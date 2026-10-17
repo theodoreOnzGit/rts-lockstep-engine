@@ -32,6 +32,13 @@ Only a first batch of self-contained foundations exists:
 | `ww::vector2`, `ww::vector3`, `ww::vector4` | `WWMath/vector2.h`, `vector3.h`, `vector4.h` (the subset `Matrix3D` uses) |
 | `ww::matrix3d` | `WWMath/matrix3d.h`, `matrix3d.cpp` (not `Get_Inverse`, the `Matrix3x3`/`Quaternion` setters, `Lerp`) |
 
+**Proposal, not yet approved:** `XferCRC`/`XferDeepCRC` carry a NaN guard
+(`common::xfer_crc::nan_guard`): a NaN `Real` xfered into a CRC panics in debug
+builds and tests and is hashed as one canonical NaN in release builds, because
+NaN bits are not portable between native and wasm peers.
+`XferCrc::new_without_nan_guard` keeps upstream's raw-bit behaviour. The
+change is a single commit so it can be reverted on its own.
+
 There is no renderer, audio, networking or game logic yet.
 
 ## Floating point and determinism

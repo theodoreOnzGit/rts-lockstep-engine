@@ -40,6 +40,8 @@ use super::xfer::{Snapshot, Xfer, XferMode, XferResult, XferState, XferStatus};
 pub struct XferCrc {
     state: XferState,
     crc: u32,
+    /// PROPOSAL: whether [`nan_guard`] applies to `xfer_real` (see there).
+    nan_guard: bool,
 }
 
 impl Default for XferCrc {
@@ -51,7 +53,13 @@ impl Default for XferCrc {
 impl XferCrc {
     /// `XferCRC()`: mode `XFER_CRC`, CRC zero.
     pub fn new() -> Self {
-        XferCrc { state: XferState::new(XferMode::Crc), crc: 0 }
+        XferCrc { state: XferState::new(XferMode::Crc), crc: 0, nan_guard: true }
+    }
+
+    /// PROPOSAL: an `XferCRC` without the NaN guard, hashing every `Real`'s
+    /// raw bits exactly as upstream does (used by the differential tests).
+    pub fn new_without_nan_guard() -> Self {
+        XferCrc { nan_guard: false, ..Self::new() }
     }
 
     /// `XferCRC::addCRC(val)`, with `val` already the value upstream adds
@@ -135,6 +143,13 @@ impl Xfer for XferCrc {
         self.add_bytes(data);
         Ok(())
     }
+
+    /// `Xfer::xferReal`, with the PROPOSED [`nan_guard`] unless built with
+    /// [`XferCrc::new_without_nan_guard`]. The caller's value is not changed.
+    fn xfer_real(&mut self, v: &mut f32) -> XferResult<()> {
+        let bits = if self.nan_guard { nan_guard(*v).to_bits() } else { v.to_bits() };
+        self.xfer_implementation(&mut bits.to_le_bytes())
+    }
 }
 
 /// `class XferDeepCRC : public XferCRC`: CRCs like `XferCRC`, but its mode
@@ -161,6 +176,13 @@ impl XferDeepCrc {
         let mut inner = XferCrc::new();
         inner.state.mode = XferMode::Save;
         XferDeepCrc { inner, file: None, last_file: Vec::new() }
+    }
+
+    /// PROPOSAL: an `XferDeepCRC` without the NaN guard (upstream's raw bits).
+    pub fn new_without_nan_guard() -> Self {
+        let mut d = Self::new();
+        d.inner.nan_guard = false;
+        d
     }
 
     /// `getCRC` (inherited from `XferCRC`).
@@ -236,6 +258,14 @@ impl Xfer for XferDeepCrc {
         Ok(())
     }
 
+    /// `Xfer::xferReal`, with the PROPOSED [`nan_guard`] unless built with
+    /// [`XferDeepCrc::new_without_nan_guard`]. What is hashed is also what
+    /// is written. The caller's value is not changed.
+    fn xfer_real(&mut self, v: &mut f32) -> XferResult<()> {
+        let bits = if self.inner.nan_guard { nan_guard(*v).to_bits() } else { v.to_bits() };
+        self.xfer_implementation(&mut bits.to_le_bytes())
+    }
+
     /// `XferDeepCRC::xferAsciiString`: at most 16385 bytes, an
     /// `UnsignedShort` length, then the bytes.
     fn xfer_ascii_string(&mut self, s: &mut Vec<u8>) -> XferResult<()> {
@@ -270,6 +300,59 @@ impl Xfer for XferDeepCrc {
     }
 }
 
+// ---------------------------------------------------------------------------
+// PROPOSAL (not approved by the owner; kept in one commit so it can be
+// reverted on its own): a NaN guard on the CRC path.
+// ---------------------------------------------------------------------------
+
+/// The one NaN bit pattern a guarded CRC hashes: the quiet NaN `0x7FC00000`
+/// (positive, empty payload).
+pub const CANONICAL_NAN_BITS: u32 = 0x7FC0_0000;
+
+/// **PROPOSAL.** What a guarded `XferCRC`/`XferDeepCRC` hashes for a `Real`.
+///
+/// Why: `XferCRC` hashes the raw bytes of every float. IEEE 754 leaves the
+/// sign and payload of a NaN produced by arithmetic unspecified, and so do
+/// Rust and WebAssembly (wasm's NaN results are explicitly
+/// non-deterministic in their bits), so a native peer and a wasm peer can run
+/// identical logic, both produce "a NaN", and hash different bits: a desync
+/// reported where the simulations agree, or, worse, logic whose result
+/// depends on a NaN going unnoticed until the CRCs differ.
+///
+/// What it does:
+/// - **debug builds and the crate's own tests** (`debug_assertions` or
+///   `cfg(test)`): a NaN panics, with a message, because logic that feeds a
+///   NaN into the lockstep state is a bug to find, not to hash;
+/// - **release builds**: a NaN is replaced by [`CANONICAL_NAN_BITS`] before
+///   hashing, so every peer hashes the same bits. Non-NaN values, including
+///   infinities, signed zeros and subnormals, pass through unchanged.
+///
+/// This changes the CRC (and the deep-CRC file) only for inputs that contain
+/// a NaN whose bits differ from the canonical one; for everything else it is
+/// bit-identical to upstream. Upstream's raw behaviour stays available as
+/// `XferCrc::new_without_nan_guard`.
+#[inline]
+pub fn nan_guard(v: f32) -> f32 {
+    if v.is_nan() {
+        if cfg!(any(debug_assertions, test)) {
+            panic!(
+                "XferCRC: NaN real ({:#010x}) xfered into a lockstep CRC; NaN bits are not portable between peers \
+                 (native vs wasm), so this would desync. Fix the logic that produced it.",
+                v.to_bits()
+            );
+        }
+        return canonical_nan();
+    }
+    v
+}
+
+/// The release-build replacement of [`nan_guard`], on its own so it can be
+/// tested in every build.
+#[inline]
+pub fn canonical_nan() -> f32 {
+    f32::from_bits(CANONICAL_NAN_BITS)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,8 +367,40 @@ mod tests {
         y.add_bytes(&[1, 2]);
         assert_eq!(y.raw_crc(), 0x0201, "leftover bytes enter little-endian");
         assert_eq!(y.get_crc(), 0x0102_0000);
-        let mut z = XferCrc { state: XferState::new(XferMode::Crc), crc: 0x8000_0000 };
+        let mut z = XferCrc { crc: 0x8000_0000, ..XferCrc::new() };
         z.add_bytes(&[0, 0, 0, 0]);
         assert_eq!(z.raw_crc(), 1);
+    }
+
+    #[test]
+    fn nan_guard_passes_non_nan_through() {
+        for v in [0.0f32, -0.0, 1.5, f32::INFINITY, f32::NEG_INFINITY, f32::MIN_POSITIVE / 2.0, f32::MAX] {
+            assert_eq!(nan_guard(v).to_bits(), v.to_bits());
+        }
+        assert_eq!(canonical_nan().to_bits(), CANONICAL_NAN_BITS);
+        assert!(canonical_nan().is_nan());
+        let mut g = XferCrc::new();
+        let mut u = XferCrc::new_without_nan_guard();
+        for v in [1.0f32, -3.25e-40, f32::INFINITY] {
+            g.xfer_real(&mut v.clone()).unwrap();
+            u.xfer_real(&mut v.clone()).unwrap();
+        }
+        assert_eq!(g.get_crc(), u.get_crc());
+    }
+
+    #[test]
+    #[should_panic(expected = "NaN real (0xffc00001) xfered into a lockstep CRC")]
+    fn nan_into_crc_panics_in_tests() {
+        let mut x = XferCrc::new();
+        x.xfer_real(&mut f32::from_bits(0xFFC0_0001)).unwrap();
+    }
+
+    #[test]
+    fn unguarded_crc_hashes_raw_nan_bits() {
+        let mut a = XferCrc::new_without_nan_guard();
+        let mut b = XferCrc::new_without_nan_guard();
+        a.xfer_real(&mut f32::from_bits(0x7FC0_0000)).unwrap();
+        b.xfer_real(&mut f32::from_bits(0xFFC0_0001)).unwrap();
+        assert_ne!(a.get_crc(), b.get_crc(), "upstream: different NaN bits, different CRC");
     }
 }

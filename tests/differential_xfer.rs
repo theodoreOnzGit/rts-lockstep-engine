@@ -7,6 +7,10 @@
 //!
 //! # Method
 //!
+//! The Rust side uses `XferCrc::new_without_nan_guard` (and the deep-CRC
+//! equivalent), i.e. upstream's raw-bit hashing; the proposed NaN guard is
+//! tested separately at the end of this file.
+//!
 //! Random **scripts** of Xfer operations are run by an interpreter on each
 //! side, against the real upstream classes and the Rust translation. Every
 //! operation logs its status (0, or the thrown `XferStatus`) and the values
@@ -43,7 +47,7 @@ mod support;
 
 use rts_lockstep_engine::common::base_type::*;
 use rts_lockstep_engine::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferStatus};
-use rts_lockstep_engine::common::xfer_crc::{XferCrc, XferDeepCrc};
+use rts_lockstep_engine::common::xfer_crc::{XferCrc, XferDeepCrc, CANONICAL_NAN_BITS};
 use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
@@ -363,7 +367,7 @@ fn run_with<X: Xfer>(x: &mut X, script: &[u32], crc: fn(&X) -> u32, post: fn(&X)
 /// Returns the log and the written file (save/deep) or nothing.
 fn run_rust(kind: i32, script: &[u32], load_file: &[u8]) -> (Vec<u32>, Vec<u8>) {
     match kind {
-        CRC => (run_with(&mut XferCrc::new(), script, |x| x.get_crc(), |_| 0, false), Vec::new()),
+        CRC => (run_with(&mut XferCrc::new_without_nan_guard(), script, |x| x.get_crc(), |_| 0, false), Vec::new()),
         SAVE => {
             let mut x = XferSave::new();
             let lg = run_with(&mut x, script, |_| 0, |_| 0, true);
@@ -374,7 +378,7 @@ fn run_rust(kind: i32, script: &[u32], load_file: &[u8]) -> (Vec<u32>, Vec<u8>) 
             (run_with(&mut x, script, |_| 0, |x| x.post_process_requests() as u32, true), Vec::new())
         }
         _ => {
-            let mut x = XferDeepCrc::new();
+            let mut x = XferDeepCrc::new_without_nan_guard();
             let lg = run_with(&mut x, script, |x| x.get_crc(), |_| 0, true);
             (lg, x.bytes().to_vec())
         }
@@ -416,11 +420,18 @@ fn run_cpp(kind: i32, script: &[u32], load_file: &[u8], tag: &str) -> (Vec<u32>,
 // Script generation
 // ---------------------------------------------------------------------------
 
-fn gen_real(g: &mut Gen) -> u32 {
-    match g.below(4) {
+/// With `canon`, every NaN is replaced by the canonical NaN (for the
+/// NaN-guard test); the random draws are the same either way.
+fn gen_real(g: &mut Gen, canon: bool) -> u32 {
+    let bits = match g.below(4) {
         0 => g.u32(), // any bit pattern, NaNs with payloads included
         1 => g.special().to_bits(),
         _ => g.uniform(-1000.0, 1000.0).to_bits(),
+    };
+    if canon && f32::from_bits(bits).is_nan() {
+        CANONICAL_NAN_BITS
+    } else {
+        bits
     }
 }
 
@@ -434,6 +445,11 @@ fn gen_ascii(g: &mut Gen, out: &mut Vec<u32>, max: u32) {
 
 /// A random script for `kind`; `aligned` keeps save and load in step.
 fn gen_script(g: &mut Gen, kind: i32, ops: usize) -> Vec<u32> {
+    gen_script_nan(g, kind, ops, false)
+}
+
+fn gen_script_nan(g: &mut Gen, kind: i32, ops: usize, canon: bool) -> Vec<u32> {
+    let gen_real = |g: &mut Gen| gen_real(g, canon);
     let aligned = kind == SAVE || kind == LOAD;
     let max_str = if aligned { 255 } else { 300 };
     let mut s = vec![39u32]; // open
@@ -627,4 +643,52 @@ fn xfer_fixed_edge_cases_match() {
     assert!(r.0.contains(&(XferStatus::InvalidVersion as u32)));
     assert!(r.0.contains(&(XferStatus::SkipError as u32)));
     println!("DIFF {:<44} cases {}  mismatches 0", "Xfer fixed edge cases", cases.len() + 1);
+}
+
+/// PROPOSED NaN guard (release builds): a guarded Rust `XferCRC` /
+/// `XferDeepCRC` on a script with arbitrary NaN bit patterns gives the same
+/// CRC and deep-CRC file as the upstream C++ on the same script with every
+/// NaN replaced by the canonical NaN. Only the final CRC and the file are
+/// compared (the logged values keep the caller's NaN, which the guard does
+/// not modify).
+#[cfg(not(debug_assertions))]
+#[test]
+fn nan_guard_equals_upstream_on_canonicalised_nans() {
+    let mut nan_scripts = 0;
+    for kind in [CRC, DEEP] {
+        for k in 0..500u64 {
+            let s = gen_script_nan(&mut Gen::new(300 + k), kind, OPS, false);
+            let sc = gen_script_nan(&mut Gen::new(300 + k), kind, OPS, true);
+            assert_eq!(s.len(), sc.len());
+            if s != sc {
+                nan_scripts += 1;
+            }
+            let lg = match kind {
+                CRC => {
+                    let mut x = XferCrc::new();
+                    (run_with(&mut x, &s, |x| x.get_crc(), |_| 0, false), Vec::new())
+                }
+                _ => {
+                    let mut x = XferDeepCrc::new();
+                    let lg = run_with(&mut x, &s, |x| x.get_crc(), |_| 0, true);
+                    (lg, x.bytes().to_vec())
+                }
+            };
+            let c = run_cpp(kind, &sc, &[], "nan-guard");
+            let crc_at = |l: &Vec<u32>| l[l.len() - 2];
+            assert_eq!(crc_at(&lg.0), crc_at(&c.0), "kind {kind} script {k}: guarded CRC differs");
+            assert_eq!(lg.1, c.1, "kind {kind} script {k}: guarded deep-CRC file differs");
+        }
+    }
+    assert!(nan_scripts > 100, "too few scripts contained a NaN");
+    println!("DIFF {:<44} scripts 1000 ({nan_scripts} with NaNs)  mismatches 0", "XferCRC NaN guard (PROPOSAL) vs canonicalised C++");
+}
+
+/// PROPOSED NaN guard (debug builds): a NaN into a guarded CRC panics.
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "xfered into a lockstep CRC")]
+fn nan_guard_panics_in_debug_builds() {
+    let mut x = XferCrc::new();
+    let _ = x.xfer_real(&mut f32::NAN);
 }
