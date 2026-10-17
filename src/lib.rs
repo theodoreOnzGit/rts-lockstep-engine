@@ -18,6 +18,9 @@
 //! | [`common::base_type`] | `Libraries/Include/Lib/BaseType.h` (fast float helpers) |
 //! | [`common::trig`] | `GameEngine/Source/Common/System/Trig.cpp`, `Libraries/Include/Lib/trig.h` |
 //! | [`common::quick_trig`] | `GameEngine/Include/Common/QuickTrig.h`, `Source/Common/System/QuickTrig.cpp` |
+//! | [`common::xfer`] | `GameEngine/Include/Common/Xfer.h`, `Snapshot.h`, `Source/Common/System/Xfer.cpp` |
+//! | [`common::xfer_crc`] | `Common/XferCRC.h`, `XferDeepCRC.h`, `System/XferCRC.cpp` |
+//! | [`common::xfer_save`], [`common::xfer_load`] | `Common/XferSave.h`, `XferLoad.h`, `System/XferSave.cpp`, `XferLoad.cpp` |
 //! | [`ww::wwmath`] | `Libraries/Source/WWVegas/WWMath/wwmath.h`, `wwmath.cpp` |
 //! | [`ww::vector2`], [`ww::vector3`], [`ww::vector4`] | `WWMath/vector2.h`, `vector3.h`, `vector4.h` |
 //! | [`ww::matrix3d`] | `WWMath/matrix3d.h`, `matrix3d.cpp` |

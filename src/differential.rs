@@ -53,6 +53,16 @@ extern "C" {
     pub fn ref_qtrig_table(which: c_int, i: c_int) -> c_float;
     pub fn ref_qtrig_count(which: c_int) -> c_float;
 
+    // Xfer.cpp, XferCRC.cpp, XferSave.cpp, XferLoad.cpp (script interpreter)
+    pub fn ref_xfer_run(
+        kind: c_int,
+        path: *const std::os::raw::c_char,
+        script: *const c_uint,
+        n: c_int,
+        log: *mut c_uint,
+        cap: c_int,
+    ) -> c_int;
+
     // BaseType.h (asm transcriptions)
     pub fn ref_fast_float2long_round(f: c_float) -> c_int;
     pub fn ref_fast_float_trunc(f: c_float) -> c_float;

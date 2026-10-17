@@ -3,7 +3,8 @@
 // Translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/Libraries/Include/Lib/BaseType.h (lines 175-245: the fast
-//   float helpers and the REAL_TO_* macros; lines 85-88: PI, TWO_PI)
+//   float helpers and the REAL_TO_* macros; lines 85-88: PI, TWO_PI;
+//   lines 258-492: the data members of the derived types)
 //
 // Original copyright notice of that file:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -173,6 +174,103 @@ pub fn real_to_int_ceil(x: f32) -> i32 {
 #[inline]
 pub fn real_to_int_floor(x: f32) -> i32 {
     fast_float2long_round(fast_float_floor(x))
+}
+
+// ---------------------------------------------------------------------------
+// Derived types (BaseType.h lines 258-492): the data members, in upstream's
+// order. Their small methods (length, normalize, toAngle, ...) are not
+// translated yet; the Xfer code only moves the members.
+// ---------------------------------------------------------------------------
+
+/// `struct RealRange { Real lo, hi; }`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct RealRange {
+    pub lo: f32,
+    pub hi: f32,
+}
+
+/// `struct Coord2D { Real x, y; }`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Coord2D {
+    pub x: f32,
+    pub y: f32,
+}
+
+/// `struct ICoord2D { Int x, y; }`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ICoord2D {
+    pub x: i32,
+    pub y: i32,
+}
+
+/// `struct Region2D { Coord2D lo, hi; }`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Region2D {
+    pub lo: Coord2D,
+    pub hi: Coord2D,
+}
+
+/// `struct IRegion2D { ICoord2D lo, hi; }`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct IRegion2D {
+    pub lo: ICoord2D,
+    pub hi: ICoord2D,
+}
+
+/// `struct Coord3D { Real x, y, z; }`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Coord3D {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+/// `struct ICoord3D { Int x, y, z; }`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ICoord3D {
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+}
+
+/// `struct Region3D { Coord3D lo, hi; }`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Region3D {
+    pub lo: Coord3D,
+    pub hi: Coord3D,
+}
+
+/// `struct IRegion3D { ICoord3D lo, hi; }`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct IRegion3D {
+    pub lo: ICoord3D,
+    pub hi: ICoord3D,
+}
+
+/// `struct RGBColor { Real red, green, blue; }`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct RGBColor {
+    pub red: f32,
+    pub green: f32,
+    pub blue: f32,
+}
+
+/// `struct RGBAColorReal { Real red, green, blue, alpha; }`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct RGBAColorReal {
+    pub red: f32,
+    pub green: f32,
+    pub blue: f32,
+    pub alpha: f32,
+}
+
+/// `struct RGBAColorInt { UnsignedInt red, green, blue, alpha; }`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RGBAColorInt {
+    pub red: u32,
+    pub green: u32,
+    pub blue: u32,
+    pub alpha: u32,
 }
 
 #[cfg(test)]

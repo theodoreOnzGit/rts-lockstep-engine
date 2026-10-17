@@ -5,6 +5,7 @@
 ** included here unchanged from upstream. */
 #ifndef SHIM_PRERTS_H
 #define SHIM_PRERTS_H
+#include <stdio.h>   /* the Xfer headers use FILE (the real PreRTS.h brings stdio) */
 #include <time.h>
 #include <string.h>
 #include "Lib/BaseType.h"

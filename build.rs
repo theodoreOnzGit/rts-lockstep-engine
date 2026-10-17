@@ -83,6 +83,26 @@ mod differential {
             .file(up.join("GameEngine/Source/Common/crc.cpp"));
         ge.compile("upstream_gameengine");
 
+        // The Xfer family: Xfer.cpp (via wrap_xfer.cpp, after matrix3d.h),
+        // XferCRC.cpp, XferSave.cpp, XferLoad.cpp and Snapshot.cpp unchanged,
+        // against the shims in differential/shim/Common. `_DEBUG` again only
+        // selects crc.h's C++ class (XferCRC.cpp includes crc.h, unused).
+        let sys = up.join("GameEngine/Source/Common/System");
+        let mut xf = cc::Build::new();
+        base(&mut xf);
+        xf.define("_DEBUG", None)
+            .include(&shim)
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .include(ww.join("WWMath"))
+            .include(ww.join("WWLib"))
+            .file(dif.join("wrap_xfer.cpp"))
+            .file(sys.join("XferCRC.cpp"))
+            .file(sys.join("XferSave.cpp"))
+            .file(sys.join("XferLoad.cpp"))
+            .file(sys.join("Snapshot.cpp"));
+        xf.compile("upstream_xfer");
+
         // Lib/BaseType.h asm helpers (hand transcriptions, see the file).
         let mut bt = cc::Build::new();
         base(&mut bt);
