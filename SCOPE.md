@@ -58,12 +58,14 @@ Generals multiplayer and replays are **lockstep**: each peer runs the same
   `sinf`/`cosf`; **corrected 2026-10-17**: `fsqrt` is correctly rounded, so it
   matches `sqrtf`). Consequences:
   - Rust↔Rust lockstep (native ↔ wasm included) is achievable with plain `f32`,
-    no fused multiply-add, and ~~**pure-Rust `libm`**~~ **petir** (the owner's
-    no_std numerics crate, which delegates to pure-Rust `libm`; owner decision
-    2026-10-17) for transcendentals. Never use `std` `sin`/`cos` in logic: they
-    call the platform's libm. petir is `f64` only so far, so upstream's `f32`
-    calls (`sinf`, `cosf`, `tanf`) stay on `libm`'s `f32` functions until petir
-    gains them.
+    no fused multiply-add, and ~~**pure-Rust `libm`**~~ **petir** from crates.io
+    (`=0.0.1`; the owner's no_std numerics crate, which delegates to pure-Rust
+    `libm`; owner decision 2026-10-17) for all maths, `f32` and `f64`, through
+    its `Real` trait. Never use `std` `sin`/`cos` in logic: they call the
+    platform's libm. ~~petir is `f64` only so far~~ **Corrected 2026-10-17**:
+    `petir::Real` is implemented for `f32` too, forwarding to `libm`'s `f32`
+    functions, so upstream's `sinf`/`cosf`/`tanf` calls go through petir as
+    well. Its `mul_add` is `fmaf` and must not be used: upstream has no FMA.
   - **Which trig the logic really uses (found 2026-10-17).** GameLogic never
     calls `WWMath::Sin`/`Cos` or their x87 assembly. Its ~120 `Sin`/`Cos` calls
     go to `Common/System/Trig.cpp`, which `#define`s `DEFAULT_TRIG`, so they are
