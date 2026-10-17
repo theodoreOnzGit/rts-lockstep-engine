@@ -31,6 +31,7 @@ public:
 	bool isEmpty() const { return m_s.empty(); }
 	bool isNotEmpty() const { return !m_s.empty(); }
 	void set(const char *s) { m_s = s ? s : ""; }
+	void set(const AsciiString &s) { m_s = s.m_s; }
 	void clear() { m_s.clear(); }
 	void concat(const AsciiString &a) { m_s += a.m_s; }
 	void concat(const char *a) { m_s += a; }
@@ -84,6 +85,12 @@ public:
 		clear();
 		for (int i = 0; i < src.getLength(); i++) m_s += (char)src.getCharAt(i);
 	}
+	/* getBufferForRead(len) (AsciiString.cpp): room for len chars and a NUL,
+	** zero-filled as the engine's allocator fills it. The real getLength() is
+	** strlen(); here a buffer filled this way keeps its full size, so code
+	** that wants the C-string length uses strlen(str()) (DataChunk.cpp only
+	** compares and copies these strings). */
+	char *getBufferForRead(int len) { m_s.assign(len, '\0'); return &m_s[0]; }
 	/* test helper (not upstream): set from bytes that may contain NUL */
 	void setBytes(const char *p, int n) { m_s.assign(p, n); }
 private:

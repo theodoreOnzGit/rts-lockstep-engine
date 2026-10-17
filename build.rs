@@ -193,6 +193,27 @@ mod differential {
             .file(up.join("GameEngine/Source/GameClient/GameText.cpp"));
         csf.compile("upstream_csf");
 
+        // The chunk file reader: DataChunk.cpp and NameKeyGenerator.cpp
+        // unchanged, with chunk_prelude.h force-included and the stand-in
+        // Dict of differential/shim_chunk (see the file). Compression.h comes
+        // from Libraries/Source/Compression (declarations only; the codecs
+        // are not compiled).
+        let shim_chunk = dif.join("shim_chunk");
+        let mut chunk = cc::Build::new();
+        base(&mut chunk);
+        chunk
+            .include(&shim_chunk)
+            .include(&shim)
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .include(up.join("Libraries/Source/Compression"))
+            .flag("-include")
+            .flag(shim_chunk.join("chunk_prelude.h").to_str().expect("UTF-8 path"))
+            .file(dif.join("wrap_chunk.cpp"))
+            .file(sys.join("DataChunk.cpp"))
+            .file(up.join("GameEngine/Source/Common/NameKeyGenerator.cpp"));
+        chunk.compile("upstream_chunk");
+
         // Lib/BaseType.h asm helpers (hand transcriptions, see the file).
         let mut bt = cc::Build::new();
         base(&mut bt);
@@ -217,6 +238,7 @@ mod differential {
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/System",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/INI/INI.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/GameClient/GameText.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/Common/NameKeyGenerator.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic",
             "upstream/GeneralsMD/Code/GameEngine/Include/GameClient",
             "upstream/GeneralsMD/Code/GameEngine/Include/Common/QuickTrig.h",

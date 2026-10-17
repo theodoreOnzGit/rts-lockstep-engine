@@ -1,5 +1,5 @@
 /* Shim for GameEngine/Include/Common/UnicodeString.h, differential tests only:
-** str(), getLength(), isEmpty(), set(const WideChar*), getCharAt(),
+** TheEmptyString, str(), getLength(), isEmpty(), set(const WideChar*), getCharAt(),
 ** construction and assignment from a WideChar string, operator==, on a
 ** std::basic_string of the 16-bit WideChar (see the shim Lib/BaseType.h).
 ** WideChar is 16 bits here, as on Win32, so upstream's L"..." literals
@@ -16,6 +16,7 @@
 class UnicodeString
 {
 public:
+	static const UnicodeString TheEmptyString;
 	UnicodeString() {}
 	UnicodeString(const WideChar *s) { if (s) m_s = s; }
 	UnicodeString(const wchar_t *s) { setWide(s); }
@@ -39,6 +40,11 @@ public:
 	void clear() { m_s.clear(); }
 	/* test helper (not upstream): set from code units that may contain NUL */
 	void setUnits(const WideChar *p, int n) { m_s.assign(p, n); }
+	/* getBufferForRead(len) (UnicodeString.cpp): room for len units and a NUL,
+	** zero-filled as the engine's allocator fills it; the length is then
+	** that of the C string the caller leaves (see fixLength) */
+	WideChar *getBufferForRead(int len) { m_s.assign(len, 0); return &m_s[0]; }
+	void fixLength() { size_t n = 0; while (n < m_s.size() && m_s[n]) ++n; m_s.resize(n); }
 private:
 	void setWide(const wchar_t *s) { m_s.clear(); for (; s && *s; ++s) m_s += (WideChar)*s; }
 	std::basic_string<WideChar> m_s;

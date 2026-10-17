@@ -23,7 +23,7 @@ public:
 	void deleteInstance() { delete this; }
 };
 #define MEMORY_POOL_GLUE_WITH_USERLOOKUP_CREATE(ARGCLASS, ARGPOOLNAME) public: virtual ~ARGCLASS();
-#define EMPTY_DTOR(CLASS) CLASS::~CLASS() {}
+#define EMPTY_DTOR(CLASS) inline CLASS::~CLASS() { }  /* as upstream, GameMemory.h line 903 */
 #define MEMORY_POOL_GLUE_ABC(ARGCLASS) protected: virtual ~ARGCLASS();
 #define newInstance(ARGCLASS) new(ShimZeroFill()) ARGCLASS
 #define NEW new(ShimZeroFill())

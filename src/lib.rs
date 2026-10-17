@@ -26,6 +26,7 @@
 //! | [`common::xfer_save`], [`common::xfer_load`] | `Common/XferSave.h`, `XferLoad.h`, `System/XferSave.cpp`, `XferLoad.cpp` |
 //! | [`formats::big`] | `Common/ArchiveFile.*`, `ArchiveFileSystem.*`, `GameEngineDevice/.../Win32BIGFile.*`, `Win32BIGFileSystem.*` |
 //! | [`formats::csf`] | `GameEngine/Source/GameClient/GameText.cpp` (the CSF loader), `Include/GameClient/GameText.h` |
+//! | [`formats::data_chunk`] | `GameEngine/Include/Common/DataChunk.h`, `Source/Common/System/DataChunk.cpp` (the reader) |
 //! | [`ww::wwmath`] | `Libraries/Source/WWVegas/WWMath/wwmath.h`, `wwmath.cpp` |
 //! | [`ww::vector2`], [`ww::vector3`], [`ww::vector4`] | `WWMath/vector2.h`, `vector3.h`, `vector4.h` |
 //! | [`ww::matrix3d`] | `WWMath/matrix3d.h`, `matrix3d.cpp` |

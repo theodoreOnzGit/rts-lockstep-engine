@@ -2,7 +2,8 @@
 ** only. Win32BIGFileSystem.cpp and its headers rely on things the real
 ** PreRTS.h / windows.h provide: the MSVC string functions stricmp/_stricmp,
 ** _MAX_PATH (260 on Win32), the DEBUG_* macros, and TheGlobalData (for
-** ArchiveFileSystem::loadMods, not exercised). */
+** ArchiveFileSystem::loadMods and DataChunkOutput's temporary file, not
+** exercised). */
 #ifndef SHIM_ARCHIVE_PRELUDE_H
 #define SHIM_ARCHIVE_PRELUDE_H
 #include <strings.h>
@@ -22,6 +23,7 @@ class GlobalData
 public:
 	AsciiString m_modBIG;
 	AsciiString m_modDir;
+	AsciiString getPath_UserData() const;
 };
 extern GlobalData *TheGlobalData;
 #endif
