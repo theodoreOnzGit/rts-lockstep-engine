@@ -1,0 +1,134 @@
+// SPDX-License-Identifier: GPL-3.0-only
+//! FFI declarations for the original upstream C++ compiled by `build.rs`
+//! under the `differential` feature (test support only, not public API).
+//!
+//! Each `ref_*` function is an `extern "C"` wrapper in `differential/*.cpp`
+//! around the unchanged upstream code (or, where upstream is MSVC inline asm
+//! only, a labelled GNU-asm transcription). Vectors cross as `f32` arrays,
+//! `Matrix3D` as 12 `f32` in row-major order. The wrappers document the
+//! meaning of every `op` code.
+//!
+//! The RNG wrappers drive upstream's process-global seed arrays, so tests that
+//! use them must serialise (see [`GLOBAL_RNG_LOCK`]).
+
+use std::os::raw::{c_double, c_float, c_int, c_longlong, c_schar, c_short, c_uchar, c_uint, c_ushort};
+
+/// Serialises tests that touch the C++ RNG globals.
+pub static GLOBAL_RNG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+extern "C" {
+    // RandomValue.cpp
+    pub fn ref_seed_random(seed: c_uint, state6: *mut c_uint);
+    pub fn ref_random_value(state6: *mut c_uint) -> c_uint;
+    pub fn ref_mult_factor() -> c_float;
+    pub fn ref_init_random(seed: c_uint);
+    pub fn ref_init_game_logic_random(seed: c_uint);
+    pub fn ref_get_game_logic_random_seed() -> c_uint;
+    pub fn ref_get_game_logic_random_seed_crc() -> c_uint;
+    pub fn ref_get_state(which: c_int, out6: *mut c_uint);
+    pub fn ref_set_state(which: c_int, in6: *const c_uint);
+    pub fn ref_logic_value(lo: c_int, hi: c_int) -> c_int;
+    pub fn ref_client_value(lo: c_int, hi: c_int) -> c_int;
+    pub fn ref_audio_value(lo: c_int, hi: c_int) -> c_int;
+    pub fn ref_logic_value_real(lo: c_float, hi: c_float) -> c_float;
+    pub fn ref_client_value_real(lo: c_float, hi: c_float) -> c_float;
+    pub fn ref_audio_value_real(lo: c_float, hi: c_float) -> c_float;
+    pub fn ref_logic_variable_get_value(kind: c_int, lo: c_float, hi: c_float) -> c_float;
+    pub fn ref_client_variable_get_value(kind: c_int, lo: c_float, hi: c_float) -> c_float;
+
+    // crc.h / crc.cpp
+    pub fn ref_crc_debug_buffer(buf: *const c_uchar, len: c_int) -> c_uint;
+    pub fn ref_crc_debug_chunks(buf: *const c_uchar, lens: *const c_int, n: c_int) -> c_uint;
+    pub fn ref_crc_asm_update(crc: c_uint, buf: *const c_uchar, len: c_int) -> c_uint;
+
+    // BaseType.h (asm transcriptions)
+    pub fn ref_fast_float2long_round(f: c_float) -> c_int;
+    pub fn ref_fast_float_trunc(f: c_float) -> c_float;
+    pub fn ref_fast_float_floor(f: c_float) -> c_float;
+    pub fn ref_fast_float_ceil(f: c_float) -> c_float;
+    pub fn ref_real_to_int(x: c_float) -> c_int;
+    pub fn ref_real_to_unsigned_int(x: c_float) -> c_uint;
+    pub fn ref_real_to_short(x: c_float) -> c_short;
+    pub fn ref_real_to_unsigned_short(x: c_float) -> c_ushort;
+    pub fn ref_real_to_byte(x: c_float) -> c_schar;
+    pub fn ref_real_to_unsigned_byte(x: c_float) -> c_uchar;
+    pub fn ref_double_to_int(x: c_double) -> c_int;
+    pub fn ref_real_to_int_ceil(x: c_float) -> c_int;
+    pub fn ref_real_to_int_floor(x: c_float) -> c_int;
+
+    // wwmath.h
+    pub fn ref_wwmath_init_tables();
+    pub fn ref_fast_sin_table(i: c_int) -> c_float;
+    pub fn ref_fast_inv_sin_table(i: c_int) -> c_float;
+    pub fn ref_fast_acos_table(i: c_int) -> c_float;
+    pub fn ref_fast_asin_table(i: c_int) -> c_float;
+    pub fn ref_fabs(v: c_float) -> c_float;
+    pub fn ref_float_to_int_chop(f: c_float) -> c_int;
+    pub fn ref_float_to_int_floor(f: c_float) -> c_int;
+    pub fn ref_cos(v: c_float) -> c_float;
+    pub fn ref_sin(v: c_float) -> c_float;
+    pub fn ref_sqrt(v: c_float) -> c_float;
+    pub fn ref_inv_sqrt(v: c_float) -> c_float;
+    pub fn ref_float_to_long(f: c_float) -> c_longlong;
+    pub fn ref_float_to_long_d(f: c_double) -> c_longlong;
+    pub fn ref_fast_sin(v: c_float) -> c_float;
+    pub fn ref_fast_inv_sin(v: c_float) -> c_float;
+    pub fn ref_fast_cos(v: c_float) -> c_float;
+    pub fn ref_fast_inv_cos(v: c_float) -> c_float;
+    pub fn ref_fast_acos(v: c_float) -> c_float;
+    pub fn ref_acos(v: c_float) -> c_float;
+    pub fn ref_fast_asin(v: c_float) -> c_float;
+    pub fn ref_asin(v: c_float) -> c_float;
+    pub fn ref_atan(v: c_float) -> c_float;
+    pub fn ref_atan2(y: c_float, x: c_float) -> c_float;
+    pub fn ref_sign(v: c_float) -> c_float;
+    pub fn ref_ceil(v: c_float) -> c_float;
+    pub fn ref_floor(v: c_float) -> c_float;
+    pub fn ref_fast_is_float_positive(v: c_float) -> c_int;
+    pub fn ref_is_power_of_2(v: c_uint) -> c_int;
+    pub fn ref_clamp(v: c_float, lo: c_float, hi: c_float) -> c_float;
+    pub fn ref_clamp_d(v: c_double, lo: c_double, hi: c_double) -> c_double;
+    pub fn ref_clamp_int(v: c_int, lo: c_int, hi: c_int) -> c_int;
+    pub fn ref_wrap(v: c_float, lo: c_float, hi: c_float) -> c_float;
+    pub fn ref_wrap_d(v: c_double, lo: c_double, hi: c_double) -> c_double;
+    pub fn ref_min(a: c_float, b: c_float) -> c_float;
+    pub fn ref_max(a: c_float, b: c_float) -> c_float;
+    pub fn ref_float_as_int(f: c_float) -> c_int;
+    pub fn ref_lerp(a: c_float, b: c_float, t: c_float) -> c_float;
+    pub fn ref_lerp_d(a: c_double, b: c_double, t: c_float) -> c_double;
+    pub fn ref_unit_float_to_byte(f: c_float) -> c_uchar;
+    pub fn ref_byte_to_unit_float(b: c_uchar) -> c_float;
+    pub fn ref_is_valid_float(x: c_float) -> c_int;
+    /// glibc's own function, looked up with dlsym (0 sinf, 1 cosf, 2 acosf,
+    /// 3 asinf, 4 atanf): bypasses the test binaries' interposition.
+    pub fn ref_glibc_f1(which: c_int, x: c_float) -> c_float;
+    pub fn ref_glibc_atan2f(y: c_float, x: c_float) -> c_float;
+
+    // vector2.h
+    pub fn ref_v2_op(op: c_int, a: *const c_float, b: *const c_float, k: c_float, out: *mut c_float);
+    pub fn ref_v2_scalar(op: c_int, a: *const c_float, b: *const c_float) -> c_float;
+    pub fn ref_v2_pred(op: c_int, a: *const c_float, b: *const c_float, k: c_float) -> c_int;
+    pub fn ref_v2_rotate_towards(inout: *mut c_float, target: *const c_float, max_s: c_float, max_c: c_float) -> c_int;
+    pub fn ref_v2_rotate_towards_theta(inout: *mut c_float, target: *const c_float, max_theta: c_float) -> c_int;
+
+    // vector3.h
+    pub fn ref_v3_op(op: c_int, a: *const c_float, b: *const c_float, k: c_float, out: *mut c_float);
+    pub fn ref_v3_scalar(op: c_int, a: *const c_float, b: *const c_float) -> c_float;
+    pub fn ref_v3_find(op: c_int, v: c_float, p1: *const c_float, p2: *const c_float) -> c_float;
+    pub fn ref_v3_pred(op: c_int, a: *const c_float, b: *const c_float, k: c_float) -> c_int;
+
+    // vector4.h
+    pub fn ref_v4_op(op: c_int, a: *const c_float, b: *const c_float, k: c_float, out: *mut c_float);
+    pub fn ref_v4_dot(a: *const c_float, b: *const c_float) -> c_float;
+    pub fn ref_v4_eq(a: *const c_float, b: *const c_float) -> c_int;
+
+    // matrix3d.h / matrix3d.cpp
+    pub fn ref_m3_op(op: c_int, m: *mut c_float, p: *const c_float);
+    pub fn ref_m3_multiply(a: *const c_float, b: *const c_float, alias: c_int, out: *mut c_float);
+    pub fn ref_m3_vec(op: c_int, m: *const c_float, v: *const c_float, out: *mut c_float);
+    pub fn ref_m3_scalar(op: c_int, m: *const c_float) -> c_float;
+    pub fn ref_m3_aabox(op: c_int, m: *const c_float, a: *const c_float, b: *const c_float, out: *mut c_float);
+    pub fn ref_m3_solve(m: *mut c_float) -> c_int;
+    pub fn ref_m3_eq(a: *const c_float, b: *const c_float) -> c_int;
+    pub fn ref_m3_static(which: c_int, out: *mut c_float);
+}

@@ -1,0 +1,25 @@
+[package]
+name = "rts-lockstep-engine"
+version = "0.0.1"
+edition = "2021"
+license = "GPL-3.0-only"
+description = "A modified Rust translation of the GPLv3 engine source released by Electronic Arts in 2025 (early, nothing playable)."
+repository = "https://github.com/theodoreOnzGit/rts-lockstep-engine"
+readme = "README.md"
+publish = false
+# The pinned upstream source is a test-only reference; never package it.
+exclude = ["upstream/", "differential/"]
+
+[features]
+default = []
+# Compile the ORIGINAL upstream C++ (from the `upstream/` submodule) and link it
+# into the crate, so tests can compare Rust and C++ outputs bit for bit.
+# Needs a C++ compiler and `git submodule update --init`. Off by default.
+differential = ["dep:cc"]
+
+[dependencies]
+# Pure-Rust libm: transcendentals in logic must not depend on the platform libm.
+libm = "0.2"
+
+[build-dependencies]
+cc = { version = "1", optional = true }
