@@ -16,6 +16,8 @@
 //! | [`common::random_value`] | `GameEngine/Source/Common/RandomValue.cpp` |
 //! | [`common::crc`] | `GameEngine/Source/Common/crc.cpp`, `Include/Common/crc.h` |
 //! | [`common::base_type`] | `Libraries/Include/Lib/BaseType.h` (fast float helpers) |
+//! | [`common::trig`] | `GameEngine/Source/Common/System/Trig.cpp`, `Libraries/Include/Lib/trig.h` |
+//! | [`common::quick_trig`] | `GameEngine/Include/Common/QuickTrig.h`, `Source/Common/System/QuickTrig.cpp` |
 //! | [`ww::wwmath`] | `Libraries/Source/WWVegas/WWMath/wwmath.h`, `wwmath.cpp` |
 //! | [`ww::vector2`], [`ww::vector3`], [`ww::vector4`] | `WWMath/vector2.h`, `vector3.h`, `vector4.h` |
 //! | [`ww::matrix3d`] | `WWMath/matrix3d.h`, `matrix3d.cpp` |

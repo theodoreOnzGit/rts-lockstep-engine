@@ -3,7 +3,7 @@
 // Translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/Libraries/Include/Lib/BaseType.h (lines 175-245: the fast
-//   float helpers and the REAL_TO_* macros)
+//   float helpers and the REAL_TO_* macros; lines 85-88: PI, TWO_PI)
 //
 // Original copyright notice of that file:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -36,6 +36,13 @@
 //!
 //! The differential tests compare these against GNU-asm transcriptions of the
 //! same instruction sequences (`differential/wrap_base_type.cpp`).
+
+/// `#define PI 3.14159265359f` (BaseType.h line 86).
+#[allow(clippy::approx_constant, clippy::excessive_precision)]
+pub const PI: f32 = 3.14159265359;
+/// `#define TWO_PI 6.28318530718f` (BaseType.h line 87).
+#[allow(clippy::approx_constant, clippy::excessive_precision)]
+pub const TWO_PI: f32 = 6.28318530718;
 
 /// `almost1 = (126<<23)|0x7fffff`, the largest float below 1.0 (`0.99999994f`).
 const ALMOST1: f32 = f32::from_bits((126 << 23) | 0x7f_ffff);

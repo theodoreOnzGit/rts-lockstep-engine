@@ -66,16 +66,20 @@ mod differential {
         let dif = root.join("differential");
         let ww = up.join("Libraries/Source/WWVegas");
 
-        // GameEngine: RandomValue.cpp (via its wrapper) and crc.cpp.
-        // `_DEBUG` selects crc.h's C++ CRC class instead of its MSVC `_asm`
-        // block; the asm path is transcribed separately in wrap_crc.cpp.
+        // GameEngine: RandomValue.cpp, Trig.cpp, QuickTrig.cpp (via their
+        // wrappers) and crc.cpp. `_DEBUG` selects crc.h's C++ CRC class
+        // instead of its MSVC `_asm` block; the asm path is transcribed
+        // separately in wrap_crc.cpp.
         let mut ge = cc::Build::new();
         base(&mut ge);
         ge.define("_DEBUG", None)
             .include(&shim)
             .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
             .file(dif.join("wrap_random_value.cpp"))
             .file(dif.join("wrap_crc.cpp"))
+            .file(dif.join("wrap_trig.cpp"))
+            .file(dif.join("wrap_quick_trig.cpp"))
             .file(up.join("GameEngine/Source/Common/crc.cpp"));
         ge.compile("upstream_gameengine");
 
@@ -100,6 +104,9 @@ mod differential {
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/RandomValue.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/crc.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Include/Common/crc.h",
+            "upstream/GeneralsMD/Code/GameEngine/Source/Common/System",
+            "upstream/GeneralsMD/Code/GameEngine/Include/Common/QuickTrig.h",
+            "upstream/GeneralsMD/Code/Libraries/Include/Lib/trig.h",
             "upstream/GeneralsMD/Code/Libraries/Source/WWVegas/WWMath",
         ] {
             println!("cargo:rerun-if-changed={p}");

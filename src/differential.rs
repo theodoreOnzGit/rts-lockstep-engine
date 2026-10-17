@@ -41,6 +41,18 @@ extern "C" {
     pub fn ref_crc_debug_chunks(buf: *const c_uchar, lens: *const c_int, n: c_int) -> c_uint;
     pub fn ref_crc_asm_update(crc: c_uint, buf: *const c_uchar, len: c_int) -> c_uint;
 
+    // Trig.cpp / trig.h
+    pub fn ref_trig_default(op: c_int, x: c_float) -> c_float;
+    pub fn ref_trig_table(op: c_int, x: c_float) -> c_float;
+    pub fn ref_int_trig(op: c_int, v: c_int) -> c_int;
+    pub fn ref_trig_lookup(which: c_int, i: c_int) -> c_int;
+
+    // QuickTrig.h / QuickTrig.cpp
+    pub fn ref_qtrig(op: c_int, x: c_float) -> c_float;
+    pub fn ref_qmag(x: c_float, y: c_float, z: c_float) -> c_float;
+    pub fn ref_qtrig_table(which: c_int, i: c_int) -> c_float;
+    pub fn ref_qtrig_count(which: c_int) -> c_float;
+
     // BaseType.h (asm transcriptions)
     pub fn ref_fast_float2long_round(f: c_float) -> c_int;
     pub fn ref_fast_float_trunc(f: c_float) -> c_float;
