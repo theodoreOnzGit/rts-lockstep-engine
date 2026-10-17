@@ -40,7 +40,7 @@ use super::xfer::{Snapshot, Xfer, XferMode, XferResult, XferState, XferStatus};
 pub struct XferCrc {
     state: XferState,
     crc: u32,
-    /// PROPOSAL: whether [`nan_guard`] applies to `xfer_real` (see there).
+    /// Whether [`nan_guard`] applies to `xfer_real` (see there).
     nan_guard: bool,
 }
 
@@ -56,7 +56,7 @@ impl XferCrc {
         XferCrc { state: XferState::new(XferMode::Crc), crc: 0, nan_guard: true }
     }
 
-    /// PROPOSAL: an `XferCRC` without the NaN guard, hashing every `Real`'s
+    /// An `XferCRC` without the NaN guard, hashing every `Real`'s
     /// raw bits exactly as upstream does (used by the differential tests).
     pub fn new_without_nan_guard() -> Self {
         XferCrc { nan_guard: false, ..Self::new() }
@@ -178,7 +178,7 @@ impl XferDeepCrc {
         XferDeepCrc { inner, file: None, last_file: Vec::new() }
     }
 
-    /// PROPOSAL: an `XferDeepCRC` without the NaN guard (upstream's raw bits).
+    /// An `XferDeepCRC` without the NaN guard (upstream's raw bits).
     pub fn new_without_nan_guard() -> Self {
         let mut d = Self::new();
         d.inner.nan_guard = false;
@@ -301,15 +301,16 @@ impl Xfer for XferDeepCrc {
 }
 
 // ---------------------------------------------------------------------------
-// PROPOSAL (not approved by the owner; kept in one commit so it can be
-// reverted on its own): a NaN guard on the CRC path.
+// The NaN guard on the CRC path. Proposed in its own commit (ba51117);
+// approved by the owner on 2026-10-17, so it is now part of the design.
+// Game logic must never store a NaN; this is the check that enforces it.
 // ---------------------------------------------------------------------------
 
 /// The one NaN bit pattern a guarded CRC hashes: the quiet NaN `0x7FC00000`
 /// (positive, empty payload).
 pub const CANONICAL_NAN_BITS: u32 = 0x7FC0_0000;
 
-/// **PROPOSAL.** What a guarded `XferCRC`/`XferDeepCRC` hashes for a `Real`.
+/// What a guarded `XferCRC`/`XferDeepCRC` hashes for a `Real`.
 ///
 /// Why: `XferCRC` hashes the raw bytes of every float. IEEE 754 leaves the
 /// sign and payload of a NaN produced by arithmetic unspecified, and so do

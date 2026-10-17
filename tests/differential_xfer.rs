@@ -681,7 +681,7 @@ fn nan_guard_equals_upstream_on_canonicalised_nans() {
         }
     }
     assert!(nan_scripts > 100, "too few scripts contained a NaN");
-    println!("DIFF {:<44} scripts 1000 ({nan_scripts} with NaNs)  mismatches 0", "XferCRC NaN guard (PROPOSAL) vs canonicalised C++");
+    println!("DIFF {:<44} scripts 1000 ({nan_scripts} with NaNs)  mismatches 0", "XferCRC NaN guard vs canonicalised C++");
 }
 
 /// PROPOSED NaN guard (debug builds): a NaN into a guarded CRC panics.

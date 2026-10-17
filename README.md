@@ -42,12 +42,12 @@ Only a first batch of self-contained foundations exists:
 | `formats::w3d` | W3D models, parsed into plain structs (no rendering): `WW3D2/w3d_file.h` and `w3d_obsolete.h` (all chunk ids, flags and the 84 file structs); hierarchies (`htree.cpp`, `pivot.cpp`); animations (`hrawanim.cpp`, `hcanim.cpp`, `motchan.cpp`: raw, time-coded, adaptive-delta and bit channels); meshes (`MeshModelClass::Load_W3D` of `meshmdlio.cpp`, with the parts of `meshgeometry.cpp`, `meshmatdesc.cpp`, `vertmaterial.cpp`, `texture.cpp`, `aabtree.cpp`, `w3d_util.cpp`, `shader.h` and `dx8wrapper.h` it calls). Not the legacy material chunks (`MATERIALS3`, multi-material per-triangle materials), the processing after the chunks are read (`install_materials`, `post_process`, generated AABTrees), nor the asset manager's file loop (`Load_3D_Assets`) |
 | `formats::texture` | textures into raw pixel buffers: Targa images as `WWLib/TARGA.CPP` reads them (`Open`, both `Load`s, run-length decoding, `InvertImage`, `XFlip`, `YFlip` with its byte-tail bug, palettes, Targa 2.0 footer and extension); DDS files as `WW3D2/ddsfile.cpp` reads them (header, level table, payload, `Get_Pixel`, `Get_4x4_Block`, the level and cube-map copies to every surface format, with upstream's DXT1 and DXT5 decompression; upstream has no DXT2-4 decoder); the formats of `ww3dformat.cpp`/`formconv.cpp`, `Write_B8G8R8A8` of `bitmaphandler.h` and `Recolor` of `colorspace.h`. Not Targa writing (`Save`, `EncodeImage`), nor the Direct3D surface overloads |
 
-**Proposal, not yet approved:** `XferCRC`/`XferDeepCRC` carry a NaN guard
+**Approved by the owner (2026-10-17):** `XferCRC`/`XferDeepCRC` carry a NaN guard
 (`common::xfer_crc::nan_guard`): a NaN `Real` xfered into a CRC panics in debug
 builds and tests and is hashed as one canonical NaN in release builds, because
 NaN bits are not portable between native and wasm peers.
-`XferCrc::new_without_nan_guard` keeps upstream's raw-bit behaviour. The
-change is a single commit so it can be reverted on its own.
+`XferCrc::new_without_nan_guard` keeps upstream's raw-bit behaviour, for the
+differential tests. The rule behind it: game logic must never store a NaN.
 
 There is no renderer, audio, networking or game logic yet.
 
