@@ -18,49 +18,115 @@
 //!
 //! # Elementary functions
 //!
-//! The C++ reference would call glibc's `sinf`, `cosf`, `sincosf`, `acosf`,
-//! `asinf`, `atanf` and `atan2f`, while the translation calls the pure-Rust
-//! `libm` crate, and the two libraries round differently in the last bit for
-//! some inputs. So that the gated tests verify the *translation*, each test
-//! binary defines those seven symbols itself (below), forwarding to `libm`;
-//! the linker binds the upstream objects' calls to them in preference to the
-//! shared glibc. The libm-vs-glibc difference is then MEASURED separately, by
-//! looking the real glibc functions up with `dlsym`
-//! (`tests/differential_libm_vs_glibc.rs`), and reported, not hidden.
+//! The C++ reference would call glibc's elementary functions, while the
+//! translation calls the owner's `petir` crate (`petir::Real`, which forwards
+//! to the pure-Rust `libm` crate), and the two libraries round differently in
+//! the last bit for some inputs. So that the gated tests verify the
+//! *translation*, each test binary defines those symbols itself (below),
+//! forwarding to the same `petir::Real` functions the translation calls; the
+//! linker binds the upstream objects' calls to them in preference to the
+//! shared glibc. Two families:
+//!
+//! - `float` functions upstream calls explicitly (`sinf`, `cosf`, `sincosf`,
+//!   `acosf`, `asinf`, `atanf`, `atan2f`, `tanf`, and `sqrtf`, which g++
+//!   substitutes for `(float)sqrt((double)f)`): petir's `f32` `Real`;
+//! - C `double` functions (`sin`, `cos`, `sincos`, `tan`, `acos`, `asin`,
+//!   `atan`, `atan2`, `sqrt`), which upstream calls on `float` arguments and
+//!   casts back (`(float)acos(val)`): petir's `f64` `Real`. The differential
+//!   build's shim `math.h` keeps g++ from resolving those calls to `float`
+//!   overloads instead (see `differential/shim/math.h`).
+//!
+//! `floor`/`ceil` are exact and are not interposed (LLVM may lower the
+//! `libm` crate's own `floorf` to a call to the `floorf` symbol, which an
+//! interposer would turn into infinite recursion). The petir/`libm`-vs-glibc
+//! difference is MEASURED separately, by looking the real glibc functions up
+//! with `dlsym` (`tests/differential_libm_vs_glibc.rs`), and reported, not
+//! hidden.
 #![allow(dead_code)]
+
+use petir::Real;
 
 /// Interposed for the C++ reference: see the module docs.
 #[no_mangle]
 pub extern "C" fn sinf(x: f32) -> f32 {
-    libm::sinf(x)
+    Real::sin(x)
 }
 #[no_mangle]
 pub extern "C" fn cosf(x: f32) -> f32 {
-    libm::cosf(x)
+    Real::cos(x)
 }
 /// g++ fuses `sinf(x)` and `cosf(x)` of one argument into `sincosf`.
 /// # Safety
 /// `s` and `c` must be valid for writes (they are, from the C++ callers).
 #[no_mangle]
 pub unsafe extern "C" fn sincosf(x: f32, s: *mut f32, c: *mut f32) {
-    *s = libm::sinf(x);
-    *c = libm::cosf(x);
+    *s = Real::sin(x);
+    *c = Real::cos(x);
+}
+#[no_mangle]
+pub extern "C" fn tanf(x: f32) -> f32 {
+    Real::tan(x)
 }
 #[no_mangle]
 pub extern "C" fn acosf(x: f32) -> f32 {
-    libm::acosf(x)
+    Real::acos(x)
 }
 #[no_mangle]
 pub extern "C" fn asinf(x: f32) -> f32 {
-    libm::asinf(x)
+    Real::asin(x)
 }
 #[no_mangle]
 pub extern "C" fn atanf(x: f32) -> f32 {
-    libm::atanf(x)
+    Real::atan(x)
 }
 #[no_mangle]
 pub extern "C" fn atan2f(y: f32, x: f32) -> f32 {
-    libm::atan2f(y, x)
+    Real::atan2(y, x)
+}
+#[no_mangle]
+pub extern "C" fn sin(x: f64) -> f64 {
+    Real::sin(x)
+}
+#[no_mangle]
+pub extern "C" fn cos(x: f64) -> f64 {
+    Real::cos(x)
+}
+/// g++ fuses `sin(x)` and `cos(x)` of one argument into `sincos`.
+/// # Safety
+/// `s` and `c` must be valid for writes (they are, from the C++ callers).
+#[no_mangle]
+pub unsafe extern "C" fn sincos(x: f64, s: *mut f64, c: *mut f64) {
+    *s = Real::sin(x);
+    *c = Real::cos(x);
+}
+#[no_mangle]
+pub extern "C" fn tan(x: f64) -> f64 {
+    Real::tan(x)
+}
+#[no_mangle]
+pub extern "C" fn acos(x: f64) -> f64 {
+    Real::acos(x)
+}
+#[no_mangle]
+pub extern "C" fn asin(x: f64) -> f64 {
+    Real::asin(x)
+}
+#[no_mangle]
+pub extern "C" fn atan(x: f64) -> f64 {
+    Real::atan(x)
+}
+#[no_mangle]
+pub extern "C" fn atan2(y: f64, x: f64) -> f64 {
+    Real::atan2(y, x)
+}
+#[no_mangle]
+pub extern "C" fn sqrt(x: f64) -> f64 {
+    Real::sqrt(x)
+}
+/// g++ folds `(float)sqrt((double)f)` into `sqrtf(f)` (the same value).
+#[no_mangle]
+pub extern "C" fn sqrtf(x: f32) -> f32 {
+    Real::sqrt(x)
 }
 
 /// SplitMix64: a small, seedable, platform-independent generator for test
@@ -105,7 +171,7 @@ impl Gen {
             50..=59 => (self.i32() % 2000) as f32 * 0.5,
             60..=74 => {
                 let e = self.uniform(-40.0, 40.0);
-                let m = libm::exp2f(e);
+                let m = Real::exp2(e);
                 if self.below(2) == 0 { m } else { -m }
             }
             75..=89 => f32::from_bits(self.u32()),

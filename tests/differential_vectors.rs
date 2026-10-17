@@ -16,6 +16,7 @@ use rts_lockstep_engine::ww::vector2::{self, Vector2};
 use rts_lockstep_engine::ww::vector3::{self, Vector3};
 use rts_lockstep_engine::ww::vector4::Vector4;
 use support::{Check, Gen, N};
+use petir::Real;
 
 fn v2(a: [f32; 2]) -> Vector2 {
     Vector2::new(a[0], a[1])
@@ -150,7 +151,7 @@ fn vector2_matches() {
     for i in 0..N {
         let (a, t) = (g.vec::<2>(Gen::geom), g.vec::<2>(Gen::geom));
         let theta = g.uniform(-4.0, 4.0);
-        let (s, cc) = (libm::sinf(theta), libm::cosf(theta));
+        let (s, cc) = (Real::sin(theta), Real::cos(theta));
         let mut va = v2(a);
         let (r1, p1) = va.rotate_towards_vector_sc(&v2(t), s, cc);
         let mut o = a;

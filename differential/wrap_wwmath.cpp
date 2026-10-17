@@ -448,9 +448,11 @@ void ref_m3_static(int which, float *out)
 
 } /* extern "C" */
 
-/* ---- glibc's own libm, for MEASURING (not gating) libm-crate differences.
-** The differential test binaries interpose sinf/cosf/sincosf/acosf/asinf/
-** atanf/atan2f with the Rust `libm` crate so that the gated tests verify the
+/* ---- glibc's own libm, for MEASURING (not gating) petir/libm-crate
+** differences. The differential test binaries interpose the float functions
+** (sinf, cosf, sincosf, tanf, acosf, asinf, atanf, atan2f) and the double ones
+** (sin, cos, sincos, tan, acos, asin, atan, atan2, sqrt) with the petir
+** functions the Rust translation calls, so that the gated tests verify the
 ** translation with identical elementary functions on both sides (see
 ** tests/support/mod.rs). These look the real glibc functions up by handle,
 ** which bypasses that interposition. */
@@ -477,6 +479,25 @@ extern "C" float ref_glibc_atan2f(float y, float x)
 	typedef float (*F)(float, float);
 	static F f = 0;
 	if (!f) f = (F)dlsym(glibc_libm(), "atan2f");
+	if (!f) abort();
+	return f(y, x);
+}
+/* Double functions: 0 sin, 1 cos, 2 acos, 3 asin, 4 atan. */
+extern "C" double ref_glibc_d1(int which, double x)
+{
+	typedef double (*F)(double);
+	static F f[5] = { 0, 0, 0, 0, 0 };
+	static const char *names[5] = { "sin", "cos", "acos", "asin", "atan" };
+	if (which < 0 || which > 4) abort();
+	if (!f[which]) f[which] = (F)dlsym(glibc_libm(), names[which]);
+	if (!f[which]) abort();
+	return f[which](x);
+}
+extern "C" double ref_glibc_atan2(double y, double x)
+{
+	typedef double (*F)(double, double);
+	static F f = 0;
+	if (!f) f = (F)dlsym(glibc_libm(), "atan2");
 	if (!f) abort();
 	return f(y, x);
 }

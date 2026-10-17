@@ -35,6 +35,7 @@ use super::vector3::Vector3;
 use super::vector4::Vector4;
 use super::wwmath::{self, WWMATH_EPSILON};
 use std::ops::{Index, IndexMut};
+use petir::Real;
 
 /// `class Matrix3D` (`Vector4 Row[3]`).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -115,8 +116,8 @@ impl Matrix3D {
     /// `Set(const Vector3 & axis, float angle)`: `c = cosf`, `s = sinf`.
     #[inline]
     pub fn set_axis_angle(&mut self, axis: &Vector3, angle: f32) {
-        let c = libm::cosf(angle);
-        let s = libm::sinf(angle);
+        let c = Real::cos(angle);
+        let s = Real::sin(angle);
         self.set_axis_sin_cos(axis, s, c);
     }
 
@@ -303,8 +304,8 @@ impl Matrix3D {
     /// `Rotate_X(float theta)`: post-multiply by a rotation about X.
     #[inline]
     pub fn rotate_x(&mut self, theta: f32) {
-        let s = libm::sinf(theta);
-        let c = libm::cosf(theta);
+        let s = Real::sin(theta);
+        let c = Real::cos(theta);
         self.post_rotate_plus(1, 2, s, c);
     }
 
@@ -318,8 +319,8 @@ impl Matrix3D {
     /// pattern: `(a, b) := (c*a - s*b, s*a + c*b)` on columns 0 and 2.
     #[inline]
     pub fn rotate_y(&mut self, theta: f32) {
-        let s = libm::sinf(theta);
-        let c = libm::cosf(theta);
+        let s = Real::sin(theta);
+        let c = Real::cos(theta);
         self.rotate_y_sc(s, c);
     }
 
@@ -338,8 +339,8 @@ impl Matrix3D {
     /// are independent calls, so the order does not affect any bit).
     #[inline]
     pub fn rotate_z(&mut self, theta: f32) {
-        let c = libm::cosf(theta);
-        let s = libm::sinf(theta);
+        let c = Real::cos(theta);
+        let s = Real::sin(theta);
         self.post_rotate_plus(0, 1, s, c);
     }
 
@@ -401,22 +402,22 @@ impl Matrix3D {
     /// `Pre_Rotate_X(float theta)`: pre-multiply (all four columns).
     #[inline]
     pub fn pre_rotate_x(&mut self, theta: f32) {
-        let c = libm::cosf(theta);
-        let s = libm::sinf(theta);
+        let c = Real::cos(theta);
+        let s = Real::sin(theta);
         self.pre_rotate_minus(1, 2, s, c, 4);
     }
     /// `Pre_Rotate_Y(float theta)`.
     #[inline]
     pub fn pre_rotate_y(&mut self, theta: f32) {
-        let c = libm::cosf(theta);
-        let s = libm::sinf(theta);
+        let c = Real::cos(theta);
+        let s = Real::sin(theta);
         self.pre_rotate_y_body(s, c, 4);
     }
     /// `Pre_Rotate_Z(float theta)`.
     #[inline]
     pub fn pre_rotate_z(&mut self, theta: f32) {
-        let c = libm::cosf(theta);
-        let s = libm::sinf(theta);
+        let c = Real::cos(theta);
+        let s = Real::sin(theta);
         self.pre_rotate_minus(0, 1, s, c, 4);
     }
     /// `Pre_Rotate_X(float s, float c)`.
@@ -438,22 +439,22 @@ impl Matrix3D {
     /// translation column is left alone.
     #[inline]
     pub fn in_place_pre_rotate_x(&mut self, theta: f32) {
-        let c = libm::cosf(theta);
-        let s = libm::sinf(theta);
+        let c = Real::cos(theta);
+        let s = Real::sin(theta);
         self.pre_rotate_minus(1, 2, s, c, 3);
     }
     /// `In_Place_Pre_Rotate_Y(float theta)`.
     #[inline]
     pub fn in_place_pre_rotate_y(&mut self, theta: f32) {
-        let c = libm::cosf(theta);
-        let s = libm::sinf(theta);
+        let c = Real::cos(theta);
+        let s = Real::sin(theta);
         self.pre_rotate_y_body(s, c, 3);
     }
     /// `In_Place_Pre_Rotate_Z(float theta)`.
     #[inline]
     pub fn in_place_pre_rotate_z(&mut self, theta: f32) {
-        let c = libm::cosf(theta);
-        let s = libm::sinf(theta);
+        let c = Real::cos(theta);
+        let s = Real::sin(theta);
         self.pre_rotate_minus(0, 1, s, c, 3);
     }
     /// `In_Place_Pre_Rotate_X(float s, float c)`.

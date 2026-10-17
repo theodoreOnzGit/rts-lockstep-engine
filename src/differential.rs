@@ -103,6 +103,9 @@ extern "C" {
     /// 3 asinf, 4 atanf): bypasses the test binaries' interposition.
     pub fn ref_glibc_f1(which: c_int, x: c_float) -> c_float;
     pub fn ref_glibc_atan2f(y: c_float, x: c_float) -> c_float;
+    /// glibc's double functions by dlsym (0 sin, 1 cos, 2 acos, 3 asin, 4 atan).
+    pub fn ref_glibc_d1(which: c_int, x: c_double) -> c_double;
+    pub fn ref_glibc_atan2(y: c_double, x: c_double) -> c_double;
 
     // vector2.h
     pub fn ref_v2_op(op: c_int, a: *const c_float, b: *const c_float, k: c_float, out: *mut c_float);

@@ -21,9 +21,11 @@
 //! | [`ww::matrix3d`] | `WWMath/matrix3d.h`, `matrix3d.cpp` |
 //!
 //! Floating point: all `f32` arithmetic is plain IEEE-754 binary32, one
-//! rounding per operation, no fused multiply-add, and transcendentals come
-//! from the pure-Rust `libm` crate, so native and wasm builds agree bit for
-//! bit. The `differential` feature checks the translation against the
+//! rounding per operation, no fused multiply-add, and every elementary
+//! function comes from the owner's `petir` crate (`petir::Real`, pure Rust,
+//! forwarding to the `libm` crate), never `std`, in upstream's precision (a C
+//! double function is evaluated in `f64`, an explicit `sinf` in `f32`), so
+//! native and wasm builds agree bit for bit. The `differential` feature checks the translation against the
 //! original C++ compiled for SSE; it does **not** establish agreement with the
 //! original x87 build (see `SCOPE.md` section 3).
 

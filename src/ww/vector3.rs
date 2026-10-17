@@ -17,7 +17,7 @@
 //!
 //! Kept as upstream: [`Vector3::quick_length`]'s third swap assigns
 //! `min = mid` *after* `mid = min`, so it does not swap. `Rotate_X/Y/Z(angle)`
-//! call `sinf`/`cosf` directly (here: pure-Rust `libm`).
+//! call `sinf`/`cosf` directly (here: petir's `f32` `Real`).
 //!
 //! Not translated: `Convert_To_ABGR`/`Convert_To_ARGB` (client-side colour
 //! packing whose float-to-unsigned casts are undefined out of range), and the
@@ -25,6 +25,7 @@
 
 use super::wwmath;
 use std::ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign};
+use petir::Real;
 
 /// `class Vector3`.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -113,7 +114,7 @@ impl Vector3 {
     /// `Rotate_X(float angle)`: `Rotate_X(sinf(angle), cosf(angle))`.
     #[inline]
     pub fn rotate_x(&mut self, angle: f32) {
-        self.rotate_x_sc(libm::sinf(angle), libm::cosf(angle));
+        self.rotate_x_sc(Real::sin(angle), Real::cos(angle));
     }
 
     /// `Rotate_X(float s_angle, float c_angle)`.
@@ -128,7 +129,7 @@ impl Vector3 {
     /// `Rotate_Y(float angle)`.
     #[inline]
     pub fn rotate_y(&mut self, angle: f32) {
-        self.rotate_y_sc(libm::sinf(angle), libm::cosf(angle));
+        self.rotate_y_sc(Real::sin(angle), Real::cos(angle));
     }
 
     /// `Rotate_Y(float s_angle, float c_angle)`.
@@ -143,7 +144,7 @@ impl Vector3 {
     /// `Rotate_Z(float angle)`.
     #[inline]
     pub fn rotate_z(&mut self, angle: f32) {
-        self.rotate_z_sc(libm::sinf(angle), libm::cosf(angle));
+        self.rotate_z_sc(Real::sin(angle), Real::cos(angle));
     }
 
     /// `Rotate_Z(float s_angle, float c_angle)`.

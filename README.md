@@ -34,9 +34,14 @@ There is no renderer, audio, networking or game logic yet.
 ## Floating point and determinism
 
 All logic arithmetic is plain IEEE-754 `f32`, one rounding per operation, no
-fused multiply-add, in upstream's operation order. Transcendentals use the
-pure-Rust [`libm`](https://crates.io/crates/libm) crate, never `std`, so native
-and wasm builds compute the same bits. This makes Rust-to-Rust lockstep
+fused multiply-add, in upstream's operation order. Every elementary function
+goes through the owner's `petir` crate (`petir::Real`, pure Rust, forwarding to
+the [`libm`](https://crates.io/crates/libm) crate), never `std`, so native and
+wasm builds compute the same bits. The precision is upstream's: where upstream
+calls a C double function on a `float` (`(float)acos(val)`), the Rust evaluates
+petir's `f64` function and rounds once; where it calls `sinf`, petir's `f32`
+one. petir is a git dependency pinned to outram-park-backend commit
+`21a93d94` (`develop`; `main` has no `Real` trait). This makes Rust-to-Rust lockstep
 possible. It does **not** make this crate bit-compatible with the original
 Windows build, which ran on the x87 FPU at 24-bit precision and, in several
 `wwmath.h` functions, used x87 instructions (`fsin`, `fcos`, `fistp`, a
@@ -72,10 +77,16 @@ cargo test --release --features differential
   are compared as raw bits. The one exception is a NaN on both sides with a
   different sign or payload, which is counted and reported but not failed,
   because Rust leaves NaN bits unspecified (see `tests/support/mod.rs`).
-- The C++ calls to `sinf`, `cosf`, `acosf`, `asinf`, `atanf`, `atan2f` are bound
-  to the same `libm` crate in the test binaries, so the gated tests check the
-  translation. How far `libm` is from glibc is measured separately
-  (`tests/differential_libm_vs_glibc.rs`: up to 1 ULP, on 0.9-5.8% of inputs depending on the function, plus NaN-sign differences outside the domain of `acosf`/`asinf`).
+- The C++ calls to the elementary functions (`sinf`, `cosf`, `acosf`, ... and
+  the double `sin`, `acos`, `asin`, `atan`, `atan2`, `sqrt`) are bound to the
+  same petir functions in the test binaries, so the gated tests check the
+  translation. A shim `math.h` keeps g++ from resolving `acos(float)` to a
+  `float` overload, so the C++ computes in double as upstream wrote it. How
+  far petir is from glibc is measured separately
+  (`tests/differential_libm_vs_glibc.rs`): the `f32` functions differ by up to
+  1 ULP on 0.9-5.8% of inputs depending on the function (plus NaN-sign
+  differences outside the domain of `acosf`/`asinf`); the `f64` functions
+  rounded to `f32` matched glibc on all ~100k inputs per function.
 
 **What this verifies:** that the Rust computes what the upstream C++ source
 computes when compiled for SSE. **What it does not verify:** agreement with

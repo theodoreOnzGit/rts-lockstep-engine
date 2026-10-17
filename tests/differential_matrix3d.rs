@@ -17,6 +17,7 @@ use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 use rts_lockstep_engine::ww::vector3::Vector3;
 use support::{Check, Gen, N};
+use petir::Real;
 
 fn mat(g: &mut Gen) -> [f32; 12] {
     if g.below(4) == 0 {
@@ -118,8 +119,8 @@ fn params(op: usize, g: &mut Gen) -> [f32; 12] {
         9..=11 | 18..=20 | 24..=26 => {
             if g.below(2) == 0 {
                 let t = g.uniform(-4.0, 4.0);
-                p[0] = libm::sinf(t);
-                p[1] = libm::cosf(t);
+                p[0] = Real::sin(t);
+                p[1] = Real::cos(t);
             }
         }
         28 | 29 => {
@@ -133,8 +134,8 @@ fn params(op: usize, g: &mut Gen) -> [f32; 12] {
             p[3] = g.uniform(-4.0, 4.0);
             if op == 29 {
                 let t = p[3];
-                p[3] = libm::sinf(t);
-                p[4] = libm::cosf(t);
+                p[3] = Real::sin(t);
+                p[4] = Real::cos(t);
             }
         }
         32 | 33 => p[6] = g.uniform(-4.0, 4.0),

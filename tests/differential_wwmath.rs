@@ -4,10 +4,12 @@
 //! g++ (so the portable, non-`_MSC_VER` branches, which are the ones
 //! translated), and the table loops of `wwmath.cpp` (`WWMath::Init`).
 //!
-//! Elementary functions: the C++ calls to sinf, cosf, sincosf, acosf, asinf,
-//! atanf and atan2f are bound to the same pure-Rust `libm` the translation
-//! uses (see `tests/support/mod.rs`), so these gated tests verify the
-//! translation itself. How far the `libm` crate is from glibc is measured
+//! Elementary functions: the C++ calls to `sinf`, `cosf`, `sincosf`, `acosf`,
+//! `asinf`, `atanf`, `atan2f` and to the double `acos`, `asin`, `atan`,
+//! `atan2`, `sin`, `sqrt` are bound to the same petir functions the
+//! translation uses (see `tests/support/mod.rs`; the shim `math.h` keeps g++
+//! from resolving `acos(float)` to a `float` overload), so these gated tests
+//! verify the translation itself. How far petir is from glibc is measured
 //! separately in `tests/differential_libm_vs_glibc.rs`.
 //!
 //! Inputs: 100k per function from the mixed generator (NaN, inf, subnormals,

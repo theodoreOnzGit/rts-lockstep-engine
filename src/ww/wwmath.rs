@@ -26,7 +26,7 @@
 //!
 //! | function | portable branch (translated) | MSVC x86 branch (shipped) |
 //! |---|---|---|
-//! | `Sin`, `Cos` | `sinf`, `cosf` (here: pure-Rust `libm`) | x87 `fsin`, `fcos` |
+//! | `Sin`, `Cos` | `sinf`, `cosf` (here: petir's `f32` `Real`) | x87 `fsin`, `fcos` |
 //! | `Sqrt` | `(float)sqrt(val)` | x87 `fsqrt` |
 //! | `Inv_Sqrt` | `1.0f / (float)sqrt(val)` | a hand-written x87 Newton iteration |
 //! | `Float_To_Long` | `(long) f` (truncate) | `fld`/`fistp` (round to nearest) |
@@ -37,14 +37,36 @@
 //! promised) goal of reproducing original replays; Rust-to-Rust lockstep is
 //! unaffected. This is a recorded decision, open for review, not an accident.
 //!
-//! All transcendentals go through the pure-Rust `libm` crate, never `std`, so
-//! native and wasm builds compute identical bits. `WWMath::Random_Float`
-//! (C `rand()`, not deterministic across platforms) is not translated.
+//! # Elementary functions: petir, in upstream's precision
+//!
+//! Every elementary function goes through the owner's `petir` crate
+//! ([`petir::Real`], which forwards to the pure-Rust `libm` crate), never
+//! `std`, so native and wasm builds compute identical bits. The precision is
+//! upstream's, call by call:
+//!
+//! - upstream calls a C **double** function on a `float` (`(float)acos(val)`,
+//!   `(float)asin(val)`, `static_cast<float>(atan(x))`,
+//!   `static_cast<float>(atan2(y,x))`, `(float)sqrt(val)`, and `acos`/`asin`/
+//!   `sin` in the `WWMath::Init` table loops): the argument is widened, the
+//!   `f64` function is evaluated, and the result is rounded to `f32` once.
+//!   Under the MSVC headers the shipped game was built with, C `acos(float)`
+//!   is that double computation. (`g++`'s libstdc++ would instead pick a
+//!   `float` overload; the differential build disables those overloads with a
+//!   shim `math.h`, see `differential/shim/math.h`.)
+//! - upstream calls an explicit **float** function (`sinf`, `cosf`, `ceilf`,
+//!   `floorf`): petir's `f32` implementation. Computing it in `f64` and
+//!   rounding would give a different function.
+//!
+//! For `sqrt` the two routes give the same bits (both are correctly rounded,
+//! and double rounding through `f64` is exact for a square root); the
+//! upstream form is kept anyway. `WWMath::Random_Float` (C `rand()`, not
+//! deterministic across platforms) is not translated.
 
 // Upstream's literal values, kept digit for digit (they are the spec, not
 // approximations to be replaced by `std::f32::consts`).
 #![allow(clippy::approx_constant, clippy::excessive_precision)]
 
+use petir::Real;
 use std::sync::OnceLock;
 
 pub const WWMATH_EPSILON: f32 = 0.0001;
@@ -70,9 +92,9 @@ pub struct FastTables {
 }
 
 impl FastTables {
-    /// The table loops of `WWMath::Init()` (wwmath.cpp). Upstream calls
-    /// `acos`/`asin`/`sin` on a `float`, which in C++ resolves to the `float`
-    /// overloads (`acosf`, `asinf`, `sinf`).
+    /// The table loops of `WWMath::Init()` (wwmath.cpp). Upstream calls the
+    /// C double functions `acos`/`asin`/`sin` on a `float` and stores the
+    /// result in a `float` table: widened, evaluated in `f64`, rounded once.
     pub fn compute() -> Self {
         let mut t = FastTables {
             acos: [0.0; ARC_TABLE_SIZE],
@@ -83,12 +105,12 @@ impl FastTables {
         let half = (ARC_TABLE_SIZE / 2) as i32;
         for a in 0..ARC_TABLE_SIZE {
             let cv = ((a as i32 - half) as f32) * (1.0f32 / (half as f32));
-            t.acos[a] = libm::acosf(cv);
-            t.asin[a] = libm::asinf(cv);
+            t.acos[a] = Real::acos(f64::from(cv)) as f32;
+            t.asin[a] = Real::asin(f64::from(cv)) as f32;
         }
         for a in 0..SIN_TABLE_SIZE {
             let cv = (a as f32) * 2.0f32 * WWMATH_PI / (SIN_TABLE_SIZE as f32);
-            t.sin[a] = libm::sinf(cv);
+            t.sin[a] = Real::sin(f64::from(cv)) as f32;
             if a > 0 {
                 t.inv_sin[a] = 1.0f32 / t.sin[a];
             } else {
@@ -100,7 +122,7 @@ impl FastTables {
 }
 
 /// The tables, computed on first use. (Upstream fills globals in
-/// `WWMath::Init()`; they are a pure function of `libm`, so computing them
+/// `WWMath::Init()`; they are a pure function of petir, so computing them
 /// lazily cannot change any result.)
 pub fn fast_tables() -> &'static FastTables {
     static TABLES: OnceLock<FastTables> = OnceLock::new();
@@ -145,28 +167,28 @@ pub fn float_to_int_floor(f: f32) -> i32 {
     r
 }
 
-/// `WWMath::Cos` (portable branch: `cosf`).
+/// `WWMath::Cos` (portable branch: `cosf`, petir's `f32` cosine).
 #[inline]
 pub fn cos(val: f32) -> f32 {
-    libm::cosf(val)
+    Real::cos(val)
 }
 
-/// `WWMath::Sin` (portable branch: `sinf`).
+/// `WWMath::Sin` (portable branch: `sinf`, petir's `f32` sine).
 #[inline]
 pub fn sin(val: f32) -> f32 {
-    libm::sinf(val)
+    Real::sin(val)
 }
 
-/// `WWMath::Sqrt` (portable branch: `(float)sqrt(val)`).
+/// `WWMath::Sqrt` (portable branch: `(float)sqrt(val)`, the double `sqrt`).
 #[inline]
 pub fn sqrt(val: f32) -> f32 {
-    libm::sqrtf(val)
+    Real::sqrt(f64::from(val)) as f32
 }
 
 /// `WWMath::Inv_Sqrt` (portable branch: `1.0f / (float)sqrt(val)`).
 #[inline]
 pub fn inv_sqrt(val: f32) -> f32 {
-    1.0f32 / libm::sqrtf(val)
+    1.0f32 / (Real::sqrt(f64::from(val)) as f32)
 }
 
 /// `WWMath::Float_To_Long(float)` (portable branch: `(long) f`).
@@ -255,10 +277,10 @@ pub fn fast_acos(val: f32) -> f32 {
     arc_table_lerp(&fast_tables().acos, val)
 }
 
-/// `WWMath::Acos`: `(float)acos(val)`, the `float` overload.
+/// `WWMath::Acos`: `(float)acos(val)`, the double `acos`.
 #[inline]
 pub fn acos(val: f32) -> f32 {
-    libm::acosf(val)
+    Real::acos(f64::from(val)) as f32
 }
 
 /// `WWMath::Fast_Asin`: table-based arc sine, exact `asin` near +-1.
@@ -270,22 +292,22 @@ pub fn fast_asin(val: f32) -> f32 {
     arc_table_lerp(&fast_tables().asin, val)
 }
 
-/// `WWMath::Asin`: `(float)asin(val)`, the `float` overload.
+/// `WWMath::Asin`: `(float)asin(val)`, the double `asin`.
 #[inline]
 pub fn asin(val: f32) -> f32 {
-    libm::asinf(val)
+    Real::asin(f64::from(val)) as f32
 }
 
-/// `WWMath::Atan`: `static_cast<float>(atan(x))`, the `float` overload.
+/// `WWMath::Atan`: `static_cast<float>(atan(x))`, the double `atan`.
 #[inline]
 pub fn atan(x: f32) -> f32 {
-    libm::atanf(x)
+    Real::atan(f64::from(x)) as f32
 }
 
-/// `WWMath::Atan2`: `static_cast<float>(atan2(y,x))`, the `float` overload.
+/// `WWMath::Atan2`: `static_cast<float>(atan2(y,x))`, the double `atan2`.
 #[inline]
 pub fn atan2(y: f32, x: f32) -> f32 {
-    libm::atan2f(y, x)
+    Real::atan2(f64::from(y), f64::from(x)) as f32
 }
 
 /// `WWMath::Sign`: +1, -1 or 0 (also 0 for NaN).
@@ -303,13 +325,13 @@ pub fn sign(val: f32) -> f32 {
 /// `WWMath::Ceil`: `ceilf`.
 #[inline]
 pub fn ceil(val: f32) -> f32 {
-    libm::ceilf(val)
+    Real::ceil(val)
 }
 
 /// `WWMath::Floor`: `floorf`.
 #[inline]
 pub fn floor(val: f32) -> f32 {
-    libm::floorf(val)
+    Real::floor(val)
 }
 
 /// `WWMath::Fast_Is_Float_Positive`: sign bit clear (true for +0.0 and +NaN).

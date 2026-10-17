@@ -51,7 +51,10 @@ pub fn fast_float2long_round(f: f32) -> i32 {
     if f.is_nan() {
         return i32::MIN;
     }
-    let r = libm::rintf(f);
+    // x87 round-to-nearest is IEEE roundToIntegralTiesToEven, an exact
+    // operation (no rounding error, identical bits on every target, like
+    // `abs`). petir has no `rint`, so this is Rust's `f32::round_ties_even`.
+    let r = f.round_ties_even();
     // Every f32 in [-2^31, 2^31) is exactly representable as f64, and 2^31
     // itself is the first value that does not fit.
     if (r as f64) < -2_147_483_648.0 || (r as f64) >= 2_147_483_648.0 {
