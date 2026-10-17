@@ -27,6 +27,8 @@
 //! original C++ compiled for SSE; it does **not** establish agreement with the
 //! original x87 build (see `SCOPE.md` section 3).
 
+pub mod common;
+
 #[cfg(feature = "differential")]
 #[doc(hidden)]
 pub mod differential;
