@@ -60,8 +60,7 @@ the [`libm`](https://crates.io/crates/libm) crate), never `std`, so native and
 wasm builds compute the same bits. The precision is upstream's: where upstream
 calls a C double function on a `float` (`(float)acos(val)`), the Rust evaluates
 petir's `f64` function and rounds once; where it calls `sinf`, petir's `f32`
-one. petir is a git dependency pinned to outram-park-backend commit
-`21a93d94` (`develop`; `main` has no `Real` trait). This makes Rust-to-Rust lockstep
+one. petir comes from crates.io, pinned to exactly `0.0.1`. This makes Rust-to-Rust lockstep
 possible. It does **not** make this crate bit-compatible with the original
 Windows build, which ran on the x87 FPU at 24-bit precision and, in several
 `wwmath.h` functions, used x87 instructions (`fsin`, `fcos`, `fistp`, a

@@ -19,13 +19,13 @@ differential = ["dep:cc"]
 
 [dependencies]
 # PETIR, the owner's no_std core-numerics crate (outram-park-backend
-# workspace), pinned by commit. ALL maths in the translation, f32 and f64,
-# goes through `petir::Real` (which forwards to the pure-Rust `libm` crate),
-# never `std`, so native and wasm builds compute the same bits. The `develop`
-# commit, not `main` (8d31482d): petir on main has no acos/asin/atan/sqrt and
-# no f32 functions (no `Real` trait). Default features off: they only add
-# `uom` for petir's transfer functions.
-petir = { git = "https://github.com/theodoreOnzGit/outram-park-backend", rev = "21a93d9460addf0e46f25559fd72fb429ee6d859", default-features = false }
+# workspace), from crates.io at an exact version (owner decision 2026-10-17).
+# ALL maths in the translation, f32 and f64, goes through `petir::Real`
+# (which forwards to the pure-Rust `libm` crate), never `std`, so native and
+# wasm builds compute the same bits. 0.0.1 implements `Real` for both f32 and
+# f64. Default features off: they only add `uom` for petir's transfer
+# functions.
+petir = { version = "=0.0.1", default-features = false }
 
 [build-dependencies]
 cc = { version = "1", optional = true }
