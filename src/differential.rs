@@ -115,6 +115,11 @@ extern "C" {
     // DataChunk.cpp, NameKeyGenerator.cpp (script interpreter)
     pub fn ref_chunk_run(data: *const c_char, len: c_int, log: *mut c_uchar, cap: c_int, log_len: *mut c_int, code: *mut c_uint) -> c_int;
 
+    // NameKeyGenerator.cpp (wrap_namekey.cpp, script interpreter)
+    pub fn ref_namekey_run(script: *const c_uchar, len: c_int, log: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_well_known_key_count() -> c_int;
+    pub fn ref_well_known_key_name(i: c_int, out: *mut c_char, cap: c_int, key: *mut c_uint) -> c_int;
+
     // WWLib/chunkio.cpp and the WW3D2 loaders (wrap_w3d.cpp)
     pub fn ref_chunkio_run(
         data: *const c_char,

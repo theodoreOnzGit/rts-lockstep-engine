@@ -26,6 +26,7 @@ the layer order of [`docs/phase1-porting-graph.md`](docs/phase1-porting-graph.md
 |---|---|
 | `common::base_type` (value types) | the methods of `Coord2D/3D`, `ICoord2D/3D`, `Region2D/3D`, `IRegion2D/3D`, `RGBColor`, `RealRange`, and `sqr`, `clamp`, `sign`, `rad2deg`, `deg2rad`, `min`, `max` of `Libraries/Include/Lib/BaseType.h` (Phase 1 layer 1) |
 | `common::game_type`, `common::game_common` (rest), `common::errors`, `common::special_power_type`, `common::thing_sort`, `logic::powers`, `logic::weapon_types`, `logic::object_script_status_bits` | `Include/Common/GameType.h` (+ `GameType.cpp`), the rest of `GameCommon.h` (+ `normalizeAngle`, `TheRelationshipNames`), `Errors.h`, `SpecialPowerType.h`, `ThingSort.h`, `Include/GameLogic/Powers.h`, `WeaponSetType.h`, `WeaponStatus.h`, `WeaponBonusConditionFlags.h`, `ObjectScriptStatusBits.h` (Phase 1 layer 1) |
+| `common::name_key_generator`, `common::well_known_keys` | `Include/Common/NameKeyGenerator.h`, `Source/Common/NameKeyGenerator.cpp` (the socket/chain structure, so keys come out in upstream's order, including its case-folding quirk), `StaticNameKey`, and the 127 keys of `Include/Common/WellKnownKeys.h` (Phase 1 layer 2) |
 | `common::random_value` | `GameEngine/Source/Common/RandomValue.cpp` and the Logic/Client/Audio RandomValue headers |
 | `common::crc` | `GameEngine/Source/Common/crc.cpp`, `GameEngine/Include/Common/crc.h` |
 | `common::base_type` | the fast float helpers, `REAL_TO_*` macros and `PI` of `Libraries/Include/Lib/BaseType.h` |

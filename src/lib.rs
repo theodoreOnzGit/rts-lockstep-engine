@@ -20,6 +20,7 @@
 //! | [`logic::powers`], [`logic::weapon_types`], [`logic::object_script_status_bits`] | `Include/GameLogic/Powers.h`, `WeaponSetType.h`, `WeaponStatus.h`, `WeaponBonusConditionFlags.h`, `ObjectScriptStatusBits.h` |
 //! | [`common::trig`] | `GameEngine/Source/Common/System/Trig.cpp`, `Libraries/Include/Lib/trig.h` |
 //! | [`common::quick_trig`] | `GameEngine/Include/Common/QuickTrig.h`, `Source/Common/System/QuickTrig.cpp` |
+//! | [`common::name_key_generator`], [`common::well_known_keys`] | `Include/Common/NameKeyGenerator.h`, `Source/Common/NameKeyGenerator.cpp`, `Include/Common/WellKnownKeys.h` |
 //! | [`common::ini`] | `GameEngine/Include/Common/INI.h`, `Source/Common/INI/INI.cpp` |
 //! | [`common::game_common`] | `Include/Common/GameCommon.h`, `Source/Common/System/GameCommon.cpp` |
 //! | [`logic::damage`] | `Include/GameLogic/Damage.h`, `Source/GameLogic/System/Damage.cpp` (the type flags) |

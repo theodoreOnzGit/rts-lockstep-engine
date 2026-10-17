@@ -534,6 +534,7 @@ mod differential {
         base(&mut chunk);
         chunk
             .include(&shim_chunk)
+            .include(&dif) // well_known_keys_list.h
             .include(&shim)
             .include(up.join("GameEngine/Include"))
             .include(up.join("Libraries/Include"))
@@ -541,6 +542,7 @@ mod differential {
             .flag("-include")
             .flag(shim_chunk.join("chunk_prelude.h").to_str().expect("UTF-8 path"))
             .file(dif.join("wrap_chunk.cpp"))
+            .file(dif.join("wrap_namekey.cpp"))
             .file(sys.join("DataChunk.cpp"))
             .file(up.join("GameEngine/Source/Common/NameKeyGenerator.cpp"));
         chunk.compile("upstream_chunk");
