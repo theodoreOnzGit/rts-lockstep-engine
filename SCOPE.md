@@ -76,9 +76,10 @@ Generals multiplayer and replays are **lockstep**: each peer runs the same
     unused integer lookup-table trig.
   - **NaN.** `XferCRC` hashes raw float bytes, and IEEE 754, Rust and wasm leave
     the bits of a NaN result unspecified, so a NaN in game state could give a
-    native and a wasm peer different CRCs from identical behaviour. Proposed
-    rule (not yet approved): logic never stores a NaN; the CRC path panics on
-    one in tests and canonicalises it in release builds.
+    native and a wasm peer different CRCs from identical behaviour. **Rule
+    (approved by the owner 2026-10-17):** logic never stores a NaN; the CRC
+    path panics on one in tests and debug builds and canonicalises it to
+    `0x7FC00000` in release builds (`common::xfer_crc::nan_guard`).
   - **Bit-exact compatibility with original replays and the original
     `generals.exe` is NOT assumed.** It is an experiment with a pass/fail gate
     (Phase 1). It is not a design promise.
