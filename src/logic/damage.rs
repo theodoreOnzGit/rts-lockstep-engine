@@ -171,33 +171,32 @@ pub const DEATH_TYPE_FLAGS_ALL: DeathTypeFlags = 0xffff_ffff;
 /// `DEATH_TYPE_FLAGS_NONE`.
 pub const DEATH_TYPE_FLAGS_NONE: DeathTypeFlags = 0;
 
-/// `1UL << (dt - 1)`. **Upstream bug:** for `DEATH_NORMAL` (0) the shift
-/// count is -1, undefined behaviour (bit 31 on the shipped 32-bit x86 build,
-/// 0 on a 64-bit one). `None` there.
-fn death_bit(dt: i32) -> Option<u32> {
-    let shift = dt.checked_sub(1)?;
-    if (0..32).contains(&shift) {
-        Some(1u32 << shift)
-    } else {
-        None
-    }
+/// `1UL << (dt - 1)` **as the shipped 32-bit x86 build computes it** (owner
+/// decision, 2026-10-17). **Upstream bug:** for `DEATH_NORMAL` (0) the shift
+/// count is -1, undefined behaviour in C++; the shipped game's `shl` masks the
+/// count to 5 bits, so `NORMAL` is bit 31, consistently in get, set and
+/// clear. This reproduces that with a count of `(dt - 1) & 31`. A 64-bit C++
+/// build differs, so the differential tests cannot compare this case;
+/// `death_flags` pins it instead.
+fn death_bit(dt: i32) -> u32 {
+    1u32 << (dt.wrapping_sub(1) as u32 & 31)
 }
 
-/// `getDeathTypeFlag`; `None` for `DEATH_NORMAL` (see [`set_death_type_flag`]).
-pub fn get_death_type_flag(flags: DeathTypeFlags, dt: i32) -> Option<bool> {
-    death_bit(dt).map(|b| flags & b != 0)
+/// `getDeathTypeFlag`; `DEATH_NORMAL` is bit 31, as shipped (see `death_bit`).
+pub fn get_death_type_flag(flags: DeathTypeFlags, dt: i32) -> bool {
+    flags & death_bit(dt) != 0
 }
 
-/// `setDeathTypeFlag`: `flags | (1UL << (dt - 1))`; `None` for
-/// `DEATH_NORMAL`, where upstream shifts by -1.
-pub fn set_death_type_flag(flags: DeathTypeFlags, dt: i32) -> Option<DeathTypeFlags> {
-    death_bit(dt).map(|b| flags | b)
+/// `setDeathTypeFlag`: `flags | (1UL << (dt - 1))`; `DEATH_NORMAL` is bit
+/// 31, as shipped.
+pub fn set_death_type_flag(flags: DeathTypeFlags, dt: i32) -> DeathTypeFlags {
+    flags | death_bit(dt)
 }
 
-/// `clearDeathTypeFlag`: `flags & ~(1UL << (dt - 1))`; `None` for
-/// `DEATH_NORMAL`.
-pub fn clear_death_type_flag(flags: DeathTypeFlags, dt: i32) -> Option<DeathTypeFlags> {
-    death_bit(dt).map(|b| flags & !b)
+/// `clearDeathTypeFlag`: `flags & ~(1UL << (dt - 1))`; `DEATH_NORMAL` is
+/// bit 31, as shipped.
+pub fn clear_death_type_flag(flags: DeathTypeFlags, dt: i32) -> DeathTypeFlags {
+    flags & !death_bit(dt)
 }
 
 #[cfg(test)]
@@ -217,8 +216,11 @@ mod tests {
 
     #[test]
     fn death_flags() {
-        assert_eq!(set_death_type_flag(0, 0), None);
-        assert_eq!(set_death_type_flag(0, 20), Some(1 << 19));
-        assert_eq!(get_death_type_flag(1, 1), Some(true));
+        // DEATH_NORMAL (0) is bit 31, as the shipped 32-bit build computes it.
+        assert_eq!(set_death_type_flag(0, 0), 1 << 31);
+        assert_eq!(clear_death_type_flag(DEATH_TYPE_FLAGS_ALL, 0), 0x7fff_ffff);
+        assert!(get_death_type_flag(1 << 31, 0));
+        assert_eq!(set_death_type_flag(0, 20), 1 << 19);
+        assert!(get_death_type_flag(1, 1));
     }
 }

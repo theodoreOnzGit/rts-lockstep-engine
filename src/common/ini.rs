@@ -87,9 +87,7 @@
 //! the number cases above; a bit index of 32 or more in a bit-string list
 //! (`1 << 32`); `+NAME`/`-NAME` or an empty list in `parseBitString8`, which
 //! reads an uninitialised variable; a lone `"` as the first token of
-//! `parseQuotedAsciiString` (an uninitialised buffer); `+REGULAR`/`-REGULAR`
-//! veterancy and `+NORMAL`/`-NORMAL` death types (a shift by -1; see
-//! [`crate::common::game_common`]); a duration over 65535 frames into an
+//! `parseQuotedAsciiString` (an uninitialised buffer); a duration over 65535 frames into an
 //! `UnsignedShort`; an error message longer than its 1024-byte `sprintf`
 //! buffer; `isspace` on a byte of 0x80 or more in `isDeclarationOfType` and
 //! `isEndOfBlock`; and a file name shorter than the directory in
@@ -189,8 +187,6 @@ pub enum Undefined {
     RealPlatformDependent,
     /// `1 << n` with `n >= 32` (a bit-string list of more than 32 names).
     ShiftOutOfRange,
-    /// `1UL << (dt - 1)` with `dt == 0` (`REGULAR`, `NORMAL`).
-    ShiftByMinusOne,
     /// `parseBitString8` reads its uninitialised `tmp`.
     UninitialisedBitString8,
     /// `getNextQuotedAsciiString` uses its uninitialised buffer.
@@ -1446,12 +1442,10 @@ impl<'x> Ini<'x> {
                 flags = VETERANCY_LEVEL_FLAGS_NONE;
             } else if t[0] == b'+' {
                 let dt = Self::scan_index_list(&t[1..], &VETERANCY_NAMES)?;
-                flags = set_veterancy_level_flag(flags, dt)
-                    .ok_or_else(|| IniError::undefined(Undefined::ShiftByMinusOne))?;
+                flags = set_veterancy_level_flag(flags, dt);
             } else if t[0] == b'-' {
                 let dt = Self::scan_index_list(&t[1..], &VETERANCY_NAMES)?;
-                flags = clear_veterancy_level_flag(flags, dt)
-                    .ok_or_else(|| IniError::undefined(Undefined::ShiftByMinusOne))?;
+                flags = clear_veterancy_level_flag(flags, dt);
             } else {
                 return err(IniErrorKind::UnknownToken);
             }
@@ -1472,11 +1466,10 @@ impl<'x> Ini<'x> {
                 flags = DEATH_TYPE_FLAGS_NONE;
             } else if t[0] == b'+' {
                 let dt = Self::scan_index_list(&t[1..], &DEATH_NAMES)?;
-                flags = set_death_type_flag(flags, dt).ok_or_else(|| IniError::undefined(Undefined::ShiftByMinusOne))?;
+                flags = set_death_type_flag(flags, dt);
             } else if t[0] == b'-' {
                 let dt = Self::scan_index_list(&t[1..], &DEATH_NAMES)?;
-                flags =
-                    clear_death_type_flag(flags, dt).ok_or_else(|| IniError::undefined(Undefined::ShiftByMinusOne))?;
+                flags = clear_death_type_flag(flags, dt);
             } else {
                 return err(IniErrorKind::UnknownToken);
             }

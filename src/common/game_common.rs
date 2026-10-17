@@ -88,35 +88,34 @@ pub const VETERANCY_LEVEL_FLAGS_ALL: VeterancyLevelFlags = 0xffff_ffff;
 pub const VETERANCY_LEVEL_FLAGS_NONE: VeterancyLevelFlags = 0x0000_0000;
 
 /// The bit of `1UL << (dt - 1)`, the expression all three veterancy flag
-/// helpers use. **Upstream bug:** for `LEVEL_REGULAR` (0) the shift count is
-/// -1, which is undefined behaviour; the shipped 32-bit x86 build computes bit
-/// 31 there (the `shl` masks its count to 5 bits), a 64-bit build bit 63
-/// truncated to 0. `None` for that case (and for levels outside 1..=32).
-fn veterancy_bit(dt: i32) -> Option<u32> {
-    let shift = dt.checked_sub(1)?;
-    if (0..32).contains(&shift) {
-        Some(1u32 << shift)
-    } else {
-        None
-    }
+/// helpers use, **as the shipped 32-bit x86 build computes it** (owner
+/// decision, 2026-10-17). **Upstream bug:** for `LEVEL_REGULAR` (0) the shift
+/// count is -1, undefined behaviour in C++. The shipped game's `shl` masks its
+/// count to 5 bits, so `REGULAR` gets bit 31, consistently in get, set and
+/// clear, and INI lines such as `-REGULAR` work in the original. This
+/// reproduces that: the count is `(dt - 1) & 31`. A 64-bit build of the C++
+/// gives a different answer, so the differential tests cannot compare this
+/// case; `regular_is_bit_31_as_shipped` pins it instead.
+fn veterancy_bit(dt: i32) -> u32 {
+    1u32 << (dt.wrapping_sub(1) as u32 & 31)
 }
 
-/// `getVeterancyLevelFlag`; `None` where upstream is undefined (see
+/// `getVeterancyLevelFlag` (see
 /// [`set_veterancy_level_flag`]).
-pub fn get_veterancy_level_flag(flags: VeterancyLevelFlags, dt: i32) -> Option<bool> {
-    veterancy_bit(dt).map(|b| flags & b != 0)
+pub fn get_veterancy_level_flag(flags: VeterancyLevelFlags, dt: i32) -> bool {
+    flags & veterancy_bit(dt) != 0
 }
 
-/// `setVeterancyLevelFlag`: `flags | (1UL << (dt - 1))`. `None` for
-/// `LEVEL_REGULAR`, where upstream shifts by -1 (undefined behaviour).
-pub fn set_veterancy_level_flag(flags: VeterancyLevelFlags, dt: i32) -> Option<VeterancyLevelFlags> {
-    veterancy_bit(dt).map(|b| flags | b)
+/// `setVeterancyLevelFlag`: `flags | (1UL << (dt - 1))`; `LEVEL_REGULAR` is
+/// bit 31, as shipped (see `veterancy_bit`).
+pub fn set_veterancy_level_flag(flags: VeterancyLevelFlags, dt: i32) -> VeterancyLevelFlags {
+    flags | veterancy_bit(dt)
 }
 
-/// `clearVeterancyLevelFlag`: `flags & ~(1UL << (dt - 1))`. `None` for
-/// `LEVEL_REGULAR` (see [`set_veterancy_level_flag`]).
-pub fn clear_veterancy_level_flag(flags: VeterancyLevelFlags, dt: i32) -> Option<VeterancyLevelFlags> {
-    veterancy_bit(dt).map(|b| flags & !b)
+/// `clearVeterancyLevelFlag`: `flags & ~(1UL << (dt - 1))`; `LEVEL_REGULAR`
+/// is bit 31, as shipped (see `veterancy_bit`).
+pub fn clear_veterancy_level_flag(flags: VeterancyLevelFlags, dt: i32) -> VeterancyLevelFlags {
+    flags & !veterancy_bit(dt)
 }
 
 #[cfg(test)]
@@ -131,10 +130,15 @@ mod tests {
     }
 
     #[test]
-    fn regular_has_no_defined_bit() {
-        assert_eq!(set_veterancy_level_flag(0, VeterancyLevel::Regular as i32), None);
-        assert_eq!(set_veterancy_level_flag(0, VeterancyLevel::Veteran as i32), Some(1));
-        assert_eq!(clear_veterancy_level_flag(0xffff_ffff, VeterancyLevel::Heroic as i32), Some(0xffff_fffb));
-        assert_eq!(get_veterancy_level_flag(4, VeterancyLevel::Heroic as i32), Some(true));
+    fn regular_is_bit_31_as_shipped() {
+        // The shipped 32-bit build's `shl` masks a count of -1 to 31.
+        let regular = VeterancyLevel::Regular as i32;
+        assert_eq!(set_veterancy_level_flag(0, regular), 1 << 31);
+        assert_eq!(clear_veterancy_level_flag(VETERANCY_LEVEL_FLAGS_ALL, regular), 0x7fff_ffff);
+        assert!(get_veterancy_level_flag(1 << 31, regular));
+        assert!(!get_veterancy_level_flag(0x7fff_ffff, regular));
+        assert_eq!(set_veterancy_level_flag(0, VeterancyLevel::Veteran as i32), 1);
+        assert_eq!(clear_veterancy_level_flag(0xffff_ffff, VeterancyLevel::Heroic as i32), 0xffff_fffb);
+        assert!(get_veterancy_level_flag(4, VeterancyLevel::Heroic as i32));
     }
 }

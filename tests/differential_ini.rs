@@ -32,7 +32,11 @@
 //!
 //! Inputs for which the Rust reports [`Undefined`] behaviour upstream (see
 //! the module docs of `common::ini`) are **not** given to the C++; their
-//! count is printed per kind.
+//! count is printed per kind. So are files using `+REGULAR`/`-REGULAR` or
+//! `+NORMAL`/`-NORMAL` (any case): upstream shifts by -1 there; the Rust
+//! follows the shipped 32-bit build (bit 31), which a 64-bit C++ build does
+//! not reproduce, so they are counted as `X86ShiftBit31` and checked by unit
+//! tests in `common::game_common` and `logic::damage` instead.
 #![cfg(feature = "differential")]
 
 mod support;
@@ -709,11 +713,24 @@ fn show(b: &[u8]) -> String {
     String::from_utf8_lossy(b).into_owned()
 }
 
+/// Whether a file contains `+REGULAR`, `-REGULAR`, `+NORMAL` or `-NORMAL`
+/// (any case), the tokens whose upstream shift count is -1 (see the module
+/// docs). Over-matching (e.g. inside a string field) only excludes more.
+fn uses_x86_shift(data: &[u8]) -> bool {
+    let lower = data.to_ascii_lowercase();
+    [&b"+regular"[..], b"-regular", b"+normal", b"-normal"]
+        .iter()
+        .any(|t| lower.windows(t.len()).any(|w| w == *t))
+}
+
 #[derive(Default)]
 struct Excluded(BTreeMap<String, u64>);
 impl Excluded {
     fn add(&mut self, e: &IniError) {
         *self.0.entry(format!("{:?}", e.kind)).or_default() += 1;
+    }
+    fn add_x86_shift(&mut self) {
+        *self.0.entry("X86ShiftBit31".to_string()).or_default() += 1;
     }
     fn total(&self) -> u64 {
         self.0.values().sum()
@@ -751,6 +768,10 @@ fn ini_load_matches_upstream() {
                 continue;
             }
         };
+        if uses_x86_shift(&data) {
+            excluded.add_x86_shift();
+            continue;
+        }
         if rust.status == 0 { ok += 1 } else { failed += 1 }
         log_bytes += rust.log.len() as u64;
         unsafe {
@@ -824,6 +845,10 @@ fn ini_load_directory_matches_upstream() {
                 continue;
             }
         };
+        if files.values().any(|d| uses_x86_shift(d)) {
+            excluded.add_x86_shift();
+            continue;
+        }
         unsafe {
             cpp::ref_ini_reset();
             for (n, d) in &files {
