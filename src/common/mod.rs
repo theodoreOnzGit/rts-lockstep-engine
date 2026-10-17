@@ -5,6 +5,8 @@
 
 pub mod base_type;
 pub mod crc;
+pub mod game_common;
+pub mod ini;
 pub mod quick_trig;
 pub mod random_value;
 pub mod trig;

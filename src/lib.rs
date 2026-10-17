@@ -18,6 +18,9 @@
 //! | [`common::base_type`] | `Libraries/Include/Lib/BaseType.h` (fast float helpers) |
 //! | [`common::trig`] | `GameEngine/Source/Common/System/Trig.cpp`, `Libraries/Include/Lib/trig.h` |
 //! | [`common::quick_trig`] | `GameEngine/Include/Common/QuickTrig.h`, `Source/Common/System/QuickTrig.cpp` |
+//! | [`common::ini`] | `GameEngine/Include/Common/INI.h`, `Source/Common/INI/INI.cpp` |
+//! | [`common::game_common`] | `Include/Common/GameCommon.h` (frame conversions, veterancy), `Source/Common/System/GameCommon.cpp` |
+//! | [`logic::damage`] | `Include/GameLogic/Damage.h`, `Source/GameLogic/System/Damage.cpp` (the type flags) |
 //! | [`common::xfer`] | `GameEngine/Include/Common/Xfer.h`, `Snapshot.h`, `Source/Common/System/Xfer.cpp` |
 //! | [`common::xfer_crc`] | `Common/XferCRC.h`, `XferDeepCRC.h`, `System/XferCRC.cpp` |
 //! | [`common::xfer_save`], [`common::xfer_load`] | `Common/XferSave.h`, `XferLoad.h`, `System/XferSave.cpp`, `XferLoad.cpp` |
@@ -37,6 +40,7 @@
 
 pub mod common;
 pub mod formats;
+pub mod logic;
 pub mod ww;
 
 #[cfg(feature = "differential")]

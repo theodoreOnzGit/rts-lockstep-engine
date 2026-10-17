@@ -2,7 +2,9 @@
 ** Xfer.h needs from it std::vector, std::list, AsciiString, UnicodeString,
 ** and (before its own `enum ObjectID;`-style forward declarations, which
 ** standard C++ accepts only for an enum already declared) the enums
-** ObjectID, DrawableID (copied from Common/GameType.h lines 41-52) and
+** ObjectID, DrawableID (from the unchanged upstream Common/GameType.h,
+** which needs only Lib/BaseType.h; they were copied here until the INI
+** tests, where GameLogic/Damage.h includes GameType.h itself) and
 ** KindOfType (Common/KindOf.h; its enumerators are not needed here, only a
 ** 4-byte enum), and the containers and comparator the archive classes use. */
 #ifndef SHIM_STLTYPEDEFS_H
@@ -15,16 +17,7 @@
 #include "Lib/BaseType.h"
 #include "Common/AsciiString.h"
 #include "Common/UnicodeString.h"
-enum ObjectID
-{
-	INVALID_ID = 0,
-	FORCE_OBJECTID_TO_LONG_SIZE = 0x7ffffff
-};
-enum DrawableID
-{
-	INVALID_DRAWABLE_ID = 0,
-	FORCE_DRAWABLEID_TO_LONG_SIZE = 0x7ffffff
-};
+#include "Common/GameType.h"
 enum KindOfType
 {
 	KINDOF_INVALID = -1,

@@ -126,6 +126,57 @@ mod differential {
             .file(dev.join("Source/Win32Device/Common/Win32BIGFileSystem.cpp"));
         ar.compile("upstream_big");
 
+        // The INI reader: INI.cpp, from a copy with two mechanical edits for
+        // the MSVC dialect it is written in, which g++ rejects and no shim or
+        // flag can supply (the upstream file itself is never edited). Each
+        // edit must match exactly once, so a different upstream fails here:
+        // 1. findFieldParse uses its loop variable `parse` after the `for`
+        //    loop that declares it (MSVC 6/7's pre-standard `for` scope); the
+        //    declaration moves before the loop, which is what the scope rule
+        //    meant when the game was compiled.
+        // 2. initFromINIMulti passes a `void*` to findFieldParse's `const
+        //    void*&` parameter, which MSVC accepted; the local becomes
+        //    `const void*`, its only other use being a `const void*` argument.
+        // `-fpermissive` downgrades the remaining MSVC-isms to warnings: the
+        // cast of `userData` to `UnsignedInt` in parseBitInInt32 (a 64-bit
+        // pointer truncated to its low 32 bits, the mask). GameCommon.cpp
+        // (TheVeterancyNames) and the wrapper compile unchanged.
+        let ini_src = up.join("GameEngine/Source/Common/INI/INI.cpp");
+        let mut ini_text = std::fs::read_to_string(&ini_src).expect("read INI.cpp");
+        for (from, to) in [
+            (
+                "\tfor (const FieldParse* parse = parseTable; parse->token; ++parse)",
+                "\tconst FieldParse* parse; for (parse = parseTable; parse->token; ++parse)",
+            ),
+            ("\t\t\t\t\tvoid* userData = 0;", "\t\t\t\t\tconst void* userData = 0;"),
+        ] {
+            assert_eq!(ini_text.matches(from).count(), 1, "INI.cpp patch site {from:?} must occur once");
+            ini_text = ini_text.replace(from, to);
+        }
+        let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+        let ini_copy = out_dir.join("INI_msvc_scope.cpp");
+        std::fs::write(&ini_copy, ini_text).expect("write INI.cpp copy");
+        let shim_ini = dif.join("shim_ini");
+        let ini_build = |cfg: &mut cc::Build| {
+            base(cfg);
+            cfg.include(&shim_ini)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .flag("-include")
+                .flag(shim_ini.join("ini_prelude.h").to_str().expect("UTF-8 path"));
+        };
+        let mut ini = cc::Build::new();
+        ini_build(&mut ini);
+        ini.flag("-fpermissive").file(&ini_copy);
+        ini.compile("upstream_ini");
+        let mut iniw = cc::Build::new();
+        ini_build(&mut iniw);
+        iniw.file(dif.join("wrap_ini.cpp")).file(sys.join("GameCommon.cpp"));
+        iniw.compile("upstream_ini_wrap");
+
         // Lib/BaseType.h asm helpers (hand transcriptions, see the file).
         let mut bt = cc::Build::new();
         base(&mut bt);
@@ -148,6 +199,9 @@ mod differential {
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/crc.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Include/Common/crc.h",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/System",
+            "upstream/GeneralsMD/Code/GameEngine/Source/Common/INI/INI.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic",
+            "upstream/GeneralsMD/Code/GameEngine/Include/GameClient",
             "upstream/GeneralsMD/Code/GameEngine/Include/Common/QuickTrig.h",
             "upstream/GeneralsMD/Code/Libraries/Include/Lib/trig.h",
             "upstream/GeneralsMD/Code/GameEngine/Include/Common",

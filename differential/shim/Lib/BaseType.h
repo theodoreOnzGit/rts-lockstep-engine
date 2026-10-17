@@ -4,7 +4,9 @@
 ** fundamental typedefs are reproduced here, copied from the real header with
 ** __int64 spelled as long long, plus (for the Xfer files) the BitSet/BitClear/
 ** BitTest macros and the data members of the derived types (lines 172-175 and
-** 258-492; their methods are omitted, nothing compiled here calls them).
+** 258-492; their methods are omitted, nothing compiled here calls them,
+** except Coord3D::zero and ICoord3D::zero, lines 357-362 and 419-425, which
+** GameLogic/Damage.h calls (INI tests)).
 ** WideChar is `wchar_t` upstream, which is 16 bits on Win32 and 32 bits on
 ** Linux; it is spelled `unsigned short` here so the bytes Xfer moves are the
 ** Win32 ones. The asm helpers of the real header are transcribed separately
@@ -36,8 +38,8 @@ struct Coord2D { Real x, y; };
 struct ICoord2D { Int x, y; };
 struct Region2D { Coord2D lo, hi; };
 struct IRegion2D { ICoord2D lo, hi; };
-struct Coord3D { Real x, y, z; };
-struct ICoord3D { Int x, y, z; };
+struct Coord3D { Real x, y, z; void zero( void ) { x = 0.0f; y = 0.0f; z = 0.0f; } };
+struct ICoord3D { Int x, y, z; void zero( void ) { x = 0; y = 0; z = 0; } };
 struct Region3D { Coord3D lo, hi; };
 struct IRegion3D { ICoord3D lo, hi; };
 struct RGBColor { Real red, green, blue; };

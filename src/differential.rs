@@ -79,6 +79,34 @@ extern "C" {
         cap: c_int,
     ) -> c_int;
 
+    // INI.cpp (a copy with two MSVC-scope edits, see build.rs), GameCommon.cpp
+    pub fn ref_ini_reset();
+    pub fn ref_ini_add_file(name: *const c_char, data: *const c_char, len: c_int);
+    pub fn ref_ini_add_dir_entry(name: *const c_char);
+    pub fn ref_ini_load(
+        filename: *const c_char,
+        with_xfer: c_int,
+        log: *mut c_uchar,
+        cap: c_int,
+        log_len: *mut c_int,
+        crc: *mut c_uint,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+    pub fn ref_ini_load_dir(
+        dir: *const c_char,
+        with_xfer: c_int,
+        log: *mut c_uchar,
+        cap: c_int,
+        log_len: *mut c_int,
+        crc: *mut c_uint,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+    pub fn ref_ini_scan(op: c_int, token: *const c_char, out: *mut c_uint) -> c_int;
+
     // BaseType.h (asm transcriptions)
     pub fn ref_fast_float2long_round(f: c_float) -> c_int;
     pub fn ref_fast_float_trunc(f: c_float) -> c_float;

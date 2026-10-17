@@ -34,11 +34,18 @@
 const AsciiString AsciiString::TheEmptyString;
 
 /* ---- stand-ins for engine singletons that the compiled code references
-** but the tests never reach (they abort if reached). */
+** but the tests never reach (they abort if reached). FileSystem::openFile
+** is reached by INI::load in the INI tests: it forwards to the hook that
+** differential/wrap_ini.cpp installs, and aborts without one. */
 GlobalData *TheGlobalData = 0;
 AudioManager *TheAudio = 0;
 FileSystem *TheFileSystem = 0;
-File *FileSystem::openFile(const Char *, Int) { abort(); }
+File *(*shim_file_system_open_hook)(const Char *, Int) = 0;
+File *FileSystem::openFile(const Char *name, Int access)
+{
+	if (shim_file_system_open_hook) return shim_file_system_open_hook(name, access);
+	abort();
+}
 Bool GetStringFromGeneralsRegistry(AsciiString, AsciiString, AsciiString &) { return FALSE; }
 
 namespace {
