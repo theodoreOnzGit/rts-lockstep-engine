@@ -229,6 +229,85 @@ mod differential {
             )],
         ));
         let meshmatdesc = write("meshmatdesc_msvc_scope.cpp", &meshmatdesc_text);
+        // Textures. ddsfile.cpp: `level` is used after the loop that
+        // declares it, and `unsigned short(x)` is MSVC's functional cast of
+        // a two-word type name. ddsfile.h (as a generated header found
+        // before WW3D2's): LegacyDDSURFACEDESC2's `void* Surface` is 4 bytes
+        // on Win32, so it is spelled `unsigned` to keep the 124-byte layout
+        // the file is read into. formconv.cpp: `i` used after its loop.
+        let ddsfile = write(
+            "ddsfile_msvc.cpp",
+            &patch_copy(
+                &w3d.join("ddsfile.cpp"),
+                "ddsfile.cpp",
+                &[
+                    ("\tfor (unsigned level=0;level<ReductionFactor;++level) ", "\tunsigned level; for (level=0;level<ReductionFactor;++level) ", 1),
+                    ("unsigned short(cols>>16)", "(unsigned short)(cols>>16)", 9),
+                    ("unsigned short(cols&0xffff)", "(unsigned short)(cols&0xffff)", 9),
+                ],
+            ),
+        );
+        let ddsfile_h = patch_copy(
+            &w3d.join("ddsfile.h"),
+            "ddsfile.h",
+            &[("\tvoid* Surface;", "\tunsigned Surface; /* void* on Win32 (differential tests: see build.rs) */", 1)],
+        );
+        std::fs::write(gen.join("ddsfile.h"), ddsfile_h).expect("write ddsfile.h");
+        let formconv = write(
+            "formconv_msvc_scope.cpp",
+            &patch_copy(
+                &w3d.join("formconv.cpp"),
+                "formconv.cpp",
+                &[("\tfor (int i=0;i<HIGHEST_SUPPORTED_D3DFORMAT;++i) {", "\tint i; for (i=0;i<HIGHEST_SUPPORTED_D3DFORMAT;++i) {", 1)],
+            ),
+        );
+        // TARGA.CPP: `long` is 32 bits on Win32 (its structs and size
+        // arithmetic depend on it): the copy includes what TARGA.CPP
+        // includes, then shim_w3d/targa.h, then defines `long` as `int` for
+        // its own text. YFlip's _swapBytes is MSVC x86 inline assembly with
+        // 32-bit pointers; the copy keeps it under `#if 0` and adds a
+        // GNU-asm transcription of the same instructions on 64-bit
+        // registers (the same reads and writes, including its byte loop,
+        // which writes back the byte it took instead of swapping it).
+        let mut targa_text = b"/* differential tests: see build.rs */\n#include <stdlib.h>\n#include <malloc.h>\n\
+            #include <memory.h>\n#include <string.h>\n#include \"wwfile.h\"\n#include \"ffactory.h\"\n#include \"targa.h\"\n\
+            #define long int\n"
+            .to_vec();
+        targa_text.extend(patch_copy(
+            &ww.join("WWLib/TARGA.CPP"),
+            "TARGA.CPP",
+            &[
+                ("{\n  _asm\n  {\n    mov esi,[p1]\n", "{\n#if 0\n  _asm\n  {\n    mov esi,[p1]\n", 1),
+                (
+                    "  done:\n  }\n}\n",
+                    concat!(
+                        "  done:\n  }\n#else\n",
+                        "  /* GNU-asm transcription of the block above (differential tests) */\n",
+                        "  __asm__ __volatile__(\n",
+                        "    \"movl %%ebx, %%ecx\\n\\t\" \"shrl $4, %%ecx\\n\\t\" \"jz 2f\\n\"\n",
+                        "    \"1:\\n\\t\"\n",
+                        "    \"movl (%%rsi), %%eax\\n\\t\" \"movl 4(%%rsi), %%edx\\n\\t\"\n",
+                        "    \"xchgl %%eax, (%%rdi)\\n\\t\" \"xchgl %%edx, 4(%%rdi)\\n\\t\"\n",
+                        "    \"movl %%eax, (%%rsi)\\n\\t\" \"movl %%edx, 4(%%rsi)\\n\\t\"\n",
+                        "    \"movl 8(%%rsi), %%eax\\n\\t\" \"movl 12(%%rsi), %%edx\\n\\t\"\n",
+                        "    \"xchgl %%eax, 8(%%rdi)\\n\\t\" \"xchgl %%edx, 12(%%rdi)\\n\\t\"\n",
+                        "    \"movl %%eax, 8(%%rsi)\\n\\t\" \"movl %%edx, 12(%%rsi)\\n\\t\"\n",
+                        "    \"addq $16, %%rsi\\n\\t\" \"addq $16, %%rdi\\n\\t\" \"decl %%ecx\\n\\t\" \"jnz 1b\\n\"\n",
+                        "    \"2:\\n\\t\" \"andl $15, %%ebx\\n\"\n",
+                        "    \"3:\\n\\t\" \"jz 4f\\n\\t\"\n",
+                        "    \"movb (%%rsi), %%al\\n\\t\" \"xchgb %%al, (%%rdi)\\n\\t\" \"movb %%al, (%%rdi)\\n\\t\"\n",
+                        "    \"incq %%rsi\\n\\t\" \"incq %%rdi\\n\\t\" \"decl %%ebx\\n\\t\" \"jmp 3b\\n\"\n",
+                        "    \"4:\\n\"\n",
+                        "    : \"+S\"(p1), \"+D\"(p2), \"+b\"(count)\n",
+                        "    :\n",
+                        "    : \"eax\", \"ecx\", \"edx\", \"memory\", \"cc\");\n",
+                        "#endif\n}\n"
+                    ),
+                    1,
+                ),
+            ],
+        ));
+        let targa = write("targa_win32_long.cpp", &targa_text);
         let w3d_build = |cfg: &mut cc::Build, mesh: bool| {
             base(cfg);
             cfg.compiler("clang++")
@@ -246,7 +325,8 @@ mod differential {
                 cfg.flag("-include").flag(shim_w3d.join("mesh_prelude.h").to_str().expect("UTF-8 path"));
             }
         };
-        // The mesh loader (see differential/wrap_w3d_mesh.cpp), linked before
+        // The mesh loader (see differential/wrap_w3d_mesh.cpp) and the texture
+        // readers (differential/wrap_texture.cpp), linked before
         // upstream_w3d, whose chunk reader and pool functions it uses.
         let mut mb = cc::Build::new();
         w3d_build(&mut mb, true);
@@ -255,7 +335,12 @@ mod differential {
             .file(&meshmatdesc)
             .file(w3d.join("w3d_util.cpp"))
             .file(ww.join("WWLib/realcrc.cpp"))
-            .file(&multilist);
+            .file(&multilist)
+            .file(dif.join("wrap_texture.cpp"))
+            .file(&ddsfile)
+            .file(&formconv)
+            .file(w3d.join("ww3dformat.cpp"))
+            .file(&targa);
         mb.compile("upstream_w3d_mesh");
         let mut wb = cc::Build::new();
         w3d_build(&mut wb, false);

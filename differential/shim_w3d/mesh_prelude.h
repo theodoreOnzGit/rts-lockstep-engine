@@ -1,7 +1,9 @@
-/* Forced include (-include, after w3d_prelude.h) for the W3D mesh sources,
-** differential tests only: WW3D2/meshmdlio.cpp, meshmatdesc.cpp,
-** w3d_util.cpp, WWLib/realcrc.cpp (all compiled unchanged) and
-** differential/wrap_w3d_mesh.cpp.
+/* Forced include (-include, after w3d_prelude.h) for the W3D mesh and
+** texture sources, differential tests only: WW3D2/meshmdlio.cpp,
+** meshmatdesc.cpp, w3d_util.cpp, WWLib/realcrc.cpp, multilist.cpp,
+** WW3D2/ddsfile.cpp, formconv.cpp, ww3dformat.cpp, WWLib/TARGA.CPP (copies
+** where build.rs says so) and differential/wrap_w3d_mesh.cpp,
+** wrap_texture.cpp.
 **
 ** The mesh loader is compiled with the real meshmdl.h, meshgeometry.h,
 ** meshmatdesc.h, shader.h, w3d_file.h and chunkio.h, so every class layout
@@ -12,7 +14,9 @@
 **   dx8wrapper.h, dx8caps.h, dx8list.h, rinfo.h, ww3d.h: stand-ins that
 **     declare only what the loader calls (WW3D's pre-lit mode and load
 **     options; DX8Wrapper::Convert_Color, whose x87 asm is transcribed in
-**     wrap_w3d_mesh.cpp, as BaseType.h's helpers are in wrap_base_type.cpp);
+**     wrap_w3d_mesh.cpp, as BaseType.h's helpers are in wrap_base_type.cpp;
+**     for ww3dformat.cpp's Get_Valid_Texture_Format, which the tests do not
+**     call, the device queries, which abort);
 **   vertmaterial.h, texture.h, matinfo.h, aabtree.h: stand-in classes with
 **     the members the loader and meshmatdesc.cpp use. Their loading
 **     functions (VertexMaterialClass::Load_W3D, Load_Texture,
@@ -51,6 +55,7 @@
 #include "shader.h"
 #include "multilist.h"
 #include "vector_this.h"
+#include "ww3dformat.h"
 #include <string>
 #include <vector>
 
@@ -74,6 +79,8 @@ public:
 	static bool Is_Munge_Sort_On_Load_Enabled() { return false; }
 	static bool Is_Overbright_Modify_On_Load_Enabled() { return false; }
 	static int Get_NPatches_Level() { return 1; }
+	static void Get_Device_Resolution(int &, int &, int &, bool &) { abort(); }
+	static int Get_Texture_Bitdepth() { abort(); }
 };
 
 /* ---- dx8wrapper.h, dx8caps.h ---------------------------------------- */
@@ -82,7 +89,10 @@ class DX8Caps
 public:
 	bool Support_Bump_Envmap() const { return false; }
 	bool Support_NPatches() const { return false; }
+	bool Support_DXTC() const { abort(); }
+	bool Support_Texture_Format(WW3DFormat) const { abort(); }
 };
+#define DX8_ErrorCode(x) (x)
 class DX8Wrapper
 {
 public:
@@ -151,7 +161,6 @@ public:
 	int MipMapping = -1, UAddr = -1, VAddr = -1;
 };
 enum MipCountType { MIP_LEVELS_ALL = 0, MIP_LEVELS_1, MIP_LEVELS_2, MIP_LEVELS_3, MIP_LEVELS_4 };
-enum WW3DFormat { WW3D_FORMAT_UNKNOWN = 0, WW3D_FORMAT_U8V8, WW3D_FORMAT_L6V5U5, WW3D_FORMAT_X8L8V8U8 };
 class TextureClass : public W3DMPO, public RefCountClass
 {
 	W3DMPO_GLUE(TextureClass)

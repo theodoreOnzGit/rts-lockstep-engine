@@ -112,8 +112,19 @@ struct Snapshot {};
 WW3D::PrelitModeEnum WW3D::PrelitMode = WW3D::PRELIT_MODE_LIGHTMAP_MULTI_PASS;
 
 /* ---- stand-ins never reached by what is compared (they abort) ------- */
-void StringClass::Free_String(void) { abort(); }
-void StringClass::Get_String(int, bool) { abort(); }
+/* StringClass (wwstring.cpp needs windows.h): only the empty string, which
+** is all ddsfile.cpp makes (`StringClass tmp(0,true)`, then Format for an
+** assert message the release build discards: Format keeps it empty). */
+void StringClass::Free_String(void)
+{
+	if (m_Buffer != m_EmptyString) abort();
+}
+void StringClass::Get_String(int length, bool)
+{
+	if (length != 0) abort();
+	m_Buffer = m_EmptyString;
+}
+int _cdecl StringClass::Format(const TCHAR *, ...) { return 0; }
 TCHAR StringClass::m_NullChar = 0;
 TCHAR *StringClass::m_EmptyString = &StringClass::m_NullChar;
 void ShaderClass::Enable_Fog(const char *) { abort(); }

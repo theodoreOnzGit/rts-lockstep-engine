@@ -34,6 +34,7 @@
 //! | [`ww::chunkio`] | `WWLib/chunkio.h`, `chunkio.cpp` (`ChunkLoadClass`), read through `GameFileClass` over `RAMFile` |
 //! | [`ww::realcrc`] | `WWLib/realcrc.h`, `realcrc.cpp` (`CRC_Memory`) |
 //! | [`formats::w3d`] | `WW3D2/w3d_file.h`, `w3d_obsolete.h`; the loaders of `htree.cpp`, `pivot.cpp`, `hrawanim.cpp`, `hcanim.cpp`, `motchan.cpp`, `meshmdlio.cpp` (with what they call in `meshgeometry.cpp`, `meshmatdesc.cpp`, `vertmaterial.cpp`, `texture.cpp`, `aabtree.cpp`, `w3d_util.cpp`, `shader.h`, `dx8wrapper.h`) |
+//! | [`formats::texture`] | `WWLib/TARGA.CPP`, `TARGA.H`; `WW3D2/ddsfile.cpp`, `ddsfile.h`, `ww3dformat.cpp`, `formconv.cpp`, `bitmaphandler.h` (`Write_B8G8R8A8`), `colorspace.h` |
 //!
 //! Floating point: all `f32` arithmetic is plain IEEE-754 binary32, one
 //! rounding per operation, no fused multiply-add, and every elementary

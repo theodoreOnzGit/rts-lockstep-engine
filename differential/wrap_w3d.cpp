@@ -124,6 +124,14 @@ static size_t array_bytes(const void *p)
 	return it->second;
 }
 
+/* For differential/wrap_texture.cpp: the registry, switched on and read. */
+extern "C" void ref_w3d_track_arrays(int on)
+{
+	std::lock_guard<std::mutex> l(reg_mutex());
+	g_track = on != 0;
+}
+extern "C" size_t ref_w3d_array_bytes(const void *p) { return array_bytes(p); }
+
 /* ---- the W3DMPO pools (always.h) on malloc/free --------------------- */
 void *createW3DMemPool(const char *, int) { return (void *)1; }
 void *allocateFromW3DMemPool(void *, int n) { return calloc(1, n); }

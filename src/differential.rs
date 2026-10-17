@@ -141,6 +141,27 @@ extern "C" {
     pub fn ref_crc_memory(data: *const c_uchar, len: c_int, crc: c_uint) -> c_uint;
     pub fn ref_dx8_convert_color(rgba: *const c_float) -> c_uint;
 
+    // WW3D2/ddsfile.cpp, WWLib/TARGA.CPP (wrap_texture.cpp)
+    pub fn ref_d3d_to_ww3d(code: c_uint) -> c_uint;
+    pub fn ref_bytes_per_pixel(format: c_uint) -> c_uint;
+    pub fn ref_write_b8g8r8a8(format: c_uint, argb: c_uint, out8: *mut c_uchar);
+    pub fn ref_recolor(rgba: c_uint, hsv: *const c_float) -> c_uint;
+    pub fn ref_dds_surface_desc_size() -> c_int;
+    pub fn ref_dds_run(
+        data: *const c_char,
+        len: c_int,
+        reduction: c_uint,
+        do_load: c_int,
+        max_levels: c_uint,
+        ops: *const c_uint,
+        hsv: *const c_float,
+        n_ops: c_int,
+        log: *mut c_uchar,
+        cap: c_int,
+        log_len: *mut c_int,
+    ) -> c_int;
+    pub fn ref_tga_run(data: *const c_char, len: c_int, flow: c_int, log: *mut c_uchar, cap: c_int, log_len: *mut c_int) -> c_int;
+
     // BaseType.h (asm transcriptions)
     pub fn ref_fast_float2long_round(f: c_float) -> c_int;
     pub fn ref_fast_float_trunc(f: c_float) -> c_float;

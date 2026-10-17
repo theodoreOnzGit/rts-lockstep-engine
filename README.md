@@ -40,6 +40,7 @@ Only a first batch of self-contained foundations exists:
 | `ww::chunkio` | `WWLib/chunkio.h`, `chunkio.cpp`: `ChunkLoadClass` (chunks, micro-chunks, reads), with the file read through `GameFileClass` over `RAMFile` (the game's path for W3D files in `.big` archives); not the writer (`ChunkSaveClass`) |
 | `ww::realcrc` | `WWLib/realcrc.h`, `realcrc.cpp`: `CRC_Memory` |
 | `formats::w3d` | W3D models, parsed into plain structs (no rendering): `WW3D2/w3d_file.h` and `w3d_obsolete.h` (all chunk ids, flags and the 84 file structs); hierarchies (`htree.cpp`, `pivot.cpp`); animations (`hrawanim.cpp`, `hcanim.cpp`, `motchan.cpp`: raw, time-coded, adaptive-delta and bit channels); meshes (`MeshModelClass::Load_W3D` of `meshmdlio.cpp`, with the parts of `meshgeometry.cpp`, `meshmatdesc.cpp`, `vertmaterial.cpp`, `texture.cpp`, `aabtree.cpp`, `w3d_util.cpp`, `shader.h` and `dx8wrapper.h` it calls). Not the legacy material chunks (`MATERIALS3`, multi-material per-triangle materials), the processing after the chunks are read (`install_materials`, `post_process`, generated AABTrees), nor the asset manager's file loop (`Load_3D_Assets`) |
+| `formats::texture` | textures into raw pixel buffers: Targa images as `WWLib/TARGA.CPP` reads them (`Open`, both `Load`s, run-length decoding, `InvertImage`, `XFlip`, `YFlip` with its byte-tail bug, palettes, Targa 2.0 footer and extension); DDS files as `WW3D2/ddsfile.cpp` reads them (header, level table, payload, `Get_Pixel`, `Get_4x4_Block`, the level and cube-map copies to every surface format, with upstream's DXT1 and DXT5 decompression; upstream has no DXT2-4 decoder); the formats of `ww3dformat.cpp`/`formconv.cpp`, `Write_B8G8R8A8` of `bitmaphandler.h` and `Recolor` of `colorspace.h`. Not Targa writing (`Save`, `EncodeImage`), nor the Direct3D surface overloads |
 
 **Proposal, not yet approved:** `XferCRC`/`XferDeepCRC` carry a NaN guard
 (`common::xfer_crc::nan_guard`): a NaN `Real` xfered into a CRC panics in debug
@@ -97,7 +98,14 @@ cargo test --release --features differential
   cannot compile without Direct3D or the collision system
   (`meshgeometry.cpp`, `vertmaterial.cpp`, `texture.cpp`, `aabtree.cpp`, the
   x87 `DX8Wrapper::Convert_Color`) are transcribed into
-  `differential/wrap_w3d_mesh.cpp`, labelled as such.
+  `differential/wrap_w3d_mesh.cpp`, labelled as such. The texture build
+  compiles `ddsfile.cpp` and `formconv.cpp` with the same kind of edits
+  (loop scope, MSVC's `unsigned short(x)` cast), reads `ddsfile.h` with
+  its `void*` member spelled as 4 bytes, and compiles `TARGA.CPP` with
+  `long` as `int` (both 32 bits on Win32) and its `_swapBytes` MSVC
+  assembly as a GNU-asm transcription of the same instructions; the
+  Direct3D 8 and DirectDraw constants come from documented SDK values
+  (`differential/shim_w3d/d3d8.h`, `ddraw.h`).
 - `differential/shim/` holds minimal stand-ins for headers that cannot be
   compiled outside MSVC/Windows (each says what it replaces and why;
   `differential/shim_ini/` adds, for the INI build only, declaration-only
