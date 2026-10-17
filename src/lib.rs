@@ -15,11 +15,13 @@
 //! |---|---|
 //! | [`common::random_value`] | `GameEngine/Source/Common/RandomValue.cpp` |
 //! | [`common::crc`] | `GameEngine/Source/Common/crc.cpp`, `Include/Common/crc.h` |
-//! | [`common::base_type`] | `Libraries/Include/Lib/BaseType.h` (fast float helpers) |
+//! | [`common::base_type`] | `Libraries/Include/Lib/BaseType.h` (fast float helpers; value types and templates) |
+//! | [`common::game_type`], [`common::errors`], [`common::special_power_type`], [`common::thing_sort`] | `Include/Common/GameType.h` (+ `GameType.cpp`), `Errors.h`, `SpecialPowerType.h`, `ThingSort.h` |
+//! | [`logic::powers`], [`logic::weapon_types`], [`logic::object_script_status_bits`] | `Include/GameLogic/Powers.h`, `WeaponSetType.h`, `WeaponStatus.h`, `WeaponBonusConditionFlags.h`, `ObjectScriptStatusBits.h` |
 //! | [`common::trig`] | `GameEngine/Source/Common/System/Trig.cpp`, `Libraries/Include/Lib/trig.h` |
 //! | [`common::quick_trig`] | `GameEngine/Include/Common/QuickTrig.h`, `Source/Common/System/QuickTrig.cpp` |
 //! | [`common::ini`] | `GameEngine/Include/Common/INI.h`, `Source/Common/INI/INI.cpp` |
-//! | [`common::game_common`] | `Include/Common/GameCommon.h` (frame conversions, veterancy), `Source/Common/System/GameCommon.cpp` |
+//! | [`common::game_common`] | `Include/Common/GameCommon.h`, `Source/Common/System/GameCommon.cpp` |
 //! | [`logic::damage`] | `Include/GameLogic/Damage.h`, `Source/GameLogic/System/Damage.cpp` (the type flags) |
 //! | [`common::xfer`] | `GameEngine/Include/Common/Xfer.h`, `Snapshot.h`, `Source/Common/System/Xfer.cpp` |
 //! | [`common::xfer_crc`] | `Common/XferCRC.h`, `XferDeepCRC.h`, `System/XferCRC.cpp` |

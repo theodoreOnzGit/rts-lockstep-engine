@@ -301,6 +301,19 @@ impl Check {
         );
     }
 
+    /// For a **planted bug**: the same comparison run against a deliberately
+    /// wrong variant of the Rust. It must be caught (at least one mismatch);
+    /// otherwise the inputs cannot tell the right answer from a plausible
+    /// wrong one and the passing comparison proves little.
+    pub fn finish_planted(self) {
+        println!(
+            "PLANTED {:<41} compared {:>9}  caught {:>9}",
+            self.name, self.compared, self.mismatches
+        );
+        assert!(self.compared > 0, "{}: nothing compared", self.name);
+        assert!(self.mismatches > 0, "{}: the planted bug was NOT caught by {} inputs", self.name, self.compared);
+    }
+
     /// Print the summary line without failing; returns the mismatch count.
     /// Used only for measurements that are reported, not gated.
     pub fn report(self) -> u64 {

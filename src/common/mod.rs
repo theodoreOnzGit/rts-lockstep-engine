@@ -5,10 +5,14 @@
 
 pub mod base_type;
 pub mod crc;
+pub mod errors;
 pub mod game_common;
+pub mod game_type;
 pub mod ini;
 pub mod quick_trig;
 pub mod random_value;
+pub mod special_power_type;
+pub mod thing_sort;
 pub mod trig;
 mod trig_tables;
 pub mod xfer;

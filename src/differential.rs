@@ -162,6 +162,22 @@ extern "C" {
     ) -> c_int;
     pub fn ref_tga_run(data: *const c_char, len: c_int, flow: c_int, log: *mut c_uchar, cap: c_int, log_len: *mut c_int) -> c_int;
 
+    // BaseType.h value types and templates (wrap_value_types.cpp)
+    pub fn ref_vt_coord2d(op: c_int, x: c_float, y: c_float, out: *mut c_float) -> c_float;
+    pub fn ref_vt_coord3d(op: c_int, a: *const c_float, b: *const c_float, k: c_float, out: *mut c_float) -> c_float;
+    pub fn ref_vt_region(op: c_int, lo: *const c_float, hi: *const c_float, q: *const c_float, out: *mut c_float) -> c_float;
+    pub fn ref_vt_int(op: c_int, lo: *const c_int, hi: *const c_int) -> c_int;
+    pub fn ref_vt_rgb_get_as_int(rgb: *const c_float) -> c_int;
+    pub fn ref_vt_rgb_set_from_int(v: c_int, out: *mut c_float);
+    pub fn ref_vt_real(op: c_int, a: c_float, b: c_float, c: c_float, d: c_float) -> c_float;
+    pub fn ref_vt_intfn(op: c_int, a: c_int, b: c_int, c: c_int) -> c_int;
+
+    // GameType.cpp, GameCommon.cpp and the enum headers (wrap_game_types.cpp)
+    pub fn ref_enum_values(which: c_int, out: *mut c_longlong, cap: c_int) -> c_int;
+    pub fn ref_name_table(which: c_int, i: c_int) -> *const c_char;
+    pub fn ref_game_common_angle(op: c_int, a: c_float, b: c_float) -> c_float;
+    pub fn ref_attack_type(op: c_int, t: c_int) -> c_int;
+
     // BaseType.h (asm transcriptions)
     pub fn ref_fast_float2long_round(f: c_float) -> c_int;
     pub fn ref_fast_float_trunc(f: c_float) -> c_float;

@@ -18,10 +18,14 @@ plan is in [`SCOPE.md`](SCOPE.md).
 
 ## Status: early, nothing playable
 
-Only a first batch of self-contained foundations exists:
+Phase 0 (formats) is done; Phase 1 (game logic) has started, bottom up, in
+the layer order of [`docs/phase1-porting-graph.md`](docs/phase1-porting-graph.md)
+(measured by `scripts/porting_graph.py`). What exists:
 
 | Rust module | Translated from (`GeneralsMD/Code/...`) |
 |---|---|
+| `common::base_type` (value types) | the methods of `Coord2D/3D`, `ICoord2D/3D`, `Region2D/3D`, `IRegion2D/3D`, `RGBColor`, `RealRange`, and `sqr`, `clamp`, `sign`, `rad2deg`, `deg2rad`, `min`, `max` of `Libraries/Include/Lib/BaseType.h` (Phase 1 layer 1) |
+| `common::game_type`, `common::game_common` (rest), `common::errors`, `common::special_power_type`, `common::thing_sort`, `logic::powers`, `logic::weapon_types`, `logic::object_script_status_bits` | `Include/Common/GameType.h` (+ `GameType.cpp`), the rest of `GameCommon.h` (+ `normalizeAngle`, `TheRelationshipNames`), `Errors.h`, `SpecialPowerType.h`, `ThingSort.h`, `Include/GameLogic/Powers.h`, `WeaponSetType.h`, `WeaponStatus.h`, `WeaponBonusConditionFlags.h`, `ObjectScriptStatusBits.h` (Phase 1 layer 1) |
 | `common::random_value` | `GameEngine/Source/Common/RandomValue.cpp` and the Logic/Client/Audio RandomValue headers |
 | `common::crc` | `GameEngine/Source/Common/crc.cpp`, `GameEngine/Include/Common/crc.h` |
 | `common::base_type` | the fast float helpers, `REAL_TO_*` macros and `PI` of `Libraries/Include/Lib/BaseType.h` |
@@ -49,7 +53,8 @@ NaN bits are not portable between native and wasm peers.
 `XferCrc::new_without_nan_guard` keeps upstream's raw-bit behaviour, for the
 differential tests. The rule behind it: game logic must never store a NaN.
 
-There is no renderer, audio, networking or game logic yet.
+There is no renderer, audio or networking yet, and of the game logic only
+the bottom layers listed above.
 
 ## Floating point and determinism
 
@@ -104,7 +109,11 @@ cargo test --release --features differential
   `long` as `int` (both 32 bits on Win32) and its `_swapBytes` MSVC
   assembly as a GNU-asm transcription of the same instructions; the
   Direct3D 8 and DirectDraw constants come from documented SDK values
-  (`differential/shim_w3d/d3d8.h`, `ddraw.h`).
+  (`differential/shim_w3d/d3d8.h`, `ddraw.h`). `Lib/BaseType.h` cannot be
+  compiled by g++ at all (MSVC `__int64`, `__asm`); for its value types the
+  build copies two segments of its text verbatim (the templates, and the
+  derived types with their methods), each located by its first and last
+  line and asserted to occur once.
 - `differential/shim/` holds minimal stand-ins for headers that cannot be
   compiled outside MSVC/Windows (each says what it replaces and why;
   `differential/shim_ini/` adds, for the INI build only, declaration-only
@@ -125,6 +134,11 @@ cargo test --release --features differential
   are compared as raw bits. The one exception is a NaN on both sides with a
   different sign or payload, which is counted and reported but not failed,
   because Rust leaves NaN bits unspecified (see `tests/support/mod.rs`).
+- **Planted bugs** (from Phase 1 on): each comparison is also run against a
+  deliberately wrong variant of the Rust (a plausible slip: `<=` for `<`, a
+  missing clamp, 256 for 255, a swapped component), which must be caught
+  (`Check::finish_planted`, printed as `PLANTED ... caught n`). That shows
+  the inputs can tell the translation from a near miss.
 - The C++ calls to the elementary functions (`sinf`, `cosf`, `acosf`, ... and
   the double `sin`, `acos`, `asin`, `atan`, `atan2`, `sqrt`) are bound to the
   same petir functions in the test binaries, so the gated tests check the
