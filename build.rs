@@ -177,6 +177,22 @@ mod differential {
         iniw.file(dif.join("wrap_ini.cpp")).file(sys.join("GameCommon.cpp"));
         iniw.compile("upstream_ini_wrap");
 
+        // The CSF string loader: GameText.cpp unchanged, with csf_prelude.h
+        // force-included (windows.h names, SubsystemInterface; see the file)
+        // and the stand-ins of differential/shim_csf.
+        let shim_csf = dif.join("shim_csf");
+        let mut csf = cc::Build::new();
+        base(&mut csf);
+        csf.include(&shim_csf)
+            .include(&shim)
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .flag("-include")
+            .flag(shim_csf.join("csf_prelude.h").to_str().expect("UTF-8 path"))
+            .file(dif.join("wrap_csf.cpp"))
+            .file(up.join("GameEngine/Source/GameClient/GameText.cpp"));
+        csf.compile("upstream_csf");
+
         // Lib/BaseType.h asm helpers (hand transcriptions, see the file).
         let mut bt = cc::Build::new();
         base(&mut bt);
@@ -200,6 +216,7 @@ mod differential {
             "upstream/GeneralsMD/Code/GameEngine/Include/Common/crc.h",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/System",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/INI/INI.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/GameClient/GameText.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic",
             "upstream/GeneralsMD/Code/GameEngine/Include/GameClient",
             "upstream/GeneralsMD/Code/GameEngine/Include/Common/QuickTrig.h",

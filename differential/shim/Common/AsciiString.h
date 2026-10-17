@@ -8,13 +8,18 @@
 ** comparison operators (strcmp), TheEmptyString, and nextToken(), whose body
 ** is copied from AsciiString.cpp lines 368-396 with its helpers skipSeps /
 ** skipNonSeps (lines 55-68): on an empty string it returns false and leaves
-** the token unchanged. */
+** the token unchanged. For GameText.cpp also format() (vsnprintf into a
+** 2048-byte buffer) and translate() (AsciiString.cpp lines 178-187: each
+** WideChar truncated to a char). */
 #ifndef SHIM_ASCIISTRING_H
 #define SHIM_ASCIISTRING_H
 #include <string>
 #include <string.h>
 #include <strings.h>
 #include <ctype.h>
+#include <stdio.h>
+#include <stdarg.h>
+class UnicodeString;
 class AsciiString
 {
 public:
@@ -64,6 +69,20 @@ public:
 			tok->clear();
 			return false;
 		}
+	}
+	void format(const char *fmt, ...)
+	{
+		char buf[2048];
+		va_list args;
+		va_start(args, fmt);
+		int n = vsnprintf(buf, sizeof(buf), fmt, args);
+		va_end(args);
+		m_s = n < 0 ? "" : buf;
+	}
+	template <class U> void translate(const U &src)
+	{
+		clear();
+		for (int i = 0; i < src.getLength(); i++) m_s += (char)src.getCharAt(i);
 	}
 	/* test helper (not upstream): set from bytes that may contain NUL */
 	void setBytes(const char *p, int n) { m_s.assign(p, n); }

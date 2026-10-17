@@ -758,7 +758,6 @@ fn ini_load_matches_upstream() {
             let cname = CString::new(name.clone()).unwrap();
             cpp::ref_ini_add_file(cname.as_ptr(), data.as_ptr() as *const _, data.len() as i32);
         }
-        if std::env::var("INI_TRACE").is_ok() { eprintln!("case {case} {:?}", show(&data)); }
         let mut c = cpp_outcome(cpp::ref_ini_load, &name, with_xfer);
         if !with_xfer {
             c.crc = 0;

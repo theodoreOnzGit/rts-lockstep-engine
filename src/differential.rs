@@ -107,6 +107,11 @@ extern "C" {
     ) -> c_int;
     pub fn ref_ini_scan(op: c_int, token: *const c_char, out: *mut c_uint) -> c_int;
 
+    // GameText.cpp (the CSF loader)
+    pub fn ref_csf_load(data: *const c_char, len: c_int) -> c_int;
+    pub fn ref_csf_fetch(label: *const c_char, out: *mut c_ushort, cap: c_int, exists: *mut c_int) -> c_int;
+    pub fn ref_csf_prefix(prefix: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
+
     // BaseType.h (asm transcriptions)
     pub fn ref_fast_float2long_round(f: c_float) -> c_int;
     pub fn ref_fast_float_trunc(f: c_float) -> c_float;
