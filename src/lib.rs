@@ -21,6 +21,7 @@
 //! | [`common::xfer`] | `GameEngine/Include/Common/Xfer.h`, `Snapshot.h`, `Source/Common/System/Xfer.cpp` |
 //! | [`common::xfer_crc`] | `Common/XferCRC.h`, `XferDeepCRC.h`, `System/XferCRC.cpp` |
 //! | [`common::xfer_save`], [`common::xfer_load`] | `Common/XferSave.h`, `XferLoad.h`, `System/XferSave.cpp`, `XferLoad.cpp` |
+//! | [`formats::big`] | `Common/ArchiveFile.*`, `ArchiveFileSystem.*`, `GameEngineDevice/.../Win32BIGFile.*`, `Win32BIGFileSystem.*` |
 //! | [`ww::wwmath`] | `Libraries/Source/WWVegas/WWMath/wwmath.h`, `wwmath.cpp` |
 //! | [`ww::vector2`], [`ww::vector3`], [`ww::vector4`] | `WWMath/vector2.h`, `vector3.h`, `vector4.h` |
 //! | [`ww::matrix3d`] | `WWMath/matrix3d.h`, `matrix3d.cpp` |
@@ -35,6 +36,7 @@
 //! original x87 build (see `SCOPE.md` section 3).
 
 pub mod common;
+pub mod formats;
 pub mod ww;
 
 #[cfg(feature = "differential")]

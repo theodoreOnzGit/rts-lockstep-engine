@@ -11,7 +11,7 @@
 //! The RNG wrappers drive upstream's process-global seed arrays, so tests that
 //! use them must serialise (see [`GLOBAL_RNG_LOCK`]).
 
-use std::os::raw::{c_double, c_float, c_int, c_longlong, c_schar, c_short, c_uchar, c_uint, c_ushort};
+use std::os::raw::{c_char, c_double, c_float, c_int, c_longlong, c_schar, c_short, c_uchar, c_uint, c_ushort};
 
 /// Serialises tests that touch the C++ RNG globals.
 pub static GLOBAL_RNG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -56,10 +56,26 @@ extern "C" {
     // Xfer.cpp, XferCRC.cpp, XferSave.cpp, XferLoad.cpp (script interpreter)
     pub fn ref_xfer_run(
         kind: c_int,
-        path: *const std::os::raw::c_char,
+        path: *const c_char,
         script: *const c_uint,
         n: c_int,
         log: *mut c_uint,
+        cap: c_int,
+    ) -> c_int;
+
+    // ArchiveFile.cpp, ArchiveFileSystem.cpp, Win32BIGFile(System).cpp
+    pub fn ref_big_reset();
+    pub fn ref_big_add_local(name: *const c_char, data: *const c_char, len: c_int);
+    pub fn ref_big_load(name: *const c_char, overwrite: c_int) -> c_int;
+    pub fn ref_big_exists(name: *const c_char) -> c_int;
+    pub fn ref_big_archive_for(name: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
+    pub fn ref_big_open(name: *const c_char, out: *mut c_char, cap: c_int, streaming: c_int, size_out: *mut c_int) -> c_int;
+    pub fn ref_big_file_info(name: *const c_char) -> c_longlong;
+    pub fn ref_big_list(
+        current: *const c_char,
+        original: *const c_char,
+        search: *const c_char,
+        out: *mut c_char,
         cap: c_int,
     ) -> c_int;
 

@@ -1,8 +1,21 @@
 /* Shim for GameEngine/Include/Common/GameMemory.h, differential tests only.
-** XferSave.cpp allocates its XferBlockData from a memory pool. The pool glue
-** macros are replaced by plain new/delete, which changes no Xfer behaviour. */
+** XferSave.cpp (XferBlockData) and the file classes (File, RAMFile,
+** StreamingArchiveFile) allocate from memory pools. The pool glue macros are
+** replaced by plain new/delete, which changes no behaviour under test, with
+** one thing kept from the real allocator: every allocation through it is
+** ZERO-FILLED (GameMemory.cpp: DynamicMemoryAllocator::allocateBytesImplementation
+** and MemoryPool::allocateBlockImplementation both memset 0). Upstream code
+** depends on that: ArchiveFile's constructor never initialises m_file, and
+** attachFile() then closes it if it is not NULL. */
 #ifndef SHIM_GAMEMEMORY_H
 #define SHIM_GAMEMEMORY_H
+#include <new>
+#include <string.h>
+struct ShimZeroFill {};
+inline void *operator new(size_t n, ShimZeroFill) { void *p = ::operator new(n); memset(p, 0, n); return p; }
+inline void *operator new[](size_t n, ShimZeroFill) { void *p = ::operator new[](n); memset(p, 0, n); return p; }
+inline void operator delete(void *p, ShimZeroFill) { ::operator delete(p); }
+inline void operator delete[](void *p, ShimZeroFill) { ::operator delete[](p); }
 class MemoryPoolObject
 {
 public:
@@ -11,5 +24,8 @@ public:
 };
 #define MEMORY_POOL_GLUE_WITH_USERLOOKUP_CREATE(ARGCLASS, ARGPOOLNAME) public: virtual ~ARGCLASS();
 #define EMPTY_DTOR(CLASS) CLASS::~CLASS() {}
-#define newInstance(ARGCLASS) new ARGCLASS
+#define MEMORY_POOL_GLUE_ABC(ARGCLASS) protected: virtual ~ARGCLASS();
+#define newInstance(ARGCLASS) new(ShimZeroFill()) ARGCLASS
+#define NEW new(ShimZeroFill())
+#define MSGNEW(MSG) new(ShimZeroFill())
 #endif

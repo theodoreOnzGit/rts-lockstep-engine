@@ -28,6 +28,7 @@ Only a first batch of self-contained foundations exists:
 | `common::trig` | `GameEngine/Source/Common/System/Trig.cpp`, `Libraries/Include/Lib/trig.h`: the shipped `sinf`-based `Sin`/`Cos`/`Tan`/`ACos`/`ASin`, and the unused integer-table branch as `trig::table` |
 | `common::quick_trig` | `GameEngine/Include/Common/QuickTrig.h`, `GameEngine/Source/Common/System/QuickTrig.cpp` |
 | `common::xfer`, `xfer_crc`, `xfer_save`, `xfer_load` | `GameEngine/Source/Common/System/Xfer.cpp`, `XferCRC.cpp` (with `XferDeepCRC`), `XferSave.cpp`, `XferLoad.cpp` and their headers, `Snapshot.h`: the snapshot/version mechanism, blocks, typed xfers, the lockstep CRC; save/load on in-memory buffers (not `xferMapName`, `xferScienceType`/`Vec`, `xferKindOf`, `xferUpgradeMask`, which need engine name tables) |
+| `formats::big` | `.big` archives: `GameEngineDevice/Source/Win32Device/Common/Win32BIGFileSystem.cpp` (the parser), `Win32BIGFile.cpp`, `GameEngine/Source/Common/System/ArchiveFile.cpp`, `ArchiveFileSystem.cpp`, on in-memory byte buffers |
 | `ww::wwmath` | `Libraries/Source/WWVegas/WWMath/wwmath.h` (+ table init of `wwmath.cpp`) |
 | `ww::vector2`, `ww::vector3`, `ww::vector4` | `WWMath/vector2.h`, `vector3.h`, `vector4.h` (the subset `Matrix3D` uses) |
 | `ww::matrix3d` | `WWMath/matrix3d.h`, `matrix3d.cpp` (not `Get_Inverse`, the `Matrix3x3`/`Quaternion` setters, `Lerp`) |

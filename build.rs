@@ -103,6 +103,29 @@ mod differential {
             .file(sys.join("Snapshot.cpp"));
         xf.compile("upstream_xfer");
 
+        // The .big archive reader: ArchiveFile.cpp, ArchiveFileSystem.cpp,
+        // File.cpp, RAMFile.cpp, StreamingArchiveFile.cpp, Win32BIGFile.cpp
+        // and Win32BIGFileSystem.cpp unchanged, with archive_prelude.h
+        // force-included (MSVC names, _MAX_PATH; see the file).
+        let dev = up.join("GameEngineDevice");
+        let mut ar = cc::Build::new();
+        base(&mut ar);
+        ar.include(&shim)
+            .include(up.join("GameEngine/Include"))
+            .include(dev.join("Include"))
+            .include(up.join("Libraries/Include"))
+            .flag("-include")
+            .flag(shim.join("archive_prelude.h").to_str().expect("UTF-8 path"))
+            .file(dif.join("wrap_big.cpp"))
+            .file(sys.join("ArchiveFile.cpp"))
+            .file(sys.join("ArchiveFileSystem.cpp"))
+            .file(sys.join("File.cpp"))
+            .file(sys.join("RAMFile.cpp"))
+            .file(sys.join("StreamingArchiveFile.cpp"))
+            .file(dev.join("Source/Win32Device/Common/Win32BIGFile.cpp"))
+            .file(dev.join("Source/Win32Device/Common/Win32BIGFileSystem.cpp"));
+        ar.compile("upstream_big");
+
         // Lib/BaseType.h asm helpers (hand transcriptions, see the file).
         let mut bt = cc::Build::new();
         base(&mut bt);
@@ -127,6 +150,9 @@ mod differential {
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/System",
             "upstream/GeneralsMD/Code/GameEngine/Include/Common/QuickTrig.h",
             "upstream/GeneralsMD/Code/Libraries/Include/Lib/trig.h",
+            "upstream/GeneralsMD/Code/GameEngine/Include/Common",
+            "upstream/GeneralsMD/Code/GameEngineDevice/Source/Win32Device/Common",
+            "upstream/GeneralsMD/Code/GameEngineDevice/Include/Win32Device/Common",
             "upstream/GeneralsMD/Code/Libraries/Source/WWVegas/WWMath",
         ] {
             println!("cargo:rerun-if-changed={p}");
