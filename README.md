@@ -36,6 +36,10 @@ Only a first batch of self-contained foundations exists:
 | `ww::wwmath` | `Libraries/Source/WWVegas/WWMath/wwmath.h` (+ table init of `wwmath.cpp`) |
 | `ww::vector2`, `ww::vector3`, `ww::vector4` | `WWMath/vector2.h`, `vector3.h`, `vector4.h` (the subset `Matrix3D` uses) |
 | `ww::matrix3d` | `WWMath/matrix3d.h`, `matrix3d.cpp` (not `Get_Inverse`, the `Matrix3x3`/`Quaternion` setters, `Lerp`) |
+| `ww::quat` | `WWMath/quat.h`, `quat.cpp`: the `Quaternion` data and `Build_Matrix3D` only |
+| `ww::chunkio` | `WWLib/chunkio.h`, `chunkio.cpp`: `ChunkLoadClass` (chunks, micro-chunks, reads), with the file read through `GameFileClass` over `RAMFile` (the game's path for W3D files in `.big` archives); not the writer (`ChunkSaveClass`) |
+| `ww::realcrc` | `WWLib/realcrc.h`, `realcrc.cpp`: `CRC_Memory` |
+| `formats::w3d` | W3D models, parsed into plain structs (no rendering): `WW3D2/w3d_file.h` and `w3d_obsolete.h` (all chunk ids, flags and the 84 file structs); hierarchies (`htree.cpp`, `pivot.cpp`); animations (`hrawanim.cpp`, `hcanim.cpp`, `motchan.cpp`: raw, time-coded, adaptive-delta and bit channels); meshes (`MeshModelClass::Load_W3D` of `meshmdlio.cpp`, with the parts of `meshgeometry.cpp`, `meshmatdesc.cpp`, `vertmaterial.cpp`, `texture.cpp`, `aabtree.cpp`, `w3d_util.cpp`, `shader.h` and `dx8wrapper.h` it calls). Not the legacy material chunks (`MATERIALS3`, multi-material per-triangle materials), the processing after the chunks are read (`install_materials`, `post_process`, generated AABTrees), nor the asset manager's file loop (`Load_3D_Assets`) |
 
 **Proposal, not yet approved:** `XferCRC`/`XferDeepCRC` carry a NaN guard
 (`common::xfer_crc::nan_guard`): a NaN `Real` xfered into a CRC panics in debug
@@ -76,12 +80,24 @@ cargo test --release --features differential
 - `upstream/` is EA's repository as a git submodule. Its files are never
   edited. `build.rs` compiles the needed `.cpp` files with the `cc` crate,
   only when the `differential` feature is on (off by default, so normal and
-  wasm builds need no C++ compiler). It needs an x86_64 host with g++ or clang++.
+  wasm builds need no C++ compiler). It needs an x86_64 host with g++ and,
+  for the W3D files, clang++ (their headers use MSVC template code that
+  g++ rejects; clang accepts it with `-fms-extensions
+  -fdelayed-template-parsing`).
 - One exception to "unchanged": `INI.cpp` is written in MSVC 6/7's dialect
   in two places that g++ rejects and no shim can supply (a loop variable
   used after its `for`, and a `void*` bound to `const void*&`). `build.rs`
   compiles a copy with exactly those two mechanical edits, each asserted to
-  match once, and documents them.
+  match once, and documents them. The W3D build does the same for the same
+  MSVC loop-scope rule in `motchan.cpp`, `htree.cpp`, `meshmdlio.cpp` and
+  `meshmatdesc.cpp`, a missing `template<>` in `multilist.cpp`, and adds
+  `this->` to the dependent-base calls of `Vector.H`; `meshmatdesc.cpp`'s
+  copy also renames `Is_Empty` so the test can snapshot the mesh at the
+  point where its loading ends. W3D functions that live in files which
+  cannot compile without Direct3D or the collision system
+  (`meshgeometry.cpp`, `vertmaterial.cpp`, `texture.cpp`, `aabtree.cpp`, the
+  x87 `DX8Wrapper::Convert_Color`) are transcribed into
+  `differential/wrap_w3d_mesh.cpp`, labelled as such.
 - `differential/shim/` holds minimal stand-ins for headers that cannot be
   compiled outside MSVC/Windows (each says what it replaces and why;
   `differential/shim_ini/` adds, for the INI build only, declaration-only
@@ -95,7 +111,10 @@ cargo test --release --features differential
   is the same IEEE single precision the Rust uses.
 - Inputs: edge cases (zeros, signs, subnormals, `MIN`/`MAX`, inf, NaN,
   rounding boundaries, `lo > hi`) plus at least 100,000 seeded random inputs
-  per function; for the RNGs, sequences of 1,000,000 draws per seed. Outputs
+  per function; for the RNGs, sequences of 1,000,000 draws per seed; for
+  the file-format readers, 1,500 to 30,000 generated files per reader
+  (each test prints its counts, including the files left out of the C++
+  comparison because upstream is undefined on them). Outputs
   are compared as raw bits. The one exception is a NaN on both sides with a
   different sign or payload, which is counted and reported but not failed,
   because Rust leaves NaN bits unspecified (see `tests/support/mod.rs`).

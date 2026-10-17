@@ -115,6 +115,32 @@ extern "C" {
     // DataChunk.cpp, NameKeyGenerator.cpp (script interpreter)
     pub fn ref_chunk_run(data: *const c_char, len: c_int, log: *mut c_uchar, cap: c_int, log_len: *mut c_int, code: *mut c_uint) -> c_int;
 
+    // WWLib/chunkio.cpp and the WW3D2 loaders (wrap_w3d.cpp)
+    pub fn ref_chunkio_run(
+        data: *const c_char,
+        len: c_int,
+        script: *const c_uchar,
+        slen: c_int,
+        log: *mut c_uchar,
+        cap: c_int,
+        log_len: *mut c_int,
+    ) -> c_int;
+    pub fn ref_w3d_layouts(log: *mut c_uchar, cap: c_int, log_len: *mut c_int) -> c_int;
+    pub fn ref_w3d_parse(index: c_int, bytes: *const c_uchar, log: *mut c_uchar, cap: c_int, log_len: *mut c_int) -> c_int;
+    pub fn ref_w3d_reset_htrees();
+    pub fn ref_w3d_add_htree(name16: *const c_char, num_pivots: c_uint) -> c_int;
+    pub fn ref_w3d_load(data: *const c_char, len: c_int, kind: c_int, log: *mut c_uchar, cap: c_int, log_len: *mut c_int) -> c_int;
+    pub fn ref_w3d_load_mesh(
+        data: *const c_char,
+        len: c_int,
+        prelit_mode: c_int,
+        log: *mut c_uchar,
+        cap: c_int,
+        log_len: *mut c_int,
+    ) -> c_int;
+    pub fn ref_crc_memory(data: *const c_uchar, len: c_int, crc: c_uint) -> c_uint;
+    pub fn ref_dx8_convert_color(rgba: *const c_float) -> c_uint;
+
     // BaseType.h (asm transcriptions)
     pub fn ref_fast_float2long_round(f: c_float) -> c_int;
     pub fn ref_fast_float_trunc(f: c_float) -> c_float;
