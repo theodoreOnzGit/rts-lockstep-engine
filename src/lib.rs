@@ -28,6 +28,7 @@
 //! original x87 build (see `SCOPE.md` section 3).
 
 pub mod common;
+pub mod ww;
 
 #[cfg(feature = "differential")]
 #[doc(hidden)]
