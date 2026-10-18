@@ -1652,6 +1652,30 @@ mod differential {
                 println!("cargo:rerun-if-changed={p}");
             }
         }
+        // ExperienceTracker (differential/wrap_experience_tracker.cpp):
+        // ExperienceTracker.cpp #included by the wrapper, unchanged, on
+        // differential/shim_experience (Object, ThingTemplate, GameLogic,
+        // renamed ExpTrack*). Linked ahead of upstream_xfer, whose XferSave
+        // and XferLoad it calls.
+        {
+            let shim_ex = dif.join("shim_experience");
+            let mut ex = cc::Build::new();
+            base(&mut ex);
+            ex.include(&shim_ex)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .file(dif.join("wrap_experience_tracker.cpp"));
+            ex.compile("upstream_experience_tracker");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/ExperienceTracker.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/ExperienceTracker.h",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
         // --- end p1w6-trackers ---
 
         // The Xfer family: Xfer.cpp (via wrap_xfer.cpp, after matrix3d.h),

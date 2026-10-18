@@ -868,4 +868,19 @@ extern "C" {
         cap: c_int,
     ) -> c_int;
 }
+extern "C" {
+    // ExperienceTracker.cpp (wrap_experience_tracker.cpp): a program of tracker operations on up to
+    // four objects (tests/differential_experience_tracker.rs documents the encoding).
+    pub fn ref_experience_run(
+        n: c_int,
+        spec: *const c_int,
+        ops: *const c_int,
+        n_ops: c_int,
+        blob: *const c_uchar,
+        blob_len: c_int,
+        tmp_path: *const c_char,
+        out: *mut c_uint,
+        cap: c_int,
+    ) -> c_int;
+}
 // --- end p1w6-trackers ---
