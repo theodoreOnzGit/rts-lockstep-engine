@@ -1081,3 +1081,23 @@ against the unchanged `Science.cpp`, `RankInfo.cpp`, `INI.cpp`, `Xfer.cpp`.
 `addRootSciences` and is `Undefined::ScienceCycle`; a failed `Science` block stays in the
 store (with `SCIENCE_INVALID`), a failed new `Rank` block is not added.
 <!-- --- end p1w2-science --- -->
+
+<!-- --- p1w3-playertemplate --- -->
+## Wave 3: PlayerTemplate (`p1w3-playertemplate`)
+
+**Translated:** `common::player_template` (`PlayerTemplate`, `PlayerTemplateStore`, the
+`PlayerTemplate` block, `parseStartMoney`, `parseProductionCostChange`,
+`parseProductionTimeChange`, `parseProductionVeterancyLevel`). Verified by
+`tests/differential_player_template.rs` against the unchanged `PlayerTemplate.cpp`, `INI.cpp`,
+`Science.cpp`, `Money.cpp`, `Handicap.cpp`.
+
+**Moved to layer 7 (take a `Player` or an `Object`):** none. `PlayerTemplate.cpp` includes
+`Common/Player.h` and does not use it; `Player` reads the getters.
+
+**Choices:** the five image getters return the names (`TheMappedImageCollection` is the client);
+`StartMoney`'s deposit drops its cash sound and `recordIncome()` (`ThePlayerList` does not exist
+yet when the templates are read, see the module docs); `findPlayerTemplate`'s fifteen
+`static NameKeyType`s are kept in the store, looked up on the first call and never again, so one
+store models the process; a block named like one of the old maps' twelve sub-factions updates the
+base faction's template and renames it to the name as written.
+<!-- --- end p1w3-playertemplate --- -->

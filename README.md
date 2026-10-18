@@ -80,6 +80,9 @@ the layer order of [`docs/phase1-porting-graph.md`](docs/phase1-porting-graph.md
 | `common::special_power` | `Include/Common/SpecialPower.h`, `Source/Common/RTS/SpecialPower.cpp`, `Source/Common/INI/INISpecialPower.cpp`: `SpecialPowerTemplate` (reload time, required science, timers, radius, flags, two sound names, academy type) with its `Overridable` chain (getters read the final override; `getAcademyClassificationType` reads the head, as upstream), `SpecialPowerStore` (lookup by name, id and index; `reset` removing overrides; the `SpecialPower` INI block in `Overwrite` and `CREATE_OVERRIDES` loads) and the `SPECIALPOWERMASK` helper functions. `RequiredScience` takes a function saying which name keys are sciences, until `Science` is translated. Left out for layers 7/8: `canUseSpecialPower(Object*, ...)`. A template copied from a `DefaultSpecialPower` that has an override chain is an error (upstream shares the pointer and frees it at `reset`) (Phase 1 layer 4) |
 | `common::academy_classification`, `common::audio_event_name` | `AcademyClassificationType` and its names (`Include/Common/AcademyStats.h`, `Source/Common/RTS/AcademyStats.cpp`; the rest of that file is layer 7), and the name of an `AudioEventRTS` as `INI::parseAudioEventRTS` sets it (`NoSound` changes nothing; the client resolves the name) (Phase 1 layer 4) |
 <!-- --- end p1w2-upgrade --- -->
+<!-- --- p1w3-playertemplate --- -->
+| `common::player_template` | `Include/Common/PlayerTemplate.h`, `Source/Common/RTS/PlayerTemplate.cpp`: `PlayerTemplate` (the 45 fields of the `PlayerTemplate` block: sides, display name, `StartMoney` through `Money::init`+`deposit`, colour, starting building and ten units, production cost/time/veterancy maps keyed by name key, intrinsic sciences checked against the `ScienceStore`, command sets, shortcut bar, screens, music, medallions; the default `Handicap`), `PlayerTemplateStore` (`findPlayerTemplate` with the old maps' twelve sub-faction names mapped to their base faction and its fifteen function-static name keys, looked up once and kept; `getTemplateNumByName`, `getAllSideStrings`; `init()` clears, `reset()` keeps) and the `PlayerTemplate` INI block (a name seen before, or mapped from an old name, is updated in place and renamed). Images, sounds and music stay names (cut points). No method takes a `Player` or an `Object`. The cash sound and income record of `StartMoney`'s deposit are dropped (no player list exists then) (Phase 1 layer 4) |
+<!-- --- end p1w3-playertemplate --- -->
 
 **Approved by the owner (2026-10-17):** `XferCRC`/`XferDeepCRC` carry a NaN guard
 (`common::xfer_crc::nan_guard`): a NaN `Real` xfered into a CRC panics in debug
@@ -203,6 +206,21 @@ cargo test --release --features differential
   field, a `calcTimeToBuild` float-to-int out of range, and a template copied
   from a `DefaultSpecialPower` that has an override chain.
 <!-- --- end p1w2-upgrade --- -->
+<!-- --- p1w3-playertemplate --- -->
+- `differential/wrap_playertemplate.cpp` runs the real `PlayerTemplate.cpp` behind the real
+  `INI::load`, `NameKeyGenerator`, `Money::deposit` (from the Money build), `Handicap` and the
+  real `Science.cpp`, in the Science build's setup plus `differential/shim_playertemplate/`
+  (a prelude adding three typedefs of the real `STLTypedefs.h`, and the INI build's one-lookup
+  `Image.h`). It defines no symbol another fixture defines: `ThePlayerTemplateStore` and
+  `INI::parsePlayerTemplateDefinition` (now `WEAK` in `wrap_ini.cpp`) are its own, and it
+  installs the real Science lookup through `ref_science_lookup_hook` in its reset function. The
+  one `PlayerTemplateStore` lives for the whole test, `init()` between sessions, because
+  `findPlayerTemplate`'s fifteen function statics are initialised once per process. Results
+  (`tests/differential_player_template.rs`, 2026-10-18, upstream `0a05454d`): 3,000 sessions,
+  8,317 loads, 10,181 dumps of every field of the store, 852,334 lookups, the fifteen statics:
+  **no mismatch**; every comparison also catches its planted bug. Left out of the C++
+  comparison as undefined upstream (counted by the test): numbers out of range of `Int`.
+<!-- --- end p1w3-playertemplate --- -->
 - The C++ is compiled with `-msse2 -mfpmath=sse -ffp-contract=off
   -fno-fast-math -fwrapv -fno-strict-aliasing`, so that its `float` arithmetic
   is the same IEEE single precision the Rust uses.
