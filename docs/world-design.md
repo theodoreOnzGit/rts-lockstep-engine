@@ -260,3 +260,14 @@ where upstream registers an object no lookup can find.
 3. **Terrain ownership.** `world.terrain` is a field, checked out by `take`
    for its own update. If you prefer `Game { world, terrain }`, only the
    field moves.
+
+### Decisions (lead, 2026-10-18)
+
+1. **No deferred-command queue by default.** Upstream makes these calls
+   synchronously, so deferring them would change the order of effects, which
+   is simulation state. When layer 10 meets the first real case, the fix must
+   keep the synchronous order (for example by routing the call to the
+   checked-out body that the caller already holds). A queue is acceptable only
+   if it is shown to produce the same order of effects.
+2. **Yes:** `ObjectCreated` gains `object_id` when `Object::new` lands.
+3. **Keep `world.terrain`** as a field, checked out for its own update.
