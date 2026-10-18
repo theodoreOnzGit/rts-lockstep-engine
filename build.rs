@@ -751,6 +751,19 @@ mod differential {
                 .file(dif.join("wrap_energy.cpp"));
             en.compile("upstream_energy");
 
+            // ScoreKeeper.cpp, unchanged (differential/wrap_score_keeper.cpp), on shim_score:
+            // stand-ins for Player, ThingTemplate, ThingFactory, Object and TheGameLogic.
+            let shim_score = dif.join("shim_score");
+            let mut sk = cc::Build::new();
+            base(&mut sk);
+            sk.include(&shim_score)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .file(dif.join("wrap_score_keeper.cpp"));
+            sk.compile("upstream_score_keeper");
         }
         // --- end p1w6-energy ---
         // --- p1w1-geometry ---

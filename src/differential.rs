@@ -861,5 +861,12 @@ extern "C" {
     pub fn ref_energy_save(path: *const c_char) -> c_int;
     pub fn ref_energy_load(path: *const c_char, out: *mut c_uint);
 
+    // ScoreKeeper.cpp, unchanged (wrap_score_keeper.cpp): a fixed table of 12 templates, one
+    // ScoreKeeper, its readout (27 values with the status on load), and its xfer
+    pub fn ref_score_setup(names: *const c_char, groups: *const c_int, known: *const c_int, kind_bits: *const c_int);
+    pub fn ref_score_fresh();
+    pub fn ref_score_op(op: c_int, t: c_int, c: c_int, uc: c_int, scoring: c_int, amount: c_int, out: *mut c_uint);
+    pub fn ref_score_save(path: *const c_char) -> c_int;
+    pub fn ref_score_load(path: *const c_char, out: *mut c_uint);
 }
 // --- end p1w6-energy ---

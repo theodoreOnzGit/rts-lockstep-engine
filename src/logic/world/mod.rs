@@ -30,6 +30,7 @@ pub mod team;
 pub mod update_body;
 // --- p1w6-energy ---
 pub mod energy;
+pub mod score_keeper;
 // --- end p1w6-energy ---
 
 pub use game_logic::{Hook, World, WorldError};
