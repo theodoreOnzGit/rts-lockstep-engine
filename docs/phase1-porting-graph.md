@@ -738,6 +738,42 @@ Findings (each is a test):
   shipped game, and in the translation.
 <!-- --- end p1w2-globaldata --- -->
 
+## Where translation stopped (2026-10-18, paused by the owner)
+
+Phase 1 translation was paused after wave 6, at `phase1-gamelogic` commit
+`f8f9b94` (this note is the commit after it). Layers 1 to 8 are merged, minus
+the layer-7 managers and the weapons named below. Gates on that commit:
+`cargo build --release`; `cargo test --release` (505 passed, 0 failed);
+`cargo test --release --features differential` (694 passed, 0 failed);
+`cargo clippy --release --all-targets --features differential` (no warnings);
+`cargo build --release --target wasm32-unknown-unknown`.
+
+**Open defect, fix first on resuming.** A call from a module into an object
+whose running module is checked out is *skipped and recorded* (`p1w6-object`;
+see "Object (layer 8)" in `docs/world-design.md`). Upstream makes that call at
+once, so the skip can change behaviour and breaks the rule that upstream's
+synchronous call order is kept unless shown identical. The fix makes the
+re-entrant call run at once.
+
+**Known differences, recorded, not settled:** an object queued for
+destruction twice is deleted once (upstream behaviour is undefined); the id
+table entry is made earlier than upstream; `OFF_MAP` is never set, since
+objects do not yet know the map extent.
+
+**Next, wave 7:** `Weapon` and `WeaponSet`, `Player` and `PlayerList`, `Team`,
+`ResourceGatheringManager`, `TunnelTracker`, `CaveSystem`, `ActionManager`,
+`BuildAssistant`, `ObjectCreationList`; with them the parts of `Object` left
+untranslated (weapon forwarders, `updateObjValuesFromMapProperties`, the
+command-button and `canProduceUpgrade` checks, bone positions,
+`adjustModelConditionForWeaponStatus`). Then layer 9 (197 module units), then
+10 to 12.
+
+**Other follow-ups:** convert `&mut dyn Xfer` to an enum; decide whether
+partial-load field semantics must match the C++; check whether any shipped
+map uses the water grid in logic. The branch `p1w6-object-wip` on GitHub is a
+stale backup of the Object agent's unfinished work and can be deleted (the
+session's push token was refused, HTTP 403).
+
 ## Differential-test routes, by rule
 
 The `differential route` column of the unit table is derived from the
