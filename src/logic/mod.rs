@@ -26,3 +26,7 @@ pub mod weapon_bonus;
 // --- p1w2-science ---
 pub mod rank_info;
 // --- end p1w2-science ---
+// --- p1w3-thing ---
+pub mod object_iter;
+pub mod thing;
+// --- end p1w3-thing ---
