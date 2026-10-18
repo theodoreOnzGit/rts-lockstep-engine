@@ -290,6 +290,27 @@ is never produced; `FASTER_GCO` is defined, so `CellOutwardIterator` is dead.
   snapshots, 0 mismatches; a planted stable-sort scheduler is caught on 29,792
   of 45,446 words. Method, stand-ins and what is *not* upstream text are in the
   test's and the wrapper's headers.
+- `tests/differential_partition.rs`: the whole of `PartitionManager.cpp`
+  compiled under clang++ (renamed classes, an `Object` stand-in, upstream's own
+  `Geometry`, `DiscreteCircle`, `BitFlags` and `SimpleObjectIterator`; the file is
+  never edited, `build.rs` makes mechanical edits into `OUT_DIR`). Both sides run
+  the same random worlds and a 32-operation query/mutation program. Result
+  (2026-10-18, 5000 cases): 436,339 operations, 33,827,114 words compared
+  (result lists in order, distances bitwise, shroud states, CRC, state dumps),
+  0 mismatches; 16,697 operations withheld because upstream's behaviour is
+  undefined there (see below). Planted bugs, each run at 300 cases (3000 where
+  noted) and each caught, then reverted: prepend changed in a cell list, ring
+  table order reversed, `addLooker` min removed, contact list oldest first,
+  `calcMaxCoi` by sphere formula, ping-pong sign flipped, one CRC coordinate
+  skipped, a circle row shortened, `PlayerAffiliation` with the wrong flag,
+  a BFS neighbour dropped (3000 cases; first missed at 300, so the generator
+  gave the nearest-group query three slots), `>=` for `>` in the value test
+  (3000 cases, same fix). Not exercised as a planted bug: the
+  `iterate_all_objects` insertion order (its order is compared in every case).
+- Undefined upstream behaviour is withheld, not copied: the breadth-first walk
+  off the last row, `restoreFoggedCells` before any store (division by zero),
+  null attacker, and uninitialised collision location/normal (the C++ side is
+  built with `-ftrivial-auto-var-init=zero`).
 - Not compiled from upstream (hand-written stand-in, Rust unit tests): the
   hook order of `destroyObject`.
 

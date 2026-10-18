@@ -1128,7 +1128,7 @@ fn gen_case(seed: u64) -> Case {
             }
             71..=73 => Op::ObjShroud { id, player: g.below(players as u32) as i32 },
             74 => Op::MostValuable { player: g.below(players as u32) as i32, types: g.below(16) as i32, vt: 1 + g.below(2) as i32 },
-            75 => Op::NearestGroup {
+            75 | 81 | 82 => Op::NearestGroup {
                 player: g.below(players as u32) as i32,
                 types: g.below(16) as i32,
                 vt: 1 + g.below(2) as i32,
@@ -1142,7 +1142,7 @@ fn gen_case(seed: u64) -> Case {
             76 => Op::MapOps { kind: g.below(5) as i32, player: g.below(players as u32) as i32 },
             77 => Op::StoreRestore(g.below(4) as i32),
             78..=80 => Op::Crc,
-            81..=85 => Op::Dump,
+            83..=85 => Op::Dump,
             86..=92 => {
                 let p = pos(g);
                 Op::FindPosition {

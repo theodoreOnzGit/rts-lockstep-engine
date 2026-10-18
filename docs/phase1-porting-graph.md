@@ -500,6 +500,9 @@ are a context argument (`&mut World` or a frame number) instead of a global.
 <!-- --- p1w4-thingtemplate --- -->
 | 5 (wave 4, `p1w4-thingtemplate`) | `ThingTemplate` (`common::thing_template`: the `Object` and `ObjectReskin` fields, override behaviour, build variations, module lists through `ModuleFactory`), `ThingFactory` (`common::thing_factory`: store, lookup, `newObject`'s template side), `ProductionPrerequisite` data, `WeaponTemplateSet`. Cut points: build cost/time and the build facility (`Player`), `getBuildable` script override, `Locomotor`/`friend_getAIModuleInfo` (layer 9), `newObject` after the template choice (layer 8), image resolution | `tests/differential_thing_template.rs` |
 <!-- --- end p1w4-thingtemplate --- -->
+<!-- --- p1w6-partition --- -->
+| 8 (wave 6, `p1w6-partition`) | `PartitionManager.h/.cpp` whole (`logic::world::partition`, `world.partition`): grid, `PartitionData` and COI lists, `getClosestObjects` ring table, `iterate*` with the merge sort, the 33 filters, shroud counters and the unlook queue, threat and value maps, store/restore fog, line of sight, `findPositionAround`, contact list, xfer. Cut points: `TheDisplay`, `TheGhostObjectManager` (events), `Object`/terrain/players/pathfinder (host traits) | `tests/differential_partition.rs` (whole file under clang++) |
+<!-- --- end p1w6-partition --- -->
 
 Layer 4, not translated: `RankInfo` (`GameLogic/System/RankInfo.cpp`).
 It needs `Overridable`/`Override` (layer 1, open), `UnicodeString` (layer 2,
