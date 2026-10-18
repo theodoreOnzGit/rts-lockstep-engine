@@ -29,6 +29,7 @@ pub mod sleepy;
 pub mod team;
 pub mod update_body;
 // --- p1w6-energy ---
+pub mod academy_stats;
 pub mod energy;
 pub mod mission_stats;
 pub mod score_keeper;

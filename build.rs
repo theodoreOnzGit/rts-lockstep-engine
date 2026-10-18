@@ -777,6 +777,21 @@ mod differential {
                 .include(ww.join("WWLib"))
                 .file(dif.join("wrap_mission_stats.cpp"));
             ms.compile("upstream_mission_stats");
+
+            // AcademyStats.cpp, unchanged (differential/wrap_academy_stats.cpp), on shim_academy:
+            // stand-ins for the player and its neighbours, the templates, the client text and the
+            // global data. Its Energy.h is a stand-in (the real Energy is the energy wrapper's).
+            let shim_academy = dif.join("shim_academy");
+            let mut ac = cc::Build::new();
+            base(&mut ac);
+            ac.include(&shim_academy)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .file(dif.join("wrap_academy_stats.cpp"));
+            ac.compile("upstream_academy_stats");
         }
         // --- end p1w6-energy ---
         // --- p1w1-geometry ---

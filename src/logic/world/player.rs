@@ -36,6 +36,7 @@
 //! - Everything else `Player` and `PlayerList` do (relationships, energy,
 //!   money, the sides list, `xfer`) is layer 7.
 
+use super::academy_stats::AcademyStats;
 use super::energy::Energy;
 use super::mission_stats::MissionStats;
 use super::score_keeper::ScoreKeeper;
@@ -58,6 +59,8 @@ pub struct Player {
     pub score_keeper: ScoreKeeper,
     /// `m_missionStats` (`MissionStats`).
     pub mission_stats: MissionStats,
+    /// `m_academyStats` (`AcademyStats`): `Player::init` calls `init(this)`.
+    pub academy_stats: AcademyStats,
     // --- end p1w6-energy ---
 }
 
@@ -71,6 +74,7 @@ impl Player {
             energy: Energy::new(),
             score_keeper: ScoreKeeper::new(),
             mission_stats: MissionStats::new(),
+            academy_stats: AcademyStats::default(),
             // --- end p1w6-energy ---
         }
     }
