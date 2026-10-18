@@ -51,6 +51,7 @@ pub mod score_keeper;
 // --- end p1w6-energy ---
 // --- p1w7-sonnet ---
 pub mod cave_system;
+pub mod resource_gathering_manager;
 pub mod tunnel_tracker;
 // --- end p1w7-sonnet ---
 

@@ -1122,6 +1122,29 @@ mod differential {
                 println!("cargo:rerun-if-changed={p}");
             }
         }
+        // ResourceGatheringManager.cpp, unchanged (differential/wrap_resource_gathering.cpp), on shim_resource:
+        // stand-ins for the objects of a test world (AI, supply-truck interface, dock interface, modules by
+        // name), TheGameLogic, ActionManager::canTransferSuppliesAt and the partition manager's distance.
+        {
+            let shim_resource = dif.join("shim_resource");
+            let mut rg = cc::Build::new();
+            base(&mut rg);
+            rg.include(&shim_resource)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .file(dif.join("wrap_resource_gathering.cpp"));
+            rg.compile("upstream_resource_gathering");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/Common/RTS/ResourceGatheringManager.cpp",
+                "differential/wrap_resource_gathering.cpp",
+                "differential/shim_resource",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
         // --- end p1w7-sonnet ---
         // --- p1w1-geometry ---
         // GeometryInfo: Geometry.cpp unchanged (differential/wrap_geometry.cpp),

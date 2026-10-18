@@ -239,6 +239,12 @@ pub struct ObjectCuts {
     /// is a defect in a module that called into the world without lending
     /// itself: a tripwire, empty in every correct run.
     pub reentrant_skips: Vec<(ModuleHandle, ModuleCall)>,
+    // --- p1w7-sonnet ---
+    /// `TheActionManager->canTransferSuppliesAt(obj, transferObj)`, as the set of
+    /// `(obj, transferObj)` pairs for which it is true, until `ActionManager` is translated
+    /// (`ResourceGatheringManager` asks).
+    pub can_transfer_supplies: BTreeSet<(ObjectId, ObjectId)>,
+    // --- end p1w7-sonnet ---
     /// The module calls that ran **at once, inside a call to the same
     /// module** (the body lent itself, see `World::lend_body`): upstream's
     /// plain recursion, counted so a test can show that it was exercised.
@@ -320,6 +326,7 @@ impl Default for ObjectCuts {
             trace: None,
             reentrant_skips: Vec::new(),
             reentrant_delivered: 0,
+            can_transfer_supplies: BTreeSet::new(),
             module_stack: Vec::new(),
             globals: ObjectGlobals::default(),
             neutral_default_team: 0,
@@ -702,3 +709,13 @@ impl World {
         }
     }
 }
+
+// --- p1w7-sonnet ---
+impl World {
+    /// `TheActionManager->canTransferSuppliesAt(obj, transferObj)`: a table of the world (see
+    /// [`ObjectCuts::can_transfer_supplies`]).
+    pub fn can_transfer_supplies_at(&self, obj: ObjectId, transfer_obj: ObjectId) -> bool {
+        self.cuts.can_transfer_supplies.contains(&(obj, transfer_obj))
+    }
+}
+// --- end p1w7-sonnet ---

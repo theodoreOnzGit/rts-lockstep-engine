@@ -256,6 +256,15 @@ pub enum ModuleCall {
     /// `CountermeasuresBehaviorInterface::calculateCountermeasureToDivertTo(victim)`;
     /// replies [`ModuleReply::Id`].
     CalculateCountermeasureToDivertTo { victim: ObjectId },
+    // --- p1w7-sonnet ---
+    /// `DockUpdateInterface::isClearToApproach(docker)`; replies [`ModuleReply::Bool`].
+    IsClearToApproach { docker: ObjectId },
+    /// `SupplyTruckAIInterface::getPreferredDockID()`; replies [`ModuleReply::Id`]
+    /// (unhandled: the AI is not a supply truck's, upstream's `NULL` interface).
+    GetSupplyTruckPreferredDockId,
+    /// `SupplyTruckAIInterface::getWarehouseScanDistance()`; replies [`ModuleReply::Real`].
+    GetSupplyTruckWarehouseScanDistance,
+    // --- end p1w7-sonnet ---
 }
 
 /// What a module answers to a [`ModuleCall`].

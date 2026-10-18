@@ -1039,5 +1039,11 @@ extern "C" {
     // operation observes. Returns the length written, or minus the length needed if `cap` is
     // too small. The words of a program are documented in tests/differential_tunnel_tracker.rs.
     pub fn ref_tunnel_run(prog: *const c_uint, n_prog: c_int, out: *mut c_char, cap: c_int) -> c_int;
+
+    // ResourceGatheringManager.cpp, unchanged (wrap_resource_gathering.cpp): a program of operations on a
+    // world of 8 objects and one manager; the text lines each operation observes. Returns the length written,
+    // or minus the length needed if `cap` is too small. The words are documented in
+    // tests/differential_resource_gathering.rs.
+    pub fn ref_resource_run(prog: *const c_uint, n_prog: c_int, out: *mut c_char, cap: c_int) -> c_int;
 }
 // --- end p1w7-sonnet ---

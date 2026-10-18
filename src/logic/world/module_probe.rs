@@ -77,6 +77,16 @@ pub struct ProbeAnswers {
     pub countermeasure: ObjectId,
     /// A collide call sets `OBJECT_STATUS_NO_COLLISIONS` on the module's object.
     pub collide_sets_no_collisions: bool,
+    // --- p1w7-sonnet ---
+    /// `isClearToApproach`.
+    pub clear_to_approach: bool,
+    /// The AI is a supply truck's (`getSupplyTruckAIInterface()` is not `NULL`).
+    pub supply_truck: bool,
+    /// `getPreferredDockID`.
+    pub preferred_dock: ObjectId,
+    /// `getWarehouseScanDistance`.
+    pub scan_distance: f32,
+    // --- end p1w7-sonnet ---
 }
 
 /// The scripted module. See the module docs.
@@ -279,6 +289,17 @@ impl ProbeModule {
                     ModuleReply::Unhandled
                 }
             }
+            // --- p1w7-sonnet ---
+            ModuleCall::IsClearToApproach { .. } => ModuleReply::Bool(self.answers.clear_to_approach),
+            ModuleCall::GetSupplyTruckPreferredDockId => {
+                if self.answers.supply_truck {
+                    ModuleReply::Id(self.answers.preferred_dock)
+                } else {
+                    ModuleReply::Unhandled
+                }
+            }
+            ModuleCall::GetSupplyTruckWarehouseScanDistance => ModuleReply::Real(self.answers.scan_distance),
+            // --- end p1w7-sonnet ---
             // ---- the ones with an effect ----
             ModuleCall::OnCollide { .. } => {
                 if self.answers.collide_sets_no_collisions {

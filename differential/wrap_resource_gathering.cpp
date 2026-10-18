@@ -34,6 +34,7 @@
 #include <vector>
 #include <list>
 #include <algorithm>
+#include "PreRTS.h"
 #include "Common/Xfer.h"
 #include "Common/XferSave.h"
 #include "Common/XferLoad.h"
