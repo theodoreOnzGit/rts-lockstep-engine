@@ -27,13 +27,17 @@
 //!   handle a call answers [`ModuleReply::Unhandled`], which is upstream's
 //!   empty virtual (`onDelete`, `onCapture`, ... do nothing in the base class).
 //! - **The body is checked out while it runs**, as for updates
-//!   (`docs/world-design.md`, "Re-entrancy"). A call that reaches a module
-//!   whose body is already running (the module that called into the object
-//!   calls back into itself through the object: upstream allows it because it
-//!   is a plain recursive call) is **not delivered**; it is recorded in
-//!   [`World::cuts`](crate::logic::world::World::cuts)`.reentrant_skips` so
-//!   that a test or the layer-9 translator of the first real case sees it.
-//!   `docs/world-design.md` decision 1 governs the fix when one is needed.
+//!   (`docs/world-design.md`, "Re-entrancy"), and **lends itself** to its
+//!   slot around every call that can reach its own object
+//!   ([`World::lend_body`](crate::logic::world::game_logic::World::lend_body)).
+//!   A call that reaches a module whose body is running (the module calls back
+//!   into the object, which reaches the module again: upstream allows it
+//!   because it is a plain recursive call) therefore **runs at once**, inside
+//!   the outer call, on the live state, in upstream's order. A module that
+//!   does not lend itself leaves its call undelivered; that is recorded in
+//!   [`World::cuts`](crate::logic::world::World::cuts)`.reentrant_skips` as a
+//!   tripwire (it must stay empty), and `reentrant_delivered` counts the calls
+//!   that did run re-entrantly.
 //!
 //! `DamageInfo` crosses by value and comes back in the reply: the module
 //! writes `out` (`actualDamageDealt`, `noEffect`...) and the caller reads it.

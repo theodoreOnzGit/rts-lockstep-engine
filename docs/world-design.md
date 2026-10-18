@@ -345,7 +345,10 @@ where upstream registers an object no lookup can find.
 
 ## Open questions for the lead
 
-1. **Same-module re-entrancy.** `with_body` on a module that is running
+1. ~~**Same-module re-entrancy.** `with_body` on a module that is running
+   returns `None`.~~ **CORRECTED 2026-10-18** — see "Object (layer 8)": a module call to a running module now
+   runs at once through `World::lend_body`; `with_body` itself still returns `None` for a body that is out
+   and has not lent itself (the update loop never meets that). Original text: `with_body` on a module that is running
    returns `None`. Upstream allows `AIUpdate::update` to cause a call back into
    its own `AIUpdate` interface (e.g. via another object's group command).
    Proposal: such cross-calls go through a small per-world "deferred command"
@@ -400,14 +403,21 @@ index, ModuleCall)` checks the module's body out of its slot, calls
 world. A loop over the modules skips a module whose mask lacks the interface
 (`getDie()` is `NULL`), as upstream does.
 
-**Deviation to decide (needs the lead).** A call to a module **whose body is
-running** is *not delivered*: it is recorded in `world.cuts.reentrant_skips`.
-Upstream makes the plain recursive call (`ActiveBody::attemptDamage` ->
-`Object::onDie` -> the same body's `DieModuleInterface`). Decision 1 (2026-10-18)
-asks for the synchronous order. Layer 9's first body that is both a body and a
-die module (`ActiveBody` with `onDie`) will hit it; the fix must route the call
-to the body the caller holds. Until then it is visible (`reentrant_skips`) and
-the differential test models it identically on both sides.
+~~**Deviation to decide (needs the lead).** A call to a module **whose body is running** is *not delivered*: it is recorded in `world.cuts.reentrant_skips`. Upstream makes the plain recursive call (`ActiveBody::attemptDamage` -> `Object::onDie` -> the same body's `DieModuleInterface`). Decision 1 (2026-10-18) asks for the synchronous order. Layer 9's first body that is both a body and a die module (`ActiveBody` with `onDie`) will hit it; the fix must route the call to the body the caller holds. Until then it is visible (`reentrant_skips`) and the differential test models it identically on both sides.~~
+**CORRECTED 2026-10-18 (`p1w7-sonnet`)** — a call that reaches a running module **runs at once**,
+inside the outer call, on the module's live state, in upstream's order. The running body *lends itself* to
+its slot around every call into the world that can reach its own object: `World::lend_body(me, body, |w| ..)`
+puts the body back in the slot, runs the closure (a nested `module_call` to the same module finds the body,
+takes it, runs it, puts it back), then takes the body back and returns it to the caller, who stores it into
+its own `self` (`ProbeModule::lend` is the pattern). No deferred queue: the order of effects is upstream's
+call order. A module that does not lend itself leaves the call undelivered, which is recorded in
+`world.cuts.reentrant_skips` as a tripwire (it must stay empty; the differential test asserts it);
+`cuts.reentrant_delivered` counts the calls that ran re-entrantly. **Layer 9 rule:** a body that calls into
+the world (damage, die, status, any `Object` function) while holding `&mut self` wraps that call in
+`lend`. The same pattern serves an update module's `update()` (its `ModuleHandle` is the slot of its
+`ModuleSlot`; `take_module_body` reads the `BehaviorSlot` body for a module with an update interface).
+Proof: `tests/differential_object.rs` (5,292 re-entrant calls in the default run, 0 programs differ, two
+planted bugs caught), `object_tests.rs`.
 
 **Cut points (each is a `CutCall`, an `ObjectClientEvent` or a table of
 `ObjectCuts`; the list the lead asked for):**

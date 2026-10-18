@@ -26,15 +26,12 @@ void BehaviorModule::onDie(DamageInfo* i) const { probe("OnDie"); }
 void BehaviorModule::onCollide(Object* other, const Coord3D* loc, const Coord3D* normal) const
 {
 	if (!probe("OnCollide")) return;
-	running = true;
 	if (a.collideSetsNoCollisions)
 		m_object->setStatus(MAKE_OBJECT_STATUS_MASK(OBJECT_STATUS_NO_COLLISIONS));
-	running = false;
 }
 void BehaviorModule::attemptDamage(DamageInfo* info) const
 {
 	if (!probe("AttemptDamage")) return;
-	running = true;
 	/* ActiveBody in miniature: the damage taken, then death once (module_probe.rs) */
 	Real dealt;
 	if (info->in.m_kill)
@@ -54,7 +51,6 @@ void BehaviorModule::attemptDamage(DamageInfo* info) const
 		died = true;
 		m_object->onDie(info);
 	}
-	running = false;
 }
 void BehaviorModule::attemptHealing(DamageInfo* info) const
 {

@@ -230,9 +230,18 @@ pub struct ObjectCuts {
     /// module receives (`mod Name`), in the order they happen (the differential test compares it with the
     /// records of the compiled `Object.cpp`).
     pub trace: Option<Vec<String>>,
-    /// The module calls that were not delivered because the module's body was
-    /// running (see `module_call.rs`).
+    /// The module calls that were **not** delivered because the module's body
+    /// was out of its slot and had not lent itself (see `module_call.rs`,
+    /// "Re-entrancy"). Upstream delivers every such call, so a non-empty list
+    /// is a defect in a module that called into the world without lending
+    /// itself: a tripwire, empty in every correct run.
     pub reentrant_skips: Vec<(ModuleHandle, ModuleCall)>,
+    /// The module calls that ran **at once, inside a call to the same
+    /// module** (the body lent itself, see `World::lend_body`): upstream's
+    /// plain recursion, counted so a test can show that it was exercised.
+    pub reentrant_delivered: u32,
+    /// The modules whose `module_call` is running, outermost first.
+    pub module_stack: Vec<ModuleHandle>,
     /// The values of the global stores.
     pub globals: ObjectGlobals,
     /// `ThePlayerList->getNeutralPlayer()->getDefaultTeam()`.
@@ -307,6 +316,8 @@ impl Default for ObjectCuts {
             log: None,
             trace: None,
             reentrant_skips: Vec::new(),
+            reentrant_delivered: 0,
+            module_stack: Vec::new(),
             globals: ObjectGlobals::default(),
             neutral_default_team: 0,
             team_players: BTreeMap::new(),

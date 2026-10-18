@@ -31,6 +31,7 @@ use crate::logic::damage::{DamageInfo, DAMAGE_HEALING};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::object_state::mask_of;
+use crate::logic::world::update_body::UpdateBody;
 
 /// What a probe answers to the yes/no questions. Bit `k` of `has` answers the
 /// `k`-th `Has...Interface` call (in the order of [`ModuleCall`]).
@@ -121,6 +122,21 @@ impl ProbeModule {
         }
     }
 
+    /// Runs `f` with this module lent to its slot ([`World::lend_body`]), so a
+    /// call that reaches the module from inside `f` runs at once on the live
+    /// state, and takes the state back afterwards. This is how the probe
+    /// keeps upstream's plain recursion (`attemptDamage` -> `onDie` -> the
+    /// same module's `onDie`).
+    pub fn lend<R>(&mut self, world: &mut World, me: ModuleHandle, f: impl FnOnce(&mut World) -> R) -> R {
+        let vacant = ProbeModule::new(ProbeAnswers::default(), 0.0, UpgradeMaskType::default());
+        let mine = std::mem::replace(self, vacant);
+        let (r, back) = world.lend_body(me, UpdateBody::ModuleProbe(mine), f);
+        if let Some(UpdateBody::ModuleProbe(b)) = back {
+            *self = b;
+        }
+        r
+    }
+
     /// The module's answer to `call`.
     pub fn handle(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         self.calls = self.calls.wrapping_add(1);
@@ -179,7 +195,7 @@ impl ProbeModule {
                 self.last_damage_source = info.input.source_id;
                 if self.health <= 0.0 && !self.died {
                     self.died = true;
-                    world.on_die(me.object, &info);
+                    self.lend(world, me, |w| w.on_die(me.object, &info));
                 }
                 ModuleReply::Damage(info)
             }
@@ -266,7 +282,7 @@ impl ProbeModule {
             // ---- the ones with an effect ----
             ModuleCall::OnCollide { .. } => {
                 if self.answers.collide_sets_no_collisions {
-                    world.set_status(me.object, mask_of(OBJECT_STATUS_NO_COLLISIONS), true);
+                    self.lend(world, me, |w| w.set_status(me.object, mask_of(OBJECT_STATUS_NO_COLLISIONS), true));
                 }
                 ModuleReply::Done
             }

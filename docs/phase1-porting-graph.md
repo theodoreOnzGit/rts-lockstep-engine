@@ -748,12 +748,16 @@ the layer-7 managers and the weapons named below. Gates on that commit:
 `cargo clippy --release --all-targets --features differential` (no warnings);
 `cargo build --release --target wasm32-unknown-unknown`.
 
-**Open defect, fix first on resuming.** A call from a module into an object
+~~**Open defect, fix first on resuming.** A call from a module into an object
 whose running module is checked out is *skipped and recorded* (`p1w6-object`;
 see "Object (layer 8)" in `docs/world-design.md`). Upstream makes that call at
 once, so the skip can change behaviour and breaks the rule that upstream's
 synchronous call order is kept unless shown identical. The fix makes the
-re-entrant call run at once.
+re-entrant call run at once.~~ **CORRECTED 2026-10-18 (`p1w7-sonnet`)** — fixed:
+a running body lends itself to its slot (`World::lend_body`), so the nested call
+runs at once on the live state; 5,292 re-entrant calls in the Object
+differential run, 0 programs differ, two planted bugs caught. See
+`docs/world-design.md`, "Object (layer 8)".
 
 **Known differences, recorded, not settled:** an object queued for
 destruction twice is deleted once (upstream behaviour is undefined); the id

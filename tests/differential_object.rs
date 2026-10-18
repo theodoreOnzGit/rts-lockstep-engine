@@ -34,17 +34,28 @@
 //! The reads of the world (`getRelationship`, `getPlayersWithRelationship`, `getDisabledUntil`, ...) are covered by
 //! the effects that depend on them.
 //!
-//! # Known deviations, both kept in the stand-ins
+//! # Re-entrant module calls (fixed 2026-10-18, `p1w7-sonnet`)
 //!
-//! - **Re-entrant module calls.** A call to a module whose body is running (the body calls back into the object,
-//!   which reaches the module again) is not delivered in Rust (`docs/world-design.md`, "Re-entrancy"); the
-//!   `BehaviorModule` stand-in does the same (`running`), so the comparison tests everything else.
+//! A call that reaches a module whose body is running (`attemptDamage` -> `Object::onDie` -> the same module's
+//! `DieModuleInterface`) is upstream's plain recursion and runs **at once**. The Rust body lends itself to its
+//! slot around the call (`World::lend_body`), so the nested call runs inside the outer one, on the live state, in
+//! upstream's order; the `BehaviorModule` stand-in no longer has a `running` guard. Previously both sides skipped
+//! such a call. Evidence: in the default run the Rust side delivered **5,292** re-entrant calls (counted by
+//! `cuts.reentrant_delivered`; the run asserts the count is above 0 and that `cuts.reentrant_skips`, the tripwire
+//! for a module that did not lend itself, stays empty), with every trace line and snapshot equal. **Planted bugs**
+//! for this change (Rust side only, 1,200 programs each, then removed): (a) the lend does not take the body back
+//! (the state the nested call changed is lost): 1,200 of 1,200 programs differ; (b) a deferred queue instead of the
+//! synchronous call (the nested call runs after the outer one returns): 1,200 of 1,200 differ, first at the trace
+//! line of the nested `mod OnDie`.
+//!
+//! # Known deviation, kept in the stand-ins
+//!
 //! - **Terrain.** The Rust world has no height map, so its extent is unknown and `OFF_MAP` is never touched; the
 //!   stand-in answers an extent too large to leave.
 //!
 //! # Results
 //!
-//! Run 2026-10-18 (`OBJECT_CASES=15000 cargo test --release --features differential --test differential_object --
+//! Run 2026-10-18, before the re-entrancy fix (`OBJECT_CASES=15000 cargo test --release --features differential --test differential_object --
 //! --nocapture`, 166 s): **15,000 programs of 110 operations, 28,303,130 lines compared, 0 programs differ.** The
 //! default run is 1,200 programs (2,258,873 lines, 0 differ). Pass criterion: every line equal.
 //!
@@ -1281,11 +1292,17 @@ impl Run {
 }
 
 fn run_rust(prog: &[u32], verbose: bool) -> Vec<String> {
+    run_rust_counted(prog, verbose).0
+}
+
+/// The lines, the number of module calls that ran at once inside a call to the same module, and the number that
+/// were skipped (must be 0).
+fn run_rust_counted(prog: &[u32], verbose: bool) -> (Vec<String>, u32, usize) {
     let mut r = Rd { w: prog, at: 0 };
     let mut run = Run::new(&mut r);
     run.verbose = verbose;
     run.ops(&mut r);
-    run.lines
+    (run.lines, run.w.cuts.reentrant_delivered, run.w.cuts.reentrant_skips.len())
 }
 
 // ---- the C++ side ------------------------------------------------------------------------------------------------
@@ -2192,6 +2209,7 @@ fn object_matches_upstream() {
     let cases: u64 = std::env::var("OBJECT_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(1200);
     let (mut lines, mut kinds): (usize, BTreeMap<String, usize>) = (0, BTreeMap::new());
     let mut bad = 0;
+    let mut reentrant = 0u64;
     for case in 0..cases {
         let prog = gen_program(0x0B1E_C700 + case, 110);
         if let Ok(dir) = std::env::var("OBJECT_DUMP_ALL") {
@@ -2201,7 +2219,9 @@ fn object_matches_upstream() {
         }
         if std::env::var("OBJECT_TRACE").is_ok() { eprintln!("CASE {case}"); }
         let c = run_cpp(&prog, false);
-        let r = run_rust(&prog, false);
+        let (r, reentered, skipped) = run_rust_counted(&prog, false);
+        reentrant += u64::from(reentered);
+        assert_eq!(skipped, 0, "case {case}: a module call was not delivered");
         lines += c.len();
         for l in &c {
             let tag: Vec<&str> = l.split(' ').take(2).collect();
@@ -2223,6 +2243,8 @@ fn object_matches_upstream() {
         }
     }
     println!("RESULT {cases} programs, {lines} lines compared, {bad} programs differ");
+    println!("RESULT re-entrant module calls run at once (Rust side): {reentrant}");
+    assert!(reentrant > 0, "the re-entrant path was never exercised");
     for (k, n) in &kinds {
         println!("RESULT   {k}: {n}");
     }

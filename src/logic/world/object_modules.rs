@@ -25,9 +25,10 @@
 //!
 //! # Re-entrancy
 //!
-//! A module whose body is already running (checked out) is not called again;
-//! the call is recorded in `World::cuts.reentrant_skips`. See
-//! `module_call.rs`.
+//! A call that reaches a module already running (upstream: a plain recursive
+//! call) runs at once on the live state of the module, because a running body
+//! *lends* itself to the slot around every call that can reach its own object
+//! ([`World::lend_body`]). See `module_call.rs`.
 
 use crate::common::base_type::Coord3D;
 use crate::common::game_type::{ObjectId, INVALID_ID};
@@ -74,10 +75,30 @@ impl World {
         }
     }
 
+    /// Lends a running module's body to its slot for the duration of `f`, so
+    /// that a call reaching the module from inside `f` is delivered **at
+    /// once**, as upstream's plain recursion delivers it, and finds the live
+    /// state (every change the module made before the lend, none lost).
+    /// Returns `f`'s result and the body as `f` left it (nested calls may have
+    /// changed it); the caller puts it back into its own state.
+    ///
+    /// `None` for the body only if the module is gone (its object was
+    /// deleted inside `f`, which upstream defers to the end of the frame).
+    ///
+    /// A module must lend itself around every call into the world that can
+    /// reach its own object. One that does not is a defect, and the call is
+    /// then recorded in `cuts.reentrant_skips` instead of being lost silently.
+    pub fn lend_body<R>(&mut self, me: ModuleHandle, body: UpdateBody, f: impl FnOnce(&mut World) -> R) -> (R, Option<UpdateBody>) {
+        self.put_module_body(me, body);
+        let r = f(self);
+        (r, self.take_module_body(me))
+    }
+
     /// Sends `call` to module `idx` of object `id` and returns its answer.
-    /// [`ModuleReply::Unhandled`] if the object or module is missing, the
-    /// module has no body, or its body is running (the last is recorded in
-    /// `cuts.reentrant_skips`, see the module docs).
+    /// [`ModuleReply::Unhandled`] if the object or module is missing, or the
+    /// module has no body. A call to a module that is running delivers at once
+    /// if the module lent itself ([`World::lend_body`]); if it did not, the
+    /// call is recorded in `cuts.reentrant_skips` (a defect of that module).
     pub fn module_call(&mut self, id: ObjectId, idx: ModuleIndex, call: ModuleCall) -> ModuleReply {
         let h = ModuleHandle { object: id, index: idx };
         let had_body = match self.objects.find(id).and_then(|o| o.modules.get(idx as usize)) {
@@ -90,7 +111,12 @@ impl World {
             }
             return ModuleReply::Unhandled;
         };
+        if self.cuts.module_stack.contains(&h) {
+            self.cuts.reentrant_delivered += 1;
+        }
+        self.cuts.module_stack.push(h);
         let reply = body.module_call(self, h, call);
+        self.cuts.module_stack.pop();
         self.put_module_body(h, body);
         reply
     }

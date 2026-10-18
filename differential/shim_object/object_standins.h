@@ -305,13 +305,14 @@ class BehaviorModule : public Module
 public:
 	Object* m_object; Bool m_helper; Int m_helperKind; unsigned m_interfaces; Bool m_stealth, m_ai;
 	ProbeAnswers a; mutable Real health, maxHealth, damageScalar; mutable Bool died; mutable ObjectID lastDamageSource; mutable UnsignedInt armorFlags; UpgradeMaskType upgradeTrigger;
-	mutable Bool upgraded; mutable Bool running; mutable ContainedItemsList m_items; mutable UnsignedInt calls; mutable SpecialPowerTemplate spTemplate; mutable DamageInfo lastDamage;
+	mutable Bool upgraded; mutable ContainedItemsList m_items; mutable UnsignedInt calls; mutable SpecialPowerTemplate spTemplate; mutable DamageInfo lastDamage;
 	BehaviorModule() : m_object(NULL), m_helper(false), m_helperKind(0), m_interfaces(0), m_stealth(false), m_ai(false), health(0), maxHealth(0),
-		damageScalar(1.0f), died(false), lastDamageSource(INVALID_ID), armorFlags(0), upgraded(false), running(false), calls(0) { spTemplate.m_owner = this; }
+		damageScalar(1.0f), died(false), lastDamageSource(INVALID_ID), armorFlags(0), upgraded(false), calls(0) { spTemplate.m_owner = this; }
 	/* one call is counted and recorded; a helper records nothing */
 	BehaviorModule* self() const { return const_cast<BehaviorModule*>(this); }
-	/* a call to a module whose body is running is not delivered (module_call.rs: the body is checked out while it runs) */
-	bool probe(const char* name) const { if (m_helper || running) return false; calls = calls + 1; MODC(name); return true; }
+	/* a call to a module that is running is delivered at once, as upstream's plain recursion does (module_call.rs: the
+	** body lends itself to its slot, World::lend_body) */
+	bool probe(const char* name) const { if (m_helper) return false; calls = calls + 1; MODC(name); return true; }
 
 	/* the interface getters: the interface mask of the slot, as the Rust ModuleSlot::interfaces */
 	BehaviorModule* getBody() const { return (m_interfaces & MODULEINTERFACE_BODY) ? self() : NULL; }

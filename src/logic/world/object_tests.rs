@@ -266,16 +266,44 @@ fn real_to_int_truncates_toward_zero() {
 }
 
 #[test]
-fn module_calls_to_a_running_module_are_skipped_and_recorded() {
+fn a_call_to_a_body_that_is_out_and_not_lent_is_recorded_as_a_defect() {
     let mut w = world();
     let id = make(&mut w, vec![probe_module(10.0)]);
     let b = w.get_body_module(id).unwrap();
     let body = w.take_module_body(ModuleHandle { object: id, index: b }).expect("body present");
     let r = w.module_call(id, b, ModuleCall::GetHealth);
     assert!(matches!(r, crate::logic::world::module_call::ModuleReply::Unhandled));
-    assert_eq!(w.cuts.reentrant_skips.len(), 1);
+    assert_eq!(w.cuts.reentrant_skips.len(), 1, "the tripwire records a module that did not lend itself");
     w.put_module_body(ModuleHandle { object: id, index: b }, body);
     assert_eq!(health(&mut w, id), 10.0);
+}
+
+#[test]
+fn a_body_that_dies_is_called_back_at_once_by_its_own_die_interface() {
+    // ActiveBody::attemptDamage -> Object::onDie -> the same module's DieModuleInterface, a plain recursive call
+    // upstream: the nested OnDie runs inside AttemptDamage, before it returns, on the live state.
+    let mut w = world();
+    w.cuts.trace = Some(Vec::new());
+    let id = make(&mut w, vec![probe_module(10.0)]);
+    let b = w.get_body_module(id).unwrap();
+    w.cuts.trace.as_mut().unwrap().clear();
+    let mut info = damage_of(25.0, INVALID_ID);
+    info.input.amount = 25.0;
+    w.attempt_damage(id, &mut info);
+    let t = w.cuts.trace.clone().unwrap();
+    let attempt = t.iter().position(|l| l == "mod AttemptDamage").expect("attempt");
+    let die = t.iter().position(|l| l == "mod OnDie").expect("the die interface was called");
+    assert!(die > attempt);
+    assert!(w.cuts.reentrant_skips.is_empty(), "nothing is skipped");
+    assert_eq!(w.cuts.reentrant_delivered, 1, "one call ran inside a call to the same module");
+    // the state the nested call changed (the call count) was not lost when the outer call took its body back
+    let calls_before = match w.objects.find(id).unwrap().modules[b as usize].body.as_ref() {
+        Some(UpdateBody::ModuleProbe(m)) => m.calls,
+        _ => panic!("probe body"),
+    };
+    // helpers answer first: AttemptDamage + OnDie + whatever the death asks (at least these two)
+    assert!(calls_before >= 2, "calls = {calls_before}");
+    assert_eq!(health(&mut w, id), 0.0);
 }
 
 #[test]
