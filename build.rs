@@ -422,9 +422,9 @@ mod differential {
         // accepted and g++ and clang reject: the copies (the four .cpp files
         // in OUT_DIR, and the two extracted lists) add `template<> ` before
         // each definition, asserted once per list. clang++ with
-        // -fms-extensions -fdelayed-template-parsing, because
-        // SparseMatchFinder.h omits `typename` on dependent types inside
-        // template bodies that are never instantiated here. shim_flags comes
+        // -fms-extensions -fdelayed-template-parsing (the MSVC dialect of
+        // the headers; SparseMatchFinder.h, which the test instantiates,
+        // gets its missing `typename`s in a copy, below). shim_flags comes
         // first: the real BitFlagsIO.h (after KindOf.h, for Xfer.h's
         // forward-declared `enum KindOfType;`, see the file) and
         // ModelState.h, and an STLTypedefs.h without the KindOfType stand-in
@@ -445,11 +445,29 @@ mod differential {
             lists.push_str(&format!("/* {file} */\ntemplate<> {}\n", &text[a..b]));
         }
         std::fs::write(flags_gen.join("bit_name_lists.h"), lists).expect("write bit_name_lists.h");
+        // SparseMatchFinder.h, instantiated by the test: a copy in
+        // OUT_DIR/flags_gen/Common (found before the upstream header) adds
+        // the two `typename`s MSVC did not require on dependent types,
+        // each asserted once.
+        std::fs::create_dir_all(flags_gen.join("Common")).expect("create flags_gen/Common");
+        std::fs::write(
+            flags_gen.join("Common/SparseMatchFinder.h"),
+            patch_copy(
+                &up.join("GameEngine/Include/Common/SparseMatchFinder.h"),
+                "SparseMatchFinder.h",
+                &[
+                    ("for (std::vector<MATCHABLE>::const_iterator it", "for (typename std::vector<MATCHABLE>::const_iterator it", 1),
+                    ("\t\tMatchMap::const_iterator it = m_bestMatches.find(bits);", "\t\ttypename MatchMap::const_iterator it = m_bestMatches.find(bits);", 1),
+                ],
+            ),
+        )
+        .expect("write SparseMatchFinder.h copy");
         let mut fl = cc::Build::new();
         base(&mut fl);
         fl.compiler("clang++")
             .flag("-fms-extensions")
             .flag("-fdelayed-template-parsing")
+            .include(&flags_gen)
             .include(dif.join("shim_flags"))
             .include(dif.join("shim_ini"))
             .include(&shim)
@@ -457,7 +475,6 @@ mod differential {
             .include(up.join("Libraries/Include"))
             .include(ww.join("WWMath"))
             .include(ww.join("WWLib"))
-            .include(&flags_gen)
             .include(&dif)
             .flag("-include")
             .flag(dif.join("shim_flags/flags_prelude.h").to_str().expect("UTF-8 path"))

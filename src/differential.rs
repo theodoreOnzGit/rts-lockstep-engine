@@ -227,6 +227,15 @@ extern "C" {
     pub fn ref_flags_xfer(which: c_int, mode: c_int, path: *const c_char, input: *const u64, out: *mut u64) -> c_int;
     pub fn ref_flags_enum_values(which: c_int, out: *mut c_longlong, cap: c_int) -> c_int;
     pub fn ref_flags_globals(which: c_int, out: *mut u64);
+    pub fn ref_sparse_match(
+        which: c_int,
+        masks: *const u64,
+        counts: *const c_int,
+        n_entries: c_int,
+        queries: *const u64,
+        n_queries: c_int,
+        out: *mut c_int,
+    ) -> c_int;
 
     // BaseType.h (asm transcriptions)
     pub fn ref_fast_float2long_round(f: c_float) -> c_int;

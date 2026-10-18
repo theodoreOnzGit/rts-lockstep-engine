@@ -29,6 +29,7 @@ the layer order of [`docs/phase1-porting-graph.md`](docs/phase1-porting-graph.md
 | `common::discrete_circle` | `Include/Common/DiscreteCircle.h`, `Source/Common/DiscreteCircle.cpp`: the Bresenham scanlines of partition-grid circles (Phase 1 layer 1) |
 | `common::name_key_generator`, `common::well_known_keys` | `Include/Common/NameKeyGenerator.h`, `Source/Common/NameKeyGenerator.cpp` (the socket/chain structure, so keys come out in upstream's order, including its case-folding quirk), `StaticNameKey`, and the 127 keys of `Include/Common/WellKnownKeys.h` (Phase 1 layer 2) |
 | `common::bit_flags`, `common::kind_of`, `common::object_status_types`, `common::disabled_types`, `common::model_state`, `common::special_power_mask_type`, `logic::armor_set`, `logic::weapon_set_flags` | `Include/Common/BitFlags.h`, `BitFlagsIO.h` (operations, names, INI parsing, xfer; the CRC branch hashes 4 bytes as the shipped Win32 build did) and its seven instantiations with their enums and name lists: `KindOf.h`/`.cpp`, `ObjectStatusTypes.h`/`.cpp`, `DisabledTypes.h`/`.cpp`, `ModelState.h` and `BitFlags.cpp`, `SpecialPowerMaskType.h` (names of `SpecialPower.cpp`), `GameLogic/ArmorSet.h` (the flags), `WeaponSetFlags.h` (names of `WeaponSet.cpp`) (Phase 1 layer 3) |
+| `common::sparse_match_finder` | `Include/Common/SparseMatchFinder.h`: best-match lookup of armor/weapon/model entries by condition flags, with upstream's scan order and tie-break (Phase 1 layer 3) |
 | `common::dict` | `Include/Common/Dict.h`, `Source/Common/Dict.cpp`: the sorted key/value pairs with upstream's 24-bit key packing, Shell sort, binary search and rename-and-drop `remove` (Phase 1 layer 3) |
 | `common::random_value` | `GameEngine/Source/Common/RandomValue.cpp` and the Logic/Client/Audio RandomValue headers |
 | `common::crc` | `GameEngine/Source/Common/crc.cpp`, `GameEngine/Include/Common/crc.h` |
@@ -121,6 +122,7 @@ cargo test --release --features differential
   `KindOf.cpp`, `ObjectStatusTypes.cpp` and `DisabledTypes.cpp` from copies
   that add the `template<>` MSVC did not require before each name list, and
   copies the name lists of `WeaponSet.cpp` and `SpecialPower.cpp` verbatim
+  and `SparseMatchFinder.h` with the two `typename`s MSVC did not require
   (those files need most of the engine); it uses clang++ with
   `-fms-extensions -fdelayed-template-parsing` and includes `KindOf.h` before
   `Xfer.h`, whose `enum KindOfType;` forward declaration only MSVC accepted

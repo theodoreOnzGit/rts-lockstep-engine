@@ -238,10 +238,52 @@ int ref_flags_enum_values(int which, long long *out, int cap)
 	return n;
 }
 
+} /* extern "C" (the templates below need C++ linkage) */
+
+/* SparseMatchFinder (Include/Common/SparseMatchFinder.h, unchanged) over a
+** test MATCHABLE holding a list of "yes" masks. which: 0 ModelConditionFlags,
+** 1 ArmorSetFlags. Entry e has counts[e] masks, taken in order from masks
+** (4 words each). Each query runs findBestInfo on one finder kept across
+** the queries (so later queries hit its cache), and on a fresh finder
+** (findBestInfoSlow, which is private); out[2q], out[2q+1] are their entry
+** indices, -1 for NULL. */
+template <class F> struct TestMatchable
+{
+	std::vector<F> yes;
+	Int getConditionsYesCount() const { return (Int)yes.size(); }
+	const F &getNthConditionsYes(Int i) const { return yes[i]; }
+};
+template <class F> int sparseMatch(const W *masks, const int *counts, int nEntries, const W *queries, int nQueries, int *out)
+{
+	std::vector<TestMatchable<F> > v(nEntries);
+	int k = 0;
+	for (int e = 0; e < nEntries; ++e)
+		for (int c = 0; c < counts[e]; ++c, ++k)
+			v[e].yes.push_back(fromWords<F>(masks + 4 * k));
+	SparseMatchFinder<TestMatchable<F>, F> finder;
+	for (int q = 0; q < nQueries; ++q) {
+		F bits = fromWords<F>(queries + 4 * q);
+		const TestMatchable<F> *a = finder.findBestInfo(v, bits);
+		SparseMatchFinder<TestMatchable<F>, F> fresh;
+		const TestMatchable<F> *b = fresh.findBestInfo(v, bits);
+		out[2 * q] = a ? (int)(a - &v[0]) : -1;
+		out[2 * q + 1] = b ? (int)(b - &v[0]) : -1;
+	}
+	return 0;
+}
+
+extern "C" {
+
 /* The two KindOfMaskType lookups Xfer::xferKindOf calls (wrap_xfer.cpp's
 ** stand-in class forwards to these). */
 const char *ref_kindof_name_from_single_bit(int i) { return KindOfMaskType::getNameFromSingleBit(i); }
 int ref_kindof_single_bit_from_name(const char *token) { return KindOfMaskType::getSingleBitFromName(token); }
+
+int ref_sparse_match(int which, const W *masks, const int *counts, int nEntries, const W *queries, int nQueries, int *out)
+{
+	return which == 0 ? sparseMatch<ModelConditionFlags>(masks, counts, nEntries, queries, nQueries, out)
+	                  : sparseMatch<ArmorSetFlags>(masks, counts, nEntries, queries, nQueries, out);
+}
 
 /* KINDOFMASK_FS after initKindOfMasks(), DISABLEDMASK_ALL after
 ** initDisabledMasks(): which 0, 1 */

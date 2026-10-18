@@ -19,6 +19,7 @@ pub mod name_key_generator;
 pub mod object_status_types;
 pub mod quick_trig;
 pub mod random_value;
+pub mod sparse_match_finder;
 pub mod special_power_mask_type;
 pub mod special_power_type;
 pub mod thing_sort;

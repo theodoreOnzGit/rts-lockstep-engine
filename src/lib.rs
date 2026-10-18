@@ -23,6 +23,7 @@
 //! | [`common::name_key_generator`], [`common::well_known_keys`] | `Include/Common/NameKeyGenerator.h`, `Source/Common/NameKeyGenerator.cpp`, `Include/Common/WellKnownKeys.h` |
 //! | [`common::bit_flags`] and [`common::kind_of`], [`common::object_status_types`], [`common::disabled_types`], [`common::model_state`], [`common::special_power_mask_type`], [`logic::armor_set`], [`logic::weapon_set_flags`] | `Include/Common/BitFlags.h`, `BitFlagsIO.h`, `Source/Common/BitFlags.cpp`, `KindOf.h`/`.cpp`, `ObjectStatusTypes.h`/`.cpp`, `DisabledTypes.h`/`.cpp`, `ModelState.h`, `SpecialPowerMaskType.h`, `GameLogic/ArmorSet.h`, `WeaponSetFlags.h` (with the name lists of `SpecialPower.cpp`, `WeaponSet.cpp`) |
 //! | [`common::discrete_circle`] | `Include/Common/DiscreteCircle.h`, `Source/Common/DiscreteCircle.cpp` |
+//! | [`common::sparse_match_finder`] | `Include/Common/SparseMatchFinder.h` |
 //! | [`common::dict`] | `Include/Common/Dict.h`, `Source/Common/Dict.cpp` |
 //! | [`common::ini`] | `GameEngine/Include/Common/INI.h`, `Source/Common/INI/INI.cpp` |
 //! | [`common::game_common`] | `Include/Common/GameCommon.h`, `Source/Common/System/GameCommon.cpp` |

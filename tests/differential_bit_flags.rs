@@ -601,3 +601,74 @@ fn xfer_kind_of_matches() {
     ok.finish();
     bug.finish_planted();
 }
+
+/// `SparseMatchFinder` (SparseMatchFinder.h, instantiated in
+/// `differential/wrap_flags.cpp`) against `common::sparse_match_finder`, on
+/// `ModelConditionFlags` and `ArmorSetFlags`: 3,000 random entry lists (0 to
+/// 12 entries of 0 to 3 masks, masks often sharing bits so that scores tie)
+/// with 20 queries each, through one finder kept across the queries (the
+/// cache) and a fresh one (the slow search). Planted bug: ties go to the
+/// last candidate instead of the first.
+#[test]
+fn sparse_match_finder_matches() {
+    use rts_lockstep_engine::common::sparse_match_finder::{SparseMatchFinder, SparseMatchable};
+    struct Entry<T: BitFlagNames>(Vec<BitFlags<T>>);
+    impl<T: BitFlagNames> SparseMatchable<T> for Entry<T> {
+        fn conditions_yes_count(&self) -> i32 {
+            self.0.len() as i32
+        }
+        fn nth_conditions_yes(&self, i: i32) -> &BitFlags<T> {
+            &self.0[i as usize]
+        }
+    }
+    fn run<T: BitFlagNames>(which: i32, tag: &str, g: &mut Gen) {
+        let mut ok = Check::new(&format!("SparseMatchFinder<{tag}>"));
+        let mut bug = Check::new(&format!("SparseMatchFinder<{tag}>"));
+        let n = T::NUM_BITS as u32;
+        let small = |g: &mut Gen| {
+            let mut f = BitFlags::<T>::new();
+            for _ in 0..g.below(4) {
+                f.set(g.below(n.min(8)) as i32, 1);
+            }
+            f
+        };
+        for _ in 0..3000 {
+            let entries: Vec<Entry<T>> =
+                (0..g.below(13)).map(|_| Entry((0..g.below(4)).map(|_| if g.below(3) == 0 { random_mask(g) } else { small(g) }).collect())).collect();
+            let queries: Vec<BitFlags<T>> = (0..20).map(|_| if g.below(2) == 0 { small(g) } else { random_mask(g) }).collect();
+            let masks: Vec<u64> = entries.iter().flat_map(|e| e.0.iter().flat_map(|m| m.words())).collect();
+            let counts: Vec<i32> = entries.iter().map(|e| e.0.len() as i32).collect();
+            let qw: Vec<u64> = queries.iter().flat_map(|q| q.words()).collect();
+            let mut out = vec![0i32; 2 * queries.len()];
+            unsafe {
+                cpp::ref_sparse_match(which, masks.as_ptr(), counts.as_ptr(), counts.len() as i32, qw.as_ptr(), queries.len() as i32, out.as_mut_ptr());
+            }
+            let mut finder = SparseMatchFinder::new();
+            for (q, bits) in queries.iter().enumerate() {
+                let cached = finder.find_best_info(&entries, bits).map_or(-1, |i| i as i32);
+                let slow = SparseMatchFinder::find_best_info_slow(&entries, bits).map_or(-1, |i| i as i32);
+                ok.eq((cached, slow), (out[2 * q], out[2 * q + 1]), || format!("query {q}"));
+                // planted: `<=` on the extraneous bits (ties go to the last candidate)
+                let mut res = -1;
+                let (mut bm, mut be) = (0, 999);
+                for (idx, e) in entries.iter().enumerate() {
+                    for m in e.0.iter().rev() {
+                        let (ym, ye) = (bits.count_intersection(m), bits.count_inverse_intersection(m));
+                        if ym > bm || (ym >= bm && ye <= be) {
+                            res = idx as i32;
+                            bm = ym;
+                            be = ye;
+                        }
+                    }
+                }
+                bug.eq(res, out[2 * q + 1], || format!("query {q}"));
+            }
+        }
+        ok.finish();
+        bug.finish_planted();
+    }
+    let _turn = CPP_GLOBALS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut g = Gen::new(311);
+    run::<model_state::ModelConditionNames>(0, "ModelConditionFlags", &mut g);
+    run::<armor_set::ArmorSetNames>(1, "ArmorSetFlags", &mut g);
+}

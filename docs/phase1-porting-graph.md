@@ -477,12 +477,12 @@ are a context argument (`&mut World` or a frame number) instead of a global.
 |---|---|---|
 | 1 | `BaseType.h` value types and templates; `GameType.h`/`.cpp`; `GameCommon.h` (all but the intrusive-list macros) and `GameCommon.cpp`; `Errors.h`; `SpecialPowerType.h`; `ThingSort.h`; `Powers.h`; `WeaponSetType.h`; `WeaponStatus.h`; `WeaponBonusConditionFlags.h`; `ObjectScriptStatusBits.h`; `DiscreteCircle` | `tests/differential_value_types.rs` |
 | 2 | `NameKeyGenerator`, `StaticNameKey`, `WellKnownKeys.h` | `tests/differential_name_key.rs` |
-| 3 | `BitFlags`/`BitFlagsIO` and all seven instantiations (`KindOf`, `ObjectStatusTypes`, `DisabledTypes`, `ModelState` flags, `ArmorSet` flags, `WeaponSetFlags`, `SpecialPowerMaskType`); `Dict`; `Xfer::xferKindOf` | `tests/differential_bit_flags.rs`, `tests/differential_dict.rs` |
+| 3 | `BitFlags`/`BitFlagsIO` and all seven instantiations (`KindOf`, `ObjectStatusTypes`, `DisabledTypes`, `ModelState` flags, `ArmorSet` flags, `WeaponSetFlags`, `SpecialPowerMaskType`); `SparseMatchFinder`; `Dict`; `Xfer::xferKindOf` | `tests/differential_bit_flags.rs`, `tests/differential_dict.rs` |
 
 Still open in layers 1-3: `PartitionSolver` (see the `std::sort` hazard
 above), `Overridable`/`Override`, `LatchRestore` (layer 1);
 `AsciiString`/`UnicodeString` semantics, `STLTypedefs.h`,
-`SubsystemInterface` (layer 2); `SparseMatchFinder` (layer 3); folding
+`SubsystemInterface` (layer 2); folding
 `logic::damage`'s hand-written `DamageTypeFlags` into the generic
 `BitFlags`; moving `formats::data_chunk`'s name-keyed `Dict` stand-in onto
 `common::dict` and `common::name_key_generator`.
