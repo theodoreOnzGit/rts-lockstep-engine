@@ -66,3 +66,7 @@ pub mod audio_event_name;
 pub mod special_power;
 pub mod upgrade;
 // --- end p1w2-upgrade ---
+// --- p1w3-modules ---
+pub mod module;
+pub mod module_factory;
+// --- end p1w3-modules ---

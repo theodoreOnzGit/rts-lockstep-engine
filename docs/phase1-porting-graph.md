@@ -488,6 +488,9 @@ are a context argument (`&mut World` or a frame number) instead of a global.
 <!-- --- p1w2-upgrade --- -->
 | 4 (wave 2, `p1w2-upgrade`) | `Upgrade` (`UpgradeTemplate`, `UpgradeCenter` with its mask bits, `Upgrade` instances and their xfer, the `Upgrade` block, `Xfer::xferUpgradeMask` as `common::upgrade::xfer_upgrade_mask`), `SpecialPower` (`SpecialPowerTemplate` with its override chain, `SpecialPowerStore`, the `SpecialPower` block); button images and sounds stay names | `tests/differential_upgrade.rs`, `tests/differential_special_power.rs` |
 <!-- --- end p1w2-upgrade --- -->
+<!-- --- p1w3-modules --- -->
+| 5 (wave 3, `p1w3-modules`) | `Module`/`ModuleData`, the module-interface headers (`BehaviorModule`, `BodyModule`, `CollideModule`, `ContainModule` (the data only), `CreateModule`, `DamageModule`, `DestroyModule`, `DieModule`, `UpdateModule` with its sleepy-update word, `UpgradeModule` with `UpgradeMux`, `SpecialPowerModule`, `SpecialPowerUpdateModule`) as the variants of the `Module` and `ModuleDataKind` enums, and `ModuleFactory` as the name to constructor table of all 205 `init()` registrations, none translated yet | `tests/differential_module.rs` |
+<!-- --- end p1w3-modules --- -->
 
 Layer 4, not translated: `RankInfo` (`GameLogic/System/RankInfo.cpp`).
 It needs `Overridable`/`Override` (layer 1, open), `UnicodeString` (layer 2,
@@ -582,6 +585,53 @@ override `DefaultSpecialPower`. `Xfer::xferUpgradeMask` is checked by Rust
 unit tests only: the Xfer build stands `TheUpgradeCenter` in with functions
 that abort.
 <!-- --- end p1w2-upgrade --- -->
+<!-- --- p1w3-modules --- -->
+**Thing and module system, the module bases (wave 3, `p1w3-modules`, 2026-10-18).**
+The design of section 5 is in place for the bases: `common::module::Module` is an
+enum with one variant per module class (so far the abstract bases only, each
+holding its base's struct), `ModuleDataKind` the same for the data (`Arc`s
+shared by the modules of one INI block), dispatch is a `match`. `ModuleFactory`
+(`common::module_factory`) records all **205** registrations of `init()` in order;
+`translated_module(name)` is the one place layer 9 adds an arm per class; a name
+that is registered but not translated is `ModuleFactoryError::NotTranslated`,
+and asking for a name that is not registered, or is one of the six under
+`#ifdef ALLOW_SURRENDER`/`ALLOW_DEMORALIZE` (neither is defined anywhere), is
+an error too. What the registrations measured, by `build.rs` and the tests:
+
+- 205 calls, 199 compiled into the shipped game, 198 distinct keys
+  (`WeaponBonusUpgrade` is registered twice). Each registration assigns a name
+  key to `'0' + type + name` in `init()` order, so `ModuleFactory::init` assigns
+  them in that order, and **every lookup assigns a key** to a name it has not
+  seen (found or not): the factory functions take the `NameKeyGenerator`.
+- The type that goes into the key is the class's `getModuleType()`: 201 behavior
+  and 4 client-update modules, one of which is `LaserUpdate`, listed among the
+  update modules. Read from the headers once (a script over `Include/`), not
+  compiled.
+- `UpdateModule`'s `getUpdatePhase()` is a constant of each concrete class, so the
+  Rust keeps it as a field set by the constructor. Its `FIX_OLD_SAVES` block is
+  compiled only under `_DEBUG`/`_INTERNAL`: not in the shipped build, not here.
+- `UpgradeMuxData` computes its masks the first time anyone asks and assigns name
+  keys then (`findUpgrade` calls `nameToKey`), so the same call order is part of
+  lockstep state; its `mutable` members are an `RwLock`.
+- `ModuleData::m_moduleTagNameKey` is never initialised upstream;
+  `Module::friend_newModuleData` runs `initFromINI(data, 0)`, a null parse table
+  that any field line dereferences; `TheMaxHealthChangeTypeNames` has three names
+  for four enumerators and no `NULL`; `SpecialPowerModule` has two `getReadyFrame`
+  overloads (the non-`const` one returns `m_availableOnFrame` as it is) and a
+  `syncReadyFrameToStatusQuo` that is declared and never defined.
+- Cut points for layer 8: every `Object`, `Player`, `TheGameLogic`, UI, audio and
+  script-engine call is an argument, a returned value or an `UpgradeEffects`
+  method (see each file's header); `ObjectModule::onCapture`, the twenty
+  interface-acquisition virtuals and `friend_newModuleInstance` arrive with the
+  concrete modules.
+
+Findings from the wave-3 differential runs (all now tests): the unchanged
+`UpdateModule.cpp`, `UpgradeModule.cpp` and `Module.cpp` compile under clang
+with stand-ins for `Thing`, `Object`, `GameLogic`, `FXList` and `Drawable` and
+two enums the headers forward-declare (`StaticGameLODLevel`, `CommandOption`,
+which MSVC accepts incomplete, copied from their headers); `xferBool` stores a
+raw byte in a `bool`, so a byte above 1 is not comparable.
+<!-- --- end p1w3-modules --- -->
 
 Two translation choices await the owner, both formally undefined C++ on a
 function's normal path, where MSVC's behaviour gives the intended result and

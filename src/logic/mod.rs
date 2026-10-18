@@ -26,3 +26,6 @@ pub mod weapon_bonus;
 // --- p1w2-science ---
 pub mod rank_info;
 // --- end p1w2-science ---
+// --- p1w3-modules ---
+pub mod module;
+// --- end p1w3-modules ---

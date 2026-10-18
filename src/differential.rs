@@ -624,3 +624,72 @@ extern "C" {
     ) -> c_int;
 }
 // --- end p1w2-upgrade ---
+
+// --- p1w3-modules ---
+extern "C" {
+    // Module.cpp, BehaviorModule.cpp, UpdateModule.cpp, UpgradeModule.cpp, DieModule.cpp, CreateModule.cpp,
+    // DamageModule.cpp, CollideModule.cpp, DestroyModule.cpp, BodyModule.cpp, and the body of
+    // ModuleFactory::init (wrap_module.cpp)
+    pub fn ref_mod_registrations(which: c_int, buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_mod_const(i: c_int) -> c_int;
+    pub fn ref_mod_data(
+        kind: c_int,
+        filename: *const c_char,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+    pub fn ref_mod_construct(cls: c_int, null_data: c_int) -> c_int;
+    pub fn ref_mod_base_xfer(
+        cls: c_int,
+        prep: c_int,
+        prep_scale: c_float,
+        kind: c_int,
+        path: *const c_char,
+        bytes: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        crc: *mut c_uint,
+        state: *mut c_uint,
+    ) -> c_int;
+    pub fn ref_mod_body_defaults(out: *mut c_uint) -> c_int;
+    pub fn ref_mod_collide_defaults(out: *mut c_uint) -> c_int;
+    pub fn ref_mod_body_enums(out: *mut c_int) -> c_int;
+    pub fn ref_mod_update_run(phase: c_int, n: c_int, ops: *const c_uint, out: *mut c_uint, out_cap: c_int, path: *const c_char) -> c_int;
+    pub fn ref_mod_upgrade_run(
+        filename: *const c_char,
+        n: c_int,
+        ops: *const c_uint,
+        names: *const *const c_char,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+    pub fn ref_mod_upgrade_xfer(
+        filename: *const c_char,
+        executed: c_int,
+        kind: c_int,
+        path: *const c_char,
+        bytes: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        crc: *mut c_uint,
+        state: *mut c_uint,
+    ) -> c_int;
+    pub fn ref_mod_die_run(
+        filename: *const c_char,
+        n: c_int,
+        queries: *const c_uint,
+        out: *mut c_uchar,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+}
+// --- end p1w3-modules ---

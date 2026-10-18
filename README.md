@@ -80,6 +80,10 @@ the layer order of [`docs/phase1-porting-graph.md`](docs/phase1-porting-graph.md
 | `common::special_power` | `Include/Common/SpecialPower.h`, `Source/Common/RTS/SpecialPower.cpp`, `Source/Common/INI/INISpecialPower.cpp`: `SpecialPowerTemplate` (reload time, required science, timers, radius, flags, two sound names, academy type) with its `Overridable` chain (getters read the final override; `getAcademyClassificationType` reads the head, as upstream), `SpecialPowerStore` (lookup by name, id and index; `reset` removing overrides; the `SpecialPower` INI block in `Overwrite` and `CREATE_OVERRIDES` loads) and the `SPECIALPOWERMASK` helper functions. `RequiredScience` takes a function saying which name keys are sciences, until `Science` is translated. Left out for layers 7/8: `canUseSpecialPower(Object*, ...)`. A template copied from a `DefaultSpecialPower` that has an override chain is an error (upstream shares the pointer and frees it at `reset`) (Phase 1 layer 4) |
 | `common::academy_classification`, `common::audio_event_name` | `AcademyClassificationType` and its names (`Include/Common/AcademyStats.h`, `Source/Common/RTS/AcademyStats.cpp`; the rest of that file is layer 7), and the name of an `AudioEventRTS` as `INI::parseAudioEventRTS` sets it (`NoSound` changes nothing; the client resolves the name) (Phase 1 layer 4) |
 <!-- --- end p1w2-upgrade --- -->
+<!-- --- p1w3-modules --- -->
+| `common::module`, `common::module_factory` | `Include/Common/Module.h`, `Source/Common/Thing/Module.cpp`, `Include/Common/ModuleFactory.h`, `Source/Common/Thing/ModuleFactory.cpp`: `ModuleData` (the module tag, read before it is set is undefined upstream), `ModuleType` and the `MODULEINTERFACE_*` bits, `ObjectModule`/`DrawableModule` (a null module data is `INI_INVALID_DATA`), and the enums that replace the class hierarchy: `Module` (one variant per module class, so far only the abstract bases) and `ModuleDataKind`. `ModuleFactory` is the name to constructor table: all **205** `addModule` names of `init()` in order (199 in the shipped game, `WeaponBonusUpgrade` twice, `LaserUpdate` is a client-update module), each marked translated or not; **none is translated yet** (layer 9), and asking for one is an error, never a skip. Not the concrete modules, `friend_newModuleInstance`/`getModuleNameKey`, the `onCapture`-style virtuals that take a `Player` (Phase 1 layers 8/9) |
+| `logic::module::{behavior,update,upgrade,die,create,damage,collide,destroy,body,contain,special_power,special_power_update}_module` | `Include/GameLogic/Module/*Module.h` with `Source/GameLogic/Object/*/*Module.cpp`: the base class of each interface. `UpdateModule` (the sleepy-update word: next call frame and phase in one `u32`, `frameToSleepTime`, wake frames, its xfer), `UpgradeModule` with `UpgradeMux`/`UpgradeMuxData` (the trigger, conflict, require-all and reset decisions; masks computed on first use, which assigns name keys), `DieMuxData::isDieApplicable`, `CreateModule`, `BodyModule` (damage scalar, defaults, `BodyDamageType`), `SpecialPowerModule`'s recharge and pause state, the data classes and their INI fields. Effects on objects, players, the UI and the game logic are arguments or traits (`UpgradeEffects`), listed as cut points for layer 8 in each file (Phase 1 layer 5) |
+<!-- --- end p1w3-modules --- -->
 
 **Approved by the owner (2026-10-17):** `XferCRC`/`XferDeepCRC` carry a NaN guard
 (`common::xfer_crc::nan_guard`): a NaN `Real` xfered into a CRC panics in debug
@@ -203,6 +207,41 @@ cargo test --release --features differential
   field, a `calcTimeToBuild` float-to-int out of range, and a template copied
   from a `DefaultSpecialPower` that has an override chain.
 <!-- --- end p1w2-upgrade --- -->
+<!-- --- p1w3-modules --- -->
+- `differential/wrap_module.cpp` runs the real `Module.cpp`, `BehaviorModule.cpp`,
+  `UpdateModule.cpp`, `UpgradeModule.cpp`, `DieModule.cpp`, `CreateModule.cpp`,
+  `DamageModule.cpp`, `CollideModule.cpp`, `DestroyModule.cpp` and `BodyModule.cpp`
+  (with the unchanged headers) behind the real `INI`, `XferSave`/`XferLoad`/`XferCRC`
+  and the **real `UpgradeCenter` of the Upgrade build** (the module tests define their
+  upgrades through `ref_up_reset`/`ref_up_load`; the Upgrade classes keep the
+  Upgrade build's renames, the stand-in classes of this build get names of their own,
+  `differential/shim_module/module_prelude.h`). `differential/shim_module/` holds the
+  stand-ins of `Thing`, `ThingTemplate`, `Object`, `GameLogic` (a frame counter that
+  records `friend_awakenUpdateModule`), `Drawable`, `ExperienceTracker` and `FXList`;
+  `shim/Common/AsciiString.h` gained `isNone`. `ModuleFactory.cpp` cannot be
+  compiled (205 module headers): `build.rs` cuts the body of `init()` out of it
+  verbatim and the wrapper preprocesses it with `addModule` as a recorder, with and
+  without `ALLOW_SURRENDER`/`ALLOW_DEMORALIZE`. Not compiled, so tested by Rust unit
+  tests against the upstream text: `SpecialPowerModule.cpp`,
+  `SpecialPowerUpdateModule.cpp` (they need the player, the UI, the script engine
+  and the thing factory), the `ModuleFactory` lookups (the 205 classes) and
+  `ContainModuleInterface::getContainerPipsToShow`. Results
+  (`tests/differential_module.rs`, 2026-10-18, upstream `0a05454d`): the 205 and the
+  199 registration names in order; 37 constants; 6,000 module-data blocks over nine
+  data classes (5,586 compared, 2,739 read, 2,847 threw with their messages;
+  414 left out: a field line in a base `ModuleData` block reads a null parse table);
+  6,000 `UpgradeModuleData` over 0 to 8 upgrades driven through 39,926
+  `UpgradeMux` operations (5,338 sequences compared, 852 modules fired, 4,119
+  resets, every effect in order, every field of the mux data after every
+  operation, the name keys after); 6,000 `UpdateModule` sequences (44,719
+  operations in the four phases); 40,656 `isDieApplicable` queries; 4,400 base-class
+  xfers (save, load, CRC) over 11 classes: **no mismatch**; every comparison also
+  catches its planted bug, and eight bugs put into the Rust source one at a time were
+  each caught. Left out of the C++ comparison as undefined upstream (counted):
+  an empty or `None` upgrade name that finds no upgrade, a field line in a base
+  `ModuleData` block, `DEATH_NORMAL`/`LEVEL_REGULAR` (`1UL << -1`), a `Bool` byte
+  above 1 read by `xferBool`.
+<!-- --- end p1w3-modules --- -->
 - The C++ is compiled with `-msse2 -mfpmath=sse -ffp-contract=off
   -fno-fast-math -fwrapv -fno-strict-aliasing`, so that its `float` arithmetic
   is the same IEEE single precision the Rust uses.
