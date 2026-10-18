@@ -37,6 +37,7 @@
 //!   money, the sides list, `xfer`) is layer 7.
 
 use super::energy::Energy;
+use super::mission_stats::MissionStats;
 use super::score_keeper::ScoreKeeper;
 use super::ids::PlayerIndex;
 
@@ -55,6 +56,8 @@ pub struct Player {
     pub energy: Energy,
     /// `m_scoreKeeper` (`ScoreKeeper`): `Player::init` calls `reset(m_playerIndex)`.
     pub score_keeper: ScoreKeeper,
+    /// `m_missionStats` (`MissionStats`).
+    pub mission_stats: MissionStats,
     // --- end p1w6-energy ---
 }
 
@@ -67,6 +70,7 @@ impl Player {
             // --- p1w6-energy ---
             energy: Energy::new(),
             score_keeper: ScoreKeeper::new(),
+            mission_stats: MissionStats::new(),
             // --- end p1w6-energy ---
         }
     }

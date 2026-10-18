@@ -764,6 +764,19 @@ mod differential {
                 .include(ww.join("WWLib"))
                 .file(dif.join("wrap_score_keeper.cpp"));
             sk.compile("upstream_score_keeper");
+
+            // MissionStats.cpp, unchanged (differential/wrap_mission_stats.cpp), on shim_energy
+            // (its Player.h is the stand-in; the file never calls a player).
+            let mut ms = cc::Build::new();
+            base(&mut ms);
+            ms.include(&shim_energy)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .file(dif.join("wrap_mission_stats.cpp"));
+            ms.compile("upstream_mission_stats");
         }
         // --- end p1w6-energy ---
         // --- p1w1-geometry ---

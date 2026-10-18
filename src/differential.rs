@@ -868,5 +868,10 @@ extern "C" {
     pub fn ref_score_op(op: c_int, t: c_int, c: c_int, uc: c_int, scoring: c_int, amount: c_int, out: *mut c_uint);
     pub fn ref_score_save(path: *const c_char) -> c_int;
     pub fn ref_score_load(path: *const c_char, out: *mut c_uint);
+
+    // MissionStats.cpp, unchanged (wrap_mission_stats.cpp): its counters (34 values) and its xfer
+    pub fn ref_mission_op(op: c_int, idx: c_int, value: c_int, out: *mut c_uint);
+    pub fn ref_mission_save(path: *const c_char) -> c_int;
+    pub fn ref_mission_load(path: *const c_char, out: *mut c_uint);
 }
 // --- end p1w6-energy ---
