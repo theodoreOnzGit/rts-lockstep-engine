@@ -1287,6 +1287,143 @@ mod differential {
             }
         }
         // --- end p1w4-terrain ---
+        // --- p1w6-locomotor ---
+        // Locomotor and LocomotorSet (differential/wrap_locomotor.cpp): Locomotor.cpp is
+        // #included by the wrapper UNCHANGED, with the real Locomotor.h, LocomotorSet.h,
+        // INI.h, NameKeyGenerator.h, Override.h, Snapshot.h, the Xfer headers and BaseType.h, on
+        // differential/shim_locomotor (the stand-ins for the object, its physics behaviour and
+        // body module, the terrain, the partition manager, the pathfinder, the global data and
+        // the game logic; locomotor_world.h says what each stands in for) ahead of shim_terrain
+        // (GameMemory, SubsystemInterface, STLTypedefs for the real BaseType.h) and the shared
+        // shim, with clang++ -fms-extensions as the other real-BaseType builds.
+        // Compiled HERE, ahead of the libraries it calls, which come later in the link line:
+        // INI (upstream_ini), name keys (upstream_chunk), Xfer (upstream_xfer), Matrix3D
+        // (upstream_wwmath), Cos/Sin/ACos and the logic random values (upstream_gameengine),
+        // normalizeAngle (upstream_ini_wrap). Its INI::parseLocomotorTemplateDefinition is the
+        // real one; the weak STUB of wrap_ini.cpp gives way to it.
+        //
+        // Generated into OUT_DIR/loco_gen, every piece a verbatim cut of an upstream file, its
+        // first marker asserted to occur once:
+        // - locomotor_gen_defs.h: the enums ModelConditionFlagType (ModelState.h), KindOfType
+        //   (KindOf.h), ObjectStatusTypes (ObjectStatusTypes.h), DisabledType
+        //   (DisabledTypes.h), BodyDamageType (BodyModule.h), PhysicsTurningType
+        //   (PhysicsUpdate.h), each from its `enum` line to the first `};`; and the lines
+        //   IS_CONDITION_WORSE and IS_CONDITION_BETTER (BodyModule.h), PATHFIND_CELL_SIZE and
+        //   PATHFIND_CELL_SIZE_F (AIPathfind.h);
+        // - thing_methods.inc: Thing::getUnitDirectionVector2D .. Thing::setTransformMatrix
+        //   (Thing.cpp), and thing_heights.inc: Thing::calculateHeightAboveTerrain ..
+        //   getHeightAboveTerrainOrWater, with the ONE mechanical edit that `Thing::` reads
+        //   `Object::` (the stand-in Object of locomotor_world.h is what the Locomotor drives;
+        //   the edit is asserted to apply and to leave no `Thing::` behind).
+        {
+            let engine = up.join("GameEngine");
+            let gen = out_dir.join("loco_gen");
+            std::fs::create_dir_all(&gen).expect("create loco_gen");
+            let read = |p: std::path::PathBuf| std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+            // from `first` (which must occur once) to the end of `last` after it
+            let seg = |text: &str, what: &str, first: &str, last: &str| -> String {
+                assert_eq!(text.matches(first).count(), 1, "{what}: {first:?} must occur once");
+                let a = text.find(first).expect("segment start");
+                let rel = text[a..].find(last).unwrap_or_else(|| panic!("{what}: {last:?} must follow {first:?}"));
+                text[a..a + rel + last.len()].to_string()
+            };
+            // from `first` (which must occur once) to just before `last`
+            let seg_before = |text: &str, what: &str, first: &str, last: &str| -> String {
+                assert_eq!(text.matches(first).count(), 1, "{what}: {first:?} must occur once");
+                let a = text.find(first).expect("segment start");
+                let rel = text[a..].find(last).unwrap_or_else(|| panic!("{what}: {last:?} must follow {first:?}"));
+                text[a..a + rel].to_string()
+            };
+            let enum_of = |text: &str, what: &str, first: &str| seg(text, what, first, "\n};");
+            let line_of = |text: &str, what: &str, prefix: &str| -> String {
+                let lines: Vec<&str> = text.lines().filter(|l| l.starts_with(prefix)).collect();
+                assert_eq!(lines.len(), 1, "{what}: exactly one line must start with {prefix:?}");
+                lines[0].to_string()
+            };
+            let model_state = read(engine.join("Include/Common/ModelState.h"));
+            let kind_of = read(engine.join("Include/Common/KindOf.h"));
+            let status = read(engine.join("Include/Common/ObjectStatusTypes.h"));
+            let disabled = read(engine.join("Include/Common/DisabledTypes.h"));
+            let body = read(engine.join("Include/GameLogic/Module/BodyModule.h"));
+            let physics = read(engine.join("Include/GameLogic/Module/PhysicsUpdate.h"));
+            let pathfind = read(engine.join("Include/GameLogic/AIPathfind.h"));
+            let defs = [
+                enum_of(&model_state, "ModelState.h", "enum ModelConditionFlagType"),
+                enum_of(&kind_of, "KindOf.h", "enum KindOfType"),
+                enum_of(&status, "ObjectStatusTypes.h", "enum ObjectStatusTypes"),
+                enum_of(&disabled, "DisabledTypes.h", "enum DisabledType"),
+                enum_of(&body, "BodyModule.h", "enum BodyDamageType"),
+                line_of(&body, "BodyModule.h", "#define IS_CONDITION_WORSE"),
+                line_of(&body, "BodyModule.h", "#define IS_CONDITION_BETTER"),
+                enum_of(&physics, "PhysicsUpdate.h", "enum PhysicsTurningType"),
+                line_of(&pathfind, "AIPathfind.h", "#define PATHFIND_CELL_SIZE\t"),
+                line_of(&pathfind, "AIPathfind.h", "#define PATHFIND_CELL_SIZE_F"),
+            ];
+            std::fs::write(
+                gen.join("locomotor_gen_defs.h"),
+                format!("/* generated by build.rs: verbatim from the upstream headers */\n#ifndef LOCO_GEN_DEFS_H\n#define LOCO_GEN_DEFS_H\n{}\n#endif\n", defs.join("\n")),
+            )
+            .expect("write locomotor_gen_defs.h");
+            let thing = read(engine.join("Source/Common/Thing/Thing.cpp"));
+            let as_object = |what: &str, text: String| -> String {
+                assert!(text.contains("Thing::"), "{what}: the cut must name Thing::");
+                let edited = text.replace("Thing::", "Object::");
+                assert!(!edited.contains("Thing::"), "{what}: no Thing:: may remain");
+                edited
+            };
+            let methods = seg_before(
+                &thing,
+                "Thing.cpp",
+                "const Coord3D* Thing::getUnitDirectionVector2D() const",
+                "\n//-------------------------------------------------------------------------------------------------\nBool Thing::isKindOf(KindOfType t) const",
+            );
+            std::fs::write(
+                gen.join("thing_methods.inc"),
+                format!("/* generated by build.rs: Thing.cpp getUnitDirectionVector2D .. setTransformMatrix, `Thing::` read as `Object::` */\n{}", as_object("thing_methods", methods)),
+            )
+            .expect("write thing_methods.inc");
+            let heights = seg_before(
+                &thing,
+                "Thing.cpp",
+                "Real Thing::calculateHeightAboveTerrain() const",
+                "\n//=============================================================================\n/** If we treat this as airborne",
+            );
+            std::fs::write(
+                gen.join("thing_heights.inc"),
+                format!("/* generated by build.rs: Thing.cpp calculateHeightAboveTerrain .. getHeightAboveTerrainOrWater, `Thing::` read as `Object::` */\n{}", as_object("thing_heights", heights)),
+            )
+            .expect("write thing_heights.inc");
+
+            let mut lo = cc::Build::new();
+            base(&mut lo);
+            lo.compiler("clang++")
+                .flag("-fms-extensions")
+                .flag("-fdelayed-template-parsing")
+                .include(&gen)
+                .include(dif.join("shim_locomotor"))
+                .include(dif.join("shim_terrain"))
+                .include(&shim)
+                .include(engine.join("Include"))
+                .include(up.join("Libraries/Include"))
+                .include(up.join("Libraries/Source/Compression"))
+                .include(&ww)
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .include(&dif)
+                .file(dif.join("wrap_locomotor.cpp"));
+            lo.compile("upstream_locomotor");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Locomotor.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/Locomotor.h",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/LocomotorSet.h",
+                "upstream/GeneralsMD/Code/GameEngine/Source/Common/Thing/Thing.cpp",
+                "differential/wrap_locomotor.cpp",
+                "differential/shim_locomotor",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
+        // --- end p1w6-locomotor ---
 
         // GameEngine: RandomValue.cpp, Trig.cpp, QuickTrig.cpp (via their
         // wrappers) and crc.cpp. `_DEBUG` selects crc.h's C++ CRC class
