@@ -5,7 +5,9 @@
 //! `WeaponStatus.h`, `WeaponBonusConditionFlags.h`,
 //! `ObjectScriptStatusBits.h`). Layer plan: `docs/phase1-porting-graph.md`.
 
+pub mod armor_set;
 pub mod damage;
 pub mod object_script_status_bits;
 pub mod powers;
+pub mod weapon_set_flags;
 pub mod weapon_types;

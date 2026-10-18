@@ -153,7 +153,7 @@ instantiations: `KindOf`, `ObjectStatusTypes`, `DisabledTypes`,
 `ModelState` (model condition flags, needed by logic because modules test
 them), `WeaponSetFlags`, `ArmorSetFlags`, `SpecialPowerMaskType`;
 `SparseMatchFinder` (best-match lookup of armor/weapon sets by flags, with a
-`hash_map` cache); `Dict` (a sorted array of `NameKeyType` -> typed value, the
+`std::map` cache keyed by the flags; its `hash_map` cache is commented out); `Dict` (a sorted array of `NameKeyType` -> typed value, the
 map-object property bag).
 
 *Differential route:* direct. `BitFlags.cpp`, `KindOf.cpp`,

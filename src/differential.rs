@@ -183,6 +183,33 @@ extern "C" {
     pub fn ref_game_common_angle(op: c_int, a: c_float, b: c_float) -> c_float;
     pub fn ref_attack_type(op: c_int, t: c_int) -> c_int;
 
+    // BitFlags.h/BitFlagsIO.h and the flag types (wrap_flags.cpp); masks are 4 x u64
+    pub fn ref_flags_op(which: c_int, code: c_int, a: *const u64, b: *const u64, c: *const u64, i: c_int, out: *mut u64) -> c_int;
+    pub fn ref_flags_names(
+        which: c_int,
+        code: c_int,
+        a: *const u64,
+        token: *const c_char,
+        i: c_int,
+        out: *mut u64,
+        name: *mut c_char,
+        cap: c_int,
+    ) -> c_int;
+    pub fn ref_flags_name_at(which: c_int, i: c_int) -> *const c_char;
+    pub fn ref_flags_parse(
+        which: c_int,
+        line: *mut c_char,
+        start: *const u64,
+        out: *mut u64,
+        single: c_int,
+        index: *mut c_int,
+        desc: *mut c_char,
+        cap: c_int,
+    ) -> c_int;
+    pub fn ref_flags_xfer(which: c_int, mode: c_int, path: *const c_char, input: *const u64, out: *mut u64) -> c_int;
+    pub fn ref_flags_enum_values(which: c_int, out: *mut c_longlong, cap: c_int) -> c_int;
+    pub fn ref_flags_globals(which: c_int, out: *mut u64);
+
     // BaseType.h (asm transcriptions)
     pub fn ref_fast_float2long_round(f: c_float) -> c_int;
     pub fn ref_fast_float_trunc(f: c_float) -> c_float;

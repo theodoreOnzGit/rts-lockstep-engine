@@ -21,43 +21,34 @@
 //!
 //! Upstream's `ObjectID`, `DrawableID` and `FormationID` are enums used as
 //! 32-bit integers (`FORCE_*_TO_LONG_SIZE` only sizes them); here they are
-//! `u32` newtypes, because ids are allocated by counting and the type keeps
-//! them apart. Their `INVALID` value is 0.
+//! `i32` aliases (the ones `common::xfer` moves). Their invalid value is 0.
 
 /// `DEFAULT_WORLD_WIDTH`.
 pub const DEFAULT_WORLD_WIDTH: i32 = 64;
 /// `DEFAULT_WORLD_HEIGHT`.
 pub const DEFAULT_WORLD_HEIGHT: i32 = 64;
 
-/// `enum ObjectID`: a unique identifier of an `Object`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ObjectId(pub u32);
-impl ObjectId {
-    /// `INVALID_ID`.
-    pub const INVALID: ObjectId = ObjectId(0);
-}
+/// `enum ObjectID`: a unique identifier of an `Object`. An `int`-sized
+/// enum upstream, used as a counter; `INVALID_ID` is 0.
+pub type ObjectId = i32;
+/// `INVALID_ID`.
+pub const INVALID_ID: ObjectId = 0;
 
 /// `enum DrawableID`: a unique identifier of a `Drawable` (client side).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DrawableId(pub u32);
-impl DrawableId {
-    /// `INVALID_DRAWABLE_ID`.
-    pub const INVALID: DrawableId = DrawableId(0);
-}
+pub type DrawableId = i32;
+/// `INVALID_DRAWABLE_ID`.
+pub const INVALID_DRAWABLE_ID: DrawableId = 0;
 
 /// `enum FormationID`: a player-specified formation.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FormationId(pub u32);
-impl FormationId {
-    /// `NO_FORMATION_ID`: the unit is not in a formation.
-    pub const NONE: FormationId = FormationId(0);
-}
+pub type FormationId = i32;
+/// `NO_FORMATION_ID`: the unit is not in a formation.
+pub const NO_FORMATION_ID: FormationId = 0;
 
 /// `FORCE_OBJECTID_TO_LONG_SIZE` (and the `DrawableID`/`FormationID` ones):
 /// `0x7ffffff`, with seven `f`s. **Upstream quirk:** it is 2^27 - 1, not
 /// the 2^31 - 1 the name suggests; it only sizes the enum, it does not cap
 /// the ids.
-pub const FORCE_ID_TO_LONG_SIZE: u32 = 0x07ff_ffff;
+pub const FORCE_ID_TO_LONG_SIZE: i32 = 0x07ff_ffff;
 
 /// `#define INVALID_ANGLE -100.0f`.
 pub const INVALID_ANGLE: f32 = -100.0;

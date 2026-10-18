@@ -839,6 +839,19 @@ impl<'x> Ini<'x> {
         Some((begin, token))
     }
 
+    /// Not an upstream function: puts `line` (up to its first NUL, at most
+    /// `INI_MAX_CHARS_PER_LINE` bytes) in the line buffer and takes its first
+    /// token with `strtok(m_buffer, seps)`, as `initFromINI` does with each
+    /// field line before calling the field's parser. With it a field parser
+    /// runs on one line (the BitFlags parsers, and their tests).
+    pub fn begin_line(&mut self, line: &[u8]) -> Option<Vec<u8>> {
+        let line = c_str(line);
+        let n = line.len().min(INI_MAX_CHARS_PER_LINE);
+        self.buffer.iter_mut().for_each(|b| *b = 0);
+        self.buffer[..n].copy_from_slice(&line[..n]);
+        self.strtok(true, SEPS)
+    }
+
     /// `getNextToken(seps)`: the next token (default separators if `None`);
     /// `INI_INVALID_DATA` if there is none.
     pub fn get_next_token(&mut self, seps: Option<&[u8]>) -> IniResult<Vec<u8>> {

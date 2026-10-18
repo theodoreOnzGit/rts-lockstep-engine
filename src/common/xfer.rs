@@ -60,14 +60,9 @@ pub type XferVersion = u8;
 pub type XferBlockSize = i32;
 /// `typedef Int Color`.
 pub type Color = i32;
-/// `enum ObjectID` (GameType.h): a 32-bit id, `INVALID_ID = 0`.
-pub type ObjectId = i32;
-/// `enum DrawableID` (GameType.h): a 32-bit id, `INVALID_DRAWABLE_ID = 0`.
-pub type DrawableId = i32;
-/// `INVALID_ID`.
-pub const INVALID_ID: ObjectId = 0;
-/// `INVALID_DRAWABLE_ID`.
-pub const INVALID_DRAWABLE_ID: DrawableId = 0;
+/// `enum ObjectID`, `enum DrawableID` (GameType.h), defined in
+/// [`super::game_type`].
+pub use super::game_type::{DrawableId, ObjectId, INVALID_DRAWABLE_ID, INVALID_ID};
 
 /// `enum XferMode`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
