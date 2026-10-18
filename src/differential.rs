@@ -334,3 +334,9 @@ extern "C" {
     pub fn ref_m3_eq(a: *const c_float, b: *const c_float) -> c_int;
     pub fn ref_m3_static(which: c_int, out: *mut c_float);
 }
+
+// --- p1w1-unicode ---
+extern "C" {
+    // UnicodeString.cpp (wrap_unicode_string.cpp, script interpreter)
+    pub fn ref_unicode_run(script: *const c_uchar, len: c_int, log: *mut c_uchar, cap: c_int) -> c_int;
+}

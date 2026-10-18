@@ -38,6 +38,7 @@ the layer order of [`docs/phase1-porting-graph.md`](docs/phase1-porting-graph.md
 | `common::trig` | `GameEngine/Source/Common/System/Trig.cpp`, `Libraries/Include/Lib/trig.h`: the shipped `sinf`-based `Sin`/`Cos`/`Tan`/`ACos`/`ASin`, and the unused integer-table branch as `trig::table` |
 | `common::quick_trig` | `GameEngine/Include/Common/QuickTrig.h`, `GameEngine/Source/Common/System/QuickTrig.cpp` |
 | `common::xfer`, `xfer_crc`, `xfer_save`, `xfer_load` | `GameEngine/Source/Common/System/Xfer.cpp`, `XferCRC.cpp` (with `XferDeepCRC`), `XferSave.cpp`, `XferLoad.cpp` and their headers, `Snapshot.h`: the snapshot/version mechanism, blocks, typed xfers, the lockstep CRC; save/load on in-memory buffers, and (Phase 1) `xferKindOf`; not `xferMapName`, `xferScienceType`/`Vec`, `xferUpgradeMask`, which need engine name tables |
+| `common::unicode_string` | `Include/Common/UnicodeString.h`, `Source/Common/System/UnicodeString.cpp`: the 16-bit string with `AsciiString`'s semantics (buffer or none, the 16,380-unit limit, `wcscmp`/`_wcsicmp` ordering, `trim` on `iswspace`, `nextToken`, `translate` sign-extending `char`); not `format` or `getBufferForRead` (Phase 1 layer 2) <!-- // --- p1w1-unicode --- -->|
 | `common::ini` | `GameEngine/Source/Common/INI/INI.cpp`, `Include/Common/INI.h`: line reading, `strtok` tokenising, block dispatch, the field-parse tables (`initFromINI`, `initFromINIMulti`, catch-all entries), `loadDirectory`, the INI `XferCRC`, and the generic field parsers (integers, reals, bools, strings, string lists, percentages, angles, durations, velocities, colours, coordinates, bit strings, index and lookup lists, veterancy/death/damage flags, random variables). Not the 62 block handlers of `theTypeTable` (all build game objects not yet ported; listed in `ini::TYPE_TABLE`), nor the field parsers that look names up in game systems (`parseAndTranslateLabel`, `parseMappedImage`, `parseAnim2DTemplate`, the two audio-event parsers, `parseThingTemplate`, `parseArmorTemplate`, `parseWeaponTemplate`, `parseFXList`, `parseParticleSystemTemplate`, `parseDamageFX`, `parseObjectCreationList`, `parseUpgradeTemplate`, `parseSpecialPowerTemplate`, `parseScience`, `parseScienceVector`) |
 | `common::game_common`, `logic::damage` | the frame-rate conversions and veterancy flags of `Include/Common/GameCommon.h` (+ `GameCommon.cpp`), and the damage/death type flags of `Include/GameLogic/Damage.h` (+ `Damage.cpp`), which the INI flag parsers use |
 | `formats::big` | `.big` archives: `GameEngineDevice/Source/Win32Device/Common/Win32BIGFileSystem.cpp` (the parser), `Win32BIGFile.cpp`, `GameEngine/Source/Common/System/ArchiveFile.cpp`, `ArchiveFileSystem.cpp`, on in-memory byte buffers |
@@ -175,6 +176,16 @@ cargo test --release --features differential
 computes when compiled for SSE. **What it does not verify:** agreement with
 the original x87 Win32 executable or its replays; that is a separate
 experiment planned in `SCOPE.md`.
+
+<!-- // --- p1w1-unicode --- -->
+- The real `UnicodeString.cpp` is built like `AsciiString.cpp`
+  (`differential/shim_unicode/`), with `-fshort-wchar` so that `WideChar` is
+  16-bit as on Win32 and 16-bit stand-ins for the MSVC wide-string runtime
+  (`wcslen`, `wcscpy`/`wcscat` as forward copies, `wcscmp` on unsigned units,
+  `_wcsicmp` folding to lower case, `wcsspn`, `wcscspn`, `iswspace` for the C
+  locale; each documented in `unicode_prelude.h`). `iswspace` of units from
+  0x80 is not established for MSVC, so `trim` returns an error there rather
+  than guess (see `common::unicode_string`).
 
 ## Licence
 

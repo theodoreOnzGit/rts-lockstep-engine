@@ -639,6 +639,35 @@ mod differential {
             .file(sys.join("AsciiString.cpp"));
         ascii.compile("upstream_ascii_string");
 
+        // --- p1w1-unicode ---
+        // UnicodeString.cpp unchanged (differential/wrap_unicode_string.cpp),
+        // with the REAL UnicodeString.h (shim_unicode forwards to it) on
+        // shim_dict's allocator, a stand-in AsciiString (translate reads only
+        // getLength/getCharAt) and a no-op critical section. -fshort-wchar
+        // makes wchar_t (hence WideChar and the L"..." literals) 16-bit
+        // unsigned as in MSVC; the wide C runtime functions are replaced by
+        // 16-bit versions in shim_unicode/unicode_prelude.h (each documented
+        // there). Classes renamed by macro, as in the Dict and AsciiString
+        // builds, so that the same mangled names cannot denote different
+        // classes in different builds.
+        let mut unicode = cc::Build::new();
+        base(&mut unicode);
+        unicode
+            .flag("-fshort-wchar")
+            .define("UnicodeString", Some("UpstreamUnicodeString"))
+            .define("AsciiString", Some("UnicodeBuildAsciiString"))
+            .define("TheDynamicMemoryAllocator", Some("UnicodeBuildDynamicMemoryAllocator"))
+            .include(dif.join("shim_unicode"))
+            .include(&shim)
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .flag("-include")
+            .flag(dif.join("shim_unicode/unicode_prelude.h").to_str().expect("UTF-8 path"))
+            .file(dif.join("wrap_unicode_string.cpp"))
+            .file(sys.join("UnicodeString.cpp"));
+        unicode.compile("upstream_unicode_string");
+        // --- end p1w1-unicode ---
+
         // The CSF string loader: GameText.cpp unchanged, with csf_prelude.h
         // force-included (windows.h names, SubsystemInterface; see the file)
         // and the stand-ins of differential/shim_csf.

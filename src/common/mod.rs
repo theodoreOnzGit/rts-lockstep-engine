@@ -31,3 +31,5 @@ pub mod xfer;
 pub mod xfer_crc;
 pub mod xfer_load;
 pub mod xfer_save;
+// --- p1w1-unicode ---
+pub mod unicode_string;
