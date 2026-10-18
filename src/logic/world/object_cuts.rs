@@ -226,6 +226,10 @@ impl Default for ObjectGlobals {
 pub struct ObjectCuts {
     /// When `Some`, every [`CutCall`] is appended.
     pub log: Option<Vec<CutCall>>,
+    /// When `Some`, one line per cut call (`cut ...`), per `Object` client event (`evt ...`) and per call a probe
+    /// module receives (`mod Name`), in the order they happen (the differential test compares it with the
+    /// records of the compiled `Object.cpp`).
+    pub trace: Option<Vec<String>>,
     /// The module calls that were not delivered because the module's body was
     /// running (see `module_call.rs`).
     pub reentrant_skips: Vec<(ModuleHandle, ModuleCall)>,
@@ -283,6 +287,8 @@ pub struct ObjectCuts {
     pub potential_collisions: Vec<ObjectId>,
     /// What `iterateObjectsInRange(..)` with the booby-trap filters returns, nearest first.
     pub booby_traps_in_range: Vec<ObjectId>,
+    /// Objects whose AI has a dozer interface (`ai->getDozerAIInterface()` is non-null; its current task is a real one).
+    pub dozer_ais: BTreeSet<ObjectId>,
     /// Objects whose AI's current locomotor flies (`getLegalSurfaces() & LOCOMOTORSURFACE_AIR`).
     pub ai_airborne: BTreeSet<ObjectId>,
     /// `ai->getTurretRotAndPitch(turret)`'s rotation: (object, turret) -> radians.
@@ -299,6 +305,7 @@ impl Default for ObjectCuts {
     fn default() -> Self {
         ObjectCuts {
             log: None,
+            trace: None,
             reentrant_skips: Vec::new(),
             globals: ObjectGlobals::default(),
             neutral_default_team: 0,
@@ -325,6 +332,7 @@ impl Default for ObjectCuts {
             weapon_sets_with_weapons: BTreeSet::new(),
             ai_turrets: BTreeMap::new(),
             ai_turrets_disabled: BTreeSet::new(),
+            dozer_ais: BTreeSet::new(),
             ai_airborne: BTreeSet::new(),
             ai_turret_rotation: BTreeMap::new(),
             shrouded_status: BTreeMap::new(),
@@ -541,6 +549,9 @@ impl ObjectCuts {
 impl World {
     /// Records an action cut point (when logging is on).
     pub fn cut(&mut self, call: CutCall) {
+        if let Some(t) = &mut self.cuts.trace {
+            t.push(format!("cut {call:?}"));
+        }
         if let Some(log) = &mut self.cuts.log {
             log.push(call);
         }
@@ -548,6 +559,9 @@ impl World {
 
     /// Sends one `Object` notification to the client.
     pub fn emit(&mut self, e: ObjectClientEvent) {
+        if let Some(t) = &mut self.cuts.trace {
+            t.push(format!("evt {e:?}"));
+        }
         self.events.push(ClientEvent::Object(e));
     }
 

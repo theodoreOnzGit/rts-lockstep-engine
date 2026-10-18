@@ -211,11 +211,14 @@ impl World {
         }
 
         if self.objects.find(id).is_some_and(|o| o.ai.is_some()) {
-            if self.cuts.team_has_template_info(team) {
-                self.cut(CutCall::AiSetAttitude { object: id, team });
-            }
-            if self.cuts.team_attack_info(team) {
-                self.cut(CutCall::AiSetAttackInfo { object: id, team });
+            // `getTeam()`, not the team asked for: `setTeam` puts an object of an inactive player on the neutral team
+            if let Some(team) = self.get_team(id) {
+                if self.cuts.team_has_template_info(team) {
+                    self.cut(CutCall::AiSetAttitude { object: id, team });
+                }
+                if self.cuts.team_attack_info(team) {
+                    self.cut(CutCall::AiSetAttackInfo { object: id, team });
+                }
             }
         }
 
@@ -399,7 +402,11 @@ impl World {
     pub fn send_object_created(&mut self, id: ObjectId) {
         let Some(o) = self.objects.find(id) else { return };
         let template_id = o.template().get_template_id();
-        self.events.push(crate::logic::client_event::ClientEvent::ObjectCreated { template_id, drawable_status_bits: 0, object_id: id });
+        let created = crate::logic::client_event::ClientEvent::ObjectCreated { template_id, drawable_status_bits: 0, object_id: id };
+        if let Some(t) = &mut self.cuts.trace {
+            t.push(format!("evt {created:?}"));
+        }
+        self.events.push(created);
         let draw = self.cuts.allocate_drawable_id();
         self.friend_bind_to_drawable(id, draw);
     }
@@ -407,7 +414,11 @@ impl World {
     /// `GameLogic::sendObjectDestroyed(obj)`: the client destroys the
     /// drawable (`ObjectDestroyed`), and the binding is erased.
     pub fn send_object_destroyed(&mut self, id: ObjectId) {
-        self.events.push(crate::logic::client_event::ClientEvent::ObjectDestroyed { object_id: id });
+        let destroyed = crate::logic::client_event::ClientEvent::ObjectDestroyed { object_id: id };
+        if let Some(t) = &mut self.cuts.trace {
+            t.push(format!("evt {destroyed:?}"));
+        }
+        self.events.push(destroyed);
         self.friend_bind_to_drawable(id, INVALID_DRAWABLE_ID);
     }
 

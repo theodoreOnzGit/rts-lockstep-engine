@@ -485,7 +485,7 @@ impl World {
         // rip through the behavior modules and call the onDisabledEdge for any modules that care
         self.call_all_modules(id, ModuleCall::OnDisabledEdge { becoming_disabled });
 
-        if becoming_disabled && self.objects.find(id).is_some_and(|o| o.ai.is_some()) {
+        if becoming_disabled && self.objects.find(id).is_some_and(|o| o.ai.is_some()) && self.cuts.dozer_ais.contains(&id) {
             // Have to say goodbye to the thing we might be building or repairing so someone else can do it.
             self.cut(CutCall::DozerCancelTask { object: id });
         }

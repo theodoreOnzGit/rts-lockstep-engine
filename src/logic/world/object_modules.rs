@@ -262,9 +262,11 @@ impl World {
 
     /// `findAnyShortcutSpecialPowerModuleInterface()`.
     pub fn find_any_shortcut_special_power_module_interface(&mut self, id: ObjectId) -> Option<ModuleIndex> {
-        self.modules_with(id, MODULEINTERFACE_SPECIAL_POWER)
-            .into_iter()
-            .find(|&idx| self.module_call(id, idx, ModuleCall::IsShortcutPower).as_bool())
+        // `spTemplate && spTemplate->isShortcutPower()`: a module with no template is skipped
+        self.modules_with(id, MODULEINTERFACE_SPECIAL_POWER).into_iter().find(|&idx| {
+            matches!(self.module_call(id, idx, ModuleCall::GetSpecialPowerType), ModuleReply::Int(_))
+                && self.module_call(id, idx, ModuleCall::IsShortcutPower).as_bool()
+        })
     }
 
     /// `getSpecialPowerModule(template)`: the module that implements the

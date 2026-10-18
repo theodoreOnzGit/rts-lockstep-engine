@@ -49,6 +49,188 @@ mod differential {
         cfg.define("NDEBUG", None);
     }
 
+    // --- p1w6-object ---
+    /// The text of Object.cpp and its neighbours for differential/wrap_object.cpp (see the block in `build`).
+    /// Latin-1 sources are read lossily: only comments carry non-ASCII bytes.
+    fn generate_object_includes(engine: &Path, out: &Path) {
+        let rd = |rel: &str| -> String { String::from_utf8_lossy(&std::fs::read(engine.join(rel)).unwrap_or_else(|e| panic!("read {rel}: {e}"))).into_owned() };
+        let wr = |name: &str, text: String| std::fs::write(out.join(name), text).unwrap_or_else(|e| panic!("write {name}: {e}"));
+        fn once(text: &str, marker: &str) -> usize {
+            assert_eq!(text.matches(marker).count(), 1, "{marker:?} must occur exactly once");
+            text.find(marker).expect("marker")
+        }
+        fn cut(text: &str, start: &str, end: &str) -> String {
+            let a = once(text, start);
+            let b = once(text, end);
+            assert!(a < b, "{start:?} must come before {end:?}");
+            format!("{}\n{}", &text[..a], &text[b..])
+        }
+        fn class_text(text: &str, start: &str, end: &str) -> String {
+            let a = once(text, start);
+            let b = text[a..].find(end).unwrap_or_else(|| panic!("end of {start:?}")) + a;
+            format!("{}\n", &text[a..b + end.len()])
+        }
+        fn function_text(text: &str, sig: &str) -> String {
+            let a = once(text, sig);
+            let b = text[a..].find("\n}").unwrap_or_else(|| panic!("end of {sig:?}")) + a;
+            format!("{}\n", &text[a..b + 2])
+        }
+        let dashes = "//-------------------------------------------------------------------------------------------------\n";
+
+        // Object.cpp
+        let mut src = rd("Source/GameLogic/Object/Object.cpp");
+        let a = once(&src, "#include \"PreRTS.h\"");
+        let endmark = "#include \"Common/DynamicAudioEventInfo.h\"\n";
+        let b = once(&src, endmark) + endmark.len();
+        src = format!("{}{}", &src[..a], &src[b..]);
+        src = cut(&src, "static const ModelConditionFlags s_allWeaponFireFlags[WEAPONSLOT_COUNT] =", &format!("{dashes}extern void addIcon"));
+        src = cut(
+            &src,
+            "extern void addIcon(const Coord3D *pos, Real width, Int numFramesDuration, RGBColor color);",
+            &format!("{dashes}{dashes}#ifdef DEBUG_LOGGING"),
+        );
+        src = cut(&src, "void Object::reloadAllAmmo(Bool now)", "void Object::setModelConditionState( ModelConditionFlagType a )");
+        src = cut(&src, "\nWeapon* Object::getCurrentWeapon(WeaponSlotType* wslot)\n{", "Relationship Object::getRelationship(const Object *that) const");
+        src = cut(&src, "void Object::adjustModelConditionForWeaponStatus()", "void Object::onPartitionCellChange()");
+        src = cut(&src, "void Object::updateObjValuesFromMapProperties(Dict* properties)", "void Object::friend_adjustPowerForPlayer( Bool incoming )");
+        src = cut(
+            &src,
+            "void Object::doCommandButton( const CommandButton *commandButton, CommandSourceType cmdSource )",
+            "ProductionUpdateInterface* Object::getProductionUpdateInterface( void )",
+        );
+        src = cut(&src, "Int Object::getNumConsecutiveShotsFiredAtTarget( const Object *victim ) const", "const AsciiString& Object::getCommandSetString() const");
+        src = cut(&src, "Bool Object::canProduceUpgrade( const UpgradeTemplate *upgrade )", "void Object::defect( Team* newTeam, UnsignedInt detectionTime )");
+        once(&src, "TheInGameUI->addWorldAnimation( animTemplate,");
+        src = src.replace("TheInGameUI->addWorldAnimation( animTemplate,", "TheInGameUI->addWorldAnimation( this, animTemplate,");
+        wr("object_cpp.inc", format!("/* generated: Object.cpp, includes and untranslated regions removed (build.rs) */\n{src}"));
+
+        // the class body of Object.h
+        let hdr = rd("Include/GameLogic/Object.h");
+        let a = once(&hdr, "class Object : public Thing, public Snapshot");
+        let endm = "};  // end class Object";
+        let b = once(&hdr, endm) + endm.len();
+        wr("object_class.inc", format!("/* generated: class Object from Object.h */\n{}\n", &hdr[a..b]));
+
+        // Geometry
+        let geo_h = rd("Include/Common/Geometry.h");
+        let geo_c = rd("Source/Common/System/Geometry.cpp");
+        wr(
+            "geometry_class.inc",
+            format!(
+                "/* generated: GeometryType and class GeometryInfo from Geometry.h */\n{}class INI;\n{}",
+                class_text(&geo_h, "enum GeometryType\n{", "\n};"),
+                class_text(&geo_h, "class GeometryInfo : public Snapshot", "\n};")
+            ),
+        );
+        let geo_sigs = [
+            "void GeometryInfo::set(GeometryType type, Bool isSmall, Real height, Real majorRadius, Real minorRadius)",
+            "void GeometryInfo::setMaxHeightAbovePosition(Real z)",
+            "Real GeometryInfo::getMaxHeightAbovePosition() const",
+            "void GeometryInfo::calcBoundingStuff()",
+            "void GeometryInfo::crc( Xfer *xfer )",
+            "void GeometryInfo::xfer( Xfer *xfer )",
+            "void GeometryInfo::loadPostProcess( void )",
+        ];
+        wr(
+            "geometry_cpp.inc",
+            format!("/* generated: the GeometryInfo functions Object reaches, from Geometry.cpp */\n{}", geo_sigs.iter().map(|s| function_text(&geo_c, s)).collect::<String>()),
+        );
+
+        // Thing
+        let th_h = rd("Include/Common/Thing.h");
+        let th_c = rd("Source/Common/Thing/Thing.cpp");
+        wr("thing_class.inc", format!("/* generated: class Thing from Thing.h */\n{}", class_text(&th_h, "class Thing : public MemoryPoolObject", "\n}; \n")));
+        let a = once(&th_c, "//=============================================================================\n/** Constructor */");
+        wr("thing_cpp.inc", format!("/* generated: Thing.cpp without its includes */\n{}", &th_c[a..]));
+
+        // ExperienceTracker
+        let ex_h = rd("Include/GameLogic/ExperienceTracker.h");
+        let ex_c = rd("Source/GameLogic/Object/ExperienceTracker.cpp");
+        wr(
+            "experience_class.inc",
+            format!("/* generated: class ExperienceTracker from ExperienceTracker.h */\n{}", class_text(&ex_h, "class ExperienceTracker : public MemoryPoolObject, public Snapshot", "\n};")),
+        );
+        let a = once(&ex_c, &format!("{dashes}ExperienceTracker::ExperienceTracker(Object *parent)"));
+        wr("experience_cpp.inc", format!("/* generated: ExperienceTracker.cpp without its includes */\n{}", &ex_c[a..]));
+
+        // Coord3D, ICoord3D, Region3D
+        let bt = String::from_utf8_lossy(&std::fs::read(engine.join("../Libraries/Include/Lib/BaseType.h")).expect("read BaseType.h")).into_owned();
+        let struct_text = |first: &str| -> String {
+            let a = once(&bt, first);
+            let b = bt[a..].find("\n};\n").unwrap_or_else(|| panic!("end of {first:?}")) + a;
+            bt[a..b + 4].to_string()
+        };
+        wr(
+            "basetype_coords.inc",
+            format!(
+                "/* generated: Coord3D, ICoord3D and Region3D verbatim from Lib/BaseType.h */\n{}\n{}\n{}",
+                struct_text("struct Coord3D \n{"),
+                struct_text("struct ICoord3D \n{"),
+                struct_text("struct Region3D\n{")
+            ),
+        );
+
+        // the enums, verbatim from the headers that define them: `enum Name` followed by `{` (a bare `enum Name;` is a declaration)
+        let enums = [
+            ("Common/ObjectStatusTypes.h", "ObjectStatusTypes"),
+            ("Common/DisabledTypes.h", "DisabledType"),
+            ("Common/KindOf.h", "KindOfType"),
+            ("Common/ModelState.h", "ModelConditionFlagType"),
+            ("GameLogic/WeaponSetType.h", "WeaponSetType"),
+            ("GameLogic/Weapon.h", "WeaponBonusConditionType"),
+            ("GameLogic/ArmorSet.h", "ArmorSetType"),
+            ("Common/SpecialPowerType.h", "SpecialPowerType"),
+            ("GameLogic/Damage.h", "DamageType"),
+            ("GameLogic/Damage.h", "DeathType"),
+            ("Common/GameCommon.h", "Relationship"),
+            ("Common/GameCommon.h", "VeterancyLevel"),
+            ("Common/GameCommon.h", "ObjectShroudStatus"),
+            ("Common/GameCommon.h", "WhichTurretType"),
+            ("Common/Radar.h", "RadarPriorityType"),
+            ("Common/GameType.h", "WeaponSlotType"),
+            ("Common/GameType.h", "PathfindLayerEnum"),
+            ("GameClient/Drawable.h", "TintStatus"),
+            ("GameLogic/ObjectScriptStatusBits.h", "ObjectScriptStatusBit"),
+            ("GameLogic/Object.h", "CrushSquishTestType"),
+            ("GameClient/Eva.h", "EvaMessage"),
+            ("Common/Radar.h", "RadarEventType"),
+        ];
+        let mut all = String::from("/* generated: the enums, verbatim from the headers */\n");
+        for (path, name) in enums {
+            let t = rd(&format!("Include/{path}"));
+            let needle = format!("enum {name}");
+            let mut hits = Vec::new();
+            let mut from = 0;
+            while let Some(p) = t[from..].find(&needle) {
+                let at = from + p;
+                from = at + needle.len();
+                let line_start = t[..at].rfind('\n').map_or(0, |i| i + 1);
+                if !t[line_start..at].chars().all(|c| c == ' ' || c == '\t') {
+                    continue;
+                }
+                if t[from..].starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+                    continue;
+                }
+                if t[from..].trim_start().starts_with('{') {
+                    hits.push(at);
+                }
+            }
+            assert_eq!(hits.len(), 1, "enum {name} in {path} must be defined once");
+            let end = t[hits[0]..].find("};").unwrap_or_else(|| panic!("end of enum {name}")) + hits[0];
+            all.push_str(&format!("/* {path}: {name} */\n{}}};\n\n", &t[hits[0]..end]));
+        }
+        wr("enums.inc", all);
+
+        // the weapon-set to model-condition map (WeaponSet.h) and initKindOfMasks (KindOf.cpp)
+        let ws_h = rd("Include/GameLogic/WeaponSet.h");
+        let a = once(&ws_h, "static const ModelConditionFlagType TheWeaponSetTypeToModelConditionTypeMap[WEAPONSET_COUNT] =");
+        let b = ws_h[a..].find("\n};").expect("end of the map") + a;
+        wr("weaponset_map.inc", format!("/* generated: from WeaponSet.h */\n{}\n", &ws_h[a..b + 3]));
+        let ko_c = rd("Source/Common/System/KindOf.cpp");
+        wr("kindof_masks.inc", format!("/* generated: from KindOf.cpp */\n{}", function_text(&ko_c, "void initKindOfMasks()")));
+    }
+    // --- end p1w6-object ---
+
     pub fn build() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let up = root.join("upstream/GeneralsMD/Code");
@@ -870,6 +1052,49 @@ mod differential {
             println!("cargo:rerun-if-changed={p}");
         }
         // --- end p1w3-thing ---
+        // --- p1w6-object ---
+        // Object (differential/wrap_object.cpp): the text of Object.cpp and of the class Object, compiled with
+        // the stand-ins of differential/shim_object. Upstream is never edited; the text is cut in memory and
+        // written to OUT_DIR/object_gen, every marker asserted to occur exactly once:
+        // - Object.cpp: the includes; the weapon-flag table and the `addIcon` declaration (client types); the
+        //   region of Weapon forwarders (reloadAllAmmo .. setModelConditionState), the weapon getters (getCurrentWeapon ..
+        //   getRelationship), adjustModelConditionForWeaponStatus (the weapon-status model conditions),
+        //   updateObjValuesFromMapProperties, the doCommandButton* .. clearLeechRangeModeForAllWeapons region
+        //   (GUI command buttons), getNumConsecutiveShotsFiredAtTarget .. getCommandSetString (bone positions) and
+        //   canProduceUpgrade; and one edit, `addWorldAnimation( animTemplate,` becomes
+        //   `addWorldAnimation( this, animTemplate,` (the stand-in names the object in its record).
+        // - Object.h: the class body. Thing.h/Thing.cpp, ExperienceTracker.h/.cpp, Geometry.h and the seven functions of
+        //   Geometry.cpp that Object reaches, the enums, Coord3D/ICoord3D/Region3D (BaseType.h), the weapon-set
+        //   model-condition map and initKindOfMasks: verbatim.
+        {
+            let obj_gen = out_dir.join("object_gen");
+            std::fs::create_dir_all(&obj_gen).expect("create object_gen");
+            generate_object_includes(&up.join("GameEngine"), &obj_gen);
+            let shim_obj = dif.join("shim_object");
+            let mut ob = cc::Build::new();
+            base(&mut ob);
+            ob.compiler("clang++")
+                .flag("-fms-extensions")
+                .flag("-fdelayed-template-parsing")
+                .include(&obj_gen)
+                .include(&dif)
+                .flag("-include")
+                .flag(shim_obj.join("object_prelude.h").to_str().expect("UTF-8 path"))
+                .file(dif.join("wrap_object.cpp"));
+            ob.compile("upstream_object");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Object.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/Object.h",
+                "upstream/GeneralsMD/Code/GameEngine/Source/Common/Thing/Thing.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/ExperienceTracker.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Source/Common/System/Geometry.cpp",
+                "differential/wrap_object.cpp",
+                "differential/shim_object",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
+        // --- end p1w6-object ---
         // --- p1w4-terrain ---
         // TerrainLogic (differential/wrap_terrain_logic.cpp): TerrainLogic.cpp is
         // #included by the wrapper UNCHANGED, on differential/shim_terrain_logic (the

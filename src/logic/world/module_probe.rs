@@ -124,6 +124,11 @@ impl ProbeModule {
     /// The module's answer to `call`.
     pub fn handle(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         self.calls = self.calls.wrapping_add(1);
+        if let Some(t) = &mut world.cuts.trace {
+            let text = format!("{call:?}");
+            let end = text.find(|c: char| !c.is_ascii_alphanumeric()).unwrap_or(text.len());
+            t.push(format!("mod {}", &text[..end]));
+        }
         match call {
             // ---- the ones with an answer ----
             ModuleCall::IsSalvageCrateCollide => ModuleReply::Bool(self.answers.salvage),

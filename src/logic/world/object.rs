@@ -120,7 +120,7 @@ use crate::common::base_type::{Coord2D, Coord3D, ICoord3D};
 use crate::common::disabled_types::{DisabledMaskType, DISABLED_COUNT};
 use crate::common::game_common::{PlayerMaskType, VeterancyLevel, MAX_PLAYER_COUNT, NEVER};
 use crate::common::game_type::{
-    DrawableId, FormationId, ObjectId, PathfindLayer, INVALID_DRAWABLE_ID, INVALID_ID, LAYER_GROUND, NO_FORMATION_ID,
+    DrawableId, FormationId, ObjectId, PathfindLayer, INVALID_DRAWABLE_ID, INVALID_ID, LAYER_GROUND, LAYER_INVALID, NO_FORMATION_ID,
     WEAPONSLOT_COUNT,
 };
 use crate::common::geometry::GeometryInfo;
@@ -688,7 +688,7 @@ impl Object {
             entered_or_exited_frame: 0,
             i_pos: ICoord3D::default(),
             layer: LAYER_GROUND,
-            destination_layer: LAYER_GROUND,
+            destination_layer: LAYER_INVALID, // not set by the constructor; the memory pool zero-fills (found by the differential test)
             formation_id: NO_FORMATION_ID,
             formation_offset: Coord2D::default(),
             command_set_string_override: Vec::new(),

@@ -391,6 +391,9 @@ fn run_rust(c: &Case) -> Vec<u32> {
                 if let Some(o) = w.find_object_mut(obj) {
                     if on {
                         o.disabled.set(DISABLED_HELD, 1);
+                        // p1w6-object: `checkDisabledStatus` (end of frame, now translated) clears a type whose
+                        // frame has come; `setDisabled` sets FOREVER, and so does this stand-in for it
+                        o.disabled_till_frame[DISABLED_HELD as usize] = rts_lockstep_engine::common::game_common::FOREVER;
                     } else {
                         o.disabled.clear();
                     }
