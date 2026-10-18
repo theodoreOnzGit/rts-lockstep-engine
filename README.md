@@ -80,6 +80,9 @@ the layer order of [`docs/phase1-porting-graph.md`](docs/phase1-porting-graph.md
 | `common::special_power` | `Include/Common/SpecialPower.h`, `Source/Common/RTS/SpecialPower.cpp`, `Source/Common/INI/INISpecialPower.cpp`: `SpecialPowerTemplate` (reload time, required science, timers, radius, flags, two sound names, academy type) with its `Overridable` chain (getters read the final override; `getAcademyClassificationType` reads the head, as upstream), `SpecialPowerStore` (lookup by name, id and index; `reset` removing overrides; the `SpecialPower` INI block in `Overwrite` and `CREATE_OVERRIDES` loads) and the `SPECIALPOWERMASK` helper functions. `RequiredScience` takes a function saying which name keys are sciences, until `Science` is translated. Left out for layers 7/8: `canUseSpecialPower(Object*, ...)`. A template copied from a `DefaultSpecialPower` that has an override chain is an error (upstream shares the pointer and frees it at `reset`) (Phase 1 layer 4) |
 | `common::academy_classification`, `common::audio_event_name` | `AcademyClassificationType` and its names (`Include/Common/AcademyStats.h`, `Source/Common/RTS/AcademyStats.cpp`; the rest of that file is layer 7), and the name of an `AudioEventRTS` as `INI::parseAudioEventRTS` sets it (`NoSound` changes nothing; the client resolves the name) (Phase 1 layer 4) |
 <!-- --- end p1w2-upgrade --- -->
+<!-- --- p1w3-statemachine --- -->
+| `common::state_machine` | `Include/Common/StateMachine.h`, `Source/Common/StateMachine.cpp`: `StateMachine` (the enter/update/exit protocol, `STATE_CONTINUE`/`SUCCESS`/`FAILURE` and sleeping states, success/failure successors, conditions, `EXIT_MACHINE_WITH_*`, the 20-deep transition limit, lock/halt, the goal, `xfer` with its snapshot-all-states branch), the four utility states, `isIn*State` with upstream's quirks. States and conditions are values of enums the caller defines (`StateBehavior`), dispatched by `match`; the owner `Object` and `TheGameLogic` are a context (`StateContext`: the frame and `findObjectByID`), a cut point per call (Phase 1 layer 5). The `STATE_MACHINE_DEBUG` code is not translated. A state id defined twice and unbounded re-entrancy are undefined upstream: errors, counted |
+<!-- --- end p1w3-statemachine --- -->
 
 **Approved by the owner (2026-10-17):** `XferCRC`/`XferDeepCRC` carry a NaN guard
 (`common::xfer_crc::nan_guard`): a NaN `Real` xfered into a CRC panics in debug
@@ -203,6 +206,32 @@ cargo test --release --features differential
   field, a `calcTimeToBuild` float-to-int out of range, and a template copied
   from a `DefaultSpecialPower` that has an override chain.
 <!-- --- end p1w2-upgrade --- -->
+<!-- --- p1w3-statemachine --- -->
+- `differential/wrap_statemachine.cpp` runs the real `StateMachine.cpp`,
+  compiled unchanged as its own translation unit, with `StateMachine.h` and the
+  Xfer headers unchanged, against `differential/shim_statemachine/`: `GameLogic.h`
+  (the frame and `findObjectByID`), `Object.h` (`getID`, `getPosition`),
+  `ThingTemplate.h`, `GlobalData.h` (debug logging only) and a `GameState.h`
+  that adds the `SaveCode` enum, which build.rs cuts verbatim out of the real
+  header (asserted once). `statemachine_prelude.h` (forced in) renames
+  `Object`, `GameLogic`, `TheGameLogic` and `ThingTemplate` to `Sm*` by macro, so
+  that no symbol of the archive clashes with another fixture's stand-in or
+  translation, and makes `private`/`protected` public for the wrapper's dump.
+  The machine is driven through the real `XferSave`, `XferLoad`, `XferCRC` and
+  `XferDeepCRC` of the Xfer build (this archive is linked ahead of it); loads go
+  through a `GuardedLoad` that flags a `bool` byte other than 0/1 and a short read
+  of a field, which are undefined or unspecified upstream. Results
+  (`tests/differential_state_machine.rs`, 2026-10-18, upstream `0a05454d`): 6,000
+  random state graphs with operation scripts, 5,897 run on both sides (131,922
+  operations, 746,502 callbacks, 278,595 conditions, 66,723 re-entrant actions,
+  6,324 saves, 3,632 CRC operations, 18,981 loads); **no mismatch** in the events,
+  results, xfer bytes or CRCs; each comparison catches its planted bug. Left out of
+  the C++ comparison as undefined upstream (counted by the test): a state id defined
+  twice (103 cases). Found: a load that fails inside a field leaves the C++ field
+  partly overwritten (`fread` into the destination) while the Rust typed Xfer
+  methods assign only on success (`common::xfer`, unchanged; the test cuts streams at
+  field boundaries).
+<!-- --- end p1w3-statemachine --- -->
 - The C++ is compiled with `-msse2 -mfpmath=sse -ffp-contract=off
   -fno-fast-math -fwrapv -fno-strict-aliasing`, so that its `float` arithmetic
   is the same IEEE single precision the Rust uses.
