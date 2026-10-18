@@ -475,18 +475,19 @@ are a context argument (`&mut World` or a frame number) instead of a global.
 
 | layer | translated so far | differential test |
 |---|---|---|
-| 1 | `BaseType.h` value types and templates; `GameType.h`/`.cpp`; `GameCommon.h` (all but the intrusive-list macros) and `GameCommon.cpp`; `Errors.h`; `SpecialPowerType.h`; `ThingSort.h`; `Powers.h`; `WeaponSetType.h`; `WeaponStatus.h`; `WeaponBonusConditionFlags.h`; `ObjectScriptStatusBits.h`; `DiscreteCircle` | `tests/differential_value_types.rs` |
-| 2 | `NameKeyGenerator`, `StaticNameKey`, `WellKnownKeys.h`; `AsciiString` (all but `format`) | `tests/differential_name_key.rs`, `tests/differential_ascii_string.rs` |
+| 1 | `BaseType.h` value types and templates; `GameType.h`/`.cpp`; `GameCommon.h` (all but the intrusive-list macros) and `GameCommon.cpp`; `Errors.h`; `SpecialPowerType.h`; `ThingSort.h`; `Powers.h`; `WeaponSetType.h`; `WeaponStatus.h`; `WeaponBonusConditionFlags.h`; `ObjectScriptStatusBits.h`; `DiscreteCircle`; `LatchRestore`; `Overridable`/`Override` | `tests/differential_value_types.rs`, `tests/differential_latch_override.rs` |
+| 2 | `NameKeyGenerator`, `StaticNameKey`, `WellKnownKeys.h`; `AsciiString` (all but `format`); `STLTypedefs.h` (the `AsciiString` comparators; the hash functors are not translated, see `common::stl_typedefs`); `SubsystemInterface` (the registry) | `tests/differential_name_key.rs`, `tests/differential_ascii_string.rs`, `tests/differential_stl_typedefs.rs`, `tests/differential_subsystem_interface.rs` |
 | 3 | `BitFlags`/`BitFlagsIO` and all seven instantiations (`KindOf`, `ObjectStatusTypes`, `DisabledTypes`, `ModelState` flags, `ArmorSet` flags, `WeaponSetFlags`, `SpecialPowerMaskType`); `SparseMatchFinder`; `Dict`; `Xfer::xferKindOf` | `tests/differential_bit_flags.rs`, `tests/differential_dict.rs` |
 
 Still open in layers 1-3: `PartitionSolver` (see the `std::sort` hazard
-above), `Overridable`/`Override`, `LatchRestore` (layer 1);
+above) (layer 1);
 `AsciiString::format` (the MSVC runtime's `_vsnprintf`) and `UnicodeString`
 (16-bit `WideChar` with the MSVC runtime's `wcslen`/`iswspace`/`wcsspn`; its
 differential build needs 16-bit stand-ins for them, and `iswspace`'s
 classification of non-ASCII spaces in the MSVC C locale has to be pinned
-down first; it holds display text, not lockstep state), `STLTypedefs.h`,
-`SubsystemInterface` (layer 2); folding
+down first; it holds display text, not lockstep state) and the `UnicodeString`
+comparator of `STLTypedefs.h` (layer 2; `less_than_nocase<UnicodeString>` waits for
+`UnicodeString`); folding
 `logic::damage`'s hand-written `DamageTypeFlags` into the generic
 `BitFlags`; moving `formats::data_chunk`'s name-keyed `Dict` stand-in onto
 `common::dict` and `common::name_key_generator`.

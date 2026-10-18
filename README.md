@@ -51,6 +51,11 @@ the layer order of [`docs/phase1-porting-graph.md`](docs/phase1-porting-graph.md
 | `ww::realcrc` | `WWLib/realcrc.h`, `realcrc.cpp`: `CRC_Memory` |
 | `formats::w3d` | W3D models, parsed into plain structs (no rendering): `WW3D2/w3d_file.h` and `w3d_obsolete.h` (all chunk ids, flags and the 84 file structs); hierarchies (`htree.cpp`, `pivot.cpp`); animations (`hrawanim.cpp`, `hcanim.cpp`, `motchan.cpp`: raw, time-coded, adaptive-delta and bit channels); meshes (`MeshModelClass::Load_W3D` of `meshmdlio.cpp`, with the parts of `meshgeometry.cpp`, `meshmatdesc.cpp`, `vertmaterial.cpp`, `texture.cpp`, `aabtree.cpp`, `w3d_util.cpp`, `shader.h` and `dx8wrapper.h` it calls). Not the legacy material chunks (`MATERIALS3`, multi-material per-triangle materials), the processing after the chunks are read (`install_materials`, `post_process`, generated AABTrees), nor the asset manager's file loop (`Load_3D_Assets`) |
 | `formats::texture` | textures into raw pixel buffers: Targa images as `WWLib/TARGA.CPP` reads them (`Open`, both `Load`s, run-length decoding, `InvertImage`, `XFlip`, `YFlip` with its byte-tail bug, palettes, Targa 2.0 footer and extension); DDS files as `WW3D2/ddsfile.cpp` reads them (header, level table, payload, `Get_Pixel`, `Get_4x4_Block`, the level and cube-map copies to every surface format, with upstream's DXT1 and DXT5 decompression; upstream has no DXT2-4 decoder); the formats of `ww3dformat.cpp`/`formconv.cpp`, `Write_B8G8R8A8` of `bitmaphandler.h` and `Recolor` of `colorspace.h`. Not Targa writing (`Save`, `EncodeImage`), nor the Direct3D surface overloads |
+| `common::latch_restore` | `Include/Common/LatchRestore.h`: the scope guard that latches a variable and restores it when dropped, on every exit from the scope (Phase 1 layer 1) |
+| `common::overridable` | `Include/Common/Overridable.h`, `Include/Common/Override.h`: the INI override chains of templates and `OVERRIDE<T>`, which reads the final override (Phase 1 layer 1) |
+| `common::stl_typedefs` | `Include/Common/STLTypedefs.h`: the `AsciiString` comparators `less_than_nocase` and `equal_to`, and the `NoCaseAsciiKey` map key; not the `hash` functors, since no `hash_map` order is kept (Phase 1 layer 2) |
+| `common::subsystem_interface` | `Include/Common/SubsystemInterface.h`, `Source/Common/System/SubsystemInterface.cpp`: the subsystem trait and its registry (init and post-process load in order, reset and shutdown in reverse), with no global list and without the `DUMP_PERF_STATS` timing (Phase 1 layer 2) |
+<!-- --- p1w1-small --- -->
 
 **Approved by the owner (2026-10-17):** `XferCRC`/`XferDeepCRC` carry a NaN guard
 (`common::xfer_crc::nan_guard`): a NaN `Real` xfered into a CRC panics in debug
@@ -143,6 +148,9 @@ cargo test --release --features differential
   inline assembly with no C++ fallback (`BaseType.h`, the release path of
   `crc.h`), the reference is a GNU-asm transcription of the same
   instructions, labelled as such.
+<!-- --- p1w1-small --- -->
+- `differential/shim_stl/` builds `STLTypedefs.h` with the real `AsciiString.h` and `AsciiString.cpp` (classes renamed by macro, as in the AsciiString build), a `BaseType` forwarder to the shim (the real header is MSVC-only), and a `UnicodeString` with `compareNoCase` that aborts if called. `differential/shim_subsys/` builds `SubsystemInterface.cpp` with its own `PreRTS.h`, stand-ins for `INI.h` and `Xfer.h` (their bodies abort; the wrapper passes no INI paths), and forwarders to the shim tree for everything except the real `SubsystemInterface.h`.
+<!-- --- end p1w1-small --- -->
 - The C++ is compiled with `-msse2 -mfpmath=sse -ffp-contract=off
   -fno-fast-math -fwrapv -fno-strict-aliasing`, so that its `float` arithmetic
   is the same IEEE single precision the Rust uses.

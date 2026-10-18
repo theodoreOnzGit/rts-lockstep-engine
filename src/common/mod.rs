@@ -31,3 +31,9 @@ pub mod xfer;
 pub mod xfer_crc;
 pub mod xfer_load;
 pub mod xfer_save;
+
+// --- p1w1-small ---
+pub mod latch_restore;
+pub mod overridable;
+pub mod stl_typedefs;
+pub mod subsystem_interface;
