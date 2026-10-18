@@ -53,3 +53,6 @@ pub mod terrain_visual;
 // --- p1w5-world ---
 pub mod world;
 // --- end p1w5-world ---
+// --- p1w6-locomotor ---
+pub mod locomotor;
+// --- end p1w6-locomotor ---

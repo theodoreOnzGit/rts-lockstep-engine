@@ -443,7 +443,7 @@ WEAK_STUB(INI::parseCrateTemplateDefinition) STUB(INI::parseWindowTransitions)
 WEAK_STUB(INI::parseDamageFXDefinition) STUB(INI::parseDialogDefinition)
 STUB(INI::parseDrawGroupNumberDefinition) STUB(INI::parseEvaEvent)
 STUB(INI::parseFXListDefinition) WEAK_STUB(INI::parseGameDataDefinition) /* p1w2-globaldata: INIGameData.cpp (wrap_globaldata.cpp) defines it */
-STUB(INI::parseInGameUIDefinition) STUB(INI::parseLocomotorTemplateDefinition)
+STUB(INI::parseInGameUIDefinition) WEAK_STUB(INI::parseLocomotorTemplateDefinition) /* p1w6-locomotor: real in Locomotor.cpp (wrap_locomotor.cpp) */
 STUB(INI::parseLanguageDefinition) STUB(INI::parseMapCacheDefinition)
 STUB(INI::parseMapDataDefinition) STUB(INI::parseMappedImageDefinition)
 STUB(INI::parseMiscAudio) STUB(INI::parseMouseDefinition) STUB(INI::parseMouseCursorDefinition)

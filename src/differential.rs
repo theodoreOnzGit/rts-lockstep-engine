@@ -853,3 +853,75 @@ extern "C" {
     pub fn ref_world_run(prog: *const c_int, n_prog: c_int, out: *mut c_uint, cap: c_int) -> c_int;
 }
 // --- end p1w5-world ---
+
+// --- p1w6-locomotor ---
+/// The scene of one Locomotor call (`LocoEnv` of differential/shim_locomotor/locomotor_world.h):
+/// same fields, same order, 4-byte fields only.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LocoEnv {
+    pub frame: c_uint,
+    pub gravity: c_float,
+    pub penalty: c_int,
+    pub body_state: c_int,
+    pub has_physics: c_int,
+    pub stunned: c_int,
+    pub motive: c_int,
+    pub vel: [c_float; 3],
+    pub vel_mag: c_float,
+    pub fwd2d: c_float,
+    pub fwd3d: c_float,
+    pub mass: c_float,
+    pub layer: c_int,
+    pub kind_mask: c_int,
+    pub deck_height: c_float,
+    pub major_radius: c_float,
+    pub bounding_circle_radius: c_float,
+    pub disabled_held: c_int,
+    pub ga: c_float,
+    pub gb: c_float,
+    pub gc: c_float,
+    pub wx: c_float,
+    pub wz: c_float,
+    pub layer_offset: c_float,
+    pub struct_offset: c_float,
+    pub highest_layer: c_int,
+    pub inv_enabled: c_int,
+    pub inv_box: [c_float; 4],
+}
+
+extern "C" {
+    // Locomotor.cpp, LocomotorSet and the INI block (wrap_locomotor.cpp). The meaning of every
+    // argument is in differential/wrap_locomotor.cpp and tests/differential_locomotor.rs.
+    pub fn ref_loco_reset();
+    pub fn ref_loco_name_key(name: *const c_char) -> c_uint;
+    pub fn ref_loco_dump_store(buf: *mut c_uint, cap: c_int) -> c_int;
+    pub fn ref_loco_store_reset();
+    pub fn ref_loco_new(name: *const c_char, frame: c_uint) -> c_int;
+    pub fn ref_loco_xfer_save(handle: c_int, path: *const c_char, out: *mut c_uchar, cap: c_int, len: *mut c_int) -> c_int;
+    pub fn ref_loco_xfer_load(name: *const c_char, frame: c_uint, path: *const c_char, new_handle: *mut c_int) -> c_int;
+    pub fn ref_loco_obj(op: c_int, fa: *const c_float, ia: *const c_int);
+    pub fn ref_loco_obj_state(out: *mut c_uint);
+    pub fn ref_loco_call(
+        handle: c_int,
+        op: c_int,
+        env: *const LocoEnv,
+        fa: *const c_float,
+        ia: *const c_int,
+        rf: *mut c_uint,
+        ri: *mut c_int,
+        log: *mut c_uint,
+        cap: c_int,
+        log_len: *mut c_int,
+    );
+    pub fn ref_loco_state(handle: c_int, out: *mut c_uint);
+    pub fn ref_loco_getters(handle: c_int, out: *mut c_uint);
+    pub fn ref_locoset_new() -> c_int;
+    pub fn ref_locoset_add(set: c_int, name: *const c_char, frame: c_uint) -> c_int;
+    pub fn ref_locoset_clear(set: c_int);
+    pub fn ref_locoset_find(set: c_int, mask: c_int) -> c_int;
+    pub fn ref_locoset_dump(set: c_int, buf: *mut c_uint, cap: c_int) -> c_int;
+    pub fn ref_locoset_xfer_save(set: c_int, cur: c_int, path: *const c_char, out: *mut c_uchar, cap: c_int, len: *mut c_int) -> c_int;
+    pub fn ref_locoset_xfer_load(set: c_int, frame: c_uint, path: *const c_char, cur: *mut c_int) -> c_int;
+}
+// --- end p1w6-locomotor ---
