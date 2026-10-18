@@ -577,6 +577,27 @@ mod differential {
         iniw.compile("upstream_ini_wrap");
 
 
+        // Dict.cpp unchanged (differential/wrap_dict.cpp), with the
+        // pointer-sized string shims and the zero-filling allocator of
+        // differential/shim_dict ahead of differential/shim. The class
+        // names are renamed by macro in this build: its AsciiString and
+        // UnicodeString are not the std::string-based shims the other
+        // builds use, and the chunk build has a stand-in Dict, so the same
+        // mangled names would otherwise denote different classes (an ODR
+        // violation the linker would resolve by picking one).
+        let mut dict = cc::Build::new();
+        base(&mut dict);
+        dict.define("AsciiString", Some("DictShimAsciiString"))
+            .define("UnicodeString", Some("DictShimUnicodeString"))
+            .define("Dict", Some("UpstreamDict"))
+            .include(dif.join("shim_dict"))
+            .include(&shim)
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .file(dif.join("wrap_dict.cpp"))
+            .file(up.join("GameEngine/Source/Common/Dict.cpp"));
+        dict.compile("upstream_dict");
+
         // The CSF string loader: GameText.cpp unchanged, with csf_prelude.h
         // force-included (windows.h names, SubsystemInterface; see the file)
         // and the stand-ins of differential/shim_csf.
@@ -641,6 +662,10 @@ mod differential {
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/INI/INI.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/GameClient/GameText.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/NameKeyGenerator.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/Common/Dict.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/Common/BitFlags.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/WeaponSet.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/Common/RTS/SpecialPower.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic",
             "upstream/GeneralsMD/Code/GameEngine/Include/GameClient",
             "upstream/GeneralsMD/Code/GameEngine/Include/Common/QuickTrig.h",

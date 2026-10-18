@@ -57,7 +57,9 @@
 //! - `NameKeyType`: `readNameKey` returns the name, and [`Dict`] is keyed by
 //!   name. Upstream's keys come from the process-wide `NameKeyGenerator` (in
 //!   first-seen order) and a `Dict` is sorted by them; here a `Dict` keeps
-//!   first-insertion order.
+//!   first-insertion order. (Both are translated since Phase 1, as
+//!   `common::name_key_generator` and `common::dict`; moving `readNameKey`
+//!   and `readDict` onto them is still to do.)
 //!
 //! # Where this differs from upstream (only where upstream is undefined)
 //!

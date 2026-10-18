@@ -123,6 +123,9 @@ extern "C" {
     pub fn ref_well_known_key_count() -> c_int;
     pub fn ref_well_known_key_name(i: c_int, out: *mut c_char, cap: c_int, key: *mut c_uint) -> c_int;
 
+    // Dict.cpp (wrap_dict.cpp, script interpreter)
+    pub fn ref_dict_run(script: *const c_uchar, len: c_int, log: *mut c_uchar, cap: c_int) -> c_int;
+
     // WWLib/chunkio.cpp and the WW3D2 loaders (wrap_w3d.cpp)
     pub fn ref_chunkio_run(
         data: *const c_char,

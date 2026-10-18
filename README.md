@@ -28,6 +28,7 @@ the layer order of [`docs/phase1-porting-graph.md`](docs/phase1-porting-graph.md
 | `common::game_type`, `common::game_common` (rest), `common::errors`, `common::special_power_type`, `common::thing_sort`, `logic::powers`, `logic::weapon_types`, `logic::object_script_status_bits` | `Include/Common/GameType.h` (+ `GameType.cpp`), the rest of `GameCommon.h` (+ `normalizeAngle`, `TheRelationshipNames`), `Errors.h`, `SpecialPowerType.h`, `ThingSort.h`, `Include/GameLogic/Powers.h`, `WeaponSetType.h`, `WeaponStatus.h`, `WeaponBonusConditionFlags.h`, `ObjectScriptStatusBits.h` (Phase 1 layer 1) |
 | `common::name_key_generator`, `common::well_known_keys` | `Include/Common/NameKeyGenerator.h`, `Source/Common/NameKeyGenerator.cpp` (the socket/chain structure, so keys come out in upstream's order, including its case-folding quirk), `StaticNameKey`, and the 127 keys of `Include/Common/WellKnownKeys.h` (Phase 1 layer 2) |
 | `common::bit_flags`, `common::kind_of`, `common::object_status_types`, `common::disabled_types`, `common::model_state`, `common::special_power_mask_type`, `logic::armor_set`, `logic::weapon_set_flags` | `Include/Common/BitFlags.h`, `BitFlagsIO.h` (operations, names, INI parsing, xfer; the CRC branch hashes 4 bytes as the shipped Win32 build did) and its seven instantiations with their enums and name lists: `KindOf.h`/`.cpp`, `ObjectStatusTypes.h`/`.cpp`, `DisabledTypes.h`/`.cpp`, `ModelState.h` and `BitFlags.cpp`, `SpecialPowerMaskType.h` (names of `SpecialPower.cpp`), `GameLogic/ArmorSet.h` (the flags), `WeaponSetFlags.h` (names of `WeaponSet.cpp`) (Phase 1 layer 3) |
+| `common::dict` | `Include/Common/Dict.h`, `Source/Common/Dict.cpp`: the sorted key/value pairs with upstream's 24-bit key packing, Shell sort, binary search and rename-and-drop `remove` (Phase 1 layer 3) |
 | `common::random_value` | `GameEngine/Source/Common/RandomValue.cpp` and the Logic/Client/Audio RandomValue headers |
 | `common::crc` | `GameEngine/Source/Common/crc.cpp`, `GameEngine/Include/Common/crc.h` |
 | `common::base_type` | the fast float helpers, `REAL_TO_*` macros and `PI` of `Libraries/Include/Lib/BaseType.h` |
@@ -122,7 +123,10 @@ cargo test --release --features differential
   (those files need most of the engine); it uses clang++ with
   `-fms-extensions -fdelayed-template-parsing` and includes `KindOf.h` before
   `Xfer.h`, whose `enum KindOfType;` forward declaration only MSVC accepted
-  in any order (`differential/shim_flags/`).
+  in any order (`differential/shim_flags/`). `Dict.cpp` keeps each string
+  in a pointer-sized slot, so its build uses pointer-sized string shims
+  (`differential/shim_dict/`), with the class names renamed by macro so
+  they cannot be confused at link time with the other builds' shims.
 - `differential/shim/` holds minimal stand-ins for headers that cannot be
   compiled outside MSVC/Windows (each says what it replaces and why;
   `differential/shim_ini/` adds, for the INI build only, declaration-only
