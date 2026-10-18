@@ -69,3 +69,6 @@ pub mod upgrade;
 // --- p1w3-playertemplate ---
 pub mod player_template;
 // --- end p1w3-playertemplate ---
+// --- p1w3-statemachine ---
+pub mod state_machine;
+// --- end p1w3-statemachine ---

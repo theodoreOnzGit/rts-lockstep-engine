@@ -672,3 +672,13 @@ extern "C" {
     pub fn ref_pt_sides_null();
 }
 // --- end p1w3-playertemplate ---
+
+// --- p1w3-statemachine ---
+extern "C" {
+    /// differential/wrap_statemachine.cpp: runs a script (encoding in
+    /// `tests/differential_state_machine.rs`) on the REAL `StateMachine`;
+    /// `path` is a scratch file prefix. Returns the log length, -1 if the
+    /// script is malformed.
+    pub fn ref_sm_run(path: *const c_char, script: *const c_uint, n: c_int, log: *mut c_uint, cap: c_int) -> c_int;
+}
+// --- end p1w3-statemachine ---

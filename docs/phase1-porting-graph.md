@@ -488,6 +488,9 @@ are a context argument (`&mut World` or a frame number) instead of a global.
 <!-- --- p1w2-upgrade --- -->
 | 4 (wave 2, `p1w2-upgrade`) | `Upgrade` (`UpgradeTemplate`, `UpgradeCenter` with its mask bits, `Upgrade` instances and their xfer, the `Upgrade` block, `Xfer::xferUpgradeMask` as `common::upgrade::xfer_upgrade_mask`), `SpecialPower` (`SpecialPowerTemplate` with its override chain, `SpecialPowerStore`, the `SpecialPower` block); button images and sounds stay names | `tests/differential_upgrade.rs`, `tests/differential_special_power.rs` |
 <!-- --- end p1w2-upgrade --- -->
+<!-- --- p1w3-statemachine --- -->
+| 5 (wave 3, `p1w3-statemachine`) | `StateMachine` (`common::state_machine`): `State`/`StateMachine` as `StateBehavior` over a caller's state enum, the enter/update/exit protocol, sleeping states, success/failure successors and conditions, the exits, lock/halt/goal, `xfer`; the four utility states. `Object` and `TheGameLogic` are the `StateContext` cut points | `tests/differential_state_machine.rs` |
+<!-- --- end p1w3-statemachine --- -->
 
 Layer 4, not translated: `RankInfo` (`GameLogic/System/RankInfo.cpp`).
 It needs `Overridable`/`Override` (layer 1, open), `UnicodeString` (layer 2,
@@ -582,6 +585,36 @@ override `DefaultSpecialPower`. `Xfer::xferUpgradeMask` is checked by Rust
 unit tests only: the Xfer build stands `TheUpgradeCenter` in with functions
 that abort.
 <!-- --- end p1w2-upgrade --- -->
+
+<!-- --- p1w3-statemachine --- -->
+**StateMachine (wave 3, branch `p1w3-statemachine`, 2026-10-18).** The shape layer 10
+(`AIStateMachine`, `AIStates`) builds on: a state is a value of the caller's enum
+`S: StateBehavior`, held in a `BTreeMap<StateId, _>` by the machine; a condition is a
+value of the caller's enum `S::Condition` (upstream's `StateTransFuncPtr` + `void*`);
+the callbacks (`on_enter`, `on_exit`, `update`, `test`) are associated functions that
+take `(machine, context, state id)` and reach their own data with `machine.state_mut(id)`
+at the point of use, so that a state may call `set_state` on its own machine from inside
+a callback, as upstream's states do, with no aliased borrow. `S::Ctx: StateContext` is
+the owner `Object` and the world.
+
+*Cut points (every `Object`/`GameLogic` call in the two files):*
+`TheGameLogic->getFrame()` -> `StateContext::frame`;
+`TheGameLogic->findObjectByID()` -> `StateContext::find_object`;
+`Object::getID()`/`getPosition()` in `setGoalObject` -> the `ObjectRef` argument;
+`getMachineOwner()`/`getOwner()` -> the context; the owner's template name,
+`TheGlobalData->m_stateMachineDebug` and `TheObjectIDToDebug` (debug logging only) -> not
+translated, with the rest of the `STATE_MACHINE_DEBUG` code.
+
+*Undefined upstream, errors in the Rust, counted:* a state id defined twice (the second
+`State` is orphaned and leaked), and unbounded re-entrancy (stack overflow; the Rust stops
+at `MAX_NESTING`). *Kept as upstream:* `isInForceAttackState` calls `isIdle()`; a sleep
+ending exactly at frame 2^32 wraps to 0 and is no sleep; saving a machine with no current
+state writes `INVALID_STATE_ID` and then heals it. *Found by the differential test:* a load
+that fails inside a field leaves the C++ field partly overwritten (`fread` writes the bytes
+that exist before `XFER_READ_ERROR`), the Rust typed Xfer methods (`common::xfer`, not
+changed here) assign only on success; unobservable unless the failed load's machine is
+inspected.
+<!-- --- end p1w3-statemachine --- -->
 
 Two translation choices await the owner, both formally undefined C++ on a
 function's normal path, where MSVC's behaviour gives the intended result and
