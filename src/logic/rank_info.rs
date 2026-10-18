@@ -104,7 +104,7 @@ fn rank_fields<'a>() -> [FieldParse<RankFill<'a>>; 5] {
 #[derive(Debug, Default)]
 pub struct RankInfoStore {
     /// `m_rankInfos`: level - 1 is the index.
-    rank_infos: Vec<Box<Overridable<RankInfo>>>,
+    rank_infos: Vec<Overridable<RankInfo>>,
 }
 
 impl RankInfoStore {
@@ -122,8 +122,8 @@ impl RankInfoStore {
     pub fn reset(&mut self) {
         let old = std::mem::take(&mut self.rank_infos);
         for head in old {
-            if let Some(kept) = head.delete_overrides() {
-                self.rank_infos.push(kept);
+            if let Some(kept) = Box::new(head).delete_overrides() {
+                self.rank_infos.push(*kept);
             }
         }
     }
@@ -144,7 +144,7 @@ impl RankInfoStore {
 
     /// Every rank's chain, level 1 first.
     pub fn chains(&self) -> impl Iterator<Item = &Overridable<RankInfo>> {
-        self.rank_infos.iter().map(|b| &**b)
+        self.rank_infos.iter()
     }
 
     /// `friend_parseRankDefinition(ini)` (the `Rank` block, reached through
@@ -185,7 +185,7 @@ impl RankInfoStore {
                 let mut fill = RankFill { info: &mut info, names, sciences, text };
                 ini.init_from_ini(&mut fill, &rank_fields())?;
             }
-            self.rank_infos.push(Box::new(Overridable::new(info)));
+            self.rank_infos.push(Overridable::new(info));
             Ok(())
         }
     }

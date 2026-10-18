@@ -815,7 +815,7 @@ fn science_and_rank_blocks_match_upstream() {
                     let c = cpp_load(&name, &data, load_type, with_xfer);
                     ck.outcome.eq(&rust, &c, || format!("{tag}: {load_type:?} file {:?}", show(&data)));
                     let wrong = Outcome { status: rust.status ^ 4, detail: rust.detail.clone(), crc: rust.crc };
-                    ck.outcome_bug.eq(&wrong, &c, || format!("{tag}"));
+                    ck.outcome_bug.eq(&wrong, &c, || tag.clone());
                 }
             }
 
@@ -864,7 +864,7 @@ fn science_and_rank_blocks_match_upstream() {
                 t.probes += 1;
             }
             for (i, n) in probes.iter().enumerate() {
-                if (i as u32 + step + session as u32) % 3 != 0 && n != "Probe_Only_Once" {
+                if !(i as u32 + step + session as u32).is_multiple_of(3) && n != "Probe_Only_Once" {
                     continue;
                 }
                 let cn = CString::new(n.as_str()).unwrap();
@@ -877,7 +877,7 @@ fn science_and_rank_blocks_match_upstream() {
                 t.probes += 1;
             }
             let cn = cpp_buf(|b, cap| unsafe { cpp::ref_science_names(b, cap) });
-            ck.name_list.eq(rust_names(&ctx), cn, || format!("{tag}"));
+            ck.name_list.eq(rust_names(&ctx), cn, || tag.clone());
             for level in -1..ctx.ranks.get_rank_level_count() + 3 {
                 let cp = cpp_buf(|b, cap| unsafe { cpp::ref_rank_probe(level, b, cap) });
                 ck.rank_probe.eq(rust_rank_probe(&ctx, level, 0), cp.clone(), || format!("{tag}: level {level}"));

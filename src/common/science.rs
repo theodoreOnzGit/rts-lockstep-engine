@@ -285,7 +285,7 @@ fn science_fields<'a>() -> [FieldParse<ScienceFill<'a>>; 6] {
 pub struct ScienceStore {
     /// `m_sciences`: the first definition of each science, with its chain of
     /// overrides.
-    sciences: Vec<Box<Overridable<ScienceInfo>>>,
+    sciences: Vec<Overridable<ScienceInfo>>,
 }
 
 impl ScienceStore {
@@ -304,8 +304,8 @@ impl ScienceStore {
     pub fn reset(&mut self) {
         let old = std::mem::take(&mut self.sciences);
         for head in old {
-            if let Some(kept) = head.delete_overrides() {
-                self.sciences.push(kept);
+            if let Some(kept) = Box::new(head).delete_overrides() {
+                self.sciences.push(*kept);
             }
         }
     }
@@ -322,7 +322,7 @@ impl ScienceStore {
 
     /// Every science's chain, first definition first, in store order.
     pub fn chains(&self) -> impl Iterator<Item = &Overridable<ScienceInfo>> {
-        self.sciences.iter().map(|b| &**b)
+        self.sciences.iter()
     }
 
     /// The final override of every science, in store order.
@@ -444,7 +444,7 @@ impl ScienceStore {
         let idx = if ini.get_load_type() == IniLoadType::CreateOverrides {
             match existing {
                 None => {
-                    let mut head = Box::new(Overridable::new(ScienceInfo::new()));
+                    let mut head = Overridable::new(ScienceInfo::new());
                     head.mark_as_override();
                     self.sciences.push(head);
                     self.sciences.len() - 1
@@ -461,7 +461,7 @@ impl ScienceStore {
             if existing.is_some() {
                 return Err(IniError::new(IniErrorKind::InvalidData));
             }
-            self.sciences.push(Box::new(Overridable::new(ScienceInfo::new())));
+            self.sciences.push(Overridable::new(ScienceInfo::new()));
             self.sciences.len() - 1
         };
 
