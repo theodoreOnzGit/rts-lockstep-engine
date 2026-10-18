@@ -438,7 +438,7 @@ WEAK_STUB(INI::parseMultiplayerColorDefinition) WEAK_STUB(INI::parseMultiplayerS
 STUB(INI::parseOnlineChatColorDefinition) WEAK_STUB(INI::parseMultiplayerSettingsDefinition)
 STUB(INI::parseMusicTrackDefinition) STUB(INI::parseObjectCreationListDefinition)
 STUB(INI::parseObjectReskinDefinition) STUB(INI::parseParticleSystemDefinition)
-STUB(INI::parsePlayerTemplateDefinition) STUB(INI::parseTerrainRoadDefinition)
+WEAK_STUB(INI::parsePlayerTemplateDefinition) /* p1w3-playertemplate: real in PlayerTemplate.cpp */ STUB(INI::parseTerrainRoadDefinition)
 WEAK_STUB(INI::parseRankDefinition) /* p1w2-science: real in RankInfo.cpp */ WEAK_STUB(INI::parseSpecialPowerDefinition) /* p1w2-upgrade: real in wrap_upgrade.cpp */
 STUB(INI::parseShellMenuSchemeDefinition) WEAK_STUB(INI::parseTerrainDefinition) /* p1w2-terrain */
 WEAK_STUB(INI::parseUpgradeDefinition) /* p1w2-upgrade: real in wrap_upgrade.cpp */ STUB(INI::parseVideoDefinition)

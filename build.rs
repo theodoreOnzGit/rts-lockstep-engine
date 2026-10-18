@@ -871,6 +871,56 @@ mod differential {
         }
         // --- end p1w2-terrain ---
 
+        // --- p1w3-playertemplate ---
+        // PlayerTemplate (differential/wrap_playertemplate.cpp):
+        // PlayerTemplate.cpp unchanged, in the Science build's setup (clang++
+        // -fms-extensions, the real BitFlagsIO.h through flags_prelude.h, the
+        // real Science.h through science_prelude.h) plus
+        // differential/shim_playertemplate (a prelude adding three typedefs of
+        // the real STLTypedefs.h, and the one-lookup Image.h of the INI
+        // build). It defines ThePlayerTemplateStore and
+        // INI::parsePlayerTemplateDefinition (WEAK in wrap_ini.cpp) and no
+        // other symbol another fixture defines: Money::deposit comes from
+        // upstream_money, Handicap's constructor from upstream_handicap,
+        // ScienceStore and Player::hasScience from upstream_science (whose
+        // wrap_science.o is pulled in for the latter). Placed ahead of
+        // upstream_science, upstream_money, upstream_handicap, upstream_xfer,
+        // upstream_ini and upstream_chunk, which it uses. The Science lookup
+        // is renamed as in the Science build, so that the wrapper can call
+        // the real one from the hook it installs in ref_science_lookup_hook.
+        {
+            let shim_pt = dif.join("shim_playertemplate");
+            let shim_science = dif.join("shim_science");
+            let mut ptb = cc::Build::new();
+            base(&mut ptb);
+            ptb.compiler("clang++")
+                .flag("-fms-extensions")
+                .flag("-fdelayed-template-parsing")
+                .include(&shim_pt)
+                .include(&shim_science)
+                .include(&shim_armor)
+                .include(&flags_gen)
+                .include(dif.join("shim_flags"))
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .include(&dif)
+                .define("friend_lookupScience", "real_friend_lookupScience")
+                .flag("-include")
+                .flag(shim_pt.join("playertemplate_prelude.h").to_str().expect("UTF-8 path"))
+                .file(dif.join("wrap_playertemplate.cpp"))
+                .file(up.join("GameEngine/Source/Common/RTS/PlayerTemplate.cpp"));
+            ptb.compile("upstream_playertemplate");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/Common/RTS/PlayerTemplate.cpp",
+                "differential/wrap_playertemplate.cpp",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
+        // --- end p1w3-playertemplate ---
         // --- p1w2-science ---
         // Science and RankInfo (differential/wrap_science.cpp): Science.cpp
         // and RankInfo.cpp unchanged. The Armor build's setup (clang++

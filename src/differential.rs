@@ -648,3 +648,27 @@ extern "C" {
     ) -> c_int;
 }
 // --- end p1w3-thing ---
+
+// --- p1w3-playertemplate ---
+extern "C" {
+    // PlayerTemplate.cpp (wrap_playertemplate.cpp)
+    pub fn ref_pt_reset();
+    pub fn ref_pt_name_key(name: *const c_char) -> c_uint;
+    pub fn ref_pt_load(
+        filename: *const c_char,
+        load_type: c_int,
+        with_xfer: c_int,
+        crc: *mut c_uint,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+    pub fn ref_pt_op(op: c_int);
+    pub fn ref_pt_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_pt_nth(i: c_int) -> c_int;
+    pub fn ref_pt_find(key: c_uint) -> c_int;
+    pub fn ref_pt_num_by_name(name: *const c_char) -> c_int;
+    pub fn ref_pt_sides(initial: *const c_char, n: c_int, buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_pt_sides_null();
+}
+// --- end p1w3-playertemplate ---

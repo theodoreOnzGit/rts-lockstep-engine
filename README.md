@@ -84,6 +84,9 @@ the layer order of [`docs/phase1-porting-graph.md`](docs/phase1-porting-graph.md
 | `logic::thing` | `Include/Common/Thing.h`, `Source/Common/Thing/Thing.cpp`: the position, orientation and world transform (`Matrix3D`), the cached direction vector and the cached heights above terrain and water, the three kind-of queries forwarded to the template, bone-to-world conversion. Cut points: the template (`ThingTemplateView`), the terrain and gravity (`ThingContext`), the reaction to a transform change (returned as `TransformChange`), and the owner's height calculation (the `_by` variants) (Phase 1 layer 5) |
 | `logic::object_iter` | `Include/GameLogic/ObjectIter.h`, `Source/GameLogic/Object/SimpleObjectIterator.cpp`: `SimpleObjectIterator` (insert at the head, walks with and without numeric keys, `makeEmpty`, `getCount`) and its bottom-up merge sort over the five `IterOrderType` orders, on an index arena. The build cost of an object is a closure argument (Phase 1 layer 5) |
 <!-- --- end p1w3-thing --- -->
+<!-- --- p1w3-playertemplate --- -->
+| `common::player_template` | `Include/Common/PlayerTemplate.h`, `Source/Common/RTS/PlayerTemplate.cpp`: `PlayerTemplate` (the 45 fields of the `PlayerTemplate` block: sides, display name, `StartMoney` through `Money::init`+`deposit`, colour, starting building and ten units, production cost/time/veterancy maps keyed by name key, intrinsic sciences checked against the `ScienceStore`, command sets, shortcut bar, screens, music, medallions; the default `Handicap`), `PlayerTemplateStore` (`findPlayerTemplate` with the old maps' twelve sub-faction names mapped to their base faction and its fifteen function-static name keys, looked up once and kept; `getTemplateNumByName`, `getAllSideStrings`; `init()` clears, `reset()` keeps) and the `PlayerTemplate` INI block (a name seen before, or mapped from an old name, is updated in place and renamed). Images, sounds and music stay names (cut points). No method takes a `Player` or an `Object`. The cash sound and income record of `StartMoney`'s deposit are dropped (no player list exists then) (Phase 1 layer 4) |
+<!-- --- end p1w3-playertemplate --- -->
 
 **Approved by the owner (2026-10-17):** `XferCRC`/`XferDeepCRC` carry a NaN guard
 (`common::xfer_crc::nan_guard`): a NaN `Real` xfered into a CRC panics in debug
@@ -210,6 +213,21 @@ cargo test --release --features differential
 <!-- --- p1w3-thing --- -->
 - `differential/shim_thing/` and `differential/wrap_thing.cpp` compile `Thing.cpp` unchanged, and `differential/wrap_object_iter.cpp` compiles `SimpleObjectIterator.cpp` unchanged. The stand-ins (`ThingTemplate`, `GlobalData`, `TerrainLogic`, `Object`) are renamed by macro in the two wrappers, so they cannot clash with the other fixtures. `Coord3D` is copied verbatim from the real `BaseType.h` (its struct, found by build.rs), because `Thing.cpp` calls `Coord3D::crossProduct`. Results (`tests/differential_thing.rs`, `tests/differential_object_iter.rs`, 2026-10-18, upstream `0a05454d`): 4,000 random `Thing` programs (30,023 operations over 18 operation kinds, 0 mismatches) and 6,000 iterator programs (124,002 operations, 0 mismatches). Left out of the C++ as undefined upstream and checked to be `Err` in Rust: `Thing(NULL)`, `setPosition(NULL)`, and angles that `normalizeAngle` never reduces. All 27 planted bugs were caught.
 <!-- --- end p1w3-thing --- -->
+<!-- --- p1w3-playertemplate --- -->
+- `differential/wrap_playertemplate.cpp` runs the real `PlayerTemplate.cpp` behind the real
+  `INI::load`, `NameKeyGenerator`, `Money::deposit` (from the Money build), `Handicap` and the
+  real `Science.cpp`, in the Science build's setup plus `differential/shim_playertemplate/`
+  (a prelude adding three typedefs of the real `STLTypedefs.h`, and the INI build's one-lookup
+  `Image.h`). It defines no symbol another fixture defines: `ThePlayerTemplateStore` and
+  `INI::parsePlayerTemplateDefinition` (now `WEAK` in `wrap_ini.cpp`) are its own, and it
+  installs the real Science lookup through `ref_science_lookup_hook` in its reset function. The
+  one `PlayerTemplateStore` lives for the whole test, `init()` between sessions, because
+  `findPlayerTemplate`'s fifteen function statics are initialised once per process. Results
+  (`tests/differential_player_template.rs`, 2026-10-18, upstream `0a05454d`): 3,000 sessions,
+  8,317 loads, 10,181 dumps of every field of the store, 852,334 lookups, the fifteen statics:
+  **no mismatch**; every comparison also catches its planted bug. Left out of the C++
+  comparison as undefined upstream (counted by the test): numbers out of range of `Int`.
+<!-- --- end p1w3-playertemplate --- -->
 - The C++ is compiled with `-msse2 -mfpmath=sse -ffp-contract=off
   -fno-fast-math -fwrapv -fno-strict-aliasing`, so that its `float` arithmetic
   is the same IEEE single precision the Rust uses.
