@@ -52,6 +52,21 @@ public:
 	AsciiString getNthAsciiString(Int n) const { return nth(n).second.a; }
 	UnicodeString getNthUnicodeString(Int n) const { return nth(n).second.u; }
 	const std::map<NameKeyType, Value> &pairs() const { return m_pairs; }
+	/* p1w4-polygon: getType and getAsciiString (Dict.h), which MapUtil.cpp's
+	** ParseObjectDataChunk calls on the object's property sheet (DICT_NONE for
+	** a key that is not there; "" unless the pair is a string) */
+	DataType getType(NameKeyType key) const
+	{
+		std::map<NameKeyType, Value>::const_iterator it = m_pairs.find(key);
+		return it == m_pairs.end() ? DICT_NONE : it->second.type;
+	}
+	AsciiString getAsciiString(NameKeyType key, Bool *exists = NULL) const
+	{
+		std::map<NameKeyType, Value>::const_iterator it = m_pairs.find(key);
+		Bool found = it != m_pairs.end() && it->second.type == DICT_ASCIISTRING;
+		if (exists) *exists = found;
+		return found ? it->second.a : AsciiString();
+	}
 private:
 	const std::pair<const NameKeyType, Value> &nth(Int n) const
 	{

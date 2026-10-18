@@ -20,7 +20,9 @@ class MemoryPoolObject
 {
 public:
 	virtual ~MemoryPoolObject() {}
-	void deleteInstance() { delete this; }
+	/* p1w4-polygon: `if (this)`, as GameMemory.h line 756 has it: deleteTriggers
+	** calls deleteInstance on an empty list (a null pointer), on every parse */
+	void deleteInstance() { if (this) delete this; }
 };
 #define MEMORY_POOL_GLUE_WITH_USERLOOKUP_CREATE(ARGCLASS, ARGPOOLNAME) public: virtual ~ARGCLASS();
 #define EMPTY_DTOR(CLASS) inline CLASS::~CLASS() { }  /* as upstream, GameMemory.h line 903 */
