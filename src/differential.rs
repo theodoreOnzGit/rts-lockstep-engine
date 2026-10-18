@@ -333,4 +333,20 @@ extern "C" {
     pub fn ref_m3_solve(m: *mut c_float) -> c_int;
     pub fn ref_m3_eq(a: *const c_float, b: *const c_float) -> c_int;
     pub fn ref_m3_static(which: c_int, out: *mut c_float);
+
+    // --- p1w1-partition ---
+    // PartitionSolver.cpp (wrap_partition_solver.cpp): pairs of (id, size)
+    // as parallel arrays; the solution as (entry id, space id) pairs.
+    pub fn ref_partition_solve(
+        how: c_int,
+        data_ids: *const c_int,
+        data_sizes: *const c_uint,
+        n_data: c_int,
+        space_ids: *const c_int,
+        space_sizes: *const c_uint,
+        n_spaces: c_int,
+        out: *mut c_int,
+        out_cap: c_int,
+    ) -> c_int;
+    // --- end p1w1-partition ---
 }
