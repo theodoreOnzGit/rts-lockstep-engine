@@ -87,6 +87,12 @@ const FXList *FXListStore::findFXList(const char *name) const
 }
 
 void FXList::doFXObj(const FXList *fx, const Object *, const Object *) { g_lastFx = fx; }
+/* p1w7-sonnet: the Weapon test reads FXList pointers its INI parsers stored (through this findFXList) back as names */
+extern "C" const char *ref_armor_fx_name(const void *fx)
+{
+	std::map<const FXList *, std::string>::const_iterator it = g_fxName.find((const FXList *)fx);
+	return it == g_fxName.end() ? "" : it->second.c_str();
+}
 
 namespace {
 

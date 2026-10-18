@@ -1045,5 +1045,17 @@ extern "C" {
     // or minus the length needed if `cap` is too small. The words are documented in
     // tests/differential_resource_gathering.rs.
     pub fn ref_resource_run(prog: *const c_uint, n_prog: c_int, out: *mut c_char, cap: c_int) -> c_int;
+
+    // Weapon.cpp's WeaponTemplate and WeaponStore, unchanged but for the cuts of build.rs (wrap_weapon.cpp): the
+    // `Weapon` block is read by the real INI::load through the hooks of wrap_ini.cpp.
+    pub fn ref_weapon_reset();
+    pub fn ref_weapon_name_key(name: *const c_char) -> c_uint;
+    pub fn ref_weapon_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_weapon_find(name: *const c_char) -> c_int;
+    pub fn ref_weapon_post_process();
+    pub fn ref_weapon_store_reset();
+    pub fn ref_weapon_historic(index: c_int, frame: c_uint, x: c_float, y: c_float, z: c_float);
+    pub fn ref_weapon_delayed(op: c_int, index: c_int, frame: c_uint, source: c_int, victim: c_int, x: c_float, y: c_float, z: c_float, bonus: *const c_float);
+    pub fn ref_weapon_getters(index: c_int, bonus: *const c_float, out: *mut c_uint);
 }
 // --- end p1w7-sonnet ---

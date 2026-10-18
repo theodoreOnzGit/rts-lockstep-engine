@@ -97,10 +97,20 @@ const ThingTemplate *ThingFactory::findTemplate(const AsciiString &) { abort(); 
 Anim2DTemplate *Anim2DCollection::findTemplate(const AsciiString &) { abort(); }
 WEAK const FXList *FXListStore::findFXList(const char *) const { abort(); }
 const Image *ImageCollection::findImageByName(const AsciiString &) { abort(); }
-ParticleSystemTemplate *ParticleSystemManager::findTemplate(const AsciiString &) const { abort(); }
+WEAK ParticleSystemTemplate *ParticleSystemManager::findTemplate(const AsciiString &) const { abort(); } /* p1w7-sonnet: WEAK, Weapon tests define the lookup */
 WEAK const ArmorTemplate *ArmorStore::findArmorTemplate(AsciiString) const { abort(); }
 const ObjectCreationList *ObjectCreationListStore::findObjectCreationList(const char *) const { abort(); }
-const WeaponTemplate *WeaponStore::findWeaponTemplate(AsciiString) const { abort(); }
+/* --- p1w7-sonnet ---
+** The Weapon block and INI::parseWeaponTemplate's lookup: the Weapon build (wrap_weapon.cpp) installs hooks here that
+** run the real WeaponStore code (the classes there are renamed), as ref_object_block_hook does for the Object block.
+** With none installed the INI tests' handlers run / this aborts, as before. */
+extern "C" { void (*ref_weapon_block_hook)(INI *) = 0; const void *(*ref_weapon_lookup_hook)(const char *) = 0; }
+const WeaponTemplate *WeaponStore::findWeaponTemplate(AsciiString name) const
+{
+	if (ref_weapon_lookup_hook) return (const WeaponTemplate *)ref_weapon_lookup_hook(name.str());
+	abort();
+}
+/* --- end p1w7-sonnet --- */
 /* ScienceStore::friend_lookupScience: the one definition in every test binary (wave-2 merge).
 ** INI::parseScience (INI.cpp) calls it by this name, and three fixtures need different
 ** behaviour from it: the science tests the real Science.cpp lookup (built under the name
@@ -411,6 +421,7 @@ WEAK void INI::parseArmorDefinition(INI *ini)
 }
 void INI::parseWeaponTemplateDefinition(INI *ini)
 {
+	if (ref_weapon_block_hook) { ref_weapon_block_hook(ini); return; } /* p1w7-sonnet */
 	put8(0xF0); put8(3);
 	putAscii(ini->getNextQuotedAsciiString());
 	Rec rec;

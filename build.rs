@@ -1815,6 +1815,74 @@ mod differential {
             println!("cargo:rerun-if-changed={p}");
         }
         // --- end p1w1-armor ---
+        // --- p1w7-sonnet ---
+        // WeaponTemplate and WeaponStore (differential/wrap_weapon.cpp): Weapon.cpp with the regions that need an
+        // Object, the partition manager, the drawable or the damage application cut out, in memory, into
+        // OUT_DIR/weapon_gen/Weapon_cut.cpp (upstream is never edited; every marker asserted to occur once):
+        // - the includes (replaced by the ones the kept code needs) and the two DistanceCalculationType constants;
+        // - estimateWeaponTemplateDamage, shouldProjectileCollideWith, trimOldHistoricDamage, dealDamageInternal and
+        //   fireWeaponTemplate (up to WeaponStore::WeaponStore());
+        // - handleProjectileDetonation and the two createAndFireTempWeapon (up to findWeaponTemplate);
+        // - WeaponStore::update (up to deleteAllDelayedDamage);
+        // - the class Weapon, from its constructor to the WeaponBonus code.
+        // Built as the armor build is (clang++ -fms-extensions, the real BitFlagsIO.h through flags_prelude.h), with
+        // differential/shim_weapon ahead of shim_armor, and linked ahead of upstream_ini and upstream_xfer.
+        {
+            fn once_at(text: &str, marker: &str) -> usize {
+                assert_eq!(text.matches(marker).count(), 1, "{marker:?} must occur once");
+                text.find(marker).expect("marker")
+            }
+            fn cut_between(text: &str, start: &str, end: &str) -> String {
+                let (a, b) = (once_at(text, start), once_at(text, end));
+                assert!(a < b, "{start:?} must come before {end:?}");
+                format!("{}\n{}", &text[..a], &text[b..])
+            }
+            let weapon_gen = out_dir.join("weapon_gen");
+            std::fs::create_dir_all(&weapon_gen).expect("create weapon_gen");
+            let mut src = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Weapon.cpp")).expect("read Weapon.cpp");
+            let (a, b) = (once_at(&src, "#include \"Common/CRC.h\""), once_at(&src, "static void parsePerVetLevelAsciiString( INI* ini"));
+            assert!(a < b);
+            src = format!(
+                "{}#include \"Common/INI.h\"\n#include \"Common/NameKeyGenerator.h\"\n#include \"Common/ThingFactory.h\"\n#include \"GameLogic/ObjectCreationList.h\"\n#include \"GameLogic/Weapon.h\"\n#define PATHFIND_CELL_SIZE_F 10.0f\n#define RATIONALIZE_ATTACK_RANGE\n#define ATTACK_RANGE_IS_2D\n\n{}",
+                &src[..a],
+                &src[b..]
+            );
+            src = cut_between(&src, "Real WeaponTemplate::estimateWeaponTemplateDamage(", "WeaponStore::WeaponStore()");
+            src = cut_between(&src, "void WeaponStore::handleProjectileDetonation(", "const WeaponTemplate *WeaponStore::findWeaponTemplate( AsciiString name ) const");
+            src = cut_between(&src, "void WeaponStore::update()", "void WeaponStore::deleteAllDelayedDamage()");
+            src = cut_between(&src, "Weapon::Weapon(const WeaponTemplate* tmpl, WeaponSlotType wslot)", "void WeaponBonus::appendBonuses(WeaponBonus& bonus) const");
+            std::fs::write(weapon_gen.join("Weapon_cut.cpp"), src).expect("write Weapon_cut.cpp");
+            let shim_weapon = dif.join("shim_weapon");
+            let shim_armor = dif.join("shim_armor");
+            let mut wp = cc::Build::new();
+            base(&mut wp);
+            wp.compiler("clang++")
+                .flag("-fms-extensions")
+                .flag("-fdelayed-template-parsing")
+                .include(&weapon_gen)
+                .include(&shim_weapon)
+                .include(&shim_armor)
+                .include(&flags_gen)
+                .include(dif.join("shim_flags"))
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .include(&dif)
+                .flag("-include")
+                .flag(shim_armor.join("armor_prelude.h").to_str().expect("UTF-8 path"))
+                .file(dif.join("wrap_weapon.cpp"));
+            wp.compile("upstream_weapon");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Weapon.cpp",
+                "differential/wrap_weapon.cpp",
+                "differential/shim_weapon",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
+        // --- end p1w7-sonnet ---
         // --- p1w2-terrain ---
         // TerrainTypes, MultiplayerSettings and CrateSystem with their INI
         // blocks (differential/wrap_terrain.cpp): TerrainTypes.cpp,

@@ -764,7 +764,14 @@ destruction twice is deleted once (upstream behaviour is undefined); the id
 table entry is made earlier than upstream; `OFF_MAP` is never set, since
 objects do not yet know the map extent.
 
-**Next, wave 7:** `Weapon` and `WeaponSet`, `Player` and `PlayerList`, `Team`,
+**Wave 7 progress (`p1w7-sonnet`):** `TunnelTracker`, `CaveSystem` and
+`ResourceGatheringManager` are translated (own differential tests). `Weapon`
+slice A is translated: `WeaponTemplate`, `WeaponStore` and the `Weapon` INI
+block (`logic::weapon`, `tests/differential_weapon.rs`; 4,000 cases, 0
+mismatches, 18 planted bugs caught). **Not yet:** the `Weapon` instance
+(ammo, reload, firing, `xfer`), `WeaponSet`, and everything below.
+
+**Next, wave 7:** ~~`Weapon` and `WeaponSet`~~ the `Weapon` instance and `WeaponSet`, `Player` and `PlayerList`, `Team`,
 `ResourceGatheringManager`, `TunnelTracker`, `CaveSystem`, `ActionManager`,
 `BuildAssistant`, `ObjectCreationList`; with them the parts of `Object` left
 untranslated (weapon forwarders, `updateObjValuesFromMapProperties`, the

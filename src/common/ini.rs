@@ -209,6 +209,12 @@ pub enum Undefined {
     /// `NameKeyGenerator` ran past its last key (`0x7fffffff`).
     NameKeysExhausted,
     // --- end p1w1-armor ---
+    // --- p1w7-sonnet ---
+    /// A missing token passed to `stricmp` (`WeaponTemplate::parseShotDelay`
+    /// reads `getNextTokenOrNull`'s `NULL` when the line has nothing after the
+    /// label).
+    NullTokenString,
+    // --- end p1w7-sonnet ---
     // --- p1w2-terrain ---
     /// `MultiplayerColorDefinition::setColor` takes `rgb.getAsInt()`, which
     /// is undefined for a negative component (`<<` of a negative `Int`) or a
