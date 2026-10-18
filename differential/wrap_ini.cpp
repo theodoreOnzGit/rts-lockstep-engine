@@ -101,8 +101,19 @@ ParticleSystemTemplate *ParticleSystemManager::findTemplate(const AsciiString &)
 WEAK const ArmorTemplate *ArmorStore::findArmorTemplate(AsciiString) const { abort(); }
 const ObjectCreationList *ObjectCreationListStore::findObjectCreationList(const char *) const { abort(); }
 const WeaponTemplate *WeaponStore::findWeaponTemplate(AsciiString) const { abort(); }
-/* p1w2-science, p1w2-upgrade: WEAK; the real definitions are in Science.cpp and wrap_upgrade.cpp */
-WEAK ScienceType ScienceStore::friend_lookupScience(const char *) const { abort(); }
+/* ScienceStore::friend_lookupScience: the one definition in every test binary (wave-2 merge).
+** INI::parseScience (INI.cpp) calls it by this name, and three fixtures need different
+** behaviour from it: the science tests the real Science.cpp lookup (built under the name
+** real_friend_lookupScience, see build.rs), the upgrade and special-power tests a lookup
+** against the set of sciences they declare, the terrain and crate tests NAMEKEY of any name.
+** Each fixture installs its behaviour through ref_science_lookup_hook in its reset function;
+** with none installed this aborts, as the old stand-in did. */
+extern "C" { ScienceType (*ref_science_lookup_hook)(const ScienceStore *, const char *) = 0; }
+ScienceType ScienceStore::friend_lookupScience(const char *scienceName) const
+{
+	if (!ref_science_lookup_hook) abort();
+	return ref_science_lookup_hook(this, scienceName);
+}
 WEAK void AudioEventRTS::setEventName(AsciiString) { abort(); }
 WEAK void AudioManager::getInfoForAudioEvent(const AudioEventRTS *) const { abort(); }
 

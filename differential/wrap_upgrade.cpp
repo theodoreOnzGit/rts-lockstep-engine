@@ -65,8 +65,10 @@ std::set<NameKeyType> g_sciences;
 ScienceStore g_scienceStore;
 }
 
-/* Science.cpp's ScienceStore::friend_lookupScience, line for line */
-ScienceType ScienceStore::friend_lookupScience(const char *scienceName) const
+/* Science.cpp's ScienceStore::friend_lookupScience, line for line, against the test's set
+** of sciences; installed as wrap_ini.cpp's ref_science_lookup_hook by ref_up_reset. */
+extern "C" ScienceType (*ref_science_lookup_hook)(const ScienceStore *, const char *);
+static ScienceType upgrade_lookup(const ScienceStore *, const char *scienceName)
 {
 	NameKeyType nkt = NAMEKEY(scienceName);
 	ScienceType st = (ScienceType)nkt;
@@ -182,6 +184,7 @@ int ref_up_reset(int init_names, int init_center, int n_sciences, const char *co
 	gen->reset();
 	if (init_names) gen->init();
 	TheNameKeyGenerator = gen;
+	ref_science_lookup_hook = upgrade_lookup;
 	g_sciences.clear();
 	TheScienceStore = &g_scienceStore;
 	for (int i = 0; i < n_sciences; ++i) g_sciences.insert(TheNameKeyGenerator->nameToKey(sciences[i]));

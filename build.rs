@@ -830,6 +830,10 @@ mod differential {
             .include(ww.join("WWMath"))
             .include(ww.join("WWLib"))
             .include(&dif)
+            // The real lookup keeps its own name in this archive, so that
+            // wrap_ini.cpp's single dispatcher (shared by every test binary)
+            // can call it through ref_science_lookup_hook.
+            .define("friend_lookupScience", "real_friend_lookupScience")
             .flag("-include")
             .flag(shim_science.join("science_prelude.h").to_str().expect("UTF-8 path"))
             .file(dif.join("wrap_science.cpp"))

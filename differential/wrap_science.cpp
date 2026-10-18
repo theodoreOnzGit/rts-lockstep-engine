@@ -165,8 +165,14 @@ extern "C" {
 
 /* a NameKeyGenerator (installed as TheNameKeyGenerator, reset: keys start at
 ** 1 again), empty stores, the stand-in text, and an empty WebpageURL list */
+/* wrap_ini.cpp's dispatcher calls this: the real Science.cpp lookup (renamed in
+** this archive by build.rs, so writing friend_lookupScience here calls it). */
+extern "C" ScienceType (*ref_science_lookup_hook)(const ScienceStore *, const char *);
+static ScienceType science_lookup(const ScienceStore *s, const char *n) { return s->friend_lookupScience(n); }
+
 void ref_science_reset(void)
 {
+	ref_science_lookup_hook = science_lookup;
 	if (!g_gen) g_gen = new NameKeyGenerator;
 	g_gen->reset();
 	TheNameKeyGenerator = g_gen;

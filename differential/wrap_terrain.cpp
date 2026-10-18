@@ -52,7 +52,9 @@ namespace {
 ScienceStore g_science;
 }
 
-ScienceType ScienceStore::friend_lookupScience(const char *scienceName) const
+/* Installed as wrap_ini.cpp's ref_science_lookup_hook by ref_terrain_reset. */
+extern "C" ScienceType (*ref_science_lookup_hook)(const ScienceStore *, const char *);
+static ScienceType terrain_lookup(const ScienceStore *, const char *scienceName)
 {
 	return (ScienceType)TheNameKeyGenerator->nameToKey(scienceName);
 }
@@ -106,6 +108,7 @@ void ref_terrain_reset(void)
 	if (!gen) gen = new NameKeyGenerator;
 	gen->reset();
 	TheNameKeyGenerator = gen;
+	ref_science_lookup_hook = terrain_lookup;
 	delete TheTerrainTypes;
 	TheTerrainTypes = new TerrainTypeCollection;
 	delete TheMultiplayerSettings;
