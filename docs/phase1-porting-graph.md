@@ -482,6 +482,21 @@ are a context argument (`&mut World` or a frame number) instead of a global.
 | 1 | `BaseType.h` value types and templates; `GameType.h`/`.cpp`; `GameCommon.h` (all but the intrusive-list macros) and `GameCommon.cpp`; `Errors.h`; `SpecialPowerType.h`; `ThingSort.h`; `Powers.h`; `WeaponSetType.h`; `WeaponStatus.h`; `WeaponBonusConditionFlags.h`; `ObjectScriptStatusBits.h`; `DiscreteCircle`; `LatchRestore`; `Overridable`/`Override` | `tests/differential_value_types.rs`, `tests/differential_latch_override.rs` |
 | 2 | `NameKeyGenerator`, `StaticNameKey`, `WellKnownKeys.h`; `AsciiString` (all but `format`); `STLTypedefs.h` (the `AsciiString` comparators; the hash functors are not translated, see `common::stl_typedefs`); `SubsystemInterface` (the registry) | `tests/differential_name_key.rs`, `tests/differential_ascii_string.rs`, `tests/differential_stl_typedefs.rs`, `tests/differential_subsystem_interface.rs` |
 | 3 | `BitFlags`/`BitFlagsIO` and all seven instantiations (`KindOf`, `ObjectStatusTypes`, `DisabledTypes`, `ModelState` flags, `ArmorSet` flags, `WeaponSetFlags`, `SpecialPowerMaskType`); `SparseMatchFinder`; `Dict`; `Xfer::xferKindOf` | `tests/differential_bit_flags.rs`, `tests/differential_dict.rs` |
+| 4 (part) | `Geometry` (`GeometryInfo`: arithmetic, INI fields, xfer); `BezierSegment` and `BezFwdIterator`; `Money` (client sounds as `logic::client_event::ClientEvent`, academy-stats record as the returned flag); `Handicap` | `tests/differential_geometry.rs`, `tests/differential_bezier.rs`, `tests/differential_money.rs`, `tests/differential_handicap.rs` |
+
+Layer 4, not translated: `RankInfo` (`GameLogic/System/RankInfo.cpp`).
+It needs `Overridable`/`Override` (layer 1, open), `UnicodeString` (layer 2,
+open) for the rank name, `Science` for `ScienceVec`, and `parseAndTranslateLabel`
+(the text tables). It is left for after those.
+
+Findings from the layer-4 differential runs (each is now a test): upstream's
+`sqr(m_height*0.5)` takes a `double` argument (the `0.5` literal), so the box
+bounding sphere is computed in double; a `float` version overflowed for
+heights near 1e19. `Geometry`'s random disc loop is `while (distSqr > max)`,
+which a NaN leaves, so its negation is not the translation. `BezFwdIterator::start`
+returns before setting the first point for one step, so a one-sample curve is
+the zero point. `Bool` is one byte in the shim `BaseType.h` (the CRC and
+layout tests read it as one).
 
 Still open in layers 1-3:
 `AsciiString::format` (the MSVC runtime's `_vsnprintf`) and `UnicodeString`

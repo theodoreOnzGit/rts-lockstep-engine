@@ -42,3 +42,8 @@ pub mod unicode_string;
 // --- p1w1-partition ---
 pub mod partition_solver;
 // --- end p1w1-partition ---
+// --- p1w1-geometry ---
+pub mod bezier_segment;
+pub mod geometry;
+pub mod handicap;
+pub mod money;

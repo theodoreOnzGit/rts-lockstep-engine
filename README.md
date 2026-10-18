@@ -33,6 +33,10 @@ the layer order of [`docs/phase1-porting-graph.md`](docs/phase1-porting-graph.md
 | `common::sparse_match_finder` | `Include/Common/SparseMatchFinder.h`: best-match lookup of armor/weapon/model entries by condition flags, with upstream's scan order and tie-break (Phase 1 layer 3) |
 | `common::partition_solver` | `Include/Common/PartitionSolver.h`, `Source/Common/PartitionSolver.cpp`: first-fit-decreasing packer; equal sizes use a documented stable order, not STLport's `std::sort` (Phase 1 layer 1) |
 | `common::dict` | `Include/Common/Dict.h`, `Source/Common/Dict.cpp`: the sorted key/value pairs with upstream's 24-bit key packing, Shell sort, binary search and rename-and-drop `remove` (Phase 1 layer 3) |
+| `common::geometry` | `Include/Common/Geometry.h`, `Source/Common/System/Geometry.cpp`: `GeometryInfo` (sphere, cylinder, box): footprint and bounding-radius arithmetic, the five `Geometry*` INI fields (`GEOMETRY_FIELDS`), its xfer (Phase 1 layer 4) |
+| `common::bezier_segment` | `Include/Common/BezierSegment.h`, `BezFwdIterator.h`, `Source/Common/Bezier/BezierSegment.cpp`, `BezFwdIterator.cpp`: cubic Bezier evaluation, subdivision, approximate length and forward-differenced sampling; the D3DX matrix calls as written-out formulas (Phase 1 layer 4) |
+| `common::money` | `Include/Common/Money.h`, `Source/Common/RTS/Money.cpp`: the balance, withdraw and deposit, `parseMoneyAmount` and the xfer; the cash sounds are `logic::client_event::ClientEvent`s (Phase 1 layer 4) |
+| `common::handicap` | `Include/Common/Handicap.h`, `Source/Common/RTS/Handicap.cpp`: the build-cost and build-time multipliers, read from `HANDICAP_*` dictionary keys (Phase 1 layer 4) |
 | `common::random_value` | `GameEngine/Source/Common/RandomValue.cpp` and the Logic/Client/Audio RandomValue headers |
 | `common::crc` | `GameEngine/Source/Common/crc.cpp`, `GameEngine/Include/Common/crc.h` |
 | `common::base_type` | the fast float helpers, `REAL_TO_*` macros and `PI` of `Libraries/Include/Lib/BaseType.h` |
