@@ -101,9 +101,10 @@ ParticleSystemTemplate *ParticleSystemManager::findTemplate(const AsciiString &)
 WEAK const ArmorTemplate *ArmorStore::findArmorTemplate(AsciiString) const { abort(); }
 const ObjectCreationList *ObjectCreationListStore::findObjectCreationList(const char *) const { abort(); }
 const WeaponTemplate *WeaponStore::findWeaponTemplate(AsciiString) const { abort(); }
-WEAK ScienceType ScienceStore::friend_lookupScience(const char *) const { abort(); } /* p1w2-science: WEAK, Science.cpp defines the real one */
-void AudioEventRTS::setEventName(AsciiString) { abort(); }
-void AudioManager::getInfoForAudioEvent(const AudioEventRTS *) const { abort(); }
+/* p1w2-science, p1w2-upgrade: WEAK; the real definitions are in Science.cpp and wrap_upgrade.cpp */
+WEAK ScienceType ScienceStore::friend_lookupScience(const char *) const { abort(); }
+WEAK void AudioEventRTS::setEventName(AsciiString) { abort(); }
+WEAK void AudioManager::getInfoForAudioEvent(const AudioEventRTS *) const { abort(); }
 
 /* GameLogic/FPUControl.h: x87 precision control (GameLogic.cpp). The tests
 ** compute in SSE single precision already, so it does nothing here. */
@@ -427,9 +428,9 @@ STUB(INI::parseOnlineChatColorDefinition) WEAK_STUB(INI::parseMultiplayerSetting
 STUB(INI::parseMusicTrackDefinition) STUB(INI::parseObjectCreationListDefinition)
 STUB(INI::parseObjectReskinDefinition) STUB(INI::parseParticleSystemDefinition)
 STUB(INI::parsePlayerTemplateDefinition) STUB(INI::parseTerrainRoadDefinition)
-WEAK_STUB(INI::parseRankDefinition) /* p1w2-science: WEAK, RankInfo.cpp defines the real one */ STUB(INI::parseSpecialPowerDefinition)
-STUB(INI::parseShellMenuSchemeDefinition) WEAK_STUB(INI::parseTerrainDefinition)
-STUB(INI::parseUpgradeDefinition) STUB(INI::parseVideoDefinition)
+WEAK_STUB(INI::parseRankDefinition) /* p1w2-science: real in RankInfo.cpp */ WEAK_STUB(INI::parseSpecialPowerDefinition) /* p1w2-upgrade: real in wrap_upgrade.cpp */
+STUB(INI::parseShellMenuSchemeDefinition) WEAK_STUB(INI::parseTerrainDefinition) /* p1w2-terrain */
+WEAK_STUB(INI::parseUpgradeDefinition) /* p1w2-upgrade: real in wrap_upgrade.cpp */ STUB(INI::parseVideoDefinition)
 STUB(INI::parseWaterSettingDefinition) STUB(INI::parseWaterTransparencyDefinition)
 STUB(INI::parseWeatherDefinition) WEAK_STUB(INI::parseWebpageURLDefinition) /* p1w2-science: WEAK, wrap_science.cpp uses this block to reach parseScience */
 STUB(INI::parseHeaderTemplateDefinition) STUB(INI::parseStaticGameLODDefinition)

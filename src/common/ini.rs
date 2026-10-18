@@ -222,6 +222,13 @@ pub enum Undefined {
     /// cycle for ever (a stack overflow).
     ScienceCycle,
     // --- end p1w2-science ---
+    // --- p1w2-upgrade ---
+    /// A new `SpecialPowerTemplate` copied from `DefaultSpecialPower` shares
+    /// the default's next-override pointer upstream, which `reset` frees
+    /// from under it; owned override chains cannot share a node (see
+    /// `common::special_power`).
+    AliasedOverrideChain,
+    // --- end p1w2-upgrade ---
 }
 
 /// What failed, innermost cause first.

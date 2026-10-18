@@ -60,3 +60,9 @@ pub mod global_data;
 // --- p1w2-science ---
 pub mod science;
 // --- end p1w2-science ---
+// --- p1w2-upgrade ---
+pub mod academy_classification;
+pub mod audio_event_name;
+pub mod special_power;
+pub mod upgrade;
+// --- end p1w2-upgrade ---

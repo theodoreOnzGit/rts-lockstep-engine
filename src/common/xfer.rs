@@ -43,8 +43,13 @@
 //! # Not translated (each needs an engine subsystem that is not here yet)
 //!
 //! `xferMapName` (`TheGameState` map-path translation), `xferScienceType`,
-//! `xferScienceVec` (`TheScienceStore`) and `xferUpgradeMask`
-//! (`TheUpgradeCenter`). Their CRC branches only hash the raw value, but
+//! `xferScienceVec` (`TheScienceStore`) and ~~`xferUpgradeMask`
+//! (`TheUpgradeCenter`)~~ **CORRECTED 2026-10-18** (p1w2-upgrade):
+//! `xferUpgradeMask` is translated as the free function
+//! `common::upgrade::xfer_upgrade_mask`, since this trait cannot see an
+//! `UpgradeCenter`; checked by Rust tests only, because the Xfer build of the
+//! differential tests stands `TheUpgradeCenter` in with functions that abort.
+//! Their CRC branches only hash the raw value, but
 //! their save/load branches go through those name tables, so they are left
 //! whole until the tables exist. (`xferKindOf` was added in Phase 1 with the
 //! `KindOfMaskType` names, [`super::kind_of`].)
