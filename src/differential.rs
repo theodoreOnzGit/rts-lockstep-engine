@@ -996,3 +996,35 @@ extern "C" {
     ) -> c_int;
 }
 // --- end p1w6-trackers ---
+// --- p1w6-energy ---
+extern "C" {
+    // Energy.cpp, unchanged (wrap_energy.cpp): one call per op on a single Energy, and its xfer
+    pub fn ref_energy_reset();
+    pub fn ref_energy_op(op: c_int, a: c_int, b: c_int, frame: c_uint, out: *mut c_uint);
+    pub fn ref_energy_save(path: *const c_char) -> c_int;
+    pub fn ref_energy_load(path: *const c_char, out: *mut c_uint);
+
+    // ScoreKeeper.cpp, unchanged (wrap_score_keeper.cpp): a fixed table of 12 templates, one
+    // ScoreKeeper, its readout (27 values with the status on load), and its xfer
+    pub fn ref_score_setup(names: *const c_char, groups: *const c_int, known: *const c_int, kind_bits: *const c_int);
+    pub fn ref_score_fresh();
+    pub fn ref_score_op(op: c_int, t: c_int, c: c_int, uc: c_int, scoring: c_int, amount: c_int, out: *mut c_uint);
+    pub fn ref_score_save(path: *const c_char) -> c_int;
+    pub fn ref_score_load(path: *const c_char, out: *mut c_uint);
+
+    // MissionStats.cpp, unchanged (wrap_mission_stats.cpp): its counters (34 values) and its xfer
+    pub fn ref_mission_op(op: c_int, idx: c_int, value: c_int, out: *mut c_uint);
+    pub fn ref_mission_save(path: *const c_char) -> c_int;
+    pub fn ref_mission_load(path: *const c_char, out: *mut c_uint);
+
+    // AcademyStats.cpp, unchanged (wrap_academy_stats.cpp): one player with its statistics, the
+    // local and neutral players, the advice; the labels of its tips come back as text
+    pub fn ref_academy_init(frame: c_uint, side: c_int, kinds: *const c_int, tunnels: *const c_int, n_objects: c_int);
+    pub fn ref_academy_update(frame: c_uint, money: c_int, power: c_int, kinds: *const c_int, tunnels: *const c_int, n_objects: c_int);
+    pub fn ref_academy_record(code: c_int, frame: c_uint, a: c_int, b: c_int, kinds: *const c_int, tunnel: c_int);
+    pub fn ref_academy_advice(frame: c_uint, local_mines: c_int, neutral_sniped: c_int, alt_mouse: c_int, labels: *mut c_char, cap: c_int) -> c_int;
+    pub fn ref_academy_probe(out: *mut c_uint);
+    pub fn ref_academy_save(path: *const c_char) -> c_int;
+    pub fn ref_academy_load(path: *const c_char, out: *mut c_uint);
+}
+// --- end p1w6-energy ---

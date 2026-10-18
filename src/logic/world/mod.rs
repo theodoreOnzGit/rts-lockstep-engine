@@ -43,6 +43,12 @@ pub mod player;
 pub mod sleepy;
 pub mod team;
 pub mod update_body;
+// --- p1w6-energy ---
+pub mod academy_stats;
+pub mod energy;
+pub mod mission_stats;
+pub mod score_keeper;
+// --- end p1w6-energy ---
 
 pub use game_logic::{Hook, World, WorldError};
 pub use ids::{ObjectId, PlayerIndex, TeamId, INVALID_ID};

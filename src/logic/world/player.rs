@@ -36,6 +36,10 @@
 //! - Everything else `Player` and `PlayerList` do (relationships, energy,
 //!   money, the sides list, `xfer`) is layer 7.
 
+use super::academy_stats::AcademyStats;
+use super::energy::Energy;
+use super::mission_stats::MissionStats;
+use super::score_keeper::ScoreKeeper;
 use super::ids::PlayerIndex;
 
 /// `MAX_PLAYER_COUNT` (`GameCommon.h`).
@@ -48,12 +52,31 @@ pub struct Player {
     pub player_index: PlayerIndex,
     /// `m_playerNameKey` (`NameKeyType`); 0 = `NAMEKEY_INVALID` until named.
     pub name_key: i32,
+    // --- p1w6-energy ---
+    /// `m_energy` (`Energy`): the power bookkeeping. `init(owner)` is `Player::init`'s.
+    pub energy: Energy,
+    /// `m_scoreKeeper` (`ScoreKeeper`): `Player::init` calls `reset(m_playerIndex)`.
+    pub score_keeper: ScoreKeeper,
+    /// `m_missionStats` (`MissionStats`).
+    pub mission_stats: MissionStats,
+    /// `m_academyStats` (`AcademyStats`): `Player::init` calls `init(this)`.
+    pub academy_stats: AcademyStats,
+    // --- end p1w6-energy ---
 }
 
 impl Player {
     /// `Player::Player(playerIndex)`: only the index is set here.
     pub fn new(player_index: PlayerIndex) -> Player {
-        Player { player_index, name_key: 0 }
+        Player {
+            player_index,
+            name_key: 0,
+            // --- p1w6-energy ---
+            energy: Energy::new(),
+            score_keeper: ScoreKeeper::new(),
+            mission_stats: MissionStats::new(),
+            academy_stats: AcademyStats::default(),
+            // --- end p1w6-energy ---
+        }
     }
 }
 
