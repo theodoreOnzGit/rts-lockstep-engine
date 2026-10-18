@@ -461,6 +461,10 @@ are a context argument (`&mut World` or a frame number) instead of a global.
   `stlport.diff` at its root names the files EA patched). Other logic sorts
   are hand-written (`Dict`'s Shell sort, `SimpleObjectIterator`'s list merge
   sort) and are translated as written.
+  **Handled (p1w1-partition):** `common::partition_solver` uses a stable sort
+  by size, largest first (ties keep input order), documented in its module
+  docs; its differential test compares the C++ (libstdc++'s sort) only on
+  problems with distinct sizes in both lists and counts the tied ones.
 - **Found while testing layer 3** (added 2026-10-17): `XferLoad::xferAsciiString`
   reads into a function-static buffer, so two loads on different threads
   corrupt each other (the tests ran in parallel and caught it). The engine
@@ -479,8 +483,7 @@ are a context argument (`&mut World` or a frame number) instead of a global.
 | 2 | `NameKeyGenerator`, `StaticNameKey`, `WellKnownKeys.h`; `AsciiString` (all but `format`); `STLTypedefs.h` (the `AsciiString` comparators; the hash functors are not translated, see `common::stl_typedefs`); `SubsystemInterface` (the registry) | `tests/differential_name_key.rs`, `tests/differential_ascii_string.rs`, `tests/differential_stl_typedefs.rs`, `tests/differential_subsystem_interface.rs` |
 | 3 | `BitFlags`/`BitFlagsIO` and all seven instantiations (`KindOf`, `ObjectStatusTypes`, `DisabledTypes`, `ModelState` flags, `ArmorSet` flags, `WeaponSetFlags`, `SpecialPowerMaskType`); `SparseMatchFinder`; `Dict`; `Xfer::xferKindOf` | `tests/differential_bit_flags.rs`, `tests/differential_dict.rs` |
 
-Still open in layers 1-3: `PartitionSolver` (see the `std::sort` hazard
-above) (layer 1);
+Still open in layers 1-3:
 `AsciiString::format` (the MSVC runtime's `_vsnprintf`) and `UnicodeString`
 (16-bit `WideChar` with the MSVC runtime's `wcslen`/`iswspace`/`wcsspn`; its
 differential build needs 16-bit stand-ins for them, and `iswspace`'s

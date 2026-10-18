@@ -347,4 +347,20 @@ extern "C" {
 extern "C" {
     // UnicodeString.cpp (wrap_unicode_string.cpp, script interpreter)
     pub fn ref_unicode_run(script: *const c_uchar, len: c_int, log: *mut c_uchar, cap: c_int) -> c_int;
+
+    // --- p1w1-partition ---
+    // PartitionSolver.cpp (wrap_partition_solver.cpp): pairs of (id, size)
+    // as parallel arrays; the solution as (entry id, space id) pairs.
+    pub fn ref_partition_solve(
+        how: c_int,
+        data_ids: *const c_int,
+        data_sizes: *const c_uint,
+        n_data: c_int,
+        space_ids: *const c_int,
+        space_sizes: *const c_uint,
+        n_spaces: c_int,
+        out: *mut c_int,
+        out_cap: c_int,
+    ) -> c_int;
+    // --- end p1w1-partition ---
 }

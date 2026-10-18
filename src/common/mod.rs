@@ -39,3 +39,6 @@ pub mod stl_typedefs;
 pub mod subsystem_interface;
 // --- p1w1-unicode ---
 pub mod unicode_string;
+// --- p1w1-partition ---
+pub mod partition_solver;
+// --- end p1w1-partition ---

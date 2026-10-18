@@ -406,6 +406,9 @@ mod differential {
             .file(dif.join("wrap_trig.cpp"))
             .file(dif.join("wrap_quick_trig.cpp"))
             .file(dif.join("wrap_discrete_circle.cpp"))
+            // --- p1w1-partition ---
+            .file(dif.join("wrap_partition_solver.cpp"))
+            // --- end p1w1-partition ---
             .file(up.join("GameEngine/Source/Common/crc.cpp"));
         ge.compile("upstream_gameengine");
 
