@@ -89,8 +89,12 @@
 //! `newDrawable` is `TheGameClient->friend_createDrawable( tmplate,
 //! statusBits )`: the client's, so it is the client event
 //! [`ClientEvent::ObjectCreated`] ([`ThingFactory::new_drawable`]).
-//! (`GameLogic::registerObject` calls it for every object, `GameLogic.cpp`
-//! line 4139.)
+//! ~~(`GameLogic::registerObject` calls it for every object, `GameLogic.cpp`
+//! line 4139.)~~ **CORRECTED 2026-10-18** (p1w6-object): `GameLogic::sendObjectCreated`
+//! (`GameLogic.cpp` 4137-4145) makes the drawable, and its only caller is
+//! `Object::initObject` (`Object.cpp` 535), which `newObject` calls last, not
+//! `registerObject` (checked: `grep sendObjectCreated` over `GameEngine` finds
+//! the declaration, that one call and the definition).
 //!
 //! # Where upstream is undefined
 //!
@@ -467,17 +471,21 @@ impl ThingFactory {
 
     /// `newDrawable(tmplate, statusBits)`: the client makes the drawable
     /// (`TheGameClient->friend_createDrawable`), which is the event.
-    /// `ERROR_BAD_ARG` for `None`.
+    /// `object_id` is the object `GameLogic::sendObjectCreated` binds the
+    /// drawable to straight after (`bindObjectAndDrawable`), which upstream
+    /// does through a pointer and the event carries as an id (0 for a drawable
+    /// that belongs to no object). `ERROR_BAD_ARG` for `None`.
     pub fn new_drawable(
         &self,
         tmplate: Option<&ThingTemplate>,
         status_bits: u32,
+        object_id: i32,
         events: &mut Vec<ClientEvent>,
     ) -> Result<(), ThingFactoryError> {
         let Some(tmplate) = tmplate else {
             return Err(ThingFactoryError::BadArg);
         };
-        events.push(ClientEvent::ObjectCreated { template_id: tmplate.get_template_id(), drawable_status_bits: status_bits });
+        events.push(ClientEvent::ObjectCreated { template_id: tmplate.get_template_id(), drawable_status_bits: status_bits, object_id });
         Ok(())
     }
 
@@ -1149,9 +1157,9 @@ ObjectReskin Skin Base\n Geometry = CYLINDER\n Draw = W3DModelDraw ModuleTag_New
         assert_eq!(rng.get_game_logic_random_seed_crc(), before);
         assert_eq!(f.new_object(None, &mut rng, mask).unwrap_err(), ThingFactoryError::BadArg);
         let mut events = Vec::new();
-        f.new_drawable(Some(&f.find_template(b"VarB").unwrap().data), 5, &mut events).unwrap();
-        assert_eq!(events, [ClientEvent::ObjectCreated { template_id: 3, drawable_status_bits: 5 }]);
-        assert_eq!(f.new_drawable(None, 0, &mut events).unwrap_err(), ThingFactoryError::BadArg);
+        f.new_drawable(Some(&f.find_template(b"VarB").unwrap().data), 5, 42, &mut events).unwrap();
+        assert_eq!(events, [ClientEvent::ObjectCreated { template_id: 3, drawable_status_bits: 5, object_id: 42 }]);
+        assert_eq!(f.new_drawable(None, 0, 0, &mut events).unwrap_err(), ThingFactoryError::BadArg);
     }
 
     #[test]

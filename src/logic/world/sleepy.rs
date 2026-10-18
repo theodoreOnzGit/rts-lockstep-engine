@@ -284,6 +284,23 @@ impl SleepyScheduler {
         }
     }
 
+    // --- p1w6-object ---
+    /// `Object::setID` on a load: the handles of that object's modules name it
+    /// by its new id (upstream's heap holds pointers).
+    pub fn rename_object(&mut self, old: ObjectId, new: ObjectId) {
+        for u in &mut self.heap {
+            if u.object == old {
+                u.object = new;
+            }
+        }
+        if let Some(c) = &mut self.cur {
+            if c.object == old {
+                c.object = new;
+            }
+        }
+    }
+    // --- end p1w6-object ---
+
     /// `setDefaults` / `loadPostProcess`: "blow away the sleepy update list",
     /// setting every module's index back to -1 first.
     pub fn clear(&mut self, objs: &mut ObjectArena) {

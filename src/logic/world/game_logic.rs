@@ -66,13 +66,15 @@ use crate::common::disabled_types::DisabledMaskType;
 use crate::common::object_status_types::OBJECT_STATUS_DESTROYED;
 use crate::common::state_machine::{ObjectRef, StateContext};
 use crate::logic::client_event::ClientEvent;
-use crate::logic::damage::DamageInfo;
 use crate::logic::module::update_module::UPDATE_SLEEP_NONE;
 use crate::logic::terrain_logic::TerrainLogic;
 use crate::logic::world::client_reads::ClientReads;
 use crate::logic::world::events::ClientEventQueue;
 use crate::logic::world::ids::{ObjectId, INVALID_ID};
 use crate::logic::world::object::{ArenaError, Object, ObjectArena};
+// --- p1w6-object ---
+use crate::logic::world::object_cuts::ObjectCuts;
+// --- end p1w6-object ---
 use crate::logic::world::player::PlayerArena;
 use crate::logic::world::sleepy::{SleepyScheduler, UpdateHandle, UpdateTraceEntry};
 use crate::logic::world::team::TeamArena;
@@ -136,6 +138,11 @@ pub struct World {
     pub reads: ClientReads,
     /// When `Some`, the hooks append themselves (see [`Hook`]).
     pub hook_log: Option<Vec<Hook>>,
+    // --- p1w6-object ---
+    /// The cut points of `Object` (layer 8): the tables and logs behind every
+    /// call it makes into a unit that is not translated (`object_cuts.rs`).
+    pub cuts: ObjectCuts,
+    // --- end p1w6-object ---
     /// `m_frame`.
     frame: u32,
     /// `m_nextObjID`.
@@ -169,6 +176,9 @@ impl World {
             events: ClientEventQueue::new(),
             reads: ClientReads::default(),
             hook_log: None,
+            // --- p1w6-object ---
+            cuts: ObjectCuts::default(),
+            // --- end p1w6-object ---
             frame: 0,
             next_object_id: 1,
             objects_to_destroy: Vec::new(),
@@ -249,8 +259,27 @@ impl World {
     /// sleepy heap.
     pub fn register_object(&mut self, obj: Object) -> Result<(), WorldError> {
         let id = obj.id;
-        let modules = obj.behaviors.len();
         self.objects.insert_at_head(obj)?;
+        self.queue_update_modules(id);
+        Ok(())
+    }
+
+    // --- p1w6-object ---
+    /// The second half of `registerObject(obj)` for an object that is already
+    /// in the lookup table (`Object::Object` adds it with `setID`, long before
+    /// it registers itself): prepend it to the object list, then queue its
+    /// update modules.
+    pub fn link_registered_object(&mut self, id: ObjectId) -> Result<(), WorldError> {
+        self.objects.link_at_head(id)?;
+        self.queue_update_modules(id);
+        Ok(())
+    }
+
+    /// The loop of `registerObject`: a module that never set its wake frame is
+    /// due now (frame 1 at frame 0), and every update module goes on the
+    /// sleepy heap.
+    fn queue_update_modules(&mut self, id: ObjectId) {
+        let modules = self.objects.find(id).map_or(0, |o| o.behaviors.len());
         let mut now = self.frame;
         if now == 0 {
             now = 1;
@@ -266,8 +295,17 @@ impl World {
             }
             self.sched.push(&mut self.objects, u);
         }
-        Ok(())
     }
+
+    /// `setID` of a queued object: the destroy list holds the new id.
+    pub(crate) fn rename_in_destroy_list(&mut self, old: ObjectId, new: ObjectId) {
+        for id in &mut self.objects_to_destroy {
+            if *id == old {
+                *id = new;
+            }
+        }
+    }
+    // --- end p1w6-object ---
 
     // ---- destruction -----------------------------------------------------
 
@@ -289,9 +327,10 @@ impl World {
             _ => return,
         }
         self.hook_destroy_modules_on_destroy(id);
-        if let Some(o) = self.objects.find_mut(id) {
-            o.set_status_bit(OBJECT_STATUS_DESTROYED);
-        }
+        // --- p1w6-object ---
+        // `setStatus( MAKE_OBJECT_STATUS_MASK( OBJECT_STATUS_DESTROYED ) )`, with its reactions
+        self.set_status(id, crate::logic::world::object_state::mask_of(OBJECT_STATUS_DESTROYED), true);
+        // --- end p1w6-object ---
         self.hook_stop_ai(id);
         // "add to end of destruction list, in case something is being destroyed and trying to
         // destroy subobjects"
@@ -543,15 +582,6 @@ impl World {
 
     // ---- the cut points --------------------------------------------------
 
-    /// `obj->attemptDamage(&info)`: the damage cut point. The shell records the
-    /// damage on the object; the body module's translation replaces this with
-    /// `BodyModule::attemptDamage`. Nothing happens for a missing object.
-    pub fn attempt_damage(&mut self, id: ObjectId, info: &mut DamageInfo) {
-        if let Some(o) = self.objects.find_mut(id) {
-            o.damage_received.push(info.clone());
-        }
-    }
-
     /// Moves the terrain's pending visual events onto the client queue. Call
     /// after anything that calls into [`World::terrain`].
     pub fn flush_terrain_events(&mut self) {
@@ -571,23 +601,41 @@ impl World {
     /// Layer 9.
     pub fn hook_destroy_modules_on_destroy(&mut self, id: ObjectId) {
         self.note(Hook::DestroyModulesOnDestroy(id));
+        // --- p1w6-object ---
+        self.call_destroy_modules(id);
+        // --- end p1w6-object ---
     }
 
     /// `destroyObject`: `ai->setLocomotorGoalNone(); ai->destroyPath()`.
     /// Layer 10.
     pub fn hook_stop_ai(&mut self, id: ObjectId) {
         self.note(Hook::StopAi(id));
+        // --- p1w6-object ---
+        if self.objects.find(id).is_some_and(|o| o.ai.is_some()) {
+            // "We desperately need to stop here, or else the destructor of the statemachine will try to do
+            // stopping logic" (`setLocomotorGoalNone`, `destroyPath`)
+            self.cut(crate::logic::world::object_cuts::CutCall::AiStopForDestroy { object: id });
+        }
+        // --- end p1w6-object ---
     }
 
     /// `destroyObject`: `obj->onDestroy()`. Layer 8.
     pub fn hook_object_on_destroy(&mut self, id: ObjectId) {
         self.note(Hook::ObjectOnDestroy(id));
+        // --- p1w6-object ---
+        self.on_destroy(id);
+        // --- end p1w6-object ---
     }
 
     /// `destroyObject`: `if (obj->isKindOf(KINDOF_WALK_ON_TOP_OF_WALL))
     /// TheAI->pathfinder()->removeWallPiece(obj)`. Layer 10.
     pub fn hook_remove_wall_piece(&mut self, id: ObjectId) {
         self.note(Hook::RemoveWallPiece(id));
+        // --- p1w6-object ---
+        if self.objects.find(id).is_some_and(|o| o.is_kind_of(crate::common::kind_of::KINDOF_WALK_ON_TOP_OF_WALL)) {
+            self.cut(crate::logic::world::object_cuts::CutCall::PathfinderRemoveWallPiece { object: id });
+        }
+        // --- end p1w6-object ---
     }
 
     /// `destroyObject`: `if (obj->hasAnySpecialPower() && local player ==
@@ -595,6 +643,12 @@ impl World {
     /// [`ClientEvent`]).
     pub fn hook_special_power_ui(&mut self, id: ObjectId) {
         self.note(Hook::SpecialPowerUi(id));
+        // --- p1w6-object ---
+        // "Clean up special power shortcut bars"
+        if self.objects.find(id).is_some_and(|o| o.has_any_special_power()) && self.players.local_index() == self.get_controlling_player(id) {
+            self.emit(crate::logic::world::object_events::ObjectClientEvent::ControlBarMarkUiDirty);
+        }
+        // --- end p1w6-object ---
     }
 
     /// `processDestroyList`: `friend_deleteInstance()`, i.e. `~Object()`, which
@@ -603,13 +657,19 @@ impl World {
     /// extends the body; the event stays.
     pub fn hook_delete_instance(&mut self, obj: Object) {
         self.note(Hook::DeleteInstance(obj.id));
-        self.events.push(ClientEvent::ObjectDestroyed { object_id: obj.id });
+        // --- p1w6-object ---
+        // `~Object`, which sends `ObjectDestroyed` where `sendObjectDestroyed` is called
+        self.delete_instance(obj);
+        // --- end p1w6-object ---
     }
 
     /// End of frame: `obj->checkDisabledStatus()` for a disabled object.
     /// Layer 8.
     pub fn hook_check_disabled_status(&mut self, id: ObjectId) {
         self.note(Hook::CheckDisabledStatus(id));
+        // --- p1w6-object ---
+        self.check_disabled_status(id);
+        // --- end p1w6-object ---
     }
 }
 
@@ -728,7 +788,9 @@ mod tests {
     fn a_disabled_object_is_skipped_and_retried_next_frame() {
         let mut w = traced();
         let a = add(&mut w, &[spec(Normal, 0, vec![step(3, vec![])])]);
-        w.find_object_mut(a).unwrap().disabled.set(DISABLED_HELD, 1);
+        // (p1w6-object: the end-of-frame pass is `checkDisabledStatus` now, which clears a type
+        // whose frame has passed, so the type is disabled until a frame far away, as `setDisabled` does)
+        w.set_disabled(a, DISABLED_HELD);
         w.run_logic_frame();
         w.run_logic_frame();
         assert!(order(&w).is_empty());

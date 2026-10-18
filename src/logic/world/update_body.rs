@@ -40,12 +40,23 @@ use crate::logic::module::update_module::{
 use crate::logic::world::game_logic::World;
 use crate::logic::world::object::{BehaviorSlot, Object};
 use crate::logic::world::sleepy::UpdateHandle;
+// --- p1w6-object ---
+use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
+use crate::logic::module::update_module::UPDATE_SLEEP_FOREVER;
+use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+use crate::logic::world::module_probe::ProbeModule;
+// --- end p1w6-object ---
 
 /// The concrete update modules. See the module docs.
 #[derive(Clone, Debug, PartialEq)]
 pub enum UpdateBody {
     /// The scripted module of the tests and of `docs/world-design.md`.
     Probe(ProbeUpdate),
+    // --- p1w6-object ---
+    /// A module with every interface and scripted answers (`module_probe.rs`),
+    /// for the dispatch of `Object`. It has no update behaviour.
+    ModuleProbe(ProbeModule),
+    // --- end p1w6-object ---
     // New variants go here, one per translated update module.
 }
 
@@ -54,9 +65,64 @@ impl UpdateBody {
     pub fn update(&mut self, world: &mut World, me: UpdateHandle) -> UpdateSleepTime {
         match self {
             UpdateBody::Probe(p) => p.update(world, me),
+            // --- p1w6-object ---
+            UpdateBody::ModuleProbe(_) => UPDATE_SLEEP_FOREVER,
+            // --- end p1w6-object ---
+        }
+    }
+
+    // --- p1w6-object ---
+    /// The interface calls of `Object` (see `module_call.rs`): the body's
+    /// answer to `call`. A module answers [`ModuleReply::Unhandled`] to a call
+    /// it has no behaviour for (upstream's empty virtual).
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+        match self {
+            UpdateBody::Probe(_) => ModuleReply::Unhandled,
+            UpdateBody::ModuleProbe(m) => m.handle(world, me, call),
+        }
+    }
+    // --- end p1w6-object ---
+}
+
+// --- p1w6-object ---
+impl Snapshot for UpdateBody {
+    /// The `crc` of the concrete module (its own state; the bases are the slot's).
+    fn crc(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        match self {
+            UpdateBody::Probe(p) => p.crc(xfer),
+            UpdateBody::ModuleProbe(m) => m.crc(xfer),
+        }
+    }
+    /// The `xfer` of the concrete module.
+    fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        match self {
+            UpdateBody::Probe(p) => p.xfer(xfer),
+            UpdateBody::ModuleProbe(m) => m.xfer(xfer),
+        }
+    }
+    /// The `loadPostProcess` of the concrete module.
+    fn load_post_process(&mut self) {
+        match self {
+            UpdateBody::Probe(p) => p.load_post_process(),
+            UpdateBody::ModuleProbe(m) => m.load_post_process(),
         }
     }
 }
+
+impl Snapshot for ProbeUpdate {
+    fn crc(&mut self, _xfer: &mut dyn Xfer) -> XferResult<()> {
+        Ok(())
+    }
+    /// Version 1: the number of calls so far.
+    fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        xfer.xfer_version(&mut version, current)?;
+        xfer.xfer_unsigned_int(&mut self.calls)
+    }
+    fn load_post_process(&mut self) {}
+}
+// --- end p1w6-object ---
 
 /// What a [`ProbeUpdate`] spec describes for a module of a new object.
 #[derive(Clone, Debug, PartialEq)]

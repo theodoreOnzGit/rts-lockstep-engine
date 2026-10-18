@@ -1320,11 +1320,11 @@ fn probe(c: &mut Ctx, ck: &mut Checks, t: &mut Tally, g: &mut Gen, tag: &str, sa
         // newDrawable
         let bits = (g.u32() & 0xffff) as i32;
         let mut events = Vec::new();
-        c.factory.new_drawable(Some(&node.data), bits as u32, &mut events).unwrap();
+        c.factory.new_drawable(Some(&node.data), bits as u32, 7, &mut events).unwrap();
         let (mut dmade, mut dstatus) = (0i32, 0i32);
         let dcode = unsafe { cpp::ref_tt_new_drawable(p, d, 0, bits, &mut dmade, &mut dstatus) };
         assert_eq!(dcode, 0);
-        let expect = [ClientEvent::ObjectCreated { template_id: dmade as u16, drawable_status_bits: dstatus as u32 }];
+        let expect = [ClientEvent::ObjectCreated { template_id: dmade as u16, drawable_status_bits: dstatus as u32, object_id: 7 }];
         ck.new_drawable.eq(&events[..], &expect[..], || format!("{tag}: newDrawable {p} {d}"));
     }
     // the null templates
