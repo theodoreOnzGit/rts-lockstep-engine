@@ -220,7 +220,7 @@ a map, build lists), `PolygonTrigger` (trigger areas: point-in-polygon tests),
 the engine).
 
 *Cut points:* `TerrainLogic` calls `TheTerrainVisual` 32 times. Most are
-writes (`setRawMapHeight` 20, bibs, water transforms: client notifications).
+writes (`setRawMapHeight` ~~20~~ **19** (**CORRECTED 2026-10-18**: the 20th grep hit is a comment), bibs, water transforms: client notifications).
 **Three are reads that feed logic**: `getWaterGridHeight` (TerrainLogic.cpp
 2164, 2222), `getWaterTransform`/`getWaterGridResolution` (2316, 2502, 2515)
 and `getRawMapHeight` (2899). Upstream the water grid lives in the client.
@@ -1341,3 +1341,67 @@ leaves those files out (13 of 8,000).
 Knobs of the test: `SIDES_CASES0`, `SIDES_CASES1` (files of each kind), `SIDES_NOOPS` (no operations),
 `SIDES_DUMP_DIR` (write the logs of a mismatching file there).
 <!-- --- end p1w4-sides --- -->
+<!-- --- p1w4-terrain --- -->
+## Layer 6, part: TerrainLogic (p1w4-terrain)
+
+Translated: `logic::terrain_logic` (`TerrainLogic.h`, `TerrainLogic.cpp`: the
+map-chunk parse of waypoints, links, triggers and bridges, height-map ground
+queries, bridges and their layers, water areas and water changes over time,
+waypoints and paths, flatten and crater, `xfer`), `logic::terrain_visual` (the
+logic-owned state of what `TheTerrainVisual` is read for, and the client
+events for what it is written), and the petir-side helpers `ww::plane` and
+`ww::tri`. Upstream commit `0a05454d`.
+
+**Corrected count.** ~~`TerrainLogic` calls `TheTerrainVisual` 32 times, with
+`setRawMapHeight` 20~~ **CORRECTED 2026-10-18**: 32 calls in total
+(`grep -c TheTerrainVisual`), of which `setRawMapHeight` is **19** (the 20th
+grep hit is a comment at line 2717). The three reads are as the paragraph above
+says.
+
+**Water grid and raw heights (recorded, NOT decided).** The Rust holds both as
+logic state: `WaterGrid` (transform, resolution, mesh heights, clamps) and
+`LogicHeightMap` (raw heights, lowered only by `setRawMapHeight`). Where
+upstream reads them: `getWaterGridHeight` 2164 and 2222, `getWaterTransform`
+2316 and 2515, `getWaterGridResolution` 2502, `getRawMapHeight` 2899. What the
+client would otherwise supply: the mesh vertex heights, which
+`WaterRenderObjClass::update()` simulates **per client frame** (only on a
+client frame whose logic frame differs from the last seen), so `isUnderwater`
+over a grid would depend on the client's frame rate. That simulation is not
+translated; heights are set by the embedder or stay 0. Undecided: whether the
+grid becomes simulated logic state or is shown irrelevant. Not checked: whether
+any shipped map has a `WaveGuide1` waypoint and is in
+`m_vertexWaterAvailableMaps` (the map files are not here). Until then a grid
+water map is not lockstep-safe. A fourth read lives outside `TerrainLogic.cpp`
+(`W3DTerrainLogic` ground height through the render object, which reads the
+same logic height map; translated). `isCliffCell` and `isClearLineOfSight` are
+not translated.
+
+**Cut points.** Writes to `TheTerrainVisual` are `TerrainVisualEvent`s (load,
+enable grid, height clamps, transform, resolution, attenuation, raw height).
+Calls into other layers go through the `TerrainWorld` trait (no trait object;
+a type parameter): object lookup and position/orientation/layer reads, bridge
+tower and landmark objects (`ThingFactory::newObject`, `ThingTemplate`
+lookups), `TheAI->pathfinder()` (layer changes, wall height), the partition
+manager (`unRegisterObject`/`registerObject` of bridge objects), body-module
+damage and repair queries, `TheGameLogic->getFrame()`, and the boundary-change
+notification. `PolygonTrigger` and `MapObject` are minimal stand-ins (`TriggerArea`,
+`WaypointMapObject`) to be replaced when the sibling `PolygonTrigger`/`MapObject`
+work lands.
+
+**Choices.** Lists are `Vec`s in upstream order (waypoints walked in reverse,
+bridges and triggers head first). Undefined-upstream inputs are `Err` and are
+counted (`undefined_inputs`): an uninitialised `pickBridge` position, a stale
+water handle, a missing water transform, and 11 others.
+
+**Upstream quirks kept and pinned:** the `update()` copy loop that removes a
+finished water entry (copies entry `j` over `i` for every `j`); `setGridResolution`
+comparing `m_gridCellsY != m_gridCellsY`; `flatten` and `crater` loops starting
+`j` at 0; the `tri.h` degenerate case; the swapped comments of `isCellOnEnd` and
+`isCellOnSide`.
+
+**Results (2026-10-18, `tests/differential_terrain_logic.rs`, 8 tests):** 24,000
+programs, 22,139 compared, 346,279 operations, 0 mismatches in results, the
+world log or the client-event log; floats bitwise. 11 planted bugs: 10 caught
+(two only after the generator was strengthened), 1 not caught (a 0.001 bias in
+a tie-break). Table in the test's module doc.
+<!-- --- end p1w4-terrain --- -->

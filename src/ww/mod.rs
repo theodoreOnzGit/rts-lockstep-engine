@@ -11,3 +11,7 @@ pub mod vector2;
 pub mod vector3;
 pub mod vector4;
 pub mod wwmath;
+// --- p1w4-terrain ---
+pub mod plane;
+pub mod tri;
+// --- end p1w4-terrain ---

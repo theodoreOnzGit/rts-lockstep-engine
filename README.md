@@ -357,6 +357,10 @@ experiment planned in `SCOPE.md`.
   0x80 is not established for MSVC, so `trim` returns an error there rather
   than guess (see `common::unicode_string`).
 
+<!-- --- p1w4-terrain --- -->
+- `differential/wrap_terrain_logic.cpp` and `differential/shim_terrain_logic/` compile the real `TerrainLogic.cpp` (the one `static` edit and the extraction are done by `build.rs` into `OUT_DIR`, asserted once) over stand-ins for `TheTerrainVisual`, the object world, the pathfinder and the partition manager. Every call from terrain to those, and every `TheTerrainVisual` write, is logged and compared with the Rust (`TerrainWorld`, `TerrainVisualEvent`). The water grid and raw heights are logic-owned state; whether that is the final design is undecided (`docs/phase1-porting-graph.md`, p1w4-terrain). Results (`tests/differential_terrain_logic.rs`, 2026-10-18, upstream `0a05454d`): 22,139 programs compared, 346,279 operations, 0 mismatches; 10 of 11 planted bugs caught. Left out of the C++ as undefined upstream and checked to be `Err` in Rust: an uninitialised `pickBridge` position, stale water handles, a missing water transform, and 11 more kinds. `PolygonTrigger` and `MapObject` are stand-ins until their own translation lands.
+<!-- --- end p1w4-terrain --- -->
+
 ## Licence
 
 GPL-3.0-only, with the additional terms in [`NOTICE.md`](NOTICE.md), which

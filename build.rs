@@ -870,6 +870,198 @@ mod differential {
             println!("cargo:rerun-if-changed={p}");
         }
         // --- end p1w3-thing ---
+        // --- p1w4-terrain ---
+        // TerrainLogic (differential/wrap_terrain_logic.cpp): TerrainLogic.cpp is
+        // #included by the wrapper UNCHANGED, on differential/shim_terrain_logic (the
+        // stand-ins for the object world, pathfinder, partition manager, polygon
+        // triggers, map objects, global data and terrain visual; each header says what
+        // it stands in for) ahead of shim_terrain (the real BaseType.h, GameMemory),
+        // shim_chunk (the Dict the real DataChunk.h includes) and the shared shim, with
+        // clang++ -fms-extensions as the other real-BaseType builds. Compiled HERE,
+        // ahead of the libraries it calls, which come later in the link line: Cos and
+        // Sin (upstream_gameengine), the chunk reader and name keys (upstream_chunk),
+        // the Xfer base (upstream_xfer), Matrix3D (upstream_wwmath), the BaseType
+        // asm transcriptions (upstream_basetype) and AsciiString::TheEmptyString
+        // (upstream_big).
+        //
+        // Generated into OUT_DIR/terrain_logic_gen, every piece a verbatim cut of an
+        // upstream file, its first line asserted to occur once:
+        // - terrain_logic_gen_defs.h: the enums GeometryType (Geometry.h), SaveCode
+        //   (GameState.h), DistanceCalculationType (PartitionManager.h),
+        //   BodyDamageType (BodyModule.h), DamageType and DeathType (Damage.h),
+        //   BridgeTowerType (TerrainRoads.h), each from its `enum` line to the first
+        //   `};`; and the lines HUGE_DAMAGE_AMOUNT (Damage.h), MAP_XY_FACTOR and
+        //   MAP_HEIGHT_SCALE (MapObject.h), LAYER_Z_CLOSE_ENOUGH_F, PATHFIND_CELL_SIZE
+        //   and PATHFIND_CELL_SIZE_F (AIPathfind.h), WATER_GRID (Scripts.h), and the
+        //   enum holding LOGICFRAMES_PER_SECOND (GameCommon.h);
+        // - w3d_terrain_logic_methods.inc: W3DTerrainLogic::getExtent through
+        //   getLayerHeight (W3DTerrainLogic.cpp), the device subclass' overrides;
+        // - height_map_height.inc: BaseHeightMapRenderObjClass::getHeightMapHeight
+        //   (BaseHeightMap.cpp) and clip_height.inc: its getClipHeight (BaseHeightMap.h);
+        // - polygon_trigger_methods.inc: PolygonTrigger::updateBounds and pointInTrigger;
+        // - geometry_set.inc: GeometryInfo::set (Geometry.cpp), the stand-in's constructor.
+        // The one EDIT, to a copy of TerrainLogic.cpp (TerrainLogic_nostatic.cpp, which the
+        // wrapper includes): `static const ThingTemplate* genericBridgeTemplate` loses its
+        // `static`, asserted to occur once; see the header of the wrapper for why.
+        {
+            let tl_shim = dif.join("shim_terrain_logic");
+            let engine = up.join("GameEngine");
+            let device = up.join("GameEngineDevice");
+            let gen = out_dir.join("terrain_logic_gen");
+            std::fs::create_dir_all(&gen).expect("create terrain_logic_gen");
+            let read = |p: std::path::PathBuf| std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+            // from `first` (which must occur once) to the end of `last` after it
+            let seg = |text: &str, what: &str, first: &str, last: &str| -> String {
+                assert_eq!(text.matches(first).count(), 1, "{what}: {first:?} must occur once");
+                let a = text.find(first).expect("segment start");
+                let rel = text[a..].find(last).unwrap_or_else(|| panic!("{what}: {last:?} must follow {first:?}"));
+                text[a..a + rel + last.len()].to_string()
+            };
+            let enum_of = |text: &str, what: &str, first: &str| seg(text, what, first, "\n};");
+            let line_of = |text: &str, what: &str, prefix: &str| -> String {
+                let lines: Vec<&str> = text.lines().filter(|l| l.starts_with(prefix)).collect();
+                assert_eq!(lines.len(), 1, "{what}: exactly one line must start with {prefix:?}");
+                lines[0].to_string()
+            };
+            let geometry = read(engine.join("Include/Common/Geometry.h"));
+            let game_state = read(engine.join("Include/Common/GameState.h"));
+            let partition = read(engine.join("Include/GameLogic/PartitionManager.h"));
+            let body = read(engine.join("Include/GameLogic/Module/BodyModule.h"));
+            let damage = read(engine.join("Include/GameLogic/Damage.h"));
+            let roads = read(engine.join("Include/GameClient/TerrainRoads.h"));
+            let map_object = read(engine.join("Include/Common/MapObject.h"));
+            let pathfind = read(engine.join("Include/GameLogic/AIPathfind.h"));
+            let scripts = read(engine.join("Include/GameLogic/Scripts.h"));
+            let game_common = read(engine.join("Include/Common/GameCommon.h"));
+            let defs = [
+                enum_of(&geometry, "Geometry.h", "enum GeometryType"),
+                enum_of(&game_state, "GameState.h", "enum SaveCode"),
+                enum_of(&partition, "PartitionManager.h", "enum DistanceCalculationType"),
+                enum_of(&body, "BodyModule.h", "enum BodyDamageType"),
+                enum_of(&damage, "Damage.h", "enum DamageType"),
+                enum_of(&damage, "Damage.h", "enum DeathType"),
+                line_of(&damage, "Damage.h", "const Real HUGE_DAMAGE_AMOUNT"),
+                enum_of(&roads, "TerrainRoads.h", "enum BridgeTowerType"),
+                line_of(&map_object, "MapObject.h", "#define MAP_XY_FACTOR"),
+                line_of(&map_object, "MapObject.h", "#define MAP_HEIGHT_SCALE"),
+                line_of(&pathfind, "AIPathfind.h", "#define LAYER_Z_CLOSE_ENOUGH_F"),
+                line_of(&pathfind, "AIPathfind.h", "#define PATHFIND_CELL_SIZE\t"),
+                line_of(&pathfind, "AIPathfind.h", "#define PATHFIND_CELL_SIZE_F"),
+                line_of(&scripts, "Scripts.h", "#define WATER_GRID "),
+                seg(&game_common, "GameCommon.h", "enum\n{\n\tLOGICFRAMES_PER_SECOND = 30,", "MSEC_PER_SECOND = 1000\n};"),
+            ];
+            std::fs::write(
+                gen.join("terrain_logic_gen_defs.h"),
+                format!(
+                    "/* generated by build.rs: verbatim from the upstream headers */\n#ifndef TL_GEN_DEFS_H\n#define TL_GEN_DEFS_H\n{}\n#endif\n",
+                    defs.join("\n")
+                ),
+            )
+            .expect("write terrain_logic_gen_defs.h");
+            let w3d = read(device.join("Source/W3DDevice/GameLogic/W3DTerrainLogic.cpp"));
+            std::fs::write(
+                gen.join("w3d_terrain_logic_methods.inc"),
+                format!(
+                    "/* generated by build.rs: verbatim from W3DTerrainLogic.cpp (getExtent .. getLayerHeight) */\n{}",
+                    seg(
+                        &w3d,
+                        "W3DTerrainLogic.cpp",
+                        "//-------------------------------------------------------------------------------------------------\n/** Get the 3D extent of the terrain in world coordinates */",
+                        "#endif\n}  // end getLayerHeight\n"
+                    )
+                ),
+            )
+            .expect("write w3d_terrain_logic_methods.inc");
+            let height_map = read(device.join("Source/W3DDevice/GameClient/BaseHeightMap.cpp"));
+            std::fs::write(
+                gen.join("height_map_height.inc"),
+                format!(
+                    "/* generated by build.rs: verbatim from BaseHeightMap.cpp */\n{}",
+                    seg(
+                        &height_map,
+                        "BaseHeightMap.cpp",
+                        "Real BaseHeightMapRenderObjClass::getHeightMapHeight(Real x, Real y, Coord3D* normal) const\n{",
+                        "\n\treturn height;\n}\n"
+                    )
+                ),
+            )
+            .expect("write height_map_height.inc");
+            let height_map_h = read(device.join("Include/W3DDevice/GameClient/BaseHeightMap.h"));
+            std::fs::write(
+                gen.join("clip_height.inc"),
+                format!(
+                    "/* generated by build.rs: verbatim from BaseHeightMap.h */\n{}",
+                    seg(&height_map_h, "BaseHeightMap.h", "\tinline UnsignedByte getClipHeight(Int x, Int y) const\n\t{", "\n\t}\n")
+                ),
+            )
+            .expect("write clip_height.inc");
+            let polygon = read(engine.join("Source/GameLogic/Map/PolygonTrigger.cpp"));
+            std::fs::write(
+                gen.join("polygon_trigger_methods.inc"),
+                format!(
+                    "/* generated by build.rs: verbatim from PolygonTrigger.cpp */\n{}\n{}",
+                    seg(&polygon, "PolygonTrigger.cpp", "void PolygonTrigger::updateBounds(void)\tconst\n{", "\n}\n"),
+                    seg(&polygon, "PolygonTrigger.cpp", "Bool PolygonTrigger::pointInTrigger(ICoord3D &point) const\n{", "\treturn inside;\n}\n"),
+                ),
+            )
+            .expect("write polygon_trigger_methods.inc");
+
+            let geometry_cpp = read(engine.join("Source/Common/System/Geometry.cpp"));
+            std::fs::write(
+                gen.join("geometry_set.inc"),
+                format!(
+                    "/* generated by build.rs: verbatim from Geometry.cpp */\n{}",
+                    seg(
+                        &geometry_cpp,
+                        "Geometry.cpp",
+                        "void GeometryInfo::set(GeometryType type, Bool isSmall, Real height, Real majorRadius, Real minorRadius)\n{",
+                        "\n}\n"
+                    )
+                ),
+            )
+            .expect("write geometry_set.inc");
+            let terrain_logic = read(engine.join("Source/GameLogic/Map/TerrainLogic.cpp"));
+            let static_line = "static const ThingTemplate* genericBridgeTemplate = TheThingFactory->findTemplate(\"GenericBridge\");";
+            assert_eq!(terrain_logic.matches(static_line).count(), 1, "TerrainLogic.cpp: the genericBridgeTemplate static must occur once");
+            std::fs::write(
+                gen.join("TerrainLogic_nostatic.cpp"),
+                terrain_logic.replace(static_line, "const ThingTemplate* genericBridgeTemplate = TheThingFactory->findTemplate(\"GenericBridge\");"),
+            )
+            .expect("write TerrainLogic_nostatic.cpp");
+
+            let mut tl = cc::Build::new();
+            base(&mut tl);
+            tl.compiler("clang++")
+                .flag("-fms-extensions")
+                .flag("-fdelayed-template-parsing")
+                .include(&gen)
+                .include(&tl_shim)
+                .include(dif.join("shim_terrain"))
+                .include(dif.join("shim_chunk"))
+                .include(&shim)
+                .include(engine.join("Include"))
+                .include(up.join("Libraries/Include"))
+                .include(up.join("Libraries/Source/Compression"))
+                .include(&ww)
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .include(&dif)
+                .file(dif.join("wrap_terrain_logic.cpp"));
+            tl.compile("upstream_terrain_logic");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Map/TerrainLogic.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/TerrainLogic.h",
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Map/PolygonTrigger.cpp",
+                "upstream/GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameLogic/W3DTerrainLogic.cpp",
+                "upstream/GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/BaseHeightMap.cpp",
+                "upstream/GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/BaseHeightMap.h",
+                "differential/wrap_terrain_logic.cpp",
+                "differential/shim_terrain_logic",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
+        // --- end p1w4-terrain ---
 
         // GameEngine: RandomValue.cpp, Trig.cpp, QuickTrig.cpp (via their
         // wrappers) and crc.cpp. `_DEBUG` selects crc.h's C++ CRC class

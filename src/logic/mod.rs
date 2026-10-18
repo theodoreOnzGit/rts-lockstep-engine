@@ -46,3 +46,7 @@ pub mod scripts;
 // --- p1w4-sides ---
 pub mod sides_list;
 // --- end p1w4-sides ---
+// --- p1w4-terrain ---
+pub mod terrain_logic;
+pub mod terrain_visual;
+// --- end p1w4-terrain ---
