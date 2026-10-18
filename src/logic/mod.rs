@@ -17,3 +17,6 @@ pub mod client_event;
 // --- p1w1-armor ---
 pub mod armor;
 // --- end p1w1-armor ---
+// --- p1w2-terrain ---
+pub mod crate_system;
+// --- end p1w2-terrain ---

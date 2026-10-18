@@ -207,6 +207,14 @@ pub enum Undefined {
     /// `NameKeyGenerator` ran past its last key (`0x7fffffff`).
     NameKeysExhausted,
     // --- end p1w1-armor ---
+    // --- p1w2-terrain ---
+    /// `MultiplayerColorDefinition::setColor` takes `rgb.getAsInt()`, which
+    /// is undefined for a negative component (`<<` of a negative `Int`) or a
+    /// component that does not fit an `Int`. `parseRGBColor` keeps every
+    /// component in 0..=255, so the INI cannot reach this; only a direct
+    /// call with such an `RGBColor` can.
+    ColorToInt,
+    // --- end p1w2-terrain ---
 }
 
 /// What failed, innermost cause first.

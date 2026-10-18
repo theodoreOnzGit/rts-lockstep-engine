@@ -621,6 +621,52 @@ mod differential {
             println!("cargo:rerun-if-changed={p}");
         }
         // --- end p1w1-armor ---
+        // --- p1w2-terrain ---
+        // TerrainTypes, MultiplayerSettings and CrateSystem with their INI
+        // blocks (differential/wrap_terrain.cpp): TerrainTypes.cpp,
+        // MultiplayerSettings.cpp, CrateSystem.cpp, and INI/INITerrain.cpp,
+        // INI/INIMultiplayer.cpp, INI/INICrate.cpp, all unchanged, built as the
+        // armor build is (clang++ -fms-extensions, the real BitFlagsIO.h through
+        // flags_prelude.h, the bit-name lists of flags_gen), with shim_terrain
+        // ahead of shim_flags for the client and game-info headers they name.
+        // Linked ahead of upstream_ini, whose INI::initFromINI and the
+        // INI reader they use.
+        let shim_terrain = dif.join("shim_terrain");
+        let mut ter = cc::Build::new();
+        base(&mut ter);
+        ter.compiler("clang++")
+            .flag("-fms-extensions")
+            .flag("-fdelayed-template-parsing")
+            .include(&shim_terrain)
+            .include(&flags_gen)
+            .include(dif.join("shim_flags"))
+            .include(&shim)
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .include(ww.join("WWMath"))
+            .include(ww.join("WWLib"))
+            .include(&dif)
+            .flag("-include")
+            .flag(shim_terrain.join("terrain_prelude.h").to_str().expect("UTF-8 path"))
+            .file(dif.join("wrap_terrain.cpp"))
+            .file(up.join("GameEngine/Source/Common/TerrainTypes.cpp"))
+            .file(up.join("GameEngine/Source/Common/MultiplayerSettings.cpp"))
+            .file(up.join("GameEngine/Source/GameLogic/System/CrateSystem.cpp"))
+            .file(up.join("GameEngine/Source/Common/INI/INITerrain.cpp"))
+            .file(up.join("GameEngine/Source/Common/INI/INIMultiplayer.cpp"))
+            .file(up.join("GameEngine/Source/Common/INI/INICrate.cpp"));
+        ter.compile("upstream_terrain");
+        for p in [
+            "upstream/GeneralsMD/Code/GameEngine/Source/Common/TerrainTypes.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/Common/MultiplayerSettings.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/System/CrateSystem.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/Common/INI/INITerrain.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/Common/INI/INIMultiplayer.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/Common/INI/INICrate.cpp",
+        ] {
+            println!("cargo:rerun-if-changed={p}");
+        }
+        // --- end p1w2-terrain ---
 
         // The Xfer family: Xfer.cpp (via wrap_xfer.cpp, after matrix3d.h),
         // XferCRC.cpp, XferSave.cpp, XferLoad.cpp and Snapshot.cpp unchanged,
