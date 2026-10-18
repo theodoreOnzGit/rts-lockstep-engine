@@ -635,7 +635,7 @@ impl World {
             return ObjectShroudStatus::Clear;
         }
         if o.in_partition {
-            return self.cuts.shrouded_status.get(&(id, player_index)).copied().unwrap_or(ObjectShroudStatus::Invalid);
+            return self.cuts.shrouded_status.get(&(id, player_index)).copied().unwrap_or(ObjectShroudStatus::Clear);
         }
         // This can happen for objects removed from the partition system (e.g., for soldiers that are
         // garrisoned inside a building).

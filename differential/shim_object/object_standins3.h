@@ -66,7 +66,7 @@ void BehaviorModule::attemptHealing(DamageInfo* info) const
 }
 const ContainedItemsList* BehaviorModule::getContainedItemsList() const
 {
-	static ContainedItemsList items;
+	ContainedItemsList& items = m_items; /* per module: getTransportSlotCount recurses into the contained objects' modules */
 	items.clear();
 	if (!probe("GetContainedItems")) return &items;
 	for (size_t i = 0; i < a.contained.size(); ++i)

@@ -67,7 +67,12 @@ use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTem
 use rts_lockstep_engine::common::upgrade::{UpgradeCenter, UpgradeMaskType};
 use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
+use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
+use rts_lockstep_engine::common::object_status_types::{OBJECT_STATUS_AIRBORNE_TARGET, OBJECT_STATUS_BOOBY_TRAPPED};
+use rts_lockstep_engine::logic::world::object_damage::CrushSquishTestType;
+use rts_lockstep_engine::logic::world::object_modules::SpecialPowerTarget;
+use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::damage::DamageInfo;
 use rts_lockstep_engine::logic::terrain_logic::TriggerArea;
@@ -212,6 +217,10 @@ struct Run {
     template_count: u16,
     /// Also write the bytes of every snapshot (to find where two of them differ).
     verbose: bool,
+    /// The bytes `SAVE` took, by object index.
+    saved: BTreeMap<i32, Vec<u8>>,
+    /// The number of polygon triggers.
+    n_triggers: usize,
 }
 
 fn level(i: i32) -> VeterancyLevel {
@@ -411,7 +420,7 @@ impl Run {
             triggers.push(TriggerArea::new(name, i + 1, false, points).expect("trigger"));
         }
         w.terrain.set_triggers(triggers);
-        Run { w, ids: Vec::new(), lines: Vec::new(), uc, names, upgrade_masks, production_levels, template_count: 0, verbose: false }
+        Run { w, ids: Vec::new(), lines: Vec::new(), uc, names, upgrade_masks, production_levels, template_count: 0, verbose: false, saved: BTreeMap::new(), n_triggers: n as usize }
     }
 
     /// Moves what the world traced into the lines.
@@ -591,14 +600,14 @@ impl Run {
             }
             let k = r.i();
             let o = self.live(k);
-            self.op(op, o, r);
+            self.op(op, k, o, r);
             self.flush();
             self.lines.push(Line::new("end", "Op").i("op", i64::from(op)).i("object", i64::from(k)).0);
             self.snapshot_all();
         }
     }
 
-    fn op(&mut self, op: i32, o: Option<ObjectId>, r: &mut Rd) {
+    fn op(&mut self, op: i32, k: i32, o: Option<ObjectId>, r: &mut Rd) {
         match op {
             2 => {
                 let m = r.u64();
@@ -811,7 +820,7 @@ impl Run {
             29 => {
                 let by = r.i();
                 if let (Some(id), Some(c)) = (o, self.live(by)) {
-                    if self.w.get_contain(c).is_some() {
+                    if self.w.get_contain(c).is_some() && !self.w.objects.find(c).is_some_and(|x| x.is_destroyed()) {
                         self.w.on_contained_by(id, c);
                     }
                 }
@@ -861,6 +870,14 @@ impl Run {
             }
             37 => {
                 if let Some(id) = o {
+                    // what a contain module does in onDelete: let go of the objects it holds
+                    for j in 0..self.ids.len() {
+                        if let Some(other) = self.live(j as i32) {
+                            if self.w.objects.find(other).is_some_and(|x| x.contained_by == id) {
+                                self.w.on_removed_from(other);
+                            }
+                        }
+                    }
                     self.w.destroy_object(id);
                 }
             }
@@ -895,6 +912,342 @@ impl Run {
                     let mut x = XferCrc::new();
                     self.w.object_crc(id, &mut x).expect("crc");
                     self.ret(Line::new("ret", "Crc").i("crc", i64::from(x.get_crc())));
+                }
+            }
+            45 => {
+                if let Some(id) = o {
+                    let res = self.w.is_able_to_attack(id);
+                    self.ret(Line::new("ret", "AbleToAttack").b("result", res));
+                }
+            }
+            46 => {
+                if let Some(id) = o {
+                    let res = self.w.is_hero(id);
+                    self.ret(Line::new("ret", "IsHero").b("result", res));
+                }
+            }
+            47 => {
+                if let Some(id) = o {
+                    let res = self.w.get_transport_slot_count(id);
+                    self.ret(Line::new("ret", "TransportSlots").i("result", i64::from(res)));
+                }
+            }
+            48 => {
+                let (kind, tmpl, forced, opts, target) = (r.i(), r.i(), r.b(), r.u(), r.i());
+                let loc = Coord3D { x: r.f(), y: r.f(), z: r.f() };
+                let angle = r.f();
+                if let Some(id) = o {
+                    let t = if tmpl != 0 { Some(tmpl as u32) } else { None };
+                    let target = match kind {
+                        0 => SpecialPowerTarget::None,
+                        1 => SpecialPowerTarget::Object(self.live(target).unwrap_or(0)),
+                        2 => SpecialPowerTarget::Location { loc, angle },
+                        _ => SpecialPowerTarget::Waypoint(1),
+                    };
+                    self.w.do_special_power(id, t, target, opts, forced);
+                }
+            }
+            49 => {
+                let (kind, ty, tmpl) = (r.i(), r.i(), r.i());
+                if let Some(id) = o {
+                    let m = match kind {
+                        0 => self.w.find_special_power_module_interface(id, ty),
+                        1 => self.w.find_any_shortcut_special_power_module_interface(id),
+                        2 => self.w.find_special_ability_update(id, ty),
+                        3 => self.w.find_special_power_completion_die(id),
+                        4 => self.w.find_special_power_with_overridable_destination_active(id),
+                        5 => self.w.find_special_power_with_overridable_destination(id),
+                        6 => self.w.get_production_update_interface(id),
+                        7 => self.w.get_dock_update_interface(id),
+                        8 => self.w.get_spawn_behavior_interface(id),
+                        9 => self.w.get_projectile_update_interface(id),
+                        10 => self.w.get_countermeasures_behavior_interface(id),
+                        11 => {
+                            if self.w.has_object_exit_interface(id) {
+                                Some(0)
+                            } else {
+                                None
+                            }
+                        }
+                        _ => self.w.get_special_power_module(id, if tmpl != 0 { Some(tmpl as u32) } else { None }),
+                    };
+                    self.ret(Line::new("ret", "Find").i("kind", i64::from(kind)).i("index", m.map_or(-1, i64::from)));
+                }
+            }
+            50 => {
+                let d = Coord3D { x: r.f(), y: r.f(), z: r.f() };
+                let (speed, opts) = (r.f(), r.u());
+                if let Some(id) = o {
+                    self.w.topple(id, Some(d), speed, opts);
+                }
+            }
+            51 => {
+                let (other, tt) = (r.i(), r.i());
+                if let Some(id) = o {
+                    let t = match tt {
+                        0 => CrushSquishTestType::CrushOnly,
+                        1 => CrushSquishTestType::SquishOnly,
+                        _ => CrushSquishTestType::CrushOrSquish,
+                    };
+                    let res = self.w.can_crush_or_squish(id, self.live(other), t);
+                    self.ret(Line::new("ret", "Crush").b("result", res));
+                }
+            }
+            52 => {
+                if let Some(id) = o {
+                    let pr = self.w.get_radar_priority(id);
+                    let pos = self.w.get_health_box_position(id).expect("live");
+                    let dims = self.w.get_health_box_dimensions(id);
+                    let (h, wd) = dims.unwrap_or((0.0, 0.0));
+                    self.ret(Line::new("ret", "HealthBox").i("priority", i64::from(pr)).f("x", pos.x).f("y", pos.y).f("z", pos.z).b("dims", dims.is_some()).f("height", h).f("width", wd));
+                }
+            }
+            54 => {
+                let (kind, gt, small) = (r.i(), r.i(), r.b());
+                let (h, maj, mnr, z) = (r.f(), r.f(), r.f(), r.f());
+                if let Some(id) = o {
+                    if kind == 0 {
+                        let gt = match gt {
+                            0 => GeometryType::Sphere,
+                            1 => GeometryType::Cylinder,
+                            _ => GeometryType::Box,
+                        };
+                        self.w.set_geometry_info(id, &GeometryInfo::new(gt, small, h, maj, mnr));
+                    } else {
+                        self.w.set_geometry_info_z(id, z);
+                    }
+                }
+            }
+            55 => {
+                let (kind, color) = (r.i(), r.u());
+                if let Some(id) = o {
+                    match kind {
+                        0 => self.w.set_custom_indicator_color(id, color as i32),
+                        1 => self.w.remove_custom_indicator_color(id),
+                        _ => {
+                            let (c, n) = (self.w.get_indicator_color(id), self.w.get_night_indicator_color(id));
+                            let custom = self.w.objects.find(id).is_some_and(|o| o.indicator_color != 0);
+                            self.ret(Line::new("ret", "Indicator").i("color", i64::from(c as u32)).i("night", i64::from(n as u32)).b("custom", custom));
+                        }
+                    }
+                }
+            }
+            56 => {
+                let (kind, g) = (r.i(), r.i());
+                if let Some(id) = o {
+                    if kind == 0 {
+                        self.w.enter_group(id, g as u32);
+                    } else {
+                        self.w.leave_group(id);
+                    }
+                }
+            }
+            57 => {
+                let (which, obj) = (r.i(), r.i());
+                if let Some(id) = o {
+                    let t = if obj != 0 { self.live(obj - 1).unwrap_or(0) } else { 0 };
+                    if which == 0 {
+                        self.w.set_producer(id, t);
+                    } else {
+                        self.w.set_builder(id, t);
+                    }
+                }
+            }
+            58 => {
+                let (kind, layer) = (r.i(), r.i());
+                if let Some(id) = o {
+                    if kind == 0 {
+                        self.w.set_layer(id, layer);
+                    } else {
+                        self.w.set_destination_layer(id, layer);
+                    }
+                }
+            }
+            59 => {
+                let kind = r.i();
+                if let Some(id) = o {
+                    if kind == 0 {
+                        self.w.friend_prepare_for_map_boundary_adjust(id);
+                    } else {
+                        self.w.friend_notify_of_new_map_boundary(id);
+                    }
+                }
+            }
+            60 => {
+                let incoming = r.b();
+                if let Some(id) = o {
+                    self.w.friend_adjust_power_for_player(id, incoming);
+                }
+            }
+            61 => {
+                let receive = r.b();
+                if let Some(id) = o {
+                    self.w.set_receiving_difficulty_bonus(id, receive);
+                }
+            }
+            62 => {
+                let (old_p, new_p) = (r.i(), r.i());
+                if let Some(id) = o {
+                    self.w.on_capture(id, old_p, new_p);
+                }
+            }
+            63 => {
+                let (amount, src, duration) = (r.f(), r.i(), r.u());
+                if let Some(id) = o {
+                    let s = if src != 0 { self.live(src - 1).unwrap_or(0) } else { 0 };
+                    let res = self.w.attempt_healing_from_sole_benefactor(id, amount, s, duration);
+                    let ben = self.w.get_sole_healing_benefactor(id);
+                    self.ret(Line::new("ret", "SoleHeal").b("result", res).i("benefactor", i64::from(ben)));
+                }
+            }
+            64 => {
+                let (kind, other) = (r.i(), r.i());
+                if let Some(id) = o {
+                    let t = self.live(other);
+                    match kind {
+                        0 => {
+                            let res = self.w.has_countermeasures(id);
+                            self.ret(Line::new("ret", "HasCountermeasures").b("result", res));
+                        }
+                        1 => {
+                            if let Some(t) = t {
+                                self.w.report_missile_for_countermeasures(id, t);
+                            }
+                        }
+                        _ => {
+                            if let Some(t) = t {
+                                let d = self.w.calculate_countermeasure_to_divert_to(id, t);
+                                self.ret(Line::new("ret", "Divert").i("id", i64::from(d)));
+                            }
+                        }
+                    }
+                }
+            }
+            65 => {
+                let mut f = [0f32; 12];
+                for v in f.iter_mut() {
+                    *v = r.f();
+                }
+                if let Some(id) = o {
+                    let m = Matrix3D::new(f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[11]);
+                    self.w.set_transform_matrix(id, &m);
+                }
+            }
+            66 => {
+                let (kind, trig) = (r.i(), r.i());
+                if let Some(id) = o {
+                    let t = if (trig as usize) < self.n_triggers { Some(trig + 1) } else { None };
+                    let res = match kind {
+                        0 => self.w.did_enter(id, t),
+                        1 => self.w.did_exit(id, t),
+                        _ => self.w.is_inside(id, t),
+                    };
+                    self.ret(Line::new("ret", "Trigger").i("kind", i64::from(kind)).b("result", res));
+                }
+            }
+            67 => {
+                if let Some(id) = o {
+                    let pt = self.w.calc_natural_rally_point(id).expect("live");
+                    let deck = self.w.get_carrier_deck_height(id);
+                    self.ret(Line::new("ret", "Rally").f("x", pt.x).f("y", pt.y).f("deck", deck));
+                }
+            }
+            68 => {
+                let victim = r.i();
+                if let Some(id) = o {
+                    let v = if victim != 0 { self.live(victim - 1) } else { None };
+                    let res = self.w.check_and_detonate_booby_trap(id, v);
+                    self.ret(Line::new("ret", "Booby").b("result", res));
+                }
+            }
+            69 => {
+                let (kind, amount, status, dur) = (r.i(), r.f(), r.i(), r.u());
+                if let Some(id) = o {
+                    match kind {
+                        0 => self.w.notify_subdual_damage(id, amount),
+                        1 => self.w.do_status_damage(id, status, amount),
+                        _ => self.w.do_temp_weapon_bonus(id, status, dur),
+                    }
+                }
+            }
+            70 => {
+                let (turret, old_rot) = (r.i(), r.f());
+                if let Some(id) = o {
+                    self.w.react_to_turret_change(id, turret, old_rot, 0.0);
+                }
+            }
+            71 => {
+                let (other, player, dtype) = (r.i(), r.i(), r.i());
+                if let Some(id) = o {
+                    let t = self.live(other);
+                    let l = Line::new("ret", "Queries");
+                    let rel = t.map_or(-1, |t| self.w.get_relationship(id, t) as i64);
+                    let l = l
+                        .b("mobile", self.w.is_mobile(id))
+                        .b("selectable", self.w.is_selectable(id))
+                        .b("mass", self.w.is_mass_selectable(id))
+                        .b("local", self.w.is_locally_controlled(id))
+                        .b("neutral", self.w.is_neutral_controlled(id))
+                        .i("relationship", rel)
+                        .b("faction", self.w.is_faction_structure(id))
+                        .b("nonfaction", self.w.is_non_faction_structure(id))
+                        .i("shrouded", self.w.get_shrouded_status(id, player) as i64)
+                        .b("airborne", self.w.is_using_airborne_locomotor(id))
+                        .i("level", self.w.get_veterancy_level(id) as i64)
+                        .f("vision", self.w.get_vision_range(id))
+                        .f("clearing", self.w.get_shroud_clearing_range(id))
+                        .f("shroud", self.w.get_shroud_range(id))
+                        .i("disabled_until", i64::from(self.w.get_disabled_until(id, dtype)))
+                        .i("disabled_any", i64::from(self.w.get_disabled_until(id, 65535)));
+                    let salvage = self.w.is_salvage_crate(id);
+                    let l = l.b("salvage", salvage).b("contained", self.w.is_contained(id));
+                    let h = self.w.get_height_above_terrain(id);
+                    let o = self.w.objects.find(id).expect("live");
+                    let l = l
+                        .b("construction_complete", self.w.is_construction_complete(id))
+                        .b("effectively_dead", o.is_effectively_dead())
+                        .b("captured", o.is_captured())
+                        .b("off_map", o.is_off_map())
+                        .b("undetected_defector", o.is_undetected_defector())
+                        .b("has_special", o.has_any_special_power())
+                        .f("height", h)
+                        .b("hero", false)
+                        .i("crusher", i64::from(self.w.get_crusher_level(id)))
+                        .i("crushable", i64::from(self.w.get_crushable_level(id)))
+                        .b("airborne_target", o.test_status(OBJECT_STATUS_AIRBORNE_TARGET))
+                        .b("destroyed", o.is_destroyed())
+                        .b("modules_ready", o.modules_ready)
+                        .i("script_status", i64::from(o.test_script_status_bit(1)))
+                        .i("weapon_set", o.cur_weapon_set_flags.words()[0] as i64)
+                        .i("weapon_bonus", i64::from(o.weapon_bonus_condition))
+                        .b("single_use", o.single_use_command_used);
+                    self.ret(l);
+                }
+            }
+            72 => {
+                if let Some(id) = o {
+                    let mut x = XferSave::new();
+                    x.open(b"object").expect("open");
+                    {
+                        let mut stores = ObjectXferStores { upgrade_center: &self.uc, names: &mut self.names };
+                        self.w.object_xfer(id, &mut x, &mut stores).expect("save");
+                    }
+                    x.close().expect("close");
+                    self.saved.insert(k, x.take_bytes());
+                }
+            }
+            73 => {
+                if let Some(id) = o {
+                    if let Some(bytes) = self.saved.get(&k).cloned() {
+                        let mut x = XferLoad::new(bytes);
+                        x.open(b"object").expect("open");
+                        {
+                            let mut stores = ObjectXferStores { upgrade_center: &self.uc, names: &mut self.names };
+                            self.w.object_xfer(id, &mut x, &mut stores).expect("load");
+                        }
+                        x.close().expect("close");
+                        self.w.object_load_post_process(id);
+                    }
                 }
             }
             _ => panic!("unknown op {op}"),
@@ -1117,11 +1470,13 @@ impl Pg<'_> {
             self.p.i(pl);
             self.p.i(s);
         }
-        for _ in 0..2 {
-            let n = self.g.below(3) as i32;
+        for list in 0..2 {
+            // the second list is the booby traps in range: kept short and over the first ids, so that a trap, its
+            // producer and the BOOBY_TRAPPED status meet often enough to reach the detonation (planted bug 9)
+            let n = if list == 1 { 2 + self.g.below(2) as i32 } else { self.g.below(3) as i32 };
             self.p.i(n);
             for _ in 0..n {
-                let o = self.small_obj();
+                let o = if list == 1 { 1 + self.g.below(3) as i32 } else { self.small_obj() };
                 self.p.i(o);
             }
         }
@@ -1293,12 +1648,16 @@ impl Pg<'_> {
             self.p.b(shortcut);
             let pt = self.g.below(3);
             self.p.u(pt);
-            let rider = if self.chance(15) { self.small_obj() } else { 0 };
+            // containment and riding only point at objects created later (a cycle recurses without end upstream:
+            // `getTransportSlotCount` through the contained items, `clearDisabled` through the rider)
+            let own = self.created + 1;
+            let later = |g: &mut Gen| -> i32 { own + 1 + g.below((8 - own).max(1) as u32) as i32 };
+            let rider = if self.chance(15) && own < 7 { later(self.g) } else { 0 };
             self.p.i(rider);
-            let nc = self.g.below(3) as i32;
+            let nc = if own < 7 { self.g.below(3) as i32 } else { 0 };
             self.p.i(nc);
             for _ in 0..nc {
-                let o = self.small_obj();
+                let o = later(self.g);
                 self.p.i(o);
             }
             let slaver = if self.chance(15) { self.small_obj() } else { 0 };
@@ -1325,8 +1684,36 @@ impl Pg<'_> {
             self.create();
             return;
         }
+        if choice < 8 && self.created >= 2 {
+            // scenario (added after planted bug 9 survived): object `a` is made a sticky bomb produced by `b`, `b` is
+            // booby trapped and listed traps include `a` often, then `b` is hurt and killed
+            let a = self.g.below(self.created as u32) as i32;
+            let b = (a + 1 + self.g.below(self.created as u32 - 1) as i32) % self.created;
+            self.p.i(57);
+            self.p.i(a);
+            self.p.i(0);
+            self.p.i(1 + b);
+            self.p.i(2);
+            self.p.i(b);
+            self.p.u64(1 << OBJECT_STATUS_BOOBY_TRAPPED);
+            self.p.b(true);
+            self.emit_op(15, b);
+            self.emit_op(15, b);
+            self.emit_op(17, b);
+            return;
+        }
         let k = self.obj();
-        let op = match self.g.below(42) {
+        const NEW_OPS: [i32; 34] = [45, 46, 47, 48, 48, 49, 49, 50, 51, 52, 54, 55, 56, 57, 57, 57, 68, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 71, 72, 73];
+        let op = if self.chance(40) {
+            NEW_OPS[self.g.below(NEW_OPS.len() as u32) as usize]
+        } else {
+            self.old_op()
+        };
+        self.emit_op(op, k);
+    }
+
+    fn old_op(&mut self) -> i32 {
+        match self.g.below(42) {
             0 | 1 => 2,
             2 => 3,
             3 | 4 => 4,
@@ -1370,7 +1757,10 @@ impl Pg<'_> {
                 6 => 42,
                 _ => 44,
             },
-        };
+        }
+    }
+
+    fn emit_op(&mut self, op: i32, k: i32) {
         if op == 38 {
             // processDestroyList takes no object
             self.p.i(38);
@@ -1382,8 +1772,12 @@ impl Pg<'_> {
         match op {
             2 => {
                 let mut m = 0u64;
+                // a third of the bits come from the ones that gate rare branches (maintainer-visible bias, added after
+                // planted bug 9 survived: booby trap, repulsor, stealth, disguise, construction, car bomb ...)
+                const RARE: [u32; 14] = [3, 5, 7, 9, 16, 17, 19, 21, 22, 27, 28, 41, 43, 6];
                 for _ in 0..1 + self.g.below(2) {
-                    m |= 1 << self.g.below(45);
+                    let bit = if self.chance(35) { RARE[self.g.below(RARE.len() as u32) as usize] } else { self.g.below(45) };
+                    m |= 1 << bit;
                 }
                 m &= !1; // OBJECT_STATUS_NONE has no bit of its own
                 let set = self.chance(60);
@@ -1558,6 +1952,153 @@ impl Pg<'_> {
                 let b = self.chance(50);
                 self.p.b(b);
             }
+            48 => {
+                let kind = self.g.below(4) as i32;
+                let tmpl = self.g.below(3) as i32;
+                let forced = self.chance(30);
+                let opts = self.g.below(4);
+                let target = self.obj();
+                self.p.i(kind);
+                self.p.i(tmpl);
+                self.p.b(forced);
+                self.p.u(opts);
+                self.p.i(target);
+                for _ in 0..4 {
+                    let v = self.g.uniform(-50.0, 50.0);
+                    self.p.f(v);
+                }
+            }
+            49 => {
+                let kind = self.g.below(13) as i32;
+                let ty = self.g.below(12) as i32;
+                let tmpl = self.g.below(3) as i32;
+                self.p.i(kind);
+                self.p.i(ty);
+                self.p.i(tmpl);
+            }
+            50 => {
+                for _ in 0..3 {
+                    let v = self.g.uniform(-1.0, 1.0);
+                    self.p.f(v);
+                }
+                let speed = self.g.uniform(0.0, 5.0);
+                let opts = self.g.below(4);
+                self.p.f(speed);
+                self.p.u(opts);
+            }
+            51 => {
+                let other = self.obj();
+                let tt = self.g.below(3) as i32;
+                self.p.i(other);
+                self.p.i(tt);
+            }
+            54 => {
+                let kind = self.g.below(2) as i32;
+                let gt = self.g.below(3) as i32;
+                let small = self.chance(50);
+                self.p.i(kind);
+                self.p.i(gt);
+                self.p.b(small);
+                for _ in 0..4 {
+                    let v = self.g.uniform(1.0, 40.0);
+                    self.p.f(v);
+                }
+            }
+            55 => {
+                let kind = self.g.below(3) as i32;
+                let color = if self.chance(70) { self.g.u32() | 0xff00_0000 } else { 0 };
+                self.p.i(kind);
+                self.p.u(color);
+            }
+            56 => {
+                let kind = self.g.below(2) as i32;
+                let g = 1 + self.g.below(3) as i32;
+                self.p.i(kind);
+                self.p.i(g);
+            }
+            57 => {
+                let which = self.g.below(2) as i32;
+                let obj = if self.chance(80) { 1 + if self.chance(50) { self.g.below(3) as i32 } else { self.obj() } } else { 0 };
+                self.p.i(which);
+                self.p.i(obj);
+            }
+            58 => {
+                let kind = self.g.below(2) as i32;
+                let layer = [0, 1, 2, 15][self.g.below(4) as usize];
+                self.p.i(kind);
+                self.p.i(layer);
+            }
+            59 => {
+                let kind = self.g.below(2) as i32;
+                self.p.i(kind);
+            }
+            60 | 61 => {
+                let b = self.chance(50);
+                self.p.b(b);
+            }
+            62 => {
+                let a = self.g.below(self.players as u32) as i32;
+                let b = self.g.below(self.players as u32) as i32;
+                self.p.i(a);
+                self.p.i(b);
+            }
+            63 => {
+                let amount = self.g.uniform(0.0, 50.0);
+                let src = if self.chance(80) { 1 + self.obj() } else { 0 };
+                let duration = self.g.below(60);
+                self.p.f(amount);
+                self.p.i(src);
+                self.p.u(duration);
+            }
+            64 => {
+                let kind = self.g.below(3) as i32;
+                let other = self.obj();
+                self.p.i(kind);
+                self.p.i(other);
+            }
+            65 => {
+                // a rotation about Z and a translation (a transform nothing has to normalise)
+                let a = self.g.uniform(-3.0, 3.0);
+                let (c, s) = (a.cos(), a.sin());
+                let (x, y, z) = (self.g.uniform(-60.0, 260.0), self.g.uniform(-60.0, 260.0), self.g.uniform(-5.0, 30.0));
+                for v in [c, -s, 0.0, x, s, c, 0.0, y, 0.0, 0.0, 1.0, z] {
+                    self.p.f(v);
+                }
+            }
+            66 => {
+                let kind = self.g.below(3) as i32;
+                let trig = self.g.below(4) as i32;
+                self.p.i(kind);
+                self.p.i(trig);
+            }
+            68 => {
+                let victim = if self.chance(70) { 1 + self.obj() } else { 0 };
+                self.p.i(victim);
+            }
+            69 => {
+                let kind = self.g.below(3) as i32;
+                let amount = self.g.uniform(-5.0, 30.0);
+                let status = self.g.below(27) as i32;
+                let dur = self.g.below(60);
+                self.p.i(kind);
+                self.p.f(amount);
+                self.p.i(status);
+                self.p.u(dur);
+            }
+            70 => {
+                let turret = self.g.below(2) as i32;
+                let rot = self.g.uniform(-3.0, 3.0);
+                self.p.i(turret);
+                self.p.f(rot);
+            }
+            71 => {
+                let other = self.obj();
+                let player = self.g.below(self.players as u32) as i32;
+                let dtype = self.g.below(13) as i32;
+                self.p.i(other);
+                self.p.i(player);
+                self.p.i(dtype);
+            }
             _ => {}
         }
     }
@@ -1587,6 +2128,10 @@ fn first_difference(a: &[String], b: &[String]) -> Option<String> {
             let from = i.saturating_sub(6);
             let mut s = format!("line {i}:\n  rust: {}\n  cpp : {}\ncontext (cpp):\n", a[i], b[i]);
             for l in &b[from..i] {
+                s.push_str(&format!("    {l}\n"));
+            }
+            s.push_str("the operations before it (cpp):\n");
+            for l in b[..i].iter().filter(|l| l.starts_with("end Op")).rev().take(8).collect::<Vec<_>>().into_iter().rev() {
                 s.push_str(&format!("    {l}\n"));
             }
             return Some(s);
@@ -1619,11 +2164,17 @@ fn explain_snapshot(prog: &[u32]) -> String {
 
 #[test]
 fn object_matches_upstream() {
-    let cases = 60;
+    let cases: u64 = std::env::var("OBJECT_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(1200);
     let (mut lines, mut kinds): (usize, BTreeMap<String, usize>) = (0, BTreeMap::new());
     let mut bad = 0;
     for case in 0..cases {
-        let prog = gen_program(0x0B1E_C700 + case, 90);
+        let prog = gen_program(0x0B1E_C700 + case, 110);
+        if let Ok(dir) = std::env::var("OBJECT_DUMP_ALL") {
+            let bytes: Vec<u8> = prog.iter().flat_map(|w| w.to_le_bytes()).collect();
+            std::fs::write(format!("{dir}/prog_{case}.bin"), bytes).expect("dump program");
+            std::fs::write(format!("{dir}/names.bin"), flag_names()).expect("dump names");
+        }
+        if std::env::var("OBJECT_TRACE").is_ok() { eprintln!("CASE {case}"); }
         let c = run_cpp(&prog, false);
         let r = run_rust(&prog, false);
         lines += c.len();

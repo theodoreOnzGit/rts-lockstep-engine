@@ -327,15 +327,31 @@ void GameLogic::destroyObject(Object* obj)
 }
 static void processDestroyList()
 {
+	std::set<Object*> deleted;
 	for (size_t i = 0; i < g_objectsToDestroy.size(); ++i)
 	{
 		Object* o = g_objectsToDestroy[i];
+		/* an object queued twice (a module destroying its own object from onDestroy, before the destroyed bit is set) is
+		** deleted twice upstream, undefined behaviour; here, as in the Rust world, the second entry is skipped */
+		if (!deleted.insert(o).second) continue;
 		o->removeFromList(&TheGameLogic->m_objList);
 		TheGameLogic->removeObjectFromLookupTable(o);
 		g_deletingId = o->getID();
 		o->friend_deleteInstance();
 	}
 	g_objectsToDestroy.clear();
+}
+
+static SpecialPowerTemplate g_spTemplates[3];
+static std::map<int, AIGroup*> g_groups;
+static std::map<int, std::vector<unsigned char> > g_saved;
+static int moduleIndex(Object* o, BehaviorModule* m)
+{
+	if (!m) return -1;
+	int i = 0;
+	for (BehaviorModule** b = o->m_behaviors; *b; ++b, ++i)
+		if (*b == m) return i;
+	return -1;
 }
 
 static void runOps(Reader& r)
@@ -394,7 +410,7 @@ static void runOps(Reader& r)
 		case 26: { int bit = r.i(); if (!o) break; o->removeUpgrade(g_w->upgradeTemplates[bit]); break; }
 		case 27: { if (!o) break; o->updateUpgradeModules(); break; }
 		case 28: { int bit = r.i(); if (!o) break; bool h = o->hasUpgrade(g_w->upgradeTemplates[bit]); bool a = o->affectedByUpgrade(g_w->upgradeTemplates[bit]); Rec("ret", "Upgrade").b("has", h).b("affected", a); break; }
-		case 29: { int by = r.i(); if (!o) break; Object* c = objAt(by); if (c && c->getContain()) o->onContainedBy(c); break; }
+		case 29: { int by = r.i(); if (!o) break; Object* c = objAt(by); if (c && c->getContain() && !c->isDestroyed()) o->onContainedBy(c); /* not into a container that is going away */ break; }
 		case 30: { if (!o) break; o->onRemovedFrom(o->getContainedBy()); break; }
 		case 31: { int kind = r.i(); float v = r.f(); if (!o) break; if (kind == 0) o->setVisionRange(v); else if (kind == 1) o->setShroudClearingRange(v); else o->setShroudRange(v); break; }
 		case 32: { bool setting = r.b(); int player = r.i(); if (!o) break; o->setVisionSpied(setting, player); break; }
@@ -402,13 +418,183 @@ static void runOps(Reader& r)
 		case 34: { bool s = r.b(); if (!o) break; o->setSelectable(s); break; }
 		case 35: { int mc = r.i(); unsigned frames = r.u(); if (!o) break; o->setSpecialModelConditionState((ModelConditionFlagType)mc, frames); break; }
 		case 36: { if (!o) break; o->clearSpecialModelConditionStates(); break; }
-		case 37: { if (!o) break; TheGameLogic->destroyObject(o); break; }
+		case 37:
+		{
+			if (!o) break;
+			/* what a contain module does in onDelete: let go of the objects it holds (a pointer to a deleted container
+			** dangles upstream) */
+			for (size_t j = 0; j < w->ids.size(); ++j)
+			{
+				Object* other = objAt((int)j);
+				if (other && other->getContainedBy() == o) other->onRemovedFrom(o);
+			}
+			TheGameLogic->destroyObject(o);
+			break;
+		}
 		case 38: { processDestroyList(); break; }
 		case 39: { int other = r.i(); if (!o) break; Object* t = objAt(other); Coord3D loc; loc.x = 1; loc.y = 2; loc.z = 3; if (t) o->onCollide(t, &loc, &loc); break; }
 		case 41: { bool m = r.b(); if (!o) break; o->maskObject(m); break; }
 		case 42: { bool d = r.b(); if (!o) break; o->setEffectivelyDead(d); break; }
 		case 43: { bool c = r.b(); if (!o) break; o->setCaptured(c); break; }
 		case 44: { if (!o) break; XferCRC x; x.xferSnapshot(o); Rec("ret", "Crc").i("crc", (long long)x.getCRC()); break; }
+		case 45: { if (!o) break; bool res = o->isAbleToAttack(); Rec("ret", "AbleToAttack").b("result", res); break; }
+		case 46: { if (!o) break; bool res = o->isHero(); Rec("ret", "IsHero").b("result", res); break; }
+		case 47: { if (!o) break; int res = o->getTransportSlotCount(); Rec("ret", "TransportSlots").i("result", res); break; }
+		case 48:
+		{
+			int kind = r.i(); int tmpl = r.i(); bool forced = r.b(); unsigned opts = r.u(); int target = r.i();
+			Coord3D loc; loc.x = r.f(); loc.y = r.f(); loc.z = r.f(); float angle = r.f();
+			if (!o) break;
+			const SpecialPowerTemplate* t = tmpl ? &g_spTemplates[tmpl] : NULL;
+			if (kind == 0) o->doSpecialPower(t, opts, forced);
+			else if (kind == 1) o->doSpecialPowerAtObject(t, objAt(target), opts, forced);
+			else if (kind == 2) o->doSpecialPowerAtLocation(t, &loc, angle, opts, forced);
+			else { static Waypoint way; o->doSpecialPowerUsingWaypoints(t, &way, opts, forced); }
+			break;
+		}
+		case 49:
+		{
+			int kind = r.i(); int type = r.i(); int tmpl = r.i();
+			if (!o) break;
+			BehaviorModule* m = NULL;
+			switch (kind)
+			{
+			case 0: m = o->findSpecialPowerModuleInterface((SpecialPowerType)type); break;
+			case 1: m = o->findAnyShortcutSpecialPowerModuleInterface(); break;
+			case 2: m = o->findSpecialAbilityUpdate((SpecialPowerType)type); break;
+			case 3: m = o->findSpecialPowerCompletionDie(); break;
+			case 4: m = o->findSpecialPowerWithOverridableDestinationActive((SpecialPowerType)type); break;
+			case 5: m = o->findSpecialPowerWithOverridableDestination((SpecialPowerType)type); break;
+			case 6: m = o->getProductionUpdateInterface(); break;
+			case 7: m = o->getDockUpdateInterface(); break;
+			case 8: m = o->getSpawnBehaviorInterface(); break;
+			case 9: m = o->getProjectileUpdateInterface(); break;
+			case 10: m = o->getCountermeasuresBehaviorInterface(); break;
+			case 11: m = o->getObjectExitInterface(); break;
+			default: m = o->getSpecialPowerModule(tmpl ? &g_spTemplates[tmpl] : NULL); break;
+			}
+			Rec("ret", "Find").i("kind", kind).i("index", kind == 11 ? (m ? 0 : -1) : moduleIndex(o, m)); /* the Rust side answers whether the exit interface exists */
+			break;
+		}
+		case 50: { Coord3D d; d.x = r.f(); d.y = r.f(); d.z = r.f(); float speed = r.f(); unsigned opts = r.u(); if (!o) break; o->topple(&d, speed, opts); break; }
+		case 51: { int other = r.i(); int tt = r.i(); if (!o) break; Object* t = objAt(other); bool res = o->canCrushOrSquish(t, (CrushSquishTestType)tt); Rec("ret", "Crush").b("result", res); break; }
+		case 52:
+		{
+			if (!o) break;
+			int pr = o->getRadarPriority();
+			Coord3D pos; o->getHealthBoxPosition(pos);
+			Real h = 0, wd = 0; bool dims = o->getHealthBoxDimensions(h, wd);
+			Rec("ret", "HealthBox").i("priority", pr).f("x", pos.x).f("y", pos.y).f("z", pos.z).b("dims", dims).f("height", h).f("width", wd);
+			break;
+		}
+		case 54:
+		{
+			int kind = r.i(); int gt = r.i(); bool small = r.b(); float h = r.f(), maj = r.f(), mnr = r.f(); float z = r.f();
+			if (!o) break;
+			if (kind == 0) { GeometryInfo g((GeometryType)gt, small, h, maj, mnr); o->setGeometryInfo(g); }
+			else o->setGeometryInfoZ(z);
+			break;
+		}
+		case 55:
+		{
+			int kind = r.i(); unsigned color = r.u();
+			if (!o) break;
+			if (kind == 0) o->setCustomIndicatorColor(color);
+			else if (kind == 1) o->removeCustomIndicatorColor();
+			else Rec("ret", "Indicator").i("color", (long long)o->getIndicatorColor()).i("night", (long long)o->getNightIndicatorColor()).b("custom", o->hasCustomIndicatorColor());
+			break;
+		}
+		case 56:
+		{
+			int kind = r.i(); int g = r.i();
+			if (!o) break;
+			if (kind == 0) { AIGroup*& grp = g_groups[g]; if (!grp) { grp = new AIGroup(); grp->m_id = (UnsignedInt)g; } o->enterGroup(grp); }
+			else o->leaveGroup();
+			break;
+		}
+		case 57: { int which = r.i(); int obj = r.i(); if (!o) break; Object* t = obj ? objAt(obj - 1) : NULL; if (which == 0) o->setProducer(t); else o->setBuilder(t); break; }
+		case 58: { int kind = r.i(); int layer = r.i(); if (!o) break; if (kind == 0) o->setLayer((PathfindLayerEnum)layer); else o->setDestinationLayer((PathfindLayerEnum)layer); break; }
+		case 59: { int kind = r.i(); if (!o) break; if (kind == 0) o->friend_prepareForMapBoundaryAdjust(); else o->friend_notifyOfNewMapBoundary(); break; }
+		case 60: { bool incoming = r.b(); if (!o) break; o->friend_adjustPowerForPlayer(incoming); break; }
+		case 61: { bool receive = r.b(); if (!o) break; o->setReceivingDifficultyBonus(receive); break; }
+		case 62: { int oldP = r.i(), newP = r.i(); if (!o) break; o->onCapture(ThePlayerList->getNthPlayer(oldP), ThePlayerList->getNthPlayer(newP)); break; }
+		case 63:
+		{
+			float amount = r.f(); int src = r.i(); unsigned duration = r.u();
+			if (!o) break;
+			Object* s = src ? objAt(src - 1) : NULL;
+			bool res = o->attemptHealingFromSoleBenefactor(amount, s, duration);
+			Rec("ret", "SoleHeal").b("result", res).i("benefactor", o->getSoleHealingBenefactor());
+			break;
+		}
+		case 64:
+		{
+			int kind = r.i(); int other = r.i();
+			if (!o) break;
+			Object* t = objAt(other);
+			if (kind == 0) { bool res = o->hasCountermeasures(); Rec("ret", "HasCountermeasures").b("result", res); }
+			else if (kind == 1) { if (t) o->reportMissileForCountermeasures(t); }
+			else if (t) { ObjectID id = o->calculateCountermeasureToDivertTo(*t); Rec("ret", "Divert").i("id", id); }
+			break;
+		}
+		case 65: { Matrix3D m; for (int i = 0; i < 3; ++i) for (int j = 0; j < 4; ++j) m.Row[i][j] = r.f(); if (!o) break; o->setTransformMatrix(&m); break; }
+		case 66:
+		{
+			int kind = r.i(); int trig = r.i();
+			if (!o) break;
+			const PolygonTrigger* t = trig < (int)g_w->triggers.size() ? g_w->triggers[trig] : NULL;
+			bool res = kind == 0 ? o->didEnter(t) : kind == 1 ? o->didExit(t) : o->isInside(t);
+			Rec("ret", "Trigger").i("kind", kind).b("result", res);
+			break;
+		}
+		case 67:
+		{
+			if (!o) break;
+			Coord2D pt; o->calcNaturalRallyPoint(&pt);
+			Real deck = o->getCarrierDeckHeight();
+			Rec("ret", "Rally").f("x", pt.x).f("y", pt.y).f("deck", deck);
+			break;
+		}
+		case 68: { int victim = r.i(); if (!o) break; Object* v = victim ? objAt(victim - 1) : NULL; bool res = o->checkAndDetonateBoobyTrap(v); Rec("ret", "Booby").b("result", res); break; }
+		case 69:
+		{
+			int kind = r.i(); float amount = r.f(); int status = r.i(); unsigned dur = r.u();
+			if (!o) break;
+			if (kind == 0) o->notifySubdualDamage(amount);
+			else if (kind == 1) o->doStatusDamage((ObjectStatusTypes)status, amount);
+			else o->doTempWeaponBonus((WeaponBonusConditionType)status, dur);
+			break;
+		}
+		case 70: { int turret = r.i(); float oldRot = r.f(); if (!o) break; o->reactToTurretChange((WhichTurretType)turret, oldRot, 0.0f); break; }
+		case 71:
+		{
+			int other = r.i(); int player = r.i(); int dtype = r.i();
+			if (!o) break;
+			Object* t = objAt(other);
+			Rec q("ret", "Queries");
+			q.b("mobile", o->isMobile()).b("selectable", o->isSelectable()).b("mass", o->isMassSelectable()).b("local", o->isLocallyControlled()).b("neutral", o->isNeutralControlled())
+				.i("relationship", t ? (long long)o->getRelationship(t) : -1).b("faction", o->isFactionStructure()).b("nonfaction", o->isNonFactionStructure())
+				.i("shrouded", (long long)o->getShroudedStatus(player)).b("airborne", o->isUsingAirborneLocomotor()).i("level", (long long)o->getVeterancyLevel())
+				.f("vision", o->getVisionRange()).f("clearing", o->getShroudClearingRange()).f("shroud", o->getShroudRange())
+				.i("disabled_until", (long long)o->getDisabledUntil((DisabledType)dtype)).i("disabled_any", (long long)o->getDisabledUntil(DISABLED_ANY)).b("salvage", o->isSalvageCrate())
+				.b("contained", o->isContained()).b("construction_complete", o->getConstructionPercent() == CONSTRUCTION_COMPLETE).b("effectively_dead", o->isEffectivelyDead())
+				.b("captured", o->isCaptured()).b("off_map", o->isOffMap()).b("undetected_defector", o->getIsUndetectedDefector()).b("has_special", o->hasAnySpecialPower())
+				.f("height", o->getHeightAboveTerrain()).b("hero", false).i("crusher", o->getCrusherLevel()).i("crushable", o->getCrushableLevel())
+				.b("airborne_target", o->isAirborneTarget()).b("destroyed", o->isDestroyed()).b("modules_ready", o->areModulesReady()).i("script_status", o->testScriptStatusBit((ObjectScriptStatusBit)1) ? 1 : 0)
+				.i("weapon_set", (long long)o->getWeaponSetFlags().m_bits.to_ullong()).i("weapon_bonus", (long long)o->getWeaponBonusCondition()).b("single_use", o->hasSingleUseCommandBeenUsed());
+			break;
+		}
+		case 72: { if (!o) break; XferSave xs; xs.xferSnapshot(o); g_saved[k] = xs.bytes; break; }
+		case 73:
+		{
+			if (!o) break;
+			std::map<int, std::vector<unsigned char> >::iterator it = g_saved.find(k);
+			if (it == g_saved.end()) break;
+			XferLoad xl; xl.bytes = it->second;
+			xl.xferSnapshot(o);
+			o->loadPostProcess();
+			break;
+		}
 		default: abort();
 		}
 		Rec("end", "Op").i("op", op).i("object", k);
@@ -439,6 +625,9 @@ extern "C" int ref_object_run(const unsigned* prog, int nprog, const char* names
 	}
 	World world;
 	g_w = &world;
+	for (int i = 0; i < 3; ++i) g_spTemplates[i].m_id = i;
+	g_groups.clear();
+	g_saved.clear();
 	PolygonTrigger::s_first = NULL;
 	g_objectsToDestroy.clear();
 	Reader r; r.p = prog; r.e = prog + nprog;
