@@ -949,8 +949,50 @@ extern "C" {
         n_ops: c_int,
         ops: *const c_int,
         opf: *const c_float,
+// --- p1w6-trackers ---
+extern "C" {
+    // ObjectTypes.cpp (wrap_object_types.cpp): a program of list operations, logged word by word
+    // (tests/differential_object_types.rs documents the encoding).
+    pub fn ref_object_types_run(
+        ops: *const c_int,
+        n_ops: c_int,
+        blob: *const c_uchar,
+        blob_len: c_int,
+        tmp_path: *const c_char,
         out: *mut c_uint,
         cap: c_int,
     ) -> c_int;
 }
 // --- end p1w6-partition ---
+extern "C" {
+    // ExperienceTracker.cpp (wrap_experience_tracker.cpp): a program of tracker operations on up to
+    // four objects (tests/differential_experience_tracker.rs documents the encoding).
+    pub fn ref_experience_run(
+        n: c_int,
+        spec: *const c_int,
+        ops: *const c_int,
+        n_ops: c_int,
+        blob: *const c_uchar,
+        blob_len: c_int,
+        tmp_path: *const c_char,
+        out: *mut c_uint,
+        cap: c_int,
+    ) -> c_int;
+}
+extern "C" {
+    // FiringTracker.cpp (wrap_firing_tracker.cpp): a program of tracker operations on one tracker,
+    // logging every call it makes on its owner, weapon and audio in order
+    // (tests/differential_firing_tracker.rs documents the encoding).
+    pub fn ref_firing_run(
+        spec: *const c_int,
+        n_spec: c_int,
+        ops: *const c_int,
+        n_ops: c_int,
+        blob: *const c_uchar,
+        blob_len: c_int,
+        tmp_path: *const c_char,
+        out: *mut c_uint,
+        cap: c_int,
+    ) -> c_int;
+}
+// --- end p1w6-trackers ---

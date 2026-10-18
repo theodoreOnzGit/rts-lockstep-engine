@@ -2111,6 +2111,81 @@ mod differential {
         }
         // --- end p1w4-polygon ---
 
+        // --- p1w6-trackers ---
+        // ObjectTypes (differential/wrap_object_types.cpp): ObjectTypes.cpp
+        // #included by the wrapper, unchanged, on differential/shim_object_types
+        // (Player::canBuild, ThingFactory::findTemplate and ThingTemplate::getName,
+        // renamed ObjTypes*). Linked ahead of upstream_xfer, whose XferSave and
+        // XferLoad it calls.
+        {
+            let shim_ot = dif.join("shim_object_types");
+            let mut ot = cc::Build::new();
+            base(&mut ot);
+            ot.include(&shim_ot)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .file(dif.join("wrap_object_types.cpp"));
+            ot.compile("upstream_object_types");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/ObjectTypes.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/ObjectTypes.h",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
+        // ExperienceTracker (differential/wrap_experience_tracker.cpp):
+        // ExperienceTracker.cpp #included by the wrapper, unchanged, on
+        // differential/shim_experience (Object, ThingTemplate, GameLogic,
+        // renamed ExpTrack*). Linked ahead of upstream_xfer, whose XferSave
+        // and XferLoad it calls.
+        {
+            let shim_ex = dif.join("shim_experience");
+            let mut ex = cc::Build::new();
+            base(&mut ex);
+            ex.include(&shim_ex)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .file(dif.join("wrap_experience_tracker.cpp"));
+            ex.compile("upstream_experience_tracker");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/ExperienceTracker.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/ExperienceTracker.h",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
+        // FiringTracker (differential/wrap_firing_tracker.cpp): FiringTracker.cpp
+        // #included by the wrapper, unchanged, on differential/shim_firing (the
+        // module base UpdateModule, Object, Weapon, ThingTemplate, GameLogic,
+        // AudioManager, AudioEventRTS, ModelConditionFlags, DisabledMaskType,
+        // renamed FireTest*). Linked ahead of upstream_xfer.
+        {
+            let shim_fi = dif.join("shim_firing");
+            let mut fi = cc::Build::new();
+            base(&mut fi);
+            fi.include(&shim_fi)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .file(dif.join("wrap_firing_tracker.cpp"));
+            fi.compile("upstream_firing_tracker");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/FiringTracker.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/FiringTracker.h",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
+        // --- end p1w6-trackers ---
+
         // The Xfer family: Xfer.cpp (via wrap_xfer.cpp, after matrix3d.h),
         // XferCRC.cpp, XferSave.cpp, XferLoad.cpp and Snapshot.cpp unchanged,
         // against the shims in differential/shim/Common. `_DEBUG` again only
