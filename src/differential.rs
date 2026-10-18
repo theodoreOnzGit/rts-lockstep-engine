@@ -481,3 +481,29 @@ extern "C" {
     pub fn ref_damage_crc(kind: c_int, w: *const c_uint, tmpl: *const c_char, crc: *mut c_uint) -> c_int;
 }
 // --- end p1w1-armor ---
+
+// --- p1w2-globaldata ---
+extern "C" {
+    // GlobalData.cpp (a copy without the OptionPreferences tail, see build.rs),
+    // INIGameData.cpp, and the WeaponBonusSet parts of Weapon.h/.cpp
+    // (differential/wrap_globaldata.cpp)
+    pub fn ref_globaldata_clear();
+    pub fn ref_globaldata_create();
+    pub fn ref_globaldata_reset();
+    pub fn ref_globaldata_len() -> c_int;
+    pub fn ref_globaldata_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_globaldata_field_count() -> c_int;
+    pub fn ref_globaldata_field_token(i: c_int) -> *const c_char;
+    pub fn ref_globaldata_set_time_of_day(tod: c_int) -> c_int;
+    pub fn ref_globaldata_append_bonuses(flags: c_uint, out: *mut c_uint);
+    pub fn ref_globaldata_load(
+        filename: *const c_char,
+        load_type: c_int,
+        with_xfer: c_int,
+        crc: *mut c_uint,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+}
+// --- end p1w2-globaldata ---
