@@ -3,7 +3,12 @@
 //! `DataChunk.cpp` and `NameKeyGenerator.cpp` (commit 0a05454d), compiled
 //! unchanged by g++ (see `differential/wrap_chunk.cpp`; the `Dict` that
 //! `readDict` fills is a stand-in with `Dict.cpp`'s set semantics, because
-//! `Dict.cpp` cannot hold the shim strings).
+//! `Dict.cpp` cannot hold the shim strings). The Rust side fills
+//! `common::dict::Dict` and keys names through `common::name_key_generator`
+//! (moved there 2026-10-18, `p1w2-dictmove`): the same 20,000 files gave the
+//! same counts before and after the move (11,849 parsed, 136 threw, 3,953,898
+//! log bytes, 249 excluded as undefined, 52 with a table past 10^5 entries,
+//! 19,699 compared, 0 mismatches).
 //!
 //! No game maps are available, so every chunk file is **synthetic**, built
 //! byte by byte in the layout the upstream reader reads: a table of contents
@@ -34,13 +39,23 @@
 mod support;
 
 use rts_lockstep_engine::differential as cpp;
+use rts_lockstep_engine::common::dict::DataType;
+use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
 use rts_lockstep_engine::formats::data_chunk::{
-    CachedFileInputStream, ChunkError, ChunkResult, DataChunkInfo, DataChunkInput, DictValue,
+    CachedFileInputStream, ChunkError, ChunkResult, DataChunkInfo, DataChunkInput,
 };
 use std::collections::BTreeMap;
 use support::{Check, Gen};
 
 type Log = Vec<u8>;
+
+/// What the parsers get: the log, and the name keys (upstream's
+/// `TheNameKeyGenerator`, which `readNameKey` and `readDict` take here).
+#[derive(Default)]
+struct Ctx {
+    log: Log,
+    names: NameKeyGenerator,
+}
 
 fn put_str(log: &mut Log, s: &[u8]) {
     log.extend_from_slice(&(s.len() as u32).to_le_bytes());
@@ -55,89 +70,91 @@ fn put_wide(log: &mut Log, s: &[u16]) {
 }
 
 /// `interp` of wrap_chunk.cpp.
-fn interp(file: &mut DataChunkInput<Log>, info: &DataChunkInfo, log: &mut Log) -> ChunkResult<bool> {
-    log.push(b'I');
-    put_str(log, &info.label);
-    put_str(log, &info.parent_label);
-    log.extend_from_slice(&info.version.to_le_bytes());
-    log.extend_from_slice(&info.data_size.to_le_bytes());
-    log.extend_from_slice(&file.get_chunk_data_size().to_le_bytes());
-    log.extend_from_slice(&file.get_chunk_data_size_left().to_le_bytes());
-    log.extend_from_slice(&file.get_chunk_version().to_le_bytes());
-    put_str(log, &file.get_chunk_label());
+fn interp(file: &mut DataChunkInput<Ctx>, info: &DataChunkInfo, ctx: &mut Ctx) -> ChunkResult<bool> {
+    ctx.log.push(b'I');
+    put_str(&mut ctx.log, &info.label);
+    put_str(&mut ctx.log, &info.parent_label);
+    ctx.log.extend_from_slice(&info.version.to_le_bytes());
+    ctx.log.extend_from_slice(&info.data_size.to_le_bytes());
+    ctx.log.extend_from_slice(&file.get_chunk_data_size().to_le_bytes());
+    ctx.log.extend_from_slice(&file.get_chunk_data_size_left().to_le_bytes());
+    ctx.log.extend_from_slice(&file.get_chunk_version().to_le_bytes());
+    put_str(&mut ctx.log, &file.get_chunk_label());
     for _ in 0..64 {
         if file.at_end_of_chunk() {
-            log.push(b'E');
+            ctx.log.push(b'E');
             break;
         }
         let op = file.read_byte()? as u8;
-        log.extend_from_slice(&[b'o', op]);
+        ctx.log.extend_from_slice(&[b'o', op]);
         match op % 12 {
-            0 => log.extend_from_slice(&file.read_int()?.to_le_bytes()),
-            1 => log.extend_from_slice(&file.read_real()?.to_le_bytes()),
-            2 => log.push(file.read_byte()? as u8),
+            0 => ctx.log.extend_from_slice(&file.read_int()?.to_le_bytes()),
+            1 => ctx.log.extend_from_slice(&file.read_real()?.to_le_bytes()),
+            2 => ctx.log.push(file.read_byte()? as u8),
             3 => {
                 let s = file.read_ascii_string()?;
-                put_str(log, &s);
+                put_str(&mut ctx.log, &s);
             }
             4 => {
                 let s = file.read_unicode_string()?;
-                put_wide(log, &s);
+                put_wide(&mut ctx.log, &s);
             }
             5 => {
                 let n = (file.read_byte()? as u8 & 0x3f) as usize;
                 let mut buf = [0u8; 64];
                 file.read_array_of_bytes(&mut buf, n as i32)?;
-                log.push(n as u8);
-                log.extend_from_slice(&buf[..n]);
+                ctx.log.push(n as u8);
+                ctx.log.extend_from_slice(&buf[..n]);
             }
             6 => {
-                let r = file.parse(log)?;
-                log.extend_from_slice(&[b'p', u8::from(r)]);
+                let r = file.parse(ctx)?;
+                ctx.log.extend_from_slice(&[b'p', u8::from(r)]);
             }
             7 => {
-                let d = file.read_dict()?;
-                let mut v: Vec<&(Vec<u8>, DictValue)> = d.pairs().iter().collect();
+                let d = file.read_dict(&mut ctx.names)?;
+                let mut v: Vec<(Vec<u8>, i32)> =
+                    (0..d.get_pair_count()).map(|n| (ctx.names.key_to_name(d.get_nth_key(n)).to_vec(), n)).collect();
                 v.sort_by(|a, b| a.0.cmp(&b.0));
-                log.extend_from_slice(&(v.len() as u32).to_le_bytes());
-                for (name, value) in v {
-                    put_str(log, name);
-                    match value {
-                        DictValue::Bool(b) => log.extend_from_slice(&[0, u8::from(*b)]),
-                        DictValue::Int(i) => {
-                            log.push(1);
-                            log.extend_from_slice(&i.to_le_bytes());
+                ctx.log.extend_from_slice(&(v.len() as u32).to_le_bytes());
+                for (name, n) in v {
+                    put_str(&mut ctx.log, &name);
+                    match d.get_nth_type(n) {
+                        DataType::Bool => ctx.log.extend_from_slice(&[0, u8::from(d.try_get_nth_bool(n).expect("in range"))]),
+                        DataType::Int => {
+                            ctx.log.push(1);
+                            ctx.log.extend_from_slice(&d.try_get_nth_int(n).expect("in range").to_le_bytes());
                         }
-                        DictValue::Real(r) => {
-                            log.push(2);
-                            log.extend_from_slice(&r.to_le_bytes());
+                        DataType::Real => {
+                            ctx.log.push(2);
+                            ctx.log.extend_from_slice(&d.try_get_nth_real(n).expect("in range").to_le_bytes());
                         }
-                        DictValue::AsciiString(s) => {
-                            log.push(3);
-                            put_str(log, s);
+                        DataType::AsciiString => {
+                            ctx.log.push(3);
+                            put_str(&mut ctx.log, &d.try_get_nth_ascii_string(n).expect("in range"));
                         }
-                        DictValue::UnicodeString(s) => {
-                            log.push(4);
-                            put_wide(log, s);
+                        DataType::UnicodeString => {
+                            ctx.log.push(4);
+                            put_wide(&mut ctx.log, &d.try_get_nth_unicode_string(n).expect("in range"));
                         }
+                        DataType::None => unreachable!("a pair always has a type"),
                     }
                 }
             }
             8 => {
-                let n = file.read_name_key()?;
-                put_str(log, &n);
+                let k = file.read_name_key(&mut ctx.names)?;
+                put_str(&mut ctx.log, ctx.names.key_to_name(k));
             }
             9 => {
-                log.push(b'z');
-                log.extend_from_slice(&file.get_chunk_data_size_left().to_le_bytes());
-                log.push(u8::from(file.at_end_of_file()));
+                ctx.log.push(b'z');
+                ctx.log.extend_from_slice(&file.get_chunk_data_size_left().to_le_bytes());
+                ctx.log.push(u8::from(file.at_end_of_file()));
             }
             10 => {
-                log.push(b'F');
+                ctx.log.push(b'F');
                 return Ok(false);
             }
             _ => {
-                log.push(b'S');
+                ctx.log.push(b'S');
                 return Ok(true);
             }
         }
@@ -145,31 +162,32 @@ fn interp(file: &mut DataChunkInput<Log>, info: &DataChunkInfo, log: &mut Log) -
     Ok(true)
 }
 
-fn fail_parser(_: &mut DataChunkInput<Log>, _: &DataChunkInfo, log: &mut Log) -> ChunkResult<bool> {
-    log.push(b'X');
+fn fail_parser(_: &mut DataChunkInput<Ctx>, _: &DataChunkInfo, ctx: &mut Ctx) -> ChunkResult<bool> {
+    ctx.log.push(b'X');
     Ok(false)
 }
 
-fn quiet_parser(_: &mut DataChunkInput<Log>, info: &DataChunkInfo, log: &mut Log) -> ChunkResult<bool> {
-    log.push(b'Q');
-    log.extend_from_slice(&info.data_size.to_le_bytes());
+fn quiet_parser(_: &mut DataChunkInput<Ctx>, info: &DataChunkInfo, ctx: &mut Ctx) -> ChunkResult<bool> {
+    ctx.log.push(b'Q');
+    ctx.log.extend_from_slice(&info.data_size.to_le_bytes());
     Ok(true)
 }
 
 /// `ref_chunk_run` of wrap_chunk.cpp: (status, code, log).
 /// Also the number of table entries past the end of the file.
 fn rust_run(data: &[u8]) -> Result<(i32, u32, Log, u64), ChunkError> {
-    let mut log = Log::new();
+    let mut ctx = Ctx::default();
+    ctx.names.init(); // as the wrapper's `new NameKeyGenerator` + init()
     let mut eof_mappings = 0;
     let r = (|| -> ChunkResult<()> {
         let mut input = DataChunkInput::new(CachedFileInputStream::new(data.to_vec()).expect("non-empty"))?;
         eof_mappings = input.contents().eof_mappings();
-        log.push(u8::from(input.is_valid_file_type()));
+        ctx.log.push(u8::from(input.is_valid_file_type()));
         for name in [&b""[..], b"A", b"B", b"C", b"D", b"Fail", b"Unknown", b"a"] {
-            log.extend_from_slice(&input.contents().get_id(name).to_le_bytes());
+            ctx.log.extend_from_slice(&input.contents().get_id(name).to_le_bytes());
         }
         for id in (0..12).chain([0xFFFF_FFFF]) {
-            put_str(&mut log, &input.contents().get_name(id));
+            put_str(&mut ctx.log, &input.contents().get_name(id));
         }
         input.register_parser(b"A", b"", fail_parser);
         input.register_parser(b"A", b"", interp);
@@ -181,16 +199,16 @@ fn rust_run(data: &[u8]) -> Result<(i32, u32, Log, u64), ChunkError> {
         input.register_parser(b"Fail", b"", fail_parser);
         input.register_parser(b"D", b"", quiet_parser);
         input.register_parser(b"D", b"A", quiet_parser);
-        let r = input.parse(&mut log)?;
-        log.extend_from_slice(&[b'R', u8::from(r)]);
+        let r = input.parse(&mut ctx)?;
+        ctx.log.extend_from_slice(&[b'R', u8::from(r)]);
         input.reset();
-        let r = input.parse(&mut log)?;
-        log.extend_from_slice(&[b'R', u8::from(r)]);
+        let r = input.parse(&mut ctx)?;
+        ctx.log.extend_from_slice(&[b'R', u8::from(r)]);
         Ok(())
     })();
     match r {
-        Ok(()) => Ok((0, 0, log, eof_mappings)),
-        Err(ChunkError::Thrown(c)) => Ok((3, c, log, eof_mappings)),
+        Ok(()) => Ok((0, 0, ctx.log, eof_mappings)),
+        Err(ChunkError::Thrown(c)) => Ok((3, c, ctx.log, eof_mappings)),
         Err(e) => Err(e),
     }
 }

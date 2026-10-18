@@ -1,9 +1,11 @@
 /* Shim for GameEngine/Include/Common/UnicodeString.h, STLTypedefs build only
 ** (differential tests). The pointer-sized UnicodeString of shim_dict, with
 ** one member more: compareNoCase, which less_than_nocase<UnicodeString>
-** (STLTypedefs.h) calls. No UnicodeString is compared by this build (the
-** Rust has none yet, see src/common/stl_typedefs.rs), so the body aborts if
-** it is ever reached rather than inventing an order. */
+** (STLTypedefs.h) calls. No UnicodeString is compared by this build: the
+** UnicodeString comparators are tested in their own build with the real
+** header (differential/wrap_stl_typedefs_unicode.cpp, build.rs
+** "p1w2-dictmove"). The body aborts if it is ever reached rather than
+** inventing an order. */
 #ifndef SHIM_STL_UNICODESTRING_H
 #define SHIM_STL_UNICODESTRING_H
 #include <stdlib.h>

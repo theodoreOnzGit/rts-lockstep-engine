@@ -504,8 +504,14 @@ Still open in layers 1-3 (after wave 1, 2026-10-18):
 (`_vsnwprintf`) and `getBufferForRead`, and `iswspace` for units 0x80 and above
 in the MSVC C locale (until pinned down, `trim` returns an error there; the
 type holds display text, not lockstep state); the `UnicodeString` comparator
-of `STLTypedefs.h`, now unblocked; moving `formats::data_chunk`'s name-keyed
-`Dict` stand-in onto `common::dict` and `common::name_key_generator`.
+~~of `STLTypedefs.h`, now unblocked~~ **done 2026-10-18** (`p1w2-dictmove`:
+`less_than_nocase<UnicodeString>` and `equal_to<UnicodeString>`, 100,000 and
+50,000 comparisons, 0 mismatches, in `tests/differential_stl_typedefs.rs`);
+~~moving `formats::data_chunk`'s name-keyed `Dict` stand-in onto
+`common::dict` and `common::name_key_generator`~~ **done 2026-10-18**
+(`p1w2-dictmove`: `readDict` and `readNameKey` take a `NameKeyGenerator` and
+fill a `common::dict::Dict`; the chunk differential test gives the same
+counts as before the move).
 ~~`UnicodeString`, `STLTypedefs.h`, `SubsystemInterface`, `Overridable`,
 `LatchRestore`, `PartitionSolver`; folding `logic::damage`'s hand-written
 `DamageTypeFlags` into the generic `BitFlags`~~ **done in wave 1**
