@@ -481,3 +481,32 @@ extern "C" {
     pub fn ref_damage_crc(kind: c_int, w: *const c_uint, tmpl: *const c_char, crc: *mut c_uint) -> c_int;
 }
 // --- end p1w1-armor ---
+// --- p1w2-terrain ---
+extern "C" {
+    // TerrainTypes.cpp, MultiplayerSettings.cpp, CrateSystem.cpp and their INI
+    // blocks (wrap_terrain.cpp). Every dump is little-endian: u32/i32 words,
+    // u8 flags, floats as their bit patterns, strings length-prefixed.
+    pub fn ref_terrain_reset();
+    pub fn ref_terrain_name_key(name: *const c_char) -> c_uint;
+    pub fn ref_terrain_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_mp_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_mp_colors_by_query(buf: *mut c_uchar, cap: c_int, from: c_int, to: c_int) -> c_int;
+    pub fn ref_mp_find_by_name(name: *const c_char, buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_crate_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_crate_reset();
+    pub fn ref_crate_find(name: *const c_char, buf: *mut c_uchar, cap: c_int) -> c_int;
+    // INI::load with a load type (wrap_ini.cpp), the crate tests' override files
+    pub fn ref_ini_load_typed(
+        filename: *const c_char,
+        load_type: c_int,
+        with_xfer: c_int,
+        log: *mut c_uchar,
+        cap: c_int,
+        log_len: *mut c_int,
+        crc: *mut c_uint,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+}
+// --- end p1w2-terrain ---

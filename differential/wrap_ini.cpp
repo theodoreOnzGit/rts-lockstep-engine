@@ -60,6 +60,9 @@
 ** files it compiles, linked ahead of this object): where both are linked,
 ** the real ones override these stand-ins. In the INI tests only these exist. */
 #define WEAK __attribute__((weak))
+/* p1w2-terrain: the five block handlers of INI/INITerrain.cpp, INIMultiplayer.cpp and
+** INICrate.cpp, and ScienceStore::friend_lookupScience, are WEAK here: the terrain
+** build (wrap_terrain.cpp) defines them for real. */
 /* --- end p1w1-armor --- */
 
 /* ---- Damage.cpp lines 42-83 (copied) */
@@ -98,7 +101,7 @@ ParticleSystemTemplate *ParticleSystemManager::findTemplate(const AsciiString &)
 WEAK const ArmorTemplate *ArmorStore::findArmorTemplate(AsciiString) const { abort(); }
 const ObjectCreationList *ObjectCreationListStore::findObjectCreationList(const char *) const { abort(); }
 const WeaponTemplate *WeaponStore::findWeaponTemplate(AsciiString) const { abort(); }
-ScienceType ScienceStore::friend_lookupScience(const char *) const { abort(); }
+WEAK ScienceType ScienceStore::friend_lookupScience(const char *) const { abort(); }
 void AudioEventRTS::setEventName(AsciiString) { abort(); }
 void AudioManager::getInfoForAudioEvent(const AudioEventRTS *) const { abort(); }
 
@@ -411,7 +414,7 @@ STUB(INI::parseTerrainBridgeDefinition) STUB(INI::parseCampaignDefinition)
 STUB(INI::parseChallengeModeDefinition) STUB(INI::parseCommandButtonDefinition)
 STUB(INI::parseMetaMapDefinition) STUB(INI::parseCommandSetDefinition)
 STUB(INI::parseControlBarSchemeDefinition) STUB(INI::parseControlBarResizerDefinition)
-STUB(INI::parseCrateTemplateDefinition) STUB(INI::parseWindowTransitions)
+WEAK_STUB(INI::parseCrateTemplateDefinition) STUB(INI::parseWindowTransitions)
 WEAK_STUB(INI::parseDamageFXDefinition) STUB(INI::parseDialogDefinition)
 STUB(INI::parseDrawGroupNumberDefinition) STUB(INI::parseEvaEvent)
 STUB(INI::parseFXListDefinition) STUB(INI::parseGameDataDefinition)
@@ -419,13 +422,13 @@ STUB(INI::parseInGameUIDefinition) STUB(INI::parseLocomotorTemplateDefinition)
 STUB(INI::parseLanguageDefinition) STUB(INI::parseMapCacheDefinition)
 STUB(INI::parseMapDataDefinition) STUB(INI::parseMappedImageDefinition)
 STUB(INI::parseMiscAudio) STUB(INI::parseMouseDefinition) STUB(INI::parseMouseCursorDefinition)
-STUB(INI::parseMultiplayerColorDefinition) STUB(INI::parseMultiplayerStartingMoneyChoiceDefinition)
-STUB(INI::parseOnlineChatColorDefinition) STUB(INI::parseMultiplayerSettingsDefinition)
+WEAK_STUB(INI::parseMultiplayerColorDefinition) WEAK_STUB(INI::parseMultiplayerStartingMoneyChoiceDefinition)
+STUB(INI::parseOnlineChatColorDefinition) WEAK_STUB(INI::parseMultiplayerSettingsDefinition)
 STUB(INI::parseMusicTrackDefinition) STUB(INI::parseObjectCreationListDefinition)
 STUB(INI::parseObjectReskinDefinition) STUB(INI::parseParticleSystemDefinition)
 STUB(INI::parsePlayerTemplateDefinition) STUB(INI::parseTerrainRoadDefinition)
 STUB(INI::parseRankDefinition) STUB(INI::parseSpecialPowerDefinition)
-STUB(INI::parseShellMenuSchemeDefinition) STUB(INI::parseTerrainDefinition)
+STUB(INI::parseShellMenuSchemeDefinition) WEAK_STUB(INI::parseTerrainDefinition)
 STUB(INI::parseUpgradeDefinition) STUB(INI::parseVideoDefinition)
 STUB(INI::parseWaterSettingDefinition) STUB(INI::parseWaterTransparencyDefinition)
 STUB(INI::parseWeatherDefinition) STUB(INI::parseWebpageURLDefinition)
@@ -474,6 +477,23 @@ int ref_ini_load(const char *filename, int with_xfer, unsigned char *log, int ca
 	try {
 		INI ini;
 		ini.load(AsciiString(filename), INI_LOAD_OVERWRITE, with_xfer ? &x : NULL);
+	}
+	CATCH_ALL(status, code, msg, msgCap)
+	*crc = x.getCRC();
+	return finish(status, log, cap, logLen);
+}
+
+/* p1w2-terrain: INI::load with the load type given (the crate tests load
+** INI_LOAD_CREATE_OVERRIDES files too). The same status mapping as ref_ini_load. */
+int ref_ini_load_typed(const char *filename, int loadType, int with_xfer, unsigned char *log, int cap, int *logLen,
+	unsigned *crc, char *msg, int msgCap, unsigned *code)
+{
+	g_log.clear();
+	XferCRC x;
+	int status = 0;
+	try {
+		INI ini;
+		ini.load(AsciiString(filename), (INILoadType)loadType, with_xfer ? &x : NULL);
 	}
 	CATCH_ALL(status, code, msg, msgCap)
 	*crc = x.getCRC();
