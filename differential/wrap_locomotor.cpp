@@ -664,6 +664,29 @@ int ref_locoset_dump(int set, unsigned *buf, int cap)
 	return finishWords(buf, cap);
 }
 
+/* the data members of locomotor `index` of the set, as ref_loco_state gives them */
+void ref_locoset_state(int set, int index, unsigned *o)
+{
+	const Locomotor *l = g_sets[set]->m_locomotors[index];
+	int n = 0;
+	o[n++] = (unsigned)l->m_donutTimer;
+	o[n++] = bitsOf(l->m_maintainPos.x);
+	o[n++] = bitsOf(l->m_maintainPos.y);
+	o[n++] = bitsOf(l->m_maintainPos.z);
+	o[n++] = bitsOf(l->m_brakingFactor);
+	o[n++] = bitsOf(l->m_maxLift);
+	o[n++] = bitsOf(l->m_maxSpeed);
+	o[n++] = bitsOf(l->m_maxAccel);
+	o[n++] = bitsOf(l->m_maxBraking);
+	o[n++] = bitsOf(l->m_maxTurnRate);
+	o[n++] = bitsOf(l->m_closeEnoughDist);
+	o[n++] = (unsigned)l->m_flags;
+	o[n++] = bitsOf(l->m_preferredHeight);
+	o[n++] = bitsOf(l->m_preferredHeightDamping);
+	o[n++] = bitsOf(l->m_angleOffset);
+	o[n++] = bitsOf(l->m_offsetIncrement);
+}
+
 /* xferSelfAndCurLocoPtr through XferSave to `path`, with the current locomotor at `cur` (-1:
 ** none); the file's bytes. Returns the XferStatus thrown (0 none, -1 other). */
 int ref_locoset_xfer_save(int set, int cur, const char *path, unsigned char *out, int cap, int *len)

@@ -87,7 +87,10 @@
 //!   `<math.h>`, see `differential/shim/math.h`): `sqrt(float)` is
 //!   `(float)sqrt((double)x)`, and wherever the result takes part in a larger
 //!   expression the expression is evaluated in `double`. Those places are
-//!   marked `// double:` below and are exactly: `calcSlowDownDist`'s quotient,
+//!   marked `// double:` below and are exactly (a quotient of two floats rounded once
+//!   from `double` equals the `float` quotient, so the two quotient sites below cannot be
+//!   told apart from a `float` evaluation by any input - a planted `float` version was not
+//!   caught, and cannot be; they are kept as written): `calcSlowDownDist`'s quotient,
 //!   `calcLiftToUseAtPt`'s `brakeDist`, `moveTowardsPositionTreads`'s
 //!   `angleCoeff > 0.05` and `2.0*slowDownDist`, the same two doubles in the
 //!   wheels, and `moveTowardsPositionClimb`'s `pos.z-0.1`. No fused

@@ -921,6 +921,7 @@ extern "C" {
     pub fn ref_locoset_clear(set: c_int);
     pub fn ref_locoset_find(set: c_int, mask: c_int) -> c_int;
     pub fn ref_locoset_dump(set: c_int, buf: *mut c_uint, cap: c_int) -> c_int;
+    pub fn ref_locoset_state(set: c_int, index: c_int, out: *mut c_uint);
     pub fn ref_locoset_xfer_save(set: c_int, cur: c_int, path: *const c_char, out: *mut c_uchar, cap: c_int, len: *mut c_int) -> c_int;
     pub fn ref_locoset_xfer_load(set: c_int, frame: c_uint, path: *const c_char, cur: *mut c_int) -> c_int;
 }

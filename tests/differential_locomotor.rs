@@ -58,6 +58,40 @@
 //! Recorded by running `cargo test --release --features differential --test
 //! differential_locomotor -- --nocapture --test-threads=1` (the `DIFF`, `COVERAGE` and `PLANTED`
 //! lines).
+//!
+//! Run of 2026-10-18 against upstream 0a05454d, data version: the generated programs of seed
+//! `0x10C0_2000` etc. (all deterministic):
+//!
+//! - INI: 4,000 files (8,051 loads), 0 mismatches in outcome, store and reset (917 resets
+//!   skipped: undefined upstream, see below).
+//! - Movement: 2,250 programs, 675,000 frames, 673,384 compared calls, 0 mismatches in the
+//!   call logs, results, object, locomotor state; 40,406 xfer byte and load comparisons; 24,693
+//!   getter comparisons. Max ULP of any float difference: 0.
+//! - LocomotorSet: 600 sets, 0 mismatches.
+//!
+//! Findings (each fixed or documented in `logic::locomotor`):
+//! 1. The first run found a real deviation: upstream asks the pathfinder
+//!    (`validMovementTerrain`) BEFORE it reads `ALLOW_INVALID_POSITION`; the first translation
+//!    short-circuited on the flag. Fixed.
+//! 2. `moveTowardsPositionTreads` reads an uninitialised `relAngle` when a pivoting tread is
+//!    within 0.1 of its goal: undefined upstream, counted (`Locomotor::undefined_inputs`), the
+//!    program ends there (14 of 2,250).
+//! 3. `LocomotorStore::reset()` is undefined upstream after an override-load-made template
+//!    (erased iterator reused): not compared, removed by the Rust.
+//!
+//! Planted bugs (a wrong translation edited in, run, removed): THRUST+lift accepted (caught,
+//! INI outcome); `Braking` parsed as velocity (caught, INI store: 599 of 8,051); reset keeps
+//! overrides (caught, 171); three-point-turn distance 4 radii (caught, call logs: 27);
+//! hover over-water test inverted (caught); ultra-accurate lift factor 2 (caught, 251);
+//! climber `pos.z-0.1` in float (caught after the programs were made to reach its edge, 191);
+//! `calcMinTurnRadius` time (caught, results: 805); `setMaxSpeed` into the wrong member
+//! (caught, state: 1,599); un-normalised orientation (caught, 839); xfer field order (caught);
+//! wheel-turn-angle getter (caught, getters: 8,071); set surfaces (caught, 1,378);
+//! `findLocomotor` by equality (caught, 4,150); set xfer without the downhill flag (caught,
+//! 600). NOT caught, and not catchable: `calcSlowDownDist`'s quotient and the treads'
+//! `2.0*slowDownDist` evaluated in `float` instead of `double`: a quotient of two floats
+//! rounded once from `double` is the `float` quotient, and doubling is exact, so they are
+//! equivalent mutants.
 #![cfg(feature = "differential")]
 
 mod support;
@@ -1036,6 +1070,14 @@ fn gen_template(g: &mut Gen, name: &str, appearance: usize) -> (String, Meta) {
     if g.below(5) == 0 {
         put("StickToGround", "Yes".to_string());
     }
+    if g.below(3) == 0 {
+        put("HasSuspension", "Yes".to_string());
+        put("FrontWheelTurnAngle", format!("{:.3}", g.uniform(0.0, 45.0)));
+        put("MaximumWheelExtension", format!("{:.3}", g.uniform(-3.0, 0.0)));
+        put("MaximumWheelCompression", format!("{:.3}", g.uniform(0.0, 3.0)));
+        put("AccelerationPitchLimit", format!("{:.3}", g.uniform(0.0, 20.0)));
+        put("RudderCorrectionDegree", format!("{:.3}", g.uniform(0.0, 20.0)));
+    }
     s.push_str("End\n");
     let f = speed * (1.0 / 30.0);
     (s, Meta { appearance, z, air: flyer, max_speed: f })
@@ -1316,6 +1358,15 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
                     2 => real,
                     _ => real * g.uniform(1.0, 2.5) + g.uniform(0.0, 20.0),
                 };
+                // sometimes exactly at calcSlowDownDist's threshold, +-2 ulps: where a float
+                // evaluation of its quotient (upstream's is a double) would flip the comparison
+                let on_path = if g.below(6) == 0 {
+                    let d = env.fwd2d - loco.template().min_speed;
+                    let sd = (((d * d) as f64 / f64::from(loco.get_braking().abs())) * 0.5) as f32 * 1.05;
+                    f32::from_bits((sd.to_bits() as i64 + g.below(5) as i64 - 2).max(0) as u32)
+                } else {
+                    on_path
+                };
                 let desired = match g.below(5) {
                     0 => 99999.0,
                     1 => 0.0,
@@ -1324,6 +1375,22 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
                 fa[0] = goal.x;
                 fa[1] = goal.y;
                 fa[2] = goal.z;
+                if meta.appearance == 6 && g.below(5) == 0 {
+                    // a climber whose look-ahead ground is 0.1 (+- ulps) below it: the edge of
+                    // moveTowardsPositionClimb's `delta.z < pos.z-0.1` (a double comparison)
+                    let mut d = Coord3D { x: goal.x - p.x, y: goal.y - p.y, z: 0.0 };
+                    d.normalize();
+                    let ahead = host.ground(d.x + p.x, d.y + p.y);
+                    let z = ahead + 0.1f32;
+                    let z = f32::from_bits((z.to_bits() as i64 + g.below(7) as i64 - 3).max(0) as u32);
+                    let np = Coord3D { x: p.x, y: p.y, z };
+                    host.set_position(&np);
+                    host.log.clear();
+                    let mut f12 = [0.0f32; 12];
+                    f12[..3].copy_from_slice(&[np.x, np.y, np.z]);
+                    cpp_obj(1, &f12, &[0, 0]);
+                    fa[2] = z + 20.0;
+                }
                 fa[3] = on_path;
                 fa[4] = desired;
                 ia[0] = i32::from(g.below(8) == 0);
@@ -1645,8 +1712,8 @@ fn run_all_programs(programs_per_appearance: usize, frames: usize, seed: u64) ->
 #[test]
 fn locomotor_movement_matches_upstream() {
     let _lock = cpp::GLOBAL_RNG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let (checks, cov, frames) = run_all_programs(70, 220, 0x10C0_2000);
-    println!("COVERAGE movement: {frames} frames of {} programs", 70 * 9);
+    let (checks, cov, frames) = run_all_programs(250, 300, 0x10C0_2000);
+    println!("COVERAGE movement: {frames} frames of {} programs", 250 * 9);
     for (k, v) in &cov.counts {
         println!("COVERAGE   {k:<28} {v}");
     }
@@ -1658,4 +1725,174 @@ fn locomotor_movement_matches_upstream() {
         assert!(cov.counts.get(need).copied().unwrap_or(0) > 0, "never reached: {need}");
     }
     checks.finish();
+}
+
+// ---------------------------------------------------------------------------
+// LocomotorSet
+// ---------------------------------------------------------------------------
+
+/// Templates of the set tests: surfaces overlapping, one downhill-only, one with no surfaces.
+const SET_INI: &str = "\
+Locomotor Walker\n Surfaces = GROUND CLIFF\n Appearance = TWO_LEGS\n Speed = 30\nEnd\n\
+Locomotor Truck\n Surfaces = GROUND\n Appearance = FOUR_WHEELS\n Speed = 60\n CloseEnoughDist = 3\nEnd\n\
+Locomotor Boat\n Surfaces = WATER\n Appearance = HOVER\n Speed = 50\nEnd\n\
+Locomotor Heli\n Surfaces = AIR\n Appearance = OTHER\n ZAxisBehavior = SURFACE_RELATIVE_HEIGHT\n PreferredHeight = 30\n Lift = 200\nEnd\n\
+Locomotor Cart\n Surfaces = GROUND RUBBLE\n DownhillOnly = Yes\nEnd\n\
+Locomotor Ghost\nEnd\n\
+Locomotor Amphibian\n Surfaces = GROUND WATER\n Appearance = TREADS\nEnd\n";
+
+const SET_NAMES: [&str; 8] = ["Walker", "Truck", "Boat", "Heli", "Cart", "Ghost", "Amphibian", "NoSuchTemplate"];
+
+fn load_both(ini: &str, ictx: &mut IniCtx) {
+    let table = blocks();
+    Ini::load(b"s.ini", ini.as_bytes(), IniLoadType::Overwrite, None, &table, ictx).unwrap();
+    let o = cpp_load("s.ini", ini.as_bytes(), IniLoadType::Overwrite);
+    assert_eq!(o.status, 0);
+}
+
+fn xfer_status(e: &LocomotorSetError) -> i32 {
+    use rts_lockstep_engine::common::xfer::XferStatus;
+    match e {
+        LocomotorSetError::NotEmpty => XferStatus::ListNotEmpty as i32,
+        LocomotorSetError::UnknownString(_) => XferStatus::UnknownString as i32,
+        LocomotorSetError::Xfer(s) => *s as i32,
+        LocomotorSetError::UnknownTemplate => panic!("not an xfer error"),
+    }
+}
+
+fn cpp_set_dump(set: c_int) -> Vec<u32> {
+    let mut buf = vec![0u32; 4096];
+    let n = unsafe { cpp::ref_locoset_dump(set, buf.as_mut_ptr(), buf.len() as c_int) } as usize;
+    assert!(n <= buf.len());
+    buf.truncate(n);
+    buf
+}
+
+fn rust_set_dump(set: &LocomotorSet) -> Vec<u32> {
+    let mut v = vec![set.len() as u32, set.get_valid_surfaces() as u32, u32::from(set.is_downhill_only())];
+    for i in 0..set.len() {
+        put_str(&mut v, set.get(i).unwrap().get_template_name());
+    }
+    v
+}
+
+#[test]
+fn locomotor_set_matches_upstream() {
+    let _lock = cpp::GLOBAL_RNG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut g = Gen::new(0x10C0_5E70);
+    let mut adds = WordCheck::new("LocomotorSet add (result)");
+    let mut dumps = WordCheck::new("LocomotorSet contents");
+    let mut finds = WordCheck::new("LocomotorSet::findLocomotor");
+    let mut saves = WordCheck::new("LocomotorSet xfer save bytes");
+    let mut loads = WordCheck::new("LocomotorSet xfer load (result, set, locomotors)");
+    let (mut saved_sets, mut unknown_string, mut not_empty, mut empty_cur) = (0u64, 0u64, 0u64, 0u64);
+    let table = blocks();
+    for case in 0..600 {
+        unsafe { cpp::ref_loco_reset() };
+        let mut ictx = IniCtx::new();
+        load_both(SET_INI, &mut ictx);
+        let seed = g.u32();
+        unsafe { cpp::ref_init_game_logic_random(seed) };
+        let mut rng = RandomValues::default();
+        rng.init_game_logic_random(seed);
+        let set_h = unsafe { cpp::ref_locoset_new() };
+        let mut set = LocomotorSet::new();
+        let mut frame = g.below(5000);
+        for _ in 0..1 + g.below(8) {
+            let name = SET_NAMES[g.below(SET_NAMES.len() as u32) as usize];
+            frame += g.below(50);
+            let ctxs = || format!("case {case} add {name}");
+            let key = ictx.names.name_to_key(name.as_bytes());
+            let rust_r = set.add_locomotor(&ictx.store, key, &mut rng, frame);
+            let cpp_r = unsafe { cpp::ref_locoset_add(set_h, cstr(name).as_ptr(), frame) };
+            adds.words(&[u32::from(rust_r.is_err())], &[cpp_r as u32], |_| false, ctxs);
+            if g.below(12) == 0 {
+                set.clear();
+                unsafe { cpp::ref_locoset_clear(set_h) };
+            }
+            dumps.words(&rust_set_dump(&set), &cpp_set_dump(set_h), |_| false, ctxs);
+        }
+        for mask in [0, 1, 2, 4, 8, 16, 3, 9, 17, 0xffff, 0x20, 6, 12, g.below(64) as i32] {
+            finds.words(&[set.find_locomotor(mask).map_or(-1, |i| i as i32) as u32], &[unsafe { cpp::ref_locoset_find(set_h, mask) } as u32], |_| false, || format!("case {case} mask {mask:#x}"));
+        }
+
+        // xferSelfAndCurLocoPtr: save with a current locomotor (or none), then load
+        let cur = if set.is_empty() || g.below(4) == 0 { -1 } else { g.below(set.len() as u32) as i32 };
+        if cur < 0 {
+            empty_cur += 1;
+        }
+        let path = std::env::temp_dir().join(format!("locoset_xfer_{}_{case}.bin", std::process::id()));
+        let cpath = cstr(path.to_str().unwrap());
+        let mut out = vec![0u8; 4096];
+        let mut len = 0;
+        let st = unsafe { cpp::ref_locoset_xfer_save(set_h, cur, cpath.as_ptr(), out.as_mut_ptr(), out.len() as c_int, &mut len) };
+        assert_eq!(st, 0);
+        let mut save = XferSave::new();
+        save.open(path.to_str().unwrap().as_bytes()).unwrap();
+        let mut cur_r = if cur < 0 { None } else { Some(cur as usize) };
+        set.xfer_self_and_cur_loco_ptr(&mut save, &ictx.store, &mut ictx.names, &mut rng, frame, &mut cur_r).unwrap();
+        save.close().unwrap();
+        let (rb, cb) = (save.bytes().to_vec(), out[..len as usize].to_vec());
+        saves.words(&rb.iter().map(|&b| u32::from(b)).collect::<Vec<_>>(), &cb.iter().map(|&b| u32::from(b)).collect::<Vec<_>>(), |_| false, || format!("case {case}"));
+        saved_sets += 1;
+
+        // a second phase: load the file into a new set, in a store that lacks one template half the time
+        let drop_name = if g.below(2) == 0 { Some(SET_NAMES[g.below(7) as usize]) } else { None };
+        unsafe { cpp::ref_loco_reset() };
+        ictx = IniCtx::new();
+        let ini2: String = match drop_name {
+            None => SET_INI.to_string(),
+            Some(d) => SET_INI.split("End\n").filter(|b| !b.trim().is_empty() && !b.starts_with(&format!("Locomotor {d}\n"))).map(|b| format!("{b}End\n")).collect(),
+        };
+        load_both(&ini2, &mut ictx);
+        let _ = &table;
+        let seed2 = g.u32();
+        unsafe { cpp::ref_init_game_logic_random(seed2) };
+        let mut rng2 = RandomValues::default();
+        rng2.init_game_logic_random(seed2);
+        let h2 = unsafe { cpp::ref_locoset_new() };
+        let mut set2 = LocomotorSet::new();
+        // sometimes the target set is not empty (upstream refuses)
+        if g.below(8) == 0 {
+            let key = ictx.names.name_to_key(b"Walker");
+            if drop_name != Some("Walker") {
+                set2.add_locomotor(&ictx.store, key, &mut rng2, 1).unwrap();
+                unsafe { cpp::ref_locoset_add(h2, cstr("Walker").as_ptr(), 1) };
+            }
+        }
+        let was_nonempty = !set2.is_empty();
+        let mut load = XferLoad::new(cb.clone());
+        load.open(b"x").unwrap();
+        let mut cur2_r = None;
+        let rust_status = match set2.xfer_self_and_cur_loco_ptr(&mut load, &ictx.store, &mut ictx.names, &mut rng2, 77, &mut cur2_r) {
+            Ok(()) => 0,
+            Err(e) => xfer_status(&e),
+        };
+        let mut cur2_c = -1;
+        let cpp_status = unsafe { cpp::ref_locoset_xfer_load(h2, 77, cpath.as_ptr(), &mut cur2_c) };
+        let ctxs = || format!("case {case} dropped {drop_name:?} nonempty {was_nonempty}");
+        loads.words(&[rust_status as u32], &[cpp_status as u32], |_| false, ctxs);
+        match rust_status {
+            0 => {}
+            x if x == rts_lockstep_engine::common::xfer::XferStatus::UnknownString as i32 => unknown_string += 1,
+            _ => not_empty += 1,
+        }
+        loads.words(&rust_set_dump(&set2), &cpp_set_dump(h2), |_| false, ctxs);
+        if rust_status == 0 {
+            loads.words(&[cur2_r.map_or(-1, |i| i as i32) as u32], &[cur2_c as u32], |_| false, ctxs);
+        }
+        for i in 0..set2.len() {
+            let mut w = [0u32; 16];
+            unsafe { cpp::ref_locoset_state(h2, i as c_int, w.as_mut_ptr()) };
+            loads.words(&rust_state_words(set2.get_mut(i).unwrap()), &w, state_is_float, ctxs);
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+    println!("COVERAGE set: {saved_sets} saved sets ({empty_cur} with no current locomotor), loads refused: {unknown_string} unknown template, {not_empty} not empty");
+    assert!(unknown_string > 5 && not_empty > 5, "both refusals were exercised");
+    adds.finish();
+    dumps.finish();
+    finds.finish();
+    saves.finish();
+    loads.finish();
 }
