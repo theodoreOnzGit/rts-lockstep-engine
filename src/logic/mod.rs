@@ -14,3 +14,6 @@ pub mod weapon_types;
 
 // --- p1w1-geometry ---
 pub mod client_event;
+// --- p1w1-armor ---
+pub mod armor;
+// --- end p1w1-armor ---

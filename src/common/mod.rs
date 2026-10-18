@@ -47,3 +47,6 @@ pub mod bezier_segment;
 pub mod geometry;
 pub mod handicap;
 pub mod money;
+// --- p1w1-armor ---
+pub mod damage_fx;
+// --- end p1w1-armor ---

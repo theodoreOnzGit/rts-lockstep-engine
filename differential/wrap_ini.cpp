@@ -54,8 +54,16 @@
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/Weapon.h"
 
+/* --- p1w1-armor ---
+** The definitions marked WEAK here are also defined, for real, by the
+** Armor/Damage/DamageFX build (differential/wrap_armor.cpp and the upstream
+** files it compiles, linked ahead of this object): where both are linked,
+** the real ones override these stand-ins. In the INI tests only these exist. */
+#define WEAK __attribute__((weak))
+/* --- end p1w1-armor --- */
+
 /* ---- Damage.cpp lines 42-83 (copied) */
-template<> const char *DamageTypeFlags::s_bitNameList[] =
+template<> WEAK const char *DamageTypeFlags::s_bitNameList[] =
 {
 	"EXPLOSION", "CRUSH", "ARMOR_PIERCING", "SMALL_ARMS", "GATTLING", "RADIATION", "FLAME", "LASER",
 	"SNIPER", "POISON", "HEALING", "UNRESISTABLE", "WATER", "DEPLOY", "SURRENDER", "HACK", "KILL_PILOT",
@@ -65,29 +73,29 @@ template<> const char *DamageTypeFlags::s_bitNameList[] =
 	"SUBDUAL_UNRESISTABLE", "MICROWAVE", "KILL_GARRISONED", "STATUS",
 	NULL
 };
-DamageTypeFlags DAMAGE_TYPE_FLAGS_NONE;
+WEAK DamageTypeFlags DAMAGE_TYPE_FLAGS_NONE;
 
 /* ---- stand-ins for the game systems the untranslated field parsers use;
 ** the tests never reach them (they abort if reached). */
 GameTextInterface *TheGameText = 0;
-DamageFXStore *TheDamageFXStore = 0;
+WEAK DamageFXStore *TheDamageFXStore = 0;
 SpecialPowerStore *TheSpecialPowerStore = 0;
-ThingFactory *TheThingFactory = 0;
+WEAK ThingFactory *TheThingFactory = 0;
 Anim2DCollection *TheAnim2DCollection = 0;
-FXListStore *TheFXListStore = 0;
+WEAK FXListStore *TheFXListStore = 0;
 ImageCollection *TheMappedImageCollection = 0;
 ParticleSystemManager *TheParticleSystemManager = 0;
-ArmorStore *TheArmorStore = 0;
+WEAK ArmorStore *TheArmorStore = 0;
 ObjectCreationListStore *TheObjectCreationListStore = 0;
 WeaponStore *TheWeaponStore = 0;
-const DamageFX *DamageFXStore::findDamageFX(AsciiString) const { abort(); }
+WEAK const DamageFX *DamageFXStore::findDamageFX(AsciiString) const { abort(); }
 const SpecialPowerTemplate *SpecialPowerStore::findSpecialPowerTemplate(AsciiString) const { abort(); }
 const ThingTemplate *ThingFactory::findTemplate(const AsciiString &) { abort(); }
 Anim2DTemplate *Anim2DCollection::findTemplate(const AsciiString &) { abort(); }
-const FXList *FXListStore::findFXList(const char *) const { abort(); }
+WEAK const FXList *FXListStore::findFXList(const char *) const { abort(); }
 const Image *ImageCollection::findImageByName(const AsciiString &) { abort(); }
 ParticleSystemTemplate *ParticleSystemManager::findTemplate(const AsciiString &) const { abort(); }
-const ArmorTemplate *ArmorStore::findArmorTemplate(AsciiString) const { abort(); }
+WEAK const ArmorTemplate *ArmorStore::findArmorTemplate(AsciiString) const { abort(); }
 const ObjectCreationList *ObjectCreationListStore::findObjectCreationList(const char *) const { abort(); }
 const WeaponTemplate *WeaponStore::findWeaponTemplate(AsciiString) const { abort(); }
 ScienceType ScienceStore::friend_lookupScience(const char *) const { abort(); }
@@ -362,7 +370,7 @@ void INI::parseObjectDefinition(INI *ini)
 	ini->initFromINI(&rec, TheFieldTable);
 	put8(0xF1);
 }
-void INI::parseArmorDefinition(INI *ini)
+WEAK void INI::parseArmorDefinition(INI *ini)
 {
 	put8(0xF0); put8(2);
 	putAscii(ini->getNextAsciiString());
@@ -396,6 +404,7 @@ void INI::parseScienceDefinition(INI *ini)
 }
 
 #define STUB(F) void F(INI *) { throw ERROR_BUG; }
+#define WEAK_STUB(F) WEAK void F(INI *) { throw ERROR_BUG; }
 STUB(INI::parseAIDataDefinition) STUB(INI::parseAnim2DDefinition)
 STUB(INI::parseAudioEventDefinition) STUB(INI::parseAudioSettingsDefinition)
 STUB(INI::parseTerrainBridgeDefinition) STUB(INI::parseCampaignDefinition)
@@ -403,7 +412,7 @@ STUB(INI::parseChallengeModeDefinition) STUB(INI::parseCommandButtonDefinition)
 STUB(INI::parseMetaMapDefinition) STUB(INI::parseCommandSetDefinition)
 STUB(INI::parseControlBarSchemeDefinition) STUB(INI::parseControlBarResizerDefinition)
 STUB(INI::parseCrateTemplateDefinition) STUB(INI::parseWindowTransitions)
-STUB(INI::parseDamageFXDefinition) STUB(INI::parseDialogDefinition)
+WEAK_STUB(INI::parseDamageFXDefinition) STUB(INI::parseDialogDefinition)
 STUB(INI::parseDrawGroupNumberDefinition) STUB(INI::parseEvaEvent)
 STUB(INI::parseFXListDefinition) STUB(INI::parseGameDataDefinition)
 STUB(INI::parseInGameUIDefinition) STUB(INI::parseLocomotorTemplateDefinition)

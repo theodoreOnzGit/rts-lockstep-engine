@@ -483,6 +483,7 @@ are a context argument (`&mut World` or a frame number) instead of a global.
 | 2 | `NameKeyGenerator`, `StaticNameKey`, `WellKnownKeys.h`; `AsciiString` (all but `format`); `STLTypedefs.h` (the `AsciiString` comparators; the hash functors are not translated, see `common::stl_typedefs`); `SubsystemInterface` (the registry) | `tests/differential_name_key.rs`, `tests/differential_ascii_string.rs`, `tests/differential_stl_typedefs.rs`, `tests/differential_subsystem_interface.rs` |
 | 3 | `BitFlags`/`BitFlagsIO` and all seven instantiations (`KindOf`, `ObjectStatusTypes`, `DisabledTypes`, `ModelState` flags, `ArmorSet` flags, `WeaponSetFlags`, `SpecialPowerMaskType`); `SparseMatchFinder`; `Dict`; `Xfer::xferKindOf` | `tests/differential_bit_flags.rs`, `tests/differential_dict.rs` |
 | 4 (part) | `Geometry` (`GeometryInfo`: arithmetic, INI fields, xfer); `BezierSegment` and `BezFwdIterator`; `Money` (client sounds as `logic::client_event::ClientEvent`, academy-stats record as the returned flag); `Handicap` | `tests/differential_geometry.rs`, `tests/differential_bezier.rs`, `tests/differential_money.rs`, `tests/differential_handicap.rs` |
+| 4 (in progress) | `Armor` (`ArmorTemplate`, `ArmorStore`, the `Armor` block), `Damage` (`DamageInfo`, its xfer, `DamageTypeFlags` as `BitFlags`), `DamageFX` (templates, store, the `DamageFX` block; `FXList`s stay names) | `tests/differential_armor.rs` |
 
 Layer 4, not translated: `RankInfo` (`GameLogic/System/RankInfo.cpp`).
 It needs `Overridable`/`Override` (layer 1, open), `UnicodeString` (layer 2,
@@ -503,11 +504,11 @@ Still open in layers 1-3:
 (16-bit `WideChar` with the MSVC runtime's `wcslen`/`iswspace`/`wcsspn`; its
 differential build needs 16-bit stand-ins for them, and `iswspace`'s
 classification of non-ASCII spaces in the MSVC C locale has to be pinned
-down first; it holds display text, not lockstep state) and the `UnicodeString`
-comparator of `STLTypedefs.h` (layer 2; `less_than_nocase<UnicodeString>` waits for
-`UnicodeString`); folding
+down first; it holds display text, not lockstep state), `STLTypedefs.h`,
+`SubsystemInterface` (layer 2); ~~folding
 `logic::damage`'s hand-written `DamageTypeFlags` into the generic
-`BitFlags`; moving `formats::data_chunk`'s name-keyed `Dict` stand-in onto
+`BitFlags`~~ **DONE in layer 4** (`DamageTypeFlags` is `BitFlags<DamageTypeNames>`;
+`tests/differential_ini.rs` and `tests/differential_armor.rs` pass on it); moving `formats::data_chunk`'s name-keyed `Dict` stand-in onto
 `common::dict` and `common::name_key_generator`.
 
 Two translation choices await the owner, both formally undefined C++ on a

@@ -117,6 +117,21 @@ fn c_str(s: &[u8]) -> &[u8] {
 impl<T: BitFlagNames> BitFlags<T> {
     const CHECK: () = assert!(T::NUM_BITS <= WORDS * 64 && T::NAMES.len() == T::NUM_BITS);
 
+    /// `BitFlags()`: all clear (named like upstream's `*_FLAGS_NONE`).
+    pub const NONE: Self = Self::new();
+
+    /// Every one of the `NUMBITS` bits set (upstream's `*_FLAGS_ALL`: clear,
+    /// then `flip()`).
+    pub const ALL: Self = {
+        let mut bits = [0u64; WORDS];
+        let mut w = 0;
+        while w < WORDS {
+            bits[w] = Self::word_mask(w);
+            w += 1;
+        }
+        BitFlags { bits, _names: PhantomData }
+    };
+
     /// `BitFlags()`: all clear.
     pub const fn new() -> Self {
         #[allow(clippy::let_unit_value)]
@@ -152,7 +167,7 @@ impl<T: BitFlagNames> BitFlags<T> {
         BitFlags { bits: words, _names: PhantomData }
     }
 
-    fn word_mask(w: usize) -> u64 {
+    const fn word_mask(w: usize) -> u64 {
         let lo = w * 64;
         if T::NUM_BITS >= lo + 64 {
             u64::MAX
