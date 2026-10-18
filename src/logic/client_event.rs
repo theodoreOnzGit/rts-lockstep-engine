@@ -30,4 +30,12 @@ pub enum ClientEvent {
     /// up the sound's name in its own `MiscAudio`, so logic never holds a
     /// `AudioEventRTS`.
     MoneySound { sound: MoneySound, player_index: i32 },
+    // --- p1w4-thingtemplate ---
+    /// `TheGameClient->friend_createDrawable(tmplate, statusBits)`, which
+    /// `ThingFactory::newDrawable` calls (and `GameLogic::registerObject`
+    /// for every object): the client makes the drawable of a thing made from
+    /// the template with this id, with these `DrawableStatus` bits. Logic
+    /// never holds the `Drawable`.
+    ObjectCreated { template_id: u16, drawable_status_bits: u32 },
+    // --- end p1w4-thingtemplate ---
 }

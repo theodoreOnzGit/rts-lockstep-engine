@@ -33,3 +33,6 @@ pub mod thing;
 // --- p1w3-modules ---
 pub mod module;
 // --- end p1w3-modules ---
+// --- p1w4-thingtemplate ---
+pub mod weapon_set;
+// --- end p1w4-thingtemplate ---

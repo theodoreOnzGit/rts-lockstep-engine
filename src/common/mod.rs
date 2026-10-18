@@ -76,3 +76,8 @@ pub mod state_machine;
 pub mod module;
 pub mod module_factory;
 // --- end p1w3-modules ---
+// --- p1w4-thingtemplate ---
+pub mod production_prerequisite;
+pub mod thing_factory;
+pub mod thing_template;
+// --- end p1w4-thingtemplate ---
