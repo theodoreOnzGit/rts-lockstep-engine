@@ -846,3 +846,10 @@ extern "C" {
     pub fn ref_terrain_logic_run(scenario: *const c_uint, n_scenario: c_int, program: *const c_uint, n_program: c_int, out: *mut c_uint, cap: c_int) -> c_int;
 }
 // --- end p1w4-terrain ---
+
+// --- p1w5-world ---
+extern "C" {
+    // GameLogic.cpp's object lifetime (wrap_game_logic.cpp): a program on a fresh GameLogic
+    pub fn ref_world_run(prog: *const c_int, n_prog: c_int, out: *mut c_uint, cap: c_int) -> c_int;
+}
+// --- end p1w5-world ---

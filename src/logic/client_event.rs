@@ -12,6 +12,15 @@
 //! Events that logic emits for the client. Only the variants needed by the
 //! layer-4 static data are defined here (the others arrive with their
 //! callers); each names the upstream call it replaces.
+//!
+//! This is the one client-notification interface: `logic::world` owns the
+//! per-frame queue of these (`world::events::ClientEventQueue`) and
+//! `TerrainVisualEvent` nests inside as [`ClientEvent::Terrain`]. See
+//! `docs/world-design.md`.
+
+// --- p1w5-world ---
+use crate::logic::terrain_visual::TerrainVisualEvent;
+// --- end p1w5-world ---
 
 /// Which of `MiscAudio`'s money sounds an event asks for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -23,7 +32,7 @@ pub enum MoneySound {
 }
 
 /// One event for the client.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ClientEvent {
     /// `TheAudio->addAudioEvent(&event)`, where `event` is the money sound
     /// of `MiscAudio` with `setPlayerIndex(player_index)`. The client looks
@@ -38,4 +47,22 @@ pub enum ClientEvent {
     /// never holds the `Drawable`.
     ObjectCreated { template_id: u16, drawable_status_bits: u32 },
     // --- end p1w4-thingtemplate ---
+    // --- p1w5-world ---
+    /// `TheGameClient->destroyDrawable(obj->getDrawable())`, which
+    /// `GameLogic::sendObjectDestroyed` calls from `~Object`: the client
+    /// destroys the drawable it keeps for this object id (a drawable is a
+    /// client-side mapping from `ObjectId`, see `logic::world`).
+    ObjectDestroyed { object_id: i32 },
+    /// `TheAudio->addAudioEvent(&event)` where `event` names a sound, is
+    /// attached to an object (`setObjectID`) and has a player
+    /// (`setPlayerIndex`, -1 for none). The client resolves the name in its
+    /// own audio tables. Position, volume and the other `AudioEventRTS`
+    /// setters are added by the first caller that needs them.
+    Audio { event_name: Vec<u8>, object_id: i32, player_index: i32 },
+    /// The `TheTerrainVisual` writes of `TerrainLogic`
+    /// ([`TerrainVisualEvent`]), nested: `TerrainLogic` still queues its own
+    /// events (its differential tests read them) and
+    /// `World::flush_terrain_events` moves them here, in order.
+    Terrain(TerrainVisualEvent),
+    // --- end p1w5-world ---
 }

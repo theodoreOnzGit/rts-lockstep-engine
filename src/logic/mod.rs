@@ -50,3 +50,6 @@ pub mod sides_list;
 pub mod terrain_logic;
 pub mod terrain_visual;
 // --- end p1w4-terrain ---
+// --- p1w5-world ---
+pub mod world;
+// --- end p1w5-world ---

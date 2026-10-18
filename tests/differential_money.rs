@@ -54,6 +54,10 @@ fn event_pair(e: &ClientEvent) -> (u32, u32) {
         ClientEvent::MoneySound { sound: MoneySound::Withdraw, player_index } => (2, *player_index as u32),
         // p1w4-thingtemplate: the event of `ThingFactory::newObject`'s drawable; the money code makes none
         ClientEvent::ObjectCreated { .. } => unreachable!("the money code makes no ObjectCreated event"),
+        // p1w5-world: the other events of the unified client interface; the money code makes none
+        ClientEvent::ObjectDestroyed { .. } | ClientEvent::Audio { .. } | ClientEvent::Terrain(_) => {
+            unreachable!("the money code makes only MoneySound events")
+        }
     }
 }
 

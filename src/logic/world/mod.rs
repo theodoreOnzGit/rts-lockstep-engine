@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: GPL-3.0-only
+//! The shared world core for layers 7 and 8: the object arena, the player and
+//! team arenas, the update scheduler, the one client-event queue, and the one
+//! context ([`World`]) passed to everything that upstream reaches through
+//! `TheGameLogic`, `ThePlayerList`, `TheTeamFactory` and the client singletons.
+//!
+//! The design, the reasons for it, how later layers plug in (with a worked
+//! example) and what is left are in `docs/world-design.md`. Each file's
+//! module documentation is the reference for what it translates.
+//!
+//! | file | holds |
+//! |---|---|
+//! | `ids` | `ObjectId`, `TeamId`, `PlayerIndex` and their invalid values |
+//! | `object` | `ObjectArena` (`m_objList` + `m_objVector`) and the `Object` shell |
+//! | `sleepy` | `SleepyScheduler` (`m_sleepyUpdates`, `m_curUpdateModule`) |
+//! | `update_body` | `UpdateBody`, the enum of concrete update modules |
+//! | `player`, `team` | `PlayerArena` (`PlayerList`), `TeamArena` (`TeamFactory`) shells |
+//! | `events` | `ClientEventQueue` |
+//! | `client_reads` | `ClientReads`: the client values logic reads, as state |
+//! | `game_logic` | `World` and the translation of `GameLogic`'s object lifetime |
+
+pub mod client_reads;
+pub mod events;
+pub mod game_logic;
+pub mod ids;
+pub mod object;
+pub mod player;
+pub mod sleepy;
+pub mod team;
+pub mod update_body;
+
+pub use game_logic::{Hook, World, WorldError};
+pub use ids::{ObjectId, PlayerIndex, TeamId, INVALID_ID};
