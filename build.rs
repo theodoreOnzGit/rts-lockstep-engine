@@ -1097,6 +1097,32 @@ mod differential {
             ac.compile("upstream_academy_stats");
         }
         // --- end p1w6-energy ---
+        // --- p1w7-sonnet ---
+        // TunnelTracker.cpp and CaveSystem.cpp, unchanged (differential/wrap_tunnel_tracker.cpp), on
+        // shim_tunnel: stand-ins for the objects of a test world, TheGameLogic, the partition manager, the
+        // pathfinder, the drawable and the body module. Linked before upstream_xfer, which they call.
+        {
+            let shim_tunnel = dif.join("shim_tunnel");
+            let mut tt = cc::Build::new();
+            base(&mut tt);
+            tt.include(&shim_tunnel)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .file(dif.join("wrap_tunnel_tracker.cpp"));
+            tt.compile("upstream_tunnel_tracker");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/Common/RTS/TunnelTracker.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/System/CaveSystem.cpp",
+                "differential/wrap_tunnel_tracker.cpp",
+                "differential/shim_tunnel",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
+        // --- end p1w7-sonnet ---
         // --- p1w1-geometry ---
         // GeometryInfo: Geometry.cpp unchanged (differential/wrap_geometry.cpp),
         // with the INI build's headers and prelude. Compiled before the

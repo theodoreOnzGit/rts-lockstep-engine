@@ -201,6 +201,8 @@ pub struct ObjectGlobals {
     pub enable_repulsors: bool,
     /// `TheGameLogic->getDrawIconUI()`.
     pub draw_icon_ui: bool,
+    /// `TheGlobalData->m_maxTunnelCapacity` (`TunnelTracker::getContainMax`).
+    pub max_tunnel_capacity: i32,
     /// `TheScriptEngine->getObjectsShouldReceiveDifficultyBonus()`.
     pub objects_should_receive_difficulty_bonus: bool,
 }
@@ -216,6 +218,7 @@ impl Default for ObjectGlobals {
             level_gain_animation_name_set: false,
             enable_repulsors: false,
             draw_icon_ui: true,
+            max_tunnel_capacity: 0,
             objects_should_receive_difficulty_bonus: false,
         }
     }

@@ -375,6 +375,7 @@ impl Run {
             enable_repulsors: r.b(),
             draw_icon_ui: r.b(),
             objects_should_receive_difficulty_bonus: r.b(),
+            max_tunnel_capacity: 0, // not read by Object.cpp (TunnelTracker.cpp, tested in differential_tunnel_tracker.rs)
         };
         w.cuts.globals = g;
         let _extent_known = r.b();

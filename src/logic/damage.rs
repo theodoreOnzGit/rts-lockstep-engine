@@ -313,6 +313,8 @@ pub const HUGE_DAMAGE_AMOUNT: f32 = 999999.0;
 pub type DeathType = i32;
 /// `DEATH_NORMAL`.
 pub const DEATH_NORMAL: DeathType = 0;
+/// `DEATH_NONE`: "a special case that can't normally cause death".
+pub const DEATH_NONE: DeathType = 1;
 
 /// `class DamageInfoInput`: what the damage is (the inputs of a
 /// [`DamageInfo`]). `source_template` is a name, see the module docs.

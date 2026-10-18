@@ -151,6 +151,10 @@ pub struct World {
     /// call it makes into a unit that is not translated (`object_cuts.rs`).
     pub cuts: ObjectCuts,
     // --- end p1w6-object ---
+    // --- p1w7-sonnet ---
+    /// `TheCaveSystem`: a tracker per cave index. See `world::cave_system`.
+    pub cave_system: crate::logic::world::cave_system::CaveSystem,
+    // --- end p1w7-sonnet ---
     /// `m_frame`.
     frame: u32,
     /// `m_nextObjID`.
@@ -190,6 +194,9 @@ impl World {
             // --- p1w6-object ---
             cuts: ObjectCuts::default(),
             // --- end p1w6-object ---
+            // --- p1w7-sonnet ---
+            cave_system: crate::logic::world::cave_system::CaveSystem::new(),
+            // --- end p1w7-sonnet ---
             frame: 0,
             next_object_id: 1,
             objects_to_destroy: Vec::new(),

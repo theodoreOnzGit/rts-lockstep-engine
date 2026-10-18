@@ -114,6 +114,8 @@ pub enum ObjectClientEvent {
     DrawableModelCondition { object_id: ObjectId, op: ModelConditionOp },
     /// `m_drawable->setTerrainDecalFadeTarget(target, rate)`.
     DrawableTerrainDecalFadeTarget { object_id: ObjectId, target: f32, rate: f32 },
+    /// `m_drawable->setDrawableHidden(hidden)` (`TunnelTracker::loadPostProcess`).
+    DrawableSetHidden { object_id: ObjectId, hidden: bool },
     /// `m_drawable->flashAsSelected()`.
     DrawableFlashAsSelected { object_id: ObjectId },
     /// `draw->setID(drawableID)` (`Object::xfer` on a load): the drawable of

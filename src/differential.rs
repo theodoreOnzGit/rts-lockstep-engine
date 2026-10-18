@@ -1032,3 +1032,12 @@ extern "C" {
     pub fn ref_academy_load(path: *const c_char, out: *mut c_uint);
 }
 // --- end p1w6-energy ---
+// --- p1w7-sonnet ---
+extern "C" {
+    // TunnelTracker.cpp and CaveSystem.cpp, unchanged (wrap_tunnel_tracker.cpp): a program of
+    // operations on a world of 8 objects, one tracker and a cave system; the text lines each
+    // operation observes. Returns the length written, or minus the length needed if `cap` is
+    // too small. The words of a program are documented in tests/differential_tunnel_tracker.rs.
+    pub fn ref_tunnel_run(prog: *const c_uint, n_prog: c_int, out: *mut c_char, cap: c_int) -> c_int;
+}
+// --- end p1w7-sonnet ---

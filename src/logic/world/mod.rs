@@ -49,6 +49,10 @@ pub mod energy;
 pub mod mission_stats;
 pub mod score_keeper;
 // --- end p1w6-energy ---
+// --- p1w7-sonnet ---
+pub mod cave_system;
+pub mod tunnel_tracker;
+// --- end p1w7-sonnet ---
 
 pub use game_logic::{Hook, World, WorldError};
 pub use ids::{ObjectId, PlayerIndex, TeamId, INVALID_ID};
