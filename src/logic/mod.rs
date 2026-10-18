@@ -33,3 +33,7 @@ pub mod thing;
 // --- p1w3-modules ---
 pub mod module;
 // --- end p1w3-modules ---
+// --- p1w4-terrain ---
+pub mod terrain_logic;
+pub mod terrain_visual;
+// --- end p1w4-terrain ---

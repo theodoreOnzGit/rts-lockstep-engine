@@ -751,3 +751,12 @@ extern "C" {
     ) -> c_int;
 }
 // --- end p1w3-modules ---
+// --- p1w4-terrain ---
+// TerrainLogic.cpp (differential/wrap_terrain_logic.cpp). `scenario` and `program` are
+// word arrays (floats as their bits); the encodings are documented in
+// tests/differential_terrain_logic.rs. Returns the words written to `out`, or -1 if they
+// do not fit.
+extern "C" {
+    pub fn ref_terrain_logic_run(scenario: *const c_uint, n_scenario: c_int, program: *const c_uint, n_program: c_int, out: *mut c_uint, cap: c_int) -> c_int;
+}
+// --- end p1w4-terrain ---
