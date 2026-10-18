@@ -33,3 +33,9 @@ pub mod thing;
 // --- p1w3-modules ---
 pub mod module;
 // --- end p1w3-modules ---
+// --- p1w4-sides ---
+pub mod scripts;
+// --- end p1w4-sides ---
+// --- p1w4-sides ---
+pub mod sides_list;
+// --- end p1w4-sides ---

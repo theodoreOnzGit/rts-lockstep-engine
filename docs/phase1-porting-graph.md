@@ -1203,3 +1203,128 @@ yet when the templates are read, see the module docs); `findPlayerTemplate`'s fi
 store models the process; a block named like one of the old maps' twelve sub-factions updates the
 base faction's template and renames it to the name as written.
 <!-- --- end p1w3-playertemplate --- -->
+
+<!-- --- p1w4-sides --- -->
+## Wave 4: SidesList and the Scripts data model (`p1w4-sides`, 2026-10-18)
+
+**Translated (layer 6):** `logic::sides_list` (`SidesList`, `SidesInfo`, `TeamsInfo`/`TeamsInfoRec`,
+`BuildListInfo`; `ParseSidesDataChunk`, `WriteSidesDataChunk`, `validateSides`, `addPlayerByTemplate`,
+`prepareForMP_or_Skirmish` with `ParsePlayersDataChunk`/`ParseTeamsDataChunk`, the finders, `removeSide`/`removeTeam`),
+`logic::scripts` (`ScriptList`, `ScriptGroup`, `Script`, `OrCondition`, `Condition`, `ScriptAction`, `Parameter`,
+`Template`; every `Parse*DataChunk` and `Write*DataChunk`, the repairs of old files, `duplicate`, `duplicateAndQualify`,
+`qualify`, `updateFrom`, the list editing functions), and `formats::data_chunk_output` (the writer half of
+`DataChunk.cpp`, which the Phase 0 reader left out). `SidesList.cpp` 1,168 lines + `.h` 396, `Scripts.cpp` 2,718 + `.h`
+1,141.
+
+**Cut points (listed once, as the task asks):**
+
+1. **`ScriptEngine::init`'s tables** (layer 11): the 109 condition and 344 action templates (internal name key,
+   parameter types) are the input `ScriptTemplates`. Nothing here evaluates a script.
+2. **Editor text:** `getUiText`, `getUiStrings` of `Script`, `Condition`, `ScriptAction`, `Parameter`; the
+   `Surfaces` and `ShakeIntensities` tables.
+3. **Save games:** the `Snapshot` methods (`crc`, `xfer`, `loadPostProcess`) of `SidesList`, `BuildListInfo`,
+   `ScriptList`, `ScriptGroup`, `Script`.
+4. **UI to engine:** `SignalUIInteraction` and `TheShellHookNames`.
+5. **INI:** `BuildListInfo::parseStructure` (the AI's `BuildList` block; `AISideBuildList` is layer 10).
+6. **The file system:** the skirmish scripts file is bytes (`SidesCtx::skirmish_scripts_file`).
+7. **Players and templates are names:** a side is a dictionary (`playerName`, `playerFaction`, ...), a build list entry holds
+   the building's and the thing template's names, a team its owner's name. No `Player`, `Team`, `ThingTemplate` is created
+   or looked up (layers 7 and 5).
+8. **Memory pools and the renderer:** `newInstance`/`deleteInstance`, `BuildListInfo::m_renderObj`/`m_shadowObj`.
+
+**Shape:** linked lists are vectors (`m_nextScript`, `m_nextGroup`, `m_nextOr`, `m_nextAndCondition`, `m_nextAction`,
+`m_nextBuildList`); `m_parms` stays an array of up to 12 optional parameters with a signed count (the parse leaves slots
+empty and counts negative); the three enumerations a file's `readInt` is cast to are `i32`; the process-wide state
+(`ScriptList::m_curId`, `s_readLists`/`s_numInReadList`, `static_readPlayerNames`, `TheSidesList`, the name keys) is an
+explicit context (`SidesCtx`, `ScriptsState`) that tests keep across cases, as the original keeps it. `userData` of the
+nested `parse` calls is the object last added to the list being read.
+
+**Differential test:** `tests/differential_sides_scripts.rs` (methodology in its header). `SidesList.cpp` (one mechanical edit
+by `build.rs` in a copy, asserted to match once: the call that opens the skirmish scripts file) and `Scripts.cpp`
+(unchanged) are compiled with the Phase 0 `DataChunk.cpp` and `NameKeyGenerator.cpp` under `differential/shim_sides/`, driven by
+`differential/wrap_sides.cpp`. Result (2026-10-18, `cargo test --release --features differential --test
+differential_sides_scripts`, seed fixed): **8,000 synthetic files generated** (6,000 `SidesList` files, 2,000 `PlayerScriptsList`
+files), **7,014 compared, 0 mismatches**, 129.7 MB of log (dumps of every field before and after up to 8 operations, the bytes
+written, the group counter), 18.1 MB of written chunk files compared byte for byte. The parse succeeded in 6,525 files,
+stopped (returned false) in 262 and threw in 227 (`ERROR_BUG` 171, an unknown `KIND_OF` name, `ERROR_CORRUPT_FILE_FORMAT`
+55, `ERROR_OUT_OF_MEMORY` 1); 981 files were **undefined upstream** and not given to the C++ (`ParameterIndexOutOfRange` 474,
+`UninitialisedRead` 158, `NullParameter` 104, `ActionTypeOutOfRange` 85, `ConditionTypeOutOfRange` 46, `NameTooLong` 42,
+`ParameterTypeOutOfRange` 35, `KindOfIndexOutOfRange` 24, and 13 with a string holding a 0, see below), 5 had a table of
+contents declaring more than 10^5 names. What the compared files held: 15,267 sides, 20,076 build list entries, 18,583
+script lists, 46,639 scripts, 17,995 groups, 67,834 conditions (11,749 made false by a bad count or an unknown name), 114,615
+actions (19,537 made no-ops), 275,851 parameters; each of the 26 operations ran 165 to 713 times; `prepareForMP_or_Skirmish` read
+the standard scripts file 100 times and gave scripts to a skirmish side 40 times. The constants (92: the enumerators the
+translation names, `NUM_ITEMS` of the three tables, `MAX_PARMS`, `KINDOF_COUNT`, `OBJECT_STATUS_COUNT`) are compared with
+the C++ by `constants_match_upstream`.
+
+**Planted bugs** (a deliberate error in the translation, one at a time, to see the comparison fail; run on 2,000 files
+generated by the same seed (`SIDES_CASES0=1500 SIDES_CASES1=500`, 1,734 compared), all removed afterwards):
+
+| planted | files that caught it |
+|---|---|
+| build entry `z` not forced to 0 (parse field) | 928 |
+| `TEAM_FOLLOW_WAYPOINTS` repair defaults its flag to 0 (old-file repair) | 224 |
+| `whiner`/`unsellable` written in the other order (written bytes) | 816 |
+| no `validateSides` after the write (state after the write) | 297 |
+| `ScriptGroup::duplicate` takes no number of the group counter (counter) | 1,731 |
+| allies/enemies keep the player itself (`validateSides`) | 510 |
+| `qualify` of a `SIDE` compares the unqualified name | 9 |
+| `static_readPlayerNames` not cleared after the skirmish file | 3 |
+| `health` read as its absolute value | 211 |
+| type tag in `keyAndType` off by one (writer) | 1,573 |
+| `CRUSHER` read to index 1 instead of the current index | 23 |
+| `Fundamentalist` replaced by `Gla` | 549 |
+| version 1 condition repair adds `SURFACES_ALLOWED` 2 instead of 3 | 219 |
+| `addScript` with a negative position goes to the front | 43 |
+| `WriteParameter` leaves the `KIND_OF` string | 76 |
+| leftover read lists not dropped by the next `ParseScriptsDataChunk` | 3 |
+| a constant (`PERCENT` 50 instead of 51) | 1 of 92 |
+
+(Two other plants, reading the build entry's extra fields only from version 4 and leaving the count of the version 1 condition
+repair at 2, made the Rust choose operations the C++ then ran into undefined behaviour with: the test process died with
+SIGSEGV. They are not in the table.)
+
+**Which numbers to quote:** the 7,014 compared files and 0 mismatches; the 981 undefined files are not a result about the
+translation (the Rust refuses them, the C++ would read through a null or out-of-bounds pointer or an unspecified enum).
+
+**Upstream behaviour found and kept (all pinned by the test):**
+
+- `PlayerScriptsList` is written with version **5**: `K_SCRIPTS_DATA_VERSION_1` follows `K_SCRIPT_CONDITION_VERSION_4 = 4`
+  in an enum.
+- A condition or action whose name key matches no template becomes `CONDITION_FALSE` / `NO_OP`, but its parameters are read
+  by the count in the file and compared with the **last** template's count, because the search loop leaves `ct`/`at` there.
+- The version 1 repair `m_parms[m_numParms] = SURFACES_ALLOWED; m_numParms = 3` sets the count to 3, not one more; with a
+  count of 0 or 1 it leaves empty slots below the count (writing such a condition dereferences `NULL`).
+- `KIND_OF_PARAM` `MISSILE`: the retry loop compares the string with the literal it was just set to, so it stops at index 0
+  and the outer loop goes on from 1 until it meets `SMALL_MISSILE`'s real index; `CRUSHER` and the others take the current
+  index, which is 0 (the check is made on the first pass).
+- `ParseSidesDataChunk` breaks out of its loop at 16 sides but not out of the file: the unread sides' bytes are read as the
+  teams and scripts that follow. `ParseScriptsDataChunk` returns false for a 17th script list, which `ParseSidesDataChunk`
+  turns into `ERROR_CORRUPT_FILE_FORMAT`; the previous read lists are gone but their count stays.
+- `ParseScript` returns `NULL` if its children fail to parse, and both callers store the result.
+- `WriteSidesDataChunk` runs `validateSides` after the chunk is closed (it can change the list the caller still holds);
+  `WriteParameter` replaces the string of a `KIND_OF_PARAM`.
+- `SidesInfo::operator=` copies the script list with `ScriptList::duplicate`, which takes a number of the group counter per
+  group, so `removeSide` and `prepareForMP_or_Skirmish` advance the counter; `operator=` on itself does nothing.
+- `validateSides` restarts its team-name check with a `goto` after `removeTeam`, which refuses to remove the last team: a
+  list with one team named like a player would loop forever (unreachable after the default teams are made; the Rust returns
+  `MapUndefined::NonTermination`).
+- `Condition::duplicate` after the first condition of a chain copies as many parameters as the original has, from slots
+  that exist only up to the template's count: a condition made false by an unknown name keeps the file's count and its
+  copy dereferences `NULL`.
+
+**Harness record.** New: `differential/shim_sides/` (stand-ins for `PlayerTemplate.h`, `AI.h`, `Radar.h`, `ThingTemplate.h`,
+`ContainModule.h`, `View.h`, `Player.h`, `Object.h`, `NetworkDefs.h`, `KindOf.h`, `GameState.h` with `SaveCode`, `ScriptEngine.h`
+with the two tables; each says what it stands in for), `differential/wrap_sides.cpp`, one `build.rs` block (the lib is
+compiled ahead of `upstream_chunk`, `-fno-delete-null-pointer-checks` because upstream calls `deleteInstance()` on `NULL`).
+Added to shared shims, each in a `p1w4-sides` block: `AsciiString::startsWith` and `nextToken(tok)`,
+`UnicodeString::translate(AsciiString)`, `Dict::clear`/`getBool`/`getAsciiString` of the chunk build's stand-in, the declaration of
+`KindOfMaskType::getBitNames` (defined in `wrap_sides.cpp` over the real name table). `wrap_chunk.cpp`'s
+`getPath_UserData` stand-in, which aborted, calls a hook (`ref_chunk_user_data_path_hook`) that `wrap_sides.cpp` installs, so
+`DataChunkOutput` can write its temporary file. **Limit of the stand-in:** the `std::string` `AsciiString` of this build counts
+bytes past an embedded 0 in `getLength()` where the engine's `strlen`s, so a file with a string holding a 0 would make the C++
+write more than the engine would; `DataChunkInput::embedded_nul_strings` (added, additive) counts such strings and the test
+leaves those files out (13 of 8,000).
+Knobs of the test: `SIDES_CASES0`, `SIDES_CASES1` (files of each kind), `SIDES_NOOPS` (no operations),
+`SIDES_DUMP_DIR` (write the logs of a mismatching file there).
+<!-- --- end p1w4-sides --- -->

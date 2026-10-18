@@ -751,3 +751,24 @@ extern "C" {
     ) -> c_int;
 }
 // --- end p1w3-modules ---
+
+// --- p1w4-sides ---
+extern "C" {
+    // wrap_sides.cpp: SidesList.cpp and Scripts.cpp. The meaning of every argument and of the
+    // log is in differential/wrap_sides.cpp and tests/differential_sides_scripts.rs.
+    pub fn ref_sides_setup(tmp_dir: *const c_char, blob: *const c_uchar, blob_len: c_int);
+    pub fn ref_sides_constants(out: *mut c_int) -> c_int;
+    pub fn ref_sides_run(
+        mode: c_int,
+        data: *const c_char,
+        len: c_int,
+        ops: *const c_uchar,
+        nops: c_int,
+        skirmish: *const c_char,
+        sk_len: c_int,
+        log: *mut c_uchar,
+        cap: c_int,
+        log_len: *mut c_int,
+    ) -> c_int;
+}
+// --- end p1w4-sides ---

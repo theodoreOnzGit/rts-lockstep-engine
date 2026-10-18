@@ -49,8 +49,12 @@
 //!   `CompressionManager` recognises (RefPack, Nox LZH, zlib, BTree, Huff;
 //!   most codecs are missing from the released source). This takes bytes
 //!   that are already uncompressed.
-//! - The writer, `DataChunkOutput` (it goes through a temporary file), and
-//!   `DataChunkTableOfContents::write`, `allocateID`'s use by it.
+//! - ~~The writer, `DataChunkOutput` (it goes through a temporary file), and
+//!   `DataChunkTableOfContents::write`, `allocateID`'s use by it.~~
+//!   **CORRECTED 2026-10-18** (`p1w4-sides`): the writer is
+//!   [`super::data_chunk_output`], in memory instead of through a temporary
+//!   file, with the table of contents' `write`; checked against the C++ byte
+//!   for byte by `tests/differential_sides_scripts.rs`.
 //! - `m_currentObject` and `m_userData` (`void*` hooks for parsers): a Rust
 //!   parser gets `&mut C`. The `userData` given to `registerParser` is not
 //!   kept: upstream never reads it (each parser gets `parse`'s argument).
@@ -418,6 +422,11 @@ pub struct DataChunkInput<C> {
     parsers: Vec<UserParser<C>>,
     /// Open chunks, the innermost last.
     chunk_stack: Vec<InputChunk>,
+    // --- p1w4-sides ---
+    /// How many strings read so far held a 0 before their end (see
+    /// [`DataChunkInput::embedded_nul_strings`]).
+    embedded_nuls: u64,
+    // --- end p1w4-sides ---
 }
 
 impl<C> DataChunkInput<C> {
@@ -426,8 +435,19 @@ impl<C> DataChunkInput<C> {
         let mut contents = DataChunkTableOfContents::new();
         contents.read(&mut file)?;
         let filepos_of_first_chunk = file.tell();
-        Ok(DataChunkInput { file, contents, filepos_of_first_chunk, parsers: Vec::new(), chunk_stack: Vec::new() })
+        Ok(DataChunkInput { file, contents, filepos_of_first_chunk, parsers: Vec::new(), chunk_stack: Vec::new(), embedded_nuls: 0 })
     }
+
+    // --- p1w4-sides ---
+    /// How many `AsciiString`s and `UnicodeString`s read so far held a 0
+    /// before their end (the string is then cut there, as the engine's
+    /// strings are C strings). The differential build's `std::string`
+    /// stand-ins keep the bytes after the 0 and count them in `getLength()`,
+    /// so the tests that write such strings back leave these files out.
+    pub fn embedded_nul_strings(&self) -> u64 {
+        self.embedded_nuls
+    }
+    // --- end p1w4-sides ---
 
     /// The table of contents.
     pub fn contents(&self) -> &DataChunkTableOfContents {
@@ -611,6 +631,7 @@ impl<C> DataChunkInput<C> {
         let mut buf = vec![0u8; usize::from(len)];
         self.file.read(&mut buf, i32::from(len))?;
         self.decrement_data_left(i32::from(len))?;
+        self.embedded_nuls += u64::from(c_str(&buf).len() < buf.len()); // p1w4-sides
         Ok(c_str(&buf).to_vec())
     }
 
@@ -625,6 +646,7 @@ impl<C> DataChunkInput<C> {
         self.decrement_data_left(i32::from(len) * 2)?;
         let units: Vec<u16> = buf.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
         let n = units.iter().position(|&u| u == 0).unwrap_or(units.len());
+        self.embedded_nuls += u64::from(n < units.len()); // p1w4-sides
         Ok(units[..n].to_vec())
     }
 

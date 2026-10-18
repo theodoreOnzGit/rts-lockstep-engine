@@ -1332,6 +1332,49 @@ mod differential {
             .file(up.join("GameEngine/Source/GameClient/GameText.cpp"));
         csf.compile("upstream_csf");
 
+        // --- p1w4-sides ---
+        // The map's sides and scripts: Scripts.cpp unchanged and SidesList.cpp with ONE
+        // mechanical edit (below), through differential/wrap_sides.cpp, with the chunk
+        // build's headers and prelude (shim_sides/sides_prelude.h force-includes
+        // shim_chunk/chunk_prelude.h and DataChunk.h) and the stand-ins of
+        // differential/shim_sides (each says what it stands in for). Compiled ahead of
+        // upstream_chunk, upstream_xfer, upstream_ini and upstream_flags, whose
+        // DataChunk, Xfer, INI and KindOf/ObjectStatus name-table symbols it uses.
+        // The edit, asserted to match once, in the copy under OUT_DIR: the call that
+        // opens the skirmish scripts file in SidesList::prepareForMP_or_Skirmish,
+        // `theInputStream.open(path)`, goes through the file system and
+        // CompressionManager (which aborts in the chunk build), and becomes a call to
+        // sides_open_skirmish_stream (wrap_sides.cpp), which serves the bytes of the
+        // case; the rest of the function, the reading of the file included, is unchanged.
+        // -fno-delete-null-pointer-checks: upstream calls deleteInstance() on NULL
+        // pointers (a no-op under MSVC), which g++ would otherwise compile as
+        // "this is never NULL".
+        let shim_sides = dif.join("shim_sides");
+        let sides_cpp = patch_copy(
+            &up.join("GameEngine/Source/GameLogic/Map/SidesList.cpp"),
+            "SidesList.cpp",
+            &[("if (theInputStream.open(path)) {", "if (sides_open_skirmish_stream(theInputStream, path)) {", 1)],
+        );
+        let sides_copy = write("SidesList.cpp", &sides_cpp);
+        let mut sides = cc::Build::new();
+        base(&mut sides);
+        sides
+            .flag("-fno-delete-null-pointer-checks")
+            .include(&shim_sides)
+            .include(dif.join("shim_chunk"))
+            .include(&dif) // well_known_keys_list.h
+            .include(&shim)
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .include(up.join("Libraries/Source/Compression"))
+            .flag("-include")
+            .flag(shim_sides.join("sides_prelude.h").to_str().expect("UTF-8 path"))
+            .file(dif.join("wrap_sides.cpp"))
+            .file(&sides_copy)
+            .file(up.join("GameEngine/Source/GameLogic/ScriptEngine/Scripts.cpp"));
+        sides.compile("upstream_sides");
+        // --- end p1w4-sides ---
+
         // The chunk file reader: DataChunk.cpp and NameKeyGenerator.cpp
         // unchanged, with chunk_prelude.h force-included and the stand-in
         // Dict of differential/shim_chunk (see the file). Compression.h comes
@@ -1461,6 +1504,8 @@ mod differential {
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/System",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/INI/INI.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/GameClient/GameText.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Map/SidesList.cpp", // p1w4-sides
+            "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/ScriptEngine/Scripts.cpp", // p1w4-sides
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/NameKeyGenerator.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/Dict.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Include/Common/AsciiString.h",

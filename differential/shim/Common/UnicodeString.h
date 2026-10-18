@@ -45,6 +45,15 @@ public:
 	** that of the C string the caller leaves (see fixLength) */
 	WideChar *getBufferForRead(int len) { m_s.assign(len, 0); return &m_s[0]; }
 	void fixLength() { size_t n = 0; while (n < m_s.size() && m_s[n]) ++n; m_s.resize(n); }
+	/* --- p1w4-sides --- */
+	/* translate(const AsciiString&) (UnicodeString.cpp line 200): each char, sign-extended as
+	** the signed char it is, becomes a WideChar */
+	template <class A> void translate(const A &src)
+	{
+		clear();
+		for (int i = 0; i < src.getLength(); i++) m_s += (WideChar)src.getCharAt(i);
+	}
+	/* --- end p1w4-sides --- */
 private:
 	void setWide(const wchar_t *s) { m_s.clear(); for (; s && *s; ++s) m_s += (WideChar)*s; }
 	std::basic_string<WideChar> m_s;

@@ -52,6 +52,25 @@ public:
 	AsciiString getNthAsciiString(Int n) const { return nth(n).second.a; }
 	UnicodeString getNthUnicodeString(Int n) const { return nth(n).second.u; }
 	const std::map<NameKeyType, Value> &pairs() const { return m_pairs; }
+	/* --- p1w4-sides --- */
+	/* clear() and the keyed getters of Dict.h/Dict.cpp: a missing key, or one of another
+	** type, gives the default value and *exists false */
+	void clear() { m_pairs.clear(); }
+	Bool getBool(NameKeyType key, Bool *exists = NULL) const
+	{
+		std::map<NameKeyType, Value>::const_iterator it = m_pairs.find(key);
+		if (it != m_pairs.end() && it->second.type == DICT_BOOL) { if (exists) *exists = true; return it->second.b; }
+		if (exists) *exists = false;
+		return false;
+	}
+	AsciiString getAsciiString(NameKeyType key, Bool *exists = NULL) const
+	{
+		std::map<NameKeyType, Value>::const_iterator it = m_pairs.find(key);
+		if (it != m_pairs.end() && it->second.type == DICT_ASCIISTRING) { if (exists) *exists = true; return it->second.a; }
+		if (exists) *exists = false;
+		return AsciiString::TheEmptyString;
+	}
+	/* --- end p1w4-sides --- */
 private:
 	const std::pair<const NameKeyType, Value> &nth(Int n) const
 	{
