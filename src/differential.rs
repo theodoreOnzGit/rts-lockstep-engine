@@ -949,6 +949,11 @@ extern "C" {
         n_ops: c_int,
         ops: *const c_int,
         opf: *const c_float,
+        out: *mut c_uint,
+        cap: c_int,
+    ) -> c_int;
+}
+// --- end p1w6-partition ---
 // --- p1w6-trackers ---
 extern "C" {
     // ObjectTypes.cpp (wrap_object_types.cpp): a program of list operations, logged word by word
@@ -963,7 +968,6 @@ extern "C" {
         cap: c_int,
     ) -> c_int;
 }
-// --- end p1w6-partition ---
 extern "C" {
     // ExperienceTracker.cpp (wrap_experience_tracker.cpp): a program of tracker operations on up to
     // four objects (tests/differential_experience_tracker.rs documents the encoding).
