@@ -33,12 +33,13 @@
 ** KindOf.cpp's names) compiled in the BitFlags build (wrap_flags.cpp). */
 extern "C" const char *ref_kindof_name_from_single_bit(int i);
 extern "C" int ref_kindof_single_bit_from_name(const char *token);
-ScienceStore *TheScienceStore = 0;
+/* p1w2-science: the three ScienceStore stand-ins are WEAK; Science.cpp (differential/wrap_science.cpp) defines the real ones */
+__attribute__((weak)) ScienceStore *TheScienceStore = 0;
 UpgradeCenter *TheUpgradeCenter = 0;
 static GameState theShimGameState;
 GameState *TheGameState = &theShimGameState;
-AsciiString ScienceStore::getInternalNameForScience(ScienceType) const { abort(); }
-ScienceType ScienceStore::getScienceFromInternalName(const AsciiString &) const { abort(); }
+__attribute__((weak)) AsciiString ScienceStore::getInternalNameForScience(ScienceType) const { abort(); }
+__attribute__((weak)) ScienceType ScienceStore::getScienceFromInternalName(const AsciiString &) const { abort(); }
 bool UpgradeMaskType::testForAll(const UpgradeMaskType &) const { abort(); }
 void UpgradeMaskType::clear() { abort(); }
 void UpgradeMaskType::set(const UpgradeMaskType &) { abort(); }

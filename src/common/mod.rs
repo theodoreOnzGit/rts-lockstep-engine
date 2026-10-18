@@ -57,3 +57,6 @@ pub mod terrain_types;
 // --- p1w2-globaldata ---
 pub mod global_data;
 // --- end p1w2-globaldata ---
+// --- p1w2-science ---
+pub mod science;
+// --- end p1w2-science ---

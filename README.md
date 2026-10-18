@@ -71,6 +71,10 @@ the layer order of [`docs/phase1-porting-graph.md`](docs/phase1-porting-graph.md
 <!-- --- p1w2-globaldata --- -->
 | `common::global_data`, `logic::weapon_bonus` | `Include/Common/GlobalData.h`, `Source/Common/GlobalData.cpp`, `Source/Common/INI/INIGameData.cpp`: `GlobalData` (`TheGlobalData`), all 280 members of the retail configuration (half are client settings, kept as plain data; the 90 that game logic names are marked), its constructor's defaults, `setTimeOfDay`, the 336-entry `GameData` parse table (generated from the upstream header and table by `scripts/gen_global_data.py`), the `GameData` block with `INI_LOAD_CREATE_OVERRIDES`/`INI_LOAD_MULTIFILE`, and the `m_next` chain of overrides (`GlobalDataStore`); and `WeaponBonus`/`WeaponBonusSet` of `Weapon.h`/`Weapon.cpp` (the `WeaponBonus =` field). Not the executable CRC, user data directory, double-click time or user preferences (filesystem, registry, devices), nor the `_DEBUG`/`_INTERNAL`/`ALLOW_SURRENDER` members. Upstream's `newOverride` copies nothing (a no-op `operator=`): kept (Phase 1 layer 4) |
 <!-- --- end p1w2-globaldata --- -->
+<!-- --- p1w2-science --- -->
+| `common::science` | `Include/Common/Science.h`, `Source/Common/RTS/Science.cpp`, and from `INI.cpp`/`Xfer.cpp` `parseScience`, `parseScienceVector`, `scanScience`, `parseAndTranslateLabel`, `xferScienceType`, `xferScienceVec`: `ScienceType` (a name key), `ScienceInfo`, `ScienceStore` with override chains, runtime root sciences, lookups, the `Science` INI block. Game text is a `GameTextFetch` argument. Not the three methods that take a `Player` (`playerHasPrereqsForScience`, `playerHasRootPrereqsForScience`, `getPurchasableSciences`; layer 7) (Phase 1 layer 4) |
+| `logic::rank_info` | `Include/GameLogic/RankInfo.h`, `Source/GameLogic/System/RankInfo.cpp`: `RankInfo`, `RankInfoStore` (levels 1..n, overrides of existing levels only) and the `Rank` INI block (Phase 1 layer 4) |
+<!-- --- end p1w2-science --- -->
 
 **Approved by the owner (2026-10-17):** `XferCRC`/`XferDeepCRC` carry a NaN guard
 (`common::xfer_crc::nan_guard`): a NaN `Real` xfered into a CRC panics in debug

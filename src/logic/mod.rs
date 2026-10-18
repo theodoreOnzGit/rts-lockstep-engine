@@ -23,3 +23,6 @@ pub mod crate_system;
 // --- p1w2-globaldata ---
 pub mod weapon_bonus;
 // --- end p1w2-globaldata ---
+// --- p1w2-science ---
+pub mod rank_info;
+// --- end p1w2-science ---
