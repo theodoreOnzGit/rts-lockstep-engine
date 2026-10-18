@@ -495,6 +495,59 @@ mod differential {
         }
         fl.compile("upstream_flags");
 
+        // --- p1w1-armor ---
+        // Armor, Damage and DamageFX (differential/wrap_armor.cpp): Armor.cpp,
+        // DamageFX.cpp and INI/INIDamageFX.cpp unchanged, Damage.cpp from a
+        // copy that adds the `template<> ` before its one s_bitNameList
+        // definition (the g++/clang spelling, as for the flags build above;
+        // asserted once). The BitFlags build's setup (clang++
+        // -fms-extensions, the real BitFlagsIO.h through flags_prelude.h)
+        // plus differential/shim_armor: ThingTemplate, ThingFactory, FXList,
+        // Object and an ordered std::hash_map. Linked here, ahead of
+        // upstream_xfer, upstream_ini and upstream_chunk, whose Xfer,
+        // INI and NameKeyGenerator it uses; the weak stand-ins of
+        // wrap_ini.cpp give way to the real definitions.
+        let shim_armor = dif.join("shim_armor");
+        let damage_copy = write(
+            "Damage_template_spec.cpp",
+            &patch_copy(
+                &up.join("GameEngine/Source/GameLogic/System/Damage.cpp"),
+                "Damage.cpp",
+                &[("const char* DamageTypeFlags::s_bitNameList[] = ", "template<> const char* DamageTypeFlags::s_bitNameList[] = ", 1)],
+            ),
+        );
+        let mut arm = cc::Build::new();
+        base(&mut arm);
+        arm.compiler("clang++")
+            .flag("-fms-extensions")
+            .flag("-fdelayed-template-parsing")
+            .include(&shim_armor)
+            .include(&flags_gen)
+            .include(dif.join("shim_flags"))
+            .include(&shim)
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .include(ww.join("WWMath"))
+            .include(ww.join("WWLib"))
+            .include(&dif)
+            .flag("-include")
+            .flag(shim_armor.join("armor_prelude.h").to_str().expect("UTF-8 path"))
+            .file(dif.join("wrap_armor.cpp"))
+            .file(up.join("GameEngine/Source/GameLogic/Object/Armor.cpp"))
+            .file(up.join("GameEngine/Source/Common/DamageFX.cpp"))
+            .file(up.join("GameEngine/Source/Common/INI/INIDamageFX.cpp"))
+            .file(damage_copy);
+        arm.compile("upstream_armor");
+        for p in [
+            "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Armor.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/Common/DamageFX.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/Common/INI/INIDamageFX.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/System/Damage.cpp",
+        ] {
+            println!("cargo:rerun-if-changed={p}");
+        }
+        // --- end p1w1-armor ---
+
         // The Xfer family: Xfer.cpp (via wrap_xfer.cpp, after matrix3d.h),
         // XferCRC.cpp, XferSave.cpp, XferLoad.cpp and Snapshot.cpp unchanged,
         // against the shims in differential/shim/Common. `_DEBUG` again only

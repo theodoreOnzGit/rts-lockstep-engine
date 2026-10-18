@@ -334,3 +334,48 @@ extern "C" {
     pub fn ref_m3_eq(a: *const c_float, b: *const c_float) -> c_int;
     pub fn ref_m3_static(which: c_int, out: *mut c_float);
 }
+
+// --- p1w1-armor ---
+extern "C" {
+    // Armor.cpp, DamageFX.cpp, INIDamageFX.cpp, Damage.cpp (wrap_armor.cpp)
+    pub fn ref_armor_reset();
+    pub fn ref_armor_name_key(name: *const c_char) -> c_uint;
+    pub fn ref_armor_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_dfx_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_armor_adjust(name: *const c_char, dt: c_int, damage: c_float, out: *mut c_uint) -> c_int;
+    pub fn ref_armor_none(damage: c_float, out: *mut c_uint);
+    pub fn ref_dfx_query(
+        name: *const c_char,
+        dt: c_int,
+        amount: c_float,
+        level: c_int,
+        throttle: *mut c_uint,
+        fx: *mut c_char,
+        cap: c_int,
+        fx_len: *mut c_int,
+        via_do: *mut c_int,
+    ) -> c_int;
+    pub fn ref_damage_inline(op: c_int, dt: c_int) -> c_int;
+    pub fn ref_damage_flags(all: *mut u64, none: *mut u64);
+    pub fn ref_damage_default(w: *mut c_uint);
+    pub fn ref_damage_save(
+        kind: c_int,
+        w: *const c_uint,
+        tmpl: *const c_char,
+        path: *const c_char,
+        out: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+    ) -> c_int;
+    pub fn ref_damage_load(
+        kind: c_int,
+        w: *mut c_uint,
+        tmpl: *mut c_char,
+        tmpl_cap: c_int,
+        bytes: *const c_uchar,
+        n: c_int,
+        path: *const c_char,
+    ) -> c_int;
+    pub fn ref_damage_crc(kind: c_int, w: *const c_uint, tmpl: *const c_char, crc: *mut c_uint) -> c_int;
+}
+// --- end p1w1-armor ---

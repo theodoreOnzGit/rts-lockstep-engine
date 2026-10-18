@@ -11,3 +11,6 @@ pub mod object_script_status_bits;
 pub mod powers;
 pub mod weapon_set_flags;
 pub mod weapon_types;
+// --- p1w1-armor ---
+pub mod armor;
+// --- end p1w1-armor ---

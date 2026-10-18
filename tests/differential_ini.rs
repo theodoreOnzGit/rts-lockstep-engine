@@ -155,7 +155,7 @@ fn ic2(c: ICoord2D) -> Vec<u8> {
     [c.x, c.y].iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 fn dmg(f: DamageTypeFlags) -> [u8; 8] {
-    f.0.to_le_bytes()
+    f.words()[0].to_le_bytes()
 }
 fn rv(v: &GameClientRandomVariable) -> Vec<u8> {
     let mut b = v.low.to_le_bytes().to_vec();

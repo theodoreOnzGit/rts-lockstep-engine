@@ -478,6 +478,7 @@ are a context argument (`&mut World` or a frame number) instead of a global.
 | 1 | `BaseType.h` value types and templates; `GameType.h`/`.cpp`; `GameCommon.h` (all but the intrusive-list macros) and `GameCommon.cpp`; `Errors.h`; `SpecialPowerType.h`; `ThingSort.h`; `Powers.h`; `WeaponSetType.h`; `WeaponStatus.h`; `WeaponBonusConditionFlags.h`; `ObjectScriptStatusBits.h`; `DiscreteCircle` | `tests/differential_value_types.rs` |
 | 2 | `NameKeyGenerator`, `StaticNameKey`, `WellKnownKeys.h`; `AsciiString` (all but `format`) | `tests/differential_name_key.rs`, `tests/differential_ascii_string.rs` |
 | 3 | `BitFlags`/`BitFlagsIO` and all seven instantiations (`KindOf`, `ObjectStatusTypes`, `DisabledTypes`, `ModelState` flags, `ArmorSet` flags, `WeaponSetFlags`, `SpecialPowerMaskType`); `SparseMatchFinder`; `Dict`; `Xfer::xferKindOf` | `tests/differential_bit_flags.rs`, `tests/differential_dict.rs` |
+| 4 (in progress) | `Armor` (`ArmorTemplate`, `ArmorStore`, the `Armor` block), `Damage` (`DamageInfo`, its xfer, `DamageTypeFlags` as `BitFlags`), `DamageFX` (templates, store, the `DamageFX` block; `FXList`s stay names) | `tests/differential_armor.rs` |
 
 Still open in layers 1-3: `PartitionSolver` (see the `std::sort` hazard
 above), `Overridable`/`Override`, `LatchRestore` (layer 1);
@@ -486,9 +487,10 @@ above), `Overridable`/`Override`, `LatchRestore` (layer 1);
 differential build needs 16-bit stand-ins for them, and `iswspace`'s
 classification of non-ASCII spaces in the MSVC C locale has to be pinned
 down first; it holds display text, not lockstep state), `STLTypedefs.h`,
-`SubsystemInterface` (layer 2); folding
+`SubsystemInterface` (layer 2); ~~folding
 `logic::damage`'s hand-written `DamageTypeFlags` into the generic
-`BitFlags`; moving `formats::data_chunk`'s name-keyed `Dict` stand-in onto
+`BitFlags`~~ **DONE in layer 4** (`DamageTypeFlags` is `BitFlags<DamageTypeNames>`;
+`tests/differential_ini.rs` and `tests/differential_armor.rs` pass on it); moving `formats::data_chunk`'s name-keyed `Dict` stand-in onto
 `common::dict` and `common::name_key_generator`.
 
 Two translation choices await the owner, both formally undefined C++ on a

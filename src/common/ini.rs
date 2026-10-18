@@ -199,6 +199,14 @@ pub enum Undefined {
     IsspaceNonAscii,
     /// `loadDirectory`: a file name shorter than the directory name.
     FilenameShorterThanDirectory,
+    // --- p1w1-armor ---
+    /// A `DamageType` outside `[0, DAMAGE_NUM_TYPES)` indexes an array
+    /// (`parseArmorCoefficients` and `DamageFX`'s parsers with an unknown
+    /// damage name, whose index is -1).
+    DamageTypeOutOfRange,
+    /// `NameKeyGenerator` ran past its last key (`0x7fffffff`).
+    NameKeysExhausted,
+    // --- end p1w1-armor ---
 }
 
 /// What failed, innermost cause first.
