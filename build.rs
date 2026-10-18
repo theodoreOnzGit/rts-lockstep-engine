@@ -694,6 +694,59 @@ mod differential {
             .file(ww.join("WWMath/matrix3d.cpp"));
         wm.compile("upstream_wwmath");
 
+        // --- p1w1-small ---
+        // LatchRestore.h, Overridable.h and Override.h, unchanged, through
+        // differential/wrap_latch_override.cpp. The only stand-in is
+        // shim/Common/GameMemory.h (MemoryPoolObject, as in the other builds).
+        let mut lo = cc::Build::new();
+        base(&mut lo);
+        lo.include(&shim)
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .file(dif.join("wrap_latch_override.cpp"));
+        lo.compile("upstream_latch_override");
+
+        // STLTypedefs.h, unchanged, through differential/wrap_stl_typedefs.cpp,
+        // with AsciiString.cpp unchanged in the same build (its out-of-line
+        // functions, e.g. removeLastChar). The real AsciiString.h is built as
+        // in the AsciiString build (the classes renamed by macro, so this
+        // build's AsciiString cannot be linked against another's). shim_stl supplies the BaseType and Trig
+        // forwarders (the real BaseType.h is MSVC-only), an opaque declaration
+        // of the three enums STLTypedefs.h forward-declares without a base, and
+        // a UnicodeString with compareNoCase (which only aborts if called).
+        let shim_stl = dif.join("shim_stl");
+        let mut stl = cc::Build::new();
+        base(&mut stl);
+        stl.define("AsciiString", Some("StlTypedefsAsciiString"))
+            .define("UnicodeString", Some("StlTypedefsUnicodeString"))
+            .define("TheDynamicMemoryAllocator", Some("StlTypedefsAllocator"))
+            .include(&shim_stl)
+            .include(dif.join("shim_ascii"))
+            .include(dif.join("shim_dict"))
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .flag("-include")
+            .flag(shim_stl.join("stl_prelude.h").to_str().expect("UTF-8 path"))
+            .file(dif.join("wrap_stl_typedefs.cpp"))
+            .file(sys.join("AsciiString.cpp"));
+        stl.compile("upstream_stl_typedefs");
+
+        // SubsystemInterface.cpp unchanged, through differential/wrap_subsystem_interface.cpp.
+        // shim_subsys holds the PreRTS.h of this unit, stand-ins for INI.h and
+        // Xfer.h (their bodies abort; this build passes no INI paths), and
+        // forwarders to the shim tree for every header the real
+        // SubsystemInterface.h chain includes except SubsystemInterface.h itself,
+        // which must be the real one.
+        let mut sub = cc::Build::new();
+        base(&mut sub);
+        sub.include(dif.join("shim_subsys"))
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .file(dif.join("wrap_subsystem_interface.cpp"))
+            .file(sys.join("SubsystemInterface.cpp"));
+        sub.compile("upstream_subsystem_interface");
+        // --- end p1w1-small ---
+
         for p in [
             "differential",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/RandomValue.cpp",

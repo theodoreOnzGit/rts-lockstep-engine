@@ -333,4 +333,12 @@ extern "C" {
     pub fn ref_m3_solve(m: *mut c_float) -> c_int;
     pub fn ref_m3_eq(a: *const c_float, b: *const c_float) -> c_int;
     pub fn ref_m3_static(which: c_int, out: *mut c_float);
+    // --- p1w1-small ---
+    // LatchRestore.h and Overridable.h/Override.h (wrap_latch_override.cpp)
+    pub fn ref_latch_restore(pair: c_int, ops: *const c_int, n: c_int, out: *mut c_int, cap: c_int) -> c_int;
+    pub fn ref_overridable_chains(spec: *const c_int, n: c_int, out: *mut c_int, cap: c_int) -> c_int;
+    // STLTypedefs.h comparators (wrap_stl_typedefs.cpp)
+    pub fn ref_stl_compare(a: *const c_char, ka: c_int, b: *const c_char, kb: c_int, out: *mut c_int);
+    // SubsystemInterface.h/.cpp (wrap_subsystem_interface.cpp)
+    pub fn ref_subsys_run(ops: *const c_int, n: c_int, out: *mut c_char, cap: c_int) -> c_int;
 }
