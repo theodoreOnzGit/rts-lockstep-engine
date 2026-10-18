@@ -86,7 +86,7 @@ what it translates from `GameLogic.cpp`, `Object.cpp`, `PlayerList.cpp` and
 | `Object` (layer 8) | Grow `world::object::Object` in place (it is the shell). Keep the contract below. Its `ThingContext` (ground height, gravity) is built from `world.terrain` and global data as a sibling-field borrow inside a `World` method. |
 | an update module (layer 9) | Add a variant to `UpdateBody` and an arm to `UpdateBody::update`, in a `// --- p1wN-name ---` block. Its `update(&mut self, world: &mut World, me: UpdateHandle) -> UpdateSleepTime` is your port. |
 | `Player`, `Team` (layer 7) | Fill `world::player::Player`, `world::team::{Team, TeamPrototype}` in place; keep the arena APIs (`get_nth`, `set_local_player`, `allocate_team_id`, `recover_counters`). Their `becomingLocalPlayer(..)`, EVA, radar and UI calls are `ClientEvent`s. |
-| `Weapon`, `Locomotor`, `PartitionManager` | Plain functions or structs taking `&mut World`/`&World` plus ids. `PartitionManager` becomes a field of `World` (add it in a marker block) and its queries return ids. |
+| `Weapon`, `Locomotor`, `PartitionManager` | Plain functions or structs taking `&mut World`/`&World` plus ids. `PartitionManager` becomes a field of `World` (add it in a marker block) and its queries return ids. **`PartitionManager` is done (wave 6, `p1w6-partition`): `world.partition`, see "The partition manager" below.** |
 | a hook | The `World::hook_*` methods are the places `destroyObject`, `processDestroyList` and the end of frame call into later layers; fill them in place. `Hook` and `world.hook_log` pin the order in tests. |
 | a new client call | Add a `ClientEvent` variant naming the upstream call it replaces. |
 
@@ -211,6 +211,74 @@ onto the world queue in order. `Money::deposit/withdraw` and
   world concern; unchanged. (It is a `dyn` object in existing code, from before
   this wave's rule.)
 
+## The partition manager (`logic::world::partition`, wave 6)
+
+`PartitionManager.h/.cpp` (7,454 lines) is `world.partition`, a
+`PartitionManager` (layer 8). It owns the cell grid, every object's footprint in
+it, the dirty list and the collision pass, the **shroud and fog of war** and the
+**threat and value maps** of every player, and the queries (closest object,
+range with its sort orders and 33 filters, potential collisions, distances,
+line of sight, cell walks, `findPositionAround`). Files: `collide` (shape tests,
+distance procs), `cell`, `data`, `manager` (grid, registration, `update`),
+`shroud`, `query`, `filters`, `xfer`, `scenario` (a table-driven host for tests).
+
+**How it reaches the rest of the game.** Objects are `ObjectId`s. What upstream
+reads from `Object`, `Player`, `Team`, `TheTerrainLogic`, `TheAI`,
+`TheActionManager`, `TheGlobalData` and the client comes through two generic
+traits, `PartitionHost` (the clock, the terrain, the players, an object's
+position/orientation/shape/kind/status, the two re-entrant callbacks
+`onPartitionCellChange` and `onCollide`, the random generator, the pathfinder
+questions of `findPositionAround`) and `PartitionFilterHost` (what the 33
+filters ask an object). Static dispatch, no trait objects. The `&mut self`
+callbacks receive the manager (`&mut PartitionManager`) because upstream's
+callee calls straight back into `ThePartitionManager` (a collision handler
+unregisters objects; a cell change looks and unlooks). So the manager is **checked
+out of `World` for the call**, as the terrain is:
+`let mut pm = std::mem::take(&mut world.partition); pm.update(&mut adapter);
+world.partition = pm;` where `adapter` borrows the other `World` fields. Writing
+that adapter is the first job once `Object` has its fields (the layer-8 Object
+agent, or layer 12): each method names the upstream call it replaces.
+
+| host question | answered by |
+|---|---|
+| position, orientation, `GeometryInfo`, kind mask, status bits, destroyed | `Object` / `Thing` |
+| player mask, count, local player, relationships, `getPlayersWithRelationship` | `Player`, `PlayerList`, `Team` (layer 7) |
+| ground height, extent, line of sight, cliffs, water, layers | `TerrainLogic` (already `world.terrain`) |
+| pathfinder cell types, `doesPathExist`, `isViewBlockedByObstacle` | the pathfinder (layer 10) |
+| contain / stealth / body / AI facts for the filters, action-manager checks | modules (layer 9), `ActionManager`, `Squad` |
+| `m_partitionCellSize`, `m_unlookPersistDuration` | global data (layer 4, `GlobalData`) |
+
+**Cut points (client).** `TheDisplay`/`TheRadar` shroud writes and the
+`TheGhostObjectManager` calls are `PartitionClientEvent`s (forwarded as
+`ClientEvent::Partition` by `World::flush_partition_events`, which
+`take_client_events` calls). The ghost object itself is the host's
+(`add_ghost_object` decides whether a building gets one); the manager keeps the
+ghost's geometry, because a ghost-only module still occupies cells, and emits
+`GhostSnapShot`/`GhostFreeSnapShot`/`GhostRemoved`/`GhostParentGone`. Debug
+drawing (`addIcon`, the threat-map overlay) and the perf counters are not translated.
+
+**Simulation-state orders reproduced exactly.** Every intrusive list (the
+cell's intersections, the module list, the dirty list, the contact list) is
+prepended to and drained as upstream does; `m_radiusVec` is built in the
+double-loop order; a range query appends to a `SimpleObjectIterator`, which
+prepends, so the unsorted result is the reverse of the visit order and
+`iterateAllObjects` lists the oldest registration first; the merge sort of
+`logic::object_iter` decides ties.
+
+**Upstream quirks kept, found by the differential test or by reading.** The
+grid of a 400-unit map with 40-unit cells is 11 x 11, not 10 x 10:
+`REAL_TO_INT_CEIL(10.0)` is `fast_float_ceil(10.0)`, which adds 0.99999994 and
+rounds to 11 in `float`. `calcMaxCoiForShape` has no `break` after the sphere
+and cylinder case, so every shape is sized by the box formula.
+`PartitionFilterPlayerAffiliation` takes the `PlayerList.h` flags
+(`ALLOW_ENEMIES = 4`), not `PartitionFilterRelationship`'s (`1 << ENEMIES = 1`).
+`getNearestGroupWithValue` passes `valueRequired` where it means `greaterThan`.
+`iterateCellsBreadthFirst` expands the neighbours of the cell processed *before*
+the one it pops, and tests `curY + 1 > 0` for `curY + 1 < height`, which reads out
+of bounds on the last row (here: skipped, and reported to the caller).
+`DISABLE_INVALID_PREVENTION` is defined, so `OBJECTSHROUD_INVALID_BUT_PREVIOUS_VALID`
+is never produced; `FASTER_GCO` is defined, so `CellOutwardIterator` is dead.
+
 ## Verification
 
 - Unit tests in each file (`cargo test --release --lib world`).
@@ -239,8 +307,11 @@ where upstream registers an object no lookup can find.
 - `Object`'s real fields and `Thing` base; `BehaviorModule` lists beyond the
   update-capable ones (destroy/die/damage/create interfaces dispatch).
 - The `hook_*` bodies (layers 7-10), `attempt_damage` -> `BodyModule`.
-- `PartitionManager` (a `World` field), the pathfinder, the AI, `ScriptEngine`,
-  `GameLogic::update`'s remaining steps and `GameLogic::xfer`/CRC (layer 12).
+- ~~`PartitionManager` (a `World` field)~~ **CORRECTED 2026-10-18** (wave 6,
+  `p1w6-partition`): translated, see "The partition manager". Still left: the
+  pathfinder, the AI, `ScriptEngine`, `GameLogic::update`'s remaining steps and
+  `GameLogic::xfer`/CRC (layer 12), and the `World` implementation of the
+  partition host traits (needs the real `Object`).
 - `Player`/`Team` contents; the `TeamFactory` creation functions.
 - The `GameSetup` struct (network slots), and the audio-length table loader.
 - `popSleepyUpdate` is translated but unused (upstream never calls it).

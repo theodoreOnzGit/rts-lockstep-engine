@@ -31,3 +31,7 @@ pub mod update_body;
 
 pub use game_logic::{Hook, World, WorldError};
 pub use ids::{ObjectId, PlayerIndex, TeamId, INVALID_ID};
+
+// --- p1w6-partition ---
+pub mod partition;
+// --- end p1w6-partition ---

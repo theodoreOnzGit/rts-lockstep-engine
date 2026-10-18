@@ -853,3 +853,23 @@ extern "C" {
     pub fn ref_world_run(prog: *const c_int, n_prog: c_int, out: *mut c_uint, cap: c_int) -> c_int;
 }
 // --- end p1w5-world ---
+
+// --- p1w6-partition ---
+extern "C" {
+    // PartitionManager.cpp (wrap_partition.cpp): a program on a fresh PartitionManager over an installed
+    // scenario; the encodings are documented in tests/differential_partition.rs. Returns the words
+    // written, -1 if they do not fit, -3 for an unknown operation, -5 if Radar's calls differ from Display's.
+    pub fn ref_partition_run(
+        ig: *const c_int,
+        fg: *const c_float,
+        rel: *const c_uchar,
+        io: *const c_int,
+        fo: *const c_float,
+        n_ops: c_int,
+        ops: *const c_int,
+        opf: *const c_float,
+        out: *mut c_uint,
+        cap: c_int,
+    ) -> c_int;
+}
+// --- end p1w6-partition ---

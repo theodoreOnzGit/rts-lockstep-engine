@@ -58,6 +58,9 @@ fn event_pair(e: &ClientEvent) -> (u32, u32) {
         ClientEvent::ObjectDestroyed { .. } | ClientEvent::Audio { .. } | ClientEvent::Terrain(_) => {
             unreachable!("the money code makes only MoneySound events")
         }
+        // --- p1w6-partition ---
+        ClientEvent::Partition(_) => unreachable!("the money code makes only MoneySound events"),
+        // --- end p1w6-partition ---
     }
 }
 

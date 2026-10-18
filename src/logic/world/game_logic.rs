@@ -77,6 +77,9 @@ use crate::logic::world::player::PlayerArena;
 use crate::logic::world::sleepy::{SleepyScheduler, UpdateHandle, UpdateTraceEntry};
 use crate::logic::world::team::TeamArena;
 use crate::logic::world::update_body::UpdateBody;
+// --- p1w6-partition ---
+use crate::logic::world::partition::PartitionManager;
+// --- end p1w6-partition ---
 
 /// What the world refuses (each is a crash or undefined behaviour upstream).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -134,6 +137,11 @@ pub struct World {
     pub events: ClientEventQueue,
     /// The values logic reads from the client.
     pub reads: ClientReads,
+    // --- p1w6-partition ---
+    /// `ThePartitionManager`: the spatial grid and the shroud. Checked out with
+    /// `std::mem::take` for its own `update` (see `world::partition`).
+    pub partition: PartitionManager,
+    // --- end p1w6-partition ---
     /// When `Some`, the hooks append themselves (see [`Hook`]).
     pub hook_log: Option<Vec<Hook>>,
     /// `m_frame`.
@@ -168,6 +176,9 @@ impl World {
             terrain: TerrainLogic::default(),
             events: ClientEventQueue::new(),
             reads: ClientReads::default(),
+            // --- p1w6-partition ---
+            partition: PartitionManager::new(),
+            // --- end p1w6-partition ---
             hook_log: None,
             frame: 0,
             next_object_id: 1,
@@ -559,9 +570,21 @@ impl World {
         self.events.extend(ev.into_iter().map(ClientEvent::Terrain));
     }
 
+    // --- p1w6-partition ---
+    /// Moves the partition manager's pending client calls (shroud writes, ghost
+    /// object calls) onto the client queue, in order.
+    pub fn flush_partition_events(&mut self) {
+        let ev = self.partition.take_client_events();
+        self.events.extend(ev.into_iter().map(ClientEvent::Partition));
+    }
+    // --- end p1w6-partition ---
+
     /// The client's call after each logic frame: every pending event.
     pub fn take_client_events(&mut self) -> Vec<ClientEvent> {
         self.flush_terrain_events();
+        // --- p1w6-partition ---
+        self.flush_partition_events();
+        // --- end p1w6-partition ---
         self.events.drain()
     }
 
