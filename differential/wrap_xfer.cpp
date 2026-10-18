@@ -27,8 +27,12 @@
 #include "Common/Snapshot.h"
 
 /* ---- stand-ins for the engine singletons the shims declare. The functions
-** that use the lookups (xferMapName, xferScienceType/Vec, xferKindOf,
-** xferUpgradeMask) are NOT translated and NOT exercised; reaching them aborts. */
+** that use the lookups (xferMapName, xferScienceType/Vec, xferUpgradeMask)
+** are NOT translated and NOT exercised; reaching them aborts. xferKindOf's
+** two lookups forward to the REAL KindOfMaskType (BitFlags<KINDOF_COUNT>,
+** KindOf.cpp's names) compiled in the BitFlags build (wrap_flags.cpp). */
+extern "C" const char *ref_kindof_name_from_single_bit(int i);
+extern "C" int ref_kindof_single_bit_from_name(const char *token);
 ScienceStore *TheScienceStore = 0;
 UpgradeCenter *TheUpgradeCenter = 0;
 static GameState theShimGameState;
@@ -43,8 +47,8 @@ AsciiString UpgradeTemplate::getUpgradeName() const { abort(); }
 UpgradeTemplate *UpgradeTemplate::friend_getNext() { abort(); }
 UpgradeTemplate *UpgradeCenter::firstUpgradeTemplate() { abort(); }
 const UpgradeTemplate *UpgradeCenter::findUpgrade(const AsciiString &) { abort(); }
-AsciiString KindOfMaskType::getNameFromSingleBit(int) { abort(); }
-int KindOfMaskType::getSingleBitFromName(const char *) { abort(); }
+AsciiString KindOfMaskType::getNameFromSingleBit(int i) { return AsciiString(ref_kindof_name_from_single_bit(i)); }
+int KindOfMaskType::getSingleBitFromName(const char *token) { return ref_kindof_single_bit_from_name(token); }
 AsciiString GameState::realMapPathToPortableMapPath(const AsciiString &) const { abort(); }
 AsciiString GameState::portableMapPathToRealMapPath(const AsciiString &) const { abort(); }
 void GameState::addPostProcessSnapshot(Snapshot *) { ++m_postProcessCount; }
@@ -244,6 +248,23 @@ int ref_xfer_run(int kind, const char *path, const unsigned *script, int n, unsi
 	** warn and close; the test reads the files afterwards) */
 	try { if (kind == 1 || kind == 2 || kind == 3) x->close(); } catch (...) {}
 	return lg.n;
+}
+
+/* Xfer::xferKindOf(&value) on a fresh xfer of `kind` (0 XferCRC, 1 XferSave
+** to path, 2 XferLoad from path): returns 0 or the XferStatus thrown; *value
+** after the call into out[0], the CRC (kind 0) into out[1]. */
+int ref_xfer_kind_of(int kind, const char *path, int value, int *out)
+{
+	XferCRC crcX; XferSave saveX; XferLoad loadX;
+	Xfer *x = kind == 0 ? (Xfer *)&crcX : kind == 1 ? (Xfer *)&saveX : (Xfer *)&loadX;
+	KindOfType k = (KindOfType)value;
+	int status = 0;
+	x->open(AsciiString(path));
+	try { x->xferKindOf(&k); } catch (XferStatus s) { status = (int)s; }
+	x->close();
+	out[0] = (int)k;
+	out[1] = kind == 0 ? (int)crcX.getCRC() : 0;
+	return status;
 }
 
 } /* extern "C" */

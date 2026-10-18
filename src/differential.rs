@@ -63,6 +63,9 @@ extern "C" {
         cap: c_int,
     ) -> c_int;
 
+    // Xfer::xferKindOf, with the real KindOfMaskType lookups (wrap_xfer.cpp, wrap_flags.cpp)
+    pub fn ref_xfer_kind_of(kind: c_int, path: *const c_char, value: c_int, out: *mut c_int) -> c_int;
+
     // ArchiveFile.cpp, ArchiveFileSystem.cpp, Win32BIGFile(System).cpp
     pub fn ref_big_reset();
     pub fn ref_big_add_local(name: *const c_char, data: *const c_char, len: c_int);

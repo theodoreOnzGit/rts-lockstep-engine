@@ -238,6 +238,11 @@ int ref_flags_enum_values(int which, long long *out, int cap)
 	return n;
 }
 
+/* The two KindOfMaskType lookups Xfer::xferKindOf calls (wrap_xfer.cpp's
+** stand-in class forwards to these). */
+const char *ref_kindof_name_from_single_bit(int i) { return KindOfMaskType::getNameFromSingleBit(i); }
+int ref_kindof_single_bit_from_name(const char *token) { return KindOfMaskType::getSingleBitFromName(token); }
+
 /* KINDOFMASK_FS after initKindOfMasks(), DISABLEDMASK_ALL after
 ** initDisabledMasks(): which 0, 1 */
 void ref_flags_globals(int which, W *out)

@@ -540,3 +540,64 @@ per_type!(armor_set_flags, armor_set::ArmorSetNames, 4, "ArmorSetFlags", 305);
 per_type!(weapon_set_flags, weapon_set_flags::WeaponSetNames, 5, "WeaponSetFlags", 306);
 per_type!(special_power_mask_type, special_power_mask_type::SpecialPowerNames, 6, "SpecialPowerMaskType", 307);
 
+
+/// `Xfer::xferKindOf` (Xfer.cpp, with the real `KindOfMaskType` lookups, see
+/// `differential/wrap_xfer.cpp`) against `Xfer::xfer_kind_of`: CRC values,
+/// saved bytes, and loads of those bytes and of files with unknown names
+/// (which leave the value unchanged). Values -5..=120 and 2,000 random ints.
+/// Planted bug: an unknown name on load sets `KINDOF_INVALID`.
+#[test]
+fn xfer_kind_of_matches() {
+    let _turn = CPP_GLOBALS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut g = Gen::new(310);
+    let path = std::env::temp_dir().join(format!("rts-lockstep-kindof-{}.bin", std::process::id()));
+    let cpath = CString::new(path.to_str().expect("UTF-8 temp path")).expect("no NUL");
+    let mut ok = Check::new("Xfer::xferKindOf");
+    let mut bug = Check::new("Xfer::xferKindOf");
+    let values: Vec<i32> = (-5..=120).chain((0..2000).map(|_| g.i32())).collect();
+    for (k, &v) in values.iter().enumerate() {
+        // CRC
+        let mut out = [0i32; 2];
+        let st = unsafe { cpp::ref_xfer_kind_of(0, cpath.as_ptr(), v, out.as_mut_ptr()) };
+        let mut x = XferCrc::new_without_nan_guard();
+        x.open(b"x").expect("open");
+        let mut r = v;
+        x.xfer_kind_of(&mut r).expect("crc");
+        ok.eq((0, r, x.get_crc()), (st, out[0], out[1] as u32), || format!("CRC of {v}"));
+        // save
+        let st = unsafe { cpp::ref_xfer_kind_of(1, cpath.as_ptr(), v, out.as_mut_ptr()) };
+        let saved = std::fs::read(&path).expect("read C++ save");
+        let mut xs = XferSave::new();
+        xs.open(b"x").expect("open");
+        let mut r = v;
+        xs.xfer_kind_of(&mut r).expect("save");
+        xs.close().expect("close");
+        ok.eq((0, xs.bytes().to_vec()), (st, saved.clone()), || format!("save of {v}"));
+        // load: the saved file, or one with an unknown name
+        let mut file = saved;
+        if k % 3 == 1 && file.len() > 2 {
+            let last = file.len() - 1;
+            file[last] = b'~';
+        }
+        std::fs::write(&path, &file).expect("write");
+        let start = (k as i32 % 7) - 1;
+        let st = unsafe { cpp::ref_xfer_kind_of(2, cpath.as_ptr(), start, out.as_mut_ptr()) };
+        let mut xl = XferLoad::new(file.clone());
+        xl.open(b"x").expect("open");
+        let mut r = start;
+        let rst = match xl.xfer_kind_of(&mut r) {
+            Ok(()) => 0,
+            Err(e) => e as i32,
+        };
+        ok.eq((rst, r), (st, out[0]), || format!("load of {file:?} from {start}"));
+        let wrong = if rst == 0 && r == start && kind_of::KindOfMaskType::get_single_bit_from_name(&file[2..]) == -1 {
+            -1
+        } else {
+            r
+        };
+        bug.eq((rst, wrong), (st, out[0]), || format!("case {k}"));
+    }
+    let _ = std::fs::remove_file(&path);
+    ok.finish();
+    bug.finish_planted();
+}

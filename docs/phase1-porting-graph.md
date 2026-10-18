@@ -108,8 +108,9 @@ family (`Xfer`, `XferCRC`, `XferDeepCRC`, `XferSave`, `XferLoad`, `Snapshot`),
 the INI reader core, `DataChunk` (reader), the `.big` file system, and the
 damage/death flag parts of `Damage.h`. **Partly done** and to be finished in
 their layers: `INI.cpp`'s 62 block handlers and the field parsers that look
-names up in game systems (layers 4-5), `Xfer`'s `xferKindOf`,
-`xferUpgradeMask`, `xferScienceType`, `xferMapName` (layers 3-4),
+names up in game systems (layers 4-5), `Xfer`'s ~~`xferKindOf`,~~
+`xferUpgradeMask`, `xferScienceType`, `xferMapName` (layers 3-4; `xferKindOf`
+done with layer 3),
 `Damage.cpp`'s `DamageInfo` and its xfer (layer 4).
 
 ### 1. Value types and enums (2,241 lines + BaseType.h)

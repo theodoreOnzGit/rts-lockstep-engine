@@ -43,15 +43,17 @@
 //! # Not translated (each needs an engine subsystem that is not here yet)
 //!
 //! `xferMapName` (`TheGameState` map-path translation), `xferScienceType`,
-//! `xferScienceVec` (`TheScienceStore`), `xferKindOf` (`KindOfMaskType` name
-//! table) and `xferUpgradeMask` (`TheUpgradeCenter`). Their CRC branches only
-//! hash the raw value, but their save/load branches go through those name
-//! tables, so they are left whole until the tables exist.
+//! `xferScienceVec` (`TheScienceStore`) and `xferUpgradeMask`
+//! (`TheUpgradeCenter`). Their CRC branches only hash the raw value, but
+//! their save/load branches go through those name tables, so they are left
+//! whole until the tables exist. (`xferKindOf` was added in Phase 1 with the
+//! `KindOfMaskType` names, [`super::kind_of`].)
 
 use super::base_type::{
     Coord2D, Coord3D, ICoord2D, ICoord3D, IRegion2D, IRegion3D, RGBAColorInt, RGBAColorReal, RGBColor, RealRange,
     Region2D, Region3D,
 };
+use super::kind_of::{KindOfMaskType, KindOfType};
 use crate::ww::matrix3d::Matrix3D;
 
 /// `typedef UnsignedByte XferVersion`.
@@ -411,6 +413,39 @@ pub trait Xfer {
     /// `xferUser`: raw bytes.
     fn xfer_user(&mut self, data: &mut [u8]) -> XferResult<()> {
         self.xfer_implementation(data)
+    }
+    /// `xferKindOf` (version 1). Save: the kind's name as an `AsciiString`
+    /// (`getNameFromSingleBit`; an index outside the table gives `NULL`,
+    /// which saves the empty string). Load: the name read, looked up with
+    /// `getSingleBitFromName`; **an unknown name leaves `*kind` unchanged**
+    /// and is not an error (upstream quirk, kept). CRC: the 4 bytes of the
+    /// `int`-sized enum.
+    fn xfer_kind_of(&mut self, kind: &mut KindOfType) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        self.xfer_version(&mut version, current)?;
+        match self.get_xfer_mode() {
+            XferMode::Save => {
+                let mut name = KindOfMaskType::get_name_from_single_bit(*kind).unwrap_or("").as_bytes().to_vec();
+                self.xfer_ascii_string(&mut name)
+            }
+            XferMode::Load => {
+                let mut name = Vec::new();
+                self.xfer_ascii_string(&mut name)?;
+                let bit = KindOfMaskType::get_single_bit_from_name(&name);
+                if bit != -1 {
+                    *kind = bit;
+                }
+                Ok(())
+            }
+            XferMode::Crc => {
+                let mut b = kind.to_le_bytes();
+                self.xfer_implementation(&mut b)?;
+                *kind = KindOfType::from_le_bytes(b);
+                Ok(())
+            }
+            XferMode::Invalid => Err(XferStatus::ModeUnknown),
+        }
     }
     /// `xferMatrix3D` (version 1): the twelve members, row by row.
     fn xfer_matrix3d(&mut self, mtx: &mut Matrix3D) -> XferResult<()> {
