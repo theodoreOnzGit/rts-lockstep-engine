@@ -33,3 +33,7 @@ pub mod thing;
 // --- p1w3-modules ---
 pub mod module;
 // --- end p1w3-modules ---
+// --- p1w4-polygon ---
+pub mod map_object;
+pub mod polygon_trigger;
+// --- end p1w4-polygon ---

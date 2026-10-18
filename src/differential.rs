@@ -751,3 +751,32 @@ extern "C" {
     ) -> c_int;
 }
 // --- end p1w3-modules ---
+// --- p1w4-polygon ---
+extern "C" {
+    // PolygonTrigger.cpp (differential/wrap_polygon_trigger.cpp): the parse, the chain
+    // written back, and the queries of each trigger. Returns the log length, or -1.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ref_polygon_run(
+        data: *const c_char,
+        len: c_int,
+        water_x: c_float,
+        water_y: c_float,
+        write_id: c_uint,
+        queries: *const c_int,
+        nq: c_int,
+        log: *mut c_uchar,
+        log_cap: c_int,
+        log_len: *mut c_int,
+        inside: *mut c_uchar,
+        centers: *mut c_uint,
+        radii: *mut c_uint,
+        trig_cap: c_int,
+        nt: *mut c_int,
+    ) -> c_int;
+
+    // MapUtil.cpp's ParseObjectDataChunk (differential/wrap_map_object.cpp): the objects
+    // at their deletion and the waypoint map. Returns the parse's result (1 or 0), 3 with
+    // the thrown ErrorCode in `code`, or -1.
+    pub fn ref_map_object_run(data: *const c_char, len: c_int, log: *mut c_uchar, cap: c_int, log_len: *mut c_int, code: *mut c_uint) -> c_int;
+}
+// --- end p1w4-polygon ---
