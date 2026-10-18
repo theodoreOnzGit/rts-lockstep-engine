@@ -80,6 +80,10 @@ the layer order of [`docs/phase1-porting-graph.md`](docs/phase1-porting-graph.md
 | `common::special_power` | `Include/Common/SpecialPower.h`, `Source/Common/RTS/SpecialPower.cpp`, `Source/Common/INI/INISpecialPower.cpp`: `SpecialPowerTemplate` (reload time, required science, timers, radius, flags, two sound names, academy type) with its `Overridable` chain (getters read the final override; `getAcademyClassificationType` reads the head, as upstream), `SpecialPowerStore` (lookup by name, id and index; `reset` removing overrides; the `SpecialPower` INI block in `Overwrite` and `CREATE_OVERRIDES` loads) and the `SPECIALPOWERMASK` helper functions. `RequiredScience` takes a function saying which name keys are sciences, until `Science` is translated. Left out for layers 7/8: `canUseSpecialPower(Object*, ...)`. A template copied from a `DefaultSpecialPower` that has an override chain is an error (upstream shares the pointer and frees it at `reset`) (Phase 1 layer 4) |
 | `common::academy_classification`, `common::audio_event_name` | `AcademyClassificationType` and its names (`Include/Common/AcademyStats.h`, `Source/Common/RTS/AcademyStats.cpp`; the rest of that file is layer 7), and the name of an `AudioEventRTS` as `INI::parseAudioEventRTS` sets it (`NoSound` changes nothing; the client resolves the name) (Phase 1 layer 4) |
 <!-- --- end p1w2-upgrade --- -->
+<!-- --- p1w3-thing --- -->
+| `logic::thing` | `Include/Common/Thing.h`, `Source/Common/Thing/Thing.cpp`: the position, orientation and world transform (`Matrix3D`), the cached direction vector and the cached heights above terrain and water, the three kind-of queries forwarded to the template, bone-to-world conversion. Cut points: the template (`ThingTemplateView`), the terrain and gravity (`ThingContext`), the reaction to a transform change (returned as `TransformChange`), and the owner's height calculation (the `_by` variants) (Phase 1 layer 5) |
+| `logic::object_iter` | `Include/GameLogic/ObjectIter.h`, `Source/GameLogic/Object/SimpleObjectIterator.cpp`: `SimpleObjectIterator` (insert at the head, walks with and without numeric keys, `makeEmpty`, `getCount`) and its bottom-up merge sort over the five `IterOrderType` orders, on an index arena. The build cost of an object is a closure argument (Phase 1 layer 5) |
+<!-- --- end p1w3-thing --- -->
 
 **Approved by the owner (2026-10-17):** `XferCRC`/`XferDeepCRC` carry a NaN guard
 (`common::xfer_crc::nan_guard`): a NaN `Real` xfered into a CRC panics in debug
@@ -203,6 +207,9 @@ cargo test --release --features differential
   field, a `calcTimeToBuild` float-to-int out of range, and a template copied
   from a `DefaultSpecialPower` that has an override chain.
 <!-- --- end p1w2-upgrade --- -->
+<!-- --- p1w3-thing --- -->
+- `differential/shim_thing/` and `differential/wrap_thing.cpp` compile `Thing.cpp` unchanged, and `differential/wrap_object_iter.cpp` compiles `SimpleObjectIterator.cpp` unchanged. The stand-ins (`ThingTemplate`, `GlobalData`, `TerrainLogic`, `Object`) are renamed by macro in the two wrappers, so they cannot clash with the other fixtures. `Coord3D` is copied verbatim from the real `BaseType.h` (its struct, found by build.rs), because `Thing.cpp` calls `Coord3D::crossProduct`. Results (`tests/differential_thing.rs`, `tests/differential_object_iter.rs`, 2026-10-18, upstream `0a05454d`): 4,000 random `Thing` programs (30,023 operations over 18 operation kinds, 0 mismatches) and 6,000 iterator programs (124,002 operations, 0 mismatches). Left out of the C++ as undefined upstream and checked to be `Err` in Rust: `Thing(NULL)`, `setPosition(NULL)`, and angles that `normalizeAngle` never reduces. All 27 planted bugs were caught.
+<!-- --- end p1w3-thing --- -->
 - The C++ is compiled with `-msse2 -mfpmath=sse -ffp-contract=off
   -fno-fast-math -fwrapv -fno-strict-aliasing`, so that its `float` arithmetic
   is the same IEEE single precision the Rust uses.

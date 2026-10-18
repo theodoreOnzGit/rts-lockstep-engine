@@ -1081,3 +1081,22 @@ against the unchanged `Science.cpp`, `RankInfo.cpp`, `INI.cpp`, `Xfer.cpp`.
 `addRootSciences` and is `Undefined::ScienceCycle`; a failed `Science` block stays in the
 store (with `SCIENCE_INVALID`), a failed new `Rank` block is not added.
 <!-- --- end p1w2-science --- -->
+<!-- --- p1w3-thing --- -->
+## Layer 5, part: Thing and SimpleObjectIterator (p1w3-thing)
+
+Translated: `logic::thing` (`Thing.h`, `Thing.cpp`) and `logic::object_iter`
+(`ObjectIter.h`, `SimpleObjectIterator.cpp`), upstream commit `0a05454d`.
+Cut points: the template and its kind-of queries (`ThingTemplateView`); the
+terrain and `TheGlobalData->m_gravity` (`ThingContext`); `reactToTransformChange`
+(returned `TransformChange`); the bridge-aware height calculation (`_by`
+closures); the object's build cost (closure of `sort`).
+
+Results (2026-10-18): `Thing` 4,000 programs, 30,023 operations, 0 mismatches;
+`SimpleObjectIterator` 6,000 programs, 124,002 operations, 0 mismatches. Planted
+bugs: 19 of 19 `Thing` and 8 of 8 iterator comparisons caught.
+
+Upstream quirk kept, not fixed: `setOrientation` on a
+`KINDOF_STICK_TO_TERRAIN_SLOPE` thing caches the position from before the
+terrain alignment, so `getPosition()` can disagree with the transform's
+translation. The differential test pins this behaviour.
+<!-- --- end p1w3-thing --- -->

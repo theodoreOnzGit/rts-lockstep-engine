@@ -624,3 +624,27 @@ extern "C" {
     ) -> c_int;
 }
 // --- end p1w2-upgrade ---
+// --- p1w3-thing ---
+extern "C" {
+    // Thing.cpp (wrap_thing.cpp): a program of operations on one Thing
+    pub fn ref_thing_run(
+        kind_words: *const u64,
+        terrain: *const c_float,
+        n_ops: c_int,
+        ops: *const c_int,
+        params: *const c_float,
+        out: *mut c_uint,
+        cap: c_int,
+    ) -> c_int;
+    // SimpleObjectIterator.cpp (wrap_object_iter.cpp): a program on one iterator
+    pub fn ref_object_iter_run(
+        n_objs: c_int,
+        costs: *const c_int,
+        n_ops: c_int,
+        ops: *const c_int,
+        nums: *const c_float,
+        out: *mut c_uint,
+        cap: c_int,
+    ) -> c_int;
+}
+// --- end p1w3-thing ---
