@@ -47,6 +47,18 @@ extern "C" {
     pub fn ref_int_trig(op: c_int, v: c_int) -> c_int;
     pub fn ref_trig_lookup(which: c_int, i: c_int) -> c_int;
 
+    // DiscreteCircle.cpp (wrap_discrete_circle.cpp)
+    pub fn ref_discrete_circle(
+        x: c_int,
+        y: c_int,
+        r: c_int,
+        edges: *mut c_int,
+        edge_cap: c_int,
+        calls: *mut c_int,
+        call_cap: c_int,
+        call_count: *mut c_int,
+    ) -> c_int;
+
     // QuickTrig.h / QuickTrig.cpp
     pub fn ref_qtrig(op: c_int, x: c_float) -> c_float;
     pub fn ref_qmag(x: c_float, y: c_float, z: c_float) -> c_float;

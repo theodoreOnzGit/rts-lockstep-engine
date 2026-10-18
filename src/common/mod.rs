@@ -8,6 +8,7 @@ pub mod bit_flags;
 pub mod crc;
 pub mod dict;
 pub mod disabled_types;
+pub mod discrete_circle;
 pub mod errors;
 pub mod game_common;
 pub mod game_type;

@@ -405,6 +405,7 @@ mod differential {
             .file(dif.join("wrap_crc.cpp"))
             .file(dif.join("wrap_trig.cpp"))
             .file(dif.join("wrap_quick_trig.cpp"))
+            .file(dif.join("wrap_discrete_circle.cpp"))
             .file(up.join("GameEngine/Source/Common/crc.cpp"));
         ge.compile("upstream_gameengine");
 
@@ -663,6 +664,7 @@ mod differential {
             "upstream/GeneralsMD/Code/GameEngine/Source/GameClient/GameText.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/NameKeyGenerator.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/Dict.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/Common/DiscreteCircle.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/BitFlags.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/WeaponSet.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/RTS/SpecialPower.cpp",

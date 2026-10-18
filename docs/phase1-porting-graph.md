@@ -451,6 +451,46 @@ are a context argument (`&mut World` or a frame number) instead of a global.
   translation reproduces the first and treats the second as an error.
 - **x87 precision.** `setFPMode()` on every logic entry (`FPUControl.h`):
   `SCOPE.md` section 3, unchanged.
+- **`std::sort` with ties.** Logic calls `std::sort` in one place,
+  `PartitionSolver::solve` (PartitionSolver.cpp 94, 97; used by
+  `PartitionManager` and `ScriptActions`). `std::sort` is not stable, so the
+  order of equal-sized entries is whatever the shipped STLport 4.x
+  introsort produced; a Rust (or libstdc++) sort orders ties differently.
+  Rust-to-Rust lockstep only needs one fixed algorithm, but agreement with
+  original replays needs STLport's (not in the repository; the
+  `stlport.diff` at its root names the files EA patched). Other logic sorts
+  are hand-written (`Dict`'s Shell sort, `SimpleObjectIterator`'s list merge
+  sort) and are translated as written.
+- **Found while testing layer 3** (added 2026-10-17): `XferLoad::xferAsciiString`
+  reads into a function-static buffer, so two loads on different threads
+  corrupt each other (the tests ran in parallel and caught it). The engine
+  loads on one thread; the Rust `XferLoad` has no shared buffer.
+- **The CRC of every `BitFlags`** (found in layer 3): `BitFlags::xfer` in
+  CRC mode hashes `sizeof(this)`, the size of the pointer: 4 bytes on Win32,
+  so only bits 0-31 of `KindOf`, `ObjectStatus`, `ModelCondition` and the
+  other flag sets enter the lockstep CRC. Reproduced as shipped
+  (`common::bit_flags`).
+
+## Progress (updated with each commit of this branch)
+
+| layer | translated so far | differential test |
+|---|---|---|
+| 1 | `BaseType.h` value types and templates; `GameType.h`/`.cpp`; `GameCommon.h` (all but the intrusive-list macros) and `GameCommon.cpp`; `Errors.h`; `SpecialPowerType.h`; `ThingSort.h`; `Powers.h`; `WeaponSetType.h`; `WeaponStatus.h`; `WeaponBonusConditionFlags.h`; `ObjectScriptStatusBits.h`; `DiscreteCircle` | `tests/differential_value_types.rs` |
+| 2 | `NameKeyGenerator`, `StaticNameKey`, `WellKnownKeys.h` | `tests/differential_name_key.rs` |
+| 3 | `BitFlags`/`BitFlagsIO` and all seven instantiations (`KindOf`, `ObjectStatusTypes`, `DisabledTypes`, `ModelState` flags, `ArmorSet` flags, `WeaponSetFlags`, `SpecialPowerMaskType`); `Dict`; `Xfer::xferKindOf` | `tests/differential_bit_flags.rs`, `tests/differential_dict.rs` |
+
+Still open in layers 1-3: `PartitionSolver` (see the `std::sort` hazard
+above), `Overridable`/`Override`, `LatchRestore` (layer 1);
+`AsciiString`/`UnicodeString` semantics, `STLTypedefs.h`,
+`SubsystemInterface` (layer 2); `SparseMatchFinder` (layer 3); folding
+`logic::damage`'s hand-written `DamageTypeFlags` into the generic
+`BitFlags`; moving `formats::data_chunk`'s name-keyed `Dict` stand-in onto
+`common::dict` and `common::name_key_generator`.
+
+One translation choice awaits the owner: `DiscreteCircle` shifts negative
+`Int`s left (`(1 - radius) << 1`), undefined before C++20 but the normal
+path of the function; it is translated as multiplication by 2, as MSVC (and
+C++20) define it, instead of as an error (`common::discrete_circle`).
 
 ## Differential-test routes, by rule
 

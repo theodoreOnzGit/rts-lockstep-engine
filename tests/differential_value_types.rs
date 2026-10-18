@@ -803,3 +803,90 @@ fn normalize_angle_and_attack_types_match() {
     ok.finish();
     bug.finish_planted();
 }
+
+/// `DiscreteCircle` (DiscreteCircle.cpp, `common::discrete_circle`): edges
+/// and draw calls for every radius 0..=600 at random centres, and 20,000
+/// random (centre, radius) pairs up to radius 5,000 and centres within
+/// +-2^20, plus centres near the `Int` limits. Inputs where upstream is
+/// undefined (a negative radius throws; `Int` overflow) are not sent to the
+/// C++; the Rust must return an error there. Planted bug: duplicate rows
+/// keep the first (narrowest) edge instead of the last.
+#[test]
+fn discrete_circle_matches() {
+    use rts_lockstep_engine::common::discrete_circle::*;
+    let mut g = Gen::new(108);
+    let mut ok = Check::new("DiscreteCircle edges and draw calls");
+    let mut bug = Check::new("DiscreteCircle edges and draw calls");
+    let mut undefined = 0u32;
+    let mut cases: Vec<(i32, i32, i32)> = (0..=600).map(|r| (g.i32() % 1000, g.i32() % 1000, r)).collect();
+    for _ in 0..20_000 {
+        let r = match g.below(4) {
+            0 => g.below(5001) as i32,
+            1 => -(g.below(5) as i32),
+            _ => g.below(64) as i32,
+        };
+        let (x, y) = match g.below(10) {
+            0 => (i32::MAX - g.below(100) as i32, i32::MIN + g.below(100) as i32),
+            1 => (g.i32(), g.i32()),
+            _ => ((g.i32() % (1 << 20)), (g.i32() % (1 << 20))),
+        };
+        cases.push((x, y, r));
+    }
+    for (x, y, r) in cases {
+        let rust = DiscreteCircle::new(x, y, r).and_then(|c| {
+            let mut calls = Vec::new();
+            c.draw_circle(|a, b, yy| calls.extend_from_slice(&[a, b, yy]))?;
+            Ok((c.get_edges().to_vec(), calls))
+        });
+        // Independent definedness check, in i64.
+        let (x6, y6, r6) = (i64::from(x), i64::from(y), i64::from(r));
+        let fits = |v: i64| v >= i64::from(i32::MIN) && v <= i64::from(i32::MAX);
+        let defined = r >= 0 && fits(2 * y6) && fits(2 * r6) && fits(x6 - r6) && fits(x6 + r6) && fits(y6 + r6) && fits(2 * y6 - (y6 + r6)) && fits(2 * y6 - y6);
+        let (edges, calls) = match rust {
+            Ok(v) => v,
+            Err(e) => {
+                assert!(!defined, "({x}, {y}, {r}): {e} on an input upstream defines");
+                undefined += 1;
+                continue;
+            }
+        };
+        assert!(defined, "({x}, {y}, {r}): Ok on an input upstream leaves undefined");
+        let mut ce = vec![0i32; 3 * 20_000];
+        let mut cc = vec![0i32; 6 * 20_000];
+        let mut ncalls = 0;
+        let n = unsafe {
+            cpp::ref_discrete_circle(x, y, r, ce.as_mut_ptr(), ce.len() as i32, cc.as_mut_ptr(), cc.len() as i32, &mut ncalls)
+        };
+        assert!(n >= 0, "buffers");
+        let flat: Vec<i32> = edges.iter().flat_map(|e| [e.y_pos, e.x_start, e.x_end]).collect();
+        ok.eq((flat.clone(), calls), (ce[..3 * n as usize].to_vec(), cc[..3 * ncalls as usize].to_vec()), || format!("({x}, {y}, {r})"));
+        // planted: keep the first edge of each row
+        let mut first: Vec<i32> = Vec::new();
+        let mut gen_edges = Vec::new();
+        {
+            let (mut xx, mut yy, mut d) = (0i64, r6, (1 - r6) * 2);
+            while yy >= 0 {
+                gen_edges.push([y6 + yy, x6 - xx, x6 + xx]);
+                if d + yy > 0 {
+                    yy -= 1;
+                    d -= yy * 2 - 1;
+                }
+                if xx > d {
+                    xx += 1;
+                    d += xx * 2 + 1;
+                }
+            }
+        }
+        let mut last_row = None;
+        for e in gen_edges {
+            if last_row != Some(e[0]) {
+                first.extend(e.iter().map(|&v| v as i32));
+                last_row = Some(e[0]);
+            }
+        }
+        bug.eq(first, ce[..3 * n as usize].to_vec(), || format!("({x}, {y}, {r})"));
+    }
+    println!("     DiscreteCircle: {undefined} inputs left out (negative radius or Int overflow; Rust returned Err)");
+    ok.finish();
+    bug.finish_planted();
+}
