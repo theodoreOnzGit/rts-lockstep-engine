@@ -503,6 +503,9 @@ are a context argument (`&mut World` or a frame number) instead of a global.
 <!-- --- p1w6-locomotor --- -->
 | 8 (wave 6, `p1w6-locomotor`) | `LocomotorTemplate`/`LocomotorStore`/`Locomotor`/`LocomotorSet` (`logic::locomotor`): the INI block with overrides, every movement function, Z behaviours, xfer. Cut points (`LocomotorHost`): object transform/status, `PhysicsBehavior` (forces, scrub, velocity getters), body damage state, `TerrainLogic` heights and water, `PartitionManager::getGroundOrStructureHeight`, `pathfinder()->validMovementTerrain`, frame, gravity | `tests/differential_locomotor.rs` (Locomotor.cpp compiled unchanged; call logs, object and locomotor state compared bit for bit after every frame) |
 <!-- --- end p1w6-locomotor --- -->
+<!-- --- p1w6-partition --- -->
+| 8 (wave 6, `p1w6-partition`) | `PartitionManager.h/.cpp` whole (`logic::world::partition`, `world.partition`): grid, `PartitionData` and COI lists, `getClosestObjects` ring table, `iterate*` with the merge sort, the 33 filters, shroud counters and the unlook queue, threat and value maps, store/restore fog, line of sight, `findPositionAround`, contact list, xfer. Cut points: `TheDisplay`, `TheGhostObjectManager` (events), `Object`/terrain/players/pathfinder (host traits) | `tests/differential_partition.rs` (whole file under clang++) |
+<!-- --- end p1w6-partition --- -->
 
 Layer 4, not translated: `RankInfo` (`GameLogic/System/RankInfo.cpp`).
 It needs `Overridable`/`Override` (layer 1, open), `UnicodeString` (layer 2,

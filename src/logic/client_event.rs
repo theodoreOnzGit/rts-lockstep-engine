@@ -21,6 +21,9 @@
 // --- p1w5-world ---
 use crate::logic::terrain_visual::TerrainVisualEvent;
 // --- end p1w5-world ---
+// --- p1w6-partition ---
+use crate::logic::world::partition::PartitionClientEvent;
+// --- end p1w6-partition ---
 
 /// Which of `MiscAudio`'s money sounds an event asks for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -74,4 +77,10 @@ pub enum ClientEvent {
     /// `logic::world::object_events`).
     Object(crate::logic::world::object_events::ObjectClientEvent),
     // --- end p1w6-object ---
+    // --- p1w6-partition ---
+    /// The partition manager's calls on `TheDisplay`, `TheRadar` and
+    /// `TheGhostObjectManager` ([`PartitionClientEvent`]), nested;
+    /// `World::flush_partition_events` moves them here, in order.
+    Partition(PartitionClientEvent),
+    // --- end p1w6-partition ---
 }

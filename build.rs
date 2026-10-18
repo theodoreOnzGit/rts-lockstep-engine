@@ -915,6 +915,128 @@ mod differential {
         }
         // --- end p1w4-thingtemplate ---
 
+        // --- p1w6-partition ---
+        // PartitionManager (differential/wrap_partition.cpp): PartitionManager.cpp, SimpleObjectIterator.cpp
+        // and Line2D.cpp are #included by the wrapper on differential/shim_partition (the stand-ins for the
+        // object world, players, terrain, pathfinder, client and ghost objects; each header says what it
+        // stands in for), with clang++ -fms-extensions as the other real-BaseType builds. The real
+        // PartitionManager.h, BitFlags (KindOf, ObjectStatusTypes, DisabledTypes), GameCommon.h,
+        // Geometry.h, ObjectIter.h, Snapshot.h, Xfer.h, DiscreteCircle.h and the WWMath Vector3 are used.
+        // Compiled HERE, ahead of the libraries it calls (GeometryInfo in upstream_geometry; Cos, Sin and
+        // DiscreteCircle in upstream_gameengine; the BitFlags names in upstream_flags; XferCRC in
+        // upstream_xfer; the BaseType asm transcriptions in upstream_basetype; Vector3 in upstream_wwmath),
+        // as the link order requires.
+        //
+        // Generated into OUT_DIR/partition_gen, every piece a verbatim cut or a mechanical edit of an
+        // upstream file, each edit asserted to match the stated number of times:
+        // - GameLogic/PartitionManager.h, a copy with two edits: (1) PartitionData::wasSeenByAnyPlayers
+        //   uses its `for` variable after the loop (MSVC 6 leaked it), so `Int i;` moves before the loop;
+        //   (2) the eight `friend void hLine...(...)` declarations are removed (MSVC made a friend
+        //   declaration visible to ordinary lookup, clang does not; they only gave access to protected
+        //   members, which the wrapper's `#define protected public` gives anyway);
+        // - PartitionManager_decl.cpp, a copy of PartitionManager.cpp with one edit: eight `static void
+        //   hLine...(Int, Int, Int, void *);` declarations after `static int cellValueProc(...);`, so the
+        //   uses above the (static) definitions find them;
+        // - save_code.h: `enum SaveCode` of GameState.h, verbatim (PartitionManager::xfer throws SC_INVALID_DATA);
+        // - map_xy_factor.h: the `#define MAP_XY_FACTOR` line of MapObject.h, verbatim.
+        {
+            let engine = up.join("GameEngine");
+            let gen = out_dir.join("partition_gen");
+            std::fs::create_dir_all(gen.join("GameLogic")).expect("create partition_gen");
+            let read = |p: std::path::PathBuf| std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+            let friends: Vec<(String, String, usize)> = [
+                ("hLineAddLooker", "playerIndex"),
+                ("hLineRemoveLooker", "playerIndex"),
+                ("hLineAddShrouder", "playerIndex"),
+                ("hLineRemoveShrouder", "playerIndex"),
+                ("hLineAddThreat", "threatValueParms"),
+                ("hLineRemoveThreat", "threatValueParms"),
+                ("hLineAddValue", "threatValueParms"),
+                ("hLineRemoveValue", "threatValueParms"),
+            ]
+            .iter()
+            .map(|(f, p)| (format!("\tfriend void {f}(Int x1, Int x2, Int y, void *{p});\n"), String::new(), 1))
+            .collect();
+            let mut header_edits: Vec<(&str, &str, usize)> = vec![(
+                "\t\tfor (Int i=0; i<MAX_PLAYER_COUNT; i++)\n\t\t\tif (m_everSeenByPlayer[i] && m_shroudedness[i] == OBJECTSHROUD_FOGGED)\n\t\t\t\treturn i;\n\t\treturn i;",
+                "\t\tInt i;\n\t\tfor (i=0; i<MAX_PLAYER_COUNT; i++)\n\t\t\tif (m_everSeenByPlayer[i] && m_shroudedness[i] == OBJECTSHROUD_FOGGED)\n\t\t\t\treturn i;\n\t\treturn i;",
+                1,
+            )];
+            for (a, b, n) in &friends {
+                header_edits.push((a.as_str(), b.as_str(), *n));
+            }
+            std::fs::write(
+                gen.join("GameLogic/PartitionManager.h"),
+                patch_copy(&engine.join("Include/GameLogic/PartitionManager.h"), "PartitionManager.h", &header_edits),
+            )
+            .expect("write PartitionManager.h copy");
+            let hline_names = ["hLineAddLooker", "hLineRemoveLooker", "hLineAddShrouder", "hLineRemoveShrouder", "hLineAddThreat", "hLineRemoveThreat", "hLineAddValue", "hLineRemoveValue"];
+            let decls: String = hline_names.iter().map(|n| format!("static void {n}(Int x1, Int x2, Int y, void *parms);\n")).collect();
+            let anchor_line = "static int cellValueProc(PartitionCell* cell, void* userData);\n";
+            let with_decls = format!("{anchor_line}{decls}");
+            std::fs::write(
+                gen.join("PartitionManager_decl.cpp"),
+                patch_copy(
+                    &engine.join("Source/GameLogic/Object/PartitionManager.cpp"),
+                    "PartitionManager.cpp",
+                    &[(anchor_line, with_decls.as_str(), 1)],
+                ),
+            )
+            .expect("write PartitionManager.cpp copy");
+            let game_state = read(engine.join("Include/Common/GameState.h"));
+            assert_eq!(game_state.matches("enum SaveCode").count(), 1, "GameState.h: enum SaveCode must occur once");
+            let a = game_state.find("enum SaveCode").expect("SaveCode start");
+            let rel = game_state[a..].find("\n};").expect("SaveCode end");
+            std::fs::write(
+                gen.join("save_code.h"),
+                format!(
+                    "/* generated by build.rs: verbatim from Common/GameState.h */\n#ifndef PM_GEN_SAVE_CODE_H\n#define PM_GEN_SAVE_CODE_H\n{}\n#endif\n",
+                    &game_state[a..a + rel + 3]
+                ),
+            )
+            .expect("write save_code.h");
+            let map_object = read(engine.join("Include/Common/MapObject.h"));
+            let factor: Vec<&str> = map_object.lines().filter(|l| l.starts_with("#define MAP_XY_FACTOR")).collect();
+            assert_eq!(factor.len(), 1, "MapObject.h: exactly one MAP_XY_FACTOR line");
+            std::fs::write(gen.join("map_xy_factor.h"), format!("/* generated by build.rs: verbatim from Common/MapObject.h */\n{}\n", factor[0])).expect("write map_xy_factor.h");
+
+            let mut pt = cc::Build::new();
+            base(&mut pt);
+            // -ftrivial-auto-var-init=zero: upstream leaves some automatic variables unset on some
+            // paths (the CollideLocAndNormal passed to onCollide when two nearly coincident boxes or
+            // cylinders collide has no location or normal in x and y); clang fills them with zero, the
+            // value the Rust gives, so that the defined part of the log can be compared.
+            pt.compiler("clang++")
+                .flag("-fms-extensions")
+                .flag("-fdelayed-template-parsing")
+                .flag("-ftrivial-auto-var-init=zero")
+                .include(&gen)
+                .include(dif.join("shim_partition"))
+                .include(dif.join("shim_flags"))
+                .include(dif.join("shim_ini"))
+                .include(dif.join("shim_terrain"))
+                .include(&shim)
+                .include(engine.join("Include"))
+                .include(up.join("Libraries/Include"))
+                .include(&ww)
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .include(&dif)
+                .file(dif.join("wrap_partition.cpp"));
+            pt.compile("upstream_partition");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/PartitionManager.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/PartitionManager.h",
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/SimpleObjectIterator.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameClient/Line2D.cpp",
+                "differential/wrap_partition.cpp",
+                "differential/shim_partition",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
+        // --- end p1w6-partition ---
+
         // --- p1w1-geometry ---
         // GeometryInfo: Geometry.cpp unchanged (differential/wrap_geometry.cpp),
         // with the INI build's headers and prelude. Compiled before the
