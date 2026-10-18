@@ -853,3 +853,13 @@ extern "C" {
     pub fn ref_world_run(prog: *const c_int, n_prog: c_int, out: *mut c_uint, cap: c_int) -> c_int;
 }
 // --- end p1w5-world ---
+
+// --- p1w6-object ---
+extern "C" {
+    // Object.cpp (wrap_object.cpp): a program on a fresh world of objects. `names` holds the four flag name
+    // tables ("count\nname\n..." each); the lines the run writes go to `out` (separated by '\n'). Returns their
+    // length, or minus the length needed when `cap` is too small. The encoding of the program is documented in
+    // tests/differential_object.rs.
+    pub fn ref_object_run(prog: *const c_uint, n_prog: c_int, names: *const c_char, n_names: c_int, out: *mut c_char, cap: c_int, verbose: c_int) -> c_int;
+}
+// --- end p1w6-object ---

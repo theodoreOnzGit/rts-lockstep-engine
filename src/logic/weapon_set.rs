@@ -154,6 +154,21 @@ impl WeaponTemplateSet {
         }
     }
 
+    // --- p1w6-object ---
+    /// A set for tests and the differential test, built without INI: the
+    /// conditions, and whether the primary slot has a weapon (a name key of
+    /// 1; no weapon store is consulted).
+    pub fn from_values(thing_template: Option<u16>, types: WeaponSetFlags, has_primary_weapon: bool) -> Self {
+        let mut s = WeaponTemplateSet::new();
+        s.thing_template = thing_template;
+        s.types = types;
+        if has_primary_weapon {
+            s.template[0] = Some(NameKeyType(1));
+        }
+        s
+    }
+    // --- end p1w6-object ---
+
     /// `clear()`: no conditions, no weapons, "by default, allow autochoosing
     /// from any CommandSource" and "weapon isn't preferred against anything
     /// in particular". (`m_thingTemplate` is not touched.)

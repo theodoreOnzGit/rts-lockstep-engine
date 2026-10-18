@@ -1429,6 +1429,130 @@ impl ThingTemplate {
     }
 }
 
+// --- p1w6-object ---
+/// The values of a template that `Object` (layer 8) reads, for building one
+/// without INI (the tests of `logic::world` and the differential test of
+/// `Object` use it; production code reads templates from INI). Every field
+/// has the constructor's default in [`ObjectTemplateValues::default`].
+#[derive(Clone, Debug)]
+pub struct ObjectTemplateValues {
+    /// `m_nameString`.
+    pub name: Vec<u8>,
+    /// `m_templateID`.
+    pub template_id: u16,
+    /// The `KindOf` bits set.
+    pub kind_of: Vec<crate::common::kind_of::KindOfType>,
+    /// `m_visionRange`.
+    pub vision_range: f32,
+    /// `m_shroudClearingRange` (-1 = use the vision range).
+    pub shroud_clearing_range: f32,
+    /// `m_shroudRevealToAllRange`.
+    pub shroud_reveal_to_all_range: f32,
+    /// `m_geometryInfo` (`None`: the constructor's).
+    pub geometry: Option<GeometryInfo>,
+    /// `m_energyProduction`.
+    pub energy_production: i32,
+    /// `m_energyBonus`.
+    pub energy_bonus: i32,
+    /// `m_buildCost`.
+    pub build_cost: u16,
+    /// `m_threatValue`.
+    pub threat_value: u16,
+    /// `m_crusherLevel`.
+    pub crusher_level: u8,
+    /// `m_crushableLevel`.
+    pub crushable_level: u8,
+    /// `m_transportSlotCount`.
+    pub transport_slot_count: i8,
+    /// `m_experienceValues`.
+    pub experience_values: [i32; 4],
+    /// `m_experienceRequired`.
+    pub experience_required: [i32; 4],
+    /// `m_isTrainable`.
+    pub is_trainable: bool,
+    /// `m_enterGuard`.
+    pub enter_guard: bool,
+    /// `m_occlusionDelay`.
+    pub occlusion_delay: u32,
+    /// `m_radarPriority`.
+    pub radar_priority: u8,
+    /// `m_commandSetString`.
+    pub command_set_string: Vec<u8>,
+    /// The behaviour modules' (class name, tag), in order.
+    pub behavior_modules: Vec<(Vec<u8>, Vec<u8>)>,
+    /// The weapon template sets: (the `WEAPONSET_*` conditions, has a weapon in the primary slot).
+    pub weapon_sets: Vec<(Vec<i32>, bool)>,
+}
+
+impl Default for ObjectTemplateValues {
+    fn default() -> Self {
+        ObjectTemplateValues {
+            name: Vec::new(),
+            template_id: 0,
+            kind_of: Vec::new(),
+            vision_range: 0.0,
+            shroud_clearing_range: -1.0,
+            shroud_reveal_to_all_range: 0.0,
+            geometry: None,
+            energy_production: 0,
+            energy_bonus: 0,
+            build_cost: 0,
+            threat_value: 0,
+            crusher_level: 0,
+            crushable_level: 0,
+            transport_slot_count: 0,
+            experience_values: [0; 4],
+            experience_required: [0; 4],
+            is_trainable: false,
+            enter_guard: false,
+            occlusion_delay: 0,
+            radar_priority: RADAR_PRIORITY_INVALID,
+            command_set_string: Vec::new(),
+            behavior_modules: Vec::new(),
+            weapon_sets: Vec::new(),
+        }
+    }
+}
+
+impl ThingTemplate {
+    /// A template with these values and the constructor's defaults for the rest.
+    pub fn from_object_values(v: &ObjectTemplateValues) -> ThingTemplate {
+        let mut t = ThingTemplate::new(v.occlusion_delay);
+        t.name_string = v.name.clone();
+        t.template_id = v.template_id;
+        t.kindof = KindOfMaskType::from_indices(&v.kind_of);
+        t.vision_range = v.vision_range;
+        t.shroud_clearing_range = v.shroud_clearing_range;
+        t.shroud_reveal_to_all_range = v.shroud_reveal_to_all_range;
+        if let Some(g) = &v.geometry {
+            t.geometry_info = g.clone();
+        }
+        t.energy_production = v.energy_production;
+        t.energy_bonus = v.energy_bonus;
+        t.build_cost = v.build_cost;
+        t.threat_value = v.threat_value;
+        t.crusher_level = v.crusher_level;
+        t.crushable_level = v.crushable_level;
+        t.transport_slot_count = v.transport_slot_count;
+        t.experience_values = v.experience_values;
+        t.experience_required = v.experience_required;
+        t.is_trainable = v.is_trainable;
+        t.enter_guard = v.enter_guard;
+        t.radar_priority = v.radar_priority;
+        t.command_set_string = v.command_set_string.clone();
+        for (name, tag) in &v.behavior_modules {
+            t.behavior_module_info.add_module_info(name, tag, ModuleInfoData::Client(ClientModuleData::default()), 0, false, false);
+        }
+        t.weapon_template_sets = v
+            .weapon_sets
+            .iter()
+            .map(|(flags, has)| WeaponTemplateSet::from_values(Some(v.template_id), crate::logic::weapon_set_flags::WeaponSetFlags::from_indices(flags), *has))
+            .collect();
+        t
+    }
+}
+// --- end p1w6-object ---
+
 // ---------------------------------------------------------------------------
 // isEquivalentTo
 // ---------------------------------------------------------------------------

@@ -137,6 +137,10 @@ const VALID_ALTITUDE_SEALEVEL: u32 = 0x04;
 /// `class Thing`. Upstream's `m_transform` is the true description of where
 /// the thing is; the other fields are caches of it. Nothing outside this
 /// module writes them.
+// --- p1w6-object ---
+// Clone and Debug: `Object` (which holds a `Thing`) is `Clone + Debug` for `World`.
+#[derive(Clone, Debug)]
+// --- end p1w6-object ---
 pub struct Thing<T> {
     template: Arc<T>,
     transform: Matrix3D,

@@ -236,9 +236,14 @@ where upstream registers an object no lookup can find.
 
 ## Left for later waves
 
-- `Object`'s real fields and `Thing` base; `BehaviorModule` lists beyond the
-  update-capable ones (destroy/die/damage/create interfaces dispatch).
-- The `hook_*` bodies (layers 7-10), `attempt_damage` -> `BodyModule`.
+- ~~`Object`'s real fields and `Thing` base; `BehaviorModule` lists beyond the
+  update-capable ones (destroy/die/damage/create interfaces dispatch).~~
+  **DONE 2026-10-18 (wave 6, `p1w6-object`)**: see "Object (layer 8)" below.
+- The `hook_*` bodies of layers 7, 9 and 10 (the Object-owned ones are filled:
+  destroy modules, `onDestroy`, `~Object`, `checkDisabledStatus`, stop-AI,
+  wall piece, special-power UI). ~~`attempt_damage` -> `BodyModule`~~ **DONE**:
+  `attempt_damage` is in `object_damage.rs` and sends `AttemptDamage` to the
+  body module.
 - `PartitionManager` (a `World` field), the pathfinder, the AI, `ScriptEngine`,
   `GameLogic::update`'s remaining steps and `GameLogic::xfer`/CRC (layer 12).
 - `Player`/`Team` contents; the `TeamFactory` creation functions.
@@ -270,4 +275,87 @@ where upstream registers an object no lookup can find.
    checked-out body that the caller already holds). A queue is acceptable only
    if it is shown to produce the same order of effects.
 2. **Yes:** `ObjectCreated` gains `object_id` when `Object::new` lands.
+   **DONE 2026-10-18 (`p1w6-object`)**: `ClientEvent::ObjectCreated { template_id,
+   drawable_status_bits, object_id }`, sent by `World::send_object_created`.
 3. **Keep `world.terrain`** as a field, checked out for its own update.
+
+<!-- --- p1w6-object --- -->
+## Object (layer 8, wave 6)
+
+`Object.h`/`Object.cpp` (7,250 lines) on this core. Files, all in
+`src/logic/world/`:
+
+| file | what |
+|---|---|
+| `object.rs` | the `Object` struct (every field of `Object.h` that is data), `ModuleSlot`, `BehaviorSlot`, the helper kinds, the arena's `insert_unlisted` / `link_at_head` / `rekey` |
+| `module_call.rs`, `module_probe.rs` | `ModuleCall` / `ModuleReply`: the calls `Object` makes through the module interfaces as one message type; the scripted `ProbeModule` the tests use |
+| `object_modules.rs` | the module lists: interface lookups, upgrades, special powers, collide, countermeasures, create/destroy/die loops |
+| `object_state.rs` | status, script status, disabled states, weapon-set / weapon-bonus / armor-set flags, selectability, geometry, containment, vision and shroud, the partition maintenance |
+| `object_team.rs` | team and player membership as ids, `setTeam` and its reactions, defection, capture, radar |
+| `object_damage.rs` | `attemptDamage`, healing, `kill`, `onDie`, `scoreTheKill`, veterancy, crush/squish, `isAbleToAttack`, the model-condition helpers |
+| `object_create.rs` | `newObject` after the template side (`World::new_object`), `initObject`, `onDestroy`, `~Object` (`delete_instance`), drawable binding |
+| `object_transform.rs` | the position / orientation setters and `reactToTransformChange`, trigger areas, layers |
+| `object_xfer.rs` | `crc`, `xfer` (version 9) and `loadPostProcess`, `setID` (`ObjectArena::rekey`) |
+| `object_cuts.rs`, `object_events.rs` | the cut points (below) |
+
+**Module dispatch.** `Object::modules` is `m_behaviors`; each `ModuleSlot` has
+the interface mask of its class (`MODULEINTERFACE_*`) and, for a module with an
+update interface, the index of its `BehaviorSlot` in `Object::behaviors` (the
+contract of "What the Object translator must keep", kept). `World::module_call(id,
+index, ModuleCall)` checks the module's body out of its slot, calls
+`UpdateBody::module_call` and puts it back, so a module may call back into the
+world. A loop over the modules skips a module whose mask lacks the interface
+(`getDie()` is `NULL`), as upstream does.
+
+**Deviation to decide (needs the lead).** A call to a module **whose body is
+running** is *not delivered*: it is recorded in `world.cuts.reentrant_skips`.
+Upstream makes the plain recursive call (`ActiveBody::attemptDamage` ->
+`Object::onDie` -> the same body's `DieModuleInterface`). Decision 1 (2026-10-18)
+asks for the synchronous order. Layer 9's first body that is both a body and a
+die module (`ActiveBody` with `onDie`) will hit it; the fix must route the call
+to the body the caller holds. Until then it is visible (`reentrant_skips`) and
+the differential test models it identically on both sides.
+
+**Cut points (each is a `CutCall`, an `ObjectClientEvent` or a table of
+`ObjectCuts`; the list the lead asked for):**
+
+| unit | calls |
+|---|---|
+| `Player` (7) | `becomingTeamMember`, score keeper, skill points, bounty, difficulty / battle-plan bonuses, `addRadar` / `removeRadar`; queries (`getPlayerMask`, colour, completed upgrades, relationship to a team, production veterancy ...) are tables |
+| `Team` (7) | member list, `notifyTeamOfObjectDeath`, `setEnteredExited`, controlling player, name, template info, attack priority |
+| `Energy`, `AcademyStats` | `objectEnteringInfluence`, `objectLeavingInfluence`, `adjustPower`, `recordMine` |
+| `PartitionManager` (wave 6) | `registerObject`, `unRegisterObject`, shroud reveal / cover, value and threat maps, `makeDirty`; `iteratePotentialCollisions` and the booby-trap range query are tables |
+| `ExperienceTracker` (wave 6) | default copies of its logic over `Object::experience` (`cut_experience_*`), checked against the real `ExperienceTracker.cpp` |
+| `WeaponSet` / `Weapon` (8) | `updateWeaponSet`, `weaponSetOnWeaponBonusChange`, slot queries; **the 25 forwarders (`fireCurrentWeapon` ...) are not translated** |
+| AI, pathfinder (10) | `setAttitude`, `setAttackInfo`, `aiIdle`, `transferAttack`, `stop`, dozer `cancelTask`, `updatePos` / `removePos` / `addObjectToPathfindMap` / `removeObjectFromPathfindMap` / `removeWallPiece`; turret and locomotor queries are tables |
+| `ScriptEngine` (11), `GameLogic`, `BuildAssistant` | `notifyOfObjectCreationOrDestruction`, `notifyOfObjectDestruction`, `AppendDebugMessage`, `updateObjectsChangedTriggerAreas`, `deselectObject`, `sellObject` |
+| the client | audio, radar, EVA, in-game UI, control bar, `notifyTerrainObjectMoved`, and every `m_drawable->...` call are `ObjectClientEvent`s (`ClientEvent::Object`) |
+| helpers (9) | `ObjectSMCHelper` ... `TempWeaponBonusHelper` are stub modules (`NewModule::helper_stub`); `sleepUntil` is a `CutCall` |
+| module factory | `NewObject::modules` (the caller makes the modules) |
+| **not translated** | `updateObjValuesFromMapProperties` (the map `Dict`), `doCommandButton*`, `canProduceUpgrade` (GUI command buttons), the bone-position getters (client model data), the weapon forwarders, `adjustModelConditionForWeaponStatus` |
+
+**Other deviations from the upstream text (all kept visible):**
+
+- `new_object` puts the object in the id table *before* its modules exist
+  (`ObjectArena::insert_unlisted`), as `setID` does in the constructor, and in
+  the list at the end of construction (`registerObject`).
+- `~Object` runs on an object already removed from the list and table;
+  `delete_instance` puts it back for the duration (the destructor reads its
+  own team and radar data) and removes it at the end.
+- `Object::position` mirrors the thing's position (the scheduler reads it).
+- `Object::new(id)` is a blank object with a default template: the shell the
+  world-core tests use.
+- The constructor tests `getTemplateInfo()` of the team before setting the AI
+  attitude; upstream does not (a null dereference on a team with no template
+  info).
+
+**Verification.** `tests/differential_object.rs` compiles the text of
+`Object.cpp` (cut in `build.rs`, every cut asserted once) on the stand-ins of
+`differential/shim_object` and runs random programs on both sides; see its
+header for the method and the results. It found three defects in the first
+translation (the constructor set the AI attitude from the team asked for, not
+the team the object ended on; `findAnyShortcutSpecialPowerModuleInterface` did
+not skip a module with no template; `m_destinationLayer` started at
+`LAYER_GROUND`, but the memory pool zero-fills and the constructor never sets
+it).
+<!-- --- end p1w6-object --- -->

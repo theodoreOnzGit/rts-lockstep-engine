@@ -44,8 +44,11 @@ pub enum ClientEvent {
     /// `ThingFactory::newDrawable` calls (and `GameLogic::registerObject`
     /// for every object): the client makes the drawable of a thing made from
     /// the template with this id, with these `DrawableStatus` bits. Logic
-    /// never holds the `Drawable`.
-    ObjectCreated { template_id: u16, drawable_status_bits: u32 },
+    /// never holds the `Drawable`. `object_id` is the object the drawable is
+    /// bound to (`GameLogic::sendObjectCreated` binds them), so the client
+    /// can pair a drawable with its object; `ObjectDestroyed` is the matching
+    /// end (added by `p1w6-object`, lead decision 2026-10-18).
+    ObjectCreated { template_id: u16, drawable_status_bits: u32, object_id: i32 },
     // --- end p1w4-thingtemplate ---
     // --- p1w5-world ---
     /// `TheGameClient->destroyDrawable(obj->getDrawable())`, which
@@ -65,4 +68,10 @@ pub enum ClientEvent {
     /// `World::flush_terrain_events` moves them here, in order.
     Terrain(TerrainVisualEvent),
     // --- end p1w5-world ---
+    // --- p1w6-object ---
+    /// What `Object` tells `Drawable`, `TheAudio`, `TheRadar`, `TheInGameUI`,
+    /// `TheControlBar`, `TheEva` and `TheGameClient` (see
+    /// `logic::world::object_events`).
+    Object(crate::logic::world::object_events::ObjectClientEvent),
+    // --- end p1w6-object ---
 }

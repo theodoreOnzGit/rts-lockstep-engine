@@ -24,6 +24,21 @@ pub mod events;
 pub mod game_logic;
 pub mod ids;
 pub mod object;
+// --- p1w6-object ---
+pub mod module_call;
+pub mod module_probe;
+pub mod object_create;
+pub mod object_cuts;
+pub mod object_damage;
+pub mod object_events;
+pub mod object_modules;
+pub mod object_state;
+pub mod object_team;
+pub mod object_transform;
+pub mod object_xfer;
+#[cfg(test)]
+mod object_tests;
+// --- end p1w6-object ---
 pub mod player;
 pub mod sleepy;
 pub mod team;
