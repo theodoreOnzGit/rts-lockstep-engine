@@ -484,6 +484,9 @@ are a context argument (`&mut World` or a frame number) instead of a global.
 | 3 | `BitFlags`/`BitFlagsIO` and all seven instantiations (`KindOf`, `ObjectStatusTypes`, `DisabledTypes`, `ModelState` flags, `ArmorSet` flags, `WeaponSetFlags`, `SpecialPowerMaskType`); `SparseMatchFinder`; `Dict`; `Xfer::xferKindOf` | `tests/differential_bit_flags.rs`, `tests/differential_dict.rs` |
 | 4 (part) | `Geometry` (`GeometryInfo`: arithmetic, INI fields, xfer); `BezierSegment` and `BezFwdIterator`; `Money` (client sounds as `logic::client_event::ClientEvent`, academy-stats record as the returned flag); `Handicap` | `tests/differential_geometry.rs`, `tests/differential_bezier.rs`, `tests/differential_money.rs`, `tests/differential_handicap.rs` |
 | 4 (in progress) | `Armor` (`ArmorTemplate`, `ArmorStore`, the `Armor` block), `Damage` (`DamageInfo`, its xfer, `DamageTypeFlags` as `BitFlags`), `DamageFX` (templates, store, the `DamageFX` block; `FXList`s stay names) | `tests/differential_armor.rs` |
+<!-- --- p1w2-upgrade --- -->
+| 4 (wave 2, `p1w2-upgrade`) | `Upgrade` (`UpgradeTemplate`, `UpgradeCenter` with its mask bits, `Upgrade` instances and their xfer, the `Upgrade` block, `Xfer::xferUpgradeMask` as `common::upgrade::xfer_upgrade_mask`), `SpecialPower` (`SpecialPowerTemplate` with its override chain, `SpecialPowerStore`, the `SpecialPower` block); button images and sounds stay names | `tests/differential_upgrade.rs`, `tests/differential_special_power.rs` |
+<!-- --- end p1w2-upgrade --- -->
 
 Layer 4, not translated: `RankInfo` (`GameLogic/System/RankInfo.cpp`).
 It needs `Overridable`/`Override` (layer 1, open), `UnicodeString` (layer 2,
@@ -522,6 +525,57 @@ Layer 4 left after wave 1: `RankInfo` (needs `Overridable`, `UnicodeString`,
 `GlobalData`, `PlayerTemplate`, `SpecialPower`, `CrateSystem`; and the
 `Object`-taking parts of `DamageFX` and the `INI::parseArmorTemplate` /
 `INI::parseDamageFX` field parsers.
+
+<!-- --- p1w2-upgrade --- -->
+**CORRECTED 2026-10-18 (wave 2, `p1w2-upgrade`):** `Upgrade` and `SpecialPower`
+are translated (the paragraph "Layer 4 left after wave 1" above lists them as open). What they cut, and what moves to the
+layers that have players and objects (7/8), is:
+
+- `UpgradeTemplate::calcTimeToBuild(Player*)` and `calcCostToBuild(Player*)`:
+  in the shipped build neither reads the player (the `buildsInstantly()` cheat
+  is debug-only; handicaps are a `@todo`), so their results are
+  `time_to_build_frames()` and `cost_to_build()`; the `Player` signatures move
+  up. `UpgradeCenter::canAffordUpgrade(Player*, ...)` (money check, the
+  `GUI:NotEnoughMoneyToUpgrade` message) moves up, and so do granting,
+  queueing and the per-player lists of `Upgrade` instances (`friend_getNext`
+  and `friend_getPrev` link them into `Player`/`Object` lists).
+- `SpecialPowerStore::canUseSpecialPower(Object*, ...)` (the object's module
+  can run the power; the controlling player has the required science) moves up
+  with `Object::getSpecialPowerModule` and `Player::hasScience`.
+- `UpgradeTemplate::cacheButtonImage`/`getButtonImage` and
+  `UpgradeCenter::reset` (which only calls it): the client resolves
+  `ButtonImage`, which stays a name. `AudioEventRTS` fields stay names
+  (`common::audio_event_name`).
+- `INI::parseUpgradeTemplate` and `INI::parseSpecialPowerTemplate` (the
+  fields of command buttons and modules): name lookups in the two stores,
+  with their users.
+- `RequiredScience`: needs `ScienceStore::friend_lookupScience`
+  (`NAMEKEY` of the name, `INI_INVALID_DATA` unless it is a defined science).
+  The parser takes a function saying which name keys are sciences, to be
+  replaced by the translated `ScienceStore` (wave 2, `p1w2-science`); the
+  `ScienceType` alias in `common::special_power` goes with it.
+- `AcademyClassificationType` and its names are in
+  `common::academy_classification`; the rest of `AcademyStats` (layer 7)
+  should import them.
+
+Findings from the wave-2 differential runs (all now tests): `Xfer.h` includes
+`Upgrade.h`, so the real header is read while the BitFlags prelude is, before
+any wrapper line (the renaming macros live in the prelude for that reason).
+The `std::out_of_range` of the 129th upgrade reaches `INI::load` wrapped in an
+`INIException`, as every handler's exception does. The constructor of
+`SpecialPowerTemplate` leaves `m_academyClassificationType` unset (the memory
+pools zero it, so `ACT_NONE`), and `getAcademyClassificationType` is the one
+getter that reads the head and not the final override. A template copied from
+`DefaultSpecialPower` copies the `Overridable` part too: its `m_isOverride`
+(so a default made by an override load makes overrides, deleted by `reset`),
+and its next-override pointer, which the copy then shares with the default;
+`reset` frees that node from the default and leaves the copy dangling. The
+Rust has owned chains and returns an error for that case
+(`Undefined::AliasedOverrideChain`); nothing in the game's own data is known to
+override `DefaultSpecialPower`. `Xfer::xferUpgradeMask` is checked by Rust
+unit tests only: the Xfer build stands `TheUpgradeCenter` in with functions
+that abort.
+<!-- --- end p1w2-upgrade --- -->
 
 Two translation choices await the owner, both formally undefined C++ on a
 function's normal path, where MSVC's behaviour gives the intended result and

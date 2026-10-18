@@ -98,9 +98,10 @@ ParticleSystemTemplate *ParticleSystemManager::findTemplate(const AsciiString &)
 WEAK const ArmorTemplate *ArmorStore::findArmorTemplate(AsciiString) const { abort(); }
 const ObjectCreationList *ObjectCreationListStore::findObjectCreationList(const char *) const { abort(); }
 const WeaponTemplate *WeaponStore::findWeaponTemplate(AsciiString) const { abort(); }
-ScienceType ScienceStore::friend_lookupScience(const char *) const { abort(); }
-void AudioEventRTS::setEventName(AsciiString) { abort(); }
-void AudioManager::getInfoForAudioEvent(const AudioEventRTS *) const { abort(); }
+/* p1w2-upgrade: these three are WEAK (defined for real in wrap_upgrade.cpp) */
+WEAK ScienceType ScienceStore::friend_lookupScience(const char *) const { abort(); }
+WEAK void AudioEventRTS::setEventName(AsciiString) { abort(); }
+WEAK void AudioManager::getInfoForAudioEvent(const AudioEventRTS *) const { abort(); }
 
 /* GameLogic/FPUControl.h: x87 precision control (GameLogic.cpp). The tests
 ** compute in SSE single precision already, so it does nothing here. */
@@ -424,9 +425,9 @@ STUB(INI::parseOnlineChatColorDefinition) STUB(INI::parseMultiplayerSettingsDefi
 STUB(INI::parseMusicTrackDefinition) STUB(INI::parseObjectCreationListDefinition)
 STUB(INI::parseObjectReskinDefinition) STUB(INI::parseParticleSystemDefinition)
 STUB(INI::parsePlayerTemplateDefinition) STUB(INI::parseTerrainRoadDefinition)
-STUB(INI::parseRankDefinition) STUB(INI::parseSpecialPowerDefinition)
+STUB(INI::parseRankDefinition) WEAK_STUB(INI::parseSpecialPowerDefinition) /* p1w2-upgrade: weak, real in wrap_upgrade.cpp */
 STUB(INI::parseShellMenuSchemeDefinition) STUB(INI::parseTerrainDefinition)
-STUB(INI::parseUpgradeDefinition) STUB(INI::parseVideoDefinition)
+WEAK_STUB(INI::parseUpgradeDefinition) /* p1w2-upgrade: weak, real in wrap_upgrade.cpp */ STUB(INI::parseVideoDefinition)
 STUB(INI::parseWaterSettingDefinition) STUB(INI::parseWaterTransparencyDefinition)
 STUB(INI::parseWeatherDefinition) STUB(INI::parseWebpageURLDefinition)
 STUB(INI::parseHeaderTemplateDefinition) STUB(INI::parseStaticGameLODDefinition)

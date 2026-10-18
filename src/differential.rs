@@ -481,3 +481,56 @@ extern "C" {
     pub fn ref_damage_crc(kind: c_int, w: *const c_uint, tmpl: *const c_char, crc: *mut c_uint) -> c_int;
 }
 // --- end p1w1-armor ---
+
+// --- p1w2-upgrade ---
+extern "C" {
+    // Upgrade.cpp, INIUpgrade.cpp, SpecialPower.cpp, INISpecialPower.cpp (wrap_upgrade.cpp)
+    pub fn ref_up_reset(init_names: c_int, init_center: c_int, n_sciences: c_int, sciences: *const *const c_char) -> c_int;
+    pub fn ref_up_name_key(name: *const c_char) -> c_uint;
+    pub fn ref_up_load(
+        filename: *const c_char,
+        load_type: c_int,
+        with_xfer: c_int,
+        crc: *mut c_uint,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+    pub fn ref_up_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_up_find(name: *const c_char) -> c_int;
+    pub fn ref_up_find_by_key(key: c_uint) -> c_int;
+    pub fn ref_up_find_vet(level: c_int) -> c_int;
+    pub fn ref_up_names(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_up_calc(index: c_int, time: *mut c_int, cost: *mut c_int) -> c_int;
+    pub fn ref_up_new_upgrade(name: *const c_char) -> c_int;
+    pub fn ref_up_type_name(i: c_int) -> *const c_char;
+    pub fn ref_academy_name(i: c_int) -> *const c_char;
+    pub fn ref_up_inst_xfer(
+        kind: c_int,
+        status: *mut c_int,
+        path: *const c_char,
+        bytes: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        crc: *mut c_uint,
+    ) -> c_int;
+    pub fn ref_sp_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_sp_by_name(name: *const c_char, out: *mut c_uint, names: *mut c_uchar, cap: c_int, nlen: *mut c_int) -> c_int;
+    pub fn ref_sp_by_id(id: c_uint, out: *mut c_uint, names: *mut c_uchar, cap: c_int, nlen: *mut c_int) -> c_int;
+    pub fn ref_sp_by_index(index: c_uint, out: *mut c_uint, names: *mut c_uchar, cap: c_int, nlen: *mut c_int) -> c_int;
+    pub fn ref_sp_count() -> c_int;
+    pub fn ref_sp_reset_store();
+    pub fn ref_sp_real_name(i: c_int) -> *const c_char;
+    pub fn ref_sp_default_detection() -> c_uint;
+    pub fn ref_mask_op(
+        which: c_int,
+        op: c_int,
+        a: *const u64,
+        b: *const u64,
+        c: *const u64,
+        idx: *const c_int,
+        nidx: c_int,
+        out: *mut u64,
+    ) -> c_int;
+}
+// --- end p1w2-upgrade ---

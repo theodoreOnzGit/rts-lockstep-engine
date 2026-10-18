@@ -207,6 +207,13 @@ pub enum Undefined {
     /// `NameKeyGenerator` ran past its last key (`0x7fffffff`).
     NameKeysExhausted,
     // --- end p1w1-armor ---
+    // --- p1w2-upgrade ---
+    /// A new `SpecialPowerTemplate` copied from `DefaultSpecialPower` shares
+    /// the default's next-override pointer upstream, which `reset` frees
+    /// from under it; owned override chains cannot share a node (see
+    /// `common::special_power`).
+    AliasedOverrideChain,
+    // --- end p1w2-upgrade ---
 }
 
 /// What failed, innermost cause first.

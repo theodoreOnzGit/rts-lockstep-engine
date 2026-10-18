@@ -50,3 +50,9 @@ pub mod money;
 // --- p1w1-armor ---
 pub mod damage_fx;
 // --- end p1w1-armor ---
+// --- p1w2-upgrade ---
+pub mod academy_classification;
+pub mod audio_event_name;
+pub mod special_power;
+pub mod upgrade;
+// --- end p1w2-upgrade ---

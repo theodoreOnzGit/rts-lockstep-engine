@@ -65,6 +65,11 @@ the layer order of [`docs/phase1-porting-graph.md`](docs/phase1-porting-graph.md
 | `logic::armor` | `Include/GameLogic/Armor.h`, `Source/GameLogic/Object/Armor.cpp`: `ArmorTemplate` (38 damage coefficients, `adjustDamage` with the unresistable pass-through and the floor at 0), `Armor` (a handle by name key), `ArmorStore` (an ordered map where upstream has a `hash_map`) and the `Armor` INI block (Phase 1 layer 4). Not `INI::parseArmorTemplate` (the `Armor =` field of thing templates) <!-- --- p1w1-armor --- --> |
 | `common::damage_fx` | `Include/Common/DamageFX.h`, `Source/Common/DamageFX.cpp`, `Source/Common/INI/INIDamageFX.cpp`: `DamageFX` (per damage type and veterancy level: major threshold, major and minor effect, throttle time), `DamageFXStore` and the `DamageFX` INI block. `FXList`s stay as names, never resolved (a cut point). Left out: `doDamageFX` and the `Object` forms of the getters (the Rust takes the veterancy level), `INI::parseDamageFX` (Phase 1 layer 4) |
 | `logic::damage` (rest) | `DamageType` and its constants, `IsSubdualDamage`, `IsHealthDamagingDamage`, `DamageInfoInput`/`DamageInfoOutput`/`DamageInfo` with their xfer (the source template is kept as a name, a cut point), `DamageTypeFlags` as the generic `BitFlags` (Phase 1 layer 4) <!-- --- end p1w1-armor --- --> |
+<!-- --- p1w2-upgrade --- -->
+| `common::upgrade` | `Include/Common/Upgrade.h`, `Source/Common/System/Upgrade.cpp`, `Source/Common/INI/INIUpgrade.cpp`, `Xfer::xferUpgradeMask`: `UpgradeTemplate` (type, name and key, display label, build time, cost, a bit of the 128-bit `UpgradeMaskType`, two sound names, academy type, button image name), `UpgradeCenter` (templates newest first as the linked list is, `DefaultUpgrade` copied into each new one, the three veterancy templates of `init`, the 129th template throws `std::out_of_range`, the `Upgrade` INI block), `Upgrade` (an instance, with its xfer), the `UPGRADE_MASK` helper functions, and `xfer_upgrade_mask` (names, not bits; verified by Rust tests only). Button images and sounds stay names (cut points). Left out for layers 7/8: `calcTimeToBuild(Player*)`, `calcCostToBuild(Player*)` (player-free results are `time_to_build_frames`, `cost_to_build`), `canAffordUpgrade(Player*)`, the per-player `Upgrade` lists (Phase 1 layer 4) |
+| `common::special_power` | `Include/Common/SpecialPower.h`, `Source/Common/RTS/SpecialPower.cpp`, `Source/Common/INI/INISpecialPower.cpp`: `SpecialPowerTemplate` (reload time, required science, timers, radius, flags, two sound names, academy type) with its `Overridable` chain (getters read the final override; `getAcademyClassificationType` reads the head, as upstream), `SpecialPowerStore` (lookup by name, id and index; `reset` removing overrides; the `SpecialPower` INI block in `Overwrite` and `CREATE_OVERRIDES` loads) and the `SPECIALPOWERMASK` helper functions. `RequiredScience` takes a function saying which name keys are sciences, until `Science` is translated. Left out for layers 7/8: `canUseSpecialPower(Object*, ...)`. A template copied from a `DefaultSpecialPower` that has an override chain is an error (upstream shares the pointer and frees it at `reset`) (Phase 1 layer 4) |
+| `common::academy_classification`, `common::audio_event_name` | `AcademyClassificationType` and its names (`Include/Common/AcademyStats.h`, `Source/Common/RTS/AcademyStats.cpp`; the rest of that file is layer 7), and the name of an `AudioEventRTS` as `INI::parseAudioEventRTS` sets it (`NoSound` changes nothing; the client resolves the name) (Phase 1 layer 4) |
+<!-- --- end p1w2-upgrade --- -->
 
 **Approved by the owner (2026-10-17):** `XferCRC`/`XferDeepCRC` carry a NaN guard
 (`common::xfer_crc::nan_guard`): a NaN `Real` xfered into a CRC panics in debug
@@ -160,6 +165,31 @@ cargo test --release --features differential
 <!-- --- p1w1-small --- -->
 - `differential/shim_stl/` builds `STLTypedefs.h` with the real `AsciiString.h` and `AsciiString.cpp` (classes renamed by macro, as in the AsciiString build), a `BaseType` forwarder to the shim (the real header is MSVC-only), and a `UnicodeString` with `compareNoCase` that aborts if called. `differential/shim_subsys/` builds `SubsystemInterface.cpp` with its own `PreRTS.h`, stand-ins for `INI.h` and `Xfer.h` (their bodies abort; the wrapper passes no INI paths), and forwarders to the shim tree for everything except the real `SubsystemInterface.h`.
 <!-- --- end p1w1-small --- -->
+<!-- --- p1w2-upgrade --- -->
+- `differential/wrap_upgrade.cpp` runs the real `Upgrade.cpp`, `INIUpgrade.cpp`,
+  `SpecialPower.cpp` (a copy in which the one definition of
+  `SpecialPowerMaskType::s_bitNameList` is renamed so the real list can be
+  dumped) and `INISpecialPower.cpp` behind the real `INI::load`, `Overridable.h`
+  and `NameKeyGenerator`, included under renaming macros (`differential/shim_upgrade/upgrade_prelude.h`)
+  so that they cannot clash with the Xfer build's aborting stand-ins for
+  `UpgradeCenter`. `differential/shim_upgrade/` holds the stand-ins: a forwarder
+  to the real `Upgrade.h` (the Xfer build's shim sits earlier on other include
+  paths), an `AudioEventRTS` that keeps its name, `Player`, `Object`,
+  `InGameUI` and `Image`. Three `wrap_ini.cpp` stand-ins (`friend_lookupScience`,
+  `AudioEventRTS::setEventName`, `AudioManager::getInfoForAudioEvent`) and the
+  two block stubs are now `WEAK`, like the Armor ones. Results
+  (`tests/differential_upgrade.rs`, `tests/differential_special_power.rs`,
+  2026-10-18, upstream `0a05454d`): 8,000 `Upgrade` files (7,781 compared, 63,201
+  templates, 251 throwing `std::out_of_range` at the 129th mask bit, 300
+  centers of 135 direct `newUpgrade` calls), 6,000 `SpecialPower` sequences
+  (14,220 files in four load types, 15,456 final templates, 817 with an
+  override chain, 2,126 resets, 193,754 getter results), 6,000 `Upgrade`
+  instance xfers, 60,000 mask-helper cases: **no mismatch**; every comparison
+  also catches its planted bug. Left out of the C++ comparison as undefined
+  upstream (counted by the tests): numbers out of range of their type in a
+  field, a `calcTimeToBuild` float-to-int out of range, and a template copied
+  from a `DefaultSpecialPower` that has an override chain.
+<!-- --- end p1w2-upgrade --- -->
 - The C++ is compiled with `-msse2 -mfpmath=sse -ffp-contract=off
   -fno-fast-math -fwrapv -fno-strict-aliasing`, so that its `float` arithmetic
   is the same IEEE single precision the Rust uses.
