@@ -29,7 +29,16 @@ const UnicodeString UnicodeString::TheEmptyString;
 Bool CompressionManager::isDataCompressed(const void *, Int) { abort(); }
 Int CompressionManager::getUncompressedSize(const void *, Int) { abort(); }
 Int CompressionManager::decompressData(void *, Int, void *, Int) { abort(); }
-AsciiString GlobalData::getPath_UserData() const { abort(); }
+/* --- p1w4-sides --- DataChunkOutput's temporary file lives in the user data path: the
+** sides/scripts fixture (differential/wrap_sides.cpp), the one that writes chunks, installs
+** this hook. Reached without it, it aborts, as before. */
+extern "C" { const char *(*ref_chunk_user_data_path_hook)() = 0; }
+AsciiString GlobalData::getPath_UserData() const
+{
+	if (!ref_chunk_user_data_path_hook) abort();
+	return AsciiString(ref_chunk_user_data_path_hook());
+}
+/* --- end p1w4-sides --- */
 
 namespace {
 

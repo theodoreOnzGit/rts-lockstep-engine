@@ -8,3 +8,6 @@ pub mod csf;
 pub mod data_chunk;
 pub mod texture;
 pub mod w3d;
+// --- p1w4-sides ---
+pub mod data_chunk_output;
+// --- end p1w4-sides ---

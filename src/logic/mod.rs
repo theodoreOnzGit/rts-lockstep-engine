@@ -40,3 +40,9 @@ pub mod polygon_trigger;
 // --- p1w4-thingtemplate ---
 pub mod weapon_set;
 // --- end p1w4-thingtemplate ---
+// --- p1w4-sides ---
+pub mod scripts;
+// --- end p1w4-sides ---
+// --- p1w4-sides ---
+pub mod sides_list;
+// --- end p1w4-sides ---

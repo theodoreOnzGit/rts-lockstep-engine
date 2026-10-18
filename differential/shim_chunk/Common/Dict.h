@@ -52,7 +52,7 @@ public:
 	AsciiString getNthAsciiString(Int n) const { return nth(n).second.a; }
 	UnicodeString getNthUnicodeString(Int n) const { return nth(n).second.u; }
 	const std::map<NameKeyType, Value> &pairs() const { return m_pairs; }
-	/* p1w4-polygon: getType and getAsciiString (Dict.h), which MapUtil.cpp's
+	/* p1w4-polygon: getType (Dict.h; getAsciiString is in the p1w4-sides block below), which MapUtil.cpp's
 	** ParseObjectDataChunk calls on the object's property sheet (DICT_NONE for
 	** a key that is not there; "" unless the pair is a string) */
 	DataType getType(NameKeyType key) const
@@ -60,13 +60,25 @@ public:
 		std::map<NameKeyType, Value>::const_iterator it = m_pairs.find(key);
 		return it == m_pairs.end() ? DICT_NONE : it->second.type;
 	}
+	/* --- p1w4-sides --- */
+	/* clear() and the keyed getters of Dict.h/Dict.cpp: a missing key, or one of another
+	** type, gives the default value and *exists false */
+	void clear() { m_pairs.clear(); }
+	Bool getBool(NameKeyType key, Bool *exists = NULL) const
+	{
+		std::map<NameKeyType, Value>::const_iterator it = m_pairs.find(key);
+		if (it != m_pairs.end() && it->second.type == DICT_BOOL) { if (exists) *exists = true; return it->second.b; }
+		if (exists) *exists = false;
+		return false;
+	}
 	AsciiString getAsciiString(NameKeyType key, Bool *exists = NULL) const
 	{
 		std::map<NameKeyType, Value>::const_iterator it = m_pairs.find(key);
-		Bool found = it != m_pairs.end() && it->second.type == DICT_ASCIISTRING;
-		if (exists) *exists = found;
-		return found ? it->second.a : AsciiString();
+		if (it != m_pairs.end() && it->second.type == DICT_ASCIISTRING) { if (exists) *exists = true; return it->second.a; }
+		if (exists) *exists = false;
+		return AsciiString::TheEmptyString;
 	}
+	/* --- end p1w4-sides --- */
 private:
 	const std::pair<const NameKeyType, Value> &nth(Int n) const
 	{

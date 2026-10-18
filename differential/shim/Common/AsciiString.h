@@ -98,6 +98,18 @@ public:
 	char *getBufferForRead(int len) { m_s.assign(len, '\0'); return &m_s[0]; }
 	/* test helper (not upstream): set from bytes that may contain NUL */
 	void setBytes(const char *p, int n) { m_s.assign(p, n); }
+	/* --- p1w4-sides --- */
+	/* startsWith (AsciiString.cpp line 306): strncmp of the first strlen(p) characters;
+	** nextToken with the default separators (AsciiString.h: seps = NULL) */
+	bool startsWith(const char *p) const
+	{
+		if (*p == 0) return true;
+		int lenThis = getLength(), lenThat = (int)strlen(p);
+		if (lenThis < lenThat) return false;
+		return strncmp(str(), p, lenThat) == 0;
+	}
+	bool nextToken(AsciiString *tok) { return nextToken(tok, NULL); }
+	/* --- end p1w4-sides --- */
 private:
 	std::string m_s;
 };
