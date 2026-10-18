@@ -53,3 +53,7 @@ pub mod terrain_visual;
 // --- p1w5-world ---
 pub mod world;
 // --- end p1w5-world ---
+
+// --- p1w6-trackers ---
+pub mod object_types;
+// --- end p1w6-trackers ---

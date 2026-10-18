@@ -1627,6 +1627,33 @@ mod differential {
         }
         // --- end p1w4-polygon ---
 
+        // --- p1w6-trackers ---
+        // ObjectTypes (differential/wrap_object_types.cpp): ObjectTypes.cpp
+        // #included by the wrapper, unchanged, on differential/shim_object_types
+        // (Player::canBuild, ThingFactory::findTemplate and ThingTemplate::getName,
+        // renamed ObjTypes*). Linked ahead of upstream_xfer, whose XferSave and
+        // XferLoad it calls.
+        {
+            let shim_ot = dif.join("shim_object_types");
+            let mut ot = cc::Build::new();
+            base(&mut ot);
+            ot.include(&shim_ot)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .file(dif.join("wrap_object_types.cpp"));
+            ot.compile("upstream_object_types");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/ObjectTypes.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/ObjectTypes.h",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
+        // --- end p1w6-trackers ---
+
         // The Xfer family: Xfer.cpp (via wrap_xfer.cpp, after matrix3d.h),
         // XferCRC.cpp, XferSave.cpp, XferLoad.cpp and Snapshot.cpp unchanged,
         // against the shims in differential/shim/Common. `_DEBUG` again only

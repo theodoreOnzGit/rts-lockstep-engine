@@ -853,3 +853,19 @@ extern "C" {
     pub fn ref_world_run(prog: *const c_int, n_prog: c_int, out: *mut c_uint, cap: c_int) -> c_int;
 }
 // --- end p1w5-world ---
+
+// --- p1w6-trackers ---
+extern "C" {
+    // ObjectTypes.cpp (wrap_object_types.cpp): a program of list operations, logged word by word
+    // (tests/differential_object_types.rs documents the encoding).
+    pub fn ref_object_types_run(
+        ops: *const c_int,
+        n_ops: c_int,
+        blob: *const c_uchar,
+        blob_len: c_int,
+        tmp_path: *const c_char,
+        out: *mut c_uint,
+        cap: c_int,
+    ) -> c_int;
+}
+// --- end p1w6-trackers ---
