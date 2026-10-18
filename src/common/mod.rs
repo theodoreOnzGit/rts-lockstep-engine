@@ -72,3 +72,7 @@ pub mod player_template;
 // --- p1w3-statemachine ---
 pub mod state_machine;
 // --- end p1w3-statemachine ---
+// --- p1w3-modules ---
+pub mod module;
+pub mod module_factory;
+// --- end p1w3-modules ---

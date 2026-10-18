@@ -30,3 +30,6 @@ pub mod rank_info;
 pub mod object_iter;
 pub mod thing;
 // --- end p1w3-thing ---
+// --- p1w3-modules ---
+pub mod module;
+// --- end p1w3-modules ---

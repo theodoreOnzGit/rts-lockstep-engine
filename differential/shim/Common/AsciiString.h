@@ -32,6 +32,9 @@ public:
 	/* p1w2-globaldata: getCharAt (AsciiString.h), called by GlobalData's user data directory code, which the tests never reach */
 	char getCharAt(int index) const { return m_s[index]; }
 	bool isNotEmpty() const { return !m_s.empty(); }
+	/* p1w3-modules: isNone / isNotNone (AsciiString.h line 326; AsciiString.cpp: m_data && stricmp(peek(), "None") == 0) */
+	bool isNone() const { return !m_s.empty() && strcasecmp(m_s.c_str(), "None") == 0; }
+	bool isNotNone() const { return !isNone(); }
 	void set(const char *s) { m_s = s ? s : ""; }
 	void set(const AsciiString &s) { m_s = s.m_s; }
 	void clear() { m_s.clear(); }

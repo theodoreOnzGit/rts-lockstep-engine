@@ -229,6 +229,28 @@ pub enum Undefined {
     /// `common::special_power`).
     AliasedOverrideChain,
     // --- end p1w2-upgrade ---
+    // --- p1w3-modules ---
+    /// `ModuleData::m_moduleTagNameKey` is never set by the constructor
+    /// (`ModuleData() { }`); reading it before `setModuleTagNameKey` reads an
+    /// uninitialised `NameKeyType`.
+    UninitialisedModuleTag,
+    /// `Module::friend_newModuleData` runs `initFromINI(data, 0)`: a null
+    /// parse table. Any field line reaches `findFieldParse(NULL, ...)`, which
+    /// dereferences it (only `End` is defined).
+    NullFieldParseTable,
+    /// `UpgradeMuxData::getUpgradeActivationMasks` accepts an empty name or
+    /// `None` that finds no upgrade and then calls
+    /// `theTemplate->getUpgradeMask()` on the null template;
+    /// `muxDataProcessUpgradeRemoval` does the same with the removal names,
+    /// passing the null template to `Object::removeUpgrade`, whose first
+    /// statement is `upgradeT->getUpgradeMask()`.
+    NullUpgradeTemplate,
+    /// `SpecialPowerModule::isReady` (with a controlling player) and the
+    /// other members that ask `m_specialPowerTemplate->isSharedNSync()` run
+    /// on a module whose data has no template (`SpecialPowerTemplate None`,
+    /// or one that was not found).
+    NullSpecialPowerTemplate,
+    // --- end p1w3-modules ---
 }
 
 /// What failed, innermost cause first.
