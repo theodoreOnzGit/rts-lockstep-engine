@@ -733,6 +733,26 @@ mod differential {
         }
         // --- end p1w4-thingtemplate ---
 
+        // --- p1w6-energy ---
+        // Energy.cpp, unchanged (differential/wrap_energy.cpp), on shim_energy: stand-ins for
+        // Player (the brown-out notification), ThePlayerList, the template's energy numbers and
+        // TheGameLogic->getFrame(). Linked before upstream_xfer, which it calls (as the geometry
+        // group below: see the comment there).
+        {
+            let shim_energy = dif.join("shim_energy");
+            let mut en = cc::Build::new();
+            base(&mut en);
+            en.include(&shim_energy)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .file(dif.join("wrap_energy.cpp"));
+            en.compile("upstream_energy");
+
+        }
+        // --- end p1w6-energy ---
         // --- p1w1-geometry ---
         // GeometryInfo: Geometry.cpp unchanged (differential/wrap_geometry.cpp),
         // with the INI build's headers and prelude. Compiled before the

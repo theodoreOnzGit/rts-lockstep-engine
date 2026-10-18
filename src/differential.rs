@@ -853,3 +853,13 @@ extern "C" {
     pub fn ref_world_run(prog: *const c_int, n_prog: c_int, out: *mut c_uint, cap: c_int) -> c_int;
 }
 // --- end p1w5-world ---
+// --- p1w6-energy ---
+extern "C" {
+    // Energy.cpp, unchanged (wrap_energy.cpp): one call per op on a single Energy, and its xfer
+    pub fn ref_energy_reset();
+    pub fn ref_energy_op(op: c_int, a: c_int, b: c_int, frame: c_uint, out: *mut c_uint);
+    pub fn ref_energy_save(path: *const c_char) -> c_int;
+    pub fn ref_energy_load(path: *const c_char, out: *mut c_uint);
+
+}
+// --- end p1w6-energy ---
