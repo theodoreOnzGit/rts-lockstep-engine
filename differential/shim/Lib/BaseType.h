@@ -42,7 +42,10 @@ struct Coord3D { Real x, y, z; void zero( void ) { x = 0.0f; y = 0.0f; z = 0.0f;
 struct ICoord3D { Int x, y, z; void zero( void ) { x = 0; y = 0; z = 0; } };
 struct Region3D { Coord3D lo, hi; };
 struct IRegion3D { ICoord3D lo, hi; };
-struct RGBColor { Real red, green, blue; };
+struct RGBColor { Real red, green, blue;
+	/* p1w2-globaldata: setFromInt (BaseType.h lines 472-477), called by GlobalData's constructor */
+	void setFromInt( Int c ) { red = ((c >> 16) & 0xff) / 255.0f; green = ((c >> 8) & 0xff) / 255.0f; blue = ((c >> 0) & 0xff) / 255.0f; }
+};
 struct RGBAColorReal { Real red, green, blue, alpha; };
 struct RGBAColorInt { UnsignedInt red, green, blue, alpha; };
 

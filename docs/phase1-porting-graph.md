@@ -543,6 +543,46 @@ the translation follows it instead of returning an error:
   so the differential reference is compiled with a forward `strcpy`
   (`common::ascii_string`).
 
+<!-- --- p1w2-globaldata --- -->
+**GlobalData (wave 2, branch `p1w2-globaldata`, 2026-10-18).** `common::global_data`
+(`GlobalData`, the `GameData` block, the override chain) and
+`logic::weapon_bonus` (`WeaponBonus`, `WeaponBonusSet`: the `WeaponBonus =`
+field needs them); differential test `tests/differential_globaldata.rs`
+(336 of 336 table entries, 5,842 random cases, 11,682 loads, no mismatch).
+The retail configuration only: members and `GameData` fields under
+`_DEBUG`/`_INTERNAL`, `DUMP_PERF_STATS`, `ALLOW_SURRENDER` and
+`_ALLOW_DEBUG_CHEATS_IN_RELEASE` do not exist, as in the shipped game. Left
+out: the executable CRC, the user data directory, `GetDoubleClickTime()` (500
+ms) and the user preferences applied after each parse (filesystem, registry,
+devices); the version. `GlobalData` is a layer-4 unit but is read by almost
+everything: the 90 members that `Source/GameLogic` and `Include/GameLogic`
+name are marked on the struct and listed in `READ_BY_GAME_LOGIC`.
+
+Findings (each is a test):
+
+- **Awaits the owner: `newOverride` copies nothing.** Upstream's
+  `*override = *TheWritableGlobalData` calls `GlobalData`'s private copy
+  assignment, declared `{ DEBUG_CRASH(("unimplemented")); return *this; }`, a
+  no-op in a release build. A `GameData` block loaded with
+  `INI_LOAD_CREATE_OVERRIDES` (a map's) therefore starts from the constructor's
+  defaults, not from the previous values, despite the function's comment. The
+  translation does the same; copying instead would be a behaviour change.
+- **`DrawSkyBox` is a `Real`** parsed with `parseBool` (one byte written into
+  its low byte), `DebugAI` an enumeration parsed the same way, and
+  `FirewallPortAllocationDelta` a `Short` parsed with `parseInt` (four bytes,
+  two of them padding). Kept (little endian, as on x86).
+- **`parseCoord3D`/`parseCoord2D` store component by component**, so a failing
+  `Y` leaves `X` stored. `Ini::parse_coord3d`/`parse_coord2d` (Phase 0) return
+  the whole value or nothing; the `GameData` table reads the components
+  itself. No other table uses them yet. (`differential_ini.rs` cannot see the
+  difference: it logs a value only after a successful parse.)
+- `m_infantryLightScale[0]`, `m_useAlternateMouse` and `m_doubleClickAttackMove`
+  are never set by the constructor (the engine's allocator zero-fills them).
+- A `GameData` file naming `Wireframe`, `HealthBonus_Regular`,
+  `DoubleClickTimeMS` or the prison bounty fields is an unknown field in the
+  shipped game, and in the translation.
+<!-- --- end p1w2-globaldata --- -->
+
 ## Differential-test routes, by rule
 
 The `differential route` column of the unit table is derived from the

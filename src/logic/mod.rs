@@ -20,3 +20,6 @@ pub mod armor;
 // --- p1w2-terrain ---
 pub mod crate_system;
 // --- end p1w2-terrain ---
+// --- p1w2-globaldata ---
+pub mod weapon_bonus;
+// --- end p1w2-globaldata ---

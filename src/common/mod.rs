@@ -54,3 +54,6 @@ pub mod damage_fx;
 pub mod multiplayer_settings;
 pub mod terrain_types;
 // --- end p1w2-terrain ---
+// --- p1w2-globaldata ---
+pub mod global_data;
+// --- end p1w2-globaldata ---

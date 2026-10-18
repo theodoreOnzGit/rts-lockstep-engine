@@ -417,7 +417,7 @@ STUB(INI::parseControlBarSchemeDefinition) STUB(INI::parseControlBarResizerDefin
 WEAK_STUB(INI::parseCrateTemplateDefinition) STUB(INI::parseWindowTransitions)
 WEAK_STUB(INI::parseDamageFXDefinition) STUB(INI::parseDialogDefinition)
 STUB(INI::parseDrawGroupNumberDefinition) STUB(INI::parseEvaEvent)
-STUB(INI::parseFXListDefinition) STUB(INI::parseGameDataDefinition)
+STUB(INI::parseFXListDefinition) WEAK_STUB(INI::parseGameDataDefinition) /* p1w2-globaldata: INIGameData.cpp (wrap_globaldata.cpp) defines it */
 STUB(INI::parseInGameUIDefinition) STUB(INI::parseLocomotorTemplateDefinition)
 STUB(INI::parseLanguageDefinition) STUB(INI::parseMapCacheDefinition)
 STUB(INI::parseMapDataDefinition) STUB(INI::parseMappedImageDefinition)

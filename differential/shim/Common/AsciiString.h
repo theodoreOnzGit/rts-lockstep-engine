@@ -29,6 +29,8 @@ public:
 	const char *str() const { return m_s.c_str(); }
 	int getLength() const { return (int)m_s.size(); }
 	bool isEmpty() const { return m_s.empty(); }
+	/* p1w2-globaldata: getCharAt (AsciiString.h), called by GlobalData's user data directory code, which the tests never reach */
+	char getCharAt(int index) const { return m_s[index]; }
 	bool isNotEmpty() const { return !m_s.empty(); }
 	void set(const char *s) { m_s = s ? s : ""; }
 	void set(const AsciiString &s) { m_s = s.m_s; }
