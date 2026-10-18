@@ -15,9 +15,10 @@
 // Translated to Rust and modified; not the original program.
 
 //! The comparison functors of `namespace rts` in `STLTypedefs.h`, for the
-//! `AsciiString` keys the logic uses: `less_than_nocase<AsciiString>`
-//! (the order of `std::map` keys that compare without case) and
-//! `equal_to<AsciiString>`.
+//! `AsciiString` and `UnicodeString` keys the logic uses:
+//! `less_than_nocase<AsciiString>` and `less_than_nocase<UnicodeString>`
+//! (the order of `std::map` keys that compare without case), and
+//! `equal_to<AsciiString>` and `equal_to<UnicodeString>`.
 //!
 //! What is **not** translated, and why:
 //!
@@ -31,25 +32,26 @@
 //!   value needs to match.
 //! - **`equal_to<const char*>`** (`strcmp`) has no caller once the strings are
 //!   `AsciiString`.
-//! - **`less_than_nocase<UnicodeString>`** waits for `UnicodeString`, which
-//!   is not translated yet (see `docs/phase1-porting-graph.md`, layer 2).
 //! - **The typedefs** (`AsciiStringList`, `ObjectPointerList`, `VecCoord3D`,
 //!   ...) are spellings of `std::list`/`std::vector`/`std::map`; the Rust
 //!   code uses those types directly.
 //!
-//! # Equality and `AsciiString`
+//! # Equality
 //!
 //! Upstream's `operator==` for `AsciiString` compares `str()` with `strcmp`,
 //! and `str()` of an empty `AsciiString` without a buffer is `""`. So a string
 //! with no buffer equals an empty string with one. [`equal_to`] keeps that
-//! rule. The derived `PartialEq`/`Hash` of [`AsciiString`] do **not**: they
-//! see `None` and `Some(b"")` as different (the difference is recorded in the
-//! differential test and in the report on this unit).
+//! rule, and so do the `PartialEq`/`Hash` of [`AsciiString`] (both go through
+//! `str()`, since commit 28ce3e9; before it, the derived impls told `None` and
+//! `Some(b"")` apart, and the differential test found 12,388 of 50,000 pairs
+//! disagreeing). `UnicodeString` is the same: upstream's `operator==` is
+//! `wcscmp` of `str()`, and its `PartialEq` is too.
 //!
 //! Verified against the real `rts::less_than_nocase` and `rts::equal_to`
-//! templates by `tests/differential_stl_typedefs.rs`.
+//! templates for both string types by `tests/differential_stl_typedefs.rs`.
 
 use super::ascii_string::AsciiString;
+use super::unicode_string::UnicodeString;
 use std::cmp::Ordering;
 
 /// `rts::equal_to<AsciiString>`: `operator==`, that is `strcmp(str(), str()) == 0`.
@@ -60,6 +62,20 @@ pub fn equal_to(a: &AsciiString, b: &AsciiString) -> bool {
 /// `rts::less_than_nocase<AsciiString>`: `compareNoCase(b) < 0`.
 pub fn less_than_nocase(a: &AsciiString, b: &AsciiString) -> bool {
     a.compare_no_case(b.str()) == Ordering::Less
+}
+
+/// `rts::less_than_nocase<UnicodeString>`: `compareNoCase(b) < 0`, that is
+/// `_wcsicmp` (see [`UnicodeString::compare_no_case`]).
+pub fn less_than_nocase_unicode(a: &UnicodeString, b: &UnicodeString) -> bool {
+    a.compare_no_case_unicode(b) == Ordering::Less
+}
+
+/// `rts::equal_to<UnicodeString>`. Upstream has no specialisation: the
+/// generic functor calls `operator==`, which is `wcscmp(str(), str()) == 0`,
+/// so a string with no buffer equals an empty string that keeps one (as the
+/// `PartialEq` of [`UnicodeString`] does).
+pub fn equal_to_unicode(a: &UnicodeString, b: &UnicodeString) -> bool {
+    a == b
 }
 
 /// A key ordered by `rts::less_than_nocase<AsciiString>`, for use in a
@@ -114,5 +130,14 @@ mod tests {
     fn equal_to_treats_no_buffer_as_empty() {
         assert!(equal_to(&AsciiString::new(), &s(b"")));
         assert!(!equal_to(&s(b"a"), &s(b"A")));
+    }
+
+    #[test]
+    fn unicode_nocase_order_and_equality() {
+        let w = |t: &str| UnicodeString::try_from_chars(&t.encode_utf16().collect::<Vec<u16>>()).expect("short string");
+        assert!(less_than_nocase_unicode(&w("apple"), &w("BANANA")));
+        assert!(!less_than_nocase_unicode(&w("Abc"), &w("aBC")), "neither is less: equal keys");
+        assert!(equal_to_unicode(&UnicodeString::new(), &w("")));
+        assert!(!equal_to_unicode(&w("a"), &w("A")));
     }
 }

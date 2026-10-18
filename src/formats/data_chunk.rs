@@ -54,12 +54,11 @@
 //! - `m_currentObject` and `m_userData` (`void*` hooks for parsers): a Rust
 //!   parser gets `&mut C`. The `userData` given to `registerParser` is not
 //!   kept: upstream never reads it (each parser gets `parse`'s argument).
-//! - `NameKeyType`: `readNameKey` returns the name, and [`Dict`] is keyed by
-//!   name. Upstream's keys come from the process-wide `NameKeyGenerator` (in
-//!   first-seen order) and a `Dict` is sorted by them; here a `Dict` keeps
-//!   first-insertion order. (Both are translated since Phase 1, as
-//!   `common::name_key_generator` and `common::dict`; moving `readNameKey`
-//!   and `readDict` onto them is still to do.)
+//! - `NameKeyType`: upstream's `TheNameKeyGenerator` is process-wide, so
+//!   `readNameKey` and `readDict` take it as `names` (the caller owns it, and
+//!   one generator can serve several readers). Keys come from
+//!   [`NameKeyGenerator::try_name_to_key`] in first-seen order, and a
+//!   [`Dict`] (`common::dict`) is keyed and sorted by them as upstream's is.
 //!
 //! # Where this differs from upstream (only where upstream is undefined)
 //!
@@ -68,7 +67,8 @@
 //! table of contents' `count`, and its first name length, likewise); a
 //! negative byte count for `readArrayOfBytes` (a `memcpy` of a negative
 //! size); a byte count whose end overflows `Int`; more bytes than the
-//! caller's buffer holds; and a `dataLeft` that overflows `Int`.
+//! caller's buffer holds; a `dataLeft` that overflows `Int`; and a name key
+//! past `0x7fffffff` ([`ChunkUndefined::NameKeysExhausted`]).
 //!
 //! # Upstream quirks that are kept
 //!
@@ -96,6 +96,9 @@
 //!   (before reading them) and `ERROR_CORRUPT_FILE_FORMAT` for an unknown
 //!   type; the exception passes through `parse` to its caller.
 
+use crate::common::dict::{Dict, DictError};
+use crate::common::name_key_generator::{NameKeyGenerator, NameKeyType};
+
 /// `typedef unsigned short DataChunkVersionType`.
 pub type DataChunkVersionType = u16;
 /// `DataChunkInput::CHUNK_HEADER_BYTES` (the header is in fact 10 bytes).
@@ -107,11 +110,13 @@ pub const ERROR_OUT_OF_MEMORY: u32 = 0xdead_0002;
 /// `ERROR_CORRUPT_FILE_FORMAT` (Common/Errors.h).
 pub const ERROR_CORRUPT_FILE_FORMAT: u32 = 0xdead_0005;
 /// `Dict::MAX_LEN`.
-pub const DICT_MAX_LEN: u16 = 32767;
+pub const DICT_MAX_LEN: u16 = crate::common::dict::MAX_LEN as u16;
 
 /// Where upstream is undefined (see the module docs).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ChunkUndefined {
+    /// A name key past `0x7fffffff` (`NameKeyGenerator`'s next key).
+    NameKeysExhausted,
     /// A value read only partly, or not at all, before its use.
     UninitialisedRead,
     /// A read of a negative number of bytes (`memcpy` of a negative size).
@@ -391,44 +396,17 @@ pub struct UserParser<C> {
     pub parent_label: Vec<u8>,
 }
 
-/// A `Dict` value (`Dict::DataType` and the value).
-#[derive(Clone, Debug, PartialEq)]
-pub enum DictValue {
-    Bool(bool),
-    Int(i32),
-    Real(f32),
-    AsciiString(Vec<u8>),
-    /// UTF-16 code units.
-    UnicodeString(Vec<u16>),
+/// `nameToKey(name)` on the caller's generator. Its only failure is a key
+/// past `0x7fffffff`, undefined upstream (`NameKeyError::KeysExhausted`).
+fn name_to_key(names: &mut NameKeyGenerator, name: &[u8]) -> ChunkResult<NameKeyType> {
+    names.try_name_to_key(name).map_err(|_| ChunkError::Undefined(ChunkUndefined::NameKeysExhausted))
 }
 
-/// `class Dict`, keyed by name (see the module docs): setting a name again
-/// replaces its type and value.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Dict {
-    pairs: Vec<(Vec<u8>, DictValue)>,
-}
-
-impl Dict {
-    /// `setBool`/`setInt`/...: add the pair, or replace an existing one.
-    pub fn set(&mut self, name: Vec<u8>, value: DictValue) {
-        match self.pairs.iter_mut().find(|(n, _)| *n == name) {
-            Some(p) => p.1 = value,
-            None => self.pairs.push((name, value)),
-        }
-    }
-    /// The value for `name`.
-    pub fn get(&self, name: &[u8]) -> Option<&DictValue> {
-        self.pairs.iter().find(|(n, _)| n == name).map(|(_, v)| v)
-    }
-    /// `getPairCount`.
-    pub fn get_pair_count(&self) -> usize {
-        self.pairs.len()
-    }
-    /// The pairs, in first-insertion order.
-    pub fn pairs(&self) -> &[(Vec<u8>, DictValue)] {
-        &self.pairs
-    }
+/// A `Dict` setter's failure: `ERROR_OUT_OF_MEMORY`, the throw of
+/// `Dict::Dict(n)` and of the setters past `MAX_LEN` pairs. `readDict` has
+/// already refused more than `MAX_LEN` pairs, so this is not reached.
+fn dict_error(_: DictError) -> ChunkError {
+    ChunkError::Thrown(ERROR_OUT_OF_MEMORY)
 }
 
 /// `class DataChunkInput`, with parsers that fill a `C`.
@@ -650,34 +628,37 @@ impl<C> DataChunkInput<C> {
         Ok(units[..n].to_vec())
     }
 
-    /// `readNameKey`: an `Int` whose upper 24 bits are a table id; the name
-    /// (where upstream returns its `NameKeyType`).
-    pub fn read_name_key(&mut self) -> ChunkResult<Vec<u8>> {
+    /// `readNameKey`: an `Int` whose upper 24 bits are a table id; the key
+    /// of that id's name in `names` (`nameToKey`).
+    pub fn read_name_key(&mut self, names: &mut NameKeyGenerator) -> ChunkResult<NameKeyType> {
         let key_and_type = self.read_int()?;
-        Ok(self.contents.get_name((key_and_type >> 8) as u32))
+        let name = self.contents.get_name((key_and_type >> 8) as u32);
+        name_to_key(names, &name)
     }
 
     /// `readDict`: a count (`UnsignedShort`), then per pair an `Int` of
-    /// table id (upper 24 bits) and type (low 8), and the value.
-    pub fn read_dict(&mut self) -> ChunkResult<Dict> {
+    /// table id (upper 24 bits) and type (low 8), and the value. The key of
+    /// each pair is taken before its value is read, as upstream does.
+    pub fn read_dict(&mut self, names: &mut NameKeyGenerator) -> ChunkResult<Dict> {
         let len = self.read_len()?;
         if len > DICT_MAX_LEN {
             return Err(ChunkError::Thrown(ERROR_OUT_OF_MEMORY));
         }
-        let mut d = Dict::default();
+        let mut d = Dict::with_preallocated(i32::from(len)).map_err(dict_error)?;
         for _ in 0..len {
             let key_and_type = self.read_int()?;
             let t = key_and_type & 0xff;
             let name = self.contents.get_name((key_and_type >> 8) as u32);
-            let v = match t {
-                0 => DictValue::Bool(self.read_byte()? != 0),
-                1 => DictValue::Int(self.read_int()?),
-                2 => DictValue::Real(self.read_real()?),
-                3 => DictValue::AsciiString(self.read_ascii_string()?),
-                4 => DictValue::UnicodeString(self.read_unicode_string()?),
+            let k = name_to_key(names, &name)?;
+            let set = match t {
+                0 => d.set_bool(k, self.read_byte()? != 0),
+                1 => d.set_int(k, self.read_int()?),
+                2 => d.set_real(k, self.read_real()?),
+                3 => d.set_ascii_string(k, &self.read_ascii_string()?),
+                4 => d.set_unicode_string(k, &self.read_unicode_string()?),
                 _ => return Err(ChunkError::Thrown(ERROR_CORRUPT_FILE_FORMAT)),
             };
-            d.set(name, v);
+            set.map_err(dict_error)?;
         }
         Ok(d)
     }
@@ -686,6 +667,7 @@ impl<C> DataChunkInput<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::dict::DictValue;
 
     fn w(v: &mut Vec<u8>, x: &[u8]) {
         v.extend_from_slice(x);
@@ -752,9 +734,66 @@ mod tests {
         assert!(!t.is_opened_for_read()); // no names
         let mut s = CachedFileInputStream::new(b"CkMp\x05".to_vec()).unwrap();
         assert_eq!(t.read(&mut s), Err(ChunkError::Undefined(ChunkUndefined::UninitialisedRead)));
-        let mut d = Dict::default();
-        d.set(b"a".to_vec(), DictValue::Int(1));
-        d.set(b"a".to_vec(), DictValue::Bool(true));
-        assert_eq!(d.pairs(), &[(b"a".to_vec(), DictValue::Bool(true))]);
+        let a = NameKeyType(1);
+        let mut d = Dict::new();
+        d.set_int(a, 1).unwrap();
+        d.set_bool(a, true).unwrap();
+        assert_eq!(d.get_pair_count(), 1);
+        assert_eq!(d.get(a), Some(&DictValue::Bool(true)));
+    }
+
+    /// `readDict` and `readNameKey` with a table of contents of four names:
+    /// the keys come from the generator in first-seen order, and the pairs
+    /// are filled in upstream's `Dict` (here `common::dict`).
+    #[derive(Default)]
+    struct DictOut {
+        names: NameKeyGenerator,
+        dict: Option<Dict>,
+        key: Option<NameKeyType>,
+    }
+
+    fn dict_parser(f: &mut DataChunkInput<DictOut>, _: &DataChunkInfo, out: &mut DictOut) -> ChunkResult<bool> {
+        out.dict = Some(f.read_dict(&mut out.names)?);
+        out.key = Some(f.read_name_key(&mut out.names)?);
+        Ok(true)
+    }
+
+    #[test]
+    fn read_dict_and_name_key_fill_common_dict() {
+        let mut v = b"CkMp".to_vec();
+        w(&mut v, &4i32.to_le_bytes());
+        for (name, id) in [(&b"Ints"[..], 1u32), (b"Text", 2), (b"Real", 3), (b"Outer", 4)] {
+            v.push(name.len() as u8);
+            w(&mut v, name);
+            w(&mut v, &id.to_le_bytes());
+        }
+        let mut data = Vec::new();
+        w(&mut data, &3u16.to_le_bytes());
+        w(&mut data, &((1 << 8) | 1i32).to_le_bytes());
+        w(&mut data, &7i32.to_le_bytes());
+        w(&mut data, &((2 << 8) | 3i32).to_le_bytes());
+        w(&mut data, &3u16.to_le_bytes());
+        w(&mut data, b"abc");
+        w(&mut data, &((3 << 8) | 2i32).to_le_bytes());
+        w(&mut data, &1.5f32.to_le_bytes());
+        w(&mut data, &((1 << 8) | 1i32).to_le_bytes()); // the name key that follows
+        w(&mut v, &4u32.to_le_bytes());
+        w(&mut v, &3u16.to_le_bytes());
+        w(&mut v, &(data.len() as i32).to_le_bytes());
+        w(&mut v, &data);
+        let mut input = DataChunkInput::new(CachedFileInputStream::new(v).unwrap()).unwrap();
+        input.register_parser(b"Outer", b"", dict_parser);
+        let mut out = DictOut::default();
+        out.names.init();
+        assert_eq!(input.parse(&mut out), Ok(true));
+        let (ints, text, real) = (out.names.name_to_key(b"Ints"), out.names.name_to_key(b"Text"), out.names.name_to_key(b"Real"));
+        assert_eq!((ints, text, real), (NameKeyType(1), NameKeyType(2), NameKeyType(3)));
+        assert_eq!(out.names.key_to_name(text), b"Text");
+        let d = out.dict.expect("read_dict ran");
+        assert_eq!(d.get_pair_count(), 3);
+        assert_eq!(d.get_int(ints), (7, true));
+        assert_eq!(d.get_ascii_string(text), (b"abc".to_vec(), true));
+        assert_eq!(d.get_real(real), (1.5, true));
+        assert_eq!(out.key, Some(ints));
     }
 }

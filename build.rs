@@ -887,6 +887,35 @@ mod differential {
             .file(sys.join("AsciiString.cpp"));
         stl.compile("upstream_stl_typedefs");
 
+        // --- p1w2-dictmove ---
+        // STLTypedefs.h, unchanged, through differential/wrap_stl_typedefs_unicode.cpp,
+        // for rts::less_than_nocase<UnicodeString>. This is a build of its own
+        // because the stl build above holds a UnicodeString stand-in whose
+        // compareNoCase aborts. Here the REAL UnicodeString.h and
+        // UnicodeString.cpp are compiled unchanged (-fshort-wchar, with the
+        // 16-bit wide C runtime of shim_unicode/unicode_prelude.h, forced in
+        // by shim_stl_unicode/stl_unicode_prelude.h), with the REAL AsciiString.h
+        // (shim_ascii), which STLTypedefs.h declares its functors against.
+        // AsciiString.cpp is not needed: nothing here calls its out-of-line
+        // functions. Classes renamed by macro, as in the other builds.
+        let mut stlu = cc::Build::new();
+        base(&mut stlu);
+        stlu.flag("-fshort-wchar")
+            .define("AsciiString", Some("StlUnicodeAsciiString"))
+            .define("UnicodeString", Some("StlUnicodeUnicodeString"))
+            .define("TheDynamicMemoryAllocator", Some("StlUnicodeAllocator"))
+            .include(dif.join("shim_stl_unicode"))
+            .include(dif.join("shim_ascii"))
+            .include(dif.join("shim_stl"))
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .flag("-include")
+            .flag(dif.join("shim_stl_unicode/stl_unicode_prelude.h").to_str().expect("UTF-8 path"))
+            .file(dif.join("wrap_stl_typedefs_unicode.cpp"))
+            .file(sys.join("UnicodeString.cpp"));
+        stlu.compile("upstream_stl_unicode");
+        // --- end p1w2-dictmove ---
+
         // SubsystemInterface.cpp unchanged, through differential/wrap_subsystem_interface.cpp.
         // shim_subsys holds the PreRTS.h of this unit, stand-ins for INI.h and
         // Xfer.h (their bodies abort; this build passes no INI paths), and

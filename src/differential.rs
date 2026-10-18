@@ -481,3 +481,10 @@ extern "C" {
     pub fn ref_damage_crc(kind: c_int, w: *const c_uint, tmpl: *const c_char, crc: *mut c_uint) -> c_int;
 }
 // --- end p1w1-armor ---
+
+// --- p1w2-dictmove ---
+extern "C" {
+    // STLTypedefs.h, the UnicodeString comparator (wrap_stl_typedefs_unicode.cpp)
+    pub fn ref_stl_compare_unicode(a: *const c_ushort, na: c_int, ka: c_int, b: *const c_ushort, nb: c_int, kb: c_int, out: *mut c_int);
+}
+// --- end p1w2-dictmove ---
