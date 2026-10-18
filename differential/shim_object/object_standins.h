@@ -305,7 +305,7 @@ class BehaviorModule : public Module
 public:
 	Object* m_object; Bool m_helper; Int m_helperKind; unsigned m_interfaces; Bool m_stealth, m_ai;
 	ProbeAnswers a; mutable Real health, maxHealth, damageScalar; mutable Bool died; mutable ObjectID lastDamageSource; mutable UnsignedInt armorFlags; UpgradeMaskType upgradeTrigger;
-	mutable Bool upgraded; mutable Bool running; mutable UnsignedInt calls; mutable SpecialPowerTemplate spTemplate; mutable DamageInfo lastDamage;
+	mutable Bool upgraded; mutable Bool running; mutable ContainedItemsList m_items; mutable UnsignedInt calls; mutable SpecialPowerTemplate spTemplate; mutable DamageInfo lastDamage;
 	BehaviorModule() : m_object(NULL), m_helper(false), m_helperKind(0), m_interfaces(0), m_stealth(false), m_ai(false), health(0), maxHealth(0),
 		damageScalar(1.0f), died(false), lastDamageSource(INVALID_ID), armorFlags(0), upgraded(false), running(false), calls(0) { spTemplate.m_owner = this; }
 	/* one call is counted and recorded; a helper records nothing */
@@ -333,7 +333,7 @@ public:
 	BehaviorModule* getCountermeasuresBehaviorInterface() const { return probe("HasCountermeasuresInterface") && (a.has & (1u << 5)) ? self() : NULL; }
 	BehaviorModule* getParkingPlaceBehaviorInterface() const { return probe("HasParkingPlaceInterface") && (a.has & (1u << 6)) ? self() : NULL; }
 	BehaviorModule* getContainExitInterface() const { return probe("HasContainExitInterface") && (a.has & (1u << 7)) ? self() : NULL; }
-	BehaviorModule* getSlavedUpdateInterface() const { return probe("GetSlaverId") && a.slaver != 0 ? self() : NULL; }
+	BehaviorModule* getSlavedUpdateInterface() const { return probe("GetSlaverId") && a.slaver != 0 ? self() : NULL; } /* the one GetSlaverId call: getSlaverID() below is silent */
 	BehaviorModule* getSpecialPowerUpdateInterface() const { return self(); }
 
 	/* BehaviorModule virtuals */
@@ -403,7 +403,7 @@ public:
 	void startDefectionTimer(UnsignedInt t, Bool withFx = TRUE) const { probe("StartDefectionTimer"); }
 	void cancelAndRefundAllProduction() const { probe("CancelAndRefundAllProduction"); }
 	void startRebuildProcess(const ThingTemplate* t, ObjectID spawner) const { probe("StartRebuildProcess"); }
-	ObjectID getSlaverID() const { if (!probe("GetSlaverId")) return INVALID_ID; return (ObjectID)a.slaver; }
+	ObjectID getSlaverID() const { return (ObjectID)a.slaver; }
 	Bool isActive() const { if (!probe("CountermeasuresIsActive")) return false; return a.yes; }
 	void reportMissileForCountermeasures(Object* m) const { probe("ReportMissileForCountermeasures"); }
 	Bool doesSpecialPowerHaveOverridableDestinationActive() const { if (!probe("DoesSpecialPowerHaveOverridableDestinationActive")) return false; return (a.has & (1u << 8)) && a.yes; }
