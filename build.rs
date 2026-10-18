@@ -1676,6 +1676,30 @@ mod differential {
                 println!("cargo:rerun-if-changed={p}");
             }
         }
+        // FiringTracker (differential/wrap_firing_tracker.cpp): FiringTracker.cpp
+        // #included by the wrapper, unchanged, on differential/shim_firing (the
+        // module base UpdateModule, Object, Weapon, ThingTemplate, GameLogic,
+        // AudioManager, AudioEventRTS, ModelConditionFlags, DisabledMaskType,
+        // renamed FireTest*). Linked ahead of upstream_xfer.
+        {
+            let shim_fi = dif.join("shim_firing");
+            let mut fi = cc::Build::new();
+            base(&mut fi);
+            fi.include(&shim_fi)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .file(dif.join("wrap_firing_tracker.cpp"));
+            fi.compile("upstream_firing_tracker");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/FiringTracker.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/FiringTracker.h",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
         // --- end p1w6-trackers ---
 
         // The Xfer family: Xfer.cpp (via wrap_xfer.cpp, after matrix3d.h),

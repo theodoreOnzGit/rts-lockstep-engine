@@ -56,5 +56,6 @@ pub mod world;
 
 // --- p1w6-trackers ---
 pub mod experience_tracker;
+pub mod firing_tracker;
 pub mod object_types;
 // --- end p1w6-trackers ---
