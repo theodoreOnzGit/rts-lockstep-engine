@@ -342,3 +342,9 @@ extern "C" {
     // SubsystemInterface.h/.cpp (wrap_subsystem_interface.cpp)
     pub fn ref_subsys_run(ops: *const c_int, n: c_int, out: *mut c_char, cap: c_int) -> c_int;
 }
+
+// --- p1w1-unicode ---
+extern "C" {
+    // UnicodeString.cpp (wrap_unicode_string.cpp, script interpreter)
+    pub fn ref_unicode_run(script: *const c_uchar, len: c_int, log: *mut c_uchar, cap: c_int) -> c_int;
+}

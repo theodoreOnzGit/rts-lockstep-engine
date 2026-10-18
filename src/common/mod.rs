@@ -37,3 +37,5 @@ pub mod latch_restore;
 pub mod overridable;
 pub mod stl_typedefs;
 pub mod subsystem_interface;
+// --- p1w1-unicode ---
+pub mod unicode_string;
