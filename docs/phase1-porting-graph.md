@@ -481,7 +481,11 @@ are a context argument (`&mut World` or a frame number) instead of a global.
 
 Still open in layers 1-3: `PartitionSolver` (see the `std::sort` hazard
 above), `Overridable`/`Override`, `LatchRestore` (layer 1);
-`AsciiString::format` and `UnicodeString`, `STLTypedefs.h`,
+`AsciiString::format` (the MSVC runtime's `_vsnprintf`) and `UnicodeString`
+(16-bit `WideChar` with the MSVC runtime's `wcslen`/`iswspace`/`wcsspn`; its
+differential build needs 16-bit stand-ins for them, and `iswspace`'s
+classification of non-ASCII spaces in the MSVC C locale has to be pinned
+down first; it holds display text, not lockstep state), `STLTypedefs.h`,
 `SubsystemInterface` (layer 2); folding
 `logic::damage`'s hand-written `DamageTypeFlags` into the generic
 `BitFlags`; moving `formats::data_chunk`'s name-keyed `Dict` stand-in onto
