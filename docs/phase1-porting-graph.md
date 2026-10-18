@@ -517,8 +517,7 @@ string with no buffer from an empty one with a buffer; upstream's
 `operator==` compares the characters only (`strcmp` of `str()`), so equality
 and hashing now do too (found by the `STLTypedefs` differential test).
 
-Layer 4 left after wave 1: `RankInfo` (needs `Overridable`, `UnicodeString`,
-`Science`), `TerrainTypes`, `Science`, `Upgrade`, `MultiplayerSettings`,
+Layer 4 left after wave 1: ~~`RankInfo`, `Science`~~ **done in `p1w2-science`**, `TerrainTypes`, `Upgrade`, `MultiplayerSettings`,
 `GlobalData`, `PlayerTemplate`, `SpecialPower`, `CrateSystem`; and the
 `Object`-taking parts of `DamageFX` and the `INI::parseArmorTemplate` /
 `INI::parseDamageFX` field parsers.
@@ -962,3 +961,22 @@ the full count in brackets; `--json` has them all.
 | `stackdump` | R | Include/Common/StackDump.h<br>Source/Common/System/StackDump.cpp | 72+635 | 0 | - | - | none | none: replaced |
 | `systeminfo` | R | Include/Common/SystemInfo.h | 37+0 | 0 | - | - | none | none: replaced |
 | `unittimings` | R | Include/Common/UnitTimings.h | 39+0 | 0 | - | - | none | none: replaced |
+
+<!-- --- p1w2-science --- -->
+## Wave 2: Science and RankInfo (`p1w2-science`)
+
+**Translated:** `common::science` (`ScienceType`, `ScienceVec`, `ScienceInfo`,
+`ScienceStore`, the `Science` block, `INI::parseScience`,
+`INI::parseScienceVector`, `INI::scanScience`, `INI::parseAndTranslateLabel`,
+`Xfer::xferScienceType`/`xferScienceVec`) and `logic::rank_info` (`RankInfo`,
+`RankInfoStore`, the `Rank` block). Verified by `tests/differential_science.rs`
+against the unchanged `Science.cpp`, `RankInfo.cpp`, `INI.cpp`, `Xfer.cpp`.
+
+**Moved to layer 7 (take a `Player`):** `ScienceStore::playerHasPrereqsForScience`,
+`playerHasRootPrereqsForScience`, `getPurchasableSciences`.
+
+**Choices:** `TheGameText->fetch` is a `GameTextFetch` argument (display strings stay
+`UnicodeString`); a prerequisite cycle made by overrides recurses for ever in
+`addRootSciences` and is `Undefined::ScienceCycle`; a failed `Science` block stays in the
+store (with `SCIENCE_INVALID`), a failed new `Rank` block is not added.
+<!-- --- end p1w2-science --- -->

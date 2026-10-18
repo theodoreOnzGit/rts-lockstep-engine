@@ -622,6 +622,46 @@ mod differential {
         }
         // --- end p1w1-armor ---
 
+        // --- p1w2-science ---
+        // Science and RankInfo (differential/wrap_science.cpp): Science.cpp
+        // and RankInfo.cpp unchanged. The Armor build's setup (clang++
+        // -fms-extensions, the real BitFlagsIO.h through flags_prelude.h)
+        // plus differential/shim_science: the REAL Science.h (included, with
+        // private made public, by science_prelude.h before the stand-in of
+        // differential/shim could be found) and a Player with hasScience only.
+        // Linked ahead of upstream_xfer, upstream_ini and upstream_chunk,
+        // whose Xfer, INI and NameKeyGenerator it uses; the weak stand-ins of
+        // wrap_ini.cpp and wrap_xfer.cpp give way to the real definitions.
+        let shim_science = dif.join("shim_science");
+        let mut sci = cc::Build::new();
+        base(&mut sci);
+        sci.compiler("clang++")
+            .flag("-fms-extensions")
+            .flag("-fdelayed-template-parsing")
+            .include(&shim_science)
+            .include(&shim_armor)
+            .include(&flags_gen)
+            .include(dif.join("shim_flags"))
+            .include(&shim)
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .include(ww.join("WWMath"))
+            .include(ww.join("WWLib"))
+            .include(&dif)
+            .flag("-include")
+            .flag(shim_science.join("science_prelude.h").to_str().expect("UTF-8 path"))
+            .file(dif.join("wrap_science.cpp"))
+            .file(up.join("GameEngine/Source/Common/RTS/Science.cpp"))
+            .file(up.join("GameEngine/Source/GameLogic/System/RankInfo.cpp"));
+        sci.compile("upstream_science");
+        for p in [
+            "upstream/GeneralsMD/Code/GameEngine/Source/Common/RTS/Science.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/System/RankInfo.cpp",
+        ] {
+            println!("cargo:rerun-if-changed={p}");
+        }
+        // --- end p1w2-science ---
+
         // The Xfer family: Xfer.cpp (via wrap_xfer.cpp, after matrix3d.h),
         // XferCRC.cpp, XferSave.cpp, XferLoad.cpp and Snapshot.cpp unchanged,
         // against the shims in differential/shim/Common. `_DEBUG` again only

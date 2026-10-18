@@ -98,7 +98,7 @@ ParticleSystemTemplate *ParticleSystemManager::findTemplate(const AsciiString &)
 WEAK const ArmorTemplate *ArmorStore::findArmorTemplate(AsciiString) const { abort(); }
 const ObjectCreationList *ObjectCreationListStore::findObjectCreationList(const char *) const { abort(); }
 const WeaponTemplate *WeaponStore::findWeaponTemplate(AsciiString) const { abort(); }
-ScienceType ScienceStore::friend_lookupScience(const char *) const { abort(); }
+WEAK ScienceType ScienceStore::friend_lookupScience(const char *) const { abort(); } /* p1w2-science: WEAK, Science.cpp defines the real one */
 void AudioEventRTS::setEventName(AsciiString) { abort(); }
 void AudioManager::getInfoForAudioEvent(const AudioEventRTS *) const { abort(); }
 
@@ -395,7 +395,7 @@ void INI::parseCredits(INI *ini)
 	for (const char *t = ini->getNextTokenOrNull(); t; t = ini->getNextTokenOrNull()) { put8(42); putCStr(t); }
 	put8(0xF1);
 }
-void INI::parseScienceDefinition(INI *ini)
+WEAK void INI::parseScienceDefinition(INI *ini) /* p1w2-science: WEAK, Science.cpp defines the real one */
 {
 	put8(0xF0); put8(5);
 	Rec rec;
@@ -424,11 +424,11 @@ STUB(INI::parseOnlineChatColorDefinition) STUB(INI::parseMultiplayerSettingsDefi
 STUB(INI::parseMusicTrackDefinition) STUB(INI::parseObjectCreationListDefinition)
 STUB(INI::parseObjectReskinDefinition) STUB(INI::parseParticleSystemDefinition)
 STUB(INI::parsePlayerTemplateDefinition) STUB(INI::parseTerrainRoadDefinition)
-STUB(INI::parseRankDefinition) STUB(INI::parseSpecialPowerDefinition)
+WEAK_STUB(INI::parseRankDefinition) /* p1w2-science: WEAK, RankInfo.cpp defines the real one */ STUB(INI::parseSpecialPowerDefinition)
 STUB(INI::parseShellMenuSchemeDefinition) STUB(INI::parseTerrainDefinition)
 STUB(INI::parseUpgradeDefinition) STUB(INI::parseVideoDefinition)
 STUB(INI::parseWaterSettingDefinition) STUB(INI::parseWaterTransparencyDefinition)
-STUB(INI::parseWeatherDefinition) STUB(INI::parseWebpageURLDefinition)
+STUB(INI::parseWeatherDefinition) WEAK_STUB(INI::parseWebpageURLDefinition) /* p1w2-science: WEAK, wrap_science.cpp uses this block to reach parseScience */
 STUB(INI::parseHeaderTemplateDefinition) STUB(INI::parseStaticGameLODDefinition)
 STUB(INI::parseDynamicGameLODDefinition) STUB(INI::parseLODPreset) STUB(INI::parseBenchProfile)
 STUB(parseReallyLowMHz) STUB(ScriptEngine::parseScriptAction) STUB(ScriptEngine::parseScriptCondition)

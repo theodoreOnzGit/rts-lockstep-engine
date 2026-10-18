@@ -481,3 +481,31 @@ extern "C" {
     pub fn ref_damage_crc(kind: c_int, w: *const c_uint, tmpl: *const c_char, crc: *mut c_uint) -> c_int;
 }
 // --- end p1w1-armor ---
+
+// --- p1w2-science ---
+extern "C" {
+    // Science.cpp, RankInfo.cpp (wrap_science.cpp)
+    pub fn ref_science_reset();
+    pub fn ref_science_name_key(name: *const c_char) -> c_uint;
+    pub fn ref_science_load(
+        filename: *const c_char,
+        load_type: c_int,
+        with_xfer: c_int,
+        crc: *mut c_uint,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+    pub fn ref_science_op(op: c_int);
+    pub fn ref_science_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_rank_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_science_web_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_science_probe(st: c_int, buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_science_name_probe(name: *const c_char, buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_science_names(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_rank_probe(level: c_int, buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_science_save(kind: c_int, vals: *const c_int, n: c_int, path: *const c_char, out: *mut c_uchar, cap: c_int, len: *mut c_int) -> c_int;
+    pub fn ref_science_load_xfer(kind: c_int, vals: *mut c_int, cap: c_int, n: *mut c_int, bytes: *const c_uchar, nbytes: c_int, path: *const c_char) -> c_int;
+    pub fn ref_science_crc(kind: c_int, vals: *const c_int, n: c_int, crc: *mut c_uint) -> c_int;
+}
+// --- end p1w2-science ---

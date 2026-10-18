@@ -61,6 +61,8 @@
 //!   `parseObjectCreationList`, `parseUpgradeTemplate`,
 //!   `parseSpecialPowerTemplate`, `parseScience`, `parseScienceVector` and
 //!   `scanScience`.
+//!   (~~`parseScience`, `parseScienceVector` and `scanScience`~~ **translated in
+//!   `common::science`** with `parseAndTranslateLabel`; p1w2-science.)
 //! - `setFPMode()` at the start of `load` (x87 precision control; the Rust
 //!   is plain `f32` already).
 //! - `INI_LOAD_*` has no effect inside this file upstream either; it is kept
@@ -207,6 +209,11 @@ pub enum Undefined {
     /// `NameKeyGenerator` ran past its last key (`0x7fffffff`).
     NameKeysExhausted,
     // --- end p1w1-armor ---
+    // --- p1w2-science ---
+    /// `ScienceInfo::addRootSciences` recurses through the prerequisites of a
+    /// cycle for ever (a stack overflow).
+    ScienceCycle,
+    // --- end p1w2-science ---
 }
 
 /// What failed, innermost cause first.

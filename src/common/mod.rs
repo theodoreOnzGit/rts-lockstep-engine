@@ -50,3 +50,6 @@ pub mod money;
 // --- p1w1-armor ---
 pub mod damage_fx;
 // --- end p1w1-armor ---
+// --- p1w2-science ---
+pub mod science;
+// --- end p1w2-science ---
