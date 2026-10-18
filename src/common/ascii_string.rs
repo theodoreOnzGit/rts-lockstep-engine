@@ -124,10 +124,30 @@ fn need(num_chars: usize) -> Result<(), AsciiStringError> {
 }
 
 /// `class AsciiString`.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+///
+/// Equality and hashing follow upstream's `operator==`
+/// (`strcmp(s1.str(), s2.str()) == 0`, `AsciiString.h:586`): they compare the
+/// characters only, so a string with no buffer equals an empty string that
+/// has one. (A derived `PartialEq` told them apart; found by the
+/// `STLTypedefs` differential test, 12,388 of 50,000 pairs.)
+#[derive(Clone, Debug, Default)]
 pub struct AsciiString {
     /// `m_data`: `None` for a null pointer, else the characters (no NUL).
     data: Option<Vec<u8>>,
+}
+
+impl PartialEq for AsciiString {
+    fn eq(&self, other: &Self) -> bool {
+        self.str() == other.str()
+    }
+}
+
+impl Eq for AsciiString {}
+
+impl core::hash::Hash for AsciiString {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.str().hash(state);
+    }
 }
 
 impl AsciiString {
@@ -392,6 +412,24 @@ impl AsciiString {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Upstream `operator==` compares characters only (`strcmp` of `str()`).
+    #[test]
+    fn equality_ignores_the_buffer() {
+        use core::hash::{Hash, Hasher};
+        let none = AsciiString::new();
+        let mut empty = AsciiString::try_from_bytes(b"x").unwrap();
+        empty.remove_last_char().unwrap();
+        assert!(!none.has_buffer() && empty.has_buffer() && empty.is_empty());
+        assert_eq!(none, empty);
+        let hash = |s: &AsciiString| {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            s.hash(&mut h);
+            h.finish()
+        };
+        assert_eq!(hash(&none), hash(&empty));
+        assert_ne!(none, AsciiString::try_from_bytes(b"a").unwrap());
+    }
 
     #[test]
     fn buffer_state_and_tokens() {

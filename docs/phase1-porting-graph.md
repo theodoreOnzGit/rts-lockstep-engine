@@ -499,17 +499,29 @@ returns before setting the first point for one step, so a one-sample curve is
 the zero point. `Bool` is one byte in the shim `BaseType.h` (the CRC and
 layout tests read it as one).
 
-Still open in layers 1-3:
-`AsciiString::format` (the MSVC runtime's `_vsnprintf`) and `UnicodeString`
-(16-bit `WideChar` with the MSVC runtime's `wcslen`/`iswspace`/`wcsspn`; its
-differential build needs 16-bit stand-ins for them, and `iswspace`'s
-classification of non-ASCII spaces in the MSVC C locale has to be pinned
-down first; it holds display text, not lockstep state), `STLTypedefs.h`,
-`SubsystemInterface` (layer 2); ~~folding
-`logic::damage`'s hand-written `DamageTypeFlags` into the generic
-`BitFlags`~~ **DONE in layer 4** (`DamageTypeFlags` is `BitFlags<DamageTypeNames>`;
-`tests/differential_ini.rs` and `tests/differential_armor.rs` pass on it); moving `formats::data_chunk`'s name-keyed `Dict` stand-in onto
-`common::dict` and `common::name_key_generator`.
+Still open in layers 1-3 (after wave 1, 2026-10-18):
+`AsciiString::format` (the MSVC runtime's `_vsnprintf`); `UnicodeString::format`
+(`_vsnwprintf`) and `getBufferForRead`, and `iswspace` for units 0x80 and above
+in the MSVC C locale (until pinned down, `trim` returns an error there; the
+type holds display text, not lockstep state); the `UnicodeString` comparator
+of `STLTypedefs.h`, now unblocked; moving `formats::data_chunk`'s name-keyed
+`Dict` stand-in onto `common::dict` and `common::name_key_generator`.
+~~`UnicodeString`, `STLTypedefs.h`, `SubsystemInterface`, `Overridable`,
+`LatchRestore`, `PartitionSolver`; folding `logic::damage`'s hand-written
+`DamageTypeFlags` into the generic `BitFlags`~~ **done in wave 1**
+(`p1w1-unicode`, `p1w1-small`, `p1w1-partition`, `p1w1-armor`, merged into
+`phase1-gamelogic` 2026-10-18).
+
+Fixed while merging wave 1: `AsciiString`'s derived `PartialEq`/`Hash` told a
+string with no buffer from an empty one with a buffer; upstream's
+`operator==` compares the characters only (`strcmp` of `str()`), so equality
+and hashing now do too (found by the `STLTypedefs` differential test).
+
+Layer 4 left after wave 1: `RankInfo` (needs `Overridable`, `UnicodeString`,
+`Science`), `TerrainTypes`, `Science`, `Upgrade`, `MultiplayerSettings`,
+`GlobalData`, `PlayerTemplate`, `SpecialPower`, `CrateSystem`; and the
+`Object`-taking parts of `DamageFX` and the `INI::parseArmorTemplate` /
+`INI::parseDamageFX` field parsers.
 
 Two translation choices await the owner, both formally undefined C++ on a
 function's normal path, where MSVC's behaviour gives the intended result and
