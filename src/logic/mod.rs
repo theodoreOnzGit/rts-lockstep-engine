@@ -37,3 +37,6 @@ pub mod module;
 pub mod map_object;
 pub mod polygon_trigger;
 // --- end p1w4-polygon ---
+// --- p1w4-thingtemplate ---
+pub mod weapon_set;
+// --- end p1w4-thingtemplate ---

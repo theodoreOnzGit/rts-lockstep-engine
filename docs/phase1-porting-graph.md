@@ -497,6 +497,9 @@ are a context argument (`&mut World` or a frame number) instead of a global.
 <!-- --- p1w4-polygon --- -->
 | 6 (wave 4, `p1w4-polygon`) | `PolygonTrigger` (`logic::polygon_trigger`: points, bounds, radius, `pointInTrigger`, the water and river flags, the `PolygonTriggers` chunk read (versions 1 to 4) and written; `PolygonTriggerList` holds the chain and `s_currentID`), and `MapObject` (`logic::map_object`: position, normalised angle, flags, the property `Dict`, the waypoint bit and name, the `Object` chunk reader, which fills the waypoint map). Cut points: the template is kept by name, the centre's ground height, the water extents, the writer's chunk id, the tech and supply classification | `tests/differential_polygon_trigger.rs`, `tests/differential_map_object.rs` |
 <!-- --- end p1w4-polygon --- -->
+<!-- --- p1w4-thingtemplate --- -->
+| 5 (wave 4, `p1w4-thingtemplate`) | `ThingTemplate` (`common::thing_template`: the `Object` and `ObjectReskin` fields, override behaviour, build variations, module lists through `ModuleFactory`), `ThingFactory` (`common::thing_factory`: store, lookup, `newObject`'s template side), `ProductionPrerequisite` data, `WeaponTemplateSet`. Cut points: build cost/time and the build facility (`Player`), `getBuildable` script override, `Locomotor`/`friend_getAIModuleInfo` (layer 9), `newObject` after the template choice (layer 8), image resolution | `tests/differential_thing_template.rs` |
+<!-- --- end p1w4-thingtemplate --- -->
 
 Layer 4, not translated: `RankInfo` (`GameLogic/System/RankInfo.cpp`).
 It needs `Overridable`/`Override` (layer 1, open), `UnicodeString` (layer 2,

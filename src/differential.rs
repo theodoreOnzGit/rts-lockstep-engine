@@ -780,3 +780,38 @@ extern "C" {
     pub fn ref_map_object_run(data: *const c_char, len: c_int, log: *mut c_uchar, cap: c_int, log_len: *mut c_int, code: *mut c_uint) -> c_int;
 }
 // --- end p1w4-polygon ---
+
+// --- p1w4-thingtemplate ---
+extern "C" {
+    // ThingTemplate.cpp, ThingFactory.cpp, INIObject.cpp and the cut-out members of WeaponSet.cpp,
+    // ProductionPrerequisite.cpp and ModuleFactory.cpp (wrap_thingtemplate.cpp)
+    pub fn ref_tt_reset(default_occlusion_delay: c_uint, superweapon_restriction: c_uint);
+    pub fn ref_tt_name_key(name: *const c_char) -> c_uint;
+    pub fn ref_tt_load(
+        filename: *const c_char,
+        load_type: c_int,
+        with_xfer: c_int,
+        crc: *mut c_uint,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+    pub fn ref_tt_op(op: c_int);
+    pub fn ref_tt_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_tt_fields(which: c_int, buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_tt_find(name: *const c_char) -> c_int;
+    pub fn ref_tt_find_by_id(id: c_uint) -> c_int;
+    pub fn ref_tt_equivalent(pa: c_int, da: c_int, pb: c_int, db: c_int) -> c_int;
+    pub fn ref_tt_new_object(
+        position: c_int,
+        depth: c_int,
+        null_template: c_int,
+        mask_words: *const u64,
+        made_from: *mut c_int,
+        status_out: *mut u64,
+    ) -> c_int;
+    pub fn ref_tt_new_drawable(position: c_int, depth: c_int, null_template: c_int, bits: c_int, made_from: *mut c_int, status_out: *mut c_int) -> c_int;
+    pub fn ref_tt_find_set(position: c_int, depth: c_int, which: c_int, flags: u64) -> c_int;
+    pub fn ref_tt_per_unit(position: c_int, depth: c_int, which: c_int, name: *const c_char, out: *mut c_char, cap: c_int, has: *mut c_int) -> c_int;
+}
+// --- end p1w4-thingtemplate ---

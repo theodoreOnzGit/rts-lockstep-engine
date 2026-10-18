@@ -251,6 +251,13 @@ pub enum Undefined {
     /// or one that was not found).
     NullSpecialPowerTemplate,
     // --- end p1w3-modules ---
+    // --- p1w4-thingtemplate ---
+    /// `ThingFactory::reset` deletes a template that is not at the head of
+    /// the template list (a map-only template created before a permanent
+    /// one) and leaves the previous template's `m_nextThingTemplate` pointing
+    /// at the freed object; the next walk of the list reads freed memory.
+    DanglingTemplateLink,
+    // --- end p1w4-thingtemplate ---
 }
 
 /// What failed, innermost cause first.
@@ -276,6 +283,20 @@ pub enum IniErrorKind {
     Xfer(XferStatus),
     /// Upstream is undefined here.
     Undefined(Undefined),
+    // --- p1w4-thingtemplate ---
+    /// An object template names a behavior or body module that
+    /// `ModuleFactory` registers but whose class is not translated yet
+    /// (`ModuleFactoryError::NotTranslated`). Upstream cannot fail there
+    /// (every class exists); the template load stops instead of skipping the
+    /// module.
+    ModuleNotTranslated(Vec<u8>),
+    /// An object template names a module that `ModuleFactory` has never
+    /// registered (`ModuleFactoryError::UnknownModule`; upstream returns a
+    /// null `ModuleData` and dereferences it).
+    ModuleUnknown(Vec<u8>),
+    /// One of the six registrations that the shipped game does not compile.
+    ModuleNotInShippedBuild(Vec<u8>),
+    // --- end p1w4-thingtemplate ---
 }
 
 /// What upstream throws, as the caller of `INI::load` (or of a field parser)
@@ -317,6 +338,11 @@ impl IniError {
         if let IniErrorKind::Undefined(_) = self.kind {
             return None;
         }
+        // --- p1w4-thingtemplate ---
+        if let IniErrorKind::ModuleNotTranslated(_) | IniErrorKind::ModuleUnknown(_) | IniErrorKind::ModuleNotInShippedBuild(_) = self.kind {
+            return None; // not something upstream throws, wrapped or not
+        }
+        // --- end p1w4-thingtemplate ---
         if let Some(m) = &self.exception {
             return Some(Thrown::Exception(m.clone()));
         }
@@ -324,6 +350,7 @@ impl IniError {
             IniErrorKind::Bug => Thrown::ErrorCode(ERROR_BUG),
             IniErrorKind::BitIndexOutOfRange => Thrown::OutOfRange,
             IniErrorKind::Xfer(_) => return None,
+            IniErrorKind::ModuleNotTranslated(_) | IniErrorKind::ModuleUnknown(_) | IniErrorKind::ModuleNotInShippedBuild(_) => return None,
             _ => Thrown::Status(ERROR_BAD_INI),
         })
     }

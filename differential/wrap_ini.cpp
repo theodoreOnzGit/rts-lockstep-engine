@@ -377,8 +377,21 @@ public:
 
 /* ---- the block handlers of theTypeTable: five test handlers, and the rest
 ** throw ERROR_BUG (none of them is translated) */
+/* --- p1w4-thingtemplate ---
+** The Object and ObjectReskin blocks: the ThingTemplate build (wrap_thingtemplate.cpp) installs a hook
+** here that runs the real INIObject.cpp handlers (renamed in that archive), as ref_science_lookup_hook
+** does for ScienceStore::friend_lookupScience: no other fixture may define INI::parseObjectDefinition
+** or INI::parseObjectReskinDefinition again. With no hook installed the INI tests' handlers run. */
+extern "C" { void (*ref_object_block_hook)(INI *, int) = 0; }
+void INI::parseObjectReskinDefinition(INI *ini)
+{
+	if (ref_object_block_hook) { ref_object_block_hook(ini, 1); return; }
+	throw ERROR_BUG;
+}
+/* --- end p1w4-thingtemplate --- */
 void INI::parseObjectDefinition(INI *ini)
 {
+	if (ref_object_block_hook) { ref_object_block_hook(ini, 0); return; }
 	put8(0xF0); put8(1);
 	putCStr(ini->getNextToken());
 	Rec rec;
@@ -437,7 +450,7 @@ STUB(INI::parseMiscAudio) STUB(INI::parseMouseDefinition) STUB(INI::parseMouseCu
 WEAK_STUB(INI::parseMultiplayerColorDefinition) WEAK_STUB(INI::parseMultiplayerStartingMoneyChoiceDefinition)
 STUB(INI::parseOnlineChatColorDefinition) WEAK_STUB(INI::parseMultiplayerSettingsDefinition)
 STUB(INI::parseMusicTrackDefinition) STUB(INI::parseObjectCreationListDefinition)
-STUB(INI::parseObjectReskinDefinition) STUB(INI::parseParticleSystemDefinition)
+STUB(INI::parseParticleSystemDefinition)
 WEAK_STUB(INI::parsePlayerTemplateDefinition) /* p1w3-playertemplate: real in PlayerTemplate.cpp */ STUB(INI::parseTerrainRoadDefinition)
 WEAK_STUB(INI::parseRankDefinition) /* p1w2-science: real in RankInfo.cpp */ WEAK_STUB(INI::parseSpecialPowerDefinition) /* p1w2-upgrade: real in wrap_upgrade.cpp */
 STUB(INI::parseShellMenuSchemeDefinition) WEAK_STUB(INI::parseTerrainDefinition) /* p1w2-terrain */
