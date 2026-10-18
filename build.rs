@@ -616,6 +616,29 @@ mod differential {
             .file(up.join("GameEngine/Source/Common/Dict.cpp"));
         dict.compile("upstream_dict");
 
+        // AsciiString.cpp unchanged (differential/wrap_ascii_string.cpp),
+        // with the REAL AsciiString.h (shim_ascii forwards to it, ahead of the
+        // std::string stand-in of differential/shim) on shim_dict's
+        // allocator and pointer-sized UnicodeString. Renamed by macro, as in
+        // the Dict build: AsciiString (the other builds' stand-in has the same
+        // name), UnicodeString (to the Dict build's name for the same shim)
+        // and TheDynamicMemoryAllocator (the Dict build defines one too).
+        let mut ascii = cc::Build::new();
+        base(&mut ascii);
+        ascii
+            .define("AsciiString", Some("UpstreamAsciiString"))
+            .define("UnicodeString", Some("DictShimUnicodeString"))
+            .define("TheDynamicMemoryAllocator", Some("AsciiBuildDynamicMemoryAllocator"))
+            .include(dif.join("shim_ascii"))
+            .include(&shim)
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .flag("-include")
+            .flag(dif.join("shim_ascii/ascii_prelude.h").to_str().expect("UTF-8 path"))
+            .file(dif.join("wrap_ascii_string.cpp"))
+            .file(sys.join("AsciiString.cpp"));
+        ascii.compile("upstream_ascii_string");
+
         // The CSF string loader: GameText.cpp unchanged, with csf_prelude.h
         // force-included (windows.h names, SubsystemInterface; see the file)
         // and the stand-ins of differential/shim_csf.
@@ -681,6 +704,7 @@ mod differential {
             "upstream/GeneralsMD/Code/GameEngine/Source/GameClient/GameText.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/NameKeyGenerator.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/Dict.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Include/Common/AsciiString.h",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/DiscreteCircle.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/BitFlags.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/WeaponSet.cpp",

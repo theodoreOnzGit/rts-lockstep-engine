@@ -3,6 +3,7 @@
 //! (and, for now, the fast float helpers of `Libraries/Include/Lib/BaseType.h`,
 //! which the whole engine includes, and `Libraries/Include/Lib/trig.h`).
 
+pub mod ascii_string;
 pub mod base_type;
 pub mod bit_flags;
 pub mod crc;

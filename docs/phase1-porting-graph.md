@@ -476,21 +476,29 @@ are a context argument (`&mut World` or a frame number) instead of a global.
 | layer | translated so far | differential test |
 |---|---|---|
 | 1 | `BaseType.h` value types and templates; `GameType.h`/`.cpp`; `GameCommon.h` (all but the intrusive-list macros) and `GameCommon.cpp`; `Errors.h`; `SpecialPowerType.h`; `ThingSort.h`; `Powers.h`; `WeaponSetType.h`; `WeaponStatus.h`; `WeaponBonusConditionFlags.h`; `ObjectScriptStatusBits.h`; `DiscreteCircle` | `tests/differential_value_types.rs` |
-| 2 | `NameKeyGenerator`, `StaticNameKey`, `WellKnownKeys.h` | `tests/differential_name_key.rs` |
+| 2 | `NameKeyGenerator`, `StaticNameKey`, `WellKnownKeys.h`; `AsciiString` (all but `format`) | `tests/differential_name_key.rs`, `tests/differential_ascii_string.rs` |
 | 3 | `BitFlags`/`BitFlagsIO` and all seven instantiations (`KindOf`, `ObjectStatusTypes`, `DisabledTypes`, `ModelState` flags, `ArmorSet` flags, `WeaponSetFlags`, `SpecialPowerMaskType`); `SparseMatchFinder`; `Dict`; `Xfer::xferKindOf` | `tests/differential_bit_flags.rs`, `tests/differential_dict.rs` |
 
 Still open in layers 1-3: `PartitionSolver` (see the `std::sort` hazard
 above), `Overridable`/`Override`, `LatchRestore` (layer 1);
-`AsciiString`/`UnicodeString` semantics, `STLTypedefs.h`,
+`AsciiString::format` and `UnicodeString`, `STLTypedefs.h`,
 `SubsystemInterface` (layer 2); folding
 `logic::damage`'s hand-written `DamageTypeFlags` into the generic
 `BitFlags`; moving `formats::data_chunk`'s name-keyed `Dict` stand-in onto
 `common::dict` and `common::name_key_generator`.
 
-One translation choice awaits the owner: `DiscreteCircle` shifts negative
-`Int`s left (`(1 - radius) << 1`), undefined before C++20 but the normal
-path of the function; it is translated as multiplication by 2, as MSVC (and
-C++20) define it, instead of as an error (`common::discrete_circle`).
+Two translation choices await the owner, both formally undefined C++ on a
+function's normal path, where MSVC's behaviour gives the intended result and
+the translation follows it instead of returning an error:
+
+- `DiscreteCircle` shifts negative `Int`s left (`(1 - radius) << 1`),
+  undefined before C++20; translated as multiplication by 2, as MSVC (and
+  C++20) define it (`common::discrete_circle`).
+- `AsciiString::set` copies a string's own tail into its buffer with an
+  overlapping `strcpy` (from `trim` and `nextToken`); translated as the
+  forward copy MSVC's `strcpy` makes. glibc's `strcpy` corrupts the result,
+  so the differential reference is compiled with a forward `strcpy`
+  (`common::ascii_string`).
 
 ## Differential-test routes, by rule
 

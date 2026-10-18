@@ -135,6 +135,9 @@ extern "C" {
     pub fn ref_well_known_key_count() -> c_int;
     pub fn ref_well_known_key_name(i: c_int, out: *mut c_char, cap: c_int, key: *mut c_uint) -> c_int;
 
+    // AsciiString.cpp (wrap_ascii_string.cpp, script interpreter)
+    pub fn ref_ascii_run(script: *const c_uchar, len: c_int, log: *mut c_uchar, cap: c_int) -> c_int;
+
     // Dict.cpp (wrap_dict.cpp, script interpreter)
     pub fn ref_dict_run(script: *const c_uchar, len: c_int, log: *mut c_uchar, cap: c_int) -> c_int;
 
