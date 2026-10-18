@@ -333,4 +333,76 @@ extern "C" {
     pub fn ref_m3_solve(m: *mut c_float) -> c_int;
     pub fn ref_m3_eq(a: *const c_float, b: *const c_float) -> c_int;
     pub fn ref_m3_static(which: c_int, out: *mut c_float);
+
+    // --- p1w1-geometry ---
+    // Geometry.cpp (differential/wrap_geometry.cpp)
+    pub fn ref_geometry_parse(
+        file: *const c_char,
+        data: *const c_char,
+        len: c_int,
+        type0: c_int,
+        small0: c_int,
+        height0: c_float,
+        major0: c_float,
+        minor0: c_float,
+        out: *mut c_uint,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        msg_len: *mut c_int,
+    ) -> c_int;
+    pub fn ref_geometry_op(
+        op: c_int,
+        type0: c_int,
+        small0: c_int,
+        height0: c_float,
+        major0: c_float,
+        minor0: c_float,
+        input: *const c_float,
+        out: *mut c_float,
+        out_count: *mut c_int,
+    ) -> c_int;
+    pub fn ref_geometry_random(
+        op: c_int,
+        seed: c_uint,
+        type0: c_int,
+        small0: c_int,
+        height0: c_float,
+        major0: c_float,
+        minor0: c_float,
+        count: c_int,
+        out: *mut c_float,
+    ) -> c_int;
+    pub fn ref_geometry_save(path: *const c_char, type0: c_int, small0: c_int, height0: c_float, major0: c_float, minor0: c_float) -> c_int;
+    pub fn ref_geometry_load(
+        path: *const c_char,
+        type0: c_int,
+        small0: c_int,
+        height0: c_float,
+        major0: c_float,
+        minor0: c_float,
+        out: *mut c_uint,
+    ) -> c_int;
+    pub fn ref_geometry_deep_crc(path: *const c_char, type0: c_int, small0: c_int, height0: c_float, major0: c_float, minor0: c_float) -> c_uint;
+    // BezierSegment.cpp and BezFwdIterator.cpp (differential/wrap_bezier.cpp)
+    pub fn ref_bez_eval(cp: *const c_float, t: c_float, out: *mut c_float);
+    pub fn ref_bez_points(cp: *const c_float, n: c_int, out: *mut c_float, cap: c_int, count: *mut c_int) -> c_int;
+    pub fn ref_bez_length(cp: *const c_float, tol: c_float) -> c_float;
+    pub fn ref_bez_split(cp: *const c_float, t: c_float, out: *mut c_float);
+    pub fn ref_bez_iter(cp: *const c_float, n: c_int, out: *mut c_float);
+    // Money.cpp and Handicap.cpp (differential/wrap_money.cpp, wrap_handicap.cpp)
+    pub fn ref_money_op(op: c_int, money0: c_uint, player0: c_int, amount: c_uint, play_sound: c_int, out: *mut c_uint);
+    pub fn ref_money_parse(
+        file: *const c_char,
+        data: *const c_char,
+        len: c_int,
+        out: *mut c_uint,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        msg_len: *mut c_int,
+    );
+    pub fn ref_money_save(path: *const c_char, money0: c_uint, player0: c_int) -> c_int;
+    pub fn ref_money_load(path: *const c_char, money0: c_uint, player0: c_int, out: *mut c_uint);
+    pub fn ref_money_deep_crc(path: *const c_char, money0: c_uint, player0: c_int) -> c_uint;
+    pub fn ref_handicap_read(nset: c_int, names: *const c_char, values: *const c_float, out: *mut c_float, log: *mut c_char, log_cap: c_int, log_len: *mut c_int);
+    // --- end p1w1-geometry ---
 }

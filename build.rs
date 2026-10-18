@@ -391,6 +391,77 @@ mod differential {
             .file(dif.join("wrap_value_types.cpp"));
         vt.compile("upstream_value_types");
 
+        // --- p1w1-geometry ---
+        // GeometryInfo: Geometry.cpp unchanged (differential/wrap_geometry.cpp),
+        // with the INI build's headers and prelude. Compiled before the
+        // libraries it calls (RandomValue, the Xfer family, INI), as the link
+        // order requires (see the comment above the W3D group).
+        {
+            let shim_ini = dif.join("shim_ini");
+            let mut geo = cc::Build::new();
+            base(&mut geo);
+            geo.include(&shim_ini)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .flag("-include")
+                .flag(shim_ini.join("ini_prelude.h").to_str().expect("UTF-8 path"))
+                .file(dif.join("wrap_geometry.cpp"));
+            geo.compile("upstream_geometry");
+        }
+        // BezierSegment.cpp and BezFwdIterator.cpp, unchanged
+        // (differential/wrap_bezier.cpp), on shim_bezier: Coord3D's methods
+        // and the D3DX math transcription (see the shim headers).
+        {
+            let shim_bezier = dif.join("shim_bezier");
+            let mut bez = cc::Build::new();
+            base(&mut bez);
+            bez.include(&shim_bezier)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .file(dif.join("wrap_bezier.cpp"));
+            bez.compile("upstream_bezier");
+        }
+        // Money.cpp and Handicap.cpp, unchanged (differential/wrap_money.cpp,
+        // wrap_handicap.cpp), on shim_money: stand-ins for the layer 5 to 7
+        // singletons they call, which log what logic asks of the client. The
+        // money group also reads the INI field through the INI build's
+        // headers (shim_ini's prelude).
+        {
+            let shim_money = dif.join("shim_money");
+            let shim_ini = dif.join("shim_ini");
+            let mut money = cc::Build::new();
+            base(&mut money);
+            money
+                .include(&shim_money)
+                .include(&shim_ini)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .flag("-include")
+                .flag(shim_ini.join("ini_prelude.h").to_str().expect("UTF-8 path"))
+                .file(dif.join("wrap_money.cpp"));
+            money.compile("upstream_money");
+
+            let mut handicap = cc::Build::new();
+            base(&mut handicap);
+            handicap
+                .include(&shim_money)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .file(dif.join("wrap_handicap.cpp"));
+            handicap.compile("upstream_handicap");
+        }
+        // --- end p1w1-geometry ---
+
         // GameEngine: RandomValue.cpp, Trig.cpp, QuickTrig.cpp (via their
         // wrappers) and crc.cpp. `_DEBUG` selects crc.h's C++ CRC class
         // instead of its MSVC `_asm` block; the asm path is transcribed

@@ -31,3 +31,9 @@ pub mod xfer;
 pub mod xfer_crc;
 pub mod xfer_load;
 pub mod xfer_save;
+
+// --- p1w1-geometry ---
+pub mod bezier_segment;
+pub mod geometry;
+pub mod handicap;
+pub mod money;
