@@ -1061,3 +1061,20 @@ extern "C" {
     pub fn ref_weapon_fire_run(words: *const c_uint, n: c_int, tmp_path: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
 }
 // --- end p1w7-sonnet ---
+// --- p1l9-creates ---
+extern "C" {
+    // wrap_create_modules.cpp: the seven create modules of GameLogic/Object/Create, unchanged, on the stand-ins of
+    // differential/shim_creates. A block of INI (read by the real INI) and a program of state changes and calls; the
+    // text lines the program produces (see tests/differential_create_modules.rs). Returns 0; `out_len` is the length
+    // that was written (or would have been, if it is larger than `cap`), and -1 is never returned for a valid block.
+    pub fn ref_create_run(
+        text: *const c_char,
+        text_len: c_int,
+        prog: *const c_uint,
+        n_prog: c_int,
+        out: *mut c_char,
+        cap: c_int,
+        out_len: *mut c_int,
+    ) -> c_int;
+}
+// --- end p1l9-creates ---

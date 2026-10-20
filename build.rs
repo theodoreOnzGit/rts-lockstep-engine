@@ -2289,6 +2289,43 @@ mod differential {
             }
         }
         // --- end p1w3-modules ---
+        // --- p1l9-creates ---
+        // The layer-9 create modules (differential/wrap_create_modules.cpp): the seven upstream files of
+        // GameLogic/Object/Create, unchanged, #included by the wrapper inside the forced prelude
+        // differential/shim_creates/create_prelude.h (the renames), with the layer-5 chain of the module
+        // build on the same include path. CreateModule.cpp is not compiled here: it is linked from
+        // upstream_module (wrap_module.cpp), whose symbols this build reuses.
+        {
+            let shim_cr = dif.join("shim_creates");
+            let mut cr = cc::Build::new();
+            base(&mut cr);
+            cr.compiler("clang++")
+                .flag("-fms-extensions")
+                .flag("-fdelayed-template-parsing")
+                .include(&shim_cr)
+                .include(dif.join("shim_module"))
+                .include(dif.join("shim_upgrade"))
+                .include(&flags_gen)
+                .include(dif.join("shim_flags"))
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .include(&dif)
+                .flag("-include")
+                .flag(shim_cr.join("create_prelude.h").to_str().expect("UTF-8 path"))
+                .file(dif.join("wrap_create_modules.cpp"));
+            cr.compile("upstream_create_modules");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Create",
+                "differential/wrap_create_modules.cpp",
+                "differential/shim_creates",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
+        // --- end p1l9-creates ---
         // --- p1w4-polygon ---
         // PolygonTrigger.cpp unchanged (differential/wrap_polygon_trigger.cpp), on
         // differential/shim_polygon (the precompiled header, GlobalData's water
