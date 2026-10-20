@@ -300,6 +300,10 @@ pub enum ModuleDataKind {
     Update(Arc<UpdateModuleData>),
     /// `UpgradeModuleData`.
     Upgrade(Arc<UpgradeModuleData>),
+    // --- p1l9-example ---
+    /// `CommandSetUpgradeModuleData`.
+    CommandSetUpgrade(Arc<crate::logic::modules::command_set_upgrade::CommandSetUpgradeModuleData>),
+    // --- end p1l9-example ---
 }
 
 impl ModuleDataKind {
@@ -316,6 +320,9 @@ impl ModuleDataKind {
             ModuleDataKind::SpecialPower(d) => &d.behavior.module_data,
             ModuleDataKind::Update(d) => &d.behavior.module_data,
             ModuleDataKind::Upgrade(d) => &d.behavior.module_data,
+            // --- p1l9-example ---
+            ModuleDataKind::CommandSetUpgrade(d) => &d.upgrade.behavior.module_data,
+            // --- end p1l9-example ---
         }
     }
 
@@ -343,6 +350,12 @@ impl ModuleDataKind {
             ModuleDataKind::SpecialPower(d) => set(d, key, |d| &mut d.behavior.module_data),
             ModuleDataKind::Update(d) => set(d, key, |d| &mut d.behavior.module_data),
             ModuleDataKind::Upgrade(d) => set(d, key, |d| &mut d.behavior.module_data),
+            // --- p1l9-example ---
+            ModuleDataKind::CommandSetUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            // --- end p1l9-example ---
         }
     }
 

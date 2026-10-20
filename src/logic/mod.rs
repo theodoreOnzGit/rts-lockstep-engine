@@ -74,6 +74,6 @@ pub mod weapon_host;
 pub mod weapon_set_state;
 // --- end p1w8-sonnet ---
 
-// --- p1l9-updates ---
+// --- p1l9-example ---
 pub mod modules;
-// --- end p1l9-updates ---
+// --- end p1l9-example ---

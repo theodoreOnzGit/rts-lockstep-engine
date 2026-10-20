@@ -75,7 +75,15 @@ std::vector<Event> g_events;
 void event(int kind, const void *p) { Event e = { kind, p }; g_events.push_back(e); }
 }
 void FXList::doFXObj(const FXList *fx, const Object *, const Object *) { event(1, fx); }
-void Object::removeUpgrade(const UpgradeTemplate *t) { event(2, t); }
+void Object::removeUpgrade(const UpgradeTemplate *t)
+{
+	event(2, t);
+	/* --- p1l9-example --- */
+	/* upstream's first line (Object.cpp:4517); its loop over the object's upgrade modules is not modelled
+	** (a module test has one module, and its own resetUpgrade changes nothing observable mid-attempt) */
+	if (t) m_objectUpgradesCompleted.clear(t->getUpgradeMask());
+	/* --- end p1l9-example --- */
+}
 
 /* ---- the dump ------------------------------------------------------------ */
 namespace {
@@ -757,3 +765,8 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 }
 
 }  /* extern "C" */
+
+/* ---- layer 9: the concrete modules, one driver file per batch, each #including its upstream .cpp files ---- */
+/* --- p1l9-example --- */
+#include "l9_example.inc"
+/* --- end p1l9-example --- */
