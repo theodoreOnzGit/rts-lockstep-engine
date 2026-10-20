@@ -341,7 +341,9 @@ where upstream registers an object no lookup can find.
   wave).
 - ~~`Player`/`Team` contents; the `TeamFactory` creation functions.~~ **CORRECTED 2026-10-20 (`p1w9-sonnet`)** — `Team`,
   `TeamPrototype`, `TeamFactory`, `TeamRelationMap`, `TeamTemplateInfo` and `PlayerRelationMap` are translated (see
-  "Player and Team shape" below). `Player` and `PlayerList` contents are still left.
+  "Player and Team shape" below). ~~`Player` and `PlayerList` contents are still left.~~ **CORRECTED 2026-10-20
+  (`p1w10-sonnet`)** — `Player`'s data and the first slice of its operations are translated (below); the object-facing
+  half, `xfer`, `initFromDict` and `PlayerList` are still left.
 - The `GameSetup` struct (network slots), and the audio-length table loader.
 - `popSleepyUpdate` is translated but unused (upstream never calls it).
 
@@ -392,6 +394,19 @@ host call that changes team membership (`Object::setTeam`) reaches the arena thr
 `TeamHost` is layer 12's, with the other host adapters. Until then `Object` keeps its team and member lists in
 `ObjectCuts` (`team_members`, `team_players`, `team_names`), unchanged, and `TeamArena` is the data a later
 adapter connects it to: **left for the adapter**, not forgotten.
+
+**Done for `Player`, slice 1 (`p1w10-sonnet`, 2026-10-20):** `logic::world::player` (the whole data of `class Player`,
+in the existing `PlayerArena`) and `logic::world::player_ops` (free functions over `PlayerHost`, a `TeamHost`
+supertrait: the player arena as two methods, the global data and game state as one `PlayerGlobals` value, template
+values as a `PlayerTemplateView` the adapter fills from a `PlayerTemplate`, the AI as 25 methods, the score keeper and
+the academy statistics as calls, the rank and science stores, and the client as `ClientEvent::Player`). The sub-objects
+that are other units and verified by their own tests are held by the player and called directly (`Money`, `Handicap`,
+`Energy`, `MissionStats`); `Energy`'s `OwnerNotice` is delivered by `player_deliver_brown_out_notice`. A player's loops
+walk the real team arena (its prototypes, their instance lists, the teams' member lists, with the `DLINK` semantic of
+`team.rs`). `Player::new` is the constructor's field assignments; the `init( NULL )` it ends with is `player_init`,
+which whoever builds the world calls for all sixteen. **Left for the layer-12 adapter**: `PlayerHost` and
+`TeamHost` for `World` (the `TeamHost` player methods are one-liners over `player_ops`, see
+`tests/differential_player.rs`'s `Sim`), and `PlayerTemplateView::from_template`.
 
 <!-- --- p1w6-object --- -->
 ## Object (layer 8, wave 6)

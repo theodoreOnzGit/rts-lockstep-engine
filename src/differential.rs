@@ -1167,3 +1167,9 @@ extern "C" {
     pub fn ref_team_run(words: *const c_uint, n: c_int, tmp_path: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
 }
 // --- end p1w9-sonnet ---
+// --- p1w10-sonnet ---
+extern "C" {
+    // Player.cpp (slice 1) and Team.cpp on stand-ins (wrap_player.cpp, shim_player/player_driver.h)
+    pub fn ref_player_run(words: *const c_uint, n: c_int, out: *mut c_char, cap: c_int) -> c_int;
+}
+// --- end p1w10-sonnet ---

@@ -41,6 +41,9 @@ pub mod object_xfer;
 mod object_tests;
 // --- end p1w6-object ---
 pub mod player;
+// --- p1w10-sonnet ---
+pub mod player_ops;
+// --- end p1w10-sonnet ---
 pub mod sleepy;
 pub mod team;
 // --- p1w9-sonnet ---

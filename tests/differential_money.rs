@@ -61,6 +61,9 @@ fn event_pair(e: &ClientEvent) -> (u32, u32) {
         // --- p1w6-partition ---
         ClientEvent::Partition(_) => unreachable!("the money code makes only MoneySound events"),
         // --- end p1w6-partition ---
+        // --- p1w10-sonnet ---
+        ClientEvent::Player(_) => unreachable!("the money code makes only MoneySound events"),
+        // --- end p1w10-sonnet ---
     }
 }
 

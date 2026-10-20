@@ -83,4 +83,8 @@ pub enum ClientEvent {
     /// `World::flush_partition_events` moves them here, in order.
     Partition(PartitionClientEvent),
     // --- end p1w6-partition ---
+    // --- p1w10-sonnet ---
+    /// What `Player` tells `TheAudio`, `TheControlBar` and `TheEva` ([`PlayerClientEvent`]), nested.
+    Player(crate::logic::world::player_ops::PlayerClientEvent),
+    // --- end p1w10-sonnet ---
 }
