@@ -316,7 +316,7 @@ mod tests {
     fn world() -> World {
         let mut w = World::new();
         w.cuts.neutral_default_team = 1;
-        w.teams.insert_team(Team { id: 1, prototype: 0 });
+        w.teams.insert_team(Team::new(1, 0)).unwrap();
         w.cuts.trace = Some(Vec::new());
         w
     }

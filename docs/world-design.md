@@ -339,7 +339,9 @@ where upstream registers an object no lookup can find.
   `GameLogic::xfer`/CRC (layer 12), and the `World` implementation of the
   partition host traits (now unblocked: the real `Object` landed in the same
   wave).
-- `Player`/`Team` contents; the `TeamFactory` creation functions.
+- ~~`Player`/`Team` contents; the `TeamFactory` creation functions.~~ **CORRECTED 2026-10-20 (`p1w9-sonnet`)** — `Team`,
+  `TeamPrototype`, `TeamFactory`, `TeamRelationMap`, `TeamTemplateInfo` and `PlayerRelationMap` are translated (see
+  "Player and Team shape" below). `Player` and `PlayerList` contents are still left.
 - The `GameSetup` struct (network slots), and the audio-length table loader.
 - `popSleepyUpdate` is translated but unused (upstream never calls it).
 
@@ -374,6 +376,22 @@ where upstream registers an object no lookup can find.
    **DONE 2026-10-18 (`p1w6-object`)**: `ClientEvent::ObjectCreated { template_id,
    drawable_status_bits, object_id }`, sent by `World::send_object_created`.
 3. **Keep `world.terrain`** as a field, checked out for its own update.
+
+### Player and Team shape (lead, 2026-10-20; relayed to `p1w9-sonnet`)
+
+`Player`/`PlayerList` and `Team`/`TeamFactory`/`TeamPrototype` live in the existing `World` arenas (`PlayerArena`,
+`TeamArena`); `Player` already carries Energy, ScoreKeeper, MissionStats and AcademyStats as fields, and the shells
+become the real translations in place. Anything they call that is not translated yet (the SidesList glue, the AI, the
+script engine, `Squad`, the client UI) is a cut point, done the way `ActionHost` and `WeaponHost` are done: a host
+trait (generic, no `dyn`) that the differential fixture stands in for.
+
+**Done for `Team` (`p1w9-sonnet`):** `logic::world::team` (data, the arena, the `DLINK` lists), `team_ops` (every member
+function of `Team`, `TeamPrototype` and `TeamFactory` as a free function over `TeamHost`, a trait the owner of the
+`TeamArena` implements) and `team_xfer` (save, load and post-process). `TeamHost` has the arena as two methods, so a
+host call that changes team membership (`Object::setTeam`) reaches the arena through the host. The `World` adapter of
+`TeamHost` is layer 12's, with the other host adapters. Until then `Object` keeps its team and member lists in
+`ObjectCuts` (`team_members`, `team_players`, `team_names`), unchanged, and `TeamArena` is the data a later
+adapter connects it to: **left for the adapter**, not forgotten.
 
 <!-- --- p1w6-object --- -->
 ## Object (layer 8, wave 6)
@@ -463,3 +481,9 @@ not skip a module with no template; `m_destinationLayer` started at
 `LAYER_GROUND`, but the memory pool zero-fills and the constructor never sets
 it).
 <!-- --- end p1w6-object --- -->
+
+## Open item (2026-10-20): Object still keeps team state in `ObjectCuts`
+
+The translated Team unit (`team.rs`, `team_ops.rs`, `team_xfer.rs`) reaches objects only through `TeamHost`.
+`Object::setTeam` and the object's own team fields are still the earlier shell state in `ObjectCuts`;
+the layer-12 `World` adapter is what connects the two. Not verified end to end until then.

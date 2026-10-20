@@ -1061,3 +1061,9 @@ extern "C" {
     pub fn ref_weapon_fire_run(words: *const c_uint, n: c_int, tmp_path: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
 }
 // --- end p1w7-sonnet ---
+// --- p1w9-sonnet ---
+extern "C" {
+    // Team.cpp on stand-ins (wrap_team.cpp, shim_team/team_driver.h)
+    pub fn ref_team_run(words: *const c_uint, n: c_int, tmp_path: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
+}
+// --- end p1w9-sonnet ---

@@ -49,7 +49,7 @@ fn probe_module(max_health: f32) -> NewModule {
 fn world() -> World {
     let mut w = World::new();
     w.cuts.neutral_default_team = 1;
-    w.teams.insert_team(crate::logic::world::team::Team { id: 1, prototype: 0 });
+    w.teams.insert_team(crate::logic::world::team::Team::new(1, 0)).unwrap();
     w.cuts.log = Some(Vec::new());
     w
 }
@@ -508,7 +508,7 @@ fn defect_changes_team_marks_the_defector_and_tells_the_client() {
     w.cuts.team_players.insert(2, 1);
     w.cuts.player_default_teams.insert(0, 1);
     w.cuts.player_default_teams.insert(1, 2);
-    w.teams.insert_team(crate::logic::world::team::Team { id: 2, prototype: 0 });
+    w.teams.insert_team(crate::logic::world::team::Team::new(2, 0)).unwrap();
     w.players.set_player_count(2);
     let id = make(&mut w, vec![probe_with(|_| {})]);
     w.defect(id, 2, 30);
