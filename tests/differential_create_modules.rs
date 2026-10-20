@@ -192,8 +192,8 @@ fn gen_program(rng: &mut Rng) -> Program {
     for _ in 0..ops {
         // onCreate and onBuildComplete are the common ops; the world changes are the rest
         match rng.below(12) {
-            0 | 1 | 2 => w.push(1),
-            3 | 4 | 5 => w.push(2),
+            0..=2 => w.push(1),
+            3..=5 => w.push(2),
             6 => {
                 w.push(3);
                 w.push(rng.below(PLAYERS as u32));
@@ -454,8 +454,10 @@ fn read_block(kind: u32, text: &str) -> Option<(Data, String)> {
 fn run_rust(p: &Program) -> String {
     let w = &p.words;
     let kind = w[0];
-    let mut world = World::default();
-    world.player_count = if w[1] == NULL_LIST { None } else { Some(w[1] as i32) };
+    let mut world = World {
+        player_count: if w[1] == NULL_LIST { None } else { Some(w[1] as i32) },
+        ..World::default()
+    };
     let mut r = 2;
     for player in world.players.iter_mut() {
         player.preorder = w[r] != 0;
