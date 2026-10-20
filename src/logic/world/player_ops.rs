@@ -80,6 +80,20 @@ pub enum PlayerError {
     Hang,
     /// What the team code reported.
     Team(TeamError),
+    /// `throw SC_INVALID_DATA` (`Player::xfer`, `Squad::xfer`: a load that does not fit the world).
+    InvalidData,
+    /// What the xfer itself returned.
+    Xfer(crate::common::xfer::XferStatus),
+    /// An id or key names nothing where upstream dereferences a pointer (undefined behaviour there).
+    Null,
+    /// The name-key counter ran past `0x7fffffff` (undefined upstream).
+    NameKeysExhausted,
+}
+
+impl From<crate::common::xfer::XferStatus> for PlayerError {
+    fn from(s: crate::common::xfer::XferStatus) -> PlayerError {
+        PlayerError::Xfer(s)
+    }
 }
 
 impl From<TeamError> for PlayerError {
@@ -228,6 +242,24 @@ pub type SpecialPowerTemplateRef = u32;
 pub enum EvaMessage {
     /// `EVA_GeneralLevelUp`.
     GeneralLevelUp,
+    /// `EVA_SuperweaponDetected_Own_ParticleCannon`.
+    SuperweaponDetectedOwnParticleCannon,
+    /// `EVA_SuperweaponDetected_Ally_ParticleCannon`.
+    SuperweaponDetectedAllyParticleCannon,
+    /// `EVA_SuperweaponDetected_Enemy_ParticleCannon`.
+    SuperweaponDetectedEnemyParticleCannon,
+    /// `EVA_SuperweaponDetected_Own_Nuke`.
+    SuperweaponDetectedOwnNuke,
+    /// `EVA_SuperweaponDetected_Ally_Nuke`.
+    SuperweaponDetectedAllyNuke,
+    /// `EVA_SuperweaponDetected_Enemy_Nuke`.
+    SuperweaponDetectedEnemyNuke,
+    /// `EVA_SuperweaponDetected_Own_ScudStorm`.
+    SuperweaponDetectedOwnScudStorm,
+    /// `EVA_SuperweaponDetected_Ally_ScudStorm`.
+    SuperweaponDetectedAllyScudStorm,
+    /// `EVA_SuperweaponDetected_Enemy_ScudStorm`.
+    SuperweaponDetectedEnemyScudStorm,
 }
 
 /// What `Player` tells the client (`TheAudio`, `TheControlBar`, `TheEva`): the one client interface
@@ -256,6 +288,52 @@ pub enum PlayerClientEvent {
     },
     /// `TheEva->setShouldPlay(message)`.
     Eva(EvaMessage),
+    /// `TheControlBar->setControlBarSchemeByPlayer(player)`.
+    ControlBarSchemeByPlayer {
+        /// The player.
+        player_index: i32,
+    },
+    /// `TheControlBar->setControlBarSchemeByPlayerTemplate(template)`.
+    ControlBarSchemeByPlayerTemplate {
+        /// The template found (`None` for `NULL`).
+        template: Option<PlayerTemplateRef>,
+    },
+    /// `TheInGameUI->...`/`Color` of the local player's team: `ThePlayerList->getLocalPlayer()->getPlayerColor()` as
+    /// `TheGameClient->setTeamColor(r, g, b)`.
+    SetTeamColor {
+        /// Red, 0 to 255.
+        red: i32,
+        /// Green.
+        green: i32,
+        /// Blue.
+        blue: i32,
+    },
+    /// `TheRadar->removeObject(object)`.
+    RadarRemoveObject {
+        /// The object.
+        object: ObjectId,
+    },
+    /// `TheRadar->addObject(object)`.
+    RadarAddObject {
+        /// The object.
+        object: ObjectId,
+    },
+    /// `drawable->changeIndicatorColor`/`object->getDrawable()->setIndicatorColor(color)`.
+    IndicatorColor {
+        /// The object.
+        object: ObjectId,
+        /// The colour.
+        color: u32,
+    },
+    /// `TheInGameUI->addFloatingText(text, &pos, color)` of a bounty.
+    FloatingText {
+        /// The amount shown.
+        amount: i32,
+        /// Where.
+        pos: Coord3D,
+        /// The colour.
+        color: u32,
+    },
 }
 
 /// Everything the player code reaches outside the player arena and the team arena. See the module docs.
@@ -467,14 +545,14 @@ pub fn player_init<H: PlayerHost>(h: &mut H, p: PlayerIndex, pt: Option<PlayerTe
         let me = plm(h, p)?;
         me.ai = None;
         me.resource_gathering_manager = None;
-        me.squads = vec![Squad::default(); NUM_HOTKEY_SQUADS];
+        me.squads = vec![Squad::default(); NUM_HOTKEY_SQUADS - plant(9) as usize];
         me.current_selection = Some(Squad::default());
         me.tunnel_system = None;
         me.can_build_base = true;
         me.can_build_units = true;
         me.observer = false;
         me.cash_bounty_percent = 0.0;
-        me.list_in_score_screen = true;
+        me.list_in_score_screen = !plant(8);
         me.units_should_hunt = false;
     }
     if let Some(t) = pt {
@@ -486,7 +564,7 @@ pub fn player_init<H: PlayerHost>(h: &mut H, p: PlayerIndex, pt: Option<PlayerTe
                 tp.production_cost_changes,
                 tp.production_time_changes,
                 tp.production_veterancy_levels,
-                (tp.preferred_color_as_int as u32) | 0xff00_0000,
+                if plant(1) { tp.preferred_color_as_int as u32 } else { (tp.preferred_color_as_int as u32) | 0xff00_0000 },
                 tp.money,
                 tp.handicap,
                 tp.observer,
@@ -499,14 +577,16 @@ pub fn player_init<H: PlayerHost>(h: &mut H, p: PlayerIndex, pt: Option<PlayerTe
         me.production_time_changes = time;
         me.production_veterancy_levels = vet;
         me.color = color;
-        me.night_color = color;
+        me.night_color = if plant(2) { 0 } else { color };
         me.money = money;
-        me.money.set_player_index(p);
+        if !plant(3) {
+            me.money.set_player_index(p);
+        }
         me.handicap = handicap;
         if me.money.count_money() == 0 {
             me.money = match g.game_info_starting_cash {
-                Some(m) => m,
-                None => g.default_starting_cash,
+                Some(m) if !plant(4) => m,
+                _ => g.default_starting_cash,
             };
         }
         me.display_name = UnicodeString::default();
@@ -514,7 +594,7 @@ pub fn player_init<H: PlayerHost>(h: &mut H, p: PlayerIndex, pt: Option<PlayerTe
         me.name_key = 0;
         me.player_type = PlayerType::Computer;
         me.observer = observer;
-        me.is_player_dead = observer;
+        me.is_player_dead = observer && !plant(5);
     } else {
         let empty_key = key_of(h, b"");
         {
@@ -534,10 +614,14 @@ pub fn player_init<H: PlayerHost>(h: &mut H, p: PlayerIndex, pt: Option<PlayerTe
             me.player_type = PlayerType::Computer;
         }
         // neutral is always "allied" with self -- this is the only thing ever allied with neutral!
-        player_set_player_relationship(h, p, Some(p), Relationship::Allies)?;
+        if !plant(6) {
+            player_set_player_relationship(h, p, Some(p), Relationship::Allies)?;
+        }
     }
     // reset each player
-    h.score_reset(p, p);
+    if !plant(7) {
+        h.score_reset(p, p);
+    }
     plm(h, p)?.template = pt;
 
     // reset rank info
@@ -549,7 +633,9 @@ pub fn player_init<H: PlayerHost>(h: &mut H, p: PlayerIndex, pt: Option<PlayerTe
         me.special_power_timers.clear();
         me.kind_of_production_changes.clear();
     }
-    h.academy_init(p);
+    if !plant(10) {
+        h.academy_init(p);
+    }
 
     // Always off at the beginning of a game! Only GameLogic::update has the power to turn it on.
     plm(h, p)?.logical_retaliation_mode_enabled = false;
@@ -572,7 +658,7 @@ pub fn player_get_relationship<H: PlayerHost>(h: &H, p: PlayerIndex, that: Optio
     if let Some(t) = that {
         let me = pl(h, p)?;
         // do we have an override for that particular team? if so, return it.
-        if !me.team_relations.map.is_empty() {
+        if !me.team_relations.map.is_empty() && !plant(11) {
             if let Some(r) = me.team_relations.map.get(&t) {
                 return Ok(*r);
             }
@@ -587,7 +673,7 @@ pub fn player_get_relationship<H: PlayerHost>(h: &H, p: PlayerIndex, that: Optio
             }
         }
     }
-    Ok(Relationship::Neutral)
+    Ok(if plant(12) { Relationship::Allies } else { Relationship::Neutral })
 }
 
 /// `Player::setPlayerRelationship(that, r)`.
@@ -609,7 +695,7 @@ pub fn player_remove_player_relationship<H: PlayerHost>(h: &mut H, p: PlayerInde
         match that {
             None => {
                 me.player_relations.map.clear();
-                return Ok(true);
+                return Ok(!plant(13));
             }
             Some(t) => {
                 if me.player_relations.map.remove(&t).is_some() {
@@ -639,7 +725,7 @@ pub fn player_remove_team_relationship<H: PlayerHost>(h: &mut H, p: PlayerIndex,
                 return Ok(true);
             }
             Some(t) => {
-                if me.team_relations.map.remove(&t).is_some() {
+                if me.team_relations.map.remove(&t).is_some() || plant(14) {
                     return Ok(true);
                 }
             }
@@ -666,8 +752,12 @@ pub fn player_add_to_build_list<H: PlayerHost>(h: &mut H, p: PlayerIndex, obj: O
     info.template_name = template_name;
     info.location = location;
     info.angle = angle;
-    info.num_rebuilds = 0; // Can't rebuild.
-    plm(h, p)?.build_list.insert(0, info);
+    info.num_rebuilds = plant(16) as u32; // Can't rebuild.
+    {
+        let bl = &mut plm(h, p)?.build_list;
+        let at = if plant(15) { bl.len() } else { 0 };
+        bl.insert(at, info);
+    }
     Ok(())
 }
 
@@ -677,7 +767,7 @@ pub fn player_add_to_priority_build_list<H: PlayerHost>(h: &mut H, p: PlayerInde
     info.template_name = template_name.to_vec();
     info.location = pos;
     info.angle = angle;
-    info.priority_build = true;
+    info.priority_build = !plant(17);
     info.num_rebuilds = 1; // Build once.
     plm(h, p)?.build_list.insert(0, info);
     Ok(())
@@ -687,7 +777,7 @@ pub fn player_add_to_priority_build_list<H: PlayerHost>(h: &mut H, p: PlayerInde
 
 /// `Player::update()`.
 pub fn player_update<H: PlayerHost>(h: &mut H, p: PlayerIndex) -> PResult<()> {
-    if pl(h, p)?.ai.is_some() {
+    if pl(h, p)?.ai.is_some() && !plant(20) {
         h.ai_update(p);
     }
     // Allow the teams this player owns to update themselves.
@@ -700,7 +790,7 @@ pub fn player_update<H: PlayerHost>(h: &mut H, p: PlayerIndex) -> PResult<()> {
     }
     let frame = h.frame();
     let sabotaged = pl(h, p)?.energy.power_sabotaged_till_frame();
-    if sabotaged != 0 && frame > sabotaged {
+    if sabotaged != 0 && (if plant(18) { frame >= sabotaged } else { frame > sabotaged }) {
         let me = plm(h, p)?;
         me.energy.set_power_sabotaged_till_frame(0); // Tells us we're no longer sabotaged for above check.
         let brown_out = !me.energy.has_sufficient_power(frame);
@@ -713,9 +803,9 @@ pub fn player_update<H: PlayerHost>(h: &mut H, p: PlayerIndex) -> PResult<()> {
     if h.players().local_index() == Some(p) {
         let now = h.frame();
         // Only check and post the message once every second so we don't spam the message stream to account for lag.
-        if now.is_multiple_of(LOGICFRAMES_PER_SECOND as u32) {
+        if now.is_multiple_of(if plant(19) { 29 } else { LOGICFRAMES_PER_SECOND as u32 }) {
             let enabled = h.globals().client_retaliation_mode_enabled;
-            if enabled != pl(h, p)?.logical_retaliation_mode_enabled {
+            if (enabled != pl(h, p)?.logical_retaliation_mode_enabled) != plant(70) {
                 // Post a logical message that will switch the retaliation mode on or off.
                 h.message_enable_retaliation_mode(p, enabled);
             }
@@ -735,12 +825,12 @@ pub fn player_new_map<H: PlayerHost>(h: &mut H, p: PlayerIndex) -> PResult<()> {
 /// `Player::setPlayerType(t, skirmish)`.
 pub fn player_set_player_type<H: PlayerHost>(h: &mut H, p: PlayerIndex, t: PlayerType, skirmish: bool) -> PResult<()> {
     plm(h, p)?.player_type = t;
-    if pl(h, p)?.ai.is_some() {
+    if pl(h, p)?.ai.is_some() && !plant(22) {
         h.ai_delete(p);
     }
     plm(h, p)?.ai = None;
     if t == PlayerType::Computer {
-        let skirmish = skirmish || h.globals().force_skirmish_ai;
+        let skirmish = skirmish || (h.globals().force_skirmish_ai && !plant(21));
         // create AIPlayer (or AISkirmishPlayer) and attach to this Player
         h.ai_create(p, skirmish);
         plm(h, p)?.ai = Some(AiPlayerRef { skirmish });
@@ -755,7 +845,9 @@ pub fn player_set_default_team<H: PlayerHost>(h: &mut H, p: PlayerIndex) -> PRes
     let dt = factory_find_team(h, &tname)?;
     if let Some(t) = dt {
         plm(h, p)?.default_team = Some(t);
-        team_set_active(h, t)?;
+        if !plant(23) {
+            team_set_active(h, t)?;
+        }
     }
     Ok(())
 }
@@ -789,7 +881,7 @@ pub fn player_get_current_enemy<H: PlayerHost>(h: &H, p: PlayerIndex) -> PResult
 
 /// `Player::getPlayerDifficulty()`.
 pub fn player_get_player_difficulty<H: PlayerHost>(h: &H, p: PlayerIndex) -> PResult<GameDifficulty> {
-    if pl(h, p)?.ai.is_some() {
+    if pl(h, p)?.ai.is_some() && !plant(24) {
         return Ok(h.ai_difficulty(p));
     }
     Ok(h.globals().global_difficulty)
@@ -816,7 +908,9 @@ pub fn player_repair_structure<H: PlayerHost>(h: &mut H, p: PlayerIndex, structu
 /// `Player::onUnitCreated(factory, unit)`.
 pub fn player_on_unit_created<H: PlayerHost>(h: &mut H, p: PlayerIndex, factory: Option<ObjectId>, unit: Option<ObjectId>) -> PResult<()> {
     h.script_notify_of_object_creation_or_destruction();
-    h.score_add_object_built(p, unit);
+    if !plant(26) {
+        h.score_add_object_built(p, unit);
+    }
     if pl(h, p)?.ai.is_some() {
         h.ai_on_unit_produced(p, factory, unit);
     }
@@ -825,7 +919,7 @@ pub fn player_on_unit_created<H: PlayerHost>(h: &mut H, p: PlayerIndex, factory:
 
 /// `Player::isSupplySourceSafe(minSupplies)`.
 pub fn player_is_supply_source_safe<H: PlayerHost>(h: &mut H, p: PlayerIndex, min_supplies: i32) -> PResult<bool> {
-    Ok(if pl(h, p)?.ai.is_some() { h.ai_is_supply_source_safe(p, min_supplies) } else { true })
+    Ok(if pl(h, p)?.ai.is_some() { h.ai_is_supply_source_safe(p, min_supplies) } else { !plant(25) })
 }
 
 /// `Player::isSupplySourceAttacked()`.
@@ -862,7 +956,11 @@ pub fn player_on_structure_created<H: PlayerHost>(_h: &mut H, _p: PlayerIndex, _
 
 /// `Player::onStructureUndone(structure)`.
 pub fn player_on_structure_undone<H: PlayerHost>(h: &mut H, p: PlayerIndex, structure: Option<ObjectId>) {
-    h.score_remove_object_built(p, structure);
+    if plant(27) {
+        h.score_add_object_built(p, structure);
+    } else {
+        h.score_remove_object_built(p, structure);
+    }
 }
 
 /// `Player::friend_setSkillset(skillSet)`.
@@ -950,7 +1048,7 @@ pub fn player_calc_closest_construction_zone_location<H: PlayerHost>(h: &mut H, 
 /// `Player::addTeamToList(team)`: nothing if it is already there.
 pub fn player_add_team_to_list<H: PlayerHost>(h: &mut H, p: PlayerIndex, team: TeamPrototypeId) -> PResult<()> {
     let me = plm(h, p)?;
-    if !me.team_prototypes.contains(&team) {
+    if !me.team_prototypes.contains(&team) || plant(28) {
         me.team_prototypes.push(team);
     }
     Ok(())
@@ -960,7 +1058,11 @@ pub fn player_add_team_to_list<H: PlayerHost>(h: &mut H, p: PlayerIndex, team: T
 pub fn player_remove_team_from_list<H: PlayerHost>(h: &mut H, p: PlayerIndex, team: TeamPrototypeId) -> PResult<()> {
     let me = plm(h, p)?;
     if let Some(i) = me.team_prototypes.iter().position(|x| *x == team) {
-        me.team_prototypes.remove(i);
+        if plant(29) {
+            me.team_prototypes.swap_remove(i);
+        } else {
+            me.team_prototypes.remove(i);
+        }
     }
     Ok(())
 }
@@ -991,7 +1093,9 @@ pub fn player_count_objects_by_thing_template<H: PlayerHost>(
     ignore_under_construction: bool,
 ) -> PResult<()> {
     for c in counts.iter_mut().take(things.len()) {
-        *c = 0;
+        if !plant(30) {
+            *c = 0;
+        }
     }
     for proto in protos(h, p)? {
         proto_count_objects_by_thing_template(h, proto, things, ignore_dead, counts, ignore_under_construction);
@@ -1003,7 +1107,7 @@ pub fn player_count_objects_by_thing_template<H: PlayerHost>(
 pub fn player_count_buildings<H: PlayerHost>(h: &H, p: PlayerIndex) -> PResult<i32> {
     let mut r = 0;
     for proto in protos(h, p)? {
-        r += proto_count_buildings(h, proto);
+        r += proto_count_buildings(h, proto) + plant(71) as i32;
     }
     Ok(r)
 }
@@ -1029,12 +1133,12 @@ pub fn player_find_closest_by_kind_of<H: PlayerHost>(
     let mut closest: Option<ObjectId> = None;
     let mut closest_dist_sq = f32::MAX;
     player_iterate_objects(h, p, |h, obj| {
-        if !h.obj_is_kind_of_multi(obj, set_mask, clear_mask) {
+        if !h.obj_is_kind_of_multi(obj, set_mask, clear_mask) && !plant(32) {
             return; // Do nothing to the magic running total pointer man.
         }
         // is this the closest one so far
         let dist_sq = h.partition_distance_squared_2d(source, obj);
-        if dist_sq < closest_dist_sq {
+        if if plant(31) { dist_sq <= closest_dist_sq } else { dist_sq < closest_dist_sq } {
             closest = Some(obj);
             closest_dist_sq = dist_sq;
         }
@@ -1055,7 +1159,7 @@ pub fn player_has_any_buildings<H: PlayerHost>(h: &H, p: PlayerIndex) -> PResult
 /// `Player::hasAnyBuildings(kindOf)`.
 pub fn player_has_any_buildings_kind_of<H: PlayerHost>(h: &H, p: PlayerIndex, kind_of: &KindOfMaskType) -> PResult<bool> {
     for proto in protos(h, p)? {
-        if proto_has_any_buildings_kind_of(h, proto, kind_of) {
+        if if plant(33) { proto_has_any_buildings(h, proto) } else { proto_has_any_buildings_kind_of(h, proto, kind_of) } {
             return Ok(true);
         }
     }
@@ -1131,7 +1235,7 @@ pub fn player_get_production_time_change_percent<H: PlayerHost>(h: &mut H, p: Pl
 /// `Player::getProductionVeterancyLevel(buildTemplateName)`.
 pub fn player_get_production_veterancy_level<H: PlayerHost>(h: &mut H, p: PlayerIndex, name: &[u8]) -> PResult<VeterancyLevel> {
     let k = key_of(h, name);
-    Ok(pl(h, p)?.production_veterancy_levels.get(&k).copied().unwrap_or(VeterancyLevel::Regular))
+    Ok(pl(h, p)?.production_veterancy_levels.get(&k).copied().unwrap_or(if plant(34) { VeterancyLevel::Veteran } else { VeterancyLevel::Regular }))
 }
 
 /// `Player::setObjectsEnabled(templateTypeToAffect, enable)`.
@@ -1139,7 +1243,7 @@ pub fn player_set_objects_enabled<H: PlayerHost>(h: &mut H, p: PlayerIndex, temp
     for_each_member(h, p, |h, obj| {
         if let Some(t) = h.obj_template(obj) {
             if h.tmpl_name(t) == template_type_to_affect {
-                h.obj_set_script_status_disabled(obj, !enable);
+                h.obj_set_script_status_disabled(obj, enable == plant(35));
             }
         }
     })
@@ -1148,7 +1252,7 @@ pub fn player_set_objects_enabled<H: PlayerHost>(h: &mut H, p: PlayerIndex, temp
 /// `Player::allowedToBuild(tmplate)`.
 pub fn player_allowed_to_build<H: PlayerHost>(h: &H, p: PlayerIndex, tmplate: TemplateRef) -> PResult<bool> {
     let me = pl(h, p)?;
-    if !me.can_build_base && h.tmpl_is_kind_of(tmplate, KINDOF_STRUCTURE) {
+    if !(if plant(36) { me.can_build_units } else { me.can_build_base }) && h.tmpl_is_kind_of(tmplate, KINDOF_STRUCTURE) {
         return Ok(false);
     }
     if !me.can_build_units && !h.tmpl_is_kind_of(tmplate, KINDOF_STRUCTURE) {
@@ -1162,13 +1266,13 @@ pub fn player_allowed_to_build<H: PlayerHost>(h: &H, p: PlayerIndex, tmplate: Te
 /// `Player::okToPlayRadarEdgeSound()`.
 pub fn player_ok_to_play_radar_edge_sound<H: PlayerHost>(h: &H, p: PlayerIndex) -> PResult<bool> {
     let g = h.globals();
-    Ok(!h.victory_has_single_player_been_defeated(p) && !pl(h, p)?.is_player_dead && !g.client_quiet && g.in_game_logic_update && h.frame() > 0)
+    Ok(!h.victory_has_single_player_been_defeated(p) && !pl(h, p)?.is_player_dead && !g.client_quiet && g.in_game_logic_update && (plant(37) || h.frame() > 0))
 }
 
 /// `Player::hasRadar()`.
 pub fn player_has_radar<H: PlayerHost>(h: &H, p: PlayerIndex) -> PResult<bool> {
     let me = pl(h, p)?;
-    if me.radar_disabled && me.disable_proof_radar_count == 0 {
+    if me.radar_disabled && (me.disable_proof_radar_count == 0 || plant(41)) {
         return Ok(false); // Nope, no matter how many you have, if I say no, you don't have it
     }
     Ok(me.radar_count > 0)
@@ -1184,7 +1288,7 @@ pub fn player_add_radar<H: PlayerHost>(h: &mut H, p: PlayerIndex, disable_proof:
     {
         let me = plm(h, p)?;
         me.radar_count = me.radar_count.wrapping_add(1);
-        if disable_proof {
+        if disable_proof && !plant(38) {
             me.disable_proof_radar_count = me.disable_proof_radar_count.wrapping_add(1); // Disable proof is also in the normal refcount
         }
     }
@@ -1204,7 +1308,7 @@ pub fn player_remove_radar<H: PlayerHost>(h: &mut H, p: PlayerIndex, disable_pro
             me.disable_proof_radar_count = me.disable_proof_radar_count.wrapping_sub(1);
         }
     }
-    if had_radar && !player_has_radar(h, p)? && player_ok_to_play_radar_edge_sound(h, p)? {
+    if (had_radar || plant(39)) && !player_has_radar(h, p)? && player_ok_to_play_radar_edge_sound(h, p)? {
         radar_sound(h, p, false);
     }
     Ok(())
@@ -1214,7 +1318,7 @@ pub fn player_remove_radar<H: PlayerHost>(h: &mut H, p: PlayerIndex, disable_pro
 pub fn player_disable_radar<H: PlayerHost>(h: &mut H, p: PlayerIndex) -> PResult<()> {
     let had_radar = player_has_radar(h, p)?;
     plm(h, p)?.radar_disabled = true;
-    if had_radar && !player_has_radar(h, p)? && player_ok_to_play_radar_edge_sound(h, p)? {
+    if had_radar && !player_has_radar(h, p)? && (plant(40) || player_ok_to_play_radar_edge_sound(h, p)?) {
         radar_sound(h, p, false);
     }
     Ok(())
@@ -1232,14 +1336,14 @@ pub fn player_enable_radar<H: PlayerHost>(h: &mut H, p: PlayerIndex) -> PResult<
 
 /// `Player::onPowerBrownOutChange(brownOut)`.
 pub fn player_on_power_brown_out_change<H: PlayerHost>(h: &mut H, p: PlayerIndex, brown_out: bool) -> PResult<()> {
-    if brown_out {
+    if brown_out != plant(42) {
         player_disable_radar(h, p)?;
     } else {
         player_enable_radar(h, p)?; // This doesn't give radar necessarily, it just removes the restriction
     }
     player_iterate_objects(h, p, |h, obj| {
         // doPowerDisable
-        if h.obj_is_kind_of(obj, KINDOF_POWERED) {
+        if h.obj_is_kind_of(obj, KINDOF_POWERED) || plant(43) {
             if brown_out {
                 h.obj_set_disabled_underpowered(obj); // set disabled has a pauseAllSpecialPowers that prevents double pausing
             } else {
@@ -1250,10 +1354,13 @@ pub fn player_on_power_brown_out_change<H: PlayerHost>(h: &mut H, p: PlayerIndex
 }
 
 /// What `Energy`'s methods ask of their owner (`m_owner->onPowerBrownOutChange(!hasSufficientPower())`): the caller
-/// that changed the energy hands the notice here.
+/// that changed the energy of player `p` hands the notice here. It goes to the energy's **owner**, which is `p` unless a
+/// load (`Energy::xfer` reads the owner's index from the file) has made it another player's; ~~to `p`~~ **CORRECTED
+/// 2026-10-20** (found by the `Player::xfer` differential: loading one player's save into another).
 pub fn player_deliver_brown_out_notice<H: PlayerHost>(h: &mut H, p: PlayerIndex, notice: super::energy::OwnerNotice) -> PResult<()> {
     if let Some(n) = notice {
-        player_on_power_brown_out_change(h, p, n.brown_out)?;
+        let owner = pl(h, p)?.energy.owner().unwrap_or(p);
+        player_on_power_brown_out_change(h, owner, n.brown_out != plant(69))?;
     }
     Ok(())
 }
@@ -1274,7 +1381,7 @@ pub fn player_reset_or_start_special_power_ready_frame<H: PlayerHost>(h: &mut H,
     let me = plm(h, p)?;
     for timer in me.special_power_timers.iter_mut() {
         if timer.template_id == v.id {
-            timer.ready_frame = now.wrapping_add(v.reload_time);
+            timer.ready_frame = if plant(44) { now } else { now.wrapping_add(v.reload_time) };
             return Ok(());
         }
     }
@@ -1300,7 +1407,7 @@ pub fn player_get_or_start_special_power_ready_frame<H: PlayerHost>(h: &mut H, p
     let now = h.frame();
     for timer in pl(h, p)?.special_power_timers.iter() {
         if timer.template_id == id {
-            return Ok(timer.ready_frame);
+            return Ok(if plant(45) { now } else { timer.ready_frame });
         }
     }
     player_add_new_shared_special_power_timer(h, p, temp, now)?;
@@ -1314,7 +1421,9 @@ pub fn player_add_kind_of_production_cost_change<H: PlayerHost>(h: &mut H, p: Pl
     let me = plm(h, p)?;
     for tof in me.kind_of_production_changes.iter_mut() {
         if tof.percent == percent && tof.kind_of == kind_of {
-            tof.ref_count = tof.ref_count.wrapping_add(1);
+            if !plant(46) {
+                tof.ref_count = tof.ref_count.wrapping_add(1);
+            }
             return Ok(());
         }
     }
@@ -1327,7 +1436,7 @@ pub fn player_add_kind_of_production_cost_change<H: PlayerHost>(h: &mut H, p: Pl
 pub fn player_remove_kind_of_production_cost_change<H: PlayerHost>(h: &mut H, p: PlayerIndex, kind_of: KindOfMaskType, percent: f32) -> PResult<()> {
     let me = plm(h, p)?;
     if let Some(i) = me.kind_of_production_changes.iter().position(|t| t.percent == percent && t.kind_of == kind_of) {
-        let r = me.kind_of_production_changes[i].ref_count.wrapping_sub(1);
+        let r = me.kind_of_production_changes[i].ref_count.wrapping_sub(if plant(47) { 2 } else { 1 });
         me.kind_of_production_changes[i].ref_count = r;
         if r == 0 {
             me.kind_of_production_changes.remove(i);
@@ -1342,7 +1451,7 @@ pub fn player_get_production_cost_change_based_on_kind_of<H: PlayerHost>(h: &H, 
     let mut start = 1.0f32;
     for tof in pl(h, p)?.kind_of_production_changes.iter() {
         if kind_of.test_set_and_clear(&tof.kind_of, &crate::common::kind_of::KINDOFMASK_NONE) {
-            start *= 1.0 + tof.percent;
+            start *= if plant(48) { tof.percent } else { 1.0 + tof.percent };
         }
     }
     Ok(start)
@@ -1355,7 +1464,9 @@ pub fn player_set_attacked_by<H: PlayerHost>(h: &mut H, p: PlayerIndex, player_n
     let frame = h.frame();
     let me = plm(h, p)?;
     *me.attacked_by.get_mut(usize::try_from(player_ndx).map_err(|_| PlayerError::NoPlayer)?).ok_or(PlayerError::NoPlayer)? = true;
-    me.attacked_frame = frame;
+    if !plant(49) {
+        me.attacked_frame = frame;
+    }
     Ok(())
 }
 
@@ -1377,7 +1488,7 @@ pub fn player_is_player_dead<H: PlayerHost>(h: &H, p: PlayerIndex) -> PResult<bo
 /// `Player::isPlayerActive()`.
 pub fn player_is_player_active<H: PlayerHost>(h: &H, p: PlayerIndex) -> PResult<bool> {
     let me = pl(h, p)?;
-    Ok(!me.observer && !me.is_player_dead)
+    Ok(!me.observer && (plant(50) || !me.is_player_dead))
 }
 
 /// `Player::isPlayableSide()`.
@@ -1415,7 +1526,9 @@ pub fn player_set_science_availability<H: PlayerHost>(h: &mut H, p: PlayerIndex,
     let me = plm(h, p)?;
     let mut found = false;
     if let Some(i) = me.sciences_disabled.iter().position(|s| *s == science) {
-        me.sciences_disabled.remove(i);
+        if !plant(67) {
+            me.sciences_disabled.remove(i);
+        }
         found = true;
     }
     if !found {
@@ -1434,7 +1547,7 @@ pub fn player_set_science_availability<H: PlayerHost>(h: &mut H, p: PlayerIndex,
 /// `Player::getScienceAvailabilityTypeFromString(name)`: case-insensitive.
 pub fn player_get_science_availability_type_from_string(name: &[u8]) -> ScienceAvailabilityType {
     for (i, n) in SCIENCE_AVAILABILITY_NAMES.iter().enumerate() {
-        if name.eq_ignore_ascii_case(n.as_bytes()) {
+        if if plant(68) { name == n.as_bytes() } else { name.eq_ignore_ascii_case(n.as_bytes()) } {
             return match i {
                 0 => ScienceAvailabilityType::Available,
                 1 => ScienceAvailabilityType::Disabled,
@@ -1447,7 +1560,7 @@ pub fn player_get_science_availability_type_from_string(name: &[u8]) -> ScienceA
 
 /// `Player::addScience(science)`: gives the science; false if the player already had it.
 pub fn player_add_science<H: PlayerHost>(h: &mut H, p: PlayerIndex, science: ScienceType) -> PResult<bool> {
-    if player_has_science(h, p, science)? {
+    if player_has_science(h, p, science)? && !plant(72) {
         return Ok(false);
     }
     plm(h, p)?.sciences.push(science);
@@ -1457,7 +1570,7 @@ pub fn player_add_science<H: PlayerHost>(h: &mut H, p: PlayerIndex, science: Sci
             let mut cur_o = h.teams().first_member(t);
             while let Some(o) = cur_o {
                 for m in h.obj_special_power_modules(o) {
-                    if h.sp_required_science(m) == science {
+                    if h.sp_required_science(m) == science || (plant(73) && h.sp_required_science(m).0 == science.0 + 1) {
                         h.sp_on_special_power_creation(m);
                         let f = h.frame();
                         h.sp_set_ready_frame(m, f);
@@ -1467,9 +1580,13 @@ pub fn player_add_science<H: PlayerHost>(h: &mut H, p: PlayerIndex, science: Sci
             }
             cur_t = h.teams().next_instance(t);
         }
-        h.client_event(ClientEvent::Player(PlayerClientEvent::ControlBarDirty)); // Refresh the UI to show new cameos, etc
+        if !plant(52) {
+            h.client_event(ClientEvent::Player(PlayerClientEvent::ControlBarDirty)); // Refresh the UI to show new cameos, etc
+        }
     }
-    h.script_notify_of_acquired_science(p, science);
+    if !plant(51) {
+        h.script_notify_of_acquired_science(p, science);
+    }
     Ok(true)
 }
 
@@ -1478,10 +1595,10 @@ pub fn player_add_science_purchase_points<H: PlayerHost>(h: &mut H, p: PlayerInd
     let me = plm(h, p)?;
     let old = me.science_purchase_points;
     me.science_purchase_points = me.science_purchase_points.wrapping_add(delta);
-    if me.science_purchase_points < 0 {
+    if me.science_purchase_points < 0 && !plant(53) {
         me.science_purchase_points = 0;
     }
-    if old != me.science_purchase_points {
+    if old != me.science_purchase_points || plant(54) {
         h.client_event(ClientEvent::Player(PlayerClientEvent::SciencePurchasePointsChanged { player_index: p }));
     }
     Ok(())
@@ -1502,7 +1619,7 @@ pub fn player_is_capable_of_purchasing_science<H: PlayerHost>(h: &H, p: PlayerIn
         return Ok(false);
     }
     let cost = h.science_purchase_cost(science);
-    if cost == 0 || cost > pl(h, p)?.science_purchase_points {
+    if cost == 0 || (if plant(55) { cost >= pl(h, p)?.science_purchase_points } else { cost > pl(h, p)?.science_purchase_points }) {
         return Ok(false);
     }
     Ok(true)
@@ -1516,7 +1633,9 @@ pub fn player_attempt_to_purchase_science<H: PlayerHost>(h: &mut H, p: PlayerInd
     let cost = h.science_purchase_cost(science);
     player_add_science_purchase_points(h, p, cost.wrapping_neg())?;
     player_add_science(h, p, science)?;
-    h.academy_record_generals_points_spent(p, cost);
+    if !plant(56) {
+        h.academy_record_generals_points_spent(p, cost);
+    }
     if h.players().local_index() == Some(p) {
         h.client_event(ClientEvent::Player(PlayerClientEvent::ControlBarDirty));
     }
@@ -1525,7 +1644,7 @@ pub fn player_attempt_to_purchase_science<H: PlayerHost>(h: &mut H, p: PlayerInd
 
 /// `Player::grantScience(science)`.
 pub fn player_grant_science<H: PlayerHost>(h: &mut H, p: PlayerIndex, science: ScienceType) -> PResult<bool> {
-    if !h.science_is_grantable(science) {
+    if !h.science_is_grantable(science) && !plant(57) {
         return Ok(false); // it's not grantable, so tough, can't have it, even via this method.
     }
     player_add_science(h, p, science)
@@ -1538,7 +1657,9 @@ pub fn player_reset_sciences<H: PlayerHost>(h: &mut H, p: PlayerIndex) -> PResul
         let me = plm(h, p)?;
         me.sciences.clear();
         if let Some(v) = intrinsic {
-            me.sciences = v;
+            if !plant(58) {
+                me.sciences = v;
+            }
         }
     }
     let rank_level = pl(h, p)?.rank_level;
@@ -1559,7 +1680,7 @@ pub fn player_reset_sciences<H: PlayerHost>(h: &mut H, p: PlayerIndex) -> PResul
 
 /// `Player::resetRank()`.
 pub fn player_reset_rank<H: PlayerHost>(h: &mut H, p: PlayerIndex) -> PResult<()> {
-    let next_rank = h.rank_info(2);
+    let next_rank = h.rank_info(if plant(76) { 3 } else { 2 });
     let cur_rank = h.rank_info(1);
     let intrinsic_spp = match pl(h, p)?.template {
         Some(t) => h.player_template(t).intrinsic_science_purchase_points,
@@ -1571,9 +1692,9 @@ pub fn player_reset_rank<H: PlayerHost>(h: &mut H, p: PlayerIndex) -> PResult<()
         me.rank_level = 1;
         me.skill_points = 0;
         me.level_up = next_rank.map(|r| r.skill_points_needed).unwrap_or(i32::MAX);
-        me.level_down = 0;
+        me.level_down = plant(77) as i32;
         me.sciences.clear();
-        me.science_purchase_points = intrinsic_spp.wrapping_add(cur_rank.map(|r| r.science_purchase_points_granted).unwrap_or(0));
+        me.science_purchase_points = intrinsic_spp.wrapping_add(if plant(59) { 0 } else { cur_rank.map(|r| r.science_purchase_points_granted).unwrap_or(0) });
         me.general_name = general_name;
     }
     player_reset_sciences(h, p)
@@ -1587,16 +1708,17 @@ pub fn player_set_rank_level<H: PlayerHost>(h: &mut H, p: PlayerIndex, new_level
     } else if new_level > h.rank_level_count() {
         new_level = h.rank_level_count();
     }
-    if new_level > h.globals().rank_level_limit {
+    if new_level > h.globals().rank_level_limit && !plant(60) {
         new_level = h.globals().rank_level_limit;
     }
     if new_level == pl(h, p)?.rank_level {
         return Ok(false);
     }
     let old_spp = pl(h, p)?.science_purchase_points;
-    if new_level < pl(h, p)?.rank_level {
-        player_reset_rank(h, p)?;
-    }
+    if new_level < pl(h, p)?.rank_level
+        && !plant(75) {
+            player_reset_rank(h, p)?;
+        }
     let mut i = pl(h, p)?.rank_level + 1;
     while i <= new_level {
         if let Some(rank) = h.rank_info(i) {
@@ -1605,13 +1727,15 @@ pub fn player_set_rank_level<H: PlayerHost>(h: &mut H, p: PlayerIndex, new_level
             if me.science_purchase_points < 0 {
                 me.science_purchase_points = 0;
             }
-            if me.skill_points < rank.skill_points_needed {
+            if me.skill_points < rank.skill_points_needed && !plant(61) {
                 me.skill_points = rank.skill_points_needed;
             }
             for s in rank.sciences_granted.iter() {
                 player_add_science(h, p, *s)?;
             }
-            plm(h, p)?.level_down = rank.skill_points_needed;
+            if !plant(62) {
+                plm(h, p)?.level_down = rank.skill_points_needed;
+            }
         }
         i += 1;
     }
@@ -1619,10 +1743,10 @@ pub fn player_set_rank_level<H: PlayerHost>(h: &mut H, p: PlayerIndex, new_level
     {
         let me = plm(h, p)?;
         me.level_up = next_rank.map(|r| r.skill_points_needed).unwrap_or(i32::MAX);
-        me.rank_level = new_level;
+        me.rank_level = new_level + plant(74) as i32;
     }
     // TheControlBar != NULL
-    if pl(h, p)?.level_up != 0 && h.players().local_index() == Some(p) {
+    if (pl(h, p)?.level_up != 0 || plant(63)) && h.players().local_index() == Some(p) {
         h.client_event(ClientEvent::Player(PlayerClientEvent::Eva(EvaMessage::GeneralLevelUp)));
     }
     h.client_event(ClientEvent::Player(PlayerClientEvent::RankChanged { player_index: p }));
@@ -1635,11 +1759,11 @@ pub fn player_set_rank_level<H: PlayerHost>(h: &mut H, p: PlayerIndex, new_level
 /// `Player::addSkillPoints(delta)`: true if the player gained levels.
 pub fn player_add_skill_points<H: PlayerHost>(h: &mut H, p: PlayerIndex, delta: i32) -> PResult<bool> {
     let modifier = pl(h, p)?.skill_points_modifier;
-    let delta = real_to_int_ceil(modifier * (delta as f32));
+    let delta = if plant(64) { crate::common::base_type::real_to_int(modifier * (delta as f32)) } else { real_to_int_ceil(modifier * (delta as f32)) };
     if delta == 0 {
         return Ok(false);
     }
-    let level_cap = h.globals().rank_level_limit.min(h.rank_level_count());
+    let level_cap = if plant(65) { h.rank_level_count() } else { h.globals().rank_level_limit.min(h.rank_level_count()) };
     let point_cap = h.rank_info(level_cap).ok_or(PlayerError::NoRank)?.skill_points_needed; // Cap at lowest point of cap level, not highest.
     let mut level_gained = false;
     {
@@ -1662,7 +1786,7 @@ pub fn player_add_skill_points<H: PlayerHost>(h: &mut H, p: PlayerIndex, delta: 
 /// `Player::addSkillPointsForKill(killer, victim)`: true if the player gained levels.
 pub fn player_add_skill_points_for_kill<H: PlayerHost>(h: &mut H, p: PlayerIndex, killer: Option<ObjectId>, victim: Option<ObjectId>) -> PResult<bool> {
     let (Some(_), Some(v)) = (killer, victim) else { return Ok(false) };
-    if h.obj_test_status(v, OBJECT_STATUS_UNDER_CONSTRUCTION) {
+    if h.obj_test_status(v, OBJECT_STATUS_UNDER_CONSTRUCTION) && !plant(66) {
         return Ok(false);
     }
     let victim_level = h.obj_veterancy_level(v);
@@ -1671,4 +1795,11 @@ pub fn player_add_skill_points_for_kill<H: PlayerHost>(h: &mut H, p: PlayerIndex
         None => return Err(PlayerError::NoRank),
     };
     player_add_skill_points(h, p, skill_value)
+}
+
+/// (test-only) the planted bug that is switched on by `PLAYER_PLANT`.
+pub fn plant(k: u32) -> bool {
+    use std::sync::OnceLock;
+    static P: OnceLock<u32> = OnceLock::new();
+    *P.get_or_init(|| std::env::var("PLAYER_PLANT").ok().and_then(|s| s.parse().ok()).unwrap_or(0)) == k
 }

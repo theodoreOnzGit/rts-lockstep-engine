@@ -27,6 +27,36 @@
 #include "Common/Upgrade.h"
 #include "GameLogic/ObjectScriptStatusBits.h"
 #include "Common/AudioEventRTS.h"
+#include "GameClient/Color.h"
+
+/* slice 2: forward declarations and the two enums the partition manager's members use */
+class SupplyTruckAIInterface; class ObjectIterator; class BuildAssistant; class Radar; class GameClient; class PlayerTemplateStore;
+enum ValueOrThreat { VOT_CashValue = 1, VOT_ThreatValue, VOT_NumItems };
+enum IterOrderType { ITER_FASTEST = 0, ITER_SORTED_NEAR_TO_FAR, ITER_SORTED_FAR_TO_NEAR };
+/* PlayerList.h lines 63-69, verbatim */
+enum AllowPlayerRelationship
+{
+	ALLOW_SAME_PLAYER			= 0x01,
+	ALLOW_ALLIES					= 0x02,
+	ALLOW_ENEMIES					= 0x04,
+	ALLOW_NEUTRAL					= 0x08
+};
+/* ActionManager.h lines 51-56, verbatim */
+enum CanEnterType { CHECK_CAPACITY, DONT_CHECK_CAPACITY, COMBATDROP_INTO };
+/* GameMemory.h lines 772-781 without the debug assertion */
+class MemoryPoolObjectHolder
+{
+private:
+	MemoryPoolObject *m_mpo;
+public:
+	MemoryPoolObjectHolder(MemoryPoolObject *mpo = NULL) : m_mpo(mpo) { }
+	void hold(MemoryPoolObject *mpo) { m_mpo = mpo; }
+	void release() { m_mpo = NULL; }
+	~MemoryPoolObjectHolder() { m_mpo->deleteInstance(); }
+};
+class Pathfinder { public: void removeObjectFromPathfindMap(Object* obj); void addObjectToPathfindMap(Object* obj); };
+class ActionManager { public: Bool canEnterObject(const Object* obj, const Object* objectToEnter, CommandSourceType commandSource, CanEnterType modifierFlags) const; };
+extern ActionManager* TheActionManager;
 
 /* Common/GameState.h's SaveCode, verbatim from upstream (GameState.h lines 129-138): Team.cpp throws SC_INVALID_DATA */
 enum SaveCode
@@ -93,19 +123,29 @@ public:
 };
 
 /* ---- the thing templates ---------------------------------------------------------------------------------------- */
+class ProductionPrerequisite;
 class ThingTemplate
 {
 public:
 	int m_idx; Int m_skill[4];
 	Int getSkillPointValue(Int level) const { return m_skill[level & 3]; }
-	KindOfMaskType m_kinds;
+	KindOfMaskType m_kindof;
+	Int m_buildCost; BuildableStatus m_buildable; Int m_nPrereq; unsigned m_prereqMask; UnsignedInt m_maxSimul; NameKeyType m_linkKey; AsciiString m_owningSide;
+	Int getBuildCost() const { return m_buildCost; }
+	BuildableStatus getBuildable() const { return m_buildable; }
+	Int getPrereqCount() const { return m_nPrereq; }
+	const ProductionPrerequisite* getNthPrereq(Int i) const;
+	UnsignedInt getMaxSimultaneousOfType() const { return m_maxSimul; }
+	NameKeyType getMaxSimultaneousLinkKey() const { return m_linkKey; }
+	AsciiString getDefaultOwningSide() const { return m_owningSide; }
+	Int calcCostToBuild(const Player* player) const;
 	bool m_buildFacility;
 	int m_equiv;
 	AsciiString m_name;
 	std::vector<AsciiString> m_variations;
 	Bool isEquivalentTo(const ThingTemplate* tt) const { if (!tt) return false; if (this == tt) return true; return m_equiv == tt->m_equiv; }
-	Bool isKindOf(KindOfType t) const { return m_kinds.test(t); }
-	Bool isKindOfMulti(const KindOfMaskType& mustBeSet, const KindOfMaskType& mustBeClear) const { return m_kinds.testSetAndClear(mustBeSet, mustBeClear); }
+	Bool isKindOf(KindOfType t) const { return m_kindof.test(t); }
+	Bool isKindOfMulti(const KindOfMaskType& mustBeSet, const KindOfMaskType& mustBeClear) const { return m_kindof.testSetAndClear(mustBeSet, mustBeClear); }
 	Bool isBuildFacility() const { return m_buildFacility; }
 	const AsciiString& getName() const { return m_name; }
 	const std::vector<AsciiString>& getBuildVariations() const { return m_variations; }
@@ -136,6 +176,12 @@ public:
 	Bool isIdle() const { return m_idle; }
 	Bool isRecruitable() const { return m_recruitable; }
 	const LocomotorSet& getLocomotorSet() const { return m_loco; }
+	void aiHunt(CommandSourceType source);
+	void aiIdle(CommandSourceType source);
+	void aiEnter(Object* obj, CommandSourceType source);
+	void aiEvacuate(Bool exposeStealthUnits, CommandSourceType source);
+	void aiMoveToPosition(const Coord3D* pos, CommandSourceType source);
+	SupplyTruckAIInterface* getSupplyTruckAIInterface() const;
 };
 class ContainModuleInterface
 {
@@ -143,12 +189,16 @@ public:
 	Object* m_owner; int m_count;
 	Int getContainCount() const { return m_count; }
 	void removeAllContained(Bool exposeStealthUnits = FALSE);
+	unsigned m_whoEntered;
+	void recalcApparentControllingPlayer();
+	PlayerMaskType getPlayerWhoEntered() const { return (PlayerMaskType)m_whoEntered; }
 };
 class AIGroup
 {
 public:
-	int m_id;
+	int m_id; std::vector<ObjectID> m_ids;
 	void add(Object* obj);
+	const std::vector<ObjectID>& getAllIDs() const { return m_ids; }
 };
 class PolygonTrigger { public: int m_id; };
 
@@ -259,12 +309,17 @@ public:
 	Money m_defaultStartingCash; TimeOfDay m_timeOfDay;
 };
 class GameInfo { public: Money m_cash; Money getStartingCash() const { return m_cash; } };
+union GameMessageArgumentType { Int integer; Bool boolean; ObjectID objectID; };
+class GameMessageArgument { public: GameMessageArgumentType m_u; };
 class GameMessage
 {
 public:
 	enum Type { MSG_ENABLE_RETALIATION_MODE = 1 };
+	std::vector<GameMessageArgument> m_args;
 	void appendIntegerArgument(Int a);
 	void appendBooleanArgument(Bool a);
+	UnsignedByte getArgumentCount() const { return (UnsignedByte)m_args.size(); }
+	const GameMessageArgumentType* getArgument(Int i) const { return &m_args[i].m_u; }
 };
 class MessageStream { public: GameMessage* appendMessage(GameMessage::Type t); };
 
@@ -305,42 +360,69 @@ public:
 	Bool calcClosestConstructionZoneLocation(const ThingTemplate* t, Coord3D* loc);
 protected:
 	virtual void crc(Xfer*) {}
-	virtual void xfer(Xfer*) {}
+	/* the AI is another unit: this stand-in saves a version, as the Rust stand-in does */
+	virtual void xfer(Xfer* xfer) { XferVersion currentVersion = 1; XferVersion version = currentVersion; xfer->xferVersion(&version, currentVersion); }
 	virtual void loadPostProcess(void) {}
 };
 class AISkirmishPlayer : public AIPlayer { public: AISkirmishPlayer(Player* p) : AIPlayer(p) { m_skirmish = true; } };
 class AIData { public: Bool m_forceSkirmishAI; };
-class AI { public: AIData m_data; AIData* getAiData() { return &m_data; } };
+class AI { public: AIData m_data; Pathfinder m_pf; AIData* getAiData() { return &m_data; } Pathfinder* pathfinder() { return &m_pf; } };
 
 /* ---- squads and the build list ------------------------------------------------------------------------------------- */
-class Squad : public MemoryPoolObject, public Snapshot
+/* the REAL Squad.h (the class, unchanged; its functions are Squad.cpp's, taken whole by build.rs) */
+#include "GameLogic/Squad.h"
+/* BuildListInfo (SidesList.h lines 150-250): the members of the real class, in the real order, with the accessors the player code and the
+** driver use; its constructor, crc, xfer and loadPostProcess are SidesList.cpp's, taken whole by build.rs. The rest of the class is the
+** editor's and the map's (parseStructure, duplicate, ...) and is not reached from Player. */
+class BuildListInfo : public MemoryPoolObject, public Snapshot
 {
 public:
-	int m_serial;
-	virtual void crc(Xfer*) {}
-	virtual void xfer(Xfer*) {}
-	virtual void loadPostProcess(void) {}
-};
-class BuildListInfo : public MemoryPoolObject
-{
-public:
-	ObjectID m_objectID; AsciiString m_templateName; Coord3D m_location; Real m_angle; Int m_numRebuilds; Bool m_priorityBuild; BuildListInfo* m_next;
-	BuildListInfo() : m_objectID((ObjectID)0), m_angle(0), m_numRebuilds(0), m_priorityBuild(false), m_next(NULL) { m_location.x = m_location.y = m_location.z = 0; }
-	void setObjectID(ObjectID id) { m_objectID = id; }
-	void setTemplateName(AsciiString n) { m_templateName = n; }
-	void setLocation(Coord3D l) { m_location = l; }
-	void setAngle(Real a) { m_angle = a; }
-	void setNumRebuilds(Int n) { m_numRebuilds = n; }
-	void markPriorityBuild() { m_priorityBuild = true; }
-	void setNextBuildList(BuildListInfo* n) { m_next = n; }
-	BuildListInfo* getNext() { return m_next; }
+	enum {UNLIMITED_REBUILDS=0xFFFFFFFF};
+	enum {MAX_RESOURCE_GATHERERS = 10};
+	BuildListInfo(void);
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
+	AsciiString			m_buildingName;
+	AsciiString			m_templateName;
+	Coord3D					m_location;
+	Coord2D					m_rallyPointOffset;
+	Real						m_angle;
+	Bool						m_isInitiallyBuilt;
+	UnsignedInt			m_numRebuilds;
+	BuildListInfo*	m_nextBuildList;
+	AsciiString		m_script;
+	Int				m_health;
+	Bool			m_whiner;
+	Bool			m_unsellable;
+	Bool			m_repairable;
+	Bool			m_automaticallyBuild;
+	void*	m_renderObj;
+	void*	m_shadowObj;
+	Bool				m_selected;
+	ObjectID m_objectID;
+	UnsignedInt m_objectTimestamp;
+	Bool		 m_underConstruction;
+	ObjectID m_resourceGatherers[MAX_RESOURCE_GATHERERS];
+	Bool		 m_isSupplyBuilding;
+	Int			 m_desiredGatherers;
+	Int			 m_currentGatherers;
+	Bool		 m_priorityBuild;
+	void setNumRebuilds(UnsignedInt numRebuilds) {m_numRebuilds = numRebuilds;}
+	void setNextBuildList(BuildListInfo *pNext) {m_nextBuildList = pNext;}
+	void setLocation(Coord3D loc) {m_location = loc;}
+	void setAngle(Real angle) {m_angle = angle;}
+	BuildListInfo *getNext(void) const {return m_nextBuildList;}
+	void setTemplateName(AsciiString name) {m_templateName = name;}
+	void setObjectID( ObjectID objID ) { m_objectID = objID; }
+	void markPriorityBuild(void) {m_priorityBuild = true; }
 };
 
 /* ---- the client and the other services ------------------------------------------------------------------------------ */
-enum EvaMessage { EVA_GeneralLevelUp = 1 };
+enum EvaMessage { EVA_GeneralLevelUp = 1, EVA_SuperweaponDetected_Own_ParticleCannon, EVA_SuperweaponDetected_Ally_ParticleCannon, EVA_SuperweaponDetected_Enemy_ParticleCannon, EVA_SuperweaponDetected_Own_Nuke, EVA_SuperweaponDetected_Ally_Nuke, EVA_SuperweaponDetected_Enemy_Nuke, EVA_SuperweaponDetected_Own_ScudStorm, EVA_SuperweaponDetected_Ally_ScudStorm, EVA_SuperweaponDetected_Enemy_ScudStorm };
 class Eva { public: void setShouldPlay(EvaMessage m); };
-class ControlBar { public: void markUIDirty(); void onPlayerSciencePurchasePointsChanged(const Player* p); void onPlayerRankChanged(const Player* p); };
-class InGameUI { public: Bool m_quiet; Bool isClientQuiet() const { return m_quiet; } };
+class ControlBar { public: void markUIDirty(); void onPlayerSciencePurchasePointsChanged(const Player* p); void onPlayerRankChanged(const Player* p); void setControlBarSchemeByPlayer(Player* p); void setControlBarSchemeByPlayerTemplate(const PlayerTemplate* pt); };
+class InGameUI { public: Bool m_quiet; Bool isClientQuiet() const { return m_quiet; } void addIdleWorker(Object* obj); void removeIdleWorker(Object* obj, Int playerNumber); void addFloatingText(const UnicodeString& text, const Coord3D* pos, Color color); };
 class GameText { public: UnicodeString fetch(const char* label); };
 class VictoryConditions { public: bool m_defeated[16]; Bool hasSinglePlayerBeenDefeated(const Player* p); };
 class MiscAudio { public: AudioEventRTS m_radarOnlineSound, m_radarOfflineSound, m_moneyDepositSound, m_moneyWithdrawSound; MiscAudio() : m_radarOnlineSound(3), m_radarOfflineSound(4), m_moneyDepositSound(1), m_moneyWithdrawSound(2) {} };
@@ -356,13 +438,40 @@ public:
 
 /* ---- the special power modules of an object (addScience reaches them through the behaviour list) --------------------- */
 class SpecialPowerTemplate { public: UnsignedInt m_id; UnsignedInt m_reload; bool m_shared; UnsignedInt getID() const { return m_id; } UnsignedInt getReloadTime() const { return m_reload; } Bool isSharedNSync() const { return m_shared; } };
-class ResourceGatheringManager : public MemoryPoolObject, public Snapshot { public: virtual void crc(Xfer*) {} virtual void xfer(Xfer*) {} virtual void loadPostProcess(void) {} };
-class TunnelTracker : public MemoryPoolObject, public Snapshot { public: virtual void crc(Xfer*) {} virtual void xfer(Xfer*) {} virtual void loadPostProcess(void) {} };
+/* ResourceGatheringManager.h lines 68-72 and TunnelTracker.h lines 81-88: the members the xfer reads, with the real types; the xfers are the real files' */
+class ResourceGatheringManager : public MemoryPoolObject, public Snapshot
+{
+public:
+	typedef std::list<ObjectID> objectIDList;
+	virtual void crc(Xfer*);
+	virtual void xfer(Xfer*);
+	virtual void loadPostProcess(void) {}
+	objectIDList m_supplyWarehouses;
+	objectIDList m_supplyCenters;
+};
+class TunnelTracker : public MemoryPoolObject, public Snapshot
+{
+public:
+	typedef std::list<Object*> ContainedItemsList;
+	TunnelTracker() : m_containListSize(0), m_tunnelCount(0) {}
+	virtual void crc(Xfer*);
+	virtual void xfer(Xfer*);
+	virtual void loadPostProcess(void) {}
+	std::list< ObjectID > m_tunnelIDs;
+	ContainedItemsList m_containList;
+	std::list< ObjectID > m_xferContainList;
+	Int m_containListSize;
+	UnsignedInt m_tunnelCount;
+};
 class SpecialPowerModuleInterface
 {
 public:
-	int m_serial; ScienceType m_required;
+	int m_serial; ScienceType m_required; int m_type; bool m_scriptOnly; unsigned m_ready, m_percent; SpecialPowerTemplate m_tmpl;
 	ScienceType getRequiredScience() const { return m_required; }
+	Bool isScriptOnly() const { return m_scriptOnly; }
+	UnsignedInt getReadyFrame() const { return m_ready; }
+	UnsignedInt getPercentReady() const { return m_percent; }
+	const SpecialPowerTemplate* getSpecialPowerTemplate() const { return &m_tmpl; }
 	void onSpecialPowerCreation();
 	void setReadyFrame(UnsignedInt f);
 };
@@ -376,12 +485,16 @@ public:
 	PartitionFilterRelationship(const Object* obj, unsigned flags) {}
 };
 class PartitionFilterAlive : public PartitionFilter { public: PartitionFilterAlive() {} };
+class PartitionFilterAcceptByKindOf : public PartitionFilter { public: KindOfMaskType m_set, m_clear; PartitionFilterAcceptByKindOf(const KindOfMaskType& mustBeSet, const KindOfMaskType& mustBeClear) : m_set(mustBeSet), m_clear(mustBeClear) {} };
 class PartitionFilterSameMapStatus : public PartitionFilter { public: PartitionFilterSameMapStatus(const Object* obj) {} };
 class PartitionManager
 {
 public:
 	Object* getClosestObject(const Object* obj, Real maxDist, DistanceCalculationType dc, PartitionFilter** filters);
 	Real getDistanceSquared(const Object* a, const Object* b, DistanceCalculationType dc);
+	void getMostValuableLocation(Int playerIndex, unsigned relationship, ValueOrThreat vot, Coord3D* pos);
+	ObjectIterator* iterateAllObjects();
+	ObjectIterator* iterateObjectsInRange(const Coord3D* pos, Real maxDist, DistanceCalculationType dc, PartitionFilter** filters, IterOrderType order);
 };
 
 /* ---- the game logic ----------------------------------------------------------------------------------------------- */
@@ -432,6 +545,41 @@ extern GameText* TheGameText;
 extern VictoryConditions* TheVictoryConditions;
 extern AudioManager* TheAudio;
 extern RankInfoStore* TheRankInfoStore;
+extern BuildAssistant* TheBuildAssistant;
+extern Radar* TheRadar;
+extern GameClient* TheGameClient;
+extern PlayerTemplateStore* ThePlayerTemplateStore;
+
+/* ---- the rest of what slice 2 of Player reaches ------------------------------------------------------------------------ */
+class ProductionPrerequisite { public: bool m_ok; Bool isSatisfied(const Player* p) const { return m_ok; } };
+class ProductionUpdateInterface { public: int m_queued; Int countUnitTypeInQueue(const ThingTemplate* t) const { return m_queued; } };
+class ProductionUpdate { public: static ProductionUpdateInterface* getProductionUpdateInterfaceFromObject(const Object* obj); };
+class UpdateModule { public: int m_dummy; };
+class AutoDepositUpdate { public: Object* m_owner; void awardInitialCaptureBonus(Player* p); };
+class StealthUpdate { public: int m_player; Bool isDisguised() const { return m_player >= 0; } Int getDisguisedPlayerIndex() const { return m_player; } };
+class Drawable { public: Object* m_owner; void setIndicatorColor(Color c); };
+enum MaxHealthChangeType { SAME_CURRENTHEALTH, PRESERVE_RATIO, ADD_CURRENT_HEALTH_TOO, FULLY_HEAL };
+class BodyModuleInterface
+{
+public:
+	Object* m_owner;
+	Real getMaxHealth() const;
+	void setMaxHealth(Real maxHealth, MaxHealthChangeType healthChangeType = SAME_CURRENTHEALTH);
+	void applyDamageScalar(Real scalar);
+};
+class SupplyTruckAIInterface { public: Object* m_owner; void setForceWantingState(Bool v); };
+class ActionManagerStandIn;
+class BuildAssistant { public: void sellObject(Object* obj); };
+class Radar { public: void removeObject(Object* obj); void addObject(Object* obj); };
+class GameClient { public: void setTeamColor(Int red, Int green, Int blue); };
+class PlayerTemplateStore { public: PlayerTemplate* m_observer; const PlayerTemplate* findPlayerTemplate(NameKeyType key) const; };
+class ObjectIterator : public MemoryPoolObject
+{
+public:
+	std::vector<Object*> m_objs; size_t m_at;
+	Object* first() { m_at = 0; return m_objs.empty() ? NULL : m_objs[0]; }
+	Object* next() { ++m_at; return m_at < m_objs.size() ? m_objs[m_at] : NULL; }
+};
 
 /* ---- the object ---------------------------------------------------------------------------------------------------- */
 class Object : public MemoryPoolObject
@@ -472,6 +620,37 @@ public:
 	Bool isInside(const PolygonTrigger* t) const { return (m_inside >> t->m_id) & 1; }
 	Object* getNextObject() const { return m_nextObj; }
 	BehaviorModule** getBehaviorModules() { return m_modules; }
+	unsigned m_wb;
+	bool m_modulesReady, m_hasAutoDeposit, m_hasDrawable, m_disabled, m_factionStructure, m_hasWeapon, m_selectable, m_supplyTruck;
+	int m_disguisedPlayer; unsigned m_nightColor, m_indicatorColor, m_weaponPercent, m_whoEntered, m_canEnter; ObjectID m_producer; float m_health, m_shroud; int m_prodQueue;
+	AutoDepositUpdate m_adu; StealthUpdate m_stealth; Drawable m_drawable; BodyModuleInterface m_body; SupplyTruckAIInterface m_truck; ProductionUpdateInterface m_pui;
+	void friend_adjustPowerForPlayer(Bool yes);
+	UpdateModule* findUpdateModule(NameKeyType key) const { return m_hasAutoDeposit ? (UpdateModule*)(const_cast<AutoDepositUpdate*>(&m_adu)) : NULL; }
+	Bool areModulesReady() const { return m_modulesReady; }
+	StealthUpdate* getStealth() const { return const_cast<StealthUpdate*>(&m_stealth); }
+	Drawable* getDrawable() const { return m_hasDrawable ? const_cast<Drawable*>(&m_drawable) : NULL; }
+	Color getNightIndicatorColor() const { return m_nightColor; }
+	Color getIndicatorColor() const { return m_indicatorColor; }
+	Bool isDisabled() const { return m_disabled; }
+	Bool hasAnySpecialPower() const { for (int k = 0; k < 4; ++k) if (m_modules[k] && m_modules[k]->m_sp) return true; return false; }
+	SpecialPowerModuleInterface* findAnyShortcutSpecialPowerModuleInterface() const { for (int k = 0; k < 4; ++k) if (m_modules[k] && m_modules[k]->m_sp) return m_modules[k]->m_sp; return NULL; }
+	Bool hasSpecialPower(SpecialPowerType t) const { for (int k = 0; k < 4; ++k) if (m_modules[k] && m_modules[k]->m_sp && m_modules[k]->m_sp->m_type == (int)t) return true; return false; }
+	SpecialPowerModuleInterface* findSpecialPowerModuleInterface(SpecialPowerType t) const { for (int k = 0; k < 4; ++k) if (m_modules[k] && m_modules[k]->m_sp && m_modules[k]->m_sp->m_type == (int)t) return m_modules[k]->m_sp; return NULL; }
+	Bool hasAnyWeapon() const { return m_hasWeapon; }
+	UnsignedInt getMostPercentReadyToFireAnyWeapon() const { return m_weaponPercent; }
+	void leaveGroup();
+	Bool isAnyKindOf(KindOfMaskType t) const { return m_tpl->m_kindof.anyIntersectionWith(t); }
+	void setVisionSpied(Bool setting, Int byWhom);
+	void updateUpgradeModules();
+	BodyModuleInterface* getBodyModule() const { return const_cast<BodyModuleInterface*>(&m_body); }
+	void setWeaponBonusCondition(WeaponBonusConditionType c);
+	void clearWeaponBonusCondition(WeaponBonusConditionType c);
+	void setVisionRange(Real r) { Rec("vision %d %08x", (int)m_id, fbits(r)); m_vision = r; }
+	Real getShroudClearingRange() const { return m_shroud; }
+	void setShroudClearingRange(Real r) { Rec("shroud %d %08x", (int)m_id, fbits(r)); m_shroud = r; }
+	ObjectID getProducerID() const { return m_producer; }
+	Bool isFactionStructure() const { return m_factionStructure; }
+	Bool isSelectable() const { return m_selectable; }
 	Real m_orientation; Real getOrientation() const { return m_orientation; }
 	VeterancyLevel m_vet; VeterancyLevel getVeterancyLevel() const { return m_vet; }
 	BehaviorModule* m_modules[4]; BehaviorModule m_mod[3]; SpecialPowerModuleInterface m_spm[3];

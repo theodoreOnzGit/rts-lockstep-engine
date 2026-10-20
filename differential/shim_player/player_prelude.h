@@ -106,6 +106,16 @@
 #define AI PlTestAI
 #define TheAI PlTestTheAI
 #define Squad PlTestSquad
+#define Xfer PlTestXfer
+#define XferCRC PlTestXferCRC
+#define XferDeepCRC PlTestXferDeepCRC
+#define XferSave PlTestXferSave
+#define XferLoad PlTestXferLoad
+#define Snapshot PlTestSnapshot
+#define GameState PlTestGameState
+#define TheGameState PlTestTheGameState
+#define ResourceGatheringManager PlTestResourceGatheringManager
+#define TunnelTracker PlTestTunnelTracker
 #define BuildListInfo PlTestBuildListInfo
 #define Eva PlTestEva
 #define TheEva PlTestTheEva
@@ -133,6 +143,29 @@
 #define VisionSpiedStruct PlTestVisionSpiedStruct
 #define TypeCountData PlTestTypeCountData
 #define ScienceAvailabilityType PlTestScienceAvailabilityType
+#define PartitionFilterAcceptByKindOf PlTestPartitionFilterAcceptByKindOf
+#define ObjectIterator PlTestObjectIterator
+#define Pathfinder PlTestPathfinder
+#define ActionManager PlTestActionManager
+#define TheActionManager PlTestTheActionManager
+#define BuildAssistant PlTestBuildAssistant
+#define TheBuildAssistant PlTestTheBuildAssistant
+#define Radar PlTestRadar
+#define TheRadar PlTestTheRadar
+#define GameClient PlTestGameClient
+#define TheGameClient PlTestTheGameClient
+#define PlayerTemplateStore PlTestPlayerTemplateStore
+#define ThePlayerTemplateStore PlTestThePlayerTemplateStore
+#define ProductionPrerequisite PlTestProductionPrerequisite
+#define ProductionUpdateInterface PlTestProductionUpdateInterface
+#define ProductionUpdate PlTestProductionUpdate
+#define AutoDepositUpdate PlTestAutoDepositUpdate
+#define StealthUpdate PlTestStealthUpdate
+#define Drawable PlTestDrawable
+#define BodyModuleInterface PlTestBodyModuleInterface
+#define SupplyTruckAIInterface PlTestSupplyTruckAIInterface
+#define UpdateModule PlTestUpdateModule
+#define MemoryPoolObjectHolder PlTestMemoryPoolObjectHolder
 #define private public
 #define protected public
 
@@ -166,9 +199,16 @@ typedef std::map< NameKeyType, Real, std::less<NameKeyType> > ProductionChangeMa
 typedef std::map< NameKeyType, VeterancyLevel, std::less<NameKeyType> > ProductionVeterancyMap;
 #include "Common/AcademyStats.h"
 #define SHIM_INI_PRELUDE_H
+/* the copy of the real BitFlagsIO.h that build.rs edits (OUT_DIR/player_gen/Common: BitFlags::xfer in CRC mode hashes 4 bytes, as the shipped build does),
+** read before the Weapon prelude reaches the forwarder of shim_flags (same include guard, so that one is then empty) */
+#include "Common/BitFlagsIO.h"
 #include "../shim_weapon/weapon_prelude.h"
 #include "Common/SpecialPowerType.h"
 #include "enums_gen.inc"
+/* CRCDebug.h line 117 (the release definition) and Player.cpp line 204 (the release definition), verbatim */
+#define CRCDEBUG_LOG(x) {}
+#define DUMPBATTLEPLANBONUSES(x,y,z) {}
+#define CRCDUMPBATTLEPLANBONUSES(x,y,z) {}
 extern "C" {
 int ref_fast_float2long_round(float f);
 float ref_fast_float_trunc(float f);
@@ -181,4 +221,13 @@ float ref_fast_float_ceil(float f);
 using std::min;
 using std::max;
 #define INT_TO_REAL(x) ((Real)(x))
+/* BaseType.h line 231, with the Rust-side fast_float functions (as REAL_TO_INT_CEIL above) */
+#define REAL_TO_INT(x) ((Int)(ref_fast_float2long_round(ref_fast_float_trunc(x))))
+/* always.h line 190 */
+#ifndef MAX
+#define MAX(a,b) (((a) > (b)) ? (a) : (b))
+#endif
+/* MSVC's <stdlib.h> __max and __min */
+#define __max(a,b) (((a) > (b)) ? (a) : (b))
+#define __min(a,b) (((a) < (b)) ? (a) : (b))
 #endif

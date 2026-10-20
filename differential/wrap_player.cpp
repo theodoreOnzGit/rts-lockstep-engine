@@ -25,6 +25,14 @@
 #include "Common/XferSave.h"
 #include "Common/XferLoad.h"
 #include "Common/Team.h"
+/* the Xfer family, renamed (player_prelude.h) and compiled here, unchanged: Player::xfer reaches xferScienceVec and xferUpgradeMask, which
+** look the sciences and the upgrades up in the world of this fixture (TheScienceStore, TheUpgradeCenter) */
+#include "matrix3d.h"
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/Common/System/Xfer.cpp"
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/Common/System/XferCRC.cpp"
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/Common/System/XferSave.cpp"
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/Common/System/XferLoad.cpp"
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/Common/System/Snapshot.cpp"
 #define DEFINE_SCIENCE_AVAILABILITY_NAMES
 #include "Common/Player.h"
 #include "Team_cut.cpp"

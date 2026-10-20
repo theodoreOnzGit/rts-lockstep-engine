@@ -54,6 +54,23 @@ public:
 		for (int i = 0; i < src.getLength(); i++) m_s += (WideChar)src.getCharAt(i);
 	}
 	/* --- end p1w4-sides --- */
+	/* --- p1w10-sonnet --- */
+	/* format(UnicodeString format, ...) (UnicodeString.h line 243): the format is this string's units widened back to wchar_t */
+	void format(UnicodeString fmt, ...)
+	{
+		wchar_t w[1024];
+		size_t n = 0;
+		for (; n + 1 < sizeof(w) / sizeof(w[0]) && n < fmt.m_s.size(); ++n) w[n] = (wchar_t)fmt.m_s[n];
+		w[n] = 0;
+		wchar_t buf[2048];
+		va_list args;
+		va_start(args, fmt);
+		int r = vswprintf(buf, sizeof(buf) / sizeof(buf[0]) - 1, w, args);
+		va_end(args);
+		if (r < 0) buf[0] = 0;
+		setWide(buf);
+	}
+	/* --- end p1w10-sonnet --- */
 private:
 	void setWide(const wchar_t *s) { m_s.clear(); for (; s && *s; ++s) m_s += (WideChar)*s; }
 	std::basic_string<WideChar> m_s;

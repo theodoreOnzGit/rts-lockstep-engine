@@ -5,10 +5,12 @@
 #ifndef TEAM_DRIVER_H
 #define TEAM_DRIVER_H
 
-/* Common/GameState.h's SaveCode (verbatim from upstream, GameState.h lines 129-138) and the counter the Xfer archive's
-** GameState keeps (differential/wrap_xfer.cpp: XferLoad::xferSnapshot calls addPostProcessSnapshot, which counts) */
-class GameState { public: AsciiString realMapPathToPortableMapPath(const AsciiString&) const; AsciiString portableMapPathToRealMapPath(const AsciiString&) const; void addPostProcessSnapshot(Snapshot*); int m_postProcessCount; };
-extern GameState* TheGameState;
+/* Common/GameState.h is the Xfer archive's shim (differential/shim/Common/GameState.h), renamed here: XferLoad::xferSnapshot calls
+** addPostProcessSnapshot, which counts (the number of post-process requests a load made), and Xfer::xferMapName is not reached */
+static GameState g_theGameState; GameState* TheGameState = &g_theGameState;
+AsciiString GameState::realMapPathToPortableMapPath(const AsciiString&) const { abort(); }
+AsciiString GameState::portableMapPathToRealMapPath(const AsciiString&) const { abort(); }
+void GameState::addPostProcessSnapshot(Snapshot*) { ++m_postProcessCount; }
 
 /* ---- globals ------------------------------------------------------------------------------------------------ */
 static ThingFactory g_thingFactory; ThingFactory* TheThingFactory = &g_thingFactory;
@@ -30,6 +32,13 @@ static AudioManager g_audio; AudioManager* TheAudio = &g_audio;
 static RankInfoStore g_rankStore; RankInfoStore* TheRankInfoStore = &g_rankStore;
 static ScienceStore* g_scienceStorePtr = NULL; ScienceStore* TheScienceStore = NULL;
 static AIGroup g_groups[3];
+static UpgradeCenter g_upgradeCenter; UpgradeCenter* TheUpgradeCenter = &g_upgradeCenter;
+void UpgradeCenter::init() {}
+void UpgradeCenter::reset() {}
+static std::vector<UpgradeTemplate*> g_upgrades;
+static std::string g_tmpPath;
+static std::vector<unsigned char> g_saved;
+static bool g_haveSave = false;
 static PolygonTrigger g_triggers[2];
 static unsigned g_setTeamCalls = 0;
 static const unsigned HANG_LIMIT = 10000;
@@ -126,7 +135,7 @@ void Eva::setShouldPlay(EvaMessage m) { Rec("eva %d", (int)m); }
 void ControlBar::markUIDirty() { Rec("ui.dirty"); }
 void ControlBar::onPlayerSciencePurchasePointsChanged(const Player* p) { Rec("ui.spp %d", pidx(p)); }
 void ControlBar::onPlayerRankChanged(const Player* p) { Rec("ui.rank %d", pidx(p)); }
-UnicodeString GameText::fetch(const char* label) { Rec("text %s", label); return UnicodeString(L"General"); }
+UnicodeString GameText::fetch(const char* label) { Rec("text %s", label); return strcmp(label, "GUI:AddCash") == 0 ? UnicodeString(L"+$%d") : UnicodeString(L"General"); }
 Bool VictoryConditions::hasSinglePlayerBeenDefeated(const Player* p) { return m_defeated[pidx(p) & 15]; }
 void AudioManager::addAudioEvent(const AudioEventRTS* e) { Rec("audio %d player=%d", (int)e->m_id, (int)e->m_playerIndex); }
 
@@ -168,10 +177,15 @@ void ScoreKeeper::reset(Int playerIdx) { Rec("score.reset %d", playerIdx); }
 void ScoreKeeper::addObjectBuilt(const Object* o) { Rec("score.built %d", o ? (int)o->m_id : 0); }
 void ScoreKeeper::removeObjectBuilt(const Object* o) { Rec("score.unbuilt %d", o ? (int)o->m_id : 0); }
 void ScoreKeeper::crc(Xfer*) {}
-void ScoreKeeper::xfer(Xfer*) {}
+/* the score keeper is another unit (differential_score_keeper.rs): this stand-in saves a version and the two sums, as the Rust stand-in does */
+void ScoreKeeper::xfer(Xfer* xfer)
+{
+	XferVersion currentVersion = 1; XferVersion version = currentVersion; xfer->xferVersion(&version, currentVersion);
+	xfer->xferInt(&m_totalMoneySpent); xfer->xferInt(&m_totalMoneyEarned);
+}
 void ScoreKeeper::loadPostProcess() {}
 AcademyStats::AcademyStats() {}
-void AcademyStats::init(const Player* p) { Rec("academy.init %d", pidx(p)); m_generalsPointsSpent = 0; }
+void AcademyStats::init(const Player* p) { Rec("academy.init %d", pidx(p)); m_generalsPointsSpent = 0; m_controlGroupsUsed = 0; }
 void AcademyStats::update() { Rec("academy.update"); }
 void AcademyStats::recordIncome() { Rec("academy.income"); }
 void AcademyStats::crc(Xfer*) {}
@@ -180,31 +194,18 @@ void AcademyStats::loadPostProcess() {}
 void MissionStats::crc(Xfer*) {}
 void MissionStats::xfer(Xfer*) {}
 void MissionStats::loadPostProcess() {}
-void Money::crc(Xfer*) {}
-void Money::xfer(Xfer*) {}
-void Money::loadPostProcess() {}
-void Energy::crc(Xfer*) {}
-void Energy::xfer(Xfer*) {}
-void Energy::loadPostProcess() {}
-Upgrade::Upgrade(const UpgradeTemplate* t) : m_template(t), m_status(UPGRADE_STATUS_INVALID), m_next(NULL), m_prev(NULL) {}
-void Upgrade::crc(Xfer*) {}
-void Upgrade::xfer(Xfer*) {}
-void Upgrade::loadPostProcess() {}
-
-/* Player's snapshot methods are slice 4's; the vtable needs them */
-void Player::crc(Xfer*) {}
-void Player::xfer(Xfer*) {}
-void Player::loadPostProcess() {}
 
 /* the science store: the answers come from the program (a table of costs, grantable flags and prerequisites) */
 struct SciCfg { int cost; bool grantable; std::vector<int> prereqs; std::string name; };
 static std::map<int, SciCfg> g_sciCfg;
+/* the eight sciences of a program are name keys ("Sci0" ... "Sci7"), as ScienceStore makes them; -1 stays -1 */
+static int g_sciKey[8];
+static int sciKey(int i) { return (i >= 0 && i < 8) ? g_sciKey[i] : i; }
 ScienceStore::~ScienceStore() {}
 void ScienceStore::init() {}
 void ScienceStore::reset() {}
 Bool ScienceStore::isScienceGrantable(ScienceType st) const { std::map<int, SciCfg>::const_iterator it = g_sciCfg.find((int)st); return it != g_sciCfg.end() && it->second.grantable; }
 Int ScienceStore::getSciencePurchaseCost(ScienceType st) const { std::map<int, SciCfg>::const_iterator it = g_sciCfg.find((int)st); return it == g_sciCfg.end() ? 0 : it->second.cost; }
-AsciiString ScienceStore::getInternalNameForScience(ScienceType st) const { std::map<int, SciCfg>::const_iterator it = g_sciCfg.find((int)st); return AsciiString(it == g_sciCfg.end() ? "" : it->second.name.c_str()); }
 Bool ScienceStore::playerHasPrereqsForScience(const Player* player, ScienceType st) const
 {
 	std::map<int, SciCfg>::const_iterator it = g_sciCfg.find((int)st);
@@ -332,10 +333,14 @@ static void dumpPlayer(Player* p)
 {
 	char b[256];
 	std::string build;
-	for (BuildListInfo* e = p->m_pBuildList; e; e = e->m_next)
+	for (BuildListInfo* e = p->m_pBuildList; e; e = e->m_nextBuildList)
 	{
 		sprintf(b, "%s%d/%s/%08x,%08x,%08x/%08x/%d/%d", build.empty() ? "" : ";", (int)e->m_objectID, ascStr(e->m_templateName).c_str(), FB(e->m_location.x), FB(e->m_location.y), FB(e->m_location.z), FB(e->m_angle), e->m_numRebuilds, e->m_priorityBuild ? 1 : 0);
 		build += b;
+		{ char c[512]; std::string gat; char g[16];
+		  for (int j = 0; j < BuildListInfo::MAX_RESOURCE_GATHERERS; ++j) { sprintf(g, "%s%d", j ? "," : "", (int)e->m_resourceGatherers[j]); gat += g; }
+		  sprintf(c, "/%s/%s/%08x/%08x/%d/%d%d%d%d%d%d%d/%u/%d,%d/%s", ascStr(e->m_buildingName).c_str(), ascStr(e->m_script).c_str(), FB(e->m_rallyPointOffset.x), FB(e->m_rallyPointOffset.y), (int)e->m_health, e->m_whiner ? 1 : 0, e->m_unsellable ? 1 : 0, e->m_repairable ? 1 : 0, e->m_automaticallyBuild ? 1 : 0, e->m_isInitiallyBuilt ? 1 : 0, e->m_underConstruction ? 1 : 0, e->m_isSupplyBuilding ? 1 : 0, (unsigned)e->m_objectTimestamp, (int)e->m_desiredGatherers, (int)e->m_currentGatherers, gat.c_str());
+		  build += c; }
 	}
 	if (build.empty()) build = "-";
 	std::vector<int> protos;
@@ -365,6 +370,15 @@ static void dumpPlayer(Player* p)
 		FB(p->m_skillPointsModifier), att.c_str(), (unsigned)p->m_attackedFrame, FB(p->m_cashBountyPercent), kop.c_str(), spt.c_str(), nsq, p->m_currentSelection ? 1 : 0, (unsigned)p->m_academyStats.m_generalsPointsSpent);
 }
 
+static void dumpPlayer3(Player* p)
+{
+	const BattlePlanBonuses* b = p->m_battlePlanBonuses;
+	if (b) Rec("D player3 %d spent=%d earned=%d bonus=%08x,%08x,%d,%d,%d,%s,%s", p->m_playerIndex, p->m_scoreKeeper.m_totalMoneySpent, p->m_scoreKeeper.m_totalMoneyEarned,
+		FB(b->m_armorScalar), FB(b->m_sightRangeScalar), b->m_bombardment, b->m_holdTheLine, b->m_searchAndDestroy, kindBits(b->m_validKindOf).c_str(), kindBits(b->m_invalidKindOf).c_str());
+	else Rec("D player3 %d spent=%d earned=%d bonus=-", p->m_playerIndex, p->m_scoreKeeper.m_totalMoneySpent, p->m_scoreKeeper.m_totalMoneyEarned);
+}
+
+static void dumpPlayer4(Player* p);
 static void dumpState()
 {
 	Rec("D frame=%u tid=%u pid=%u nprotos=%u local=%d", (unsigned)TheGameLogic->m_frame, (unsigned)TheTeamFactory->m_uniqueTeamID, (unsigned)TheTeamFactory->m_uniqueTeamPrototypeID,
@@ -391,19 +405,173 @@ static void dumpState()
 		Rec("D obj id=%d team=%d next=%d prev=%d", (int)o->m_id, tid(o->m_team), o->m_dlink_TeamMemberList.m_next ? (int)o->m_dlink_TeamMemberList.m_next->m_id : 0,
 			o->m_dlink_TeamMemberList.m_prev ? (int)o->m_dlink_TeamMemberList.m_prev->m_id : 0);
 	}
-	for (size_t i = 0; i < g_players.size(); ++i) dumpPlayer(g_players[i]);
+	for (size_t i = 0; i < g_objs.size(); ++i)
+	{
+		Object* o = g_objs[i];
+		Rec("D obj2 %d health=%08x vision=%08x shroud=%08x wb=%08x", (int)o->m_id, FB(o->m_health), FB(o->m_vision), FB(o->m_shroud), o->m_wb);
+	}
+	for (size_t i = 0; i < g_players.size(); ++i) { dumpPlayer(g_players[i]); dumpPlayer4(g_players[i]); dumpPlayer3(g_players[i]); }
+}
+
+/* ---- slice 2b and 3: upgrades, squads, save and load ------------------------------------------------------------- */
+static std::vector<unsigned char> readFileBytes(const char* path)
+{
+	std::vector<unsigned char> v;
+	FILE* f = fopen(path, "rb");
+	if (!f) return v;
+	unsigned char buf[4096];
+	size_t n;
+	while ((n = fread(buf, 1, sizeof buf, f)) > 0) v.insert(v.end(), buf, buf + n);
+	fclose(f);
+	return v;
+}
+static void writeFileBytes(const char* path, const std::vector<unsigned char>& v)
+{
+	FILE* f = fopen(path, "wb");
+	if (v.size()) fwrite(&v[0], 1, v.size(), f);
+	fclose(f);
+}
+static unsigned hashBytes(const std::vector<unsigned char>& v)
+{
+	unsigned h = 2166136261u;
+	for (size_t i = 0; i < v.size(); ++i) { h ^= v[i]; h *= 16777619u; }
+	return h;
+}
+/* a word that picks an object, or (a quarter of the time) an id no object has */
+static ObjectID objIdOf(unsigned w) { return (w % 4 == 0) ? (ObjectID)(900 + (w / 4) % 7) : g_objs[(w / 4) % g_objs.size()]->m_id; }
+static Object* realObj(unsigned w) { return g_objs[w % g_objs.size()]; }
+static AIGroup* groupOf(unsigned w) { return (w % 4 == 0) ? NULL : &g_groups[w % 3]; }
+static UpgradeMaskType upgradeMaskOf(const unsigned* a, int k)
+{
+	size_t n = g_upgrades.size();
+	UpgradeMaskType m;
+	if (a[k] % 3 != 0) m.set(g_upgrades[a[k + 1] % n]->getUpgradeMask());
+	if (a[k] % 3 == 2) m.set(g_upgrades[a[k + 2] % n]->getUpgradeMask());
+	return m;
+}
+static int upgradeIndex(const UpgradeTemplate* t) { for (size_t i = 0; i < g_upgrades.size(); ++i) if (g_upgrades[i] == t) return (int)i; return -1; }
+static int listIndex(Player* p, Upgrade* u) { int i = 0; for (Upgrade* x = p->m_upgradeList; x; x = x->friend_getNext(), ++i) if (x == u) return i; return -1; }
+static std::string maskStr(const UpgradeMaskType& m)
+{
+	std::string s; char b[16];
+	for (int i = 0; i < 128; ++i) if (m.test(i)) { sprintf(b, "%s%d", s.empty() ? "" : ",", i); s += b; }
+	return s.empty() ? "-" : s;
+}
+static std::string squadStr(Squad* q)
+{
+	std::vector<int> ids, cache;
+	for (size_t i = 0; i < q->m_objectIDs.size(); ++i) ids.push_back((int)q->m_objectIDs[i]);
+	for (size_t i = 0; i < q->m_objectsCached.size(); ++i) cache.push_back((int)q->m_objectsCached[i]->m_id);
+	return idList(ids) + "/" + idList(cache);
+}
+static std::string idsOf(const VecObjectPtr& v)
+{
+	std::vector<int> ids;
+	for (size_t i = 0; i < v.size(); ++i) ids.push_back((int)v[i]->m_id);
+	return idList(ids);
+}
+static void dumpPlayer4(Player* p)
+{
+	std::string ups, squads;
+	for (Upgrade* u = p->m_upgradeList; u; u = u->friend_getNext())
+	{ char b[32]; sprintf(b, "%s%d:%d", ups.empty() ? "" : ";", upgradeIndex(u->getTemplate()), (int)u->getStatus()); ups += b; }
+	if (ups.empty()) ups = "-";
+	for (int k = 0; k < NUM_HOTKEY_SQUADS; ++k) if (p->m_squads[k]) squads += (squads.empty() ? "" : "|") + squadStr(p->m_squads[k]);
+	if (squads.empty()) squads = "-";
+	Rec("D player4 %d gused=%u up=%s inprog=%s comp=%s squads=%s sel=%s", p->m_playerIndex, (unsigned)p->m_academyStats.m_controlGroupsUsed, ups.c_str(), maskStr(p->m_upgradesInProgress).c_str(),
+		maskStr(p->m_upgradesCompleted).c_str(), squads.c_str(), p->m_currentSelection ? squadStr(p->m_currentSelection).c_str() : "-");
 }
 
 /* ---- the kinds and statuses a program can name (index -> real enumerator) ---------------------------------------- */
-static const KindOfType k_kindPool[12] = { KINDOF_STRUCTURE, KINDOF_PROJECTILE, KINDOF_MINE, KINDOF_INERT, KINDOF_TECH_BUILDING, KINDOF_AIRCRAFT, KINDOF_INFANTRY, KINDOF_VEHICLE,
-	KINDOF_POWERED, KINDOF_DOZER, KINDOF_HARVESTER, KINDOF_COMMANDCENTER };
-static const ObjectStatusTypes k_statusPool[4] = { OBJECT_STATUS_STEALTHED, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_UNDER_CONSTRUCTION };
+static const KindOfType k_kindPool[15] = { KINDOF_STRUCTURE, KINDOF_PROJECTILE, KINDOF_MINE, KINDOF_INERT, KINDOF_TECH_BUILDING, KINDOF_AIRCRAFT, KINDOF_INFANTRY, KINDOF_VEHICLE,
+	KINDOF_POWERED, KINDOF_DOZER, KINDOF_HARVESTER, KINDOF_COMMANDCENTER, KINDOF_DISGUISER, KINDOF_FS_POWER, KINDOF_IGNORES_SELECT_ALL };
+static const ObjectStatusTypes k_statusPool[5] = { OBJECT_STATUS_STEALTHED, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_UNDER_CONSTRUCTION, OBJECT_STATUS_SOLD };
 static KindOfMaskType kindMask(unsigned bits)
 {
 	KindOfMaskType m;
-	for (int k = 0; k < 12; ++k) if (bits & (1u << k)) m.set(k_kindPool[k]);
+	for (int k = 0; k < 15; ++k) if (bits & (1u << k)) m.set(k_kindPool[k]);
 	return m;
 }
+
+/* ---- slice 2: the object-facing services (each call that has an effect is a line, in the Rust host's words) ---- */
+void Object::friend_adjustPowerForPlayer(Bool yes) { Rec("adjustpower %d %d", (int)m_id, yes ? 1 : 0); }
+void AutoDepositUpdate::awardInitialCaptureBonus(Player* p) { Rec("capturebonus %d %d", (int)m_owner->m_id, pidx(p)); }
+void InGameUI::addIdleWorker(Object* obj) { Rec("ui.idle+ %d", (int)obj->m_id); }
+void InGameUI::removeIdleWorker(Object* obj, Int playerNumber) { Rec("ui.idle- %d %d", (int)obj->m_id, playerNumber); }
+void InGameUI::addFloatingText(const UnicodeString& text, const Coord3D* pos, Color color) { Rec("ui.float %s %08x,%08x,%08x %08x", uniStr(text).c_str(), FB(pos->x), FB(pos->y), FB(pos->z), (unsigned)color); }
+void Drawable::setIndicatorColor(Color c) { Rec("indicator %d %08x", (int)m_owner->m_id, (unsigned)c); }
+void Object::leaveGroup() { Rec("leavegroup %d", (int)m_id); }
+void Object::setVisionSpied(Bool setting, Int byWhom) { Rec("spied %d %d %d", (int)m_id, setting ? 1 : 0, byWhom); }
+void Object::updateUpgradeModules() { Rec("upgrademods %d", (int)m_id); }
+void Object::setWeaponBonusCondition(WeaponBonusConditionType c) { Rec("wb+ %d %d", (int)m_id, (int)c); m_wb |= 1u << (int)c; }
+void Object::clearWeaponBonusCondition(WeaponBonusConditionType c) { Rec("wb- %d %d", (int)m_id, (int)c); m_wb &= ~(1u << (int)c); }
+Real BodyModuleInterface::getMaxHealth() const { return m_owner->m_health; }
+void BodyModuleInterface::setMaxHealth(Real maxHealth, MaxHealthChangeType) { Rec("health %d %08x", (int)m_owner->m_id, FB(maxHealth)); m_owner->m_health = maxHealth; }
+void BodyModuleInterface::applyDamageScalar(Real scalar) { Rec("armor %d %08x", (int)m_owner->m_id, FB(scalar)); }
+void SupplyTruckAIInterface::setForceWantingState(Bool v) { Rec("ai.force %d %d", (int)m_owner->m_id, v ? 1 : 0); }
+SupplyTruckAIInterface* AIUpdateInterface::getSupplyTruckAIInterface() const { return m_owner->m_supplyTruck ? &m_owner->m_truck : NULL; }
+void AIUpdateInterface::aiHunt(CommandSourceType source) { Rec("ai.hunt %d %d", (int)m_owner->m_id, (int)source); }
+void AIUpdateInterface::aiIdle(CommandSourceType source) { Rec("ai.idle %d %d", (int)m_owner->m_id, (int)source); }
+void AIUpdateInterface::aiEnter(Object* obj, CommandSourceType source) { Rec("ai.enter %d %d %d", (int)m_owner->m_id, (int)obj->m_id, (int)source); }
+void AIUpdateInterface::aiEvacuate(Bool exposeStealthUnits, CommandSourceType source) { Rec("ai.evacuate %d %d %d", (int)m_owner->m_id, exposeStealthUnits ? 1 : 0, (int)source); }
+void AIUpdateInterface::aiMoveToPosition(const Coord3D* pos, CommandSourceType source) { Rec("ai.move %d %08x,%08x,%08x %d", (int)m_owner->m_id, FB(pos->x), FB(pos->y), FB(pos->z), (int)source); }
+void Pathfinder::removeObjectFromPathfindMap(Object* obj) { Rec("path.remove %d", (int)obj->m_id); }
+void Pathfinder::addObjectToPathfindMap(Object* obj) { Rec("path.add %d", (int)obj->m_id); }
+void PartitionManager::getMostValuableLocation(Int playerIndex, unsigned relationship, ValueOrThreat vot, Coord3D* pos) { Rec("partition.valuable %d", playerIndex); }
+ObjectIterator* PartitionManager::iterateAllObjects()
+{
+	ObjectIterator* it = new ObjectIterator;
+	it->m_objs = g_objs;
+	return it;
+}
+ObjectIterator* PartitionManager::iterateObjectsInRange(const Coord3D* pos, Real maxDist, DistanceCalculationType dc, PartitionFilter** filters, IterOrderType order)
+{
+	/* the one use (Player::garrisonAllUnits): the structures, nearest first, from the centre in 3D; ties keep the object order */
+	ObjectIterator* it = new ObjectIterator;
+	std::vector<std::pair<Real, Object*> > v;
+	PartitionFilterAcceptByKindOf* f = (PartitionFilterAcceptByKindOf*)filters[0];
+	for (size_t i = 0; i < g_objs.size(); ++i)
+	{
+		Object* o = g_objs[i];
+		if (!o->isKindOfMulti(f->m_set, f->m_clear)) continue;
+		Real dx = o->m_pos.x - pos->x, dy = o->m_pos.y - pos->y, dz = o->m_pos.z - pos->z;
+		v.push_back(std::make_pair(dx * dx + dy * dy + dz * dz, o));
+	}
+	std::stable_sort(v.begin(), v.end(), [](const std::pair<Real, Object*>& a, const std::pair<Real, Object*>& b) { return a.first < b.first; });
+	for (size_t i = 0; i < v.size(); ++i) it->m_objs.push_back(v[i].second);
+	return it;
+}
+void ContainModuleInterface::recalcApparentControllingPlayer() { Rec("recalc %d", (int)m_owner->m_id); }
+Bool ActionManager::canEnterObject(const Object* obj, const Object* objectToEnter, CommandSourceType commandSource, CanEnterType modifierFlags) const
+{
+	Rec("canenter %d %d %d", (int)obj->m_id, (int)objectToEnter->m_id, (int)commandSource);
+	return (obj->m_canEnter >> ((int)objectToEnter->m_id & 31)) & 1;
+}
+void BuildAssistant::sellObject(Object* obj) { Rec("sell %d", (int)obj->m_id); }
+void Radar::removeObject(Object* obj) { Rec("radar- %d", (int)obj->m_id); }
+void Radar::addObject(Object* obj) { Rec("radar+ %d", (int)obj->m_id); }
+void GameClient::setTeamColor(Int red, Int green, Int blue) { Rec("teamcolor %d %d %d", red, green, blue); }
+void ControlBar::setControlBarSchemeByPlayer(Player* p) { Rec("ui.scheme.player %d", pidx(p)); }
+void ControlBar::setControlBarSchemeByPlayerTemplate(const PlayerTemplate* pt) { Rec("ui.scheme.template %d", tplIndexOf(pt)); }
+const PlayerTemplate* PlayerTemplateStore::findPlayerTemplate(NameKeyType key) const { return key == TheNameKeyGenerator->nameToKey("FactionObserver") ? m_observer : NULL; }
+ProductionUpdateInterface* ProductionUpdate::getProductionUpdateInterfaceFromObject(const Object* obj)
+{
+	if (obj->m_prodQueue < 0) return NULL;
+	Object* o = const_cast<Object*>(obj);
+	o->m_pui.m_queued = o->m_prodQueue;
+	return &o->m_pui;
+}
+const ProductionPrerequisite* ThingTemplate::getNthPrereq(Int i) const
+{
+	static ProductionPrerequisite pp;
+	pp.m_ok = (m_prereqMask >> (i & 31)) & 1;
+	return &pp;
+}
+static BuildAssistant g_buildAssistant; BuildAssistant* TheBuildAssistant = &g_buildAssistant;
+static Radar g_radar; Radar* TheRadar = &g_radar;
+static GameClient g_gameClient; GameClient* TheGameClient = &g_gameClient;
+static PlayerTemplateStore g_ptStore; PlayerTemplateStore* ThePlayerTemplateStore = &g_ptStore;
+static ActionManager g_actionManager; ActionManager* TheActionManager = &g_actionManager;
 
 static void iterCb(Object* o, void* ud) { Rec("iter %d", (int)o->m_id); }
 
@@ -418,6 +586,8 @@ static void clearWorld()
 	g_objs.clear();
 	g_playerList.m_count = 0;
 	g_playerList.m_local = NULL;
+	{ UpgradeTemplate* u = g_upgradeCenter.m_upgradeList; while (u) { UpgradeTemplate* nx = u->friend_getNext(); u->deleteInstance(); u = nx; } g_upgradeCenter.m_upgradeList = NULL; g_upgradeCenter.m_nextTemplateMaskBit = 0; }
+	g_upgrades.clear();
 	for (size_t i = 0; i < g_allPlayers.size(); ++i)
 	{
 		/* the player is not deleted through ~Player (slice 4): its AI is */
@@ -472,6 +642,7 @@ static void readMoney(Reader& r, Money& m)
 	m.init(); m.m_money = amount; m.setPlayerIndex(idx);
 }
 
+static void setupWorld2(Reader& r);
 static void setupWorld(Reader& r)
 {
 	/* ---- the dictionaries (the handicaps of the player templates and the teams are read from them) ---- */
@@ -503,18 +674,19 @@ static void setupWorld(Reader& r)
 	for (int i = 0; i < nr; ++i)
 	{
 		RankInfo* ri = new RankInfo; ri->m_skillPointsNeeded = r.i(); ri->m_sciencePurchasePointsGranted = r.i();
-		int ng = r.i(); for (int k = 0; k < ng; ++k) ri->m_sciencesGranted.push_back((ScienceType)r.i());
+		int ng = r.i(); for (int k = 0; k < ng; ++k) ri->m_sciencesGranted.push_back((ScienceType)sciKey(r.i()));
 		g_ranks.push_back(ri); g_rankStore.m_ranks.push_back(ri);
 	}
 	int nsci = r.i();
 	for (int i = 0; i < nsci; ++i)
 	{
-		int id = r.i(); SciCfg c; c.cost = r.i(); c.grantable = r.b(); int np2 = r.i(); for (int k = 0; k < np2; ++k) c.prereqs.push_back(r.i());
-		char b[32]; sprintf(b, "Sci%d", id); c.name = b;
+		int id = sciKey(r.i()); SciCfg c; c.cost = r.i(); c.grantable = r.b(); int np2 = r.i(); for (int k = 0; k < np2; ++k) c.prereqs.push_back(sciKey(r.i()));
 		g_sciCfg[id] = c;
 	}
 	static ScienceStore sciStore;
 	TheScienceStore = &sciStore;
+	int nup = r.i();
+	for (int i = 0; i < nup; ++i) { char b[16]; sprintf(b, "Upg%d", i); g_upgrades.push_back(TheUpgradeCenter->newUpgrade(AsciiString(b))); }
 	int nsp = r.i();
 	for (int i = 0; i < nsp; ++i) { SpecialPowerTemplate* t = new SpecialPowerTemplate; t->m_id = r.u(); t->m_reload = r.u(); t->m_shared = r.b(); g_sptpls.push_back(t); }
 	int npt = r.i();
@@ -537,7 +709,7 @@ static void setupWorld(Reader& r)
 		nc = r.i(); for (int k = 0; k < nc; ++k) { sprintf(b, "Tpl%d", r.i()); NameKeyType key = TheNameKeyGenerator->nameToKey(b); t->m_time[key] = r.f(); }
 		nc = r.i(); for (int k = 0; k < nc; ++k) { sprintf(b, "Tpl%d", r.i()); NameKeyType key = TheNameKeyGenerator->nameToKey(b); t->m_vet[key] = (VeterancyLevel)(r.u() % 4); }
 		t->m_observer = r.b(); t->m_playable = r.b();
-		nc = r.i(); for (int k = 0; k < nc; ++k) t->m_intrinsic.push_back((ScienceType)r.i());
+		nc = r.i(); for (int k = 0; k < nc; ++k) t->m_intrinsic.push_back((ScienceType)sciKey(r.i()));
 		t->m_intrinsicSPP = r.i();
 		g_ptpls.push_back(t);
 	}
@@ -570,7 +742,7 @@ static void setupWorld(Reader& r)
 		ThingTemplate* t = new ThingTemplate;
 		t->m_idx = i;
 		int nk = r.i();
-		for (int k = 0; k < nk; ++k) t->m_kinds.set(k_kindPool[r.u() % 12]);
+		for (int k = 0; k < nk; ++k) t->m_kindof.set(k_kindPool[r.u() % 15]);
 		t->m_buildFacility = r.b(); t->m_equiv = r.i();
 		char b[32]; sprintf(b, "Tpl%d", r.i());
 		t->m_name = AsciiString(b);
@@ -590,7 +762,7 @@ static void setupWorld(Reader& r)
 		o->m_player = g_players[r.u() % g_players.size()];
 		o->m_team = NULL;
 		int ns = r.i();
-		for (int k = 0; k < ns; ++k) o->m_status.set(k_statusPool[r.u() % 4]);
+		for (int k = 0; k < ns; ++k) o->m_status.set(k_statusPool[r.u() % 5]);
 		o->m_dead = r.b(); o->m_destroyed = r.b(); o->m_contained = r.b(); o->m_held = r.b(); o->m_enemyNear = r.b();
 		o->m_hasAI = r.b(); o->m_ai.m_owner = o; o->m_ai.m_idle = r.b(); o->m_ai.m_recruitable = r.b(); o->m_ai.m_loco.m_valid = r.u();
 		int cc = r.i(); o->m_hasContain = cc >= 0; o->m_contain.m_owner = o; o->m_contain.m_count = cc;
@@ -602,7 +774,7 @@ static void setupWorld(Reader& r)
 		for (int k = 0; k < nm; ++k)
 		{
 			bool sp = r.b(); int serial = r.i(); int sci = r.i();
-			o->m_spm[k].m_serial = serial; o->m_spm[k].m_required = (ScienceType)sci;
+			o->m_spm[k].m_serial = serial; o->m_spm[k].m_required = (ScienceType)sciKey(sci);
 			o->m_mod[k].m_sp = sp ? &o->m_spm[k] : NULL;
 			o->m_modules[k] = &o->m_mod[k];
 		}
@@ -638,13 +810,50 @@ static void setupWorld(Reader& r)
 	}
 
 	g_gameLogic.m_frame = r.u();
+	setupWorld2(r);
+}
+
+/* The special powers a program can name (index -> real enumerator); 8 is SPECIAL_INVALID */
+static const SpecialPowerType k_spPool[9] = { SPECIAL_PARTICLE_UPLINK_CANNON, SUPW_SPECIAL_PARTICLE_UPLINK_CANNON, LAZR_SPECIAL_PARTICLE_UPLINK_CANNON, SPECIAL_NEUTRON_MISSILE,
+	NUKE_SPECIAL_NEUTRON_MISSILE, SUPW_SPECIAL_NEUTRON_MISSILE, SPECIAL_SCUD_STORM, SPECIAL_DAISY_CUTTER, SPECIAL_INVALID };
+
+/* The second part of the header (slice 2): what the object-facing operations read. It follows the frame, so the first
+** part of the program is the same as slice 1's. */
+static bool g_hasObserver = false;
+static unsigned g_observerIdx = 0;
+static void setupWorld2(Reader& r)
+{
+	g_hasObserver = r.b(); g_observerIdx = r.u();
+	g_ptStore.m_observer = (g_hasObserver && !g_ptpls.empty()) ? g_ptpls[g_observerIdx % g_ptpls.size()] : NULL;
+	for (size_t i = 0; i < g_tpls.size(); ++i)
+	{
+		ThingTemplate* t = g_tpls[i];
+		t->m_buildCost = r.i(); t->m_buildable = (BuildableStatus)(r.u() % 4); t->m_nPrereq = (Int)(r.u() % 4); t->m_prereqMask = r.u(); t->m_maxSimul = r.u() % 4;
+		int lk = r.i(); char b[32];
+		if (lk == 0) t->m_linkKey = NAMEKEY_INVALID; else { sprintf(b, "Link%d", lk); t->m_linkKey = TheNameKeyGenerator->nameToKey(b); }
+		sprintf(b, "Side%u", r.u() % 4); t->m_owningSide = AsciiString(b);
+	}
+	for (size_t i = 0; i < g_objs.size(); ++i)
+	{
+		Object* o = g_objs[i];
+		o->m_modulesReady = r.b(); o->m_hasAutoDeposit = r.b(); o->m_hasDrawable = r.b(); o->m_disabled = r.b(); o->m_factionStructure = r.b(); o->m_hasWeapon = r.b();
+		o->m_weaponPercent = r.u() % 130; o->m_selectable = r.b(); o->m_supplyTruck = r.b(); o->m_disguisedPlayer = r.i(); o->m_nightColor = r.u(); o->m_indicatorColor = r.u();
+		o->m_producer = (ObjectID)r.u(); o->m_health = r.f(); o->m_shroud = r.f(); o->m_contain.m_whoEntered = r.u(); o->m_canEnter = r.u(); o->m_prodQueue = r.i();
+		o->m_adu.m_owner = o; o->m_drawable.m_owner = o; o->m_body.m_owner = o; o->m_truck.m_owner = o; o->m_stealth.m_player = o->m_disguisedPlayer; o->m_wb = 0;
+		for (int k = 0; k < 4; ++k)
+		{
+			if (!o->m_modules[k]) continue;
+			SpecialPowerModuleInterface& m = o->m_spm[k];
+			m.m_type = (int)k_spPool[r.u() % 9]; m.m_scriptOnly = r.b(); m.m_ready = r.u(); m.m_percent = r.u() % 130; m.m_tmpl.m_shared = r.b();
+		}
+	}
 }
 
 static AsciiString teamName(unsigned id) { char b[32]; if (id >= 100) sprintf(b, "teamP%u", id - 100); else sprintf(b, "Team%u", id); return AsciiString(b); }
 static AsciiString thingName(unsigned v) { char b[32]; if (v >= 8) sprintf(b, "tpl%u", v - 8); else sprintf(b, "Tpl%u", v); return AsciiString(b); }
 static std::string countsStr(const int* c, int n) { std::string s; char b[16]; for (int i = 0; i < n; ++i) { sprintf(b, "%s%d", i ? "," : "", c[i]); s += b; } return s; }
 static Coord3D coordOf(unsigned a, unsigned b2, unsigned c) { Coord3D d; memcpy(&d.x, &a, 4); memcpy(&d.y, &b2, 4); memcpy(&d.z, &c, 4); return d; }
-static ScienceType sciOf(unsigned v) { return (ScienceType)(int)(v % 8); }
+static ScienceType sciOf(unsigned v) { return (ScienceType)sciKey((int)(v % 8)); }
 
 static void objOp(Object* o, unsigned sub, const unsigned* a)
 {
@@ -652,13 +861,19 @@ static void objOp(Object* o, unsigned sub, const unsigned* a)
 	{
 	case 0: o->m_dead = a[0] != 0; break;
 	case 1: o->m_destroyed = a[0] != 0; break;
-	case 2: o->m_status.set(k_statusPool[a[0] % 4], a[1] != 0 ? 1 : 0); break;
+	case 2: o->m_status.set(k_statusPool[a[0] % 5], a[1] != 0 ? 1 : 0); break;
 	case 3: o->m_enemyNear = a[0] != 0; break;
 	case 4: memcpy(&o->m_pos.x, &a[0], 4); memcpy(&o->m_pos.y, &a[1], 4); memcpy(&o->m_pos.z, &a[2], 4); break;
 	case 5: o->m_reactions = a[0]; break;
 	case 6: memcpy(&o->m_orientation, &a[0], 4); break;
 	case 7: o->m_vet = (VeterancyLevel)(a[0] % 4); break;
 	case 8: o->m_held = a[0] != 0; break;
+	case 9: o->m_disabled = a[0] != 0; break;
+	case 10: o->m_modulesReady = a[0] != 0; break;
+	case 11: for (int k = 0; k < 4; ++k) if (o->m_modules[(k + a[0]) % 4]) { SpecialPowerModuleInterface& m = o->m_spm[(k + a[0]) % 4]; m.m_ready = a[1]; m.m_percent = a[2] % 130; m.m_scriptOnly = a[3] != 0; break; } break;
+	case 12: o->m_hasWeapon = a[0] != 0; o->m_weaponPercent = a[1] % 130; o->m_factionStructure = a[2] != 0; break;
+	case 13: o->m_prodQueue = (int)a[0] % 4 - 1; o->m_canEnter = a[1]; o->m_contain.m_whoEntered = a[2] % 2 ? (1u << (a[3] % 4)) : 0; break;
+	case 14: memcpy(&o->m_health, &a[0], 4); o->m_disguisedPlayer = (int)(a[1] % 5) - 1; o->m_stealth.m_player = o->m_disguisedPlayer; o->m_supplyTruck = a[2] != 0; break;
 	default: break;
 	}
 }
@@ -683,7 +898,13 @@ static void playerOp(Player* p, unsigned sub, const unsigned* a)
 	case 9: { Team* t = a[0] ? pickTeam(a[0] - 1) : NULL; Rec("ret rmtrel %d", p->removeTeamRelationship(t) ? 1 : 0); break; }
 	case 10: {
 		BuildListInfo* head = NULL; int n = a[0] % 4;
-		for (int k = n - 1; k >= 0; --k) { BuildListInfo* e = new BuildListInfo; e->m_objectID = (ObjectID)(a[1] + k); e->m_templateName = thingName(a[2] + k); e->m_angle = (Real)k; e->m_numRebuilds = (Int)a[3] + k; e->m_next = head; head = e; }
+		for (int k = n - 1; k >= 0; --k) { BuildListInfo* e = new BuildListInfo; e->m_objectID = (ObjectID)(a[1] + k); e->m_templateName = thingName(a[2] + k); e->m_angle = (Real)k; e->m_numRebuilds = (Int)a[3] + k;
+			e->m_health = (Int)(a[4] % 300); e->m_whiner = (a[4] & 1) != 0; e->m_unsellable = (a[4] & 2) != 0; e->m_repairable = (a[4] & 4) != 0; e->m_automaticallyBuild = (a[4] & 8) != 0;
+			e->m_isInitiallyBuilt = (a[4] & 16) != 0; e->m_underConstruction = (a[4] & 32) != 0; e->m_isSupplyBuilding = (a[4] & 64) != 0;
+			{ char b[16]; sprintf(b, "B%u", a[5] % 5); e->m_buildingName = AsciiString(b); sprintf(b, "S%u", (a[5] / 8) % 3); e->m_script = AsciiString(b); }
+			e->m_rallyPointOffset.x = (Real)(a[6] % 50); e->m_rallyPointOffset.y = (Real)k; e->m_desiredGatherers = (Int)(a[7] % 6); e->m_currentGatherers = (Int)((a[7] / 8) % 6); e->m_objectTimestamp = a[7];
+			for (int j = 0; j < BuildListInfo::MAX_RESOURCE_GATHERERS; ++j) e->m_resourceGatherers[j] = (ObjectID)(a[5] * 0x01010101u + (unsigned)j * a[6]);
+			e->m_nextBuildList = head; head = e; }
 		p->setBuildList(head); break; }
 	case 11: p->addToBuildList(pickObj(a[0])); break;
 	case 12: { Coord3D pos = coordOf(a[1], a[2], a[3]); float ang; memcpy(&ang, &a[4], 4); p->addToPriorityBuildList(thingName(a[0] % 16), &pos, ang); break; }
@@ -798,6 +1019,159 @@ static void playerOp(Player* p, unsigned sub, const unsigned* a)
 		}
 		break; }
 	case 76: p->setCashBounty(a[0] % 2 ? 0.25f : 0.0f); p->m_unitsShouldHunt = a[1] != 0; p->m_isPlayerDead = a[2] != 0; break;
+	case 77: { Object* o = a[0] ? pickObj(a[0] - 1) : NULL; p->becomingTeamMember(o, a[1] != 0); break; }
+	case 78: p->becomingLocalPlayer(a[0] != 0); break;
+	case 79: {
+		SpecialPowerType sp = k_spPool[a[1] % 9];
+		const ThingTemplate* th = g_tpls[a[2] % g_tpls.size()];
+		switch (a[0] % 7)
+		{
+		case 0: { Object* o = p->findNaturalCommandCenter(); Rec("ret ncc %d", o ? (int)o->m_id : 0); break; }
+		case 1: { Object* o = p->findMostReadyShortcutSpecialPowerOfType(sp); Rec("ret mrsp %d", o ? (int)o->m_id : 0); break; }
+		case 2: { UnsignedInt pct = 77; Object* o = p->findMostReadyShortcutWeaponForThing(th, pct); Rec("ret mrw %d %u", o ? (int)o->m_id : 0, (unsigned)pct); break; }
+		case 3: { UnsignedInt pct = 77; Object* o = p->findMostReadyShortcutSpecialPowerForThing(th, pct); Rec("ret mrst %d %u", o ? (int)o->m_id : 0, (unsigned)pct); break; }
+		case 4: { Object* o = p->findAnyExistingObjectWithThingTemplate(th); Rec("ret anyobj %d", o ? (int)o->m_id : 0); break; }
+		case 5: Rec("ret anysp %d", p->hasAnyShortcutSpecialPower() ? 1 : 0); break;
+		default: Rec("ret countsp %d", p->countReadyShortcutSpecialPowersOfType(sp)); break;
+		}
+		break; }
+	case 80: { Object* b2 = a[0] ? pickObj(a[0] - 1) : NULL; p->onStructureConstructionComplete(b2, pickObj(a[1]), a[2] != 0); break; }
+	case 81: p->setUnitsShouldHunt(a[0] != 0, (CommandSourceType)(a[1] % 4)); break;
+	case 82: p->killPlayer(); break;
+	case 83: { Player* that = pickPlayer(a[0]); if (!that->m_playerTemplate) { Rec("skip notemplate"); break; } p->transferAssetsFromThat(that); break; }
+	case 84:
+		switch (a[0] % 4)
+		{
+		case 0: p->garrisonAllUnits((CommandSourceType)(a[1] % 4)); break;
+		case 1: p->ungarrisonAllUnits((CommandSourceType)(a[1] % 4)); break;
+		case 2: p->setUnitsShouldIdleOrResume(a[1] != 0); break;
+		default: p->sellEverythingUnderTheSun(); break;
+		}
+		break;
+	case 85: { Object* k = a[0] ? pickObj(a[0] - 1) : NULL; Object* v = a[1] ? pickObj(a[1] - 1) : NULL; p->doBountyForKill(k, v); break; }
+	case 86: {
+		const ThingTemplate* t = (a[1] && a[0] % 3 == 1) ? g_tpls[(a[1] - 1) % g_tpls.size()] : g_tpls[a[1] % g_tpls.size()];
+		if (a[0] % 3 == 1 && !a[1]) t = NULL;
+		switch (a[0] % 3)
+		{
+		case 0: Rec("ret morethan %d", p->canBuildMoreOfType(t) ? 1 : 0); break;
+		case 1: Rec("ret canbuild %d", p->canBuild(t) ? 1 : 0); break;
+		default: Rec("ret afford %d", p->canAffordBuild(t) ? 1 : 0); break;
+		}
+		break; }
+	case 87: p->friend_applyDifficultyBonusesForObject(pickObj(a[0]), a[1] != 0); break;
+	case 88: {
+		static const float scal[8] = { 1.0f, 0.5f, 2.0f, 0.0f, 0.7f, 1.0f, 1.3f, 3.0f };
+		switch (a[0] % 6)
+		{
+		case 0: case 5: {
+			BattlePlanBonuses* b2 = newInstance(BattlePlanBonuses);
+			b2->m_armorScalar = scal[a[3] % 8]; b2->m_sightRangeScalar = scal[(a[3] >> 4) % 8];
+			b2->m_bombardment = (Int)(a[4] % 4); b2->m_holdTheLine = (Int)((a[4] >> 4) % 4); b2->m_searchAndDestroy = (Int)((a[4] >> 8) % 4);
+			b2->m_validKindOf = kindMask(a[5]); b2->m_invalidKindOf = kindMask(a[6]);
+			if (a[0] % 6 == 0) p->changeBattlePlan((BattlePlanStatus)(a[1] % 4), (Int)(a[2] % 2 ? 1 : -1), b2); else p->applyBattlePlanBonusesForPlayerObjects(b2);
+			Rec("bonus %08x %08x %d %d %d %s %s", FB(b2->m_armorScalar), FB(b2->m_sightRangeScalar), b2->m_bombardment, b2->m_holdTheLine, b2->m_searchAndDestroy, kindBits(b2->m_validKindOf).c_str(), kindBits(b2->m_invalidKindOf).c_str());
+			delete b2;
+			break; }
+		case 1: { Object* o = a[1] ? pickObj(a[1] - 1) : NULL; Rec("ret qualifies %d", p->doesObjectQualifyForBattlePlan(o) ? 1 : 0); break; }
+		case 2: Rec("ret plans %d %d", p->getBattlePlansActiveSpecific((BattlePlanStatus)(a[1] % 4)), p->getNumBattlePlansActive()); break;
+		case 3: case 4:
+			if (!p->m_battlePlanBonuses) { Rec("skip nobonus"); break; }
+			if (a[0] % 6 == 3) p->applyBattlePlanBonusesForObject(pickObj(a[1])); else p->removeBattlePlanBonusesForObject(pickObj(a[1]));
+			break;
+		default: break;
+		}
+		break; }
+	case 89: p->setUnitsVisionSpied(a[0] != 0, kindMask(a[1]), (PlayerIndex)(a[2] % np)); break;
+	case 90: p->m_money.m_money = a[0] % 3 == 0 ? a[1] : (a[1] % 4000); break;
+	case 91: {
+		size_t n = g_upgrades.size();
+		if (!n) { Rec("skip noupgrades"); break; }
+		UpgradeTemplate* key = g_upgrades[a[1] % n];
+		switch (a[0] % 8)
+		{
+		case 0: {
+			static const UpgradeStatusType st[3] = { UPGRADE_STATUS_INVALID, UPGRADE_STATUS_IN_PRODUCTION, UPGRADE_STATUS_COMPLETE };
+			Upgrade* u = p->addUpgrade(key, st[a[2] % 3]);
+			Rec("ret addupg %d", listIndex(p, u));
+			break; }
+		case 1: Rec("ret findupg %d", listIndex(p, p->findUpgrade(key))); break;
+		case 2: Rec("ret upgcomplete %d", p->hasUpgradeComplete(key) ? 1 : 0); break;
+		case 3: Rec("ret upgmask %d", p->hasUpgradeComplete(upgradeMaskOf(a, 2)) ? 1 : 0); break;
+		case 4: Rec("ret upginprod %d", p->hasUpgradeInProduction(key) ? 1 : 0); break;
+		case 5: p->removeUpgrade(key); break;
+		case 6: p->onUpgradeCompleted(key); break;
+		default: {
+			UpgradeMaskType m = upgradeMaskOf(a, 3);
+			UpgradeMaskType& target = (a[2] % 2 == 0) ? p->m_upgradesInProgress : p->m_upgradesCompleted;
+			if (a[6] % 3 == 0) target.clear(m); else target.set(m);
+			break; }
+		}
+		break; }
+	case 92: {
+		int hk = (int)(a[1] % 13) - 1;
+		int n = (int)(a[2] % 5);
+		std::vector<ObjectID> ids;
+		for (int i = 0; i < n; ++i) ids.push_back(objIdOf(a[3 + i % 4]));
+		switch (a[0] % 12)
+		{
+		case 0: case 1: case 2: {
+			GameMessage msg;
+			for (size_t i = 0; i < ids.size(); ++i) { GameMessageArgument arg; arg.m_u.objectID = ids[i]; msg.m_args.push_back(arg); }
+			if (a[0] % 12 == 0) p->processCreateTeamGameMessage(hk, &msg); else if (a[0] % 12 == 1) p->processSelectTeamGameMessage(hk, &msg); else p->processAddTeamGameMessage(hk, &msg);
+			break; }
+		case 3: p->getCurrentSelectionAsAIGroup(groupOf(a[2])); break;
+		case 4: p->setCurrentlySelectedAIGroup(groupOf(a[2])); break;
+		case 5: { Squad* q = p->getHotkeySquad(hk); Rec("ret hotkey %d", q ? q->getSizeOfGroup() : -1); break; }
+		case 6: Rec("ret squadno %d", p->getSquadNumberForObject(realObj(a[2]))); break;
+		case 7: p->removeObjectFromHotkeySquad(a[2] % 4 == 0 ? NULL : realObj(a[2])); break;
+		case 8: p->addAIGroupToCurrentSelection(groupOf(a[2])); break;
+		case 9: g_groups[a[1] % 3].m_ids = ids; break;
+		default: {
+			bool useSel = (a[2] & 4) != 0;
+			Squad* q = useSel ? p->m_currentSelection : ((hk >= 0 && hk < NUM_HOTKEY_SQUADS) ? p->m_squads[hk] : NULL);
+			if (!q) { Rec(useSel ? "skip nosel" : "skip nosquad"); break; }
+			if (a[0] % 12 == 10)
+			{
+				switch (a[2] % 4)
+				{
+				case 0: Rec("ret squadall %s", idsOf(q->getAllObjects()).c_str()); break;
+				case 1: Rec("ret squadlive %s", idsOf(q->getLiveObjects()).c_str()); break;
+				default: Rec("ret squadsize %d %d", q->getSizeOfGroup(), q->isOnSquad(realObj(a[3])) ? 1 : 0); break;
+				}
+			}
+			else if (a[3] % 2 == 0) q->squadFromTeam(a[4] ? pickTeam(a[4] - 1) : NULL, a[5] % 2 == 0);
+			else q->squadFromAIGroup(groupOf(a[4]), a[5] % 2 == 0);
+			break; }
+		}
+		break; }
+	case 93: {
+		if (a[0] % 3 == 0)
+		{
+			{ XferCRC xc; xc.open(AsciiString("p")); p->crc(&xc); xc.close(); Rec("ret pcrc %08x", xc.getCRC()); if (getenv("PCRC_DBG")) { fprintf(stderr, "CPP bonus=%d crc=%08x sp=%d spp=%d\n", p->m_battlePlanBonuses ? 1 : 0, xc.getCRC(), p->m_skillPoints, p->m_sciencePurchasePoints); if (p->m_battlePlanBonuses) { XferCRC x2; x2.open(AsciiString("q")); p->m_battlePlanBonuses->m_validKindOf.xfer(&x2); fprintf(stderr, " valid-only crc=%08x\n", x2.getCRC()); } } }
+			XferSave xs; xs.open(AsciiString(g_tmpPath.c_str())); xs.xferSnapshot(p); xs.close();
+			g_saved = readFileBytes(g_tmpPath.c_str());
+			g_haveSave = true;
+			Rec("ret psave len=%u hash=%08x", (unsigned)g_saved.size(), hashBytes(g_saved));
+		}
+		else if (!g_haveSave) Rec("skip");
+		else
+		{
+			if (a[1] & 1) { p->m_kindOfPercentProductionChangeList.clear(); p->m_specialPowerReadyTimerList.clear(); }
+			if (a[1] & 2)
+			{
+				for (int k = 0; k < NUM_HOTKEY_SQUADS; ++k) if (p->m_squads[k]) p->m_squads[k]->m_objectsCached.clear();
+				if (p->m_currentSelection) p->m_currentSelection->m_objectsCached.clear();
+			}
+			writeFileBytes(g_tmpPath.c_str(), g_saved);
+			TheGameState->m_postProcessCount = 0;
+			XferLoad xl; xl.open(AsciiString(g_tmpPath.c_str()));
+			try { xl.xferSnapshot(p); } catch (...) { try { xl.close(); } catch (...) {} throw; }
+			xl.close();
+			Rec("ret pload pp=%d", TheGameState->m_postProcessCount);
+			p->loadPostProcess();
+		}
+		break; }
 	default: Rec("ret nop"); break;
 	}
 }
@@ -826,19 +1200,21 @@ static void doOp(unsigned op, Reader& r)
 /* The Player differential (tests/differential_player.rs): runs a program (the words) against the real Player.cpp functions (and the
 ** real Team.cpp) on the stand-ins, and writes the trace lines, each ended by '\n'. Returns the size of the text (written only
 ** if it fits `cap`). */
-extern "C" int ref_player_run(const unsigned* words, int n, char* out, int cap)
+extern "C" int ref_player_run(const unsigned* words, int n, const char* tmpPath, char* out, int cap)
 {
+	g_tmpPath = tmpPath; g_saved.clear(); g_haveSave = false; g_upgrades.clear(); TheGameState->m_postProcessCount = 0;
 	static NameKeyGenerator* gen = NULL;
 	if (!gen) gen = new NameKeyGenerator;
 	gen->reset();
 	TheNameKeyGenerator = gen;
 	resetKeys();
-	for (int i = 0; i < 3; ++i) g_groups[i].m_id = i + 1;
+	for (int i = 0; i < 3; ++i) { g_groups[i].m_id = i + 1; g_groups[i].m_ids.clear(); }
 	for (int i = 0; i < 2; ++i) g_triggers[i].m_id = i;
 	std::vector<std::string> lines;
 	g_lines = &lines;
 	g_setTeamCalls = 0;
 	g_aiCfg.clear();
+	for (int i = 0; i < 8; ++i) { char b[16]; sprintf(b, "Sci%d", i); g_sciKey[i] = (int)TheNameKeyGenerator->nameToKey(b); }
 	TheTeamFactory = new TeamFactory;
 	TheTeamFactory->init();
 	Reader r; r.w = words; r.n = n; r.p = 0;
@@ -856,6 +1232,7 @@ extern "C" int ref_player_run(const unsigned* words, int n, char* out, int cap)
 		try { doOp(op, r); }
 		catch (ErrorCode) { Rec("threw badarg"); }
 		catch (SaveCode) { Rec("threw invaliddata"); threw = true; }
+		catch (XferStatus s) { Rec("threw xfer %d", (int)s); threw = true; }
 		catch (HangException) { Rec("threw hang"); threw = true; }
 		if (!threw) dumpState();
 	}

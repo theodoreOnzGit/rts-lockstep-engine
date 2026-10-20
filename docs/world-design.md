@@ -408,6 +408,8 @@ which whoever builds the world calls for all sixteen. **Left for the layer-12 ad
 `TeamHost` for `World` (the `TeamHost` player methods are one-liners over `player_ops`, see
 `tests/differential_player.rs`'s `Sim`), and `PlayerTemplateView::from_template`.
 
+**Done for `Player`, slices 2, 2b and 3 (`p1w10-sonnet`, 2026-10-20):** `player_objects` (`PlayerObjectHost`: what `Player` asks of objects, the AI, the action manager, the build assistant and the body), `player_squads` (`PlayerSquadHost`: upgrades, `Squad` including its `m_objectsCached`, which upstream leaves filled and `Squad::xfer` then refuses) and `player_xfer` (`PlayerXferHost`: the upgrade centre with the name keys, and two hooks for the units that are not in the player's own data, the score keeper and the AI). A nested `xferSnapshot` of something that needs the host is `xfer_nested`, as in `team_xfer.rs`. **Left for the layer-12 adapter:** the three host traits for `World`. **Open (owner):** `Squad`'s home: it is declared in `player.rs` because the player owns the ten hotkey squads; the AI group translation (layer 10) will want it as its own module.
+
 <!-- --- p1w6-object --- -->
 ## Object (layer 8, wave 6)
 

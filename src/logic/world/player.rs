@@ -161,6 +161,9 @@ pub struct BattlePlanBonuses {
 pub struct Squad {
     /// `m_objectIDs`.
     pub object_ids: Vec<ObjectId>,
+    /// `m_objectsCached`: the `Object*` of the last `getAllObjects` / `getLiveObjects`, kept (as ids) because it is
+    /// left filled and `Squad::xfer` on a load refuses a squad whose cache is not empty.
+    pub objects_cached: Vec<ObjectId>,
 }
 
 /// `m_ai` (`AIPlayer*`): the AI is not translated; the player only knows whether it has one and of which class.

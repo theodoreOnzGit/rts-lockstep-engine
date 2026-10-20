@@ -52,7 +52,9 @@
 //!   AI INI files, which hands each entry to the AI's `AISideBuildList`)
 //!   belongs with the AI layer.
 //! - **Save games:** the `Snapshot` methods (`crc`, `xfer`,
-//!   `loadPostProcess`) of `SidesList` and `BuildListInfo`.
+//!   `loadPostProcess`) of `SidesList`. ~~and `BuildListInfo`~~ **CORRECTED 2026-10-20**
+//!   (`p1w10-sonnet`): `BuildListInfo`'s are translated (`impl Snapshot for BuildListInfo`), verified through
+//!   `Player::xfer` in `tests/differential_player.rs`.
 //! - **The editor and the renderer:** `BuildListInfo`'s `m_renderObj`,
 //!   `m_shadowObj` (pointers into the 3D scene) are not kept;
 //!   `m_selected` is.
@@ -293,6 +295,99 @@ impl BuildListInfo {
         chain.to_vec()
     }
 }
+
+// --- p1w10-sonnet ---
+impl crate::common::xfer::Snapshot for BuildListInfo {
+    /// `BuildListInfo::crc`: nothing.
+    fn crc(&mut self, _xfer: &mut dyn crate::common::xfer::Xfer) -> crate::common::xfer::XferResult<()> {
+        Ok(())
+    }
+
+    /// `BuildListInfo::xfer`, version 2 (2 adds `m_currentGatherers`). `m_renderObj`, `m_shadowObj` and `m_selected` are
+    /// the editor's and are not saved; `m_resourceGatherers` is raw bytes (`xferUser`).
+    fn xfer(&mut self, xfer: &mut dyn crate::common::xfer::Xfer) -> crate::common::xfer::XferResult<()> {
+        let current_version: u8 = 2;
+        let mut version = current_version;
+        xfer.xfer_version(&mut version, current_version)?;
+
+        if !crate::logic::world::player_ops::plant(390) {
+            xfer.xfer_ascii_string(&mut self.building_name)?;
+        }
+        if !crate::logic::world::player_ops::plant(391) {
+            xfer.xfer_ascii_string(&mut self.template_name)?;
+        }
+        if !crate::logic::world::player_ops::plant(392) {
+            xfer.xfer_coord3d(&mut self.location)?;
+        }
+        if !crate::logic::world::player_ops::plant(393) {
+            xfer.xfer_coord2d(&mut self.rally_point_offset)?;
+        }
+        if !crate::logic::world::player_ops::plant(394) {
+            xfer.xfer_real(&mut self.angle)?;
+        }
+        if !crate::logic::world::player_ops::plant(395) {
+            xfer.xfer_bool(&mut self.is_initially_built)?;
+        }
+        if !crate::logic::world::player_ops::plant(396) {
+            xfer.xfer_unsigned_int(&mut self.num_rebuilds)?;
+        }
+        if !crate::logic::world::player_ops::plant(397) {
+            xfer.xfer_ascii_string(&mut self.script)?;
+        }
+        if !crate::logic::world::player_ops::plant(398) {
+            xfer.xfer_int(&mut self.health)?;
+        }
+        if !crate::logic::world::player_ops::plant(399) {
+            xfer.xfer_bool(&mut self.whiner)?;
+        }
+        if !crate::logic::world::player_ops::plant(400) {
+            xfer.xfer_bool(&mut self.unsellable)?;
+        }
+        if !crate::logic::world::player_ops::plant(401) {
+            xfer.xfer_bool(&mut self.repairable)?;
+        }
+        if !crate::logic::world::player_ops::plant(402) {
+            xfer.xfer_bool(&mut self.automatically_build)?;
+        }
+        if !crate::logic::world::player_ops::plant(403) {
+            xfer.xfer_object_id(&mut self.object_id)?;
+        }
+        if !crate::logic::world::player_ops::plant(404) {
+            xfer.xfer_unsigned_int(&mut self.object_timestamp)?;
+        }
+        if !crate::logic::world::player_ops::plant(405) {
+            xfer.xfer_bool(&mut self.under_construction)?;
+        }
+        let mut bytes = [0u8; 4 * MAX_RESOURCE_GATHERERS];
+        for (i, g) in self.resource_gatherers.iter().enumerate() {
+            bytes[i * 4..i * 4 + 4].copy_from_slice(&g.to_le_bytes());
+        }
+        if !crate::logic::world::player_ops::plant(406) {
+            xfer.xfer_user(&mut bytes)?;
+        }
+        for (i, g) in self.resource_gatherers.iter_mut().enumerate() {
+            *g = i32::from_le_bytes([bytes[i * 4], bytes[i * 4 + 1], bytes[i * 4 + 2], if crate::logic::world::player_ops::plant(411) { 0 } else { bytes[i * 4 + 3] }]);
+        }
+        if !crate::logic::world::player_ops::plant(407) {
+            xfer.xfer_bool(&mut self.is_supply_building)?;
+        }
+        if !crate::logic::world::player_ops::plant(408) {
+            xfer.xfer_int(&mut self.desired_gatherers)?;
+        }
+        if !crate::logic::world::player_ops::plant(409) {
+            xfer.xfer_bool(&mut self.priority_build)?;
+        }
+        if (version >= 2) != crate::logic::world::player_ops::plant(389)
+            && !crate::logic::world::player_ops::plant(410) {
+            xfer.xfer_int(&mut self.current_gatherers)?;
+        }
+        Ok(())
+    }
+
+    /// `BuildListInfo::loadPostProcess`: nothing.
+    fn load_post_process(&mut self) {}
+}
+// --- end p1w10-sonnet ---
 
 // ---------------------------------------------------------------------------
 // SidesInfo, TeamsInfo, TeamsInfoRec

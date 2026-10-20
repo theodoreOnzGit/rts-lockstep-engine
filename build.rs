@@ -2251,6 +2251,155 @@ mod differential {
             ] {
                 fns.push_str(&extract_block(&pc, h));
             }
+            // slice 2: the half of Player that works through objects, and the helpers and structs they use
+            for h in [
+                "struct PlayerObjectFindInfo",
+                "static void doFindCommandCenter(Object* obj, void* userData)",
+                "static void doFindSpecialPowerSourceObject( Object *obj, void *userData )",
+                "static void doCountSpecialPowersReady( Object *obj, void *userData )",
+                "static void doFindMostReadyWeaponForThing( Object *obj, void *userData )",
+                "static void doFindMostReadySpecialPowerForThing( Object *obj, void *userData )",
+                "static void doFindExistingObjectWithThingTemplate( Object *obj, void *userData )",
+                "struct TypeCountData",
+                "static void countExisting( Object *obj, void *userData )",
+                "struct VisionSpiedStruct",
+                "static void iterator_setUnitsVisionSpied( Object *obj, void * voidData)",
+                "void sellBuildings( Object *obj, void *userData )",
+                "static void localApplyBattlePlanBonusesToObject( Object *obj, void *userData )",
+                "void Player::becomingTeamMember(Object *obj, Bool yes)",
+                "void Player::becomingLocalPlayer(Bool yes)",
+                "Object* Player::findNaturalCommandCenter()",
+                "Object* Player::findMostReadyShortcutSpecialPowerOfType( SpecialPowerType spType )",
+                "Object* Player::findMostReadyShortcutWeaponForThing( const ThingTemplate *thing, UnsignedInt &mostReadyPercentage )",
+                "Object* Player::findMostReadyShortcutSpecialPowerForThing( const ThingTemplate *thing, UnsignedInt &mostReadyPercentage )",
+                "Object* Player::findAnyExistingObjectWithThingTemplate( const ThingTemplate *thing )",
+                "Bool Player::hasAnyShortcutSpecialPower()",
+                "Int Player::countReadyShortcutSpecialPowersOfType( SpecialPowerType spType )",
+                "void Player::onStructureConstructionComplete( Object *builder, Object *structure, Bool isRebuild )",
+                "void Player::setUnitsShouldHunt(Bool unitsShouldHunt, CommandSourceType source)",
+                "void Player::killPlayer(void)",
+                "void Player::transferAssetsFromThat(Player *that)",
+                "void Player::garrisonAllUnits(CommandSourceType source)",
+                "void Player::ungarrisonAllUnits(CommandSourceType source)",
+                "void Player::setUnitsShouldIdleOrResume(Bool idle)",
+                "void Player::sellEverythingUnderTheSun()",
+                "void Player::doBountyForKill(const Object* killer, const Object* victim)",
+                "Bool Player::canBuildMoreOfType( const ThingTemplate *whatToBuild ) const",
+                "Bool Player::canBuild(const ThingTemplate *tmplate) const",
+                "Bool Player::canAffordBuild( const ThingTemplate *whatToBuild ) const",
+                "void Player::friend_applyDifficultyBonusesForObject(Object* obj, Bool apply) const",
+                "Bool Player::doesObjectQualifyForBattlePlan( Object *obj ) const",
+                "void Player::changeBattlePlan( BattlePlanStatus plan, Int delta, BattlePlanBonuses *bonus )",
+                "Int Player::getBattlePlansActiveSpecific( BattlePlanStatus plan ) const",
+                "void Player::applyBattlePlanBonusesForObject( Object *obj ) const",
+                "void Player::removeBattlePlanBonusesForObject( Object *obj ) const",
+                "void Player::applyBattlePlanBonusesForPlayerObjects( const BattlePlanBonuses *bonus )",
+                "void Player::setUnitsVisionSpied( Bool setting, KindOfMaskType whichUnits, PlayerIndex byWhom )",
+            ] {
+                fns.push_str(&extract_block(&pc, h));
+            }
+            // slice 2b and 3: the upgrades, the hotkey squads, and the save and load
+            for h in [
+                "Upgrade *Player::findUpgrade( const UpgradeTemplate *upgradeTemplate )",
+                "Bool Player::hasUpgradeComplete( const UpgradeTemplate *upgradeTemplate )",
+                "Bool Player::hasUpgradeComplete( UpgradeMaskType testMask )",
+                "Bool Player::hasUpgradeInProduction( const UpgradeTemplate *upgradeTemplate )",
+                "Upgrade *Player::addUpgrade( const UpgradeTemplate *upgradeTemplate, UpgradeStatusType status )",
+                "void Player::onUpgradeCompleted( const UpgradeTemplate *upgradeTemplate )",
+                "void Player::removeUpgrade( const UpgradeTemplate *upgradeTemplate )",
+                "void Player::processCreateTeamGameMessage(Int hotkeyNum, GameMessage *msg) {",
+                "void Player::processSelectTeamGameMessage(Int hotkeyNum, GameMessage *msg) {",
+                "void Player::processAddTeamGameMessage(Int hotkeyNum, GameMessage *msg) {",
+                "void Player::getCurrentSelectionAsAIGroup(AIGroup *group) {",
+                "void Player::setCurrentlySelectedAIGroup(AIGroup *group) {",
+                "Squad *Player::getHotkeySquad(Int squadNumber)",
+                "Int Player::getSquadNumberForObject(const Object *objToFind) const",
+                "void Player::removeObjectFromHotkeySquad(Object *objToRemove)",
+                "void Player::addAIGroupToCurrentSelection(AIGroup *group) {",
+                "void Player::crc( Xfer *xfer )",
+                "void Player::xfer( Xfer *xfer )",
+                "void Player::loadPostProcess( void )",
+            ] {
+                fns.push_str(&extract_block(&pc, h));
+            }
+            let gsrc = up.join("GameEngine/Source");
+            let rds = |n: &str| std::fs::read_to_string(gsrc.join(n)).unwrap_or_else(|_| panic!("read {n}"));
+            let sq = rds("GameLogic/AI/Squad.cpp");
+            for h in [
+                "void Squad::addObject(Object *objectToAdd)",
+                "void Squad::addObjectID(ObjectID objectID) {",
+                "void Squad::removeObject(Object *objectToRemove)",
+                "void Squad::clearSquad() {",
+                "const VecObjectPtr& Squad::getAllObjects(void)",
+                "const VecObjectPtr& Squad::getLiveObjects(void)",
+                "Int Squad::getSizeOfGroup(void) const",
+                "Bool Squad::isOnSquad(const Object *objToTest) const",
+                "void Squad::squadFromTeam(const Team* fromTeam, Bool clearSquadFirst)",
+                "void Squad::squadFromAIGroup(const AIGroup* fromAIGroup, Bool clearSquadFirst)",
+                "void Squad::aiGroupFromSquad(AIGroup* aiGroupToFill)",
+                "void Squad::crc( Xfer *xfer )",
+                "void Squad::xfer( Xfer *xfer )",
+                "void Squad::loadPostProcess( void )",
+            ] {
+                fns.push_str(&extract_block(&sq, h));
+            }
+            let ug = rds("Common/System/Upgrade.cpp");
+            for h in [
+                "Upgrade::Upgrade( const UpgradeTemplate *upgradeTemplate )",
+                "Upgrade::~Upgrade( void )",
+                "void Upgrade::crc( Xfer *xfer )",
+                "void Upgrade::xfer( Xfer *xfer )",
+                "void Upgrade::loadPostProcess( void )",
+                "UpgradeTemplate::UpgradeTemplate( void )",
+                "UpgradeTemplate::~UpgradeTemplate( void )",
+                "UpgradeCenter::UpgradeCenter( void )",
+                "UpgradeCenter::~UpgradeCenter( void )",
+                "UpgradeTemplate *UpgradeCenter::findNonConstUpgradeByKey( NameKeyType key )",
+                "UpgradeTemplate *UpgradeCenter::firstUpgradeTemplate( void )",
+                "const UpgradeTemplate *UpgradeCenter::findUpgradeByKey( NameKeyType key ) const",
+                "const UpgradeTemplate *UpgradeCenter::findUpgrade( const AsciiString& name ) const",
+                "UpgradeTemplate *UpgradeCenter::newUpgrade( const AsciiString& name )",
+                "void UpgradeCenter::linkUpgrade( UpgradeTemplate *upgrade )",
+            ] {
+                fns.push_str(&extract_block(&ug, h));
+            }
+            let sl = rds("GameLogic/Map/SidesList.cpp");
+            for h in [
+                "BuildListInfo::BuildListInfo(void) :",
+                "void BuildListInfo::crc( Xfer *xfer )",
+                "void BuildListInfo::xfer( Xfer *xfer )",
+                "void BuildListInfo::loadPostProcess( void )",
+            ] {
+                fns.push_str(&extract_block(&sl, h));
+            }
+            let sci = read("Science.cpp");
+            for h in [
+                "ScienceType ScienceStore::getScienceFromInternalName(const AsciiString& name) const",
+                "AsciiString ScienceStore::getInternalNameForScience(ScienceType science) const",
+            ] {
+                fns.push_str(&extract_block(&sci, h));
+            }
+            let rg = read("ResourceGatheringManager.cpp");
+            for h in [
+                "void ResourceGatheringManager::crc( Xfer *xfer )",
+                "void ResourceGatheringManager::xfer( Xfer *xfer )",
+            ] {
+                fns.push_str(&extract_block(&rg, h));
+            }
+            let tn = read("TunnelTracker.cpp");
+            for h in ["void TunnelTracker::crc( Xfer *xfer )", "void TunnelTracker::xfer( Xfer *xfer )"] {
+                fns.push_str(&extract_block(&tn, h));
+            }
+            // MSVC 6 scoped a `for` loop's declaration to the enclosing block, and `Player::killPlayer` relies on it:
+            // its second loop reuses the `it` of the first. Every later compiler rejects that; the edit gives the second
+            // loop its own declaration, with the same type and the same initial value, and changes nothing else.
+            {
+                let old = "\tfor (it = m_playerTeamPrototypes.begin(); it != m_playerTeamPrototypes.end(); ++it) {";
+                assert_eq!(fns.matches(old).count(), 1, "killPlayer's second loop");
+                fns = fns.replace(old, "\tfor (PlayerTeamList::iterator it = m_playerTeamPrototypes.begin(); it != m_playerTeamPrototypes.end(); ++it) {");
+            }
+            let tt = std::fs::read_to_string(up.join("GameEngine/Source/Common/Thing/ThingTemplate.cpp")).expect("read ThingTemplate.cpp");
+            fns.push_str(&extract_block(&tt, "Int ThingTemplate::calcCostToBuild( const Player* player) const"));
             let en = read("Energy.cpp");
             for h in [
                 "Energy::Energy()",
@@ -2260,6 +2409,9 @@ mod differential {
                 "void Energy::adjustPower(Int powerDelta, Bool adding)",
                 "void Energy::addProduction(Int amt)",
                 "void Energy::addConsumption(Int amt)",
+                "void Energy::crc( Xfer *xfer )",
+                "void Energy::xfer( Xfer *xfer )",
+                "void Energy::loadPostProcess( void )",
             ] {
                 fns.push_str(&extract_block(&en, h));
             }
@@ -2267,11 +2419,20 @@ mod differential {
             for h in [
                 "UnsignedInt Money::withdraw(UnsignedInt amountToWithdraw, Bool playSound)",
                 "void Money::deposit(UnsignedInt amountToDeposit, Bool playSound)",
+                "void Money::crc( Xfer *xfer )",
+                "void Money::xfer( Xfer *xfer )",
+                "void Money::loadPostProcess( void )",
             ] {
                 fns.push_str(&extract_block(&mo, h));
             }
             let ha = read("Handicap.cpp");
-            for h in ["Handicap::Handicap()", "void Handicap::init()", "void Handicap::readFromDict(const Dict* d)"] {
+            for h in [
+                "Handicap::Handicap()",
+                "void Handicap::init()",
+                "void Handicap::readFromDict(const Dict* d)",
+                "/*static*/ Handicap::ThingType Handicap::getBestThingType(const ThingTemplate *tmpl)",
+                "Real Handicap::getHandicap(HandicapType ht, const ThingTemplate *tmpl) const",
+            ] {
                 fns.push_str(&extract_block(&ha, h));
             }
             let pln = read("PlayerList.cpp");
@@ -2281,6 +2442,19 @@ mod differential {
                 fns.push_str(&extract_block(&ms, h));
             }
             std::fs::write(player_gen.join("player_fns.inc"), fns).expect("write player_fns.inc");
+            // `BitFlags::xfer` in CRC mode hashes `sizeof( this )` bytes: the size of a POINTER, 4 in the shipped Win32 build and 8 in this
+            // 64-bit reference (see common/bit_flags.rs). Player::crc writes two such masks, so the reference is made to hash the 4 bytes
+            // the shipped build hashes: the one edit of this copy of BitFlagsIO.h (found before the upstream header), asserted once.
+            std::fs::create_dir_all(player_gen.join("Common")).expect("create player_gen/Common");
+            let bf = std::fs::read_to_string(up.join("GameEngine/Include/Common/BitFlagsIO.h")).expect("read BitFlagsIO.h");
+            let bf_old = "xfer->xferUser( this, sizeof( this ) );";
+            assert_eq!(bf.matches(bf_old).count(), 1, "BitFlags::xfer's CRC branch");
+            // (it also does what differential/shim_flags/Common/BitFlagsIO.h does, which it replaces: the real KindOf.h first, see that file)
+            let bf_text = format!(
+                "#ifndef SHIM_FLAGS_BITFLAGSIO_H\n#define SHIM_FLAGS_BITFLAGSIO_H\n#include \"Common/KindOf.h\"\n{}\n#endif\n",
+                bf.replace(bf_old, "xfer->xferUser( this, 4 ); /* build.rs: sizeof( this ) of the shipped Win32 build */")
+            );
+            std::fs::write(player_gen.join("Common/BitFlagsIO.h"), bf_text).expect("write BitFlagsIO.h");
             // Player.h forward-declares `enum BattlePlanStatus;` and `class BattlePlanBonuses;`, which only MSVC accepts
             // for an enum; the definitions come from BattlePlanUpdate.h, whole and unchanged
             let bp = std::fs::read_to_string(up.join("GameEngine/Include/GameLogic/Module/BattlePlanUpdate.h")).expect("read BattlePlanUpdate.h");
@@ -2289,6 +2463,12 @@ mod differential {
             enums.push_str(&extract_block(&bp, "class BattlePlanBonuses : public MemoryPoolObject"));
             let all_plans = "#define ALL_PLANS\t1000000";
             once_at(&bp, all_plans);
+            // slice 2: two enums the real headers declare only as opaque `enum X;` (Object.h) or inside classes the
+            // stand-ins replace
+            let wpn = std::fs::read_to_string(up.join("GameEngine/Include/GameLogic/Weapon.h")).expect("read Weapon.h");
+            enums.push_str(&extract_block(&wpn, "enum WeaponBonusConditionType"));
+            let tth = std::fs::read_to_string(up.join("GameEngine/Include/Common/ThingTemplate.h")).expect("read ThingTemplate.h");
+            enums.push_str(&extract_block(&tth, "enum BuildableStatus"));
             enums.push_str("EMPTY_DTOR(BattlePlanBonuses)\n");
             enums.push_str(all_plans);
             enums.push('\n');
@@ -2326,6 +2506,12 @@ mod differential {
                 "upstream/GeneralsMD/Code/GameEngine/Source/Common/RTS/Handicap.cpp",
                 "upstream/GeneralsMD/Code/GameEngine/Source/Common/RTS/MissionStats.cpp",
                 "upstream/GeneralsMD/Code/GameEngine/Source/Common/RTS/PlayerList.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Source/Common/RTS/ResourceGatheringManager.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Source/Common/RTS/TunnelTracker.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Source/Common/System/Upgrade.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Source/Common/System/Xfer.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/AI/Squad.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Map/SidesList.cpp",
                 "upstream/GeneralsMD/Code/GameEngine/Include/Common/Player.h",
                 "differential/wrap_player.cpp",
                 "differential/shim_player",

@@ -1,94 +1,115 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Code-to-code verification of `logic::world::player` and `player_ops` (slice 1 of `Player`: construction and `init`,
-//! relationships, the build list, the team lists and the loops over a player's objects, the AI forwarders, radar and
-//! power, special power timers, production changes, sciences and ranks) against upstream's own `Player.h` and the
-//! `Player.cpp` functions of that slice (commit 0a05454d). Phase 1 layer 7, p1w10-sonnet.
+//! Code-to-code verification of `logic::world::player`, `player_ops`, `player_objects`, `player_squads` and `player_xfer`
+//! (`Player`: slice 1, construction and `init`, relationships, the build list, the team lists and the loops over a player's
+//! objects, the AI forwarders, radar and power, special power timers, production changes, sciences and ranks; slice 2, what
+//! works through objects, battle plans, vision, bounty, what can be built; slice 2b, the upgrade list and the hotkey squads
+//! with `Squad.cpp`; slice 3, `Player::crc`, `xfer` and `loadPostProcess`, with `BuildListInfo::xfer`) against upstream's own
+//! `Player.h` and the `Player.cpp` functions of those slices (commit 0a05454d). Phase 1 layer 7, p1w10-sonnet.
 //!
 //! # What is compared against what
 //!
-//! `build.rs` takes `Player.h`, `Team.h` and every other header unchanged; the functions of the slice from
-//! `Player.cpp` (and the few of `Energy.cpp`, `Money.cpp`, `Handicap.cpp`, `MissionStats.cpp` and `PlayerList.cpp`
-//! they call), each whole and unchanged, into `player_fns.inc`; `Team.cpp` with only its include block replaced (as
-//! the Team differential does) -- so the real teams, prototypes and DLINK member lists are the world the player's loops
-//! walk -- and `differential/wrap_player.cpp` compiles them under clang++ on the stand-ins of
-//! `differential/shim_player`: the objects (with the special power modules the sciences reach), the AI, the score
-//! keeper, the academy statistics, the rank and science stores, the client, the global data and the game state.
-//! Money, Handicap, Energy and the player's own fields are the real classes' text. The Rust side runs the same program
-//! on `Sim`, a [`PlayerHost`] (and [`TeamHost`]) that answers from the same configuration and writes the same lines.
+//! `build.rs` takes `Player.h`, `Team.h`, `Squad.h` and every other header unchanged; the functions of the slices from
+//! `Player.cpp` (and those of `Squad.cpp`, `Upgrade.cpp`, `SidesList.cpp`, `Energy.cpp`, `Money.cpp`, `Handicap.cpp`,
+//! `MissionStats.cpp`, `Science.cpp`, `ResourceGatheringManager.cpp`, `TunnelTracker.cpp` and `PlayerList.cpp` they call), each
+//! whole and unchanged, into `player_fns.inc`; `Team.cpp` with only its include block replaced (as the Team differential does)
+//! -- so the real teams, prototypes and DLINK member lists are the world the player's loops walk -- and
+//! `differential/wrap_player.cpp` compiles them under clang++ on the stand-ins of `differential/shim_player`: the objects (with
+//! the special power modules the sciences reach), the AI, the score keeper, the academy statistics, the rank and science
+//! stores, the client, the global data and the game state. Money, Handicap, Energy, Squad, the upgrade templates and centre,
+//! BuildListInfo (its members and its functions) and the player's own fields are the real classes' text. The **Xfer family**
+//! (`Xfer.cpp`, `XferCRC.cpp`, `XferSave.cpp`, `XferLoad.cpp`, `Snapshot.cpp`) is compiled into the same archive, unchanged and
+//! renamed, because `Player::xfer` reaches `xferScienceVec` and `xferUpgradeMask`, which look the world of the fixture up. Two
+//! mechanical edits, both in `build.rs`, both asserted to apply once: the include block of `Team.cpp`, and `BitFlags::xfer`'s
+//! CRC branch, which hashes `sizeof( this )` bytes -- 4 in the shipped Win32 build, 8 in this 64-bit reference
+//! (`common/bit_flags.rs`) -- made `4`. The Rust side runs the same program on `Sim`, a [`PlayerHost`] (and [`TeamHost`],
+//! [`PlayerObjectHost`], [`PlayerSquadHost`], [`PlayerXferHost`]) that answers from the same configuration and writes the same lines.
 //!
-//! Every call that has an effect (an AI order, a score record, a client event, a script notification, an object
-//! disabled, a special power ready) writes a line, formatted alike on both sides; calls that only answer a question
-//! write none (their answers show in the `ret` lines and in the state). After every operation both sides write the whole
-//! state: the factory's counters, every prototype and team with its members, every object's team and `DLINK`
-//! neighbours, and every player's fields (two lines each).
+//! Every call that has an effect (an AI order, a score record, a client event, a script notification, an object disabled, a
+//! special power ready) writes a line, formatted alike on both sides; calls that only answer a question write none (their
+//! answers show in the `ret` lines and in the state). After every operation both sides write the whole state: the factory's
+//! counters, every prototype and team with its members, every object's team and `DLINK` neighbours, and every player's fields
+//! (five lines each: the scalars, the lists, the upgrades with their masks and the squads with their caches, the battle plan
+//! bonuses, the build list in full).
+//!
+//! **Stand-ins that write a marker** (the units verified elsewhere): the score keeper (`differential_score_keeper.rs`) saves a
+//! version and its two sums, the AI a version; the real `ResourceGatheringManager`/`TunnelTracker` xfers run on lists that are
+//! empty in these programs (the player makes neither until `initFromDict`).
 //!
 //! # Method
 //!
-//! A **program** is a header (dictionaries, the services -- global data, game state, ranks, sciences, special power
-//! templates, player templates, AI behaviour -- the players, thing templates, objects with their special power
-//! modules, scripts, waypoints) and a list of operations: team-world set-up (`initTeam`, `createTeam`,
-//! `createInactiveTeam`, an object joining a team, changes to an object), and every `Player` operation of the slice
-//! (about 110 cases), each on a player picked among those of the program. Teams and prototypes are named by position
-//! among those alive.
+//! A **program** is a header (dictionaries, the services -- global data, game state, ranks, sciences (name keys `Sci0`...,
+//! as `ScienceStore` makes them), upgrade templates, special power templates, player templates, AI behaviour -- the players,
+//! thing templates, objects with their special power modules, scripts, waypoints) and a list of operations: team-world set-up,
+//! and every `Player` operation (about 130 cases), each on a player picked among those of the program. Teams and prototypes are
+//! named by position among those alive. Save and load: one save is kept; a load puts it into the player named by the operation
+//! (often another player than the one saved: the AI, the team prototypes and the default team then differ), after the
+//! operation has emptied what a load refuses to find filled.
 //!
-//! **Inputs for which upstream is undefined** (a `NULL` dereferenced, a deleted default team, a rank level the table
-//! does not have where the answer is dereferenced, a loop that never ends) are never given to the C++: the Rust returns
-//! an error and the program is counted as excluded.
+//! **Inputs for which upstream is undefined** (a `NULL` dereferenced, a deleted default team, a rank level the table does not
+//! have where the answer is dereferenced, a loop that never ends) are never given to the C++: the Rust returns an error and the
+//! program is counted as excluded.
 //!
 //! # Results (2026-10-20, upstream `0a05454d`)
 //!
 //! `cargo test --release --features differential --test differential_player -- --nocapture` with `PLAYER_CASES=3000`:
-//! **3,000 programs, 27 excluded as undefined upstream, 5,254,698 trace lines compared, 0 mismatches.** The exclusions
-//! are rank tables for which `addSkillPoints` never leaves its `while (m_skillPoints >= m_levelUp)` loop (the table is not
-//! strictly increasing and the rank limit stops the player below the entry that is not above the cap; upstream spins).
-//! The programs contain 2,132 relationship queries, 453 rank changes, 411 skill-point additions, 224 science purchases,
-//! 100,958 `notifyOfAcquiredScience` calls, 889 AIs made, 250 EVA messages, 632 radar sounds, 235 objects disabled for
-//! lack of power, 157 retaliation messages, 352 special powers created by a science, 17,892 `setTeam` calls, and every
-//! one of the 77 operations many times.
+//! **3,000 programs, 215 excluded as undefined upstream (56 a `NULL` dereferenced, 10 a loop that never ends, 149 a player without
+//! a template asked for its beacon), 9,344,499 trace lines compared, 0 mismatches.** The programs contain 1,464 saves (each with
+//! its `Player::crc`) and 510 loads that completed (65 more threw `SC_INVALID_DATA`), 336 `addUpgrade` calls, 390 hotkey squad
+//! reads, 931 objects told to recheck their upgrade modules, and every one of the 93 operations many times.
 //!
-//! **Planted bugs.** Each was applied to the Rust alone as a runtime switch (`PLAYER_PLANT=<n>`, all 77 in one build, the
-//! working tree restored afterwards) and the run repeated at 1,000 programs. **All 77 are caught.** The smallest counts
-//! of mismatching lines: plant 36 (`allowedToBuild` testing the units flag for structures): 1; plant 31
-//! (`findClosestByKindOf` taking the later of two objects at the same distance): 2; plant 11 (the team override of
-//! `getRelationship` skipped): 6; plant 24 (`getPlayerDifficulty` ignoring the AI): 9; plant 33 (`hasAnyBuildings(kind)`
-//! ignoring the kind): 11; plant 14 (`removeTeamRelationship` answering true for an entry that is not there): 12;
-//! plant 48 (the kind-of production change not compounding): 14. Plants 60 (the rank limit not clamping a new level) and
-//! 76 (`resetRank` reading the wrong next rank) make 1,000 programs run too long to finish under the test's watchdog and
-//! are caught by 951 and 26,463 mismatches at 100 programs.
+//! **A defect found by the comparison** (kept as a finding): `player_deliver_brown_out_notice` handed `Energy`'s notice to the
+//! player whose energy changed; upstream's `Energy` calls its **owner**, and `Energy::xfer` reads the owner's index from the file,
+//! so after loading one player's save into another the owner is the other player. Corrected in `player_ops.rs`.
 //!
-//! Four rounds of the generator were needed: the first left four plants alive (`frame > sabotaged` against `>=` needs the
-//! sabotage frame to be exactly the current frame; the kind masks were wide random words that never matched; the counts
-//! array of `countObjectsByThingTemplate` started at zero so the clearing was invisible; a dead player who is not an
-//! observer is unreachable until `killPlayer`), the second left eleven (the kind-of production-change entries never met
-//! twice, a science's availability was never changed twice in a row), the third two (`okToPlayRadarEdgeSound`'s
-//! `frame > 0` needs frame zero; the EVA's `m_levelUp != 0` needs a rank table whose second entry is zero). The fixes
-//! were directed sequences, not more programs: the program's frame is tracked so that an operation can name it; kind
-//! masks are none, one or two kinds; the last `Player` operation is repeated with some words re-rolled; the rank table's
-//! second entry is sometimes zero; the first frame is sometimes zero. One plant (the removal of the last match of a
-//! team prototype from the list) was an equivalent mutant, since the list never holds an entry twice, and was replaced
-//! by one that changes the order of the list.
+//! **Planted bugs.** Each was applied to the Rust alone as a runtime switch (`PLAYER_PLANT=<n>`, all in one build, the working tree
+//! restored afterwards) and the run repeated. **303 switches** (77 of slice 1, 77 of slice 2, 38 of the upgrades and squads, 111 of
+//! the save and load and `BuildListInfo::xfer`); of the 293 that can be observed, **all are caught within 6,000 programs**: 273 at
+//! 2,000, and the 20 that need more (36, 116, 156, 208, 215, 232, 233, 235, 366, 411 and the rest)
+//! by 6,000, with 50 to 144 mismatching lines each; plants 9 and 355 end the run in a panic or a
+//! crash, and 60 and 76 make the programs run too long to finish under the watchdog (as in slice 1). The smallest counts of
+//! mismatching lines at 2,000 programs: plant 116 (`findMostReadyShortcutSpecialPowerOfType` taking a power ready exactly now as
+//! not ready): 51 at 6,000; plant 156 (`calcCostToBuild` multiplying its three factors in another order): 50 at 6,000.
+//!
+//! Rounds of the generator that the plants forced (slice 3): squad operations were too rare to reach the squads' caches, so a
+//! squad operation is a fifth of the operations, with directed pairs (a squad queried then rebuilt; a special power made ready
+//! exactly now then searched for); build list entries carry every field a save writes (the first dump showed only six of them,
+//! which left the load of the rest unobservable); template costs go above 2^24 so that the order of the factors of a cost shows
+//! (an `f32` product of three factors rounds differently when the result is not exactly representable).
+//!
+//! **Mutants that cannot be observed and are not counted** (the switch stays in the code, `PLAYER_PLANT=212, 227, 228, 354, 356,
+//! 363, 369, 370`): 212 and 227 need a hotkey squad that holds an object twice, which `processCreateTeamGameMessage` never
+//! builds (it removes the object from every squad first); 228 is the declaration 227 needs; 354 and 356 turn an `SC_INVALID_DATA`
+//! into a NULL dereference (an excluded program, by design) and need an upgrade or prototype the file names and the world lacks,
+//! which these programs never make; 363 removes a `clear()` that `xferScienceVec` repeats; 369 and 370 need a squad table of another
+//! size, or an uninitialised one, which `Player::init` always prevents.
 #![cfg(feature = "differential")]
 
 mod support;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use rts_lockstep_engine::common::base_type::Coord3D;
+use rts_lockstep_engine::common::base_type::{Coord2D, Coord3D};
 use rts_lockstep_engine::common::dict::Dict;
 use rts_lockstep_engine::common::game_common::{GameDifficulty, PlayerType, Relationship, VeterancyLevel};
 use rts_lockstep_engine::common::game_type::ObjectId;
 use rts_lockstep_engine::common::handicap::{Handicap, HandicapType};
 use rts_lockstep_engine::common::kind_of::{
     KindOfMaskType, KindOfType, KINDOF_AIRCRAFT, KINDOF_COMMANDCENTER, KINDOF_COUNT, KINDOF_DOZER, KINDOF_HARVESTER, KINDOF_INERT, KINDOF_INFANTRY, KINDOF_MINE, KINDOF_POWERED,
-    KINDOF_PROJECTILE, KINDOF_STRUCTURE, KINDOF_TECH_BUILDING, KINDOF_VEHICLE,
+    KINDOF_PROJECTILE, KINDOF_STRUCTURE, KINDOF_TECH_BUILDING, KINDOF_VEHICLE, KINDOF_DISGUISER, KINDOF_FS_POWER, KINDOF_IGNORES_SELECT_ALL,
 };
 use rts_lockstep_engine::common::money::Money;
 use rts_lockstep_engine::common::name_key_generator::{NameKeyGenerator, NameKeyType};
 use rts_lockstep_engine::common::object_status_types::{
-    ObjectStatusTypes, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_STEALTHED, OBJECT_STATUS_UNDER_CONSTRUCTION,
+    ObjectStatusTypes, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_SOLD, OBJECT_STATUS_STEALTHED, OBJECT_STATUS_UNDER_CONSTRUCTION,
 };
 use rts_lockstep_engine::common::science::ScienceType;
+use rts_lockstep_engine::common::special_power_type::*;
 use rts_lockstep_engine::common::unicode_string::UnicodeString;
+use rts_lockstep_engine::common::upgrade::{UpgradeCenter, UpgradeMaskType, UPGRADE_STATUS_COMPLETE, UPGRADE_STATUS_IN_PRODUCTION, UPGRADE_STATUS_INVALID};
+use rts_lockstep_engine::common::xfer::Xfer;
+use rts_lockstep_engine::common::xfer_crc::XferCrc;
+use rts_lockstep_engine::common::xfer_load::XferLoad;
+use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::common::well_known_keys::WellKnownKeys;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
@@ -96,12 +117,17 @@ use rts_lockstep_engine::logic::damage::{DAMAGE_UNRESISTABLE, DEATH_NORMAL};
 use rts_lockstep_engine::logic::sides_list::BuildListInfo;
 use rts_lockstep_engine::logic::world::ids::{PlayerIndex, TeamId, TeamPrototypeId};
 use rts_lockstep_engine::logic::world::player::*;
+use rts_lockstep_engine::logic::world::player_objects::*;
 use rts_lockstep_engine::logic::world::player_ops::*;
+use rts_lockstep_engine::logic::world::player_squads::*;
+use rts_lockstep_engine::logic::world::player_xfer::*;
 use rts_lockstep_engine::logic::world::team::{ScriptRef, TeamArena, TeamError, WaypointId, WaypointInfo};
 use rts_lockstep_engine::logic::world::team_ops::*;
 use support::{Check, Gen};
 
 /// The C++ side has process-global state (the name keys, the factory, the stand-in world), so the tests take turns.
+/// The sub of the last `Player` operation, for `PLAYER_WHY`.
+static LAST_SUB: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 static CPP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -177,7 +203,7 @@ fn fb(f: f32) -> String {
 // The world of a program: the same configuration as differential/shim_player
 // ---------------------------------------------------------------------------------------------------------------------
 
-const KIND_POOL: [KindOfType; 12] = [
+const KIND_POOL: [KindOfType; 15] = [
     KINDOF_STRUCTURE,
     KINDOF_PROJECTILE,
     KINDOF_MINE,
@@ -190,8 +216,11 @@ const KIND_POOL: [KindOfType; 12] = [
     KINDOF_DOZER,
     KINDOF_HARVESTER,
     KINDOF_COMMANDCENTER,
+    KINDOF_DISGUISER,
+    KINDOF_FS_POWER,
+    KINDOF_IGNORES_SELECT_ALL,
 ];
-const STATUS_POOL: [ObjectStatusTypes; 4] = [OBJECT_STATUS_STEALTHED, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_UNDER_CONSTRUCTION];
+const STATUS_POOL: [ObjectStatusTypes; 5] = [OBJECT_STATUS_STEALTHED, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_UNDER_CONSTRUCTION, OBJECT_STATUS_SOLD];
 
 fn kind_mask(bits: u32) -> KindOfMaskType {
     let mut m = KindOfMaskType::new();
@@ -210,7 +239,44 @@ struct TplSim {
     name: Vec<u8>,
     variations: Vec<Vec<u8>>,
     skill: [i32; 4],
+    // --- p1w10-sonnet --- (slice 2)
+    cost: i32,
+    buildable: u8,
+    n_prereq: i32,
+    prereq_mask: u32,
+    max_simul: u32,
+    link_key: NameKeyType,
+    owning_side: u32,
+    // --- end p1w10-sonnet ---
 }
+
+/// A special power module of an object.
+#[derive(Clone)]
+struct ModSim {
+    has_sp: bool,
+    serial: i32,
+    required: i32,
+    // --- p1w10-sonnet --- (slice 2)
+    ty: i32,
+    script_only: bool,
+    ready: u32,
+    percent: u32,
+    shared: bool,
+    // --- end p1w10-sonnet ---
+}
+
+/// The special powers a program can name (index -> the enumerator); 8 is `SPECIAL_INVALID`.
+const SP_POOL: [i32; 9] = [
+    SPECIAL_PARTICLE_UPLINK_CANNON,
+    SUPW_SPECIAL_PARTICLE_UPLINK_CANNON,
+    LAZR_SPECIAL_PARTICLE_UPLINK_CANNON,
+    SPECIAL_NEUTRON_MISSILE,
+    NUKE_SPECIAL_NEUTRON_MISSILE,
+    SUPW_SPECIAL_NEUTRON_MISSILE,
+    SPECIAL_SCUD_STORM,
+    SPECIAL_DAISY_CUTTER,
+    SPECIAL_INVALID,
+];
 
 struct ObjSim {
     id: ObjectId,
@@ -235,9 +301,29 @@ struct ObjSim {
     reactions: u32,
     orientation: f32,
     vet: i32,
-    /// (has a special power interface, serial, required science)
-    modules: Vec<(bool, i32, i32)>,
+    modules: Vec<ModSim>,
     team: Option<TeamId>,
+    // --- p1w10-sonnet --- (slice 2)
+    modules_ready: bool,
+    has_auto_deposit: bool,
+    has_drawable: bool,
+    disabled: bool,
+    faction_structure: bool,
+    has_weapon: bool,
+    weapon_percent: u32,
+    selectable: bool,
+    supply_truck: bool,
+    disguised: i32,
+    night_color: u32,
+    indicator_color: u32,
+    producer: i32,
+    health: f32,
+    shroud: f32,
+    who_entered: u32,
+    can_enter: u32,
+    prod_queue: i32,
+    wb: u32,
+    // --- end p1w10-sonnet ---
 }
 
 #[derive(Clone)]
@@ -307,6 +393,24 @@ struct Sim {
     ptpls: Vec<PlayerTemplateView>,
     ai_cfg: Vec<AiCfg>,
     academy_points: Vec<u32>,
+    // --- p1w10-sonnet --- (slice 2)
+    observer_template: Option<usize>,
+    spent: [i32; 16],
+    earned: [i32; 16],
+    /// The name keys of the programs' sciences 0..7.
+    sci_keys: [i32; 8],
+    /// `TheUpgradeCenter` and the name keys of its templates, in the order the program made them.
+    upgrades: UpgradeCenter,
+    upgrade_keys: Vec<NameKeyType>,
+    /// The three AI groups' ids (`g_groups`), the messages the squad operations built (their object id arguments).
+    groups: Vec<Vec<ObjectId>>,
+    msgs: Vec<Vec<ObjectId>>,
+    /// `m_academyStats.m_controlGroupsUsed` of each player.
+    groups_used: [u32; 16],
+    /// The last save of a player, and whether there is one.
+    saved: Vec<u8>,
+    have_save: bool,
+    // --- end p1w10-sonnet ---
     /// Upstream is undefined for something the program did (a deleted default team, a template-less player asked for its
     /// beacon): the program is excluded.
     undefined: std::cell::Cell<Option<&'static str>>,
@@ -317,6 +421,14 @@ fn tid(t: Option<TeamId>) -> u32 {
 }
 
 impl Sim {
+    /// A science of a program (0..7, or -1 for none) as the name key it stands for.
+    fn sci_key(&self, i: i32) -> i32 {
+        if (0..8).contains(&i) {
+            self.sci_keys[i as usize]
+        } else {
+            i
+        }
+    }
     fn rec(&mut self, s: String) {
         self.lines.push(s);
     }
@@ -672,7 +784,35 @@ impl PlayerHost for Sim {
             ClientEvent::Player(PlayerClientEvent::ControlBarDirty) => "ui.dirty".to_string(),
             ClientEvent::Player(PlayerClientEvent::SciencePurchasePointsChanged { player_index }) => format!("ui.spp {player_index}"),
             ClientEvent::Player(PlayerClientEvent::RankChanged { player_index }) => format!("ui.rank {player_index}"),
-            ClientEvent::Player(PlayerClientEvent::Eva(EvaMessage::GeneralLevelUp)) => "eva 1".to_string(),
+            ClientEvent::Player(PlayerClientEvent::Eva(m)) => format!(
+                "eva {}",
+                match m {
+                    EvaMessage::GeneralLevelUp => 1,
+                    EvaMessage::SuperweaponDetectedOwnParticleCannon => 2,
+                    EvaMessage::SuperweaponDetectedAllyParticleCannon => 3,
+                    EvaMessage::SuperweaponDetectedEnemyParticleCannon => 4,
+                    EvaMessage::SuperweaponDetectedOwnNuke => 5,
+                    EvaMessage::SuperweaponDetectedAllyNuke => 6,
+                    EvaMessage::SuperweaponDetectedEnemyNuke => 7,
+                    EvaMessage::SuperweaponDetectedOwnScudStorm => 8,
+                    EvaMessage::SuperweaponDetectedAllyScudStorm => 9,
+                    EvaMessage::SuperweaponDetectedEnemyScudStorm => 10,
+                }
+            ),
+            // --- p1w10-sonnet --- (slice 2)
+            ClientEvent::MoneySound { sound, player_index } => format!("audio {} player={player_index}", if sound == rts_lockstep_engine::logic::client_event::MoneySound::Deposit { 1 } else { 2 }),
+            ClientEvent::Player(PlayerClientEvent::ControlBarSchemeByPlayer { player_index }) => format!("ui.scheme.player {player_index}"),
+            ClientEvent::Player(PlayerClientEvent::ControlBarSchemeByPlayerTemplate { template }) => format!("ui.scheme.template {}", template.map_or(-1, |t| t as i32)),
+            ClientEvent::Player(PlayerClientEvent::SetTeamColor { red, green, blue }) => format!("teamcolor {red} {green} {blue}"),
+            ClientEvent::Player(PlayerClientEvent::RadarRemoveObject { object }) => format!("radar- {object}"),
+            ClientEvent::Player(PlayerClientEvent::RadarAddObject { object }) => format!("radar+ {object}"),
+            ClientEvent::Player(PlayerClientEvent::IndicatorColor { object, color }) => format!("indicator {object} {color:08x}"),
+            ClientEvent::Player(PlayerClientEvent::FloatingText { amount, pos, color }) => {
+                // `TheGameText->fetch("GUI:AddCash")` comes first, then the text is formatted with the amount
+                self.rec("text GUI:AddCash".to_string());
+                format!("ui.float +${amount} {} {color:08x}", coord_str(&pos))
+            }
+            // --- end p1w10-sonnet ---
             other => panic!("unexpected client event {other:?}"),
         };
         self.rec(line);
@@ -719,6 +859,7 @@ impl PlayerHost for Sim {
     fn academy_init(&mut self, p: PlayerIndex) {
         self.rec(format!("academy.init {p}"));
         self.academy_points[p as usize] = 0;
+        self.groups_used[p as usize] = 0;
     }
     fn academy_update(&mut self, _p: PlayerIndex) {
         self.rec("academy.update".to_string());
@@ -869,13 +1010,13 @@ impl PlayerHost for Sim {
         self.rec(format!("enable {o} {}", DISABLED_UNDERPOWERED));
     }
     fn obj_special_power_modules(&self, o: ObjectId) -> Vec<SpecialPowerModuleRef> {
-        self.obj(o).modules.iter().filter(|m| m.0).map(|m| m.1 as u32).collect()
+        self.obj(o).modules.iter().filter(|m| m.has_sp).map(|m| m.serial as u32).collect()
     }
     fn sp_required_science(&self, m: SpecialPowerModuleRef) -> ScienceType {
         for o in &self.objs {
             for md in &o.modules {
-                if md.0 && md.1 as u32 == m {
-                    return ScienceType(md.2);
+                if md.has_sp && md.serial as u32 == m {
+                    return ScienceType(md.required);
                 }
             }
         }
@@ -896,6 +1037,253 @@ impl PlayerHost for Sim {
         dx * dx + dy * dy
     }
 }
+
+// --- p1w10-sonnet --- (slice 2)
+impl Sim {
+    /// The special power module the opaque reference (its serial) names.
+    fn module(&self, m: SpecialPowerModuleRef) -> &ModSim {
+        self.objs.iter().flat_map(|o| o.modules.iter()).find(|x| x.has_sp && x.serial as u32 == m).expect("module")
+    }
+}
+
+
+impl PlayerObjectHost for Sim {
+    fn obj_friend_adjust_power_for_player(&mut self, o: ObjectId, yes: bool) {
+        self.rec(format!("adjustpower {o} {}", yes as u32));
+    }
+    fn obj_has_auto_deposit_update(&self, o: ObjectId, _key: NameKeyType) -> bool {
+        self.obj(o).has_auto_deposit
+    }
+    fn auto_deposit_award_initial_capture_bonus(&mut self, o: ObjectId, p: PlayerIndex) {
+        self.rec(format!("capturebonus {o} {p}"));
+    }
+    fn obj_modules_ready(&self, o: ObjectId) -> bool {
+        self.obj(o).modules_ready
+    }
+    fn ui_add_idle_worker(&mut self, o: ObjectId) {
+        self.rec(format!("ui.idle+ {o}"));
+    }
+    fn ui_remove_idle_worker(&mut self, o: ObjectId, player: PlayerIndex) {
+        self.rec(format!("ui.idle- {o} {player}"));
+    }
+    fn tmpl_default_owning_side(&self, t: TemplateRef) -> Vec<u8> {
+        format!("Side{}", self.tpls[t as usize].owning_side).into_bytes()
+    }
+    fn obj_has_drawable(&self, o: ObjectId) -> bool {
+        self.obj(o).has_drawable
+    }
+    fn obj_stealth_disguised_player_index(&self, o: ObjectId) -> Option<PlayerIndex> {
+        let d = self.obj(o).disguised;
+        if d >= 0 {
+            Some(d)
+        } else {
+            None
+        }
+    }
+    fn obj_night_indicator_color(&self, o: ObjectId) -> u32 {
+        self.obj(o).night_color
+    }
+    fn obj_indicator_color(&self, o: ObjectId) -> u32 {
+        self.obj(o).indicator_color
+    }
+    fn obj_is_disabled(&self, o: ObjectId) -> bool {
+        self.obj(o).disabled
+    }
+    fn obj_has_any_special_power(&self, o: ObjectId) -> bool {
+        self.obj(o).modules.iter().any(|m| m.has_sp)
+    }
+    fn obj_find_any_shortcut_special_power(&self, o: ObjectId) -> Option<SpecialPowerModuleRef> {
+        self.obj(o).modules.iter().find(|m| m.has_sp).map(|m| m.serial as u32)
+    }
+    fn obj_has_special_power(&self, o: ObjectId, t: SpecialPowerType) -> bool {
+        self.obj(o).modules.iter().any(|m| m.has_sp && m.ty == t)
+    }
+    fn obj_find_special_power(&self, o: ObjectId, t: SpecialPowerType) -> Option<SpecialPowerModuleRef> {
+        self.obj(o).modules.iter().find(|m| m.has_sp && m.ty == t).map(|m| m.serial as u32)
+    }
+    fn sp_is_script_only(&self, m: SpecialPowerModuleRef) -> bool {
+        self.module(m).script_only
+    }
+    fn sp_ready_frame(&self, m: SpecialPowerModuleRef) -> u32 {
+        self.module(m).ready
+    }
+    fn sp_percent_ready(&self, m: SpecialPowerModuleRef) -> u32 {
+        self.module(m).percent
+    }
+    fn sp_is_shared_n_sync(&self, m: SpecialPowerModuleRef) -> bool {
+        self.module(m).shared
+    }
+    fn obj_has_any_weapon(&self, o: ObjectId) -> bool {
+        self.obj(o).has_weapon
+    }
+    fn obj_most_percent_ready_to_fire_any_weapon(&self, o: ObjectId) -> u32 {
+        self.obj(o).weapon_percent
+    }
+    fn obj_leave_group(&mut self, o: ObjectId) {
+        self.rec(format!("leavegroup {o}"));
+    }
+    fn obj_is_any_kind_of(&self, o: ObjectId, mask: &KindOfMaskType) -> bool {
+        self.tpl_of(o).kinds.any_intersection_with(mask)
+    }
+    fn ai_hunt(&mut self, o: ObjectId, source: CommandSource) {
+        self.rec(format!("ai.hunt {o} {source}"));
+    }
+    fn ai_idle(&mut self, o: ObjectId, source: CommandSource) {
+        self.rec(format!("ai.idle {o} {source}"));
+    }
+    fn ai_enter(&mut self, o: ObjectId, building: ObjectId, source: CommandSource) {
+        self.rec(format!("ai.enter {o} {building} {source}"));
+    }
+    fn ai_evacuate(&mut self, o: ObjectId, expose_stealth_units: bool, source: CommandSource) {
+        self.rec(format!("ai.evacuate {o} {} {source}", expose_stealth_units as u32));
+    }
+    fn ai_move_to_position(&mut self, o: ObjectId, pos: Coord3D, source: CommandSource) {
+        self.rec(format!("ai.move {o} {} {source}", coord_str(&pos)));
+    }
+    fn ai_has_supply_truck_interface(&self, o: ObjectId) -> bool {
+        self.obj(o).supply_truck
+    }
+    fn ai_supply_truck_set_force_wanting_state(&mut self, o: ObjectId, v: bool) {
+        self.rec(format!("ai.force {o} {}", v as u32));
+    }
+    fn pathfinder_remove_object(&mut self, o: ObjectId) {
+        self.rec(format!("path.remove {o}"));
+    }
+    fn pathfinder_add_object(&mut self, o: ObjectId) {
+        self.rec(format!("path.add {o}"));
+    }
+    fn partition_get_most_valuable_location(&mut self, p: PlayerIndex) {
+        self.rec(format!("partition.valuable {p}"));
+    }
+    fn partition_structures_near_to_far(&mut self, pos: Coord3D) -> Vec<ObjectId> {
+        let mut v: Vec<(f32, ObjectId)> = self
+            .objs
+            .iter()
+            .filter(|o| self.tpls[o.tpl].kinds.test(KINDOF_STRUCTURE))
+            .map(|o| {
+                let (dx, dy, dz) = (o.pos.x - pos.x, o.pos.y - pos.y, o.pos.z - pos.z);
+                (dx * dx + dy * dy + dz * dz, o.id)
+            })
+            .collect();
+        v.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        v.into_iter().map(|x| x.1).collect()
+    }
+    fn partition_all_objects(&self) -> Vec<ObjectId> {
+        self.objs.iter().map(|o| o.id).collect()
+    }
+    fn contain_player_who_entered(&self, building: ObjectId) -> Option<u32> {
+        if self.obj(building).contain_count >= 0 {
+            Some(self.obj(building).who_entered)
+        } else {
+            None
+        }
+    }
+    fn contain_recalc_apparent_controlling_player(&mut self, o: ObjectId) {
+        self.rec(format!("recalc {o}"));
+    }
+    fn obj_has_contain(&self, o: ObjectId) -> bool {
+        self.obj(o).contain_count >= 0
+    }
+    fn action_can_enter_object(&mut self, o: ObjectId, building: ObjectId, source: CommandSource) -> bool {
+        self.rec(format!("canenter {o} {building} {source}"));
+        (self.obj(o).can_enter >> (building & 31)) & 1 != 0
+    }
+    fn build_assistant_sell_object(&mut self, o: ObjectId) {
+        self.rec(format!("sell {o}"));
+    }
+    fn obj_is_faction_structure(&self, o: ObjectId) -> bool {
+        self.obj(o).faction_structure
+    }
+    fn tmpl_build_cost(&self, t: TemplateRef) -> i32 {
+        self.tpls[t as usize].cost
+    }
+    fn tmpl_kind_of_mask(&self, t: TemplateRef) -> KindOfMaskType {
+        self.tpls[t as usize].kinds
+    }
+    fn obj_producer_id(&self, o: ObjectId) -> ObjectId {
+        self.obj(o).producer
+    }
+    fn obj_body_max_health(&self, o: ObjectId) -> f32 {
+        self.obj(o).health
+    }
+    fn obj_body_set_max_health(&mut self, o: ObjectId, health: f32) {
+        self.rec(format!("health {o} {}", fb(health)));
+        self.obj_mut(o).health = health;
+    }
+    fn obj_body_apply_damage_scalar(&mut self, o: ObjectId, scalar: f32) {
+        self.rec(format!("armor {o} {}", fb(scalar)));
+    }
+    fn obj_set_weapon_bonus_condition(&mut self, o: ObjectId, c: i32) {
+        self.rec(format!("wb+ {o} {c}"));
+        self.obj_mut(o).wb |= 1u32 << c;
+    }
+    fn obj_clear_weapon_bonus_condition(&mut self, o: ObjectId, c: i32) {
+        self.rec(format!("wb- {o} {c}"));
+        self.obj_mut(o).wb &= !(1u32 << c);
+    }
+    fn obj_shroud_clearing_range(&self, o: ObjectId) -> f32 {
+        self.obj(o).shroud
+    }
+    fn obj_set_vision_range(&mut self, o: ObjectId, range: f32) {
+        self.rec(format!("vision {o} {}", fb(range)));
+        self.obj_mut(o).vision = range;
+    }
+    fn obj_set_shroud_clearing_range(&mut self, o: ObjectId, range: f32) {
+        self.rec(format!("shroud {o} {}", fb(range)));
+        self.obj_mut(o).shroud = range;
+    }
+    fn obj_set_vision_spied(&mut self, o: ObjectId, setting: bool, by_whom: PlayerIndex) {
+        self.rec(format!("spied {o} {} {by_whom}", setting as u32));
+    }
+    fn tmpl_buildable(&self, t: TemplateRef) -> u8 {
+        self.tpls[t as usize].buildable
+    }
+    fn tmpl_prereq_count(&self, t: TemplateRef) -> i32 {
+        self.tpls[t as usize].n_prereq
+    }
+    fn tmpl_prereq_is_satisfied(&self, t: TemplateRef, i: i32, _p: PlayerIndex) -> bool {
+        (self.tpls[t as usize].prereq_mask >> (i & 31)) & 1 != 0
+    }
+    fn tmpl_max_simultaneous_of_type(&self, t: TemplateRef) -> u32 {
+        self.tpls[t as usize].max_simul
+    }
+    fn tmpl_max_simultaneous_link_key(&self, t: TemplateRef) -> NameKeyType {
+        self.tpls[t as usize].link_key
+    }
+    fn obj_production_queue_count(&self, o: ObjectId, _t: TemplateRef) -> Option<u32> {
+        let q = self.obj(o).prod_queue;
+        if q >= 0 {
+            Some(q as u32)
+        } else {
+            None
+        }
+    }
+    fn player_template_find(&self, key: NameKeyType) -> Option<PlayerTemplateRef> {
+        // `ThePlayerTemplateStore->findPlayerTemplate(NAMEKEY("FactionObserver"))`: the key was made by the caller
+        if self.names.key_to_name(key) == b"FactionObserver" {
+            self.observer_template.map(|i| i as PlayerTemplateRef)
+        } else {
+            None
+        }
+    }
+    fn thing_factory_find_template(&mut self, name: &[u8]) -> Option<TemplateRef> {
+        self.tpls.iter().position(|t| t.name == name).map(|i| i as TemplateRef)
+    }
+    fn find_object_by_id(&self, id: ObjectId) -> Option<ObjectId> {
+        if self.objs.iter().any(|o| o.id == id) {
+            Some(id)
+        } else {
+            None
+        }
+    }
+    fn score_add_money_spent(&mut self, p: PlayerIndex, amount: i32) {
+        self.spent[p as usize] = self.spent[p as usize].wrapping_add(amount);
+    }
+    fn score_add_money_earned(&mut self, p: PlayerIndex, amount: i32) {
+        self.earned[p as usize] = self.earned[p as usize].wrapping_add(amount);
+    }
+}
+// --- end p1w10-sonnet ---
 
 /// `DISABLED_UNDERPOWERED`.
 const DISABLED_UNDERPOWERED: i32 = rts_lockstep_engine::common::disabled_types::DISABLED_UNDERPOWERED;
@@ -1004,7 +1392,7 @@ fn dump_player(sim: &mut Sim, idx: usize, out: &mut Vec<String>) {
         .iter()
         .map(|e: &BuildListInfo| {
             format!(
-                "{}/{}/{},{},{}/{}/{}/{}",
+                "{}/{}/{},{},{}/{}/{}/{}/{}/{}/{}/{}/{}/{}{}{}{}{}{}{}/{}/{},{}/{}",
                 e.object_id,
                 dash(e.template_name.clone()),
                 fb(e.location.x),
@@ -1012,7 +1400,23 @@ fn dump_player(sim: &mut Sim, idx: usize, out: &mut Vec<String>) {
                 fb(e.location.z),
                 fb(e.angle),
                 e.num_rebuilds as i32,
-                e.priority_build as u32
+                e.priority_build as u32,
+                dash(e.building_name.clone()),
+                dash(e.script.clone()),
+                fb(e.rally_point_offset.x),
+                fb(e.rally_point_offset.y),
+                e.health,
+                e.whiner as u32,
+                e.unsellable as u32,
+                e.repairable as u32,
+                e.automatically_build as u32,
+                e.is_initially_built as u32,
+                e.under_construction as u32,
+                e.is_supply_building as u32,
+                e.object_timestamp,
+                e.desired_gatherers,
+                e.current_gatherers,
+                e.resource_gatherers.iter().map(|g| g.to_string()).collect::<Vec<_>>().join(",")
             )
         })
         .collect::<Vec<_>>()
@@ -1109,6 +1513,20 @@ fn dump_player(sim: &mut Sim, idx: usize, out: &mut Vec<String>) {
         p.current_selection.is_some() as u32,
         sim.academy_points[idx],
     ));
+    // --- p1w10-sonnet --- (slice 2b and 3): the upgrades, their masks, the squads and their caches
+    let mask_str = |m: &UpgradeMaskType| -> String {
+        let v: Vec<String> = (0..128).filter(|i| m.test(*i)).map(|i| i.to_string()).collect();
+        if v.is_empty() { "-".into() } else { v.join(",") }
+    };
+    let ups = if p.upgrades.is_empty() {
+        "-".to_string()
+    } else {
+        p.upgrades.iter().map(|u| format!("{}:{}", sim.upgrade_keys.iter().position(|k| *k == u.template).map_or(-1, |i| i as i32), u.status)).collect::<Vec<_>>().join(";")
+    };
+    let squads = if p.squads.is_empty() { "-".to_string() } else { p.squads.iter().map(|s| format!("{}/{}", squad_str(s), id_list(&s.objects_cached))).collect::<Vec<_>>().join("|") };
+    let sel = p.current_selection.as_ref().map_or("-".to_string(), |s| format!("{}/{}", squad_str(s), id_list(&s.objects_cached)));
+    out.push(format!("D player4 {} gused={} up={} inprog={} comp={} squads={} sel={}", p.player_index, sim.groups_used[idx], ups, mask_str(&p.upgrades_in_progress), mask_str(&p.upgrades_completed), squads, sel));
+    // --- end p1w10-sonnet ---
 }
 
 fn dump_state(sim: &mut Sim) {
@@ -1136,8 +1554,30 @@ fn dump_state(sim: &mut Sim) {
         let prev = sim.teams.prev_member(o.id).unwrap_or(0);
         out.push(format!("D obj id={} team={} next={} prev={}", o.id, tid(o.team), next, prev));
     }
+    // --- p1w10-sonnet --- (slice 2)
+    for o in &sim.objs {
+        out.push(format!("D obj2 {} health={} vision={} shroud={} wb={:08x}", o.id, fb(o.health), fb(o.vision), fb(o.shroud), o.wb));
+    }
+    // --- end p1w10-sonnet ---
     for i in 0..sim.np {
         dump_player(sim, i, &mut out);
+        // --- p1w10-sonnet --- (slice 2)
+        let p = sim.players.get_nth(i as i32).unwrap();
+        let bonus = match &p.battle_plan_bonuses {
+            Some(b) => format!(
+                "{},{},{},{},{},{},{}",
+                fb(b.armor_scalar),
+                fb(b.sight_range_scalar),
+                b.bombardment,
+                b.hold_the_line,
+                b.search_and_destroy,
+                kind_bits(&b.valid_kind_of),
+                kind_bits(&b.invalid_kind_of)
+            ),
+            None => "-".to_string(),
+        };
+        out.push(format!("D player3 {i} spent={} earned={} bonus={bonus}", sim.spent[i], sim.earned[i]));
+        // --- end p1w10-sonnet ---
     }
     sim.lines.extend(out);
 }
@@ -1178,6 +1618,10 @@ fn thrown(e: PlayerError) -> Result<String, Excluded> {
         PlayerError::Team(TeamError::Hang) | PlayerError::Hang => Err(Excluded("a loop that never ends")),
         PlayerError::Team(TeamError::IdCollision) => Err(Excluded("an id shared by two live teams after reset")),
         PlayerError::NoRank => Err(Excluded("a rank level the table does not have, dereferenced")),
+        PlayerError::InvalidData => Ok("threw invaliddata".to_string()),
+        PlayerError::Xfer(s) => Ok(format!("threw xfer {}", s as i32)),
+        PlayerError::Null => Err(Excluded("a NULL or dangling pointer dereferenced")),
+        PlayerError::NameKeysExhausted => Err(Excluded("the name keys ran out")),
     }
 }
 
@@ -1264,6 +1708,12 @@ fn read_dicts(r: &mut Reader<'_>, sim: &mut Sim) {
 fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
     let mut names = NameKeyGenerator::new();
     names.reset();
+    // the eight sciences of a program are name keys ("Sci0" ... "Sci7"), as ScienceStore makes them: Player::xfer saves a
+    // science as its name, and the key is the only thing the name is looked up by
+    let mut sci_keys = [0i32; 8];
+    for (i, k) in sci_keys.iter_mut().enumerate() {
+        *k = ScienceType::from_name_key(names.name_to_key(format!("Sci{i}").as_bytes())).0;
+    }
     let mut sim = Sim {
         teams: TeamArena::new(),
         players: PlayerArena::new(),
@@ -1301,6 +1751,17 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
         ptpls: Vec::new(),
         ai_cfg: Vec::new(),
         academy_points: vec![0; 16],
+        observer_template: None,
+        spent: [0; 16],
+        earned: [0; 16],
+        sci_keys,
+        upgrades: UpgradeCenter::new(),
+        upgrade_keys: Vec::new(),
+        groups: vec![Vec::new(); 3],
+        msgs: Vec::new(),
+        saved: Vec::new(),
+        have_save: false,
+        groups_used: [0; 16],
         undefined: std::cell::Cell::new(None),
     };
     // the dictionaries
@@ -1338,17 +1799,24 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
         let needed = r.i();
         let spp = r.i();
         let ng = r.i();
-        let sciences_granted = (0..ng).map(|_| ScienceType(r.i())).collect();
+        let sciences_granted = (0..ng).map(|_| ScienceType(sim.sci_key(r.i()))).collect();
         sim.ranks.push(RankInfoView { skill_points_needed: needed, science_purchase_points_granted: spp, sciences_granted });
     }
     let nsci = r.i();
     for _ in 0..nsci {
-        let id = r.i();
+        let id = sim.sci_key(r.i());
         let cost = r.i();
         let grantable = r.b();
         let np2 = r.i();
-        let prereqs = (0..np2).map(|_| r.i()).collect();
+        let prereqs = (0..np2).map(|_| sim.sci_key(r.i())).collect();
         sim.sciences.insert(id, SciCfg { cost, grantable, prereqs });
+    }
+    let nup = r.i();
+    for i in 0..nup {
+        let name = format!("Upg{i}");
+        sim.upgrades.new_upgrade(&mut sim.names, name.as_bytes()).expect("new upgrade");
+        let key = sim.names.name_to_key(name.as_bytes());
+        sim.upgrade_keys.push(key);
     }
     let nsp = r.i();
     for _ in 0..nsp {
@@ -1401,7 +1869,7 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
         let observer = r.b();
         let playable_side = r.b();
         let nc = r.i();
-        let intrinsic_sciences = (0..nc).map(|_| ScienceType(r.i())).collect();
+        let intrinsic_sciences = (0..nc).map(|_| ScienceType(sim.sci_key(r.i()))).collect();
         let intrinsic_science_purchase_points = r.i();
         sim.ptpls.push(PlayerTemplateView {
             side,
@@ -1444,7 +1912,7 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
         let nk = r.i();
         let mut kinds = KindOfMaskType::new();
         for _ in 0..nk {
-            kinds.set(KIND_POOL[(r.u() % 12) as usize], 1);
+            kinds.set(KIND_POOL[(r.u() % 15) as usize], 1);
         }
         let build_facility = r.b();
         let equiv = r.i();
@@ -1461,7 +1929,21 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
             })
             .collect();
         let skill = [r.i(), r.i(), r.i(), r.i()];
-        sim.tpls.push(TplSim { kinds, build_facility, equiv, name, variations, skill });
+        sim.tpls.push(TplSim {
+            kinds,
+            build_facility,
+            equiv,
+            name,
+            variations,
+            skill,
+            cost: 0,
+            buildable: 0,
+            n_prereq: 0,
+            prereq_mask: 0,
+            max_simul: 0,
+            link_key: NameKeyType::INVALID,
+            owning_side: 0,
+        });
     }
     let no = r.i();
     for _ in 0..no {
@@ -1469,7 +1951,7 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
         let tpl = r.u() as usize % sim.tpls.len();
         let player = r.u() as usize % sim.np;
         let ns = r.i();
-        let status = (0..ns).map(|_| STATUS_POOL[(r.u() % 4) as usize]).collect();
+        let status = (0..ns).map(|_| STATUS_POOL[(r.u() % 5) as usize]).collect();
         let (dead, destroyed, contained, held, enemy_near) = (r.b(), r.b(), r.b(), r.b(), r.b());
         let (has_ai, ai_idle, ai_recruit) = (r.b(), r.b(), r.b());
         let surfaces = r.u();
@@ -1482,7 +1964,7 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
         let nm = (r.i() % 4) as usize;
         let mut modules = Vec::new();
         for _ in 0..nm {
-            modules.push((r.b(), r.i(), r.i()));
+            modules.push(ModSim { has_sp: r.b(), serial: r.i(), required: sim.sci_key(r.i()), ty: 0, script_only: false, ready: 0, percent: 0, shared: false });
         }
         sim.objs.push(ObjSim {
             id,
@@ -1509,6 +1991,25 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
             vet,
             modules,
             team: None,
+            modules_ready: false,
+            has_auto_deposit: false,
+            has_drawable: false,
+            disabled: false,
+            faction_structure: false,
+            has_weapon: false,
+            weapon_percent: 0,
+            selectable: false,
+            supply_truck: false,
+            disguised: -1,
+            night_color: 0,
+            indicator_color: 0,
+            producer: 0,
+            health: 0.0,
+            shroud: 0.0,
+            who_entered: 0,
+            can_enter: 0,
+            prod_queue: -1,
+            wb: 0,
         });
     }
     let ns = r.i();
@@ -1528,6 +2029,7 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
         sim.ways.push((WaypointInfo { name, location }, id));
     }
     sim.frame = r.u();
+    read_header2(r, &mut sim);
     let n_probe = r.i();
     let probes = (0..n_probe).map(|_| r.s()).collect();
     (sim, probes)
@@ -1535,6 +2037,50 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
 
 /// Runs the Rust side of a program, giving the trace lines (as the C++ side writes them), or why it cannot be given
 /// to the C++.
+/// The second part of the header (slice 2), which follows the frame.
+fn read_header2(r: &mut Reader<'_>, sim: &mut Sim) {
+    let has_observer = r.b();
+    let observer_idx = r.u() as usize;
+    sim.observer_template = if has_observer && !sim.ptpls.is_empty() { Some(observer_idx % sim.ptpls.len()) } else { None };
+    for t in sim.tpls.iter_mut() {
+        t.cost = r.i();
+        t.buildable = (r.u() % 4) as u8;
+        t.n_prereq = (r.u() % 4) as i32;
+        t.prereq_mask = r.u();
+        t.max_simul = r.u() % 4;
+        let lk = r.i();
+        t.link_key = if lk == 0 { NameKeyType::INVALID } else { sim.names.name_to_key(format!("Link{lk}").as_bytes()) };
+        t.owning_side = r.u() % 4;
+    }
+    for o in sim.objs.iter_mut() {
+        o.modules_ready = r.b();
+        o.has_auto_deposit = r.b();
+        o.has_drawable = r.b();
+        o.disabled = r.b();
+        o.faction_structure = r.b();
+        o.has_weapon = r.b();
+        o.weapon_percent = r.u() % 130;
+        o.selectable = r.b();
+        o.supply_truck = r.b();
+        o.disguised = r.i();
+        o.night_color = r.u();
+        o.indicator_color = r.u();
+        o.producer = r.u() as i32;
+        o.health = r.f();
+        o.shroud = r.f();
+        o.who_entered = r.u();
+        o.can_enter = r.u();
+        o.prod_queue = r.i();
+        for m in o.modules.iter_mut() {
+            m.ty = SP_POOL[(r.u() % 9) as usize];
+            m.script_only = r.b();
+            m.ready = r.u();
+            m.percent = r.u() % 130;
+            m.shared = r.b();
+        }
+    }
+}
+
 fn run_rust(words: &[u32]) -> Result<Vec<String>, Excluded> {
     let mut r = Reader { w: words, p: 0 };
     let (mut sim, probes) = read_sim(&mut r);
@@ -1551,7 +2097,7 @@ fn run_rust(words: &[u32]) -> Result<Vec<String>, Excluded> {
             Ok(()) => dump_state(&mut sim),
             Err(e) => {
                 if std::env::var_os("PLAYER_WHY").is_some() {
-                    eprintln!("WHY {e:?} at op {op}");
+                    eprintln!("WHY {e:?} at op {op} sub {}", LAST_SUB.load(std::sync::atomic::Ordering::Relaxed));
                 }
                 let line = thrown(e)?;
                 sim.rec(line);
@@ -1584,10 +2130,6 @@ fn coord_of(a: u32, b: u32, c: u32) -> Coord3D {
     Coord3D { x: f32::from_bits(a), y: f32::from_bits(b), z: f32::from_bits(c) }
 }
 
-fn sci_of(v: u32) -> ScienceType {
-    ScienceType((v % 8) as i32)
-}
-
 fn rel_of(v: u32) -> Relationship {
     match v % 3 {
         0 => Relationship::Enemies,
@@ -1605,7 +2147,7 @@ fn obj_op(sim: &mut Sim, o: ObjectId, sub: u32, a: &[u32; 8]) {
         0 => sim.obj_mut(o).dead = a[0] != 0,
         1 => sim.obj_mut(o).destroyed = a[0] != 0,
         2 => {
-            let s = STATUS_POOL[(a[0] % 4) as usize];
+            let s = STATUS_POOL[(a[0] % 5) as usize];
             if a[1] != 0 {
                 sim.obj_mut(o).status.insert(s);
             } else {
@@ -1618,6 +2160,41 @@ fn obj_op(sim: &mut Sim, o: ObjectId, sub: u32, a: &[u32; 8]) {
         6 => sim.obj_mut(o).orientation = f32::from_bits(a[0]),
         7 => sim.obj_mut(o).vet = (a[0] % 4) as i32,
         8 => sim.obj_mut(o).held = a[0] != 0,
+        // --- p1w10-sonnet --- (slice 2)
+        9 => sim.obj_mut(o).disabled = a[0] != 0,
+        10 => sim.obj_mut(o).modules_ready = a[0] != 0,
+        11 => {
+            let n = sim.obj(o).modules.len();
+            for k in 0..4usize {
+                let idx = (k + a[0] as usize) % 4;
+                if idx < n {
+                    let m = &mut sim.obj_mut(o).modules[idx];
+                    m.ready = a[1];
+                    m.percent = a[2] % 130;
+                    m.script_only = a[3] != 0;
+                    break;
+                }
+            }
+        }
+        12 => {
+            let ob = sim.obj_mut(o);
+            ob.has_weapon = a[0] != 0;
+            ob.weapon_percent = a[1] % 130;
+            ob.faction_structure = a[2] != 0;
+        }
+        13 => {
+            let ob = sim.obj_mut(o);
+            ob.prod_queue = (a[0] % 4) as i32 - 1;
+            ob.can_enter = a[1];
+            ob.who_entered = if !a[2].is_multiple_of(2) { 1u32 << (a[3] % 4) } else { 0 };
+        }
+        14 => {
+            let ob = sim.obj_mut(o);
+            ob.health = f32::from_bits(a[0]);
+            ob.disguised = (a[1] % 5) as i32 - 1;
+            ob.supply_truck = a[2] != 0;
+        }
+        // --- end p1w10-sonnet ---
         _ => {}
     }
 }
@@ -1629,7 +2206,283 @@ fn thing_list(sim: &Sim, a: &[u32; 8]) -> (Vec<Option<TemplateRef>>, Vec<i32>) {
 }
 
 /// One `Player` operation; `a` are its eight words.
+// --- p1w10-sonnet --- (slice 2b and 3)
+impl PlayerSquadHost for Sim {
+    fn upgrade_mask(&self, t: NameKeyType) -> UpgradeMaskType {
+        self.upgrades.find_upgrade_by_key(t).map(|u| u.upgrade_mask()).expect("an upgrade of the program")
+    }
+    fn obj_update_upgrade_modules(&mut self, o: ObjectId) {
+        self.rec(format!("upgrademods {o}"));
+    }
+    fn obj_is_selectable(&self, o: ObjectId) -> bool {
+        self.obj(o).selectable
+    }
+    fn ai_group_all_ids(&self, group: GroupRef) -> Vec<ObjectId> {
+        self.groups[group as usize - 1].clone()
+    }
+    fn message_argument_count(&self, msg: MessageRef) -> u8 {
+        self.msgs[msg as usize].len() as u8
+    }
+    fn message_argument_object_id(&self, msg: MessageRef, i: u8) -> ObjectId {
+        self.msgs[msg as usize][i as usize]
+    }
+    fn academy_record_control_groups_used(&mut self, p: PlayerIndex) {
+        self.groups_used[p as usize] += 1; // AcademyStats.h line 107, inline: no line, but `m_controlGroupsUsed` is dumped
+    }
+}
+
+impl PlayerXferHost for Sim {
+    fn upgrade_center_and_names(&mut self) -> (&UpgradeCenter, &mut NameKeyGenerator) {
+        (&self.upgrades, &mut self.names)
+    }
+    /// The score keeper is another unit (differential_score_keeper.rs): the fixture's stand-in saves a version and the two sums.
+    fn xfer_score_keeper(&mut self, p: PlayerIndex, xfer: &mut dyn Xfer) -> PResult<()> {
+        let mut version = 1u8;
+        xfer.xfer_version(&mut version, 1)?;
+        xfer.xfer_int(&mut self.spent[p as usize])?;
+        xfer.xfer_int(&mut self.earned[p as usize])?;
+        Ok(())
+    }
+    /// The AI is another unit: the fixture's stand-in saves a version.
+    fn xfer_ai(&mut self, _p: PlayerIndex, xfer: &mut dyn Xfer) -> PResult<()> {
+        let mut version = 1u8;
+        xfer.xfer_version(&mut version, 1)?;
+        Ok(())
+    }
+}
+
+fn hash_bytes(v: &[u8]) -> u32 {
+    let mut h: u32 = 2166136261;
+    for &b in v {
+        h = (h ^ u32::from(b)).wrapping_mul(16777619);
+    }
+    h
+}
+
+/// An object of a program's message or group: a word that picks an object, or (a quarter of the time) an id no object has.
+fn obj_id_of(sim: &Sim, w: u32) -> ObjectId {
+    if w.is_multiple_of(4) {
+        900 + ((w / 4) % 7) as i32
+    } else {
+        sim.objs[((w / 4) as usize) % sim.objs.len()].id
+    }
+}
+
+/// An object that exists, picked by a word.
+fn real_obj_id(sim: &Sim, w: u32) -> ObjectId {
+    sim.objs[(w as usize) % sim.objs.len()].id
+}
+
+/// The ids of a squad, `-` for none.
+fn squad_str(s: &Squad) -> String {
+    id_list(&s.object_ids)
+}
+
+/// The upgrade masks of a program: none, one template's, or two.
+fn upgrade_mask_of(sim: &Sim, a: &[u32; 8], k: usize) -> UpgradeMaskType {
+    let n = sim.upgrade_keys.len();
+    let mut m = UpgradeMaskType::default();
+    if !a[k].is_multiple_of(3) {
+        m.set_mask(&sim.upgrade_mask(sim.upgrade_keys[a[k + 1] as usize % n]));
+    }
+    if a[k] % 3 == 2 {
+        m.set_mask(&sim.upgrade_mask(sim.upgrade_keys[a[k + 2] as usize % n]));
+    }
+    m
+}
+
+fn upgrade_op(sim: &mut Sim, p: PlayerIndex, a: &[u32; 8]) -> Result<(), PlayerError> {
+    let n = sim.upgrade_keys.len();
+    if n == 0 {
+        sim.rec("skip noupgrades".into());
+        return Ok(());
+    }
+    let key = sim.upgrade_keys[a[1] as usize % n];
+    match a[0] % 8 {
+        0 => {
+            let status = [UPGRADE_STATUS_INVALID, UPGRADE_STATUS_IN_PRODUCTION, UPGRADE_STATUS_COMPLETE][a[2] as usize % 3];
+            let idx = player_add_upgrade(sim, p, key, status)?;
+            sim.rec(format!("ret addupg {idx}"));
+        }
+        1 => {
+            let idx = player_find_upgrade(sim, p, key)?;
+            sim.rec(format!("ret findupg {}", idx.map_or(-1, |i| i as i32)));
+        }
+        2 => {
+            let r = player_has_upgrade_complete(sim, p, key)?;
+            sim.rec(format!("ret upgcomplete {}", r as u32));
+        }
+        3 => {
+            let m = upgrade_mask_of(sim, a, 2);
+            let r = player_has_upgrade_complete_mask(sim, p, &m)?;
+            sim.rec(format!("ret upgmask {}", r as u32));
+        }
+        4 => {
+            let r = player_has_upgrade_in_production(sim, p, key)?;
+            sim.rec(format!("ret upginprod {}", r as u32));
+        }
+        5 => player_remove_upgrade(sim, p, key)?,
+        6 => player_on_upgrade_completed(sim, p, key)?,
+        _ => {
+            let m = upgrade_mask_of(sim, a, 3);
+            let me = sim.players.get_nth_mut(p).unwrap();
+            let target = if a[2].is_multiple_of(2) { &mut me.upgrades_in_progress } else { &mut me.upgrades_completed };
+            if a[6].is_multiple_of(3) {
+                target.clear_mask(&m);
+            } else {
+                target.set_mask(&m);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn squad_op(sim: &mut Sim, p: PlayerIndex, a: &[u32; 8]) -> Result<(), PlayerError> {
+    // hotkey numbers -1 ..= 11: the last two and -1 are outside the table
+    let hk = (a[1] % 13) as i32 - 1;
+    let n = (a[2] % 5) as usize;
+    let ids: Vec<ObjectId> = (0..n).map(|i| obj_id_of(sim, a[3 + i % 4])).collect();
+    let group = |w: u32| -> Option<GroupRef> { if w.is_multiple_of(4) { None } else { Some(w % 3 + 1) } };
+    match a[0] % 12 {
+        0..=2 => {
+            sim.msgs.push(ids);
+            let msg = (sim.msgs.len() - 1) as MessageRef;
+            match a[0] % 12 {
+                0 => player_process_create_team_game_message(sim, p, hk, msg)?,
+                1 => player_process_select_team_game_message(sim, p, hk, msg)?,
+                _ => player_process_add_team_game_message(sim, p, hk, msg)?,
+            }
+        }
+        3 => player_get_current_selection_as_ai_group(sim, p, group(a[2]))?,
+        4 => player_set_currently_selected_ai_group(sim, p, group(a[2]))?,
+        5 => {
+            let sq = player_get_hotkey_squad(sim, p, hk)?;
+            sim.rec(format!("ret hotkey {}", sq.map_or(-1, |s| squad_get_size_of_group(&s))));
+        }
+        6 => {
+            let o = real_obj_id(sim, a[2]);
+            let r = player_get_squad_number_for_object(sim, p, o)?;
+            sim.rec(format!("ret squadno {r}"));
+        }
+        7 => {
+            let o = if a[2].is_multiple_of(4) { None } else { Some(real_obj_id(sim, a[2])) };
+            player_remove_object_from_hotkey_squad(sim, p, o)?;
+        }
+        8 => player_add_ai_group_to_current_selection(sim, p, group(a[2]))?,
+        9 => {
+            sim.groups[(a[1] % 3) as usize] = ids;
+        }
+        10 | 11 => {
+            // a squad of the player: the current selection (a[2] & 4) or a hotkey squad
+            let use_sel = a[2] & 4 != 0;
+            let mut sq = if use_sel {
+                match sim.players.get_nth_mut(p).unwrap().current_selection.take() {
+                    Some(s) => s,
+                    None => {
+                        sim.rec("skip nosel".into());
+                        return Ok(());
+                    }
+                }
+            } else {
+                match sim.players.get_nth_mut(p).unwrap().squads.get_mut(hk as usize).filter(|_| hk >= 0).map(std::mem::take) {
+                    Some(s) => s,
+                    None => {
+                        sim.rec("skip nosquad".into());
+                        return Ok(());
+                    }
+                }
+            };
+            if a[0] % 12 == 10 {
+                match a[2] % 4 {
+                    0 => {
+                        let v = squad_get_all_objects(sim, &mut sq);
+                        sim.rec(format!("ret squadall {}", id_list(&v)));
+                    }
+                    1 => {
+                        let v = squad_get_live_objects(sim, &mut sq);
+                        sim.rec(format!("ret squadlive {}", id_list(&v)));
+                    }
+                    _ => {
+                        let o = real_obj_id(sim, a[3]);
+                        sim.rec(format!("ret squadsize {} {}", squad_get_size_of_group(&sq), squad_is_on_squad(&sq, o) as u32));
+                    }
+                }
+            } else if a[3].is_multiple_of(2) {
+                let t = pick_opt_team(sim, a[4]);
+                squad_from_team(sim, &mut sq, t, a[5].is_multiple_of(2));
+            } else {
+                squad_from_ai_group(sim, &mut sq, group(a[4]), a[5].is_multiple_of(2));
+            }
+            let me = sim.players.get_nth_mut(p).unwrap();
+            if use_sel {
+                me.current_selection = Some(sq);
+            } else {
+                me.squads[hk as usize] = sq;
+            }
+        }
+        _ => unreachable!(),
+    }
+    Ok(())
+}
+
+fn xfer_op(sim: &mut Sim, p: PlayerIndex, a: &[u32; 8]) -> Result<(), PlayerError> {
+    match a[0] % 3 {
+        0 => {
+            let mut xc = XferCrc::new();
+            xc.open(b"p").unwrap();
+            player_crc(sim, &mut xc, p)?;
+            xc.close().unwrap();
+            sim.rec(format!("ret pcrc {:08x}", xc.get_crc()));
+            if std::env::var_os("PCRC_DBG").is_some() {
+                let me = sim.players.get_nth(p).unwrap();
+                eprintln!("RUST bonus={} crc={:08x} sp={} spp={}", me.battle_plan_bonuses.is_some() as u32, xc.get_crc(), me.skill_points, me.science_purchase_points);
+                if let Some(b) = me.battle_plan_bonuses.clone() {
+                    let mut x2 = XferCrc::new();
+                    x2.open(b"q").unwrap();
+                    let mut v = b.valid_kind_of;
+                    v.xfer(&mut x2).unwrap();
+                    eprintln!(" valid-only crc={:08x}", x2.get_crc());
+                }
+            }
+            let mut save = XferSave::new();
+            save.open(b"p").unwrap();
+            xfer_nested(sim, &mut save, |h, x| player_xfer(h, x, p))?;
+            save.close().unwrap();
+            sim.saved = save.take_bytes();
+            sim.have_save = true;
+            sim.rec(format!("ret psave len={} hash={:08x}", sim.saved.len(), hash_bytes(&sim.saved)));
+        }
+        _ if !sim.have_save => sim.rec("skip".into()),
+        _ => {
+            // what a loading game has not filled yet: the lists a load refuses to find filled, the squads' caches
+            let me = sim.players.get_nth_mut(p).unwrap();
+            if a[1] & 1 != 0 {
+                me.kind_of_production_changes.clear();
+                me.special_power_timers.clear();
+            }
+            if a[1] & 2 != 0 {
+                for sq in me.squads.iter_mut().chain(me.current_selection.iter_mut()) {
+                    sq.objects_cached.clear();
+                }
+            }
+            let mut load = XferLoad::new(sim.saved.clone());
+            load.open(b"p").unwrap();
+            let r = xfer_nested(sim, &mut load, |h, x| player_xfer(h, x, p));
+            let _ = load.close();
+            r?;
+            sim.rec(format!("ret pload pp={}", load.post_process_requests()));
+            player_load_post_process(sim, p)?;
+        }
+    }
+    Ok(())
+}
+// --- end p1w10-sonnet ---
+
 fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<(), PlayerError> {
+    LAST_SUB.store(sub, std::sync::atomic::Ordering::Relaxed);
+    if std::env::var_os("PLAYER_OPS").is_some() {
+        eprintln!("OP line {} player {p} sub {sub} {a:?}", sim.lines.len());
+    }
     let np = sim.np;
     match sub {
         0 => player_update(sim, p)?,
@@ -1674,6 +2527,25 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
                 e.template_name = thing_name(a[2].wrapping_add(k));
                 e.angle = k as f32;
                 e.num_rebuilds = (a[3] as i32).wrapping_add(k as i32) as u32;
+                // --- p1w10-sonnet --- (slice 3): the other fields of the entry, which a save writes
+                e.health = (a[4] % 300) as i32;
+                e.whiner = a[4] & 1 != 0;
+                e.unsellable = a[4] & 2 != 0;
+                e.repairable = a[4] & 4 != 0;
+                e.automatically_build = a[4] & 8 != 0;
+                e.is_initially_built = a[4] & 16 != 0;
+                e.under_construction = a[4] & 32 != 0;
+                e.is_supply_building = a[4] & 64 != 0;
+                e.building_name = format!("B{}", a[5] % 5).into_bytes();
+                e.script = format!("S{}", (a[5] / 8) % 3).into_bytes();
+                e.rally_point_offset = Coord2D { x: (a[6] % 50) as f32, y: k as f32 };
+                e.desired_gatherers = (a[7] % 6) as i32;
+                e.current_gatherers = ((a[7] / 8) % 6) as i32;
+                e.object_timestamp = a[7];
+                for (j, g) in e.resource_gatherers.iter_mut().enumerate() {
+                    *g = (a[5].wrapping_mul(0x0101_0101)).wrapping_add(j as u32 * a[6]) as i32;
+                }
+                // --- end p1w10-sonnet ---
                 list.push(e);
             }
             player_set_build_list(sim, p, list)?;
@@ -1918,7 +2790,7 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
             sim.players.set_local_player(Some((a[0] as usize % np) as PlayerIndex));
         }
         74 => {
-            let s = sci_of(a[1]);
+            let s = ScienceType(sim.sci_key((a[1] % 8) as i32));
             match a[0] % 10 {
                 0 => {
                     let r = player_has_science(sim, p, s)?;
@@ -1991,6 +2863,162 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
             me.units_should_hunt = a[1] != 0;
             me.is_player_dead = a[2] != 0;
         }
+        // --- p1w10-sonnet --- (slice 2)
+        77 => {
+            let o = pick_opt_obj(sim, a[0]);
+            player_becoming_team_member(sim, p, o, a[1] != 0)?;
+        }
+        78 => player_becoming_local_player(sim, p, a[0] != 0)?,
+        79 => {
+            let sp = SP_POOL[(a[1] % 9) as usize];
+            let th = (a[2] as usize % sim.tpls.len()) as TemplateRef;
+            match a[0] % 7 {
+                0 => {
+                    let o = player_find_natural_command_center(sim, p)?;
+                    sim.rec(format!("ret ncc {}", o.unwrap_or(0)));
+                }
+                1 => {
+                    let o = player_find_most_ready_shortcut_special_power_of_type(sim, p, sp)?;
+                    sim.rec(format!("ret mrsp {}", o.unwrap_or(0)));
+                }
+                2 => {
+                    let (o, pct) = player_find_most_ready_shortcut_weapon_for_thing(sim, p, th)?;
+                    sim.rec(format!("ret mrw {} {pct}", o.unwrap_or(0)));
+                }
+                3 => {
+                    let (o, pct) = player_find_most_ready_shortcut_special_power_for_thing(sim, p, th)?;
+                    sim.rec(format!("ret mrst {} {pct}", o.unwrap_or(0)));
+                }
+                4 => {
+                    let o = player_find_any_existing_object_with_thing_template(sim, p, th)?;
+                    sim.rec(format!("ret anyobj {}", o.unwrap_or(0)));
+                }
+                5 => {
+                    let r = player_has_any_shortcut_special_power(sim, p)?;
+                    sim.rec(format!("ret anysp {}", r as u32));
+                }
+                _ => {
+                    let r = player_count_ready_shortcut_special_powers_of_type(sim, p, sp)?;
+                    sim.rec(format!("ret countsp {r}"));
+                }
+            }
+        }
+        80 => {
+            let b = pick_opt_obj(sim, a[0]);
+            let st = pick_obj(sim, a[1]);
+            player_on_structure_construction_complete(sim, p, b, st, a[2] != 0)?;
+        }
+        81 => player_set_units_should_hunt(sim, p, a[0] != 0, (a[1] % 4) as i32)?,
+        82 => player_kill_player(sim, p)?,
+        83 => {
+            let that = (a[0] as usize % np) as PlayerIndex;
+            // a player without a template has no beacon to look up (upstream dereferences NULL): skipped
+            if sim.players.get_nth(that).unwrap().template.is_none() {
+                sim.rec("skip notemplate".into());
+            } else {
+                player_transfer_assets_from_that(sim, p, that)?;
+            }
+        }
+        84 => match a[0] % 4 {
+            0 => player_garrison_all_units(sim, p, (a[1] % 4) as i32)?,
+            1 => player_ungarrison_all_units(sim, p, (a[1] % 4) as i32)?,
+            2 => player_set_units_should_idle_or_resume(sim, p, a[1] != 0)?,
+            _ => player_sell_everything_under_the_sun(sim, p)?,
+        },
+        85 => {
+            let (k, v) = (pick_opt_obj(sim, a[0]), pick_opt_obj(sim, a[1]));
+            player_do_bounty_for_kill(sim, p, k, v)?;
+        }
+        86 => {
+            let n = sim.tpls.len();
+            let t = if a[0] % 3 == 1 && a[1] != 0 { ((a[1] - 1) as usize % n) as TemplateRef } else { (a[1] as usize % n) as TemplateRef };
+            let none = a[0] % 3 == 1 && a[1] == 0;
+            match a[0] % 3 {
+                0 => {
+                    let r = player_can_build_more_of_type(sim, p, t)?;
+                    sim.rec(format!("ret morethan {}", r as u32));
+                }
+                1 => {
+                    let r = player_can_build(sim, p, if none { None } else { Some(t) })?;
+                    sim.rec(format!("ret canbuild {}", r as u32));
+                }
+                _ => {
+                    let r = player_can_afford_build(sim, p, t)?;
+                    sim.rec(format!("ret afford {}", r as u32));
+                }
+            }
+        }
+        87 => {
+            let o = pick_obj(sim, a[0]);
+            player_friend_apply_difficulty_bonuses_for_object(sim, p, o, a[1] != 0)?;
+        }
+        88 => {
+            const SCAL: [f32; 8] = [1.0, 0.5, 2.0, 0.0, 0.7, 1.0, 1.3, 3.0];
+            match a[0] % 6 {
+                0 | 5 => {
+                    let mut b = BattlePlanBonuses {
+                        armor_scalar: SCAL[(a[3] % 8) as usize],
+                        sight_range_scalar: SCAL[((a[3] >> 4) % 8) as usize],
+                        bombardment: (a[4] % 4) as i32,
+                        hold_the_line: ((a[4] >> 4) % 4) as i32,
+                        search_and_destroy: ((a[4] >> 8) % 4) as i32,
+                        valid_kind_of: kind_mask(a[5]),
+                        invalid_kind_of: kind_mask(a[6]),
+                    };
+                    if a[0].is_multiple_of(6) {
+                        let plan = [BattlePlanStatus::None, BattlePlanStatus::Bombardment, BattlePlanStatus::HoldTheLine, BattlePlanStatus::SearchAndDestroy][(a[1] % 4) as usize];
+                        player_change_battle_plan(sim, p, plan, if !a[2].is_multiple_of(2) { 1 } else { -1 }, &mut b)?;
+                    } else {
+                        player_apply_battle_plan_bonuses_for_player_objects(sim, p, &b)?;
+                    }
+                    sim.rec(format!(
+                        "bonus {} {} {} {} {} {} {}",
+                        fb(b.armor_scalar),
+                        fb(b.sight_range_scalar),
+                        b.bombardment,
+                        b.hold_the_line,
+                        b.search_and_destroy,
+                        kind_bits(&b.valid_kind_of),
+                        kind_bits(&b.invalid_kind_of)
+                    ));
+                }
+                1 => {
+                    let o = pick_opt_obj(sim, a[1]);
+                    let r = player_does_object_qualify_for_battle_plan(sim, p, o)?;
+                    sim.rec(format!("ret qualifies {}", r as u32));
+                }
+                2 => {
+                    let plan = [BattlePlanStatus::None, BattlePlanStatus::Bombardment, BattlePlanStatus::HoldTheLine, BattlePlanStatus::SearchAndDestroy][(a[1] % 4) as usize];
+                    let x = player_get_battle_plans_active_specific(sim, p, plan)?;
+                    let y = player_get_num_battle_plans_active(sim, p)?;
+                    sim.rec(format!("ret plans {x} {y}"));
+                }
+                // without bonuses upstream dereferences NULL: the operation is skipped (the program is not excluded)
+                3 | 4 if sim.players.get_nth(p).unwrap().battle_plan_bonuses.is_none() => sim.rec("skip nobonus".into()),
+                3 => {
+                    let o = pick_obj(sim, a[1]);
+                    player_apply_battle_plan_bonuses_for_object(sim, p, o)?;
+                }
+                _ => {
+                    let o = pick_obj(sim, a[1]);
+                    player_remove_battle_plan_bonuses_for_object(sim, p, o)?;
+                }
+            }
+        }
+        89 => {
+            let mask = kind_mask(a[1]);
+            player_set_units_vision_spied(sim, p, a[0] != 0, &mask, (a[2] as usize % np) as PlayerIndex)?;
+        }
+        90 => {
+            let amount = if a[0].is_multiple_of(3) { a[1] } else { a[1] % 4000 };
+            let me = sim.players.get_nth_mut(p).unwrap();
+            let idx = me.money.player_index();
+            me.money = money_of(amount, idx);
+        }
+        91 => upgrade_op(sim, p, a)?,
+        92 => squad_op(sim, p, a)?,
+        93 => xfer_op(sim, p, a)?,
+        // --- end p1w10-sonnet ---
         _ => sim.rec("ret nop".into()),
     }
     Ok(())
@@ -2184,7 +3212,7 @@ fn gen_money(g: &mut Gen, w: &mut W) {
     w.i(g.below(16) as i32);
 }
 
-fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32) {
+fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32, [u32; 3]) {
     let np = 2 + g.below(3);
     let nt = 2 + g.below(5);
     let nscr = g.below(6);
@@ -2242,6 +3270,8 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32) {
             w.i(g.below(id as u32) as i32);
         }
     }
+    // the upgrade templates ("Upg0" ...)
+    w.i(if chance(g, 10) { 0 } else { 1 + g.below(4) } as i32);
     // special power templates
     let nsp = 1 + g.below(3);
     w.i(nsp as i32);
@@ -2302,10 +3332,11 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32) {
         let nk = g.below(4);
         w.i(nk as i32);
         for _ in 0..nk {
-            w.u(g.below(12));
+            // --- p1w10-sonnet --- (slice 2): often one of the kinds the object-facing operations look at
+            w.u(if chance(g, 40) { [0u32, 11, 9, 12, 1][g.below(5) as usize] } else { g.below(15) });
         }
         w.b(chance(g, 25));
-        w.i(g.below(3) as i32);
+        w.i(g.below(2) as i32);
         w.i(g.below(8) as i32);
         let nv = if chance(g, 70) { 1 + g.below(2) } else { 0 };
         w.i(nv as i32);
@@ -2320,6 +3351,7 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32) {
     let no = 3 + g.below(12);
     w.i(no as i32);
     let mut used = BTreeSet::new();
+    let mut mod_counts: Vec<u32> = Vec::new();
     for oi in 0..no {
         let mut id = 1 + g.below(200);
         while !used.insert(id) {
@@ -2331,7 +3363,7 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32) {
         let ns = g.below(3);
         w.i(ns as i32);
         for _ in 0..ns {
-            w.u(g.below(4));
+            w.u(g.below(5));
         }
         w.b(chance(g, 15));
         w.b(chance(g, 10));
@@ -2356,6 +3388,7 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32) {
         w.f(g.uniform(-3.0, 3.0));
         w.u(g.below(4));
         let nm = g.below(4);
+        mod_counts.push(nm);
         w.i(nm as i32);
         for k in 0..nm {
             w.b(chance(g, 70));
@@ -2383,14 +3416,77 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32) {
     // the frame: often a whole number of seconds, which is when Player::update posts its message
     let frame0 = if chance(g, 15) { 0 } else if chance(g, 60) { 30 * g.below(40) } else { g.below(1000) };
     w.u(frame0);
+    let palette = gen_header2(g, w, np, nt, &used.iter().copied().collect::<Vec<_>>(), &mod_counts, frame0);
     // the name keys to look at at the end
     let probes = ["", "Player0", "Player3", "Tpl3", "Tpl9", "teamName", "HANDICAP_BUILDCOST_GENERIC", "HANDICAP_BUILDTIME_BUILDINGS", "TeamOwner", "never-used"];
     w.i(probes.len() as i32);
     for name in probes {
         w.s(name);
     }
-    (np, no, frame0)
+    (np, no, frame0, palette)
 }
+
+// --- p1w10-sonnet --- (slice 2)
+/// The second part of the header: what the object-facing operations read (costs, prerequisites, the objects' flags and
+/// the special power modules' timers).
+fn gen_header2(g: &mut Gen, w: &mut W, np: u32, nt: u32, ids: &[u32], mod_counts: &[u32], frame0: u32) -> [u32; 3] {
+    // the special powers of the program come from a palette of three (so that objects share a type)
+    let palette = [g.below(9), g.below(9), g.below(9)];
+    w.b(chance(g, 60));
+    w.u(g.below(8));
+    for _ in 0..nt {
+        w.i(match g.below(8) {
+            0 => 0,
+            1..=5 => 50 * g.below(40) as i32,
+            6 => -(g.below(300) as i32),
+            // above 2^24 an f32 cannot hold every integer, so the order of the factors shows in the cost
+            _ if chance(g, 50) => 20_000_000 + g.below(200_000_000) as i32,
+            _ => 100_000 + g.below(400_000) as i32,
+        });
+        w.u(g.below(4));
+        w.u(g.below(4));
+        w.u(g.u32());
+        w.u(if chance(g, 50) { 0 } else { 1 + g.below(3) });
+        w.i(if chance(g, 50) { 0 } else { 1 + g.below(3) as i32 });
+        w.u(g.below(4));
+    }
+    for &nm in mod_counts {
+        w.b(chance(g, 70));
+        w.b(chance(g, 40));
+        w.b(chance(g, 70));
+        w.b(chance(g, 30));
+        w.b(chance(g, 30));
+        w.b(chance(g, 80));
+        w.u(if chance(g, 80) { [0u32, 100, 100, 101, 129, 129][g.below(6) as usize] } else { g.below(130) });
+        w.b(chance(g, 70));
+        w.b(chance(g, 25));
+        w.i(if chance(g, 50) { -1 } else { g.below(np) as i32 });
+        w.u(g.u32());
+        w.u(g.u32());
+        w.u(if chance(g, 50) { 0 } else if chance(g, 70) { ids[g.below(ids.len() as u32) as usize] } else { 1 + g.below(200) });
+        w.f(g.uniform(50.0, 500.0));
+        w.f(g.uniform(0.0, 300.0));
+        w.u(if chance(g, 50) { 0 } else { 1 << g.below(np) });
+        w.u(g.u32());
+        w.i(if chance(g, 50) { -1 } else { g.below(4) as i32 });
+        for _ in 0..nm {
+            w.u(if chance(g, 85) { palette[g.below(3) as usize] } else { g.below(9) });
+            w.b(chance(g, 20));
+            w.u(match g.below(8) {
+                0 => 0,
+                1 | 2 => frame0.saturating_sub(1),
+                3 | 4 => frame0,
+                5 => frame0 + 1,
+                6 => frame0 + 2,
+                _ => g.below(2000),
+            });
+            w.u(if chance(g, 70) { [0u32, 50, 99, 100, 101, 129][g.below(6) as usize] } else { g.below(130) });
+            w.b(chance(g, 40));
+        }
+    }
+    palette
+}
+// --- end p1w10-sonnet ---
 
 /// A real from the pools of the operations, as bits.
 fn gen_bits(g: &mut Gen) -> u32 {
@@ -2410,13 +3506,14 @@ fn gen_pos(g: &mut Gen) -> [f32; 3] {
 fn gen_mask(g: &mut Gen) -> u32 {
     match g.below(10) {
         0..=3 => 0,
-        4..=7 => 1 << g.below(12),
-        _ => (1 << g.below(12)) | (1 << g.below(12)),
+        4..=7 => 1 << g.below(15),
+        _ => (1 << g.below(15)) | (1 << g.below(15)),
     }
 }
 
 /// The eight words of a `Player` operation.
-fn gen_player_args(g: &mut Gen, sub: u32, frame: u32) -> [u32; 8] {
+fn gen_player_args(g: &mut Gen, sub: u32, st: &GenState) -> [u32; 8] {
+    let frame = st.frame;
     let mut a = [0u32; 8];
     for x in a.iter_mut() {
         *x = if chance(g, 20) { 0 } else { g.below(6) };
@@ -2432,6 +3529,10 @@ fn gen_player_args(g: &mut Gen, sub: u32, frame: u32) -> [u32; 8] {
             a[1] = g.below(200);
             a[2] = g.below(16);
             a[3] = g.below(4);
+            // --- p1w10-sonnet --- (slice 3): the other fields of the entries
+            for x in a[4..].iter_mut() {
+                *x = g.u32();
+            }
         }
         12 => {
             a[0] = g.below(16);
@@ -2462,7 +3563,7 @@ fn gen_player_args(g: &mut Gen, sub: u32, frame: u32) -> [u32; 8] {
         }
         70 => {
             a[1] = gen_mask(g);
-            a[2] = [0.25f32, -0.5, 0.25, 1.0][g.below(4) as usize].to_bits();
+            a[2] = [0.25f32, -0.5, 0.25, 1.0, 0.1, -0.3, 0.7, 0.15][g.below(8) as usize].to_bits();
         }
         35 => {
             a[0] = g.below(5);
@@ -2496,6 +3597,58 @@ fn gen_player_args(g: &mut Gen, sub: u32, frame: u32) -> [u32; 8] {
                 _ => g.below(16),
             };
         }
+        // --- p1w10-sonnet --- (slice 2)
+        79 => {
+            a[0] = [0u32, 1, 1, 1, 2, 3, 4, 5, 6, 6][g.below(10) as usize];
+            a[1] = if chance(g, 75) { st.palette[g.below(3) as usize] } else { g.below(9) };
+            a[2] = g.below(8);
+        }
+        84 => a[0] = g.below(4),
+        86 => {
+            a[0] = g.below(3);
+            a[1] = g.below(8);
+        }
+        88 => {
+            a[0] = g.below(6);
+            a[1] = g.below(8);
+            a[2] = g.below(2);
+            a[3] = g.u32();
+            a[4] = g.u32();
+            // a valid mask of many kinds (so that objects qualify), an invalid one of few
+            a[5] = (0..15).fold(0u32, |m, k| if chance(g, 45) { m | (1 << k) } else { m });
+            a[6] = if chance(g, 55) { 0 } else { gen_mask(g) };
+        }
+        89 => a[1] = gen_mask(g),
+        90 => {
+            a[0] = g.below(3);
+            a[1] = g.below(5000);
+        }
+        91 => {
+            for x in a.iter_mut() {
+                *x = g.u32();
+            }
+            a[0] = g.below(8);
+        }
+        92 => {
+            for x in a.iter_mut() {
+                *x = g.u32();
+            }
+            a[0] = g.below(12);
+            a[1] = if chance(g, 85) { 1 + g.below(10) } else { g.below(13) };
+            // most squad operations come as a fill (a group, a message with objects) and a use of what was filled
+            a[2] = if chance(g, 50) { 1 + g.below(3) + 4 * g.below(2) } else { g.u32() };
+            if chance(g, 40) {
+                a[0] = [0u32, 9, 8, 4, 2, 1][g.below(6) as usize];
+            }
+        }
+        93 => {
+            for x in a.iter_mut() {
+                *x = g.u32();
+            }
+            a[0] = if chance(g, 35) { 0 } else { 1 + g.below(2) };
+            a[1] = if chance(g, 70) { 3 } else { g.below(4) };
+        }
+        // --- end p1w10-sonnet ---
         _ => {}
     }
     a
@@ -2503,6 +3656,21 @@ fn gen_player_args(g: &mut Gen, sub: u32, frame: u32) -> [u32; 8] {
 
 /// The operations that make the world a Player has something to do in: a team of the player, objects on it.
 fn gen_setup(g: &mut Gen, w: &mut W, n: &mut u32, np: u32) {
+    // --- p1w10-sonnet --- (slice 2): most players start with a template (`init`), as in a game
+    for k in 0..np {
+        if chance(g, 85) {
+            w.u(6);
+            w.u(k);
+            w.u(13);
+            w.u(1 + g.below(8));
+            for _ in 0..7 {
+                w.u(0);
+            }
+            *n += 1;
+        }
+    }
+    // --- end p1w10-sonnet ---
+    let mut made = 0u32;
     for k in 0..np {
         if chance(g, 70) {
             // a team for a player, named for its default team
@@ -2523,6 +3691,15 @@ fn gen_setup(g: &mut Gen, w: &mut W, n: &mut u32, np: u32) {
             w.u(2);
             w.u(100 + k);
             *n += 1;
+            // --- p1w10-sonnet --- (slice 2): a few objects on the team, so that the player has objects to search
+            made += 1;
+            for _ in 0..(4 + g.below(5)) {
+                w.u(4);
+                w.u(g.below(32));
+                w.u(made);
+                *n += 1;
+            }
+            // --- end p1w10-sonnet ---
         }
     }
     for k in 0..(1 + g.below(3)) {
@@ -2544,6 +3721,14 @@ struct GenState {
     /// The last `Player` operation: the player, the sub and the words (a repeat with some words re-rolled makes pairs of
     /// operations on the same science, kind mask or team).
     last: Option<(u32, u32, [u32; 8])>,
+    // --- p1w10-sonnet --- (slice 2)
+    /// The three special powers the program's objects share.
+    palette: [u32; 3],
+    /// The battle plans the generator has switched on (`PLANSTATUS_*` index), so that it can switch them off again.
+    plans: [[i32; 4]; 16],
+    /// The number of players.
+    np: u32,
+    // --- end p1w10-sonnet ---
 }
 
 fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
@@ -2552,7 +3737,7 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
     match r {
         0..=5 => {
             w.u(0);
-            let v = [1u32, 29, 30, 31, 60, 300][g.below(6) as usize];
+            let v = [1u32, 1, 1, 2, 29, 30, 31, 60, 300][g.below(9) as usize];
             st.frame = st.frame.wrapping_add(v);
             w.u(v);
         }
@@ -2579,7 +3764,7 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
         27..=34 => {
             w.u(5);
             w.u(g.below(32));
-            let sub = g.below(9);
+            let sub = g.below(15);
             w.u(sub);
             let mut a = [0u32; 8];
             for x in a.iter_mut() {
@@ -2595,6 +3780,24 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
                 5 => a[0] = [0u32, 1, 2, 4, 8, 15][g.below(6) as usize],
                 6 => a[0] = g.uniform(-3.0, 3.0).to_bits(),
                 7 => a[0] = g.below(4),
+                // --- p1w10-sonnet --- (slice 2)
+                2 => a[0] = g.below(5),
+                11 => {
+                    a[0] = g.below(4);
+                    a[1] = if chance(g, 50) { 0 } else { st.frame.saturating_sub(1) + g.below(3) };
+                    a[2] = g.below(130);
+                }
+                12 => a[1] = g.below(130),
+                13 => {
+                    a[0] = g.below(4);
+                    a[1] = g.u32();
+                    a[3] = g.below(4);
+                }
+                14 => {
+                    a[0] = g.uniform(1.0, 500.0).to_bits();
+                    a[1] = g.below(5);
+                }
+                // --- end p1w10-sonnet ---
                 _ => {}
             }
             for x in a {
@@ -2604,7 +3807,7 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
         _ => {
             w.u(6);
             let (pk, sub, a) = if let (true, Some((pk, sub, last))) = (chance(g, 25), st.last) {
-                let fresh = gen_player_args(g, sub, st.frame);
+                let fresh = gen_player_args(g, sub, st);
                 let mut a = last;
                 for k in 0..8 {
                     if chance(g, 40) {
@@ -2614,9 +3817,85 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
                 (pk, sub, a)
             } else {
                 let pk = g.below(8);
+                // --- p1w10-sonnet --- directed pairs: a special power ready exactly now, then the search for it; a squad queried, then rebuilt
+                if chance(g, 5) {
+                    let ok = g.below(32);
+                    let mut oa = [0u32; 8];
+                    oa[0] = g.below(4);
+                    oa[1] = st.frame;
+                    oa[2] = g.below(130);
+                    w.u(5);
+                    w.u(ok);
+                    w.u(11);
+                    for x in oa {
+                        w.u(x);
+                    }
+                    *n += 1;
+                    let mut pa = gen_player_args(g, 79, st);
+                    pa[0] = [1u32, 3, 0, 6][g.below(4) as usize];
+                    st.last = Some((pk, 79, pa));
+                    w.u(6);
+                    w.u(pk);
+                    w.u(79);
+                    for x in pa {
+                        w.u(x);
+                    }
+                    return;
+                }
+                if chance(g, 4) {
+                    let mut qa = gen_player_args(g, 92, st);
+                    qa[0] = 10;
+                    qa[2] &= !4;
+                    let hk = qa[1];
+                    w.u(6);
+                    w.u(pk);
+                    w.u(92);
+                    for x in qa {
+                        w.u(x);
+                    }
+                    *n += 1;
+                    let mut ca = gen_player_args(g, 92, st);
+                    ca[0] = 0;
+                    ca[1] = hk;
+                    st.last = Some((pk, 92, ca));
+                    w.u(6);
+                    w.u(pk);
+                    w.u(92);
+                    for x in ca {
+                        w.u(x);
+                    }
+                    return;
+                }
+                // --- end p1w10-sonnet ---
                 // the subs: all, with a bias to the loops over objects and the sciences
-                let sub = if chance(g, 30) { [0u32, 33, 34, 35, 36, 37, 38, 44, 68, 74, 75, 3, 69, 69, 62, 63, 64, 65, 70, 50, 14, 13, 2, 5, 6, 8][g.below(26) as usize] } else { g.below(77) };
-                let a = gen_player_args(g, sub, st.frame);
+                let sub = if chance(g, 14) { [92u32, 92, 92, 92, 92, 91, 93, 93][g.below(8) as usize] } else if chance(g, 20) { [0u32, 33, 34, 35, 36, 37, 38, 44, 68, 74, 75, 3, 69, 69, 62, 63, 64, 65, 70, 50, 14, 13, 2, 5, 6, 8, 76, 85, 85, 79, 79, 79, 79, 79, 79][g.below(35) as usize] } else if chance(g, 45) { 77 + g.below(17) } else { g.below(94) };
+                let mut a = gen_player_args(g, sub, st);
+                if sub == 88 && chance(g, 50) {
+                    a[0] = 0;
+                }
+                if sub == 88 && a[0].is_multiple_of(6) {
+                    // switch a plan off again that was switched on, half of the time
+                    let on: Vec<u32> = (1..4u32).filter(|k| st.plans[(pk % st.np) as usize][*k as usize] > 0).collect();
+                    let neg: Vec<u32> = (1..4u32).filter(|k| st.plans[(pk % st.np) as usize][*k as usize] < 0).collect();
+                    if !neg.is_empty() && chance(g, 70) {
+                        // a plan that was switched off without being on: switched on, back to zero
+                        a[1] = neg[g.below(neg.len() as u32) as usize];
+                        a[2] = 1;
+                    } else if chance(g, 15) {
+                        // a plan switched off that is not on, or on twice
+                        a[1] = 1 + g.below(3);
+                        a[2] = g.below(2);
+                    } else if !on.is_empty() && chance(g, 55) {
+                        let k = on[g.below(on.len() as u32) as usize];
+                        a[1] = k;
+                        a[2] = 0; // delta -1
+                    } else {
+                        a[1] = 1 + g.below(3);
+                        a[2] = 1; // delta +1
+                    }
+                    let delta = if !a[2].is_multiple_of(2) { 1 } else { -1 };
+                    st.plans[(pk % st.np) as usize][(a[1] % 4) as usize] += delta;
+                }
                 (pk, sub, a)
             };
             st.last = Some((pk, sub, a));
@@ -2629,11 +3908,27 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
     }
 }
 
-fn gen_ops(g: &mut Gen, w: &mut W, np: u32, frame0: u32) {
+fn gen_ops(g: &mut Gen, w: &mut W, np: u32, frame0: u32, palette: [u32; 3]) {
     let mut ops = W::default();
     let mut n = 0u32;
     gen_setup(g, &mut ops, &mut n, np);
-    let mut st = GenState { frame: frame0, last: None };
+    let mut st = GenState { frame: frame0, last: None, palette, plans: [[0; 4]; 16], np };
+    // --- p1w10-sonnet --- (slice 2): most programs start with a battle plan on for a player or two (the bonuses it hands out
+    // are what later operations remove, apply to new team members and read back)
+    for pk in 0..np {
+        if chance(g, 50) {
+            let plan = 1 + g.below(3);
+            ops.u(6);
+            ops.u(pk);
+            ops.u(88);
+            for x in [0, plan, 1, g.u32(), g.u32(), (0..15).fold(0u32, |m, k| if chance(g, 45) { m | (1 << k) } else { m }), if chance(g, 55) { 0 } else { gen_mask(g) }, 0] {
+                ops.u(x);
+            }
+            n += 1;
+            st.plans[pk as usize][plan as usize] += 1;
+        }
+    }
+    // --- end p1w10-sonnet ---
     let target = n + 25 + g.below(60);
     while n < target {
         gen_one(g, &mut ops, &mut n, &mut st);
@@ -2645,8 +3940,8 @@ fn gen_ops(g: &mut Gen, w: &mut W, np: u32, frame0: u32) {
 fn gen_program(seed: u64) -> Vec<u32> {
     let mut g = Gen::new(seed);
     let mut w = W::default();
-    let (np, _no, frame0) = gen_header(&mut g, &mut w);
-    gen_ops(&mut g, &mut w, np, frame0);
+    let (np, _no, frame0, palette) = gen_header(&mut g, &mut w);
+    gen_ops(&mut g, &mut w, np, frame0, palette);
     w.0
 }
 
@@ -2655,10 +3950,11 @@ fn gen_program(seed: u64) -> Vec<u32> {
 // ---------------------------------------------------------------------------------------------------------------------
 
 fn cpp_run(words: &[u32]) -> Vec<String> {
+    let path = std::ffi::CString::new(format!("{}/player_{}.bin", std::env::temp_dir().display(), std::process::id())).unwrap();
     let mut cap = 1 << 20;
     loop {
         let mut buf = vec![0u8; cap];
-        let n = unsafe { cpp::ref_player_run(words.as_ptr(), words.len() as i32, buf.as_mut_ptr() as *mut std::os::raw::c_char, cap as i32) } as usize;
+        let n = unsafe { cpp::ref_player_run(words.as_ptr(), words.len() as i32, path.as_ptr(), buf.as_mut_ptr() as *mut std::os::raw::c_char, cap as i32) } as usize;
         if n <= cap {
             buf.truncate(n);
             return String::from_utf8_lossy(&buf).lines().map(str::to_owned).collect();
@@ -2683,7 +3979,16 @@ fn player_matches_upstream() {
         "ret objects", "ret closest", "ret anybuildings", "ret anyunits", "ret anyobjects", "ret buildfacility", "ret local", "ret prod ", "ret allowed", "ret zone ", "ret radar ", "ret radarok",
         "ret spready", "ret kopc", "ret attackedby", "ret status", "ret hasscience", "ret purchase", "ret grant", "ret capable", "ret prereqs", "ret avail", "ret setrank", "ret addskill",
         "ret killskill", "audio ", "ui.dirty", "ui.spp", "ui.rank", "eva ", "msg.append", "script.science", "script.objchange", "sp.created", "sp.ready", "disable ", "enable ", "script-status",
-        "ai.new", "ai.delete", "ai.update", "ai.buildteam", "score.", "academy.", "setteam ", "kill ", "damage ", "heal ", "iter ", "skip", "threw badarg", "D team ",
+        "ai.new", "ai.delete", "ai.update", "ai.buildteam",
+        // --- p1w10-sonnet --- (slice 2)
+        "ret ncc", "ret mrsp", "ret mrw", "ret mrst", "ret anyobj ", "ret anysp", "ret countsp", "ret morethan", "ret canbuild", "ret afford", "ret qualifies", "ret plans", "bonus ", "skip nobonus",
+        "skip notemplate", "adjustpower", "capturebonus", "ui.idle+", "ui.idle-", "leavegroup", "ai.hunt", "ai.idle", "ai.enter", "ai.evacuate", "ai.move", "ai.force", "path.remove", "path.add",
+        "partition.valuable", "recalc", "canenter", "sell ", "health ", "armor ", "wb+", "wb-", "vision ", "shroud ", "spied", "radar+", "radar-", "indicator", "teamcolor", "ui.scheme.player",
+        "ui.scheme.template", "ui.float", "D obj2", "D player3 ",
+        // --- p1w10-sonnet --- (slice 2b and 3)
+        "ret addupg", "ret findupg", "ret upgcomplete", "ret upgmask", "ret upginprod", "upgrademods", "ret hotkey", "ret squadno", "ret squadall", "ret squadlive", "ret squadsize", "group.add", "skip nosel",
+        "skip nosquad", "skip noupgrades", "ret pcrc", "ret psave", "ret pload", "threw invaliddata", "threw xfer", "D player4 ",
+        // --- end p1w10-sonnet --- "score.", "academy.", "setteam ", "kill ", "damage ", "heal ", "iter ", "skip", "threw badarg", "D team ",
     ];
     let from: u64 = std::env::var("PLAYER_FROM").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
     for case in from..from + cases() {
@@ -2700,6 +4005,15 @@ fn player_matches_upstream() {
         let cpp_lines = cpp_run(&words);
         lines += rust.len() as u64;
         for l in &rust {
+            // --- p1w10-sonnet --- (slice 2): how often a search found something, a build was allowed, a plan was on
+            for m in ["ret ncc ", "ret mrsp ", "ret mrw ", "ret mrst ", "ret anyobj ", "ret anysp ", "ret countsp ", "ret morethan ", "ret canbuild ", "ret afford ", "ret qualifies "] {
+                if let Some(v) = l.strip_prefix(m) {
+                    if !v.starts_with('0') {
+                        *counts.entry(format!("{m}(non-zero)")).or_insert(0) += 1;
+                    }
+                }
+            }
+            // --- end p1w10-sonnet ---
             for m in markers {
                 if l.starts_with(m) {
                     *counts.entry(m.to_string()).or_insert(0) += 1;
@@ -2709,6 +4023,20 @@ fn player_matches_upstream() {
         check.eq(rust.len(), cpp_lines.len(), || format!("program {case}: line count"));
         for (i, (a, b)) in rust.iter().zip(cpp_lines.iter()).enumerate() {
             check.eq(a.as_str(), b.as_str(), || format!("program {case} line {i}"));
+        }
+        // `PLAYER_SHOW=1`: the lines before the first difference of a program (what the operations did), for debugging
+        if std::env::var_os("PLAYER_SHOW").is_some() {
+            if let Some(i) = rust.iter().zip(cpp_lines.iter()).position(|(a, b)| a != b) {
+                eprintln!("--- program {case}, first difference at line {i}");
+                for k in i.saturating_sub(40)..=i {
+                    let (a, b) = (&rust[k], &cpp_lines[k]);
+                    if a == b {
+                        eprintln!("  {k}: {a}");
+                    } else {
+                        eprintln!("  {k}: RUST {a}\n  {k}: C++  {b}");
+                    }
+                }
+            }
         }
     }
     println!("RESULT programs {programs}, excluded (upstream undefined) {excluded}, lines compared {lines}");
