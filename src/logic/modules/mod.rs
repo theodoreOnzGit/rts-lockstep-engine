@@ -1,88 +1,51 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Layer-9 concrete modules, one file each (`Object/Upgrade/` first).
+//
+// Translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
+// commit 0a05454d8574207440a5fb15241b98ad0b435590): the concrete object
+// modules under GeneralsMD/Code/GameEngine/Source/GameLogic/Object/ (layer 9);
+// each file names its own upstream source.
+//
+// Licensed under the GNU General Public License version 3 (GPL-3.0-only for
+// this translation), with the additional terms in NOTICE.md.
+// Translated to Rust and modified; not the original program.
+
+//! Layer 9: the concrete object modules (`Object/Behavior`, `Body`,
+//! `Collide`, `Contain`, `Create`, `Damage`, `Destroy`, `Die`, `Helper`,
+//! `SpecialPower`, `Update`, `Upgrade`).
 //!
-//! Upstream's `UpgradeModuleData` subclasses add fields to the mux data; the
-//! five mux fields (`TriggeredBy`, `ConflictsWith`, `RemovesUpgrades`,
-//! `FXListUpgrade`, `RequiresAllTriggers`) are parsed here by
-//! [`upgrade_mux_field_table!`] into a table over the subclass, because the
-//! layer-5 parse functions are private to `upgrade_module.rs`. The bodies
-//! are copies of those functions (same INI calls, same order).
+//! [`command_set_upgrade`] is the lead's worked example: its module docs list
+//! every piece a translated module adds, and where. [`new_module`] is where
+//! each one is made for an object: one arm per translated class.
 
-use crate::common::ini::{Ini, IniResult, UserData};
-use crate::logic::module::upgrade_module::UpgradeMuxData;
+use crate::common::ini::IniResult;
+use crate::common::module::{ModuleDataKind, ObjectId};
+use crate::logic::world::object_create::NewModule;
+use crate::logic::world::update_body::UpdateBody;
 
-/// `TriggeredBy`: `parseAsciiStringVector` into `m_activationUpgradeNames`.
-pub(crate) fn parse_triggered_by(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
-    ini.parse_ascii_string_vector(&mut d.activation_upgrade_names)
-}
+pub mod upgrade_body;
 
-/// `ConflictsWith`: into `m_conflictingUpgradeNames`.
-pub(crate) fn parse_conflicts_with(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
-    ini.parse_ascii_string_vector(&mut d.conflicting_upgrade_names)
-}
+// --- p1l9-example ---
+pub mod command_set_upgrade;
+// --- end p1l9-example ---
 
-/// `RemovesUpgrades`: into `m_removalUpgradeNames`.
-pub(crate) fn parse_removes_upgrades(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
-    ini.parse_ascii_string_vector(&mut d.removal_upgrade_names)
-}
-
-/// `FXListUpgrade`: `INI::parseFXList`, as far as the token goes.
-pub(crate) fn parse_fx_list_upgrade(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
-    let token = ini.get_next_token(None)?;
-    d.fx_list_upgrade = if token.eq_ignore_ascii_case(b"None") { None } else { Some(token) };
-    Ok(())
-}
-
-/// `RequiresAllTriggers`: a bool.
-pub(crate) fn parse_requires_all_triggers(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
-    d.requires_all_triggers = ini.parse_bool()?;
-    Ok(())
-}
-
-/// The five mux fields plus the terminator, over a type `$t` whose
-/// `UpgradeModuleData` base is the field `$base` (an `Arc<UpgradeModuleData>`
-/// or the data itself: anything with `mux_data_mut()` after `Deref`).
-#[macro_export]
-macro_rules! upgrade_mux_field_table {
-    ($t:ty, $base:ident) => {
-        [
-            $crate::common::ini::FieldParse::new(
-                "TriggeredBy",
-                |i, d: &mut $t, u| $crate::logic::modules::parse_triggered_by(i, &mut d.$base.mux_data_mut(), u),
-                $crate::common::ini::UserData::None,
-            ),
-            $crate::common::ini::FieldParse::new(
-                "ConflictsWith",
-                |i, d: &mut $t, u| $crate::logic::modules::parse_conflicts_with(i, &mut d.$base.mux_data_mut(), u),
-                $crate::common::ini::UserData::None,
-            ),
-            $crate::common::ini::FieldParse::new(
-                "RemovesUpgrades",
-                |i, d: &mut $t, u| $crate::logic::modules::parse_removes_upgrades(i, &mut d.$base.mux_data_mut(), u),
-                $crate::common::ini::UserData::None,
-            ),
-            $crate::common::ini::FieldParse::new(
-                "FXListUpgrade",
-                |i, d: &mut $t, u| $crate::logic::modules::parse_fx_list_upgrade(i, &mut d.$base.mux_data_mut(), u),
-                $crate::common::ini::UserData::None,
-            ),
-            $crate::common::ini::FieldParse::new(
-                "RequiresAllTriggers",
-                |i, d: &mut $t, u| $crate::logic::modules::parse_requires_all_triggers(i, &mut d.$base.mux_data_mut(), u),
-                $crate::common::ini::UserData::None,
-            ),
-            $crate::common::ini::FieldParse::end(),
-        ]
+/// The module for one module line of an object's template: the concrete
+/// class `data` belongs to, made for `object` (upstream:
+/// `TheModuleFactory->newModule(thing, name, data, type)`), with its tag.
+/// `None` for data of a class that is not translated.
+pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKind) -> Option<IniResult<NewModule>> {
+    let made = |interfaces: i32, body: IniResult<UpdateBody>| -> IniResult<NewModule> {
+        let mut m = NewModule::plain(name, tag);
+        m.interfaces = interfaces;
+        m.body = Some(body?);
+        Ok(m)
     };
+    match data {
+        // --- p1l9-example ---
+        ModuleDataKind::CommandSetUpgrade(d) => Some(made(
+            command_set_upgrade::CommandSetUpgrade::get_interface_mask(),
+            command_set_upgrade::CommandSetUpgrade::new(object, Some(d.clone())).map(UpdateBody::CommandSetUpgrade),
+        )),
+        // --- end p1l9-example ---
+        _ => None,
+    }
 }
-
-// --- p1l9-upgrades ---
-pub mod weapon_set_upgrade;
-pub mod weapon_bonus_upgrade;
-pub mod armor_upgrade;
-pub mod model_condition_upgrade;
-pub mod experience_scalar_upgrade;
-pub mod active_shroud_upgrade;
-pub mod max_health_upgrade;
-pub mod grant_science_upgrade;
-// --- end p1l9-upgrades ---

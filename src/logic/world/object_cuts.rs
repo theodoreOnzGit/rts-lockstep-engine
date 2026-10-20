@@ -251,6 +251,12 @@ pub struct ObjectCuts {
     pub reentrant_delivered: u32,
     /// The modules whose `module_call` is running, outermost first.
     pub module_stack: Vec<ModuleHandle>,
+    // --- p1l9-example ---
+    /// What upstream throws from inside the game loop and nothing catches (an
+    /// upgrade module naming an upgrade that does not exist): recorded with the
+    /// module instead of crashing. See `logic::modules::upgrade_body`.
+    pub module_errors: Vec<(ModuleHandle, crate::common::ini::IniError)>,
+    // --- end p1l9-example ---
     /// The values of the global stores.
     pub globals: ObjectGlobals,
     /// `ThePlayerList->getNeutralPlayer()->getDefaultTeam()`.
@@ -328,6 +334,9 @@ impl Default for ObjectCuts {
             reentrant_delivered: 0,
             can_transfer_supplies: BTreeSet::new(),
             module_stack: Vec::new(),
+            // --- p1l9-example ---
+            module_errors: Vec::new(),
+            // --- end p1l9-example ---
             globals: ObjectGlobals::default(),
             neutral_default_team: 0,
             team_players: BTreeMap::new(),

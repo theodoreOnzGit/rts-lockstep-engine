@@ -55,10 +55,15 @@
 //! # Translated or not
 //!
 //! Whether a name has a Rust module is [`is_translated`]: a `match` over the
-//! names whose class is a variant of [`Module`]. **None yet**: this layer
+//! names whose class is a variant of [`Module`]. ~~**None yet**: this layer
 //! holds only the bases, and the concrete modules arrive in layer 9, each
 //! adding its arm there (its `friend_newModuleInstance`, its data constructor
-//! and `getInterfaceMask()`). Looking up a name that is registered but not
+//! and `getInterfaceMask()`).~~ **CORRECTED 2026-10-20**: layer 9 has begun.
+//! A translated class's arm records its data constructor and
+//! `getInterfaceMask()`; its `NewModuleProc` makes the **base** class the
+//! factory's accessors answer for (an upgrade module's `UpgradeModule`), and
+//! the concrete module, with its behaviour, is made for an object by
+//! `logic::modules::new_module`. `CommandSetUpgrade` is the first. Looking up a name that is registered but not
 //! translated is [`ModuleFactoryError::NotTranslated`]: an **error at the
 //! time an object template asks for it, never a silent skip** (upstream
 //! cannot fail there: every class exists). So until a name's arm exists, an
@@ -353,13 +358,36 @@ pub const NUM_REGISTRATIONS: usize = 205;
 
 /// The module a name makes, once its class is a variant of [`Module`]: the
 /// two constructor functions and `getInterfaceMask()` that `addModule`
-/// records. **No concrete module is translated yet** (layer 9 adds an arm per
-/// name).
-#[allow(clippy::match_single_binding)] // one arm per translated class arrives with layer 9
+/// records. ~~**No concrete module is translated yet**~~ **CORRECTED
+/// 2026-10-20**: `CommandSetUpgrade` (the lead's layer-9 example) is the
+/// first; layer 9 adds an arm per name.
 pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
     match name {
+        // --- p1l9-example ---
+        "CommandSetUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::command_set_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::command_set_upgrade::CommandSetUpgrade::get_interface_mask()),
+        }),
+        // --- end p1l9-example ---
         _ => None,
     }
+}
+
+/// The `NewModuleProc` of a translated upgrade module: its `UpgradeModule`
+/// base, made from the `UpgradeModuleData` base of its data. The factory
+/// answers what the base answers (the interface accessors); the concrete
+/// module, with its behaviour, is made for an object by
+/// `logic::modules::new_module`.
+fn new_upgrade_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module, IniError> {
+    let base = match data {
+        Some(ModuleDataKind::Upgrade(d)) => Some(d),
+        // --- p1l9-example ---
+        Some(ModuleDataKind::CommandSetUpgrade(d)) => Some(d.upgrade.clone()),
+        // --- end p1l9-example ---
+        _ => None,
+    };
+    Ok(Module::Upgrade(crate::logic::module::upgrade_module::UpgradeModule::new(object, base)?))
 }
 
 /// Whether the class a registered name stands for is translated.
@@ -673,9 +701,19 @@ mod tests {
         assert!(REGISTRATIONS.iter().all(|r| r.module_type != ModuleType::Draw));
     }
 
+    // ~~no_concrete_module_is_translated_yet~~ CORRECTED 2026-10-20: layer 9 has begun.
     #[test]
-    fn no_concrete_module_is_translated_yet() {
-        assert!(REGISTRATIONS.iter().all(|r| !is_translated(r.name)));
+    fn only_the_translated_modules_are_translated() {
+        // --- p1l9-example ---
+        let translated: Vec<&str> = REGISTRATIONS.iter().map(|r| r.name).filter(|n| is_translated(n)).collect();
+        assert!(translated.contains(&"CommandSetUpgrade"));
+        // every translated name is registered, and has all three parts
+        for n in &translated {
+            let t = translated_module(n).unwrap();
+            assert!(t.create_proc.is_some() && t.create_data_proc.is_some() && t.which_interfaces.is_some(), "{n}");
+        }
+        assert!(!is_translated("SlowDeathBehavior"));
+        // --- end p1l9-example ---
         assert!(!ModuleTemplate::UNTRANSLATED.is_translated());
     }
 

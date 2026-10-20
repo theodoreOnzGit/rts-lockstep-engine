@@ -57,7 +57,11 @@ pub enum UpdateBody {
     /// for the dispatch of `Object`. It has no update behaviour.
     ModuleProbe(ProbeModule),
     // --- end p1w6-object ---
-    // New variants go here, one per translated update module.
+    // --- p1l9-example ---
+    /// `CommandSetUpgrade` (the lead's layer-9 example).
+    CommandSetUpgrade(crate::logic::modules::command_set_upgrade::CommandSetUpgrade),
+    // --- end p1l9-example ---
+    // New variants go here, one per translated module.
 }
 
 impl UpdateBody {
@@ -68,6 +72,10 @@ impl UpdateBody {
             // --- p1w6-object ---
             UpdateBody::ModuleProbe(_) => UPDATE_SLEEP_FOREVER,
             // --- end p1w6-object ---
+            // --- p1l9-example ---
+            // not an update module: the scheduler never holds it
+            UpdateBody::CommandSetUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            // --- end p1l9-example ---
         }
     }
 
@@ -79,18 +87,68 @@ impl UpdateBody {
         match self {
             UpdateBody::Probe(_) => ModuleReply::Unhandled,
             UpdateBody::ModuleProbe(m) => m.handle(world, me, call),
+            // --- p1l9-example ---
+            UpdateBody::CommandSetUpgrade(m) => m.module_call(world, me, call),
+            // --- end p1l9-example ---
         }
     }
     // --- end p1w6-object ---
 }
 
 // --- p1w6-object ---
+// --- p1l9-example ---
+impl UpdateBody {
+    /// Whether the concrete module saves its whole base chain itself, in
+    /// upstream's order (every translated layer-9 module), rather than the
+    /// slot saving the bases first (the probes). Upstream's
+    /// `X::xfer` writes `X`'s version, then calls `UpdateModule::xfer` (the
+    /// scheduling half) or `UpgradeModule::xfer`, then `X`'s fields; a slot
+    /// that wrote the scheduling half before the module would put the bytes
+    /// in the wrong order.
+    pub fn owns_base_chain(&self) -> bool {
+        !matches!(self, UpdateBody::Probe(_) | UpdateBody::ModuleProbe(_))
+    }
+
+    /// The whole chain's `xfer` for a module that [owns it](UpdateBody::owns_base_chain):
+    /// `update` is the scheduling half (`UpdateModule`) for an update module,
+    /// `None` for any other.
+    pub fn xfer_chain(&mut self, update: Option<&mut UpdateModule>, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let _ = &update; // used by the update modules' arms
+        match self {
+            UpdateBody::CommandSetUpgrade(m) => m.xfer(xfer),
+            _ => self.xfer(xfer),
+        }
+    }
+
+    /// The whole chain's `crc` (see [`UpdateBody::xfer_chain`]).
+    pub fn crc_chain(&mut self, update: Option<&mut UpdateModule>, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let _ = &update;
+        match self {
+            UpdateBody::CommandSetUpgrade(m) => m.crc(xfer),
+            _ => self.crc(xfer),
+        }
+    }
+
+    /// The whole chain's `loadPostProcess` (see [`UpdateBody::xfer_chain`]).
+    pub fn load_post_process_chain(&mut self, update: Option<&mut UpdateModule>) {
+        let _ = &update;
+        match self {
+            UpdateBody::CommandSetUpgrade(m) => m.load_post_process(),
+            _ => self.load_post_process(),
+        }
+    }
+}
+// --- end p1l9-example ---
+
 impl Snapshot for UpdateBody {
     /// The `crc` of the concrete module (its own state; the bases are the slot's).
     fn crc(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
         match self {
             UpdateBody::Probe(p) => p.crc(xfer),
             UpdateBody::ModuleProbe(m) => m.crc(xfer),
+            // --- p1l9-example ---
+            UpdateBody::CommandSetUpgrade(m) => m.crc(xfer),
+            // --- end p1l9-example ---
         }
     }
     /// The `xfer` of the concrete module.
@@ -98,6 +156,9 @@ impl Snapshot for UpdateBody {
         match self {
             UpdateBody::Probe(p) => p.xfer(xfer),
             UpdateBody::ModuleProbe(m) => m.xfer(xfer),
+            // --- p1l9-example ---
+            UpdateBody::CommandSetUpgrade(m) => m.xfer(xfer),
+            // --- end p1l9-example ---
         }
     }
     /// The `loadPostProcess` of the concrete module.
@@ -105,6 +166,9 @@ impl Snapshot for UpdateBody {
         match self {
             UpdateBody::Probe(p) => p.load_post_process(),
             UpdateBody::ModuleProbe(m) => m.load_post_process(),
+            // --- p1l9-example ---
+            UpdateBody::CommandSetUpgrade(m) => m.load_post_process(),
+            // --- end p1l9-example ---
         }
     }
 }

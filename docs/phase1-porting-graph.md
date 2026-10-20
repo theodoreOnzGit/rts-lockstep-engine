@@ -794,6 +794,17 @@ map uses the water grid in logic. The branch `p1w6-object-wip` on GitHub is a
 stale backup of the Object agent's unfinished work and can be deleted (the
 session's push token was refused, HTTP 403).
 
+<!-- --- p1l9-example --- -->
+**Layer 9 begun (2026-10-20).** `CommandSetUpgrade` is translated as the lead's
+reference module (`logic::modules::command_set_upgrade`; the pattern is in
+`docs/world-design.md`, "Layer 9: how a concrete module is translated"), with
+`tests/differential_command_set_upgrade.rs`: 12,000 cases against the
+unchanged `CommandSetUpgrade.cpp`, 0 mismatches, 8 of 8 planted bugs caught.
+It adds the shared pieces every module uses: `world.statics` / `world.names`,
+`modules::upgrade_body`, `modules::new_module`, the factory's first arm, and
+the slot snapshot handing a translated module its whole base chain.
+<!-- --- end p1l9-example --- -->
+
 ## Differential-test routes, by rule
 
 The `differential route` column of the unit table is derived from the

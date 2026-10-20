@@ -155,6 +155,14 @@ pub struct World {
     /// `TheCaveSystem`: a tracker per cave index. See `world::cave_system`.
     pub cave_system: crate::logic::world::cave_system::CaveSystem,
     // --- end p1w7-sonnet ---
+    // --- p1l9-example ---
+    /// The INI stores upstream reads through globals (`TheUpgradeCenter`, ...),
+    /// read-only once the game runs. See `world::statics`.
+    pub statics: std::sync::Arc<crate::logic::world::statics::GameStatics>,
+    /// `TheNameKeyGenerator`: the generator the INI load used (modules assign
+    /// keys at run time, so it is not one of the statics).
+    pub names: crate::common::name_key_generator::NameKeyGenerator,
+    // --- end p1l9-example ---
     /// `m_frame`.
     frame: u32,
     /// `m_nextObjID`.
@@ -197,6 +205,10 @@ impl World {
             // --- p1w7-sonnet ---
             cave_system: crate::logic::world::cave_system::CaveSystem::new(),
             // --- end p1w7-sonnet ---
+            // --- p1l9-example ---
+            statics: std::sync::Arc::new(crate::logic::world::statics::GameStatics::new()),
+            names: crate::common::name_key_generator::NameKeyGenerator::new(),
+            // --- end p1l9-example ---
             frame: 0,
             next_object_id: 1,
             objects_to_destroy: Vec::new(),
