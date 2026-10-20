@@ -28,6 +28,17 @@ pub mod upgrade_body;
 pub mod command_set_upgrade;
 // --- end p1l9-example ---
 
+// --- p1l9-creates ---
+pub mod create_host;
+pub mod grant_upgrade_create;
+pub mod lock_weapon_create;
+pub mod preorder_create;
+pub mod special_power_create;
+pub mod supply_center_create;
+pub mod supply_warehouse_create;
+pub mod veterancy_gain_create;
+// --- end p1l9-creates ---
+
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
 /// `TheModuleFactory->newModule(thing, name, data, type)`), with its tag.
