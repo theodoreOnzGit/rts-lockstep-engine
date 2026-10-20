@@ -64,3 +64,6 @@ pub use ids::{ObjectId, PlayerIndex, TeamId, INVALID_ID};
 // --- p1w6-partition ---
 pub mod partition;
 // --- end p1w6-partition ---
+// --- p1l9-example ---
+pub mod statics;
+// --- end p1l9-example ---
