@@ -60,3 +60,32 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         _ => None,
     }
 }
+
+// --- p1l9-updates ---
+// Layer-9 update modules that need nothing outside the object (lifetime_update, deletion_update,
+// base_regenerate_update, smart_bomb_target_homing_update): each file is the module's data class and its logic,
+// written against `UpdateHost` (and its extensions), the cut point to the world. Not yet wired into the world.
+
+pub mod base_regenerate_update;
+pub mod deletion_update;
+pub mod lifetime_update;
+pub mod smart_bomb_target_homing_update;
+
+/// The calls a layer-9 update module makes on the game logic and on its
+/// object. Every method is one upstream call, in its upstream order.
+pub trait UpdateHost {
+    /// `TheGameLogic->getFrame()`.
+    fn frame(&self) -> u32;
+    /// `getObject()->isKindOf(KINDOF_HULK)`.
+    fn is_kind_of_hulk(&self) -> bool;
+    /// `TheGameLogic->getHulkMaxLifetimeOverride()`.
+    fn hulk_max_lifetime_override(&self) -> i32;
+    /// `TheGameLogic->friend_awakenUpdateModule(getObject(), this, frame)`.
+    fn awaken_update_module(&mut self, frame: u32);
+    /// `getObject()->kill()`.
+    fn kill_object(&mut self);
+    /// `TheGameLogic->destroyObject(getObject())`.
+    fn destroy_object(&mut self);
+}
+
+// --- end p1l9-updates ---
