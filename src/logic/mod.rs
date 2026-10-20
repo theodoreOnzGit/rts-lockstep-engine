@@ -66,3 +66,9 @@ pub mod object_types;
 // --- p1w7-sonnet ---
 pub mod weapon;
 // --- end p1w7-sonnet ---
+
+// --- p1w8-sonnet ---
+pub mod weapon_fire;
+pub mod weapon_host;
+pub mod weapon_set_state;
+// --- end p1w8-sonnet ---

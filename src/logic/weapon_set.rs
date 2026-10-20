@@ -169,6 +169,23 @@ impl WeaponTemplateSet {
     }
     // --- end p1w6-object ---
 
+    // --- p1w8-sonnet ---
+    /// A set built from its parts, without INI (a host that has no INI, the differential test): the thing template it
+    /// belongs to, its conditions, the weapon of each slot (by name key), the command sources that may auto-choose each
+    /// slot, what each slot is preferred against, and the two flags.
+    pub fn from_parts(
+        thing_template: Option<u16>,
+        types: WeaponSetFlags,
+        template: [Option<NameKeyType>; SLOTS],
+        auto_choose_mask: [u32; SLOTS],
+        preferred_against: [KindOfMaskType; SLOTS],
+        is_reload_time_shared: bool,
+        is_weapon_lock_shared_across_sets: bool,
+    ) -> Self {
+        WeaponTemplateSet { thing_template, types, template, auto_choose_mask, preferred_against, is_reload_time_shared, is_weapon_lock_shared_across_sets }
+    }
+    // --- end p1w8-sonnet ---
+
     /// `clear()`: no conditions, no weapons, "by default, allow autochoosing
     /// from any CommandSource" and "weapon isn't preferred against anything
     /// in particular". (`m_thingTemplate` is not touched.)

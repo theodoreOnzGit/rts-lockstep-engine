@@ -506,6 +506,9 @@ are a context argument (`&mut World` or a frame number) instead of a global.
 <!-- --- p1w6-partition --- -->
 | 8 (wave 6, `p1w6-partition`) | `PartitionManager.h/.cpp` whole (`logic::world::partition`, `world.partition`): grid, `PartitionData` and COI lists, `getClosestObjects` ring table, `iterate*` with the merge sort, the 33 filters, shroud counters and the unlook queue, threat and value maps, store/restore fog, line of sight, `findPositionAround`, contact list, xfer. Cut points: `TheDisplay`, `TheGhostObjectManager` (events), `Object`/terrain/players/pathfinder (host traits) | `tests/differential_partition.rs` (whole file under clang++) |
 <!-- --- end p1w6-partition --- -->
+<!-- --- p1w8-sonnet --- -->
+| 8 (wave 7, `p1w8-sonnet`, slice B) | `Weapon` instance and `WeaponSet` (`logic::weapon_fire`, `logic::weapon_set_state`, `logic::weapon_host`): ammo, reload (shared reload times returned as `SharedReload`), `getStatus`, `computeBonus`, all range, pitch and line-of-sight queries, `preFireWeapon`, `privateFireWeapon` and its wrappers, projectile and laser creation, `newProjectileFired`, `fireWeaponTemplate`, `dealDamageInternal`, `estimateWeaponTemplateDamage`, `shouldProjectileCollideWith`, `WeaponStore::update`, `createAndFireTempWeapon`, `handleProjectileDetonation`, `crc`/`xfer`/`loadPostProcess` of both classes; the owned `WeaponSet` (update, locks, `chooseBestWeaponForTarget`, both "able to attack" questions, ammo pips, reload all, bonus change). Everything the weapon asks of the rest of the game is a method of the `WeaponHost` trait (about 100: object state, players, modules, AI, partition, terrain, factory, drawable): the world implements it when `Object` takes the real `WeaponSet` | `tests/differential_weapon_fire.rs` (upstream `Weapon.cpp` and `WeaponSet.cpp` compiled unchanged but for the includes and four cut regions; 30,000 programs, 24,082,803 trace lines, 0 mismatches; 21 planted bugs caught) |
+<!-- --- end p1w8-sonnet --- -->
 
 Layer 4, not translated: `RankInfo` (`GameLogic/System/RankInfo.cpp`).
 It needs `Overridable`/`Override` (layer 1, open), `UnicodeString` (layer 2,
@@ -768,10 +771,14 @@ objects do not yet know the map extent.
 `ResourceGatheringManager` are translated (own differential tests). `Weapon`
 slice A is translated: `WeaponTemplate`, `WeaponStore` and the `Weapon` INI
 block (`logic::weapon`, `tests/differential_weapon.rs`; 4,000 cases, 0
-mismatches, 18 planted bugs caught). **Not yet:** the `Weapon` instance
-(ammo, reload, firing, `xfer`), `WeaponSet`, and everything below.
+mismatches, 18 planted bugs caught). ~~**Not yet:** the `Weapon` instance
+(ammo, reload, firing, `xfer`), `WeaponSet`, and everything below.~~ **CORRECTED 2026-10-20 (`p1w8-sonnet`)** — the
+`Weapon` instance, `fireWeaponTemplate`, `dealDamageInternal`, `WeaponStore::update` and `WeaponSet` are translated
+(slice B, `logic::weapon_fire`, `logic::weapon_set_state`, `tests/differential_weapon_fire.rs`; 30,000 programs, 0
+mismatches, 21 planted bugs caught; see Progress). Not yet: `Object` holding the real `WeaponSet` (it still holds the
+`WeaponSetRecord`, no weapon in any slot), and everything below.
 
-**Next, wave 7:** ~~`Weapon` and `WeaponSet`~~ the `Weapon` instance and `WeaponSet`, `Player` and `PlayerList`, `Team`,
+**Next, wave 7:** ~~`Weapon` and `WeaponSet`~~ ~~the `Weapon` instance and `WeaponSet`~~ (done 2026-10-20, slice B), `Player` and `PlayerList`, `Team`,
 `ResourceGatheringManager`, `TunnelTracker`, `CaveSystem`, `ActionManager`,
 `BuildAssistant`, `ObjectCreationList`; with them the parts of `Object` left
 untranslated (weapon forwarders, `updateObjValuesFromMapProperties`, the

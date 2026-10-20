@@ -1,14 +1,10 @@
-/* Stand-in for GameEngine/Include/Common/ThingFactory.h, Weapon tests only: `findTemplate`, which
-** `WeaponTemplate::postProcessLoad` calls. The wrapper answers a template for the names that start with
-** "Proj" and none for the others (the real factory is a later layer's). */
+/* Stand-in for GameEngine/Include/Common/ThingFactory.h, Weapon tests only: the class is in shim_weapon/fire_standins.h
+** (it has findTemplate, which WeaponTemplate::postProcessLoad and Weapon::createLaser call, and newObject, which
+** fireWeaponTemplate calls); this file only makes the include of Weapon.cpp resolve. */
 #ifndef SHIM_WEAPON_THINGFACTORY_H
 #define SHIM_WEAPON_THINGFACTORY_H
 #include "Common/AsciiString.h"
 class ThingTemplate;
-class ThingFactory
-{
-public:
-	const ThingTemplate *findTemplate(const AsciiString &name, Bool check = TRUE);
-};
+class ThingFactory;
 extern ThingFactory *TheThingFactory;
 #endif

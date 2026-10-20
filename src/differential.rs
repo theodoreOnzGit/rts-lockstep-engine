@@ -1057,5 +1057,7 @@ extern "C" {
     pub fn ref_weapon_historic(index: c_int, frame: c_uint, x: c_float, y: c_float, z: c_float);
     pub fn ref_weapon_delayed(op: c_int, index: c_int, frame: c_uint, source: c_int, victim: c_int, x: c_float, y: c_float, z: c_float, bonus: *const c_float);
     pub fn ref_weapon_getters(index: c_int, bonus: *const c_float, out: *mut c_uint);
+    // p1w8-sonnet slice B: the firing half of Weapon.cpp and all of WeaponSet.cpp on stand-ins (wrap_weapon.cpp, fire_driver.h)
+    pub fn ref_weapon_fire_run(words: *const c_uint, n: c_int, tmp_path: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
 }
 // --- end p1w7-sonnet ---

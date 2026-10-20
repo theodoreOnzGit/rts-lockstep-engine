@@ -19,6 +19,14 @@
 **
 ** Entry points (extern "C", tests/differential_weapon.rs): ref_weapon_reset, ref_weapon_dump, ref_weapon_find,
 ** ref_weapon_post_process, ref_weapon_getters, ref_weapon_delayed, ref_weapon_store_reset, ref_weapon_historic. */
+/* the name lists Weapon.h defines under these (Weapon.cpp defines them before it includes Weapon.h; here Weapon.h comes first) */
+#define DEFINE_DEATH_NAMES
+#define DEFINE_WEAPONBONUSCONDITION_NAMES
+#define DEFINE_WEAPONBONUSFIELD_NAMES
+#define DEFINE_WEAPONCOLLIDEMASK_NAMES
+#define DEFINE_WEAPONAFFECTSMASK_NAMES
+#define DEFINE_WEAPONRELOAD_NAMES
+#define DEFINE_WEAPONPREFIRE_NAMES
 #define WeaponBonus WpnTestWeaponBonus
 #define WeaponBonusSet WpnTestWeaponBonusSet
 #define WeaponTemplate WpnTestWeaponTemplate
@@ -31,6 +39,54 @@
 #define TheThingFactory WpnTestTheThingFactory
 #define ObjectCreationListStore WpnTestOclStore
 #define TheObjectCreationListStore WpnTestTheOclStore
+/* slice B (p1w8-sonnet): the firing half of Weapon.cpp and all of WeaponSet.cpp, on the stand-ins of
+** shim_weapon/fire_standins.h (every class and global of which is renamed here) */
+#define WeaponSet WpnTestWeaponSet
+#define WeaponTemplateSet WpnTestWeaponTemplateSet
+#define WeaponTemplateSetVector WpnTestWeaponTemplateSetVector
+#define WeaponTemplateSetFinder WpnTestWeaponTemplateSetFinder
+#define Object WpnTestObject
+#define Drawable WpnTestDrawable
+#define Player WpnTestPlayer
+#define PlayerList WpnTestPlayerList
+#define ThePlayerList WpnTestThePlayerList
+#define Team WpnTestTeam
+#define ThingTemplate WpnTestThingTemplate
+#define BehaviorModule WpnTestBehaviorModule
+#define ContainModuleInterface WpnTestContainModuleInterface
+#define AIUpdateInterface WpnTestAIUpdateInterface
+#define StealthUpdate WpnTestStealthUpdate
+#define SpawnBehaviorInterface WpnTestSpawnBehaviorInterface
+#define ProjectileUpdateInterface WpnTestProjectileUpdateInterface
+#define LandMineInterface WpnTestLandMineInterface
+#define ParkingPlaceBehaviorInterface WpnTestParkingPlaceBehaviorInterface
+#define SpecialPowerCompletionDie WpnTestSpecialPowerCompletionDie
+#define UpdateModule WpnTestUpdateModule
+#define ProjectileStreamUpdate WpnTestProjectileStreamUpdate
+#define AssistedTargetingUpdate WpnTestAssistedTargetingUpdate
+#define LaserUpdate WpnTestLaserUpdate
+#define PhysicsBehavior WpnTestPhysicsBehavior
+#define ExperienceTracker WpnTestExperienceTracker
+#define AssaultTransportAIInterface WpnTestAssaultTransportAIInterface
+#define AcademyStats WpnTestAcademyStats
+#define FXList WpnTestFXList
+#define ObjectCreationList WpnTestObjectCreationList
+#define SimpleObjectIterator WpnTestSimpleObjectIterator
+#define ObjectIterator WpnTestObjectIterator
+#define PartitionManager WpnTestPartitionManager
+#define ThePartitionManager WpnTestThePartitionManager
+#define TerrainLogic WpnTestTerrainLogic
+#define TheTerrainLogic WpnTestTheTerrainLogic
+#define Pathfinder WpnTestPathfinder
+#define AIManager WpnTestAIManager
+#define TheAI WpnTestTheAI
+#define GameLogic WpnTestGameLogic
+#define TheGameLogic WpnTestTheGameLogic
+#define GlobalData WpnTestGlobalData
+#define TheGlobalData WpnTestTheGlobalData
+#define TBridgeAttackInfo WpnTestTBridgeAttackInfo
+#define WpnWorldCfg WpnTestWorldCfg
+#define WpnPlayerCfg WpnTestPlayerCfg
 
 #include <limits.h>
 #include <stdlib.h>
@@ -49,8 +105,9 @@
 /* REAL_TO_INT_FLOOR of the real BaseType.h is `fast_float2long_round(fast_float_floor(x))`, MSVC `__asm` upstream. The
 ** shared shim's BaseType.h does not have it; the hand transcription of the asm is in wrap_base_type.cpp (verified
 ** against the Rust by differential_base_type.rs), and the macro is composed here exactly as upstream composes it. */
-extern "C" { int ref_fast_float2long_round(float f); float ref_fast_float_floor(float f); }
+extern "C" { int ref_fast_float2long_round(float f); float ref_fast_float_floor(float f); float ref_fast_float_ceil(float f); }
 #define REAL_TO_INT_FLOOR(x) (ref_fast_float2long_round(ref_fast_float_floor(x)))
+#define REAL_TO_INT_CEIL(x) (ref_fast_float2long_round(ref_fast_float_ceil(x)))
 /* `new(ShimZeroFill()) T` (differential/shim/Common/GameMemory.h) parses as a function type under clang; braces do not */
 #include "Common/GameMemory.h"
 #undef newInstance
@@ -62,15 +119,25 @@ extern "C" { int ref_fast_float2long_round(float f); float ref_fast_float_floor(
 #include "shim_ini/GameClient/ParticleSys.h"
 extern "C" const char *ref_armor_fx_name(const void *fx);
 
-/* the real headers and the cut Weapon.cpp, with their members readable (the dump reads them) */
+/* the real headers, the stand-ins of the world, the cut Weapon.cpp and WeaponSet.cpp, with their members readable (the dumps
+** read them) */
 #define private public
 #define protected public
+#include "Common/ObjectStatusTypes.h"
+#include "Common/Geometry.h"
+#include "GameLogic/Weapon.h"
+#include "GameLogic/WeaponSet.h"
+#include "Lib/trig.h"
+#include "shim_weapon/fire_standins.h"
+/* BaseType.h's min and max are macros upstream; defined here, after the standard headers, and undone after the cut files */
+#define min(x,y) (((x)<(y)) ? (x) : (y))
+#define max(x,y) (((x)>(y)) ? (x) : (y))
 #include "Weapon_cut.cpp"
+#include "WeaponSet_cut.cpp"
+#undef min
+#undef max
 #undef private
 #undef protected
-
-/* WeaponStore::update is cut (its damage application is the next slice); the store's vtable needs it */
-void WeaponStore::update() {}
 
 /* ---- stand-ins */
 namespace {
@@ -93,9 +160,20 @@ ObjectCreationListStore *TheObjectCreationListStore = &g_oclStore;
 
 const ThingTemplate *ThingFactory::findTemplate(const AsciiString &name, Bool)
 {
+	/* p1w8-sonnet: "T<n>" is the n-th stand-in thing template of the firing test (what WeaponSet::xfer saves and loads) */
+	if (name.str()[0] == 'T' && name.str()[1] >= '0' && name.str()[1] <= '9')
+	{
+		int n = atoi(name.str() + 1);
+		return (n >= 1 && n <= (int)g_thingTemplates.size()) ? g_thingTemplates[n - 1] : 0;
+	}
 	if (strncmp(name.str(), "Proj", 4) != 0) return 0;
 	return (const ThingTemplate *)(size_t)idOf(name.str());
 }
+#define private public
+#define protected public
+#include "shim_weapon/fire_driver.h"
+#undef private
+#undef protected
 const ObjectCreationList *ObjectCreationListStore::findObjectCreationList(const char *name) const
 {
 	if (strncmp(name, "OCL_", 4) != 0) return 0;
@@ -261,5 +339,20 @@ void ref_weapon_getters(int index, const float *bonus, unsigned *out)
 	BITS(t->getPrimaryDamage(b)); BITS(t->getPrimaryDamageRadius(b)); BITS(t->getSecondaryDamage(b)); BITS(t->getSecondaryDamageRadius(b));
 	out[n++] = t->isContactWeapon() ? 1 : 0; out[n++] = t->getAutoReloadsClip() ? 1 : 0;
 	#undef BITS
+}
+
+/* The firing differential (tests/differential_weapon_fire.rs): runs a program (the words) against the real Weapon.cpp and
+** WeaponSet.cpp on the stand-ins, and writes the trace lines, each ended by '\n'. Returns the size of the text (the text
+** is written only if it fits `cap`). tmpPath is a file the XferSave/XferLoad operations use. */
+int ref_weapon_fire_run(const unsigned *words, int n, const char *tmpPath, char *out, int cap)
+{
+	std::vector<std::string> lines;
+	g_lines = &lines;
+	runProgram(words, n, tmpPath);
+	g_lines = 0;
+	std::string all;
+	for (size_t i = 0; i < lines.size(); ++i) { all += lines[i]; all += '\n'; }
+	if ((int)all.size() <= cap) memcpy(out, all.data(), all.size());
+	return (int)all.size();
 }
 }  /* extern "C" */

@@ -229,6 +229,11 @@ impl WeaponBonusSet {
         &self.bonus[condition]
     }
 
+    /// `m_bonus[condition].setField(field, value)`, for a host that builds a set without INI.
+    pub fn set_bonus_field(&mut self, condition: usize, field: usize, value: f32) {
+        self.bonus[condition].set_field(field, value);
+    }
+
     /// `appendBonuses(flags, bonus)`: for every condition whose bit is set in
     /// `flags`, appends that condition's bonus to `bonus`.
     pub fn append_bonuses(&self, flags: u32, bonus: &mut WeaponBonus) {

@@ -26,13 +26,16 @@
 //!
 //! # What is translated, and what is not (wave 7, slice A)
 //!
-//! Translated: the template's data and its INI table (all 80 fields), the getters that fold in a
+//! Translated here: the template's data and its INI table (all 80 fields), the getters that fold in a
 //! [`WeaponBonus`], `postProcessLoad`, the store (`findWeaponTemplate`, `newWeaponTemplate`, `reset`, the delayed
-//! damage list, the block handler). **Not yet translated** (they need `Object`, the partition manager, the
-//! drawable and the damage application, and belong to the next slices): `fireWeaponTemplate`,
-//! `dealDamageInternal` and with it `WeaponStore::update`, `estimateWeaponTemplateDamage`,
-//! `shouldProjectileCollideWith`, `handleProjectileDetonation`, `createAndFireTempWeapon`, and the `Weapon`
-//! instance (ammo, reload, status, `xfer`).
+//! damage list, the block handler). ~~**Not yet translated** (they need `Object`, the partition manager, the
+//! drawable and the damage application, and belong to the next slices): `fireWeaponTemplate`, `dealDamageInternal`
+//! and with it `WeaponStore::update`, `estimateWeaponTemplateDamage`, `shouldProjectileCollideWith`,
+//! `handleProjectileDetonation`, `createAndFireTempWeapon`, and the `Weapon` instance (ammo, reload, status,
+//! `xfer`).~~ **CORRECTED 2026-10-20 (slice B, `p1w8-sonnet`)** — all of those are translated in
+//! `logic::weapon_fire` (the `Weapon` instance and the firing half of the template and the store, over a
+//! `WeaponHost`) and `logic::weapon_set_state` (the owned `WeaponSet`), and verified by
+//! `tests/differential_weapon_fire.rs`.
 //!
 //! # Translation choices
 //!
@@ -71,8 +74,8 @@
 //!   [`Undefined::NullTokenString`] here. It also stores `ceilf(...)` into an `Int` (the values it can reach fit).
 //! - `getPreAttackDelay` returns an `Int` computed as `m_preAttackDelay * bonus` (a `Real`), truncating, which is
 //!   undefined for a product outside `Int`: an error here.
-//! - `WeaponStore::update` has `const isProjectileDetonation = false;` (an implicit `int`, MSVC only); it is part
-//!   of the untranslated damage path.
+//! - `WeaponStore::update` has `const isProjectileDetonation = false;` (an implicit `int`, MSVC only); translated in
+//!   `weapon_fire::weapon_store_update` (the differential build adds the `Bool` it lacks, the only edit of the text).
 //!
 //! # Verified
 //!
@@ -198,6 +201,11 @@ pub type FxName = Option<Vec<u8>>;
 pub enum WeaponError {
     /// `getPreAttackDelay`: a `Real` outside `Int` converted to `Int`.
     FloatToIntOutOfRange,
+    /// A null `Object*` is dereferenced (`logic::weapon_fire`).
+    NullObject,
+    /// `ThingFactory::newObject(NULL, ..)` throws `ERROR_BAD_ARG`: `newProjectileFired` on a projectile stream name
+    /// that names no template.
+    NullTemplate,
 }
 
 /// `struct HistoricWeaponDamageInfo`: when and where this weapon was fired.
@@ -1003,6 +1011,13 @@ impl WeaponStore {
         wt.name_key = names.try_name_to_key(name).map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
         self.templates.push(wt);
         Ok(Some(self.templates.len() - 1))
+    }
+
+    /// `m_weaponDDI.erase(it)`: drop the delayed damage at position `index` (`WeaponStore::update`).
+    pub fn remove_delayed_damage(&mut self, index: usize) {
+        if index < self.delayed_damage.len() {
+            self.delayed_damage.remove(index);
+        }
     }
 
     /// `deleteAllDelayedDamage()`.

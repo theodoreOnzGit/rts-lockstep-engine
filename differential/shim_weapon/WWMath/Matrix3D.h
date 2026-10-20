@@ -1,6 +1,3 @@
-/* Stand-in for WWMath/Matrix3D.h, Weapon tests only: Weapon.h names Matrix3D only in the declarations of the
-** projectile-launch helpers (not translated in this slice), by reference. */
-#ifndef SHIM_WEAPON_MATRIX3D_H
-#define SHIM_WEAPON_MATRIX3D_H
-class Matrix3D;
-#endif
+/* Forwarder, Weapon tests only: the REAL Matrix3D (matrix3d.h, whose methods are in upstream_wwmath), under the
+** capital-M name Weapon.h includes it by. */
+#include "matrix3d.h"
