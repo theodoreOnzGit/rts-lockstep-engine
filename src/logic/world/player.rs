@@ -36,14 +36,68 @@
 //! - Everything else `Player` and `PlayerList` do (relationships, energy,
 //!   money, the sides list, `xfer`) is layer 7.
 
+use std::collections::BTreeMap;
+
 use super::academy_stats::AcademyStats;
 use super::energy::Energy;
 use super::mission_stats::MissionStats;
 use super::score_keeper::ScoreKeeper;
 use super::ids::PlayerIndex;
+use super::team::relationship_from_i32;
+use crate::common::game_common::Relationship;
+use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferStatus};
 
 /// `MAX_PLAYER_COUNT` (`GameCommon.h`).
 pub use crate::common::game_common::MAX_PLAYER_COUNT;
+
+/// `class PlayerRelationMap`: the players a player or a team has a special relationship with (`Player.h`,
+/// `Player.cpp`; wave 7, `p1w9-sonnet`). `m_map` is a `hash_map` upstream, ordered here (only `xfer` walks it).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PlayerRelationMap {
+    /// `m_map`.
+    pub map: BTreeMap<PlayerIndex, Relationship>,
+}
+
+impl Snapshot for PlayerRelationMap {
+    /// `crc`: nothing.
+    fn crc(&mut self, _xfer: &mut dyn Xfer) -> XferResult<()> {
+        Ok(())
+    }
+
+    /// `xfer`, version 1: the count (`UnsignedShort`), then each player index (`xferInt`) and relationship
+    /// (`xferUser`, 4 bytes); a load assigns `m_map[playerIndex] = r`. A relationship outside `0..=2` is
+    /// `XFER_INVALID_PARAMETERS` here (upstream stores any int in the `enum`).
+    fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current_version = 1;
+        let mut version = current_version;
+        xfer.xfer_version(&mut version, current_version)?;
+
+        let mut count = self.map.len() as u16;
+        xfer.xfer_unsigned_short(&mut count)?;
+
+        if xfer.get_xfer_mode() == XferMode::Save {
+            for (index, r) in self.map.iter() {
+                let mut player_index = *index;
+                xfer.xfer_int(&mut player_index)?;
+                let mut rb = (*r as i32).to_le_bytes();
+                xfer.xfer_user(&mut rb)?;
+            }
+        } else {
+            for _ in 0..count {
+                let mut player_index = 0;
+                xfer.xfer_int(&mut player_index)?;
+                let mut rb = [0u8; 4];
+                xfer.xfer_user(&mut rb)?;
+                let r = relationship_from_i32(i32::from_le_bytes(rb)).ok_or(XferStatus::InvalidParameters)?;
+                self.map.insert(player_index, r);
+            }
+        }
+        Ok(())
+    }
+
+    /// `loadPostProcess`: nothing.
+    fn load_post_process(&mut self) {}
+}
 
 /// The shell of `Player` (layer 7 fills it in).
 #[derive(Clone, Debug, PartialEq, Eq)]

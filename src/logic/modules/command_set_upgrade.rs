@@ -284,7 +284,7 @@ mod tests {
         w.statics = Arc::new(GameStatics { upgrade_center: center });
         w.names = names;
         w.cuts.neutral_default_team = 1;
-        w.teams.insert_team(crate::logic::world::team::Team { id: 1, prototype: 0 });
+        w.teams.insert_team(crate::logic::world::team::Team::new(1, 0)).unwrap();
         w.cuts.team_players.insert(1, 0);
         let data = ModuleDataKind::CommandSetUpgrade(Arc::new(data_of(text).unwrap()));
         let m = crate::logic::modules::new_module(0, b"CommandSetUpgrade", b"ModuleTag_CS", &data).unwrap().unwrap();

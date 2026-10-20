@@ -345,7 +345,7 @@ impl Run {
             let player = r.i();
             let template_info = r.b();
             let attack_info = r.b();
-            w.teams.insert_team(Team { id, prototype: 0 });
+            w.teams.insert_team(Team::new(id, 0)).unwrap();
             w.cuts.team_players.insert(id, player);
             w.cuts.team_names.insert(id, format!("team{id}").into_bytes());
             if template_info {

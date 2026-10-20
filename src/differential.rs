@@ -1082,3 +1082,9 @@ extern "C" {
     ) -> c_int;
 }
 // --- end p1l9-example ---
+// --- p1w9-sonnet ---
+extern "C" {
+    // Team.cpp on stand-ins (wrap_team.cpp, shim_team/team_driver.h)
+    pub fn ref_team_run(words: *const c_uint, n: c_int, tmp_path: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
+}
+// --- end p1w9-sonnet ---

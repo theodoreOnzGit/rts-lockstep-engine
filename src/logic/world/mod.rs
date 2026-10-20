@@ -14,7 +14,8 @@
 //! | `object` | `ObjectArena` (`m_objList` + `m_objVector`) and the `Object` shell |
 //! | `sleepy` | `SleepyScheduler` (`m_sleepyUpdates`, `m_curUpdateModule`) |
 //! | `update_body` | `UpdateBody`, the enum of concrete update modules |
-//! | `player`, `team` | `PlayerArena` (`PlayerList`), `TeamArena` (`TeamFactory`) shells |
+//! | `player` | `PlayerArena` (`PlayerList`) shell, and `PlayerRelationMap` |
+//! | `team`, `team_ops`, `team_xfer` | `TeamArena` (`TeamFactory`, every `TeamPrototype` and `Team`), their operations over the `TeamHost` trait, and their save and load |
 //! | `events` | `ClientEventQueue` |
 //! | `client_reads` | `ClientReads`: the client values logic reads, as state |
 //! | `game_logic` | `World` and the translation of `GameLogic`'s object lifetime |
@@ -42,6 +43,10 @@ mod object_tests;
 pub mod player;
 pub mod sleepy;
 pub mod team;
+// --- p1w9-sonnet ---
+pub mod team_ops;
+pub mod team_xfer;
+// --- end p1w9-sonnet ---
 pub mod update_body;
 // --- p1w6-energy ---
 pub mod academy_stats;

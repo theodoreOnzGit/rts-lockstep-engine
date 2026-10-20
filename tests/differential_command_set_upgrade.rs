@@ -276,7 +276,7 @@ fn rust_run(
     w.statics = Arc::new(GameStatics { upgrade_center: ctx.center });
     w.names = ctx.names;
     w.cuts.neutral_default_team = 1;
-    w.teams.insert_team(rts_lockstep_engine::logic::world::team::Team { id: 1, prototype: 0 });
+    w.teams.insert_team(rts_lockstep_engine::logic::world::team::Team::new(1, 0)).unwrap();
     if has_player {
         w.cuts.team_players.insert(1, 0);
         w.cuts.player_upgrades.insert(0, mask_from(&player_mask));
