@@ -849,7 +849,12 @@ pub fn player_calc_cost_to_build<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex,
         faction_modifier *= player_get_production_cost_change_based_on_kind_of(h, p, &mask)?;
     }
     let hc = pl(h, p)?.handicap.get_handicap(if plant(155) { crate::common::handicap::HandicapType::BuildTime } else { crate::common::handicap::HandicapType::BuildCost }, h.tmpl_is_kind_of(t, KINDOF_STRUCTURE));
-    Ok(if plant(156) { (h.tmpl_build_cost(t) as f32 * (faction_modifier * hc)) as i32 } else { (h.tmpl_build_cost(t) as f32 * faction_modifier * hc) as i32 })
+    let cost = if plant(156) { h.tmpl_build_cost(t) as f32 * (faction_modifier * hc) } else { h.tmpl_build_cost(t) as f32 * faction_modifier * hc };
+    // the `Int` return converts the float: out of range (or NaN) is undefined in C++ (x86 gives INT_MIN), an error here
+    if !(cost >= -2_147_483_648.0 && cost < 2_147_483_648.0) {
+        return Err(PlayerError::OutOfRange);
+    }
+    Ok(cost as i32)
 }
 
 // ---- difficulty and battle plans --------------------------------------------------------------------------------

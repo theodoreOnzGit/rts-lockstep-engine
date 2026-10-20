@@ -19,6 +19,43 @@ static TerrainLogic g_terrain; TerrainLogic* TheTerrainLogic = &g_terrain;
 static ScriptEngine g_scriptEngine; ScriptEngine* TheScriptEngine = &g_scriptEngine;
 static PartitionManager g_partition; PartitionManager* ThePartitionManager = &g_partition;
 static PlayerList g_playerList; PlayerList* ThePlayerList = &g_playerList;
+/* PlayerList's constructor and destructor make and destroy the sixteen players: this fixture makes its own (setupWorld) */
+PlayerList::PlayerList() : m_local(NULL), m_playerCount(0) {}
+PlayerList::~PlayerList() {}
+static std::map<unsigned, int> g_playerByName;
+Player* PlayerList::findPlayerWithNameKey(NameKeyType key)
+{
+	std::map<unsigned, int>::const_iterator it = g_playerByName.find((unsigned)key);
+	if (it != g_playerByName.end() && it->second < m_playerCount) return m_players[it->second];
+	for (Int i = 0; i < m_playerCount; i++) if (m_players[i]->getPlayerNameKey() == key) return m_players[i];
+	return NULL;
+}
+static SidesList g_sidesList; SidesList* TheSidesList = &g_sidesList;
+NetworkStandIn* TheNetwork = NULL;
+static int g_nextScriptList = 1;
+ScriptList* ScriptList::duplicateAndQualify(const AsciiString& q, const AsciiString& t, const AsciiString& n)
+{
+	ScriptList* l = new ScriptList; l->m_id = g_nextScriptList++;
+	Rec("scripts.qualify %d -> %d q=%s t=%s n=%s", m_id, l->m_id, q.str(), t.str(), n.str());
+	return l;
+}
+void ScriptList::deleteInstance() { Rec("scripts.delete %d", m_id); }
+void SidesList::removeTeam(Int i) { Rec("sides.removeteam %d", i); m_teams.erase(m_teams.begin() + i); }
+TeamsInfo* SidesList::findTeamInfo(AsciiString name, Int* index)
+{
+	for (size_t i = 0; i < m_teams.size(); ++i)
+		if (m_teams[i]->m_dict.getAsciiString(TheKey_teamName) == name) { if (index) *index = (Int)i; return m_teams[i]; }
+	return NULL;
+}
+void SidesList::addTeam(Dict* d)
+{
+	TeamsInfo* t = new TeamsInfo; t->m_dict = *d; m_teams.push_back(t);
+	std::string s = "sides.addteam owner=" + std::string(d->getAsciiString(TheKey_teamOwner).str()) + " name=" + d->getAsciiString(TheKey_teamName).str();
+	NameKeyType ks[7] = { TheKey_teamOnCreateScript, TheKey_teamOnIdleScript, TheKey_teamOnUnitDestroyedScript, TheKey_teamOnDestroyedScript, TheKey_teamEnemySightedScript, TheKey_teamAllClearScript, TheKey_teamProductionCondition };
+	for (int j = 0; j < 7; ++j) { s += " "; s += d->getAsciiString(ks[j]).str(); }
+	for (int j = 0; j < 16; ++j) { char b[48]; sprintf(b, "%s%d", TheNameKeyGenerator->keyToName(TheKey_teamGenericScriptHook).str(), j); s += " "; s += d->getAsciiString(TheNameKeyGenerator->nameToKey(b)).str(); }
+	Rec("%s", s.c_str());
+}
 static GlobalData g_globalData; GlobalData* TheGlobalData = &g_globalData;
 static GameInfo g_gameInfo; GameInfo* TheGameInfo = NULL;
 static MessageStream g_messageStream; MessageStream* TheMessageStream = &g_messageStream;
@@ -139,10 +176,12 @@ UnicodeString GameText::fetch(const char* label) { Rec("text %s", label); return
 Bool VictoryConditions::hasSinglePlayerBeenDefeated(const Player* p) { return m_defeated[pidx(p) & 15]; }
 void AudioManager::addAudioEvent(const AudioEventRTS* e) { Rec("audio %d player=%d", (int)e->m_id, (int)e->m_playerIndex); }
 
+static void applyCfgTo(AIPlayer* a, int playerIndex);
 AIPlayer::AIPlayer(Player* p) : m_player(p), m_skirmish(false), m_diff(DIFFICULTY_NORMAL), m_enemy(NULL), m_supplySafe(true), m_supplyAttacked(false), m_checkBridges(false), m_hasBase(false), m_superOK(false), m_construct(false)
 {
 	m_base.x = m_base.y = m_base.z = 0; m_constructAt = m_base;
 	Rec("ai.new %d", pidx(p));
+	applyCfgTo(this, pidx(p));
 }
 AIPlayer::~AIPlayer() { Rec("ai.delete %d", pidx(m_player)); }
 void AIPlayer::update() { Rec("ai.update %d", pidx(m_player)); }
@@ -229,6 +268,7 @@ struct Reader
 struct DictEntry { int type; std::string key; unsigned bits; std::string str; };
 struct DictSpec { std::vector<DictEntry> e; };
 static std::vector<DictSpec> g_dicts;
+static std::vector<Dict> g_sdicts;
 static std::vector<ThingTemplate*> g_tpls;
 static std::vector<Player*> g_players;
 static std::vector<Player*> g_allPlayers;
@@ -251,6 +291,7 @@ static void buildDict(const DictSpec& s, Dict& d)
 		case 0: d.setBool(k, e.bits != 0); break;
 		case 1: d.setInt(k, (Int)e.bits); break;
 		case 2: memcpy(&f, &e.bits, 4); d.setReal(k, f); break;
+		case 4: { std::vector<WideChar> u; for (size_t j = 0; j < e.str.size(); ++j) u.push_back((WideChar)(unsigned char)e.str[j]); d.setUnicodeUnits(k, u); break; }
 		default: d.setAsciiString(k, AsciiString(e.str.c_str())); break;
 		}
 	}
@@ -411,6 +452,22 @@ static void dumpState()
 		Rec("D obj2 %d health=%08x vision=%08x shroud=%08x wb=%08x", (int)o->m_id, FB(o->m_health), FB(o->m_vision), FB(o->m_shroud), o->m_wb);
 	}
 	for (size_t i = 0; i < g_players.size(); ++i) { dumpPlayer(g_players[i]); dumpPlayer4(g_players[i]); dumpPlayer3(g_players[i]); }
+	{
+		SidesList* sl = TheSidesList;
+		std::string a, b, c, t; char buf[64];
+		for (size_t i = 0; i < sl->m_sides.size(); ++i)
+		{
+			ScriptList* l = sl->m_sides[i]->m_scripts; if (l) sprintf(buf, "%s%d", i ? "," : "", l->m_id); else sprintf(buf, "%s-", i ? "," : ""); a += buf;
+			int n = 0; for (BuildListInfo* e = sl->m_sides[i]->m_buildList; e; e = e->m_nextBuildList) ++n;
+			sprintf(buf, "%s%d", i ? "," : "", n); c += buf;
+		}
+		for (size_t i = 0; i < sl->m_skirmishSides.size(); ++i)
+		{ ScriptList* l = sl->m_skirmishSides[i]->m_scripts; if (l) sprintf(buf, "%s%d", i ? "," : "", l->m_id); else sprintf(buf, "%s-", i ? "," : ""); b += buf; }
+		for (size_t i = 0; i < sl->m_teams.size(); ++i)
+		{ t += (i ? "," : ""); t += sl->m_teams[i]->m_dict.getAsciiString(TheKey_teamName).str(); t += "@"; t += sl->m_teams[i]->m_dict.getAsciiString(TheKey_teamOwner).str(); }
+		if (t.empty()) t = "-";
+		Rec("D sides scripts=%s sk=%s builds=%s teams=%s count=%d", a.c_str(), b.c_str(), c.c_str(), t.c_str(), ThePlayerList->m_playerCount);
+	}
 }
 
 /* ---- slice 2b and 3: upgrades, squads, save and load ------------------------------------------------------------- */
@@ -553,7 +610,18 @@ void Radar::addObject(Object* obj) { Rec("radar+ %d", (int)obj->m_id); }
 void GameClient::setTeamColor(Int red, Int green, Int blue) { Rec("teamcolor %d %d %d", red, green, blue); }
 void ControlBar::setControlBarSchemeByPlayer(Player* p) { Rec("ui.scheme.player %d", pidx(p)); }
 void ControlBar::setControlBarSchemeByPlayerTemplate(const PlayerTemplate* pt) { Rec("ui.scheme.template %d", tplIndexOf(pt)); }
-const PlayerTemplate* PlayerTemplateStore::findPlayerTemplate(NameKeyType key) const { return key == TheNameKeyGenerator->nameToKey("FactionObserver") ? m_observer : NULL; }
+const PlayerTemplate* PlayerTemplateStore::findPlayerTemplate(NameKeyType key) const
+{
+	/* the key was made by the caller: look the name up, do not make keys */
+	AsciiString nm = TheNameKeyGenerator->keyToName(key);
+	if (strcmp(nm.str(), "FactionObserver") == 0) return m_observer;
+	if (strncmp(nm.str(), "Faction", 7) == 0 && nm.str()[7] >= '0' && nm.str()[7] <= '9')
+	{
+		unsigned idx = (unsigned)atoi(nm.str() + 7);
+		if (idx < g_ptpls.size() && nm.getLength() == (int)(7 + std::to_string(idx).size())) return g_ptpls[idx];
+	}
+	return NULL;
+}
 ProductionUpdateInterface* ProductionUpdate::getProductionUpdateInterfaceFromObject(const Object* obj)
 {
 	if (obj->m_prodQueue < 0) return NULL;
@@ -584,8 +652,17 @@ static void clearWorld()
 	for (size_t i = 0; i < g_objs.size(); ++i) { g_objs[i]->m_team = NULL; }
 	for (size_t i = 0; i < g_objs.size(); ++i) delete g_objs[i];
 	g_objs.clear();
-	g_playerList.m_count = 0;
+	g_playerList.m_playerCount = 0;
 	g_playerList.m_local = NULL;
+	{
+		SidesList* sl = TheSidesList;
+		for (size_t i = 0; i < sl->m_sides.size(); ++i) delete sl->m_sides[i];
+		for (size_t i = 0; i < sl->m_skirmishSides.size(); ++i) delete sl->m_skirmishSides[i];
+		for (size_t i = 0; i < sl->m_teams.size(); ++i) delete sl->m_teams[i];
+		for (size_t i = 0; i < sl->m_skirmishTeams.size(); ++i) delete sl->m_skirmishTeams[i];
+		sl->m_sides.clear(); sl->m_skirmishSides.clear(); sl->m_teams.clear(); sl->m_skirmishTeams.clear();
+		g_sdicts.clear(); g_nextScriptList = 1;
+	}
 	{ UpgradeTemplate* u = g_upgradeCenter.m_upgradeList; while (u) { UpgradeTemplate* nx = u->friend_getNext(); u->deleteInstance(); u = nx; } g_upgradeCenter.m_upgradeList = NULL; g_upgradeCenter.m_nextTemplateMaskBit = 0; }
 	g_upgrades.clear();
 	for (size_t i = 0; i < g_allPlayers.size(); ++i)
@@ -613,7 +690,7 @@ static void clearWorld()
 	g_thingFactory.m_templates.clear();
 	g_gameLogic.m_objs.clear();
 	g_terrain.m_ways.clear();
-	g_playerList.m_byKey.clear();
+	g_playerByName.clear();
 	TheGameInfo = NULL;
 }
 
@@ -628,12 +705,17 @@ static void resetKeys()
 /* the AI configuration of a player, read before the player is made (the AI is made later) */
 struct AiCfg { bool safe, attacked, bridges, hasBase, superOK, construct; Coord3D base, at; int enemy; int diff; };
 static std::vector<AiCfg> g_aiCfg;
+static void applyCfgTo(AIPlayer* a, int playerIndex)
+{
+	if (playerIndex < 0 || g_aiCfg.empty()) return;
+	const AiCfg& c = g_aiCfg[(size_t)playerIndex % g_aiCfg.size()];
+	a->m_supplySafe = c.safe; a->m_supplyAttacked = c.attacked; a->m_checkBridges = c.bridges; a->m_hasBase = c.hasBase; a->m_base = c.base;
+	a->m_superOK = c.superOK; a->m_construct = c.construct; a->m_constructAt = c.at; a->m_enemy = c.enemy >= 0 ? g_players[c.enemy % g_players.size()] : NULL; a->m_diff = (GameDifficulty)c.diff;
+}
 static void applyAiCfg(Player* p)
 {
 	if (!p->m_ai) return;
-	const AiCfg& c = g_aiCfg[p->m_playerIndex];
-	p->m_ai->m_supplySafe = c.safe; p->m_ai->m_supplyAttacked = c.attacked; p->m_ai->m_checkBridges = c.bridges; p->m_ai->m_hasBase = c.hasBase; p->m_ai->m_base = c.base;
-	p->m_ai->m_superOK = c.superOK; p->m_ai->m_construct = c.construct; p->m_ai->m_constructAt = c.at; p->m_ai->m_enemy = c.enemy >= 0 ? g_players[c.enemy % g_players.size()] : NULL; p->m_ai->m_diff = (GameDifficulty)c.diff;
+	applyCfgTo(p->m_ai, p->m_playerIndex);
 }
 
 static void readMoney(Reader& r, Money& m)
@@ -654,7 +736,7 @@ static void setupWorld(Reader& r)
 		for (int k = 0; k < ne; ++k)
 		{
 			DictEntry e; e.type = r.i(); e.key = r.s(); e.bits = 0;
-			if (e.type == 3) e.str = r.s(); else e.bits = r.u();
+			if (e.type == 3 || e.type == 4) e.str = r.s(); else e.bits = r.u();
 			spec.e.push_back(e);
 		}
 		g_dicts.push_back(spec);
@@ -695,7 +777,7 @@ static void setupWorld(Reader& r)
 		PlayerTemplate* t = new PlayerTemplate;
 		char b[40];
 		sprintf(b, "Tpl%d", r.i()); t->m_beacon = AsciiString(b);
-		sprintf(b, "Side%d", r.i()); t->m_side = AsciiString(b);
+		{ int sv = r.i(); if (sv == 7) strcpy(b, "Civilian"); else sprintf(b, "Side%d", sv); } t->m_side = AsciiString(b);
 		sprintf(b, "Base%d", r.i()); t->m_baseSide = AsciiString(b);
 		t->m_color.m_asInt = r.i();
 		readMoney(r, t->m_money);
@@ -719,7 +801,7 @@ static void setupWorld(Reader& r)
 		AiCfg c; c.safe = r.b(); c.attacked = r.b(); c.bridges = r.b(); c.hasBase = r.b(); c.base = r.c(); c.superOK = r.b(); c.construct = r.b(); c.at = r.c(); c.enemy = r.i(); c.diff = (int)(r.u() % 3);
 		g_aiCfg.push_back(c);
 	}
-	g_playerList.m_count = 0;
+	g_playerList.m_playerCount = 0;
 	for (int i = 0; i < 16; ++i) g_playerList.m_players[i] = NULL;
 	g_playerList.m_local = NULL;
 	/* PlayerList::PlayerList makes all MAX_PLAYER_COUNT players; the program's world uses the first np of them */
@@ -731,9 +813,9 @@ static void setupWorld(Reader& r)
 		if (i < np) g_players.push_back(p);
 		g_playerList.m_players[i] = p;
 		char b[32]; sprintf(b, "Player%d", i);
-		g_playerList.m_byKey[(unsigned)TheNameKeyGenerator->nameToKey(b)] = i;
+		g_playerByName[(unsigned)TheNameKeyGenerator->nameToKey(b)] = i;
 	}
-	g_playerList.m_count = np;
+	g_playerList.m_playerCount = np;
 	g_playerList.m_local = g_players[0];
 
 	int nt = r.i();
@@ -821,6 +903,7 @@ static const SpecialPowerType k_spPool[9] = { SPECIAL_PARTICLE_UPLINK_CANNON, SU
 ** part of the program is the same as slice 1's. */
 static bool g_hasObserver = false;
 static unsigned g_observerIdx = 0;
+static void readSides(Reader& r);
 static void setupWorld2(Reader& r)
 {
 	g_hasObserver = r.b(); g_observerIdx = r.u();
@@ -847,10 +930,60 @@ static void setupWorld2(Reader& r)
 			m.m_type = (int)k_spPool[r.u() % 9]; m.m_scriptOnly = r.b(); m.m_ready = r.u(); m.m_percent = r.u() % 130; m.m_tmpl.m_shared = r.b();
 		}
 	}
+	readSides(r);
 }
 
 static AsciiString teamName(unsigned id) { char b[32]; if (id >= 100) sprintf(b, "teamP%u", id - 100); else sprintf(b, "Team%u", id); return AsciiString(b); }
 static AsciiString thingName(unsigned v) { char b[32]; if (v >= 8) sprintf(b, "tpl%u", v - 8); else sprintf(b, "Tpl%u", v); return AsciiString(b); }
+static void readSides(Reader& r)
+{
+	int nsd = r.i();
+	for (int i = 0; i < nsd; ++i)
+	{
+		DictSpec spec;
+		int ne = r.i();
+		for (int k = 0; k < ne; ++k)
+		{
+			DictEntry e; e.type = r.i(); e.key = r.s(); e.bits = 0;
+			if (e.type == 3 || e.type == 4) e.str = r.s(); else e.bits = r.u();
+			spec.e.push_back(e);
+		}
+		Dict d; buildDict(spec, d);
+		g_sdicts.push_back(d);
+	}
+	SidesList* sl = TheSidesList;
+	for (int i = 0; i < 16; ++i)
+	{
+		SidesInfo* si = new SidesInfo;
+		unsigned di = r.u(); if (di != 0 && !g_sdicts.empty()) si->m_dict = g_sdicts[(di - 1) % g_sdicts.size()];
+		if (r.b()) { ScriptList* l = new ScriptList; l->m_id = g_nextScriptList++; si->m_scripts = l; }
+		int bl = r.i();
+		BuildListInfo* head = NULL;
+		for (int k = bl - 1; k >= 0; --k) { BuildListInfo* e = new BuildListInfo; e->m_objectID = (ObjectID)(100 * i + k); e->m_templateName = thingName((unsigned)(i + k)); e->m_nextBuildList = head; head = e; }
+		si->m_buildList = head;
+		sl->m_sides.push_back(si);
+	}
+	int nss = r.i();
+	for (int i = 0; i < nss; ++i)
+	{
+		SidesInfo* si = new SidesInfo;
+		unsigned di = r.u(); if (di != 0 && !g_sdicts.empty()) si->m_dict = g_sdicts[(di - 1) % g_sdicts.size()];
+		if (r.b()) { ScriptList* l = new ScriptList; l->m_id = g_nextScriptList++; si->m_scripts = l; }
+		sl->m_skirmishSides.push_back(si);
+	}
+	int nt = r.i();
+	for (int i = 0; i < nt; ++i)
+	{
+		TeamsInfo* t = new TeamsInfo; unsigned di = r.u(); if (di != 0 && !g_sdicts.empty()) t->m_dict = g_sdicts[(di - 1) % g_sdicts.size()];
+		sl->m_teams.push_back(t);
+	}
+	int nk = r.i();
+	for (int i = 0; i < nk; ++i)
+	{
+		TeamsInfo* t = new TeamsInfo; unsigned di = r.u(); if (di != 0 && !g_sdicts.empty()) t->m_dict = g_sdicts[(di - 1) % g_sdicts.size()];
+		sl->m_skirmishTeams.push_back(t);
+	}
+}
 static std::string countsStr(const int* c, int n) { std::string s; char b[16]; for (int i = 0; i < n; ++i) { sprintf(b, "%s%d", i ? "," : "", c[i]); s += b; } return s; }
 static Coord3D coordOf(unsigned a, unsigned b2, unsigned c) { Coord3D d; memcpy(&d.x, &a, 4); memcpy(&d.y, &b2, 4); memcpy(&d.z, &c, 4); return d; }
 static ScienceType sciOf(unsigned v) { return (ScienceType)sciKey((int)(v % 8)); }
@@ -1145,6 +1278,10 @@ static void playerOp(Player* p, unsigned sub, const unsigned* a)
 			break; }
 		}
 		break; }
+	case 94: {
+		if (g_sdicts.empty()) { Rec("skip nosdicts"); break; }
+		p->initFromDict(&g_sdicts[a[0] % g_sdicts.size()]);
+		break; }
 	case 93: {
 		if (a[0] % 3 == 0)
 		{
@@ -1176,6 +1313,55 @@ static void playerOp(Player* p, unsigned sub, const unsigned* a)
 	}
 }
 
+static std::vector<unsigned char> g_savedList;
+static bool g_haveList = false;
+/* one operation on the player list */
+static void listOp(unsigned sub, const unsigned* a)
+{
+	int np = (int)g_players.size();
+	switch (sub % 15)
+	{
+	case 0: ThePlayerList->update(); break;
+	case 1: ThePlayerList->newMap(); break;
+	case 2: ThePlayerList->updateTeamStates(); break;
+	case 3: { Team* t = ThePlayerList->validateTeam(teamName(a[0])); Rec("ret vteam %d", tid(t)); break; }
+	case 4: ThePlayerList->setLocalPlayer(a[0] ? g_players[(a[0] - 1) % np] : NULL); break;
+	case 5: { PlayerMaskType mask = (a[0] % 3 == 0) ? (PlayerMaskType)(1u << (a[1] % 16)) : (PlayerMaskType)(a[1] & 0xffff); Player* p = ThePlayerList->getPlayerFromMask(mask); Rec("ret pfm %d", p ? p->m_playerIndex : -1); break; }
+	case 6: { PlayerMaskType m = (PlayerMaskType)(a[0] & 0xffff); for (int k = 0; k < 3; ++k) { Player* p = ThePlayerList->getEachPlayerFromMask(m); Rec("ret each %04x %d", (unsigned)m, p ? p->m_playerIndex : -1); } break; }
+	case 7: Rec("ret pwr %04x", (unsigned)ThePlayerList->getPlayersWithRelationship((Int)(a[0] % 16), a[1] & 0xf)); break;
+	case 8: ThePlayerList->init(); break;
+	case 9: ThePlayerList->reset(); break;
+	case 10: ThePlayerList->newGame(); break;
+	case 11: { XferCRC xc; xc.open(AsciiString("l")); xc.xferSnapshot(ThePlayerList); xc.close(); Rec("ret lcrc %08x", xc.getCRC()); break; }
+	case 12: {
+		XferSave xs; xs.open(AsciiString(g_tmpPath.c_str())); xs.xferSnapshot(ThePlayerList); xs.close();
+		g_savedList = readFileBytes(g_tmpPath.c_str()); g_haveList = true;
+		Rec("ret lsave len=%u hash=%08x", (unsigned)g_savedList.size(), hashBytes(g_savedList));
+		break; }
+	case 13: {
+		if (!g_haveList) { Rec("skip"); break; }
+		for (int i = 0; i < ThePlayerList->m_playerCount; ++i)
+		{
+			Player* p = ThePlayerList->m_players[i];
+			if (a[1] & 1) { p->m_kindOfPercentProductionChangeList.clear(); p->m_specialPowerReadyTimerList.clear(); }
+			if (a[1] & 2)
+			{
+				for (int k = 0; k < NUM_HOTKEY_SQUADS; ++k) if (p->m_squads[k]) p->m_squads[k]->m_objectsCached.clear();
+				if (p->m_currentSelection) p->m_currentSelection->m_objectsCached.clear();
+			}
+		}
+		writeFileBytes(g_tmpPath.c_str(), g_savedList);
+		TheGameState->m_postProcessCount = 0;
+		XferLoad xl; xl.open(AsciiString(g_tmpPath.c_str()));
+		try { xl.xferSnapshot(ThePlayerList); } catch (...) { try { xl.close(); } catch (...) {} throw; }
+		xl.close();
+		Rec("ret lload pp=%d", TheGameState->m_postProcessCount);
+		ThePlayerList->loadPostProcess();
+		break; }
+	default: { Team* t = a[0] ? pickTeam(a[0] - 1) : NULL; if (!t) { Rec("skip"); break; } ThePlayerList->teamAboutToBeDeleted(t); break; }
+	}
+}
+
 static void doOp(unsigned op, Reader& r)
 {
 	int np = (int)g_players.size();
@@ -1193,6 +1379,7 @@ static void doOp(unsigned op, Reader& r)
 	case 4: { unsigned ok = r.u(), ts = r.u(); Team* t = ts ? pickTeam(ts - 1) : NULL; if (ts && !t) { Rec("skip"); break; } pickObj(ok)->setTeam(t); break; }
 	case 5: { unsigned ok = r.u(), sub = r.u(), a[8]; for (int k = 0; k < 8; ++k) a[k] = r.u(); objOp(pickObj(ok), sub, a); break; }
 	case 6: { unsigned pk = r.u(), sub = r.u(), a[8]; for (int k = 0; k < 8; ++k) a[k] = r.u(); playerOp(pickPlayer(pk), sub, a); break; }
+	case 7: { unsigned sub = r.u(), a[8]; for (int k = 0; k < 8; ++k) a[k] = r.u(); listOp(sub, a); break; }
 	default: Rec("ret nop"); break;
 	}
 }
@@ -1202,7 +1389,7 @@ static void doOp(unsigned op, Reader& r)
 ** if it fits `cap`). */
 extern "C" int ref_player_run(const unsigned* words, int n, const char* tmpPath, char* out, int cap)
 {
-	g_tmpPath = tmpPath; g_saved.clear(); g_haveSave = false; g_upgrades.clear(); TheGameState->m_postProcessCount = 0;
+	g_tmpPath = tmpPath; g_saved.clear(); g_haveSave = false; g_savedList.clear(); g_haveList = false; g_upgrades.clear(); TheGameState->m_postProcessCount = 0;
 	static NameKeyGenerator* gen = NULL;
 	if (!gen) gen = new NameKeyGenerator;
 	gen->reset();

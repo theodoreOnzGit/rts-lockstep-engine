@@ -88,6 +88,8 @@ pub enum PlayerError {
     Null,
     /// The name-key counter ran past `0x7fffffff` (undefined upstream).
     NameKeysExhausted,
+    /// A float converted to an `Int` out of its range (undefined in C++).
+    OutOfRange,
 }
 
 impl From<crate::common::xfer::XferStatus> for PlayerError {

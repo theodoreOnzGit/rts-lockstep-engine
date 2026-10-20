@@ -34,13 +34,7 @@ class SupplyTruckAIInterface; class ObjectIterator; class BuildAssistant; class 
 enum ValueOrThreat { VOT_CashValue = 1, VOT_ThreatValue, VOT_NumItems };
 enum IterOrderType { ITER_FASTEST = 0, ITER_SORTED_NEAR_TO_FAR, ITER_SORTED_FAR_TO_NEAR };
 /* PlayerList.h lines 63-69, verbatim */
-enum AllowPlayerRelationship
-{
-	ALLOW_SAME_PLAYER			= 0x01,
-	ALLOW_ALLIES					= 0x02,
-	ALLOW_ENEMIES					= 0x04,
-	ALLOW_NEUTRAL					= 0x08
-};
+
 /* ActionManager.h lines 51-56, verbatim */
 enum CanEnterType { CHECK_CAPACITY, DONT_CHECK_CAPACITY, COMBATDROP_INTO };
 /* GameMemory.h lines 772-781 without the debug assertion */
@@ -108,13 +102,15 @@ enum DistanceCalculationType { FROM_CENTER_2D = 0, FROM_CENTER_3D = 1, FROM_BOUN
 class Dict
 {
 public:
-	struct Val { int type; unsigned bits; AsciiString s; };
+	struct Val { int type; unsigned bits; AsciiString s; std::vector<WideChar> u; };
 	std::map<unsigned, Val> m;
 	void set(NameKeyType k, int type, unsigned bits, const AsciiString& s) { Val v; v.type = type; v.bits = bits; v.s = s; m[(unsigned)k] = v; }
 	void setBool(NameKeyType k, Bool v) { set(k, 0, v ? 1 : 0, AsciiString()); }
 	void setInt(NameKeyType k, Int v) { set(k, 1, (unsigned)v, AsciiString()); }
 	void setReal(NameKeyType k, Real v) { unsigned b; memcpy(&b, &v, 4); set(k, 2, b, AsciiString()); }
 	void setAsciiString(NameKeyType k, const AsciiString& v) { set(k, 3, 0, v); }
+	void setUnicodeUnits(NameKeyType k, const std::vector<WideChar>& u) { set(k, 4, 0, AsciiString()); m[(unsigned)k].u = u; }
+	UnicodeString getUnicodeString(NameKeyType k, Bool* exists = NULL) const { const Val* v = find(k, 4); if (exists) *exists = v != NULL; UnicodeString r; if (v) { std::vector<WideChar> t = v->u; t.push_back(0); r.set(&t[0]); } return r; }
 	const Val* find(NameKeyType k, int type) const { std::map<unsigned, Val>::const_iterator it = m.find((unsigned)k); return (it != m.end() && it->second.type == type) ? &it->second : NULL; }
 	Bool getBool(NameKeyType k, Bool* exists = NULL) const { const Val* v = find(k, 0); if (exists) *exists = v != NULL; return v ? v->bits != 0 : false; }
 	Int getInt(NameKeyType k, Bool* exists = NULL) const { const Val* v = find(k, 1); if (exists) *exists = v != NULL; return v ? (Int)v->bits : 0; }
@@ -285,21 +281,12 @@ public:
 	const ScienceVec& getIntrinsicSciences() const { return m_intrinsic; }
 	Int getIntrinsicSciencePurchasePoints() const { return m_intrinsicSPP; }
 };
-class PlayerList
-{
-public:
-	Player* m_players[16]; int m_count; Player* m_local; std::map<unsigned, int> m_byKey;
-	Int getPlayerCount() const { return m_count; }
-	Player* getNthPlayer(Int i) const { return (i >= 0 && i < 16) ? m_players[i] : NULL; }
-	Player* getNeutralPlayer() const { return m_players[0]; }
-	Player* getLocalPlayer() const { return m_local; }
-	Player* findPlayerWithNameKey(NameKeyType key) const
-	{
-		std::map<unsigned, int>::const_iterator it = m_byKey.find((unsigned)key);
-		return (it == m_byKey.end() || it->second >= m_count) ? NULL : m_players[it->second];
-	}
-	void teamAboutToBeDeleted(Team* team);
-};
+/* the REAL PlayerList.h (the class, unchanged; its functions are PlayerList.cpp's, taken whole by build.rs). Not extracted: the constructor and
+** destructor (they make the sixteen players and init them: this fixture makes its own, see setupWorld) and findPlayerWithNameKey, which answers
+** the program's players by their fixed names first ("Player0"... : the Team operations name owners that way, and Player::init gives every player
+** the empty name) and then as the real one does, by m_playerNameKey */
+#include "Common/PlayerList.h"
+
 
 /* ---- the global data (the fields Player.cpp reads), game info, the message stream ------------------------------- */
 class GlobalData
@@ -514,19 +501,51 @@ public:
 };
 
 /* ---- the sides list (Team::initFromSides reads the team dictionaries) -------------------------------------------- */
+class ScriptList
+{
+public:
+	int m_id;
+	ScriptList* duplicateAndQualify(const AsciiString& qualifier, const AsciiString& qualTemplatePlayerName, const AsciiString& newPlayerName);
+	void deleteInstance();
+};
 class TeamsInfo
 {
 public:
 	Dict m_dict;
 	Dict* getDict() { return &m_dict; }
 };
+class SidesInfo
+{
+public:
+	Dict m_dict; BuildListInfo* m_buildList; ScriptList* m_scripts;
+	SidesInfo() : m_buildList(NULL), m_scripts(NULL) {}
+	Dict* getDict() { return &m_dict; }
+	BuildListInfo* getBuildList() { return m_buildList; }
+	void releaseBuildList() { m_buildList = NULL; }
+	ScriptList* getScriptList() { return m_scripts; }
+	void setScriptList(ScriptList* l) { m_scripts = l; }
+};
 class SidesList
 {
 public:
-	std::vector<TeamsInfo*> m_teams;
+	std::vector<SidesInfo*> m_sides, m_skirmishSides;
+	std::vector<TeamsInfo*> m_teams, m_skirmishTeams;
+	Int getNumSides() const { return (Int)m_sides.size(); }
+	SidesInfo* getSideInfo(Int i) { return m_sides[i]; }
+	Int getNumSkirmishSides() const { return (Int)m_skirmishSides.size(); }
+	SidesInfo* getSkirmishSideInfo(Int i) { return m_skirmishSides[i]; }
 	Int getNumTeams() const { return (Int)m_teams.size(); }
 	TeamsInfo* getTeamInfo(Int i) { return m_teams[i]; }
+	Int getNumSkirmishTeams() const { return (Int)m_skirmishTeams.size(); }
+	TeamsInfo* getSkirmishTeamInfo(Int i) { return m_skirmishTeams[i]; }
+	void removeTeam(Int i);
+	TeamsInfo* findTeamInfo(AsciiString name, Int* index = NULL);
+	void addTeam(Dict* d);
 };
+extern SidesList* TheSidesList;
+class NetworkStandIn;
+extern NetworkStandIn* TheNetwork;
+
 
 extern PlayerList* ThePlayerList;
 extern ScriptEngine* TheScriptEngine;

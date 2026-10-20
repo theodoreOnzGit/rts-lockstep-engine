@@ -106,6 +106,11 @@
 #define AI PlTestAI
 #define TheAI PlTestTheAI
 #define Squad PlTestSquad
+#define ScriptList PlTestScriptList
+#define SidesInfo PlTestSidesInfo
+#define TheSidesList PlTestTheSidesList
+#define TheNetwork PlTestTheNetwork
+#define NetworkStandIn PlTestNetworkStandIn
 #define Xfer PlTestXfer
 #define XferCRC PlTestXferCRC
 #define XferDeepCRC PlTestXferDeepCRC

@@ -120,6 +120,8 @@ use rts_lockstep_engine::logic::world::player::*;
 use rts_lockstep_engine::logic::world::player_objects::*;
 use rts_lockstep_engine::logic::world::player_ops::*;
 use rts_lockstep_engine::logic::world::player_squads::*;
+use rts_lockstep_engine::logic::world::player_init::*;
+use rts_lockstep_engine::logic::world::player_list::*;
 use rts_lockstep_engine::logic::world::player_xfer::*;
 use rts_lockstep_engine::logic::world::team::{ScriptRef, TeamArena, TeamError, WaypointId, WaypointInfo};
 use rts_lockstep_engine::logic::world::team_ops::*;
@@ -349,6 +351,13 @@ struct DictEntry {
 }
 
 #[derive(Clone)]
+/// One entry of `TheSidesList`'s side arrays.
+struct SideSim {
+    dict: Dict,
+    scripts: Option<u32>,
+    build: Vec<BuildListInfo>,
+}
+
 struct SciCfg {
     cost: i32,
     grantable: bool,
@@ -405,6 +414,18 @@ struct Sim {
     /// The three AI groups' ids (`g_groups`), the messages the squad operations built (their object id arguments).
     groups: Vec<Vec<ObjectId>>,
     msgs: Vec<Vec<ObjectId>>,
+    /// `TheSidesList`: the sixteen sides (a side per player index), the skirmish sides, the teams and the skirmish teams.
+    sides: Vec<SideSim>,
+    skirmish_sides: Vec<SideSim>,
+    side_teams: Vec<Dict>,
+    skirmish_teams: Vec<Dict>,
+    sdicts: Vec<Dict>,
+    next_script: u32,
+    /// The last save of the whole player list.
+    saved_list: Vec<u8>,
+    have_list: bool,
+    /// The difficulty an AI was given by `setAIDifficulty`, until it is made again.
+    ai_diff: [Option<u32>; 16],
     /// `m_academyStats.m_controlGroupsUsed` of each player.
     groups_used: [u32; 16],
     /// The last save of a player, and whether there is one.
@@ -456,6 +477,7 @@ impl Sim {
                 0 => d.set_bool(k, e.bits != 0).unwrap(),
                 1 => d.set_int(k, e.bits as i32).unwrap(),
                 2 => d.set_real(k, f32::from_bits(e.bits)).unwrap(),
+                4 => d.set_unicode_string(k, &e.s.iter().map(|b| u16::from(*b)).collect::<Vec<u16>>()).unwrap(),
                 _ => d.set_ascii_string(k, &e.s).unwrap(),
             }
         }
@@ -495,13 +517,17 @@ impl TeamHost for Sim {
         self.apply_reaction(o, 2);
     }
     fn player_list_find_with_name_key(&mut self, key: NameKeyType) -> Option<PlayerIndex> {
-        self.player_by_key.get(&key.0).filter(|i| **i < self.np).map(|i| *i as PlayerIndex)
+        // the program's players by their fixed names first, then as the real function does (see shim_player/player_driver.h)
+        if let Some(i) = self.player_by_key.get(&key.0).filter(|i| (**i as i32) < self.players.player_count()) {
+            return Some(*i as PlayerIndex);
+        }
+        self.players.find_with_name_key(key.0 as i32).map(|p| p.player_index)
     }
     fn player_list_neutral(&self) -> Option<PlayerIndex> {
         Some(0)
     }
     fn player_list_count(&self) -> i32 {
-        self.np as i32
+        self.players.player_count()
     }
     fn player_list_nth(&self, i: i32) -> Option<PlayerIndex> {
         if (0..16).contains(&i) {
@@ -516,9 +542,7 @@ impl TeamHost for Sim {
             self.undef("a player's default team was deleted");
         }
         // PlayerList::teamAboutToBeDeleted: every player drops its relationship override for the team
-        for i in 0..16 {
-            let _ = player_remove_team_relationship(self, i, Some(team));
-        }
+        let _ = player_list_team_about_to_be_deleted(self, team);
     }
     fn player_add_team_to_list(&mut self, p: PlayerIndex, proto: TeamPrototypeId) {
         let _ = player_add_team_to_list(self, p, proto);
@@ -880,6 +904,7 @@ impl PlayerHost for Sim {
         self.rec(format!("score.unbuilt {}", o.unwrap_or(0)));
     }
     fn ai_create(&mut self, p: PlayerIndex, _skirmish: bool) {
+        self.ai_diff[p as usize] = None;
         self.rec(format!("ai.new {p}"));
     }
     fn ai_delete(&mut self, p: PlayerIndex) {
@@ -892,7 +917,7 @@ impl PlayerHost for Sim {
         self.rec(format!("ai.newmap {p}"));
     }
     fn ai_difficulty(&self, p: PlayerIndex) -> GameDifficulty {
-        match self.ai_cfg_of(p).diff {
+        match self.ai_diff[p as usize].unwrap_or(self.ai_cfg_of(p).diff) {
             0 => GameDifficulty::Easy,
             1 => GameDifficulty::Normal,
             _ => GameDifficulty::Hard,
@@ -1260,8 +1285,12 @@ impl PlayerObjectHost for Sim {
     }
     fn player_template_find(&self, key: NameKeyType) -> Option<PlayerTemplateRef> {
         // `ThePlayerTemplateStore->findPlayerTemplate(NAMEKEY("FactionObserver"))`: the key was made by the caller
-        if self.names.key_to_name(key) == b"FactionObserver" {
+        let name = self.names.key_to_name(key);
+        if name == b"FactionObserver" {
             self.observer_template.map(|i| i as PlayerTemplateRef)
+        } else if let Some(digits) = name.strip_prefix(b"Faction") {
+            // "Faction" and a number written as `to_string` writes it, naming one of the program's player templates
+            std::str::from_utf8(digits).ok().and_then(|t| t.parse::<usize>().ok()).filter(|i| i.to_string().as_bytes() == digits && *i < self.ptpls.len()).map(|i| i as PlayerTemplateRef)
         } else {
             None
         }
@@ -1579,6 +1608,24 @@ fn dump_state(sim: &mut Sim) {
         out.push(format!("D player3 {i} spent={} earned={} bonus={bonus}", sim.spent[i], sim.earned[i]));
         // --- end p1w10-sonnet ---
     }
+    // --- p1w10-sonnet --- (slice 4): the sides list
+    {
+        let scripts = |v: &Vec<SideSim>| v.iter().map(|x| x.scripts.map_or("-".to_string(), |i| i.to_string())).collect::<Vec<_>>().join(",");
+        let builds = sim.sides.iter().map(|x| x.build.len().to_string()).collect::<Vec<_>>().join(",");
+        let teams = if sim.side_teams.is_empty() {
+            "-".to_string()
+        } else {
+            let kn = sim.names.name_to_key(b"teamName");
+            let ko = sim.names.name_to_key(b"teamOwner");
+            sim.side_teams
+                .iter()
+                .map(|d| format!("{}@{}", String::from_utf8_lossy(&d.get_ascii_string(kn).0), String::from_utf8_lossy(&d.get_ascii_string(ko).0)))
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        out.push(format!("D sides scripts={} sk={} builds={} teams={} count={}", scripts(&sim.sides), scripts(&sim.skirmish_sides), builds, teams, sim.players.player_count()));
+    }
+    // --- end p1w10-sonnet ---
     sim.lines.extend(out);
 }
 
@@ -1622,6 +1669,7 @@ fn thrown(e: PlayerError) -> Result<String, Excluded> {
         PlayerError::Xfer(s) => Ok(format!("threw xfer {}", s as i32)),
         PlayerError::Null => Err(Excluded("a NULL or dangling pointer dereferenced")),
         PlayerError::NameKeysExhausted => Err(Excluded("the name keys ran out")),
+        PlayerError::OutOfRange => Err(Excluded("a float converted to an int out of range")),
     }
 }
 
@@ -1694,7 +1742,7 @@ fn read_dicts(r: &mut Reader<'_>, sim: &mut Sim) {
             let ty = r.i();
             let key = r.s();
             let (mut bits, mut s) = (0, Vec::new());
-            if ty == 3 {
+            if ty == 3 || ty == 4 {
                 s = r.s();
             } else {
                 bits = r.u();
@@ -1762,6 +1810,15 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
         saved: Vec::new(),
         have_save: false,
         groups_used: [0; 16],
+        sides: Vec::new(),
+        skirmish_sides: Vec::new(),
+        side_teams: Vec::new(),
+        skirmish_teams: Vec::new(),
+        sdicts: Vec::new(),
+        next_script: 1,
+        saved_list: Vec::new(),
+        have_list: false,
+        ai_diff: [None; 16],
         undefined: std::cell::Cell::new(None),
     };
     // the dictionaries
@@ -1828,7 +1885,10 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
     let npt = r.i();
     for _ in 0..npt {
         let beacon = format!("Tpl{}", r.i()).into_bytes();
-        let side = format!("Side{}", r.i()).into_bytes();
+        let side = match r.i() {
+            7 => b"Civilian".to_vec(),
+            v => format!("Side{v}").into_bytes(),
+        };
         let base_side = format!("Base{}", r.i()).into_bytes();
         let color = r.i();
         let money = read_money(r);
@@ -2052,6 +2112,11 @@ fn read_header2(r: &mut Reader<'_>, sim: &mut Sim) {
         t.link_key = if lk == 0 { NameKeyType::INVALID } else { sim.names.name_to_key(format!("Link{lk}").as_bytes()) };
         t.owning_side = r.u() % 4;
     }
+    read_header2_objects(r, sim);
+    read_sides(r, sim);
+}
+
+fn read_header2_objects(r: &mut Reader<'_>, sim: &mut Sim) {
     for o in sim.objs.iter_mut() {
         o.modules_ready = r.b();
         o.has_auto_deposit = r.b();
@@ -2206,6 +2271,274 @@ fn thing_list(sim: &Sim, a: &[u32; 8]) -> (Vec<Option<TemplateRef>>, Vec<i32>) {
 }
 
 /// One `Player` operation; `a` are its eight words.
+// --- p1w10-sonnet --- (slice 4)
+impl PlayerInitHost for Sim {
+    fn sides_num_sides(&self) -> i32 {
+        self.sides.len() as i32
+    }
+    fn sides_side_dict(&self, i: i32) -> Dict {
+        self.sides[i as usize].dict.clone()
+    }
+    fn sides_side_scripts(&self, i: i32) -> Option<ScriptListRef> {
+        self.sides[i as usize].scripts
+    }
+    fn sides_set_side_scripts(&mut self, i: i32, l: Option<ScriptListRef>) {
+        self.sides[i as usize].scripts = l;
+    }
+    fn sides_take_side_build_list(&mut self, i: i32) -> Vec<BuildListInfo> {
+        std::mem::take(&mut self.sides[i as usize].build)
+    }
+    fn sides_num_skirmish_sides(&self) -> i32 {
+        self.skirmish_sides.len() as i32
+    }
+    fn sides_skirmish_side_dict(&self, i: i32) -> Dict {
+        self.skirmish_sides[i as usize].dict.clone()
+    }
+    fn sides_skirmish_side_scripts(&self, i: i32) -> Option<ScriptListRef> {
+        self.skirmish_sides[i as usize].scripts
+    }
+    fn sides_set_skirmish_side_scripts(&mut self, i: i32, l: Option<ScriptListRef>) {
+        self.skirmish_sides[i as usize].scripts = l;
+    }
+    fn sides_num_teams(&self) -> i32 {
+        self.side_teams.len() as i32
+    }
+    fn sides_team_dict(&self, i: i32) -> Dict {
+        self.side_teams[i as usize].clone()
+    }
+    fn sides_remove_team(&mut self, i: i32) {
+        self.rec(format!("sides.removeteam {i}"));
+        self.side_teams.remove(i as usize);
+    }
+    fn sides_num_skirmish_teams(&self) -> i32 {
+        self.skirmish_teams.len() as i32
+    }
+    fn sides_skirmish_team_dict(&self, i: i32) -> Dict {
+        self.skirmish_teams[i as usize].clone()
+    }
+    fn sides_find_team_info(&mut self, name: &[u8]) -> bool {
+        if self.side_teams.is_empty() {
+            return false;
+        }
+        let k = self.names.name_to_key(b"teamName");
+        self.side_teams.iter().any(|d| d.get_ascii_string(k).0 == name)
+    }
+    fn sides_add_team(&mut self, d: &Dict) {
+        let get = |sim: &mut Sim, name: &str| -> String {
+            let k = sim.names.name_to_key(name.as_bytes());
+            String::from_utf8_lossy(&d.get_ascii_string(k).0).into_owned()
+        };
+        let mut line = format!("sides.addteam owner={} name={}", get(self, "teamOwner"), get(self, "teamName"));
+        for n in ["teamOnCreateScript", "teamOnIdleScript", "teamOnUnitDestroyedScript", "teamOnDestroyedScript", "teamEnemySightedScript", "teamAllClearScript", "teamProductionCondition"] {
+            line.push(' ');
+            line.push_str(&get(self, n));
+        }
+        for j in 0..16 {
+            line.push(' ');
+            self.names.name_to_key(b"teamGenericScriptHook"); // keyToName(TheKey_teamGenericScriptHook)
+            line.push_str(&get(self, &format!("teamGenericScriptHook{j}")));
+        }
+        self.rec(line);
+        self.side_teams.push(d.clone());
+    }
+    fn script_list_duplicate_and_qualify(&mut self, list: ScriptListRef, qualifier: &[u8], qual_template_player_name: &[u8], new_player_name: &[u8]) -> ScriptListRef {
+        let id = self.next_script;
+        self.next_script += 1;
+        self.rec(format!(
+            "scripts.qualify {list} -> {id} q={} t={} n={}",
+            String::from_utf8_lossy(qualifier),
+            String::from_utf8_lossy(qual_template_player_name),
+            String::from_utf8_lossy(new_player_name)
+        ));
+        id
+    }
+    fn script_list_delete(&mut self, list: ScriptListRef) {
+        self.rec(format!("scripts.delete {list}"));
+    }
+    fn script_engine_global_difficulty(&self) -> GameDifficulty {
+        self.globals.global_difficulty
+    }
+    fn ai_set_difficulty(&mut self, p: PlayerIndex, d: GameDifficulty) {
+        self.rec(format!("ai.diff {p} {}", d as i32));
+        self.ai_diff[p as usize] = Some(match d {
+            GameDifficulty::Easy => 0,
+            GameDifficulty::Normal => 1,
+            GameDifficulty::Hard => 2,
+        });
+    }
+    fn network_present(&self) -> bool {
+        false
+    }
+    fn team_factory_init_from_sides(&mut self) -> PResult<()> {
+        let mut sides = rts_lockstep_engine::logic::sides_list::SidesList::new();
+        for d in self.side_teams.clone() {
+            sides.add_team(&d);
+        }
+        factory_init_from_sides(self, &sides)?;
+        Ok(())
+    }
+}
+
+/// A side or a team of the program: a dictionary of the program's list (0 is an empty one).
+fn sdict_at(sim: &Sim, w: u32) -> Dict {
+    if w == 0 || sim.sdicts.is_empty() {
+        Dict::new()
+    } else {
+        sim.sdicts[(w as usize - 1) % sim.sdicts.len()].clone()
+    }
+}
+
+/// The part of the header that is `TheSidesList` (dictionaries first, then the sixteen sides, the skirmish sides, the teams).
+fn read_sides(r: &mut Reader<'_>, sim: &mut Sim) {
+    let nsd = r.i();
+    for _ in 0..nsd {
+        let ne = r.i();
+        let mut entries = Vec::new();
+        for _ in 0..ne {
+            let ty = r.i();
+            let key = r.s();
+            let (mut bits, mut s) = (0, Vec::new());
+            if ty == 3 || ty == 4 {
+                s = r.s();
+            } else {
+                bits = r.u();
+            }
+            entries.push(DictEntry { ty, key, bits, s });
+        }
+        let d = sim.build_dict(&entries);
+        sim.sdicts.push(d);
+    }
+    for i in 0..16 {
+        let dict = sdict_at(sim, r.u());
+        let scripts = if r.b() {
+            let id = sim.next_script;
+            sim.next_script += 1;
+            Some(id)
+        } else {
+            None
+        };
+        let bl = r.i();
+        let mut build = Vec::new();
+        for k in 0..bl {
+            let mut e = BuildListInfo::new();
+            e.object_id = 100 * i + k;
+            e.template_name = thing_name((i + k) as u32);
+            build.push(e);
+        }
+        sim.sides.push(SideSim { dict, scripts, build });
+    }
+    let nss = r.i();
+    for _ in 0..nss {
+        let dict = sdict_at(sim, r.u());
+        let scripts = if r.b() {
+            let id = sim.next_script;
+            sim.next_script += 1;
+            Some(id)
+        } else {
+            None
+        };
+        sim.skirmish_sides.push(SideSim { dict, scripts, build: Vec::new() });
+    }
+    let nt = r.i();
+    for _ in 0..nt {
+        let d = sdict_at(sim, r.u());
+        sim.side_teams.push(d);
+    }
+    let nk = r.i();
+    for _ in 0..nk {
+        let d = sdict_at(sim, r.u());
+        sim.skirmish_teams.push(d);
+    }
+}
+
+/// One operation on the player list.
+fn list_op(sim: &mut Sim, a: &[u32; 8], sub: u32) -> Result<(), PlayerError> {
+    let np = sim.np;
+    match sub % 15 {
+        0 => player_list_update(sim)?,
+        1 => player_list_new_map(sim)?,
+        2 => player_list_update_team_states(sim)?,
+        3 => {
+            let t = player_list_validate_team(sim, &team_name(a[0]))?;
+            sim.rec(format!("ret vteam {}", tid(t)));
+        }
+        4 => {
+            let p = if a[0] != 0 { Some(((a[0] - 1) as usize % np) as PlayerIndex) } else { None };
+            player_list_set_local_player(sim, p)?;
+        }
+        5 => {
+            let mask: u16 = if a[0] % 3 == 0 { 1u16 << (a[1] % 16) } else { (a[1] & 0xffff) as u16 };
+            let p = player_list_get_player_from_mask(sim, mask);
+            sim.rec(format!("ret pfm {}", p.unwrap_or(-1)));
+        }
+        6 => {
+            let mut m = (a[0] & 0xffff) as u16;
+            for _ in 0..3 {
+                let p = player_list_get_each_player_from_mask(sim, &mut m);
+                sim.rec(format!("ret each {:04x} {}", m, p.unwrap_or(-1)));
+            }
+        }
+        7 => {
+            let r = player_list_get_players_with_relationship(sim, (a[0] % 16) as i32, a[1] & 0xf)?;
+            sim.rec(format!("ret pwr {r:04x}"));
+        }
+        8 => player_list_init(sim)?,
+        9 => player_list_reset(sim)?,
+        10 => player_list_new_game(sim)?,
+        11 => {
+            let mut xc = XferCrc::new();
+            xc.open(b"l").unwrap();
+            player_list_crc(sim, &mut xc)?;
+            xc.close().unwrap();
+            sim.rec(format!("ret lcrc {:08x}", xc.get_crc()));
+        }
+        12 => {
+            let mut save = XferSave::new();
+            save.open(b"l").unwrap();
+            let r = xfer_nested(sim, &mut save, |h, x| player_list_xfer(h, x));
+            save.close().unwrap();
+            r?;
+            sim.saved_list = save.take_bytes();
+            sim.have_list = true;
+            sim.rec(format!("ret lsave len={} hash={:08x}", sim.saved_list.len(), hash_bytes(&sim.saved_list)));
+        }
+        13 => {
+            if !sim.have_list {
+                sim.rec("skip".into());
+                return Ok(());
+            }
+            for i in 0..sim.players.player_count() {
+                let me = sim.players.get_nth_mut(i).unwrap();
+                if a[1] & 1 != 0 {
+                    me.kind_of_production_changes.clear();
+                    me.special_power_timers.clear();
+                }
+                if a[1] & 2 != 0 {
+                    for sq in me.squads.iter_mut().chain(me.current_selection.iter_mut()) {
+                        sq.objects_cached.clear();
+                    }
+                }
+            }
+            let mut load = XferLoad::new(sim.saved_list.clone());
+            load.open(b"l").unwrap();
+            let r = xfer_nested(sim, &mut load, |h, x| player_list_xfer(h, x));
+            let _ = load.close();
+            r?;
+            sim.rec(format!("ret lload pp={}", load.post_process_requests()));
+            player_list_load_post_process(sim);
+        }
+        _ => {
+            let t = if a[0] != 0 { pick_team(sim, a[0] - 1) } else { None };
+            match t {
+                Some(t) => player_list_team_about_to_be_deleted(sim, t)?,
+                None => sim.rec("skip".into()),
+            }
+        }
+    }
+    Ok(())
+}
+// --- end p1w10-sonnet ---
+
 // --- p1w10-sonnet --- (slice 2b and 3)
 impl PlayerSquadHost for Sim {
     fn upgrade_mask(&self, t: NameKeyType) -> UpgradeMaskType {
@@ -3018,6 +3351,14 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
         91 => upgrade_op(sim, p, a)?,
         92 => squad_op(sim, p, a)?,
         93 => xfer_op(sim, p, a)?,
+        94 => {
+            if sim.sdicts.is_empty() {
+                sim.rec("skip nosdicts".into());
+            } else {
+                let d = sim.sdicts[a[0] as usize % sim.sdicts.len()].clone();
+                player_init_from_dict(sim, p, &d)?;
+            }
+        }
         // --- end p1w10-sonnet ---
         _ => sim.rec("ret nop".into()),
     }
@@ -3080,6 +3421,16 @@ fn do_op(sim: &mut Sim, op: u32, r: &mut Reader<'_>) -> Result<(), PlayerError> 
             let p = (pk as usize % np) as PlayerIndex;
             player_op(sim, p, sub, &a)?;
         }
+        // --- p1w10-sonnet --- (slice 4): the player list
+        7 => {
+            let sub = r.u();
+            let mut a = [0u32; 8];
+            for x in a.iter_mut() {
+                *x = r.u();
+            }
+            list_op(sim, &a, sub)?;
+        }
+        // --- end p1w10-sonnet ---
         _ => sim.rec("ret nop".into()),
     }
     Ok(())
@@ -3282,6 +3633,7 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32, [u32; 3]) {
     }
     // player templates
     let npt = 1 + g.below(3);
+    NPT.store(npt, std::sync::atomic::Ordering::Relaxed);
     w.i(npt as i32);
     for _ in 0..npt {
         w.i(g.below(8) as i32);
@@ -3429,6 +3781,9 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32, [u32; 3]) {
 // --- p1w10-sonnet --- (slice 2)
 /// The second part of the header: what the object-facing operations read (costs, prerequisites, the objects' flags and
 /// the special power modules' timers).
+/// The number of player templates of the program being generated (`gen_sides` names factions).
+static NPT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+
 fn gen_header2(g: &mut Gen, w: &mut W, np: u32, nt: u32, ids: &[u32], mod_counts: &[u32], frame0: u32) -> [u32; 3] {
     // the special powers of the program come from a palette of three (so that objects share a type)
     let palette = [g.below(9), g.below(9), g.below(9)];
@@ -3484,7 +3839,147 @@ fn gen_header2(g: &mut Gen, w: &mut W, np: u32, nt: u32, ids: &[u32], mod_counts
             w.b(chance(g, 40));
         }
     }
+    gen_sides(g, w);
     palette
+}
+
+/// One dictionary entry: a type (0 bool, 1 int, 2 real, 3 ascii, 4 unicode), a key, a value.
+fn w_entry_str(w: &mut W, ty: i32, key: &str, v: &str) {
+    w.i(ty);
+    w.s(key);
+    w.s(v);
+}
+
+fn w_entry_bits(w: &mut W, ty: i32, key: &str, v: u32) {
+    w.i(ty);
+    w.s(key);
+    w.u(v);
+}
+
+/// The sides list of the program: player dictionaries (a faction, names, flags, colours, money, the enemies and allies, a
+/// handicap), skirmish side dictionaries, team dictionaries (owner, name, script names, hooks), then the sixteen sides
+/// (a dictionary, whether they have a script list, a build list), the skirmish sides and the teams that refer to them.
+fn gen_sides(g: &mut Gen, w: &mut W) {
+    let npt = NPT.load(std::sync::atomic::Ordering::Relaxed);
+    let npd = 1 + g.below(5);
+    let nsk = g.below(3);
+    let ntd = g.below(5);
+    w.i((npd + nsk + ntd) as i32);
+    let faction = |g: &mut Gen| -> String {
+        match g.below(10) {
+            0 => "FactionObserver".to_string(),
+            1 => format!("Faction{npt}"),
+            _ => format!("Faction{}", g.below(npt)),
+        }
+    };
+    for _ in 0..npd {
+        let mut entries: Vec<Box<dyn Fn(&mut W)>> = Vec::new();
+        if chance(g, 90) {
+            let f = faction(g);
+            entries.push(Box::new(move |w| w_entry_str(w, 3, "playerFaction", &f)));
+        }
+        if chance(g, 70) {
+            let n = format!("Name{}", g.below(100));
+            entries.push(Box::new(move |w| w_entry_str(w, 4, "playerDisplayName", &n)));
+        }
+        if chance(g, 85) {
+            let n = if chance(g, 8) { String::new() } else { format!("PN{}", g.below(6)) };
+            entries.push(Box::new(move |w| w_entry_str(w, 3, "playerName", &n)));
+        }
+        for key in ["playerIsSkirmish", "playerIsHuman", "playerIsPreorder", "multiplayerIsLocal"] {
+            if chance(g, 40) {
+                let v = chance(g, 55) as u32;
+                entries.push(Box::new(move |w| w_entry_bits(w, 0, key, v)));
+            }
+        }
+        if chance(g, 60) {
+            let v = g.below(8);
+            entries.push(Box::new(move |w| w_entry_bits(w, 1, "multiplayerStartIndex", v)));
+        }
+        if chance(g, 50) {
+            // a value the enum names (upstream stores any int in it; the Rust enum holds the three)
+            let v = g.below(3);
+            entries.push(Box::new(move |w| w_entry_bits(w, 1, "skirmishDifficulty", v)));
+        }
+        for key in ["playerColor", "playerNightColor"] {
+            if chance(g, 40) {
+                let v = g.below(0x100_0000);
+                entries.push(Box::new(move |w| w_entry_bits(w, 1, key, v)));
+            }
+        }
+        if chance(g, 50) {
+            let v = g.below(3000);
+            entries.push(Box::new(move |w| w_entry_bits(w, 1, "playerStartMoney", v)));
+        }
+        for key in ["playerEnemies", "playerAllies"] {
+            if chance(g, 45) {
+                let n = 1 + g.below(3);
+                let v = (0..n).map(|_| format!("PN{}", g.below(6))).collect::<Vec<_>>().join(" ");
+                entries.push(Box::new(move |w| w_entry_str(w, 3, key, &v)));
+            }
+        }
+        if chance(g, 40) {
+            let v = gen_real(g).to_bits();
+            let key = ["HANDICAP_BUILDCOST_GENERIC", "HANDICAP_BUILDTIME_BUILDINGS", "HANDICAP_BUILDCOST_BUILDINGS"][g.below(3) as usize];
+            entries.push(Box::new(move |w| w_entry_bits(w, 2, key, v)));
+        }
+        w.i(entries.len() as i32);
+        for e in &entries {
+            e(w);
+        }
+    }
+    for k in 0..nsk {
+        // a skirmish side: a faction (mostly the first), its name
+        let f = format!("Faction{}", g.below(npt));
+        w.i(2);
+        w_entry_str(w, 3, "playerFaction", &f);
+        w_entry_str(w, 3, "playerName", &format!("SK{k}"));
+    }
+    for _ in 0..ntd {
+        // a team: an owner (a player of the map or a skirmish side), a name, script names, hooks
+        let mut entries: Vec<(i32, String, String)> = Vec::new();
+        let owner = if chance(g, 50) && nsk > 0 { format!("SK{}", g.below(nsk)) } else { format!("PN{}", g.below(6)) };
+        entries.push((3, "teamOwner".into(), owner));
+        entries.push((3, "teamName".into(), format!("ST{}", g.below(4))));
+        for key in ["teamOnCreateScript", "teamOnIdleScript", "teamOnUnitDestroyedScript", "teamOnDestroyedScript", "teamEnemySightedScript", "teamAllClearScript", "teamProductionCondition"] {
+            if chance(g, 40) {
+                entries.push((3, key.into(), if chance(g, 15) { String::new() } else { format!("Scr{}", g.below(5)) }));
+            }
+        }
+        for j in 0..16 {
+            if chance(g, 12) {
+                entries.push((3, format!("teamGenericScriptHook{j}"), format!("Hook{}", g.below(4))));
+            }
+        }
+        w.i(entries.len() as i32);
+        for (ty, k, v) in &entries {
+            w_entry_str(w, *ty, k, v);
+        }
+    }
+    let total = npd + nsk + ntd;
+    // the sixteen sides: a player dictionary for some of the first, a script list for some, a build list for some
+    for i in 0..16u32 {
+        w.u(if i < 6 && chance(g, 55) { 1 + g.below(npd) } else { 0 });
+        w.b(chance(g, 30));
+        w.i(if chance(g, 30) { 1 + g.below(2) as i32 } else { 0 });
+    }
+    // the skirmish sides and the teams
+    w.i(nsk as i32);
+    for k in 0..nsk {
+        w.u(npd + 1 + k);
+        w.b(chance(g, 75));
+    }
+    let nst = g.below(4);
+    w.i(nst as i32);
+    for _ in 0..nst {
+        w.u(if ntd > 0 { 1 + npd + nsk + g.below(ntd) } else { 0 });
+    }
+    let nkt = g.below(4);
+    w.i(nkt as i32);
+    for _ in 0..nkt {
+        w.u(if ntd > 0 { 1 + npd + nsk + g.below(ntd) } else { 0 });
+    }
+    let _ = total;
 }
 // --- end p1w10-sonnet ---
 
@@ -3640,6 +4135,9 @@ fn gen_player_args(g: &mut Gen, sub: u32, st: &GenState) -> [u32; 8] {
             if chance(g, 40) {
                 a[0] = [0u32, 9, 8, 4, 2, 1][g.below(6) as usize];
             }
+        }
+        94 => {
+            a[0] = g.u32();
         }
         93 => {
             for x in a.iter_mut() {
@@ -3804,6 +4302,42 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
                 w.u(x);
             }
         }
+        // --- p1w10-sonnet --- (slice 4): an operation on the player list
+        35..=37 => {
+            // the heavy ones (init, reset, newGame) are rarer than the queries
+            let sub = if chance(g, 25) { [8u32, 9, 10, 10, 10][g.below(5) as usize] } else { g.below(15) };
+            let mut a = [0u32; 8];
+            for x in a.iter_mut() {
+                *x = g.u32();
+            }
+            a[0] = match sub {
+                3 => g.below(8),
+                4 => g.below(6),
+                14 => g.below(8),
+                _ => g.u32(),
+            };
+            if sub == 13 {
+                a[1] = if chance(g, 70) { 3 } else { g.below(4) };
+            }
+            if sub == 5 && chance(g, 50) {
+                a[0] = 0;
+            }
+            w.u(7);
+            w.u(sub);
+            for x in a {
+                w.u(x);
+            }
+            // a save is often loaded straight back (the interesting case: the state is the one that was saved)
+            if sub == 12 && chance(g, 60) {
+                *n += 1;
+                w.u(7);
+                w.u(13);
+                for k in 0..8 {
+                    w.u(if k == 1 { 3 } else { g.u32() });
+                }
+            }
+        }
+        // --- end p1w10-sonnet ---
         _ => {
             w.u(6);
             let (pk, sub, a) = if let (true, Some((pk, sub, last))) = (chance(g, 25), st.last) {
@@ -3868,7 +4402,7 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
                 }
                 // --- end p1w10-sonnet ---
                 // the subs: all, with a bias to the loops over objects and the sciences
-                let sub = if chance(g, 14) { [92u32, 92, 92, 92, 92, 91, 93, 93][g.below(8) as usize] } else if chance(g, 20) { [0u32, 33, 34, 35, 36, 37, 38, 44, 68, 74, 75, 3, 69, 69, 62, 63, 64, 65, 70, 50, 14, 13, 2, 5, 6, 8, 76, 85, 85, 79, 79, 79, 79, 79, 79][g.below(35) as usize] } else if chance(g, 45) { 77 + g.below(17) } else { g.below(94) };
+                let sub = if chance(g, 14) { [92u32, 92, 92, 92, 92, 91, 93, 93][g.below(8) as usize] } else if chance(g, 20) { [0u32, 33, 34, 35, 36, 37, 38, 44, 68, 74, 75, 3, 69, 69, 62, 63, 64, 65, 70, 50, 14, 13, 2, 5, 6, 8, 76, 85, 85, 79, 79, 79, 79, 79, 79][g.below(35) as usize] } else if chance(g, 45) { 77 + g.below(18) } else { g.below(95) };
                 let mut a = gen_player_args(g, sub, st);
                 if sub == 88 && chance(g, 50) {
                     a[0] = 0;
@@ -3988,6 +4522,8 @@ fn player_matches_upstream() {
         // --- p1w10-sonnet --- (slice 2b and 3)
         "ret addupg", "ret findupg", "ret upgcomplete", "ret upgmask", "ret upginprod", "upgrademods", "ret hotkey", "ret squadno", "ret squadall", "ret squadlive", "ret squadsize", "group.add", "skip nosel",
         "skip nosquad", "skip noupgrades", "ret pcrc", "ret psave", "ret pload", "threw invaliddata", "threw xfer", "D player4 ",
+        // --- p1w10-sonnet --- (slice 4)
+        "scripts.qualify", "scripts.delete", "sides.removeteam", "sides.addteam", "ai.diff", "ret vteam", "ret pfm", "ret each", "ret pwr", "ret lcrc", "ret lsave", "ret lload", "skip nosdicts", "D sides",
         // --- end p1w10-sonnet --- "score.", "academy.", "setteam ", "kill ", "damage ", "heal ", "iter ", "skip", "threw badarg", "D team ",
     ];
     let from: u64 = std::env::var("PLAYER_FROM").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
@@ -4002,6 +4538,11 @@ fn player_matches_upstream() {
                 continue;
             }
         };
+        if std::env::var_os("PLAYER_DUMP").is_some() {
+            for l in &rust {
+                eprintln!("RUST {l}");
+            }
+        }
         let cpp_lines = cpp_run(&words);
         lines += rust.len() as u64;
         for l in &rust {

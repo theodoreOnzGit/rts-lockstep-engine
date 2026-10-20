@@ -89,6 +89,39 @@ fn upgrade_mask_err(e: XferUpgradeMaskError) -> PlayerError {
     }
 }
 
+/// `xferSnapshot` of a snapshot that needs the host, on an xfer that calls `crc` (`XferCRC`): [`xfer_nested`] runs `xfer`.
+pub fn crc_nested<H, F>(host: &mut H, xfer: &mut dyn Xfer, f: F) -> PResult<()>
+where
+    F: FnMut(&mut H, &mut dyn Xfer) -> PResult<()>,
+{
+    struct Nested<'a, H, F> {
+        host: &'a mut H,
+        f: F,
+        err: Option<PlayerError>,
+    }
+    impl<'a, H, F: FnMut(&mut H, &mut dyn Xfer) -> PResult<()>> Snapshot for Nested<'a, H, F> {
+        fn crc(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+            match (self.f)(self.host, xfer) {
+                Ok(()) => Ok(()),
+                Err(e) => {
+                    self.err = Some(e);
+                    Err(XferStatus::ErrorUnknown)
+                }
+            }
+        }
+        fn xfer(&mut self, _xfer: &mut dyn Xfer) -> XferResult<()> {
+            Ok(())
+        }
+        fn load_post_process(&mut self) {}
+    }
+    let mut n = Nested { host, f, err: None };
+    let r = xfer.xfer_snapshot(&mut n);
+    match n.err.take() {
+        Some(e) => Err(e),
+        None => r.map_err(PlayerError::Xfer),
+    }
+}
+
 /// `xferSnapshot` of a snapshot that needs the host (see the module docs).
 pub fn xfer_nested<H, F>(host: &mut H, xfer: &mut dyn Xfer, f: F) -> PResult<()>
 where

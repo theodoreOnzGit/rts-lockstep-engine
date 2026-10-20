@@ -2319,6 +2319,7 @@ mod differential {
                 "void Player::crc( Xfer *xfer )",
                 "void Player::xfer( Xfer *xfer )",
                 "void Player::loadPostProcess( void )",
+                "void Player::initFromDict(const Dict* d)",
             ] {
                 fns.push_str(&extract_block(&pc, h));
             }
@@ -2436,7 +2437,26 @@ mod differential {
                 fns.push_str(&extract_block(&ha, h));
             }
             let pln = read("PlayerList.cpp");
-            fns.push_str(&extract_block(&pln, "void PlayerList::teamAboutToBeDeleted(Team* team)"));
+            for h in [
+                "void PlayerList::teamAboutToBeDeleted(Team* team)",
+                "Player *PlayerList::getNthPlayer(Int i)",
+                "void PlayerList::reset()",
+                "void PlayerList::newGame()",
+                "void PlayerList::init()",
+                "void PlayerList::update()",
+                "void PlayerList::newMap()",
+                "void PlayerList::updateTeamStates(void)",
+                "Team *PlayerList::validateTeam( AsciiString owner )",
+                "void PlayerList::setLocalPlayer(Player *player)",
+                "Player *PlayerList::getPlayerFromMask( PlayerMaskType mask )",
+                "Player *PlayerList::getEachPlayerFromMask( PlayerMaskType& maskToAdjust )",
+                "PlayerMaskType PlayerList::getPlayersWithRelationship( Int srcPlayerIndex, UnsignedInt allowedRelationships )",
+                "void PlayerList::crc( Xfer *xfer )",
+                "void PlayerList::xfer( Xfer *xfer )",
+                "void PlayerList::loadPostProcess( void )",
+            ] {
+                fns.push_str(&extract_block(&pln, h));
+            }
             let ms = read("MissionStats.cpp");
             for h in ["MissionStats::MissionStats()", "void MissionStats::init()"] {
                 fns.push_str(&extract_block(&ms, h));

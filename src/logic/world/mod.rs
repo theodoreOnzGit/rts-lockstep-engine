@@ -44,6 +44,8 @@ pub mod player;
 // --- p1w10-sonnet ---
 pub mod player_objects;
 pub mod player_squads;
+pub mod player_init;
+pub mod player_list;
 pub mod player_xfer;
 pub mod player_ops;
 // --- end p1w10-sonnet ---
