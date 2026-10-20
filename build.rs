@@ -2232,6 +2232,47 @@ mod differential {
         }
         // --- end p1w3-statemachine ---
 
+        // --- p1l9-updates ---
+        // LifetimeUpdate.cpp and DeletionUpdate.cpp, unchanged (differential/wrap_l9updates.cpp), built with the
+        // module harness's setup (clang++ -fms-extensions, module_prelude.h forced in, the same renames) and with
+        // differential/shim_updates first on the include path: its GameLogic/Object.h and GameLogic.h are the module
+        // build's with three declarations added and no member changed. Linked before upstream_module (the base
+        // classes UpdateModule, BehaviorModule, ModuleData and the wake recorder come from there).
+        {
+            let shim_mod = dif.join("shim_module");
+            let shim_upd = dif.join("shim_updates");
+            let mut lu = cc::Build::new();
+            base(&mut lu);
+            lu.compiler("clang++")
+                .flag("-fms-extensions")
+                .flag("-fdelayed-template-parsing")
+                .include(&shim_upd)
+                .include(&shim_mod)
+                .include(dif.join("shim_upgrade"))
+                .include(&flags_gen)
+                .include(dif.join("shim_flags"))
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .include(&dif)
+                // BaseType first, forced: PreRTS.h (shim/) includes its own Lib/BaseType.h by a relative path, which
+                // would win otherwise. The two files share the include guard, so the shim's copy is then skipped.
+                .flag("-include")
+                .flag(shim_upd.join("Lib/BaseType.h").to_str().expect("UTF-8 path"))
+                .flag("-include")
+                .flag(shim_mod.join("module_prelude.h").to_str().expect("UTF-8 path"))
+                .file(dif.join("wrap_l9updates.cpp"));
+            lu.compile("upstream_l9updates");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/LifetimeUpdate.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/DeletionUpdate.cpp",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
+        // --- end p1l9-updates ---
         // --- p1w3-modules ---
         // The module base classes (differential/wrap_module.cpp, which #includes Module.cpp,
         // BehaviorModule.cpp, UpdateModule.cpp, UpgradeModule.cpp, DieModule.cpp, CreateModule.cpp,

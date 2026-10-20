@@ -1061,3 +1061,64 @@ extern "C" {
     pub fn ref_weapon_fire_run(words: *const c_uint, n: c_int, tmp_path: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
 }
 // --- end p1w7-sonnet ---
+// --- p1l9-updates ---
+extern "C" {
+    // LifetimeUpdate.cpp and DeletionUpdate.cpp, unchanged (differential/wrap_l9updates.cpp): one module built from the
+    // INI text, then `n` ops of 6 words; see the wrapper's header for the words written.
+    pub fn ref_l9updates_run(
+        kind: c_int,
+        ini_text: *const c_char,
+        ini_len: c_int,
+        seed: c_uint,
+        frame: c_uint,
+        hulk: c_int,
+        override_frames: c_int,
+        n: c_int,
+        ops: *const c_uint,
+        out: *mut c_uint,
+        out_cap: c_int,
+        out_len: *mut c_int,
+        status: *mut c_int,
+        code: *mut c_uint,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        xfer_path: *const c_char,
+    ) -> c_int;
+    // BaseRegenerateUpdate.cpp (the same wrapper): the module with the global data given, then `n` ops of 6 words.
+    pub fn ref_l9updates_regen_run(
+        ini_text: *const c_char,
+        ini_len: c_int,
+        pct: c_float,
+        delay: c_uint,
+        seed: c_uint,
+        frame: c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        out: *mut c_uint,
+        out_cap: c_int,
+        out_len: *mut c_int,
+        status: *mut c_int,
+        code: *mut c_uint,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        xfer_path: *const c_char,
+    ) -> c_int;
+    // SmartBombTargetHomingUpdate.cpp (the same wrapper): the module from the INI text, then `n` ops of 6 words.
+    pub fn ref_l9updates_smart_run(
+        ini_text: *const c_char,
+        ini_len: c_int,
+        seed: c_uint,
+        frame: c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        out: *mut c_uint,
+        out_cap: c_int,
+        out_len: *mut c_int,
+        status: *mut c_int,
+        code: *mut c_uint,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        xfer_path: *const c_char,
+    ) -> c_int;
+}
+// --- end p1l9-updates ---

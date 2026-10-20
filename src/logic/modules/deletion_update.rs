@@ -1,0 +1,178 @@
+// SPDX-License-Identifier: GPL-3.0-only
+//
+// Translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
+// commit 0a05454d8574207440a5fb15241b98ad0b435590):
+//   GeneralsMD/Code/GameEngine/Include/GameLogic/Module/DeletionUpdate.h
+//   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/DeletionUpdate.cpp
+//
+// Original copyright notice of those files:
+//   Command & Conquer Generals Zero Hour(tm)
+//   Copyright 2025 Electronic Arts Inc.
+//   (c) 2001-2003 Electronic Arts Inc.
+//   Author: Graham Smallwood, August 2002
+//
+// Licensed under the GNU General Public License version 3 (GPL-3.0-only for
+// this translation), with the additional terms in NOTICE.md.
+// Translated to Rust and modified; not the original program.
+
+//! `DeletionUpdate`: counts a random lifetime down and **destroys** the object
+//! (`TheGameLogic->destroyObject`, not `kill`) when it is up.
+//!
+//! The debugging `CRISS_CROSS_GEOMETRY` path of upstream is compiled out in
+//! the shipped build and is not translated; only the shipped `update` is here.
+//!
+//! The random draw and the host calls are as in `lifetime_update.rs`.
+
+use std::sync::Arc;
+
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
+use crate::common::module::ObjectId;
+use crate::common::random_value::RandomValues;
+use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
+use crate::logic::module::behavior_module::BehaviorModuleData;
+use crate::logic::module::update_module::{
+    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER,
+};
+use crate::logic::modules::UpdateHost;
+
+/// `class DeletionUpdateModuleData : public UpdateModuleData`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DeletionUpdateModuleData {
+    /// The `UpdateModuleData` base.
+    pub update: UpdateModuleData,
+    /// `m_minFrames` (`MinLifetime`, a duration in frames).
+    pub min_frames: u32,
+    /// `m_maxFrames` (`MaxLifetime`, a duration in frames).
+    pub max_frames: u32,
+}
+
+impl DeletionUpdateModuleData {
+    /// `DeletionUpdateModuleData()`: both frames 0.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// `DeletionUpdateModuleData::buildFieldParse(p)`: the base's, then
+    /// `MinLifetime` and `MaxLifetime`.
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, DeletionUpdateModuleData>) -> IniResult<()> {
+        BehaviorModuleData::build_field_parse(p)?;
+        p.add(&DELETION_UPDATE_MODULE_DATA_FIELD_PARSE)
+    }
+
+    /// `DeletionUpdate::friend_newModuleData(ini)`.
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<DeletionUpdateModuleData> {
+        let mut data = DeletionUpdateModuleData::new();
+        if let Some(ini) = ini {
+            ini.init_from_ini_multi_proc(&mut data, DeletionUpdateModuleData::build_field_parse)?;
+        }
+        Ok(data)
+    }
+}
+
+/// `dataFieldParse` of `DeletionUpdateModuleData::buildFieldParse`: both are
+/// `INI::parseDurationUnsignedInt`.
+pub static DELETION_UPDATE_MODULE_DATA_FIELD_PARSE: [FieldParse<DeletionUpdateModuleData>; 3] = [
+    FieldParse::new(
+        "MinLifetime",
+        |ini, d, _: &UserData| {
+            d.min_frames = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MaxLifetime",
+        |ini, d, _: &UserData| {
+            d.max_frames = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::end(),
+];
+
+/// `class DeletionUpdate : public UpdateModule`.
+#[derive(Clone, Debug)]
+pub struct DeletionUpdate {
+    /// The `UpdateModule` base (the scheduling half).
+    update: UpdateModule,
+    /// `getDeletionUpdateModuleData()`.
+    data: Arc<DeletionUpdateModuleData>,
+    /// `m_dieFrame`: the frame the random lifetime ends on.
+    die_frame: u32,
+}
+
+impl DeletionUpdate {
+    /// `DeletionUpdate(thing, moduleData)`: draws the lifetime, then
+    /// `setWakeFrame`. `INI_INVALID_DATA` for null data.
+    pub fn new(
+        object: ObjectId,
+        module_data: Option<Arc<DeletionUpdateModuleData>>,
+        host: &mut impl UpdateHost,
+        rng: &mut RandomValues,
+    ) -> IniResult<Self> {
+        let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
+        let base = Arc::new(data.update.clone());
+        let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
+        let mut me = DeletionUpdate { update, data: data.clone(), die_frame: 0 };
+        let delay = me.calc_sleep_delay(host, rng, data.min_frames, data.max_frames);
+        host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), update_sleep(delay)));
+        Ok(me)
+    }
+
+    /// `setLifetimeRange(minFrames, maxFrames)`: a new random lifetime, then
+    /// `setWakeFrame`.
+    pub fn set_lifetime_range(&mut self, host: &mut impl UpdateHost, rng: &mut RandomValues, min_frames: u32, max_frames: u32) {
+        let delay = self.calc_sleep_delay(host, rng, min_frames, max_frames);
+        host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), update_sleep(delay)));
+    }
+
+    /// `getDieFrame()`.
+    pub fn get_die_frame(&self) -> u32 {
+        self.die_frame
+    }
+
+    /// `update()`: destroy (not kill) the object, then sleep forever.
+    pub fn update(&mut self, host: &mut impl UpdateHost) -> UpdateSleepTime {
+        host.destroy_object();
+        UPDATE_SLEEP_FOREVER
+    }
+
+    /// `calcSleepDelay(minFrames, maxFrames)`: as `LifetimeUpdate`'s.
+    fn calc_sleep_delay(&mut self, host: &impl UpdateHost, rng: &mut RandomValues, min_frames: u32, max_frames: u32) -> u32 {
+        let mut delay = rng.game_logic_random_value(min_frames as i32, max_frames as i32) as u32;
+        if delay < 1 {
+            delay = 1;
+        }
+        self.die_frame = host.frame().wrapping_add(delay);
+        delay
+    }
+
+    /// The `UpdateModule` base, for the scheduler's bookkeeping.
+    pub fn update_module(&self) -> &UpdateModule {
+        &self.update
+    }
+
+    /// The module data (`getDeletionUpdateModuleData()`).
+    pub fn module_data(&self) -> &Arc<DeletionUpdateModuleData> {
+        &self.data
+    }
+}
+
+impl Snapshot for DeletionUpdate {
+    /// `DeletionUpdate::crc`: the base's.
+    fn crc(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        self.update.crc(xfer)
+    }
+    /// Version 1: the base, then `m_dieFrame`.
+    fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        xfer.xfer_version(&mut version, current)?;
+        self.update.xfer(xfer)?;
+        xfer.xfer_unsigned_int(&mut self.die_frame)
+    }
+    fn load_post_process(&mut self) {
+        self.update.load_post_process();
+    }
+}
