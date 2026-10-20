@@ -463,3 +463,61 @@ not skip a module with no template; `m_destinationLayer` started at
 `LAYER_GROUND`, but the memory pool zero-fills and the constructor never sets
 it).
 <!-- --- end p1w6-object --- -->
+
+<!-- --- p1l9-example --- -->
+## Layer 9: how a concrete module is translated (lead's pattern, 2026-10-20)
+
+`logic::modules::command_set_upgrade` (`CommandSetUpgrade`) is the worked
+example; its module docs carry the checklist. Every layer-9 module adds the
+same pieces, each in its translator's marked block:
+
+1. **Data class** with the base by `Arc` (`upgrade: Arc<UpgradeModuleData>`;
+   upstream's base and the module's base are the same object) and its own
+   fields; the field table is the base table first (for upgrade modules,
+   `upgrade_module_data_field_parse!`) then the class's own;
+   `friend_new_module_data(ini)`.
+2. **Module** holding its base(s) by value (`UpgradeModule`, with the
+   `UpgradeMux` inside) and its own state.
+3. **Behaviour**: the interface calls `Object` makes arrive as `ModuleCall`s
+   through `World::module_call`. Upgrade modules implement `UpgradeBehavior`
+   and answer with `upgrade_module_call` (`modules::upgrade_body`), which runs
+   upstream's `attemptUpgrade` -> `giveSelfUpgrade` steps with the world in
+   between. Other families get a shared helper of the same shape when their
+   first module is translated.
+4. **Statics**: the stores upstream reads through globals are
+   `world.statics` (`GameStatics`, an `Arc`, read-only once the game runs:
+   `upgrade_center` so far; a module that needs another store adds it there).
+   `TheNameKeyGenerator` is `world.names` (lookups assign keys at run time).
+5. **Re-entrancy**: a module lends itself (`modules::upgrade_body::lend`,
+   `World::lend_body`) around any call into the world that can reach its own
+   object's modules (`removeUpgrade` resets every upgrade module, this one
+   included).
+6. **Client**: `world.emit(ObjectClientEvent::..)`; a new notification is a
+   new variant (`FxListDoFxObj` was added for `FXList::doFXObj`).
+7. **Upstream throws during a game** (`INI_INVALID_DATA` from a mux name that
+   is not an upgrade) are recorded in `world.cuts.module_errors` with the
+   module; the call answers `FALSE`. Undefined behaviour (a mux list naming
+   `None`, which upstream dereferences as a null template) is an error with
+   `is_undefined()`, never sent to the C++.
+8. **Dispatch**: a variant of `UpdateBody`, with arms in `update`,
+   `module_call`, `crc`/`xfer`/`load_post_process`, and the `*_chain` methods.
+9. **Save order**: a translated module saves its **whole base chain itself**,
+   in upstream's order (`X::xfer` writes its version, then the base's `xfer`,
+   then its fields). `UpdateBody::owns_base_chain` is true for every
+   translated module, and the slot snapshot (`object_xfer.rs`) then hands the
+   whole chain to the module, passing the scheduling half (`UpdateModule`)
+   for an update module through `xfer_chain(update, ..)`; the slot no longer
+   writes the bases first.
+10. **Factory**: an arm in `module_factory::translated_module` (data
+    constructor, `getInterfaceMask()`, a `NewModuleProc` that makes the base
+    the factory's accessors answer for), a variant of `ModuleDataKind` with
+    its arms, and an arm in `modules::new_module`, which makes the module for
+    an object.
+11. **Differential test**: the unchanged `.cpp` is `#include`d by one driver
+    file per batch (`differential/l9_<batch>.inc`), itself `#include`d in its
+    marked block at the end of `differential/wrap_module.cpp`, so it shares
+    that unit's stand-ins (`differential/shim_module`: `Object`, `Thing`,
+    `Player`, `ControlBar`, ...; add to them in marked blocks), its effect log
+    and dump helpers, and the REAL `UpgradeCenter` and `INI`. The Rust side is
+    the real `World`, not a twin.
+<!-- --- end p1l9-example --- -->

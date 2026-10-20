@@ -128,6 +128,12 @@ pub enum ObjectClientEvent {
     /// `m_drawable->clearAndSetModelConditionFlags(..)` for the day/night and
     /// weather properties of the map object (`objectTime`, `objectWeather`).
     DrawableTimeOrWeather { object_id: ObjectId, night: Option<bool>, snow: Option<bool> },
+    // --- p1l9-example ---
+    /// `FXList::doFXObj(fx, obj)`: an effect list played on the object (FX
+    /// lists are client data; logic only names it). `UpgradeMux::performUpgradeFX`
+    /// is the first caller.
+    FxListDoFxObj { fx: Vec<u8>, object_id: ObjectId },
+    // --- end p1l9-example ---
 }
 
 /// The `objectSoundAmbient*` properties of a map object, as read from its

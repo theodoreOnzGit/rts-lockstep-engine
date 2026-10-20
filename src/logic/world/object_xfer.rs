@@ -142,6 +142,14 @@ struct SlotSnapshot {
 
 impl Snapshot for SlotSnapshot {
     fn crc(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        // --- p1l9-example ---
+        // a translated module saves its whole chain itself, in upstream's order
+        if let Some(b) = &mut self.body {
+            if b.owns_base_chain() {
+                return b.crc_chain(self.update.as_mut(), xfer);
+            }
+        }
+        // --- end p1l9-example ---
         if let Some(u) = &mut self.update {
             u.crc(xfer)?;
         }
@@ -154,6 +162,14 @@ impl Snapshot for SlotSnapshot {
         Ok(())
     }
     fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        // --- p1l9-example ---
+        // a translated module saves its whole chain itself, in upstream's order
+        if let Some(b) = &mut self.body {
+            if b.owns_base_chain() {
+                return b.xfer_chain(self.update.as_mut(), xfer);
+            }
+        }
+        // --- end p1l9-example ---
         if let Some(u) = &mut self.update {
             u.xfer(xfer)?;
         }
@@ -166,6 +182,13 @@ impl Snapshot for SlotSnapshot {
         Ok(())
     }
     fn load_post_process(&mut self) {
+        // --- p1l9-example ---
+        if let Some(b) = &mut self.body {
+            if b.owns_base_chain() {
+                return b.load_post_process_chain(self.update.as_mut());
+            }
+        }
+        // --- end p1l9-example ---
         if let Some(u) = &mut self.update {
             u.load_post_process();
         }

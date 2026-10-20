@@ -112,7 +112,7 @@ pub trait UpgradeEffects {
 /// `findUpgrade(name)` for one of the mux's names: the template, `INI_INVALID_DATA`
 /// for a name that is neither empty, `None`, nor an upgrade, and
 /// [`Undefined::NullUpgradeTemplate`] for an empty or `None` one that is not.
-fn find_named_upgrade<'c>(center: &'c UpgradeCenter, names: &mut NameKeyGenerator, name: &[u8]) -> IniResult<&'c UpgradeTemplate> {
+pub(crate) fn find_named_upgrade<'c>(center: &'c UpgradeCenter, names: &mut NameKeyGenerator, name: &[u8]) -> IniResult<&'c UpgradeTemplate> {
     let found = center.find_upgrade(names, name).map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
     match found {
         Some(t) => Ok(t),
@@ -160,22 +160,22 @@ impl UpgradeMuxData {
 
     /// `getFieldParse()` as a table over a type that holds the mux data: the
     /// five fields. `T` reaches its mux data through `mux`.
-    fn parse_triggered_by(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
+    pub fn parse_triggered_by(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
         ini.parse_ascii_string_vector(&mut d.activation_upgrade_names)
     }
-    fn parse_conflicts_with(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
+    pub fn parse_conflicts_with(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
         ini.parse_ascii_string_vector(&mut d.conflicting_upgrade_names)
     }
-    fn parse_removes_upgrades(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
+    pub fn parse_removes_upgrades(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
         ini.parse_ascii_string_vector(&mut d.removal_upgrade_names)
     }
-    fn parse_fx_list_upgrade(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
+    pub fn parse_fx_list_upgrade(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
         // INI::parseFXList, as far as the token goes (see common::damage_fx)
         let token = ini.get_next_token(None)?;
         d.fx_list_upgrade = if token.eq_ignore_ascii_case(b"None") { None } else { Some(token) };
         Ok(())
     }
-    fn parse_requires_all_triggers(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
+    pub fn parse_requires_all_triggers(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
         d.requires_all_triggers = ini.parse_bool()?;
         Ok(())
     }
@@ -491,6 +491,51 @@ pub static UPGRADE_MODULE_DATA_FIELD_PARSE: [FieldParse<UpgradeModuleData>; 6] =
     FieldParse::end(),
 ];
 
+// --- p1l9-example ---
+/// The field table of [`UPGRADE_MODULE_DATA_FIELD_PARSE`] for a concrete
+/// module's data class `$t`, whose `UpgradeModuleData` base is the field
+/// `$base` (an `Arc<UpgradeModuleData>`). Upstream adds the same table at the
+/// base's offset; here each entry reaches the base through the field.
+///
+/// ```ignore
+/// static BASE: [FieldParse<CommandSetUpgradeModuleData>; 6] =
+///     upgrade_module_data_field_parse!(CommandSetUpgradeModuleData, upgrade);
+/// ```
+#[macro_export]
+macro_rules! upgrade_module_data_field_parse {
+    ($t:ty, $base:ident) => {
+        [
+            $crate::common::ini::FieldParse::<$t>::new(
+                "TriggeredBy",
+                |i, d, u| $crate::logic::module::upgrade_module::UpgradeMuxData::parse_triggered_by(i, &mut d.$base.mux_data_mut(), u),
+                $crate::common::ini::UserData::None,
+            ),
+            $crate::common::ini::FieldParse::<$t>::new(
+                "ConflictsWith",
+                |i, d, u| $crate::logic::module::upgrade_module::UpgradeMuxData::parse_conflicts_with(i, &mut d.$base.mux_data_mut(), u),
+                $crate::common::ini::UserData::None,
+            ),
+            $crate::common::ini::FieldParse::<$t>::new(
+                "RemovesUpgrades",
+                |i, d, u| $crate::logic::module::upgrade_module::UpgradeMuxData::parse_removes_upgrades(i, &mut d.$base.mux_data_mut(), u),
+                $crate::common::ini::UserData::None,
+            ),
+            $crate::common::ini::FieldParse::<$t>::new(
+                "FXListUpgrade",
+                |i, d, u| $crate::logic::module::upgrade_module::UpgradeMuxData::parse_fx_list_upgrade(i, &mut d.$base.mux_data_mut(), u),
+                $crate::common::ini::UserData::None,
+            ),
+            $crate::common::ini::FieldParse::<$t>::new(
+                "RequiresAllTriggers",
+                |i, d, u| $crate::logic::module::upgrade_module::UpgradeMuxData::parse_requires_all_triggers(i, &mut d.$base.mux_data_mut(), u),
+                $crate::common::ini::UserData::None,
+            ),
+            $crate::common::ini::FieldParse::<$t>::end(),
+        ]
+    };
+}
+// --- end p1l9-example ---
+
 /// `class UpgradeModule : public BehaviorModule, public UpgradeMux`.
 #[derive(Clone, Debug)]
 pub struct UpgradeModule {
@@ -534,6 +579,14 @@ impl UpgradeModule {
     pub fn is_triggered_by(&self, upgrade: &[u8]) -> bool {
         self.data.mux_data().is_triggered_by(upgrade)
     }
+
+    // --- p1l9-example ---
+    /// The `UpgradeMux` base, to change. For a concrete module that runs the
+    /// mux steps itself with the world in between (`logic::modules::upgrade_body`).
+    pub fn mux_mut(&mut self) -> &mut UpgradeMux {
+        &mut self.mux
+    }
+    // --- end p1l9-example ---
 
     /// `isAlreadyUpgraded()`.
     pub fn is_already_upgraded(&self) -> bool {
