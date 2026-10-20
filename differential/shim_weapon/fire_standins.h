@@ -61,7 +61,7 @@ public:
 /* ---- configuration ------------------------------------------------------------------------------------------ */
 struct TBridgeAttackInfo { Coord3D attackPoint1, attackPoint2; };
 
-struct WpnPlayerCfg { int battlePlans; unsigned mask; int rel[4]; };
+struct WpnPlayerCfg { int battlePlans; unsigned mask; int rel[4]; int isHuman; };
 
 /* the world's configuration, filled by the driver */
 struct WpnWorldCfg
@@ -82,7 +82,7 @@ public:
 	ObjectID projectileGetLauncherID() const;
 };
 class LandMineInterface { public: Object* m_owner; void disarm(); };
-class ParkingPlaceBehaviorInterface { public: Object* m_owner; Bool hasReservedSpace(ObjectID id) const; };
+class ParkingPlaceBehaviorInterface { public: Object* m_owner; Bool hasReservedSpace(ObjectID id) const; Bool shouldReserveDoorWhenQueued(const ThingTemplate* tt) const; Bool hasAvailableSpaceFor(const ThingTemplate* tt) const; };
 class SpecialPowerCompletionDie { public: Object* m_owner; void notifyScriptEngine(); void setCreator(ObjectID id); };
 class UpdateModule { public: virtual ~UpdateModule() {} };
 class ProjectileStreamUpdate : public UpdateModule
@@ -105,13 +105,46 @@ class ExperienceTracker { public: Object* m_owner; void setExperienceSink(Object
 class AssaultTransportAIInterface { public: Object* m_owner; void beginAssault(const Object* designatedTarget) const; };
 class AcademyStats { public: int m_player; void recordMineCleared(); };
 
+/* ---- what ActionManager.cpp asks of an object ------------------------------------------------------------------ */
+enum DozerTask { DOZER_TASK_INVALID = -1, DOZER_TASK_FIRST = 0, DOZER_TASK_BUILD = DOZER_TASK_FIRST, DOZER_TASK_REPAIR = 1, DOZER_TASK_FORTIFY = 2 };
+class BodyModuleInterface { public: Real m_h, m_max; Real getHealth() const { return m_h; } Real getMaxHealth() const { return m_max; } };
+class SpecialPowerTemplate { public: int m_id; SpecialPowerType m_type; SpecialPowerType getSpecialPowerType() const { return m_type; } };
+class SpecialPowerModuleInterface { public: Real m_percent; Real getPercentReady() const { return m_percent; } };
+class SpecialPowerUpdateInterface { public: int dummy; };
+class SpecialAbilityUpdate
+{
+public:
+	int m_count, m_max; std::set<int> m_producers;
+	Int getSpecialObjectCount() const { return m_count; }
+	Int getSpecialObjectMax() const { return m_max; }
+	Object* findSpecialObjectWithProducerID(const Object* target) const;
+};
+class SupplyTruckAIInterface { public: int m_boxes; Bool m_avail; Int getNumberBoxes() const { return m_boxes; } Bool isAvailableForSupplying() const { return m_avail; } };
+class DozerAIInterface { public: int m_task, m_target; DozerTask getCurrentTask() const { return (DozerTask)m_task; } ObjectID getTaskTarget(DozerTask t) const { return (ObjectID)m_target; } };
+class DockUpdateInterface { public: int dummy; };
+class CollideModuleInterface
+{
+public:
+	Object* m_owner; int m_index;
+	Bool wouldLikeToCollideWith(const Object* other) const;
+	Bool isCarBombCrateCollide() const;
+	Bool isHijackedVehicleCrateCollide() const;
+	Bool isSabotageBuildingCrateCollide() const;
+};
+class SupplyWarehouseDockUpdate : public UpdateModule { public: int m_boxes; Int getBoxesStored() const { return m_boxes; } };
+class SupplyCenterDockUpdate : public UpdateModule { public: int dummy; };
+class RailedTransportDockUpdate : public UpdateModule { public: int dummy; };
+class RailroadBehavior : public UpdateModule { public: int dummy; };
+
 class BehaviorModule
 {
 public:
-	Object* m_owner; int m_kind; /* 0 land mine, 1 projectile update, 2 parking place */
+	Object* m_owner; int m_kind; int m_index; /* 0 land mine, 1 projectile update, 2 parking place, 3 dock, 4 collide */
 	LandMineInterface* getLandMineInterface();
 	ProjectileUpdateInterface* getProjectileUpdateInterface();
 	ParkingPlaceBehaviorInterface* getParkingPlaceBehaviorInterface();
+	DockUpdateInterface* getDockUpdateInterface();
+	CollideModuleInterface* getCollide();
 };
 
 class AIUpdateInterface
@@ -125,6 +158,8 @@ public:
 	WhichTurretType getWhichTurretForWeaponSlot(WeaponSlotType wslot, Real* turretAngle, Real* turretPitch) const;
 	Bool isWeaponSlotOnTurretAndAimingAtTarget(WeaponSlotType wslot, const Object* victim) const;
 	Bool getTurretRotAndPitch(WhichTurretType tur, Real* turretAngle, Real* turretPitch) const;
+	SupplyTruckAIInterface* getSupplyTruckAIInterface() const;
+	DozerAIInterface* getDozerAIInterface() const;
 };
 
 typedef std::list<Object*> ContainedItemsList;
@@ -142,6 +177,10 @@ public:
 	Bool isPassengerAllowedToFire() const;
 	const ContainedItemsList* getContainedItemsList() const;
 	const Player* getApparentControllingPlayer(const Player* observingPlayer) const;
+	Bool isHealContain() const;
+	Int getStealthUnitsContained() const;
+	Bool isValidContainerFor(const Object* obj, Bool checkCapacity) const;
+	Object* getClosestRider(const Coord3D* pos) const;
 };
 
 class StealthUpdate { public: Object* m_owner; Bool isDisguised() const; Int getDisguisedPlayerIndex() const; };
@@ -150,6 +189,7 @@ class SpawnBehaviorInterface
 public:
 	Object* m_owner;
 	CanAttackResult getCanAnySlavesUseWeaponAgainstTarget(AbleToAttackType attackType, const Object* victim, const Coord3D* pos, CommandSourceType commandSource) const;
+	Object* getClosestSlave(const Coord3D* pos) const;
 };
 
 /* ---- the teams, the players, the thing templates ------------------------------------------------------------- */
@@ -164,7 +204,9 @@ public:
 	void applyBattlePlanBonusesForObject(Object* obj) const;
 	AcademyStats* getAcademyStats() const { return const_cast<AcademyStats*>(&m_academy); }
 	PlayerMaskType getPlayerMask() const { return (PlayerMaskType)g_wcfg.players[m_index].mask; }
-	Relationship getRelationship(const Team* that) const { return m_team.getRelationship(that); }
+	Relationship getRelationship(const Team* that) const { return that ? m_team.getRelationship(that) : NEUTRAL; }
+	PlayerType getPlayerType() const { return g_wcfg.players[m_index].isHuman ? PLAYER_HUMAN : PLAYER_COMPUTER; }
+	Int getPlayerIndex() const { return m_index; }
 	void iterateObjects(void (*func)(Object*, void*), void* userData);
 };
 class PlayerList { public: Player* getNthPlayer(Int i); };
@@ -251,12 +293,23 @@ public:
 	/* modules */
 	Bool m_hasLandMine, m_hasPUI, m_hasParking, m_hasSPCDie, m_hasStream, m_hasAssist, m_assistFree, m_hasCountermeasures, m_hasPhysics;
 	int m_launcherId; std::set<int> m_reserved; std::set<int> m_collides;
-	BehaviorModule m_mods[3]; BehaviorModule* m_modList[4]; ProjectileUpdateInterface m_pui; LandMineInterface m_lmi; ParkingPlaceBehaviorInterface m_ppi;
+	BehaviorModule m_mods[3]; BehaviorModule* m_modList[12]; ProjectileUpdateInterface m_pui; LandMineInterface m_lmi; ParkingPlaceBehaviorInterface m_ppi;
 	SpecialPowerCompletionDie m_spcDie; ProjectileStreamUpdate m_stream; AssistedTargetingUpdate m_assist; PhysicsBehavior m_phys; ExperienceTracker m_xp;
 	/* the weapon set */
 	WeaponSet m_weaponSet;
 	/* Object.cpp's weapon functions run on these (Object_weapons.cpp) */
 	FiringTracker* m_firingTracker; FiringTracker m_tracker; Byte m_lastWeaponCondition[WEAPONSLOT_COUNT]; Bool m_hasTracker; AsciiString m_commandSetStringOverride;
+	/* the facts ActionManager.cpp reads */
+	Bool m_mobile; Real m_deckHeight; unsigned m_disabledMask; BodyModuleInterface m_body; Bool m_hasBody; Int m_transportSlots; Bool m_factionStructure;
+	Int m_shroud[4]; ObjectID m_builder; unsigned m_spHas[4];
+	std::vector<std::pair<int, Real> > m_spModules; SpecialPowerModuleInterface m_spmStore[8];
+	struct SaCfg { int type; SpecialAbilityUpdate sa; }; std::vector<SaCfg> m_saUpdates;
+	unsigned m_spOverride[4];
+	Bool m_hasWhDock, m_hasCenterDock, m_hasRailedDock, m_hasRailroad; SupplyWarehouseDockUpdate m_whDock; SupplyCenterDockUpdate m_centerDock; RailedTransportDockUpdate m_railedDock; RailroadBehavior m_railroad;
+	Bool m_hasSupplyTruck; SupplyTruckAIInterface m_supplyTruck; Bool m_hasDozerAI; DozerAIInterface m_dozerAI; Bool m_hasDock;
+	struct ColliderCfg { std::set<int> likes; Bool carBomb, hijack, sabotage; }; std::vector<ColliderCfg> m_colliders;
+	Bool m_parkShould, m_parkAvail; Bool m_healContain; Int m_stealthCount; unsigned m_validMask; ObjectID m_closestRider, m_closestSlave;
+	std::vector<BehaviorModule> m_extraMods; CollideModuleInterface m_colliderIfs[4];
 
 	Object();
 
@@ -268,6 +321,7 @@ public:
 	Bool isKindOf(KindOfType t) const { return m_kindOf.test(t); }
 	Bool isKindOfMulti(const KindOfMaskType& mustBeSet, const KindOfMaskType& mustBeClear) const { return m_kindOf.testSetAndClear(mustBeSet, mustBeClear); }
 	Bool testStatus(ObjectStatusTypes s) const { return ((m_statusBits >> s) & 1) != 0; }
+	ObjectStatusMaskType getStatusBits() const { ObjectStatusMaskType m; for (int i = 0; i < 64; ++i) if ((m_statusBits >> i) & 1) m.set(i); return m; }
 	Bool testScriptStatusBit(unsigned b) const { return (m_scriptStatus & b) != 0; }
 	VeterancyLevel getVeterancyLevel() const { return (VeterancyLevel)m_veterancy; }
 	Drawable* getDrawable() const { return m_drawable; }
@@ -276,6 +330,19 @@ public:
 	const WeaponSetFlags& getWeaponSetFlags() const { return m_wsFlags; }
 	const ThingTemplate* getTemplate() const { return m_template; }
 	Bool isReloadTimeShared() const { return m_weaponSet.isSharedReloadTime(); }
+	Bool isMobile() const { return m_mobile; }
+	Real getCarrierDeckHeight() const { return m_deckHeight; }
+	Bool isDisabledByType(DisabledType t) const { return ((m_disabledMask >> (t == DISABLED_SUBDUED ? 0 : 1)) & 1) != 0; }
+	BodyModuleInterface* getBodyModule() const { return m_hasBody ? const_cast<BodyModuleInterface*>(&m_body) : NULL; }
+	Int getTransportSlotCount() const { return m_transportSlots; }
+	Bool isFactionStructure() const { return m_factionStructure; }
+	ObjectShroudStatus getShroudedStatus(Int playerIndex) const { return (ObjectShroudStatus)m_shroud[playerIndex]; }
+	ObjectID getBuilderID() const { return m_builder; }
+	Bool hasSpecialPower(SpecialPowerType t) const { return ((m_spHas[t >> 5] >> (t & 31)) & 1) != 0; }
+	SpecialPowerModuleInterface* findSpecialPowerModuleInterface(SpecialPowerType t) const;
+	SpecialPowerModuleInterface* getSpecialPowerModule(const SpecialPowerTemplate* tmpl) const { return findSpecialPowerModuleInterface(tmpl->getSpecialPowerType()); }
+	SpecialAbilityUpdate* findSpecialAbilityUpdate(SpecialPowerType t) const;
+	SpecialPowerUpdateInterface* findSpecialPowerWithOverridableDestinationActive(SpecialPowerType t) const;
 	Weapon* getWeaponInWeaponSlot(WeaponSlotType wslot) const { return m_weaponSet.getWeaponInWeaponSlot(wslot); }
 	Int getNumConsecutiveShotsFiredAtTarget(const Object* victim) const { return m_consecutiveShots; }
 	Bool isAboveTerrain() const { return m_aboveTerrain; }
@@ -391,6 +458,7 @@ static Real wpnRad(const Object* o, DistanceCalculationType t) { return (t == FR
 class PartitionManager
 {
 public:
+	CellShroudStatus getShroudStatusForPlayer(Int playerIndex, const Coord3D* loc) const { return (CellShroudStatus)((((Int)(loc->x * 0.1f) + playerIndex) % 3 + 3) % 3); }
 	Real getDistanceSquared(const Object* obj, const Object* other, DistanceCalculationType t) const
 	{ return wpnDist(obj->m_pos, wpnRad(obj, t), other->m_pos, wpnRad(other, t), t); }
 	Real getDistanceSquared(const Object* obj, const Coord3D* other, DistanceCalculationType t) const
@@ -426,6 +494,7 @@ public:
 		info->attackPoint2.x = bridge->m_pos.x - 10.0f; info->attackPoint2.y = bridge->m_pos.y + 5.0f; info->attackPoint2.z = bridge->m_pos.z;
 	}
 	Real getGroundHeight(Real x, Real y) const { return x * 0.01f + y * 0.02f; }
+	Bool isUnderwater(Real x, Real y, Real* waterZ = NULL, Real* terrainZ = NULL) const { return x < y; }
 	Real getLayerHeight(Real x, Real y, PathfindLayerEnum layer) const { return x * 0.01f + y * 0.02f + (Real)layer * 1.5f; }
 	void getExtent(Region3D* extent) const { *extent = g_wcfg.extent; }
 };

@@ -1930,6 +1930,13 @@ mod differential {
                 ow.push_str(&extract(&oc, h));
             }
             std::fs::write(weapon_gen.join("Object_weapons.cpp"), ow).expect("write Object_weapons.cpp");
+            // ActionManager.cpp: only its include block is replaced (the stand-ins and the real enums are in
+            // wrap_weapon.cpp and fire_standins.h); everything else is unchanged.
+            let mut am = std::fs::read_to_string(up.join("GameEngine/Source/Common/RTS/ActionManager.cpp")).expect("read ActionManager.cpp");
+            let (a, b) = (once_at(&am, "#include \"PreRTS.h\""), once_at(&am, "#ifdef _INTERNAL"));
+            assert!(a < b);
+            am = format!("{}#include \"Common/ActionManager.h\"\n\n{}", &am[..a], &am[b..]);
+            std::fs::write(weapon_gen.join("ActionManager_cut.cpp"), am).expect("write ActionManager_cut.cpp");
             let shim_weapon = dif.join("shim_weapon");
             let shim_armor = dif.join("shim_armor");
             let mut wp = cc::Build::new();
@@ -1956,6 +1963,7 @@ mod differential {
                 "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Weapon.cpp",
                 "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/WeaponSet.cpp",
                 "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Object.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Source/Common/RTS/ActionManager.cpp",
                 "differential/wrap_weapon.cpp",
                 "differential/shim_weapon",
             ] {

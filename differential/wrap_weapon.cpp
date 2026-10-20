@@ -71,6 +71,22 @@
 #define AcademyStats WpnTestAcademyStats
 #define FiringTracker WpnTestFiringTracker
 #define UpgradeTemplate WpnTestUpgradeTemplate
+#define DozerTask WpnTestDozerTask
+#define BodyModuleInterface WpnTestBodyModuleInterface
+#define SpecialPowerTemplate WpnTestSpecialPowerTemplate
+#define SpecialPowerModuleInterface WpnTestSpecialPowerModuleInterface
+#define SpecialPowerUpdateInterface WpnTestSpecialPowerUpdateInterface
+#define SpecialAbilityUpdate WpnTestSpecialAbilityUpdate
+#define SupplyTruckAIInterface WpnTestSupplyTruckAIInterface
+#define DozerAIInterface WpnTestDozerAIInterface
+#define DockUpdateInterface WpnTestDockUpdateInterface
+#define CollideModuleInterface WpnTestCollideModuleInterface
+#define SupplyWarehouseDockUpdate WpnTestSupplyWarehouseDockUpdate
+#define SupplyCenterDockUpdate WpnTestSupplyCenterDockUpdate
+#define RailedTransportDockUpdate WpnTestRailedTransportDockUpdate
+#define RailroadBehavior WpnTestRailroadBehavior
+#define ActionManager WpnTestActionManager
+#define TheActionManager WpnTestTheActionManager
 #define CommandButton WpnTestCommandButton
 #define CommandSet WpnTestCommandSet
 #define ControlBar WpnTestControlBar
@@ -131,6 +147,8 @@ extern "C" const char *ref_armor_fx_name(const void *fx);
 #define private public
 #define protected public
 #include "Common/ObjectStatusTypes.h"
+#include "Common/DisabledTypes.h"
+#include "Common/SpecialPowerType.h"
 #include "Common/Geometry.h"
 #include "GameLogic/Weapon.h"
 #include "GameLogic/WeaponSet.h"
@@ -142,6 +160,7 @@ extern "C" const char *ref_armor_fx_name(const void *fx);
 #include "Weapon_cut.cpp"
 #include "WeaponSet_cut.cpp"
 #include "Object_weapons.cpp"
+#include "ActionManager_cut.cpp"
 #undef min
 #undef max
 #undef private

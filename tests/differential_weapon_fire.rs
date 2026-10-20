@@ -37,6 +37,10 @@
 //! the weapon's `crc` and `xfer` (saved, then loaded into a copy); and, for an object's weapon set, update, reload
 //! all, bonus change, choose the best weapon, both "able to attack" questions, locks, the queries, `xfer`, clearing the
 //! leech range, and a change to the object (its weapon-set flags, bonus word, a status bit, its position).
+//! Further operations run the unchanged text of the `Object.cpp` weapon functions (ops 37 to 47: forwarders, model
+//! condition, bone positions, `canProduceUpgrade`) and the unchanged `ActionManager.cpp` (ops 48 and 49: the 22
+//! object-to-object "can X do Y" queries and the special-power queries), with the action facts of an object (kinds,
+//! contain, dozer, supply, special power, parking, shroud) behind stand-ins in `differential/shim_weapon/`.
 //!
 //! Inputs for which upstream is undefined behaviour or throws (a null `Object*` dereferenced; `newObject(NULL)`,
 //! which throws `ERROR_BAD_ARG`, for a projectile stream name that names no template) are **not** given to the C++:
@@ -105,6 +109,41 @@
 //! | B7 | the command-set override ignored | the C++ crashes on the program the Rust no longer excludes |
 //! | B8, B9 | the failed lookup's position and transform | 125, 117 |
 //! | B10 | the turret function without its AI test | 80 |
+//! | A1 | `canGetRepairedAt`: the mobile test inverted | the C++ or the Rust fails outright (no comparison output) |
+//! | A2 | `canGetRepairedAt`: `||` for `&&` (above terrain, airfield) | 1 |
+//! | A3 | a command source test (`FromScript`) inverted | 58 |
+//! | A4, A7 | shroud status: `Fogged` for `Shrouded`, and back | 17, 2 |
+//! | A5, A6 | the warehouse and supply-truck box counts (`0` for `1`) | 8, 1 |
+//! | A8 | the vehicle-or-infantry test made `&&` | 16 |
+//! | A9 | the heal pad kind test inverted | 14 |
+//! | A10 | bridge or bridge tower made `&&` | 4 |
+//! | A11 | `canBuildHere`: dozer task `&&` target made `||` | 1 (at 30000 programs; first passed unnoticed at 6000) |
+//! | A12 | `canEnterObject`: self-entry test inverted | 16 |
+//! | A13 | subdued test for unmanned | 4 |
+//! | A14 | carrier deck height `>=` for `>` | 1 (at 30000; needed the aircraft trait) |
+//! | A15 | parking `&&` made `||` | 1 (at 30000; needed the aircraft trait) |
+//! | A16 | stealth contain count `&&` made `||` | 3 (at 30000) |
+//! | A17 | capacity test inverted | 2 |
+//! | A18 | command source `FromPlayer` for `FromAi` | 30 |
+//! | A19 | `InvalidShot` for `PossibleAfterMoving` (dozer attack) | 1 |
+//! | A20 | hijack collide `&&` made `||` | 2 |
+//! | A21 | the unmanned test of sniping inverted | 6 |
+//! | A22 | `canDoSpecialPowerAtLocation`: the underwater test inverted | the C++ or the Rust fails outright |
+//! | A23 | `Neutral \|\| Allies` made `&&` | 10 (at 30000) |
+//! | A24 | special ability `object_count < object_max` made `<=` | 1 |
+//! | A25 | `canGarrison`: empty test made non-empty | 4 (at 30000) |
+//! | A26 | `canPlayerGarrison`: `count == 0` made `> 0` | 7 |
+//! | A27 | the kill-pilot damage test inverted | 9,487 |
+//! | A28 | `estimateWeaponDamage != 0` made `== 0` | 15 |
+//! | A29 | the enemies relationship test inverted | 3 (at 30000) |
+//! | A30 | stealthed and not detected: the detected test dropped | 2 (at 30000) |
+//! | A31 | the drone kind test replaced by the boat kind | 2 |
+//!
+//! The A column counts mismatching trace lines at 6,000 programs unless marked. A11, A14, A15, A16, A23, A25, A29 and
+//! A30 were first uncaught at 6,000 programs: the generator now makes an aircraft land (`above terrain`, a deck
+//! status, no early-refusal kinds or statuses on aircraft and pads), a dozer's task target the object built by the
+//! next-higher id, a charge-placing special more often, and the stealth and detected status bits more often. They
+//! were re-run at 30,000 programs on the final generator and all are caught.
 //!
 //! (One plant is equivalent: passing `i` for the weapon's own slot to `updateDrawableClipStatus`: the same value.)
 //!
@@ -127,6 +166,13 @@
 //!   creations 1,100, OCLs 760, projectile launches 650, lasers 70, projectile streams 20, land-mine disarms 55,
 //!   firing-tracker calls 690, model-condition changes 3,700, `xfer` round trips about 1,250, bone queries 2,100,
 //!   `canProduceUpgrade` 680.
+//! * ActionManager (ops 48 and 49 and the generator's object traits), final generator, **30000 programs: 21,334,856
+//!   trace lines compared, 0 mismatches**, 4,073 programs excluded (937 dereference a null object, 2,062 read an
+//!   out-parameter upstream never wrote, 595 give `newObject` a NULL template, 474 position a projectile with no
+//!   drawable, 5 take the team of a team-less object). Op 48 (the 22 object-to-object queries) gave 44,711 answers,
+//!   op 49 (the special-power queries) 27,559. True answers per query (`RESULT ret act k=... non-zero`): all but one
+//!   query is true at least 3 times (`canStealCashViaHacking` once); `canBribeUnit` and `canCutBuildingPower` are
+//!   always false upstream.
 //! * Earlier runs of this test found: the unsigned comparison of `getPreAttackDelay` (program 370 of 600), the
 //!   `newObject(NULL)` throw, the self-assignment guard of `operator=`, and (program 7910 of 30,000) that firing
 //!   must take only the weapon, not the whole set, out of the object.
@@ -174,6 +220,12 @@ use rts_lockstep_engine::logic::weapon_set_flags::WeaponSetFlags;
 use rts_lockstep_engine::logic::weapon_set_state::WeaponSet;
 use rts_lockstep_engine::logic::weapon_types::WeaponStatus;
 use rts_lockstep_engine::common::model_state::{ModelConditionFlags, MODELCONDITION_COUNT};
+use rts_lockstep_engine::logic::action_manager::{
+    self as am, ActionHost, CanEnterType, CollideFacts, DozerFacts, NamedUpdateModule, ParkingFacts, SpecialAbilityFacts, SpecialPowerTemplateRef,
+    SupplyTruckFacts,
+};
+use rts_lockstep_engine::common::game_common::{CellShroudStatus, ObjectShroudStatus};
+use rts_lockstep_engine::common::disabled_types::{DisabledType, DISABLED_SUBDUED};
 use rts_lockstep_engine::logic::world::object_weapons::{self as ow, FireAt, ObjectBoneHost, ObjectWeaponHost};
 use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 use rts_lockstep_engine::ww::vector3::Vector3;
@@ -328,6 +380,41 @@ struct Obj {
     cmd_override: i32,
     has_tracker: bool,
     last_cond: [i8; 3],
+    // the facts ActionManager.cpp reads
+    mobile: bool,
+    deck_height: f32,
+    disabled_mask: u32,
+    has_body: bool,
+    health: f32,
+    max_health: f32,
+    transport_slots: i32,
+    faction_structure: bool,
+    shroud: [i32; 4],
+    builder: i32,
+    sp_has: [u32; 4],
+    sp_modules: Vec<(i32, f32)>,
+    sa: Vec<(i32, i32, i32, BTreeSet<i32>)>,
+    sp_override: [u32; 4],
+    has_wh: bool,
+    has_center: bool,
+    has_railed: bool,
+    has_railroad: bool,
+    wh_boxes: i32,
+    has_supply_truck: bool,
+    st_boxes: i32,
+    st_avail: bool,
+    has_dozer: bool,
+    dz_task: i32,
+    dz_target: i32,
+    has_dock: bool,
+    colliders: Vec<(BTreeSet<i32>, bool, bool, bool)>,
+    park_should: bool,
+    park_avail: bool,
+    heal_contain: bool,
+    stealth_count: i32,
+    valid_mask: u32,
+    closest_rider: i32,
+    closest_slave: i32,
     weapon_set: WeaponSet,
 }
 
@@ -432,6 +519,55 @@ fn read_object(r: &mut Reader<'_>, things: usize) -> Obj {
     for c in last_cond.iter_mut() {
         *c = r.i() as i8;
     }
+    let mobile = r.b();
+    let deck_height = r.f();
+    let disabled_mask = r.u();
+    let has_body = r.b();
+    let health = r.f();
+    let max_health = r.f();
+    let transport_slots = r.i();
+    let faction_structure = r.b();
+    let shroud = [r.i(), r.i(), r.i(), r.i()];
+    let builder = r.i();
+    let sp_has = [r.u(), r.u(), r.u(), r.u()];
+    let mut sp_modules = Vec::new();
+    for _ in 0..r.u() {
+        sp_modules.push((r.i(), r.f()));
+    }
+    let mut sa = Vec::new();
+    for _ in 0..r.u() {
+        let (t, c, m) = (r.i(), r.i(), r.i());
+        let mut prod = BTreeSet::new();
+        for _ in 0..r.u() {
+            prod.insert(r.i());
+        }
+        sa.push((t, c, m, prod));
+    }
+    let sp_override = [r.u(), r.u(), r.u(), r.u()];
+    let (has_wh, has_center, has_railed, has_railroad) = (r.b(), r.b(), r.b(), r.b());
+    let wh_boxes = r.i();
+    let has_supply_truck = r.b();
+    let st_boxes = r.i();
+    let st_avail = r.b();
+    let has_dozer = r.b();
+    let dz_task = r.i();
+    let dz_target = r.i();
+    let has_dock = r.b();
+    let mut colliders = Vec::new();
+    for _ in 0..r.u() {
+        let mut likes = BTreeSet::new();
+        for _ in 0..r.u() {
+            likes.insert(r.i());
+        }
+        colliders.push((likes, r.b(), r.b(), r.b()));
+    }
+    let park_should = r.b();
+    let park_avail = r.b();
+    let heal_contain = r.b();
+    let stealth_count = r.i();
+    let valid_mask = r.u();
+    let closest_rider = r.i();
+    let closest_slave = r.i();
     Obj {
         id: 0,
         tmpl,
@@ -508,6 +644,40 @@ fn read_object(r: &mut Reader<'_>, things: usize) -> Obj {
         cmd_override,
         has_tracker,
         last_cond,
+        mobile,
+        deck_height,
+        disabled_mask,
+        has_body,
+        health,
+        max_health,
+        transport_slots,
+        faction_structure,
+        shroud,
+        builder,
+        sp_has,
+        sp_modules,
+        sa,
+        sp_override,
+        has_wh,
+        has_center,
+        has_railed,
+        has_railroad,
+        wh_boxes,
+        has_supply_truck,
+        st_boxes,
+        st_avail,
+        has_dozer,
+        dz_task,
+        dz_target,
+        has_dock,
+        colliders,
+        park_should,
+        park_avail,
+        heal_contain,
+        stealth_count,
+        valid_mask,
+        closest_rider,
+        closest_slave,
         weapon_set: WeaponSet::new(),
     }
 }
@@ -525,6 +695,7 @@ struct PlayerCfg {
     battle_plans: i32,
     mask: u16,
     rel: [i32; 4],
+    is_human: bool,
 }
 
 /// The Rust host: `WpnTestObject`, `WpnTestPlayer`, ... of fire_standins.h, in the same arithmetic.
@@ -540,6 +711,8 @@ struct Sim {
     objs: Vec<Obj>,
     lines: std::cell::RefCell<Vec<String>>,
     next_id: i32,
+    /// Set by a host method that is asked what upstream dereferences a NULL for; the operation's program is then excluded.
+    ub: std::cell::Cell<Option<&'static str>>,
 }
 
 fn id_of(name: &[u8]) -> u32 {
@@ -768,6 +941,11 @@ impl WeaponHost for Sim {
         self.ob(o).able_to_attack
     }
     fn team_relationship_to_player_index(&self, o: ObjectId, player_index: i32) -> Relationship {
+        if self.ob(o).player < 0 {
+            // `getTeam()` is NULL and `->getRelationship(..)` is called on it
+            self.ub.set(Some("the team of a team-less object is dereferenced"));
+            return Relationship::Neutral;
+        }
         match self.players[self.ob(o).player as usize].rel[player_index as usize] {
             0 => Relationship::Enemies,
             1 => Relationship::Neutral,
@@ -1290,7 +1468,8 @@ fn build_sim(r: &mut Reader<'_>, names: &mut NameKeyGenerator) -> Sim {
         let battle_plans = r.i();
         let mask = r.u() as u16;
         let rel = [r.i(), r.i(), r.i(), r.i()];
-        players.push(PlayerCfg { battle_plans, mask, rel });
+        let is_human = r.i() != 0;
+        players.push(PlayerCfg { battle_plans, mask, rel, is_human });
     }
     let n_thing = r.u();
     let mut things = Vec::new();
@@ -1330,6 +1509,7 @@ fn build_sim(r: &mut Reader<'_>, names: &mut NameKeyGenerator) -> Sim {
         things,
         objs: Vec::new(),
         lines: Default::default(),
+        ub: Default::default(),
         next_id: 1,
     };
     let n_obj = r.u();
@@ -2066,12 +2246,217 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let res = ow::can_produce_upgrade(&sim, o, up)?;
                 sim.rec(format!("ret canproduce {}", res as i32));
             }
+            48 => {
+                let kind = r.i();
+                let o = sim.opt(r.i());
+                let t = sim.opt(r.i());
+                let cs = command_source(r.i());
+                let ex = r.i();
+                let v: i32 = match kind {
+                    0 => am::can_get_repaired_at(&sim, o, t, cs)? as i32,
+                    1 => am::can_transfer_supplies_at(&sim, o, t) as i32,
+                    2 => am::can_dock_at(&sim, o.expect("canDockAt takes objects"), t.expect("canDockAt takes objects"), cs) as i32,
+                    3 => am::can_get_healed_at(&sim, o, t, cs) as i32,
+                    4 => am::can_repair_object(&sim, o, t, cs)? as i32,
+                    5 => am::can_resume_construction_of(&sim, o, t, cs) as i32,
+                    6 => {
+                        let mode = match ex % 3 {
+                            0 => CanEnterType::CheckCapacity,
+                            1 => CanEnterType::DontCheckCapacity,
+                            _ => CanEnterType::CombatDropInto,
+                        };
+                        am::can_enter_object(&sim, o, t, cs, mode)? as i32
+                    }
+                    7 => am::get_can_attack_object(&sim, o, t, cs, ex as AbleToAttackType)? as i32,
+                    8 => am::can_convert_object_to_car_bomb(&sim, o, t, cs) as i32,
+                    9 => am::can_hijack_vehicle(&sim, o, t, cs) as i32,
+                    10 => am::can_sabotage_building(&sim, o, t, cs) as i32,
+                    11 => am::can_capture_building(&sim, o, t, cs)? as i32,
+                    12 => am::can_disable_vehicle_via_hacking(&sim, o, t, cs, ex & 1 != 0)? as i32,
+                    13 => am::can_steal_cash_via_hacking(&sim, o, t, cs)? as i32,
+                    14 => am::can_snipe_vehicle(&sim, o, t, cs) as i32,
+                    15 => am::can_bribe_unit(o, t, cs) as i32,
+                    16 => am::can_cut_building_power(o, t, cs) as i32,
+                    17 => am::can_disable_building_via_hacking(&sim, o, t, cs)? as i32,
+                    18 => am::can_make_object_defector(&sim, o, t, cs) as i32,
+                    19 => am::can_fire_weapon_at_object(&sim, o, t, cs, ex % 3)? as i32,
+                    20 => am::can_garrison(&sim, o, t, cs)? as i32,
+                    _ => am::can_player_garrison(&sim, (0..sim.players.len() as i32).contains(&ex).then_some(ex), t, cs)? as i32,
+                };
+                sim.rec(format!("ret act k={kind} v={v}"));
+            }
+            49 => {
+                let kind = r.i();
+                let o = r.i();
+                let t = r.i();
+                let has_loc = r.b();
+                let loc = r.coord();
+                let cs = command_source(r.i());
+                let sp_type = r.i();
+                let check = r.b();
+                let opts = r.u();
+                let slot = r.i();
+                let way = sim.opt(r.i());
+                let tmpl = SpecialPowerTemplateRef { id: 1000 + sp_type as u32, sp_type };
+                let v: i32 = match kind {
+                    0 => am::can_do_special_power_at_location(&sim, o, &loc, cs, &tmpl, way, opts, check)? as i32,
+                    1 => am::can_do_special_power_at_object(&sim, o, t, cs, &tmpl, opts, check)? as i32,
+                    2 => am::can_do_special_power(&sim, o, &tmpl, cs, opts, check) as i32,
+                    3 => am::can_fire_weapon_at_location(&sim, sim.opt(o), has_loc.then_some(&loc), cs, slot % 3, way) as i32,
+                    4 => am::can_fire_weapon(&sim, sim.opt(o), slot % 3, cs) as i32,
+                    _ => am::can_override_special_power_destination(&sim, o, &loc, sp_type, cs)? as i32,
+                };
+                sim.rec(format!("ret actsp k={kind} v={v}"));
+            }
             _ => panic!("unknown op {op}"),
+        }
+        if let Some(why) = sim.ub.get() {
+            return Err(Excluded(why));
         }
         dump_snapshot(&sim, &reg);
     }
     let lines = sim.lines.take();
     Ok(lines)
+}
+
+fn shroud_from(v: i32) -> ObjectShroudStatus {
+    match v {
+        0 => ObjectShroudStatus::Invalid,
+        1 => ObjectShroudStatus::Clear,
+        2 => ObjectShroudStatus::PartialClear,
+        3 => ObjectShroudStatus::Fogged,
+        4 => ObjectShroudStatus::Shrouded,
+        _ => ObjectShroudStatus::InvalidButPreviousValid,
+    }
+}
+
+/// What `ActionManager.cpp` asks, from the same configuration the stand-ins of `fire_standins.h` answer from.
+impl ActionHost for Sim {
+    fn is_mobile(&self, o: ObjectId) -> bool {
+        self.ob(o).mobile
+    }
+    fn carrier_deck_height(&self, o: ObjectId) -> f32 {
+        self.ob(o).deck_height
+    }
+    fn is_disabled_by_type(&self, o: ObjectId, t: DisabledType) -> bool {
+        (self.ob(o).disabled_mask >> (if t == DISABLED_SUBDUED { 0 } else { 1 })) & 1 != 0
+    }
+    fn body_health(&self, o: ObjectId) -> Option<(f32, f32)> {
+        let s = self.ob(o);
+        s.has_body.then_some((s.health, s.max_health))
+    }
+    fn transport_slot_count(&self, o: ObjectId) -> i32 {
+        self.ob(o).transport_slots
+    }
+    fn is_faction_structure(&self, o: ObjectId) -> bool {
+        self.ob(o).faction_structure
+    }
+    fn object_shrouded_status(&self, o: ObjectId, player_index: i32) -> ObjectShroudStatus {
+        shroud_from(self.ob(o).shroud[player_index as usize])
+    }
+    fn builder_id(&self, o: ObjectId) -> ObjectId {
+        self.ob(o).builder
+    }
+    fn controlling_player_is_human(&self, o: ObjectId) -> Option<bool> {
+        let p = self.ob(o).player;
+        (p >= 0).then(|| self.players[p as usize].is_human)
+    }
+    fn player_relationship_to_team_of(&self, player_index: i32, o: ObjectId) -> Relationship {
+        let op = self.ob(o).player;
+        if op < 0 {
+            return Relationship::Neutral;
+        }
+        match self.players[player_index as usize].rel[op as usize] {
+            0 => Relationship::Enemies,
+            1 => Relationship::Neutral,
+            _ => Relationship::Allies,
+        }
+    }
+    fn has_special_power(&self, o: ObjectId, t: i32) -> bool {
+        (self.ob(o).sp_has[(t >> 5) as usize] >> (t & 31)) & 1 != 0
+    }
+    fn special_power_percent_ready_by_type(&self, o: ObjectId, t: i32) -> Option<f32> {
+        self.ob(o).sp_modules.iter().find(|m| m.0 == t).map(|m| m.1)
+    }
+    fn special_power_percent_ready_by_template(&self, o: ObjectId, template: &SpecialPowerTemplateRef) -> Option<f32> {
+        self.special_power_percent_ready_by_type(o, template.sp_type)
+    }
+    fn special_ability_update(&self, o: ObjectId, t: i32) -> Option<SpecialAbilityFacts> {
+        self.ob(o).sa.iter().find(|s| s.0 == t).map(|s| SpecialAbilityFacts { object_count: s.1, object_max: s.2 })
+    }
+    fn special_ability_has_object_with_producer(&self, o: ObjectId, t: i32, target: ObjectId) -> bool {
+        self.ob(o).sa.iter().find(|s| s.0 == t).is_some_and(|s| s.3.contains(&target))
+    }
+    fn special_power_overridable_destination_active(&self, o: ObjectId, t: i32) -> bool {
+        (self.ob(o).sp_override[(t >> 5) as usize] >> (t & 31)) & 1 != 0
+    }
+    fn has_named_update_module(&self, o: ObjectId, which: NamedUpdateModule) -> bool {
+        let s = self.ob(o);
+        match which {
+            NamedUpdateModule::SupplyWarehouseDock => s.has_wh,
+            NamedUpdateModule::SupplyCenterDock => s.has_center,
+            NamedUpdateModule::RailedTransportDock => s.has_railed,
+            NamedUpdateModule::Railroad => s.has_railroad,
+        }
+    }
+    fn warehouse_boxes_stored(&self, o: ObjectId) -> i32 {
+        self.ob(o).wh_boxes
+    }
+    fn has_ai_interface(&self, o: ObjectId) -> bool {
+        self.ob(o).has_ai
+    }
+    fn supply_truck_ai(&self, o: ObjectId) -> Option<SupplyTruckFacts> {
+        let s = self.ob(o);
+        s.has_supply_truck.then_some(SupplyTruckFacts { number_boxes: s.st_boxes, available_for_supplying: s.st_avail })
+    }
+    fn dozer_ai(&self, o: ObjectId) -> Option<DozerFacts> {
+        let s = self.ob(o);
+        s.has_dozer.then_some(DozerFacts { current_task: s.dz_task, build_task_target: s.dz_target })
+    }
+    fn has_dock_update_interface(&self, o: ObjectId) -> bool {
+        self.ob(o).has_dock
+    }
+    fn collide_facts(&self, o: ObjectId, other: ObjectId) -> Vec<CollideFacts> {
+        self.ob(o)
+            .colliders
+            .iter()
+            .map(|(likes, car_bomb, hijack, sabotage)| CollideFacts { would_like: likes.contains(&other), car_bomb: *car_bomb, hijack: *hijack, sabotage: *sabotage })
+            .collect()
+    }
+    fn parking_facts(&self, dest: ObjectId, obj: ObjectId) -> Vec<ParkingFacts> {
+        let d = self.ob(dest);
+        if d.has_parking {
+            vec![ParkingFacts { has_reserved_space: d.reserved.contains(&obj), should_reserve_door: d.park_should, has_available_space: d.park_avail }]
+        } else {
+            Vec::new()
+        }
+    }
+    fn contain_is_heal_contain(&self, o: ObjectId) -> bool {
+        self.ob(o).heal_contain
+    }
+    fn contain_stealth_units_contained(&self, o: ObjectId) -> i32 {
+        self.ob(o).stealth_count
+    }
+    fn contain_is_valid_container_for(&self, container: ObjectId, _obj: ObjectId, check_capacity: bool) -> bool {
+        (self.ob(container).valid_mask >> (if check_capacity { 0 } else { 1 })) & 1 != 0
+    }
+    fn contain_closest_rider(&self, container: ObjectId, _pos: &Coord3D) -> Option<ObjectId> {
+        self.opt(self.ob(container).closest_rider)
+    }
+    fn spawn_closest_slave(&self, o: ObjectId, _pos: &Coord3D) -> Option<Option<ObjectId>> {
+        let s = self.ob(o);
+        s.has_spawn.then(|| self.opt(s.closest_slave))
+    }
+    fn cell_shroud_status_for_player(&self, player_index: i32, loc: &Coord3D) -> CellShroudStatus {
+        match (((loc.x * 0.1f32) as i32 + player_index) % 3 + 3) % 3 {
+            0 => CellShroudStatus::Clear,
+            1 => CellShroudStatus::Fogged,
+            _ => CellShroudStatus::Shrouded,
+        }
+    }
+    fn is_underwater(&self, x: f32, y: f32) -> bool {
+        x < y
+    }
 }
 
 fn mtx_str(m: &Matrix3D) -> String {
@@ -2262,6 +2647,35 @@ const KIND_POOL: [KindOfType; 18] = [
     KINDOF_FS_AIRFIELD,
     KINDOF_PARACHUTE,
 ];
+const ACTION_KINDS: [KindOfType; 17] = {
+    use rts_lockstep_engine::common::kind_of::*;
+    [
+        KINDOF_AIRCRAFT,
+        KINDOF_REPAIR_PAD,
+        KINDOF_HEAL_PAD,
+        KINDOF_DOZER,
+        KINDOF_MOB_NEXUS,
+        KINDOF_IGNORED_IN_GUI,
+        KINDOF_REJECT_UNMANNED,
+        KINDOF_CAPTURABLE,
+        KINDOF_IMMUNE_TO_CAPTURE,
+        KINDOF_REBUILD_HOLE,
+        KINDOF_BRIDGE_TOWER,
+        KINDOF_CASH_GENERATOR,
+        KINDOF_FS_TECHNOLOGY,
+        KINDOF_DRONE,
+        KINDOF_BOAT,
+        KINDOF_CLIFF_JUMPER,
+        KINDOF_NO_GARRISON,
+    ]
+};
+
+const ACTION_STATUS: [ObjectStatusTypes; 3] = [
+    rts_lockstep_engine::common::object_status_types::OBJECT_STATUS_UNDER_CONSTRUCTION,
+    rts_lockstep_engine::common::object_status_types::OBJECT_STATUS_SOLD,
+    rts_lockstep_engine::common::object_status_types::OBJECT_STATUS_DECK_HEIGHT_OFFSET,
+];
+
 const STATUS_POOL: [ObjectStatusTypes; 11] = [
     OBJECT_STATUS_AIRBORNE_TARGET,
     OBJECT_STATUS_BURNED,
@@ -2430,6 +2844,7 @@ fn gen_object(
 ) -> Vec<u32> {
     let mut w = W::default();
     let id = index as i32 + 1;
+    let tr = Traits::roll(g);
     w.u(1 + g.below(n_things as u32));
     w.i(player);
     let pos = gen_coord(g, spread);
@@ -2450,15 +2865,42 @@ fn gen_object(
             kinds.push(KINDOF_SMALL_MISSILE);
         }
     }
+    // the kinds ActionManager.cpp tests (more of them than of the weapon kinds)
+    for k in ACTION_KINDS {
+        if chance(g, 28) {
+            kinds.push(k);
+        }
+    }
+    tr.add_kinds(g, &mut kinds);
+    // an aircraft or a pad is made to get past the early refusals of `canEnterObject` (the GUI-ignored and nexus
+    // kinds, a structure or immobile aircraft, and below the under-construction and sold statuses), or the
+    // landing rules behind them would be reached by almost no program
+    let clean = tr.aircraft || tr.pad;
+    if clean {
+        use rts_lockstep_engine::common::kind_of::*;
+        kinds.retain(|&k| k != KINDOF_IGNORED_IN_GUI && k != KINDOF_MOB_NEXUS && !(tr.aircraft && (k == KINDOF_STRUCTURE || k == KINDOF_IMMOBILE)));
+    }
     w.u(kinds.len() as u32);
     for k in kinds {
         w.i(k);
     }
     let mut status: u64 = 0;
     for s in STATUS_POOL {
-        if chance(g, 9) {
+        if chance(g, 14) {
             status |= 1u64 << s;
         }
+    }
+    for s in ACTION_STATUS {
+        if chance(g, 12) {
+            status |= 1u64 << s;
+        }
+    }
+    if clean {
+        use rts_lockstep_engine::common::object_status_types::{OBJECT_STATUS_SOLD, OBJECT_STATUS_UNDER_CONSTRUCTION};
+        status &= !((1u64 << OBJECT_STATUS_SOLD) | (1u64 << OBJECT_STATUS_UNDER_CONSTRUCTION));
+    }
+    if tr.aircraft && chance(g, 60) {
+        status |= 1u64 << rts_lockstep_engine::common::object_status_types::OBJECT_STATUS_DECK_HEIGHT_OFFSET;
     }
     w.u(status as u32);
     w.u((status >> 32) as u32);
@@ -2472,7 +2914,7 @@ fn gen_object(
     w.b(chance(g, 5));
     w.b(chance(g, 85));
     w.i(if chance(g, 90) { 1 } else if chance(g, 50) { 15 } else { 2 });
-    w.b(chance(g, 25));
+    w.b(chance(g, 25) || (tr.aircraft && chance(g, 80))); // above terrain
     w.b(chance(g, 25));
     w.i(g.below(4) as i32);
     w.f(if chance(g, 30) { 0.0 } else { g.uniform(1.0, 80.0) });
@@ -2491,7 +2933,7 @@ fn gen_object(
     w.c([g.uniform(-2.0, 2.0), g.uniform(-2.0, 2.0), g.uniform(0.0, 4.0)]);
     w.c([g.uniform(-2.0, 2.0), g.uniform(-2.0, 2.0), g.uniform(0.0, 4.0)]);
     w.b(chance(g, 50)); // laser update
-    let has_ai = chance(g, 70);
+    let has_ai = chance(g, 70) || tr.vehicle || tr.dozer || tr.supply || tr.infantry;
     w.b(has_ai);
     w.b(chance(g, 15)); // sneaky
     w.c([g.uniform(-4.0, 4.0), g.uniform(-4.0, 4.0), g.uniform(0.0, 3.0)]);
@@ -2513,7 +2955,7 @@ fn gen_object(
     let has_contain = contains[index];
     w.b(has_contain);
     w.i(g.below(4) as i32);
-    w.b(chance(g, 40));
+    w.b(chance(g, 40) || tr.container); // garrisonable
     w.b(chance(g, 20));
     w.b(chance(g, 30));
     w.u(if chance(g, 50) { g.below(1 << 27) } else { 0 });
@@ -2551,7 +2993,7 @@ fn gen_object(
     w.i(g.below(4) as i32);
     w.b(chance(g, 12)); // land mine
     w.b(if projectile_proto { chance(g, 75) } else { chance(g, 15) }); // projectile update
-    w.b(chance(g, 12)); // parking
+    w.b(chance(g, 12) || (tr.pad && chance(g, 70))); // parking
     w.b(chance(g, 15)); // special power completion die
     w.b(chance(g, 20)); // projectile stream
     w.b(chance(g, 25)); // assisted targeting
@@ -2584,8 +3026,192 @@ fn gen_object(
     for _ in 0..3 {
         w.i(pick(g, &[-1, 0, 1, 2, 3, 4]));
     }
+    gen_action_facts(g, &mut w, n_obj, tr, id, pos[2]);
     let _ = has_ai;
     w.0
+}
+
+/// What an object is made to be, to reach the success paths of `ActionManager.cpp` (each trait raises the odds of
+/// the facts that its queries need; the rest of an object stays random).
+#[derive(Clone, Copy)]
+struct Traits {
+    vehicle: bool,
+    pad: bool,
+    dozer: bool,
+    building: bool,
+    special: bool,
+    container: bool,
+    supply: bool,
+    infantry: bool,
+    aircraft: bool,
+}
+
+impl Traits {
+    fn roll(g: &mut Gen) -> Traits {
+        Traits {
+            vehicle: chance(g, 26),
+            pad: chance(g, 20),
+            dozer: chance(g, 18),
+            building: chance(g, 26),
+            special: chance(g, 30),
+            container: chance(g, 24),
+            supply: chance(g, 18),
+            infantry: chance(g, 24),
+            aircraft: chance(g, 22),
+        }
+    }
+
+    fn add_kinds(&self, g: &mut Gen, kinds: &mut Vec<KindOfType>) {
+        use rts_lockstep_engine::common::kind_of::*;
+        let mut add = |g: &mut Gen, on: bool, k: KindOfType, p: u32| {
+            if on && chance(g, p) {
+                kinds.push(k);
+            }
+        };
+        add(g, self.vehicle, KINDOF_VEHICLE, 92);
+        add(g, self.pad, KINDOF_REPAIR_PAD, 60);
+        add(g, self.pad, KINDOF_HEAL_PAD, 60);
+        add(g, self.pad, KINDOF_FS_AIRFIELD, 70);
+        add(g, self.aircraft, KINDOF_AIRCRAFT, 95);
+        add(g, self.dozer, KINDOF_DOZER, 95);
+        add(g, self.building, KINDOF_STRUCTURE, 92);
+        add(g, self.building, KINDOF_CAPTURABLE, 60);
+        add(g, self.building, KINDOF_CASH_GENERATOR, 40);
+        add(g, self.building, KINDOF_FS_TECHNOLOGY, 30);
+        add(g, self.infantry, KINDOF_INFANTRY, 92);
+        add(g, self.container, KINDOF_STRUCTURE, 50);
+        add(g, self.supply, KINDOF_VEHICLE, 50);
+    }
+}
+
+/// The special power types `ActionManager.cpp` names (the ones its switches care about more often).
+const RELEVANT_SP: [i32; 14] = [27, 28, 29, 30, 25, 10, 7, 22, 23, 24, 34, 33, 66, 2];
+
+/// The facts `ActionManager.cpp` reads of an object (the words after the weapon-set facts of `gen_object`).
+fn gen_action_facts(g: &mut Gen, w: &mut W, n_obj: usize, tr: Traits, id: i32, pos_z: f32) {
+    let some_obj = |g: &mut Gen| if chance(g, 25) { 0 } else { 1 + g.below(n_obj as u32) as i32 };
+    w.b(chance(g, 80) || (tr.vehicle && chance(g, 95))); // mobile
+    w.f(if chance(g, 40) { 0.0 } else if chance(g, 50) { pos_z } else { g.uniform(0.0, 50.0) });
+    let mut dis = 0u32;
+    for b in 0..2 {
+        if chance(g, 15) {
+            dis |= 1 << b;
+        }
+    }
+    w.u(dis);
+    let has_body = chance(g, 88) || tr.vehicle || tr.building;
+    w.b(has_body);
+    let h = g.uniform(1.0, 100.0);
+    w.f(h);
+    w.f(if chance(g, 35) && !tr.vehicle { h } else { h + g.uniform(1.0, 50.0) });
+    w.i(g.below(4) as i32);
+    w.b(chance(g, 15));
+    for _ in 0..4 {
+        w.i(pick(g, &[1, 1, 2, 3, 3, 4, 4, 5, 0]));
+    }
+    // builder: a building is often built by the next object, which a dozer is often building it (the dozer's
+    // `build_task_target` below is the previous object)
+    let builder = if tr.building && (id as usize) < n_obj && chance(g, 55) {
+        id as u32 + 1
+    } else if chance(g, 40) {
+        1 + g.below(n_obj as u32)
+    } else {
+        0
+    };
+    w.u(builder);
+    // the special powers the object has, and the modules for some of them
+    let mut has = [0u32; 4];
+    let mut types: Vec<i32> = Vec::new();
+    for &t in &RELEVANT_SP {
+        if chance(g, 18) || (tr.special && chance(g, 40)) {
+            types.push(t);
+        }
+    }
+    for _ in 0..g.below(3) {
+        types.push(1 + g.below(66) as i32);
+    }
+    for &t in &types {
+        if chance(g, 80) {
+            has[(t >> 5) as usize] |= 1 << (t & 31);
+        }
+    }
+    for h in has {
+        w.u(h);
+    }
+    let mut mods: Vec<i32> = Vec::new();
+    for &t in &types {
+        if chance(g, 70) && mods.len() < 8 && !mods.contains(&t) {
+            mods.push(t);
+        }
+    }
+    w.u(mods.len() as u32);
+    for &t in &mods {
+        w.i(t);
+        w.f(if tr.special { pick(g, &[1.0f32, 1.0, 1.0, 0.5]) } else { pick(g, &[0.0f32, 0.5, 1.0, 1.0, 0.999]) });
+    }
+    // special ability updates (the charges)
+    let mut sas: Vec<i32> = Vec::new();
+    for t in [22, 23, 24] {
+        if chance(g, 30) || (tr.special && chance(g, 50)) {
+            sas.push(t);
+        }
+    }
+    w.u(sas.len() as u32);
+    for &t in &sas {
+        w.i(t);
+        w.i(g.below(4) as i32);
+        w.i(g.below(4) as i32);
+        let prods: Vec<i32> = (1..=n_obj as i32).filter(|_| chance(g, 25)).collect();
+        w.u(prods.len() as u32);
+        for p in prods {
+            w.i(p);
+        }
+    }
+    let mut ov = [0u32; 4];
+    for &t in &types {
+        if chance(g, 40) {
+            ov[(t >> 5) as usize] |= 1 << (t & 31);
+        }
+    }
+    for o in ov {
+        w.u(o);
+    }
+    for _ in 0..4 {
+        w.b(chance(g, 25) || (tr.supply && chance(g, 30)));
+    }
+    w.i(if chance(g, 50) && !tr.supply { 0 } else { 1 + g.below(3) as i32 });
+    let st = chance(g, 35) || (tr.supply && chance(g, 85));
+    w.b(st);
+    w.i(if tr.supply { 1 + g.below(2) as i32 } else { g.below(3) as i32 });
+    w.b(chance(g, 70));
+    let dz = chance(g, 35) || (tr.dozer && chance(g, 85));
+    w.b(dz);
+    w.i(if tr.dozer && chance(g, 60) { 0 } else { g.below(4) as i32 - 1 });
+    w.i(if tr.dozer && id > 1 && chance(g, 60) { id - 1 } else { some_obj(g) });
+    w.b(chance(g, 25) || (tr.supply && chance(g, 60))); // a dock update interface
+    let nc = if chance(g, 40) || (tr.special && chance(g, 50)) { 1 + g.below(2) } else { 0 };
+    w.u(nc);
+    for _ in 0..nc {
+        let (pl, pf) = if tr.special { (80, 65) } else { (35, 35) };
+        let likes: Vec<i32> = (1..=n_obj as i32).filter(|_| chance(g, pl)).collect();
+        w.u(likes.len() as u32);
+        for l in likes {
+            w.i(l);
+        }
+        w.b(chance(g, pf));
+        w.b(chance(g, pf));
+        w.b(chance(g, pf));
+    }
+    w.b(chance(g, 50));
+    w.b(chance(g, 50));
+    w.b(chance(g, 15));
+    w.i(g.below(3) as i32);
+    w.u(if tr.container { 3 } else { g.below(4) });
+    w.i(some_obj(g));
+    w.i(some_obj(g));
+    let _ = st;
+    let _ = dz;
+    let _ = has_body;
 }
 
 fn gen_header(g: &mut Gen, w: &mut W) -> World {
@@ -2616,8 +3242,9 @@ fn gen_header(g: &mut Gen, w: &mut W) -> World {
         for q in 0..4 {
             w.i(if p == q { 2 } else { g.below(3) as i32 });
         }
+        w.i(chance(g, 50) as i32); // a human player
     }
-    let contains: Vec<bool> = (0..n_obj).map(|_| chance(g, 30)).collect();
+    let contains: Vec<bool> = (0..n_obj).map(|_| chance(g, 42)).collect();
     w.u(n_things as u32);
     for t in 0..n_things {
         w.i(g.below(2) as i32);
@@ -2771,6 +3398,32 @@ fn gen_ops(g: &mut Gen, world: &World, w: &mut W) {
                     op!(ops.u(45); ops.i(o); ops.i(g.below(3) as i32); ops.i(v))
                 }
                 _ => op!(ops.u(37); ops.i(o); ops.i(g.below(38) as i32); ops.i(g.below(3) as i32)),
+            }
+            continue;
+        }
+        if chance(g, 14) {
+            // ActionManager.cpp: what an object can do to another, and special powers
+            let sp = if chance(g, 75) { pick(g, &RELEVANT_SP) } else { g.below(67) as i32 };
+            if chance(g, 62) {
+                let kind = g.below(22) as i32;
+                let nullable = !matches!(kind, 2);
+                let o = if nullable && chance(g, 8) { 0 } else { obj(g) };
+                let t = if nullable && chance(g, 8) { 0 } else { obj(g) };
+                let ex = match kind {
+                    6 => g.below(3) as i32,
+                    7 => pick(g, &[0, 1, 2, 3, 4]),
+                    12 => g.below(2) as i32,
+                    19 => g.below(3) as i32,
+                    21 => g.below(5) as i32 - 1,
+                    _ => 0,
+                };
+                op!(ops.u(48); ops.i(kind); ops.i(o); ops.i(t); ops.i(g.below(5) as i32); ops.i(ex))
+            } else {
+                let kind = g.below(6) as i32;
+                let o = if matches!(kind, 3 | 4) && chance(g, 10) { 0 } else { obj(g) };
+                let p = pos(g);
+                let way = if chance(g, 40) { 0 } else { obj(g) };
+                op!(ops.u(49); ops.i(kind); ops.i(o); ops.i(obj(g)); ops.b(chance(g, 80)); ops.c(p); ops.i(g.below(5) as i32); ops.i(sp); ops.b(chance(g, 75)); ops.u(g.below(4)); ops.i(g.below(3) as i32); ops.i(way))
             }
             continue;
         }
@@ -3005,11 +3658,12 @@ fn weapon_firing_matches_upstream() {
     let (mut programs, mut excluded, mut lines) = (0u64, 0u64, 0u64);
     let mut counts: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
     let mut why_counts: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
+    let mut true_counts: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
     let markers = [
         "fx.fire", "fx.pos", "ocl ", "dmg ", "est ", "newobj", "launch ", "stream.add", "laser ", "assist ", "destroy", "lm.disarm", "cm.report", "assault",
         "spc.", "battleplan", "academy.mine", "adjust", "xform", "phys.", "ret fire", "ret able", "ret choose", "ret xfer-load 0", "ret setxfer-load 0",
         "ret approach", "ret estimate", "ret collide 1", "ret collide 0", "ret launchpos", "tracker ", "undetected ", "clipstatus ", "mcflags ", "animloop ",
-        "ret objq", "ret oable ", "ret oableuse", "ret ochoose", "ret olock", "ret bone0", "ret bone1", "ret bonemulti", "ret canproduce",
+        "ret objq", "ret oable ", "ret oableuse", "ret ochoose", "ret olock", "ret bone0", "ret bone1", "ret bonemulti", "ret canproduce", "ret act ", "ret actsp",
     ];
     // (`WEAPON_FIRE_FROM` starts at another program, to look at one: `WEAPON_FIRE_FROM=7910 WEAPON_FIRE_CASES=1`)
     let from: u64 = std::env::var("WEAPON_FIRE_FROM").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
@@ -3033,6 +3687,12 @@ fn weapon_firing_matches_upstream() {
                 }
             }
         }
+        for l in &rust {
+            if (l.starts_with("ret act k=") || l.starts_with("ret actsp k=")) && !l.ends_with("v=0") {
+                let key = l.rsplit_once(' ').map_or(l.as_str(), |(a, b)| if b.starts_with("v=") && b != "v=0" { a } else { l.as_str() });
+                *true_counts.entry(format!("{key} non-zero")).or_insert(0) += 1;
+            }
+        }
         check.eq(rust.len(), cpp_lines.len(), || format!("program {case}: line count"));
         for (i, (a, b)) in rust.iter().zip(cpp_lines.iter()).enumerate() {
             check.eq(a.as_str(), b.as_str(), || format!("program {case} line {i}"));
@@ -3044,6 +3704,9 @@ fn weapon_firing_matches_upstream() {
     }
     for (m, c) in &counts {
         println!("RESULT   {m:<20} {c}");
+    }
+    for (m, c) in &true_counts {
+        println!("RESULT   {m:<28} {c}");
     }
     check.finish();
 }

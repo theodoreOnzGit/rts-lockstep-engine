@@ -51,6 +51,12 @@ Object::Object() : m_geom(GEOMETRY_SPHERE, false, 0.0f, 0.0f, 0.0f)
 	m_hasStealth = m_disguised = false; m_disguisedPlayer = 0; m_hasSpawn = false; m_spawnResult = 0;
 	m_hasLandMine = m_hasPUI = m_hasParking = m_hasSPCDie = m_hasStream = m_hasAssist = m_assistFree = m_hasCountermeasures = m_hasPhysics = false;
 	m_launcherId = 0;
+	m_mobile = false; m_deckHeight = 0; m_disabledMask = 0; m_hasBody = false; m_body.m_h = m_body.m_max = 0; m_transportSlots = 0; m_factionStructure = false;
+	for (int i = 0; i < 4; ++i) { m_shroud[i] = 1; m_spHas[i] = 0; m_spOverride[i] = 0; }
+	m_builder = (ObjectID)0; m_hasWhDock = m_hasCenterDock = m_hasRailedDock = m_hasRailroad = false; m_whDock.m_boxes = 0;
+	m_hasSupplyTruck = false; m_supplyTruck.m_boxes = 0; m_supplyTruck.m_avail = false; m_hasDozerAI = false; m_dozerAI.m_task = -1; m_dozerAI.m_target = 0; m_hasDock = false;
+	m_parkShould = m_parkAvail = false; m_healContain = false; m_stealthCount = 0; m_validMask = 0; m_closestRider = m_closestSlave = (ObjectID)0;
+	m_supplyTruck.m_boxes = 0;
 	m_hasTracker = false; m_firingTracker = NULL; m_tracker.m_owner = this; for (int i = 0; i < 3; ++i) m_lastWeaponCondition[i] = 0;
 	m_drawable = NULL; m_drawableStorage.m_owner = this; m_laser.m_owner = this; m_ai.m_owner = this; m_assault.m_owner = this; m_contain.m_owner = this; m_stealth.m_owner = this;
 	m_spawn.m_owner = this; m_pui.m_owner = this; m_lmi.m_owner = this; m_ppi.m_owner = this; m_spcDie.m_owner = this; m_stream.m_owner = this;
@@ -85,6 +91,14 @@ UpdateModule* Object::findUpdateModule(NameKeyType key) const
 	static NameKeyType kAssist = TheNameKeyGenerator->nameToKey("AssistedTargetingUpdate");
 	if (key == kStream && m_hasStream) return const_cast<ProjectileStreamUpdate*>(&m_stream);
 	if (key == kAssist && m_hasAssist) return const_cast<AssistedTargetingUpdate*>(&m_assist);
+	static NameKeyType kWh = TheNameKeyGenerator->nameToKey("SupplyWarehouseDockUpdate");
+	static NameKeyType kCenter = TheNameKeyGenerator->nameToKey("SupplyCenterDockUpdate");
+	static NameKeyType kRailed = TheNameKeyGenerator->nameToKey("RailedTransportDockUpdate");
+	static NameKeyType kRailroad = TheNameKeyGenerator->nameToKey("RailroadBehavior");
+	if (key == kWh && m_hasWhDock) return const_cast<SupplyWarehouseDockUpdate*>(&m_whDock);
+	if (key == kCenter && m_hasCenterDock) return const_cast<SupplyCenterDockUpdate*>(&m_centerDock);
+	if (key == kRailed && m_hasRailedDock) return const_cast<RailedTransportDockUpdate*>(&m_railedDock);
+	if (key == kRailroad && m_hasRailroad) return const_cast<RailroadBehavior*>(&m_railroad);
 	return NULL;
 }
 void Object::reportMissileForCountermeasures(Object* missile) { Rec("cm.report o=%d missile=%d", m_id, oid(missile)); }
@@ -151,6 +165,39 @@ const CommandSet* ControlBar::findCommandSet(const AsciiString& name) const
 }
 static ControlBar g_controlBar;
 ControlBar* TheControlBar = &g_controlBar;
+
+/* ---- what ActionManager.cpp asks of an object ------------------------------------------------------------------ */
+SpecialPowerModuleInterface* Object::findSpecialPowerModuleInterface(SpecialPowerType t) const
+{
+	for (size_t i = 0; i < m_spModules.size(); ++i) if (m_spModules[i].first == (int)t) return const_cast<SpecialPowerModuleInterface*>(&m_spmStore[i]);
+	return NULL;
+}
+SpecialAbilityUpdate* Object::findSpecialAbilityUpdate(SpecialPowerType t) const
+{
+	for (size_t i = 0; i < m_saUpdates.size(); ++i) if (m_saUpdates[i].type == (int)t) return const_cast<SpecialAbilityUpdate*>(&m_saUpdates[i].sa);
+	return NULL;
+}
+SpecialPowerUpdateInterface* Object::findSpecialPowerWithOverridableDestinationActive(SpecialPowerType t) const
+{
+	static SpecialPowerUpdateInterface x;
+	return (((m_spOverride[t >> 5] >> (t & 31)) & 1) != 0) ? &x : NULL;
+}
+Object* SpecialAbilityUpdate::findSpecialObjectWithProducerID(const Object* target) const { return m_producers.count((int)target->getID()) ? const_cast<Object*>(target) : NULL; }
+SupplyTruckAIInterface* AIUpdateInterface::getSupplyTruckAIInterface() const { return m_owner->m_hasSupplyTruck ? &m_owner->m_supplyTruck : NULL; }
+DozerAIInterface* AIUpdateInterface::getDozerAIInterface() const { return m_owner->m_hasDozerAI ? &m_owner->m_dozerAI : NULL; }
+DockUpdateInterface* BehaviorModule::getDockUpdateInterface() { static DockUpdateInterface d; return m_kind == 3 ? &d : NULL; }
+CollideModuleInterface* BehaviorModule::getCollide() { return m_kind == 4 ? &m_owner->m_colliderIfs[m_index] : NULL; }
+Bool CollideModuleInterface::wouldLikeToCollideWith(const Object* other) const { return m_owner->m_colliders[m_index].likes.count((int)other->getID()) != 0; }
+Bool CollideModuleInterface::isCarBombCrateCollide() const { return m_owner->m_colliders[m_index].carBomb; }
+Bool CollideModuleInterface::isHijackedVehicleCrateCollide() const { return m_owner->m_colliders[m_index].hijack; }
+Bool CollideModuleInterface::isSabotageBuildingCrateCollide() const { return m_owner->m_colliders[m_index].sabotage; }
+Bool ParkingPlaceBehaviorInterface::shouldReserveDoorWhenQueued(const ThingTemplate*) const { return m_owner->m_parkShould; }
+Bool ParkingPlaceBehaviorInterface::hasAvailableSpaceFor(const ThingTemplate*) const { return m_owner->m_parkAvail; }
+Bool ContainModuleInterface::isHealContain() const { return m_owner->m_healContain; }
+Int ContainModuleInterface::getStealthUnitsContained() const { return m_owner->m_stealthCount; }
+Bool ContainModuleInterface::isValidContainerFor(const Object*, Bool checkCapacity) const { return ((m_owner->m_validMask >> (checkCapacity ? 0 : 1)) & 1) != 0; }
+Object* ContainModuleInterface::getClosestRider(const Coord3D*) const { return wpnFind((int)m_owner->m_closestRider); }
+Object* SpawnBehaviorInterface::getClosestSlave(const Coord3D*) const { return wpnFind((int)m_owner->m_closestSlave); }
 
 /* ---- modules ------------------------------------------------------------------------------------------------ */
 LandMineInterface* BehaviorModule::getLandMineInterface() { return m_kind == 0 ? &m_owner->m_lmi : NULL; }
@@ -364,11 +411,28 @@ static void readObject(Reader& r, Object* o)
 	{ unsigned n = r.u(); for (unsigned k = 0; k < n; ++k) o->m_collides.insert(r.i()); }
 	{ int c = r.i(); char nm[24]; if (c < 0) nm[0] = 0; else if (c >= 100) snprintf(nm, sizeof nm, "Other"); else snprintf(nm, sizeof nm, "Cmd%d", c); o->m_commandSetStringOverride = nm; }
 	o->m_hasTracker = r.b(); o->m_firingTracker = o->m_hasTracker ? &o->m_tracker : NULL; for (int k = 0; k < 3; ++k) o->m_lastWeaponCondition[k] = (Byte)r.i();
-	/* the module list: land mine (0), projectile update (1), parking place (2), in that order */
+	/* the facts ActionManager.cpp reads */
+	o->m_mobile = r.b(); o->m_deckHeight = r.f(); o->m_disabledMask = r.u(); o->m_hasBody = r.b(); o->m_body.m_h = r.f(); o->m_body.m_max = r.f();
+	o->m_transportSlots = r.i(); o->m_factionStructure = r.b(); for (int k = 0; k < 4; ++k) o->m_shroud[k] = r.i(); o->m_builder = (ObjectID)r.i();
+	for (int k = 0; k < 4; ++k) o->m_spHas[k] = r.u();
+	{ unsigned c = r.u(); for (unsigned k = 0; k < c; ++k) { int t = r.i(); Real p = r.f(); o->m_spmStore[k].m_percent = p; o->m_spModules.push_back(std::make_pair(t, p)); } }
+	{ unsigned c = r.u(); for (unsigned k = 0; k < c; ++k) { Object::SaCfg sa; sa.type = r.i(); sa.sa.m_count = r.i(); sa.sa.m_max = r.i(); unsigned np = r.u(); for (unsigned q = 0; q < np; ++q) sa.sa.m_producers.insert(r.i()); o->m_saUpdates.push_back(sa); } }
+	for (int k = 0; k < 4; ++k) o->m_spOverride[k] = r.u();
+	o->m_hasWhDock = r.b(); o->m_hasCenterDock = r.b(); o->m_hasRailedDock = r.b(); o->m_hasRailroad = r.b(); o->m_whDock.m_boxes = r.i();
+	o->m_hasSupplyTruck = r.b(); o->m_supplyTruck.m_boxes = r.i(); o->m_supplyTruck.m_avail = r.b();
+	o->m_hasDozerAI = r.b(); o->m_dozerAI.m_task = r.i(); o->m_dozerAI.m_target = r.i(); o->m_hasDock = r.b();
+	{ unsigned c = r.u(); for (unsigned k = 0; k < c; ++k) { Object::ColliderCfg cc; unsigned nl = r.u(); for (unsigned q = 0; q < nl; ++q) cc.likes.insert(r.i()); cc.carBomb = r.b(); cc.hijack = r.b(); cc.sabotage = r.b(); o->m_colliders.push_back(cc); } }
+	o->m_parkShould = r.b(); o->m_parkAvail = r.b(); o->m_healContain = r.b(); o->m_stealthCount = r.i(); o->m_validMask = r.u(); o->m_closestRider = (ObjectID)r.i(); o->m_closestSlave = (ObjectID)r.i();
+	/* the module list: land mine (0), projectile update (1), parking place (2), dock, the colliders, in that order */
+	o->m_extraMods.resize(1 + o->m_colliders.size());
+	o->m_extraMods[0].m_owner = o; o->m_extraMods[0].m_kind = 3; o->m_extraMods[0].m_index = 0;
+	for (size_t k = 0; k < o->m_colliders.size(); ++k) { o->m_extraMods[1 + k].m_owner = o; o->m_extraMods[1 + k].m_kind = 4; o->m_extraMods[1 + k].m_index = (int)k; o->m_colliderIfs[k].m_owner = o; o->m_colliderIfs[k].m_index = (int)k; }
 	int n = 0;
 	if (o->m_hasLandMine) o->m_modList[n++] = &o->m_mods[0];
 	if (o->m_hasPUI) o->m_modList[n++] = &o->m_mods[1];
 	if (o->m_hasParking) o->m_modList[n++] = &o->m_mods[2];
+	if (o->m_hasDock) o->m_modList[n++] = &o->m_extraMods[0];
+	for (size_t k = 0; k < o->m_colliders.size(); ++k) o->m_modList[n++] = &o->m_extraMods[1 + k];
 	o->m_modList[n] = NULL;
 }
 /* the contained items refer to objects that may not exist yet when the record is read */
@@ -540,6 +604,7 @@ static void buildWorld(Reader& r)
 	{
 		g_wcfg.players[k].battlePlans = r.i(); g_wcfg.players[k].mask = r.u();
 		for (int q = 0; q < 4; ++q) g_wcfg.players[k].rel[q] = r.i();
+		g_wcfg.players[k].isHuman = r.i();
 		Player* p = new Player; p->m_index = k; p->m_team.m_index = k; p->m_academy.m_player = k; g_players.push_back(p);
 	}
 	/* the thing templates: group, fence width, and the object record dynamic objects copy */
@@ -808,6 +873,56 @@ static int runProgram(const unsigned* words, int n, const char* tmpPath)
 			Object* o = wpnFind(r.i()); unsigned up = r.u();
 			Rec("ret cmdset %s", o->getCommandSetString().str());
 			Rec("ret canproduce %d", o->canProduceUpgrade((const UpgradeTemplate*)(size_t)up) ? 1 : 0);
+			break; }
+		case 48: {
+			/* ActionManager.cpp, object against object */
+			static ActionManager am;
+			int kind = r.i(); Object* o = wpnFind(r.i()); Object* t = wpnFind(r.i()); CommandSourceType cs = (CommandSourceType)r.i(); int ex = r.i();
+			int v = 0;
+			switch (kind)
+			{
+			case 0: v = am.canGetRepairedAt(o, t, cs) ? 1 : 0; break;
+			case 1: v = am.canTransferSuppliesAt(o, t) ? 1 : 0; break;
+			case 2: v = am.canDockAt(o, t, cs) ? 1 : 0; break;
+			case 3: v = am.canGetHealedAt(o, t, cs) ? 1 : 0; break;
+			case 4: v = am.canRepairObject(o, t, cs) ? 1 : 0; break;
+			case 5: v = am.canResumeConstructionOf(o, t, cs) ? 1 : 0; break;
+			case 6: v = am.canEnterObject(o, t, cs, (CanEnterType)(ex % 3)) ? 1 : 0; break;
+			case 7: v = (int)am.getCanAttackObject(o, t, cs, (AbleToAttackType)ex); break;
+			case 8: v = am.canConvertObjectToCarBomb(o, t, cs) ? 1 : 0; break;
+			case 9: v = am.canHijackVehicle(o, t, cs) ? 1 : 0; break;
+			case 10: v = am.canSabotageBuilding(o, t, cs) ? 1 : 0; break;
+			case 11: v = am.canCaptureBuilding(o, t, cs) ? 1 : 0; break;
+			case 12: v = am.canDisableVehicleViaHacking(o, t, cs, (ex & 1) != 0) ? 1 : 0; break;
+			case 13: v = am.canStealCashViaHacking(o, t, cs) ? 1 : 0; break;
+			case 14: v = am.canSnipeVehicle(o, t, cs) ? 1 : 0; break;
+			case 15: v = am.canBribeUnit(o, t, cs) ? 1 : 0; break;
+			case 16: v = am.canCutBuildingPower(o, t, cs) ? 1 : 0; break;
+			case 17: v = am.canDisableBuildingViaHacking(o, t, cs) ? 1 : 0; break;
+			case 18: v = am.canMakeObjectDefector(o, t, cs) ? 1 : 0; break;
+			case 19: v = am.canFireWeaponAtObject(o, t, cs, (WeaponSlotType)(ex % 3)) ? 1 : 0; break;
+			case 20: v = am.canGarrison(o, t, cs) ? 1 : 0; break;
+			case 21: v = am.canPlayerGarrison(ThePlayerList->getNthPlayer(ex), t, cs) ? 1 : 0; break;
+			}
+			Rec("ret act k=%d v=%d", kind, v);
+			break; }
+		case 49: {
+			/* ActionManager.cpp, special powers and weapons at locations */
+			static ActionManager am;
+			int kind = r.i(); Object* o = wpnFind(r.i()); Object* t = wpnFind(r.i()); bool hasLoc = r.b(); Coord3D loc = rdCoord(r); CommandSourceType cs = (CommandSourceType)r.i();
+			int spType = r.i(); bool check = r.b(); unsigned opts = r.u(); int slot = r.i(); Object* way = wpnFind(r.i());
+			SpecialPowerTemplate tmpl; tmpl.m_id = 1000 + spType; tmpl.m_type = (SpecialPowerType)spType;
+			int v = 0;
+			switch (kind)
+			{
+			case 0: v = am.canDoSpecialPowerAtLocation(o, &loc, cs, &tmpl, way, opts, check) ? 1 : 0; break;
+			case 1: v = am.canDoSpecialPowerAtObject(o, t, cs, &tmpl, opts, check) ? 1 : 0; break;
+			case 2: v = am.canDoSpecialPower(o, &tmpl, cs, opts, check) ? 1 : 0; break;
+			case 3: v = am.canFireWeaponAtLocation(o, hasLoc ? &loc : NULL, cs, (WeaponSlotType)(slot % 3), way) ? 1 : 0; break;
+			case 4: v = am.canFireWeapon(o, (WeaponSlotType)(slot % 3), cs) ? 1 : 0; break;
+			case 5: v = am.canOverrideSpecialPowerDestination(o, &loc, (SpecialPowerType)spType, cs) ? 1 : 0; break;
+			}
+			Rec("ret actsp k=%d v=%d", kind, v);
 			break; }
 		default: abort();
 		}

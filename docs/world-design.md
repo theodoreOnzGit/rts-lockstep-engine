@@ -436,6 +436,7 @@ planted bugs caught), `object_tests.rs`.
 | helpers (9) | `ObjectSMCHelper` ... `TempWeaponBonusHelper` are stub modules (`NewModule::helper_stub`); `sleepUntil` is a `CutCall` |
 | module factory | `NewObject::modules` (the caller makes the modules) |
 | ~~**not translated**~~ **CORRECTED 2026-10-20 (`p1w8-sonnet`)** | ~~`updateObjValuesFromMapProperties` (the map `Dict`), `doCommandButton*`, `canProduceUpgrade` (GUI command buttons), the bone-position getters (client model data), the weapon forwarders, `adjustModelConditionForWeaponStatus`~~ translated in `logic::world::object_weapons` (generic over `ObjectWeaponHost` / `ObjectBoneHost`, implemented by the layer-12 adapter; tested against the unchanged text in the weapon differential): the 25 weapon forwarders, `adjustModelConditionForWeaponStatus`, `getSingleLogicalBonePosition`, `...OnTurret`, `getMultiLogicalBonePosition`, `getCommandSetString`, `canProduceUpgrade`. **Still not translated:** `updateObjValuesFromMapProperties` (the map `Dict`; its AI, locomotor, audio and upgrade calls are cut points that need the layer 9/10 units) and `doCommandButton*` (`CommandButton`, special powers, AI orders) |
+| `TheActionManager` (7) | translated as `logic::action_manager` over the `ActionHost` trait (31 methods); the layer-12 adapter implements it for `World` from `Object`, `Player`, the modules and the partition; nothing in `World` calls it yet |
 
 **Other deviations from the upstream text (all kept visible):**
 

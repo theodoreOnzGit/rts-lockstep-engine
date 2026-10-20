@@ -72,7 +72,14 @@ struct IRegion2D { ICoord2D lo, hi; };
 /* struct Coord3D, verbatim from Libraries/Include/Lib/BaseType.h (build.rs writes weapon_gen/basetype_coord3d.h) */
 #include "basetype_coord3d.h"
 struct ICoord3D { Int x, y, z; void zero( void ) { x = 0; y = 0; z = 0; } };
-struct Region3D { Coord3D lo, hi; };
+struct Region3D { Coord3D lo, hi;
+	/* BaseType.h lines 437-441, verbatim */
+	Bool isInRegionNoZ( const Coord3D *query ) const
+	{
+		return (lo.x < query->x) && (query->x < hi.x) 
+						&& (lo.y < query->y) && (query->y < hi.y);
+	}
+};
 struct IRegion3D { ICoord3D lo, hi; };
 struct RGBColor { Real red, green, blue;
 	/* p1w2-globaldata: setFromInt (BaseType.h lines 472-477), called by GlobalData's constructor */

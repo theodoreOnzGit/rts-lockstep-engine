@@ -68,6 +68,7 @@ pub mod weapon;
 // --- end p1w7-sonnet ---
 
 // --- p1w8-sonnet ---
+pub mod action_manager;
 pub mod weapon_fire;
 pub mod weapon_host;
 pub mod weapon_set_state;
