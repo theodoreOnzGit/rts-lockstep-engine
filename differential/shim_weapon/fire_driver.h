@@ -51,7 +51,8 @@ Object::Object() : m_geom(GEOMETRY_SPHERE, false, 0.0f, 0.0f, 0.0f)
 	m_hasStealth = m_disguised = false; m_disguisedPlayer = 0; m_hasSpawn = false; m_spawnResult = 0;
 	m_hasLandMine = m_hasPUI = m_hasParking = m_hasSPCDie = m_hasStream = m_hasAssist = m_assistFree = m_hasCountermeasures = m_hasPhysics = false;
 	m_launcherId = 0;
-	m_drawable.m_owner = this; m_laser.m_owner = this; m_ai.m_owner = this; m_assault.m_owner = this; m_contain.m_owner = this; m_stealth.m_owner = this;
+	m_hasTracker = false; m_firingTracker = NULL; m_tracker.m_owner = this; for (int i = 0; i < 3; ++i) m_lastWeaponCondition[i] = 0;
+	m_drawable = NULL; m_drawableStorage.m_owner = this; m_laser.m_owner = this; m_ai.m_owner = this; m_assault.m_owner = this; m_contain.m_owner = this; m_stealth.m_owner = this;
 	m_spawn.m_owner = this; m_pui.m_owner = this; m_lmi.m_owner = this; m_ppi.m_owner = this; m_spcDie.m_owner = this; m_stream.m_owner = this;
 	m_assist.m_owner = this; m_phys.m_owner = this; m_xp.m_owner = this;
 	for (int i = 0; i < 3; ++i) { m_mods[i].m_owner = this; m_mods[i].m_kind = i; }
@@ -96,11 +97,60 @@ void Object::setTransformMatrix(const Matrix3D* mx)
 	for (int r = 0; r < 3; ++r) for (int c = 0; c < 4; ++c) n += sprintf(b + n, "%08x ", FB((*mx)[r][c]));
 	Rec("xform o=%d %s", m_id, b);
 }
+/* the stand-in conversion (Thing's and the drawable's): the world position is the bone position moved by the object's position
+** (nothing for no bone position), the world transform is the object's transform times the bone's. The inputs are read before any
+** output is written (upstream calls it with the same pointer in and out). */
 void Object::convertBonePosToWorldPos(const Coord3D* bonePos, const Matrix3D* boneTransform, Coord3D* worldPos, Matrix3D* worldTransform) const
 {
-	if (worldTransform) worldTransform->mul(m_xform, *boneTransform);
-	if (worldPos) { worldPos->x = 0; worldPos->y = 0; worldPos->z = 0; }
+	Coord3D p; p.x = p.y = p.z = 0;
+	if (bonePos) { p.x = bonePos->x + m_pos.x; p.y = bonePos->y + m_pos.y; p.z = bonePos->z + m_pos.z; }
+	Matrix3D t(true);
+	if (boneTransform) t.mul(m_xform, *boneTransform);
+	if (worldTransform) *worldTransform = t;
+	if (worldPos) *worldPos = p;
 }
+Int Drawable::getPristineBonePositions(const char* boneNamePrefix, Int startIndex, Coord3D* positions, Matrix3D* transforms, Int maxBones) const
+{
+	unsigned h = 0;
+	for (const char* c = boneNamePrefix; *c; ++c) h = h * 31u + (unsigned char)*c;
+	Int count = (Int)((h + (unsigned)startIndex) % 4u);
+	if (count > maxBones) count = maxBones;
+	for (Int i = 0; i < count; ++i)
+	{
+		Coord3D p; p.x = (Real)(h % 97u) + (Real)i; p.y = (Real)(i * 2); p.z = (Real)startIndex + 0.5f;
+		if (positions) positions[i] = p;
+		if (transforms) { transforms[i].Make_Identity(); transforms[i].Rotate_Z(0.25f * (Real)(i + 1)); transforms[i].Set_Translation(Vector3(p.x, p.y, p.z)); }
+	}
+	return count;
+}
+void Drawable::convertBonePosToWorldPos(const Coord3D* bonePos, const Matrix3D* boneTransform, Coord3D* worldPos, Matrix3D* worldTransform) const
+{
+	m_owner->convertBonePosToWorldPos(bonePos, boneTransform, worldPos, worldTransform);
+}
+Bool AIUpdateInterface::getTurretRotAndPitch(WhichTurretType tur, Real* turretAngle, Real* turretPitch) const
+{
+	if (tur < 0 || tur > 2) return false;
+	if (turretAngle) *turretAngle = m_owner->m_turretAngle[tur];
+	if (turretPitch) *turretPitch = m_owner->m_turretPitch[tur];
+	return true;
+}
+/* command sets: "Cmd<k>" has a button i when (k + i) % 3 != 0, and that button is an upgrade (id (k*7 + i*3) % 5, 0 = not an upgrade) */
+const CommandButton* CommandSet::getCommandButton(Int i) const { return ((m_k + i) % 3 != 0) ? &m_buttons[i] : NULL; }
+const CommandSet* ControlBar::findCommandSet(const AsciiString& name) const
+{
+	static std::map<int, CommandSet*> sets;
+	if (strncmp(name.str(), "Cmd", 3) != 0) return NULL;
+	int k = atoi(name.str() + 3);
+	if (sets.find(k) == sets.end())
+	{
+		CommandSet* cs = new CommandSet; cs->m_k = k;
+		for (int i = 0; i < MAX_COMMANDS_PER_SET; ++i) cs->m_buttons[i].m_up = (const UpgradeTemplate*)(size_t)((k * 7 + i * 3) % 5);
+		sets[k] = cs;
+	}
+	return sets[k];
+}
+static ControlBar g_controlBar;
+ControlBar* TheControlBar = &g_controlBar;
 
 /* ---- modules ------------------------------------------------------------------------------------------------ */
 LandMineInterface* BehaviorModule::getLandMineInterface() { return m_kind == 0 ? &m_owner->m_lmi : NULL; }
@@ -212,9 +262,28 @@ const Matrix3D* Drawable::getTransformMatrix() const { return &m_owner->m_xform;
 Bool Drawable::getProjectileLaunchOffset(WeaponSlotType wslot, Int specificBarrelToUse, Matrix3D* launchPos, WhichTurretType tur, Coord3D* rot, Coord3D* pitch) const
 {
 	if (!m_owner->m_hasLaunchOffset) return false;
-	*launchPos = m_owner->m_launchXform; *rot = m_owner->m_turretRotPos; *pitch = m_owner->m_turretPitchPos;
+	if (launchPos) *launchPos = m_owner->m_launchXform;
+	if (rot) *rot = m_owner->m_turretRotPos;
+	if (pitch) *pitch = m_owner->m_turretPitchPos;
 	return true;
 }
+static std::string mtxStr(const Matrix3D& m)
+{
+	char t[200];
+	snprintf(t, sizeof t, "%08x,%08x,%08x,%08x,%08x,%08x,%08x,%08x,%08x,%08x,%08x,%08x", FB(m[0][0]), FB(m[0][1]), FB(m[0][2]), FB(m[0][3]), FB(m[1][0]), FB(m[1][1]), FB(m[1][2]), FB(m[1][3]), FB(m[2][0]), FB(m[2][1]), FB(m[2][2]), FB(m[2][3]));
+	return t;
+}
+static std::string mcFlagsStr(const ModelConditionFlags& f)
+{
+	std::string s;
+	for (int b = 0; b < MODELCONDITION_COUNT; ++b) if (f.test(b)) { char t[16]; snprintf(t, sizeof t, "%d,", b); s += t; }
+	return s;
+}
+void Drawable::updateDrawableClipStatus(UnsignedInt ammoInClip, UnsignedInt maxClipSize, WeaponSlotType slot) { Rec("clipstatus o=%d ammo=%u clip=%u slot=%d", m_owner->m_id, ammoInClip, maxClipSize, (int)slot); }
+void Drawable::clearAndSetModelConditionFlags(const ModelConditionFlags& clr, const ModelConditionFlags& set) { Rec("mcflags o=%d clear=[%s] set=[%s]", m_owner->m_id, mcFlagsStr(clr).c_str(), mcFlagsStr(set).c_str()); }
+void Drawable::setAnimationLoopDuration(UnsignedInt numFrames) { Rec("animloop o=%d frames=%u", m_owner->m_id, numFrames); }
+void FiringTracker::shotFired(const Weapon* w, ObjectID victimID) { Rec("tracker o=%d slot=%d victim=%d next=%u last=%u", m_owner->m_id, (int)w->getWeaponSlot(), (int)victimID, w->getPossibleNextShotFrame(), w->getLastShotFrame()); }
+void Object::friend_setUndetectedDefector(Bool status) { Rec("undetected o=%d v=%d", m_id, status ? 1 : 0); }
 void Drawable::setDrawableHidden(Bool hidden) { Rec("unhide o=%d hidden=%d", m_owner->m_id, hidden ? 1 : 0); }
 LaserUpdate* Drawable::findClientUpdateModule(NameKeyType key)
 {
@@ -274,7 +343,7 @@ static void readObject(Reader& r, Object* o)
 	o->m_effDead = r.b(); o->m_destroyed = r.b(); o->m_ableToAttack = r.b(); o->m_layer = r.i(); o->m_aboveTerrain = r.b(); o->m_signifAbove = r.b();
 	o->m_consecutiveShots = r.i(); o->m_estimate = r.f();
 	{ unsigned m = r.u(); o->m_wsFlags.clear(); for (int k = 0; k < 17; ++k) if (m & (1u << k)) o->m_wsFlags.set(k); }
-	o->m_hasDrawable = r.b(); for (int k = 0; k < 3; ++k) o->m_barrels[k] = r.i(); o->m_fxHandled = r.b();
+	o->m_hasDrawable = r.b(); o->m_drawable = o->m_hasDrawable ? &o->m_drawableStorage : NULL; for (int k = 0; k < 3; ++k) o->m_barrels[k] = r.i(); o->m_fxHandled = r.b();
 	o->m_hasLaunchOffset = r.b();
 	{ Real rz = r.f(); Coord3D t = rdCoord(r); o->m_launchXform.Make_Identity(); o->m_launchXform.Rotate_Z(rz); o->m_launchXform.Set_Translation(Vector3(t.x, t.y, t.z)); }
 	o->m_turretRotPos = rdCoord(r); o->m_turretPitchPos = rdCoord(r); o->m_hasLaserUpdate = r.b();
@@ -293,6 +362,8 @@ static void readObject(Reader& r, Object* o)
 	o->m_assistFree = r.b(); o->m_hasCountermeasures = r.b(); o->m_hasPhysics = r.b(); o->m_launcherId = r.i();
 	{ unsigned n = r.u(); for (unsigned k = 0; k < n; ++k) o->m_reserved.insert(r.i()); }
 	{ unsigned n = r.u(); for (unsigned k = 0; k < n; ++k) o->m_collides.insert(r.i()); }
+	{ int c = r.i(); char nm[24]; if (c < 0) nm[0] = 0; else if (c >= 100) snprintf(nm, sizeof nm, "Other"); else snprintf(nm, sizeof nm, "Cmd%d", c); o->m_commandSetStringOverride = nm; }
+	o->m_hasTracker = r.b(); o->m_firingTracker = o->m_hasTracker ? &o->m_tracker : NULL; for (int k = 0; k < 3; ++k) o->m_lastWeaponCondition[k] = (Byte)r.i();
 	/* the module list: land mine (0), projectile update (1), parking place (2), in that order */
 	int n = 0;
 	if (o->m_hasLandMine) o->m_modList[n++] = &o->m_mods[0];
@@ -354,10 +425,11 @@ static void dumpSnapshot(const std::vector<Weapon*>& reg)
 		if (ws.m_curWeaponTemplateSet && o->m_template)
 			for (size_t k = 0; k < o->m_template->m_weaponTemplateSets.size(); ++k)
 				if (&o->m_template->m_weaponTemplateSets[k] == ws.m_curWeaponTemplateSet) tset = (int)k;
-		Rec("O%d pos=%08x,%08x,%08x launcher=%d bonus=%u status=%016llx cur=%d lock=%d mask=%u anti=%d pl=%d dw=%d tset=%d dmg=%u,%u",
+		Rec("O%d pos=%08x,%08x,%08x launcher=%d bonus=%u status=%016llx cur=%d lock=%d mask=%u anti=%d pl=%d dw=%d tset=%d dmg=%u,%u lwc=%d,%d,%d",
 			(int)o->m_id, FB(o->m_pos.x), FB(o->m_pos.y), FB(o->m_pos.z), (int)o->m_launcherId, o->m_bonusCond, o->m_statusBits, (int)ws.m_curWeapon,
 			(int)ws.m_curWeaponLockedStatus, ws.m_filledWeaponSlotMask, (int)ws.m_totalAntiMask, ws.m_hasPitchLimit ? 1 : 0, ws.m_hasDamageWeapon ? 1 : 0, tset,
-			(unsigned)ws.m_totalDamageTypeMask.count(), (unsigned)(ws.m_totalDamageTypeMask.test(DAMAGE_EXPLOSION) ? 1 : 0));
+			(unsigned)ws.m_totalDamageTypeMask.count(), (unsigned)(ws.m_totalDamageTypeMask.test(DAMAGE_EXPLOSION) ? 1 : 0),
+			(int)o->m_lastWeaponCondition[0], (int)o->m_lastWeaponCondition[1], (int)o->m_lastWeaponCondition[2]);
 		for (int k = 0; k < WEAPONSLOT_COUNT; ++k)
 			if (ws.m_weapons[k]) Rec("O%d.%d %s", (int)o->m_id, k, dumpWeapon(ws.m_weapons[k]).c_str());
 	}
@@ -475,6 +547,7 @@ static void buildWorld(Reader& r)
 	for (unsigned k = 0; k < nThing; ++k)
 	{
 		ThingTemplate* tt = new ThingTemplate; tt->m_id = (int)k + 1; tt->m_group = r.i(); tt->m_fenceWidth = r.f();
+		{ char nm[24]; if (k % 4 == 3) nm[0] = 0; else snprintf(nm, sizeof nm, "Cmd%d", (int)k); tt->m_cmdSet = nm; }
 		g_thingTemplates.push_back(tt);
 		unsigned len = r.u(); std::vector<unsigned> words; for (unsigned q = 0; q < len; ++q) words.push_back(r.u());
 		g_protos.push_back(words);
@@ -675,6 +748,66 @@ static int runProgram(const unsigned* words, int n, const char* tmpPath)
 			/* setClipPercentFull on a weapon owned by an object's weapon set (how a set's weapon gets to be out of ammo) */
 			Object* o = wpnFind(r.i()); int slot = r.i(); float p = r.f(); bool a = r.b();
 			if (o && o->m_weaponSet.m_weapons[slot]) o->m_weaponSet.m_weapons[slot]->setClipPercentFull(p, a);
+			break; }
+		case 37: {
+			/* the object-level questions (Object.cpp's text) */
+			Object* o = wpnFind(r.i()); int dt = r.i(); int slot = r.i();
+			WeaponSlotType cs = (WeaponSlotType)-1; Weapon* cur = o->getCurrentWeapon(&cs);
+			const Object* co = o; WeaponSlotType ccs = (WeaponSlotType)-1; const Weapon* ccur = co->getCurrentWeapon(&ccs);
+			Weapon* wp = o->findWaypointFollowingCapableWeapon();
+			Int nt = -7, nf = -7; Bool pip = o->getAmmoPipShowingInfo(nt, nf);
+			Rec("ret objq any=%d dmg=%d ready=%u dtype=%d range=%08x oom=%d locked=%d shared=%d mask=%08x lastshot=%u cur=%d,%d ccur=%d,%d wp=%d pip=%d,%d,%d",
+				o->hasAnyWeapon() ? 1 : 0, o->hasAnyDamageWeapon() ? 1 : 0, o->getMostPercentReadyToFireAnyWeapon(), o->hasWeaponToDealDamageType((DamageType)dt) ? 1 : 0,
+				FB(o->getLargestWeaponRange()), o->isOutOfAmmo() ? 1 : 0, o->isCurWeaponLocked() ? 1 : 0, o->isReloadTimeShared() ? 1 : 0,
+				o->getWeaponInWeaponSlotCommandSourceMask((WeaponSlotType)slot), o->getLastShotFiredFrame(),
+				cur ? 1 : 0, (int)cs, ccur ? 1 : 0, (int)ccs, wp ? (int)wp->getWeaponSlot() : -1, pip ? 1 : 0, (int)nt, (int)nf);
+			break; }
+		case 38: { Object* o = wpnFind(r.i()); bool now = r.b(); o->reloadAllAmmo(now); break; }
+		case 39: { Object* o = wpnFind(r.i()); o->setFiringConditionForCurrentWeapon(); break; }
+		case 40: { Object* o = wpnFind(r.i()); o->adjustModelConditionForWeaponStatus(); break; }
+		case 41: {
+			Object* o = wpnFind(r.i()); Object* v = wpnFind(r.i()); Coord3D pos = rdCoord(r); bool hasPos = r.b(); bool atPos = r.b();
+			if (atPos) o->fireCurrentWeapon(hasPos ? &pos : NULL); else o->fireCurrentWeapon(v);
+			break; }
+		case 42: { Object* o = wpnFind(r.i()); Object* v = wpnFind(r.i()); o->preFireCurrentWeapon(v); break; }
+		case 43: {
+			Object* o = wpnFind(r.i()); Object* v = wpnFind(r.i()); bool hasPos = r.b(); Coord3D pos = rdCoord(r); int at = r.i(); int cmd = r.i(); int slot = r.i(); int crit = r.i(); int kind = r.u();
+			if (kind == 0) Rec("ret oable %d", (int)o->getAbleToAttackSpecificObject((AbleToAttackType)at, v, (CommandSourceType)cmd, (WeaponSlotType)slot));
+			else if (kind == 1) Rec("ret oableuse %d", (int)o->getAbleToUseWeaponAgainstTarget((AbleToAttackType)at, v, hasPos ? &pos : NULL, (CommandSourceType)cmd, (WeaponSlotType)slot));
+			else Rec("ret ochoose %d", o->chooseBestWeaponForTarget(v, (WeaponChoiceCriteria)crit, (CommandSourceType)cmd) ? 1 : 0);
+			break; }
+		case 44: {
+			Object* o = wpnFind(r.i()); int what = r.i(); int slot = r.i(); int type = r.i();
+			if (what == 0) Rec("ret olock %d", o->setWeaponLock((WeaponSlotType)slot, (WeaponLockType)type) ? 1 : 0);
+			else if (what == 1) o->releaseWeaponLock((WeaponLockType)type);
+			else o->clearLeechRangeModeForAllWeapons();
+			break; }
+		case 45: { Object* o = wpnFind(r.i()); int slot = r.i(); int victim = r.i(); Weapon* w = o->getWeaponInWeaponSlot((WeaponSlotType)slot); if (w) o->notifyFiringTrackerShotFired(w, (ObjectID)victim); break; }
+		case 46: {
+			Object* o = wpnFind(r.i()); bool wantPos = r.b(); bool wantTr = r.b(); unsigned kind = r.u(); int turret = r.i(); int nameIdx = r.i(); int maxBones = r.i(); bool toWorld = r.b();
+			static const char* NAMES[4] = { "Bone", "Muzzle", "Turret01", "FXBone" };
+			const char* name = NAMES[nameIdx & 3];
+			Coord3D pos; pos.x = pos.y = pos.z = -99.0f; Matrix3D tr(true); tr.Set_Translation(Vector3(-77.0f, -77.0f, -77.0f));
+			if (kind == 0 || kind == 1)
+			{
+				Bool found = kind == 0 ? o->getSingleLogicalBonePosition(name, wantPos ? &pos : NULL, wantTr ? &tr : NULL)
+				                       : o->getSingleLogicalBonePositionOnTurret((WhichTurretType)turret, name, wantPos ? &pos : NULL, wantTr ? &tr : NULL);
+				Rec("ret bone%u found=%d pos=%08x,%08x,%08x tr=%s", kind, found ? 1 : 0, FB(pos.x), FB(pos.y), FB(pos.z), mtxStr(tr).c_str());
+			}
+			else
+			{
+				Coord3D ps[4]; Matrix3D ts[4];
+				for (int i = 0; i < 4; ++i) { ps[i].x = ps[i].y = ps[i].z = -99.0f; ts[i].Make_Identity(); ts[i].Set_Translation(Vector3(-77.0f, -77.0f, -77.0f)); }
+				Int n = o->getMultiLogicalBonePosition(name, maxBones, wantPos ? ps : NULL, wantTr ? ts : NULL, toWorld);
+				std::string s;
+				for (int i = 0; i < 4; ++i) { char t[160]; snprintf(t, sizeof t, "[%08x,%08x,%08x %s]", FB(ps[i].x), FB(ps[i].y), FB(ps[i].z), mtxStr(ts[i]).c_str()); s += t; }
+				Rec("ret bonemulti n=%d %s", (int)n, s.c_str());
+			}
+			break; }
+		case 47: {
+			Object* o = wpnFind(r.i()); unsigned up = r.u();
+			Rec("ret cmdset %s", o->getCommandSetString().str());
+			Rec("ret canproduce %d", o->canProduceUpgrade((const UpgradeTemplate*)(size_t)up) ? 1 : 0);
 			break; }
 		default: abort();
 		}

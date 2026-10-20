@@ -76,6 +76,38 @@
 //! | 20 | `chooseBestWeaponForTarget` out-of-ammo test: auto-reload inverted | 0 at 600, **3493 at 30000** (needed op 36) |
 //! | 21 | `chooseBestWeaponForTarget` anti-mask test inverted | 58488 |
 //!
+//! The weapon half of `Object` (`logic::world::object_weapons`, ops 37 to 47: Object.cpp's own text of those
+//! functions is compiled on the stand-ins) has its own plants, run at 3000 programs:
+//!
+//! | # | planted bug | mismatches |
+//! |---|---|---|
+//! | O1 | `fireCurrentWeapon` fires a weapon that is not ready | 102326 |
+//! | O2 | temporary locks released when the clip was **not** reloaded | 24 |
+//! | O3 | `preFireCurrentWeapon` tests `frame` instead of `frame + 1` | 743 |
+//! | O4 | `getLargestWeaponRange` starts at -2 instead of -1 | 1246 |
+//! | O5 | `adjustModelConditionForWeaponStatus`: `lastShotFrame <= now` for `== now` | 228249 |
+//! | O6 | the ready-to-fire "between" special case dropped | 8211 |
+//! | O7 | the status to condition table with BETWEEN and RELOADING swapped | 30504 |
+//! | O8 | `preAttackDone > now` -> `>=` | 0 at 3000 programs, **6 at 30000** |
+//! | O9 | `friend_setUndetectedDefector(false)` dropped (after `fireCurrentWeapon`), or inverted (after `preFire`) | 142229, 336103 |
+//! | O10 | `getAmmoPipShowingInfo` total and full swapped | 176 |
+//! | O11 | `getLastShotFiredFrame` keeps the smallest | 39 |
+//! | O12 | `setFiringConditionForCurrentWeapon` sets BETWEEN | 1346 |
+//! | O13 | `getCurrentWeapon` always has a weapon | 543 |
+//! | O14 | the firing tracker never told | 96869 |
+//! | O15 | the shared reload of `fireCurrentWeapon` not applied to the other weapons | 1216 |
+//! | O16 | the attacking test of the model condition inverted | 107977 |
+//! | O17 | `fireCurrentWeapon(pos)` ignores the shared reload | 417 |
+//! | B1 | bone: no drawable test (any object asked) | 49 |
+//! | B2, B3 | the turret twist: a sign, a rotation offset | 175, 175 |
+//! | B4, B5 | `convertToWorld` inverted; the start index | 423, 448 |
+//! | B6 | `canProduceUpgrade` matches any upgrade | 143 |
+//! | B7 | the command-set override ignored | the C++ crashes on the program the Rust no longer excludes |
+//! | B8, B9 | the failed lookup's position and transform | 125, 117 |
+//! | B10 | the turret function without its AI test | 80 |
+//!
+//! (One plant is equivalent: passing `i` for the weapon's own slot to `updateDrawableClipStatus`: the same value.)
+//!
 //! Plants 10, 14 and 20 first passed unnoticed; the generator was strengthened (short historic windows, one-sided
 //! pitch limits, op 36 empties a set weapon's clip) and 10 and 20 were caught only at 30000 programs. One further plant
 //! is **equivalent, not missed**: removing `m_projectileStreamID = INVALID_ID` in `newProjectileFired` (the reset is
@@ -84,18 +116,25 @@
 //!
 //! # Results
 //!
-//! Measured 2026-10-20, clang++ upstream Weapon.cpp/WeaponSet.cpp commit 0a05454d, seed fixed in `tests/support`:
+//! Measured 2026-10-20 against upstream commit 0a05454d (clang++), generator seeds `0x57ea0000 + n`:
 //!
-//! * 3000 programs (the default; `WEAPON_FIRE_CASES`): 2 387 988 trace lines compared, **0 mismatches**, 153 programs
-//!   excluded (undefined upstream).
-//! * 30000 programs: 24 082 803 trace lines compared, **0 mismatches**, 1363 excluded.
-//! * Coverage of the 3000-program run (events written): damage 5610, estimates 6638, FX 3305, object creations 1207,
-//!   OCLs 841, projectile launches 711, lasers 74, projectile streams 25, land-mine disarms 51, countermeasure
-//!   reports 4, `xfer` round trips about 1750.
+//! * 3000 programs (the default; `WEAPON_FIRE_CASES`): about 2.15 million trace lines compared, **0 mismatches**,
+//!   about 400 programs excluded (undefined upstream, by reason in the `RESULT` lines).
+//! * **30000 programs: 21,426,969 trace lines compared, 0 mismatches**, 4,115 programs excluded: 1,087 dereference a
+//!   null object, 1,870 read an out-parameter upstream never wrote (the turret bone function with no launch
+//!   offset), 635 give `newObject` a NULL template (upstream throws), 523 position a projectile with no drawable.
+//! * Coverage of the 3000-program run (events written): damage about 4,500, estimates 5,400, FX 2,900, object
+//!   creations 1,100, OCLs 760, projectile launches 650, lasers 70, projectile streams 20, land-mine disarms 55,
+//!   firing-tracker calls 690, model-condition changes 3,700, `xfer` round trips about 1,250, bone queries 2,100,
+//!   `canProduceUpgrade` 680.
+//! * Earlier runs of this test found: the unsigned comparison of `getPreAttackDelay` (program 370 of 600), the
+//!   `newObject(NULL)` throw, the self-assignment guard of `operator=`, and (program 7910 of 30,000) that firing
+//!   must take only the weapon, not the whole set, out of the object.
 //!
-//! Interpretation: the translation of the `Weapon` instance and the `WeaponSet` agrees bit for bit with upstream over
-//! this generator's inputs. Not covered: the host methods themselves (the unit that provides the real
-//! `Object`/`Player`/AI answers is a later one), the INI parsers, and the cut points listed in `weapon_host`.
+//! Interpretation: the translation of the `Weapon` instance, the `WeaponSet` and the weapon half of `Object` agrees
+//! bit for bit with upstream over this generator's inputs. Not covered: the host methods themselves (what the
+//! layer-12 adapter will answer from the real `Object`, `Player`, AI and partition manager), the INI parsers, and the
+//! cut points listed in `weapon_host`.
 //!
 #![cfg(feature = "differential")]
 
@@ -134,6 +173,8 @@ use rts_lockstep_engine::logic::weapon_set::WeaponTemplateSet;
 use rts_lockstep_engine::logic::weapon_set_flags::WeaponSetFlags;
 use rts_lockstep_engine::logic::weapon_set_state::WeaponSet;
 use rts_lockstep_engine::logic::weapon_types::WeaponStatus;
+use rts_lockstep_engine::common::model_state::{ModelConditionFlags, MODELCONDITION_COUNT};
+use rts_lockstep_engine::logic::world::object_weapons::{self as ow, FireAt, ObjectBoneHost, ObjectWeaponHost};
 use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 use rts_lockstep_engine::ww::vector3::Vector3;
 use support::{Check, Gen};
@@ -284,6 +325,9 @@ struct Obj {
     launcher: i32,
     reserved: BTreeSet<i32>,
     collides: BTreeSet<i32>,
+    cmd_override: i32,
+    has_tracker: bool,
+    last_cond: [i8; 3],
     weapon_set: WeaponSet,
 }
 
@@ -382,6 +426,12 @@ fn read_object(r: &mut Reader<'_>, things: usize) -> Obj {
     for _ in 0..r.u() {
         collides.insert(r.i());
     }
+    let cmd_override = r.i();
+    let has_tracker = r.b();
+    let mut last_cond = [0i8; 3];
+    for c in last_cond.iter_mut() {
+        *c = r.i() as i8;
+    }
     Obj {
         id: 0,
         tmpl,
@@ -455,6 +505,9 @@ fn read_object(r: &mut Reader<'_>, things: usize) -> Obj {
         launcher,
         reserved,
         collides,
+        cmd_override,
+        has_tracker,
+        last_cond,
         weapon_set: WeaponSet::new(),
     }
 }
@@ -1334,7 +1387,7 @@ fn dump_snapshot(sim: &Sim, reg: &[Option<Weapon>]) {
         let ws = &o.weapon_set;
         let tset = ws.cur_weapon_template_set().map_or(-1, |r| r.index as i32);
         sim.rec(format!(
-            "O{} pos={} launcher={} bonus={} status={:016x} cur={} lock={} mask={} anti={} pl={} dw={} tset={} dmg={},{}",
+            "O{} pos={} launcher={} bonus={} status={:016x} cur={} lock={} mask={} anti={} pl={} dw={} tset={} dmg={},{} lwc={},{},{}",
             o.id,
             fb3(&o.pos),
             o.launcher,
@@ -1348,7 +1401,10 @@ fn dump_snapshot(sim: &Sim, reg: &[Option<Weapon>]) {
             ws.has_any_damage_weapon() as i32,
             tset,
             ws.total_damage_type_count(),
-            ws.has_weapon_to_deal_damage_type(DAMAGE_EXPLOSION) as i32
+            ws.has_weapon_to_deal_damage_type(DAMAGE_EXPLOSION) as i32,
+            o.last_cond[0],
+            o.last_cond[1],
+            o.last_cond[2]
         ));
         for k in 0..3 {
             if let Some(w) = ws.get_weapon_in_weapon_slot(k) {
@@ -1393,6 +1449,7 @@ impl From<WeaponError> for Excluded {
     fn from(e: WeaponError) -> Self {
         Excluded(match e {
             WeaponError::NullTemplate => "newObject is given a NULL template (upstream throws)",
+            WeaponError::UninitialisedRead => "an out-parameter that upstream never wrote is read",
             _ => "a null object is dereferenced",
         })
     }
@@ -1639,6 +1696,10 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let wslot = r.i();
                 let barrel = r.i();
                 let l = sim.opt(launcher);
+                if l.is_some() && !sim.ob(proj).has_drawable {
+                    // `projectile->getDrawable()->setDrawableHidden(false)` on a NULL drawable
+                    return Err(Excluded("positionProjectileForLaunch of a projectile with no drawable"));
+                }
                 Weapon::position_projectile_for_launch(&mut sim, proj, l, wslot, barrel);
             }
             19 => {
@@ -1853,12 +1914,299 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                     }
                 }
             }
+            37 => {
+                let o = r.i();
+                let dt = r.i();
+                let slot = r.i();
+                let cur = ow::get_current_weapon(&sim, o);
+                let wp = ow::find_waypoint_following_capable_weapon(&mut sim, o);
+                let pip = ow::get_ammo_pip_showing_info(&sim, o);
+                // (the const getCurrentWeapon is the same call)
+                sim.rec(format!(
+                    "ret objq any={} dmg={} ready={} dtype={} range={:08x} oom={} locked={} shared={} mask={:08x} lastshot={} cur={},{} ccur={},{} wp={} pip={},{},{}",
+                    ow::has_any_weapon(&sim, o) as i32,
+                    ow::has_any_damage_weapon(&sim, o) as i32,
+                    ow::get_most_percent_ready_to_fire_any_weapon(&sim, o),
+                    ow::has_weapon_to_deal_damage_type(&sim, o, dt) as i32,
+                    ow::get_largest_weapon_range(&sim, o).to_bits(),
+                    ow::is_out_of_ammo(&sim, o) as i32,
+                    ow::is_cur_weapon_locked(&sim, o) as i32,
+                    ow::is_reload_time_shared(&sim, o) as i32,
+                    ow::get_weapon_in_weapon_slot_command_source_mask(&sim, o, slot as usize),
+                    ow::get_last_shot_fired_frame(&sim, o),
+                    cur.has_weapon as i32,
+                    cur.slot.unwrap_or(-1),
+                    cur.has_weapon as i32,
+                    cur.slot.unwrap_or(-1),
+                    wp.unwrap_or(-1),
+                    pip.is_some() as i32,
+                    pip.map_or(-7, |p| p.0),
+                    pip.map_or(-7, |p| p.1)
+                ));
+            }
+            38 => {
+                let o = r.i();
+                let now = r.b();
+                ow::reload_all_ammo(&mut sim, o, now);
+            }
+            39 => {
+                let o = r.i();
+                ow::set_firing_condition_for_current_weapon(&mut sim, o);
+            }
+            40 => {
+                let o = r.i();
+                ow::adjust_model_condition_for_weapon_status(&mut sim, o);
+            }
+            41 => {
+                let o = r.i();
+                let v = r.i();
+                let pos = r.coord();
+                let has_pos = r.b();
+                let at_pos = r.b();
+                let at = if at_pos { FireAt::Position(has_pos.then_some(pos)) } else { FireAt::Object(sim.opt(v)) };
+                ow::fire_current_weapon(&mut sim, o, at)?;
+            }
+            42 => {
+                let o = r.i();
+                let v = r.i();
+                let victim = sim.opt(v);
+                ow::pre_fire_current_weapon(&mut sim, o, victim)?;
+            }
+            43 => {
+                let o = r.i();
+                let v = r.i();
+                let has_pos = r.b();
+                let pos = r.coord();
+                let at = r.i();
+                let cmd = r.i();
+                let slot = r.i();
+                let crit = r.i();
+                let kind = r.u();
+                let victim = sim.opt(v);
+                match kind {
+                    0 => {
+                        let res = ow::get_able_to_attack_specific_object(&sim, o, at as AbleToAttackType, v, command_source(cmd), slot)?;
+                        sim.rec(format!("ret oable {}", res as i32));
+                    }
+                    1 => {
+                        let res = ow::get_able_to_use_weapon_against_target(&sim, o, at, victim, has_pos.then_some(pos), command_source(cmd), slot)?;
+                        sim.rec(format!("ret oableuse {}", res as i32));
+                    }
+                    _ => {
+                        let res = ow::choose_best_weapon_for_target(&mut sim, o, victim, crit, command_source(cmd))?;
+                        sim.rec(format!("ret ochoose {}", res as i32));
+                    }
+                }
+            }
+            44 => {
+                let o = r.i();
+                let what = r.i();
+                let slot = r.i();
+                let ty = r.i();
+                match what {
+                    0 => {
+                        let res = ow::set_weapon_lock(&mut sim, o, slot, ty);
+                        sim.rec(format!("ret olock {}", res as i32));
+                    }
+                    1 => ow::release_weapon_lock(&mut sim, o, ty),
+                    _ => ow::clear_leech_range_mode_for_all_weapons(&mut sim, o),
+                }
+            }
+            45 => {
+                let o = r.i();
+                let slot = r.i();
+                let victim = r.i();
+                let weapon = sim.ob(o).weapon_set.get_weapon_in_weapon_slot(slot).cloned();
+                if let Some(w) = weapon {
+                    ow::notify_firing_tracker_shot_fired(&mut sim, o, &w, victim);
+                }
+            }
+            46 => {
+                let o = r.i();
+                let want_pos = r.b();
+                let want_tr = r.b();
+                let kind = r.u();
+                let turret = r.i();
+                let name_idx = r.i();
+                let max_bones = r.i();
+                let to_world = r.b();
+                const NAMES: [&[u8]; 4] = [b"Bone", b"Muzzle", b"Turret01", b"FXBone"];
+                let name = NAMES[(name_idx & 3) as usize];
+                let fmt_pos = |p: Option<Coord3D>| {
+                    let p = p.unwrap_or(Coord3D { x: -99.0, y: -99.0, z: -99.0 });
+                    format!("{},{},{}", fb(p.x), fb(p.y), fb(p.z))
+                };
+                let untouched = {
+                    let mut t = Matrix3D::identity();
+                    t.set_translation(&Vector3::new(-77.0, -77.0, -77.0));
+                    t
+                };
+                if kind < 2 {
+                    let q = if kind == 0 {
+                        ow::get_single_logical_bone_position(&sim, o, name, want_pos, want_tr)
+                    } else {
+                        ow::get_single_logical_bone_position_on_turret(&sim, o, turret, name, want_pos, want_tr)?
+                    };
+                    sim.rec(format!("ret bone{} found={} pos={} tr={}", kind, q.found as i32, fmt_pos(q.position), mtx_str(&q.transform.unwrap_or(untouched))));
+                } else {
+                    let bones = ow::get_multi_logical_bone_position(&sim, o, name, max_bones, want_pos, want_tr, to_world);
+                    let mut s = String::new();
+                    for i in 0..4 {
+                        let (p, t) = bones.get(i).copied().unwrap_or((None, None));
+                        s.push_str(&format!("[{} {}]", fmt_pos(p), mtx_str(&t.unwrap_or(untouched))));
+                    }
+                    sim.rec(format!("ret bonemulti n={} {}", bones.len(), s));
+                }
+            }
+            47 => {
+                let o = r.i();
+                let up = r.u();
+                let name = ow::get_command_set_string(&sim, o);
+                sim.rec(format!("ret cmdset {}", String::from_utf8_lossy(&name)));
+                let res = ow::can_produce_upgrade(&sim, o, up)?;
+                sim.rec(format!("ret canproduce {}", res as i32));
+            }
             _ => panic!("unknown op {op}"),
         }
         dump_snapshot(&sim, &reg);
     }
     let lines = sim.lines.take();
     Ok(lines)
+}
+
+fn mtx_str(m: &Matrix3D) -> String {
+    m.to_array().iter().map(|&x| fb(x)).collect::<Vec<_>>().join(",")
+}
+
+/// The drawable, the AI and the control bar as `fire_driver.h` stands them in (the formulas are the same operations).
+impl ObjectBoneHost for Sim {
+    fn pristine_bone_positions(&self, _o: ObjectId, prefix: &[u8], start_index: i32, max_bones: i32) -> Vec<(Coord3D, Matrix3D)> {
+        let mut h: u32 = 0;
+        for &c in prefix {
+            h = h.wrapping_mul(31).wrapping_add(u32::from(c));
+        }
+        let mut count = (h.wrapping_add(start_index as u32) % 4) as i32;
+        if count > max_bones {
+            count = max_bones;
+        }
+        (0..count)
+            .map(|i| {
+                let p = Coord3D { x: (h % 97) as f32 + i as f32, y: (i * 2) as f32, z: start_index as f32 + 0.5 };
+                let mut t = Matrix3D::identity();
+                t.rotate_z(0.25 * (i + 1) as f32);
+                t.set_translation(&Vector3::new(p.x, p.y, p.z));
+                (p, t)
+            })
+            .collect()
+    }
+    fn convert_bone_pos_to_world_pos(&self, o: ObjectId, bone_pos: Option<&Coord3D>, bone_transform: Option<&Matrix3D>) -> (Option<Coord3D>, Option<Matrix3D>) {
+        let s = self.ob(o);
+        let mut p = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
+        if let Some(b) = bone_pos {
+            p = Coord3D { x: b.x + s.pos.x, y: b.y + s.pos.y, z: b.z + s.pos.z };
+        }
+        let mut t = Matrix3D::identity();
+        if let Some(b) = bone_transform {
+            t.mul(&s.xform, b);
+        }
+        (bone_pos.map(|_| p), bone_transform.map(|_| t))
+    }
+    fn has_ai(&self, o: ObjectId) -> bool {
+        self.ob(o).has_ai
+    }
+    fn ai_turret_rot_and_pitch(&self, o: ObjectId, turret: i32) -> Option<(f32, f32)> {
+        (0..=2).contains(&turret).then(|| (self.ob(o).turret_angle[turret as usize], self.ob(o).turret_pitch[turret as usize]))
+    }
+    fn command_set_upgrades(&self, name: &[u8]) -> Option<Vec<Option<u32>>> {
+        let rest = name.strip_prefix(b"Cmd")?;
+        let k: i32 = rest.iter().take_while(|c| c.is_ascii_digit()).fold(0i32, |a, &c| a * 10 + i32::from(c - b'0'));
+        Some(
+            (0..18)
+                .map(|i| {
+                    if (k + i) % 3 != 0 {
+                        let up = (k * 7 + i * 3) % 5;
+                        (up != 0).then_some(up as u32)
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+        )
+    }
+    fn command_set_string_override(&self, o: ObjectId) -> Vec<u8> {
+        match self.ob(o).cmd_override {
+            c if c < 0 => Vec::new(),
+            c if c >= 100 => b"Other".to_vec(),
+            c => format!("Cmd{c}").into_bytes(),
+        }
+    }
+    fn template_command_set_string(&self, o: ObjectId) -> Vec<u8> {
+        let k = self.ob(o).tmpl;
+        if k % 4 == 3 {
+            Vec::new()
+        } else {
+            format!("Cmd{k}").into_bytes()
+        }
+    }
+}
+
+fn mc_flags_str(f: &ModelConditionFlags) -> String {
+    (0..MODELCONDITION_COUNT).filter(|&b| f.test(b)).map(|b| format!("{b},")).collect()
+}
+
+/// The weapon half of `Object` on the scenario host (`Drawable`, `FiringTracker` and the rest write the trace lines
+/// that `fire_driver.h` writes).
+impl ObjectWeaponHost for Sim {
+    fn weapon_set(&self, o: ObjectId) -> &WeaponSet {
+        &self.ob(o).weapon_set
+    }
+    fn take_weapon_set(&mut self, o: ObjectId) -> WeaponSet {
+        std::mem::take(&mut self.ob_mut(o).weapon_set)
+    }
+    fn put_weapon_set(&mut self, o: ObjectId, set: WeaponSet) {
+        self.ob_mut(o).weapon_set = set;
+    }
+    fn weapon_set_mut(&mut self, o: ObjectId) -> &mut WeaponSet {
+        &mut self.ob_mut(o).weapon_set
+    }
+    fn take_weapon(&mut self, o: ObjectId, slot: i32) -> Option<Weapon> {
+        self.ob_mut(o).weapon_set.slots_mut()[slot as usize].take()
+    }
+    fn put_weapon(&mut self, o: ObjectId, slot: i32, weapon: Weapon) {
+        self.ob_mut(o).weapon_set.slots_mut()[slot as usize] = Some(weapon);
+    }
+    fn last_weapon_condition(&self, o: ObjectId, slot: usize) -> i8 {
+        self.ob(o).last_cond[slot]
+    }
+    fn set_last_weapon_condition(&mut self, o: ObjectId, slot: usize, v: i8) {
+        self.ob_mut(o).last_cond[slot] = v;
+    }
+    fn firing_tracker_shot_fired(&mut self, o: ObjectId, weapon: &Weapon, victim: ObjectId) -> bool {
+        if !self.ob(o).has_tracker {
+            return false;
+        }
+        self.rec(format!(
+            "tracker o={} slot={} victim={} next={} last={}",
+            o,
+            weapon.weapon_slot(),
+            victim,
+            weapon.possible_next_shot_frame(),
+            weapon.last_shot_frame()
+        ));
+        true
+    }
+    fn friend_set_undetected_defector(&mut self, o: ObjectId, undetected: bool) {
+        self.rec(format!("undetected o={} v={}", o, undetected as i32));
+    }
+    fn drawable_update_clip_status(&mut self, o: ObjectId, ammo_in_clip: u32, max_clip_size: i32, slot: i32) {
+        self.rec(format!("clipstatus o={} ammo={} clip={} slot={}", o, ammo_in_clip, max_clip_size as u32, slot));
+    }
+    fn drawable_clear_and_set_model_condition_flags(&mut self, o: ObjectId, clear: &ModelConditionFlags, set: &ModelConditionFlags) {
+        self.rec(format!("mcflags o={} clear=[{}] set=[{}]", o, mc_flags_str(clear), mc_flags_str(set)));
+    }
+    fn drawable_set_animation_loop_duration(&mut self, o: ObjectId, frames: u32) {
+        self.rec(format!("animloop o={} frames={}", o, frames));
+    }
 }
 
 fn command_source(c: i32) -> CommandSourceType {
@@ -1890,7 +2238,8 @@ use rts_lockstep_engine::common::kind_of::{
 };
 use rts_lockstep_engine::common::object_status_types::{
     OBJECT_STATUS_AIRBORNE_TARGET, OBJECT_STATUS_BURNED, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_IGNORING_STEALTH,
-    OBJECT_STATUS_MASKED, OBJECT_STATUS_NO_ATTACK_FROM_AI, OBJECT_STATUS_STEALTHED,
+    OBJECT_STATUS_IS_AIMING_WEAPON, OBJECT_STATUS_IS_ATTACKING, OBJECT_STATUS_IS_FIRING_WEAPON, OBJECT_STATUS_MASKED, OBJECT_STATUS_NO_ATTACK_FROM_AI,
+    OBJECT_STATUS_STEALTHED,
 };
 
 const KIND_POOL: [KindOfType; 18] = [
@@ -1913,7 +2262,7 @@ const KIND_POOL: [KindOfType; 18] = [
     KINDOF_FS_AIRFIELD,
     KINDOF_PARACHUTE,
 ];
-const STATUS_POOL: [ObjectStatusTypes; 8] = [
+const STATUS_POOL: [ObjectStatusTypes; 11] = [
     OBJECT_STATUS_AIRBORNE_TARGET,
     OBJECT_STATUS_BURNED,
     OBJECT_STATUS_STEALTHED,
@@ -1922,6 +2271,9 @@ const STATUS_POOL: [ObjectStatusTypes; 8] = [
     OBJECT_STATUS_NO_ATTACK_FROM_AI,
     OBJECT_STATUS_IGNORING_STEALTH,
     OBJECT_STATUS_DISGUISED,
+    OBJECT_STATUS_IS_ATTACKING,
+    OBJECT_STATUS_IS_AIMING_WEAPON,
+    OBJECT_STATUS_IS_FIRING_WEAPON,
 ];
 
 fn chance(g: &mut Gen, percent: u32) -> bool {
@@ -2227,6 +2579,11 @@ fn gen_object(
     for e in collides {
         w.i(e);
     }
+    w.i(pick(g, &[-1, -1, 0, 1, 2, 3, 4, 5, 6, 7, 100])); // a command set override
+    w.b(chance(g, 70)); // a firing tracker
+    for _ in 0..3 {
+        w.i(pick(g, &[-1, 0, 1, 2, 3, 4]));
+    }
     let _ = has_ai;
     w.0
 }
@@ -2368,6 +2725,63 @@ fn gen_ops(g: &mut Gen, world: &World, w: &mut W) {
             let o = src(g);
             let p = pick(g, &[0.0f32, 0.0, 0.5, 1.0]);
             op!(ops.u(36); ops.i(o); ops.i(g.below(3) as i32); ops.f(p); ops.b(chance(g, 80)));
+            continue;
+        }
+        if chance(g, 3) {
+            // an object that starts an attack: attacking, pre-fire, then its model condition follows the weapon
+            let o = src(g);
+            let v = victim_opt(g);
+            op!(ops.u(33); ops.i(o); ops.i(OBJECT_STATUS_IS_ATTACKING); ops.b(true));
+            op!(ops.u(42); ops.i(o); ops.i(v));
+            op!(ops.u(40); ops.i(o));
+            op!(ops.u(0); ops.u(g.below(4)));
+            op!(ops.u(40); ops.i(o));
+            continue;
+        }
+        if chance(g, 22) {
+            // the weapon half of `Object` (Object.cpp's text): questions, firing, the model condition
+            let o = src(g);
+            match g.below(12) {
+                0 => op!(ops.u(37); ops.i(o); ops.i(g.below(38) as i32); ops.i(g.below(3) as i32)),
+                1 => op!(ops.u(38); ops.i(o); ops.b(chance(g, 50))),
+                2 => op!(ops.u(39); ops.i(o)),
+                3 | 4 => op!(ops.u(40); ops.i(o)),
+                5 | 6 => {
+                    let v = victim_opt(g);
+                    let p = pos(g);
+                    op!(ops.u(41); ops.i(o); ops.i(v); ops.c(p); ops.b(chance(g, 85)); ops.b(chance(g, 30)))
+                }
+                7 => {
+                    let v = victim_opt(g);
+                    op!(ops.u(42); ops.i(o); ops.i(v))
+                }
+                8 => {
+                    let kind = g.below(3);
+                    let v = if kind == 0 { obj(g) } else { victim_opt(g) };
+                    let p = pos(g);
+                    let has_pos = v == 0 || chance(g, 50);
+                    let at = pick(g, &[0, 1, 2, 3, 4]);
+                    let cmd = g.below(5) as i32;
+                    let slot = if chance(g, 70) { -1 } else { g.below(3) as i32 };
+                    op!(ops.u(43); ops.i(o); ops.i(v); ops.b(has_pos); ops.c(p); ops.i(at); ops.i(cmd); ops.i(slot); ops.i(g.below(2) as i32); ops.u(kind))
+                }
+                9 => op!(ops.u(44); ops.i(o); ops.i(g.below(3) as i32); ops.i(g.below(3) as i32); ops.i(1 + g.below(2) as i32)),
+                10 => {
+                    let v = victim_opt(g);
+                    op!(ops.u(45); ops.i(o); ops.i(g.below(3) as i32); ops.i(v))
+                }
+                _ => op!(ops.u(37); ops.i(o); ops.i(g.below(38) as i32); ops.i(g.below(3) as i32)),
+            }
+            continue;
+        }
+        if chance(g, 6) {
+            // bone positions, the command set (any object: some have no drawable)
+            let o = obj(g);
+            if chance(g, 25) {
+                op!(ops.u(47); ops.i(o); ops.u(g.below(5)));
+            } else {
+                op!(ops.u(46); ops.i(o); ops.b(chance(g, 70)); ops.b(chance(g, 70)); ops.u(g.below(3)); ops.i(g.below(4) as i32 - 1); ops.i(g.below(4) as i32); ops.i(g.below(5) as i32 - 1); ops.b(chance(g, 50)));
+            }
             continue;
         }
         match g.below(100) {
@@ -2594,9 +3008,12 @@ fn weapon_firing_matches_upstream() {
     let markers = [
         "fx.fire", "fx.pos", "ocl ", "dmg ", "est ", "newobj", "launch ", "stream.add", "laser ", "assist ", "destroy", "lm.disarm", "cm.report", "assault",
         "spc.", "battleplan", "academy.mine", "adjust", "xform", "phys.", "ret fire", "ret able", "ret choose", "ret xfer-load 0", "ret setxfer-load 0",
-        "ret approach", "ret estimate", "ret collide 1", "ret collide 0", "ret launchpos",
+        "ret approach", "ret estimate", "ret collide 1", "ret collide 0", "ret launchpos", "tracker ", "undetected ", "clipstatus ", "mcflags ", "animloop ",
+        "ret objq", "ret oable ", "ret oableuse", "ret ochoose", "ret olock", "ret bone0", "ret bone1", "ret bonemulti", "ret canproduce",
     ];
-    for case in 0..cases() {
+    // (`WEAPON_FIRE_FROM` starts at another program, to look at one: `WEAPON_FIRE_FROM=7910 WEAPON_FIRE_CASES=1`)
+    let from: u64 = std::env::var("WEAPON_FIRE_FROM").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+    for case in from..from + cases() {
         let words = gen_program(0x57ea_0000 + case);
         programs += 1;
         let rust = match rust_run_fresh(&words) {

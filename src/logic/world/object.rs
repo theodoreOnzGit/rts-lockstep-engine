@@ -95,7 +95,7 @@
 //! | `m_partitionData`, `m_radarData` | flags: the partition manager and the radar keep the data |
 //! | `m_partitionLast*` (`SightingInfo*`) | [`Sighting`] by value |
 //! | `m_experienceTracker` | [`ExperienceRecord`], the tracker's state (its behaviours are cut points) |
-//! | `m_weaponSet` | [`WeaponSetRecord`], the weapon set's state with no weapon in any slot (weapons are a cut point) |
+//! | `m_weaponSet` | [`WeaponSet`] (`logic::weapon_set_state`), the real set that owns its weapons. ~~`WeaponSetRecord`, the state with no weapon in any slot~~ **CORRECTED 2026-10-20 (`p1w8-sonnet`)** — the record is gone; the questions that need a host go through `logic::world::object_weapons` |
 //! | `m_triggerInfo[].pTrigger` | the trigger area's id |
 //!
 //! # Modules
@@ -131,10 +131,11 @@ use crate::common::special_power_mask_type::SpecialPowerMaskType;
 use crate::common::thing_template::ThingTemplate;
 use crate::common::upgrade::UpgradeMaskType;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
-use crate::logic::damage::{DamageInfo, DamageTypeFlags};
+use crate::logic::damage::DamageInfo;
 use crate::logic::module::update_module::UpdateModule;
 use crate::logic::thing::{Thing, ThingTemplateView};
 use crate::logic::weapon_set_flags::WeaponSetFlags;
+use crate::logic::weapon_set_state::WeaponSet;
 use crate::logic::world::ids::TeamId;
 use crate::logic::world::sleepy::UpdateHandle;
 use crate::logic::world::update_body::UpdateBody;
@@ -380,78 +381,6 @@ pub fn veterancy_from_i32(i: i32) -> VeterancyLevel {
     }
 }
 
-/// `WeaponSet`'s state with every weapon slot empty. `Weapon` and the weapon
-/// set's logic are not translated (a cut point); this is what `Object::xfer`
-/// and `Object::crc` need of it, laid out as `WeaponSet::xfer` writes it.
-#[derive(Clone, Debug, PartialEq)]
-pub struct WeaponSetRecord {
-    /// The template name of `m_curWeaponTemplateSet` (empty = none).
-    pub template_name: Vec<u8>,
-    /// The flags of `m_curWeaponTemplateSet`.
-    pub flags: WeaponSetFlags,
-    /// `m_curWeapon` (a `WeaponSlotType`).
-    pub cur_weapon: i32,
-    /// `m_curWeaponLockedStatus` (a `WeaponLockType`).
-    pub cur_weapon_locked_status: i32,
-    /// `m_filledWeaponSlotMask`.
-    pub filled_weapon_slot_mask: u32,
-    /// `m_totalAntiMask`.
-    pub total_anti_mask: i32,
-    /// `m_hasDamageWeapon`.
-    pub has_damage_weapon: bool,
-    /// `m_totalDamageTypeMask`.
-    pub total_damage_type_mask: DamageTypeFlags,
-}
-
-impl Default for WeaponSetRecord {
-    /// `WeaponSet::WeaponSet()`: no template set, `PRIMARY_WEAPON`, not locked.
-    fn default() -> Self {
-        WeaponSetRecord {
-            template_name: Vec::new(),
-            flags: WeaponSetFlags::new(),
-            cur_weapon: 0,
-            cur_weapon_locked_status: 0,
-            filled_weapon_slot_mask: 0,
-            total_anti_mask: 0,
-            has_damage_weapon: false,
-            total_damage_type_mask: DamageTypeFlags::new(),
-        }
-    }
-}
-
-impl Snapshot for WeaponSetRecord {
-    /// `WeaponSet::crc`: nothing.
-    fn crc(&mut self, _xfer: &mut dyn Xfer) -> XferResult<()> {
-        Ok(())
-    }
-    /// `WeaponSet::xfer` (version 1), with no weapon in any slot.
-    fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
-        let current: XferVersion = 1;
-        let mut version = current;
-        xfer.xfer_version(&mut version, current)?;
-        xfer.xfer_ascii_string(&mut self.template_name)?;
-        self.flags.xfer(xfer)?;
-        for _ in 0..WEAPONSLOT_COUNT {
-            // xferBool(&hasWeaponInSlot): the weapons themselves are a cut point
-            let mut has = false;
-            xfer.xfer_bool(&mut has)?;
-        }
-        let mut cur = self.cur_weapon.to_le_bytes();
-        xfer.xfer_user(&mut cur)?;
-        self.cur_weapon = i32::from_le_bytes(cur);
-        let mut locked = self.cur_weapon_locked_status.to_le_bytes();
-        xfer.xfer_user(&mut locked)?;
-        self.cur_weapon_locked_status = i32::from_le_bytes(locked);
-        xfer.xfer_unsigned_int(&mut self.filled_weapon_slot_mask)?;
-        xfer.xfer_int(&mut self.total_anti_mask)?;
-        xfer.xfer_bool(&mut self.has_damage_weapon)?;
-        // upstream writes m_hasDamageWeapon twice (the second xfer is a copy-paste of the first)
-        xfer.xfer_bool(&mut self.has_damage_weapon)?;
-        self.total_damage_type_mask.xfer(xfer)
-    }
-    fn load_post_process(&mut self) {}
-}
-
 /// `TTriggerInfo` (`Object.h`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TriggerInfo {
@@ -560,7 +489,7 @@ pub struct Object {
     /// `m_healthBoxOffset`.
     pub health_box_offset: Coord3D,
     /// `m_weaponSet`.
-    pub weapon_set: WeaponSetRecord,
+    pub weapon_set: WeaponSet,
     /// `m_curWeaponSetFlags`.
     pub cur_weapon_set_flags: WeaponSetFlags,
     /// `m_weaponBonusCondition`.
@@ -677,7 +606,7 @@ impl Object {
             original_team_name: Vec::new(),
             indicator_color: 0,
             health_box_offset: Coord3D::default(),
-            weapon_set: WeaponSetRecord::default(),
+            weapon_set: WeaponSet::new(),
             cur_weapon_set_flags: WeaponSetFlags::new(),
             weapon_bonus_condition: 0,
             last_weapon_condition: [0; WEAPONSLOT_COUNT as usize],

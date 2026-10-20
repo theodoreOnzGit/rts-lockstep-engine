@@ -18,10 +18,14 @@
 //!
 //! # What is cut
 //!
-//! - **The weapons** (`xferSnapshot(thisWeapon)` in `crc`, and the slots of
+//! - ~~**The weapons** (`xferSnapshot(thisWeapon)` in `crc`, and the slots of
 //!   `WeaponSet::xfer`): `Weapon` is not translated, so the weapon set is
-//!   [`WeaponSetRecord`](crate::logic::world::object::WeaponSetRecord) with
-//!   every slot empty.
+//!   `WeaponSetRecord` with every slot empty.~~ **CORRECTED 2026-10-20
+//!   (`p1w8-sonnet`)** — the object holds the real `WeaponSet`: `crc` takes each
+//!   weapon's `crc` (the name of its template from `TheWeaponStore`), and `xfer`
+//!   goes through [`WeaponXferLookups`], which [`ObjectXferStores`] answers from
+//!   the thing factory and the weapon store. `Weapon::loadPostProcess` (it
+//!   needs the game logic) is the caller's, as `WeaponSet::load_post_process_weapons`.
 //! - **The drawable's id** is written from `Object::drawable`; on a load the
 //!   client is told the id the drawable has to take (`DrawableSetId`).
 //! - **`xferUpgradeMask`** needs the upgrade centre and the name keys:
@@ -39,9 +43,17 @@ use crate::common::game_common::MAX_PLAYER_COUNT;
 use crate::common::game_type::{DrawableId, ObjectId, INVALID_ID, NO_FORMATION_ID};
 use crate::common::module::Module;
 use crate::common::name_key_generator::NameKeyGenerator;
+use crate::common::sparse_match_finder::SparseMatchFinder;
+use crate::common::thing_factory::ThingFactory;
 use crate::common::upgrade::{xfer_upgrade_mask, UpgradeCenter, XferUpgradeMaskError};
 use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferStatus, XferVersion};
 use crate::logic::module::update_module::UpdateModule;
+use crate::common::name_key_generator::NameKeyType;
+use crate::logic::weapon::WeaponStore;
+use crate::logic::weapon_fire::WeaponXferError;
+use crate::logic::weapon_host::{WeaponTemplateSetRef, WeaponXferLookups};
+use crate::logic::weapon_set::WeaponTemplateSet;
+use crate::logic::weapon_set_flags::WeaponSetFlags;
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::ModuleCall;
 use crate::logic::world::object_events::ObjectClientEvent;
@@ -76,13 +88,47 @@ impl From<XferUpgradeMaskError> for ObjectXferError {
 }
 
 /// The global stores `Object::xfer` needs and the world does not own:
-/// `TheUpgradeCenter` and `TheNameKeyGenerator`.
+/// `TheUpgradeCenter`, `TheNameKeyGenerator`, `TheThingFactory` and
+/// `TheWeaponStore` (the last two for the weapon set's `xfer`).
 #[derive(Debug)]
 pub struct ObjectXferStores<'a> {
     /// `TheUpgradeCenter`.
     pub upgrade_center: &'a UpgradeCenter,
     /// `TheNameKeyGenerator`.
     pub names: &'a mut NameKeyGenerator,
+    /// `TheThingFactory`.
+    pub factory: &'a ThingFactory,
+    /// `TheWeaponStore`.
+    pub weapon_store: &'a WeaponStore,
+}
+
+/// What `WeaponSet::xfer` looks up: the thing factory and the weapon store.
+impl WeaponXferLookups for ObjectXferStores<'_> {
+    fn find_thing_template(&self, name: &[u8]) -> Option<u16> {
+        self.factory.find_template(name).map(|t| t.get_final_override().data.get_template_id())
+    }
+    fn thing_template_name(&self, id: u16) -> Vec<u8> {
+        self.factory.find_by_template_id(id).map(|t| t.get_final_override().data.get_name().to_vec()).unwrap_or_default()
+    }
+    fn find_weapon_template_set_by_flags(&mut self, thing_template: u16, flags: &WeaponSetFlags) -> Option<WeaponTemplateSetRef> {
+        let t = self.factory.find_by_template_id(thing_template)?;
+        let sets = t.get_final_override().data.get_weapon_template_sets();
+        // (the template's match cache answers what the slow search does)
+        SparseMatchFinder::find_best_info_slow::<_, WeaponTemplateSet>(sets, flags).map(|index| WeaponTemplateSetRef { thing_template, index })
+    }
+    fn weapon_template_set(&self, r: WeaponTemplateSetRef) -> &WeaponTemplateSet {
+        &self.factory.find_by_template_id(r.thing_template).expect("a set ref names a template of the factory").get_final_override().data.get_weapon_template_sets()
+            [r.index]
+    }
+    fn weapon_template_names(&self) -> Vec<(Vec<u8>, usize)> {
+        self.weapon_store.templates().iter().enumerate().map(|(i, t)| (t.name.to_vec(), i)).collect()
+    }
+    fn weapon_template_index(&self, key: NameKeyType) -> Option<usize> {
+        self.weapon_store.templates().iter().position(|t| t.name_key == key)
+    }
+    fn weapon_template_name(&self, index: usize) -> Vec<u8> {
+        self.weapon_store.templates()[index].name.to_vec()
+    }
 }
 
 /// A module as `xferSnapshot(module)` sees it: the scheduling half, the
@@ -151,7 +197,7 @@ impl World {
     /// object: the private status, the transform (48 bytes), the id, the
     /// first 64 bits of the completed upgrades, the experience, the health,
     /// the weapon bonus conditions, the damage scalar and the weapons.
-    pub fn object_crc(&mut self, id: ObjectId, xfer: &mut dyn Xfer) -> XferResult<()> {
+    pub fn object_crc(&mut self, id: ObjectId, xfer: &mut dyn Xfer, weapon_store: &WeaponStore) -> XferResult<()> {
         let health;
         let scalar;
         {
@@ -182,7 +228,11 @@ impl World {
         xfer.xfer_user(&mut health.to_le_bytes())?;
         xfer.xfer_unsigned_int(&mut o.weapon_bonus_condition)?;
         xfer.xfer_user(&mut scalar.to_le_bytes())?;
-        // for each weapon slot with a weapon: xferSnapshot(weapon) (cut: no weapon is ever present)
+        // for each weapon slot with a weapon: xferSnapshot(weapon)
+        for w in o.weapon_set.slots_mut().iter_mut().flatten() {
+            let name = weapon_store.templates()[w.template()].name.to_vec();
+            w.crc_with_name(&name, xfer)?;
+        }
         Ok(())
     }
 
@@ -473,7 +523,10 @@ impl World {
                 o.last_weapon_condition[i] = *v as i8;
             }
             // do the weaponSet itself after all the weapon-related stuff, just in case
-            xfer.xfer_snapshot(&mut o.weapon_set)?;
+            o.weapon_set.xfer(stores, xfer).map_err(|e| match e {
+                WeaponXferError::Xfer(s) => ObjectXferError::Xfer(s),
+                WeaponXferError::InvalidData => ObjectXferError::InvalidData("a weapon names no weapon template"),
+            })?;
             o.special_power_bits.xfer(xfer)?;
             xfer.xfer_ascii_string(&mut o.command_set_string_override)?;
             xfer.xfer_bool(&mut o.modules_ready)?;

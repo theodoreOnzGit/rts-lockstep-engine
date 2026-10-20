@@ -54,6 +54,9 @@ pub mod cave_system;
 pub mod resource_gathering_manager;
 pub mod tunnel_tracker;
 // --- end p1w7-sonnet ---
+// --- p1w8-sonnet ---
+pub mod object_weapons;
+// --- end p1w8-sonnet ---
 
 pub use game_logic::{Hook, World, WorldError};
 pub use ids::{ObjectId, PlayerIndex, TeamId, INVALID_ID};

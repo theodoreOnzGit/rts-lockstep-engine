@@ -624,7 +624,8 @@ impl World {
         if o.ai.is_some() && !o.is_kind_of(KINDOF_CAN_ATTACK) {
             for i in 0..WEAPONSLOT_COUNT {
                 // Find the weapon in this slot.
-                if !self.cuts.weapon_in_slot(id, i) {
+                // (the object's own weapon, or one a cut table gives it: the tables are how a test world gives an object weapons)
+                if o.weapon_set.get_weapon_in_weapon_slot(i).is_none() && !self.cuts.weapon_in_slot(id, i) {
                     continue;
                 }
                 any_weapon = true;
@@ -674,7 +675,7 @@ impl World {
         }
         // if we have AI and a weapon, assume we know how to use it
         let o = self.objects.find(id).expect("checked above");
-        if o.ai.is_some() && self.cuts.weapon_set_has_any_weapon(id) {
+        if o.ai.is_some() && (o.weapon_set.has_any_weapon() || self.cuts.weapon_set_has_any_weapon(id)) {
             return true;
         }
         if let Some(spawn) = self.get_spawn_behavior_interface(id) {

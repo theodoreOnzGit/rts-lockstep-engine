@@ -206,6 +206,8 @@ pub enum WeaponError {
     /// `ThingFactory::newObject(NULL, ..)` throws `ERROR_BAD_ARG`: `newProjectileFired` on a projectile stream name
     /// that names no template.
     NullTemplate,
+    /// A value upstream reads without ever writing it (an out-parameter whose function returned false).
+    UninitialisedRead,
 }
 
 /// `struct HistoricWeaponDamageInfo`: when and where this weapon was fired.

@@ -34,6 +34,8 @@ use crate::logic::world::object_create::{NewModule, NewObject};
 use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::object_events::ObjectClientEvent;
 use crate::logic::world::object_state::mask_of;
+use crate::common::thing_factory::ThingFactory;
+use crate::logic::weapon::WeaponStore;
 use crate::logic::world::object_xfer::ObjectXferStores;
 use crate::logic::world::update_body::UpdateBody;
 
@@ -347,7 +349,7 @@ fn the_cut_log_records_actions() {
 fn save(w: &mut World, id: ObjectId, names: &mut NameKeyGenerator, uc: &UpgradeCenter) -> Vec<u8> {
     let mut x = XferSave::new();
     x.open(b"object").unwrap();
-    let mut stores = ObjectXferStores { upgrade_center: uc, names };
+    let mut stores = ObjectXferStores { upgrade_center: uc, names, factory: &ThingFactory::new(), weapon_store: &WeaponStore::new() };
     w.object_xfer(id, &mut x, &mut stores).expect("save");
     x.close().unwrap();
     x.take_bytes()
@@ -371,7 +373,7 @@ fn xfer_round_trips_and_is_deterministic() {
     assert_eq!(id, id2);
     let mut x = XferLoad::new(bytes.clone());
     x.open(b"object").unwrap();
-    let mut stores = ObjectXferStores { upgrade_center: &uc, names: &mut names };
+    let mut stores = ObjectXferStores { upgrade_center: &uc, names: &mut names, factory: &ThingFactory::new(), weapon_store: &WeaponStore::new() };
     w2.object_xfer(id2, &mut x, &mut stores).expect("load");
     x.close().unwrap();
     w2.object_load_post_process(id2);
@@ -387,7 +389,7 @@ fn crc_changes_with_health_and_not_with_a_second_call() {
     let id = make(&mut w, vec![probe_module(100.0)]);
     let crc = |w: &mut World| {
         let mut x = XferCrc::new();
-        w.object_crc(id, &mut x).unwrap();
+        w.object_crc(id, &mut x, &WeaponStore::new()).unwrap();
         x.get_crc()
     };
     let a = crc(&mut w);
@@ -741,7 +743,7 @@ fn the_logic_crc_is_stable_and_follows_the_state() {
     let id = make(&mut w, vec![probe_with(|_| {})]);
     let crc = |w: &mut World| {
         let mut x = XferCrc::new();
-        w.object_crc(id, &mut x).unwrap();
+        w.object_crc(id, &mut x, &WeaponStore::new()).unwrap();
         x.get_crc()
     };
     let a = crc(&mut w);
@@ -798,7 +800,7 @@ fn xfer_load_restores_the_state_and_refuses_an_unknown_team() {
     w.set_status(id, mask_of(OBJECT_STATUS_DETECTED), true);
     let mut x = XferLoad::new(saved.clone());
     x.open(b"object").unwrap();
-    let mut stores = ObjectXferStores { upgrade_center: &uc, names: &mut names };
+    let mut stores = ObjectXferStores { upgrade_center: &uc, names: &mut names, factory: &ThingFactory::new(), weapon_store: &WeaponStore::new() };
     w.object_xfer(id, &mut x, &mut stores).unwrap();
     assert_eq!(health(&mut w, id), 100.0);
     assert!(!w.objects.find(id).unwrap().test_status(OBJECT_STATUS_DETECTED));
@@ -811,7 +813,7 @@ fn xfer_load_restores_the_state_and_refuses_an_unknown_team() {
     };
     let mut x = XferLoad::new(saved);
     x.open(b"object").unwrap();
-    let mut stores = ObjectXferStores { upgrade_center: &uc, names: &mut names };
+    let mut stores = ObjectXferStores { upgrade_center: &uc, names: &mut names, factory: &ThingFactory::new(), weapon_store: &WeaponStore::new() };
     assert!(w2.object_xfer(id2, &mut x, &mut stores).is_err());
 }
 

@@ -117,6 +117,8 @@ use rts_lockstep_engine::logic::world::ids::TeamId;
 use rts_lockstep_engine::logic::world::module_probe::{ProbeAnswers, ProbeModule};
 use rts_lockstep_engine::logic::world::object_create::{NewModule, NewObject};
 use rts_lockstep_engine::logic::world::object_cuts::ObjectGlobals;
+use rts_lockstep_engine::common::thing_factory::ThingFactory;
+use rts_lockstep_engine::logic::weapon::WeaponStore;
 use rts_lockstep_engine::logic::world::object_xfer::ObjectXferStores;
 use rts_lockstep_engine::logic::world::team::Team;
 use rts_lockstep_engine::logic::world::update_body::UpdateBody;
@@ -596,7 +598,7 @@ impl Run {
             let mut x = XferSave::new();
             x.open(b"object").expect("open");
             {
-                let mut stores = ObjectXferStores { upgrade_center: &self.uc, names: &mut self.names };
+                let mut stores = ObjectXferStores { upgrade_center: &self.uc, names: &mut self.names, factory: &ThingFactory::new(), weapon_store: &WeaponStore::new() };
                 self.w.object_xfer(id, &mut x, &mut stores).expect("save");
             }
             x.close().expect("close");
@@ -947,7 +949,7 @@ impl Run {
             44 => {
                 if let Some(id) = o {
                     let mut x = XferCrc::new();
-                    self.w.object_crc(id, &mut x).expect("crc");
+                    self.w.object_crc(id, &mut x, &WeaponStore::new()).expect("crc");
                     self.ret(Line::new("ret", "Crc").i("crc", i64::from(x.get_crc())));
                 }
             }
@@ -1266,7 +1268,7 @@ impl Run {
                     let mut x = XferSave::new();
                     x.open(b"object").expect("open");
                     {
-                        let mut stores = ObjectXferStores { upgrade_center: &self.uc, names: &mut self.names };
+                        let mut stores = ObjectXferStores { upgrade_center: &self.uc, names: &mut self.names, factory: &ThingFactory::new(), weapon_store: &WeaponStore::new() };
                         self.w.object_xfer(id, &mut x, &mut stores).expect("save");
                     }
                     x.close().expect("close");
@@ -1279,7 +1281,7 @@ impl Run {
                         let mut x = XferLoad::new(bytes);
                         x.open(b"object").expect("open");
                         {
-                            let mut stores = ObjectXferStores { upgrade_center: &self.uc, names: &mut self.names };
+                            let mut stores = ObjectXferStores { upgrade_center: &self.uc, names: &mut self.names, factory: &ThingFactory::new(), weapon_store: &WeaponStore::new() };
                             self.w.object_xfer(id, &mut x, &mut stores).expect("load");
                         }
                         x.close().expect("close");

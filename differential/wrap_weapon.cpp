@@ -69,6 +69,13 @@
 #define ExperienceTracker WpnTestExperienceTracker
 #define AssaultTransportAIInterface WpnTestAssaultTransportAIInterface
 #define AcademyStats WpnTestAcademyStats
+#define FiringTracker WpnTestFiringTracker
+#define UpgradeTemplate WpnTestUpgradeTemplate
+#define CommandButton WpnTestCommandButton
+#define CommandSet WpnTestCommandSet
+#define ControlBar WpnTestControlBar
+#define TheControlBar WpnTestTheControlBar
+#define MAX_COMMANDS_PER_SET WpnTestMAX_COMMANDS_PER_SET
 #define FXList WpnTestFXList
 #define ObjectCreationList WpnTestObjectCreationList
 #define SimpleObjectIterator WpnTestSimpleObjectIterator
@@ -134,6 +141,7 @@ extern "C" const char *ref_armor_fx_name(const void *fx);
 #define max(x,y) (((x)>(y)) ? (x) : (y))
 #include "Weapon_cut.cpp"
 #include "WeaponSet_cut.cpp"
+#include "Object_weapons.cpp"
 #undef min
 #undef max
 #undef private

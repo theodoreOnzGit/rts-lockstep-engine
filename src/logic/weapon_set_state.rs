@@ -25,9 +25,12 @@
 //!
 //! The set owns its [`Weapon`]s. Every question that reaches an object, a player, the partition manager or a
 //! module goes through [`WeaponHost`], called where upstream makes the call. The object that owns the set takes
-//! it out of itself for the call (`std::mem::take`), so that the host can be `World` while the set is `&mut`;
-//! while a set is out, the host cannot see it (a nested question about the same object's set finds none). That is
-//! the one difference from upstream's re-entrancy, and `World` counts such a question (`weapon_set_out_asks`).
+//! it out of itself for a call that changes the set (`std::mem::take`), so that the host can be `World` while the
+//! set is `&mut`; while a set is out, the host cannot see it. Nothing those calls ask of the host reaches the
+//! source's own set. **Firing is different**: firing reaches the world (damage, a temporary weapon) and what it
+//! reaches asks the source's set whether the reload time is shared and sets the other weapons' reload, so
+//! `logic::world::object_weapons` takes only the firing *weapon* out of its slot. The first version took the whole
+//! set, and the differential test found the difference at program 7910 of 30,000.
 //!
 //! # Upstream defects kept
 //!
@@ -276,6 +279,11 @@ impl WeaponSet {
             Some(r) => host.weapon_template_set(r).is_shared_reload_time(),
             None => false,
         }
+    }
+
+    /// The effect of a shared reload on this set's weapons (what a weapon fired from outside the set returns).
+    pub fn apply_shared_reload(&mut self, effect: Option<SharedReload>) {
+        self.apply(effect);
     }
 
     /// The effect of a shared reload on this set's weapons.

@@ -124,6 +124,7 @@ public:
 	AssaultTransportAIInterface* getAssaultTransportAIInterface() const;
 	WhichTurretType getWhichTurretForWeaponSlot(WeaponSlotType wslot, Real* turretAngle, Real* turretPitch) const;
 	Bool isWeaponSlotOnTurretAndAimingAtTarget(WeaponSlotType wslot, const Object* victim) const;
+	Bool getTurretRotAndPitch(WhichTurretType tur, Real* turretAngle, Real* turretPitch) const;
 };
 
 typedef std::list<Object*> ContainedItemsList;
@@ -171,7 +172,8 @@ class PlayerList { public: Player* getNthPlayer(Int i); };
 class ThingTemplate
 {
 public:
-	int m_id; int m_group; Real m_fenceWidth;
+	int m_id; int m_group; Real m_fenceWidth; AsciiString m_cmdSet;
+	const AsciiString& friend_getCommandSetString() const { return m_cmdSet; }
 	WeaponTemplateSetVector m_weaponTemplateSets;
 	WeaponTemplateSetFinder m_weaponTemplateSetFinder;
 	Bool isEquivalentTo(const ThingTemplate* tt) const { return m_group == tt->m_group; }
@@ -196,13 +198,27 @@ class Drawable
 public:
 	Object* m_owner;
 	Int getBarrelCount(WeaponSlotType wslot) const;
+	void updateDrawableClipStatus(UnsignedInt ammoInClip, UnsignedInt maxClipSize, WeaponSlotType slot);
+	void clearAndSetModelConditionFlags(const ModelConditionFlags& clr, const ModelConditionFlags& set);
+	void setAnimationLoopDuration(UnsignedInt numFrames);
 	Bool handleWeaponFireFX(WeaponSlotType wslot, Int specificBarrelToUse, const FXList* fxl, Real weaponSpeed, Real recoilAmount, Real recoilAngle, const Coord3D* victimPos, Real damageRadius);
 	const Coord3D* getPosition() const;
 	const Matrix3D* getTransformMatrix() const;
 	Bool getProjectileLaunchOffset(WeaponSlotType wslot, Int specificBarrelToUse, Matrix3D* launchPos, WhichTurretType tur, Coord3D* turretRotPos, Coord3D* turretPitchPos) const;
+	Int getPristineBonePositions(const char* boneNamePrefix, Int startIndex, Coord3D* positions, Matrix3D* transforms, Int maxBones) const;
+	void convertBonePosToWorldPos(const Coord3D* bonePos, const Matrix3D* boneTransform, Coord3D* worldPos, Matrix3D* worldTransform) const;
 	void setDrawableHidden(Bool hidden);
 	LaserUpdate* findClientUpdateModule(NameKeyType key);
 };
+
+class FiringTracker { public: Object* m_owner; void shotFired(const Weapon* weaponFired, ObjectID victimID); };
+/* the control bar's command sets: a name "Cmd<k>" is a set whose buttons are formulas of k (fire_driver.h) */
+class UpgradeTemplate { public: int dummy; };
+class CommandButton { public: const UpgradeTemplate* m_up; const UpgradeTemplate* getUpgradeTemplate() const { return m_up; } };
+enum { MAX_COMMANDS_PER_SET = 18 };
+class CommandSet { public: int m_k; CommandButton m_buttons[MAX_COMMANDS_PER_SET]; const CommandButton* getCommandButton(Int i) const; };
+class ControlBar { public: const CommandSet* findCommandSet(const AsciiString& name) const; };
+extern ControlBar* TheControlBar;
 
 /* ---- the object -------------------------------------------------------------------------------------------- */
 class Object
@@ -218,7 +234,7 @@ public:
 	Bool m_effDead, m_destroyed, m_ableToAttack; Int m_layer; Bool m_aboveTerrain, m_signifAbove;
 	Int m_consecutiveShots; Real m_estimate; WeaponSetFlags m_wsFlags;
 	/* the drawable */
-	Bool m_hasDrawable; Int m_barrels[3]; Drawable m_drawable; Bool m_fxHandled;
+	Bool m_hasDrawable; Int m_barrels[3]; Drawable m_drawableStorage; Drawable* m_drawable; Bool m_fxHandled;
 	Bool m_hasLaunchOffset; Matrix3D m_launchXform; Coord3D m_turretRotPos, m_turretPitchPos;
 	Bool m_hasLaserUpdate; LaserUpdate m_laser;
 	/* the AI */
@@ -239,6 +255,8 @@ public:
 	SpecialPowerCompletionDie m_spcDie; ProjectileStreamUpdate m_stream; AssistedTargetingUpdate m_assist; PhysicsBehavior m_phys; ExperienceTracker m_xp;
 	/* the weapon set */
 	WeaponSet m_weaponSet;
+	/* Object.cpp's weapon functions run on these (Object_weapons.cpp) */
+	FiringTracker* m_firingTracker; FiringTracker m_tracker; Byte m_lastWeaponCondition[WEAPONSLOT_COUNT]; Bool m_hasTracker; AsciiString m_commandSetStringOverride;
 
 	Object();
 
@@ -252,7 +270,7 @@ public:
 	Bool testStatus(ObjectStatusTypes s) const { return ((m_statusBits >> s) & 1) != 0; }
 	Bool testScriptStatusBit(unsigned b) const { return (m_scriptStatus & b) != 0; }
 	VeterancyLevel getVeterancyLevel() const { return (VeterancyLevel)m_veterancy; }
-	Drawable* getDrawable() const { return m_hasDrawable ? const_cast<Drawable*>(&m_drawable) : NULL; }
+	Drawable* getDrawable() const { return m_drawable; }
 	Bool isLocallyControlled() const { return m_locallyControlled; }
 	WeaponBonusConditionFlags getWeaponBonusCondition() const { return m_bonusCond; }
 	const WeaponSetFlags& getWeaponSetFlags() const { return m_wsFlags; }
@@ -289,8 +307,40 @@ public:
 	void setProducer(const Object* obj);
 	void setPosition(const Coord3D* pos);
 	void setTransformMatrix(const Matrix3D* mx);
-	CanAttackResult getAbleToUseWeaponAgainstTarget(AbleToAttackType attackType, const Object* victim, const Coord3D* pos, CommandSourceType commandSource, WeaponSlotType specificSlot = (WeaponSlotType)-1) const
-	{ return m_weaponSet.getAbleToUseWeaponAgainstTarget(attackType, this, victim, pos, commandSource, specificSlot); }
+	/* declared as Object.h declares them; defined by Object_weapons.cpp, the text of Object.cpp */
+	void reloadAllAmmo(Bool now);
+	Bool isOutOfAmmo() const;
+	Bool hasAnyWeapon() const;
+	Bool hasAnyDamageWeapon() const;
+	Bool hasWeaponToDealDamageType(DamageType typeToDeal) const;
+	Real getLargestWeaponRange() const;
+	UnsignedInt getMostPercentReadyToFireAnyWeapon() const;
+	void setFiringConditionForCurrentWeapon() const;
+	void adjustModelConditionForWeaponStatus();
+	void fireCurrentWeapon(Object *target);
+	void fireCurrentWeapon(const Coord3D* pos);
+	void preFireCurrentWeapon( const Object *victim );
+	Weapon* getCurrentWeapon(WeaponSlotType* wslot = NULL);
+	const Weapon* getCurrentWeapon(WeaponSlotType* wslot = NULL) const;
+	Weapon* findWaypointFollowingCapableWeapon();
+	void notifyFiringTrackerShotFired( const Weapon* weaponFired, ObjectID victimID );
+	UnsignedInt getLastShotFiredFrame() const;
+	Bool getAmmoPipShowingInfo(Int& numTotal, Int& numFull) const;
+	CanAttackResult getAbleToAttackSpecificObject( AbleToAttackType t, const Object* target, CommandSourceType commandSource, WeaponSlotType specificSlot = (WeaponSlotType)-1 ) const;
+	CanAttackResult getAbleToUseWeaponAgainstTarget( AbleToAttackType attackType, const Object *victim, const Coord3D *pos, CommandSourceType commandSource, WeaponSlotType specificSlot = (WeaponSlotType)-1 ) const;
+	Bool chooseBestWeaponForTarget(const Object* target, WeaponChoiceCriteria criteria, CommandSourceType cmdSource);
+	void clearLeechRangeModeForAllWeapons();
+	Bool getSingleLogicalBonePosition(const char* boneName, Coord3D* position, Matrix3D* transform) const;
+	Bool getSingleLogicalBonePositionOnTurret( WhichTurretType whichTurret, const char* boneName, Coord3D* position, Matrix3D* transform ) const;
+	Int getMultiLogicalBonePosition(const char* boneNamePrefix, Int maxBones, Coord3D* positions, Matrix3D* transforms, Bool convertToWorld = FALSE ) const;
+	const AsciiString& getCommandSetString() const;
+	Bool canProduceUpgrade( const UpgradeTemplate *upgrade );
+	/* the inline forwarders of Object.h, as written there */
+	UnsignedInt getWeaponInWeaponSlotCommandSourceMask( WeaponSlotType wSlot ) const { return m_weaponSet.getNthCommandSourceMask( wSlot ); }
+	Bool setWeaponLock( WeaponSlotType weaponSlot, WeaponLockType lockType ){ return m_weaponSet.setWeaponLock( weaponSlot, lockType ); }
+	void releaseWeaponLock(WeaponLockType lockType){ m_weaponSet.releaseWeaponLock(lockType); }
+	Bool isCurWeaponLocked() const { return m_weaponSet.isCurWeaponLocked(); }
+	void friend_setUndetectedDefector(Bool status);
 	void convertBonePosToWorldPos(const Coord3D* bonePos, const Matrix3D* boneTransform, Coord3D* worldPos, Matrix3D* worldTransform) const;
 };
 
