@@ -46,6 +46,65 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
             command_set_upgrade::CommandSetUpgrade::new(object, Some(d.clone())).map(UpdateBody::CommandSetUpgrade),
         )),
         // --- end p1l9-example ---
+        // --- p1l9-upgrades ---
+        ModuleDataKind::WeaponSetUpgrade(d) => Some(made(
+            weapon_set_upgrade::WeaponSetUpgrade::get_interface_mask(),
+            weapon_set_upgrade::WeaponSetUpgrade::new(object, Some(d.clone())).map(UpdateBody::WeaponSetUpgrade),
+        )),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        ModuleDataKind::WeaponBonusUpgrade(d) => Some(made(
+            weapon_bonus_upgrade::WeaponBonusUpgrade::get_interface_mask(),
+            weapon_bonus_upgrade::WeaponBonusUpgrade::new(object, Some(d.clone())).map(UpdateBody::WeaponBonusUpgrade),
+        )),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        ModuleDataKind::ArmorUpgrade(d) => Some(made(
+            armor_upgrade::ArmorUpgrade::get_interface_mask(),
+            armor_upgrade::ArmorUpgrade::new(object, Some(d.clone())).map(UpdateBody::ArmorUpgrade),
+        )),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        ModuleDataKind::ModelConditionUpgrade(d) => Some(made(
+            model_condition_upgrade::ModelConditionUpgrade::get_interface_mask(),
+            model_condition_upgrade::ModelConditionUpgrade::new(object, Some(d.clone())).map(UpdateBody::ModelConditionUpgrade),
+        )),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        ModuleDataKind::ExperienceScalarUpgrade(d) => Some(made(
+            experience_scalar_upgrade::ExperienceScalarUpgrade::get_interface_mask(),
+            experience_scalar_upgrade::ExperienceScalarUpgrade::new(object, Some(d.clone())).map(UpdateBody::ExperienceScalarUpgrade),
+        )),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        ModuleDataKind::ActiveShroudUpgrade(d) => Some(made(
+            active_shroud_upgrade::ActiveShroudUpgrade::get_interface_mask(),
+            active_shroud_upgrade::ActiveShroudUpgrade::new(object, Some(d.clone())).map(UpdateBody::ActiveShroudUpgrade),
+        )),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        ModuleDataKind::MaxHealthUpgrade(d) => Some(made(
+            max_health_upgrade::MaxHealthUpgrade::get_interface_mask(),
+            max_health_upgrade::MaxHealthUpgrade::new(object, Some(d.clone())).map(UpdateBody::MaxHealthUpgrade),
+        )),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        ModuleDataKind::GrantScienceUpgrade(d) => Some(made(
+            grant_science_upgrade::GrantScienceUpgrade::get_interface_mask(),
+            grant_science_upgrade::GrantScienceUpgrade::new(object, Some(d.clone())).map(UpdateBody::GrantScienceUpgrade),
+        )),
+        // --- end p1l9-upgrades ---
         _ => None,
     }
 }
+
+// --- p1l9-upgrades ---
+pub mod weapon_set_upgrade;
+pub mod weapon_bonus_upgrade;
+pub mod armor_upgrade;
+pub mod model_condition_upgrade;
+pub mod experience_scalar_upgrade;
+pub mod active_shroud_upgrade;
+pub mod max_health_upgrade;
+pub mod grant_science_upgrade;
+// --- end p1l9-upgrades ---

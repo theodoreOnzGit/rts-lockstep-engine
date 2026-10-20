@@ -141,6 +141,11 @@ pub enum ModuleCall {
     OnVeterancyLevelChanged { old_level: i32, new_level: i32, provide_feedback: bool },
     /// `setMaxHealth(maxHealth)` (the default change type).
     SetMaxHealth(f32),
+    // --- p1l9-upgrades ---
+    /// `setMaxHealth(maxHealth, healthChangeType)` (`MaxHealthUpgrade`);
+    /// the change type is `MaxHealthChangeType`.
+    SetMaxHealthWithChange { max_health: f32, change_type: i32 },
+    // --- end p1l9-upgrades ---
     /// `setInitialHealth(initialPercent)`.
     SetInitialHealth(i32),
     /// `setIndestructible(indestructible)`.

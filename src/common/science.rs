@@ -281,7 +281,9 @@ fn science_fields<'a>() -> [FieldParse<ScienceFill<'a>>; 6] {
 }
 
 /// `class ScienceStore` (`TheScienceStore`).
-#[derive(Debug, Default)]
+// --- p1l9-upgrades ---
+#[derive(Clone, Debug, Default)]
+// --- end p1l9-upgrades ---
 pub struct ScienceStore {
     /// `m_sciences`: the first definition of each science, with its chain of
     /// overrides.

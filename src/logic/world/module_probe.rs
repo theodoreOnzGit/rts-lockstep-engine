@@ -230,6 +230,16 @@ impl ProbeModule {
                 ModuleReply::Done
             }
             ModuleCall::TestArmorSetFlag(f) => ModuleReply::Bool(self.armor_flags & 1u32.wrapping_shl(f as u32) != 0),
+// --- p1l9-upgrades ---
+            ModuleCall::SetMaxHealthWithChange { max_health, .. } => {
+                // the probe has no change type: the answer is the same as `SetMaxHealth`
+                self.max_health = max_health;
+                if self.health > max_health {
+                    self.health = max_health;
+                }
+                ModuleReply::Done
+            }
+            // --- end p1l9-upgrades ---
             ModuleCall::SetMaxHealth(m) => {
                 self.max_health = m;
                 if self.health > m {
