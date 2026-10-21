@@ -846,3 +846,21 @@ fn model_conditions_and_the_special_state_reach_the_drawable() {
     let n = events(&w).iter().filter(|e| matches!(e, ObjectClientEvent::DrawableModelCondition { .. })).count();
     assert!(n >= 6);
 }
+
+// --- p1w11-sonnet ---
+#[test]
+fn a_helper_that_processes_every_disabled_type_runs_on_a_disabled_object() {
+    // `StatusDamageHelper::getDisabledTypesToProcess()` is `DISABLEDMASK_ALL`: its timer runs out although the object is disabled. (The
+    // scheduler reads the module in its arena, the `UpdateModule` base, so the concrete class sets its override there.)
+    let mut w = world();
+    let id = make(&mut w, vec![probe_module(100.0)]);
+    let idx = w.find_module(id, b"StatusDamageHelper").unwrap();
+    w.module_call(id, idx, ModuleCall::DoStatusDamage { status: OBJECT_STATUS_MASKED, duration: 2.0 });
+    assert!(w.objects.find(id).unwrap().test_status(OBJECT_STATUS_MASKED));
+    w.objects.find_mut(id).unwrap().disabled.set(DISABLED_HELD, 1);
+    w.set_frame(5);
+    w.run_sleepy_updates();
+    assert!(!w.objects.find(id).unwrap().test_status(OBJECT_STATUS_MASKED), "the helper ran although the object is disabled");
+}
+
+// --- end p1w11-sonnet ---

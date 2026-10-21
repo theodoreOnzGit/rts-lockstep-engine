@@ -18,6 +18,8 @@ use crate::common::object_status_types::{ObjectStatusMaskType, ObjectStatusTypes
 use crate::logic::module::update_module::{UpdateModule, UpdateModuleData};
 use crate::logic::modules::object_repulsor_helper::ObjectRepulsorHelper;
 use crate::logic::modules::object_smc_helper::ObjectSMCHelper;
+use crate::logic::modules::object_defection_helper::ObjectDefectionHelper;
+use crate::logic::modules::subdual_damage_helper::SubdualDamageHelper;
 use crate::logic::modules::object_weapon_status_helper::ObjectWeaponStatusHelper;
 use crate::logic::modules::status_damage_helper::StatusDamageHelper;
 use crate::logic::modules::temp_weapon_bonus_helper::TempWeaponBonusHelper;
@@ -92,8 +94,8 @@ impl HelperHost for World {
 
 impl World {
     /// Makes the helper of that kind for object `id` (`Object::Object`'s `newInstance(ObjectSMCHelper)(this, &data)` and the
-    /// others): the five helpers that are translated are real modules, the rest (`SubdualDamageHelper`, `ObjectDefectionHelper`,
-    /// `FiringTracker`) are the stand-in of [`ObjectCuts::make_helper`](crate::logic::world::object_cuts::ObjectCuts::make_helper)
+    /// others): ~~the five helpers that are translated are real modules, the rest (`SubdualDamageHelper`, `ObjectDefectionHelper`,
+    /// `FiringTracker`)~~ **CORRECTED 2026-10-21** (`p1w11-sonnet`): seven are real modules, only `FiringTracker` are the stand-in of [`ObjectCuts::make_helper`](crate::logic::world::object_cuts::ObjectCuts::make_helper)
     /// until they are.
     pub(crate) fn make_helper_module(&self, id: ObjectId, kind: HelperKind) -> NewModule {
         let data = Some(Arc::new(UpdateModuleData::new()));
@@ -114,6 +116,14 @@ impl World {
             HelperKind::TempWeaponBonus => {
                 TempWeaponBonusHelper::unconstructed(id, data).ok().map(|h| (h.helper().update_module().clone(), UpdateBody::TempWeaponBonusHelper(h)))
             }
+            // --- p1w11-sonnet ---
+            HelperKind::SubdualDamage => {
+                SubdualDamageHelper::unconstructed(id, data).ok().map(|h| (h.helper().update_module().clone(), UpdateBody::SubdualDamageHelper(h)))
+            }
+            HelperKind::Defection => {
+                ObjectDefectionHelper::unconstructed(id, data).ok().map(|h| (h.helper().update_module().clone(), UpdateBody::ObjectDefectionHelper(h)))
+            }
+            // --- end p1w11-sonnet ---
             _ => None,
         };
         let mut m = self.cuts.make_helper(kind);
@@ -233,13 +243,16 @@ mod tests {
         let id = make(&mut w, vec![]);
         let o = w.objects.find(id).unwrap();
         // no weapon in the template: the SMC, status damage, subdual damage and defection helpers
-        for class in [&b"ObjectSMCHelper"[..], b"StatusDamageHelper"] {
+        // (p1w11-sonnet: `SubdualDamageHelper` and `ObjectDefectionHelper` are real modules now)
+        for class in [&b"ObjectSMCHelper"[..], b"StatusDamageHelper", b"SubdualDamageHelper", b"ObjectDefectionHelper"] {
             let idx = w.find_module(id, class).unwrap();
             assert!(o.modules[idx as usize].update_index.is_some(), "{}", String::from_utf8_lossy(class));
             assert_eq!(next_call(&w, id, class), UPDATE_SLEEP_FOREVER.0, "asleep: {}", String::from_utf8_lossy(class));
         }
-        let idx = w.find_module(id, b"SubdualDamageHelper").unwrap();
-        assert!(o.modules[idx as usize].update_index.is_none(), "not translated yet: a stand-in");
+        // `FiringTracker` is the one helper no layer has translated yet: a stand-in
+        let armed = make_armed(&mut w);
+        let idx = w.find_module(armed, b"FiringTracker").unwrap();
+        assert!(w.objects.find(armed).unwrap().modules[idx as usize].update_index.is_none(), "not translated yet: a stand-in");
         // the ablation is explicit
         let mut w = base_world();
         w.cuts.stub_helpers = true;

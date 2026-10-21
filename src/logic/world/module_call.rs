@@ -312,6 +312,12 @@ pub enum ModuleCall {
     GetSpecialPowerTemplateId,
     /// `SpecialPowerCompletionDie::setCreator(creatorID)` (the object creation list, on the die `findSpecialPowerCompletionDie` finds).
     SetCreator { creator: ObjectId },
+    /// `getSubdualDamageHealRate()` of the body; replies [`ModuleReply::Int`] (`SubdualDamageHelper`).
+    GetSubdualDamageHealRate,
+    /// `getSubdualDamageHealAmount()` of the body; replies [`ModuleReply::Real`].
+    GetSubdualDamageHealAmount,
+    /// `hasAnySubdualDamage()` of the body; replies [`ModuleReply::Bool`].
+    HasAnySubdualDamage,
     // --- end p1w11-sonnet ---
 }
 

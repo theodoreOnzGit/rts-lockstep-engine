@@ -866,6 +866,14 @@ crate for the rest of the process (upstream's `AutoDepositUpdate::getUpgradedSup
 (`cuts.money_crate_upgrade_static`) and the C++ side turns the `static` into a resettable global with a mechanical edit in `build.rs`. Left among the
 crates: `UnitCrateCollide` (needs `findPositionAround`), `VeterancyCrateCollide`, `SalvageCrateCollide`, `ConvertToCarBombCrateCollide`,
 `ConvertToHijackedVehicleCrateCollide` and the eight `Sabotage*`.
+**Layer-9 helper batch G (2026-10-21, `p1w11-sonnet`).** `SubdualDamageHelper` and `ObjectDefectionHelper` (`modules/*_helper.rs` over
+`modules/update_behavior.rs`), made by `World::make_helper_module` in place of the stand-ins, with `tests/differential_helper_modules_g.rs` against the two
+unchanged `.cpp` files (`differential/l9_helpers_g.inc`): 9,000 cases, 95,416 dump lines (77,416 ops), 0 mismatches; 9 planted bugs (`L9_PLANT`
+781-784, 791-795), all caught. **Defect found and fixed in the same change:** ~~the scheduler reads `getDisabledTypesToProcess()` from the module
+in its arena~~ **CORRECTED 2026-10-21** - that is the `UpdateModule` base, whose answer was always `DISABLEDMASK_NONE`, so the concrete classes'
+overrides (`StatusDamageHelper`, `TempWeaponBonusHelper`: all types; `BaseRegenerateUpdate`: `DISABLED_UNDERPOWERED`) were never in force and those
+modules did not run on a disabled object (`UpdateModule::set_disabled_types_to_process`, set when the concrete module is made; pinned by
+`object_tests::a_helper_that_processes_every_disabled_type_runs_on_a_disabled_object`). The one helper left a stand-in: `FiringTracker`.
 **Layer-9 helper and die batch verified (2026-10-21, `p1w10-sonnet`).** ~~The helpers and dies of `p1l9-helpers` (`ObjectHelper`,
 `ObjectSMCHelper`, `ObjectRepulsorHelper`, `ObjectWeaponStatusHelper`, `StatusDamageHelper`, `TempWeaponBonusHelper`,
 `DestroyDie`, `KeepObjectDie`, `UpgradeDie`) are pure functions returning effects.~~ **CORRECTED 2026-10-21** - the drafts were

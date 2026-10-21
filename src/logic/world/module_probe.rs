@@ -77,6 +77,14 @@ pub struct ProbeAnswers {
     pub countermeasure: ObjectId,
     /// A collide call sets `OBJECT_STATUS_NO_COLLISIONS` on the module's object.
     pub collide_sets_no_collisions: bool,
+    // --- p1w11-sonnet ---
+    /// `getSubdualDamageHealRate()` of the body.
+    pub subdual_rate: u32,
+    /// `getSubdualDamageHealAmount()` of the body.
+    pub subdual_amount: f32,
+    /// `hasAnySubdualDamage()` of the body.
+    pub subdual_has: bool,
+    // --- end p1w11-sonnet ---
     // --- p1w7-sonnet ---
     /// `isClearToApproach`.
     pub clear_to_approach: bool,
@@ -159,6 +167,9 @@ impl ProbeModule {
             // ---- the ones with an answer ----
             ModuleCall::IsSalvageCrateCollide => ModuleReply::Bool(self.answers.salvage),
             // --- p1w11-sonnet ---
+            ModuleCall::GetSubdualDamageHealRate => ModuleReply::Int(self.answers.subdual_rate as i32),
+            ModuleCall::GetSubdualDamageHealAmount => ModuleReply::Real(self.answers.subdual_amount),
+            ModuleCall::HasAnySubdualDamage => ModuleReply::Bool(self.answers.subdual_has),
             ModuleCall::WouldLikeToCollideWith { .. }
             | ModuleCall::IsRailroad
             | ModuleCall::IsCarBombCrateCollide
@@ -230,6 +241,20 @@ impl ProbeModule {
                 ModuleReply::Done
             }
             ModuleCall::LoadPostProcess | ModuleCall::SetCreator { .. } => ModuleReply::Done,
+            // --- end p1w11-sonnet ---
+            // --- p1w11-sonnet --- (the subdual helper's test: the body only logs the subdual damage it is given, when `probe_effect_trace` asks)
+            ModuleCall::AttemptDamage(info) if world.cuts.probe_effect_trace && info.input.damage_type == crate::logic::damage::DAMAGE_SUBDUAL_UNRESISTABLE => {
+                if let Some(t) = &mut world.cuts.trace {
+                    t.push(format!(
+                        "attemptdamage {} {} {} {}",
+                        info.input.damage_type,
+                        info.input.amount.to_bits(),
+                        info.input.source_id as i32,
+                        info.input.death_type as i32
+                    ));
+                }
+                ModuleReply::Damage(info)
+            }
             // --- end p1w11-sonnet ---
             ModuleCall::AttemptDamage(mut info) => {
                 // ActiveBody in miniature: the damage taken, then death once.

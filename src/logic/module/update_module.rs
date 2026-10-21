@@ -182,6 +182,11 @@ pub struct UpdateModule {
     index_in_logic: i32,
     /// What `getUpdatePhase()` returns for the concrete class.
     update_phase: SleepyUpdatePhase,
+    // --- p1w11-sonnet ---
+    /// What `getDisabledTypesToProcess()` returns for the concrete class (the base's is `DISABLEDMASK_NONE`). The scheduler reads the
+    /// module in its arena, which is this base, so the concrete class that overrides the virtual sets it here when it is made.
+    disabled_types_to_process: DisabledMaskType,
+    // --- end p1w11-sonnet ---
 }
 
 impl UpdateModule {
@@ -192,7 +197,7 @@ impl UpdateModule {
     pub fn new(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>, update_phase: SleepyUpdatePhase) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let behavior = BehaviorModule::new(object, Some(ModuleDataKind::Update(data.clone())))?;
-        Ok(UpdateModule { behavior, data, next_call_frame_and_phase: 0, index_in_logic: -1, update_phase })
+        Ok(UpdateModule { behavior, data, next_call_frame_and_phase: 0, index_in_logic: -1, update_phase, disabled_types_to_process: DisabledMaskType::NONE })
     }
 
     /// `UpdateModule::getInterfaceMask()`: `MODULEINTERFACE_UPDATE`.
@@ -218,8 +223,15 @@ impl UpdateModule {
     /// `getDisabledTypesToProcess()`: `DISABLEDMASK_NONE` (the concrete
     /// modules that run while disabled redefine it).
     pub fn get_disabled_types_to_process(&self) -> DisabledMaskType {
-        DisabledMaskType::NONE
+        self.disabled_types_to_process
     }
+
+    // --- p1w11-sonnet ---
+    /// The concrete class's override of `getDisabledTypesToProcess()` (`StatusDamageHelper`: `DISABLEDMASK_ALL`).
+    pub fn set_disabled_types_to_process(&mut self, mask: DisabledMaskType) {
+        self.disabled_types_to_process = mask;
+    }
+    // --- end p1w11-sonnet ---
 
     /// `friend_getPriority()`: the whole `m_nextCallFrameAndPhase`, which is
     /// what the scheduler sorts by.

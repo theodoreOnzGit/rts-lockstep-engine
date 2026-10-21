@@ -61,7 +61,8 @@ impl StatusDamageHelper {
 
     /// The first half of the constructor, which touches no world: no status, frame 0.
     pub fn unconstructed(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>) -> IniResult<Self> {
-        let helper = ObjectHelper::unconstructed(object, module_data, SleepyUpdatePhase::Normal)?;
+        let mut helper = ObjectHelper::unconstructed(object, module_data, SleepyUpdatePhase::Normal)?;
+        helper.update_module_mut().set_disabled_types_to_process(disabledmask_all()); // p1w11-sonnet: the scheduler reads the arena's base
         Ok(StatusDamageHelper { helper, status_to_heal: OBJECT_STATUS_NONE, frame_to_heal: 0 })
     }
 

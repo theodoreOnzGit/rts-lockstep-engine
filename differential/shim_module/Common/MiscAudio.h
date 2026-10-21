@@ -14,5 +14,7 @@ public:
 	AudioEventRTS m_crateMoney;
 	AudioEventRTS m_sabotageShutDownBuilding;
 	AudioEventRTS m_sabotageResetTimerBuilding;
+	AudioEventRTS m_defectorTimerTickSound;
+	AudioEventRTS m_defectorTimerDingSound;
 };
 #endif

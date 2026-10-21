@@ -219,6 +219,8 @@ pub enum Undefined {
     UnknownPickupScience,
     /// `parseUpgradePair`: `stricmp(token, "Boost")` of a `NULL` token (the line ended after the upgrade's name).
     NullTokenCompared,
+    /// `SubdualDamageHelper::update`: `getObject()->getBodyModule()` is `NULL` and the helper calls through it.
+    NullBodyModule,
     // --- end p1w11-sonnet ---
     // --- p1l9-upgrades ---
     /// `ArmorUpgrade`: a triggered chemical-suits upgrade on an object with no

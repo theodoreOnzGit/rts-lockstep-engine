@@ -30,6 +30,8 @@ use crate::logic::world::update_body::UpdateBody;
 
 pub mod crate_collide;
 pub mod upgrade_pair;
+pub mod subdual_damage_helper;
+pub mod object_defection_helper;
 pub mod update_behavior;
 pub mod upgrade_body;
 

@@ -35,7 +35,7 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	void showSubObject(const AsciiString &name, Bool show); void updateSubObjects();
 	/* --- p1w11-sonnet --- (PowerPlantUpdate, RadarUpdate: l9_updates_e.inc) */
 	void clearModelConditionFlags(const ModelConditionFlags &clr); void clearAndSetModelConditionState(ModelConditionFlagType clr, ModelConditionFlagType set);
-	void flashAsSelected(const void *color = 0);   /* the crates' sabotage feedback */
+	void flashAsSelected(const RGBColor *color = 0);   /* the crates' sabotage feedback */
 	/* --- end p1w11-sonnet --- */ };
 /* --- end p1w10-sonnet --- */
 #endif

@@ -164,6 +164,10 @@ pub enum UpdateBody {
     ShroudCrateCollide(crate::logic::modules::shroud_crate_collide::ShroudCrateCollide),
     /// `MoneyCrateCollide`.
     MoneyCrateCollide(crate::logic::modules::money_crate_collide::MoneyCrateCollide),
+    /// `SubdualDamageHelper`.
+    SubdualDamageHelper(crate::logic::modules::subdual_damage_helper::SubdualDamageHelper),
+    /// `ObjectDefectionHelper`.
+    ObjectDefectionHelper(crate::logic::modules::object_defection_helper::ObjectDefectionHelper),
     // --- end p1w11-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -234,6 +238,8 @@ impl UpdateBody {
             UpdateBody::HealCrateCollide(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::ShroudCrateCollide(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::MoneyCrateCollide(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::SubdualDamageHelper(m) => m.world_update(world, me),
+            UpdateBody::ObjectDefectionHelper(m) => m.world_update(world, me),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -304,6 +310,8 @@ impl UpdateBody {
             UpdateBody::HealCrateCollide(m) => m.module_call(world, me, call),
             UpdateBody::ShroudCrateCollide(m) => m.module_call(world, me, call),
             UpdateBody::MoneyCrateCollide(m) => m.module_call(world, me, call),
+            UpdateBody::SubdualDamageHelper(m) => m.module_call(world, me, call),
+            UpdateBody::ObjectDefectionHelper(m) => m.module_call(world, me, call),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -376,6 +384,8 @@ impl UpdateBody {
 // --- p1w11-sonnet ---
             UpdateBody::PowerPlantUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::RadarUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::SubdualDamageHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::ObjectDefectionHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
 // --- end p1w11-sonnet ---
             _ => self.xfer(xfer),
         }
@@ -430,6 +440,8 @@ impl UpdateBody {
 // --- p1w11-sonnet ---
             UpdateBody::PowerPlantUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::RadarUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::SubdualDamageHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::ObjectDefectionHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
 // --- end p1w11-sonnet ---
             _ => self.crc(xfer),
         }
@@ -484,6 +496,8 @@ impl UpdateBody {
 // --- p1w11-sonnet ---
             UpdateBody::PowerPlantUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::RadarUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::SubdualDamageHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::ObjectDefectionHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
 // --- end p1w11-sonnet ---
             _ => self.load_post_process(),
         }
@@ -554,6 +568,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::HealCrateCollide(m) => m.crc(xfer),
             UpdateBody::ShroudCrateCollide(m) => m.crc(xfer),
             UpdateBody::MoneyCrateCollide(m) => m.crc(xfer),
+            UpdateBody::SubdualDamageHelper(m) => m.crc(xfer),
+            UpdateBody::ObjectDefectionHelper(m) => m.crc(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -620,6 +636,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::HealCrateCollide(m) => m.xfer(xfer),
             UpdateBody::ShroudCrateCollide(m) => m.xfer(xfer),
             UpdateBody::MoneyCrateCollide(m) => m.xfer(xfer),
+            UpdateBody::SubdualDamageHelper(m) => m.xfer(xfer),
+            UpdateBody::ObjectDefectionHelper(m) => m.xfer(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -686,6 +704,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::HealCrateCollide(m) => m.load_post_process(),
             UpdateBody::ShroudCrateCollide(m) => m.load_post_process(),
             UpdateBody::MoneyCrateCollide(m) => m.load_post_process(),
+            UpdateBody::SubdualDamageHelper(m) => m.load_post_process(),
+            UpdateBody::ObjectDefectionHelper(m) => m.load_post_process(),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -837,6 +857,8 @@ impl UpdateBody {
 // --- p1w11-sonnet ---
             UpdateBody::PowerPlantUpdate(m) => m.world_construct(world, me),
             UpdateBody::RadarUpdate(m) => m.world_construct(world, me),
+            UpdateBody::SubdualDamageHelper(m) => m.world_construct(world, me),
+            UpdateBody::ObjectDefectionHelper(m) => m.world_construct(world, me),
 // --- end p1w11-sonnet ---
             _ => {}
         }

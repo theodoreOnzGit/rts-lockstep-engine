@@ -34,7 +34,11 @@ void cfDestroyHook(Object *obj) { ulog("destroy %d", (int)obj->m_oid); }
 }  // namespace
 
 Bool Object::isNeutralControlled() const { return m_player && m_player->m_idx == 0; }
-void Drawable::flashAsSelected(const void *) { ulog("flash"); }
+void Drawable::flashAsSelected(const RGBColor *color)
+{
+	if (color) ulog("flashcolor %u,%u,%u", realBits(color->red), realBits(color->green), realBits(color->blue));
+	else ulog("flash");
+}
 void Player::healAllObjects() { ulog("heal %d", (int)m_idx); }
 void Money::deposit(UnsignedInt amountToDeposit, Bool playSound) { ulog("deposit %d %u %d", (int)m_idx, amountToDeposit, (int)playSound); }
 void ScoreKeeper::addMoneyEarned(Int money) { ulog("earned %d %d", (int)m_idx, (int)money); }

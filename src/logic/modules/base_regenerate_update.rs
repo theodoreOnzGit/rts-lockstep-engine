@@ -130,7 +130,11 @@ impl BaseRegenerateUpdate {
     pub fn unconstructed(object: ObjectId, module_data: Option<Arc<BaseRegenerateUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
-        let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
+        let mut update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
+        // p1w11-sonnet: `getDisabledTypesToProcess()` is `MAKE_DISABLED_MASK(DISABLED_UNDERPOWERED)`; the scheduler reads the arena's base
+        let mut mask = crate::common::disabled_types::DisabledMaskType::new();
+        mask.set(crate::common::disabled_types::DISABLED_UNDERPOWERED, 1);
+        update.set_disabled_types_to_process(mask);
         Ok(BaseRegenerateUpdate { update, data })
     }
 

@@ -49,6 +49,8 @@ pub enum ObjectSound {
     CrateShroud,
     /// `MiscAudio::m_crateMoney` (`MoneyCrateCollide`).
     CrateMoney,
+    /// `MiscAudio::m_defectorTimerDingSound` (`ObjectDefectionHelper`, when the period ends).
+    DefectorTimerDing,
     // --- end p1w11-sonnet ---
 }
 
@@ -141,6 +143,10 @@ pub enum ObjectClientEvent {
     DrawableSetHidden { object_id: ObjectId, hidden: bool },
     /// `m_drawable->flashAsSelected()`.
     DrawableFlashAsSelected { object_id: ObjectId },
+    // --- p1w11-sonnet ---
+    /// `draw->flashAsSelected(&color)` (`ObjectDefectionHelper`'s white flash when the period ends).
+    DrawableFlashAsSelectedColor { object_id: ObjectId, r: f32, g: f32, b: f32 },
+    // --- end p1w11-sonnet ---
     /// `draw->setID(drawableID)` (`Object::xfer` on a load): the drawable of
     /// this object takes the id it had when it was saved.
     DrawableSetId { object_id: ObjectId, drawable_id: i32 },

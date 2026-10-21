@@ -1298,6 +1298,17 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    // the helpers of batch G on stand-ins (l9_helpers_g.inc in wrap_module.cpp)
+    pub fn ref_l9hg_run(
+        kind: c_int,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+    ) -> c_int;
     // the crate modules of batch F on stand-ins (l9_crates_f.inc in wrap_module.cpp)
     pub fn ref_l9cf_run(
         kind: c_int,

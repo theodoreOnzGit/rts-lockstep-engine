@@ -144,6 +144,10 @@ public:
 	Bool isEffectivelyDead() const { return m_effDead; }
 	Bool isAboveTerrain() const { return m_pos.z > 0; }   /* the test's terrain is flat at zero */
 	Bool m_effDead = false;
+	/* helper batch G: the defector flag ObjectDefectionHelper reads and clears */
+	Bool getIsUndetectedDefector(void) const { return m_undetected; }
+	void friend_setUndetectedDefector(Bool status) { m_undetected = status != 0; }
+	Bool m_undetected = false;
 	Object *m_next;
 	Coord3D m_pos;
 	unsigned m_disabledBits;
