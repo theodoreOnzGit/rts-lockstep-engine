@@ -109,6 +109,7 @@ pub mod ocl_update;
 // --- p1w13-sonnet ---
 pub mod height_die_update;
 pub mod dynamic_shroud_clearing_range_update;
+pub mod squish_collide;
 // --- end p1w13-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -388,6 +389,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
             UpdateModule::get_interface_mask(),
             dynamic_shroud_clearing_range_update::DynamicShroudClearingRangeUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::DynamicShroudClearingRangeUpdate(m))),
         )),
+        ModuleDataKind::Collide(d) => match name {
+            b"SquishCollide" => Some(made(crate::logic::module::collide_module::CollideModule::get_interface_mask(), squish_collide::SquishCollide::new(object, Some(d.clone())).map(UpdateBody::SquishCollide))),
+            _ => None,
+        },
         // --- end p1w13-sonnet ---
         _ => None,
     }

@@ -246,6 +246,14 @@ pub enum ModuleCall {
     /// `FireSpreadUpdate::startFireSpreading()` (`FlammableUpdate`).
     StartFireSpreading,
     // --- end p1w12-sonnet ---
+    // --- p1w13-sonnet ---
+    /// `AIUpdateInterface::getGoalObject()`; replies [`ModuleReply::Id`] (`INVALID_ID` for `NULL`).
+    AiGetGoalObject,
+    /// `SpecialAbilityUpdate::isActive()`; replies [`ModuleReply::Bool`].
+    SpecialAbilityIsActive,
+    /// `PhysicsBehavior::getVelocity()`; replies [`ModuleReply::Coord`].
+    PhysicsGetVelocity,
+    // --- end p1w13-sonnet ---
     /// `ToppleUpdate::isAbleToBeToppled()`; replies [`ModuleReply::Bool`].
     IsAbleToBeToppled,
     /// `ToppleUpdate::applyTopplingForce(direction, speed, options)`.
@@ -388,6 +396,10 @@ pub enum ModuleReply {
     Ids(Vec<ObjectId>),
     /// The `DamageInfo` after the call.
     Damage(DamageInfo),
+    // --- p1w13-sonnet ---
+    /// A `Coord3D` (a velocity).
+    Coord(Coord3D),
+    // --- end p1w13-sonnet ---
 }
 
 impl ModuleReply {
@@ -409,6 +421,14 @@ impl ModuleReply {
         match self {
             ModuleReply::Id(i) => *i,
             _ => crate::common::game_type::INVALID_ID,
+        }
+    }
+
+    /// The answer as a `Coord3D`, the zero vector for anything else.
+    pub fn as_coord(&self) -> Coord3D {
+        match self {
+            ModuleReply::Coord(c) => *c,
+            _ => Coord3D { x: 0.0, y: 0.0, z: 0.0 },
         }
     }
 

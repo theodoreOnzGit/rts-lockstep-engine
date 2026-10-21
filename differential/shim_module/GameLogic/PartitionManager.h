@@ -44,6 +44,7 @@ public:
 /* --- end p1w12-sonnet --- */
 /* --- p1w13-sonnet --- (update batch O: HeightDieUpdate's scan for structures under it) */
 #include "Common/KindOf.h"
+#include "Common/Geometry.h"
 class PartitionFilterAcceptByKindOf : public PartitionFilter
 {
 public:
@@ -58,6 +59,7 @@ public:
 	SimpleObjectIterator *iterateObjectsInRange( const Coord3D *pos, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = 0, IterOrderType order = ITER_FASTEST );
 	/* --- end p1w12-sonnet --- */
 	/* --- p1w13-sonnet --- */
+	Bool geomCollidesWithGeom(const Coord3D* pos1, const GeometryInfo& geom1, Real angle1, const Coord3D* pos2, const GeometryInfo& geom2, Real angle2) const;
 	SimpleObjectIterator *iterateObjectsInRange( const Object *obj, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = 0, IterOrderType order = ITER_FASTEST );
 	/* --- end p1w13-sonnet --- */
 };

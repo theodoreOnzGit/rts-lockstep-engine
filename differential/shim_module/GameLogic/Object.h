@@ -61,6 +61,9 @@ class Team;
 /* --- end p1w12-sonnet --- */
 /* --- p1w13-sonnet --- */
 #include "GameLogic/Damage.h"
+#include "Common/SpecialPowerType.h"
+class PhysicsBehavior;
+class SpecialAbilityUpdate;
 /* --- end p1w13-sonnet --- */
 /* --- p1w12-sonnet --- (Common/STLTypedefs.h lines 88-89, verbatim) */
 #include <list>
@@ -205,6 +208,16 @@ public:
 	const Object *getContainedBy() const { return m_containedBy; }
 	void kill( DamageType damageType = DAMAGE_UNRESISTABLE, DeathType deathType = DEATH_NORMAL );
 	Object *m_containedBy = 0;
+	/* update batch O: SquishCollide (differential/l9_squish_collide_o.inc) */
+	AIUpdateInterface *getAI() const { return m_ai; }
+	UnsignedByte getCrusherLevel() const { return m_crusher; }
+	PhysicsBehavior *getPhysics() const { return m_physics; }
+	SpecialAbilityUpdate *findSpecialAbilityUpdate( SpecialPowerType type ) const { return (m_sauType == type) ? m_sau : 0; }
+	Relationship getRelationship( const Object *that ) const;   /* Object.cpp, cut by build.rs (mod_gen/ObjectRelationship.inc) */
+	UnsignedByte m_crusher = 0;
+	PhysicsBehavior *m_physics = 0;
+	SpecialAbilityUpdate *m_sau = 0;
+	int m_sauType = -1;
 	/* DynamicShroudClearingRangeUpdate reads the range that setShroudClearingRange (l9_powers_h.inc) writes */
 	Real getShroudClearingRange() const { return m_shroudRange; }
 	/* --- end p1w13-sonnet --- */

@@ -23,6 +23,7 @@
 //! - as a **collide** module it can set `OBJECT_STATUS_NO_COLLISIONS` on its
 //!   object ("check each time thru the loop, in case a collide module sets it").
 
+use crate::common::base_type::Coord3D;
 use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::object_status_types::OBJECT_STATUS_NO_COLLISIONS;
 use crate::common::upgrade::UpgradeMaskType;
@@ -91,6 +92,12 @@ pub struct ProbeAnswers {
     /// `initiateIntentToDoSpecialPower(...)`: whether the update takes the intent.
     pub spu_take: bool,
     // --- end p1w11-sonnet ---
+    // --- p1w13-sonnet ---
+    /// `getGoalObject()` of the AI (`INVALID_ID`: none).
+    pub goal_object: ObjectId,
+    /// `getVelocity()` of the physics.
+    pub velocity: Coord3D,
+    // --- end p1w13-sonnet ---
     // --- p1w7-sonnet ---
     /// `isClearToApproach`.
     pub clear_to_approach: bool,
@@ -328,6 +335,10 @@ impl ProbeModule {
                 }
                 ModuleReply::Damage(info)
             }
+            // --- p1w13-sonnet ---
+            ModuleCall::AiGetGoalObject => ModuleReply::Id(self.answers.goal_object),
+            ModuleCall::PhysicsGetVelocity => ModuleReply::Coord(self.answers.velocity),
+            // --- end p1w13-sonnet ---
             // --- p1w12-sonnet --- (FlammableUpdate's test: the body's setAflame is a line of the trace, when `probe_effect_trace` asks)
             ModuleCall::StartFireSpreading => {
                 if world.cuts.probe_effect_trace {
@@ -428,6 +439,7 @@ impl ProbeModule {
             | ModuleCall::IsOverchargeActive
             | ModuleCall::IsAbleToBeToppled
             | ModuleCall::WouldIgnite // p1w12-sonnet
+            | ModuleCall::SpecialAbilityIsActive // p1w13-sonnet
             | ModuleCall::CountermeasuresIsActive => ModuleReply::Bool(self.answers.yes),
             ModuleCall::CalculateCountermeasureToDivertTo { .. } => ModuleReply::Id(self.answers.countermeasure),
             ModuleCall::DoesSpecialPowerHaveOverridableDestinationActive | ModuleCall::DoesSpecialPowerHaveOverridableDestination => {

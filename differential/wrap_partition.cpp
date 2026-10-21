@@ -1063,4 +1063,14 @@ int ref_partition_run(const int *ig, const float *fg, const unsigned char *rel, 
 	return n;
 }
 
+/* --- p1w13-sonnet --- */
+/* PartitionManager::geomCollidesWithGeom (PartitionManager.cpp, unchanged) for the module build's stand-in manager (update batch O: SquishCollide). It reads
+** no member of the manager, only the static collide procedures. */
+int ref_partition_geom_collides(const Coord3D *p1, const GeometryInfo *g1, float a1, const Coord3D *p2, const GeometryInfo *g2, float a2)
+{
+	static PartitionManager *pm = new PartitionManager;
+	return pm->geomCollidesWithGeom(p1, *g1, a1, p2, *g2, a2) ? 1 : 0;
+}
+/* --- end p1w13-sonnet --- */
+
 }	/* extern "C" */

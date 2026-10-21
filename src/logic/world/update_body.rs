@@ -204,6 +204,8 @@ pub enum UpdateBody {
     HeightDieUpdate(crate::logic::modules::height_die_update::HeightDieUpdate),
     /// `DynamicShroudClearingRangeUpdate`.
     DynamicShroudClearingRangeUpdate(crate::logic::modules::dynamic_shroud_clearing_range_update::DynamicShroudClearingRangeUpdate),
+    /// `SquishCollide`.
+    SquishCollide(crate::logic::modules::squish_collide::SquishCollide),
     // --- end p1w13-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -296,6 +298,7 @@ impl UpdateBody {
 // --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.world_update(world, me),
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.world_update(world, me),
+            UpdateBody::SquishCollide(_) => UPDATE_SLEEP_FOREVER,
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -388,6 +391,7 @@ impl UpdateBody {
 // --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.module_call(world, me, call),
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::SquishCollide(m) => m.module_call(world, me, call),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -705,6 +709,7 @@ impl Snapshot for UpdateBody {
 // --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.crc(xfer),
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.crc(xfer),
+            UpdateBody::SquishCollide(m) => m.crc(xfer),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -793,6 +798,7 @@ impl Snapshot for UpdateBody {
 // --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.xfer(xfer),
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.xfer(xfer),
+            UpdateBody::SquishCollide(m) => m.xfer(xfer),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -881,6 +887,7 @@ impl Snapshot for UpdateBody {
 // --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.load_post_process(),
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.load_post_process(),
+            UpdateBody::SquishCollide(m) => m.load_post_process(),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }

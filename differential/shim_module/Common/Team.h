@@ -2,5 +2,10 @@
 ** pointer the test numbers (the real header needs the whole team and object layer). */
 #ifndef SHIM_MODULE_TEAM_H
 #define SHIM_MODULE_TEAM_H
-class Team { public: int m_dummy; };
+#include "Common/GameCommon.h"
+class Team { public: int m_dummy;
+	/* --- p1w13-sonnet --- (update batch O: Object::getRelationship, cut from Object.cpp by build.rs, asks it; differential/l9_squish_collide_o.inc) */
+	Relationship getRelationship(const Team *that) const;
+	/* --- end p1w13-sonnet --- */
+};
 #endif
