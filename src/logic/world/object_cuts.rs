@@ -108,6 +108,15 @@ pub enum CutCall {
     /// `adjustModelConditionForWeaponStatus()` (`ObjectWeaponStatusHelper::update`, every frame of an object that can have a
     /// weapon): the weapon half of the object is layer 12's.
     AdjustModelConditionForWeaponStatus { object: ObjectId },
+    /// `ai->setLocomotorUpgrade(true)` (`LocomotorSetUpgrade`).
+    AiSetLocomotorUpgrade { object: ObjectId },
+    /// `contain->setPassengerAllowedToFire(TRUE)` (`PassengersFireUpgrade`).
+    ContainSetPassengerAllowedToFire { object: ObjectId },
+    /// `spawnBehavior->giveSlavesStealthUpgrade(TRUE)` (`StealthUpgrade`).
+    SpawnGiveSlavesStealthUpgrade { object: ObjectId },
+    /// `ObjectCreationList::create(ocl, obj, NULL)` for the list named `ocl` (`ObjectCreationUpgrade`); `OclHost` answers it, and a name that is
+    /// no list makes nothing (upstream's pointer was `NULL`).
+    OclCreate { object: ObjectId, ocl: Vec<u8> },
     // --- end p1w10-sonnet ---
     // ---- Team ----
     /// `team->notifyTeamOfObjectDeath()`.

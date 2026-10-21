@@ -3,6 +3,7 @@
 ** nothing from it. Renamed by the wrapper's macros (module_prelude.h). */
 #ifndef SHIM_MODULE_DRAWABLE_H
 #define SHIM_MODULE_DRAWABLE_H
+#include "Common/AsciiString.h"
 /* --- p1w10-sonnet --- (ArmorUpgrade sets the chemical-suit terrain decal; TerrainDecalType is GameClient/Drawable.h lines 257-275 with
 ** ALLOW_DEMORALIZE undefined, as the shipped game) */
 enum TerrainDecalType
@@ -29,6 +30,8 @@ enum TintStatus
 	TINT_STATUS_FRENZY			= 0x00000010,
 };
 class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModelConditionState(ModelConditionFlagType a);
-	void setTintStatus(TintStatus statusBits); void clearTintStatus(TintStatus statusBits); };
+	void setTintStatus(TintStatus statusBits); void clearTintStatus(TintStatus statusBits);
+	/* SubObjectsUpgrade (batch B) */
+	void showSubObject(const AsciiString &name, Bool show); void updateSubObjects(); };
 /* --- end p1w10-sonnet --- */
 #endif

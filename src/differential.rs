@@ -1215,5 +1215,22 @@ extern "C" {
     pub fn ref_ocl_reset(preload_assets: c_int);
     pub fn ref_ocl_dump(out: *mut c_char, cap: c_int) -> c_int;
     pub fn ref_ocl_run(words: *const c_uint, n: c_int, out: *mut c_char, cap: c_int) -> c_int;
+    // the upgrade modules of batch B on stand-ins (l9_upgrades_b.inc in wrap_module.cpp)
+    pub fn ref_l9upb_run(
+        kind: c_int,
+        filename: *const c_char,
+        has_player: c_int,
+        player_mask: *const c_uint,
+        obj_mask: *const c_uint,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
 }
 // --- end p1w10-sonnet ---

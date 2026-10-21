@@ -43,13 +43,17 @@ static const ModelConditionFlagType TheWeaponSetTypeToModelConditionTypeMap[WEAP
 	/*WEAPONSET_RIDER8*/								MODELCONDITION_RIDER8,
 };
 class BodyModuleInterface;
+class AIUpdateInterface;
+class ContainModuleInterface;
+class SpawnBehaviorInterface;
+#include "Common/KindOf.h"
 class Drawable;
 class ExperienceTracker;
 /* --- end p1w10-sonnet --- */
 class Object : public Thing
 {
 public:
-	Object() : m_level(LEVEL_REGULAR), m_player(0), m_body(0), m_drawable(0), m_xp(0), m_weaponBonusCondition(0), m_shroudRange(0), m_producerID((ObjectID)0) { m_weaponSetFlags[0] = m_weaponSetFlags[1] = 0; }
+	Object() : m_level(LEVEL_REGULAR), m_player(0), m_body(0), m_drawable(0), m_xp(0), m_weaponBonusCondition(0), m_shroudRange(0), m_producerID((ObjectID)0), m_ai(0), m_contain(0), m_spawn(0) { m_weaponSetFlags[0] = m_weaponSetFlags[1] = 0; }
 	VeterancyLevel getVeterancyLevel() const { return m_level; }
 	const ObjectStatusMaskType &getStatusBits() const { return m_status; }
 	void removeUpgrade(const UpgradeTemplate *t);
@@ -91,6 +95,17 @@ public:
 	ObjectID getProducerID() const { return m_producerID; }
 	Bool hasUpgrade(const UpgradeTemplate *upgradeT) const;   /* Object.cpp:4456, in l9_helpers.inc */
 	ObjectID m_producerID;
+	/* --- end p1w10-sonnet --- */
+	/* --- p1w10-sonnet --- (the layer-9 upgrade batch B: what StatusBitsUpgrade, LocomotorSetUpgrade, PassengersFireUpgrade, StealthUpgrade,
+	** SubObjectsUpgrade and ObjectCreationUpgrade call on their object; the modules the object "has" are the test's) */
+	AIUpdateInterface *getAIUpdateInterface() const { return m_ai; }
+	ContainModuleInterface *getContain() const { return m_contain; }
+	SpawnBehaviorInterface *getSpawnBehaviorInterface() const { return m_spawn; }
+	Bool isKindOf(KindOfType t) const { return m_kindOf.test(t); }
+	AIUpdateInterface *m_ai;
+	ContainModuleInterface *m_contain;
+	SpawnBehaviorInterface *m_spawn;
+	KindOfMaskType m_kindOf;
 	/* --- end p1w10-sonnet --- */
 protected:
 	virtual Object *asObjectMeth() { return this; }

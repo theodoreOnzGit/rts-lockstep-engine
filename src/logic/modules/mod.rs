@@ -59,6 +59,12 @@ pub mod veterancy_gain_create;
 
 // --- p1w10-sonnet ---
 pub mod deliver_payload_data;
+pub mod status_bits_upgrade;
+pub mod locomotor_set_upgrade;
+pub mod passengers_fire_upgrade;
+pub mod stealth_upgrade;
+pub mod sub_objects_upgrade;
+pub mod object_creation_upgrade;
 // --- end p1w10-sonnet ---
 
 /// The module for one module line of an object's template: the concrete
@@ -137,6 +143,32 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
             grant_science_upgrade::GrantScienceUpgrade::new(object, Some(d.clone())).map(UpdateBody::GrantScienceUpgrade),
         )),
         // --- end p1l9-upgrades ---
+        // --- p1w10-sonnet ---
+        ModuleDataKind::StatusBitsUpgrade(d) => Some(made(
+            status_bits_upgrade::StatusBitsUpgrade::get_interface_mask(),
+            status_bits_upgrade::StatusBitsUpgrade::new(object, Some(d.clone())).map(UpdateBody::StatusBitsUpgrade),
+        )),
+        ModuleDataKind::LocomotorSetUpgrade(d) => Some(made(
+            locomotor_set_upgrade::LocomotorSetUpgrade::get_interface_mask(),
+            locomotor_set_upgrade::LocomotorSetUpgrade::new(object, Some(d.clone())).map(UpdateBody::LocomotorSetUpgrade),
+        )),
+        ModuleDataKind::PassengersFireUpgrade(d) => Some(made(
+            passengers_fire_upgrade::PassengersFireUpgrade::get_interface_mask(),
+            passengers_fire_upgrade::PassengersFireUpgrade::new(object, Some(d.clone())).map(UpdateBody::PassengersFireUpgrade),
+        )),
+        ModuleDataKind::StealthUpgrade(d) => Some(made(
+            stealth_upgrade::StealthUpgrade::get_interface_mask(),
+            stealth_upgrade::StealthUpgrade::new(object, Some(d.clone())).map(UpdateBody::StealthUpgrade),
+        )),
+        ModuleDataKind::SubObjectsUpgrade(d) => Some(made(
+            sub_objects_upgrade::SubObjectsUpgrade::get_interface_mask(),
+            sub_objects_upgrade::SubObjectsUpgrade::new(object, Some(d.clone())).map(UpdateBody::SubObjectsUpgrade),
+        )),
+        ModuleDataKind::ObjectCreationUpgrade(d) => Some(made(
+            object_creation_upgrade::ObjectCreationUpgrade::get_interface_mask(),
+            object_creation_upgrade::ObjectCreationUpgrade::new(object, Some(d.clone())).map(UpdateBody::ObjectCreationUpgrade),
+        )),
+        // --- end p1w10-sonnet ---
         // --- p1w10-sonnet ---
         ModuleDataKind::GrantUpgradeCreate(d) => Some(made(
             CreateModule::get_interface_mask(),

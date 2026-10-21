@@ -99,7 +99,7 @@ WEAK const FXList *FXListStore::findFXList(const char *) const { abort(); }
 const Image *ImageCollection::findImageByName(const AsciiString &) { abort(); }
 WEAK ParticleSystemTemplate *ParticleSystemManager::findTemplate(const AsciiString &) const { abort(); } /* p1w7-sonnet: WEAK, Weapon tests define the lookup */
 WEAK const ArmorTemplate *ArmorStore::findArmorTemplate(AsciiString) const { abort(); }
-const ObjectCreationList *ObjectCreationListStore::findObjectCreationList(const char *) const { abort(); }
+WEAK const ObjectCreationList *ObjectCreationListStore::findObjectCreationList(const char *) const { abort(); } /* p1w10-sonnet: the ObjectCreationUpgrade fixture (l9_upgrades_b.inc) defines it */
 /* --- p1w7-sonnet ---
 ** The Weapon block and INI::parseWeaponTemplate's lookup: the Weapon build (wrap_weapon.cpp) installs hooks here that
 ** run the real WeaponStore code (the classes there are renamed), as ref_object_block_hook does for the Object block.

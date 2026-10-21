@@ -116,6 +116,12 @@ pub enum ObjectClientEvent {
     DrawableTint { object_id: ObjectId, status: i32, on: bool },
     /// The model-condition calls on `m_drawable`.
     DrawableModelCondition { object_id: ObjectId, op: ModelConditionOp },
+    // --- p1w10-sonnet ---
+    /// `draw->showSubObject(name, show)` (`SubObjectsUpgrade`).
+    DrawableShowSubObject { object_id: ObjectId, name: Vec<u8>, show: bool },
+    /// `draw->updateSubObjects()` (`SubObjectsUpgrade`).
+    DrawableUpdateSubObjects { object_id: ObjectId },
+    // --- end p1w10-sonnet ---
     /// `m_drawable->setTerrainDecalFadeTarget(target, rate)`.
     DrawableTerrainDecalFadeTarget { object_id: ObjectId, target: f32, rate: f32 },
     /// `m_drawable->setDrawableHidden(hidden)` (`TunnelTracker::loadPostProcess`).

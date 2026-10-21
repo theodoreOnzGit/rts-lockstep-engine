@@ -775,5 +775,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 /* --- end p1l9-example --- */
 /* --- p1w10-sonnet --- */
 #include "l9_upgrades.inc"
+#include "l9_upgrades_b.inc"
 #include "l9_helpers.inc"
 /* --- end p1w10-sonnet --- */

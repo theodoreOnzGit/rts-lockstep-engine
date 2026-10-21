@@ -427,6 +427,38 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
         }),
         // --- end p1l9-upgrades ---
         // --- p1w10-sonnet ---
+        "StatusBitsUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::status_bits_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::status_bits_upgrade::StatusBitsUpgrade::get_interface_mask()),
+        }),
+        "LocomotorSetUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::locomotor_set_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::locomotor_set_upgrade::LocomotorSetUpgrade::get_interface_mask()),
+        }),
+        "PassengersFireUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::passengers_fire_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::passengers_fire_upgrade::PassengersFireUpgrade::get_interface_mask()),
+        }),
+        "StealthUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::stealth_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::stealth_upgrade::StealthUpgrade::get_interface_mask()),
+        }),
+        "SubObjectsUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::sub_objects_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::sub_objects_upgrade::SubObjectsUpgrade::get_interface_mask()),
+        }),
+        "ObjectCreationUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::object_creation_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::object_creation_upgrade::ObjectCreationUpgrade::get_interface_mask()),
+        }),
+        // --- end p1w10-sonnet ---
+        // --- p1w10-sonnet ---
         "PreorderCreate" => Some(ModuleTemplate {
             create_proc: Some(new_create_base),
             create_data_proc: Some(crate::logic::modules::create_host::new_plain_create_module_data),
@@ -581,6 +613,14 @@ fn new_upgrade_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mo
         // --- p1l9-upgrades ---
         Some(ModuleDataKind::GrantScienceUpgrade(d)) => Some(d.upgrade.clone()),
         // --- end p1l9-upgrades ---
+        // --- p1w10-sonnet ---
+        Some(ModuleDataKind::StatusBitsUpgrade(d)) => Some(d.upgrade.clone()),
+        Some(ModuleDataKind::LocomotorSetUpgrade(d)) => Some(d.upgrade.clone()),
+        Some(ModuleDataKind::PassengersFireUpgrade(d)) => Some(d.upgrade.clone()),
+        Some(ModuleDataKind::StealthUpgrade(d)) => Some(d.upgrade.clone()),
+        Some(ModuleDataKind::SubObjectsUpgrade(d)) => Some(d.upgrade.clone()),
+        Some(ModuleDataKind::ObjectCreationUpgrade(d)) => Some(d.upgrade.clone()),
+        // --- end p1w10-sonnet ---
         _ => None,
     };
     Ok(Module::Upgrade(crate::logic::module::upgrade_module::UpgradeModule::new(object, base)?))

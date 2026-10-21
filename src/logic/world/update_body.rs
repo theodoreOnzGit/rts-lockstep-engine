@@ -78,6 +78,20 @@ pub enum UpdateBody {
     MaxHealthUpgrade(crate::logic::modules::max_health_upgrade::MaxHealthUpgrade),
     /// `GrantScienceUpgrade`.
     GrantScienceUpgrade(crate::logic::modules::grant_science_upgrade::GrantScienceUpgrade),
+    // --- p1w10-sonnet ---
+    /// `StatusBitsUpgrade`.
+    StatusBitsUpgrade(crate::logic::modules::status_bits_upgrade::StatusBitsUpgrade),
+    /// `LocomotorSetUpgrade`.
+    LocomotorSetUpgrade(crate::logic::modules::locomotor_set_upgrade::LocomotorSetUpgrade),
+    /// `PassengersFireUpgrade`.
+    PassengersFireUpgrade(crate::logic::modules::passengers_fire_upgrade::PassengersFireUpgrade),
+    /// `StealthUpgrade`.
+    StealthUpgrade(crate::logic::modules::stealth_upgrade::StealthUpgrade),
+    /// `SubObjectsUpgrade`.
+    SubObjectsUpgrade(crate::logic::modules::sub_objects_upgrade::SubObjectsUpgrade),
+    /// `ObjectCreationUpgrade`.
+    ObjectCreationUpgrade(crate::logic::modules::object_creation_upgrade::ObjectCreationUpgrade),
+    // --- end p1w10-sonnet ---
 // --- p1w10-sonnet ---
     /// `PreorderCreate`.
     PreorderCreate(crate::logic::modules::preorder_create::PreorderCreate),
@@ -146,6 +160,12 @@ impl UpdateBody {
             UpdateBody::ActiveShroudUpgrade(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::MaxHealthUpgrade(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::GrantScienceUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::StatusBitsUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::LocomotorSetUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::PassengersFireUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::StealthUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::SubObjectsUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::ObjectCreationUpgrade(_) => UPDATE_SLEEP_FOREVER,
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(_) => UPDATE_SLEEP_FOREVER,
 // --- p1w10-sonnet (helpers and dies) ---
@@ -195,6 +215,12 @@ impl UpdateBody {
             UpdateBody::ActiveShroudUpgrade(m) => m.module_call(world, me, call),
             UpdateBody::MaxHealthUpgrade(m) => m.module_call(world, me, call),
             UpdateBody::GrantScienceUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::StatusBitsUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::LocomotorSetUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::PassengersFireUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::StealthUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::SubObjectsUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::ObjectCreationUpgrade(m) => m.module_call(world, me, call),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.module_call(world, me, call),
 // --- p1w10-sonnet (helpers and dies) ---
@@ -257,6 +283,12 @@ impl UpdateBody {
             UpdateBody::ActiveShroudUpgrade(m) => m.xfer(xfer),
             UpdateBody::MaxHealthUpgrade(m) => m.xfer(xfer),
             UpdateBody::GrantScienceUpgrade(m) => m.xfer(xfer),
+            UpdateBody::StatusBitsUpgrade(m) => m.xfer(xfer),
+            UpdateBody::LocomotorSetUpgrade(m) => m.xfer(xfer),
+            UpdateBody::PassengersFireUpgrade(m) => m.xfer(xfer),
+            UpdateBody::StealthUpgrade(m) => m.xfer(xfer),
+            UpdateBody::SubObjectsUpgrade(m) => m.xfer(xfer),
+            UpdateBody::ObjectCreationUpgrade(m) => m.xfer(xfer),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.xfer(xfer),
 // --- p1w10-sonnet (helpers and dies) ---
@@ -301,6 +333,12 @@ impl UpdateBody {
             UpdateBody::ActiveShroudUpgrade(m) => m.crc(xfer),
             UpdateBody::MaxHealthUpgrade(m) => m.crc(xfer),
             UpdateBody::GrantScienceUpgrade(m) => m.crc(xfer),
+            UpdateBody::StatusBitsUpgrade(m) => m.crc(xfer),
+            UpdateBody::LocomotorSetUpgrade(m) => m.crc(xfer),
+            UpdateBody::PassengersFireUpgrade(m) => m.crc(xfer),
+            UpdateBody::StealthUpgrade(m) => m.crc(xfer),
+            UpdateBody::SubObjectsUpgrade(m) => m.crc(xfer),
+            UpdateBody::ObjectCreationUpgrade(m) => m.crc(xfer),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.crc(xfer),
 // --- p1w10-sonnet (helpers and dies) ---
@@ -345,6 +383,12 @@ impl UpdateBody {
             UpdateBody::ActiveShroudUpgrade(m) => m.load_post_process(),
             UpdateBody::MaxHealthUpgrade(m) => m.load_post_process(),
             UpdateBody::GrantScienceUpgrade(m) => m.load_post_process(),
+            UpdateBody::StatusBitsUpgrade(m) => m.load_post_process(),
+            UpdateBody::LocomotorSetUpgrade(m) => m.load_post_process(),
+            UpdateBody::PassengersFireUpgrade(m) => m.load_post_process(),
+            UpdateBody::StealthUpgrade(m) => m.load_post_process(),
+            UpdateBody::SubObjectsUpgrade(m) => m.load_post_process(),
+            UpdateBody::ObjectCreationUpgrade(m) => m.load_post_process(),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.load_post_process(),
 // --- p1w10-sonnet (helpers and dies) ---
@@ -394,6 +438,12 @@ impl Snapshot for UpdateBody {
             UpdateBody::ActiveShroudUpgrade(m) => m.crc(xfer),
             UpdateBody::MaxHealthUpgrade(m) => m.crc(xfer),
             UpdateBody::GrantScienceUpgrade(m) => m.crc(xfer),
+            UpdateBody::StatusBitsUpgrade(m) => m.crc(xfer),
+            UpdateBody::LocomotorSetUpgrade(m) => m.crc(xfer),
+            UpdateBody::PassengersFireUpgrade(m) => m.crc(xfer),
+            UpdateBody::StealthUpgrade(m) => m.crc(xfer),
+            UpdateBody::SubObjectsUpgrade(m) => m.crc(xfer),
+            UpdateBody::ObjectCreationUpgrade(m) => m.crc(xfer),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.crc(xfer),
 // --- p1w10-sonnet (helpers and dies) ---
@@ -439,6 +489,12 @@ impl Snapshot for UpdateBody {
             UpdateBody::ActiveShroudUpgrade(m) => m.xfer(xfer),
             UpdateBody::MaxHealthUpgrade(m) => m.xfer(xfer),
             UpdateBody::GrantScienceUpgrade(m) => m.xfer(xfer),
+            UpdateBody::StatusBitsUpgrade(m) => m.xfer(xfer),
+            UpdateBody::LocomotorSetUpgrade(m) => m.xfer(xfer),
+            UpdateBody::PassengersFireUpgrade(m) => m.xfer(xfer),
+            UpdateBody::StealthUpgrade(m) => m.xfer(xfer),
+            UpdateBody::SubObjectsUpgrade(m) => m.xfer(xfer),
+            UpdateBody::ObjectCreationUpgrade(m) => m.xfer(xfer),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.xfer(xfer),
 // --- p1w10-sonnet (helpers and dies) ---
@@ -484,6 +540,12 @@ impl Snapshot for UpdateBody {
             UpdateBody::ActiveShroudUpgrade(m) => m.load_post_process(),
             UpdateBody::MaxHealthUpgrade(m) => m.load_post_process(),
             UpdateBody::GrantScienceUpgrade(m) => m.load_post_process(),
+            UpdateBody::StatusBitsUpgrade(m) => m.load_post_process(),
+            UpdateBody::LocomotorSetUpgrade(m) => m.load_post_process(),
+            UpdateBody::PassengersFireUpgrade(m) => m.load_post_process(),
+            UpdateBody::StealthUpgrade(m) => m.load_post_process(),
+            UpdateBody::SubObjectsUpgrade(m) => m.load_post_process(),
+            UpdateBody::ObjectCreationUpgrade(m) => m.load_post_process(),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.load_post_process(),
 // --- p1w10-sonnet (helpers and dies) ---

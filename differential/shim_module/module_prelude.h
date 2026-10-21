@@ -58,6 +58,10 @@
 #define FXList ModTestFXList
 #define FXListStore ModTestFXListStore
 #define TheFXListStore ModTestTheFXListStore
+/* --- p1w10-sonnet --- (upgrade batch B: the module interfaces the six upgrade modules call, shim_module/GameLogic/Module/{AIUpdate,SpawnBehavior}.h) */
+#define AIUpdateInterface ModTestAIUpdateInterface
+#define SpawnBehaviorInterface ModTestSpawnBehaviorInterface
+/* --- end p1w10-sonnet --- */
 #define GameLogic ModTestGameLogic
 #define TheGameLogic ModTestTheGameLogic
 

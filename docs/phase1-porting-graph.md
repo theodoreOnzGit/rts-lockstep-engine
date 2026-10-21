@@ -822,6 +822,13 @@ the slot snapshot handing a translated module its whole base chain.
 cases, 11,872 data reads, 141,744 op dumps compared (70,309 ops, 2,016 upgrades fired, 3,079 effect lines), 0 mismatches,
 128 cases excluded as undefined upstream; 22 planted bugs (`L9_PLANT`), 21 caught and 1 equivalent mutant (re-looking the
 science up on every attempt, which finds the same name key). The comparison found no defect in the drafts.
+**Layer-9 upgrade batch B (2026-10-21, `p1w10-sonnet`).** `StatusBitsUpgrade`, `LocomotorSetUpgrade`, `PassengersFireUpgrade`,
+`StealthUpgrade`, `SubObjectsUpgrade` and `ObjectCreationUpgrade` (`modules/*_upgrade.rs`), wired as object modules, with
+`tests/differential_upgrade_modules_b.rs` against the six unchanged `.cpp` files (`differential/l9_upgrades_b.inc`): 9,000
+cases, 8,854 data reads, 110,657 op dumps, 8,372 key probes, 0 mismatches, 146 excluded as undefined upstream; 30 planted bugs
+(`L9_PLANT` 601-631, 628 unused), 29 caught (one by a C++ crash) and 1 equivalent (629). `ObjectCreationUpgrade` names its list
+in a cut call `OclCreate`; the layer-12 consumer must treat an unknown name as no list. Still to do of the Upgrade directory:
+`ReplaceObjectUpgrade`, `UnpauseSpecialPowerUpgrade`, `PowerPlantUpgrade`, `RadarUpgrade`, `CostModifierUpgrade`.
 **Layer-9 helper and die batch verified (2026-10-21, `p1w10-sonnet`).** ~~The helpers and dies of `p1l9-helpers` (`ObjectHelper`,
 `ObjectSMCHelper`, `ObjectRepulsorHelper`, `ObjectWeaponStatusHelper`, `StatusDamageHelper`, `TempWeaponBonusHelper`,
 `DestroyDie`, `KeepObjectDie`, `UpgradeDie`) are pure functions returning effects.~~ **CORRECTED 2026-10-21** - the drafts were

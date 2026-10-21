@@ -321,6 +321,20 @@ pub enum ModuleDataKind {
     MaxHealthUpgrade(Arc<crate::logic::modules::max_health_upgrade::MaxHealthUpgradeModuleData>),
     /// `GrantScienceUpgradeModuleData`.
     GrantScienceUpgrade(Arc<crate::logic::modules::grant_science_upgrade::GrantScienceUpgradeModuleData>),
+    // --- p1w10-sonnet ---
+    /// `StatusBitsUpgradeModuleData`.
+    StatusBitsUpgrade(Arc<crate::logic::modules::status_bits_upgrade::StatusBitsUpgradeModuleData>),
+    /// `LocomotorSetUpgradeModuleData`.
+    LocomotorSetUpgrade(Arc<crate::logic::modules::locomotor_set_upgrade::LocomotorSetUpgradeModuleData>),
+    /// `PassengersFireUpgradeModuleData`.
+    PassengersFireUpgrade(Arc<crate::logic::modules::passengers_fire_upgrade::PassengersFireUpgradeModuleData>),
+    /// `StealthUpgradeModuleData`.
+    StealthUpgrade(Arc<crate::logic::modules::stealth_upgrade::StealthUpgradeModuleData>),
+    /// `SubObjectsUpgradeModuleData`.
+    SubObjectsUpgrade(Arc<crate::logic::modules::sub_objects_upgrade::SubObjectsUpgradeModuleData>),
+    /// `ObjectCreationUpgradeModuleData`.
+    ObjectCreationUpgrade(Arc<crate::logic::modules::object_creation_upgrade::ObjectCreationUpgradeModuleData>),
+    // --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
     /// `GrantUpgradeCreateModuleData`.
@@ -368,6 +382,14 @@ impl ModuleDataKind {
             ModuleDataKind::ActiveShroudUpgrade(d) => &d.upgrade.behavior.module_data,
             ModuleDataKind::MaxHealthUpgrade(d) => &d.upgrade.behavior.module_data,
             ModuleDataKind::GrantScienceUpgrade(d) => &d.upgrade.behavior.module_data,
+            // --- p1w10-sonnet ---
+            ModuleDataKind::StatusBitsUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::LocomotorSetUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::PassengersFireUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::StealthUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::SubObjectsUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::ObjectCreationUpgrade(d) => &d.upgrade.behavior.module_data,
+            // --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
             ModuleDataKind::GrantUpgradeCreate(d) => &d.create.behavior.module_data,
@@ -445,6 +467,32 @@ impl ModuleDataKind {
                 Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
                 None => false,
             },
+            // --- p1w10-sonnet ---
+            ModuleDataKind::StatusBitsUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::LocomotorSetUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::PassengersFireUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::StealthUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::SubObjectsUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::ObjectCreationUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            // --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
             ModuleDataKind::GrantUpgradeCreate(d) => match Arc::get_mut(d) {
