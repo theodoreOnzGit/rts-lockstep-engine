@@ -13,6 +13,8 @@
 /* --- end p1w11-sonnet --- */
 class AudioEventRTS
 {
+private:
+	AsciiString m_eventName;   /* p1w11-sonnet: the FIRST member, as the ObjectCreationList fixture's stand-in (shim_ocl) relies on */
 public:
 	AudioEventRTS() : m_hasPos(false), m_playerIndex(-1), m_objectID((ObjectID)0) { m_pos.x = m_pos.y = m_pos.z = 0; }
 	void setEventName(AsciiString name);
@@ -26,7 +28,5 @@ public:
 	Int m_playerIndex;
 	ObjectID m_objectID;
 	/* --- end p1w11-sonnet --- */
-private:
-	AsciiString m_eventName;
 };
 #endif
