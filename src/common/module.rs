@@ -346,6 +346,12 @@ pub enum ModuleDataKind {
     UnpauseSpecialPowerUpgrade(Arc<crate::logic::modules::unpause_special_power_upgrade::UnpauseSpecialPowerUpgradeModuleData>),
     /// `ReplaceObjectUpgradeModuleData`.
     ReplaceObjectUpgrade(Arc<crate::logic::modules::replace_object_upgrade::ReplaceObjectUpgradeModuleData>),
+    /// `DamDieModuleData`.
+    DamDie(Arc<crate::logic::modules::dam_die::DamDieModuleData>),
+    /// `SpecialPowerCompletionDieModuleData`.
+    SpecialPowerCompletionDie(Arc<crate::logic::modules::special_power_completion_die::SpecialPowerCompletionDieModuleData>),
+    /// `EjectPilotDieModuleData`.
+    EjectPilotDie(Arc<crate::logic::modules::eject_pilot_die::EjectPilotDieModuleData>),
     // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
@@ -408,6 +414,9 @@ impl ModuleDataKind {
             ModuleDataKind::RadarUpgrade(d) => &d.upgrade.behavior.module_data,
             ModuleDataKind::UnpauseSpecialPowerUpgrade(d) => &d.upgrade.behavior.module_data,
             ModuleDataKind::ReplaceObjectUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::DamDie(d) => &d.die.behavior.module_data,
+            ModuleDataKind::SpecialPowerCompletionDie(d) => &d.die.behavior.module_data,
+            ModuleDataKind::EjectPilotDie(d) => &d.die.behavior.module_data,
             // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
@@ -531,6 +540,27 @@ impl ModuleDataKind {
             },
             ModuleDataKind::ReplaceObjectUpgrade(d) => match Arc::get_mut(d) {
                 Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::DamDie(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.die.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::SpecialPowerCompletionDie(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.die.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::EjectPilotDie(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.die.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
                 None => false,
             },
             // --- end p1w11-sonnet ---

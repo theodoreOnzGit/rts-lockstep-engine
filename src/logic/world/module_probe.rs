@@ -222,7 +222,7 @@ impl ProbeModule {
                 }
                 ModuleReply::Done
             }
-            ModuleCall::LoadPostProcess => ModuleReply::Done,
+            ModuleCall::LoadPostProcess | ModuleCall::SetCreator { .. } => ModuleReply::Done,
             // --- end p1w11-sonnet ---
             ModuleCall::AttemptDamage(mut info) => {
                 // ActiveBody in miniature: the damage taken, then death once.

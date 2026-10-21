@@ -56,11 +56,13 @@ class BehaviorModule;
 class UpdateModule;
 class Team;
 #include "matrix3d.h"
+#include "Common/DisabledTypes.h"
+#include "Common/ThingTemplate.h"
 /* --- end p1w11-sonnet --- */
 class Object : public Thing
 {
 public:
-	Object() : m_level(LEVEL_REGULAR), m_player(0), m_body(0), m_drawable(0), m_xp(0), m_weaponBonusCondition(0), m_shroudRange(0), m_producerID((ObjectID)0), m_ai(0), m_contain(0), m_spawn(0), m_disabled(false), m_behaviors(0), m_team(0), m_oid(0), m_destroyed(false) { m_weaponSetFlags[0] = m_weaponSetFlags[1] = 0; }
+	Object() : m_level(LEVEL_REGULAR), m_player(0), m_body(0), m_drawable(0), m_xp(0), m_weaponBonusCondition(0), m_shroudRange(0), m_producerID((ObjectID)0), m_ai(0), m_contain(0), m_spawn(0), m_disabled(false), m_behaviors(0), m_team(0), m_oid(0), m_destroyed(false), m_next(0), m_disabledBits(0) { m_pos.x = m_pos.y = m_pos.z = 0; m_weaponSetFlags[0] = m_weaponSetFlags[1] = 0; }
 	VeterancyLevel getVeterancyLevel() const { return m_level; }
 	const ObjectStatusMaskType &getStatusBits() const { return m_status; }
 	void removeUpgrade(const UpgradeTemplate *t);
@@ -129,6 +131,17 @@ public:
 	Team *m_team;
 	Int m_oid;
 	Bool m_destroyed;
+	/* die batch D: the game logic's object list, the position, the disabled bits and the template of the object */
+	Object *getNextObject() const { return m_next; }
+	const Coord3D *getPosition() const { return &m_pos; }
+	ObjectID getID() const { return (ObjectID)m_oid; }
+	const ThingTemplate *getTemplate() const { return &m_tmpl; }
+	void clearDisabled(DisabledType type);              /* differential/l9_dies_d.inc */
+	Bool isSignificantlyAboveTerrain();                 /* differential/l9_dies_d.inc */
+	Object *m_next;
+	Coord3D m_pos;
+	unsigned m_disabledBits;
+	ThingTemplate m_tmpl;
 	/* --- end p1w11-sonnet --- */
 protected:
 	virtual Object *asObjectMeth() { return this; }

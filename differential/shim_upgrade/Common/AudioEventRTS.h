@@ -8,12 +8,24 @@
 #ifndef SHIM_UPGRADE_AUDIOEVENTRTS_H
 #define SHIM_UPGRADE_AUDIOEVENTRTS_H
 #include "Common/AsciiString.h"
+/* --- p1w11-sonnet --- (die batch D: what EjectPilotDie sets on the copy of the template's event before it hands it to the audio manager) */
+#include "Lib/BaseType.h"
+/* --- end p1w11-sonnet --- */
 class AudioEventRTS
 {
 public:
-	AudioEventRTS() {}
+	AudioEventRTS() : m_hasPos(false), m_playerIndex(-1), m_objectID((ObjectID)0) { m_pos.x = m_pos.y = m_pos.z = 0; }
 	void setEventName(AsciiString name);
 	const AsciiString &getEventName() const { return m_eventName; }
+	/* --- p1w11-sonnet --- */
+	void setPosition(const Coord3D *pos) { m_pos = *pos; m_hasPos = true; }
+	void setPlayerIndex(Int playerIndex) { m_playerIndex = playerIndex; }
+	void setObjectID(ObjectID objID) { m_objectID = objID; }
+	Coord3D m_pos;
+	Bool m_hasPos;
+	Int m_playerIndex;
+	ObjectID m_objectID;
+	/* --- end p1w11-sonnet --- */
 private:
 	AsciiString m_eventName;
 };

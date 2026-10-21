@@ -129,6 +129,11 @@ pub enum CutCall {
     PlayerRemovePowerBonus { player: PlayerIndex, object: ObjectId },
     /// `player->onStructureConstructionComplete(builder, structure, isRebuild)` (`ReplaceObjectUpgrade`).
     PlayerOnStructureConstructionComplete { player: PlayerIndex, builder: ObjectId, structure: ObjectId, is_rebuild: bool },
+    /// `ObjectCreationList::create(ocl, primary, secondary)` for the list named `ocl` with a secondary object (`EjectPilotDie`'s damage dealer;
+    /// `INVALID_ID` for `NULL`); like [`CutCall::OclCreate`], a name that is no list makes nothing.
+    OclCreateWithSecondary { primary: ObjectId, secondary: ObjectId, ocl: Vec<u8> },
+    /// `TheScriptEngine->notifyOfCompletedSpecialPower(playerIndex, specialPowerName, sourceObject)` (`SpecialPowerCompletionDie`).
+    ScriptNotifyOfCompletedSpecialPower { player: PlayerIndex, name: Vec<u8>, creator: ObjectId },
     // --- end p1w11-sonnet ---
     // ---- Team ----
     /// `team->notifyTeamOfObjectDeath()`.

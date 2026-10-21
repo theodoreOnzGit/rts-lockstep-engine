@@ -1268,5 +1268,20 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    // the dies of batch D on stand-ins (l9_dies_d.inc in wrap_module.cpp)
+    pub fn ref_l9dd_run(
+        kind: c_int,
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
 }
 // --- end p1w11-sonnet ---

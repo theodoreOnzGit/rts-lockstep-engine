@@ -72,7 +72,11 @@ pub mod cost_modifier_upgrade;
 pub mod power_plant_upgrade;
 pub mod radar_upgrade;
 pub mod unpause_special_power_upgrade;
+pub mod die_body;
 pub mod replace_object_upgrade;
+pub mod dam_die;
+pub mod special_power_completion_die;
+pub mod eject_pilot_die;
 // --- end p1w11-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -255,6 +259,18 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::ReplaceObjectUpgrade(d) => Some(made(
             replace_object_upgrade::ReplaceObjectUpgrade::get_interface_mask(),
             replace_object_upgrade::ReplaceObjectUpgrade::new(object, Some(d.clone())).map(UpdateBody::ReplaceObjectUpgrade),
+        )),
+        ModuleDataKind::DamDie(d) => Some(made(
+            DieModule::get_interface_mask(),
+            dam_die::DamDie::new(object, Some(d.clone())).map(UpdateBody::DamDie),
+        )),
+        ModuleDataKind::SpecialPowerCompletionDie(d) => Some(made(
+            DieModule::get_interface_mask(),
+            special_power_completion_die::SpecialPowerCompletionDie::new(object, Some(d.clone())).map(UpdateBody::SpecialPowerCompletionDie),
+        )),
+        ModuleDataKind::EjectPilotDie(d) => Some(made(
+            DieModule::get_interface_mask(),
+            eject_pilot_die::EjectPilotDie::new(object, Some(d.clone())).map(UpdateBody::EjectPilotDie),
         )),
         // --- end p1w11-sonnet ---
         _ => None,

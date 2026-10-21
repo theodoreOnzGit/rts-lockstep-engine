@@ -68,6 +68,12 @@
 #define AI ModTestAI
 #define TheAI ModTestTheAI
 #define Pathfinder ModTestPathfinder
+/* die batch D: the template, the audio manager and the script engine the dies call */
+#define ThingTemplate ModTestThingTemplate
+#define AudioManager ModTestAudioManager
+#define TheAudio ModTestTheAudio
+#define ScriptEngine ModTestScriptEngine
+#define TheScriptEngine ModTestTheScriptEngine
 /* --- end p1w11-sonnet --- */
 #define GameLogic ModTestGameLogic
 #define TheGameLogic ModTestTheGameLogic

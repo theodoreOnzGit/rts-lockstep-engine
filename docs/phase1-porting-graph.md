@@ -843,6 +843,12 @@ against the unchanged `.cpp` (`differential/l9_replace_object.inc`): 9,000 cases
 caught. `logic/world/thing_factory_world.rs` is the whole of `ThingFactory::newObject` over the world (the part `object_create.rs` did not
 have: the template, its build variation, the behavior module list made with `modules::new_module`), reusable by every later module that makes
 an object from a template name (the object creation list's host, `SpawnBehavior`, `ProductionUpdate`, ...).
+**Layer-9 die batch D (2026-10-21, `p1w11-sonnet`).** `DamDie`, `SpecialPowerCompletionDie` and `EjectPilotDie` (`modules/*_die.rs` over
+`modules/die_body.rs`), wired as object modules, with `tests/differential_die_modules_d.rs` against the three unchanged `.cpp` files
+(`differential/l9_dies_d.inc`): 9,000 cases, 8,511 data reads, 57,059 op dumps (18,965 `onDie`, 7,861 xfers), 0 mismatches, 489 excluded as
+undefined upstream; 12 planted bugs (`L9_PLANT` 701-725), all caught (711 and 721 by a C++ crash, as plant 619 of batch B). `onDie` is sent death types
+1-20 and veterancy levels 1-3 only: `1UL << (dt - 1)` is bit 31 for MSVC's 32-bit `long` (what `common::game_common` models) and bit 63 for the
+64-bit `long` of the C++ build here. The remaining dies: `CreateObjectDie`, `CreateCrateDie`, `CrushDie`, `FXListDie`, `RebuildHoleExposeDie`.
 **Layer-9 helper and die batch verified (2026-10-21, `p1w10-sonnet`).** ~~The helpers and dies of `p1l9-helpers` (`ObjectHelper`,
 `ObjectSMCHelper`, `ObjectRepulsorHelper`, `ObjectWeaponStatusHelper`, `StatusDamageHelper`, `TempWeaponBonusHelper`,
 `DestroyDie`, `KeepObjectDie`, `UpgradeDie`) are pure functions returning effects.~~ **CORRECTED 2026-10-21** - the drafts were

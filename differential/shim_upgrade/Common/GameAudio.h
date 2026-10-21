@@ -21,6 +21,9 @@ public:
 	virtual ~AudioManager() {}
 	virtual void stopAudio( AudioAffect which ) = 0;
 	void getInfoForAudioEvent( const AudioEventRTS *eventToFindAndFill ) const;
+	/* --- p1w11-sonnet --- (the Module build renames this class; its die batch D defines the call) */
+	UnsignedInt addAudioEvent( const AudioEventRTS *eventToAdd );
+	/* --- end p1w11-sonnet --- */
 };
 extern AudioManager *TheAudio;
 #endif

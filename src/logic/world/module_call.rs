@@ -298,6 +298,8 @@ pub enum ModuleCall {
     /// [`ModuleReply::Int`] with the id, or anything else when the pointer is `NULL` (`UnpauseSpecialPowerUpgrade` compares it with its
     /// own pointer, `NULL` included).
     GetSpecialPowerTemplateId,
+    /// `SpecialPowerCompletionDie::setCreator(creatorID)` (the object creation list, on the die `findSpecialPowerCompletionDie` finds).
+    SetCreator { creator: ObjectId },
     // --- end p1w11-sonnet ---
 }
 

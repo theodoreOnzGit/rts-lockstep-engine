@@ -92,6 +92,9 @@ const ObjectCreationList *ObjectCreationListStore::findObjectCreationList(const 
 Object *ObjectCreationList::createInternal(const Object *primary, const Object *secondary, UnsignedInt lifetimeFrames) const
 {
 	ulog("ocl %d", this == &g_upOcls[0] ? 0 : 1);
+	/* --- p1w11-sonnet --- (EjectPilotDie passes its damage dealer; batch B always passes NULL) */
+	if (secondary) ulog("oclsec %d", (int)secondary->m_oid);
+	/* --- end p1w11-sonnet --- */
 	return 0;
 }
 

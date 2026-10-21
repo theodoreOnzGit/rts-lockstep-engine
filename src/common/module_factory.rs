@@ -556,6 +556,21 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::replace_object_upgrade::new_module_data),
             which_interfaces: Some(crate::logic::modules::replace_object_upgrade::ReplaceObjectUpgrade::get_interface_mask()),
         }),
+        "DamDie" => Some(ModuleTemplate {
+            create_proc: Some(new_die_base),
+            create_data_proc: Some(crate::logic::modules::dam_die::new_module_data),
+            which_interfaces: Some(crate::logic::module::die_module::DieModule::get_interface_mask()),
+        }),
+        "SpecialPowerCompletionDie" => Some(ModuleTemplate {
+            create_proc: Some(new_die_base),
+            create_data_proc: Some(crate::logic::modules::special_power_completion_die::new_module_data),
+            which_interfaces: Some(crate::logic::module::die_module::DieModule::get_interface_mask()),
+        }),
+        "EjectPilotDie" => Some(ModuleTemplate {
+            create_proc: Some(new_die_base),
+            create_data_proc: Some(crate::logic::modules::eject_pilot_die::new_module_data),
+            which_interfaces: Some(crate::logic::module::die_module::DieModule::get_interface_mask()),
+        }),
         // --- end p1w11-sonnet ---
         _ => None,
     }
@@ -599,6 +614,11 @@ fn new_die_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module
     let base = match data {
         Some(ModuleDataKind::Die(d)) => Some(d),
         Some(ModuleDataKind::UpgradeDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
+        // --- p1w11-sonnet ---
+        Some(ModuleDataKind::DamDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
+        Some(ModuleDataKind::SpecialPowerCompletionDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
+        Some(ModuleDataKind::EjectPilotDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
+        // --- end p1w11-sonnet ---
         _ => None,
     };
     Ok(Module::Die(crate::logic::module::die_module::DieModule::new(object, base)?))

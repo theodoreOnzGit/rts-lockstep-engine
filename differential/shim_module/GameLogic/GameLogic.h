@@ -27,6 +27,7 @@ public:
 	/* --- p1w10-sonnet --- (the layer-9 die batch: DestroyDie and UpgradeDie; both answered by l9_helpers.inc) */
 	void destroyObject(Object *obj) { if (g_modDestroyHook) g_modDestroyHook(obj); modhelp_destroy(obj); }   /* inline hooks: shim_updates' GameLogic has its own, out of line, destroyObject */
 	Object *findObjectByID(ObjectID id) { return modhelp_find(id); }
+	Object *getFirstObject();   /* differential/l9_dies_d.inc */
 	/* --- end p1w10-sonnet --- */
 	UnsignedInt m_frame = 0;
 	int m_awakenCalls = 0;

@@ -436,6 +436,14 @@ which whoever builds the world calls for all sixteen. **Left for the layer-12 ad
   upstream's order. The pathfinder, the player's `onStructureConstructionComplete` and the player's power, radar and cost effects are cut
   calls (`PathfinderAdd/RemoveObjectFromPathfindMap`, `PlayerOnStructureConstructionComplete`, `PlayerAdd/RemovePowerBonus`, `PlayerAdd/RemoveKindOfProductionCostChange`).
 
+**Die batch D (`p1w11-sonnet`, 2026-10-21).** `modules/die_body.rs` is to the die modules what `upgrade_body.rs` is to the upgrade modules:
+`DieBehavior` (the `DieModule` base, `on_die`, `other_call`, `is_die_applicable`) and `die_module_call`, which lends the module to its slot
+around `onDie` (`lend_clone`). A die module's INI names for things in another store (a special power template, an object creation list) are
+kept as names and looked up in `world.statics` when the die runs (`special_power_store`, `object_creation_list_store`), the way
+`UnpauseSpecialPowerUpgrade` does it. What a die asks of the script engine, the audio and the object creation list is a cut call or client
+event (`ScriptNotifyOfCompletedSpecialPower`, `OclCreateWithSecondary`, `AudioAddEvent`); an object creation list's new object is not returned
+yet (`CreateObjectDie` needs it: the host for `OclCreate` is layer 12's).
+
 <!-- --- p1w6-object --- -->
 ## Object (layer 8, wave 6)
 

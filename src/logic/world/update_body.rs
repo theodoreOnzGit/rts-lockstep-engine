@@ -148,6 +148,12 @@ pub enum UpdateBody {
     UnpauseSpecialPowerUpgrade(crate::logic::modules::unpause_special_power_upgrade::UnpauseSpecialPowerUpgrade),
     /// `ReplaceObjectUpgrade`.
     ReplaceObjectUpgrade(crate::logic::modules::replace_object_upgrade::ReplaceObjectUpgrade),
+    /// `DamDie`.
+    DamDie(crate::logic::modules::dam_die::DamDie),
+    /// `SpecialPowerCompletionDie`.
+    SpecialPowerCompletionDie(crate::logic::modules::special_power_completion_die::SpecialPowerCompletionDie),
+    /// `EjectPilotDie`.
+    EjectPilotDie(crate::logic::modules::eject_pilot_die::EjectPilotDie),
     // --- end p1w11-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -210,6 +216,9 @@ impl UpdateBody {
             UpdateBody::RadarUpgrade(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::UnpauseSpecialPowerUpgrade(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::ReplaceObjectUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::DamDie(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::SpecialPowerCompletionDie(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::EjectPilotDie(_) => UPDATE_SLEEP_FOREVER,
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -272,6 +281,9 @@ impl UpdateBody {
             UpdateBody::RadarUpgrade(m) => m.module_call(world, me, call),
             UpdateBody::UnpauseSpecialPowerUpgrade(m) => m.module_call(world, me, call),
             UpdateBody::ReplaceObjectUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::DamDie(m) => m.module_call(world, me, call),
+            UpdateBody::SpecialPowerCompletionDie(m) => m.module_call(world, me, call),
+            UpdateBody::EjectPilotDie(m) => m.module_call(world, me, call),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -502,6 +514,9 @@ impl Snapshot for UpdateBody {
             UpdateBody::RadarUpgrade(m) => m.crc(xfer),
             UpdateBody::UnpauseSpecialPowerUpgrade(m) => m.crc(xfer),
             UpdateBody::ReplaceObjectUpgrade(m) => m.crc(xfer),
+            UpdateBody::DamDie(m) => m.crc(xfer),
+            UpdateBody::SpecialPowerCompletionDie(m) => m.crc(xfer),
+            UpdateBody::EjectPilotDie(m) => m.crc(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -560,6 +575,9 @@ impl Snapshot for UpdateBody {
             UpdateBody::RadarUpgrade(m) => m.xfer(xfer),
             UpdateBody::UnpauseSpecialPowerUpgrade(m) => m.xfer(xfer),
             UpdateBody::ReplaceObjectUpgrade(m) => m.xfer(xfer),
+            UpdateBody::DamDie(m) => m.xfer(xfer),
+            UpdateBody::SpecialPowerCompletionDie(m) => m.xfer(xfer),
+            UpdateBody::EjectPilotDie(m) => m.xfer(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -618,6 +636,9 @@ impl Snapshot for UpdateBody {
             UpdateBody::RadarUpgrade(m) => m.load_post_process(),
             UpdateBody::UnpauseSpecialPowerUpgrade(m) => m.load_post_process(),
             UpdateBody::ReplaceObjectUpgrade(m) => m.load_post_process(),
+            UpdateBody::DamDie(m) => m.load_post_process(),
+            UpdateBody::SpecialPowerCompletionDie(m) => m.load_post_process(),
+            UpdateBody::EjectPilotDie(m) => m.load_post_process(),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }

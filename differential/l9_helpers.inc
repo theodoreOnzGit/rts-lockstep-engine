@@ -37,7 +37,10 @@ unsigned firstBit(const ObjectStatusMaskType &m)
 
 void modhelp_bonus(int b) { hlog(5, (unsigned)b); }
 void modhelp_destroy(Object *obj) { g_destroyed = obj; hlog(9, 0); }
-Object *modhelp_find(ObjectID) { return g_producer; }
+/* --- p1w11-sonnet --- die batch D answers findObjectByID by id (l9_dies_d.inc sets the hook); the helper batch's tests leave it null */
+Object *(*g_modFindHook)(ObjectID) = 0;
+Object *modhelp_find(ObjectID id) { return g_modFindHook ? g_modFindHook(id) : g_producer; }
+/* --- end p1w11-sonnet --- */
 void Object::setStatus(ObjectStatusMaskType objectStatus, Bool set)
 {
 	/* Object.cpp's setStatus does more (it reacts to a few of the bits); the helpers only need the bits */

@@ -30,6 +30,7 @@ public:
 	void removeRadar(Bool disableProof);
 	void onStructureConstructionComplete(Object *builder, Object *structure, Bool isRebuild);   /* ReplaceObjectUpgrade */
 	Int m_idx;
+	Int getPlayerIndex() const { return m_idx; }   /* the dies: SpecialPowerCompletionDie, EjectPilotDie */
 	/* --- end p1w11-sonnet --- */
 };
 #endif
