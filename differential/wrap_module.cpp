@@ -807,4 +807,5 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_height_die_o.inc"
 #include "l9_dynamic_shroud_o.inc"
 #include "l9_squish_collide_o.inc"
+#include "l9_prone_o.inc"
 /* --- end p1w13-sonnet --- */

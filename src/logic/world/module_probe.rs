@@ -507,6 +507,7 @@ impl ProbeModule {
             | ModuleCall::OnSpawnDeath { .. }
             | ModuleCall::UndoUpgrade
             | ModuleCall::StopHealing // p1w12-sonnet
+            | ModuleCall::ProneGoProne(_) // p1w13-sonnet
             | ModuleCall::TryToIgnite // p1w12-sonnet
             | ModuleCall::OclUpdateResetTimer // p1w12-sonnet
             | ModuleCall::OclUpdateGetCountdownPercent // p1w12-sonnet

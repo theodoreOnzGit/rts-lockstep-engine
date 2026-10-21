@@ -253,6 +253,8 @@ pub enum ModuleCall {
     SpecialAbilityIsActive,
     /// `PhysicsBehavior::getVelocity()`; replies [`ModuleReply::Coord`].
     PhysicsGetVelocity,
+    /// `ProneUpdate::goProne(damageInfo)` (`AIUpdateInterface::friend_...`: a unit that is damaged goes prone).
+    ProneGoProne(DamageInfo),
     // --- end p1w13-sonnet ---
     /// `ToppleUpdate::isAbleToBeToppled()`; replies [`ModuleReply::Bool`].
     IsAbleToBeToppled,
