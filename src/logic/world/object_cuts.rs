@@ -174,6 +174,13 @@ impl World {
         self.cuts.terrain_layer_height[terrain_cell(x, y)]
     }
 
+    /// `TheTerrainLogic->isUnderwater(x, y, &waterZ)`: the water height if there is water at (x, y), `None` if the call leaves `waterZ` as it was.
+    pub fn terrain_is_underwater_water_z(&mut self, x: f32, y: f32) -> Option<f32> {
+        self.cut(CutCall::TerrainIsUnderwater { x, y });
+        let cell = terrain_cell(x, y);
+        self.cuts.terrain_has_water[cell].then(|| self.cuts.terrain_water[cell])
+    }
+
     /// `ThePartitionManager->iterateObjectsInRange(object, range, FROM_BOUNDINGSPHERE_3D, { PartitionFilterAcceptByKindOf(STRUCTURE) })`: the objects, in
     /// iteration order.
     pub fn partition_iterate_structures_in_range(&mut self, object: ObjectId, range: f32) -> Vec<ObjectId> {
@@ -300,6 +307,8 @@ pub enum CutCall {
     PartitionIterateStructuresInRange { object: ObjectId, range: f32 },
     /// `TheParticleSystemManager->destroyAttachedSystems(obj)` (`HeightDieUpdate`).
     ParticleDestroyAttachedSystems { object: ObjectId },
+    /// `TheTerrainLogic->isUnderwater(x, y, &waterZ)` (`FloatUpdate`); `ObjectCuts::terrain_has_water` and `terrain_water` answer.
+    TerrainIsUnderwater { x: f32, y: f32 },
     // --- end p1w13-sonnet ---
     // ---- Team ----
     /// `team->notifyTeamOfObjectDeath()`.
@@ -590,6 +599,10 @@ pub struct ObjectCuts {
     pub terrain_layer: [i32; 8],
     /// The height `getLayerHeight(x, y, layer)` answers, by [`terrain_cell`] of (x, y).
     pub terrain_layer_height: [f32; 8],
+    /// Whether `isUnderwater(x, y, &waterZ)` finds water (and so assigns `waterZ`), by [`terrain_cell`] of (x, y).
+    pub terrain_has_water: [bool; 8],
+    /// The water height `isUnderwater` assigns, by [`terrain_cell`] of (x, y).
+    pub terrain_water: [f32; 8],
     // --- end p1w13-sonnet ---
     /// `ai->getWhichTurretForWeaponSlot(slot)` != `TURRET_INVALID`: (object, slot) -> turret.
     pub ai_turrets: BTreeMap<(ObjectId, i32), i32>,
@@ -674,6 +687,8 @@ impl Default for ObjectCuts {
             terrain_ground: [0.0; 8],
             terrain_layer: [crate::common::game_type::LAYER_GROUND; 8],
             terrain_layer_height: [0.0; 8],
+            terrain_has_water: [false; 8],
+            terrain_water: [0.0; 8],
             // --- end p1w13-sonnet ---
             ai_turrets: BTreeMap::new(),
             ai_turrets_disabled: BTreeSet::new(),

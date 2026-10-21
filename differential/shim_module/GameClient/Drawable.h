@@ -4,6 +4,7 @@
 #ifndef SHIM_MODULE_DRAWABLE_H
 #define SHIM_MODULE_DRAWABLE_H
 #include "Common/AsciiString.h"
+#include "matrix3d.h"   /* p1w13-sonnet: FloatUpdate */
 /* --- p1w10-sonnet --- (ArmorUpgrade sets the chemical-suit terrain decal; TerrainDecalType is GameClient/Drawable.h lines 257-275 with
 ** ALLOW_DEMORALIZE undefined, as the shipped game) */
 enum TerrainDecalType
@@ -40,6 +41,10 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	/* --- p1w12-sonnet --- (update batch N) */
 	void reactToGeometryChange();
 	void clearModelConditionState(ModelConditionFlagType a);   /* update batch N: l9_flammable_n.inc */
-	/* --- end p1w12-sonnet --- */ };
+	/* --- end p1w12-sonnet --- */
+	/* --- p1w13-sonnet --- (update batch O: FloatUpdate; differential/l9_float_o.inc) */
+	const Matrix3D *getInstanceMatrix() const;
+	void setInstanceMatrix(const Matrix3D *instance);
+	/* --- end p1w13-sonnet --- */ };
 /* --- end p1w10-sonnet --- */
 #endif

@@ -231,6 +231,8 @@ pub enum Undefined {
     // --- p1w13-sonnet ---
     /// A signed `Int` expression of a module overflows (undefined in C++; `DynamicShroudClearingRangeUpdate::animateGridDecals`).
     SignedIntOverflow,
+    /// A local `Real` that nothing assigned is read (`FloatUpdate`: `isUnderwater` leaves `waterZ` alone when there is no water).
+    UninitialisedLocal,
     // --- end p1w13-sonnet ---
     // --- p1l9-upgrades ---
     /// `ArmorUpgrade`: a triggered chemical-suits upgrade on an object with no

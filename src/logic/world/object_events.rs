@@ -182,6 +182,9 @@ pub enum ObjectClientEvent {
     // --- p1w13-sonnet ---
     /// One call on the `index`th grid decal of an object's `DynamicShroudClearingRangeUpdate` (a `RadiusDecal`, which the client's shadow manager draws).
     GridDecal { object_id: ObjectId, index: u32, op: GridDecalOp },
+    /// `FloatUpdate`: the drawable's instance matrix is set to a tilt that depends on the frame (`sin(frame * 0.0291) * 0.05` of yaw, `sin(frame * 0.0515) * 0.05` of
+    /// pitch, keeping its Z rotation); the client's maths, since the matrix is client data.
+    DrawableFloatTilt { object_id: ObjectId, frame: u32 },
     // --- end p1w13-sonnet ---
     // --- p1w11-sonnet ---
     /// `TheAudio->addAudioEvent(&event)` for an event copied from the template's per-unit sounds (`EjectPilotDie`): the event's name, the object

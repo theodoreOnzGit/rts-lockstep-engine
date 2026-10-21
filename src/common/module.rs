@@ -400,6 +400,8 @@ pub enum ModuleDataKind {
     ProneUpdate(Arc<crate::logic::modules::prone_update::ProneUpdateModuleData>),
     /// `EnemyNearUpdateModuleData`.
     EnemyNearUpdate(Arc<crate::logic::modules::enemy_near_update::EnemyNearUpdateModuleData>),
+    /// `FloatUpdateModuleData`.
+    FloatUpdate(Arc<crate::logic::modules::float_update::FloatUpdateModuleData>),
     // --- end p1w13-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
@@ -491,6 +493,7 @@ impl ModuleDataKind {
             ModuleDataKind::DynamicShroudClearingRangeUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::ProneUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::EnemyNearUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::FloatUpdate(d) => &d.update.behavior.module_data,
             // --- end p1w13-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
@@ -789,6 +792,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::EnemyNearUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::FloatUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

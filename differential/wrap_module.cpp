@@ -809,4 +809,5 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_squish_collide_o.inc"
 #include "l9_prone_o.inc"
 #include "l9_enemy_near_o.inc"
+#include "l9_float_o.inc"
 /* --- end p1w13-sonnet --- */

@@ -255,6 +255,8 @@ pub enum ModuleCall {
     PhysicsGetVelocity,
     /// `ProneUpdate::goProne(damageInfo)` (`AIUpdateInterface::friend_...`: a unit that is damaged goes prone).
     ProneGoProne(DamageInfo),
+    /// `FloatUpdate::setEnabled(enabled)` (`ObjectCreationList`'s `DeliverPayload`/`Debris` nuggets).
+    FloatSetEnabled(bool),
     // --- end p1w13-sonnet ---
     /// `ToppleUpdate::isAbleToBeToppled()`; replies [`ModuleReply::Bool`].
     IsAbleToBeToppled,
