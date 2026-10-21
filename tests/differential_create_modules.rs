@@ -68,7 +68,10 @@
 //! | P15 player-type upgrade in build-complete given to the object | `GrantUpgradeCreate` | 31 |
 #![cfg(feature = "differential")]
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+/// The C++ reference keeps its world in globals: the two tests of this file may not run it at once (they flaked when they did).
+static CPP_LOCK: Mutex<()> = Mutex::new(());
 
 use rts_lockstep_engine::common::game_common::VeterancyLevel;
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
@@ -576,6 +579,7 @@ fn first_difference(a: &str, b: &str) -> String {
 
 #[test]
 fn creates_agree_with_the_upstream_text_on_random_programs() {
+    let _guard = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
     let programs = 1500;
     let mut lines = 0usize;
@@ -609,6 +613,7 @@ fn creates_agree_with_the_upstream_text_on_random_programs() {
 /// lock. Written out, so a reader sees what the random programs cover.
 #[test]
 fn a_hand_written_program_makes_the_documented_calls() {
+    let _guard = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     // kind 6 (grant), 4 players, controller 1, under construction, no tracker
     let words = vec![
         6, 4, // kind (grant), players

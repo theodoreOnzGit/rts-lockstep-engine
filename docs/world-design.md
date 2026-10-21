@@ -343,7 +343,7 @@ where upstream registers an object no lookup can find.
   `TeamPrototype`, `TeamFactory`, `TeamRelationMap`, `TeamTemplateInfo` and `PlayerRelationMap` are translated (see
   "Player and Team shape" below). ~~`Player` and `PlayerList` contents are still left.~~ **CORRECTED 2026-10-20
   (`p1w10-sonnet`)** — `Player`'s data and the first slice of its operations are translated (below); the object-facing
-  half, `xfer`, `initFromDict` and `PlayerList` are still left.
+  half, `xfer`, `initFromDict` and `PlayerList` are still left. ~~`initFromDict` and `PlayerList` are still left.~~ **CORRECTED 2026-10-21** — both are translated (slice 4, below).
 - The `GameSetup` struct (network slots), and the audio-length table loader.
 - `popSleepyUpdate` is translated but unused (upstream never calls it).
 
@@ -408,7 +408,7 @@ which whoever builds the world calls for all sixteen. **Left for the layer-12 ad
 `TeamHost` for `World` (the `TeamHost` player methods are one-liners over `player_ops`, see
 `tests/differential_player.rs`'s `Sim`), and `PlayerTemplateView::from_template`.
 
-**Done for `Player`, slices 2, 2b and 3 (`p1w10-sonnet`, 2026-10-20):** `player_objects` (`PlayerObjectHost`: what `Player` asks of objects, the AI, the action manager, the build assistant and the body), `player_squads` (`PlayerSquadHost`: upgrades, `Squad` including its `m_objectsCached`, which upstream leaves filled and `Squad::xfer` then refuses) and `player_xfer` (`PlayerXferHost`: the upgrade centre with the name keys, and two hooks for the units that are not in the player's own data, the score keeper and the AI). A nested `xferSnapshot` of something that needs the host is `xfer_nested`, as in `team_xfer.rs`. **Left for the layer-12 adapter:** the three host traits for `World`. **Open (owner):** `Squad`'s home: it is declared in `player.rs` because the player owns the ten hotkey squads; the AI group translation (layer 10) will want it as its own module.
+**Done for `Player`, slices 2, 2b and 3 (`p1w10-sonnet`, 2026-10-20):** `player_objects` (`PlayerObjectHost`: what `Player` asks of objects, the AI, the action manager, the build assistant and the body), `player_squads` (`PlayerSquadHost`: upgrades, `Squad` including its `m_objectsCached`, which upstream leaves filled and `Squad::xfer` then refuses) and `player_xfer` (`PlayerXferHost`: the upgrade centre with the name keys, and two hooks for the units that are not in the player's own data, the score keeper and the AI). A nested `xferSnapshot` of something that needs the host is `xfer_nested`, as in `team_xfer.rs`. **Left for the layer-12 adapter:** the three host traits for `World`. **Done for `Player`, slice 4 (`p1w10-sonnet`, 2026-10-21):** `player_init` (`Player::initFromDict` over `PlayerInitHost`, 24 methods that name every question and change it makes to the sides list, the skirmish sides, the script lists and the other services) and `player_list` (`PlayerList`'s functions over the same host; the list itself stays `PlayerArena`). **Left for the layer-12 adapter:** `PlayerInitHost` for `World`, answered from the real `SidesList` and `logic::scripts`. **Open (owner):** `Squad`'s home: it is declared in `player.rs` because the player owns the ten hotkey squads; the AI group translation (layer 10) will want it as its own module.
 
 <!-- --- p1w6-object --- -->
 ## Object (layer 8, wave 6)

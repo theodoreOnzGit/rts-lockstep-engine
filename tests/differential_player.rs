@@ -82,6 +82,48 @@
 //! into a NULL dereference (an excluded program, by design) and need an upgrade or prototype the file names and the world lacks,
 //! which these programs never make; 363 removes a `clear()` that `xferScienceVec` repeats; 369 and 370 need a squad table of another
 //! size, or an uninitialised one, which `Player::init` always prevents.
+//!
+//! # Slice 4: `Player::initFromDict` and `PlayerList` (2026-10-21)
+//!
+//! **Methodology.** `PlayerList.cpp` joins the unchanged functions of `Player.cpp` that `build.rs` extracts (now with
+//! `initFromDict`), and the fixture gains stand-ins for `SidesList` (with the skirmish sides and the build lists it hands over)
+//! and `ScriptList` (copy, qualify, delete: each writes a line, the real script lists being verified by
+//! `differential_sides_scripts.rs`). The operations added: the 15 `PlayerList` operations (`update`, `newMap`,
+//! `updateTeamStates`, `validateTeam`, `setLocalPlayer`, `getPlayerFromMask`, `getEachPlayerFromMask`,
+//! `getPlayersWithRelationship`, `init`, `reset`, `newGame`, `crc`, `xfer` save and load, `teamAboutToBeDeleted`) and
+//! `Player::initFromDict`, on dictionaries that vary every key it reads (name, faction, display name, colours, start money,
+//! `playerIsSkirmish`, `playerIsHuman`, `multiplayerIsLocal`, start index, difficulty, the team dictionaries of the side).
+//! Some programs start a new game on the world they are given. Directed sequences: a squad filled, then `initFromDict`;
+//! a player initialised from a dictionary, saved, and the save loaded into another player that has not been (and back);
+//! neutral's default team made before `validateTeam` is asked for a name that is neither team nor player.
+//!
+//! **Results (2026-10-21, upstream `0a05454d`).** `PLAYER_CASES=3000`: **3,000 programs, 278 excluded as undefined upstream (156 a
+//! `NULL` dereferenced, 83 a player without a template asked for its beacon, 14 a deleted default team, 13 a float out of the
+//! `Int` range, 7 a deleted prototype, 5 a loop that never ends), 7,827,629 trace lines compared (456,266 of them the defined
+//! prefixes of the excluded programs), 0 mismatches.** 1,616 `newGame` calls, 124 skirmish queries, 561 script lists qualified
+//! and 397 deleted, 74 teams added to and 66 removed from the sides, 109 `getPlayerFromMask`, 575 `getEachPlayerFromMask`,
+//! 6,380 `getPlayersWithRelationship`, 110 player list saves (109 `crc`) and 18 loads.
+//!
+//! **The number of excluded programs is pinned** (91 of 1,000, 188 of 2,000, 278 of 3,000: the generator is deterministic). It was
+//! added because plant 562 (`newGame` skipping every named side) left 0 mismatches: the faulty Rust failed with a NULL
+//! dereference where upstream does not, so the program was *excluded* and compared only on its prefix. A fault that turns defined
+//! behaviour into an error now shows as more exclusions.
+//!
+//! **Planted bugs of slice 4** (`PLAYER_PLANT=501..577` and the `359` of slice 3 that became reachable): 77 + 1 switches. **72
+//! are caught** by mismatching lines at 2,000 programs (1 to several hundred lines each; the smallest, 359 and 562, one line:
+//! 562's is the pinned exclusion count), and **11** (501, 505, 506, 507, 508, 510, 511, 515, 542, 543, 546) end in a **crash of the
+//! C++ reference**: the faulty Rust accepts a dictionary (a skirmish flag, a player with no template, a list slot) on which
+//! upstream dereferences `NULL`, the program reaches the C++, and the C++ dies -- a detection, but not a line-by-line one.
+//! Rounds the plants forced: the directed squad-then-`initFromDict` and save-load-between-players sequences (359), the
+//! `validateTeam` names that are neither team nor player together with neutral's default team (551), the exclusion pin (562).
+//!
+//! **Mutants that cannot be observed** (the switch stays in the code): `PLAYER_PLANT=540, 541` re-create the squads and the
+//! selection that `Player::init`, called a few lines earlier in `initFromDict`, has just made empty; `545` skips
+//! `becomingLocalPlayer( false )`, which upstream defines as nothing (`if( yes ) { ... }`); `554` skips the `maskToAdjust = 0`
+//! of `getEachPlayerFromMask`, but all 16 slots hold a player, so a non-zero mask is always consumed to zero before the loop
+//! ends; `555` skips the early return for `allowedRelationships == 0`, whose loop then adds nothing; `360` needs a save with a
+//! resource gathering manager and no tunnel tracker (or the reverse), but `initFromDict` makes both together and 359's check
+//! on the manager fires first.
 #![cfg(feature = "differential")]
 
 mod support;
@@ -2503,7 +2545,7 @@ fn list_op(sim: &mut Sim, a: &[u32; 8], sub: u32) -> Result<(), PlayerError> {
             player_list_set_local_player(sim, p)?;
         }
         5 => {
-            let mask: u16 = if a[0] % 3 == 0 { 1u16 << (a[1] % 16) } else { (a[1] & 0xffff) as u16 };
+            let mask: u16 = if a[0].is_multiple_of(3) { 1u16 << (a[1] % 16) } else { (a[1] & 0xffff) as u16 };
             let p = player_list_get_player_from_mask(sim, mask);
             sim.rec(format!("ret pfm {}", p.unwrap_or(-1)));
         }
@@ -3924,7 +3966,8 @@ fn gen_sides(g: &mut Gen, w: &mut W) {
         }
     };
     for _ in 0..npd {
-        let mut entries: Vec<Box<dyn Fn(&mut W)>> = Vec::new();
+        type Entry = Box<dyn Fn(&mut W)>;
+        let mut entries: Vec<Entry> = Vec::new();
         if chance(g, 90) {
             let f = faction(g);
             entries.push(Box::new(move |w| w_entry_str(w, 3, "playerFaction", &f)));
@@ -4318,7 +4361,7 @@ fn directed_sequence(g: &mut Gen, np: u32, kind: u32) -> Vec<(u32, u32, [u32; 8]
             v.push((pk, 92, [9, a[1], a[2], a[3], a[4], a[5], a[6], a[7]]));
             // (from the AI group: an odd a[3]; the group word is gi modulo 3 and not a multiple of 4)
             let mut gw = gi + 3 * g.below(30);
-            while gw % 4 == 0 {
+            while gw.is_multiple_of(4) {
                 gw += 3;
             }
             let use_sel = chance(g, 30);
@@ -4340,6 +4383,23 @@ fn directed_sequence(g: &mut Gen, np: u32, kind: u32) -> Vec<(u32, u32, [u32; 8]
             let mut d = rnd(g);
             d[2] = 1 + g.below(3);
             v.push((pk, 92, [3, d[1], d[2], d[3], d[4], d[5], d[6], d[7]]));
+            // slice 4: half of the time the player is then initialised from a dictionary again, which makes its squads and its
+            // selection afresh (plants 540, 541)
+            if chance(g, 50) {
+                v.push((pk, 94, [g.u32(), 0, 0, 0, 0, 0, 0, 0]));
+            }
+        }
+        // slice 4: a player initialised from a dictionary (it then has a resource gathering manager and a tunnel tracker)
+        // saved, and the save loaded into another player that has not (plants 359, 360), and the other way round
+        6 => {
+            let pk2 = if np > 1 { (pk + 1 + g.below(np - 1)) % np } else { pk };
+            let dsel = g.u32();
+            v.push((pk, 94, [dsel, 0, 0, 0, 0, 0, 0, 0]));
+            v.push((pk, 93, [0, 3, 0, 0, 0, 0, 0, 0]));
+            v.push((pk2, 93, [1 + g.below(2), 3, 0, 0, 0, 0, 0, 0]));
+            v.push((pk2, 94, [g.u32(), 0, 0, 0, 0, 0, 0, 0]));
+            v.push((pk, 93, [0, 3, 0, 0, 0, 0, 0, 0]));
+            v.push((pk2, 93, [1 + g.below(2), 3, 0, 0, 0, 0, 0, 0]));
         }
         // save and load: with the caches and the lists filled, loaded without clearing them
         1 => {
@@ -4525,7 +4585,8 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
                 *x = g.u32();
             }
             a[0] = match sub {
-                3 => g.below(8),
+                // slice 4: a name that is no team and no player reaches validateTeam's last resort (neutral's default team)
+                3 => if chance(g, 30) { 100 + g.below(40) } else { g.below(8) },
                 4 => g.below(6),
                 14 => g.below(8),
                 _ => g.u32(),
@@ -4540,6 +4601,11 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
                 // the players of the program, and a mix of the four relationships
                 a[0] = g.below(6);
                 a[1] = 1 + g.below(15);
+            }
+            // slice 4: neutral's default team made first, so that validateTeam's last resort has an answer (plant 551)
+            if sub == 3 && chance(g, 60) {
+                emit_player_op(g, w, 0, 3, 0, 0);
+                *n += 1;
             }
             w.u(7);
             w.u(sub);
@@ -4596,7 +4662,7 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
             }
         }
         41..=44 => {
-            let kind = g.below(6);
+            let kind = if chance(g, 25) { 6 } else { g.below(6) };
             if kind == 3 && st.np == 16 {
                 // relations of the last player to a team, which the list is then told is about to be deleted
                 let team = 1 + g.below(12);
@@ -4947,6 +5013,17 @@ fn player_matches_upstream() {
     for (why, c) in &why_counts {
         println!("RESULT   excluded: {why}: {c}");
     }
+    // --- p1w10-sonnet --- (slice 4) The generator is deterministic, so the number of programs excluded as undefined upstream is
+    // too. A fault in the Rust that makes it fail where upstream does not (plant 562) shows as MORE exclusions, not as a
+    // mismatch -- an excluded program is compared only on its defined prefix -- so the count is pinned for the usual sizes.
+    if from == 0 {
+        for (n, expected) in [(1000u64, 91u64), (2000, 188), (3000, 278)] {
+            if cases() == n {
+                check.eq(excluded, expected, || format!("programs excluded as undefined upstream, of {n}"));
+            }
+        }
+    }
+    // --- end p1w10-sonnet ---
     for (m, c) in &counts {
         println!("RESULT   {m:<24} {c}");
     }

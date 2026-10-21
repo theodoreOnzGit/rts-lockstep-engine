@@ -182,8 +182,8 @@ pub fn player_init_from_dict<H: PlayerInitHost>(h: &mut H, p: PlayerIndex, d: &D
     if d.get_bool(k).0 || (force_human && !plant(508)) {
         player_set_player_type(h, p, PlayerType::Human, false)?;
         let k = wkey(h, wk::PLAYER_IS_PREORDER);
-        if d.get_bool(k).0 {
-            if !plant(509) { plm(h, p)?.is_preorder = true; }
+        if d.get_bool(k).0 && !plant(509) {
+            plm(h, p)?.is_preorder = true;
         }
         if h.sides_num_skirmish_sides() > if plant(510) { 1 } else { 0 } {
             // Human player gets scripts from CIVILIAN player.
