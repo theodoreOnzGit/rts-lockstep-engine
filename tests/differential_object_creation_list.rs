@@ -788,7 +788,7 @@ impl OclHost for Sim {
     }
     fn terrain_is_underwater(&self, x: f32, y: f32) -> Option<(f32, f32)> {
         let h = h3(x.to_bits(), y.to_bits(), self.tseed ^ 0x77);
-        if h % 5 != 0 {
+        if !h.is_multiple_of(5) {
             return None;
         }
         Some((self.ground(x, y) + (h / 5 % 16) as f32 * 0.5, self.ground(x, y)))
@@ -1315,7 +1315,7 @@ fn gen_prog(g: &mut Gen) -> Vec<u32> {
     let mut flags = 0u32;
     for (bit, p) in [(PF_DEBRIS_SKIPPED, 6), (PF_NEUTRAL_PLAYER, 1), (PF_NEUTRAL_TEAM, 1), (PF_SRC_PLAYER, 1), (PF_SRC_ACTIVE, 1), (PF_SRC_TEAM, 1)] {
         // `p` is the odds against: 1 in 7 of PF_SRC_PLAYER and PF_NEUTRAL_PLAYER absent, ...
-        if g.below(8) >= p + 1 || bit == PF_DEBRIS_SKIPPED && g.below(6) == 0 {
+        if g.below(8) > p || bit == PF_DEBRIS_SKIPPED && g.below(6) == 0 {
             flags |= bit;
         }
     }
