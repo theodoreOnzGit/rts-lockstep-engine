@@ -274,3 +274,19 @@ impl BaseRegenerateUpdate {
     }
 }
 // --- end p1w10-sonnet ---
+
+// --- p1w11-sonnet ---
+#[cfg(test)]
+mod disabled_types_tests {
+    use super::*;
+
+    #[test]
+    fn it_processes_only_the_underpowered_disabled_type() {
+        // `getDisabledTypesToProcess()` is `MAKE_DISABLED_MASK(DISABLED_UNDERPOWERED)`; the scheduler reads it from the module's `UpdateModule` base
+        let m = BaseRegenerateUpdate::unconstructed(1, Some(Arc::new(BaseRegenerateUpdateModuleData::default()))).unwrap();
+        let mask = m.update_module().get_disabled_types_to_process();
+        assert_eq!(mask.count(), 1);
+        assert!(mask.test(crate::common::disabled_types::DISABLED_UNDERPOWERED));
+    }
+}
+// --- end p1w11-sonnet ---
