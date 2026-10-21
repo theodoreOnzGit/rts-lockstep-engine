@@ -616,6 +616,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::defector_special_power::new_module_data),
             which_interfaces: Some(crate::logic::module::special_power_module::SpecialPowerModule::get_interface_mask()),
         }),
+        "SpyVisionUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::spy_vision_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::spy_vision_update::SpyVisionUpdate::get_interface_mask()),
+        }),
         // --- end p1w11-sonnet ---
         _ => None,
     }
@@ -648,6 +653,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         // --- p1w11-sonnet ---
         Some(ModuleDataKind::PowerPlantUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::RadarUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::SpyVisionUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         // --- end p1w11-sonnet ---
         _ => None,
     };

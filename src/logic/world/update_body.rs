@@ -178,6 +178,8 @@ pub enum UpdateBody {
     DefectorSpecialPower(crate::logic::modules::defector_special_power::DefectorSpecialPower),
     /// `SpecialPowerModule`.
     SpecialPowerModule(crate::logic::modules::special_power_module_impl::SpecialPowerModuleImpl),
+    /// `SpyVisionUpdate`.
+    SpyVisionUpdate(crate::logic::modules::spy_vision_update::SpyVisionUpdate),
     // --- end p1w11-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -255,6 +257,7 @@ impl UpdateBody {
             UpdateBody::SpyVisionSpecialPower(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::DefectorSpecialPower(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SpecialPowerModule(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::SpyVisionUpdate(m) => m.world_update(world, me),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -332,6 +335,7 @@ impl UpdateBody {
             UpdateBody::SpyVisionSpecialPower(m) => m.module_call(world, me, call),
             UpdateBody::DefectorSpecialPower(m) => m.module_call(world, me, call),
             UpdateBody::SpecialPowerModule(m) => m.module_call(world, me, call),
+            UpdateBody::SpyVisionUpdate(m) => m.module_call(world, me, call),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -406,6 +410,7 @@ impl UpdateBody {
             UpdateBody::RadarUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::SubdualDamageHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::ObjectDefectionHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::SpyVisionUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
 // --- end p1w11-sonnet ---
             _ => self.xfer(xfer),
         }
@@ -462,6 +467,7 @@ impl UpdateBody {
             UpdateBody::RadarUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::SubdualDamageHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::ObjectDefectionHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::SpyVisionUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
 // --- end p1w11-sonnet ---
             _ => self.crc(xfer),
         }
@@ -518,6 +524,7 @@ impl UpdateBody {
             UpdateBody::RadarUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::SubdualDamageHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::ObjectDefectionHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::SpyVisionUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
 // --- end p1w11-sonnet ---
             _ => self.load_post_process(),
         }
@@ -595,6 +602,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::SpyVisionSpecialPower(m) => m.crc(xfer),
             UpdateBody::DefectorSpecialPower(m) => m.crc(xfer),
             UpdateBody::SpecialPowerModule(m) => m.crc(xfer),
+            UpdateBody::SpyVisionUpdate(m) => m.crc(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -668,6 +676,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::SpyVisionSpecialPower(m) => m.xfer(xfer),
             UpdateBody::DefectorSpecialPower(m) => m.xfer(xfer),
             UpdateBody::SpecialPowerModule(m) => m.xfer(xfer),
+            UpdateBody::SpyVisionUpdate(m) => m.xfer(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -741,6 +750,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::SpyVisionSpecialPower(m) => m.load_post_process(),
             UpdateBody::DefectorSpecialPower(m) => m.load_post_process(),
             UpdateBody::SpecialPowerModule(m) => m.load_post_process(),
+            UpdateBody::SpyVisionUpdate(m) => m.load_post_process(),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -899,6 +909,7 @@ impl UpdateBody {
             UpdateBody::SpyVisionSpecialPower(m) => m.world_construct(world, me),
             UpdateBody::DefectorSpecialPower(m) => m.world_construct(world, me),
             UpdateBody::SpecialPowerModule(m) => m.world_construct(world, me),
+            UpdateBody::SpyVisionUpdate(m) => m.world_construct(world, me),
 // --- end p1w11-sonnet ---
             _ => {}
         }

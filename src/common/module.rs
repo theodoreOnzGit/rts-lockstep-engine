@@ -370,6 +370,8 @@ pub enum ModuleDataKind {
     SpyVisionSpecialPower(Arc<crate::logic::modules::spy_vision_special_power::SpyVisionSpecialPowerModuleData>),
     /// `DefectorSpecialPowerModuleData`.
     DefectorSpecialPower(Arc<crate::logic::modules::defector_special_power::DefectorSpecialPowerModuleData>),
+    /// `SpyVisionUpdateModuleData`.
+    SpyVisionUpdate(Arc<crate::logic::modules::spy_vision_update::SpyVisionUpdateModuleData>),
     // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
@@ -444,6 +446,7 @@ impl ModuleDataKind {
             ModuleDataKind::BaikonurLaunchPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::SpyVisionSpecialPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::DefectorSpecialPower(d) => &d.special_power.behavior.module_data,
+            ModuleDataKind::SpyVisionUpdate(d) => &d.update.behavior.module_data,
             // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
@@ -649,6 +652,13 @@ impl ModuleDataKind {
             ModuleDataKind::DefectorSpecialPower(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.special_power.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::SpyVisionUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
                     true
                 }
                 None => false,

@@ -93,6 +93,8 @@ pub mod cleanup_area_power;
 pub mod baikonur_launch_power;
 pub mod spy_vision_special_power;
 pub mod defector_special_power;
+pub mod spy_vision_update;
+pub mod upgrade_mux_user;
 // --- end p1w11-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -323,6 +325,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::DefectorSpecialPower(d) => Some(made(
             defector_special_power::DefectorSpecialPower::get_interface_mask(),
             defector_special_power::DefectorSpecialPower::new(object, Some(d.clone())).map(UpdateBody::DefectorSpecialPower),
+        )),
+        ModuleDataKind::SpyVisionUpdate(d) => Some(made_update(
+            spy_vision_update::SpyVisionUpdate::get_interface_mask(),
+            spy_vision_update::SpyVisionUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::SpyVisionUpdate(m))),
         )),
         // --- end p1w11-sonnet ---
         _ => None,

@@ -17,12 +17,12 @@
 //! The C++ side is the five `.cpp` files, compiled unchanged into `wrap_module.cpp`'s unit (`differential/l9_powers_h.inc`) on the module build's
 //! stand-ins: three players (the shared special power timers, the academy stats, the relationship to the object's team, a default team), an Eva that
 //! logs, an in-game UI that logs the superweapons, a script engine that logs, an audio manager that logs, the update modules the powers look for
-//! (`CleanupHazardUpdate`, `SpyVisionUpdate`, and a behaviour with a `SpecialPowerUpdateInterface`), a contain with a count, a thing factory with `RO_A`
+//! (`CleanupHazardUpdate` and a behaviour with a `SpecialPowerUpdateInterface`; `SpyVisionUpdate` is the REAL class, compiled for update batch I), a contain with a count, a thing factory with `RO_A`
 //! (the view and the detonation object) and the REAL `SpecialPowerStore`, `INI` and `AudioEventRTS` parse.
 //!
 //! The Rust side is the real thing: a `World` with the loaded special power store and a thing factory read from INI text, five teams, three players
 //! (the timers are `Player::special_power_timers`), two objects (the one with the module from `modules::new_module` beside scripted `ProbeModule`s
-//! for the update modules and the contain, and a second one that is the target of `doSpecialPowerAtObject`), every op a `World::module_call` or an
+//! for `CleanupHazardUpdate`, the update interface behaviour and the contain, and the real `SpyVisionUpdate`; and a second one that is the target of `doSpecialPowerAtObject`), every op a `World::module_call` or an
 //! xfer through `World::xfer_module_slot`.
 //!
 //! Each case defines four special powers with random fields, reads a `D` block (mostly well formed), and when the read succeeds runs 1 to 16 ops
@@ -31,8 +31,8 @@
 //! the relationships changed).
 //!
 //! Compared, bit for bit: the read's throw; the data; the constructor's effects; per op the throw status, `isReady`, `getPercentReady`,
-//! `getReadyFrame`, `isScriptOnly`, the effects in order (`eva`, `script`, `academy`, `audio`, `addsuper`, `defect`, `cleanup`, `spyvision`, `intent`, `mc`),
-//! the xfer status, bytes and CRC, the module's four state words, and every object the module made (id, team, position, shroud clearing range).
+//! `getReadyFrame`, `isScriptOnly`, the effects in order (`eva`, `script`, `academy`, `audio`, `addsuper`, `defect`, `cleanup`, `spied`, `intent`, `mc`),
+//! the xfer status, bytes and CRC, the module's four state words, the real spy vision update's deactivate frame and whether it is on, and every object the module made (id, team, position, shroud clearing range).
 //!
 //! # Deviations the test cannot see
 //!
@@ -44,11 +44,14 @@
 //!
 //! # Results
 //!
-//! (2026-10-21, 9000 cases, `L9PH_CASES` overrides.) 7,852 data reads and 62,363 dump lines (42,776 ops: 20,477 `doSpecialPower...` calls, 4,602 xfers)
-//! compared, 0 mismatches; 1,148 inputs excluded as undefined upstream; 2,704 data blocks threw on both sides. Compared per kind: 1,005 base,
-//! 1,037 `CleanupAreaPower`, 1,018 `BaikonurLaunchPower`, 1,044 `SpyVisionSpecialPower`, 1,044 `DefectorSpecialPower`. Effects: 7,738 `academy`,
-//! 7,448 `script`, 10,960 `audio`, 4,508 `eva`, 3,055 `intent`, 481 `defect`, 585 `cleanup`, 596 `spyvision`, 456 `addsuper`, 482 `mc`; up to 11 objects made
+//! (2026-10-21, 9000 cases, `L9PH_CASES` overrides.) 7,805 data reads and 61,698 dump lines (42,234 ops: 20,664 `doSpecialPower...` calls, 4,504 xfers)
+//! compared, 0 mismatches; 1,195 inputs excluded as undefined upstream; 2,678 data blocks threw on both sides. Compared per kind: 1,044 base,
+//! 1,024 `CleanupAreaPower`, 1,018 `BaikonurLaunchPower`, 1,034 `SpyVisionSpecialPower`, 1,007 `DefectorSpecialPower`. Effects: 7,543 `academy`,
+//! 7,444 `script`, 10,981 `audio`, 4,524 `eva`, 3,114 `intent`, 525 `defect`, 635 `cleanup`, 532 `spied`, 466 `addsuper`, 510 `mc`; up to 10 objects made
 //! by one case (view objects and detonation objects).
+//!
+//! `SpyVisionUpdate` was a logging stand-in when this batch was first written (a `spyvision <duration>` line); it is now the real class on both sides
+//! (update batch I), so the duration the power computes is seen as the update's deactivate frame and the activation as the `spied` lines.
 //!
 //! # Upstream facts the test exposed
 //!
@@ -114,6 +117,7 @@ use rts_lockstep_engine::logic::modules::defector_special_power::DefectorSpecial
 use rts_lockstep_engine::logic::modules::special_power_body::SpecialPowerBehavior;
 use rts_lockstep_engine::logic::modules::special_power_module_impl::SpecialPowerModuleImpl;
 use rts_lockstep_engine::logic::modules::spy_vision_special_power::SpyVisionSpecialPowerModuleData;
+use rts_lockstep_engine::logic::modules::spy_vision_update::SpyVisionUpdateModuleData;
 use rts_lockstep_engine::logic::weapon_set::WeaponTemplateTable;
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleReply};
@@ -316,6 +320,7 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
         let bytes: Vec<u32> = (0..blen).map(|_| u32_(&mut p)).collect();
         let crc = u32_(&mut p);
         let state: Vec<u32> = (0..4).map(|_| u32_(&mut p)).collect();
+        let spy: Vec<u32> = (0..3).map(|_| u32_(&mut p)).collect();
         let n_objs = u32_(&mut p);
         let objs: Vec<String> = (0..n_objs)
             .map(|_| {
@@ -325,7 +330,7 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
             })
             .collect();
         out.push(format!(
-            "op {i}: status {st} ready {ready} percent {percent:#x} frame {frame} scriptonly {script_only} log {log:?} xfer {xst} bytes {bytes:?} crc {crc:#x} state {state:x?} objects {objs:?}"
+            "op {i}: status {st} ready {ready} percent {percent:#x} frame {frame} scriptonly {script_only} log {log:?} xfer {xst} bytes {bytes:?} crc {crc:#x} state {state:x?} spy {spy:?} objects {objs:?}"
         ));
     }
     out
@@ -504,6 +509,26 @@ fn set_relationships(w: &mut World, word: u32) {
     }
 }
 
+/// Player `a`'s relationship to the default team of player `b` is bits `2 * (3 * a + b)` of `word`.
+fn set_matrix(w: &mut World, word: u32) {
+    for a in 0..3 {
+        for b in 0..3 {
+            w.cuts.player_relationships.insert((a, 101 + b as u32), relationship(word >> (2 * (3 * a + b))));
+        }
+    }
+}
+
+/// A kind-of mask as the driver prints it in a log line: four words, hex, the highest first.
+fn kind_words(m: &rts_lockstep_engine::common::kind_of::KindOfMaskType) -> String {
+    let mut w = [0u32; 4];
+    for i in 0..rts_lockstep_engine::common::kind_of::KINDOF_COUNT {
+        if m.test(i) {
+            w[(i / 32) as usize] |= 1 << (i % 32);
+        }
+    }
+    format!("{:08x}{:08x}{:08x}{:08x}", w[3], w[2], w[1], w[0])
+}
+
 fn set_local(w: &mut World, local: Option<i32>) {
     w.players.set_local_player(local);
 }
@@ -540,7 +565,7 @@ fn eva_number(weapon: EvaSuperweapon, whose: EvaWhose) -> i32 {
 }
 
 /// The effect lines of one stretch of the trace, in the driver's format: each `cut` line takes the next cut call, each `evt` line the next client
-/// event, and the module's own lines (`defect`, `cleanup`, `spyvision`, `intent`) are the driver's.
+/// event, and the module's own lines (`defect`, `cleanup`, `intent`) are the driver's.
 fn effects(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClientEvent>) -> Vec<String> {
     let mut log = Vec::new();
     let mut cut_iter = cuts.into_iter();
@@ -550,6 +575,7 @@ fn effects(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClientEvent
             match cut_iter.next().expect("a cut line has a cut call") {
                 CutCall::ScriptNotifyOfTriggeredSpecialPower { player, name, source } => log.push(format!("script {player} {} {source}", String::from_utf8_lossy(&name))),
                 CutCall::PlayerAcademyRecordSpecialPowerUsed { player, template } => log.push(format!("academy {player} {template}")),
+                CutCall::PlayerSetUnitsVisionSpied { player, setting, which_units, by_whom } => log.push(format!("spied {player} {} {by_whom} {}", i32::from(setting), kind_words(&which_units))),
                 _ => {}
             }
         } else if t.starts_with("evt ObjectCreated") || t.starts_with("evt ObjectDestroyed") {
@@ -570,7 +596,7 @@ fn effects(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClientEvent
                 ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Set(v), .. } => log.push(format!("mc {}", v.first().copied().unwrap_or(-1))),
                 _ => {}
             }
-        } else if t.starts_with("defect ") || t.starts_with("cleanup ") || t.starts_with("spyvision ") || t.starts_with("intent ") {
+        } else if t.starts_with("defect ") || t.starts_with("cleanup ") || t.starts_with("intent ") {
             log.push(t);
         }
     }
@@ -609,7 +635,7 @@ fn power_module(kind: usize, id: ObjectId, data: &ModuleDataKind) -> NewModule {
 
 /// Runs the ops on a fresh world and returns the dump (after the data dump) and the world.
 #[allow(clippy::too_many_arguments)]
-fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data: ModuleDataKind, cfg: &[u32; 7], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
+fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data: ModuleDataKind, cfg: &[u32; 8], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     put_data(&mut v, &data, &store);
 
@@ -625,11 +651,13 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
     for team in [OBJECT_TEAM, 101, 102, 103] {
         w.teams.insert_team(Team::new(team, 0)).unwrap();
     }
+    w.players.set_player_count(3);
     for i in 0..3 {
         w.players.get_nth_mut(i).unwrap().default_team = Some(101 + i as u32);
     }
     set_local(&mut w, (cfg[1] < 3).then_some(cfg[1] as i32));
     set_relationships(&mut w, cfg[4]);
+    set_matrix(&mut w, cfg[7]);
     if cfg[0] != NO_PLAYER {
         w.cuts.team_players.insert(OBJECT_TEAM, cfg[0] as i32);
     }
@@ -643,9 +671,9 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
         modules.push(b);
     }
     if cfg[2] >> 4 & 1 != 0 {
-        let mut b = NewModule::plain(b"SpyVisionUpdate", b"ModuleTag_Spy");
-        b.body = Some(probe(ProbeAnswers::default()));
-        modules.push(b);
+        // the real SpyVisionUpdate, with the default data (batch I tests its fields)
+        let spy = ModuleDataKind::SpyVisionUpdate(Arc::new(SpyVisionUpdateModuleData::default()));
+        modules.push(rts_lockstep_engine::logic::modules::new_module(first_id, b"SpyVisionUpdate", b"ModuleTag_Spy", &spy).unwrap().unwrap());
     }
     if cfg[2] >> 5 & 1 != 0 {
         let mut b = NewModule::plain(b"CleanupHazardUpdate", b"ModuleTag_Cleanup");
@@ -757,6 +785,7 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
             }
             16 => set_local(&mut w, (o[1] != 0).then(|| o[1] as i32 - 1)),
             17 => set_relationships(&mut w, o[1]),
+            18 => set_matrix(&mut w, o[1]),
             _ => unreachable!(),
         }
         let threw = w.cuts.module_errors.len() > errors_before;
@@ -794,6 +823,14 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
         for s in state_words(&w, me, idx) {
             put_u32(&mut v, s);
         }
+        // the object's real SpyVisionUpdate, if it has one: its deactivate frame and whether it is on
+        let spy = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
+            Some(UpdateBody::SpyVisionUpdate(m)) => Some(m.state_words()),
+            _ => None,
+        });
+        put_u32(&mut v, u32::from(spy.is_some()));
+        put_u32(&mut v, spy.as_ref().map_or(0, |s| s[0]));
+        put_u32(&mut v, spy.as_ref().map_or(0, |s| s[1]));
         // the objects the module made (the ids after the two it was given, in creation order)
         let made: Vec<ObjectId> = (3..).take_while(|id| w.objects.find(*id).is_some()).collect();
         tally.made = tally.made.max(made.len() as u64);
@@ -870,7 +907,7 @@ fn power_modules_h_match_upstream() {
             }
         };
         // [the object's player, the local player, flags, the contain count, the relationships, the first new id, the frame]
-        let mut cfg = [0u32; 7];
+        let mut cfg = [0u32; 8];
         cfg[0] = if g.below(12) == 0 { NO_PLAYER } else { g.below(3) };
         cfg[1] = g.below(3); // (a local player always exists once the list is set up: `setLocalPlayer(NULL)` selects the neutral player)
         let dis = u32::from(g.below(5) == 0);
@@ -889,6 +926,7 @@ fn power_modules_h_match_upstream() {
         cfg[4] = (g.below(3)) | (g.below(3) << 2) | (g.below(3) << 4);
         cfg[5] = 3;
         cfg[6] = gen_frame(&mut g);
+        cfg[7] = (0..9).fold(0u32, |acc, i| acc | (g.below(3) << (2 * i)));
         let n_ops = 1 + g.below(16) as usize;
         let ops: Vec<[u32; 6]> = (0..n_ops)
             .map(|_| match g.below(60) {
@@ -909,6 +947,7 @@ fn power_modules_h_match_upstream() {
                 51 => [14, 0, 0, 0, 0, 0],
                 52..=53 => [15, 0, 0, 0, 0, 0],
                 54..=55 => [16, 1 + g.below(3), 0, 0, 0, 0],
+                56..=57 => [18, (0..9).fold(0u32, |acc, i| acc | (g.below(3) << (2 * i))), 0, 0, 0, 0],
                 _ => [17, g.below(3) | (g.below(3) << 2) | (g.below(3) << 4), 0, 0, 0, 0],
             })
             .collect();
@@ -967,7 +1006,7 @@ fn power_modules_h_match_upstream() {
         };
         let (dr, dc) = (decode(kind, &rd, ops.len()), decode(kind, &buf, ops.len()));
         for l in &dr {
-            for key in ["\"eva ", "\"script ", "\"academy ", "\"audio ", "\"addsuper ", "\"defect ", "\"cleanup ", "\"spyvision ", "\"intent ", "\"mc "] {
+            for key in ["\"eva ", "\"script ", "\"academy ", "\"audio ", "\"addsuper ", "\"defect ", "\"cleanup ", "\"spied ", "\"intent ", "\"mc "] {
                 *counts.entry(key.trim_matches('"').trim().to_string()).or_default() += l.matches(key).count() as u64;
             }
         }

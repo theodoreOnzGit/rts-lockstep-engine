@@ -181,6 +181,7 @@ impl ProbeModule {
                 }
                 ModuleReply::Done
             }
+            ModuleCall::SetSpyVisionDisabledUntilFrame { .. } => ModuleReply::Done,
             ModuleCall::ActivateSpyVision { duration } => {
                 if world.cuts.probe_effect_trace {
                     if let Some(t) = &mut world.cuts.trace {

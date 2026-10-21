@@ -21,6 +21,9 @@ Player *g_spLocal = 0;
 Team *g_spObjectTeam = (Team *)(size_t)100;
 GlobalData g_spGlobals;
 int g_spRelations[3];            /* each player's relationship to the object's team (0 enemies, 1 neutral, 2 allies) */
+int g_spMatrix[3][3];            /* each player's relationship to the default team of each player (team 101 + index; same numbering) */
+Player *g_spPlayerPtrs[3];       /* the players ThePlayerList counts (the drivers of batches H and I set them) */
+int g_spPlayerCount = 3;
 bool g_spCleanupPresent = false;
 bool g_spSpyPresent = false;
 bool g_spLogRemove = false;
@@ -31,9 +34,8 @@ ScriptEngine g_spScript;
 InGameUI g_spUi;
 
 class SpCleanup { public: int m_dummy; };
-class SpSpy { public: int m_dummy; };
 SpCleanup g_spCleanup;
-SpSpy g_spSpy;
+SpyVisionUpdate *g_spSpyReal = 0;            /* the REAL SpyVisionUpdate (SpyVisionUpdate.cpp is compiled by differential/l9_updates_i.inc) */
 
 class SpContain : public UpgContain {
 public:
@@ -70,7 +72,7 @@ UpdateModule *spFindHook(const Object *o, NameKeyType key)
 {
 	if (o->m_oid != 1) return 0;
 	if (g_spCleanupPresent && key == TheNameKeyGenerator->nameToKey("CleanupHazardUpdate")) return (UpdateModule *)&g_spCleanup;
-	if (g_spSpyPresent && key == TheNameKeyGenerator->nameToKey("SpyVisionUpdate")) return (UpdateModule *)&g_spSpy;
+	if (g_spSpyPresent && key == TheNameKeyGenerator->nameToKey("SpyVisionUpdate")) return g_spSpyReal;
 	return 0;
 }
 
@@ -138,12 +140,25 @@ void Player::resetOrStartSpecialPowerReadyFrame(const SpecialPowerTemplate *temp
 	if (it != g_spTimers[m_idx].end()) it->second = now + temp->getReloadTime();
 	else g_spTimers[m_idx][ref_sp_raw_id(temp)] = now;
 }
-Relationship Player::getRelationship(const Team *that) const { return (Relationship)g_spRelations[m_idx]; }
+Relationship Player::getRelationship(const Team *that) const
+{
+	int t = (int)(size_t)that;
+	if (t >= 101 && t <= 103) return (Relationship)g_spMatrix[m_idx][t - 101];     /* a player's default team */
+	return (Relationship)g_spRelations[m_idx];                                      /* the object's team */
+}
+Int PlayerList::getPlayerCount() { return g_spPlayerCount; }
+Player *PlayerList::getNthPlayer(Int i) { return g_spPlayerPtrs[i]; }
+void Player::setUnitsVisionSpied(Bool setting, KindOfMaskType whichUnits, Int byWhom)
+{
+	/* the kinds as four words (bit k of word k / 32), hex: the effect log's lines are short */
+	unsigned w[4] = { 0, 0, 0, 0 };
+	for (int k = 0; k < KINDOF_COUNT; ++k) if (whichUnits.test((KindOfType)k)) w[k / 32] |= 1u << (k % 32);
+	ulog("spied %d %d %d %08x%08x%08x%08x", (int)m_idx, (int)setting, (int)byWhom, w[3], w[2], w[1], w[0]);
+}
 void PowerAcademyStats::recordSpecialPowerUsed(const SpecialPowerTemplate *t) { ulog("academy %d %u", (int)((Player *)this)->m_idx, ref_sp_raw_id(t)); }
 void Object::defect(Team *newTeam, UnsignedInt detectionTime) { ulog("defect %d %d %u", (int)m_oid, (int)(size_t)newTeam, detectionTime); }
 void Object::setShroudClearingRange(Real r) { m_shroudRange = r; }
 void CleanupHazardUpdate::setCleanupAreaParameters(const Coord3D *pos, Real range) { ulog("cleanup %u,%u,%u %u", realBits(pos->x), realBits(pos->y), realBits(pos->z), realBits(range)); }
-void SpyVisionUpdate::activateSpyVision(UnsignedInt duration) { ulog("spyvision %u", duration); }
 
 extern "C" {
 
@@ -151,12 +166,12 @@ extern "C" {
 ** 4 DefectorSpecialPower) and make the module on an Object (id 1, team 100) beside a second object (id 2). `cfg`: [the controlling player of both (0xFFFFFFFF
 ** none), the local player, flags (bit 0 disabled after the constructor, 1 under construction, 2 a structure, 3 has a contain, 4 has a SpyVisionUpdate, 5 has a CleanupHazardUpdate,
 ** 6 has a special power update behaviour that passes the science test, 7 and takes the intent, 8 the view object RO_A is defined, 9 the global view object
-** name is RO_A, 10 the object has a drawable after the constructor), the contain count, the players' relationships to the object's team (2 bits each), the first new object's id, the game logic's frame]. The
+** name is RO_A, 10 the object has a drawable after the constructor), the contain count, the players' relationships to the object's team (2 bits each), the first new object's id, the game logic's frame, the players' relationships to each player's default team (2 bits each, [player][default team of player])]. The
 ** three real special powers SP_0..SP_3 are the real store's (the test loaded them). Then `n` ops of 6 words [op, a, b, c, d]: 0 doSpecialPower(options a)
 ** 1 doSpecialPowerAtObject(object 2, options a)  2 doSpecialPowerAtLocation((a, b, c) float bits, options d)  3 doSpecialPowerUsingWaypoints(a)  4 pauseCountdown(a & 1)
 ** 5 onSpecialPowerCreation  6 setReadyFrame(a)  7 markSpecialPowerTriggered(a != 0: location (b, c, d))  8 startPowerRecharge  9 queries only  10 the frame = a
 ** 11 the objects' disabled = a & 1 and controlling player = b - 1 (0 none)  12 xfer save  13 xfer load of the last save  14 xfer CRC  15 loadPostProcess
-** 16 the local player = a - 1 (0 none)  17 the relationships = a (2 bits each). Each op appends: the CATCH_ALL status, isReady, getPercentReady (bits),
+** 16 the local player = a - 1 (0 none)  17 the relationships = a (2 bits each)  18 the relationships to the default teams = a. Each op appends: the CATCH_ALL status, isReady, getPercentReady (bits),
 ** getReadyFrame, isScriptOnly, the effect log (count, then each as a string), the xfer status, bytes and CRC, the module's four state words, and the
 ** objects the module made (count, then id, team, position and shroud range bits of each). The constructor's effect log (count, then each as a string) comes
 ** before the first op. */
@@ -202,6 +217,9 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 	for (int t = 0; t < 256; ++t) g_roTeamPlayer[t] = -1;
 	g_spLocal = (int)cfg[1] >= 0 && cfg[1] < 3 ? &players[cfg[1]] : 0;
 	for (int i = 0; i < 3; ++i) g_spRelations[i] = (cfg[4] >> (2 * i)) & 3;
+	for (int a = 0; a < 3; ++a) for (int b = 0; b < 3; ++b) g_spMatrix[a][b] = (cfg[7] >> (2 * (3 * a + b))) & 3;
+	for (int i = 0; i < 3; ++i) g_spPlayerPtrs[i] = &players[i];
+	g_spPlayerCount = 3;
 	g_spCleanupPresent = (cfg[2] >> 5 & 1) != 0;
 	g_spSpyPresent = (cfg[2] >> 4 & 1) != 0;
 	g_spContain.m_count = cfg[3];
@@ -253,6 +271,9 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 		list[0] = spu;
 	}
 	obj->m_behaviors = list;
+	SpyVisionUpdateModuleData spyData;
+	g_spSpyReal = 0;
+	if (g_spSpyPresent) g_spSpyReal = new SpyVisionUpdate(obj, &spyData);
 	g_events.clear();
 	g_ulog.clear();
 	SpecialPowerModule *m = 0;
@@ -320,6 +341,7 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 			case 15: m->loadPostProcess(); break;
 			case 16: g_spLocal = o[1] ? &players[o[1] - 1] : 0; break;
 			case 17: for (int p = 0; p < 3; ++p) g_spRelations[p] = (o[1] >> (2 * p)) & 3; break;
+			case 18: for (int a = 0; a < 3; ++a) for (int b = 0; b < 3; ++b) g_spMatrix[a][b] = (o[1] >> (2 * (3 * a + b))) & 3; break;
 			}
 		}
 		CATCH_ALL(st, &c2, m2, 16)
@@ -347,6 +369,9 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 		putU32((unsigned)m->m_pausedCount);
 		putU32(m->m_pausedOnFrame);
 		putU32(realBits(m->m_pausedPercent));
+		putU32(g_spSpyReal ? 1 : 0);                 /* the object's real SpyVisionUpdate: its deactivate frame and whether it is on */
+		putU32(g_spSpyReal ? g_spSpyReal->m_deactivateFrame : 0);
+		putU32(g_spSpyReal ? (g_spSpyReal->m_currentlyActive ? 1 : 0) : 0);
 		putU32((unsigned)(g_roObjects.size()));
 		for (size_t j = 0; j < g_roObjects.size(); ++j) {
 			const Object *ob = g_roObjects[j];
@@ -359,6 +384,8 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 	*len = finish(buf, cap);
 	g_spLogRemove = false;
 	delete m;
+	delete g_spSpyReal;
+	g_spSpyReal = 0;
 	delete spu;
 	delete d;
 	obj->m_drawable = 0;

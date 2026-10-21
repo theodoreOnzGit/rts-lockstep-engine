@@ -53,6 +53,7 @@ public:
 	class PowerAcademyStats *getAcademyStats() { return (class PowerAcademyStats *)this; }
 	Relationship getRelationship(const Team *that) const;
 	Team *getDefaultTeam() { return m_defaultTeam; }
+	void setUnitsVisionSpied(Bool setting, KindOfMaskType whichUnits, Int byWhom);   /* SpyVisionUpdate: a line of the effect log */
 	Team *m_defaultTeam;
 	Money m_money;
 	ScoreKeeper m_score;

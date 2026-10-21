@@ -786,4 +786,5 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_crates_f.inc"
 #include "l9_helpers_g.inc"
 #include "l9_powers_h.inc"
+#include "l9_updates_i.inc"
 /* --- end p1w11-sonnet --- */

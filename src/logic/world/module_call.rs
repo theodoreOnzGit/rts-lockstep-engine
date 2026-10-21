@@ -324,6 +324,8 @@ pub enum ModuleCall {
     SetCleanupAreaParameters { loc: Coord3D, range: f32 },
     /// `SpyVisionUpdate::activateSpyVision(duration)` (`SpyVisionSpecialPower`).
     ActivateSpyVision { duration: u32 },
+    /// `SpyVisionUpdate::setDisabledUntilFrame(frame)` (the sabotage crates).
+    SetSpyVisionDisabledUntilFrame { frame: u32 },
     /// `getPercentReady()`; replies [`ModuleReply::Real`].
     GetPercentReady,
     /// `getReadyFrame() const`; replies [`ModuleReply::Int`] (the frame as an `Int`).

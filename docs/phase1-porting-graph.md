@@ -886,6 +886,16 @@ goes, because the model has no hook for a module's destruction. **Found by the t
 interface one and a non-`const` one returning `m_availableOnFrame`); three function-local `static NameKeyType` caches (made plain locals by `build.rs` for
 the run-after-run test). Left among the powers: `OCLSpecialPower`, `CashBountyPower`, `CashHackSpecialPower`, `FireWeaponPower`,
 `DemoralizeSpecialPower`, `SpecialAbility`, `SpectreGunshipDeploymentUpdate` and the rest (floating text and player plumbing, or later layers).
+**Layer-9 update batch I (2026-10-21, `p1w11-sonnet`).** `SpyVisionUpdate` (`modules/spy_vision_update.rs`) over `modules/update_behavior.rs`, and the
+shared plumbing of a module that has an `UpgradeMux` without being an `UpgradeModule` (`modules/upgrade_mux_user.rs`: `isAlreadyUpgraded`, `attemptUpgrade`,
+`wouldUpgrade`, `resetUpgrade`, `forceRefreshUpgrade`, in `upgrade_body.rs`'s step order), wired as an object module with `tests/differential_update_modules_i.rs`
+against the unchanged `.cpp` (`differential/l9_updates_i.inc`): 9,000 cases, 8,920 data reads, 128,932 dump lines (62,604 ops), 8,291 name-key checks, 0
+mismatches, 80 excluded as undefined upstream; 11 planted bugs (`L9_PLANT` 861-871), all caught. Batch H's `SpyVisionSpecialPower` now drives the REAL
+`SpyVisionUpdate` on both sides (it was a logging stand-in): the duration the power computes shows as the update's deactivate frame, the activation
+as `PlayerSetUnitsVisionSpied` cut calls. **Upstream fact kept:** `SpyVisionUpdate::xfer` does not save the mux's `m_upgradeExecuted` (an `UpgradeModule` does).
+New: `ModuleCall::SetSpyVisionDisabledUntilFrame` (the sabotage crates call `setDisabledUntilFrame`), `CutCall::PlayerSetUnitsVisionSpied`. The other modules
+that mix `UpgradeMux` in (`FXListDie`, `FireWeaponWhenDeadBehavior`, `FireWeaponWhenDamagedBehavior`, `AutoHealBehavior`, `CountermeasuresBehavior`,
+`GenerateMinefieldBehavior`, `FireOCLAfterWeaponCooldownUpdate`) can use `upgrade_mux_user`.
 **Layer-9 helper and die batch verified (2026-10-21, `p1w10-sonnet`).** ~~The helpers and dies of `p1l9-helpers` (`ObjectHelper`,
 `ObjectSMCHelper`, `ObjectRepulsorHelper`, `ObjectWeaponStatusHelper`, `StatusDamageHelper`, `TempWeaponBonusHelper`,
 `DestroyDie`, `KeepObjectDie`, `UpgradeDie`) are pure functions returning effects.~~ **CORRECTED 2026-10-21** - the drafts were
