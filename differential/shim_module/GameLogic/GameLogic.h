@@ -7,6 +7,9 @@
 #include "Lib/BaseType.h"
 class Object;
 class UpdateModule;
+#include "Common/GameType.h"
+void modhelp_destroy(Object *obj);
+Object *modhelp_find(ObjectID id);
 class GameLogic
 {
 public:
@@ -18,6 +21,10 @@ public:
 		m_awakenModule = u;
 		m_awakenFrame = whenToWakeUp;
 	}
+	/* --- p1w10-sonnet --- (the layer-9 die batch: DestroyDie and UpgradeDie; both answered by l9_helpers.inc) */
+	void destroyObject(Object *obj) { modhelp_destroy(obj); }   /* inline hooks: shim_updates' GameLogic has its own, out of line, destroyObject */
+	Object *findObjectByID(ObjectID id) { return modhelp_find(id); }
+	/* --- end p1w10-sonnet --- */
 	UnsignedInt m_frame = 0;
 	int m_awakenCalls = 0;
 	Object *m_awakenObject = 0;

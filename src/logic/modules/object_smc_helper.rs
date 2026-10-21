@@ -13,32 +13,61 @@
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
 
-//! `ObjectSMCHelper`: "special model condition" helper. When it wakes (it is
-//! only ever awakened forcibly), it clears the object's special model
-//! conditions and sleeps forever.
+//! `ObjectSMCHelper`: clears the object's special model-condition states when woken, then sleeps until forcibly awakened.
 
-use super::object_helper::HelperEffect;
-use crate::logic::module::update_module::{UpdateSleepTime, UPDATE_SLEEP_FOREVER};
+use std::sync::Arc;
 
-/// `ObjectSMCHelper`: no state of its own (version 1 xfers nothing).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ObjectSmcHelper;
+use super::plant;
+use super::object_helper::{HelperHost, ObjectHelper};
+use crate::common::ini::IniResult;
+use crate::common::module::ObjectId;
+use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
+use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER};
 
-impl ObjectSmcHelper {
-    /// `ObjectSMCHelper::update()`: the effects, and the sleep (forever).
-    pub fn update(&self) -> (UpdateSleepTime, Vec<HelperEffect>) {
-        (UPDATE_SLEEP_FOREVER, vec![HelperEffect::ClearSpecialModelConditionStates])
+/// `class ObjectSMCHelper : public ObjectHelper`; it has no state of its own.
+#[derive(Clone, Debug)]
+pub struct ObjectSMCHelper {
+    helper: ObjectHelper,
+}
+
+impl ObjectSMCHelper {
+    /// `ObjectSMCHelper(thing, modData)`: the `ObjectHelper` (asleep), then nothing.
+    pub fn new(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>, host: &mut impl HelperHost) -> IniResult<Self> {
+        let helper = ObjectHelper::new(object, module_data, SleepyUpdatePhase::Normal, host)?;
+        Ok(ObjectSMCHelper { helper })
+    }
+
+    /// `ObjectSMCHelper::update()`.
+    pub fn update(&mut self, host: &mut impl HelperHost) -> UpdateSleepTime {
+        if !plant(33) {
+            host.clear_special_model_condition_states();
+        }
+        UPDATE_SLEEP_FOREVER
+    }
+
+    /// The `ObjectHelper` base.
+    pub fn helper(&self) -> &ObjectHelper {
+        &self.helper
+    }
+
+    /// The `ObjectHelper` base, mutably.
+    pub fn helper_mut(&mut self) -> &mut ObjectHelper {
+        &mut self.helper
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn update_clears_special_model_conditions_then_sleeps_forever() {
-        let (sleep, fx) = ObjectSmcHelper.update();
-        assert_eq!(sleep, UPDATE_SLEEP_FOREVER);
-        assert_eq!(fx, vec![HelperEffect::ClearSpecialModelConditionStates]);
+impl Snapshot for ObjectSMCHelper {
+    fn crc(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        self.helper.crc(xfer)
+    }
+    /// Version 1: the version, `ObjectHelper::xfer`.
+    fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        xfer.xfer_version(&mut version, current)?;
+        self.helper.xfer(xfer)
+    }
+    fn load_post_process(&mut self) {
+        self.helper.load_post_process();
     }
 }

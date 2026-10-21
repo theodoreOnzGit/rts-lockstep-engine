@@ -1182,6 +1182,24 @@ extern "C" {
     ) -> c_int;
 }
 // --- end p1w10-sonnet ---
+// --- p1w10-sonnet --- (the layer-9 helper and die batch, differential/l9_helpers.inc)
+extern "C" {
+    #[allow(clippy::too_many_arguments)]
+    pub fn ref_l9help_run(
+        kind: c_int,
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+}
+// --- end p1w10-sonnet ---
 // --- p1w9-sonnet ---
 extern "C" {
     // Team.cpp on stand-ins (wrap_team.cpp, shim_team/team_driver.h)

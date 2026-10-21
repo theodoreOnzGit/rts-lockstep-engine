@@ -13,41 +13,62 @@
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
 
-//! `ObjectWeaponStatusHelper`: runs every frame, in the final update phase,
-//! so the model condition follows the weapon status (`adjustModelConditionForWeaponStatus`).
-//! Unlike the other helpers it starts awake (`UPDATE_SLEEP_NONE`).
+//! `ObjectWeaponStatusHelper`: keeps the object's model condition in step with its weapon status; it starts active and runs in the final update phase, after every normal update module.
 
-use super::object_helper::HelperEffect;
-use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateSleepTime, UPDATE_SLEEP_NONE};
+use std::sync::Arc;
 
-/// The update phase of this helper (`getUpdatePhase()`): `PHASE_FINAL`, so it
-/// runs after every normal update module.
-pub const UPDATE_PHASE: SleepyUpdatePhase = SleepyUpdatePhase::Final;
+use super::plant;
+use super::object_helper::{HelperHost, ObjectHelper};
+use crate::common::ini::IniResult;
+use crate::common::module::ObjectId;
+use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
+use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
 
-/// The delay its constructor gives the module (`setWakeFrame(UPDATE_SLEEP_NONE)`).
-pub const CONSTRUCTOR_SLEEP: UpdateSleepTime = UPDATE_SLEEP_NONE;
-
-/// `ObjectWeaponStatusHelper`: no state of its own.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ObjectWeaponStatusHelper;
+/// `class ObjectWeaponStatusHelper : public ObjectHelper`; it has no state of its own.
+#[derive(Clone, Debug)]
+pub struct ObjectWeaponStatusHelper {
+    helper: ObjectHelper,
+}
 
 impl ObjectWeaponStatusHelper {
-    /// `ObjectWeaponStatusHelper::update()`: adjusts the model condition; runs every frame.
-    pub fn update(&self) -> (UpdateSleepTime, Vec<HelperEffect>) {
-        (UPDATE_SLEEP_NONE, vec![HelperEffect::AdjustModelConditionForWeaponStatus])
+    /// `ObjectWeaponStatusHelper(thing, modData)`: the `ObjectHelper` (asleep), then `setWakeFrame(UPDATE_SLEEP_NONE)` ("unlike other helpers, this one needs to start active").
+    pub fn new(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>, host: &mut impl HelperHost) -> IniResult<Self> {
+        let helper = ObjectHelper::new(object, module_data, if plant(35) { SleepyUpdatePhase::Normal } else { SleepyUpdatePhase::Final }, host)?;
+        if !plant(36) {
+            host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), UPDATE_SLEEP_NONE));
+        }
+        Ok(ObjectWeaponStatusHelper { helper })
+    }
+
+    /// `ObjectWeaponStatusHelper::update()`.
+    pub fn update(&mut self, host: &mut impl HelperHost) -> UpdateSleepTime {
+        host.adjust_model_condition_for_weapon_status();
+        if plant(37) { crate::logic::module::update_module::UPDATE_SLEEP_FOREVER } else { UPDATE_SLEEP_NONE }
+    }
+
+    /// The `ObjectHelper` base.
+    pub fn helper(&self) -> &ObjectHelper {
+        &self.helper
+    }
+
+    /// The `ObjectHelper` base, mutably.
+    pub fn helper_mut(&mut self) -> &mut ObjectHelper {
+        &mut self.helper
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn update_runs_every_frame_in_the_final_phase() {
-        let (sleep, fx) = ObjectWeaponStatusHelper.update();
-        assert_eq!(sleep, UPDATE_SLEEP_NONE);
-        assert_eq!(fx, vec![HelperEffect::AdjustModelConditionForWeaponStatus]);
-        assert_eq!(UPDATE_PHASE, SleepyUpdatePhase::Final);
-        assert_eq!(CONSTRUCTOR_SLEEP, UPDATE_SLEEP_NONE);
+impl Snapshot for ObjectWeaponStatusHelper {
+    fn crc(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        self.helper.crc(xfer)
+    }
+    /// Version 1: the version, `ObjectHelper::xfer`.
+    fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        xfer.xfer_version(&mut version, current)?;
+        self.helper.xfer(xfer)
+    }
+    fn load_post_process(&mut self) {
+        self.helper.load_post_process();
     }
 }

@@ -20,6 +20,7 @@ class Player;
 #include "GameLogic/WeaponSetType.h"
 #include "GameLogic/Weapon.h"
 #include "Common/ModelState.h"
+#include "Common/GameType.h"
 /* GameLogic/WeaponSet.h lines 87-106 (commit 0a05454d), verbatim: the real header needs the weapon layer */
 static const ModelConditionFlagType TheWeaponSetTypeToModelConditionTypeMap[WEAPONSET_COUNT] =
 {
@@ -48,7 +49,7 @@ class ExperienceTracker;
 class Object : public Thing
 {
 public:
-	Object() : m_level(LEVEL_REGULAR), m_player(0), m_body(0), m_drawable(0), m_xp(0), m_weaponBonusCondition(0), m_shroudRange(0) { m_weaponSetFlags[0] = m_weaponSetFlags[1] = 0; }
+	Object() : m_level(LEVEL_REGULAR), m_player(0), m_body(0), m_drawable(0), m_xp(0), m_weaponBonusCondition(0), m_shroudRange(0), m_producerID((ObjectID)0) { m_weaponSetFlags[0] = m_weaponSetFlags[1] = 0; }
 	VeterancyLevel getVeterancyLevel() const { return m_level; }
 	const ObjectStatusMaskType &getStatusBits() const { return m_status; }
 	void removeUpgrade(const UpgradeTemplate *t);
@@ -79,6 +80,17 @@ public:
 	unsigned long long m_weaponSetFlags[2];
 	unsigned m_weaponBonusCondition;
 	Real m_shroudRange;
+	/* --- end p1w10-sonnet --- */
+	/* --- p1w10-sonnet --- (the layer-9 helper and die batch: what ObjectHelper's subclasses and DestroyDie/UpgradeDie call on their object; every
+	** call is a line of the helper log of differential/l9_helpers.inc) */
+	void setStatus(ObjectStatusMaskType objectStatus, Bool set = true);
+	inline void clearStatus(ObjectStatusMaskType objectStatus) { setStatus(objectStatus, false); }
+	void clearSpecialModelConditionStates();
+	void adjustModelConditionForWeaponStatus();
+	void clearWeaponBonusCondition(WeaponBonusConditionType wst);
+	ObjectID getProducerID() const { return m_producerID; }
+	Bool hasUpgrade(const UpgradeTemplate *upgradeT) const;   /* Object.cpp:4456, in l9_helpers.inc */
+	ObjectID m_producerID;
 	/* --- end p1w10-sonnet --- */
 protected:
 	virtual Object *asObjectMeth() { return this; }

@@ -24,9 +24,14 @@
 //! caller passes what they found as a [`ProducerView`] (or `None` when the
 //! producer does not exist), and gets back the effect.
 
-use crate::common::ini::{FieldParse, Ini, IniResult, MultiIniFieldParse, UserData};
+use std::sync::Arc;
+
+use super::{plant, DieHost};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
+use crate::common::module::ObjectId;
+use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::die_module::{DieModuleData, DIE_MODULE_DATA_FIELD_PARSE};
+use crate::logic::module::die_module::{DieModule, DieModuleData, DIE_MODULE_DATA_FIELD_PARSE};
 
 /// `class UpgradeDieModuleData : public DieModuleData`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -82,41 +87,61 @@ pub static UPGRADE_DIE_MODULE_DATA_FIELD_PARSE: [FieldParse<UpgradeDieModuleData
     FieldParse::end(),
 ];
 
-/// The facts about the producer the caller found: the upgrade template by
-/// the data's name, and whether the producer has that upgrade.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ProducerView {
-    /// `TheUpgradeCenter->findUpgrade(name)` is non-null.
-    pub upgrade_template_found: bool,
-    /// `producer->hasUpgrade(upgrade)`.
-    pub producer_has_upgrade: bool,
+/// `class UpgradeDie : public DieModule`.
+#[derive(Clone, Debug)]
+pub struct UpgradeDie {
+    die: DieModule,
+    data: Arc<UpgradeDieModuleData>,
 }
 
-/// What an [`UpgradeDie`] asks of its producer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UpgradeDieEffect {
-    /// `producer->removeUpgrade(upgrade)`.
-    RemoveUpgradeFromProducer,
-    /// The producer does not have the upgrade: upstream's `DEBUG_ASSERTCRASH`
-    /// (a debug-only check; nothing happens in release). Reported so a caller
-    /// can count it.
-    ProducerLacksUpgrade,
+impl UpgradeDie {
+    /// `UpgradeDie(thing, moduleData)`; `INI_INVALID_DATA` for null data.
+    pub fn new(object: ObjectId, module_data: Option<Arc<UpgradeDieModuleData>>) -> IniResult<Self> {
+        let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
+        let die = DieModule::new(object, Some(Arc::new(data.die.clone())))?;
+        Ok(UpgradeDie { die, data })
+    }
+
+    /// `UpgradeDie::onDie(damageInfo)`: if the die mux applies and the object
+    /// has a producer that has the upgrade, the producer loses it. A producer
+    /// that lacks the upgrade is upstream's `DEBUG_ASSERTCRASH(0, ...)`, which
+    /// is compiled out of a release build: nothing happens.
+    pub fn on_die(&mut self, host: &mut impl DieHost, death_type: i32) {
+        if !self.die.is_die_applicable(death_type, host.veterancy_level(), &host.status_bits()) && !plant(51) {
+            return;
+        }
+        // Look for the object that created me.
+        if host.producer_exists() {
+            // Okay, we found our parent... now look for the upgrade.
+            if host.find_upgrade(&self.data.upgrade_name) {
+                // We found the upgrade, now see if the parent object has it set...
+                if host.producer_has_upgrade(&self.data.upgrade_name) || plant(49) {
+                    // Cool, now remove it.
+                    host.producer_remove_upgrade(&self.data.upgrade_name);
+                }
+            }
+        }
+    }
+
+    /// The `DieModule` base.
+    pub fn die_module(&self) -> &DieModule {
+        &self.die
+    }
 }
 
-/// `UpgradeDie::onDie(damageInfo)`. `applicable` is `isDieApplicable`;
-/// `producer` is `None` when `findObjectByID(producerID)` finds nothing.
-pub fn on_die(applicable: bool, producer: Option<ProducerView>) -> Option<UpgradeDieEffect> {
-    if !applicable {
-        return None;
+impl Snapshot for UpgradeDie {
+    fn crc(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        self.die.crc(xfer)
     }
-    let p = producer?;
-    if !p.upgrade_template_found {
-        return None;
+    /// Version 1: the version, `DieModule::xfer`.
+    fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        xfer.xfer_version(&mut version, current)?;
+        self.die.xfer(xfer)
     }
-    if p.producer_has_upgrade {
-        Some(UpgradeDieEffect::RemoveUpgradeFromProducer)
-    } else {
-        Some(UpgradeDieEffect::ProducerLacksUpgrade)
+    fn load_post_process(&mut self) {
+        self.die.load_post_process();
     }
 }
 
@@ -145,17 +170,5 @@ mod tests {
         // upstream INI::parseAsciiString takes getNextAsciiString(): an empty value is an empty name
         assert!(data_of("UpgradeToRemove =").unwrap().upgrade_name.is_empty());
         assert!(UpgradeDieModuleData::default().upgrade_name.is_empty());
-    }
-
-    #[test]
-    fn on_die_removes_the_upgrade_only_when_everything_is_there() {
-        let has = ProducerView { upgrade_template_found: true, producer_has_upgrade: true };
-        let lacks = ProducerView { upgrade_template_found: true, producer_has_upgrade: false };
-        let no_template = ProducerView { upgrade_template_found: false, producer_has_upgrade: true };
-        assert_eq!(on_die(true, Some(has)), Some(UpgradeDieEffect::RemoveUpgradeFromProducer));
-        assert_eq!(on_die(true, Some(lacks)), Some(UpgradeDieEffect::ProducerLacksUpgrade));
-        assert_eq!(on_die(true, Some(no_template)), None);
-        assert_eq!(on_die(true, None), None, "no producer");
-        assert_eq!(on_die(false, Some(has)), None, "not applicable");
     }
 }

@@ -821,6 +821,15 @@ the slot snapshot handing a translated module its whole base chain.
 cases, 11,872 data reads, 141,744 op dumps compared (70,309 ops, 2,016 upgrades fired, 3,079 effect lines), 0 mismatches,
 128 cases excluded as undefined upstream; 22 planted bugs (`L9_PLANT`), 21 caught and 1 equivalent mutant (re-looking the
 science up on every attempt, which finds the same name key). The comparison found no defect in the drafts.
+**Layer-9 helper and die batch verified (2026-10-21, `p1w10-sonnet`).** ~~The helpers and dies of `p1l9-helpers` (`ObjectHelper`,
+`ObjectSMCHelper`, `ObjectRepulsorHelper`, `ObjectWeaponStatusHelper`, `StatusDamageHelper`, `TempWeaponBonusHelper`,
+`DestroyDie`, `KeepObjectDie`, `UpgradeDie`) are pure functions returning effects.~~ **CORRECTED 2026-10-21** - the drafts were
+missing `getDisabledTypesToProcess()` (`DISABLEDMASK_ALL` on the status and weapon-bonus helpers), the second constructor wake
+of three helpers, `xfer` on the two stateful helpers, and the `setWakeFrame` calls (the sleep was a return value); they were
+rebuilt on the `UpdateModule` / `DieModule` bases with `HelperHost` / `DieHost` (`modules/object_helper.rs`, `modules/mod.rs`) and
+verified by `tests/differential_helper_modules.rs` against the nine unchanged `.cpp` files (`differential/l9_helpers.inc`): 12,000
+programs, 133,142 ops, 4,206,471 words compared, 0 mismatches; 24 planted bugs (`L9_PLANT` 30-56), all caught. Not yet wired into
+the object system (the host traits are implemented by the world in layer 12).
 <!-- --- end p1w10-sonnet (layer 9) --- -->
 
 ## Differential-test routes, by rule

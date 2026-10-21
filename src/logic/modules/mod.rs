@@ -168,4 +168,23 @@ pub fn plant(k: u32) -> bool {
     static P: OnceLock<u32> = OnceLock::new();
     *P.get_or_init(|| std::env::var("L9_PLANT").ok().and_then(|s| s.parse().ok()).unwrap_or(0)) == k
 }
+
+/// The calls a layer-9 die module makes on its object and the game logic (the cut point to the world): the die mux reads the
+/// object's veterancy level and status bits; `DestroyDie` destroys it; `UpgradeDie` looks up its producer's upgrade.
+pub trait DieHost {
+    /// `getObject()->getVeterancyLevel()`, as an integer.
+    fn veterancy_level(&self) -> i32;
+    /// `getObject()->getStatusBits()`.
+    fn status_bits(&self) -> crate::common::object_status_types::ObjectStatusMaskType;
+    /// `TheGameLogic->destroyObject(getObject())`.
+    fn destroy_object(&mut self);
+    /// `TheGameLogic->findObjectByID(getObject()->getProducerID()) != NULL`.
+    fn producer_exists(&self) -> bool;
+    /// `TheUpgradeCenter->findUpgrade(name) != NULL`.
+    fn find_upgrade(&mut self, name: &[u8]) -> bool;
+    /// `producer->hasUpgrade(upgrade)` for the upgrade of that name.
+    fn producer_has_upgrade(&self, name: &[u8]) -> bool;
+    /// `producer->removeUpgrade(upgrade)` for the upgrade of that name.
+    fn producer_remove_upgrade(&mut self, name: &[u8]);
+}
 // --- end p1w10-sonnet ---

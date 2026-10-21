@@ -19,6 +19,16 @@ enum TerrainDecalType
 	TERRAIN_DECAL_SHADOW_TEXTURE,
 	TERRAIN_DECAL_MAX
 };
-class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModelConditionState(ModelConditionFlagType a); };
+/* GameClient/Drawable.h lines 241-249, verbatim */
+enum TintStatus
+{
+	TINT_STATUS_DISABLED		= 0x00000001,
+	TINT_STATUS_IRRADIATED	= 0x00000002,
+	TINT_STATUS_POISONED		= 0x00000004,
+	TINT_STATUS_GAINING_SUBDUAL_DAMAGE		= 0x00000008,
+	TINT_STATUS_FRENZY			= 0x00000010,
+};
+class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModelConditionState(ModelConditionFlagType a);
+	void setTintStatus(TintStatus statusBits); void clearTintStatus(TintStatus statusBits); };
 /* --- end p1w10-sonnet --- */
 #endif

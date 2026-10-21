@@ -13,114 +13,114 @@
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
 
-//! `TempWeaponBonusHelper`: gives an object a timed weapon bonus condition
-//! (`doTempWeaponBonus`) and tints its drawable while it lasts; the helper
-//! removes both when its timer wakes it.
+//! `TempWeaponBonusHelper`: holds one weapon bonus condition on an object for
+//! a number of frames (`doTempWeaponBonus`), tinting its drawable, and clears
+//! it when its sleep ends. Asleep until used. Runs while the object is
+//! disabled (`getDisabledTypesToProcess()` is `DISABLEDMASK_ALL`).
 
-use super::object_helper::{HelperEffect, TINT_STATUS_FRENZY};
-use crate::logic::module::update_module::{update_sleep, UpdateSleepTime, UPDATE_SLEEP_FOREVER};
+use std::sync::Arc;
+
+use super::plant;
+use super::object_helper::{HelperHost, ObjectHelper, TINT_STATUS_FRENZY};
+use crate::common::disabled_types::{disabledmask_all, DisabledMaskType};
+use crate::common::ini::IniResult;
+use crate::common::module::ObjectId;
+use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
+use crate::logic::module::update_module::{
+    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER,
+};
 use crate::logic::weapon_bonus::condition::INVALID as WEAPONBONUSCONDITION_INVALID;
 
-/// `TempWeaponBonusHelper`: the bonus being timed and the frame it ends.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// `class TempWeaponBonusHelper : public ObjectHelper`.
+#[derive(Clone, Debug)]
 pub struct TempWeaponBonusHelper {
+    helper: ObjectHelper,
     /// `m_currentBonus` (`WEAPONBONUSCONDITION_INVALID` when idle).
     pub current_bonus: i32,
     /// `m_frameToRemove`.
     pub frame_to_remove: u32,
 }
 
-impl Default for TempWeaponBonusHelper {
-    /// The constructor: no bonus, frame 0, then `setWakeFrame(FOREVER)`.
-    fn default() -> Self {
-        TempWeaponBonusHelper { current_bonus: WEAPONBONUSCONDITION_INVALID, frame_to_remove: 0 }
-    }
-}
-
 impl TempWeaponBonusHelper {
-    /// The delay the constructor gives the module.
-    pub const CONSTRUCTOR_SLEEP: UpdateSleepTime = UPDATE_SLEEP_FOREVER;
+    /// `TempWeaponBonusHelper(thing, modData)`: the `ObjectHelper`, no bonus,
+    /// frame 0, then a second `setWakeFrame(UPDATE_SLEEP_FOREVER)`.
+    pub fn new(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>, host: &mut impl HelperHost) -> IniResult<Self> {
+        let helper = ObjectHelper::new(object, module_data, SleepyUpdatePhase::Normal, host)?;
+        if !plant(55) {
+            host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), UPDATE_SLEEP_FOREVER));
+        }
+        Ok(TempWeaponBonusHelper { helper, current_bonus: WEAPONBONUSCONDITION_INVALID, frame_to_remove: 0 })
+    }
 
-    /// `TempWeaponBonusHelper::update()`: clear the bonus (and the tint, if
-    /// there is a drawable), then sleep forever.
-    pub fn update(&mut self, has_drawable: bool) -> (UpdateSleepTime, Vec<HelperEffect>) {
-        let mut fx = Vec::new();
-        self.clear_temp_weapon_bonus(has_drawable, &mut fx);
-        (UPDATE_SLEEP_FOREVER, fx)
+    /// `getDisabledTypesToProcess()`: `DISABLEDMASK_ALL`.
+    pub fn get_disabled_types_to_process(&self) -> DisabledMaskType {
+        disabledmask_all()
+    }
+
+    /// `update()`: clear the bonus (and the tint, if there is a drawable),
+    /// then sleep forever. (The "woke up too soon" assert is compiled out.)
+    pub fn update(&mut self, host: &mut impl HelperHost) -> UpdateSleepTime {
+        self.clear_temp_weapon_bonus(host);
+        UPDATE_SLEEP_FOREVER
     }
 
     /// `clearTempWeaponBonus()`.
-    fn clear_temp_weapon_bonus(&mut self, has_drawable: bool, fx: &mut Vec<HelperEffect>) {
+    fn clear_temp_weapon_bonus(&mut self, host: &mut impl HelperHost) {
         if self.current_bonus != WEAPONBONUSCONDITION_INVALID {
-            fx.push(HelperEffect::ClearWeaponBonusCondition(self.current_bonus));
+            host.clear_weapon_bonus_condition(self.current_bonus);
             self.current_bonus = WEAPONBONUSCONDITION_INVALID;
             self.frame_to_remove = 0;
-            if has_drawable {
-                fx.push(HelperEffect::DrawableTint { status: TINT_STATUS_FRENZY, on: false });
+            if host.has_drawable() || plant(44) {
+                host.clear_tint_status(TINT_STATUS_FRENZY);
             }
         }
     }
 
-    /// `doTempWeaponBonus(status, duration)` at frame `now`: a different bonus
-    /// clears the old one first; the same one resets the timer.
-    pub fn do_temp_weapon_bonus(&mut self, now: u32, has_drawable: bool, status: i32, duration: u32) -> (UpdateSleepTime, Vec<HelperEffect>) {
-        let mut fx = Vec::new();
+    /// `doTempWeaponBonus(status, duration)`: a different bonus clears the old
+    /// one first; the same one resets the timer.
+    pub fn do_temp_weapon_bonus(&mut self, host: &mut impl HelperHost, status: i32, duration: u32) {
         if self.current_bonus != status {
-            self.clear_temp_weapon_bonus(has_drawable, &mut fx);
+            self.clear_temp_weapon_bonus(host);
         }
-        fx.push(HelperEffect::SetWeaponBonusCondition(status));
+        host.set_weapon_bonus_condition(status);
         self.current_bonus = status;
-        self.frame_to_remove = now.wrapping_add(duration);
-        if has_drawable {
-            fx.push(HelperEffect::DrawableTint { status: TINT_STATUS_FRENZY, on: true });
+        self.frame_to_remove = if plant(45) { duration } else { host.frame().wrapping_add(duration) };
+        if host.has_drawable() && !plant(43) {
+            host.set_tint_status(TINT_STATUS_FRENZY);
         }
-        (update_sleep(duration), fx)
+        host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), update_sleep(duration)));
+    }
+
+    /// The `ObjectHelper` base.
+    pub fn helper(&self) -> &ObjectHelper {
+        &self.helper
+    }
+
+    /// The `ObjectHelper` base, mutably.
+    pub fn helper_mut(&mut self) -> &mut ObjectHelper {
+        &mut self.helper
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn constructor_is_idle_and_sleeps_forever() {
-        assert_eq!(TempWeaponBonusHelper::default(), TempWeaponBonusHelper { current_bonus: -1, frame_to_remove: 0 });
-        assert_eq!(TempWeaponBonusHelper::CONSTRUCTOR_SLEEP, UPDATE_SLEEP_FOREVER);
+impl Snapshot for TempWeaponBonusHelper {
+    fn crc(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        self.helper.crc(xfer)
     }
-
-    #[test]
-    fn do_temp_weapon_bonus_sets_the_bonus_and_tints_when_there_is_a_drawable() {
-        let mut h = TempWeaponBonusHelper::default();
-        let (sleep, fx) = h.do_temp_weapon_bonus(50, true, 1, 30);
-        assert_eq!(fx, vec![HelperEffect::SetWeaponBonusCondition(1), HelperEffect::DrawableTint { status: TINT_STATUS_FRENZY, on: true }]);
-        assert_eq!((sleep, h.current_bonus, h.frame_to_remove), (update_sleep(30), 1, 80));
-        let (_, fx) = h.do_temp_weapon_bonus(51, false, 1, 30);
-        assert_eq!(fx, vec![HelperEffect::SetWeaponBonusCondition(1)]);
+    /// Version 1: the base, `m_currentBonus` (`xferUser` of the enum, 4 bytes), `m_frameToRemove`.
+    fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        xfer.xfer_version(&mut version, current)?;
+        self.helper.xfer(xfer)?;
+        let mut bytes = self.current_bonus.to_le_bytes();
+        xfer.xfer_user(&mut bytes)?;
+        self.current_bonus = i32::from_le_bytes(bytes);
+        if plant(46) {
+            return Ok(());
+        }
+        xfer.xfer_unsigned_int(&mut self.frame_to_remove)
     }
-
-    #[test]
-    fn a_different_bonus_clears_the_old_one_and_its_tint_first() {
-        let mut h = TempWeaponBonusHelper::default();
-        h.do_temp_weapon_bonus(0, true, 1, 30);
-        let (_, fx) = h.do_temp_weapon_bonus(1, true, 2, 10);
-        assert_eq!(
-            fx,
-            vec![
-                HelperEffect::ClearWeaponBonusCondition(1),
-                HelperEffect::DrawableTint { status: TINT_STATUS_FRENZY, on: false },
-                HelperEffect::SetWeaponBonusCondition(2),
-                HelperEffect::DrawableTint { status: TINT_STATUS_FRENZY, on: true },
-            ]
-        );
-    }
-
-    #[test]
-    fn update_clears_the_bonus_and_goes_back_to_sleep() {
-        let mut h = TempWeaponBonusHelper::default();
-        h.do_temp_weapon_bonus(0, false, 3, 30);
-        let (sleep, fx) = h.update(false);
-        assert_eq!((sleep, fx), (UPDATE_SLEEP_FOREVER, vec![HelperEffect::ClearWeaponBonusCondition(3)]));
-        assert_eq!(h, TempWeaponBonusHelper::default());
-        assert!(h.update(true).1.is_empty());
+    fn load_post_process(&mut self) {
+        self.helper.load_post_process();
     }
 }

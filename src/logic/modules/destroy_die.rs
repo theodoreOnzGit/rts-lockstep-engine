@@ -14,34 +14,56 @@
 // Translated to Rust and modified; not the original program.
 
 //! `DestroyDie`: destroys its object when it dies (if the die mux applies).
-//! The applicability check is the layer-5 [`DieModuleData::is_die_applicable`],
-//! which the caller evaluates with the object's veterancy and status bits.
 
-use crate::logic::module::die_module::DieModuleData;
+use std::sync::Arc;
 
-/// What a [`DestroyDie`] asks of its object.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DestroyDieEffect {
-    /// `TheGameLogic->destroyObject(obj)`.
-    DestroyObject,
-}
-
-/// `DestroyDie::onDie(damageInfo)`. `applicable` is
-/// `isDieApplicable(damageInfo)` (the caller's evaluation of the mux).
-pub fn on_die(applicable: bool) -> Option<DestroyDieEffect> {
-    if applicable { Some(DestroyDieEffect::DestroyObject) } else { None }
-}
+use super::{plant, DieHost};
+use crate::common::ini::IniResult;
+use crate::common::module::ObjectId;
+use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
+use crate::logic::module::die_module::{DieModule, DieModuleData};
 
 /// The data of a `DestroyDie` block: the die mux only.
 pub type DestroyDieModuleData = DieModuleData;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// `class DestroyDie : public DieModule`.
+#[derive(Clone, Debug)]
+pub struct DestroyDie {
+    die: DieModule,
+}
 
-    #[test]
-    fn an_applicable_death_destroys_the_object_and_others_do_not() {
-        assert_eq!(on_die(true), Some(DestroyDieEffect::DestroyObject));
-        assert_eq!(on_die(false), None);
+impl DestroyDie {
+    /// `DestroyDie(thing, moduleData)`; `INI_INVALID_DATA` for null data.
+    pub fn new(object: ObjectId, module_data: Option<Arc<DieModuleData>>) -> IniResult<Self> {
+        Ok(DestroyDie { die: DieModule::new(object, module_data)? })
+    }
+
+    /// `DestroyDie::onDie(damageInfo)`; `death_type` is `damageInfo->in.m_deathType`.
+    pub fn on_die(&mut self, host: &mut impl DieHost, death_type: i32) {
+        if !self.die.is_die_applicable(death_type, host.veterancy_level(), &host.status_bits()) && !plant(47) {
+            return;
+        }
+        host.destroy_object();
+    }
+
+    /// The `DieModule` base.
+    pub fn die_module(&self) -> &DieModule {
+        &self.die
+    }
+}
+
+impl Snapshot for DestroyDie {
+    fn crc(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        self.die.crc(xfer)
+    }
+    /// Version 1: the version, `DieModule::xfer`.
+    fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        xfer.xfer_version(&mut version, current)?;
+        self.die.xfer(xfer)
+    }
+    fn load_post_process(&mut self) {
+        self.die.load_post_process();
     }
 }

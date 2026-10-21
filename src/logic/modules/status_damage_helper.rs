@@ -13,115 +13,116 @@
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
 
-//! `StatusDamageHelper`: gives an object a timed status (`doStatusDamage`),
-//! sets it, and clears it when its timer wakes the helper.
+//! `StatusDamageHelper`: sets an object status for a number of frames
+//! (`doStatusDamage`) and clears it when its sleep ends. Asleep until used.
+//! Unlike most update modules it runs while the object is disabled
+//! (`getDisabledTypesToProcess()` is `DISABLEDMASK_ALL`).
 
-use super::object_helper::HelperEffect;
+use std::sync::Arc;
+
+use super::plant;
+use super::object_helper::{HelperHost, ObjectHelper};
 use crate::common::base_type::real_to_int_floor;
+use crate::common::disabled_types::{disabledmask_all, DisabledMaskType};
+use crate::common::ini::IniResult;
+use crate::common::module::ObjectId;
 use crate::common::object_status_types::{ObjectStatusTypes, OBJECT_STATUS_NONE};
-use crate::logic::module::update_module::{update_sleep, UpdateSleepTime, UPDATE_SLEEP_FOREVER};
+use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
+use crate::logic::module::update_module::{
+    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER,
+};
 
-/// `StatusDamageHelper`: the status being timed and the frame it ends.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// `class StatusDamageHelper : public ObjectHelper`.
+#[derive(Clone, Debug)]
 pub struct StatusDamageHelper {
+    helper: ObjectHelper,
     /// `m_statusToHeal` (`OBJECT_STATUS_NONE` when idle).
     pub status_to_heal: ObjectStatusTypes,
     /// `m_frameToHeal`.
     pub frame_to_heal: u32,
 }
 
-impl Default for StatusDamageHelper {
-    /// The constructor: no status, frame 0, then `setWakeFrame(FOREVER)`
-    /// (the caller applies [`StatusDamageHelper::CONSTRUCTOR_SLEEP`]).
-    fn default() -> Self {
-        StatusDamageHelper { status_to_heal: OBJECT_STATUS_NONE, frame_to_heal: 0 }
-    }
-}
-
 impl StatusDamageHelper {
-    /// The delay the constructor gives the module.
-    pub const CONSTRUCTOR_SLEEP: UpdateSleepTime = UPDATE_SLEEP_FOREVER;
+    /// `StatusDamageHelper(thing, modData)`: the `ObjectHelper`, no status,
+    /// frame 0, then `setWakeFrame(UPDATE_SLEEP_FOREVER)` (a second wake call
+    /// after the base's).
+    pub fn new(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>, host: &mut impl HelperHost) -> IniResult<Self> {
+        let helper = ObjectHelper::new(object, module_data, SleepyUpdatePhase::Normal, host)?;
+        if !plant(56) {
+            host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), UPDATE_SLEEP_FOREVER));
+        }
+        Ok(StatusDamageHelper { helper, status_to_heal: OBJECT_STATUS_NONE, frame_to_heal: 0 })
+    }
 
-    /// `StatusDamageHelper::update()`: "we are sleep driven, so seeing an
-    /// update means our timer is ready": clear the status, sleep forever.
-    pub fn update(&mut self) -> (UpdateSleepTime, Vec<HelperEffect>) {
-        let mut fx = Vec::new();
-        self.clear_status_condition(&mut fx);
-        (UPDATE_SLEEP_FOREVER, fx)
+    /// `getDisabledTypesToProcess()`: `DISABLEDMASK_ALL`.
+    pub fn get_disabled_types_to_process(&self) -> DisabledMaskType {
+        if plant(40) { DisabledMaskType::new() } else { disabledmask_all() }
+    }
+
+    /// `update()`: "we are sleep driven, so seeing an update means our timer
+    /// is ready implicitly": clear the status, sleep forever. (Upstream's
+    /// `DEBUG_ASSERTCRASH` that it did not wake too soon is compiled out.)
+    pub fn update(&mut self, host: &mut impl HelperHost) -> UpdateSleepTime {
+        self.clear_status_condition(host);
+        UPDATE_SLEEP_FOREVER
     }
 
     /// `clearStatusCondition()`: if a status is being timed, clear its bit
     /// and reset the timer.
-    fn clear_status_condition(&mut self, fx: &mut Vec<HelperEffect>) {
+    fn clear_status_condition(&mut self, host: &mut impl HelperHost) {
         if self.status_to_heal != OBJECT_STATUS_NONE {
-            fx.push(HelperEffect::ClearStatus(self.status_to_heal));
+            host.clear_status(self.status_to_heal);
             self.status_to_heal = OBJECT_STATUS_NONE;
-            self.frame_to_heal = 0;
+            if !plant(42) {
+                self.frame_to_heal = 0;
+            }
         }
     }
 
-    /// `doStatusDamage(status, duration)` at frame `now`. The duration is
-    /// truncated to whole frames (`REAL_TO_INT_FLOOR`); the frame sum and the
-    /// sleep wrap as the C++ unsigned arithmetic does.
-    pub fn do_status_damage(&mut self, now: u32, status: ObjectStatusTypes, duration: f32) -> (UpdateSleepTime, Vec<HelperEffect>) {
-        let duration_as_int = real_to_int_floor(duration);
-        let mut fx = Vec::new();
+    /// `doStatusDamage(status, duration)`. The duration is truncated to whole
+    /// frames (`REAL_TO_INT_FLOOR`); the frame sum and the sleep wrap as the
+    /// C++ unsigned arithmetic does.
+    pub fn do_status_damage(&mut self, host: &mut impl HelperHost, status: ObjectStatusTypes, duration: f32) {
+        let duration_as_int = if plant(41) { duration as i32 } else { real_to_int_floor(duration) };
         // Clear any different status we may have. Re-getting the same status just resets the timer.
-        if self.status_to_heal != status {
-            self.clear_status_condition(&mut fx);
+        if self.status_to_heal != status && !plant(38) {
+            self.clear_status_condition(host);
         }
-        fx.push(HelperEffect::SetStatus(status));
+        host.set_status(status);
         self.status_to_heal = status;
-        self.frame_to_heal = now.wrapping_add(duration_as_int as u32);
-        (update_sleep(duration_as_int as u32), fx)
+        self.frame_to_heal = host.frame().wrapping_add(duration_as_int as u32).wrapping_add(u32::from(plant(39)));
+        host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), update_sleep(duration_as_int as u32)));
+    }
+
+    /// The `ObjectHelper` base.
+    pub fn helper(&self) -> &ObjectHelper {
+        &self.helper
+    }
+
+    /// The `ObjectHelper` base, mutably.
+    pub fn helper_mut(&mut self) -> &mut ObjectHelper {
+        &mut self.helper
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::common::object_status_types::{OBJECT_STATUS_AFLAME, OBJECT_STATUS_WET};
-
-    #[test]
-    fn constructor_is_idle_and_sleeps_forever() {
-        assert_eq!(StatusDamageHelper::default(), StatusDamageHelper { status_to_heal: 0, frame_to_heal: 0 });
-        assert_eq!(StatusDamageHelper::CONSTRUCTOR_SLEEP, UPDATE_SLEEP_FOREVER);
+impl Snapshot for StatusDamageHelper {
+    fn crc(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        self.helper.crc(xfer)
     }
-
-    #[test]
-    fn do_status_damage_sets_the_status_and_sleeps_the_whole_frames() {
-        let mut h = StatusDamageHelper::default();
-        let (sleep, fx) = h.do_status_damage(100, OBJECT_STATUS_AFLAME, 12.9);
-        assert_eq!(fx, vec![HelperEffect::SetStatus(OBJECT_STATUS_AFLAME)]);
-        assert_eq!(sleep, update_sleep(12));
-        assert_eq!((h.status_to_heal, h.frame_to_heal), (OBJECT_STATUS_AFLAME, 112));
+    /// Version 1: the base, `m_statusToHeal` (`xferUser` of the enum, 4 bytes), `m_frameToHeal`.
+    fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        xfer.xfer_version(&mut version, current)?;
+        self.helper.xfer(xfer)?;
+        if !plant(53) {
+            let mut bytes = self.status_to_heal.to_le_bytes();
+            xfer.xfer_user(&mut bytes)?;
+            self.status_to_heal = i32::from_le_bytes(bytes);
+        }
+        xfer.xfer_unsigned_int(&mut self.frame_to_heal)
     }
-
-    #[test]
-    fn a_different_status_clears_the_old_one_first() {
-        let mut h = StatusDamageHelper::default();
-        h.do_status_damage(0, OBJECT_STATUS_AFLAME, 5.0);
-        let (_, fx) = h.do_status_damage(2, OBJECT_STATUS_WET, 5.0);
-        assert_eq!(fx, vec![HelperEffect::ClearStatus(OBJECT_STATUS_AFLAME), HelperEffect::SetStatus(OBJECT_STATUS_WET)]);
-    }
-
-    #[test]
-    fn the_same_status_only_resets_the_timer() {
-        let mut h = StatusDamageHelper::default();
-        h.do_status_damage(0, OBJECT_STATUS_AFLAME, 5.0);
-        let (sleep, fx) = h.do_status_damage(3, OBJECT_STATUS_AFLAME, 4.0);
-        assert_eq!(fx, vec![HelperEffect::SetStatus(OBJECT_STATUS_AFLAME)]);
-        assert_eq!((sleep, h.frame_to_heal), (update_sleep(4), 7));
-    }
-
-    #[test]
-    fn update_clears_the_status_and_goes_back_to_sleep() {
-        let mut h = StatusDamageHelper::default();
-        h.do_status_damage(0, OBJECT_STATUS_AFLAME, 5.0);
-        let (sleep, fx) = h.update();
-        assert_eq!(sleep, UPDATE_SLEEP_FOREVER);
-        assert_eq!(fx, vec![HelperEffect::ClearStatus(OBJECT_STATUS_AFLAME)]);
-        assert_eq!(h, StatusDamageHelper::default());
-        assert!(h.update().1.is_empty());
+    fn load_post_process(&mut self) {
+        self.helper.load_post_process();
     }
 }

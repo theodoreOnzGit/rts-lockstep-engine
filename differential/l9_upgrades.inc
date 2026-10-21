@@ -37,7 +37,8 @@ void Object::setWeaponSetFlag(WeaponSetType wst)
 	ulog("wset");
 	if (m_drawable) m_drawable->setModelConditionState(TheWeaponSetTypeToModelConditionTypeMap[wst]);
 }
-void Object::setWeaponBonusCondition(WeaponBonusConditionType wst) { m_weaponBonusCondition |= (1 << wst); }
+void modhelp_bonus(int b);   /* l9_helpers.inc: TempWeaponBonusHelper's tests read the call from a log */
+void Object::setWeaponBonusCondition(WeaponBonusConditionType wst) { m_weaponBonusCondition |= (1 << (wst & 31)); modhelp_bonus((int)wst); }
 void Object::setShroudRange(Real r) { m_shroudRange = r; }
 void Object::handlePartitionCellMaintenance() { ulog("partition"); }
 void Object::setModelConditionState(ModelConditionFlagType a) { if (m_drawable) m_drawable->setModelConditionState(a); }

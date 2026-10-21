@@ -13,32 +13,60 @@
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
 
-//! `ObjectRepulsorHelper`: ends the temporary `OBJECT_STATUS_REPULSOR` status
-//! when it wakes (`Object::setStatus` arms it with `sleepUntil`).
+//! `ObjectRepulsorHelper`: clears `OBJECT_STATUS_REPULSOR` when woken, then sleeps until forcibly awakened.
 
-use super::object_helper::HelperEffect;
+use std::sync::Arc;
+
+use super::plant;
+use super::object_helper::{HelperHost, ObjectHelper};
+use crate::common::ini::IniResult;
+use crate::common::module::ObjectId;
+use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
+use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER};
 use crate::common::object_status_types::OBJECT_STATUS_REPULSOR;
-use crate::logic::module::update_module::{UpdateSleepTime, UPDATE_SLEEP_FOREVER};
 
-/// `ObjectRepulsorHelper`: no state of its own.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ObjectRepulsorHelper;
+/// `class ObjectRepulsorHelper : public ObjectHelper`; it has no state of its own.
+#[derive(Clone, Debug)]
+pub struct ObjectRepulsorHelper {
+    helper: ObjectHelper,
+}
 
 impl ObjectRepulsorHelper {
-    /// `ObjectRepulsorHelper::update()`: clears `OBJECT_STATUS_REPULSOR`, sleeps forever.
-    pub fn update(&self) -> (UpdateSleepTime, Vec<HelperEffect>) {
-        (UPDATE_SLEEP_FOREVER, vec![HelperEffect::ClearStatus(OBJECT_STATUS_REPULSOR)])
+    /// `ObjectRepulsorHelper(thing, modData)`: the `ObjectHelper` (asleep), then nothing.
+    pub fn new(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>, host: &mut impl HelperHost) -> IniResult<Self> {
+        let helper = ObjectHelper::new(object, module_data, SleepyUpdatePhase::Normal, host)?;
+        Ok(ObjectRepulsorHelper { helper })
+    }
+
+    /// `ObjectRepulsorHelper::update()`.
+    pub fn update(&mut self, host: &mut impl HelperHost) -> UpdateSleepTime {
+        host.clear_status(OBJECT_STATUS_REPULSOR + i32::from(plant(34)));
+        UPDATE_SLEEP_FOREVER
+    }
+
+    /// The `ObjectHelper` base.
+    pub fn helper(&self) -> &ObjectHelper {
+        &self.helper
+    }
+
+    /// The `ObjectHelper` base, mutably.
+    pub fn helper_mut(&mut self) -> &mut ObjectHelper {
+        &mut self.helper
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn update_clears_the_repulsor_status_then_sleeps_forever() {
-        let (sleep, fx) = ObjectRepulsorHelper.update();
-        assert_eq!(sleep, UPDATE_SLEEP_FOREVER);
-        assert_eq!(fx, vec![HelperEffect::ClearStatus(9)]);
+impl Snapshot for ObjectRepulsorHelper {
+    fn crc(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        self.helper.crc(xfer)
+    }
+    /// Version 1: the version, `ObjectHelper::xfer`.
+    fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        xfer.xfer_version(&mut version, current)?;
+        self.helper.xfer(xfer)
+    }
+    fn load_post_process(&mut self) {
+        self.helper.load_post_process();
     }
 }
