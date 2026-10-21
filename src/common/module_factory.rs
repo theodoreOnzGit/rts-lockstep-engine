@@ -648,6 +648,21 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::auto_heal_behavior::new_module_data),
             which_interfaces: Some(crate::logic::modules::auto_heal_behavior::AutoHealBehavior::get_interface_mask()),
         }),
+        "CheckpointUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::checkpoint_update::new_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        "FlammableUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::flammable_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::flammable_update::FlammableUpdate::get_interface_mask()),
+        }),
+        "OCLUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::ocl_update::new_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
         // --- end p1w12-sonnet ---
         _ => None,
     }
@@ -686,6 +701,9 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         // --- p1w12-sonnet ---
         Some(ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::AutoHealBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::CheckpointUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::FlammableUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::OclUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         // --- end p1w12-sonnet ---
         _ => None,
     };
@@ -1162,8 +1180,8 @@ mod tests {
         let name = |s: &str| s.as_bytes().to_vec();
         let find = |f: &ModuleFactory, names: &mut NameKeyGenerator, n: &str, t| f.find_module_template(names, n.as_bytes(), t).unwrap_err();
         assert_eq!(
-            find(&f, &mut names, "AutoHealBehavior", ModuleType::Behavior),
-            ModuleFactoryError::NotTranslated { name: name("AutoHealBehavior"), module_type: ModuleType::Behavior }
+            find(&f, &mut names, "SpectreGunshipUpdate", ModuleType::Behavior),
+            ModuleFactoryError::NotTranslated { name: name("SpectreGunshipUpdate"), module_type: ModuleType::Behavior }
         );
         assert_eq!(
             find(&f, &mut names, "BeaconClientUpdate", ModuleType::ClientUpdate),

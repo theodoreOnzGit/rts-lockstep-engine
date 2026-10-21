@@ -384,6 +384,12 @@ pub enum ModuleDataKind {
     FireOCLAfterWeaponCooldownUpdate(Arc<crate::logic::modules::fire_ocl_after_weapon_cooldown_update::FireOCLAfterWeaponCooldownUpdateModuleData>),
     /// `AutoHealBehaviorModuleData`.
     AutoHealBehavior(Arc<crate::logic::modules::auto_heal_behavior::AutoHealBehaviorModuleData>),
+    /// `CheckpointUpdateModuleData`.
+    CheckpointUpdate(Arc<crate::logic::modules::checkpoint_update::CheckpointUpdateModuleData>),
+    /// `FlammableUpdateModuleData`.
+    FlammableUpdate(Arc<crate::logic::modules::flammable_update::FlammableUpdateModuleData>),
+    /// `OclUpdateModuleData`.
+    OclUpdate(Arc<crate::logic::modules::ocl_update::OclUpdateModuleData>),
     // --- end p1w12-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
@@ -466,6 +472,9 @@ impl ModuleDataKind {
             // --- p1w12-sonnet ---
             ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::AutoHealBehavior(d) => &d.update.behavior.module_data,
+            ModuleDataKind::CheckpointUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::FlammableUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::OclUpdate(d) => &d.update.behavior.module_data,
             // --- end p1w12-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
@@ -713,6 +722,27 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::AutoHealBehavior(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::CheckpointUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::FlammableUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::OclUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

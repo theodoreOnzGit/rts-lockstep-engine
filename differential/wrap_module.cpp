@@ -796,6 +796,10 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 /* --- end p1w11-sonnet --- */
 /* --- p1w12-sonnet --- */
 #include "l9_crash_trap_m.inc"
+#include "l9_body_m.inc"
 #include "l9_fire_ocl_m.inc"
 #include "l9_auto_heal_m.inc"
+#include "l9_checkpoint_n.inc"
+#include "l9_flammable_n.inc"
+#include "l9_ocl_update_n.inc"
 /* --- end p1w12-sonnet --- */

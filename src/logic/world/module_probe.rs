@@ -299,6 +299,13 @@ impl ProbeModule {
             }
             // --- end p1w11-sonnet ---
             ModuleCall::AttemptDamage(mut info) => {
+                // --- p1w12-sonnet --- (FlammableUpdate's test: the damage is a line of the trace, when `probe_effect_trace` asks)
+                if world.cuts.probe_effect_trace {
+                    if let Some(t) = &mut world.cuts.trace {
+                        t.push(format!("damage {} {:08x} {} {} {}", me.object, info.input.amount.to_bits(), info.input.damage_type, info.input.death_type, info.input.source_id));
+                    }
+                }
+                // --- end p1w12-sonnet ---
                 // ActiveBody in miniature: the damage taken, then death once.
                 let dealt = if info.input.kill {
                     self.health
@@ -321,6 +328,24 @@ impl ProbeModule {
                 }
                 ModuleReply::Damage(info)
             }
+            // --- p1w12-sonnet --- (FlammableUpdate's test: the body's setAflame is a line of the trace, when `probe_effect_trace` asks)
+            ModuleCall::StartFireSpreading => {
+                if world.cuts.probe_effect_trace {
+                    if let Some(t) = &mut world.cuts.trace {
+                        t.push("spread".to_string());
+                    }
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::SetAflame(on) => {
+                if world.cuts.probe_effect_trace {
+                    if let Some(t) = &mut world.cuts.trace {
+                        t.push(format!("aflame {}", i32::from(on)));
+                    }
+                }
+                ModuleReply::Done
+            }
+            // --- end p1w12-sonnet ---
             ModuleCall::AttemptHealing(mut info) => {
                 // --- p1w12-sonnet --- (AutoHealBehavior's test: the heal is a line of the trace, when `probe_effect_trace` asks)
                 if world.cuts.probe_effect_trace {
@@ -402,6 +427,7 @@ impl ProbeModule {
             | ModuleCall::GetRadarDisableProof
             | ModuleCall::IsOverchargeActive
             | ModuleCall::IsAbleToBeToppled
+            | ModuleCall::WouldIgnite // p1w12-sonnet
             | ModuleCall::CountermeasuresIsActive => ModuleReply::Bool(self.answers.yes),
             ModuleCall::CalculateCountermeasureToDivertTo { .. } => ModuleReply::Id(self.answers.countermeasure),
             ModuleCall::DoesSpecialPowerHaveOverridableDestinationActive | ModuleCall::DoesSpecialPowerHaveOverridableDestination => {
@@ -469,6 +495,10 @@ impl ProbeModule {
             | ModuleCall::OnSpawnDeath { .. }
             | ModuleCall::UndoUpgrade
             | ModuleCall::StopHealing // p1w12-sonnet
+            | ModuleCall::TryToIgnite // p1w12-sonnet
+            | ModuleCall::OclUpdateResetTimer // p1w12-sonnet
+            | ModuleCall::OclUpdateGetCountdownPercent // p1w12-sonnet
+            | ModuleCall::OclUpdateGetRemainingFrames // p1w12-sonnet
             | ModuleCall::ApplyTopplingForce { .. }
             | ModuleCall::Detonate
             | ModuleCall::StartDefectionTimer { .. }

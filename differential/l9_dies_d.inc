@@ -51,13 +51,14 @@ void ScriptEngine::notifyOfCompletedSpecialPower(Int playerIndex, const AsciiStr
 }
 ScriptEngine *TheScriptEngine = 0;
 AudioManager *TheAudio = 0;
+UnsignedInt g_audioHandleLast = 0;   /* p1w12-sonnet: the handles the audio manager gives out, 1, 2, 3, ... (FlammableUpdate keeps one); die batch D ignores it */
 UnsignedInt AudioManager::addAudioEvent(const AudioEventRTS *eventToAdd)
 {
 	char pos[64];
 	if (eventToAdd->m_hasPos) sprintf(pos, "%u,%u,%u", realBits(eventToAdd->m_pos.x), realBits(eventToAdd->m_pos.y), realBits(eventToAdd->m_pos.z));
 	else strcpy(pos, "-");
 	ulog("audio %s %s %d %d", eventToAdd->getEventName().str(), pos, (int)eventToAdd->m_playerIndex, (int)eventToAdd->m_objectID);
-	return 0;
+	return ++g_audioHandleLast;
 }
 
 namespace {

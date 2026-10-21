@@ -102,6 +102,9 @@ pub mod auto_deposit_update;
 // --- p1w12-sonnet ---
 pub mod fire_ocl_after_weapon_cooldown_update;
 pub mod auto_heal_behavior;
+pub mod checkpoint_update;
+pub mod flammable_update;
+pub mod ocl_update;
 // --- end p1w12-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -358,6 +361,18 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::AutoHealBehavior(d) => Some(made_update(
             auto_heal_behavior::AutoHealBehavior::get_interface_mask(),
             auto_heal_behavior::AutoHealBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::AutoHealBehavior(m))),
+        )),
+        ModuleDataKind::CheckpointUpdate(d) => Some(made_update(
+            UpdateModule::get_interface_mask(),
+            checkpoint_update::CheckpointUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::CheckpointUpdate(m))),
+        )),
+        ModuleDataKind::FlammableUpdate(d) => Some(made_update(
+            flammable_update::FlammableUpdate::get_interface_mask(),
+            flammable_update::FlammableUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::FlammableUpdate(m))),
+        )),
+        ModuleDataKind::OclUpdate(d) => Some(made_update(
+            UpdateModule::get_interface_mask(),
+            ocl_update::OclUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::OclUpdate(m))),
         )),
         // --- end p1w12-sonnet ---
         _ => None,

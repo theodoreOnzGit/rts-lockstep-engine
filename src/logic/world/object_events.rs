@@ -160,6 +160,10 @@ pub enum ObjectClientEvent {
     /// `draw->updateSubObjects()` (`SubObjectsUpgrade`).
     DrawableUpdateSubObjects { object_id: ObjectId },
     // --- end p1w10-sonnet ---
+    // --- p1w12-sonnet ---
+    /// `TheAudio->removeAudioEvent(handle)` (`FlammableUpdate`'s burning sound).
+    AudioRemoveEvent { handle: u32 },
+    // --- end p1w12-sonnet ---
     // --- p1w11-sonnet ---
     /// `TheAudio->addAudioEvent(&event)` for an event copied from the template's per-unit sounds (`EjectPilotDie`): the event's name, the object
     /// it is attached to (`INVALID_ID` for none), the position it was set to and the player index it was set to, if any.

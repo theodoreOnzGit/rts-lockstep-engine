@@ -61,14 +61,16 @@ class Team;
 /* --- end p1w12-sonnet --- */
 /* --- p1w12-sonnet --- (Common/STLTypedefs.h lines 88-89, verbatim) */
 #include <list>
+#include "Common/Geometry.h"
 class Object;
+class DamageInfo;
 typedef std::list<Object *>																ObjectPointerList;
 typedef std::list<Object *>::iterator											ObjectPointerListIterator;
 /* --- end p1w12-sonnet --- */
 class Object : public Thing
 {
 public:
-	Object() : m_level(LEVEL_REGULAR), m_player(0), m_body(0), m_drawable(0), m_xp(0), m_weaponBonusCondition(0), m_shroudRange(0), m_producerID((ObjectID)0), m_ai(0), m_contain(0), m_spawn(0), m_disabled(false), m_behaviors(0), m_team(0), m_oid(0), m_destroyed(false), m_next(0), m_disabledBits(0) { m_pos.x = m_pos.y = m_pos.z = 0; m_weaponSetFlags[0] = m_weaponSetFlags[1] = 0; }
+	Object() : m_level(LEVEL_REGULAR), m_player(0), m_body(0), m_drawable(0), m_xp(0), m_weaponBonusCondition(0), m_shroudRange(0), m_producerID((ObjectID)0), m_ai(0), m_contain(0), m_spawn(0), m_disabled(false), m_behaviors(0), m_team(0), m_oid(0), m_destroyed(false), m_next(0), m_disabledBits(0), m_geometry(GEOMETRY_SPHERE, false, 1.0f, 1.0f, 1.0f) { m_pos.x = m_pos.y = m_pos.z = 0; m_weaponSetFlags[0] = m_weaponSetFlags[1] = 0; }
 	VeterancyLevel getVeterancyLevel() const { return m_level; }
 	const ObjectStatusMaskType &getStatusBits() const { return m_status; }
 	void removeUpgrade(const UpgradeTemplate *t);
@@ -158,10 +160,11 @@ public:
 	Bool isLocallyControlled() const;
 	Real getConstructionPercent() const { return m_constructionPercent; }
 	Bool testStatus(ObjectStatusTypes bit) const { return m_status.test(bit); }
-	struct ShimGeometry { Real m_major = 0, m_minor = 0, m_height = 0; Real getMajorRadius() const { return m_major; } Real getMinorRadius() const { return m_minor; } Real getMaxHeightAbovePosition() const { return m_height; } };
-	const ShimGeometry &getGeometryInfo() const { return m_geometry; }
+	/* update batch N: the REAL GeometryInfo (Geometry.cpp, compiled by wrap_geometry.cpp) */
+	const GeometryInfo &getGeometryInfo() const { return m_geometry; }
+	void setGeometryInfo(const GeometryInfo &geom);   /* differential/l9_checkpoint_n.inc */
 	Real m_constructionPercent = -1.0f;   /* CONSTRUCTION_COMPLETE */
-	ShimGeometry m_geometry;
+	GeometryInfo m_geometry;
 	Bool isKindOfMulti(const KindOfMaskType &mustBeSet, const KindOfMaskType &mustBeClear) const { return m_kindOf.testSetAndClear(mustBeSet, mustBeClear); }
 	Bool isEffectivelyDead() const { return m_effDead; }
 	Bool isAboveTerrain() const { return m_pos.z > 0; }   /* the test's terrain is flat at zero */
@@ -175,6 +178,14 @@ public:
 	ObjectID getSoleHealingBenefactor(void) const __asm__("l9m_Object_getSoleHealingBenefactor");
 	Bool attemptHealingFromSoleBenefactor(Real amount, const Object *source, UnsignedInt duration) __asm__("l9m_Object_attemptHealingFromSoleBenefactor");
 	Bool m_offMap = false;
+	/* update batch N: CheckpointUpdate */
+	Real getVisionRange() const { return m_vision; }
+	Real getOrientation() const { return m_orientation; }   /* update batch N: OCLUpdate */
+	Real m_orientation = 0.0f;
+	/* update batch N: FlammableUpdate (differential/l9_flammable_n.inc) */
+	void attemptDamage( DamageInfo *damageInfo );
+	void clearModelConditionState(ModelConditionFlagType a);
+	Real m_vision = 0.0f;
 	ObjectID m_soleHealingBenefactorID = INVALID_ID;
 	UnsignedInt m_soleHealingBenefactorExpirationFrame = 0;
 	/* helper batch G: the defector flag ObjectDefectionHelper reads and clears */

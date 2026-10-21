@@ -935,6 +935,23 @@ dereferences the controlling player before anything else. **Open (deviation):** 
 **Deferred (needs a keystone):** `FireWeaponWhenDamagedBehavior` (eight `Weapon` instances saved with `xferSnapshot`: needs the `WeaponHost` adapter),
 `CountermeasuresBehavior` (physics, thing factory, projectile interface; and its `m_reloadFrame` is never initialised upstream), `GenerateMinefieldBehavior`
 (thing factory, terrain queries, the partition manager's potential collisions).
+**Layer-9 update batch N (2026-10-21, `p1w12-sonnet`).** `CheckpointUpdate` (`modules/checkpoint_update.rs`), `FlammableUpdate` (`modules/flammable_update.rs`) and
+`OCLUpdate` (`modules/ocl_update.rs`) over `modules/update_behavior.rs`, with `tests/differential_update_checkpoint.rs`, `differential_update_flammable.rs` and
+`differential_update_ocl.rs` against the unchanged `.cpp` files (`differential/l9_checkpoint_n.inc`, `l9_flammable_n.inc`, `l9_ocl_update_n.inc`), each of 9,000
+cases with 0 mismatches: Checkpoint 8,948 data-read comparisons and 159,705 op outputs (133,827 ops, 122,763 geometry reactions), 8 planted bugs (`L9_PLANT` 961-968)
+caught; Flammable 8,185 and 152,266 (130,159 ops, 8,249 ignitions), 9 planted bugs (981-989) caught; OCLUpdate 8,872 and 183,468 (160,074 ops, 1,940 lists), 9 planted
+bugs (1001-1009) caught. **Shared plumbing:** `tests/harness/` (the whole case loop of a one-module test: the module supplies its generators, its Rust run, its
+C++ call and its decoder; a crash status 99 is a mismatch); `differential/l9_body_m.inc` (one stand-in `BodyModuleInterface`, `MBody`, for AutoHeal and
+Flammable: it takes healing and damage as the scripted probe does and logs both and `setAflame`); the module build's Object now holds the REAL `GeometryInfo`
+(`Geometry.cpp`) instead of the earlier radii struct; `ModuleCall::{SetAflame, TryToIgnite, WouldIgnite, StartFireSpreading, OclUpdateResetTimer,
+OclUpdateGetCountdownPercent, OclUpdateGetRemainingFrames}`; `ObjectClientEvent::AudioRemoveEvent`; `ObjectCuts::{ai_enemy_near, ai_ally_near, player_sides,
+edge_point_offset, last_audio_handle}`. A function-local `static` name key of `FlammableUpdate.cpp` is removed by `build.rs` (asserted once; the run resets the generator).
+**Upstream facts kept:** `CheckpointUpdate::checkForAlliesAndEnemies` tests `m_enemyScanDelay == 0 || TRUE` (the scan runs every frame; the countdown branch is dead);
+`OCLUpdate::parseFactionObjectCreationList` compares a possibly `NULL` token with `stricmp`; `FlammableUpdate` saves its status enum as raw bytes. **Open (deviation):**
+`~FlammableUpdate` (`stopBurningSound`) is not sent (no hook for a module's destruction). **Gate finding:** the first full gate run on batch L+M found that
+`AutoHealBehavior` was the plain-test suite's example of an untranslated module (two tests now use `SpectreGunshipUpdate`), and that the particle system manager's
+symbols clashed with the weapon fixture's at link time (the module build's classes are renamed `ModTest*`; `AutoHealBehavior.h`'s parser is replaced by a copy
+of `INI::parseParticleSystemTemplate` through `build.rs`, asserted twice).
 **Layer-9 helper and die batch verified (2026-10-21, `p1w10-sonnet`).** ~~The helpers and dies of `p1l9-helpers` (`ObjectHelper`,
 `ObjectSMCHelper`, `ObjectRepulsorHelper`, `ObjectWeaponStatusHelper`, `StatusDamageHelper`, `TempWeaponBonusHelper`,
 `DestroyDie`, `KeepObjectDie`, `UpgradeDie`) are pure functions returning effects.~~ **CORRECTED 2026-10-21** - the drafts were

@@ -107,6 +107,38 @@ impl World {
         Some((health, max_health))
     }
 
+    /// `TheTerrainLogic->findClosestEdgePoint(&pos)`: `pos` moved by `cuts.edge_point_offset` (the real terrain logic is the adapter's).
+    pub fn terrain_find_closest_edge_point(&self, pos: crate::common::base_type::Coord3D) -> crate::common::base_type::Coord3D {
+        let o = self.cuts.edge_point_offset;
+        crate::common::base_type::Coord3D { x: pos.x + o.x, y: pos.y + o.y, z: pos.z + o.z }
+    }
+
+    /// `TheAudio->addAudioEvent(&AudioEventRTS(name, object))`: the handle the audio manager gave it (never 0).
+    pub fn audio_add_event(&mut self, name: Vec<u8>, object_id: ObjectId) -> u32 {
+        self.emit(ObjectClientEvent::AudioAddEvent { name, object_id, position: None, player_index: None });
+        self.cuts.last_audio_handle = self.cuts.last_audio_handle.wrapping_add(1);
+        self.cuts.last_audio_handle
+    }
+
+    /// `TheAudio->removeAudioEvent(handle)`.
+    pub fn audio_remove_event(&mut self, handle: u32) {
+        self.emit(ObjectClientEvent::AudioRemoveEvent { handle });
+    }
+
+    /// `TheAI->findClosestEnemy(obj, range, qualifiers) != NULL`.
+    pub fn ai_find_closest_enemy(&mut self, id: ObjectId, range: f32, qualifiers: u32) -> bool {
+        let minor_radius = self.objects.find(id).map_or(0.0, |o| o.geometry_info.get_minor_radius());
+        self.cut(CutCall::AiFindClosestEnemy { object: id, range, qualifiers, minor_radius });
+        self.cuts.ai_enemy_near.contains(&id)
+    }
+
+    /// `TheAI->findClosestAlly(obj, range, qualifiers) != NULL`.
+    pub fn ai_find_closest_ally(&mut self, id: ObjectId, range: f32, qualifiers: u32) -> bool {
+        let minor_radius = self.objects.find(id).map_or(0.0, |o| o.geometry_info.get_minor_radius());
+        self.cut(CutCall::AiFindClosestAlly { object: id, range, qualifiers, minor_radius });
+        self.cuts.ai_ally_near.contains(&id)
+    }
+
     /// `TheParticleSystemManager->createParticleSystem(tmpl)`, `system->setPosition(&position)` and `system->getSystemID()`: the id the client gave it.
     pub fn create_particle_system(&mut self, template: Vec<u8>, position: crate::common::base_type::Coord3D) -> u32 {
         self.cuts.last_particle_system_id = self.cuts.last_particle_system_id.wrapping_add(1);
@@ -208,6 +240,14 @@ pub enum CutCall {
     OclCreateWithLifetime { primary: ObjectId, secondary: ObjectId, ocl: Vec<u8>, lifetime_frames: u32 },
     /// `TheParticleSystemManager->createParticleSystem(tmpl)` and `system->setPosition(&position)`; `id` is the system's id (`AutoHealBehavior`).
     ParticleSystemCreate { template: Vec<u8>, position: crate::common::base_type::Coord3D, id: u32 },
+    /// `TheAI->findClosestEnemy(obj, range, qualifiers)` (`CheckpointUpdate`); `ObjectCuts::ai_enemy_near` answers.
+    /// `minor_radius` is the object's geometry at the call, which the search measures from.
+    AiFindClosestEnemy { object: ObjectId, range: f32, qualifiers: u32, minor_radius: f32 },
+    /// `TheAI->findClosestAlly(obj, range, qualifiers)` (`CheckpointUpdate`); `ObjectCuts::ai_ally_near` answers.
+    AiFindClosestAlly { object: ObjectId, range: f32, qualifiers: u32, minor_radius: f32 },
+    /// `ObjectCreationList::create(ocl, primary, &primaryPos, &secondaryPos, angle)` for the list named `ocl` (`OCLUpdate`); like [`CutCall::OclCreate`], a
+    /// name that is no list makes nothing.
+    OclCreateAt { primary: ObjectId, ocl: Vec<u8>, primary_pos: crate::common::base_type::Coord3D, secondary_pos: crate::common::base_type::Coord3D, angle: f32 },
     // --- end p1w12-sonnet ---
     // ---- Team ----
     /// `team->notifyTeamOfObjectDeath()`.
@@ -474,6 +514,16 @@ pub struct ObjectCuts {
     /// What `ThePartitionManager->iterateObjectsInRange(..)` returns for a module that scans around its object (`AutoHealBehavior`'s allies in a
     /// radius), in the order it is visited: the filters are the partition manager's.
     pub range_scan: Vec<ObjectId>,
+    /// `Player::getPlayerTemplate()->getSide()` per player (`None`: no template).
+    pub player_sides: BTreeMap<PlayerIndex, Vec<u8>>,
+    /// What `TheTerrainLogic->findClosestEdgePoint(pos)` adds to `pos` until the layer-12 adapter plugs the terrain in.
+    pub edge_point_offset: crate::common::base_type::Coord3D,
+    /// The handle of the last audio event added (`AudioManager::addAudioEvent` hands out 1, 2, 3, ...).
+    pub last_audio_handle: u32,
+    /// The objects for which `TheAI->findClosestEnemy` finds an enemy.
+    pub ai_enemy_near: BTreeSet<ObjectId>,
+    /// The objects for which `TheAI->findClosestAlly` finds an ally.
+    pub ai_ally_near: BTreeSet<ObjectId>,
     /// `TheGlobalData->m_getHealedAnimationName` (`AutoHealBehavior`'s icon).
     pub get_healed_animation_name: Vec<u8>,
     /// `Player::iterateObjects` order, per player.
@@ -551,6 +601,11 @@ impl Default for ObjectCuts {
             // --- p1w12-sonnet ---
             cur_weapon: BTreeMap::new(),
             range_scan: Vec::new(),
+            player_sides: BTreeMap::new(),
+            edge_point_offset: crate::common::base_type::Coord3D { x: 0.0, y: 0.0, z: 0.0 },
+            last_audio_handle: 0,
+            ai_enemy_near: BTreeSet::new(),
+            ai_ally_near: BTreeSet::new(),
             get_healed_animation_name: Vec::new(),
             player_object_list: BTreeMap::new(),
             last_particle_system_id: 0,
@@ -640,6 +695,11 @@ impl ObjectCuts {
     /// `Player::getPlayerNightColor()`.
     pub fn player_night_color(&self, p: PlayerIndex) -> i32 {
         self.player_night_colors.get(&p).copied().unwrap_or(0)
+    }
+
+    /// `Player::getPlayerTemplate()->getSide()`; `None` for no template.
+    pub fn player_side(&self, p: PlayerIndex) -> Option<Vec<u8>> {
+        self.player_sides.get(&p).cloned()
     }
 
     /// `Player::getCompletedUpgradeMask()`.

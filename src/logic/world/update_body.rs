@@ -192,6 +192,12 @@ pub enum UpdateBody {
     FireOCLAfterWeaponCooldownUpdate(crate::logic::modules::fire_ocl_after_weapon_cooldown_update::FireOCLAfterWeaponCooldownUpdate),
     /// `AutoHealBehavior`.
     AutoHealBehavior(crate::logic::modules::auto_heal_behavior::AutoHealBehavior),
+    /// `CheckpointUpdate`.
+    CheckpointUpdate(crate::logic::modules::checkpoint_update::CheckpointUpdate),
+    /// `FlammableUpdate`.
+    FlammableUpdate(crate::logic::modules::flammable_update::FlammableUpdate),
+    /// `OclUpdate`.
+    OclUpdate(crate::logic::modules::ocl_update::OclUpdate),
     // --- end p1w12-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -277,6 +283,9 @@ impl UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.world_update(world, me),
             UpdateBody::AutoHealBehavior(m) => m.world_update(world, me),
+            UpdateBody::CheckpointUpdate(m) => m.world_update(world, me),
+            UpdateBody::FlammableUpdate(m) => m.world_update(world, me),
+            UpdateBody::OclUpdate(m) => m.world_update(world, me),
 // --- end p1w12-sonnet ---
             // --- end p1l9-example ---
         }
@@ -362,6 +371,9 @@ impl UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.module_call(world, me, call),
             UpdateBody::AutoHealBehavior(m) => m.module_call(world, me, call),
+            UpdateBody::CheckpointUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::FlammableUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::OclUpdate(m) => m.module_call(world, me, call),
 // --- end p1w12-sonnet ---
             // --- end p1l9-example ---
         }
@@ -442,6 +454,9 @@ impl UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::AutoHealBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::CheckpointUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::FlammableUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::OclUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
 // --- end p1w12-sonnet ---
             _ => self.xfer(xfer),
         }
@@ -504,6 +519,9 @@ impl UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::AutoHealBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::CheckpointUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::FlammableUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::OclUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
 // --- end p1w12-sonnet ---
             _ => self.crc(xfer),
         }
@@ -566,6 +584,9 @@ impl UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::AutoHealBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::CheckpointUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::FlammableUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::OclUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
 // --- end p1w12-sonnet ---
             _ => self.load_post_process(),
         }
@@ -651,6 +672,9 @@ impl Snapshot for UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.crc(xfer),
             UpdateBody::AutoHealBehavior(m) => m.crc(xfer),
+            UpdateBody::CheckpointUpdate(m) => m.crc(xfer),
+            UpdateBody::FlammableUpdate(m) => m.crc(xfer),
+            UpdateBody::OclUpdate(m) => m.crc(xfer),
 // --- end p1w12-sonnet ---
             // --- end p1l9-example ---
         }
@@ -732,6 +756,9 @@ impl Snapshot for UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.xfer(xfer),
             UpdateBody::AutoHealBehavior(m) => m.xfer(xfer),
+            UpdateBody::CheckpointUpdate(m) => m.xfer(xfer),
+            UpdateBody::FlammableUpdate(m) => m.xfer(xfer),
+            UpdateBody::OclUpdate(m) => m.xfer(xfer),
 // --- end p1w12-sonnet ---
             // --- end p1l9-example ---
         }
@@ -813,6 +840,9 @@ impl Snapshot for UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.load_post_process(),
             UpdateBody::AutoHealBehavior(m) => m.load_post_process(),
+            UpdateBody::CheckpointUpdate(m) => m.load_post_process(),
+            UpdateBody::FlammableUpdate(m) => m.load_post_process(),
+            UpdateBody::OclUpdate(m) => m.load_post_process(),
 // --- end p1w12-sonnet ---
             // --- end p1l9-example ---
         }
@@ -979,6 +1009,9 @@ impl UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.world_construct(world, me),
             UpdateBody::AutoHealBehavior(m) => m.world_construct(world, me),
+            UpdateBody::CheckpointUpdate(m) => m.world_construct(world, me),
+            UpdateBody::FlammableUpdate(m) => m.world_construct(world, me),
+            UpdateBody::OclUpdate(m) => m.world_construct(world, me),
 // --- end p1w12-sonnet ---
             _ => {}
         }

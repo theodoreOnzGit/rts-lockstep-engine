@@ -58,6 +58,11 @@ public:
 	/* update batch M: Player::iterateObjects over the objects the test lists, in order */
 	void iterateObjects( void (*func)( Object *, void * ), void *userData );
 	std::vector<Object *> m_objects;
+	/* update batch N: OCLUpdate */
+	Bool isPlayableSide() const { return m_playable; }
+	const class PlayerTemplate *getPlayerTemplate() const { return m_template; }
+	Bool m_playable = true;
+	const class PlayerTemplate *m_template = 0;
 	void setUnitsVisionSpied(Bool setting, KindOfMaskType whichUnits, Int byWhom);   /* SpyVisionUpdate: a line of the effect log */
 	Team *m_defaultTeam;
 	Money m_money;

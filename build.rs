@@ -3088,6 +3088,36 @@ mod differential {
                 .expect("write ObjectHealing.inc");
                 println!("cargo:rerun-if-changed=upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Object.cpp");
             }
+            // Update batch M (differential/l9_auto_heal_m.inc): AutoHealBehavior.h's field table names `INI::parseParticleSystemTemplate`, which lives in the
+            // INI archive and calls `ParticleSystemManager::findTemplate` (a symbol the weapon fixture defines for itself); the two names are replaced by the
+            // driver's own copy of that function (`l9ahParsePsTemplate`, on this unit's renamed manager). Each edit is asserted to apply the stated number of
+            // times; the edited header is mod_gen/GameLogic/Module/AutoHealBehavior.h, which the module build finds before the upstream one.
+            {
+                let path = up.join("GameEngine/Include/GameLogic/Module/AutoHealBehavior.h");
+                let text = std::fs::read_to_string(&path).expect("read AutoHealBehavior.h");
+                let (parse, include) = ("INI::parseParticleSystemTemplate", "#include \"Common/BitFlagsIO.h\"\n");
+                assert_eq!(text.matches(parse).count(), 2, "AutoHealBehavior.h: the particle system parser must occur twice");
+                assert_eq!(text.matches(include).count(), 1, "AutoHealBehavior.h: the BitFlagsIO include must occur once");
+                let cut = text.replace(parse, "l9ahParsePsTemplate").replace(
+                    include,
+                    &format!("{include}class INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n"),
+                );
+                let dir = mod_gen.join("GameLogic/Module");
+                std::fs::create_dir_all(&dir).expect("create mod_gen/GameLogic/Module");
+                std::fs::write(dir.join("AutoHealBehavior.h"), cut).expect("write AutoHealBehavior.h copy");
+                println!("cargo:rerun-if-changed={}", path.display());
+            }
+            // Update batch N (differential/l9_flammable_n.inc): the `static` of a function-local name key loses its `static` (the test resets the name key
+            // generator for every case, and a key cached by an earlier case would name another string, as in special power batch H). Asserted to apply once;
+            // the edited copy is in mod_gen/ (…_nokey.cpp) and the driver includes that.
+            for (dir, file, decl) in [("Update", "FlammableUpdate.cpp", "static const NameKeyType key_FireSpreadUpdate = NAMEKEY(\"FireSpreadUpdate\");")] {
+                let path = up.join("GameEngine/Source/GameLogic/Object").join(dir).join(file);
+                let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {file}: {e}"));
+                assert_eq!(text.matches(decl).count(), 1, "{file}: the static name key must occur once");
+                let cut = text.replace(decl, &decl.replacen("static const ", "const ", 1));
+                std::fs::write(mod_gen.join(file.replace(".cpp", "_nokey.cpp")), cut).expect("write nokey copy");
+                println!("cargo:rerun-if-changed={}", path.display());
+            }
             // --- end p1w12-sonnet ---
             let mut md = cc::Build::new();
             base(&mut md);

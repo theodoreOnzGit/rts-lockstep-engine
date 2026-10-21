@@ -16,6 +16,9 @@ class AudioEventRTS
 private:
 	AsciiString m_eventName;   /* p1w11-sonnet: the FIRST member, as the ObjectCreationList fixture's stand-in (shim_ocl) relies on */
 public:
+	/* --- p1w12-sonnet --- (update batch N: FlammableUpdate's burning sound) */
+	AudioEventRTS( const AsciiString &eventName, ObjectID ownerID ) : m_eventName( eventName ), m_hasPos(false), m_playerIndex(-1), m_objectID(ownerID) { m_pos.x = m_pos.y = m_pos.z = 0; }
+	/* --- end p1w12-sonnet --- */
 	AudioEventRTS() : m_hasPos(false), m_playerIndex(-1), m_objectID((ObjectID)0) { m_pos.x = m_pos.y = m_pos.z = 0; }
 	void setEventName(AsciiString name);
 	const AsciiString &getEventName() const { return m_eventName; }
@@ -29,4 +32,7 @@ public:
 	ObjectID m_objectID;
 	/* --- end p1w11-sonnet --- */
 };
+/* --- p1w12-sonnet --- */
+typedef UnsignedInt AudioHandle;
+/* --- end p1w12-sonnet --- */
 #endif

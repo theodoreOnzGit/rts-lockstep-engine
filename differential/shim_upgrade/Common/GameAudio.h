@@ -23,6 +23,7 @@ public:
 	void getInfoForAudioEvent( const AudioEventRTS *eventToFindAndFill ) const;
 	/* --- p1w11-sonnet --- (the Module build renames this class; its die batch D defines the call) */
 	UnsignedInt addAudioEvent( const AudioEventRTS *eventToAdd );
+	void removeAudioEvent( UnsignedInt audioEvent );   /* p1w12-sonnet, update batch N (differential/l9_flammable_n.inc) */
 	const class MiscAudio *getMiscAudio( void ) const;   /* the crates (differential/l9_crates_f.inc) */
 	/* --- end p1w11-sonnet --- */
 };

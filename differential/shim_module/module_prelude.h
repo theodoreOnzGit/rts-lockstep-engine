@@ -105,6 +105,13 @@
 #define PartitionFilterSameMapStatus ModTestPartitionFilterSameMapStatus
 #define MemoryPoolObjectHolder ModTestMemoryPoolObjectHolder
 #define IterOrderType ModTestIterOrderType
+#define PlayerTemplate ModTestPlayerTemplate
+#define ParticleSystemManager ModTestParticleSystemManager
+#define ParticleSystem ModTestParticleSystem
+#define ParticleSystemTemplate ModTestParticleSystemTemplate
+#define TheParticleSystemManager ModTestTheParticleSystemManager
+#define TerrainLogic ModTestTerrainLogic
+#define TheTerrainLogic ModTestTheTerrainLogic
 #define DistanceCalculationType ModTestDistanceCalculationType
 /* --- end p1w12-sonnet --- */
 #define GameLogic ModTestGameLogic

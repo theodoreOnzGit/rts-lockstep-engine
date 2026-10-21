@@ -106,8 +106,7 @@ static int l9ulRunInner(const char *filename, const char *xfer_path, const unsig
 	obj->m_oid = 1;
 	obj->m_player = cfg[0] == 0xFFFFFFFFu ? 0 : &players[cfg[0]];
 	if (cfg[4] & 1) obj->m_kindOf.set(KINDOF_STRUCTURE);
-	memcpy(&obj->m_geometry.m_major, &cfg[5], 4);
-	memcpy(&obj->m_geometry.m_minor, &cfg[6], 4);
+	{ Real maj, min; memcpy(&maj, &cfg[5], 4); memcpy(&min, &cfg[6], 4); obj->m_geometry.setMajorRadius(maj); obj->m_geometry.setMinorRadius(min); }
 	memcpy(&obj->m_constructionPercent, &cfg[7], 4);
 	obj->m_pos.x = 11.0f; obj->m_pos.y = 22.0f; obj->m_pos.z = 5.0f;
 	GameLogic gl;
@@ -143,7 +142,7 @@ static int l9ulRunInner(const char *filename, const char *xfer_path, const unsig
 			case 5: { ObjectStatusMaskType sm; if (o[1] & 1) sm.set(OBJECT_STATUS_STEALTHED); if (o[1] & 2) sm.set(OBJECT_STATUS_DETECTED); obj->m_status = sm; break; }
 			case 6: g_spLocal = o[1] ? &players[o[1] - 1] : 0; break;
 			case 7: for (int p = 0; p < 3; ++p) players[p].m_upgradesCompleted = mask; break;
-			case 8: memcpy(&obj->m_geometry.m_major, &o[1], 4); memcpy(&obj->m_geometry.m_minor, &o[2], 4); break;
+			case 8: { Real maj, min; memcpy(&maj, &o[1], 4); memcpy(&min, &o[2], 4); obj->m_geometry.setMajorRadius(maj); obj->m_geometry.setMinorRadius(min); break; }
 			case 10: xst = runXfer(m, 0, xfer_path, bytes, 512, &blen, &crc); g_ulSaved.assign(bytes, bytes + blen); break;
 			case 11: {
 				std::vector<unsigned char> b = g_ulSaved;

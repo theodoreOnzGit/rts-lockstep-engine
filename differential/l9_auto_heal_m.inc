@@ -11,57 +11,6 @@
 
 namespace {
 
-/* A body that keeps a health and a maximum and takes healing as the scripted probe body of the Rust side does (module_probe.rs, AttemptHealing). */
-class MBody : public BodyModuleInterface
-{
-public:
-	Real m_health = 0.0f, m_max = 0.0f;
-	Object *m_owner = 0;
-	void attemptDamage( DamageInfo * ) {}
-	void attemptHealing( DamageInfo *info )
-	{
-		ulog("heal %d %08x %d", (int)m_owner->m_oid, realBits(info->in.m_amount), (int)info->in.m_sourceID);
-		Real room = m_max - m_health;
-		Real healed = (info->in.m_damageType == DAMAGE_HEALING && info->in.m_amount < room) ? info->in.m_amount : room;
-		m_health += healed;
-		info->out.m_actualDamageDealt = healed;
-	}
-	Real estimateDamage( DamageInfoInput & ) const { return 0.0f; }
-	Real getHealth() const { return m_health; }
-	Real getMaxHealth() const { return m_max; }
-	Real getInitialHealth() const { return 0.0f; }
-	Real getPreviousHealth() const { return 0.0f; }
-	UnsignedInt getSubdualDamageHealRate() const { return 0; }
-	Real getSubdualDamageHealAmount() const { return 0.0f; }
-	Bool hasAnySubdualDamage() const { return false; }
-	Real getCurrentSubdualDamageAmount() const { return 0.0f; }
-	BodyDamageType getDamageState() const { return BODY_PRISTINE; }
-	void setDamageState( BodyDamageType ) {}
-	void setAflame( Bool ) {}
-	void onVeterancyLevelChanged( VeterancyLevel, VeterancyLevel, Bool ) {}
-	void setArmorSetFlag( ArmorSetType ) {}
-	void clearArmorSetFlag( ArmorSetType ) {}
-	Bool testArmorSetFlag( ArmorSetType ) { return false; }
-	const DamageInfo *getLastDamageInfo() const { return 0; }
-	UnsignedInt getLastDamageTimestamp() const { return 0; }
-	UnsignedInt getLastHealingTimestamp() const { return 0; }
-	ObjectID getClearableLastAttacker() const { return INVALID_ID; }
-	void clearLastAttacker() {}
-	Bool getFrontCrushed() const { return false; }
-	Bool getBackCrushed() const { return false; }
-	void setInitialHealth( Int ) {}
-	void setMaxHealth( Real, MaxHealthChangeType ) {}
-	void setFrontCrushed( Bool ) {}
-	void setBackCrushed( Bool ) {}
-	void applyDamageScalar( Real ) {}
-	Real getDamageScalar() const { return 1.0f; }
-	void internalChangeHealth( Real ) {}
-	void setIndestructible( Bool ) {}
-	Bool isIndestructible( void ) const { return false; }
-	void evaluateVisualCondition() {}
-	void updateBodyParticleSystems() {}
-};
-
 std::vector<std::string> g_ahPsNames;
 std::map<std::string, ParticleSystemTemplate *> g_ahPsTemplates;
 ParticleSystem g_ahPsSlots[64];
@@ -142,6 +91,17 @@ SimpleObjectIterator *PartitionManager::iterateObjectsInRange( const Coord3D *po
 	return it;
 }
 
+/* INI::parseParticleSystemTemplate (INI.cpp 1275-1287), on this unit's manager; AutoHealBehavior.h's field table names this function (build.rs) */
+void l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData )
+{
+	const char *token = ini->getNextToken();
+	const ParticleSystemTemplate *pSystemT = TheParticleSystemManager->findTemplate( AsciiString( token ) );
+	typedef const ParticleSystemTemplate* ConstParticleSystemTemplatePtr;
+	ConstParticleSystemTemplatePtr* theParticleSystemTemplate = (ConstParticleSystemTemplatePtr*)store;
+	*theParticleSystemTemplate = pSystemT;
+}
+ParticleSystemManager *TheParticleSystemManager = 0;
+
 extern "C" {
 
 /* Read `filename` (block `D`) as the data of an AutoHealBehavior and make the module on object 1 of four. `cfg` (28 words): [0..4) the objects'
@@ -216,7 +176,7 @@ static int l9ahRunInner(const char *filename, const char *xfer_path, const unsig
 		objs[k]->m_body = (cfg[16 + k] & 1) ? &bodies[k] : 0;
 		objs[k]->m_effDead = (cfg[16 + k] & 2) != 0;
 		objs[k]->m_offMap = (cfg[16 + k] & 4) != 0;
-		memcpy(&objs[k]->m_geometry.m_height, &cfg[20 + k], 4);
+		{ Real h; memcpy(&h, &cfg[20 + k], 4); objs[k]->m_geometry.set(GEOMETRY_BOX, false, h, 1.0f, 1.0f); }
 		objs[k]->m_pos.x = objs[k]->m_pos.y = objs[k]->m_pos.z = 0.0f;   /* the objects are moved after the module is made, as the Rust test does */
 	}
 	GameLogic gl;
@@ -273,7 +233,7 @@ static int l9ahRunInner(const char *filename, const char *xfer_path, const unsig
 					case 3: memcpy(&bodies[o[1] & 3].m_health, &v, 4); break;
 					case 4: memcpy(&bodies[o[1] & 3].m_max, &v, 4); break;
 					case 5: memcpy(&t->m_pos.z, &v, 4); break;
-					case 6: memcpy(&t->m_geometry.m_height, &v, 4); break;
+					case 6: { Real h; memcpy(&h, &v, 4); t->m_geometry.set(GEOMETRY_BOX, false, h, 1.0f, 1.0f); break; }
 					default: t->m_body = v ? &bodies[o[1] & 3] : 0; break;
 					}
 					break;

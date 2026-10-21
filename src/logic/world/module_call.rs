@@ -231,6 +231,20 @@ pub enum ModuleCall {
     // --- p1w12-sonnet ---
     /// `AutoHealBehavior::stopHealing()` (`MinefieldBehavior`).
     StopHealing,
+    /// `BodyModuleInterface::setAflame(setting)` (`FlammableUpdate`).
+    SetAflame(bool),
+    /// `FlammableUpdate::tryToIgnite()` (`FireSpreadUpdate`).
+    TryToIgnite,
+    /// `OCLUpdate::resetTimer()`.
+    OclUpdateResetTimer,
+    /// `OCLUpdate::getCountdownPercent()`; replies [`ModuleReply::Real`].
+    OclUpdateGetCountdownPercent,
+    /// `OCLUpdate::getRemainingFrames()`; replies [`ModuleReply::Int`].
+    OclUpdateGetRemainingFrames,
+    /// `FlammableUpdate::wouldIgnite()`; replies [`ModuleReply::Bool`].
+    WouldIgnite,
+    /// `FireSpreadUpdate::startFireSpreading()` (`FlammableUpdate`).
+    StartFireSpreading,
     // --- end p1w12-sonnet ---
     /// `ToppleUpdate::isAbleToBeToppled()`; replies [`ModuleReply::Bool`].
     IsAbleToBeToppled,
