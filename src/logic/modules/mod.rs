@@ -111,6 +111,7 @@ pub mod height_die_update;
 pub mod dynamic_shroud_clearing_range_update;
 pub mod squish_collide;
 pub mod prone_update;
+pub mod enemy_near_update;
 // --- end p1w13-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -397,6 +398,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::ProneUpdate(d) => Some(made_update(
             UpdateModule::get_interface_mask(),
             prone_update::ProneUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::ProneUpdate(m))),
+        )),
+        ModuleDataKind::EnemyNearUpdate(d) => Some(made_update(
+            UpdateModule::get_interface_mask(),
+            enemy_near_update::EnemyNearUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::EnemyNearUpdate(m))),
         )),
         // --- end p1w13-sonnet ---
         _ => None,

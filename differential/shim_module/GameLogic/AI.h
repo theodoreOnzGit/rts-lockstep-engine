@@ -18,6 +18,17 @@ class PartitionFilter;
 class AI
 {
 public:
+	/* --- p1w13-sonnet --- (AI.h lines 253-261, verbatim; update batch O: EnemyNearUpdate) */
+	enum
+	{
+		CAN_SEE														=	1 << 0,
+		CAN_ATTACK												= 1 << 1,
+		IGNORE_INSIGNIFICANT_BUILDINGS		= 1 << 2,
+		ATTACK_BUILDINGS									= 1 << 3,
+		WITHIN_ATTACK_RANGE								= 1 << 4,
+		UNFOGGED													= 1 << 5
+	};
+	/* --- end p1w13-sonnet --- */
 	/* --- p1w12-sonnet --- */
 	Object *findClosestEnemy( const Object *me, Real range, UnsignedInt qualifiers, const AttackPriorityInfo *info = 0, PartitionFilter *optionalFilter = 0 );
 	Object *findClosestAlly( const Object *me, Real range, UnsignedInt qualifiers );

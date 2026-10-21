@@ -208,6 +208,8 @@ pub enum UpdateBody {
     SquishCollide(crate::logic::modules::squish_collide::SquishCollide),
     /// `ProneUpdate`.
     ProneUpdate(crate::logic::modules::prone_update::ProneUpdate),
+    /// `EnemyNearUpdate`.
+    EnemyNearUpdate(crate::logic::modules::enemy_near_update::EnemyNearUpdate),
     // --- end p1w13-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -302,6 +304,7 @@ impl UpdateBody {
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.world_update(world, me),
             UpdateBody::SquishCollide(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::ProneUpdate(m) => m.world_update(world, me),
+            UpdateBody::EnemyNearUpdate(m) => m.world_update(world, me),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -396,6 +399,7 @@ impl UpdateBody {
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.module_call(world, me, call),
             UpdateBody::SquishCollide(m) => m.module_call(world, me, call),
             UpdateBody::ProneUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::EnemyNearUpdate(m) => m.module_call(world, me, call),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -484,6 +488,7 @@ impl UpdateBody {
             UpdateBody::HeightDieUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::ProneUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::EnemyNearUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
 // --- end p1w13-sonnet ---
             _ => self.xfer(xfer),
         }
@@ -554,6 +559,7 @@ impl UpdateBody {
             UpdateBody::HeightDieUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::ProneUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::EnemyNearUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
 // --- end p1w13-sonnet ---
             _ => self.crc(xfer),
         }
@@ -624,6 +630,7 @@ impl UpdateBody {
             UpdateBody::HeightDieUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::ProneUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::EnemyNearUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
 // --- end p1w13-sonnet ---
             _ => self.load_post_process(),
         }
@@ -718,6 +725,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.crc(xfer),
             UpdateBody::SquishCollide(m) => m.crc(xfer),
             UpdateBody::ProneUpdate(m) => m.crc(xfer),
+            UpdateBody::EnemyNearUpdate(m) => m.crc(xfer),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -808,6 +816,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.xfer(xfer),
             UpdateBody::SquishCollide(m) => m.xfer(xfer),
             UpdateBody::ProneUpdate(m) => m.xfer(xfer),
+            UpdateBody::EnemyNearUpdate(m) => m.xfer(xfer),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -898,6 +907,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.load_post_process(),
             UpdateBody::SquishCollide(m) => m.load_post_process(),
             UpdateBody::ProneUpdate(m) => m.load_post_process(),
+            UpdateBody::EnemyNearUpdate(m) => m.load_post_process(),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -1072,6 +1082,7 @@ impl UpdateBody {
             UpdateBody::HeightDieUpdate(m) => m.world_construct(world, me),
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.world_construct(world, me),
             UpdateBody::ProneUpdate(m) => m.world_construct(world, me),
+            UpdateBody::EnemyNearUpdate(m) => m.world_construct(world, me),
 // --- end p1w13-sonnet ---
             _ => {}
         }
