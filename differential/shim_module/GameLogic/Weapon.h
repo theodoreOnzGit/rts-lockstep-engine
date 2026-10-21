@@ -50,4 +50,17 @@ public:
 };
 extern WeaponStore *TheWeaponStore;
 /* --- end p1w12-sonnet --- */
+/* --- p1w12-sonnet --- (update batch M, FireOCLAfterWeaponCooldownUpdate.cpp) a Weapon with the three facts that module reads of one; renamed
+** ModTestWeapon by module_prelude.h so that no inline member clashes with the weapon fixtures' real Weapon */
+#include "Common/GameType.h"
+class Weapon
+{
+public:
+	WeaponSlotType getWeaponSlot() const { return m_slot; }
+	UnsignedInt getLastShotFrame() const { return m_last; }
+	UnsignedInt getPossibleNextShotFrame() const { return m_next; }
+	WeaponSlotType m_slot = PRIMARY_WEAPON;
+	UnsignedInt m_last = 0, m_next = 0;
+};
+/* --- end p1w12-sonnet --- */
 #endif

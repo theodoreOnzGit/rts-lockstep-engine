@@ -96,6 +96,16 @@
 #define WeaponStore ModTestWeaponStore
 #define TheWeaponStore ModTestTheWeaponStore
 #define WeaponTemplate ModTestWeaponTemplate
+#define Weapon ModTestWeapon   /* update batch M */
+#define ObjectIterator ModTestObjectIterator
+#define SimpleObjectIterator ModTestSimpleObjectIterator
+#define PartitionFilter ModTestPartitionFilter
+#define PartitionFilterRelationship ModTestPartitionFilterRelationship
+#define PartitionFilterAlive ModTestPartitionFilterAlive
+#define PartitionFilterSameMapStatus ModTestPartitionFilterSameMapStatus
+#define MemoryPoolObjectHolder ModTestMemoryPoolObjectHolder
+#define IterOrderType ModTestIterOrderType
+#define DistanceCalculationType ModTestDistanceCalculationType
 /* --- end p1w12-sonnet --- */
 #define GameLogic ModTestGameLogic
 #define TheGameLogic ModTestTheGameLogic

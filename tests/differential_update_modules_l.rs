@@ -109,12 +109,6 @@ fn put_str(v: &mut Vec<u8>, s: &[u8]) {
     put_u32(v, s.len() as u32);
     v.extend_from_slice(s);
 }
-fn put_names(v: &mut Vec<u8>, names: &[Vec<u8>]) {
-    put_u32(v, names.len() as u32);
-    for n in names {
-        put_str(v, n);
-    }
-}
 fn mask_from(w: &[u32]) -> UpgradeMaskType {
     let mut m = UpgradeMaskType::default();
     for i in 0..128 {

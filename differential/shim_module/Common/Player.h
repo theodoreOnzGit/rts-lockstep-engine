@@ -55,6 +55,9 @@ public:
 	Team *getDefaultTeam() { return m_defaultTeam; }
 	Color getPlayerColor() const { return m_color; }   /* update batch L: the floating text's colour */
 	Color m_color = 0;
+	/* update batch M: Player::iterateObjects over the objects the test lists, in order */
+	void iterateObjects( void (*func)( Object *, void * ), void *userData );
+	std::vector<Object *> m_objects;
 	void setUnitsVisionSpied(Bool setting, KindOfMaskType whichUnits, Int byWhom);   /* SpyVisionUpdate: a line of the effect log */
 	Team *m_defaultTeam;
 	Money m_money;

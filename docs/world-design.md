@@ -471,6 +471,15 @@ slot around the calls that reach other modules) and the data field macro `specia
 the update modules it talks to are `ModuleCall`s (`InitiateIntentToDoSpecialPower`, `SetCleanupAreaParameters`, `ActivateSpyVision`, `SetLifetimeRange`).
 The view object and the detonation object are made with `World::thing_factory_new_object`. `World::defect` leaves a `defect` trace line when the test asks for effect lines.
 
+**Update batch M (`p1w12-sonnet`, 2026-10-21).** A module that mixes `UpgradeMux` into an update module (`FireOCLAfterWeaponCooldownUpdate`,
+`AutoHealBehavior`) is `UpdateBehavior` + `UpgradeMuxUser`, wired with kind `updatemux` (its `getInterfaceMask()` carries `MODULEINTERFACE_UPGRADE`); its
+`crc_with` is `UpdateModule::crc` then `upgradeMuxCRC`, and its `xfer_fields` begin with `upgradeMuxXfer` (the order of the C++ `xfer`). What an update
+module reads of the world that the full-game adapter will own is a table on `ObjectCuts` the test fills (`cur_weapon`, `range_scan`,
+`player_object_list`), consulted after the real source where one exists (`World::current_weapon_facts` reads the object's weapon set first). A module call
+that is not made from `update()` (`onDamage`) calls `update_behavior::set_wake_frame` directly: `module_call` has the module on the module stack, which is
+what `UpdateHost::running_module` reads. The batch's drivers run inside `l9TrappedRun` (`differential/l9_crash_trap_m.inc`): a crash of the C++ becomes status
+99, a mismatch, so that a planted bug that steers the Rust past upstream undefined behaviour is a clean observation.
+
 <!-- --- p1w6-object --- -->
 ## Object (layer 8, wave 6)
 

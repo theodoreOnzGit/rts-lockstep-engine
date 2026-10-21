@@ -322,6 +322,13 @@ impl ProbeModule {
                 ModuleReply::Damage(info)
             }
             ModuleCall::AttemptHealing(mut info) => {
+                // --- p1w12-sonnet --- (AutoHealBehavior's test: the heal is a line of the trace, when `probe_effect_trace` asks)
+                if world.cuts.probe_effect_trace {
+                    if let Some(t) = &mut world.cuts.trace {
+                        t.push(format!("heal {} {:08x} {}", me.object, info.input.amount.to_bits(), info.input.source_id));
+                    }
+                }
+                // --- end p1w12-sonnet ---
                 let room = self.max_health - self.health;
                 let healed = if info.input.damage_type == DAMAGE_HEALING && info.input.amount < room { info.input.amount } else { room };
                 self.health += healed;
@@ -461,6 +468,7 @@ impl ProbeModule {
             | ModuleCall::OrderSlavesToClearDisabled { .. }
             | ModuleCall::OnSpawnDeath { .. }
             | ModuleCall::UndoUpgrade
+            | ModuleCall::StopHealing // p1w12-sonnet
             | ModuleCall::ApplyTopplingForce { .. }
             | ModuleCall::Detonate
             | ModuleCall::StartDefectionTimer { .. }

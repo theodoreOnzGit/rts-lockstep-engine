@@ -99,6 +99,10 @@ pub mod fx_list_die;
 pub mod fire_weapon_when_dead_behavior;
 pub mod auto_deposit_update;
 // --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
+pub mod fire_ocl_after_weapon_cooldown_update;
+pub mod auto_heal_behavior;
+// --- end p1w12-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
 /// `TheModuleFactory->newModule(thing, name, data, type)`), with its tag.
@@ -346,6 +350,16 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
             auto_deposit_update::AutoDepositUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::AutoDepositUpdate(m))),
         )),
         // --- end p1w11-sonnet ---
+        // --- p1w12-sonnet ---
+        ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d) => Some(made_update(
+            fire_ocl_after_weapon_cooldown_update::FireOCLAfterWeaponCooldownUpdate::get_interface_mask(),
+            fire_ocl_after_weapon_cooldown_update::FireOCLAfterWeaponCooldownUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::FireOCLAfterWeaponCooldownUpdate(m))),
+        )),
+        ModuleDataKind::AutoHealBehavior(d) => Some(made_update(
+            auto_heal_behavior::AutoHealBehavior::get_interface_mask(),
+            auto_heal_behavior::AutoHealBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::AutoHealBehavior(m))),
+        )),
+        // --- end p1w12-sonnet ---
         _ => None,
     }
 }

@@ -71,6 +71,52 @@ pub const ALLOW_ENEMIES: u32 = 0x04;
 /// `ALLOW_NEUTRAL`.
 pub const ALLOW_NEUTRAL: u32 = 0x08;
 
+// --- p1w12-sonnet ---
+/// What a module reads of `Object::getCurrentWeapon()`: the weapon's slot, `getLastShotFrame()` and `getPossibleNextShotFrame()`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WeaponFacts {
+    /// `getWeaponSlot()`.
+    pub slot: i32,
+    /// `getLastShotFrame()`.
+    pub last_shot_frame: u32,
+    /// `getPossibleNextShotFrame()`.
+    pub possible_next_shot_frame: u32,
+}
+
+impl World {
+    /// `Object::getCurrentWeapon()` as a module reads it: the weapon set's current weapon when it has one, else the table `cuts.cur_weapon` (see
+    /// `modules::fire_ocl_after_weapon_cooldown_update`). `None` is `NULL`.
+    pub fn current_weapon_facts(&self, id: ObjectId) -> Option<WeaponFacts> {
+        let o = self.objects.find(id)?;
+        if let Some(w) = o.weapon_set.get_cur_weapon() {
+            return Some(WeaponFacts { slot: w.weapon_slot(), last_shot_frame: w.last_shot_frame(), possible_next_shot_frame: w.possible_next_shot_frame() });
+        }
+        self.cuts.cur_weapon.get(&id).copied()
+    }
+
+    /// `Object::getWeaponInWeaponSlot(slot) != NULL`: the weapon set's, or the table `cuts.weapons`.
+    pub fn weapon_in_slot_exists(&self, id: ObjectId, slot: i32) -> bool {
+        self.objects.find(id).is_some_and(|o| o.weapon_set.get_weapon_in_weapon_slot(slot).is_some()) || self.cuts.weapon_in_slot(id, slot)
+    }
+
+    /// `obj->getBodyModule()->getHealth()` and `getMaxHealth()`; `None` for an object with no body module (`NULL`).
+    pub fn body_health(&mut self, id: ObjectId) -> Option<(f32, f32)> {
+        let body = self.get_body_module(id)?;
+        let health = self.module_call(id, body, ModuleCall::GetHealth).as_real(0.0);
+        let max_health = self.module_call(id, body, ModuleCall::GetMaxHealth).as_real(0.0);
+        Some((health, max_health))
+    }
+
+    /// `TheParticleSystemManager->createParticleSystem(tmpl)`, `system->setPosition(&position)` and `system->getSystemID()`: the id the client gave it.
+    pub fn create_particle_system(&mut self, template: Vec<u8>, position: crate::common::base_type::Coord3D) -> u32 {
+        self.cuts.last_particle_system_id = self.cuts.last_particle_system_id.wrapping_add(1);
+        let id = self.cuts.last_particle_system_id;
+        self.cut(CutCall::ParticleSystemCreate { template, position, id });
+        id
+    }
+}
+// --- end p1w12-sonnet ---
+
 /// What `Object` does to a unit that is not translated. See the module docs.
 #[derive(Clone, Debug, PartialEq)]
 pub enum CutCall {
@@ -156,6 +202,13 @@ pub enum CutCall {
     /// `TheInGameUI->addFloatingText(text, &position, color)` with `text` the format `GUI:AddCash` given `amount` (`AutoDepositUpdate`).
     InGameUiAddFloatingText { amount: i32, position: crate::common::base_type::Coord3D, color: i32 },
     // --- end p1w11-sonnet ---
+    // --- p1w12-sonnet ---
+    /// `ObjectCreationList::create(ocl, primary, secondary, lifetimeFrames)` for the list named `ocl` (`FireOCLAfterWeaponCooldownUpdate`); like
+    /// [`CutCall::OclCreate`], a name that is no list makes nothing.
+    OclCreateWithLifetime { primary: ObjectId, secondary: ObjectId, ocl: Vec<u8>, lifetime_frames: u32 },
+    /// `TheParticleSystemManager->createParticleSystem(tmpl)` and `system->setPosition(&position)`; `id` is the system's id (`AutoHealBehavior`).
+    ParticleSystemCreate { template: Vec<u8>, position: crate::common::base_type::Coord3D, id: u32 },
+    // --- end p1w12-sonnet ---
     // ---- Team ----
     /// `team->notifyTeamOfObjectDeath()`.
     TeamNotifyTeamOfObjectDeath { team: TeamId },
@@ -266,6 +319,12 @@ pub struct ObjectGlobals {
     /// `TheAnim2DCollection != NULL` (`CrateCollide::onCollide` shows its execute animation only then).
     pub anim2d_collection_present: bool,
     // --- end p1w11-sonnet ---
+    // --- p1w12-sonnet ---
+    /// `TheGlobalData->m_getHealedAnimationDisplayTimeInSeconds`.
+    pub get_healed_animation_display_time_in_seconds: f32,
+    /// `TheGlobalData->m_getHealedAnimationZRisePerSecond`.
+    pub get_healed_animation_z_rise_per_second: f32,
+    // --- end p1w12-sonnet ---
     /// `TheGlobalData->m_maxTunnelCapacity` (`TunnelTracker::getContainMax`).
     pub max_tunnel_capacity: i32,
     /// `TheScriptEngine->getObjectsShouldReceiveDifficultyBonus()`.
@@ -294,6 +353,10 @@ impl Default for ObjectGlobals {
             // --- p1w11-sonnet ---
             anim2d_collection_present: true,
             // --- end p1w11-sonnet ---
+            // --- p1w12-sonnet ---
+            get_healed_animation_display_time_in_seconds: 0.0,
+            get_healed_animation_z_rise_per_second: 0.0,
+            // --- end p1w12-sonnet ---
             max_tunnel_capacity: 0,
             objects_should_receive_difficulty_bonus: false,
             // --- p1w10-sonnet ---
@@ -404,6 +467,20 @@ pub struct ObjectCuts {
     pub weapons: BTreeSet<(ObjectId, i32)>,
     /// `m_weaponSet.hasAnyWeapon()` per object.
     pub weapon_sets_with_weapons: BTreeSet<ObjectId>,
+    // --- p1w12-sonnet ---
+    /// The facts the modules read of an object's current weapon (`getCurrentWeapon()`), until the weapon set holds real weapons: see
+    /// [`World::current_weapon_facts`].
+    pub cur_weapon: BTreeMap<ObjectId, WeaponFacts>,
+    /// What `ThePartitionManager->iterateObjectsInRange(..)` returns for a module that scans around its object (`AutoHealBehavior`'s allies in a
+    /// radius), in the order it is visited: the filters are the partition manager's.
+    pub range_scan: Vec<ObjectId>,
+    /// `TheGlobalData->m_getHealedAnimationName` (`AutoHealBehavior`'s icon).
+    pub get_healed_animation_name: Vec<u8>,
+    /// `Player::iterateObjects` order, per player.
+    pub player_object_list: BTreeMap<PlayerIndex, Vec<ObjectId>>,
+    /// `ParticleSystemManager::m_uniqueSystemID`: the id of the last system made (ids run 1, 2, 3, ...).
+    pub last_particle_system_id: u32,
+    // --- end p1w12-sonnet ---
     /// `ai->getWhichTurretForWeaponSlot(slot)` != `TURRET_INVALID`: (object, slot) -> turret.
     pub ai_turrets: BTreeMap<(ObjectId, i32), i32>,
     /// `ai->isTurretEnabled(turret)` is false for these (object, turret).
@@ -471,6 +548,13 @@ impl Default for ObjectCuts {
             special_power_denied: BTreeSet::new(),
             weapons: BTreeSet::new(),
             weapon_sets_with_weapons: BTreeSet::new(),
+            // --- p1w12-sonnet ---
+            cur_weapon: BTreeMap::new(),
+            range_scan: Vec::new(),
+            get_healed_animation_name: Vec::new(),
+            player_object_list: BTreeMap::new(),
+            last_particle_system_id: 0,
+            // --- end p1w12-sonnet ---
             ai_turrets: BTreeMap::new(),
             ai_turrets_disabled: BTreeSet::new(),
             dozer_ais: BTreeSet::new(),

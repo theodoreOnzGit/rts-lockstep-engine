@@ -59,6 +59,12 @@ class Team;
 #include "Common/DisabledTypes.h"
 #include "Common/ThingTemplate.h"
 /* --- end p1w12-sonnet --- */
+/* --- p1w12-sonnet --- (Common/STLTypedefs.h lines 88-89, verbatim) */
+#include <list>
+class Object;
+typedef std::list<Object *>																ObjectPointerList;
+typedef std::list<Object *>::iterator											ObjectPointerListIterator;
+/* --- end p1w12-sonnet --- */
 class Object : public Thing
 {
 public:
@@ -144,10 +150,15 @@ public:
 	void setShroudClearingRange(Real r);   /* l9_powers_h.inc */
 	Bool isNeutralControlled() const;   /* l9_crates_f.inc: Player is incomplete here */
 	/* update batch L: what AutoDepositUpdate asks of its object (differential/l9_updates_l.inc) */
+	/* update batch M: FireOCLAfterWeaponCooldownUpdate asks for the current weapon and the weapon in a slot (the test's) */
+	Weapon *getCurrentWeapon(WeaponSlotType *wslot = NULL) { if (wslot && m_curWeapon) *wslot = m_curWeapon->getWeaponSlot(); return m_curWeapon; }
+	Weapon *getWeaponInWeaponSlot(WeaponSlotType wslot) const { return m_slotWeapon[wslot]; }
+	Weapon *m_curWeapon = 0;
+	Weapon *m_slotWeapon[3] = { 0, 0, 0 };
 	Bool isLocallyControlled() const;
 	Real getConstructionPercent() const { return m_constructionPercent; }
 	Bool testStatus(ObjectStatusTypes bit) const { return m_status.test(bit); }
-	struct ShimGeometry { Real m_major = 0, m_minor = 0; Real getMajorRadius() const { return m_major; } Real getMinorRadius() const { return m_minor; } };
+	struct ShimGeometry { Real m_major = 0, m_minor = 0, m_height = 0; Real getMajorRadius() const { return m_major; } Real getMinorRadius() const { return m_minor; } Real getMaxHeightAbovePosition() const { return m_height; } };
 	const ShimGeometry &getGeometryInfo() const { return m_geometry; }
 	Real m_constructionPercent = -1.0f;   /* CONSTRUCTION_COMPLETE */
 	ShimGeometry m_geometry;
@@ -155,6 +166,17 @@ public:
 	Bool isEffectivelyDead() const { return m_effDead; }
 	Bool isAboveTerrain() const { return m_pos.z > 0; }   /* the test's terrain is flat at zero */
 	Bool m_effDead = false;
+	/* update batch M: what AutoHealBehavior asks of the objects it scans, and the healing functions (cut verbatim from Object.cpp by build.rs,
+	** mod_gen/ObjectHealing.inc, compiled by differential/l9_auto_heal_m.inc) */
+	Bool isOffMap() const { return m_offMap; }
+	Bool isAnyKindOf(const KindOfMaskType &anyKindOf) const { return m_kindOf.anyIntersectionWith(anyKindOf); }
+	/* asm labels: the other module-build units (wrap_l9updates.cpp) define their own ModTestObject::attemptHealing with another layout */
+	void attemptHealing(Real amount, const Object *source) __asm__("l9m_Object_attemptHealing");
+	ObjectID getSoleHealingBenefactor(void) const __asm__("l9m_Object_getSoleHealingBenefactor");
+	Bool attemptHealingFromSoleBenefactor(Real amount, const Object *source, UnsignedInt duration) __asm__("l9m_Object_attemptHealingFromSoleBenefactor");
+	Bool m_offMap = false;
+	ObjectID m_soleHealingBenefactorID = INVALID_ID;
+	UnsignedInt m_soleHealingBenefactorExpirationFrame = 0;
 	/* helper batch G: the defector flag ObjectDefectionHelper reads and clears */
 	Bool getIsUndetectedDefector(void) const { return m_undetected; }
 	void friend_setUndetectedDefector(Bool status) { m_undetected = status != 0; }

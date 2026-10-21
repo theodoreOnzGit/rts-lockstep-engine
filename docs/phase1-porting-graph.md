@@ -918,6 +918,23 @@ inside its loop, so the first pair's template is looked up once per process and 
 whole file (build.rs no longer cuts it out). New: `ModuleCall::AwardInitialCaptureBonus` (`Player::becomingTeamMember`), `Player::getPlayerColor` and the
 `GameText`/`UnicodeString` stand-ins. **Driver:** the C++ run is wrapped in a SIGSEGV/SIGBUS trap (status 99, reported as a mismatch), so a planted bug that
 steers the Rust past an upstream-undefined input is a clean mismatch rather than a process kill (plants 906 and 910 needed it).
+**Layer-9 update batch M (2026-10-21, `p1w12-sonnet`).** `FireOCLAfterWeaponCooldownUpdate` (`modules/fire_ocl_after_weapon_cooldown_update.rs`) and `AutoHealBehavior`
+(`modules/auto_heal_behavior.rs`), both over `modules/update_behavior.rs` and `modules/upgrade_mux_user.rs`, with `tests/differential_update_fire_ocl.rs` and
+`tests/differential_update_auto_heal.rs` against the unchanged `.cpp` files (`differential/l9_fire_ocl_m.inc`, `l9_auto_heal_m.inc`). FireOCL: 9,000 cases, 7,976
+data-read comparisons, 209,502 op outputs (159,865 ops, 1,075 object creation lists), 0 mismatches, 1,024 excluded as undefined upstream; 11 planted bugs
+(`L9_PLANT` 921-931), all caught. AutoHeal: 9,000 cases, 8,449 data-read comparisons, 211,638 op outputs (149,574 ops, 5,885 heals, 143 icons), 0 mismatches,
+551 excluded (undefined upstream, or a constructor that throws); 14 planted bugs (941-954), all caught. **Shared plumbing:** `tests/mux_common/` (the dump,
+generator and xfer helpers of the mux-bearing modules, so the next module's test is the module's own part only); `differential/l9_crash_trap_m.inc` (the
+batch M drivers' SIGSEGV trap: status 99 is a mismatch); a stand-in `BodyModuleInterface` in the AutoHeal driver; `Object::attemptHealing`,
+`getSoleHealingBenefactor` and `attemptHealingFromSoleBenefactor` cut verbatim out of `Object.cpp` by `build.rs` (asserted once; asm labels keep the symbols apart from
+`wrap_l9updates.cpp`'s own `ModTestObject::attemptHealing`). New cut points: `CutCall::{OclCreateWithLifetime, ParticleSystemCreate}`, `ModuleCall::StopHealing`,
+`ObjectCuts::{cur_weapon, range_scan, player_object_list, get_healed_animation_name}` (tables the layer-12 adapter replaces with the weapon set, the partition
+manager and `Player::iterateObjects`; `World::current_weapon_facts` reads the object's real weapon set first). **Upstream facts kept:** `AutoHealBehavior`'s
+`HealingDelay` defaults to `UINT_MAX` and the constructor's phase is `GameLogicRandomValue(1, (Int)delay)`; `FireOCLAfterWeaponCooldownUpdate::update`
+dereferences the controlling player before anything else. **Open (deviation):** `~AutoHealBehavior` (`destroyParticleSystemByID`) is not sent (no hook for a module's destruction).
+**Deferred (needs a keystone):** `FireWeaponWhenDamagedBehavior` (eight `Weapon` instances saved with `xferSnapshot`: needs the `WeaponHost` adapter),
+`CountermeasuresBehavior` (physics, thing factory, projectile interface; and its `m_reloadFrame` is never initialised upstream), `GenerateMinefieldBehavior`
+(thing factory, terrain queries, the partition manager's potential collisions).
 **Layer-9 helper and die batch verified (2026-10-21, `p1w10-sonnet`).** ~~The helpers and dies of `p1l9-helpers` (`ObjectHelper`,
 `ObjectSMCHelper`, `ObjectRepulsorHelper`, `ObjectWeaponStatusHelper`, `StatusDamageHelper`, `TempWeaponBonusHelper`,
 `DestroyDie`, `KeepObjectDie`, `UpgradeDie`) are pure functions returning effects.~~ **CORRECTED 2026-10-21** - the drafts were

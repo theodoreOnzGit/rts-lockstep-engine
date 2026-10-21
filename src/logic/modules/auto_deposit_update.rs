@@ -286,7 +286,8 @@ impl AutoDepositUpdate {
 
 /// `GameMakeColor(0, 0, 0, 230)`.
 fn floating_alpha() -> i32 {
-    ((230u32 << 24) | (0 << 16) | (0 << 8)) as i32
+    // (a << 24) | (r << 16) | (g << 8) | b, with r = g = b = 0
+    (230u32 << 24) as i32
 }
 
 impl UpdateBehavior for AutoDepositUpdate {

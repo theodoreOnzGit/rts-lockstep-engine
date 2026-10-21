@@ -95,6 +95,9 @@ Object *ObjectCreationList::createInternal(const Object *primary, const Object *
 	/* --- p1w11-sonnet --- (EjectPilotDie passes its damage dealer; batch B always passes NULL) */
 	if (secondary) ulog("oclsec %d", (int)secondary->m_oid);
 	/* --- end p1w11-sonnet --- */
+	/* --- p1w12-sonnet --- (FireOCLAfterWeaponCooldownUpdate passes a lifetime; the others pass 0) */
+	if (lifetimeFrames) ulog("ocllife %u", lifetimeFrames);
+	/* --- end p1w12-sonnet --- */
 	return 0;
 }
 

@@ -228,6 +228,10 @@ pub enum ModuleCall {
     IsOverchargeActive,
     /// `AutoHealBehavior::undoUpgrade()`.
     UndoUpgrade,
+    // --- p1w12-sonnet ---
+    /// `AutoHealBehavior::stopHealing()` (`MinefieldBehavior`).
+    StopHealing,
+    // --- end p1w12-sonnet ---
     /// `ToppleUpdate::isAbleToBeToppled()`; replies [`ModuleReply::Bool`].
     IsAbleToBeToppled,
     /// `ToppleUpdate::applyTopplingForce(direction, speed, options)`.

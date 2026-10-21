@@ -187,6 +187,12 @@ pub enum UpdateBody {
     /// `AutoDepositUpdate`.
     AutoDepositUpdate(crate::logic::modules::auto_deposit_update::AutoDepositUpdate),
     // --- end p1w11-sonnet ---
+    // --- p1w12-sonnet ---
+    /// `FireOCLAfterWeaponCooldownUpdate`.
+    FireOCLAfterWeaponCooldownUpdate(crate::logic::modules::fire_ocl_after_weapon_cooldown_update::FireOCLAfterWeaponCooldownUpdate),
+    /// `AutoHealBehavior`.
+    AutoHealBehavior(crate::logic::modules::auto_heal_behavior::AutoHealBehavior),
+    // --- end p1w12-sonnet ---
     // New variants go here, one per translated module.
 }
 
@@ -268,6 +274,10 @@ impl UpdateBody {
             UpdateBody::FireWeaponWhenDeadBehavior(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::AutoDepositUpdate(m) => m.world_update(world, me),
 // --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
+            UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.world_update(world, me),
+            UpdateBody::AutoHealBehavior(m) => m.world_update(world, me),
+// --- end p1w12-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -349,6 +359,10 @@ impl UpdateBody {
             UpdateBody::FireWeaponWhenDeadBehavior(m) => m.module_call(world, me, call),
             UpdateBody::AutoDepositUpdate(m) => m.module_call(world, me, call),
 // --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
+            UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::AutoHealBehavior(m) => m.module_call(world, me, call),
+// --- end p1w12-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -425,6 +439,10 @@ impl UpdateBody {
             UpdateBody::SpyVisionUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::AutoDepositUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
 // --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
+            UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::AutoHealBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+// --- end p1w12-sonnet ---
             _ => self.xfer(xfer),
         }
     }
@@ -483,6 +501,10 @@ impl UpdateBody {
             UpdateBody::SpyVisionUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::AutoDepositUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
 // --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
+            UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::AutoHealBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+// --- end p1w12-sonnet ---
             _ => self.crc(xfer),
         }
     }
@@ -541,6 +563,10 @@ impl UpdateBody {
             UpdateBody::SpyVisionUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::AutoDepositUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
 // --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
+            UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::AutoHealBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+// --- end p1w12-sonnet ---
             _ => self.load_post_process(),
         }
     }
@@ -622,6 +648,10 @@ impl Snapshot for UpdateBody {
             UpdateBody::FireWeaponWhenDeadBehavior(m) => m.crc(xfer),
             UpdateBody::AutoDepositUpdate(m) => m.crc(xfer),
 // --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
+            UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.crc(xfer),
+            UpdateBody::AutoHealBehavior(m) => m.crc(xfer),
+// --- end p1w12-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -699,6 +729,10 @@ impl Snapshot for UpdateBody {
             UpdateBody::FireWeaponWhenDeadBehavior(m) => m.xfer(xfer),
             UpdateBody::AutoDepositUpdate(m) => m.xfer(xfer),
 // --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
+            UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.xfer(xfer),
+            UpdateBody::AutoHealBehavior(m) => m.xfer(xfer),
+// --- end p1w12-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -776,6 +810,10 @@ impl Snapshot for UpdateBody {
             UpdateBody::FireWeaponWhenDeadBehavior(m) => m.load_post_process(),
             UpdateBody::AutoDepositUpdate(m) => m.load_post_process(),
 // --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
+            UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.load_post_process(),
+            UpdateBody::AutoHealBehavior(m) => m.load_post_process(),
+// --- end p1w12-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -938,6 +976,10 @@ impl UpdateBody {
             UpdateBody::FireWeaponWhenDeadBehavior(m) => m.world_construct(world, me),
             UpdateBody::AutoDepositUpdate(m) => m.world_construct(world, me),
 // --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
+            UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.world_construct(world, me),
+            UpdateBody::AutoHealBehavior(m) => m.world_construct(world, me),
+// --- end p1w12-sonnet ---
             _ => {}
         }
     }

@@ -379,6 +379,12 @@ pub enum ModuleDataKind {
     /// `AutoDepositUpdateModuleData`.
     AutoDepositUpdate(Arc<crate::logic::modules::auto_deposit_update::AutoDepositUpdateModuleData>),
     // --- end p1w11-sonnet ---
+    // --- p1w12-sonnet ---
+    /// `FireOCLAfterWeaponCooldownUpdateModuleData`.
+    FireOCLAfterWeaponCooldownUpdate(Arc<crate::logic::modules::fire_ocl_after_weapon_cooldown_update::FireOCLAfterWeaponCooldownUpdateModuleData>),
+    /// `AutoHealBehaviorModuleData`.
+    AutoHealBehavior(Arc<crate::logic::modules::auto_heal_behavior::AutoHealBehaviorModuleData>),
+    // --- end p1w12-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
     /// `GrantUpgradeCreateModuleData`.
@@ -457,6 +463,10 @@ impl ModuleDataKind {
             ModuleDataKind::FireWeaponWhenDeadBehavior(d) => &d.die.behavior.module_data,
             ModuleDataKind::AutoDepositUpdate(d) => &d.update.behavior.module_data,
             // --- end p1w11-sonnet ---
+            // --- p1w12-sonnet ---
+            ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::AutoHealBehavior(d) => &d.update.behavior.module_data,
+            // --- end p1w12-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
             ModuleDataKind::GrantUpgradeCreate(d) => &d.create.behavior.module_data,
@@ -694,6 +704,22 @@ impl ModuleDataKind {
                 None => false,
             },
             // --- end p1w11-sonnet ---
+            // --- p1w12-sonnet ---
+            ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::AutoHealBehavior(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            // --- end p1w12-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
             ModuleDataKind::GrantUpgradeCreate(d) => match Arc::get_mut(d) {

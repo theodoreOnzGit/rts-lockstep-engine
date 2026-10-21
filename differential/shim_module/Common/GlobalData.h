@@ -12,6 +12,11 @@ class GlobalData
 public:
 	AsciiString m_specialPowerViewObjectName;
 	Bool m_specialPowerUsesDelay;
+	/* --- p1w12-sonnet --- (update batch M: AutoHealBehavior's icon) */
+	AsciiString m_getHealedAnimationName;
+	Real m_getHealedAnimationDisplayTimeInSeconds;
+	Real m_getHealedAnimationZRisePerSecond;
+	/* --- end p1w12-sonnet --- */
 };
 extern GlobalData *TheGlobalData;
 #endif
