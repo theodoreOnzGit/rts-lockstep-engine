@@ -6,6 +6,7 @@
 class Team { public: int m_dummy;
 	/* --- p1w13-sonnet --- (update batch O: Object::getRelationship, cut from Object.cpp by build.rs, asks it; differential/l9_squish_collide_o.inc) */
 	Relationship getRelationship(const Team *that) const;
+	class Player *m_controller = 0;   /* update batch O: the player of the team (the test's) */
 	/* --- end p1w13-sonnet --- */
 };
 #endif

@@ -208,6 +208,7 @@ public:
 	const Object *getContainedBy() const { return m_containedBy; }
 	void kill( DamageType damageType = DAMAGE_UNRESISTABLE, DeathType deathType = DEATH_NORMAL );
 	Object *m_containedBy = 0;
+	void setTeam( Team *team );   /* update batch O: TechBuildingBehavior (differential/l9_tech_building_o.inc) */
 	/* update batch O: SquishCollide (differential/l9_squish_collide_o.inc) */
 	AIUpdateInterface *getAI() const { return m_ai; }
 	UnsignedByte getCrusherLevel() const { return m_crusher; }

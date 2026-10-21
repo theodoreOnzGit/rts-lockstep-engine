@@ -10,6 +10,7 @@ public:
 	Player *getLocalPlayer();
 	Int getPlayerCount();            /* special power batch H / update batch I: the three players of the test */
 	Player *getNthPlayer(Int i);
+	Player *getNeutralPlayer();   /* p1w13-sonnet, update batch O: TechBuildingBehavior (differential/l9_tech_building_o.inc) */
 };
 extern PlayerList *ThePlayerList;
 #endif
