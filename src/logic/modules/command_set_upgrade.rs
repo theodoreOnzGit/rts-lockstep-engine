@@ -281,7 +281,7 @@ mod tests {
             center.new_upgrade(&mut names, n.as_bytes()).unwrap();
         }
         let mut w = World::new();
-        w.statics = Arc::new(GameStatics { upgrade_center: center });
+        w.statics = Arc::new(GameStatics { upgrade_center: center, ..Default::default() });
         w.names = names;
         w.cuts.neutral_default_team = 1;
         w.teams.insert_team(crate::logic::world::team::Team::new(1, 0)).unwrap();

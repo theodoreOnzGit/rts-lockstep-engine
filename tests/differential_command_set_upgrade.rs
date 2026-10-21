@@ -273,7 +273,7 @@ fn rust_run(
     put_str(&mut v, &data.trigger_alt);
 
     let mut w = World::new();
-    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, ..Default::default() });
     w.names = ctx.names;
     w.cuts.neutral_default_team = 1;
     w.teams.insert_team(rts_lockstep_engine::logic::world::team::Team::new(1, 0)).unwrap();
