@@ -24,6 +24,18 @@ use crate::logic::world::update_body::UpdateBody;
 
 pub mod upgrade_body;
 
+// --- p1l9-helpers ---
+pub mod object_helper;
+pub mod object_smc_helper;
+pub mod object_repulsor_helper;
+pub mod object_weapon_status_helper;
+pub mod status_damage_helper;
+pub mod temp_weapon_bonus_helper;
+pub mod destroy_die;
+pub mod keep_object_die;
+pub mod upgrade_die;
+// --- end p1l9-helpers ---
+
 // --- p1l9-example ---
 pub mod command_set_upgrade;
 // --- end p1l9-example ---
