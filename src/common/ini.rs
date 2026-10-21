@@ -58,7 +58,9 @@
 //!   `parseDynamicAudioEventRTS`, `parseThingTemplate`,
 //!   `parseArmorTemplate`, `parseWeaponTemplate`, `parseFXList`,
 //!   `parseParticleSystemTemplate`, `parseDamageFX`,
-//!   `parseObjectCreationList`, `parseUpgradeTemplate`,
+//!   `parseObjectCreationList` (~~its store is not translated~~ **CORRECTED 2026-10-21, `p1w10-sonnet`**: the store is,
+//!   `logic::object_creation_list::ObjectCreationListStore::find_object_creation_list`; the field parser itself stores a pointer, which
+//!   `weapon.rs` keeps as an id), `parseUpgradeTemplate`,
 //!   `parseSpecialPowerTemplate`, `parseScience`, `parseScienceVector` and
 //!   `scanScience`.
 //!   (~~`parseScience`, `parseScienceVector` and `scanScience`~~ **translated in
@@ -524,7 +526,10 @@ pub struct BlockParse<C> {
 
 /// Upstream's `theTypeTable`, in order: each block type's token, upstream
 /// handler, and the file that defines the handler (`GameEngine/Source/...`).
-/// None of the handlers is translated yet.
+/// ~~None of the handlers is translated yet.~~ **CORRECTED 2026-10-21 (`p1w10-sonnet`)** -- several are, in their own modules
+/// (`WeaponStore::parse_weapon_template_definition`, `DamageFxStore::parse_damage_fx_definition`,
+/// `ObjectCreationListStore::parse_object_creation_list_definition`, ...); this table lists every block type and the file upstream
+/// defines its handler in (checked against `grep "fn parse_.*_definition" src`).
 pub const TYPE_TABLE: [(&str, &str, &str); 62] = [
     ("AIData", "INI::parseAIDataDefinition", "Common/INI/INIAiData.cpp"),
     ("Animation", "INI::parseAnim2DDefinition", "Common/INI/INIAnimation.cpp"),

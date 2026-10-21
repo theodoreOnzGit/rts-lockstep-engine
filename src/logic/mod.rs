@@ -78,3 +78,7 @@ pub mod weapon_set_state;
 pub mod modules;
 // --- end p1l9-example ---
 
+// --- p1w10-sonnet ---
+pub mod object_creation_list;
+pub mod radius_decal;
+// --- end p1w10-sonnet ---

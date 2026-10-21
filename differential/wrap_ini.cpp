@@ -460,7 +460,7 @@ STUB(INI::parseMapDataDefinition) STUB(INI::parseMappedImageDefinition)
 STUB(INI::parseMiscAudio) STUB(INI::parseMouseDefinition) STUB(INI::parseMouseCursorDefinition)
 WEAK_STUB(INI::parseMultiplayerColorDefinition) WEAK_STUB(INI::parseMultiplayerStartingMoneyChoiceDefinition)
 STUB(INI::parseOnlineChatColorDefinition) WEAK_STUB(INI::parseMultiplayerSettingsDefinition)
-STUB(INI::parseMusicTrackDefinition) STUB(INI::parseObjectCreationListDefinition)
+STUB(INI::parseMusicTrackDefinition) WEAK_STUB(INI::parseObjectCreationListDefinition) /* p1w10-sonnet: real in ObjectCreationList.cpp (wrap_ocl.cpp) */
 STUB(INI::parseParticleSystemDefinition)
 WEAK_STUB(INI::parsePlayerTemplateDefinition) /* p1w3-playertemplate: real in PlayerTemplate.cpp */ STUB(INI::parseTerrainRoadDefinition)
 WEAK_STUB(INI::parseRankDefinition) /* p1w2-science: real in RankInfo.cpp */ WEAK_STUB(INI::parseSpecialPowerDefinition) /* p1w2-upgrade: real in wrap_upgrade.cpp */

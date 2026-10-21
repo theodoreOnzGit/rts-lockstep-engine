@@ -2591,6 +2591,107 @@ mod differential {
                 println!("cargo:rerun-if-changed={p}");
             }
         }
+        // ObjectCreationList.cpp (differential/wrap_ocl.cpp), p1w10-sonnet: the whole file, with TWO mechanical edits made in memory into
+        // OUT_DIR/ocl_gen/ObjectCreationList_cut.cpp (upstream is never edited; every marker is asserted to occur once): `#include "PreRTS.h"` and
+        // the include block (Common/AudioEventRTS.h .. Common/CRCDebug.h) are each replaced by a comment, the wrapper including what the
+        // stand-ins need before it. ObjectCreationList.h and RadiusDecal.h are unchanged. Three pieces of OTHER units' files, which the file
+        // reaches and which are verbatim text, are cut out into .inc files: RadiusDecalTemplate's constructor and parser (RadiusDecal.cpp), the
+        // DeliverPayloadData class with its field parse (DeliverPayloadAIUpdate.h/.cpp) and INI::parseStaticGameLODLevel with its name list
+        // (GameLOD.cpp). The world the file reaches is stand-ins in differential/shim_ocl, every class renamed by the wrapper.
+        {
+            fn once_at(text: &str, marker: &str) -> usize {
+                assert_eq!(text.matches(marker).count(), 1, "{marker:?} must occur once");
+                text.find(marker).expect("marker")
+            }
+            // the text from `start` to the end of the first `end` after it, both asserted to occur once (`end` after `start`)
+            fn extract(text: &str, start: &str, end: &str) -> String {
+                let a = once_at(text, start);
+                let rest = &text[a..];
+                let b = rest.find(end).unwrap_or_else(|| panic!("{end:?} must follow {start:?}"));
+                format!("{}\n", &rest[..b + end.len()])
+            }
+            let ocl_gen = out_dir.join("ocl_gen");
+            std::fs::create_dir_all(&ocl_gen).expect("create ocl_gen");
+            let mut src = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/ObjectCreationList.cpp")).expect("read ObjectCreationList.cpp");
+            let pre = "#include \"PreRTS.h\"";
+            let a = once_at(&src, pre);
+            let eol = a + src[a..].find('\n').expect("end of the PreRTS line");
+            src = format!("{}/* PreRTS.h is replaced by the includes of differential/wrap_ocl.cpp (build.rs) */{}", &src[..a], &src[eol..]);
+            let first = "#include \"Common/AudioEventRTS.h\"";
+            let last = "#include \"Common/CRCDebug.h\"";
+            let a = once_at(&src, first);
+            let b = once_at(&src, last) + last.len();
+            assert!(a < b);
+            src = format!("{}/* the include block of ObjectCreationList.cpp is replaced by the includes of differential/wrap_ocl.cpp (build.rs) */{}", &src[..a], &src[b..]);
+            std::fs::write(ocl_gen.join("ObjectCreationList_cut.cpp"), src).expect("write ObjectCreationList_cut.cpp");
+
+            let rd = std::fs::read_to_string(up.join("GameEngine/Source/GameClient/RadiusDecal.cpp")).expect("read RadiusDecal.cpp");
+            let mut inc = extract(&rd, "RadiusDecalTemplate::RadiusDecalTemplate() : ", "\n}\n");
+            inc += &extract(&rd, "/*static*/ void RadiusDecalTemplate::parseRadiusDecalTemplate(", "\tini->initFromINI(store, dataFieldParse);\n}");
+            std::fs::write(ocl_gen.join("ocl_radius_decal_template.inc"), inc).expect("write ocl_radius_decal_template.inc");
+
+            let dh = std::fs::read_to_string(up.join("GameEngine/Include/GameLogic/Module/DeliverPayloadAIUpdate.h")).expect("read DeliverPayloadAIUpdate.h");
+            let dc = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Update/AIUpdate/DeliverPayloadAIUpdate.cpp")).expect("read DeliverPayloadAIUpdate.cpp");
+            let mut inc = extract(&dh, "class DeliverPayloadData\n{", "\tstatic const FieldParse* getFieldParse();\n};");
+            inc += &extract(&dc, "const FieldParse* DeliverPayloadData::getFieldParse()", "\treturn dataFieldParse;\n}");
+            std::fs::write(ocl_gen.join("ocl_deliver_payload_data.inc"), inc).expect("write ocl_deliver_payload_data.inc");
+
+            let lod = std::fs::read_to_string(up.join("GameEngine/Source/Common/GameLOD.cpp")).expect("read GameLOD.cpp");
+            let mut inc = extract(&lod, "static const char *StaticGameLODNames[]=", "\n};");
+            inc += &extract(&lod, "void INI::parseStaticGameLODLevel( INI* ini, void * , void *store, const void*)", "\tthrow INI_INVALID_DATA;\n}");
+            std::fs::write(ocl_gen.join("ocl_static_lod_level.inc"), inc).expect("write ocl_static_lod_level.inc");
+
+            // differential/shim_weapon has a stand-in GameLogic/ObjectCreationList.h that comes first on the include path; the real header
+            // is reached by its absolute path through this generated file
+            let real_header = up.join("GameEngine/Include/GameLogic/ObjectCreationList.h");
+            std::fs::write(
+                ocl_gen.join("ocl_real_header.h"),
+                format!("/* generated by build.rs: the real ObjectCreationList.h, unchanged */\n#include \"{}\"\n", real_header.display()),
+            )
+            .expect("write ocl_real_header.h");
+            let shim_ocl = dif.join("shim_ocl");
+            let shim_weapon = dif.join("shim_weapon");
+            let shim_armor = dif.join("shim_armor");
+            let mut oclb = cc::Build::new();
+            base(&mut oclb);
+            // The undefined inputs of the file (a method called on a `NULL` object, see ocl_driver.h) must crash the C++ the way they crash the
+            // shipped game, so that the driver can catch the SIGSEGV; by default the optimiser may assume a pointer that is dereferenced is not null
+            // and compile the crash away.
+            oclb.compiler("clang++")
+                .flag("-fno-delete-null-pointer-checks")
+                .flag("-fms-extensions")
+                .flag("-fdelayed-template-parsing")
+                .include(&ocl_gen)
+                .include(&shim_ocl)
+                .include(out_dir.join("team_gen"))
+                .include(&shim_weapon)
+                .include(&shim_armor)
+                .include(&flags_gen)
+                .include(dif.join("shim_flags"))
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .include(&dif)
+                .flag("-include")
+                .flag(shim_weapon.join("weapon_prelude.h").to_str().expect("UTF-8 path"))
+                .file(dif.join("wrap_ocl.cpp"));
+            oclb.compile("upstream_ocl");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/ObjectCreationList.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/ObjectCreationList.h",
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameClient/RadiusDecal.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameClient/RadiusDecal.h",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/Module/DeliverPayloadAIUpdate.h",
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/AIUpdate/DeliverPayloadAIUpdate.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Source/Common/GameLOD.cpp",
+                "differential/wrap_ocl.cpp",
+                "differential/shim_ocl",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
         // --- end p1w10-sonnet ---
         // --- p1w2-terrain ---
         // TerrainTypes, MultiplayerSettings and CrateSystem with their INI

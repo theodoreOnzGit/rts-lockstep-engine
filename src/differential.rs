@@ -1211,5 +1211,9 @@ extern "C" {
     // Player.cpp (slice 1) and Team.cpp on stand-ins (wrap_player.cpp, shim_player/player_driver.h)
     pub fn ref_player_run(words: *const c_uint, n: c_int, tmp_path: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
     pub fn ref_ba_run(words: *const c_uint, n: c_int, tmp_path: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
+    // ObjectCreationList.cpp on stand-ins (wrap_ocl.cpp, shim_ocl/ocl_driver.h): an empty store, the dump of the store, a program
+    pub fn ref_ocl_reset(preload_assets: c_int);
+    pub fn ref_ocl_dump(out: *mut c_char, cap: c_int) -> c_int;
+    pub fn ref_ocl_run(words: *const c_uint, n: c_int, out: *mut c_char, cap: c_int) -> c_int;
 }
 // --- end p1w10-sonnet ---

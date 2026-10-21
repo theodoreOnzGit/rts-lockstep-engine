@@ -57,6 +57,10 @@ pub mod supply_warehouse_create;
 pub mod veterancy_gain_create;
 // --- end p1l9-creates ---
 
+// --- p1w10-sonnet ---
+pub mod deliver_payload_data;
+// --- end p1w10-sonnet ---
+
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
 /// `TheModuleFactory->newModule(thing, name, data, type)`), with its tag.
