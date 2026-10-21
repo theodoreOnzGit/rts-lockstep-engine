@@ -486,7 +486,12 @@ fn plm<H: PlayerHost>(h: &mut H, p: PlayerIndex) -> PResult<&mut Player> {
 
 /// The prototypes a player owns, as `m_playerTeamPrototypes` holds them now.
 fn protos<H: PlayerHost>(h: &H, p: PlayerIndex) -> PResult<Vec<TeamPrototypeId>> {
-    Ok(pl(h, p)?.team_prototypes.clone())
+    let list = pl(h, p)?.team_prototypes.clone();
+    // a prototype deleted while another player still lists it (a prototype whose owner changed) is a dangling pointer upstream
+    if list.iter().any(|id| h.teams().prototype(*id).is_none()) {
+        return Err(PlayerError::Team(crate::logic::world::team::TeamError::Null));
+    }
+    Ok(list)
 }
 
 /// `for (DLINK_ITERATOR<Team> iter = (*it)->iterate_TeamInstanceList(); ...) for (DLINK_ITERATOR<Object> iterObj =

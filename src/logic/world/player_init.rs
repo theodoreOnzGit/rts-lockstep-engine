@@ -147,53 +147,53 @@ fn faction_side<H: PlayerInitHost>(h: &mut H, d: &Dict) -> Option<Vec<u8>> {
 pub fn player_init_from_dict<H: PlayerInitHost>(h: &mut H, p: PlayerIndex, d: &Dict) -> PResult<()> {
     let (tmplname, _) = dict_ascii(h, d, wk::PLAYER_FACTION);
     let key = namekey(h, &tmplname);
-    let pt = h.player_template_find(key);
+    let pt = if plant(501) { None } else { h.player_template_find(key) };
     player_init(h, p, pt)?;
 
     let k = wkey(h, wk::PLAYER_DISPLAY_NAME);
     let (display, _) = d.get_unicode_string(k);
     let mut display_name = crate::common::unicode_string::UnicodeString::default();
     display_name.set(&display).map_err(|_| PlayerError::Xfer(crate::common::xfer::XferStatus::InvalidParameters))?;
-    plm(h, p)?.display_name = display_name;
+    if !plant(502) { plm(h, p)?.display_name = display_name; }
     let (pname, _) = dict_ascii(h, d, wk::PLAYER_NAME);
-    plm(h, p)?.player_name = pname.clone();
+    if !plant(503) { plm(h, p)?.player_name = pname.clone(); }
     let name_key = namekey(h, &pname);
-    plm(h, p)?.name_key = name_key.0 as i32;
+    plm(h, p)?.name_key = name_key.0 as i32 + plant(504) as i32;
 
     let mut skirmish = false;
     let mut force_human = false;
     let k = wkey(h, wk::PLAYER_IS_SKIRMISH);
-    if d.get_bool(k).0 {
+    if d.get_bool(k).0 != plant(505) {
         // srj sez: check to ensure the map actually has a skirmish player...
         let side = pl(h, p)?.side.clone();
         for sp_idx in 0..h.sides_num_skirmish_sides() {
             let sd = h.sides_skirmish_side_dict(sp_idx);
-            if faction_side(h, &sd).is_some_and(|s| s == side) {
+            if faction_side(h, &sd).is_some_and(|s| (s == side) != plant(506)) {
                 skirmish = true;
                 break;
             }
         }
-        if !skirmish {
+        if !skirmish && !plant(507) {
             force_human = true;
         }
     }
 
     let k = wkey(h, wk::PLAYER_IS_HUMAN);
-    if d.get_bool(k).0 || force_human {
+    if d.get_bool(k).0 || (force_human && !plant(508)) {
         player_set_player_type(h, p, PlayerType::Human, false)?;
         let k = wkey(h, wk::PLAYER_IS_PREORDER);
         if d.get_bool(k).0 {
-            plm(h, p)?.is_preorder = true;
+            if !plant(509) { plm(h, p)?.is_preorder = true; }
         }
-        if h.sides_num_skirmish_sides() > 0 {
+        if h.sides_num_skirmish_sides() > if plant(510) { 1 } else { 0 } {
             // Human player gets scripts from CIVILIAN player.
-            let my_side: &[u8] = b"Civilian";
+            let my_side: &[u8] = if plant(511) { b"civilian" } else { b"Civilian" };
             let mut found: Option<(i32, Vec<u8>)> = None;
             for i in 0..h.sides_num_skirmish_sides() {
                 let sd = h.sides_skirmish_side_dict(i);
                 if faction_side(h, &sd).is_some_and(|s| s == my_side) {
                     let (n, _) = dict_ascii(h, &sd, wk::PLAYER_NAME);
-                    let mp = pl(h, p)?.mp_start_index;
+                    let mp = if plant(512) { 0 } else { pl(h, p)?.mp_start_index };
                     found = Some((i, name_with_number(&n, mp)));
                     break;
                 }
@@ -203,20 +203,22 @@ pub fn player_init_from_dict<H: PlayerInitHost>(h: &mut H, p: PlayerIndex, d: &D
                     let qualifier = name_with_number(b"", pl(h, p)?.mp_start_index);
                     let scripts = h.script_list_duplicate_and_qualify(list, &qualifier, &qual_template_player_name, &pname);
                     if let Some(old) = h.sides_side_scripts(p) {
-                        h.script_list_delete(old);
+                        if !plant(513) {
+                            h.script_list_delete(old);
+                        }
                     }
                     h.sides_set_side_scripts(p, Some(scripts));
-                    h.script_list_delete(list);
-                    h.sides_set_skirmish_side_scripts(i, None);
+                    if !plant(514) { h.script_list_delete(list); }
+                    if !plant(515) { h.sides_set_skirmish_side_scripts(i, None); }
                 }
             }
         }
-        skirmish = false;
+        skirmish = plant(516);
     } else {
         player_set_player_type(h, p, PlayerType::Computer, skirmish)?;
     }
     let k = wkey(h, wk::MULTIPLAYER_START_INDEX);
-    plm(h, p)?.mp_start_index = d.get_int(k).0;
+    plm(h, p)?.mp_start_index = d.get_int(k).0 + plant(517) as i32;
     if skirmish {
         // Copy and qualify scripts, and teams.
         let my_side = pl(h, p)?.side.clone();
@@ -233,15 +235,15 @@ pub fn player_init_from_dict<H: PlayerInitHost>(h: &mut H, p: PlayerIndex, d: &D
         let k = wkey(h, wk::SKIRMISH_DIFFICULTY);
         let (diff_int, exists) = d.get_int(k);
         let mut difficulty = h.script_engine_global_difficulty();
-        if exists {
+        if exists && !plant(518) {
             difficulty = difficulty_from_int(diff_int);
         }
-        if pl(h, p)?.ai.is_some() {
+        if pl(h, p)?.ai.is_some() != plant(519) {
             h.ai_set_difficulty(p, difficulty);
         }
 
         if let Some((skirmish_ndx, qual_template_player_name)) = found {
-            plm(h, p)?.player_name = qual_template_player_name.clone();
+            if !plant(520) { plm(h, p)?.player_name = qual_template_player_name.clone(); }
             let qualifier = name_with_number(b"", pl(h, p)?.mp_start_index);
             let list = h.sides_skirmish_side_scripts(skirmish_ndx).ok_or(PlayerError::Null)?;
             let scripts = h.script_list_duplicate_and_qualify(list, &qualifier, &qual_template_player_name, &pname);
@@ -252,10 +254,12 @@ pub fn player_init_from_dict<H: PlayerInitHost>(h: &mut H, p: PlayerIndex, d: &D
             let mut i = 0;
             while i < h.sides_num_teams() {
                 let td = h.sides_team_dict(i);
-                if dict_ascii(h, &td, wk::TEAM_OWNER).0 == pname {
+                if (dict_ascii(h, &td, wk::TEAM_OWNER).0 == pname) != plant(522) {
                     // Remove any teams in this player.
                     h.sides_remove_team(i);
-                    i -= 1;
+                    if !plant(521) {
+                        i -= 1;
+                    }
                 }
                 i += 1;
             }
@@ -264,20 +268,20 @@ pub fn player_init_from_dict<H: PlayerInitHost>(h: &mut H, p: PlayerIndex, d: &D
             let original_player_name = dict_ascii(h, &sd, wk::PLAYER_NAME).0;
             for i in 0..h.sides_num_skirmish_teams() {
                 let team_dict = h.sides_skirmish_team_dict(i);
-                if dict_ascii(h, &team_dict, wk::TEAM_OWNER).0 != original_player_name {
+                if (dict_ascii(h, &team_dict, wk::TEAM_OWNER).0 != original_player_name) != plant(523) {
                     continue;
                 }
                 let mut team_dict = team_dict;
                 let mp = pl(h, p)?.mp_start_index;
                 let team_name = dict_ascii(h, &team_dict, wk::TEAM_NAME).0;
                 let new_name = name_with_number(&team_name, mp);
-                if h.sides_find_team_info(&new_name) {
+                if h.sides_find_team_info(&new_name) && !plant(524) {
                     continue;
                 }
                 let k = wkey(h, wk::TEAM_OWNER);
-                team_dict.set_ascii_string(k, &pname).map_err(|_| PlayerError::Null)?;
+                if !plant(525) { team_dict.set_ascii_string(k, &pname).map_err(|_| PlayerError::Null)?; }
                 let k = wkey(h, wk::TEAM_NAME);
-                team_dict.set_ascii_string(k, &new_name).map_err(|_| PlayerError::Null)?;
+                if !plant(526) { team_dict.set_ascii_string(k, &new_name).map_err(|_| PlayerError::Null)?; }
                 // qualify scripts.
                 for which in [
                     wk::TEAM_ON_CREATE_SCRIPT,
@@ -289,14 +293,14 @@ pub fn player_init_from_dict<H: PlayerInitHost>(h: &mut H, p: PlayerIndex, d: &D
                     wk::TEAM_PRODUCTION_CONDITION,
                 ] {
                     let (tmp, exists) = dict_ascii(h, &team_dict, which);
-                    if exists && !tmp.is_empty() {
+                    if exists && (!tmp.is_empty() || plant(527)) {
                         let nn = name_with_number(&tmp, mp);
                         let k = wkey(h, which);
                         team_dict.set_ascii_string(k, &nn).map_err(|_| PlayerError::Null)?;
                     }
                 }
                 // Now do the TheKey_teamGenericScriptHookN (where N can be from 0 to 15.)
-                for j in 0..MAX_GENERIC_SCRIPTS {
+                for j in 0..MAX_GENERIC_SCRIPTS - plant(528) as usize {
                     let base = {
                         let k = wkey(h, wk::TEAM_GENERIC_SCRIPT_HOOK);
                         h.names().0.key_to_name(k).to_vec()
@@ -310,27 +314,27 @@ pub fn player_init_from_dict<H: PlayerInitHost>(h: &mut H, p: PlayerIndex, d: &D
                     }
                 }
                 // Done. Now add the team.
-                h.sides_add_team(&team_dict);
+                if !plant(529) { h.sides_add_team(&team_dict); }
             }
         }
     }
-    plm(h, p)?.resource_gathering_manager = Some(Default::default());
-    plm(h, p)?.tunnel_system = Some(Default::default());
+    plm(h, p)?.resource_gathering_manager = if plant(530) { None } else { Some(Default::default()) };
+    plm(h, p)?.tunnel_system = if plant(531) { None } else { Some(Default::default()) };
 
     {
         let mut hc = pl_handicap(h, p)?;
         let (names, _) = h.names();
-        hc.read_from_dict(names, d);
+        if !plant(532) { hc.read_from_dict(names, d); }
         plm(h, p)?.handicap = hc;
     }
 
     // @todo Ack! the todo in PlayerList::reset() mentioning the need for a Player::reset() really needs to get done.
     {
         let me = plm(h, p)?;
-        me.player_relations.map.clear();
-        me.team_relations.map.clear();
+        if !plant(533) { me.player_relations.map.clear(); }
+        if !plant(534) { me.team_relations.map.clear(); }
         for b in me.attacked_by.iter_mut() {
-            *b = false;
+            *b = plant(535);
         }
     }
 
@@ -338,26 +342,26 @@ pub fn player_init_from_dict<H: PlayerInitHost>(h: &mut H, p: PlayerIndex, d: &D
     let (c, exists) = d.get_int(k);
     if exists {
         let me = plm(h, p)?;
-        me.color = (c as u32) | 0xff00_0000;
-        me.night_color = me.color;
+        me.color = (c as u32) | if plant(537) { 0 } else { 0xff00_0000 };
+        me.night_color = if plant(536) { 0 } else { me.color };
     }
 
     let k = wkey(h, wk::PLAYER_NIGHT_COLOR);
     let (c, exists) = d.get_int(k);
     if exists {
-        plm(h, p)?.night_color = (c as u32) | 0xff00_0000;
+        plm(h, p)?.night_color = (c as u32) | if plant(538) { 0 } else { 0xff00_0000 };
     }
 
     let k = wkey(h, wk::PLAYER_START_MONEY);
     let (m, exists) = d.get_int(k);
     if exists {
-        player_money_deposit(h, p, m as u32, true)?;
+        player_money_deposit(h, p, m as u32, !plant(539))?;
     }
 
     {
         let me = plm(h, p)?;
-        me.squads = vec![Squad::default(); NUM_HOTKEY_SQUADS];
-        me.current_selection = Some(Squad::default());
+        if !plant(540) { me.squads = vec![Squad::default(); NUM_HOTKEY_SQUADS]; }
+        if !plant(541) { me.current_selection = Some(Squad::default()); }
     }
     Ok(())
 }

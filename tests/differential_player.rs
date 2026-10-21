@@ -442,6 +442,10 @@ fn tid(t: Option<TeamId>) -> u32 {
 }
 
 impl Sim {
+    /// The players the operations address: those of the program that the list still counts (a new game may leave fewer).
+    fn np_now(&self) -> usize {
+        self.np.min(self.players.player_count().max(1) as usize)
+    }
     /// A science of a program (0..7, or -1 for none) as the name key it stands for.
     fn sci_key(&self, i: i32) -> i32 {
         if (0..8).contains(&i) {
@@ -1386,7 +1390,7 @@ fn kind_bits(m: &KindOfMaskType) -> String {
 /// The prototypes alive: the union of the players' lists, in id order.
 fn alive_protos(sim: &Sim) -> Vec<TeamPrototypeId> {
     let mut v: Vec<TeamPrototypeId> = Vec::new();
-    for i in 0..sim.np {
+    for i in 0..sim.np_now() {
         for pr in &sim.players.get_nth(i as i32).unwrap().team_prototypes {
             if !v.contains(pr) {
                 v.push(*pr);
@@ -1588,7 +1592,7 @@ fn dump_state(sim: &mut Sim) {
         out.push(format!("D obj2 {} health={} vision={} shroud={} wb={:08x}", o.id, fb(o.health), fb(o.vision), fb(o.shroud), o.wb));
     }
     // --- end p1w10-sonnet ---
-    for i in 0..sim.np {
+    for i in 0..sim.np_now() {
         dump_player(sim, i, &mut out);
         // --- p1w10-sonnet --- (slice 2)
         let p = sim.players.get_nth(i as i32).unwrap();
@@ -2146,16 +2150,40 @@ fn read_header2_objects(r: &mut Reader<'_>, sim: &mut Sim) {
     }
 }
 
+/// What of an excluded program is still defined upstream: the operations before the one that made it undefined and the
+/// lines the Rust wrote up to there. The C++ is run on those operations alone and its first lines are compared (a program
+/// that is undefined at its tenth operation says something about its first nine).
+struct Prefix {
+    /// The position of the operation count among the program's words.
+    pos_n: usize,
+    ops: usize,
+    lines: Vec<String>,
+}
+
+thread_local! {
+    static LAST_PREFIX: std::cell::RefCell<Option<Prefix>> = const { std::cell::RefCell::new(None) };
+}
+
 fn run_rust(words: &[u32]) -> Result<Vec<String>, Excluded> {
+    let mut pre = None;
+    let r = run_rust_inner(words, &mut pre);
+    LAST_PREFIX.with(|p| *p.borrow_mut() = if r.is_err() { pre } else { None });
+    r
+}
+
+fn run_rust_inner(words: &[u32], pre: &mut Option<Prefix>) -> Result<Vec<String>, Excluded> {
     let mut r = Reader { w: words, p: 0 };
     let (mut sim, probes) = read_sim(&mut r);
+    let pos_n = r.p;
     let n_ops = r.i();
     let mut threw = false;
     dump_state(&mut sim);
-    for _ in 0..n_ops {
+    for i in 0..n_ops as usize {
+        let ok_lines = sim.lines.len();
         let op = r.u();
         let res = do_op(&mut sim, op, &mut r);
         if let Some(why) = sim.undefined.get() {
+            *pre = Some(Prefix { pos_n, ops: i, lines: sim.lines[..ok_lines].to_vec() });
             return Err(Excluded(why));
         }
         match res {
@@ -2164,12 +2192,19 @@ fn run_rust(words: &[u32]) -> Result<Vec<String>, Excluded> {
                 if std::env::var_os("PLAYER_WHY").is_some() {
                     eprintln!("WHY {e:?} at op {op} sub {}", LAST_SUB.load(std::sync::atomic::Ordering::Relaxed));
                 }
-                let line = thrown(e)?;
+                let line = match thrown(e) {
+                    Ok(line) => line,
+                    Err(x) => {
+                        *pre = Some(Prefix { pos_n, ops: i, lines: sim.lines[..ok_lines].to_vec() });
+                        return Err(x);
+                    }
+                };
                 sim.rec(line);
                 // `ERROR_BAD_ARG` is thrown before anything is changed: the program goes on
                 if e == PlayerError::Team(TeamError::BadArg) {
                     dump_state(&mut sim);
                     if let Some(why) = sim.undefined.get() {
+                        *pre = Some(Prefix { pos_n, ops: i, lines: sim.lines[..ok_lines].to_vec() });
                         return Err(Excluded(why));
                     }
                     continue;
@@ -2179,6 +2214,7 @@ fn run_rust(words: &[u32]) -> Result<Vec<String>, Excluded> {
             }
         }
         if let Some(why) = sim.undefined.get() {
+            *pre = Some(Prefix { pos_n, ops: i, lines: sim.lines[..ok_lines].to_vec() });
             return Err(Excluded(why));
         }
     }
@@ -2453,7 +2489,7 @@ fn read_sides(r: &mut Reader<'_>, sim: &mut Sim) {
 
 /// One operation on the player list.
 fn list_op(sim: &mut Sim, a: &[u32; 8], sub: u32) -> Result<(), PlayerError> {
-    let np = sim.np;
+    let np = sim.np_now();
     match sub % 15 {
         0 => player_list_update(sim)?,
         1 => player_list_new_map(sim)?,
@@ -2473,9 +2509,13 @@ fn list_op(sim: &mut Sim, a: &[u32; 8], sub: u32) -> Result<(), PlayerError> {
         }
         6 => {
             let mut m = (a[0] & 0xffff) as u16;
-            for _ in 0..3 {
+            // until none is left (a mask with bits of no player ends in the none, which empties it)
+            for _ in 0..24 {
                 let p = player_list_get_each_player_from_mask(sim, &mut m);
                 sim.rec(format!("ret each {:04x} {}", m, p.unwrap_or(-1)));
+                if p.is_none() {
+                    break;
+                }
             }
         }
         7 => {
@@ -2484,7 +2524,11 @@ fn list_op(sim: &mut Sim, a: &[u32; 8], sub: u32) -> Result<(), PlayerError> {
         }
         8 => player_list_init(sim)?,
         9 => player_list_reset(sim)?,
-        10 => player_list_new_game(sim)?,
+        10 => {
+            player_list_new_game(sim)?;
+            let c = sim.players.player_count();
+            sim.rec(format!("ret newgame {c}"));
+        }
         11 => {
             let mut xc = XferCrc::new();
             xc.open(b"l").unwrap();
@@ -2816,7 +2860,7 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
     if std::env::var_os("PLAYER_OPS").is_some() {
         eprintln!("OP line {} player {p} sub {sub} {a:?}", sim.lines.len());
     }
-    let np = sim.np;
+    let np = sim.np_now();
     match sub {
         0 => player_update(sim, p)?,
         1 => player_new_map(sim, p)?,
@@ -3366,7 +3410,7 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
 }
 
 fn do_op(sim: &mut Sim, op: u32, r: &mut Reader<'_>) -> Result<(), PlayerError> {
-    let np = sim.np;
+    let np = sim.np_now();
     match op {
         0 => {
             let n = r.u();
@@ -3427,6 +3471,9 @@ fn do_op(sim: &mut Sim, op: u32, r: &mut Reader<'_>) -> Result<(), PlayerError> 
             let mut a = [0u32; 8];
             for x in a.iter_mut() {
                 *x = r.u();
+            }
+            if std::env::var_os("PLAYER_OPS").is_some() {
+                eprintln!("LIST line {} sub {} {a:?}", sim.lines.len(), sub % 15);
             }
             list_op(sim, &a, sub)?;
         }
@@ -3564,7 +3611,8 @@ fn gen_money(g: &mut Gen, w: &mut W) {
 }
 
 fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32, [u32; 3]) {
-    let np = 2 + g.below(3);
+    // (a few programs have all sixteen players, so that the last one is reached by the loops over the list)
+    let np = if chance(g, 4) { 16 } else { 2 + g.below(3) };
     let nt = 2 + g.below(5);
     let nscr = g.below(6);
     let nw = g.below(4);
@@ -3635,9 +3683,10 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32, [u32; 3]) {
     let npt = 1 + g.below(3);
     NPT.store(npt, std::sync::atomic::Ordering::Relaxed);
     w.i(npt as i32);
-    for _ in 0..npt {
+    for ti in 0..npt {
         w.i(g.below(8) as i32);
-        w.i(g.below(3) as i32);
+        // the side: 7 is `Civilian`, whose skirmish side a human player takes the scripts of
+        w.i(if chance(g, if ti == 0 { 55 } else { 25 }) { 7 } else { g.below(3) as i32 });
         w.i(g.below(3) as i32);
         w.i(g.below(0x100_0000) as i32);
         gen_money(g, w);
@@ -3792,10 +3841,10 @@ fn gen_header2(g: &mut Gen, w: &mut W, np: u32, nt: u32, ids: &[u32], mod_counts
     for _ in 0..nt {
         w.i(match g.below(8) {
             0 => 0,
-            1..=5 => 50 * g.below(40) as i32,
-            6 => -(g.below(300) as i32),
+            1..=3 => 50 * g.below(40) as i32,
+            4 => -(g.below(300) as i32),
             // above 2^24 an f32 cannot hold every integer, so the order of the factors shows in the cost
-            _ if chance(g, 50) => 20_000_000 + g.below(200_000_000) as i32,
+            5 | 6 => 20_000_000 + g.below(200_000_000) as i32,
             _ => 100_000 + g.below(400_000) as i32,
         });
         w.u(g.below(4));
@@ -3861,7 +3910,9 @@ fn w_entry_bits(w: &mut W, ty: i32, key: &str, v: u32) {
 /// (a dictionary, whether they have a script list, a build list), the skirmish sides and the teams that refer to them.
 fn gen_sides(g: &mut Gen, w: &mut W) {
     let npt = NPT.load(std::sync::atomic::Ordering::Relaxed);
-    let npd = 1 + g.below(5);
+    let wide = chance(g, 15);
+    WIDE.store(wide, std::sync::atomic::Ordering::Relaxed);
+    let npd = if wide { 4 + g.below(2) } else { 1 + g.below(5) };
     let nsk = g.below(3);
     let ntd = g.below(5);
     w.i((npd + nsk + ntd) as i32);
@@ -3930,7 +3981,7 @@ fn gen_sides(g: &mut Gen, w: &mut W) {
     }
     for k in 0..nsk {
         // a skirmish side: a faction (mostly the first), its name
-        let f = format!("Faction{}", g.below(npt));
+        let f = format!("Faction{}", if chance(g, 60) { 0 } else { g.below(npt) });
         w.i(2);
         w_entry_str(w, 3, "playerFaction", &f);
         w_entry_str(w, 3, "playerName", &format!("SK{k}"));
@@ -3959,7 +4010,7 @@ fn gen_sides(g: &mut Gen, w: &mut W) {
     let total = npd + nsk + ntd;
     // the sixteen sides: a player dictionary for some of the first, a script list for some, a build list for some
     for i in 0..16u32 {
-        w.u(if i < 6 && chance(g, 55) { 1 + g.below(npd) } else { 0 });
+        w.u(if i < if wide { 16 } else { 6 } && chance(g, if wide { 92 } else { 55 }) { 1 + g.below(npd) } else { 0 });
         w.b(chance(g, 30));
         w.i(if chance(g, 30) { 1 + g.below(2) as i32 } else { 0 });
     }
@@ -4229,6 +4280,169 @@ struct GenState {
     // --- end p1w10-sonnet ---
 }
 
+/// One `Player` operation with its first two arguments given and the rest random.
+fn emit_player_op(g: &mut Gen, w: &mut W, pk: u32, sub: u32, a0: u32, a1: u32) {
+    w.u(6);
+    w.u(pk);
+    w.u(sub);
+    w.u(a0);
+    w.u(a1);
+    for _ in 2..8 {
+        w.u(g.u32());
+    }
+}
+
+/// One `Player` operation with all eight arguments given.
+fn emit_player_args(w: &mut W, pk: u32, sub: u32, a: [u32; 8]) {
+    w.u(6);
+    w.u(pk);
+    w.u(sub);
+    for x in a {
+        w.u(x);
+    }
+}
+
+/// A directed sequence of `Player` operations that the plain random operations reach too seldom, as a list of
+/// (player, sub, arguments); the caller counts the operations. `kind` picks the sequence.
+fn directed_sequence(g: &mut Gen, np: u32, kind: u32) -> Vec<(u32, u32, [u32; 8])> {
+    let mut v: Vec<(u32, u32, [u32; 8])> = Vec::new();
+    let pk = g.below(np.max(1));
+    let rnd = |g: &mut Gen| -> [u32; 8] { [g.u32(), g.u32(), g.u32(), g.u32(), g.u32(), g.u32(), g.u32(), g.u32()] };
+    match kind {
+        // hotkey squads: filled from an AI group that holds objects that do not exist, then asked for their objects
+        0 => {
+            let (gi, hk) = (g.below(3), g.below(10));
+            let mut a = rnd(g);
+            a[1] = gi;
+            a[2] = 1 + g.below(4);
+            v.push((pk, 92, [9, a[1], a[2], a[3], a[4], a[5], a[6], a[7]]));
+            // (from the AI group: an odd a[3]; the group word is gi modulo 3 and not a multiple of 4)
+            let mut gw = gi + 3 * g.below(30);
+            while gw % 4 == 0 {
+                gw += 3;
+            }
+            let use_sel = chance(g, 30);
+            let a2 = if use_sel { 4 } else { 0 };
+            let mut b = rnd(g);
+            b[1] = hk + 1;
+            b[2] = a2;
+            b[3] = 1;
+            b[4] = gw;
+            b[5] = g.below(2);
+            v.push((pk, 92, [11, b[1], b[2], b[3], b[4], b[5], b[6], b[7]]));
+            for q in 0..(2 + g.below(3)) {
+                let mut c = rnd(g);
+                c[1] = hk + 1;
+                c[2] = a2 + (q % 2);
+                v.push((pk, 92, [10, c[1], c[2], c[3], c[4], c[5], c[6], c[7]]));
+            }
+            // the selection as an AI group (the squad's live objects into a group)
+            let mut d = rnd(g);
+            d[2] = 1 + g.below(3);
+            v.push((pk, 92, [3, d[1], d[2], d[3], d[4], d[5], d[6], d[7]]));
+        }
+        // save and load: with the caches and the lists filled, loaded without clearing them
+        1 => {
+            for _ in 0..g.below(3) {
+                let mut a = rnd(g);
+                a[0] = 0;
+                a[2] = g.uniform(0.2, 1.8).to_bits();
+                v.push((pk, 70, a));
+            }
+            let hk = g.below(10);
+            for q in 0..2 {
+                let mut c = rnd(g);
+                c[1] = hk + 1;
+                c[2] = q;
+                v.push((pk, 92, [10, c[1], c[2], c[3], c[4], c[5], c[6], c[7]]));
+            }
+            let mut s = rnd(g);
+            s[0] = 0;
+            v.push((pk, 93, s));
+            for _ in 0..(1 + g.below(3)) {
+                let mut l = rnd(g);
+                l[0] = 2;
+                l[1] = g.below(4);
+                v.push((g.below(np.max(1)), 93, l));
+            }
+        }
+        // upgrades: added in production or complete, asked about, removed (the masks of the player follow)
+        3 => {
+            let key = g.u32();
+            for _ in 0..(1 + g.below(2)) {
+                let mut a = rnd(g);
+                a[0] = 0;
+                a[1] = key;
+                a[2] = g.below(3);
+                v.push((pk, 91, a));
+            }
+            let mut q = rnd(g);
+            q[0] = 4;
+            q[1] = key;
+            v.push((pk, 91, q));
+            let mut r = rnd(g);
+            r[0] = 5;
+            r[1] = key;
+            v.push((pk, 91, r));
+            let mut c = rnd(g);
+            c[0] = 2;
+            c[1] = key;
+            v.push((pk, 91, c));
+        }
+        // team relationships: set, read, removed (a team that is not in the map, then one that is, then again)
+        4 => {
+            let (t1, t2) = (1 + g.below(12), 1 + g.below(12));
+            for (sub, team, rel) in [(8u32, t1, g.below(3)), (8, t2, g.below(3)), (5, t1, 0), (5, t2, 0), (9, 1 + g.below(12), 0), (9, t1, 0), (9, t1, 0), (5, t1, 0), (5, t2, 0)] {
+                let mut a = rnd(g);
+                a[0] = team;
+                a[1] = rel;
+                v.push((pk, sub, a));
+            }
+        }
+        // what a build costs: changes of the production cost by kind on every player (the victim's owner's count), a bounty
+        // for the killer, then bounties and the affording of builds
+        _ => {
+            for q in 0..np.clamp(1, 6) {
+                for _ in 0..(1 + g.below(2)) {
+                    let mut a = rnd(g);
+                    a[0] = 0;
+                    // (a template matches when it has every kind of the change: one or two kinds)
+                    a[1] = (1 << g.below(15)) | if chance(g, 30) { 1 << g.below(15) } else { 0 };
+                    a[2] = g.uniform(-0.6, 1.4).to_bits();
+                    v.push((q, 70, a));
+                }
+            }
+            let mut a = rnd(g);
+            a[0] = 1;
+            v.push((pk, 76, a));
+            for _ in 0..4 {
+                let mut a = rnd(g);
+                a[0] = 2;
+                v.push((pk, 86, a));
+                let mut b = rnd(g);
+                b[0] = 1 + g.below(30);
+                b[1] = 1 + g.below(30);
+                v.push((pk, 85, b));
+            }
+        }
+    }
+    v
+}
+
+/// One player-list operation (top-level operation 7) with its first two arguments given and the rest random.
+fn emit_list_op(g: &mut Gen, w: &mut W, sub: u32, a0: u32, a1: u32) {
+    w.u(7);
+    w.u(sub);
+    w.u(a0);
+    w.u(a1);
+    for _ in 2..8 {
+        w.u(g.u32());
+    }
+}
+
+/// Set when the program's sides list fills all sixteen sides (so that a new game makes sixteen players).
+static WIDE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
     let r = g.below(100);
     *n += 1;
@@ -4322,12 +4536,26 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
             if sub == 5 && chance(g, 50) {
                 a[0] = 0;
             }
+            if sub == 7 {
+                // the players of the program, and a mix of the four relationships
+                a[0] = g.below(6);
+                a[1] = 1 + g.below(15);
+            }
             w.u(7);
             w.u(sub);
             for x in a {
                 w.u(x);
             }
             // a save is often loaded straight back (the interesting case: the state is the one that was saved)
+            if sub == 12 && chance(g, 25) {
+                // ... or after the list has changed size (init, new game): the load refuses it
+                *n += 1;
+                w.u(7);
+                w.u([8u32, 10][g.below(2) as usize]);
+                for _ in 0..8 {
+                    w.u(g.u32());
+                }
+            }
             if sub == 12 && chance(g, 60) {
                 *n += 1;
                 w.u(7);
@@ -4335,6 +4563,62 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
                 for k in 0..8 {
                     w.u(if k == 1 { 3 } else { g.u32() });
                 }
+            }
+        }
+        // --- end p1w10-sonnet ---
+        // --- p1w10-sonnet --- directed sequences for the plants the plain random operations reached too seldom
+        // (relationships set, then the players asked for by relationship; what a player may build set, then asked)
+        38..=40 => {
+            if chance(g, 50) {
+                for _ in 0..2 {
+                    let pk = g.below(8);
+                    for _ in 0..(2 + g.below(4)) {
+                        let (o, rel) = (1 + g.below(8), g.below(3));
+                        emit_player_op(g, w, pk, 6, o, rel);
+                        *n += 1;
+                    }
+                }
+                for flags in [2u32, 4, 8, 6, 12, 10] {
+                    let src = g.below(st.np);
+                    emit_list_op(g, w, 7, src, flags);
+                    *n += 1;
+                }
+                *n -= 1;
+            } else {
+                let pk = g.below(8);
+                let (units, base) = if chance(g, 50) { (0, 1) } else { (1, 0) };
+                emit_player_op(g, w, pk, 51, units, base);
+                for _ in 0..6 {
+                    let t = g.u32();
+                    emit_player_op(g, w, pk, 52, t, 0);
+                    *n += 1;
+                }
+            }
+        }
+        41..=44 => {
+            let kind = g.below(6);
+            if kind == 3 && st.np == 16 {
+                // relations of the last player to a team, which the list is then told is about to be deleted
+                let team = 1 + g.below(12);
+                for _ in 0..3 {
+                    let rel = g.below(3);
+                    emit_player_op(g, w, 15, 8, team, rel);
+                    *n += 1;
+                }
+                emit_list_op(g, w, 14, team, 0);
+                return;
+            }
+            // (the last player's relations needed sixteen players: otherwise the sequence is a hotkey squad one)
+            let kind = match kind {
+                3 => 0,
+                4 => 3,
+                5 => 4,
+                k => k,
+            };
+            let seq = directed_sequence(g, st.np, kind);
+            *n += seq.len() as u32 - 1;
+            for (pk, sub, a) in seq {
+                emit_player_args(w, pk, sub, a);
             }
         }
         // --- end p1w10-sonnet ---
@@ -4350,7 +4634,7 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
                 }
                 (pk, sub, a)
             } else {
-                let pk = g.below(8);
+                let pk = g.below(16);
                 // --- p1w10-sonnet --- directed pairs: a special power ready exactly now, then the search for it; a squad queried, then rebuilt
                 if chance(g, 5) {
                     let ok = g.below(32);
@@ -4402,7 +4686,7 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
                 }
                 // --- end p1w10-sonnet ---
                 // the subs: all, with a bias to the loops over objects and the sciences
-                let sub = if chance(g, 14) { [92u32, 92, 92, 92, 92, 91, 93, 93][g.below(8) as usize] } else if chance(g, 20) { [0u32, 33, 34, 35, 36, 37, 38, 44, 68, 74, 75, 3, 69, 69, 62, 63, 64, 65, 70, 50, 14, 13, 2, 5, 6, 8, 76, 85, 85, 79, 79, 79, 79, 79, 79][g.below(35) as usize] } else if chance(g, 45) { 77 + g.below(18) } else { g.below(95) };
+                let sub = if chance(g, 14) { [92u32, 92, 92, 92, 92, 91, 93, 93, 94, 94][g.below(10) as usize] } else if chance(g, 20) { [0u32, 33, 34, 35, 36, 37, 38, 44, 68, 74, 75, 3, 69, 69, 62, 63, 64, 65, 70, 50, 14, 13, 2, 5, 6, 8, 76, 85, 85, 79, 79, 79, 79, 79, 79][g.below(35) as usize] } else if chance(g, 45) { 77 + g.below(18) } else { g.below(95) };
                 let mut a = gen_player_args(g, sub, st);
                 if sub == 88 && chance(g, 50) {
                     a[0] = 0;
@@ -4445,6 +4729,71 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
 fn gen_ops(g: &mut Gen, w: &mut W, np: u32, frame0: u32, palette: [u32; 3]) {
     let mut ops = W::default();
     let mut n = 0u32;
+    // --- p1w10-sonnet --- (slice 4): some programs start a new game (or reset, or init the list) on the world they are given,
+    // before anything exists that its teams would take down (those programs are excluded as undefined once teams and objects
+    // are on the players' default teams)
+    let wide = WIDE.load(std::sync::atomic::Ordering::Relaxed);
+    if chance(g, 35) || wide {
+        // (a local player other than the neutral one first, so that init and new game have a local player to replace)
+        if chance(g, 50) {
+            ops.u(7);
+            ops.u(4);
+            ops.u(1 + g.below(np));
+            for _ in 1..8 {
+                ops.u(g.u32());
+            }
+            n += 1;
+        }
+        let one = |g: &mut Gen, ops: &mut W, n: &mut u32, sub: u32| {
+            ops.u(7);
+            ops.u(sub);
+            for k in 0..8 {
+                ops.u(if k == 1 { 3 } else { g.u32() });
+            }
+            *n += 1;
+        };
+        one(g, &mut ops, &mut n, 10);
+        if chance(g, 60) {
+            // players a new game made, saved and loaded into the neutral player (which has no resource gathering manager and no
+            // tunnel tracker; a human player has no AI either, so that the first check that differs is the manager's), and the
+            // neutral player's save loaded into them
+            for pk in 1..np.clamp(2, 4) {
+                emit_player_op(g, &mut ops, pk, 93, 0, 0);
+                emit_player_op(g, &mut ops, 0, 93, 2, 3);
+                emit_player_op(g, &mut ops, 0, 93, 0, 0);
+                emit_player_op(g, &mut ops, pk, 93, 2, 3);
+                n += 4;
+            }
+        }
+        if wide {
+            // sixteen players: the last one's new map, team states, the teams about to be deleted, the players it has relations to
+            for (sub, a0, a1) in [(1u32, 0u32, 0u32), (2, 0, 0), (14, 1 + g.below(8), 0), (14, 1 + g.below(8), 0), (7, 15, 1 + g.below(15)), (7, 15, 14)] {
+                emit_list_op(g, &mut ops, sub, a0, a1);
+                n += 1;
+            }
+        }
+        // who the new game's players take for enemies, allies and neutral
+        for flags in [4u32, 2, 8, 1] {
+            if chance(g, 70) {
+                ops.u(7);
+                ops.u(7);
+                ops.u(g.below(6));
+                ops.u(flags);
+                for _ in 2..8 {
+                    ops.u(g.u32());
+                }
+                n += 1;
+            }
+        }
+        if chance(g, 50) {
+            let sub = [1u32, 0, 2, 12, 11, 8, 9][g.below(7) as usize];
+            one(g, &mut ops, &mut n, sub);
+        }
+        if chance(g, 35) {
+            one(g, &mut ops, &mut n, 10);
+        }
+    }
+    // --- end p1w10-sonnet ---
     gen_setup(g, &mut ops, &mut n, np);
     let mut st = GenState { frame: frame0, last: None, palette, plans: [[0; 4]; 16], np };
     // --- p1w10-sonnet --- (slice 2): most programs start with a battle plan on for a player or two (the bonuses it hands out
@@ -4506,6 +4855,7 @@ fn player_matches_upstream() {
     let _guard = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut check = Check::new("player, trace lines");
     let (mut programs, mut excluded, mut lines) = (0u64, 0u64, 0u64);
+    let (mut prefix_programs, mut prefix_lines) = (0u64, 0u64);
     let mut why_counts: BTreeMap<&str, u64> = BTreeMap::new();
     let mut counts: BTreeMap<String, u64> = BTreeMap::new();
     let markers = [
@@ -4523,7 +4873,7 @@ fn player_matches_upstream() {
         "ret addupg", "ret findupg", "ret upgcomplete", "ret upgmask", "ret upginprod", "upgrademods", "ret hotkey", "ret squadno", "ret squadall", "ret squadlive", "ret squadsize", "group.add", "skip nosel",
         "skip nosquad", "skip noupgrades", "ret pcrc", "ret psave", "ret pload", "threw invaliddata", "threw xfer", "D player4 ",
         // --- p1w10-sonnet --- (slice 4)
-        "scripts.qualify", "scripts.delete", "sides.removeteam", "sides.addteam", "ai.diff", "ret vteam", "ret pfm", "ret each", "ret pwr", "ret lcrc", "ret lsave", "ret lload", "skip nosdicts", "D sides",
+        "ret newgame", "scripts.qualify", "scripts.delete", "sides.removeteam", "sides.addteam", "ai.diff", "ret vteam", "ret pfm", "ret each", "ret pwr", "ret lcrc", "ret lsave", "ret lload", "skip nosdicts", "D sides",
         // --- end p1w10-sonnet --- "score.", "academy.", "setteam ", "kill ", "damage ", "heal ", "iter ", "skip", "threw badarg", "D team ",
     ];
     let from: u64 = std::env::var("PLAYER_FROM").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
@@ -4535,6 +4885,18 @@ fn player_matches_upstream() {
             Err(Excluded(why)) => {
                 excluded += 1;
                 *why_counts.entry(why).or_insert(0) += 1;
+                // the operations before the undefined one are defined: the C++ runs those and is compared on them
+                if let Some(pre) = LAST_PREFIX.with(|p| p.borrow_mut().take()) {
+                    let mut short = words.clone();
+                    short[pre.pos_n] = pre.ops as u32;
+                    let cpp_lines = cpp_run(&short);
+                    prefix_programs += 1;
+                    prefix_lines += pre.lines.len() as u64;
+                    check.eq(cpp_lines.len() >= pre.lines.len(), true, || format!("program {case}: prefix line count"));
+                    for (i, (a, b)) in pre.lines.iter().zip(cpp_lines.iter()).enumerate() {
+                        check.eq(a.as_str(), b.as_str(), || format!("program {case} prefix line {i}"));
+                    }
+                }
                 continue;
             }
         };
@@ -4581,6 +4943,7 @@ fn player_matches_upstream() {
         }
     }
     println!("RESULT programs {programs}, excluded (upstream undefined) {excluded}, lines compared {lines}");
+    println!("RESULT excluded programs compared on their defined prefix: {prefix_programs} ({prefix_lines} lines)");
     for (why, c) in &why_counts {
         println!("RESULT   excluded: {why}: {c}");
     }

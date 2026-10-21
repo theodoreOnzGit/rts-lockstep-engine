@@ -297,11 +297,20 @@ static void buildDict(const DictSpec& s, Dict& d)
 	}
 }
 
+// --- p1w10-sonnet --- (slice 4): the players the operations address: those of the program that the list still counts
+// (a new game may leave fewer players than the program made; the others are not given operations or dumped)
+static size_t npNow()
+{
+	size_t c = (size_t)ThePlayerList->m_playerCount;
+	if (c == 0) c = 1;
+	return c < g_players.size() ? c : g_players.size();
+}
+// --- end p1w10-sonnet ---
 /* ---- the selectors: the alive prototypes and teams, found as the Rust finds them (through the lists) ------------- */
 static std::vector<TeamPrototype*> aliveProtos()
 {
 	std::vector<TeamPrototype*> v;
-	for (size_t i = 0; i < g_players.size(); ++i)
+	for (size_t i = 0; i < npNow(); ++i)
 		for (Player::PlayerTeamList::const_iterator it = g_players[i]->m_playerTeamPrototypes.begin(); it != g_players[i]->m_playerTeamPrototypes.end(); ++it)
 			if (std::find(v.begin(), v.end(), *it) == v.end()) v.push_back(*it);
 	std::stable_sort(v.begin(), v.end(), [](TeamPrototype* a, TeamPrototype* b) { return a->getID() < b->getID(); });
@@ -319,7 +328,7 @@ static std::vector<Team*> aliveTeams()
 static Team* pickTeam(unsigned k) { std::vector<Team*> v = aliveTeams(); return v.empty() ? NULL : v[k % v.size()]; }
 static TeamPrototype* pickProto(unsigned k) { std::vector<TeamPrototype*> v = aliveProtos(); return v.empty() ? NULL : v[k % v.size()]; }
 static Object* pickObj(unsigned k) { return g_objs[k % g_objs.size()]; }
-static Player* pickPlayer(unsigned k) { return g_players[k % g_players.size()]; }
+static Player* pickPlayer(unsigned k) { return g_players[k % npNow()]; }
 
 /* ---- the dump --------------------------------------------------------------------------------------------------- */
 static std::string idList(const std::vector<int>& v)
@@ -451,7 +460,7 @@ static void dumpState()
 		Object* o = g_objs[i];
 		Rec("D obj2 %d health=%08x vision=%08x shroud=%08x wb=%08x", (int)o->m_id, FB(o->m_health), FB(o->m_vision), FB(o->m_shroud), o->m_wb);
 	}
-	for (size_t i = 0; i < g_players.size(); ++i) { dumpPlayer(g_players[i]); dumpPlayer4(g_players[i]); dumpPlayer3(g_players[i]); }
+	for (size_t i = 0; i < npNow(); ++i) { dumpPlayer(g_players[i]); dumpPlayer4(g_players[i]); dumpPlayer3(g_players[i]); }
 	{
 		SidesList* sl = TheSidesList;
 		std::string a, b, c, t; char buf[64];
@@ -1016,7 +1025,7 @@ static std::string ptrStr(const void* p) { return p ? "1" : "0"; }
 /* one Player operation; `a` are its eight words */
 static void playerOp(Player* p, unsigned sub, const unsigned* a)
 {
-	int np = (int)g_players.size();
+	int np = (int)npNow();
 	switch (sub)
 	{
 	case 0: p->update(); break;
@@ -1318,7 +1327,8 @@ static bool g_haveList = false;
 /* one operation on the player list */
 static void listOp(unsigned sub, const unsigned* a)
 {
-	int np = (int)g_players.size();
+	int np = (int)npNow();
+	if (getenv("PLAYER_CPPOPS")) fprintf(stderr, "CPP list sub %u\n", sub % 15);
 	switch (sub % 15)
 	{
 	case 0: ThePlayerList->update(); break;
@@ -1327,11 +1337,11 @@ static void listOp(unsigned sub, const unsigned* a)
 	case 3: { Team* t = ThePlayerList->validateTeam(teamName(a[0])); Rec("ret vteam %d", tid(t)); break; }
 	case 4: ThePlayerList->setLocalPlayer(a[0] ? g_players[(a[0] - 1) % np] : NULL); break;
 	case 5: { PlayerMaskType mask = (a[0] % 3 == 0) ? (PlayerMaskType)(1u << (a[1] % 16)) : (PlayerMaskType)(a[1] & 0xffff); Player* p = ThePlayerList->getPlayerFromMask(mask); Rec("ret pfm %d", p ? p->m_playerIndex : -1); break; }
-	case 6: { PlayerMaskType m = (PlayerMaskType)(a[0] & 0xffff); for (int k = 0; k < 3; ++k) { Player* p = ThePlayerList->getEachPlayerFromMask(m); Rec("ret each %04x %d", (unsigned)m, p ? p->m_playerIndex : -1); } break; }
+	case 6: { PlayerMaskType m = (PlayerMaskType)(a[0] & 0xffff); for (int k = 0; k < 24; ++k) { Player* p = ThePlayerList->getEachPlayerFromMask(m); Rec("ret each %04x %d", (unsigned)m, p ? p->m_playerIndex : -1); if (!p) break; } break; }
 	case 7: Rec("ret pwr %04x", (unsigned)ThePlayerList->getPlayersWithRelationship((Int)(a[0] % 16), a[1] & 0xf)); break;
 	case 8: ThePlayerList->init(); break;
 	case 9: ThePlayerList->reset(); break;
-	case 10: ThePlayerList->newGame(); break;
+	case 10: ThePlayerList->newGame(); Rec("ret newgame %d", ThePlayerList->m_playerCount); break;
 	case 11: { XferCRC xc; xc.open(AsciiString("l")); xc.xferSnapshot(ThePlayerList); xc.close(); Rec("ret lcrc %08x", xc.getCRC()); break; }
 	case 12: {
 		XferSave xs; xs.open(AsciiString(g_tmpPath.c_str())); xs.xferSnapshot(ThePlayerList); xs.close();
@@ -1364,7 +1374,7 @@ static void listOp(unsigned sub, const unsigned* a)
 
 static void doOp(unsigned op, Reader& r)
 {
-	int np = (int)g_players.size();
+	int np = (int)npNow();
 	switch (op)
 	{
 	case 0: { unsigned n = r.u(); g_gameLogic.m_frame += n; break; }
