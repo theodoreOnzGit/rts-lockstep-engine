@@ -274,14 +274,12 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         modules.push(m);
     }
     modules.push(rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"HeightDieUpdate", b"ModuleTag_HeightDie", &data).unwrap().unwrap());
-    let mut values = ObjectTemplateValues::default();
-    values.geometry = Some(GeometryInfo::new(GeometryType::Box, false, f32::from_bits(cfg[10]), f32::from_bits(cfg[8]), f32::from_bits(cfg[9])));
+    let values = ObjectTemplateValues { geometry: Some(GeometryInfo::new(GeometryType::Box, false, f32::from_bits(cfg[10]), f32::from_bits(cfg[8]), f32::from_bits(cfg[9]))), ..Default::default() };
     let template = Arc::new(ThingTemplate::from_object_values(&values));
     let me = w.new_object(NewObject { template, status: Default::default(), team: None, modules }).unwrap();
     assert_eq!(me, 1, "the first object of a fresh world has the id 1");
     for k in 0..3 {
-        let mut values = ObjectTemplateValues::default();
-        values.geometry = Some(GeometryInfo::new(GeometryType::Box, false, f32::from_bits(cfg[11 + k]), 1.0, 1.0));
+        let values = ObjectTemplateValues { geometry: Some(GeometryInfo::new(GeometryType::Box, false, f32::from_bits(cfg[11 + k]), 1.0, 1.0)), ..Default::default() };
         let template = Arc::new(ThingTemplate::from_object_values(&values));
         let id = w.new_object(NewObject { template, status: Default::default(), team: None, modules: Vec::new() }).unwrap();
         assert_eq!(id, 2 + k as i32);

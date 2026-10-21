@@ -40,6 +40,17 @@ pub struct Counts {
     pub excluded: u64,
 }
 
+/// A case's configuration words and its ops of five words.
+pub type Program = (Vec<u32>, Vec<[u32; 5]>);
+/// The generator of a `D` block (the upgrades' names, whether to keep it well formed).
+pub type GenData<'a> = dyn Fn(&mut Gen, &[String], bool) -> Vec<u8> + 'a;
+/// The generator of a case's program.
+pub type GenCase<'a> = dyn Fn(&mut Gen, &Option<ModuleDataKind>, usize, &[String]) -> Program + 'a;
+/// The Rust run of a case.
+pub type RustRun<'a> = dyn Fn(Ctx, ModuleDataKind, &[u32], &[[u32; 5]]) -> RunOut + 'a;
+/// The C++ run of a case.
+pub type CppRun<'a> = dyn Fn(&CString, &CString, &[u32], &[[u32; 5]]) -> CppOut + 'a;
+
 type RustRead<'a> = &'a dyn Fn(&[u8], &[u8]) -> (rts_lockstep_engine::common::ini::IniResult<()>, Option<ModuleDataKind>);
 
 /// One module's test.
@@ -52,13 +63,13 @@ pub struct Harness<'a> {
     /// The stem of the INI file names (cycled over five).
     pub ini_stem: &'a str,
     /// The text of a `D` block (the upgrades' names, whether to keep it well formed).
-    pub gen_data: &'a dyn Fn(&mut Gen, &[String], bool) -> Vec<u8>,
+    pub gen_data: &'a GenData<'a>,
     /// Reads the block on the Rust side.
     pub rust_read: RustRead<'a>,
     /// The configuration and the ops of a case (the data is `None` when the read failed).
-    pub gen_case: &'a dyn Fn(&mut Gen, &Option<ModuleDataKind>, usize, &[String]) -> (Vec<u32>, Vec<[u32; 5]>),
-    pub rust_run: &'a dyn Fn(Ctx, ModuleDataKind, &[u32], &[[u32; 5]]) -> RunOut,
-    pub cpp_run: &'a dyn Fn(&CString, &CString, &[u32], &[[u32; 5]]) -> CppOut,
+    pub gen_case: &'a GenCase<'a>,
+    pub rust_run: &'a RustRun<'a>,
+    pub cpp_run: &'a CppRun<'a>,
     pub decode: &'a dyn Fn(&[u8], usize) -> Vec<String>,
     /// The names whose keys are compared afterwards (empty: not compared).
     pub probe: &'a [&'a str],

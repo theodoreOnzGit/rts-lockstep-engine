@@ -3110,7 +3110,8 @@ mod differential {
             // Update batch N (differential/l9_flammable_n.inc): the `static` of a function-local name key loses its `static` (the test resets the name key
             // generator for every case, and a key cached by an earlier case would name another string, as in special power batch H). Asserted to apply once;
             // the edited copy is in mod_gen/ (…_nokey.cpp) and the driver includes that.
-            for (dir, file, decl) in [("Update", "FlammableUpdate.cpp", "static const NameKeyType key_FireSpreadUpdate = NAMEKEY(\"FireSpreadUpdate\");")] {
+            {
+                let (dir, file, decl) = ("Update", "FlammableUpdate.cpp", "static const NameKeyType key_FireSpreadUpdate = NAMEKEY(\"FireSpreadUpdate\");");
                 let path = up.join("GameEngine/Source/GameLogic/Object").join(dir).join(file);
                 let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {file}: {e}"));
                 assert_eq!(text.matches(decl).count(), 1, "{file}: the static name key must occur once");

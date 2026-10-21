@@ -208,7 +208,7 @@ impl PartialEq for DynamicShroudClearingRangeUpdate {
 
 /// `(Int)x` for a float: undefined outside the range of `Int`.
 fn float_to_int(x: f32) -> Result<i32, IniError> {
-    if x >= -2_147_483_648.0 && x < 2_147_483_648.0 {
+    if (-2_147_483_648.0..2_147_483_648.0).contains(&x) {
         Ok(x as i32)
     } else {
         Err(IniError::undefined(Undefined::FloatToIntOutOfRange))

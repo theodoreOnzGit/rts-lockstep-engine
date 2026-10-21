@@ -352,8 +352,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     };
     set_player(&mut w, cfg[1]);
     let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"DynamicShroudClearingRangeUpdate", b"ModuleTag_Dsc", &data).unwrap().unwrap();
-    let mut values = ObjectTemplateValues::default();
-    values.shroud_clearing_range = f32::from_bits(cfg[2]);
+    let values = ObjectTemplateValues { shroud_clearing_range: f32::from_bits(cfg[2]), ..Default::default() };
     let template = Arc::new(ThingTemplate::from_object_values(&values));
     let events_before = w.events.events().len();
     let me = w.new_object(NewObject { template, status: Default::default(), team: Some(TEAM), modules: vec![m] }).unwrap();
