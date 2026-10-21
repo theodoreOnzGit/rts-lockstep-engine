@@ -256,11 +256,11 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 3 => w.objects.find_mut(me).unwrap().team = if o[1] != 0 { TEAM0 + o[1] - 1 } else { 0 },
                 4 => w.set_frame(o[1]),
                 5 => {
-                    for k in 0..3 {
+                    for k in 0..3i32 {
                         if o[1] >> k & 1 != 0 {
-                            w.cuts.unplayable_players.remove(&(k as i32));
+                            w.cuts.unplayable_players.remove(&k);
                         } else {
-                            w.cuts.unplayable_players.insert(k as i32);
+                            w.cuts.unplayable_players.insert(k);
                         }
                     }
                 }

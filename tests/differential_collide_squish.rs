@@ -234,8 +234,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     let template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
     let me = w.new_object(NewObject { template, status: Default::default(), team: if cfg[3] != 0 { Some(TEAM_A) } else { None }, modules }).unwrap();
     assert_eq!(me, 1);
-    let mut values = ObjectTemplateValues::default();
-    values.crusher_level = cfg[5] as u8;
+    let values = ObjectTemplateValues { crusher_level: cfg[5] as u8, ..Default::default() };
     let template = Arc::new(ThingTemplate::from_object_values(&values));
     let mut cmods = Vec::new();
     let mut phys = NewModule::plain(b"PhysicsBehavior", b"ModuleTag_Physics");

@@ -83,7 +83,7 @@ impl SquishCollide {
     pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
             ModuleCall::OnCollide { other, .. } => {
-                lend_clone(world, me, self, |m| UpdateBody::SquishCollide(m), |b| match b {
+                lend_clone(world, me, self, UpdateBody::SquishCollide, |b| match b {
                     UpdateBody::SquishCollide(m) => Some(m),
                     _ => None,
                 }, |w, m| m.on_collide(w, me, other));
