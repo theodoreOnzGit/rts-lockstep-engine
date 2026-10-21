@@ -154,6 +154,10 @@ pub enum UpdateBody {
     SpecialPowerCompletionDie(crate::logic::modules::special_power_completion_die::SpecialPowerCompletionDie),
     /// `EjectPilotDie`.
     EjectPilotDie(crate::logic::modules::eject_pilot_die::EjectPilotDie),
+    /// `PowerPlantUpdate`.
+    PowerPlantUpdate(crate::logic::modules::power_plant_update::PowerPlantUpdate),
+    /// `RadarUpdate`.
+    RadarUpdate(crate::logic::modules::radar_update::RadarUpdate),
     // --- end p1w11-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -219,6 +223,8 @@ impl UpdateBody {
             UpdateBody::DamDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SpecialPowerCompletionDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::EjectPilotDie(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::PowerPlantUpdate(m) => m.world_update(world, me),
+            UpdateBody::RadarUpdate(m) => m.world_update(world, me),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -284,6 +290,8 @@ impl UpdateBody {
             UpdateBody::DamDie(m) => m.module_call(world, me, call),
             UpdateBody::SpecialPowerCompletionDie(m) => m.module_call(world, me, call),
             UpdateBody::EjectPilotDie(m) => m.module_call(world, me, call),
+            UpdateBody::PowerPlantUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::RadarUpdate(m) => m.module_call(world, me, call),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -353,6 +361,10 @@ impl UpdateBody {
             UpdateBody::GrantUpgradeCreate(m) => m.xfer(xfer),
 // --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
+// --- p1w11-sonnet ---
+            UpdateBody::PowerPlantUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::RadarUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+// --- end p1w11-sonnet ---
             _ => self.xfer(xfer),
         }
     }
@@ -403,6 +415,10 @@ impl UpdateBody {
             UpdateBody::GrantUpgradeCreate(m) => m.crc(xfer),
 // --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
+// --- p1w11-sonnet ---
+            UpdateBody::PowerPlantUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::RadarUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+// --- end p1w11-sonnet ---
             _ => self.crc(xfer),
         }
     }
@@ -453,6 +469,10 @@ impl UpdateBody {
             UpdateBody::GrantUpgradeCreate(m) => m.load_post_process(),
 // --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
+// --- p1w11-sonnet ---
+            UpdateBody::PowerPlantUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::RadarUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+// --- end p1w11-sonnet ---
             _ => self.load_post_process(),
         }
     }
@@ -517,6 +537,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::DamDie(m) => m.crc(xfer),
             UpdateBody::SpecialPowerCompletionDie(m) => m.crc(xfer),
             UpdateBody::EjectPilotDie(m) => m.crc(xfer),
+            UpdateBody::PowerPlantUpdate(m) => m.crc(xfer),
+            UpdateBody::RadarUpdate(m) => m.crc(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -578,6 +600,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::DamDie(m) => m.xfer(xfer),
             UpdateBody::SpecialPowerCompletionDie(m) => m.xfer(xfer),
             UpdateBody::EjectPilotDie(m) => m.xfer(xfer),
+            UpdateBody::PowerPlantUpdate(m) => m.xfer(xfer),
+            UpdateBody::RadarUpdate(m) => m.xfer(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -639,6 +663,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::DamDie(m) => m.load_post_process(),
             UpdateBody::SpecialPowerCompletionDie(m) => m.load_post_process(),
             UpdateBody::EjectPilotDie(m) => m.load_post_process(),
+            UpdateBody::PowerPlantUpdate(m) => m.load_post_process(),
+            UpdateBody::RadarUpdate(m) => m.load_post_process(),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -787,6 +813,10 @@ impl UpdateBody {
             UpdateBody::ObjectWeaponStatusHelper(m) => m.world_construct(world, me),
             UpdateBody::StatusDamageHelper(m) => m.world_construct(world, me),
             UpdateBody::TempWeaponBonusHelper(m) => m.world_construct(world, me),
+// --- p1w11-sonnet ---
+            UpdateBody::PowerPlantUpdate(m) => m.world_construct(world, me),
+            UpdateBody::RadarUpdate(m) => m.world_construct(world, me),
+// --- end p1w11-sonnet ---
             _ => {}
         }
     }

@@ -571,6 +571,16 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::eject_pilot_die::new_module_data),
             which_interfaces: Some(crate::logic::module::die_module::DieModule::get_interface_mask()),
         }),
+        "PowerPlantUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::power_plant_update::new_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        "RadarUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::radar_update::new_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
         // --- end p1w11-sonnet ---
         _ => None,
     }
@@ -600,6 +610,10 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::DeletionUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::BaseRegenerateUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::SmartBombTargetHomingUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        // --- p1w11-sonnet ---
+        Some(ModuleDataKind::PowerPlantUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::RadarUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        // --- end p1w11-sonnet ---
         _ => None,
     };
     Ok(Module::Update(crate::logic::module::update_module::UpdateModule::new(

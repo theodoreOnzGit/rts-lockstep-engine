@@ -28,6 +28,7 @@ use crate::logic::module::die_module::DieModule;
 use crate::logic::module::update_module::UpdateModule;
 use crate::logic::world::update_body::UpdateBody;
 
+pub mod update_behavior;
 pub mod upgrade_body;
 
 // --- p1l9-helpers ---
@@ -77,6 +78,8 @@ pub mod replace_object_upgrade;
 pub mod dam_die;
 pub mod special_power_completion_die;
 pub mod eject_pilot_die;
+pub mod power_plant_update;
+pub mod radar_update;
 // --- end p1w11-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -271,6 +274,14 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::EjectPilotDie(d) => Some(made(
             DieModule::get_interface_mask(),
             eject_pilot_die::EjectPilotDie::new(object, Some(d.clone())).map(UpdateBody::EjectPilotDie),
+        )),
+        ModuleDataKind::PowerPlantUpdate(d) => Some(made_update(
+            UpdateModule::get_interface_mask(),
+            power_plant_update::PowerPlantUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::PowerPlantUpdate(m))),
+        )),
+        ModuleDataKind::RadarUpdate(d) => Some(made_update(
+            UpdateModule::get_interface_mask(),
+            radar_update::RadarUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::RadarUpdate(m))),
         )),
         // --- end p1w11-sonnet ---
         _ => None,

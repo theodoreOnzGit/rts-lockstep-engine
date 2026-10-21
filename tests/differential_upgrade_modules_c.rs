@@ -54,6 +54,10 @@
 //! 358 data blocks threw on both sides; 1641 `attemptUpgrade` calls fired; effects: 917 removals, 573 `addpower`, 542 `addcost`, 507 `addradar`,
 //! 373 FX, 313 `extendrods`, 290 `extendradar`, 200 `removecost`, 191 `pause`, 183 `removepower`, 146 `removeradar`).
 //!
+//! Re-run 2026-10-21 after batch E (same numbers, 0 mismatches): `RadarUpgrade`'s `findUpdateModule("RadarUpdate")` now finds the REAL `RadarUpdate`
+//! (batch E compiles `RadarUpdate.cpp`, so the old stand-in `extendRadar` that logged is gone), on an object with the stand-in drawable; its
+//! `extendRadar()` gives the drawable `MODELCONDITION_RADAR_EXTENDING`, which the driver shows as the line `extendradar`.
+//!
 //! # Planted bugs
 //!
 //! Each runs the Rust side with `L9_PLANT=k` (`logic::modules::plant`); the case count is 3000. All 29 are caught (the first run of 655 survived:

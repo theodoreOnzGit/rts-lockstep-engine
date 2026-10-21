@@ -849,6 +849,12 @@ an object from a template name (the object creation list's host, `SpawnBehavior`
 undefined upstream; 12 planted bugs (`L9_PLANT` 701-725), all caught (711 and 721 by a C++ crash, as plant 619 of batch B). `onDie` is sent death types
 1-20 and veterancy levels 1-3 only: `1UL << (dt - 1)` is bit 31 for MSVC's 32-bit `long` (what `common::game_common` models) and bit 63 for the
 64-bit `long` of the C++ build here. The remaining dies: `CreateObjectDie`, `CreateCrateDie`, `CrushDie`, `FXListDie`, `RebuildHoleExposeDie`.
+**Layer-9 update batch E (2026-10-21, `p1w11-sonnet`).** `PowerPlantUpdate` and `RadarUpdate` (`modules/{power_plant,radar}_update.rs` over
+`modules/update_behavior.rs`), wired as object modules, with `tests/differential_update_modules_e.rs` against the two unchanged `.cpp` files
+(`differential/l9_updates_e.inc`): 9,000 cases, 8,795 data reads, 78,410 dump lines (56,105 ops), 0 mismatches, 205 excluded as undefined upstream;
+8 planted bugs (`L9_PLANT` 731-738), all caught. `RadarUpdate::extendRadar` keeps upstream's `UnsignedInt + Real` float sum. Left among the
+update modules: `ProneUpdate` (its data derives from `ModuleData`, not `UpdateModuleData`: upstream reads out of bounds), `FloatUpdate` (needs the
+drawable's instance matrix), `EnemyNearUpdate` (needs an AI query result), `WeaponBonusUpdate` (needs partition iteration with filters).
 **Layer-9 helper and die batch verified (2026-10-21, `p1w10-sonnet`).** ~~The helpers and dies of `p1l9-helpers` (`ObjectHelper`,
 `ObjectSMCHelper`, `ObjectRepulsorHelper`, `ObjectWeaponStatusHelper`, `StatusDamageHelper`, `TempWeaponBonusHelper`,
 `DestroyDie`, `KeepObjectDie`, `UpgradeDie`) are pure functions returning effects.~~ **CORRECTED 2026-10-21** - the drafts were

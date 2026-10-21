@@ -213,6 +213,8 @@ pub enum Undefined {
     /// `throw` upstream, which nothing catches), or the world refused the object; the new object is then `NULL` and
     /// `replacementObject->setTransformMatrix` dereferences it.
     NewObjectFailed,
+    /// `RadarUpdate::extendRadar`: `UnsignedInt = now + Real` is a conversion of a float outside the range of `unsigned int` (undefined in C++).
+    FloatToUnsignedOutOfRange,
     // --- end p1w11-sonnet ---
     // --- p1l9-upgrades ---
     /// `ArmorUpgrade`: a triggered chemical-suits upgrade on an object with no

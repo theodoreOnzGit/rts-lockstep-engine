@@ -26,7 +26,8 @@ std::string kindStr(const KindOfMaskType &m)
 }
 
 int g_hasRadar = 0;
-char g_fakeRadarBytes[64];
+UpdateModule *g_radarMod = 0;
+Drawable g_radarDrawable;
 int g_nameKeyRadar = -1;
 
 }  // namespace
@@ -37,12 +38,12 @@ void Player::addPowerBonus(Object *obj) { ulog("addpower %d", (int)m_idx); }
 void Player::removePowerBonus(Object *obj) { ulog("removepower %d", (int)m_idx); }
 void Player::addRadar(Bool disableProof) { ulog("addradar %d %d", (int)m_idx, (int)disableProof); }
 void Player::removeRadar(Bool disableProof) { ulog("removeradar %d %d", (int)m_idx, (int)disableProof); }
-void RadarUpdate::extendRadar(void) { ulog("extendradar"); }
-/* the object's radar update: a module the test gives the object (g_hasRadar), found by the key of its name; RadarUpgrade only calls the
-** non-virtual extendRadar() on what it finds, so the module is a block of bytes */
+/* the object's radar update: the REAL RadarUpdate (batch E compiles RadarUpdate.cpp), which the test gives the object (g_radarMod) and finds by the key of
+** its name. Its extendRadar() gives the object's drawable MODELCONDITION_RADAR_EXTENDING: the drawable is the stand-in that logs "mc <flag>", and the driver
+** shows that line as "extendradar" (what the Rust probe module logs) */
 UpdateModule *Object::findUpdateModule(NameKeyType key) const
 {
-	if (g_hasRadar && key == TheNameKeyGenerator->nameToKey("RadarUpdate")) return (UpdateModule *)g_fakeRadarBytes;
+	if (g_radarMod && key == TheNameKeyGenerator->nameToKey("RadarUpdate")) return g_radarMod;
 	return 0;
 }
 
@@ -167,6 +168,13 @@ int ref_l9upc_run(int kind, const char *filename, int ctrl, const unsigned *play
 	obj->m_objectUpgradesCompleted = maskFromU32<UpgradeMaskType>(UPGRADE_MAX_COUNT, obj_mask);
 	obj->m_disabled = cfg[0] != 0;
 	g_hasRadar = (int)cfg[6];
+	GameLogic radarGl;
+	RadarUpdateModuleData radarData;
+	if (g_hasRadar) {
+		TheGameLogic = &radarGl;
+		obj->m_drawable = &g_radarDrawable;
+		g_radarMod = new RadarUpdate(obj, &radarData);
+	}
 	ModuleData mdata;
 	UpcBehavior *behaviors[4] = { 0, 0, 0, 0 };
 	BehaviorModule *list[5];
@@ -224,7 +232,12 @@ int ref_l9upc_run(int kind, const char *filename, int ctrl, const unsigned *play
 		std::vector<std::string> log;
 		for (size_t j = 0; j < g_events.size(); ++j) {
 			const Event &e = g_events[j];
-			if (e.kind == 100) log.push_back(g_ulog[(size_t)e.p]);
+			if (e.kind == 100) {
+				/* the radar update's drawable call, as the Rust probe logs the call itself */
+				char radarMc[32];
+				sprintf(radarMc, "mc %d", (int)MODELCONDITION_RADAR_EXTENDING);
+				log.push_back(g_hasRadar && g_ulog[(size_t)e.p] == radarMc ? std::string("extendradar") : g_ulog[(size_t)e.p]);
+			}
 			else if (e.kind == 1) { char b[32]; sprintf(b, "fx%d", fxId((const FXList *)e.p)); log.push_back(b); }
 			else if (e.kind == 2) log.push_back(std::string("remove ") + (e.p ? ((const UpgradeTemplate *)e.p)->getUpgradeName().str() : "(null)"));
 		}
@@ -234,6 +247,10 @@ int ref_l9upc_run(int kind, const char *filename, int ctrl, const unsigned *play
 	*len = finish(buf, cap);
 	obj->m_behaviors = 0;
 	g_hasRadar = 0;
+	delete g_radarMod;
+	g_radarMod = 0;
+	obj->m_drawable = 0;
+	TheGameLogic = 0;
 	delete m;
 	delete d;
 	for (unsigned i = 0; i < nmods; ++i) delete behaviors[i];

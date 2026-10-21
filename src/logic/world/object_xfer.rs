@@ -590,6 +590,17 @@ impl World {
         Ok(new)
     }
 
+    // --- p1w11-sonnet ---
+    /// `xfer->xferSnapshot(module)` for one module of an object, as the object's xfer does it: the scheduling half, the base state and the behaviour,
+    /// checked out of the object for the call (a save, a load or a CRC, by the xfer's mode). The module tests use it to run one module's xfer.
+    pub fn xfer_module_slot(&mut self, id: ObjectId, idx: usize, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let mut snap = self.take_slot_snapshot(id, idx);
+        let r = xfer.xfer_snapshot(&mut snap);
+        self.put_slot_snapshot(id, idx, snap);
+        r
+    }
+    // --- end p1w11-sonnet ---
+
     fn take_slot_snapshot(&mut self, id: ObjectId, idx: usize) -> SlotSnapshot {
         let o = self.objects.find_mut(id).expect("kept");
         let slot = &mut o.modules[idx];

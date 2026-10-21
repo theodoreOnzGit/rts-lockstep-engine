@@ -90,6 +90,14 @@ impl UpdateHost for World {
     }
 
     fn awaken_update_module(&mut self, frame: u32) {
+        // --- p1w11-sonnet --- (the wake call as a line of the trace, for the update-module differential tests)
+        if self.cuts.probe_effect_trace {
+            let index = self.running_module().map_or(-1, |h| i32::from(h.index));
+            if let Some(t) = &mut self.cuts.trace {
+                t.push(format!("awaken {index} {frame}"));
+            }
+        }
+        // --- end p1w11-sonnet ---
         let Some(u) = self.running_module().and_then(|h| self.update_handle_of_module(h)) else { return };
         // a defect of the sleepy list (an illegal index) is the list's own check; the module has nothing to do about it
         let _ = World::awaken_update_module(self, u.object, u, frame);

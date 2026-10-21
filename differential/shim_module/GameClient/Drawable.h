@@ -32,6 +32,9 @@ enum TintStatus
 class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModelConditionState(ModelConditionFlagType a);
 	void setTintStatus(TintStatus statusBits); void clearTintStatus(TintStatus statusBits);
 	/* SubObjectsUpgrade (batch B) */
-	void showSubObject(const AsciiString &name, Bool show); void updateSubObjects(); };
+	void showSubObject(const AsciiString &name, Bool show); void updateSubObjects();
+	/* --- p1w11-sonnet --- (PowerPlantUpdate, RadarUpdate: l9_updates_e.inc) */
+	void clearModelConditionFlags(const ModelConditionFlags &clr); void clearAndSetModelConditionState(ModelConditionFlagType clr, ModelConditionFlagType set);
+	/* --- end p1w11-sonnet --- */ };
 /* --- end p1w10-sonnet --- */
 #endif

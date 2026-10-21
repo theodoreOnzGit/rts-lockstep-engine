@@ -543,7 +543,7 @@ fn rust_run(kind: usize, mut ctx: Ctx, data: ModuleDataKind, cfg: &mut [u32; 9],
             (Arc::new(ThingTemplate::from_object_values(&values)), Vec::new())
         };
         let id = w.new_object(NewObject { template, status: ObjectStatusMaskType::default(), team: Some(1), modules }).unwrap();
-        if i >= 1 && i <= 4 {
+        if (1..=4).contains(&i) {
             let bits = cfg[4] >> (4 * (i - 1)) & 15;
             let o = w.objects.find_mut(id).unwrap();
             for b in 0..4 {
@@ -584,7 +584,7 @@ fn rust_run(kind: usize, mut ctx: Ctx, data: ModuleDataKind, cfg: &mut [u32; 9],
             1 => {
                 w.module_call(me, idx, ModuleCall::SetCreator { creator: o[1] as _ });
             }
-            2 | 3 | 4 => {
+            2..=4 => {
                 let how = o[0] - 2;
                 let body = w.objects.find_mut(me).unwrap().modules[idx as usize].body.as_mut().expect("the module's body");
                 let r = run_xfer(body, how, &saved);
@@ -641,7 +641,7 @@ fn rust_run(kind: usize, mut ctx: Ctx, data: ModuleDataKind, cfg: &mut [u32; 9],
                         Some(p) => format!("{},{},{}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits()),
                         None => "-".to_string(),
                     };
-                    log.push(format!("audio {} {pos} {} {}", String::from_utf8_lossy(&name), player_index.unwrap_or(-1), object_id as i32));
+                    log.push(format!("audio {} {pos} {} {}", String::from_utf8_lossy(&name), player_index.unwrap_or(-1), { object_id }));
                 }
             } else if let Some(r) = t.strip_prefix("dam cleardisabled ") {
                 log.push(format!("cleardisabled {r}"));

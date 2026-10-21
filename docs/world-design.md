@@ -444,6 +444,15 @@ kept as names and looked up in `world.statics` when the die runs (`special_power
 event (`ScriptNotifyOfCompletedSpecialPower`, `OclCreateWithSecondary`, `AudioAddEvent`); an object creation list's new object is not returned
 yet (`CreateObjectDie` needs it: the host for `OclCreate` is layer 12's).
 
+**Update batch E (`p1w11-sonnet`, 2026-10-21).** `modules/update_behavior.rs` gives the update modules what `die_body.rs` gives the dies:
+`UpdateBehavior` (the `UpdateModule` base, `update`, the constructor's world half `construct`, the fields `xfer` writes, `other_call`) and the
+free functions the module types delegate to. `world_update` lends the module to its slot for the duration of `update()` (an update's effects can
+reach its own object's modules, this one included) and runs it as the update module `in_update_module` names, so the host calls (`setWakeFrame`
+-> `awaken_update_module`) find it; the lend compares the module before and after and keeps the change `update()` made or the change a nested call
+made to the lent copy. The module's state lives in the object's `behaviors` slot (its `UpdateModule` base is the scheduler's), and a module's xfer
+runs over that live base through `World::xfer_module_slot`, as the object's own xfer does. `ExtendRods` and `ExtendRadar` are module calls: the
+upgrades send them to the modules of their object that answer them.
+
 <!-- --- p1w6-object --- -->
 ## Object (layer 8, wave 6)
 
