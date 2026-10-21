@@ -118,6 +118,16 @@ pub enum CutCall {
     /// no list makes nothing (upstream's pointer was `NULL`).
     OclCreate { object: ObjectId, ocl: Vec<u8> },
     // --- end p1w10-sonnet ---
+    // --- p1w11-sonnet ---
+    /// `player->addKindOfProductionCostChange(kindOf, percent)` (`CostModifierUpgrade`).
+    PlayerAddKindOfProductionCostChange { player: PlayerIndex, kind_of: crate::common::kind_of::KindOfMaskType, percent: f32 },
+    /// `player->removeKindOfProductionCostChange(kindOf, percent)` (`CostModifierUpgrade`).
+    PlayerRemoveKindOfProductionCostChange { player: PlayerIndex, kind_of: crate::common::kind_of::KindOfMaskType, percent: f32 },
+    /// `player->addPowerBonus(obj)` (`PowerPlantUpgrade`): `m_energy.addPowerBonus(obj)`.
+    PlayerAddPowerBonus { player: PlayerIndex, object: ObjectId },
+    /// `player->removePowerBonus(obj)` (`PowerPlantUpgrade`).
+    PlayerRemovePowerBonus { player: PlayerIndex, object: ObjectId },
+    // --- end p1w11-sonnet ---
     // ---- Team ----
     /// `team->notifyTeamOfObjectDeath()`.
     TeamNotifyTeamOfObjectDeath { team: TeamId },

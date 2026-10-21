@@ -335,6 +335,16 @@ pub enum ModuleDataKind {
     /// `ObjectCreationUpgradeModuleData`.
     ObjectCreationUpgrade(Arc<crate::logic::modules::object_creation_upgrade::ObjectCreationUpgradeModuleData>),
     // --- end p1w10-sonnet ---
+    // --- p1w11-sonnet ---
+    /// `CostModifierUpgradeModuleData`.
+    CostModifierUpgrade(Arc<crate::logic::modules::cost_modifier_upgrade::CostModifierUpgradeModuleData>),
+    /// `PowerPlantUpgradeModuleData`.
+    PowerPlantUpgrade(Arc<crate::logic::modules::power_plant_upgrade::PowerPlantUpgradeModuleData>),
+    /// `RadarUpgradeModuleData`.
+    RadarUpgrade(Arc<crate::logic::modules::radar_upgrade::RadarUpgradeModuleData>),
+    /// `UnpauseSpecialPowerUpgradeModuleData`.
+    UnpauseSpecialPowerUpgrade(Arc<crate::logic::modules::unpause_special_power_upgrade::UnpauseSpecialPowerUpgradeModuleData>),
+    // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
     /// `GrantUpgradeCreateModuleData`.
@@ -390,6 +400,12 @@ impl ModuleDataKind {
             ModuleDataKind::SubObjectsUpgrade(d) => &d.upgrade.behavior.module_data,
             ModuleDataKind::ObjectCreationUpgrade(d) => &d.upgrade.behavior.module_data,
             // --- end p1w10-sonnet ---
+            // --- p1w11-sonnet ---
+            ModuleDataKind::CostModifierUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::PowerPlantUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::RadarUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::UnpauseSpecialPowerUpgrade(d) => &d.upgrade.behavior.module_data,
+            // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
             ModuleDataKind::GrantUpgradeCreate(d) => &d.create.behavior.module_data,
@@ -493,6 +509,24 @@ impl ModuleDataKind {
                 None => false,
             },
             // --- end p1w10-sonnet ---
+            // --- p1w11-sonnet ---
+            ModuleDataKind::CostModifierUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::PowerPlantUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::RadarUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::UnpauseSpecialPowerUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
             ModuleDataKind::GrantUpgradeCreate(d) => match Arc::get_mut(d) {

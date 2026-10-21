@@ -137,6 +137,16 @@ pub enum UpdateBody {
 // --- end p1w10-sonnet (update modules) ---
 // --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
+    // --- p1w11-sonnet ---
+    /// `CostModifierUpgrade`.
+    CostModifierUpgrade(crate::logic::modules::cost_modifier_upgrade::CostModifierUpgrade),
+    /// `PowerPlantUpgrade`.
+    PowerPlantUpgrade(crate::logic::modules::power_plant_upgrade::PowerPlantUpgrade),
+    /// `RadarUpgrade`.
+    RadarUpgrade(crate::logic::modules::radar_upgrade::RadarUpgrade),
+    /// `UnpauseSpecialPowerUpgrade`.
+    UnpauseSpecialPowerUpgrade(crate::logic::modules::unpause_special_power_upgrade::UnpauseSpecialPowerUpgrade),
+    // --- end p1w11-sonnet ---
     // New variants go here, one per translated module.
 }
 
@@ -192,6 +202,12 @@ impl UpdateBody {
             UpdateBody::GrantUpgradeCreate(_) => UPDATE_SLEEP_FOREVER,
 // --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
+// --- p1w11-sonnet ---
+            UpdateBody::CostModifierUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::PowerPlantUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::RadarUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::UnpauseSpecialPowerUpgrade(_) => UPDATE_SLEEP_FOREVER,
+// --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -247,6 +263,12 @@ impl UpdateBody {
             UpdateBody::GrantUpgradeCreate(m) => m.module_call(world, me, call),
 // --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
+// --- p1w11-sonnet ---
+            UpdateBody::CostModifierUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::PowerPlantUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::RadarUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::UnpauseSpecialPowerUpgrade(m) => m.module_call(world, me, call),
+// --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -470,6 +492,12 @@ impl Snapshot for UpdateBody {
             UpdateBody::GrantUpgradeCreate(m) => m.crc(xfer),
 // --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
+// --- p1w11-sonnet ---
+            UpdateBody::CostModifierUpgrade(m) => m.crc(xfer),
+            UpdateBody::PowerPlantUpgrade(m) => m.crc(xfer),
+            UpdateBody::RadarUpgrade(m) => m.crc(xfer),
+            UpdateBody::UnpauseSpecialPowerUpgrade(m) => m.crc(xfer),
+// --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -521,6 +549,12 @@ impl Snapshot for UpdateBody {
             UpdateBody::GrantUpgradeCreate(m) => m.xfer(xfer),
 // --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
+// --- p1w11-sonnet ---
+            UpdateBody::CostModifierUpgrade(m) => m.xfer(xfer),
+            UpdateBody::PowerPlantUpgrade(m) => m.xfer(xfer),
+            UpdateBody::RadarUpgrade(m) => m.xfer(xfer),
+            UpdateBody::UnpauseSpecialPowerUpgrade(m) => m.xfer(xfer),
+// --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -572,6 +606,12 @@ impl Snapshot for UpdateBody {
             UpdateBody::GrantUpgradeCreate(m) => m.load_post_process(),
 // --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
+// --- p1w11-sonnet ---
+            UpdateBody::CostModifierUpgrade(m) => m.load_post_process(),
+            UpdateBody::PowerPlantUpgrade(m) => m.load_post_process(),
+            UpdateBody::RadarUpgrade(m) => m.load_post_process(),
+            UpdateBody::UnpauseSpecialPowerUpgrade(m) => m.load_post_process(),
+// --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
     }

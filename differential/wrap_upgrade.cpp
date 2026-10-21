@@ -462,3 +462,9 @@ int ref_mask_op(int which, int op, const unsigned long long *a, const unsigned l
 }
 
 } /* extern "C" */
+
+/* --- p1w11-sonnet --- the raw template pointer findSpecialPowerTemplate(name) returns, and a template's id, for the module unit's
+** UnpauseSpecialPowerUpgrade fixture (differential/l9_upgrades_c.inc), which parses its template through the real INI */
+extern "C" const void *ref_sp_find_raw(const char *name) { return TheSpecialPowerStore->findSpecialPowerTemplate(AsciiString(name)); }
+extern "C" unsigned ref_sp_raw_id(const void *t) { return t ? ((const SpecialPowerTemplate *)t)->getID() : 0; }
+/* --- end p1w11-sonnet --- */

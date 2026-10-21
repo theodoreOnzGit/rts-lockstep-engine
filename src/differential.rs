@@ -1234,3 +1234,24 @@ extern "C" {
     ) -> c_int;
 }
 // --- end p1w10-sonnet ---
+// --- p1w11-sonnet ---
+extern "C" {
+    // the upgrade modules of batch C on stand-ins (l9_upgrades_c.inc in wrap_module.cpp)
+    pub fn ref_l9upc_run(
+        kind: c_int,
+        filename: *const c_char,
+        ctrl: c_int,
+        player_mask: *const c_uint,
+        obj_mask: *const c_uint,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+}
+// --- end p1w11-sonnet ---

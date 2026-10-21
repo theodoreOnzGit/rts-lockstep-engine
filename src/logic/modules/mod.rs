@@ -67,6 +67,12 @@ pub mod sub_objects_upgrade;
 pub mod object_creation_upgrade;
 // --- end p1w10-sonnet ---
 
+// --- p1w11-sonnet ---
+pub mod cost_modifier_upgrade;
+pub mod power_plant_upgrade;
+pub mod radar_upgrade;
+pub mod unpause_special_power_upgrade;
+// --- end p1w11-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
 /// `TheModuleFactory->newModule(thing, name, data, type)`), with its tag.
@@ -228,6 +234,24 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
             _ => None,
         },
         // --- end p1w10-sonnet ---
+        // --- p1w11-sonnet ---
+        ModuleDataKind::CostModifierUpgrade(d) => Some(made(
+            cost_modifier_upgrade::CostModifierUpgrade::get_interface_mask(),
+            cost_modifier_upgrade::CostModifierUpgrade::new(object, Some(d.clone())).map(UpdateBody::CostModifierUpgrade),
+        )),
+        ModuleDataKind::PowerPlantUpgrade(d) => Some(made(
+            power_plant_upgrade::PowerPlantUpgrade::get_interface_mask(),
+            power_plant_upgrade::PowerPlantUpgrade::new(object, Some(d.clone())).map(UpdateBody::PowerPlantUpgrade),
+        )),
+        ModuleDataKind::RadarUpgrade(d) => Some(made(
+            radar_upgrade::RadarUpgrade::get_interface_mask(),
+            radar_upgrade::RadarUpgrade::new(object, Some(d.clone())).map(UpdateBody::RadarUpgrade),
+        )),
+        ModuleDataKind::UnpauseSpecialPowerUpgrade(d) => Some(made(
+            unpause_special_power_upgrade::UnpauseSpecialPowerUpgrade::get_interface_mask(),
+            unpause_special_power_upgrade::UnpauseSpecialPowerUpgrade::new(object, Some(d.clone())).map(UpdateBody::UnpauseSpecialPowerUpgrade),
+        )),
+        // --- end p1w11-sonnet ---
         _ => None,
     }
 }

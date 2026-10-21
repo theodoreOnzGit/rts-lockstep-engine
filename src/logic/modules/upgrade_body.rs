@@ -81,6 +81,16 @@ pub trait UpgradeBehavior: Clone + Sized {
     fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError>;
     /// `isSubObjectsUpgrade()` (pure virtual upstream).
     fn is_sub_objects_upgrade(&self) -> bool;
+    // --- p1w11-sonnet ---
+    /// `onDelete()` (`Object::onDestroy`'s loop): empty for a module that does not override it.
+    fn on_delete(&mut self, _world: &mut World, _me: ModuleHandle) {}
+    /// `onCapture(oldOwner, newOwner)` (`Object::onCapture`'s loop), the owners as player indices (a negative index is upstream's
+    /// `NULL`): empty for a module that does not override it.
+    fn on_capture(&mut self, _world: &mut World, _me: ModuleHandle, _old_owner: i32, _new_owner: i32) {}
+    /// The part of `loadPostProcess()` that needs the world (see [`ModuleCall::LoadPostProcess`]): empty for a module that has none. The
+    /// base's `UpgradeModule::loadPostProcess()` is the world-free `Snapshot::load_post_process`, which runs first.
+    fn load_post_process_world(&mut self, _world: &mut World, _me: ModuleHandle) {}
+    // --- end p1w11-sonnet ---
     /// The module as the variant of [`UpdateBody`] it is.
     fn into_body(self) -> UpdateBody;
     /// The module back out of its variant; `None` for another variant.
@@ -121,6 +131,20 @@ pub fn upgrade_module_call<M: UpgradeBehavior>(m: &mut M, world: &mut World, me:
             }
             ModuleReply::Done
         }
+        // --- p1w11-sonnet ---
+        ModuleCall::OnDelete => {
+            m.on_delete(world, me);
+            ModuleReply::Done
+        }
+        ModuleCall::OnCapture { old_owner, new_owner } => {
+            m.on_capture(world, me, old_owner, new_owner);
+            ModuleReply::Done
+        }
+        ModuleCall::LoadPostProcess => {
+            m.load_post_process_world(world, me);
+            ModuleReply::Done
+        }
+        // --- end p1w11-sonnet ---
         _ => ModuleReply::Unhandled,
     }
 }

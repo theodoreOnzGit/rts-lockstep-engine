@@ -92,7 +92,22 @@ WEAK ArmorStore *TheArmorStore = 0;
 ObjectCreationListStore *TheObjectCreationListStore = 0;
 WeaponStore *TheWeaponStore = 0;
 WEAK const DamageFX *DamageFXStore::findDamageFX(AsciiString) const { abort(); }
-const SpecialPowerTemplate *SpecialPowerStore::findSpecialPowerTemplate(AsciiString) const { abort(); }
+/* --- p1w11-sonnet --- UnpauseSpecialPowerUpgrade (differential/l9_upgrades_c.inc) parses a SpecialPowerTemplate field through the real
+** INI::parseSpecialPowerTemplate: the module unit binds the lookup to the real store of wrap_upgrade.cpp while it reads the data, and
+** unbinds it afterwards; with no hook bound the lookup aborts, as before. */
+static const void *(*g_spFindHook)(const char *) = 0;
+extern "C" void ref_ini_sp_bind(const void *(*hook)(const char *))
+{
+	static SpecialPowerStore dummy;
+	g_spFindHook = hook;
+	TheSpecialPowerStore = hook ? &dummy : 0;
+}
+const SpecialPowerTemplate *SpecialPowerStore::findSpecialPowerTemplate(AsciiString name) const
+{
+	if (!g_spFindHook) abort();
+	return (const SpecialPowerTemplate *)g_spFindHook(name.str());
+}
+/* --- end p1w11-sonnet --- */
 const ThingTemplate *ThingFactory::findTemplate(const AsciiString &) { abort(); }
 Anim2DTemplate *Anim2DCollection::findTemplate(const AsciiString &) { abort(); }
 WEAK const FXList *FXListStore::findFXList(const char *) const { abort(); }

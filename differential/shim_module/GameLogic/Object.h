@@ -50,10 +50,15 @@ class SpawnBehaviorInterface;
 class Drawable;
 class ExperienceTracker;
 /* --- end p1w10-sonnet --- */
+/* --- p1w11-sonnet --- */
+#include "Common/NameKeyGenerator.h"
+class BehaviorModule;
+class UpdateModule;
+/* --- end p1w11-sonnet --- */
 class Object : public Thing
 {
 public:
-	Object() : m_level(LEVEL_REGULAR), m_player(0), m_body(0), m_drawable(0), m_xp(0), m_weaponBonusCondition(0), m_shroudRange(0), m_producerID((ObjectID)0), m_ai(0), m_contain(0), m_spawn(0) { m_weaponSetFlags[0] = m_weaponSetFlags[1] = 0; }
+	Object() : m_level(LEVEL_REGULAR), m_player(0), m_body(0), m_drawable(0), m_xp(0), m_weaponBonusCondition(0), m_shroudRange(0), m_producerID((ObjectID)0), m_ai(0), m_contain(0), m_spawn(0), m_disabled(false), m_behaviors(0) { m_weaponSetFlags[0] = m_weaponSetFlags[1] = 0; }
 	VeterancyLevel getVeterancyLevel() const { return m_level; }
 	const ObjectStatusMaskType &getStatusBits() const { return m_status; }
 	void removeUpgrade(const UpgradeTemplate *t);
@@ -107,6 +112,14 @@ public:
 	SpawnBehaviorInterface *m_spawn;
 	KindOfMaskType m_kindOf;
 	/* --- end p1w10-sonnet --- */
+	/* --- p1w11-sonnet --- (upgrade batch C: what PowerPlantUpgrade, RadarUpgrade and UnpauseSpecialPowerUpgrade call on their object; the
+	** behaviour modules are the test's, a null-terminated array as upstream's m_behaviors) */
+	Bool isDisabled() const { return m_disabled; }
+	BehaviorModule **getBehaviorModules() const { return m_behaviors; }
+	UpdateModule *findUpdateModule(NameKeyType key) const;   /* defined in l9_upgrades_c.inc */
+	Bool m_disabled;
+	BehaviorModule **m_behaviors;
+	/* --- end p1w11-sonnet --- */
 protected:
 	virtual Object *asObjectMeth() { return this; }
 	virtual const Object *asObjectMeth() const { return this; }

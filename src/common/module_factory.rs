@@ -530,6 +530,28 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             which_interfaces: Some(crate::logic::module::die_module::DieModule::get_interface_mask()),
         }),
         // --- end p1w10-sonnet ---
+        // --- p1w11-sonnet ---
+        "CostModifierUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::cost_modifier_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::cost_modifier_upgrade::CostModifierUpgrade::get_interface_mask()),
+        }),
+        "PowerPlantUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::power_plant_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::power_plant_upgrade::PowerPlantUpgrade::get_interface_mask()),
+        }),
+        "RadarUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::radar_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::radar_upgrade::RadarUpgrade::get_interface_mask()),
+        }),
+        "UnpauseSpecialPowerUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::unpause_special_power_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::unpause_special_power_upgrade::UnpauseSpecialPowerUpgrade::get_interface_mask()),
+        }),
+        // --- end p1w11-sonnet ---
         _ => None,
     }
 }
@@ -621,6 +643,12 @@ fn new_upgrade_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mo
         Some(ModuleDataKind::SubObjectsUpgrade(d)) => Some(d.upgrade.clone()),
         Some(ModuleDataKind::ObjectCreationUpgrade(d)) => Some(d.upgrade.clone()),
         // --- end p1w10-sonnet ---
+        // --- p1w11-sonnet ---
+        Some(ModuleDataKind::CostModifierUpgrade(d)) => Some(d.upgrade.clone()),
+        Some(ModuleDataKind::PowerPlantUpgrade(d)) => Some(d.upgrade.clone()),
+        Some(ModuleDataKind::RadarUpgrade(d)) => Some(d.upgrade.clone()),
+        Some(ModuleDataKind::UnpauseSpecialPowerUpgrade(d)) => Some(d.upgrade.clone()),
+        // --- end p1w11-sonnet ---
         _ => None,
     };
     Ok(Module::Upgrade(crate::logic::module::upgrade_module::UpgradeModule::new(object, base)?))

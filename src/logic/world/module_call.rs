@@ -284,6 +284,21 @@ pub enum ModuleCall {
     /// `SmartBombTargetHomingUpdate::SetTargetPosition(pos)` (`DeliverPayloadAIUpdate`).
     SetSmartBombTargetPosition(Coord3D),
     // --- end p1w10-sonnet ---
+    // --- p1w11-sonnet ---
+    /// `PowerPlantUpdateInterface::extendRods(extend)` (`PowerPlantUpgrade::upgradeImplementation` asks every behaviour module of
+    /// its object for `getPowerPlantUpdateInterface()`; a module without one answers [`ModuleReply::Unhandled`]).
+    ExtendRods { extend: bool },
+    /// `RadarUpdate::extendRadar()` (`RadarUpgrade::upgradeImplementation`, on the module `findUpdateModule("RadarUpdate")` finds).
+    ExtendRadar,
+    /// `loadPostProcess()` of a module that needs the world to run it (`PowerPlantUpgrade` re-adds its power bonus to the player on
+    /// load): the world-level post-load pass of `docs/world-design.md` ("A World-aware loadPostProcess") sends it to the modules of an
+    /// object in module order, after the world-free `Snapshot::load_post_process` of every module has run.
+    LoadPostProcess,
+    /// `SpecialPowerModuleInterface::getSpecialPowerTemplate()` as a template id (`SpecialPowerTemplate::getID`): replies
+    /// [`ModuleReply::Int`] with the id, or anything else when the pointer is `NULL` (`UnpauseSpecialPowerUpgrade` compares it with its
+    /// own pointer, `NULL` included).
+    GetSpecialPowerTemplateId,
+    // --- end p1w11-sonnet ---
 }
 
 /// What a module answers to a [`ModuleCall`].

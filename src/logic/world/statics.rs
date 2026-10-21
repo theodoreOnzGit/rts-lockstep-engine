@@ -47,6 +47,10 @@ pub struct GameStatics {
     /// `TheScienceStore`.
     pub science_store: crate::common::science::ScienceStore,
     // --- end p1l9-upgrades ---
+    // --- p1w11-sonnet ---
+    /// `TheSpecialPowerStore` (`UnpauseSpecialPowerUpgrade` finds its template in it).
+    pub special_power_store: crate::common::special_power::SpecialPowerStore,
+    // --- end p1w11-sonnet ---
     // New stores go here, each in its translator's marked block.
 }
 
