@@ -421,11 +421,7 @@ fn gen_text(g: &mut Gen, kind: usize, clean: bool) -> Vec<u8> {
                 }
             }
         }
-        4 => {
-            if g.below(100) < 80 {
-                lines.push(format!("FatCursorRadius = {}", gen_real(g, clean)));
-            }
-        }
+        4 if g.below(100) < 80 => lines.push(format!("FatCursorRadius = {}", gen_real(g, clean))),
         _ => {}
     }
     if !clean {
