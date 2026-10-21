@@ -23,6 +23,11 @@
 //! body is the host's ([`CreateHost::resource_add_supply_warehouse`]), which
 //! performs upstream's two `NULL` tests.
 
+// --- p1w10-sonnet ---
+use crate::logic::modules::create_host::{create_module_eq, create_module_snapshot};
+use crate::logic::world::game_logic::World;
+use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+// --- end p1w10-sonnet ---
 use std::sync::Arc;
 
 use crate::common::game_type::ObjectId;
@@ -60,6 +65,30 @@ impl SupplyWarehouseCreate {
         }
     }
 }
+
+// --- p1w10-sonnet ---
+create_module_snapshot!(SupplyWarehouseCreate);
+create_module_eq!(SupplyWarehouseCreate);
+
+impl SupplyWarehouseCreate {
+    /// The module's answer to one of `Object`'s calls (`onCreate` and `onBuildComplete` of the create interface).
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+        let _ = me;
+        match call {
+            ModuleCall::OnCreate => {
+                self.on_create(world);
+                ModuleReply::Done
+            }
+            ModuleCall::OnBuildComplete => {
+                // `onBuildComplete` is the base's: it only clears the flag
+                self.create.on_build_complete();
+                ModuleReply::Done
+            }
+            _ => ModuleReply::Unhandled,
+        }
+    }
+}
+// --- end p1w10-sonnet ---
 
 #[cfg(test)]
 mod tests {

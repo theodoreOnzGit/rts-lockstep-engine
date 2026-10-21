@@ -56,7 +56,7 @@ pub trait CreateHost {
     /// `player->hasScience(science)`, the science by its name. (Upstream holds
     /// a `ScienceType`; the name is what the INI carries until the science
     /// store is wired to the host.)
-    fn player_has_science(&self, player: PlayerIndex, science: &[u8]) -> bool;
+    fn player_has_science(&mut self, player: PlayerIndex, science: &[u8]) -> bool;
 
     /// `object->setModelConditionState(flag)`.
     fn set_model_condition_state(&mut self, obj: ObjectId, flag: ModelConditionFlagType);
@@ -91,7 +91,7 @@ pub trait CreateHost {
     fn experience_set_min_veterancy_level(&mut self, obj: ObjectId, level: VeterancyLevel);
 
     /// `TheUpgradeCenter->findUpgrade(name)`: `None` if there is no such upgrade.
-    fn find_upgrade(&self, name: &[u8]) -> Option<UpgradeRef>;
+    fn find_upgrade(&mut self, name: &[u8]) -> Option<UpgradeRef>;
 
     /// `player->addUpgrade(upgrade, UPGRADE_STATUS_COMPLETE)`.
     fn player_add_upgrade_complete(&mut self, player: PlayerIndex, upgrade: UpgradeRef);
@@ -105,6 +105,70 @@ pub trait CreateHost {
     /// `getObject()->getStatusBits()`.
     fn object_status_bits(&self, obj: ObjectId) -> ObjectStatusMaskType;
 }
+
+
+// --- p1w10-sonnet ---
+/// Reports an undefined input of a create module the way the upgrade modules do: a `module_errors` entry of the world
+/// (`IniError::undefined`), nothing else.
+pub fn report_create_error(world: &mut crate::logic::world::game_logic::World, me: crate::logic::world::module_call::ModuleHandle, r: Result<(), CreateError>) {
+    if let Err(CreateError::NoControllingPlayer) = r {
+        world.cuts.module_errors.push((me, crate::common::ini::IniError::undefined(crate::common::ini::Undefined::NullControllingPlayer)));
+    }
+}
+
+/// `crc`, `xfer` (version 1: the version, `CreateModule::xfer`) and `loadPostProcess` of a concrete create module: every
+/// one of the seven is `X::xfer { xferVersion(1); CreateModule::xfer }`.
+macro_rules! create_module_snapshot {
+    ($t:ty) => {
+        impl crate::common::xfer::Snapshot for $t {
+            fn crc(&mut self, xfer: &mut dyn crate::common::xfer::Xfer) -> crate::common::xfer::XferResult<()> {
+                self.create.crc(xfer)
+            }
+            fn xfer(&mut self, xfer: &mut dyn crate::common::xfer::Xfer) -> crate::common::xfer::XferResult<()> {
+                let current: crate::common::xfer::XferVersion = 1;
+                let mut version = current;
+                xfer.xfer_version(&mut version, current)?;
+                self.create.xfer(xfer)
+            }
+            fn load_post_process(&mut self) {
+                self.create.load_post_process();
+            }
+        }
+    };
+}
+pub(crate) use create_module_snapshot;
+// --- end p1w10-sonnet ---
+
+// --- p1w10-sonnet ---
+/// The factory's `NewModuleDataProc` for the four create modules whose data is `CreateModuleData` itself
+/// (`PreorderCreate`, `SpecialPowerCreate`, `SupplyCenterCreate`, `SupplyWarehouseCreate`).
+pub fn new_plain_create_module_data(ini: Option<&mut crate::common::ini::Ini<'_>>) -> crate::common::ini::IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::Create(std::sync::Arc::new(crate::logic::module::create_module::CreateModuleData::friend_new_module_data(ini)?)))
+}
+
+/// `UpdateBody` is compared in tests: two create modules are equal when they are the same class on the same object with the
+/// same `m_needToRunOnBuildComplete` (and, for a module with data of its own, the same data object, as upstream's pointers).
+macro_rules! create_module_eq {
+    ($t:ty) => {
+        impl PartialEq for $t {
+            fn eq(&self, other: &Self) -> bool {
+                self.create.behavior().object() == other.create.behavior().object()
+                    && self.create.should_do_on_build_complete() == other.create.should_do_on_build_complete()
+            }
+        }
+    };
+    ($t:ty, data) => {
+        impl PartialEq for $t {
+            fn eq(&self, other: &Self) -> bool {
+                self.create.behavior().object() == other.create.behavior().object()
+                    && self.create.should_do_on_build_complete() == other.create.should_do_on_build_complete()
+                    && std::sync::Arc::ptr_eq(&self.data, &other.data)
+            }
+        }
+    };
+}
+pub(crate) use create_module_eq;
+// --- end p1w10-sonnet ---
 
 /// A recording [`CreateHost`] for the unit tests of the create modules: the
 /// answers are fields, and every call is logged in order.
@@ -135,7 +199,7 @@ pub(crate) mod test_support {
             let _ = player;
             self.preorder
         }
-        fn player_has_science(&self, player: PlayerIndex, science: &[u8]) -> bool {
+        fn player_has_science(&mut self, player: PlayerIndex, science: &[u8]) -> bool {
             let _ = player;
             self.sciences.iter().any(|s| s == science)
         }
@@ -167,7 +231,7 @@ pub(crate) mod test_support {
         fn experience_set_min_veterancy_level(&mut self, obj: ObjectId, level: VeterancyLevel) {
             self.log.push(format!("minvet {obj} {}", level as i32));
         }
-        fn find_upgrade(&self, name: &[u8]) -> Option<UpgradeRef> {
+        fn find_upgrade(&mut self, name: &[u8]) -> Option<UpgradeRef> {
             self.upgrades.iter().find(|(n, _)| n == name).map(|(_, u)| *u)
         }
         fn player_add_upgrade_complete(&mut self, player: PlayerIndex, upgrade: UpgradeRef) {

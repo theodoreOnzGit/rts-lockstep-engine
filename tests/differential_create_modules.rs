@@ -282,7 +282,7 @@ impl CreateHost for Host {
     fn player_did_preorder(&self, player: i32) -> bool {
         self.world.players[player as usize].preorder
     }
-    fn player_has_science(&self, player: i32, science: &[u8]) -> bool {
+    fn player_has_science(&mut self, player: i32, science: &[u8]) -> bool {
         let bit = match science {
             b"SCIENCE_A" => 0,
             b"SCIENCE_B" => 1,
@@ -326,7 +326,7 @@ impl CreateHost for Host {
     fn experience_set_min_veterancy_level(&mut self, obj: ObjectId, level: VeterancyLevel) {
         self.log.push(format!("minvet {obj} {}", level as i32));
     }
-    fn find_upgrade(&self, name: &[u8]) -> Option<UpgradeRef> {
+    fn find_upgrade(&mut self, name: &[u8]) -> Option<UpgradeRef> {
         let i = UPGRADE_NAMES.iter().position(|n| n.as_bytes() == name)?;
         let (exists, player_type) = self.world.upgrades[i];
         exists.then_some(UpgradeRef { id: i as u32, player_type })

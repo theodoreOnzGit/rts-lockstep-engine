@@ -322,6 +322,14 @@ pub enum ModuleDataKind {
     /// `GrantScienceUpgradeModuleData`.
     GrantScienceUpgrade(Arc<crate::logic::modules::grant_science_upgrade::GrantScienceUpgradeModuleData>),
 // --- end p1l9-upgrades ---
+    // --- p1w10-sonnet ---
+    /// `GrantUpgradeCreateModuleData`.
+    GrantUpgradeCreate(Arc<crate::logic::modules::grant_upgrade_create::GrantUpgradeCreateModuleData>),
+    /// `LockWeaponCreateModuleData`.
+    LockWeaponCreate(Arc<crate::logic::modules::lock_weapon_create::LockWeaponCreateModuleData>),
+    /// `VeterancyGainCreateModuleData`.
+    VeterancyGainCreate(Arc<crate::logic::modules::veterancy_gain_create::VeterancyGainCreateModuleData>),
+    // --- end p1w10-sonnet ---
 }
 
 impl ModuleDataKind {
@@ -351,6 +359,11 @@ impl ModuleDataKind {
             ModuleDataKind::MaxHealthUpgrade(d) => &d.upgrade.behavior.module_data,
             ModuleDataKind::GrantScienceUpgrade(d) => &d.upgrade.behavior.module_data,
 // --- end p1l9-upgrades ---
+            // --- p1w10-sonnet ---
+            ModuleDataKind::GrantUpgradeCreate(d) => &d.create.behavior.module_data,
+            ModuleDataKind::LockWeaponCreate(d) => &d.create.behavior.module_data,
+            ModuleDataKind::VeterancyGainCreate(d) => &d.create.behavior.module_data,
+            // --- end p1w10-sonnet ---
         }
     }
 
@@ -418,6 +431,29 @@ impl ModuleDataKind {
                 None => false,
             },
 // --- end p1l9-upgrades ---
+            // --- p1w10-sonnet ---
+            ModuleDataKind::GrantUpgradeCreate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.create.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::LockWeaponCreate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.create.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::VeterancyGainCreate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.create.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            // --- end p1w10-sonnet ---
         }
     }
 

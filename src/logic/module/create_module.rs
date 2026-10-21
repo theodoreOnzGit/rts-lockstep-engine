@@ -51,6 +51,18 @@ impl CreateModuleData {
     pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, CreateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)
     }
+
+    // --- p1w10-sonnet ---
+    /// `CreateModule::friend_newModuleData(ini)` (the data proc of the create modules that have no data class of
+    /// their own): new data, read with `initFromINIMultiProc` if there is an `ini`.
+    pub fn friend_new_module_data(ini: Option<&mut crate::common::ini::Ini<'_>>) -> IniResult<CreateModuleData> {
+        let mut data = CreateModuleData::new();
+        if let Some(ini) = ini {
+            ini.init_from_ini_multi_proc(&mut data, CreateModuleData::build_field_parse)?;
+        }
+        Ok(data)
+    }
+    // --- end p1w10-sonnet ---
 }
 
 /// `class CreateModule : public BehaviorModule, public CreateModuleInterface`.

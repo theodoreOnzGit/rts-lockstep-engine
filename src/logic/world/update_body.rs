@@ -78,6 +78,22 @@ pub enum UpdateBody {
     MaxHealthUpgrade(crate::logic::modules::max_health_upgrade::MaxHealthUpgrade),
     /// `GrantScienceUpgrade`.
     GrantScienceUpgrade(crate::logic::modules::grant_science_upgrade::GrantScienceUpgrade),
+// --- p1w10-sonnet ---
+    /// `PreorderCreate`.
+    PreorderCreate(crate::logic::modules::preorder_create::PreorderCreate),
+    /// `SpecialPowerCreate`.
+    SpecialPowerCreate(crate::logic::modules::special_power_create::SpecialPowerCreate),
+    /// `SupplyCenterCreate`.
+    SupplyCenterCreate(crate::logic::modules::supply_center_create::SupplyCenterCreate),
+    /// `SupplyWarehouseCreate`.
+    SupplyWarehouseCreate(crate::logic::modules::supply_warehouse_create::SupplyWarehouseCreate),
+    /// `LockWeaponCreate`.
+    LockWeaponCreate(crate::logic::modules::lock_weapon_create::LockWeaponCreate),
+    /// `VeterancyGainCreate`.
+    VeterancyGainCreate(crate::logic::modules::veterancy_gain_create::VeterancyGainCreate),
+    /// `GrantUpgradeCreate`.
+    GrantUpgradeCreate(crate::logic::modules::grant_upgrade_create::GrantUpgradeCreate),
+// --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
     // New variants go here, one per translated module.
 }
@@ -102,6 +118,15 @@ impl UpdateBody {
             UpdateBody::ActiveShroudUpgrade(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::MaxHealthUpgrade(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::GrantScienceUpgrade(_) => UPDATE_SLEEP_FOREVER,
+// --- p1w10-sonnet ---
+            UpdateBody::PreorderCreate(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::SpecialPowerCreate(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::SupplyCenterCreate(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::SupplyWarehouseCreate(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::LockWeaponCreate(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::VeterancyGainCreate(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::GrantUpgradeCreate(_) => UPDATE_SLEEP_FOREVER,
+// --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
             // --- end p1l9-example ---
         }
@@ -126,6 +151,15 @@ impl UpdateBody {
             UpdateBody::ActiveShroudUpgrade(m) => m.module_call(world, me, call),
             UpdateBody::MaxHealthUpgrade(m) => m.module_call(world, me, call),
             UpdateBody::GrantScienceUpgrade(m) => m.module_call(world, me, call),
+// --- p1w10-sonnet ---
+            UpdateBody::PreorderCreate(m) => m.module_call(world, me, call),
+            UpdateBody::SpecialPowerCreate(m) => m.module_call(world, me, call),
+            UpdateBody::SupplyCenterCreate(m) => m.module_call(world, me, call),
+            UpdateBody::SupplyWarehouseCreate(m) => m.module_call(world, me, call),
+            UpdateBody::LockWeaponCreate(m) => m.module_call(world, me, call),
+            UpdateBody::VeterancyGainCreate(m) => m.module_call(world, me, call),
+            UpdateBody::GrantUpgradeCreate(m) => m.module_call(world, me, call),
+// --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
             // --- end p1l9-example ---
         }
@@ -163,6 +197,15 @@ impl UpdateBody {
             UpdateBody::ActiveShroudUpgrade(m) => m.xfer(xfer),
             UpdateBody::MaxHealthUpgrade(m) => m.xfer(xfer),
             UpdateBody::GrantScienceUpgrade(m) => m.xfer(xfer),
+// --- p1w10-sonnet ---
+            UpdateBody::PreorderCreate(m) => m.xfer(xfer),
+            UpdateBody::SpecialPowerCreate(m) => m.xfer(xfer),
+            UpdateBody::SupplyCenterCreate(m) => m.xfer(xfer),
+            UpdateBody::SupplyWarehouseCreate(m) => m.xfer(xfer),
+            UpdateBody::LockWeaponCreate(m) => m.xfer(xfer),
+            UpdateBody::VeterancyGainCreate(m) => m.xfer(xfer),
+            UpdateBody::GrantUpgradeCreate(m) => m.xfer(xfer),
+// --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
             _ => self.xfer(xfer),
         }
@@ -182,6 +225,15 @@ impl UpdateBody {
             UpdateBody::ActiveShroudUpgrade(m) => m.crc(xfer),
             UpdateBody::MaxHealthUpgrade(m) => m.crc(xfer),
             UpdateBody::GrantScienceUpgrade(m) => m.crc(xfer),
+// --- p1w10-sonnet ---
+            UpdateBody::PreorderCreate(m) => m.crc(xfer),
+            UpdateBody::SpecialPowerCreate(m) => m.crc(xfer),
+            UpdateBody::SupplyCenterCreate(m) => m.crc(xfer),
+            UpdateBody::SupplyWarehouseCreate(m) => m.crc(xfer),
+            UpdateBody::LockWeaponCreate(m) => m.crc(xfer),
+            UpdateBody::VeterancyGainCreate(m) => m.crc(xfer),
+            UpdateBody::GrantUpgradeCreate(m) => m.crc(xfer),
+// --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
             _ => self.crc(xfer),
         }
@@ -201,6 +253,15 @@ impl UpdateBody {
             UpdateBody::ActiveShroudUpgrade(m) => m.load_post_process(),
             UpdateBody::MaxHealthUpgrade(m) => m.load_post_process(),
             UpdateBody::GrantScienceUpgrade(m) => m.load_post_process(),
+// --- p1w10-sonnet ---
+            UpdateBody::PreorderCreate(m) => m.load_post_process(),
+            UpdateBody::SpecialPowerCreate(m) => m.load_post_process(),
+            UpdateBody::SupplyCenterCreate(m) => m.load_post_process(),
+            UpdateBody::SupplyWarehouseCreate(m) => m.load_post_process(),
+            UpdateBody::LockWeaponCreate(m) => m.load_post_process(),
+            UpdateBody::VeterancyGainCreate(m) => m.load_post_process(),
+            UpdateBody::GrantUpgradeCreate(m) => m.load_post_process(),
+// --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
             _ => self.load_post_process(),
         }
@@ -225,6 +286,15 @@ impl Snapshot for UpdateBody {
             UpdateBody::ActiveShroudUpgrade(m) => m.crc(xfer),
             UpdateBody::MaxHealthUpgrade(m) => m.crc(xfer),
             UpdateBody::GrantScienceUpgrade(m) => m.crc(xfer),
+// --- p1w10-sonnet ---
+            UpdateBody::PreorderCreate(m) => m.crc(xfer),
+            UpdateBody::SpecialPowerCreate(m) => m.crc(xfer),
+            UpdateBody::SupplyCenterCreate(m) => m.crc(xfer),
+            UpdateBody::SupplyWarehouseCreate(m) => m.crc(xfer),
+            UpdateBody::LockWeaponCreate(m) => m.crc(xfer),
+            UpdateBody::VeterancyGainCreate(m) => m.crc(xfer),
+            UpdateBody::GrantUpgradeCreate(m) => m.crc(xfer),
+// --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
             // --- end p1l9-example ---
         }
@@ -245,6 +315,15 @@ impl Snapshot for UpdateBody {
             UpdateBody::ActiveShroudUpgrade(m) => m.xfer(xfer),
             UpdateBody::MaxHealthUpgrade(m) => m.xfer(xfer),
             UpdateBody::GrantScienceUpgrade(m) => m.xfer(xfer),
+// --- p1w10-sonnet ---
+            UpdateBody::PreorderCreate(m) => m.xfer(xfer),
+            UpdateBody::SpecialPowerCreate(m) => m.xfer(xfer),
+            UpdateBody::SupplyCenterCreate(m) => m.xfer(xfer),
+            UpdateBody::SupplyWarehouseCreate(m) => m.xfer(xfer),
+            UpdateBody::LockWeaponCreate(m) => m.xfer(xfer),
+            UpdateBody::VeterancyGainCreate(m) => m.xfer(xfer),
+            UpdateBody::GrantUpgradeCreate(m) => m.xfer(xfer),
+// --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
             // --- end p1l9-example ---
         }
@@ -265,6 +344,15 @@ impl Snapshot for UpdateBody {
             UpdateBody::ActiveShroudUpgrade(m) => m.load_post_process(),
             UpdateBody::MaxHealthUpgrade(m) => m.load_post_process(),
             UpdateBody::GrantScienceUpgrade(m) => m.load_post_process(),
+// --- p1w10-sonnet ---
+            UpdateBody::PreorderCreate(m) => m.load_post_process(),
+            UpdateBody::SpecialPowerCreate(m) => m.load_post_process(),
+            UpdateBody::SupplyCenterCreate(m) => m.load_post_process(),
+            UpdateBody::SupplyWarehouseCreate(m) => m.load_post_process(),
+            UpdateBody::LockWeaponCreate(m) => m.load_post_process(),
+            UpdateBody::VeterancyGainCreate(m) => m.load_post_process(),
+            UpdateBody::GrantUpgradeCreate(m) => m.load_post_process(),
+// --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
             // --- end p1l9-example ---
         }

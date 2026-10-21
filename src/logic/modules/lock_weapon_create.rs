@@ -28,6 +28,11 @@
 //!
 //! Verification: `tests/differential_create_modules.rs`.
 
+// --- p1w10-sonnet ---
+use crate::logic::modules::create_host::{create_module_eq, create_module_snapshot};
+use crate::logic::world::game_logic::World;
+use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+// --- end p1w10-sonnet ---
 use std::sync::Arc;
 
 use crate::common::game_type::ObjectId;
@@ -110,6 +115,47 @@ impl LockWeaponCreate {
         host.set_weapon_lock(obj, self.data.slot_to_lock, LOCKED_PERMANENTLY);
     }
 }
+
+// --- p1w10-sonnet ---
+impl LockWeaponCreateModuleData {
+    /// `LockWeaponCreate::friend_newModuleData(ini)`: new data, read with `initFromINIMultiProc` if there is an `ini`.
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<LockWeaponCreateModuleData> {
+        let mut data = LockWeaponCreateModuleData::new();
+        if let Some(ini) = ini {
+            ini.init_from_ini_multi_proc(&mut data, LockWeaponCreateModuleData::build_field_parse)?;
+        }
+        Ok(data)
+    }
+}
+
+/// The factory's `NewModuleDataProc` for `LockWeaponCreate`.
+pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::LockWeaponCreate(Arc::new(LockWeaponCreateModuleData::friend_new_module_data(ini)?)))
+}
+// --- end p1w10-sonnet ---
+
+// --- p1w10-sonnet ---
+create_module_snapshot!(LockWeaponCreate);
+create_module_eq!(LockWeaponCreate, data);
+
+impl LockWeaponCreate {
+    /// The module's answer to one of `Object`'s calls (`onCreate` and `onBuildComplete` of the create interface).
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+        let _ = me;
+        match call {
+            ModuleCall::OnCreate => {
+                self.on_create();
+                ModuleReply::Done
+            }
+            ModuleCall::OnBuildComplete => {
+                self.on_build_complete(world);
+                ModuleReply::Done
+            }
+            _ => ModuleReply::Unhandled,
+        }
+    }
+}
+// --- end p1w10-sonnet ---
 
 #[cfg(test)]
 mod tests {

@@ -20,6 +20,7 @@
 use crate::common::ini::IniResult;
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::logic::world::object_create::NewModule;
+use crate::logic::module::create_module::CreateModule;
 use crate::logic::world::update_body::UpdateBody;
 
 pub mod upgrade_body;
@@ -117,6 +118,35 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
             grant_science_upgrade::GrantScienceUpgrade::new(object, Some(d.clone())).map(UpdateBody::GrantScienceUpgrade),
         )),
         // --- end p1l9-upgrades ---
+        // --- p1w10-sonnet ---
+        ModuleDataKind::GrantUpgradeCreate(d) => Some(made(
+            CreateModule::get_interface_mask(),
+            grant_upgrade_create::GrantUpgradeCreate::new(object, Some(d.clone())).map(UpdateBody::GrantUpgradeCreate),
+        )),
+        ModuleDataKind::LockWeaponCreate(d) => Some(made(
+            CreateModule::get_interface_mask(),
+            lock_weapon_create::LockWeaponCreate::new(object, Some(d.clone())).map(UpdateBody::LockWeaponCreate),
+        )),
+        ModuleDataKind::VeterancyGainCreate(d) => Some(made(
+            CreateModule::get_interface_mask(),
+            veterancy_gain_create::VeterancyGainCreate::new(object, Some(d.clone())).map(UpdateBody::VeterancyGainCreate),
+        )),
+        // the four create modules whose data is `CreateModuleData` itself are told apart by their name
+        ModuleDataKind::Create(d) => match name {
+            b"PreorderCreate" => Some(made(CreateModule::get_interface_mask(), preorder_create::PreorderCreate::new(object, Some(d.clone())).map(UpdateBody::PreorderCreate))),
+            b"SpecialPowerCreate" => {
+                Some(made(CreateModule::get_interface_mask(), special_power_create::SpecialPowerCreate::new(object, Some(d.clone())).map(UpdateBody::SpecialPowerCreate)))
+            }
+            b"SupplyCenterCreate" => {
+                Some(made(CreateModule::get_interface_mask(), supply_center_create::SupplyCenterCreate::new(object, Some(d.clone())).map(UpdateBody::SupplyCenterCreate)))
+            }
+            b"SupplyWarehouseCreate" => Some(made(
+                CreateModule::get_interface_mask(),
+                supply_warehouse_create::SupplyWarehouseCreate::new(object, Some(d.clone())).map(UpdateBody::SupplyWarehouseCreate),
+            )),
+            _ => None,
+        },
+        // --- end p1w10-sonnet ---
         _ => None,
     }
 }

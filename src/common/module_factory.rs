@@ -426,9 +426,62 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             which_interfaces: Some(crate::logic::modules::grant_science_upgrade::GrantScienceUpgrade::get_interface_mask()),
         }),
         // --- end p1l9-upgrades ---
+        // --- p1w10-sonnet ---
+        "PreorderCreate" => Some(ModuleTemplate {
+            create_proc: Some(new_create_base),
+            create_data_proc: Some(crate::logic::modules::create_host::new_plain_create_module_data),
+            which_interfaces: Some(crate::logic::module::create_module::CreateModule::get_interface_mask()),
+        }),
+        "SpecialPowerCreate" => Some(ModuleTemplate {
+            create_proc: Some(new_create_base),
+            create_data_proc: Some(crate::logic::modules::create_host::new_plain_create_module_data),
+            which_interfaces: Some(crate::logic::module::create_module::CreateModule::get_interface_mask()),
+        }),
+        "SupplyCenterCreate" => Some(ModuleTemplate {
+            create_proc: Some(new_create_base),
+            create_data_proc: Some(crate::logic::modules::create_host::new_plain_create_module_data),
+            which_interfaces: Some(crate::logic::module::create_module::CreateModule::get_interface_mask()),
+        }),
+        "SupplyWarehouseCreate" => Some(ModuleTemplate {
+            create_proc: Some(new_create_base),
+            create_data_proc: Some(crate::logic::modules::create_host::new_plain_create_module_data),
+            which_interfaces: Some(crate::logic::module::create_module::CreateModule::get_interface_mask()),
+        }),
+        "LockWeaponCreate" => Some(ModuleTemplate {
+            create_proc: Some(new_create_base),
+            create_data_proc: Some(crate::logic::modules::lock_weapon_create::new_module_data),
+            which_interfaces: Some(crate::logic::module::create_module::CreateModule::get_interface_mask()),
+        }),
+        "VeterancyGainCreate" => Some(ModuleTemplate {
+            create_proc: Some(new_create_base),
+            create_data_proc: Some(crate::logic::modules::veterancy_gain_create::new_module_data),
+            which_interfaces: Some(crate::logic::module::create_module::CreateModule::get_interface_mask()),
+        }),
+        "GrantUpgradeCreate" => Some(ModuleTemplate {
+            create_proc: Some(new_create_base),
+            create_data_proc: Some(crate::logic::modules::grant_upgrade_create::new_module_data),
+            which_interfaces: Some(crate::logic::module::create_module::CreateModule::get_interface_mask()),
+        }),
+        // --- end p1w10-sonnet ---
         _ => None,
     }
 }
+
+// --- p1w10-sonnet ---
+/// The `NewModuleProc` of a translated create module: its `CreateModule` base, made from the `CreateModuleData` base of its
+/// data. As [`new_upgrade_base`] does for the upgrade modules, the factory answers what the base answers; the concrete
+/// module is made for an object by `logic::modules::new_module`.
+fn new_create_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module, IniError> {
+    let base = match data {
+        Some(ModuleDataKind::Create(d)) => Some(d),
+        Some(ModuleDataKind::GrantUpgradeCreate(d)) => Some(std::sync::Arc::new(d.create.clone())),
+        Some(ModuleDataKind::LockWeaponCreate(d)) => Some(std::sync::Arc::new(d.create.clone())),
+        Some(ModuleDataKind::VeterancyGainCreate(d)) => Some(std::sync::Arc::new(d.create.clone())),
+        _ => None,
+    };
+    Ok(Module::Create(crate::logic::module::create_module::CreateModule::new(object, base)?))
+}
+// --- end p1w10-sonnet ---
 
 /// The `NewModuleProc` of a translated upgrade module: its `UpgradeModule`
 /// base, made from the `UpgradeModuleData` base of its data. The factory

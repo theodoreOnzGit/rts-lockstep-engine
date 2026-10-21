@@ -99,6 +99,13 @@ pub enum CutCall {
     /// `player->grantScience(science)` (`GrantScienceUpgrade`).
     PlayerGrantScience { player: PlayerIndex, science: i32 },
     // --- end p1l9-upgrades ---
+    // --- p1w10-sonnet ---
+    /// `player->addUpgrade(upgrade, UPGRADE_STATUS_COMPLETE)` (`GrantUpgradeCreate`); `upgrade` is the template's
+    /// name key.
+    PlayerAddUpgradeComplete { player: PlayerIndex, upgrade: u32 },
+    /// `player->getAcademyStats()->recordUpgrade(upgrade, granted)` (`GrantUpgradeCreate`).
+    PlayerAcademyRecordUpgrade { player: PlayerIndex, upgrade: u32, granted: bool },
+    // --- end p1w10-sonnet ---
     // ---- Team ----
     /// `team->notifyTeamOfObjectDeath()`.
     TeamNotifyTeamOfObjectDeath { team: TeamId },

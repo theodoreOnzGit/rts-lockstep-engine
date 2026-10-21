@@ -22,6 +22,11 @@
 //! Upstream order: `shouldDoOnBuildComplete()`, then the base's
 //! `onBuildComplete` (clears the flag), then the loop.
 
+// --- p1w10-sonnet ---
+use crate::logic::modules::create_host::{create_module_eq, create_module_snapshot};
+use crate::logic::world::game_logic::World;
+use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+// --- end p1w10-sonnet ---
 use std::sync::Arc;
 
 use crate::common::game_type::ObjectId;
@@ -59,6 +64,29 @@ impl SpecialPowerCreate {
         host.special_power_creation(self.create.behavior().object());
     }
 }
+
+// --- p1w10-sonnet ---
+create_module_snapshot!(SpecialPowerCreate);
+create_module_eq!(SpecialPowerCreate);
+
+impl SpecialPowerCreate {
+    /// The module's answer to one of `Object`'s calls (`onCreate` and `onBuildComplete` of the create interface).
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+        let _ = me;
+        match call {
+            ModuleCall::OnCreate => {
+                self.on_create();
+                ModuleReply::Done
+            }
+            ModuleCall::OnBuildComplete => {
+                self.on_build_complete(world);
+                ModuleReply::Done
+            }
+            _ => ModuleReply::Unhandled,
+        }
+    }
+}
+// --- end p1w10-sonnet ---
 
 #[cfg(test)]
 mod tests {

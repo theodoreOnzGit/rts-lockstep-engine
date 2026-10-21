@@ -32,6 +32,11 @@
 //! Rust returns `Ok(())` with no effect, the same. A `NULL` controlling player
 //! where upstream dereferences it is [`CreateError::NoControllingPlayer`].
 
+// --- p1w10-sonnet ---
+use crate::logic::modules::create_host::{create_module_eq, create_module_snapshot, report_create_error};
+use crate::logic::world::game_logic::World;
+use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+// --- end p1w10-sonnet ---
 use std::sync::Arc;
 
 use crate::common::game_type::ObjectId;
@@ -142,6 +147,49 @@ impl GrantUpgradeCreate {
         Ok(())
     }
 }
+
+// --- p1w10-sonnet ---
+impl GrantUpgradeCreateModuleData {
+    /// `GrantUpgradeCreate::friend_newModuleData(ini)`: new data, read with `initFromINIMultiProc` if there is an `ini`.
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<GrantUpgradeCreateModuleData> {
+        let mut data = GrantUpgradeCreateModuleData::new();
+        if let Some(ini) = ini {
+            ini.init_from_ini_multi_proc(&mut data, GrantUpgradeCreateModuleData::build_field_parse)?;
+        }
+        Ok(data)
+    }
+}
+
+/// The factory's `NewModuleDataProc` for `GrantUpgradeCreate`.
+pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::GrantUpgradeCreate(Arc::new(GrantUpgradeCreateModuleData::friend_new_module_data(ini)?)))
+}
+// --- end p1w10-sonnet ---
+
+// --- p1w10-sonnet ---
+create_module_snapshot!(GrantUpgradeCreate);
+create_module_eq!(GrantUpgradeCreate, data);
+
+impl GrantUpgradeCreate {
+    /// The module's answer to one of `Object`'s calls (`onCreate` and `onBuildComplete` of the create interface).
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+        let _ = me;
+        match call {
+            ModuleCall::OnCreate => {
+                let r = self.on_create(world);
+                report_create_error(world, me, r);
+                ModuleReply::Done
+            }
+            ModuleCall::OnBuildComplete => {
+                let r = self.on_build_complete(world);
+                report_create_error(world, me, r);
+                ModuleReply::Done
+            }
+            _ => ModuleReply::Unhandled,
+        }
+    }
+}
+// --- end p1w10-sonnet ---
 
 #[cfg(test)]
 mod tests {

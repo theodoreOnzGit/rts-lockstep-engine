@@ -201,6 +201,11 @@ pub enum Undefined {
     IsspaceNonAscii,
     /// `loadDirectory`: a file name shorter than the directory name.
     FilenameShorterThanDirectory,
+    // --- p1w10-sonnet ---
+    /// A create module (`PreorderCreate`, `GrantUpgradeCreate`) dereferences `getControllingPlayer()` of an object with
+    /// no controlling player without testing it.
+    NullControllingPlayer,
+    // --- end p1w10-sonnet ---
     // --- p1l9-upgrades ---
     /// `ArmorUpgrade`: a triggered chemical-suits upgrade on an object with no
     /// drawable dereferences a null `Drawable` pointer.

@@ -324,6 +324,10 @@ impl ProbeModule {
             | ModuleCall::OnDisabledEdge { .. }
             | ModuleCall::OnCapture { .. }
             | ModuleCall::OnCreate
+            // --- p1w10-sonnet ---
+            | ModuleCall::OnBuildComplete
+            | ModuleCall::OnSpecialPowerCreation
+            // --- end p1w10-sonnet ---
             | ModuleCall::OnDestroy
             | ModuleCall::OnDie(_)
             | ModuleCall::ForceRefreshUpgrade

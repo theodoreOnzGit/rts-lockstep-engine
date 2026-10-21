@@ -270,6 +270,13 @@ pub enum ModuleCall {
     /// `SupplyTruckAIInterface::getWarehouseScanDistance()`; replies [`ModuleReply::Real`].
     GetSupplyTruckWarehouseScanDistance,
     // --- end p1w7-sonnet ---
+    // --- p1w10-sonnet ---
+    /// `CreateModuleInterface::onBuildComplete()`: "This is called when you are a finished game object" (the
+    /// loop in `BuildAssistant`, `GameLogic`, `DozerAIUpdate`, `ProductionUpdate` and `ReplaceObjectUpgrade`).
+    OnBuildComplete,
+    /// `SpecialPowerModuleInterface::onSpecialPowerCreation()` (`SpecialPowerCreate::onBuildComplete`'s loop).
+    OnSpecialPowerCreation,
+    // --- end p1w10-sonnet ---
 }
 
 /// What a module answers to a [`ModuleCall`].

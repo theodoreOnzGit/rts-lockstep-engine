@@ -830,6 +830,20 @@ rebuilt on the `UpdateModule` / `DieModule` bases with `HelperHost` / `DieHost` 
 verified by `tests/differential_helper_modules.rs` against the nine unchanged `.cpp` files (`differential/l9_helpers.inc`): 12,000
 programs, 133,142 ops, 4,206,471 words compared, 0 mismatches; 24 planted bugs (`L9_PLANT` 30-56), all caught. Not yet wired into
 the object system (the host traits are implemented by the world in layer 12).
+**Layer-9 create modules wired (2026-10-21, `p1w10-sonnet`).** The seven create modules of `p1l9-creates` (verified
+standalone against the unchanged `.cpp` files by `tests/differential_create_modules.rs`) are now object modules: an
+`UpdateBody` variant each, `ModuleDataKind` variants for the three with data of their own, factory entries
+(`new_create_base`), `new_module` arms (the four with plain `CreateModuleData` are told apart by name), `Snapshot` impls
+(every one is `xferVersion(1); CreateModule::xfer`, upstream-checked), `ModuleCall::OnBuildComplete` (the loop of
+`BuildAssistant`, `GameLogic`, `DozerAIUpdate`, `ProductionUpdate`, `ReplaceObjectUpgrade`) and
+`ModuleCall::OnSpecialPowerCreation`. `impl CreateHost for World` (`logic/world/create_host_world.rs`) answers them from the
+world's own data (player preorder flag, sciences, resource gathering manager and academy stats; the object's weapon set and
+experience record; the upgrade center) and from two cut points (`CutCall::PlayerAddUpgradeComplete`, which also sets the
+player's completed-upgrade mask in `cuts.player_upgrades`; `PlayerAcademyRecordUpgrade`). Tests through `World`:
+`create_host_world::tests`. **Convention found and documented:** a module that holds its object's id is made with
+`world.next_object_id()` (the id `new_object` is about to allocate); the upgrade modules read the id from the call.
+Open: `ScienceRequired` is resolved by name at use (upstream resolves at INI read), and the weapon lock of `LockWeaponCreate`
+is only observable on an object with a weapon in the slot (no test builds one yet).
 <!-- --- end p1w10-sonnet (layer 9) --- -->
 
 ## Differential-test routes, by rule

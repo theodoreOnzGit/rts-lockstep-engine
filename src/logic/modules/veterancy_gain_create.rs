@@ -26,6 +26,11 @@
 //!
 //! `onBuildComplete` is not overridden upstream; it is the base's.
 
+// --- p1w10-sonnet ---
+use crate::logic::modules::create_host::{create_module_eq, create_module_snapshot};
+use crate::logic::world::game_logic::World;
+use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+// --- end p1w10-sonnet ---
 use std::sync::Arc;
 
 use crate::common::game_common::{VeterancyLevel, VETERANCY_NAMES};
@@ -126,6 +131,48 @@ impl VeterancyGainCreate {
         }
     }
 }
+
+// --- p1w10-sonnet ---
+impl VeterancyGainCreateModuleData {
+    /// `VeterancyGainCreate::friend_newModuleData(ini)`: new data, read with `initFromINIMultiProc` if there is an `ini`.
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<VeterancyGainCreateModuleData> {
+        let mut data = VeterancyGainCreateModuleData::new();
+        if let Some(ini) = ini {
+            ini.init_from_ini_multi_proc(&mut data, VeterancyGainCreateModuleData::build_field_parse)?;
+        }
+        Ok(data)
+    }
+}
+
+/// The factory's `NewModuleDataProc` for `VeterancyGainCreate`.
+pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::VeterancyGainCreate(Arc::new(VeterancyGainCreateModuleData::friend_new_module_data(ini)?)))
+}
+// --- end p1w10-sonnet ---
+
+// --- p1w10-sonnet ---
+create_module_snapshot!(VeterancyGainCreate);
+create_module_eq!(VeterancyGainCreate, data);
+
+impl VeterancyGainCreate {
+    /// The module's answer to one of `Object`'s calls (`onCreate` and `onBuildComplete` of the create interface).
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+        let _ = me;
+        match call {
+            ModuleCall::OnCreate => {
+                self.on_create(world);
+                ModuleReply::Done
+            }
+            ModuleCall::OnBuildComplete => {
+                // `onBuildComplete` is the base's: it only clears the flag
+                self.create.on_build_complete();
+                ModuleReply::Done
+            }
+            _ => ModuleReply::Unhandled,
+        }
+    }
+}
+// --- end p1w10-sonnet ---
 
 #[cfg(test)]
 mod tests {
