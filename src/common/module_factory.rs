@@ -596,6 +596,26 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::money_crate_collide::new_module_data),
             which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
         }),
+        "CleanupAreaPower" => Some(ModuleTemplate {
+            create_proc: Some(new_special_power_base),
+            create_data_proc: Some(crate::logic::modules::cleanup_area_power::new_module_data),
+            which_interfaces: Some(crate::logic::module::special_power_module::SpecialPowerModule::get_interface_mask()),
+        }),
+        "BaikonurLaunchPower" => Some(ModuleTemplate {
+            create_proc: Some(new_special_power_base),
+            create_data_proc: Some(crate::logic::modules::baikonur_launch_power::new_module_data),
+            which_interfaces: Some(crate::logic::module::special_power_module::SpecialPowerModule::get_interface_mask()),
+        }),
+        "SpyVisionSpecialPower" => Some(ModuleTemplate {
+            create_proc: Some(new_special_power_base),
+            create_data_proc: Some(crate::logic::modules::spy_vision_special_power::new_module_data),
+            which_interfaces: Some(crate::logic::module::special_power_module::SpecialPowerModule::get_interface_mask()),
+        }),
+        "DefectorSpecialPower" => Some(ModuleTemplate {
+            create_proc: Some(new_special_power_base),
+            create_data_proc: Some(crate::logic::modules::defector_special_power::new_module_data),
+            which_interfaces: Some(crate::logic::module::special_power_module::SpecialPowerModule::get_interface_mask()),
+        }),
         // --- end p1w11-sonnet ---
         _ => None,
     }
@@ -655,6 +675,21 @@ fn new_die_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module
 // --- end p1w10-sonnet ---
 
 // --- p1w11-sonnet ---
+/// The `NewModuleProc` of a translated special power module: its `SpecialPowerModule` base, made from the `SpecialPowerModuleData` base of its data.
+fn new_special_power_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module, IniError> {
+    let base = match data {
+        Some(ModuleDataKind::SpecialPower(d)) => Some(d),
+        // --- p1w11-sonnet ---
+        Some(ModuleDataKind::CleanupAreaPower(d)) => Some(std::sync::Arc::new(d.special_power.clone())),
+        Some(ModuleDataKind::BaikonurLaunchPower(d)) => Some(std::sync::Arc::new(d.special_power.clone())),
+        Some(ModuleDataKind::SpyVisionSpecialPower(d)) => Some(std::sync::Arc::new(d.special_power.clone())),
+        Some(ModuleDataKind::DefectorSpecialPower(d)) => Some(std::sync::Arc::new(d.special_power.clone())),
+        // --- end p1w11-sonnet ---
+        _ => None,
+    };
+    Ok(Module::SpecialPower(crate::logic::module::special_power_module::SpecialPowerModule::new(object, base)?))
+}
+
 /// The `NewModuleProc` of a translated collide module: its `CollideModule` base, made from the `CollideModuleData` base of its data.
 fn new_collide_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module, IniError> {
     let base = match data {

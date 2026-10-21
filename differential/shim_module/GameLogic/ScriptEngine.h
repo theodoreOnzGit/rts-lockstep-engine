@@ -8,6 +8,7 @@ class ScriptEngine
 {
 public:
 	void notifyOfCompletedSpecialPower(Int playerIndex, const AsciiString &specialPowerName, ObjectID sourceObject);
+	void notifyOfTriggeredSpecialPower(Int playerIndex, const AsciiString &completedPower, ObjectID sourceObj);   /* special power batch H */
 };
 extern ScriptEngine *TheScriptEngine;
 #endif

@@ -3053,6 +3053,22 @@ mod differential {
             .expect("write AutoDepositPair.inc");
             println!("cargo:rerun-if-changed=upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Collide/CrateCollide/MoneyCrateCollide.cpp");
             println!("cargo:rerun-if-changed=upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/AutoDepositUpdate.cpp");
+            // Special power batch H (differential/l9_powers_h.inc): three function-local `static NameKeyType key_X = NAMEKEY("X")` (in
+            // SpecialPowerModule.cpp, CleanupAreaPower.cpp, SpyVisionSpecialPower.cpp) lose the `static`. In the game the name key generator is never
+            // reset, so the cached key is the key; the test resets it for every case, and a key cached by an earlier case would name another
+            // string. Each edit is asserted to apply once; the edited copies are in mod_gen/ (…_nokey.cpp) and the driver includes those.
+            for (file, decl) in [
+                ("SpecialPowerModule.cpp", "static NameKeyType key_DeletionUpdate = NAMEKEY(\"DeletionUpdate\");"),
+                ("CleanupAreaPower.cpp", "static NameKeyType key_CleanupHazardUpdate = NAMEKEY( \"CleanupHazardUpdate\" );"),
+                ("SpyVisionSpecialPower.cpp", "static const NameKeyType key_SpyVisionUpdate = NAMEKEY( \"SpyVisionUpdate\" );"),
+            ] {
+                let path = up.join("GameEngine/Source/GameLogic/Object/SpecialPower").join(file);
+                let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {file}: {e}"));
+                assert_eq!(text.matches(decl).count(), 1, "{file}: the static name key must occur once");
+                let cut = text.replace(decl, &decl.replacen("static ", "", 1));
+                std::fs::write(mod_gen.join(file.replace(".cpp", "_nokey.cpp")), cut).expect("write nokey copy");
+                println!("cargo:rerun-if-changed={}", path.display());
+            }
             // --- end p1w11-sonnet ---
             let mut md = cc::Build::new();
             base(&mut md);

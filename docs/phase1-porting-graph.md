@@ -874,6 +874,18 @@ in its arena~~ **CORRECTED 2026-10-21** - that is the `UpdateModule` base, whose
 overrides (`StatusDamageHelper`, `TempWeaponBonusHelper`: all types; `BaseRegenerateUpdate`: `DISABLED_UNDERPOWERED`) were never in force and those
 modules did not run on a disabled object (`UpdateModule::set_disabled_types_to_process`, set when the concrete module is made; pinned by
 `object_tests::a_helper_that_processes_every_disabled_type_runs_on_a_disabled_object`). The one helper left a stand-in: `FiringTracker`.
+**Layer-9 special power batch H (2026-10-21, `p1w11-sonnet`).** `SpecialPowerModule` (the base, never registered with the module factory: `modules/special_power_body.rs`
+over the layer-5 state, with `modules/special_power_module_impl.rs` as the concrete base) and four powers: `CleanupAreaPower`, `BaikonurLaunchPower`,
+`SpyVisionSpecialPower`, `DefectorSpecialPower`, wired as object modules, with `tests/differential_power_modules_h.rs` against the five unchanged `.cpp` files
+(`differential/l9_powers_h.inc`): 9,000 cases, 7,852 data reads, 62,363 dump lines (42,776 ops), 0 mismatches, 1,148 excluded as undefined upstream; 13
+planted bugs (`L9_PLANT` 801, 811, 821, 831, 841, 843, 844, 846-849, 852, 855), all caught. The template field is kept as a name and found in
+`statics.special_power_store` when the power runs (a module's data proc has no store; an unknown name is `NULL` upstream and dereferenced: `Undefined`).
+The player's shared timers are `Player::special_power_timers`, through the new list functions `player_ops::special_power_timers_*` (the host-generic
+player functions now call the same ones). **Open (deviation):** `~SpecialPowerModule` (`TheInGameUI->removeSuperweapon`) is not sent when the object
+goes, because the model has no hook for a module's destruction. **Found by the test:** `SpecialPowerModule.h` declares two `getReadyFrame` (a `const`
+interface one and a non-`const` one returning `m_availableOnFrame`); three function-local `static NameKeyType` caches (made plain locals by `build.rs` for
+the run-after-run test). Left among the powers: `OCLSpecialPower`, `CashBountyPower`, `CashHackSpecialPower`, `FireWeaponPower`,
+`DemoralizeSpecialPower`, `SpecialAbility`, `SpectreGunshipDeploymentUpdate` and the rest (floating text and player plumbing, or later layers).
 **Layer-9 helper and die batch verified (2026-10-21, `p1w10-sonnet`).** ~~The helpers and dies of `p1l9-helpers` (`ObjectHelper`,
 `ObjectSMCHelper`, `ObjectRepulsorHelper`, `ObjectWeaponStatusHelper`, `StatusDamageHelper`, `TempWeaponBonusHelper`,
 `DestroyDie`, `KeepObjectDie`, `UpgradeDie`) are pure functions returning effects.~~ **CORRECTED 2026-10-21** - the drafts were

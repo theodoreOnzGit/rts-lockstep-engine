@@ -105,6 +105,12 @@ pub struct SpecialPowerModuleData {
     /// as the template's id (`SpecialPowerTemplate::getID`, unique); `None`
     /// for a null pointer.
     pub special_power_template: Option<u32>,
+    // --- p1w11-sonnet ---
+    /// The template field as the name that was written, `None` if the field was never read. A module made by the module factory reads its data
+    /// with no store to look the name up in ([`SpecialPowerModuleData::friend_new_module_data_deferred`]); the concrete module finds the template
+    /// by this name when it needs it, in `world.statics.special_power_store`.
+    pub special_power_template_name: Option<Vec<u8>>,
+    // --- end p1w11-sonnet ---
     /// `m_initiateSound`.
     pub initiate_sound: AudioEventName,
     /// `m_updateModuleStartsAttack`: "update module determines when the
@@ -123,6 +129,10 @@ pub struct SpecialPowerModuleDataCtx<'a> {
     /// The data being read.
     pub data: SpecialPowerModuleData,
     store: Option<&'a SpecialPowerStore>,
+    // --- p1w11-sonnet ---
+    /// Keep the template's name and look nothing up (the module factory's data proc has no store).
+    defer: bool,
+    // --- end p1w11-sonnet ---
 }
 
 impl SpecialPowerModuleDataCtx<'_> {
@@ -132,6 +142,12 @@ impl SpecialPowerModuleDataCtx<'_> {
     /// `TheSpecialPowerStore` is null.
     fn parse_special_power_template(ini: &mut Ini<'_>, c: &mut SpecialPowerModuleDataCtx<'_>, _: &UserData) -> IniResult<()> {
         let token = ini.get_next_token(None)?;
+        // --- p1w11-sonnet --- (the name is kept either way)
+        c.data.special_power_template_name = Some(token.clone());
+        if c.defer && c.store.is_none() {
+            return Ok(());
+        }
+        // --- end p1w11-sonnet ---
         let Some(store) = c.store else {
             return Err(IniError::new(IniErrorKind::Bug));
         };
@@ -179,7 +195,18 @@ impl SpecialPowerModuleData {
     /// `initFromINIMultiProc(data, buildFieldParse)` if there is an `ini`.
     /// `store` is `TheSpecialPowerStore` (`None` while null).
     pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>, store: Option<&SpecialPowerStore>) -> IniResult<SpecialPowerModuleData> {
-        let mut ctx = SpecialPowerModuleDataCtx { data: SpecialPowerModuleData::new(), store };
+        Self::friend_new_module_data_with(ini, store, false)
+    }
+
+    // --- p1w11-sonnet ---
+    /// [`friend_new_module_data`](Self::friend_new_module_data) as the module factory's data proc must make it: no store, so the template field keeps
+    /// its name ([`SpecialPowerModuleData::special_power_template_name`]) and looks nothing up.
+    pub fn friend_new_module_data_deferred(ini: Option<&mut Ini<'_>>) -> IniResult<SpecialPowerModuleData> {
+        Self::friend_new_module_data_with(ini, None, true)
+    }
+
+    fn friend_new_module_data_with(ini: Option<&mut Ini<'_>>, store: Option<&SpecialPowerStore>, defer: bool) -> IniResult<SpecialPowerModuleData> {
+        let mut ctx = SpecialPowerModuleDataCtx { data: SpecialPowerModuleData::new(), store, defer };
         if let Some(ini) = ini {
             let fields = [
                 FieldParse::new("SpecialPowerTemplate", SpecialPowerModuleDataCtx::parse_special_power_template, UserData::None),
@@ -395,6 +422,13 @@ impl SpecialPowerModule {
     pub fn get_available_on_frame(&self) -> u32 {
         self.available_on_frame
     }
+
+    // --- p1w11-sonnet ---
+    /// `m_availableOnFrame = frame` alone (`onSpecialPowerCreation` copies the player's shared ready frame into it).
+    pub fn set_available_on_frame(&mut self, frame: u32) {
+        self.available_on_frame = frame;
+    }
+    // --- end p1w11-sonnet ---
 
     /// `setReadyFrame(frame)` ("for use by the scripting engine only"): the
     /// frame, and "if a script should change the ready frame, we need to

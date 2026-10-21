@@ -30,6 +30,8 @@ use crate::logic::world::update_body::UpdateBody;
 
 pub mod crate_collide;
 pub mod upgrade_pair;
+pub mod special_power_body;
+pub mod special_power_module_impl;
 pub mod subdual_damage_helper;
 pub mod object_defection_helper;
 pub mod update_behavior;
@@ -87,6 +89,10 @@ pub mod radar_update;
 pub mod heal_crate_collide;
 pub mod shroud_crate_collide;
 pub mod money_crate_collide;
+pub mod cleanup_area_power;
+pub mod baikonur_launch_power;
+pub mod spy_vision_special_power;
+pub mod defector_special_power;
 // --- end p1w11-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -301,6 +307,22 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::MoneyCrateCollide(d) => Some(made(
             money_crate_collide::MoneyCrateCollide::get_interface_mask(),
             money_crate_collide::MoneyCrateCollide::new(object, Some(d.clone())).map(UpdateBody::MoneyCrateCollide),
+        )),
+        ModuleDataKind::CleanupAreaPower(d) => Some(made(
+            cleanup_area_power::CleanupAreaPower::get_interface_mask(),
+            cleanup_area_power::CleanupAreaPower::new(object, Some(d.clone())).map(UpdateBody::CleanupAreaPower),
+        )),
+        ModuleDataKind::BaikonurLaunchPower(d) => Some(made(
+            baikonur_launch_power::BaikonurLaunchPower::get_interface_mask(),
+            baikonur_launch_power::BaikonurLaunchPower::new(object, Some(d.clone())).map(UpdateBody::BaikonurLaunchPower),
+        )),
+        ModuleDataKind::SpyVisionSpecialPower(d) => Some(made(
+            spy_vision_special_power::SpyVisionSpecialPower::get_interface_mask(),
+            spy_vision_special_power::SpyVisionSpecialPower::new(object, Some(d.clone())).map(UpdateBody::SpyVisionSpecialPower),
+        )),
+        ModuleDataKind::DefectorSpecialPower(d) => Some(made(
+            defector_special_power::DefectorSpecialPower::get_interface_mask(),
+            defector_special_power::DefectorSpecialPower::new(object, Some(d.clone())).map(UpdateBody::DefectorSpecialPower),
         )),
         // --- end p1w11-sonnet ---
         _ => None,

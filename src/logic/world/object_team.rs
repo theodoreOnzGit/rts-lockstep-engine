@@ -301,6 +301,13 @@ impl World {
     /// relooks, goes idle, and says so; a container that kicks out on capture
     /// empties; parked units defect with it; and so do the mines it laid.
     pub fn defect(&mut self, id: ObjectId, new_team: TeamId, detection_time: u32) {
+        // --- p1w11-sonnet --- (the call itself, for the tests that compare it with upstream's: a trace line only a test that asks for effect lines sees)
+        if self.cuts.probe_effect_trace {
+            if let Some(t) = &mut self.cuts.trace {
+                t.push(format!("defect {id} {new_team} {detection_time}"));
+            }
+        }
+        // --- end p1w11-sonnet ---
         if self.is_contained(id) {
             return; // @todo make contained units unselectable, until then... lorenzen
         }

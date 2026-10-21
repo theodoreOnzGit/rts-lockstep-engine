@@ -318,6 +318,31 @@ pub enum ModuleCall {
     GetSubdualDamageHealAmount,
     /// `hasAnySubdualDamage()` of the body; replies [`ModuleReply::Bool`].
     HasAnySubdualDamage,
+    /// `SpecialPowerModuleInterface::isReady()`; replies [`ModuleReply::Bool`].
+    IsReady,
+    /// `CleanupHazardUpdate::setCleanupAreaParameters(loc, range)` (`CleanupAreaPower`).
+    SetCleanupAreaParameters { loc: Coord3D, range: f32 },
+    /// `SpyVisionUpdate::activateSpyVision(duration)` (`SpyVisionSpecialPower`).
+    ActivateSpyVision { duration: u32 },
+    /// `getPercentReady()`; replies [`ModuleReply::Real`].
+    GetPercentReady,
+    /// `getReadyFrame() const`; replies [`ModuleReply::Int`] (the frame as an `Int`).
+    GetReadyFrame,
+    /// `getRequiredScience()` (the template's); replies [`ModuleReply::Int`].
+    GetRequiredScience,
+    /// `setReadyFrame(frame)`.
+    SetReadyFrame { frame: u32 },
+    /// `markSpecialPowerTriggered(location)` (`None` is `NULL`).
+    MarkSpecialPowerTriggered { location: Option<Coord3D> },
+    /// `startPowerRecharge()`.
+    StartPowerRecharge,
+    /// `isScriptOnly()`; replies [`ModuleReply::Bool`].
+    IsScriptOnly,
+    /// `SpecialPowerUpdateInterface::doesSpecialPowerUpdatePassScienceTest()`; replies [`ModuleReply::Bool`] (unhandled: no such interface).
+    DoesSpecialPowerUpdatePassScienceTest,
+    /// `SpecialPowerUpdateInterface::initiateIntentToDoSpecialPower(template, targetObj, targetPos, way, commandOptions)`, the template by id
+    /// and the waypoint by id; replies [`ModuleReply::Bool`] (unhandled: no such interface).
+    InitiateIntentToDoSpecialPower { template: u32, target_object: ObjectId, target_position: Option<Coord3D>, waypoint: u32, command_options: u32 },
     // --- end p1w11-sonnet ---
 }
 

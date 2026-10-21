@@ -77,6 +77,10 @@
 /* crate batch F: the miscellaneous audio, the partition manager and the 2D animations the crates call */
 #define MiscAudio ModTestMiscAudio
 #define ScoreKeeper ModTestScoreKeeper
+#define Eva ModTestEva
+#define TheEva ModTestTheEva
+#define PlayerList ModTestPlayerList
+#define ThePlayerList ModTestThePlayerList
 #define PartitionManager ModTestPartitionManager
 #define ThePartitionManager ModTestThePartitionManager
 #define Anim2DTemplate ModTestAnim2DTemplate

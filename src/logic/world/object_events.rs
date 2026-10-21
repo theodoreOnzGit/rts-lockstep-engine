@@ -63,6 +63,34 @@ pub enum EvaMessage {
     UnitLost,
 }
 
+// --- p1w11-sonnet ---
+/// The superweapons `SpecialPowerModule::aboutToDoSpecialPower` announces with `TheEva->setShouldPlay(EVA_SuperweaponLaunched_<who>_<weapon>)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EvaSuperweapon {
+    /// The particle uplink cannon.
+    ParticleCannon,
+    /// The neutron missile.
+    Nuke,
+    /// The scud storm.
+    ScudStorm,
+    /// The GPS scrambler.
+    GpsScrambler,
+    /// The sneak attack.
+    SneakAttack,
+}
+
+/// Whose superweapon it is, to the local player.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EvaWhose {
+    /// The local player's own.
+    Own,
+    /// An ally's (anything that is not an enemy's).
+    Ally,
+    /// An enemy's.
+    Enemy,
+}
+// --- end p1w11-sonnet ---
+
 /// The `TheRadar` calls of `Object.cpp`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RadarCall {
@@ -146,6 +174,11 @@ pub enum ObjectClientEvent {
     // --- p1w11-sonnet ---
     /// `draw->flashAsSelected(&color)` (`ObjectDefectionHelper`'s white flash when the period ends).
     DrawableFlashAsSelectedColor { object_id: ObjectId, r: f32, g: f32, b: f32 },
+    /// `TheEva->setShouldPlay(EVA_SuperweaponLaunched_<whose>_<weapon>)` (`SpecialPowerModule::aboutToDoSpecialPower`).
+    EvaSuperweaponLaunched { weapon: EvaSuperweapon, whose: EvaWhose },
+    /// `TheInGameUI->addSuperweapon(playerIndex, powerName, id, powerTemplate)` (`SpecialPowerModule`'s constructor, `onSpecialPowerCreation`
+    /// and `loadPostProcess`); the template by id.
+    UiAddSuperweapon { player_index: i32, power_name: Vec<u8>, object_id: ObjectId, template: u32 },
     // --- end p1w11-sonnet ---
     /// `draw->setID(drawableID)` (`Object::xfer` on a load): the drawable of
     /// this object takes the id it had when it was saved.

@@ -461,6 +461,16 @@ virtual `executeCrateBehavior`, the overridable `isValidToExecute`) and `crate_m
 partition manager, the audio and the 2D animations is a cut call or a client event (`PlayerHealAllObjects`, `PartitionRevealMapForPlayer`,
 `InGameUiAddWorldAnimation`, `ObjectSound::{CrateHeal, CrateShroud}`); `TheAnim2DCollection != NULL` is `cuts.globals.anim2d_collection_present`.
 
+**Special power batch H (`p1w11-sonnet`, 2026-10-21).** `modules/special_power_body.rs` holds what every special power shares: `SpecialPowerBehavior` (the
+state in `logic::module::special_power_module`, the four `doSpecialPower...` as overridable defaults a power replaces and calls back through
+`base_do_special_power` and its siblings), `construct`/`on_special_power_creation`/`load_post_process_world`, `special_power_module_call` (lends the module to its
+slot around the calls that reach other modules) and the data field macro `special_power_data_field_parse!`. The template is a name resolved against
+`statics.special_power_store` when used. The player's shared timers are `Player::special_power_timers`; `World` works on them through
+`player_ops::special_power_timers_*` (the same functions the host-generic player code calls). What a power tells the rest of the game is a cut call
+(`ScriptNotifyOfTriggeredSpecialPower`, `PlayerAcademyRecordSpecialPowerUsed`) or a client event (`EvaSuperweaponLaunched`, `UiAddSuperweapon`, `AudioAddEvent`);
+the update modules it talks to are `ModuleCall`s (`InitiateIntentToDoSpecialPower`, `SetCleanupAreaParameters`, `ActivateSpyVision`, `SetLifetimeRange`).
+The view object and the detonation object are made with `World::thing_factory_new_object`. `World::defect` leaves a `defect` trace line when the test asks for effect lines.
+
 <!-- --- p1w6-object --- -->
 ## Object (layer 8, wave 6)
 

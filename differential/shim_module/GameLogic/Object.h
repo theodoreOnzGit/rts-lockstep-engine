@@ -139,6 +139,9 @@ public:
 	void clearDisabled(DisabledType type);              /* differential/l9_dies_d.inc */
 	Bool isSignificantlyAboveTerrain();                 /* differential/l9_dies_d.inc */
 	/* crate batch F: what CrateCollide asks of the object that collides (the test's) and of the crate (differential/l9_crates_f.inc) */
+	void setPosition(const Coord3D *pos) { m_pos = *pos; }   /* special power batch H: the view object and the detonation object are placed */
+	void defect(Team *newTeam, UnsignedInt detectionTime);   /* l9_powers_h.inc */
+	void setShroudClearingRange(Real r);   /* l9_powers_h.inc */
 	Bool isNeutralControlled() const;   /* l9_crates_f.inc: Player is incomplete here */
 	Bool isKindOfMulti(const KindOfMaskType &mustBeSet, const KindOfMaskType &mustBeClear) const { return m_kindOf.testSetAndClear(mustBeSet, mustBeClear); }
 	Bool isEffectivelyDead() const { return m_effDead; }

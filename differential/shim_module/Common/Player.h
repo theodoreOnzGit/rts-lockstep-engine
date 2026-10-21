@@ -10,6 +10,8 @@
 #include "Common/KindOf.h"
 #include "Common/GameCommon.h"
 #include <vector>
+class SpecialPowerTemplate;
+class Team;
 #include <algorithm>
 class Object;
 /* --- end p1w11-sonnet --- */
@@ -44,10 +46,20 @@ public:
 	Money *getMoney() { return &m_money; }
 	ScoreKeeper *getScoreKeeper() { return &m_score; }
 	Bool hasUpgradeComplete(const UpgradeTemplate *upgradeTemplate) { return m_upgradesCompleted.testForAll(upgradeTemplate->getUpgradeMask()); }
+	/* special power batch H: the player's shared special power timers, its academy stats, its relationship to a team and its default team */
+	void expressSpecialPowerReadyFrame(const SpecialPowerTemplate *temp, UnsignedInt frame);
+	UnsignedInt getOrStartSpecialPowerReadyFrame(const SpecialPowerTemplate *temp);
+	void resetOrStartSpecialPowerReadyFrame(const SpecialPowerTemplate *temp);
+	class PowerAcademyStats *getAcademyStats() { return (class PowerAcademyStats *)this; }
+	Relationship getRelationship(const Team *that) const;
+	Team *getDefaultTeam() { return m_defaultTeam; }
+	Team *m_defaultTeam;
 	Money m_money;
 	ScoreKeeper m_score;
 	PlayerType m_type;
 	std::vector<ScienceType> m_sciences;
 	/* --- end p1w11-sonnet --- */
 };
+/* special power batch H: what getAcademyStats() answers (it is the player itself, whose index the log wants) */
+class PowerAcademyStats { public: void recordSpecialPowerUsed(const SpecialPowerTemplate *t); };
 #endif

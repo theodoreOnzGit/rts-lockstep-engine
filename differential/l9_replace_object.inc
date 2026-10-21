@@ -14,7 +14,7 @@ namespace {
 struct RoTmpl { const char *name; int defined; int n; int create[4]; };
 RoTmpl g_roTmpl[3] = { { "RO_A", 0, 0, {0,0,0,0} }, { "RO_B", 0, 0, {0,0,0,0} }, { "RO_C", 0, 0, {0,0,0,0} } };
 Player *g_roPlayers[3];
-int g_roTeamPlayer[4];       /* the player index each team has, -1 none (index 1..3) */
+int g_roTeamPlayer[256];     /* the player index each team has, -1 none (index 1..3 for the replace driver, any team below 256 for the power driver) */
 int g_roNextId = 0;
 int g_roMeId = 0;
 std::vector<Object *> g_roObjects;   /* in id order */

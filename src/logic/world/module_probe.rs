@@ -84,6 +84,12 @@ pub struct ProbeAnswers {
     pub subdual_amount: f32,
     /// `hasAnySubdualDamage()` of the body.
     pub subdual_has: bool,
+    /// The module has a `SpecialPowerUpdateInterface` (otherwise it answers neither of its two calls).
+    pub spu_present: bool,
+    /// `doesSpecialPowerUpdatePassScienceTest()`.
+    pub spu_pass: bool,
+    /// `initiateIntentToDoSpecialPower(...)`: whether the update takes the intent.
+    pub spu_take: bool,
     // --- end p1w11-sonnet ---
     // --- p1w7-sonnet ---
     /// `isClearToApproach`.
@@ -167,6 +173,41 @@ impl ProbeModule {
             // ---- the ones with an answer ----
             ModuleCall::IsSalvageCrateCollide => ModuleReply::Bool(self.answers.salvage),
             // --- p1w11-sonnet ---
+            ModuleCall::SetCleanupAreaParameters { loc, range } => {
+                if world.cuts.probe_effect_trace {
+                    if let Some(t) = &mut world.cuts.trace {
+                        t.push(format!("cleanup {},{},{} {}", loc.x.to_bits(), loc.y.to_bits(), loc.z.to_bits(), range.to_bits()));
+                    }
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::ActivateSpyVision { duration } => {
+                if world.cuts.probe_effect_trace {
+                    if let Some(t) = &mut world.cuts.trace {
+                        t.push(format!("spyvision {duration}"));
+                    }
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::IsReady | ModuleCall::IsScriptOnly => ModuleReply::Bool(self.answers.yes),
+            ModuleCall::GetPercentReady => ModuleReply::Real(1.0),
+            ModuleCall::GetReadyFrame | ModuleCall::GetRequiredScience => ModuleReply::Int(0),
+            ModuleCall::SetReadyFrame { .. } | ModuleCall::MarkSpecialPowerTriggered { .. } | ModuleCall::StartPowerRecharge => ModuleReply::Done,
+            ModuleCall::DoesSpecialPowerUpdatePassScienceTest if self.answers.spu_present => ModuleReply::Bool(self.answers.spu_pass),
+            ModuleCall::InitiateIntentToDoSpecialPower { template, target_object, target_position, waypoint, command_options } if self.answers.spu_present => {
+                if world.cuts.probe_effect_trace {
+                    if let Some(t) = &mut world.cuts.trace {
+                        t.push(format!(
+                            "intent {template} {} {} {} {command_options}",
+                            if target_object == INVALID_ID { 0 } else { target_object },
+                            u8::from(target_position.is_some()),
+                            u8::from(waypoint != 0)
+                        ));
+                    }
+                }
+                ModuleReply::Bool(self.answers.spu_take)
+            }
+            ModuleCall::DoesSpecialPowerUpdatePassScienceTest | ModuleCall::InitiateIntentToDoSpecialPower { .. } => ModuleReply::Unhandled,
             ModuleCall::GetSubdualDamageHealRate => ModuleReply::Int(self.answers.subdual_rate as i32),
             ModuleCall::GetSubdualDamageHealAmount => ModuleReply::Real(self.answers.subdual_amount),
             ModuleCall::HasAnySubdualDamage => ModuleReply::Bool(self.answers.subdual_has),

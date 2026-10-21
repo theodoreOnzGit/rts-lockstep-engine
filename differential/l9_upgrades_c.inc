@@ -41,8 +41,10 @@ void Player::removeRadar(Bool disableProof) { ulog("removeradar %d %d", (int)m_i
 /* the object's radar update: the REAL RadarUpdate (batch E compiles RadarUpdate.cpp), which the test gives the object (g_radarMod) and finds by the key of
 ** its name. Its extendRadar() gives the object's drawable MODELCONDITION_RADAR_EXTENDING: the drawable is the stand-in that logs "mc <flag>", and the driver
 ** shows that line as "extendradar" (what the Rust probe module logs) */
+UpdateModule *(*g_findUpdateHook)(const Object *, NameKeyType) = 0;   /* special power batch H finds its own update modules */
 UpdateModule *Object::findUpdateModule(NameKeyType key) const
 {
+	if (g_findUpdateHook) return g_findUpdateHook(this, key);
 	if (g_radarMod && key == TheNameKeyGenerator->nameToKey("RadarUpdate")) return g_radarMod;
 	return 0;
 }

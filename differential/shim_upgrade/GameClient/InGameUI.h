@@ -5,6 +5,8 @@
 #ifndef SHIM_UPGRADE_INGAMEUI_H
 #define SHIM_UPGRADE_INGAMEUI_H
 #include "Lib/BaseType.h"
+#include "Common/AsciiString.h"
+#include "Common/GameType.h"
 /* --- p1w11-sonnet --- (crate batch F: CrateCollide's execute animation; WorldAnimationOptions is GameClient/InGameUI.h lines 291-296, verbatim) */
 class Anim2DTemplate;
 enum WorldAnimationOptions
@@ -19,6 +21,8 @@ class InGameUI
 public:
 	void message(const char *) {}
 	/* --- p1w11-sonnet --- */
+	void addSuperweapon(Int playerIndex, const AsciiString &powerName, ObjectID id, const class SpecialPowerTemplate *powerTemplate);
+	Bool removeSuperweapon(Int playerIndex, const AsciiString &powerName, ObjectID id, const class SpecialPowerTemplate *powerTemplate);
 	void addWorldAnimation( Anim2DTemplate *animTemplate, const Coord3D *pos, WorldAnimationOptions options, Real durationInSeconds, Real zRisePerSecond );
 	/* --- end p1w11-sonnet --- */
 };

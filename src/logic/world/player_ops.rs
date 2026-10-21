@@ -1374,10 +1374,51 @@ pub fn player_deliver_brown_out_notice<H: PlayerHost>(h: &mut H, p: PlayerIndex,
 
 // ---- special power timers ------------------------------------------------------------------------------------------
 
+// --- p1w11-sonnet --- the four operations on the timer list, over the list alone, so that `World` (whose modules need them before the world
+// implements `PlayerHost`) and the host-generic functions below are one piece of logic
+/// `Player::addNewSharedSpecialPowerTimer(temp, frame)` on the list.
+pub fn special_power_timers_add_new(timers: &mut Vec<SpecialPowerReadyTimer>, template_id: u32, frame: u32) {
+    timers.push(SpecialPowerReadyTimer { template_id, ready_frame: frame });
+}
+
+/// `Player::resetOrStartSpecialPowerReadyFrame(temp)` on the list: `now + reload_time` for a known template, else a new timer at `now`.
+pub fn special_power_timers_reset_or_start(timers: &mut Vec<SpecialPowerReadyTimer>, template_id: u32, reload_time: u32, now: u32) {
+    for timer in timers.iter_mut() {
+        if timer.template_id == template_id {
+            timer.ready_frame = if plant(44) { now } else { now.wrapping_add(reload_time) };
+            return;
+        }
+    }
+    special_power_timers_add_new(timers, template_id, now);
+}
+
+/// `Player::expressSpecialPowerReadyFrame(temp, frame)` on the list.
+pub fn special_power_timers_express(timers: &mut Vec<SpecialPowerReadyTimer>, template_id: u32, frame: u32) {
+    for timer in timers.iter_mut() {
+        if timer.template_id == template_id {
+            timer.ready_frame = frame;
+            return;
+        }
+    }
+    special_power_timers_add_new(timers, template_id, frame);
+}
+
+/// `Player::getOrStartSpecialPowerReadyFrame(temp)` on the list: the timer's frame, or a new timer at `now` (and `now`).
+pub fn special_power_timers_get_or_start(timers: &mut Vec<SpecialPowerReadyTimer>, template_id: u32, now: u32) -> u32 {
+    for timer in timers.iter() {
+        if timer.template_id == template_id {
+            return if plant(45) { now } else { timer.ready_frame };
+        }
+    }
+    special_power_timers_add_new(timers, template_id, now);
+    now
+}
+// --- end p1w11-sonnet ---
+
 /// `Player::addNewSharedSpecialPowerTimer(temp, frame)`.
 pub fn player_add_new_shared_special_power_timer<H: PlayerHost>(h: &mut H, p: PlayerIndex, temp: SpecialPowerTemplateRef, frame: u32) -> PResult<()> {
     let id = h.special_power_template(temp).id;
-    plm(h, p)?.special_power_timers.push(SpecialPowerReadyTimer { template_id: id, ready_frame: frame });
+    special_power_timers_add_new(&mut plm(h, p)?.special_power_timers, id, frame);
     Ok(())
 }
 
@@ -1385,40 +1426,22 @@ pub fn player_add_new_shared_special_power_timer<H: PlayerHost>(h: &mut H, p: Pl
 pub fn player_reset_or_start_special_power_ready_frame<H: PlayerHost>(h: &mut H, p: PlayerIndex, temp: SpecialPowerTemplateRef) -> PResult<()> {
     let v = h.special_power_template(temp);
     let now = h.frame();
-    let me = plm(h, p)?;
-    for timer in me.special_power_timers.iter_mut() {
-        if timer.template_id == v.id {
-            timer.ready_frame = if plant(44) { now } else { now.wrapping_add(v.reload_time) };
-            return Ok(());
-        }
-    }
-    player_add_new_shared_special_power_timer(h, p, temp, now)
+    special_power_timers_reset_or_start(&mut plm(h, p)?.special_power_timers, v.id, v.reload_time, now);
+    Ok(())
 }
 
 /// `Player::expressSpecialPowerReadyFrame(temp, frame)`.
 pub fn player_express_special_power_ready_frame<H: PlayerHost>(h: &mut H, p: PlayerIndex, temp: SpecialPowerTemplateRef, frame: u32) -> PResult<()> {
     let id = h.special_power_template(temp).id;
-    let me = plm(h, p)?;
-    for timer in me.special_power_timers.iter_mut() {
-        if timer.template_id == id {
-            timer.ready_frame = frame;
-            return Ok(());
-        }
-    }
-    player_add_new_shared_special_power_timer(h, p, temp, frame)
+    special_power_timers_express(&mut plm(h, p)?.special_power_timers, id, frame);
+    Ok(())
 }
 
 /// `Player::getOrStartSpecialPowerReadyFrame(temp)`.
 pub fn player_get_or_start_special_power_ready_frame<H: PlayerHost>(h: &mut H, p: PlayerIndex, temp: SpecialPowerTemplateRef) -> PResult<u32> {
     let id = h.special_power_template(temp).id;
     let now = h.frame();
-    for timer in pl(h, p)?.special_power_timers.iter() {
-        if timer.template_id == id {
-            return Ok(if plant(45) { now } else { timer.ready_frame });
-        }
-    }
-    player_add_new_shared_special_power_timer(h, p, temp, now)?;
-    Ok(now)
+    Ok(special_power_timers_get_or_start(&mut plm(h, p)?.special_power_timers, id, now))
 }
 
 // ---- production changes by kind -------------------------------------------------------------------------------------

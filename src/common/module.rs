@@ -362,6 +362,14 @@ pub enum ModuleDataKind {
     ShroudCrateCollide(Arc<crate::logic::modules::shroud_crate_collide::ShroudCrateCollideModuleData>),
     /// `MoneyCrateCollideModuleData`.
     MoneyCrateCollide(Arc<crate::logic::modules::money_crate_collide::MoneyCrateCollideModuleData>),
+    /// `CleanupAreaPowerModuleData`.
+    CleanupAreaPower(Arc<crate::logic::modules::cleanup_area_power::CleanupAreaPowerModuleData>),
+    /// `BaikonurLaunchPowerModuleData`.
+    BaikonurLaunchPower(Arc<crate::logic::modules::baikonur_launch_power::BaikonurLaunchPowerModuleData>),
+    /// `SpyVisionSpecialPowerModuleData`.
+    SpyVisionSpecialPower(Arc<crate::logic::modules::spy_vision_special_power::SpyVisionSpecialPowerModuleData>),
+    /// `DefectorSpecialPowerModuleData`.
+    DefectorSpecialPower(Arc<crate::logic::modules::defector_special_power::DefectorSpecialPowerModuleData>),
     // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
@@ -432,6 +440,10 @@ impl ModuleDataKind {
             ModuleDataKind::HealCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::ShroudCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::MoneyCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
+            ModuleDataKind::CleanupAreaPower(d) => &d.special_power.behavior.module_data,
+            ModuleDataKind::BaikonurLaunchPower(d) => &d.special_power.behavior.module_data,
+            ModuleDataKind::SpyVisionSpecialPower(d) => &d.special_power.behavior.module_data,
+            ModuleDataKind::DefectorSpecialPower(d) => &d.special_power.behavior.module_data,
             // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
@@ -609,6 +621,34 @@ impl ModuleDataKind {
             ModuleDataKind::MoneyCrateCollide(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::CleanupAreaPower(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.special_power.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::BaikonurLaunchPower(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.special_power.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::SpyVisionSpecialPower(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.special_power.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::DefectorSpecialPower(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.special_power.behavior.module_data.set_module_tag_name_key(key);
                     true
                 }
                 None => false,

@@ -1298,6 +1298,21 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    // the special powers of batch H on stand-ins (l9_powers_h.inc in wrap_module.cpp)
+    pub fn ref_l9sp_run(
+        kind: c_int,
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
     // the helpers of batch G on stand-ins (l9_helpers_g.inc in wrap_module.cpp)
     pub fn ref_l9hg_run(
         kind: c_int,

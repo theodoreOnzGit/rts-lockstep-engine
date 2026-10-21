@@ -168,6 +168,16 @@ pub enum UpdateBody {
     SubdualDamageHelper(crate::logic::modules::subdual_damage_helper::SubdualDamageHelper),
     /// `ObjectDefectionHelper`.
     ObjectDefectionHelper(crate::logic::modules::object_defection_helper::ObjectDefectionHelper),
+    /// `CleanupAreaPower`.
+    CleanupAreaPower(crate::logic::modules::cleanup_area_power::CleanupAreaPower),
+    /// `BaikonurLaunchPower`.
+    BaikonurLaunchPower(crate::logic::modules::baikonur_launch_power::BaikonurLaunchPower),
+    /// `SpyVisionSpecialPower`.
+    SpyVisionSpecialPower(crate::logic::modules::spy_vision_special_power::SpyVisionSpecialPower),
+    /// `DefectorSpecialPower`.
+    DefectorSpecialPower(crate::logic::modules::defector_special_power::DefectorSpecialPower),
+    /// `SpecialPowerModule`.
+    SpecialPowerModule(crate::logic::modules::special_power_module_impl::SpecialPowerModuleImpl),
     // --- end p1w11-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -240,6 +250,11 @@ impl UpdateBody {
             UpdateBody::MoneyCrateCollide(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SubdualDamageHelper(m) => m.world_update(world, me),
             UpdateBody::ObjectDefectionHelper(m) => m.world_update(world, me),
+            UpdateBody::CleanupAreaPower(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::BaikonurLaunchPower(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::SpyVisionSpecialPower(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::DefectorSpecialPower(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::SpecialPowerModule(_) => UPDATE_SLEEP_FOREVER,
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -312,6 +327,11 @@ impl UpdateBody {
             UpdateBody::MoneyCrateCollide(m) => m.module_call(world, me, call),
             UpdateBody::SubdualDamageHelper(m) => m.module_call(world, me, call),
             UpdateBody::ObjectDefectionHelper(m) => m.module_call(world, me, call),
+            UpdateBody::CleanupAreaPower(m) => m.module_call(world, me, call),
+            UpdateBody::BaikonurLaunchPower(m) => m.module_call(world, me, call),
+            UpdateBody::SpyVisionSpecialPower(m) => m.module_call(world, me, call),
+            UpdateBody::DefectorSpecialPower(m) => m.module_call(world, me, call),
+            UpdateBody::SpecialPowerModule(m) => m.module_call(world, me, call),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -570,6 +590,11 @@ impl Snapshot for UpdateBody {
             UpdateBody::MoneyCrateCollide(m) => m.crc(xfer),
             UpdateBody::SubdualDamageHelper(m) => m.crc(xfer),
             UpdateBody::ObjectDefectionHelper(m) => m.crc(xfer),
+            UpdateBody::CleanupAreaPower(m) => m.crc(xfer),
+            UpdateBody::BaikonurLaunchPower(m) => m.crc(xfer),
+            UpdateBody::SpyVisionSpecialPower(m) => m.crc(xfer),
+            UpdateBody::DefectorSpecialPower(m) => m.crc(xfer),
+            UpdateBody::SpecialPowerModule(m) => m.crc(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -638,6 +663,11 @@ impl Snapshot for UpdateBody {
             UpdateBody::MoneyCrateCollide(m) => m.xfer(xfer),
             UpdateBody::SubdualDamageHelper(m) => m.xfer(xfer),
             UpdateBody::ObjectDefectionHelper(m) => m.xfer(xfer),
+            UpdateBody::CleanupAreaPower(m) => m.xfer(xfer),
+            UpdateBody::BaikonurLaunchPower(m) => m.xfer(xfer),
+            UpdateBody::SpyVisionSpecialPower(m) => m.xfer(xfer),
+            UpdateBody::DefectorSpecialPower(m) => m.xfer(xfer),
+            UpdateBody::SpecialPowerModule(m) => m.xfer(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -706,6 +736,11 @@ impl Snapshot for UpdateBody {
             UpdateBody::MoneyCrateCollide(m) => m.load_post_process(),
             UpdateBody::SubdualDamageHelper(m) => m.load_post_process(),
             UpdateBody::ObjectDefectionHelper(m) => m.load_post_process(),
+            UpdateBody::CleanupAreaPower(m) => m.load_post_process(),
+            UpdateBody::BaikonurLaunchPower(m) => m.load_post_process(),
+            UpdateBody::SpyVisionSpecialPower(m) => m.load_post_process(),
+            UpdateBody::DefectorSpecialPower(m) => m.load_post_process(),
+            UpdateBody::SpecialPowerModule(m) => m.load_post_process(),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -859,6 +894,11 @@ impl UpdateBody {
             UpdateBody::RadarUpdate(m) => m.world_construct(world, me),
             UpdateBody::SubdualDamageHelper(m) => m.world_construct(world, me),
             UpdateBody::ObjectDefectionHelper(m) => m.world_construct(world, me),
+            UpdateBody::CleanupAreaPower(m) => m.world_construct(world, me),
+            UpdateBody::BaikonurLaunchPower(m) => m.world_construct(world, me),
+            UpdateBody::SpyVisionSpecialPower(m) => m.world_construct(world, me),
+            UpdateBody::DefectorSpecialPower(m) => m.world_construct(world, me),
+            UpdateBody::SpecialPowerModule(m) => m.world_construct(world, me),
 // --- end p1w11-sonnet ---
             _ => {}
         }

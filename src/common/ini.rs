@@ -221,6 +221,12 @@ pub enum Undefined {
     NullTokenCompared,
     /// `SubdualDamageHelper::update`: `getObject()->getBodyModule()` is `NULL` and the helper calls through it.
     NullBodyModule,
+    /// `SpecialPowerModule::aboutToDoSpecialPower`: `ThePlayerList->getLocalPlayer()` is `NULL` and the relationship is asked of it.
+    NullLocalPlayer,
+    /// `SpecialPowerModule`: a `NULL` location or object is dereferenced (`obj->getPosition()`, `viewObject->setPosition(location)`).
+    NullLocation,
+    /// `DefectorSpecialPower::doSpecialPowerAtObject`: the controlling player has no default team and `defect` is given `NULL`.
+    NullDefaultTeam,
     // --- end p1w11-sonnet ---
     // --- p1l9-upgrades ---
     /// `ArmorUpgrade`: a triggered chemical-suits upgrade on an object with no
