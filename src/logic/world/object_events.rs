@@ -195,6 +195,12 @@ pub enum ObjectClientEvent {
     /// lists are client data; logic only names it). `UpgradeMux::performUpgradeFX`
     /// is the first caller.
     FxListDoFxObj { fx: Vec<u8>, object_id: ObjectId },
+    // --- p1w11-sonnet ---
+    /// `FXList::doFXObj(fx, primary, secondary)` with a secondary object (`FXListDie`: the damage dealer; `INVALID_ID` for none).
+    FxListDoFxObjSecondary { fx: Vec<u8>, object_id: ObjectId, secondary: ObjectId },
+    /// `FXList::doFXPos(fx, &position)` (`FXListDie` with `OrientToObject = No`).
+    FxListDoFxPos { fx: Vec<u8>, position: Coord3D },
+    // --- end p1w11-sonnet ---
     // --- end p1l9-example ---
 }
 

@@ -113,6 +113,15 @@ fn attempt_upgrade<M: UpgradeMuxUser>(m: &mut M, world: &mut World, me: ModuleHa
             return Ok(false);
         }
     }
+    give_self_upgrade(m, world, me)?;
+    Ok(true)
+}
+
+/// `UpgradeMux::giveSelfUpgrade()` (also what `FXListDie`'s constructor calls when it starts active): `performUpgradeFX`, `processUpgradeRemoval`, the
+/// module's `upgradeImplementation`, `setUpgradeExecuted(true)`.
+pub fn give_self_upgrade<M: UpgradeMuxUser>(m: &mut M, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
+    let statics = world.statics.clone();
+    let holder = m.mux_data().clone();
     // performUpgradeFX()
     let fx = holder.mux_data().fx_list_upgrade.clone();
     if let Some(fx) = fx {
@@ -131,7 +140,7 @@ fn attempt_upgrade<M: UpgradeMuxUser>(m: &mut M, world: &mut World, me: ModuleHa
     }
     m.upgrade_implementation(world, me)?;
     m.mux_mut().set_upgrade_executed(!crate::logic::modules::plant(871));
-    Ok(true)
+    Ok(())
 }
 
 /// Runs `f` with the module lent to its slot ([`World::lend_body`]), so a call that reaches it from inside `f` runs at once on its live state, and

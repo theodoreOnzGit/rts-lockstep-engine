@@ -151,6 +151,8 @@ pub enum CutCall {
     InGameUiAddWorldAnimation { template: Vec<u8>, position: crate::common::base_type::Coord3D, display_time_in_seconds: f32, z_rise_per_second: f32 },
     /// `player->setUnitsVisionSpied(setting, whichUnits, byWhom)` (`SpyVisionUpdate::doActivationWork`).
     PlayerSetUnitsVisionSpied { player: PlayerIndex, setting: bool, which_units: crate::common::kind_of::KindOfMaskType, by_whom: PlayerIndex },
+    /// `TheWeaponStore->createAndFireTempWeapon(weapon, source, &position)` (`FireWeaponWhenDeadBehavior`), the weapon by its name in the store.
+    WeaponCreateAndFireTemp { weapon: Vec<u8>, source: ObjectId, position: crate::common::base_type::Coord3D },
     // --- end p1w11-sonnet ---
     // ---- Team ----
     /// `team->notifyTeamOfObjectDeath()`.

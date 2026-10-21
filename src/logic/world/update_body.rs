@@ -180,6 +180,10 @@ pub enum UpdateBody {
     SpecialPowerModule(crate::logic::modules::special_power_module_impl::SpecialPowerModuleImpl),
     /// `SpyVisionUpdate`.
     SpyVisionUpdate(crate::logic::modules::spy_vision_update::SpyVisionUpdate),
+    /// `FXListDie`.
+    FXListDie(crate::logic::modules::fx_list_die::FXListDie),
+    /// `FireWeaponWhenDeadBehavior`.
+    FireWeaponWhenDeadBehavior(crate::logic::modules::fire_weapon_when_dead_behavior::FireWeaponWhenDeadBehavior),
     // --- end p1w11-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -258,6 +262,8 @@ impl UpdateBody {
             UpdateBody::DefectorSpecialPower(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SpecialPowerModule(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SpyVisionUpdate(m) => m.world_update(world, me),
+            UpdateBody::FXListDie(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::FireWeaponWhenDeadBehavior(_) => UPDATE_SLEEP_FOREVER,
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -336,6 +342,8 @@ impl UpdateBody {
             UpdateBody::DefectorSpecialPower(m) => m.module_call(world, me, call),
             UpdateBody::SpecialPowerModule(m) => m.module_call(world, me, call),
             UpdateBody::SpyVisionUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::FXListDie(m) => m.module_call(world, me, call),
+            UpdateBody::FireWeaponWhenDeadBehavior(m) => m.module_call(world, me, call),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -603,6 +611,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::DefectorSpecialPower(m) => m.crc(xfer),
             UpdateBody::SpecialPowerModule(m) => m.crc(xfer),
             UpdateBody::SpyVisionUpdate(m) => m.crc(xfer),
+            UpdateBody::FXListDie(m) => m.crc(xfer),
+            UpdateBody::FireWeaponWhenDeadBehavior(m) => m.crc(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -677,6 +687,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::DefectorSpecialPower(m) => m.xfer(xfer),
             UpdateBody::SpecialPowerModule(m) => m.xfer(xfer),
             UpdateBody::SpyVisionUpdate(m) => m.xfer(xfer),
+            UpdateBody::FXListDie(m) => m.xfer(xfer),
+            UpdateBody::FireWeaponWhenDeadBehavior(m) => m.xfer(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -751,6 +763,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::DefectorSpecialPower(m) => m.load_post_process(),
             UpdateBody::SpecialPowerModule(m) => m.load_post_process(),
             UpdateBody::SpyVisionUpdate(m) => m.load_post_process(),
+            UpdateBody::FXListDie(m) => m.load_post_process(),
+            UpdateBody::FireWeaponWhenDeadBehavior(m) => m.load_post_process(),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -910,6 +924,8 @@ impl UpdateBody {
             UpdateBody::DefectorSpecialPower(m) => m.world_construct(world, me),
             UpdateBody::SpecialPowerModule(m) => m.world_construct(world, me),
             UpdateBody::SpyVisionUpdate(m) => m.world_construct(world, me),
+            UpdateBody::FXListDie(m) => m.world_construct(world, me),
+            UpdateBody::FireWeaponWhenDeadBehavior(m) => m.world_construct(world, me),
 // --- end p1w11-sonnet ---
             _ => {}
         }

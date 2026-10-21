@@ -896,6 +896,18 @@ as `PlayerSetUnitsVisionSpied` cut calls. **Upstream fact kept:** `SpyVisionUpda
 New: `ModuleCall::SetSpyVisionDisabledUntilFrame` (the sabotage crates call `setDisabledUntilFrame`), `CutCall::PlayerSetUnitsVisionSpied`. The other modules
 that mix `UpgradeMux` in (`FXListDie`, `FireWeaponWhenDeadBehavior`, `FireWeaponWhenDamagedBehavior`, `AutoHealBehavior`, `CountermeasuresBehavior`,
 `GenerateMinefieldBehavior`, `FireOCLAfterWeaponCooldownUpdate`) can use `upgrade_mux_user`.
+**Layer-9 die batch J and behavior batch K (2026-10-21, `p1w11-sonnet`).** `FXListDie` (`modules/fx_list_die.rs`: a die module and an `UpgradeMux`; the
+effect list at the object, oriented to the damage dealer or at the position; the constructor's `giveSelfUpgrade()` when it starts active, which it does
+by default) and `FireWeaponWhenDeadBehavior` (`modules/fire_weapon_when_dead_behavior.rs`: a behaviour module with `DieModuleInterface` and an
+`UpgradeMux`; a temporary weapon at the object when it dies, never under construction), both over `modules/upgrade_mux_user.rs` (now with
+`give_self_upgrade`), with `tests/differential_die_modules_j.rs` and `tests/differential_behavior_modules_k.rs` against the unchanged `.cpp` files
+(`differential/l9_dies_j.inc`, `l9_behaviors_k.inc`). J: 9,000 cases, 8,826 data reads, 139,328 dump lines (63,161 ops), 8,463 name-key checks, 0 mismatches,
+174 excluded; 8 planted bugs (`L9_PLANT` 871, 881-887), all caught (871 by a C++ crash, recorded in the test header). K: 9,000 cases, 8,715 data reads, 138,368 dump
+lines (62,660 ops), 8,412 name-key checks, 0 mismatches, 285 excluded; 8 planted bugs (891-898), all caught. New: `ObjectClientEvent::{FxListDoFxObjSecondary,
+FxListDoFxPos}`, `CutCall::WeaponCreateAndFireTemp`, `GameStatics::weapon_store` (the death weapon is a name found in it when it fires; no name key is assigned,
+which upstream does at the read). **Upstream facts kept:** `FXListDie`'s `StartsActive` defaults to TRUE and its `xfer` leaves the mux's flag out;
+`FireWeaponWhenDeadBehavior`'s default is FALSE and its `xfer` saves it. Still to do with the mux: `FireWeaponWhenDamagedBehavior` (weapon instances),
+`AutoHealBehavior`, `CountermeasuresBehavior`, `GenerateMinefieldBehavior`, `FireOCLAfterWeaponCooldownUpdate`.
 **Layer-9 helper and die batch verified (2026-10-21, `p1w10-sonnet`).** ~~The helpers and dies of `p1l9-helpers` (`ObjectHelper`,
 `ObjectSMCHelper`, `ObjectRepulsorHelper`, `ObjectWeaponStatusHelper`, `StatusDamageHelper`, `TempWeaponBonusHelper`,
 `DestroyDie`, `KeepObjectDie`, `UpgradeDie`) are pure functions returning effects.~~ **CORRECTED 2026-10-21** - the drafts were

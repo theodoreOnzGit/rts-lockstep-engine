@@ -87,6 +87,11 @@
 #define Anim2DCollection ModTestAnim2DCollection
 #define TheAnim2DCollection ModTestTheAnim2DCollection
 /* --- end p1w11-sonnet --- */
+/* --- p1w11-sonnet --- (behavior batch K: FireWeaponWhenDeadBehavior fires a temporary weapon) */
+#define WeaponStore ModTestWeaponStore
+#define TheWeaponStore ModTestTheWeaponStore
+#define WeaponTemplate ModTestWeaponTemplate
+/* --- end p1w11-sonnet --- */
 #define GameLogic ModTestGameLogic
 #define TheGameLogic ModTestTheGameLogic
 

@@ -95,6 +95,8 @@ pub mod spy_vision_special_power;
 pub mod defector_special_power;
 pub mod spy_vision_update;
 pub mod upgrade_mux_user;
+pub mod fx_list_die;
+pub mod fire_weapon_when_dead_behavior;
 // --- end p1w11-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -329,6 +331,14 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::SpyVisionUpdate(d) => Some(made_update(
             spy_vision_update::SpyVisionUpdate::get_interface_mask(),
             spy_vision_update::SpyVisionUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::SpyVisionUpdate(m))),
+        )),
+        ModuleDataKind::FXListDie(d) => Some(made(
+            fx_list_die::FXListDie::get_interface_mask(),
+            fx_list_die::FXListDie::new(object, Some(d.clone())).map(UpdateBody::FXListDie),
+        )),
+        ModuleDataKind::FireWeaponWhenDeadBehavior(d) => Some(made(
+            fire_weapon_when_dead_behavior::FireWeaponWhenDeadBehavior::get_interface_mask(),
+            fire_weapon_when_dead_behavior::FireWeaponWhenDeadBehavior::new(object, Some(d.clone())).map(UpdateBody::FireWeaponWhenDeadBehavior),
         )),
         // --- end p1w11-sonnet ---
         _ => None,

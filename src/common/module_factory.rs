@@ -621,6 +621,16 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::spy_vision_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::spy_vision_update::SpyVisionUpdate::get_interface_mask()),
         }),
+        "FXListDie" => Some(ModuleTemplate {
+            create_proc: Some(new_die_base),
+            create_data_proc: Some(crate::logic::modules::fx_list_die::new_module_data),
+            which_interfaces: Some(crate::logic::modules::fx_list_die::FXListDie::get_interface_mask()),
+        }),
+        "FireWeaponWhenDeadBehavior" => Some(ModuleTemplate {
+            create_proc: Some(new_die_base),
+            create_data_proc: Some(crate::logic::modules::fire_weapon_when_dead_behavior::new_module_data),
+            which_interfaces: Some(crate::logic::modules::fire_weapon_when_dead_behavior::FireWeaponWhenDeadBehavior::get_interface_mask()),
+        }),
         // --- end p1w11-sonnet ---
         _ => None,
     }
@@ -673,6 +683,8 @@ fn new_die_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module
         Some(ModuleDataKind::DamDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
         Some(ModuleDataKind::SpecialPowerCompletionDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
         Some(ModuleDataKind::EjectPilotDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
+        Some(ModuleDataKind::FXListDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
+        Some(ModuleDataKind::FireWeaponWhenDeadBehavior(d)) => Some(std::sync::Arc::new(d.die.clone())),
         // --- end p1w11-sonnet ---
         _ => None,
     };

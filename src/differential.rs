@@ -1299,6 +1299,34 @@ extern "C" {
         code: *mut c_uint,
     ) -> c_int;
     // the special powers of batch H on stand-ins (l9_powers_h.inc in wrap_module.cpp)
+    // behavior batch K: FireWeaponWhenDeadBehavior on stand-ins (l9_behaviors_k.inc in wrap_module.cpp)
+    pub fn ref_l9fk_run(
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+    // die batch J: FXListDie on stand-ins (l9_dies_j.inc in wrap_module.cpp)
+    pub fn ref_l9fj_run(
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
     // update batch I: SpyVisionUpdate on stand-ins (l9_updates_i.inc in wrap_module.cpp)
     pub fn ref_l9ui_run(
         filename: *const c_char,

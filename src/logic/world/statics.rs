@@ -54,6 +54,8 @@ pub struct GameStatics {
     pub thing_factory: crate::common::thing_factory::ThingFactory,
     /// `TheObjectCreationListStore` (`EjectPilotDie` finds out whether its lists exist).
     pub object_creation_list_store: crate::logic::object_creation_list::ObjectCreationListStore,
+    /// `TheWeaponStore` (`FireWeaponWhenDeadBehavior` finds its death weapon in it).
+    pub weapon_store: crate::logic::weapon::WeaponStore,
     // --- end p1w11-sonnet ---
     // New stores go here, each in its translator's marked block.
 }

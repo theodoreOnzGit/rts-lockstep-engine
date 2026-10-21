@@ -77,7 +77,10 @@ struct Event { int kind; const void *p; };
 std::vector<Event> g_events;
 void event(int kind, const void *p) { Event e = { kind, p }; g_events.push_back(e); }
 }
-void FXList::doFXObj(const FXList *fx, const Object *, const Object *) { event(1, fx); }
+/* --- p1w11-sonnet --- (a driver that wants the objects of a doFXObj sets this hook; none by default) */
+void (*g_fxObjHook)(const Object *primary, const Object *secondary) = 0;
+/* --- end p1w11-sonnet --- */
+void FXList::doFXObj(const FXList *fx, const Object *a, const Object *b) { event(1, fx); if (g_fxObjHook) g_fxObjHook(a, b); }
 void Object::removeUpgrade(const UpgradeTemplate *t)
 {
 	event(2, t);
@@ -787,4 +790,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_helpers_g.inc"
 #include "l9_powers_h.inc"
 #include "l9_updates_i.inc"
+#include "l9_dies_j.inc"
+#include "l9_behaviors_k.inc"
 /* --- end p1w11-sonnet --- */

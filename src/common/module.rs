@@ -372,6 +372,10 @@ pub enum ModuleDataKind {
     DefectorSpecialPower(Arc<crate::logic::modules::defector_special_power::DefectorSpecialPowerModuleData>),
     /// `SpyVisionUpdateModuleData`.
     SpyVisionUpdate(Arc<crate::logic::modules::spy_vision_update::SpyVisionUpdateModuleData>),
+    /// `FXListDieModuleData`.
+    FXListDie(Arc<crate::logic::modules::fx_list_die::FXListDieModuleData>),
+    /// `FireWeaponWhenDeadBehaviorModuleData`.
+    FireWeaponWhenDeadBehavior(Arc<crate::logic::modules::fire_weapon_when_dead_behavior::FireWeaponWhenDeadBehaviorModuleData>),
     // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
@@ -447,6 +451,8 @@ impl ModuleDataKind {
             ModuleDataKind::SpyVisionSpecialPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::DefectorSpecialPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::SpyVisionUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::FXListDie(d) => &d.die.behavior.module_data,
+            ModuleDataKind::FireWeaponWhenDeadBehavior(d) => &d.die.behavior.module_data,
             // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
@@ -659,6 +665,20 @@ impl ModuleDataKind {
             ModuleDataKind::SpyVisionUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::FXListDie(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.die.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::FireWeaponWhenDeadBehavior(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.die.behavior.module_data.set_module_tag_name_key(key);
                     true
                 }
                 None => false,
