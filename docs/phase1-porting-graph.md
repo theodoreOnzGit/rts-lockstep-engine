@@ -827,8 +827,22 @@ science up on every attempt, which finds the same name key). The comparison foun
 `tests/differential_upgrade_modules_b.rs` against the six unchanged `.cpp` files (`differential/l9_upgrades_b.inc`): 9,000
 cases, 8,854 data reads, 110,657 op dumps, 8,372 key probes, 0 mismatches, 146 excluded as undefined upstream; 30 planted bugs
 (`L9_PLANT` 601-631, 628 unused), 29 caught (one by a C++ crash) and 1 equivalent (629). `ObjectCreationUpgrade` names its list
-in a cut call `OclCreate`; the layer-12 consumer must treat an unknown name as no list. Still to do of the Upgrade directory:
-`ReplaceObjectUpgrade`, `UnpauseSpecialPowerUpgrade`, `PowerPlantUpgrade`, `RadarUpgrade`, `CostModifierUpgrade`.
+in a cut call `OclCreate`; the layer-12 consumer must treat an unknown name as no list. ~~Still to do of the Upgrade directory:
+`ReplaceObjectUpgrade`, `UnpauseSpecialPowerUpgrade`, `PowerPlantUpgrade`, `RadarUpgrade`, `CostModifierUpgrade`.~~ **CORRECTED 2026-10-21
+(`p1w11-sonnet`)** -- all five are done (next two paragraphs); the Upgrade directory is complete.
+**Layer-9 upgrade batch C (2026-10-21, `p1w11-sonnet`).** `CostModifierUpgrade`, `PowerPlantUpgrade`, `RadarUpgrade` and
+`UnpauseSpecialPowerUpgrade` (`modules/*_upgrade.rs`), wired as object modules, with `tests/differential_upgrade_modules_c.rs` against the four
+unchanged `.cpp` files (`differential/l9_upgrades_c.inc`; `Common/player.h` is a forwarder in `shim_module` because the upstream include is
+lower case): 9,000 cases, 8,712 data reads, 118,456 op dumps, 8,354 key probes, 0 mismatches, 288 excluded as undefined upstream (an object
+with no controlling player: `CostModifierUpgrade` and `RadarUpgrade` dereference it); 29 planted bugs (`L9_PLANT` 640-673), all caught. The
+first modules to answer `onDelete`, `onCapture` (`UpgradeBehavior`, called from `upgrade_module_call`) and a world-aware `loadPostProcess`
+(`ModuleCall::LoadPostProcess`, sent by `World::modules_load_post_process`; see world-design). `UnpauseSpecialPowerUpgrade` keeps its template
+by name and looks it up when it runs (a module's data has no store to look in at read time).
+**ReplaceObjectUpgrade and `World::thing_factory_new_object` (2026-10-21, `p1w11-sonnet`).** `tests/differential_replace_object_upgrade.rs`
+against the unchanged `.cpp` (`differential/l9_replace_object.inc`): 9,000 cases, 177,582 op/object dumps, 0 mismatches, 8 of 8 planted bugs
+caught. `logic/world/thing_factory_world.rs` is the whole of `ThingFactory::newObject` over the world (the part `object_create.rs` did not
+have: the template, its build variation, the behavior module list made with `modules::new_module`), reusable by every later module that makes
+an object from a template name (the object creation list's host, `SpawnBehavior`, `ProductionUpdate`, ...).
 **Layer-9 helper and die batch verified (2026-10-21, `p1w10-sonnet`).** ~~The helpers and dies of `p1l9-helpers` (`ObjectHelper`,
 `ObjectSMCHelper`, `ObjectRepulsorHelper`, `ObjectWeaponStatusHelper`, `StatusDamageHelper`, `TempWeaponBonusHelper`,
 `DestroyDie`, `KeepObjectDie`, `UpgradeDie`) are pure functions returning effects.~~ **CORRECTED 2026-10-21** - the drafts were

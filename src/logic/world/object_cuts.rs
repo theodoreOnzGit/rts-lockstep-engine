@@ -314,6 +314,9 @@ pub struct ObjectCuts {
     // --- p1w11-sonnet ---
     /// The classes `World::thing_factory_new_object` made as stubs because they are not translated (`ThingFactory::newObject`), in order.
     pub untranslated_modules: Vec<Vec<u8>>,
+    /// A [`ModuleProbe`](crate::logic::world::module_probe::ProbeModule) writes the lines `pause`, `extendrods` and `extendradar` to `trace`
+    /// (off by default: `differential_object` compares the probe's trace to the C++ log, which has no such lines).
+    pub probe_effect_trace: bool,
     // --- end p1w11-sonnet ---
     /// The values of the global stores.
     pub globals: ObjectGlobals,
@@ -399,6 +402,7 @@ impl Default for ObjectCuts {
             module_errors: Vec::new(),
             // --- p1w11-sonnet ---
             untranslated_modules: Vec::new(),
+            probe_effect_trace: false,
             // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
             globals: ObjectGlobals::default(),

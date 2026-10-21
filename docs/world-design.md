@@ -412,6 +412,30 @@ which whoever builds the world calls for all sixteen. **Left for the layer-12 ad
 
 **Upgrade batch B (`p1w10-sonnet`, 2026-10-21):** upgrade modules reach other modules and the drawable through cut calls (`CutCall::AiSetLocomotorUpgrade`, `ContainSetPassengerAllowedToFire`, `SpawnGiveSlavesStealthUpgrade`, `OclCreate`) and client events (`DrawableShowSubObject`, `DrawableUpdateSubObjects`); the layer-12 consumer of `OclCreate` looks the list up by name and does nothing for an unknown name, as `INI::parseObjectCreationList` answers NULL.
 
+**Upgrade batch C and ReplaceObjectUpgrade (`p1w11-sonnet`, 2026-10-21).**
+
+- **A World-aware `loadPostProcess` (decision).** `Snapshot::load_post_process(&mut self)` has no world, and `PowerPlantUpgrade::loadPostProcess`
+  re-adds its power bonus to the object's player. Chosen: a `ModuleCall::LoadPostProcess` hook, answered by `upgrade_module_call` through
+  `UpgradeBehavior::load_post_process_world`, and sent by `World::modules_load_post_process(id)` -- the world-level pass, which the save/load
+  code runs after the world-free `load_post_process` of every module and in module order, the order upstream's post-process list has (the
+  modules are added to it as they are xfered). Rejected: a `&mut World` parameter on the `Snapshot` trait (every snapshot in the crate would
+  take a world it does not use).
+- **`onDelete` and `onCapture` for upgrade modules**: `UpgradeBehavior::{on_delete, on_capture}` (empty by default), reached by
+  `ModuleCall::OnDelete` and `OnCapture { old_owner, new_owner }`; an owner is a player index, a negative one is upstream's `NULL`.
+- **Reaching other modules**: `ModuleCall::ExtendRods` (every module of the object but the sender; a module without the interface answers
+  `Unhandled`), `ExtendRadar` (the module `findUpdateModule("RadarUpdate")` finds, by class name), `GetSpecialPowerTemplateId` (a pointer
+  compare that includes `NULL`). `findModule` compares class names and assigns no key, where upstream's `getModuleNameKey()` assigns the key of a
+  class the first time it is asked: a later `nameToKey` of a new name could get a different key (documented in `radar_upgrade.rs`).
+- **Stores**: `GameStatics::special_power_store` (`TheSpecialPowerStore`) and `GameStatics::thing_factory` (`TheThingFactory`).
+- **Making an object from a template**: `World::thing_factory_find_template(name)` and `World::thing_factory_new_object(id, team, status)`
+  (`thing_factory_world.rs`) are `ThingFactory::newObject` over the world. A module class that is not translated yet is a stub with the
+  interface mask its registration recorded in the template (`ModuleInfo`'s `interfaceMask`), and the class is listed in
+  `world.cuts.untranslated_modules`.
+- **Replacing an object (decision, per the lead)**: `ReplaceObjectUpgrade` calls `World::destroy_object` with the module lent to its slot around
+  it (the destroy sends `onDelete` and `onDestroy` to every module of the object, this one included), then `thing_factory_new_object`, in
+  upstream's order. The pathfinder, the player's `onStructureConstructionComplete` and the player's power, radar and cost effects are cut
+  calls (`PathfinderAdd/RemoveObjectFromPathfindMap`, `PlayerOnStructureConstructionComplete`, `PlayerAdd/RemovePowerBonus`, `PlayerAdd/RemoveKindOfProductionCostChange`).
+
 <!-- --- p1w6-object --- -->
 ## Object (layer 8, wave 6)
 

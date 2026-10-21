@@ -32,7 +32,7 @@
 //!
 //! The Rust side is the real thing: a `World` whose `statics` hold the loaded upgrade center and special power store, one object made by
 //! `World::new_object` with the module from `modules::new_module` and the behaviour modules as scripted `ProbeModule`s, and every op sent through
-//! `World::module_call` (`OnDelete`, `OnCapture`, `LoadPostProcess` as the upgrade call path of `modules::upgrade_body` answers them).
+//! `World::module_call` (`OnDelete` and `OnCapture` as the upgrade call path of `modules::upgrade_body` answers them, and `LoadPostProcess` through `World::modules_load_post_process`).
 //!
 //! Compared, bit for bit: the read's throw (status and message); the data (the mux and the module's fields: the kind-of list and the percentage
 //! bits, the disable-proof flag, the id of the template the name finds); per op the throw status, the result, `isAlreadyUpgraded`, the effects in the
@@ -442,6 +442,7 @@ fn rust_run(
     for p in 0..3 {
         w.cuts.player_upgrades.insert(p, mask_from(&player_mask));
     }
+    w.cuts.probe_effect_trace = true;
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     let m = rts_lockstep_engine::logic::modules::new_module(0, CLASSES[kind].as_bytes(), b"ModuleTag_Up", &data).unwrap().unwrap();
@@ -502,7 +503,7 @@ fn rust_run(
             }
             6 => {
                 for p in 0..3 {
-                    w.cuts.player_upgrades.insert(p, mask.clone());
+                    w.cuts.player_upgrades.insert(p, mask);
                 }
                 false
             }
@@ -519,7 +520,7 @@ fn rust_run(
                 false
             }
             10 => {
-                w.module_call(id, idx, ModuleCall::LoadPostProcess);
+                w.modules_load_post_process(id);
                 false
             }
             _ => {

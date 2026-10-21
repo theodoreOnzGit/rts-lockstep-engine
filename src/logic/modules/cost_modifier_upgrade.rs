@@ -140,7 +140,7 @@ impl UpgradeBehavior for CostModifierUpgrade {
         let player = world.get_controlling_player(me.object).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
         // update the player with another TypeOfProductionCostChange
         if !crate::logic::modules::plant(647) {
-            world.cut(CutCall::PlayerAddKindOfProductionCostChange { player, kind_of: self.data.kind_of.clone(), percent: self.data.percentage });
+            world.cut(CutCall::PlayerAddKindOfProductionCostChange { player, kind_of: self.data.kind_of, percent: self.data.percentage });
         }
         Ok(())
     }
@@ -156,7 +156,7 @@ impl UpgradeBehavior for CostModifierUpgrade {
         }
         // remove the cost change from the player
         if let Some(player) = world.get_controlling_player(me.object) {
-            world.cut(CutCall::PlayerRemoveKindOfProductionCostChange { player, kind_of: self.data.kind_of.clone(), percent: self.data.percentage });
+            world.cut(CutCall::PlayerRemoveKindOfProductionCostChange { player, kind_of: self.data.kind_of, percent: self.data.percentage });
         }
         // this upgrade module is now "not upgraded"
         if !crate::logic::modules::plant(641) {
@@ -172,7 +172,7 @@ impl UpgradeBehavior for CostModifierUpgrade {
         // remove the cost change from the old player and add it to the new player
         if old_owner >= 0 {
             if !crate::logic::modules::plant(642) {
-                world.cut(CutCall::PlayerRemoveKindOfProductionCostChange { player: old_owner, kind_of: self.data.kind_of.clone(), percent: self.data.percentage });
+                world.cut(CutCall::PlayerRemoveKindOfProductionCostChange { player: old_owner, kind_of: self.data.kind_of, percent: self.data.percentage });
             }
             if !crate::logic::modules::plant(644) {
                 self.base.mux_mut().set_upgrade_executed(false);
@@ -180,7 +180,7 @@ impl UpgradeBehavior for CostModifierUpgrade {
         }
         if new_owner >= 0 {
             if !crate::logic::modules::plant(643) {
-                world.cut(CutCall::PlayerAddKindOfProductionCostChange { player: new_owner, kind_of: self.data.kind_of.clone(), percent: self.data.percentage });
+                world.cut(CutCall::PlayerAddKindOfProductionCostChange { player: new_owner, kind_of: self.data.kind_of, percent: self.data.percentage });
             }
             self.base.mux_mut().set_upgrade_executed(true);
         }

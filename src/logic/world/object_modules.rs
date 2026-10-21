@@ -152,6 +152,16 @@ impl World {
         }
     }
 
+    // --- p1w11-sonnet ---
+    /// The world-level post-load pass for the modules of `id`: `loadPostProcess()` of each module whose `loadPostProcess` needs the world
+    /// (`PowerPlantUpgrade` re-adds its power bonus to the player), in module order, as [`ModuleCall::LoadPostProcess`]. It runs after the
+    /// world-free `Snapshot::load_post_process` of every module has (that is `World::load_post_process`'s and the xfer chain's); see
+    /// `docs/world-design.md`, "A World-aware `loadPostProcess`".
+    pub fn modules_load_post_process(&mut self, id: ObjectId) {
+        self.call_all_modules(id, ModuleCall::LoadPostProcess);
+    }
+    // --- end p1w11-sonnet ---
+
     // ---- findModule and the interface lookups ----------------------------------
 
     /// `findModule(key)`: the first module with that class name.

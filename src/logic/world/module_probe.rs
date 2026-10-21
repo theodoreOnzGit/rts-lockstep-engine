@@ -186,7 +186,7 @@ impl ProbeModule {
             }
             ModuleCall::IsShortcutPower => ModuleReply::Bool(self.answers.shortcut),
             ModuleCall::IsModuleForPower { template } => ModuleReply::Bool(self.answers.power_template == template),
-            // --- p1w11-sonnet --- (the effects are lines of the trace, tagged with the module's position, for the batch C tests)
+            // --- p1w11-sonnet --- (the effects are lines of the trace, tagged with the module's position, when `cuts.probe_effect_trace` asks)
             ModuleCall::GetSpecialPowerTemplateId => {
                 if self.answers.power_template != 0 {
                     ModuleReply::Int(self.answers.power_template as i32)
@@ -195,15 +195,19 @@ impl ProbeModule {
                 }
             }
             ModuleCall::PauseCountdown { disabling } => {
-                if let Some(t) = &mut world.cuts.trace {
-                    t.push(format!("pause {} {}", me.index, i32::from(disabling)));
+                if world.cuts.probe_effect_trace {
+                    if let Some(t) = &mut world.cuts.trace {
+                        t.push(format!("pause {} {}", me.index, i32::from(disabling)));
+                    }
                 }
                 ModuleReply::Done
             }
             ModuleCall::ExtendRods { extend } => {
                 if self.answers.has & (1 << 20) != 0 {
-                    if let Some(t) = &mut world.cuts.trace {
-                        t.push(format!("extendrods {} {}", me.index, i32::from(extend)));
+                    if world.cuts.probe_effect_trace {
+                        if let Some(t) = &mut world.cuts.trace {
+                            t.push(format!("extendrods {} {}", me.index, i32::from(extend)));
+                        }
                     }
                     ModuleReply::Done
                 } else {
@@ -211,8 +215,10 @@ impl ProbeModule {
                 }
             }
             ModuleCall::ExtendRadar => {
-                if let Some(t) = &mut world.cuts.trace {
-                    t.push("extendradar".to_string());
+                if world.cuts.probe_effect_trace {
+                    if let Some(t) = &mut world.cuts.trace {
+                        t.push("extendradar".to_string());
+                    }
                 }
                 ModuleReply::Done
             }

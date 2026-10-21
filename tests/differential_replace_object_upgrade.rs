@@ -470,7 +470,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, player_mask: [u32; 4], obj_mask: [u3
             }
             6 => {
                 for p in 0..3 {
-                    w.cuts.player_upgrades.insert(p, mask.clone());
+                    w.cuts.player_upgrades.insert(p, mask);
                 }
                 false
             }
@@ -533,7 +533,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, player_mask: [u32; 4], obj_mask: [u3
         put_u32(&mut v, ids.len() as u32);
         for id in ids {
             let ob = w.objects.find(id).unwrap();
-            put_i32(&mut v, id as i32);
+            put_i32(&mut v, id);
             put_i32(&mut v, i32::from(ob.is_destroyed()));
             let t = match ob.template().get_name() {
                 b"RO_A" => 1,
