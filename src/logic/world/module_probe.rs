@@ -336,6 +336,22 @@ impl ProbeModule {
                 ModuleReply::Damage(info)
             }
             // --- p1w13-sonnet ---
+            ModuleCall::WouldIgnite => {
+                if world.cuts.probe_effect_trace {
+                    if let Some(t) = &mut world.cuts.trace {
+                        t.push(format!("wouldignite {}", me.object));
+                    }
+                }
+                ModuleReply::Bool(self.answers.yes)
+            }
+            ModuleCall::TryToIgnite => {
+                if world.cuts.probe_effect_trace {
+                    if let Some(t) = &mut world.cuts.trace {
+                        t.push(format!("tryignite {}", me.object));
+                    }
+                }
+                ModuleReply::Done
+            }
             ModuleCall::AiGetGoalObject => ModuleReply::Id(self.answers.goal_object),
             ModuleCall::PhysicsGetVelocity => ModuleReply::Coord(self.answers.velocity),
             // --- end p1w13-sonnet ---
@@ -438,7 +454,6 @@ impl ProbeModule {
             | ModuleCall::GetRadarDisableProof
             | ModuleCall::IsOverchargeActive
             | ModuleCall::IsAbleToBeToppled
-            | ModuleCall::WouldIgnite // p1w12-sonnet
             | ModuleCall::SpecialAbilityIsActive // p1w13-sonnet
             | ModuleCall::CountermeasuresIsActive => ModuleReply::Bool(self.answers.yes),
             ModuleCall::CalculateCountermeasureToDivertTo { .. } => ModuleReply::Id(self.answers.countermeasure),
@@ -509,7 +524,6 @@ impl ProbeModule {
             | ModuleCall::StopHealing // p1w12-sonnet
             | ModuleCall::ProneGoProne(_) // p1w13-sonnet
             | ModuleCall::FloatSetEnabled(_) // p1w13-sonnet
-            | ModuleCall::TryToIgnite // p1w12-sonnet
             | ModuleCall::OclUpdateResetTimer // p1w12-sonnet
             | ModuleCall::OclUpdateGetCountdownPercent // p1w12-sonnet
             | ModuleCall::OclUpdateGetRemainingFrames // p1w12-sonnet

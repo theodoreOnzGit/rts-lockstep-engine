@@ -25,7 +25,10 @@ public:
 	std::vector<Object *> m_list;
 	size_t m_i = 0;
 };
-class PartitionFilter { public: virtual ~PartitionFilter() {} };
+class PartitionFilter { public: virtual ~PartitionFilter() {}
+	/* --- p1w13-sonnet --- (update batch O: FireSpreadUpdate's own filter overrides it) */
+	virtual Bool allow(Object *objOther) { return TRUE; }
+	/* --- end p1w13-sonnet --- */ };
 class PartitionFilterRelationship : public PartitionFilter
 {
 public:
@@ -59,6 +62,7 @@ public:
 	SimpleObjectIterator *iterateObjectsInRange( const Coord3D *pos, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = 0, IterOrderType order = ITER_FASTEST );
 	/* --- end p1w12-sonnet --- */
 	/* --- p1w13-sonnet --- */
+	Object *getClosestObject( const Object *obj, Real maxDist, DistanceCalculationType dc = FROM_CENTER_2D, PartitionFilter **filters = 0 );   /* update batch O: FireSpreadUpdate */
 	Bool geomCollidesWithGeom(const Coord3D* pos1, const GeometryInfo& geom1, Real angle1, const Coord3D* pos2, const GeometryInfo& geom2, Real angle2) const;
 	SimpleObjectIterator *iterateObjectsInRange( const Object *obj, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = 0, IterOrderType order = ITER_FASTEST );
 	/* --- end p1w13-sonnet --- */

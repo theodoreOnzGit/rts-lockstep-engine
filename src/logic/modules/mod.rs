@@ -114,6 +114,7 @@ pub mod prone_update;
 pub mod enemy_near_update;
 pub mod float_update;
 pub mod tech_building_behavior;
+pub mod fire_spread_update;
 // --- end p1w13-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -412,6 +413,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::TechBuildingBehavior(d) => Some(made_update(
             tech_building_behavior::TechBuildingBehavior::get_interface_mask(),
             tech_building_behavior::TechBuildingBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::TechBuildingBehavior(m))),
+        )),
+        ModuleDataKind::FireSpreadUpdate(d) => Some(made_update(
+            UpdateModule::get_interface_mask(),
+            fire_spread_update::FireSpreadUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::FireSpreadUpdate(m))),
         )),
         // --- end p1w13-sonnet ---
         _ => None,

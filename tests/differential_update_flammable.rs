@@ -16,10 +16,10 @@
 //! `key_FireSpreadUpdate` is removed, because the test resets the name key generator for every case), compiled into `wrap_module.cpp`'s unit (`differential/l9_flammable_n.inc`) on the module build's
 //! stand-ins: an `Object` with status bits, a `Drawable` that logs the model-condition calls, a body (`MBody`, `l9_body_m.inc`) that logs the damage and the
 //! `setAflame` it is given and takes damage as the scripted probe body of the Rust side does, an audio manager that hands out handles 1, 2, 3, ... and logs
-//! (`removeAudioEvent` is new), a `FireSpreadUpdate` whose `startFireSpreading` logs, a game logic whose frame the test sets and whose wake recorder
+//! (`removeAudioEvent` is new), the REAL `FireSpreadUpdate` (`differential/l9_fire_spread_o.inc`; p1w13-sonnet replaced the earlier stand-in whose `startFireSpreading` logged), a game logic whose frame the test sets and whose wake recorder
 //! counts the calls `setWakeFrame` makes, and the REAL `UpdateModule`, `INI` and `Xfer`.
 //!
-//! The Rust side is the real thing: a `World` with one object (a drawable, a probe body, and a probe `FireSpreadUpdate` if the case has one), the
+//! The Rust side is the real thing: a `World` with one object (a drawable, a probe body, and the real `FireSpreadUpdate` module if the case has one; since 2026-10-21 the `spread` log line is the wake call the real module makes, counted with the flammable module's own), the
 //! module from `modules::new_module`, `update()` run as the scheduler runs it (`World::with_body`), `onDamage`, `tryToIgnite` and `wouldIgnite` as
 //! `World::module_call`s, and the xfers through `World::xfer_module_slot`.
 //!
@@ -274,6 +274,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.set_frame(cfg[0]);
+    w.random.init_game_logic_random(0);
     let mut modules = Vec::new();
     if cfg[3] != 0 {
         let mut m = NewModule::plain(b"ProbeBody", b"ModuleTag_Body");
@@ -282,15 +283,15 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         modules.push(m);
     }
     if cfg[4] != 0 {
-        let mut s = NewModule::plain(b"FireSpreadUpdate", b"ModuleTag_Spread");
-        s.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
-        modules.push(s);
+        let spread_data = ModuleDataKind::FireSpreadUpdate(Arc::new(rts_lockstep_engine::logic::modules::fire_spread_update::FireSpreadUpdateModuleData::default()));
+        modules.push(rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"FireSpreadUpdate", b"ModuleTag_Spread", &spread_data).unwrap().unwrap());
     }
     modules.push(rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"FlammableUpdate", b"ModuleTag_Flammable", &data).unwrap().unwrap());
     let template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
     let me = w.new_object(NewObject { template, status: Default::default(), team: None, modules }).unwrap();
     assert_eq!(me, 1, "the first object of a fresh world has the id 1");
     let idx = w.find_module(me, b"FlammableUpdate").unwrap();
+    let spread_idx = w.find_module(me, b"FireSpreadUpdate").map(i32::from);
     let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
     let constructor_trace = w.cuts.trace.take().unwrap_or_default();
     // a new object has the drawable the client made for it: the test binds one, as batch E does
@@ -356,7 +357,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             for t in trace {
                 if let Some(f) = t.strip_prefix("awaken ") {
                     let (i, f) = f.split_once(' ').unwrap();
-                    if i.parse::<i32>().unwrap() == i32::from(idx) {
+                    // the wake calls of the two modules under test count (the REAL FireSpreadUpdate's too, in the C++ recorder as here), not the helpers'
+                    if i.parse::<i32>().unwrap() == i32::from(idx) || spread_idx == Some(i.parse::<i32>().unwrap()) {
                         wakes += 1;
                         last = f.parse().unwrap();
                     }
@@ -386,7 +388,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             for t in trace {
                 if let Some(f) = t.strip_prefix("awaken ") {
                     let (i, f) = f.split_once(' ').unwrap();
-                    if i.parse::<i32>().unwrap() == i32::from(idx) {
+                    // the wake calls of the two modules under test count (the REAL FireSpreadUpdate's too, in the C++ recorder as here), not the helpers'
+                    if i.parse::<i32>().unwrap() == i32::from(idx) || spread_idx == Some(i.parse::<i32>().unwrap()) {
                         wakes += 1;
                         last = f.parse().unwrap();
                     }

@@ -2,7 +2,7 @@
 **   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/FlammableUpdate.cpp   (#included, unchanged)
 ** (with one mechanical edit, see below) with its header unchanged, in wrap_module.cpp's unit on the stand-ins of differential/shim_module: an Object with status bits, a Drawable (it logs the
 ** model-condition calls), a body (MBody, l9_body_m.inc: it logs the damage and setAflame it is given), an audio manager that hands out handles 1, 2, 3, ...
-** and logs, a FireSpreadUpdate whose startFireSpreading logs (found through the findUpdateModule hook), the game logic whose frame the test sets and
+** and logs, the REAL FireSpreadUpdate (l9_fire_spread_o.inc; found through the findUpdateModule hook), the game logic whose frame the test sets and
 ** whose wake recorder counts the calls setWakeFrame makes, and the REAL UpdateModule, INI and Xfer. */
 #include "FlammableUpdate_nokey.cpp"   /* FlammableUpdate.cpp with the `static` of its name key removed by build.rs (mod_gen) */
 
@@ -33,20 +33,18 @@ ModuleData *l9flRead(const char *filename)
 
 std::vector<unsigned char> g_flSaved;
 Drawable g_flDrawable;
-bool g_flHasSpread = false;
-unsigned char g_flSpreadBuf[16] = { 0 };
+FireSpreadUpdate *g_flSpread = 0;   /* the REAL FireSpreadUpdate (l9_fire_spread_o.inc), made when the case has one */
 AudioManager *g_flAudio = 0;
 
-/* findUpdateModule("FireSpreadUpdate"): a FireSpreadUpdate pointer the module casts and calls startFireSpreading on (which touches no member) */
+/* findUpdateModule("FireSpreadUpdate"): the case's FireSpreadUpdate, if it has one */
 UpdateModule *flFindHook(const Object *, NameKeyType key)
 {
-	if (g_flHasSpread && key == TheNameKeyGenerator->nameToKey("FireSpreadUpdate")) return (UpdateModule *)(FireSpreadUpdate *)(void *)g_flSpreadBuf;
+	if (g_flSpread && key == TheNameKeyGenerator->nameToKey("FireSpreadUpdate")) return g_flSpread;
 	return 0;
 }
 
 }  // namespace
 
-void FireSpreadUpdate::startFireSpreading() { ulog("spread"); }
 void Drawable::clearModelConditionState(ModelConditionFlagType a) { ulog("mcclear %d", (int)a); }
 void Object::clearModelConditionState(ModelConditionFlagType a) { if (m_drawable) m_drawable->clearModelConditionState(a); }
 /* Object.cpp:1818-1823; the shock wave that follows is for damage that has one, which the test's does not */
@@ -65,7 +63,7 @@ extern "C" {
 ** wake calls. Then `n` ops of 5 words [op, a, b, ...]: 0 update()  1 onDamage (damage type a, actual damage dealt b as float bits)  2 tryToIgnite  3 wouldIgnite
 ** 4 the frame = a  5 the object's status bits AFLAME (a & 1) and BURNED (a & 2) = b  6 xfer save  7 xfer load of the last save  8 xfer CRC. Each op appends: the CATCH_ALL status, the result (the sleep time update() returned, or the Bool of wouldIgnite), the effect log (count,
 ** then each as a string: "mc <n>", "mcclear <n>", "damage <object> <amount> <type> <death> <source>", "aflame <0|1>", "audio <name> <pos> <player> <object>",
-** "audioremove <handle>", "spread"), the number of wake calls and the frame of the last, the xfer status, bytes and CRC, the module's seven state words, the
+** "audioremove <handle>"), the number of wake calls and the frame of the last, the xfer status, bytes and CRC, the module's seven state words, the
 ** object's AFLAME and BURNED bits and its body's health bits. */
 static int l9flRunInner(const char *filename, const char *xfer_path, const unsigned *cfg, int n, const unsigned *ops, unsigned char *buf, int cap, int *len, char *msg,
 	int msgCap, unsigned *code)
@@ -96,7 +94,7 @@ static int l9flRunInner(const char *filename, const char *xfer_path, const unsig
 	memcpy(&body.m_health, &cfg[1], 4);
 	memcpy(&body.m_max, &cfg[2], 4);
 	obj->m_body = cfg[3] ? &body : 0;
-	g_flHasSpread = cfg[4] != 0;
+	InitGameLogicRandom(0);
 	g_findUpdateHook = flFindHook;
 	GameLogic gl;
 	gl.m_frame = cfg[0];
@@ -108,11 +106,20 @@ static int l9flRunInner(const char *filename, const char *xfer_path, const unsig
 	g_events.clear();
 	g_ulog.clear();
 	FlammableUpdate *m = 0;
+	FireSpreadUpdateModuleData *spreadData = 0;
+	g_flSpread = 0;
 	status = 0;
-	try { m = new FlammableUpdate(obj, d); }
+	/* the module order of the Rust side: the spread module (if any), then this one */
+	try {
+		if (cfg[4]) {
+			spreadData = (FireSpreadUpdateModuleData *)FireSpreadUpdate::friend_newModuleData(0);
+			g_flSpread = new FireSpreadUpdate(obj, spreadData);
+		}
+		m = new FlammableUpdate(obj, d);
+	}
 	CATCH_ALL(status, code, msg, msgCap)
 	if (status) {
-		TheGameLogic = 0; TheAudio = saveAudio; g_findUpdateHook = 0;
+		TheGameLogic = 0; TheAudio = saveAudio; g_findUpdateHook = 0; g_flSpread = 0;
 		return 5;
 	}
 	for (int phase = 0; phase < 1 + n; ++phase) {
@@ -194,6 +201,9 @@ static int l9flRunInner(const char *filename, const char *xfer_path, const unsig
 	}
 	*len = finish(buf, cap);
 	delete m;
+	delete g_flSpread;
+	delete spreadData;
+	g_flSpread = 0;
 	delete d;
 	delete obj;
 	TheGameLogic = 0;

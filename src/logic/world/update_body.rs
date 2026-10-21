@@ -214,6 +214,8 @@ pub enum UpdateBody {
     FloatUpdate(crate::logic::modules::float_update::FloatUpdate),
     /// `TechBuildingBehavior`.
     TechBuildingBehavior(crate::logic::modules::tech_building_behavior::TechBuildingBehavior),
+    /// `FireSpreadUpdate`.
+    FireSpreadUpdate(crate::logic::modules::fire_spread_update::FireSpreadUpdate),
     // --- end p1w13-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -311,6 +313,7 @@ impl UpdateBody {
             UpdateBody::EnemyNearUpdate(m) => m.world_update(world, me),
             UpdateBody::FloatUpdate(m) => m.world_update(world, me),
             UpdateBody::TechBuildingBehavior(m) => m.world_update(world, me),
+            UpdateBody::FireSpreadUpdate(m) => m.world_update(world, me),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -408,6 +411,7 @@ impl UpdateBody {
             UpdateBody::EnemyNearUpdate(m) => m.module_call(world, me, call),
             UpdateBody::FloatUpdate(m) => m.module_call(world, me, call),
             UpdateBody::TechBuildingBehavior(m) => m.module_call(world, me, call),
+            UpdateBody::FireSpreadUpdate(m) => m.module_call(world, me, call),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -499,6 +503,7 @@ impl UpdateBody {
             UpdateBody::EnemyNearUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::FloatUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::TechBuildingBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::FireSpreadUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
 // --- end p1w13-sonnet ---
             _ => self.xfer(xfer),
         }
@@ -572,6 +577,7 @@ impl UpdateBody {
             UpdateBody::EnemyNearUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::FloatUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::TechBuildingBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::FireSpreadUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
 // --- end p1w13-sonnet ---
             _ => self.crc(xfer),
         }
@@ -645,6 +651,7 @@ impl UpdateBody {
             UpdateBody::EnemyNearUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::FloatUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::TechBuildingBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::FireSpreadUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
 // --- end p1w13-sonnet ---
             _ => self.load_post_process(),
         }
@@ -742,6 +749,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::EnemyNearUpdate(m) => m.crc(xfer),
             UpdateBody::FloatUpdate(m) => m.crc(xfer),
             UpdateBody::TechBuildingBehavior(m) => m.crc(xfer),
+            UpdateBody::FireSpreadUpdate(m) => m.crc(xfer),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -835,6 +843,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::EnemyNearUpdate(m) => m.xfer(xfer),
             UpdateBody::FloatUpdate(m) => m.xfer(xfer),
             UpdateBody::TechBuildingBehavior(m) => m.xfer(xfer),
+            UpdateBody::FireSpreadUpdate(m) => m.xfer(xfer),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -928,6 +937,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::EnemyNearUpdate(m) => m.load_post_process(),
             UpdateBody::FloatUpdate(m) => m.load_post_process(),
             UpdateBody::TechBuildingBehavior(m) => m.load_post_process(),
+            UpdateBody::FireSpreadUpdate(m) => m.load_post_process(),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -1105,6 +1115,7 @@ impl UpdateBody {
             UpdateBody::EnemyNearUpdate(m) => m.world_construct(world, me),
             UpdateBody::FloatUpdate(m) => m.world_construct(world, me),
             UpdateBody::TechBuildingBehavior(m) => m.world_construct(world, me),
+            UpdateBody::FireSpreadUpdate(m) => m.world_construct(world, me),
 // --- end p1w13-sonnet ---
             _ => {}
         }

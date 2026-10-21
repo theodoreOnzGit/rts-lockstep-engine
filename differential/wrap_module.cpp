@@ -811,4 +811,5 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_enemy_near_o.inc"
 #include "l9_float_o.inc"
 #include "l9_tech_building_o.inc"
+#include "l9_fire_spread_o.inc"
 /* --- end p1w13-sonnet --- */

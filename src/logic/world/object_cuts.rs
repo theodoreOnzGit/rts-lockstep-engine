@@ -188,6 +188,13 @@ impl World {
         self.cuts.range_scan.clone()
     }
 
+    /// `ThePartitionManager->getClosestObject(object, range, FROM_CENTER_3D, filters)`: the candidates the manager would test the filters on, nearest first (the
+    /// caller's own filter chooses the first that passes, which is the closest object that passes all).
+    pub fn partition_closest_candidates(&mut self, object: ObjectId, range: f32) -> Vec<ObjectId> {
+        self.cut(CutCall::PartitionGetClosestObject { object, range });
+        self.cuts.range_scan.clone()
+    }
+
     /// `TheParticleSystemManager->destroyAttachedSystems(obj)`.
     pub fn particle_destroy_attached_systems(&mut self, object: ObjectId) {
         self.cut(CutCall::ParticleDestroyAttachedSystems { object });
@@ -307,6 +314,8 @@ pub enum CutCall {
     PartitionIterateStructuresInRange { object: ObjectId, range: f32 },
     /// `TheParticleSystemManager->destroyAttachedSystems(obj)` (`HeightDieUpdate`).
     ParticleDestroyAttachedSystems { object: ObjectId },
+    /// `ThePartitionManager->getClosestObject(obj, range, FROM_CENTER_3D, filters)` (`FireSpreadUpdate`); `ObjectCuts::range_scan` answers with the candidates, nearest first.
+    PartitionGetClosestObject { object: ObjectId, range: f32 },
     /// `TheTerrainLogic->isUnderwater(x, y, &waterZ)` (`FloatUpdate`); `ObjectCuts::terrain_has_water` and `terrain_water` answer.
     TerrainIsUnderwater { x: f32, y: f32 },
     // --- end p1w13-sonnet ---

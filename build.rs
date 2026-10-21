@@ -3150,6 +3150,20 @@ mod differential {
                 assert_eq!(text.matches(decl).count(), 1, "SquishCollide.cpp: the static name key must occur once");
                 std::fs::write(mod_gen.join("SquishCollide_nokey.cpp"), text.replace(decl, &decl.replacen("static ", "", 1))).expect("write SquishCollide_nokey.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // FireSpreadUpdate.cpp (differential/l9_fire_spread_o.inc): the two function-local `static` name keys lose their `static` (asserted twice), and its two
+                // calls on another object's FlammableUpdate, `fu->wouldIgnite()` and `fu->tryToIgnite()` (asserted once each), name the driver's functions of the
+                // same arguments, which answer for the test's objects (the real FlammableUpdate needs a body, a drawable and a sound manager of its own, and has its
+                // own test); the edited copy is mod_gen/FireSpreadUpdate_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Update/FireSpreadUpdate.cpp");
+                let text = std::fs::read_to_string(&path).expect("read FireSpreadUpdate.cpp");
+                let decl = "static NameKeyType key_FlammableUpdate = NAMEKEY(\"FlammableUpdate\");";
+                assert_eq!(text.matches(decl).count(), 2, "FireSpreadUpdate.cpp: the static name key must occur twice");
+                let (would, tryto) = ("fu->wouldIgnite()", "fu->tryToIgnite()");
+                assert_eq!(text.matches(would).count(), 1, "FireSpreadUpdate.cpp: wouldIgnite must occur once");
+                assert_eq!(text.matches(tryto).count(), 1, "FireSpreadUpdate.cpp: tryToIgnite must occur once");
+                let edited = text.replace(decl, &decl.replacen("static ", "", 1)).replace(would, "l9fsWouldIgnite( fu )").replace(tryto, "l9fsTryToIgnite( fu )");
+                std::fs::write(mod_gen.join("FireSpreadUpdate_edit.cpp"), edited).expect("write FireSpreadUpdate_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();
