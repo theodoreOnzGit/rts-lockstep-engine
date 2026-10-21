@@ -137,7 +137,7 @@ impl MoneyCrateCollide {
                 let found = world.statics.upgrade_center.find_upgrade(&mut world.names, &info.type_name).ok().flatten().map(|t| t.upgrade_mask());
                 world.cuts.money_crate_upgrade_static = Some(found);
             }
-            if let Some(mask) = world.cuts.money_crate_upgrade_static.clone().flatten() {
+            if let Some(mask) = world.cuts.money_crate_upgrade_static.flatten() {
                 if world.players.get_nth(player).is_some_and(|p| p.upgrades_completed.test_for_all(&mask)) {
                     return info.amount;
                 }

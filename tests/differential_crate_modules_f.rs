@@ -585,7 +585,7 @@ fn rust_run(kind: usize, names: NameKeyGenerator, center: UpgradeCenter, data: M
                         Some(p) => format!("{},{},{}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits()),
                         None => "-".to_string(),
                     };
-                    log.push(format!("audio {name} {pos} -1 {}", object_id as i32));
+                    log.push(format!("audio {name} {pos} -1 {}", object_id));
                 }
             } else if t.starts_with("evt FxListDoFxObj") {
                 if let Some(ObjectClientEvent::FxListDoFxObj { fx: name, .. }) = event_iter.next() {

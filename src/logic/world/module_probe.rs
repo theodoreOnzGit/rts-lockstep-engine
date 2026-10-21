@@ -249,8 +249,8 @@ impl ProbeModule {
                         "attemptdamage {} {} {} {}",
                         info.input.damage_type,
                         info.input.amount.to_bits(),
-                        info.input.source_id as i32,
-                        info.input.death_type as i32
+                        info.input.source_id,
+                        info.input.death_type
                     ));
                 }
                 ModuleReply::Damage(info)

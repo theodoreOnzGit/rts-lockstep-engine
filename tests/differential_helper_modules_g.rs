@@ -205,7 +205,7 @@ fn effects(trace: Vec<String>, events: Vec<ObjectClientEvent>, idx: u16) -> (Vec
                         ObjectSound::DefectorTimerDing => "defectorDing",
                         other => panic!("unexpected sound {other:?}"),
                     };
-                    log.push(format!("audio {name} - -1 {}", object_id as i32));
+                    log.push(format!("audio {name} - -1 {}", object_id));
                 }
                 _ => {}
             }
