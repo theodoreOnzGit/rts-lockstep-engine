@@ -4,6 +4,20 @@
 #ifndef BA_DRIVER_H
 #define BA_DRIVER_H
 
+#include <signal.h>
+#include <setjmp.h>
+/* Where upstream is undefined (a null pointer dereferenced) the C++ crashes. A SIGSEGV during an operation is caught here, the lines the
+** operation had written are dropped, and the program ends with the line "UNDEF op=<k>": the Rust writes the same line where it returns an
+** `is_undefined()` error, so that the two must agree on WHERE upstream is undefined, and a Rust that fails to see it shows as a difference. */
+static sigjmp_buf g_jmp;
+static volatile sig_atomic_t g_inOp = 0;
+static void onCrash(int sig)
+{
+	if (g_inOp) siglongjmp(g_jmp, 1);
+	signal(sig, SIG_DFL);
+	raise(sig);
+}
+
 /* ---- the world of a program ----------------------------------------------------------------------------------- */
 static GlobalData g_globalData; GlobalData* TheGlobalData = &g_globalData;
 static unsigned g_seedH, g_tileDensity, g_cellDensity, g_shroudDensity, g_layerDensity, g_seedTile, g_seedCell, g_seedShroud, g_seedLayer;
@@ -464,6 +478,9 @@ static void doOp(unsigned op, Reader& r)
 		}
 		else
 		{
+			/* upstream writes positions[ 0 ] of an array that has no element (init never ran, or m_maxLineBuildObjects is 0): a heap
+			** overflow that does not always crash, so the undefined input is made to (see the SIGSEGV handler) */
+			if (ba.m_buildPositionSize < 1 && TheGlobalData->m_maxLineBuildObjects < 1) raise(SIGSEGV);
 			ba.buildObjectLineNow(c, t, &pos, &end, angle, owner);
 			Rec("ret buildline");
 		}
@@ -497,6 +514,7 @@ static void doOp(unsigned op, Reader& r)
 		Real tiling = q.f(); Int maxTiles = q.i(); unsigned bs = q.u();
 		Object* b = sel(bs);
 		if ((bs != 0 && !alive(b)) || nT == 0) { Rec("skip"); break; }
+		if (ba.m_buildPositionSize < 1 && maxTiles < 1) raise(SIGSEGV);   /* positions[ 0 ] of an array with no element, as above */
 		BuildAssistant::TileBuildInfo* info = ba.buildTiledLocations(g_tmpls[ti % nT], angle, &s, &e, tiling, maxTiles, b);
 		std::string ps;
 		for (int k = 0; k < info->tilesUsed; ++k) { char bb[64]; snprintf(bb, sizeof bb, "%s%08x,%08x,%08x", k ? " " : "", FB(info->positions[k].x), FB(info->positions[k].y), FB(info->positions[k].z)); ps += bb; }
@@ -585,15 +603,40 @@ extern "C" int ref_ba_run(const unsigned* words, int n, const char* /*tmpPath*/,
 	Reader r; r.w = words; r.n = n; r.p = 0;
 	setupWorld(r);
 	int nOps = r.i();
+	struct sigaction sa, oldSegv, oldBus;
+	memset(&sa, 0, sizeof sa);
+	sa.sa_handler = onCrash;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_NODEFER;
+	sigaction(SIGSEGV, &sa, &oldSegv);
+	sigaction(SIGBUS, &sa, &oldBus);
+	bool crashed = false;
 	for (int k = 0; k < nOps; ++k)
 	{
+		size_t before = lines.size();
 		unsigned op = r.u();
-		doOp(op, r);
-		dumpState();
+		if (sigsetjmp(g_jmp, 1) == 0)
+		{
+			g_inOp = 1;
+			doOp(op, r);
+			g_inOp = 0;
+			dumpState();
+		}
+		else
+		{
+			g_inOp = 0;
+			lines.resize(before);
+			Rec("UNDEF op=%d", k);
+			crashed = true;
+			break;
+		}
 	}
+	sigaction(SIGSEGV, &oldSegv, NULL);
+	sigaction(SIGBUS, &oldBus, NULL);
 	std::string all;
 	for (size_t i = 0; i < lines.size(); ++i) { all += lines[i]; all += '\n'; }
-	g_buildAssistant.reset();
+	if (!crashed) g_buildAssistant.reset();
+	g_buildAssistant.m_sellList.clear();
 	clearWorld();
 	if ((int)all.size() <= cap) memcpy(out, all.data(), all.size());
 	return (int)all.size();

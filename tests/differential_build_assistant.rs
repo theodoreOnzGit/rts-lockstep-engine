@@ -35,7 +35,37 @@
 //!
 //! **Inputs for which upstream is undefined** (the position array has no element when a line is tiled before `init` or with
 //! `m_maxLineBuildObjects == 0`; a builder with no controlling player asked what it can make; a player with no default team given to
-//! `buildObjectNow`) are never given to the C++: the Rust returns an error, and the operations before it are compared on their own.
+//! `buildObjectNow`) make the C++ crash. The driver catches that (SIGSEGV, `sigsetjmp`), drops the lines of the operation and ends the
+//! program with `UNDEF op=<k>`; the Rust, which returns an `is_undefined()` error there, writes the same line. So the two must agree on
+//! where upstream is undefined: a Rust that misses a place shows as a difference (the C++ ends the program, the Rust goes on) and
+//! one that sees one too many shows too.
+//!
+//! # Results (2026-10-21, upstream `0a05454d`)
+//!
+//! `cargo test --release --features differential --test differential_build_assistant -- --nocapture` with `BA_CASES=3000`: **3,000
+//! programs, 470 of them ending in `UNDEF` (upstream undefined at the same operation on both sides), 1,955,904 trace lines compared, 0
+//! mismatches.** The programs make 2,359 saves and 745 loads of the sell list, 9,261 updates (the sell countdown runs from `99.9` to the
+//! refund at `-50` in 160-frame runs), 8,926 sales, 9,123 tiled lines, 13,600 `buildObjectNow` calls (5,846 objects made; 157 orders to a dozer to
+//! `construct`), 6,898 + 7,096 + 548 + 6,773 + 890 + 361 + 106 location checks answering each of the seven `LegalBuildCode`s, 4,646 + 4,625 +
+//! 17 clear-of-objects checks answering OK, objects in the way and generic failure, 17,550 bibs, 7,254 `removeTreesAndPropsForConstruction`
+//! calls, and every `CanMakeType` (375 OK, 2,762 no prerequisites, 136 no money, 953 factory disabled, 10 queue full, 6 parking full, 4,067
+//! maxed out).
+//!
+//! **Planted bugs.** `BA_PLANT=<n>` switches one fault into the Rust alone (all in one build; ids 1 to 172, of which 47 and 77 were
+//! replaced while the set was written and have no code). **170 faults: 163 are caught by mismatching lines within 3,000 programs** (3 to
+//! 1.4 million lines each; the weakest, 51, drops the last footprint row only when it falls within 3 units of the extent: 3 lines), **2 by a panic
+//! of the Rust itself** (130 and 133 leave the position array one element short and index past it), and **5 are equivalent mutants** that
+//! cannot change the answer in this fixture: 49 (a sphere or cylinder footprint takes `getMajorRadius` instead of the bounding circle,
+//! which are the same number); 55 (the `z` handed to `Transform_Vector` is overwritten by the ground height afterwards); 86 (a negative
+//! exit width is never tested for being positive); 96 (the minor radius of a non-box exit rectangle, which the bounding-circle collision
+//! of the stand-in ignores); 101 (skipping the "no exit space" shortcut when only the template's own bib is padded, where every exit
+//! check is off anyway).
+//!
+//! Rounds of the generator that the plants forced: the sell countdown runs one update per frame (160 per operation) so that the whole
+//! sale is reached; an object's construction percent is sometimes set to exactly `0` mid-sale (plant 4); a line's end has a height of its
+//! own (plant 131, `placementVector` is 3D); placement queries for templates with a factory exit, by a skirmish AI player, at a random
+//! distance and bearing from an immobile structure, with exit widths up to 100 (plant 85, the skirmish padding of the exit width); and
+//! the `UNDEF` line, which turned the C++ crashes of faulty Rust (a position array with no element) into line mismatches.
 #![cfg(feature = "differential")]
 
 mod support;
@@ -386,8 +416,7 @@ impl Sim {
         let tmpls = p
             .tmpls
             .iter()
-            .enumerate()
-            .map(|(_k, t)| TmplS {
+            .map(|t| TmplS {
                 kinds: (0..11).filter(|b| (t.kind_mask >> b) & 1 != 0).map(|b| KIND_TABLE[b]).collect(),
                 geom: GeometryInfo::new(geom_type(t.geom_type), t.small != 0, t.height, t.major, t.minor),
                 exit_width: t.exit_width,
@@ -900,7 +929,7 @@ impl BuildAssistantHost for Sim {
     }
     fn terrain_layer_for_destination(&self, pos: Coord3D) -> PathfindLayer {
         let seed = self.seed_h ^ 0x4444;
-        if self.layer_density > 0 && h3(cell_of(pos.x) as u32, cell_of(pos.y) as u32, seed) % self.layer_density == 0 {
+        if self.layer_density > 0 && h3(cell_of(pos.x) as u32, cell_of(pos.y) as u32, seed).is_multiple_of(self.layer_density) {
             15
         } else {
             1
@@ -908,10 +937,10 @@ impl BuildAssistantHost for Sim {
     }
     fn terrain_tile_restricts_construction(&self, x: f32, y: f32) -> Option<bool> {
         let hh = h3(cell_of(x) as u32, cell_of(y) as u32, self.seed_h ^ 0x1111);
-        if hh % 7 == 0 {
+        if hh.is_multiple_of(7) {
             return None;
         }
-        Some(self.tile_density > 0 && hh % self.tile_density == 0)
+        Some(self.tile_density > 0 && hh.is_multiple_of(self.tile_density))
     }
     fn terrain_visual_add_faction_bib(&mut self, o: ObjectId, highlight: bool, extra: f32) {
         self.rec(format!("bib {o} {} {:08x}", highlight as i32, extra.to_bits()));
@@ -975,7 +1004,7 @@ impl BuildAssistantHost for Sim {
             return CellShroudStatus::Clear;
         }
         let hh = h3(x as u32, y as u32, (self.seed_h ^ 0x3333).wrapping_add(player_index as u32));
-        if hh % self.shroud_density != 0 {
+        if !hh.is_multiple_of(self.shroud_density) {
             return CellShroudStatus::Clear;
         }
         if (hh >> 9) & 1 != 0 {
@@ -986,10 +1015,10 @@ impl BuildAssistantHost for Sim {
     }
     fn pathfinder_cell_type(&self, _layer: PathfindLayer, x: i32, y: i32) -> Option<PathfindCellType> {
         let hh = h3(x as u32, y as u32, self.seed_h ^ 0x2222);
-        if hh % 23 == 0 {
+        if hh.is_multiple_of(23) {
             return None;
         }
-        if self.cell_density > 0 && hh % self.cell_density == 0 {
+        if self.cell_density > 0 && hh.is_multiple_of(self.cell_density) {
             Some(match ((hh >> 8) % 6) + 1 {
                 1 => PathfindCellType::Water,
                 2 => PathfindCellType::Cliff,
@@ -1316,6 +1345,39 @@ fn gen_status(g: &mut Gen) -> u64 {
     }
 }
 
+/// A third of the placement queries ask for a template with a factory exit, for a skirmish AI player when there is one (the padding of
+/// `isLocationClearOfObjects`), with the overlap flags that reach the exit rectangles.
+fn directed_exit_case(g: &mut Gen, a: &mut [u32; 16], tmpls: &[TmplCfg], players: &[PlayerCfg], objs: &[ObjCfg]) {
+    if !chance(g, 35) {
+        return;
+    }
+    let with_exit: Vec<u32> = (0..tmpls.len() as u32).filter(|k| tmpls[*k as usize].exit_width > 0.0).collect();
+    let skirmish: Vec<u32> = (0..players.len() as u32).filter(|k| players[*k as usize].skirmish != 0).collect();
+    if !with_exit.is_empty() {
+        a[3] = with_exit[g.below(with_exit.len() as u32) as usize];
+    }
+    if !skirmish.is_empty() {
+        a[7] = 1 + skirmish[g.below(skirmish.len() as u32) as usize];
+    }
+    a[5] = NO_OBJECT_OVERLAP | (a[5] & IGNORE_STEALTHED);
+    // ... placed at a random distance and bearing from an immobile structure, where its exit rectangle may reach the structure
+    // without the padded footprint doing so
+    let immobile: Vec<&ObjCfg> = objs
+        .iter()
+        .filter(|o| {
+            let m = tmpls[o.tmpl as usize % tmpls.len()].kind_mask;
+            m & (1 << 7) != 0 && m & (1 << 1) != 0
+        })
+        .collect();
+    if !immobile.is_empty() {
+        let o = immobile[g.below(immobile.len() as u32) as usize];
+        let d = g.uniform(5.0, 140.0);
+        let th = g.uniform(0.0, std::f32::consts::TAU);
+        a[0] = (o.pos[0] + d * th.cos()).to_bits();
+        a[1] = (o.pos[1] + d * th.sin()).to_bits();
+    }
+}
+
 fn gen_prog(seed: u64) -> Prog {
     let mut g = Gen::new(seed);
     let g = &mut g;
@@ -1339,8 +1401,8 @@ fn gen_prog(seed: u64) -> Prog {
                 height: g.uniform(2.0, 30.0),
                 major: g.uniform(4.0, 40.0),
                 minor: g.uniform(4.0, 30.0),
-                exit_width: if chance(g, 55) { 0.0 } else { g.uniform(5.0, 45.0) },
-                extra_bib: if chance(g, 55) { 0.0 } else { g.uniform(1.0, 45.0) },
+                exit_width: if chance(g, 40) { 0.0 } else { g.uniform(5.0, 100.0) },
+                extra_bib: if chance(g, 45) { 0.0 } else { g.uniform(1.0, 45.0) },
                 vision: g.uniform(30.0, 300.0),
                 refund: if chance(g, 65) { 0 } else { g.below(2000) as i32 },
                 cost: if chance(g, 4) { -(g.below(500) as i32) } else { g.below(3000) as i32 },
@@ -1357,7 +1419,7 @@ fn gen_prog(seed: u64) -> Prog {
     let players: Vec<PlayerCfg> = (0..n_p)
         .map(|_| PlayerCfg {
             computer: g.below(2),
-            skirmish: if chance(g, 30) { 1 } else { 0 },
+            skirmish: if chance(g, 50) { 1 } else { 0 },
             has_team: if chance(g, 94) { 1 } else { 0 },
             money: if chance(g, 30) { g.below(300) } else { g.below(10000) },
             can_mask: if chance(g, 15) { 0 } else { g.u32() },
@@ -1389,7 +1451,7 @@ fn gen_prog(seed: u64) -> Prog {
                 g.below(n_p as u32 + extra)
             },
             pos: [g.uniform(0.0, size), g.uniform(0.0, size), g.uniform(0.0, 6.0)],
-            orient: g.uniform(0.0, 6.283),
+            orient: g.uniform(0.0, std::f32::consts::TAU),
             status: gen_status(g),
             disabled: if chance(g, 12) { 1 } else { 0 },
             dead: if chance(g, 12) { 1 } else { 0 },
@@ -1438,7 +1500,7 @@ fn gen_prog(seed: u64) -> Prog {
             0..=19 => {
                 // legal to build: pos(3) tmpl angle options builder player
                 put3(&mut a, 0, near_obj(g, &objs));
-                a[4] = g.uniform(0.0, 6.283).to_bits();
+                a[4] = g.uniform(0.0, std::f32::consts::TAU).to_bits();
                 let mut opt = 0u32;
                 for bit in 0..8 {
                     if chance(g, if bit == 5 { 20 } else { 45 }) {
@@ -1455,11 +1517,12 @@ fn gen_prog(seed: u64) -> Prog {
                 if chance(g, 40) {
                     a[7] = 0;
                 }
+                directed_exit_case(g, &mut a, &tmpls, &players, &objs);
                 7
             }
             20..=27 => {
                 put3(&mut a, 0, near_obj(g, &objs));
-                a[4] = g.uniform(0.0, 6.283).to_bits();
+                a[4] = g.uniform(0.0, std::f32::consts::TAU).to_bits();
                 a[5] = if chance(g, 30) { NO_ENEMY_OBJECT_OVERLAP } else { g.u32() & 0xff };
                 if chance(g, 25) {
                     a[6] = 0;
@@ -1467,6 +1530,7 @@ fn gen_prog(seed: u64) -> Prog {
                 if chance(g, 40) {
                     a[7] = 0;
                 }
+                directed_exit_case(g, &mut a, &tmpls, &players, &objs);
                 8
             }
             28..=39 => {
@@ -1475,7 +1539,7 @@ fn gen_prog(seed: u64) -> Prog {
                     a[0] = 0;
                 }
                 put3(&mut a, 2, near_obj(g, &objs));
-                a[5] = g.uniform(0.0, 6.283).to_bits();
+                a[5] = g.uniform(0.0, std::f32::consts::TAU).to_bits();
                 put3(&mut a, 7, near_obj(g, &objs));
                 5
             }
@@ -1485,18 +1549,18 @@ fn gen_prog(seed: u64) -> Prog {
                 }
                 let s = near_obj(g, &objs);
                 put3(&mut a, 2, s);
-                a[5] = g.uniform(0.0, 6.283).to_bits();
-                put3(&mut a, 7, [s[0] + g.uniform(-80.0, 80.0), s[1] + g.uniform(-80.0, 80.0), s[2]]);
+                a[5] = g.uniform(0.0, std::f32::consts::TAU).to_bits();
+                put3(&mut a, 7, [s[0] + g.uniform(-80.0, 80.0), s[1] + g.uniform(-80.0, 80.0), if chance(g, 50) { s[2] } else { s[2] + g.uniform(-30.0, 30.0) }]);
                 6
             }
             46..=53 => {
                 // tiled: tmpl angle start(3) end(3) tiling maxTiles builder
-                a[1] = g.uniform(0.0, 6.283).to_bits();
+                a[1] = g.uniform(0.0, std::f32::consts::TAU).to_bits();
                 let s = near_obj(g, &objs);
                 put3(&mut a, 2, s);
-                put3(&mut a, 5, [s[0] + g.uniform(-120.0, 120.0), s[1] + g.uniform(-120.0, 120.0), s[2]]);
+                put3(&mut a, 5, [s[0] + g.uniform(-120.0, 120.0), s[1] + g.uniform(-120.0, 120.0), if chance(g, 50) { s[2] } else { s[2] + g.uniform(-30.0, 30.0) }]);
                 a[8] = g.uniform(2.0, 40.0).to_bits();
-                a[9] = g.below(14) as u32;
+                a[9] = g.below(14);
                 if chance(g, 25) {
                     a[10] = 0;
                 }
@@ -1525,7 +1589,7 @@ fn gen_prog(seed: u64) -> Prog {
                 a[1] = g.below(6);
                 match a[1] {
                     0 => put3(&mut a, 2, near_obj(g, &objs)),
-                    3 => a[2] = g.uniform(-60.0, 100.0).to_bits(),
+                    3 => a[2] = if chance(g, 35) { 0.0f32.to_bits() } else { g.uniform(-60.0, 100.0).to_bits() },
                     1 => {
                         let s = gen_status(g);
                         a[2] = s as u32;
@@ -1596,10 +1660,17 @@ fn run_rust(p: &Prog) -> (Vec<String>, Option<usize>) {
     let mut sim = Sim::new(p);
     for (k, (op, a)) in p.ops.iter().enumerate() {
         let before = sim.lines.len();
+        if std::env::var_os("BA_OPS").is_some() {
+            eprintln!("OP {k} code {op}");
+        }
         if let Err(e) = sim.do_op(*op, a) {
+            if std::env::var_os("BA_OPS").is_some() {
+                eprintln!("  -> {e:?}");
+            }
             assert!(e.is_undefined(), "program failed with a defined error: {e:?}");
+            // the C++ crashes where upstream is undefined: the lines of the operation are dropped and the program ends
             sim.lines.truncate(before);
-            // the lines of the operations before the undefined one
+            sim.lines.push(format!("UNDEF op={k}"));
             return (sim.lines, Some(k));
         }
         sim.dump();
@@ -1643,11 +1714,10 @@ fn build_assistant_matches_upstream() {
         let prog = gen_prog(0xba5e_0000 + case);
         programs += 1;
         let (rust, undefined_at) = run_rust(&prog);
-        let n_ops = undefined_at.unwrap_or(prog.ops.len());
         if undefined_at.is_some() {
             excluded += 1;
         }
-        let cpp_lines = cpp_run(&words(&prog, n_ops));
+        let cpp_lines = cpp_run(&words(&prog, prog.ops.len()));
         lines += rust.len() as u64;
         for l in &rust {
             for m in markers {
@@ -1674,7 +1744,7 @@ fn build_assistant_matches_upstream() {
             }
         }
     }
-    println!("RESULT programs {programs}, excluded (upstream undefined) {excluded}, lines compared {lines}");
+    println!("RESULT programs {programs}, programs ending in UNDEF (upstream undefined) {excluded}, lines compared {lines}");
     for (m, c) in &counts {
         println!("RESULT   {m:<24} {c}");
     }
