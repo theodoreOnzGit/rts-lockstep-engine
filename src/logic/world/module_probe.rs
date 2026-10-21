@@ -158,6 +158,13 @@ impl ProbeModule {
         match call {
             // ---- the ones with an answer ----
             ModuleCall::IsSalvageCrateCollide => ModuleReply::Bool(self.answers.salvage),
+            // --- p1w11-sonnet ---
+            ModuleCall::WouldLikeToCollideWith { .. }
+            | ModuleCall::IsRailroad
+            | ModuleCall::IsCarBombCrateCollide
+            | ModuleCall::IsHijackedVehicleCrateCollide
+            | ModuleCall::IsSabotageBuildingCrateCollide => ModuleReply::Bool(false),
+            // --- end p1w11-sonnet ---
             ModuleCall::IsAlreadyUpgraded => ModuleReply::Bool(self.upgraded),
             ModuleCall::AttemptUpgrade(mask) => {
                 if mask.test_for_any(&self.upgrade_trigger) {

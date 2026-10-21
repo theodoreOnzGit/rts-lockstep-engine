@@ -19,6 +19,11 @@ use crate::common::game_type::ObjectId;
 use crate::logic::world::game_logic::World;
 
 impl World {
+    /// `obj->isAboveTerrain()`: `getHeightAboveTerrain() > 0`. `false` for an object that does not exist (its height is 0).
+    pub fn is_above_terrain(&mut self, id: ObjectId) -> bool {
+        self.get_height_above_terrain(id) > 0.0
+    }
+
     /// `obj->isSignificantlyAboveTerrain()`: the height above the terrain (the layer the object is on) is more than `-(3*3)` times the gravity.
     /// `false` for an object that does not exist.
     pub fn is_significantly_above_terrain(&mut self, id: ObjectId) -> bool {

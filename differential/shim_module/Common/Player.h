@@ -8,6 +8,9 @@
 #include "Common/Science.h"
 /* --- p1w11-sonnet --- */
 #include "Common/KindOf.h"
+#include "Common/GameCommon.h"
+#include <vector>
+#include <algorithm>
 class Object;
 /* --- end p1w11-sonnet --- */
 class Player
@@ -31,6 +34,12 @@ public:
 	void onStructureConstructionComplete(Object *builder, Object *structure, Bool isRebuild);   /* ReplaceObjectUpgrade */
 	Int m_idx;
 	Int getPlayerIndex() const { return m_idx; }   /* the dies: SpecialPowerCompletionDie, EjectPilotDie */
+	/* crate batch F: the crates ask a player its type and sciences, and heal all its objects (a line of the effect log) */
+	PlayerType getPlayerType() const { return m_type; }
+	Bool hasScience(ScienceType t) const { return std::find(m_sciences.begin(), m_sciences.end(), t) != m_sciences.end(); }
+	void healAllObjects();   /* differential/l9_crates_f.inc */
+	PlayerType m_type;
+	std::vector<ScienceType> m_sciences;
 	/* --- end p1w11-sonnet --- */
 };
 #endif

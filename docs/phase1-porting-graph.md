@@ -855,6 +855,14 @@ undefined upstream; 12 planted bugs (`L9_PLANT` 701-725), all caught (711 and 72
 8 planted bugs (`L9_PLANT` 731-738), all caught. `RadarUpdate::extendRadar` keeps upstream's `UnsignedInt + Real` float sum. Left among the
 update modules: `ProneUpdate` (its data derives from `ModuleData`, not `UpdateModuleData`: upstream reads out of bounds), `FloatUpdate` (needs the
 drawable's instance matrix), `EnemyNearUpdate` (needs an AI query result), `WeaponBonusUpdate` (needs partition iteration with filters).
+**Layer-9 crate batch F (2026-10-21, `p1w11-sonnet`).** `CrateCollide` (the base: `modules/crate_collide.rs`) with `HealCrateCollide` and
+`ShroudCrateCollide`, wired as object modules, with `tests/differential_crate_modules_f.rs` against the three unchanged `.cpp` files
+(`differential/l9_crates_f.inc`): 9,000 cases, 8,834 data reads, 56,341 dump lines (44,361 ops), 0 mismatches, 166 excluded as undefined upstream;
+13 planted bugs (`L9_PLANT` 751-763), all caught (755 and 760 by a C++ crash). `PickupScience` is kept as a name and looked up in
+`statics.science_store` when the crate is tested (an unknown name throws at the read upstream: here `Undefined::UnknownPickupScience` at the first
+test). Left among the crates: `MoneyCrateCollide` (its `static const UpgradeTemplate *` inside the loop caches the FIRST lookup for the life of
+the process: an upstream defect to keep, needing a resettable stand-in in `build.rs`), `UnitCrateCollide`, `VeterancyCrateCollide`, `SalvageCrateCollide`,
+`ConvertToCarBombCrateCollide`, `ConvertToHijackedVehicleCrateCollide` and the eight `Sabotage*`.
 **Layer-9 helper and die batch verified (2026-10-21, `p1w10-sonnet`).** ~~The helpers and dies of `p1l9-helpers` (`ObjectHelper`,
 `ObjectSMCHelper`, `ObjectRepulsorHelper`, `ObjectWeaponStatusHelper`, `StatusDamageHelper`, `TempWeaponBonusHelper`,
 `DestroyDie`, `KeepObjectDie`, `UpgradeDie`) are pure functions returning effects.~~ **CORRECTED 2026-10-21** - the drafts were

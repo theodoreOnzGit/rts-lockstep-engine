@@ -215,6 +215,8 @@ pub enum Undefined {
     NewObjectFailed,
     /// `RadarUpdate::extendRadar`: `UnsignedInt = now + Real` is a conversion of a float outside the range of `unsigned int` (undefined in C++).
     FloatToUnsignedOutOfRange,
+    /// `CrateCollide::isValidToExecute`: the `PickupScience` the store does not know (upstream's `INI::parseScience` threw `INI_INVALID_DATA` when the data was read).
+    UnknownPickupScience,
     // --- end p1w11-sonnet ---
     // --- p1l9-upgrades ---
     /// `ArmorUpgrade`: a triggered chemical-suits upgrade on an object with no

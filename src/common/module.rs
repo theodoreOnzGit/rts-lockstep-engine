@@ -356,6 +356,10 @@ pub enum ModuleDataKind {
     PowerPlantUpdate(Arc<crate::logic::modules::power_plant_update::PowerPlantUpdateModuleData>),
     /// `RadarUpdateModuleData`.
     RadarUpdate(Arc<crate::logic::modules::radar_update::RadarUpdateModuleData>),
+    /// `HealCrateCollideModuleData`.
+    HealCrateCollide(Arc<crate::logic::modules::heal_crate_collide::HealCrateCollideModuleData>),
+    /// `ShroudCrateCollideModuleData`.
+    ShroudCrateCollide(Arc<crate::logic::modules::shroud_crate_collide::ShroudCrateCollideModuleData>),
     // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
@@ -423,6 +427,8 @@ impl ModuleDataKind {
             ModuleDataKind::EjectPilotDie(d) => &d.die.behavior.module_data,
             ModuleDataKind::PowerPlantUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::RadarUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::HealCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
+            ModuleDataKind::ShroudCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
@@ -579,6 +585,20 @@ impl ModuleDataKind {
             ModuleDataKind::RadarUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::HealCrateCollide(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::ShroudCrateCollide(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
                     true
                 }
                 None => false,

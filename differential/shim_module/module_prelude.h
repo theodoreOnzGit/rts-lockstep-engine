@@ -74,6 +74,13 @@
 #define TheAudio ModTestTheAudio
 #define ScriptEngine ModTestScriptEngine
 #define TheScriptEngine ModTestTheScriptEngine
+/* crate batch F: the miscellaneous audio, the partition manager and the 2D animations the crates call */
+#define MiscAudio ModTestMiscAudio
+#define PartitionManager ModTestPartitionManager
+#define ThePartitionManager ModTestThePartitionManager
+#define Anim2DTemplate ModTestAnim2DTemplate
+#define Anim2DCollection ModTestAnim2DCollection
+#define TheAnim2DCollection ModTestTheAnim2DCollection
 /* --- end p1w11-sonnet --- */
 #define GameLogic ModTestGameLogic
 #define TheGameLogic ModTestTheGameLogic

@@ -23,6 +23,7 @@ public:
 	void getInfoForAudioEvent( const AudioEventRTS *eventToFindAndFill ) const;
 	/* --- p1w11-sonnet --- (the Module build renames this class; its die batch D defines the call) */
 	UnsignedInt addAudioEvent( const AudioEventRTS *eventToAdd );
+	const class MiscAudio *getMiscAudio( void ) const;   /* the crates (differential/l9_crates_f.inc) */
 	/* --- end p1w11-sonnet --- */
 };
 extern AudioManager *TheAudio;

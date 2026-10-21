@@ -453,6 +453,14 @@ made to the lent copy. The module's state lives in the object's `behaviors` slot
 runs over that live base through `World::xfer_module_slot`, as the object's own xfer does. `ExtendRods` and `ExtendRadar` are module calls: the
 upgrades send them to the modules of their object that answer them.
 
+**Crate batch F (`p1w11-sonnet`, 2026-10-21).** `modules/crate_collide.rs` holds `CrateCollide`: `CrateCollideModuleData` (with
+`crate_collide_data_field_parse!`, the table every derived data class reuses), `CrateBehavior` (the `CollideModule` base, the data, the pure
+virtual `executeCrateBehavior`, the overridable `isValidToExecute`) and `crate_module_call`, which lends the module to its slot around `onCollide`
+(`destroyObject` of the crate sends `onDelete` to its own modules, this one included) and answers `WouldLikeToCollideWith` with `isValidToExecute`.
+`isValidToExecute` reads the world as a `&mut World` (the height above terrain is cached in the thing). What a crate asks of the player, the
+partition manager, the audio and the 2D animations is a cut call or a client event (`PlayerHealAllObjects`, `PartitionRevealMapForPlayer`,
+`InGameUiAddWorldAnimation`, `ObjectSound::{CrateHeal, CrateShroud}`); `TheAnim2DCollection != NULL` is `cuts.globals.anim2d_collection_present`.
+
 <!-- --- p1w6-object --- -->
 ## Object (layer 8, wave 6)
 

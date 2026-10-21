@@ -581,6 +581,16 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::radar_update::new_module_data),
             which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
         }),
+        "HealCrateCollide" => Some(ModuleTemplate {
+            create_proc: Some(new_collide_base),
+            create_data_proc: Some(crate::logic::modules::heal_crate_collide::new_module_data),
+            which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
+        }),
+        "ShroudCrateCollide" => Some(ModuleTemplate {
+            create_proc: Some(new_collide_base),
+            create_data_proc: Some(crate::logic::modules::shroud_crate_collide::new_module_data),
+            which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
+        }),
         // --- end p1w11-sonnet ---
         _ => None,
     }
@@ -638,6 +648,21 @@ fn new_die_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module
     Ok(Module::Die(crate::logic::module::die_module::DieModule::new(object, base)?))
 }
 // --- end p1w10-sonnet ---
+
+// --- p1w11-sonnet ---
+/// The `NewModuleProc` of a translated collide module: its `CollideModule` base, made from the `CollideModuleData` base of its data.
+fn new_collide_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module, IniError> {
+    let base = match data {
+        Some(ModuleDataKind::Collide(d)) => Some(d),
+        // --- p1w11-sonnet ---
+        Some(ModuleDataKind::HealCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
+        Some(ModuleDataKind::ShroudCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
+        // --- end p1w11-sonnet ---
+        _ => None,
+    };
+    Ok(Module::Collide(crate::logic::module::collide_module::CollideModule::new(object, base)?))
+}
+// --- end p1w11-sonnet ---
 
 /// The `NewModuleProc` of a translated upgrade module: its `UpgradeModule`
 /// base, made from the `UpgradeModuleData` base of its data. The factory

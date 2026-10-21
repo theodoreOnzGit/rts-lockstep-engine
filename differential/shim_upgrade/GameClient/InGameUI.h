@@ -4,10 +4,23 @@
 ** tests never reach. */
 #ifndef SHIM_UPGRADE_INGAMEUI_H
 #define SHIM_UPGRADE_INGAMEUI_H
+#include "Lib/BaseType.h"
+/* --- p1w11-sonnet --- (crate batch F: CrateCollide's execute animation; WorldAnimationOptions is GameClient/InGameUI.h lines 291-296, verbatim) */
+class Anim2DTemplate;
+enum WorldAnimationOptions
+{
+	WORLD_ANIM_NO_OPTIONS								= 0x00000000,
+	WORLD_ANIM_FADE_ON_EXPIRE						= 0x00000001,
+	WORLD_ANIM_PLAY_ONCE_AND_DESTROY		= 0x00000002,
+};
+/* --- end p1w11-sonnet --- */
 class InGameUI
 {
 public:
 	void message(const char *) {}
+	/* --- p1w11-sonnet --- */
+	void addWorldAnimation( Anim2DTemplate *animTemplate, const Coord3D *pos, WorldAnimationOptions options, Real durationInSeconds, Real zRisePerSecond );
+	/* --- end p1w11-sonnet --- */
 };
 extern InGameUI *TheInGameUI;
 #endif

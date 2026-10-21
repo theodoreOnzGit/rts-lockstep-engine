@@ -34,6 +34,10 @@ public:
 	Object *m_awakenObject = 0;
 	UpdateModule *m_awakenModule = 0;
 	UnsignedInt m_awakenFrame = 0;
+	/* --- p1w11-sonnet --- (crate batch F; appended: the other builds' copy of this class keeps the layout of what comes before) */
+	Bool getDrawIconUI() const { return m_drawIconUI; }
+	Bool m_drawIconUI = true;
+	/* --- end p1w11-sonnet --- */
 };
 extern GameLogic *TheGameLogic;
 #endif

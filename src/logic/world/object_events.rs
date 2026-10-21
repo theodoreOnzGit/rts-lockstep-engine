@@ -42,6 +42,12 @@ pub enum ObjectSound {
     DefectorTimerTick,
     /// `getTemplate()->getVoiceDefect()` (`defect`).
     VoiceDefect,
+    // --- p1w11-sonnet ---
+    /// `MiscAudio::m_crateHeal` (`HealCrateCollide`).
+    CrateHeal,
+    /// `MiscAudio::m_crateShroud` (`ShroudCrateCollide`).
+    CrateShroud,
+    // --- end p1w11-sonnet ---
 }
 
 /// The `TheEva->setShouldPlay(..)` messages `Object::onDie` sends.

@@ -134,6 +134,13 @@ pub enum CutCall {
     OclCreateWithSecondary { primary: ObjectId, secondary: ObjectId, ocl: Vec<u8> },
     /// `TheScriptEngine->notifyOfCompletedSpecialPower(playerIndex, specialPowerName, sourceObject)` (`SpecialPowerCompletionDie`).
     ScriptNotifyOfCompletedSpecialPower { player: PlayerIndex, name: Vec<u8>, creator: ObjectId },
+    /// `player->healAllObjects()` (`HealCrateCollide`).
+    PlayerHealAllObjects { player: PlayerIndex },
+    /// `ThePartitionManager->revealMapForPlayer(playerIndex)` (`ShroudCrateCollide`).
+    PartitionRevealMapForPlayer { player: PlayerIndex },
+    /// `TheAnim2DCollection->findTemplate(name)` and `TheInGameUI->addWorldAnimation(template, pos, WORLD_ANIM_FADE_ON_EXPIRE, time, zRise)`
+    /// (`CrateCollide::onCollide`).
+    InGameUiAddWorldAnimation { template: Vec<u8>, position: crate::common::base_type::Coord3D, display_time_in_seconds: f32, z_rise_per_second: f32 },
     // --- end p1w11-sonnet ---
     // ---- Team ----
     /// `team->notifyTeamOfObjectDeath()`.
@@ -241,6 +248,10 @@ pub struct ObjectGlobals {
     pub enable_repulsors: bool,
     /// `TheGameLogic->getDrawIconUI()`.
     pub draw_icon_ui: bool,
+    // --- p1w11-sonnet ---
+    /// `TheAnim2DCollection != NULL` (`CrateCollide::onCollide` shows its execute animation only then).
+    pub anim2d_collection_present: bool,
+    // --- end p1w11-sonnet ---
     /// `TheGlobalData->m_maxTunnelCapacity` (`TunnelTracker::getContainMax`).
     pub max_tunnel_capacity: i32,
     /// `TheScriptEngine->getObjectsShouldReceiveDifficultyBonus()`.
@@ -266,6 +277,9 @@ impl Default for ObjectGlobals {
             level_gain_animation_name_set: false,
             enable_repulsors: false,
             draw_icon_ui: true,
+            // --- p1w11-sonnet ---
+            anim2d_collection_present: true,
+            // --- end p1w11-sonnet ---
             max_tunnel_capacity: 0,
             objects_should_receive_difficulty_bonus: false,
             // --- p1w10-sonnet ---

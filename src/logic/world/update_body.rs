@@ -158,6 +158,10 @@ pub enum UpdateBody {
     PowerPlantUpdate(crate::logic::modules::power_plant_update::PowerPlantUpdate),
     /// `RadarUpdate`.
     RadarUpdate(crate::logic::modules::radar_update::RadarUpdate),
+    /// `HealCrateCollide`.
+    HealCrateCollide(crate::logic::modules::heal_crate_collide::HealCrateCollide),
+    /// `ShroudCrateCollide`.
+    ShroudCrateCollide(crate::logic::modules::shroud_crate_collide::ShroudCrateCollide),
     // --- end p1w11-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -225,6 +229,8 @@ impl UpdateBody {
             UpdateBody::EjectPilotDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::PowerPlantUpdate(m) => m.world_update(world, me),
             UpdateBody::RadarUpdate(m) => m.world_update(world, me),
+            UpdateBody::HealCrateCollide(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::ShroudCrateCollide(_) => UPDATE_SLEEP_FOREVER,
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -292,6 +298,8 @@ impl UpdateBody {
             UpdateBody::EjectPilotDie(m) => m.module_call(world, me, call),
             UpdateBody::PowerPlantUpdate(m) => m.module_call(world, me, call),
             UpdateBody::RadarUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::HealCrateCollide(m) => m.module_call(world, me, call),
+            UpdateBody::ShroudCrateCollide(m) => m.module_call(world, me, call),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -539,6 +547,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::EjectPilotDie(m) => m.crc(xfer),
             UpdateBody::PowerPlantUpdate(m) => m.crc(xfer),
             UpdateBody::RadarUpdate(m) => m.crc(xfer),
+            UpdateBody::HealCrateCollide(m) => m.crc(xfer),
+            UpdateBody::ShroudCrateCollide(m) => m.crc(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -602,6 +612,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::EjectPilotDie(m) => m.xfer(xfer),
             UpdateBody::PowerPlantUpdate(m) => m.xfer(xfer),
             UpdateBody::RadarUpdate(m) => m.xfer(xfer),
+            UpdateBody::HealCrateCollide(m) => m.xfer(xfer),
+            UpdateBody::ShroudCrateCollide(m) => m.xfer(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -665,6 +677,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::EjectPilotDie(m) => m.load_post_process(),
             UpdateBody::PowerPlantUpdate(m) => m.load_post_process(),
             UpdateBody::RadarUpdate(m) => m.load_post_process(),
+            UpdateBody::HealCrateCollide(m) => m.load_post_process(),
+            UpdateBody::ShroudCrateCollide(m) => m.load_post_process(),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }

@@ -84,6 +84,18 @@ pub enum ModuleCall {
     OnCollide { other: ObjectId, loc: Option<Coord3D>, normal: Option<Coord3D> },
     /// `isSalvageCrateCollide()`; replies [`ModuleReply::Bool`].
     IsSalvageCrateCollide,
+    // --- p1w11-sonnet ---
+    /// `wouldLikeToCollideWith(other)` (`other` is `INVALID_ID` for `NULL`); replies [`ModuleReply::Bool`].
+    WouldLikeToCollideWith { other: ObjectId },
+    /// `isRailroad()`; replies [`ModuleReply::Bool`].
+    IsRailroad,
+    /// `isCarBombCrateCollide()`; replies [`ModuleReply::Bool`].
+    IsCarBombCrateCollide,
+    /// `isHijackedVehicleCrateCollide()`; replies [`ModuleReply::Bool`].
+    IsHijackedVehicleCrateCollide,
+    /// `isSabotageBuildingCrateCollide()`; replies [`ModuleReply::Bool`].
+    IsSabotageBuildingCrateCollide,
+    // --- end p1w11-sonnet ---
     // ---- UpgradeModuleInterface ----
     /// `isAlreadyUpgraded()`; replies [`ModuleReply::Bool`].
     IsAlreadyUpgraded,

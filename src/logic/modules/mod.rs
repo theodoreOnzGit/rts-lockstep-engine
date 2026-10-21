@@ -28,6 +28,7 @@ use crate::logic::module::die_module::DieModule;
 use crate::logic::module::update_module::UpdateModule;
 use crate::logic::world::update_body::UpdateBody;
 
+pub mod crate_collide;
 pub mod update_behavior;
 pub mod upgrade_body;
 
@@ -80,6 +81,8 @@ pub mod special_power_completion_die;
 pub mod eject_pilot_die;
 pub mod power_plant_update;
 pub mod radar_update;
+pub mod heal_crate_collide;
+pub mod shroud_crate_collide;
 // --- end p1w11-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -282,6 +285,14 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::RadarUpdate(d) => Some(made_update(
             UpdateModule::get_interface_mask(),
             radar_update::RadarUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::RadarUpdate(m))),
+        )),
+        ModuleDataKind::HealCrateCollide(d) => Some(made(
+            heal_crate_collide::HealCrateCollide::get_interface_mask(),
+            heal_crate_collide::HealCrateCollide::new(object, Some(d.clone())).map(UpdateBody::HealCrateCollide),
+        )),
+        ModuleDataKind::ShroudCrateCollide(d) => Some(made(
+            shroud_crate_collide::ShroudCrateCollide::get_interface_mask(),
+            shroud_crate_collide::ShroudCrateCollide::new(object, Some(d.clone())).map(UpdateBody::ShroudCrateCollide),
         )),
         // --- end p1w11-sonnet ---
         _ => None,
