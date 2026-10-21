@@ -146,6 +146,8 @@ pub enum UpdateBody {
     RadarUpgrade(crate::logic::modules::radar_upgrade::RadarUpgrade),
     /// `UnpauseSpecialPowerUpgrade`.
     UnpauseSpecialPowerUpgrade(crate::logic::modules::unpause_special_power_upgrade::UnpauseSpecialPowerUpgrade),
+    /// `ReplaceObjectUpgrade`.
+    ReplaceObjectUpgrade(crate::logic::modules::replace_object_upgrade::ReplaceObjectUpgrade),
     // --- end p1w11-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -207,6 +209,7 @@ impl UpdateBody {
             UpdateBody::PowerPlantUpgrade(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::RadarUpgrade(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::UnpauseSpecialPowerUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::ReplaceObjectUpgrade(_) => UPDATE_SLEEP_FOREVER,
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -268,6 +271,7 @@ impl UpdateBody {
             UpdateBody::PowerPlantUpgrade(m) => m.module_call(world, me, call),
             UpdateBody::RadarUpgrade(m) => m.module_call(world, me, call),
             UpdateBody::UnpauseSpecialPowerUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::ReplaceObjectUpgrade(m) => m.module_call(world, me, call),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -497,6 +501,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::PowerPlantUpgrade(m) => m.crc(xfer),
             UpdateBody::RadarUpgrade(m) => m.crc(xfer),
             UpdateBody::UnpauseSpecialPowerUpgrade(m) => m.crc(xfer),
+            UpdateBody::ReplaceObjectUpgrade(m) => m.crc(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -554,6 +559,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::PowerPlantUpgrade(m) => m.xfer(xfer),
             UpdateBody::RadarUpgrade(m) => m.xfer(xfer),
             UpdateBody::UnpauseSpecialPowerUpgrade(m) => m.xfer(xfer),
+            UpdateBody::ReplaceObjectUpgrade(m) => m.xfer(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -611,6 +617,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::PowerPlantUpgrade(m) => m.load_post_process(),
             UpdateBody::RadarUpgrade(m) => m.load_post_process(),
             UpdateBody::UnpauseSpecialPowerUpgrade(m) => m.load_post_process(),
+            UpdateBody::ReplaceObjectUpgrade(m) => m.load_post_process(),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }

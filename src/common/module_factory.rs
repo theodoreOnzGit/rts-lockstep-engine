@@ -551,6 +551,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::unpause_special_power_upgrade::new_module_data),
             which_interfaces: Some(crate::logic::modules::unpause_special_power_upgrade::UnpauseSpecialPowerUpgrade::get_interface_mask()),
         }),
+        "ReplaceObjectUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::replace_object_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::replace_object_upgrade::ReplaceObjectUpgrade::get_interface_mask()),
+        }),
         // --- end p1w11-sonnet ---
         _ => None,
     }
@@ -648,6 +653,7 @@ fn new_upgrade_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mo
         Some(ModuleDataKind::PowerPlantUpgrade(d)) => Some(d.upgrade.clone()),
         Some(ModuleDataKind::RadarUpgrade(d)) => Some(d.upgrade.clone()),
         Some(ModuleDataKind::UnpauseSpecialPowerUpgrade(d)) => Some(d.upgrade.clone()),
+        Some(ModuleDataKind::ReplaceObjectUpgrade(d)) => Some(d.upgrade.clone()),
         // --- end p1w11-sonnet ---
         _ => None,
     };

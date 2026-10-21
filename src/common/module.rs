@@ -344,6 +344,8 @@ pub enum ModuleDataKind {
     RadarUpgrade(Arc<crate::logic::modules::radar_upgrade::RadarUpgradeModuleData>),
     /// `UnpauseSpecialPowerUpgradeModuleData`.
     UnpauseSpecialPowerUpgrade(Arc<crate::logic::modules::unpause_special_power_upgrade::UnpauseSpecialPowerUpgradeModuleData>),
+    /// `ReplaceObjectUpgradeModuleData`.
+    ReplaceObjectUpgrade(Arc<crate::logic::modules::replace_object_upgrade::ReplaceObjectUpgradeModuleData>),
     // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
@@ -405,6 +407,7 @@ impl ModuleDataKind {
             ModuleDataKind::PowerPlantUpgrade(d) => &d.upgrade.behavior.module_data,
             ModuleDataKind::RadarUpgrade(d) => &d.upgrade.behavior.module_data,
             ModuleDataKind::UnpauseSpecialPowerUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::ReplaceObjectUpgrade(d) => &d.upgrade.behavior.module_data,
             // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
@@ -523,6 +526,10 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::UnpauseSpecialPowerUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::ReplaceObjectUpgrade(d) => match Arc::get_mut(d) {
                 Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
                 None => false,
             },

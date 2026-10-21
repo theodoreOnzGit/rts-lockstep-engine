@@ -28,6 +28,7 @@ public:
 	void removePowerBonus(Object *obj);
 	void addRadar(Bool disableProof);
 	void removeRadar(Bool disableProof);
+	void onStructureConstructionComplete(Object *builder, Object *structure, Bool isRebuild);   /* ReplaceObjectUpgrade */
 	Int m_idx;
 	/* --- end p1w11-sonnet --- */
 };

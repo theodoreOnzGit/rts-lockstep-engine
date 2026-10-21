@@ -54,11 +54,13 @@ class ExperienceTracker;
 #include "Common/NameKeyGenerator.h"
 class BehaviorModule;
 class UpdateModule;
+class Team;
+#include "matrix3d.h"
 /* --- end p1w11-sonnet --- */
 class Object : public Thing
 {
 public:
-	Object() : m_level(LEVEL_REGULAR), m_player(0), m_body(0), m_drawable(0), m_xp(0), m_weaponBonusCondition(0), m_shroudRange(0), m_producerID((ObjectID)0), m_ai(0), m_contain(0), m_spawn(0), m_disabled(false), m_behaviors(0) { m_weaponSetFlags[0] = m_weaponSetFlags[1] = 0; }
+	Object() : m_level(LEVEL_REGULAR), m_player(0), m_body(0), m_drawable(0), m_xp(0), m_weaponBonusCondition(0), m_shroudRange(0), m_producerID((ObjectID)0), m_ai(0), m_contain(0), m_spawn(0), m_disabled(false), m_behaviors(0), m_team(0), m_oid(0), m_destroyed(false) { m_weaponSetFlags[0] = m_weaponSetFlags[1] = 0; }
 	VeterancyLevel getVeterancyLevel() const { return m_level; }
 	const ObjectStatusMaskType &getStatusBits() const { return m_status; }
 	void removeUpgrade(const UpgradeTemplate *t);
@@ -119,6 +121,14 @@ public:
 	UpdateModule *findUpdateModule(NameKeyType key) const;   /* defined in l9_upgrades_c.inc */
 	Bool m_disabled;
 	BehaviorModule **m_behaviors;
+	/* ReplaceObjectUpgrade: the object's place, team and id, and whether destroyObject has been called on it */
+	const Matrix3D *getTransformMatrix() const { return &m_matrix; }
+	void setTransformMatrix(const Matrix3D *mx);   /* defined in l9_replace_object.inc (logs) */
+	Team *getTeam() const { return m_team; }
+	Matrix3D m_matrix;
+	Team *m_team;
+	Int m_oid;
+	Bool m_destroyed;
 	/* --- end p1w11-sonnet --- */
 protected:
 	virtual Object *asObjectMeth() { return this; }

@@ -1253,5 +1253,20 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    // ReplaceObjectUpgrade on stand-ins (l9_replace_object.inc in wrap_module.cpp)
+    pub fn ref_l9ro_run(
+        filename: *const c_char,
+        player_mask: *const c_uint,
+        obj_mask: *const c_uint,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
 }
 // --- end p1w11-sonnet ---

@@ -84,3 +84,6 @@ pub mod partition;
 // --- p1l9-example ---
 pub mod statics;
 // --- end p1l9-example ---
+// --- p1w11-sonnet ---
+pub mod thing_factory_world;
+// --- end p1w11-sonnet ---

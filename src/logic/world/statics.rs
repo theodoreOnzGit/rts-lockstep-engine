@@ -50,6 +50,8 @@ pub struct GameStatics {
     // --- p1w11-sonnet ---
     /// `TheSpecialPowerStore` (`UnpauseSpecialPowerUpgrade` finds its template in it).
     pub special_power_store: crate::common::special_power::SpecialPowerStore,
+    /// `TheThingFactory` (`ReplaceObjectUpgrade` finds its replacement in it, and `World::thing_factory_new_object` makes the object).
+    pub thing_factory: crate::common::thing_factory::ThingFactory,
     // --- end p1w11-sonnet ---
     // New stores go here, each in its translator's marked block.
 }

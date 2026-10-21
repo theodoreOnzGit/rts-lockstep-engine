@@ -62,6 +62,13 @@
 #define AIUpdateInterface ModTestAIUpdateInterface
 #define SpawnBehaviorInterface ModTestSpawnBehaviorInterface
 /* --- end p1w10-sonnet --- */
+/* --- p1w11-sonnet --- (ReplaceObjectUpgrade: the thing factory and the pathfinder, shim_module/Common/ThingFactory.h and GameLogic/AI.h) */
+#define ThingFactory ModTestThingFactory
+#define TheThingFactory ModTestTheThingFactory
+#define AI ModTestAI
+#define TheAI ModTestTheAI
+#define Pathfinder ModTestPathfinder
+/* --- end p1w11-sonnet --- */
 #define GameLogic ModTestGameLogic
 #define TheGameLogic ModTestTheGameLogic
 

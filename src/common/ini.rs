@@ -208,6 +208,12 @@ pub enum Undefined {
     /// no controlling player without testing it.
     NullControllingPlayer,
     // --- end p1w10-sonnet ---
+    // --- p1w11-sonnet ---
+    /// `ReplaceObjectUpgrade` makes its replacement with `TheThingFactory->newObject` and the module factory refused one of its modules (a
+    /// `throw` upstream, which nothing catches), or the world refused the object; the new object is then `NULL` and
+    /// `replacementObject->setTransformMatrix` dereferences it.
+    NewObjectFailed,
+    // --- end p1w11-sonnet ---
     // --- p1l9-upgrades ---
     /// `ArmorUpgrade`: a triggered chemical-suits upgrade on an object with no
     /// drawable dereferences a null `Drawable` pointer.

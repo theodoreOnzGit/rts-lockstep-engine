@@ -127,6 +127,8 @@ pub enum CutCall {
     PlayerAddPowerBonus { player: PlayerIndex, object: ObjectId },
     /// `player->removePowerBonus(obj)` (`PowerPlantUpgrade`).
     PlayerRemovePowerBonus { player: PlayerIndex, object: ObjectId },
+    /// `player->onStructureConstructionComplete(builder, structure, isRebuild)` (`ReplaceObjectUpgrade`).
+    PlayerOnStructureConstructionComplete { player: PlayerIndex, builder: ObjectId, structure: ObjectId, is_rebuild: bool },
     // --- end p1w11-sonnet ---
     // ---- Team ----
     /// `team->notifyTeamOfObjectDeath()`.
@@ -309,6 +311,10 @@ pub struct ObjectCuts {
     /// module instead of crashing. See `logic::modules::upgrade_body`.
     pub module_errors: Vec<(ModuleHandle, crate::common::ini::IniError)>,
     // --- end p1l9-example ---
+    // --- p1w11-sonnet ---
+    /// The classes `World::thing_factory_new_object` made as stubs because they are not translated (`ThingFactory::newObject`), in order.
+    pub untranslated_modules: Vec<Vec<u8>>,
+    // --- end p1w11-sonnet ---
     /// The values of the global stores.
     pub globals: ObjectGlobals,
     /// `ThePlayerList->getNeutralPlayer()->getDefaultTeam()`.
@@ -391,6 +397,9 @@ impl Default for ObjectCuts {
             module_stack: Vec::new(),
             // --- p1l9-example ---
             module_errors: Vec::new(),
+            // --- p1w11-sonnet ---
+            untranslated_modules: Vec::new(),
+            // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
             globals: ObjectGlobals::default(),
             neutral_default_team: 0,
