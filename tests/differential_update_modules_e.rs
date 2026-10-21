@@ -65,6 +65,8 @@
 //! | 735 | RadarUpdate | the radar is not made active |
 //! | 737 | RadarUpdate | `extendRadar` does not set the extending condition |
 
+#![cfg(feature = "differential")]
+
 mod support;
 mod up_common;
 
