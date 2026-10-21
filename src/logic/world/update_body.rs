@@ -162,6 +162,8 @@ pub enum UpdateBody {
     HealCrateCollide(crate::logic::modules::heal_crate_collide::HealCrateCollide),
     /// `ShroudCrateCollide`.
     ShroudCrateCollide(crate::logic::modules::shroud_crate_collide::ShroudCrateCollide),
+    /// `MoneyCrateCollide`.
+    MoneyCrateCollide(crate::logic::modules::money_crate_collide::MoneyCrateCollide),
     // --- end p1w11-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -231,6 +233,7 @@ impl UpdateBody {
             UpdateBody::RadarUpdate(m) => m.world_update(world, me),
             UpdateBody::HealCrateCollide(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::ShroudCrateCollide(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::MoneyCrateCollide(_) => UPDATE_SLEEP_FOREVER,
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -300,6 +303,7 @@ impl UpdateBody {
             UpdateBody::RadarUpdate(m) => m.module_call(world, me, call),
             UpdateBody::HealCrateCollide(m) => m.module_call(world, me, call),
             UpdateBody::ShroudCrateCollide(m) => m.module_call(world, me, call),
+            UpdateBody::MoneyCrateCollide(m) => m.module_call(world, me, call),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -549,6 +553,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::RadarUpdate(m) => m.crc(xfer),
             UpdateBody::HealCrateCollide(m) => m.crc(xfer),
             UpdateBody::ShroudCrateCollide(m) => m.crc(xfer),
+            UpdateBody::MoneyCrateCollide(m) => m.crc(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -614,6 +619,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::RadarUpdate(m) => m.xfer(xfer),
             UpdateBody::HealCrateCollide(m) => m.xfer(xfer),
             UpdateBody::ShroudCrateCollide(m) => m.xfer(xfer),
+            UpdateBody::MoneyCrateCollide(m) => m.xfer(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -679,6 +685,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::RadarUpdate(m) => m.load_post_process(),
             UpdateBody::HealCrateCollide(m) => m.load_post_process(),
             UpdateBody::ShroudCrateCollide(m) => m.load_post_process(),
+            UpdateBody::MoneyCrateCollide(m) => m.load_post_process(),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }

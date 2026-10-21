@@ -76,6 +76,7 @@
 #define TheScriptEngine ModTestTheScriptEngine
 /* crate batch F: the miscellaneous audio, the partition manager and the 2D animations the crates call */
 #define MiscAudio ModTestMiscAudio
+#define ScoreKeeper ModTestScoreKeeper
 #define PartitionManager ModTestPartitionManager
 #define ThePartitionManager ModTestThePartitionManager
 #define Anim2DTemplate ModTestAnim2DTemplate

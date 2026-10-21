@@ -13,6 +13,9 @@
 #include <algorithm>
 class Object;
 /* --- end p1w11-sonnet --- */
+/* crate batch F: the money and the score keeper of a player, whose calls are lines of the effect log (differential/l9_crates_f.inc) */
+class Money { public: void deposit(UnsignedInt amountToDeposit, Bool playSound = TRUE); Int m_idx; };
+class ScoreKeeper { public: void addMoneyEarned(Int money); Int m_idx; };
 class Player
 {
 public:
@@ -38,6 +41,11 @@ public:
 	PlayerType getPlayerType() const { return m_type; }
 	Bool hasScience(ScienceType t) const { return std::find(m_sciences.begin(), m_sciences.end(), t) != m_sciences.end(); }
 	void healAllObjects();   /* differential/l9_crates_f.inc */
+	Money *getMoney() { return &m_money; }
+	ScoreKeeper *getScoreKeeper() { return &m_score; }
+	Bool hasUpgradeComplete(const UpgradeTemplate *upgradeTemplate) { return m_upgradesCompleted.testForAll(upgradeTemplate->getUpgradeMask()); }
+	Money m_money;
+	ScoreKeeper m_score;
 	PlayerType m_type;
 	std::vector<ScienceType> m_sciences;
 	/* --- end p1w11-sonnet --- */

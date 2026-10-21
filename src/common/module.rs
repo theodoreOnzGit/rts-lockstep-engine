@@ -360,6 +360,8 @@ pub enum ModuleDataKind {
     HealCrateCollide(Arc<crate::logic::modules::heal_crate_collide::HealCrateCollideModuleData>),
     /// `ShroudCrateCollideModuleData`.
     ShroudCrateCollide(Arc<crate::logic::modules::shroud_crate_collide::ShroudCrateCollideModuleData>),
+    /// `MoneyCrateCollideModuleData`.
+    MoneyCrateCollide(Arc<crate::logic::modules::money_crate_collide::MoneyCrateCollideModuleData>),
     // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
@@ -429,6 +431,7 @@ impl ModuleDataKind {
             ModuleDataKind::RadarUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::HealCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::ShroudCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
+            ModuleDataKind::MoneyCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
@@ -597,6 +600,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::ShroudCrateCollide(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::MoneyCrateCollide(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
                     true

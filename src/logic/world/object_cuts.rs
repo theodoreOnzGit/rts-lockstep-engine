@@ -138,6 +138,10 @@ pub enum CutCall {
     PlayerHealAllObjects { player: PlayerIndex },
     /// `ThePartitionManager->revealMapForPlayer(playerIndex)` (`ShroudCrateCollide`).
     PartitionRevealMapForPlayer { player: PlayerIndex },
+    /// `player->getMoney()->deposit(amount)`, with the cash sound (`MoneyCrateCollide`).
+    PlayerMoneyDeposit { player: PlayerIndex, amount: u32 },
+    /// `player->getScoreKeeper()->addMoneyEarned(amount)` (`MoneyCrateCollide`).
+    PlayerScoreAddMoneyEarned { player: PlayerIndex, amount: i32 },
     /// `TheAnim2DCollection->findTemplate(name)` and `TheInGameUI->addWorldAnimation(template, pos, WORLD_ANIM_FADE_ON_EXPIRE, time, zRise)`
     /// (`CrateCollide::onCollide`).
     InGameUiAddWorldAnimation { template: Vec<u8>, position: crate::common::base_type::Coord3D, display_time_in_seconds: f32, z_rise_per_second: f32 },
@@ -336,6 +340,9 @@ pub struct ObjectCuts {
     /// A [`ModuleProbe`](crate::logic::world::module_probe::ProbeModule) writes the lines `pause`, `extendrods` and `extendradar` to `trace`
     /// (off by default: `differential_object` compares the probe's trace to the C++ log, which has no such lines).
     pub probe_effect_trace: bool,
+    /// The function-local `static` of `MoneyCrateCollide::getUpgradedSupplyBoost`: `None` until control first reaches it, then the upgrade mask of
+    /// the template the first pair named (`Some(None)` for a name that is no upgrade). See `modules::money_crate_collide`.
+    pub money_crate_upgrade_static: Option<Option<crate::common::upgrade::UpgradeMaskType>>,
     // --- end p1w11-sonnet ---
     /// The values of the global stores.
     pub globals: ObjectGlobals,
@@ -422,6 +429,7 @@ impl Default for ObjectCuts {
             // --- p1w11-sonnet ---
             untranslated_modules: Vec::new(),
             probe_effect_trace: false,
+            money_crate_upgrade_static: None,
             // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
             globals: ObjectGlobals::default(),

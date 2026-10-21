@@ -3,12 +3,13 @@
 //
 // Differential test of the translation of (EA's release,
 // https://github.com/electronicarts/CnC_Generals_Zero_Hour, commit 0a05454d8574207440a5fb15241b98ad0b435590):
-//   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Collide/CrateCollide/{CrateCollide, HealCrateCollide, ShroudCrateCollide}.cpp
+//   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Collide/CrateCollide/{CrateCollide, HealCrateCollide, ShroudCrateCollide, MoneyCrateCollide}.cpp
+//   (and parseUpgradePair of .../Update/AutoDepositUpdate.cpp)
 //
 // Licensed under the GNU General Public License version 3 (GPL-3.0-only), with
 // the additional terms in NOTICE.md.
 
-//! The crate base and two crate modules (`logic::modules::{crate_collide, heal_crate_collide, shroud_crate_collide}`) against the unchanged C++,
+//! The crate base and three crate modules (`logic::modules::{crate_collide, heal_crate_collide, shroud_crate_collide, money_crate_collide}`, with `upgrade_pair`) against the unchanged C++,
 //! `p1w11-sonnet`, crate batch F.
 //!
 //! # Method
@@ -23,25 +24,28 @@
 //! module from `modules::new_module`, the other with the kinds the case gives it); every op is a `World::module_call` (`OnCollide`,
 //! `WouldLikeToCollideWith`), a change to the other object or the crate, or an xfer through `World::xfer_module_slot`.
 //!
-//! Each case reads a `D` block (the `CrateCollide` fields, mostly well formed), and when the read succeeds runs 1 to 14 ops.
+//! Each case defines four upgrades, reads a `D` block (the `CrateCollide` fields and, for a money crate, `MoneyProvided` and `UpgradedBoost` pairs; mostly well formed), and when the read succeeds runs 1 to 14 ops.
 //!
 //! Compared, bit for bit: the read's throw; the data; per op the throw status, the result of `wouldLikeToCollideWith`, the effects in order (`heal`,
-//! `reveal`, `audio`, `fx`, `destroy`, `findanim` and `anim`) and the xfer status, bytes and CRC.
+//! `reveal`, `deposit`, `earned`, `audio`, `fx`, `destroy`, `findanim` and `anim`) and the xfer status, bytes and CRC.
 //!
 //! # Deviations the test cannot see
 //!
 //! `PickupScience` is kept as the science's name and looked up when the crate is tested (see `modules::crate_collide`): the generator names only
 //! known sciences, so that the throw upstream makes at the read for an unknown one is not in play. Inputs for which upstream is undefined (a collecting
-//! object with no controlling player, for `HealCrateCollide` and `ShroudCrateCollide`) are never sent to the C++: the Rust records an `is_undefined()`
+//! object with no controlling player, for the three modules; an `UpgradedBoost` line that ends after the upgrade's name, whose `stricmp` of a `NULL` token crashes) are never sent to the C++: the Rust records an `is_undefined()`
 //! error and the case is counted as excluded.
 //!
-//! # Results
+//! # Results (2026-10-21, 9000 cases, `L9CF_CASES` overrides)
 //!
-//! (2026-10-21, 9000 cases, `L9CF_CASES` overrides)
+//! 8,768 data reads and 58,166 dump lines (44,280 ops: 15,898 `onCollide`, 5,740 xfers) compared, 0 mismatches; 232 inputs excluded as undefined upstream;
+//! 2,828 data blocks threw on both sides. 1,225 crates were destroyed. Effects: 1,199 `audio`, 1,199 `destroy`, 457 `fx`, 453 `deposit` and `earned`,
+//! 390 `heal`, 356 `reveal`, 269 `findanim` and `anim`.
 //!
-//! 8,834 data reads and 56,341 dump lines (44,361 ops: 16,070 `onCollide`, 5,687 xfers) compared, 0 mismatches; 166 inputs excluded as undefined upstream;
-//! 2,844 data blocks threw on both sides. 1,217 crates were destroyed. Effects: 1,217 `audio`, 1,217 `destroy`, 634 `reveal`, 583 `heal`, 473 `fx`, 273
-//! `findanim` and `anim`.
+//! `MoneyCrateCollide`'s `static` (see `modules::money_crate_collide`): the C++ is `MoneyCrateCollide.cpp` with that one declaration turned into a
+//! global and a flag by `build.rs` (`mod_gen/MoneyCrateCollide_static.cpp`, asserted to apply once; the driver resets the flag for each case), and
+//! `parseUpgradePair` is cut out of `AutoDepositUpdate.cpp` the same way (`mod_gen/AutoDepositPair.inc`). Plant 773 (no cache) is caught, so the
+//! cases do reach the pairs after the first with a template the first pair fixed.
 //!
 //! # Planted bugs
 //!
@@ -62,8 +66,12 @@
 //! | 761 | CrateCollide | a parachute may collect |
 //! | 762 | CrateCollide | the science test is inverted |
 //! | 763 | CrateCollide | `HumanOnly` admits only computers |
+//! | 771 | MoneyCrateCollide | the upgrade boost is never added |
+//! | 772 | MoneyCrateCollide | the score keeper is told 0 |
+//! | 773 | MoneyCrateCollide | the template is looked up on every pair (no `static`) |
+//! | 774 | `parseUpgradePair` | the boost is stored as its absolute value |
 //!
-//! All 13 are caught. Plants 755 and 760 are detected by the C++ reference segfaulting (exit 139): with the plant the Rust no longer reports a case as
+//! All 17 are caught. Plants 755 and 760 are detected by the C++ reference segfaulting (exit 139): with the plant the Rust no longer reports a case as
 //! undefined upstream (a collector with no controlling player passes the test), so the case reaches the C++ that upstream cannot run. That is a
 //! detection, not a clean mismatch; it is recorded as it happened (as plant 619 of `differential_upgrade_modules_b.rs`).
 
@@ -81,6 +89,7 @@ use rts_lockstep_engine::common::object_status_types::ObjectStatusMaskType;
 use rts_lockstep_engine::common::science::{GameTextFetch, ScienceStore, ScienceType};
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
 use rts_lockstep_engine::common::unicode_string::UnicodeString;
+use rts_lockstep_engine::common::upgrade::{UpgradeCenter, UpgradeMaskType};
 use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::common::xfer_load::XferLoad;
@@ -88,6 +97,7 @@ use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::modules::crate_collide::CrateCollideModuleData;
 use rts_lockstep_engine::logic::modules::heal_crate_collide::HealCrateCollideModuleData;
+use rts_lockstep_engine::logic::modules::money_crate_collide::MoneyCrateCollideModuleData;
 use rts_lockstep_engine::logic::modules::shroud_crate_collide::ShroudCrateCollideModuleData;
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleReply};
@@ -108,7 +118,9 @@ const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9crates_f.b
 const XFER_FILE: &str = "l9crates_f.bin";
 
 /// The class names of the kinds, in the order of the driver's `kind`.
-const CLASSES: [&str; 2] = ["HealCrateCollide", "ShroudCrateCollide"];
+const CLASSES: [&str; 3] = ["HealCrateCollide", "ShroudCrateCollide", "MoneyCrateCollide"];
+/// The upgrades the cases define, `Up_0` first (they take the mask bits 0 to 3).
+const UPGRADES: [&str; 4] = ["Up_0", "Up_1", "Up_2", "Up_3"];
 /// The kinds a collecting object is given, by bit (the driver's `g_cfKinds`), with their INI names.
 const KINDS: [(KindOfType, &str); 8] = [
     (KINDOF_STRUCTURE, "STRUCTURE"),
@@ -152,7 +164,8 @@ impl FxIds {
 fn read_block(ini: &mut Ini<'_>, out: &mut (usize, Option<ModuleDataKind>)) -> IniResult<()> {
     out.1 = Some(match out.0 {
         0 => ModuleDataKind::HealCrateCollide(Arc::new(HealCrateCollideModuleData::friend_new_module_data(Some(ini))?)),
-        _ => ModuleDataKind::ShroudCrateCollide(Arc::new(ShroudCrateCollideModuleData::friend_new_module_data(Some(ini))?)),
+        1 => ModuleDataKind::ShroudCrateCollide(Arc::new(ShroudCrateCollideModuleData::friend_new_module_data(Some(ini))?)),
+        _ => ModuleDataKind::MoneyCrateCollide(Arc::new(MoneyCrateCollideModuleData::friend_new_module_data(Some(ini))?)),
     });
     Ok(())
 }
@@ -168,6 +181,7 @@ fn crate_data(data: &ModuleDataKind) -> &CrateCollideModuleData {
     match data {
         ModuleDataKind::HealCrateCollide(d) => &d.crate_data,
         ModuleDataKind::ShroudCrateCollide(d) => &d.crate_data,
+        ModuleDataKind::MoneyCrateCollide(d) => &d.crate_data,
         _ => unreachable!("not a crate module"),
     }
 }
@@ -191,10 +205,18 @@ fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, fx: &mut FxIds) {
     put_u32(v, c.execute_animation_display_time_in_seconds.to_bits());
     put_u32(v, c.execute_animation_z_rise_per_second.to_bits());
     put_u32(v, u32::from(c.execute_animation_fades));
+    if let ModuleDataKind::MoneyCrateCollide(d) = data {
+        put_u32(v, d.money_provided);
+        put_u32(v, d.upgrade_boost.len() as u32);
+        for pair in &d.upgrade_boost {
+            put_str(v, &pair.type_name);
+            put_i32(v, pair.amount);
+        }
+    }
 }
 
 /// A dump as text, for the comparison.
-fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
+fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
     let mut p = 0usize;
     let mut out = Vec::new();
     let u32_ = |p: &mut usize| -> u32 {
@@ -220,6 +242,12 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
     let anim = str_(&mut p);
     let (t, z, fades) = (u32_(&mut p), u32_(&mut p), u32_(&mut p));
     out.push(format!("data kinds {set:?} flags {flags:?} science {sci} fx {fx} anim {anim:?} time {t:#x} rise {z:#x} fades {fades}"));
+    if kind == 2 {
+        let money = u32_(&mut p);
+        let n = u32_(&mut p);
+        let pairs: Vec<(String, i32)> = (0..n).map(|_| (str_(&mut p), u32_(&mut p) as i32)).collect();
+        out.push(format!("money {money} boosts {pairs:?}"));
+    }
     for i in 0..n_ops {
         if p >= b.len() {
             break;
@@ -253,8 +281,24 @@ fn kind_tokens(g: &mut Gen) -> String {
 }
 
 /// The block `D`: the crate fields (each present with some probability), now and then a bogus token or an unknown field.
-fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
+fn gen_text(g: &mut Gen, kind: usize, clean: bool) -> Vec<u8> {
     let mut lines: Vec<String> = Vec::new();
+    if kind == 2 {
+        if g.below(100) < 85 {
+            lines.push(format!("MoneyProvided = {}", gen_int(g, clean)));
+        }
+        for _ in 0..g.below(4) {
+            let name = pick(g, &["Up_0", "Up_1", "Up_2", "Up_3", "up_1", "Unknown"]);
+            let amount = g.below(400) as i32 - 100;
+            lines.push(match g.below(40) {
+                0 if !clean => format!("UpgradedBoost = UpgradeType:{name}"),
+                1 if !clean => format!("UpgradedBoost = Type:{name} Boost:{amount}"),
+                2 if !clean => format!("UpgradedBoost = UpgradeType:{name} Bonus:{amount}"),
+                3 => format!("UpgradedBoost = UpgradeType = {name} Boost = {amount}"),
+                _ => format!("UpgradedBoost = UpgradeType:{name} Boost:{amount}"),
+            });
+        }
+    }
     if g.below(100) < 14 {
         lines.push(format!("RequiredKindOf = {}", kind_tokens(g)));
     }
@@ -368,6 +412,16 @@ fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> 
     }
 }
 
+fn mask_of_word(w: u32) -> UpgradeMaskType {
+    let mut m = UpgradeMaskType::default();
+    for i in 0..32 {
+        if w >> i & 1 != 0 {
+            m.set(i, 1);
+        }
+    }
+    m
+}
+
 fn set_player_of_team(w: &mut World, team: u32, player: Option<u32>) {
     match player {
         Some(p) => {
@@ -389,7 +443,7 @@ fn set_dead(w: &mut World, id: ObjectId, dead: bool) {
 }
 
 /// Runs the ops on a fresh world and returns the dump (after the data dump) and the world.
-fn rust_run(kind: usize, names: NameKeyGenerator, data: ModuleDataKind, cfg: &[u32; 10], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
+fn rust_run(kind: usize, names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind, cfg: &[u32; 22], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     let mut fx = FxIds::default();
     put_data(&mut v, &data, &mut fx);
@@ -402,7 +456,7 @@ fn rust_run(kind: usize, names: NameKeyGenerator, data: ModuleDataKind, cfg: &[u
 
     let mut w = World::new();
     w.names = sc.names;
-    w.statics = Arc::new(GameStatics { science_store: sc.store, ..Default::default() });
+    w.statics = Arc::new(GameStatics { science_store: sc.store, upgrade_center: center, ..Default::default() });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.globals.draw_icon_ui = cfg[3] & 8 != 0;
@@ -415,6 +469,7 @@ fn rust_run(kind: usize, names: NameKeyGenerator, data: ModuleDataKind, cfg: &[u
         let p = w.players.get_nth_mut(i as i32).unwrap();
         p.player_type = if cfg[8] >> i & 1 != 0 { PlayerType::Computer } else { PlayerType::Human };
         p.sciences = science_keys;
+        p.upgrades_completed = mask_of_word(cfg[10 + 4 * i as usize]);
     }
     set_player_of_team(&mut w, 1, (cfg[0] != NO_PLAYER).then_some(cfg[0]));
     set_player_of_team(&mut w, 2, (cfg[1] != NO_PLAYER).then_some(cfg[1]));
@@ -476,6 +531,11 @@ fn rust_run(kind: usize, names: NameKeyGenerator, data: ModuleDataKind, cfg: &[u
                 tally.xfers += 1;
             }
             12 => set_player_of_team(&mut w, 1, (o[1] != 0).then(|| o[1] - 1)),
+            13 => {
+                for i in 0..3 {
+                    w.players.get_nth_mut(i as i32).unwrap().upgrades_completed = mask_of_word(o[1 + i]);
+                }
+            }
             _ => unreachable!(),
         }
         let threw = w.cuts.module_errors.len() > errors_before;
@@ -498,6 +558,8 @@ fn rust_run(kind: usize, names: NameKeyGenerator, data: ModuleDataKind, cfg: &[u
                 match cut_iter.next().expect("a cut line has a cut call") {
                     CutCall::PlayerHealAllObjects { player } => log.push(format!("heal {player}")),
                     CutCall::PartitionRevealMapForPlayer { player } => log.push(format!("reveal {player}")),
+                    CutCall::PlayerMoneyDeposit { player, amount } => log.push(format!("deposit {player} {amount} 1")),
+                    CutCall::PlayerScoreAddMoneyEarned { player, amount } => log.push(format!("earned {player} {amount}")),
                     CutCall::InGameUiAddWorldAnimation { template, position, display_time_in_seconds, z_rise_per_second } => {
                         log.push(format!("findanim {}", String::from_utf8_lossy(template)));
                         log.push(format!(
@@ -516,6 +578,7 @@ fn rust_run(kind: usize, names: NameKeyGenerator, data: ModuleDataKind, cfg: &[u
                     let name = match sound {
                         ObjectSound::CrateHeal => "crateHeal",
                         ObjectSound::CrateShroud => "crateShroud",
+                        ObjectSound::CrateMoney => "crateMoney",
                         other => panic!("unexpected sound {other:?}"),
                     };
                     let pos = match position {
@@ -568,15 +631,19 @@ fn crate_modules_f_match_upstream() {
     let mut run = Check::new("crate module F ops (data, effects, xfers)");
     let (mut read_failed, mut ops_run, mut excluded) = (0u64, 0u64, 0u64);
     let mut tally = Tally::default();
-    let mut per_kind = [0u64; 2];
+    let mut per_kind = [0u64; 3];
     let mut counts: BTreeMap<String, u64> = BTreeMap::new();
     let mut shown = 0;
     for case in 0..cases {
-        let kind = case % 2;
-        let ctx = Ctx::new(true, true);
+        let kind = case % 3;
+        let mut ctx = Ctx::new(true, true);
         cpp_reset(true, true);
+        let defs: String = UPGRADES.iter().map(|u| format!("Upgrade {u}\n Type = PLAYER\nEnd\n")).collect();
+        let table = blocks();
+        Ini::load(b"Data\\INI\\Upgrade.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ctx).expect("upgrades load");
+        assert_eq!(cpp_load(b"Data\\INI\\Upgrade.ini", defs.as_bytes(), IniLoadType::Overwrite, false).status, 0);
         let clean = g.below(10) < 7;
-        let text = gen_text(&mut g, clean);
+        let text = gen_text(&mut g, kind, clean);
         let name = format!("Data\\INI\\Uf{}.ini", case % 5).into_bytes();
         let (r, data) = rust_read(kind, &name, &text);
         let outcome = match rust_outcome(r, 0) {
@@ -589,7 +656,7 @@ fn crate_modules_f_match_upstream() {
         };
         // [the crate's player, the other's player, the other's kinds, flags, the crate's z, the other's x, y, z, the types of the players, their sciences]
         let player = |g: &mut Gen| if g.below(10) == 0 { NO_PLAYER } else { 1 + g.below(2) - u32::from(g.below(6) == 0) };
-        let mut cfg = [0u32; 10];
+        let mut cfg = [0u32; 22];
         cfg[0] = player(&mut g);
         cfg[1] = player(&mut g);
         cfg[2] = (g.u32() & g.u32() & 0xff) | if g.below(3) == 0 { 1 << g.below(8) } else { 0 };
@@ -600,6 +667,9 @@ fn crate_modules_f_match_upstream() {
         cfg[7] = pick_z(&mut g);
         cfg[8] = g.below(8);
         cfg[9] = g.u32() & g.u32() & 0x7fff;
+        for i in 0..3 {
+            cfg[10 + 4 * i] = g.u32() & 0xf;
+        }
         let n_ops = 1 + g.below(14) as usize;
         let ops: Vec<[u32; 6]> = (0..n_ops)
             .map(|_| match g.below(40) {
@@ -614,13 +684,14 @@ fn crate_modules_f_match_upstream() {
                 32..=33 => [9, 0, 0, 0, 0, 0],
                 34..=35 => [10, 0, 0, 0, 0, 0],
                 36 => [11, 0, 0, 0, 0, 0],
+                37 => [13, g.u32() & 0xf, g.u32() & 0xf, g.u32() & 0xf, 0, 0],
                 _ => [12, g.below(4), 0, 0, 0, 0],
             })
             .collect();
 
         // Rust first: a case that reaches upstream undefined behaviour is counted and never sent to the C++
         let rust = if outcome.status == 0 {
-            let (rd, w) = rust_run(kind, ctx.names, data.expect("read ok"), &cfg, &ops, &mut tally);
+            let (rd, w) = rust_run(kind, ctx.names.clone(), ctx.center.clone(), data.expect("read ok"), &cfg, &ops, &mut tally);
             if w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined()) {
                 excluded += 1;
                 continue;
@@ -667,9 +738,9 @@ fn crate_modules_f_match_upstream() {
             read_failed += 1;
             continue;
         };
-        let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
+        let (dr, dc) = (decode(kind, &rd, ops.len()), decode(kind, &buf, ops.len()));
         for l in &dr {
-            for key in ["\"heal ", "\"reveal ", "\"audio ", "\"fx", "\"destroy ", "\"findanim ", "\"anim "] {
+            for key in ["\"deposit ", "\"earned ", "\"heal ", "\"reveal ", "\"audio ", "\"fx", "\"destroy ", "\"findanim ", "\"anim "] {
                 *counts.entry(key.trim_matches('"').trim().to_string()).or_default() += l.matches(key).count() as u64;
             }
         }

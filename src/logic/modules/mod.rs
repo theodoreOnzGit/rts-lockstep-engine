@@ -29,6 +29,7 @@ use crate::logic::module::update_module::UpdateModule;
 use crate::logic::world::update_body::UpdateBody;
 
 pub mod crate_collide;
+pub mod upgrade_pair;
 pub mod update_behavior;
 pub mod upgrade_body;
 
@@ -83,6 +84,7 @@ pub mod power_plant_update;
 pub mod radar_update;
 pub mod heal_crate_collide;
 pub mod shroud_crate_collide;
+pub mod money_crate_collide;
 // --- end p1w11-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -293,6 +295,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::ShroudCrateCollide(d) => Some(made(
             shroud_crate_collide::ShroudCrateCollide::get_interface_mask(),
             shroud_crate_collide::ShroudCrateCollide::new(object, Some(d.clone())).map(UpdateBody::ShroudCrateCollide),
+        )),
+        ModuleDataKind::MoneyCrateCollide(d) => Some(made(
+            money_crate_collide::MoneyCrateCollide::get_interface_mask(),
+            money_crate_collide::MoneyCrateCollide::new(object, Some(d.clone())).map(UpdateBody::MoneyCrateCollide),
         )),
         // --- end p1w11-sonnet ---
         _ => None,

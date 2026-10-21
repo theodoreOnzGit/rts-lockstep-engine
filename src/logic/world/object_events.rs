@@ -47,6 +47,8 @@ pub enum ObjectSound {
     CrateHeal,
     /// `MiscAudio::m_crateShroud` (`ShroudCrateCollide`).
     CrateShroud,
+    /// `MiscAudio::m_crateMoney` (`MoneyCrateCollide`).
+    CrateMoney,
     // --- end p1w11-sonnet ---
 }
 

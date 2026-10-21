@@ -9,6 +9,12 @@
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Collide/CrateCollide/CrateCollide.cpp"
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Collide/CrateCollide/HealCrateCollide.cpp"
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Collide/CrateCollide/ShroudCrateCollide.cpp"
+/* MoneyCrateCollide.cpp with its function-local `static` made a global and a flag the driver resets (build.rs, mod_gen/), and parseUpgradePair cut
+** out of AutoDepositUpdate.cpp (build.rs, mod_gen/): both mechanical, asserted to apply once */
+namespace { const UpgradeTemplate *g_moneyStatic = 0; bool g_moneyStaticInit = false; }
+#include "GameLogic/Module/AutoDepositUpdate.h"
+#include "AutoDepositPair.inc"
+#include "MoneyCrateCollide_static.cpp"
 
 namespace {
 
@@ -30,6 +36,8 @@ void cfDestroyHook(Object *obj) { ulog("destroy %d", (int)obj->m_oid); }
 Bool Object::isNeutralControlled() const { return m_player && m_player->m_idx == 0; }
 void Drawable::flashAsSelected(const void *) { ulog("flash"); }
 void Player::healAllObjects() { ulog("heal %d", (int)m_idx); }
+void Money::deposit(UnsignedInt amountToDeposit, Bool playSound) { ulog("deposit %d %u %d", (int)m_idx, amountToDeposit, (int)playSound); }
+void ScoreKeeper::addMoneyEarned(Int money) { ulog("earned %d %d", (int)m_idx, (int)money); }
 void PartitionManager::revealMapForPlayer(Int playerIndex) { ulog("reveal %d", (int)playerIndex); }
 const MiscAudio *AudioManager::getMiscAudio(void) const { return &g_cfMisc; }
 Anim2DTemplate *Anim2DCollection::findTemplate(const AsciiString &name) { ulog("findanim %s", name.str()); return &g_cfAnimTemplate; }
@@ -52,7 +60,11 @@ ModuleData *l9cfRead(int kind, const char *filename)
 		ini.readLine();
 		AsciiString currentLine = ini.m_buffer;
 		try {
-			data = kind == 0 ? (ModuleData *)HealCrateCollide::friend_newModuleData(&ini) : (ModuleData *)ShroudCrateCollide::friend_newModuleData(&ini);
+			switch (kind) {
+			case 0: data = HealCrateCollide::friend_newModuleData(&ini); break;
+			case 1: data = ShroudCrateCollide::friend_newModuleData(&ini); break;
+			default: data = MoneyCrateCollide::friend_newModuleData(&ini); break;
+			}
 		} catch (...) {
 			char buff[1024];
 			sprintf(buff, "Error parsing INI file '%s' (Line: '%s')\n", ini.m_filename.str(), currentLine.str());
@@ -97,15 +109,17 @@ void cfPutBase(const CrateCollideModuleData *c, const unsigned *scienceKeys)
 
 extern "C" {
 
-/* Read `filename` (block `D`) as the data of crate module `kind` (0 HealCrateCollide, 1 ShroudCrateCollide) and make the module on a crate Object
+/* Read `filename` (block `D`) as the data of crate module `kind` (0 HealCrateCollide, 1 ShroudCrateCollide, 2 MoneyCrateCollide) and make the module on a crate Object
 ** (id 1) whose controlling player is cfg[0] of three (0xFFFFFFFF none), with a second object (id 2) that collides with it. `cfg`: [the crate's player,
 ** the other's player (0xFFFFFFFF none), the other's kinds (bits of g_cfKinds), flags (bit 0 the other has an AI, 1 it is effectively dead, 2 the
 ** animation collection exists, 3 the game logic draws icons), the crate's z (float bits), the other's x, y, z (float bits), the types of the three
-** players (bit i set: player i is a computer), the sciences of the three players (5 bits each: bit k of player i's group is the test's science k)].
+** players (bit i set: player i is a computer), the sciences of the three players (5 bits each: bit k of player i's group is the test's science k), the
+** completed upgrades of the three players (four words each, from cfg[10])].
 ** The data dump goes first (the crate base). Then `n` ops of 6 words [op, a, b, c]: 0 onCollide(other: a = 0 NULL, 1 the other object)
 ** 1 wouldLikeToCollideWith(a)  2 the other's player = a - 1 (0 none)  3 the other has an AI = a  4 the other is effectively dead = a  5 the other's kinds = a
 ** 6 the other's position = (a, b, c) float bits  7 the crate's z = a  8 flags = a (as cfg[3])  9 xfer save  10 xfer load of the last save  11 xfer CRC
-** 12 the crate's player = a - 1 (0 none). Each op appends: the CATCH_ALL status, the Bool result of op 1, the effect log (count, then each as a
+** 12 the crate's player = a - 1 (0 none)
+** 13 the players' completed upgrades = (a, 0, 0, 0), (b, 0, 0, 0), (c, 0, 0, 0). Each op appends: the CATCH_ALL status, the Bool result of op 1, the effect log (count, then each as a
 ** string), the xfer status, its bytes and CRC. */
 int ref_l9cf_run(int kind, const char *filename, const char *xfer_path, const unsigned *cfg, int n, const unsigned *ops,
 	unsigned char *buf, int cap, int *len, char *msg, int msgCap, unsigned *code)
@@ -122,9 +136,23 @@ int ref_l9cf_run(int kind, const char *filename, const char *xfer_path, const un
 	unsigned scienceKeys[5];
 	for (int i = 0; i < 5; ++i) scienceKeys[i] = (unsigned)NAMEKEY(SCIENCE_NAMES_CF[i]);
 	cfPutBase((CrateCollideModuleData *)d, scienceKeys);
+	if (kind == 2) {
+		const MoneyCrateCollideModuleData *md = (const MoneyCrateCollideModuleData *)d;
+		putU32(md->m_moneyProvided);
+		putU32((unsigned)md->m_upgradeBoost.size());
+		for (std::list<upgradePair>::const_iterator it = md->m_upgradeBoost.begin(); it != md->m_upgradeBoost.end(); ++it) {
+			putStr(it->type.c_str(), (int)it->type.size());
+			putI32(it->amount);
+		}
+	}
+	g_moneyStaticInit = false;
+	g_moneyStatic = 0;
 	Player players[3];
 	for (int i = 0; i < 3; ++i) {
 		players[i].m_idx = i;
+		players[i].m_money.m_idx = i;
+		players[i].m_score.m_idx = i;
+		players[i].m_upgradesCompleted = maskFromU32<UpgradeMaskType>(UPGRADE_MAX_COUNT, cfg + 10 + 4 * i);
 		players[i].m_type = (cfg[8] >> i & 1) ? PLAYER_COMPUTER : PLAYER_HUMAN;
 		for (int k = 0; k < 5; ++k) if (cfg[9] >> (5 * i + k) & 1) players[i].m_sciences.push_back((ScienceType)scienceKeys[k]);
 	}
@@ -153,9 +181,11 @@ int ref_l9cf_run(int kind, const char *filename, const char *xfer_path, const un
 	g_modDestroyHook = cfDestroyHook;
 	g_cfMisc.m_crateHeal.setEventName(AsciiString("crateHeal"));
 	g_cfMisc.m_crateShroud.setEventName(AsciiString("crateShroud"));
+	g_cfMisc.m_crateMoney.setEventName(AsciiString("crateMoney"));
 	CrateCollide *m = 0;
 	if (kind == 0) m = new HealCrateCollide(crate, d);
-	else m = new ShroudCrateCollide(crate, d);
+	else if (kind == 1) m = new ShroudCrateCollide(crate, d);
+	else m = new MoneyCrateCollide(crate, d);
 	unsigned flags = cfg[3];
 	for (int i = 0; i < n; ++i) {
 		const unsigned *o = ops + 6 * i;
@@ -188,6 +218,7 @@ int ref_l9cf_run(int kind, const char *filename, const char *xfer_path, const un
 			}
 			case 11: xst = runXfer(m, 2, "crc", bytes, 0, &blen, &crc); break;
 			case 12: crate->m_player = o[1] ? &players[o[1] - 1] : 0; break;
+			case 13: for (int p = 0; p < 3; ++p) { unsigned w[4] = { o[1 + p], 0, 0, 0 }; players[p].m_upgradesCompleted = maskFromU32<UpgradeMaskType>(UPGRADE_MAX_COUNT, w); } break;
 			}
 		}
 		CATCH_ALL(st, &c2, m2, 16)
