@@ -105,6 +105,9 @@ pub enum CutCall {
     PlayerAddUpgradeComplete { player: PlayerIndex, upgrade: u32 },
     /// `player->getAcademyStats()->recordUpgrade(upgrade, granted)` (`GrantUpgradeCreate`).
     PlayerAcademyRecordUpgrade { player: PlayerIndex, upgrade: u32, granted: bool },
+    /// `adjustModelConditionForWeaponStatus()` (`ObjectWeaponStatusHelper::update`, every frame of an object that can have a
+    /// weapon): the weapon half of the object is layer 12's.
+    AdjustModelConditionForWeaponStatus { object: ObjectId },
     // --- end p1w10-sonnet ---
     // ---- Team ----
     /// `team->notifyTeamOfObjectDeath()`.
@@ -273,6 +276,12 @@ pub struct ObjectCuts {
     /// module** (the body lent itself, see `World::lend_body`): upstream's
     /// plain recursion, counted so a test can show that it was exercised.
     pub reentrant_delivered: u32,
+    // --- p1w10-sonnet ---
+    /// An explicit ablation: make the helpers of a new object as the stand-in of [`ObjectCuts::make_helper`] (a name and a tag,
+    /// nothing else) instead of the translated modules. Off by default: an object has the helpers upstream gives it. The
+    /// differential test of `Object.cpp` sets it, because its C++ side stands in for the helpers too.
+    pub stub_helpers: bool,
+    // --- end p1w10-sonnet ---
     /// The modules whose `module_call` is running, outermost first.
     pub module_stack: Vec<ModuleHandle>,
     // --- p1l9-example ---
@@ -356,6 +365,9 @@ impl Default for ObjectCuts {
             trace: None,
             reentrant_skips: Vec::new(),
             reentrant_delivered: 0,
+            // --- p1w10-sonnet ---
+            stub_helpers: false,
+            // --- end p1w10-sonnet ---
             can_transfer_supplies: BTreeSet::new(),
             module_stack: Vec::new(),
             // --- p1l9-example ---

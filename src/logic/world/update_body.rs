@@ -102,6 +102,24 @@ pub enum UpdateBody {
     BaseRegenerateUpdate(crate::logic::modules::base_regenerate_update::BaseRegenerateUpdate),
     /// `SmartBombTargetHomingUpdate`.
     SmartBombTargetHomingUpdate(crate::logic::modules::smart_bomb_target_homing_update::SmartBombTargetHomingUpdate),
+// --- p1w10-sonnet (helpers and dies) ---
+    /// `ObjectSMCHelper`.
+    ObjectSMCHelper(crate::logic::modules::object_smc_helper::ObjectSMCHelper),
+    /// `ObjectRepulsorHelper`.
+    ObjectRepulsorHelper(crate::logic::modules::object_repulsor_helper::ObjectRepulsorHelper),
+    /// `ObjectWeaponStatusHelper`.
+    ObjectWeaponStatusHelper(crate::logic::modules::object_weapon_status_helper::ObjectWeaponStatusHelper),
+    /// `StatusDamageHelper`.
+    StatusDamageHelper(crate::logic::modules::status_damage_helper::StatusDamageHelper),
+    /// `TempWeaponBonusHelper`.
+    TempWeaponBonusHelper(crate::logic::modules::temp_weapon_bonus_helper::TempWeaponBonusHelper),
+    /// `DestroyDie`.
+    DestroyDie(crate::logic::modules::destroy_die::DestroyDie),
+    /// `KeepObjectDie`.
+    KeepObjectDie(crate::logic::modules::keep_object_die::KeepObjectDie),
+    /// `UpgradeDie`.
+    UpgradeDie(crate::logic::modules::upgrade_die::UpgradeDie),
+// --- end p1w10-sonnet (helpers and dies) ---
 // --- end p1w10-sonnet (update modules) ---
 // --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
@@ -130,6 +148,16 @@ impl UpdateBody {
             UpdateBody::GrantScienceUpgrade(_) => UPDATE_SLEEP_FOREVER,
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(_) => UPDATE_SLEEP_FOREVER,
+// --- p1w10-sonnet (helpers and dies) ---
+            UpdateBody::ObjectSMCHelper(m) => m.world_update(world, me),
+            UpdateBody::ObjectRepulsorHelper(m) => m.world_update(world, me),
+            UpdateBody::ObjectWeaponStatusHelper(m) => m.world_update(world, me),
+            UpdateBody::StatusDamageHelper(m) => m.world_update(world, me),
+            UpdateBody::TempWeaponBonusHelper(m) => m.world_update(world, me),
+            UpdateBody::DestroyDie(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::KeepObjectDie(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::UpgradeDie(_) => UPDATE_SLEEP_FOREVER,
+// --- end p1w10-sonnet (helpers and dies) ---
 // --- p1w10-sonnet (update modules) ---
             UpdateBody::LifetimeUpdate(m) => m.world_update(world, me),
             UpdateBody::DeletionUpdate(m) => m.world_update(world, me),
@@ -169,6 +197,16 @@ impl UpdateBody {
             UpdateBody::GrantScienceUpgrade(m) => m.module_call(world, me, call),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.module_call(world, me, call),
+// --- p1w10-sonnet (helpers and dies) ---
+            UpdateBody::ObjectSMCHelper(m) => m.module_call(world, me, call),
+            UpdateBody::ObjectRepulsorHelper(m) => m.module_call(world, me, call),
+            UpdateBody::ObjectWeaponStatusHelper(m) => m.module_call(world, me, call),
+            UpdateBody::StatusDamageHelper(m) => m.module_call(world, me, call),
+            UpdateBody::TempWeaponBonusHelper(m) => m.module_call(world, me, call),
+            UpdateBody::DestroyDie(m) => m.module_call(world, me, call),
+            UpdateBody::KeepObjectDie(m) => m.module_call(world, me, call),
+            UpdateBody::UpgradeDie(m) => m.module_call(world, me, call),
+// --- end p1w10-sonnet (helpers and dies) ---
 // --- p1w10-sonnet (update modules) ---
             UpdateBody::LifetimeUpdate(m) => m.module_call(world, me, call),
             UpdateBody::DeletionUpdate(m) => m.module_call(world, me, call),
@@ -221,6 +259,16 @@ impl UpdateBody {
             UpdateBody::GrantScienceUpgrade(m) => m.xfer(xfer),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.xfer(xfer),
+// --- p1w10-sonnet (helpers and dies) ---
+            UpdateBody::ObjectSMCHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::ObjectRepulsorHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::ObjectWeaponStatusHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::StatusDamageHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::TempWeaponBonusHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::DestroyDie(m) => m.xfer(xfer),
+            UpdateBody::KeepObjectDie(m) => m.xfer(xfer),
+            UpdateBody::UpgradeDie(m) => m.xfer(xfer),
+// --- end p1w10-sonnet (helpers and dies) ---
 // --- p1w10-sonnet (update modules) ---
             UpdateBody::LifetimeUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::DeletionUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
@@ -255,6 +303,16 @@ impl UpdateBody {
             UpdateBody::GrantScienceUpgrade(m) => m.crc(xfer),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.crc(xfer),
+// --- p1w10-sonnet (helpers and dies) ---
+            UpdateBody::ObjectSMCHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::ObjectRepulsorHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::ObjectWeaponStatusHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::StatusDamageHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::TempWeaponBonusHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::DestroyDie(m) => m.crc(xfer),
+            UpdateBody::KeepObjectDie(m) => m.crc(xfer),
+            UpdateBody::UpgradeDie(m) => m.crc(xfer),
+// --- end p1w10-sonnet (helpers and dies) ---
 // --- p1w10-sonnet (update modules) ---
             UpdateBody::LifetimeUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::DeletionUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
@@ -289,6 +347,16 @@ impl UpdateBody {
             UpdateBody::GrantScienceUpgrade(m) => m.load_post_process(),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.load_post_process(),
+// --- p1w10-sonnet (helpers and dies) ---
+            UpdateBody::ObjectSMCHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::ObjectRepulsorHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::ObjectWeaponStatusHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::StatusDamageHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::TempWeaponBonusHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::DestroyDie(m) => m.load_post_process(),
+            UpdateBody::KeepObjectDie(m) => m.load_post_process(),
+            UpdateBody::UpgradeDie(m) => m.load_post_process(),
+// --- end p1w10-sonnet (helpers and dies) ---
 // --- p1w10-sonnet (update modules) ---
             UpdateBody::LifetimeUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::DeletionUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
@@ -328,6 +396,16 @@ impl Snapshot for UpdateBody {
             UpdateBody::GrantScienceUpgrade(m) => m.crc(xfer),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.crc(xfer),
+// --- p1w10-sonnet (helpers and dies) ---
+            UpdateBody::ObjectSMCHelper(m) => m.crc(xfer),
+            UpdateBody::ObjectRepulsorHelper(m) => m.crc(xfer),
+            UpdateBody::ObjectWeaponStatusHelper(m) => m.crc(xfer),
+            UpdateBody::StatusDamageHelper(m) => m.crc(xfer),
+            UpdateBody::TempWeaponBonusHelper(m) => m.crc(xfer),
+            UpdateBody::DestroyDie(m) => m.crc(xfer),
+            UpdateBody::KeepObjectDie(m) => m.crc(xfer),
+            UpdateBody::UpgradeDie(m) => m.crc(xfer),
+// --- end p1w10-sonnet (helpers and dies) ---
 // --- p1w10-sonnet (update modules) ---
             UpdateBody::LifetimeUpdate(m) => m.crc(xfer),
             UpdateBody::DeletionUpdate(m) => m.crc(xfer),
@@ -363,6 +441,16 @@ impl Snapshot for UpdateBody {
             UpdateBody::GrantScienceUpgrade(m) => m.xfer(xfer),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.xfer(xfer),
+// --- p1w10-sonnet (helpers and dies) ---
+            UpdateBody::ObjectSMCHelper(m) => m.xfer(xfer),
+            UpdateBody::ObjectRepulsorHelper(m) => m.xfer(xfer),
+            UpdateBody::ObjectWeaponStatusHelper(m) => m.xfer(xfer),
+            UpdateBody::StatusDamageHelper(m) => m.xfer(xfer),
+            UpdateBody::TempWeaponBonusHelper(m) => m.xfer(xfer),
+            UpdateBody::DestroyDie(m) => m.xfer(xfer),
+            UpdateBody::KeepObjectDie(m) => m.xfer(xfer),
+            UpdateBody::UpgradeDie(m) => m.xfer(xfer),
+// --- end p1w10-sonnet (helpers and dies) ---
 // --- p1w10-sonnet (update modules) ---
             UpdateBody::LifetimeUpdate(m) => m.xfer(xfer),
             UpdateBody::DeletionUpdate(m) => m.xfer(xfer),
@@ -398,6 +486,16 @@ impl Snapshot for UpdateBody {
             UpdateBody::GrantScienceUpgrade(m) => m.load_post_process(),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.load_post_process(),
+// --- p1w10-sonnet (helpers and dies) ---
+            UpdateBody::ObjectSMCHelper(m) => m.load_post_process(),
+            UpdateBody::ObjectRepulsorHelper(m) => m.load_post_process(),
+            UpdateBody::ObjectWeaponStatusHelper(m) => m.load_post_process(),
+            UpdateBody::StatusDamageHelper(m) => m.load_post_process(),
+            UpdateBody::TempWeaponBonusHelper(m) => m.load_post_process(),
+            UpdateBody::DestroyDie(m) => m.load_post_process(),
+            UpdateBody::KeepObjectDie(m) => m.load_post_process(),
+            UpdateBody::UpgradeDie(m) => m.load_post_process(),
+// --- end p1w10-sonnet (helpers and dies) ---
 // --- p1w10-sonnet (update modules) ---
             UpdateBody::LifetimeUpdate(m) => m.load_post_process(),
             UpdateBody::DeletionUpdate(m) => m.load_post_process(),
@@ -554,6 +652,11 @@ impl UpdateBody {
             UpdateBody::DeletionUpdate(m) => m.world_construct(world, me),
             UpdateBody::BaseRegenerateUpdate(m) => m.world_construct(world, me),
             UpdateBody::SmartBombTargetHomingUpdate(m) => m.world_construct(world, me),
+            UpdateBody::ObjectSMCHelper(m) => m.world_construct(world, me),
+            UpdateBody::ObjectRepulsorHelper(m) => m.world_construct(world, me),
+            UpdateBody::ObjectWeaponStatusHelper(m) => m.world_construct(world, me),
+            UpdateBody::StatusDamageHelper(m) => m.world_construct(world, me),
+            UpdateBody::TempWeaponBonusHelper(m) => m.world_construct(world, me),
             _ => {}
         }
     }

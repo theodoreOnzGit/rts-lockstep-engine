@@ -83,17 +83,37 @@ impl ObjectHelper {
         phase: SleepyUpdatePhase,
         host: &mut impl HelperHost,
     ) -> IniResult<Self> {
-        let update = UpdateModule::new(object, module_data, phase)?;
+        let mut me = ObjectHelper::unconstructed(object, module_data, phase)?;
+        me.construct(host);
+        Ok(me)
+    }
+
+    /// The first half of the constructor, which touches no world: the `UpdateModule`.
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>, phase: SleepyUpdatePhase) -> IniResult<Self> {
+        Ok(ObjectHelper { update: UpdateModule::new(object, module_data, phase)? })
+    }
+
+    /// The second half: `setWakeFrame(getObject(), UPDATE_SLEEP_FOREVER)`. The world runs it once the module is part of its object.
+    pub fn construct(&mut self, host: &mut impl HelperHost) {
         if !plant(32) {
             host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), UPDATE_SLEEP_FOREVER));
         }
-        Ok(ObjectHelper { update })
     }
 
     /// The `UpdateModule` base.
     pub fn update_module(&self) -> &UpdateModule {
         &self.update
     }
+
+    // --- p1w10-sonnet ---
+    /// `ObjectHelper::xfer` on the scheduling half the slot holds (the live `UpdateModule`): the version, that half.
+    pub fn xfer_with(update: &mut UpdateModule, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        xfer.xfer_version(&mut version, current)?;
+        update.xfer(xfer)
+    }
+    // --- end p1w10-sonnet ---
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
     pub fn update_module_mut(&mut self) -> &mut UpdateModule {

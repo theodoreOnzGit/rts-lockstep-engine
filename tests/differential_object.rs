@@ -306,6 +306,7 @@ impl Run {
     /// The configuration (the header of the program): `readHeader` of the driver.
     fn new(r: &mut Rd) -> Run {
         let mut w = World::new();
+        w.cuts.stub_helpers = true; // the C++ side stands in for the helpers, as the stub does
         w.cuts.log = Some(Vec::new());
         w.cuts.trace = Some(Vec::new());
         assert_eq!(r.u(), 0x4F42_4A31);

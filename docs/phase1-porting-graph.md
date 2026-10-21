@@ -858,6 +858,18 @@ and `xfer_with` (the version, the **slot's** `UpdateModule`, the fields), becaus
 Host trait signatures changed to `&mut self` where the world must send a call (`max_health`, `health`,
 `is_significantly_above_terrain`). Tests through `World`: `update_host_world::tests` (die frames, hulk override,
 `setLifetimeRange`, regeneration with a probe body, homing, an object save and load, the factory).
+**Layer-9 helpers and die modules wired (2026-10-21, `p1w10-sonnet`).** The five translated helpers are what
+`Object::Object` makes (`World::make_helper_module`; `cuts.stub_helpers` is the explicit ablation, set by the differential test
+of `Object.cpp`, whose C++ side stands in for them), and `DestroyDie`, `KeepObjectDie` and `UpgradeDie` are die modules:
+`UpdateBody` variants (the helpers are lent to their slot while they run; a die is lent around `onDie`, because
+`destroyObject` and the upgrade removal send calls to every module of the object), `ModuleDataKind::UpgradeDie`, factory
+entries (`new_die_base`), `new_module` arms, `impl HelperHost + DieHost for World` (`logic/world/helper_host_world.rs`),
+`CutCall::AdjustModelConditionForWeaponStatus` (the weapon half of the object is layer 12's; the helper makes the call every
+frame, as upstream). `ObjectHelper`/the helpers split their constructors (`unconstructed`, `construct`; `new` is both).
+Found by wiring: a test that removed an object from the arena without taking its update modules off the sleepy list
+(`resource_gathering_manager`) now fails loudly because the helpers are update modules; it takes them off first.
+Tests through `World`: `helper_host_world::tests` (the helpers asleep, status damage, temp weapon bonus with the tint, the
+special model condition, the weapon status every frame in the final phase, the dies, the factory, a save and load).
 <!-- --- end p1w10-sonnet (layer 9) --- -->
 
 ## Differential-test routes, by rule

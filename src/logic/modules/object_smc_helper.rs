@@ -22,6 +22,14 @@ use super::object_helper::{HelperHost, ObjectHelper};
 use crate::common::ini::IniResult;
 use crate::common::module::ObjectId;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
+// --- p1w10-sonnet ---
+use crate::logic::module::update_module::UpdateModule;
+use crate::logic::modules::lend_clone;
+use crate::logic::world::game_logic::World;
+use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+use crate::logic::world::sleepy::UpdateHandle;
+use crate::logic::world::update_body::UpdateBody;
+// --- end p1w10-sonnet ---
 use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER};
 
 /// `class ObjectSMCHelper : public ObjectHelper`; it has no state of its own.
@@ -33,8 +41,19 @@ pub struct ObjectSMCHelper {
 impl ObjectSMCHelper {
     /// `ObjectSMCHelper(thing, modData)`: the `ObjectHelper` (asleep), then nothing.
     pub fn new(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>, host: &mut impl HelperHost) -> IniResult<Self> {
-        let helper = ObjectHelper::new(object, module_data, SleepyUpdatePhase::Normal, host)?;
-        Ok(ObjectSMCHelper { helper })
+        let mut me = ObjectSMCHelper::unconstructed(object, module_data)?;
+        me.construct(host);
+        Ok(me)
+    }
+
+    /// The first half of the constructor, which touches no world.
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>) -> IniResult<Self> {
+        Ok(ObjectSMCHelper { helper: ObjectHelper::unconstructed(object, module_data, SleepyUpdatePhase::Normal)? })
+    }
+
+    /// The second half: the base's wake. The world runs it once the module is part of its object.
+    pub fn construct(&mut self, host: &mut impl HelperHost) {
+        self.helper.construct(host);
     }
 
     /// `ObjectSMCHelper::update()`.
@@ -71,3 +90,65 @@ impl Snapshot for ObjectSMCHelper {
         self.helper.load_post_process();
     }
 }
+
+// --- p1w10-sonnet ---
+impl PartialEq for ObjectSMCHelper {
+    /// The same state: the same object and the same fields. (`UpdateBody` is compared in tests.)
+    fn eq(&self, other: &Self) -> bool {
+        self.helper.update_module().behavior().object() == other.helper.update_module().behavior().object()
+    }
+}
+
+impl ObjectSMCHelper {
+    /// `update()` as the scheduler runs it: this module is the running one for the host calls, and it is lent to its slot.
+    pub fn world_update(&mut self, world: &mut World, me: UpdateHandle) -> UpdateSleepTime {
+        let Some(h) = world.module_handle_of_update(me) else {
+            return self.update(world);
+        };
+        lend_clone(world, h, self, UpdateBody::ObjectSMCHelper, un, |w, m| w.in_update_module(me, |w| m.update(w)))
+    }
+
+    /// The world half of the constructor, run by the world once the module is part of its object.
+    pub fn world_construct(&mut self, world: &mut World, _me: ModuleHandle) {
+        self.construct(world);
+    }
+
+    /// The module's answer to one of `Object`'s calls.
+    pub fn module_call(&mut self, _world: &mut World, _me: ModuleHandle, _call: ModuleCall) -> ModuleReply {
+        ModuleReply::Unhandled // (nothing is asked of it through the interfaces: it only updates)
+    }
+
+    /// `xfer` with the scheduling half the slot holds (the live `UpdateModule`): the version, `ObjectHelper::xfer`, the fields.
+    pub fn xfer_with(&mut self, update: &mut UpdateModule, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        xfer.xfer_version(&mut version, current)?;
+        ObjectHelper::xfer_with(update, xfer)?;
+        self.xfer_fields(xfer)
+    }
+
+    /// `crc` with the scheduling half the slot holds.
+    pub fn crc_with(&mut self, update: &mut UpdateModule, xfer: &mut dyn Xfer) -> XferResult<()> {
+        update.crc(xfer)
+    }
+
+    /// `loadPostProcess` with the scheduling half the slot holds.
+    pub fn load_post_process_with(&mut self, update: &mut UpdateModule) {
+        update.load_post_process();
+    }
+
+    /// The fields after the base.
+    fn xfer_fields(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let _ = xfer;
+        Ok(())
+    }
+}
+
+/// The variant's module, if `b` is one.
+fn un(b: UpdateBody) -> Option<ObjectSMCHelper> {
+    match b {
+        UpdateBody::ObjectSMCHelper(m) => Some(m),
+        _ => None,
+    }
+}
+// --- end p1w10-sonnet ---

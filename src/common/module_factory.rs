@@ -482,6 +482,21 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::smart_bomb_target_homing_update::new_module_data),
             which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
         }),
+        "DestroyDie" => Some(ModuleTemplate {
+            create_proc: Some(new_die_base),
+            create_data_proc: Some(crate::logic::modules::new_plain_die_module_data),
+            which_interfaces: Some(crate::logic::module::die_module::DieModule::get_interface_mask()),
+        }),
+        "KeepObjectDie" => Some(ModuleTemplate {
+            create_proc: Some(new_die_base),
+            create_data_proc: Some(crate::logic::modules::new_plain_die_module_data),
+            which_interfaces: Some(crate::logic::module::die_module::DieModule::get_interface_mask()),
+        }),
+        "UpgradeDie" => Some(ModuleTemplate {
+            create_proc: Some(new_die_base),
+            create_data_proc: Some(crate::logic::modules::upgrade_die::new_module_data),
+            which_interfaces: Some(crate::logic::module::die_module::DieModule::get_interface_mask()),
+        }),
         // --- end p1w10-sonnet ---
         _ => None,
     }
@@ -518,6 +533,16 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         base,
         crate::logic::module::update_module::SleepyUpdatePhase::Normal,
     )?))
+}
+
+/// The `NewModuleProc` of a translated die module: its `DieModule` base, made from the `DieModuleData` base of its data.
+fn new_die_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module, IniError> {
+    let base = match data {
+        Some(ModuleDataKind::Die(d)) => Some(d),
+        Some(ModuleDataKind::UpgradeDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
+        _ => None,
+    };
+    Ok(Module::Die(crate::logic::module::die_module::DieModule::new(object, base)?))
 }
 // --- end p1w10-sonnet ---
 

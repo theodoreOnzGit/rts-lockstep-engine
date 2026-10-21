@@ -210,7 +210,7 @@ impl DieHost for Sim {
         let c = &mut self.center;
         matches!(c.center.find_upgrade(&mut c.names, name), Ok(Some(_)))
     }
-    fn producer_has_upgrade(&self, name: &[u8]) -> bool {
+    fn producer_has_upgrade(&mut self, name: &[u8]) -> bool {
         self.template_mask(name).is_some_and(|t| self.producer_mask.test_for_all(&t))
     }
     fn producer_remove_upgrade(&mut self, name: &[u8]) {

@@ -337,6 +337,8 @@ pub enum ModuleDataKind {
     BaseRegenerateUpdate(Arc<crate::logic::modules::base_regenerate_update::BaseRegenerateUpdateModuleData>),
     /// `SmartBombTargetHomingUpdateModuleData`.
     SmartBombTargetHomingUpdate(Arc<crate::logic::modules::smart_bomb_target_homing_update::SmartBombTargetHomingUpdateModuleData>),
+    /// `UpgradeDieModuleData`.
+    UpgradeDie(Arc<crate::logic::modules::upgrade_die::UpgradeDieModuleData>),
     // --- end p1w10-sonnet ---
 }
 
@@ -375,6 +377,7 @@ impl ModuleDataKind {
             ModuleDataKind::DeletionUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::BaseRegenerateUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::SmartBombTargetHomingUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::UpgradeDie(d) => &d.die.behavior.module_data,
             // --- end p1w10-sonnet ---
         }
     }
@@ -489,6 +492,13 @@ impl ModuleDataKind {
             ModuleDataKind::SmartBombTargetHomingUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::UpgradeDie(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.die.behavior.module_data.set_module_tag_name_key(key);
                     true
                 }
                 None => false,

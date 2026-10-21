@@ -71,7 +71,7 @@ impl World {
     }
 
     /// The object of the module that is running; `INVALID_ID` with none.
-    fn running_object(&self) -> ObjectId {
+    pub(crate) fn running_object(&self) -> ObjectId {
         self.running_module().map_or(crate::common::game_type::INVALID_ID, |h| h.object)
     }
 }

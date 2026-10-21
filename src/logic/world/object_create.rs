@@ -32,13 +32,25 @@
 //!   each module of the template, in order; here the caller makes them (with
 //!   the `ModuleFactory`, which fails for a class that is not translated
 //!   yet) and hands them in [`NewObject::modules`]. They are therefore built
-//!   before the object's team is set rather than after; module constructors
-//!   cannot observe the difference through the id they are given.
+//!   before the object's team is set rather than after; ~~module constructors
+//!   cannot observe the difference through the id they are given~~ **CORRECTED
+//!   2026-10-21** (`p1w10-sonnet`): a module that stores its object's id (a
+//!   create, die or update module) is made with the id the object is about to
+//!   get, `World::next_object_id()`; one made with another id acts on the wrong
+//!   object. The upgrade modules read the id from the call (`ModuleHandle`) and
+//!   do not care. The world half of a constructor (a random draw, a wake call)
+//!   runs in [`World::add_module`] once the module is in its object
+//!   (`UpdateBody::construct`), in module order.
 //! - **The helpers are made by a cut point.** `Object::Object` makes up to
 //!   eight sleepy helper modules (`ObjectSMCHelper`, ...) before the
 //!   template's. Which ones is decided here, exactly as upstream; making
-//!   them is `cuts.make_helper`, which until layer 9 makes a stand-in with no
-//!   behaviour and no update interface.
+//!   them is `World::make_helper_module`: ~~until layer 9 a stand-in with no
+//!   behaviour and no update interface~~ **CORRECTED 2026-10-21**: the five
+//!   translated helpers (`ObjectSMCHelper`, `ObjectRepulsorHelper`,
+//!   `ObjectWeaponStatusHelper`, `StatusDamageHelper`, `TempWeaponBonusHelper`)
+//!   are real update modules; `SubdualDamageHelper`, `ObjectDefectionHelper`
+//!   and `FiringTracker` are still `cuts.make_helper`'s stand-in, and
+//!   `cuts.stub_helpers` is the explicit ablation that makes all of them so.
 //! - **An object under construction is findable by id from the start**, as
 //!   upstream (`setID` adds it to the lookup table), but is not in the object
 //!   list until the end of the constructor (`registerObject`).
@@ -201,7 +213,9 @@ impl World {
             helpers.push(HelperKind::TempWeaponBonus);
         }
         for kind in helpers {
-            let m = self.cuts.make_helper(kind);
+            // --- p1w10-sonnet ---
+            let m = self.make_helper_module(id, kind);
+            // --- end p1w10-sonnet ---
             self.add_module(id, m, Some(kind));
         }
 

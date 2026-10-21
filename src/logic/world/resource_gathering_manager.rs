@@ -408,6 +408,8 @@ mod tests {
         m.add_supply_center(Some(c1));
         m.add_supply_center(Some(c2));
         assert_eq!(m.find_best_supply_center(&mut w, Some(truck)), Ok(Some(c2)));
+        // (the object leaves the sleepy list first, as `processDestroyList` does: its helpers are update modules now)
+        w.sched.erase_object_updates(&mut w.objects, c1);
         let _ = w.objects.remove(c1);
         assert_eq!(m.find_best_supply_center(&mut w, Some(truck)), Err(ResourceError::EraseFromWrongList(c1)));
         m.remove_supply_center(Some(c1));

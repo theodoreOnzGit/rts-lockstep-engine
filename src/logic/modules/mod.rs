@@ -19,9 +19,12 @@
 
 use crate::common::ini::IniResult;
 use crate::common::module::{ModuleDataKind, ObjectId};
+use crate::logic::world::game_logic::World;
+use crate::logic::world::module_call::ModuleHandle;
 use crate::logic::world::object_create::NewModule;
 use crate::common::module::MODULEINTERFACE_DAMAGE;
 use crate::logic::module::create_module::CreateModule;
+use crate::logic::module::die_module::DieModule;
 use crate::logic::module::update_module::UpdateModule;
 use crate::logic::world::update_body::UpdateBody;
 
@@ -163,6 +166,16 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
             smart_bomb_target_homing_update::SmartBombTargetHomingUpdate::unconstructed(object, Some(d.clone()))
                 .map(|m| (m.update_module().clone(), UpdateBody::SmartBombTargetHomingUpdate(m))),
         )),
+        ModuleDataKind::UpgradeDie(d) => Some(made(
+            DieModule::get_interface_mask(),
+            upgrade_die::UpgradeDie::new(object, Some(d.clone())).map(UpdateBody::UpgradeDie),
+        )),
+        // the two die modules whose data is `DieModuleData` itself are told apart by their name
+        ModuleDataKind::Die(d) => match name {
+            b"DestroyDie" => Some(made(DieModule::get_interface_mask(), destroy_die::DestroyDie::new(object, Some(d.clone())).map(UpdateBody::DestroyDie))),
+            b"KeepObjectDie" => Some(made(DieModule::get_interface_mask(), keep_object_die::KeepObjectDie::new(object, Some(d.clone())).map(UpdateBody::KeepObjectDie))),
+            _ => None,
+        },
         // the four create modules whose data is `CreateModuleData` itself are told apart by their name
         ModuleDataKind::Create(d) => match name {
             b"PreorderCreate" => Some(made(CreateModule::get_interface_mask(), preorder_create::PreorderCreate::new(object, Some(d.clone())).map(UpdateBody::PreorderCreate))),
@@ -231,6 +244,32 @@ pub fn plant(k: u32) -> bool {
     *P.get_or_init(|| std::env::var("L9_PLANT").ok().and_then(|s| s.parse().ok()).unwrap_or(0)) == k
 }
 
+/// The factory's `NewModuleDataProc` for the die modules whose data is `DieModuleData` itself (`DestroyDie`, `KeepObjectDie`).
+pub fn new_plain_die_module_data(ini: Option<&mut crate::common::ini::Ini<'_>>) -> crate::common::ini::IniResult<ModuleDataKind> {
+    Ok(ModuleDataKind::Die(std::sync::Arc::new(crate::logic::module::die_module::DieModuleData::friend_new_module_data(ini)?)))
+}
+
+/// Runs `f` on `m` with a copy of it lent to its slot (`World::lend_body`), so that a call that reaches the module from inside `f`
+/// (`destroyObject` sends `onDelete` to every module of the object, the running one included) is delivered at once, as upstream's
+/// plain recursion delivers it. If `f` did not change `m`, the lent copy (which the nested calls may have changed) becomes its state.
+pub fn lend_clone<M: Clone + PartialEq, R>(
+    world: &mut World,
+    me: ModuleHandle,
+    m: &mut M,
+    wrap: fn(M) -> UpdateBody,
+    unwrap: fn(UpdateBody) -> Option<M>,
+    f: impl FnOnce(&mut World, &mut M) -> R,
+) -> R {
+    let before = m.clone();
+    let (r, back) = world.lend_body(me, wrap(m.clone()), |w| f(w, m));
+    if *m == before {
+        if let Some(b) = back.and_then(unwrap) {
+            *m = b;
+        }
+    }
+    r
+}
+
 /// The calls a layer-9 die module makes on its object and the game logic (the cut point to the world): the die mux reads the
 /// object's veterancy level and status bits; `DestroyDie` destroys it; `UpgradeDie` looks up its producer's upgrade.
 pub trait DieHost {
@@ -245,7 +284,7 @@ pub trait DieHost {
     /// `TheUpgradeCenter->findUpgrade(name) != NULL`.
     fn find_upgrade(&mut self, name: &[u8]) -> bool;
     /// `producer->hasUpgrade(upgrade)` for the upgrade of that name.
-    fn producer_has_upgrade(&self, name: &[u8]) -> bool;
+    fn producer_has_upgrade(&mut self, name: &[u8]) -> bool;
     /// `producer->removeUpgrade(upgrade)` for the upgrade of that name.
     fn producer_remove_upgrade(&mut self, name: &[u8]);
 }

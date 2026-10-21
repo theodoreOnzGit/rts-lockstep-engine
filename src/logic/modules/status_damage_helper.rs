@@ -28,6 +28,13 @@ use crate::common::ini::IniResult;
 use crate::common::module::ObjectId;
 use crate::common::object_status_types::{ObjectStatusTypes, OBJECT_STATUS_NONE};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
+// --- p1w10-sonnet ---
+use crate::logic::modules::lend_clone;
+use crate::logic::world::game_logic::World;
+use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+use crate::logic::world::sleepy::UpdateHandle;
+use crate::logic::world::update_body::UpdateBody;
+// --- end p1w10-sonnet ---
 use crate::logic::module::update_module::{
     update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER,
 };
@@ -47,11 +54,24 @@ impl StatusDamageHelper {
     /// frame 0, then `setWakeFrame(UPDATE_SLEEP_FOREVER)` (a second wake call
     /// after the base's).
     pub fn new(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>, host: &mut impl HelperHost) -> IniResult<Self> {
-        let helper = ObjectHelper::new(object, module_data, SleepyUpdatePhase::Normal, host)?;
+        let mut me = StatusDamageHelper::unconstructed(object, module_data)?;
+        me.construct(host);
+        Ok(me)
+    }
+
+    /// The first half of the constructor, which touches no world: no status, frame 0.
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>) -> IniResult<Self> {
+        let helper = ObjectHelper::unconstructed(object, module_data, SleepyUpdatePhase::Normal)?;
+        Ok(StatusDamageHelper { helper, status_to_heal: OBJECT_STATUS_NONE, frame_to_heal: 0 })
+    }
+
+    /// The second half: the base's wake, then a second `setWakeFrame(UPDATE_SLEEP_FOREVER)`. The world runs it once the module
+    /// is part of its object.
+    pub fn construct(&mut self, host: &mut impl HelperHost) {
+        self.helper.construct(host);
         if !plant(56) {
             host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), UPDATE_SLEEP_FOREVER));
         }
-        Ok(StatusDamageHelper { helper, status_to_heal: OBJECT_STATUS_NONE, frame_to_heal: 0 })
     }
 
     /// `getDisabledTypesToProcess()`: `DISABLEDMASK_ALL`.
@@ -126,3 +146,75 @@ impl Snapshot for StatusDamageHelper {
         self.helper.load_post_process();
     }
 }
+
+// --- p1w10-sonnet ---
+impl PartialEq for StatusDamageHelper {
+    /// The same state: the same object and the same fields. (`UpdateBody` is compared in tests.)
+    fn eq(&self, other: &Self) -> bool {
+        self.helper.update_module().behavior().object() == other.helper.update_module().behavior().object() && self.status_to_heal == other.status_to_heal && self.frame_to_heal == other.frame_to_heal
+    }
+}
+
+impl StatusDamageHelper {
+    /// `update()` as the scheduler runs it: this module is the running one for the host calls, and it is lent to its slot.
+    pub fn world_update(&mut self, world: &mut World, me: UpdateHandle) -> UpdateSleepTime {
+        let Some(h) = world.module_handle_of_update(me) else {
+            return self.update(world);
+        };
+        lend_clone(world, h, self, UpdateBody::StatusDamageHelper, un, |w, m| w.in_update_module(me, |w| m.update(w)))
+    }
+
+    /// The world half of the constructor, run by the world once the module is part of its object.
+    pub fn world_construct(&mut self, world: &mut World, _me: ModuleHandle) {
+        self.construct(world);
+    }
+
+    /// The module's answer to one of `Object`'s calls.
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+        match call {
+            ModuleCall::DoStatusDamage { status, duration } => {
+                lend_clone(world, me, self, UpdateBody::StatusDamageHelper, un, |w, m| m.do_status_damage(w, status, duration));
+                ModuleReply::Done
+            }
+            _ => ModuleReply::Unhandled,
+        }
+    }
+
+    /// `xfer` with the scheduling half the slot holds (the live `UpdateModule`): the version, `ObjectHelper::xfer`, the fields.
+    pub fn xfer_with(&mut self, update: &mut UpdateModule, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        xfer.xfer_version(&mut version, current)?;
+        ObjectHelper::xfer_with(update, xfer)?;
+        self.xfer_fields(xfer)
+    }
+
+    /// `crc` with the scheduling half the slot holds.
+    pub fn crc_with(&mut self, update: &mut UpdateModule, xfer: &mut dyn Xfer) -> XferResult<()> {
+        update.crc(xfer)
+    }
+
+    /// `loadPostProcess` with the scheduling half the slot holds.
+    pub fn load_post_process_with(&mut self, update: &mut UpdateModule) {
+        update.load_post_process();
+    }
+
+    /// The fields after the base.
+    fn xfer_fields(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        if !plant(53) {
+            let mut bytes = self.status_to_heal.to_le_bytes();
+            xfer.xfer_user(&mut bytes)?;
+            self.status_to_heal = i32::from_le_bytes(bytes);
+        }
+        xfer.xfer_unsigned_int(&mut self.frame_to_heal)
+    }
+}
+
+/// The variant's module, if `b` is one.
+fn un(b: UpdateBody) -> Option<StatusDamageHelper> {
+    match b {
+        UpdateBody::StatusDamageHelper(m) => Some(m),
+        _ => None,
+    }
+}
+// --- end p1w10-sonnet ---

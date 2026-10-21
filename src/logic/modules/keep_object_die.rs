@@ -19,6 +19,12 @@
 use std::sync::Arc;
 
 use super::{plant, DieHost};
+// --- p1w10-sonnet ---
+use crate::logic::modules::lend_clone;
+use crate::logic::world::game_logic::World;
+use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+use crate::logic::world::update_body::UpdateBody;
+// --- end p1w10-sonnet ---
 use crate::common::ini::IniResult;
 use crate::common::module::ObjectId;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
@@ -70,3 +76,35 @@ impl Snapshot for KeepObjectDie {
         self.die.load_post_process();
     }
 }
+
+// --- p1w10-sonnet ---
+impl PartialEq for KeepObjectDie {
+    /// The same object. (`UpdateBody` is compared in tests.)
+    fn eq(&self, other: &Self) -> bool {
+        self.die.behavior().object() == other.die.behavior().object()
+    }
+}
+
+impl KeepObjectDie {
+    /// The module's answer to one of `Object`'s calls: `onDie`. The module is lent to its slot around it, because
+    /// `destroyObject` and the upgrade removal send calls to every module of the object, this one included.
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+        match call {
+            ModuleCall::OnDie(info) => {
+                let death_type = info.input.death_type;
+                lend_clone(world, me, self, UpdateBody::KeepObjectDie, un, |w, m| m.on_die(w, death_type));
+                ModuleReply::Done
+            }
+            _ => ModuleReply::Unhandled,
+        }
+    }
+}
+
+/// The variant's module, if `b` is one.
+fn un(b: UpdateBody) -> Option<KeepObjectDie> {
+    match b {
+        UpdateBody::KeepObjectDie(m) => Some(m),
+        _ => None,
+    }
+}
+// --- end p1w10-sonnet ---
