@@ -202,6 +202,8 @@ pub enum UpdateBody {
     // --- p1w13-sonnet ---
     /// `HeightDieUpdate`.
     HeightDieUpdate(crate::logic::modules::height_die_update::HeightDieUpdate),
+    /// `DynamicShroudClearingRangeUpdate`.
+    DynamicShroudClearingRangeUpdate(crate::logic::modules::dynamic_shroud_clearing_range_update::DynamicShroudClearingRangeUpdate),
     // --- end p1w13-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -293,6 +295,7 @@ impl UpdateBody {
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.world_update(world, me),
+            UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.world_update(world, me),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -384,6 +387,7 @@ impl UpdateBody {
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.module_call(world, me, call),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -470,6 +474,7 @@ impl UpdateBody {
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::DynamicShroudClearingRangeUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
 // --- end p1w13-sonnet ---
             _ => self.xfer(xfer),
         }
@@ -538,6 +543,7 @@ impl UpdateBody {
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::DynamicShroudClearingRangeUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
 // --- end p1w13-sonnet ---
             _ => self.crc(xfer),
         }
@@ -606,6 +612,7 @@ impl UpdateBody {
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::DynamicShroudClearingRangeUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
 // --- end p1w13-sonnet ---
             _ => self.load_post_process(),
         }
@@ -697,6 +704,7 @@ impl Snapshot for UpdateBody {
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.crc(xfer),
+            UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.crc(xfer),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -784,6 +792,7 @@ impl Snapshot for UpdateBody {
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.xfer(xfer),
+            UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.xfer(xfer),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -871,6 +880,7 @@ impl Snapshot for UpdateBody {
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.load_post_process(),
+            UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.load_post_process(),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -1043,6 +1053,7 @@ impl UpdateBody {
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.world_construct(world, me),
+            UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.world_construct(world, me),
 // --- end p1w13-sonnet ---
             _ => {}
         }

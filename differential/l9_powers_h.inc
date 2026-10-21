@@ -157,7 +157,7 @@ void Player::setUnitsVisionSpied(Bool setting, KindOfMaskType whichUnits, Int by
 }
 void PowerAcademyStats::recordSpecialPowerUsed(const SpecialPowerTemplate *t) { ulog("academy %d %u", (int)((Player *)this)->m_idx, ref_sp_raw_id(t)); }
 void Object::defect(Team *newTeam, UnsignedInt detectionTime) { ulog("defect %d %d %u", (int)m_oid, (int)(size_t)newTeam, detectionTime); }
-void Object::setShroudClearingRange(Real r) { m_shroudRange = r; }
+void Object::setShroudClearingRange(Real r) { if (r != m_shroudRange) m_shroudRange = r; }   /* Object.cpp:5185-5189 (the relook after it is the partition manager's) */
 void CleanupHazardUpdate::setCleanupAreaParameters(const Coord3D *pos, Real range) { ulog("cleanup %u,%u,%u %u", realBits(pos->x), realBits(pos->y), realBits(pos->z), realBits(range)); }
 
 extern "C" {

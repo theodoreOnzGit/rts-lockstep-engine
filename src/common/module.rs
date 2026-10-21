@@ -394,6 +394,8 @@ pub enum ModuleDataKind {
     // --- p1w13-sonnet ---
     /// `HeightDieUpdateModuleData`.
     HeightDieUpdate(Arc<crate::logic::modules::height_die_update::HeightDieUpdateModuleData>),
+    /// `DynamicShroudClearingRangeUpdateModuleData`.
+    DynamicShroudClearingRangeUpdate(Arc<crate::logic::modules::dynamic_shroud_clearing_range_update::DynamicShroudClearingRangeUpdateModuleData>),
     // --- end p1w13-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
@@ -482,6 +484,7 @@ impl ModuleDataKind {
             // --- end p1w12-sonnet ---
             // --- p1w13-sonnet ---
             ModuleDataKind::HeightDieUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::DynamicShroudClearingRangeUpdate(d) => &d.update.behavior.module_data,
             // --- end p1w13-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
@@ -759,6 +762,13 @@ impl ModuleDataKind {
             // --- end p1w12-sonnet ---
             // --- p1w13-sonnet ---
             ModuleDataKind::HeightDieUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::DynamicShroudClearingRangeUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

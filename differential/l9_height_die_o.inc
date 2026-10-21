@@ -4,7 +4,7 @@
 ** position the test sets, a container the test sets, a body (MBody, l9_body_m.inc: it logs the damage it is given and dies of a kill), a terrain logic whose three
 ** queries log and answer from tables the test sets (by a hash of the position, as the Rust side's cut points do), a partition manager whose range scan logs and
 ** answers with the list the test gives, a particle system manager whose destroyAttachedSystems logs, the game logic whose frame the test sets, and the REAL
-** UpdateModule, INI and Xfer. Object::kill is Object.cpp lines 1954-1968 (the assertion dropped). */
+** UpdateModule, INI and Xfer. Object::kill is the verbatim text of Object.cpp (cut by build.rs). */
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/HeightDieUpdate.cpp"
 
 namespace {
@@ -52,19 +52,7 @@ unsigned hdCell(Real x, Real y)
 
 }  // namespace
 
-/* Object.cpp lines 1954-1968 (the DEBUG_ASSERTCRASH dropped) */
-void Object::kill( DamageType damageType, DeathType deathType )
-{
-	DamageInfo damageInfo;
-
-	// Do unmodifiable damage equal to their max health to kill.
-	damageInfo.in.m_damageType = damageType;
-	damageInfo.in.m_deathType = deathType;
-	damageInfo.in.m_sourceID = INVALID_ID;
-	damageInfo.in.m_amount = getBodyModule()->getMaxHealth();
-	damageInfo.in.m_kill = TRUE; // Triggers object to die no matter what.
-	attemptDamage( &damageInfo );
-}
+#include "ObjectKill.inc"   /* Object::kill, verbatim from Object.cpp (build.rs, mod_gen) */
 Real TerrainLogic::getGroundHeight( Real x, Real y, Coord3D* normal ) const
 {
 	ulog("ground %08x %08x", realBits(x), realBits(y));

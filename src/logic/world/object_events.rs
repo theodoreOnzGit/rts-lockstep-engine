@@ -117,6 +117,21 @@ pub enum ModelConditionOp {
     ClearAndSet { clear: Vec<i32>, set: Vec<i32> },
 }
 
+// --- p1w13-sonnet ---
+/// What a module does to one `RadiusDecal` (see [`ObjectClientEvent::GridDecal`]).
+#[derive(Clone, Debug, PartialEq)]
+pub enum GridDecalOp {
+    /// `clear()`.
+    Clear,
+    /// `tmpl.createRadiusDecal(pos, radius, owningPlayer, decal)`; `player` is the owning player's index (`None`: `NULL`).
+    Create { template: crate::logic::radius_decal::RadiusDecalTemplate, radius: f32, position: Coord3D, player: Option<i32> },
+    /// `setPosition(pos)`.
+    SetPosition(Coord3D),
+    /// `setOpacity(o)`.
+    SetOpacity(f32),
+}
+// --- end p1w13-sonnet ---
+
 /// One notification of `Object`. See the module docs.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ObjectClientEvent {
@@ -164,6 +179,10 @@ pub enum ObjectClientEvent {
     /// `TheAudio->removeAudioEvent(handle)` (`FlammableUpdate`'s burning sound).
     AudioRemoveEvent { handle: u32 },
     // --- end p1w12-sonnet ---
+    // --- p1w13-sonnet ---
+    /// One call on the `index`th grid decal of an object's `DynamicShroudClearingRangeUpdate` (a `RadiusDecal`, which the client's shadow manager draws).
+    GridDecal { object_id: ObjectId, index: u32, op: GridDecalOp },
+    // --- end p1w13-sonnet ---
     // --- p1w11-sonnet ---
     /// `TheAudio->addAudioEvent(&event)` for an event copied from the template's per-unit sounds (`EjectPilotDie`): the event's name, the object
     /// it is attached to (`INVALID_ID` for none), the position it was set to and the player index it was set to, if any.

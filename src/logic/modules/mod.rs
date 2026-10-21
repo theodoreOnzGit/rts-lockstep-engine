@@ -108,6 +108,7 @@ pub mod ocl_update;
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
 pub mod height_die_update;
+pub mod dynamic_shroud_clearing_range_update;
 // --- end p1w13-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -382,6 +383,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::HeightDieUpdate(d) => Some(made_update(
             UpdateModule::get_interface_mask(),
             height_die_update::HeightDieUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::HeightDieUpdate(m))),
+        )),
+        ModuleDataKind::DynamicShroudClearingRangeUpdate(d) => Some(made_update(
+            UpdateModule::get_interface_mask(),
+            dynamic_shroud_clearing_range_update::DynamicShroudClearingRangeUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::DynamicShroudClearingRangeUpdate(m))),
         )),
         // --- end p1w13-sonnet ---
         _ => None,

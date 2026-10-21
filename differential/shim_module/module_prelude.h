@@ -114,6 +114,10 @@
 #define TheTerrainLogic ModTestTheTerrainLogic
 #define DistanceCalculationType ModTestDistanceCalculationType
 /* --- end p1w12-sonnet --- */
+/* --- p1w13-sonnet --- (update batch O: DynamicShroudClearingRangeUpdate's grid decals; the ObjectCreationList fixture has classes of the same names) */
+#define RadiusDecal ModTestRadiusDecal
+#define RadiusDecalTemplate ModTestRadiusDecalTemplate
+/* --- end p1w13-sonnet --- */
 #define GameLogic ModTestGameLogic
 #define TheGameLogic ModTestTheGameLogic
 

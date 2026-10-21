@@ -205,6 +205,8 @@ public:
 	const Object *getContainedBy() const { return m_containedBy; }
 	void kill( DamageType damageType = DAMAGE_UNRESISTABLE, DeathType deathType = DEATH_NORMAL );
 	Object *m_containedBy = 0;
+	/* DynamicShroudClearingRangeUpdate reads the range that setShroudClearingRange (l9_powers_h.inc) writes */
+	Real getShroudClearingRange() const { return m_shroudRange; }
 	/* --- end p1w13-sonnet --- */
 protected:
 	virtual Object *asObjectMeth() { return this; }

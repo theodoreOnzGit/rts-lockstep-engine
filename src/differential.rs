@@ -1408,6 +1408,20 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    // update batch O: DynamicShroudClearingRangeUpdate on stand-ins (l9_dynamic_shroud_o.inc in wrap_module.cpp)
+    pub fn ref_l9ds_run(
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
     // --- end p1w13-sonnet ---
     // behavior batch K: FireWeaponWhenDeadBehavior on stand-ins (l9_behaviors_k.inc in wrap_module.cpp)
     pub fn ref_l9fk_run(

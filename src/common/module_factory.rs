@@ -670,6 +670,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::height_die_update::new_module_data),
             which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
         }),
+        "DynamicShroudClearingRangeUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::dynamic_shroud_clearing_range_update::new_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
         // --- end p1w13-sonnet ---
         _ => None,
     }
@@ -714,6 +719,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         // --- end p1w12-sonnet ---
         // --- p1w13-sonnet ---
         Some(ModuleDataKind::HeightDieUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::DynamicShroudClearingRangeUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         // --- end p1w13-sonnet ---
         _ => None,
     };
