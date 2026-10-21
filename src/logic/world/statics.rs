@@ -43,6 +43,10 @@ use crate::common::upgrade::UpgradeCenter;
 pub struct GameStatics {
     /// `TheUpgradeCenter`.
     pub upgrade_center: UpgradeCenter,
+    // --- p1l9-upgrades ---
+    /// `TheScienceStore`.
+    pub science_store: crate::common::science::ScienceStore,
+    // --- end p1l9-upgrades ---
     // New stores go here, each in its translator's marked block.
 }
 

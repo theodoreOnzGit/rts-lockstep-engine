@@ -61,6 +61,24 @@ pub enum UpdateBody {
     /// `CommandSetUpgrade` (the lead's layer-9 example).
     CommandSetUpgrade(crate::logic::modules::command_set_upgrade::CommandSetUpgrade),
     // --- end p1l9-example ---
+// --- p1l9-upgrades ---
+    /// `WeaponSetUpgrade`.
+    WeaponSetUpgrade(crate::logic::modules::weapon_set_upgrade::WeaponSetUpgrade),
+    /// `WeaponBonusUpgrade`.
+    WeaponBonusUpgrade(crate::logic::modules::weapon_bonus_upgrade::WeaponBonusUpgrade),
+    /// `ArmorUpgrade`.
+    ArmorUpgrade(crate::logic::modules::armor_upgrade::ArmorUpgrade),
+    /// `ModelConditionUpgrade`.
+    ModelConditionUpgrade(crate::logic::modules::model_condition_upgrade::ModelConditionUpgrade),
+    /// `ExperienceScalarUpgrade`.
+    ExperienceScalarUpgrade(crate::logic::modules::experience_scalar_upgrade::ExperienceScalarUpgrade),
+    /// `ActiveShroudUpgrade`.
+    ActiveShroudUpgrade(crate::logic::modules::active_shroud_upgrade::ActiveShroudUpgrade),
+    /// `MaxHealthUpgrade`.
+    MaxHealthUpgrade(crate::logic::modules::max_health_upgrade::MaxHealthUpgrade),
+    /// `GrantScienceUpgrade`.
+    GrantScienceUpgrade(crate::logic::modules::grant_science_upgrade::GrantScienceUpgrade),
+// --- end p1l9-upgrades ---
     // New variants go here, one per translated module.
 }
 
@@ -75,6 +93,16 @@ impl UpdateBody {
             // --- p1l9-example ---
             // not an update module: the scheduler never holds it
             UpdateBody::CommandSetUpgrade(_) => UPDATE_SLEEP_FOREVER,
+// --- p1l9-upgrades ---
+            UpdateBody::WeaponSetUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::WeaponBonusUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::ArmorUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::ModelConditionUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::ExperienceScalarUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::ActiveShroudUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::MaxHealthUpgrade(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::GrantScienceUpgrade(_) => UPDATE_SLEEP_FOREVER,
+// --- end p1l9-upgrades ---
             // --- end p1l9-example ---
         }
     }
@@ -89,6 +117,16 @@ impl UpdateBody {
             UpdateBody::ModuleProbe(m) => m.handle(world, me, call),
             // --- p1l9-example ---
             UpdateBody::CommandSetUpgrade(m) => m.module_call(world, me, call),
+// --- p1l9-upgrades ---
+            UpdateBody::WeaponSetUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::WeaponBonusUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::ArmorUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::ModelConditionUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::ExperienceScalarUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::ActiveShroudUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::MaxHealthUpgrade(m) => m.module_call(world, me, call),
+            UpdateBody::GrantScienceUpgrade(m) => m.module_call(world, me, call),
+// --- end p1l9-upgrades ---
             // --- end p1l9-example ---
         }
     }
@@ -116,6 +154,16 @@ impl UpdateBody {
         let _ = &update; // used by the update modules' arms
         match self {
             UpdateBody::CommandSetUpgrade(m) => m.xfer(xfer),
+// --- p1l9-upgrades ---
+            UpdateBody::WeaponSetUpgrade(m) => m.xfer(xfer),
+            UpdateBody::WeaponBonusUpgrade(m) => m.xfer(xfer),
+            UpdateBody::ArmorUpgrade(m) => m.xfer(xfer),
+            UpdateBody::ModelConditionUpgrade(m) => m.xfer(xfer),
+            UpdateBody::ExperienceScalarUpgrade(m) => m.xfer(xfer),
+            UpdateBody::ActiveShroudUpgrade(m) => m.xfer(xfer),
+            UpdateBody::MaxHealthUpgrade(m) => m.xfer(xfer),
+            UpdateBody::GrantScienceUpgrade(m) => m.xfer(xfer),
+// --- end p1l9-upgrades ---
             _ => self.xfer(xfer),
         }
     }
@@ -125,6 +173,16 @@ impl UpdateBody {
         let _ = &update;
         match self {
             UpdateBody::CommandSetUpgrade(m) => m.crc(xfer),
+// --- p1l9-upgrades ---
+            UpdateBody::WeaponSetUpgrade(m) => m.crc(xfer),
+            UpdateBody::WeaponBonusUpgrade(m) => m.crc(xfer),
+            UpdateBody::ArmorUpgrade(m) => m.crc(xfer),
+            UpdateBody::ModelConditionUpgrade(m) => m.crc(xfer),
+            UpdateBody::ExperienceScalarUpgrade(m) => m.crc(xfer),
+            UpdateBody::ActiveShroudUpgrade(m) => m.crc(xfer),
+            UpdateBody::MaxHealthUpgrade(m) => m.crc(xfer),
+            UpdateBody::GrantScienceUpgrade(m) => m.crc(xfer),
+// --- end p1l9-upgrades ---
             _ => self.crc(xfer),
         }
     }
@@ -134,6 +192,16 @@ impl UpdateBody {
         let _ = &update;
         match self {
             UpdateBody::CommandSetUpgrade(m) => m.load_post_process(),
+// --- p1l9-upgrades ---
+            UpdateBody::WeaponSetUpgrade(m) => m.load_post_process(),
+            UpdateBody::WeaponBonusUpgrade(m) => m.load_post_process(),
+            UpdateBody::ArmorUpgrade(m) => m.load_post_process(),
+            UpdateBody::ModelConditionUpgrade(m) => m.load_post_process(),
+            UpdateBody::ExperienceScalarUpgrade(m) => m.load_post_process(),
+            UpdateBody::ActiveShroudUpgrade(m) => m.load_post_process(),
+            UpdateBody::MaxHealthUpgrade(m) => m.load_post_process(),
+            UpdateBody::GrantScienceUpgrade(m) => m.load_post_process(),
+// --- end p1l9-upgrades ---
             _ => self.load_post_process(),
         }
     }
@@ -148,6 +216,16 @@ impl Snapshot for UpdateBody {
             UpdateBody::ModuleProbe(m) => m.crc(xfer),
             // --- p1l9-example ---
             UpdateBody::CommandSetUpgrade(m) => m.crc(xfer),
+// --- p1l9-upgrades ---
+            UpdateBody::WeaponSetUpgrade(m) => m.crc(xfer),
+            UpdateBody::WeaponBonusUpgrade(m) => m.crc(xfer),
+            UpdateBody::ArmorUpgrade(m) => m.crc(xfer),
+            UpdateBody::ModelConditionUpgrade(m) => m.crc(xfer),
+            UpdateBody::ExperienceScalarUpgrade(m) => m.crc(xfer),
+            UpdateBody::ActiveShroudUpgrade(m) => m.crc(xfer),
+            UpdateBody::MaxHealthUpgrade(m) => m.crc(xfer),
+            UpdateBody::GrantScienceUpgrade(m) => m.crc(xfer),
+// --- end p1l9-upgrades ---
             // --- end p1l9-example ---
         }
     }
@@ -158,6 +236,16 @@ impl Snapshot for UpdateBody {
             UpdateBody::ModuleProbe(m) => m.xfer(xfer),
             // --- p1l9-example ---
             UpdateBody::CommandSetUpgrade(m) => m.xfer(xfer),
+// --- p1l9-upgrades ---
+            UpdateBody::WeaponSetUpgrade(m) => m.xfer(xfer),
+            UpdateBody::WeaponBonusUpgrade(m) => m.xfer(xfer),
+            UpdateBody::ArmorUpgrade(m) => m.xfer(xfer),
+            UpdateBody::ModelConditionUpgrade(m) => m.xfer(xfer),
+            UpdateBody::ExperienceScalarUpgrade(m) => m.xfer(xfer),
+            UpdateBody::ActiveShroudUpgrade(m) => m.xfer(xfer),
+            UpdateBody::MaxHealthUpgrade(m) => m.xfer(xfer),
+            UpdateBody::GrantScienceUpgrade(m) => m.xfer(xfer),
+// --- end p1l9-upgrades ---
             // --- end p1l9-example ---
         }
     }
@@ -168,6 +256,16 @@ impl Snapshot for UpdateBody {
             UpdateBody::ModuleProbe(m) => m.load_post_process(),
             // --- p1l9-example ---
             UpdateBody::CommandSetUpgrade(m) => m.load_post_process(),
+// --- p1l9-upgrades ---
+            UpdateBody::WeaponSetUpgrade(m) => m.load_post_process(),
+            UpdateBody::WeaponBonusUpgrade(m) => m.load_post_process(),
+            UpdateBody::ArmorUpgrade(m) => m.load_post_process(),
+            UpdateBody::ModelConditionUpgrade(m) => m.load_post_process(),
+            UpdateBody::ExperienceScalarUpgrade(m) => m.load_post_process(),
+            UpdateBody::ActiveShroudUpgrade(m) => m.load_post_process(),
+            UpdateBody::MaxHealthUpgrade(m) => m.load_post_process(),
+            UpdateBody::GrantScienceUpgrade(m) => m.load_post_process(),
+// --- end p1l9-upgrades ---
             // --- end p1l9-example ---
         }
     }

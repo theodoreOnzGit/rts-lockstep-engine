@@ -304,6 +304,24 @@ pub enum ModuleDataKind {
     /// `CommandSetUpgradeModuleData`.
     CommandSetUpgrade(Arc<crate::logic::modules::command_set_upgrade::CommandSetUpgradeModuleData>),
     // --- end p1l9-example ---
+// --- p1l9-upgrades ---
+    /// `WeaponSetUpgradeModuleData`.
+    WeaponSetUpgrade(Arc<crate::logic::modules::weapon_set_upgrade::WeaponSetUpgradeModuleData>),
+    /// `WeaponBonusUpgradeModuleData`.
+    WeaponBonusUpgrade(Arc<crate::logic::modules::weapon_bonus_upgrade::WeaponBonusUpgradeModuleData>),
+    /// `ArmorUpgradeModuleData`.
+    ArmorUpgrade(Arc<crate::logic::modules::armor_upgrade::ArmorUpgradeModuleData>),
+    /// `ModelConditionUpgradeModuleData`.
+    ModelConditionUpgrade(Arc<crate::logic::modules::model_condition_upgrade::ModelConditionUpgradeModuleData>),
+    /// `ExperienceScalarUpgradeModuleData`.
+    ExperienceScalarUpgrade(Arc<crate::logic::modules::experience_scalar_upgrade::ExperienceScalarUpgradeModuleData>),
+    /// `ActiveShroudUpgradeModuleData`.
+    ActiveShroudUpgrade(Arc<crate::logic::modules::active_shroud_upgrade::ActiveShroudUpgradeModuleData>),
+    /// `MaxHealthUpgradeModuleData`.
+    MaxHealthUpgrade(Arc<crate::logic::modules::max_health_upgrade::MaxHealthUpgradeModuleData>),
+    /// `GrantScienceUpgradeModuleData`.
+    GrantScienceUpgrade(Arc<crate::logic::modules::grant_science_upgrade::GrantScienceUpgradeModuleData>),
+// --- end p1l9-upgrades ---
 }
 
 impl ModuleDataKind {
@@ -323,6 +341,16 @@ impl ModuleDataKind {
             // --- p1l9-example ---
             ModuleDataKind::CommandSetUpgrade(d) => &d.upgrade.behavior.module_data,
             // --- end p1l9-example ---
+// --- p1l9-upgrades ---
+            ModuleDataKind::WeaponSetUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::WeaponBonusUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::ArmorUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::ModelConditionUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::ExperienceScalarUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::ActiveShroudUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::MaxHealthUpgrade(d) => &d.upgrade.behavior.module_data,
+            ModuleDataKind::GrantScienceUpgrade(d) => &d.upgrade.behavior.module_data,
+// --- end p1l9-upgrades ---
         }
     }
 
@@ -356,6 +384,40 @@ impl ModuleDataKind {
                 None => false,
             },
             // --- end p1l9-example ---
+// --- p1l9-upgrades ---
+            ModuleDataKind::WeaponSetUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::WeaponBonusUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::ArmorUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::ModelConditionUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::ExperienceScalarUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::ActiveShroudUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::MaxHealthUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+            ModuleDataKind::GrantScienceUpgrade(d) => match Arc::get_mut(d) {
+                Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
+                None => false,
+            },
+// --- end p1l9-upgrades ---
         }
     }
 

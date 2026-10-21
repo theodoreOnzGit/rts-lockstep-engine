@@ -201,6 +201,11 @@ pub enum Undefined {
     IsspaceNonAscii,
     /// `loadDirectory`: a file name shorter than the directory name.
     FilenameShorterThanDirectory,
+    // --- p1l9-upgrades ---
+    /// `ArmorUpgrade`: a triggered chemical-suits upgrade on an object with no
+    /// drawable dereferences a null `Drawable` pointer.
+    NullDrawable,
+    // --- end p1l9-upgrades ---
     // --- p1w1-armor ---
     /// A `DamageType` outside `[0, DAMAGE_NUM_TYPES)` indexes an array
     /// (`parseArmorCoefficients` and `DamageFX`'s parsers with an unknown

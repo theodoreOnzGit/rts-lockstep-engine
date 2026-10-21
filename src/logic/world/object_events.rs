@@ -100,6 +100,10 @@ pub enum ObjectClientEvent {
     LevelGainAnimation { object_id: ObjectId, position: Coord3D },
     /// `TheControlBar->markUIDirty()`.
     ControlBarMarkUiDirty,
+    // --- p1l9-upgrades ---
+    /// `obj->getDrawable()->setTerrainDecal(decal)` (`ArmorUpgrade`).
+    DrawableSetTerrainDecal { object_id: ObjectId, decal: i32 },
+    // --- end p1l9-upgrades ---
     /// `TheGameClient->notifyTerrainObjectMoved(obj)`.
     TerrainObjectMoved { object_id: ObjectId },
     /// `m_drawable->changedTeam()`.

@@ -95,6 +95,10 @@ pub enum CutCall {
     PlayerRemoveRadar { player: PlayerIndex, disable_proof: bool },
     /// `player->addRadar(disableProof)`.
     PlayerAddRadar { player: PlayerIndex, disable_proof: bool },
+    // --- p1l9-upgrades ---
+    /// `player->grantScience(science)` (`GrantScienceUpgrade`).
+    PlayerGrantScience { player: PlayerIndex, science: i32 },
+    // --- end p1l9-upgrades ---
     // ---- Team ----
     /// `team->notifyTeamOfObjectDeath()`.
     TeamNotifyTeamOfObjectDeath { team: TeamId },

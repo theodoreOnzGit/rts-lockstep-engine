@@ -370,6 +370,62 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             which_interfaces: Some(crate::logic::modules::command_set_upgrade::CommandSetUpgrade::get_interface_mask()),
         }),
         // --- end p1l9-example ---
+        // --- p1l9-upgrades ---
+        "WeaponSetUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::weapon_set_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::weapon_set_upgrade::WeaponSetUpgrade::get_interface_mask()),
+        }),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        "WeaponBonusUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::weapon_bonus_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::weapon_bonus_upgrade::WeaponBonusUpgrade::get_interface_mask()),
+        }),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        "ArmorUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::armor_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::armor_upgrade::ArmorUpgrade::get_interface_mask()),
+        }),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        "ModelConditionUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::model_condition_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::model_condition_upgrade::ModelConditionUpgrade::get_interface_mask()),
+        }),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        "ExperienceScalarUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::experience_scalar_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::experience_scalar_upgrade::ExperienceScalarUpgrade::get_interface_mask()),
+        }),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        "ActiveShroudUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::active_shroud_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::active_shroud_upgrade::ActiveShroudUpgrade::get_interface_mask()),
+        }),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        "MaxHealthUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::max_health_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::max_health_upgrade::MaxHealthUpgrade::get_interface_mask()),
+        }),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        "GrantScienceUpgrade" => Some(ModuleTemplate {
+            create_proc: Some(new_upgrade_base),
+            create_data_proc: Some(crate::logic::modules::grant_science_upgrade::new_module_data),
+            which_interfaces: Some(crate::logic::modules::grant_science_upgrade::GrantScienceUpgrade::get_interface_mask()),
+        }),
+        // --- end p1l9-upgrades ---
         _ => None,
     }
 }
@@ -385,6 +441,30 @@ fn new_upgrade_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mo
         // --- p1l9-example ---
         Some(ModuleDataKind::CommandSetUpgrade(d)) => Some(d.upgrade.clone()),
         // --- end p1l9-example ---
+        // --- p1l9-upgrades ---
+        Some(ModuleDataKind::WeaponSetUpgrade(d)) => Some(d.upgrade.clone()),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        Some(ModuleDataKind::WeaponBonusUpgrade(d)) => Some(d.upgrade.clone()),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        Some(ModuleDataKind::ArmorUpgrade(d)) => Some(d.upgrade.clone()),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        Some(ModuleDataKind::ModelConditionUpgrade(d)) => Some(d.upgrade.clone()),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        Some(ModuleDataKind::ExperienceScalarUpgrade(d)) => Some(d.upgrade.clone()),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        Some(ModuleDataKind::ActiveShroudUpgrade(d)) => Some(d.upgrade.clone()),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        Some(ModuleDataKind::MaxHealthUpgrade(d)) => Some(d.upgrade.clone()),
+        // --- end p1l9-upgrades ---
+        // --- p1l9-upgrades ---
+        Some(ModuleDataKind::GrantScienceUpgrade(d)) => Some(d.upgrade.clone()),
+        // --- end p1l9-upgrades ---
         _ => None,
     };
     Ok(Module::Upgrade(crate::logic::module::upgrade_module::UpgradeModule::new(object, base)?))
