@@ -1,4 +1,4 @@
-/* Stand-in for GameEngine/Include/Common/ThingFactory.h, Module build only (differential tests, p1w11-sonnet, ReplaceObjectUpgrade): the two calls
+/* Stand-in for GameEngine/Include/Common/ThingFactory.h, Module build only (differential tests, p1w12-sonnet, ReplaceObjectUpgrade): the two calls
 ** that module makes, answered by differential/l9_replace_object.inc. Renamed ModTestThingFactory by module_prelude.h. */
 #ifndef SHIM_MODULE_THINGFACTORY_H
 #define SHIM_MODULE_THINGFACTORY_H

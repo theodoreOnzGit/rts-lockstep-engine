@@ -6,7 +6,7 @@
 #define SHIM_MODULE_PLAYER_H
 #include "Common/Upgrade.h"
 #include "Common/Science.h"
-/* --- p1w11-sonnet --- */
+/* --- p1w12-sonnet --- */
 #include "Common/KindOf.h"
 #include "Common/GameCommon.h"
 #include <vector>
@@ -14,7 +14,7 @@ class SpecialPowerTemplate;
 class Team;
 #include <algorithm>
 class Object;
-/* --- end p1w11-sonnet --- */
+/* --- end p1w12-sonnet --- */
 /* crate batch F: the money and the score keeper of a player, whose calls are lines of the effect log (differential/l9_crates_f.inc) */
 class Money { public: void deposit(UnsignedInt amountToDeposit, Bool playSound = TRUE); Int m_idx; };
 class ScoreKeeper { public: void addMoneyEarned(Int money); Int m_idx; };
@@ -28,7 +28,7 @@ public:
 	/* --- p1w10-sonnet --- (GrantScienceUpgrade: the grant is a line of the effect log) */
 	void grantScience(ScienceType st);
 	/* --- end p1w10-sonnet --- */
-	/* --- p1w11-sonnet --- (upgrade batch C: what CostModifierUpgrade, PowerPlantUpgrade and RadarUpgrade call on their player; every
+	/* --- p1w12-sonnet --- (upgrade batch C: what CostModifierUpgrade, PowerPlantUpgrade and RadarUpgrade call on their player; every
 	** call is a line of the effect log of differential/l9_upgrades_c.inc, tagged with m_idx, the player's index in the test) */
 	void addKindOfProductionCostChange(KindOfMaskType kindOf, Real percent);
 	void removeKindOfProductionCostChange(KindOfMaskType kindOf, Real percent);
@@ -53,13 +53,15 @@ public:
 	class PowerAcademyStats *getAcademyStats() { return (class PowerAcademyStats *)this; }
 	Relationship getRelationship(const Team *that) const;
 	Team *getDefaultTeam() { return m_defaultTeam; }
+	Color getPlayerColor() const { return m_color; }   /* update batch L: the floating text's colour */
+	Color m_color = 0;
 	void setUnitsVisionSpied(Bool setting, KindOfMaskType whichUnits, Int byWhom);   /* SpyVisionUpdate: a line of the effect log */
 	Team *m_defaultTeam;
 	Money m_money;
 	ScoreKeeper m_score;
 	PlayerType m_type;
 	std::vector<ScienceType> m_sciences;
-	/* --- end p1w11-sonnet --- */
+	/* --- end p1w12-sonnet --- */
 };
 /* special power batch H: what getAcademyStats() answers (it is the player itself, whose index the log wants) */
 class PowerAcademyStats { public: void recordSpecialPowerUsed(const SpecialPowerTemplate *t); };

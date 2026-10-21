@@ -153,6 +153,8 @@ pub enum CutCall {
     PlayerSetUnitsVisionSpied { player: PlayerIndex, setting: bool, which_units: crate::common::kind_of::KindOfMaskType, by_whom: PlayerIndex },
     /// `TheWeaponStore->createAndFireTempWeapon(weapon, source, &position)` (`FireWeaponWhenDeadBehavior`), the weapon by its name in the store.
     WeaponCreateAndFireTemp { weapon: Vec<u8>, source: ObjectId, position: crate::common::base_type::Coord3D },
+    /// `TheInGameUI->addFloatingText(text, &position, color)` with `text` the format `GUI:AddCash` given `amount` (`AutoDepositUpdate`).
+    InGameUiAddFloatingText { amount: i32, position: crate::common::base_type::Coord3D, color: i32 },
     // --- end p1w11-sonnet ---
     // ---- Team ----
     /// `team->notifyTeamOfObjectDeath()`.
@@ -351,6 +353,8 @@ pub struct ObjectCuts {
     /// The function-local `static` of `MoneyCrateCollide::getUpgradedSupplyBoost`: `None` until control first reaches it, then the upgrade mask of
     /// the template the first pair named (`Some(None)` for a name that is no upgrade). See `modules::money_crate_collide`.
     pub money_crate_upgrade_static: Option<Option<crate::common::upgrade::UpgradeMaskType>>,
+    /// The function-local `static` of `AutoDepositUpdate::getUpgradedSupplyBoost` (its own, not `MoneyCrateCollide`'s), the same way.
+    pub auto_deposit_upgrade_static: Option<Option<crate::common::upgrade::UpgradeMaskType>>,
     /// `TheGlobalData->m_specialPowerViewObjectName` (`SpecialPowerModule::createViewObject`); empty for none.
     pub special_power_view_object_name: Vec<u8>,
     // --- end p1w11-sonnet ---
@@ -440,6 +444,7 @@ impl Default for ObjectCuts {
             untranslated_modules: Vec::new(),
             probe_effect_trace: false,
             money_crate_upgrade_static: None,
+            auto_deposit_upgrade_static: None,
             special_power_view_object_name: Vec::new(),
             // --- end p1w11-sonnet ---
             // --- end p1l9-example ---

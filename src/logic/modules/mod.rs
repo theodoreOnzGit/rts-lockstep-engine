@@ -97,6 +97,7 @@ pub mod spy_vision_update;
 pub mod upgrade_mux_user;
 pub mod fx_list_die;
 pub mod fire_weapon_when_dead_behavior;
+pub mod auto_deposit_update;
 // --- end p1w11-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -339,6 +340,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::FireWeaponWhenDeadBehavior(d) => Some(made(
             fire_weapon_when_dead_behavior::FireWeaponWhenDeadBehavior::get_interface_mask(),
             fire_weapon_when_dead_behavior::FireWeaponWhenDeadBehavior::new(object, Some(d.clone())).map(UpdateBody::FireWeaponWhenDeadBehavior),
+        )),
+        ModuleDataKind::AutoDepositUpdate(d) => Some(made_update(
+            UpdateModule::get_interface_mask(),
+            auto_deposit_update::AutoDepositUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::AutoDepositUpdate(m))),
         )),
         // --- end p1w11-sonnet ---
         _ => None,

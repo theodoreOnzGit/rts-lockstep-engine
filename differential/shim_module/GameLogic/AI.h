@@ -1,4 +1,4 @@
-/* Stand-in for GameEngine/Include/GameLogic/AI.h, Module build only (differential tests, p1w11-sonnet, ReplaceObjectUpgrade): TheAI->pathfinder() and
+/* Stand-in for GameEngine/Include/GameLogic/AI.h, Module build only (differential tests, p1w12-sonnet, ReplaceObjectUpgrade): TheAI->pathfinder() and
 ** the two calls that module makes on it (answered by differential/l9_replace_object.inc). Renamed ModTestAI and ModTestPathfinder by
 ** module_prelude.h. */
 #ifndef SHIM_MODULE_AI_H

@@ -1299,6 +1299,20 @@ extern "C" {
         code: *mut c_uint,
     ) -> c_int;
     // the special powers of batch H on stand-ins (l9_powers_h.inc in wrap_module.cpp)
+    // update batch L: AutoDepositUpdate on stand-ins (l9_updates_l.inc in wrap_module.cpp)
+    pub fn ref_l9ul_run(
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
     // behavior batch K: FireWeaponWhenDeadBehavior on stand-ins (l9_behaviors_k.inc in wrap_module.cpp)
     pub fn ref_l9fk_run(
         filename: *const c_char,

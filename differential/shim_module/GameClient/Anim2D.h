@@ -1,4 +1,4 @@
-/* Stand-in for GameEngine/Include/GameClient/Anim2D.h, Module build only (differential tests, p1w11-sonnet, crate batch F): the collection and
+/* Stand-in for GameEngine/Include/GameClient/Anim2D.h, Module build only (differential tests, p1w12-sonnet, crate batch F): the collection and
 ** its template lookup, logged by differential/l9_crates_f.inc. Renamed ModTestAnim2D* by module_prelude.h. */
 #ifndef SHIM_MODULE_ANIM2D_H
 #define SHIM_MODULE_ANIM2D_H

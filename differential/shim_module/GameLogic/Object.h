@@ -50,7 +50,7 @@ class SpawnBehaviorInterface;
 class Drawable;
 class ExperienceTracker;
 /* --- end p1w10-sonnet --- */
-/* --- p1w11-sonnet --- */
+/* --- p1w12-sonnet --- */
 #include "Common/NameKeyGenerator.h"
 class BehaviorModule;
 class UpdateModule;
@@ -58,7 +58,7 @@ class Team;
 #include "matrix3d.h"
 #include "Common/DisabledTypes.h"
 #include "Common/ThingTemplate.h"
-/* --- end p1w11-sonnet --- */
+/* --- end p1w12-sonnet --- */
 class Object : public Thing
 {
 public:
@@ -116,7 +116,7 @@ public:
 	SpawnBehaviorInterface *m_spawn;
 	KindOfMaskType m_kindOf;
 	/* --- end p1w10-sonnet --- */
-	/* --- p1w11-sonnet --- (upgrade batch C: what PowerPlantUpgrade, RadarUpgrade and UnpauseSpecialPowerUpgrade call on their object; the
+	/* --- p1w12-sonnet --- (upgrade batch C: what PowerPlantUpgrade, RadarUpgrade and UnpauseSpecialPowerUpgrade call on their object; the
 	** behaviour modules are the test's, a null-terminated array as upstream's m_behaviors) */
 	Bool isDisabled() const { return m_disabled; }
 	BehaviorModule **getBehaviorModules() const { return m_behaviors; }
@@ -143,6 +143,14 @@ public:
 	void defect(Team *newTeam, UnsignedInt detectionTime);   /* l9_powers_h.inc */
 	void setShroudClearingRange(Real r);   /* l9_powers_h.inc */
 	Bool isNeutralControlled() const;   /* l9_crates_f.inc: Player is incomplete here */
+	/* update batch L: what AutoDepositUpdate asks of its object (differential/l9_updates_l.inc) */
+	Bool isLocallyControlled() const;
+	Real getConstructionPercent() const { return m_constructionPercent; }
+	Bool testStatus(ObjectStatusTypes bit) const { return m_status.test(bit); }
+	struct ShimGeometry { Real m_major = 0, m_minor = 0; Real getMajorRadius() const { return m_major; } Real getMinorRadius() const { return m_minor; } };
+	const ShimGeometry &getGeometryInfo() const { return m_geometry; }
+	Real m_constructionPercent = -1.0f;   /* CONSTRUCTION_COMPLETE */
+	ShimGeometry m_geometry;
 	Bool isKindOfMulti(const KindOfMaskType &mustBeSet, const KindOfMaskType &mustBeClear) const { return m_kindOf.testSetAndClear(mustBeSet, mustBeClear); }
 	Bool isEffectivelyDead() const { return m_effDead; }
 	Bool isAboveTerrain() const { return m_pos.z > 0; }   /* the test's terrain is flat at zero */
@@ -155,7 +163,7 @@ public:
 	Coord3D m_pos;
 	unsigned m_disabledBits;
 	ThingTemplate m_tmpl;
-	/* --- end p1w11-sonnet --- */
+	/* --- end p1w12-sonnet --- */
 protected:
 	virtual Object *asObjectMeth() { return this; }
 	virtual const Object *asObjectMeth() const { return this; }

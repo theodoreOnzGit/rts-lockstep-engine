@@ -1,4 +1,4 @@
-/* Stand-in for GameEngine/Include/GameClient/Eva.h, Module build only (differential tests, p1w11-sonnet, special power batch H): the
+/* Stand-in for GameEngine/Include/GameClient/Eva.h, Module build only (differential tests, p1w12-sonnet, special power batch H): the
 ** superweapon announcements SpecialPowerModule::aboutToDoSpecialPower makes, logged by differential/l9_powers_h.inc. The enumerators are the
 ** names of Eva.h (the order here is the stand-in's). Renamed ModTestEva by module_prelude.h. */
 #ifndef SHIM_MODULE_EVA_H

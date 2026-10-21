@@ -14,8 +14,8 @@ class FXList
 {
 public:
 	static void doFXObj(const FXList *fx, const Object *primary, const Object *secondary = 0);
-	/* --- p1w11-sonnet --- (FXListDie: defined by differential/l9_dies_j.inc) */
+	/* --- p1w12-sonnet --- (FXListDie: defined by differential/l9_dies_j.inc) */
 	static void doFXPos(const FXList *fx, const Coord3D *primary, const Matrix3D *primaryMtx = 0, const Real primarySpeed = 0.0f, const Coord3D *secondary = 0, const Real overrideRadius = 0.0f);
-	/* --- end p1w11-sonnet --- */
+	/* --- end p1w12-sonnet --- */
 };
 #endif

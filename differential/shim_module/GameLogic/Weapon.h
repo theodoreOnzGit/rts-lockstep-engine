@@ -38,7 +38,7 @@ enum WeaponBonusConditionType
 
 	WEAPONBONUSCONDITION_COUNT
 };
-/* --- p1w11-sonnet --- (behavior batch K: FireWeaponWhenDeadBehavior.cpp) what that module asks of the weapon layer: a template it was given by the INI
+/* --- p1w12-sonnet --- (behavior batch K: FireWeaponWhenDeadBehavior.cpp) what that module asks of the weapon layer: a template it was given by the INI
 ** (opaque here) and the store that fires a temporary weapon, which differential/l9_behaviors_k.inc defines to log the call. Renamed by module_prelude.h. */
 class Object;
 #include "Lib/BaseType.h"
@@ -49,5 +49,5 @@ public:
 	void createAndFireTempWeapon(const WeaponTemplate *wt, const Object *source, const Coord3D *pos);
 };
 extern WeaponStore *TheWeaponStore;
-/* --- end p1w11-sonnet --- */
+/* --- end p1w12-sonnet --- */
 #endif

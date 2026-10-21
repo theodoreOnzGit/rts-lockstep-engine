@@ -9,9 +9,9 @@ class Object;
 class UpdateModule;
 #include "Common/GameType.h"
 void modhelp_destroy(Object *obj);
-/* --- p1w11-sonnet --- ReplaceObjectUpgrade's test logs and records the destroy (l9_replace_object.inc); null elsewhere */
+/* --- p1w12-sonnet --- ReplaceObjectUpgrade's test logs and records the destroy (l9_replace_object.inc); null elsewhere */
 extern void (*g_modDestroyHook)(Object *obj);
-/* --- end p1w11-sonnet --- */
+/* --- end p1w12-sonnet --- */
 Object *modhelp_find(ObjectID id);
 class GameLogic
 {
@@ -34,10 +34,10 @@ public:
 	Object *m_awakenObject = 0;
 	UpdateModule *m_awakenModule = 0;
 	UnsignedInt m_awakenFrame = 0;
-	/* --- p1w11-sonnet --- (crate batch F; appended: the other builds' copy of this class keeps the layout of what comes before) */
+	/* --- p1w12-sonnet --- (crate batch F; appended: the other builds' copy of this class keeps the layout of what comes before) */
 	Bool getDrawIconUI() const { return m_drawIconUI; }
 	Bool m_drawIconUI = true;
-	/* --- end p1w11-sonnet --- */
+	/* --- end p1w12-sonnet --- */
 };
 extern GameLogic *TheGameLogic;
 #endif

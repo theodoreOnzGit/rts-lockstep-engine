@@ -376,6 +376,8 @@ pub enum ModuleDataKind {
     FXListDie(Arc<crate::logic::modules::fx_list_die::FXListDieModuleData>),
     /// `FireWeaponWhenDeadBehaviorModuleData`.
     FireWeaponWhenDeadBehavior(Arc<crate::logic::modules::fire_weapon_when_dead_behavior::FireWeaponWhenDeadBehaviorModuleData>),
+    /// `AutoDepositUpdateModuleData`.
+    AutoDepositUpdate(Arc<crate::logic::modules::auto_deposit_update::AutoDepositUpdateModuleData>),
     // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
@@ -453,6 +455,7 @@ impl ModuleDataKind {
             ModuleDataKind::SpyVisionUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::FXListDie(d) => &d.die.behavior.module_data,
             ModuleDataKind::FireWeaponWhenDeadBehavior(d) => &d.die.behavior.module_data,
+            ModuleDataKind::AutoDepositUpdate(d) => &d.update.behavior.module_data,
             // --- end p1w11-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
@@ -679,6 +682,13 @@ impl ModuleDataKind {
             ModuleDataKind::FireWeaponWhenDeadBehavior(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.die.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::AutoDepositUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
                     true
                 }
                 None => false,

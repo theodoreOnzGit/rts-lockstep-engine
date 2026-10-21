@@ -7,7 +7,8 @@
 #include "Lib/BaseType.h"
 #include "Common/AsciiString.h"
 #include "Common/GameType.h"
-/* --- p1w11-sonnet --- (crate batch F: CrateCollide's execute animation; WorldAnimationOptions is GameClient/InGameUI.h lines 291-296, verbatim) */
+#include "GameClient/Color.h"
+/* --- p1w12-sonnet --- (crate batch F: CrateCollide's execute animation; WorldAnimationOptions is GameClient/InGameUI.h lines 291-296, verbatim) */
 class Anim2DTemplate;
 enum WorldAnimationOptions
 {
@@ -15,16 +16,17 @@ enum WorldAnimationOptions
 	WORLD_ANIM_FADE_ON_EXPIRE						= 0x00000001,
 	WORLD_ANIM_PLAY_ONCE_AND_DESTROY		= 0x00000002,
 };
-/* --- end p1w11-sonnet --- */
+/* --- end p1w12-sonnet --- */
 class InGameUI
 {
 public:
 	void message(const char *) {}
-	/* --- p1w11-sonnet --- */
+	/* --- p1w12-sonnet --- */
 	void addSuperweapon(Int playerIndex, const AsciiString &powerName, ObjectID id, const class SpecialPowerTemplate *powerTemplate);
 	Bool removeSuperweapon(Int playerIndex, const AsciiString &powerName, ObjectID id, const class SpecialPowerTemplate *powerTemplate);
 	void addWorldAnimation( Anim2DTemplate *animTemplate, const Coord3D *pos, WorldAnimationOptions options, Real durationInSeconds, Real zRisePerSecond );
-	/* --- end p1w11-sonnet --- */
+	void addFloatingText(const class UnicodeString &text, const Coord3D *pos, Color color);   /* update batch L (differential/l9_updates_l.inc) */
+	/* --- end p1w12-sonnet --- */
 };
 extern InGameUI *TheInGameUI;
 #endif

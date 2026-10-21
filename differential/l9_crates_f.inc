@@ -9,11 +9,10 @@
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Collide/CrateCollide/CrateCollide.cpp"
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Collide/CrateCollide/HealCrateCollide.cpp"
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Collide/CrateCollide/ShroudCrateCollide.cpp"
-/* MoneyCrateCollide.cpp with its function-local `static` made a global and a flag the driver resets (build.rs, mod_gen/), and parseUpgradePair cut
-** out of AutoDepositUpdate.cpp (build.rs, mod_gen/): both mechanical, asserted to apply once */
+/* MoneyCrateCollide.cpp with its function-local `static` made a global and a flag the driver resets (build.rs, mod_gen/: mechanical, asserted to apply
+** once); parseUpgradePair is AutoDepositUpdate.cpp's, compiled by differential/l9_updates_l.inc */
 namespace { const UpgradeTemplate *g_moneyStatic = 0; bool g_moneyStaticInit = false; }
 #include "GameLogic/Module/AutoDepositUpdate.h"
-#include "AutoDepositPair.inc"
 #include "MoneyCrateCollide_static.cpp"
 
 namespace {

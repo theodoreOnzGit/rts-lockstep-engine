@@ -908,6 +908,16 @@ FxListDoFxPos}`, `CutCall::WeaponCreateAndFireTemp`, `GameStatics::weapon_store`
 which upstream does at the read). **Upstream facts kept:** `FXListDie`'s `StartsActive` defaults to TRUE and its `xfer` leaves the mux's flag out;
 `FireWeaponWhenDeadBehavior`'s default is FALSE and its `xfer` saves it. Still to do with the mux: `FireWeaponWhenDamagedBehavior` (weapon instances),
 `AutoHealBehavior`, `CountermeasuresBehavior`, `GenerateMinefieldBehavior`, `FireOCLAfterWeaponCooldownUpdate`.
+**Layer-9 update batch L (2026-10-21, `p1w12-sonnet`).** `AutoDepositUpdate` (`modules/auto_deposit_update.rs`) over `modules/update_behavior.rs`, wired as an
+object module, with `tests/differential_update_modules_l.rs` against the unchanged `.cpp` (`differential/l9_updates_l.inc`): 9,000 cases, 8,558 data-read
+comparisons, 76,176 op outputs (59,972 ops, 2,731 deposits, 3,148 floating texts), 0 mismatches, 442 excluded as undefined upstream; 10 planted bugs
+(`L9_PLANT` 901-910), all caught. **Upstream defects kept:** `getUpgradedSupplyBoost` has `static const UpgradeTemplate *upgradeTemplate = findUpgrade(...)`
+inside its loop, so the first pair's template is looked up once per process and used for every later pair (here once per `World`:
+`cuts.auto_deposit_upgrade_static`; `build.rs` makes it a global the driver resets, asserted once); a negative deposit-plus-boost becomes a huge
+`UnsignedInt` for `Money::deposit`; the score keeper gets the amount without the boost. `MoneyCrateCollide` now reads its `parseUpgradePair` from the
+whole file (build.rs no longer cuts it out). New: `ModuleCall::AwardInitialCaptureBonus` (`Player::becomingTeamMember`), `Player::getPlayerColor` and the
+`GameText`/`UnicodeString` stand-ins. **Driver:** the C++ run is wrapped in a SIGSEGV/SIGBUS trap (status 99, reported as a mismatch), so a planted bug that
+steers the Rust past an upstream-undefined input is a clean mismatch rather than a process kill (plants 906 and 910 needed it).
 **Layer-9 helper and die batch verified (2026-10-21, `p1w10-sonnet`).** ~~The helpers and dies of `p1l9-helpers` (`ObjectHelper`,
 `ObjectSMCHelper`, `ObjectRepulsorHelper`, `ObjectWeaponStatusHelper`, `StatusDamageHelper`, `TempWeaponBonusHelper`,
 `DestroyDie`, `KeepObjectDie`, `UpgradeDie`) are pure functions returning effects.~~ **CORRECTED 2026-10-21** - the drafts were

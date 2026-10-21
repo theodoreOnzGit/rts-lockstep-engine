@@ -184,6 +184,8 @@ pub enum UpdateBody {
     FXListDie(crate::logic::modules::fx_list_die::FXListDie),
     /// `FireWeaponWhenDeadBehavior`.
     FireWeaponWhenDeadBehavior(crate::logic::modules::fire_weapon_when_dead_behavior::FireWeaponWhenDeadBehavior),
+    /// `AutoDepositUpdate`.
+    AutoDepositUpdate(crate::logic::modules::auto_deposit_update::AutoDepositUpdate),
     // --- end p1w11-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -264,6 +266,7 @@ impl UpdateBody {
             UpdateBody::SpyVisionUpdate(m) => m.world_update(world, me),
             UpdateBody::FXListDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::FireWeaponWhenDeadBehavior(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::AutoDepositUpdate(m) => m.world_update(world, me),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -344,6 +347,7 @@ impl UpdateBody {
             UpdateBody::SpyVisionUpdate(m) => m.module_call(world, me, call),
             UpdateBody::FXListDie(m) => m.module_call(world, me, call),
             UpdateBody::FireWeaponWhenDeadBehavior(m) => m.module_call(world, me, call),
+            UpdateBody::AutoDepositUpdate(m) => m.module_call(world, me, call),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -419,6 +423,7 @@ impl UpdateBody {
             UpdateBody::SubdualDamageHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::ObjectDefectionHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::SpyVisionUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::AutoDepositUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
 // --- end p1w11-sonnet ---
             _ => self.xfer(xfer),
         }
@@ -476,6 +481,7 @@ impl UpdateBody {
             UpdateBody::SubdualDamageHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::ObjectDefectionHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::SpyVisionUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::AutoDepositUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
 // --- end p1w11-sonnet ---
             _ => self.crc(xfer),
         }
@@ -533,6 +539,7 @@ impl UpdateBody {
             UpdateBody::SubdualDamageHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::ObjectDefectionHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::SpyVisionUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::AutoDepositUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
 // --- end p1w11-sonnet ---
             _ => self.load_post_process(),
         }
@@ -613,6 +620,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::SpyVisionUpdate(m) => m.crc(xfer),
             UpdateBody::FXListDie(m) => m.crc(xfer),
             UpdateBody::FireWeaponWhenDeadBehavior(m) => m.crc(xfer),
+            UpdateBody::AutoDepositUpdate(m) => m.crc(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -689,6 +697,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::SpyVisionUpdate(m) => m.xfer(xfer),
             UpdateBody::FXListDie(m) => m.xfer(xfer),
             UpdateBody::FireWeaponWhenDeadBehavior(m) => m.xfer(xfer),
+            UpdateBody::AutoDepositUpdate(m) => m.xfer(xfer),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -765,6 +774,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::SpyVisionUpdate(m) => m.load_post_process(),
             UpdateBody::FXListDie(m) => m.load_post_process(),
             UpdateBody::FireWeaponWhenDeadBehavior(m) => m.load_post_process(),
+            UpdateBody::AutoDepositUpdate(m) => m.load_post_process(),
 // --- end p1w11-sonnet ---
             // --- end p1l9-example ---
         }
@@ -926,6 +936,7 @@ impl UpdateBody {
             UpdateBody::SpyVisionUpdate(m) => m.world_construct(world, me),
             UpdateBody::FXListDie(m) => m.world_construct(world, me),
             UpdateBody::FireWeaponWhenDeadBehavior(m) => m.world_construct(world, me),
+            UpdateBody::AutoDepositUpdate(m) => m.world_construct(world, me),
 // --- end p1w11-sonnet ---
             _ => {}
         }

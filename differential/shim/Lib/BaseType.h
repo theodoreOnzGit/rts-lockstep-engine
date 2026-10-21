@@ -38,7 +38,7 @@ struct Coord2D { Real x, y; };
 struct ICoord2D { Int x, y; };
 struct Region2D { Coord2D lo, hi; };
 struct IRegion2D { ICoord2D lo, hi; };
-struct Coord3D { Real x, y, z; void zero( void ) { x = 0.0f; y = 0.0f; z = 0.0f; } };
+struct Coord3D { Real x, y, z; void zero( void ) { x = 0.0f; y = 0.0f; z = 0.0f; } void set( const Coord3D *c ) { x = c->x; y = c->y; z = c->z; } /* (p1w12-sonnet: BaseType.h's own, AutoDepositUpdate) */ };
 struct ICoord3D { Int x, y, z; void zero( void ) { x = 0; y = 0; z = 0; } };
 struct Region3D { Coord3D lo, hi; };
 struct IRegion3D { ICoord3D lo, hi; };

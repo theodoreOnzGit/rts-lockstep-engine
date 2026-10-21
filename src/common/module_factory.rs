@@ -631,6 +631,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::fire_weapon_when_dead_behavior::new_module_data),
             which_interfaces: Some(crate::logic::modules::fire_weapon_when_dead_behavior::FireWeaponWhenDeadBehavior::get_interface_mask()),
         }),
+        "AutoDepositUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::auto_deposit_update::new_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
         // --- end p1w11-sonnet ---
         _ => None,
     }
@@ -664,6 +669,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::PowerPlantUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::RadarUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::SpyVisionUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::AutoDepositUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         // --- end p1w11-sonnet ---
         _ => None,
     };
