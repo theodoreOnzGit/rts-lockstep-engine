@@ -844,6 +844,20 @@ player's completed-upgrade mask in `cuts.player_upgrades`; `PlayerAcademyRecordU
 `world.next_object_id()` (the id `new_object` is about to allocate); the upgrade modules read the id from the call.
 Open: `ScienceRequired` is resolved by name at use (upstream resolves at INI read), and the weapon lock of `LockWeaponCreate`
 is only observable on an object with a weapon in the slot (no test builds one yet).
+**Layer-9 update modules wired (2026-10-21, `p1w10-sonnet`).** `LifetimeUpdate`, `DeletionUpdate`, `BaseRegenerateUpdate` and
+`SmartBombTargetHomingUpdate` (verified standalone by `tests/differential_l9_updates.rs`) are object modules.
+Pieces added: `UpdateBody` variants whose `update` is the scheduler's (the module is lent to its slot while it runs, because
+`destroyObject` sends `onDelete` to every module of the object, the running one included); `UpdateBody::construct`, the
+world half of a constructor (a random draw, a wake call), run by `add_module` once the module is in its object, in module
+order; `World::random` (the game-logic generators) and three `ObjectGlobals` fields (`hulk_max_lifetime_override`, the base
+regeneration rate and delay); `ModuleCall::OnDamage`, `SetLifetimeRange`, `SetSmartBombTargetPosition`;
+`impl UpdateHost/BaseRegenHost/SmartBombHost for World` (`logic/world/update_host_world.rs`), which answers for the module
+that is running (the top of `cuts.module_stack`); `ModuleDataKind` variants, factory entries (`new_update_base`) and
+`new_module` arms. Each module has `unconstructed` and `construct` (its constructor, split in two; `new` is both, unchanged)
+and `xfer_with` (the version, the **slot's** `UpdateModule`, the fields), because the scheduling state lives in the slot.
+Host trait signatures changed to `&mut self` where the world must send a call (`max_health`, `health`,
+`is_significantly_above_terrain`). Tests through `World`: `update_host_world::tests` (die frames, hulk override,
+`setLifetimeRange`, regeneration with a probe body, homing, an object save and load, the factory).
 <!-- --- end p1w10-sonnet (layer 9) --- -->
 
 ## Differential-test routes, by rule

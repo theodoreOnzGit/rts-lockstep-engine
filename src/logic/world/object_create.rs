@@ -300,6 +300,12 @@ impl World {
                 HelperKind::TempWeaponBonus => o.helpers.temp_weapon_bonus = Some(idx),
             }
         }
+        // --- p1w10-sonnet ---
+        // the world half of the module's constructor (a draw, a wake call), now that the module is part of its object
+        if has_body {
+            self.construct_module(id, idx);
+        }
+        // --- end p1w10-sonnet ---
         idx
     }
 

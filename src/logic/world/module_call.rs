@@ -276,6 +276,13 @@ pub enum ModuleCall {
     OnBuildComplete,
     /// `SpecialPowerModuleInterface::onSpecialPowerCreation()` (`SpecialPowerCreate::onBuildComplete`'s loop).
     OnSpecialPowerCreation,
+    /// `DamageModuleInterface::onDamage(damageInfo)` (the loop of `ActiveBody::attemptDamage`).
+    OnDamage(DamageInfo),
+    /// `LifetimeUpdate::setLifetimeRange(min, max)` / `DeletionUpdate::setLifetimeRange(min, max)` (frames): "the lifetime
+    /// module of this object" is found with `findUpdateModule`.
+    SetLifetimeRange { min_frames: u32, max_frames: u32 },
+    /// `SmartBombTargetHomingUpdate::SetTargetPosition(pos)` (`DeliverPayloadAIUpdate`).
+    SetSmartBombTargetPosition(Coord3D),
     // --- end p1w10-sonnet ---
 }
 

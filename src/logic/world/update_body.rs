@@ -93,6 +93,16 @@ pub enum UpdateBody {
     VeterancyGainCreate(crate::logic::modules::veterancy_gain_create::VeterancyGainCreate),
     /// `GrantUpgradeCreate`.
     GrantUpgradeCreate(crate::logic::modules::grant_upgrade_create::GrantUpgradeCreate),
+// --- p1w10-sonnet (update modules) ---
+    /// `LifetimeUpdate`.
+    LifetimeUpdate(crate::logic::modules::lifetime_update::LifetimeUpdate),
+    /// `DeletionUpdate`.
+    DeletionUpdate(crate::logic::modules::deletion_update::DeletionUpdate),
+    /// `BaseRegenerateUpdate`.
+    BaseRegenerateUpdate(crate::logic::modules::base_regenerate_update::BaseRegenerateUpdate),
+    /// `SmartBombTargetHomingUpdate`.
+    SmartBombTargetHomingUpdate(crate::logic::modules::smart_bomb_target_homing_update::SmartBombTargetHomingUpdate),
+// --- end p1w10-sonnet (update modules) ---
 // --- end p1w10-sonnet ---
 // --- end p1l9-upgrades ---
     // New variants go here, one per translated module.
@@ -120,6 +130,12 @@ impl UpdateBody {
             UpdateBody::GrantScienceUpgrade(_) => UPDATE_SLEEP_FOREVER,
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(_) => UPDATE_SLEEP_FOREVER,
+// --- p1w10-sonnet (update modules) ---
+            UpdateBody::LifetimeUpdate(m) => m.world_update(world, me),
+            UpdateBody::DeletionUpdate(m) => m.world_update(world, me),
+            UpdateBody::BaseRegenerateUpdate(m) => m.world_update(world, me),
+            UpdateBody::SmartBombTargetHomingUpdate(m) => m.world_update(world, me),
+// --- end p1w10-sonnet (update modules) ---
             UpdateBody::SpecialPowerCreate(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SupplyCenterCreate(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SupplyWarehouseCreate(_) => UPDATE_SLEEP_FOREVER,
@@ -153,6 +169,12 @@ impl UpdateBody {
             UpdateBody::GrantScienceUpgrade(m) => m.module_call(world, me, call),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.module_call(world, me, call),
+// --- p1w10-sonnet (update modules) ---
+            UpdateBody::LifetimeUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::DeletionUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::BaseRegenerateUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::SmartBombTargetHomingUpdate(m) => m.module_call(world, me, call),
+// --- end p1w10-sonnet (update modules) ---
             UpdateBody::SpecialPowerCreate(m) => m.module_call(world, me, call),
             UpdateBody::SupplyCenterCreate(m) => m.module_call(world, me, call),
             UpdateBody::SupplyWarehouseCreate(m) => m.module_call(world, me, call),
@@ -199,6 +221,12 @@ impl UpdateBody {
             UpdateBody::GrantScienceUpgrade(m) => m.xfer(xfer),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.xfer(xfer),
+// --- p1w10-sonnet (update modules) ---
+            UpdateBody::LifetimeUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::DeletionUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::BaseRegenerateUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::SmartBombTargetHomingUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+// --- end p1w10-sonnet (update modules) ---
             UpdateBody::SpecialPowerCreate(m) => m.xfer(xfer),
             UpdateBody::SupplyCenterCreate(m) => m.xfer(xfer),
             UpdateBody::SupplyWarehouseCreate(m) => m.xfer(xfer),
@@ -227,6 +255,12 @@ impl UpdateBody {
             UpdateBody::GrantScienceUpgrade(m) => m.crc(xfer),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.crc(xfer),
+// --- p1w10-sonnet (update modules) ---
+            UpdateBody::LifetimeUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::DeletionUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::BaseRegenerateUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::SmartBombTargetHomingUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+// --- end p1w10-sonnet (update modules) ---
             UpdateBody::SpecialPowerCreate(m) => m.crc(xfer),
             UpdateBody::SupplyCenterCreate(m) => m.crc(xfer),
             UpdateBody::SupplyWarehouseCreate(m) => m.crc(xfer),
@@ -255,6 +289,12 @@ impl UpdateBody {
             UpdateBody::GrantScienceUpgrade(m) => m.load_post_process(),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.load_post_process(),
+// --- p1w10-sonnet (update modules) ---
+            UpdateBody::LifetimeUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::DeletionUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::BaseRegenerateUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::SmartBombTargetHomingUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+// --- end p1w10-sonnet (update modules) ---
             UpdateBody::SpecialPowerCreate(m) => m.load_post_process(),
             UpdateBody::SupplyCenterCreate(m) => m.load_post_process(),
             UpdateBody::SupplyWarehouseCreate(m) => m.load_post_process(),
@@ -288,6 +328,12 @@ impl Snapshot for UpdateBody {
             UpdateBody::GrantScienceUpgrade(m) => m.crc(xfer),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.crc(xfer),
+// --- p1w10-sonnet (update modules) ---
+            UpdateBody::LifetimeUpdate(m) => m.crc(xfer),
+            UpdateBody::DeletionUpdate(m) => m.crc(xfer),
+            UpdateBody::BaseRegenerateUpdate(m) => m.crc(xfer),
+            UpdateBody::SmartBombTargetHomingUpdate(m) => m.crc(xfer),
+// --- end p1w10-sonnet (update modules) ---
             UpdateBody::SpecialPowerCreate(m) => m.crc(xfer),
             UpdateBody::SupplyCenterCreate(m) => m.crc(xfer),
             UpdateBody::SupplyWarehouseCreate(m) => m.crc(xfer),
@@ -317,6 +363,12 @@ impl Snapshot for UpdateBody {
             UpdateBody::GrantScienceUpgrade(m) => m.xfer(xfer),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.xfer(xfer),
+// --- p1w10-sonnet (update modules) ---
+            UpdateBody::LifetimeUpdate(m) => m.xfer(xfer),
+            UpdateBody::DeletionUpdate(m) => m.xfer(xfer),
+            UpdateBody::BaseRegenerateUpdate(m) => m.xfer(xfer),
+            UpdateBody::SmartBombTargetHomingUpdate(m) => m.xfer(xfer),
+// --- end p1w10-sonnet (update modules) ---
             UpdateBody::SpecialPowerCreate(m) => m.xfer(xfer),
             UpdateBody::SupplyCenterCreate(m) => m.xfer(xfer),
             UpdateBody::SupplyWarehouseCreate(m) => m.xfer(xfer),
@@ -346,6 +398,12 @@ impl Snapshot for UpdateBody {
             UpdateBody::GrantScienceUpgrade(m) => m.load_post_process(),
 // --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.load_post_process(),
+// --- p1w10-sonnet (update modules) ---
+            UpdateBody::LifetimeUpdate(m) => m.load_post_process(),
+            UpdateBody::DeletionUpdate(m) => m.load_post_process(),
+            UpdateBody::BaseRegenerateUpdate(m) => m.load_post_process(),
+            UpdateBody::SmartBombTargetHomingUpdate(m) => m.load_post_process(),
+// --- end p1w10-sonnet (update modules) ---
             UpdateBody::SpecialPowerCreate(m) => m.load_post_process(),
             UpdateBody::SupplyCenterCreate(m) => m.load_post_process(),
             UpdateBody::SupplyWarehouseCreate(m) => m.load_post_process(),
@@ -484,3 +542,20 @@ pub fn probe_object(id: ObjectId, specs: &[ProbeModuleSpec]) -> Object {
     }
     obj
 }
+
+// --- p1w10-sonnet ---
+impl UpdateBody {
+    /// The part of a module's constructor that needs the world (a random draw, a wake call, a read of the global data), which
+    /// the world runs once the module is part of its object, in module order (`World::construct_module`). Nothing for a module
+    /// whose constructor touches no world.
+    pub fn construct(&mut self, world: &mut World, me: ModuleHandle) {
+        match self {
+            UpdateBody::LifetimeUpdate(m) => m.world_construct(world, me),
+            UpdateBody::DeletionUpdate(m) => m.world_construct(world, me),
+            UpdateBody::BaseRegenerateUpdate(m) => m.world_construct(world, me),
+            UpdateBody::SmartBombTargetHomingUpdate(m) => m.world_construct(world, me),
+            _ => {}
+        }
+    }
+}
+// --- end p1w10-sonnet ---

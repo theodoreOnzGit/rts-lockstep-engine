@@ -33,6 +33,11 @@ use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::update_module::{
     update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER,
 };
+// --- p1w10-sonnet ---
+use crate::logic::world::game_logic::World;
+use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+use crate::logic::world::sleepy::UpdateHandle;
+// --- end p1w10-sonnet ---
 use crate::logic::modules::UpdateHost;
 
 /// `class DeletionUpdateModuleData : public UpdateModuleData`.
@@ -111,14 +116,28 @@ impl DeletionUpdate {
         host: &mut impl UpdateHost,
         rng: &mut RandomValues,
     ) -> IniResult<Self> {
+        let mut me = DeletionUpdate::unconstructed(object, module_data)?;
+        me.construct(host, rng);
+        Ok(me)
+    }
+
+    // --- p1w10-sonnet ---
+    /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data).
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<DeletionUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        let mut me = DeletionUpdate { update, data: data.clone(), die_frame: 0 };
-        let delay = me.calc_sleep_delay(host, rng, data.min_frames, data.max_frames);
-        host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), update_sleep(delay)));
-        Ok(me)
+        Ok(DeletionUpdate { update, data, die_frame: 0 })
     }
+
+    /// The second half of the constructor: draws the lifetime, then `setWakeFrame`. The world runs it once the module is part
+    /// of its object.
+    pub fn construct(&mut self, host: &mut impl UpdateHost, rng: &mut RandomValues) {
+        let data = self.data.clone();
+        let delay = self.calc_sleep_delay(host, rng, data.min_frames, data.max_frames);
+        host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), update_sleep(delay)));
+    }
+    // --- end p1w10-sonnet ---
 
     /// `setLifetimeRange(minFrames, maxFrames)`: a new random lifetime, then
     /// `setWakeFrame`.
@@ -176,3 +195,78 @@ impl Snapshot for DeletionUpdate {
         self.update.load_post_process();
     }
 }
+
+// --- p1w10-sonnet ---
+impl PartialEq for DeletionUpdate {
+    /// The same state: the same data object (upstream compares pointers) and the same `m_dieFrame`. (`UpdateBody` is compared in tests.)
+    fn eq(&self, other: &Self) -> bool {
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.die_frame == other.die_frame
+    }
+}
+
+/// The factory's `NewModuleDataProc` for `DeletionUpdate`.
+pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::DeletionUpdate(Arc::new(DeletionUpdateModuleData::friend_new_module_data(ini)?)))
+}
+
+impl DeletionUpdate {
+    /// `update()` as the scheduler runs it: this module is the running one for the host calls, and it is lent to its slot for the
+    /// duration, so that a call that reaches it from inside (`destroyObject` runs `onDelete` on every module of the object, this
+    /// one included) is delivered at once on its live state, as upstream's plain recursion delivers it.
+    pub fn world_update(&mut self, world: &mut World, me: UpdateHandle) -> UpdateSleepTime {
+        let Some(h) = world.module_handle_of_update(me) else {
+            return self.update(world);
+        };
+        let lent = crate::logic::world::update_body::UpdateBody::DeletionUpdate(self.clone());
+        let (r, back) = world.lend_body(h, lent, |w| w.in_update_module(me, |w| self.update(w)));
+        if let Some(crate::logic::world::update_body::UpdateBody::DeletionUpdate(b)) = back {
+            *self = b;
+        }
+        r
+    }
+
+    /// The constructor's second half, run by the world once the module is part of its object.
+    pub fn world_construct(&mut self, world: &mut World, _me: ModuleHandle) {
+        let mut rng = std::mem::take(&mut world.random);
+        self.construct(world, &mut rng);
+        world.random = rng;
+    }
+
+    /// The module's answer to one of `Object`'s calls.
+    pub fn module_call(&mut self, world: &mut World, _me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+        match call {
+            ModuleCall::SetLifetimeRange { min_frames, max_frames } => {
+                let mut rng = std::mem::take(&mut world.random);
+                self.set_lifetime_range(world, &mut rng, min_frames, max_frames);
+                world.random = rng;
+                ModuleReply::Done
+            }
+            _ => ModuleReply::Unhandled,
+        }
+    }
+
+    /// The fields after the base: `m_dieFrame`.
+    fn xfer_fields(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        xfer.xfer_unsigned_int(&mut self.die_frame)
+    }
+
+    /// `xfer` with the scheduling half the slot holds (the live `UpdateModule`): the version, that half, then the fields.
+    pub fn xfer_with(&mut self, update: &mut UpdateModule, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        xfer.xfer_version(&mut version, current)?;
+        update.xfer(xfer)?;
+        self.xfer_fields(xfer)
+    }
+
+    /// `crc` with the scheduling half the slot holds.
+    pub fn crc_with(&mut self, update: &mut UpdateModule, xfer: &mut dyn Xfer) -> XferResult<()> {
+        update.crc(xfer)
+    }
+
+    /// `loadPostProcess` with the scheduling half the slot holds.
+    pub fn load_post_process_with(&mut self, update: &mut UpdateModule) {
+        update.load_post_process();
+    }
+}
+// --- end p1w10-sonnet ---

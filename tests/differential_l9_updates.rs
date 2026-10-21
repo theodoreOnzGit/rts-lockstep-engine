@@ -201,10 +201,10 @@ impl BaseRegenHost for RegenHost {
     fn is_sold(&self) -> bool {
         self.sold
     }
-    fn max_health(&self) -> f32 {
+    fn max_health(&mut self) -> f32 {
         self.max
     }
-    fn health(&self) -> f32 {
+    fn health(&mut self) -> f32 {
         self.health
     }
     fn attempt_healing(&mut self, amount: f32) {
@@ -689,7 +689,7 @@ impl UpdateHost for SmartHost {
 }
 
 impl SmartBombHost for SmartHost {
-    fn is_significantly_above_terrain(&self) -> bool {
+    fn is_significantly_above_terrain(&mut self) -> bool {
         self.above
     }
     fn position(&self) -> Coord3D {

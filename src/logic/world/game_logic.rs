@@ -163,6 +163,11 @@ pub struct World {
     /// keys at run time, so it is not one of the statics).
     pub names: crate::common::name_key_generator::NameKeyGenerator,
     // --- end p1l9-example ---
+    // --- p1w10-sonnet ---
+    /// The game-logic random generators (`GameLogicRandomValue`, ..., file-static in `RandomValue.cpp`): the draws of module
+    /// constructors and of gameplay. Seeded by `init_game_logic_random` at the start of a game.
+    pub random: crate::common::random_value::RandomValues,
+    // --- end p1w10-sonnet ---
     /// `m_frame`.
     frame: u32,
     /// `m_nextObjID`.
@@ -209,6 +214,9 @@ impl World {
             statics: std::sync::Arc::new(crate::logic::world::statics::GameStatics::new()),
             names: crate::common::name_key_generator::NameKeyGenerator::new(),
             // --- end p1l9-example ---
+            // --- p1w10-sonnet ---
+            random: crate::common::random_value::RandomValues::default(),
+            // --- end p1w10-sonnet ---
             frame: 0,
             next_object_id: 1,
             objects_to_destroy: Vec::new(),

@@ -33,12 +33,17 @@ use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::update_module::{
     SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE,
 };
+// --- p1w10-sonnet ---
+use crate::logic::world::game_logic::World;
+use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+use crate::logic::world::sleepy::UpdateHandle;
+// --- end p1w10-sonnet ---
 use crate::logic::modules::UpdateHost;
 
 /// The calls the module makes on its object, besides [`UpdateHost`]'s.
 pub trait SmartBombHost: UpdateHost {
     /// `getObject()->isSignificantlyAboveTerrain()`.
-    fn is_significantly_above_terrain(&self) -> bool;
+    fn is_significantly_above_terrain(&mut self) -> bool;
     /// `getObject()->getPosition()`.
     fn position(&self) -> Coord3D;
     /// `getObject()->setPosition(&pos)`.
@@ -113,12 +118,26 @@ impl SmartBombTargetHomingUpdate {
     /// `SmartBombTargetHomingUpdate(thing, moduleData)`: no target yet, due
     /// next frame. `INI_INVALID_DATA` for null data.
     pub fn new(object: ObjectId, module_data: Option<Arc<SmartBombTargetHomingUpdateModuleData>>, host: &mut impl UpdateHost) -> IniResult<Self> {
+        let mut me = SmartBombTargetHomingUpdate::unconstructed(object, module_data)?;
+        me.construct(host);
+        Ok(me)
+    }
+
+    // --- p1w10-sonnet ---
+    /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data).
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<SmartBombTargetHomingUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), UPDATE_SLEEP_NONE));
         Ok(SmartBombTargetHomingUpdate { update, data, target_received: false, target: Coord3D::default() })
     }
+
+    /// The second half of the constructor: `setWakeFrame(UPDATE_SLEEP_NONE)`. The world runs it once the module is part of its
+    /// object.
+    pub fn construct(&mut self, host: &mut impl UpdateHost) {
+        host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), UPDATE_SLEEP_NONE));
+    }
+    // --- end p1w10-sonnet ---
 
     /// `SetTargetPosition(target)`: a target of length zero (or NaN) is
     /// refused; anything else is the target from now on.
@@ -190,3 +209,74 @@ impl Snapshot for SmartBombTargetHomingUpdate {
         self.update.load_post_process();
     }
 }
+
+// --- p1w10-sonnet ---
+impl PartialEq for SmartBombTargetHomingUpdate {
+    /// The same state: the same data object (upstream compares pointers), the target received and the target. (`UpdateBody` is compared in tests.)
+    fn eq(&self, other: &Self) -> bool {
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.target_received == other.target_received && self.target == other.target
+    }
+}
+
+/// The factory's `NewModuleDataProc` for `SmartBombTargetHomingUpdate`.
+pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::SmartBombTargetHomingUpdate(Arc::new(SmartBombTargetHomingUpdateModuleData::friend_new_module_data(ini)?)))
+}
+
+impl SmartBombTargetHomingUpdate {
+    /// `update()` as the scheduler runs it: this module is the running one for the host calls, and it is lent to its slot for the
+    /// duration, so that a call that reaches it from inside (`destroyObject` runs `onDelete` on every module of the object, this
+    /// one included) is delivered at once on its live state, as upstream's plain recursion delivers it.
+    pub fn world_update(&mut self, world: &mut World, me: UpdateHandle) -> UpdateSleepTime {
+        let Some(h) = world.module_handle_of_update(me) else {
+            return self.update(world);
+        };
+        let lent = crate::logic::world::update_body::UpdateBody::SmartBombTargetHomingUpdate(self.clone());
+        let (r, back) = world.lend_body(h, lent, |w| w.in_update_module(me, |w| self.update(w)));
+        if let Some(crate::logic::world::update_body::UpdateBody::SmartBombTargetHomingUpdate(b)) = back {
+            *self = b;
+        }
+        r
+    }
+
+    /// The constructor's second half, run by the world once the module is part of its object.
+    pub fn world_construct(&mut self, world: &mut World, _me: ModuleHandle) {
+        self.construct(world);
+    }
+
+    /// The module's answer to one of `Object`'s calls: `SetTargetPosition`.
+    pub fn module_call(&mut self, _world: &mut World, _me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+        match call {
+            ModuleCall::SetSmartBombTargetPosition(pos) => {
+                self.set_target_position(pos);
+                ModuleReply::Done
+            }
+            _ => ModuleReply::Unhandled,
+        }
+    }
+
+    /// The fields after the base: none (upstream saves only the base).
+    fn xfer_fields(&mut self, _xfer: &mut dyn Xfer) -> XferResult<()> {
+        Ok(())
+    }
+
+    /// `xfer` with the scheduling half the slot holds (the live `UpdateModule`): the version, that half, then the fields.
+    pub fn xfer_with(&mut self, update: &mut UpdateModule, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        xfer.xfer_version(&mut version, current)?;
+        update.xfer(xfer)?;
+        self.xfer_fields(xfer)
+    }
+
+    /// `crc` with the scheduling half the slot holds.
+    pub fn crc_with(&mut self, update: &mut UpdateModule, xfer: &mut dyn Xfer) -> XferResult<()> {
+        update.crc(xfer)
+    }
+
+    /// `loadPostProcess` with the scheduling half the slot holds.
+    pub fn load_post_process_with(&mut self, update: &mut UpdateModule) {
+        update.load_post_process();
+    }
+}
+// --- end p1w10-sonnet ---

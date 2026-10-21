@@ -329,6 +329,14 @@ pub enum ModuleDataKind {
     LockWeaponCreate(Arc<crate::logic::modules::lock_weapon_create::LockWeaponCreateModuleData>),
     /// `VeterancyGainCreateModuleData`.
     VeterancyGainCreate(Arc<crate::logic::modules::veterancy_gain_create::VeterancyGainCreateModuleData>),
+    /// `LifetimeUpdateModuleData`.
+    LifetimeUpdate(Arc<crate::logic::modules::lifetime_update::LifetimeUpdateModuleData>),
+    /// `DeletionUpdateModuleData`.
+    DeletionUpdate(Arc<crate::logic::modules::deletion_update::DeletionUpdateModuleData>),
+    /// `BaseRegenerateUpdateModuleData`.
+    BaseRegenerateUpdate(Arc<crate::logic::modules::base_regenerate_update::BaseRegenerateUpdateModuleData>),
+    /// `SmartBombTargetHomingUpdateModuleData`.
+    SmartBombTargetHomingUpdate(Arc<crate::logic::modules::smart_bomb_target_homing_update::SmartBombTargetHomingUpdateModuleData>),
     // --- end p1w10-sonnet ---
 }
 
@@ -363,6 +371,10 @@ impl ModuleDataKind {
             ModuleDataKind::GrantUpgradeCreate(d) => &d.create.behavior.module_data,
             ModuleDataKind::LockWeaponCreate(d) => &d.create.behavior.module_data,
             ModuleDataKind::VeterancyGainCreate(d) => &d.create.behavior.module_data,
+            ModuleDataKind::LifetimeUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::DeletionUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::BaseRegenerateUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::SmartBombTargetHomingUpdate(d) => &d.update.behavior.module_data,
             // --- end p1w10-sonnet ---
         }
     }
@@ -449,6 +461,34 @@ impl ModuleDataKind {
             ModuleDataKind::VeterancyGainCreate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.create.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::LifetimeUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::DeletionUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::BaseRegenerateUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::SmartBombTargetHomingUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
                     true
                 }
                 None => false,

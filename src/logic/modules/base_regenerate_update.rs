@@ -44,6 +44,11 @@ use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::update_module::{
     update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE,
 };
+// --- p1w10-sonnet ---
+use crate::logic::world::game_logic::World;
+use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+use crate::logic::world::sleepy::UpdateHandle;
+// --- end p1w10-sonnet ---
 use crate::logic::modules::UpdateHost;
 
 /// The calls `BaseRegenerateUpdate` makes on the global data, its object's
@@ -58,9 +63,9 @@ pub trait BaseRegenHost: UpdateHost {
     /// `getObject()->testStatus(OBJECT_STATUS_SOLD)`.
     fn is_sold(&self) -> bool;
     /// `getBodyModule()->getMaxHealth()`.
-    fn max_health(&self) -> f32;
+    fn max_health(&mut self) -> f32;
     /// `getBodyModule()->getHealth()`.
-    fn health(&self) -> f32;
+    fn health(&mut self) -> f32;
     /// `getObject()->attemptHealing(amount, getObject())`.
     fn attempt_healing(&mut self, amount: f32);
 }
@@ -115,14 +120,27 @@ impl BaseRegenerateUpdate {
     /// global rate is zero, else due next frame. `INI_INVALID_DATA` for null
     /// data.
     pub fn new(object: ObjectId, module_data: Option<Arc<BaseRegenerateUpdateModuleData>>, host: &mut impl BaseRegenHost) -> IniResult<Self> {
+        let mut me = BaseRegenerateUpdate::unconstructed(object, module_data)?;
+        me.construct(host);
+        Ok(me)
+    }
+
+    // --- p1w10-sonnet ---
+    /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data).
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<BaseRegenerateUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        let me = BaseRegenerateUpdate { update, data };
+        Ok(BaseRegenerateUpdate { update, data })
+    }
+
+    /// The second half of the constructor: `setWakeFrame` (forever when the global rate is zero, else every frame). The world
+    /// runs it once the module is part of its object.
+    pub fn construct(&mut self, host: &mut impl BaseRegenHost) {
         let wake = if host.base_regen_health_percent_per_second() == 0.0 { UPDATE_SLEEP_FOREVER } else { UPDATE_SLEEP_NONE };
         host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), wake));
-        Ok(me)
     }
+    // --- end p1w10-sonnet ---
 
     /// `onDamage(damageInfo)`: damage other than healing, with a rate, starts
     /// the delay before healing; anything else sleeps for ever. `damage_type`
@@ -181,3 +199,74 @@ impl Snapshot for BaseRegenerateUpdate {
         self.update.load_post_process();
     }
 }
+
+// --- p1w10-sonnet ---
+impl PartialEq for BaseRegenerateUpdate {
+    /// The same state: the same data object (upstream compares pointers). (`UpdateBody` is compared in tests.)
+    fn eq(&self, other: &Self) -> bool {
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
+    }
+}
+
+/// The factory's `NewModuleDataProc` for `BaseRegenerateUpdate`.
+pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::BaseRegenerateUpdate(Arc::new(BaseRegenerateUpdateModuleData::friend_new_module_data(ini)?)))
+}
+
+impl BaseRegenerateUpdate {
+    /// `update()` as the scheduler runs it: this module is the running one for the host calls, and it is lent to its slot for the
+    /// duration, so that a call that reaches it from inside (`destroyObject` runs `onDelete` on every module of the object, this
+    /// one included) is delivered at once on its live state, as upstream's plain recursion delivers it.
+    pub fn world_update(&mut self, world: &mut World, me: UpdateHandle) -> UpdateSleepTime {
+        let Some(h) = world.module_handle_of_update(me) else {
+            return self.update(world);
+        };
+        let lent = crate::logic::world::update_body::UpdateBody::BaseRegenerateUpdate(self.clone());
+        let (r, back) = world.lend_body(h, lent, |w| w.in_update_module(me, |w| self.update(w)));
+        if let Some(crate::logic::world::update_body::UpdateBody::BaseRegenerateUpdate(b)) = back {
+            *self = b;
+        }
+        r
+    }
+
+    /// The constructor's second half, run by the world once the module is part of its object.
+    pub fn world_construct(&mut self, world: &mut World, _me: ModuleHandle) {
+        self.construct(world);
+    }
+
+    /// The module's answer to one of `Object`'s calls: `onDamage` of the damage interface.
+    pub fn module_call(&mut self, world: &mut World, _me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+        match call {
+            ModuleCall::OnDamage(info) => {
+                self.on_damage(world, info.input.damage_type);
+                ModuleReply::Done
+            }
+            _ => ModuleReply::Unhandled,
+        }
+    }
+
+    /// The fields after the base: none.
+    fn xfer_fields(&mut self, _xfer: &mut dyn Xfer) -> XferResult<()> {
+        Ok(())
+    }
+
+    /// `xfer` with the scheduling half the slot holds (the live `UpdateModule`): the version, that half, then the fields.
+    pub fn xfer_with(&mut self, update: &mut UpdateModule, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        xfer.xfer_version(&mut version, current)?;
+        update.xfer(xfer)?;
+        self.xfer_fields(xfer)
+    }
+
+    /// `crc` with the scheduling half the slot holds.
+    pub fn crc_with(&mut self, update: &mut UpdateModule, xfer: &mut dyn Xfer) -> XferResult<()> {
+        update.crc(xfer)
+    }
+
+    /// `loadPostProcess` with the scheduling half the slot holds.
+    pub fn load_post_process_with(&mut self, update: &mut UpdateModule) {
+        update.load_post_process();
+    }
+}
+// --- end p1w10-sonnet ---

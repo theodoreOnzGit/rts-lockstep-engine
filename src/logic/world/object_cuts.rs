@@ -216,6 +216,14 @@ pub struct ObjectGlobals {
     pub max_tunnel_capacity: i32,
     /// `TheScriptEngine->getObjectsShouldReceiveDifficultyBonus()`.
     pub objects_should_receive_difficulty_bonus: bool,
+    // --- p1w10-sonnet ---
+    /// `TheGameLogic->getHulkMaxLifetimeOverride()` (-1: none; set by the script action).
+    pub hulk_max_lifetime_override: i32,
+    /// `TheGlobalData->m_baseRegenHealthPercentPerSecond` (`BaseRegenerateUpdate`).
+    pub base_regen_health_percent_per_second: f32,
+    /// `TheGlobalData->m_baseRegenDelay` (frames).
+    pub base_regen_delay: u32,
+    // --- end p1w10-sonnet ---
 }
 
 impl Default for ObjectGlobals {
@@ -231,6 +239,11 @@ impl Default for ObjectGlobals {
             draw_icon_ui: true,
             max_tunnel_capacity: 0,
             objects_should_receive_difficulty_bonus: false,
+            // --- p1w10-sonnet ---
+            hulk_max_lifetime_override: -1,
+            base_regen_health_percent_per_second: 0.0,
+            base_regen_delay: 0,
+            // --- end p1w10-sonnet ---
         }
     }
 }

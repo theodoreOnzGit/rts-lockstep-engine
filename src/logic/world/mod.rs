@@ -50,6 +50,7 @@ pub mod player_xfer;
 pub mod player_ops;
 pub mod build_assistant;
 pub mod create_host_world;
+pub mod update_host_world;
 // --- end p1w10-sonnet ---
 pub mod sleepy;
 pub mod team;

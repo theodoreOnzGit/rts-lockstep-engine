@@ -20,7 +20,9 @@
 use crate::common::ini::IniResult;
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::logic::world::object_create::NewModule;
+use crate::common::module::MODULEINTERFACE_DAMAGE;
 use crate::logic::module::create_module::CreateModule;
+use crate::logic::module::update_module::UpdateModule;
 use crate::logic::world::update_body::UpdateBody;
 
 pub mod upgrade_body;
@@ -63,6 +65,16 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         m.body = Some(body?);
         Ok(m)
     };
+    // --- p1w10-sonnet ---
+    let made_update = |interfaces: i32, made: IniResult<(UpdateModule, UpdateBody)>| -> IniResult<NewModule> {
+        let (update, body) = made?;
+        let mut m = NewModule::plain(name, tag);
+        m.interfaces = interfaces;
+        m.update = Some(update);
+        m.body = Some(body);
+        Ok(m)
+    };
+    // --- end p1w10-sonnet ---
     match data {
         // --- p1l9-example ---
         ModuleDataKind::CommandSetUpgrade(d) => Some(made(
@@ -130,6 +142,26 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::VeterancyGainCreate(d) => Some(made(
             CreateModule::get_interface_mask(),
             veterancy_gain_create::VeterancyGainCreate::new(object, Some(d.clone())).map(UpdateBody::VeterancyGainCreate),
+        )),
+        ModuleDataKind::LifetimeUpdate(d) => Some(made_update(
+            UpdateModule::get_interface_mask(),
+            lifetime_update::LifetimeUpdate::unconstructed(object, Some(d.clone()))
+                .map(|m| (m.update_module().clone(), UpdateBody::LifetimeUpdate(m))),
+        )),
+        ModuleDataKind::DeletionUpdate(d) => Some(made_update(
+            UpdateModule::get_interface_mask(),
+            deletion_update::DeletionUpdate::unconstructed(object, Some(d.clone()))
+                .map(|m| (m.update_module().clone(), UpdateBody::DeletionUpdate(m))),
+        )),
+        ModuleDataKind::BaseRegenerateUpdate(d) => Some(made_update(
+            UpdateModule::get_interface_mask() | MODULEINTERFACE_DAMAGE,
+            base_regenerate_update::BaseRegenerateUpdate::unconstructed(object, Some(d.clone()))
+                .map(|m| (m.update_module().clone(), UpdateBody::BaseRegenerateUpdate(m))),
+        )),
+        ModuleDataKind::SmartBombTargetHomingUpdate(d) => Some(made_update(
+            UpdateModule::get_interface_mask(),
+            smart_bomb_target_homing_update::SmartBombTargetHomingUpdate::unconstructed(object, Some(d.clone()))
+                .map(|m| (m.update_module().clone(), UpdateBody::SmartBombTargetHomingUpdate(m))),
         )),
         // the four create modules whose data is `CreateModuleData` itself are told apart by their name
         ModuleDataKind::Create(d) => match name {

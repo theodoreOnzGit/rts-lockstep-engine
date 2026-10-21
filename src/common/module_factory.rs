@@ -462,6 +462,26 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::grant_upgrade_create::new_module_data),
             which_interfaces: Some(crate::logic::module::create_module::CreateModule::get_interface_mask()),
         }),
+        "LifetimeUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::lifetime_update::new_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        "DeletionUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::deletion_update::new_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        "BaseRegenerateUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::base_regenerate_update::new_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask() | crate::common::module::MODULEINTERFACE_DAMAGE),
+        }),
+        "SmartBombTargetHomingUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::smart_bomb_target_homing_update::new_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
         // --- end p1w10-sonnet ---
         _ => None,
     }
@@ -480,6 +500,24 @@ fn new_create_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         _ => None,
     };
     Ok(Module::Create(crate::logic::module::create_module::CreateModule::new(object, base)?))
+}
+
+/// The `NewModuleProc` of a translated update module: its `UpdateModule` base, made from the `UpdateModuleData` base of its
+/// data (all four are `PHASE_NORMAL`). The concrete module is made for an object by `logic::modules::new_module`.
+fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module, IniError> {
+    let base = match data {
+        Some(ModuleDataKind::Update(d)) => Some(d),
+        Some(ModuleDataKind::LifetimeUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::DeletionUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::BaseRegenerateUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::SmartBombTargetHomingUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        _ => None,
+    };
+    Ok(Module::Update(crate::logic::module::update_module::UpdateModule::new(
+        object,
+        base,
+        crate::logic::module::update_module::SleepyUpdatePhase::Normal,
+    )?))
 }
 // --- end p1w10-sonnet ---
 

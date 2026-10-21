@@ -327,6 +327,9 @@ impl ProbeModule {
             // --- p1w10-sonnet ---
             | ModuleCall::OnBuildComplete
             | ModuleCall::OnSpecialPowerCreation
+            | ModuleCall::OnDamage(_)
+            | ModuleCall::SetLifetimeRange { .. }
+            | ModuleCall::SetSmartBombTargetPosition(_)
             // --- end p1w10-sonnet ---
             | ModuleCall::OnDestroy
             | ModuleCall::OnDie(_)
