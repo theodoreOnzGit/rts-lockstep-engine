@@ -106,6 +106,9 @@ pub mod checkpoint_update;
 pub mod flammable_update;
 pub mod ocl_update;
 // --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
+pub mod height_die_update;
+// --- end p1w13-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
 /// `TheModuleFactory->newModule(thing, name, data, type)`), with its tag.
@@ -375,6 +378,12 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
             ocl_update::OclUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::OclUpdate(m))),
         )),
         // --- end p1w12-sonnet ---
+        // --- p1w13-sonnet ---
+        ModuleDataKind::HeightDieUpdate(d) => Some(made_update(
+            UpdateModule::get_interface_mask(),
+            height_die_update::HeightDieUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::HeightDieUpdate(m))),
+        )),
+        // --- end p1w13-sonnet ---
         _ => None,
     }
 }

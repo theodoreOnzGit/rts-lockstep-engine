@@ -664,6 +664,13 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
         }),
         // --- end p1w12-sonnet ---
+        // --- p1w13-sonnet ---
+        "HeightDieUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::height_die_update::new_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        // --- end p1w13-sonnet ---
         _ => None,
     }
 }
@@ -705,6 +712,9 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::FlammableUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::OclUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         // --- end p1w12-sonnet ---
+        // --- p1w13-sonnet ---
+        Some(ModuleDataKind::HeightDieUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        // --- end p1w13-sonnet ---
         _ => None,
     };
     Ok(Module::Update(crate::logic::module::update_module::UpdateModule::new(

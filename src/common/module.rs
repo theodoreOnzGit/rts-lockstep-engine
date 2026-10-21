@@ -391,6 +391,10 @@ pub enum ModuleDataKind {
     /// `OclUpdateModuleData`.
     OclUpdate(Arc<crate::logic::modules::ocl_update::OclUpdateModuleData>),
     // --- end p1w12-sonnet ---
+    // --- p1w13-sonnet ---
+    /// `HeightDieUpdateModuleData`.
+    HeightDieUpdate(Arc<crate::logic::modules::height_die_update::HeightDieUpdateModuleData>),
+    // --- end p1w13-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
     /// `GrantUpgradeCreateModuleData`.
@@ -476,6 +480,9 @@ impl ModuleDataKind {
             ModuleDataKind::FlammableUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::OclUpdate(d) => &d.update.behavior.module_data,
             // --- end p1w12-sonnet ---
+            // --- p1w13-sonnet ---
+            ModuleDataKind::HeightDieUpdate(d) => &d.update.behavior.module_data,
+            // --- end p1w13-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
             ModuleDataKind::GrantUpgradeCreate(d) => &d.create.behavior.module_data,
@@ -750,6 +757,15 @@ impl ModuleDataKind {
                 None => false,
             },
             // --- end p1w12-sonnet ---
+            // --- p1w13-sonnet ---
+            ModuleDataKind::HeightDieUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            // --- end p1w13-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
             ModuleDataKind::GrantUpgradeCreate(d) => match Arc::get_mut(d) {

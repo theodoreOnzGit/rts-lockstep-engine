@@ -26,6 +26,7 @@ public:
 	void removeAudioEvent( UnsignedInt audioEvent );   /* p1w12-sonnet, update batch N (differential/l9_flammable_n.inc) */
 	const class MiscAudio *getMiscAudio( void ) const;   /* the crates (differential/l9_crates_f.inc) */
 	/* --- end p1w11-sonnet --- */
+	const AudioEventRTS *getValidSilentAudioEvent() const;   /* p1w13-sonnet: PhysicsUpdate.h's inline getBounceSound names it (HeightDieUpdate.cpp includes the header); never called */
 };
 extern AudioManager *TheAudio;
 #endif

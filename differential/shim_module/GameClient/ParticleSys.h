@@ -25,6 +25,7 @@ public:
 	ParticleSystemTemplate *findTemplate( const AsciiString &name ) const;
 	ParticleSystem *createParticleSystem( const ParticleSystemTemplate *sysTemplate, Bool createSlaves = TRUE );
 	void destroyParticleSystemByID( ParticleSystemID id );
+	void destroyAttachedSystems( class Object *obj );   /* p1w13-sonnet, update batch O: differential/l9_height_die_o.inc */
 };
 extern ParticleSystemManager *TheParticleSystemManager;
 #endif

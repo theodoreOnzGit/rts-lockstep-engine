@@ -42,6 +42,14 @@ public:
 	~MemoryPoolObjectHolder() { m_mpo->deleteInstance(); }
 };
 /* --- end p1w12-sonnet --- */
+/* --- p1w13-sonnet --- (update batch O: HeightDieUpdate's scan for structures under it) */
+#include "Common/KindOf.h"
+class PartitionFilterAcceptByKindOf : public PartitionFilter
+{
+public:
+	PartitionFilterAcceptByKindOf(const KindOfMaskType& mustBeSet, const KindOfMaskType& mustBeClear) {}
+};
+/* --- end p1w13-sonnet --- */
 class PartitionManager
 {
 public:
@@ -49,6 +57,9 @@ public:
 	/* --- p1w12-sonnet --- */
 	SimpleObjectIterator *iterateObjectsInRange( const Coord3D *pos, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = 0, IterOrderType order = ITER_FASTEST );
 	/* --- end p1w12-sonnet --- */
+	/* --- p1w13-sonnet --- */
+	SimpleObjectIterator *iterateObjectsInRange( const Object *obj, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = 0, IterOrderType order = ITER_FASTEST );
+	/* --- end p1w13-sonnet --- */
 };
 extern PartitionManager *ThePartitionManager;
 #endif

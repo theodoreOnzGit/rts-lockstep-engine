@@ -59,6 +59,9 @@ class Team;
 #include "Common/DisabledTypes.h"
 #include "Common/ThingTemplate.h"
 /* --- end p1w12-sonnet --- */
+/* --- p1w13-sonnet --- */
+#include "GameLogic/Damage.h"
+/* --- end p1w13-sonnet --- */
 /* --- p1w12-sonnet --- (Common/STLTypedefs.h lines 88-89, verbatim) */
 #include <list>
 #include "Common/Geometry.h"
@@ -197,6 +200,12 @@ public:
 	unsigned m_disabledBits;
 	ThingTemplate m_tmpl;
 	/* --- end p1w12-sonnet --- */
+	/* --- p1w13-sonnet --- (update batch O: HeightDieUpdate asks what contains the object, and kills it; differential/l9_height_die_o.inc) */
+	Object *getContainedBy() { return m_containedBy; }
+	const Object *getContainedBy() const { return m_containedBy; }
+	void kill( DamageType damageType = DAMAGE_UNRESISTABLE, DeathType deathType = DEATH_NORMAL );
+	Object *m_containedBy = 0;
+	/* --- end p1w13-sonnet --- */
 protected:
 	virtual Object *asObjectMeth() { return this; }
 	virtual const Object *asObjectMeth() const { return this; }

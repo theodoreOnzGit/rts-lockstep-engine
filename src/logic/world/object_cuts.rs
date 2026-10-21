@@ -148,6 +148,45 @@ impl World {
     }
 }
 // --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
+/// The cell of the cut-point terrain tables a position falls in: an integer hash of the bits of (x, y), so that both sides of a differential test
+/// (which share no terrain) answer alike. (A stand-in only until the layer-12 adapter answers from the real terrain.)
+pub fn terrain_cell(x: f32, y: f32) -> usize {
+    ((x.to_bits() ^ y.to_bits().rotate_left(13)).wrapping_mul(2_654_435_761) >> 28) as usize & 7
+}
+
+impl World {
+    /// `TheTerrainLogic->getGroundHeight(x, y)`.
+    pub fn terrain_get_ground_height(&mut self, x: f32, y: f32) -> f32 {
+        self.cut(CutCall::TerrainGetGroundHeight { x, y });
+        self.cuts.terrain_ground[terrain_cell(x, y)]
+    }
+
+    /// `TheTerrainLogic->getHighestLayerForDestination(pos)`.
+    pub fn terrain_get_highest_layer_for_destination(&mut self, pos: &crate::common::base_type::Coord3D) -> crate::common::game_type::PathfindLayer {
+        self.cut(CutCall::TerrainGetHighestLayerForDestination { x: pos.x, y: pos.y, z: pos.z });
+        self.cuts.terrain_layer[terrain_cell(pos.x, pos.y)]
+    }
+
+    /// `TheTerrainLogic->getLayerHeight(x, y, layer)`.
+    pub fn terrain_get_layer_height(&mut self, x: f32, y: f32, layer: crate::common::game_type::PathfindLayer) -> f32 {
+        self.cut(CutCall::TerrainGetLayerHeight { x, y, layer });
+        self.cuts.terrain_layer_height[terrain_cell(x, y)]
+    }
+
+    /// `ThePartitionManager->iterateObjectsInRange(object, range, FROM_BOUNDINGSPHERE_3D, { PartitionFilterAcceptByKindOf(STRUCTURE) })`: the objects, in
+    /// iteration order.
+    pub fn partition_iterate_structures_in_range(&mut self, object: ObjectId, range: f32) -> Vec<ObjectId> {
+        self.cut(CutCall::PartitionIterateStructuresInRange { object, range });
+        self.cuts.range_scan.clone()
+    }
+
+    /// `TheParticleSystemManager->destroyAttachedSystems(obj)`.
+    pub fn particle_destroy_attached_systems(&mut self, object: ObjectId) {
+        self.cut(CutCall::ParticleDestroyAttachedSystems { object });
+    }
+}
+// --- end p1w13-sonnet ---
 
 /// What `Object` does to a unit that is not translated. See the module docs.
 #[derive(Clone, Debug, PartialEq)]
@@ -249,6 +288,19 @@ pub enum CutCall {
     /// name that is no list makes nothing.
     OclCreateAt { primary: ObjectId, ocl: Vec<u8>, primary_pos: crate::common::base_type::Coord3D, secondary_pos: crate::common::base_type::Coord3D, angle: f32 },
     // --- end p1w12-sonnet ---
+    // --- p1w13-sonnet ---
+    /// `TheTerrainLogic->getGroundHeight(x, y)` (`HeightDieUpdate`); `ObjectCuts::terrain_ground` answers.
+    TerrainGetGroundHeight { x: f32, y: f32 },
+    /// `TheTerrainLogic->getHighestLayerForDestination(pos)` (`HeightDieUpdate`); `ObjectCuts::terrain_layer` answers.
+    TerrainGetHighestLayerForDestination { x: f32, y: f32, z: f32 },
+    /// `TheTerrainLogic->getLayerHeight(x, y, layer)` (`HeightDieUpdate`); `ObjectCuts::terrain_layer_height` answers.
+    TerrainGetLayerHeight { x: f32, y: f32, layer: i32 },
+    /// `ThePartitionManager->iterateObjectsInRange(obj, range, FROM_BOUNDINGSPHERE_3D, { AcceptByKindOf(STRUCTURE) })` (`HeightDieUpdate`);
+    /// `ObjectCuts::range_scan` answers.
+    PartitionIterateStructuresInRange { object: ObjectId, range: f32 },
+    /// `TheParticleSystemManager->destroyAttachedSystems(obj)` (`HeightDieUpdate`).
+    ParticleDestroyAttachedSystems { object: ObjectId },
+    // --- end p1w13-sonnet ---
     // ---- Team ----
     /// `team->notifyTeamOfObjectDeath()`.
     TeamNotifyTeamOfObjectDeath { team: TeamId },
@@ -531,6 +583,14 @@ pub struct ObjectCuts {
     /// `ParticleSystemManager::m_uniqueSystemID`: the id of the last system made (ids run 1, 2, 3, ...).
     pub last_particle_system_id: u32,
     // --- end p1w12-sonnet ---
+    // --- p1w13-sonnet ---
+    /// The ground height `TheTerrainLogic->getGroundHeight(x, y)` answers, by [`terrain_cell`] of (x, y), until the layer-12 adapter plugs the terrain in.
+    pub terrain_ground: [f32; 8],
+    /// The layer `getHighestLayerForDestination(pos)` answers, by [`terrain_cell`] of (x, y).
+    pub terrain_layer: [i32; 8],
+    /// The height `getLayerHeight(x, y, layer)` answers, by [`terrain_cell`] of (x, y).
+    pub terrain_layer_height: [f32; 8],
+    // --- end p1w13-sonnet ---
     /// `ai->getWhichTurretForWeaponSlot(slot)` != `TURRET_INVALID`: (object, slot) -> turret.
     pub ai_turrets: BTreeMap<(ObjectId, i32), i32>,
     /// `ai->isTurretEnabled(turret)` is false for these (object, turret).
@@ -610,6 +670,11 @@ impl Default for ObjectCuts {
             player_object_list: BTreeMap::new(),
             last_particle_system_id: 0,
             // --- end p1w12-sonnet ---
+            // --- p1w13-sonnet ---
+            terrain_ground: [0.0; 8],
+            terrain_layer: [crate::common::game_type::LAYER_GROUND; 8],
+            terrain_layer_height: [0.0; 8],
+            // --- end p1w13-sonnet ---
             ai_turrets: BTreeMap::new(),
             ai_turrets_disabled: BTreeSet::new(),
             dozer_ais: BTreeSet::new(),

@@ -199,6 +199,10 @@ pub enum UpdateBody {
     /// `OclUpdate`.
     OclUpdate(crate::logic::modules::ocl_update::OclUpdate),
     // --- end p1w12-sonnet ---
+    // --- p1w13-sonnet ---
+    /// `HeightDieUpdate`.
+    HeightDieUpdate(crate::logic::modules::height_die_update::HeightDieUpdate),
+    // --- end p1w13-sonnet ---
     // New variants go here, one per translated module.
 }
 
@@ -287,6 +291,9 @@ impl UpdateBody {
             UpdateBody::FlammableUpdate(m) => m.world_update(world, me),
             UpdateBody::OclUpdate(m) => m.world_update(world, me),
 // --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
+            UpdateBody::HeightDieUpdate(m) => m.world_update(world, me),
+// --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -375,6 +382,9 @@ impl UpdateBody {
             UpdateBody::FlammableUpdate(m) => m.module_call(world, me, call),
             UpdateBody::OclUpdate(m) => m.module_call(world, me, call),
 // --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
+            UpdateBody::HeightDieUpdate(m) => m.module_call(world, me, call),
+// --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -458,6 +468,9 @@ impl UpdateBody {
             UpdateBody::FlammableUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::OclUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
 // --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
+            UpdateBody::HeightDieUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+// --- end p1w13-sonnet ---
             _ => self.xfer(xfer),
         }
     }
@@ -523,6 +536,9 @@ impl UpdateBody {
             UpdateBody::FlammableUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::OclUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
 // --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
+            UpdateBody::HeightDieUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+// --- end p1w13-sonnet ---
             _ => self.crc(xfer),
         }
     }
@@ -588,6 +604,9 @@ impl UpdateBody {
             UpdateBody::FlammableUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::OclUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
 // --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
+            UpdateBody::HeightDieUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+// --- end p1w13-sonnet ---
             _ => self.load_post_process(),
         }
     }
@@ -676,6 +695,9 @@ impl Snapshot for UpdateBody {
             UpdateBody::FlammableUpdate(m) => m.crc(xfer),
             UpdateBody::OclUpdate(m) => m.crc(xfer),
 // --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
+            UpdateBody::HeightDieUpdate(m) => m.crc(xfer),
+// --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -760,6 +782,9 @@ impl Snapshot for UpdateBody {
             UpdateBody::FlammableUpdate(m) => m.xfer(xfer),
             UpdateBody::OclUpdate(m) => m.xfer(xfer),
 // --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
+            UpdateBody::HeightDieUpdate(m) => m.xfer(xfer),
+// --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -844,6 +869,9 @@ impl Snapshot for UpdateBody {
             UpdateBody::FlammableUpdate(m) => m.load_post_process(),
             UpdateBody::OclUpdate(m) => m.load_post_process(),
 // --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
+            UpdateBody::HeightDieUpdate(m) => m.load_post_process(),
+// --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -1013,6 +1041,9 @@ impl UpdateBody {
             UpdateBody::FlammableUpdate(m) => m.world_construct(world, me),
             UpdateBody::OclUpdate(m) => m.world_construct(world, me),
 // --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
+            UpdateBody::HeightDieUpdate(m) => m.world_construct(world, me),
+// --- end p1w13-sonnet ---
             _ => {}
         }
     }
