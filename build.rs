@@ -2539,6 +2539,58 @@ mod differential {
                 println!("cargo:rerun-if-changed={p}");
             }
         }
+        // BuildAssistant.cpp (differential/wrap_build_assistant.cpp), p1w10-sonnet: the whole file, with ONE mechanical edit made in memory into
+        // OUT_DIR/build_assistant_gen/BuildAssistant_cut.cpp (upstream is never edited; the markers are asserted to occur once): the include
+        // block (PreRTS.h .. ParkingPlaceBehavior.h) is replaced by a comment, the wrapper including what the stand-ins need before it.
+        // BuildAssistant.h is unchanged. The world it reaches is stand-ins in differential/shim_buildassist, every class renamed by the wrapper.
+        {
+            fn once_at(text: &str, marker: &str) -> usize {
+                assert_eq!(text.matches(marker).count(), 1, "{marker:?} must occur once");
+                text.find(marker).expect("marker")
+            }
+            let ba_gen = out_dir.join("build_assistant_gen");
+            std::fs::create_dir_all(&ba_gen).expect("create build_assistant_gen");
+            let mut src = std::fs::read_to_string(up.join("GameEngine/Source/Common/System/BuildAssistant.cpp")).expect("read BuildAssistant.cpp");
+            let a = once_at(&src, "#include \"PreRTS.h\"");
+            let end = "#include \"GameLogic/Module/ParkingPlaceBehavior.h\"";
+            let b = once_at(&src, end) + end.len();
+            assert!(a < b);
+            src = format!("{}/* the include block of BuildAssistant.cpp is replaced by the includes of differential/wrap_build_assistant.cpp (build.rs) */{}", &src[..a], &src[b..]);
+            std::fs::write(ba_gen.join("BuildAssistant_cut.cpp"), src).expect("write BuildAssistant_cut.cpp");
+            let shim_ba = dif.join("shim_buildassist");
+            let shim_weapon = dif.join("shim_weapon");
+            let shim_armor = dif.join("shim_armor");
+            let mut bab = cc::Build::new();
+            base(&mut bab);
+            bab.compiler("clang++")
+                .flag("-fms-extensions")
+                .flag("-fdelayed-template-parsing")
+                .include(&ba_gen)
+                .include(&shim_ba)
+                .include(out_dir.join("team_gen"))
+                .include(&shim_weapon)
+                .include(&shim_armor)
+                .include(&flags_gen)
+                .include(dif.join("shim_flags"))
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .include(&dif)
+                .flag("-include")
+                .flag(shim_weapon.join("weapon_prelude.h").to_str().expect("UTF-8 path"))
+                .file(dif.join("wrap_build_assistant.cpp"));
+            bab.compile("upstream_build_assistant");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/Common/System/BuildAssistant.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/Common/BuildAssistant.h",
+                "differential/wrap_build_assistant.cpp",
+                "differential/shim_buildassist",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
         // --- end p1w10-sonnet ---
         // --- p1w2-terrain ---
         // TerrainTypes, MultiplayerSettings and CrateSystem with their INI

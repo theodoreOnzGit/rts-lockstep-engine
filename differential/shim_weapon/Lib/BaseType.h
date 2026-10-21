@@ -65,7 +65,9 @@ inline Real deg2rad(Real rad) { return rad * (PI/180); }
 #define BitToggle( x, i ) ( (x) ^= (i) )
 
 struct RealRange { Real lo, hi; };
-struct Coord2D { Real x, y; };
+/* --- p1w10-sonnet --- (BuildAssistant: iterateFootprint calls Coord2D::length, BaseType.h line 275, verbatim) */
+struct Coord2D { Real x, y; Real length( void ) const { return (Real)sqrt( x*x + y*y ); } };
+/* --- end p1w10-sonnet --- */
 struct ICoord2D { Int x, y; };
 struct Region2D { Coord2D lo, hi; };
 struct IRegion2D { ICoord2D lo, hi; };
