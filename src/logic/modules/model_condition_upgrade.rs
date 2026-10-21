@@ -36,8 +36,8 @@ use crate::common::model_state::{ModelConditionFlagType, ModelConditionFlags, MO
 /// `ModelConditionUpgrade::upgradeImplementation`'s flag: `None` for
 /// `MODELCONDITION_INVALID` (upstream does nothing then).
 pub fn upgrade_implementation(data: &ModelConditionUpgradeModuleData) -> Option<ModelConditionFlagType> {
-    if data.condition_flag != MODELCONDITION_INVALID {
-        Some(data.condition_flag)
+    if data.condition_flag != MODELCONDITION_INVALID || crate::logic::modules::plant(9) {
+        Some(data.condition_flag + crate::logic::modules::plant(10) as i32)
     } else {
         None
     }

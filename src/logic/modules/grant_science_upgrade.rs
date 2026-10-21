@@ -43,7 +43,7 @@ use crate::logic::world::object_cuts::CutCall;
 /// one if valid, otherwise `lookup(name)`, kept in `cached` (an invalid
 /// result is looked up again next time).
 pub fn science_to_grant(cached: &mut ScienceType, name: &[u8], lookup: impl FnOnce(&[u8]) -> ScienceType) -> ScienceType {
-    if *cached == SCIENCE_INVALID {
+    if *cached == SCIENCE_INVALID || crate::logic::modules::plant(20) {
         *cached = lookup(name);
     }
     *cached
@@ -139,6 +139,11 @@ impl GrantScienceUpgrade {
     pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         upgrade_module_call(self, world, me, call)
     }
+
+    /// `m_scienceType`: the science the first upgrade looked up (`SCIENCE_INVALID` before it).
+    pub fn cached_science(&self) -> ScienceType {
+        self.science
+    }
 }
 
 impl UpgradeBehavior for GrantScienceUpgrade {
@@ -165,7 +170,9 @@ impl UpgradeBehavior for GrantScienceUpgrade {
             return Err(IniError::undefined(crate::common::ini::Undefined::NameKeysExhausted));
         }
         if let Some(player) = world.get_controlling_player(me.object) {
-            world.cut(CutCall::PlayerGrantScience { player, science: science.0 });
+            if !crate::logic::modules::plant(21) {
+                world.cut(CutCall::PlayerGrantScience { player, science: science.0 });
+            }
         }
         Ok(())
     }

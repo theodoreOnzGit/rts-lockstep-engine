@@ -16,10 +16,39 @@ class UpgradeTemplate;
 #include "Common/AsciiString.h"
 class Player;
 /* --- end p1l9-example --- */
+/* --- p1w10-sonnet --- */
+#include "GameLogic/WeaponSetType.h"
+#include "GameLogic/Weapon.h"
+#include "Common/ModelState.h"
+/* GameLogic/WeaponSet.h lines 87-106 (commit 0a05454d), verbatim: the real header needs the weapon layer */
+static const ModelConditionFlagType TheWeaponSetTypeToModelConditionTypeMap[WEAPONSET_COUNT] =
+{
+	/*WEAPONSET_VETERAN*/								MODELCONDITION_WEAPONSET_VETERAN,		
+	/*WEAPONSET_ELITE*/									MODELCONDITION_WEAPONSET_ELITE,
+	/*WEAPONSET_HERO*/									MODELCONDITION_WEAPONSET_HERO,
+	/*WEAPONSET_PLAYER_UPGRADE*/				MODELCONDITION_WEAPONSET_PLAYER_UPGRADE,
+	/*WEAPONSET_CRATEUPGRADE_ONE*/			MODELCONDITION_WEAPONSET_CRATEUPGRADE_ONE,
+	/*WEAPONSET_CRATEUPGRADE_TWO*/			MODELCONDITION_WEAPONSET_CRATEUPGRADE_TWO,
+	/*WEAPONSET_VEHICLE_HIJACK*/				MODELCONDITION_INVALID,
+	/*WEAPONSET_CARBOMB*/								MODELCONDITION_INVALID,
+	/*WEAPONSET_MINE_CLEARING_DETAIL*/	MODELCONDITION_INVALID,
+	/*WEAPONSET_RIDER1*/								MODELCONDITION_RIDER1,
+	/*WEAPONSET_RIDER2*/								MODELCONDITION_RIDER2,
+	/*WEAPONSET_RIDER3*/								MODELCONDITION_RIDER3,
+	/*WEAPONSET_RIDER4*/								MODELCONDITION_RIDER4,
+	/*WEAPONSET_RIDER5*/								MODELCONDITION_RIDER5,
+	/*WEAPONSET_RIDER6*/								MODELCONDITION_RIDER6,
+	/*WEAPONSET_RIDER7*/								MODELCONDITION_RIDER7,
+	/*WEAPONSET_RIDER8*/								MODELCONDITION_RIDER8,
+};
+class BodyModuleInterface;
+class Drawable;
+class ExperienceTracker;
+/* --- end p1w10-sonnet --- */
 class Object : public Thing
 {
 public:
-	Object() : m_level(LEVEL_REGULAR), m_player(0) {}
+	Object() : m_level(LEVEL_REGULAR), m_player(0), m_body(0), m_drawable(0), m_xp(0), m_weaponBonusCondition(0), m_shroudRange(0) { m_weaponSetFlags[0] = m_weaponSetFlags[1] = 0; }
 	VeterancyLevel getVeterancyLevel() const { return m_level; }
 	const ObjectStatusMaskType &getStatusBits() const { return m_status; }
 	void removeUpgrade(const UpgradeTemplate *t);
@@ -34,6 +63,23 @@ public:
 	UpgradeMaskType m_objectUpgradesCompleted;
 	AsciiString m_commandSetStringOverride;
 	/* --- end p1l9-example --- */
+	/* --- p1w10-sonnet --- (the layer-9 upgrade batch: what the eight upgrade modules call on their object; every call is
+	** a line of the effect log, the state is what the dump reads) */
+	void setWeaponSetFlag(WeaponSetType wst);
+	void setWeaponBonusCondition(WeaponBonusConditionType wst);
+	BodyModuleInterface *getBodyModule() const { return m_body; }
+	Drawable *getDrawable() const { return m_drawable; }
+	ExperienceTracker *getExperienceTracker() const { return m_xp; }
+	void setShroudRange(Real r);
+	void handlePartitionCellMaintenance();
+	void setModelConditionState(ModelConditionFlagType a);
+	BodyModuleInterface *m_body;
+	Drawable *m_drawable;
+	ExperienceTracker *m_xp;
+	unsigned long long m_weaponSetFlags[2];
+	unsigned m_weaponBonusCondition;
+	Real m_shroudRange;
+	/* --- end p1w10-sonnet --- */
 protected:
 	virtual Object *asObjectMeth() { return this; }
 	virtual const Object *asObjectMeth() const { return this; }

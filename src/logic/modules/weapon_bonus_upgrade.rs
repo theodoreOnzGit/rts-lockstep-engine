@@ -121,7 +121,9 @@ impl UpgradeBehavior for WeaponBonusUpgrade {
         &mut self.base
     }
     fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
-        world.set_weapon_bonus_condition(me.object, PLAYER_UPGRADE);
+        if !crate::logic::modules::plant(4) {
+            world.set_weapon_bonus_condition(me.object, PLAYER_UPGRADE + crate::logic::modules::plant(3) as i32);
+        }
         Ok(())
     }
 

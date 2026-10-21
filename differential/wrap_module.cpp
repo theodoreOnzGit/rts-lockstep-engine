@@ -40,6 +40,9 @@
 ** '%s')`, the six lines of INI::load that matter, copied below).
 **
 ** Dumps. Private and protected members are made public for this build only (module_prelude.h). */
+/* --- p1w10-sonnet --- MaxHealthUpgrade.cpp reads TheMaxHealthChangeTypeNames, which BodyModule.h defines only under this macro (BodyModule.cpp below includes the header first) */
+#define DEFINE_MAXHEALTHCHANGETYPE_NAMES
+/* --- end p1w10-sonnet --- */
 #include "Common/INI.h"
 #include "Common/INIException.h"
 #include "Common/NameKeyGenerator.h"
@@ -770,3 +773,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 /* --- p1l9-example --- */
 #include "l9_example.inc"
 /* --- end p1l9-example --- */
+/* --- p1w10-sonnet --- */
+#include "l9_upgrades.inc"
+/* --- end p1w10-sonnet --- */

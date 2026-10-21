@@ -121,7 +121,9 @@ impl UpgradeBehavior for WeaponSetUpgrade {
         &mut self.base
     }
     fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
-        world.set_weapon_set_flag(me.object, WEAPONSET_PLAYER_UPGRADE);
+        if !crate::logic::modules::plant(2) {
+            world.set_weapon_set_flag(me.object, if crate::logic::modules::plant(1) { 0 } else { WEAPONSET_PLAYER_UPGRADE });
+        }
         Ok(())
     }
 

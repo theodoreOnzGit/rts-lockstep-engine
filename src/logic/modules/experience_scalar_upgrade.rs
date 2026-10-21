@@ -34,7 +34,7 @@ use crate::logic::world::update_body::UpdateBody;
 use crate::upgrade_module_data_field_parse;
 /// `ExperienceScalarUpgrade::upgradeImplementation`'s scalar: `current + AddXPScalar`.
 pub fn upgrade_implementation(current_scalar: f32, data: &ExperienceScalarUpgradeModuleData) -> f32 {
-    current_scalar + data.add_xp_scalar
+    if crate::logic::modules::plant(11) { current_scalar - data.add_xp_scalar } else { current_scalar + data.add_xp_scalar }
 }
 /// `class ExperienceScalarUpgradeModuleData : public UpgradeModuleData`.
 #[derive(Debug)]
@@ -50,7 +50,7 @@ impl Default for ExperienceScalarUpgradeModuleData {
     fn default() -> Self {
         ExperienceScalarUpgradeModuleData {
             upgrade: Arc::new(UpgradeModuleData::new()),
-            add_xp_scalar: 0.0,
+            add_xp_scalar: if crate::logic::modules::plant(23) { 1.0 } else { 0.0 },
         }
     }
 }
@@ -137,7 +137,9 @@ impl UpgradeBehavior for ExperienceScalarUpgrade {
         if let Some(current) = world.objects.find(me.object).map(|o| o.experience.scalar) {
             let new = upgrade_implementation(current, &self.data);
             if let Some(o) = world.objects.find_mut(me.object) {
-                o.experience.scalar = new;
+                if !crate::logic::modules::plant(12) {
+                    o.experience.scalar = new;
+                }
             }
         }
         Ok(())

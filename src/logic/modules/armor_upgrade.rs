@@ -74,13 +74,13 @@ pub struct ArmorUpgradePlan {
 /// `ArmorUpgrade::upgradeImplementation` as a plan. `has_body` and
 /// `has_drawable` are the object's.
 pub fn upgrade_implementation(data: &UpgradeModuleData, has_body: bool, has_drawable: bool) -> ArmorUpgradePlan {
-    let triggered = data.mux_data().is_triggered_by(CHEMICAL_SUITS_UPGRADE);
+    let triggered = data.mux_data().is_triggered_by(CHEMICAL_SUITS_UPGRADE) != crate::logic::modules::plant(6);
     let chem_suit_decal = match (triggered, has_drawable) {
         (false, _) => ChemSuitDecal::None,
         (true, true) => ChemSuitDecal::SetChemSuit,
         (true, false) => ChemSuitDecal::NullDrawable,
     };
-    ArmorUpgradePlan { set_armor_set_flag: has_body, chem_suit_decal }
+    ArmorUpgradePlan { set_armor_set_flag: has_body && !crate::logic::modules::plant(5), chem_suit_decal }
 }
 /// `class ArmorUpgradeModuleData : public UpgradeModuleData`.
 #[derive(Debug)]
@@ -184,7 +184,7 @@ impl UpgradeBehavior for ArmorUpgrade {
         match plan.chem_suit_decal {
             ChemSuitDecal::None => {}
             ChemSuitDecal::SetChemSuit => {
-                world.emit(ObjectClientEvent::DrawableSetTerrainDecal { object_id: me.object, decal: TERRAIN_DECAL_CHEMSUIT });
+                world.emit(ObjectClientEvent::DrawableSetTerrainDecal { object_id: me.object, decal: TERRAIN_DECAL_CHEMSUIT + crate::logic::modules::plant(7) as i32 });
             }
             ChemSuitDecal::NullDrawable => return Err(IniError::undefined(Undefined::NullDrawable)),
         }

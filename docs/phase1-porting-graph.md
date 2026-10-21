@@ -813,6 +813,15 @@ It adds the shared pieces every module uses: `world.statics` / `world.names`,
 `modules::upgrade_body`, `modules::new_module`, the factory's first arm, and
 the slot snapshot handing a translated module its whole base chain.
 <!-- --- end p1l9-example --- -->
+<!-- --- p1w10-sonnet (layer 9) --- -->
+**Layer-9 upgrade batch verified (2026-10-21, `p1w10-sonnet`).** The eight upgrade modules of `p1l9-upgrades`
+(`WeaponSetUpgrade`, `WeaponBonusUpgrade`, `ArmorUpgrade`, `ModelConditionUpgrade`, `ExperienceScalarUpgrade`,
+`ActiveShroudUpgrade`, `MaxHealthUpgrade`, `GrantScienceUpgrade`; merged unverified) now have
+`tests/differential_upgrade_modules.rs` against the eight unchanged `.cpp` files (`differential/l9_upgrades.inc`): 12,000
+cases, 11,872 data reads, 141,744 op dumps compared (70,309 ops, 2,016 upgrades fired, 3,079 effect lines), 0 mismatches,
+128 cases excluded as undefined upstream; 22 planted bugs (`L9_PLANT`), 21 caught and 1 equivalent mutant (re-looking the
+science up on every attempt, which finds the same name key). The comparison found no defect in the drafts.
+<!-- --- end p1w10-sonnet (layer 9) --- -->
 
 ## Differential-test routes, by rule
 

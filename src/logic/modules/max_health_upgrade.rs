@@ -42,7 +42,7 @@ use crate::logic::module::body_module::{MAX_HEALTH_CHANGE_TYPE_NAMES, SAME_CURRE
 /// `MaxHealthUpgrade::upgradeImplementation`'s arguments of the body's
 /// `setMaxHealth`: `(current max + AddMaxHealth, ChangeType)`.
 pub fn upgrade_implementation(current_max_health: f32, data: &MaxHealthUpgradeModuleData) -> (f32, i32) {
-    (current_max_health + data.add_max_health, data.max_health_change_type)
+    (current_max_health + data.add_max_health, if crate::logic::modules::plant(16) { SAME_CURRENTHEALTH } else { data.max_health_change_type })
 }
 /// `class MaxHealthUpgradeModuleData : public UpgradeModuleData`.
 #[derive(Debug)]
@@ -61,7 +61,7 @@ impl Default for MaxHealthUpgradeModuleData {
         MaxHealthUpgradeModuleData {
             upgrade: Arc::new(UpgradeModuleData::new()),
             add_max_health: 0.0,
-            max_health_change_type: SAME_CURRENTHEALTH,
+            max_health_change_type: if crate::logic::modules::plant(24) { 1 } else { SAME_CURRENTHEALTH },
         }
     }
 }
@@ -152,11 +152,16 @@ impl UpgradeBehavior for MaxHealthUpgrade {
             ModuleReply::Real(r) => r,
             _ => 0.0,
         };
-        let (max_health, change_type) = upgrade_implementation(current, &self.data);
+        let (mut max_health, change_type) = upgrade_implementation(current, &self.data);
+        if crate::logic::modules::plant(17) {
+            max_health = current - self.data.add_max_health;
+        }
         if let Some(trace) = &mut world.cuts.trace {
             trace.push(format!("setMaxHealth {} {}", max_health.to_bits(), change_type));
         }
-        world.module_call(me.object, idx, ModuleCall::SetMaxHealthWithChange { max_health, change_type });
+        if !crate::logic::modules::plant(18) {
+            world.module_call(me.object, idx, ModuleCall::SetMaxHealthWithChange { max_health, change_type });
+        }
         Ok(())
     }
 

@@ -1161,6 +1161,27 @@ extern "C" {
     ) -> c_int;
 }
 // --- end p1l9-example ---
+// --- p1w10-sonnet --- (the layer-9 upgrade batch, differential/l9_upgrades.inc)
+extern "C" {
+    #[allow(clippy::too_many_arguments)]
+    pub fn ref_l9up_run(
+        kind: c_int,
+        filename: *const c_char,
+        has_player: c_int,
+        player_mask: *const c_uint,
+        obj_mask: *const c_uint,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+}
+// --- end p1w10-sonnet ---
 // --- p1w9-sonnet ---
 extern "C" {
     // Team.cpp on stand-ins (wrap_team.cpp, shim_team/team_driver.h)

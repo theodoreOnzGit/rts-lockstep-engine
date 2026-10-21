@@ -34,7 +34,7 @@ use crate::logic::world::update_body::UpdateBody;
 use crate::upgrade_module_data_field_parse;
 /// `ActiveShroudUpgrade::upgradeImplementation`'s range: `NewShroudRange`.
 pub fn upgrade_implementation(data: &ActiveShroudUpgradeModuleData) -> f32 {
-    data.new_shroud_range
+    if crate::logic::modules::plant(15) { data.new_shroud_range * 2.0 } else { data.new_shroud_range }
 }
 /// `class ActiveShroudUpgradeModuleData : public UpgradeModuleData`.
 #[derive(Debug)]
@@ -50,7 +50,7 @@ impl Default for ActiveShroudUpgradeModuleData {
     fn default() -> Self {
         ActiveShroudUpgradeModuleData {
             upgrade: Arc::new(UpgradeModuleData::new()),
-            new_shroud_range: 0.0,
+            new_shroud_range: if crate::logic::modules::plant(25) { 1.0 } else { 0.0 },
         }
     }
 }
@@ -135,8 +135,12 @@ impl UpgradeBehavior for ActiveShroudUpgrade {
     }
     fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
         let range = upgrade_implementation(&self.data);
-        world.set_shroud_range(me.object, range);
-        world.handle_partition_cell_maintenance(me.object); // "To shroud where I am without waiting."
+        if !crate::logic::modules::plant(14) {
+            world.set_shroud_range(me.object, range);
+        }
+        if !crate::logic::modules::plant(13) {
+            world.handle_partition_cell_maintenance(me.object); // "To shroud where I am without waiting."
+        }
         Ok(())
     }
 

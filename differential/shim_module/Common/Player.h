@@ -5,6 +5,7 @@
 #ifndef SHIM_MODULE_PLAYER_H
 #define SHIM_MODULE_PLAYER_H
 #include "Common/Upgrade.h"
+#include "Common/Science.h"
 class Player
 {
 public:
@@ -12,5 +13,8 @@ public:
 	UpgradeMaskType m_upgradesCompleted;
 	/* --- p1l9-example --- */
 	/* --- end p1l9-example --- */
+	/* --- p1w10-sonnet --- (GrantScienceUpgrade: the grant is a line of the effect log) */
+	void grantScience(ScienceType st);
+	/* --- end p1w10-sonnet --- */
 };
 #endif
