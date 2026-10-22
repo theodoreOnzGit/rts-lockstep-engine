@@ -134,6 +134,8 @@ pub struct ProbeAnswers {
     pub free_to_exit: i32,
     /// `AIUpdateInterface::getCurLocomotor()` is not `NULL`.
     pub has_locomotor: bool,
+    /// `DockUpdateInterface::isDockOpen()` (batch R3); `setDockOpen` sets it.
+    pub dock_open: bool,
     // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     // --- p1w7-sonnet ---
@@ -726,6 +728,14 @@ impl ProbeModule {
             ModuleCall::HasUpdateExitInterface => ModuleReply::Bool(self.answers.has & (1 << 0) != 0),
             ModuleCall::HasProductionUpdateInterface => ModuleReply::Bool(self.answers.has & (1 << 1) != 0),
             ModuleCall::HasDockUpdateInterface => ModuleReply::Bool(self.answers.has & (1 << 2) != 0),
+            // --- p1w13-sonnet --- (batch R3: the dock of a railed transport; the line of the C++ stand-in)
+            ModuleCall::DockIsOpen => ModuleReply::Bool(self.answers.dock_open),
+            ModuleCall::DockSetOpen(open) => {
+                world.body_trace(format!("docksetopen {} {}", me.object, i32::from(open)));
+                self.answers.dock_open = open;
+                ModuleReply::Done
+            }
+            // --- end p1w13-sonnet ---
             ModuleCall::HasSpawnBehaviorInterface => ModuleReply::Bool(self.answers.has & (1 << 3) != 0),
             ModuleCall::HasProjectileUpdateInterface => ModuleReply::Bool(self.answers.has & (1 << 4) != 0),
             ModuleCall::HasCountermeasuresInterface => ModuleReply::Bool(self.answers.has & (1 << 5) != 0),

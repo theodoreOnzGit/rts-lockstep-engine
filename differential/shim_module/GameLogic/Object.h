@@ -188,6 +188,7 @@ public:
 	Bool isUsingAirborneLocomotor() const { return m_airborneLoco; }
 	Bool m_airborneLoco = false;
 	Int getTransportSlotCount() const;   /* Object.cpp, verbatim: differential/l9_open_contain_r.inc */
+	class DockUpdateInterface *getDockUpdateInterface( void );   /* batch R3: Object.cpp, verbatim: differential/l9_open_contain_r.inc */
 	/* Thing.h: the test's bone table holds world positions already */
 	void convertBonePosToWorldPos(const Coord3D* bonePos, const Matrix3D* boneTransform, Coord3D* worldPos, Matrix3D* worldTransform) const { if (worldPos && bonePos) *worldPos = *bonePos; }
 	/* --- end p1w13-sonnet --- */

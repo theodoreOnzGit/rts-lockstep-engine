@@ -29,6 +29,9 @@
 //! and harming them, collisions, deaths, updates, the exits through the door, the orders to the passengers, the queries, the environment (the frame, the selection,
 //! the model conditions, the statuses, the places, the booby traps, the AI) and the three xfers with the load post process.
 //!
+//! Batch R3 adds the `I` (`InternetHackContain`) and `R` (`RailedTransportContain`) blocks (the transport's fields), class codes 2 and 3 for the scene's
+//! containers, and per object a dock behaviour after the contain (open or closed; `setDockOpen` is a line of the log).
+//!
 //! Batch R2 adds `TransportContain`: one data block in two is a `T` block (the base's fields, then `Slots`, `ExitBone`, `ExitPitchRate`, `InitialPayload`,
 //! `HealthRegen%PerSec`, `ExitDelay` and the eight flags), and each later container is a transport one time in two (its data from the scene). The scene adds, per
 //! object, what a transport reads of its riders and itself: the template's raw transport slot count, an airborne locomotor, the AI's free-to-exit answer and
@@ -113,6 +116,18 @@
 //! | 1430 | the infantry test of `isPassengerAllowedToFire` inverted |
 //! | 1431 | `isExitBusy` on the frame itself |
 //! | 1432 | the `DISABLED_UNMANNED` test of `onCapture` inverted |
+//!
+//! Batch R3, `internet_hack_contain.rs` and `railed_transport_contain.rs` (9,000 cases: all 6 caught; the 57 caught plants above were run again on the
+//! generator with the four classes and are all still caught):
+//!
+//! | id | planted bug |
+//! |---|---|
+//! | 1441 | InternetHack: the rider not told to hack |
+//! | 1442 | InternetHack: the hack ordered `CMD_FROM_PLAYER` |
+//! | 1443 | RailedTransport: the dock not reopened when the last rider is out |
+//! | 1444 | RailedTransport: the dock closed instead of opened |
+//! | 1445 | RailedTransport: the closed-dock test of `isSpecificRiderFreeToExit` inverted |
+//! | 1446 | RailedTransport: `exitObjectViaDoor` exits through the base (as if the static helper were called) |
 //!
 //! Not planted, unobservable here: the `wasSelected` argument of `onContaining` (1375, removed). `OpenContain::onContaining` ignores it; ~~`TransportContain` and `GarrisonContain` use it, and
 //! their tests will catch it~~ **CORRECTED 2026-10-22 (batch R2)**: `TransportContain::onContaining` only hands it to the base, so it is unobservable there too;
@@ -310,6 +325,9 @@ struct Obj {
     exit_bone_name: u32,
     /// the body's health (a transport heals its riders up to `max_health`)
     health: f32,
+    /// batch R3: a dock behaviour (after the contain), and whether it is open
+    has_dock: bool,
+    dock_open: bool,
 }
 
 /// The payload template names and exit bone names a scene-built transport can name (the driver's `kPayload` and `kExitBone`).
@@ -413,6 +431,8 @@ impl Obj {
         w.u(self.payload_name);
         w.u(self.exit_bone_name);
         w.f(self.health);
+        w.u(u32::from(self.has_dock));
+        w.u(u32::from(self.dock_open));
     }
 
     fn read(r: &mut R<'_>) -> Obj {
@@ -512,6 +532,8 @@ impl Obj {
         o.payload_name = r.u();
         o.exit_bone_name = r.u();
         o.health = r.f();
+        o.has_dock = r.u() != 0;
+        o.dock_open = r.u() != 0;
         o
     }
 }
@@ -619,7 +641,9 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     field!(25, "ExemptStatus", name_list(g, &STATUS_NAMES, clean));
     field!(25, "RequiredStatus", name_list(g, &STATUS_NAMES, clean));
     // batch R2: one block in two is a `TransportContain` (`T`), with its own fields after the base's
+    // batch R3: a transport block is `T`, `I` (InternetHackContain) or `R` (RailedTransportContain); the fields are the same
     let transport = g.below(2) == 0;
+    let token = if transport { ["T\n", "I\n", "R\n"][g.below(3) as usize] } else { "D\n" };
     if transport {
         field!(60, "Slots", health_str(g, clean));
         field!(30, "ScatterNearbyOnExit", gen_bool(g, clean));
@@ -639,7 +663,7 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     if !clean && g.below(12) == 0 {
         lines.push(format!("Bogus{}1", gen_sep(g)));
     }
-    let mut s = String::from(if transport { "T\n" } else { "D\n" });
+    let mut s = String::from(token);
     for l in &lines {
         s.push_str(gen_indent(g));
         s.push_str(l);
@@ -728,7 +752,8 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
             *p = coord(g);
         }
     }
-    o.cls = if o.has_contain && k > 0 { g.below(2) } else { 0 };
+    // 0 OpenContain, 1 TransportContain, 2 InternetHackContain, 3 RailedTransportContain
+    o.cls = if o.has_contain && k > 0 { g.below(4) } else { 0 };
     o.raw_slots = *pick(g, &[&0i32, &1, &1, &1, &2, &3]);
     // upstream's airborne locomotor is the AI's
     o.airborne = o.has_ai && g.below(4) == 0;
@@ -755,6 +780,8 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     o.payload_name = g.below(4);
     o.exit_bone_name = g.below(3);
     o.health = if g.below(3) == 0 { o.max_health } else { *pick(g, &[&0.0f32, &20.0, &99.5, &150.0]) };
+    o.has_dock = g.below(2) == 0;
+    o.dock_open = g.below(2) == 0;
     o
 }
 
@@ -768,7 +795,12 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> Vec<u32> {
     for k in 0..n {
         let mut o = gen_obj(g, k, n);
         if k == 0 {
-            o.cls = u32::from(matches!(_data, Some(ModuleDataKind::TransportContain(_))));
+            o.cls = match _data {
+                Some(ModuleDataKind::TransportContain(_)) => 1,
+                Some(ModuleDataKind::InternetHackContain(_)) => 2,
+                Some(ModuleDataKind::RailedTransportContain(_)) => 3,
+                _ => 0,
+            };
         }
         o.write(&mut w);
     }
@@ -891,6 +923,19 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId, has_contain: bool) {
             }
             // a transport: 2, then its state words (the base's, then the three of its own)
             Some(UpdateBody::TransportContain(m)) => {
+                put_u32(v, 2);
+                for x in m.state_words() {
+                    put_u32(v, x);
+                }
+            }
+            // batch R3: the derived transports have no state of their own
+            Some(UpdateBody::InternetHackContain(m)) => {
+                put_u32(v, 2);
+                for x in m.state_words() {
+                    put_u32(v, x);
+                }
+            }
+            Some(UpdateBody::RailedTransportContain(m)) => {
                 put_u32(v, 2);
                 for x in m.state_words() {
                     put_u32(v, x);
@@ -1125,7 +1170,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     {
         let d: &OpenContainModuleData = match &data {
             ModuleDataKind::OpenContain(d) => d,
-            ModuleDataKind::TransportContain(t) => &t.open,
+            ModuleDataKind::TransportContain(t) | ModuleDataKind::InternetHackContain(t) | ModuleDataKind::RailedTransportContain(t) => &t.open,
             _ => unreachable!("not a contain"),
         };
         put_u32(&mut v, d.contain_max as u32);
@@ -1164,8 +1209,14 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         put_u32(&mut v, ex);
         put_u32(&mut v, rq);
         // batch R2: 1 and the transport's fields, or 0
-        if let ModuleDataKind::TransportContain(t) = &data {
-            put_u32(&mut v, 1);
+        let block_cls = match &data {
+            ModuleDataKind::TransportContain(t) => Some((1, t)),
+            ModuleDataKind::InternetHackContain(t) => Some((2, t)),
+            ModuleDataKind::RailedTransportContain(t) => Some((3, t)),
+            _ => None,
+        };
+        if let Some((cls, t)) = block_cls {
+            put_u32(&mut v, cls);
             put_u32(&mut v, t.slot_capacity as u32);
             put_u32(&mut v, t.exit_pitch_rate.to_bits());
             put_str(&mut v, &t.exit_bone);
@@ -1361,14 +1412,30 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                         exit_bone: EXIT_BONES[o.exit_bone_name as usize % 3].as_bytes().to_vec(),
                         ..Default::default()
                     };
-                    ModuleDataKind::TransportContain(Arc::new(t))
+                    match o.cls {
+                        2 => ModuleDataKind::InternetHackContain(Arc::new(t)),
+                        3 => ModuleDataKind::RailedTransportContain(Arc::new(t)),
+                        _ => ModuleDataKind::TransportContain(Arc::new(t)),
+                    }
                 } else {
                     ModuleDataKind::OpenContain(Arc::new(d))
                 }
             };
-            let class: &[u8] = if matches!(cd, ModuleDataKind::TransportContain(_)) { b"TransportContain" } else { b"OpenContain" };
+            let class: &[u8] = match cd {
+                ModuleDataKind::TransportContain(_) => b"TransportContain",
+                ModuleDataKind::InternetHackContain(_) => b"InternetHackContain",
+                ModuleDataKind::RailedTransportContain(_) => b"RailedTransportContain",
+                _ => b"OpenContain",
+            };
             let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class, b"ModuleTag_Contain", &cd).unwrap().unwrap();
             modules.push(m);
+        }
+        // batch R3: the dock, a probe after the contain (as the driver's `CtDock`)
+        if o.has_dock {
+            let a = ProbeAnswers { has: 1 << 2, dock_open: o.dock_open, ..Default::default() };
+            let mut pm = NewModule::plain(b"CtDock", b"ModuleTag_Dock");
+            pm.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(a, 0.0, Default::default())));
+            modules.push(pm);
         }
         let mut status = Default::default();
         for (b, st) in STATUSES.iter().enumerate() {
@@ -1489,6 +1556,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                             let mux = match ob.behaviors[u as usize].body.as_ref() {
                                 Some(UpdateBody::OpenContain(c)) => Some(c.module_data().die_mux_data.clone()),
                                 Some(UpdateBody::TransportContain(c)) => Some(c.module_data().open.die_mux_data.clone()),
+                                Some(UpdateBody::InternetHackContain(c)) => Some(c.module_data().open.die_mux_data.clone()),
+                                Some(UpdateBody::RailedTransportContain(c)) => Some(c.module_data().open.die_mux_data.clone()),
                                 _ => None,
                             };
                             if let Some(mux) = mux {
@@ -1859,8 +1928,18 @@ fn read_transport_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> 
     Ok(())
 }
 
+fn read_internet_hack_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
+    *out = Some(rts_lockstep_engine::logic::modules::internet_hack_contain::new_module_data(Some(ini))?);
+    Ok(())
+}
+
+fn read_railed_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
+    *out = Some(rts_lockstep_engine::logic::modules::railed_transport_contain::new_module_data(Some(ini))?);
+    Ok(())
+}
+
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }];
+    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)

@@ -121,6 +121,8 @@ pub mod inactive_body;
 pub mod slow_death_behavior;
 pub mod open_contain;
 pub mod transport_contain;
+pub mod railed_transport_contain;
+pub mod internet_hack_contain;
 // --- end p1w13-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -448,6 +450,14 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::OpenContain(d) => Some(made_update(
             open_contain::OpenContain::get_interface_mask(),
             open_contain::OpenContain::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::OpenContain(m))),
+        )),
+        ModuleDataKind::InternetHackContain(d) => Some(made_update(
+            internet_hack_contain::InternetHackContain::get_interface_mask(),
+            internet_hack_contain::InternetHackContain::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::InternetHackContain(m))),
+        )),
+        ModuleDataKind::RailedTransportContain(d) => Some(made_update(
+            railed_transport_contain::RailedTransportContain::get_interface_mask(),
+            railed_transport_contain::RailedTransportContain::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::RailedTransportContain(m))),
         )),
         ModuleDataKind::TransportContain(d) => Some(made_update(
             transport_contain::TransportContain::get_interface_mask(),

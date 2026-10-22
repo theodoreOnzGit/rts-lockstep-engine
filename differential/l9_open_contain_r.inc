@@ -21,10 +21,31 @@ static char *ctItoa(int value, char *buffer, int radix)
 #include "OpenContain_edit.cpp"  /* OpenContain.cpp with one mechanical edit made by build.rs */
 /* --- p1w13-sonnet --- (batch R2: TransportContain) */
 #include "TransportContain_edit.cpp"  /* TransportContain.cpp with its two `while( *it )` loops ending at end() (build.rs) */
+/* batch R3: the two derived transports, unchanged */
+/* RailedTransportContain.cpp includes RailedTransportDockUpdate.h for one class: that header's guard is defined here and the class is copied
+** verbatim (RailedTransportDockUpdate.h:57-66), so the rest of DockUpdate (not translated yet) stays out of this unit */
+#define __RAILED_TRANSPORT_DOCK_UPDATE_H_
+class RailedTransportDockUpdateInterface
+{
+
+public:
+
+	virtual Bool isLoadingOrUnloading( void ) = 0;
+	virtual void unloadAll( void ) = 0;
+	virtual void unloadSingleObject( Object *obj ) = 0;
+
+};
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/InternetHackContain.cpp"
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/RailedTransportContain.cpp"
 /* --- end p1w13-sonnet --- */
 #undef itoa
 
 namespace {
+
+/* --- p1w13-sonnet --- (batch R3) the class the data block names: 0 OpenContain (D), 1 TransportContain (T), 2 InternetHackContain (I),
+** 3 RailedTransportContain (R) */
+unsigned g_ctBlockCls = 0;
+/* --- end p1w13-sonnet --- */
 
 ModuleData *l9ctRead(const char *filename)
 {
@@ -35,7 +56,14 @@ ModuleData *l9ctRead(const char *filename)
 		ini.readLine();
 		AsciiString currentLine = ini.m_buffer;
 		try {
-			data = (strncmp(currentLine.str(), "T", 1) == 0) ? TransportContain::friend_newModuleData(&ini) : OpenContain::friend_newModuleData(&ini);   /* --- p1w13-sonnet --- (batch R2: TransportContain) */
+			/* --- p1w13-sonnet --- (batches R2, R3) */
+			const char c0 = currentLine.str()[0];
+			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : 0;
+			if (g_ctBlockCls == 1) data = TransportContain::friend_newModuleData(&ini);
+			else if (g_ctBlockCls == 2) data = InternetHackContain::friend_newModuleData(&ini);
+			else if (g_ctBlockCls == 3) data = RailedTransportContain::friend_newModuleData(&ini);
+			else data = OpenContain::friend_newModuleData(&ini);
+			/* --- end p1w13-sonnet --- */
 		} catch (...) {
 			char buff[1024];
 			sprintf(buff, "Error parsing INI file '%s' (Line: '%s')\n", ini.m_filename.str(), currentLine.str());
@@ -81,6 +109,35 @@ std::string ctInfoLine(const DamageInfo *i)
 }
 
 /* a body that logs the damage it is given and knows its maximum health (the contained objects' bodies) */
+/* --- p1w13-sonnet --- (batch R3: RailedTransportContain) a behaviour with the dock interface: open or closed, and setDockOpen logs */
+struct CtDock : public TestBehavior, public DockUpdateInterface
+{
+	CtDock(Thing *t, const ModuleData *d) : TestBehavior(t, d), m_open(false) {}
+	virtual DockUpdateInterface *getDockUpdateInterface() { return this; }
+	virtual Bool isDockOpen(void) { return m_open; }
+	virtual void setDockOpen(Bool open) { ulog("docksetopen %d %d", (int)AsObject(const_cast<Thing *>(static_cast<const Thing *>(getObject())))->m_oid, open ? 1 : 0); m_open = open; }
+	/* the rest of the interface: no contain module calls it */
+	virtual Bool isClearToApproach(Object const *) const { return false; }
+	virtual Bool reserveApproachPosition(Object *, Coord3D *, Int *) { return false; }
+	virtual Bool advanceApproachPosition(Object *, Coord3D *, Int *) { return false; }
+	virtual Bool isClearToEnter(Object const *) const { return false; }
+	virtual Bool isClearToAdvance(Object const *, Int) const { return false; }
+	virtual void getEnterPosition(Object *, Coord3D *) {}
+	virtual void getDockPosition(Object *, Coord3D *) {}
+	virtual void getExitPosition(Object *, Coord3D *) {}
+	virtual void onApproachReached(Object *) {}
+	virtual void onEnterReached(Object *) {}
+	virtual void onDockReached(Object *) {}
+	virtual void onExitReached(Object *) {}
+	virtual Bool action(Object *, Object *) { return false; }
+	virtual void cancelDock(Object *) {}
+	virtual void setDockCrippled(Bool) {}
+	virtual Bool isAllowPassthroughType() { return false; }
+	virtual Bool isRallyPointAfterDockType() { return false; }
+	Bool m_open;
+};
+/* --- end p1w13-sonnet --- */
+
 class CtBody : public InactiveBody
 {
 public:
@@ -106,13 +163,14 @@ struct CtObj
 {
 	Object *obj;
 	CtBody *body;
+	struct CtDock *dock;   /* p1w13-sonnet, batch R3 */
 	AIUpdateInterface ai;
 	StealthUpdate stealth;
 	Drawable draw;
 	Team team;
 	OpenContain *oc;
 	OpenContainModuleData *data;
-	BehaviorModule *behaviors[3];
+	BehaviorModule *behaviors[4];   /* p1w13-sonnet, batch R3: body, contain, dock, NULL */
 	unsigned boobyTrapped;
 	unsigned fpCount;
 	Matrix3D fp[CT_FP];
@@ -250,6 +308,20 @@ void Object::clearWeaponSetFlag(WeaponSetType wst)
 	if (m_drawable) m_drawable->clearModelConditionState(TheWeaponSetTypeToModelConditionTypeMap[wst]);
 }
 void Weapon::transferNextShotStatsFrom(const Weapon &weapon) { ulog("shotxfer %d %d", (int)m_ownerId, (int)weapon.m_ownerId); }
+/* Object.cpp:5855-5867, verbatim (batch R3) */
+DockUpdateInterface *Object::getDockUpdateInterface( void )
+{
+	DockUpdateInterface *dock = NULL;
+
+	for( BehaviorModule **u = m_behaviors; *u; ++u )
+	{
+		if( (dock = (*u)->getDockUpdateInterface()) != NULL )
+			return dock;
+	}
+
+	return NULL;
+
+}  // end getDockUpdateInterface
 /* Object.cpp:724-741, verbatim */
 Int Object::getTransportSlotCount() const
 {
@@ -471,7 +543,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		putU32(rq);
 		/* --- p1w13-sonnet --- (batch R2: TransportContain) */
 		const TransportContainModuleData *td = dynamic_cast<const TransportContainModuleData *>(d);
-		putU32(td ? 1u : 0u);
+		putU32(td ? g_ctBlockCls : 0u);   /* p1w13-sonnet, batch R3: the class of the block */
 		if (td) {
 			putU32((unsigned)td->m_slotCapacity);
 			putU32(realBits(td->m_exitPitchRate));
@@ -504,7 +576,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		unsigned turret[CT_FP][3];
 		/* --- p1w13-sonnet --- (batch R2: TransportContain) */
 		unsigned cls; int rawSlots; unsigned airborne; int freeToExit; unsigned hasLoco, validTerrain, com, vel[3], weapons, unmanned, extraKinds, exitBoneHas, exitBone[3];
-		int slotCap; unsigned regen, exitDelay, tflags, pitch; int payloadCount; unsigned payloadName, exitBoneName, health;
+		int slotCap; unsigned regen, exitDelay, tflags, pitch; int payloadCount; unsigned payloadName, exitBoneName, health, hasDock, dockOpen;
 		/* --- end p1w13-sonnet --- */
 	} oc[CT_OBJS];
 	for (int k = 0; k < g_ctN; ++k) {
@@ -527,7 +599,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		o.cls = c.u(); o.rawSlots = c.s(); o.airborne = c.u(); o.freeToExit = c.s(); o.hasLoco = c.u(); o.validTerrain = c.u(); o.com = c.u();
 		for (int i = 0; i < 3; ++i) o.vel[i] = c.u();
 		o.weapons = c.u(); o.unmanned = c.u(); o.extraKinds = c.u(); o.exitBoneHas = c.u(); for (int i = 0; i < 3; ++i) o.exitBone[i] = c.u();
-		o.slotCap = c.s(); o.regen = c.u(); o.exitDelay = c.u(); o.tflags = c.u(); o.pitch = c.u(); o.payloadCount = c.s(); o.payloadName = c.u(); o.exitBoneName = c.u(); o.health = c.u();
+		o.slotCap = c.s(); o.regen = c.u(); o.exitDelay = c.u(); o.tflags = c.u(); o.pitch = c.u(); o.payloadCount = c.s(); o.payloadName = c.u(); o.exitBoneName = c.u(); o.health = c.u(); o.hasDock = c.u(); o.dockOpen = c.u();
 		/* --- end p1w13-sonnet --- */
 	}
 	for (int i = 0; i < g_ctN; ++i) for (int j = 0; j < g_ctN; ++j) g_ctRel[i][j] = (Relationship)c.s();
@@ -600,7 +672,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		obj->m_physics = o.hasPhys ? phys : 0;
 		if (o.hasPhys) { g_ctMass[phys] = ctF(o.mass); phys->setAllowToFall(o.canFall != 0); }
 		/* --- p1w13-sonnet --- (batch R2: TransportContain) */
-		a.cls = o.cls;
+		a.cls = k == 0 ? g_ctBlockCls : o.cls;   /* batch R3: the first container's class is the block's */
 		a.validTerrain = o.validTerrain;
 		obj->m_tmpl.m_rawTransportSlotCount = o.rawSlots;
 		obj->m_airborneLoco = o.airborne != 0;
@@ -639,12 +711,13 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			a.turret[j].Set_Translation(Vector3(ctF(o.turret[j][0]), ctF(o.turret[j][1]), ctF(o.turret[j][2])));
 		}
 		a.body = 0;
+		a.dock = 0;   /* p1w13-sonnet, batch R3 */
 		a.oc = 0;
 		a.data = 0;
 		obj->m_body = 0;
 		obj->m_contain = 0;
 		obj->m_behaviors = a.behaviors;
-		a.behaviors[0] = a.behaviors[1] = a.behaviors[2] = 0;
+		a.behaviors[0] = a.behaviors[1] = a.behaviors[2] = a.behaviors[3] = 0;
 		g_ctSavedContainedBy[k] = 0;
 	}
 	/* the modules, once every object they may name exists */
@@ -713,7 +786,12 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			}
 			try {
 				/* --- p1w13-sonnet --- (batch R2: TransportContain) */
-				if (k == 0 ? dynamic_cast<TransportContainModuleData *>(d) != 0 : o.cls != 0) a.oc = new(ShimZeroFill{}) TransportContain(a.obj, k == 0 ? d : (ModuleData *)tdata);   /* the memory pool's zero fill: the constructor leaves m_payloadCreated */
+				/* the memory pool's zero fill: the constructor leaves m_payloadCreated (batch R3: the derived transports by class) */
+				const unsigned cls = k == 0 ? g_ctBlockCls : o.cls;
+				ModuleData *td = k == 0 ? d : (ModuleData *)tdata;
+				if (cls == 1) a.oc = new(ShimZeroFill{}) TransportContain(a.obj, td);
+				else if (cls == 2) a.oc = new(ShimZeroFill{}) InternetHackContain(a.obj, td);
+				else if (cls == 3) a.oc = new(ShimZeroFill{}) RailedTransportContain(a.obj, td);
 				else
 				/* --- end p1w13-sonnet --- */
 				a.oc = new OpenContain(a.obj, a.data);
@@ -723,6 +801,13 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			a.obj->m_contain = a.oc;
 			a.behaviors[idx++] = a.oc;
 		}
+		/* --- p1w13-sonnet --- (batch R3) the dock, after the contain (the Rust side's dock probe is the last module too) */
+		if (o.hasDock) {
+			a.dock = new CtDock(a.obj, new ModuleData);
+			a.dock->m_open = o.dockOpen != 0;
+			a.behaviors[idx++] = a.dock;
+		}
+		/* --- end p1w13-sonnet --- */
 	}
 	if (failed) {
 		TheGameLogic = 0; TheAudio = 0; TheInGameUI = 0; TheAI = 0; ThePartitionManager = 0; TheTerrainLogic = 0;

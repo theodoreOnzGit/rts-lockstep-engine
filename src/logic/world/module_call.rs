@@ -200,6 +200,12 @@ pub enum ModuleCall {
     HasProductionUpdateInterface,
     /// `getDockUpdateInterface() != NULL`; replies [`ModuleReply::Bool`].
     HasDockUpdateInterface,
+    // --- p1w13-sonnet --- (batch R3: RailedTransportContain)
+    /// `DockUpdateInterface::isDockOpen()`; replies [`ModuleReply::Bool`].
+    DockIsOpen,
+    /// `DockUpdateInterface::setDockOpen(open)`.
+    DockSetOpen(bool),
+    // --- end p1w13-sonnet ---
     /// `getSpawnBehaviorInterface() != NULL`; replies [`ModuleReply::Bool`].
     HasSpawnBehaviorInterface,
     /// `getProjectileUpdateInterface() != NULL`; replies [`ModuleReply::Bool`].

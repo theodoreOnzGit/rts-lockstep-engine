@@ -22,10 +22,14 @@
 //! # Design
 //!
 //! As [`OpenContain`] for its base: the module holds its `OpenContain` by value and implements [`OpenContainVirtuals`], overriding what upstream
-//! overrides. Four classes derive from `TransportContain` upstream (`RailedTransportContain`, `RiderChangeContain`, `HelixContain`,
-//! `OverlordContain`) and override `isSpecificRiderFreeToExit` and `createPayload`, so those two are the methods of [`TransportContainVirtuals`], and
-//! every `TransportContain` function is a free function generic over it ([`tc_update`], [`tc_on_removing`], ...), which a derived class calls from its
-//! own `OpenContainVirtuals`.
+//! overrides. ~~Four classes derive from `TransportContain` upstream (`RailedTransportContain`, `RiderChangeContain`, `HelixContain`,
+//! `OverlordContain`) and override `isSpecificRiderFreeToExit` and `createPayload`, so those two are the methods of [`TransportContainVirtuals`]~~
+//! **CORRECTED 2026-10-22 (batch R3)**: five classes derive from it upstream (those four and `InternetHackContain`), and between them they override
+//! more than those two, so [`TransportContainVirtuals`] carries `isSpecificRiderFreeToExit`, `createPayload` and a `t_*` hook for every `OpenContain`
+//! virtual that `TransportContain` or a derived class overrides. `transport_open_contain_virtuals!` writes the `OpenContainVirtuals` impl (this class's
+//! too), routing each to its hook, whose default is `TransportContain`'s; `derived_transport_contain_glue!` writes the rest of a derived class with no
+//! state of its own. Every `TransportContain` function is a free function generic over the trait ([`tc_update`], [`tc_on_removing`], ...), which a
+//! derived class's override calls to "extend base class".
 //!
 //! # Cut points
 //!
@@ -304,6 +308,11 @@ impl TransportContain {
         &self.oc
     }
 
+    /// The base, to change.
+    pub fn open_contain_mut(&mut self) -> &mut OpenContain {
+        &mut self.oc
+    }
+
     /// The state `xfer` writes, as words: the base's, then `m_payloadCreated`, `m_extraSlotsInUse`, `m_frameExitNotBusy`.
     pub fn state_words(&self) -> Vec<u32> {
         let mut v = self.oc.state_words();
@@ -356,7 +365,9 @@ impl TransportContain {
     }
 }
 
-/// The virtuals `TransportContain` adds, which the classes derived from it override. See the module docs.
+/// The virtuals `TransportContain` adds, which the classes derived from it override, and (`t_*`, batch R3) a hook for every `OpenContain` virtual that
+/// `TransportContain` overrides or a derived class overrides: [`transport_open_contain_virtuals!`] routes the `OpenContainVirtuals` method to the hook, whose
+/// default is `TransportContain`'s own, so a derived class overrides only what upstream's does. See the module docs.
 pub trait TransportContainVirtuals: OpenContainVirtuals {
     /// The `TransportContain` this is (or is the base of).
     fn tc(&self) -> &TransportContain;
@@ -370,6 +381,68 @@ pub trait TransportContainVirtuals: OpenContainVirtuals {
     fn create_payload(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
         tc_create_payload(self, world, me)
     }
+    // --- p1w13-sonnet --- (batch R3: the hooks of the derived transports)
+    /// `isValidContainerFor(obj, checkCapacity)`.
+    fn t_is_valid_container_for(&mut self, world: &mut World, me: ModuleHandle, obj: ObjectId, check_capacity: bool) -> bool {
+        tc_is_valid_container_for(self, world, me, obj, check_capacity)
+    }
+    /// `onCapture(oldOwner, newOwner)`.
+    fn t_on_capture(&mut self, world: &mut World, me: ModuleHandle, old_owner: i32, new_owner: i32) {
+        tc_on_capture(self, world, me, old_owner, new_owner)
+    }
+    /// `onContaining(rider, wasSelected)`.
+    fn t_on_containing(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId, was_selected: bool) {
+        tc_on_containing(self, world, me, rider, was_selected)
+    }
+    /// `onRemoving(rider)`.
+    fn t_on_removing(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId) {
+        tc_on_removing(self, world, me, rider)
+    }
+    /// `update()`.
+    fn t_update(&mut self, world: &mut World, me: ModuleHandle) -> UpdateSleepTime {
+        tc_update(self, world, me)
+    }
+    /// `isRiderChangeContain()`.
+    fn t_is_rider_change_contain(&self) -> bool {
+        false
+    }
+    /// `isSpecialOverlordStyleContainer()`.
+    fn t_is_special_overlord_style_container(&self) -> bool {
+        false
+    }
+    /// `getContainMax()`.
+    fn t_get_contain_max(&mut self) -> i32 {
+        tc_get_contain_max(self)
+    }
+    /// `getExtraSlotsInUse()`.
+    fn t_get_extra_slots_in_use(&mut self) -> i32 {
+        self.tc().extra_slots_in_use
+    }
+    /// `isExitBusy()`.
+    fn t_is_exit_busy(&mut self, world: &mut World, me: ModuleHandle) -> bool {
+        tc_is_exit_busy(self, world, me)
+    }
+    /// `reserveDoorForExit(objType, specificObject)`.
+    fn t_reserve_door_for_exit(&mut self, world: &mut World, me: ModuleHandle, specific: ObjectId) -> ExitDoorType {
+        tc_reserve_door_for_exit(self, world, me, specific)
+    }
+    /// `isDisplayedOnControlBar()`.
+    fn t_is_displayed_on_control_bar(&self) -> bool {
+        true
+    }
+    /// `killRidersWhoAreNotFreeToExit()`.
+    fn t_kill_riders_who_are_not_free_to_exit(&mut self, world: &mut World, me: ModuleHandle) {
+        tc_kill_riders_who_are_not_free_to_exit(self, world, me)
+    }
+    /// `isPassengerAllowedToFire(id)`.
+    fn t_is_passenger_allowed_to_fire(&mut self, world: &mut World, me: ModuleHandle, id: ObjectId) -> bool {
+        tc_is_passenger_allowed_to_fire(self, world, me, id)
+    }
+    /// `exitObjectViaDoor(exitObj, exitDoor)`: `OpenContain`'s.
+    fn t_exit_object_via_door(&mut self, world: &mut World, me: ModuleHandle, exit_obj: ObjectId, exit_door: ExitDoorType) {
+        open_contain::base_exit_object_via_door(self, world, me, exit_obj, exit_door);
+    }
+    // --- end p1w13-sonnet ---
 }
 
 /// Records that upstream is undefined here.
@@ -756,71 +829,197 @@ pub fn tc_on_capture<T: TransportContainVirtuals>(t: &mut T, world: &mut World, 
     }
 }
 
-impl OpenContainVirtuals for TransportContain {
-    fn oc(&self) -> &OpenContain {
-        &self.oc
-    }
-    fn oc_mut(&mut self) -> &mut OpenContain {
-        &mut self.oc
-    }
-    fn into_body(self) -> UpdateBody {
-        UpdateBody::TransportContain(self)
-    }
-    fn from_body(b: UpdateBody) -> Option<Self> {
-        match b {
-            UpdateBody::TransportContain(m) => Some(m),
-            _ => None,
+// --- p1w13-sonnet --- (batch R3)
+/// `impl OpenContainVirtuals` for `TransportContain` and the classes derived from it: the base and the slot variant, and every virtual that
+/// `TransportContain` (or a derived class) overrides routed to its [`TransportContainVirtuals`] hook.
+macro_rules! transport_open_contain_virtuals {
+    ($ty:ty, $variant:ident) => {
+        impl $crate::logic::modules::open_contain::OpenContainVirtuals for $ty {
+            fn oc(&self) -> &$crate::logic::modules::open_contain::OpenContain {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::tc(self).open_contain()
+            }
+            fn oc_mut(&mut self) -> &mut $crate::logic::modules::open_contain::OpenContain {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::tc_mut(self).open_contain_mut()
+            }
+            fn into_body(self) -> $crate::logic::world::update_body::UpdateBody {
+                $crate::logic::world::update_body::UpdateBody::$variant(self)
+            }
+            fn from_body(b: $crate::logic::world::update_body::UpdateBody) -> Option<Self> {
+                match b {
+                    $crate::logic::world::update_body::UpdateBody::$variant(m) => Some(m),
+                    _ => None,
+                }
+            }
+            fn is_valid_container_for(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, obj: $crate::common::game_type::ObjectId, check_capacity: bool) -> bool {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_is_valid_container_for(self, world, me, obj, check_capacity)
+            }
+            fn on_capture(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, old_owner: i32, new_owner: i32) {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_on_capture(self, world, me, old_owner, new_owner)
+            }
+            fn on_containing(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, rider: $crate::common::game_type::ObjectId, was_selected: bool) {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_on_containing(self, world, me, rider, was_selected)
+            }
+            fn on_removing(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, rider: $crate::common::game_type::ObjectId) {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_on_removing(self, world, me, rider)
+            }
+            fn update(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle) -> $crate::logic::module::update_module::UpdateSleepTime {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_update(self, world, me)
+            }
+            fn is_rider_change_contain(&self) -> bool {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_is_rider_change_contain(self)
+            }
+            fn is_special_overlord_style_container(&self) -> bool {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_is_special_overlord_style_container(self)
+            }
+            fn get_contain_max(&mut self) -> i32 {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_get_contain_max(self)
+            }
+            fn get_extra_slots_in_use(&mut self) -> i32 {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_get_extra_slots_in_use(self)
+            }
+            fn is_exit_busy(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle) -> bool {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_is_exit_busy(self, world, me)
+            }
+            fn reserve_door_for_exit(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, specific: $crate::common::game_type::ObjectId) -> $crate::logic::module::update_module::ExitDoorType {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_reserve_door_for_exit(self, world, me, specific)
+            }
+            fn is_displayed_on_control_bar(&self) -> bool {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_is_displayed_on_control_bar(self)
+            }
+            fn kill_riders_who_are_not_free_to_exit(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle) {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_kill_riders_who_are_not_free_to_exit(self, world, me)
+            }
+            fn is_passenger_allowed_to_fire(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, id: $crate::common::game_type::ObjectId) -> bool {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_is_passenger_allowed_to_fire(self, world, me, id)
+            }
+            fn exit_object_via_door(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, exit_obj: $crate::common::game_type::ObjectId, exit_door: $crate::logic::module::update_module::ExitDoorType) {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_exit_object_via_door(self, world, me, exit_obj, exit_door)
+            }
+            fn other_call(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, call: $crate::logic::world::module_call::ModuleCall) -> $crate::logic::world::module_call::ModuleReply {
+                match call {
+                    $crate::logic::world::module_call::ModuleCall::IsSpecificRiderFreeToExit { obj } => $crate::logic::world::module_call::ModuleReply::Bool($crate::logic::modules::transport_contain::TransportContainVirtuals::is_specific_rider_free_to_exit(self, world, me, obj)),
+                    _ => $crate::logic::world::module_call::ModuleReply::Unhandled,
+                }
+            }
         }
-    }
-    fn is_valid_container_for(&mut self, world: &mut World, me: ModuleHandle, obj: ObjectId, check_capacity: bool) -> bool {
-        tc_is_valid_container_for(self, world, me, obj, check_capacity)
-    }
-    fn on_capture(&mut self, world: &mut World, me: ModuleHandle, old_owner: i32, new_owner: i32) {
-        tc_on_capture(self, world, me, old_owner, new_owner)
-    }
-    fn on_containing(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId, was_selected: bool) {
-        tc_on_containing(self, world, me, rider, was_selected)
-    }
-    fn on_removing(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId) {
-        tc_on_removing(self, world, me, rider)
-    }
-    fn update(&mut self, world: &mut World, me: ModuleHandle) -> UpdateSleepTime {
-        tc_update(self, world, me)
-    }
-    fn is_rider_change_contain(&self) -> bool {
-        false
-    }
-    fn is_special_overlord_style_container(&self) -> bool {
-        false
-    }
-    fn get_contain_max(&mut self) -> i32 {
-        tc_get_contain_max(self)
-    }
-    fn get_extra_slots_in_use(&mut self) -> i32 {
-        self.extra_slots_in_use
-    }
-    fn is_exit_busy(&mut self, world: &mut World, me: ModuleHandle) -> bool {
-        tc_is_exit_busy(self, world, me)
-    }
-    fn reserve_door_for_exit(&mut self, world: &mut World, me: ModuleHandle, specific: ObjectId) -> ExitDoorType {
-        tc_reserve_door_for_exit(self, world, me, specific)
-    }
-    fn is_displayed_on_control_bar(&self) -> bool {
-        true
-    }
-    fn kill_riders_who_are_not_free_to_exit(&mut self, world: &mut World, me: ModuleHandle) {
-        tc_kill_riders_who_are_not_free_to_exit(self, world, me)
-    }
-    fn is_passenger_allowed_to_fire(&mut self, world: &mut World, me: ModuleHandle, id: ObjectId) -> bool {
-        tc_is_passenger_allowed_to_fire(self, world, me, id)
-    }
-    fn other_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
-        match call {
-            ModuleCall::IsSpecificRiderFreeToExit { obj } => ModuleReply::Bool(self.is_specific_rider_free_to_exit(world, me, obj)),
-            _ => ModuleReply::Unhandled,
-        }
-    }
+    };
 }
+pub(crate) use transport_open_contain_virtuals;
+
+/// The rest of a class derived from `TransportContain` with no fields of its own (it holds the base as `tc`): construction, the slot's entry points,
+/// `UpdateBehavior`, and `Snapshot` (version 1, then "extend base class", as every derived transport's `xfer` is).
+macro_rules! derived_transport_contain_glue {
+    ($ty:ident, $variant:ident) => {
+        impl $ty {
+            /// `getInterfaceMask()`: the base's.
+            pub const fn get_interface_mask() -> i32 {
+                $crate::logic::modules::transport_contain::TransportContain::get_interface_mask()
+            }
+            /// The constructor's first half: the base's.
+            pub fn unconstructed(
+                object: $crate::common::game_type::ObjectId,
+                module_data: Option<std::sync::Arc<$crate::logic::modules::transport_contain::TransportContainModuleData>>,
+            ) -> $crate::common::ini::IniResult<$ty> {
+                Ok($ty { tc: $crate::logic::modules::transport_contain::TransportContain::unconstructed(object, module_data)? })
+            }
+            /// The `UpdateModule` base, for the scheduler's bookkeeping.
+            pub fn update_module(&self) -> &$crate::logic::module::update_module::UpdateModule {
+                self.tc.update_module()
+            }
+            /// The module data.
+            pub fn module_data(&self) -> &std::sync::Arc<$crate::logic::modules::transport_contain::TransportContainModuleData> {
+                self.tc.module_data()
+            }
+            /// The `TransportContain` base.
+            pub fn transport_contain(&self) -> &$crate::logic::modules::transport_contain::TransportContain {
+                &self.tc
+            }
+            /// The state `xfer` writes, as words: the base's (no fields of its own).
+            pub fn state_words(&self) -> Vec<u32> {
+                self.tc.state_words()
+            }
+            /// The constructor's second half: the base's.
+            pub fn world_construct(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle) {
+                self.tc.world_construct(world, me);
+            }
+            /// `update()` as the scheduler runs it.
+            pub fn world_update(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::sleepy::UpdateHandle) -> $crate::logic::module::update_module::UpdateSleepTime {
+                $crate::logic::modules::update_behavior::world_update(self, world, me)
+            }
+            /// The module's answer to one of `Object`'s calls.
+            pub fn module_call(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, call: $crate::logic::world::module_call::ModuleCall) -> $crate::logic::world::module_call::ModuleReply {
+                $crate::logic::modules::open_contain::contain_module_call(self, world, me, call)
+            }
+            /// `xfer` with the scheduling half the slot holds: the version, then the base's.
+            pub fn xfer_with(
+                &mut self,
+                update: &mut $crate::logic::module::update_module::UpdateModule,
+                xfer: &mut dyn $crate::common::xfer::Xfer,
+            ) -> $crate::common::xfer::XferResult<()> {
+                let current: $crate::common::xfer::XferVersion = 1;
+                let mut version = current;
+                xfer.xfer_version(&mut version, current)?;
+                self.tc.xfer_with(update, xfer)
+            }
+            /// `crc` with the scheduling half: "extend base class".
+            pub fn crc_with(
+                &mut self,
+                update: &mut $crate::logic::module::update_module::UpdateModule,
+                xfer: &mut dyn $crate::common::xfer::Xfer,
+            ) -> $crate::common::xfer::XferResult<()> {
+                self.tc.crc_with(update, xfer)
+            }
+            /// `loadPostProcess` with the scheduling half: "extend base class".
+            pub fn load_post_process_with(&mut self, update: &mut $crate::logic::module::update_module::UpdateModule) {
+                self.tc.load_post_process_with(update);
+            }
+        }
+
+        impl $crate::logic::modules::update_behavior::UpdateBehavior for $ty {
+            const XFER_VERSION: $crate::common::xfer::XferVersion = 1;
+            fn update_base(&self) -> &$crate::logic::module::update_module::UpdateModule {
+                self.tc.update_module()
+            }
+            fn update(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle) -> $crate::logic::module::update_module::UpdateSleepTime {
+                $crate::logic::modules::open_contain::OpenContainVirtuals::update(self, world, me)
+            }
+            fn into_body(self) -> $crate::logic::world::update_body::UpdateBody {
+                $crate::logic::world::update_body::UpdateBody::$variant(self)
+            }
+            fn from_body(body: $crate::logic::world::update_body::UpdateBody) -> Option<Self> {
+                match body {
+                    $crate::logic::world::update_body::UpdateBody::$variant(m) => Some(m),
+                    _ => None,
+                }
+            }
+            fn other_call(&mut self, _world: &mut $crate::logic::world::game_logic::World, _me: $crate::logic::world::module_call::ModuleHandle, _call: $crate::logic::world::module_call::ModuleCall) -> $crate::logic::world::module_call::ModuleReply {
+                $crate::logic::world::module_call::ModuleReply::Unhandled
+            }
+        }
+
+        impl $crate::common::xfer::Snapshot for $ty {
+            /// `crc`: "extend base class".
+            fn crc(&mut self, xfer: &mut dyn $crate::common::xfer::Xfer) -> $crate::common::xfer::XferResult<()> {
+                $crate::common::xfer::Snapshot::crc(&mut self.tc, xfer)
+            }
+            /// `xfer` (version 1): the version, then `TransportContain::xfer`.
+            fn xfer(&mut self, xfer: &mut dyn $crate::common::xfer::Xfer) -> $crate::common::xfer::XferResult<()> {
+                let current: $crate::common::xfer::XferVersion = 1;
+                let mut version = current;
+                xfer.xfer_version(&mut version, current)?;
+                $crate::common::xfer::Snapshot::xfer(&mut self.tc, xfer)
+            }
+            /// `loadPostProcess`: "extend base class".
+            fn load_post_process(&mut self) {
+                $crate::common::xfer::Snapshot::load_post_process(&mut self.tc);
+            }
+        }
+    };
+}
+pub(crate) use derived_transport_contain_glue;
+
+transport_open_contain_virtuals!(TransportContain, TransportContain);
+// --- end p1w13-sonnet ---
 
 impl TransportContainVirtuals for TransportContain {
     fn tc(&self) -> &TransportContain {
