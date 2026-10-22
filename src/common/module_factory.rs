@@ -1239,7 +1239,8 @@ mod tests {
             let t = translated_module(n).unwrap();
             assert!(t.create_proc.is_some() && t.create_data_proc.is_some() && t.which_interfaces.is_some(), "{n}");
         }
-        assert!(!is_translated("SlowDeathBehavior"));
+        // some registered module is always still untranslated until the port is complete
+        assert!(REGISTRATIONS.iter().any(|r| !is_translated(r.name)));
         // --- end p1l9-example ---
         assert!(!ModuleTemplate::UNTRANSLATED.is_translated());
     }
@@ -1299,11 +1300,13 @@ mod tests {
         assert!(matches!(find(&f, &mut names, "NoSuchModule", ModuleType::Behavior), ModuleFactoryError::UnknownModule { .. }));
         assert!(matches!(find(&f, &mut names, "autohealbehavior", ModuleType::Behavior), ModuleFactoryError::NotTranslated { .. } | ModuleFactoryError::UnknownModule { .. }));
         // the three public entry points, for an untranslated name
-        let e = f.new_module(&mut names, 1, b"SlowDeathBehavior", None, ModuleType::Behavior).unwrap_err();
+        let pending = REGISTRATIONS.iter().find(|r| r.module_type == ModuleType::Behavior && !is_translated(r.name)).map(|r| r.name.as_bytes().to_vec()).unwrap();
+        let pending = &pending[..];
+        let e = f.new_module(&mut names, 1, pending, None, ModuleType::Behavior).unwrap_err();
         assert!(matches!(e, ModuleFactoryError::NotTranslated { .. }));
-        let e = f.new_module_data_from_ini(&mut names, None, b"SlowDeathBehavior", ModuleType::Behavior, b"ModuleTag_01").unwrap_err();
+        let e = f.new_module_data_from_ini(&mut names, None, pending, ModuleType::Behavior, b"ModuleTag_01").unwrap_err();
         assert!(matches!(e, ModuleFactoryError::NotTranslated { .. }));
-        let e = f.find_module_interface_mask(&mut names, b"SlowDeathBehavior", ModuleType::Behavior).unwrap_err();
+        let e = f.find_module_interface_mask(&mut names, pending, ModuleType::Behavior).unwrap_err();
         assert!(matches!(e, ModuleFactoryError::NotTranslated { .. }));
         assert!(f.module_data_list().is_empty());
         // an empty name
