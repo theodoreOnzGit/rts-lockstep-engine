@@ -146,7 +146,9 @@ impl Harness<'_> {
             if cout.status == 99 {
                 // the C++ crashed on a case the planted Rust steered past upstream undefined behaviour: a mismatch, not a process kill
                 run.eq(&"C++ crashed", &"no crash", what);
-                continue;
+                // the C++ is not trusted after a crash (a trapped stack overflow leaves every later case to the driver's alarm): the test has failed,
+                // so the rest is not run (p1w13-sonnet, batch R9)
+                break;
             }
             let detail = match cout.status {
                 0 | 4 => Vec::new(),

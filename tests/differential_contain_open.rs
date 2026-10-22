@@ -32,6 +32,10 @@
 //! Batch R3 adds the `I` (`InternetHackContain`) and `R` (`RailedTransportContain`) blocks (the transport's fields), class codes 2 and 3 for the scene's
 //! containers, and per object a dock behaviour after the contain (open or closed; `setDockOpen` is a line of the log).
 //!
+//! Batch R9 adds the `M` block (`MobNexusContain`: the base's fields, `Slots`, `ScatterNearbyOnExit`, `OrientLikeContainerOnExit`,
+//! `KeepContainerVelocityOnExit`, `ExitBone`, `ExitPitchRate`, `InitialPayload` with templates that exist, `HealthRegen%PerSec`), class code 9, op 62
+//! (`tryToEvacuate`), and the mob scene (one scene in eight; [`mob_scene`]). The op group of batches R8 and R9 is one op in four.
+//!
 //! Batch R8 adds the `P` block (`ParachuteContain`: the base's fields, `PitchRateMax`, `RollRateMax`, `LowAltitudeDamping`, `ParachuteOpenDist`,
 //! `KillWhenLandingInWaterSlop`, `FreeFallDamagePercent`, `ParachuteOpenSound`), class code 8, ops 58 to 61 (`onCollide` with the ground,
 //! `setOverrideDestination`, `onDrawableBoundToObject`, the held flag), per object the held flag, the parachute bones, the locomotor's sway and the
@@ -232,6 +236,26 @@
 //! | 1531 | the roll never moves |
 //! | 1532 | an empty chute not killed |
 //! | 1533 | the override destination not marked set |
+//!
+//! Batch R9, `mob_nexus_contain.rs` (9,000 cases: 14 of 15 caught; the 120 caught plants above were run again and are still all caught):
+//!
+//! | id | planted bug |
+//! |---|---|
+//! | 1541 | the extra slots not saved |
+//! | 1542 | `tryToEvacuate` reports nobody out |
+//! | 1543 | a parachute not judged by what it holds (caught by the mob scene) |
+//! | 1544 | non-allied riders taken |
+//! | 1545 | the capacity check without the extra slots (caught by the mob scene) |
+//! | 1546 | the extra slots not counted in |
+//! | 1547 | the orient-like-container test inverted |
+//! | 1548 | the exit force's Z not scaled by the mass |
+//! | 1549 | riders never scattered |
+//! | 1550 | LOADED not cleared when empty |
+//! | 1551 | the initial payload not added (SURVIVES: the test's factory makes nothing, as for 1424) |
+//! | 1552 | no health regeneration |
+//! | 1553 | healthy riders healed too |
+//! | 1554 | the free-to-exit test inverted |
+//! | 1555 | the movement terrain test dropped |
 //!
 //! Not planted, unobservable here: the `wasSelected` argument of `onContaining` (1375, removed). `OpenContain::onContaining` ignores it; ~~`TransportContain` and `GarrisonContain` use it, and
 //! their tests will catch it~~ **CORRECTED 2026-10-22 (batch R2)**: `TransportContain::onContaining` only hands it to the base, so it is unobservable there too;
