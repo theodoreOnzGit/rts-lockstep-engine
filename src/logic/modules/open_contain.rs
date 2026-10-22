@@ -1836,6 +1836,7 @@ macro_rules! with_contain_body {
             UpdateBody::HelixContain($m) => Some($e),
             UpdateBody::RiderChangeContain($m) => Some($e),
             UpdateBody::OverlordContain($m) => Some($e),
+            UpdateBody::HealContain($m) => Some($e),
             _ => None,
         }
     };

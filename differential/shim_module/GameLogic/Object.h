@@ -276,6 +276,9 @@ public:
 	void clearAndSetModelConditionState( ModelConditionFlagType clr, ModelConditionFlagType set );
 	UnsignedInt getWeaponBonusCondition() const { return m_weaponBonusCondition; }
 	void friend_setContainedBy( Object *containedBy ) { m_containedBy = containedBy; }
+	/* p1w13-sonnet, batch R7: HealContain reads when the object went in (Object.h) */
+	UnsignedInt getContainedByFrame() const { return m_containedByFrame; }
+	UnsignedInt m_containedByFrame = 0;
 	PathfindLayerEnum m_layer = LAYER_GROUND;
 	class StealthUpdate *m_stealth = 0;
 	/* --- end p1w13-sonnet --- */

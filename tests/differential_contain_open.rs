@@ -32,6 +32,10 @@
 //! Batch R3 adds the `I` (`InternetHackContain`) and `R` (`RailedTransportContain`) blocks (the transport's fields), class codes 2 and 3 for the scene's
 //! containers, and per object a dock behaviour after the contain (open or closed; `setDockOpen` is a line of the log).
 //!
+//! Batch R7 adds the `L` block (`HealContain`: the base's fields and `TimeForFullHeal`), class code 7, each object's contained-by frame, and the class
+//! queries (`isHealContain`, `isTunnelContain`, `isRiderChangeContain`, `isSpecialOverlordStyleContainer`, `isSpecialZeroSlotContainer`,
+//! `isGarrisonable`, `isBustable`) in the query op's hash. Op 55 asks transports only.
+//!
 //! Batch R6 adds the `O` block (`OverlordContain`: the transport's fields, `PayloadTemplateName`, `ExperienceSinkForRider`) and class code 6. A ring of
 //! redirecting Overlords is undefined upstream and excluded (the C++ reference would loop until the driver's alarm).
 //!
@@ -184,6 +188,16 @@
 //! | 1497 | `getContainedItemsList` not redirected |
 //! | 1498 | the nested-containment test of `isPassengerAllowedToFire` inverted (caught as a crash: an endless recursion) |
 //! | 1499 | `m_redirectionActivated` not saved |
+//!
+//! Batch R7, `heal_contain.rs` (9,000 cases: all 5 caught; the 91 caught plants above were run again and are still all caught):
+//!
+//! | id | planted bug |
+//! |---|---|
+//! | 1501 | the full-heal time test inverted |
+//! | 1502 | a partial heal gives the full health |
+//! | 1503 | a healed rider not let out |
+//! | 1504 | `update` sleeps for ever |
+//! | 1505 | `isHealContain` FALSE |
 //!
 //! Not planted, unobservable here: the `wasSelected` argument of `onContaining` (1375, removed). `OpenContain::onContaining` ignores it; ~~`TransportContain` and `GarrisonContain` use it, and
 //! their tests will catch it~~ **CORRECTED 2026-10-22 (batch R2)**: `TransportContain::onContaining` only hands it to the base, so it is unobservable there too;
@@ -394,6 +408,9 @@ struct Obj {
     ai_moving: bool,
     /// batch R6: a scene-built Overlord's `ExperienceSinkForRider` (its payload list is `helix_payload`'s)
     ov_sink: bool,
+    /// batch R7: a scene-built heal container's `TimeForFullHeal`, and the frame the object went in (`getContainedByFrame()`)
+    heal_frames: u32,
+    contained_by_frame: u32,
 }
 
 /// The riders a scene-built combat bike can name (the driver's `kCtRiderSets`): per set up to three of (template, index into [`RIDER_TEMPLATES`], 0
@@ -518,6 +535,8 @@ impl Obj {
         w.u(self.scuttle_cond);
         w.u(u32::from(self.ai_moving));
         w.u(u32::from(self.ov_sink));
+        w.u(self.heal_frames);
+        w.u(self.contained_by_frame);
     }
 
     fn read(r: &mut R<'_>) -> Obj {
@@ -625,6 +644,8 @@ impl Obj {
         o.scuttle_cond = r.u();
         o.ai_moving = r.u() != 0;
         o.ov_sink = r.u() != 0;
+        o.heal_frames = r.u();
+        o.contained_by_frame = r.u();
         o
     }
 }
@@ -734,7 +755,11 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     // batch R2: one block in two is a `TransportContain` (`T`), with its own fields after the base's
     // batch R3: a transport block is `T`, `I` (InternetHackContain) or `R` (RailedTransportContain); the fields are the same
     let transport = g.below(2) == 0;
-    let token = if transport { ["T\n", "I\n", "R\n", "H\n", "C\n", "O\n"][g.below(6) as usize] } else { "D\n" };
+    // batch R7: one plain block in three is a heal container's (`L`: the base's fields and `TimeForFullHeal`)
+    let heal = !transport && g.below(3) == 0;
+    let token = if heal {
+        "L\n"
+    } else if transport { ["T\n", "I\n", "R\n", "H\n", "C\n", "O\n"][g.below(6) as usize] } else { "D\n" };
     if transport {
         field!(60, "Slots", health_str(g, clean));
         field!(30, "ScatterNearbyOnExit", gen_bool(g, clean));
@@ -759,6 +784,9 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
             }
         }
         field!(30, "ShouldDrawPips", gen_bool(g, clean));
+    }
+    if heal {
+        field!(60, "TimeForFullHeal", format!("{}", *pick(g, &[&0i32, &33, &100, &1000, &5000])));
     }
     // batch R6: an Overlord's payload names (rare, as the Helix's) and experience sink
     if token == "O\n" {
@@ -880,7 +908,8 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
         }
     }
     // 0 OpenContain, 1 TransportContain, 2 InternetHackContain, 3 RailedTransportContain
-    o.cls = if o.has_contain && k > 0 { g.below(7) } else { 0 };
+    // 6 OverlordContain, 7 HealContain
+    o.cls = if o.has_contain && k > 0 { g.below(8) } else { 0 };
     o.raw_slots = *pick(g, &[&0i32, &1, &1, &1, &2, &3]);
     // upstream's airborne locomotor is the AI's
     o.airborne = o.has_ai && g.below(4) == 0;
@@ -916,6 +945,8 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     o.scuttle_cond = g.below(6);
     o.ai_moving = g.below(2) == 0;
     o.ov_sink = g.below(3) != 0;
+    o.heal_frames = *pick(g, &[&0u32, &1, &5, &30, &300]);
+    o.contained_by_frame = g.below(300);
     if g.below(4) == 0 {
         o.extra_kinds |= 8;
     }
@@ -939,6 +970,7 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> Vec<u32> {
                 Some(ModuleDataKind::HelixContain(_)) => 4,
                 Some(ModuleDataKind::RiderChangeContain(_)) => 5,
                 Some(ModuleDataKind::OverlordContain(_)) => 6,
+                Some(ModuleDataKind::HealContain(_)) => 7,
                 _ => 0,
             };
         }
@@ -1082,6 +1114,13 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId, has_contain: bool) {
                 }
             }
             // batch R4: a Helix, 3 (the transport's words and its portable structure)
+            // batch R7: a heal container, 1 (an OpenContain's words)
+            Some(UpdateBody::HealContain(m)) => {
+                put_u32(v, 1);
+                for x in m.state_words() {
+                    put_u32(v, x);
+                }
+            }
             // batch R6: an Overlord, 5 (the transport's words and the redirection flag)
             Some(UpdateBody::OverlordContain(m)) => {
                 put_u32(v, 5);
@@ -1382,6 +1421,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             ModuleDataKind::HelixContain(h) => &h.transport.open,
             ModuleDataKind::RiderChangeContain(r) => &r.transport.open,
             ModuleDataKind::OverlordContain(r) => &r.transport.open,
+            ModuleDataKind::HealContain(h) => &h.open,
             _ => unreachable!("not a contain"),
         };
         put_u32(&mut v, d.contain_max as u32);
@@ -1474,6 +1514,13 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 }
                 put_u32(&mut v, u32::from(od.experience_sink_for_rider));
             }
+        } else {
+            put_u32(&mut v, 0);
+        }
+        // batch R7: 1 and a heal block's time, or 0
+        if let ModuleDataKind::HealContain(h) = &data {
+            put_u32(&mut v, 1);
+            put_u32(&mut v, h.frames_for_full_heal);
         } else {
             put_u32(&mut v, 0);
         }
@@ -1609,7 +1656,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 data.clone()
             } else {
                 // a transport's base starts from `TransportContainModuleData()` (infantry allowed inside)
-                let base = if o.cls != 0 { TransportContainModuleData::default().open } else { OpenContainModuleData::default() };
+                let base = if o.cls != 0 && o.cls != 7 { TransportContainModuleData::default().open } else { OpenContainModuleData::default() };
                 let mut d = OpenContainModuleData { contain_max: o.contain_max, passengers_allowed_to_fire: o.allow_fire, passengers_in_turret: o.in_turret, number_of_exit_paths: o.exit_paths, damage_percentage_to_units: o.damage_pct, is_burned_death_to_units: o.burned, door_open_time: o.door_open, weapon_bonus_passed_to_passengers: o.weapon_pass, allow_allies_inside: o.allow_rel & 1 != 0, allow_enemies_inside: o.allow_rel & 2 != 0, allow_neutral_inside: o.allow_rel & 4 != 0, ..base };
                 if o.enter_snd > 0 {
                     d.enter_sound.event_name = format!("snd{}", o.enter_snd).into_bytes();
@@ -1640,7 +1687,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                         d.die_mux_data.required_status.set(STATUSES[i], 1);
                     }
                 }
-                if o.cls != 0 {
+                if o.cls == 7 {
+                    ModuleDataKind::HealContain(Arc::new(rts_lockstep_engine::logic::modules::heal_contain::HealContainModuleData { open: d, frames_for_full_heal: o.heal_frames }))
+                } else if o.cls != 0 {
                     let t = TransportContainModuleData {
                         open: d,
                         slot_capacity: o.slot_cap,
@@ -1702,6 +1751,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 ModuleDataKind::HelixContain(_) => b"HelixContain",
                 ModuleDataKind::RiderChangeContain(_) => b"RiderChangeContain",
                 ModuleDataKind::OverlordContain(_) => b"OverlordContain",
+                ModuleDataKind::HealContain(_) => b"HealContain",
                 _ => b"OpenContain",
             };
             let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class, b"ModuleTag_Contain", &cd).unwrap().unwrap();
@@ -1730,6 +1780,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         ob.layer = o.layer as i32;
         ob.weapon_bonus_condition = o.weapon_bonus;
         ob.contained_by = INVALID_ID;
+        ob.contained_by_frame = o.contained_by_frame;
         if o.unmanned {
             ob.disabled.set(rts_lockstep_engine::common::disabled_types::DISABLED_UNMANNED, 1);
         }
@@ -1842,6 +1893,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                                 Some(UpdateBody::HelixContain(c)) => Some(c.module_data().transport.open.die_mux_data),
                                 Some(UpdateBody::RiderChangeContain(c)) => Some(c.module_data().transport.open.die_mux_data),
                                 Some(UpdateBody::OverlordContain(c)) => Some(c.module_data().transport.open.die_mux_data),
+                                Some(UpdateBody::HealContain(c)) => Some(c.module_data().open.die_mux_data),
                                 _ => None,
                             };
                             if let Some(mux) = mux {
@@ -1926,6 +1978,14 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                         h = fold(h, boo(w.module_call(id, m, ModuleCall::HasObjectsWantingToEnterOrExit)));
                         h = fold(h, boo(w.module_call(id, m, ModuleCall::IsExitBusy)));
                         h = fold(h, boo(w.module_call(id, m, ModuleCall::IsImmuneToClearBuildingAttacks)));
+                        // batch R7: the class queries
+                        h = fold(h, boo(w.module_call(id, m, ModuleCall::IsHealContain)));
+                        h = fold(h, boo(w.module_call(id, m, ModuleCall::IsTunnelContain)));
+                        h = fold(h, boo(w.module_call(id, m, ModuleCall::IsRiderChangeContain)));
+                        h = fold(h, boo(w.module_call(id, m, ModuleCall::IsSpecialOverlordStyleContainer)));
+                        h = fold(h, boo(w.module_call(id, m, ModuleCall::IsSpecialZeroSlotContainer)));
+                        h = fold(h, boo(w.module_call(id, m, ModuleCall::IsGarrisonable)));
+                        h = fold(h, boo(w.module_call(id, m, ModuleCall::IsBustable)));
                         result = h;
                     }
                     27 => {
@@ -2008,7 +2068,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                         w.module_call(id, m, ModuleCall::KillRidersWhoAreNotFreeToExit);
                     }
                     55 => {
-                        if sc.objs[id as usize - 1].cls != 0 {
+                        // transports only (classes 1 to 6; a HealContain, class 7, is none)
+                        if (1..=6).contains(&sc.objs[id as usize - 1].cls) {
                             result = u32::from(w.module_call(id, m, ModuleCall::IsSpecificRiderFreeToExit { obj: if o[3] & 1 != 0 { INVALID_ID } else { rider } }).as_bool());
                         }
                     }
@@ -2161,6 +2222,9 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
             out.push(format!("rider data {riders:?} scuttle {} {}", r.u32(), r.u32()));
         }
     }
+    if r.u32() != 0 {
+        out.push(format!("heal data {}", r.u32()));
+    }
     let n_obj = r.u32();
     for i in 0..=n_ops {
         if r.at_end() {
@@ -2269,13 +2333,18 @@ fn read_overlord_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> I
     Ok(())
 }
 
+fn read_heal_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
+    *out = Some(rts_lockstep_engine::logic::modules::heal_contain::new_module_data(Some(ini))?);
+    Ok(())
+}
+
 fn read_railed_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
     *out = Some(rts_lockstep_engine::logic::modules::railed_transport_contain::new_module_data(Some(ini))?);
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }, BlockParse { token: "C", parse: read_rider_change_block }, BlockParse { token: "O", parse: read_overlord_block }];
+    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }, BlockParse { token: "C", parse: read_rider_change_block }, BlockParse { token: "O", parse: read_overlord_block }, BlockParse { token: "L", parse: read_heal_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)

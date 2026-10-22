@@ -71,6 +71,8 @@ static MessageStream *TheMessageStream = &g_ctMessageStream;
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/RiderChangeContain.cpp"
 /* batch R6: OverlordContain.cpp with its `while( *it )` loop ending at end() (build.rs) */
 #include "OverlordContain_edit.cpp"
+/* batch R7, unchanged */
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/HealContain.cpp"
 /* --- end p1w13-sonnet --- */
 #undef itoa
 
@@ -92,13 +94,14 @@ ModuleData *l9ctRead(const char *filename)
 		try {
 			/* --- p1w13-sonnet --- (batches R2, R3) */
 			const char c0 = currentLine.str()[0];
-			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : c0 == 'H' ? 4 : c0 == 'C' ? 5 : c0 == 'O' ? 6 : 0;
+			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : c0 == 'H' ? 4 : c0 == 'C' ? 5 : c0 == 'O' ? 6 : c0 == 'L' ? 7 : 0;
 			if (g_ctBlockCls == 1) data = TransportContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 2) data = InternetHackContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 3) data = RailedTransportContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 4) data = HelixContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 5) data = RiderChangeContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 6) data = OverlordContain::friend_newModuleData(&ini);
+			else if (g_ctBlockCls == 7) data = HealContain::friend_newModuleData(&ini);
 			else data = OpenContain::friend_newModuleData(&ini);
 			/* --- end p1w13-sonnet --- */
 		} catch (...) {
@@ -324,8 +327,8 @@ Bool Object::checkAndDetonateBoobyTrap(const Object *victim)
 	ulog("booby %d %d %d", (int)m_oid, victim ? (int)victim->m_oid : 0, (int)r);
 	return r;
 }
-void Object::onContainedBy(Object *containedBy) { ulog("oncontainedby %d %d", (int)m_oid, (int)containedBy->m_oid); m_containedBy = containedBy; }
-void Object::onRemovedFrom(Object *removedFrom) { ulog("onremovedfrom %d %d", (int)m_oid, (int)removedFrom->m_oid); m_containedBy = 0; }
+void Object::onContainedBy(Object *containedBy) { ulog("oncontainedby %d %d", (int)m_oid, (int)containedBy->m_oid); m_containedBy = containedBy; m_containedByFrame = TheGameLogic->getFrame(); }   /* batch R7: and the frame (Object.cpp) */
+void Object::onRemovedFrom(Object *removedFrom) { ulog("onremovedfrom %d %d", (int)m_oid, (int)removedFrom->m_oid); m_containedBy = 0; m_containedByFrame = 0; }
 void Object::clearAndSetModelConditionState(ModelConditionFlagType clr, ModelConditionFlagType set)
 {
 	if (m_drawable) m_drawable->clearAndSetModelConditionState(clr, set);
@@ -622,6 +625,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		/* --- p1w13-sonnet --- (batch R2: TransportContain) */
 		const TransportContainModuleData *td = dynamic_cast<const TransportContainModuleData *>(d);
 		putU32(td ? g_ctBlockCls : 0u);   /* p1w13-sonnet, batch R3: the class of the block */
+
 		if (td) {
 			putU32((unsigned)td->m_slotCapacity);
 			putU32(realBits(td->m_exitPitchRate));
@@ -664,6 +668,9 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				putU32(ovd->m_experienceSinkForRider ? 1u : 0u);
 			}
 		}
+		/* batch R7: 1 and a heal block's time, or 0 */
+		putU32(g_ctBlockCls == 7 ? 1u : 0u);
+		if (g_ctBlockCls == 7) putU32(((const HealContainModuleData *)d)->m_framesForFullHeal);
 		/* --- end p1w13-sonnet --- */
 	}
 	initKindOfMasks();
@@ -684,7 +691,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		unsigned turret[CT_FP][3];
 		/* --- p1w13-sonnet --- (batch R2: TransportContain) */
 		unsigned cls; int rawSlots; unsigned airborne; int freeToExit; unsigned hasLoco, validTerrain, com, vel[3], weapons, unmanned, extraKinds, exitBoneHas, exitBone[3];
-		int slotCap; unsigned regen, exitDelay, tflags, pitch; int payloadCount; unsigned payloadName, exitBoneName, health, hasDock, dockOpen, helixPayload, riderSet, scuttleFrames, scuttleCond, aiMoving, ovSink;
+		int slotCap; unsigned regen, exitDelay, tflags, pitch; int payloadCount; unsigned payloadName, exitBoneName, health, hasDock, dockOpen, helixPayload, riderSet, scuttleFrames, scuttleCond, aiMoving, ovSink, healFrames, containedByFrame;
 		/* --- end p1w13-sonnet --- */
 	} oc[CT_OBJS];
 	for (int k = 0; k < g_ctN; ++k) {
@@ -707,7 +714,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		o.cls = c.u(); o.rawSlots = c.s(); o.airborne = c.u(); o.freeToExit = c.s(); o.hasLoco = c.u(); o.validTerrain = c.u(); o.com = c.u();
 		for (int i = 0; i < 3; ++i) o.vel[i] = c.u();
 		o.weapons = c.u(); o.unmanned = c.u(); o.extraKinds = c.u(); o.exitBoneHas = c.u(); for (int i = 0; i < 3; ++i) o.exitBone[i] = c.u();
-		o.slotCap = c.s(); o.regen = c.u(); o.exitDelay = c.u(); o.tflags = c.u(); o.pitch = c.u(); o.payloadCount = c.s(); o.payloadName = c.u(); o.exitBoneName = c.u(); o.health = c.u(); o.hasDock = c.u(); o.dockOpen = c.u(); o.helixPayload = c.u(); o.riderSet = c.u(); o.scuttleFrames = c.u(); o.scuttleCond = c.u(); o.aiMoving = c.u(); o.ovSink = c.u();
+		o.slotCap = c.s(); o.regen = c.u(); o.exitDelay = c.u(); o.tflags = c.u(); o.pitch = c.u(); o.payloadCount = c.s(); o.payloadName = c.u(); o.exitBoneName = c.u(); o.health = c.u(); o.hasDock = c.u(); o.dockOpen = c.u(); o.helixPayload = c.u(); o.riderSet = c.u(); o.scuttleFrames = c.u(); o.scuttleCond = c.u(); o.aiMoving = c.u(); o.ovSink = c.u(); o.healFrames = c.u(); o.containedByFrame = c.u();
 		/* --- end p1w13-sonnet --- */
 	}
 	for (int i = 0; i < g_ctN; ++i) for (int j = 0; j < g_ctN; ++j) g_ctRel[i][j] = (Relationship)c.s();
@@ -790,6 +797,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		a.ai.m_freeToExit = o.freeToExit;
 		a.ai.m_hasLoco = o.hasLoco != 0;
 		a.ai.m_moving = o.aiMoving != 0;   /* batch R5 */
+		obj->m_containedByFrame = o.containedByFrame;   /* batch R7: when the object went in (HealContain reads it) */
 		memset(a.physData, 0, sizeof(a.physData));
 		((PhysicsBehaviorModuleData *)a.physData)->m_centerOfMassOffset = ctF(o.com);
 		phys->m_moduleData = (const ModuleData *)a.physData;
@@ -854,6 +862,12 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			TransportContainModuleData *tdata = 0;   /* --- p1w13-sonnet --- (batch R2: TransportContain) */
 			if (k == 0) a.data = (OpenContainModuleData *)d;
 			else {
+				if (o.cls == 7) {
+					/* batch R7: a heal container's data (an OpenContainModuleData) */
+					HealContainModuleData *hd = new HealContainModuleData;
+					hd->m_framesForFullHeal = o.healFrames;
+					a.data = hd;
+				} else
 				if (o.cls) {
 					/* batch R4: a Helix's data, with the payload list the scene names */
 					/* batch R6: an Overlord's data, with the payload list (the Helix's lists) and the experience sink the scene names */
@@ -941,6 +955,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				else if (cls == 4) a.oc = new(ShimZeroFill{}) HelixContain(a.obj, td);
 				else if (cls == 5) a.oc = new(ShimZeroFill{}) RiderChangeContain(a.obj, td);
 				else if (cls == 6) a.oc = new(ShimZeroFill{}) OverlordContain(a.obj, td);
+				else if (cls == 7) a.oc = new(ShimZeroFill{}) HealContain(a.obj, k == 0 ? d : (ModuleData *)a.data);
 				else
 				/* --- end p1w13-sonnet --- */
 				a.oc = new OpenContain(a.obj, a.data);
@@ -1059,6 +1074,14 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 					h = h * 31u + (oc2->hasObjectsWantingToEnterOrExit() ? 1u : 0u);
 					h = h * 31u + (oc2->isExitBusy() ? 1u : 0u);
 					h = h * 31u + (oc2->isImmuneToClearBuildingAttacks() ? 1u : 0u);
+					/* batch R7: the class queries (a derived container answers its own) */
+					h = h * 31u + (oc2->isHealContain() ? 1u : 0u);
+					h = h * 31u + (oc2->isTunnelContain() ? 1u : 0u);
+					h = h * 31u + (oc2->isRiderChangeContain() ? 1u : 0u);
+					h = h * 31u + (oc2->isSpecialOverlordStyleContainer() ? 1u : 0u);
+					h = h * 31u + (oc2->isSpecialZeroSlotContainer() ? 1u : 0u);
+					h = h * 31u + (oc2->isGarrisonable() ? 1u : 0u);
+					h = h * 31u + (oc2->isBustable() ? 1u : 0u);
 					result = h;
 				} break;
 				case 27: if (oc2) oc2->scatterToNearbyPosition(r2); break;
@@ -1093,7 +1116,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				case 52: if (oc2) result = (unsigned)oc2->getExtraSlotsInUse(); break;
 				case 53: if (oc2) oc2->onCapture(o[3] % 5 < 4 ? &g_ctPlayers[o[3] % 5] : 0, o[4] % 5 < 4 ? &g_ctPlayers[o[4] % 5] : 0); break;
 				case 54: if (oc2) oc2->killRidersWhoAreNotFreeToExit(); break;
-				case 55: if (oc2 && t->cls) result = ((TransportContain *)oc2)->isSpecificRiderFreeToExit((o[3] & 1) ? 0 : r2) ? 1 : 0; break;
+				case 55: if (TransportContain *tc2 = dynamic_cast<TransportContain *>(oc2)) result = tc2->isSpecificRiderFreeToExit((o[3] & 1) ? 0 : r2) ? 1 : 0; break;   /* batch R7: transports only (a HealContain has a class but is none) */
 				/* batch R4 */
 				case 56: if (oc2) oc2->onBodyDamageStateChange(0, (BodyDamageType)(o[3] % 4), (BodyDamageType)(o[4] % 4)); break;
 				case 57: if (oc2) oc2->clientVisibleContainedFlashAsSelected(); break;
