@@ -760,6 +760,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::railed_transport_contain::new_module_data),
             which_interfaces: Some(crate::logic::modules::railed_transport_contain::RailedTransportContain::get_interface_mask()),
         }),
+        "HelixContain" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::helix_contain::new_module_data),
+            which_interfaces: Some(crate::logic::modules::helix_contain::HelixContain::get_interface_mask()),
+        }),
         "TransportContain" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::transport_contain::new_module_data),
@@ -801,6 +806,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::AutoDepositUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::OpenContain(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::TransportContain(d)) => Some(std::sync::Arc::new(d.open.update.clone())),
+        Some(ModuleDataKind::HelixContain(d)) => Some(std::sync::Arc::new(d.transport.open.update.clone())),
         Some(ModuleDataKind::RailedTransportContain(d)) => Some(std::sync::Arc::new(d.open.update.clone())),
         Some(ModuleDataKind::InternetHackContain(d)) => Some(std::sync::Arc::new(d.open.update.clone())),
         // --- end p1w11-sonnet ---

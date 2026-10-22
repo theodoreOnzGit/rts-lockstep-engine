@@ -205,6 +205,8 @@ pub enum ModuleCall {
     DockIsOpen,
     /// `DockUpdateInterface::setDockOpen(open)`.
     DockSetOpen(bool),
+    /// `StealthUpdate::receiveGrant(active, frames)` (batch R4).
+    StealthReceiveGrant { active: bool, frames: u32 },
     // --- end p1w13-sonnet ---
     /// `getSpawnBehaviorInterface() != NULL`; replies [`ModuleReply::Bool`].
     HasSpawnBehaviorInterface,

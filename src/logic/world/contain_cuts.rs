@@ -125,6 +125,13 @@ pub enum ContainCall {
     ClearDisabled { object: ObjectId, disabled: i32 },
     /// `TheThingFactory->newObject(template, team)` for a transport's initial payload.
     NewObject { template: u16, team: i32 },
+    // batch R4 (HelixContain)
+    /// `portable->setTeam(team)`.
+    SetTeam { object: ObjectId, team: i32 },
+    /// `portable->getBodyModule()->setDamageState(state)`.
+    SetDamageState { object: ObjectId, state: i32 },
+    /// `obj->getStealth()->receiveGrant(active, frames)` (the object has a stealth update).
+    StealthReceiveGrant { object: ObjectId, active: bool, frames: u32 },
     // --- end p1w13-sonnet ---
 }
 
@@ -390,6 +397,34 @@ impl World {
             return INVALID_ID;
         }
         self.thing_factory_new_object(template, Some(team), status).unwrap_or(INVALID_ID)
+    }
+
+    // batch R4 (HelixContain)
+    /// `obj->setTeam(team)`. The stub records the call only.
+    pub fn contain_set_team(&mut self, id: ObjectId, team: crate::logic::world::ids::TeamId) {
+        self.contain_cut(ContainCall::SetTeam { object: id, team: team as i32 });
+        if !self.cuts.contain.stub_object_calls {
+            self.set_team(id, Some(team));
+        }
+    }
+
+    /// `obj->getBodyModule()->setDamageState(state)`: `false` when the object has no body (the call would be through `NULL`).
+    pub fn contain_set_damage_state(&mut self, id: ObjectId, state: i32) -> bool {
+        let Some(body) = self.objects.find(id).and_then(|o| o.body) else { return false };
+        self.contain_cut(ContainCall::SetDamageState { object: id, state });
+        if !self.cuts.contain.stub_object_calls {
+            self.module_call(id, body, crate::logic::world::module_call::ModuleCall::SetDamageState(state));
+        }
+        true
+    }
+
+    /// `obj->getStealth()`, then `receiveGrant(active, frames)` if there is one.
+    pub fn contain_stealth_receive_grant(&mut self, id: ObjectId, active: bool, frames: u32) {
+        let Some(stealth) = self.objects.find(id).and_then(|o| o.stealth) else { return };
+        self.contain_cut(ContainCall::StealthReceiveGrant { object: id, active, frames });
+        if !self.cuts.contain.stub_object_calls {
+            self.module_call(id, stealth, crate::logic::world::module_call::ModuleCall::StealthReceiveGrant { active, frames });
+        }
     }
     // --- end p1w13-sonnet ---
 }

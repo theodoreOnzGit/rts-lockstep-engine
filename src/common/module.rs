@@ -414,6 +414,8 @@ pub enum ModuleDataKind {
     OpenContain(Arc<crate::logic::modules::open_contain::OpenContainModuleData>),
     /// `TransportContainModuleData`.
     TransportContain(Arc<crate::logic::modules::transport_contain::TransportContainModuleData>),
+    /// `HelixContain`'s data.
+    HelixContain(Arc<crate::logic::modules::helix_contain::HelixContainModuleData>),
     /// `RailedTransportContain`'s data (`TransportContainModuleData`).
     RailedTransportContain(Arc<crate::logic::modules::transport_contain::TransportContainModuleData>),
     /// `InternetHackContain`'s data (`TransportContainModuleData`).
@@ -520,6 +522,7 @@ impl ModuleDataKind {
             ModuleDataKind::SlowDeathBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::OpenContain(d) => &d.update.behavior.module_data,
             ModuleDataKind::TransportContain(d) => &d.open.update.behavior.module_data,
+            ModuleDataKind::HelixContain(d) => &d.transport.open.update.behavior.module_data,
             ModuleDataKind::RailedTransportContain(d) => &d.open.update.behavior.module_data,
             ModuleDataKind::InternetHackContain(d) => &d.open.update.behavior.module_data,
             ModuleDataKind::UndeadBody(d) => &d.active.body.behavior.module_data,
@@ -880,6 +883,13 @@ impl ModuleDataKind {
             ModuleDataKind::RailedTransportContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.open.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::HelixContain(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.transport.open.update.behavior.module_data.set_module_tag_name_key(key);
                     true
                 }
                 None => false,

@@ -53,7 +53,7 @@ void Object::setStatus(ObjectStatusMaskType objectStatus, Bool set)
 }
 void Object::clearSpecialModelConditionStates() { hlog(3, 0); }
 void Object::adjustModelConditionForWeaponStatus() { hlog(4, 0); }
-void Object::clearWeaponBonusCondition(WeaponBonusConditionType wst) { hlog(6, (unsigned)wst); }
+void Object::clearWeaponBonusCondition(WeaponBonusConditionType wst) { hlog(6, (unsigned)wst); m_weaponBonusCondition &= ~(1 << (wst & 31)); }   /* p1w13-sonnet, batch R4: the bit cleared too, as setWeaponBonusCondition sets it (Object.cpp clears it) */
 void Drawable::setTintStatus(TintStatus statusBits) { hlog(7, (unsigned)statusBits); }
 void Drawable::clearTintStatus(TintStatus statusBits) { hlog(8, (unsigned)statusBits); }
 /* Object.cpp:4456, verbatim */

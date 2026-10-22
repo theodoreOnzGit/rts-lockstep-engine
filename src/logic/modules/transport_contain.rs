@@ -171,7 +171,7 @@ fn lift_die(k: usize, i: &mut Ini<'_>, d: &mut TransportContainModuleData, u: &U
 }
 
 /// `OpenContainModuleData::buildFieldParse`'s two tables, on the `open` base.
-static OPEN_BASE_FIELD_PARSE: [FieldParse<TransportContainModuleData>; 16] = [
+pub(crate) static OPEN_BASE_FIELD_PARSE: [FieldParse<TransportContainModuleData>; 16] = [
     FieldParse::new("ContainMax", |i, d, u| lift_open(0, i, d, u), UserData::None),
     FieldParse::new("EnterSound", |i, d, u| lift_open(1, i, d, u), UserData::None),
     FieldParse::new("ExitSound", |i, d, u| lift_open(2, i, d, u), UserData::None),
@@ -191,7 +191,7 @@ static OPEN_BASE_FIELD_PARSE: [FieldParse<TransportContainModuleData>; 16] = [
 ];
 
 /// The die mux table, on the `open` base.
-static DIE_BASE_FIELD_PARSE: [FieldParse<TransportContainModuleData>; 5] = [
+pub(crate) static DIE_BASE_FIELD_PARSE: [FieldParse<TransportContainModuleData>; 5] = [
     FieldParse::new("DeathTypes", |i, d, u| lift_die(0, i, d, u), UserData::None),
     FieldParse::new("VeterancyLevels", |i, d, u| lift_die(1, i, d, u), UserData::None),
     FieldParse::new("ExemptStatus", |i, d, u| lift_die(2, i, d, u), UserData::None),
@@ -262,11 +262,11 @@ pub struct TransportContain {
     /// `getTransportContainModuleData()`.
     data: Arc<TransportContainModuleData>,
     /// `m_payloadCreated` (protected; never set by the constructor, see the module docs).
-    payload_created: bool,
+    pub(crate) payload_created: bool,
     /// `m_extraSlotsInUse`: "transports have the ability to carry guys who take up more than one spot".
-    extra_slots_in_use: i32,
+    pub(crate) extra_slots_in_use: i32,
     /// `m_frameExitNotBusy`.
-    frame_exit_not_busy: u32,
+    pub(crate) frame_exit_not_busy: u32,
 }
 
 impl PartialEq for TransportContain {
@@ -442,6 +442,50 @@ pub trait TransportContainVirtuals: OpenContainVirtuals {
     fn t_exit_object_via_door(&mut self, world: &mut World, me: ModuleHandle, exit_obj: ObjectId, exit_door: ExitDoorType) {
         open_contain::base_exit_object_via_door(self, world, me, exit_obj, exit_door);
     }
+    // batch R4 (HelixContain): the `OpenContain` virtuals the overlord-style containers override, each defaulting to `OpenContain`'s
+    /// `addToContain(rider)`.
+    fn t_add_to_contain(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId) {
+        open_contain::base_add_to_contain(self, world, me, rider);
+    }
+    /// `addToContainList(rider)`.
+    fn t_add_to_contain_list(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId) {
+        open_contain::base_add_to_contain_list(self, world, me, rider);
+    }
+    /// `removeFromContain(rider, exposeStealthUnits)`.
+    fn t_remove_from_contain(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId, expose_stealth_units: bool) {
+        open_contain::base_remove_from_contain(self, world, me, rider, expose_stealth_units);
+    }
+    /// `isEnclosingContainerFor(obj)`: `TRUE`.
+    fn t_is_enclosing_container_for(&mut self, _world: &mut World, _me: ModuleHandle, _obj: ObjectId) -> bool {
+        true
+    }
+    /// `friend_getRider()`: `NULL`.
+    fn t_friend_get_rider(&self, _world: &World) -> ObjectId {
+        INVALID_ID
+    }
+    /// `redeployOccupants()`.
+    fn t_redeploy_occupants(&mut self, world: &mut World, me: ModuleHandle) {
+        open_contain::base_redeploy_occupants(self, world, me);
+    }
+    /// `onDie(damageInfo)`.
+    fn t_on_die(&mut self, world: &mut World, me: ModuleHandle, info: &crate::logic::damage::DamageInfo) {
+        open_contain::base_on_die(self, world, me, info);
+    }
+    /// `onDelete()`.
+    fn t_on_delete(&mut self, world: &mut World, me: ModuleHandle) {
+        open_contain::base_on_delete(self, world, me);
+    }
+    /// A call no `OpenContain` virtual answers: `isSpecificRiderFreeToExit`, else unhandled.
+    fn t_other_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+        match call {
+            ModuleCall::IsSpecificRiderFreeToExit { obj } => ModuleReply::Bool(self.is_specific_rider_free_to_exit(world, me, obj)),
+            _ => ModuleReply::Unhandled,
+        }
+    }
+    /// `onObjectCreated()`: nothing.
+    fn t_on_object_created(&mut self, _world: &mut World, _me: ModuleHandle) {}
+    /// `onBodyDamageStateChange(damageInfo, oldState, newState)`: nothing.
+    fn t_on_body_damage_state_change(&mut self, _world: &mut World, _me: ModuleHandle, _info: &crate::logic::damage::DamageInfo, _old_state: i32, _new_state: i32) {}
     // --- end p1w13-sonnet ---
 }
 
@@ -892,14 +936,41 @@ macro_rules! transport_open_contain_virtuals {
             fn is_passenger_allowed_to_fire(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, id: $crate::common::game_type::ObjectId) -> bool {
                 $crate::logic::modules::transport_contain::TransportContainVirtuals::t_is_passenger_allowed_to_fire(self, world, me, id)
             }
+            fn add_to_contain(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, rider: $crate::common::game_type::ObjectId) {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_add_to_contain(self, world, me, rider)
+            }
+            fn add_to_contain_list(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, rider: $crate::common::game_type::ObjectId) {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_add_to_contain_list(self, world, me, rider)
+            }
+            fn remove_from_contain(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, rider: $crate::common::game_type::ObjectId, expose_stealth_units: bool) {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_remove_from_contain(self, world, me, rider, expose_stealth_units)
+            }
+            fn is_enclosing_container_for(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, obj: $crate::common::game_type::ObjectId) -> bool {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_is_enclosing_container_for(self, world, me, obj)
+            }
+            fn friend_get_rider(&self, world: &$crate::logic::world::game_logic::World) -> $crate::common::game_type::ObjectId {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_friend_get_rider(self, world)
+            }
+            fn redeploy_occupants(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle) {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_redeploy_occupants(self, world, me)
+            }
+            fn on_die(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, info: &$crate::logic::damage::DamageInfo) {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_on_die(self, world, me, info)
+            }
+            fn on_delete(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle) {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_on_delete(self, world, me)
+            }
+            fn on_object_created(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle) {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_on_object_created(self, world, me)
+            }
+            fn on_body_damage_state_change(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, info: &$crate::logic::damage::DamageInfo, old_state: i32, new_state: i32) {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_on_body_damage_state_change(self, world, me, info, old_state, new_state)
+            }
             fn exit_object_via_door(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, exit_obj: $crate::common::game_type::ObjectId, exit_door: $crate::logic::module::update_module::ExitDoorType) {
                 $crate::logic::modules::transport_contain::TransportContainVirtuals::t_exit_object_via_door(self, world, me, exit_obj, exit_door)
             }
             fn other_call(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, call: $crate::logic::world::module_call::ModuleCall) -> $crate::logic::world::module_call::ModuleReply {
-                match call {
-                    $crate::logic::world::module_call::ModuleCall::IsSpecificRiderFreeToExit { obj } => $crate::logic::world::module_call::ModuleReply::Bool($crate::logic::modules::transport_contain::TransportContainVirtuals::is_specific_rider_free_to_exit(self, world, me, obj)),
-                    _ => $crate::logic::world::module_call::ModuleReply::Unhandled,
-                }
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_other_call(self, world, me, call)
             }
         }
     };

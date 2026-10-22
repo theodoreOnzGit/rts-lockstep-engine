@@ -426,10 +426,16 @@ pub trait OpenContainVirtuals: Clone + PartialEq + Sized {
     fn get_contained_items_list_for_iteration(&self) -> Vec<ObjectId> {
         self.oc().contain_list.clone()
     }
-    /// `friend_getRider()`.
-    fn friend_get_rider(&self) -> ObjectId {
+    /// `friend_getRider()`. It reads the world (batch R4: `HelixContain`'s is `findObjectByID` of its portable structure).
+    fn friend_get_rider(&self, _world: &World) -> ObjectId {
         INVALID_ID
     }
+    // --- p1w13-sonnet --- (batch R4: HelixContain)
+    /// `onObjectCreated()`: `Module`'s, nothing.
+    fn on_object_created(&mut self, _world: &mut World, _me: ModuleHandle) {}
+    /// `onBodyDamageStateChange(damageInfo, oldState, newState)`: `OpenContain`'s, nothing.
+    fn on_body_damage_state_change(&mut self, _world: &mut World, _me: ModuleHandle, _info: &DamageInfo, _old_state: i32, _new_state: i32) {}
+    // --- end p1w13-sonnet ---
     /// `redeployOccupants()`.
     fn redeploy_occupants(&mut self, world: &mut World, me: ModuleHandle) {
         base_redeploy_occupants(self, world, me);
@@ -1610,7 +1616,17 @@ pub fn contain_module_call<T: OpenContainVirtuals>(t: &mut T, world: &mut World,
         | ModuleCall::IsRailroad
         | ModuleCall::IsSalvageCrateCollide
         | ModuleCall::IsSabotageBuildingCrateCollide => ModuleReply::Bool(false),
-        ModuleCall::OnDamage(_) | ModuleCall::OnHealing(_) | ModuleCall::OnBodyDamageStateChange { .. } => ModuleReply::Done,
+        ModuleCall::OnDamage(_) | ModuleCall::OnHealing(_) => ModuleReply::Done,
+        // --- p1w13-sonnet --- (batch R4: the two a derived container overrides)
+        ModuleCall::OnBodyDamageStateChange { info, old_state, new_state } => {
+            t.on_body_damage_state_change(world, me, &info, old_state, new_state);
+            ModuleReply::Done
+        }
+        ModuleCall::OnObjectCreated => {
+            t.on_object_created(world, me);
+            ModuleReply::Done
+        }
+        // --- end p1w13-sonnet ---
         ModuleCall::ContainReactToTransformChange => {
             t.redeploy_occupants(world, me);
             ModuleReply::Done
@@ -1723,7 +1739,7 @@ pub fn contain_module_call<T: OpenContainVirtuals>(t: &mut T, world: &mut World,
         ModuleCall::GetContainedItems => ModuleReply::Ids(t.get_contained_items_list()),
         ModuleCall::GetContainCount => ModuleReply::Int(t.get_contain_count() as i32),
         ModuleCall::GetContainMax => ModuleReply::Int(t.get_contain_max()),
-        ModuleCall::GetRider => ModuleReply::Id(t.friend_get_rider()),
+        ModuleCall::GetRider => ModuleReply::Id(t.friend_get_rider(world)),
         ModuleCall::GetContainedItemsMass => ModuleReply::Real(get_contained_items_mass(t, world, me)),
         ModuleCall::GetStealthUnitsContained => ModuleReply::Int(t.oc().stealth_units_contained as i32),
         ModuleCall::GetPlayerWhoEntered => ModuleReply::Int(i32::from(t.oc().player_entered_mask)),

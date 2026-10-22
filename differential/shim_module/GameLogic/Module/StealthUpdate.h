@@ -7,6 +7,7 @@ class StealthUpdate
 {
 public:
 	void markAsDetected( UnsignedInt numFrames = 0 );
+	void receiveGrant( Bool active = TRUE, UnsignedInt frames = 0 );   /* p1w13-sonnet, batch R4: HelixContain grants stealth to its portable structure */
 	Object *m_owner = 0;
 };
 #endif

@@ -37,6 +37,8 @@ public:
 };
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/InternetHackContain.cpp"
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/RailedTransportContain.cpp"
+/* batch R4, unchanged */
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/HelixContain.cpp"
 /* --- end p1w13-sonnet --- */
 #undef itoa
 
@@ -58,10 +60,11 @@ ModuleData *l9ctRead(const char *filename)
 		try {
 			/* --- p1w13-sonnet --- (batches R2, R3) */
 			const char c0 = currentLine.str()[0];
-			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : 0;
+			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : c0 == 'H' ? 4 : 0;
 			if (g_ctBlockCls == 1) data = TransportContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 2) data = InternetHackContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 3) data = RailedTransportContain::friend_newModuleData(&ini);
+			else if (g_ctBlockCls == 4) data = HelixContain::friend_newModuleData(&ini);
 			else data = OpenContain::friend_newModuleData(&ini);
 			/* --- end p1w13-sonnet --- */
 		} catch (...) {
@@ -145,6 +148,7 @@ public:
 	virtual Real getMaxHealth() const { return m_max; }
 	/* --- p1w13-sonnet --- (batch R2: TransportContain heals its riders) the health the scene gives, and a heal that logs and fills up to the maximum */
 	virtual Real getHealth() const { return m_health; }
+	virtual void setDamageState(BodyDamageType s) { ulog("setdamagestate %d %d", (int)AsObject(const_cast<Thing *>(static_cast<const Thing *>(getObject())))->m_oid, (int)s); }   /* batch R4 */
 	virtual void attemptHealing(DamageInfo *info)
 	{
 		ulog("heal %d %08x %d", (int)AsObject(const_cast<Thing *>(static_cast<const Thing *>(getObject())))->m_oid, realBits(info->in.m_amount), (int)info->in.m_sourceID);
@@ -251,6 +255,10 @@ Int ctMultiBone(const Object *obj, const char *prefix, Int maxBones, Coord3D *, 
 
 /* ---- the calls the container makes on the rest of the world ---- */
 void StealthUpdate::markAsDetected(UnsignedInt) { ulog("markdetected %d", (int)m_owner->m_oid); }
+/* --- p1w13-sonnet --- (batch R4: HelixContain) */
+void StealthUpdate::receiveGrant(Bool active, UnsignedInt frames) { ulog("stealthgrant %d %d %u", (int)m_owner->m_oid, active ? 1 : 0, frames); }
+void ctSetTeam(Object *obj, Team *team) { ulog("setteam %d %d", (int)obj->m_oid, team ? (int)team->m_dummy : -1); }
+/* --- end p1w13-sonnet --- */
 void Drawable::setDrawableHidden(Bool hidden) { ulog("hidden %d %d", m_ownerObject ? (int)m_ownerObject->m_oid : 0, (int)hidden); }
 void Object::setLayer(PathfindLayerEnum layer) { ulog("setlayer %d %d", (int)m_oid, (int)layer); }
 void Object::setOrientation(Real angle) { ulog("setorient %d %08x", (int)m_oid, realBits(angle)); }
@@ -423,7 +431,7 @@ void ctPutObject(CtObj *a)
 {
 	if (a->oc) {
 		OpenContain *oc = a->oc;
-		putU32(dynamic_cast<TransportContain *>(oc) ? 2 : 1);   /* --- p1w13-sonnet --- (batch R2): 2 marks a transport */
+		putU32(dynamic_cast<HelixContain *>(oc) ? 3 : dynamic_cast<TransportContain *>(oc) ? 2 : 1);   /* --- p1w13-sonnet --- (batches R2, R4): 2 marks a transport, 3 a Helix */
 		putU32(oc->m_containListSize);
 		putU32((unsigned)oc->m_containList.size());
 		for (ContainedItemsList::const_iterator it = oc->m_containList.begin(); it != oc->m_containList.end(); ++it) putU32((unsigned)(*it)->m_oid);
@@ -468,6 +476,7 @@ void ctPutObject(CtObj *a)
 			putU32(tc->m_payloadCreated ? 1 : 0);
 			putU32((unsigned)tc->m_extraSlotsInUse);
 			putU32(tc->m_frameExitNotBusy);
+			if (HelixContain *hc = dynamic_cast<HelixContain *>(oc)) putU32((unsigned)hc->m_portableStructureID);   /* batch R4 */
 		}
 		/* --- end p1w13-sonnet --- */
 	} else {
@@ -494,6 +503,7 @@ void ctPutObject(CtObj *a)
 		putU32(m);
 	}
 	putU32(a->draw.m_selected && a->obj->m_drawable ? 1 : 0);
+	putU32(a->obj->m_weaponBonusCondition);   /* p1w13-sonnet, batch R4: HelixContain sets and clears GARRISONED */
 }
 
 }  // namespace
@@ -555,6 +565,13 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			putU32((td->m_scatterNearbyOnExit ? 1u : 0u) | (td->m_orientLikeContainerOnExit ? 2u : 0u) | (td->m_keepContainerVelocityOnExit ? 4u : 0u) |
 				(td->m_goAggressiveOnExit ? 8u : 0u) | (td->m_armedRidersUpgradeWeaponSet ? 16u : 0u) | (td->m_resetMoodCheckTimeOnExit ? 32u : 0u) |
 				(td->m_destroyRidersWhoAreNotFreeToExit ? 64u : 0u) | (td->m_isDelayExitInAir ? 128u : 0u));
+			/* batch R4: a Helix block's payload names and pips flag */
+			if (g_ctBlockCls == 4) {
+				const HelixContainModuleData *hd = (const HelixContainModuleData *)td;
+				putU32((unsigned)hd->m_payloadTemplateNameData.size());
+				for (size_t j = 0; j < hd->m_payloadTemplateNameData.size(); ++j) putStr(hd->m_payloadTemplateNameData[j].str(), hd->m_payloadTemplateNameData[j].getLength());
+				putU32(hd->m_drawPips ? 1u : 0u);
+			}
 		}
 		/* --- end p1w13-sonnet --- */
 	}
@@ -576,7 +593,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		unsigned turret[CT_FP][3];
 		/* --- p1w13-sonnet --- (batch R2: TransportContain) */
 		unsigned cls; int rawSlots; unsigned airborne; int freeToExit; unsigned hasLoco, validTerrain, com, vel[3], weapons, unmanned, extraKinds, exitBoneHas, exitBone[3];
-		int slotCap; unsigned regen, exitDelay, tflags, pitch; int payloadCount; unsigned payloadName, exitBoneName, health, hasDock, dockOpen;
+		int slotCap; unsigned regen, exitDelay, tflags, pitch; int payloadCount; unsigned payloadName, exitBoneName, health, hasDock, dockOpen, helixPayload;
 		/* --- end p1w13-sonnet --- */
 	} oc[CT_OBJS];
 	for (int k = 0; k < g_ctN; ++k) {
@@ -599,7 +616,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		o.cls = c.u(); o.rawSlots = c.s(); o.airborne = c.u(); o.freeToExit = c.s(); o.hasLoco = c.u(); o.validTerrain = c.u(); o.com = c.u();
 		for (int i = 0; i < 3; ++i) o.vel[i] = c.u();
 		o.weapons = c.u(); o.unmanned = c.u(); o.extraKinds = c.u(); o.exitBoneHas = c.u(); for (int i = 0; i < 3; ++i) o.exitBone[i] = c.u();
-		o.slotCap = c.s(); o.regen = c.u(); o.exitDelay = c.u(); o.tflags = c.u(); o.pitch = c.u(); o.payloadCount = c.s(); o.payloadName = c.u(); o.exitBoneName = c.u(); o.health = c.u(); o.hasDock = c.u(); o.dockOpen = c.u();
+		o.slotCap = c.s(); o.regen = c.u(); o.exitDelay = c.u(); o.tflags = c.u(); o.pitch = c.u(); o.payloadCount = c.s(); o.payloadName = c.u(); o.exitBoneName = c.u(); o.health = c.u(); o.hasDock = c.u(); o.dockOpen = c.u(); o.helixPayload = c.u();
 		/* --- end p1w13-sonnet --- */
 	}
 	for (int i = 0; i < g_ctN; ++i) for (int j = 0; j < g_ctN; ++j) g_ctRel[i][j] = (Relationship)c.s();
@@ -625,6 +642,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 	/* --- p1w13-sonnet --- (batch R2: TransportContain) */
 	g_findTemplateHook = ctFindTemplate;
 	g_newObjectHook = ctNewObject;
+	g_setTeamHook = ctSetTeam;   /* batch R4 */
 	/* --- end p1w13-sonnet --- */
 	TheGlobalData = TheGlobalData;
 	g_ctNeutralTeam.m_dummy = 0;
@@ -693,6 +711,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		if (o.extraKinds & 1) obj->m_kindOf.set(KINDOF_CLIFF_JUMPER);
 		if (o.extraKinds & 2) obj->m_kindOf.set(KINDOF_HERO);
 		if (o.extraKinds & 4) obj->m_kindOf.set(KINDOF_SALVAGER);
+		if (o.extraKinds & 8) obj->m_kindOf.set(KINDOF_PORTABLE_STRUCTURE);   /* batch R4 */
 		a.draw.m_exitBoneHas = o.exitBoneHas != 0;
 		a.draw.m_exitBone.x = ctF(o.exitBone[0]); a.draw.m_exitBone.y = ctF(o.exitBone[1]); a.draw.m_exitBone.z = ctF(o.exitBone[2]);
 		/* --- end p1w13-sonnet --- */
@@ -742,6 +761,13 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			if (k == 0) a.data = (OpenContainModuleData *)d;
 			else {
 				if (o.cls) {
+					/* batch R4: a Helix's data, with the payload list the scene names */
+					if (o.cls == 4) {
+						HelixContainModuleData *hd = new HelixContainModuleData;
+						static const char *const kHelixPayload[4][2] = { { 0, 0 }, { "Nope", 0 }, { "T1", 0 }, { "Nope", "T2" } };
+						for (int j = 0; j < 2; ++j) if (kHelixPayload[o.helixPayload % 4][j]) hd->m_payloadTemplateNameData.push_back(AsciiString(kHelixPayload[o.helixPayload % 4][j]));
+						tdata = hd;
+					} else
 					tdata = new TransportContainModuleData;
 					tdata->m_slotCapacity = o.slotCap;
 					tdata->m_healthRegen = ctF(o.regen);
@@ -792,6 +818,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				if (cls == 1) a.oc = new(ShimZeroFill{}) TransportContain(a.obj, td);
 				else if (cls == 2) a.oc = new(ShimZeroFill{}) InternetHackContain(a.obj, td);
 				else if (cls == 3) a.oc = new(ShimZeroFill{}) RailedTransportContain(a.obj, td);
+				else if (cls == 4) a.oc = new(ShimZeroFill{}) HelixContain(a.obj, td);
 				else
 				/* --- end p1w13-sonnet --- */
 				a.oc = new OpenContain(a.obj, a.data);
@@ -799,6 +826,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			CATCH_ALL(status, code, msg, msgCap)
 			if (status) { failed = true; break; }
 			a.obj->m_contain = a.oc;
+			a.oc->onObjectCreated();   /* batch R4: Object's constructor tells every module (the Rust side's World::new_object does); HelixContain loads its payload */
 			a.behaviors[idx++] = a.oc;
 		}
 		/* --- p1w13-sonnet --- (batch R3) the dock, after the contain (the Rust side's dock probe is the last module too) */
@@ -812,7 +840,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 	if (failed) {
 		TheGameLogic = 0; TheAudio = 0; TheInGameUI = 0; TheAI = 0; ThePartitionManager = 0; TheTerrainLogic = 0;
 		g_modFindHook = 0; g_modDestroyHook = 0; g_teamRelHook = 0; g_xformHook = 0; g_multiBoneHook = 0;
-		g_findTemplateHook = 0; g_newObjectHook = 0;   /* --- p1w13-sonnet --- (batch R2: TransportContain) */
+		g_findTemplateHook = 0; g_newObjectHook = 0; g_setTeamHook = 0;   /* --- p1w13-sonnet --- (batches R2, R4) */
 		return 5;
 	}
 	for (int k = 0; k < g_ctN; ++k) {
@@ -826,6 +854,15 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		}
 	}
 
+	/* --- p1w13-sonnet --- (batch R4) GameLogic::registerObject's loop over the update modules (GameLogic.cpp, as the Rust side's World::new_object runs it):
+	** "note that 'when' can be zero here for any update module that didn't bother to call setWakeFrame() in its ctor" -- such a module is due now
+	** (frame 1 at frame 0). The containers are this test's only update modules. Without it the scheduling word of a save is 0 here and the frame on
+	** the Rust side, and a load that reads that word as versions (a Helix loading another class's save) parts the two. */
+	for (int k = 0; k < g_ctN; ++k) {
+		UpdateModule *u = g_ctObjs[k].oc;
+		if (u && u->friend_getNextCallFrame() == 0) u->friend_setNextCallFrame(gl.m_frame ? gl.m_frame : 1);
+	}
+	/* --- end p1w13-sonnet --- */
 	/* the random generators start after the objects are made (the Rust side's object creation may draw) */
 	InitRandom(clientSeed);
 	InitGameLogicRandom(logicSeed);
@@ -935,6 +972,9 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				case 53: if (oc2) oc2->onCapture(o[3] % 5 < 4 ? &g_ctPlayers[o[3] % 5] : 0, o[4] % 5 < 4 ? &g_ctPlayers[o[4] % 5] : 0); break;
 				case 54: if (oc2) oc2->killRidersWhoAreNotFreeToExit(); break;
 				case 55: if (oc2 && t->cls) result = ((TransportContain *)oc2)->isSpecificRiderFreeToExit((o[3] & 1) ? 0 : r2) ? 1 : 0; break;
+				/* batch R4 */
+				case 56: if (oc2) oc2->onBodyDamageStateChange(0, (BodyDamageType)(o[3] % 4), (BodyDamageType)(o[4] % 4)); break;
+				case 57: if (oc2) oc2->clientVisibleContainedFlashAsSelected(); break;
 				/* --- end p1w13-sonnet --- */
 				default: break;
 				}
@@ -963,7 +1003,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 	delete d;
 	TheGameLogic = 0; TheAudio = 0; TheInGameUI = 0; TheAI = 0; ThePartitionManager = 0; TheTerrainLogic = 0;
 	g_modFindHook = 0; g_modDestroyHook = 0; g_teamRelHook = 0; g_xformHook = 0; g_multiBoneHook = 0;
-	g_findTemplateHook = 0; g_newObjectHook = 0;   /* --- p1w13-sonnet --- (batch R2: TransportContain) */
+	g_findTemplateHook = 0; g_newObjectHook = 0; g_setTeamHook = 0;   /* --- p1w13-sonnet --- (batches R2, R4) */
 	return 0;
 }
 

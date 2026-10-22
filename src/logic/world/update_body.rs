@@ -239,6 +239,8 @@ pub enum UpdateBody {
     OpenContain(crate::logic::modules::open_contain::OpenContain),
     /// `TransportContain`.
     TransportContain(crate::logic::modules::transport_contain::TransportContain),
+    /// `HelixContain`.
+    HelixContain(crate::logic::modules::helix_contain::HelixContain),
     /// `RailedTransportContain`.
     RailedTransportContain(crate::logic::modules::railed_transport_contain::RailedTransportContain),
     /// `InternetHackContain`.
@@ -351,6 +353,7 @@ impl UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => m.world_update(world, me),
             UpdateBody::OpenContain(m) => m.world_update(world, me),
             UpdateBody::TransportContain(m) => m.world_update(world, me),
+            UpdateBody::HelixContain(m) => m.world_update(world, me),
             UpdateBody::RailedTransportContain(m) => m.world_update(world, me),
             UpdateBody::InternetHackContain(m) => m.world_update(world, me),
 // --- end p1w13-sonnet ---
@@ -461,6 +464,7 @@ impl UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => m.module_call(world, me, call),
             UpdateBody::OpenContain(m) => m.module_call(world, me, call),
             UpdateBody::TransportContain(m) => m.module_call(world, me, call),
+            UpdateBody::HelixContain(m) => m.module_call(world, me, call),
             UpdateBody::RailedTransportContain(m) => m.module_call(world, me, call),
             UpdateBody::InternetHackContain(m) => m.module_call(world, me, call),
 // --- end p1w13-sonnet ---
@@ -558,6 +562,7 @@ impl UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::OpenContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::TransportContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::HelixContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::RailedTransportContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::InternetHackContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
 // --- end p1w13-sonnet ---
@@ -637,6 +642,7 @@ impl UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::OpenContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::TransportContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::HelixContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::RailedTransportContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::InternetHackContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
 // --- end p1w13-sonnet ---
@@ -716,6 +722,7 @@ impl UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::OpenContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::TransportContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::HelixContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::RailedTransportContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::InternetHackContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
 // --- end p1w13-sonnet ---
@@ -826,6 +833,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => m.crc(xfer),
             UpdateBody::OpenContain(m) => m.crc(xfer),
             UpdateBody::TransportContain(m) => m.crc(xfer),
+            UpdateBody::HelixContain(m) => m.crc(xfer),
             UpdateBody::RailedTransportContain(m) => m.crc(xfer),
             UpdateBody::InternetHackContain(m) => m.crc(xfer),
 // --- end p1w13-sonnet ---
@@ -932,6 +940,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => m.xfer(xfer),
             UpdateBody::OpenContain(m) => m.xfer(xfer),
             UpdateBody::TransportContain(m) => m.xfer(xfer),
+            UpdateBody::HelixContain(m) => m.xfer(xfer),
             UpdateBody::RailedTransportContain(m) => m.xfer(xfer),
             UpdateBody::InternetHackContain(m) => m.xfer(xfer),
 // --- end p1w13-sonnet ---
@@ -1038,6 +1047,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => m.load_post_process(),
             UpdateBody::OpenContain(m) => m.load_post_process(),
             UpdateBody::TransportContain(m) => m.load_post_process(),
+            UpdateBody::HelixContain(m) => m.load_post_process(),
             UpdateBody::RailedTransportContain(m) => m.load_post_process(),
             UpdateBody::InternetHackContain(m) => m.load_post_process(),
 // --- end p1w13-sonnet ---
@@ -1228,6 +1238,7 @@ impl UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => m.world_construct(world, me),
             UpdateBody::OpenContain(m) => m.world_construct(world, me),
             UpdateBody::TransportContain(m) => m.world_construct(world, me),
+            UpdateBody::HelixContain(m) => m.world_construct(world, me),
             UpdateBody::RailedTransportContain(m) => m.world_construct(world, me),
             UpdateBody::InternetHackContain(m) => m.world_construct(world, me),
 // --- end p1w13-sonnet ---

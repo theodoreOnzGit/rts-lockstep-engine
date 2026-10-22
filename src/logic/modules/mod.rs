@@ -121,6 +121,7 @@ pub mod inactive_body;
 pub mod slow_death_behavior;
 pub mod open_contain;
 pub mod transport_contain;
+pub mod helix_contain;
 pub mod railed_transport_contain;
 pub mod internet_hack_contain;
 // --- end p1w13-sonnet ---
@@ -458,6 +459,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::RailedTransportContain(d) => Some(made_update(
             railed_transport_contain::RailedTransportContain::get_interface_mask(),
             railed_transport_contain::RailedTransportContain::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::RailedTransportContain(m))),
+        )),
+        ModuleDataKind::HelixContain(d) => Some(made_update(
+            helix_contain::HelixContain::get_interface_mask(),
+            helix_contain::HelixContain::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::HelixContain(m))),
         )),
         ModuleDataKind::TransportContain(d) => Some(made_update(
             transport_contain::TransportContain::get_interface_mask(),

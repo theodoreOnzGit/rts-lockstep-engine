@@ -32,6 +32,10 @@
 //! Batch R3 adds the `I` (`InternetHackContain`) and `R` (`RailedTransportContain`) blocks (the transport's fields), class codes 2 and 3 for the scene's
 //! containers, and per object a dock behaviour after the contain (open or closed; `setDockOpen` is a line of the log).
 //!
+//! Batch R4 adds the `H` block (`HelixContain`: the transport's fields, `PayloadTemplateName`, `ShouldDrawPips`), class code 4, the PORTABLE_STRUCTURE kind,
+//! ops 56 and 57, and each object's weapon bonus word. Both sides register the containers' update modules as `GameLogic::registerObject` does, so a save's
+//! scheduling word is compared, not masked (it used to be masked at a fixed offset that was right only for `OpenContain`).
+//!
 //! Batch R2 adds `TransportContain`: one data block in two is a `T` block (the base's fields, then `Slots`, `ExitBone`, `ExitPitchRate`, `InitialPayload`,
 //! `HealthRegen%PerSec`, `ExitDelay` and the eight flags), and each later container is a transport one time in two (its data from the scene). The scene adds, per
 //! object, what a transport reads of its riders and itself: the template's raw transport slot count, an airborne locomotor, the AI's free-to-exit answer and
@@ -128,6 +132,23 @@
 //! | 1444 | RailedTransport: the dock closed instead of opened |
 //! | 1445 | RailedTransport: the closed-dock test of `isSpecificRiderFreeToExit` inverted |
 //! | 1446 | RailedTransport: `exitObjectViaDoor` exits through the base (as if the static helper were called) |
+//!
+//! Batch R4, `helix_contain.rs` (9,000 cases: 11 of 12 caught):
+//!
+//! | id | planted bug |
+//! |---|---|
+//! | 1451 | a second portable structure taken while one is held |
+//! | 1452 | the payload never added (SURVIVES: the stub factory makes no object, and a Helix dereferences it: undefined, excluded) |
+//! | 1453 | `onObjectCreated` does not create the payload |
+//! | 1454 | the portable structure does not follow the Helix |
+//! | 1455 | `redeployOccupants` at the Helix's height, not 8 above |
+//! | 1456 | the rubble test of `onBodyDamageStateChange` inverted |
+//! | 1457 | the portable structure's team not changed on capture |
+//! | 1458 | the portable structure not forgotten by `removeFromContain` |
+//! | 1459 | xfer version 1 (no portable structure saved) |
+//! | 1460 | no garrisoned weapon bonus for a rider |
+//! | 1461 | the stealth grant's test inverted |
+//! | 1462 | the garrisoned weapon bonus not cleared |
 //!
 //! Not planted, unobservable here: the `wasSelected` argument of `onContaining` (1375, removed). `OpenContain::onContaining` ignores it; ~~`TransportContain` and `GarrisonContain` use it, and
 //! their tests will catch it~~ **CORRECTED 2026-10-22 (batch R2)**: `TransportContain::onContaining` only hands it to the base, so it is unobservable there too;
@@ -328,7 +349,12 @@ struct Obj {
     /// batch R3: a dock behaviour (after the contain), and whether it is open
     has_dock: bool,
     dock_open: bool,
+    /// batch R4: a scene-built Helix's payload names, an index into [`HELIX_PAYLOADS`]
+    helix_payload: u32,
 }
+
+/// The payload lists a scene-built Helix can name (the driver's `kHelixPayload`).
+const HELIX_PAYLOADS: [&[&str]; 4] = [&[], &["Nope"], &["T1"], &["Nope", "T2"]];
 
 /// The payload template names and exit bone names a scene-built transport can name (the driver's `kPayload` and `kExitBone`).
 const PAYLOADS: [&str; 4] = ["", "T1", "T2", "Nope"];
@@ -433,6 +459,7 @@ impl Obj {
         w.f(self.health);
         w.u(u32::from(self.has_dock));
         w.u(u32::from(self.dock_open));
+        w.u(self.helix_payload);
     }
 
     fn read(r: &mut R<'_>) -> Obj {
@@ -534,6 +561,7 @@ impl Obj {
         o.health = r.f();
         o.has_dock = r.u() != 0;
         o.dock_open = r.u() != 0;
+        o.helix_payload = r.u();
         o
     }
 }
@@ -643,7 +671,7 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     // batch R2: one block in two is a `TransportContain` (`T`), with its own fields after the base's
     // batch R3: a transport block is `T`, `I` (InternetHackContain) or `R` (RailedTransportContain); the fields are the same
     let transport = g.below(2) == 0;
-    let token = if transport { ["T\n", "I\n", "R\n"][g.below(3) as usize] } else { "D\n" };
+    let token = if transport { ["T\n", "I\n", "R\n", "H\n"][g.below(4) as usize] } else { "D\n" };
     if transport {
         field!(60, "Slots", health_str(g, clean));
         field!(30, "ScatterNearbyOnExit", gen_bool(g, clean));
@@ -659,6 +687,15 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
         field!(40, "ExitDelay", format!("{}", *pick(g, &[&0i32, &33, &100, &1000])));
         field!(40, "ArmedRidersUpgradeMyWeaponSet", gen_bool(g, clean));
         field!(40, "DelayExitInAir", gen_bool(g, clean));
+    }
+    // batch R4: a Helix's own fields (the payload names are rare: see `helix_payload`)
+    if token == "H\n" {
+        if g.below(4) == 0 {
+            for _ in 0..1 + g.below(2) {
+                field!(100, "PayloadTemplateName", PAYLOADS[1 + g.below(3) as usize].to_string());
+            }
+        }
+        field!(30, "ShouldDrawPips", gen_bool(g, clean));
     }
     if !clean && g.below(12) == 0 {
         lines.push(format!("Bogus{}1", gen_sep(g)));
@@ -753,7 +790,7 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
         }
     }
     // 0 OpenContain, 1 TransportContain, 2 InternetHackContain, 3 RailedTransportContain
-    o.cls = if o.has_contain && k > 0 { g.below(4) } else { 0 };
+    o.cls = if o.has_contain && k > 0 { g.below(5) } else { 0 };
     o.raw_slots = *pick(g, &[&0i32, &1, &1, &1, &2, &3]);
     // upstream's airborne locomotor is the AI's
     o.airborne = o.has_ai && g.below(4) == 0;
@@ -782,6 +819,11 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     o.health = if g.below(3) == 0 { o.max_health } else { *pick(g, &[&0.0f32, &20.0, &99.5, &150.0]) };
     o.has_dock = g.below(2) == 0;
     o.dock_open = g.below(2) == 0;
+    // mostly no payload: a payload template that exists makes the stub factory's NULL object, which the Helix dereferences (undefined, excluded)
+    o.helix_payload = if g.below(4) == 0 { g.below(4) } else { 0 };
+    if g.below(4) == 0 {
+        o.extra_kinds |= 8;
+    }
     o
 }
 
@@ -799,6 +841,7 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> Vec<u32> {
                 Some(ModuleDataKind::TransportContain(_)) => 1,
                 Some(ModuleDataKind::InternetHackContain(_)) => 2,
                 Some(ModuleDataKind::RailedTransportContain(_)) => 3,
+                Some(ModuleDataKind::HelixContain(_)) => 4,
                 _ => 0,
             };
         }
@@ -831,7 +874,7 @@ fn gen_ops(g: &mut Gen, n: u32) -> Vec<[u32; 5]> {
             [47 + burst, c, a, g.below(16), g.below(2)]
         } else if burst < 6 {
             // batch R2: the transport's own (49 to 55)
-            [49 + g.below(7), c, a, g.below(10), g.below(10)]
+            [49 + g.below(9), c, a, g.below(10), g.below(10)]
         } else {
             gen_op(g, c, a)
         };
@@ -941,6 +984,13 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId, has_contain: bool) {
                     put_u32(v, x);
                 }
             }
+            // batch R4: a Helix, 3 (the transport's words and its portable structure)
+            Some(UpdateBody::HelixContain(m)) => {
+                put_u32(v, 3);
+                for x in m.state_words() {
+                    put_u32(v, x);
+                }
+            }
             _ => panic!("the container is in its slot"),
         }
     } else {
@@ -993,6 +1043,8 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId, has_contain: bool) {
         put_u32(v, m);
     }
     put_u32(v, u32::from(w.reads.local_selection.contains(&id)));
+    // batch R4: the weapon bonus conditions (HelixContain sets and clears GARRISONED)
+    put_u32(v, w.objects.find(id).unwrap().weapon_bonus_condition);
 }
 
 /// The state words of the module with the 32 fire point matrices folded into one word (the driver folds the same way).
@@ -1103,6 +1155,9 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                         ContainCall::GetSingleLogicalBonePositionOnTurret { object, name } => log.push(format!("boneturret {object} {}", String::from_utf8_lossy(&name))),
                         ContainCall::SetDisabled { object, disabled } => log.push(format!("setdisabled {object} {disabled}")),
                         ContainCall::ClearDisabled { object, disabled } => log.push(format!("cleardisabled {object} {disabled}")),
+                        ContainCall::SetTeam { object, team } => log.push(format!("setteam {object} {team}")),
+                        ContainCall::SetDamageState { object, state } => log.push(format!("setdamagestate {object} {state}")),
+                        ContainCall::StealthReceiveGrant { object, active, frames } => log.push(format!("stealthgrant {object} {} {frames}", i32::from(active))),
                         ContainCall::NewObject { template, team } => log.push(format!("newobject {} {team}", template_names.get(&template).cloned().unwrap_or_default())),
                     }
                 }
@@ -1122,6 +1177,7 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                 }
                 Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::ClearAndSet { clear, set }, .. }) => log.push(format!("clearset {} {}", clear[0], set[0])),
                 Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Set(a), .. }) => log.push(format!("mc {}", a[0])),
+                Some(ObjectClientEvent::DrawableFlashAsSelected { .. }) => log.push("flash".to_string()),
                 Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Clear(a), .. }) => log.push(format!("mcclear {}", a[0])),
                 _ => {}
             }
@@ -1171,6 +1227,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         let d: &OpenContainModuleData = match &data {
             ModuleDataKind::OpenContain(d) => d,
             ModuleDataKind::TransportContain(t) | ModuleDataKind::InternetHackContain(t) | ModuleDataKind::RailedTransportContain(t) => &t.open,
+            ModuleDataKind::HelixContain(h) => &h.transport.open,
             _ => unreachable!("not a contain"),
         };
         put_u32(&mut v, d.contain_max as u32);
@@ -1210,9 +1267,10 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         put_u32(&mut v, rq);
         // batch R2: 1 and the transport's fields, or 0
         let block_cls = match &data {
-            ModuleDataKind::TransportContain(t) => Some((1, t)),
-            ModuleDataKind::InternetHackContain(t) => Some((2, t)),
-            ModuleDataKind::RailedTransportContain(t) => Some((3, t)),
+            ModuleDataKind::TransportContain(t) => Some((1, &**t)),
+            ModuleDataKind::InternetHackContain(t) => Some((2, &**t)),
+            ModuleDataKind::RailedTransportContain(t) => Some((3, &**t)),
+            ModuleDataKind::HelixContain(h) => Some((4, &h.transport)),
             _ => None,
         };
         if let Some((cls, t)) = block_cls {
@@ -1231,6 +1289,13 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     | b(t.armed_riders_upgrade_weapon_set, 16) | b(t.reset_mood_check_time_on_exit, 32) | b(t.destroy_riders_who_are_not_free_to_exit, 64)
                     | b(t.is_delay_exit_in_air, 128),
             );
+            if let ModuleDataKind::HelixContain(h) = &data {
+                put_u32(&mut v, h.payload_template_name_data.len() as u32);
+                for n in &h.payload_template_name_data {
+                    put_str(&mut v, n);
+                }
+                put_u32(&mut v, u32::from(h.draw_pips));
+            }
         } else {
             put_u32(&mut v, 0);
         }
@@ -1257,7 +1322,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     let mut templates = Vec::new();
     for (k, o) in sc.objs.iter().enumerate() {
         let mut kind_of: Vec<i32> = (0..8).filter(|&i| o.kinds >> i & 1 != 0).map(|i| KINDS[i]).collect();
-        for (i, kk) in [KINDOF_CLIFF_JUMPER, KINDOF_HERO, KINDOF_SALVAGER].iter().enumerate() {
+        for (i, kk) in [KINDOF_CLIFF_JUMPER, KINDOF_HERO, KINDOF_SALVAGER, KINDOF_PORTABLE_STRUCTURE].iter().enumerate() {
             if o.extra_kinds >> i & 1 != 0 {
                 kind_of.push(*kk);
             }
@@ -1415,6 +1480,11 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     match o.cls {
                         2 => ModuleDataKind::InternetHackContain(Arc::new(t)),
                         3 => ModuleDataKind::RailedTransportContain(Arc::new(t)),
+                        4 => ModuleDataKind::HelixContain(Arc::new(rts_lockstep_engine::logic::modules::helix_contain::HelixContainModuleData {
+                            transport: t,
+                            payload_template_name_data: HELIX_PAYLOADS[o.helix_payload as usize % 4].iter().map(|n| n.as_bytes().to_vec()).collect(),
+                            draw_pips: true,
+                        })),
                         _ => ModuleDataKind::TransportContain(Arc::new(t)),
                     }
                 } else {
@@ -1425,6 +1495,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 ModuleDataKind::TransportContain(_) => b"TransportContain",
                 ModuleDataKind::InternetHackContain(_) => b"InternetHackContain",
                 ModuleDataKind::RailedTransportContain(_) => b"RailedTransportContain",
+                ModuleDataKind::HelixContain(_) => b"HelixContain",
                 _ => b"OpenContain",
             };
             let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class, b"ModuleTag_Contain", &cd).unwrap().unwrap();
@@ -1499,6 +1570,10 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         }
     }
     let _ = &ids;
+    // batch R4: undefined in the setup (a Helix's payload at `onObjectCreated`: the stub factory's NULL object): never sent to the C++
+    if w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined() && !e.is_end_iterator_dereferenced()) {
+        return RunOut { dump: v, keys: Vec::new(), excluded: true };
+    }
     let mut saved: Vec<u8> = Vec::new();
     let mut excluded = false;
     let mut end_reads = 0u64;
@@ -1522,7 +1597,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 info.input.amount = 10.0;
             }
             let fold3 = |p: &Coord3D| p.x.to_bits().wrapping_mul(31 * 31).wrapping_add(p.y.to_bits().wrapping_mul(31)).wrapping_add(p.z.to_bits());
-            if let Some(m) = m.filter(|_| o[0] < 34 || (42..=45).contains(&o[0]) || (47..=55).contains(&o[0])) {
+            if let Some(m) = m.filter(|_| o[0] < 34 || (42..=45).contains(&o[0]) || (47..=57).contains(&o[0])) {
                 match o[0] {
                     0 => {
                         w.module_call(id, m, ModuleCall::AddToContain(rider));
@@ -1558,6 +1633,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                                 Some(UpdateBody::TransportContain(c)) => Some(c.module_data().open.die_mux_data.clone()),
                                 Some(UpdateBody::InternetHackContain(c)) => Some(c.module_data().open.die_mux_data.clone()),
                                 Some(UpdateBody::RailedTransportContain(c)) => Some(c.module_data().open.die_mux_data.clone()),
+                                Some(UpdateBody::HelixContain(c)) => Some(c.module_data().transport.open.die_mux_data.clone()),
                                 _ => None,
                             };
                             if let Some(mux) = mux {
@@ -1728,6 +1804,13 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                             result = u32::from(w.module_call(id, m, ModuleCall::IsSpecificRiderFreeToExit { obj: if o[3] & 1 != 0 { INVALID_ID } else { rider } }).as_bool());
                         }
                     }
+                    // batch R4
+                    56 => {
+                        w.module_call(id, m, ModuleCall::OnBodyDamageStateChange { info: DamageInfo::default(), old_state: (o[3] % 4) as i32, new_state: (o[4] % 4) as i32 });
+                    }
+                    57 => {
+                        w.module_call(id, m, ModuleCall::ClientVisibleContainedFlashAsSelected);
+                    }
                     _ => {}
                 }
             }
@@ -1842,11 +1925,16 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
     let (en, ex) = (r.str(), r.str());
     let data: Vec<u32> = (0..14).map(|_| r.u32()).collect();
     out.push(format!("data {max} {en} {ex} {data:08x?}"));
-    if r.u32() != 0 {
+    let cls = r.u32();
+    if cls != 0 {
         let (cap, pitch) = (r.u32(), r.u32());
         let (bone, payload) = (r.str(), r.str());
         let rest: Vec<u32> = (0..4).map(|_| r.u32()).collect();
         out.push(format!("transport data {cap} {pitch:08x} {bone} {payload} {rest:08x?}"));
+        if cls == 4 {
+            let names: Vec<String> = (0..r.u32()).map(|_| r.str()).collect();
+            out.push(format!("helix data {names:?} pips {}", r.u32()));
+        }
     }
     let n_obj = r.u32();
     for i in 0..=n_ops {
@@ -1857,7 +1945,14 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let result = r.u32();
         let nlog = r.u32();
         let log: Vec<String> = (0..nlog).map(|_| r.str()).collect();
-        let xfer = r.xfer();
+        // the scheduling half's frame-and-phase word is compared too: both sides register the containers as `GameLogic::registerObject` does
+        let xfer = {
+            let xst = r.u32() as i32;
+            let blen = r.u32();
+            let bytes: Vec<u32> = (0..blen).map(|_| r.u32()).collect();
+            let crc = r.u32();
+            format!("xfer {xst} bytes {bytes:?} crc {crc:#x}")
+        };
         out.push(format!("op {i}: status {st} result {result:08x} log {log:?} {xfer}"));
         for k in 0..n_obj {
             let has = r.u32();
@@ -1880,12 +1975,12 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
                 for _ in 0..map * 2 {
                     state.push(r.u32());
                 }
-                for _ in 0..if has == 2 { 6 } else { 3 } {
+                for _ in 0..match has { 2 => 6, 3 => 7, _ => 3 } {
                     state.push(r.u32());
                 }
             }
-            let rest: Vec<u32> = (0..17).map(|_| r.u32()).collect();
-            out.push(format!("op {i} object {k}: contain {state:08x?} container {} at {:08x} {:08x} {:08x} status {:08x} {:08x} dead {} aidead {} fall {} radius {:08x} orient {:08x} layer {} conds {:08x?} selected {}", rest[0], rest[1], rest[2], rest[3], rest[4], rest[5], rest[6], rest[7], rest[8], rest[9], rest[10], rest[11], &rest[12..16], rest[16]));
+            let rest: Vec<u32> = (0..18).map(|_| r.u32()).collect();
+            out.push(format!("op {i} object {k}: contain {state:08x?} container {} at {:08x} {:08x} {:08x} status {:08x} {:08x} dead {} aidead {} fall {} radius {:08x} orient {:08x} layer {} conds {:08x?} selected {} bonus {:x}", rest[0], rest[1], rest[2], rest[3], rest[4], rest[5], rest[6], rest[7], rest[8], rest[9], rest[10], rest[11], &rest[12..16], rest[16], rest[17]));
         }
     }
     out
@@ -1933,13 +2028,18 @@ fn read_internet_hack_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>)
     Ok(())
 }
 
+fn read_helix_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
+    *out = Some(rts_lockstep_engine::logic::modules::helix_contain::new_module_data(Some(ini))?);
+    Ok(())
+}
+
 fn read_railed_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
     *out = Some(rts_lockstep_engine::logic::modules::railed_transport_contain::new_module_data(Some(ini))?);
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }];
+    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
