@@ -347,8 +347,8 @@ pub trait OpenContainVirtuals: Clone + PartialEq + Sized {
     fn is_passenger_allowed_to_fire(&mut self, world: &mut World, me: ModuleHandle, id: ObjectId) -> bool {
         base_is_passenger_allowed_to_fire(self, world, me, id)
     }
-    /// `getContainMax()`.
-    fn get_contain_max(&mut self) -> i32 {
+    /// `getContainMax()` (reads the world: see `get_contained_items_list`).
+    fn get_contain_max(&self, _world: &World) -> i32 {
         self.oc().data.contain_max
     }
     /// `addToContain(rider)`.
@@ -405,25 +405,25 @@ pub trait OpenContainVirtuals: Clone + PartialEq + Sized {
     fn update(&mut self, world: &mut World, me: ModuleHandle) -> UpdateSleepTime {
         base_update(self, world, me)
     }
-    /// `getContainedItemsList()`, as ids in list order.
-    fn get_contained_items_list(&self) -> Vec<ObjectId> {
+    /// `getContainedItemsList()`, as ids in list order. It reads the world (batch R6: `OverlordContain` answers its rider's contain's list).
+    fn get_contained_items_list(&self, _world: &World) -> Vec<ObjectId> {
         self.oc().contain_list.clone()
     }
-    /// `getContainCount()`.
-    fn get_contain_count(&self) -> u32 {
+    /// `getContainCount()` (reads the world: see `get_contained_items_list`).
+    fn get_contain_count(&self, _world: &World) -> u32 {
         self.oc().contain_list_size
     }
     /// `iterateContained(func, userData, reverse)`: the ids to call `func` on, in the order it is called (the callee may remove the items: upstream advances the
     /// iterator first).
-    fn iterate_contained(&self, reverse: bool) -> Vec<ObjectId> {
-        let mut v = self.get_contained_items_list_for_iteration();
+    fn iterate_contained(&self, world: &World, reverse: bool) -> Vec<ObjectId> {
+        let mut v = self.get_contained_items_list_for_iteration(world);
         if reverse {
             v.reverse();
         }
         v
     }
     /// The list `iterateContained` walks (the module's own list unless a derived class redirects it).
-    fn get_contained_items_list_for_iteration(&self) -> Vec<ObjectId> {
+    fn get_contained_items_list_for_iteration(&self, _world: &World) -> Vec<ObjectId> {
         self.oc().contain_list.clone()
     }
     /// `friend_getRider()`. It reads the world (batch R4: `HelixContain`'s is `findObjectByID` of its portable structure).
@@ -509,7 +509,7 @@ pub trait OpenContainVirtuals: Clone + PartialEq + Sized {
         false
     }
     /// `isDisplayedOnControlBar()`.
-    fn is_displayed_on_control_bar(&self) -> bool {
+    fn is_displayed_on_control_bar(&self, _world: &World) -> bool {
         false
     }
     /// `getExtraSlotsInUse()`.
@@ -517,7 +517,7 @@ pub trait OpenContainVirtuals: Clone + PartialEq + Sized {
         0
     }
     /// `isKickOutOnCapture()`: "by default, yes, all contain modules kick passengers out on capture".
-    fn is_kick_out_on_capture(&mut self) -> bool {
+    fn is_kick_out_on_capture(&self, _world: &World) -> bool {
         true
     }
     /// `isExitBusy()`.
@@ -752,7 +752,7 @@ pub fn base_add_or_remove_obj_from_world<T: OpenContainVirtuals>(t: &mut T, worl
 }
 
 /// The depth at which a recursion through containers that contain each other is taken for an endless one.
-const MAX_RECURSION: u32 = 64;
+pub(crate) const MAX_RECURSION: u32 = 64;
 
 fn add_or_remove_obj_from_world_inner<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, obj: ObjectId, add: bool) {
     // it's expensive to add and remove structures from the pathfinder, but we really shouldn't be doing it anyway as it doesn't make much sense to contain a
@@ -1078,7 +1078,8 @@ pub fn base_on_removing<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me
 /// `OpenContain::getContainedItemsMass`.
 pub fn get_contained_items_mass<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle) -> f32 {
     let mut mass = 0.0f32;
-    for rider in t.get_contained_items_list() {
+    // `m_containList`, the module's own (not the virtual `getContainedItemsList()`, which an Overlord redirects)
+    for rider in t.oc().contain_list.clone() {
         let phys = world.objects.find(rider).and_then(|o| o.physics);
         if let Some(p) = phys {
             let m = out(t, world, me, |w| w.module_call(rider, p, ModuleCall::PhysicsGetMass)).as_real(0.0);
@@ -1482,7 +1483,7 @@ pub fn base_exit_object_in_a_hurry<T: OpenContainVirtuals>(t: &mut T, world: &mu
 /// `OpenContain::orderAllPassengersToExit`.
 pub fn base_order_all_passengers_to_exit<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, command_source: i32, instantly: bool) {
     let us = me.object;
-    for rider in t.get_contained_items_list() {
+    for rider in t.get_contained_items_list(world) {
         // call it
         if let Some(ai) = world.objects.find(rider).and_then(|o| o.ai) {
             if instantly != crate::logic::modules::plant(1407) {
@@ -1496,7 +1497,7 @@ pub fn base_order_all_passengers_to_exit<T: OpenContainVirtuals>(t: &mut T, worl
 
 /// `OpenContain::orderAllPassengersToIdle`.
 pub fn order_all_passengers_to_idle<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, command_source: i32) {
-    for rider in t.get_contained_items_list() {
+    for rider in t.get_contained_items_list(world) {
         if let Some(ai) = world.objects.find(rider).and_then(|o| o.ai) {
             out(t, world, me, |w| w.module_call(rider, ai, ModuleCall::AiIdleFrom { command_source }));
         }
@@ -1505,7 +1506,7 @@ pub fn order_all_passengers_to_idle<T: OpenContainVirtuals>(t: &mut T, world: &m
 
 /// `OpenContain::orderAllPassengersToHackInternet`.
 pub fn order_all_passengers_to_hack_internet<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, command_source: i32) {
-    for rider in t.get_contained_items_list() {
+    for rider in t.get_contained_items_list(world) {
         if world.objects.find(rider).is_some_and(|o| o.is_kind_of(KINDOF_MONEY_HACKER)) || crate::logic::modules::plant(1408) {
             if let Some(ai) = world.objects.find(rider).and_then(|o| o.ai) {
                 out(t, world, me, |w| w.module_call(rider, ai, ModuleCall::AiHackInternet { command_source }));
@@ -1530,7 +1531,7 @@ pub fn base_process_damage_to_contained<T: OpenContainVirtuals>(t: &mut T, world
     let data = t.oc().data.clone();
     let us = me.object;
 
-    let items = t.get_contained_items_list();
+    let items = t.get_contained_items_list(world);
     let any = !items.is_empty();
     for object in items {
         // advance to the next iterator before we apply the damage. It's possible that the damage will kill the unit and foobar the iterator list.
@@ -1565,7 +1566,7 @@ pub fn base_process_damage_to_contained<T: OpenContainVirtuals>(t: &mut T, world
 /// `OpenContain::isAnyRiderAttacking`.
 pub fn is_any_rider_attacking<T: OpenContainVirtuals>(t: &T, world: &World) -> bool {
     let mut well_is_he = false;
-    for rider in t.iterate_contained(false) {
+    for rider in t.iterate_contained(world, false) {
         if well_is_he {
             continue;
         }
@@ -1733,12 +1734,12 @@ pub fn contain_module_call<T: OpenContainVirtuals>(t: &mut T, world: &mut World,
             t.oc_mut().passenger_allowed_to_fire = permission;
             ModuleReply::Done
         }
-        ModuleCall::IsDisplayedOnControlBar => ModuleReply::Bool(t.is_displayed_on_control_bar()),
+        ModuleCall::IsDisplayedOnControlBar => ModuleReply::Bool(t.is_displayed_on_control_bar(world)),
         ModuleCall::GetExtraSlotsInUse => ModuleReply::Int(t.get_extra_slots_in_use()),
-        ModuleCall::IsKickOutOnCapture => ModuleReply::Bool(t.is_kick_out_on_capture()),
-        ModuleCall::GetContainedItems => ModuleReply::Ids(t.get_contained_items_list()),
-        ModuleCall::GetContainCount => ModuleReply::Int(t.get_contain_count() as i32),
-        ModuleCall::GetContainMax => ModuleReply::Int(t.get_contain_max()),
+        ModuleCall::IsKickOutOnCapture => ModuleReply::Bool(t.is_kick_out_on_capture(world)),
+        ModuleCall::GetContainedItems => ModuleReply::Ids(t.get_contained_items_list(world)),
+        ModuleCall::GetContainCount => ModuleReply::Int(t.get_contain_count(world) as i32),
+        ModuleCall::GetContainMax => ModuleReply::Int(t.get_contain_max(world)),
         ModuleCall::GetRider => ModuleReply::Id(t.friend_get_rider(world)),
         ModuleCall::GetContainedItemsMass => ModuleReply::Real(get_contained_items_mass(t, world, me)),
         ModuleCall::GetStealthUnitsContained => ModuleReply::Int(t.oc().stealth_units_contained as i32),
@@ -1821,6 +1822,84 @@ pub fn contain_module_call<T: OpenContainVirtuals>(t: &mut T, world: &mut World,
 }
 
 // ---- the concrete class ---------------------------------------------------------------------------------------------------------------------------------------
+
+// --- p1w13-sonnet --- (batch R6: OverlordContain reads its rider's contain)
+/// Runs `$e` with `$m` bound to the contain module in `$body` (an [`UpdateBody`]), whatever its class; `None` for a body that is no contain module.
+/// Every class that implements [`OpenContainVirtuals`] is listed here.
+macro_rules! with_contain_body {
+    ($body:expr, $m:ident => $e:expr) => {
+        match $body {
+            UpdateBody::OpenContain($m) => Some($e),
+            UpdateBody::TransportContain($m) => Some($e),
+            UpdateBody::InternetHackContain($m) => Some($e),
+            UpdateBody::RailedTransportContain($m) => Some($e),
+            UpdateBody::HelixContain($m) => Some($e),
+            UpdateBody::RiderChangeContain($m) => Some($e),
+            UpdateBody::OverlordContain($m) => Some($e),
+            _ => None,
+        }
+    };
+}
+
+/// The contain module of `obj` (`obj->getContain()`), read in its slot: `None` for no object or no contain. A contain that is lent out is the
+/// module running now (the only one whose slot is empty while it reads the world through `&World`), reached again through the redirections it
+/// follows: upstream recurses for ever (or loops: the compiler makes the tail call a jump), so the read sets `cuts.contain.view_overflow`.
+fn contain_body(world: &World, obj: ObjectId) -> Option<&UpdateBody> {
+    let o = world.objects.find(obj)?;
+    let idx = o.contain?;
+    let u = o.modules[idx as usize].update_index?;
+    let body = o.behaviors[u as usize].body.as_ref();
+    if body.is_none() {
+        world.cuts.contain.view_overflow.set(true);
+    }
+    body
+}
+
+/// Runs a read of another object's contain module one level deeper: a ring of redirecting containers (two Overlords that carry each other) recurses
+/// for ever upstream; past [`MAX_RECURSION`] levels the read answers `None` and leaves `cuts.contain.view_overflow` set, which the caller with the
+/// world turns into [`Undefined::EndlessLoop`].
+fn view_guarded<R>(world: &World, f: impl FnOnce() -> Option<R>) -> Option<R> {
+    let depth = world.cuts.contain.view_depth.get();
+    if depth >= MAX_RECURSION {
+        world.cuts.contain.view_overflow.set(true);
+        return None;
+    }
+    world.cuts.contain.view_depth.set(depth + 1);
+    let r = f();
+    world.cuts.contain.view_depth.set(depth);
+    r
+}
+
+/// `obj->getContain()->getContainCount()`, read without calling into the world.
+pub fn view_contain_count(world: &World, obj: ObjectId) -> Option<u32> {
+    view_guarded(world, || with_contain_body!(contain_body(world, obj)?, m => m.get_contain_count(world)))
+}
+
+/// `obj->getContain()->getContainedItemsList()`.
+pub fn view_contained_items_list(world: &World, obj: ObjectId) -> Option<Vec<ObjectId>> {
+    view_guarded(world, || with_contain_body!(contain_body(world, obj)?, m => m.get_contained_items_list(world)))
+}
+
+/// The list `obj->getContain()->iterateContained(...)` walks.
+pub fn view_contained_items_list_for_iteration(world: &World, obj: ObjectId) -> Option<Vec<ObjectId>> {
+    view_guarded(world, || with_contain_body!(contain_body(world, obj)?, m => m.get_contained_items_list_for_iteration(world)))
+}
+
+/// `obj->getContain()->getContainMax()`.
+pub fn view_contain_max(world: &World, obj: ObjectId) -> Option<i32> {
+    view_guarded(world, || with_contain_body!(contain_body(world, obj)?, m => m.get_contain_max(world)))
+}
+
+/// `obj->getContain()->isDisplayedOnControlBar()`.
+pub fn view_is_displayed_on_control_bar(world: &World, obj: ObjectId) -> Option<bool> {
+    view_guarded(world, || with_contain_body!(contain_body(world, obj)?, m => m.is_displayed_on_control_bar(world)))
+}
+
+/// `obj->getContain()->isKickOutOnCapture()`.
+pub fn view_is_kick_out_on_capture(world: &World, obj: ObjectId) -> Option<bool> {
+    view_guarded(world, || with_contain_body!(contain_body(world, obj)?, m => m.is_kick_out_on_capture(world)))
+}
+// --- end p1w13-sonnet ---
 
 // --- p1w13-sonnet --- (batch R2)
 /// `enableLoadSounds(enable)` on the module itself (a derived class's `createPayload` asks its own contain interface).

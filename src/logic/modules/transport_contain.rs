@@ -411,7 +411,7 @@ pub trait TransportContainVirtuals: OpenContainVirtuals {
         false
     }
     /// `getContainMax()`.
-    fn t_get_contain_max(&mut self) -> i32 {
+    fn t_get_contain_max(&self, _world: &World) -> i32 {
         tc_get_contain_max(self)
     }
     /// `getExtraSlotsInUse()`.
@@ -427,7 +427,7 @@ pub trait TransportContainVirtuals: OpenContainVirtuals {
         tc_reserve_door_for_exit(self, world, me, specific)
     }
     /// `isDisplayedOnControlBar()`.
-    fn t_is_displayed_on_control_bar(&self) -> bool {
+    fn t_is_displayed_on_control_bar(&self, _world: &World) -> bool {
         true
     }
     /// `killRidersWhoAreNotFreeToExit()`.
@@ -481,6 +481,39 @@ pub trait TransportContainVirtuals: OpenContainVirtuals {
             ModuleCall::IsSpecificRiderFreeToExit { obj } => ModuleReply::Bool(self.is_specific_rider_free_to_exit(world, me, obj)),
             _ => ModuleReply::Unhandled,
         }
+    }
+    // batch R6 (OverlordContain): the queries and calls an overlord-style container redirects, each defaulting to `OpenContain`'s
+    /// `getContainedItemsList()`.
+    fn t_get_contained_items_list(&self, _world: &World) -> Vec<ObjectId> {
+        self.oc().contain_list().to_vec()
+    }
+    /// `getContainCount()`.
+    fn t_get_contain_count(&self, _world: &World) -> u32 {
+        self.oc().contain_list_size()
+    }
+    /// The list `iterateContained` walks.
+    fn t_get_contained_items_list_for_iteration(&self, _world: &World) -> Vec<ObjectId> {
+        self.oc().contain_list().to_vec()
+    }
+    /// `isKickOutOnCapture()`: `TRUE`.
+    fn t_is_kick_out_on_capture(&self, _world: &World) -> bool {
+        true
+    }
+    /// `isGarrisonable()`: `FALSE`.
+    fn t_is_garrisonable(&mut self, _world: &mut World, _me: ModuleHandle) -> bool {
+        false
+    }
+    /// `isBustable()`: `FALSE`.
+    fn t_is_bustable(&self) -> bool {
+        false
+    }
+    /// `removeAllContained(exposeStealthUnits)`.
+    fn t_remove_all_contained(&mut self, world: &mut World, me: ModuleHandle, expose_stealth_units: bool) {
+        open_contain::base_remove_all_contained(self, world, me, expose_stealth_units);
+    }
+    /// `killAllContained()`.
+    fn t_kill_all_contained(&mut self, world: &mut World, me: ModuleHandle) {
+        open_contain::base_kill_all_contained(self, world, me);
     }
     /// `onObjectCreated()`: nothing.
     fn t_on_object_created(&mut self, _world: &mut World, _me: ModuleHandle) {}
@@ -538,8 +571,8 @@ pub fn tc_is_valid_container_for<T: TransportContainVirtuals>(t: &mut T, world: 
     }
 
     if check_capacity {
-        let contain_max = t.get_contain_max();
-        let contain_count = t.get_contain_count() as i32;
+        let contain_max = t.get_contain_max(world);
+        let contain_count = t.get_contain_count(world) as i32;
         if crate::logic::modules::plant(1413) {
             return contain_count + transport_slot_count <= contain_max;
         }
@@ -557,7 +590,7 @@ pub fn tc_let_riders_upgrade_weapon_set<T: TransportContainVirtuals>(t: &mut T, 
     }
     let us = me.object;
     let mut any_rider_has_viable_weapon = false;
-    let riders = t.get_contained_items_list();
+    let riders = t.get_contained_items_list(world);
     for rider in riders {
         if world.objects.find(rider).is_none_or(|o| !o.template().is_kind_of(KINDOF_INFANTRY)) {
             continue;
@@ -601,7 +634,7 @@ pub fn tc_on_containing<T: TransportContainVirtuals>(t: &mut T, world: &mut Worl
     t.tc_mut().extra_slots_in_use += transport_slot_count - 1;
 
     // when we go from holding nothing to holding something we have a model condition to visually show the change
-    if t.get_contain_count() == 1 {
+    if t.get_contain_count(world) == 1 {
         out(t, world, me, |w| w.contain_drawable_model_condition(me.object, MODELCONDITION_LOADED, true));
     }
 
@@ -658,7 +691,7 @@ pub fn tc_on_removing<T: TransportContainVirtuals>(t: &mut T, world: &mut World,
     t.tc_mut().extra_slots_in_use -= transport_slot_count - 1;
 
     // when we are empty again, clear the model condition for loaded
-    if t.get_contain_count() == 0 {
+    if t.get_contain_count(world) == 0 {
         out(t, world, me, |w| w.contain_drawable_model_condition(us, MODELCONDITION_LOADED, false));
     }
 
@@ -747,7 +780,7 @@ pub fn tc_update<T: TransportContainVirtuals>(t: &mut T, world: &mut World, me: 
     if d.health_regen != 0.0 && !crate::logic::modules::plant(1425) {
         // "This transport has a health regeneration value, so go through and heal all inside."
         let us = me.object;
-        let items = t.get_contained_items_list();
+        let items = t.get_contained_items_list(world);
         for object in items {
             // "Determine if we need healing or not."
             let Some((health, max)) = out(t, world, me, |w| w.body_health(object)) else {
@@ -915,8 +948,32 @@ macro_rules! transport_open_contain_virtuals {
             fn is_special_overlord_style_container(&self) -> bool {
                 $crate::logic::modules::transport_contain::TransportContainVirtuals::t_is_special_overlord_style_container(self)
             }
-            fn get_contain_max(&mut self) -> i32 {
-                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_get_contain_max(self)
+            fn get_contain_max(&self, world: &$crate::logic::world::game_logic::World) -> i32 {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_get_contain_max(self, world)
+            }
+            fn get_contained_items_list(&self, world: &$crate::logic::world::game_logic::World) -> Vec<$crate::common::game_type::ObjectId> {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_get_contained_items_list(self, world)
+            }
+            fn get_contain_count(&self, world: &$crate::logic::world::game_logic::World) -> u32 {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_get_contain_count(self, world)
+            }
+            fn get_contained_items_list_for_iteration(&self, world: &$crate::logic::world::game_logic::World) -> Vec<$crate::common::game_type::ObjectId> {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_get_contained_items_list_for_iteration(self, world)
+            }
+            fn is_kick_out_on_capture(&self, world: &$crate::logic::world::game_logic::World) -> bool {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_is_kick_out_on_capture(self, world)
+            }
+            fn is_garrisonable(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle) -> bool {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_is_garrisonable(self, world, me)
+            }
+            fn is_bustable(&self) -> bool {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_is_bustable(self)
+            }
+            fn remove_all_contained(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, expose_stealth_units: bool) {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_remove_all_contained(self, world, me, expose_stealth_units)
+            }
+            fn kill_all_contained(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle) {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_kill_all_contained(self, world, me)
             }
             fn get_extra_slots_in_use(&mut self) -> i32 {
                 $crate::logic::modules::transport_contain::TransportContainVirtuals::t_get_extra_slots_in_use(self)
@@ -927,8 +984,8 @@ macro_rules! transport_open_contain_virtuals {
             fn reserve_door_for_exit(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, specific: $crate::common::game_type::ObjectId) -> $crate::logic::module::update_module::ExitDoorType {
                 $crate::logic::modules::transport_contain::TransportContainVirtuals::t_reserve_door_for_exit(self, world, me, specific)
             }
-            fn is_displayed_on_control_bar(&self) -> bool {
-                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_is_displayed_on_control_bar(self)
+            fn is_displayed_on_control_bar(&self, world: &$crate::logic::world::game_logic::World) -> bool {
+                $crate::logic::modules::transport_contain::TransportContainVirtuals::t_is_displayed_on_control_bar(self, world)
             }
             fn kill_riders_who_are_not_free_to_exit(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle) {
                 $crate::logic::modules::transport_contain::TransportContainVirtuals::t_kill_riders_who_are_not_free_to_exit(self, world, me)

@@ -359,7 +359,7 @@ impl TransportContainVirtuals for RiderChangeContain {
     }
 
     /// `getContainMax()`: the slot capacity.
-    fn t_get_contain_max(&mut self) -> i32 {
+    fn t_get_contain_max(&self, _world: &World) -> i32 {
         self.data.transport.slot_capacity
     }
 
@@ -380,7 +380,8 @@ impl TransportContainVirtuals for RiderChangeContain {
 
     /// `friend_getRider()`: the first rider ("this does assume that infantry never ride double on the bike").
     fn t_friend_get_rider(&self, _world: &World) -> ObjectId {
-        self.get_contained_items_list().first().copied().unwrap_or(INVALID_ID)
+        // `m_containListSize` and `m_containList.front()`, the module's own
+        self.oc().contain_list().first().copied().unwrap_or(INVALID_ID)
     }
 
     /// `isValidContainerFor(rider, checkCapacity)`: the base's without the capacity, not scuttled, and one of the eight riders.

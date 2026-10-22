@@ -56,6 +56,9 @@ pub struct ContainCutTables {
     pub booby_trapped: BTreeSet<ObjectId>,
     /// How deep the recursion of `addOrRemoveObjFromWorld` and `isPassengerAllowedToFire` is: a ring of containers recurses for ever upstream.
     pub recursion: u32,
+    /// batch R6: how deep the reads of other objects' contain modules go (`open_contain::view_*`, through `&World`), and whether one went too deep.
+    pub view_depth: std::cell::Cell<u32>,
+    pub view_overflow: std::cell::Cell<bool>,
     // --- p1w13-sonnet --- (batch R2: TransportContain)
     /// `draw->getPristineBonePositions(exitBone, 0, &pos, NULL, 1) == 1` then `convertBonePosToWorldPos`: the world position of a transport's exit
     /// bone, by object and bone name (no entry: the bone is not in the art).
@@ -139,6 +142,9 @@ pub enum ContainCall {
     ExperienceSetExperienceAndLevel { object: ObjectId, experience: i32 },
     /// `obj->kill(damageType, deathType)`: unresistable damage of the body's maximum health.
     KillWith { object: ObjectId, amount: f32, damage_type: i32, death_type: i32 },
+    // batch R6 (OverlordContain)
+    /// `obj->getExperienceTracker()->setExperienceSink(sink)`.
+    ExperienceSetSink { object: ObjectId, sink: ObjectId },
     // --- end p1w13-sonnet ---
 }
 
@@ -481,6 +487,16 @@ impl World {
             self.kill(id, damage_type, death_type);
         }
         true
+    }
+
+    // batch R6 (OverlordContain)
+    /// `obj->getExperienceTracker()->setExperienceSink(sink)`: the object's experience goes to `sink` from now on. The stub records the call and keeps
+    /// the field (the stand-in does the same).
+    pub fn contain_experience_set_sink(&mut self, id: ObjectId, sink: ObjectId) {
+        self.contain_cut(ContainCall::ExperienceSetSink { object: id, sink });
+        if let Some(o) = self.objects.find_mut(id) {
+            o.experience.sink = sink;
+        }
     }
     // --- end p1w13-sonnet ---
 }

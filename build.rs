@@ -3256,6 +3256,14 @@ mod differential {
                 };
                 std::fs::write(mod_gen.join("RiderChangeContain_edit.h"), edited).expect("write RiderChangeContain_edit.h");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R6: OverlordContain.cpp's clientVisibleContainedFlashAsSelected loops `while( *it )` over the list (the read of end() after the
+                // last one); it ends there, asserted once, into mod_gen/OverlordContain_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Contain/OverlordContain.cpp");
+                let text = std::fs::read_to_string(&path).expect("read OverlordContain.cpp");
+                assert_eq!(text.matches(wh).count(), 1, "OverlordContain.cpp: the `while( *it )` loop must occur once");
+                assert!(text.contains("const ContainedItemsList* items = TransportContain::getContainedItemsList();"), "OverlordContain.cpp: the loop is over items");
+                std::fs::write(mod_gen.join("OverlordContain_edit.cpp"), text.replace(wh, "while( it != items->end() )")).expect("write OverlordContain_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();

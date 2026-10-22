@@ -80,7 +80,7 @@ impl TransportContainVirtuals for RailedTransportContain {
         // extend functionality
         tc_on_removing(self, world, me, rider);
 
-        if self.get_contain_count() == 0 && !crate::logic::modules::plant(1443) {
+        if self.get_contain_count(world) == 0 && !crate::logic::modules::plant(1443) {
             let us = me.object;
             out(self, world, me, |w| {
                 if let Some(dock) = w.get_dock_update_interface(us) {

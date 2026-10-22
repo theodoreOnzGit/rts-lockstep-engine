@@ -379,7 +379,8 @@ impl TransportContainVirtuals for HelixContain {
     fn t_redeploy_occupants(&mut self, world: &mut World, me: ModuleHandle) {
         let mut fire_pos = world.objects.find(me.object).map(|o| o.position).unwrap_or_default();
         fire_pos.z += if crate::logic::modules::plant(1455) { 0.0 } else { 8.0 };
-        for rider in self.get_contained_items_list() {
+        // `m_containList`, the module's own
+        for rider in self.oc().contain_list().to_vec() {
             if rider != INVALID_ID {
                 out(self, world, me, |w| w.contain_set_position(rider, &fire_pos));
             }

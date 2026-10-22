@@ -18,6 +18,8 @@ public:
 	VeterancyLevel getVeterancyLevel() const __asm__("l9m_ExperienceTracker_getVeterancyLevel");
 	void setVeterancyLevel( VeterancyLevel newLevel, Bool provideFeedback = TRUE ) __asm__("l9m_ExperienceTracker_setVeterancyLevel");
 	void setExperienceAndLevel( Int experienceIn, Bool provideFeedback = TRUE ) __asm__("l9m_ExperienceTracker_setExperienceAndLevel");
+	void setExperienceSink( ObjectID sink ) __asm__("l9m_ExperienceTracker_setExperienceSink");   /* batch R6: OverlordContain */
+	ObjectID m_sink = INVALID_ID;
 	class Object *m_owner = 0;
 	/* --- end p1w13-sonnet --- */
 };

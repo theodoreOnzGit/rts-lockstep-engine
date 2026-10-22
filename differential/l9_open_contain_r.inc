@@ -69,6 +69,8 @@ public:
 static MessageStream g_ctMessageStream;
 static MessageStream *TheMessageStream = &g_ctMessageStream;
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/RiderChangeContain.cpp"
+/* batch R6: OverlordContain.cpp with its `while( *it )` loop ending at end() (build.rs) */
+#include "OverlordContain_edit.cpp"
 /* --- end p1w13-sonnet --- */
 #undef itoa
 
@@ -90,12 +92,13 @@ ModuleData *l9ctRead(const char *filename)
 		try {
 			/* --- p1w13-sonnet --- (batches R2, R3) */
 			const char c0 = currentLine.str()[0];
-			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : c0 == 'H' ? 4 : c0 == 'C' ? 5 : 0;
+			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : c0 == 'H' ? 4 : c0 == 'C' ? 5 : c0 == 'O' ? 6 : 0;
 			if (g_ctBlockCls == 1) data = TransportContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 2) data = InternetHackContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 3) data = RailedTransportContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 4) data = HelixContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 5) data = RiderChangeContain::friend_newModuleData(&ini);
+			else if (g_ctBlockCls == 6) data = OverlordContain::friend_newModuleData(&ini);
 			else data = OpenContain::friend_newModuleData(&ini);
 			/* --- end p1w13-sonnet --- */
 		} catch (...) {
@@ -304,6 +307,7 @@ Bool ThingTemplate::isEquivalentTo(const ThingTemplate *tt) const
 VeterancyLevel ExperienceTracker::getVeterancyLevel() const { return m_owner->m_level; }
 void ExperienceTracker::setVeterancyLevel(VeterancyLevel l, Bool) { ulog("xplevel %d %d", (int)m_owner->m_oid, (int)l); m_owner->m_level = l; }
 void ExperienceTracker::setExperienceAndLevel(Int xp, Bool) { ulog("xpset %d %d", (int)m_owner->m_oid, (int)xp); }
+void ExperienceTracker::setExperienceSink(ObjectID sink) { ulog("xpsink %d %d", (int)m_owner->m_oid, (int)sink); m_sink = sink; }   /* batch R6 */
 int ctDrawOwner(const Drawable *d) { for (int k = 0; k < g_ctN; ++k) if (&g_ctObjs[k].draw == d) return k + 1; return 0; }
 void InGameUI::selectDrawable(Drawable *d) { ulog("uiselect %d", ctDrawOwner(d)); }
 void InGameUI::deselectDrawable(Drawable *d) { ulog("uideselect %d", ctDrawOwner(d)); }
@@ -481,7 +485,7 @@ void ctPutObject(CtObj *a)
 {
 	if (a->oc) {
 		OpenContain *oc = a->oc;
-		putU32(dynamic_cast<RiderChangeContain *>(oc) ? 4 : dynamic_cast<HelixContain *>(oc) ? 3 : dynamic_cast<TransportContain *>(oc) ? 2 : 1);   /* --- p1w13-sonnet --- (batches R2, R4, R5): 2 a transport, 3 a Helix, 4 a combat bike */
+		putU32(dynamic_cast<OverlordContain *>(oc) ? 5 : dynamic_cast<RiderChangeContain *>(oc) ? 4 : dynamic_cast<HelixContain *>(oc) ? 3 : dynamic_cast<TransportContain *>(oc) ? 2 : 1);   /* batch R6: 5 an Overlord */   /* --- p1w13-sonnet --- (batches R2, R4, R5): 2 a transport, 3 a Helix, 4 a combat bike */
 		putU32(oc->m_containListSize);
 		putU32((unsigned)oc->m_containList.size());
 		for (ContainedItemsList::const_iterator it = oc->m_containList.begin(); it != oc->m_containList.end(); ++it) putU32((unsigned)(*it)->m_oid);
@@ -527,6 +531,7 @@ void ctPutObject(CtObj *a)
 			putU32((unsigned)tc->m_extraSlotsInUse);
 			putU32(tc->m_frameExitNotBusy);
 			if (HelixContain *hc = dynamic_cast<HelixContain *>(oc)) putU32((unsigned)hc->m_portableStructureID);   /* batch R4 */
+			if (OverlordContain *ovc = dynamic_cast<OverlordContain *>(oc)) putU32(ovc->m_redirectionActivated ? 1 : 0);   /* batch R6 */
 			if (RiderChangeContain *rc = dynamic_cast<RiderChangeContain *>(oc)) { putU32((unsigned)rc->m_extraSlotsInUse); putU32(rc->m_frameExitNotBusy); putU32(rc->m_scuttledOnFrame); }   /* batch R5: its own two, and the scuttle */
 		}
 		/* --- end p1w13-sonnet --- */
@@ -651,6 +656,13 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				putU32(rd->m_scuttleFrames);
 				putU32((unsigned)rd->m_scuttleState);
 			}
+			/* batch R6: an Overlord block's payload names and experience sink */
+			if (g_ctBlockCls == 6) {
+				const OverlordContainModuleData *ovd = (const OverlordContainModuleData *)td;
+				putU32((unsigned)ovd->m_payloadTemplateNameData.size());
+				for (size_t j = 0; j < ovd->m_payloadTemplateNameData.size(); ++j) putStr(ovd->m_payloadTemplateNameData[j].str(), ovd->m_payloadTemplateNameData[j].getLength());
+				putU32(ovd->m_experienceSinkForRider ? 1u : 0u);
+			}
 		}
 		/* --- end p1w13-sonnet --- */
 	}
@@ -672,7 +684,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		unsigned turret[CT_FP][3];
 		/* --- p1w13-sonnet --- (batch R2: TransportContain) */
 		unsigned cls; int rawSlots; unsigned airborne; int freeToExit; unsigned hasLoco, validTerrain, com, vel[3], weapons, unmanned, extraKinds, exitBoneHas, exitBone[3];
-		int slotCap; unsigned regen, exitDelay, tflags, pitch; int payloadCount; unsigned payloadName, exitBoneName, health, hasDock, dockOpen, helixPayload, riderSet, scuttleFrames, scuttleCond, aiMoving;
+		int slotCap; unsigned regen, exitDelay, tflags, pitch; int payloadCount; unsigned payloadName, exitBoneName, health, hasDock, dockOpen, helixPayload, riderSet, scuttleFrames, scuttleCond, aiMoving, ovSink;
 		/* --- end p1w13-sonnet --- */
 	} oc[CT_OBJS];
 	for (int k = 0; k < g_ctN; ++k) {
@@ -695,7 +707,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		o.cls = c.u(); o.rawSlots = c.s(); o.airborne = c.u(); o.freeToExit = c.s(); o.hasLoco = c.u(); o.validTerrain = c.u(); o.com = c.u();
 		for (int i = 0; i < 3; ++i) o.vel[i] = c.u();
 		o.weapons = c.u(); o.unmanned = c.u(); o.extraKinds = c.u(); o.exitBoneHas = c.u(); for (int i = 0; i < 3; ++i) o.exitBone[i] = c.u();
-		o.slotCap = c.s(); o.regen = c.u(); o.exitDelay = c.u(); o.tflags = c.u(); o.pitch = c.u(); o.payloadCount = c.s(); o.payloadName = c.u(); o.exitBoneName = c.u(); o.health = c.u(); o.hasDock = c.u(); o.dockOpen = c.u(); o.helixPayload = c.u(); o.riderSet = c.u(); o.scuttleFrames = c.u(); o.scuttleCond = c.u(); o.aiMoving = c.u();
+		o.slotCap = c.s(); o.regen = c.u(); o.exitDelay = c.u(); o.tflags = c.u(); o.pitch = c.u(); o.payloadCount = c.s(); o.payloadName = c.u(); o.exitBoneName = c.u(); o.health = c.u(); o.hasDock = c.u(); o.dockOpen = c.u(); o.helixPayload = c.u(); o.riderSet = c.u(); o.scuttleFrames = c.u(); o.scuttleCond = c.u(); o.aiMoving = c.u(); o.ovSink = c.u();
 		/* --- end p1w13-sonnet --- */
 	}
 	for (int i = 0; i < g_ctN; ++i) for (int j = 0; j < g_ctN; ++j) g_ctRel[i][j] = (Relationship)c.s();
@@ -844,6 +856,14 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			else {
 				if (o.cls) {
 					/* batch R4: a Helix's data, with the payload list the scene names */
+					/* batch R6: an Overlord's data, with the payload list (the Helix's lists) and the experience sink the scene names */
+					if (o.cls == 6) {
+						OverlordContainModuleData *od2 = new OverlordContainModuleData;
+						static const char *const kOverlordPayload[4][2] = { { 0, 0 }, { "Nope", 0 }, { "T1", 0 }, { "Nope", "T2" } };
+						for (int j = 0; j < 2; ++j) if (kOverlordPayload[o.helixPayload % 4][j]) od2->m_payloadTemplateNameData.push_back(AsciiString(kOverlordPayload[o.helixPayload % 4][j]));
+						od2->m_experienceSinkForRider = o.ovSink != 0;
+						tdata = od2;
+					} else
 					/* batch R5: a combat bike's data, with the riders of the scene's set */
 					if (o.cls == 5) {
 						RiderChangeContainModuleData *rd = new RiderChangeContainModuleData;
@@ -920,6 +940,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				else if (cls == 3) a.oc = new(ShimZeroFill{}) RailedTransportContain(a.obj, td);
 				else if (cls == 4) a.oc = new(ShimZeroFill{}) HelixContain(a.obj, td);
 				else if (cls == 5) a.oc = new(ShimZeroFill{}) RiderChangeContain(a.obj, td);
+				else if (cls == 6) a.oc = new(ShimZeroFill{}) OverlordContain(a.obj, td);
 				else
 				/* --- end p1w13-sonnet --- */
 				a.oc = new OpenContain(a.obj, a.data);

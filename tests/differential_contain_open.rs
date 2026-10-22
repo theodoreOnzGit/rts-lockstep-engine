@@ -32,6 +32,9 @@
 //! Batch R3 adds the `I` (`InternetHackContain`) and `R` (`RailedTransportContain`) blocks (the transport's fields), class codes 2 and 3 for the scene's
 //! containers, and per object a dock behaviour after the contain (open or closed; `setDockOpen` is a line of the log).
 //!
+//! Batch R6 adds the `O` block (`OverlordContain`: the transport's fields, `PayloadTemplateName`, `ExperienceSinkForRider`) and class code 6. A ring of
+//! redirecting Overlords is undefined upstream and excluded (the C++ reference would loop until the driver's alarm).
+//!
 //! Batch R5 adds the `C` block (`RiderChangeContain`: `Rider1`..`Rider8`, `ScuttleDelay`, `ScuttleStatus`), class code 5 with the scene's rider sets,
 //! the AI's `isMoving`, the local player (player 0), and each object's command set override and veterancy level. The scene's templates are the factory's
 //! (the rider match is `isEquivalentTo` of the factory's templates).
@@ -167,6 +170,20 @@
 //! | 1477 | the moving test of the scuttle inverted |
 //! | 1478 | the scuttle delay ignored |
 //! | 1479 | `m_payloadCreated` not saved a second time |
+//!
+//! Batch R6, `overlord_contain.rs` (9,000 cases: 8 of 9 caught; the 83 caught plants above were run again and are still all caught):
+//!
+//! | id | planted bug |
+//! |---|---|
+//! | 1491 | the payload never added (SURVIVES: the stub factory makes no object, and `isValidContainerFor(NULL)` is `FALSE`) |
+//! | 1492 | no damage state for the rider |
+//! | 1493 | the rider's team not changed on capture |
+//! | 1494 | `addToContain` not redirected |
+//! | 1495 | redirection never activated |
+//! | 1496 | `killAllContained` kills the Overlord's own riders |
+//! | 1497 | `getContainedItemsList` not redirected |
+//! | 1498 | the nested-containment test of `isPassengerAllowedToFire` inverted (caught as a crash: an endless recursion) |
+//! | 1499 | `m_redirectionActivated` not saved |
 //!
 //! Not planted, unobservable here: the `wasSelected` argument of `onContaining` (1375, removed). `OpenContain::onContaining` ignores it; ~~`TransportContain` and `GarrisonContain` use it, and
 //! their tests will catch it~~ **CORRECTED 2026-10-22 (batch R2)**: `TransportContain::onContaining` only hands it to the base, so it is unobservable there too;
@@ -375,6 +392,8 @@ struct Obj {
     scuttle_frames: u32,
     scuttle_cond: u32,
     ai_moving: bool,
+    /// batch R6: a scene-built Overlord's `ExperienceSinkForRider` (its payload list is `helix_payload`'s)
+    ov_sink: bool,
 }
 
 /// The riders a scene-built combat bike can name (the driver's `kCtRiderSets`): per set up to three of (template, index into [`RIDER_TEMPLATES`], 0
@@ -498,6 +517,7 @@ impl Obj {
         w.u(self.scuttle_frames);
         w.u(self.scuttle_cond);
         w.u(u32::from(self.ai_moving));
+        w.u(u32::from(self.ov_sink));
     }
 
     fn read(r: &mut R<'_>) -> Obj {
@@ -604,6 +624,7 @@ impl Obj {
         o.scuttle_frames = r.u();
         o.scuttle_cond = r.u();
         o.ai_moving = r.u() != 0;
+        o.ov_sink = r.u() != 0;
         o
     }
 }
@@ -713,7 +734,7 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     // batch R2: one block in two is a `TransportContain` (`T`), with its own fields after the base's
     // batch R3: a transport block is `T`, `I` (InternetHackContain) or `R` (RailedTransportContain); the fields are the same
     let transport = g.below(2) == 0;
-    let token = if transport { ["T\n", "I\n", "R\n", "H\n", "C\n"][g.below(5) as usize] } else { "D\n" };
+    let token = if transport { ["T\n", "I\n", "R\n", "H\n", "C\n", "O\n"][g.below(6) as usize] } else { "D\n" };
     if transport {
         field!(60, "Slots", health_str(g, clean));
         field!(30, "ScatterNearbyOnExit", gen_bool(g, clean));
@@ -738,6 +759,15 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
             }
         }
         field!(30, "ShouldDrawPips", gen_bool(g, clean));
+    }
+    // batch R6: an Overlord's payload names (rare, as the Helix's) and experience sink
+    if token == "O\n" {
+        if g.below(4) == 0 {
+            for _ in 0..1 + g.below(2) {
+                field!(100, "PayloadTemplateName", PAYLOADS[1 + g.below(3) as usize].to_string());
+            }
+        }
+        field!(40, "ExperienceSinkForRider", gen_bool(g, clean));
     }
     // batch R5: a combat bike's riders (`Rider1` .. `Rider8`: template, model condition, weapon set, status, command set, locomotor set) and scuttle
     if token == "C\n" {
@@ -850,7 +880,7 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
         }
     }
     // 0 OpenContain, 1 TransportContain, 2 InternetHackContain, 3 RailedTransportContain
-    o.cls = if o.has_contain && k > 0 { g.below(6) } else { 0 };
+    o.cls = if o.has_contain && k > 0 { g.below(7) } else { 0 };
     o.raw_slots = *pick(g, &[&0i32, &1, &1, &1, &2, &3]);
     // upstream's airborne locomotor is the AI's
     o.airborne = o.has_ai && g.below(4) == 0;
@@ -885,6 +915,7 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     o.scuttle_frames = *pick(g, &[&0u32, &1, &3, &30]);
     o.scuttle_cond = g.below(6);
     o.ai_moving = g.below(2) == 0;
+    o.ov_sink = g.below(3) != 0;
     if g.below(4) == 0 {
         o.extra_kinds |= 8;
     }
@@ -907,6 +938,7 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> Vec<u32> {
                 Some(ModuleDataKind::RailedTransportContain(_)) => 3,
                 Some(ModuleDataKind::HelixContain(_)) => 4,
                 Some(ModuleDataKind::RiderChangeContain(_)) => 5,
+                Some(ModuleDataKind::OverlordContain(_)) => 6,
                 _ => 0,
             };
         }
@@ -1050,6 +1082,13 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId, has_contain: bool) {
                 }
             }
             // batch R4: a Helix, 3 (the transport's words and its portable structure)
+            // batch R6: an Overlord, 5 (the transport's words and the redirection flag)
+            Some(UpdateBody::OverlordContain(m)) => {
+                put_u32(v, 5);
+                for x in m.state_words() {
+                    put_u32(v, x);
+                }
+            }
             // batch R5: a combat bike, 4 (the transport's words, its own two counters and the scuttle frame)
             Some(UpdateBody::RiderChangeContain(m)) => {
                 put_u32(v, 4);
@@ -1236,6 +1275,7 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                         ContainCall::GetSingleLogicalBonePositionOnTurret { object, name } => log.push(format!("boneturret {object} {}", String::from_utf8_lossy(&name))),
                         ContainCall::SetDisabled { object, disabled } => log.push(format!("setdisabled {object} {disabled}")),
                         ContainCall::ClearDisabled { object, disabled } => log.push(format!("cleardisabled {object} {disabled}")),
+                        ContainCall::ExperienceSetSink { object, sink } => log.push(format!("xpsink {object} {sink}")),
                         ContainCall::ExperienceSetVeterancyLevel { object, level } => log.push(format!("xplevel {object} {level}")),
                         ContainCall::ExperienceSetExperienceAndLevel { object, experience } => log.push(format!("xpset {object} {experience}")),
                         ContainCall::KillWith { object, amount, damage_type, death_type } => {
@@ -1341,6 +1381,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             ModuleDataKind::TransportContain(t) | ModuleDataKind::InternetHackContain(t) | ModuleDataKind::RailedTransportContain(t) => &t.open,
             ModuleDataKind::HelixContain(h) => &h.transport.open,
             ModuleDataKind::RiderChangeContain(r) => &r.transport.open,
+            ModuleDataKind::OverlordContain(r) => &r.transport.open,
             _ => unreachable!("not a contain"),
         };
         put_u32(&mut v, d.contain_max as u32);
@@ -1385,6 +1426,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             ModuleDataKind::RailedTransportContain(t) => Some((3, &**t)),
             ModuleDataKind::HelixContain(h) => Some((4, &h.transport)),
             ModuleDataKind::RiderChangeContain(r) => Some((5, &r.transport)),
+            ModuleDataKind::OverlordContain(r) => Some((6, &r.transport)),
             _ => None,
         };
         if let Some((cls, t)) = block_cls {
@@ -1424,6 +1466,13 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 }
                 put_u32(&mut v, rd.scuttle_frames);
                 put_u32(&mut v, rd.scuttle_state as u32);
+            }
+            if let ModuleDataKind::OverlordContain(od) = &data {
+                put_u32(&mut v, od.payload_template_name_data.len() as u32);
+                for n in &od.payload_template_name_data {
+                    put_str(&mut v, n);
+                }
+                put_u32(&mut v, u32::from(od.experience_sink_for_rider));
             }
         } else {
             put_u32(&mut v, 0);
@@ -1612,6 +1661,11 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     match o.cls {
                         2 => ModuleDataKind::InternetHackContain(Arc::new(t)),
                         3 => ModuleDataKind::RailedTransportContain(Arc::new(t)),
+                        6 => ModuleDataKind::OverlordContain(Arc::new(rts_lockstep_engine::logic::modules::overlord_contain::OverlordContainModuleData {
+                            transport: t,
+                            payload_template_name_data: HELIX_PAYLOADS[o.helix_payload as usize % 4].iter().map(|n| n.as_bytes().to_vec()).collect(),
+                            experience_sink_for_rider: o.ov_sink,
+                        })),
                         5 => {
                             let mut rd = rts_lockstep_engine::logic::modules::rider_change_contain::RiderChangeContainModuleData { transport: t, ..Default::default() };
                             for (j, e) in RIDER_SETS[o.rider_set as usize % 4].iter().enumerate() {
@@ -1647,6 +1701,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 ModuleDataKind::RailedTransportContain(_) => b"RailedTransportContain",
                 ModuleDataKind::HelixContain(_) => b"HelixContain",
                 ModuleDataKind::RiderChangeContain(_) => b"RiderChangeContain",
+                ModuleDataKind::OverlordContain(_) => b"OverlordContain",
                 _ => b"OpenContain",
             };
             let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class, b"ModuleTag_Contain", &cd).unwrap().unwrap();
@@ -1786,6 +1841,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                                 Some(UpdateBody::RailedTransportContain(c)) => Some(c.module_data().open.die_mux_data),
                                 Some(UpdateBody::HelixContain(c)) => Some(c.module_data().transport.open.die_mux_data),
                                 Some(UpdateBody::RiderChangeContain(c)) => Some(c.module_data().transport.open.die_mux_data),
+                                Some(UpdateBody::OverlordContain(c)) => Some(c.module_data().transport.open.die_mux_data),
                                 _ => None,
                             };
                             if let Some(mux) = mux {
@@ -2087,6 +2143,10 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
             let names: Vec<String> = (0..r.u32()).map(|_| r.str()).collect();
             out.push(format!("helix data {names:?} pips {}", r.u32()));
         }
+        if cls == 6 {
+            let names: Vec<String> = (0..r.u32()).map(|_| r.str()).collect();
+            out.push(format!("overlord data {names:?} sink {}", r.u32()));
+        }
         if cls == 5 {
             let mut riders = Vec::new();
             for _ in 0..8 {
@@ -2140,7 +2200,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
                 for _ in 0..map * 2 {
                     state.push(r.u32());
                 }
-                for _ in 0..match has { 2 => 6, 3 => 7, 4 => 9, _ => 3 } {
+                for _ in 0..match has { 2 => 6, 3 | 5 => 7, 4 => 9, _ => 3 } {
                     state.push(r.u32());
                 }
             }
@@ -2204,13 +2264,18 @@ fn read_rider_change_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) 
     Ok(())
 }
 
+fn read_overlord_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
+    *out = Some(rts_lockstep_engine::logic::modules::overlord_contain::new_module_data(Some(ini))?);
+    Ok(())
+}
+
 fn read_railed_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
     *out = Some(rts_lockstep_engine::logic::modules::railed_transport_contain::new_module_data(Some(ini))?);
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }, BlockParse { token: "C", parse: read_rider_change_block }];
+    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }, BlockParse { token: "C", parse: read_rider_change_block }, BlockParse { token: "O", parse: read_overlord_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
