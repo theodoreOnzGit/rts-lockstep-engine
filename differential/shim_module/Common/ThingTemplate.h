@@ -6,12 +6,34 @@
 #define SHIM_MODULE_THINGTEMPLATE_H
 #include "Common/AsciiString.h"
 #include "Common/AudioEventRTS.h"
+/* --- p1w13-sonnet --- (batch P: ActiveBody finds its armor set in the template; the name is the FIRST member, as the Armor build's stand-in ThingTemplate has it, because
+** Damage.cpp's DamageInfoInput::xfer (that build) reads the name of the template this build hands it) */
+#include "GameLogic/ArmorSet.h"
+/* --- end p1w13-sonnet --- */
 class ThingTemplate
 {
 public:
+	/* --- p1w13-sonnet --- */
+	AsciiString m_name;
+	const AsciiString &getName() const { return m_name; }
+	/* --- end p1w13-sonnet --- */
 	const AudioEventRTS *getPerUnitSound(const AsciiString &soundNameToGet) const;
 	AudioEventRTS m_voiceEject;
 	AudioEventRTS m_soundEject;
+	/* --- p1w13-sonnet --- (batch P) */
+	ArmorTemplateSetVector m_armorTemplateSets;
+	mutable ArmorTemplateSetFinder m_armorTemplateSetFinder;
+	const ArmorTemplateSet* findArmorTemplateSet(const ArmorSetFlags& t) const { return m_armorTemplateSetFinder.findBestInfo(m_armorTemplateSets, t); }
+	Byte m_structureRubbleHeight = 0;
+	Real getStructureRubbleHeight() const { return (Real)m_structureRubbleHeight; }
+	AudioEventRTS m_soundOnDamaged, m_soundOnReallyDamaged, m_voiceFear, m_soundPromotedVeteran, m_soundPromotedElite, m_soundPromotedHero;
+	const AudioEventRTS *getSoundOnDamaged() const { return &m_soundOnDamaged; }
+	const AudioEventRTS *getSoundOnReallyDamaged() const { return &m_soundOnReallyDamaged; }
+	const AudioEventRTS *getVoiceFear() const { return &m_voiceFear; }
+	const AudioEventRTS *getSoundPromotedVeteran() const { return &m_soundPromotedVeteran; }
+	const AudioEventRTS *getSoundPromotedElite() const { return &m_soundPromotedElite; }
+	const AudioEventRTS *getSoundPromotedHero() const { return &m_soundPromotedHero; }
+	/* --- end p1w13-sonnet --- */
 };
 #endif
 /* --- end p1w12-sonnet --- */

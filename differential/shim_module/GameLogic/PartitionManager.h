@@ -53,6 +53,15 @@ class PartitionFilterAcceptByKindOf : public PartitionFilter
 public:
 	PartitionFilterAcceptByKindOf(const KindOfMaskType& mustBeSet, const KindOfMaskType& mustBeClear) {}
 };
+/* batch P (ActiveBody): the retaliation scan's two filters (constructed, never run: the scan is the list the test gives); the affiliation filter keeps its player */
+class Player;
+class PartitionFilterPlayerAffiliation : public PartitionFilter
+{
+public:
+	PartitionFilterPlayerAffiliation( const Player *player, Int affiliation, Bool allow ) : m_player(player), m_affiliation(affiliation), m_allow(allow) {}
+	const Player *m_player; Int m_affiliation; Bool m_allow;
+};
+class PartitionFilterOnMap : public PartitionFilter { public: PartitionFilterOnMap() {} };
 /* --- end p1w13-sonnet --- */
 class PartitionManager
 {
@@ -65,6 +74,7 @@ public:
 	Object *getClosestObject( const Object *obj, Real maxDist, DistanceCalculationType dc = FROM_CENTER_2D, PartitionFilter **filters = 0 );   /* update batch O: FireSpreadUpdate */
 	Bool geomCollidesWithGeom(const Coord3D* pos1, const GeometryInfo& geom1, Real angle1, const Coord3D* pos2, const GeometryInfo& geom2, Real angle2) const;
 	SimpleObjectIterator *iterateObjectsInRange( const Object *obj, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = 0, IterOrderType order = ITER_FASTEST );
+	Real getDistanceSquared( const Object *obj, const Object *otherObj, DistanceCalculationType d, Coord3D *vec = 0 ) const;   /* batch P: ActiveBody */
 	/* --- end p1w13-sonnet --- */
 };
 extern PartitionManager *ThePartitionManager;

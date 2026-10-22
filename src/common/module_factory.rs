@@ -705,6 +705,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::fire_spread_update::new_module_data),
             which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
         }),
+        "ActiveBody" => Some(ModuleTemplate {
+            create_proc: Some(new_body_base),
+            create_data_proc: Some(crate::logic::modules::active_body::new_module_data),
+            which_interfaces: Some(crate::logic::modules::active_body::ActiveBody::get_interface_mask()),
+        }),
         // --- end p1w13-sonnet ---
         _ => None,
     }
@@ -813,6 +818,20 @@ fn new_collide_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mo
     Ok(Module::Collide(crate::logic::module::collide_module::CollideModule::new(object, base)?))
 }
 // --- end p1w11-sonnet ---
+// --- p1w13-sonnet ---
+/// The `NewModuleProc` of a translated body module: its `BodyModule` base, made from the `BodyModuleData` base of its data. The concrete module is made for
+/// an object by `logic::modules::new_module`.
+fn new_body_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module, IniError> {
+    let base = match data {
+        Some(ModuleDataKind::Body(d)) => Some(d),
+        // --- p1w13-sonnet ---
+        Some(ModuleDataKind::ActiveBody(d)) => Some(std::sync::Arc::new(d.body.clone())),
+        // --- end p1w13-sonnet ---
+        _ => None,
+    };
+    Ok(Module::Body(crate::logic::module::body_module::BodyModule::new(object, base)?))
+}
+// --- end p1w13-sonnet ---
 
 /// The `NewModuleProc` of a translated upgrade module: its `UpgradeModule`
 /// base, made from the `UpgradeModuleData` base of its data. The factory

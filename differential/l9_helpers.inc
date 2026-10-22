@@ -41,8 +41,12 @@ void modhelp_destroy(Object *obj) { g_destroyed = obj; hlog(9, 0); }
 Object *(*g_modFindHook)(ObjectID) = 0;
 Object *modhelp_find(ObjectID id) { return g_modFindHook ? g_modFindHook(id) : g_producer; }
 /* --- end p1w11-sonnet --- */
+/* --- p1w13-sonnet --- (batch P: ActiveBody logs the status it sets; null for the other drivers) */
+void (*g_setStatusHook)(Object *, ObjectStatusMaskType, Bool) = 0;
+/* --- end p1w13-sonnet --- */
 void Object::setStatus(ObjectStatusMaskType objectStatus, Bool set)
 {
+	if (g_setStatusHook) g_setStatusHook(this, objectStatus, set);
 	/* Object.cpp's setStatus does more (it reacts to a few of the bits); the helpers only need the bits */
 	hlog(set ? 1 : 2, firstBit(objectStatus));
 	if (set) m_status.set(objectStatus); else m_status.clear(objectStatus);

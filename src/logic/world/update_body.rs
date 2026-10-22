@@ -216,6 +216,8 @@ pub enum UpdateBody {
     TechBuildingBehavior(crate::logic::modules::tech_building_behavior::TechBuildingBehavior),
     /// `FireSpreadUpdate`.
     FireSpreadUpdate(crate::logic::modules::fire_spread_update::FireSpreadUpdate),
+    /// `ActiveBody`.
+    ActiveBody(crate::logic::modules::active_body::ActiveBody),
     // --- end p1w13-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -314,6 +316,7 @@ impl UpdateBody {
             UpdateBody::FloatUpdate(m) => m.world_update(world, me),
             UpdateBody::TechBuildingBehavior(m) => m.world_update(world, me),
             UpdateBody::FireSpreadUpdate(m) => m.world_update(world, me),
+            UpdateBody::ActiveBody(_) => UPDATE_SLEEP_FOREVER,
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -412,6 +415,7 @@ impl UpdateBody {
             UpdateBody::FloatUpdate(m) => m.module_call(world, me, call),
             UpdateBody::TechBuildingBehavior(m) => m.module_call(world, me, call),
             UpdateBody::FireSpreadUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::ActiveBody(m) => m.module_call(world, me, call),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -750,6 +754,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::FloatUpdate(m) => m.crc(xfer),
             UpdateBody::TechBuildingBehavior(m) => m.crc(xfer),
             UpdateBody::FireSpreadUpdate(m) => m.crc(xfer),
+            UpdateBody::ActiveBody(m) => m.crc(xfer),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -844,6 +849,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::FloatUpdate(m) => m.xfer(xfer),
             UpdateBody::TechBuildingBehavior(m) => m.xfer(xfer),
             UpdateBody::FireSpreadUpdate(m) => m.xfer(xfer),
+            UpdateBody::ActiveBody(m) => m.xfer(xfer),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -938,6 +944,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::FloatUpdate(m) => m.load_post_process(),
             UpdateBody::TechBuildingBehavior(m) => m.load_post_process(),
             UpdateBody::FireSpreadUpdate(m) => m.load_post_process(),
+            UpdateBody::ActiveBody(m) => m.load_post_process(),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -1116,6 +1123,7 @@ impl UpdateBody {
             UpdateBody::FloatUpdate(m) => m.world_construct(world, me),
             UpdateBody::TechBuildingBehavior(m) => m.world_construct(world, me),
             UpdateBody::FireSpreadUpdate(m) => m.world_construct(world, me),
+            UpdateBody::ActiveBody(m) => m.world_construct(world, me),
 // --- end p1w13-sonnet ---
             _ => {}
         }

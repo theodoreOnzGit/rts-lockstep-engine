@@ -104,6 +104,14 @@ impl ArmorTemplate {
         &self.damage_coefficient
     }
 
+    // --- p1w13-sonnet ---
+    /// An armor template with these coefficients (what `parseArmorCoefficients` leaves for the same values: a program that builds a store without INI text,
+    /// as the differential test of `ActiveBody` does, gives the coefficients themselves).
+    pub fn from_coefficients(damage_coefficient: [f32; DAMAGE_NUM_TYPES]) -> Self {
+        ArmorTemplate { damage_coefficient }
+    }
+    // --- end p1w13-sonnet ---
+
     /// `adjustDamage(t, damage)`: given a damage type and amount, "return
     /// the amount that should be dealt". The two unresistable types pass
     /// through; otherwise the amount is multiplied by the type's
@@ -228,6 +236,13 @@ impl ArmorStore {
         let key = names.try_name_to_key(name)?;
         Ok(self.armor_templates.get(&key))
     }
+
+    // --- p1w13-sonnet ---
+    /// Puts `template` in the store under `key` (what `parseArmorDefinition` does for a new name), for a program that builds a store without INI text.
+    pub fn insert_template(&mut self, key: NameKeyType, template: ArmorTemplate) {
+        self.armor_templates.insert(key, template);
+    }
+    // --- end p1w13-sonnet ---
 
     /// `makeArmor(tmpl)`.
     pub fn make_armor(&self, template: Option<NameKeyType>) -> Armor {

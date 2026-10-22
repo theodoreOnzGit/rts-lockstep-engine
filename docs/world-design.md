@@ -631,3 +631,7 @@ same pieces, each in its translator's marked block:
 The translated Team unit (`team.rs`, `team_ops.rs`, `team_xfer.rs`) reaches objects only through `TeamHost`.
 `Object::setTeam` and the object's own team fields are still the earlier shell state in `ObjectCuts`;
 the layer-12 `World` adapter is what connects the two. Not verified end to end until then.
+
+<!-- --- p1w13-sonnet --- -->
+**Body cut points (2026-10-22, `ActiveBody`).** `CutCall::Body(BodyCall)` carries the Object-level calls a body makes (`setDisabled`, `clearDisabled`, `doStatusDamage`, `notifySubdualDamage`, `scoreTheKill`, `onDie`, `setTeam`, `setStatus`, academy statistics, bones, particle systems, able-to-attack, distance, the retaliation scan); `BodyCutTables` answers them in a test and the layer-12 adapters answer them from the real objects. `cuts.body.stub_object_calls` is the explicit ablation that logs them instead of performing them. ~~A call to a module whose body is running is not delivered~~ **Handled for bodies 2026-10-22:** `ActiveBody` lends itself back to its slot around each outgoing call (`out()`, `lend_clone`), so `attemptDamage` -> `Object::onDie` -> the same body's die interface runs synchronously as upstream does. `scripts` wire kind `body` wires a body module into the shared files.
+<!-- --- end p1w13-sonnet --- -->

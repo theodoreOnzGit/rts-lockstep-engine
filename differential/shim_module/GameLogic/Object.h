@@ -64,6 +64,15 @@ class Team;
 #include "Common/SpecialPowerType.h"
 class PhysicsBehavior;
 class SpecialAbilityUpdate;
+/* batch P (ActiveBody): GameLogic/WeaponSet.h lines 188-195 (the real header needs the weapon layer), verbatim apart from the comments */
+class ProjectileUpdateInterface;
+enum CanAttackResult
+{
+	ATTACKRESULT_NOT_POSSIBLE,					///< can't possibly attack the target
+	ATTACKRESULT_INVALID_SHOT,					///< not a clear shot
+	ATTACKRESULT_POSSIBLE_AFTER_MOVING,	///< possible, after moving closer
+	ATTACKRESULT_POSSIBLE,							///< possible now
+};
 /* --- end p1w13-sonnet --- */
 /* --- p1w12-sonnet --- (Common/STLTypedefs.h lines 88-89, verbatim) */
 #include <list>
@@ -221,6 +230,20 @@ public:
 	int m_sauType = -1;
 	/* DynamicShroudClearingRangeUpdate reads the range that setShroudClearingRange (l9_powers_h.inc) writes */
 	Real getShroudClearingRange() const { return m_shroudRange; }
+	/* --- end p1w13-sonnet --- */
+	/* --- p1w13-sonnet --- (batch P: ActiveBody; the calls are lines of the effect log, differential/l9_active_body_p.inc) */
+	void scoreTheKill( const Object *victim );
+	void onDie( DamageInfo *damageInfo );
+	void setDisabled( DisabledType type );
+	void doStatusDamage( ObjectStatusTypes status, Real duration );
+	void notifySubdualDamage( Real amount );
+	void setEffectivelyDead( Bool dead ) { m_effDead = dead; }
+	void setGeometryInfoZ( Real newZ );
+	ProjectileUpdateInterface *getProjectileUpdateInterface() const;
+	Int getMultiLogicalBonePosition( const char *boneNamePrefix, Int maxBones, Coord3D *positions, Matrix3D *transforms, Bool convertToWorld = TRUE ) const;
+	Bool isAirborneTarget() const { return m_status.test( OBJECT_STATUS_AIRBORNE_TARGET ); }
+	Bool isFactionStructure() const;
+	CanAttackResult getAbleToAttackSpecificObject( AbleToAttackType t, const Object *target, CommandSourceType commandSource, WeaponSlotType specificSlot = (WeaponSlotType)-1 ) const;
 	/* --- end p1w13-sonnet --- */
 protected:
 	virtual Object *asObjectMeth() { return this; }

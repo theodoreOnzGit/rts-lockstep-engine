@@ -8,6 +8,7 @@
 class Object;
 class UpdateModule;
 #include "Common/GameType.h"
+#include "Common/GameCommon.h"
 void modhelp_destroy(Object *obj);
 /* --- p1w12-sonnet --- ReplaceObjectUpgrade's test logs and records the destroy (l9_replace_object.inc); null elsewhere */
 extern void (*g_modDestroyHook)(Object *obj);
@@ -38,6 +39,9 @@ public:
 	Bool getDrawIconUI() const { return m_drawIconUI; }
 	Bool m_drawIconUI = true;
 	/* --- end p1w12-sonnet --- */
+	/* --- p1w13-sonnet --- (batch P: ActiveBody; differential/l9_active_body_p.inc) */
+	void deselectObject( Object *objToDeselect, PlayerMaskType playerMask, Bool affectClient );
+	/* --- end p1w13-sonnet --- */
 };
 extern GameLogic *TheGameLogic;
 #endif

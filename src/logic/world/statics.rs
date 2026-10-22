@@ -57,6 +57,12 @@ pub struct GameStatics {
     /// `TheWeaponStore` (`FireWeaponWhenDeadBehavior` finds its death weapon in it).
     pub weapon_store: crate::logic::weapon::WeaponStore,
     // --- end p1w11-sonnet ---
+    // --- p1w13-sonnet ---
+    /// `TheArmorStore` (`ActiveBody::validateArmorAndDamageFX` makes its armor from it).
+    pub armor_store: crate::logic::armor::ArmorStore,
+    /// `TheDamageFXStore` (`ActiveBody::doDamageFX` finds the damage FX of its armor set in it).
+    pub damage_fx_store: crate::common::damage_fx::DamageFxStore,
+    // --- end p1w13-sonnet ---
     // New stores go here, each in its translator's marked block.
 }
 

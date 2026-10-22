@@ -1504,6 +1504,22 @@ extern "C" {
     ) -> c_int;
     // --- end p1w13-sonnet ---
     // --- p1w13-sonnet ---
+    // batch P: ActiveBody on stand-ins (l9_active_body_p.inc in wrap_module.cpp)
+    pub fn ref_l9ab_run(
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+    // --- end p1w13-sonnet ---
+    // --- p1w13-sonnet ---
     // update batch O: FireSpreadUpdate on stand-ins (l9_fire_spread_o.inc in wrap_module.cpp)
     pub fn ref_l9fs_run(
         filename: *const c_char,

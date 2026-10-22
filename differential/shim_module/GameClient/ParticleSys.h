@@ -15,6 +15,8 @@ class ParticleSystem
 {
 public:
 	void setPosition( const Coord3D *pos );
+	void attachToObject( const class Object *obj );   /* p1w13-sonnet, batch P (differential/l9_active_body_p.inc) */
+	void destroy( void );
 	ParticleSystemID getSystemID() const { return m_id; }
 	ParticleSystemID m_id;
 	int m_tmpl;
@@ -26,6 +28,7 @@ public:
 	ParticleSystem *createParticleSystem( const ParticleSystemTemplate *sysTemplate, Bool createSlaves = TRUE );
 	void destroyParticleSystemByID( ParticleSystemID id );
 	void destroyAttachedSystems( class Object *obj );   /* p1w13-sonnet, update batch O: differential/l9_height_die_o.inc */
+	ParticleSystem *findParticleSystem( ParticleSystemID id );   /* p1w13-sonnet, batch P */
 };
 extern ParticleSystemManager *TheParticleSystemManager;
 #endif

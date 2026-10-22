@@ -27,6 +27,10 @@ public:
 	void addWorldAnimation( Anim2DTemplate *animTemplate, const Coord3D *pos, WorldAnimationOptions options, Real durationInSeconds, Real zRisePerSecond );
 	void addFloatingText(const class UnicodeString &text, const Coord3D *pos, Color color);   /* update batch L (differential/l9_updates_l.inc) */
 	/* --- end p1w12-sonnet --- */
+	/* --- p1w13-sonnet --- (batch P: ActiveBody's veterancy feedback; differential/l9_active_body_p.inc) */
+	class Drawable *getFirstSelectedDrawable();
+	Int getSelectCount();
+	/* --- end p1w13-sonnet --- */
 };
 extern InGameUI *TheInGameUI;
 #endif

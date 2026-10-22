@@ -138,6 +138,18 @@ impl DamageFx {
         Ok(&self.dfx[t as usize][level as usize])
     }
 
+    // --- p1w13-sonnet ---
+    /// Replaces `m_dfx[t][level]` (what the parsers leave for the same values), for a program that builds a `DamageFX` without INI text. An error for a
+    /// damage type outside the table.
+    pub fn set_dfx(&mut self, t: i32, level: VeterancyLevel, dfx: Dfx) -> Result<(), DamageTypeOutOfRange> {
+        if t < 0 || t as usize >= DAMAGE_NUM_TYPES {
+            return Err(DamageTypeOutOfRange);
+        }
+        self.dfx[t as usize][level as usize] = dfx;
+        Ok(())
+    }
+    // --- end p1w13-sonnet ---
+
     /// `getDamageFXThrottleTime(t, source)`, for the source's veterancy
     /// level (`LEVEL_REGULAR` when there is no source).
     pub fn get_damage_fx_throttle_time(&self, t: i32, level: VeterancyLevel) -> Result<u32, DamageTypeOutOfRange> {
@@ -256,6 +268,13 @@ impl DamageFxStore {
     pub fn get(&self, key: NameKeyType) -> Option<&DamageFx> {
         self.dfxmap.get(&key)
     }
+
+    // --- p1w13-sonnet ---
+    /// Puts `dfx` in the store under `key` (what `parseDamageFXDefinition` does for a new name), for a program that builds a store without INI text.
+    pub fn insert(&mut self, key: NameKeyType, dfx: DamageFx) {
+        self.dfxmap.insert(key, dfx);
+    }
+    // --- end p1w13-sonnet ---
 
     /// The number of `DamageFX`es.
     pub fn len(&self) -> usize {

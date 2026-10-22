@@ -257,6 +257,83 @@ pub enum ModuleCall {
     ProneGoProne(DamageInfo),
     /// `FloatUpdate::setEnabled(enabled)` (`ObjectCreationList`'s `DeliverPayload`/`Debris` nuggets).
     FloatSetEnabled(bool),
+    // ---- the rest of BodyModuleInterface (`ActiveBody`) ----
+    /// `getDamageState()`; replies [`ModuleReply::Int`].
+    GetDamageState,
+    /// `setDamageState(newState)`.
+    SetDamageState(i32),
+    /// `getInitialHealth()`; replies [`ModuleReply::Real`].
+    GetInitialHealth,
+    /// `getPreviousHealth()`; replies [`ModuleReply::Real`].
+    GetPreviousHealth,
+    /// `internalChangeHealth(delta)`.
+    InternalChangeHealth(f32),
+    /// `evaluateVisualCondition()`.
+    EvaluateVisualCondition,
+    /// `updateBodyParticleSystems()`.
+    UpdateBodyParticleSystems,
+    /// `isSubdued()`; replies [`ModuleReply::Bool`].
+    IsSubdued,
+    /// `canBeSubdued()`; replies [`ModuleReply::Bool`].
+    CanBeSubdued,
+    /// `onSubdualChange(isNowSubdued)`.
+    OnSubdualChange(bool),
+    /// `getCurrentSubdualDamageAmount()`; replies [`ModuleReply::Real`].
+    GetCurrentSubdualDamageAmount,
+    /// `*getLastDamageInfo()`; replies [`ModuleReply::Damage`] (unhandled: the body has none).
+    GetLastDamageInfo,
+    /// `getLastDamageTimestamp()`; replies [`ModuleReply::Int`] (the frame as an `Int`).
+    GetLastDamageTimestamp,
+    /// `getLastHealingTimestamp()`; replies [`ModuleReply::Int`] (the frame as an `Int`).
+    GetLastHealingTimestamp,
+    /// `getClearableLastAttacker()`; replies [`ModuleReply::Id`].
+    GetClearableLastAttacker,
+    /// `clearLastAttacker()`.
+    ClearLastAttacker,
+    /// `getFrontCrushed()`; replies [`ModuleReply::Bool`].
+    GetFrontCrushed,
+    /// `getBackCrushed()`; replies [`ModuleReply::Bool`].
+    GetBackCrushed,
+    /// `setFrontCrushed(v)`.
+    SetFrontCrushed(bool),
+    /// `setBackCrushed(v)`.
+    SetBackCrushed(bool),
+    /// `isIndestructible()`; replies [`ModuleReply::Bool`].
+    IsIndestructible,
+    /// `applyDamageScalar(scalar)`.
+    ApplyDamageScalar(f32),
+    // ---- DamageModuleInterface ----
+    /// `onHealing(damageInfo)` (the loop of `ActiveBody::attemptHealing`).
+    OnHealing(DamageInfo),
+    /// `onBodyDamageStateChange(damageInfo, oldState, newState)`.
+    OnBodyDamageStateChange { info: DamageInfo, old_state: i32, new_state: i32 },
+    // ---- ContainModuleInterface, the rest ----
+    /// `isImmuneToClearBuildingAttacks()`; replies [`ModuleReply::Bool`].
+    IsImmuneToClearBuildingAttacks,
+    /// `isRiderChangeContain()`; replies [`ModuleReply::Bool`].
+    IsRiderChangeContain,
+    /// `orderAllPassengersToIdle(CMD_FROM_AI)`.
+    OrderAllPassengersToIdle,
+    /// `orderAllPassengersToHackInternet(CMD_FROM_AI)`.
+    OrderAllPassengersToHackInternet,
+    // ---- AIUpdateInterface ----
+    /// `isMoving()`; replies [`ModuleReply::Bool`].
+    AiIsMoving,
+    /// `isIdle()`; replies [`ModuleReply::Bool`].
+    AiIsIdle,
+    /// `aiIdle(CMD_FROM_AI)`.
+    AiIdle,
+    /// `aiEvacuateInstantly(exposeStealthUnits, CMD_FROM_AI)`.
+    AiEvacuateInstantly { expose_stealth_units: bool },
+    /// `aiGuardRetaliate(victim, pos, NO_MAX_SHOTS_LIMIT, CMD_FROM_AI)`.
+    AiGuardRetaliate { victim: ObjectId, pos: Coord3D },
+    // ---- the other interfaces ActiveBody asks for ----
+    /// `ProjectileUpdateInterface::projectileNowJammed()`.
+    ProjectileNowJammed,
+    /// `getBridgeBehaviorInterface() != NULL`; replies [`ModuleReply::Bool`].
+    HasBridgeBehaviorInterface,
+    /// `BridgeBehaviorInterface::getTowerID(BridgeTowerType)`; replies [`ModuleReply::Id`].
+    GetBridgeTowerId { tower: i32 },
     // --- end p1w13-sonnet ---
     /// `ToppleUpdate::isAbleToBeToppled()`; replies [`ModuleReply::Bool`].
     IsAbleToBeToppled,

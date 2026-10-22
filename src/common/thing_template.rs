@@ -579,6 +579,14 @@ impl ArmorTemplateSet {
         &self.types
     }
 
+    // --- p1w13-sonnet ---
+    /// An armor template set with these parts (what `parseArmorTemplateSet` leaves for the same values), for a program that builds a template without INI
+    /// text, as the differential test of `ActiveBody` does.
+    pub fn from_parts(types: ArmorSetFlags, template: Option<NameKeyType>, fx: Option<NameKeyType>) -> Self {
+        ArmorTemplateSet { types, template, fx }
+    }
+    // --- end p1w13-sonnet ---
+
     /// `parseArmorTemplateSet(ini)` (ThingTemplate.cpp): `Conditions`, `Armor`
     /// and `DamageFX` until `End`.
     pub fn parse_armor_template_set(
@@ -1482,6 +1490,14 @@ pub struct ObjectTemplateValues {
     pub behavior_modules: Vec<(Vec<u8>, Vec<u8>)>,
     /// The weapon template sets: (the `WEAPONSET_*` conditions, has a weapon in the primary slot).
     pub weapon_sets: Vec<(Vec<i32>, bool)>,
+    // --- p1w13-sonnet ---
+    /// The armor template sets (`ArmorSet` blocks), in order.
+    pub armor_sets: Vec<ArmorTemplateSet>,
+    /// The sounds of the template (`VoiceFear`, `SoundOnDamaged`, ...): the audio type and the event's name.
+    pub audio: Vec<(ThingTemplateAudioType, Vec<u8>)>,
+    /// `m_structureRubbleHeight` (an `Int8`).
+    pub structure_rubble_height: i8,
+    // --- end p1w13-sonnet ---
 }
 
 impl Default for ObjectTemplateValues {
@@ -1510,6 +1526,11 @@ impl Default for ObjectTemplateValues {
             command_set_string: Vec::new(),
             behavior_modules: Vec::new(),
             weapon_sets: Vec::new(),
+            // --- p1w13-sonnet ---
+            armor_sets: Vec::new(),
+            audio: Vec::new(),
+            structure_rubble_height: 0,
+            // --- end p1w13-sonnet ---
         }
     }
 }
@@ -1548,6 +1569,13 @@ impl ThingTemplate {
             .iter()
             .map(|(flags, has)| WeaponTemplateSet::from_values(Some(v.template_id), crate::logic::weapon_set_flags::WeaponSetFlags::from_indices(flags), *has))
             .collect();
+        // --- p1w13-sonnet ---
+        t.armor_template_sets = v.armor_sets.clone();
+        for (slot, name) in &v.audio {
+            t.audio_array[*slot as usize].get_or_insert_with(AudioEventName::default).event_name = name.clone();
+        }
+        t.structure_rubble_height = v.structure_rubble_height;
+        // --- end p1w13-sonnet ---
         t
     }
 }

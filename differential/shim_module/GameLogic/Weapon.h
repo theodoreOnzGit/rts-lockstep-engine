@@ -63,4 +63,7 @@ public:
 	UnsignedInt m_last = 0, m_next = 0;
 };
 /* --- end p1w12-sonnet --- */
+/* --- p1w13-sonnet --- (batch P: ActiveBody asks the guard to retaliate with no limit on the shots; Weapon.h line 56, verbatim) */
+const Int NO_MAX_SHOTS_LIMIT = 0x7fffffff;
+/* --- end p1w13-sonnet --- */
 #endif

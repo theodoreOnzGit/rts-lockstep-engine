@@ -4,6 +4,15 @@
 #define SHIM_MODULE_PLAYERLIST_H
 #include "Lib/BaseType.h"
 class Player;
+/* --- p1w13-sonnet --- (batch P: ActiveBody's retaliation filter; Common/PlayerList.h lines 63-69, verbatim) */
+enum AllowPlayerRelationship
+{
+	ALLOW_SAME_PLAYER			= 0x01,		///< allow only objects of the same player as m_obj
+	ALLOW_ALLIES					= 0x02,		///< allow objects that m_obj considers allies
+	ALLOW_ENEMIES					= 0x04,		///< allow objects that m_obj considers enemy 
+	ALLOW_NEUTRAL					= 0x08		///< allow objects that m_obj considers neutral
+};
+/* --- end p1w13-sonnet --- */
 class PlayerList
 {
 public:

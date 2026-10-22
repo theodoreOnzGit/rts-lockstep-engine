@@ -117,6 +117,10 @@
 /* --- p1w13-sonnet --- (update batch O: DynamicShroudClearingRangeUpdate's grid decals; the ObjectCreationList fixture has classes of the same names) */
 #define RadiusDecal ModTestRadiusDecal
 #define RadiusDecalTemplate ModTestRadiusDecalTemplate
+/* batch P (ActiveBody): the Armor build's DamageFX is compiled against ITS Object; this unit's has the functions of DamageFX.cpp cut in (build.rs), under names of its own */
+#define DamageFX ModTestDamageFX
+#define DamageFXStore ModTestDamageFXStore
+#define TheDamageFXStore ModTestTheDamageFXStore
 /* --- end p1w13-sonnet --- */
 #define GameLogic ModTestGameLogic
 #define TheGameLogic ModTestTheGameLogic

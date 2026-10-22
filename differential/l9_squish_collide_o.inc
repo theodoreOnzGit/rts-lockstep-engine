@@ -48,7 +48,10 @@ UpdateModule *sqFindHook(const Object *, NameKeyType key)
 }  // namespace
 
 #include "ObjectRelationship.inc"   /* Object::getRelationship, verbatim from Object.cpp (build.rs, mod_gen) */
-Relationship Team::getRelationship(const Team *that) const { return that ? g_sqRel : NEUTRAL; }
+/* --- p1w13-sonnet --- (batch P: ActiveBody's test has a table of relationships between its teams) */
+Relationship (*g_teamRelHook)(const Team *, const Team *) = 0;
+/* --- end p1w13-sonnet --- */
+Relationship Team::getRelationship(const Team *that) const { return that ? (g_teamRelHook ? g_teamRelHook(this, that) : g_sqRel) : NEUTRAL; }
 Bool PartitionManager::geomCollidesWithGeom(const Coord3D* pos1, const GeometryInfo& geom1, Real angle1, const Coord3D* pos2, const GeometryInfo& geom2, Real angle2) const
 {
 	return ref_partition_geom_collides(pos1, &geom1, angle1, pos2, &geom2, angle2) != 0;

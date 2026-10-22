@@ -16,6 +16,9 @@ class Team;
 class Object;
 /* --- end p1w12-sonnet --- */
 /* crate batch F: the money and the score keeper of a player, whose calls are lines of the effect log (differential/l9_crates_f.inc) */
+/* --- p1w13-sonnet --- (batch P: Player::setAttackedBy stamps the game logic's frame, which this header cannot name) */
+extern UnsignedInt (*g_playerFrameHook)();
+/* --- end p1w13-sonnet --- */
 class Money { public: void deposit(UnsignedInt amountToDeposit, Bool playSound = TRUE); Int m_idx; };
 class ScoreKeeper { public: void addMoneyEarned(Int money); Int m_idx; };
 class Player
@@ -65,6 +68,13 @@ public:
 	const class PlayerTemplate *m_template = 0;
 	void setUnitsVisionSpied(Bool setting, KindOfMaskType whichUnits, Int byWhom);   /* SpyVisionUpdate: a line of the effect log */
 	Team *m_defaultTeam;
+	/* --- p1w13-sonnet --- (batch P: ActiveBody) */
+	void setAttackedBy( Int playerNdx ) { m_attackedBy[playerNdx] = true; m_attackedFrame = g_playerFrameHook ? g_playerFrameHook() : 0; }
+	Bool isLogicalRetaliationModeEnabled() const { return m_retaliation; }
+	Bool m_retaliation = false;
+	Bool m_attackedBy[16] = { false };
+	UnsignedInt m_attackedFrame = 0;
+	/* --- end p1w13-sonnet --- */
 	Money m_money;
 	ScoreKeeper m_score;
 	PlayerType m_type;
@@ -72,5 +82,9 @@ public:
 	/* --- end p1w12-sonnet --- */
 };
 /* special power batch H: what getAcademyStats() answers (it is the player itself, whose index the log wants) */
-class PowerAcademyStats { public: void recordSpecialPowerUsed(const SpecialPowerTemplate *t); };
+class PowerAcademyStats { public: void recordSpecialPowerUsed(const SpecialPowerTemplate *t);
+	/* --- p1w13-sonnet --- (batch P: ActiveBody; differential/l9_active_body_p.inc) */
+	void recordVehicleSniped();
+	void recordClearedGarrisonedBuilding();
+	/* --- end p1w13-sonnet --- */ };
 #endif

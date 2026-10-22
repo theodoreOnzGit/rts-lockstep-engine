@@ -17,6 +17,19 @@ public:
 	Real m_getHealedAnimationDisplayTimeInSeconds;
 	Real m_getHealedAnimationZRisePerSecond;
 	/* --- end p1w12-sonnet --- */
+	/* --- p1w13-sonnet --- (batch P: ActiveBody; set by differential/l9_active_body_p.inc) */
+	Real m_unitDamagedThresh;
+	Real m_unitReallyDamagedThresh;
+	Real m_defaultStructureRubbleHeight;
+	Real m_healthBonus[4];
+	AsciiString m_autoFireParticleSmallPrefix, m_autoFireParticleSmallSystem; Int m_autoFireParticleSmallMax;
+	AsciiString m_autoFireParticleMediumPrefix, m_autoFireParticleMediumSystem; Int m_autoFireParticleMediumMax;
+	AsciiString m_autoFireParticleLargePrefix, m_autoFireParticleLargeSystem; Int m_autoFireParticleLargeMax;
+	AsciiString m_autoSmokeParticleSmallPrefix, m_autoSmokeParticleSmallSystem; Int m_autoSmokeParticleSmallMax;
+	AsciiString m_autoSmokeParticleMediumPrefix, m_autoSmokeParticleMediumSystem; Int m_autoSmokeParticleMediumMax;
+	AsciiString m_autoSmokeParticleLargePrefix, m_autoSmokeParticleLargeSystem; Int m_autoSmokeParticleLargeMax;
+	AsciiString m_autoAflameParticlePrefix, m_autoAflameParticleSystem; Int m_autoAflameParticleMax;
+	/* --- end p1w13-sonnet --- */
 };
 extern GlobalData *TheGlobalData;
 #endif

@@ -84,8 +84,12 @@ void Player::iterateObjects( void (*func)( Object *, void * ), void *userData )
 {
 	for (size_t i = 0; i < m_objects.size(); ++i) func(m_objects[i], userData);
 }
+/* --- p1w13-sonnet --- (batch P: ActiveBody logs its retaliation scan; null for AutoHealBehavior's) */
+void (*g_ahRangeHook)(const Coord3D *, Real, PartitionFilter **) = 0;
+/* --- end p1w13-sonnet --- */
 SimpleObjectIterator *PartitionManager::iterateObjectsInRange( const Coord3D *pos, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters, IterOrderType order )
 {
+	if (g_ahRangeHook) g_ahRangeHook(pos, maxDist, filters);
 	SimpleObjectIterator *it = new SimpleObjectIterator;
 	it->m_list = g_ahRange;
 	return it;

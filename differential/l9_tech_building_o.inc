@@ -40,8 +40,12 @@ TechBuildingBehavior *g_tbModule = 0;
 Player *PlayerList::getNeutralPlayer() { return g_tbNeutral; }
 /* Object.cpp's setTeam -> setOrRestoreTeam, reduced to what a module can see: a team that is the same changes nothing; the object's controlling player is the team's;
 ** the modules are told onCapture(old owner, new owner) when both teams exist (Object.cpp setOrRestoreTeam, "This can't just go in ::defect") */
+/* --- p1w13-sonnet --- (batch P: ActiveBody's test logs the team it is given and leaves the object alone; null for TechBuildingBehavior's) */
+void (*g_setTeamHook)(Object *, Team *) = 0;
+/* --- end p1w13-sonnet --- */
 void Object::setTeam( Team *team )
 {
+	if (g_setTeamHook) { g_setTeamHook(this, team); return; }
 	Team *old = m_team;
 	if (old == team) return;
 	m_team = team;

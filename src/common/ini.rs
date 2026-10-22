@@ -233,6 +233,12 @@ pub enum Undefined {
     SignedIntOverflow,
     /// A local `Real` that nothing assigned is read (`FloatUpdate`: `isUnderwater` leaves `waterZ` alone when there is no water).
     UninitialisedLocal,
+    /// `getAI()` is `NULL` and the module calls through it (`ActiveBody`'s `DAMAGE_KILLPILOT` of a rider-change vehicle).
+    NullAi,
+    /// `*(getContainedItemsList()->begin())` of a list with nothing in it (`ActiveBody`'s `DAMAGE_KILLPILOT` of a rider-change vehicle).
+    EmptyContainedList,
+    /// An array indexed by an enum value outside its range (`TheGlobalData->m_healthBonus[level]`).
+    ArrayIndexOutOfRange,
     // --- end p1w13-sonnet ---
     // --- p1l9-upgrades ---
     /// `ArmorUpgrade`: a triggered chemical-suits upgrade on an object with no

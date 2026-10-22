@@ -97,6 +97,16 @@ pub struct ProbeAnswers {
     pub goal_object: ObjectId,
     /// `getVelocity()` of the physics.
     pub velocity: Coord3D,
+    /// `isMoving()` of the AI.
+    pub moving: bool,
+    /// `isIdle()` of the AI.
+    pub idle: bool,
+    /// `isImmuneToClearBuildingAttacks()` of the contain module.
+    pub immune: bool,
+    /// `isRiderChangeContain()` of the contain module.
+    pub rider_change: bool,
+    /// `getTowerID(i)` of the bridge behaviour (`has` bit 10 says there is one).
+    pub bridge_towers: [ObjectId; 4],
     // --- end p1w13-sonnet ---
     // --- p1w7-sonnet ---
     /// `isClearToApproach`.
@@ -335,7 +345,82 @@ impl ProbeModule {
                 }
                 ModuleReply::Damage(info)
             }
-            // --- p1w13-sonnet ---
+            // --- p1w13-sonnet --- (ActiveBody's test: the calls its body makes on the other modules of its object are lines of the trace, when `cuts.body.probe_trace` asks)
+            ModuleCall::OnDamage(info) if world.cuts.body.probe_trace => {
+                world.body_trace(format!("ondamage {} {} {}", me.object, me.index, crate::logic::world::body_cuts::info_line(&info)));
+                ModuleReply::Done
+            }
+            ModuleCall::OnHealing(info) => {
+                if world.cuts.body.probe_trace {
+                    world.body_trace(format!("onhealing {} {} {}", me.object, me.index, crate::logic::world::body_cuts::info_line(&info)));
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::OnBodyDamageStateChange { info, old_state, new_state } => {
+                if world.cuts.body.probe_trace {
+                    world.body_trace(format!("bodystate {} {} {old_state} {new_state} {}", me.object, me.index, crate::logic::world::body_cuts::info_line(&info)));
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::IsImmuneToClearBuildingAttacks => ModuleReply::Bool(self.answers.immune),
+            ModuleCall::IsRiderChangeContain => ModuleReply::Bool(self.answers.rider_change),
+            ModuleCall::OrderAllPassengersToIdle | ModuleCall::OrderAllPassengersToHackInternet | ModuleCall::AiIdle | ModuleCall::ProjectileNowJammed => {
+                if world.cuts.body.probe_trace {
+                    let name = match call {
+                        ModuleCall::OrderAllPassengersToIdle => "idleall",
+                        ModuleCall::OrderAllPassengersToHackInternet => "hackall",
+                        ModuleCall::AiIdle => "aiidle",
+                        _ => "jammed",
+                    };
+                    world.body_trace(format!("{name} {}", me.object));
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::AiIsMoving => ModuleReply::Bool(self.answers.moving),
+            ModuleCall::AiIsIdle => ModuleReply::Bool(self.answers.idle),
+            ModuleCall::AiEvacuateInstantly { expose_stealth_units } => {
+                if world.cuts.body.probe_trace {
+                    world.body_trace(format!("aievac {} {}", me.object, i32::from(expose_stealth_units)));
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::AiGuardRetaliate { victim, pos } => {
+                if world.cuts.body.probe_trace {
+                    world.body_trace(format!("guard {} {} {:08x} {:08x} {:08x}", me.object, victim, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()));
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::HasBridgeBehaviorInterface => ModuleReply::Bool(self.answers.has & (1 << 10) != 0),
+            ModuleCall::GetBridgeTowerId { tower } => {
+                if self.answers.has & (1 << 10) != 0 {
+                    ModuleReply::Id(self.answers.bridge_towers.get(tower as usize).copied().unwrap_or(INVALID_ID))
+                } else {
+                    ModuleReply::Unhandled
+                }
+            }
+            // the body half of BodyModuleInterface belongs to the concrete bodies: the probe's body answers its own few
+            ModuleCall::GetDamageState
+            | ModuleCall::SetDamageState(_)
+            | ModuleCall::GetInitialHealth
+            | ModuleCall::GetPreviousHealth
+            | ModuleCall::InternalChangeHealth(_)
+            | ModuleCall::EvaluateVisualCondition
+            | ModuleCall::UpdateBodyParticleSystems
+            | ModuleCall::IsSubdued
+            | ModuleCall::CanBeSubdued
+            | ModuleCall::OnSubdualChange(_)
+            | ModuleCall::GetCurrentSubdualDamageAmount
+            | ModuleCall::GetLastDamageInfo
+            | ModuleCall::GetLastDamageTimestamp
+            | ModuleCall::GetLastHealingTimestamp
+            | ModuleCall::GetClearableLastAttacker
+            | ModuleCall::ClearLastAttacker
+            | ModuleCall::GetFrontCrushed
+            | ModuleCall::GetBackCrushed
+            | ModuleCall::SetFrontCrushed(_)
+            | ModuleCall::SetBackCrushed(_)
+            | ModuleCall::IsIndestructible
+            | ModuleCall::ApplyDamageScalar(_) => ModuleReply::Unhandled,
             ModuleCall::WouldIgnite => {
                 if world.cuts.probe_effect_trace {
                     if let Some(t) = &mut world.cuts.trace {
