@@ -224,6 +224,8 @@ pub enum UpdateBody {
     ImmortalBody(crate::logic::modules::derived_bodies::ImmortalBody),
     /// `StructureBody`.
     StructureBody(crate::logic::modules::derived_bodies::StructureBody),
+    /// `InactiveBody`.
+    InactiveBody(crate::logic::modules::inactive_body::InactiveBody),
     // --- end p1w13-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -326,6 +328,7 @@ impl UpdateBody {
             UpdateBody::HighlanderBody(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::ImmortalBody(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::StructureBody(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::InactiveBody(_) => UPDATE_SLEEP_FOREVER,
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -428,6 +431,7 @@ impl UpdateBody {
             UpdateBody::HighlanderBody(m) => m.module_call(world, me, call),
             UpdateBody::ImmortalBody(m) => m.module_call(world, me, call),
             UpdateBody::StructureBody(m) => m.module_call(world, me, call),
+            UpdateBody::InactiveBody(m) => m.module_call(world, me, call),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -770,6 +774,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::HighlanderBody(m) => m.crc(xfer),
             UpdateBody::ImmortalBody(m) => m.crc(xfer),
             UpdateBody::StructureBody(m) => m.crc(xfer),
+            UpdateBody::InactiveBody(m) => m.crc(xfer),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -868,6 +873,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::HighlanderBody(m) => m.xfer(xfer),
             UpdateBody::ImmortalBody(m) => m.xfer(xfer),
             UpdateBody::StructureBody(m) => m.xfer(xfer),
+            UpdateBody::InactiveBody(m) => m.xfer(xfer),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -966,6 +972,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::HighlanderBody(m) => m.load_post_process(),
             UpdateBody::ImmortalBody(m) => m.load_post_process(),
             UpdateBody::StructureBody(m) => m.load_post_process(),
+            UpdateBody::InactiveBody(m) => m.load_post_process(),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -1148,6 +1155,7 @@ impl UpdateBody {
             UpdateBody::HighlanderBody(m) => m.world_construct(world, me),
             UpdateBody::ImmortalBody(m) => m.world_construct(world, me),
             UpdateBody::StructureBody(m) => m.world_construct(world, me),
+            UpdateBody::InactiveBody(m) => m.world_construct(world, me),
 // --- end p1w13-sonnet ---
             _ => {}
         }

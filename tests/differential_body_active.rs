@@ -39,29 +39,30 @@
 //! scan, `getAbleToAttackSpecificObject`, `getDistanceSquared`, the bones of the drawable and the particle system manager are stand-ins on both sides (the partition manager,
 //! the weapon layer, the drawable and the particle system manager are verified by their own tests): the body's use of them is what is under test.
 //!
-//! Measured 2026-10-22 (second run, after `HighlanderBody`, `ImmortalBody` and `StructureBody` joined the scene as the class of each object's body: the C++ side
-//! also runs the unchanged `HighlanderBody.cpp`, `ImmortalBody.cpp` and `StructureBody.cpp`), 9,000 cases (`L9AB_CASES`, seed `0x00AB_0D1E`), the unchanged
+//! Measured 2026-10-22 (third run, after `HighlanderBody`, `ImmortalBody`, `StructureBody` and `InactiveBody` joined the scene as the class of each object's body: the
+//! C++ side also runs the unchanged `HighlanderBody.cpp`, `ImmortalBody.cpp`, `StructureBody.cpp` and `InactiveBody.cpp`), 9,000 cases (`L9AB_CASES`, seed `0x00AB_0D1E`), the unchanged
 //! `ActiveBody.cpp` (edited only by `build.rs`) against the Rust module:
 //!
-//! - data reads: 8,343 compared, 0 mismatches (499 data blocks that upstream's parser throws on, the same message on both sides);
-//! - op outputs: 1,332,949 compared, 0 mismatches, max ULP 0, no NaN-payload-only differences;
-//! - 255,199 ops, 89,920 damage hits, 5,554 deaths, 4,821 kills scored, 8,376 xfers (save, load, CRC), 969,278 effect lines, 10,199 fx, 222,614 particle systems,
-//!   769 retaliation checks, 9,703 subdual hits;
-//! - 657 cases excluded: upstream-undefined input (a null AI, an empty contained list, an out-of-range array index, a `Real` outside `Int`), counted Rust-only.
+//! - data reads: 8,446 compared, 0 mismatches (499 data blocks that upstream's parser throws on, the same message on both sides);
+//! - op outputs: 1,352,101 compared, 0 mismatches, max ULP 0, no NaN-payload-only differences;
+//! - 258,909 ops, 89,920 damage hits, 5,213 deaths, 3,539 kills scored, 8,376 xfers (save, load, CRC), 728,961 effect lines, 7,687 fx, 167,018 particle systems,
+//!   565 retaliation checks, 7,006 subdual hits;
+//! - 554 cases excluded: upstream-undefined input (a null AI, an empty contained list, an out-of-range array index, a `Real` outside `Int`), counted Rust-only.
 //!
 //! Interpretation: every line the body sends to the rest of the game (and every value it returns or saves) agrees bit for bit with upstream over this input space.
 //! The retaliation scan, the able-to-attack and distance answers, the bones and the particle manager are the test's stand-ins on both sides, so this does not verify them.
 //!
 //! # The derived classes
 //!
-//! Each object's body is one of `ActiveBody`, `HighlanderBody`, `ImmortalBody`, `StructureBody` (the scene's last word per object), with op 36 `setConstructorObject`
+//! Each object's body is one of `ActiveBody`, `HighlanderBody`, `ImmortalBody`, `StructureBody`, `InactiveBody` (the scene's last word per object; class 4 is the
+//! `InactiveBody`, whose state the driver and the test read through the body's virtuals: the same 18 words, the Rust side asking the module with `ModuleCall`s), with op 36 `setConstructorObject`
 //! and the structure's constructor object id as the last word of the object's state. A load only takes bytes that a body of the same class saved: another class's bytes
 //! are shifted fields, and a flag read from a byte that is not 0 or 1 is not a `bool` in C++ (the C++ side prints `0x3c` where Rust, which normalises, has `true`).
 //! `UndeadBody` (needs `SlowDeathBehavior`) and `HiveStructureBody` (needs the spawn and contain interfaces) are not in this test yet.
 //!
 //! # Planted bugs
 //!
-//! `L9_PLANT=<id>` flips one branch of `active_body.rs`; each must make the test fail at 9,000 cases (1212-1253 and 1261-1267 all caught except as noted):
+//! `L9_PLANT=<id>` flips one branch of `active_body.rs`; each must make the test fail at 9,000 cases (1212-1253, 1261-1267 and 1271-1282 all caught except as noted):
 //!
 //! | id | planted bug |
 //! |---|---|
@@ -77,9 +78,10 @@
 //! | 1261-1263 | Highlander: the limit applied to UNRESISTABLE instead of the rest; limit by health not health - 1; `max` for `min` |
 //! | 1264-1265 | Immortal: limit by -health (not -health + 1); `min` for `max` |
 //! | 1266-1267 | Structure: `setConstructorObject(NULL)` overwrites the id; the id is not saved |
+//! | 1271-1282 | InactiveBody: the object not made effectively dead; the unresistable estimate; the damage outputs not zeroed; `noEffect` kept on the kill; the die modules run on every kill; `m_dieCalled` never set; a damage-type healing call not sent on to damage; a damage state other than pristine; not indestructible; the version/flag saved (`m_dieCalled` is not); the damage scalar ignored |
 //! | 1249-1253 | veterancy bonus ratio inverted, promoted-hero sound, UI dirty (selected, contained-by), promotion feedback |
 //!
-//! Not planted, equivalent mutant: the `max(desiredHealth, 0)` clamp in `setDamageState` (1243 survived): `internalChangeHealth` clamps the result to 0 anyway, so removing it
+//! Not planted, equivalent mutants (1273 survived, removed): in `InactiveBody::attemptDamage`, sending a `DAMAGE_HEALING` call on to `attemptHealing` (the fall-through zeroes the same outputs, `noEffect` true); and the `max(desiredHealth, 0)` clamp in `setDamageState` (1243 survived): `internalChangeHealth` clamps the result to 0 anyway, so removing it
 //! cannot be seen from outside. Its plant was removed and the clamp stays as upstream has it.
 
 mod harness;
@@ -110,7 +112,7 @@ use rts_lockstep_engine::logic::damage::*;
 use rts_lockstep_engine::logic::modules::active_body::ActiveBodyModuleData;
 use rts_lockstep_engine::logic::world::body_cuts::{info_line, AutoParticle, BodyCall};
 use rts_lockstep_engine::logic::world::game_logic::World;
-use rts_lockstep_engine::logic::world::module_call::ModuleCall;
+use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleReply};
 use rts_lockstep_engine::logic::world::module_probe::{ProbeAnswers, ProbeModule};
 use rts_lockstep_engine::logic::world::object_create::{NewModule, NewObject};
 use rts_lockstep_engine::logic::world::object_cuts::CutCall;
@@ -627,7 +629,7 @@ fn gen_scene(g: &mut Gen, data: &Option<ModuleDataKind>, focus: u32) -> Vec<u32>
         w.f(if focus == 4 { *pick(g, &[&100.0f32, &50.0, &80.0, &300.0, &0.0]) } else { *pick(g, &[&0.0f32, &0.0, &100.0, &50.0]) });
         w.u(*pick(g, &[&0u32, &30, &90]));
         w.f(*pick(g, &[&0.0f32, &5.0, &20.0]));
-        w.u(*pick(g, &[&0u32, &0, &1, &2, &3, &3])); // the class of the body
+        w.u(*pick(g, &[&0u32, &0, &1, &2, &3, &3, &4, &4])); // the class of the body
     }
     for i in 0..n {
         for j in 0..n {
@@ -940,20 +942,58 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
     out
 }
 
-fn put_object(v: &mut Vec<u8>, w: &World, id: ObjectId) {
-    let o = w.objects.find(id).expect("the object");
-    let body_idx = o.body.expect("the body") as usize;
-    let (m, constructor) = match o.modules[body_idx].body.as_ref() {
-        Some(UpdateBody::ActiveBody(m)) => (m, None),
-        Some(UpdateBody::HighlanderBody(m)) => (m.active_body(), None),
-        Some(UpdateBody::ImmortalBody(m)) => (m.active_body(), None),
-        Some(UpdateBody::StructureBody(m)) => (m.active_body(), Some(m.get_constructor_object_id())),
-        _ => panic!("the body is in its slot"),
+fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId) {
+    let body_idx = w.objects.find(id).expect("the object").body.expect("the body");
+    let inactive = matches!(w.objects.find(id).unwrap().modules[body_idx as usize].body.as_ref(), Some(UpdateBody::InactiveBody(_)));
+    let (words, info, constructor) = if inactive {
+        // an InactiveBody has no fields of the ActiveBody layout: what Object asks of it, in the same 18 words as the driver's (the module's answers to the calls)
+        let mut ask = |c: ModuleCall| w.module_call(id, body_idx, c);
+        let real = |r: ModuleReply| r.as_real(f32::NAN).to_bits();
+        let int = |r: ModuleReply| if let ModuleReply::Int(i) = r { i as u32 } else { 0xdead_0001 };
+        let flag = |r: ModuleReply| u32::from(r.as_bool());
+        let mut words = vec![
+            real(ask(ModuleCall::GetHealth)),
+            real(ask(ModuleCall::GetPreviousHealth)),
+            real(ask(ModuleCall::GetMaxHealth)),
+            real(ask(ModuleCall::GetInitialHealth)),
+            real(ask(ModuleCall::GetCurrentSubdualDamageAmount)),
+            int(ask(ModuleCall::GetDamageState)),
+            int(ask(ModuleCall::GetSubdualDamageHealRate)),
+            flag(ask(ModuleCall::HasAnySubdualDamage)) ^ real(ask(ModuleCall::GetSubdualDamageHealAmount)),
+            int(ask(ModuleCall::GetLastDamageTimestamp)),
+            int(ask(ModuleCall::GetLastHealingTimestamp)),
+            flag(ask(ModuleCall::GetFrontCrushed)),
+            flag(ask(ModuleCall::GetBackCrushed)),
+            ask(ModuleCall::GetClearableLastAttacker).as_id() as u32,
+            flag(ask(ModuleCall::IsIndestructible)),
+        ];
+        let mut flags = 0u32;
+        for i in 0..rts_lockstep_engine::logic::armor_set::ARMORSET_COUNT {
+            if ask(ModuleCall::TestArmorSetFlag(i)).as_bool() {
+                flags |= 1 << i;
+            }
+        }
+        words.push(flags);
+        words.push(real(ask(ModuleCall::GetDamageScalar)));
+        words.push(u32::from(!matches!(ask(ModuleCall::GetLastDamageInfo), ModuleReply::Unhandled)));
+        words.push(0);
+        (words, DamageInfo::default(), None)
+    } else {
+        let o = w.objects.find(id).unwrap();
+        let (m, constructor) = match o.modules[body_idx as usize].body.as_ref() {
+            Some(UpdateBody::ActiveBody(m)) => (m, None),
+            Some(UpdateBody::HighlanderBody(m)) => (m.active_body(), None),
+            Some(UpdateBody::ImmortalBody(m)) => (m.active_body(), None),
+            Some(UpdateBody::StructureBody(m)) => (m.active_body(), Some(m.get_constructor_object_id())),
+            _ => panic!("the body is in its slot"),
+        };
+        (m.state_words(), m.get_last_damage_info().clone(), constructor)
     };
-    for x in m.state_words() {
+    let o = w.objects.find(id).unwrap();
+    for x in words {
         put_u32(v, x);
     }
-    put_info(v, m.get_last_damage_info());
+    put_info(v, &info);
     let (mut w0, mut w1) = (0u32, 0u32);
     for i in 0..OBJECT_STATUS_COUNT.min(64) {
         if o.status.test(i) {
@@ -1282,7 +1322,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 subdual_damage_heal_amount: f(o.body[4]),
             }))
         };
-        let class_name: &[u8] = [b"ActiveBody".as_slice(), b"HighlanderBody", b"ImmortalBody", b"StructureBody"][o.cls as usize];
+        let class_name: &[u8] = [b"ActiveBody".as_slice(), b"HighlanderBody", b"ImmortalBody", b"StructureBody", b"InactiveBody"][o.cls as usize];
+        // an InactiveBody has no module data of its own: `Module::friend_newModuleData`'s plain `ModuleData`
+        let body_data = if o.cls == 4 { ModuleDataKind::Module(Arc::new(rts_lockstep_engine::common::module::ModuleData::new())) } else { body_data };
         let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class_name, b"ModuleTag_Body", &body_data).unwrap().unwrap();
         let mut modules = vec![m];
         for i in 0..o.n_probes {
@@ -1498,7 +1540,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         }
         put_u32(&mut v, crc);
         for &id in &ids {
-            put_object(&mut v, &w, id);
+            put_object(&mut v, &mut w, id);
         }
         for p in 0..4 {
             let pl = w.players.get_nth(p).unwrap();

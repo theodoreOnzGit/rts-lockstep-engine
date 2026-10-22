@@ -720,6 +720,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::active_body::new_module_data),
             which_interfaces: Some(crate::logic::modules::derived_bodies::StructureBody::get_interface_mask()),
         }),
+        "InactiveBody" => Some(ModuleTemplate {
+            create_proc: Some(new_body_base),
+            create_data_proc: Some(crate::logic::modules::inactive_body::new_module_data),
+            which_interfaces: Some(crate::logic::modules::inactive_body::InactiveBody::get_interface_mask()),
+        }),
         "ActiveBody" => Some(ModuleTemplate {
             create_proc: Some(new_body_base),
             create_data_proc: Some(crate::logic::modules::active_body::new_module_data),
@@ -841,6 +846,9 @@ fn new_body_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Modul
         Some(ModuleDataKind::Body(d)) => Some(d),
         // --- p1w13-sonnet ---
         Some(ModuleDataKind::ActiveBody(d)) => Some(std::sync::Arc::new(d.body.clone())),
+        Some(ModuleDataKind::Module(d)) => Some(std::sync::Arc::new(crate::logic::module::body_module::BodyModuleData {
+            behavior: crate::logic::module::behavior_module::BehaviorModuleData { module_data: (*d).clone() },
+        })),
         // --- end p1w13-sonnet ---
         _ => None,
     };

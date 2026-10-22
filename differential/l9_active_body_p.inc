@@ -17,6 +17,7 @@ extern "C" int ref_real_to_int_ceil(float x);
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Body/HighlanderBody.cpp"
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Body/ImmortalBody.cpp"
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Body/StructureBody.cpp"
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Body/InactiveBody.cpp"
 #include "DamageFX_cut.inc"            /* DamageFX::DamageFX, clear, getDamageFXThrottleTime, doDamageFX, getDamageFXList: verbatim from DamageFX.cpp (build.rs) */
 #include "BridgeBehaviorFromObject.inc" /* BridgeBehavior::getBridgeBehaviorInterfaceFromObject: verbatim from BridgeBehavior.cpp (build.rs) */
 #undef min
@@ -146,7 +147,7 @@ public:
 struct AbObj
 {
 	Object *obj;
-	ActiveBody *body;
+	BodyModule *body; /* the body, of whatever class (cls 4 is an InactiveBody, which is no ActiveBody) */
 	unsigned cls;
 	ActiveBodyModuleData *data;
 	AbProbe *probe[2];
@@ -332,7 +333,33 @@ void abPutDamageInfo(const DamageInfo *i)
 ** geometry height */
 void abPutObject(AbObj *a)
 {
-	ActiveBody *b = a->body;
+	if (a->cls == 4) {
+		/* an InactiveBody has no fields of the ActiveBody layout: its virtuals, in the same 18 words (the Rust side asks the module the same questions) */
+		BodyModule *ib = a->body;
+		putU32(realBits(ib->getHealth()));
+		putU32(realBits(ib->getPreviousHealth()));
+		putU32(realBits(ib->getMaxHealth()));
+		putU32(realBits(ib->getInitialHealth()));
+		putU32(realBits(ib->getCurrentSubdualDamageAmount()));
+		putU32((unsigned)ib->getDamageState());
+		putU32(ib->getSubdualDamageHealRate());
+		putU32((ib->hasAnySubdualDamage() ? 1u : 0u) ^ realBits(ib->getSubdualDamageHealAmount()));
+		putU32(ib->getLastDamageTimestamp());
+		putU32(ib->getLastHealingTimestamp());
+		putU32(ib->getFrontCrushed() ? 1 : 0);
+		putU32(ib->getBackCrushed() ? 1 : 0);
+		putU32((unsigned)ib->getClearableLastAttacker());
+		putU32(ib->isIndestructible() ? 1 : 0);
+		unsigned fl = 0;
+		for (int i = 0; i < ARMORSET_COUNT; ++i) if (ib->testArmorSetFlag((ArmorSetType)i)) fl |= 1u << i;
+		putU32(fl);
+		putU32(realBits(ib->getDamageScalar()));
+		putU32(ib->getLastDamageInfo() ? 1u : 0u);
+		putU32(0);
+		DamageInfo none;
+		abPutDamageInfo(&none);
+	} else {
+	ActiveBody *b = (ActiveBody *)a->body;
 	putU32(realBits(b->m_currentHealth));
 	putU32(realBits(b->m_prevHealth));
 	putU32(realBits(b->m_maxHealth));
@@ -359,6 +386,7 @@ void abPutObject(AbObj *a)
 	putU32(n);
 	for (BodyParticleSystem *s = b->m_particleSystems; s; s = s->m_next) putU32(s->m_particleSystemID);
 	abPutDamageInfo(&b->m_lastDamageInfo);
+	}
 	unsigned w[2] = { 0, 0 };
 	for (int i = 0; i < OBJECT_STATUS_COUNT && i < 64; ++i) if (a->obj->m_status.test(i)) w[i / 32] |= 1u << (i % 32);
 	putU32(w[0]);
@@ -674,6 +702,7 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 			case 1: a.body = new HighlanderBody(a.obj, a.data); break;
 			case 2: a.body = new ImmortalBody(a.obj, a.data); break;
 			case 3: a.body = new StructureBody(a.obj, a.data); break;
+			case 4: a.body = new InactiveBody(a.obj, a.data); break;
 			default: a.body = new ActiveBody(a.obj, a.data); break;
 			}
 		}
@@ -781,7 +810,7 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 				case 32: t->obj->m_effDead = o[2] != 0; break;
 				case 33: t->obj->m_drawable = o[2] ? &t->draw : 0; break;
 				case 34: t->obj->m_level = (VeterancyLevel)o[2]; break;
-				case 35: t->body->m_particleSystems = t->body->m_particleSystems; break;
+				case 35: if (t->cls != 4) { ActiveBody *ab = (ActiveBody *)t->body; ab->m_particleSystems = ab->m_particleSystems; } break;
 				case 36: if (t->cls == 3) ((StructureBody *)t->body)->setConstructorObject(o[2] ? abFind(o[2])->obj : 0); break;
 				default: break;
 				}

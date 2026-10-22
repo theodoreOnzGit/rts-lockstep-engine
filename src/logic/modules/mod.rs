@@ -117,6 +117,7 @@ pub mod tech_building_behavior;
 pub mod fire_spread_update;
 pub mod active_body;
 pub mod derived_bodies;
+pub mod inactive_body;
 // --- end p1w13-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -419,6 +420,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::FireSpreadUpdate(d) => Some(made_update(
             UpdateModule::get_interface_mask(),
             fire_spread_update::FireSpreadUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::FireSpreadUpdate(m))),
+        )),
+        ModuleDataKind::Module(d) if name == b"InactiveBody" => Some(made(
+            inactive_body::InactiveBody::get_interface_mask(),
+            inactive_body::InactiveBody::new(object, Some(d.clone())).map(UpdateBody::InactiveBody),
         )),
         ModuleDataKind::ActiveBody(d) => Some(made(
             active_body::ActiveBody::get_interface_mask(),
