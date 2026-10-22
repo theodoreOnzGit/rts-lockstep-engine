@@ -119,6 +119,7 @@ pub mod active_body;
 pub mod derived_bodies;
 pub mod inactive_body;
 pub mod slow_death_behavior;
+pub mod open_contain;
 // --- end p1w13-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -442,6 +443,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::HiveStructureBody(d) => Some(made(
             active_body::ActiveBody::get_interface_mask(),
             derived_bodies::HiveStructureBody::new(object, Some(d.clone())).map(UpdateBody::HiveStructureBody),
+        )),
+        ModuleDataKind::OpenContain(d) => Some(made_update(
+            open_contain::OpenContain::get_interface_mask(),
+            open_contain::OpenContain::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::OpenContain(m))),
         )),
         ModuleDataKind::SlowDeathBehavior(d) => Some(made_update(
             slow_death_behavior::SlowDeathBehavior::get_interface_mask(),

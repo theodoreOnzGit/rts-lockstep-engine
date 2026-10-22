@@ -51,6 +51,11 @@ pub struct ClientReads {
     /// `TheAudio->hasMusicTrackCompleted(name, count)` (`ScriptConditions`):
     /// how many times each track has completed. Headless: empty (never).
     pub music_track_completions: BTreeMap<Vec<u8>, i32>,
+    // --- p1w13-sonnet ---
+    /// `Drawable::getModelConditionFlags()` of each object's drawable (`OpenContain::monitorConditionChanges` redeploys its occupants when it changes). Headless:
+    /// empty, and [`ClientReads::drawable_model_condition_flags`] answers the empty set.
+    pub drawable_model_condition: BTreeMap<ObjectId, crate::common::model_state::ModelConditionFlags>,
+    // --- end p1w13-sonnet ---
 }
 
 impl Default for ClientReads {
@@ -64,11 +69,21 @@ impl Default for ClientReads {
             frame_selection_changed: 0,
             audio_length_ms: BTreeMap::new(),
             music_track_completions: BTreeMap::new(),
+            // --- p1w13-sonnet ---
+            drawable_model_condition: BTreeMap::new(),
+            // --- end p1w13-sonnet ---
         }
     }
 }
 
 impl ClientReads {
+    // --- p1w13-sonnet ---
+    /// `drawable->getModelConditionFlags()`: the flags of the object's drawable, the empty set for an object the client has not told about.
+    pub fn drawable_model_condition_flags(&self, id: ObjectId) -> crate::common::model_state::ModelConditionFlags {
+        self.drawable_model_condition.get(&id).cloned().unwrap_or_default()
+    }
+    // --- end p1w13-sonnet ---
+
     /// `GameLogic::update`'s `freezeTime` camera term:
     /// `isTimeFrozen() && !isCameraMovementFinished()`.
     pub fn camera_freezes_time(&self) -> bool {

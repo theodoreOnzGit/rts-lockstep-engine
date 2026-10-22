@@ -121,6 +121,12 @@ pub struct ProbeAnswers {
     pub closest_slave: ObjectId,
     /// `getClosestRider(pos)` of the contain module.
     pub closest_rider: ObjectId,
+    /// `PhysicsBehavior::getMass()`.
+    pub mass: f32,
+    /// `PhysicsBehavior::getAllowToFall()` (`setAllowToFall` sets it).
+    pub can_fall: bool,
+    /// `AIUpdateInterface::getEnterTarget()`.
+    pub enter_target: ObjectId,
     // --- end p1w13-sonnet ---
     // --- p1w7-sonnet ---
     /// `isClearToApproach`.
@@ -454,6 +460,7 @@ impl ProbeModule {
             // SlowDeathBehavior's test: the physics, AI and slaved calls it makes are lines of the trace (`bt ...`), the module's answers are scripted
             ModuleCall::PhysicsSetAllowToFall(b) => {
                 world.body_trace(format!("pfall {} {}", me.object, i32::from(b)));
+                self.answers.can_fall = b;
                 ModuleReply::Done
             }
             ModuleCall::PhysicsApplyForce(f) => {
@@ -520,6 +527,94 @@ impl ProbeModule {
             }
             ModuleCall::AiGetGoalObject => ModuleReply::Id(self.answers.goal_object),
             ModuleCall::PhysicsGetVelocity => ModuleReply::Coord(self.answers.velocity),
+            // OpenContain's test: the calls the container makes on its riders are lines of the trace (`bt ...`)
+            ModuleCall::AiIdleFrom { command_source } => {
+                world.body_trace(format!("aiidlefrom {} {command_source}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiExit { container, command_source } => {
+                world.body_trace(format!("aiexit {} {container} {command_source}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiExitInstantly { container, command_source } => {
+                world.body_trace(format!("aiexitnow {} {container} {command_source}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiHackInternet { command_source } => {
+                world.body_trace(format!("aihack {} {command_source}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiMoveToPosition { pos, command_source } => {
+                world.body_trace(format!("aimove {} {:08x} {:08x} {:08x} {command_source}", me.object, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()));
+                ModuleReply::Done
+            }
+            ModuleCall::AiIgnoreObstacle { obstacle } => {
+                world.body_trace(format!("aiignore {} {obstacle}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiGetEnterTarget => ModuleReply::Id(self.answers.enter_target),
+            ModuleCall::AiSetIgnoreCollisionTime { frames } => {
+                world.body_trace(format!("aiignorecoll {} {frames}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiFollowPath { path, ignore_object, command_source } => {
+                let pts: Vec<String> = path.iter().map(|p| format!("{:08x},{:08x},{:08x}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits())).collect();
+                world.body_trace(format!("aipath {} {ignore_object} {command_source} {}", me.object, pts.join(";")));
+                ModuleReply::Done
+            }
+            ModuleCall::AiDoQuickExit { path } => {
+                let pts: Vec<String> = path.iter().map(|p| format!("{:08x},{:08x},{:08x}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits())).collect();
+                world.body_trace(format!("aiquick {} {}", me.object, pts.join(";")));
+                ModuleReply::Done
+            }
+            ModuleCall::PhysicsGetMass => ModuleReply::Real(self.answers.mass),
+            ModuleCall::PhysicsGetAllowToFall => ModuleReply::Bool(self.answers.can_fall),
+            ModuleCall::StealthMarkAsDetected => {
+                world.body_trace(format!("markdetected {}", me.object));
+                ModuleReply::Done
+            }
+            // the contain module's own interface: a probe is a damage and die module, and answers the contain questions as it did before (the scripted answers)
+            ModuleCall::AddToContain(_)
+            | ModuleCall::AddToContainList(_)
+            | ModuleCall::RemoveFromContainExposing { .. }
+            | ModuleCall::KillAllContained
+            | ModuleCall::HarmAndForceExitAllContained(_)
+            | ModuleCall::IsValidContainerFor { .. }
+            | ModuleCall::OnContaining { .. }
+            | ModuleCall::OnRemoving(_)
+            | ModuleCall::OnSelling
+            | ModuleCall::GetContainMax
+            | ModuleCall::OrderAllPassengersToExit { .. }
+            | ModuleCall::OrderAllPassengersToIdleFrom { .. }
+            | ModuleCall::OrderAllPassengersToHackInternetFrom { .. }
+            | ModuleCall::MarkAllPassengersDetected
+            | ModuleCall::SetPassengerAllowedToFire(_)
+            | ModuleCall::SetOverrideDestination(_)
+            | ModuleCall::IsDisplayedOnControlBar
+            | ModuleCall::GetExtraSlotsInUse
+            | ModuleCall::GetContainedItemsMass
+            | ModuleCall::GetStealthUnitsContained
+            | ModuleCall::GetPlayerWhoEntered
+            | ModuleCall::ProcessDamageToContained(_)
+            | ModuleCall::EnableLoadSounds(_)
+            | ModuleCall::SetEvacDisposition(_)
+            | ModuleCall::IsWeaponBonusPassedToPassengers
+            | ModuleCall::GetWeaponBonusPassedToPassengers
+            | ModuleCall::IsBustable
+            | ModuleCall::IsHealContain
+            | ModuleCall::IsTunnelContain
+            | ModuleCall::IsSpecialOverlordStyleContainer
+            | ModuleCall::IsAnyRiderAttacking
+            | ModuleCall::ClientVisibleContainedFlashAsSelected
+            | ModuleCall::RecalcApparentControllingPlayer
+            | ModuleCall::OnObjectWantsToEnterOrExit { .. }
+            | ModuleCall::HasObjectsWantingToEnterOrExit
+            | ModuleCall::IsExitBusy
+            | ModuleCall::ExitObjectViaDoor { .. }
+            | ModuleCall::ExitObjectInAHurry(_)
+            | ModuleCall::SetRallyPoint(_)
+            | ModuleCall::GetRallyPoint
+            | ModuleCall::GetNaturalRallyPoint => ModuleReply::Unhandled,
             // --- end p1w13-sonnet ---
             // --- p1w12-sonnet --- (FlammableUpdate's test: the body's setAflame is a line of the trace, when `probe_effect_trace` asks)
             ModuleCall::StartFireSpreading => {

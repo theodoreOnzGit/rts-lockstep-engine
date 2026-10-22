@@ -318,6 +318,8 @@ pub const DEATH_NONE: DeathType = 1;
 // --- p1w13-sonnet ---
 /// `DEATH_CRUSHED`.
 pub const DEATH_CRUSHED: DeathType = 2;
+/// `DEATH_BURNED`.
+pub const DEATH_BURNED: DeathType = 3;
 // --- end p1w13-sonnet ---
 
 /// `class DamageInfoInput`: what the damage is (the inputs of a

@@ -239,6 +239,10 @@ pub enum Undefined {
     EmptyContainedList,
     /// An array indexed by an enum value outside its range (`TheGlobalData->m_healthBonus[level]`).
     ArrayIndexOutOfRange,
+    /// A `NULL` `Object` pointer is dereferenced (`OpenContain`: the rider of a contain call is no object).
+    NullObject,
+    /// A loop that upstream restarts for ever (`OpenContain::harmAndForceExitAllContained`: a rider that stays in the list).
+    EndlessLoop,
     // --- end p1w13-sonnet ---
     // --- p1l9-upgrades ---
     /// `ArmorUpgrade`: a triggered chemical-suits upgrade on an object with no

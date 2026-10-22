@@ -316,6 +316,8 @@ pub enum CutCall {
     ParticleDestroyAttachedSystems { object: ObjectId },
     /// What `ActiveBody` did to a unit that is not translated (see `body_cuts`).
     Body(crate::logic::world::body_cuts::BodyCall),
+    /// What a contain module did to a unit that is not translated (see `contain_cuts`).
+    Contain(crate::logic::world::contain_cuts::ContainCall),
     /// `ThePartitionManager->getClosestObject(obj, range, FROM_CENTER_3D, filters)` (`FireSpreadUpdate`); `ObjectCuts::range_scan` answers with the candidates, nearest first.
     PartitionGetClosestObject { object: ObjectId, range: f32 },
     /// `TheTerrainLogic->isUnderwater(x, y, &waterZ)` (`FloatUpdate`); `ObjectCuts::terrain_has_water` and `terrain_water` answer.
@@ -623,6 +625,8 @@ pub struct ObjectCuts {
     pub terrain_water: [f32; 8],
     /// The cut points of `ActiveBody`: see `body_cuts`.
     pub body: crate::logic::world::body_cuts::BodyCutTables,
+    /// The cut points of the contain modules: see `contain_cuts`.
+    pub contain: crate::logic::world::contain_cuts::ContainCutTables,
     // --- end p1w13-sonnet ---
     /// `ai->getWhichTurretForWeaponSlot(slot)` != `TURRET_INVALID`: (object, slot) -> turret.
     pub ai_turrets: BTreeMap<(ObjectId, i32), i32>,
@@ -710,6 +714,7 @@ impl Default for ObjectCuts {
             terrain_has_water: [false; 8],
             terrain_water: [0.0; 8],
             body: Default::default(),
+            contain: Default::default(),
             // --- end p1w13-sonnet ---
             ai_turrets: BTreeMap::new(),
             ai_turrets_disabled: BTreeSet::new(),

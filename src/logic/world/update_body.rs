@@ -232,6 +232,8 @@ pub enum UpdateBody {
     InactiveBody(crate::logic::modules::inactive_body::InactiveBody),
     /// `SlowDeathBehavior`.
     SlowDeathBehavior(crate::logic::modules::slow_death_behavior::SlowDeathBehavior),
+    /// `OpenContain`.
+    OpenContain(crate::logic::modules::open_contain::OpenContain),
     // --- end p1w13-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -338,6 +340,7 @@ impl UpdateBody {
             UpdateBody::HiveStructureBody(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::InactiveBody(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SlowDeathBehavior(m) => m.world_update(world, me),
+            UpdateBody::OpenContain(m) => m.world_update(world, me),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -444,6 +447,7 @@ impl UpdateBody {
             UpdateBody::HiveStructureBody(m) => m.module_call(world, me, call),
             UpdateBody::InactiveBody(m) => m.module_call(world, me, call),
             UpdateBody::SlowDeathBehavior(m) => m.module_call(world, me, call),
+            UpdateBody::OpenContain(m) => m.module_call(world, me, call),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -537,6 +541,7 @@ impl UpdateBody {
             UpdateBody::TechBuildingBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::FireSpreadUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::SlowDeathBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::OpenContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
 // --- end p1w13-sonnet ---
             _ => self.xfer(xfer),
         }
@@ -612,6 +617,7 @@ impl UpdateBody {
             UpdateBody::TechBuildingBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::FireSpreadUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::SlowDeathBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::OpenContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
 // --- end p1w13-sonnet ---
             _ => self.crc(xfer),
         }
@@ -687,6 +693,7 @@ impl UpdateBody {
             UpdateBody::TechBuildingBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::FireSpreadUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::SlowDeathBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::OpenContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
 // --- end p1w13-sonnet ---
             _ => self.load_post_process(),
         }
@@ -793,6 +800,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::HiveStructureBody(m) => m.crc(xfer),
             UpdateBody::InactiveBody(m) => m.crc(xfer),
             UpdateBody::SlowDeathBehavior(m) => m.crc(xfer),
+            UpdateBody::OpenContain(m) => m.crc(xfer),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -895,6 +903,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::HiveStructureBody(m) => m.xfer(xfer),
             UpdateBody::InactiveBody(m) => m.xfer(xfer),
             UpdateBody::SlowDeathBehavior(m) => m.xfer(xfer),
+            UpdateBody::OpenContain(m) => m.xfer(xfer),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -997,6 +1006,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::HiveStructureBody(m) => m.load_post_process(),
             UpdateBody::InactiveBody(m) => m.load_post_process(),
             UpdateBody::SlowDeathBehavior(m) => m.load_post_process(),
+            UpdateBody::OpenContain(m) => m.load_post_process(),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -1183,6 +1193,7 @@ impl UpdateBody {
             UpdateBody::HiveStructureBody(m) => m.world_construct(world, me),
             UpdateBody::InactiveBody(m) => m.world_construct(world, me),
             UpdateBody::SlowDeathBehavior(m) => m.world_construct(world, me),
+            UpdateBody::OpenContain(m) => m.world_construct(world, me),
 // --- end p1w13-sonnet ---
             _ => {}
         }

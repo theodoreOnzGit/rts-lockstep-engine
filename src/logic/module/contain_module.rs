@@ -48,6 +48,18 @@ pub enum ObjectEnterExitType {
     WantsNeither = 2,
 }
 
+impl ObjectEnterExitType {
+    /// The enumerator with that value, `None` for a value that is none.
+    pub fn from_i32(v: i32) -> Option<ObjectEnterExitType> {
+        match v {
+            0 => Some(ObjectEnterExitType::WantsToEnter),
+            1 => Some(ObjectEnterExitType::WantsToExit),
+            2 => Some(ObjectEnterExitType::WantsNeither),
+            _ => None,
+        }
+    }
+}
+
 /// `enum EvacDisposition`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(i32)]

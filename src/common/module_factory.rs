@@ -745,6 +745,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::slow_death_behavior::new_module_data),
             which_interfaces: Some(crate::logic::modules::slow_death_behavior::SlowDeathBehavior::get_interface_mask()),
         }),
+        "OpenContain" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::open_contain::new_module_data),
+            which_interfaces: Some(crate::logic::modules::open_contain::OpenContain::get_interface_mask()),
+        }),
         // --- end p1w13-sonnet ---
         _ => None,
     }

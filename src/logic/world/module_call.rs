@@ -331,6 +331,116 @@ pub enum ModuleCall {
     SetConstructorObject(ObjectId),
     /// `StructureBody::getConstructorObjectID()`.
     GetConstructorObjectId,
+    // ---- OpenContain: the rest of the contain, collide and exit interfaces, and what the container asks of its riders ----
+    /// `addToContain(obj)`.
+    AddToContain(ObjectId),
+    /// `addToContainList(obj)`.
+    AddToContainList(ObjectId),
+    /// `removeFromContain(obj, exposeStealthUnits)`.
+    RemoveFromContainExposing { obj: ObjectId, expose_stealth_units: bool },
+    /// `killAllContained()`.
+    KillAllContained,
+    /// `harmAndForceExitAllContained(info)`; replies [`ModuleReply::Damage`].
+    HarmAndForceExitAllContained(DamageInfo),
+    /// `isValidContainerFor(obj, checkCapacity)`; replies [`ModuleReply::Bool`].
+    IsValidContainerFor { obj: ObjectId, check_capacity: bool },
+    /// `onContaining(obj, wasSelected)`.
+    OnContaining { obj: ObjectId, was_selected: bool },
+    /// `onRemoving(obj)`.
+    OnRemoving(ObjectId),
+    /// `onSelling()`.
+    OnSelling,
+    /// `getContainMax()`; replies [`ModuleReply::Int`].
+    GetContainMax,
+    /// `orderAllPassengersToExit(commandSource, instantly)`.
+    OrderAllPassengersToExit { command_source: i32, instantly: bool },
+    /// `orderAllPassengersToIdle(commandSource)`.
+    OrderAllPassengersToIdleFrom { command_source: i32 },
+    /// `orderAllPassengersToHackInternet(commandSource)`.
+    OrderAllPassengersToHackInternetFrom { command_source: i32 },
+    /// `markAllPassengersDetected()`.
+    MarkAllPassengersDetected,
+    /// `setPassengerAllowedToFire(permission)`.
+    SetPassengerAllowedToFire(bool),
+    /// `setOverrideDestination(pos)`.
+    SetOverrideDestination(Coord3D),
+    /// `isDisplayedOnControlBar()`; replies [`ModuleReply::Bool`].
+    IsDisplayedOnControlBar,
+    /// `getExtraSlotsInUse()`; replies [`ModuleReply::Int`].
+    GetExtraSlotsInUse,
+    /// `getContainedItemsMass()`; replies [`ModuleReply::Real`].
+    GetContainedItemsMass,
+    /// `getStealthUnitsContained()`; replies [`ModuleReply::Int`].
+    GetStealthUnitsContained,
+    /// `getPlayerWhoEntered()`; replies [`ModuleReply::Int`] (the mask).
+    GetPlayerWhoEntered,
+    /// `processDamageToContained(percentDamage)`.
+    ProcessDamageToContained(f32),
+    /// `enableLoadSounds(enable)`.
+    EnableLoadSounds(bool),
+    /// `setEvacDisposition(disp)`.
+    SetEvacDisposition(i32),
+    /// `isWeaponBonusPassedToPassengers()`; replies [`ModuleReply::Bool`].
+    IsWeaponBonusPassedToPassengers,
+    /// `getWeaponBonusPassedToPassengers()`; replies [`ModuleReply::Int`] (the flags).
+    GetWeaponBonusPassedToPassengers,
+    /// `isBustable()`; replies [`ModuleReply::Bool`].
+    IsBustable,
+    /// `isHealContain()`; replies [`ModuleReply::Bool`].
+    IsHealContain,
+    /// `isTunnelContain()`; replies [`ModuleReply::Bool`].
+    IsTunnelContain,
+    /// `isSpecialOverlordStyleContainer()`; replies [`ModuleReply::Bool`].
+    IsSpecialOverlordStyleContainer,
+    /// `isAnyRiderAttacking()`; replies [`ModuleReply::Bool`].
+    IsAnyRiderAttacking,
+    /// `clientVisibleContainedFlashAsSelected()`.
+    ClientVisibleContainedFlashAsSelected,
+    /// `recalcApparentControllingPlayer()`.
+    RecalcApparentControllingPlayer,
+    /// `onObjectWantsToEnterOrExit(obj, wants)`, `wants` an `ObjectEnterExitType`.
+    OnObjectWantsToEnterOrExit { obj: ObjectId, wants: i32 },
+    /// `hasObjectsWantingToEnterOrExit()`; replies [`ModuleReply::Bool`].
+    HasObjectsWantingToEnterOrExit,
+    /// `isExitBusy()`; replies [`ModuleReply::Bool`].
+    IsExitBusy,
+    /// `exitObjectViaDoor(obj, door)`.
+    ExitObjectViaDoor { obj: ObjectId, door: i32 },
+    /// `exitObjectInAHurry(obj)`.
+    ExitObjectInAHurry(ObjectId),
+    /// `setRallyPoint(pos)`.
+    SetRallyPoint(Coord3D),
+    /// `getRallyPoint()`; replies [`ModuleReply::Coord`] ([`ModuleReply::Unhandled`]: `NULL`).
+    GetRallyPoint,
+    /// `getNaturalRallyPoint(rallyPoint, offset)`; replies [`ModuleReply::Coord`].
+    GetNaturalRallyPoint,
+    // ---- the AI, physics and stealth calls the contain modules make on their riders ----
+    /// `aiIdle(commandSource)`.
+    AiIdleFrom { command_source: i32 },
+    /// `aiExit(container, commandSource)`.
+    AiExit { container: ObjectId, command_source: i32 },
+    /// `aiExitInstantly(container, commandSource)`.
+    AiExitInstantly { container: ObjectId, command_source: i32 },
+    /// `aiHackInternet(commandSource)`.
+    AiHackInternet { command_source: i32 },
+    /// `aiMoveToPosition(pos, commandSource)`.
+    AiMoveToPosition { pos: Coord3D, command_source: i32 },
+    /// `ignoreObstacle(obstacle)` (`INVALID_ID` for `NULL`).
+    AiIgnoreObstacle { obstacle: ObjectId },
+    /// `getEnterTarget()`; replies [`ModuleReply::Id`].
+    AiGetEnterTarget,
+    /// `setIgnoreCollisionTime(frames)`.
+    AiSetIgnoreCollisionTime { frames: i32 },
+    /// `aiFollowPath(path, ignoreObject, commandSource)`.
+    AiFollowPath { path: Vec<Coord3D>, ignore_object: ObjectId, command_source: i32 },
+    /// `doQuickExit(path)`.
+    AiDoQuickExit { path: Vec<Coord3D> },
+    /// `PhysicsBehavior::getMass()`; replies [`ModuleReply::Real`].
+    PhysicsGetMass,
+    /// `PhysicsBehavior::getAllowToFall()`; replies [`ModuleReply::Bool`].
+    PhysicsGetAllowToFall,
+    /// `StealthUpdate::markAsDetected()`.
+    StealthMarkAsDetected,
     /// `SpawnBehaviorInterface::getClosestSlave(pos)` (`HiveStructureBody`); replies [`ModuleReply::Id`] (`INVALID_ID`: no slave).
     GetClosestSlave(Coord3D),
     /// `ContainModuleInterface::getClosestRider(pos)` (`HiveStructureBody`); replies [`ModuleReply::Id`] (`INVALID_ID`: no rider).
