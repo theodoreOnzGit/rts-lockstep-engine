@@ -373,10 +373,17 @@ impl ParachuteContain {
         xfer.xfer_bool(&mut self.opened)
     }
 
-    /// The rider: the front of the module's own list when `getContainCount()` (the virtual) says there is one.
-    fn rider(&self, world: &World) -> ObjectId {
+    /// The rider: the front of the module's own list when `getContainCount()` (the virtual) says there is one. `front()` of an empty list (the count and
+    /// the list disagree) is undefined ([`Undefined::NullObject`], recorded).
+    fn rider(&self, world: &mut World, me: ModuleHandle) -> ObjectId {
         if self.get_contain_count(world) > 0 {
-            self.oc.contain_list().first().copied().unwrap_or(INVALID_ID)
+            match self.oc.contain_list().first() {
+                Some(&r) => r,
+                None => {
+                    undefined(world, me, Undefined::NullObject);
+                    INVALID_ID
+                }
+            }
         } else {
             INVALID_ID
         }
@@ -408,7 +415,7 @@ impl ParachuteContain {
 
         if self.need_to_update_rider_bones {
             self.need_to_update_rider_bones = false;
-            let rider = self.rider(world);
+            let rider = self.rider(world, me);
             if rider != INVALID_ID && world.has_drawable(rider) {
                 match world.contain_drawable_pristine_bone(rider, b"PARA_MAN") {
                     Some(p) => self.rider_attach_bone = p,
@@ -426,7 +433,7 @@ impl ParachuteContain {
     }
 
     /// `updateOffsetsFromBones()`: the bones in the world, as offsets from the objects.
-    fn update_offsets_from_bones(&mut self, world: &World, me: ModuleHandle) {
+    fn update_offsets_from_bones(&mut self, world: &mut World, me: ModuleHandle) {
         let us = me.object;
         let obj_pos = world.objects.find(us).map_or(ZERO, |o| o.get_position());
         let sub = |a: Coord3D, b: &Coord3D| Coord3D { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
@@ -434,7 +441,7 @@ impl ParachuteContain {
         self.para_sway_offset = sub(world.contain_convert_bone_pos_to_world_pos(us, &self.para_sway_bone), &obj_pos);
         self.para_attach_offset = sub(world.contain_convert_bone_pos_to_world_pos(us, &self.para_attach_bone), &obj_pos);
 
-        let rider = self.rider(world);
+        let rider = self.rider(world, me);
         if rider != INVALID_ID {
             let rider_pos = world.objects.find(rider).map_or(ZERO, |o| o.get_position());
             self.rider_attach_offset = sub(world.contain_convert_bone_pos_to_world_pos(rider, &self.rider_attach_bone), &rider_pos);
@@ -647,7 +654,7 @@ impl OpenContainVirtuals for ParachuteContain {
     fn on_die(&mut self, world: &mut World, me: ModuleHandle, info: &DamageInfo) {
         let us = me.object;
         if out(self, world, me, |w| w.is_significantly_above_terrain(us)) != crate::logic::modules::plant(1524) {
-            let rider = self.rider(world);
+            let rider = self.rider(world, me);
             if rider != INVALID_ID {
                 self.remove_all_contained(world, me, false);
                 let d = self.data.clone();
@@ -703,7 +710,7 @@ impl OpenContainVirtuals for ParachuteContain {
 
         let parachute_ai = world.objects.find(us).and_then(|o| o.ai);
         let d = self.data.clone();
-        let rider = self.rider(world);
+        let rider = self.rider(world, me);
         let pos = |w: &World| w.objects.find(us).map_or(ZERO, |o| o.get_position());
 
         if self.start_z == NO_START_Z {
@@ -779,7 +786,7 @@ impl OpenContainVirtuals for ParachuteContain {
                     // "damp the swaying a bunch when we get close, so that things land vertically (or nearly so)"
                     let mut altitude_damping = 0.0;
                     if self.get_contain_count(world) > 0 {
-                        let rider = self.oc.contain_list().first().copied().unwrap_or(INVALID_ID);
+                        let rider = self.rider(world, me);
                         const ALTITUDE_DAMP_START: f32 = 20.0;
                         if out(self, world, me, |w| w.get_height_above_terrain(rider)) <= ALTITUDE_DAMP_START {
                             altitude_damping = d.low_altitude_damping;

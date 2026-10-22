@@ -234,9 +234,10 @@ pub trait Xfer {
     /// `xferByte` (`Byte` is `char`, signed on the target).
     fn xfer_byte(&mut self, v: &mut i8) -> XferResult<()> {
         let mut b = v.to_le_bytes();
-        self.xfer_implementation(&mut b)?;
+        // `fread` copies the bytes there are before it fails: a short read leaves them in the value (batch R9)
+        let r = self.xfer_implementation(&mut b);
         *v = i8::from_le_bytes(b);
-        Ok(())
+        r
     }
     /// `xferUnsignedByte`.
     fn xfer_unsigned_byte(&mut self, v: &mut u8) -> XferResult<()> {
@@ -257,44 +258,50 @@ pub trait Xfer {
     /// `xferInt`.
     fn xfer_int(&mut self, v: &mut i32) -> XferResult<()> {
         let mut b = v.to_le_bytes();
-        self.xfer_implementation(&mut b)?;
+        // `fread` copies the bytes there are before it fails: a short read leaves them in the value (batch R9)
+        let r = self.xfer_implementation(&mut b);
         *v = i32::from_le_bytes(b);
-        Ok(())
+        r
     }
     /// `xferInt64`.
     fn xfer_int64(&mut self, v: &mut i64) -> XferResult<()> {
         let mut b = v.to_le_bytes();
-        self.xfer_implementation(&mut b)?;
+        // `fread` copies the bytes there are before it fails: a short read leaves them in the value (batch R9)
+        let r = self.xfer_implementation(&mut b);
         *v = i64::from_le_bytes(b);
-        Ok(())
+        r
     }
     /// `xferUnsignedInt`.
     fn xfer_unsigned_int(&mut self, v: &mut u32) -> XferResult<()> {
         let mut b = v.to_le_bytes();
-        self.xfer_implementation(&mut b)?;
+        // `fread` copies the bytes there are before it fails: a short read leaves them in the value (batch R9)
+        let r = self.xfer_implementation(&mut b);
         *v = u32::from_le_bytes(b);
-        Ok(())
+        r
     }
     /// `xferShort`.
     fn xfer_short(&mut self, v: &mut i16) -> XferResult<()> {
         let mut b = v.to_le_bytes();
-        self.xfer_implementation(&mut b)?;
+        // `fread` copies the bytes there are before it fails: a short read leaves them in the value (batch R9)
+        let r = self.xfer_implementation(&mut b);
         *v = i16::from_le_bytes(b);
-        Ok(())
+        r
     }
     /// `xferUnsignedShort`.
     fn xfer_unsigned_short(&mut self, v: &mut u16) -> XferResult<()> {
         let mut b = v.to_le_bytes();
-        self.xfer_implementation(&mut b)?;
+        // `fread` copies the bytes there are before it fails: a short read leaves them in the value (batch R9)
+        let r = self.xfer_implementation(&mut b);
         *v = u16::from_le_bytes(b);
-        Ok(())
+        r
     }
     /// `xferReal`: the raw IEEE-754 bits.
     fn xfer_real(&mut self, v: &mut f32) -> XferResult<()> {
         let mut b = v.to_bits().to_le_bytes();
-        self.xfer_implementation(&mut b)?;
+        // `fread` copies the bytes there are before it fails: a short read leaves them in the value (batch R9)
+        let r = self.xfer_implementation(&mut b);
         *v = f32::from_bits(u32::from_le_bytes(b));
-        Ok(())
+        r
     }
     /// `xferMarkerLabel`: purely for readability, discarded (a no-op in
     /// every upstream implementation).
@@ -364,9 +371,10 @@ pub trait Xfer {
     /// `xferColor`: `xferImplementation(color, sizeof(Color))`.
     fn xfer_color(&mut self, color: &mut Color) -> XferResult<()> {
         let mut b = color.to_le_bytes();
-        self.xfer_implementation(&mut b)?;
+        // `fread` copies the bytes there are before it fails: a short read leaves them in the value (batch R9)
+        let r = self.xfer_implementation(&mut b);
         *color = i32::from_le_bytes(b);
-        Ok(())
+        r
     }
     /// `xferRGBColor`.
     fn xfer_rgb_color(&mut self, c: &mut RGBColor) -> XferResult<()> {
@@ -391,16 +399,18 @@ pub trait Xfer {
     /// `xferObjectID`: `xferImplementation(objectID, sizeof(ObjectID))`.
     fn xfer_object_id(&mut self, id: &mut ObjectId) -> XferResult<()> {
         let mut b = id.to_le_bytes();
-        self.xfer_implementation(&mut b)?;
+        // `fread` copies the bytes there are before it fails: a short read leaves them in the value (batch R9)
+        let r = self.xfer_implementation(&mut b);
         *id = i32::from_le_bytes(b);
-        Ok(())
+        r
     }
     /// `xferDrawableID`.
     fn xfer_drawable_id(&mut self, id: &mut DrawableId) -> XferResult<()> {
         let mut b = id.to_le_bytes();
-        self.xfer_implementation(&mut b)?;
+        // `fread` copies the bytes there are before it fails: a short read leaves them in the value (batch R9)
+        let r = self.xfer_implementation(&mut b);
         *id = i32::from_le_bytes(b);
-        Ok(())
+        r
     }
     /// `xferSTLObjectIDVector` (version 1).
     fn xfer_stl_object_id_vector(&mut self, v: &mut Vec<ObjectId>) -> XferResult<()> {
@@ -445,9 +455,10 @@ pub trait Xfer {
             }
             XferMode::Crc => {
                 let mut b = kind.to_le_bytes();
-                self.xfer_implementation(&mut b)?;
+                // `fread` copies the bytes there are before it fails: a short read leaves them in the value (batch R9)
+                let r = self.xfer_implementation(&mut b);
                 *kind = KindOfType::from_le_bytes(b);
-                Ok(())
+                r
             }
             XferMode::Invalid => Err(XferStatus::ModeUnknown),
         }

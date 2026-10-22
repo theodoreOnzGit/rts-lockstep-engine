@@ -221,6 +221,8 @@ pub enum ModuleCall {
     AiLocomotorSetCloseEnoughDist3D(bool),
     /// `PhysicsBehavior::setIsInFreeFall(on)`.
     PhysicsSetIsInFreeFall(bool),
+    /// batch R9: `MobNexusContain::tryToEvacuate(exposeStealthedUnits)`; replies [`ModuleReply::Bool`].
+    TryToEvacuate { expose_stealthed_units: bool },
     /// `ExitInterface::useSpawnRallyPoint()`; replies [`ModuleReply::Bool`] (`FALSE` unless the module says otherwise, as upstream's default).
     UseSpawnRallyPoint,
     // --- end p1w13-sonnet ---

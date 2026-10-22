@@ -1853,6 +1853,7 @@ macro_rules! with_contain_body {
             UpdateBody::RiderChangeContain($m) => Some($e),
             UpdateBody::OverlordContain($m) => Some($e),
             UpdateBody::ParachuteContain($m) => Some($e),
+            UpdateBody::MobNexusContain($m) => Some($e),
             UpdateBody::HealContain($m) => Some($e),
             _ => None,
         }

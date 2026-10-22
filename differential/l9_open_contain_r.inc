@@ -74,6 +74,7 @@ static MessageStream *TheMessageStream = &g_ctMessageStream;
 /* batch R7, unchanged */
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/HealContain.cpp"
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/ParachuteContain.cpp"   /* batch R8 */
+#include "MobNexusContain_edit.cpp"   /* batch R9: its two reads of end() stop there (build.rs) */
 /* --- end p1w13-sonnet --- */
 #undef itoa
 
@@ -95,7 +96,7 @@ ModuleData *l9ctRead(const char *filename)
 		try {
 			/* --- p1w13-sonnet --- (batches R2, R3) */
 			const char c0 = currentLine.str()[0];
-			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : c0 == 'H' ? 4 : c0 == 'C' ? 5 : c0 == 'O' ? 6 : c0 == 'L' ? 7 : c0 == 'P' ? 8 : 0;
+			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : c0 == 'H' ? 4 : c0 == 'C' ? 5 : c0 == 'O' ? 6 : c0 == 'L' ? 7 : c0 == 'P' ? 8 : c0 == 'M' ? 9 : 0;
 			if (g_ctBlockCls == 1) data = TransportContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 2) data = InternetHackContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 3) data = RailedTransportContain::friend_newModuleData(&ini);
@@ -104,6 +105,7 @@ ModuleData *l9ctRead(const char *filename)
 			else if (g_ctBlockCls == 6) data = OverlordContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 7) data = HealContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 8) data = ParachuteContain::friend_newModuleData(&ini);   /* batch R8 */
+			else if (g_ctBlockCls == 9) data = MobNexusContain::friend_newModuleData(&ini);   /* batch R9 */
 			else data = OpenContain::friend_newModuleData(&ini);
 			/* --- end p1w13-sonnet --- */
 		} catch (...) {
@@ -600,7 +602,7 @@ void ctPutObject(CtObj *a)
 {
 	if (a->oc) {
 		OpenContain *oc = a->oc;
-		putU32(dynamic_cast<ParachuteContain *>(oc) ? 6 : dynamic_cast<OverlordContain *>(oc) ? 5 : dynamic_cast<RiderChangeContain *>(oc) ? 4 : dynamic_cast<HelixContain *>(oc) ? 3 : dynamic_cast<TransportContain *>(oc) ? 2 : 1);   /* batch R6: 5 an Overlord */   /* --- p1w13-sonnet --- (batches R2, R4, R5): 2 a transport, 3 a Helix, 4 a combat bike */
+		putU32(dynamic_cast<MobNexusContain *>(oc) ? 7 : dynamic_cast<ParachuteContain *>(oc) ? 6 : dynamic_cast<OverlordContain *>(oc) ? 5 : dynamic_cast<RiderChangeContain *>(oc) ? 4 : dynamic_cast<HelixContain *>(oc) ? 3 : dynamic_cast<TransportContain *>(oc) ? 2 : 1);   /* batch R6: 5 an Overlord */   /* --- p1w13-sonnet --- (batches R2, R4, R5): 2 a transport, 3 a Helix, 4 a combat bike */
 		putU32(oc->m_containListSize);
 		putU32((unsigned)oc->m_containList.size());
 		for (ContainedItemsList::const_iterator it = oc->m_containList.begin(); it != oc->m_containList.end(); ++it) putU32((unsigned)(*it)->m_oid);
@@ -649,6 +651,8 @@ void ctPutObject(CtObj *a)
 			if (OverlordContain *ovc = dynamic_cast<OverlordContain *>(oc)) putU32(ovc->m_redirectionActivated ? 1 : 0);   /* batch R6 */
 			if (RiderChangeContain *rc = dynamic_cast<RiderChangeContain *>(oc)) { putU32((unsigned)rc->m_extraSlotsInUse); putU32(rc->m_frameExitNotBusy); putU32(rc->m_scuttledOnFrame); }   /* batch R5: its own two, and the scuttle */
 		}
+		/* batch R9: a mob nexus's extra slots */
+		if (MobNexusContain *mc = dynamic_cast<MobNexusContain *>(oc)) putU32((unsigned)mc->m_extraSlotsInUse);
 		/* batch R8: a parachute's fields, in xfer order */
 		if (ParachuteContain *pc = dynamic_cast<ParachuteContain *>(oc)) {
 			putU32(realBits(pc->m_pitch)); putU32(realBits(pc->m_roll)); putU32(realBits(pc->m_pitchRate)); putU32(realBits(pc->m_rollRate)); putU32(realBits(pc->m_startZ));
@@ -799,6 +803,16 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			putU32(realBits(pd->m_pitchRateMax)); putU32(realBits(pd->m_rollRateMax)); putU32(realBits(pd->m_lowAltitudeDamping)); putU32(realBits(pd->m_paraOpenDist));
 			putU32(realBits(pd->m_freeFallDamagePercent)); putU32(realBits(pd->m_killWhenLandingInWaterSlop));
 			putStr(pd->m_parachuteOpenSound.getEventName().str(), pd->m_parachuteOpenSound.getEventName().getLength());
+		}
+		/* batch R9: 1 and a mob nexus block's fields, or 0 */
+		putU32(g_ctBlockCls == 9 ? 1u : 0u);
+		if (g_ctBlockCls == 9) {
+			const MobNexusContainModuleData *md = (const MobNexusContainModuleData *)d;
+			putU32((unsigned)md->m_slotCapacity); putU32(realBits(md->m_exitPitchRate));
+			putU32((md->m_scatterNearbyOnExit ? 1u : 0u) | (md->m_orientLikeContainerOnExit ? 2u : 0u) | (md->m_keepContainerVelocityOnExit ? 4u : 0u));
+			putStr(md->m_exitBone.str(), md->m_exitBone.getLength());
+			putStr(md->m_initialPayload.name.str(), md->m_initialPayload.name.getLength());
+			putU32((unsigned)md->m_initialPayload.count); putU32(realBits(md->m_healthRegen));
 		}
 		/* --- end p1w13-sonnet --- */
 	}
@@ -1017,6 +1031,19 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			TransportContainModuleData *tdata = 0;   /* --- p1w13-sonnet --- (batch R2: TransportContain) */
 			if (k == 0) a.data = (OpenContainModuleData *)d;
 			else {
+				if (o.cls == 9) {
+					/* batch R9: a mob nexus's data, with the transport's fields the scene gives (no payload: the factory would throw for a missing template) */
+					MobNexusContainModuleData *md = new MobNexusContainModuleData;
+					md->m_slotCapacity = o.slotCap;
+					md->m_healthRegen = ctF(o.regen);
+					md->m_exitPitchRate = ctF(o.pitch);
+					md->m_orientLikeContainerOnExit = (o.tflags & 1) != 0;
+					md->m_keepContainerVelocityOnExit = (o.tflags & 2) != 0;
+					md->m_scatterNearbyOnExit = (o.tflags & 64) != 0;
+					static const char *const kExitBoneM[3] = { "", "ExitBoneT", "Other" };
+					md->m_exitBone = kExitBoneM[o.exitBoneName % 3];
+					a.data = md;
+				} else
 				if (o.cls == 8) {
 					/* batch R8: a parachute's data (an OpenContainModuleData), its own fields at their defaults */
 					a.data = new ParachuteContainModuleData;
@@ -1116,6 +1143,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				else if (cls == 6) a.oc = new(ShimZeroFill{}) OverlordContain(a.obj, td);
 				else if (cls == 7) a.oc = new(ShimZeroFill{}) HealContain(a.obj, k == 0 ? d : (ModuleData *)a.data);
 				else if (cls == 8) a.oc = new(ShimZeroFill{}) ParachuteContain(a.obj, k == 0 ? d : (ModuleData *)a.data);   /* batch R8 */
+				else if (cls == 9) a.oc = new(ShimZeroFill{}) MobNexusContain(a.obj, k == 0 ? d : (ModuleData *)a.data);   /* batch R9 */
 				else
 				/* --- end p1w13-sonnet --- */
 				a.oc = new OpenContain(a.obj, a.data);
@@ -1284,6 +1312,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				case 58: if (oc2) oc2->onCollide(0, 0, 0); break;
 				case 59: if (oc2) { Coord3D p; p.x = ctF(o[2]); p.y = ctF(o[3]); p.z = ctF(o[4]); oc2->setOverrideDestination(&p); } break;
 				case 60: if (oc2) oc2->onDrawableBoundToObject(); break;
+				case 62: if (MobNexusContain *mc2 = dynamic_cast<MobNexusContain *>(oc2)) result = mc2->tryToEvacuate((o[2] & 1) != 0) ? 1 : 0; break;   /* batch R9 */
 				case 61: if (o[2] & 1) t->obj->m_disabledBits |= 1u << (unsigned)DISABLED_HELD; else t->obj->m_disabledBits &= ~(1u << (unsigned)DISABLED_HELD); break;
 				/* --- end p1w13-sonnet --- */
 				default: break;

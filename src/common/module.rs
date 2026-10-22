@@ -414,6 +414,8 @@ pub enum ModuleDataKind {
     OpenContain(Arc<crate::logic::modules::open_contain::OpenContainModuleData>),
     /// `TransportContainModuleData`.
     TransportContain(Arc<crate::logic::modules::transport_contain::TransportContainModuleData>),
+    /// `MobNexusContain`'s data.
+    MobNexusContain(Arc<crate::logic::modules::mob_nexus_contain::MobNexusContainModuleData>),
     /// `ParachuteContain`'s data.
     ParachuteContain(Arc<crate::logic::modules::parachute_contain::ParachuteContainModuleData>),
     /// `HealContain`'s data.
@@ -530,6 +532,7 @@ impl ModuleDataKind {
             ModuleDataKind::SlowDeathBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::OpenContain(d) => &d.update.behavior.module_data,
             ModuleDataKind::TransportContain(d) => &d.open.update.behavior.module_data,
+            ModuleDataKind::MobNexusContain(d) => &d.open.update.behavior.module_data,
             ModuleDataKind::ParachuteContain(d) => &d.open.update.behavior.module_data,
             ModuleDataKind::HealContain(d) => &d.open.update.behavior.module_data,
             ModuleDataKind::OverlordContain(d) => &d.transport.open.update.behavior.module_data,
@@ -928,6 +931,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::ParachuteContain(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.open.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::MobNexusContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.open.update.behavior.module_data.set_module_tag_name_key(key);
                     true

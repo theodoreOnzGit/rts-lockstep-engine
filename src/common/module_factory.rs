@@ -785,6 +785,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::parachute_contain::new_module_data),
             which_interfaces: Some(crate::logic::modules::parachute_contain::ParachuteContain::get_interface_mask()),
         }),
+        "MobNexusContain" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::mob_nexus_contain::new_module_data),
+            which_interfaces: Some(crate::logic::modules::mob_nexus_contain::MobNexusContain::get_interface_mask()),
+        }),
         "TransportContain" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::transport_contain::new_module_data),
@@ -826,6 +831,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::AutoDepositUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::OpenContain(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::TransportContain(d)) => Some(std::sync::Arc::new(d.open.update.clone())),
+        Some(ModuleDataKind::MobNexusContain(d)) => Some(std::sync::Arc::new(d.open.update.clone())),
         Some(ModuleDataKind::ParachuteContain(d)) => Some(std::sync::Arc::new(d.open.update.clone())),
         Some(ModuleDataKind::HealContain(d)) => Some(std::sync::Arc::new(d.open.update.clone())),
         Some(ModuleDataKind::OverlordContain(d)) => Some(std::sync::Arc::new(d.transport.open.update.clone())),

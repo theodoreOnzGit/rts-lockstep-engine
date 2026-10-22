@@ -745,6 +745,7 @@ impl ProbeModule {
                 ModuleReply::Done
             }
             ModuleCall::UseSpawnRallyPoint => ModuleReply::Bool(false),
+            ModuleCall::TryToEvacuate { .. } => ModuleReply::Unhandled,
             ModuleCall::AiLocomotorSway(k) => ModuleReply::Real(self.answers.locomotor_sway[usize::from(k) & 3]),
             ModuleCall::AiLocomotorSetUltraAccurate(on) => {
                 world.body_trace(format!("locoultra {} {}", me.object, i32::from(on)));

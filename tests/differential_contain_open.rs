@@ -840,7 +840,11 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     let heal = !transport && g.below(3) == 0;
     // batch R8: one plain block in two that is no heal container is a parachute's (`P`: the base's fields and its own)
     let parachute = !transport && !heal && g.below(2) == 0;
-    let token = if parachute {
+    // batch R9: one plain block in two of the rest is a mob nexus's (`M`)
+    let mob = !transport && !heal && !parachute && g.below(2) == 0;
+    let token = if mob {
+        "M\n"
+    } else if parachute {
         "P\n"
     } else if heal {
         "L\n"
@@ -869,6 +873,17 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
             }
         }
         field!(30, "ShouldDrawPips", gen_bool(g, clean));
+    }
+    if mob {
+        field!(60, "Slots", health_str(g, clean));
+        field!(30, "ScatterNearbyOnExit", gen_bool(g, clean));
+        field!(40, "OrientLikeContainerOnExit", gen_bool(g, clean));
+        field!(40, "KeepContainerVelocityOnExit", gen_bool(g, clean));
+        field!(40, "ExitBone", EXIT_BONES[1 + g.below(2) as usize].to_string());
+        field!(40, "ExitPitchRate", format!("{}", *pick(g, &[&0i32, &30, &90, &-45])));
+        // only templates that exist: a missing one throws out of `onObjectCreated`, at the scene's setup
+        field!(30, "InitialPayload", format!("{} {}", PAYLOADS[1 + g.below(2) as usize], *pick(g, &[&0i32, &1, &2])));
+        field!(40, "HealthRegen%PerSec", format!("{}", *pick(g, &[&0i32, &10, &50, &100])));
     }
     if parachute {
         field!(50, "PitchRateMax", format!("{}", *pick(g, &[&0i32, &30, &90, &-45])));
@@ -1004,7 +1019,7 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     // 0 OpenContain, 1 TransportContain, 2 InternetHackContain, 3 RailedTransportContain
     // 6 OverlordContain, 7 HealContain
     // 8 ParachuteContain (batch R8)
-    o.cls = if o.has_contain && k > 0 { g.below(9) } else { 0 };
+    o.cls = if o.has_contain && k > 0 { g.below(10) } else { 0 };
     o.raw_slots = *pick(g, &[&0i32, &1, &1, &1, &2, &3]);
     // upstream's airborne locomotor is the AI's
     o.airborne = o.has_ai && g.below(4) == 0;
@@ -1082,6 +1097,7 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> Vec<u32> {
                 Some(ModuleDataKind::OverlordContain(_)) => 6,
                 Some(ModuleDataKind::HealContain(_)) => 7,
                 Some(ModuleDataKind::ParachuteContain(_)) => 8,
+                Some(ModuleDataKind::MobNexusContain(_)) => 9,
                 _ => 0,
             };
         }
@@ -1134,9 +1150,13 @@ fn gen_ops(g: &mut Gen, n: u32) -> Vec<[u32; 5]> {
         } else if burst < 6 {
             // batch R2: the transport's own (49 to 55)
             [49 + g.below(9), c, a, g.below(10), g.below(10)]
-        } else if burst < 9 {
+        } else if burst < 12 {
             // batch R8: the parachute's (a collision with the ground, the override destination, the drawable bound, the held flag) and its update
-            match g.below(6) {
+            match g.below(9) {
+                6 => [62, c, g.below(2), 0, 0],
+                // batch R9: the capacity check (a mob nexus counts its extra slots), and a rider added to fill them
+                7 => [8, c, a, 1, 0],
+                8 => [0, c, a, 0, 0],
                 0 => [58, c, 0, 0, 0],
                 1 => [59, c, coord(g).to_bits(), coord(g).to_bits(), coord(g).to_bits()],
                 2 => [60, c, 0, 0, 0],
@@ -1270,6 +1290,13 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId, has_contain: bool) {
             // batch R5: a combat bike, 4 (the transport's words, its own two counters and the scuttle frame)
             Some(UpdateBody::RiderChangeContain(m)) => {
                 put_u32(v, 4);
+                for x in m.state_words() {
+                    put_u32(v, x);
+                }
+            }
+            // batch R9: a mob nexus, 7 (an OpenContain's words and the extra slots)
+            Some(UpdateBody::MobNexusContain(m)) => {
+                put_u32(v, 7);
                 for x in m.state_words() {
                     put_u32(v, x);
                 }
@@ -1587,6 +1614,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             ModuleDataKind::OverlordContain(r) => &r.transport.open,
             ModuleDataKind::HealContain(h) => &h.open,
             ModuleDataKind::ParachuteContain(p) => &p.open,
+            ModuleDataKind::MobNexusContain(m) => &m.open,
             _ => unreachable!("not a contain"),
         };
         put_u32(&mut v, d.contain_max as u32);
@@ -1696,6 +1724,19 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 put_u32(&mut v, x.to_bits());
             }
             put_str(&mut v, &p.parachute_open_sound.event_name);
+        } else {
+            put_u32(&mut v, 0);
+        }
+        // batch R9: 1 and a mob nexus block's fields, or 0
+        if let ModuleDataKind::MobNexusContain(m) = &data {
+            put_u32(&mut v, 1);
+            put_u32(&mut v, m.slot_capacity as u32);
+            put_u32(&mut v, m.exit_pitch_rate.to_bits());
+            put_u32(&mut v, u32::from(m.scatter_nearby_on_exit) | u32::from(m.orient_like_container_on_exit) << 1 | u32::from(m.keep_container_velocity_on_exit) << 2);
+            put_str(&mut v, &m.exit_bone);
+            put_str(&mut v, &m.initial_payload.name);
+            put_u32(&mut v, m.initial_payload.count as u32);
+            put_u32(&mut v, m.health_regen.to_bits());
         } else {
             put_u32(&mut v, 0);
         }
@@ -1847,7 +1888,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 data.clone()
             } else {
                 // a transport's base starts from `TransportContainModuleData()` (infantry allowed inside)
-                let base = if o.cls != 0 && o.cls != 7 && o.cls != 8 { TransportContainModuleData::default().open } else { OpenContainModuleData::default() };
+                let base = if o.cls == 9 {
+                    rts_lockstep_engine::logic::modules::mob_nexus_contain::MobNexusContainModuleData::default().open
+                } else if o.cls != 0 && o.cls != 7 && o.cls != 8 { TransportContainModuleData::default().open } else { OpenContainModuleData::default() };
                 let mut d = OpenContainModuleData { contain_max: o.contain_max, passengers_allowed_to_fire: o.allow_fire, passengers_in_turret: o.in_turret, number_of_exit_paths: o.exit_paths, damage_percentage_to_units: o.damage_pct, is_burned_death_to_units: o.burned, door_open_time: o.door_open, weapon_bonus_passed_to_passengers: o.weapon_pass, allow_allies_inside: o.allow_rel & 1 != 0, allow_enemies_inside: o.allow_rel & 2 != 0, allow_neutral_inside: o.allow_rel & 4 != 0, ..base };
                 if o.enter_snd > 0 {
                     d.enter_sound.event_name = format!("snd{}", o.enter_snd).into_bytes();
@@ -1878,7 +1921,19 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                         d.die_mux_data.required_status.set(STATUSES[i], 1);
                     }
                 }
-                if o.cls == 8 {
+                if o.cls == 9 {
+                    ModuleDataKind::MobNexusContain(Arc::new(rts_lockstep_engine::logic::modules::mob_nexus_contain::MobNexusContainModuleData {
+                        open: d,
+                        slot_capacity: o.slot_cap,
+                        health_regen: o.regen,
+                        exit_pitch_rate: o.pitch,
+                        orient_like_container_on_exit: o.tflags & 1 != 0,
+                        keep_container_velocity_on_exit: o.tflags & 2 != 0,
+                        scatter_nearby_on_exit: o.tflags & 64 != 0,
+                        exit_bone: EXIT_BONES[o.exit_bone_name as usize % 3].as_bytes().to_vec(),
+                        ..Default::default()
+                    }))
+                } else if o.cls == 8 {
                     ModuleDataKind::ParachuteContain(Arc::new(rts_lockstep_engine::logic::modules::parachute_contain::ParachuteContainModuleData { open: d, ..Default::default() }))
                 } else if o.cls == 7 {
                     ModuleDataKind::HealContain(Arc::new(rts_lockstep_engine::logic::modules::heal_contain::HealContainModuleData { open: d, frames_for_full_heal: o.heal_frames }))
@@ -1946,6 +2001,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 ModuleDataKind::OverlordContain(_) => b"OverlordContain",
                 ModuleDataKind::HealContain(_) => b"HealContain",
                 ModuleDataKind::ParachuteContain(_) => b"ParachuteContain",
+                ModuleDataKind::MobNexusContain(_) => b"MobNexusContain",
                 _ => b"OpenContain",
             };
             let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class, b"ModuleTag_Contain", &cd).unwrap().unwrap();
@@ -2058,7 +2114,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 info.input.amount = 10.0;
             }
             let fold3 = |p: &Coord3D| p.x.to_bits().wrapping_mul(31 * 31).wrapping_add(p.y.to_bits().wrapping_mul(31)).wrapping_add(p.z.to_bits());
-            if let Some(m) = m.filter(|_| o[0] < 34 || (42..=45).contains(&o[0]) || (47..=60).contains(&o[0])) {
+            if let Some(m) = m.filter(|_| o[0] < 34 || (42..=45).contains(&o[0]) || (47..=60).contains(&o[0]) || o[0] == 62) {
                 match o[0] {
                     0 => {
                         w.module_call(id, m, ModuleCall::AddToContain(rider));
@@ -2098,6 +2154,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                                 Some(UpdateBody::RiderChangeContain(c)) => Some(c.module_data().transport.open.die_mux_data),
                                 Some(UpdateBody::OverlordContain(c)) => Some(c.module_data().transport.open.die_mux_data),
                                 Some(UpdateBody::ParachuteContain(c)) => Some(c.module_data().open.die_mux_data),
+                                Some(UpdateBody::MobNexusContain(c)) => Some(c.module_data().open.die_mux_data),
                                 Some(UpdateBody::HealContain(c)) => Some(c.module_data().open.die_mux_data),
                                 _ => None,
                             };
@@ -2295,6 +2352,12 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     60 => {
                         w.module_call(id, m, ModuleCall::OnDrawableBoundToObject);
                     }
+                    // batch R9: MobNexusContain's own
+                    62 => {
+                        if let ModuleReply::Bool(b) = w.module_call(id, m, ModuleCall::TryToEvacuate { expose_stealthed_units: o[2] & 1 != 0 }) {
+                            result = u32::from(b);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -2447,6 +2510,12 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let w: Vec<u32> = (0..6).map(|_| r.u32()).collect();
         out.push(format!("parachute data {w:08x?} {}", r.str()));
     }
+    // batch R9: a mob nexus block's fields
+    if r.u32() != 0 {
+        let (slots, pitch, flags) = (r.u32(), r.u32(), r.u32());
+        let (bone, payload) = (r.str(), r.str());
+        out.push(format!("mob data {slots} {pitch:08x} {flags} {bone} {payload} {} {:08x}", r.u32(), r.u32()));
+    }
     let n_obj = r.u32();
     for i in 0..=n_ops {
         if r.at_end() {
@@ -2486,7 +2555,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
                 for _ in 0..map * 2 {
                     state.push(r.u32());
                 }
-                for _ in 0..match has { 2 => 6, 3 | 5 => 7, 4 => 9, 6 => 3 + 36, _ => 3 } {
+                for _ in 0..match has { 2 => 6, 3 | 5 => 7, 4 => 9, 6 => 3 + 36, 7 => 4, _ => 3 } {
                     state.push(r.u32());
                 }
             }
@@ -2560,6 +2629,12 @@ fn read_heal_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniRe
     Ok(())
 }
 
+// batch R9
+fn read_mob_nexus_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
+    *out = Some(rts_lockstep_engine::logic::modules::mob_nexus_contain::new_module_data(Some(ini))?);
+    Ok(())
+}
+
 // batch R8
 fn read_parachute_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
     *out = Some(rts_lockstep_engine::logic::modules::parachute_contain::new_module_data(Some(ini))?);
@@ -2572,7 +2647,7 @@ fn read_railed_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> Ini
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }, BlockParse { token: "C", parse: read_rider_change_block }, BlockParse { token: "O", parse: read_overlord_block }, BlockParse { token: "L", parse: read_heal_block }, BlockParse { token: "P", parse: read_parachute_block }];
+    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }, BlockParse { token: "C", parse: read_rider_change_block }, BlockParse { token: "O", parse: read_overlord_block }, BlockParse { token: "L", parse: read_heal_block }, BlockParse { token: "P", parse: read_parachute_block }, BlockParse { token: "M", parse: read_mob_nexus_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)

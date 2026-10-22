@@ -3263,6 +3263,17 @@ mod differential {
                 assert_eq!(text.matches(wh).count(), 1, "OverlordContain.cpp: the `while( *it )` loop must occur once");
                 assert!(text.contains("const ContainedItemsList* items = TransportContain::getContainedItemsList();"), "OverlordContain.cpp: the loop is over items");
                 std::fs::write(mod_gen.join("OverlordContain_edit.cpp"), text.replace(wh, "while( it != items->end() )")).expect("write OverlordContain_edit.cpp");
+                // batch R9: MobNexusContain.cpp reads `end()` twice: `if( *it )` of `begin()` of an empty special zero-slot rider's list
+                // (isValidContainerFor) and update's `while( *it )` after the last rider; both stop at `end()` (the Rust side records
+                // `Undefined::EndIteratorDereferenced`), asserted once each, into mod_gen/MobNexusContain_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Contain/MobNexusContain.cpp");
+                let text = std::fs::read_to_string(&path).expect("read MobNexusContain.cpp");
+                let iff = "if( *it )";
+                assert_eq!(text.matches(iff).count(), 1, "MobNexusContain.cpp: `if( *it )` must occur once");
+                assert_eq!(text.matches(wh).count(), 1, "MobNexusContain.cpp: `while( *it )` must occur once");
+                let edited = text.replace(iff, "if( it != items->end() && *it )").replace(wh, "while( it != items->end() )");
+                std::fs::write(mod_gen.join("MobNexusContain_edit.cpp"), edited).expect("write MobNexusContain_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
                 println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
