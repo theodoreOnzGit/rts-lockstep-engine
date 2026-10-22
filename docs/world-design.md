@@ -626,6 +626,20 @@ same pieces, each in its translator's marked block:
     and dump helpers, and the REAL `UpgradeCenter` and `INI`. The Rust side is
     the real `World`, not a twin.
 <!-- --- end p1l9-example --- -->
+<!-- --- p1w13-sonnet --- -->
+12. **A class hierarchy of modules** (batches R and R2: `OpenContain` ->
+    `TransportContain` -> `RailedTransport`, `Helix`, ...): the virtuals of
+    the base class are a trait (`OpenContainVirtuals`), and every base
+    function is a generic free function over it (`open_contain::base_*`), so
+    a call the base makes through `this` reaches the derived override. A
+    derived class holds its base by value, implements the base's trait (its
+    overrides call its own `tc_*` functions, the rest default to the base's),
+    and adds its own virtuals as a trait extending the base's
+    (`TransportContainVirtuals: OpenContainVirtuals`). The derived class's
+    differential test extends the base's (one driver, one scene, more fields
+    and ops) rather than starting a new one, so the base's paths are run
+    again through the derived class's overrides.
+<!-- --- end p1w13-sonnet --- -->
 ## Open item (2026-10-20): Object still keeps team state in `ObjectCuts`
 
 The translated Team unit (`team.rs`, `team_ops.rs`, `team_xfer.rs`) reaches objects only through `TeamHost`.

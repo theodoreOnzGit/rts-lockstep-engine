@@ -44,7 +44,7 @@
 //!
 //! # Planted bugs
 //!
-//! `L9_PLANT=<id>` flips one branch of `open_contain.rs`; each must make the test fail at 9,000 cases (all 37 below were caught, as mismatches or a crash):
+//! `L9_PLANT=<id>` flips one branch of `open_contain.rs` or `transport_contain.rs`; each must make the test fail at 9,000 cases (all 37 of batch R below were caught, as mismatches or a crash):
 //!
 //! | id | planted bug |
 //! |---|---|
@@ -86,8 +86,37 @@
 //! | 1407 | `instantly` inverted |
 //! | 1408 | money hacker test always true |
 //!
-//! Not planted, unobservable here: the `wasSelected` argument of `onContaining` (1375, removed). `OpenContain::onContaining` ignores it; `TransportContain` and `GarrisonContain` use it, and
-//! their tests will catch it.
+//! Batch R2, `transport_contain.rs` (at 9,000 cases, 20 of the 22 caught; the generator was widened for 1413, 1426 and 1430, which survived the first run, and the
+//! 37 above were run again on the widened generator and are still all caught):
+//!
+//! | id | planted bug |
+//! |---|---|
+//! | 1411 | a zero-slot rider not replaced by its first passenger (SURVIVES: the scene has no zero-slot container; `ParachuteContain`'s test will see it) |
+//! | 1412 | controlling-player test inverted |
+//! | 1413 | `m_extraSlotsInUse` left out of the capacity check |
+//! | 1414 | the damage-weapon test inverted |
+//! | 1415 | the weapon set flag not cleared when no rider is armed |
+//! | 1416 | the rider not `DISABLED_HELD` |
+//! | 1417 | the Jarmen Kell transfer on the way in skipped |
+//! | 1418 | `orientLikeContainerOnExit` inverted |
+//! | 1419 | the motive force's z not scaled by the mass |
+//! | 1420 | the above-terrain test inverted |
+//! | 1421 | the scatter-when-dead test inverted |
+//! | 1422 | the exit delay ignored |
+//! | 1423 | the Jarmen Kell transfer on the way out reversed |
+//! | 1424 | the payload never added (SURVIVES: the test's factory makes nothing; see "Method") |
+//! | 1425 | no healing |
+//! | 1426 | riders at full health healed |
+//! | 1427 | `destroyRidersWhoAreNotFreeToExit` inverted |
+//! | 1428 | the free-to-exit test inverted |
+//! | 1429 | the movement terrain test dropped |
+//! | 1430 | the infantry test of `isPassengerAllowedToFire` inverted |
+//! | 1431 | `isExitBusy` on the frame itself |
+//! | 1432 | the `DISABLED_UNMANNED` test of `onCapture` inverted |
+//!
+//! Not planted, unobservable here: the `wasSelected` argument of `onContaining` (1375, removed). `OpenContain::onContaining` ignores it; ~~`TransportContain` and `GarrisonContain` use it, and
+//! their tests will catch it~~ **CORRECTED 2026-10-22 (batch R2)**: `TransportContain::onContaining` only hands it to the base, so it is unobservable there too;
+//! of the contain family only `RiderChangeContain` reads it (it reselects the container), so its test is the one that can catch it.
 //!
 //! # Deviations the test cannot see
 //!
