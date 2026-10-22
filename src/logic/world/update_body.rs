@@ -48,6 +48,9 @@ use crate::logic::world::module_probe::ProbeModule;
 // --- end p1w6-object ---
 
 /// The concrete update modules. See the module docs.
+// One value per module slot; the containers' variants (`OpenContain` holds its 32 fire-point matrices inline, as upstream) are much larger than
+// most. Boxing them would add a heap indirection to every call into a container for a memory saving that does not matter at module counts.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum UpdateBody {
     /// The scripted module of the tests and of `docs/world-design.md`.

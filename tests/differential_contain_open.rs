@@ -30,6 +30,53 @@
 //! Compared, bit for bit: the read's throw; the data; per op the throw status, a result word, the effects in order, the xfer status, bytes and CRC, and the state of
 //! every object (the container's lists, counters, fire points, rally point and flags; the place, the container, the statuses).
 //!
+//! # Planted bugs
+//!
+//! `L9_PLANT=<id>` flips one branch of `open_contain.rs`; each must make the test fail at 9,000 cases (all 37 below were caught, as mismatches or a crash):
+//!
+//! | id | planted bug |
+//! |---|---|
+//! | 1371 | `allow_allies_inside` test inverted |
+//! | 1372 | neutral objects judged by `allow_enemies_inside` |
+//! | 1373 | `forbid_inside_kind_of` ignored |
+//! | 1374 | `player_entered_mask` ORed instead of set |
+//! | 1376 | the already-contained refusal of `addToContain` dropped |
+//! | 1377 | `STEALTH_GARRISON` count not kept |
+//! | 1378 | the `containedBy != me` refusal of `removeFromContain` dropped |
+//! | 1379 | `exposeStealthUnits` inverted |
+//! | 1380 | `setLayer` on removal skipped |
+//! | 1381 | `kill` of a contained object skipped |
+//! | 1382 | harm: damage before removal instead of after |
+//! | 1383 | load sound frame guard `||` |
+//! | 1384 | `lastUnloadSoundFrame` not stored |
+//! | 1385 | closest exit picks the farthest |
+//! | 1386 | scatter radius 2x instead of 1.5x |
+//! | 1387 | no-AI exit lands at the container |
+//! | 1388 | controlling-player comparison inverted |
+//! | 1389 | `isValidContainerFor` check dropped on collide |
+//! | 1390 | burned/normal death type swapped |
+//! | 1391 | percent-damage kill threshold 0.5 |
+//! | 1392 | `onObjectWantsToEnterOrExit` always takes the container path |
+//! | 1393 | drawable not hidden |
+//! | 1394 | `removeAllContained(true)` for the wrong flag |
+//! | 1395 | contained mass is the maximum, not the sum |
+//! | 1396 | door closes one frame early |
+//! | 1397 | `playerEnteredMask` not cleared on update |
+//! | 1398 | effectively dead riders kept |
+//! | 1399 | condition-state change ignored |
+//! | 1400 | order-all-exit iterates forward |
+//! | 1401 | fire point number padding at 9 |
+//! | 1402 | fire point wraps one early |
+//! | 1403 | exit bone number padding at 9 |
+//! | 1404 | exit path counter from 0 |
+//! | 1405 | idle test accepts any vehicle |
+//! | 1406 | exit path has one point |
+//! | 1407 | `instantly` inverted |
+//! | 1408 | money hacker test always true |
+//!
+//! Not planted, unobservable here: the `wasSelected` argument of `onContaining` (1375, removed). `OpenContain::onContaining` ignores it; `TransportContain` and `GarrisonContain` use it, and
+//! their tests will catch it.
+//!
 //! # Deviations the test cannot see
 //!
 //! The Object-level calls that cascade are stubbed on the Rust side (`onContainedBy`, `onRemovedFrom`, `kill`, `attemptDamage`, `setPosition`, `setLayer`,
@@ -983,9 +1030,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         if !fps.is_empty() {
             w.cuts.contain.fire_points.insert(id, fps);
         }
-        for j in 0..NB {
+        for (j, bone) in BONES.iter().enumerate() {
             if o.bone_has[j] {
-                w.cuts.contain.single_bones.insert((id, BONES[j].as_bytes().to_vec()), Coord3D { x: o.bone[j][0], y: o.bone[j][1], z: o.bone[j][2] });
+                w.cuts.contain.single_bones.insert((id, bone.as_bytes().to_vec()), Coord3D { x: o.bone[j][0], y: o.bone[j][1], z: o.bone[j][2] });
             }
         }
         for j in 0..FP {
@@ -1028,22 +1075,22 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 }
                 if o.allow_mode != 0 {
                     d.allow_inside_kind_of = KindOfMaskType::new();
-                    for i in 0..8 {
+                    for (i, &k) in KINDS.iter().enumerate() {
                         if o.allow_mask >> i & 1 != 0 {
-                            d.allow_inside_kind_of.set(KINDS[i], 1);
+                            d.allow_inside_kind_of.set(k, 1);
                         }
                     }
                 }
-                for i in 0..8 {
+                for (i, &k) in KINDS.iter().enumerate() {
                     if o.forbid_mask >> i & 1 != 0 {
-                        d.forbid_inside_kind_of.set(KINDS[i], 1);
+                        d.forbid_inside_kind_of.set(k, 1);
                     }
                 }
                 d.die_mux_data.death_types = o.death_mask;
                 d.die_mux_data.veterancy_levels = o.vet_mask;
-                for i in 0..3 {
+                for (i, &st) in STATUSES.iter().enumerate() {
                     if o.exempt_mask >> i & 1 != 0 {
-                        d.die_mux_data.exempt_status.set(STATUSES[i], 1);
+                        d.die_mux_data.exempt_status.set(st, 1);
                     }
                     if o.required_mask >> i & 1 != 0 {
                         d.die_mux_data.required_status.set(STATUSES[i], 1);
@@ -1075,9 +1122,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             w.reads.local_selection.push(id);
         }
         let mut flags = ModelConditionFlags::new();
-        for i in 0..6 {
+        for (i, &c) in CONDS.iter().enumerate() {
             if o.cond >> i & 1 != 0 {
-                flags.set(CONDS[i], 1);
+                flags.set(c, 1);
             }
         }
         w.reads.drawable_model_condition.insert(id, flags);
@@ -1319,9 +1366,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 }
                 36 => {
                     let mut flags = ModelConditionFlags::new();
-                    for i in 0..6 {
+                    for (i, &c) in CONDS.iter().enumerate() {
                         if o[2] >> i & 1 != 0 {
-                            flags.set(CONDS[i], 1);
+                            flags.set(c, 1);
                         }
                     }
                     w.reads.drawable_model_condition.insert(id, flags);

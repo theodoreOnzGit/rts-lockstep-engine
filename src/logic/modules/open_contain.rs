@@ -810,7 +810,7 @@ pub fn base_add_to_contain<T: OpenContainVirtuals>(t: &mut T, world: &mut World,
     }
 
     let rider_draw = world.objects.find(rider).is_some_and(|o| o.drawable != crate::common::game_type::INVALID_DRAWABLE_ID);
-    let was_selected = rider_draw && world.reads.local_selection.contains(&rider) && !crate::logic::modules::plant(1375);
+    let was_selected = rider_draw && world.reads.local_selection.contains(&rider);
 
     // this object cannot be contained by this module if it is already contained in something
     if world.objects.find(rider).is_some_and(|o| o.contained_by != INVALID_ID) && !crate::logic::modules::plant(1376) {
@@ -1349,7 +1349,7 @@ pub fn base_exit_object_via_door<T: OpenContainVirtuals>(t: &mut T, world: &mut 
             exit_ai_prologue(t, world, me, my_ai);
             out(t, world, me, |w| w.module_call(exit_obj, ai, ModuleCall::AiIgnoreObstacle { obstacle: INVALID_ID }));
             // the units often come out at the same position, and need to ignore collisions briefly as they move out. jba.
-            out(t, world, me, |w| w.module_call(exit_obj, ai, ModuleCall::AiSetIgnoreCollisionTime { frames: LOGICFRAMES_PER_SECOND as i32 }));
+            out(t, world, me, |w| w.module_call(exit_obj, ai, ModuleCall::AiSetIgnoreCollisionTime { frames: LOGICFRAMES_PER_SECOND }));
             out(t, world, me, |w| w.contain_pathfind_adjust_to_possible_destination(exit_obj, &mut end_position));
         }
         let mut exit_path = if crate::logic::modules::plant(1406) { vec![end_position] } else { vec![end_position, end_position] }; // do it twice, in case units stack up due to brief flying. jba.
@@ -1445,7 +1445,7 @@ pub fn base_exit_object_in_a_hurry<T: OpenContainVirtuals>(t: &mut T, world: &mu
             exit_ai_prologue(t, world, me, my_ai);
             out(t, world, me, |w| w.module_call(exit_obj, ai, ModuleCall::AiIgnoreObstacle { obstacle: INVALID_ID }));
             // the units often come out at the same position, and need to ignore collisions briefly as they move out. jba.
-            out(t, world, me, |w| w.module_call(exit_obj, ai, ModuleCall::AiSetIgnoreCollisionTime { frames: LOGICFRAMES_PER_SECOND as i32 }));
+            out(t, world, me, |w| w.module_call(exit_obj, ai, ModuleCall::AiSetIgnoreCollisionTime { frames: LOGICFRAMES_PER_SECOND }));
             out(t, world, me, |w| w.contain_pathfind_adjust_to_possible_destination(exit_obj, &mut end_position));
         }
         exit_path.push(end_position);
