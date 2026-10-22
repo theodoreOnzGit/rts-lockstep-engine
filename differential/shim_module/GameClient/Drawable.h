@@ -58,6 +58,17 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	Bool isSelected() const { return m_selected; }
 	void setDrawableHidden(Bool hidden);
 	const ModelConditionFlags &getModelConditionFlags() const { return m_condFlags; }
+	/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+	/* the transport's exit bone: one named ExitBoneT, at a world position, if the scene gives the art one */
+	Int getPristineBonePositions(const char* boneNamePrefix, Int startIndex, Coord3D* positions, Matrix3D* transforms, Int maxBones) const
+	{
+		if (!m_exitBoneHas || strcmp(boneNamePrefix, "ExitBoneT") != 0 || maxBones < 1) return 0;
+		if (positions) positions[0] = m_exitBone;
+		return 1;
+	}
+	Bool m_exitBoneHas = false;
+	Coord3D m_exitBone;
+	/* --- end p1w13-sonnet --- */
 	Bool m_selected = false;
 	ModelConditionFlags m_condFlags;
 	/* --- end p1w13-sonnet --- */ };

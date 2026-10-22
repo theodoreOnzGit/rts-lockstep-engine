@@ -46,13 +46,19 @@ void roDestroyHook(Object *obj)
 
 }  // namespace
 
+/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+const ThingTemplate *(*g_findTemplateHook)(const AsciiString &name) = 0;
+Object *(*g_newObjectHook)(const ThingTemplate *tmplate, Team *team) = 0;
+/* --- end p1w13-sonnet --- */
 const ThingTemplate *ThingFactory::findTemplate(const AsciiString &name, Bool check)
 {
+	if (g_findTemplateHook) return g_findTemplateHook(name);   /* --- p1w13-sonnet --- (batch R2: TransportContain) */
 	for (int i = 0; i < 3; ++i) if (g_roTmpl[i].defined && strcmp(name.str(), g_roTmpl[i].name) == 0) return (const ThingTemplate *)&g_roTmpl[i];
 	return 0;
 }
 Object *ThingFactory::newObject(const ThingTemplate *tmplate, Team *team, ObjectStatusMaskType statusMask)
 {
+	if (g_newObjectHook) { if (tmplate == NULL) throw ERROR_BAD_ARG; return g_newObjectHook(tmplate, team); }   /* p1w13-sonnet, batch R2: the throw is ThingFactory.cpp:307-308, verbatim */
 	const RoTmpl *t = (const RoTmpl *)tmplate;
 	int ti = (int)(t - g_roTmpl);
 	Object *o = new Object;

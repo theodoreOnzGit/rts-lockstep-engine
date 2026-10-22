@@ -111,6 +111,9 @@ use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
 use rts_lockstep_engine::logic::damage::*;
 use rts_lockstep_engine::logic::modules::open_contain::{OpenContain, OpenContainModuleData};
+use rts_lockstep_engine::logic::modules::transport_contain::{InitialPayload, TransportContainModuleData};
+use rts_lockstep_engine::logic::world::object_cuts::WeaponSlotFacts;
+use std::collections::BTreeMap;
 use rts_lockstep_engine::logic::world::body_cuts::info_line;
 use rts_lockstep_engine::logic::world::contain_cuts::ContainCall;
 use rts_lockstep_engine::logic::world::game_logic::World;
@@ -236,7 +239,39 @@ struct Obj {
     bone: [[f32; 3]; NB],
     turret_has: [bool; FP],
     turret: [[f32; 3]; FP],
+    // batch R2 (TransportContain): the words after the turret bones, in the driver's order
+    /// 1: the container is a `TransportContain` (the first object's class is the data block's)
+    cls: u32,
+    raw_slots: i32,
+    airborne: bool,
+    free_to_exit: i32,
+    has_loco: bool,
+    valid_terrain: bool,
+    com: f32,
+    vel: [f32; 3],
+    /// per weapon slot s: bit 3s has a weapon, 3s+1 contact, 3s+2 damage
+    weapons: u32,
+    unmanned: bool,
+    /// bit 0 CLIFF_JUMPER, 1 HERO, 2 SALVAGER
+    extra_kinds: u32,
+    exit_bone_has: bool,
+    exit_bone: [f32; 3],
+    slot_cap: i32,
+    regen: f32,
+    exit_delay: u32,
+    /// bit 1 orient, 2 keep velocity, 4 aggressive, 8 armed riders upgrade, 16 reset mood, 32 destroy riders, 64 delay exit in air
+    tflags: u32,
+    pitch: f32,
+    payload_count: i32,
+    /// index into [`PAYLOADS`]
+    payload_name: u32,
+    /// index into [`EXIT_BONES`]
+    exit_bone_name: u32,
 }
+
+/// The payload template names and exit bone names a scene-built transport can name (the driver's `kPayload` and `kExitBone`).
+const PAYLOADS: [&str; 4] = ["", "T1", "T2", "Nope"];
+const EXIT_BONES: [&str; 3] = ["", "ExitBoneT", "Other"];
 
 impl Obj {
     fn write(&self, w: &mut W) {
@@ -309,6 +344,31 @@ impl Obj {
                 w.f(p);
             }
         }
+        w.u(self.cls);
+        w.s(self.raw_slots);
+        w.u(u32::from(self.airborne));
+        w.s(self.free_to_exit);
+        w.u(u32::from(self.has_loco));
+        w.u(u32::from(self.valid_terrain));
+        w.f(self.com);
+        for p in self.vel {
+            w.f(p);
+        }
+        w.u(self.weapons);
+        w.u(u32::from(self.unmanned));
+        w.u(self.extra_kinds);
+        w.u(u32::from(self.exit_bone_has));
+        for p in self.exit_bone {
+            w.f(p);
+        }
+        w.s(self.slot_cap);
+        w.f(self.regen);
+        w.u(self.exit_delay);
+        w.u(self.tflags);
+        w.f(self.pitch);
+        w.s(self.payload_count);
+        w.u(self.payload_name);
+        w.u(self.exit_bone_name);
     }
 
     fn read(r: &mut R<'_>) -> Obj {
@@ -382,6 +442,31 @@ impl Obj {
                 *p = r.f();
             }
         }
+        o.cls = r.u();
+        o.raw_slots = r.s();
+        o.airborne = r.u() != 0;
+        o.free_to_exit = r.s();
+        o.has_loco = r.u() != 0;
+        o.valid_terrain = r.u() != 0;
+        o.com = r.f();
+        for p in o.vel.iter_mut() {
+            *p = r.f();
+        }
+        o.weapons = r.u();
+        o.unmanned = r.u() != 0;
+        o.extra_kinds = r.u();
+        o.exit_bone_has = r.u() != 0;
+        for p in o.exit_bone.iter_mut() {
+            *p = r.f();
+        }
+        o.slot_cap = r.s();
+        o.regen = r.f();
+        o.exit_delay = r.u();
+        o.tflags = r.u();
+        o.pitch = r.f();
+        o.payload_count = r.s();
+        o.payload_name = r.u();
+        o.exit_bone_name = r.u();
         o
     }
 }
@@ -488,10 +573,28 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     field!(25, "VeterancyLevels", signed_list(g, &["VETERAN", "ELITE", "HEROIC"], clean));
     field!(25, "ExemptStatus", name_list(g, &STATUS_NAMES, clean));
     field!(25, "RequiredStatus", name_list(g, &STATUS_NAMES, clean));
+    // batch R2: one block in two is a `TransportContain` (`T`), with its own fields after the base's
+    let transport = g.below(2) == 0;
+    if transport {
+        field!(60, "Slots", health_str(g, clean));
+        field!(30, "ScatterNearbyOnExit", gen_bool(g, clean));
+        field!(40, "OrientLikeContainerOnExit", gen_bool(g, clean));
+        field!(40, "KeepContainerVelocityOnExit", gen_bool(g, clean));
+        field!(40, "GoAggressiveOnExit", gen_bool(g, clean));
+        field!(30, "ResetMoodCheckTimeOnExit", gen_bool(g, clean));
+        field!(40, "DestroyRidersWhoAreNotFreeToExit", gen_bool(g, clean));
+        field!(40, "ExitBone", EXIT_BONES[1 + g.below(2) as usize].to_string());
+        field!(40, "ExitPitchRate", format!("{}", *pick(g, &[&0i32, &30, &90, &-45])));
+        field!(40, "InitialPayload", format!("{} {}", PAYLOADS[1 + g.below(3) as usize], *pick(g, &[&0i32, &1, &2, &3])));
+        field!(40, "HealthRegen%PerSec", format!("{}", *pick(g, &[&0i32, &10, &50, &100])));
+        field!(40, "ExitDelay", format!("{}", *pick(g, &[&0i32, &33, &100, &1000])));
+        field!(40, "ArmedRidersUpgradeMyWeaponSet", gen_bool(g, clean));
+        field!(40, "DelayExitInAir", gen_bool(g, clean));
+    }
     if !clean && g.below(12) == 0 {
         lines.push(format!("Bogus{}1", gen_sep(g)));
     }
-    let mut s = String::from("D\n");
+    let mut s = String::from(if transport { "T\n" } else { "D\n" });
     for l in &lines {
         s.push_str(gen_indent(g));
         s.push_str(l);
@@ -579,6 +682,32 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
             *p = coord(g);
         }
     }
+    o.cls = if o.has_contain && k > 0 { g.below(2) } else { 0 };
+    o.raw_slots = *pick(g, &[&0i32, &1, &1, &1, &2, &3]);
+    // upstream's airborne locomotor is the AI's
+    o.airborne = o.has_ai && g.below(4) == 0;
+    o.free_to_exit = *pick(g, &[&0i32, &0, &1, &2]);
+    o.has_loco = g.below(4) != 0;
+    o.valid_terrain = g.below(4) != 0;
+    o.com = *pick(g, &[&0.0f32, &0.5, &-1.0, &2.0]);
+    for p in o.vel.iter_mut() {
+        *p = coord(g);
+    }
+    o.weapons = g.below(512);
+    o.unmanned = g.below(5) == 0;
+    o.extra_kinds = if g.below(3) == 0 { 7 } else { g.below(8) & g.below(8) };
+    o.exit_bone_has = g.below(2) == 0;
+    for p in o.exit_bone.iter_mut() {
+        *p = coord(g);
+    }
+    o.slot_cap = *pick(g, &[&0i32, &1, &2, &3, &5]);
+    o.regen = *pick(g, &[&0.0f32, &0.0, &10.0, &50.0]);
+    o.exit_delay = *pick(g, &[&0u32, &0, &1, &5, &100]);
+    o.tflags = g.below(128);
+    o.pitch = *pick(g, &[&0.0f32, &0.5, &-1.0]);
+    o.payload_count = *pick(g, &[&0i32, &0, &0, &1, &2]);
+    o.payload_name = g.below(4);
+    o.exit_bone_name = g.below(3);
     o
 }
 
@@ -590,7 +719,11 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> Vec<u32> {
     w.u(g.u32());
     w.u(n as u32);
     for k in 0..n {
-        gen_obj(g, k, n).write(&mut w);
+        let mut o = gen_obj(g, k, n);
+        if k == 0 {
+            o.cls = u32::from(matches!(_data, Some(ModuleDataKind::TransportContain(_))));
+        }
+        o.write(&mut w);
     }
     for i in 0..n {
         for j in 0..n {
@@ -617,6 +750,9 @@ fn gen_ops(g: &mut Gen, n: u32) -> Vec<[u32; 5]> {
         let burst = g.below(24);
         let op = if burst < 2 {
             [47 + burst, c, a, g.below(16), g.below(2)]
+        } else if burst < 6 {
+            // batch R2: the transport's own (49 to 55)
+            [49 + g.below(7), c, a, g.below(10), g.below(10)]
         } else {
             gen_op(g, c, a)
         };
@@ -701,11 +837,20 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId, has_contain: bool) {
         let o = w.objects.find(id).unwrap();
         let idx = o.contain.expect("the container");
         let u = o.modules[idx as usize].update_index.expect("an update module");
-        let Some(UpdateBody::OpenContain(m)) = o.behaviors[u as usize].body.as_ref() else {
-            panic!("the container is in its slot");
-        };
-        put_u32(v, 1);
-        put_words_state(v, m);
+        match o.behaviors[u as usize].body.as_ref() {
+            Some(UpdateBody::OpenContain(m)) => {
+                put_u32(v, 1);
+                put_words_state(v, m);
+            }
+            // a transport: 2, then its state words (the base's, then the three of its own)
+            Some(UpdateBody::TransportContain(m)) => {
+                put_u32(v, 2);
+                for x in m.state_words() {
+                    put_u32(v, x);
+                }
+            }
+            _ => panic!("the container is in its slot"),
+        }
     } else {
         put_u32(v, 0);
     }
@@ -810,7 +955,7 @@ fn hex3(p: &Coord3D) -> String {
 }
 
 /// The lines of the effect log the trace and the records of one op make, in order.
-fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClientEvent>, tally: &RefCell<Tally>) -> Vec<String> {
+fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClientEvent>, tally: &RefCell<Tally>, template_names: &BTreeMap<u16, String>) -> Vec<String> {
     let mut log = Vec::new();
     let (mut cut_iter, mut ev_iter) = (cuts.into_iter(), events.into_iter());
     for t in trace {
@@ -864,8 +1009,13 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                         ContainCall::GetSingleLogicalBonePosition { object, name } => log.push(format!("bone1 {object} {}", String::from_utf8_lossy(&name))),
                         ContainCall::GetMultiLogicalBonePosition { object, prefix, max } => log.push(format!("bonen {object} {} {max}", String::from_utf8_lossy(&prefix))),
                         ContainCall::GetSingleLogicalBonePositionOnTurret { object, name } => log.push(format!("boneturret {object} {}", String::from_utf8_lossy(&name))),
+                        ContainCall::SetDisabled { object, disabled } => log.push(format!("setdisabled {object} {disabled}")),
+                        ContainCall::ClearDisabled { object, disabled } => log.push(format!("cleardisabled {object} {disabled}")),
+                        ContainCall::NewObject { template, team } => log.push(format!("newobject {} {team}", template_names.get(&template).cloned().unwrap_or_default())),
                     }
                 }
+                Some(CutCall::WeaponSetUpdate { .. }) => log.push("wset".to_string()),
+                Some(CutCall::WeaponTransferNextShotStats { to, from }) => log.push(format!("shotxfer {to} {from}")),
                 Some(CutCall::TerrainGetLayerHeight { x, y, layer }) => log.push(format!("layerheight {:08x} {:08x} {layer}", x.to_bits(), y.to_bits())),
                 _ => {}
             }
@@ -879,6 +1029,8 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                     log.push(format!("audio {} {pos} {} {object_id}", String::from_utf8_lossy(&name), player_index.unwrap_or(-1)));
                 }
                 Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::ClearAndSet { clear, set }, .. }) => log.push(format!("clearset {} {}", clear[0], set[0])),
+                Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Set(a), .. }) => log.push(format!("mc {}", a[0])),
+                Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Clear(a), .. }) => log.push(format!("mcclear {}", a[0])),
                 _ => {}
             }
         } else if let Some(line) = t.strip_prefix("bt ") {
@@ -921,7 +1073,11 @@ fn veterancy_of(k: usize) -> rts_lockstep_engine::common::game_common::Veterancy
 fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally: &RefCell<Tally>) -> RunOut {
     let mut v = Vec::new();
     {
-        let ModuleDataKind::OpenContain(d) = &data else { unreachable!("not an OpenContain") };
+        let d: &OpenContainModuleData = match &data {
+            ModuleDataKind::OpenContain(d) => d,
+            ModuleDataKind::TransportContain(t) => &t.open,
+            _ => unreachable!("not a contain"),
+        };
         put_u32(&mut v, d.contain_max as u32);
         put_str(&mut v, &d.enter_sound.event_name);
         put_str(&mut v, &d.exit_sound.event_name);
@@ -957,6 +1113,26 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         }
         put_u32(&mut v, ex);
         put_u32(&mut v, rq);
+        // batch R2: 1 and the transport's fields, or 0
+        if let ModuleDataKind::TransportContain(t) = &data {
+            put_u32(&mut v, 1);
+            put_u32(&mut v, t.slot_capacity as u32);
+            put_u32(&mut v, t.exit_pitch_rate.to_bits());
+            put_str(&mut v, &t.exit_bone);
+            put_str(&mut v, &t.initial_payload.name);
+            put_u32(&mut v, t.initial_payload.count as u32);
+            put_u32(&mut v, t.health_regen.to_bits());
+            put_u32(&mut v, t.exit_delay);
+            let b = |x: bool, m: u32| if x { m } else { 0 };
+            put_u32(
+                &mut v,
+                b(t.scatter_nearby_on_exit, 1) | b(t.orient_like_container_on_exit, 2) | b(t.keep_container_velocity_on_exit, 4) | b(t.go_aggressive_on_exit, 8)
+                    | b(t.armed_riders_upgrade_weapon_set, 16) | b(t.reset_mood_check_time_on_exit, 32) | b(t.destroy_riders_who_are_not_free_to_exit, 64)
+                    | b(t.is_delay_exit_in_air, 128),
+            );
+        } else {
+            put_u32(&mut v, 0);
+        }
     }
     let sc = parse_scene(cfg);
     let n = sc.objs.len();
@@ -979,13 +1155,27 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     w.names = ctx.names;
     let mut templates = Vec::new();
     for (k, o) in sc.objs.iter().enumerate() {
-        let kind_of: Vec<i32> = (0..8).filter(|&i| o.kinds >> i & 1 != 0).map(|i| KINDS[i]).collect();
+        let mut kind_of: Vec<i32> = (0..8).filter(|&i| o.kinds >> i & 1 != 0).map(|i| KINDS[i]).collect();
+        for (i, kk) in [KINDOF_CLIFF_JUMPER, KINDOF_HERO, KINDOF_SALVAGER].iter().enumerate() {
+            if o.extra_kinds >> i & 1 != 0 {
+                kind_of.push(*kk);
+            }
+        }
         let slots = [ThingTemplateAudioType::SoundEnter, ThingTemplateAudioType::SoundExit, ThingTemplateAudioType::SoundFalling];
         let audio = (0..3).filter(|&i| o.snd[i] > 0).map(|i| (slots[i], format!("snd{}", o.snd[i]).into_bytes())).collect();
         let geometry = Some(GeometryInfo::new(GeometryType::Sphere, false, 1.0, o.radius, o.radius));
-        templates.push(Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues { name: format!("T{}", k + 1).into_bytes(), kind_of, audio, geometry, ..Default::default() })));
+        templates.push(Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues { name: format!("T{}", k + 1).into_bytes(), kind_of, audio, geometry, transport_slot_count: o.raw_slots as i8, ..Default::default() })));
     }
-    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
+    // the payload's templates: the factory finds the scene's by name (the test's factory makes nothing; `newobject` is a line of the log)
+    let mut factory = rts_lockstep_engine::common::thing_factory::ThingFactory::new();
+    let mut template_names = BTreeMap::new();
+    for k in 0..n {
+        let name = format!("T{}", k + 1);
+        factory.new_template(name.as_bytes(), 0).expect("a template");
+        let id = factory.find_template(name.as_bytes()).expect("the new template").data.get_template_id();
+        template_names.insert(id, name);
+    }
+    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, thing_factory: factory, ..Default::default() });
     // the cut points
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
@@ -1049,6 +1239,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         if o.has_body || o.has_ai || o.has_stealth {
             let mut a = ProbeAnswers { idle: o.ai_idle, enter_target: o.enter_target as i32, ..Default::default() };
             a.can_fall = o.can_fall;
+            a.free_to_exit = o.free_to_exit;
+            a.has_locomotor = o.has_loco;
             let mut pm = NewModule::plain(b"CtProbe", b"ModuleTag_Probe");
             pm.interfaces = if o.has_body { MODULEINTERFACE_BODY } else { 0 };
             pm.is_ai = o.has_ai;
@@ -1057,7 +1249,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             modules.push(pm);
         }
         if o.has_phys {
-            let a = ProbeAnswers { mass: o.mass, can_fall: o.can_fall, ..Default::default() };
+            let a = ProbeAnswers { mass: o.mass, can_fall: o.can_fall, center_of_mass_offset: o.com, velocity: Coord3D { x: o.vel[0], y: o.vel[1], z: o.vel[2] }, ..Default::default() };
             let mut pm = NewModule::plain(b"PhysicsBehavior", b"ModuleTag_Physics");
             pm.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(a, 0.0, Default::default())));
             modules.push(pm);
@@ -1066,7 +1258,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             let cd = if k == 0 {
                 data.clone()
             } else {
-                let mut d = OpenContainModuleData { contain_max: o.contain_max, passengers_allowed_to_fire: o.allow_fire, passengers_in_turret: o.in_turret, number_of_exit_paths: o.exit_paths, damage_percentage_to_units: o.damage_pct, is_burned_death_to_units: o.burned, door_open_time: o.door_open, weapon_bonus_passed_to_passengers: o.weapon_pass, allow_allies_inside: o.allow_rel & 1 != 0, allow_enemies_inside: o.allow_rel & 2 != 0, allow_neutral_inside: o.allow_rel & 4 != 0, ..Default::default() };
+                // a transport's base starts from `TransportContainModuleData()` (infantry allowed inside)
+                let base = if o.cls != 0 { TransportContainModuleData::default().open } else { OpenContainModuleData::default() };
+                let mut d = OpenContainModuleData { contain_max: o.contain_max, passengers_allowed_to_fire: o.allow_fire, passengers_in_turret: o.in_turret, number_of_exit_paths: o.exit_paths, damage_percentage_to_units: o.damage_pct, is_burned_death_to_units: o.burned, door_open_time: o.door_open, weapon_bonus_passed_to_passengers: o.weapon_pass, allow_allies_inside: o.allow_rel & 1 != 0, allow_enemies_inside: o.allow_rel & 2 != 0, allow_neutral_inside: o.allow_rel & 4 != 0, ..base };
                 if o.enter_snd > 0 {
                     d.enter_sound.event_name = format!("snd{}", o.enter_snd).into_bytes();
                 }
@@ -1096,9 +1290,31 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                         d.die_mux_data.required_status.set(STATUSES[i], 1);
                     }
                 }
-                ModuleDataKind::OpenContain(Arc::new(d))
+                if o.cls != 0 {
+                    let t = TransportContainModuleData {
+                        open: d,
+                        slot_capacity: o.slot_cap,
+                        health_regen: o.regen,
+                        exit_delay: o.exit_delay,
+                        orient_like_container_on_exit: o.tflags & 1 != 0,
+                        keep_container_velocity_on_exit: o.tflags & 2 != 0,
+                        go_aggressive_on_exit: o.tflags & 4 != 0,
+                        armed_riders_upgrade_weapon_set: o.tflags & 8 != 0,
+                        reset_mood_check_time_on_exit: o.tflags & 16 != 0,
+                        destroy_riders_who_are_not_free_to_exit: o.tflags & 32 != 0,
+                        is_delay_exit_in_air: o.tflags & 64 != 0,
+                        exit_pitch_rate: o.pitch,
+                        initial_payload: InitialPayload { name: PAYLOADS[o.payload_name as usize % 4].as_bytes().to_vec(), count: o.payload_count },
+                        exit_bone: EXIT_BONES[o.exit_bone_name as usize % 3].as_bytes().to_vec(),
+                        ..Default::default()
+                    };
+                    ModuleDataKind::TransportContain(Arc::new(t))
+                } else {
+                    ModuleDataKind::OpenContain(Arc::new(d))
+                }
             };
-            let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"OpenContain", b"ModuleTag_Contain", &cd).unwrap().unwrap();
+            let class: &[u8] = if matches!(cd, ModuleDataKind::TransportContain(_)) { b"TransportContain" } else { b"OpenContain" };
+            let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class, b"ModuleTag_Contain", &cd).unwrap().unwrap();
             modules.push(m);
         }
         let mut status = Default::default();
@@ -1117,7 +1333,25 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         ob.layer = o.layer as i32;
         ob.weapon_bonus_condition = o.weapon_bonus;
         ob.contained_by = INVALID_ID;
+        if o.unmanned {
+            ob.disabled.set(rts_lockstep_engine::common::disabled_types::DISABLED_UNMANNED, 1);
+        }
         apply_tables(&mut w, k, o);
+        // batch R2: the transport's tables
+        if o.airborne {
+            w.cuts.ai_airborne.insert(id);
+        }
+        if o.valid_terrain && o.has_loco {
+            w.cuts.contain.valid_movement_terrain.insert(id);
+        }
+        if o.exit_bone_has {
+            w.cuts.contain.exit_bones.insert((id, b"ExitBoneT".to_vec()), Coord3D { x: o.exit_bone[0], y: o.exit_bone[1], z: o.exit_bone[2] });
+        }
+        for s in 0..3 {
+            if o.weapons >> (3 * s) & 1 != 0 {
+                w.cuts.weapon_slot_facts.insert((id, s as i32), WeaponSlotFacts { is_contact_weapon: o.weapons >> (3 * s + 1) & 1 != 0, is_damage_weapon: o.weapons >> (3 * s + 2) & 1 != 0 });
+            }
+        }
         if o.selected && o.drawable {
             w.reads.local_selection.push(id);
         }
@@ -1168,7 +1402,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 info.input.amount = 10.0;
             }
             let fold3 = |p: &Coord3D| p.x.to_bits().wrapping_mul(31 * 31).wrapping_add(p.y.to_bits().wrapping_mul(31)).wrapping_add(p.z.to_bits());
-            if let Some(m) = m.filter(|_| o[0] < 34 || (42..=45).contains(&o[0]) || (47..=48).contains(&o[0])) {
+            if let Some(m) = m.filter(|_| o[0] < 34 || (42..=45).contains(&o[0]) || (47..=55).contains(&o[0])) {
                 match o[0] {
                     0 => {
                         w.module_call(id, m, ModuleCall::AddToContain(rider));
@@ -1199,8 +1433,13 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                         {
                             let ob = w.objects.find(id).unwrap();
                             let u = ob.modules[m as usize].update_index.expect("an update module");
-                            if let Some(UpdateBody::OpenContain(c)) = ob.behaviors[u as usize].body.as_ref() {
-                                result = u32::from(c.module_data().die_mux_data.is_die_applicable(info.input.death_type, ob.get_veterancy_level() as i32, &ob.status));
+                            let mux = match ob.behaviors[u as usize].body.as_ref() {
+                                Some(UpdateBody::OpenContain(c)) => Some(c.module_data().die_mux_data.clone()),
+                                Some(UpdateBody::TransportContain(c)) => Some(c.module_data().open.die_mux_data.clone()),
+                                _ => None,
+                            };
+                            if let Some(mux) = mux {
+                                result = u32::from(mux.is_die_applicable(info.input.death_type, ob.get_veterancy_level() as i32, &ob.status));
                             }
                         }
                         w.module_call(id, m, ModuleCall::OnDie(info));
@@ -1350,6 +1589,23 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                             w.module_call(id, m, ModuleCall::PutObjAtNextFirePoint(rider));
                         }
                     }
+                    // batch R2: the transport's own (the specific rider is NULL when the fourth word is odd)
+                    49 => result = w.module_call(id, m, ModuleCall::ReserveDoorForExit { specific: if o[3] & 1 != 0 { INVALID_ID } else { rider } }).as_int(-1) as u32,
+                    50 => result = u32::from(w.module_call(id, m, ModuleCall::IsExitBusy).as_bool()),
+                    51 => result = w.module_call(id, m, ModuleCall::GetContainMax).as_int(-1) as u32,
+                    52 => result = w.module_call(id, m, ModuleCall::GetExtraSlotsInUse).as_int(-1) as u32,
+                    53 => {
+                        let who = |x: u32| if x % 5 < 4 { (x % 5) as i32 } else { -1 };
+                        w.module_call(id, m, ModuleCall::OnCapture { old_owner: who(o[3]), new_owner: who(o[4]) });
+                    }
+                    54 => {
+                        w.module_call(id, m, ModuleCall::KillRidersWhoAreNotFreeToExit);
+                    }
+                    55 => {
+                        if sc.objs[id as usize - 1].cls != 0 {
+                            result = u32::from(w.module_call(id, m, ModuleCall::IsSpecificRiderFreeToExit { obj: if o[3] & 1 != 0 { INVALID_ID } else { rider } }).as_bool());
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1414,6 +1670,12 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             excluded = true;
             break;
         }
+        // an `ErrorCode` thrown out of the op (`TransportContain::createPayload`'s `newObject(NULL)`): CATCH_ALL's status 3, the result never assigned
+        let mut op_status = 0;
+        if new_errors.iter().any(|(_, e)| matches!(e.thrown(), Some(rts_lockstep_engine::common::ini::Thrown::ErrorCode(_)))) {
+            op_status = 3;
+            result = 0;
+        }
         // the effects of the op, in order
         let trace = w.cuts.trace.take().unwrap_or_default();
         let cuts = w.cuts.log.take().unwrap_or_default();
@@ -1426,9 +1688,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             .collect();
         events_before = w.events.events().len();
         let _ = events_before;
-        let log = effect_lines(trace, cuts, events, tally);
+        let log = effect_lines(trace, cuts, events, tally, &template_names);
         tally.borrow_mut().effects += log.len() as u64;
-        put_i32(&mut v, 0);
+        put_i32(&mut v, op_status);
         put_u32(&mut v, result);
         put_u32(&mut v, log.len() as u32);
         for l in &log {
@@ -1458,6 +1720,12 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
     let (en, ex) = (r.str(), r.str());
     let data: Vec<u32> = (0..14).map(|_| r.u32()).collect();
     out.push(format!("data {max} {en} {ex} {data:08x?}"));
+    if r.u32() != 0 {
+        let (cap, pitch) = (r.u32(), r.u32());
+        let (bone, payload) = (r.str(), r.str());
+        let rest: Vec<u32> = (0..4).map(|_| r.u32()).collect();
+        out.push(format!("transport data {cap} {pitch:08x} {bone} {payload} {rest:08x?}"));
+    }
     let n_obj = r.u32();
     for i in 0..=n_ops {
         if r.at_end() {
@@ -1490,7 +1758,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
                 for _ in 0..map * 2 {
                     state.push(r.u32());
                 }
-                for _ in 0..3 {
+                for _ in 0..if has == 2 { 6 } else { 3 } {
                     state.push(r.u32());
                 }
             }
@@ -1533,8 +1801,13 @@ fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<
     Ok(())
 }
 
+fn read_transport_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
+    *out = Some(ModuleDataKind::TransportContain(Arc::new(TransportContainModuleData::friend_new_module_data(Some(ini))?)));
+    Ok(())
+}
+
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }];
+    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)

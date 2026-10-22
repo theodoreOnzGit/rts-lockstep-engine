@@ -6,6 +6,15 @@
 #include "Common/GameCommon.h"
 #include <vector>
 class Object;
+/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+#include "GameLogic/AI.h"
+enum AIFreeToExitType // Note - written out in save/load xfer, don't change these numbers.  jba.
+{
+	FREE_TO_EXIT=0,
+	NOT_FREE_TO_EXIT=1,
+	WAIT_TO_EXIT=2
+};
+/* --- end p1w13-sonnet --- */
 class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	/* --- p1w13-sonnet --- (update batch O: SquishCollide asks what the AI is going for) */
 	Object *getGoalObject() const { return m_goal; }
@@ -35,6 +44,14 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	Object *getEnterTarget() const { return m_enterTarget; }
 	const class LocomotorSet *getLocomotorSet() const { return 0; }
 	Object *m_enterTarget = 0;
+	/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+	void setAttitude( AttitudeType tude );
+	void wakeUpAndAttemptToTarget( void );
+	AIFreeToExitType getAiFreeToExit(const Object* exiter) const { return (AIFreeToExitType)m_freeToExit; }
+	const Locomotor *getCurLocomotor() const { return m_hasLoco ? (const Locomotor *)this : 0; }   /* the test's locomotor is the AI itself */
+	Int m_freeToExit = 0;
+	Bool m_hasLoco = false;
+	/* --- end p1w13-sonnet --- */
 	/* --- end p1w13-sonnet --- */
 };
 #endif

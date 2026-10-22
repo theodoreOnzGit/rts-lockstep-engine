@@ -103,6 +103,7 @@ public:
 	/* --- p1w10-sonnet --- (the layer-9 upgrade batch: what the eight upgrade modules call on their object; every call is
 	** a line of the effect log, the state is what the dump reads) */
 	void setWeaponSetFlag(WeaponSetType wst);
+	void clearWeaponSetFlag(WeaponSetType wst);   /* p1w13-sonnet, batch R2 (TransportContain): defined in differential/l9_open_contain_r.inc */
 	void setWeaponBonusCondition(WeaponBonusConditionType wst);
 	BodyModuleInterface *getBodyModule() const { return m_body; }
 	Drawable *getDrawable() const { return m_drawable; }
@@ -183,6 +184,13 @@ public:
 	Bool isKindOfMulti(const KindOfMaskType &mustBeSet, const KindOfMaskType &mustBeClear) const { return m_kindOf.testSetAndClear(mustBeSet, mustBeClear); }
 	Bool isEffectivelyDead() const { return m_effDead; }
 	Bool isAboveTerrain() const { return m_pos.z > 0; }   /* the test's terrain is flat at zero */
+	/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+	Bool isUsingAirborneLocomotor() const { return m_airborneLoco; }
+	Bool m_airborneLoco = false;
+	Int getTransportSlotCount() const;   /* Object.cpp, verbatim: differential/l9_open_contain_r.inc */
+	/* Thing.h: the test's bone table holds world positions already */
+	void convertBonePosToWorldPos(const Coord3D* bonePos, const Matrix3D* boneTransform, Coord3D* worldPos, Matrix3D* worldTransform) const { if (worldPos && bonePos) *worldPos = *bonePos; }
+	/* --- end p1w13-sonnet --- */
 	Bool m_effDead = false;
 	/* update batch M: what AutoHealBehavior asks of the objects it scans, and the healing functions (cut verbatim from Object.cpp by build.rs,
 	** mod_gen/ObjectHealing.inc, compiled by differential/l9_auto_heal_m.inc) */

@@ -54,6 +54,14 @@ extern WeaponStore *TheWeaponStore;
 /* --- p1w12-sonnet --- (update batch M, FireOCLAfterWeaponCooldownUpdate.cpp) a Weapon with the three facts that module reads of one; renamed
 ** ModTestWeapon by module_prelude.h so that no inline member clashes with the weapon fixtures' real Weapon */
 #include "Common/GameType.h"
+/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+class WeaponTemplate
+{
+public:
+	Bool isContactWeapon() const { return m_contact; }
+	Bool m_contact = false;
+};
+/* --- end p1w13-sonnet --- */
 class Weapon
 {
 public:
@@ -62,6 +70,14 @@ public:
 	UnsignedInt getPossibleNextShotFrame() const { return m_next; }
 	WeaponSlotType m_slot = PRIMARY_WEAPON;
 	UnsignedInt m_last = 0, m_next = 0;
+	/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+	const WeaponTemplate *getTemplate() const { return &m_tmplObj; }
+	Bool isDamageWeapon() const { return m_damageW; }
+	void transferNextShotStatsFrom( const Weapon &weapon );   /* logs: differential/l9_open_contain_r.inc */
+	WeaponTemplate m_tmplObj;
+	Bool m_damageW = false;
+	Int m_ownerId = 0;
+	/* --- end p1w13-sonnet --- */
 };
 /* --- end p1w12-sonnet --- */
 /* --- p1w13-sonnet --- (batch P: ActiveBody asks the guard to retaliate with no limit on the shots; Weapon.h line 56, verbatim) */

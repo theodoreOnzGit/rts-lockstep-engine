@@ -466,6 +466,11 @@ pub enum ModuleCall {
     AiHasCurLocomotor,
     /// `ExitInterface::reserveDoorForExit(objType, specificObject)` of a contain module; replies [`ModuleReply::Int`] (`ExitDoorType`).
     ReserveDoorForExit { specific: ObjectId },
+    /// `killRidersWhoAreNotFreeToExit()` of a contain module (protected upstream; the differential test calls it).
+    KillRidersWhoAreNotFreeToExit,
+    /// `TransportContain::isSpecificRiderFreeToExit(obj)` (protected upstream; the differential test calls it); replies [`ModuleReply::Bool`], or
+    /// `Unhandled` for a container that is no transport.
+    IsSpecificRiderFreeToExit { obj: ObjectId },
     // --- end p1w13-sonnet ---
     /// `StealthUpdate::markAsDetected()`.
     StealthMarkAsDetected,

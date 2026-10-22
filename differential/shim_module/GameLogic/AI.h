@@ -6,6 +6,10 @@
 #include "Lib/BaseType.h"
 #include "Common/GameType.h"   /* PathfindLayerEnum (p1w13-sonnet) */
 class Object;
+/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+class Locomotor;
+enum AttitudeType { AI_SLEEP = -2, AI_PASSIVE=-1, AI_NORMAL=0, AI_ALERT=1, AI_AGGRESSIVE=2, AI_INVALID=3 };		///< AI "attitude" behavior modifiers
+/* --- end p1w13-sonnet --- */
 class Pathfinder
 {
 public:
@@ -16,6 +20,9 @@ public:
 	void updatePos(Object *obj, const Coord3D *newPos);
 	void updateGoal(Object *obj, const Coord3D *newGoal, PathfindLayerEnum layer);
 	Bool adjustToPossibleDestination(Object *obj, const class LocomotorSet *locomotorSet, Coord3D *dest);
+	/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+	Bool validMovementTerrain( PathfindLayerEnum layer, const Locomotor* locomotor, const Coord3D *pos );
+	/* --- end p1w13-sonnet --- */
 	/* --- end p1w13-sonnet --- */
 };
 /* --- p1w12-sonnet --- (update batch N: CheckpointUpdate) the two queries it makes; defined by differential/l9_checkpoint_n.inc */

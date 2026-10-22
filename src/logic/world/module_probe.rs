@@ -555,7 +555,7 @@ impl ProbeModule {
             }
             ModuleCall::AiGetFreeToExit { .. } => ModuleReply::Int(self.answers.free_to_exit),
             ModuleCall::AiHasCurLocomotor => ModuleReply::Bool(self.answers.has_locomotor),
-            ModuleCall::ReserveDoorForExit { .. } => ModuleReply::Unhandled,
+            ModuleCall::ReserveDoorForExit { .. } | ModuleCall::KillRidersWhoAreNotFreeToExit | ModuleCall::IsSpecificRiderFreeToExit { .. } => ModuleReply::Unhandled,
             // --- end p1w13-sonnet ---
             // OpenContain's test: the calls the container makes on its riders are lines of the trace (`bt ...`)
             ModuleCall::AiIdleFrom { command_source } => {

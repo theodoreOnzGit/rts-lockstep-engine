@@ -39,6 +39,10 @@ public:
 	const AudioEventRTS *getSoundEnter() const { return &m_soundEnter; }
 	const AudioEventRTS *getSoundExit() const { return &m_soundExit; }
 	const AudioEventRTS *getSoundFalling() const { return &m_soundFalling; }
+	/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+	Int m_rawTransportSlotCount = 0;
+	Int getRawTransportSlotCount() const { return m_rawTransportSlotCount; }
+	/* --- end p1w13-sonnet --- */
 	/* --- end p1w13-sonnet --- */
 };
 #endif

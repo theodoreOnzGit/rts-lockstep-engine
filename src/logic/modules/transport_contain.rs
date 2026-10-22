@@ -814,6 +814,12 @@ impl OpenContainVirtuals for TransportContain {
     fn is_passenger_allowed_to_fire(&mut self, world: &mut World, me: ModuleHandle, id: ObjectId) -> bool {
         tc_is_passenger_allowed_to_fire(self, world, me, id)
     }
+    fn other_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+        match call {
+            ModuleCall::IsSpecificRiderFreeToExit { obj } => ModuleReply::Bool(self.is_specific_rider_free_to_exit(world, me, obj)),
+            _ => ModuleReply::Unhandled,
+        }
+    }
 }
 
 impl TransportContainVirtuals for TransportContain {

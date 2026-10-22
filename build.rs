@@ -3219,6 +3219,28 @@ mod differential {
                 assert_eq!(text.matches(wh).count(), 1, "OpenContain.cpp: the processDamageToContained loop must occur once");
                 std::fs::write(mod_gen.join("OpenContain_edit.cpp"), text.replace(wh, wh_fixed)).expect("write OpenContain_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R2: TransportContain.cpp loops `while( *it )` twice (letRidersUpgradeWeaponSet over riderList, update over items), with the same read of
+                // list::end() after the last rider; both end there, asserted once each and in that order, into mod_gen/TransportContain_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Contain/TransportContain.cpp");
+                let text = std::fs::read_to_string(&path).expect("read TransportContain.cpp");
+                assert_eq!(text.matches(wh).count(), 2, "TransportContain.cpp: the two `while( *it )` loops must occur twice");
+                let first = text.find(wh).expect("first loop");
+                let second = first + wh.len() + text[first + wh.len()..].find(wh).expect("second loop");
+                assert!(text[..first].contains("riderList = getContainedItemsList()") && text[first..second].contains("items = contain->getContainedItemsList()"),
+                    "TransportContain.cpp: the loops are letRidersUpgradeWeaponSet's then update's");
+                let mut edited = String::new();
+                edited.push_str(&text[..first]);
+                edited.push_str("while( it != riderList->end() )");
+                edited.push_str(&text[first + wh.len()..second]);
+                edited.push_str("while( it != items->end() )");
+                edited.push_str(&text[second + wh.len()..]);
+                // and `hisLocomotor == FALSE` (isSpecificRiderFreeToExit) compares a pointer with MSVC's FALSE (0); clang's FALSE is a bool, so the test is spelled
+                // with the value it has under MSVC
+                let (cmp, cmp_fixed) = ("if( hisLocomotor == FALSE )", "if( hisLocomotor == 0 )");
+                assert_eq!(edited.matches(cmp).count(), 1, "TransportContain.cpp: the locomotor test must occur once");
+                let edited = edited.replace(cmp, cmp_fixed);
+                std::fs::write(mod_gen.join("TransportContain_edit.cpp"), edited).expect("write TransportContain_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();

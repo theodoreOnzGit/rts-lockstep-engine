@@ -19,6 +19,9 @@ static char *ctItoa(int value, char *buffer, int radix)
 }
 #define itoa(v, s, r) ctItoa(v, s, r)
 #include "OpenContain_edit.cpp"  /* OpenContain.cpp with one mechanical edit made by build.rs */
+/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+#include "TransportContain_edit.cpp"  /* TransportContain.cpp with its two `while( *it )` loops ending at end() (build.rs) */
+/* --- end p1w13-sonnet --- */
 #undef itoa
 
 namespace {
@@ -32,7 +35,7 @@ ModuleData *l9ctRead(const char *filename)
 		ini.readLine();
 		AsciiString currentLine = ini.m_buffer;
 		try {
-			data = OpenContain::friend_newModuleData(&ini);
+			data = (strncmp(currentLine.str(), "T", 1) == 0) ? TransportContain::friend_newModuleData(&ini) : OpenContain::friend_newModuleData(&ini);   /* --- p1w13-sonnet --- (batch R2: TransportContain) */
 		} catch (...) {
 			char buff[1024];
 			sprintf(buff, "Error parsing INI file '%s' (Line: '%s')\n", ini.m_filename.str(), currentLine.str());
@@ -109,6 +112,12 @@ struct CtObj
 	Coord3D adj;
 	unsigned hasPhys;
 	Real mass;
+	/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+	unsigned cls;   /* 0 OpenContain, 1 TransportContain */
+	Weapon weap[3];
+	unsigned char physData[sizeof(PhysicsBehaviorModuleData) + 16];
+	unsigned validTerrain;
+	/* --- end p1w13-sonnet --- */
 	AsciiString tmplName;
 };
 
@@ -210,6 +219,52 @@ Bool Object::getSingleLogicalBonePositionOnTurret(WhichTurretType, const char *b
 	}
 	return false;
 }
+/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+int ctPhysOwner(const PhysicsBehavior *p) { for (int k = 0; k < g_ctN; ++k) if ((const void *)g_ctPhysMem[k] == (const void *)p) return k + 1; return 0; }
+void PhysicsBehavior::applyMotiveForce(const Coord3D *f) { ulog("pmotive %d %08x %08x %08x", ctPhysOwner(this), realBits(f->x), realBits(f->y), realBits(f->z)); }
+void PhysicsBehavior::setPitchRate(Real pitch) { ulog("ppitch %d %08x", ctPhysOwner(this), realBits(pitch)); }
+void AIUpdateInterface::setAttitude(AttitudeType tude) { ulog("aiattitude %d %d", (int)m_owner->m_oid, (int)tude); }
+void AIUpdateInterface::wakeUpAndAttemptToTarget(void) { ulog("aiwake %d", (int)m_owner->m_oid); }
+Bool Pathfinder::validMovementTerrain(PathfindLayerEnum layer, const Locomotor *locomotor, const Coord3D *pos)
+{
+	for (int k = 0; k < g_ctN; ++k) if ((const void *)&g_ctObjs[k].ai == (const void *)locomotor) return g_ctObjs[k].validTerrain != 0;
+	return false;
+}
+/* Object.cpp:3065-3073: the flag cleared, the weapon set told, the drawable's model condition (the line setWeaponSetFlag's stand-in writes, l9_upgrades.inc) */
+void Object::clearWeaponSetFlag(WeaponSetType wst)
+{
+	m_weaponSetFlags[wst / 64] &= ~(1ULL << (wst % 64));
+	ulog("wset");
+	if (m_drawable) m_drawable->clearModelConditionState(TheWeaponSetTypeToModelConditionTypeMap[wst]);
+}
+void Weapon::transferNextShotStatsFrom(const Weapon &weapon) { ulog("shotxfer %d %d", (int)m_ownerId, (int)weapon.m_ownerId); }
+/* Object.cpp:724-741, verbatim */
+Int Object::getTransportSlotCount() const
+{
+	Int count = getTemplate()->getRawTransportSlotCount();
+	ContainModuleInterface* contain = getContain();
+	if ( contain && contain->isSpecialZeroSlotContainer() )
+	{
+		count = 0;
+		const ContainedItemsList* items = contain->getContainedItemsList();
+		if (items)
+		{
+			for (ContainedItemsList::const_iterator it = items->begin(); it != items->end(); ++it)
+			{
+				count += (*it)->getTransportSlotCount();
+			}
+		}
+	}
+	return count;
+}
+/* the payload: the factory finds the scene's templates by name and makes nothing (the call is a line of the log) */
+const ThingTemplate *ctFindTemplate(const AsciiString &name)
+{
+	for (int k = 0; k < g_ctN; ++k) if (g_ctObjs[k].obj->m_tmpl.m_name.compare(name) == 0) return &g_ctObjs[k].obj->m_tmpl;
+	return 0;
+}
+Object *ctNewObject(const ThingTemplate *tmplate, Team *team) { ulog("newobject %s %d", tmplate->getName().str(), team ? (int)team->m_dummy : -1); return 0; }
+/* --- end p1w13-sonnet --- */
 Real PhysicsBehavior::getMass() const
 {
 	std::map<const PhysicsBehavior *, Real>::const_iterator it = g_ctMass.find(this);
@@ -284,7 +339,7 @@ void ctPutObject(CtObj *a)
 {
 	if (a->oc) {
 		OpenContain *oc = a->oc;
-		putU32(1);
+		putU32(dynamic_cast<TransportContain *>(oc) ? 2 : 1);   /* --- p1w13-sonnet --- (batch R2): 2 marks a transport */
 		putU32(oc->m_containListSize);
 		putU32((unsigned)oc->m_containList.size());
 		for (ContainedItemsList::const_iterator it = oc->m_containList.begin(); it != oc->m_containList.end(); ++it) putU32((unsigned)(*it)->m_oid);
@@ -324,6 +379,13 @@ void ctPutObject(CtObj *a)
 		putU32((unsigned)oc->m_whichExitPath);
 		putU32(oc->m_passengerAllowedToFire ? 1 : 0);
 		putU32(oc->m_loadSoundsEnabled ? 1 : 0);
+		/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+		if (TransportContain *tc = dynamic_cast<TransportContain *>(oc)) {
+			putU32(tc->m_payloadCreated ? 1 : 0);
+			putU32((unsigned)tc->m_extraSlotsInUse);
+			putU32(tc->m_frameExitNotBusy);
+		}
+		/* --- end p1w13-sonnet --- */
 	} else {
 		putU32(0);
 	}
@@ -395,6 +457,22 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		for (int i = 0; i < 3; ++i) { if (od->m_dieMuxData.m_exemptStatus.test(kCtStatus[i])) ex |= 1u << i; if (od->m_dieMuxData.m_requiredStatus.test(kCtStatus[i])) rq |= 1u << i; }
 		putU32(ex);
 		putU32(rq);
+		/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+		const TransportContainModuleData *td = dynamic_cast<const TransportContainModuleData *>(d);
+		putU32(td ? 1u : 0u);
+		if (td) {
+			putU32((unsigned)td->m_slotCapacity);
+			putU32(realBits(td->m_exitPitchRate));
+			putStr(td->m_exitBone.str(), td->m_exitBone.getLength());
+			putStr(td->m_initialPayload.name.str(), td->m_initialPayload.name.getLength());
+			putU32((unsigned)td->m_initialPayload.count);
+			putU32(realBits(td->m_healthRegen));
+			putU32(td->m_exitDelay);
+			putU32((td->m_scatterNearbyOnExit ? 1u : 0u) | (td->m_orientLikeContainerOnExit ? 2u : 0u) | (td->m_keepContainerVelocityOnExit ? 4u : 0u) |
+				(td->m_goAggressiveOnExit ? 8u : 0u) | (td->m_armedRidersUpgradeWeaponSet ? 16u : 0u) | (td->m_resetMoodCheckTimeOnExit ? 32u : 0u) |
+				(td->m_destroyRidersWhoAreNotFreeToExit ? 64u : 0u) | (td->m_isDelayExitInAir ? 128u : 0u));
+		}
+		/* --- end p1w13-sonnet --- */
 	}
 	initKindOfMasks();
 
@@ -412,6 +490,10 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			weaponPass, allowRel, deathMask, vetMask, exemptMask, requiredMask;
 		unsigned adjHas, adj[3]; unsigned fpCount; unsigned fp[CT_FP][3]; unsigned boneHas[CT_BONES]; unsigned bone[CT_BONES][3]; unsigned turretHas[CT_FP];
 		unsigned turret[CT_FP][3];
+		/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+		unsigned cls; int rawSlots; unsigned airborne; int freeToExit; unsigned hasLoco, validTerrain, com, vel[3], weapons, unmanned, extraKinds, exitBoneHas, exitBone[3];
+		int slotCap; unsigned regen, exitDelay, tflags, pitch; int payloadCount; unsigned payloadName, exitBoneName;
+		/* --- end p1w13-sonnet --- */
 	} oc[CT_OBJS];
 	for (int k = 0; k < g_ctN; ++k) {
 		ObjCfg &o = oc[k];
@@ -429,6 +511,12 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		for (int j = 0; j < CT_FP; ++j) for (int i = 0; i < 3; ++i) o.fp[j][i] = c.u();
 		for (int j = 0; j < CT_BONES; ++j) { o.boneHas[j] = c.u(); for (int i = 0; i < 3; ++i) o.bone[j][i] = c.u(); }
 		for (int j = 0; j < CT_FP; ++j) { o.turretHas[j] = c.u(); for (int i = 0; i < 3; ++i) o.turret[j][i] = c.u(); }
+		/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+		o.cls = c.u(); o.rawSlots = c.s(); o.airborne = c.u(); o.freeToExit = c.s(); o.hasLoco = c.u(); o.validTerrain = c.u(); o.com = c.u();
+		for (int i = 0; i < 3; ++i) o.vel[i] = c.u();
+		o.weapons = c.u(); o.unmanned = c.u(); o.extraKinds = c.u(); o.exitBoneHas = c.u(); for (int i = 0; i < 3; ++i) o.exitBone[i] = c.u();
+		o.slotCap = c.s(); o.regen = c.u(); o.exitDelay = c.u(); o.tflags = c.u(); o.pitch = c.u(); o.payloadCount = c.s(); o.payloadName = c.u(); o.exitBoneName = c.u();
+		/* --- end p1w13-sonnet --- */
 	}
 	for (int i = 0; i < g_ctN; ++i) for (int j = 0; j < g_ctN; ++j) g_ctRel[i][j] = (Relationship)c.s();
 	for (int i = 0; i < 8; ++i) g_hdLayer[i] = c.s();
@@ -450,6 +538,10 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 	g_teamRelHook = ctTeamRel;
 	g_xformHook = ctXformHook;
 	g_multiBoneHook = ctMultiBone;
+	/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+	g_findTemplateHook = ctFindTemplate;
+	g_newObjectHook = ctNewObject;
+	/* --- end p1w13-sonnet --- */
 	TheGlobalData = TheGlobalData;
 	g_ctNeutralTeam.m_dummy = 0;
 	for (int p = 0; p < CT_PLAYERS; ++p) {
@@ -495,6 +587,31 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		PhysicsBehavior *phys = (PhysicsBehavior *)g_ctPhysMem[k];
 		obj->m_physics = o.hasPhys ? phys : 0;
 		if (o.hasPhys) { g_ctMass[phys] = ctF(o.mass); phys->setAllowToFall(o.canFall != 0); }
+		/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+		a.cls = o.cls;
+		a.validTerrain = o.validTerrain;
+		obj->m_tmpl.m_rawTransportSlotCount = o.rawSlots;
+		obj->m_airborneLoco = o.airborne != 0;
+		a.ai.m_freeToExit = o.freeToExit;
+		a.ai.m_hasLoco = o.hasLoco != 0;
+		memset(a.physData, 0, sizeof(a.physData));
+		((PhysicsBehaviorModuleData *)a.physData)->m_centerOfMassOffset = ctF(o.com);
+		phys->m_moduleData = (const ModuleData *)a.physData;
+		phys->m_vel.x = ctF(o.vel[0]); phys->m_vel.y = ctF(o.vel[1]); phys->m_vel.z = ctF(o.vel[2]);
+		for (int s = 0; s < 3; ++s) {
+			a.weap[s] = Weapon();
+			a.weap[s].m_tmplObj.m_contact = (o.weapons >> (3 * s + 1) & 1) != 0;
+			a.weap[s].m_damageW = (o.weapons >> (3 * s + 2) & 1) != 0;
+			a.weap[s].m_ownerId = k + 1;
+			obj->m_slotWeapon[s] = (o.weapons >> (3 * s) & 1) ? &a.weap[s] : 0;
+		}
+		if (o.unmanned) obj->m_disabledBits |= 1u << (unsigned)DISABLED_UNMANNED;
+		if (o.extraKinds & 1) obj->m_kindOf.set(KINDOF_CLIFF_JUMPER);
+		if (o.extraKinds & 2) obj->m_kindOf.set(KINDOF_HERO);
+		if (o.extraKinds & 4) obj->m_kindOf.set(KINDOF_SALVAGER);
+		a.draw.m_exitBoneHas = o.exitBoneHas != 0;
+		a.draw.m_exitBone.x = ctF(o.exitBone[0]); a.draw.m_exitBone.y = ctF(o.exitBone[1]); a.draw.m_exitBone.z = ctF(o.exitBone[2]);
+		/* --- end p1w13-sonnet --- */
 		a.boobyTrapped = o.booby;
 		a.adjHas = o.adjHas;
 		a.adj.x = ctF(o.adj[0]); a.adj.y = ctF(o.adj[1]); a.adj.z = ctF(o.adj[2]);
@@ -535,8 +652,29 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			a.behaviors[idx++] = a.body;
 		}
 		if (o.hasContain) {
+			TransportContainModuleData *tdata = 0;   /* --- p1w13-sonnet --- (batch R2: TransportContain) */
 			if (k == 0) a.data = (OpenContainModuleData *)d;
 			else {
+				if (o.cls) {
+					tdata = new TransportContainModuleData;
+					tdata->m_slotCapacity = o.slotCap;
+					tdata->m_healthRegen = ctF(o.regen);
+					tdata->m_exitDelay = o.exitDelay;
+					tdata->m_orientLikeContainerOnExit = (o.tflags & 1) != 0;
+					tdata->m_keepContainerVelocityOnExit = (o.tflags & 2) != 0;
+					tdata->m_goAggressiveOnExit = (o.tflags & 4) != 0;
+					tdata->m_armedRidersUpgradeWeaponSet = (o.tflags & 8) != 0;
+					tdata->m_resetMoodCheckTimeOnExit = (o.tflags & 16) != 0;
+					tdata->m_destroyRidersWhoAreNotFreeToExit = (o.tflags & 32) != 0;
+					tdata->m_isDelayExitInAir = (o.tflags & 64) != 0;
+					tdata->m_exitPitchRate = ctF(o.pitch);
+					tdata->m_initialPayload.count = o.payloadCount;
+					static const char *const kPayload[4] = { "", "T1", "T2", "Nope" };
+					tdata->m_initialPayload.name = kPayload[o.payloadName % 4];
+					static const char *const kExitBone[3] = { "", "ExitBoneT", "Other" };
+					tdata->m_exitBone = kExitBone[o.exitBoneName % 3];
+					a.data = tdata;
+				} else
 				a.data = new OpenContainModuleData;
 				a.data->m_containMax = o.containMax;
 				if (o.enterSnd) { char sn[16]; sprintf(sn, "snd%u", o.enterSnd); a.data->m_enterSound.setEventName(AsciiString(sn)); }
@@ -560,7 +698,13 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				a.data->m_dieMuxData.m_veterancyLevels = o.vetMask;
 				for (int i = 0; i < 3; ++i) { if (o.exemptMask >> i & 1) a.data->m_dieMuxData.m_exemptStatus.set(kCtStatus[i]); if (o.requiredMask >> i & 1) a.data->m_dieMuxData.m_requiredStatus.set(kCtStatus[i]); }
 			}
-			try { a.oc = new OpenContain(a.obj, a.data); }
+			try {
+				/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+				if (k == 0 ? dynamic_cast<TransportContainModuleData *>(d) != 0 : o.cls != 0) a.oc = new(ShimZeroFill{}) TransportContain(a.obj, k == 0 ? d : (ModuleData *)tdata);   /* the memory pool's zero fill: the constructor leaves m_payloadCreated */
+				else
+				/* --- end p1w13-sonnet --- */
+				a.oc = new OpenContain(a.obj, a.data);
+			}
 			CATCH_ALL(status, code, msg, msgCap)
 			if (status) { failed = true; break; }
 			a.obj->m_contain = a.oc;
@@ -570,6 +714,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 	if (failed) {
 		TheGameLogic = 0; TheAudio = 0; TheInGameUI = 0; TheAI = 0; ThePartitionManager = 0; TheTerrainLogic = 0;
 		g_modFindHook = 0; g_modDestroyHook = 0; g_teamRelHook = 0; g_xformHook = 0; g_multiBoneHook = 0;
+		g_findTemplateHook = 0; g_newObjectHook = 0;   /* --- p1w13-sonnet --- (batch R2: TransportContain) */
 		return 5;
 	}
 	for (int k = 0; k < g_ctN; ++k) {
@@ -684,6 +829,15 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				case 46: t->obj->m_containedBy = ((o[3] & 1) || r2 == t->obj) ? 0 : r2; break;
 				case 47: if (oc2) for (unsigned j = 0; j < 1 + o[3] % 12; ++j) { if (o[4] & 1) oc2->exitObjectInAHurry(r2); else oc2->exitObjectViaDoor(r2, DOOR_1); } break;
 				case 48: if (oc2) for (unsigned j = 0; j < 1 + o[3] % 12; ++j) oc2->putObjAtNextFirePoint(r2); break;
+				/* --- p1w13-sonnet --- (batch R2: TransportContain) */
+				case 49: if (oc2) result = (unsigned)oc2->reserveDoorForExit(0, (o[3] & 1) ? 0 : r2); break;
+				case 50: if (oc2) result = oc2->isExitBusy() ? 1 : 0; break;
+				case 51: if (oc2) result = (unsigned)oc2->getContainMax(); break;
+				case 52: if (oc2) result = (unsigned)oc2->getExtraSlotsInUse(); break;
+				case 53: if (oc2) oc2->onCapture(o[3] % 5 < 4 ? &g_ctPlayers[o[3] % 5] : 0, o[4] % 5 < 4 ? &g_ctPlayers[o[4] % 5] : 0); break;
+				case 54: if (oc2) oc2->killRidersWhoAreNotFreeToExit(); break;
+				case 55: if (oc2 && t->cls) result = ((TransportContain *)oc2)->isSpecificRiderFreeToExit((o[3] & 1) ? 0 : r2) ? 1 : 0; break;
+				/* --- end p1w13-sonnet --- */
 				default: break;
 				}
 			}
@@ -711,6 +865,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 	delete d;
 	TheGameLogic = 0; TheAudio = 0; TheInGameUI = 0; TheAI = 0; ThePartitionManager = 0; TheTerrainLogic = 0;
 	g_modFindHook = 0; g_modDestroyHook = 0; g_teamRelHook = 0; g_xformHook = 0; g_multiBoneHook = 0;
+	g_findTemplateHook = 0; g_newObjectHook = 0;   /* --- p1w13-sonnet --- (batch R2: TransportContain) */
 	return 0;
 }
 
