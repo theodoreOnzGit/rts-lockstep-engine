@@ -32,6 +32,12 @@
 //! Batch R3 adds the `I` (`InternetHackContain`) and `R` (`RailedTransportContain`) blocks (the transport's fields), class codes 2 and 3 for the scene's
 //! containers, and per object a dock behaviour after the contain (open or closed; `setDockOpen` is a line of the log).
 //!
+//! Batch R8 adds the `P` block (`ParachuteContain`: the base's fields, `PitchRateMax`, `RollRateMax`, `LowAltitudeDamping`, `ParachuteOpenDist`,
+//! `KillWhenLandingInWaterSlop`, `FreeFallDamagePercent`, `ParachuteOpenSound`), class code 8, ops 58 to 61 (`onCollide` with the ground,
+//! `setOverrideDestination`, `onDrawableBoundToObject`, the held flag), per object the held flag, the parachute bones, the locomotor's sway and the
+//! producer, and per scene the gravity, the terrain's ground, water and cell types, the skirmish players and `findPositionAround`'s answer. The logic
+//! generator is seeded before the objects are made too (the parachute's constructor draws).
+//!
 //! Batch R7 adds the `L` block (`HealContain`: the base's fields and `TimeForFullHeal`), class code 7, each object's contained-by frame, and the class
 //! queries (`isHealContain`, `isTunnelContain`, `isRiderChangeContain`, `isSpecialOverlordStyleContainer`, `isSpecialZeroSlotContainer`,
 //! `isGarrisonable`, `isBustable`) in the query op's hash. Op 55 asks transports only.
@@ -109,7 +115,7 @@
 //!
 //! | id | planted bug |
 //! |---|---|
-//! | 1411 | a zero-slot rider not replaced by its first passenger (SURVIVES: the scene has no zero-slot container; `ParachuteContain`'s test will see it) |
+//! | 1411 | a zero-slot rider not replaced by its first passenger (~~SURVIVES: the scene has no zero-slot container; `ParachuteContain`'s test will see it~~ **CORRECTED 2026-10-22, batch R8**: caught, the scene has parachutes) |
 //! | 1412 | controlling-player test inverted |
 //! | 1413 | `m_extraSlotsInUse` left out of the capacity check |
 //! | 1414 | the damage-weapon test inverted |
@@ -198,6 +204,34 @@
 //! | 1503 | a healed rider not let out |
 //! | 1504 | `update` sleeps for ever |
 //! | 1505 | `isHealContain` FALSE |
+//!
+//! Batch R8, `parachute_contain.rs` (9,000 cases: all 23 caught; the 97 caught plants above were run again and are still all caught, and 1411 is now caught):
+//!
+//! | id | planted bug |
+//! |---|---|
+//! | 1511 | the roll rate not drawn |
+//! | 1512 | the sway bone not saved |
+//! | 1513 | the sway matrix without the pitch |
+//! | 1514 | the rider's geometry height not added |
+//! | 1515 | the rider's sway offset not updated |
+//! | 1516 | a rider below ground left there |
+//! | 1517 | parachutable riders refused |
+//! | 1518 | a second rider taken |
+//! | 1519 | `isEnclosingContainerFor` TRUE |
+//! | 1520 | the empty chute left colliding |
+//! | 1521 | a landed rider not idled |
+//! | 1522 | a drowned rider's death NORMAL |
+//! | 1523 | a water cell not deadly |
+//! | 1524 | the in-air test of `onDie` inverted |
+//! | 1525 | free fall not set |
+//! | 1526 | a contained chute's ground collision not ignored (caught as a C++ stack overflow) |
+//! | 1527 | the too-low start not fudged |
+//! | 1528 | the chute never opens |
+//! | 1529 | no clear spot looked for |
+//! | 1530 | the rider's collisions not restored |
+//! | 1531 | the roll never moves |
+//! | 1532 | an empty chute not killed |
+//! | 1533 | the override destination not marked set |
 //!
 //! Not planted, unobservable here: the `wasSelected` argument of `onContaining` (1375, removed). `OpenContain::onContaining` ignores it; ~~`TransportContain` and `GarrisonContain` use it, and
 //! their tests will catch it~~ **CORRECTED 2026-10-22 (batch R2)**: `TransportContain::onContaining` only hands it to the base, so it is unobservable there too;
