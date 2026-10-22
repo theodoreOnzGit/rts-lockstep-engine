@@ -70,7 +70,7 @@ pub fn is_angle_different(a: f32, b: f32) -> bool {
 /// for that is not in the thing, computed before the call. The setters only
 /// ask `alignOnTerrain` (for a `KINDOF_STICK_TO_TERRAIN_SLOPE` thing); the
 /// height queries of `Thing` are not used (`Object` overrides them).
-struct SetterContext {
+pub(crate) struct SetterContext {
     gravity: f32,
     aligned: Option<Matrix3D>,
 }
@@ -128,7 +128,7 @@ impl World {
         mtx
     }
 
-    fn setter_context(&self, id: ObjectId, align: Option<(f32, Coord3D)>) -> Option<SetterContext> {
+    pub(crate) fn setter_context(&self, id: ObjectId, align: Option<(f32, Coord3D)>) -> Option<SetterContext> {
         let o = self.objects.find(id)?;
         let aligned = if o.is_kind_of(KINDOF_STICK_TO_TERRAIN_SLOPE) {
             align.map(|(angle, pos)| self.align_on_ground(angle, &pos, true))

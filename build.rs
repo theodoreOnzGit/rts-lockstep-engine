@@ -3210,6 +3210,15 @@ mod differential {
                 assert_eq!(text.matches(loop2).count(), 1, "UndeadBody.cpp: the second loop must occur once");
                 std::fs::write(mod_gen.join("UndeadBody_edit.cpp"), text.replace(loop2, loop2_fixed)).expect("write UndeadBody_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // OpenContain.cpp (differential/l9_open_contain_r.inc): processDamageToContained loops `while( *it )` and so dereferences list::end() once the last rider is
+                // done (undefined: the sentinel holds no value). The edit reads that as the loop ending, which is what the shipped game does, asserted once, into
+                // mod_gen/OpenContain_edit.cpp; the Rust side records the undefined read (`Undefined::EndIteratorDereferenced`) and the test accepts that one.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Contain/OpenContain.cpp");
+                let text = std::fs::read_to_string(&path).expect("read OpenContain.cpp");
+                let (wh, wh_fixed) = ("while( *it )", "while( it != items->end() )");
+                assert_eq!(text.matches(wh).count(), 1, "OpenContain.cpp: the processDamageToContained loop must occur once");
+                std::fs::write(mod_gen.join("OpenContain_edit.cpp"), text.replace(wh, wh_fixed)).expect("write OpenContain_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();

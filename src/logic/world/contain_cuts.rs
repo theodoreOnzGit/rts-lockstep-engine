@@ -54,6 +54,8 @@ pub struct ContainCutTables {
     pub adjusted_destination: BTreeMap<ObjectId, Coord3D>,
     /// `checkAndDetonateBoobyTrap(rider)`: the objects that are booby trapped (the call answers true, and the test's answers decide who is dead afterwards).
     pub booby_trapped: BTreeSet<ObjectId>,
+    /// How deep the recursion of `addOrRemoveObjFromWorld` and `isPassengerAllowedToFire` is: a ring of containers recurses for ever upstream.
+    pub recursion: u32,
 }
 
 /// What a contain module did to a unit that is not translated, or that is run for real but cascades. See the module docs.
@@ -89,10 +91,10 @@ pub enum ContainCall {
     OnContainedBy { rider: ObjectId, container: ObjectId },
     /// `rider->onRemovedFrom(container)`.
     OnRemovedFrom { rider: ObjectId, container: ObjectId },
-    /// `rider->kill()`.
-    Kill { object: ObjectId },
-    /// `rider->attemptDamage(info)`.
-    AttemptDamage { object: ObjectId, info: DamageInfo },
+    /// `rider->kill()`: the damage it does is the body's maximum health, `kill` true.
+    Kill { object: ObjectId, amount: f32 },
+    /// `rider->attemptDamage(info)`; `has_body` is whether the object has a body to give it to (`Object::attemptDamage` does nothing without one).
+    AttemptDamage { object: ObjectId, info: DamageInfo, has_body: bool },
     /// `obj->setPosition(pos)`.
     SetPosition { object: ObjectId, position: Coord3D },
     /// `obj->setOrientation(angle)`.
@@ -222,17 +224,22 @@ impl World {
         }
     }
 
-    /// `rider->kill()` (`DAMAGE_UNRESISTABLE`, `DEATH_NORMAL`).
-    pub fn contain_kill(&mut self, id: ObjectId) {
-        self.contain_cut(ContainCall::Kill { object: id });
+    /// `rider->kill()` (`DAMAGE_UNRESISTABLE`, `DEATH_NORMAL`): `Object::kill` takes the amount from `getBodyModule()->getMaxHealth()`, so `false` is a body that
+    /// is `NULL` (a call through a null pointer upstream; nothing is done).
+    pub fn contain_kill(&mut self, id: ObjectId) -> bool {
+        let Some(body) = self.objects.find(id).and_then(|o| o.body) else { return false };
+        let amount = self.module_call(id, body, crate::logic::world::module_call::ModuleCall::GetMaxHealth).as_real(0.0);
+        self.contain_cut(ContainCall::Kill { object: id, amount });
         if !self.cuts.contain.stub_object_calls {
             self.kill(id, crate::logic::damage::DAMAGE_UNRESISTABLE, crate::logic::damage::DEATH_NORMAL);
         }
+        true
     }
 
     /// `object->attemptDamage(info)`; the info comes back as the body wrote it.
     pub fn contain_attempt_damage(&mut self, id: ObjectId, info: &mut DamageInfo) {
-        self.contain_cut(ContainCall::AttemptDamage { object: id, info: info.clone() });
+        let has_body = self.objects.find(id).is_some_and(|o| o.body.is_some());
+        self.contain_cut(ContainCall::AttemptDamage { object: id, info: info.clone(), has_body });
         if !self.cuts.contain.stub_object_calls {
             self.attempt_damage(id, info);
         }
@@ -241,7 +248,19 @@ impl World {
     /// `obj->setPosition(pos)`.
     pub fn contain_set_position(&mut self, id: ObjectId, pos: &Coord3D) {
         self.contain_cut(ContainCall::SetPosition { object: id, position: *pos });
-        if !self.cuts.contain.stub_object_calls {
+        if self.cuts.contain.stub_object_calls {
+            // the bookkeeping the container reads back: where the object is (the thing's own place, none of `reactToTransformChange`'s cascade)
+            let angle = match self.objects.find(id) {
+                Some(o) => o.thing.orientation(),
+                None => return,
+            };
+            if let Some(ctx) = self.setter_context(id, Some((angle, *pos))) {
+                if let Some(o) = self.objects.find_mut(id) {
+                    let _ = o.thing.set_position(&ctx, Some(pos));
+                    o.position = *o.thing.position();
+                }
+            }
+        } else {
             self.set_position(id, pos);
         }
     }
@@ -260,6 +279,7 @@ impl World {
         if !self.cuts.contain.stub_object_calls {
             self.set_layer(id, layer);
         }
+        // (the stub leaves the layer alone: the test's objects have the layers the scene gave them)
     }
 
     /// `obj->setTransformMatrix(matrix)`.

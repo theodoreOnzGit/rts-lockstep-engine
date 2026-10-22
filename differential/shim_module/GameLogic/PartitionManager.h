@@ -75,6 +75,9 @@ public:
 	Bool geomCollidesWithGeom(const Coord3D* pos1, const GeometryInfo& geom1, Real angle1, const Coord3D* pos2, const GeometryInfo& geom2, Real angle2) const;
 	SimpleObjectIterator *iterateObjectsInRange( const Object *obj, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = 0, IterOrderType order = ITER_FASTEST );
 	Real getDistanceSquared( const Object *obj, const Object *otherObj, DistanceCalculationType d, Coord3D *vec = 0 ) const;   /* batch P: ActiveBody */
+	Real getDistanceSquared( const Object *obj, const Coord3D *pos, DistanceCalculationType d, Coord3D *vec = 0 ) const;   /* batch R: OpenContain */
+	void registerObject( Object *obj );   /* batch R: OpenContain */
+	void unRegisterObject( Object *obj );
 	/* --- end p1w13-sonnet --- */
 };
 extern PartitionManager *ThePartitionManager;

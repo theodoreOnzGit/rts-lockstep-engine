@@ -34,6 +34,12 @@ public:
 	const AudioEventRTS *getSoundPromotedElite() const { return &m_soundPromotedElite; }
 	const AudioEventRTS *getSoundPromotedHero() const { return &m_soundPromotedHero; }
 	/* --- end p1w13-sonnet --- */
+	/* --- p1w13-sonnet --- (batch R: OpenContain) */
+	AudioEventRTS m_soundEnter, m_soundExit, m_soundFalling;
+	const AudioEventRTS *getSoundEnter() const { return &m_soundEnter; }
+	const AudioEventRTS *getSoundExit() const { return &m_soundExit; }
+	const AudioEventRTS *getSoundFalling() const { return &m_soundFalling; }
+	/* --- end p1w13-sonnet --- */
 };
 #endif
 /* --- end p1w12-sonnet --- */

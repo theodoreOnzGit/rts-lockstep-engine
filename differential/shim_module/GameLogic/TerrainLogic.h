@@ -13,6 +13,7 @@ public:
 	Real getLayerHeight(Real x, Real y, PathfindLayerEnum layer, Coord3D* normal = NULL, Bool clip = true) const;
 	PathfindLayerEnum getHighestLayerForDestination(const Coord3D *pos, Bool onlyHealthyBridges = false);
 	Bool isUnderwater( Real x, Real y, Real *waterZ = NULL, Real *terrainZ = NULL );   /* update batch O: FloatUpdate */
+	PathfindLayerEnum getLayerForDestination(const Coord3D *pos);   /* batch R: OpenContain */
 	/* --- end p1w13-sonnet --- */
 };
 extern TerrainLogic *TheTerrainLogic;

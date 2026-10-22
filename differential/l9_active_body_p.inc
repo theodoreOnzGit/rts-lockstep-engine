@@ -263,8 +263,10 @@ ProjectileUpdateInterface *Object::getProjectileUpdateInterface() const
 	}
 	return 0;
 }
+Int (*g_multiBoneHook)(const Object *obj, const char *boneNamePrefix, Int maxBones, Coord3D *positions, Matrix3D *transforms, Bool convertToWorld) = 0;   /* batch R: OpenContain's test answers it */
 Int Object::getMultiLogicalBonePosition(const char *boneNamePrefix, Int maxBones, Coord3D *positions, Matrix3D *transforms, Bool convertToWorld) const
 {
+	if (g_multiBoneHook) return g_multiBoneHook(this, boneNamePrefix, maxBones, positions, transforms, convertToWorld);
 	ulog("bones %d %s %d", (int)m_oid, boneNamePrefix, (int)maxBones);
 	if (!m_drawable) return 0;
 	std::map<std::pair<int, std::string>, std::vector<Coord3D> >::const_iterator it = g_abBones.find(std::make_pair((int)m_oid, std::string(boneNamePrefix)));

@@ -253,6 +253,23 @@ public:
 	void clearModelConditionFlags( const ModelConditionFlags &clr );
 	void setModelConditionFlags( const ModelConditionFlags &set );
 	/* --- end p1w13-sonnet --- */
+	/* --- p1w13-sonnet --- (batch R: OpenContain; the calls are lines of the effect log, differential/l9_open_contain_r.inc) */
+	PathfindLayerEnum getLayer() const { return m_layer; }
+	void setLayer( PathfindLayerEnum layer );
+	void setOrientation( Real angle );
+	void leaveGroup();
+	Bool checkAndDetonateBoobyTrap( const Object *victim );
+	void onContainedBy( Object *containedBy );
+	void onRemovedFrom( Object *removedFrom );
+	class StealthUpdate *getStealth() const { return m_stealth; }
+	Bool getSingleLogicalBonePosition( const char *boneName, Coord3D *position, Matrix3D *transform ) const;
+	Bool getSingleLogicalBonePositionOnTurret( WhichTurretType whichTurret, const char *boneName, Coord3D *position, Matrix3D *transform ) const;
+	void clearAndSetModelConditionState( ModelConditionFlagType clr, ModelConditionFlagType set );
+	UnsignedInt getWeaponBonusCondition() const { return m_weaponBonusCondition; }
+	void friend_setContainedBy( Object *containedBy ) { m_containedBy = containedBy; }
+	PathfindLayerEnum m_layer = LAYER_GROUND;
+	class StealthUpdate *m_stealth = 0;
+	/* --- end p1w13-sonnet --- */
 protected:
 	virtual Object *asObjectMeth() { return this; }
 	virtual const Object *asObjectMeth() const { return this; }

@@ -63,7 +63,7 @@ use crate::common::game_common::{PlayerMaskType, Relationship, LOGICFRAMES_PER_S
 use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::kind_of::{KindOfMaskType, KINDOF_MONEY_HACKER, KINDOF_STEALTH_GARRISON, KINDOF_VEHICLE};
-use crate::common::model_state::{ModelConditionFlags, MODELCONDITION_DOOR_1_CLOSING, MODELCONDITION_DOOR_1_OPENING};
+use crate::common::model_state::{ModelConditionFlags, MODELCONDITION_COUNT, MODELCONDITION_DOOR_1_CLOSING, MODELCONDITION_DOOR_1_OPENING};
 use crate::common::module::{ModuleDataKind, MODULEINTERFACE_COLLIDE, MODULEINTERFACE_CONTAIN, MODULEINTERFACE_DAMAGE, MODULEINTERFACE_DIE};
 use crate::common::object_status_types::OBJECT_STATUS_IS_ATTACKING;
 use crate::common::thing_template::ThingTemplateAudioType;
@@ -243,6 +243,9 @@ pub struct OpenContain {
     door_close_countdown: u32,
     /// `m_xferContainIDList`: "for loading m_containList from a save game".
     xfer_contain_id_list: Vec<ObjectId>,
+    /// The objects of a contain list that a load found where the list was not empty: upstream destroys them in the middle of the xfer (see
+    /// [`ModuleCall::DrainXferDestroys`]).
+    xfer_destroy: Vec<ObjectId>,
     /// `m_playerEnteredMask`: "mask of player that entered last, if any".
     player_entered_mask: PlayerMaskType,
     /// `m_lastUnloadSoundFrame`.
@@ -284,6 +287,7 @@ impl PartialEq for OpenContain {
             && self.which_exit_path == other.which_exit_path
             && self.door_close_countdown == other.door_close_countdown
             && self.xfer_contain_id_list == other.xfer_contain_id_list
+            && self.xfer_destroy == other.xfer_destroy
             && self.player_entered_mask == other.player_entered_mask
             && self.last_unload_sound_frame == other.last_unload_sound_frame
             && self.last_load_sound_frame == other.last_load_sound_frame
@@ -548,6 +552,7 @@ impl OpenContain {
             which_exit_path: 1,
             door_close_countdown: 0,
             xfer_contain_id_list: Vec::new(),
+            xfer_destroy: Vec::new(),
             player_entered_mask: 0,
             last_unload_sound_frame: 0,
             last_load_sound_frame: 0,
@@ -600,7 +605,8 @@ impl OpenContain {
     }
 
     /// The state `xfer` writes, as words (the test compares them): the list size and the list, the entered mask, the two sound frames, the stealth count, the door
-    /// countdown, the condition state's bit count, the fire points' first rows, the three fire point indexes, the flags, the rally point and the exit path.
+    /// countdown, the condition state's bits (four words), the 32 fire point matrices folded into one word (`h * 31 + bits`, row by row), the three fire point indexes,
+    /// the art flag, the rally point and its flag, the enter-exit map, the exit path and the two flags.
     pub fn state_words(&self) -> Vec<u32> {
         let mut v = vec![self.contain_list_size, self.contain_list.len() as u32];
         v.extend(self.contain_list.iter().map(|&i| i as u32));
@@ -609,10 +615,23 @@ impl OpenContain {
         v.push(self.last_load_sound_frame);
         v.push(self.stealth_units_contained);
         v.push(self.door_close_countdown);
-        v.push(self.condition_state.count() as u32);
-        for m in self.fire_points.iter() {
-            v.extend(matrix_bits(m));
+        for w in 0..4 {
+            let mut m = 0u32;
+            for b in 0..32 {
+                let i = w * 32 + b;
+                if i < MODELCONDITION_COUNT && self.condition_state.test(i) {
+                    m |= 1 << b;
+                }
+            }
+            v.push(m);
         }
+        let mut h = 0u32;
+        for m in self.fire_points.iter() {
+            for x in matrix_bits(m) {
+                h = h.wrapping_mul(31).wrapping_add(x);
+            }
+        }
+        v.push(h);
         v.push(self.fire_point_start as u32);
         v.push(self.fire_point_next as u32);
         v.push(self.fire_point_size as u32);
@@ -693,7 +712,14 @@ pub fn base_is_passenger_allowed_to_fire<T: OpenContainVirtuals>(t: &mut T, worl
             undefined(world, me, Undefined::NullObject);
             return false;
         };
-        return out(t, world, me, |w| w.module_call(container, c, ModuleCall::IsPassengerAllowedToFire(INVALID_ID))).as_bool();
+        if world.cuts.contain.recursion >= MAX_RECURSION {
+            undefined(world, me, Undefined::EndlessLoop); // a ring of containers
+            return false;
+        }
+        world.cuts.contain.recursion += 1;
+        let r = out(t, world, me, |w| w.module_call(container, c, ModuleCall::IsPassengerAllowedToFire(INVALID_ID))).as_bool();
+        world.cuts.contain.recursion -= 1;
+        return r;
     }
 
     true // we say yes, and we are not inside something
@@ -701,6 +727,20 @@ pub fn base_is_passenger_allowed_to_fire<T: OpenContainVirtuals>(t: &mut T, worl
 
 /// `OpenContain::addOrRemoveObjFromWorld`.
 pub fn base_add_or_remove_obj_from_world<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, obj: ObjectId, add: bool) {
+    if world.cuts.contain.recursion >= MAX_RECURSION {
+        // a ring of containers: upstream recurses until the stack is gone
+        undefined(world, me, Undefined::EndlessLoop);
+        return;
+    }
+    world.cuts.contain.recursion += 1;
+    add_or_remove_obj_from_world_inner(t, world, me, obj, add);
+    world.cuts.contain.recursion -= 1;
+}
+
+/// The depth at which a recursion through containers that contain each other is taken for an endless one.
+const MAX_RECURSION: u32 = 64;
+
+fn add_or_remove_obj_from_world_inner<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, obj: ObjectId, add: bool) {
     // it's expensive to add and remove structures from the pathfinder, but we really shouldn't be doing it anyway as it doesn't make much sense to contain a
     // structure, but we'll check for it here and print a warning (DEBUG_LOG, compiled out)
     let Some(o) = world.objects.find(obj) else {
@@ -891,7 +931,10 @@ pub fn base_kill_all_contained<T: OpenContainVirtuals>(t: &mut T, world: &mut Wo
             t.on_removing(world, me, rider);
             let us = me.object;
             out(t, world, me, |w| w.contain_on_removed_from(rider, us));
-            out(t, world, me, |w| w.contain_kill(rider));
+            if !out(t, world, me, |w| w.contain_kill(rider)) {
+                undefined(world, me, Undefined::NullBodyModule); // `Object::kill` calls through `getBodyModule()`
+                return;
+            }
         } else {
             i += 1;
         }
@@ -1467,6 +1510,7 @@ pub fn base_process_damage_to_contained<T: OpenContainVirtuals>(t: &mut T, world
     let us = me.object;
 
     let items = t.get_contained_items_list();
+    let any = !items.is_empty();
     for object in items {
         // advance to the next iterator before we apply the damage. It's possible that the damage will kill the unit and foobar the iterator list.
 
@@ -1485,9 +1529,15 @@ pub fn base_process_damage_to_contained<T: OpenContainVirtuals>(t: &mut T, world
         out(t, world, me, |w| w.contain_attempt_damage(object, &mut damage_info));
 
         let dead = world.objects.find(object).is_none_or(|o| o.is_effectively_dead());
-        if !dead && percent_damage == 1.0 {
-            out(t, world, me, |w| w.contain_kill(object)); // in case we are carrying flame proof troops we have been asked to kill
+        if !dead && percent_damage == 1.0 && !out(t, world, me, |w| w.contain_kill(object)) {
+            // in case we are carrying flame proof troops we have been asked to kill
+            undefined(world, me, Undefined::NullBodyModule); // `Object::kill` calls through `getBodyModule()`
+            return;
         }
+    }
+    if any {
+        // upstream: `while( *it )` reads `end()` after the last rider (see `Undefined::EndIteratorDereferenced`)
+        undefined(world, me, Undefined::EndIteratorDereferenced);
     }
 }
 
@@ -1586,8 +1636,32 @@ pub fn contain_module_call<T: OpenContainVirtuals>(t: &mut T, world: &mut World,
             mark_all_passengers_detected(t, world, me);
             ModuleReply::Done
         }
+        ModuleCall::DrainXferDestroys => {
+            let gone = std::mem::take(&mut t.oc_mut().xfer_destroy);
+            for id in &gone {
+                let id = *id;
+                out(t, world, me, |w| w.contain_destroy_object(id));
+            }
+            ModuleReply::Ids(gone)
+        }
+        ModuleCall::ScatterToNearbyPosition(rider) => {
+            scatter_to_nearby_position(t, world, me, rider);
+            ModuleReply::Done
+        }
+        ModuleCall::RedeployOccupants => {
+            t.redeploy_occupants(world, me);
+            ModuleReply::Done
+        }
+        ModuleCall::PutObjAtNextFirePoint(obj) => {
+            t.put_obj_at_next_fire_point(world, me, obj);
+            ModuleReply::Done
+        }
         ModuleCall::LoadPostProcess => {
-            // the world-level pass: the saved ids become the contain list (`SC_INVALID_DATA` is recorded)
+            // the objects a load found in a list that was not empty are destroyed now (see `DrainXferDestroys`), then the saved ids become the contain list
+            // (`SC_INVALID_DATA` is recorded)
+            for id in std::mem::take(&mut t.oc_mut().xfer_destroy) {
+                out(t, world, me, |w| w.contain_destroy_object(id));
+            }
             if base_load_post_process(t, world, me).is_err() {
                 world.cuts.module_errors.push((me, IniError::new(IniErrorKind::InvalidData)));
             }
@@ -1832,9 +1906,10 @@ pub fn xfer_open_fields(oc: &mut OpenContain, xfer: &mut dyn Xfer, version: Xfer
         // the containment list should be emtpy at this time
         if !oc.contain_list.is_empty() {
             // srj sez: yeah, it SHOULD be, but a few rogue things come into existence (via their ctor) preloaded with stuff (eg, "CabooseFullOfTerrorists"). so
-            // just nuke 'em here. sigh... (the objects are destroyed by the world, which `load_post_process_world` finds out from `contain_list_size == 0`)
+            // just nuke 'em here. sigh... (the objects are destroyed by the world: `DrainXferDestroys`)
             oc.contain_list_size = 0;
-            oc.contain_list.clear();
+            let gone = std::mem::take(&mut oc.contain_list);
+            oc.xfer_destroy.extend(gone);
         }
 
         // contain list size

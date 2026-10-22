@@ -82,7 +82,8 @@ void Player::onStructureConstructionComplete(Object *builder, Object *structure,
 {
 	ulog("structdone %d %d %d %d", (int)m_idx, (int)builder->m_oid, (int)structure->m_oid, (int)isRebuild);
 }
-void Object::setTransformMatrix(const Matrix3D *mx) { m_matrix = *mx; ulog("settransform %d", (int)m_oid); }
+void (*g_xformHook)(Object *o, const Matrix3D *mx) = 0;   /* p1w13-sonnet: batch R (OpenContain) logs the matrix too; none by default */
+void Object::setTransformMatrix(const Matrix3D *mx) { m_matrix = *mx; ulog("settransform %d", (int)m_oid); if (g_xformHook) g_xformHook(this, mx); }
 void (*g_modDestroyHook)(Object *obj) = 0;
 ThingFactory *TheThingFactory = 0;
 AI *TheAI = 0;

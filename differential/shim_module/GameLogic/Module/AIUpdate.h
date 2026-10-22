@@ -4,6 +4,7 @@
 #define SHIM_MODULE_AIUPDATE_H
 #include "Lib/BaseType.h"
 #include "Common/GameCommon.h"
+#include <vector>
 class Object;
 class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	/* --- p1w13-sonnet --- (update batch O: SquishCollide asks what the AI is going for) */
@@ -21,6 +22,19 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	Bool isAiInDeadState() const { return m_dead; }   /* SlowDeathBehavior */
 	void markAsDead();
 	Bool m_dead = false;
+	/* --- end p1w13-sonnet --- */
+	/* --- p1w13-sonnet --- (batch R: OpenContain; differential/l9_open_contain_r.inc) */
+	void aiExit( Object *objectToExit, CommandSourceType cmdSource );
+	void aiExitInstantly( Object *objectToExit, CommandSourceType cmdSource );
+	void aiHackInternet( CommandSourceType cmdSource );
+	void aiMoveToPosition( const Coord3D *pos, CommandSourceType cmdSource );
+	void ignoreObstacle( const Object *obj );
+	void setIgnoreCollisionTime( Int frames );
+	void aiFollowPath( const std::vector<Coord3D> *path, Object *ignoreObject, CommandSourceType cmdSource );
+	void doQuickExit( const std::vector<Coord3D> *path );
+	Object *getEnterTarget() const { return m_enterTarget; }
+	const class LocomotorSet *getLocomotorSet() const { return 0; }
+	Object *m_enterTarget = 0;
 	/* --- end p1w13-sonnet --- */
 };
 #endif

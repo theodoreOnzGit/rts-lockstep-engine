@@ -614,6 +614,10 @@ impl ProbeModule {
             | ModuleCall::ExitObjectInAHurry(_)
             | ModuleCall::SetRallyPoint(_)
             | ModuleCall::GetRallyPoint
+            | ModuleCall::ScatterToNearbyPosition(_)
+            | ModuleCall::RedeployOccupants
+            | ModuleCall::PutObjAtNextFirePoint(_)
+            | ModuleCall::DrainXferDestroys
             | ModuleCall::GetNaturalRallyPoint => ModuleReply::Unhandled,
             // --- end p1w13-sonnet ---
             // --- p1w12-sonnet --- (FlammableUpdate's test: the body's setAflame is a line of the trace, when `probe_effect_trace` asks)

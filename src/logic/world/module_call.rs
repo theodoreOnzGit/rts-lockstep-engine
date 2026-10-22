@@ -414,6 +414,16 @@ pub enum ModuleCall {
     GetRallyPoint,
     /// `getNaturalRallyPoint(rallyPoint, offset)`; replies [`ModuleReply::Coord`].
     GetNaturalRallyPoint,
+    /// `scatterToNearbyPosition(rider)` (a protected member of the base class the derived containers call; the test reaches it through this).
+    ScatterToNearbyPosition(ObjectId),
+    /// `redeployOccupants()` (protected).
+    RedeployOccupants,
+    /// `putObjAtNextFirePoint(obj)` (protected).
+    PutObjAtNextFirePoint(ObjectId),
+    /// The objects `xfer` found in the contain list of a module that was loaded over one that was not empty ("a few rogue things come into existence preloaded with
+    /// stuff"): upstream destroys them in the middle of the xfer, which has no world here, so the world destroys them (`TheGameLogic->destroyObject`) when it gets
+    /// this; replies [`ModuleReply::Ids`] and empties the list.
+    DrainXferDestroys,
     // ---- the AI, physics and stealth calls the contain modules make on their riders ----
     /// `aiIdle(commandSource)`.
     AiIdleFrom { command_source: i32 },

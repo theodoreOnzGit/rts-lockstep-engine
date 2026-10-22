@@ -243,6 +243,9 @@ pub enum Undefined {
     NullObject,
     /// A loop that upstream restarts for ever (`OpenContain::harmAndForceExitAllContained`: a rider that stays in the list).
     EndlessLoop,
+    /// `OpenContain::processDamageToContained` loops `while( *it )`, so after the last rider it reads the value of `list::end()`, which holds none. The shipped game
+    /// reads it as NULL (the loop ends); recorded here, not acted on.
+    EndIteratorDereferenced,
     // --- end p1w13-sonnet ---
     // --- p1l9-upgrades ---
     /// `ArmorUpgrade`: a triggered chemical-suits upgrade on an object with no
@@ -381,6 +384,10 @@ impl IniError {
     }
     pub fn undefined(u: Undefined) -> Self {
         IniError::new(IniErrorKind::Undefined(u))
+    }
+    /// Whether this is `Undefined::EndIteratorDereferenced` (`processDamageToContained`'s read of `list::end()`).
+    pub fn is_end_iterator_dereferenced(&self) -> bool {
+        matches!(self.kind, IniErrorKind::Undefined(Undefined::EndIteratorDereferenced))
     }
     /// Whether upstream's behaviour is undefined for this input.
     pub fn is_undefined(&self) -> bool {

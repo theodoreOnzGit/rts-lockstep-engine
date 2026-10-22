@@ -71,6 +71,7 @@ public:
 	/* --- p1w13-sonnet --- (batch P: ActiveBody) */
 	void setAttackedBy( Int playerNdx ) { m_attackedBy[playerNdx] = true; m_attackedFrame = g_playerFrameHook ? g_playerFrameHook() : 0; }
 	Bool isLogicalRetaliationModeEnabled() const { return m_retaliation; }
+	PlayerMaskType getPlayerMask() const { return 1 << m_idx; }   /* batch R: OpenContain */
 	Bool m_retaliation = false;
 	Bool m_attackedBy[16] = { false };
 	UnsignedInt m_attackedFrame = 0;

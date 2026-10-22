@@ -163,7 +163,7 @@ impl Harness<'_> {
             if dr != dc && shown < 6 {
                 shown += 1;
                 let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
-                eprintln!("--- case {case} cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
+                eprintln!("--- case {case} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}\n  prev {:?}\n  cfg {cfg:x?}", show(&text), dr.get(i), dc.get(i), i.checked_sub(1).and_then(|j| dr.get(j)));
             }
             run.eq(&dr.len(), &dc.len(), what);
             for (a, b) in dr.iter().zip(dc.iter()) {
