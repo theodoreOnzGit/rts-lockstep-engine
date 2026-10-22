@@ -331,6 +331,10 @@ pub enum ModuleCall {
     SetConstructorObject(ObjectId),
     /// `StructureBody::getConstructorObjectID()`.
     GetConstructorObjectId,
+    /// `SpawnBehaviorInterface::getClosestSlave(pos)` (`HiveStructureBody`); replies [`ModuleReply::Id`] (`INVALID_ID`: no slave).
+    GetClosestSlave(Coord3D),
+    /// `ContainModuleInterface::getClosestRider(pos)` (`HiveStructureBody`); replies [`ModuleReply::Id`] (`INVALID_ID`: no rider).
+    GetClosestRider(Coord3D),
     // ---- SlowDeathBehavior and the physics, AI and slaved calls it makes ----
     /// `SlowDeathBehaviorInterface::beginSlowDeath(damageInfo)`.
     BeginSlowDeath(DamageInfo),

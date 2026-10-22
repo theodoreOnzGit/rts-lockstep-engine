@@ -3,5 +3,15 @@
 #ifndef SHIM_MODULE_SPAWNBEHAVIOR_H
 #define SHIM_MODULE_SPAWNBEHAVIOR_H
 #include "Lib/BaseType.h"
-class SpawnBehaviorInterface { public: void giveSlavesStealthUpgrade(Bool giveUpgrade); };
+class Object;
+/* p1w13-sonnet: getClosestSlave (HiveStructureBody, differential/l9_active_body_p.inc) answers the scene's object; m_ownerId names the owner in the effect log */
+class SpawnBehaviorInterface
+{
+public:
+	SpawnBehaviorInterface() : m_closestSlave(0), m_ownerId(0) {}
+	void giveSlavesStealthUpgrade(Bool giveUpgrade);
+	Object *getClosestSlave(const Coord3D *pos);
+	Object *m_closestSlave;
+	int m_ownerId;
+};
 #endif

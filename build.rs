@@ -3202,6 +3202,14 @@ mod differential {
                 let edited = text.replace(decl, &decl.replacen("static ", "", 1)).replace(find, "UpdateModule* slave = obj->findUpdateModule( key_SlavedUpdate );").replace(die, "l9sdSlaverDie( slave );").replace(loop2, loop2_fixed);
                 std::fs::write(mod_gen.join("SlowDeathBehavior_edit.cpp"), edited).expect("write SlowDeathBehavior_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // UndeadBody.cpp (differential/l9_active_body_p.inc): the second loop of startSecondLife names the first loop's `update` (Visual C++ 6 let a `for`
+                // variable outlive its loop; clang does not): it declares its own, asserted once, into mod_gen/UndeadBody_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Body/UndeadBody.cpp");
+                let text = std::fs::read_to_string(&path).expect("read UndeadBody.cpp");
+                let (loop2, loop2_fixed) = ("for( update = getObject()->getBehaviorModules(); *update; ++update)", "for( BehaviorModule** update = getObject()->getBehaviorModules(); *update; ++update)");
+                assert_eq!(text.matches(loop2).count(), 1, "UndeadBody.cpp: the second loop must occur once");
+                std::fs::write(mod_gen.join("UndeadBody_edit.cpp"), text.replace(loop2, loop2_fixed)).expect("write UndeadBody_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();

@@ -435,6 +435,14 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
                 _ => active_body::ActiveBody::new(object, Some(d.clone())).map(UpdateBody::ActiveBody),
             },
         )),
+        ModuleDataKind::UndeadBody(d) => Some(made(
+            active_body::ActiveBody::get_interface_mask(),
+            derived_bodies::UndeadBody::new(object, Some(d.clone())).map(UpdateBody::UndeadBody),
+        )),
+        ModuleDataKind::HiveStructureBody(d) => Some(made(
+            active_body::ActiveBody::get_interface_mask(),
+            derived_bodies::HiveStructureBody::new(object, Some(d.clone())).map(UpdateBody::HiveStructureBody),
+        )),
         ModuleDataKind::SlowDeathBehavior(d) => Some(made_update(
             slow_death_behavior::SlowDeathBehavior::get_interface_mask(),
             slow_death_behavior::SlowDeathBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::SlowDeathBehavior(m))),

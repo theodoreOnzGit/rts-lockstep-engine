@@ -111,6 +111,16 @@ pub struct ProbeAnswers {
     pub collidee: ObjectId,
     /// `isAiInDeadState()` of the AI (`markAsDead` sets it).
     pub ai_dead: bool,
+    /// The module is a `SlowDeathBehaviorInterface` (otherwise it answers none of its three calls).
+    pub slow_death: bool,
+    /// `isDieApplicable(info)`: bit `damageType` of this mask.
+    pub slow_applicable: u64,
+    /// `getProbabilityModifier(info)`.
+    pub slow_probability: i32,
+    /// `getClosestSlave(pos)` of the spawn behaviour (`has` bit 3 says there is one).
+    pub closest_slave: ObjectId,
+    /// `getClosestRider(pos)` of the contain module.
+    pub closest_rider: ObjectId,
     // --- end p1w13-sonnet ---
     // --- p1w7-sonnet ---
     /// `isClearToApproach`.
@@ -477,8 +487,37 @@ impl ProbeModule {
                 world.body_trace(format!("slaverdie {}", me.object));
                 ModuleReply::Done
             }
-            // a probe is no slow death behaviour
-            ModuleCall::BeginSlowDeath(_) | ModuleCall::GetProbabilityModifier(_) | ModuleCall::IsDieApplicable(_) => ModuleReply::Unhandled,
+            // a probe is no slow death behaviour unless it is told to be one (the body test's UndeadBody)
+            ModuleCall::BeginSlowDeath(info) => {
+                if !self.answers.slow_death {
+                    return ModuleReply::Unhandled;
+                }
+                world.body_trace(format!("slowbegin {} {}", me.object, crate::logic::world::body_cuts::info_line(&info)));
+                ModuleReply::Done
+            }
+            ModuleCall::GetProbabilityModifier(_) => {
+                if self.answers.slow_death {
+                    ModuleReply::Int(self.answers.slow_probability)
+                } else {
+                    ModuleReply::Unhandled
+                }
+            }
+            ModuleCall::IsDieApplicable(info) => {
+                if self.answers.slow_death {
+                    ModuleReply::Bool(self.answers.slow_applicable.checked_shr(info.input.damage_type as u32).unwrap_or(0) & 1 != 0)
+                } else {
+                    ModuleReply::Unhandled
+                }
+            }
+            // HiveStructureBody's: the closest slave of the spawn behaviour and the closest rider of the contain module
+            ModuleCall::GetClosestSlave(pos) => {
+                world.body_trace(format!("closestslave {} {:08x} {:08x} {:08x}", me.object, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()));
+                ModuleReply::Id(self.answers.closest_slave)
+            }
+            ModuleCall::GetClosestRider(pos) => {
+                world.body_trace(format!("closestrider {} {:08x} {:08x} {:08x}", me.object, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()));
+                ModuleReply::Id(self.answers.closest_rider)
+            }
             ModuleCall::AiGetGoalObject => ModuleReply::Id(self.answers.goal_object),
             ModuleCall::PhysicsGetVelocity => ModuleReply::Coord(self.answers.velocity),
             // --- end p1w13-sonnet ---

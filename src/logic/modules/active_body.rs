@@ -128,7 +128,7 @@ pub struct ActiveBodyModuleData {
 }
 
 /// `ActiveBodyModuleData::buildFieldParse`'s own table.
-static FIELD_PARSE: [FieldParse<ActiveBodyModuleData>; 6] = [
+pub(crate) static FIELD_PARSE: [FieldParse<ActiveBodyModuleData>; 6] = [
     FieldParse::new("MaxHealth", |ini, d, _| { d.max_health = ini.parse_real()?; Ok(()) }, UserData::None),
     FieldParse::new("InitialHealth", |ini, d, _| { d.initial_health = ini.parse_real()?; Ok(()) }, UserData::None),
     FieldParse::new("SubdualDamageCap", |ini, d, _| { d.subdual_damage_cap = ini.parse_real()?; Ok(()) }, UserData::None),
@@ -263,6 +263,11 @@ fn undefined(world: &mut World, me: ModuleHandle, u: Undefined) {
 }
 
 impl ActiveBody {
+    /// `setArmorSetFlag(ast)`: "m_curArmorSetFlags.set(ast, 1)" (`UndeadBody::startSecondLife`).
+    pub(crate) fn set_armor_set_flag(&mut self, ast: ArmorSetType) {
+        self.cur_armor_set_flags.set(ast, 1);
+    }
+
     /// `getInterfaceMask()`: `BodyModule::getInterfaceMask()`.
     pub const fn get_interface_mask() -> i32 {
         BodyModule::get_interface_mask()
@@ -1355,7 +1360,7 @@ fn set_initial_health<T: ActiveBodyVirtuals>(t: &mut T, world: &mut World, me: M
 }
 
 /// `setMaxHealth(maxHealth, healthChangeType)`.
-fn set_max_health<T: ActiveBodyVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, max_health: f32, health_change_type: MaxHealthChangeType) {
+pub(crate) fn set_max_health<T: ActiveBodyVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, max_health: f32, health_change_type: MaxHealthChangeType) {
     let ab = t.ab_mut();
     let prev_max_health = ab.max_health;
     ab.max_health = max_health;

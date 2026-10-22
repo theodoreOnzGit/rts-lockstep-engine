@@ -18,6 +18,8 @@ extern "C" int ref_real_to_int_ceil(float x);
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Body/ImmortalBody.cpp"
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Body/StructureBody.cpp"
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Body/InactiveBody.cpp"
+#include "UndeadBody_edit.cpp"  /* UndeadBody.cpp with one mechanical edit made by build.rs (the second loop declares its own `update`) */
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Body/HiveStructureBody.cpp"
 #include "DamageFX_cut.inc"            /* DamageFX::DamageFX, clear, getDamageFXThrottleTime, doDamageFX, getDamageFXList: verbatim from DamageFX.cpp (build.rs) */
 #include "BridgeBehaviorFromObject.inc" /* BridgeBehavior::getBridgeBehaviorInterfaceFromObject: verbatim from BridgeBehavior.cpp (build.rs) */
 #undef min
@@ -26,6 +28,9 @@ extern "C" int ref_real_to_int_ceil(float x);
 UnsignedInt (*g_playerFrameHook)() = 0;
 
 namespace {
+
+/* which class's data the first block of the file was: 0 ActiveBody (block D), 1 UndeadBody (U), 2 HiveStructureBody (H) */
+int g_abDataKind = 0;
 
 ModuleData *l9abRead(const char *filename)
 {
@@ -36,7 +41,12 @@ ModuleData *l9abRead(const char *filename)
 		ini.readLine();
 		AsciiString currentLine = ini.m_buffer;
 		try {
-			data = ActiveBody::friend_newModuleData(&ini);
+			const char *b = ini.m_buffer;
+			while (*b == ' ' || *b == '\t') ++b;
+			g_abDataKind = *b == 'U' ? 1 : *b == 'H' ? 2 : 0;
+			if (g_abDataKind == 1) data = UndeadBody::friend_newModuleData(&ini);
+			else if (g_abDataKind == 2) data = HiveStructureBody::friend_newModuleData(&ini);
+			else data = ActiveBody::friend_newModuleData(&ini);
 		} catch (...) {
 			char buff[1024];
 			sprintf(buff, "Error parsing INI file '%s' (Line: '%s')\n", ini.m_filename.str(), currentLine.str());
@@ -89,7 +99,13 @@ public:
 	bool m_garrisonable, m_immune, m_riderChange;
 	Object *m_owner;
 	mutable ContainedItemsList m_list;
-	AbContain() : m_garrisonable(false), m_immune(false), m_riderChange(false), m_owner(0) {}
+	Object *m_closestRider;
+	AbContain() : m_garrisonable(false), m_immune(false), m_riderChange(false), m_owner(0), m_closestRider(0) {}
+	virtual Object *getClosestRider(const Coord3D *pos)
+	{
+		ulog("closestrider %d %08x %08x %08x", (int)m_owner->m_oid, realBits(pos->x), realBits(pos->y), realBits(pos->z));
+		return m_closestRider;
+	}
 	virtual UnsignedInt getContainCount() const { return (UnsignedInt)m_items.size(); }
 	virtual Bool isGarrisonable() const { return m_garrisonable; }
 	virtual Bool isImmuneToClearBuildingAttacks() const { return m_immune; }
@@ -105,10 +121,23 @@ public:
 };
 
 /* a behaviour module with the damage, die, bridge and projectile interfaces (the Rust side's ProbeModule) */
-class AbProbe : public BehaviorModule, public DamageModuleInterface, public DieModuleInterface, public BridgeBehaviorInterface, public ProjectileUpdateInterface
+class AbProbe : public BehaviorModule, public DamageModuleInterface, public DieModuleInterface, public BridgeBehaviorInterface, public ProjectileUpdateInterface,
+	public SlowDeathBehaviorInterface
 {
 public:
-	AbProbe(Thing *t, const ModuleData *d, int index) : BehaviorModule(t, d), m_index(index), m_bridge(false), m_projectile(false) { for (int i = 0; i < 4; ++i) m_towers[i] = INVALID_ID; }
+	AbProbe(Thing *t, const ModuleData *d, int index) : BehaviorModule(t, d), m_index(index), m_bridge(false), m_projectile(false), m_slow(false), m_slowMask(0), m_slowProb(0)
+	{
+		for (int i = 0; i < 4; ++i) m_towers[i] = INVALID_ID;
+	}
+	virtual SlowDeathBehaviorInterface *getSlowDeathBehaviorInterface() { return m_slow ? this : 0; }
+	/* SlowDeathBehaviorInterface (UndeadBody's second life asks every behaviour of the object) */
+	virtual void beginSlowDeath(const DamageInfo *info) { ulog("slowbegin %d %s", (int)getObject()->m_oid, abInfoLine(info).c_str()); }
+	virtual Int getProbabilityModifier(const DamageInfo *) const { return m_slowProb; }
+	virtual Bool isDieApplicable(const DamageInfo *info) const
+	{
+		const int t = (int)info->in.m_damageType;
+		return t >= 0 && t < 64 && ((m_slowMask >> t) & 1) != 0;
+	}
 	virtual NameKeyType getModuleNameKey() const { return NAMEKEY_INVALID; }
 	virtual DamageModuleInterface *getDamage() { return this; }
 	virtual DieModuleInterface *getDie() { return this; }
@@ -140,7 +169,9 @@ public:
 	virtual void setFramesTillCountermeasureDiversionOccurs(UnsignedInt) {}
 	virtual void projectileNowJammed() { ulog("jammed %d", (int)getObject()->m_oid); }
 	int m_index;
-	bool m_bridge, m_projectile;
+	bool m_bridge, m_projectile, m_slow;
+	unsigned long long m_slowMask;
+	int m_slowProb;
 	ObjectID m_towers[4];
 };
 
@@ -154,6 +185,7 @@ struct AbObj
 	int nProbes;
 	BehaviorModule *behaviors[4];
 	AbContain contain;
+	SpawnBehaviorInterface spawn;
 	AIUpdateInterface ai;
 	Drawable draw;
 	Team team;
@@ -241,6 +273,11 @@ Int Object::getMultiLogicalBonePosition(const char *boneNamePrefix, Int maxBones
 	if (n > maxBones) n = maxBones;
 	for (Int i = 0; i < n; ++i) positions[i] = it->second[(size_t)i];
 	return n;
+}
+Object *SpawnBehaviorInterface::getClosestSlave(const Coord3D *pos)
+{
+	ulog("closestslave %d %08x %08x %08x", m_ownerId, realBits(pos->x), realBits(pos->y), realBits(pos->z));
+	return m_closestSlave;
 }
 Bool Object::isFactionStructure() const { return isAnyKindOf(KINDOFMASK_FS); }
 CanAttackResult Object::getAbleToAttackSpecificObject(AbleToAttackType, const Object *target, CommandSourceType, WeaponSlotType) const
@@ -393,7 +430,8 @@ void abPutObject(AbObj *a)
 	putU32(w[1]);
 	putU32(a->obj->m_effDead ? 1 : 0);
 	putU32(realBits(a->obj->m_geometry.getMaxHeightAbovePosition()));
-	putU32(a->cls == 3 ? (unsigned)((StructureBody *)a->body)->getConstructorObjectID() : 0u);
+	/* the structure's constructor object, the undead body's second life flag */
+	putU32(a->cls == 3 || a->cls == 6 ? (unsigned)((StructureBody *)a->body)->getConstructorObjectID() : a->cls == 5 ? (unsigned)((UndeadBody *)a->body)->m_isSecondLife : 0u);
 }
 
 /* the effect log of one op: the events in order (the FX lists, the UI refresh) and the ulog lines */
@@ -444,6 +482,14 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 	if (status) return status;
 	{
 		const ActiveBodyModuleData *ad = (const ActiveBodyModuleData *)d;
+		putU32((unsigned)g_abDataKind);
+		if (g_abDataKind == 1) putU32(realBits(((const UndeadBodyModuleData *)d)->m_secondLifeMaxHealth));
+		if (g_abDataKind == 2) {
+			const HiveStructureBodyModuleData *hd = (const HiveStructureBodyModuleData *)d;
+			unsigned long long pm = 0, sm = 0;
+			for (int t = 0; t < 38; ++t) { if (hd->m_damageTypesToPropagateToSlaves.test(t)) pm |= 1ull << t; if (hd->m_damageTypesToSwallow.test(t)) sm |= 1ull << t; }
+			putU32((unsigned)pm); putU32((unsigned)(pm >> 32)); putU32((unsigned)sm); putU32((unsigned)(sm >> 32));
+		}
 		putU32(realBits(ad->m_maxHealth));
 		putU32(realBits(ad->m_initialHealth));
 		putU32(realBits(ad->m_subdualDamageCap));
@@ -541,7 +587,8 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 	/* the objects */
 	g_abN = (int)c.u();
 	struct ObjCfg { unsigned tmpl, kinds, status; int player; int vet; unsigned pos[3]; unsigned containedBy; unsigned drawable, hasAi, moving, idle, hasContain, garrisonable, immune, riderChange, nProbes;
-		unsigned nItems; unsigned items[3]; unsigned probeBridge[2], probeProj[2]; unsigned towers[4]; unsigned bodyData[5]; unsigned cls; } oc[AB_OBJS];
+		unsigned nItems; unsigned items[3]; unsigned probeBridge[2], probeProj[2]; unsigned towers[4]; unsigned bodyData[5]; unsigned cls;
+		unsigned secondLife, propLo, propHi, swallowLo, swallowHi, spawn, closestSlave, closestRider; unsigned probeSlow[2], slowLo[2], slowHi[2]; int slowProb[2]; } oc[AB_OBJS];
 	for (int k = 0; k < g_abN; ++k) {
 		ObjCfg &o = oc[k];
 		o.tmpl = c.u(); o.kinds = c.u(); o.status = c.u(); o.player = c.s(); o.vet = c.s();
@@ -554,6 +601,9 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 		for (int i = 0; i < 4; ++i) o.towers[i] = c.u();
 		for (int i = 0; i < 5; ++i) o.bodyData[i] = c.u();
 		o.cls = c.u();
+		o.secondLife = c.u(); o.propLo = c.u(); o.propHi = c.u(); o.swallowLo = c.u(); o.swallowHi = c.u();
+		o.spawn = c.u(); o.closestSlave = c.u(); o.closestRider = c.u();
+		for (int i = 0; i < 2; ++i) { o.probeSlow[i] = c.u(); o.slowLo[i] = c.u(); o.slowHi[i] = c.u(); o.slowProb[i] = c.s(); }
 	}
 	for (int i = 0; i < g_abN; ++i) for (int j = 0; j < g_abN; ++j) g_abRel[i][j] = (Relationship)c.s();
 	/* the damage infos */
@@ -662,10 +712,25 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 		a.contain.m_riderChange = o.riderChange != 0;
 		a.contain.m_items.clear();
 		obj->m_contain = o.hasContain ? &a.contain : 0;
+		/* the spawn behaviour is the one of probe (spawn - 1), when the object has that many */
+		a.spawn.m_ownerId = k + 1;
+		a.spawn.m_closestSlave = 0;
+		obj->m_spawn = (o.spawn != 0 && o.spawn <= o.nProbes) ? &a.spawn : 0;
 		/* the body */
 		if (k == 0) a.data = (ActiveBodyModuleData *)d;
 		else {
-			a.data = new ActiveBodyModuleData;
+			if (o.cls == 5) {
+				UndeadBodyModuleData *ud = new UndeadBodyModuleData;
+				ud->m_secondLifeMaxHealth = abF(o.secondLife);
+				a.data = ud;
+			} else if (o.cls == 6) {
+				HiveStructureBodyModuleData *hd = new HiveStructureBodyModuleData;
+				for (int t = 0; t < 38; ++t) {
+					if ((t < 32 ? o.propLo >> t : o.propHi >> (t - 32)) & 1) hd->m_damageTypesToPropagateToSlaves.set(t, 1);
+					if ((t < 32 ? o.swallowLo >> t : o.swallowHi >> (t - 32)) & 1) hd->m_damageTypesToSwallow.set(t, 1);
+				}
+				a.data = hd;
+			} else a.data = new ActiveBodyModuleData;
 			a.data->m_maxHealth = abF(o.bodyData[0]);
 			a.data->m_initialHealth = abF(o.bodyData[1]);
 			a.data->m_subdualDamageCap = abF(o.bodyData[2]);
@@ -678,6 +743,9 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 			a.probe[i] = new AbProbe(obj, probeData, i + 1);
 			a.probe[i]->m_bridge = o.probeBridge[i] != 0;
 			a.probe[i]->m_projectile = o.probeProj[i] != 0;
+			a.probe[i]->m_slow = o.probeSlow[i] != 0;
+			a.probe[i]->m_slowMask = ((unsigned long long)o.slowHi[i] << 32) | o.slowLo[i];
+			a.probe[i]->m_slowProb = o.slowProb[i];
 			for (int t = 0; t < 4; ++t) a.probe[i]->m_towers[t] = (ObjectID)o.towers[t];
 		}
 		a.body = 0;
@@ -691,6 +759,8 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 		const ObjCfg &o = oc[k];
 		a.obj->m_containedBy = o.containedBy ? abFind(o.containedBy)->obj : 0;
 		for (unsigned i = 0; i < o.nItems; ++i) if (o.items[i]) a.contain.m_items.push_back(abFind(o.items[i])->obj);
+		a.spawn.m_closestSlave = o.closestSlave ? abFind(o.closestSlave)->obj : 0;
+		a.contain.m_closestRider = o.closestRider ? abFind(o.closestRider)->obj : 0;
 	}
 	/* the bodies, once every object they may name exists (the constructor reads its object's template) */
 	for (int k = 0; k < g_abN && !failed; ++k) {
@@ -703,6 +773,8 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 			case 2: a.body = new ImmortalBody(a.obj, a.data); break;
 			case 3: a.body = new StructureBody(a.obj, a.data); break;
 			case 4: a.body = new InactiveBody(a.obj, a.data); break;
+			case 5: a.body = new UndeadBody(a.obj, a.data); break;
+			case 6: a.body = new HiveStructureBody(a.obj, a.data); break;
 			default: a.body = new ActiveBody(a.obj, a.data); break;
 			}
 		}
@@ -811,7 +883,7 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 				case 33: t->obj->m_drawable = o[2] ? &t->draw : 0; break;
 				case 34: t->obj->m_level = (VeterancyLevel)o[2]; break;
 				case 35: if (t->cls != 4) { ActiveBody *ab = (ActiveBody *)t->body; ab->m_particleSystems = ab->m_particleSystems; } break;
-				case 36: if (t->cls == 3) ((StructureBody *)t->body)->setConstructorObject(o[2] ? abFind(o[2])->obj : 0); break;
+				case 36: if (t->cls == 3 || t->cls == 6) ((StructureBody *)t->body)->setConstructorObject(o[2] ? abFind(o[2])->obj : 0); break;
 				default: break;
 				}
 			}

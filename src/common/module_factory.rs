@@ -715,6 +715,16 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::active_body::new_module_data),
             which_interfaces: Some(crate::logic::modules::derived_bodies::ImmortalBody::get_interface_mask()),
         }),
+        "UndeadBody" => Some(ModuleTemplate {
+            create_proc: Some(new_body_base),
+            create_data_proc: Some(crate::logic::modules::derived_bodies::new_undead_module_data),
+            which_interfaces: Some(crate::logic::modules::derived_bodies::UndeadBody::get_interface_mask()),
+        }),
+        "HiveStructureBody" => Some(ModuleTemplate {
+            create_proc: Some(new_body_base),
+            create_data_proc: Some(crate::logic::modules::derived_bodies::new_hive_module_data),
+            which_interfaces: Some(crate::logic::modules::derived_bodies::HiveStructureBody::get_interface_mask()),
+        }),
         "StructureBody" => Some(ModuleTemplate {
             create_proc: Some(new_body_base),
             create_data_proc: Some(crate::logic::modules::active_body::new_module_data),

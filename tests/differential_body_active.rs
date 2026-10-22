@@ -110,6 +110,7 @@ use rts_lockstep_engine::logic::armor_set::ArmorSetFlags;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
 use rts_lockstep_engine::logic::damage::*;
 use rts_lockstep_engine::logic::modules::active_body::ActiveBodyModuleData;
+use rts_lockstep_engine::logic::modules::derived_bodies::{HiveStructureBodyModuleData, UndeadBodyModuleData};
 use rts_lockstep_engine::logic::world::body_cuts::{info_line, AutoParticle, BodyCall};
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleReply};
@@ -211,8 +212,21 @@ struct Obj {
     probe_proj: [bool; 2],
     towers: [i32; 4],
     body: [u32; 5],
-    /// 0 `ActiveBody`, 1 `HighlanderBody`, 2 `ImmortalBody`, 3 `StructureBody`
+    /// 0 `ActiveBody`, 1 `HighlanderBody`, 2 `ImmortalBody`, 3 `StructureBody`, 4 `InactiveBody`, 5 `UndeadBody`, 6 `HiveStructureBody`
     cls: u32,
+    /// `SecondLifeMaxHealth` of an `UndeadBody`'s data (float bits).
+    second_life: u32,
+    /// The damage types a `HiveStructureBody` propagates / swallows, as bit sets (`DamageTypeFlags`).
+    propagate: u64,
+    swallow: u64,
+    /// The probe (1-based; 0 none) that is the object's spawn behaviour, and the objects it and the contain module answer as the closest slave and rider.
+    spawn: u32,
+    closest_slave: i32,
+    closest_rider: i32,
+    /// Per probe: a slow death behaviour, the damage types it is applicable to (bit set), its probability modifier.
+    probe_slow: [bool; 2],
+    slow_mask: [u64; 2],
+    slow_prob: [i32; 2],
 }
 
 struct Tmpl {
@@ -315,6 +329,16 @@ fn parse_scene(cfg: &[u32]) -> Scene {
         let towers = [r.u() as i32, r.u() as i32, r.u() as i32, r.u() as i32];
         let body = [r.u(), r.u(), r.u(), r.u(), r.u()];
         let cls = r.u();
+        let second_life = r.u();
+        let (p_lo, p_hi, s_lo, s_hi) = (r.u(), r.u(), r.u(), r.u());
+        let (spawn, closest_slave, closest_rider) = (r.u(), r.u() as i32, r.u() as i32);
+        let (mut probe_slow, mut slow_mask, mut slow_prob) = ([false; 2], [0u64; 2], [0i32; 2]);
+        for i in 0..2 {
+            probe_slow[i] = r.u() != 0;
+            let (lo, hi) = (r.u(), r.u());
+            slow_mask[i] = (u64::from(hi) << 32) | u64::from(lo);
+            slow_prob[i] = r.s();
+        }
         objs.push(Obj {
             tmpl,
             kinds,
@@ -338,6 +362,15 @@ fn parse_scene(cfg: &[u32]) -> Scene {
             towers,
             body,
             cls,
+            second_life,
+            propagate: (u64::from(p_hi) << 32) | u64::from(p_lo),
+            swallow: (u64::from(s_hi) << 32) | u64::from(s_lo),
+            spawn,
+            closest_slave,
+            closest_rider,
+            probe_slow,
+            slow_mask,
+            slow_prob,
         });
     }
     let mut rel = vec![vec![0; n]; n];
@@ -411,6 +444,19 @@ fn health_str(g: &mut Gen, clean: bool) -> String {
     }
 }
 
+/// The value of a `DamageTypeFlags` field: `NONE` or `ALL`, then `+TYPE` / `-TYPE`s (an unknown type, and the empty value, sometimes).
+fn gen_flags(g: &mut Gen, clean: bool) -> String {
+    let mut t = vec![if g.below(3) == 0 { "ALL".to_string() } else { "NONE".to_string() }];
+    for _ in 0..g.below(6) {
+        let name = DAMAGE_TYPE_NAMES[g.below(DAMAGE_NUM_TYPES as u32) as usize];
+        t.push(format!("{}{name}", if g.below(4) == 0 { '-' } else { '+' }));
+    }
+    if !clean && g.below(10) == 0 {
+        t.push("+NOT_A_TYPE".to_string());
+    }
+    t.join(" ")
+}
+
 fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     let mut lines = Vec::new();
     if g.below(100) < 92 {
@@ -435,7 +481,19 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     if !clean && g.below(12) == 0 {
         lines.push(format!("Bogus{}1", gen_sep(g)));
     }
-    let mut s = String::from("D\n");
+    // the class of the data: the block's name (D `ActiveBody`, U `UndeadBody`, H `HiveStructureBody`)
+    let kind: &str = ["D", "D", "D", "U", "U", "H", "H"][g.below(7) as usize];
+    if kind == "U" && g.below(100) < 80 {
+        lines.push(format!("SecondLifeMaxHealth{}{}", gen_sep(g), health_str(g, clean)));
+    }
+    if kind == "H" {
+        for key in ["PropagateDamageTypesToSlavesWhenExisting", "SwallowDamageTypesIfSlavesNotExisting"] {
+            if g.below(100) < 85 {
+                lines.push(format!("{key}{}{}", gen_sep(g), gen_flags(g, clean)));
+            }
+        }
+    }
+    let mut s = format!("{kind}\n");
     for l in &lines {
         s.push_str(gen_indent(g));
         s.push_str(l);
@@ -486,9 +544,19 @@ fn gen_damage_type(g: &mut Gen) -> i32 {
     }
 }
 
+/// A set of damage types, as a bit set: a few named ones, or most of them.
+fn gen_type_mask(g: &mut Gen) -> u64 {
+    let all = (1u64 << DAMAGE_NUM_TYPES) - 1;
+    match g.below(6) {
+        0 => 0,
+        1 => all,
+        2 => all & !(1 << DAMAGE_UNRESISTABLE),
+        _ => (g.u32() as u64 | (g.u32() as u64) << 32) & (g.u32() as u64 | (g.u32() as u64) << 32) & all,
+    }
+}
+
 /// The scene of a case, as words (the one writer of the layout).
 fn gen_scene(g: &mut Gen, data: &Option<ModuleDataKind>, focus: u32) -> Vec<u32> {
-    let _ = data;
     let mut w = W(Vec::new());
     let n = 2 + g.below(3) as usize;
     w.u(g.below(300));
@@ -629,7 +697,32 @@ fn gen_scene(g: &mut Gen, data: &Option<ModuleDataKind>, focus: u32) -> Vec<u32>
         w.f(if focus == 4 { *pick(g, &[&100.0f32, &50.0, &80.0, &300.0, &0.0]) } else { *pick(g, &[&0.0f32, &0.0, &100.0, &50.0]) });
         w.u(*pick(g, &[&0u32, &30, &90]));
         w.f(*pick(g, &[&0.0f32, &5.0, &20.0]));
-        w.u(*pick(g, &[&0u32, &0, &1, &2, &3, &3, &4, &4])); // the class of the body
+        // the class of the body; the first object's follows the class of the data read from the INI
+        w.u(match (k, data) {
+            (0, Some(ModuleDataKind::UndeadBody(_))) => 5,
+            (0, Some(ModuleDataKind::HiveStructureBody(_))) => 6,
+            (0, _) => *pick(g, &[&0u32, &0, &1, &2, &3, &3, &4, &4]),
+            _ => *pick(g, &[&0u32, &0, &1, &2, &3, &3, &4, &4, &5, &5, &5, &6, &6, &6]),
+        });
+        // the second life, the damage types a hive passes on, its spawn behaviour, its closest slave and rider (always a later object: a hive that passed damage on
+        // to itself, or in a ring, would recurse for ever upstream), and the slow death behaviours among the probes
+        w.f(*pick(g, &[&1.0f32, &50.0, &200.0, &0.0, &-5.0, &1000.0, &30.0]));
+        for _ in 0..2 {
+            let m = gen_type_mask(g);
+            w.u(m as u32);
+            w.u((m >> 32) as u32);
+        }
+        w.u(if g.below(3) == 0 { 0 } else { 1 + g.below(2) });
+        for _ in 0..2 {
+            w.u(if k + 1 < n && g.below(4) != 0 { (k as u32 + 2) + g.below((n - k - 1) as u32) } else { 0 });
+        }
+        for _ in 0..2 {
+            w.u(u32::from(g.below(5) < 3));
+            let m = gen_type_mask(g);
+            w.u(m as u32);
+            w.u((m >> 32) as u32);
+            w.s(*pick(g, &[&1i32, &2, &3, &5, &10, &0, &-2, &100]));
+        }
     }
     for i in 0..n {
         for j in 0..n {
@@ -912,8 +1005,11 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         return out;
     }
     let mut r = Reader::new(b);
-    let data: Vec<u32> = (0..5).map(|_| r.u32()).collect();
-    out.push(format!("data {data:08x?}"));
+    // the class of the data (0 `ActiveBody`, 1 `UndeadBody`: the second life, 2 `HiveStructureBody`: the two sets as four words), then the five fields
+    let kind = r.u32();
+    let n_extra = [0, 1, 4][kind as usize];
+    let data: Vec<u32> = (0..5 + n_extra).map(|_| r.u32()).collect();
+    out.push(format!("data {kind} {data:08x?}"));
     let n_obj = r.u32();
     for i in 0..=n_ops {
         if r.at_end() {
@@ -985,6 +1081,8 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId) {
             Some(UpdateBody::HighlanderBody(m)) => (m.active_body(), None),
             Some(UpdateBody::ImmortalBody(m)) => (m.active_body(), None),
             Some(UpdateBody::StructureBody(m)) => (m.active_body(), Some(m.get_constructor_object_id())),
+            Some(UpdateBody::UndeadBody(m)) => (m.active_body(), Some(i32::from(m.is_second_life()))),
+            Some(UpdateBody::HiveStructureBody(m)) => (m.active_body(), Some(m.structure_body().get_constructor_object_id())),
             _ => panic!("the body is in its slot"),
         };
         (m.state_words(), m.get_last_damage_info().clone(), constructor)
@@ -1010,6 +1108,22 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId) {
     put_u32(v, o.geometry_info.get_max_height_above_position().to_bits());
     // the constructor object id of a StructureBody, else 0
     put_u32(v, constructor.unwrap_or(0) as u32);
+}
+
+/// A `DamageTypeFlags` as a bit set (bit `t` for damage type `t`).
+fn flags_bits(f: &DamageTypeFlags) -> u64 {
+    (0..DAMAGE_NUM_TYPES as i32).filter(|&t| f.test(t)).fold(0, |m, t| m | 1 << t)
+}
+
+/// The inverse of [`flags_bits`].
+fn bits_flags(m: u64) -> DamageTypeFlags {
+    let mut f = DamageTypeFlags::NONE;
+    for t in 0..DAMAGE_NUM_TYPES as i32 {
+        if m >> t & 1 != 0 {
+            f.set(t, 1);
+        }
+    }
+    f
 }
 
 fn veterancy(i: i32) -> VeterancyLevel {
@@ -1177,7 +1291,19 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
 fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally: &RefCell<Tally>) -> RunOut {
     let mut v = Vec::new();
     {
-        let ModuleDataKind::ActiveBody(d) = &data else { unreachable!("not an ActiveBody") };
+        // the class of the data (0 `ActiveBody`, 1 `UndeadBody`, 2 `HiveStructureBody`) and what it adds, then the five fields of `ActiveBodyModuleData`
+        let (d, extra): (&ActiveBodyModuleData, Vec<u32>) = match &data {
+            ModuleDataKind::ActiveBody(d) => (d, vec![0]),
+            ModuleDataKind::UndeadBody(d) => (&d.active, vec![1, d.second_life_max_health.to_bits()]),
+            ModuleDataKind::HiveStructureBody(d) => {
+                let (p, sw) = (flags_bits(&d.damage_types_to_propagate_to_slaves), flags_bits(&d.damage_types_to_swallow));
+                (&d.active, vec![2, p as u32, (p >> 32) as u32, sw as u32, (sw >> 32) as u32])
+            }
+            _ => unreachable!("not a body's data"),
+        };
+        for x in extra {
+            put_u32(&mut v, x);
+        }
         put_u32(&mut v, d.max_health.to_bits());
         put_u32(&mut v, d.initial_health.to_bits());
         put_u32(&mut v, d.subdual_damage_cap.to_bits());
@@ -1314,16 +1440,26 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         let body_data = if k == 0 {
             data.clone()
         } else {
-            ModuleDataKind::ActiveBody(Arc::new(ActiveBodyModuleData {
+            let active = ActiveBodyModuleData {
                 body: Default::default(),
                 max_health: f(o.body[0]),
                 initial_health: f(o.body[1]),
                 subdual_damage_cap: f(o.body[2]),
                 subdual_damage_heal_rate: o.body[3],
                 subdual_damage_heal_amount: f(o.body[4]),
-            }))
+            };
+            match o.cls {
+                5 => ModuleDataKind::UndeadBody(Arc::new(UndeadBodyModuleData { active, second_life_max_health: f(o.second_life) })),
+                6 => ModuleDataKind::HiveStructureBody(Arc::new(HiveStructureBodyModuleData {
+                    active,
+                    damage_types_to_propagate_to_slaves: bits_flags(o.propagate),
+                    damage_types_to_swallow: bits_flags(o.swallow),
+                })),
+                _ => ModuleDataKind::ActiveBody(Arc::new(active)),
+            }
         };
-        let class_name: &[u8] = [b"ActiveBody".as_slice(), b"HighlanderBody", b"ImmortalBody", b"StructureBody", b"InactiveBody"][o.cls as usize];
+        let class_name: &[u8] =
+            [b"ActiveBody".as_slice(), b"HighlanderBody", b"ImmortalBody", b"StructureBody", b"InactiveBody", b"UndeadBody", b"HiveStructureBody"][o.cls as usize];
         // an InactiveBody has no module data of its own: `Module::friend_newModuleData`'s plain `ModuleData`
         let body_data = if o.cls == 4 { ModuleDataKind::Module(Arc::new(rts_lockstep_engine::common::module::ModuleData::new())) } else { body_data };
         let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class_name, b"ModuleTag_Body", &body_data).unwrap().unwrap();
@@ -1345,6 +1481,18 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 a.has |= 1 << 4;
             }
             a.bridge_towers = o.towers;
+            if o.probe_slow[i] {
+                a.slow_death = true;
+                a.slow_applicable = o.slow_mask[i];
+                a.slow_probability = o.slow_prob[i];
+            }
+            if o.spawn == i as u32 + 1 {
+                a.has |= 1 << 3;
+                a.closest_slave = o.closest_slave;
+            }
+            if i == 0 {
+                a.closest_rider = o.closest_rider;
+            }
             let mut pm = NewModule::plain(b"AbProbe", b"ModuleTag_Probe");
             pm.interfaces = MODULEINTERFACE_DAMAGE | MODULEINTERFACE_DIE | if i == 0 && o.has_contain { MODULEINTERFACE_CONTAIN } else { 0 };
             pm.is_ai = i == 0 && o.has_ai;
@@ -1604,8 +1752,18 @@ fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<
     Ok(())
 }
 
+fn read_undead_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
+    *out = Some(ModuleDataKind::UndeadBody(Arc::new(UndeadBodyModuleData::friend_new_module_data(Some(ini))?)));
+    Ok(())
+}
+
+fn read_hive_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
+    *out = Some(ModuleDataKind::HiveStructureBody(Arc::new(HiveStructureBodyModuleData::friend_new_module_data(Some(ini))?)));
+    Ok(())
+}
+
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }];
+    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "U", parse: read_undead_block }, BlockParse { token: "H", parse: read_hive_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)

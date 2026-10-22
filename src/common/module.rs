@@ -410,6 +410,10 @@ pub enum ModuleDataKind {
     ActiveBody(Arc<crate::logic::modules::active_body::ActiveBodyModuleData>),
     /// `SlowDeathBehaviorModuleData`.
     SlowDeathBehavior(Arc<crate::logic::modules::slow_death_behavior::SlowDeathBehaviorModuleData>),
+    /// `UndeadBodyModuleData`.
+    UndeadBody(Arc<crate::logic::modules::derived_bodies::UndeadBodyModuleData>),
+    /// `HiveStructureBodyModuleData`.
+    HiveStructureBody(Arc<crate::logic::modules::derived_bodies::HiveStructureBodyModuleData>),
     // --- end p1w13-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
@@ -506,6 +510,8 @@ impl ModuleDataKind {
             ModuleDataKind::FireSpreadUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::ActiveBody(d) => &d.body.behavior.module_data,
             ModuleDataKind::SlowDeathBehavior(d) => &d.update.behavior.module_data,
+            ModuleDataKind::UndeadBody(d) => &d.active.body.behavior.module_data,
+            ModuleDataKind::HiveStructureBody(d) => &d.active.body.behavior.module_data,
             // --- end p1w13-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
@@ -841,6 +847,20 @@ impl ModuleDataKind {
             ModuleDataKind::SlowDeathBehavior(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::UndeadBody(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.active.body.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::HiveStructureBody(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.active.body.behavior.module_data.set_module_tag_name_key(key);
                     true
                 }
                 None => false,

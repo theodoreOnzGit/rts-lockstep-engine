@@ -224,6 +224,10 @@ pub enum UpdateBody {
     ImmortalBody(crate::logic::modules::derived_bodies::ImmortalBody),
     /// `StructureBody`.
     StructureBody(crate::logic::modules::derived_bodies::StructureBody),
+    /// `UndeadBody`.
+    UndeadBody(crate::logic::modules::derived_bodies::UndeadBody),
+    /// `HiveStructureBody`.
+    HiveStructureBody(crate::logic::modules::derived_bodies::HiveStructureBody),
     /// `InactiveBody`.
     InactiveBody(crate::logic::modules::inactive_body::InactiveBody),
     /// `SlowDeathBehavior`.
@@ -330,6 +334,8 @@ impl UpdateBody {
             UpdateBody::HighlanderBody(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::ImmortalBody(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::StructureBody(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::UndeadBody(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::HiveStructureBody(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::InactiveBody(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SlowDeathBehavior(m) => m.world_update(world, me),
 // --- end p1w13-sonnet ---
@@ -434,6 +440,8 @@ impl UpdateBody {
             UpdateBody::HighlanderBody(m) => m.module_call(world, me, call),
             UpdateBody::ImmortalBody(m) => m.module_call(world, me, call),
             UpdateBody::StructureBody(m) => m.module_call(world, me, call),
+            UpdateBody::UndeadBody(m) => m.module_call(world, me, call),
+            UpdateBody::HiveStructureBody(m) => m.module_call(world, me, call),
             UpdateBody::InactiveBody(m) => m.module_call(world, me, call),
             UpdateBody::SlowDeathBehavior(m) => m.module_call(world, me, call),
 // --- end p1w13-sonnet ---
@@ -781,6 +789,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::HighlanderBody(m) => m.crc(xfer),
             UpdateBody::ImmortalBody(m) => m.crc(xfer),
             UpdateBody::StructureBody(m) => m.crc(xfer),
+            UpdateBody::UndeadBody(m) => m.crc(xfer),
+            UpdateBody::HiveStructureBody(m) => m.crc(xfer),
             UpdateBody::InactiveBody(m) => m.crc(xfer),
             UpdateBody::SlowDeathBehavior(m) => m.crc(xfer),
 // --- end p1w13-sonnet ---
@@ -881,6 +891,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::HighlanderBody(m) => m.xfer(xfer),
             UpdateBody::ImmortalBody(m) => m.xfer(xfer),
             UpdateBody::StructureBody(m) => m.xfer(xfer),
+            UpdateBody::UndeadBody(m) => m.xfer(xfer),
+            UpdateBody::HiveStructureBody(m) => m.xfer(xfer),
             UpdateBody::InactiveBody(m) => m.xfer(xfer),
             UpdateBody::SlowDeathBehavior(m) => m.xfer(xfer),
 // --- end p1w13-sonnet ---
@@ -981,6 +993,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::HighlanderBody(m) => m.load_post_process(),
             UpdateBody::ImmortalBody(m) => m.load_post_process(),
             UpdateBody::StructureBody(m) => m.load_post_process(),
+            UpdateBody::UndeadBody(m) => m.load_post_process(),
+            UpdateBody::HiveStructureBody(m) => m.load_post_process(),
             UpdateBody::InactiveBody(m) => m.load_post_process(),
             UpdateBody::SlowDeathBehavior(m) => m.load_post_process(),
 // --- end p1w13-sonnet ---
@@ -1165,6 +1179,8 @@ impl UpdateBody {
             UpdateBody::HighlanderBody(m) => m.world_construct(world, me),
             UpdateBody::ImmortalBody(m) => m.world_construct(world, me),
             UpdateBody::StructureBody(m) => m.world_construct(world, me),
+            UpdateBody::UndeadBody(m) => m.world_construct(world, me),
+            UpdateBody::HiveStructureBody(m) => m.world_construct(world, me),
             UpdateBody::InactiveBody(m) => m.world_construct(world, me),
             UpdateBody::SlowDeathBehavior(m) => m.world_construct(world, me),
 // --- end p1w13-sonnet ---
