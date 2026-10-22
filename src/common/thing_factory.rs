@@ -894,8 +894,8 @@ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY Rifle\n End\nEnd\n",
         let e = load(&mut c, "Object M\n Behavior = SpectreGunshipUpdate ModuleTag_X\n  HealingAmount = 3\n End\nEnd\n").unwrap_err();
         assert_eq!(e.kind, IniErrorKind::ModuleNotTranslated(b"SpectreGunshipUpdate".to_vec()));
         assert_eq!(root(&c, "M").get_behavior_module_info().get_count(), 0);
-        let e = load(&mut c, "Object M2\n Body = UndeadBody ModuleTag_B\n End\nEnd\n").unwrap_err();
-        assert_eq!(e.kind, IniErrorKind::ModuleNotTranslated(b"UndeadBody".to_vec()));
+        let e = load(&mut c, "Object M2\n Body = BattleBusSlowDeathBehavior ModuleTag_B\n End\nEnd\n").unwrap_err();
+        assert_eq!(e.kind, IniErrorKind::ModuleNotTranslated(b"BattleBusSlowDeathBehavior".to_vec()));
         let e = load(&mut c, "Object M3\n Behavior = NoSuchThing ModuleTag_B\n End\nEnd\n").unwrap_err();
         assert_eq!(e.kind, IniErrorKind::ModuleUnknown(b"NoSuchThing".to_vec()));
         let e = load(&mut c, "Object M4\n Behavior = PrisonBehavior ModuleTag_B\n End\nEnd\n").unwrap_err();

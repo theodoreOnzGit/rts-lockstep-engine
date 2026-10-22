@@ -2,8 +2,8 @@
 //
 // Translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
-//   GeneralsMD/Code/GameEngine/Include/GameLogic/Module/{StructureBody,HighlanderBody,ImmortalBody}.h
-//   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Body/{StructureBody,HighlanderBody,ImmortalBody}.cpp
+//   GeneralsMD/Code/GameEngine/Include/GameLogic/Module/{StructureBody,HighlanderBody,ImmortalBody,UndeadBody,HiveStructureBody}.h
+//   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Body/{StructureBody,HighlanderBody,ImmortalBody,UndeadBody,HiveStructureBody}.cpp
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -14,7 +14,7 @@
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
 
-//! The three bodies derived from `ActiveBody` that change nothing but one small thing: `HighlanderBody` ("takes damage according to armor, but can't die from
+//! The bodies derived from `ActiveBody` (`UndeadBody` and `HiveStructureBody` below the first three, with their own module data). The first three change nothing but one small thing: `HighlanderBody` ("takes damage according to armor, but can't die from
 //! normal damage"), `ImmortalBody` ("just like Active Body, but won't let health drop below 1") and `StructureBody` (an `ActiveBody` that remembers the object that
 //! built it). Each holds its base by value and implements [`ActiveBodyVirtuals`], so the base's functions reach the override as the vtable sends them there.
 //!
@@ -32,11 +32,23 @@
 //! - `StructureBody::setConstructorObject(NULL)` leaves the stored id as it was. Nothing in the game calls it (the whole tree was searched on 2026-10-22); it is
 //!   reachable here as `ModuleCall::SetConstructorObject` and tested through the differential test.
 //!
+//! - `UndeadBody::attemptDamage` limits the amount to `getHealth() - 1` (written into the caller's `DamageInfo`, `min` as the macro, so a NaN amount is kept: but a NaN
+//!   amount never passes the `>=` test either) and starts the second life AFTER the base took the damage. `startSecondLife` asks every behaviour of the object
+//!   (`getBehaviorModules()`, the body included) for its `SlowDeathBehaviorInterface`: [`ModuleCall::IsDieApplicable`] answers `Unhandled` for a module that is none, and the
+//!   probability modifiers are summed as `Int` (the `DEBUG_ASSERTCRASH(total > 0)` is compiled out of a release build, and `GameLogicRandomValue(1, total)` with `total < 1`
+//!   is defined: `hi - lo + 1` wraps as unsigned, and a zero range returns `hi` without drawing). The roll walks the same behaviours again and the first whose running
+//!   total reaches 0 begins its slow death; with no applicable behaviour nothing begins, and the object is left with its second life and no death.
+//!   Upstream's second loop names the first loop's `update` (Visual C++ 6 let a `for` variable outlive its loop): the differential build declares its own, by one mechanical edit.
+//! - `HiveStructureBody::attemptDamage` passes a damage type of `PropagateDamageTypesToSlavesWhenExisting` to the closest slave (the spawn behaviour) or, if there is no
+//!   spawn behaviour, the closest rider of the contain module, measured from the SHOOTER's position; without a shooter it falls through to the structure body's damage. A
+//!   hive with neither module reaches a `DEBUG_CRASH`, compiled out of a release build: the damage is taken by the hive. The swallow set eats the damage only when there is
+//!   a shooter and no slave (zeroing the dealt and clipped damage and setting `noEffect`).
+//!
 //! `p1w13-sonnet`, 2026-10-22.
 
 use std::sync::Arc;
 
-use crate::common::base_type::{max, min};
+use crate::common::base_type::{max, min, Coord3D};
 use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::ini::{FieldParse, Ini, IniResult, MultiIniFieldParse, UserData};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
@@ -628,34 +640,41 @@ impl HiveStructureBody {
         use crate::logic::modules::plant;
         let data = self.data.clone();
         let hive = me.object;
-        let propagate = data.damage_types_to_propagate_to_slaves.test(info.input.damage_type) != plant(1353);
+        let propagate_set = if plant(1355) { &data.damage_types_to_swallow } else { &data.damage_types_to_propagate_to_slaves };
+        let propagate = propagate_set.test(info.input.damage_type) != plant(1353);
         if propagate {
             // we have the right type of damage types incoming to propagate to slaves. Do we have slaves?
             let spawn = active_body::out(self, world, me, |w| w.get_spawn_behavior_interface(hive));
             let contain = world.get_contain(hive);
+            let (spawn, contain) = if plant(1356) && contain.is_some() { (None, contain) } else { (spawn, contain) };
+            // `shooter->getPosition()`
+            let shooter_pos = match world.objects.find(info.input.source_id) {
+                Some(o) => Some(if plant(1357) { Coord3D { x: 0.0, y: 0.0, z: 0.0 } } else { o.get_position() }),
+                None => plant(1358).then_some(Coord3D { x: 0.0, y: 0.0, z: 0.0 }),
+            };
             if let Some(spawn) = spawn {
                 // we found the spawn interface, now get some slaves!
-                let shooter_pos = world.objects.find(info.input.source_id).map(|o| o.get_position());
                 if let Some(pos) = shooter_pos {
                     let slave = active_body::out(self, world, me, |w| w.module_call(hive, spawn, ModuleCall::GetClosestSlave(pos))).as_id();
                     if slave != INVALID_ID {
                         // propagate damage and return!
                         self.pass_on(world, me, slave, info);
-                        return;
+                        if !plant(1359) {
+                            return;
+                        }
                     } else if data.damage_types_to_swallow.test(info.input.damage_type) != plant(1354) {
                         Self::swallow(info);
                         return;
                     }
                 }
             } else if let Some(contain) = contain {
-                let shooter_pos = world.objects.find(info.input.source_id).map(|o| o.get_position());
                 if let Some(pos) = shooter_pos {
                     let rider = active_body::out(self, world, me, |w| w.module_call(hive, contain, ModuleCall::GetClosestRider(pos))).as_id();
                     if rider != INVALID_ID {
                         // propagate damage and return!
                         self.pass_on(world, me, rider, info);
                         return;
-                    } else if data.damage_types_to_swallow.test(info.input.damage_type) {
+                    } else if data.damage_types_to_swallow.test(info.input.damage_type) != plant(1360) {
                         Self::swallow(info);
                         return;
                     }

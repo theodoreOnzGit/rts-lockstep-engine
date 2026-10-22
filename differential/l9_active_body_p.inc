@@ -618,6 +618,9 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 		di.in.m_amount = c.f();
 		di.in.m_kill = c.u() != 0;
 		di.in.m_damageStatusType = (ObjectStatusTypes)c.s();
+		/* what the info's outputs hold before the body sees it (only a body that leaves them alone shows it) */
+		di.out.m_actualDamageDealt = c.f();
+		di.out.m_actualDamageClipped = c.f();
 	}
 	/* the tables: attack results, distances, bones, dead particle systems */
 	for (int i = 0; i < g_abN; ++i) for (int j = 0; j < g_abN; ++j) g_abAble[i][j] = c.s();
@@ -808,7 +811,12 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 			AbObj *t = (o[0] <= 16 || (o[0] >= 29 && o[0] <= 36)) && (int)o[1] < g_abN ? &g_abObjs[o[1]] : 0;
 			try {
 				switch (o[0]) {
-				case 0: { DamageInfo di = infos[o[2]]; t->obj->attemptDamage(&di); break; }
+				case 0: {
+					DamageInfo di = infos[o[2]]; t->obj->attemptDamage(&di);
+					/* what the caller sees afterwards: the amount the body limited, the damage dealt and clipped, and whether it had no effect */
+					result = realBits(di.out.m_actualDamageDealt) + realBits(di.out.m_actualDamageClipped) * 31u + realBits(di.in.m_amount) * 1009u + (di.out.m_noEffect ? 77777u : 0u);
+					break;
+				}
 				case 1: { DamageInfo di = infos[o[2]]; t->body->attemptHealing(&di); break; }
 				case 2: { DamageInfoInput in = infos[o[2]].in; result = realBits(t->body->estimateDamage(in)); break; }
 				case 3: t->body->setDamageState((BodyDamageType)o[2]); break;

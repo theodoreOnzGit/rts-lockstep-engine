@@ -39,30 +39,42 @@
 //! scan, `getAbleToAttackSpecificObject`, `getDistanceSquared`, the bones of the drawable and the particle system manager are stand-ins on both sides (the partition manager,
 //! the weapon layer, the drawable and the particle system manager are verified by their own tests): the body's use of them is what is under test.
 //!
-//! Measured 2026-10-22 (third run, after `HighlanderBody`, `ImmortalBody`, `StructureBody` and `InactiveBody` joined the scene as the class of each object's body: the
-//! C++ side also runs the unchanged `HighlanderBody.cpp`, `ImmortalBody.cpp`, `StructureBody.cpp` and `InactiveBody.cpp`), 9,000 cases (`L9AB_CASES`, seed `0x00AB_0D1E`), the unchanged
-//! `ActiveBody.cpp` (edited only by `build.rs`) against the Rust module:
+//! Measured 2026-10-22 (fourth run, after `UndeadBody` and `HiveStructureBody` joined the scene: the C++ side also runs the unchanged `UndeadBody.cpp` (one mechanical edit
+//! by `build.rs`: its second loop declares its own `update`, as Visual C++ 6 let the first loop's outlive it; asserted once) and `HiveStructureBody.cpp`), 9,000 cases
+//! (`L9AB_CASES`, seed `0x00AB_0D1E`), the unchanged `ActiveBody.cpp` (edited only by `build.rs`) against the Rust module:
 //!
-//! - data reads: 8,446 compared, 0 mismatches (499 data blocks that upstream's parser throws on, the same message on both sides);
-//! - op outputs: 1,352,101 compared, 0 mismatches, max ULP 0, no NaN-payload-only differences;
-//! - 258,909 ops, 89,920 damage hits, 5,213 deaths, 3,539 kills scored, 8,376 xfers (save, load, CRC), 728,961 effect lines, 7,687 fx, 167,018 particle systems,
-//!   565 retaliation checks, 7,006 subdual hits;
-//! - 554 cases excluded: upstream-undefined input (a null AI, an empty contained list, an out-of-range array index, a `Real` outside `Int`), counted Rust-only.
+//! - data reads: 8,465 compared, 0 mismatches (583 data blocks that upstream's parser throws on, the same message on both sides);
+//! - op outputs: 1,343,857 compared, 0 mismatches, max ULP 0, no NaN-payload-only differences;
+//! - 258,170 ops, 90,050 damage hits, 6,054 deaths, 4,592 kills scored, 8,478 xfers (save, load, CRC), 897,087 effect lines, 8,688 fx, 204,862 particle systems,
+//!   722 retaliation checks, 8,452 subdual hits; among the effect lines 629 slow deaths begun (`UndeadBody`'s second life), 3,577 closest-slave and 2,282 closest-rider
+//!   questions (`HiveStructureBody`);
+//! - 535 cases excluded: upstream-undefined input (a null AI, an empty contained list, an out-of-range array index, a `Real` outside `Int`), counted Rust-only.
+//!
+//! ~~Measured 2026-10-22 (third run): 8,446 data reads, 1,352,101 op outputs, 554 excluded~~ **CORRECTED 2026-10-22**: the numbers above are the run after the two classes
+//! were added; the third run's figures were for the scene without them.
 //!
 //! Interpretation: every line the body sends to the rest of the game (and every value it returns or saves) agrees bit for bit with upstream over this input space.
 //! The retaliation scan, the able-to-attack and distance answers, the bones and the particle manager are the test's stand-ins on both sides, so this does not verify them.
 //!
 //! # The derived classes
 //!
-//! Each object's body is one of `ActiveBody`, `HighlanderBody`, `ImmortalBody`, `StructureBody`, `InactiveBody` (the scene's last word per object; class 4 is the
-//! `InactiveBody`, whose state the driver and the test read through the body's virtuals: the same 18 words, the Rust side asking the module with `ModuleCall`s), with op 36 `setConstructorObject`
-//! and the structure's constructor object id as the last word of the object's state. A load only takes bytes that a body of the same class saved: another class's bytes
-//! are shifted fields, and a flag read from a byte that is not 0 or 1 is not a `bool` in C++ (the C++ side prints `0x3c` where Rust, which normalises, has `true`).
-//! `UndeadBody` (needs `SlowDeathBehavior`) and `HiveStructureBody` (needs the spawn and contain interfaces) are not in this test yet.
+//! Each object's body is one of `ActiveBody`, `HighlanderBody`, `ImmortalBody`, `StructureBody`, `InactiveBody`, `UndeadBody`, `HiveStructureBody` (the scene's last word per
+//! object, then the class's own words; class 4 is the `InactiveBody`, whose state the driver and the test read through the body's virtuals: the same 18 words, the Rust side
+//! asking the module with `ModuleCall`s), with op 36 `setConstructorObject` and, as the last word of the object's state, the structure's (and hive's) constructor object id or
+//! the undead body's `m_isSecondLife`. The block of the INI file names the class of the first object's data (`D` `ActiveBodyModuleData`, `U` `UndeadBodyModuleData` with
+//! `SecondLifeMaxHealth`, `H` `HiveStructureBodyModuleData` with the two `DamageTypeFlags` fields), and the first object's body follows it. A load only takes bytes that a
+//! body of the same class saved: another class's bytes are shifted fields, and a flag read from a byte that is not 0 or 1 is not a `bool` in C++ (the C++ side prints `0x3c`
+//! where Rust, which normalises, has `true`).
+//!
+//! The probes grew what the two classes ask of the object's other modules: a probe may be a `SlowDeathBehaviorInterface` (which damage types it is applicable to, its
+//! probability modifier; `beginSlowDeath` is a log line), and one probe may be the object's spawn behaviour (`getClosestSlave` logs its position and answers a scene object);
+//! the contain module's `getClosestRider` does the same. A hive's slave or rider is always a LATER object (a hive that passed damage on to itself, or in a ring, would recurse
+//! for ever upstream). The result word of a damage hit (op 0) is the caller's view afterwards (the amount the body limited, the damage dealt and clipped, `noEffect`), and each
+//! damage info starts with scene-chosen output fields, so a body that leaves them alone (a hive swallowing damage) is told from one that zeroes them.
 //!
 //! # Planted bugs
 //!
-//! `L9_PLANT=<id>` flips one branch of `active_body.rs`; each must make the test fail at 9,000 cases (1212-1253, 1261-1267 and 1271-1282 all caught except as noted):
+//! `L9_PLANT=<id>` flips one branch of `active_body.rs`; each must make the test fail at 9,000 cases (1212-1253, 1261-1267, 1271-1282, 1331-1347 and 1351-1360 all caught except as noted; re-run 2026-10-22 on the final binary):
 //!
 //! | id | planted bug |
 //! |---|---|
@@ -79,6 +91,9 @@
 //! | 1264-1265 | Immortal: limit by -health (not -health + 1); `min` for `max` |
 //! | 1266-1267 | Structure: `setConstructorObject(NULL)` overwrites the id; the id is not saved |
 //! | 1271-1282 | InactiveBody: the object not made effectively dead; the unresistable estimate; the damage outputs not zeroed; `noEffect` kept on the kill; the die modules run on every kill; `m_dieCalled` never set; a damage-type healing call not sent on to damage; a damage state other than pristine; not indestructible; the version/flag saved (`m_dieCalled` is not); the damage scalar ignored |
+//! | 1331-1340 | Undead: the unresistable test inverted; the first-life test dropped; `>` for `>=`; the health-damaging test dropped; the limit by health not health - 1; the second life started before the damage; `m_isSecondLife` never set; the first life's maximum health kept; `PRESERVE_RATIO` for `FULLY_HEAL`; the armor flag not set |
+//! | 1341-1347 | Undead: non-applicable behaviours counted in the total; the roll from 0; the modifier replaced by 1; `<` for `<=` on the roll; the first applicable behaviour always begun; the loop not left after the first begin; `m_isSecondLife` not saved |
+//! | 1351-1360 | Hive: the swallow does not zero the clipped damage; `noEffect` not set; the propagation test inverted; the swallow test inverted (spawn branch); the swallow set used for propagation; the contain branch taken before the spawn branch; the origin used for the shooter's position; a missing shooter not stopping the propagation; the damage also taken by the hive after passing it on; the swallow test inverted (contain branch) |
 //! | 1249-1253 | veterancy bonus ratio inverted, promoted-hero sound, UI dirty (selected, contained-by), promotion feedback |
 //!
 //! Not planted, equivalent mutants (1273 survived, removed): in `InactiveBody::attemptDamage`, sending a `DAMAGE_HEALING` call on to `attemptHealing` (the fall-through zeroes the same outputs, `noEffect` true); and the `max(desiredHealth, 0)` clamp in `setDamageState` (1243 survived): `internalChangeHealth` clamps the result to 0 anyway, so removing it
@@ -240,6 +255,9 @@ struct FxCfg {
     overrides: Vec<(i32, i32, f32, u32, u32, u32)>,
 }
 
+/// A damage info of the scene: source, type, death type, FX override, amount, kill, status type, and the dealt and clipped outputs it starts with.
+type InfoCfg = (u32, i32, i32, i32, f32, bool, i32, f32, f32);
+
 struct Scene {
     frame: u32,
     logic_seed: u32,
@@ -259,7 +277,7 @@ struct Scene {
     players: [(u32, bool); 4],
     objs: Vec<Obj>,
     rel: Vec<Vec<i32>>,
-    infos: Vec<(u32, i32, i32, i32, f32, bool, i32)>,
+    infos: Vec<InfoCfg>,
     able: Vec<Vec<i32>>,
     dist: Vec<Vec<f32>>,
     bones: Vec<(i32, i32, Vec<[f32; 3]>)>,
@@ -381,7 +399,7 @@ fn parse_scene(cfg: &[u32]) -> Scene {
     }
     let mut infos = Vec::new();
     for _ in 0..r.u() {
-        infos.push((r.u(), r.s(), r.s(), r.s(), r.f(), r.u() != 0, r.s()));
+        infos.push((r.u(), r.s(), r.s(), r.s(), r.f(), r.u() != 0, r.s(), r.f(), r.f()));
     }
     let mut able = vec![vec![0; n]; n];
     for row in able.iter_mut() {
@@ -766,6 +784,9 @@ fn gen_scene(g: &mut Gen, data: &Option<ModuleDataKind>, focus: u32) -> Vec<u32>
         });
         w.u(u32::from(i == 10 || g.below(12) == 0));
         w.s(g.below(OBJECT_STATUS_COUNT as u32) as i32);
+        // the outputs the info holds before the body sees it
+        w.f(*pick(g, &[&0.0f32, &0.0, &7.5, &-1.0]));
+        w.f(*pick(g, &[&0.0f32, &0.0, &3.25, &-2.0]));
     }
     for _ in 0..n * n {
         w.s(g.below(4) as i32);
@@ -1536,6 +1557,14 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 0 => {
                     let mut info = make_info(&sc, o[2] as usize);
                     w.attempt_damage(id, &mut info);
+                    // what the caller sees afterwards: the amount the body limited, the damage dealt and clipped, and whether it had no effect
+                    result = info
+                        .out
+                        .actual_damage_dealt
+                        .to_bits()
+                        .wrapping_add(info.out.actual_damage_clipped.to_bits().wrapping_mul(31))
+                        .wrapping_add(info.input.amount.to_bits().wrapping_mul(1009))
+                        .wrapping_add(if info.out.no_effect { 77777 } else { 0 });
                     tally.borrow_mut().damages += 1;
                 }
                 1 => {
@@ -1707,7 +1736,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
 }
 
 fn make_info(sc: &Scene, i: usize) -> DamageInfo {
-    let (src, t, death, fxo, amount, kill, status) = sc.infos[i];
+    let (src, t, death, fxo, amount, kill, status, dealt, clipped) = sc.infos[i];
     let mut info = DamageInfo::default();
     info.input.source_id = if src == 0 { INVALID_ID } else { src as i32 };
     info.input.damage_type = t;
@@ -1716,6 +1745,8 @@ fn make_info(sc: &Scene, i: usize) -> DamageInfo {
     info.input.amount = amount;
     info.input.kill = kill;
     info.input.damage_status_type = status;
+    info.out.actual_damage_dealt = dealt;
+    info.out.actual_damage_clipped = clipped;
     info
 }
 
