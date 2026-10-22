@@ -91,8 +91,12 @@ const KIND_NAMES: [&str; 8] = ["STEALTH_GARRISON", "STRUCTURE", "VEHICLE", "MONE
 const STATUSES: [i32; 3] = [OBJECT_STATUS_IS_ATTACKING, OBJECT_STATUS_AIRBORNE_TARGET, OBJECT_STATUS_STEALTHED];
 const STATUS_NAMES: [&str; 3] = ["IS_ATTACKING", "AIRBORNE_TARGET", "STEALTHED"];
 const CONDS: [i32; 6] = [MODELCONDITION_DOOR_1_OPENING, MODELCONDITION_DOOR_1_CLOSING, MODELCONDITION_DAMAGED, MODELCONDITION_REALLY_DAMAGED, MODELCONDITION_NIGHT, MODELCONDITION_SNOW];
-const BONES: [&str; 8] = ["ExitStart", "ExitEnd", "ExitStart01", "ExitEnd01", "ExitStart02", "ExitEnd02", "ExitStart03", "ExitEnd03"];
-const FP: usize = 4;
+/// The exit bones the scene can name: the plain pair, the numbered pairs 1 to 3, then those at the width boundary of the number (`01`..`09` are padded, `10` and
+/// on are not; `9` and `09` are told apart, which is what plant 1403 breaks).
+const BONES: [&str; NB] = ["ExitStart", "ExitEnd", "ExitStart01", "ExitEnd01", "ExitStart02", "ExitEnd02", "ExitStart03", "ExitEnd03", "ExitStart09", "ExitEnd09", "ExitStart9", "ExitEnd9", "ExitStart10", "ExitEnd10"];
+const NB: usize = 14;
+/// Fire points, and turret bones `FIREPOINT01`..: twelve, so that the next fire point reaches 9 and 10 (the width of the number in the turret bone name).
+const FP: usize = 12;
 
 // ---- the scene, as words -------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -181,8 +185,8 @@ struct Obj {
     adj: [f32; 3],
     fp_count: u32,
     fp: [[f32; 3]; FP],
-    bone_has: [bool; 8],
-    bone: [[f32; 3]; 8],
+    bone_has: [bool; NB],
+    bone: [[f32; 3]; NB],
     turret_has: [bool; FP],
     turret: [[f32; 3]; FP],
 }
@@ -246,7 +250,7 @@ impl Obj {
                 w.f(p);
             }
         }
-        for j in 0..8 {
+        for j in 0..NB {
             w.u(u32::from(self.bone_has[j]));
             for p in self.bone[j] {
                 w.f(p);
@@ -319,7 +323,7 @@ impl Obj {
                 *p = r.f();
             }
         }
-        for j in 0..8 {
+        for j in 0..NB {
             o.bone_has[j] = r.u() != 0;
             for p in o.bone[j].iter_mut() {
                 *p = r.f();
@@ -387,13 +391,33 @@ fn name_list(g: &mut Gen, names: &[&str], clean: bool) -> String {
     v.join(" ")
 }
 
+/// The value of `DeathTypes` or `VeterancyLevels` (`INI::parseDeathTypeFlags`): the flags start as ALL, and each token is `ALL`, `NONE`, `+NAME` (set) or `-NAME`
+/// (clear); a bare name is `INI_UNKNOWN_TOKEN`. (`NORMAL` and `REGULAR` are left out: their flag is the shift by -1, undefined upstream; see `death_flags`.)
+fn signed_list(g: &mut Gen, names: &[&str], clean: bool) -> String {
+    let mut v: Vec<String> = Vec::new();
+    match g.below(8) {
+        0 => v.push("NONE".to_string()),
+        1 => v.push("ALL".to_string()),
+        _ => {}
+    }
+    for _ in 0..1 + g.below(3) {
+        let sign = if g.below(2) == 0 { '+' } else { '-' };
+        v.push(format!("{sign}{}", names[g.below(names.len() as u32) as usize]));
+    }
+    if !clean && g.below(12) == 0 {
+        v.push(["NOT_A_NAME".to_string(), "+NOT_A_NAME".to_string(), names[0].to_string()][g.below(3) as usize].clone());
+    }
+    v.join(" ")
+}
+
 fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     let mut lines: Vec<String> = Vec::new();
     macro_rules! field {
         ($p:expr, $name:expr, $value:expr) => {
             if g.below(100) < $p {
                 let value: String = $value;
-                let sep = gen_sep(g);
+                // a field line is `name = value`: upstream reads the `=` as the first token, so a line without it (or with two) throws; only the unclean files have those
+                let sep = if clean { *pick(g, &[&" = ", &"=", &" =", &"= ", &" = "]) } else { gen_sep(g) };
                 lines.push(format!("{}{}{}", $name, sep, value));
             }
         };
@@ -413,8 +437,8 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     field!(40, "AllowAlliesInside", gen_bool(g, clean));
     field!(40, "AllowEnemiesInside", gen_bool(g, clean));
     field!(40, "AllowNeutralInside", gen_bool(g, clean));
-    field!(30, "DeathTypes", name_list(g, &["NORMAL", "EXPLODED", "BURNED", "CRUSHED", "POISONED"], clean));
-    field!(25, "VeterancyLevels", name_list(g, &["REGULAR", "VETERAN", "ELITE", "HEROIC"], clean));
+    field!(30, "DeathTypes", signed_list(g, &["EXPLODED", "BURNED", "CRUSHED", "POISONED"], clean));
+    field!(25, "VeterancyLevels", signed_list(g, &["VETERAN", "ELITE", "HEROIC"], clean));
     field!(25, "ExemptStatus", name_list(g, &STATUS_NAMES, clean));
     field!(25, "RequiredStatus", name_list(g, &STATUS_NAMES, clean));
     if !clean && g.below(12) == 0 {
@@ -472,8 +496,8 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     o.enter_snd = if g.below(3) == 0 { 0 } else { 1 + g.below(5) };
     o.exit_snd = if g.below(3) == 0 { 0 } else { 1 + g.below(5) };
     o.allow_fire = g.below(2) == 0;
-    o.in_turret = g.below(5) == 0;
-    o.exit_paths = *pick(g, &[&0i32, &1, &1, &2, &3, &12]);
+    o.in_turret = g.below(3) == 0;
+    o.exit_paths = *pick(g, &[&0i32, &1, &1, &2, &3, &12, &12]);
     o.damage_pct = *pick(g, &[&0.0f32, &0.0, &0.25, &0.5, &1.0]);
     o.burned = g.below(2) == 0;
     o.door_open = *pick(g, &[&0u32, &1, &1, &3]);
@@ -490,20 +514,20 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     for p in o.adj.iter_mut() {
         *p = coord(g);
     }
-    o.fp_count = g.below(FP as u32 + 1);
+    o.fp_count = if g.below(3) == 0 { FP as u32 } else { g.below(FP as u32 + 1) };
     for j in 0..FP {
         for p in o.fp[j].iter_mut() {
             *p = coord(g);
         }
     }
-    for j in 0..8 {
+    for j in 0..NB {
         o.bone_has[j] = g.below(4) != 0;
         for p in o.bone[j].iter_mut() {
             *p = coord(g);
         }
     }
     for j in 0..FP {
-        o.turret_has[j] = g.below(3) != 0;
+        o.turret_has[j] = g.below(8) != 0;
         for p in o.turret[j].iter_mut() {
             *p = coord(g);
         }
@@ -542,7 +566,21 @@ fn gen_ops(g: &mut Gen, n: u32) -> Vec<[u32; 5]> {
     for _ in 0..count {
         let c = g.below(n);
         let a = g.below(n);
-        let op = match g.below(100) {
+        // one op in twelve is a burst: the exit path number and the next fire point only reach the width boundary of their bone names after many calls
+        let burst = g.below(24);
+        let op = if burst < 2 {
+            [47 + burst, c, a, g.below(16), g.below(2)]
+        } else {
+            gen_op(g, c, a)
+        };
+        ops.push(op);
+    }
+    ops
+}
+
+fn gen_op(g: &mut Gen, c: u32, a: u32) -> [u32; 5] {
+    {
+        match g.below(100) {
             0..=17 => [0, c, a, 0, 0],
             18..=24 => [1, c, a, g.below(2), 0],
             25..=27 => [2, c, g.below(2), 0, 0],
@@ -589,12 +627,13 @@ fn gen_ops(g: &mut Gen, n: u32) -> Vec<[u32; 5]> {
                 0 => [42, c, a, g.below(2), 0],
                 1 => [43, c, a, 0, 0],
                 2 => [44, c, 0, 0, 0],
-                _ => [45, c, a, 0, 0],
+                _ => match g.below(3) {
+                    0 => [46, c, a, g.below(2), 0],
+                    _ => [45, c, a, 0, 0],
+                },
             },
-        };
-        ops.push(op);
+        }
     }
-    ops
 }
 
 fn gen_case(g: &mut Gen, data: &Option<ModuleDataKind>, _n_up: usize, _upgrades: &[String]) -> (Vec<u32>, Vec<[u32; 5]>) {
@@ -944,7 +983,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         if !fps.is_empty() {
             w.cuts.contain.fire_points.insert(id, fps);
         }
-        for j in 0..8 {
+        for j in 0..NB {
             if o.bone_has[j] {
                 w.cuts.contain.single_bones.insert((id, BONES[j].as_bytes().to_vec()), Coord3D { x: o.bone[j][0], y: o.bone[j][1], z: o.bone[j][2] });
             }
@@ -1082,7 +1121,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 info.input.amount = 10.0;
             }
             let fold3 = |p: &Coord3D| p.x.to_bits().wrapping_mul(31 * 31).wrapping_add(p.y.to_bits().wrapping_mul(31)).wrapping_add(p.z.to_bits());
-            if let Some(m) = m.filter(|_| o[0] < 34 || (42..=45).contains(&o[0])) {
+            if let Some(m) = m.filter(|_| o[0] < 34 || (42..=45).contains(&o[0]) || (47..=48).contains(&o[0])) {
                 match o[0] {
                     0 => {
                         w.module_call(id, m, ModuleCall::AddToContain(rider));
@@ -1251,6 +1290,19 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     45 => {
                         w.module_call(id, m, ModuleCall::PutObjAtNextFirePoint(rider));
                     }
+                    // a burst of exits through the door (of the quick kind when the fifth word is odd): the exit path number runs up to the width boundary of its bone names
+                    47 => {
+                        for _ in 0..1 + o[3] % 12 {
+                            w.module_call(id, m, if o[4] & 1 != 0 { ModuleCall::ExitObjectInAHurry(rider) } else { ModuleCall::ExitObjectViaDoor { obj: rider, door: 0 } });
+                            tally.borrow_mut().exits += 1;
+                        }
+                    }
+                    // a burst of fire point placements: the next fire point runs up to the width boundary of the turret bone names
+                    48 => {
+                        for _ in 0..1 + o[3] % 12 {
+                            w.module_call(id, m, ModuleCall::PutObjAtNextFirePoint(rider));
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1291,6 +1343,10 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     } else {
                         w.cuts.contain.booby_trapped.remove(&id);
                     }
+                }
+                // the container of an object set apart from the lists (a rider that is listed but says it is elsewhere, or says it is here and is not listed)
+                46 => {
+                    w.objects.find_mut(id).unwrap().contained_by = if o[3] & 1 != 0 || rider == id { INVALID_ID } else { rider };
                 }
                 41 => {
                     let ob = w.objects.find_mut(id).unwrap();

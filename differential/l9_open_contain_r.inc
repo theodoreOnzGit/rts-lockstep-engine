@@ -4,6 +4,9 @@
 **   done to them, and OpenContain modules on those that have one (the first reads the INI, the others take their data from the scene), the REAL DieMuxData, INI,
 **   RandomValue, Matrix3D, Xfer, Object::kill and Object::getRelationship. Every call the container makes on the rest of the world is a line of the effect log
 **   (ulog), in the order it is made, in the text the Rust side's cut records, events and probe traces produce. */
+#include <time.h>
+#include <unistd.h>
+#include <sys/syscall.h>
 #include "Lib/trig.h"   /* Cos, Sin (Trig.cpp, compiled by wrap_trig.cpp) */
 extern void (*g_xformHook)(Object *o, const Matrix3D *mx);   /* l9_replace_object.inc */
 extern Int (*g_multiBoneHook)(const Object *obj, const char *boneNamePrefix, Int maxBones, Coord3D *positions, Matrix3D *transforms, Bool convertToWorld);   /* l9_active_body_p.inc */
@@ -43,7 +46,7 @@ ModuleData *l9ctRead(const char *filename)
 	return data;
 }
 
-enum { CT_OBJS = 4, CT_PLAYERS = 4, CT_BONES = 8, CT_FP = 4 };
+enum { CT_OBJS = 4, CT_PLAYERS = 4, CT_BONES = 14, CT_FP = 12 };
 
 /* the kinds, statuses and model conditions the scene's masks name: local bit i is kCtKinds[i] (the Rust test has the same lists) */
 const KindOfType kCtKinds[8] = { KINDOF_STEALTH_GARRISON, KINDOF_STRUCTURE, KINDOF_VEHICLE, KINDOF_MONEY_HACKER, KINDOF_INFANTRY, KINDOF_SELECTABLE, KINDOF_PROJECTILE,
@@ -52,7 +55,7 @@ const ObjectStatusTypes kCtStatus[3] = { OBJECT_STATUS_IS_ATTACKING, OBJECT_STAT
 const ModelConditionFlagType kCtConds[6] = { MODELCONDITION_DOOR_1_OPENING, MODELCONDITION_DOOR_1_CLOSING, MODELCONDITION_DAMAGED, MODELCONDITION_REALLY_DAMAGED,
 	MODELCONDITION_NIGHT, MODELCONDITION_SNOW };
 /* the exit and fire point bones the scene may give an object (the Rust test has the same list) */
-const char *const kCtBones[CT_BONES] = { "ExitStart", "ExitEnd", "ExitStart01", "ExitEnd01", "ExitStart02", "ExitEnd02", "ExitStart03", "ExitEnd03" };
+const char *const kCtBones[CT_BONES] = { "ExitStart", "ExitEnd", "ExitStart01", "ExitEnd01", "ExitStart02", "ExitEnd02", "ExitStart03", "ExitEnd03", "ExitStart09", "ExitEnd09", "ExitStart9", "ExitEnd9", "ExitStart10", "ExitEnd10" };
 
 struct CtCfg
 {
@@ -678,6 +681,9 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				case 43: if (oc2) oc2->onRemoving(r2); break;
 				case 44: if (oc2) oc2->redeployOccupants(); break;
 				case 45: if (oc2) oc2->putObjAtNextFirePoint(r2); break;
+				case 46: t->obj->m_containedBy = ((o[3] & 1) || r2 == t->obj) ? 0 : r2; break;
+				case 47: if (oc2) for (unsigned j = 0; j < 1 + o[3] % 12; ++j) { if (o[4] & 1) oc2->exitObjectInAHurry(r2); else oc2->exitObjectViaDoor(r2, DOOR_1); } break;
+				case 48: if (oc2) for (unsigned j = 0; j < 1 + o[3] % 12; ++j) oc2->putObjAtNextFirePoint(r2); break;
 				default: break;
 				}
 			}
@@ -711,7 +717,30 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 int ref_l9ct_run(const char *filename, const char *xfer_path, const unsigned *cfg, int n, const unsigned *ops, unsigned char *buf, int cap, int *len, char *msg,
 	int msgCap, unsigned *code)
 {
-	return l9TrappedRun(l9ctRunInner, filename, xfer_path, cfg, n, ops, buf, cap, len, msg, msgCap, code);
+	/* A planted Rust bug can steer past the guard that makes a ring of containers undefined (the Rust side records it and the case is never sent), and the C++
+	** then walks the ring for ever (isPassengerAllowedToFire). An alarm turns that into the same status 99 as a crash: a mismatch, never a hang. A real case
+	** takes milliseconds; the unplanted run has none that reaches the alarm. */
+	static bool timedOut = false;   /* once one case has hung, the run is already a mismatch: the rest are not walked */
+	if (timedOut) { *len = 0; return 99; }
+	struct sigaction sa, old;
+	memset(&sa, 0, sizeof sa);
+	sa.sa_handler = l9tCrashHandler;
+	sigemptyset(&sa.sa_mask);
+	sigaction(SIGALRM, &sa, &old);
+	/* the timer's signal goes to THIS thread: a process-directed alarm could land on another, and the jump would leave its stack */
+	struct sigevent ev;
+	memset(&ev, 0, sizeof ev);
+	ev.sigev_notify = SIGEV_THREAD_ID;
+	ev.sigev_signo = SIGALRM;
+	ev._sigev_un._tid = (int)syscall(SYS_gettid);
+	timer_t timer;
+	bool armed = timer_create(CLOCK_MONOTONIC, &ev, &timer) == 0;
+	if (armed) { struct itimerspec its; memset(&its, 0, sizeof its); its.it_value.tv_sec = 5; timer_settime(timer, 0, &its, 0); }
+	int rc = l9TrappedRun(l9ctRunInner, filename, xfer_path, cfg, n, ops, buf, cap, len, msg, msgCap, code);
+	if (armed) timer_delete(timer);
+	sigaction(SIGALRM, &old, 0);
+	if (rc == 99) timedOut = true;   /* (a segmentation fault ends the walk the same way) */
+	return rc;
 }
 
 }  /* extern "C" */

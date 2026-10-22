@@ -667,7 +667,7 @@ pub fn base_is_valid_container_for<T: OpenContainVirtuals>(t: &mut T, world: &mu
         return false;
     };
     // if we have any kind of masks set then we must make that check
-    if !o.is_any_kind_of(&data.allow_inside_kind_of) || o.is_any_kind_of(&data.forbid_inside_kind_of) {
+    if !o.is_any_kind_of(&data.allow_inside_kind_of) || (o.is_any_kind_of(&data.forbid_inside_kind_of) && !crate::logic::modules::plant(1373)) {
         return false;
     }
 
@@ -675,7 +675,7 @@ pub fn base_is_valid_container_for<T: OpenContainVirtuals>(t: &mut T, world: &mu
     let mut relationship_restricted = false;
     match world.get_relationship(obj, me.object) {
         Relationship::Allies => {
-            if !data.allow_allies_inside {
+            if !data.allow_allies_inside != crate::logic::modules::plant(1371) {
                 relationship_restricted = true;
             }
         }
@@ -685,7 +685,7 @@ pub fn base_is_valid_container_for<T: OpenContainVirtuals>(t: &mut T, world: &mu
             }
         }
         Relationship::Neutral => {
-            if !data.allow_neutral_inside {
+            if !(if crate::logic::modules::plant(1372) { data.allow_enemies_inside } else { data.allow_neutral_inside }) {
                 relationship_restricted = true;
             }
         }
@@ -707,7 +707,7 @@ pub fn base_is_passenger_allowed_to_fire<T: OpenContainVirtuals>(t: &mut T, worl
 
     // if we are ourselves contained, our passengers need to check with them if they get past us
     let container = world.objects.find(me.object).map_or(INVALID_ID, |o| o.contained_by);
-    if container != INVALID_ID {
+    if container != INVALID_ID && !crate::logic::modules::plant(1392) {
         let Some(c) = world.get_contain(container) else {
             undefined(world, me, Undefined::NullObject);
             return false;
@@ -766,7 +766,7 @@ fn add_or_remove_obj_from_world_inner<T: OpenContainVirtuals>(t: &mut T, world: 
         out(t, world, me, |w| w.contain_partition_unregister_object(obj));
 
         // hide the drawable associated with rider
-        if has_drawable {
+        if has_drawable && !crate::logic::modules::plant(1393) {
             out(t, world, me, |w| w.contain_drawable_set_hidden(obj, true));
         }
 
@@ -810,10 +810,10 @@ pub fn base_add_to_contain<T: OpenContainVirtuals>(t: &mut T, world: &mut World,
     }
 
     let rider_draw = world.objects.find(rider).is_some_and(|o| o.drawable != crate::common::game_type::INVALID_DRAWABLE_ID);
-    let was_selected = rider_draw && world.reads.local_selection.contains(&rider);
+    let was_selected = rider_draw && world.reads.local_selection.contains(&rider) && !crate::logic::modules::plant(1375);
 
     // this object cannot be contained by this module if it is already contained in something
-    if world.objects.find(rider).is_some_and(|o| o.contained_by != INVALID_ID) {
+    if world.objects.find(rider).is_some_and(|o| o.contained_by != INVALID_ID) && !crate::logic::modules::plant(1376) {
         return;
     }
 
@@ -824,7 +824,7 @@ pub fn base_add_to_contain<T: OpenContainVirtuals>(t: &mut T, world: &mut World,
         undefined(world, me, Undefined::NullControllingPlayer);
         return;
     };
-    t.oc_mut().player_entered_mask = 1u16.wrapping_shl(player as u32);
+    if crate::logic::modules::plant(1374) { t.oc_mut().player_entered_mask |= 1u16.wrapping_shl(player as u32); } else { t.oc_mut().player_entered_mask = 1u16.wrapping_shl(player as u32); }
 
     if t.is_enclosing_container_for(world, me, rider) {
         t.add_or_remove_obj_from_world(world, me, rider, false);
@@ -846,7 +846,7 @@ pub fn base_add_to_contain<T: OpenContainVirtuals>(t: &mut T, world: &mut World,
 pub fn base_add_to_contain_list<T: OpenContainVirtuals>(t: &mut T, world: &mut World, _me: ModuleHandle, rider: ObjectId) {
     t.oc_mut().contain_list.push(rider);
     t.oc_mut().contain_list_size = t.oc().contain_list_size.wrapping_add(1);
-    if world.objects.find(rider).is_some_and(|o| o.is_kind_of(KINDOF_STEALTH_GARRISON)) {
+    if world.objects.find(rider).is_some_and(|o| o.is_kind_of(KINDOF_STEALTH_GARRISON)) && !crate::logic::modules::plant(1377) {
         t.oc_mut().stealth_units_contained = t.oc().stealth_units_contained.wrapping_add(1);
     }
 }
@@ -861,7 +861,7 @@ pub fn base_remove_from_contain<T: OpenContainVirtuals>(t: &mut T, world: &mut W
 
     // we can only remove this object from the contains list of this module if it is actually contained by this module
     let contained_by = world.objects.find(rider).map_or(INVALID_ID, |o| o.contained_by);
-    if contained_by != me.object {
+    if contained_by != me.object && !crate::logic::modules::plant(1378) {
         return;
     }
 
@@ -889,7 +889,7 @@ pub fn remove_from_contain_via_index<T: OpenContainVirtuals>(t: &mut T, world: &
     let stealth_garrison = world.objects.find(rider).is_some_and(|o| o.is_kind_of(KINDOF_STEALTH_GARRISON));
     if stealth_garrison {
         t.oc_mut().stealth_units_contained = t.oc().stealth_units_contained.wrapping_sub(1);
-        if expose_stealth_units {
+        if expose_stealth_units != crate::logic::modules::plant(1379) {
             if let Some(stealth) = world.objects.find(rider).and_then(|o| o.stealth) {
                 out(t, world, me, |w| w.module_call(rider, stealth, ModuleCall::StealthMarkAsDetected));
             }
@@ -905,7 +905,7 @@ pub fn remove_from_contain_via_index<T: OpenContainVirtuals>(t: &mut T, world: &
 
     // place the object in the world at position of the container m_object
     let layer = world.objects.find(me.object).map_or(crate::common::game_type::LAYER_GROUND, |o| o.layer);
-    out(t, world, me, |w| w.contain_set_layer(rider, layer));
+    if !crate::logic::modules::plant(1380) { out(t, world, me, |w| w.contain_set_layer(rider, layer)); }
 
     do_unload_sound(t, world, me);
 
@@ -931,7 +931,7 @@ pub fn base_kill_all_contained<T: OpenContainVirtuals>(t: &mut T, world: &mut Wo
             t.on_removing(world, me, rider);
             let us = me.object;
             out(t, world, me, |w| w.contain_on_removed_from(rider, us));
-            if !out(t, world, me, |w| w.contain_kill(rider)) {
+            if !crate::logic::modules::plant(1381) && !out(t, world, me, |w| w.contain_kill(rider)) {
                 undefined(world, me, Undefined::NullBodyModule); // `Object::kill` calls through `getBodyModule()`
                 return;
             }
@@ -948,8 +948,13 @@ pub fn base_harm_and_force_exit_all_contained<T: OpenContainVirtuals>(t: &mut T,
     let mut rounds_left = t.oc().contain_list.len() + 1;
     while let Some(&rider) = t.oc().contain_list.first() {
         if rider != INVALID_ID {
-            t.remove_from_contain(world, me, rider, true);
-            out(t, world, me, |w| w.contain_attempt_damage(rider, info));
+            if crate::logic::modules::plant(1382) {
+                out(t, world, me, |w| w.contain_attempt_damage(rider, info));
+                t.remove_from_contain(world, me, rider, true);
+            } else {
+                t.remove_from_contain(world, me, rider, true);
+                out(t, world, me, |w| w.contain_attempt_damage(rider, info));
+            }
         }
         if rounds_left == 0 {
             undefined(world, me, Undefined::EndlessLoop);
@@ -964,7 +969,7 @@ pub fn base_harm_and_force_exit_all_contained<T: OpenContainVirtuals>(t: &mut T,
 pub fn do_load_sound<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle) {
     if t.oc().load_sounds_enabled {
         let now = world.frame();
-        if now != t.oc().last_load_sound_frame {
+        if now != t.oc().last_load_sound_frame || crate::logic::modules::plant(1383) {
             let name = t.oc().data.enter_sound.event_name.clone();
             out(t, world, me, |w| w.emit(ObjectClientEvent::AudioAddEvent { name, object_id: me.object, position: None, player_index: None }));
             // save this frame as the last time we did this sound
@@ -980,7 +985,7 @@ pub fn do_unload_sound<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me:
         let name = t.oc().data.exit_sound.event_name.clone();
         out(t, world, me, |w| w.emit(ObjectClientEvent::AudioAddEvent { name, object_id: me.object, position: None, player_index: None }));
         // save this frame as the last time we did this sound
-        t.oc_mut().last_unload_sound_frame = now;
+        if !crate::logic::modules::plant(1384) { t.oc_mut().last_unload_sound_frame = now; }
     }
 }
 
@@ -992,7 +997,7 @@ pub fn get_closest_rider<T: OpenContainVirtuals>(t: &mut T, world: &mut World, m
     for rider in t.oc().contain_list.clone() {
         if rider != INVALID_ID {
             let distance = out(t, world, me, |w| w.contain_partition_get_distance_squared(rider, pos));
-            if closest == INVALID_ID || closest_distance > distance {
+            if closest == INVALID_ID || (if crate::logic::modules::plant(1385) { closest_distance < distance } else { closest_distance > distance }) {
                 closest = rider;
                 closest_distance = distance;
             }
@@ -1010,7 +1015,7 @@ pub fn scatter_to_nearby_position<T: OpenContainVirtuals>(t: &mut T, world: &mut
 
     let Some(c) = world.objects.find(container) else { return };
     let min_radius = c.geometry_info.get_bounding_circle_radius();
-    let max_radius = min_radius + min_radius / 2.0;
+    let max_radius = if crate::logic::modules::plant(1386) { min_radius * 2.0 } else { min_radius + min_radius / 2.0 };
     let container_pos = c.get_position();
     let layer = c.layer;
     let dist = world.random.game_logic_random_value_real(min_radius, max_radius);
@@ -1031,7 +1036,8 @@ pub fn scatter_to_nearby_position<T: OpenContainVirtuals>(t: &mut T, world: &mut
         out(t, world, me, |w| w.module_call(rider, ai, ModuleCall::AiMoveToPosition { pos, command_source: CMD_FROM_AI }));
     } else {
         // no ai, just set position at the target pos
-        out(t, world, me, |w| w.contain_set_position(rider, &pos));
+        let at = if crate::logic::modules::plant(1387) { container_pos } else { pos };
+        out(t, world, me, |w| w.contain_set_position(rider, &at));
     }
 }
 
@@ -1061,7 +1067,8 @@ pub fn get_contained_items_mass<T: OpenContainVirtuals>(t: &mut T, world: &mut W
     for rider in t.get_contained_items_list() {
         let phys = world.objects.find(rider).and_then(|o| o.physics);
         if let Some(p) = phys {
-            mass += out(t, world, me, |w| w.module_call(rider, p, ModuleCall::PhysicsGetMass)).as_real(0.0);
+            let m = out(t, world, me, |w| w.module_call(rider, p, ModuleCall::PhysicsGetMass)).as_real(0.0);
+            mass = if crate::logic::modules::plant(1395) { mass.max(m) } else { mass + m };
         }
     }
     mass
@@ -1090,7 +1097,7 @@ pub fn base_on_collide<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me:
     let other_player = world.get_controlling_player(other);
     for rider in t.oc().contain_list.clone() {
         // (the callee may remove the rider: upstream advanced the iterator first)
-        if world.get_controlling_player(rider) != other_player {
+        if (world.get_controlling_player(rider) != other_player) != crate::logic::modules::plant(1388) {
             let rider_ai = world.objects.find(rider).and_then(|o| o.ai);
             if let Some(rider_ai) = rider_ai {
                 if world.objects.find(rider).is_some_and(|o| o.is_kind_of(KINDOF_STEALTH_GARRISON)) {
@@ -1108,7 +1115,7 @@ pub fn base_on_collide<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me:
     }
 
     // finally, we must have space to contain it.
-    if !t.is_valid_container_for(world, me, other, true) {
+    if !t.is_valid_container_for(world, me, other, true) && !crate::logic::modules::plant(1389) {
         return;
     }
 
@@ -1143,12 +1150,12 @@ pub fn base_on_die<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me: Mod
     t.kill_riders_who_are_not_free_to_exit(world, me);
 
     // (leaving orderAllPassengersToExit commented out as upstream shows it can't work: we are about to die)
-    t.remove_all_contained(world, me, false);
+    t.remove_all_contained(world, me, crate::logic::modules::plant(1394));
 }
 
 /// `OpenContain::update`.
 pub fn base_update<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle) -> UpdateSleepTime {
-    t.oc_mut().player_entered_mask = 0;
+    if !crate::logic::modules::plant(1397) { t.oc_mut().player_entered_mask = 0; }
 
     // we need to monitor changes in the art and position
     t.monitor_condition_changes(world, me);
@@ -1156,7 +1163,7 @@ pub fn base_update<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me: Mod
     if t.oc().door_close_countdown != 0 {
         // @todo srj -- for now, OpenContain assumes at most one door
         t.oc_mut().door_close_countdown -= 1;
-        if t.oc().door_close_countdown == 0 {
+        if t.oc().door_close_countdown == if crate::logic::modules::plant(1396) { 1 } else { 0 } {
             out(t, world, me, |w| w.clear_and_set_model_condition_state(me.object, MODELCONDITION_DOOR_1_OPENING, MODELCONDITION_DOOR_1_CLOSING));
         }
     }
@@ -1174,7 +1181,7 @@ pub fn prune_dead_wanters<T: OpenContainVirtuals>(t: &mut T, world: &mut World) 
     for id in ids {
         let gone = match world.objects.find(id) {
             None => true,
-            Some(o) => o.is_effectively_dead(),
+            Some(o) => o.is_effectively_dead() && !crate::logic::modules::plant(1398),
         };
         if gone {
             t.oc_mut().object_enter_exit_info.remove(&id);
@@ -1192,7 +1199,7 @@ pub fn base_monitor_condition_changes<T: OpenContainVirtuals>(t: &mut T, world: 
 
     if has_drawable {
         curr_condition = world.reads.drawable_model_condition_flags(me.object);
-        if curr_condition != t.oc().condition_state {
+        if curr_condition != t.oc().condition_state && !crate::logic::modules::plant(1399) {
             state_changed = true;
         }
     }
@@ -1218,7 +1225,7 @@ pub fn base_redeploy_occupants<T: OpenContainVirtuals>(t: &mut T, world: &mut Wo
     // redeploy the occupants, note that we're starting at the last occupant and going backwards to the start ... that reflects the order in which they actually
     // went into the building since all list building constructs at the head
     let list = t.oc().contain_list.clone();
-    for rider in list.into_iter().rev() {
+    for rider in if crate::logic::modules::plant(1400) { list } else { list.into_iter().rev().collect() } {
         t.put_obj_at_next_fire_point(world, me, rider);
     }
 }
@@ -1254,7 +1261,7 @@ pub fn base_put_obj_at_next_fire_point<T: OpenContainVirtuals>(t: &mut T, world:
         // if our passengers are in our turret, we need to recompute the matrix.
         let mut firepoint = b"FIREPOINT".to_vec();
         let next = t.oc().fire_point_next + 1; // +1 from bone names starting at 1, not zero like my array
-        if t.oc().fire_point_next < 10 {
+        if t.oc().fire_point_next < if crate::logic::modules::plant(1401) { 9 } else { 10 } {
             firepoint.push(b'0');
         }
         firepoint.extend_from_slice(next.to_string().as_bytes());
@@ -1288,7 +1295,7 @@ pub fn base_put_obj_at_next_fire_point<T: OpenContainVirtuals>(t: &mut T, world:
 
     // increment the next firepoint to use ... make sure to wrap if we need to
     t.oc_mut().fire_point_next += 1;
-    if t.oc().fire_point_next >= t.oc().fire_point_size {
+    if t.oc().fire_point_next >= t.oc().fire_point_size - i32::from(crate::logic::modules::plant(1402)) {
         t.oc_mut().fire_point_next = 0;
     }
 }
@@ -1345,7 +1352,7 @@ pub fn base_exit_object_via_door<T: OpenContainVirtuals>(t: &mut T, world: &mut 
             out(t, world, me, |w| w.module_call(exit_obj, ai, ModuleCall::AiSetIgnoreCollisionTime { frames: LOGICFRAMES_PER_SECOND as i32 }));
             out(t, world, me, |w| w.contain_pathfind_adjust_to_possible_destination(exit_obj, &mut end_position));
         }
-        let mut exit_path = vec![end_position, end_position]; // do it twice, in case units stack up due to brief flying. jba.
+        let mut exit_path = if crate::logic::modules::plant(1406) { vec![end_position] } else { vec![end_position, end_position] }; // do it twice, in case units stack up due to brief flying. jba.
         if t.oc().rally_point_exists {
             exit_path.push(t.oc().rally_point);
         }
@@ -1376,13 +1383,13 @@ fn exit_bone_names<T: OpenContainVirtuals>(t: &mut T, number_exits: i32) -> (Vec
     if number_exits > 1 {
         let which = t.oc().which_exit_path;
         let suffix = which.to_string();
-        if which < 10 {
+        if which < if crate::logic::modules::plant(1403) { 9 } else { 10 } {
             start_bone.push(b'0');
             end_bone.push(b'0');
         }
 
         // to cycle from 1 to n
-        t.oc_mut().which_exit_path = (which % number_exits) + 1;
+        t.oc_mut().which_exit_path = if crate::logic::modules::plant(1404) { which % number_exits } else { (which % number_exits) + 1 };
 
         start_bone.extend_from_slice(suffix.as_bytes());
         end_bone.extend_from_slice(suffix.as_bytes());
@@ -1395,7 +1402,7 @@ fn exit_ai_prologue<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me: Mo
     let us = me.object;
     if let Some(my_ai) = my_ai {
         let idle = out(t, world, me, |w| w.module_call(us, my_ai, ModuleCall::AiIsIdle)).as_bool();
-        if idle && world.objects.find(us).is_some_and(|o| o.is_kind_of(KINDOF_VEHICLE)) {
+        if idle && world.objects.find(us).is_some_and(|o| o.is_kind_of(KINDOF_VEHICLE) || crate::logic::modules::plant(1405)) {
             let pos = world.objects.find(us).map_or(Coord3D { x: 0.0, y: 0.0, z: 0.0 }, |o| o.get_position());
             out(t, world, me, |w| w.contain_pathfind_remove_unit(us));
             out(t, world, me, |w| w.contain_pathfind_update_pos(us, &pos));
@@ -1464,7 +1471,7 @@ pub fn base_order_all_passengers_to_exit<T: OpenContainVirtuals>(t: &mut T, worl
     for rider in t.get_contained_items_list() {
         // call it
         if let Some(ai) = world.objects.find(rider).and_then(|o| o.ai) {
-            if instantly {
+            if instantly != crate::logic::modules::plant(1407) {
                 out(t, world, me, |w| w.module_call(rider, ai, ModuleCall::AiExitInstantly { container: us, command_source }));
             } else {
                 out(t, world, me, |w| w.module_call(rider, ai, ModuleCall::AiExit { container: us, command_source }));
@@ -1485,7 +1492,7 @@ pub fn order_all_passengers_to_idle<T: OpenContainVirtuals>(t: &mut T, world: &m
 /// `OpenContain::orderAllPassengersToHackInternet`.
 pub fn order_all_passengers_to_hack_internet<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, command_source: i32) {
     for rider in t.get_contained_items_list() {
-        if world.objects.find(rider).is_some_and(|o| o.is_kind_of(KINDOF_MONEY_HACKER)) {
+        if world.objects.find(rider).is_some_and(|o| o.is_kind_of(KINDOF_MONEY_HACKER)) || crate::logic::modules::plant(1408) {
             if let Some(ai) = world.objects.find(rider).and_then(|o| o.ai) {
                 out(t, world, me, |w| w.module_call(rider, ai, ModuleCall::AiHackInternet { command_source }));
             }
@@ -1523,13 +1530,13 @@ pub fn base_process_damage_to_contained<T: OpenContainVirtuals>(t: &mut T, world
 
         let mut damage_info = DamageInfo::default();
         damage_info.input.damage_type = DAMAGE_UNRESISTABLE;
-        damage_info.input.death_type = if data.is_burned_death_to_units { DEATH_BURNED } else { DEATH_NORMAL };
+        damage_info.input.death_type = if data.is_burned_death_to_units != crate::logic::modules::plant(1390) { DEATH_BURNED } else { DEATH_NORMAL };
         damage_info.input.source_id = us;
         damage_info.input.amount = damage;
         out(t, world, me, |w| w.contain_attempt_damage(object, &mut damage_info));
 
         let dead = world.objects.find(object).is_none_or(|o| o.is_effectively_dead());
-        if !dead && percent_damage == 1.0 && !out(t, world, me, |w| w.contain_kill(object)) {
+        if !dead && (percent_damage == 1.0 || (crate::logic::modules::plant(1391) && percent_damage > 0.5)) && !out(t, world, me, |w| w.contain_kill(object)) {
             // in case we are carrying flame proof troops we have been asked to kill
             undefined(world, me, Undefined::NullBodyModule); // `Object::kill` calls through `getBodyModule()`
             return;
