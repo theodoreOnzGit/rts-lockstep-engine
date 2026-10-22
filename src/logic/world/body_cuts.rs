@@ -116,6 +116,8 @@ pub struct BodyCutTables {
 /// What `ActiveBody` did to a unit that is not translated, or that is run for real but cascades. See the module docs.
 #[derive(Clone, Debug, PartialEq)]
 pub enum BodyCall {
+    /// `TheGameLogic->destroyObject(obj)` (`SlowDeathBehavior`).
+    DestroyObject { object: ObjectId },
     /// `obj->setDisabled(type)`.
     SetDisabled { object: ObjectId, disabled_type: i32 },
     /// `me->clearDisabled(type)`.
@@ -184,6 +186,14 @@ impl World {
 
     fn body_cut(&mut self, call: BodyCall) {
         self.cut(CutCall::Body(call));
+    }
+
+    /// `TheGameLogic->destroyObject(obj)`.
+    pub fn body_destroy_object(&mut self, id: ObjectId) {
+        self.body_cut(BodyCall::DestroyObject { object: id });
+        if !self.cuts.body.stub_object_calls {
+            self.destroy_object(id);
+        }
     }
 
     /// `obj->setDisabled(type)`.

@@ -51,6 +51,8 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	void reactToBodyDamageStateChange( int newState );   /* a BodyDamageType */
 	Object *getObject() const { return m_ownerObject; }
 	Object *m_ownerObject = 0;
+	void setShadowsEnabled(Bool enable);   /* SlowDeathBehavior */
+	void setTerrainDecalFadeTarget(Real target, Real rate);
 	/* --- end p1w13-sonnet --- */ };
 /* --- end p1w10-sonnet --- */
 #endif

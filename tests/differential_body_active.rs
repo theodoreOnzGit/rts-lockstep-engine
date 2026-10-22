@@ -1103,6 +1103,7 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                         }
                         log.push(format!("setstatus {object} {w1:08x}{w0:08x} {}", i32::from(set)))
                     }
+                    BodyCall::DestroyObject { object } => log.push(format!("destroy {object}")),
                     BodyCall::AcademyVehicleSniped => log.push("sniped".to_string()),
                     BodyCall::AcademyClearedGarrisonedBuilding { player } => log.push(format!("garrisoncleared {player}")),
                     BodyCall::GetMultiLogicalBonePosition { object, prefix, max } => log.push(format!("bones {object} {} {max}", String::from_utf8_lossy(&prefix))),

@@ -245,6 +245,14 @@ public:
 	Bool isFactionStructure() const;
 	CanAttackResult getAbleToAttackSpecificObject( AbleToAttackType t, const Object *target, CommandSourceType commandSource, WeaponSlotType specificSlot = (WeaponSlotType)-1 ) const;
 	/* --- end p1w13-sonnet --- */
+	/* --- p1w13-sonnet --- (SlowDeathBehavior; differential/l9_slow_death_q.inc) */
+	Real getHeightAboveTerrain() const { return m_pos.z; }   /* the test's terrain is flat at zero */
+	void setPositionZ( Real z ) { m_pos.z = z; }
+	Bool isDisabledByType( DisabledType type ) const { return ( m_disabledBits >> type ) & 1; }
+	void clearAndSetModelConditionFlags( const ModelConditionFlags &clr, const ModelConditionFlags &set );
+	void clearModelConditionFlags( const ModelConditionFlags &clr );
+	void setModelConditionFlags( const ModelConditionFlags &set );
+	/* --- end p1w13-sonnet --- */
 protected:
 	virtual Object *asObjectMeth() { return this; }
 	virtual const Object *asObjectMeth() const { return this; }

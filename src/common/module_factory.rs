@@ -730,6 +730,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::active_body::new_module_data),
             which_interfaces: Some(crate::logic::modules::active_body::ActiveBody::get_interface_mask()),
         }),
+        "SlowDeathBehavior" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::slow_death_behavior::new_module_data),
+            which_interfaces: Some(crate::logic::modules::slow_death_behavior::SlowDeathBehavior::get_interface_mask()),
+        }),
         // --- end p1w13-sonnet ---
         _ => None,
     }
@@ -780,6 +785,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::FloatUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::TechBuildingBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::FireSpreadUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::SlowDeathBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         // --- end p1w13-sonnet ---
         _ => None,
     };

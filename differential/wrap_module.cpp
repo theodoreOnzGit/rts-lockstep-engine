@@ -813,4 +813,5 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_tech_building_o.inc"
 #include "l9_fire_spread_o.inc"
 #include "l9_active_body_p.inc"
+#include "l9_slow_death_q.inc"
 /* --- end p1w13-sonnet --- */

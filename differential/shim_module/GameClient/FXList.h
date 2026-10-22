@@ -18,4 +18,8 @@ public:
 	static void doFXPos(const FXList *fx, const Coord3D *primary, const Matrix3D *primaryMtx = 0, const Real primarySpeed = 0.0f, const Coord3D *secondary = 0, const Real overrideRadius = 0.0f);
 	/* --- end p1w12-sonnet --- */
 };
+/* --- p1w13-sonnet --- (SlowDeathBehavior's parser finds FX lists by name; differential/l9_slow_death_q.inc) */
+class FXListStore { public: const FXList *findFXList(const char *name) const; };
+extern FXListStore *TheFXListStore;
+/* --- end p1w13-sonnet --- */
 #endif

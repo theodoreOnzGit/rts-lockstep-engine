@@ -107,6 +107,10 @@ pub struct ProbeAnswers {
     pub rider_change: bool,
     /// `getTowerID(i)` of the bridge behaviour (`has` bit 10 says there is one).
     pub bridge_towers: [ObjectId; 4],
+    /// `getLastCollidee()` of the physics.
+    pub collidee: ObjectId,
+    /// `isAiInDeadState()` of the AI (`markAsDead` sets it).
+    pub ai_dead: bool,
     // --- end p1w13-sonnet ---
     // --- p1w7-sonnet ---
     /// `isClearToApproach`.
@@ -437,6 +441,44 @@ impl ProbeModule {
                 }
                 ModuleReply::Done
             }
+            // SlowDeathBehavior's test: the physics, AI and slaved calls it makes are lines of the trace (`bt ...`), the module's answers are scripted
+            ModuleCall::PhysicsSetAllowToFall(b) => {
+                world.body_trace(format!("pfall {} {}", me.object, i32::from(b)));
+                ModuleReply::Done
+            }
+            ModuleCall::PhysicsApplyForce(f) => {
+                world.body_trace(format!("pforce {} {:08x} {:08x} {:08x}", me.object, f.x.to_bits(), f.y.to_bits(), f.z.to_bits()));
+                ModuleReply::Done
+            }
+            ModuleCall::PhysicsSetExtraBounciness(v) => {
+                world.body_trace(format!("pbounce {} {:08x}", me.object, v.to_bits()));
+                ModuleReply::Done
+            }
+            ModuleCall::PhysicsSetExtraFriction(v) => {
+                world.body_trace(format!("pfriction {} {:08x}", me.object, v.to_bits()));
+                ModuleReply::Done
+            }
+            ModuleCall::PhysicsSetAllowBouncing(b) => {
+                world.body_trace(format!("pallowbounce {} {}", me.object, i32::from(b)));
+                ModuleReply::Done
+            }
+            ModuleCall::PhysicsSetAngles { yaw, pitch, roll } => {
+                world.body_trace(format!("pangles {} {:08x} {:08x} {:08x}", me.object, yaw.to_bits(), pitch.to_bits(), roll.to_bits()));
+                ModuleReply::Done
+            }
+            ModuleCall::PhysicsGetLastCollidee => ModuleReply::Id(self.answers.collidee),
+            ModuleCall::AiIsAiInDeadState => ModuleReply::Bool(self.answers.ai_dead),
+            ModuleCall::AiMarkAsDead => {
+                world.body_trace(format!("markdead {}", me.object));
+                self.answers.ai_dead = true;
+                ModuleReply::Done
+            }
+            ModuleCall::SlavedOnSlaverDie => {
+                world.body_trace(format!("slaverdie {}", me.object));
+                ModuleReply::Done
+            }
+            // a probe is no slow death behaviour
+            ModuleCall::BeginSlowDeath(_) | ModuleCall::GetProbabilityModifier(_) | ModuleCall::IsDieApplicable(_) => ModuleReply::Unhandled,
             ModuleCall::AiGetGoalObject => ModuleReply::Id(self.answers.goal_object),
             ModuleCall::PhysicsGetVelocity => ModuleReply::Coord(self.answers.velocity),
             // --- end p1w13-sonnet ---

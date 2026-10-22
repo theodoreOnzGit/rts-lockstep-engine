@@ -448,6 +448,10 @@ pub struct ObjectGlobals {
     pub base_regen_health_percent_per_second: f32,
     /// `TheGlobalData->m_baseRegenDelay` (frames).
     pub base_regen_delay: u32,
+    // --- p1w13-sonnet ---
+    /// `TheGameLODManager->getSlowDeathScale()` (`SlowDeathBehavior`): 1 is the normal speed of a death, 0 an instant one.
+    pub slow_death_scale: f32,
+    // --- end p1w13-sonnet ---
     // --- end p1w10-sonnet ---
 }
 
@@ -476,6 +480,9 @@ impl Default for ObjectGlobals {
             base_regen_health_percent_per_second: 0.0,
             base_regen_delay: 0,
             // --- end p1w10-sonnet ---
+            // --- p1w13-sonnet ---
+            slow_death_scale: 1.0,
+            // --- end p1w13-sonnet ---
         }
     }
 }

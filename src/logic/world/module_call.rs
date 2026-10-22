@@ -331,6 +331,34 @@ pub enum ModuleCall {
     SetConstructorObject(ObjectId),
     /// `StructureBody::getConstructorObjectID()`.
     GetConstructorObjectId,
+    // ---- SlowDeathBehavior and the physics, AI and slaved calls it makes ----
+    /// `SlowDeathBehaviorInterface::beginSlowDeath(damageInfo)`.
+    BeginSlowDeath(DamageInfo),
+    /// `SlowDeathBehaviorInterface::getProbabilityModifier(damageInfo)`; replies [`ModuleReply::Int`] (a module that is no slow death behaviour replies
+    /// [`ModuleReply::Unhandled`]).
+    GetProbabilityModifier(DamageInfo),
+    /// `SlowDeathBehaviorInterface::isDieApplicable(damageInfo)`; replies [`ModuleReply::Bool`] ([`ModuleReply::Unhandled`] for a module that is no slow death behaviour).
+    IsDieApplicable(DamageInfo),
+    /// `PhysicsBehavior::setAllowToFall(allow)`.
+    PhysicsSetAllowToFall(bool),
+    /// `PhysicsBehavior::applyForce(&force)`.
+    PhysicsApplyForce(Coord3D),
+    /// `PhysicsBehavior::setExtraBounciness(bounciness)`.
+    PhysicsSetExtraBounciness(f32),
+    /// `PhysicsBehavior::setExtraFriction(friction)`.
+    PhysicsSetExtraFriction(f32),
+    /// `PhysicsBehavior::setAllowBouncing(allow)`.
+    PhysicsSetAllowBouncing(bool),
+    /// `PhysicsBehavior::setAngles(yaw, pitch, roll)`.
+    PhysicsSetAngles { yaw: f32, pitch: f32, roll: f32 },
+    /// `PhysicsBehavior::getLastCollidee()`; replies [`ModuleReply::Id`].
+    PhysicsGetLastCollidee,
+    /// `AIUpdateInterface::isAiInDeadState()`; replies [`ModuleReply::Bool`].
+    AiIsAiInDeadState,
+    /// `AIUpdateInterface::markAsDead()`.
+    AiMarkAsDead,
+    /// `SlavedUpdate::onSlaverDie(NULL)`.
+    SlavedOnSlaverDie,
     // ---- the other interfaces ActiveBody asks for ----
     /// `ProjectileUpdateInterface::projectileNowJammed()`.
     ProjectileNowJammed,

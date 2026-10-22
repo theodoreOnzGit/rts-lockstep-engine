@@ -47,6 +47,7 @@ class WeaponStore
 {
 public:
 	void createAndFireTempWeapon(const WeaponTemplate *wt, const Object *source, const Coord3D *pos);
+	const WeaponTemplate *findWeaponTemplate(const char *name) const;   /* p1w13-sonnet: SlowDeathBehavior (differential/l9_slow_death_q.inc) */
 };
 extern WeaponStore *TheWeaponStore;
 /* --- end p1w12-sonnet --- */

@@ -18,6 +18,9 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	void aiGuardRetaliate( Object *victim, const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource );
 	Bool m_moving = false, m_idle = false;
 	Object *m_owner = 0;
+	Bool isAiInDeadState() const { return m_dead; }   /* SlowDeathBehavior */
+	void markAsDead();
+	Bool m_dead = false;
 	/* --- end p1w13-sonnet --- */
 };
 #endif

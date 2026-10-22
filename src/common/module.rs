@@ -408,6 +408,8 @@ pub enum ModuleDataKind {
     FireSpreadUpdate(Arc<crate::logic::modules::fire_spread_update::FireSpreadUpdateModuleData>),
     /// `ActiveBodyModuleData`.
     ActiveBody(Arc<crate::logic::modules::active_body::ActiveBodyModuleData>),
+    /// `SlowDeathBehaviorModuleData`.
+    SlowDeathBehavior(Arc<crate::logic::modules::slow_death_behavior::SlowDeathBehaviorModuleData>),
     // --- end p1w13-sonnet ---
 // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
@@ -503,6 +505,7 @@ impl ModuleDataKind {
             ModuleDataKind::TechBuildingBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::FireSpreadUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::ActiveBody(d) => &d.body.behavior.module_data,
+            ModuleDataKind::SlowDeathBehavior(d) => &d.update.behavior.module_data,
             // --- end p1w13-sonnet ---
 // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
@@ -831,6 +834,13 @@ impl ModuleDataKind {
             ModuleDataKind::ActiveBody(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.body.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::SlowDeathBehavior(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
                     true
                 }
                 None => false,

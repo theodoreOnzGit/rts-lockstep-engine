@@ -59,6 +59,19 @@ impl World {
         }
     }
 
+    // --- p1w13-sonnet ---
+    /// The concrete body of module `h` where it is (the module's slot, or the update module's entry of `Object::behaviors`), for a test that reads a module's state
+    /// without taking it out; `None` if the module is missing, has no body, or its body is out.
+    pub fn peek_module_body(&self, h: ModuleHandle) -> Option<&UpdateBody> {
+        let obj = self.objects.find(h.object)?;
+        let slot = obj.modules.get(h.index as usize)?;
+        match slot.update_index {
+            Some(u) => obj.behaviors.get(u as usize)?.body.as_ref(),
+            None => slot.body.as_ref(),
+        }
+    }
+    // --- end p1w13-sonnet ---
+
     /// Puts a checked-out body back.
     pub(crate) fn put_module_body(&mut self, h: ModuleHandle, body: UpdateBody) {
         if let Some(obj) = self.objects.find_mut(h.object) {
