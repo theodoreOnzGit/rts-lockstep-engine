@@ -758,15 +758,15 @@ impl OpenContainVirtuals for ParachuteContain {
         let no_collisions = status_mask(OBJECT_STATUS_NO_COLLISIONS);
         if !self.opened || self.get_contain_count(world) == 0 {
             // "unopened, or empty, chutes, don't collide with anything, to simplify ejections, paradrops, landings, etc..."
-            out(self, world, me, |w| w.set_status(us, no_collisions.clone(), true));
+            out(self, world, me, |w| w.set_status(us, no_collisions, true));
             if rider != INVALID_ID {
-                out(self, world, me, |w| w.set_status(rider, no_collisions.clone(), true));
+                out(self, world, me, |w| w.set_status(rider, no_collisions, true));
             }
         } else {
             // "opened/nonempty chutes DO collide..."
-            out(self, world, me, |w| w.clear_status(us, no_collisions.clone()));
+            out(self, world, me, |w| w.clear_status(us, no_collisions));
             if rider != INVALID_ID && !crate::logic::modules::plant(1530) {
-                out(self, world, me, |w| w.clear_status(rider, no_collisions.clone()));
+                out(self, world, me, |w| w.clear_status(rider, no_collisions));
             }
         }
 
