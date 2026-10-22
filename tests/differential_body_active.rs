@@ -39,20 +39,29 @@
 //! scan, `getAbleToAttackSpecificObject`, `getDistanceSquared`, the bones of the drawable and the particle system manager are stand-ins on both sides (the partition manager,
 //! the weapon layer, the drawable and the particle system manager are verified by their own tests): the body's use of them is what is under test.
 //!
-//! Measured 2026-10-22, 9,000 cases (`L9AB_CASES`, seed `0x00AB_0D1E`), the unchanged `ActiveBody.cpp` (edited only by `build.rs`) against the Rust module:
+//! Measured 2026-10-22 (second run, after `HighlanderBody`, `ImmortalBody` and `StructureBody` joined the scene as the class of each object's body: the C++ side
+//! also runs the unchanged `HighlanderBody.cpp`, `ImmortalBody.cpp` and `StructureBody.cpp`), 9,000 cases (`L9AB_CASES`, seed `0x00AB_0D1E`), the unchanged
+//! `ActiveBody.cpp` (edited only by `build.rs`) against the Rust module:
 //!
-//! - data reads: 8,439 compared, 0 mismatches (486 data blocks that upstream's parser throws on, the same message on both sides);
-//! - op outputs: 1,344,457 compared, 0 mismatches, max ULP 0, no NaN-payload-only differences;
-//! - 258,306 ops, 89,674 damage hits, 6,675 deaths, 5,471 kills scored, 8,402 xfers (save, load, CRC), 997,446 effect lines, 9,535 fx, 233,403 particle systems,
-//!   612 retaliation checks, 8,584 subdual hits;
-//! - 561 cases excluded: upstream-undefined input (a null AI, an empty contained list, an out-of-range array index, a `Real` outside `Int`), counted Rust-only.
+//! - data reads: 8,343 compared, 0 mismatches (499 data blocks that upstream's parser throws on, the same message on both sides);
+//! - op outputs: 1,332,949 compared, 0 mismatches, max ULP 0, no NaN-payload-only differences;
+//! - 255,199 ops, 89,920 damage hits, 5,554 deaths, 4,821 kills scored, 8,376 xfers (save, load, CRC), 969,278 effect lines, 10,199 fx, 222,614 particle systems,
+//!   769 retaliation checks, 9,703 subdual hits;
+//! - 657 cases excluded: upstream-undefined input (a null AI, an empty contained list, an out-of-range array index, a `Real` outside `Int`), counted Rust-only.
 //!
 //! Interpretation: every line the body sends to the rest of the game (and every value it returns or saves) agrees bit for bit with upstream over this input space.
 //! The retaliation scan, the able-to-attack and distance answers, the bones and the particle manager are the test's stand-ins on both sides, so this does not verify them.
 //!
+//! # The derived classes
+//!
+//! Each object's body is one of `ActiveBody`, `HighlanderBody`, `ImmortalBody`, `StructureBody` (the scene's last word per object), with op 36 `setConstructorObject`
+//! and the structure's constructor object id as the last word of the object's state. A load only takes bytes that a body of the same class saved: another class's bytes
+//! are shifted fields, and a flag read from a byte that is not 0 or 1 is not a `bool` in C++ (the C++ side prints `0x3c` where Rust, which normalises, has `true`).
+//! `UndeadBody` (needs `SlowDeathBehavior`) and `HiveStructureBody` (needs the spawn and contain interfaces) are not in this test yet.
+//!
 //! # Planted bugs
 //!
-//! `L9_PLANT=<id>` flips one branch of `active_body.rs`; each must make the test fail at 9,000 cases (1212-1253 all caught except as noted):
+//! `L9_PLANT=<id>` flips one branch of `active_body.rs`; each must make the test fail at 9,000 cases (1212-1253 and 1261-1267 all caught except as noted):
 //!
 //! | id | planted bug |
 //! |---|---|
@@ -65,6 +74,9 @@
 //! | 1224-1229 | subdual frames floor not ceil, cannot-be-subdued early return, unresistable branches, kill, actual damage clipped |
 //! | 1230-1241 | last-damage timestamp window, faction-structure test, last attacker, damage-state change test, particle cap, died test, subdual/garrison/sniper branches |
 //! | 1242-1248 | setDamageState REALLYDAMAGED ratio, setInitialHealth base, setMaxHealth ratio / add / full-heal / cap |
+//! | 1261-1263 | Highlander: the limit applied to UNRESISTABLE instead of the rest; limit by health not health - 1; `max` for `min` |
+//! | 1264-1265 | Immortal: limit by -health (not -health + 1); `min` for `max` |
+//! | 1266-1267 | Structure: `setConstructorObject(NULL)` overwrites the id; the id is not saved |
 //! | 1249-1253 | veterancy bonus ratio inverted, promoted-hero sound, UI dirty (selected, contained-by), promotion feedback |
 //!
 //! Not planted, equivalent mutant: the `max(desiredHealth, 0)` clamp in `setDamageState` (1243 survived): `internalChangeHealth` clamps the result to 0 anyway, so removing it
@@ -197,6 +209,8 @@ struct Obj {
     probe_proj: [bool; 2],
     towers: [i32; 4],
     body: [u32; 5],
+    /// 0 `ActiveBody`, 1 `HighlanderBody`, 2 `ImmortalBody`, 3 `StructureBody`
+    cls: u32,
 }
 
 struct Tmpl {
@@ -298,6 +312,7 @@ fn parse_scene(cfg: &[u32]) -> Scene {
         let (b0, p0, b1, p1) = (r.u() != 0, r.u() != 0, r.u() != 0, r.u() != 0);
         let towers = [r.u() as i32, r.u() as i32, r.u() as i32, r.u() as i32];
         let body = [r.u(), r.u(), r.u(), r.u(), r.u()];
+        let cls = r.u();
         objs.push(Obj {
             tmpl,
             kinds,
@@ -320,6 +335,7 @@ fn parse_scene(cfg: &[u32]) -> Scene {
             probe_proj: [p0, p1],
             towers,
             body,
+            cls,
         });
     }
     let mut rel = vec![vec![0; n]; n];
@@ -611,6 +627,7 @@ fn gen_scene(g: &mut Gen, data: &Option<ModuleDataKind>, focus: u32) -> Vec<u32>
         w.f(if focus == 4 { *pick(g, &[&100.0f32, &50.0, &80.0, &300.0, &0.0]) } else { *pick(g, &[&0.0f32, &0.0, &100.0, &50.0]) });
         w.u(*pick(g, &[&0u32, &30, &90]));
         w.f(*pick(g, &[&0.0f32, &5.0, &20.0]));
+        w.u(*pick(g, &[&0u32, &0, &1, &2, &3, &3])); // the class of the body
     }
     for i in 0..n {
         for j in 0..n {
@@ -728,6 +745,7 @@ fn gen_case(g: &mut Gen, data: &Option<ModuleDataKind>, _n_up: usize, _upgrades:
         }
     }
     let n_ops = 1 + g.below(60) as usize;
+    let mut saved_cls: Option<u32> = None;
     for _ in 0..n_ops {
         let obj = if g.below(100) < 60 { 0 } else { g.below(n) };
         let mut r = g.below(1000);
@@ -807,12 +825,21 @@ fn gen_case(g: &mut Gen, data: &Option<ModuleDataKind>, _n_up: usize, _upgrades:
             890..=899 => [26, obj, 5, g.below(4), g.u32()],
             900..=909 => [27, g.below(4), g.u32(), 0, 0],
             910..=919 => [28, obj, if g.below(2) == 0 { 0 } else { 1 + g.below(n) }, 0, 0],
-            920..=939 => [29, obj, 0, 0, 0],
-            940..=959 => [30, obj, 0, 0, 0],
+            920..=939 => {
+                saved_cls = Some(s.objs[obj as usize].cls);
+                [29, obj, 0, 0, 0]
+            }
+            // a load of the bytes another class saved is a load of shifted fields (a flag read from a byte that is not 0 or 1 is not a `bool` in C++, and is `true` here):
+            // upstream-undefined, so only a body of the class that saved loads
+            940..=959 => match (0..n).filter(|&k| Some(s.objs[k as usize].cls) == saved_cls).nth(g.below(2) as usize) {
+                Some(k) => [30, k, 0, 0, 0],
+                None => [31, obj, 0, 0, 0],
+            },
             960..=969 => [31, obj, 0, 0, 0],
             970..=979 => [32, obj, g.below(2), 0, 0],
             980..=989 => [33, obj, g.below(2), 0, 0],
-            _ => [34, obj, g.below(4), 0, 0],
+            990..=994 => [34, obj, g.below(4), 0, 0],
+            _ => [36, obj, if g.below(3) == 0 { 0 } else { 1 + g.below(n) }, 0, 0],
         };
         ops.push(op);
     }
@@ -904,8 +931,8 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
             let n_ps = state[17];
             let ids: Vec<u32> = (0..n_ps).map(|_| r.u32()).collect();
             let info = get_info(&mut r);
-            let rest: Vec<u32> = (0..4).map(|_| r.u32()).collect();
-            out.push(format!("op {i} object {k}: body {state:08x?} ps {ids:?} {info} status {:08x} {:08x} dead {} geometry {:08x}", rest[0], rest[1], rest[2], rest[3]));
+            let rest: Vec<u32> = (0..5).map(|_| r.u32()).collect();
+            out.push(format!("op {i} object {k}: body {state:08x?} ps {ids:?} {info} status {:08x} {:08x} dead {} geometry {:08x} constructor {}", rest[0], rest[1], rest[2], rest[3], rest[4]));
         }
         let players: Vec<u32> = (0..8).map(|_| r.u32()).collect();
         out.push(format!("op {i} players {players:x?}"));
@@ -916,7 +943,13 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 fn put_object(v: &mut Vec<u8>, w: &World, id: ObjectId) {
     let o = w.objects.find(id).expect("the object");
     let body_idx = o.body.expect("the body") as usize;
-    let Some(UpdateBody::ActiveBody(m)) = o.modules[body_idx].body.as_ref() else { panic!("the body is in its slot") };
+    let (m, constructor) = match o.modules[body_idx].body.as_ref() {
+        Some(UpdateBody::ActiveBody(m)) => (m, None),
+        Some(UpdateBody::HighlanderBody(m)) => (m.active_body(), None),
+        Some(UpdateBody::ImmortalBody(m)) => (m.active_body(), None),
+        Some(UpdateBody::StructureBody(m)) => (m.active_body(), Some(m.get_constructor_object_id())),
+        _ => panic!("the body is in its slot"),
+    };
     for x in m.state_words() {
         put_u32(v, x);
     }
@@ -935,6 +968,8 @@ fn put_object(v: &mut Vec<u8>, w: &World, id: ObjectId) {
     put_u32(v, w1);
     put_u32(v, u32::from(o.is_effectively_dead()));
     put_u32(v, o.geometry_info.get_max_height_above_position().to_bits());
+    // the constructor object id of a StructureBody, else 0
+    put_u32(v, constructor.unwrap_or(0) as u32);
 }
 
 fn veterancy(i: i32) -> VeterancyLevel {
@@ -1247,7 +1282,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 subdual_damage_heal_amount: f(o.body[4]),
             }))
         };
-        let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"ActiveBody", b"ModuleTag_Body", &body_data).unwrap().unwrap();
+        let class_name: &[u8] = [b"ActiveBody".as_slice(), b"HighlanderBody", b"ImmortalBody", b"StructureBody"][o.cls as usize];
+        let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class_name, b"ModuleTag_Body", &body_data).unwrap().unwrap();
         let mut modules = vec![m];
         for i in 0..o.n_probes {
             let mut a = ProbeAnswers::default();
@@ -1422,6 +1458,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     events_before = w.events.events().len();
                 }
                 34 => w.objects.find_mut(id).unwrap().experience.level = veterancy(o[2] as i32),
+                36 => {
+                    w.module_call(id, m, ModuleCall::SetConstructorObject(o[2] as i32));
+                }
                 _ => {}
             }
         } else {

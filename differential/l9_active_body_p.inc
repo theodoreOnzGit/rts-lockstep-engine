@@ -14,6 +14,9 @@ template <typename NUM> inline NUM sqr(NUM x) { return x*x; }
 #define REAL_TO_INT_CEIL(x) (ref_real_to_int_ceil(x))
 extern "C" int ref_real_to_int_ceil(float x);
 #include "ActiveBody_edit.cpp"
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Body/HighlanderBody.cpp"
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Body/ImmortalBody.cpp"
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Body/StructureBody.cpp"
 #include "DamageFX_cut.inc"            /* DamageFX::DamageFX, clear, getDamageFXThrottleTime, doDamageFX, getDamageFXList: verbatim from DamageFX.cpp (build.rs) */
 #include "BridgeBehaviorFromObject.inc" /* BridgeBehavior::getBridgeBehaviorInterfaceFromObject: verbatim from BridgeBehavior.cpp (build.rs) */
 #undef min
@@ -144,6 +147,7 @@ struct AbObj
 {
 	Object *obj;
 	ActiveBody *body;
+	unsigned cls;
 	ActiveBodyModuleData *data;
 	AbProbe *probe[2];
 	int nProbes;
@@ -361,6 +365,7 @@ void abPutObject(AbObj *a)
 	putU32(w[1]);
 	putU32(a->obj->m_effDead ? 1 : 0);
 	putU32(realBits(a->obj->m_geometry.getMaxHeightAbovePosition()));
+	putU32(a->cls == 3 ? (unsigned)((StructureBody *)a->body)->getConstructorObjectID() : 0u);
 }
 
 /* the effect log of one op: the events in order (the FX lists, the UI refresh) and the ulog lines */
@@ -508,7 +513,7 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 	/* the objects */
 	g_abN = (int)c.u();
 	struct ObjCfg { unsigned tmpl, kinds, status; int player; int vet; unsigned pos[3]; unsigned containedBy; unsigned drawable, hasAi, moving, idle, hasContain, garrisonable, immune, riderChange, nProbes;
-		unsigned nItems; unsigned items[3]; unsigned probeBridge[2], probeProj[2]; unsigned towers[4]; unsigned bodyData[5]; } oc[AB_OBJS];
+		unsigned nItems; unsigned items[3]; unsigned probeBridge[2], probeProj[2]; unsigned towers[4]; unsigned bodyData[5]; unsigned cls; } oc[AB_OBJS];
 	for (int k = 0; k < g_abN; ++k) {
 		ObjCfg &o = oc[k];
 		o.tmpl = c.u(); o.kinds = c.u(); o.status = c.u(); o.player = c.s(); o.vet = c.s();
@@ -520,6 +525,7 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 		for (int i = 0; i < 2; ++i) { o.probeBridge[i] = c.u(); o.probeProj[i] = c.u(); }
 		for (int i = 0; i < 4; ++i) o.towers[i] = c.u();
 		for (int i = 0; i < 5; ++i) o.bodyData[i] = c.u();
+		o.cls = c.u();
 	}
 	for (int i = 0; i < g_abN; ++i) for (int j = 0; j < g_abN; ++j) g_abRel[i][j] = (Relationship)c.s();
 	/* the damage infos */
@@ -662,7 +668,15 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 	for (int k = 0; k < g_abN && !failed; ++k) {
 		AbObj &a = g_abObjs[k];
 		status = 0;
-		try { a.body = new ActiveBody(a.obj, a.data); }
+		a.cls = oc[k].cls;
+		try {
+			switch (a.cls) {
+			case 1: a.body = new HighlanderBody(a.obj, a.data); break;
+			case 2: a.body = new ImmortalBody(a.obj, a.data); break;
+			case 3: a.body = new StructureBody(a.obj, a.data); break;
+			default: a.body = new ActiveBody(a.obj, a.data); break;
+			}
+		}
 		CATCH_ALL(status, code, msg, msgCap)
 		if (status) { failed = true; break; }
 		a.obj->m_body = a.body;
@@ -690,7 +704,7 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 		g_events.clear();
 		g_ulog.clear();
 		if (phase) {
-			AbObj *t = (o[0] <= 16 || (o[0] >= 29 && o[0] <= 35)) && (int)o[1] < g_abN ? &g_abObjs[o[1]] : 0;
+			AbObj *t = (o[0] <= 16 || (o[0] >= 29 && o[0] <= 36)) && (int)o[1] < g_abN ? &g_abObjs[o[1]] : 0;
 			try {
 				switch (o[0]) {
 				case 0: { DamageInfo di = infos[o[2]]; t->obj->attemptDamage(&di); break; }
@@ -768,6 +782,7 @@ static int l9abRunInner(const char *filename, const char *xfer_path, const unsig
 				case 33: t->obj->m_drawable = o[2] ? &t->draw : 0; break;
 				case 34: t->obj->m_level = (VeterancyLevel)o[2]; break;
 				case 35: t->body->m_particleSystems = t->body->m_particleSystems; break;
+				case 36: if (t->cls == 3) ((StructureBody *)t->body)->setConstructorObject(o[2] ? abFind(o[2])->obj : 0); break;
 				default: break;
 				}
 			}

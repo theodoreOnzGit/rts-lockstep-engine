@@ -705,6 +705,21 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::fire_spread_update::new_module_data),
             which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
         }),
+        "HighlanderBody" => Some(ModuleTemplate {
+            create_proc: Some(new_body_base),
+            create_data_proc: Some(crate::logic::modules::active_body::new_module_data),
+            which_interfaces: Some(crate::logic::modules::derived_bodies::HighlanderBody::get_interface_mask()),
+        }),
+        "ImmortalBody" => Some(ModuleTemplate {
+            create_proc: Some(new_body_base),
+            create_data_proc: Some(crate::logic::modules::active_body::new_module_data),
+            which_interfaces: Some(crate::logic::modules::derived_bodies::ImmortalBody::get_interface_mask()),
+        }),
+        "StructureBody" => Some(ModuleTemplate {
+            create_proc: Some(new_body_base),
+            create_data_proc: Some(crate::logic::modules::active_body::new_module_data),
+            which_interfaces: Some(crate::logic::modules::derived_bodies::StructureBody::get_interface_mask()),
+        }),
         "ActiveBody" => Some(ModuleTemplate {
             create_proc: Some(new_body_base),
             create_data_proc: Some(crate::logic::modules::active_body::new_module_data),

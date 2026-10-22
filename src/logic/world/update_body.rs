@@ -218,6 +218,12 @@ pub enum UpdateBody {
     FireSpreadUpdate(crate::logic::modules::fire_spread_update::FireSpreadUpdate),
     /// `ActiveBody`.
     ActiveBody(crate::logic::modules::active_body::ActiveBody),
+    /// `HighlanderBody`.
+    HighlanderBody(crate::logic::modules::derived_bodies::HighlanderBody),
+    /// `ImmortalBody`.
+    ImmortalBody(crate::logic::modules::derived_bodies::ImmortalBody),
+    /// `StructureBody`.
+    StructureBody(crate::logic::modules::derived_bodies::StructureBody),
     // --- end p1w13-sonnet ---
     // New variants go here, one per translated module.
 }
@@ -317,6 +323,9 @@ impl UpdateBody {
             UpdateBody::TechBuildingBehavior(m) => m.world_update(world, me),
             UpdateBody::FireSpreadUpdate(m) => m.world_update(world, me),
             UpdateBody::ActiveBody(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::HighlanderBody(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::ImmortalBody(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::StructureBody(_) => UPDATE_SLEEP_FOREVER,
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -416,6 +425,9 @@ impl UpdateBody {
             UpdateBody::TechBuildingBehavior(m) => m.module_call(world, me, call),
             UpdateBody::FireSpreadUpdate(m) => m.module_call(world, me, call),
             UpdateBody::ActiveBody(m) => m.module_call(world, me, call),
+            UpdateBody::HighlanderBody(m) => m.module_call(world, me, call),
+            UpdateBody::ImmortalBody(m) => m.module_call(world, me, call),
+            UpdateBody::StructureBody(m) => m.module_call(world, me, call),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -755,6 +767,9 @@ impl Snapshot for UpdateBody {
             UpdateBody::TechBuildingBehavior(m) => m.crc(xfer),
             UpdateBody::FireSpreadUpdate(m) => m.crc(xfer),
             UpdateBody::ActiveBody(m) => m.crc(xfer),
+            UpdateBody::HighlanderBody(m) => m.crc(xfer),
+            UpdateBody::ImmortalBody(m) => m.crc(xfer),
+            UpdateBody::StructureBody(m) => m.crc(xfer),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -850,6 +865,9 @@ impl Snapshot for UpdateBody {
             UpdateBody::TechBuildingBehavior(m) => m.xfer(xfer),
             UpdateBody::FireSpreadUpdate(m) => m.xfer(xfer),
             UpdateBody::ActiveBody(m) => m.xfer(xfer),
+            UpdateBody::HighlanderBody(m) => m.xfer(xfer),
+            UpdateBody::ImmortalBody(m) => m.xfer(xfer),
+            UpdateBody::StructureBody(m) => m.xfer(xfer),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -945,6 +963,9 @@ impl Snapshot for UpdateBody {
             UpdateBody::TechBuildingBehavior(m) => m.load_post_process(),
             UpdateBody::FireSpreadUpdate(m) => m.load_post_process(),
             UpdateBody::ActiveBody(m) => m.load_post_process(),
+            UpdateBody::HighlanderBody(m) => m.load_post_process(),
+            UpdateBody::ImmortalBody(m) => m.load_post_process(),
+            UpdateBody::StructureBody(m) => m.load_post_process(),
 // --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
@@ -1124,6 +1145,9 @@ impl UpdateBody {
             UpdateBody::TechBuildingBehavior(m) => m.world_construct(world, me),
             UpdateBody::FireSpreadUpdate(m) => m.world_construct(world, me),
             UpdateBody::ActiveBody(m) => m.world_construct(world, me),
+            UpdateBody::HighlanderBody(m) => m.world_construct(world, me),
+            UpdateBody::ImmortalBody(m) => m.world_construct(world, me),
+            UpdateBody::StructureBody(m) => m.world_construct(world, me),
 // --- end p1w13-sonnet ---
             _ => {}
         }

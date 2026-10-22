@@ -116,6 +116,7 @@ pub mod float_update;
 pub mod tech_building_behavior;
 pub mod fire_spread_update;
 pub mod active_body;
+pub mod derived_bodies;
 // --- end p1w13-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
@@ -421,7 +422,12 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         )),
         ModuleDataKind::ActiveBody(d) => Some(made(
             active_body::ActiveBody::get_interface_mask(),
-            active_body::ActiveBody::new(object, Some(d.clone())).map(UpdateBody::ActiveBody),
+            match name {
+                b"HighlanderBody" => derived_bodies::HighlanderBody::new(object, Some(d.clone())).map(UpdateBody::HighlanderBody),
+                b"ImmortalBody" => derived_bodies::ImmortalBody::new(object, Some(d.clone())).map(UpdateBody::ImmortalBody),
+                b"StructureBody" => derived_bodies::StructureBody::new(object, Some(d.clone())).map(UpdateBody::StructureBody),
+                _ => active_body::ActiveBody::new(object, Some(d.clone())).map(UpdateBody::ActiveBody),
+            },
         )),
         // --- end p1w13-sonnet ---
         _ => None,

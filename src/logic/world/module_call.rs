@@ -327,6 +327,10 @@ pub enum ModuleCall {
     AiEvacuateInstantly { expose_stealth_units: bool },
     /// `aiGuardRetaliate(victim, pos, NO_MAX_SHOTS_LIMIT, CMD_FROM_AI)`.
     AiGuardRetaliate { victim: ObjectId, pos: Coord3D },
+    /// `StructureBody::setConstructorObject(obj)`: the id of the object (`INVALID_ID` is a null pointer).
+    SetConstructorObject(ObjectId),
+    /// `StructureBody::getConstructorObjectID()`.
+    GetConstructorObjectId,
     // ---- the other interfaces ActiveBody asks for ----
     /// `ProjectileUpdateInterface::projectileNowJammed()`.
     ProjectileNowJammed,
