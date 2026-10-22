@@ -8,6 +8,22 @@
 class Object;
 /* --- p1w13-sonnet --- (batch R2: TransportContain) */
 #include "GameLogic/AI.h"
+/* batch R5 (RiderChangeContain): AIUpdate.h, verbatim */
+enum LocomotorSetType
+{
+	LOCOMOTORSET_INVALID = -1,
+
+	LOCOMOTORSET_NORMAL = 0,
+	LOCOMOTORSET_NORMAL_UPGRADED,
+	LOCOMOTORSET_FREEFALL,
+	LOCOMOTORSET_WANDER,
+	LOCOMOTORSET_PANIC,
+	LOCOMOTORSET_TAXIING,			// set used for normally-airborne items while taxiing on ground
+	LOCOMOTORSET_SUPERSONIC,	// set used for high-speed attacks
+	LOCOMOTORSET_SLUGGISH,		// set used for abnormally slow (but not damaged) speeds
+
+	LOCOMOTORSET_COUNT	///< keep last, please
+};
 enum AIFreeToExitType // Note - written out in save/load xfer, don't change these numbers.  jba.
 {
 	FREE_TO_EXIT=0,
@@ -25,6 +41,7 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	Bool isIdle() const { return m_idle; }
 	void aiIdle( CommandSourceType cmdSource );
 	void aiEvacuateInstantly( Bool exposeStealthUnits, CommandSourceType cmdSource );
+	void chooseLocomotorSet( LocomotorSetType wst );   /* p1w13-sonnet, batch R5: differential/l9_open_contain_r.inc logs it */
 	void aiGuardRetaliate( Object *victim, const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource );
 	Bool m_moving = false, m_idle = false;
 	Object *m_owner = 0;
@@ -55,3 +72,23 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	/* --- end p1w13-sonnet --- */
 };
 #endif
+
+/* --- p1w13-sonnet --- (batch R5: RiderChangeContain.cpp defines DEFINE_LOCOMOTORSET_NAMES and includes this header after others have; the names sit
+** outside the include guard so that inclusion still sees them. AIUpdate.h, verbatim.) */
+#if defined(DEFINE_LOCOMOTORSET_NAMES) && !defined(SHIM_MODULE_LOCOMOTORSET_NAMES)
+#define SHIM_MODULE_LOCOMOTORSET_NAMES
+static const char *TheLocomotorSetNames[] = 
+{
+	"SET_NORMAL",
+	"SET_NORMAL_UPGRADED",
+	"SET_FREEFALL",
+	"SET_WANDER",
+	"SET_PANIC",
+	"SET_TAXIING",
+	"SET_SUPERSONIC",
+	"SET_SLUGGISH",
+
+	NULL
+};
+#endif
+/* --- end p1w13-sonnet --- */

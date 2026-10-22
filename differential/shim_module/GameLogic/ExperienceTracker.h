@@ -5,6 +5,7 @@
 #ifndef SHIM_MODULE_EXPERIENCETRACKER_H
 #define SHIM_MODULE_EXPERIENCETRACKER_H
 #include "Lib/BaseType.h"
+#include "Common/GameCommon.h"   /* batch R5: VeterancyLevel */
 class ExperienceTracker
 {
 public:
@@ -12,6 +13,13 @@ public:
 	Real getExperienceScalar() const { return m_scalar; }
 	void setExperienceScalar(Real s) { m_scalar = s; }
 	Real m_scalar;
+	/* --- p1w13-sonnet --- (batch R5: RiderChangeContain moves veterancy between bike and rider; differential/l9_open_contain_r.inc logs the calls) */
+	/* asm labels: the experience tracker's own differential test links the real ExperienceTracker.cpp, whose symbols these would duplicate */
+	VeterancyLevel getVeterancyLevel() const __asm__("l9m_ExperienceTracker_getVeterancyLevel");
+	void setVeterancyLevel( VeterancyLevel newLevel, Bool provideFeedback = TRUE ) __asm__("l9m_ExperienceTracker_setVeterancyLevel");
+	void setExperienceAndLevel( Int experienceIn, Bool provideFeedback = TRUE ) __asm__("l9m_ExperienceTracker_setExperienceAndLevel");
+	class Object *m_owner = 0;
+	/* --- end p1w13-sonnet --- */
 };
 #endif
 /* --- end p1w10-sonnet --- */

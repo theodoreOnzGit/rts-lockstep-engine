@@ -39,6 +39,36 @@ public:
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/RailedTransportContain.cpp"
 /* batch R4, unchanged */
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/HelixContain.cpp"
+/* batch R5, unchanged; its header from build.rs (the forward enum declarations), and stand-ins for what it reaches that the module build lacks */
+#include "RiderChangeContain_edit.h"
+/* WeaponSetFlags::getBitNames(): WeaponSet.cpp's s_bitNameList, verbatim */
+struct WeaponSetFlags
+{
+	static const char *const *getBitNames()
+	{
+		static const char *const s_bitNameList[] = { "VETERAN", "ELITE", "HERO", "PLAYER_UPGRADE", "CRATEUPGRADE_ONE", "CRATEUPGRADE_TWO", "VEHICLE_HIJACK",
+			"CARBOMB", "MINE_CLEARING_DETAIL", "WEAPON_RIDER1", "WEAPON_RIDER2", "WEAPON_RIDER3", "WEAPON_RIDER4", "WEAPON_RIDER5", "WEAPON_RIDER6",
+			"WEAPON_RIDER7", "WEAPON_RIDER8", NULL };
+		return s_bitNameList;
+	}
+};
+/* the message stream: each append is a line of the log */
+class GameMessage
+{
+public:
+	enum Type { MSG_CREATE_SELECTED_GROUP, MSG_REMOVE_FROM_SELECTED_GROUP };
+	void appendBooleanArgument(Bool b) { ulog("msgbool %d", b ? 1 : 0); }
+	void appendObjectIDArgument(ObjectID id) { ulog("msgobj %d", (int)id); }
+};
+class MessageStream
+{
+public:
+	GameMessage *appendMessage(GameMessage::Type t) { ulog("msg %s", t == GameMessage::MSG_CREATE_SELECTED_GROUP ? "create" : "remove"); return &m_msg; }
+	GameMessage m_msg;
+};
+static MessageStream g_ctMessageStream;
+static MessageStream *TheMessageStream = &g_ctMessageStream;
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/RiderChangeContain.cpp"
 /* --- end p1w13-sonnet --- */
 #undef itoa
 
@@ -60,11 +90,12 @@ ModuleData *l9ctRead(const char *filename)
 		try {
 			/* --- p1w13-sonnet --- (batches R2, R3) */
 			const char c0 = currentLine.str()[0];
-			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : c0 == 'H' ? 4 : 0;
+			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : c0 == 'H' ? 4 : c0 == 'C' ? 5 : 0;
 			if (g_ctBlockCls == 1) data = TransportContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 2) data = InternetHackContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 3) data = RailedTransportContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 4) data = HelixContain::friend_newModuleData(&ini);
+			else if (g_ctBlockCls == 5) data = RiderChangeContain::friend_newModuleData(&ini);
 			else data = OpenContain::friend_newModuleData(&ini);
 			/* --- end p1w13-sonnet --- */
 		} catch (...) {
@@ -169,6 +200,7 @@ struct CtObj
 	CtBody *body;
 	struct CtDock *dock;   /* p1w13-sonnet, batch R3 */
 	AIUpdateInterface ai;
+	ExperienceTracker xp;   /* p1w13-sonnet, batch R5 */
 	StealthUpdate stealth;
 	Drawable draw;
 	Team team;
@@ -258,6 +290,24 @@ void StealthUpdate::markAsDetected(UnsignedInt) { ulog("markdetected %d", (int)m
 /* --- p1w13-sonnet --- (batch R4: HelixContain) */
 void StealthUpdate::receiveGrant(Bool active, UnsignedInt frames) { ulog("stealthgrant %d %d %u", (int)m_owner->m_oid, active ? 1 : 0, frames); }
 void ctSetTeam(Object *obj, Team *team) { ulog("setteam %d %d", (int)obj->m_oid, team ? (int)team->m_dummy : -1); }
+/* batch R5: RiderChangeContain's calls */
+void AIUpdateInterface::chooseLocomotorSet(LocomotorSetType set) { ulog("locoset %d %d", (int)m_owner->m_oid, (int)set); }
+/* ThingTemplate.cpp's isEquivalentTo reduced to what the test's templates have (no overrides, reskins or build variations): the same template; NULL
+** answers FALSE, as upstream's `if (!(this && tt))` (`this` is laundered so that the test is not optimised away) */
+Bool ThingTemplate::isEquivalentTo(const ThingTemplate *tt) const
+{
+	const void *self = this;
+	__asm__ volatile("" : "+r"(self));
+	if (!self || !tt) return false;
+	return self == (const void *)tt;
+}
+VeterancyLevel ExperienceTracker::getVeterancyLevel() const { return m_owner->m_level; }
+void ExperienceTracker::setVeterancyLevel(VeterancyLevel l, Bool) { ulog("xplevel %d %d", (int)m_owner->m_oid, (int)l); m_owner->m_level = l; }
+void ExperienceTracker::setExperienceAndLevel(Int xp, Bool) { ulog("xpset %d %d", (int)m_owner->m_oid, (int)xp); }
+int ctDrawOwner(const Drawable *d) { for (int k = 0; k < g_ctN; ++k) if (&g_ctObjs[k].draw == d) return k + 1; return 0; }
+void InGameUI::selectDrawable(Drawable *d) { ulog("uiselect %d", ctDrawOwner(d)); }
+void InGameUI::deselectDrawable(Drawable *d) { ulog("uideselect %d", ctDrawOwner(d)); }
+void InGameUI::setDisplayedMaxWarning(Bool b) { ulog("maxwarning %d", b ? 1 : 0); }
 /* --- end p1w13-sonnet --- */
 void Drawable::setDrawableHidden(Bool hidden) { ulog("hidden %d %d", m_ownerObject ? (int)m_ownerObject->m_oid : 0, (int)hidden); }
 void Object::setLayer(PathfindLayerEnum layer) { ulog("setlayer %d %d", (int)m_oid, (int)layer); }
@@ -431,7 +481,7 @@ void ctPutObject(CtObj *a)
 {
 	if (a->oc) {
 		OpenContain *oc = a->oc;
-		putU32(dynamic_cast<HelixContain *>(oc) ? 3 : dynamic_cast<TransportContain *>(oc) ? 2 : 1);   /* --- p1w13-sonnet --- (batches R2, R4): 2 marks a transport, 3 a Helix */
+		putU32(dynamic_cast<RiderChangeContain *>(oc) ? 4 : dynamic_cast<HelixContain *>(oc) ? 3 : dynamic_cast<TransportContain *>(oc) ? 2 : 1);   /* --- p1w13-sonnet --- (batches R2, R4, R5): 2 a transport, 3 a Helix, 4 a combat bike */
 		putU32(oc->m_containListSize);
 		putU32((unsigned)oc->m_containList.size());
 		for (ContainedItemsList::const_iterator it = oc->m_containList.begin(); it != oc->m_containList.end(); ++it) putU32((unsigned)(*it)->m_oid);
@@ -477,6 +527,7 @@ void ctPutObject(CtObj *a)
 			putU32((unsigned)tc->m_extraSlotsInUse);
 			putU32(tc->m_frameExitNotBusy);
 			if (HelixContain *hc = dynamic_cast<HelixContain *>(oc)) putU32((unsigned)hc->m_portableStructureID);   /* batch R4 */
+			if (RiderChangeContain *rc = dynamic_cast<RiderChangeContain *>(oc)) { putU32((unsigned)rc->m_extraSlotsInUse); putU32(rc->m_frameExitNotBusy); putU32(rc->m_scuttledOnFrame); }   /* batch R5: its own two, and the scuttle */
 		}
 		/* --- end p1w13-sonnet --- */
 	} else {
@@ -504,6 +555,8 @@ void ctPutObject(CtObj *a)
 	}
 	putU32(a->draw.m_selected && a->obj->m_drawable ? 1 : 0);
 	putU32(a->obj->m_weaponBonusCondition);   /* p1w13-sonnet, batch R4: HelixContain sets and clears GARRISONED */
+	putStr(a->obj->m_commandSetStringOverride.str(), a->obj->m_commandSetStringOverride.getLength());   /* batch R5: RiderChangeContain's command set */
+	putU32((unsigned)a->obj->m_level);   /* batch R5: the veterancy it moves between bike and rider */
 }
 
 }  // namespace
@@ -514,6 +567,16 @@ extern "C" {
 ** layout is written), and make the containers. The data dump goes first (the fifteen fields). Then `n` ops of 5 words [op, a, b, c, d] (the test's table). Each op,
 ** and the construction, appends: the CATCH_ALL status, a result word, the effect log (count, then each line as a string), the xfer status, bytes and CRC, then the
 ** state of every object. */
+/* --- p1w13-sonnet --- (batch R5) the riders a scene-built combat bike can name: per set, up to three of {template (index into kCtRiderTemplates; 0 none),
+** model condition (index into kCtConds), weapon set type, status (index into kCtStatus), command set (0 CmdA, 1 CmdB), locomotor set} */
+const char *const kCtRiderTemplates[6] = { "", "T1", "T2", "T3", "T4", "Nope" };
+const unsigned kCtRiderSets[4][3][6] = {
+	{ { 0 } },
+	{ { 1, 2, 9, 0, 0, 3 } },
+	{ { 2, 3, 10, 1, 1, 1 }, { 5, 4, 11, 2, 0, 2 } },
+	{ { 3, 0, 12, 0, 1, 4 }, { 2, 5, 13, 2, 0, 0 }, { 4, 1, 14, 1, 1, 6 } },
+};
+/* --- end p1w13-sonnet --- */
 static int l9ctRunInner(const char *filename, const char *xfer_path, const unsigned *cfg, int n, const unsigned *ops, unsigned char *buf, int cap, int *len, char *msg,
 	int msgCap, unsigned *code)
 {
@@ -572,6 +635,22 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				for (size_t j = 0; j < hd->m_payloadTemplateNameData.size(); ++j) putStr(hd->m_payloadTemplateNameData[j].str(), hd->m_payloadTemplateNameData[j].getLength());
 				putU32(hd->m_drawPips ? 1u : 0u);
 			}
+			/* batch R5: a combat bike block's riders and scuttle */
+			if (g_ctBlockCls == 5) {
+				const RiderChangeContainModuleData *rd = (const RiderChangeContainModuleData *)td;
+				for (int j = 0; j < MAX_RIDERS; ++j) {
+					const RiderInfo &r = rd->m_riders[j];
+					putStr(r.m_templateName.str(), r.m_templateName.getLength());
+					if (r.m_templateName.isEmpty()) continue;   /* the rest of a rider no line names is not set */
+					putU32((unsigned)r.m_modelConditionFlagType);
+					putU32((unsigned)r.m_weaponSetFlag);
+					putU32((unsigned)r.m_objectStatusType);
+					putStr(r.m_commandSet.str(), r.m_commandSet.getLength());
+					putU32((unsigned)r.m_locomotorSetType);
+				}
+				putU32(rd->m_scuttleFrames);
+				putU32((unsigned)rd->m_scuttleState);
+			}
 		}
 		/* --- end p1w13-sonnet --- */
 	}
@@ -593,7 +672,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		unsigned turret[CT_FP][3];
 		/* --- p1w13-sonnet --- (batch R2: TransportContain) */
 		unsigned cls; int rawSlots; unsigned airborne; int freeToExit; unsigned hasLoco, validTerrain, com, vel[3], weapons, unmanned, extraKinds, exitBoneHas, exitBone[3];
-		int slotCap; unsigned regen, exitDelay, tflags, pitch; int payloadCount; unsigned payloadName, exitBoneName, health, hasDock, dockOpen, helixPayload;
+		int slotCap; unsigned regen, exitDelay, tflags, pitch; int payloadCount; unsigned payloadName, exitBoneName, health, hasDock, dockOpen, helixPayload, riderSet, scuttleFrames, scuttleCond, aiMoving;
 		/* --- end p1w13-sonnet --- */
 	} oc[CT_OBJS];
 	for (int k = 0; k < g_ctN; ++k) {
@@ -616,7 +695,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		o.cls = c.u(); o.rawSlots = c.s(); o.airborne = c.u(); o.freeToExit = c.s(); o.hasLoco = c.u(); o.validTerrain = c.u(); o.com = c.u();
 		for (int i = 0; i < 3; ++i) o.vel[i] = c.u();
 		o.weapons = c.u(); o.unmanned = c.u(); o.extraKinds = c.u(); o.exitBoneHas = c.u(); for (int i = 0; i < 3; ++i) o.exitBone[i] = c.u();
-		o.slotCap = c.s(); o.regen = c.u(); o.exitDelay = c.u(); o.tflags = c.u(); o.pitch = c.u(); o.payloadCount = c.s(); o.payloadName = c.u(); o.exitBoneName = c.u(); o.health = c.u(); o.hasDock = c.u(); o.dockOpen = c.u(); o.helixPayload = c.u();
+		o.slotCap = c.s(); o.regen = c.u(); o.exitDelay = c.u(); o.tflags = c.u(); o.pitch = c.u(); o.payloadCount = c.s(); o.payloadName = c.u(); o.exitBoneName = c.u(); o.health = c.u(); o.hasDock = c.u(); o.dockOpen = c.u(); o.helixPayload = c.u(); o.riderSet = c.u(); o.scuttleFrames = c.u(); o.scuttleCond = c.u(); o.aiMoving = c.u();
 		/* --- end p1w13-sonnet --- */
 	}
 	for (int i = 0; i < g_ctN; ++i) for (int j = 0; j < g_ctN; ++j) g_ctRel[i][j] = (Relationship)c.s();
@@ -643,6 +722,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 	g_findTemplateHook = ctFindTemplate;
 	g_newObjectHook = ctNewObject;
 	g_setTeamHook = ctSetTeam;   /* batch R4 */
+	g_spLocal = &g_ctPlayers[0];   /* batch R5: the local player is player 0 (RiderChangeContain hands the selection over for it) */
 	/* --- end p1w13-sonnet --- */
 	TheGlobalData = TheGlobalData;
 	g_ctNeutralTeam.m_dummy = 0;
@@ -656,6 +736,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		const ObjCfg &o = oc[k];
 		a.obj = new Object;
 		a.obj->m_level = (VeterancyLevel)(1 + (k % 3));   /* never LEVEL_REGULAR: getVeterancyLevelFlag shifts by -1 for it (undefined) */
+		a.xp = ExperienceTracker(); a.xp.m_owner = a.obj; a.obj->m_xp = &a.xp;   /* batch R5 */
 		Object *obj = a.obj;
 		obj->m_oid = (ObjectID)(k + 1);
 		obj->m_pos.x = ctF(o.pos[0]); obj->m_pos.y = ctF(o.pos[1]); obj->m_pos.z = ctF(o.pos[2]);
@@ -696,6 +777,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		obj->m_airborneLoco = o.airborne != 0;
 		a.ai.m_freeToExit = o.freeToExit;
 		a.ai.m_hasLoco = o.hasLoco != 0;
+		a.ai.m_moving = o.aiMoving != 0;   /* batch R5 */
 		memset(a.physData, 0, sizeof(a.physData));
 		((PhysicsBehaviorModuleData *)a.physData)->m_centerOfMassOffset = ctF(o.com);
 		phys->m_moduleData = (const ModuleData *)a.physData;
@@ -762,6 +844,24 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			else {
 				if (o.cls) {
 					/* batch R4: a Helix's data, with the payload list the scene names */
+					/* batch R5: a combat bike's data, with the riders of the scene's set */
+					if (o.cls == 5) {
+						RiderChangeContainModuleData *rd = new RiderChangeContainModuleData;
+						for (int j = 0; j < 3; ++j) {
+							const unsigned *e = kCtRiderSets[o.riderSet % 4][j];
+							if (!e[0]) continue;
+							RiderInfo &r = rd->m_riders[j];
+							r.m_templateName = kCtRiderTemplates[e[0]];
+							r.m_modelConditionFlagType = kCtConds[e[1]];
+							r.m_weaponSetFlag = (WeaponSetType)e[2];
+							r.m_objectStatusType = (ObjectStatusType)kCtStatus[e[3]];
+							r.m_commandSet = e[4] ? "CmdB" : "CmdA";
+							r.m_locomotorSetType = (LocomotorSetType)e[5];
+						}
+						rd->m_scuttleFrames = o.scuttleFrames;
+						rd->m_scuttleState = kCtConds[o.scuttleCond % 6];
+						tdata = rd;
+					} else
 					if (o.cls == 4) {
 						HelixContainModuleData *hd = new HelixContainModuleData;
 						static const char *const kHelixPayload[4][2] = { { 0, 0 }, { "Nope", 0 }, { "T1", 0 }, { "Nope", "T2" } };
@@ -819,6 +919,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				else if (cls == 2) a.oc = new(ShimZeroFill{}) InternetHackContain(a.obj, td);
 				else if (cls == 3) a.oc = new(ShimZeroFill{}) RailedTransportContain(a.obj, td);
 				else if (cls == 4) a.oc = new(ShimZeroFill{}) HelixContain(a.obj, td);
+				else if (cls == 5) a.oc = new(ShimZeroFill{}) RiderChangeContain(a.obj, td);
 				else
 				/* --- end p1w13-sonnet --- */
 				a.oc = new OpenContain(a.obj, a.data);
@@ -840,7 +941,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 	if (failed) {
 		TheGameLogic = 0; TheAudio = 0; TheInGameUI = 0; TheAI = 0; ThePartitionManager = 0; TheTerrainLogic = 0;
 		g_modFindHook = 0; g_modDestroyHook = 0; g_teamRelHook = 0; g_xformHook = 0; g_multiBoneHook = 0;
-		g_findTemplateHook = 0; g_newObjectHook = 0; g_setTeamHook = 0;   /* --- p1w13-sonnet --- (batches R2, R4) */
+		g_findTemplateHook = 0; g_newObjectHook = 0; g_setTeamHook = 0; g_spLocal = 0;   /* --- p1w13-sonnet --- (batches R2, R4, R5) */
 		return 5;
 	}
 	for (int k = 0; k < g_ctN; ++k) {
@@ -1003,7 +1104,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 	delete d;
 	TheGameLogic = 0; TheAudio = 0; TheInGameUI = 0; TheAI = 0; ThePartitionManager = 0; TheTerrainLogic = 0;
 	g_modFindHook = 0; g_modDestroyHook = 0; g_teamRelHook = 0; g_xformHook = 0; g_multiBoneHook = 0;
-	g_findTemplateHook = 0; g_newObjectHook = 0; g_setTeamHook = 0;   /* --- p1w13-sonnet --- (batches R2, R4) */
+	g_findTemplateHook = 0; g_newObjectHook = 0; g_setTeamHook = 0; g_spLocal = 0;   /* --- p1w13-sonnet --- (batches R2, R4, R5) */
 	return 0;
 }
 

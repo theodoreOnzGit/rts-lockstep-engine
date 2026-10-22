@@ -119,7 +119,8 @@ void Object::clearAndSetModelConditionFlags(const ModelConditionFlags &clr, cons
 {
 	if (m_drawable) m_drawable->clearAndSetModelConditionState((ModelConditionFlagType)sdFirstFlag(clr), (ModelConditionFlagType)sdFirstFlag(set));
 }
-void Object::clearModelConditionFlags(const ModelConditionFlags &clr) { if (m_drawable) m_drawable->clearModelConditionState((ModelConditionFlagType)sdFirstFlag(clr)); }
+/* p1w13-sonnet, batch R5: every flag of the mask, in index order (RiderChangeContain clears two at once; the slow death masks name one) */
+void Object::clearModelConditionFlags(const ModelConditionFlags &clr) { if (m_drawable) for (int i = 0; i < MODELCONDITION_COUNT; ++i) if (clr.test(i)) m_drawable->clearModelConditionState((ModelConditionFlagType)i); }
 void Object::setModelConditionFlags(const ModelConditionFlags &set) { if (m_drawable) m_drawable->setModelConditionState((ModelConditionFlagType)sdFirstFlag(set)); }
 
 /* the physics behaviour's calls that are not inline in PhysicsUpdate.h */

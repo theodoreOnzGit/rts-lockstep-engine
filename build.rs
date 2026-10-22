@@ -3241,6 +3241,21 @@ mod differential {
                 let edited = edited.replace(cmp, cmp_fixed);
                 std::fs::write(mod_gen.join("TransportContain_edit.cpp"), edited).expect("write TransportContain_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R5: RiderChangeContain.h forward-declares three enums (an MSVC extension clang refuses). WeaponSetType and LocomotorSetType are
+                // defined before it here (WeaponSetType.h, the AIUpdate.h stand-in); ObjectStatusType is defined nowhere upstream (the real enum is
+                // ObjectStatusTypes), so it becomes an empty enum of int, the size MSVC gives the forward declaration. Into mod_gen/RiderChangeContain_edit.h,
+                // which the driver includes first (the same include guard).
+                let path = up.join("GameEngine/Include/GameLogic/Module/RiderChangeContain.h");
+                let text = std::fs::read_to_string(&path).expect("read RiderChangeContain.h");
+                let fwd = "enum WeaponSetType;\r\nenum ObjectStatusType;\r\nenum LocomotorSetType;";
+                let fwd_lf = "enum WeaponSetType;\nenum ObjectStatusType;\nenum LocomotorSetType;";
+                let fixed = "enum ObjectStatusType : int {};   /* build.rs: see the batch R5 note */";
+                let edited = if text.matches(fwd).count() == 1 { text.replace(fwd, fixed) } else {
+                    assert_eq!(text.matches(fwd_lf).count(), 1, "RiderChangeContain.h: the three forward enum declarations must occur once");
+                    text.replace(fwd_lf, fixed)
+                };
+                std::fs::write(mod_gen.join("RiderChangeContain_edit.h"), edited).expect("write RiderChangeContain_edit.h");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();

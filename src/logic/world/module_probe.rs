@@ -731,6 +731,10 @@ impl ProbeModule {
             // --- p1w13-sonnet --- (batch R3: the dock of a railed transport; the line of the C++ stand-in)
             ModuleCall::DockIsOpen => ModuleReply::Bool(self.answers.dock_open),
             ModuleCall::StealthReceiveGrant { .. } => ModuleReply::Done,
+            ModuleCall::AiChooseLocomotorSet(set) => {
+                world.body_trace(format!("locoset {} {set}", me.object));
+                ModuleReply::Done
+            }
             ModuleCall::DockSetOpen(open) => {
                 world.body_trace(format!("docksetopen {} {}", me.object, i32::from(open)));
                 self.answers.dock_open = open;

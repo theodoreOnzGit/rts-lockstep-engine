@@ -32,6 +32,10 @@
 //! Batch R3 adds the `I` (`InternetHackContain`) and `R` (`RailedTransportContain`) blocks (the transport's fields), class codes 2 and 3 for the scene's
 //! containers, and per object a dock behaviour after the contain (open or closed; `setDockOpen` is a line of the log).
 //!
+//! Batch R5 adds the `C` block (`RiderChangeContain`: `Rider1`..`Rider8`, `ScuttleDelay`, `ScuttleStatus`), class code 5 with the scene's rider sets,
+//! the AI's `isMoving`, the local player (player 0), and each object's command set override and veterancy level. The scene's templates are the factory's
+//! (the rider match is `isEquivalentTo` of the factory's templates).
+//!
 //! Batch R4 adds the `H` block (`HelixContain`: the transport's fields, `PayloadTemplateName`, `ShouldDrawPips`), class code 4, the PORTABLE_STRUCTURE kind,
 //! ops 56 and 57, and each object's weapon bonus word. Both sides register the containers' update modules as `GameLogic::registerObject` does, so a save's
 //! scheduling word is compared, not masked (it used to be masked at a fixed offset that was right only for `OpenContain`).
@@ -149,6 +153,20 @@
 //! | 1460 | no garrisoned weapon bonus for a rider |
 //! | 1461 | the stealth grant's test inverted |
 //! | 1462 | the garrisoned weapon bonus not cleared |
+//!
+//! Batch R5, `rider_change_contain.rs` (9,000 cases: all 9 caught):
+//!
+//! | id | planted bug |
+//! |---|---|
+//! | 1471 | `isExitBusy` TRUE |
+//! | 1472 | the base asked with the capacity check |
+//! | 1473 | the rider's status not set on the bike |
+//! | 1474 | the rider's veterancy not given to the bike |
+//! | 1475 | the dead-bike test of `onRemoving` inverted |
+//! | 1476 | no scuttle when the rider leaves |
+//! | 1477 | the moving test of the scuttle inverted |
+//! | 1478 | the scuttle delay ignored |
+//! | 1479 | `m_payloadCreated` not saved a second time |
 //!
 //! Not planted, unobservable here: the `wasSelected` argument of `onContaining` (1375, removed). `OpenContain::onContaining` ignores it; ~~`TransportContain` and `GarrisonContain` use it, and
 //! their tests will catch it~~ **CORRECTED 2026-10-22 (batch R2)**: `TransportContain::onContaining` only hands it to the base, so it is unobservable there too;
@@ -351,7 +369,23 @@ struct Obj {
     dock_open: bool,
     /// batch R4: a scene-built Helix's payload names, an index into [`HELIX_PAYLOADS`]
     helix_payload: u32,
+    /// batch R5: a scene-built combat bike's riders (an index into [`RIDER_SETS`]), its scuttle delay and state (an index into [`CONDS`]); the AI's
+    /// `isMoving()`
+    rider_set: u32,
+    scuttle_frames: u32,
+    scuttle_cond: u32,
+    ai_moving: bool,
 }
+
+/// The riders a scene-built combat bike can name (the driver's `kCtRiderSets`): per set up to three of (template, index into [`RIDER_TEMPLATES`], 0
+/// none; model condition, index into [`CONDS`]; weapon set type; status, index into [`STATUSES`]; command set, 0 `CmdA` 1 `CmdB`; locomotor set).
+const RIDER_SETS: [[[u32; 6]; 3]; 4] = [
+    [[0; 6], [0; 6], [0; 6]],
+    [[1, 2, 9, 0, 0, 3], [0; 6], [0; 6]],
+    [[2, 3, 10, 1, 1, 1], [5, 4, 11, 2, 0, 2], [0; 6]],
+    [[3, 0, 12, 0, 1, 4], [2, 5, 13, 2, 0, 0], [4, 1, 14, 1, 1, 6]],
+];
+const RIDER_TEMPLATES: [&str; 6] = ["", "T1", "T2", "T3", "T4", "Nope"];
 
 /// The payload lists a scene-built Helix can name (the driver's `kHelixPayload`).
 const HELIX_PAYLOADS: [&[&str]; 4] = [&[], &["Nope"], &["T1"], &["Nope", "T2"]];
@@ -460,6 +494,10 @@ impl Obj {
         w.u(u32::from(self.has_dock));
         w.u(u32::from(self.dock_open));
         w.u(self.helix_payload);
+        w.u(self.rider_set);
+        w.u(self.scuttle_frames);
+        w.u(self.scuttle_cond);
+        w.u(u32::from(self.ai_moving));
     }
 
     fn read(r: &mut R<'_>) -> Obj {
@@ -562,6 +600,10 @@ impl Obj {
         o.has_dock = r.u() != 0;
         o.dock_open = r.u() != 0;
         o.helix_payload = r.u();
+        o.rider_set = r.u();
+        o.scuttle_frames = r.u();
+        o.scuttle_cond = r.u();
+        o.ai_moving = r.u() != 0;
         o
     }
 }
@@ -671,7 +713,7 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     // batch R2: one block in two is a `TransportContain` (`T`), with its own fields after the base's
     // batch R3: a transport block is `T`, `I` (InternetHackContain) or `R` (RailedTransportContain); the fields are the same
     let transport = g.below(2) == 0;
-    let token = if transport { ["T\n", "I\n", "R\n", "H\n"][g.below(4) as usize] } else { "D\n" };
+    let token = if transport { ["T\n", "I\n", "R\n", "H\n", "C\n"][g.below(5) as usize] } else { "D\n" };
     if transport {
         field!(60, "Slots", health_str(g, clean));
         field!(30, "ScatterNearbyOnExit", gen_bool(g, clean));
@@ -696,6 +738,24 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
             }
         }
         field!(30, "ShouldDrawPips", gen_bool(g, clean));
+    }
+    // batch R5: a combat bike's riders (`Rider1` .. `Rider8`: template, model condition, weapon set, status, command set, locomotor set) and scuttle
+    if token == "C\n" {
+        use rts_lockstep_engine::common::model_state::MODEL_CONDITION_NAMES;
+        use rts_lockstep_engine::logic::weapon_set_flags::WEAPON_SET_NAMES;
+        for i in 0..8 {
+            if g.below(3) == 0 {
+                let name = ["T1", "T2", "T3", "T4", "Nope"][g.below(5) as usize];
+                let cond = MODEL_CONDITION_NAMES[CONDS[g.below(6) as usize] as usize];
+                let ws = WEAPON_SET_NAMES[9 + g.below(8) as usize];
+                let st = STATUS_NAMES[g.below(3) as usize];
+                let loco = rts_lockstep_engine::logic::modules::rider_change_contain::LOCOMOTOR_SET_NAMES[g.below(8) as usize];
+                let bad = if !clean && g.below(20) == 0 { "NOT_A_NAME" } else { st };
+                field!(100, &format!("Rider{}", i + 1), format!("{name} {cond} {ws} {bad} Cmd{} {loco}", g.below(3)));
+            }
+        }
+        field!(40, "ScuttleDelay", format!("{}", *pick(g, &[&0i32, &33, &100, &1000])));
+        field!(40, "ScuttleStatus", MODEL_CONDITION_NAMES[CONDS[g.below(6) as usize] as usize].to_string());
     }
     if !clean && g.below(12) == 0 {
         lines.push(format!("Bogus{}1", gen_sep(g)));
@@ -790,7 +850,7 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
         }
     }
     // 0 OpenContain, 1 TransportContain, 2 InternetHackContain, 3 RailedTransportContain
-    o.cls = if o.has_contain && k > 0 { g.below(5) } else { 0 };
+    o.cls = if o.has_contain && k > 0 { g.below(6) } else { 0 };
     o.raw_slots = *pick(g, &[&0i32, &1, &1, &1, &2, &3]);
     // upstream's airborne locomotor is the AI's
     o.airborne = o.has_ai && g.below(4) == 0;
@@ -821,6 +881,10 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     o.dock_open = g.below(2) == 0;
     // mostly no payload: a payload template that exists makes the stub factory's NULL object, which the Helix dereferences (undefined, excluded)
     o.helix_payload = if g.below(4) == 0 { g.below(4) } else { 0 };
+    o.rider_set = g.below(4);
+    o.scuttle_frames = *pick(g, &[&0u32, &1, &3, &30]);
+    o.scuttle_cond = g.below(6);
+    o.ai_moving = g.below(2) == 0;
     if g.below(4) == 0 {
         o.extra_kinds |= 8;
     }
@@ -842,6 +906,7 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> Vec<u32> {
                 Some(ModuleDataKind::InternetHackContain(_)) => 2,
                 Some(ModuleDataKind::RailedTransportContain(_)) => 3,
                 Some(ModuleDataKind::HelixContain(_)) => 4,
+                Some(ModuleDataKind::RiderChangeContain(_)) => 5,
                 _ => 0,
             };
         }
@@ -985,6 +1050,13 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId, has_contain: bool) {
                 }
             }
             // batch R4: a Helix, 3 (the transport's words and its portable structure)
+            // batch R5: a combat bike, 4 (the transport's words, its own two counters and the scuttle frame)
+            Some(UpdateBody::RiderChangeContain(m)) => {
+                put_u32(v, 4);
+                for x in m.state_words() {
+                    put_u32(v, x);
+                }
+            }
             Some(UpdateBody::HelixContain(m)) => {
                 put_u32(v, 3);
                 for x in m.state_words() {
@@ -1045,6 +1117,9 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId, has_contain: bool) {
     put_u32(v, u32::from(w.reads.local_selection.contains(&id)));
     // batch R4: the weapon bonus conditions (HelixContain sets and clears GARRISONED)
     put_u32(v, w.objects.find(id).unwrap().weapon_bonus_condition);
+    // batch R5: the command set override and the veterancy level (RiderChangeContain sets both)
+    put_str(v, &w.objects.find(id).unwrap().command_set_string_override);
+    put_u32(v, w.objects.find(id).unwrap().experience.level as u32);
 }
 
 /// The state words of the module with the 32 fire point matrices folded into one word (the driver folds the same way).
@@ -1092,6 +1167,12 @@ fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> 
             (st, Vec::new(), x.get_crc())
         }
     }
+}
+
+/// The factory's template id of the scene's `T{k+1}` (an object's template is the factory's, as `isEquivalentTo` needs; batch R5).
+fn factory_id(names: &BTreeMap<u16, String>, k: usize) -> u16 {
+    let want = format!("T{}", k + 1);
+    names.iter().find(|(_, n)| **n == want).map(|(id, _)| *id).expect("the factory has the scene's templates")
 }
 
 fn hex3(p: &Coord3D) -> String {
@@ -1155,6 +1236,17 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                         ContainCall::GetSingleLogicalBonePositionOnTurret { object, name } => log.push(format!("boneturret {object} {}", String::from_utf8_lossy(&name))),
                         ContainCall::SetDisabled { object, disabled } => log.push(format!("setdisabled {object} {disabled}")),
                         ContainCall::ClearDisabled { object, disabled } => log.push(format!("cleardisabled {object} {disabled}")),
+                        ContainCall::ExperienceSetVeterancyLevel { object, level } => log.push(format!("xplevel {object} {level}")),
+                        ContainCall::ExperienceSetExperienceAndLevel { object, experience } => log.push(format!("xpset {object} {experience}")),
+                        ContainCall::KillWith { object, amount, damage_type, death_type } => {
+                            let mut info = DamageInfo::default();
+                            info.input.damage_type = damage_type;
+                            info.input.death_type = death_type;
+                            info.input.source_id = INVALID_ID;
+                            info.input.amount = amount;
+                            info.input.kill = true;
+                            log.push(format!("bodydamage {object} {}", info_line(&info)));
+                        }
                         ContainCall::SetTeam { object, team } => log.push(format!("setteam {object} {team}")),
                         ContainCall::SetDamageState { object, state } => log.push(format!("setdamagestate {object} {state}")),
                         ContainCall::StealthReceiveGrant { object, active, frames } => log.push(format!("stealthgrant {object} {} {frames}", i32::from(active))),
@@ -1178,7 +1270,27 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                 Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::ClearAndSet { clear, set }, .. }) => log.push(format!("clearset {} {}", clear[0], set[0])),
                 Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Set(a), .. }) => log.push(format!("mc {}", a[0])),
                 Some(ObjectClientEvent::DrawableFlashAsSelected { .. }) => log.push("flash".to_string()),
-                Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Clear(a), .. }) => log.push(format!("mcclear {}", a[0])),
+                Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Clear(a), .. }) => {
+                    // every flag of the mask, in index order (as the driver's `clearModelConditionFlags`)
+                    let mut a = a.clone();
+                    a.sort();
+                    a.dedup();
+                    for x in a {
+                        log.push(format!("mcclear {x}"));
+                    }
+                }
+                Some(ObjectClientEvent::MessageCreateSelectedGroup { create_new, object_id }) => {
+                    log.push("msg create".to_string());
+                    log.push(format!("msgbool {}", i32::from(create_new)));
+                    log.push(format!("msgobj {object_id}"));
+                }
+                Some(ObjectClientEvent::MessageRemoveFromSelectedGroup { object_id }) => {
+                    log.push("msg remove".to_string());
+                    log.push(format!("msgobj {object_id}"));
+                }
+                Some(ObjectClientEvent::UiSelectDrawable { object_id }) => log.push(format!("uiselect {object_id}")),
+                Some(ObjectClientEvent::UiDeselectDrawable { object_id }) => log.push(format!("uideselect {object_id}")),
+                Some(ObjectClientEvent::UiSetDisplayedMaxWarning { on }) => log.push(format!("maxwarning {}", i32::from(on))),
                 _ => {}
             }
         } else if t.starts_with("heal ") {
@@ -1228,6 +1340,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             ModuleDataKind::OpenContain(d) => d,
             ModuleDataKind::TransportContain(t) | ModuleDataKind::InternetHackContain(t) | ModuleDataKind::RailedTransportContain(t) => &t.open,
             ModuleDataKind::HelixContain(h) => &h.transport.open,
+            ModuleDataKind::RiderChangeContain(r) => &r.transport.open,
             _ => unreachable!("not a contain"),
         };
         put_u32(&mut v, d.contain_max as u32);
@@ -1271,6 +1384,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             ModuleDataKind::InternetHackContain(t) => Some((2, &**t)),
             ModuleDataKind::RailedTransportContain(t) => Some((3, &**t)),
             ModuleDataKind::HelixContain(h) => Some((4, &h.transport)),
+            ModuleDataKind::RiderChangeContain(r) => Some((5, &r.transport)),
             _ => None,
         };
         if let Some((cls, t)) = block_cls {
@@ -1296,6 +1410,21 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 }
                 put_u32(&mut v, u32::from(h.draw_pips));
             }
+            if let ModuleDataKind::RiderChangeContain(rd) = &data {
+                for r in rd.riders.iter() {
+                    put_str(&mut v, &r.template_name);
+                    if r.template_name.is_empty() {
+                        continue;
+                    }
+                    put_u32(&mut v, r.model_condition_flag_type as u32);
+                    put_u32(&mut v, r.weapon_set_flag as u32);
+                    put_u32(&mut v, r.object_status_type as u32);
+                    put_str(&mut v, &r.command_set);
+                    put_u32(&mut v, r.locomotor_set_type as u32);
+                }
+                put_u32(&mut v, rd.scuttle_frames);
+                put_u32(&mut v, rd.scuttle_state as u32);
+            }
         } else {
             put_u32(&mut v, 0);
         }
@@ -1319,6 +1448,15 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
 
     let mut w = World::new();
     w.names = ctx.names;
+    // the payload's templates: the factory finds the scene's by name (the test's factory makes nothing; `newobject` is a line of the log)
+    let mut factory = rts_lockstep_engine::common::thing_factory::ThingFactory::new();
+    let mut template_names = BTreeMap::new();
+    for k in 0..n {
+        let name = format!("T{}", k + 1);
+        factory.new_template(name.as_bytes(), 0).expect("a template");
+        let id = factory.find_template(name.as_bytes()).expect("the new template").data.get_template_id();
+        template_names.insert(id, name);
+    }
     let mut templates = Vec::new();
     for (k, o) in sc.objs.iter().enumerate() {
         let mut kind_of: Vec<i32> = (0..8).filter(|&i| o.kinds >> i & 1 != 0).map(|i| KINDS[i]).collect();
@@ -1330,16 +1468,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         let slots = [ThingTemplateAudioType::SoundEnter, ThingTemplateAudioType::SoundExit, ThingTemplateAudioType::SoundFalling];
         let audio = (0..3).filter(|&i| o.snd[i] > 0).map(|i| (slots[i], format!("snd{}", o.snd[i]).into_bytes())).collect();
         let geometry = Some(GeometryInfo::new(GeometryType::Sphere, false, 1.0, o.radius, o.radius));
-        templates.push(Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues { name: format!("T{}", k + 1).into_bytes(), kind_of, audio, geometry, transport_slot_count: o.raw_slots as i8, ..Default::default() })));
-    }
-    // the payload's templates: the factory finds the scene's by name (the test's factory makes nothing; `newobject` is a line of the log)
-    let mut factory = rts_lockstep_engine::common::thing_factory::ThingFactory::new();
-    let mut template_names = BTreeMap::new();
-    for k in 0..n {
-        let name = format!("T{}", k + 1);
-        factory.new_template(name.as_bytes(), 0).expect("a template");
-        let id = factory.find_template(name.as_bytes()).expect("the new template").data.get_template_id();
-        template_names.insert(id, name);
+        templates.push(Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues { name: format!("T{}", k + 1).into_bytes(), kind_of, audio, geometry, transport_slot_count: o.raw_slots as i8, template_id: factory_id(&template_names, k), ..Default::default() })));
     }
     w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, thing_factory: factory, ..Default::default() });
     // the cut points
@@ -1348,6 +1477,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     w.cuts.body.probe_trace = true;
     w.cuts.probe_effect_trace = true;
     w.cuts.contain.stub_object_calls = true;
+    // batch R5: the local player is player 0 (as the driver's)
+    w.players.set_local_player(Some(0));
     for i in 0..8 {
         w.cuts.terrain_layer[i] = sc.layer[i];
         w.cuts.terrain_layer_height[i] = sc.layer_height[i];
@@ -1407,6 +1538,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             let mut a = ProbeAnswers { idle: o.ai_idle, enter_target: o.enter_target as i32, ..Default::default() };
             a.can_fall = o.can_fall;
             a.free_to_exit = o.free_to_exit;
+            a.moving = o.ai_moving;
             a.has_locomotor = o.has_loco;
             let mut pm = NewModule::plain(b"CtProbe", b"ModuleTag_Probe");
             pm.interfaces = if o.has_body { MODULEINTERFACE_BODY } else { 0 };
@@ -1480,6 +1612,24 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     match o.cls {
                         2 => ModuleDataKind::InternetHackContain(Arc::new(t)),
                         3 => ModuleDataKind::RailedTransportContain(Arc::new(t)),
+                        5 => {
+                            let mut rd = rts_lockstep_engine::logic::modules::rider_change_contain::RiderChangeContainModuleData { transport: t, ..Default::default() };
+                            for (j, e) in RIDER_SETS[o.rider_set as usize % 4].iter().enumerate() {
+                                if e[0] == 0 {
+                                    continue;
+                                }
+                                let r = &mut rd.riders[j];
+                                r.template_name = RIDER_TEMPLATES[e[0] as usize].as_bytes().to_vec();
+                                r.model_condition_flag_type = CONDS[e[1] as usize];
+                                r.weapon_set_flag = e[2] as i32;
+                                r.object_status_type = STATUSES[e[3] as usize];
+                                r.command_set = if e[4] != 0 { b"CmdB".to_vec() } else { b"CmdA".to_vec() };
+                                r.locomotor_set_type = e[5] as i32;
+                            }
+                            rd.scuttle_frames = o.scuttle_frames;
+                            rd.scuttle_state = CONDS[o.scuttle_cond as usize % 6];
+                            ModuleDataKind::RiderChangeContain(Arc::new(rd))
+                        }
                         4 => ModuleDataKind::HelixContain(Arc::new(rts_lockstep_engine::logic::modules::helix_contain::HelixContainModuleData {
                             transport: t,
                             payload_template_name_data: HELIX_PAYLOADS[o.helix_payload as usize % 4].iter().map(|n| n.as_bytes().to_vec()).collect(),
@@ -1496,6 +1646,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 ModuleDataKind::InternetHackContain(_) => b"InternetHackContain",
                 ModuleDataKind::RailedTransportContain(_) => b"RailedTransportContain",
                 ModuleDataKind::HelixContain(_) => b"HelixContain",
+                ModuleDataKind::RiderChangeContain(_) => b"RiderChangeContain",
                 _ => b"OpenContain",
             };
             let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class, b"ModuleTag_Contain", &cd).unwrap().unwrap();
@@ -1540,7 +1691,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         }
         for s in 0..3 {
             if o.weapons >> (3 * s) & 1 != 0 {
-                w.cuts.weapon_slot_facts.insert((id, s as i32), WeaponSlotFacts { is_contact_weapon: o.weapons >> (3 * s + 1) & 1 != 0, is_damage_weapon: o.weapons >> (3 * s + 2) & 1 != 0 });
+                w.cuts.weapon_slot_facts.insert((id, s), WeaponSlotFacts { is_contact_weapon: o.weapons >> (3 * s + 1) & 1 != 0, is_damage_weapon: o.weapons >> (3 * s + 2) & 1 != 0 });
             }
         }
         if o.selected && o.drawable {
@@ -1629,11 +1780,12 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                             let ob = w.objects.find(id).unwrap();
                             let u = ob.modules[m as usize].update_index.expect("an update module");
                             let mux = match ob.behaviors[u as usize].body.as_ref() {
-                                Some(UpdateBody::OpenContain(c)) => Some(c.module_data().die_mux_data.clone()),
-                                Some(UpdateBody::TransportContain(c)) => Some(c.module_data().open.die_mux_data.clone()),
-                                Some(UpdateBody::InternetHackContain(c)) => Some(c.module_data().open.die_mux_data.clone()),
-                                Some(UpdateBody::RailedTransportContain(c)) => Some(c.module_data().open.die_mux_data.clone()),
-                                Some(UpdateBody::HelixContain(c)) => Some(c.module_data().transport.open.die_mux_data.clone()),
+                                Some(UpdateBody::OpenContain(c)) => Some(c.module_data().die_mux_data),
+                                Some(UpdateBody::TransportContain(c)) => Some(c.module_data().open.die_mux_data),
+                                Some(UpdateBody::InternetHackContain(c)) => Some(c.module_data().open.die_mux_data),
+                                Some(UpdateBody::RailedTransportContain(c)) => Some(c.module_data().open.die_mux_data),
+                                Some(UpdateBody::HelixContain(c)) => Some(c.module_data().transport.open.die_mux_data),
+                                Some(UpdateBody::RiderChangeContain(c)) => Some(c.module_data().transport.open.die_mux_data),
                                 _ => None,
                             };
                             if let Some(mux) = mux {
@@ -1935,6 +2087,19 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
             let names: Vec<String> = (0..r.u32()).map(|_| r.str()).collect();
             out.push(format!("helix data {names:?} pips {}", r.u32()));
         }
+        if cls == 5 {
+            let mut riders = Vec::new();
+            for _ in 0..8 {
+                let name = r.str();
+                if name.is_empty() {
+                    continue;
+                }
+                let (c, w, st) = (r.u32(), r.u32(), r.u32());
+                let cmd = r.str();
+                riders.push(format!("{name} {c} {w} {st} {cmd} {}", r.u32()));
+            }
+            out.push(format!("rider data {riders:?} scuttle {} {}", r.u32(), r.u32()));
+        }
     }
     let n_obj = r.u32();
     for i in 0..=n_ops {
@@ -1975,12 +2140,13 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
                 for _ in 0..map * 2 {
                     state.push(r.u32());
                 }
-                for _ in 0..match has { 2 => 6, 3 => 7, _ => 3 } {
+                for _ in 0..match has { 2 => 6, 3 => 7, 4 => 9, _ => 3 } {
                     state.push(r.u32());
                 }
             }
             let rest: Vec<u32> = (0..18).map(|_| r.u32()).collect();
-            out.push(format!("op {i} object {k}: contain {state:08x?} container {} at {:08x} {:08x} {:08x} status {:08x} {:08x} dead {} aidead {} fall {} radius {:08x} orient {:08x} layer {} conds {:08x?} selected {} bonus {:x}", rest[0], rest[1], rest[2], rest[3], rest[4], rest[5], rest[6], rest[7], rest[8], rest[9], rest[10], rest[11], &rest[12..16], rest[16], rest[17]));
+            let (cmdset, level) = (r.str(), r.u32());
+            out.push(format!("op {i} object {k}: contain {state:08x?} container {} at {:08x} {:08x} {:08x} status {:08x} {:08x} dead {} aidead {} fall {} radius {:08x} orient {:08x} layer {} conds {:08x?} selected {} bonus {:x} cmdset {cmdset} level {level}", rest[0], rest[1], rest[2], rest[3], rest[4], rest[5], rest[6], rest[7], rest[8], rest[9], rest[10], rest[11], &rest[12..16], rest[16], rest[17]));
         }
     }
     out
@@ -2033,13 +2199,18 @@ fn read_helix_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniR
     Ok(())
 }
 
+fn read_rider_change_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
+    *out = Some(rts_lockstep_engine::logic::modules::rider_change_contain::new_module_data(Some(ini))?);
+    Ok(())
+}
+
 fn read_railed_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
     *out = Some(rts_lockstep_engine::logic::modules::railed_transport_contain::new_module_data(Some(ini))?);
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }];
+    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }, BlockParse { token: "C", parse: read_rider_change_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)

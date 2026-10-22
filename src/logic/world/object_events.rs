@@ -203,6 +203,18 @@ pub enum ObjectClientEvent {
     DrawableSetHidden { object_id: ObjectId, hidden: bool },
     /// `m_drawable->flashAsSelected()`.
     DrawableFlashAsSelected { object_id: ObjectId },
+    // --- p1w13-sonnet --- (batch R5: RiderChangeContain moves the selection between bike and rider)
+    /// `TheMessageStream->appendMessage(MSG_CREATE_SELECTED_GROUP)` with `appendBooleanArgument(createNew)` and `appendObjectIDArgument(object)`.
+    MessageCreateSelectedGroup { create_new: bool, object_id: ObjectId },
+    /// `TheMessageStream->appendMessage(MSG_REMOVE_FROM_SELECTED_GROUP)` with `appendObjectIDArgument(object)`.
+    MessageRemoveFromSelectedGroup { object_id: ObjectId },
+    /// `TheInGameUI->selectDrawable(object's drawable)`.
+    UiSelectDrawable { object_id: ObjectId },
+    /// `TheInGameUI->deselectDrawable(object's drawable)`.
+    UiDeselectDrawable { object_id: ObjectId },
+    /// `TheInGameUI->setDisplayedMaxWarning(on)`.
+    UiSetDisplayedMaxWarning { on: bool },
+    // --- end p1w13-sonnet ---
     // --- p1w11-sonnet ---
     /// `draw->flashAsSelected(&color)` (`ObjectDefectionHelper`'s white flash when the period ends).
     DrawableFlashAsSelectedColor { object_id: ObjectId, r: f32, g: f32, b: f32 },

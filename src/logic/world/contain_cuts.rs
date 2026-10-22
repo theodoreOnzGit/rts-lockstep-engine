@@ -132,6 +132,13 @@ pub enum ContainCall {
     SetDamageState { object: ObjectId, state: i32 },
     /// `obj->getStealth()->receiveGrant(active, frames)` (the object has a stealth update).
     StealthReceiveGrant { object: ObjectId, active: bool, frames: u32 },
+    // batch R5 (RiderChangeContain)
+    /// `obj->getExperienceTracker()->setVeterancyLevel(level, FALSE)`.
+    ExperienceSetVeterancyLevel { object: ObjectId, level: i32 },
+    /// `obj->getExperienceTracker()->setExperienceAndLevel(experience, FALSE)`.
+    ExperienceSetExperienceAndLevel { object: ObjectId, experience: i32 },
+    /// `obj->kill(damageType, deathType)`: unresistable damage of the body's maximum health.
+    KillWith { object: ObjectId, amount: f32, damage_type: i32, death_type: i32 },
     // --- end p1w13-sonnet ---
 }
 
@@ -350,7 +357,7 @@ impl World {
     // --- p1w13-sonnet --- (batch R2: TransportContain)
     /// `rider->setDisabled(type)`. The stub records the call only (the test's stand-in logs it and keeps no bit).
     pub fn contain_set_disabled(&mut self, id: ObjectId, disabled: crate::common::disabled_types::DisabledType) {
-        self.contain_cut(ContainCall::SetDisabled { object: id, disabled: disabled as i32 });
+        self.contain_cut(ContainCall::SetDisabled { object: id, disabled });
         if !self.cuts.contain.stub_object_calls {
             self.set_disabled(id, disabled);
         }
@@ -358,7 +365,7 @@ impl World {
 
     /// `rider->clearDisabled(type)`. The stub records the call and clears the bit (the bookkeeping the stand-in keeps).
     pub fn contain_clear_disabled(&mut self, id: ObjectId, disabled: crate::common::disabled_types::DisabledType) {
-        self.contain_cut(ContainCall::ClearDisabled { object: id, disabled: disabled as i32 });
+        self.contain_cut(ContainCall::ClearDisabled { object: id, disabled });
         if self.cuts.contain.stub_object_calls {
             if let Some(o) = self.objects.find_mut(id) {
                 o.disabled.set(disabled, 0);
@@ -425,6 +432,55 @@ impl World {
         if !self.cuts.contain.stub_object_calls {
             self.module_call(id, stealth, crate::logic::world::module_call::ModuleCall::StealthReceiveGrant { active, frames });
         }
+    }
+
+    // batch R5 (RiderChangeContain)
+    /// `obj->getExperienceTracker()->setVeterancyLevel(level, FALSE)`. The stub records the call and sets the level (the bookkeeping the stand-in
+    /// keeps); the real one is `ExperienceTracker`'s, with its feedback.
+    pub fn contain_experience_set_veterancy_level(&mut self, id: ObjectId, level: i32) {
+        self.contain_cut(ContainCall::ExperienceSetVeterancyLevel { object: id, level });
+        let level = match level {
+            1 => crate::common::game_common::VeterancyLevel::Veteran,
+            2 => crate::common::game_common::VeterancyLevel::Elite,
+            3 => crate::common::game_common::VeterancyLevel::Heroic,
+            _ => crate::common::game_common::VeterancyLevel::Regular,
+        };
+        if self.cuts.contain.stub_object_calls {
+            if let Some(o) = self.objects.find_mut(id) {
+                o.experience.level = level;
+            }
+        } else {
+            self.cut_experience_set_veterancy_level(id, level, false);
+        }
+    }
+
+    /// `obj->getExperienceTracker()->setExperienceAndLevel(experience, FALSE)`. The stub records the call only.
+    pub fn contain_experience_set_experience_and_level(&mut self, id: ObjectId, experience: i32) {
+        self.contain_cut(ContainCall::ExperienceSetExperienceAndLevel { object: id, experience });
+        if !self.cuts.contain.stub_object_calls {
+            self.cut_experience_set_experience_and_level(id, experience, false);
+        }
+    }
+
+    /// `obj->clearModelConditionFlags(flags)`, if the object has a drawable (one client event naming them all).
+    pub fn contain_clear_model_condition_flags(&mut self, id: ObjectId, flags: &[i32]) {
+        if self.has_drawable(id) {
+            self.emit(crate::logic::world::object_events::ObjectClientEvent::DrawableModelCondition {
+                object_id: id,
+                op: crate::logic::world::object_events::ModelConditionOp::Clear(flags.to_vec()),
+            });
+        }
+    }
+
+    /// `obj->kill(damageType, deathType)`; `false` when the object has no body (the maximum health is read through `NULL`).
+    pub fn contain_kill_with(&mut self, id: ObjectId, damage_type: i32, death_type: i32) -> bool {
+        let Some(body) = self.objects.find(id).and_then(|o| o.body) else { return false };
+        let amount = self.module_call(id, body, crate::logic::world::module_call::ModuleCall::GetMaxHealth).as_real(0.0);
+        self.contain_cut(ContainCall::KillWith { object: id, amount, damage_type, death_type });
+        if !self.cuts.contain.stub_object_calls {
+            self.kill(id, damage_type, death_type);
+        }
+        true
     }
     // --- end p1w13-sonnet ---
 }

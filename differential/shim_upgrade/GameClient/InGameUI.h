@@ -31,6 +31,11 @@ public:
 	class Drawable *getFirstSelectedDrawable();
 	Int getSelectCount();
 	/* --- end p1w13-sonnet --- */
+	/* --- p1w13-sonnet --- (batch R5: RiderChangeContain moves the selection; differential/l9_open_contain_r.inc) */
+	void selectDrawable( class Drawable *draw );
+	void deselectDrawable( class Drawable *draw );
+	void setDisplayedMaxWarning( Bool selected );
+	/* --- end p1w13-sonnet --- */
 };
 extern InGameUI *TheInGameUI;
 #endif

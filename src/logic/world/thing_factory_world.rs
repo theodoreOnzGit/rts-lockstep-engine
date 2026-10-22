@@ -95,4 +95,19 @@ impl World {
         }
         self.new_object(NewObject { template: tt, status, team, modules }).map_err(NewObjectError::World)
     }
+
+    // --- p1w13-sonnet --- (batch R5: RiderChangeContain)
+    /// `TheThingFactory->findTemplate(name)->isEquivalentTo(obj->getTemplate())`, for a template the factory found (`template_id`) and an object:
+    /// [`crate::common::thing_template::is_equivalent_to`] of the factory's two roots; an object whose template is not the factory's (a template made
+    /// outside it) is equivalent only to the same template id.
+    pub fn template_is_equivalent_to_object(&self, template_id: u16, obj: ObjectId) -> bool {
+        let Some(o) = self.objects.find(obj) else { return false };
+        let theirs = o.template().get_template_id();
+        let factory = &self.statics.thing_factory;
+        match (factory.find_by_template_id(template_id), factory.find_by_template_id(theirs)) {
+            (Some(a), Some(b)) => crate::common::thing_template::is_equivalent_to(a, b),
+            _ => template_id == theirs,
+        }
+    }
+    // --- end p1w13-sonnet ---
 }
