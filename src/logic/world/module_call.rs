@@ -209,6 +209,20 @@ pub enum ModuleCall {
     StealthReceiveGrant { active: bool, frames: u32 },
     /// `AIUpdateInterface::chooseLocomotorSet(set)` (batch R5).
     AiChooseLocomotorSet(i32),
+    /// batch R8 (ParachuteContain): `AIUpdateInterface::aiHunt(cmdSource)`.
+    AiHunt { command_source: i32 },
+    /// `getCurLocomotor()->getPitchStiffness()`, `getRollStiffness()`, `getPitchDamping()`, `getRollDamping()` (0 to 3); replies [`ModuleReply::Real`].
+    AiLocomotorSway(u8),
+    /// `getCurLocomotor()->setUltraAccurate(on)`.
+    AiLocomotorSetUltraAccurate(bool),
+    /// `getCurLocomotor()->setCloseEnoughDist(dist)`.
+    AiLocomotorSetCloseEnoughDist(f32),
+    /// `getCurLocomotor()->setCloseEnoughDist3D(on)`.
+    AiLocomotorSetCloseEnoughDist3D(bool),
+    /// `PhysicsBehavior::setIsInFreeFall(on)`.
+    PhysicsSetIsInFreeFall(bool),
+    /// `ExitInterface::useSpawnRallyPoint()`; replies [`ModuleReply::Bool`] (`FALSE` unless the module says otherwise, as upstream's default).
+    UseSpawnRallyPoint,
     // --- end p1w13-sonnet ---
     /// `getSpawnBehaviorInterface() != NULL`; replies [`ModuleReply::Bool`].
     HasSpawnBehaviorInterface,

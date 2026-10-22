@@ -73,6 +73,7 @@ static MessageStream *TheMessageStream = &g_ctMessageStream;
 #include "OverlordContain_edit.cpp"
 /* batch R7, unchanged */
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/HealContain.cpp"
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/ParachuteContain.cpp"   /* batch R8 */
 /* --- end p1w13-sonnet --- */
 #undef itoa
 
@@ -94,7 +95,7 @@ ModuleData *l9ctRead(const char *filename)
 		try {
 			/* --- p1w13-sonnet --- (batches R2, R3) */
 			const char c0 = currentLine.str()[0];
-			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : c0 == 'H' ? 4 : c0 == 'C' ? 5 : c0 == 'O' ? 6 : c0 == 'L' ? 7 : 0;
+			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : c0 == 'H' ? 4 : c0 == 'C' ? 5 : c0 == 'O' ? 6 : c0 == 'L' ? 7 : c0 == 'P' ? 8 : 0;
 			if (g_ctBlockCls == 1) data = TransportContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 2) data = InternetHackContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 3) data = RailedTransportContain::friend_newModuleData(&ini);
@@ -102,6 +103,7 @@ ModuleData *l9ctRead(const char *filename)
 			else if (g_ctBlockCls == 5) data = RiderChangeContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 6) data = OverlordContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 7) data = HealContain::friend_newModuleData(&ini);
+			else if (g_ctBlockCls == 8) data = ParachuteContain::friend_newModuleData(&ini);   /* batch R8 */
 			else data = OpenContain::friend_newModuleData(&ini);
 			/* --- end p1w13-sonnet --- */
 		} catch (...) {
@@ -230,6 +232,7 @@ struct CtObj
 	unsigned char physData[sizeof(PhysicsBehaviorModuleData) + 16];
 	unsigned validTerrain;
 	/* --- end p1w13-sonnet --- */
+	Real loco[4];   /* batch R8: the locomotor's pitch and roll stiffness and damping */
 	AsciiString tmplName;
 };
 
@@ -276,6 +279,28 @@ class CtUi : public InGameUI {};
 /* the tile of the terrain tables, as the Rust side's terrain_cell (and l9_height_die_o.inc's hdCell) */
 unsigned ctCell(Real x, Real y) { return hdCell(x, y); }
 
+/* --- p1w13-sonnet --- (batch R8: ParachuteContain) the pathfinder's cell types by tile (-1 a NULL cell) and findPositionAround's answer */
+int g_ctCellType[8];
+bool g_ctFindPosHas = false;
+Coord3D g_ctFindPos;
+/* the object whose AI (the test's locomotor) this is */
+CtObj *ctOfLoco(const Locomotor *l)
+{
+	for (int k = 0; k < g_ctN; ++k) if ((const void *)&g_ctObjs[k].ai == (const void *)l) return &g_ctObjs[k];
+	return 0;
+}
+/* setInstanceMatrix: a line with the matrix, or "null" */
+void ctInstanceHook(const Drawable *d, const Matrix3D *m)
+{
+	const int id = d->m_ownerObject ? (int)d->m_ownerObject->m_oid : 0;
+	if (!m) { ulog("instance %d null", id); return; }
+	char b[160];
+	int n = sprintf(b, "instance %d", id);
+	for (int r = 0; r < 3; ++r) n += sprintf(b + n, " %08x %08x %08x %08x", realBits((*m)[r].X), realBits((*m)[r].Y), realBits((*m)[r].Z), realBits((*m)[r].W));
+	ulog("%s", b);
+}
+/* --- end p1w13-sonnet --- */
+
 /* getMultiLogicalBonePosition("FIREPOINT", max, NULL, transforms, TRUE): the object's fire points, when it has a drawable (the Rust side's cut) */
 Int ctMultiBone(const Object *obj, const char *prefix, Int maxBones, Coord3D *, Matrix3D *transforms, Bool)
 {
@@ -292,6 +317,93 @@ Int ctMultiBone(const Object *obj, const char *prefix, Int maxBones, Coord3D *, 
 }  // namespace
 
 /* ---- the calls the container makes on the rest of the world ---- */
+/* --- p1w13-sonnet --- (batch R8: ParachuteContain) */
+void Object::convertBonePosToWorldPos(const Coord3D* bonePos, const Matrix3D* boneTransform, Coord3D* worldPos, Matrix3D* worldTransform) const
+{
+	/* Thing.cpp's, through the transform Thing::setOrientation makes for a thing that does not stick to the terrain's slope, at the position (the Rust
+	** side's thing has that transform: the scene sets its position, then its orientation, and the test moves it without turning it) */
+	Coord3D u, x, y, z;
+	z.x = 0.0f;
+	z.y = 0.0f;
+	z.z = 1.0f;
+	u.x = Cos(m_orientation);
+	u.y = Sin(m_orientation);
+	u.z = 0.0f;
+	/* Coord3D::crossProduct (BaseType.h), which this build's shim of the header leaves out */
+	struct Cross { static void p( const Coord3D *a, const Coord3D *b, Coord3D *r ) { r->x = (a->y * b->z - a->z * b->y); r->y = (a->z * b->x - a->x * b->z); r->z = (a->x * b->y - a->y * b->x); } };
+	Cross::p( &z, &u, &y );
+	Cross::p( &y, &z, &x );
+	Matrix3D transform;
+	transform.Set(  x.x, y.x, z.x, m_pos.x,
+										x.y, y.y, z.y, m_pos.y,
+										x.z, y.z, z.z, m_pos.z );
+	if (worldTransform)
+	{
+		worldTransform->mul(transform, *boneTransform);
+	}
+	if (worldPos)
+	{
+		Vector3 vector;
+		vector.X = bonePos->x;
+		vector.Y = bonePos->y;
+		vector.Z = bonePos->z;
+		transform.Transform_Vector(transform, vector, &vector);
+		worldPos->x = vector.X;
+		worldPos->y = vector.Y;
+		worldPos->z = vector.Z;
+	}
+}
+/* Object.cpp's, verbatim */
+ExitInterface *Object::getObjectExitInterface() const
+{
+	ExitInterface *exitInterface = NULL;
+
+	for( BehaviorModule **umod = m_behaviors; *umod; ++umod )
+	{
+		if( (exitInterface = (*umod)->getUpdateExitInterface()) != NULL )
+			break;
+	}
+
+	// If you don't have a fancy one, you may have one from your contain module,
+	// since if you can contain something, they will need to get out.
+	if( exitInterface == NULL )
+	{
+		ContainModuleInterface *cmod = getContain();
+		if( cmod )
+		{
+			exitInterface = cmod->getContainExitInterface();
+		}
+	}
+
+	return exitInterface;
+}
+const GeometryInfo &Drawable::getDrawableGeometryInfo() const { return m_ownerObject->getGeometryInfo(); }
+Real Locomotor::getPitchStiffness() const { return ctOfLoco(this)->loco[0]; }
+Real Locomotor::getRollStiffness() const { return ctOfLoco(this)->loco[1]; }
+Real Locomotor::getPitchDamping() const { return ctOfLoco(this)->loco[2]; }
+Real Locomotor::getRollDamping() const { return ctOfLoco(this)->loco[3]; }
+void Locomotor::setUltraAccurate(Bool u) { ulog("locoultra %d %d", (int)ctOfLoco(this)->obj->m_oid, u ? 1 : 0); }
+void Locomotor::setCloseEnoughDist(Real dist) { ulog("lococlose %d %08x", (int)ctOfLoco(this)->obj->m_oid, realBits(dist)); }
+void Locomotor::setCloseEnoughDist3D(Bool setting) { ulog("lococlose3d %d %d", (int)ctOfLoco(this)->obj->m_oid, setting ? 1 : 0); }
+void AIUpdateInterface::aiHunt(CommandSourceType cmdSource) { ulog("aihunt %d %d", (int)m_owner->m_oid, (int)cmdSource); }
+Bool PartitionManager::findPositionAround(const Coord3D *center, const FindPositionOptions *options, Coord3D *result)
+{
+	ulog("findpos %08x %08x %08x %08x %08x %d", realBits(center->x), realBits(center->y), realBits(center->z), realBits(options->minRadius), realBits(options->maxRadius),
+		(int)options->flags);
+	if (!g_ctFindPosHas) return FALSE;
+	*result = g_ctFindPos;
+	return TRUE;
+}
+PathfindCell *Pathfinder::getCell(PathfindLayerEnum layer, Int x, Int y)
+{
+	ulog("getcell %d %d %d", (int)layer, (int)x, (int)y);
+	static PathfindCell cell;
+	const int t = g_ctCellType[hdCell((Real)x, (Real)y)];
+	if (t < 0) return 0;
+	cell.m_type = (PathfindCell::CellType)t;
+	return &cell;
+}
+/* --- end p1w13-sonnet --- */
 void StealthUpdate::markAsDetected(UnsignedInt) { ulog("markdetected %d", (int)m_owner->m_oid); }
 /* --- p1w13-sonnet --- (batch R4: HelixContain) */
 void StealthUpdate::receiveGrant(Bool active, UnsignedInt frames) { ulog("stealthgrant %d %d %u", (int)m_owner->m_oid, active ? 1 : 0, frames); }
@@ -488,7 +600,7 @@ void ctPutObject(CtObj *a)
 {
 	if (a->oc) {
 		OpenContain *oc = a->oc;
-		putU32(dynamic_cast<OverlordContain *>(oc) ? 5 : dynamic_cast<RiderChangeContain *>(oc) ? 4 : dynamic_cast<HelixContain *>(oc) ? 3 : dynamic_cast<TransportContain *>(oc) ? 2 : 1);   /* batch R6: 5 an Overlord */   /* --- p1w13-sonnet --- (batches R2, R4, R5): 2 a transport, 3 a Helix, 4 a combat bike */
+		putU32(dynamic_cast<ParachuteContain *>(oc) ? 6 : dynamic_cast<OverlordContain *>(oc) ? 5 : dynamic_cast<RiderChangeContain *>(oc) ? 4 : dynamic_cast<HelixContain *>(oc) ? 3 : dynamic_cast<TransportContain *>(oc) ? 2 : 1);   /* batch R6: 5 an Overlord */   /* --- p1w13-sonnet --- (batches R2, R4, R5): 2 a transport, 3 a Helix, 4 a combat bike */
 		putU32(oc->m_containListSize);
 		putU32((unsigned)oc->m_containList.size());
 		for (ContainedItemsList::const_iterator it = oc->m_containList.begin(); it != oc->m_containList.end(); ++it) putU32((unsigned)(*it)->m_oid);
@@ -537,6 +649,15 @@ void ctPutObject(CtObj *a)
 			if (OverlordContain *ovc = dynamic_cast<OverlordContain *>(oc)) putU32(ovc->m_redirectionActivated ? 1 : 0);   /* batch R6 */
 			if (RiderChangeContain *rc = dynamic_cast<RiderChangeContain *>(oc)) { putU32((unsigned)rc->m_extraSlotsInUse); putU32(rc->m_frameExitNotBusy); putU32(rc->m_scuttledOnFrame); }   /* batch R5: its own two, and the scuttle */
 		}
+		/* batch R8: a parachute's fields, in xfer order */
+		if (ParachuteContain *pc = dynamic_cast<ParachuteContain *>(oc)) {
+			putU32(realBits(pc->m_pitch)); putU32(realBits(pc->m_roll)); putU32(realBits(pc->m_pitchRate)); putU32(realBits(pc->m_rollRate)); putU32(realBits(pc->m_startZ));
+			putU32(pc->m_isLandingOverrideSet ? 1 : 0);
+			const Coord3D *cs[9] = { &pc->m_landingOverride, &pc->m_riderAttachBone, &pc->m_riderSwayBone, &pc->m_paraAttachBone, &pc->m_paraSwayBone,
+				&pc->m_riderAttachOffset, &pc->m_riderSwayOffset, &pc->m_paraAttachOffset, &pc->m_paraSwayOffset };
+			for (int i = 0; i < 9; ++i) { putU32(realBits(cs[i]->x)); putU32(realBits(cs[i]->y)); putU32(realBits(cs[i]->z)); }
+			putU32(pc->m_needToUpdateRiderBones ? 1 : 0); putU32(pc->m_needToUpdateParaBones ? 1 : 0); putU32(pc->m_opened ? 1 : 0);
+		}
 		/* --- end p1w13-sonnet --- */
 	} else {
 		putU32(0);
@@ -551,7 +672,7 @@ void ctPutObject(CtObj *a)
 	putU32(w[1]);
 	putU32(a->obj->m_effDead ? 1 : 0);
 	putU32(a->ai.m_dead ? 1 : 0);
-	putU32(a->obj->m_physics ? (a->obj->m_physics->getAllowToFall() ? 1u : 0u) : 2u);
+	putU32(a->obj->m_physics ? (a->obj->m_physics->getAllowToFall() ? 1u : 0u) + (a->obj->m_physics->getIsInFreeFall() ? 4u : 0u) : 2u);   /* batch R8: 4 in free fall */
 	putU32(realBits(a->obj->m_geometry.getBoundingCircleRadius()));
 	putU32(realBits(a->obj->m_orientation));
 	putU32((unsigned)a->obj->m_layer);
@@ -671,6 +792,14 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		/* batch R7: 1 and a heal block's time, or 0 */
 		putU32(g_ctBlockCls == 7 ? 1u : 0u);
 		if (g_ctBlockCls == 7) putU32(((const HealContainModuleData *)d)->m_framesForFullHeal);
+		/* batch R8: 1 and a parachute block's fields, or 0 */
+		putU32(g_ctBlockCls == 8 ? 1u : 0u);
+		if (g_ctBlockCls == 8) {
+			const ParachuteContainModuleData *pd = (const ParachuteContainModuleData *)d;
+			putU32(realBits(pd->m_pitchRateMax)); putU32(realBits(pd->m_rollRateMax)); putU32(realBits(pd->m_lowAltitudeDamping)); putU32(realBits(pd->m_paraOpenDist));
+			putU32(realBits(pd->m_freeFallDamagePercent)); putU32(realBits(pd->m_killWhenLandingInWaterSlop));
+			putStr(pd->m_parachuteOpenSound.getEventName().str(), pd->m_parachuteOpenSound.getEventName().getLength());
+		}
 		/* --- end p1w13-sonnet --- */
 	}
 	initKindOfMasks();
@@ -692,6 +821,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		/* --- p1w13-sonnet --- (batch R2: TransportContain) */
 		unsigned cls; int rawSlots; unsigned airborne; int freeToExit; unsigned hasLoco, validTerrain, com, vel[3], weapons, unmanned, extraKinds, exitBoneHas, exitBone[3];
 		int slotCap; unsigned regen, exitDelay, tflags, pitch; int payloadCount; unsigned payloadName, exitBoneName, health, hasDock, dockOpen, helixPayload, riderSet, scuttleFrames, scuttleCond, aiMoving, ovSink, healFrames, containedByFrame;
+		unsigned held, paraBoneHas, paraBone[3][3], loco[4], producer;   /* batch R8 */
 		/* --- end p1w13-sonnet --- */
 	} oc[CT_OBJS];
 	for (int k = 0; k < g_ctN; ++k) {
@@ -715,11 +845,22 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		for (int i = 0; i < 3; ++i) o.vel[i] = c.u();
 		o.weapons = c.u(); o.unmanned = c.u(); o.extraKinds = c.u(); o.exitBoneHas = c.u(); for (int i = 0; i < 3; ++i) o.exitBone[i] = c.u();
 		o.slotCap = c.s(); o.regen = c.u(); o.exitDelay = c.u(); o.tflags = c.u(); o.pitch = c.u(); o.payloadCount = c.s(); o.payloadName = c.u(); o.exitBoneName = c.u(); o.health = c.u(); o.hasDock = c.u(); o.dockOpen = c.u(); o.helixPayload = c.u(); o.riderSet = c.u(); o.scuttleFrames = c.u(); o.scuttleCond = c.u(); o.aiMoving = c.u(); o.ovSink = c.u(); o.healFrames = c.u(); o.containedByFrame = c.u();
+		o.held = c.u(); o.paraBoneHas = c.u(); for (int j = 0; j < 3; ++j) for (int i = 0; i < 3; ++i) o.paraBone[j][i] = c.u(); for (int i = 0; i < 4; ++i) o.loco[i] = c.u(); o.producer = c.u();   /* batch R8 */
 		/* --- end p1w13-sonnet --- */
 	}
 	for (int i = 0; i < g_ctN; ++i) for (int j = 0; j < g_ctN; ++j) g_ctRel[i][j] = (Relationship)c.s();
 	for (int i = 0; i < 8; ++i) g_hdLayer[i] = c.s();
 	for (int i = 0; i < 8; ++i) g_hdLayerHeight[i] = c.f();
+	/* --- p1w13-sonnet --- (batch R8: ParachuteContain) the gravity, the terrain's ground and water, the cells, the skirmish players, findPositionAround's answer */
+	g_ddGravity = c.f();
+	for (int i = 0; i < 8; ++i) g_hdGround[i] = c.f();
+	for (int i = 0; i < 8; ++i) g_flrHasWater[i] = c.u() != 0;
+	for (int i = 0; i < 8; ++i) g_flrWater[i] = c.f();
+	for (int i = 0; i < 8; ++i) g_ctCellType[i] = c.s();
+	const unsigned skirmishMask = c.u();
+	g_ctFindPosHas = c.u() != 0;
+	g_ctFindPos.x = c.f(); g_ctFindPos.y = c.f(); g_ctFindPos.z = c.f();
+	/* --- end p1w13-sonnet --- */
 
 	/* build the world */
 	CtAudio audio;
@@ -741,6 +882,8 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 	g_findTemplateHook = ctFindTemplate;
 	g_newObjectHook = ctNewObject;
 	g_setTeamHook = ctSetTeam;   /* batch R4 */
+	g_instanceHook = ctInstanceHook;   /* batch R8 */
+	g_physOwnerHook = ctPhysOwner;   /* batch R8 */
 	g_spLocal = &g_ctPlayers[0];   /* batch R5: the local player is player 0 (RiderChangeContain hands the selection over for it) */
 	/* --- end p1w13-sonnet --- */
 	TheGlobalData = TheGlobalData;
@@ -749,6 +892,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		g_ctPlayers[p] = Player();
 		g_ctPlayers[p].m_idx = p;
 		g_ctPlayers[p].m_defaultTeam = &g_ctNeutralTeam;
+		g_ctPlayers[p].m_skirmishAI = (skirmishMask >> p & 1) != 0;   /* batch R8 */
 	}
 	for (int k = 0; k < g_ctN; ++k) {
 		CtObj &a = g_ctObjs[k];
@@ -814,6 +958,16 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		if (o.extraKinds & 2) obj->m_kindOf.set(KINDOF_HERO);
 		if (o.extraKinds & 4) obj->m_kindOf.set(KINDOF_SALVAGER);
 		if (o.extraKinds & 8) obj->m_kindOf.set(KINDOF_PORTABLE_STRUCTURE);   /* batch R4 */
+		/* --- p1w13-sonnet --- (batch R8: ParachuteContain) */
+		if (o.extraKinds & 16) obj->m_kindOf.set(KINDOF_PARACHUTABLE);
+		if (o.held) obj->m_disabledBits |= 1u << (unsigned)DISABLED_HELD;
+		for (int j = 0; j < 3; ++j) {
+			a.draw.m_paraBoneHas[j] = (o.paraBoneHas >> j & 1) != 0;
+			a.draw.m_paraBone[j].x = ctF(o.paraBone[j][0]); a.draw.m_paraBone[j].y = ctF(o.paraBone[j][1]); a.draw.m_paraBone[j].z = ctF(o.paraBone[j][2]);
+		}
+		for (int i = 0; i < 4; ++i) a.loco[i] = ctF(o.loco[i]);
+		obj->m_producerID = (ObjectID)o.producer;
+		/* --- end p1w13-sonnet --- */
 		a.draw.m_exitBoneHas = o.exitBoneHas != 0;
 		a.draw.m_exitBone.x = ctF(o.exitBone[0]); a.draw.m_exitBone.y = ctF(o.exitBone[1]); a.draw.m_exitBone.z = ctF(o.exitBone[2]);
 		/* --- end p1w13-sonnet --- */
@@ -842,6 +996,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		g_ctSavedContainedBy[k] = 0;
 	}
 	/* the modules, once every object they may name exists */
+	InitGameLogicRandom(logicSeed);   /* batch R8: ParachuteContain's constructor draws (the generators start again after the objects are made) */
 	bool failed = false;
 	for (int k = 0; k < g_ctN && !failed; ++k) {
 		CtObj &a = g_ctObjs[k];
@@ -862,6 +1017,10 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			TransportContainModuleData *tdata = 0;   /* --- p1w13-sonnet --- (batch R2: TransportContain) */
 			if (k == 0) a.data = (OpenContainModuleData *)d;
 			else {
+				if (o.cls == 8) {
+					/* batch R8: a parachute's data (an OpenContainModuleData), its own fields at their defaults */
+					a.data = new ParachuteContainModuleData;
+				} else
 				if (o.cls == 7) {
 					/* batch R7: a heal container's data (an OpenContainModuleData) */
 					HealContainModuleData *hd = new HealContainModuleData;
@@ -956,6 +1115,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				else if (cls == 5) a.oc = new(ShimZeroFill{}) RiderChangeContain(a.obj, td);
 				else if (cls == 6) a.oc = new(ShimZeroFill{}) OverlordContain(a.obj, td);
 				else if (cls == 7) a.oc = new(ShimZeroFill{}) HealContain(a.obj, k == 0 ? d : (ModuleData *)a.data);
+				else if (cls == 8) a.oc = new(ShimZeroFill{}) ParachuteContain(a.obj, k == 0 ? d : (ModuleData *)a.data);   /* batch R8 */
 				else
 				/* --- end p1w13-sonnet --- */
 				a.oc = new OpenContain(a.obj, a.data);
@@ -977,7 +1137,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 	if (failed) {
 		TheGameLogic = 0; TheAudio = 0; TheInGameUI = 0; TheAI = 0; ThePartitionManager = 0; TheTerrainLogic = 0;
 		g_modFindHook = 0; g_modDestroyHook = 0; g_teamRelHook = 0; g_xformHook = 0; g_multiBoneHook = 0;
-		g_findTemplateHook = 0; g_newObjectHook = 0; g_setTeamHook = 0; g_spLocal = 0;   /* --- p1w13-sonnet --- (batches R2, R4, R5) */
+		g_findTemplateHook = 0; g_newObjectHook = 0; g_setTeamHook = 0; g_spLocal = 0; g_instanceHook = 0; g_physOwnerHook = 0;   /* --- p1w13-sonnet --- (batches R2, R4, R5, R8) */
 		return 5;
 	}
 	for (int k = 0; k < g_ctN; ++k) {
@@ -1120,6 +1280,11 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				/* batch R4 */
 				case 56: if (oc2) oc2->onBodyDamageStateChange(0, (BodyDamageType)(o[3] % 4), (BodyDamageType)(o[4] % 4)); break;
 				case 57: if (oc2) oc2->clientVisibleContainedFlashAsSelected(); break;
+				/* batch R8: ParachuteContain's: a collision with the ground, the override destination, the drawable bound, the held flag */
+				case 58: if (oc2) oc2->onCollide(0, 0, 0); break;
+				case 59: if (oc2) { Coord3D p; p.x = ctF(o[2]); p.y = ctF(o[3]); p.z = ctF(o[4]); oc2->setOverrideDestination(&p); } break;
+				case 60: if (oc2) oc2->onDrawableBoundToObject(); break;
+				case 61: if (o[2] & 1) t->obj->m_disabledBits |= 1u << (unsigned)DISABLED_HELD; else t->obj->m_disabledBits &= ~(1u << (unsigned)DISABLED_HELD); break;
 				/* --- end p1w13-sonnet --- */
 				default: break;
 				}
@@ -1148,7 +1313,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 	delete d;
 	TheGameLogic = 0; TheAudio = 0; TheInGameUI = 0; TheAI = 0; ThePartitionManager = 0; TheTerrainLogic = 0;
 	g_modFindHook = 0; g_modDestroyHook = 0; g_teamRelHook = 0; g_xformHook = 0; g_multiBoneHook = 0;
-	g_findTemplateHook = 0; g_newObjectHook = 0; g_setTeamHook = 0; g_spLocal = 0;   /* --- p1w13-sonnet --- (batches R2, R4, R5) */
+	g_findTemplateHook = 0; g_newObjectHook = 0; g_setTeamHook = 0; g_spLocal = 0; g_instanceHook = 0; g_physOwnerHook = 0;   /* --- p1w13-sonnet --- (batches R2, R4, R5, R8) */
 	return 0;
 }
 

@@ -136,6 +136,10 @@ pub struct ProbeAnswers {
     pub has_locomotor: bool,
     /// `DockUpdateInterface::isDockOpen()` (batch R3); `setDockOpen` sets it.
     pub dock_open: bool,
+    /// batch R8: the current locomotor's pitch stiffness, roll stiffness, pitch damping and roll damping.
+    pub locomotor_sway: [f32; 4],
+    /// `PhysicsBehavior::getIsInFreeFall()` (`setIsInFreeFall` sets it).
+    pub free_fall: bool,
     // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     // --- p1w7-sonnet ---
@@ -733,6 +737,30 @@ impl ProbeModule {
             ModuleCall::StealthReceiveGrant { .. } => ModuleReply::Done,
             ModuleCall::AiChooseLocomotorSet(set) => {
                 world.body_trace(format!("locoset {} {set}", me.object));
+                ModuleReply::Done
+            }
+            // batch R8 (ParachuteContain): the AI's locomotor and the physics' free fall; the lines of the C++ stand-ins
+            ModuleCall::AiHunt { command_source } => {
+                world.body_trace(format!("aihunt {} {command_source}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::UseSpawnRallyPoint => ModuleReply::Bool(false),
+            ModuleCall::AiLocomotorSway(k) => ModuleReply::Real(self.answers.locomotor_sway[usize::from(k) & 3]),
+            ModuleCall::AiLocomotorSetUltraAccurate(on) => {
+                world.body_trace(format!("locoultra {} {}", me.object, i32::from(on)));
+                ModuleReply::Done
+            }
+            ModuleCall::AiLocomotorSetCloseEnoughDist(d) => {
+                world.body_trace(format!("lococlose {} {:08x}", me.object, d.to_bits()));
+                ModuleReply::Done
+            }
+            ModuleCall::AiLocomotorSetCloseEnoughDist3D(on) => {
+                world.body_trace(format!("lococlose3d {} {}", me.object, i32::from(on)));
+                ModuleReply::Done
+            }
+            ModuleCall::PhysicsSetIsInFreeFall(on) => {
+                world.body_trace(format!("pfreefall {} {}", me.object, i32::from(on)));
+                self.answers.free_fall = on;
                 ModuleReply::Done
             }
             ModuleCall::DockSetOpen(open) => {

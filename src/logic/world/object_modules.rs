@@ -288,6 +288,17 @@ impl World {
         }
     }
 
+    /// batch R8: `getObjectExitInterface()` as the module that is it: the first module with an update exit interface, else the contain module if it
+    /// has an exit interface.
+    pub fn get_object_exit_interface(&mut self, id: ObjectId) -> Option<ModuleIndex> {
+        if let Some(idx) = self.first_module_answering(id, ModuleCall::HasUpdateExitInterface) {
+            return Some(idx);
+        }
+        // "If you don't have a fancy one, you may have one from your contain module"
+        let c = self.get_contain(id)?;
+        self.module_call(id, c, ModuleCall::HasContainExitInterface).as_bool().then_some(c)
+    }
+
     /// The first module, in module order, that answers `true` to a
     /// `Has...Interface` call.
     fn first_module_answering(&mut self, id: ObjectId, call: ModuleCall) -> Option<ModuleIndex> {

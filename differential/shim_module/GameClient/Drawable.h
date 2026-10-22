@@ -62,10 +62,21 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	/* the transport's exit bone: one named ExitBoneT, at a world position, if the scene gives the art one */
 	Int getPristineBonePositions(const char* boneNamePrefix, Int startIndex, Coord3D* positions, Matrix3D* transforms, Int maxBones) const
 	{
+		/* batch R8: and the parachute's three bones (ParachuteContain) */
+		static const char *const kPara[3] = { "PARA_COG", "PARA_ATTCH", "PARA_MAN" };
+		for (int i = 0; i < 3; ++i) {
+			if (strcmp(boneNamePrefix, kPara[i]) != 0) continue;
+			if (!m_paraBoneHas[i] || maxBones < 1) return 0;
+			if (positions) positions[0] = m_paraBone[i];
+			return 1;
+		}
 		if (!m_exitBoneHas || strcmp(boneNamePrefix, "ExitBoneT") != 0 || maxBones < 1) return 0;
 		if (positions) positions[0] = m_exitBone;
 		return 1;
 	}
+	Bool m_paraBoneHas[3] = { false, false, false };
+	Coord3D m_paraBone[3];
+	const class GeometryInfo &getDrawableGeometryInfo() const;   /* batch R8: the owner's geometry (differential/l9_open_contain_r.inc) */
 	Bool m_exitBoneHas = false;
 	Coord3D m_exitBone;
 	/* --- end p1w13-sonnet --- */

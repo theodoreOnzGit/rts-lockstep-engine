@@ -63,6 +63,44 @@ public:
 };
 class PartitionFilterOnMap : public PartitionFilter { public: PartitionFilterOnMap() {} };
 /* --- end p1w13-sonnet --- */
+/* --- p1w13-sonnet --- (batch R8: ParachuteContain; PartitionManager.h lines 110-148, verbatim) */
+enum FindPositionFlags
+{
+	FPF_NONE															= 0x00000000,		// no options, default behavior
+	FPF_IGNORE_WATER											= 0x00000001,		// a position found underwater is ok
+	FPF_WATER_ONLY												= 0x00000002,		// find positions in the water only
+	FPF_IGNORE_ALL_OBJECTS								= 0x00000004,		// ignore all objects, positions inside objects are ok
+	FPF_IGNORE_ALLY_OR_NEUTRAL_UNITS			= 0x00000008,		// ignore friendly units (requires relationshipObject)
+	FPF_IGNORE_ALLY_OR_NEUTRAL_STRUCTURES	= 0x00000010,		// ignore friendly structures (requires relationshipObject)
+	FPF_IGNORE_ENEMY_UNITS								= 0x00000020,		// ignore enemy units (requires relationshipObject)
+	FPF_IGNORE_ENEMY_STRUCTURES						= 0x00000040,		// ignore enemy structures (requires relationshipObject)
+	FPF_USE_HIGHEST_LAYER									= 0x00000080,		// examine pos on highest layer at given xy (rather than on ground layer)
+	FPF_CLEAR_CELLS_ONLY									= 0x00000100,		// Reject anything that is not PathFindCell::Clear
+};
+const Real RANDOM_START_ANGLE = -99999.9f;			///< no start angle (an unlikely number to use for the start angle)
+struct FindPositionOptions
+{
+	FindPositionOptions( void )
+	{
+		flags									= FPF_NONE;
+		minRadius							= 0.0f;
+		maxRadius							= 0.0f;
+		startAngle						= RANDOM_START_ANGLE;
+		maxZDelta							= 1e10f;	// ie, any z delta.
+		ignoreObject					= NULL;
+		sourceToPathToDest    = NULL;
+		relationshipObject		= NULL;
+	};
+	FindPositionFlags flags;					///< flags for finding the legal position
+	Real minRadius;										///< min radius to search around
+	Real maxRadius;										///< max radius to search around
+	Real startAngle;									///< use this angle to start the search at
+	Real maxZDelta;										///< maximum delta-z we will allow
+	const Object *ignoreObject;				///< ignore this object in legal position checks
+	const Object *sourceToPathToDest;	///< object that must be able to path to the position chosen
+	const Object *relationshipObject;	///< object to use for relationship tests
+};
+/* --- end p1w13-sonnet --- */
 class PartitionManager
 {
 public:
@@ -78,6 +116,7 @@ public:
 	Real getDistanceSquared( const Object *obj, const Coord3D *pos, DistanceCalculationType d, Coord3D *vec = 0 ) const;   /* batch R: OpenContain */
 	void registerObject( Object *obj );   /* batch R: OpenContain */
 	void unRegisterObject( Object *obj );
+	Bool findPositionAround( const Coord3D *center, const FindPositionOptions *options, Coord3D *result );   /* batch R8: ParachuteContain */
 	/* --- end p1w13-sonnet --- */
 };
 extern PartitionManager *ThePartitionManager;

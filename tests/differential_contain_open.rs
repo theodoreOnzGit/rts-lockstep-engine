@@ -411,6 +411,13 @@ struct Obj {
     /// batch R7: a scene-built heal container's `TimeForFullHeal`, and the frame the object went in (`getContainedByFrame()`)
     heal_frames: u32,
     contained_by_frame: u32,
+    /// batch R8 (ParachuteContain): the object starts `DISABLED_HELD`; the drawable's art has the bones `PARA_COG`, `PARA_ATTCH`, `PARA_MAN` (a mask)
+    /// at these positions; the AI's locomotor's pitch and roll stiffness and damping; the object's producer
+    held: bool,
+    para_bone_has: u32,
+    para_bone: [[f32; 3]; 3],
+    loco: [f32; 4],
+    producer: u32,
 }
 
 /// The riders a scene-built combat bike can name (the driver's `kCtRiderSets`): per set up to three of (template, index into [`RIDER_TEMPLATES`], 0
@@ -537,6 +544,17 @@ impl Obj {
         w.u(u32::from(self.ov_sink));
         w.u(self.heal_frames);
         w.u(self.contained_by_frame);
+        w.u(u32::from(self.held));
+        w.u(self.para_bone_has);
+        for b in self.para_bone {
+            for p in b {
+                w.f(p);
+            }
+        }
+        for l in self.loco {
+            w.f(l);
+        }
+        w.u(self.producer);
     }
 
     fn read(r: &mut R<'_>) -> Obj {
@@ -646,6 +664,17 @@ impl Obj {
         o.ov_sink = r.u() != 0;
         o.heal_frames = r.u();
         o.contained_by_frame = r.u();
+        o.held = r.u() != 0;
+        o.para_bone_has = r.u();
+        for b in o.para_bone.iter_mut() {
+            for p in b.iter_mut() {
+                *p = r.f();
+            }
+        }
+        for l in o.loco.iter_mut() {
+            *l = r.f();
+        }
+        o.producer = r.u();
         o
     }
 }
@@ -658,6 +687,15 @@ struct Scene {
     rel: Vec<Vec<i32>>,
     layer: [i32; 8],
     layer_height: [f32; 8],
+    /// batch R8 (ParachuteContain): the gravity; the terrain's ground height, water and cell type by tile (-1 no cell); the players whose AI is a
+    /// skirmish AI (a mask); `findPositionAround`'s answer
+    gravity: f32,
+    ground: [f32; 8],
+    has_water: [bool; 8],
+    water: [f32; 8],
+    cell_type: [i32; 8],
+    skirmish_mask: u32,
+    find_pos: Option<Coord3D>,
 }
 
 fn parse_scene(cfg: &[u32]) -> Scene {
@@ -675,7 +713,16 @@ fn parse_scene(cfg: &[u32]) -> Scene {
     for l in layer_height.iter_mut() {
         *l = r.f();
     }
-    Scene { frame, logic_seed, client_seed, objs, rel, layer, layer_height }
+    let gravity = r.f();
+    let ground: [f32; 8] = std::array::from_fn(|_| r.f());
+    let has_water: [bool; 8] = std::array::from_fn(|_| r.u() != 0);
+    let water: [f32; 8] = std::array::from_fn(|_| r.f());
+    let cell_type: [i32; 8] = std::array::from_fn(|_| r.s());
+    let skirmish_mask = r.u();
+    let has = r.u() != 0;
+    let fp = Coord3D { x: r.f(), y: r.f(), z: r.f() };
+    let find_pos = has.then_some(fp);
+    Scene { frame, logic_seed, client_seed, objs, rel, layer, layer_height, gravity, ground, has_water, water, cell_type, skirmish_mask, find_pos }
 }
 
 // ---- the generators ------------------------------------------------------------------------------------------------------------------------------------------------
@@ -757,7 +804,11 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     let transport = g.below(2) == 0;
     // batch R7: one plain block in three is a heal container's (`L`: the base's fields and `TimeForFullHeal`)
     let heal = !transport && g.below(3) == 0;
-    let token = if heal {
+    // batch R8: one plain block in two that is no heal container is a parachute's (`P`: the base's fields and its own)
+    let parachute = !transport && !heal && g.below(2) == 0;
+    let token = if parachute {
+        "P\n"
+    } else if heal {
         "L\n"
     } else if transport { ["T\n", "I\n", "R\n", "H\n", "C\n", "O\n"][g.below(6) as usize] } else { "D\n" };
     if transport {
@@ -784,6 +835,15 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
             }
         }
         field!(30, "ShouldDrawPips", gen_bool(g, clean));
+    }
+    if parachute {
+        field!(50, "PitchRateMax", format!("{}", *pick(g, &[&0i32, &30, &90, &-45])));
+        field!(50, "RollRateMax", format!("{}", *pick(g, &[&0i32, &30, &90, &-45])));
+        field!(40, "LowAltitudeDamping", format!("{}", *pick(g, &[&0.0f32, &0.2, &0.5, &1.5])));
+        field!(60, "ParachuteOpenDist", format!("{}", *pick(g, &[&0.0f32, &5.0, &10.0, &50.0, &200.0])));
+        field!(40, "KillWhenLandingInWaterSlop", format!("{}", *pick(g, &[&0.0f32, &10.0, &25.0, &-5.0])));
+        field!(40, "FreeFallDamagePercent", format!("{}%", *pick(g, &[&0i32, &50, &100, &25])));
+        field!(40, "ParachuteOpenSound", format!("snd{}", 1 + g.below(5)));
     }
     if heal {
         field!(60, "TimeForFullHeal", format!("{}", *pick(g, &[&0i32, &33, &100, &1000, &5000])));
@@ -909,7 +969,8 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     }
     // 0 OpenContain, 1 TransportContain, 2 InternetHackContain, 3 RailedTransportContain
     // 6 OverlordContain, 7 HealContain
-    o.cls = if o.has_contain && k > 0 { g.below(8) } else { 0 };
+    // 8 ParachuteContain (batch R8)
+    o.cls = if o.has_contain && k > 0 { g.below(9) } else { 0 };
     o.raw_slots = *pick(g, &[&0i32, &1, &1, &1, &2, &3]);
     // upstream's airborne locomotor is the AI's
     o.airborne = o.has_ai && g.below(4) == 0;
@@ -950,6 +1011,21 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     if g.below(4) == 0 {
         o.extra_kinds |= 8;
     }
+    // batch R8: parachutable; held; the parachute's bones; the locomotor's sway; the producer
+    if g.below(4) == 0 {
+        o.extra_kinds |= 16;
+    }
+    o.held = g.below(6) == 0;
+    o.para_bone_has = g.below(8);
+    for b in o.para_bone.iter_mut() {
+        for p in b.iter_mut() {
+            *p = *pick(g, &[&0.0f32, &2.0, &-1.5, &10.0, &25.0]);
+        }
+    }
+    for l in o.loco.iter_mut() {
+        *l = *pick(g, &[&0.0f32, &0.1, &0.5, &1.0, &0.05]);
+    }
+    o.producer = g.below(n as u32 + 2);
     o
 }
 
@@ -971,6 +1047,7 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> Vec<u32> {
                 Some(ModuleDataKind::RiderChangeContain(_)) => 5,
                 Some(ModuleDataKind::OverlordContain(_)) => 6,
                 Some(ModuleDataKind::HealContain(_)) => 7,
+                Some(ModuleDataKind::ParachuteContain(_)) => 8,
                 _ => 0,
             };
         }
@@ -986,6 +1063,25 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> Vec<u32> {
     }
     for _ in 0..8 {
         w.f(*pick(g, &[&0.0f32, &5.0, &12.5, &-3.0]));
+    }
+    // batch R8: the gravity, the ground, the water, the cells, the skirmish players, findPositionAround's answer
+    w.f(*pick(g, &[&-1.0f32, &0.0, &-2.0]));
+    for _ in 0..8 {
+        w.f(*pick(g, &[&0.0f32, &5.0, &-10.0, &40.0]));
+    }
+    for _ in 0..8 {
+        w.u(u32::from(g.below(3) == 0));
+    }
+    for _ in 0..8 {
+        w.f(*pick(g, &[&0.0f32, &5.0, &30.0, &-5.0]));
+    }
+    for _ in 0..8 {
+        w.s(*pick(g, &[&-1i32, &0, &0, &0, &1, &2, &3, &4, &5, &6]));
+    }
+    w.u(g.below(16));
+    w.u(u32::from(g.below(2) == 0));
+    for _ in 0..3 {
+        w.f(coord(g));
     }
     w.0
 }
@@ -1004,6 +1100,15 @@ fn gen_ops(g: &mut Gen, n: u32) -> Vec<[u32; 5]> {
         } else if burst < 6 {
             // batch R2: the transport's own (49 to 55)
             [49 + g.below(9), c, a, g.below(10), g.below(10)]
+        } else if burst < 9 {
+            // batch R8: the parachute's (a collision with the ground, the override destination, the drawable bound, the held flag) and its update
+            match g.below(6) {
+                0 => [58, c, 0, 0, 0],
+                1 => [59, c, coord(g).to_bits(), coord(g).to_bits(), coord(g).to_bits()],
+                2 => [60, c, 0, 0, 0],
+                3 => [61, c, g.below(2), 0, 0],
+                _ => [7, c, 0, 0, 0],
+            }
         } else {
             gen_op(g, c, a)
         };
@@ -1135,6 +1240,13 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId, has_contain: bool) {
                     put_u32(v, x);
                 }
             }
+            // batch R8: a parachute, 6 (an OpenContain's words and its own fields)
+            Some(UpdateBody::ParachuteContain(m)) => {
+                put_u32(v, 6);
+                for x in m.state_words() {
+                    put_u32(v, x);
+                }
+            }
             Some(UpdateBody::HelixContain(m)) => {
                 put_u32(v, 3);
                 for x in m.state_words() {
@@ -1172,7 +1284,7 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId, has_contain: bool) {
     put_u32(v, u32::from(dead.unwrap_or(false)));
     // the physics block's `getAllowToFall()` (2: no physics)
     let fall = o.physics.and_then(|p| match o.modules[p as usize].body.as_ref() {
-        Some(UpdateBody::ModuleProbe(p)) => Some(u32::from(p.answers.can_fall)),
+        Some(UpdateBody::ModuleProbe(p)) => Some(u32::from(p.answers.can_fall) + 4 * u32::from(p.answers.free_fall)),
         _ => None,
     });
     put_u32(v, fall.unwrap_or(2));
@@ -1329,12 +1441,30 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                         ContainCall::SetTeam { object, team } => log.push(format!("setteam {object} {team}")),
                         ContainCall::SetDamageState { object, state } => log.push(format!("setdamagestate {object} {state}")),
                         ContainCall::StealthReceiveGrant { object, active, frames } => log.push(format!("stealthgrant {object} {} {frames}", i32::from(active))),
+                        ContainCall::PartitionFindPositionAround { position, min_radius, max_radius, flags } => {
+                            log.push(format!("findpos {} {:08x} {:08x} {flags}", hex3(&position), min_radius.to_bits(), max_radius.to_bits()))
+                        }
+                        ContainCall::PathfindGetCell { layer, x, y } => log.push(format!("getcell {layer} {x} {y}")),
+                        ContainCall::DrawableSetInstanceMatrix { object, matrix } => match matrix {
+                            None => log.push(format!("instance {object} null")),
+                            Some(m) => {
+                                let mut s = format!("instance {object}");
+                                for row in m.row.iter() {
+                                    s.push_str(&format!(" {:08x} {:08x} {:08x} {:08x}", row.x.to_bits(), row.y.to_bits(), row.z.to_bits(), row.w.to_bits()));
+                                }
+                                log.push(s);
+                            }
+                        },
                         ContainCall::NewObject { template, team } => log.push(format!("newobject {} {team}", template_names.get(&template).cloned().unwrap_or_default())),
                     }
                 }
                 Some(CutCall::WeaponSetUpdate { .. }) => log.push("wset".to_string()),
                 Some(CutCall::WeaponTransferNextShotStats { to, from }) => log.push(format!("shotxfer {to} {from}")),
                 Some(CutCall::TerrainGetLayerHeight { x, y, layer }) => log.push(format!("layerheight {:08x} {:08x} {layer}", x.to_bits(), y.to_bits())),
+                // batch R8: the terrain's ground, water and highest layer (the lines of l9_height_die_o.inc's and l9_float_o.inc's stand-ins)
+                Some(CutCall::TerrainGetGroundHeight { x, y }) => log.push(format!("ground {:08x} {:08x}", x.to_bits(), y.to_bits())),
+                Some(CutCall::TerrainIsUnderwater { x, y }) => log.push(format!("underwater {:08x} {:08x}", x.to_bits(), y.to_bits())),
+                Some(CutCall::TerrainGetHighestLayerForDestination { x, y, z }) => log.push(format!("highlayer {:08x} {:08x} {:08x}", x.to_bits(), y.to_bits(), z.to_bits())),
                 _ => {}
             }
         } else if t.starts_with("evt ") {
@@ -1380,7 +1510,7 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
             let tok: Vec<&str> = line.split(' ').collect();
             if tok[0] == "aiidlefrom" {
                 log.push(format!("aiidle {}", tok[1]));
-            } else if tok[0] == "pfall" {
+            } else if tok[0] == "pfall" || tok[0] == "pfreefall" {
                 // the physics block's flag is part of the object's state: no line of its own
             } else {
                 log.push(line.to_string());
@@ -1422,6 +1552,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             ModuleDataKind::RiderChangeContain(r) => &r.transport.open,
             ModuleDataKind::OverlordContain(r) => &r.transport.open,
             ModuleDataKind::HealContain(h) => &h.open,
+            ModuleDataKind::ParachuteContain(p) => &p.open,
             _ => unreachable!("not a contain"),
         };
         put_u32(&mut v, d.contain_max as u32);
@@ -1524,6 +1655,16 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         } else {
             put_u32(&mut v, 0);
         }
+        // batch R8: 1 and a parachute block's fields, or 0
+        if let ModuleDataKind::ParachuteContain(p) = &data {
+            put_u32(&mut v, 1);
+            for x in [p.pitch_rate_max, p.roll_rate_max, p.low_altitude_damping, p.para_open_dist, p.free_fall_damage_percent, p.kill_when_landing_in_water_slop] {
+                put_u32(&mut v, x.to_bits());
+            }
+            put_str(&mut v, &p.parachute_open_sound.event_name);
+        } else {
+            put_u32(&mut v, 0);
+        }
     }
     let sc = parse_scene(cfg);
     let n = sc.objs.len();
@@ -1556,7 +1697,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     let mut templates = Vec::new();
     for (k, o) in sc.objs.iter().enumerate() {
         let mut kind_of: Vec<i32> = (0..8).filter(|&i| o.kinds >> i & 1 != 0).map(|i| KINDS[i]).collect();
-        for (i, kk) in [KINDOF_CLIFF_JUMPER, KINDOF_HERO, KINDOF_SALVAGER, KINDOF_PORTABLE_STRUCTURE].iter().enumerate() {
+        for (i, kk) in [KINDOF_CLIFF_JUMPER, KINDOF_HERO, KINDOF_SALVAGER, KINDOF_PORTABLE_STRUCTURE, rts_lockstep_engine::common::kind_of::KINDOF_PARACHUTABLE].iter().enumerate() {
             if o.extra_kinds >> i & 1 != 0 {
                 kind_of.push(*kk);
             }
@@ -1578,7 +1719,20 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     for i in 0..8 {
         w.cuts.terrain_layer[i] = sc.layer[i];
         w.cuts.terrain_layer_height[i] = sc.layer_height[i];
+        // batch R8
+        w.cuts.terrain_ground[i] = sc.ground[i];
+        w.cuts.terrain_has_water[i] = sc.has_water[i];
+        w.cuts.terrain_water[i] = sc.water[i];
+        w.cuts.contain.cell_types[i] = sc.cell_type[i];
     }
+    // batch R8: the gravity, the skirmish players, findPositionAround's answer
+    w.cuts.globals.gravity = sc.gravity;
+    for p in 0..4 {
+        if sc.skirmish_mask >> p & 1 != 0 {
+            w.cuts.contain.skirmish_ai_players.insert(p);
+        }
+    }
+    w.cuts.contain.find_position = sc.find_pos;
     for i in 0..n {
         for j in 0..n {
             let rel = match sc.rel[i][j] {
@@ -1627,6 +1781,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             }
         }
     };
+    // batch R8: the logic generator starts before the objects too (ParachuteContain's constructor draws), and again after them
+    w.random.init_game_logic_random(sc.logic_seed);
     // the objects
     for (k, o) in sc.objs.iter().enumerate() {
         let mut modules = Vec::new();
@@ -1636,6 +1792,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             a.free_to_exit = o.free_to_exit;
             a.moving = o.ai_moving;
             a.has_locomotor = o.has_loco;
+            a.locomotor_sway = o.loco;
             let mut pm = NewModule::plain(b"CtProbe", b"ModuleTag_Probe");
             pm.interfaces = if o.has_body { MODULEINTERFACE_BODY } else { 0 };
             pm.is_ai = o.has_ai;
@@ -1656,7 +1813,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 data.clone()
             } else {
                 // a transport's base starts from `TransportContainModuleData()` (infantry allowed inside)
-                let base = if o.cls != 0 && o.cls != 7 { TransportContainModuleData::default().open } else { OpenContainModuleData::default() };
+                let base = if o.cls != 0 && o.cls != 7 && o.cls != 8 { TransportContainModuleData::default().open } else { OpenContainModuleData::default() };
                 let mut d = OpenContainModuleData { contain_max: o.contain_max, passengers_allowed_to_fire: o.allow_fire, passengers_in_turret: o.in_turret, number_of_exit_paths: o.exit_paths, damage_percentage_to_units: o.damage_pct, is_burned_death_to_units: o.burned, door_open_time: o.door_open, weapon_bonus_passed_to_passengers: o.weapon_pass, allow_allies_inside: o.allow_rel & 1 != 0, allow_enemies_inside: o.allow_rel & 2 != 0, allow_neutral_inside: o.allow_rel & 4 != 0, ..base };
                 if o.enter_snd > 0 {
                     d.enter_sound.event_name = format!("snd{}", o.enter_snd).into_bytes();
@@ -1687,7 +1844,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                         d.die_mux_data.required_status.set(STATUSES[i], 1);
                     }
                 }
-                if o.cls == 7 {
+                if o.cls == 8 {
+                    ModuleDataKind::ParachuteContain(Arc::new(rts_lockstep_engine::logic::modules::parachute_contain::ParachuteContainModuleData { open: d, ..Default::default() }))
+                } else if o.cls == 7 {
                     ModuleDataKind::HealContain(Arc::new(rts_lockstep_engine::logic::modules::heal_contain::HealContainModuleData { open: d, frames_for_full_heal: o.heal_frames }))
                 } else if o.cls != 0 {
                     let t = TransportContainModuleData {
@@ -1752,6 +1911,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 ModuleDataKind::RiderChangeContain(_) => b"RiderChangeContain",
                 ModuleDataKind::OverlordContain(_) => b"OverlordContain",
                 ModuleDataKind::HealContain(_) => b"HealContain",
+                ModuleDataKind::ParachuteContain(_) => b"ParachuteContain",
                 _ => b"OpenContain",
             };
             let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class, b"ModuleTag_Contain", &cd).unwrap().unwrap();
@@ -1784,6 +1944,16 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         if o.unmanned {
             ob.disabled.set(rts_lockstep_engine::common::disabled_types::DISABLED_UNMANNED, 1);
         }
+        // batch R8: held from the start, the producer, the parachute's bones
+        if o.held {
+            ob.disabled.set(rts_lockstep_engine::common::disabled_types::DISABLED_HELD, 1);
+        }
+        ob.producer_id = o.producer as i32;
+        for (j, name) in ["PARA_COG", "PARA_ATTCH", "PARA_MAN"].iter().enumerate() {
+            if o.para_bone_has >> j & 1 != 0 {
+                w.cuts.contain.pristine_bones.insert((id, name.as_bytes().to_vec()), Coord3D { x: o.para_bone[j][0], y: o.para_bone[j][1], z: o.para_bone[j][2] });
+            }
+        }
         apply_tables(&mut w, k, o);
         // batch R2: the transport's tables
         if o.airborne {
@@ -1793,7 +1963,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             w.cuts.contain.valid_movement_terrain.insert(id);
         }
         if o.exit_bone_has {
-            w.cuts.contain.exit_bones.insert((id, b"ExitBoneT".to_vec()), Coord3D { x: o.exit_bone[0], y: o.exit_bone[1], z: o.exit_bone[2] });
+            w.cuts.contain.pristine_bones.insert((id, b"ExitBoneT".to_vec()), Coord3D { x: o.exit_bone[0], y: o.exit_bone[1], z: o.exit_bone[2] });
         }
         for s in 0..3 {
             if o.weapons >> (3 * s) & 1 != 0 {
@@ -1854,7 +2024,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 info.input.amount = 10.0;
             }
             let fold3 = |p: &Coord3D| p.x.to_bits().wrapping_mul(31 * 31).wrapping_add(p.y.to_bits().wrapping_mul(31)).wrapping_add(p.z.to_bits());
-            if let Some(m) = m.filter(|_| o[0] < 34 || (42..=45).contains(&o[0]) || (47..=57).contains(&o[0])) {
+            if let Some(m) = m.filter(|_| o[0] < 34 || (42..=45).contains(&o[0]) || (47..=60).contains(&o[0])) {
                 match o[0] {
                     0 => {
                         w.module_call(id, m, ModuleCall::AddToContain(rider));
@@ -1893,6 +2063,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                                 Some(UpdateBody::HelixContain(c)) => Some(c.module_data().transport.open.die_mux_data),
                                 Some(UpdateBody::RiderChangeContain(c)) => Some(c.module_data().transport.open.die_mux_data),
                                 Some(UpdateBody::OverlordContain(c)) => Some(c.module_data().transport.open.die_mux_data),
+                                Some(UpdateBody::ParachuteContain(c)) => Some(c.module_data().open.die_mux_data),
                                 Some(UpdateBody::HealContain(c)) => Some(c.module_data().open.die_mux_data),
                                 _ => None,
                             };
@@ -2080,6 +2251,16 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     57 => {
                         w.module_call(id, m, ModuleCall::ClientVisibleContainedFlashAsSelected);
                     }
+                    // batch R8: ParachuteContain's
+                    58 => {
+                        w.module_call(id, m, ModuleCall::OnCollide { other: INVALID_ID, loc: None, normal: None });
+                    }
+                    59 => {
+                        w.module_call(id, m, ModuleCall::SetOverrideDestination(Coord3D { x: f(o[2]), y: f(o[3]), z: f(o[4]) }));
+                    }
+                    60 => {
+                        w.module_call(id, m, ModuleCall::OnDrawableBoundToObject);
+                    }
                     _ => {}
                 }
             }
@@ -2113,6 +2294,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     }
                 }
                 38 => w.contain_set_position(id, &Coord3D { x: f(o[2]), y: f(o[3]), z: f(o[4]) }),
+                // batch R8: the held flag
+                61 => w.objects.find_mut(id).unwrap().disabled.set(rts_lockstep_engine::common::disabled_types::DISABLED_HELD, (o[2] & 1) as i32),
                 39 => w.set_effectively_dead(id, o[2] != 0),
                 40 => {
                     if o[2] != 0 {
@@ -2225,6 +2408,11 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
     if r.u32() != 0 {
         out.push(format!("heal data {}", r.u32()));
     }
+    // batch R8: a parachute block's six reals and its sound
+    if r.u32() != 0 {
+        let w: Vec<u32> = (0..6).map(|_| r.u32()).collect();
+        out.push(format!("parachute data {w:08x?} {}", r.str()));
+    }
     let n_obj = r.u32();
     for i in 0..=n_ops {
         if r.at_end() {
@@ -2264,7 +2452,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
                 for _ in 0..map * 2 {
                     state.push(r.u32());
                 }
-                for _ in 0..match has { 2 => 6, 3 | 5 => 7, 4 => 9, _ => 3 } {
+                for _ in 0..match has { 2 => 6, 3 | 5 => 7, 4 => 9, 6 => 3 + 36, _ => 3 } {
                     state.push(r.u32());
                 }
             }
@@ -2338,13 +2526,19 @@ fn read_heal_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniRe
     Ok(())
 }
 
+// batch R8
+fn read_parachute_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
+    *out = Some(rts_lockstep_engine::logic::modules::parachute_contain::new_module_data(Some(ini))?);
+    Ok(())
+}
+
 fn read_railed_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
     *out = Some(rts_lockstep_engine::logic::modules::railed_transport_contain::new_module_data(Some(ini))?);
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }, BlockParse { token: "C", parse: read_rider_change_block }, BlockParse { token: "O", parse: read_overlord_block }, BlockParse { token: "L", parse: read_heal_block }];
+    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }, BlockParse { token: "C", parse: read_rider_change_block }, BlockParse { token: "O", parse: read_overlord_block }, BlockParse { token: "L", parse: read_heal_block }, BlockParse { token: "P", parse: read_parachute_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)

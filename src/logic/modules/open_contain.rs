@@ -456,6 +456,11 @@ pub trait OpenContainVirtuals: Clone + PartialEq + Sized {
     fn kill_riders_who_are_not_free_to_exit(&mut self, _world: &mut World, _me: ModuleHandle) {}
     /// `positionContainedObjectsRelativeToContainer()`: nothing.
     fn position_contained_objects_relative_to_container(&mut self, _world: &mut World, _me: ModuleHandle) {}
+    /// batch R8: `containReactToTransformChange()`: "our transform changed, which means our bones moved, and we keep people positioned on bones"
+    /// (`redeployOccupants()`).
+    fn contain_react_to_transform_change(&mut self, world: &mut World, me: ModuleHandle) {
+        self.redeploy_occupants(world, me);
+    }
     /// `orderAllPassengersToExit(commandSource, instantly)`.
     fn order_all_passengers_to_exit(&mut self, world: &mut World, me: ModuleHandle, command_source: i32, instantly: bool) {
         base_order_all_passengers_to_exit(self, world, me, command_source, instantly);
@@ -741,14 +746,23 @@ pub fn base_is_passenger_allowed_to_fire<T: OpenContainVirtuals>(t: &mut T, worl
 
 /// `OpenContain::addOrRemoveObjFromWorld`.
 pub fn base_add_or_remove_obj_from_world<T: OpenContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, obj: ObjectId, add: bool) {
+    // batch R8: once a ring is found the walk is undefined, and the rest of it is not taken (non-enclosing containers that hold each other more than
+    // once branch at every level: the walk to the depth limit on every branch would never end)
+    if world.cuts.contain.ring_found {
+        return;
+    }
     if world.cuts.contain.recursion >= MAX_RECURSION {
         // a ring of containers: upstream recurses until the stack is gone
         undefined(world, me, Undefined::EndlessLoop);
+        world.cuts.contain.ring_found = true;
         return;
     }
     world.cuts.contain.recursion += 1;
     add_or_remove_obj_from_world_inner(t, world, me, obj, add);
     world.cuts.contain.recursion -= 1;
+    if world.cuts.contain.recursion == 0 {
+        world.cuts.contain.ring_found = false;
+    }
 }
 
 /// The depth at which a recursion through containers that contain each other is taken for an endless one.
@@ -1629,9 +1643,11 @@ pub fn contain_module_call<T: OpenContainVirtuals>(t: &mut T, world: &mut World,
         }
         // --- end p1w13-sonnet ---
         ModuleCall::ContainReactToTransformChange => {
-            t.redeploy_occupants(world, me);
+            t.contain_react_to_transform_change(world, me);
             ModuleReply::Done
         }
+        // batch R8: `ExitInterface::useSpawnRallyPoint()`, FALSE for every container
+        ModuleCall::UseSpawnRallyPoint => ModuleReply::Bool(false),
         ModuleCall::OnContaining { obj, was_selected } => {
             t.on_containing(world, me, obj, was_selected);
             ModuleReply::Done
@@ -1836,6 +1852,7 @@ macro_rules! with_contain_body {
             UpdateBody::HelixContain($m) => Some($e),
             UpdateBody::RiderChangeContain($m) => Some($e),
             UpdateBody::OverlordContain($m) => Some($e),
+            UpdateBody::ParachuteContain($m) => Some($e),
             UpdateBody::HealContain($m) => Some($e),
             _ => None,
         }

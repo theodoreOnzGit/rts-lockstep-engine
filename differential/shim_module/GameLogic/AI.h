@@ -10,6 +10,26 @@ class Object;
 class Locomotor;
 enum AttitudeType { AI_SLEEP = -2, AI_PASSIVE=-1, AI_NORMAL=0, AI_ALERT=1, AI_AGGRESSIVE=2, AI_INVALID=3 };		///< AI "attitude" behavior modifiers
 /* --- end p1w13-sonnet --- */
+/* --- p1w13-sonnet --- (batch R8: ParachuteContain reads a cell's type; AIPathfind.h lines 257-266 and 439-440, verbatim) */
+class PathfindCell
+{
+public:
+	enum CellType
+	{
+		CELL_CLEAR		= 0x00,									///< clear, unobstructed ground
+		CELL_WATER		= 0x01,									///< water area
+		CELL_CLIFF		= 0x02,									///< steep altitude change
+		CELL_RUBBLE		= 0x03,									///< Cell is occupied by rubble.
+		CELL_OBSTACLE	= 0x04,									///< Occupied by a structure
+		CELL_BRIDGE_IMPASSABLE = 0x05,				///< Piece of a bridge that is impassable.
+		CELL_IMPASSABLE = 0x06								///< Just plain impassable except for aircraft.
+	};
+	CellType getType() const { return m_type; }
+	CellType m_type;
+};
+#define PATHFIND_CELL_SIZE		10
+#define PATHFIND_CELL_SIZE_F	10.0f
+/* --- end p1w13-sonnet --- */
 class Pathfinder
 {
 public:
@@ -17,6 +37,7 @@ public:
 	void removeObjectFromPathfindMap(Object *obj);
 	/* --- p1w13-sonnet --- (batch R: OpenContain) */
 	void removeUnitFromPathfindMap(Object *obj);
+	PathfindCell *getCell( PathfindLayerEnum layer, Int x, Int y );   /* batch R8 */
 	void updatePos(Object *obj, const Coord3D *newPos);
 	void updateGoal(Object *obj, const Coord3D *newGoal, PathfindLayerEnum layer);
 	Bool adjustToPossibleDestination(Object *obj, const class LocomotorSet *locomotorSet, Coord3D *dest);

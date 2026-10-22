@@ -1,6 +1,18 @@
 /* Stand-in for GameEngine/Include/GameLogic/Locomotor.h, Module build only (differential tests, p1w13-sonnet, batch R2: TransportContain.cpp includes it
-** and compares a `const Locomotor*` with NULL). The real header needs the whole locomotor layer. */
+** and compares a `const Locomotor*` with NULL). The real header needs the whole locomotor layer.
+** Batch R8: the calls ParachuteContain makes on the current locomotor (differential/l9_open_contain_r.inc: the test's locomotor is the AI itself). */
 #ifndef SHIM_MODULE_LOCOMOTOR_H
 #define SHIM_MODULE_LOCOMOTOR_H
-class Locomotor;
+#include "Lib/BaseType.h"
+class Locomotor
+{
+public:
+	Real getPitchStiffness() const;
+	Real getRollStiffness() const;
+	Real getPitchDamping() const;
+	Real getRollDamping() const;
+	void setUltraAccurate(Bool u);
+	void setCloseEnoughDist(Real dist);
+	void setCloseEnoughDist3D(Bool setting);
+};
 #endif

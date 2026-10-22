@@ -56,15 +56,27 @@ pub struct ContainCutTables {
     pub booby_trapped: BTreeSet<ObjectId>,
     /// How deep the recursion of `addOrRemoveObjFromWorld` and `isPassengerAllowedToFire` is: a ring of containers recurses for ever upstream.
     pub recursion: u32,
+    /// batch R8: the walk of `addOrRemoveObjFromWorld` met a ring of containers (it stops; cleared when the walk ends).
+    pub ring_found: bool,
     /// batch R6: how deep the reads of other objects' contain modules go (`open_contain::view_*`, through `&World`), and whether one went too deep.
     pub view_depth: std::cell::Cell<u32>,
     pub view_overflow: std::cell::Cell<bool>,
     // --- p1w13-sonnet --- (batch R2: TransportContain)
-    /// `draw->getPristineBonePositions(exitBone, 0, &pos, NULL, 1) == 1` then `convertBonePosToWorldPos`: the world position of a transport's exit
-    /// bone, by object and bone name (no entry: the bone is not in the art).
-    pub exit_bones: BTreeMap<(ObjectId, Vec<u8>), Coord3D>,
+    /// `draw->getPristineBonePositions(name, 0, &pos, NULL, 1)`: the bone's pristine (art) position, by object and bone name (no entry: the bone is not in
+    /// the art and the call finds none). Batch R8: a transport's exit bone was the world position here (`exit_bones`); it is now the art's position, which
+    /// `convertBonePosToWorldPos` pushes through the object's transform as upstream does.
+    pub pristine_bones: BTreeMap<(ObjectId, Vec<u8>), Coord3D>,
     /// `TheAI->pathfinder()->validMovementTerrain(layer, rider's locomotor, pos)`: the riders for which the terrain at the transport is valid.
     pub valid_movement_terrain: BTreeSet<ObjectId>,
+    // --- end p1w13-sonnet ---
+    // --- p1w13-sonnet --- (batch R8: ParachuteContain)
+    /// `ThePartitionManager->findPositionAround(&pos, options, &pos)`: the position found (`None`: none is found and `pos` is left as it was).
+    pub find_position: Option<Coord3D>,
+    /// `TheAI->pathfinder()->getCell(layer, x, y)->getType()`, by the tile of the terrain tables the cell's indices fall in (`terrain_cell(x, y)` of
+    /// the indices as reals); -1 is a `NULL` cell.
+    pub cell_types: [i32; 8],
+    /// `player->isSkirmishAIPlayer()`: the players whose AI is a skirmish AI.
+    pub skirmish_ai_players: BTreeSet<crate::logic::world::ids::PlayerIndex>,
     // --- end p1w13-sonnet ---
 }
 
@@ -145,6 +157,13 @@ pub enum ContainCall {
     // batch R6 (OverlordContain)
     /// `obj->getExperienceTracker()->setExperienceSink(sink)`.
     ExperienceSetSink { object: ObjectId, sink: ObjectId },
+    // batch R8 (ParachuteContain)
+    /// `ThePartitionManager->findPositionAround(&pos, options, &pos)` (`minRadius`, `maxRadius`, `flags`; no relationship object).
+    PartitionFindPositionAround { position: Coord3D, min_radius: f32, max_radius: f32, flags: i32 },
+    /// `TheAI->pathfinder()->getCell(layer, x, y)`.
+    PathfindGetCell { layer: PathfindLayer, x: i32, y: i32 },
+    /// `obj->getDrawable()->setInstanceMatrix(matrix)` (`None` for `NULL`).
+    DrawableSetInstanceMatrix { object: ObjectId, matrix: Option<Matrix3D> },
     // --- end p1w13-sonnet ---
 }
 
@@ -390,12 +409,56 @@ impl World {
         }
     }
 
-    /// The world position of a transport's exit bone, if it has a drawable and the art has the bone (see [`ContainCutTables::exit_bones`]).
+    /// The world position of a transport's exit bone, if it has a drawable and the art has the bone: `getPristineBonePositions` then
+    /// `convertBonePosToWorldPos` (see [`ContainCutTables::pristine_bones`]).
     pub fn contain_exit_bone_world_position(&mut self, id: ObjectId, bone: &[u8]) -> Option<Coord3D> {
+        let pos = self.contain_drawable_pristine_bone(id, bone)?;
+        Some(self.contain_convert_bone_pos_to_world_pos(id, &pos))
+    }
+
+    // batch R8 (ParachuteContain)
+    /// `obj->getDrawable()->getPristineBonePositions(name, 0, &pos, NULL, 1) == 1`: the bone's art position, `None` when the object has no drawable or
+    /// the art has no such bone (see [`ContainCutTables::pristine_bones`]).
+    pub fn contain_drawable_pristine_bone(&mut self, id: ObjectId, bone: &[u8]) -> Option<Coord3D> {
         if !self.has_drawable(id) {
             return None;
         }
-        self.cuts.contain.exit_bones.get(&(id, bone.to_vec())).copied()
+        self.cuts.contain.pristine_bones.get(&(id, bone.to_vec())).copied()
+    }
+
+    /// `obj->convertBonePosToWorldPos(&bonePos, NULL, &worldPos, NULL)`: the position pushed through the object's transform (`Thing`'s, translated).
+    pub fn contain_convert_bone_pos_to_world_pos(&self, id: ObjectId, bone: &Coord3D) -> Coord3D {
+        self.objects.find(id).map_or(*bone, |o| o.thing.bone_position_to_world(bone))
+    }
+
+    /// `ThePartitionManager->findPositionAround(&pos, options, &pos)`: `pos` is written when a position is found (see
+    /// [`ContainCutTables::find_position`]).
+    pub fn contain_partition_find_position_around(&mut self, pos: &mut Coord3D, min_radius: f32, max_radius: f32, flags: i32) -> bool {
+        self.contain_cut(ContainCall::PartitionFindPositionAround { position: *pos, min_radius, max_radius, flags });
+        match self.cuts.contain.find_position {
+            Some(p) => {
+                *pos = p;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// `TheAI->pathfinder()->getCell(layer, x, y)`, then `getType()`: `None` for a `NULL` cell (see [`ContainCutTables::cell_types`]).
+    pub fn contain_pathfind_cell_type(&mut self, layer: PathfindLayer, x: i32, y: i32) -> Option<i32> {
+        self.contain_cut(ContainCall::PathfindGetCell { layer, x, y });
+        let t = self.cuts.contain.cell_types[crate::logic::world::object_cuts::terrain_cell(x as f32, y as f32)];
+        (t >= 0).then_some(t)
+    }
+
+    /// `player->isSkirmishAIPlayer()` (see [`ContainCutTables::skirmish_ai_players`]).
+    pub fn contain_player_is_skirmish_ai(&self, player: crate::logic::world::ids::PlayerIndex) -> bool {
+        self.cuts.contain.skirmish_ai_players.contains(&player)
+    }
+
+    /// `obj->getDrawable()->setInstanceMatrix(matrix)`: the client's; the caller checks the drawable.
+    pub fn contain_drawable_set_instance_matrix(&mut self, id: ObjectId, matrix: Option<&Matrix3D>) {
+        self.contain_cut(ContainCall::DrawableSetInstanceMatrix { object: id, matrix: matrix.copied() });
     }
 
     /// `TheAI->pathfinder()->validMovementTerrain(transport's layer, rider's locomotor, pos)` (see [`ContainCutTables::valid_movement_terrain`]).

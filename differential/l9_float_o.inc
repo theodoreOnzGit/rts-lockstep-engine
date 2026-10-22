@@ -49,7 +49,8 @@ Bool TerrainLogic::isUnderwater( Real x, Real y, Real *waterZ, Real *terrainZ )
 	return TRUE;
 }
 const Matrix3D *Drawable::getInstanceMatrix() const { return &g_flrMatrix; }
-void Drawable::setInstanceMatrix(const Matrix3D *instance) { ulog("instance %u", g_flrLogic->m_frame); }
+void (*g_instanceHook)(const Drawable *, const Matrix3D *) = 0;   /* p1w13-sonnet, batch R8: the contain test's line (differential/l9_open_contain_r.inc) */
+void Drawable::setInstanceMatrix(const Matrix3D *instance) { if (g_instanceHook) { g_instanceHook(this, instance); return; } ulog("instance %u", g_flrLogic->m_frame); }
 
 extern "C" {
 

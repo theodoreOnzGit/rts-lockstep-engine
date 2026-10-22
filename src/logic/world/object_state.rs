@@ -788,16 +788,37 @@ impl World {
     /// `getTransportSlotCount()`: the template's raw count, or for a special
     /// zero-slot container the sum of what it holds.
     pub fn get_transport_slot_count(&mut self, id: ObjectId) -> i32 {
+        let mut ring = false;
+        self.transport_slot_count_at(id, 0, &mut ring)
+    }
+
+    /// `getTransportSlotCount()` `depth` containers down. A ring of special
+    /// zero-slot containers (parachutes holding each other) recurses until the
+    /// stack is gone upstream: past `MAX_RECURSION` the count is undefined
+    /// ([`Undefined::EndlessLoop`](crate::common::ini::Undefined::EndlessLoop),
+    /// recorded against the container) and 0, and the rest of the walk is not
+    /// taken: a ring that holds an object twice branches at every level
+    /// (p1w13-sonnet, batch R8).
+    fn transport_slot_count_at(&mut self, id: ObjectId, depth: u32, ring: &mut bool) -> i32 {
+        if *ring {
+            return 0;
+        }
         let Some(o) = self.objects.find(id) else { return 0 };
         let mut count = o.template().get_raw_transport_slot_count();
         if let Some(contain) = self.get_contain(id) {
             if self.module_call(id, contain, ModuleCall::IsSpecialZeroSlotContainer).as_bool() {
                 count = 0;
+                if depth >= crate::logic::modules::open_contain::MAX_RECURSION {
+                    let me = crate::logic::world::module_call::ModuleHandle { object: id, index: contain };
+                    self.cuts.module_errors.push((me, crate::common::ini::IniError::undefined(crate::common::ini::Undefined::EndlessLoop)));
+                    *ring = true;
+                    return 0;
+                }
                 if let crate::logic::world::module_call::ModuleReply::Ids(items) =
                     self.module_call(id, contain, ModuleCall::GetContainedItems)
                 {
                     for item in items {
-                        count += self.get_transport_slot_count(item);
+                        count += self.transport_slot_count_at(item, depth + 1, ring);
                     }
                 }
             }

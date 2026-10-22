@@ -190,7 +190,9 @@ public:
 	Int getTransportSlotCount() const;   /* Object.cpp, verbatim: differential/l9_open_contain_r.inc */
 	class DockUpdateInterface *getDockUpdateInterface( void );   /* batch R3: Object.cpp, verbatim: differential/l9_open_contain_r.inc */
 	/* Thing.h: the test's bone table holds world positions already */
-	void convertBonePosToWorldPos(const Coord3D* bonePos, const Matrix3D* boneTransform, Coord3D* worldPos, Matrix3D* worldTransform) const { if (worldPos && bonePos) *worldPos = *bonePos; }
+	/* p1w13-sonnet, batch R8: Thing's, through the transform setOrientation makes from m_orientation and m_pos (differential/l9_open_contain_r.inc) */
+	void convertBonePosToWorldPos(const Coord3D* bonePos, const Matrix3D* boneTransform, Coord3D* worldPos, Matrix3D* worldTransform) const;
+	class ExitInterface *getObjectExitInterface() const;   /* batch R8: Object.cpp's, verbatim (differential/l9_open_contain_r.inc) */
 	/* --- end p1w13-sonnet --- */
 	Bool m_effDead = false;
 	/* update batch M: what AutoHealBehavior asks of the objects it scans, and the healing functions (cut verbatim from Object.cpp by build.rs,

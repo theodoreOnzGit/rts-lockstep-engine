@@ -124,7 +124,8 @@ void Object::clearModelConditionFlags(const ModelConditionFlags &clr) { if (m_dr
 void Object::setModelConditionFlags(const ModelConditionFlags &set) { if (m_drawable) m_drawable->setModelConditionState((ModelConditionFlagType)sdFirstFlag(set)); }
 
 /* the physics behaviour's calls that are not inline in PhysicsUpdate.h */
-void PhysicsBehavior::applyForce(const Coord3D *force) { ulog("pforce %d %08x %08x %08x", (int)g_sdObj->m_oid, realBits(force->x), realBits(force->y), realBits(force->z)); }
+int (*g_physOwnerHook)(const PhysicsBehavior *) = 0;   /* p1w13-sonnet, batch R8: the contain test names the owner (differential/l9_open_contain_r.inc) */
+void PhysicsBehavior::applyForce(const Coord3D *force) { ulog("pforce %d %08x %08x %08x", g_physOwnerHook ? g_physOwnerHook(this) : (int)g_sdObj->m_oid, realBits(force->x), realBits(force->y), realBits(force->z)); }
 void PhysicsBehavior::setAngles(Real yaw, Real pitch, Real roll) { ulog("pangles %d %08x %08x %08x", (int)g_sdObj->m_oid, realBits(yaw), realBits(pitch), realBits(roll)); }
 void l9sdSlaverDie(UpdateModule *) { ulog("slaverdie %d", (int)g_sdObj->m_oid); }
 

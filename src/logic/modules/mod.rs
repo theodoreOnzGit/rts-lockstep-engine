@@ -121,6 +121,7 @@ pub mod inactive_body;
 pub mod slow_death_behavior;
 pub mod open_contain;
 pub mod transport_contain;
+pub mod parachute_contain;
 pub mod heal_contain;
 pub mod overlord_contain;
 pub mod rider_change_contain;
@@ -478,6 +479,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::HealContain(d) => Some(made_update(
             heal_contain::HealContain::get_interface_mask(),
             heal_contain::HealContain::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::HealContain(m))),
+        )),
+        ModuleDataKind::ParachuteContain(d) => Some(made_update(
+            parachute_contain::ParachuteContain::get_interface_mask(),
+            parachute_contain::ParachuteContain::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::ParachuteContain(m))),
         )),
         ModuleDataKind::TransportContain(d) => Some(made_update(
             transport_contain::TransportContain::get_interface_mask(),

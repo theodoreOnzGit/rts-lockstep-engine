@@ -66,6 +66,8 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	void wakeUpAndAttemptToTarget( void );
 	AIFreeToExitType getAiFreeToExit(const Object* exiter) const { return (AIFreeToExitType)m_freeToExit; }
 	const Locomotor *getCurLocomotor() const { return m_hasLoco ? (const Locomotor *)this : 0; }   /* the test's locomotor is the AI itself */
+	Locomotor *getCurLocomotor() { return m_hasLoco ? (Locomotor *)this : 0; }   /* batch R8 */
+	void aiHunt( CommandSourceType cmdSource );   /* batch R8 */
 	Int m_freeToExit = 0;
 	Bool m_hasLoco = false;
 	/* --- end p1w13-sonnet --- */
