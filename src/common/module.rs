@@ -412,6 +412,8 @@ pub enum ModuleDataKind {
     SlowDeathBehavior(Arc<crate::logic::modules::slow_death_behavior::SlowDeathBehaviorModuleData>),
     /// `OpenContainModuleData`.
     OpenContain(Arc<crate::logic::modules::open_contain::OpenContainModuleData>),
+    /// `TransportContainModuleData`.
+    TransportContain(Arc<crate::logic::modules::transport_contain::TransportContainModuleData>),
     /// `UndeadBodyModuleData`.
     UndeadBody(Arc<crate::logic::modules::derived_bodies::UndeadBodyModuleData>),
     /// `HiveStructureBodyModuleData`.
@@ -513,6 +515,7 @@ impl ModuleDataKind {
             ModuleDataKind::ActiveBody(d) => &d.body.behavior.module_data,
             ModuleDataKind::SlowDeathBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::OpenContain(d) => &d.update.behavior.module_data,
+            ModuleDataKind::TransportContain(d) => &d.open.update.behavior.module_data,
             ModuleDataKind::UndeadBody(d) => &d.active.body.behavior.module_data,
             ModuleDataKind::HiveStructureBody(d) => &d.active.body.behavior.module_data,
             // --- end p1w13-sonnet ---
@@ -857,6 +860,13 @@ impl ModuleDataKind {
                         ModuleDataKind::OpenContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::TransportContain(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.open.update.behavior.module_data.set_module_tag_name_key(key);
                     true
                 }
                 None => false,

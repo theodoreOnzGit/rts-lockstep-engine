@@ -127,6 +127,14 @@ pub struct ProbeAnswers {
     pub can_fall: bool,
     /// `AIUpdateInterface::getEnterTarget()`.
     pub enter_target: ObjectId,
+    // --- p1w13-sonnet --- (batch R2: TransportContain)
+    /// `PhysicsBehavior::getCenterOfMassOffset()`.
+    pub center_of_mass_offset: f32,
+    /// `AIUpdateInterface::getAiFreeToExit(exiter)` (`AIFreeToExitType`).
+    pub free_to_exit: i32,
+    /// `AIUpdateInterface::getCurLocomotor()` is not `NULL`.
+    pub has_locomotor: bool,
+    // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     // --- p1w7-sonnet ---
     /// `isClearToApproach`.
@@ -527,6 +535,28 @@ impl ProbeModule {
             }
             ModuleCall::AiGetGoalObject => ModuleReply::Id(self.answers.goal_object),
             ModuleCall::PhysicsGetVelocity => ModuleReply::Coord(self.answers.velocity),
+            // --- p1w13-sonnet --- (batch R2: TransportContain; the lines of the C++ stand-ins)
+            ModuleCall::PhysicsApplyMotiveForce(f) => {
+                world.body_trace(format!("pmotive {} {:08x} {:08x} {:08x}", me.object, f.x.to_bits(), f.y.to_bits(), f.z.to_bits()));
+                ModuleReply::Done
+            }
+            ModuleCall::PhysicsGetCenterOfMassOffset => ModuleReply::Real(self.answers.center_of_mass_offset),
+            ModuleCall::PhysicsSetPitchRate(p) => {
+                world.body_trace(format!("ppitch {} {:08x}", me.object, p.to_bits()));
+                ModuleReply::Done
+            }
+            ModuleCall::AiSetAttitude(a) => {
+                world.body_trace(format!("aiattitude {} {a}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiWakeUpAndAttemptToTarget => {
+                world.body_trace(format!("aiwake {}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiGetFreeToExit { .. } => ModuleReply::Int(self.answers.free_to_exit),
+            ModuleCall::AiHasCurLocomotor => ModuleReply::Bool(self.answers.has_locomotor),
+            ModuleCall::ReserveDoorForExit { .. } => ModuleReply::Unhandled,
+            // --- end p1w13-sonnet ---
             // OpenContain's test: the calls the container makes on its riders are lines of the trace (`bt ...`)
             ModuleCall::AiIdleFrom { command_source } => {
                 world.body_trace(format!("aiidlefrom {} {command_source}", me.object));

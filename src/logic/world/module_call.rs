@@ -449,6 +449,24 @@ pub enum ModuleCall {
     PhysicsGetMass,
     /// `PhysicsBehavior::getAllowToFall()`; replies [`ModuleReply::Bool`].
     PhysicsGetAllowToFall,
+    // --- p1w13-sonnet --- (batch R2: TransportContain)
+    /// `PhysicsBehavior::applyMotiveForce(force)`.
+    PhysicsApplyMotiveForce(Coord3D),
+    /// `PhysicsBehavior::getCenterOfMassOffset()`; replies [`ModuleReply::Real`].
+    PhysicsGetCenterOfMassOffset,
+    /// `PhysicsBehavior::setPitchRate(pitch)`.
+    PhysicsSetPitchRate(f32),
+    /// `AIUpdateInterface::setAttitude(attitude)` (`AttitudeType`).
+    AiSetAttitude(i32),
+    /// `AIUpdateInterface::wakeUpAndAttemptToTarget()`.
+    AiWakeUpAndAttemptToTarget,
+    /// `AIUpdateInterface::getAiFreeToExit(exiter)`; replies [`ModuleReply::Int`] (`AIFreeToExitType`).
+    AiGetFreeToExit { exiter: ObjectId },
+    /// `AIUpdateInterface::getCurLocomotor() != NULL`; replies [`ModuleReply::Bool`].
+    AiHasCurLocomotor,
+    /// `ExitInterface::reserveDoorForExit(objType, specificObject)` of a contain module; replies [`ModuleReply::Int`] (`ExitDoorType`).
+    ReserveDoorForExit { specific: ObjectId },
+    // --- end p1w13-sonnet ---
     /// `StealthUpdate::markAsDetected()`.
     StealthMarkAsDetected,
     /// `SpawnBehaviorInterface::getClosestSlave(pos)` (`HiveStructureBody`); replies [`ModuleReply::Id`] (`INVALID_ID`: no slave).

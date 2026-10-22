@@ -83,7 +83,51 @@ pub struct WeaponFacts {
     pub possible_next_shot_frame: u32,
 }
 
+// --- p1w13-sonnet --- (batch R2: TransportContain)
+/// What `TransportContain::letRidersUpgradeWeaponSet` reads of a weapon in a slot.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WeaponSlotFacts {
+    /// `getTemplate()->isContactWeapon()`.
+    pub is_contact_weapon: bool,
+    /// `isDamageWeapon()`.
+    pub is_damage_weapon: bool,
+}
+// --- end p1w13-sonnet ---
+
 impl World {
+    // --- p1w13-sonnet --- (batch R2: TransportContain)
+    /// `obj->getWeaponInWeaponSlot(slot)` as `TransportContain` reads it: the weapon set's weapon, else the table `cuts.weapon_slot_facts`. `None` is
+    /// `NULL`.
+    pub fn weapon_slot_facts(&self, id: ObjectId, slot: i32) -> Option<WeaponSlotFacts> {
+        let o = self.objects.find(id)?;
+        if let Some(w) = o.weapon_set.get_weapon_in_weapon_slot(slot) {
+            let store = &self.statics.weapon_store;
+            let contact = store.templates().get(w.template()).is_some_and(|t| t.is_contact_weapon());
+            return Some(WeaponSlotFacts { is_contact_weapon: contact, is_damage_weapon: w.is_damage_weapon(store) });
+        }
+        self.cuts.weapon_slot_facts.get(&(id, slot)).copied()
+    }
+
+    /// `toWeapon->transferNextShotStatsFrom(*fromWeapon)` when both objects have a weapon in those slots (the Patch 1.01 Jarmen Kell hack). Real weapons
+    /// are changed; a weapon of the table is a [`CutCall::WeaponTransferNextShotStats`] record.
+    pub fn weapon_transfer_next_shot_stats(&mut self, to: ObjectId, to_slot: i32, from: ObjectId, from_slot: i32) {
+        if self.weapon_slot_facts(to, to_slot).is_none() || self.weapon_slot_facts(from, from_slot).is_none() {
+            return;
+        }
+        let now = self.frame();
+        let source = self.objects.find(from).and_then(|o| o.weapon_set.get_weapon_in_weapon_slot(from_slot).cloned());
+        let target_real = self.objects.find(to).is_some_and(|o| o.weapon_set.get_weapon_in_weapon_slot(to_slot).is_some());
+        match (source, target_real) {
+            (Some(src), true) => {
+                if let Some(w) = self.objects.find_mut(to).and_then(|o| o.weapon_set.get_weapon_in_weapon_slot_mut(to_slot)) {
+                    w.transfer_next_shot_stats_from(&src, now);
+                }
+            }
+            _ => self.cut(CutCall::WeaponTransferNextShotStats { to, from }),
+        }
+    }
+    // --- end p1w13-sonnet ---
+
     /// `Object::getCurrentWeapon()` as a module reads it: the weapon set's current weapon when it has one, else the table `cuts.cur_weapon` (see
     /// `modules::fire_ocl_after_weapon_cooldown_update`). `None` is `NULL`.
     pub fn current_weapon_facts(&self, id: ObjectId) -> Option<WeaponFacts> {
@@ -405,6 +449,10 @@ pub enum CutCall {
     WeaponSetOnWeaponBonusChange { object: ObjectId },
     /// `helper->sleepUntil(when)` for that helper.
     HelperSleepUntil { object: ObjectId, kind: HelperKind, when: u32 },
+    // --- p1w13-sonnet --- (batch R2: TransportContain)
+    /// `toWeapon->transferNextShotStatsFrom(*fromWeapon)` for weapons of the table (`World::weapon_transfer_next_shot_stats`).
+    WeaponTransferNextShotStats { to: ObjectId, from: ObjectId },
+    // --- end p1w13-sonnet ---
 }
 
 /// The values of `TheGlobalData`, `TheAI->getAiData()`, `TheGameLogic` and
@@ -586,6 +634,10 @@ pub struct ObjectCuts {
     pub special_power_denied: BTreeSet<ObjectId>,
     /// `weapon != NULL` per (object, slot).
     pub weapons: BTreeSet<(ObjectId, i32)>,
+    // --- p1w13-sonnet --- (batch R2: TransportContain)
+    /// What `weapon_slot_facts` answers for an object with no weapon set, by object and slot (no entry: `NULL`).
+    pub weapon_slot_facts: BTreeMap<(ObjectId, i32), WeaponSlotFacts>,
+    // --- end p1w13-sonnet ---
     /// `m_weaponSet.hasAnyWeapon()` per object.
     pub weapon_sets_with_weapons: BTreeSet<ObjectId>,
     // --- p1w12-sonnet ---
@@ -653,6 +705,9 @@ pub struct ObjectCuts {
 impl Default for ObjectCuts {
     fn default() -> Self {
         ObjectCuts {
+            // --- p1w13-sonnet --- (batch R2)
+            weapon_slot_facts: BTreeMap::new(),
+            // --- end p1w13-sonnet ---
             log: None,
             trace: None,
             reentrant_skips: Vec::new(),

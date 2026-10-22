@@ -56,6 +56,13 @@ pub struct ContainCutTables {
     pub booby_trapped: BTreeSet<ObjectId>,
     /// How deep the recursion of `addOrRemoveObjFromWorld` and `isPassengerAllowedToFire` is: a ring of containers recurses for ever upstream.
     pub recursion: u32,
+    // --- p1w13-sonnet --- (batch R2: TransportContain)
+    /// `draw->getPristineBonePositions(exitBone, 0, &pos, NULL, 1) == 1` then `convertBonePosToWorldPos`: the world position of a transport's exit
+    /// bone, by object and bone name (no entry: the bone is not in the art).
+    pub exit_bones: BTreeMap<(ObjectId, Vec<u8>), Coord3D>,
+    /// `TheAI->pathfinder()->validMovementTerrain(layer, rider's locomotor, pos)`: the riders for which the terrain at the transport is valid.
+    pub valid_movement_terrain: BTreeSet<ObjectId>,
+    // --- end p1w13-sonnet ---
 }
 
 /// What a contain module did to a unit that is not translated, or that is run for real but cascades. See the module docs.
@@ -111,6 +118,14 @@ pub enum ContainCall {
     GetMultiLogicalBonePosition { object: ObjectId, prefix: Vec<u8>, max: i32 },
     /// `getSingleLogicalBonePositionOnTurret(TURRET_MAIN, name, NULL, &matrix)`.
     GetSingleLogicalBonePositionOnTurret { object: ObjectId, name: Vec<u8> },
+    // --- p1w13-sonnet --- (batch R2: TransportContain)
+    /// `obj->setDisabled(type)`.
+    SetDisabled { object: ObjectId, disabled: i32 },
+    /// `obj->clearDisabled(type)`.
+    ClearDisabled { object: ObjectId, disabled: i32 },
+    /// `TheThingFactory->newObject(template, team)` for a transport's initial payload.
+    NewObject { template: u16, team: i32 },
+    // --- end p1w13-sonnet ---
 }
 
 impl World {
@@ -324,4 +339,57 @@ impl World {
         self.contain_cut(ContainCall::GetSingleLogicalBonePositionOnTurret { object: id, name: name.to_vec() });
         self.cuts.contain.turret_bones.get(&(id, name.to_vec())).copied()
     }
+
+    // --- p1w13-sonnet --- (batch R2: TransportContain)
+    /// `rider->setDisabled(type)`. The stub records the call only (the test's stand-in logs it and keeps no bit).
+    pub fn contain_set_disabled(&mut self, id: ObjectId, disabled: crate::common::disabled_types::DisabledType) {
+        self.contain_cut(ContainCall::SetDisabled { object: id, disabled: disabled as i32 });
+        if !self.cuts.contain.stub_object_calls {
+            self.set_disabled(id, disabled);
+        }
+    }
+
+    /// `rider->clearDisabled(type)`. The stub records the call and clears the bit (the bookkeeping the stand-in keeps).
+    pub fn contain_clear_disabled(&mut self, id: ObjectId, disabled: crate::common::disabled_types::DisabledType) {
+        self.contain_cut(ContainCall::ClearDisabled { object: id, disabled: disabled as i32 });
+        if self.cuts.contain.stub_object_calls {
+            if let Some(o) = self.objects.find_mut(id) {
+                o.disabled.set(disabled, 0);
+            }
+        } else {
+            self.clear_disabled(id, disabled);
+        }
+    }
+
+    /// `getDrawable()->setModelConditionState(a)` (`set`) or `clearModelConditionState(a)`, if the object has a drawable.
+    pub fn contain_drawable_model_condition(&mut self, id: ObjectId, a: i32, set: bool) {
+        if set {
+            self.set_model_condition_state(id, a);
+        } else {
+            self.clear_model_condition_state(id, a);
+        }
+    }
+
+    /// The world position of a transport's exit bone, if it has a drawable and the art has the bone (see [`ContainCutTables::exit_bones`]).
+    pub fn contain_exit_bone_world_position(&mut self, id: ObjectId, bone: &[u8]) -> Option<Coord3D> {
+        if !self.has_drawable(id) {
+            return None;
+        }
+        self.cuts.contain.exit_bones.get(&(id, bone.to_vec())).copied()
+    }
+
+    /// `TheAI->pathfinder()->validMovementTerrain(transport's layer, rider's locomotor, pos)` (see [`ContainCutTables::valid_movement_terrain`]).
+    pub fn contain_valid_movement_terrain(&mut self, _transport: ObjectId, rider: ObjectId, _pos: &Coord3D) -> bool {
+        self.cuts.contain.valid_movement_terrain.contains(&rider)
+    }
+
+    /// `TheThingFactory->newObject(template, team)` for a payload; `INVALID_ID` when the stub records it (the test's factory makes nothing).
+    pub fn contain_new_payload_object(&mut self, template: u16, team: crate::logic::world::ids::TeamId, status: crate::common::object_status_types::ObjectStatusMaskType) -> ObjectId {
+        self.contain_cut(ContainCall::NewObject { template, team: team as i32 });
+        if self.cuts.contain.stub_object_calls {
+            return INVALID_ID;
+        }
+        self.thing_factory_new_object(template, Some(team), status).unwrap_or(INVALID_ID)
+    }
+    // --- end p1w13-sonnet ---
 }

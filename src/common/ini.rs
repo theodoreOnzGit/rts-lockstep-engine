@@ -340,6 +340,10 @@ pub enum IniErrorKind {
     Xfer(XferStatus),
     /// Upstream is undefined here.
     Undefined(Undefined),
+    // --- p1w13-sonnet ---
+    /// `throw ERROR_BAD_ARG` (`ThingFactory::newObject(NULL)`, reached from a module during a game: `TransportContain::createPayload`).
+    BadArg,
+    // --- end p1w13-sonnet ---
     // --- p1w4-thingtemplate ---
     /// An object template names a behavior or body module that
     /// `ModuleFactory` registers but whose class is not translated yet
@@ -409,6 +413,7 @@ impl IniError {
         }
         Some(match self.kind {
             IniErrorKind::Bug => Thrown::ErrorCode(ERROR_BUG),
+            IniErrorKind::BadArg => Thrown::ErrorCode(crate::common::errors::ERROR_BAD_ARG),
             IniErrorKind::BitIndexOutOfRange => Thrown::OutOfRange,
             IniErrorKind::Xfer(_) => return None,
             IniErrorKind::ModuleNotTranslated(_) | IniErrorKind::ModuleUnknown(_) | IniErrorKind::ModuleNotInShippedBuild(_) => return None,

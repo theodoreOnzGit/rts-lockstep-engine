@@ -515,9 +515,17 @@ pub trait OpenContainVirtuals: Clone + PartialEq + Sized {
         true
     }
     /// `isExitBusy()`.
-    fn is_exit_busy(&self) -> bool {
+    /// `isExitBusy()`: `FALSE` ("contain style exiters are getting the ability to space out exits"). It takes the world: `TransportContain` asks the
+    /// frame and the terrain.
+    fn is_exit_busy(&mut self, _world: &mut World, _me: ModuleHandle) -> bool {
         false
     }
+    // --- p1w13-sonnet --- (batch R2)
+    /// `reserveDoorForExit(objType, specificObject)`: `DOOR_1`.
+    fn reserve_door_for_exit(&mut self, _world: &mut World, _me: ModuleHandle, _specific: ObjectId) -> ExitDoorType {
+        crate::logic::module::update_module::DOOR_1
+    }
+    // --- end p1w13-sonnet ---
     /// The other calls of `Object` and the other modules that are the derived class's own (the transports' door reservation, the garrison's positions, ...):
     /// [`ModuleReply::Unhandled`] unless overridden.
     fn other_call(&mut self, _world: &mut World, _me: ModuleHandle, _call: ModuleCall) -> ModuleReply {
@@ -1755,7 +1763,10 @@ pub fn contain_module_call<T: OpenContainVirtuals>(t: &mut T, world: &mut World,
         }
         ModuleCall::HasObjectsWantingToEnterOrExit => ModuleReply::Bool(!t.oc().object_enter_exit_info.is_empty()),
         ModuleCall::HasContainExitInterface => ModuleReply::Bool(true),
-        ModuleCall::IsExitBusy => ModuleReply::Bool(t.is_exit_busy()),
+        ModuleCall::IsExitBusy => ModuleReply::Bool(t.is_exit_busy(world, me)),
+        // --- p1w13-sonnet --- (batch R2)
+        ModuleCall::ReserveDoorForExit { specific } => ModuleReply::Int(t.reserve_door_for_exit(world, me, specific)),
+        // --- end p1w13-sonnet ---
         ModuleCall::ExitObjectViaDoor { obj, door } => {
             t.exit_object_via_door(world, me, obj, door);
             ModuleReply::Done
@@ -1790,6 +1801,13 @@ pub fn contain_module_call<T: OpenContainVirtuals>(t: &mut T, world: &mut World,
 }
 
 // ---- the concrete class ---------------------------------------------------------------------------------------------------------------------------------------
+
+// --- p1w13-sonnet --- (batch R2)
+/// `enableLoadSounds(enable)` on the module itself (a derived class's `createPayload` asks its own contain interface).
+pub fn enable_load_sounds<T: OpenContainVirtuals>(t: &mut T, enable: bool) {
+    t.oc_mut().load_sounds_enabled = enable;
+}
+// --- end p1w13-sonnet ---
 
 impl OpenContainVirtuals for OpenContain {
     fn oc(&self) -> &OpenContain {
