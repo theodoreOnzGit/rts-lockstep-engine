@@ -91,12 +91,22 @@ use crate::logic::world::team_ops::TemplateRef;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector3::Vector3;
 
-/// (test-only) the planted bug that is switched on by `OCL_PLANT`.
+/// (test-only) the planted bug that is switched on by `OCL_PLANT`, for the differential tests. It exists only with the `differential`
+/// feature: in every other build it is the constant `false`, so no environment variable can change the game's logic.
+#[cfg(feature = "differential")]
 #[doc(hidden)]
 pub fn plant(k: u32) -> bool {
     use std::sync::OnceLock;
     static P: OnceLock<u32> = OnceLock::new();
     *P.get_or_init(|| std::env::var("OCL_PLANT").ok().and_then(|s| s.parse().ok()).unwrap_or(0)) == k
+}
+
+/// Without the `differential` feature no bug is ever planted.
+#[cfg(not(feature = "differential"))]
+#[doc(hidden)]
+#[inline(always)]
+pub const fn plant(_k: u32) -> bool {
+    false
 }
 
 /// Where upstream is undefined: see the module docs.

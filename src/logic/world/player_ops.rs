@@ -1827,9 +1827,20 @@ pub fn player_add_skill_points_for_kill<H: PlayerHost>(h: &mut H, p: PlayerIndex
     player_add_skill_points(h, p, skill_value)
 }
 
-/// (test-only) the planted bug that is switched on by `PLAYER_PLANT`.
+/// (test-only) the planted bug that is switched on by `PLAYER_PLANT`, for the differential tests. It exists only with the `differential`
+/// feature: in every other build it is the constant `false`, so no environment variable can change the game's logic.
+#[cfg(feature = "differential")]
+#[doc(hidden)]
 pub fn plant(k: u32) -> bool {
     use std::sync::OnceLock;
     static P: OnceLock<u32> = OnceLock::new();
     *P.get_or_init(|| std::env::var("PLAYER_PLANT").ok().and_then(|s| s.parse().ok()).unwrap_or(0)) == k
+}
+
+/// Without the `differential` feature no bug is ever planted.
+#[cfg(not(feature = "differential"))]
+#[doc(hidden)]
+#[inline(always)]
+pub const fn plant(_k: u32) -> bool {
+    false
 }
