@@ -4,11 +4,13 @@
 // Differential test of the translation of (EA's release,
 // https://github.com/electronicarts/CnC_Generals_Zero_Hour, commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/OpenContain.cpp
+//   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/TransportContain.cpp
 //
 // Licensed under the GNU General Public License version 3 (GPL-3.0-only), with
 // the additional terms in NOTICE.md.
 
-//! `OpenContain` (`logic::modules::open_contain`) against the unchanged C++, `p1w13-sonnet`, batch R.
+//! `OpenContain` (`logic::modules::open_contain`, batch R) and `TransportContain` (`logic::modules::transport_contain`, batch R2) against the unchanged C++,
+//! `p1w13-sonnet`.
 //!
 //! # Method
 //!
@@ -26,6 +28,16 @@
 //! Each case reads a `D` block (the fifteen fields; mostly well formed) for the first container and runs 1 to about 60 ops: adding and removing objects, killing
 //! and harming them, collisions, deaths, updates, the exits through the door, the orders to the passengers, the queries, the environment (the frame, the selection,
 //! the model conditions, the statuses, the places, the booby traps, the AI) and the three xfers with the load post process.
+//!
+//! Batch R2 adds `TransportContain`: one data block in two is a `T` block (the base's fields, then `Slots`, `ExitBone`, `ExitPitchRate`, `InitialPayload`,
+//! `HealthRegen%PerSec`, `ExitDelay` and the eight flags), and each later container is a transport one time in two (its data from the scene). The scene adds, per
+//! object, what a transport reads of its riders and itself: the template's raw transport slot count, an airborne locomotor, the AI's free-to-exit answer and
+//! locomotor, the movement terrain, the physics block's centre of mass and velocity, the three weapon slots (contact, damage), `DISABLED_UNMANNED`, the kinds
+//! of the Jarmen Kell hack (`CLIFF_JUMPER`, `HERO`, `SALVAGER`) and the art's exit bone. Ops 49 to 55 are the transport's own: `reserveDoorForExit`,
+//! `isExitBusy`, `getContainMax`, `getExtraSlotsInUse`, `onCapture`, `killRidersWhoAreNotFreeToExit`, `isSpecificRiderFreeToExit`. The payload's factory
+//! finds the scene's templates by name and makes nothing (`newobject <template> <team>` is a line of the log; a missing template throws `ERROR_BAD_ARG` out of
+//! `update`, compared as the op's status), so the payload's riders are never added: that half of `createPayload` (plant 1424) is left to a test with a real
+//! factory.
 //!
 //! Compared, bit for bit: the read's throw; the data; per op the throw status, a result word, the effects in order, the xfer status, bytes and CRC, and the state of
 //! every object (the container's lists, counters, fire points, rally point and flags; the place, the container, the statuses).
@@ -267,6 +279,8 @@ struct Obj {
     payload_name: u32,
     /// index into [`EXIT_BONES`]
     exit_bone_name: u32,
+    /// the body's health (a transport heals its riders up to `max_health`)
+    health: f32,
 }
 
 /// The payload template names and exit bone names a scene-built transport can name (the driver's `kPayload` and `kExitBone`).
@@ -369,6 +383,7 @@ impl Obj {
         w.s(self.payload_count);
         w.u(self.payload_name);
         w.u(self.exit_bone_name);
+        w.f(self.health);
     }
 
     fn read(r: &mut R<'_>) -> Obj {
@@ -467,6 +482,7 @@ impl Obj {
         o.payload_count = r.s();
         o.payload_name = r.u();
         o.exit_bone_name = r.u();
+        o.health = r.f();
         o
     }
 }
@@ -617,7 +633,8 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     }
     o.kinds = g.below(256) & g.below(256) | if g.below(3) == 0 { 1 } else { 0 };
     o.status = g.below(8) & g.below(8);
-    o.player = if g.below(40) == 0 { -1 } else { g.below(4) as i32 };
+    // one object in two belongs to player 0: a transport only takes its own player's units, so the riders it holds are often enough multi-slot ones
+    o.player = if g.below(40) == 0 { -1 } else if g.below(2) == 0 { 0 } else { g.below(4) as i32 };
     for p in o.pos.iter_mut() {
         *p = coord(g);
     }
@@ -708,6 +725,7 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     o.payload_count = *pick(g, &[&0i32, &0, &0, &1, &2]);
     o.payload_name = g.below(4);
     o.exit_bone_name = g.below(3);
+    o.health = if g.below(3) == 0 { o.max_health } else { *pick(g, &[&0.0f32, &20.0, &99.5, &150.0]) };
     o
 }
 
@@ -789,7 +807,7 @@ fn gen_op(g: &mut Gen, c: u32, a: u32) -> [u32; 5] {
             77 => [22, c, 0, 0, 0],
             78 => [23, c, 0, 0, 0],
             79 => [24, c, g.below(2), 0, 0],
-            80 => [25, c, 0, 0, 0],
+            80 => [25, c, a, g.below(2), 0],
             81..=82 => [26, c, a, 0, 0],
             83..=84 => [27, c, a, 0, 0],
             85 => [28, c, g.below(2), 0, 0],
@@ -1033,6 +1051,9 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                 Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Clear(a), .. }) => log.push(format!("mcclear {}", a[0])),
                 _ => {}
             }
+        } else if t.starts_with("heal ") {
+            // a transport's heal of a rider (`probe_effect_trace`); the driver's body logs the same line
+            log.push(t);
         } else if let Some(line) = t.strip_prefix("bt ") {
             // a probe's line; the idle order carries its command source, which the C++ stand-in does not print
             let tok: Vec<&str> = line.split(' ').collect();
@@ -1180,6 +1201,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.body.probe_trace = true;
+    w.cuts.probe_effect_trace = true;
     w.cuts.contain.stub_object_calls = true;
     for i in 0..8 {
         w.cuts.terrain_layer[i] = sc.layer[i];
@@ -1245,7 +1267,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             pm.interfaces = if o.has_body { MODULEINTERFACE_BODY } else { 0 };
             pm.is_ai = o.has_ai;
             pm.is_stealth = o.has_stealth;
-            pm.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(a, if o.has_body { o.max_health } else { 0.0 }, Default::default())));
+            let mut probe = ProbeModule::new(a, if o.has_body { o.max_health } else { 0.0 }, Default::default());
+            probe.health = if o.has_body { o.health } else { 0.0 };
+            pm.body = Some(UpdateBody::ModuleProbe(probe));
             modules.push(pm);
         }
         if o.has_phys {
@@ -1502,7 +1526,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     24 => {
                         w.module_call(id, m, ModuleCall::SetPassengerAllowedToFire(o[2] != 0));
                     }
-                    25 => result = u32::from(w.module_call(id, m, ModuleCall::IsPassengerAllowedToFire(INVALID_ID)).as_bool()),
+                    25 => result = u32::from(w.module_call(id, m, ModuleCall::IsPassengerAllowedToFire(if o[3] & 1 != 0 { rider } else { INVALID_ID })).as_bool()),
                     26 => {
                         let int = |r: ModuleReply| if let ModuleReply::Int(i) = r { i as u32 } else { 0xdead_0001 };
                         let boo = |r: ModuleReply| u32::from(r.as_bool());

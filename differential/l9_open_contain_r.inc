@@ -84,8 +84,20 @@ std::string ctInfoLine(const DamageInfo *i)
 class CtBody : public InactiveBody
 {
 public:
-	CtBody(Thing *t, const ModuleData *d) : InactiveBody(t, d), m_max(0) {}
+	CtBody(Thing *t, const ModuleData *d) : InactiveBody(t, d), m_max(0), m_health(0) {}
 	virtual Real getMaxHealth() const { return m_max; }
+	/* --- p1w13-sonnet --- (batch R2: TransportContain heals its riders) the health the scene gives, and a heal that logs and fills up to the maximum */
+	virtual Real getHealth() const { return m_health; }
+	virtual void attemptHealing(DamageInfo *info)
+	{
+		ulog("heal %d %08x %d", (int)AsObject(const_cast<Thing *>(static_cast<const Thing *>(getObject())))->m_oid, realBits(info->in.m_amount), (int)info->in.m_sourceID);
+		Real room = m_max - m_health;
+		Real healed = (info->in.m_damageType == DAMAGE_HEALING && info->in.m_amount < room) ? info->in.m_amount : room;
+		m_health += healed;
+		info->out.m_actualDamageDealt = healed;
+	}
+	Real m_health;
+	/* --- end p1w13-sonnet --- */
 	virtual void attemptDamage(DamageInfo *info) { ulog("bodydamage %d %s", (int)AsObject(const_cast<Thing *>(static_cast<const Thing *>(getObject())))->m_oid, ctInfoLine(info).c_str()); }
 	Real m_max;
 };
@@ -492,7 +504,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		unsigned turret[CT_FP][3];
 		/* --- p1w13-sonnet --- (batch R2: TransportContain) */
 		unsigned cls; int rawSlots; unsigned airborne; int freeToExit; unsigned hasLoco, validTerrain, com, vel[3], weapons, unmanned, extraKinds, exitBoneHas, exitBone[3];
-		int slotCap; unsigned regen, exitDelay, tflags, pitch; int payloadCount; unsigned payloadName, exitBoneName;
+		int slotCap; unsigned regen, exitDelay, tflags, pitch; int payloadCount; unsigned payloadName, exitBoneName, health;
 		/* --- end p1w13-sonnet --- */
 	} oc[CT_OBJS];
 	for (int k = 0; k < g_ctN; ++k) {
@@ -515,7 +527,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		o.cls = c.u(); o.rawSlots = c.s(); o.airborne = c.u(); o.freeToExit = c.s(); o.hasLoco = c.u(); o.validTerrain = c.u(); o.com = c.u();
 		for (int i = 0; i < 3; ++i) o.vel[i] = c.u();
 		o.weapons = c.u(); o.unmanned = c.u(); o.extraKinds = c.u(); o.exitBoneHas = c.u(); for (int i = 0; i < 3; ++i) o.exitBone[i] = c.u();
-		o.slotCap = c.s(); o.regen = c.u(); o.exitDelay = c.u(); o.tflags = c.u(); o.pitch = c.u(); o.payloadCount = c.s(); o.payloadName = c.u(); o.exitBoneName = c.u();
+		o.slotCap = c.s(); o.regen = c.u(); o.exitDelay = c.u(); o.tflags = c.u(); o.pitch = c.u(); o.payloadCount = c.s(); o.payloadName = c.u(); o.exitBoneName = c.u(); o.health = c.u();
 		/* --- end p1w13-sonnet --- */
 	}
 	for (int i = 0; i < g_ctN; ++i) for (int j = 0; j < g_ctN; ++j) g_ctRel[i][j] = (Relationship)c.s();
@@ -647,6 +659,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			ModuleData *bd = new ModuleData;
 			a.body = new CtBody(a.obj, bd);
 			a.body->m_max = ctF(o.maxHealth);
+			a.body->m_health = ctF(o.health);   /* --- p1w13-sonnet --- (batch R2) */
 			a.obj->m_effDead = o.effDead != 0;   /* InactiveBody::InactiveBody made its object effectively dead: the scene says whether it is */
 			a.obj->m_body = a.body;
 			a.behaviors[idx++] = a.body;
@@ -786,7 +799,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				case 22: if (oc2) oc2->containReactToTransformChange(); break;
 				case 23: if (oc2) oc2->onSelling(); break;
 				case 24: if (oc2) oc2->setPassengerAllowedToFire(o[2] != 0); break;
-				case 25: if (oc2) result = oc2->isPassengerAllowedToFire() ? 1 : 0; break;
+				case 25: if (oc2) result = oc2->isPassengerAllowedToFire((o[3] & 1) ? r2->getID() : INVALID_ID) ? 1 : 0; break;   /* p1w13-sonnet, batch R2: the rider's id when the fourth word is odd */
 				case 26: if (oc2) {
 					unsigned h = realBits(oc2->getContainedItemsMass());
 					h = h * 31u + oc2->getStealthUnitsContained();
