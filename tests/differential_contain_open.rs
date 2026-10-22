@@ -1078,9 +1078,11 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     o
 }
 
-fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> Vec<u32> {
+/// batch R9: one scene in eight is the mob scene ([`mob_scene`]); the ops it starts with are [`MOB_SCENE_OPS`].
+fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> (Vec<u32>, bool) {
     let mut w = W(Vec::new());
-    let n = 2 + g.below(3) as usize;
+    let mob = g.below(8) == 0;
+    let n = if mob { 4 } else { 2 + g.below(3) as usize };
     w.u(g.below(300));
     w.u(g.u32());
     w.u(g.u32());
@@ -1101,11 +1103,15 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> Vec<u32> {
                 _ => 0,
             };
         }
+        if mob {
+            mob_scene(&mut o, k);
+        }
         o.write(&mut w);
     }
     for i in 0..n {
         for j in 0..n {
-            w.s(if i == j { 2 } else { *pick(g, &[&0i32, &1, &2, &2]) });
+            let r = *pick(g, &[&0i32, &1, &2, &2]);
+            w.s(if i == j || mob { 2 } else { r });
         }
     }
     for _ in 0..8 {
@@ -1133,7 +1139,7 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> Vec<u32> {
     for _ in 0..3 {
         w.f(coord(g));
     }
-    w.0
+    (w.0, mob)
 }
 
 /// One op of five words: `[op, container, a, b, c]`.
@@ -1230,9 +1236,55 @@ fn gen_op(g: &mut Gen, c: u32, a: u32) -> [u32; 5] {
 }
 
 fn gen_case(g: &mut Gen, data: &Option<ModuleDataKind>, _n_up: usize, _upgrades: &[String]) -> (Vec<u32>, Vec<[u32; 5]>) {
-    let cfg = gen_scene(g, data);
+    let (cfg, mob) = gen_scene(g, data);
     let n = cfg[3];
-    (cfg, gen_ops(g, n))
+    let mut ops = gen_ops(g, n);
+    if mob {
+        ops.splice(0..0, MOB_SCENE_OPS.iter().copied());
+    }
+    (cfg, ops)
+}
+
+/// batch R9: the ops the mob scene starts with: is the parachute (object 3) valid for the mob nexus (object 2); the 3-slot infantry (object 1) goes in
+/// (2 extra slots); is the parachute valid now (the rider it holds takes 2 slots of the 4).
+const MOB_SCENE_OPS: [[u32; 5]; 3] = [[8, 1, 2, 1, 0], [0, 1, 0, 0, 0], [8, 1, 2, 1, 0]];
+
+/// batch R9: the mob scene, which the random scenes almost never build: a 3-slot infantry (object 1), a scene-built mob nexus with 4 slots that takes
+/// infantry (object 2), a parachute that is not infantry (object 3) holding a 2-slot infantry (object 4), all of player 0 and allied. A mob nexus judges a
+/// parachute by what it holds (plant 1543), and counts its extra slots (plant 1545).
+fn mob_scene(o: &mut Obj, k: usize) {
+    const INFANTRY_BIT: u32 = 1 << 4;
+    o.player = 0;
+    o.eff_dead = false;
+    o.held = false;
+    match k {
+        0 => {
+            o.kinds |= INFANTRY_BIT;
+            o.raw_slots = 3;
+            o.contained_by = 0;
+        }
+        1 => {
+            o.has_contain = true;
+            o.cls = 9;
+            o.slot_cap = 4;
+            o.allow_mode = 0;
+            o.forbid_mask = 0;
+            o.allow_rel = 7;
+            o.contained_by = 0;
+        }
+        2 => {
+            o.has_contain = true;
+            o.cls = 8;
+            o.kinds &= !INFANTRY_BIT;
+            o.raw_slots = 0;
+            o.contained_by = 0;
+        }
+        _ => {
+            o.kinds |= INFANTRY_BIT;
+            o.raw_slots = 2;
+            o.contained_by = 3;
+        }
+    }
 }
 
 // ---- the Rust run ---------------------------------------------------------------------------------------------------------------------------------------------------

@@ -16,6 +16,14 @@ int l9TrappedRun(L9RunFn f, const char *filename, const char *xfer_path, const u
 	memset(&sa, 0, sizeof sa);
 	sa.sa_handler = l9tCrashHandler;
 	sigemptyset(&sa.sa_mask);
+	/* p1w13-sonnet, batch R9: on the thread's alternate signal stack, so that a stack overflow (a ring of containers walked for ever by a C++ run a planted
+	** Rust bug steered there) is trapped too; the test thread has one (Rust's), else this run installs its own */
+	sa.sa_flags = SA_ONSTACK;
+	static char s_l9tAltStack[1 << 16];
+	stack_t oldAlt, alt;
+	sigaltstack(0, &oldAlt);
+	const bool ownAlt = (oldAlt.ss_flags & SS_DISABLE) != 0;
+	if (ownAlt) { alt.ss_sp = s_l9tAltStack; alt.ss_size = sizeof s_l9tAltStack; alt.ss_flags = 0; sigaltstack(&alt, 0); }
 	sigaction(SIGSEGV, &sa, &oldSegv);
 	sigaction(SIGBUS, &sa, &oldBus);
 	g_l9tArmed = 1;
@@ -31,6 +39,7 @@ int l9TrappedRun(L9RunFn f, const char *filename, const char *xfer_path, const u
 	g_l9tArmed = 0;
 	sigaction(SIGSEGV, &oldSegv, 0);
 	sigaction(SIGBUS, &oldBus, 0);
+	if (ownAlt) sigaltstack(&oldAlt, 0);
 	return rc;
 }
 }  // namespace

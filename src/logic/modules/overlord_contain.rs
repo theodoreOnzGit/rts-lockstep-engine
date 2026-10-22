@@ -348,7 +348,11 @@ impl TransportContainVirtuals for OverlordContain {
     /// `onBodyDamageStateChange(info, old, new)`: the one rider takes the state ("I want just me").
     fn t_on_body_damage_state_change(&mut self, world: &mut World, me: ModuleHandle, _info: &DamageInfo, _old_state: i32, new_state: i32) {
         if new_state != BODY_RUBBLE && self.oc().contain_list_size() == 1 && !crate::logic::modules::plant(1492) {
-            let my_guy = self.oc().contain_list()[0];
+            // `m_containList.front()`: undefined when the size disagrees with an empty list
+            let Some(&my_guy) = self.oc().contain_list().first() else {
+                undefined(world, me, Undefined::NullObject);
+                return;
+            };
             if !out(self, world, me, |w| w.contain_set_damage_state(my_guy, new_state)) {
                 undefined(world, me, Undefined::NullBodyModule);
             }
@@ -362,7 +366,10 @@ impl TransportContainVirtuals for OverlordContain {
             return;
         }
         self.redirection_activated = false;
-        let my_guy = self.oc().contain_list()[0];
+        let Some(&my_guy) = self.oc().contain_list().first() else {
+            undefined(world, me, Undefined::NullObject);
+            return;
+        };
         if !out(self, world, me, |w| w.contain_kill(my_guy)) {
             undefined(world, me, Undefined::NullBodyModule);
             return;
@@ -388,7 +395,11 @@ impl TransportContainVirtuals for OverlordContain {
         if self.oc().contain_list_size() < 1 {
             return;
         }
-        let my_guy = self.oc().contain_list()[0];
+        // `m_containList.front()`: a size that disagrees with an empty list reads `front()` of nothing (batch R9: found by the mob scene)
+        let Some(&my_guy) = self.oc().contain_list().first() else {
+            undefined(world, me, Undefined::NullObject);
+            return;
+        };
         if new_owner < 0 {
             undefined(world, me, Undefined::NullControllingPlayer);
             return;
