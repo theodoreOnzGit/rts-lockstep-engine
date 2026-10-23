@@ -121,6 +121,7 @@ pub mod inactive_body;
 pub mod slow_death_behavior;
 pub mod open_contain;
 pub mod transport_contain;
+pub mod garrison_contain;
 pub mod cave_contain;
 pub mod tunnel_contain;
 pub mod mob_nexus_contain;
@@ -498,6 +499,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::CaveContain(d) => Some(made_update(
             cave_contain::CaveContain::get_interface_mask(),
             cave_contain::CaveContain::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::CaveContain(m))),
+        )),
+        ModuleDataKind::GarrisonContain(d) => Some(made_update(
+            garrison_contain::GarrisonContain::get_interface_mask(),
+            garrison_contain::GarrisonContain::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::GarrisonContain(m))),
         )),
         ModuleDataKind::TransportContain(d) => Some(made_update(
             transport_contain::TransportContain::get_interface_mask(),

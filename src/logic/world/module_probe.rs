@@ -140,6 +140,12 @@ pub struct ProbeAnswers {
     pub locomotor_sway: [f32; 4],
     /// `PhysicsBehavior::getIsInFreeFall()` (`setIsInFreeFall` sets it).
     pub free_fall: bool,
+    /// batch R12 (GarrisonContain): the AI's `getCurrentVictim()`.
+    pub current_victim: ObjectId,
+    /// batch R12: the AI's `getCurrentVictimPos()` (`None` for `NULL`).
+    pub current_victim_pos: Option<Coord3D>,
+    /// batch R12: the body's `getDamageState()` (`None`: the probe does not answer, as before).
+    pub damage_state: Option<i32>,
     // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     // --- p1w7-sonnet ---
@@ -432,6 +438,8 @@ impl ProbeModule {
                     ModuleReply::Unhandled
                 }
             }
+            // batch R12: the damage state, when the test gives one
+            ModuleCall::GetDamageState if self.answers.damage_state.is_some() => ModuleReply::Int(self.answers.damage_state.unwrap_or(0)),
             // the body half of BodyModuleInterface belongs to the concrete bodies: the probe's body answers its own few
             ModuleCall::GetDamageState
             | ModuleCall::SetDamageState(_)
@@ -540,6 +548,8 @@ impl ProbeModule {
                 ModuleReply::Id(self.answers.closest_rider)
             }
             ModuleCall::AiGetGoalObject => ModuleReply::Id(self.answers.goal_object),
+            ModuleCall::AiGetCurrentVictim => ModuleReply::Id(self.answers.current_victim),
+            ModuleCall::AiGetCurrentVictimPos => self.answers.current_victim_pos.map_or(ModuleReply::Unhandled, ModuleReply::Coord),
             ModuleCall::PhysicsGetVelocity => ModuleReply::Coord(self.answers.velocity),
             // --- p1w13-sonnet --- (batch R2: TransportContain; the lines of the C++ stand-ins)
             ModuleCall::PhysicsApplyMotiveForce(f) => {

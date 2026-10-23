@@ -73,6 +73,8 @@ pub struct ContainCutTables {
     pub pristine_bones: BTreeMap<(ObjectId, Vec<u8>), Coord3D>,
     /// `TheAI->pathfinder()->validMovementTerrain(layer, rider's locomotor, pos)`: the riders for which the terrain at the transport is valid.
     pub valid_movement_terrain: BTreeSet<ObjectId>,
+    /// batch R12: and the tiles of the terrain tables (`terrain_cell`) where it is (bit per tile; 0, the default, is every tile).
+    pub valid_movement_cells: u8,
     // --- end p1w13-sonnet ---
     // --- p1w13-sonnet --- (batch R8: ParachuteContain)
     /// `ThePartitionManager->findPositionAround(&pos, options, &pos)`: the position found (`None`: none is found and `pos` is left as it was).
@@ -82,6 +84,25 @@ pub struct ContainCutTables {
     pub cell_types: [i32; 8],
     /// `player->isSkirmishAIPlayer()`: the players whose AI is a skirmish AI.
     pub skirmish_ai_players: BTreeSet<crate::logic::world::ids::PlayerIndex>,
+    // --- end p1w13-sonnet ---
+    // --- p1w13-sonnet --- (batch R12: GarrisonContain)
+    /// `TheThingFactory->findTemplate("GarrisonGun") != NULL` when the factory has no such template (a function static upstream: the first answer
+    /// holds for the process).
+    pub garrison_gun: bool,
+    /// The muzzle-flash drawables that exist (`TheGameClient->findDrawableByID`), and the id the next one gets.
+    pub effects: BTreeSet<crate::common::game_type::DrawableId>,
+    pub next_effect: crate::common::game_type::DrawableId,
+    /// `weapon->isWithinAttackRange(source, victim)` (victim `INVALID_ID`: a position) for a weapon of the table: the pairs in range.
+    pub in_range: BTreeSet<(ObjectId, ObjectId)>,
+    /// `obj->getCurrentWeapon()` for an object without a weapon set: the weapon's damage type (no entry: `NULL`).
+    pub cur_weapon_damage_type: BTreeMap<ObjectId, i32>,
+    /// `obj->getLastShotFiredFrame()` for an object without a weapon set.
+    pub last_shot_fired_frame: BTreeMap<ObjectId, u32>,
+    /// The condition `clearAndSetModelConditionFlags` set last, by object (none after `replaceModelConditionFlags`): the test's art raises its bones
+    /// by it (a garrison loads a set of points per damage state).
+    pub bone_condition: BTreeMap<ObjectId, i32>,
+    /// `drawable->getFullyObscuredByShroud()`: the objects whose drawable is.
+    pub obscured: BTreeSet<ObjectId>,
     // --- end p1w13-sonnet ---
 }
 
@@ -179,6 +200,30 @@ pub enum ContainCall {
     // batch R11 (CaveContain)
     /// `obj->defect(newTeam, detectionTime)` (`None` for a `NULL` team).
     Defect { object: ObjectId, team: Option<crate::logic::world::ids::TeamId>, detection_time: u32 },
+    // --- p1w13-sonnet --- (batch R12: GarrisonContain)
+    /// `TheThingFactory->newDrawable(muzzle)`: the new drawable.
+    EffectNew { drawable: crate::common::game_type::DrawableId },
+    /// `draw->setPosition(pos)`.
+    EffectSetPosition { drawable: crate::common::game_type::DrawableId, position: Coord3D },
+    /// `draw->setFullyObscuredByShroud(obscured)`.
+    EffectSetObscured { drawable: crate::common::game_type::DrawableId, obscured: bool },
+    /// `draw->setOrientation(angle)`.
+    EffectSetOrientation { drawable: crate::common::game_type::DrawableId, angle: f32 },
+    /// `draw->setModelConditionState(a)` (`set`) or `clearModelConditionState(a)`.
+    EffectModelCondition { drawable: crate::common::game_type::DrawableId, condition: i32, set: bool },
+    /// `TheGameClient->destroyDrawable(draw)`.
+    EffectDestroy { drawable: crate::common::game_type::DrawableId },
+    /// `weapon->isWithinAttackRange(source, victim)` or `(source, pos)` for a weapon of the table.
+    WeaponWithinAttackRange { source: ObjectId, victim: ObjectId, position: Option<Coord3D> },
+    /// `draw->setIndicatorColor(color)`.
+    DrawableSetIndicatorColor { object: ObjectId, color: i32 },
+    /// `obj->clearAndSetModelConditionFlags(clr, set)`, with a drawable.
+    ClearAndSetModelConditionFlags { object: ObjectId, clear: Vec<i32>, set: Vec<i32> },
+    /// `draw->replaceModelConditionFlags(flags)`: the flags set.
+    DrawableReplaceModelConditionFlags { object: ObjectId, flags: Vec<i32> },
+    /// `player->getAcademyStats()->recordBuildingGarrisoned()`.
+    AcademyBuildingGarrisoned { player: i32 },
+    // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
 }
 
@@ -318,19 +363,35 @@ impl World {
     pub fn contain_set_position(&mut self, id: ObjectId, pos: &Coord3D) {
         self.contain_cut(ContainCall::SetPosition { object: id, position: *pos });
         if self.cuts.contain.stub_object_calls {
-            // the bookkeeping the container reads back: where the object is (the thing's own place, none of `reactToTransformChange`'s cascade)
-            let angle = match self.objects.find(id) {
-                Some(o) => o.thing.orientation(),
-                None => return,
-            };
-            if let Some(ctx) = self.setter_context(id, Some((angle, *pos))) {
-                if let Some(o) = self.objects.find_mut(id) {
-                    let _ = o.thing.set_position(&ctx, Some(pos));
-                    o.position = *o.thing.position();
-                }
-            }
+            self.stub_move(id, pos);
         } else {
             self.set_position(id, pos);
+        }
+    }
+
+    /// batch R12: the object's angle set with none of `reactToTransformChange`'s cascade (the contain test's scene, as the driver sets
+    /// `m_orientation`: the cascade would redeploy a garrison's riders before the first op).
+    pub fn contain_scene_set_orientation(&mut self, id: ObjectId, angle: f32) {
+        let Some(pos) = self.objects.find(id).map(|o| o.get_position()) else { return };
+        if let Some(ctx) = self.setter_context(id, Some((angle, pos))) {
+            if let Some(o) = self.objects.find_mut(id) {
+                let _ = o.thing.set_orientation(&ctx, angle);
+            }
+        }
+    }
+
+    /// The bookkeeping the container reads back under the stub: where the object is (the thing's own place, none of `reactToTransformChange`'s
+    /// cascade).
+    fn stub_move(&mut self, id: ObjectId, pos: &Coord3D) {
+        let angle = match self.objects.find(id) {
+            Some(o) => o.thing.orientation(),
+            None => return,
+        };
+        if let Some(ctx) = self.setter_context(id, Some((angle, *pos))) {
+            if let Some(o) = self.objects.find_mut(id) {
+                let _ = o.thing.set_position(&ctx, Some(pos));
+                o.position = *o.thing.position();
+            }
         }
     }
 
@@ -385,6 +446,12 @@ impl World {
         }
         let mut found = self.cuts.contain.fire_points.get(&id).cloned().unwrap_or_default();
         found.truncate(max.max(0) as usize);
+        // batch R12: the bones rise by the condition the art was last put in
+        if let Some(&c) = self.cuts.contain.bone_condition.get(&id) {
+            for m in &mut found {
+                m.row[2].w += c as f32;
+            }
+        }
         found
     }
 
@@ -520,14 +587,148 @@ impl World {
         }
     }
 
+    // batch R12 (GarrisonContain)
+    /// `TheThingFactory->findTemplate("GarrisonGun") != NULL` (see [`ContainCutTables::garrison_gun`]).
+    pub fn contain_garrison_gun_exists(&self) -> bool {
+        self.thing_factory_find_template(b"GarrisonGun").is_some() || self.cuts.contain.garrison_gun
+    }
+
+    /// `TheThingFactory->newDrawable(muzzle)`: a muzzle-flash drawable of the client's (ids from 1000, one case's worth).
+    pub fn contain_effect_new(&mut self) -> crate::common::game_type::DrawableId {
+        if self.cuts.contain.next_effect == 0 {
+            self.cuts.contain.next_effect = 1000;
+        }
+        let id = self.cuts.contain.next_effect;
+        self.cuts.contain.next_effect += 1;
+        self.cuts.contain.effects.insert(id);
+        self.contain_cut(ContainCall::EffectNew { drawable: id });
+        id
+    }
+
+    /// `draw->setPosition(pos)` of a muzzle flash.
+    pub fn contain_effect_set_position(&mut self, id: crate::common::game_type::DrawableId, pos: &Coord3D) {
+        self.contain_cut(ContainCall::EffectSetPosition { drawable: id, position: *pos });
+    }
+
+    /// `draw->setFullyObscuredByShroud(obscured)` of a muzzle flash.
+    pub fn contain_effect_set_fully_obscured_by_shroud(&mut self, id: crate::common::game_type::DrawableId, obscured: bool) {
+        self.contain_cut(ContainCall::EffectSetObscured { drawable: id, obscured });
+    }
+
+    /// `draw->setOrientation(angle)` of a muzzle flash.
+    pub fn contain_effect_set_orientation(&mut self, id: crate::common::game_type::DrawableId, angle: f32) {
+        self.contain_cut(ContainCall::EffectSetOrientation { drawable: id, angle });
+    }
+
+    /// `draw->setModelConditionState(a)` (`set`) or `clearModelConditionState(a)` of a muzzle flash.
+    pub fn contain_effect_model_condition(&mut self, id: crate::common::game_type::DrawableId, condition: i32, set: bool) {
+        self.contain_cut(ContainCall::EffectModelCondition { drawable: id, condition, set });
+    }
+
+    /// `TheGameClient->destroyDrawable(draw)` of a muzzle flash.
+    pub fn contain_effect_destroy(&mut self, id: crate::common::game_type::DrawableId) {
+        self.cuts.contain.effects.remove(&id);
+        self.contain_cut(ContainCall::EffectDestroy { drawable: id });
+    }
+
+    /// `TheGameClient->findDrawableByID(id) != NULL` for a muzzle flash.
+    pub fn contain_effect_exists(&self, id: crate::common::game_type::DrawableId) -> bool {
+        self.cuts.contain.effects.contains(&id)
+    }
+
+    /// `obj->getDrawable()->getFullyObscuredByShroud()`: the client's (see [`ContainCutTables::obscured`]); the caller checks the drawable.
+    pub fn contain_drawable_fully_obscured_by_shroud(&self, id: ObjectId) -> bool {
+        self.cuts.contain.obscured.contains(&id)
+    }
+
+    /// `obj->getCurrentWeapon()`: `None` for `NULL`, else the weapon's damage type (the weapon set's, or the table's).
+    pub fn contain_current_weapon(&self, id: ObjectId) -> Option<i32> {
+        let o = self.objects.find(id)?;
+        if let Some(w) = o.weapon_set.get_cur_weapon() {
+            return self.statics.weapon_store.templates().get(w.template()).map(|t| t.damage_type);
+        }
+        self.cuts.contain.cur_weapon_damage_type.get(&id).copied()
+    }
+
+    /// `obj->getCurrentWeapon()->isWithinAttackRange(obj, victim)` (`victim` `INVALID_ID`: `(obj, pos)`): the range check is layer 10's weapon host,
+    /// not on the world yet; the table answers ([`ContainCutTables::in_range`]). The caller checks the weapon.
+    pub fn contain_weapon_within_attack_range(&mut self, source: ObjectId, victim: ObjectId, position: Option<Coord3D>) -> bool {
+        self.contain_cut(ContainCall::WeaponWithinAttackRange { source, victim, position });
+        self.cuts.contain.in_range.contains(&(source, victim))
+    }
+
+    /// `obj->getLastShotFiredFrame()`: the weapon set's, or the table's for an object with no weapon.
+    pub fn contain_last_shot_fired_frame(&self, id: ObjectId) -> u32 {
+        let Some(o) = self.objects.find(id) else { return 0 };
+        if (0..crate::common::game_type::WEAPONSLOT_COUNT).any(|s| o.weapon_set.get_weapon_in_weapon_slot(s).is_some()) {
+            return (0..crate::common::game_type::WEAPONSLOT_COUNT).filter_map(|s| o.weapon_set.get_weapon_in_weapon_slot(s)).map(|w| w.last_shot_frame()).max().unwrap_or(0);
+        }
+        self.cuts.contain.last_shot_fired_frame.get(&id).copied().unwrap_or(0)
+    }
+
+    /// `team->getControllingPlayer()`: the world's team-to-player table (what `getControllingPlayer` of an object reads).
+    pub fn contain_team_controlling_player(&self, team: crate::logic::world::ids::TeamId) -> Option<crate::logic::world::ids::PlayerIndex> {
+        self.cuts.team_player(team)
+    }
+
+    /// `obj->setTeam(team)` for a team that may be `NULL` (the stub records -1 for it).
+    pub fn contain_set_team_opt(&mut self, id: ObjectId, team: Option<crate::logic::world::ids::TeamId>) {
+        self.contain_cut(ContainCall::SetTeam { object: id, team: team.map_or(-1, |t| t as i32) });
+        if !self.cuts.contain.stub_object_calls {
+            self.set_team(id, team);
+        }
+    }
+
+    /// `obj->getDrawable()->setIndicatorColor(color)`: the client's; the caller checks the drawable.
+    pub fn contain_drawable_set_indicator_color(&mut self, id: ObjectId, color: i32) {
+        self.contain_cut(ContainCall::DrawableSetIndicatorColor { object: id, color });
+    }
+
+    /// `obj->clearAndSetModelConditionFlags(clr, set)`, if the object has a drawable.
+    pub fn contain_clear_and_set_model_condition_flags(&mut self, id: ObjectId, clear: &[i32], set: &[i32]) {
+        if self.has_drawable(id) {
+            self.contain_cut(ContainCall::ClearAndSetModelConditionFlags { object: id, clear: clear.to_vec(), set: set.to_vec() });
+            self.cuts.contain.bone_condition.insert(id, set.iter().min().copied().unwrap_or(0));
+        }
+    }
+
+    /// `obj->getDrawable()->replaceModelConditionFlags(flags)`: the client's; the caller checks the drawable.
+    pub fn contain_drawable_replace_model_condition_flags(&mut self, id: ObjectId, flags: &crate::common::model_state::ModelConditionFlags) {
+        let set: Vec<i32> = (0..crate::common::model_state::MODELCONDITION_COUNT).filter(|&i| flags.test(i)).collect();
+        self.cuts.contain.bone_condition.remove(&id);
+        self.contain_cut(ContainCall::DrawableReplaceModelConditionFlags { object: id, flags: set });
+    }
+
+    /// `player->getAcademyStats()->recordBuildingGarrisoned()`. The stub records the call only.
+    pub fn contain_record_building_garrisoned(&mut self, player: crate::logic::world::ids::PlayerIndex) {
+        self.contain_cut(ContainCall::AcademyBuildingGarrisoned { player });
+        if !self.cuts.contain.stub_object_calls {
+            if let Some(p) = self.players.get_nth_mut(player) {
+                p.academy_stats.record_building_garrisoned();
+            }
+        }
+    }
+
+    /// `obj->setPositionZ(z)`: the stub moves the object only (the driver's `Object` does the same, with no line).
+    pub fn contain_set_position_z(&mut self, id: ObjectId, z: f32) {
+        let Some(mut pos) = self.objects.find(id).map(|o| o.get_position()) else { return };
+        pos.z = z;
+        if self.cuts.contain.stub_object_calls {
+            self.stub_move(id, &pos);
+        } else {
+            self.set_position_z(id, z);
+        }
+    }
+
     /// `obj->getDrawable()->setInstanceMatrix(matrix)`: the client's; the caller checks the drawable.
     pub fn contain_drawable_set_instance_matrix(&mut self, id: ObjectId, matrix: Option<&Matrix3D>) {
         self.contain_cut(ContainCall::DrawableSetInstanceMatrix { object: id, matrix: matrix.copied() });
     }
 
     /// `TheAI->pathfinder()->validMovementTerrain(transport's layer, rider's locomotor, pos)` (see [`ContainCutTables::valid_movement_terrain`]).
-    pub fn contain_valid_movement_terrain(&mut self, _transport: ObjectId, rider: ObjectId, _pos: &Coord3D) -> bool {
-        self.cuts.contain.valid_movement_terrain.contains(&rider)
+    pub fn contain_valid_movement_terrain(&mut self, _transport: ObjectId, rider: ObjectId, pos: &Coord3D) -> bool {
+        let cells = self.cuts.contain.valid_movement_cells;
+        self.cuts.contain.valid_movement_terrain.contains(&rider) && (cells == 0 || cells >> crate::logic::world::object_cuts::terrain_cell(pos.x, pos.y) & 1 != 0)
     }
 
     /// `TheThingFactory->newObject(template, team)` for a payload; `INVALID_ID` when the stub records it (the test's factory makes nothing).

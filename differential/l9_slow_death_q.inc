@@ -118,6 +118,7 @@ void AIUpdateInterface::markAsDead() { m_dead = true; ulog("markdead %d", (int)m
 void Object::clearAndSetModelConditionFlags(const ModelConditionFlags &clr, const ModelConditionFlags &set)
 {
 	if (m_drawable) m_drawable->clearAndSetModelConditionState((ModelConditionFlagType)sdFirstFlag(clr), (ModelConditionFlagType)sdFirstFlag(set));
+	if (m_drawable) m_drawable->m_boneCond = sdFirstFlag(set);   /* p1w13-sonnet, batch R12: the contain test's art moves its bones with the condition */
 }
 /* p1w13-sonnet, batch R5: every flag of the mask, in index order (RiderChangeContain clears two at once; the slow death masks name one) */
 void Object::clearModelConditionFlags(const ModelConditionFlags &clr) { if (m_drawable) for (int i = 0; i < MODELCONDITION_COUNT; ++i) if (clr.test(i)) m_drawable->clearModelConditionState((ModelConditionFlagType)i); }

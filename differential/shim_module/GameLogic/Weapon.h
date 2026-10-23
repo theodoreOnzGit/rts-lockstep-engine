@@ -78,6 +78,12 @@ public:
 	Bool m_damageW = false;
 	Int m_ownerId = 0;
 	/* --- end p1w13-sonnet --- */
+	/* --- p1w13-sonnet --- (batch R12: GarrisonContain) the range check (a line, the test's answer: differential/l9_open_contain_r.inc) and the damage type */
+	Bool isWithinAttackRange(const Object *source, const Object *target) const;
+	Bool isWithinAttackRange(const Object *source, const Coord3D *pos) const;
+	Int getDamageType() const { return m_damageType; }   /* a DamageType */
+	Int m_damageType = 0;
+	/* --- end p1w13-sonnet --- */
 };
 /* --- end p1w12-sonnet --- */
 /* --- p1w13-sonnet --- (batch P: ActiveBody asks the guard to retaliate with no limit on the shots; Weapon.h line 56, verbatim) */

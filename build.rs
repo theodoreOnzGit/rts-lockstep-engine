@@ -3274,6 +3274,14 @@ mod differential {
                 let edited = text.replace(iff, "if( it != items->end() && *it )").replace(wh, "while( it != items->end() )");
                 std::fs::write(mod_gen.join("MobNexusContain_edit.cpp"), edited).expect("write MobNexusContain_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R12: GarrisonContain.cpp's loadStationGarrisonPoints names the first loop's `t` in its second loop (Visual C++ 6 let a `for`
+                // variable outlive its loop; clang does not): it declares its own, asserted once, into mod_gen/GarrisonContain_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Contain/GarrisonContain.cpp");
+                let text = std::fs::read_to_string(&path).expect("read GarrisonContain.cpp");
+                let (loop2, loop2_fixed) = ("for( t = 0; t < count; ++t )", "for( int t = 0; t < count; ++t )");
+                assert_eq!(text.matches(loop2).count(), 1, "GarrisonContain.cpp: the second loop must occur once");
+                std::fs::write(mod_gen.join("GarrisonContain_edit.cpp"), text.replace(loop2, loop2_fixed)).expect("write GarrisonContain_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
                 println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---

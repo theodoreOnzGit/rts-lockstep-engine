@@ -9,6 +9,7 @@ class Team { public: int m_dummy;
 	class Player *m_controller = 0;   /* update batch O: the player of the team (the test's) */
 	/* batch R11 (CaveContain): Team.h's id, which the test's number is */
 	UnsignedInt getID() const { return (UnsignedInt)m_dummy; }
+	class Player *getControllingPlayer() const { return m_controller; }   /* batch R12: GarrisonContain */
 	/* --- end p1w13-sonnet --- */
 };
 /* --- p1w13-sonnet --- (batch R11: CaveContain's xfer; Team.h lines 41-42 and the factory's lookup, answered by differential/l9_open_contain_r.inc) */

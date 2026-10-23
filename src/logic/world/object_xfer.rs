@@ -595,10 +595,27 @@ impl World {
     /// checked out of the object for the call (a save, a load or a CRC, by the xfer's mode). The module tests use it to run one module's xfer.
     pub fn xfer_module_slot(&mut self, id: ObjectId, idx: usize, xfer: &mut dyn Xfer) -> XferResult<()> {
         let mut snap = self.take_slot_snapshot(id, idx);
+        // batch R12: a garrison's save writes each point's object and effect through the pointer: one a load left (not found again) is undefined
+        if xfer.get_xfer_mode() == crate::common::xfer::XferMode::Save {
+            if let Some(crate::logic::world::update_body::UpdateBody::GarrisonContain(g)) = &snap.body {
+                if !g.check_save() {
+                    let me = crate::logic::world::module_call::ModuleHandle { object: id, index: idx as u16 };
+                    self.cuts.module_errors.push((me, crate::common::ini::IniError::undefined(crate::common::ini::Undefined::NullObject)));
+                }
+            }
+        }
+        crate::common::xfer::take_invalid_bool_read();
         let r = xfer.xfer_snapshot(&mut snap);
+        // batch R12: a `Bool` loaded from a byte that is no bool is undefined
+        if crate::common::xfer::take_invalid_bool_read() {
+            let me = crate::logic::world::module_call::ModuleHandle { object: id, index: idx as u16 };
+            self.cuts.module_errors.push((me, crate::common::ini::IniError::undefined(crate::common::ini::Undefined::InvalidBoolLoaded)));
+        }
         // batch R11: a cave's load asks the team factory about the original team it read (it throws `SC_INVALID_DATA` for one it does not know)
         let r = match (&mut snap.body, r) {
             (Some(crate::logic::world::update_body::UpdateBody::CaveContain(c)), Ok(())) => c.check_loaded_team(self),
+            // batch R12: a garrison's too, whatever became of the rest of the xfer (upstream throws before it)
+            (Some(crate::logic::world::update_body::UpdateBody::GarrisonContain(g)), r) => g.check_loaded_team(self, r),
             (_, r) => r,
         };
         self.put_slot_snapshot(id, idx, snap);

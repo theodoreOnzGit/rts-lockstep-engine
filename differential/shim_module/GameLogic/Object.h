@@ -77,6 +77,8 @@ enum CanAttackResult
 /* --- p1w12-sonnet --- (Common/STLTypedefs.h lines 88-89, verbatim) */
 #include <list>
 #include "Common/Geometry.h"
+/* p1w13-sonnet, batch R12: the contain test asks for the transform its scene implies (see Object::poseMatrix) */
+inline bool g_objXformFromPose = false;
 class Object;
 class DamageInfo;
 typedef std::list<Object *>																ObjectPointerList;
@@ -148,7 +150,18 @@ public:
 	Bool m_disabled;
 	BehaviorModule **m_behaviors;
 	/* ReplaceObjectUpgrade: the object's place, team and id, and whether destroyObject has been called on it */
-	const Matrix3D *getTransformMatrix() const { return &m_matrix; }
+	const Matrix3D *getTransformMatrix() const { if (g_objXformFromPose) const_cast<Object *>(this)->poseMatrix(); return &m_matrix; }
+	/* --- p1w13-sonnet --- (batch R12: GarrisonContain reads the container's transform) the transform Thing::setOrientation and setPosition keep: the
+	** rotation about z by the angle (Thing.cpp's cross products: y = z x u, x = y x z) and the position */
+	void poseMatrix()
+	{
+		const Real zr[3] = { 0.0f, 0.0f, 1.0f };
+		const Real u[3] = { (Real)cosf(m_orientation), (Real)sinf(m_orientation), 0.0f };
+		const Real y[3] = { zr[1] * u[2] - zr[2] * u[1], zr[2] * u[0] - zr[0] * u[2], zr[0] * u[1] - zr[1] * u[0] };
+		const Real x[3] = { y[1] * zr[2] - y[2] * zr[1], y[2] * zr[0] - y[0] * zr[2], y[0] * zr[1] - y[1] * zr[0] };
+		m_matrix = Matrix3D(x[0], y[0], zr[0], m_pos.x, x[1], y[1], zr[1], m_pos.y, x[2], y[2], zr[2], m_pos.z);
+	}
+	/* --- end p1w13-sonnet --- */
 	void setTransformMatrix(const Matrix3D *mx);   /* defined in l9_replace_object.inc (logs) */
 	Team *getTeam() const { return m_team; }
 	Matrix3D m_matrix;
@@ -172,6 +185,11 @@ public:
 	Weapon *getCurrentWeapon(WeaponSlotType *wslot = NULL) { if (wslot && m_curWeapon) *wslot = m_curWeapon->getWeaponSlot(); return m_curWeapon; }
 	Weapon *getWeaponInWeaponSlot(WeaponSlotType wslot) const { return m_slotWeapon[wslot]; }
 	Weapon *m_curWeapon = 0;
+	/* --- p1w13-sonnet --- (batch R12: GarrisonContain) the test's last shot frame; isMobile is Object.cpp:2902-2911 (isDisabled() of the disabled bits) */
+	UnsignedInt getLastShotFiredFrame() const { return m_lastShotFrame; }
+	UnsignedInt m_lastShotFrame = 0;
+	Bool isMobile() const { if (isKindOf(KINDOF_IMMOBILE)) return false; if( m_disabledBits != 0 ) return false; return true; }   /* isDisabled() is m_disabledMask.any() */
+	/* --- end p1w13-sonnet --- */
 	Weapon *m_slotWeapon[3] = { 0, 0, 0 };
 	Bool isLocallyControlled() const;
 	Real getConstructionPercent() const { return m_constructionPercent; }

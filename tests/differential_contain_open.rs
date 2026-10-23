@@ -32,6 +32,16 @@
 //! Batch R3 adds the `I` (`InternetHackContain`) and `R` (`RailedTransportContain`) blocks (the transport's fields), class codes 2 and 3 for the scene's
 //! containers, and per object a dock behaviour after the contain (open or closed; `setDockOpen` is a line of the log).
 //!
+//! Batch R12 adds the `G` block (`GarrisonContain`: the base's fields, `HealObjects`, `TimeForFullHeal`, `MobileGarrison`, `ImmuneToClearBuildingAttacks`,
+//! `IsEnclosingContainer`, `InitialRoster` with templates that exist), class code 12 (the scene's flags), ops 66 (`setEvacDisposition`) and 67
+//! (`getApparentControllingPlayer`), and the environment ops 68 (a rider's victim, victim place, goal and `DETECTED`), 69 (the weapon's range answers),
+//! 70 (the body's damage state), 71 (the current weapon, poison or not), 72 (the last shot frame); op 61 also sets `DISABLED_SUBDUED`; the kinds
+//! `GARRISONABLE_UNTIL_DESTROYED` and `NO_GARRISON`; the night flag and the players' colours; the muzzle flashes (`GarrisonGun`, client drawables from
+//! 1000); the movement terrain valid on the even tiles only; bones that rise with the model condition last set; and the garrison scene (one scene in
+//! four of the rest; [`garrison_scene`]). The scene's angle is set without `reactToTransformChange` (the driver sets `m_orientation`), and the driver's
+//! transform is the one the angle and place imply (`Object::poseMatrix`). A load that reads a byte other than 0 or 1 into a `Bool` is undefined
+//! (`Undefined::InvalidBoolLoaded`; a container loading another class's save can).
+//!
 //! Batch R11 adds the `V` block (`CaveContain`: the base's fields and `CaveIndex`), class code 11, ops 63 to 65 (`onBuildComplete`,
 //! `tryToSetCaveIndex`, `recalcApparentControllingPlayer`), the create modules' `onCreate` after each object is made, every container built first in one
 //! case in two, the cave scene ([`cave_scene`]), the test's team factory, and the cave system's slots after the players' trackers in each op's state.
@@ -296,6 +306,48 @@
 //! | 1589 | the data's cave index ignored |
 //! | 1590 | the caves not given back when the count is 0 |
 //!
+//! Batch R12, `garrison_contain.rs` (9,000 cases: 35 of 36 caught, 14 of them only once the garrison scene, the subdued bit, the two kinds, the tiled
+//! movement terrain and the condition-dependent bones were added; the 156 caught plants above were run again on the widened generator):
+//!
+//! | id | planted bug |
+//! |---|---|
+//! | 1601 | an occupied garrison point counted as free |
+//! | 1602 | the points in use not counted down |
+//! | 1603 | the place frame not set |
+//! | 1604 | rubble uses the damaged points |
+//! | 1605 | the really-damaged refusal dropped |
+//! | 1606 | `NO_GARRISON` ignored |
+//! | 1607 | the capacity test `<=` |
+//! | 1608 | the goal's range check dropped |
+//! | 1609 | a victim's place ignored |
+//! | 1610 | a rider moves to a farther point |
+//! | 1611 | the place frames not kept by a redeploy |
+//! | 1612 | a poison weapon flashes |
+//! | 1613 | the flash lasts one frame less |
+//! | 1614 | dead riders kept |
+//! | 1615 | `HealObjects` ignored |
+//! | 1616 | the whole heal at once |
+//! | 1617 | the allies test of the apparent controller inverted (**SURVIVES**: the test's `setTeam` is a record, so the original team is the garrison's own and has its player; only a load of another garrison's save could tell) |
+//! | 1618 | hidden without every rider stealthy |
+//! | 1619 | the building not handed to the rider's team |
+//! | 1620 | the really-damaged points loaded into the damaged set |
+//! | 1621 | the rally search twice as far |
+//! | 1622 | no rally point before everyone leaves |
+//! | 1623 | the evacuation sides swapped |
+//! | 1624 | the far side of the door tried at one radius |
+//! | 1625 | the garrisoned weapon bonus not set |
+//! | 1626 | the academy not told |
+//! | 1627 | the original team not given back |
+//! | 1628 | the occlusion frame without the delay |
+//! | 1629 | a subdued garrison lets its riders fire |
+//! | 1630 | selling does not empty the building first |
+//! | 1631 | a loaded place frame dropped |
+//! | 1632 | a loaded effect not found again |
+//! | 1633 | a station picked while occupied |
+//! | 1634 | an immobile mobile garrison carries its riders |
+//! | 1635 | `isImmuneToClearBuildingAttacks` inverted |
+//! | 1636 | a building garrisonable until destroyed is emptied when really damaged |
+//!
 //! Not planted, unobservable here: the `wasSelected` argument of `onContaining` (1375, removed). `OpenContain::onContaining` ignores it; ~~`TransportContain` and `GarrisonContain` use it, and
 //! their tests will catch it~~ **CORRECTED 2026-10-22 (batch R2)**: `TransportContain::onContaining` only hands it to the base, so it is unobservable there too;
 //! of the contain family only `RiderChangeContain` reads it (it reselects the container), so its test is the one that can catch it.
@@ -519,6 +571,8 @@ struct Obj {
     occl: u32,
     /// batch R11: a scene-built cave's index
     cave_idx: u32,
+    /// batch R12: a scene-built garrison's flags (bit 0 heal, 1 mobile, 2 not enclosing, 3 immune)
+    gflags: u32,
 }
 
 /// The riders a scene-built combat bike can name (the driver's `kCtRiderSets`): per set up to three of (template, index into [`RIDER_TEMPLATES`], 0
@@ -658,6 +712,7 @@ impl Obj {
         w.u(self.producer);
         w.u(self.occl);
         w.u(self.cave_idx);
+        w.u(self.gflags);
     }
 
     fn read(r: &mut R<'_>) -> Obj {
@@ -780,6 +835,7 @@ impl Obj {
         o.producer = r.u();
         o.occl = r.u();
         o.cave_idx = r.u();
+        o.gflags = r.u();
         o
     }
 }
@@ -803,6 +859,8 @@ struct Scene {
     find_pos: Option<Coord3D>,
     /// batch R10: `TheGlobalData->m_maxTunnelCapacity`
     tunnel_cap: i32,
+    /// batch R12: `TheGlobalData->m_timeOfDay == TIME_OF_DAY_NIGHT`
+    night: bool,
 }
 
 fn parse_scene(cfg: &[u32]) -> Scene {
@@ -830,7 +888,8 @@ fn parse_scene(cfg: &[u32]) -> Scene {
     let fp = Coord3D { x: r.f(), y: r.f(), z: r.f() };
     let find_pos = has.then_some(fp);
     let tunnel_cap = r.s();
-    Scene { frame, logic_seed, client_seed, objs, rel, layer, layer_height, gravity, ground, has_water, water, cell_type, skirmish_mask, find_pos, tunnel_cap }
+    let night = r.u() != 0;
+    Scene { frame, logic_seed, client_seed, objs, rel, layer, layer_height, gravity, ground, has_water, water, cell_type, skirmish_mask, find_pos, tunnel_cap, night }
 }
 
 // ---- the generators ------------------------------------------------------------------------------------------------------------------------------------------------
@@ -918,9 +977,13 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     let mob = !transport && !heal && !parachute && g.below(2) == 0;
     // batch R10: one plain block in two of the rest is a tunnel's (`N`)
     let tunnel = !transport && !heal && !parachute && !mob && g.below(2) == 0;
+    // batch R12: one plain block in two of the rest is a garrison's (`G`)
+    let garrison = !transport && !heal && !parachute && !mob && !tunnel && g.below(2) == 0;
     // batch R11: one plain block in two of the rest is a cave's (`V`)
-    let cave = !transport && !heal && !parachute && !mob && !tunnel && g.below(2) == 0;
-    let token = if cave {
+    let cave = !transport && !heal && !parachute && !mob && !tunnel && !garrison && g.below(2) == 0;
+    let token = if garrison {
+        "G\n"
+    } else if cave {
         "V\n"
     } else if tunnel {
         "N\n"
@@ -955,6 +1018,15 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
             }
         }
         field!(30, "ShouldDrawPips", gen_bool(g, clean));
+    }
+    if garrison {
+        field!(50, "HealObjects", gen_bool(g, clean));
+        field!(50, "TimeForFullHeal", format!("{}", *pick(g, &[&0i32, &33, &100, &1000, &5000])));
+        field!(40, "MobileGarrison", gen_bool(g, clean));
+        field!(40, "ImmuneToClearBuildingAttacks", gen_bool(g, clean));
+        field!(50, "IsEnclosingContainer", gen_bool(g, clean));
+        // only templates that exist: a missing one throws out of `onObjectCreated`, at the scene's setup
+        field!(30, "InitialRoster", format!("{} {}", PAYLOADS[1 + g.below(2) as usize], *pick(g, &[&0i32, &1, &2])));
     }
     if cave {
         field!(60, "CaveIndex", format!("{}", *pick(g, &[&0i32, &0, &1, &2])));
@@ -1107,7 +1179,7 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     // 0 OpenContain, 1 TransportContain, 2 InternetHackContain, 3 RailedTransportContain
     // 6 OverlordContain, 7 HealContain
     // 8 ParachuteContain (batch R8)
-    o.cls = if o.has_contain && k > 0 { g.below(12) } else { 0 };
+    o.cls = if o.has_contain && k > 0 { g.below(13) } else { 0 };
     o.raw_slots = *pick(g, &[&0i32, &1, &1, &1, &2, &3]);
     // upstream's airborne locomotor is the AI's
     o.airborne = o.has_ai && g.below(4) == 0;
@@ -1152,6 +1224,13 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     if g.below(4) == 0 {
         o.extra_kinds |= 16;
     }
+    // batch R12: garrisonable until destroyed; never garrisoned
+    if g.below(5) == 0 {
+        o.extra_kinds |= 32;
+    }
+    if g.below(5) == 0 {
+        o.extra_kinds |= 64;
+    }
     o.held = g.below(6) == 0;
     o.para_bone_has = g.below(8);
     for b in o.para_bone.iter_mut() {
@@ -1165,6 +1244,7 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     o.producer = g.below(n as u32 + 2);
     o.occl = *pick(g, &[&0u32, &1, &5, &30]);
     o.cave_idx = g.below(3);
+    o.gflags = g.below(16);
     o
 }
 
@@ -1174,7 +1254,9 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> (Vec<u32>, u32) {
     let mob = g.below(8) == 0;
     // batch R11: one other scene in eight is the cave scene ([`cave_scene`])
     let cave = !mob && g.below(8) == 0;
-    let n = if mob { 4 } else { 2 + g.below(3) as usize };
+    // batch R12: one other scene in four is the garrison scene ([`garrison_scene`])
+    let garrison = !mob && !cave && g.below(4) == 0;
+    let n = if mob || garrison { 4 } else { 2 + g.below(3) as usize };
     w.u(g.below(300));
     w.u(g.u32());
     w.u(g.u32());
@@ -1194,6 +1276,7 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> (Vec<u32>, u32) {
                 Some(ModuleDataKind::MobNexusContain(_)) => 9,
                 Some(ModuleDataKind::TunnelContain(_)) => 10,
                 Some(ModuleDataKind::CaveContain(_)) => 11,
+                Some(ModuleDataKind::GarrisonContain(_)) => 12,
                 _ => 0,
             };
         }
@@ -1202,6 +1285,9 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> (Vec<u32>, u32) {
         }
         if cave {
             cave_scene(&mut o, k);
+        }
+        if garrison {
+            garrison_scene(&mut o, k);
         }
         o.write(&mut w);
     }
@@ -1238,7 +1324,9 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> (Vec<u32>, u32) {
     }
     // batch R10: the tunnels' capacity
     w.s(*pick(g, &[&0i32, &1, &2, &3, &10, &-1]));
-    (w.0, if mob { 1 } else if cave { 2 } else { 0 })
+    // batch R12: night or not
+    w.u(g.below(2));
+    (w.0, if mob { 1 } else if cave { 2 } else if garrison { 3 } else { 0 })
 }
 
 /// One op of five words: `[op, container, a, b, c]`.
@@ -1257,7 +1345,16 @@ fn gen_ops(g: &mut Gen, n: u32) -> Vec<[u32; 5]> {
             [49 + g.below(9), c, a, g.below(10), g.below(10)]
         } else if burst < 12 {
             // batch R8: the parachute's (a collision with the ground, the override destination, the drawable bound, the held flag) and its update
-            match g.below(12) {
+            match g.below(19) {
+                // batch R12: GarrisonContain's evacuation side and apparent controller; the rider's target, range, the body's damage state, the
+                // current weapon and the last shot
+                12 => [66, c, g.below(4), 0, 0],
+                13 => [67, c, g.below(5), 0, 0],
+                14 => [68, c, a, g.below(16), 0],
+                15 => [69, c, g.below(32), 0, 0],
+                16 => [70, c, g.below(4), 0, 0],
+                17 => [71, c, g.below(3), 0, 0],
+                18 => [72, c, g.below(3), 0, 0],
                 9 => [63, c, 0, 0, 0],
                 10 => [64, c, g.below(4), 0, 0],
                 11 => [65, c, 0, 0, 0],
@@ -1268,7 +1365,7 @@ fn gen_ops(g: &mut Gen, n: u32) -> Vec<[u32; 5]> {
                 0 => [58, c, 0, 0, 0],
                 1 => [59, c, coord(g).to_bits(), coord(g).to_bits(), coord(g).to_bits()],
                 2 => [60, c, 0, 0, 0],
-                3 => [61, c, g.below(2), 0, 0],
+                3 => [61, c, g.below(4), 0, 0],
                 _ => [7, c, 0, 0, 0],
             }
         } else {
@@ -1351,7 +1448,76 @@ fn gen_case(g: &mut Gen, data: &Option<ModuleDataKind>, _n_up: usize, _upgrades:
     if scene == 2 {
         ops.splice(0..0, CAVE_SCENE_OPS.iter().copied());
     }
+    if scene == 3 {
+        ops.splice(0..0, GARRISON_SCENE_OPS.iter().copied());
+    }
     (cfg, ops)
+}
+
+/// batch R12: the ops the garrison scene starts with: the three riders go in; they are attacking, armed (object 3's weapon is a poison one) and have
+/// targets (object 1 object 4, which is also its goal and in range; object 3 the place of object 1; object 4 object 1, in range); the garrison is
+/// updated (the riders take the points nearest their targets, with muzzle flashes); objects 1 and 3 shot last frame (a flash for object 1); later the
+/// building is damaged and its occupants redeployed (the frames they were placed at are kept), the flashes go out; the apparent controller is asked;
+/// the garrison is saved, loaded and finds its points again.
+const GARRISON_SCENE_OPS: [[u32; 5]; 28] = [
+    [0, 1, 0, 0, 0],
+    [0, 1, 2, 0, 0],
+    [0, 1, 3, 0, 0],
+    [37, 0, 1, 0, 0],
+    [37, 2, 1, 0, 0],
+    [37, 3, 1, 0, 0],
+    [71, 0, 1, 0, 0],
+    [71, 2, 2, 0, 0],
+    [71, 3, 1, 0, 0],
+    [68, 0, 3, 5, 0],
+    [68, 2, 0, 2, 0],
+    [68, 3, 0, 1, 0],
+    [69, 0, 16, 0, 0],
+    [69, 3, 2, 0, 0],
+    [7, 1, 0, 0, 0],
+    [72, 0, 1, 0, 0],
+    [72, 2, 1, 0, 0],
+    [7, 1, 0, 0, 0],
+    [34, 0, 250, 0, 0],
+    [70, 1, 2, 0, 0],
+    [44, 1, 0, 0, 0],
+    [7, 1, 0, 0, 0],
+    [67, 1, 1, 0, 0],
+    [67, 1, 2, 0, 0],
+    [30, 1, 0, 0, 0],
+    [31, 1, 0, 0, 0],
+    [33, 1, 0, 0, 0],
+    [7, 1, 0, 0, 0],
+];
+
+/// batch R12: the garrison scene: a scene-built garrison (enclosing, or a fire base when the scene's immune bit is set) with art (object 2: a drawable, at least six fire points, a living body) and three
+/// riders of player 0 (objects 1, 3, 4: an AI, a body, a drawable, stealth garrison units), none dead, held or inside anything.
+fn garrison_scene(o: &mut Obj, k: usize) {
+    o.player = 0;
+    o.eff_dead = false;
+    o.held = false;
+    o.contained_by = 0;
+    o.has_ai = true;
+    o.has_body = true;
+    o.drawable = true;
+    if o.max_health <= 0.0 {
+        o.max_health = 50.0;
+    }
+    if k == 1 {
+        o.health = o.max_health;
+        o.has_contain = true;
+        o.cls = 12;
+        // enclosing (garrison points) unless the scene's immune bit is set: then a fire base, whose riders take station points
+        if o.gflags & 8 == 0 {
+            o.gflags &= !4;
+        }
+        o.allow_mode = 0;
+        o.forbid_mask = 0;
+        o.allow_rel = 7;
+        o.fp_count = o.fp_count.max(6);
+    } else {
+        o.kinds |= 1; // KINDOF_STEALTH_GARRISON
+    }
 }
 
 /// batch R11: the ops the cave scene starts with: the cave (object 2) is built, takes the rider (object 1: the caves defect, the original team is kept),
@@ -1471,6 +1637,13 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId, has_contain: bool) {
             // batch R5: a combat bike, 4 (the transport's words, its own two counters and the scuttle frame)
             Some(UpdateBody::RiderChangeContain(m)) => {
                 put_u32(v, 4);
+                for x in m.state_words() {
+                    put_u32(v, x);
+                }
+            }
+            // batch R12: a garrison, 10 (an OpenContain's words and its own)
+            Some(UpdateBody::GarrisonContain(m)) => {
+                put_u32(v, 10);
                 for x in m.state_words() {
                     put_u32(v, x);
                 }
@@ -1711,6 +1884,29 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                                 log.push(s);
                             }
                         },
+                        // batch R12: GarrisonContain's
+                        ContainCall::EffectNew { drawable } => log.push(format!("effnew {drawable}")),
+                        ContainCall::EffectSetPosition { drawable, position: p } => log.push(format!("effpos {drawable} {:08x} {:08x} {:08x}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits())),
+                        ContainCall::EffectSetObscured { drawable, obscured } => log.push(format!("effobscure {drawable} {}", u32::from(obscured))),
+                        ContainCall::EffectSetOrientation { drawable, angle } => log.push(format!("efforient {drawable} {:08x}", angle.to_bits())),
+                        ContainCall::EffectModelCondition { condition, set, .. } => log.push(format!("{} {condition}", if set { "mc" } else { "mcclear" })),
+                        ContainCall::EffectDestroy { drawable } => log.push(format!("effdestroy {drawable}")),
+                        ContainCall::WeaponWithinAttackRange { source, victim, position } => match position {
+                            Some(p) if victim == INVALID_ID => log.push(format!("inrangepos {source} {:08x} {:08x} {:08x}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits())),
+                            _ => log.push(format!("inrange {source} {victim}")),
+                        },
+                        ContainCall::DrawableSetIndicatorColor { object, color } => log.push(format!("indicator {object} {color}")),
+                        ContainCall::ClearAndSetModelConditionFlags { clear, set, .. } => {
+                            log.push(format!("clearset {} {}", clear.iter().min().copied().unwrap_or(-1), set.iter().min().copied().unwrap_or(-1)));
+                        }
+                        ContainCall::DrawableReplaceModelConditionFlags { object, flags } => {
+                            let mut l = format!("mcreplace {object}");
+                            for f in flags {
+                                l.push_str(&format!(" {f}"));
+                            }
+                            log.push(l);
+                        }
+                        ContainCall::AcademyBuildingGarrisoned { player } => log.push(format!("academygarrison {player}")),
                         ContainCall::Defect { object, team, detection_time } => log.push(format!("defect {object} {} {detection_time}", team.map_or(-1, |t| t as i64))),
                         ContainCall::AcademyUnitEnteredTunnelNetwork { player } => log.push(format!("academytunnel {player}")),
                         ContainCall::HandlePartitionCellMaintenance { .. } => log.push("partition".to_string()),
@@ -1816,6 +2012,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             ModuleDataKind::MobNexusContain(m) => &m.open,
             ModuleDataKind::TunnelContain(t) => &t.open,
             ModuleDataKind::CaveContain(c) => &c.open,
+            ModuleDataKind::GarrisonContain(c) => &c.open,
             _ => unreachable!("not a contain"),
         };
         put_u32(&mut v, d.contain_max as u32);
@@ -1928,6 +2125,16 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         } else {
             put_u32(&mut v, 0);
         }
+        // batch R12: 1 and a garrison block's fields, or 0
+        if let ModuleDataKind::GarrisonContain(c) = &data {
+            put_u32(&mut v, 1);
+            put_u32(&mut v, u32::from(c.do_i_heal_objects) | u32::from(c.mobile_garrison) << 1 | u32::from(c.immune_to_clear_building_attacks) << 2 | u32::from(c.is_enclosing_container) << 3);
+            put_u32(&mut v, c.frames_for_full_heal.to_bits());
+            put_str(&mut v, &c.initial_roster_template_name);
+            put_u32(&mut v, c.initial_roster_count as u32);
+        } else {
+            put_u32(&mut v, 0);
+        }
         // batch R11: 1 and a cave block's index, or 0
         if let ModuleDataKind::CaveContain(c) = &data {
             put_u32(&mut v, 1);
@@ -1987,7 +2194,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     let mut templates = Vec::new();
     for (k, o) in sc.objs.iter().enumerate() {
         let mut kind_of: Vec<i32> = (0..8).filter(|&i| o.kinds >> i & 1 != 0).map(|i| KINDS[i]).collect();
-        for (i, kk) in [KINDOF_CLIFF_JUMPER, KINDOF_HERO, KINDOF_SALVAGER, KINDOF_PORTABLE_STRUCTURE, rts_lockstep_engine::common::kind_of::KINDOF_PARACHUTABLE].iter().enumerate() {
+        for (i, kk) in [KINDOF_CLIFF_JUMPER, KINDOF_HERO, KINDOF_SALVAGER, KINDOF_PORTABLE_STRUCTURE, rts_lockstep_engine::common::kind_of::KINDOF_PARACHUTABLE, rts_lockstep_engine::common::kind_of::KINDOF_GARRISONABLE_UNTIL_DESTROYED, rts_lockstep_engine::common::kind_of::KINDOF_NO_GARRISON].iter().enumerate() {
             if o.extra_kinds >> i & 1 != 0 {
                 kind_of.push(*kk);
             }
@@ -2023,6 +2230,15 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         }
     }
     w.cuts.contain.find_position = sc.find_pos;
+    // batch R12: the time of day, the players' colours, the muzzle flash's template
+    w.cuts.globals.time_of_day_is_night = sc.night;
+    for p in 0..4 {
+        w.cuts.player_colors.insert(p, 0x10 + p);
+        w.cuts.player_night_colors.insert(p, 0x20 + p);
+    }
+    w.cuts.contain.garrison_gun = true;
+    // batch R12: the movement terrain is valid on the even tiles (the garrison's door tries three places)
+    w.cuts.contain.valid_movement_cells = 0x55;
     // batch R11: the test's team factory: the neutral team and each object's
     for t in 0..=n as u32 {
         w.cuts.contain.known_teams.insert(t);
@@ -2092,6 +2308,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             a.moving = o.ai_moving;
             a.has_locomotor = o.has_loco;
             a.locomotor_sway = o.loco;
+            a.damage_state = Some(0); // batch R12: BODY_PRISTINE until an op says otherwise
             let mut pm = NewModule::plain(b"CtProbe", b"ModuleTag_Probe");
             pm.interfaces = if o.has_body { MODULEINTERFACE_BODY } else { 0 };
             pm.is_ai = o.has_ai;
@@ -2112,7 +2329,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 data.clone()
             } else {
                 // a transport's base starts from `TransportContainModuleData()` (infantry allowed inside)
-                let base = if o.cls == 10 {
+                let base = if o.cls == 12 {
+                    rts_lockstep_engine::logic::modules::garrison_contain::GarrisonContainModuleData::default().open
+                } else if o.cls == 10 {
                     rts_lockstep_engine::logic::modules::tunnel_contain::TunnelContainModuleData::default().open
                 } else if o.cls == 9 {
                     rts_lockstep_engine::logic::modules::mob_nexus_contain::MobNexusContainModuleData::default().open
@@ -2147,7 +2366,18 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                         d.die_mux_data.required_status.set(STATUSES[i], 1);
                     }
                 }
-                if o.cls == 11 {
+                if o.cls == 12 {
+                    ModuleDataKind::GarrisonContain(Arc::new(rts_lockstep_engine::logic::modules::garrison_contain::GarrisonContainModuleData {
+                        open: d,
+                        do_i_heal_objects: o.gflags & 1 != 0,
+                        frames_for_full_heal: o.heal_frames as f32,
+                        mobile_garrison: o.gflags & 2 != 0,
+                        immune_to_clear_building_attacks: o.gflags & 8 != 0,
+                        is_enclosing_container: o.gflags & 4 == 0,
+                        initial_roster_template_name: Vec::new(),
+                        initial_roster_count: 0,
+                    }))
+                } else if o.cls == 11 {
                     ModuleDataKind::CaveContain(Arc::new(rts_lockstep_engine::logic::modules::cave_contain::CaveContainModuleData { open: d, cave_index_data: o.cave_idx as i32 }))
                 } else if o.cls == 10 {
                     ModuleDataKind::TunnelContain(Arc::new(rts_lockstep_engine::logic::modules::tunnel_contain::TunnelContainModuleData { open: d, frames_for_full_heal: o.heal_frames as f32 }))
@@ -2234,6 +2464,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 ModuleDataKind::MobNexusContain(_) => b"MobNexusContain",
                 ModuleDataKind::TunnelContain(_) => b"TunnelContain",
                 ModuleDataKind::CaveContain(_) => b"CaveContain",
+                ModuleDataKind::GarrisonContain(_) => b"GarrisonContain",
                 _ => b"OpenContain",
             };
             let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class, b"ModuleTag_Contain", &cd).unwrap().unwrap();
@@ -2259,7 +2490,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             w.module_call(id, c, ModuleCall::OnCreate);
         }
         w.contain_set_position(id, &Coord3D { x: o.pos[0], y: o.pos[1], z: o.pos[2] });
-        w.set_orientation(id, o.orient);
+        // batch R12: as the driver sets the angle (`set_orientation` tells the container, which redeploys its riders)
+        w.contain_scene_set_orientation(id, o.orient);
         w.friend_bind_to_drawable(id, if o.drawable { 7 + k as i32 } else { INVALID_DRAWABLE_ID });
         let ob = w.objects.find_mut(id).unwrap();
         ob.experience.level = veterancy_of(k);
@@ -2350,7 +2582,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 info.input.amount = 10.0;
             }
             let fold3 = |p: &Coord3D| p.x.to_bits().wrapping_mul(31 * 31).wrapping_add(p.y.to_bits().wrapping_mul(31)).wrapping_add(p.z.to_bits());
-            if let Some(m) = m.filter(|_| o[0] < 34 || (42..=45).contains(&o[0]) || (47..=60).contains(&o[0]) || (62..=65).contains(&o[0])) {
+            if let Some(m) = m.filter(|_| o[0] < 34 || (42..=45).contains(&o[0]) || (47..=60).contains(&o[0]) || (62..=67).contains(&o[0])) {
                 match o[0] {
                     0 => {
                         w.module_call(id, m, ModuleCall::AddToContain(rider));
@@ -2393,6 +2625,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                                 Some(UpdateBody::MobNexusContain(c)) => Some(c.module_data().open.die_mux_data),
                                 Some(UpdateBody::TunnelContain(c)) => Some(c.module_data().open.die_mux_data),
                                 Some(UpdateBody::CaveContain(c)) => Some(c.module_data().open.die_mux_data),
+                                Some(UpdateBody::GarrisonContain(c)) => Some(c.module_data().open.die_mux_data),
                                 Some(UpdateBody::HealContain(c)) => Some(c.module_data().open.die_mux_data),
                                 _ => None,
                             };
@@ -2590,6 +2823,16 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     60 => {
                         w.module_call(id, m, ModuleCall::OnDrawableBoundToObject);
                     }
+                    // batch R12: GarrisonContain's
+                    66 => {
+                        w.module_call(id, m, ModuleCall::SetEvacDisposition((o[2] % 4) as i32));
+                    }
+                    67 => {
+                        if sc.objs[id as usize - 1].cls == 12 {
+                            let observer = if o[2] % 5 < 4 { (o[2] % 5) as i32 } else { -1 };
+                            result = w.module_call(id, m, ModuleCall::GetApparentControllingPlayer { observer }).as_int(-1) as u32;
+                        }
+                    }
                     // batch R11: CaveContain's
                     63 => {
                         w.module_call(id, m, ModuleCall::OnBuildComplete);
@@ -2641,8 +2884,56 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     }
                 }
                 38 => w.contain_set_position(id, &Coord3D { x: f(o[2]), y: f(o[3]), z: f(o[4]) }),
+                // batch R12: the rider's target (bit 0 the victim, 1 its place, 2 the goal) and DETECTED (bit 3); the range answers; the body's damage
+                // state; the current weapon (1 a weapon, 2 a poison one); the last shot (this frame less 0 to 2)
+                68 => {
+                    let rider_pos = w.objects.find(rider).unwrap().get_position();
+                    let ob = w.objects.find_mut(id).unwrap();
+                    ob.status.set(OBJECT_STATUS_DETECTED, (o[3] >> 3 & 1) as i32);
+                    if let Some(ai) = ob.ai {
+                        if let Some(UpdateBody::ModuleProbe(p)) = ob.modules[ai as usize].body.as_mut() {
+                            p.answers.current_victim = if o[3] & 1 != 0 { rider } else { INVALID_ID };
+                            p.answers.current_victim_pos = (o[3] & 2 != 0).then_some(rider_pos);
+                            p.answers.goal_object = if o[3] & 4 != 0 { rider } else { INVALID_ID };
+                        }
+                    }
+                }
+                69 => {
+                    for v in 0..5 {
+                        if o[2] >> v & 1 != 0 {
+                            w.cuts.contain.in_range.insert((id, v));
+                        } else {
+                            w.cuts.contain.in_range.remove(&(id, v));
+                        }
+                    }
+                }
+                70 => {
+                    let ob = w.objects.find_mut(id).unwrap();
+                    if let Some(b) = ob.body {
+                        if let Some(UpdateBody::ModuleProbe(p)) = ob.modules[b as usize].body.as_mut() {
+                            p.answers.damage_state = Some((o[2] % 4) as i32);
+                        }
+                    }
+                }
+                71 => match o[2] % 3 {
+                    0 => {
+                        w.cuts.contain.cur_weapon_damage_type.remove(&id);
+                    }
+                    k => {
+                        w.cuts.contain.cur_weapon_damage_type.insert(id, if k == 2 { rts_lockstep_engine::logic::damage::DAMAGE_POISON } else { rts_lockstep_engine::logic::damage::DAMAGE_EXPLOSION });
+                    }
+                },
+                72 => {
+                    let f = w.frame().wrapping_sub(o[2] % 3);
+                    w.cuts.contain.last_shot_fired_frame.insert(id, f);
+                }
                 // batch R8: the held flag
-                61 => w.objects.find_mut(id).unwrap().disabled.set(rts_lockstep_engine::common::disabled_types::DISABLED_HELD, (o[2] & 1) as i32),
+                61 => {
+                    let ob = w.objects.find_mut(id).unwrap();
+                    ob.disabled.set(rts_lockstep_engine::common::disabled_types::DISABLED_HELD, (o[2] & 1) as i32);
+                    // batch R12: and subdued (a garrison's riders may not fire)
+                    ob.disabled.set(rts_lockstep_engine::common::disabled_types::DISABLED_SUBDUED, (o[2] >> 1 & 1) as i32);
+                }
                 39 => w.set_effectively_dead(id, o[2] != 0),
                 40 => {
                     if o[2] != 0 {
@@ -2795,6 +3086,12 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let w: Vec<u32> = (0..6).map(|_| r.u32()).collect();
         out.push(format!("parachute data {w:08x?} {}", r.str()));
     }
+    // batch R12: a garrison block's fields
+    if r.u32() != 0 {
+        let (flags, heal) = (r.u32(), r.u32());
+        let roster = r.str();
+        out.push(format!("garrison data {flags:x} {heal:08x} {roster} {}", r.u32()));
+    }
     // batch R11: a cave block's index
     if r.u32() != 0 {
         out.push(format!("cave data {}", r.u32() as i32));
@@ -2850,6 +3147,17 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
                 }
                 for _ in 0..match has { 2 => 6, 3 | 5 => 7, 4 => 9, 6 => 3 + 36, 7 => 4, 8 => 5, 9 => 6, _ => 3 } {
                     state.push(r.u32());
+                }
+                // batch R12: a garrison's: the team, the points, the count, the positions, the rally point, then the station points and five words
+                if has == 10 {
+                    for _ in 0..1 + 40 * 5 + 1 + 3 * 40 * 3 + 3 {
+                        state.push(r.u32());
+                    }
+                    let stations = r.u32();
+                    state.push(stations);
+                    for _ in 0..stations.min(64) * 4 + 5 {
+                        state.push(r.u32());
+                    }
                 }
             }
             let rest: Vec<u32> = (0..18).map(|_| r.u32()).collect();
@@ -2948,6 +3256,12 @@ fn read_heal_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniRe
     Ok(())
 }
 
+// batch R12
+fn read_garrison_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
+    *out = Some(rts_lockstep_engine::logic::modules::garrison_contain::new_module_data(Some(ini))?);
+    Ok(())
+}
+
 // batch R11
 fn read_cave_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
     *out = Some(rts_lockstep_engine::logic::modules::cave_contain::new_module_data(Some(ini))?);
@@ -2978,7 +3292,7 @@ fn read_railed_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> Ini
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }, BlockParse { token: "C", parse: read_rider_change_block }, BlockParse { token: "O", parse: read_overlord_block }, BlockParse { token: "L", parse: read_heal_block }, BlockParse { token: "P", parse: read_parachute_block }, BlockParse { token: "M", parse: read_mob_nexus_block }, BlockParse { token: "N", parse: read_tunnel_block }, BlockParse { token: "V", parse: read_cave_block }];
+    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }, BlockParse { token: "C", parse: read_rider_change_block }, BlockParse { token: "O", parse: read_overlord_block }, BlockParse { token: "L", parse: read_heal_block }, BlockParse { token: "P", parse: read_parachute_block }, BlockParse { token: "M", parse: read_mob_nexus_block }, BlockParse { token: "N", parse: read_tunnel_block }, BlockParse { token: "V", parse: read_cave_block }, BlockParse { token: "G", parse: read_garrison_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)

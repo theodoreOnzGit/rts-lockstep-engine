@@ -281,6 +281,10 @@ pub enum ModuleCall {
     // --- p1w13-sonnet ---
     /// `AIUpdateInterface::getGoalObject()`; replies [`ModuleReply::Id`] (`INVALID_ID` for `NULL`).
     AiGetGoalObject,
+    /// batch R12 (GarrisonContain): `AIUpdateInterface::getCurrentVictim()`; replies [`ModuleReply::Id`] (`INVALID_ID` for `NULL`).
+    AiGetCurrentVictim,
+    /// batch R12: `AIUpdateInterface::getCurrentVictimPos()`; replies [`ModuleReply::Coord`], or [`ModuleReply::Unhandled`] for `NULL`.
+    AiGetCurrentVictimPos,
     /// `SpecialAbilityUpdate::isActive()`; replies [`ModuleReply::Bool`].
     SpecialAbilityIsActive,
     /// `PhysicsBehavior::getVelocity()`; replies [`ModuleReply::Coord`].
@@ -713,6 +717,14 @@ impl ModuleReply {
         match self {
             ModuleReply::Id(i) => *i,
             _ => crate::common::game_type::INVALID_ID,
+        }
+    }
+
+    /// The answer as a `Coord3D`, `None` for anything else (a `NULL` position). (p1w13-sonnet, batch R12)
+    pub fn as_coord_opt(&self) -> Option<Coord3D> {
+        match self {
+            ModuleReply::Coord(c) => Some(*c),
+            _ => None,
         }
     }
 

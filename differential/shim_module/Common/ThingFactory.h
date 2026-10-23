@@ -12,6 +12,7 @@ class ThingFactory
 public:
 	const ThingTemplate *findTemplate(const AsciiString &name, Bool check = TRUE);
 	Object *newObject(const ThingTemplate *tmplate, Team *team, ObjectStatusMaskType statusMask = ObjectStatusMaskType());
+	class Drawable *newDrawable(const ThingTemplate *tmplate);   /* p1w13-sonnet, batch R12: GarrisonContain's muzzle flash (differential/l9_open_contain_r.inc) */
 };
 extern ThingFactory *TheThingFactory;
 #endif

@@ -81,6 +81,7 @@ static MessageStream *TheMessageStream = &g_ctMessageStream;
 /* batch R11: CaveContain.cpp unchanged, on the real CaveSystem.cpp (renamed, as the tracker) */
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/System/CaveSystem.cpp"
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/CaveContain.cpp"
+#include "GarrisonContain_edit.cpp"   /* batch R12: its second station loop declares its own `t` (build.rs) */
 /* --- end p1w13-sonnet --- */
 #undef itoa
 
@@ -102,7 +103,7 @@ ModuleData *l9ctRead(const char *filename)
 		try {
 			/* --- p1w13-sonnet --- (batches R2, R3) */
 			const char c0 = currentLine.str()[0];
-			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : c0 == 'H' ? 4 : c0 == 'C' ? 5 : c0 == 'O' ? 6 : c0 == 'L' ? 7 : c0 == 'P' ? 8 : c0 == 'M' ? 9 : c0 == 'N' ? 10 : c0 == 'V' ? 11 : 0;
+			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : c0 == 'H' ? 4 : c0 == 'C' ? 5 : c0 == 'O' ? 6 : c0 == 'L' ? 7 : c0 == 'P' ? 8 : c0 == 'M' ? 9 : c0 == 'N' ? 10 : c0 == 'V' ? 11 : c0 == 'G' ? 12 : 0;
 			if (g_ctBlockCls == 1) data = TransportContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 2) data = InternetHackContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 3) data = RailedTransportContain::friend_newModuleData(&ini);
@@ -114,6 +115,7 @@ ModuleData *l9ctRead(const char *filename)
 			else if (g_ctBlockCls == 9) data = MobNexusContain::friend_newModuleData(&ini);   /* batch R9 */
 			else if (g_ctBlockCls == 10) data = TunnelContain::friend_newModuleData(&ini);   /* batch R10 */
 			else if (g_ctBlockCls == 11) data = CaveContain::friend_newModuleData(&ini);   /* batch R11 */
+			else if (g_ctBlockCls == 12) data = GarrisonContain::friend_newModuleData(&ini);   /* batch R12 */
 			else data = OpenContain::friend_newModuleData(&ini);
 			/* --- end p1w13-sonnet --- */
 		} catch (...) {
@@ -208,6 +210,8 @@ public:
 	}
 	Real m_health;
 	/* --- end p1w13-sonnet --- */
+	virtual BodyDamageType getDamageState() const { return m_dmgState; }   /* p1w13-sonnet, batch R12: the state an op gives (GarrisonContain's points) */
+	BodyDamageType m_dmgState = BODY_PRISTINE;
 	virtual void attemptDamage(DamageInfo *info) { ulog("bodydamage %d %s", (int)AsObject(const_cast<Thing *>(static_cast<const Thing *>(getObject())))->m_oid, ctInfoLine(info).c_str()); }
 	Real m_max;
 };
@@ -244,6 +248,7 @@ struct CtObj
 	/* --- end p1w13-sonnet --- */
 	Real loco[4];   /* batch R8: the locomotor's pitch and roll stiffness and damping */
 	AsciiString tmplName;
+	Weapon curW;   /* batch R12: the current weapon an op gives */
 };
 
 CtObj g_ctObjs[CT_OBJS];
@@ -311,8 +316,9 @@ void ctInstanceHook(const Drawable *d, const Matrix3D *m)
 }
 /* --- end p1w13-sonnet --- */
 
-/* getMultiLogicalBonePosition("FIREPOINT", max, NULL, transforms, TRUE): the object's fire points, when it has a drawable (the Rust side's cut) */
-Int ctMultiBone(const Object *obj, const char *prefix, Int maxBones, Coord3D *, Matrix3D *transforms, Bool)
+/* getMultiLogicalBonePosition(prefix, max, positions, transforms, TRUE): the object's fire points (any prefix), when it has a drawable (the Rust side's cut);
+** batch R12: the positions are their translations */
+Int ctMultiBone(const Object *obj, const char *prefix, Int maxBones, Coord3D *positions, Matrix3D *transforms, Bool)
 {
 	ulog("bonen %d %s %d", (int)obj->m_oid, prefix, (int)maxBones);
 	CtObj *a = ctOf(obj);
@@ -320,7 +326,13 @@ Int ctMultiBone(const Object *obj, const char *prefix, Int maxBones, Coord3D *, 
 	Int n = (Int)a->fpCount;
 	if (n > maxBones) n = maxBones;
 	if (n > CT_FP) n = CT_FP;
-	for (Int i = 0; i < n; ++i) transforms[i] = a->fp[i];
+	for (Int i = 0; i < n; ++i) {
+		/* batch R12: the bones rise by the condition the art was last put in (GarrisonContain loads a point set per damage state) */
+		Matrix3D m = a->fp[i];
+		m[2][3] += (Real)obj->m_drawable->m_boneCond;
+		if (transforms) transforms[i] = m;
+		if (positions) { Vector3 t = m.Get_Translation(); positions[i].x = t.X; positions[i].y = t.Y; positions[i].z = t.Z; }   /* batch R12: GarrisonContain asks for positions */
+	}
 	return n;
 }
 
@@ -336,6 +348,53 @@ Team *TeamFactory::findTeamByID(TeamID teamID)
 	return teamID <= (TeamID)g_ctN ? &g_ctObjs[teamID - 1].team : 0;
 }
 void ctDefectHook(Object *obj, Team *newTeam, UnsignedInt detectionTime) { ulog("defect %d %d %u", (int)obj->m_oid, newTeam ? newTeam->m_dummy : -1, detectionTime); }
+/* --- end p1w13-sonnet --- */
+/* --- p1w13-sonnet --- (batch R12: GarrisonContain) the muzzle-flash drawables (ids from 1000 in each case, and the client's lookup), the weapon's range
+** check (the test's answer: bit v of the source's mask for victim v, bit 0 for a position), the indicator colour and the flags put back */
+static std::map<DrawableID, Drawable *> g_ctEffects;
+static unsigned g_ctNextEffect = 1000;
+static unsigned g_ctInRange[CT_OBJS + 1];
+GameClient g_ctGameClient;
+GameClient *TheGameClient = &g_ctGameClient;
+void ctClearEffects() { for (std::map<DrawableID, Drawable *>::iterator it = g_ctEffects.begin(); it != g_ctEffects.end(); ++it) delete it->second; g_ctEffects.clear(); g_ctNextEffect = 1000; }
+Drawable *ThingFactory::newDrawable(const ThingTemplate *) { Drawable *d = new Drawable; d->m_effectId = (DrawableID)g_ctNextEffect++; g_ctEffects[d->m_effectId] = d; ulog("effnew %d", (int)d->m_effectId); return d; }
+void GameClient::destroyDrawable(Drawable *d) { ulog("effdestroy %d", (int)d->m_effectId); g_ctEffects.erase(d->m_effectId); delete d; }
+Drawable *GameClient::findDrawableByID(const DrawableID id) { std::map<DrawableID, Drawable *>::iterator it = g_ctEffects.find(id); return it == g_ctEffects.end() ? 0 : it->second; }
+void Drawable::setPosition(const Coord3D *p) { ulog("effpos %d %08x %08x %08x", (int)m_effectId, realBits(p->x), realBits(p->y), realBits(p->z)); }
+void Drawable::setOrientation(Real angle) { ulog("efforient %d %08x", (int)m_effectId, realBits(angle)); }
+void Drawable::setFullyObscuredByShroud(Bool fully) { ulog("effobscure %d %d", (int)m_effectId, fully ? 1 : 0); }
+void Drawable::setIndicatorColor(Color color) { ulog("indicator %d %d", m_ownerObject ? (int)m_ownerObject->m_oid : 0, (int)color); }
+void Drawable::replaceModelConditionFlags(const ModelConditionFlags &flags)
+{
+	char b[512];
+	m_boneCond = 0;
+	int n = sprintf(b, "mcreplace %d", m_ownerObject ? (int)m_ownerObject->m_oid : 0);
+	for (int i = 0; i < MODELCONDITION_COUNT; ++i) if (flags.test(i)) n += sprintf(b + n, " %d", i);
+	ulog("%s", b);
+}
+Bool Weapon::isWithinAttackRange(const Object *source, const Object *target) const
+{
+	ulog("inrange %d %d", (int)source->m_oid, (int)target->m_oid);
+	return (g_ctInRange[source->m_oid] >> target->m_oid & 1) != 0;
+}
+Bool Weapon::isWithinAttackRange(const Object *source, const Coord3D *pos) const
+{
+	ulog("inrangepos %d %08x %08x %08x", (int)source->m_oid, realBits(pos->x), realBits(pos->y), realBits(pos->z));
+	return (g_ctInRange[source->m_oid] & 1) != 0;
+}
+/* the low word of a garrison point's union: an object's id, an effect's id, or what a load wrote there */
+unsigned ctObjWord(const Object *o)
+{
+	if (!o) return 0;
+	for (int k = 0; k < g_ctN; ++k) if (g_ctObjs[k].obj == o) return (unsigned)o->m_oid;
+	return (unsigned)(size_t)o;
+}
+unsigned ctEffectWord(const Drawable *d)
+{
+	if (!d) return 0;
+	for (std::map<DrawableID, Drawable *>::iterator it = g_ctEffects.begin(); it != g_ctEffects.end(); ++it) if (it->second == d) return (unsigned)it->first;
+	return (unsigned)(size_t)d;
+}
 /* --- end p1w13-sonnet --- */
 /* --- p1w13-sonnet --- (batch R8: ParachuteContain) */
 void Object::convertBonePosToWorldPos(const Coord3D* bonePos, const Matrix3D* boneTransform, Coord3D* worldPos, Matrix3D* worldTransform) const
@@ -400,6 +459,7 @@ ExitInterface *Object::getObjectExitInterface() const
 const GeometryInfo &Drawable::getDrawableGeometryInfo() const { return m_ownerObject->getGeometryInfo(); }
 /* batch R10: TunnelContain's calls */
 void PowerAcademyStats::recordUnitEnteredTunnelNetwork() { ulog("academytunnel %d", (int)((Player *)(void *)this)->m_idx); }
+void PowerAcademyStats::recordBuildingGarrisoned() { ulog("academygarrison %d", (int)((Player *)(void *)this)->m_idx); }   /* batch R12 */
 void Object::setSafeOcclusionFrame(UnsignedInt frame) { ulog("occlusion %d %u", (int)m_oid, frame); }
 Real Locomotor::getPitchStiffness() const { return ctOfLoco(this)->loco[0]; }
 Real Locomotor::getRollStiffness() const { return ctOfLoco(this)->loco[1]; }
@@ -497,7 +557,8 @@ void AIUpdateInterface::setAttitude(AttitudeType tude) { ulog("aiattitude %d %d"
 void AIUpdateInterface::wakeUpAndAttemptToTarget(void) { ulog("aiwake %d", (int)m_owner->m_oid); }
 Bool Pathfinder::validMovementTerrain(PathfindLayerEnum layer, const Locomotor *locomotor, const Coord3D *pos)
 {
-	for (int k = 0; k < g_ctN; ++k) if ((const void *)&g_ctObjs[k].ai == (const void *)locomotor) return g_ctObjs[k].validTerrain != 0;
+	/* batch R12: valid on the even tiles only (the Rust side's ContainCutTables::valid_movement_cells, which the test sets to 0x55) */
+	for (int k = 0; k < g_ctN; ++k) if ((const void *)&g_ctObjs[k].ai == (const void *)locomotor) return g_ctObjs[k].validTerrain != 0 && (0x55u >> hdCell(pos->x, pos->y) & 1) != 0;
 	return false;
 }
 /* Object.cpp:3065-3073: the flag cleared, the weapon set told, the drawable's model condition (the line setWeaponSetFlag's stand-in writes, l9_upgrades.inc) */
@@ -544,6 +605,9 @@ Int Object::getTransportSlotCount() const
 /* the payload: the factory finds the scene's templates by name and makes nothing (the call is a line of the log) */
 const ThingTemplate *ctFindTemplate(const AsciiString &name)
 {
+	/* batch R12: GarrisonContain's muzzle flash (a function static there: the first answer holds for the process, so this one always exists) */
+	static ThingTemplate s_gun;
+	if (name.compare("GarrisonGun") == 0) return &s_gun;
 	for (int k = 0; k < g_ctN; ++k) if (g_ctObjs[k].obj->m_tmpl.m_name.compare(name) == 0) return &g_ctObjs[k].obj->m_tmpl;
 	return 0;
 }
@@ -623,7 +687,7 @@ void ctPutObject(CtObj *a)
 {
 	if (a->oc) {
 		OpenContain *oc = a->oc;
-		putU32(dynamic_cast<CaveContain *>(oc) ? 9 : dynamic_cast<TunnelContain *>(oc) ? 8 : dynamic_cast<MobNexusContain *>(oc) ? 7 : dynamic_cast<ParachuteContain *>(oc) ? 6 : dynamic_cast<OverlordContain *>(oc) ? 5 : dynamic_cast<RiderChangeContain *>(oc) ? 4 : dynamic_cast<HelixContain *>(oc) ? 3 : dynamic_cast<TransportContain *>(oc) ? 2 : 1);   /* batch R6: 5 an Overlord */   /* --- p1w13-sonnet --- (batches R2, R4, R5): 2 a transport, 3 a Helix, 4 a combat bike */
+		putU32(dynamic_cast<GarrisonContain *>(oc) ? 10 : dynamic_cast<CaveContain *>(oc) ? 9 : dynamic_cast<TunnelContain *>(oc) ? 8 : dynamic_cast<MobNexusContain *>(oc) ? 7 : dynamic_cast<ParachuteContain *>(oc) ? 6 : dynamic_cast<OverlordContain *>(oc) ? 5 : dynamic_cast<RiderChangeContain *>(oc) ? 4 : dynamic_cast<HelixContain *>(oc) ? 3 : dynamic_cast<TransportContain *>(oc) ? 2 : 1);   /* batch R6: 5 an Overlord */   /* --- p1w13-sonnet --- (batches R2, R4, R5): 2 a transport, 3 a Helix, 4 a combat bike */
 		putU32(oc->m_containListSize);
 		putU32((unsigned)oc->m_containList.size());
 		for (ContainedItemsList::const_iterator it = oc->m_containList.begin(); it != oc->m_containList.end(); ++it) putU32((unsigned)(*it)->m_oid);
@@ -671,6 +735,26 @@ void ctPutObject(CtObj *a)
 			if (HelixContain *hc = dynamic_cast<HelixContain *>(oc)) putU32((unsigned)hc->m_portableStructureID);   /* batch R4 */
 			if (OverlordContain *ovc = dynamic_cast<OverlordContain *>(oc)) putU32(ovc->m_redirectionActivated ? 1 : 0);   /* batch R6 */
 			if (RiderChangeContain *rc = dynamic_cast<RiderChangeContain *>(oc)) { putU32((unsigned)rc->m_extraSlotsInUse); putU32(rc->m_frameExitNotBusy); putU32(rc->m_scuttledOnFrame); }   /* batch R5: its own two, and the scuttle */
+		}
+		/* batch R12: a garrison's original team; per point the object, the target, the two frames and the effect (the unions' low words); the points in
+		** use; every position; the rally point; the station points; the two point flags, the hidden flag, the rally flag and the evacuation side */
+		if (GarrisonContain *gc = dynamic_cast<GarrisonContain *>(oc)) {
+			putU32(gc->m_originalTeam ? gc->m_originalTeam->getID() : 0u);
+			for (int i = 0; i < GarrisonContain::MAX_GARRISON_POINTS; ++i) {
+				const GarrisonContain::GarrisonPointData &p = gc->m_garrisonPointData[i];
+				putU32(ctObjWord(p.object)); putU32((unsigned)p.targetID); putU32(p.placeFrame); putU32(p.lastEffectFrame); putU32(ctEffectWord(p.effect));
+			}
+			putU32((unsigned)gc->m_garrisonPointsInUse);
+			for (int j = 0; j < GarrisonContain::MAX_GARRISON_POINT_CONDITIONS; ++j)
+				for (int i = 0; i < GarrisonContain::MAX_GARRISON_POINTS; ++i) { const Coord3D &q = gc->m_garrisonPoint[j][i]; putU32(realBits(q.x)); putU32(realBits(q.y)); putU32(realBits(q.z)); }
+			putU32(realBits(gc->m_exitRallyPoint.x)); putU32(realBits(gc->m_exitRallyPoint.y)); putU32(realBits(gc->m_exitRallyPoint.z));
+			putU32((unsigned)gc->m_stationPointList.size());
+			for (size_t i = 0; i < gc->m_stationPointList.size(); ++i) {
+				const GarrisonContain::StationPointData &s = gc->m_stationPointList[i];
+				putU32((unsigned)s.occupantID); putU32(realBits(s.position.x)); putU32(realBits(s.position.y)); putU32(realBits(s.position.z));
+			}
+			putU32(gc->m_stationGarrisonPointsInitialized ? 1 : 0); putU32(gc->m_garrisonPointsInitialized ? 1 : 0); putU32(gc->m_hideGarrisonedStateFromNonallies ? 1 : 0);
+			putU32(gc->m_rallyValid ? 1 : 0); putU32((unsigned)gc->m_evacDisposition);
 		}
 		/* batch R11: a cave's flag, index and original team */
 		if (CaveContain *cv = dynamic_cast<CaveContain *>(oc)) { putU32(cv->m_needToRunOnBuildComplete ? 1 : 0); putU32((unsigned)cv->m_caveIndex); putU32(cv->m_originalTeam ? cv->m_originalTeam->getID() : 0u); }
@@ -829,6 +913,15 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			putU32(realBits(pd->m_freeFallDamagePercent)); putU32(realBits(pd->m_killWhenLandingInWaterSlop));
 			putStr(pd->m_parachuteOpenSound.getEventName().str(), pd->m_parachuteOpenSound.getEventName().getLength());
 		}
+		/* batch R12: 1 and a garrison block's fields, or 0 */
+		putU32(g_ctBlockCls == 12 ? 1u : 0u);
+		if (g_ctBlockCls == 12) {
+			const GarrisonContainModuleData *gd = (const GarrisonContainModuleData *)d;
+			putU32((gd->m_doIHealObjects ? 1u : 0u) | (gd->m_mobileGarrison ? 2u : 0u) | (gd->m_immuneToClearBuildingAttacks ? 4u : 0u) | (gd->m_isEnclosingContainer ? 8u : 0u));
+			putU32(realBits(gd->m_framesForFullHeal));
+			putStr(gd->m_initialRoster.templateName.str(), gd->m_initialRoster.templateName.getLength());
+			putU32((unsigned)gd->m_initialRoster.count);
+		}
 		/* batch R11: 1 and a cave block's index, or 0 */
 		putU32(g_ctBlockCls == 11 ? 1u : 0u);
 		if (g_ctBlockCls == 11) putU32((unsigned)((const CaveContainModuleData *)d)->m_caveIndexData);
@@ -869,6 +962,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		unsigned held, paraBoneHas, paraBone[3][3], loco[4], producer;   /* batch R8 */
 		unsigned occl;   /* batch R10 */
 		unsigned caveIdx;   /* batch R11 */
+		unsigned gflags;   /* batch R12 */
 		/* --- end p1w13-sonnet --- */
 	} oc[CT_OBJS];
 	for (int k = 0; k < g_ctN; ++k) {
@@ -895,6 +989,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		o.held = c.u(); o.paraBoneHas = c.u(); for (int j = 0; j < 3; ++j) for (int i = 0; i < 3; ++i) o.paraBone[j][i] = c.u(); for (int i = 0; i < 4; ++i) o.loco[i] = c.u(); o.producer = c.u();   /* batch R8 */
 		o.occl = c.u();   /* batch R10 */
 		o.caveIdx = c.u();   /* batch R11 */
+		o.gflags = c.u();   /* batch R12 */
 		/* --- end p1w13-sonnet --- */
 	}
 	for (int i = 0; i < g_ctN; ++i) for (int j = 0; j < g_ctN; ++j) g_ctRel[i][j] = (Relationship)c.s();
@@ -910,6 +1005,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 	g_ctFindPosHas = c.u() != 0;
 	g_ctFindPos.x = c.f(); g_ctFindPos.y = c.f(); g_ctFindPos.z = c.f();
 	g_spGlobals.m_maxTunnelCapacity = c.s();   /* batch R10 */
+	g_spGlobals.m_timeOfDay = c.u() ? TIME_OF_DAY_NIGHT : 0;   /* batch R12: night or not (the garrison's indicator colour) */
 	/* --- end p1w13-sonnet --- */
 
 	/* build the world */
@@ -935,6 +1031,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 	g_instanceHook = ctInstanceHook;   /* batch R8 */
 	g_physOwnerHook = ctPhysOwner;   /* batch R8 */
 	g_defectHook = ctDefectHook;   /* batch R11 */
+	g_objXformFromPose = true;   /* batch R12: the transform of the pose (GarrisonContain's doors) */
 	ModTestCaveSystem caveSystem;   /* batch R11: a cave system per case */
 	TheCaveSystem = &caveSystem;
 	g_spLocal = &g_ctPlayers[0];   /* batch R5: the local player is player 0 (RiderChangeContain hands the selection over for it) */
@@ -947,6 +1044,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		g_ctPlayers[p].m_defaultTeam = &g_ctNeutralTeam;
 		g_ctPlayers[p].m_skirmishAI = (skirmishMask >> p & 1) != 0;   /* batch R8 */
 		g_ctPlayers[p].m_tunnelSystem = new ModTestTunnelTracker;   /* batch R10 */
+		g_ctPlayers[p].m_color = 0x10 + p; g_ctPlayers[p].m_nightColor = 0x20 + p;   /* batch R12 */
 	}
 	for (int k = 0; k < g_ctN; ++k) {
 		CtObj &a = g_ctObjs[k];
@@ -967,6 +1065,11 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		a.team.m_dummy = k + 1;
 		obj->m_team = &a.team;
 		obj->m_player = o.player >= 0 ? &g_ctPlayers[o.player] : 0;
+		a.team.m_controller = obj->m_player;   /* batch R12: the team's player (GarrisonContain asks a team) */
+		/* batch R12: no victim, weapon or last shot until an op gives them */
+		a.ai.m_victim = 0; a.ai.m_victimPosHas = false; a.ai.m_goal = 0;
+		a.curW = Weapon(); obj->m_curWeapon = 0; obj->m_lastShotFrame = 0;
+		g_ctInRange[k + 1] = 0;
 		a.tmplName.format("T%d", k + 1);
 		obj->m_tmpl.m_name = a.tmplName;
 		AudioEventRTS *ev[3] = { &obj->m_tmpl.m_soundEnter, &obj->m_tmpl.m_soundExit, &obj->m_tmpl.m_soundFalling };
@@ -1015,6 +1118,8 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		if (o.extraKinds & 8) obj->m_kindOf.set(KINDOF_PORTABLE_STRUCTURE);   /* batch R4 */
 		/* --- p1w13-sonnet --- (batch R8: ParachuteContain) */
 		if (o.extraKinds & 16) obj->m_kindOf.set(KINDOF_PARACHUTABLE);
+		if (o.extraKinds & 32) obj->m_kindOf.set(KINDOF_GARRISONABLE_UNTIL_DESTROYED);   /* batch R12 */
+		if (o.extraKinds & 64) obj->m_kindOf.set(KINDOF_NO_GARRISON);   /* batch R12 */
 		if (o.held) obj->m_disabledBits |= 1u << (unsigned)DISABLED_HELD;
 		for (int j = 0; j < 3; ++j) {
 			a.draw.m_paraBoneHas[j] = (o.paraBoneHas >> j & 1) != 0;
@@ -1072,6 +1177,16 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			TransportContainModuleData *tdata = 0;   /* --- p1w13-sonnet --- (batch R2: TransportContain) */
 			if (k == 0) a.data = (OpenContainModuleData *)d;
 			else {
+				if (o.cls == 12) {
+					/* batch R12: a garrison's data: the scene's flags (bit 0 heal, 1 mobile, 2 not enclosing, 3 immune), its heal time the scene's heal frames */
+					GarrisonContainModuleData *gd = new GarrisonContainModuleData;
+					gd->m_doIHealObjects = (o.gflags & 1) != 0;
+					gd->m_mobileGarrison = (o.gflags & 2) != 0;
+					gd->m_isEnclosingContainer = (o.gflags & 4) == 0;
+					gd->m_immuneToClearBuildingAttacks = (o.gflags & 8) != 0;
+					gd->m_framesForFullHeal = (Real)o.healFrames;
+					a.data = gd;
+				} else
 				if (o.cls == 11) {
 					/* batch R11: a cave's data, its index the scene's */
 					CaveContainModuleData *vd = new CaveContainModuleData;
@@ -1199,6 +1314,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				else if (cls == 9) a.oc = new(ShimZeroFill{}) MobNexusContain(a.obj, k == 0 ? d : (ModuleData *)a.data);   /* batch R9 */
 				else if (cls == 10) a.oc = new(ShimZeroFill{}) TunnelContain(a.obj, k == 0 ? d : (ModuleData *)a.data);   /* batch R10 */
 				else if (cls == 11) a.oc = new(ShimZeroFill{}) CaveContain(a.obj, k == 0 ? d : (ModuleData *)a.data);   /* batch R11 */
+				else if (cls == 12) a.oc = new(ShimZeroFill{}) GarrisonContain(a.obj, k == 0 ? d : (ModuleData *)a.data);   /* batch R12 */
 				else
 				/* --- end p1w13-sonnet --- */
 				a.oc = new OpenContain(a.obj, a.data);
@@ -1224,6 +1340,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		g_findTemplateHook = 0; g_newObjectHook = 0; g_setTeamHook = 0; g_spLocal = 0; g_instanceHook = 0; g_physOwnerHook = 0; g_defectHook = 0;   /* --- p1w13-sonnet --- (batches R2, R4, R5, R8) */
 		for (int p = 0; p < CT_PLAYERS; ++p) { delete g_ctPlayers[p].m_tunnelSystem; g_ctPlayers[p].m_tunnelSystem = 0; }   /* batch R10 */
 	TheCaveSystem->reset(); TheCaveSystem = 0;   /* batch R11 */
+	ctClearEffects(); g_objXformFromPose = false;   /* batch R12 */
 		return 5;
 	}
 	for (int k = 0; k < g_ctN; ++k) {
@@ -1375,7 +1492,24 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				case 63: if (oc2) { if (CreateModuleInterface *cr = oc2->getCreate()) cr->onBuildComplete(); } break;
 				case 64: if (CaveContain *cv2 = dynamic_cast<CaveContain *>(oc2)) cv2->tryToSetCaveIndex((Int)(o[2] % 4)); break;
 				case 65: if (oc2) oc2->recalcApparentControllingPlayer(); break;
-				case 61: if (o[2] & 1) t->obj->m_disabledBits |= 1u << (unsigned)DISABLED_HELD; else t->obj->m_disabledBits &= ~(1u << (unsigned)DISABLED_HELD); break;
+				/* batch R12: GarrisonContain's evacuation side and apparent controller; the rider's target, weapon, range, last shot and the body's damage state */
+				case 66: if (oc2) oc2->setEvacDisposition((EvacDisposition)(o[2] % 4)); break;
+				case 67: if (GarrisonContain *gc2 = dynamic_cast<GarrisonContain *>(oc2)) { const Player *ap = gc2->getApparentControllingPlayer(o[2] % 5 < 4 ? &g_ctPlayers[o[2] % 5] : 0); result = ap ? (unsigned)((const Player *)ap - g_ctPlayers) : 0xffffffffu; } break;
+				case 68:
+					t->ai.m_victim = (o[3] & 1) ? r2 : 0;
+					t->ai.m_victimPosHas = (o[3] & 2) != 0;
+					if (o[3] & 2) t->ai.m_victimPos = *r2->getPosition();
+					t->ai.m_goal = (o[3] & 4) ? r2 : 0;
+					if (o[3] & 8) t->obj->m_status.set(OBJECT_STATUS_DETECTED); else t->obj->m_status.set(OBJECT_STATUS_DETECTED, 0);
+					break;
+				case 69: g_ctInRange[t->obj->m_oid] = o[2]; break;
+				case 70: if (t->body) t->body->m_dmgState = (BodyDamageType)(o[2] % 4); break;
+				case 71: t->curW = Weapon(); t->curW.m_damageType = (o[2] % 3 == 2) ? (Int)DAMAGE_POISON : (Int)DAMAGE_EXPLOSION; t->obj->m_curWeapon = (o[2] % 3) ? &t->curW : 0; break;
+				case 72: t->obj->m_lastShotFrame = gl.m_frame - o[2] % 3; break;
+				case 61: if (o[2] & 1) t->obj->m_disabledBits |= 1u << (unsigned)DISABLED_HELD; else t->obj->m_disabledBits &= ~(1u << (unsigned)DISABLED_HELD);
+					/* batch R12: and subdued */
+					if (o[2] & 2) t->obj->m_disabledBits |= 1u << (unsigned)DISABLED_SUBDUED; else t->obj->m_disabledBits &= ~(1u << (unsigned)DISABLED_SUBDUED);
+					break;
 				/* --- end p1w13-sonnet --- */
 				default: break;
 				}
@@ -1419,6 +1553,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 	}
 	for (int p = 0; p < CT_PLAYERS; ++p) { delete g_ctPlayers[p].m_tunnelSystem; g_ctPlayers[p].m_tunnelSystem = 0; }   /* batch R10 */
 	TheCaveSystem->reset(); TheCaveSystem = 0;   /* batch R11 */
+	ctClearEffects(); g_objXformFromPose = false;   /* batch R12 */
 	delete d;
 	TheGameLogic = 0; TheAudio = 0; TheInGameUI = 0; TheAI = 0; ThePartitionManager = 0; TheTerrainLogic = 0;
 	g_modFindHook = 0; g_modDestroyHook = 0; g_teamRelHook = 0; g_xformHook = 0; g_multiBoneHook = 0;

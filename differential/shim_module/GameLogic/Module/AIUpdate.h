@@ -68,6 +68,12 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	const Locomotor *getCurLocomotor() const { return m_hasLoco ? (const Locomotor *)this : 0; }   /* the test's locomotor is the AI itself */
 	Locomotor *getCurLocomotor() { return m_hasLoco ? (Locomotor *)this : 0; }   /* batch R8 */
 	void aiHunt( CommandSourceType cmdSource );   /* batch R8 */
+	/* batch R12: GarrisonContain asks what the rider is shooting at */
+	Object *getCurrentVictim() const { return m_victim; }
+	const Coord3D *getCurrentVictimPos() const { return m_victimPosHas ? &m_victimPos : 0; }
+	Object *m_victim = 0;
+	Bool m_victimPosHas = false;
+	Coord3D m_victimPos;
 	Int m_freeToExit = 0;
 	Bool m_hasLoco = false;
 	/* --- end p1w13-sonnet --- */

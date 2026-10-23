@@ -175,6 +175,18 @@ impl XferState {
     }
 }
 
+// --- p1w13-sonnet --- (batch R12)
+std::thread_local! {
+    /// A load read a byte other than 0 or 1 into a `bool` since [`take_invalid_bool_read`] was last called.
+    static INVALID_BOOL_READ: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether a load read a byte other than 0 or 1 into a `bool` (`Undefined::InvalidBoolLoaded`) since the last call; clears the note.
+pub fn take_invalid_bool_read() -> bool {
+    INVALID_BOOL_READ.with(|f| f.replace(false))
+}
+// --- end p1w13-sonnet ---
+
 /// `class Xfer`. Implementors supply the state accessors, the mode-specific
 /// operations and [`Xfer::xfer_implementation`]; the typed methods are
 /// upstream's defaults and may be overridden as upstream does
@@ -252,6 +264,10 @@ pub trait Xfer {
     fn xfer_bool(&mut self, v: &mut bool) -> XferResult<()> {
         let mut b = [u8::from(*v)];
         self.xfer_implementation(&mut b)?;
+        // batch R12: a byte that is no `bool` is undefined upstream; noted for the caller that has the world ([`take_invalid_bool_read`])
+        if b[0] > 1 {
+            INVALID_BOOL_READ.with(|f| f.set(true));
+        }
         *v = b[0] != 0;
         Ok(())
     }

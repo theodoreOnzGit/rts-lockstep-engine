@@ -246,6 +246,9 @@ pub enum Undefined {
     /// `OpenContain::processDamageToContained` loops `while( *it )`, so after the last rider it reads the value of `list::end()`, which holds none. The shipped game
     /// reads it as NULL (the loop ends); recorded here, not acted on.
     EndIteratorDereferenced,
+    /// batch R12: a load reads a byte other than 0 or 1 into a `Bool` (a C++ `bool`: an invalid value; seen when a container loads another class's
+    /// save).
+    InvalidBoolLoaded,
     // --- end p1w13-sonnet ---
     // --- p1l9-upgrades ---
     /// `ArmorUpgrade`: a triggered chemical-suits upgrade on an object with no

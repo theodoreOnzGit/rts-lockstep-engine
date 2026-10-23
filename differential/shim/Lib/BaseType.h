@@ -34,7 +34,23 @@ typedef unsigned short     WideChar;
 #define BitToggle( x, i ) ( (x) ^= (i) )
 
 struct RealRange { Real lo, hi; };
-struct Coord2D { Real x, y; };
+/* p1w13-sonnet, batch R12 (GarrisonContain): length() and toAngle(), BaseType.h verbatim (ACos is Trig.cpp's) */
+Real ACos(Real);
+struct Coord2D { Real x, y;
+	Real length( void ) const { return (Real)sqrt( x*x + y*y ); }
+	Real toAngle( void ) const
+	{
+		const Real len = length();
+		if (len == 0.0f)
+			return 0.0f;
+		Real c = x/len;
+		if (c < -1.0f)
+			c = -1.0f;
+		else if (c > 1.0f)
+			c = 1.0f;
+		return y < 0.0f ? -ACos(c) : ACos(c);
+	}
+};
 struct ICoord2D { Int x, y; };
 struct Region2D { Coord2D lo, hi; };
 struct IRegion2D { ICoord2D lo, hi; };

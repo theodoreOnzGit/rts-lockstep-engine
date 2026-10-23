@@ -1856,6 +1856,7 @@ macro_rules! with_contain_body {
             UpdateBody::MobNexusContain($m) => Some($e),
             UpdateBody::TunnelContain($m) => Some($e),
             UpdateBody::CaveContain($m) => Some($e),
+            UpdateBody::GarrisonContain($m) => Some($e),
             UpdateBody::HealContain($m) => Some($e),
             _ => None,
         }
