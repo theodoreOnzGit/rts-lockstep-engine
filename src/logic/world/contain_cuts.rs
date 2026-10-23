@@ -61,6 +61,8 @@ pub struct ContainCutTables {
     /// batch R10: a query that reads `&World` met a tunnel whose object has no controlling player (`getControllingPlayer()->getTunnelSystem()` through
     /// `NULL`); the module records it after the call.
     pub null_player_read: std::cell::Cell<bool>,
+    /// batch R11: `TheTeamFactory->findTeamByID(id)` under the stub: the teams the test's factory has.
+    pub known_teams: BTreeSet<crate::logic::world::ids::TeamId>,
     /// batch R6: how deep the reads of other objects' contain modules go (`open_contain::view_*`, through `&World`), and whether one went too deep.
     pub view_depth: std::cell::Cell<u32>,
     pub view_overflow: std::cell::Cell<bool>,
@@ -174,6 +176,9 @@ pub enum ContainCall {
     HandlePartitionCellMaintenance { object: ObjectId },
     /// `obj->setSafeOcclusionFrame(frame)`.
     SetSafeOcclusionFrame { object: ObjectId, frame: u32 },
+    // batch R11 (CaveContain)
+    /// `obj->defect(newTeam, detectionTime)` (`None` for a `NULL` team).
+    Defect { object: ObjectId, team: Option<crate::logic::world::ids::TeamId>, detection_time: u32 },
     // --- end p1w13-sonnet ---
 }
 
@@ -492,6 +497,26 @@ impl World {
             if let Some(o) = self.objects.find_mut(id) {
                 o.safe_occlusion_frame = frame;
             }
+        }
+    }
+
+    // batch R11 (CaveContain)
+    /// `obj->defect(newTeam, detectionTime)`. The stub records the call only; a `NULL` team is not run (`World::defect` takes a team).
+    pub fn contain_defect(&mut self, id: ObjectId, team: Option<crate::logic::world::ids::TeamId>, detection_time: u32) {
+        self.contain_cut(ContainCall::Defect { object: id, team, detection_time });
+        if !self.cuts.contain.stub_object_calls {
+            if let Some(t) = team {
+                self.defect(id, t, detection_time);
+            }
+        }
+    }
+
+    /// `TheTeamFactory->findTeamByID(id) != NULL`: under the stub, the test's teams ([`ContainCutTables::known_teams`]).
+    pub fn contain_find_team_by_id(&self, id: crate::logic::world::ids::TeamId) -> bool {
+        if self.cuts.contain.stub_object_calls {
+            self.cuts.contain.known_teams.contains(&id)
+        } else {
+            self.teams.find_team_by_id(id).is_some()
         }
     }
 

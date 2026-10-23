@@ -7,6 +7,14 @@ class Team { public: int m_dummy;
 	/* --- p1w13-sonnet --- (update batch O: Object::getRelationship, cut from Object.cpp by build.rs, asks it; differential/l9_squish_collide_o.inc) */
 	Relationship getRelationship(const Team *that) const;
 	class Player *m_controller = 0;   /* update batch O: the player of the team (the test's) */
+	/* batch R11 (CaveContain): Team.h's id, which the test's number is */
+	UnsignedInt getID() const { return (UnsignedInt)m_dummy; }
 	/* --- end p1w13-sonnet --- */
 };
+/* --- p1w13-sonnet --- (batch R11: CaveContain's xfer; Team.h lines 41-42 and the factory's lookup, answered by differential/l9_open_contain_r.inc) */
+typedef UnsignedInt TeamID;
+#define TEAM_ID_INVALID 0
+class TeamFactory { public: Team *findTeamByID( TeamID teamID ); };
+extern TeamFactory *TheTeamFactory;
+/* --- end p1w13-sonnet --- */
 #endif

@@ -77,6 +77,7 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	Bool m_paraBoneHas[3] = { false, false, false };
 	Coord3D m_paraBone[3];
 	const class GeometryInfo &getDrawableGeometryInfo() const;   /* batch R8: the owner's geometry (differential/l9_open_contain_r.inc) */
+	void setIndicatorColor(Color color) {}   /* batch R11: CaveContain (never reached here: see cave_contain.rs) */
 	Bool m_exitBoneHas = false;
 	Coord3D m_exitBone;
 	/* --- end p1w13-sonnet --- */

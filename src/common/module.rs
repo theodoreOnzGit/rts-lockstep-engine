@@ -414,6 +414,8 @@ pub enum ModuleDataKind {
     OpenContain(Arc<crate::logic::modules::open_contain::OpenContainModuleData>),
     /// `TransportContainModuleData`.
     TransportContain(Arc<crate::logic::modules::transport_contain::TransportContainModuleData>),
+    /// `CaveContain`'s data.
+    CaveContain(Arc<crate::logic::modules::cave_contain::CaveContainModuleData>),
     /// `TunnelContain`'s data.
     TunnelContain(Arc<crate::logic::modules::tunnel_contain::TunnelContainModuleData>),
     /// `MobNexusContain`'s data.
@@ -534,6 +536,7 @@ impl ModuleDataKind {
             ModuleDataKind::SlowDeathBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::OpenContain(d) => &d.update.behavior.module_data,
             ModuleDataKind::TransportContain(d) => &d.open.update.behavior.module_data,
+            ModuleDataKind::CaveContain(d) => &d.open.update.behavior.module_data,
             ModuleDataKind::TunnelContain(d) => &d.open.update.behavior.module_data,
             ModuleDataKind::MobNexusContain(d) => &d.open.update.behavior.module_data,
             ModuleDataKind::ParachuteContain(d) => &d.open.update.behavior.module_data,
@@ -948,6 +951,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::TunnelContain(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.open.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::CaveContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.open.update.behavior.module_data.set_module_tag_name_key(key);
                     true

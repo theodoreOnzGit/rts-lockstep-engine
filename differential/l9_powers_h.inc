@@ -156,7 +156,8 @@ void Player::setUnitsVisionSpied(Bool setting, KindOfMaskType whichUnits, Int by
 	ulog("spied %d %d %d %08x%08x%08x%08x", (int)m_idx, (int)setting, (int)byWhom, w[3], w[2], w[1], w[0]);
 }
 void PowerAcademyStats::recordSpecialPowerUsed(const SpecialPowerTemplate *t) { ulog("academy %d %u", (int)((Player *)this)->m_idx, ref_sp_raw_id(t)); }
-void Object::defect(Team *newTeam, UnsignedInt detectionTime) { ulog("defect %d %d %u", (int)m_oid, (int)(size_t)newTeam, detectionTime); }
+void (*g_defectHook)(Object *, Team *, UnsignedInt) = 0;   /* p1w13-sonnet, batch R11: the contain test names the team (differential/l9_open_contain_r.inc) */
+void Object::defect(Team *newTeam, UnsignedInt detectionTime) { if (g_defectHook) { g_defectHook(this, newTeam, detectionTime); return; } ulog("defect %d %d %u", (int)m_oid, (int)(size_t)newTeam, detectionTime); }
 void Object::setShroudClearingRange(Real r) { if (r != m_shroudRange) m_shroudRange = r; }   /* Object.cpp:5185-5189 (the relook after it is the partition manager's) */
 void CleanupHazardUpdate::setCleanupAreaParameters(const Coord3D *pos, Real range) { ulog("cleanup %u,%u,%u %u", realBits(pos->x), realBits(pos->y), realBits(pos->z), realBits(range)); }
 

@@ -596,6 +596,11 @@ impl World {
     pub fn xfer_module_slot(&mut self, id: ObjectId, idx: usize, xfer: &mut dyn Xfer) -> XferResult<()> {
         let mut snap = self.take_slot_snapshot(id, idx);
         let r = xfer.xfer_snapshot(&mut snap);
+        // batch R11: a cave's load asks the team factory about the original team it read (it throws `SC_INVALID_DATA` for one it does not know)
+        let r = match (&mut snap.body, r) {
+            (Some(crate::logic::world::update_body::UpdateBody::CaveContain(c)), Ok(())) => c.check_loaded_team(self),
+            (_, r) => r,
+        };
         self.put_slot_snapshot(id, idx, snap);
         r
     }

@@ -221,6 +221,12 @@ pub enum ModuleCall {
     AiLocomotorSetCloseEnoughDist3D(bool),
     /// `PhysicsBehavior::setIsInFreeFall(on)`.
     PhysicsSetIsInFreeFall(bool),
+    /// batch R11: `getCaveInterface() != NULL`; replies [`ModuleReply::Bool`].
+    HasCaveInterface,
+    /// `CaveInterface::setOriginalTeam(team)` (`None` for `NULL`).
+    SetOriginalTeam(Option<crate::logic::world::ids::TeamId>),
+    /// `CaveInterface::tryToSetCaveIndex(newIndex)`.
+    TryToSetCaveIndex(i32),
     /// batch R9: `MobNexusContain::tryToEvacuate(exposeStealthedUnits)`; replies [`ModuleReply::Bool`].
     TryToEvacuate { expose_stealthed_units: bool },
     /// `ExitInterface::useSpawnRallyPoint()`; replies [`ModuleReply::Bool`] (`FALSE` unless the module says otherwise, as upstream's default).

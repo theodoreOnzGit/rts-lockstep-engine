@@ -48,6 +48,10 @@
 /* the Upgrade build's other stand-ins keep their own names there; here the
 ** Player of Upgrade.h's declarations is a name of this unit's own */
 #define Player ModTestPlayer
+#define TeamFactory ModTestTeamFactory   /* batch R11: the contain driver's stand-in */
+#define TheTeamFactory ModTestTheTeamFactory
+#define CaveSystem ModTestCaveSystem   /* p1w13-sonnet, batch R11: CaveSystem.cpp in the contain driver (the tunnel tracker test links its own) */
+#define TheCaveSystem ModTestTheCaveSystem
 #define TunnelTracker ModTestTunnelTracker   /* p1w13-sonnet, batch R10: TunnelTracker.cpp in the contain driver (the tunnel tracker test links its own) */
 #define Money ModTestMoney
 #define InGameUI ModTestInGameUI

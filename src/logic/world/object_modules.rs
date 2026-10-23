@@ -301,7 +301,7 @@ impl World {
 
     /// The first module, in module order, that answers `true` to a
     /// `Has...Interface` call.
-    fn first_module_answering(&mut self, id: ObjectId, call: ModuleCall) -> Option<ModuleIndex> {
+    pub(crate) fn first_module_answering(&mut self, id: ObjectId, call: ModuleCall) -> Option<ModuleIndex> {
         self.all_modules(id).into_iter().find(|&idx| self.module_call(id, idx, call.clone()).as_bool())
     }
 

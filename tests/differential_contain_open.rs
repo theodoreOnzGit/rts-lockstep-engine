@@ -32,6 +32,10 @@
 //! Batch R3 adds the `I` (`InternetHackContain`) and `R` (`RailedTransportContain`) blocks (the transport's fields), class codes 2 and 3 for the scene's
 //! containers, and per object a dock behaviour after the contain (open or closed; `setDockOpen` is a line of the log).
 //!
+//! Batch R11 adds the `V` block (`CaveContain`: the base's fields and `CaveIndex`), class code 11, ops 63 to 65 (`onBuildComplete`,
+//! `tryToSetCaveIndex`, `recalcApparentControllingPlayer`), the create modules' `onCreate` after each object is made, every container built first in one
+//! case in two, the cave scene ([`cave_scene`]), the test's team factory, and the cave system's slots after the players' trackers in each op's state.
+//!
 //! Batch R10 adds the `N` block (`TunnelContain`: the base's fields and `TimeForFullHeal`), class code 10, a tunnel tracker for every scene player
 //! (written after the objects in each op's state), the template's occlusion delay, and the tunnels' capacity (`m_maxTunnelCapacity`).
 //!
@@ -277,6 +281,21 @@
 //! | 1571 | a captured tunnel not registered with the new owner |
 //! | 1572 | the network not healed |
 //!
+//! Batch R11, `cave_contain.rs` (9,000 cases: all 10 caught; the 146 caught plants above were run again and are still all caught):
+//!
+//! | id | planted bug |
+//! |---|---|
+//! | 1581 | a loaded original team dropped (caught by the cave scene) |
+//! | 1582 | a re-indexed cave not registered with its new tracker |
+//! | 1583 | the connected caves never defect |
+//! | 1584 | `isKickOutOnCapture` TRUE |
+//! | 1585 | `onRemovedFrom` not called |
+//! | 1586 | the apparent controller not worked out on containing |
+//! | 1587 | the caves not given back when the last rider leaves |
+//! | 1588 | a dead cave stays in its tracker |
+//! | 1589 | the data's cave index ignored |
+//! | 1590 | the caves not given back when the count is 0 |
+//!
 //! Not planted, unobservable here: the `wasSelected` argument of `onContaining` (1375, removed). `OpenContain::onContaining` ignores it; ~~`TransportContain` and `GarrisonContain` use it, and
 //! their tests will catch it~~ **CORRECTED 2026-10-22 (batch R2)**: `TransportContain::onContaining` only hands it to the base, so it is unobservable there too;
 //! of the contain family only `RiderChangeContain` reads it (it reselects the container), so its test is the one that can catch it.
@@ -498,6 +517,8 @@ struct Obj {
     producer: u32,
     /// batch R10: the template's occlusion delay (a tunnel sets the safe occlusion frame of a rider it lets go)
     occl: u32,
+    /// batch R11: a scene-built cave's index
+    cave_idx: u32,
 }
 
 /// The riders a scene-built combat bike can name (the driver's `kCtRiderSets`): per set up to three of (template, index into [`RIDER_TEMPLATES`], 0
@@ -636,6 +657,7 @@ impl Obj {
         }
         w.u(self.producer);
         w.u(self.occl);
+        w.u(self.cave_idx);
     }
 
     fn read(r: &mut R<'_>) -> Obj {
@@ -757,6 +779,7 @@ impl Obj {
         }
         o.producer = r.u();
         o.occl = r.u();
+        o.cave_idx = r.u();
         o
     }
 }
@@ -895,7 +918,11 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     let mob = !transport && !heal && !parachute && g.below(2) == 0;
     // batch R10: one plain block in two of the rest is a tunnel's (`N`)
     let tunnel = !transport && !heal && !parachute && !mob && g.below(2) == 0;
-    let token = if tunnel {
+    // batch R11: one plain block in two of the rest is a cave's (`V`)
+    let cave = !transport && !heal && !parachute && !mob && !tunnel && g.below(2) == 0;
+    let token = if cave {
+        "V\n"
+    } else if tunnel {
         "N\n"
     } else if mob {
         "M\n"
@@ -928,6 +955,9 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
             }
         }
         field!(30, "ShouldDrawPips", gen_bool(g, clean));
+    }
+    if cave {
+        field!(60, "CaveIndex", format!("{}", *pick(g, &[&0i32, &0, &1, &2])));
     }
     if tunnel {
         field!(60, "TimeForFullHeal", format!("{}", *pick(g, &[&0i32, &33, &100, &1000, &5000])));
@@ -1077,7 +1107,7 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     // 0 OpenContain, 1 TransportContain, 2 InternetHackContain, 3 RailedTransportContain
     // 6 OverlordContain, 7 HealContain
     // 8 ParachuteContain (batch R8)
-    o.cls = if o.has_contain && k > 0 { g.below(11) } else { 0 };
+    o.cls = if o.has_contain && k > 0 { g.below(12) } else { 0 };
     o.raw_slots = *pick(g, &[&0i32, &1, &1, &1, &2, &3]);
     // upstream's airborne locomotor is the AI's
     o.airborne = o.has_ai && g.below(4) == 0;
@@ -1134,13 +1164,16 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     }
     o.producer = g.below(n as u32 + 2);
     o.occl = *pick(g, &[&0u32, &1, &5, &30]);
+    o.cave_idx = g.below(3);
     o
 }
 
 /// batch R9: one scene in eight is the mob scene ([`mob_scene`]); the ops it starts with are [`MOB_SCENE_OPS`].
-fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> (Vec<u32>, bool) {
+fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> (Vec<u32>, u32) {
     let mut w = W(Vec::new());
     let mob = g.below(8) == 0;
+    // batch R11: one other scene in eight is the cave scene ([`cave_scene`])
+    let cave = !mob && g.below(8) == 0;
     let n = if mob { 4 } else { 2 + g.below(3) as usize };
     w.u(g.below(300));
     w.u(g.u32());
@@ -1160,18 +1193,22 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> (Vec<u32>, bool) {
                 Some(ModuleDataKind::ParachuteContain(_)) => 8,
                 Some(ModuleDataKind::MobNexusContain(_)) => 9,
                 Some(ModuleDataKind::TunnelContain(_)) => 10,
+                Some(ModuleDataKind::CaveContain(_)) => 11,
                 _ => 0,
             };
         }
         if mob {
             mob_scene(&mut o, k);
         }
+        if cave {
+            cave_scene(&mut o, k);
+        }
         o.write(&mut w);
     }
     for i in 0..n {
         for j in 0..n {
             let r = *pick(g, &[&0i32, &1, &2, &2]);
-            w.s(if i == j || mob { 2 } else { r });
+            w.s(if i == j || mob || cave { 2 } else { r });
         }
     }
     for _ in 0..8 {
@@ -1201,7 +1238,7 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> (Vec<u32>, bool) {
     }
     // batch R10: the tunnels' capacity
     w.s(*pick(g, &[&0i32, &1, &2, &3, &10, &-1]));
-    (w.0, mob)
+    (w.0, if mob { 1 } else if cave { 2 } else { 0 })
 }
 
 /// One op of five words: `[op, container, a, b, c]`.
@@ -1220,7 +1257,10 @@ fn gen_ops(g: &mut Gen, n: u32) -> Vec<[u32; 5]> {
             [49 + g.below(9), c, a, g.below(10), g.below(10)]
         } else if burst < 12 {
             // batch R8: the parachute's (a collision with the ground, the override destination, the drawable bound, the held flag) and its update
-            match g.below(9) {
+            match g.below(12) {
+                9 => [63, c, 0, 0, 0],
+                10 => [64, c, g.below(4), 0, 0],
+                11 => [65, c, 0, 0, 0],
                 6 => [62, c, g.below(2), 0, 0],
                 // batch R9: the capacity check (a mob nexus counts its extra slots), and a rider added to fill them
                 7 => [8, c, a, 1, 0],
@@ -1298,13 +1338,40 @@ fn gen_op(g: &mut Gen, c: u32, a: u32) -> [u32; 5] {
 }
 
 fn gen_case(g: &mut Gen, data: &Option<ModuleDataKind>, _n_up: usize, _upgrades: &[String]) -> (Vec<u32>, Vec<[u32; 5]>) {
-    let (cfg, mob) = gen_scene(g, data);
+    let (cfg, scene) = gen_scene(g, data);
     let n = cfg[3];
     let mut ops = gen_ops(g, n);
-    if mob {
+    // batch R11: one case in two starts with every container built (a cave registers in `onBuildComplete`; before it, its index has no tracker)
+    if g.below(2) == 0 {
+        ops.splice(0..0, (0..n).map(|k| [63, k, 0, 0, 0]));
+    }
+    if scene == 1 {
         ops.splice(0..0, MOB_SCENE_OPS.iter().copied());
     }
+    if scene == 2 {
+        ops.splice(0..0, CAVE_SCENE_OPS.iter().copied());
+    }
     (cfg, ops)
+}
+
+/// batch R11: the ops the cave scene starts with: the cave (object 2) is built, takes the rider (object 1: the caves defect, the original team is kept),
+/// and is saved and loaded (the team factory is asked for the original team).
+const CAVE_SCENE_OPS: [[u32; 5]; 4] = [[63, 1, 0, 0, 0], [0, 1, 0, 0, 0], [30, 1, 0, 0, 0], [31, 1, 0, 0, 0]];
+
+/// batch R11: the cave scene: a rider of player 0 (object 1) and a scene-built cave of index 0 (object 2), all allied.
+fn cave_scene(o: &mut Obj, k: usize) {
+    o.player = 0;
+    o.eff_dead = false;
+    o.held = false;
+    o.contained_by = 0;
+    if k == 1 {
+        o.has_contain = true;
+        o.cls = 11;
+        o.cave_idx = 0;
+        o.allow_mode = 0;
+        o.forbid_mask = 0;
+        o.allow_rel = 7;
+    }
 }
 
 /// batch R9: the ops the mob scene starts with: is the parachute (object 3) valid for the mob nexus (object 2); the 3-slot infantry (object 1) goes in
@@ -1404,6 +1471,13 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId, has_contain: bool) {
             // batch R5: a combat bike, 4 (the transport's words, its own two counters and the scuttle frame)
             Some(UpdateBody::RiderChangeContain(m)) => {
                 put_u32(v, 4);
+                for x in m.state_words() {
+                    put_u32(v, x);
+                }
+            }
+            // batch R11: a cave, 9 (an OpenContain's words, its flag, index and original team)
+            Some(UpdateBody::CaveContain(m)) => {
+                put_u32(v, 9);
                 for x in m.state_words() {
                     put_u32(v, x);
                 }
@@ -1637,6 +1711,7 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                                 log.push(s);
                             }
                         },
+                        ContainCall::Defect { object, team, detection_time } => log.push(format!("defect {object} {} {detection_time}", team.map_or(-1, |t| t as i64))),
                         ContainCall::AcademyUnitEnteredTunnelNetwork { player } => log.push(format!("academytunnel {player}")),
                         ContainCall::HandlePartitionCellMaintenance { .. } => log.push("partition".to_string()),
                         ContainCall::SetSafeOcclusionFrame { object, frame } => log.push(format!("occlusion {object} {frame}")),
@@ -1740,6 +1815,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             ModuleDataKind::ParachuteContain(p) => &p.open,
             ModuleDataKind::MobNexusContain(m) => &m.open,
             ModuleDataKind::TunnelContain(t) => &t.open,
+            ModuleDataKind::CaveContain(c) => &c.open,
             _ => unreachable!("not a contain"),
         };
         put_u32(&mut v, d.contain_max as u32);
@@ -1852,6 +1928,13 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         } else {
             put_u32(&mut v, 0);
         }
+        // batch R11: 1 and a cave block's index, or 0
+        if let ModuleDataKind::CaveContain(c) = &data {
+            put_u32(&mut v, 1);
+            put_u32(&mut v, c.cave_index_data as u32);
+        } else {
+            put_u32(&mut v, 0);
+        }
         // batch R10: 1 and a tunnel block's heal time, or 0
         if let ModuleDataKind::TunnelContain(t) = &data {
             put_u32(&mut v, 1);
@@ -1940,6 +2023,10 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         }
     }
     w.cuts.contain.find_position = sc.find_pos;
+    // batch R11: the test's team factory: the neutral team and each object's
+    for t in 0..=n as u32 {
+        w.cuts.contain.known_teams.insert(t);
+    }
     // batch R10: each player's tunnel tracker, and their capacity
     w.cuts.globals.max_tunnel_capacity = sc.tunnel_cap;
     for p in 0..4 {
@@ -2060,7 +2147,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                         d.die_mux_data.required_status.set(STATUSES[i], 1);
                     }
                 }
-                if o.cls == 10 {
+                if o.cls == 11 {
+                    ModuleDataKind::CaveContain(Arc::new(rts_lockstep_engine::logic::modules::cave_contain::CaveContainModuleData { open: d, cave_index_data: o.cave_idx as i32 }))
+                } else if o.cls == 10 {
                     ModuleDataKind::TunnelContain(Arc::new(rts_lockstep_engine::logic::modules::tunnel_contain::TunnelContainModuleData { open: d, frames_for_full_heal: o.heal_frames as f32 }))
                 } else if o.cls == 9 {
                     ModuleDataKind::MobNexusContain(Arc::new(rts_lockstep_engine::logic::modules::mob_nexus_contain::MobNexusContainModuleData {
@@ -2144,6 +2233,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 ModuleDataKind::ParachuteContain(_) => b"ParachuteContain",
                 ModuleDataKind::MobNexusContain(_) => b"MobNexusContain",
                 ModuleDataKind::TunnelContain(_) => b"TunnelContain",
+                ModuleDataKind::CaveContain(_) => b"CaveContain",
                 _ => b"OpenContain",
             };
             let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class, b"ModuleTag_Contain", &cd).unwrap().unwrap();
@@ -2164,6 +2254,10 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         }
         let id = w.new_object(NewObject { template: templates[k].clone(), status, team: Some(k as u32 + 1), modules }).unwrap();
         assert_eq!(id, k as i32 + 1);
+        // batch R11: `ThingFactory::newObject` runs the create modules after the object is made (the driver does the same)
+        if let Some(c) = w.get_contain(id) {
+            w.module_call(id, c, ModuleCall::OnCreate);
+        }
         w.contain_set_position(id, &Coord3D { x: o.pos[0], y: o.pos[1], z: o.pos[2] });
         w.set_orientation(id, o.orient);
         w.friend_bind_to_drawable(id, if o.drawable { 7 + k as i32 } else { INVALID_DRAWABLE_ID });
@@ -2256,7 +2350,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 info.input.amount = 10.0;
             }
             let fold3 = |p: &Coord3D| p.x.to_bits().wrapping_mul(31 * 31).wrapping_add(p.y.to_bits().wrapping_mul(31)).wrapping_add(p.z.to_bits());
-            if let Some(m) = m.filter(|_| o[0] < 34 || (42..=45).contains(&o[0]) || (47..=60).contains(&o[0]) || o[0] == 62) {
+            if let Some(m) = m.filter(|_| o[0] < 34 || (42..=45).contains(&o[0]) || (47..=60).contains(&o[0]) || (62..=65).contains(&o[0])) {
                 match o[0] {
                     0 => {
                         w.module_call(id, m, ModuleCall::AddToContain(rider));
@@ -2298,6 +2392,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                                 Some(UpdateBody::ParachuteContain(c)) => Some(c.module_data().open.die_mux_data),
                                 Some(UpdateBody::MobNexusContain(c)) => Some(c.module_data().open.die_mux_data),
                                 Some(UpdateBody::TunnelContain(c)) => Some(c.module_data().open.die_mux_data),
+                                Some(UpdateBody::CaveContain(c)) => Some(c.module_data().open.die_mux_data),
                                 Some(UpdateBody::HealContain(c)) => Some(c.module_data().open.die_mux_data),
                                 _ => None,
                             };
@@ -2495,6 +2590,18 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     60 => {
                         w.module_call(id, m, ModuleCall::OnDrawableBoundToObject);
                     }
+                    // batch R11: CaveContain's
+                    63 => {
+                        w.module_call(id, m, ModuleCall::OnBuildComplete);
+                    }
+                    64 => {
+                        if sc.objs[id as usize - 1].cls == 11 {
+                            w.module_call(id, m, ModuleCall::TryToSetCaveIndex((o[2] % 4) as i32));
+                        }
+                    }
+                    65 => {
+                        w.module_call(id, m, ModuleCall::RecalcApparentControllingPlayer);
+                    }
                     // batch R9: MobNexusContain's own
                     62 => {
                         if let ModuleReply::Bool(b) = w.module_call(id, m, ModuleCall::TryToEvacuate { expose_stealthed_units: o[2] & 1 != 0 }) {
@@ -2602,9 +2709,27 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         for k in 0..n {
             put_object(&mut v, &mut w, k as i32 + 1, sc.objs[k].has_contain);
         }
-        // batch R10: each player's tunnel tracker, as the driver writes it
-        for p in 0..4 {
-            let t = w.players.get_nth(p).and_then(|pl| pl.tunnel_system.as_ref()).expect("the scene's tracker");
+        // batch R10: each player's tunnel tracker, as the driver writes it; batch R11: then the cave system's slots
+        let n_cave = w.cave_system.len();
+        for p in 0..(4 + 1 + n_cave as i32) {
+            if p == 4 {
+                put_u32(&mut v, n_cave as u32);
+                continue;
+            }
+            let t = if p < 4 {
+                w.players.get_nth(p).and_then(|pl| pl.tunnel_system.as_ref()).expect("the scene's tracker")
+            } else {
+                match w.cave_system.get_tunnel_tracker_for_cave_index(p - 5) {
+                    Some(t) => {
+                        put_u32(&mut v, 1);
+                        t
+                    }
+                    None => {
+                        put_u32(&mut v, 0);
+                        continue;
+                    }
+                }
+            };
             put_u32(&mut v, t.get_contained_items_list().len() as u32);
             for id in t.get_contained_items_list() {
                 put_u32(&mut v, *id as u32);
@@ -2670,6 +2795,10 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let w: Vec<u32> = (0..6).map(|_| r.u32()).collect();
         out.push(format!("parachute data {w:08x?} {}", r.str()));
     }
+    // batch R11: a cave block's index
+    if r.u32() != 0 {
+        out.push(format!("cave data {}", r.u32() as i32));
+    }
     // batch R10: a tunnel block's heal time
     if r.u32() != 0 {
         out.push(format!("tunnel data {:08x}", r.u32()));
@@ -2719,7 +2848,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
                 for _ in 0..map * 2 {
                     state.push(r.u32());
                 }
-                for _ in 0..match has { 2 => 6, 3 | 5 => 7, 4 => 9, 6 => 3 + 36, 7 => 4, 8 => 5, _ => 3 } {
+                for _ in 0..match has { 2 => 6, 3 | 5 => 7, 4 => 9, 6 => 3 + 36, 7 => 4, 8 => 5, 9 => 6, _ => 3 } {
                     state.push(r.u32());
                 }
             }
@@ -2727,8 +2856,27 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
             let (cmdset, level) = (r.str(), r.u32());
             out.push(format!("op {i} object {k}: contain {state:08x?} container {} at {:08x} {:08x} {:08x} status {:08x} {:08x} dead {} aidead {} fall {} radius {:08x} orient {:08x} layer {} conds {:08x?} selected {} bonus {:x} cmdset {cmdset} level {level}", rest[0], rest[1], rest[2], rest[3], rest[4], rest[5], rest[6], rest[7], rest[8], rest[9], rest[10], rest[11], &rest[12..16], rest[16], rest[17]));
         }
-        // batch R10: each player's tunnel tracker
-        for p in 0..4 {
+        // batch R10: each player's tunnel tracker; batch R11: then the cave system's slots
+        for p in 0..4 + 1 + 64 {
+            if p == 4 {
+                let n_cave = r.u32();
+                out.push(format!("op {i} caves {n_cave}"));
+                if n_cave > 64 {
+                    break;
+                }
+                continue;
+            }
+            if p > 4 {
+                // the slots that were counted: the count is the last line pushed
+                let counted: usize = out.iter().rev().find_map(|l| l.strip_prefix(&format!("op {i} caves ")).and_then(|x| x.parse().ok())).unwrap_or(0);
+                if p - 5 >= counted {
+                    break;
+                }
+                if r.u32() == 0 {
+                    out.push(format!("op {i} cave slot {} empty", p - 5));
+                    continue;
+                }
+            }
             let list: Vec<u32> = (0..r.u32()).map(|_| r.u32()).collect();
             let size = r.u32();
             let ids: Vec<u32> = (0..r.u32()).map(|_| r.u32()).collect();
@@ -2800,6 +2948,12 @@ fn read_heal_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniRe
     Ok(())
 }
 
+// batch R11
+fn read_cave_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
+    *out = Some(rts_lockstep_engine::logic::modules::cave_contain::new_module_data(Some(ini))?);
+    Ok(())
+}
+
 // batch R10
 fn read_tunnel_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
     *out = Some(rts_lockstep_engine::logic::modules::tunnel_contain::new_module_data(Some(ini))?);
@@ -2824,7 +2978,7 @@ fn read_railed_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> Ini
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }, BlockParse { token: "C", parse: read_rider_change_block }, BlockParse { token: "O", parse: read_overlord_block }, BlockParse { token: "L", parse: read_heal_block }, BlockParse { token: "P", parse: read_parachute_block }, BlockParse { token: "M", parse: read_mob_nexus_block }, BlockParse { token: "N", parse: read_tunnel_block }];
+    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }, BlockParse { token: "C", parse: read_rider_change_block }, BlockParse { token: "O", parse: read_overlord_block }, BlockParse { token: "L", parse: read_heal_block }, BlockParse { token: "P", parse: read_parachute_block }, BlockParse { token: "M", parse: read_mob_nexus_block }, BlockParse { token: "N", parse: read_tunnel_block }, BlockParse { token: "V", parse: read_cave_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)

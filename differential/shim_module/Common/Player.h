@@ -58,6 +58,7 @@ public:
 	Team *getDefaultTeam() { return m_defaultTeam; }
 	Color getPlayerColor() const { return m_color; }   /* update batch L: the floating text's colour */
 	Color m_color = 0;
+	Color getPlayerNightColor() const { return m_color; }   /* batch R11: CaveContain (never reached here: see cave_contain.rs) */
 	/* update batch M: Player::iterateObjects over the objects the test lists, in order */
 	void iterateObjects( void (*func)( Object *, void * ), void *userData );
 	std::vector<Object *> m_objects;
