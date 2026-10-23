@@ -100,7 +100,7 @@ public:
 	/* --- end p1w12-sonnet --- */
 };
 /* special power batch H: what getAcademyStats() answers (it is the player itself, whose index the log wants) */
-class PowerAcademyStats { public: void recordSpecialPowerUsed(const SpecialPowerTemplate *t);
+class PowerAcademyStats { public: void recordSpecialPowerUsed(const SpecialPowerTemplate *t); void recordSalvageCollected();   /* p1w13-sonnet, batch R13c */
 	/* --- p1w13-sonnet --- (batch P: ActiveBody; differential/l9_active_body_p.inc) */
 	void recordVehicleSniped();
 	void recordClearedGarrisonedBuilding();

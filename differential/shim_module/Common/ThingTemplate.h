@@ -10,6 +10,7 @@
 ** Damage.cpp's DamageInfoInput::xfer (that build) reads the name of the template this build hands it) */
 #include "GameLogic/ArmorSet.h"
 /* --- end p1w13-sonnet --- */
+#include "Common/KindOf.h"   /* p1w13-sonnet, batch R13c */
 class ThingTemplate
 {
 public:
@@ -18,6 +19,9 @@ public:
 	const AsciiString &getName() const { return m_name; }
 	/* --- end p1w13-sonnet --- */
 	const AudioEventRTS *getPerUnitSound(const AsciiString &soundNameToGet) const;
+	/* p1w13-sonnet, batch R13c: SalvageCrateCollide asks the template (the test keeps it equal to the object's kinds) */
+	KindOfMaskType m_kindOf;
+	Bool isKindOf(KindOfType t) const { return m_kindOf.test(t); }
 	AudioEventRTS m_voiceEject;
 	AudioEventRTS m_soundEject;
 	/* --- p1w13-sonnet --- (batch P) */

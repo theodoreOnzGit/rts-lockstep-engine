@@ -373,6 +373,8 @@ pub enum CutCall {
     PartitionIterateSamePlayerInRange { object: ObjectId, range: f32 },
     /// `TheScriptEngine->transferObjectName(name, obj)` (`VeterancyCrateCollide`'s pilot).
     ScriptEngineTransferObjectName { name: Vec<u8>, object: ObjectId },
+    /// `player->getAcademyStats()->recordSalvageCollected()` (`SalvageCrateCollide`, batch R13c).
+    PlayerAcademyRecordSalvageCollected { player: PlayerIndex },
     // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     /// `TheScriptEngine->notifyOfTriggeredSpecialPower(playerIndex, specialPowerName, sourceObject)` (`SpecialPowerModule::aboutToDoSpecialPower`).

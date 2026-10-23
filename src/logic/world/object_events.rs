@@ -51,6 +51,8 @@ pub enum ObjectSound {
     CrateMoney,
     /// `MiscAudio::m_crateFreeUnit` (`UnitCrateCollide`, batch R13b).
     CrateFreeUnit,
+    /// `MiscAudio::m_crateSalvage` (`SalvageCrateCollide`, batch R13c).
+    CrateSalvage,
     /// `MiscAudio::m_defectorTimerDingSound` (`ObjectDefectionHelper`, when the period ends).
     DefectorTimerDing,
     /// batch R13: `MiscAudio::m_sabotageResetTimerBuilding` (the command centre and superweapon sabotage).

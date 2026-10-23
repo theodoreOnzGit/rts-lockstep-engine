@@ -368,6 +368,8 @@ pub enum ModuleDataKind {
     UnitCrateCollide(Arc<crate::logic::modules::unit_crate_collide::UnitCrateCollideModuleData>),
     /// `VeterancyCrateCollide`'s data (batch R13b).
     VeterancyCrateCollide(Arc<crate::logic::modules::veterancy_crate_collide::VeterancyCrateCollideModuleData>),
+    /// `SalvageCrateCollide`'s data (batch R13c).
+    SalvageCrateCollide(Arc<crate::logic::modules::salvage_crate_collide::SalvageCrateCollideModuleData>),
     /// `CleanupAreaPowerModuleData`.
     CleanupAreaPower(Arc<crate::logic::modules::cleanup_area_power::CleanupAreaPowerModuleData>),
     /// `BaikonurLaunchPowerModuleData`.
@@ -519,6 +521,7 @@ impl ModuleDataKind {
             ModuleDataKind::SabotageCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::UnitCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::VeterancyCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
+            ModuleDataKind::SalvageCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::CleanupAreaPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::BaikonurLaunchPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::SpyVisionSpecialPower(d) => &d.special_power.behavior.module_data,
@@ -749,6 +752,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::VeterancyCrateCollide(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::SalvageCrateCollide(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
                     true

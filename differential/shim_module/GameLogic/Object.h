@@ -227,6 +227,11 @@ public:
 	Real getVisionRange() const { return m_vision; }
 	Real getOrientation() const { return m_orientation; }   /* update batch N: OCLUpdate */
 	const AsciiString &getName() const { return m_name; }   /* p1w13-sonnet, batch R13b: VeterancyCrateCollide's pilot hands it on */
+	/* p1w13-sonnet, batch R13c: SalvageCrateCollide (the armor set flags are the body's, Object.cpp:1211-1226, in differential/l9_crates_r13c.inc) */
+	Bool testWeaponSetFlag(WeaponSetType wst) const { return ((m_weaponSetFlags[wst / 64] >> (wst % 64)) & 1) != 0; }
+	void setArmorSetFlag(ArmorSetType ast);
+	void clearArmorSetFlag(ArmorSetType ast);
+	Bool testArmorSetFlag(ArmorSetType ast) const;
 	AsciiString m_name;
 	Real m_orientation = 0.0f;
 	/* update batch N: FlammableUpdate (differential/l9_flammable_n.inc) */
