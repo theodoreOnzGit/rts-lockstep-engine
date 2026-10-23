@@ -32,6 +32,9 @@
 //! Batch R3 adds the `I` (`InternetHackContain`) and `R` (`RailedTransportContain`) blocks (the transport's fields), class codes 2 and 3 for the scene's
 //! containers, and per object a dock behaviour after the contain (open or closed; `setDockOpen` is a line of the log).
 //!
+//! Batch R10 adds the `N` block (`TunnelContain`: the base's fields and `TimeForFullHeal`), class code 10, a tunnel tracker for every scene player
+//! (written after the objects in each op's state), the template's occlusion delay, and the tunnels' capacity (`m_maxTunnelCapacity`).
+//!
 //! Batch R9 adds the `M` block (`MobNexusContain`: the base's fields, `Slots`, `ScatterNearbyOnExit`, `OrientLikeContainerOnExit`,
 //! `KeepContainerVelocityOnExit`, `ExitBone`, `ExitPitchRate`, `InitialPayload` with templates that exist, `HealthRegen%PerSec`), class code 9, op 62
 //! (`tryToEvacuate`), and the mob scene (one scene in eight; [`mob_scene`]). The op group of batches R8 and R9 is one op in four.
@@ -257,6 +260,23 @@
 //! | 1554 | the free-to-exit test inverted |
 //! | 1555 | the movement terrain test dropped |
 //!
+//! Batch R10, `tunnel_contain.rs` (9,000 cases: all 12 caught; the 134 caught plants above were run again and are still all caught):
+//!
+//! | id | planted bug |
+//! |---|---|
+//! | 1561 | the registration flag not saved |
+//! | 1562 | `isBustable` FALSE |
+//! | 1563 | `removeFromContain` without `onRemoving` (first planted on the tracker's `isInContainer` test: an equivalent mutant) |
+//! | 1564 | `killAllContained` kills nobody |
+//! | 1565 | the academy not told |
+//! | 1566 | a rider let go stays hidden |
+//! | 1567 | the last tunnel sold keeps its riders |
+//! | 1568 | the capacity test inverted |
+//! | 1569 | a dead tunnel stays registered |
+//! | 1570 | a created tunnel not marked registered |
+//! | 1571 | a captured tunnel not registered with the new owner |
+//! | 1572 | the network not healed |
+//!
 //! Not planted, unobservable here: the `wasSelected` argument of `onContaining` (1375, removed). `OpenContain::onContaining` ignores it; ~~`TransportContain` and `GarrisonContain` use it, and
 //! their tests will catch it~~ **CORRECTED 2026-10-22 (batch R2)**: `TransportContain::onContaining` only hands it to the base, so it is unobservable there too;
 //! of the contain family only `RiderChangeContain` reads it (it reselects the container), so its test is the one that can catch it.
@@ -476,6 +496,8 @@ struct Obj {
     para_bone: [[f32; 3]; 3],
     loco: [f32; 4],
     producer: u32,
+    /// batch R10: the template's occlusion delay (a tunnel sets the safe occlusion frame of a rider it lets go)
+    occl: u32,
 }
 
 /// The riders a scene-built combat bike can name (the driver's `kCtRiderSets`): per set up to three of (template, index into [`RIDER_TEMPLATES`], 0
@@ -613,6 +635,7 @@ impl Obj {
             w.f(l);
         }
         w.u(self.producer);
+        w.u(self.occl);
     }
 
     fn read(r: &mut R<'_>) -> Obj {
@@ -733,6 +756,7 @@ impl Obj {
             *l = r.f();
         }
         o.producer = r.u();
+        o.occl = r.u();
         o
     }
 }
@@ -754,6 +778,8 @@ struct Scene {
     cell_type: [i32; 8],
     skirmish_mask: u32,
     find_pos: Option<Coord3D>,
+    /// batch R10: `TheGlobalData->m_maxTunnelCapacity`
+    tunnel_cap: i32,
 }
 
 fn parse_scene(cfg: &[u32]) -> Scene {
@@ -780,7 +806,8 @@ fn parse_scene(cfg: &[u32]) -> Scene {
     let has = r.u() != 0;
     let fp = Coord3D { x: r.f(), y: r.f(), z: r.f() };
     let find_pos = has.then_some(fp);
-    Scene { frame, logic_seed, client_seed, objs, rel, layer, layer_height, gravity, ground, has_water, water, cell_type, skirmish_mask, find_pos }
+    let tunnel_cap = r.s();
+    Scene { frame, logic_seed, client_seed, objs, rel, layer, layer_height, gravity, ground, has_water, water, cell_type, skirmish_mask, find_pos, tunnel_cap }
 }
 
 // ---- the generators ------------------------------------------------------------------------------------------------------------------------------------------------
@@ -866,7 +893,11 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     let parachute = !transport && !heal && g.below(2) == 0;
     // batch R9: one plain block in two of the rest is a mob nexus's (`M`)
     let mob = !transport && !heal && !parachute && g.below(2) == 0;
-    let token = if mob {
+    // batch R10: one plain block in two of the rest is a tunnel's (`N`)
+    let tunnel = !transport && !heal && !parachute && !mob && g.below(2) == 0;
+    let token = if tunnel {
+        "N\n"
+    } else if mob {
         "M\n"
     } else if parachute {
         "P\n"
@@ -897,6 +928,9 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
             }
         }
         field!(30, "ShouldDrawPips", gen_bool(g, clean));
+    }
+    if tunnel {
+        field!(60, "TimeForFullHeal", format!("{}", *pick(g, &[&0i32, &33, &100, &1000, &5000])));
     }
     if mob {
         field!(60, "Slots", health_str(g, clean));
@@ -1043,7 +1077,7 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
     // 0 OpenContain, 1 TransportContain, 2 InternetHackContain, 3 RailedTransportContain
     // 6 OverlordContain, 7 HealContain
     // 8 ParachuteContain (batch R8)
-    o.cls = if o.has_contain && k > 0 { g.below(10) } else { 0 };
+    o.cls = if o.has_contain && k > 0 { g.below(11) } else { 0 };
     o.raw_slots = *pick(g, &[&0i32, &1, &1, &1, &2, &3]);
     // upstream's airborne locomotor is the AI's
     o.airborne = o.has_ai && g.below(4) == 0;
@@ -1099,6 +1133,7 @@ fn gen_obj(g: &mut Gen, k: usize, n: usize) -> Obj {
         *l = *pick(g, &[&0.0f32, &0.1, &0.5, &1.0, &0.05]);
     }
     o.producer = g.below(n as u32 + 2);
+    o.occl = *pick(g, &[&0u32, &1, &5, &30]);
     o
 }
 
@@ -1124,6 +1159,7 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> (Vec<u32>, bool) {
                 Some(ModuleDataKind::HealContain(_)) => 7,
                 Some(ModuleDataKind::ParachuteContain(_)) => 8,
                 Some(ModuleDataKind::MobNexusContain(_)) => 9,
+                Some(ModuleDataKind::TunnelContain(_)) => 10,
                 _ => 0,
             };
         }
@@ -1163,6 +1199,8 @@ fn gen_scene(g: &mut Gen, _data: &Option<ModuleDataKind>) -> (Vec<u32>, bool) {
     for _ in 0..3 {
         w.f(coord(g));
     }
+    // batch R10: the tunnels' capacity
+    w.s(*pick(g, &[&0i32, &1, &2, &3, &10, &-1]));
     (w.0, mob)
 }
 
@@ -1366,6 +1404,13 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId, has_contain: bool) {
             // batch R5: a combat bike, 4 (the transport's words, its own two counters and the scuttle frame)
             Some(UpdateBody::RiderChangeContain(m)) => {
                 put_u32(v, 4);
+                for x in m.state_words() {
+                    put_u32(v, x);
+                }
+            }
+            // batch R10: a tunnel, 8 (an OpenContain's words and its two flags)
+            Some(UpdateBody::TunnelContain(m)) => {
+                put_u32(v, 8);
                 for x in m.state_words() {
                     put_u32(v, x);
                 }
@@ -1592,6 +1637,9 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                                 log.push(s);
                             }
                         },
+                        ContainCall::AcademyUnitEnteredTunnelNetwork { player } => log.push(format!("academytunnel {player}")),
+                        ContainCall::HandlePartitionCellMaintenance { .. } => log.push("partition".to_string()),
+                        ContainCall::SetSafeOcclusionFrame { object, frame } => log.push(format!("occlusion {object} {frame}")),
                         ContainCall::NewObject { template, team } => log.push(format!("newobject {} {team}", template_names.get(&template).cloned().unwrap_or_default())),
                     }
                 }
@@ -1691,6 +1739,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             ModuleDataKind::HealContain(h) => &h.open,
             ModuleDataKind::ParachuteContain(p) => &p.open,
             ModuleDataKind::MobNexusContain(m) => &m.open,
+            ModuleDataKind::TunnelContain(t) => &t.open,
             _ => unreachable!("not a contain"),
         };
         put_u32(&mut v, d.contain_max as u32);
@@ -1803,6 +1852,13 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         } else {
             put_u32(&mut v, 0);
         }
+        // batch R10: 1 and a tunnel block's heal time, or 0
+        if let ModuleDataKind::TunnelContain(t) = &data {
+            put_u32(&mut v, 1);
+            put_u32(&mut v, t.frames_for_full_heal.to_bits());
+        } else {
+            put_u32(&mut v, 0);
+        }
         // batch R9: 1 and a mob nexus block's fields, or 0
         if let ModuleDataKind::MobNexusContain(m) = &data {
             put_u32(&mut v, 1);
@@ -1856,7 +1912,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         let slots = [ThingTemplateAudioType::SoundEnter, ThingTemplateAudioType::SoundExit, ThingTemplateAudioType::SoundFalling];
         let audio = (0..3).filter(|&i| o.snd[i] > 0).map(|i| (slots[i], format!("snd{}", o.snd[i]).into_bytes())).collect();
         let geometry = Some(GeometryInfo::new(GeometryType::Sphere, false, 1.0, o.radius, o.radius));
-        templates.push(Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues { name: format!("T{}", k + 1).into_bytes(), kind_of, audio, geometry, transport_slot_count: o.raw_slots as i8, template_id: factory_id(&template_names, k), ..Default::default() })));
+        templates.push(Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues { name: format!("T{}", k + 1).into_bytes(), kind_of, audio, geometry, transport_slot_count: o.raw_slots as i8, occlusion_delay: o.occl, template_id: factory_id(&template_names, k), ..Default::default() })));
     }
     w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, thing_factory: factory, ..Default::default() });
     // the cut points
@@ -1884,6 +1940,11 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         }
     }
     w.cuts.contain.find_position = sc.find_pos;
+    // batch R10: each player's tunnel tracker, and their capacity
+    w.cuts.globals.max_tunnel_capacity = sc.tunnel_cap;
+    for p in 0..4 {
+        w.players.get_nth_mut(p).expect("the scene's players").tunnel_system = Some(rts_lockstep_engine::logic::world::tunnel_tracker::TunnelTracker::new());
+    }
     for i in 0..n {
         for j in 0..n {
             let rel = match sc.rel[i][j] {
@@ -1964,7 +2025,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 data.clone()
             } else {
                 // a transport's base starts from `TransportContainModuleData()` (infantry allowed inside)
-                let base = if o.cls == 9 {
+                let base = if o.cls == 10 {
+                    rts_lockstep_engine::logic::modules::tunnel_contain::TunnelContainModuleData::default().open
+                } else if o.cls == 9 {
                     rts_lockstep_engine::logic::modules::mob_nexus_contain::MobNexusContainModuleData::default().open
                 } else if o.cls != 0 && o.cls != 7 && o.cls != 8 { TransportContainModuleData::default().open } else { OpenContainModuleData::default() };
                 let mut d = OpenContainModuleData { contain_max: o.contain_max, passengers_allowed_to_fire: o.allow_fire, passengers_in_turret: o.in_turret, number_of_exit_paths: o.exit_paths, damage_percentage_to_units: o.damage_pct, is_burned_death_to_units: o.burned, door_open_time: o.door_open, weapon_bonus_passed_to_passengers: o.weapon_pass, allow_allies_inside: o.allow_rel & 1 != 0, allow_enemies_inside: o.allow_rel & 2 != 0, allow_neutral_inside: o.allow_rel & 4 != 0, ..base };
@@ -1997,7 +2060,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                         d.die_mux_data.required_status.set(STATUSES[i], 1);
                     }
                 }
-                if o.cls == 9 {
+                if o.cls == 10 {
+                    ModuleDataKind::TunnelContain(Arc::new(rts_lockstep_engine::logic::modules::tunnel_contain::TunnelContainModuleData { open: d, frames_for_full_heal: o.heal_frames as f32 }))
+                } else if o.cls == 9 {
                     ModuleDataKind::MobNexusContain(Arc::new(rts_lockstep_engine::logic::modules::mob_nexus_contain::MobNexusContainModuleData {
                         open: d,
                         slot_capacity: o.slot_cap,
@@ -2078,6 +2143,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 ModuleDataKind::HealContain(_) => b"HealContain",
                 ModuleDataKind::ParachuteContain(_) => b"ParachuteContain",
                 ModuleDataKind::MobNexusContain(_) => b"MobNexusContain",
+                ModuleDataKind::TunnelContain(_) => b"TunnelContain",
                 _ => b"OpenContain",
             };
             let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class, b"ModuleTag_Contain", &cd).unwrap().unwrap();
@@ -2231,6 +2297,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                                 Some(UpdateBody::OverlordContain(c)) => Some(c.module_data().transport.open.die_mux_data),
                                 Some(UpdateBody::ParachuteContain(c)) => Some(c.module_data().open.die_mux_data),
                                 Some(UpdateBody::MobNexusContain(c)) => Some(c.module_data().open.die_mux_data),
+                                Some(UpdateBody::TunnelContain(c)) => Some(c.module_data().open.die_mux_data),
                                 Some(UpdateBody::HealContain(c)) => Some(c.module_data().open.die_mux_data),
                                 _ => None,
                             };
@@ -2535,6 +2602,23 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         for k in 0..n {
             put_object(&mut v, &mut w, k as i32 + 1, sc.objs[k].has_contain);
         }
+        // batch R10: each player's tunnel tracker, as the driver writes it
+        for p in 0..4 {
+            let t = w.players.get_nth(p).and_then(|pl| pl.tunnel_system.as_ref()).expect("the scene's tracker");
+            put_u32(&mut v, t.get_contained_items_list().len() as u32);
+            for id in t.get_contained_items_list() {
+                put_u32(&mut v, *id as u32);
+            }
+            put_u32(&mut v, t.get_contain_list_size() as u32);
+            put_u32(&mut v, t.get_container_list().len() as u32);
+            for id in t.get_container_list() {
+                put_u32(&mut v, *id as u32);
+            }
+            put_u32(&mut v, t.friend_get_tunnel_count());
+            let (nem, stamp) = t.get_nemesis_state();
+            put_u32(&mut v, nem as u32);
+            put_u32(&mut v, stamp);
+        }
     }
     tally.borrow_mut().end_reads += end_reads;
     RunOut { dump: v, keys: Vec::new(), excluded }
@@ -2586,6 +2670,10 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let w: Vec<u32> = (0..6).map(|_| r.u32()).collect();
         out.push(format!("parachute data {w:08x?} {}", r.str()));
     }
+    // batch R10: a tunnel block's heal time
+    if r.u32() != 0 {
+        out.push(format!("tunnel data {:08x}", r.u32()));
+    }
     // batch R9: a mob nexus block's fields
     if r.u32() != 0 {
         let (slots, pitch, flags) = (r.u32(), r.u32(), r.u32());
@@ -2631,13 +2719,20 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
                 for _ in 0..map * 2 {
                     state.push(r.u32());
                 }
-                for _ in 0..match has { 2 => 6, 3 | 5 => 7, 4 => 9, 6 => 3 + 36, 7 => 4, _ => 3 } {
+                for _ in 0..match has { 2 => 6, 3 | 5 => 7, 4 => 9, 6 => 3 + 36, 7 => 4, 8 => 5, _ => 3 } {
                     state.push(r.u32());
                 }
             }
             let rest: Vec<u32> = (0..18).map(|_| r.u32()).collect();
             let (cmdset, level) = (r.str(), r.u32());
             out.push(format!("op {i} object {k}: contain {state:08x?} container {} at {:08x} {:08x} {:08x} status {:08x} {:08x} dead {} aidead {} fall {} radius {:08x} orient {:08x} layer {} conds {:08x?} selected {} bonus {:x} cmdset {cmdset} level {level}", rest[0], rest[1], rest[2], rest[3], rest[4], rest[5], rest[6], rest[7], rest[8], rest[9], rest[10], rest[11], &rest[12..16], rest[16], rest[17]));
+        }
+        // batch R10: each player's tunnel tracker
+        for p in 0..4 {
+            let list: Vec<u32> = (0..r.u32()).map(|_| r.u32()).collect();
+            let size = r.u32();
+            let ids: Vec<u32> = (0..r.u32()).map(|_| r.u32()).collect();
+            out.push(format!("op {i} tunnels {p}: list {list:?} size {size} tunnels {ids:?} count {} nemesis {} at {}", r.u32(), r.u32(), r.u32()));
         }
     }
     out
@@ -2705,6 +2800,12 @@ fn read_heal_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniRe
     Ok(())
 }
 
+// batch R10
+fn read_tunnel_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
+    *out = Some(rts_lockstep_engine::logic::modules::tunnel_contain::new_module_data(Some(ini))?);
+    Ok(())
+}
+
 // batch R9
 fn read_mob_nexus_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
     *out = Some(rts_lockstep_engine::logic::modules::mob_nexus_contain::new_module_data(Some(ini))?);
@@ -2723,7 +2824,7 @@ fn read_railed_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> Ini
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }, BlockParse { token: "C", parse: read_rider_change_block }, BlockParse { token: "O", parse: read_overlord_block }, BlockParse { token: "L", parse: read_heal_block }, BlockParse { token: "P", parse: read_parachute_block }, BlockParse { token: "M", parse: read_mob_nexus_block }];
+    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "T", parse: read_transport_block }, BlockParse { token: "I", parse: read_internet_hack_block }, BlockParse { token: "R", parse: read_railed_block }, BlockParse { token: "H", parse: read_helix_block }, BlockParse { token: "C", parse: read_rider_change_block }, BlockParse { token: "O", parse: read_overlord_block }, BlockParse { token: "L", parse: read_heal_block }, BlockParse { token: "P", parse: read_parachute_block }, BlockParse { token: "M", parse: read_mob_nexus_block }, BlockParse { token: "N", parse: read_tunnel_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)

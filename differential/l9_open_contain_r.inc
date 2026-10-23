@@ -75,6 +75,9 @@ static MessageStream *TheMessageStream = &g_ctMessageStream;
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/HealContain.cpp"
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/ParachuteContain.cpp"   /* batch R8 */
 #include "MobNexusContain_edit.cpp"   /* batch R9: its two reads of end() stop there (build.rs) */
+/* batch R10: TunnelContain.cpp unchanged, on the real TunnelTracker.cpp (renamed: the tunnel tracker test links its own) */
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/Common/RTS/TunnelTracker.cpp"
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/TunnelContain.cpp"
 /* --- end p1w13-sonnet --- */
 #undef itoa
 
@@ -96,7 +99,7 @@ ModuleData *l9ctRead(const char *filename)
 		try {
 			/* --- p1w13-sonnet --- (batches R2, R3) */
 			const char c0 = currentLine.str()[0];
-			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : c0 == 'H' ? 4 : c0 == 'C' ? 5 : c0 == 'O' ? 6 : c0 == 'L' ? 7 : c0 == 'P' ? 8 : c0 == 'M' ? 9 : 0;
+			g_ctBlockCls = c0 == 'T' ? 1 : c0 == 'I' ? 2 : c0 == 'R' ? 3 : c0 == 'H' ? 4 : c0 == 'C' ? 5 : c0 == 'O' ? 6 : c0 == 'L' ? 7 : c0 == 'P' ? 8 : c0 == 'M' ? 9 : c0 == 'N' ? 10 : 0;
 			if (g_ctBlockCls == 1) data = TransportContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 2) data = InternetHackContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 3) data = RailedTransportContain::friend_newModuleData(&ini);
@@ -106,6 +109,7 @@ ModuleData *l9ctRead(const char *filename)
 			else if (g_ctBlockCls == 7) data = HealContain::friend_newModuleData(&ini);
 			else if (g_ctBlockCls == 8) data = ParachuteContain::friend_newModuleData(&ini);   /* batch R8 */
 			else if (g_ctBlockCls == 9) data = MobNexusContain::friend_newModuleData(&ini);   /* batch R9 */
+			else if (g_ctBlockCls == 10) data = TunnelContain::friend_newModuleData(&ini);   /* batch R10 */
 			else data = OpenContain::friend_newModuleData(&ini);
 			/* --- end p1w13-sonnet --- */
 		} catch (...) {
@@ -380,6 +384,9 @@ ExitInterface *Object::getObjectExitInterface() const
 	return exitInterface;
 }
 const GeometryInfo &Drawable::getDrawableGeometryInfo() const { return m_ownerObject->getGeometryInfo(); }
+/* batch R10: TunnelContain's calls */
+void PowerAcademyStats::recordUnitEnteredTunnelNetwork() { ulog("academytunnel %d", (int)((Player *)(void *)this)->m_idx); }
+void Object::setSafeOcclusionFrame(UnsignedInt frame) { ulog("occlusion %d %u", (int)m_oid, frame); }
 Real Locomotor::getPitchStiffness() const { return ctOfLoco(this)->loco[0]; }
 Real Locomotor::getRollStiffness() const { return ctOfLoco(this)->loco[1]; }
 Real Locomotor::getPitchDamping() const { return ctOfLoco(this)->loco[2]; }
@@ -602,7 +609,7 @@ void ctPutObject(CtObj *a)
 {
 	if (a->oc) {
 		OpenContain *oc = a->oc;
-		putU32(dynamic_cast<MobNexusContain *>(oc) ? 7 : dynamic_cast<ParachuteContain *>(oc) ? 6 : dynamic_cast<OverlordContain *>(oc) ? 5 : dynamic_cast<RiderChangeContain *>(oc) ? 4 : dynamic_cast<HelixContain *>(oc) ? 3 : dynamic_cast<TransportContain *>(oc) ? 2 : 1);   /* batch R6: 5 an Overlord */   /* --- p1w13-sonnet --- (batches R2, R4, R5): 2 a transport, 3 a Helix, 4 a combat bike */
+		putU32(dynamic_cast<TunnelContain *>(oc) ? 8 : dynamic_cast<MobNexusContain *>(oc) ? 7 : dynamic_cast<ParachuteContain *>(oc) ? 6 : dynamic_cast<OverlordContain *>(oc) ? 5 : dynamic_cast<RiderChangeContain *>(oc) ? 4 : dynamic_cast<HelixContain *>(oc) ? 3 : dynamic_cast<TransportContain *>(oc) ? 2 : 1);   /* batch R6: 5 an Overlord */   /* --- p1w13-sonnet --- (batches R2, R4, R5): 2 a transport, 3 a Helix, 4 a combat bike */
 		putU32(oc->m_containListSize);
 		putU32((unsigned)oc->m_containList.size());
 		for (ContainedItemsList::const_iterator it = oc->m_containList.begin(); it != oc->m_containList.end(); ++it) putU32((unsigned)(*it)->m_oid);
@@ -651,6 +658,8 @@ void ctPutObject(CtObj *a)
 			if (OverlordContain *ovc = dynamic_cast<OverlordContain *>(oc)) putU32(ovc->m_redirectionActivated ? 1 : 0);   /* batch R6 */
 			if (RiderChangeContain *rc = dynamic_cast<RiderChangeContain *>(oc)) { putU32((unsigned)rc->m_extraSlotsInUse); putU32(rc->m_frameExitNotBusy); putU32(rc->m_scuttledOnFrame); }   /* batch R5: its own two, and the scuttle */
 		}
+		/* batch R10: a tunnel's two flags */
+		if (TunnelContain *tn = dynamic_cast<TunnelContain *>(oc)) { putU32(tn->m_needToRunOnBuildComplete ? 1 : 0); putU32(tn->m_isCurrentlyRegistered ? 1 : 0); }
 		/* batch R9: a mob nexus's extra slots */
 		if (MobNexusContain *mc = dynamic_cast<MobNexusContain *>(oc)) putU32((unsigned)mc->m_extraSlotsInUse);
 		/* batch R8: a parachute's fields, in xfer order */
@@ -804,6 +813,9 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			putU32(realBits(pd->m_freeFallDamagePercent)); putU32(realBits(pd->m_killWhenLandingInWaterSlop));
 			putStr(pd->m_parachuteOpenSound.getEventName().str(), pd->m_parachuteOpenSound.getEventName().getLength());
 		}
+		/* batch R10: 1 and a tunnel block's heal time, or 0 */
+		putU32(g_ctBlockCls == 10 ? 1u : 0u);
+		if (g_ctBlockCls == 10) putU32(realBits(((const TunnelContainModuleData *)d)->m_framesForFullHeal));
 		/* batch R9: 1 and a mob nexus block's fields, or 0 */
 		putU32(g_ctBlockCls == 9 ? 1u : 0u);
 		if (g_ctBlockCls == 9) {
@@ -836,6 +848,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		unsigned cls; int rawSlots; unsigned airborne; int freeToExit; unsigned hasLoco, validTerrain, com, vel[3], weapons, unmanned, extraKinds, exitBoneHas, exitBone[3];
 		int slotCap; unsigned regen, exitDelay, tflags, pitch; int payloadCount; unsigned payloadName, exitBoneName, health, hasDock, dockOpen, helixPayload, riderSet, scuttleFrames, scuttleCond, aiMoving, ovSink, healFrames, containedByFrame;
 		unsigned held, paraBoneHas, paraBone[3][3], loco[4], producer;   /* batch R8 */
+		unsigned occl;   /* batch R10 */
 		/* --- end p1w13-sonnet --- */
 	} oc[CT_OBJS];
 	for (int k = 0; k < g_ctN; ++k) {
@@ -860,6 +873,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		o.weapons = c.u(); o.unmanned = c.u(); o.extraKinds = c.u(); o.exitBoneHas = c.u(); for (int i = 0; i < 3; ++i) o.exitBone[i] = c.u();
 		o.slotCap = c.s(); o.regen = c.u(); o.exitDelay = c.u(); o.tflags = c.u(); o.pitch = c.u(); o.payloadCount = c.s(); o.payloadName = c.u(); o.exitBoneName = c.u(); o.health = c.u(); o.hasDock = c.u(); o.dockOpen = c.u(); o.helixPayload = c.u(); o.riderSet = c.u(); o.scuttleFrames = c.u(); o.scuttleCond = c.u(); o.aiMoving = c.u(); o.ovSink = c.u(); o.healFrames = c.u(); o.containedByFrame = c.u();
 		o.held = c.u(); o.paraBoneHas = c.u(); for (int j = 0; j < 3; ++j) for (int i = 0; i < 3; ++i) o.paraBone[j][i] = c.u(); for (int i = 0; i < 4; ++i) o.loco[i] = c.u(); o.producer = c.u();   /* batch R8 */
+		o.occl = c.u();   /* batch R10 */
 		/* --- end p1w13-sonnet --- */
 	}
 	for (int i = 0; i < g_ctN; ++i) for (int j = 0; j < g_ctN; ++j) g_ctRel[i][j] = (Relationship)c.s();
@@ -874,6 +888,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 	const unsigned skirmishMask = c.u();
 	g_ctFindPosHas = c.u() != 0;
 	g_ctFindPos.x = c.f(); g_ctFindPos.y = c.f(); g_ctFindPos.z = c.f();
+	g_spGlobals.m_maxTunnelCapacity = c.s();   /* batch R10 */
 	/* --- end p1w13-sonnet --- */
 
 	/* build the world */
@@ -907,6 +922,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		g_ctPlayers[p].m_idx = p;
 		g_ctPlayers[p].m_defaultTeam = &g_ctNeutralTeam;
 		g_ctPlayers[p].m_skirmishAI = (skirmishMask >> p & 1) != 0;   /* batch R8 */
+		g_ctPlayers[p].m_tunnelSystem = new ModTestTunnelTracker;   /* batch R10 */
 	}
 	for (int k = 0; k < g_ctN; ++k) {
 		CtObj &a = g_ctObjs[k];
@@ -951,6 +967,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		a.cls = k == 0 ? g_ctBlockCls : o.cls;   /* batch R3: the first container's class is the block's */
 		a.validTerrain = o.validTerrain;
 		obj->m_tmpl.m_rawTransportSlotCount = o.rawSlots;
+		obj->m_tmpl.m_occlusionDelay = o.occl;   /* batch R10 */
 		obj->m_airborneLoco = o.airborne != 0;
 		a.ai.m_freeToExit = o.freeToExit;
 		a.ai.m_hasLoco = o.hasLoco != 0;
@@ -1031,6 +1048,12 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 			TransportContainModuleData *tdata = 0;   /* --- p1w13-sonnet --- (batch R2: TransportContain) */
 			if (k == 0) a.data = (OpenContainModuleData *)d;
 			else {
+				if (o.cls == 10) {
+					/* batch R10: a tunnel's data, its heal time the scene's heal frames */
+					TunnelContainModuleData *nd = new TunnelContainModuleData;
+					nd->m_framesForFullHeal = (Real)o.healFrames;
+					a.data = nd;
+				} else
 				if (o.cls == 9) {
 					/* batch R9: a mob nexus's data, with the transport's fields the scene gives (no payload: the factory would throw for a missing template) */
 					MobNexusContainModuleData *md = new MobNexusContainModuleData;
@@ -1144,6 +1167,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 				else if (cls == 7) a.oc = new(ShimZeroFill{}) HealContain(a.obj, k == 0 ? d : (ModuleData *)a.data);
 				else if (cls == 8) a.oc = new(ShimZeroFill{}) ParachuteContain(a.obj, k == 0 ? d : (ModuleData *)a.data);   /* batch R8 */
 				else if (cls == 9) a.oc = new(ShimZeroFill{}) MobNexusContain(a.obj, k == 0 ? d : (ModuleData *)a.data);   /* batch R9 */
+				else if (cls == 10) a.oc = new(ShimZeroFill{}) TunnelContain(a.obj, k == 0 ? d : (ModuleData *)a.data);   /* batch R10 */
 				else
 				/* --- end p1w13-sonnet --- */
 				a.oc = new OpenContain(a.obj, a.data);
@@ -1166,6 +1190,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		TheGameLogic = 0; TheAudio = 0; TheInGameUI = 0; TheAI = 0; ThePartitionManager = 0; TheTerrainLogic = 0;
 		g_modFindHook = 0; g_modDestroyHook = 0; g_teamRelHook = 0; g_xformHook = 0; g_multiBoneHook = 0;
 		g_findTemplateHook = 0; g_newObjectHook = 0; g_setTeamHook = 0; g_spLocal = 0; g_instanceHook = 0; g_physOwnerHook = 0;   /* --- p1w13-sonnet --- (batches R2, R4, R5, R8) */
+		for (int p = 0; p < CT_PLAYERS; ++p) { delete g_ctPlayers[p].m_tunnelSystem; g_ctPlayers[p].m_tunnelSystem = 0; }   /* batch R10 */
 		return 5;
 	}
 	for (int k = 0; k < g_ctN; ++k) {
@@ -1328,6 +1353,18 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		for (int j = 0; j < blen; ++j) putU32(bytes[j]);
 		putU32(crc);
 		for (int k = 0; k < g_ctN; ++k) ctPutObject(&g_ctObjs[k]);
+		/* batch R10: each player's tunnel tracker: the contain list, its size, the tunnel ids, the count, the nemesis and its time */
+		for (int p = 0; p < CT_PLAYERS; ++p) {
+			ModTestTunnelTracker *tt = g_ctPlayers[p].m_tunnelSystem;
+			putU32((unsigned)tt->m_containList.size());
+			for (ContainedItemsList::const_iterator it = tt->m_containList.begin(); it != tt->m_containList.end(); ++it) putU32((unsigned)(*it)->m_oid);
+			putU32((unsigned)tt->m_containListSize);
+			putU32((unsigned)tt->m_tunnelIDs.size());
+			for (std::list<ObjectID>::const_iterator it = tt->m_tunnelIDs.begin(); it != tt->m_tunnelIDs.end(); ++it) putU32((unsigned)*it);
+			putU32(tt->m_tunnelCount);
+			putU32((unsigned)tt->m_curNemesisID);
+			putU32(tt->m_nemesisTimestamp);
+		}
 	}
 	*len = finish(buf, cap);
 	for (int k = 0; k < g_ctN; ++k) {
@@ -1339,6 +1376,7 @@ static int l9ctRunInner(const char *filename, const char *xfer_path, const unsig
 		if (k != 0) delete a.data;
 		delete a.obj;
 	}
+	for (int p = 0; p < CT_PLAYERS; ++p) { delete g_ctPlayers[p].m_tunnelSystem; g_ctPlayers[p].m_tunnelSystem = 0; }   /* batch R10 */
 	delete d;
 	TheGameLogic = 0; TheAudio = 0; TheInGameUI = 0; TheAI = 0; ThePartitionManager = 0; TheTerrainLogic = 0;
 	g_modFindHook = 0; g_modDestroyHook = 0; g_teamRelHook = 0; g_xformHook = 0; g_multiBoneHook = 0;

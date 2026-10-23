@@ -332,8 +332,13 @@ impl TunnelTracker {
                     None => return Err(TunnelError::ContainedObjectGone(id)),
                 };
                 if contained_by == dead_tunnel {
-                    trace(world, || format!("tt onContainedBy {id} {valid_tunnel}"));
-                    world.on_contained_by(id, valid_tunnel);
+                    if world.cuts.contain.stub_object_calls {
+                        // p1w13-sonnet, batch R10: the contain test's explicit ablation (`contain_cuts`): the call is a record
+                        world.contain_on_contained_by(id, valid_tunnel);
+                    } else {
+                        trace(world, || format!("tt onContainedBy {id} {valid_tunnel}"));
+                        world.on_contained_by(id, valid_tunnel);
+                    }
                 }
             }
         }
@@ -348,6 +353,12 @@ impl TunnelTracker {
         let Some(contained_by) = world.objects.find(obj).map(|o| o.contained_by) else {
             return Err(TunnelError::ContainedObjectGone(obj));
         };
+        if world.cuts.contain.stub_object_calls {
+            // p1w13-sonnet, batch R10: the contain test's explicit ablation (`contain_cuts`): the calls are records
+            world.contain_on_removed_from(obj, contained_by);
+            world.contain_destroy_object(obj);
+            return Ok(());
+        }
         trace(world, || format!("tt onRemovedFrom {obj} {contained_by}"));
         world.on_removed_from(obj);
         trace(world, || format!("tt destroy {obj}"));

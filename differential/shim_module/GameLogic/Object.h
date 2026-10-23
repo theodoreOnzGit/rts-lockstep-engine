@@ -268,6 +268,7 @@ public:
 	PathfindLayerEnum getLayer() const { return m_layer; }
 	void setLayer( PathfindLayerEnum layer );
 	void setOrientation( Real angle );
+	void setSafeOcclusionFrame( UnsignedInt frame );   /* p1w13-sonnet, batch R10: TunnelContain (differential/l9_open_contain_r.inc) */
 	void leaveGroup();
 	Bool checkAndDetonateBoobyTrap( const Object *victim );
 	void onContainedBy( Object *containedBy );

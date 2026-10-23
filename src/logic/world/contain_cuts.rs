@@ -58,6 +58,9 @@ pub struct ContainCutTables {
     pub recursion: u32,
     /// batch R8: the walk of `addOrRemoveObjFromWorld` met a ring of containers (it stops; cleared when the walk ends).
     pub ring_found: bool,
+    /// batch R10: a query that reads `&World` met a tunnel whose object has no controlling player (`getControllingPlayer()->getTunnelSystem()` through
+    /// `NULL`); the module records it after the call.
+    pub null_player_read: std::cell::Cell<bool>,
     /// batch R6: how deep the reads of other objects' contain modules go (`open_contain::view_*`, through `&World`), and whether one went too deep.
     pub view_depth: std::cell::Cell<u32>,
     pub view_overflow: std::cell::Cell<bool>,
@@ -164,6 +167,13 @@ pub enum ContainCall {
     PathfindGetCell { layer: PathfindLayer, x: i32, y: i32 },
     /// `obj->getDrawable()->setInstanceMatrix(matrix)` (`None` for `NULL`).
     DrawableSetInstanceMatrix { object: ObjectId, matrix: Option<Matrix3D> },
+    // batch R10 (TunnelContain)
+    /// `player->getAcademyStats()->recordUnitEnteredTunnelNetwork()`.
+    AcademyUnitEnteredTunnelNetwork { player: i32 },
+    /// `obj->handlePartitionCellMaintenance()`.
+    HandlePartitionCellMaintenance { object: ObjectId },
+    /// `obj->setSafeOcclusionFrame(frame)`.
+    SetSafeOcclusionFrame { object: ObjectId, frame: u32 },
     // --- end p1w13-sonnet ---
 }
 
@@ -454,6 +464,35 @@ impl World {
     /// `player->isSkirmishAIPlayer()` (see [`ContainCutTables::skirmish_ai_players`]).
     pub fn contain_player_is_skirmish_ai(&self, player: crate::logic::world::ids::PlayerIndex) -> bool {
         self.cuts.contain.skirmish_ai_players.contains(&player)
+    }
+
+    // batch R10 (TunnelContain)
+    /// `player->getAcademyStats()->recordUnitEnteredTunnelNetwork()`. The stub records the call only.
+    pub fn contain_record_unit_entered_tunnel_network(&mut self, player: crate::logic::world::ids::PlayerIndex) {
+        self.contain_cut(ContainCall::AcademyUnitEnteredTunnelNetwork { player });
+        if !self.cuts.contain.stub_object_calls {
+            if let Some(p) = self.players.get_nth_mut(player) {
+                p.academy_stats.record_unit_entered_tunnel_network();
+            }
+        }
+    }
+
+    /// `obj->handlePartitionCellMaintenance()`. The stub records the call only.
+    pub fn contain_handle_partition_cell_maintenance(&mut self, id: ObjectId) {
+        self.contain_cut(ContainCall::HandlePartitionCellMaintenance { object: id });
+        if !self.cuts.contain.stub_object_calls {
+            self.handle_partition_cell_maintenance(id);
+        }
+    }
+
+    /// `obj->setSafeOcclusionFrame(frame)`. The stub records the call only.
+    pub fn contain_set_safe_occlusion_frame(&mut self, id: ObjectId, frame: u32) {
+        self.contain_cut(ContainCall::SetSafeOcclusionFrame { object: id, frame });
+        if !self.cuts.contain.stub_object_calls {
+            if let Some(o) = self.objects.find_mut(id) {
+                o.safe_occlusion_frame = frame;
+            }
+        }
     }
 
     /// `obj->getDrawable()->setInstanceMatrix(matrix)`: the client's; the caller checks the drawable.

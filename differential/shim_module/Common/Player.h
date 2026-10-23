@@ -74,6 +74,8 @@ public:
 	PlayerMaskType getPlayerMask() const { return 1 << m_idx; }   /* batch R: OpenContain */
 	Bool isSkirmishAIPlayer( void ) { return m_skirmishAI; }   /* batch R8: ParachuteContain */
 	Bool m_skirmishAI = false;
+	class TunnelTracker *getTunnelSystem() { return m_tunnelSystem; }   /* batch R10: TunnelContain */
+	class TunnelTracker *m_tunnelSystem = 0;
 	Bool m_retaliation = false;
 	Bool m_attackedBy[16] = { false };
 	UnsignedInt m_attackedFrame = 0;
@@ -89,5 +91,6 @@ class PowerAcademyStats { public: void recordSpecialPowerUsed(const SpecialPower
 	/* --- p1w13-sonnet --- (batch P: ActiveBody; differential/l9_active_body_p.inc) */
 	void recordVehicleSniped();
 	void recordClearedGarrisonedBuilding();
+	void recordUnitEnteredTunnelNetwork();   /* batch R10: TunnelContain (differential/l9_open_contain_r.inc) */
 	/* --- end p1w13-sonnet --- */ };
 #endif

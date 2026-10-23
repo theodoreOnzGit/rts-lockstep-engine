@@ -29,6 +29,7 @@ public:
 	AsciiString m_autoSmokeParticleMediumPrefix, m_autoSmokeParticleMediumSystem; Int m_autoSmokeParticleMediumMax;
 	AsciiString m_autoSmokeParticleLargePrefix, m_autoSmokeParticleLargeSystem; Int m_autoSmokeParticleLargeMax;
 	AsciiString m_autoAflameParticlePrefix, m_autoAflameParticleSystem; Int m_autoAflameParticleMax;
+	Int m_maxTunnelCapacity = 0;   /* batch R10: TunnelTracker */
 	/* --- end p1w13-sonnet --- */
 };
 extern GlobalData *TheGlobalData;

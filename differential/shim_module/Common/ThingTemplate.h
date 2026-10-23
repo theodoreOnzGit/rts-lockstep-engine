@@ -42,6 +42,8 @@ public:
 	/* --- p1w13-sonnet --- (batch R2: TransportContain) */
 	Int m_rawTransportSlotCount = 0;
 	Int getRawTransportSlotCount() const { return m_rawTransportSlotCount; }
+	UnsignedInt getOcclusionDelay() const { return m_occlusionDelay; }   /* batch R10: TunnelContain */
+	UnsignedInt m_occlusionDelay = 0;
 	Bool isEquivalentTo(const ThingTemplate *tt) const;   /* p1w13-sonnet, batch R5: differential/l9_open_contain_r.inc */
 	/* --- end p1w13-sonnet --- */
 	/* --- end p1w13-sonnet --- */
