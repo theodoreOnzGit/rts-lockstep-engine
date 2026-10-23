@@ -84,6 +84,7 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	void setFullyObscuredByShroud(Bool fully);
 	Bool getFullyObscuredByShroud() const { return m_obscured; }
 	void replaceModelConditionFlags(const ModelConditionFlags &flags);
+	void clearAndSetModelConditionFlags(const ModelConditionFlags &clr, const ModelConditionFlags &set);   /* p1w13-sonnet, batch R14b: differential/l9_dies_r14.inc */
 	DrawableID getID() const { return m_effectId; }
 	Bool m_obscured = false;
 	DrawableID m_effectId = (DrawableID)0;

@@ -226,6 +226,9 @@ public:
 	/* update batch N: CheckpointUpdate */
 	Real getVisionRange() const { return m_vision; }
 	void setVisionRange(Real r) { m_vision = r; }   /* p1w13-sonnet, batch R13d */
+	/* p1w13-sonnet, batch R14b (CrushDie): Thing.cpp:100-113 without the cache */
+	const Coord3D *getUnitDirectionVector2D() const { m_dirVec.x = (Real)cosf(m_orientation); m_dirVec.y = (Real)sinf(m_orientation); m_dirVec.z = 0; return &m_dirVec; }
+	mutable Coord3D m_dirVec;
 	Real getOrientation() const { return m_orientation; }   /* update batch N: OCLUpdate */
 	const AsciiString &getName() const { return m_name; }   /* p1w13-sonnet, batch R13b: VeterancyCrateCollide's pilot hands it on */
 	/* p1w13-sonnet, batch R13c: SalvageCrateCollide (the armor set flags are the body's, Object.cpp:1211-1226, in differential/l9_crates_r13c.inc) */

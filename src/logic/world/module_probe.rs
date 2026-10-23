@@ -104,6 +104,9 @@ pub struct ProbeAnswers {
     pub previous_health: Option<f32>,
     pub subdual_damage: Option<f32>,
     pub last_damage_source: Option<ObjectId>,
+    /// batch R14b: the body's front and back crushed flags, when the test gives them (`getFrontCrushed`, `setFrontCrushed` and the back's use them).
+    pub front_crushed: Option<bool>,
+    pub back_crushed: Option<bool>,
     /// `getVelocity()` of the physics.
     pub velocity: Coord3D,
     /// `isMoving()` of the AI.
@@ -455,6 +458,17 @@ impl ProbeModule {
                 } else {
                     ModuleReply::Unhandled
                 }
+            }
+            // batch R14b: the body's crushed flags, when the test gives them
+            ModuleCall::GetFrontCrushed if self.answers.front_crushed.is_some() => ModuleReply::Bool(self.answers.front_crushed.unwrap_or(false)),
+            ModuleCall::GetBackCrushed if self.answers.back_crushed.is_some() => ModuleReply::Bool(self.answers.back_crushed.unwrap_or(false)),
+            ModuleCall::SetFrontCrushed(v) if self.answers.front_crushed.is_some() => {
+                self.answers.front_crushed = Some(v);
+                ModuleReply::Done
+            }
+            ModuleCall::SetBackCrushed(v) if self.answers.back_crushed.is_some() => {
+                self.answers.back_crushed = Some(v);
+                ModuleReply::Done
             }
             // batch R14a: the body's previous health, subdual damage and last damage source, when the test gives them
             ModuleCall::GetPreviousHealth if self.answers.previous_health.is_some() => ModuleReply::Real(self.answers.previous_health.unwrap_or(0.0)),

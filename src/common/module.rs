@@ -352,6 +352,8 @@ pub enum ModuleDataKind {
     SpecialPowerCompletionDie(Arc<crate::logic::modules::special_power_completion_die::SpecialPowerCompletionDieModuleData>),
     /// `EjectPilotDieModuleData`.
     EjectPilotDie(Arc<crate::logic::modules::eject_pilot_die::EjectPilotDieModuleData>),
+    /// `CrushDie` (batch R14b).
+    CrushDie(Arc<crate::logic::modules::crush_die::CrushDieModuleData>),
     /// `CreateObjectDie` (batch R14a).
     CreateObjectDie(Arc<crate::logic::modules::create_object_die::CreateObjectDieModuleData>),
     /// `PowerPlantUpdateModuleData`.
@@ -521,6 +523,7 @@ impl ModuleDataKind {
             ModuleDataKind::DamDie(d) => &d.die.behavior.module_data,
             ModuleDataKind::SpecialPowerCompletionDie(d) => &d.die.behavior.module_data,
             ModuleDataKind::EjectPilotDie(d) => &d.die.behavior.module_data,
+            ModuleDataKind::CrushDie(d) => &d.die.behavior.module_data,
             ModuleDataKind::CreateObjectDie(d) => &d.die.behavior.module_data,
             ModuleDataKind::PowerPlantUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::RadarUpdate(d) => &d.update.behavior.module_data,
@@ -715,6 +718,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::EjectPilotDie(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.die.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::CrushDie(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.die.behavior.module_data.set_module_tag_name_key(key);
                     true
