@@ -37,6 +37,8 @@ public:
 };
 class PartitionFilterAlive : public PartitionFilter { public: PartitionFilterAlive( void ) {} };
 class PartitionFilterSameMapStatus : public PartitionFilter { public: PartitionFilterSameMapStatus( const Object *obj ) {} };
+class Player;
+class PartitionFilterSamePlayer : public PartitionFilter { public: PartitionFilterSamePlayer( const Player *player ) {} };   /* p1w13-sonnet, batch R13b: the scan's list is the test's */
 class MemoryPoolObjectHolder
 {
 	MemoryPoolObject *m_mpo;

@@ -89,6 +89,8 @@ pub mod radar_update;
 pub mod heal_crate_collide;
 pub mod shroud_crate_collide;
 pub mod sabotage_crate_collide;
+pub mod unit_crate_collide;
+pub mod veterancy_crate_collide;
 pub mod money_crate_collide;
 pub mod cleanup_area_power;
 pub mod baikonur_launch_power;
@@ -347,6 +349,14 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::SabotageCrateCollide(d) => Some(made(
             sabotage_crate_collide::SabotageCrateCollide::get_interface_mask(),
             sabotage_crate_collide::SabotageCrateCollide::new(object, Some(d.clone())).map(UpdateBody::SabotageCrateCollide),
+        )),
+        ModuleDataKind::UnitCrateCollide(d) => Some(made(
+            unit_crate_collide::UnitCrateCollide::get_interface_mask(),
+            unit_crate_collide::UnitCrateCollide::new(object, Some(d.clone())).map(UpdateBody::UnitCrateCollide),
+        )),
+        ModuleDataKind::VeterancyCrateCollide(d) => Some(made(
+            veterancy_crate_collide::VeterancyCrateCollide::get_interface_mask(),
+            veterancy_crate_collide::VeterancyCrateCollide::new(object, Some(d.clone())).map(UpdateBody::VeterancyCrateCollide),
         )),
         ModuleDataKind::MoneyCrateCollide(d) => Some(made(
             money_crate_collide::MoneyCrateCollide::get_interface_mask(),

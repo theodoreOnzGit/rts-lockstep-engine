@@ -816,4 +816,5 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_slow_death_q.inc"
 #include "l9_open_contain_r.inc"
 #include "l9_sabotage_r13.inc"   /* p1w13-sonnet, batch R13: the eight sabotage crates */
+#include "l9_crates_r13b.inc"   /* p1w13-sonnet, batch R13b: UnitCrateCollide, VeterancyCrateCollide */
 /* --- end p1w13-sonnet --- */

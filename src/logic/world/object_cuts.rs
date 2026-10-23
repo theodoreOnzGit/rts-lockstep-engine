@@ -234,6 +234,37 @@ impl World {
 
     /// `ThePartitionManager->getClosestObject(object, range, FROM_CENTER_3D, filters)`: the candidates the manager would test the filters on, nearest first (the
     /// caller's own filter chooses the first that passes, which is the closest object that passes all).
+    // --- p1w13-sonnet --- (batch R13b)
+    /// `ThePartitionManager->iterateObjectsInRange(obj, range, FROM_CENTER_2D, { PartitionFilterSamePlayer(obj's player),
+    /// PartitionFilterSameMapStatus(obj) })`: the objects, in iteration order (`VeterancyCrateCollide`).
+    pub fn partition_iterate_same_player_in_range(&mut self, object: ObjectId, range: f32) -> Vec<ObjectId> {
+        self.cut(CutCall::PartitionIterateSamePlayerInRange { object, range });
+        self.cuts.range_scan.clone()
+    }
+
+    /// `TheThingFactory->newObject(template, team)` for a crate (`UnitCrateCollide`): `INVALID_ID` when the factory made nothing. Under
+    /// `crate_stub_object_calls` the call is a record and the object a bare one of the template (no modules but the standard helpers).
+    pub fn crate_new_object(&mut self, template: u16, team: Option<TeamId>) -> ObjectId {
+        if !self.cuts.crate_stub_object_calls {
+            return self.thing_factory_new_object(template, team, Default::default()).unwrap_or(INVALID_ID);
+        }
+        self.cut(CutCall::ThingFactoryNewObject { template, team });
+        let Some(t) = self.statics.thing_factory.find_by_template_id(template) else { return INVALID_ID };
+        let tt = std::sync::Arc::new(t.get_final_override().data.clone());
+        self.new_object(crate::logic::world::object_create::NewObject { template: tt, status: Default::default(), team, modules: Vec::new() }).unwrap_or(INVALID_ID)
+    }
+
+    /// `obj->setOrientation(angle)` for a crate's new unit: a record under `crate_stub_object_calls`.
+    pub fn crate_set_orientation(&mut self, id: ObjectId, angle: f32) {
+        if self.cuts.crate_stub_object_calls {
+            self.cut(CutCall::ObjectSetOrientation { object: id, angle });
+        } else {
+            self.set_orientation(id, angle);
+        }
+    }
+
+    // --- end p1w13-sonnet ---
+
     pub fn partition_closest_candidates(&mut self, object: ObjectId, range: f32) -> Vec<ObjectId> {
         self.cut(CutCall::PartitionGetClosestObject { object, range });
         self.cuts.range_scan.clone()
@@ -330,6 +361,19 @@ pub enum CutCall {
     ObjectAttemptDamage { object: ObjectId, info: crate::logic::damage::DamageInfo },
     /// `TheInGameUI->addFloatingText(format(TheGameText->fetch(text), amount), &pos, color)`.
     InGameUiAddFloatingTextNamed { text: Vec<u8>, amount: i32, position: crate::common::base_type::Coord3D, color: i32 },
+    // --- p1w13-sonnet --- (batch R13b: UnitCrateCollide, VeterancyCrateCollide)
+    /// `TheThingFactory->newObject(template, team)` under `ObjectCuts::crate_stub_object_calls` (`UnitCrateCollide`; `None`: a `NULL` team).
+    ThingFactoryNewObject { template: u16, team: Option<TeamId> },
+    /// `obj->setOrientation(angle)` under `ObjectCuts::crate_stub_object_calls` (`UnitCrateCollide`).
+    ObjectSetOrientation { object: ObjectId, angle: f32 },
+    /// `obj->getExperienceTracker()->gainExpForLevel(levels, canScaleForBonus)` under `ObjectCuts::crate_stub_object_calls` (`VeterancyCrateCollide`).
+    ExperienceGainForLevel { object: ObjectId, levels: i32, can_scale_for_bonus: bool },
+    /// `ThePartitionManager->iterateObjectsInRange(obj, range, FROM_CENTER_2D, { SamePlayer(obj's player), SameMapStatus(obj) })`
+    /// (`VeterancyCrateCollide`); `ObjectCuts::range_scan` answers.
+    PartitionIterateSamePlayerInRange { object: ObjectId, range: f32 },
+    /// `TheScriptEngine->transferObjectName(name, obj)` (`VeterancyCrateCollide`'s pilot).
+    ScriptEngineTransferObjectName { name: Vec<u8>, object: ObjectId },
+    // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     /// `TheScriptEngine->notifyOfTriggeredSpecialPower(playerIndex, specialPowerName, sourceObject)` (`SpecialPowerModule::aboutToDoSpecialPower`).
     ScriptNotifyOfTriggeredSpecialPower { player: PlayerIndex, name: Vec<u8>, source: ObjectId },
@@ -1118,6 +1162,33 @@ impl World {
             self.on_veterancy_level_changed(id, old_level, new_level, provide_feedback);
         }
     }
+
+    // --- p1w13-sonnet --- (batch R13b: VeterancyCrateCollide)
+    /// `ExperienceTracker::canGainExpForLevel(levelsToGain)`: the level that many above the current one (no higher than `LEVEL_LAST`) is above it.
+    pub fn cut_experience_can_gain_for_level(&self, id: ObjectId, levels_to_gain: i32) -> bool {
+        let Some(o) = self.objects.find(id) else { return false };
+        let current = o.experience.level as i32;
+        current.wrapping_add(levels_to_gain).min(crate::common::game_common::LEVEL_COUNT - 1) > current
+    }
+
+    /// `ExperienceTracker::gainExpForLevel(levelsToGain, canScaleForBonus)`: the points from the current experience to the target level's
+    /// requirement, through `addExperiencePoints`; whether the target is above the current level. A record under `crate_stub_object_calls`.
+    pub fn cut_experience_gain_for_level(&mut self, id: ObjectId, levels_to_gain: i32, can_scale_for_bonus: bool) -> bool {
+        if self.cuts.crate_stub_object_calls {
+            self.cut(CutCall::ExperienceGainForLevel { object: id, levels: levels_to_gain, can_scale_for_bonus });
+            return self.cut_experience_can_gain_for_level(id, levels_to_gain);
+        }
+        let Some(o) = self.objects.find(id) else { return false };
+        let current = o.experience.level as i32;
+        let new_level = current.wrapping_add(levels_to_gain).min(crate::common::game_common::LEVEL_COUNT - 1);
+        if new_level > current {
+            let needed = o.template().get_experience_required(crate::logic::world::object::veterancy_from_i32(new_level)).wrapping_sub(o.experience.points);
+            self.cut_experience_add_points(id, needed, can_scale_for_bonus);
+            return true;
+        }
+        false
+    }
+    // --- end p1w13-sonnet ---
 
     /// `ExperienceTracker::addExperiencePoints(experienceGain, canScaleForBonus)`.
     pub fn cut_experience_add_points(&mut self, id: ObjectId, experience_gain: i32, can_scale_for_bonus: bool) {

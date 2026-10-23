@@ -174,7 +174,7 @@ public:
 	ObjectID getID() const { return (ObjectID)m_oid; }
 	const ThingTemplate *getTemplate() const { return &m_tmpl; }
 	void clearDisabled(DisabledType type);              /* differential/l9_dies_d.inc */
-	Bool isSignificantlyAboveTerrain();                 /* differential/l9_dies_d.inc */
+	Bool isSignificantlyAboveTerrain() const __asm__("l9m_Object_isSignificantlyAboveTerrain");   /* differential/l9_dies_d.inc (const as Thing's, batch R13b; the label keeps it apart from wrap_l9updates.cpp's) */
 	/* crate batch F: what CrateCollide asks of the object that collides (the test's) and of the crate (differential/l9_crates_f.inc) */
 	void setPosition(const Coord3D *pos) { m_pos = *pos; }   /* special power batch H: the view object and the detonation object are placed */
 	void defect(Team *newTeam, UnsignedInt detectionTime);   /* l9_powers_h.inc */
@@ -226,6 +226,8 @@ public:
 	/* update batch N: CheckpointUpdate */
 	Real getVisionRange() const { return m_vision; }
 	Real getOrientation() const { return m_orientation; }   /* update batch N: OCLUpdate */
+	const AsciiString &getName() const { return m_name; }   /* p1w13-sonnet, batch R13b: VeterancyCrateCollide's pilot hands it on */
+	AsciiString m_name;
 	Real m_orientation = 0.0f;
 	/* update batch N: FlammableUpdate (differential/l9_flammable_n.inc) */
 	void attemptDamage( DamageInfo *damageInfo );

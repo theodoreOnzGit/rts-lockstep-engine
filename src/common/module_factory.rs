@@ -632,6 +632,16 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: crate::logic::modules::sabotage_crate_collide::new_module_data_proc("SabotageSupplyDropzoneCrateCollide"),
             which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
         }),
+        "UnitCrateCollide" => Some(ModuleTemplate {
+            create_proc: Some(new_collide_base),
+            create_data_proc: Some(crate::logic::modules::unit_crate_collide::new_module_data),
+            which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
+        }),
+        "VeterancyCrateCollide" => Some(ModuleTemplate {
+            create_proc: Some(new_collide_base),
+            create_data_proc: Some(crate::logic::modules::veterancy_crate_collide::new_module_data),
+            which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
+        }),
         // --- end p1w13-sonnet ---
         "MoneyCrateCollide" => Some(ModuleTemplate {
             create_proc: Some(new_collide_base),
@@ -969,6 +979,8 @@ fn new_collide_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mo
         Some(ModuleDataKind::ShroudCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
         Some(ModuleDataKind::MoneyCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
         Some(ModuleDataKind::SabotageCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
+        Some(ModuleDataKind::UnitCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
+        Some(ModuleDataKind::VeterancyCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
         // --- end p1w11-sonnet ---
         _ => None,
     };

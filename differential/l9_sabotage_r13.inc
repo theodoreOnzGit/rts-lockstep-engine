@@ -178,6 +178,7 @@ int ref_l9sab_run(int kind, const char *filename, const char *xfer_path, const u
 		players[i].m_money.m_idx = i;
 		players[i].m_money.m_count = cfg[4 + i];
 		players[i].m_score.m_idx = i;
+		players[i].m_type = PLAYER_HUMAN;   /* the stand-in has no constructor; the Rust player's default */
 	}
 	g_spPlayerPtrs[0] = &players[0]; g_spPlayerPtrs[1] = &players[1]; g_spPlayerPtrs[2] = &players[2];
 	g_spPlayerCount = 3;

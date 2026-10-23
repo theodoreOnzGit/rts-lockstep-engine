@@ -37,6 +37,10 @@
 //! The first 9,000-case run found one translation defect: the Eva message was played only when there was a local player, where upstream's
 //! `isLocallyControlled` compares the two players and so is true for an unowned victim when there is no local player (`NULL == NULL`).
 //!
+//! **Harness correction, 2026-10-23 (batch R13b).** The driver's players had no player type: the C++ `Player` stand-in has no constructor, so a
+//! `HumanOnly` crate read uninitialised memory (the 9,000 cases above matched, which says only that the memory held `PLAYER_HUMAN`). The driver now
+//! makes them human, the Rust player's default; re-run, 9,000 cases, 0 mismatches.
+//!
 //! # Planted bugs
 //!
 //! `L9_PLANT=<id>` (`logic::modules::plant`), 9,000 cases: 14 of 15 caught. 1646 is unobservable: `CrateCollide::isValidToExecute` (the base,

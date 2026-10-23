@@ -4,11 +4,13 @@
 #define SHIM_MODULE_SCRIPTENGINE_H
 #include "Common/AsciiString.h"
 #include "Common/GameType.h"
+class Object;
 class ScriptEngine
 {
 public:
 	void notifyOfCompletedSpecialPower(Int playerIndex, const AsciiString &specialPowerName, ObjectID sourceObject);
 	void notifyOfTriggeredSpecialPower(Int playerIndex, const AsciiString &completedPower, ObjectID sourceObj);   /* special power batch H */
+	void transferObjectName(const AsciiString &unitName, Object *pNewObject);   /* p1w13-sonnet, batch R13b: VeterancyCrateCollide's pilot */
 };
 extern ScriptEngine *TheScriptEngine;
 #endif

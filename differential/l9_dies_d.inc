@@ -37,7 +37,7 @@ void Object::clearDisabled(DisabledType t)
 	ulog("cleardisabled %d %d", (int)m_oid, (int)t);
 	m_disabledBits &= ~(1u << (unsigned)t);
 }
-Bool Object::isSignificantlyAboveTerrain() { return m_pos.z > (Real)(-(3 * 3)) * g_ddGravity; }
+Bool Object::isSignificantlyAboveTerrain() const { return m_pos.z > (Real)(-(3 * 3)) * g_ddGravity; }
 const AudioEventRTS *ModTestThingTemplate::getPerUnitSound(const AsciiString &name) const
 {
 	if (name.isEmpty()) return &g_ddNoSound;

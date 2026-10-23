@@ -364,6 +364,10 @@ pub enum ModuleDataKind {
     MoneyCrateCollide(Arc<crate::logic::modules::money_crate_collide::MoneyCrateCollideModuleData>),
     /// The eight sabotage crates' data (batch R13).
     SabotageCrateCollide(Arc<crate::logic::modules::sabotage_crate_collide::SabotageCrateCollideModuleData>),
+    /// `UnitCrateCollide`'s data (batch R13b).
+    UnitCrateCollide(Arc<crate::logic::modules::unit_crate_collide::UnitCrateCollideModuleData>),
+    /// `VeterancyCrateCollide`'s data (batch R13b).
+    VeterancyCrateCollide(Arc<crate::logic::modules::veterancy_crate_collide::VeterancyCrateCollideModuleData>),
     /// `CleanupAreaPowerModuleData`.
     CleanupAreaPower(Arc<crate::logic::modules::cleanup_area_power::CleanupAreaPowerModuleData>),
     /// `BaikonurLaunchPowerModuleData`.
@@ -513,6 +517,8 @@ impl ModuleDataKind {
             ModuleDataKind::ShroudCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::MoneyCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::SabotageCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
+            ModuleDataKind::UnitCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
+            ModuleDataKind::VeterancyCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::CleanupAreaPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::BaikonurLaunchPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::SpyVisionSpecialPower(d) => &d.special_power.behavior.module_data,
@@ -729,6 +735,20 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::SabotageCrateCollide(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::UnitCrateCollide(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::VeterancyCrateCollide(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
                     true
