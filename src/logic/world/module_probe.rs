@@ -106,6 +106,12 @@ pub struct ProbeAnswers {
     pub last_damage_source: Option<ObjectId>,
     /// batch R14b: the body's front and back crushed flags, when the test gives them (`getFrontCrushed`, `setFrontCrushed` and the back's use them).
     pub front_crushed: Option<bool>,
+    /// batch R15: what `construct` returns (`INVALID_ID`: `NULL`); `construct` and `aiResumeConstruction` are lines of the trace.
+    pub construct_result: ObjectId,
+    /// batch R15: the probe is a hole's `RebuildHoleBehavior`: `startRebuildProcess` is a line of the trace.
+    pub rebuild_hole: bool,
+    /// batch R15: the probe is a `StickyBombUpdate` whose `getTargetObject` answers this (`None`: not a sticky bomb); `setTargetObject` is a line.
+    pub sticky_target: Option<ObjectId>,
     pub back_crushed: Option<bool>,
     /// `getVelocity()` of the physics.
     pub velocity: Coord3D,
@@ -637,6 +643,35 @@ impl ProbeModule {
                 world.body_trace(format!("transferattack {} {from} {to}", me.object));
                 ModuleReply::Done
             }
+            ModuleCall::AiConstruct { template, pos, angle, owner, is_rebuild } => {
+                world.body_trace(format!(
+                    "construct {} {} {:08x} {:08x} {:08x} {:08x} {} {}",
+                    me.object,
+                    template.map_or(-1, i32::from),
+                    pos.x.to_bits(),
+                    pos.y.to_bits(),
+                    pos.z.to_bits(),
+                    angle.to_bits(),
+                    owner.unwrap_or(-1),
+                    i32::from(is_rebuild)
+                ));
+                ModuleReply::Id(self.answers.construct_result)
+            }
+            ModuleCall::AiResumeConstruction { object, command_source } => {
+                world.body_trace(format!("resume {} {object} {command_source}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::StartRebuildProcess { template, spawner } if self.answers.rebuild_hole => {
+                world.body_trace(format!("startrebuild {} {template} {spawner}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::StickyBombGetTargetObject if self.answers.sticky_target.is_some() => ModuleReply::Id(self.answers.sticky_target.unwrap_or(INVALID_ID)),
+            ModuleCall::StickyBombSetTargetObject(t) if self.answers.sticky_target.is_some() => {
+                world.body_trace(format!("bombtarget {} {t}", me.object));
+                self.answers.sticky_target = Some(t);
+                ModuleReply::Done
+            }
+            ModuleCall::StickyBombGetTargetObject | ModuleCall::StickyBombSetTargetObject(_) => ModuleReply::Unhandled,
             ModuleCall::AiNotifyCrate(c) => {
                 world.body_trace(format!("notifycrate {} {c}", me.object));
                 ModuleReply::Done

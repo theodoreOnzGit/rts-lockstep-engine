@@ -571,6 +571,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::eject_pilot_die::new_module_data),
             which_interfaces: Some(crate::logic::module::die_module::DieModule::get_interface_mask()),
         }),
+        "RebuildHoleExposeDie" => Some(ModuleTemplate {
+            create_proc: Some(new_die_base),
+            create_data_proc: Some(crate::logic::modules::rebuild_hole_expose_die::new_module_data),
+            which_interfaces: Some(crate::logic::module::die_module::DieModule::get_interface_mask()),
+        }),
         "CreateCrateDie" => Some(ModuleTemplate {
             create_proc: Some(new_die_base),
             create_data_proc: Some(crate::logic::modules::create_crate_die::new_module_data),
@@ -832,6 +837,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::slow_death_behavior::new_module_data),
             which_interfaces: Some(crate::logic::modules::slow_death_behavior::SlowDeathBehavior::get_interface_mask()),
         }),
+        "RebuildHoleBehavior" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::rebuild_hole_behavior::new_module_data),
+            which_interfaces: Some(crate::logic::modules::rebuild_hole_behavior::RebuildHoleBehavior::get_interface_mask()),
+        }),
         "OpenContain" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::open_contain::new_module_data),
@@ -962,6 +972,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::TechBuildingBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::FireSpreadUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::SlowDeathBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::RebuildHoleBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         // --- end p1w13-sonnet ---
         _ => None,
     };
@@ -981,6 +992,7 @@ fn new_die_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module
         Some(ModuleDataKind::DamDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
         Some(ModuleDataKind::SpecialPowerCompletionDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
         Some(ModuleDataKind::EjectPilotDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
+        Some(ModuleDataKind::RebuildHoleExposeDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
         Some(ModuleDataKind::CreateCrateDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
         Some(ModuleDataKind::CrushDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
         Some(ModuleDataKind::CreateObjectDie(d)) => Some(std::sync::Arc::new(d.die.clone())),

@@ -84,6 +84,7 @@ pub mod replace_object_upgrade;
 pub mod dam_die;
 pub mod special_power_completion_die;
 pub mod eject_pilot_die;
+pub mod rebuild_hole_expose_die;
 pub mod create_crate_die;
 pub mod crush_die;
 pub mod create_object_die;
@@ -129,6 +130,7 @@ pub mod active_body;
 pub mod derived_bodies;
 pub mod inactive_body;
 pub mod slow_death_behavior;
+pub mod rebuild_hole_behavior;
 pub mod open_contain;
 pub mod transport_contain;
 pub mod garrison_contain;
@@ -336,6 +338,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::EjectPilotDie(d) => Some(made(
             DieModule::get_interface_mask(),
             eject_pilot_die::EjectPilotDie::new(object, Some(d.clone())).map(UpdateBody::EjectPilotDie),
+        )),
+        ModuleDataKind::RebuildHoleExposeDie(d) => Some(made(
+            DieModule::get_interface_mask(),
+            rebuild_hole_expose_die::RebuildHoleExposeDie::new(object, Some(d.clone())).map(UpdateBody::RebuildHoleExposeDie),
         )),
         ModuleDataKind::CreateCrateDie(d) => Some(made(
             DieModule::get_interface_mask(),
@@ -561,6 +567,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::SlowDeathBehavior(d) => Some(made_update(
             slow_death_behavior::SlowDeathBehavior::get_interface_mask(),
             slow_death_behavior::SlowDeathBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::SlowDeathBehavior(m))),
+        )),
+        ModuleDataKind::RebuildHoleBehavior(d) => Some(made_update(
+            rebuild_hole_behavior::RebuildHoleBehavior::get_interface_mask(),
+            rebuild_hole_behavior::RebuildHoleBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::RebuildHoleBehavior(m))),
         )),
         // --- end p1w13-sonnet ---
         _ => None,

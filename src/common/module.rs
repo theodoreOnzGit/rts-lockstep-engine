@@ -352,6 +352,8 @@ pub enum ModuleDataKind {
     SpecialPowerCompletionDie(Arc<crate::logic::modules::special_power_completion_die::SpecialPowerCompletionDieModuleData>),
     /// `EjectPilotDieModuleData`.
     EjectPilotDie(Arc<crate::logic::modules::eject_pilot_die::EjectPilotDieModuleData>),
+    /// `RebuildHoleExposeDie` (batch R15).
+    RebuildHoleExposeDie(Arc<crate::logic::modules::rebuild_hole_expose_die::RebuildHoleExposeDieModuleData>),
     /// `CreateCrateDie` (batch R14c).
     CreateCrateDie(Arc<crate::logic::modules::create_crate_die::CreateCrateDieModuleData>),
     /// `CrushDie` (batch R14b).
@@ -430,6 +432,8 @@ pub enum ModuleDataKind {
     ActiveBody(Arc<crate::logic::modules::active_body::ActiveBodyModuleData>),
     /// `SlowDeathBehaviorModuleData`.
     SlowDeathBehavior(Arc<crate::logic::modules::slow_death_behavior::SlowDeathBehaviorModuleData>),
+    /// `RebuildHoleBehavior` (batch R15).
+    RebuildHoleBehavior(Arc<crate::logic::modules::rebuild_hole_behavior::RebuildHoleBehaviorModuleData>),
     /// `OpenContainModuleData`.
     OpenContain(Arc<crate::logic::modules::open_contain::OpenContainModuleData>),
     /// `TransportContainModuleData`.
@@ -525,6 +529,7 @@ impl ModuleDataKind {
             ModuleDataKind::DamDie(d) => &d.die.behavior.module_data,
             ModuleDataKind::SpecialPowerCompletionDie(d) => &d.die.behavior.module_data,
             ModuleDataKind::EjectPilotDie(d) => &d.die.behavior.module_data,
+            ModuleDataKind::RebuildHoleExposeDie(d) => &d.die.behavior.module_data,
             ModuleDataKind::CreateCrateDie(d) => &d.die.behavior.module_data,
             ModuleDataKind::CrushDie(d) => &d.die.behavior.module_data,
             ModuleDataKind::CreateObjectDie(d) => &d.die.behavior.module_data,
@@ -566,6 +571,7 @@ impl ModuleDataKind {
             ModuleDataKind::FireSpreadUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::ActiveBody(d) => &d.body.behavior.module_data,
             ModuleDataKind::SlowDeathBehavior(d) => &d.update.behavior.module_data,
+            ModuleDataKind::RebuildHoleBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::OpenContain(d) => &d.update.behavior.module_data,
             ModuleDataKind::TransportContain(d) => &d.open.update.behavior.module_data,
             ModuleDataKind::GarrisonContain(d) => &d.open.update.behavior.module_data,
@@ -721,6 +727,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::EjectPilotDie(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.die.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::RebuildHoleExposeDie(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.die.behavior.module_data.set_module_tag_name_key(key);
                     true
@@ -984,6 +997,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::SlowDeathBehavior(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::RebuildHoleBehavior(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

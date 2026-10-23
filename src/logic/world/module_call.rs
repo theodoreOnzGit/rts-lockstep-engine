@@ -486,6 +486,15 @@ pub enum ModuleCall {
     AiTransferAttack { from: ObjectId, to: ObjectId },
     /// `getAIUpdateInterface()->notifyCrate(crateID)` (`CreateCrateDie`, batch R14c).
     AiNotifyCrate(ObjectId),
+    /// `getAIUpdateInterface()->construct(template, pos, angle, owner, isRebuild)` (`RebuildHoleBehavior`, batch R15): the template by id
+    /// (`None`: `NULL`), the owner a player index; replies [`ModuleReply::Id`] (`INVALID_ID`: `NULL`).
+    AiConstruct { template: Option<u16>, pos: Coord3D, angle: f32, owner: Option<crate::logic::world::ids::PlayerIndex>, is_rebuild: bool },
+    /// `getAIUpdateInterface()->aiResumeConstruction(obj, cmdSource)` (batch R15).
+    AiResumeConstruction { object: ObjectId, command_source: i32 },
+    /// `StickyBombUpdate::getTargetObject()` (batch R15: `RebuildHoleBehavior::transferBombs`); replies [`ModuleReply::Id`] (`INVALID_ID`: `NULL`).
+    StickyBombGetTargetObject,
+    /// `StickyBombUpdate::setTargetObject(obj)` (batch R15).
+    StickyBombSetTargetObject(ObjectId),
     // --- end p1w13-sonnet ---
     /// `ignoreObstacle(obstacle)` (`INVALID_ID` for `NULL`).
     AiIgnoreObstacle { obstacle: ObjectId },

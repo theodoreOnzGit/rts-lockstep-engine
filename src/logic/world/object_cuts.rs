@@ -259,6 +259,7 @@ impl World {
             c.body = Some(crate::logic::world::update_body::UpdateBody::ModuleProbe(crate::logic::world::module_probe::ProbeModule::new(answers, 0.0, Default::default())));
             modules.push(c);
         }
+        modules.extend(self.cuts.crate_new_object_modules.iter().cloned());
         let id = self.new_object(crate::logic::world::object_create::NewObject { template: tt, status: Default::default(), team, modules }).unwrap_or(INVALID_ID);
         if id != INVALID_ID {
             self.friend_bind_to_drawable(id, if self.cuts.crate_new_object_drawable { 1000 + id } else { INVALID_DRAWABLE_ID });
@@ -349,6 +350,15 @@ impl World {
             self.cut(CutCall::ObjectSetLayer { object: id, layer });
         } else {
             self.set_layer(id, layer);
+        }
+    }
+
+    /// `obj->maskObject(mask)` (`RebuildHoleBehavior`, batch R15): a record under `crate_stub_object_calls`.
+    pub fn crate_mask_object(&mut self, id: ObjectId, mask: bool) {
+        if self.cuts.crate_stub_object_calls {
+            self.cut(CutCall::ObjectMaskObject { object: id, mask });
+        } else {
+            self.mask_object(id, mask);
         }
     }
 
@@ -469,6 +479,8 @@ pub enum CutCall {
     ObjectSetOrientation { object: ObjectId, angle: f32 },
     /// `obj->setLayer(layer)` (batch R14c).
     ObjectSetLayer { object: ObjectId, layer: crate::common::game_type::PathfindLayer },
+    /// `obj->maskObject(mask)` (batch R15).
+    ObjectMaskObject { object: ObjectId, mask: bool },
     /// `obj->getExperienceTracker()->gainExpForLevel(levels, canScaleForBonus)` under `ObjectCuts::crate_stub_object_calls` (`VeterancyCrateCollide`).
     ExperienceGainForLevel { object: ObjectId, levels: i32, can_scale_for_bonus: bool },
     /// `ThePartitionManager->iterateObjectsInRange(obj, range, FROM_CENTER_2D, { SamePlayer(obj's player), SameMapStatus(obj) })`
@@ -773,6 +785,8 @@ pub struct ObjectCuts {
     /// batch R14c: under `crate_stub_object_calls`, whether the object `crate_new_object` makes is bound to a drawable (`CreateCrateDie`'s decal;
     /// otherwise it has none).
     pub crate_new_object_drawable: bool,
+    /// batch R15: under `crate_stub_object_calls`, the modules the object `crate_new_object` makes is given (after the parachute's contain).
+    pub crate_new_object_modules: Vec<NewModule>,
     /// batch R14a: what `ObjectCreationList::create` returns, per list name (`CreateObjectDie`; no entry: `NULL`).
     pub ocl_create_result: BTreeMap<Vec<u8>, ObjectId>,
     /// batch R13: `Player::iterateObjects` per player, when the test lists them (no entry: the objects the player controls, in id order).
@@ -918,6 +932,7 @@ impl Default for ObjectCuts {
             crate_booby_trapped: false,
             crate_new_object_contain: None,
             crate_new_object_drawable: false,
+            crate_new_object_modules: Vec::new(),
             ocl_create_result: BTreeMap::new(),
             crate_stub_object_calls: false,
             player_objects: BTreeMap::new(),

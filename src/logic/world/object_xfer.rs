@@ -616,6 +616,8 @@ impl World {
             (Some(crate::logic::world::update_body::UpdateBody::CaveContain(c)), Ok(())) => c.check_loaded_team(self),
             // batch R12: a garrison's too, whatever became of the rest of the xfer (upstream throws before it)
             (Some(crate::logic::world::update_body::UpdateBody::GarrisonContain(g)), r) => g.check_loaded_team(self, r),
+            // batch R15: a rebuild hole's load finds its two template names in the thing factory (it throws `SC_INVALID_DATA` for one it does not know)
+            (Some(crate::logic::world::update_body::UpdateBody::RebuildHoleBehavior(m)), r) => m.check_loaded_templates(self, r),
             (_, r) => r,
         };
         self.put_slot_snapshot(id, idx, snap);

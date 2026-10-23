@@ -47,7 +47,10 @@ public:
 	void removeRadar(Bool disableProof);
 	void onStructureConstructionComplete(Object *builder, Object *structure, Bool isRebuild);   /* ReplaceObjectUpgrade */
 	Int m_idx;
-	Int getPlayerIndex() const { return m_idx; }   /* the dies: SpecialPowerCompletionDie, EjectPilotDie */
+	Int getPlayerIndex() const { return m_idx; }
+	/* batch R15: RebuildHoleExposeDie (Player.h's isPlayerActive: not dead, not an observer) */
+	Bool isPlayerActive() const { return !m_dead && !m_observer; }
+	Bool m_dead = false, m_observer = false;   /* the dies: SpecialPowerCompletionDie, EjectPilotDie */
 	/* crate batch F: the crates ask a player its type and sciences, and heal all its objects (a line of the effect log) */
 	PlayerType getPlayerType() const { return m_type; }
 	Bool hasScience(ScienceType t) const { return std::find(m_sciences.begin(), m_sciences.end(), t) != m_sciences.end(); }
