@@ -3107,6 +3107,25 @@ mod differential {
                 std::fs::write(dir.join("AutoHealBehavior.h"), cut).expect("write AutoHealBehavior.h copy");
                 println!("cargo:rerun-if-changed={}", path.display());
             }
+            // --- p1w13-sonnet --- (batch R23, differential/l9_geom_stealth_r23.inc): GrantStealthBehavior.h's field table names
+            // `INI::parseParticleSystemTemplate` too; the same replacement (asserted once), its declaration after the header's include guard line
+            // (asserted once). The edited header is mod_gen/GameLogic/Module/GrantStealthBehavior.h.
+            {
+                let path = up.join("GameEngine/Include/GameLogic/Module/GrantStealthBehavior.h");
+                let text = std::fs::read_to_string(&path).expect("read GrantStealthBehavior.h");
+                let (parse, guard) = ("INI::parseParticleSystemTemplate", "#define __GrantStealthBehavior_H_\n");
+                assert_eq!(text.matches(parse).count(), 1, "GrantStealthBehavior.h: the particle system parser must occur once");
+                assert_eq!(text.matches(guard).count(), 1, "GrantStealthBehavior.h: the include guard must occur once");
+                let cut = text.replace(parse, "l9ahParsePsTemplate").replace(
+                    guard,
+                    &format!("{guard}class INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n"),
+                );
+                let dir = mod_gen.join("GameLogic/Module");
+                std::fs::create_dir_all(&dir).expect("create mod_gen/GameLogic/Module");
+                std::fs::write(dir.join("GrantStealthBehavior.h"), cut).expect("write GrantStealthBehavior.h copy");
+                println!("cargo:rerun-if-changed={}", path.display());
+            }
+            // --- end p1w13-sonnet ---
             // Update batch N (differential/l9_flammable_n.inc): the `static` of a function-local name key loses its `static` (the test resets the name key
             // generator for every case, and a key cached by an earlier case would name another string, as in special power batch H). Asserted to apply once;
             // the edited copy is in mod_gen/ (…_nokey.cpp) and the driver includes that.
