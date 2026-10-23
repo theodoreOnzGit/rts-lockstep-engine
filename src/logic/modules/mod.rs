@@ -122,6 +122,7 @@ pub mod poisoned_behavior;
 pub mod production_exit;
 pub mod weapon_bonus_update;
 pub mod pilot_find_vehicle_update;
+pub mod overcharge_behavior;
 pub mod grant_stealth_behavior;
 pub mod dynamic_geometry_info_update;
 pub mod animation_steering_update;
@@ -492,6 +493,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::PilotFindVehicleUpdate(d) => Some(made_update(
             pilot_find_vehicle_update::PilotFindVehicleUpdate::get_interface_mask(),
             pilot_find_vehicle_update::PilotFindVehicleUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::PilotFindVehicleUpdate(m))),
+        )),
+        ModuleDataKind::OverchargeBehavior(d) => Some(made_update(
+            overcharge_behavior::OverchargeBehavior::get_interface_mask(),
+            overcharge_behavior::OverchargeBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::OverchargeBehavior(m))),
         )),
         ModuleDataKind::GrantStealthBehavior(d) => Some(made_update(
             grant_stealth_behavior::GrantStealthBehavior::get_interface_mask(),

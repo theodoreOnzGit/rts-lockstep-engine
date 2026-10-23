@@ -228,6 +228,10 @@ pub enum ObjectClientEvent {
     MessageCreateSelectedGroup { create_new: bool, object_id: ObjectId },
     /// `TheMessageStream->appendMessage(MSG_REMOVE_FROM_SELECTED_GROUP)` with `appendObjectIDArgument(object)`.
     MessageRemoveFromSelectedGroup { object_id: ObjectId },
+    /// batch R24: `TheInGameUI->message(label)` (the string manager's label, shown to the local player).
+    UiMessage { label: Vec<u8> },
+    /// batch R24: `TheRadar->createEvent(&pos, type)` (a `RadarEventType` number; the default four seconds to live).
+    RadarCreateEvent { position: Coord3D, event_type: i32 },
     /// `TheInGameUI->selectDrawable(object's drawable)`.
     UiSelectDrawable { object_id: ObjectId },
     /// `TheInGameUI->deselectDrawable(object's drawable)`.

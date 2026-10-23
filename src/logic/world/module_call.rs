@@ -260,6 +260,10 @@ pub enum ModuleCall {
     GetRadarDisableProof,
     /// `OverchargeBehavior::isOverchargeActive()`; replies [`ModuleReply::Bool`].
     IsOverchargeActive,
+    /// `OverchargeBehaviorInterface::toggle()` (batch R24).
+    OverchargeToggle,
+    /// `OverchargeBehaviorInterface::enable(enable)` (batch R24).
+    OverchargeEnable(bool),
     /// `AutoHealBehavior::undoUpgrade()`.
     UndoUpgrade,
     // --- p1w12-sonnet ---

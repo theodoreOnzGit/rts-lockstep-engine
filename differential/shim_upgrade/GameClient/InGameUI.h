@@ -17,10 +17,11 @@ enum WorldAnimationOptions
 	WORLD_ANIM_PLAY_ONCE_AND_DESTROY		= 0x00000002,
 };
 /* --- end p1w12-sonnet --- */
+extern void (*g_uiMessageHook)(const char *);   /* p1w13-sonnet, batch R24 (null but in differential/l9_overcharge_r24.inc) */
 class InGameUI
 {
 public:
-	void message(const char *) {}
+	void message(const char *label) { if (g_uiMessageHook) g_uiMessageHook(label); }   /* p1w13-sonnet, batch R24: a line for OverchargeBehavior's driver */
 	/* --- p1w12-sonnet --- */
 	void addSuperweapon(Int playerIndex, const AsciiString &powerName, ObjectID id, const class SpecialPowerTemplate *powerTemplate);
 	Bool removeSuperweapon(Int playerIndex, const AsciiString &powerName, ObjectID id, const class SpecialPowerTemplate *powerTemplate);

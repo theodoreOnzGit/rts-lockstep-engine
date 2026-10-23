@@ -935,6 +935,8 @@ impl ProbeModule {
             ModuleCall::CanAnySlavesAttack
             | ModuleCall::GetRadarDisableProof
             | ModuleCall::IsOverchargeActive
+            | ModuleCall::OverchargeToggle
+            | ModuleCall::OverchargeEnable(_)
             | ModuleCall::IsAbleToBeToppled
             | ModuleCall::SpecialAbilityIsActive // p1w13-sonnet
             | ModuleCall::CountermeasuresIsActive => ModuleReply::Bool(self.answers.yes),

@@ -1660,6 +1660,20 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    /// p1w13-sonnet, batch R24: OverchargeBehavior (differential/l9_overcharge_r24.inc).
+    pub fn ref_l9r24_run(
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
     /// p1w13-sonnet, batch R23: DynamicGeometryInfoUpdate (kind 0), GrantStealthBehavior (kind 1) (differential/l9_geom_stealth_r23.inc).
     pub fn ref_l9r23_run(
         kind: c_int,
