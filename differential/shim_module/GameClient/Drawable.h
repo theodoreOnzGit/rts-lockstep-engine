@@ -53,6 +53,7 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	Object *m_ownerObject = 0;
 	void setShadowsEnabled(Bool enable);   /* SlowDeathBehavior */
 	void setTerrainDecalFadeTarget(Real target, Real rate);
+	void setTerrainDecalSize(Real x, Real y);   /* batch R14c: CreateCrateDie (differential/l9_dies_r14.inc) */
 	/* --- end p1w13-sonnet --- */
 	/* --- p1w13-sonnet --- (batch R: OpenContain; differential/l9_open_contain_r.inc) */
 	Bool isSelected() const { return m_selected; }

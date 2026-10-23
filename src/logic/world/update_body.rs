@@ -157,6 +157,8 @@ pub enum UpdateBody {
     SpecialPowerCompletionDie(crate::logic::modules::special_power_completion_die::SpecialPowerCompletionDie),
     /// `EjectPilotDie`.
     EjectPilotDie(crate::logic::modules::eject_pilot_die::EjectPilotDie),
+    /// `CreateCrateDie` (batch R14c).
+    CreateCrateDie(crate::logic::modules::create_crate_die::CreateCrateDie),
     /// `CrushDie` (batch R14b).
     CrushDie(crate::logic::modules::crush_die::CrushDie),
     /// `CreateObjectDie` (batch R14a).
@@ -344,6 +346,7 @@ impl UpdateBody {
             UpdateBody::DamDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SpecialPowerCompletionDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::EjectPilotDie(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::CreateCrateDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::CrushDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::CreateObjectDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::PowerPlantUpdate(m) => m.world_update(world, me),
@@ -472,6 +475,7 @@ impl UpdateBody {
             UpdateBody::DamDie(m) => m.module_call(world, me, call),
             UpdateBody::SpecialPowerCompletionDie(m) => m.module_call(world, me, call),
             UpdateBody::EjectPilotDie(m) => m.module_call(world, me, call),
+            UpdateBody::CreateCrateDie(m) => m.module_call(world, me, call),
             UpdateBody::CrushDie(m) => m.module_call(world, me, call),
             UpdateBody::CreateObjectDie(m) => m.module_call(world, me, call),
             UpdateBody::PowerPlantUpdate(m) => m.module_call(world, me, call),
@@ -885,6 +889,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::DamDie(m) => m.crc(xfer),
             UpdateBody::SpecialPowerCompletionDie(m) => m.crc(xfer),
             UpdateBody::EjectPilotDie(m) => m.crc(xfer),
+            UpdateBody::CreateCrateDie(m) => m.crc(xfer),
             UpdateBody::CrushDie(m) => m.crc(xfer),
             UpdateBody::CreateObjectDie(m) => m.crc(xfer),
             UpdateBody::PowerPlantUpdate(m) => m.crc(xfer),
@@ -1009,6 +1014,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::DamDie(m) => m.xfer(xfer),
             UpdateBody::SpecialPowerCompletionDie(m) => m.xfer(xfer),
             UpdateBody::EjectPilotDie(m) => m.xfer(xfer),
+            UpdateBody::CreateCrateDie(m) => m.xfer(xfer),
             UpdateBody::CrushDie(m) => m.xfer(xfer),
             UpdateBody::CreateObjectDie(m) => m.xfer(xfer),
             UpdateBody::PowerPlantUpdate(m) => m.xfer(xfer),
@@ -1133,6 +1139,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::DamDie(m) => m.load_post_process(),
             UpdateBody::SpecialPowerCompletionDie(m) => m.load_post_process(),
             UpdateBody::EjectPilotDie(m) => m.load_post_process(),
+            UpdateBody::CreateCrateDie(m) => m.load_post_process(),
             UpdateBody::CrushDie(m) => m.load_post_process(),
             UpdateBody::CreateObjectDie(m) => m.load_post_process(),
             UpdateBody::PowerPlantUpdate(m) => m.load_post_process(),

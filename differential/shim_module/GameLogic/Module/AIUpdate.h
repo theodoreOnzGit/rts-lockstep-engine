@@ -35,6 +35,7 @@ class DozerAIInterface;
 class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	DozerAIInterface *getDozerAIInterface();   /* p1w13-sonnet, batch R13e: differential/l9_crates_r13e.inc */
 	void transferAttack(ObjectID fromID, ObjectID toID);   /* p1w13-sonnet, batch R14a: differential/l9_dies_r14.inc */
+	void notifyCrate(ObjectID id);   /* p1w13-sonnet, batch R14c: differential/l9_dies_r14.inc */
 	/* --- p1w13-sonnet --- (update batch O: SquishCollide asks what the AI is going for) */
 	Object *getGoalObject() const { return m_goal; }
 	Object *m_goal = 0;

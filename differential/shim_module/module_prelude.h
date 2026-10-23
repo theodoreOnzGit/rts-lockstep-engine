@@ -129,6 +129,12 @@
 #define DamageFXStore ModTestDamageFXStore
 #define TheDamageFXStore ModTestTheDamageFXStore
 /* --- end p1w13-sonnet --- */
+/* --- p1w13-sonnet --- (batch R14c: CreateCrateDie; the terrain build compiles the real CrateSystem.cpp) */
+#define CrateSystem ModTestCrateSystem
+#define TheCrateSystem ModTestTheCrateSystem
+#define CrateTemplate ModTestCrateTemplate
+#define crateCreationEntry ModTestCrateCreationEntry
+/* --- end p1w13-sonnet --- */
 #define GameLogic ModTestGameLogic
 #define TheGameLogic ModTestTheGameLogic
 

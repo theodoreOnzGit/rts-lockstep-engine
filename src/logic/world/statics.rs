@@ -62,6 +62,8 @@ pub struct GameStatics {
     pub armor_store: crate::logic::armor::ArmorStore,
     /// `TheDamageFXStore` (`ActiveBody::doDamageFX` finds the damage FX of its armor set in it).
     pub damage_fx_store: crate::common::damage_fx::DamageFxStore,
+    /// `TheCrateSystem` (`CreateCrateDie` finds its crate templates in it).
+    pub crate_system: crate::logic::crate_system::CrateSystem,
     // --- end p1w13-sonnet ---
     // New stores go here, each in its translator's marked block.
 }

@@ -39,6 +39,7 @@ public:
 	/* p1w13-sonnet, batch R13c: SalvageCrateCollide asks the template (the test keeps it equal to the object's kinds) */
 	KindOfMaskType m_kindOf;
 	Bool isKindOf(KindOfType t) const { return m_kindOf.test(t); }
+	Bool isKindOfMulti(const KindOfMaskType &mustBeSet, const KindOfMaskType &mustBeClear) const { return m_kindOf.testSetAndClear(mustBeSet, mustBeClear); }   /* batch R14c */
 	/* batch R13d: ThingTemplate.h's findWeaponTemplateSet, verbatim */
 	WeaponTemplateSetVector m_weaponTemplateSets;
 	mutable WeaponTemplateSetFinder m_weaponTemplateSetFinder;

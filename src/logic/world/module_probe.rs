@@ -637,6 +637,10 @@ impl ProbeModule {
                 world.body_trace(format!("transferattack {} {from} {to}", me.object));
                 ModuleReply::Done
             }
+            ModuleCall::AiNotifyCrate(c) => {
+                world.body_trace(format!("notifycrate {} {c}", me.object));
+                ModuleReply::Done
+            }
             ModuleCall::IsValidContainerFor { obj, check_capacity } if self.answers.parachute => {
                 world.body_trace(format!("validfor {} {obj} {}", me.object, i32::from(check_capacity)));
                 ModuleReply::Bool(self.answers.yes)

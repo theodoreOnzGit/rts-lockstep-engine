@@ -1,11 +1,12 @@
 /* Differential-test driver for the die batch R14 (p1w13-sonnet; upstream commit 0a05454d):
-**   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Die/CreateObjectDie.cpp, CrushDie.cpp   (#included, unchanged)
+**   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Die/CreateObjectDie.cpp, CrushDie.cpp, CreateCrateDie.cpp   (#included, unchanged)
 ** in wrap_module.cpp's unit, at its end, on the module build's stand-ins: the dying object (id 1: the module, maybe a body, an AI, a veterancy level
 ** and status bits), the damage dealer (id 2), the object the creation list makes (id 3: maybe a body) and one more object (id 4), each maybe with an
 ** AI; the game logic's list newest first; the object creation lists OCL_A and OCL_B of l9_upgrades_b.inc, which make the object the test names (or
 ** nothing). Every call is a line of the effect log (ulog). */
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Die/CreateObjectDie.cpp"
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Die/CrushDie.cpp"   /* batch R14b */
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Die/CreateCrateDie.cpp"   /* batch R14c */
 
 /* batch R14b: a drawable's two masks, as the indices of their flags */
 void Drawable::clearAndSetModelConditionFlags(const ModelConditionFlags &clr, const ModelConditionFlags &set)
@@ -18,6 +19,10 @@ void Drawable::clearAndSetModelConditionFlags(const ModelConditionFlags &clr, co
 	ulog("%s", line.c_str());
 }
 void AIUpdateInterface::transferAttack(ObjectID fromID, ObjectID toID) { ulog("transferattack %d %d %d", (int)m_owner->m_oid, (int)fromID, (int)toID); }
+/* batch R14c: CreateCrateDie */
+void AIUpdateInterface::notifyCrate(ObjectID id) { ulog("notifycrate %d %d", (int)m_owner->m_oid, (int)id); }
+void Drawable::setTerrainDecalSize(Real x, Real y) { ulog("decalsize %08x %08x", realBits(x), realBits(y)); }
+CrateSystem *TheCrateSystem = 0;
 
 namespace {
 
@@ -105,6 +110,55 @@ ModuleData *l9r14bRead(const char *filename)
 	return data;
 }
 
+}  // namespace
+
+/* batch R14c */
+namespace {
+const KindOfType g_r14cKinds[4] = { KINDOF_VEHICLE, KINDOF_INFANTRY, KINDOF_AIRCRAFT, KINDOF_STRUCTURE };
+void r14cSetKinds(Object *o, unsigned bits)
+{
+	o->m_kindOf = KindOfMaskType();
+	for (int i = 0; i < 4; ++i) if (bits >> i & 1) o->m_kindOf.set(g_r14cKinds[i]);
+	o->m_tmpl.m_kindOf = o->m_kindOf;
+}
+int g_r14cRel = 0;
+Relationship r14cTeamRel(const Team *a, const Team *b) { return (a->m_dummy == 2 && b->m_dummy == 1) ? (Relationship)g_r14cRel : ALLIES; }
+void r14cSetTeam(Object *o, Team *t) { ulog("setteam %d %d", (int)o->m_oid, t ? (int)t->m_dummy : -1); }
+bool g_r14cDrawable = false;
+std::vector<Drawable *> g_r14cDrawables;
+Object *r14cNewObject(const ThingTemplate *tmplate, Team *team)
+{
+	Object *o = r13bNewObject(tmplate, team);
+	if (g_r14cDrawable) {
+		Drawable *d = new Drawable;
+		d->m_ownerObject = o;
+		o->m_drawable = d;
+		g_r14cDrawables.push_back(d);
+	}
+	return o;
+}
+ModuleData *l9r14cRead(const char *filename)
+{
+	INI ini;
+	ini.prepFile(AsciiString(filename), INI_LOAD_OVERWRITE);
+	ModuleData *data = 0;
+	try {
+		ini.readLine();
+		AsciiString currentLine = ini.m_buffer;
+		try {
+			data = CreateCrateDie::friend_newModuleData(&ini);
+		} catch (...) {
+			char buff[1024];
+			sprintf(buff, "Error parsing INI file '%s' (Line: '%s')\n", ini.m_filename.str(), currentLine.str());
+			throw INIException(buff);
+		}
+	} catch (...) {
+		ini.unPrepFile();
+		throw;
+	}
+	ini.unPrepFile();
+	return data;
+}
 }  // namespace
 
 extern "C" {
@@ -336,6 +390,192 @@ int ref_l9r14b_run(const char *filename, const char *xfer_path, const unsigned *
 	for (int k = 0; k < 2; ++k) { g_r14Objs[k]->m_body = 0; g_r14Objs[k]->m_drawable = 0; delete g_r14Objs[k]; g_r14Objs[k] = 0; }
 	TheGameLogic = 0;
 	TheAudio = 0;
+	return 0;
+}
+
+/* batch R14c: read `filename` (block `D`) as the data of a CreateCrateDie and make the module on the dying object (id 1, team 1); the killer is id 2
+** (team 2). The crate system holds `ncr` templates of 14 words each [0 the name (C<a>), 1 the creation chance (float bits), 2 the veterancy level
+** (4: LEVEL_INVALID), 3 the killer's kinds (bits of g_r14cKinds), 4 the killer's science (index into SCIENCE_NAMES_CF, 5: SCIENCE_INVALID), 5 owned
+** by the maker, 6 the number of crates (0-3), then each crate's name (0 U1, 1 U2, 2 Missing) and chance (float bits)]. `cfg` (12 words): [0 the
+** dying object's player (0xFFFFFFFF none), 1 the killer's, 2 the killer's kinds, 3 flags (bit 0 the killer has an AI, 1 the crates the factory
+** makes have a drawable, 2-3 the killer team's relationship to the dying object's (0 enemies, 1 neutral, 2 allies), 4-6 players 0 to 2 are
+** computers, 8 findPositionAround finds a position), 4-6 players 0 to 2's sciences (bits of SCIENCE_NAMES_CF), 7 the logic random seed, 8-10 the
+** dying object's position (float bits), 11 its layer]. The data dump goes first (the die mux, the crate names). Then `n` ops of 6 words [op, a, b,
+** c, d, e]: 0 onDie (death type a, veterancy b, status words c and d, damage source e)  1 flags = a  2 the killer's player = a - 1 (0 none)
+** 3 the killer's kinds = a  4 findPositionAround: has = a & 1, x = b, y = c  5 the dying object's layer = a  7 xfer save  8 xfer load of the last
+** save  9 xfer CRC. Each op appends: the CATCH_ALL status, the effect log (count, then each), the xfer status, bytes and CRC, then the objects made so
+** far (count, then each one's id, team and position). */
+int ref_l9r14c_run(const char *filename, const char *xfer_path, const unsigned *cfg, int ncr, const unsigned *crates, int n, const unsigned *ops,
+	unsigned char *buf, int cap, int *len, char *msg, int msgCap, unsigned *code)
+{
+	g_dump.clear();
+	g_fxIds.clear();
+	g_r14Saved.clear();
+	*len = 0;
+	int status = 0;
+	ModuleData *d = 0;
+	try { d = l9r14cRead(filename); }
+	CATCH_ALL(status, code, msg, msgCap)
+	if (status) return status;
+	const CreateCrateDieModuleData *cd = (const CreateCrateDieModuleData *)d;
+	putDieMux(cd->m_dieMuxData);
+	putU32((unsigned)cd->m_crateNameList.size());
+	for (AsciiStringListConstIterator it = cd->m_crateNameList.begin(); it != cd->m_crateNameList.end(); ++it) putStr(it->str(), it->getLength());
+	unsigned scienceKeys[5];
+	for (int i = 0; i < 5; ++i) scienceKeys[i] = (unsigned)NAMEKEY(SCIENCE_NAMES_CF[i]);
+	CrateSystem crateSystem;
+	std::vector<CrateTemplate> templates((size_t)ncr);
+	static const char *const kCrateNames[3] = { "U1", "U2", "Missing" };
+	for (int k = 0; k < ncr; ++k) {
+		const unsigned *c = crates + 14 * k;
+		CrateTemplate &t = templates[(size_t)k];
+		char nm[16];
+		sprintf(nm, "C%u", c[0]);
+		t.m_name = nm;
+		t.m_creationChance = ctF(c[1]);
+		t.m_veterancyLevel = c[2] == 4 ? LEVEL_INVALID : (VeterancyLevel)c[2];
+		for (int i = 0; i < 4; ++i) if (c[3] >> i & 1) t.m_killedByTypeKindof.set(g_r14cKinds[i]);
+		t.m_killerScience = c[4] == 5 ? SCIENCE_INVALID : (ScienceType)scienceKeys[c[4]];
+		t.m_isOwnedByMaker = c[5] != 0;
+		for (unsigned e = 0; e < c[6]; ++e) {
+			crateCreationEntry entry;
+			entry.crateName = kCrateNames[c[7 + 2 * e]];
+			entry.crateChance = ctF(c[8 + 2 * e]);
+			t.m_possibleCrates.push_back(entry);
+		}
+		crateSystem.m_templates.push_back(&t);
+	}
+	TheCrateSystem = &crateSystem;
+	GameLogic gl;
+	gl.m_frame = 0;
+	TheGameLogic = &gl;
+	InitGameLogicRandom(cfg[7]);
+	unsigned flags = cfg[3];
+	Team defaults[3];
+	Player players[3];
+	for (int i = 0; i < 3; ++i) {
+		players[i].m_idx = i;
+		defaults[i].m_dummy = 11 + i;
+		players[i].m_defaultTeam = &defaults[i];
+		for (int s = 0; s < 5; ++s) if (cfg[4 + i] >> s & 1) players[i].m_sciences.push_back((ScienceType)scienceKeys[s]);
+	}
+	g_r13bTemplates[0].m_name = "U1";
+	g_r13bTemplates[1].m_name = "U2";
+	g_findTemplateHook = r13bFindTemplate;
+	g_newObjectHook = r14cNewObject;
+	g_r13bMade.clear();
+	g_r13bNextId = 3;
+	g_teamRelHook = r14cTeamRel;
+	g_setTeamHook = r14cSetTeam;
+	Team teams[2];
+	AIUpdateInterface killerAi;
+	for (int k = 0; k < 2; ++k) {
+		g_r14Objs[k] = newObject();
+		g_r14Objs[k]->m_oid = (ObjectID)(k + 1);
+		teams[k].m_dummy = k + 1;
+		g_r14Objs[k]->m_team = &teams[k];
+		g_r14Objs[k]->m_next = k ? g_r14Objs[k - 1] : 0;
+	}
+	g_r14Objs[2] = g_r14Objs[3] = 0;
+	Object *obj = g_r14Objs[0], *killer = g_r14Objs[1];
+	killerAi.m_owner = killer;
+	obj->m_player = cfg[0] == 0xFFFFFFFFu ? 0 : &players[cfg[0]];
+	killer->m_player = cfg[1] == 0xFFFFFFFFu ? 0 : &players[cfg[1]];
+	r14cSetKinds(killer, cfg[2]);
+	obj->m_pos.x = ctF(cfg[8]);
+	obj->m_pos.y = ctF(cfg[9]);
+	obj->m_pos.z = ctF(cfg[10]);
+	obj->m_layer = (PathfindLayerEnum)cfg[11];
+	g_ctFindPos.x = 7.5f;
+	g_ctFindPos.y = -3.25f;
+	g_ctFindPos.z = 0;
+	g_modFindHook = r14Find;
+	g_modDestroyHook = cfDestroyHook;
+	DieModule *m = new CreateCrateDie(obj, d);
+	for (int i = 0; i < n; ++i) {
+		const unsigned *o = ops + 6 * i;
+		if (o[0] == 1) flags = o[1];
+		if (o[0] == 2) killer->m_player = o[1] ? &players[o[1] - 1] : 0;
+		if (o[0] == 3) r14cSetKinds(killer, o[1]);
+		if (o[0] == 4) { flags = (flags & ~256u) | ((o[1] & 1) << 8); g_ctFindPos.x = ctF(o[2]); g_ctFindPos.y = ctF(o[3]); }
+		if (o[0] == 5) obj->m_layer = (PathfindLayerEnum)o[1];
+		killer->m_ai = (flags & 1) ? &killerAi : 0;
+		g_r14cDrawable = (flags & 2) != 0;
+		g_r14cRel = (int)(flags >> 2 & 3);
+		for (int p = 0; p < 3; ++p) players[p].m_type = (flags >> (4 + p) & 1) ? PLAYER_COMPUTER : PLAYER_HUMAN;   /* the stand-in has no constructor */
+		g_ctFindPosHas = (flags & 256) != 0;
+		g_events.clear();
+		g_ulog.clear();
+		int st = 0;
+		unsigned c2 = 0;
+		char m2[16];
+		unsigned crc = 0;
+		unsigned char bytes[512];
+		int blen = 0;
+		int xst = -2;
+		try {
+			switch (o[0]) {
+			case 0: {
+				DamageInfo info;
+				info.in.m_deathType = (DeathType)o[1];
+				info.in.m_sourceID = (ObjectID)o[5];
+				obj->m_level = (VeterancyLevel)o[2];
+				obj->m_status = maskFromU32<ObjectStatusMaskType>(OBJECT_STATUS_COUNT, o + 3);
+				dynamic_cast<DieModuleInterface *>(m)->onDie(&info);
+				break;
+			}
+			case 7: xst = runXfer(m, 0, xfer_path, bytes, 512, &blen, &crc); g_r14Saved.assign(bytes, bytes + blen); break;
+			case 8: {
+				std::vector<unsigned char> b = g_r14Saved;
+				if (b.size() > 512) b.resize(512);
+				xst = runXfer(m, 1, xfer_path, b.empty() ? bytes : &b[0], (int)b.size(), &blen, &crc);
+				break;
+			}
+			case 9: xst = runXfer(m, 2, "crc", bytes, 0, &blen, &crc); break;
+			}
+		}
+		CATCH_ALL(st, &c2, m2, 16)
+		putI32(st);
+		std::vector<std::string> log;
+		for (size_t j = 0; j < g_events.size(); ++j) {
+			const Event &e = g_events[j];
+			if (e.kind == 100) log.push_back(g_ulog[(size_t)e.p]);
+		}
+		putU32((unsigned)log.size());
+		for (size_t j = 0; j < log.size(); ++j) putStr(log[j].c_str(), (int)log[j].size());
+		putI32(xst);
+		putU32((unsigned)blen);
+		for (int j = 0; j < blen; ++j) putU32(bytes[j]);
+		putU32(crc);
+		putU32((unsigned)g_r13bMade.size());
+		for (size_t j = 0; j < g_r13bMade.size(); ++j) {
+			const Object *x = g_r13bMade[j];
+			putU32((unsigned)x->m_oid);
+			putI32(x->m_team ? (int)x->m_team->m_dummy : -1);
+			putU32(realBits(x->m_pos.x));
+			putU32(realBits(x->m_pos.y));
+			putU32(realBits(x->m_pos.z));
+		}
+	}
+	*len = finish(buf, cap);
+	g_modFindHook = 0;
+	g_modDestroyHook = 0;
+	g_findTemplateHook = 0;
+	g_newObjectHook = 0;
+	g_teamRelHook = 0;
+	g_setTeamHook = 0;
+	g_ctFindPosHas = false;
+	TheCrateSystem = 0;
+	delete m;
+	delete d;
+	for (size_t j = 0; j < g_r13bMade.size(); ++j) { g_r13bMade[j]->m_xp = 0; g_r13bMade[j]->m_drawable = 0; delete g_r13bMade[j]; }
+	g_r13bMade.clear();
+	for (size_t j = 0; j < g_r13bTrackers.size(); ++j) delete g_r13bTrackers[j];
+	g_r13bTrackers.clear();
+	for (size_t j = 0; j < g_r14cDrawables.size(); ++j) delete g_r14cDrawables[j];
+	g_r14cDrawables.clear();
+	for (int k = 0; k < 2; ++k) { g_r14Objs[k]->m_ai = 0; delete g_r14Objs[k]; g_r14Objs[k] = 0; }
+	TheGameLogic = 0;
 	return 0;
 }
 

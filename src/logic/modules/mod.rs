@@ -84,6 +84,7 @@ pub mod replace_object_upgrade;
 pub mod dam_die;
 pub mod special_power_completion_die;
 pub mod eject_pilot_die;
+pub mod create_crate_die;
 pub mod crush_die;
 pub mod create_object_die;
 pub mod power_plant_update;
@@ -335,6 +336,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::EjectPilotDie(d) => Some(made(
             DieModule::get_interface_mask(),
             eject_pilot_die::EjectPilotDie::new(object, Some(d.clone())).map(UpdateBody::EjectPilotDie),
+        )),
+        ModuleDataKind::CreateCrateDie(d) => Some(made(
+            DieModule::get_interface_mask(),
+            create_crate_die::CreateCrateDie::new(object, Some(d.clone())).map(UpdateBody::CreateCrateDie),
         )),
         ModuleDataKind::CrushDie(d) => Some(made(
             DieModule::get_interface_mask(),

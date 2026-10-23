@@ -259,7 +259,11 @@ impl World {
             c.body = Some(crate::logic::world::update_body::UpdateBody::ModuleProbe(crate::logic::world::module_probe::ProbeModule::new(answers, 0.0, Default::default())));
             modules.push(c);
         }
-        self.new_object(crate::logic::world::object_create::NewObject { template: tt, status: Default::default(), team, modules }).unwrap_or(INVALID_ID)
+        let id = self.new_object(crate::logic::world::object_create::NewObject { template: tt, status: Default::default(), team, modules }).unwrap_or(INVALID_ID);
+        if id != INVALID_ID {
+            self.friend_bind_to_drawable(id, if self.cuts.crate_new_object_drawable { 1000 + id } else { INVALID_DRAWABLE_ID });
+        }
+        id
     }
 
     /// `other->checkAndDetonateBoobyTrap(victim)` for a crate (batch R13d): a record under `crate_stub_object_calls`, answered by
@@ -337,6 +341,27 @@ impl World {
         } else {
             self.set_orientation(id, angle);
         }
+    }
+
+    /// `newCrate->setLayer(layer)` (`CreateCrateDie`, batch R14c): a record under `crate_stub_object_calls`.
+    pub fn crate_set_layer(&mut self, id: ObjectId, layer: crate::common::game_type::PathfindLayer) {
+        if self.cuts.crate_stub_object_calls {
+            self.cut(CutCall::ObjectSetLayer { object: id, layer });
+        } else {
+            self.set_layer(id, layer);
+        }
+    }
+
+    /// `TERRAIN_DECAL_CRATE` (`GameClient/Drawable.h`, the enum `TerrainDecalType`: the sixth value).
+    pub const TERRAIN_DECAL_CRATE: i32 = 5;
+
+    /// The crate decal `CreateCrateDie` gives a new crate's drawable: `setTerrainDecal(TERRAIN_DECAL_CRATE)`, a size of 2.5 times the crate's major
+    /// radius each way, `setTerrainDecalFadeTarget(1.0f, 0.03f)`.
+    pub fn crate_drawable_crate_decal(&mut self, id: ObjectId) {
+        let size = 2.5 * self.objects.find(id).map_or(0.0, |o| o.geometry_info.get_major_radius());
+        self.emit(ObjectClientEvent::DrawableSetTerrainDecal { object_id: id, decal: Self::TERRAIN_DECAL_CRATE + crate::logic::modules::plant(1777) as i32 });
+        self.emit(ObjectClientEvent::DrawableSetTerrainDecalSize { object_id: id, x: size, y: size });
+        self.emit(ObjectClientEvent::DrawableTerrainDecalFadeTarget { object_id: id, target: 1.0, rate: 0.03 });
     }
 
     // --- end p1w13-sonnet ---
@@ -442,6 +467,8 @@ pub enum CutCall {
     ThingFactoryNewObject { template: u16, team: Option<TeamId> },
     /// `obj->setOrientation(angle)` under `ObjectCuts::crate_stub_object_calls` (`UnitCrateCollide`).
     ObjectSetOrientation { object: ObjectId, angle: f32 },
+    /// `obj->setLayer(layer)` (batch R14c).
+    ObjectSetLayer { object: ObjectId, layer: crate::common::game_type::PathfindLayer },
     /// `obj->getExperienceTracker()->gainExpForLevel(levels, canScaleForBonus)` under `ObjectCuts::crate_stub_object_calls` (`VeterancyCrateCollide`).
     ExperienceGainForLevel { object: ObjectId, levels: i32, can_scale_for_bonus: bool },
     /// `ThePartitionManager->iterateObjectsInRange(obj, range, FROM_CENTER_2D, { SamePlayer(obj's player), SameMapStatus(obj) })`
@@ -743,6 +770,9 @@ pub struct ObjectCuts {
     /// batch R13e: under `crate_stub_object_calls`, the object `crate_new_object` makes has a probe contain whose `isValidContainerFor` answers this
     /// (`None`: no contain).
     pub crate_new_object_contain: Option<bool>,
+    /// batch R14c: under `crate_stub_object_calls`, whether the object `crate_new_object` makes is bound to a drawable (`CreateCrateDie`'s decal;
+    /// otherwise it has none).
+    pub crate_new_object_drawable: bool,
     /// batch R14a: what `ObjectCreationList::create` returns, per list name (`CreateObjectDie`; no entry: `NULL`).
     pub ocl_create_result: BTreeMap<Vec<u8>, ObjectId>,
     /// batch R13: `Player::iterateObjects` per player, when the test lists them (no entry: the objects the player controls, in id order).
@@ -887,6 +917,7 @@ impl Default for ObjectCuts {
             money_crate_upgrade_static: None,
             crate_booby_trapped: false,
             crate_new_object_contain: None,
+            crate_new_object_drawable: false,
             ocl_create_result: BTreeMap::new(),
             crate_stub_object_calls: false,
             player_objects: BTreeMap::new(),

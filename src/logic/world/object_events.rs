@@ -172,6 +172,8 @@ pub enum ObjectClientEvent {
     // --- p1l9-upgrades ---
     /// `obj->getDrawable()->setTerrainDecal(decal)` (`ArmorUpgrade`).
     DrawableSetTerrainDecal { object_id: ObjectId, decal: i32 },
+    /// `getDrawable()->setTerrainDecalSize(x, y)` (`CreateCrateDie`, batch R14c).
+    DrawableSetTerrainDecalSize { object_id: ObjectId, x: f32, y: f32 },
     // --- end p1l9-upgrades ---
     /// `TheGameClient->notifyTerrainObjectMoved(obj)`.
     TerrainObjectMoved { object_id: ObjectId },

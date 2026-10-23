@@ -10,6 +10,12 @@ namespace rts
 	template<typename T> struct hash { size_t operator()(const T &t) const { return (size_t)t; } };
 	template<typename T> struct equal_to { bool operator()(const T &a, const T &b) const { return a == b; } };
 }
+/* STLTypedefs.h's AsciiString list (batch R14c: CreateCrateDie) */
+#include <list>
+#include "Common/AsciiString.h"
+typedef std::list<AsciiString> AsciiStringList;
+typedef std::list<AsciiString>::iterator AsciiStringListIterator;
+typedef std::list<AsciiString>::const_iterator AsciiStringListConstIterator;
 namespace std
 {
 	template<typename K, typename V, typename H, typename E> using hash_map = map<K, V>;
