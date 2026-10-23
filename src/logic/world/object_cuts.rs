@@ -317,6 +317,20 @@ pub enum CutCall {
     PlayerMoneyDeposit { player: PlayerIndex, amount: u32 },
     /// `player->getScoreKeeper()->addMoneyEarned(amount)` (`MoneyCrateCollide`).
     PlayerScoreAddMoneyEarned { player: PlayerIndex, amount: i32 },
+    // --- p1w13-sonnet --- (batch R13: the sabotage crates)
+    /// `player->getMoney()->withdraw(amount)`.
+    PlayerMoneyWithdraw { player: PlayerIndex, amount: u32 },
+    /// `player->getEnergy()->setPowerSabotagedTillFrame(frame)`.
+    PlayerSetPowerSabotagedTillFrame { player: PlayerIndex, frame: u32 },
+    /// `player->onPowerBrownOutChange(brownOut)`.
+    PlayerOnPowerBrownOutChange { player: PlayerIndex, brown_out: bool },
+    /// `obj->setDisabledUntil(type, frame)` under `ObjectCuts::crate_stub_object_calls`.
+    ObjectSetDisabledUntil { object: ObjectId, disabled: i32, frame: u32 },
+    /// `obj->attemptDamage(&info)` under `ObjectCuts::crate_stub_object_calls`.
+    ObjectAttemptDamage { object: ObjectId, info: crate::logic::damage::DamageInfo },
+    /// `TheInGameUI->addFloatingText(format(TheGameText->fetch(text), amount), &pos, color)`.
+    InGameUiAddFloatingTextNamed { text: Vec<u8>, amount: i32, position: crate::common::base_type::Coord3D, color: i32 },
+    // --- end p1w13-sonnet ---
     /// `TheScriptEngine->notifyOfTriggeredSpecialPower(playerIndex, specialPowerName, sourceObject)` (`SpecialPowerModule::aboutToDoSpecialPower`).
     ScriptNotifyOfTriggeredSpecialPower { player: PlayerIndex, name: Vec<u8>, source: ObjectId },
     /// `player->getAcademyStats()->recordSpecialPowerUsed(template)` (`SpecialPowerModule::initiateIntentToDoSpecialPower`), the template by id.
@@ -585,6 +599,11 @@ pub struct ObjectCuts {
     /// The function-local `static` of `MoneyCrateCollide::getUpgradedSupplyBoost`: `None` until control first reaches it, then the upgrade mask of
     /// the template the first pair named (`Some(None)` for a name that is no upgrade). See `modules::money_crate_collide`.
     pub money_crate_upgrade_static: Option<Option<crate::common::upgrade::UpgradeMaskType>>,
+    /// batch R13: the crate tests' explicit ablation: the Object-level calls of the sabotage crates that cascade (`setDisabledUntil`, `attemptDamage`)
+    /// are records only (see `modules::sabotage_crate_collide`).
+    pub crate_stub_object_calls: bool,
+    /// batch R13: `Player::iterateObjects` per player, when the test lists them (no entry: the objects the player controls, in id order).
+    pub player_objects: BTreeMap<PlayerIndex, Vec<ObjectId>>,
     /// The function-local `static` of `AutoDepositUpdate::getUpgradedSupplyBoost` (its own, not `MoneyCrateCollide`'s), the same way.
     pub auto_deposit_upgrade_static: Option<Option<crate::common::upgrade::UpgradeMaskType>>,
     /// `TheGlobalData->m_specialPowerViewObjectName` (`SpecialPowerModule::createViewObject`); empty for none.
@@ -723,6 +742,8 @@ impl Default for ObjectCuts {
             untranslated_modules: Vec::new(),
             probe_effect_trace: false,
             money_crate_upgrade_static: None,
+            crate_stub_object_calls: false,
+            player_objects: BTreeMap::new(),
             auto_deposit_upgrade_static: None,
             special_power_view_object_name: Vec::new(),
             // --- end p1w11-sonnet ---

@@ -167,6 +167,8 @@ pub enum UpdateBody {
     ShroudCrateCollide(crate::logic::modules::shroud_crate_collide::ShroudCrateCollide),
     /// `MoneyCrateCollide`.
     MoneyCrateCollide(crate::logic::modules::money_crate_collide::MoneyCrateCollide),
+    /// The eight sabotage crates (batch R13).
+    SabotageCrateCollide(crate::logic::modules::sabotage_crate_collide::SabotageCrateCollide),
     /// `SubdualDamageHelper`.
     SubdualDamageHelper(crate::logic::modules::subdual_damage_helper::SubdualDamageHelper),
     /// `ObjectDefectionHelper`.
@@ -331,6 +333,7 @@ impl UpdateBody {
             UpdateBody::HealCrateCollide(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::ShroudCrateCollide(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::MoneyCrateCollide(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::SabotageCrateCollide(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SubdualDamageHelper(m) => m.world_update(world, me),
             UpdateBody::ObjectDefectionHelper(m) => m.world_update(world, me),
             UpdateBody::CleanupAreaPower(_) => UPDATE_SLEEP_FOREVER,
@@ -450,6 +453,7 @@ impl UpdateBody {
             UpdateBody::HealCrateCollide(m) => m.module_call(world, me, call),
             UpdateBody::ShroudCrateCollide(m) => m.module_call(world, me, call),
             UpdateBody::MoneyCrateCollide(m) => m.module_call(world, me, call),
+            UpdateBody::SabotageCrateCollide(m) => m.module_call(world, me, call),
             UpdateBody::SubdualDamageHelper(m) => m.module_call(world, me, call),
             UpdateBody::ObjectDefectionHelper(m) => m.module_call(world, me, call),
             UpdateBody::CleanupAreaPower(m) => m.module_call(world, me, call),
@@ -851,6 +855,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::HealCrateCollide(m) => m.crc(xfer),
             UpdateBody::ShroudCrateCollide(m) => m.crc(xfer),
             UpdateBody::MoneyCrateCollide(m) => m.crc(xfer),
+            UpdateBody::SabotageCrateCollide(m) => m.crc(xfer),
             UpdateBody::SubdualDamageHelper(m) => m.crc(xfer),
             UpdateBody::ObjectDefectionHelper(m) => m.crc(xfer),
             UpdateBody::CleanupAreaPower(m) => m.crc(xfer),
@@ -966,6 +971,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::HealCrateCollide(m) => m.xfer(xfer),
             UpdateBody::ShroudCrateCollide(m) => m.xfer(xfer),
             UpdateBody::MoneyCrateCollide(m) => m.xfer(xfer),
+            UpdateBody::SabotageCrateCollide(m) => m.xfer(xfer),
             UpdateBody::SubdualDamageHelper(m) => m.xfer(xfer),
             UpdateBody::ObjectDefectionHelper(m) => m.xfer(xfer),
             UpdateBody::CleanupAreaPower(m) => m.xfer(xfer),
@@ -1081,6 +1087,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::HealCrateCollide(m) => m.load_post_process(),
             UpdateBody::ShroudCrateCollide(m) => m.load_post_process(),
             UpdateBody::MoneyCrateCollide(m) => m.load_post_process(),
+            UpdateBody::SabotageCrateCollide(m) => m.load_post_process(),
             UpdateBody::SubdualDamageHelper(m) => m.load_post_process(),
             UpdateBody::ObjectDefectionHelper(m) => m.load_post_process(),
             UpdateBody::CleanupAreaPower(m) => m.load_post_process(),

@@ -19,7 +19,13 @@ class Object;
 /* --- p1w13-sonnet --- (batch P: Player::setAttackedBy stamps the game logic's frame, which this header cannot name) */
 extern UnsignedInt (*g_playerFrameHook)();
 /* --- end p1w13-sonnet --- */
-class Money { public: void deposit(UnsignedInt amountToDeposit, Bool playSound = TRUE); Int m_idx; };
+class Money { public: void deposit(UnsignedInt amountToDeposit, Bool playSound = TRUE); Int m_idx;
+	/* p1w13-sonnet, batch R13 (the sabotage crates): the test's cash, and a withdrawal that logs (differential/l9_crates_f.inc) */
+	UnsignedInt countMoney() const { return m_count; }
+	UnsignedInt withdraw(UnsignedInt amountToWithdraw, Bool playSound = TRUE);
+	UnsignedInt m_count = 0; };
+/* p1w13-sonnet, batch R13: the power plant sabotage's call, a line of the log */
+class Energy { public: void setPowerSabotagedTillFrame(UnsignedInt frame); Int m_idx = 0; };
 class ScoreKeeper { public: void addMoneyEarned(Int money); Int m_idx; };
 class Player
 {
@@ -61,6 +67,10 @@ public:
 	Color getPlayerNightColor() const { return m_nightColor; }   /* batch R11: CaveContain (never reached there: see cave_contain.rs); batch R12: GarrisonContain */
 	Color m_nightColor = 0;
 	Team *getDefaultTeam() const { return m_defaultTeam; }   /* batch R12: GarrisonContain asks a const player */
+	/* batch R13: the power plant sabotage */
+	Energy *getEnergy() { m_energy.m_idx = m_idx; return &m_energy; }
+	void onPowerBrownOutChange(Bool brownOut);
+	Energy m_energy;
 	/* update batch M: Player::iterateObjects over the objects the test lists, in order */
 	void iterateObjects( void (*func)( Object *, void * ), void *userData );
 	std::vector<Object *> m_objects;

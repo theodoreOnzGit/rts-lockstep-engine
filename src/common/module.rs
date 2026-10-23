@@ -362,6 +362,8 @@ pub enum ModuleDataKind {
     ShroudCrateCollide(Arc<crate::logic::modules::shroud_crate_collide::ShroudCrateCollideModuleData>),
     /// `MoneyCrateCollideModuleData`.
     MoneyCrateCollide(Arc<crate::logic::modules::money_crate_collide::MoneyCrateCollideModuleData>),
+    /// The eight sabotage crates' data (batch R13).
+    SabotageCrateCollide(Arc<crate::logic::modules::sabotage_crate_collide::SabotageCrateCollideModuleData>),
     /// `CleanupAreaPowerModuleData`.
     CleanupAreaPower(Arc<crate::logic::modules::cleanup_area_power::CleanupAreaPowerModuleData>),
     /// `BaikonurLaunchPowerModuleData`.
@@ -510,6 +512,7 @@ impl ModuleDataKind {
             ModuleDataKind::HealCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::ShroudCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::MoneyCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
+            ModuleDataKind::SabotageCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::CleanupAreaPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::BaikonurLaunchPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::SpyVisionSpecialPower(d) => &d.special_power.behavior.module_data,
@@ -719,6 +722,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::ShroudCrateCollide(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::SabotageCrateCollide(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
                     true

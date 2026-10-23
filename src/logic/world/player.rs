@@ -495,6 +495,12 @@ impl PlayerArena {
     /// change returns what to notify; setting the current local player again
     /// returns `None`. An index outside the array also selects neutral (a
     /// pointer outside `m_players` is undefined upstream).
+    /// p1w13-sonnet, batch R13: the differential tests' local player, `None` included (`ThePlayerList->getLocalPlayer()` of a stand-in list may be
+    /// `NULL`), with none of the notifications.
+    pub fn friend_set_local_index(&mut self, player: Option<PlayerIndex>) {
+        self.local = player;
+    }
+
     pub fn set_local_player(&mut self, player: Option<PlayerIndex>) -> Option<LocalPlayerChange> {
         let idx = match player {
             Some(i) if (0..MAX_PLAYER_COUNT).contains(&i) => i,

@@ -187,6 +187,7 @@ public:
 	Weapon *m_curWeapon = 0;
 	/* --- p1w13-sonnet --- (batch R12: GarrisonContain) the test's last shot frame; isMobile is Object.cpp:2902-2911 (isDisabled() of the disabled bits) */
 	UnsignedInt getLastShotFiredFrame() const { return m_lastShotFrame; }
+	void setDisabledUntil( DisabledType type = DISABLED_DEFAULT, UnsignedInt frame = FOREVER );   /* batch R13: the sabotage crates (a line: differential/l9_crates_f.inc) */
 	UnsignedInt m_lastShotFrame = 0;
 	Bool isMobile() const { if (isKindOf(KINDOF_IMMOBILE)) return false; if( m_disabledBits != 0 ) return false; return true; }   /* isDisabled() is m_disabledMask.any() */
 	/* --- end p1w13-sonnet --- */

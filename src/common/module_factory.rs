@@ -591,6 +591,48 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::shroud_crate_collide::new_module_data),
             which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
         }),
+        // --- p1w13-sonnet --- (batch R13: the eight sabotage crates, one class)
+        "SabotageCommandCenterCrateCollide" => Some(ModuleTemplate {
+            create_proc: Some(new_collide_base),
+            create_data_proc: crate::logic::modules::sabotage_crate_collide::new_module_data_proc("SabotageCommandCenterCrateCollide"),
+            which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
+        }),
+        "SabotageFakeBuildingCrateCollide" => Some(ModuleTemplate {
+            create_proc: Some(new_collide_base),
+            create_data_proc: crate::logic::modules::sabotage_crate_collide::new_module_data_proc("SabotageFakeBuildingCrateCollide"),
+            which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
+        }),
+        "SabotageInternetCenterCrateCollide" => Some(ModuleTemplate {
+            create_proc: Some(new_collide_base),
+            create_data_proc: crate::logic::modules::sabotage_crate_collide::new_module_data_proc("SabotageInternetCenterCrateCollide"),
+            which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
+        }),
+        "SabotageMilitaryFactoryCrateCollide" => Some(ModuleTemplate {
+            create_proc: Some(new_collide_base),
+            create_data_proc: crate::logic::modules::sabotage_crate_collide::new_module_data_proc("SabotageMilitaryFactoryCrateCollide"),
+            which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
+        }),
+        "SabotagePowerPlantCrateCollide" => Some(ModuleTemplate {
+            create_proc: Some(new_collide_base),
+            create_data_proc: crate::logic::modules::sabotage_crate_collide::new_module_data_proc("SabotagePowerPlantCrateCollide"),
+            which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
+        }),
+        "SabotageSuperweaponCrateCollide" => Some(ModuleTemplate {
+            create_proc: Some(new_collide_base),
+            create_data_proc: crate::logic::modules::sabotage_crate_collide::new_module_data_proc("SabotageSuperweaponCrateCollide"),
+            which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
+        }),
+        "SabotageSupplyCenterCrateCollide" => Some(ModuleTemplate {
+            create_proc: Some(new_collide_base),
+            create_data_proc: crate::logic::modules::sabotage_crate_collide::new_module_data_proc("SabotageSupplyCenterCrateCollide"),
+            which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
+        }),
+        "SabotageSupplyDropzoneCrateCollide" => Some(ModuleTemplate {
+            create_proc: Some(new_collide_base),
+            create_data_proc: crate::logic::modules::sabotage_crate_collide::new_module_data_proc("SabotageSupplyDropzoneCrateCollide"),
+            which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
+        }),
+        // --- end p1w13-sonnet ---
         "MoneyCrateCollide" => Some(ModuleTemplate {
             create_proc: Some(new_collide_base),
             create_data_proc: Some(crate::logic::modules::money_crate_collide::new_module_data),
@@ -926,6 +968,7 @@ fn new_collide_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mo
         Some(ModuleDataKind::HealCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
         Some(ModuleDataKind::ShroudCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
         Some(ModuleDataKind::MoneyCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
+        Some(ModuleDataKind::SabotageCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
         // --- end p1w11-sonnet ---
         _ => None,
     };

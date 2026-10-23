@@ -250,7 +250,16 @@ impl ProbeModule {
             ModuleCall::IsReady | ModuleCall::IsScriptOnly => ModuleReply::Bool(self.answers.yes),
             ModuleCall::GetPercentReady => ModuleReply::Real(1.0),
             ModuleCall::GetReadyFrame | ModuleCall::GetRequiredScience => ModuleReply::Int(0),
-            ModuleCall::SetReadyFrame { .. } | ModuleCall::MarkSpecialPowerTriggered { .. } | ModuleCall::StartPowerRecharge => ModuleReply::Done,
+            // batch R13: a recharge is a line of the trace, when `probe_effect_trace` asks (the sabotage crates' test)
+            ModuleCall::StartPowerRecharge => {
+                if world.cuts.probe_effect_trace {
+                    if let Some(t) = &mut world.cuts.trace {
+                        t.push(format!("recharge {} {}", me.object, me.index));
+                    }
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::SetReadyFrame { .. } | ModuleCall::MarkSpecialPowerTriggered { .. } => ModuleReply::Done,
             ModuleCall::DoesSpecialPowerUpdatePassScienceTest if self.answers.spu_present => ModuleReply::Bool(self.answers.spu_pass),
             ModuleCall::InitiateIntentToDoSpecialPower { template, target_object, target_position, waypoint, command_options } if self.answers.spu_present => {
                 if world.cuts.probe_effect_trace {

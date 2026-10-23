@@ -51,6 +51,12 @@ pub enum ObjectSound {
     CrateMoney,
     /// `MiscAudio::m_defectorTimerDingSound` (`ObjectDefectionHelper`, when the period ends).
     DefectorTimerDing,
+    /// batch R13: `MiscAudio::m_sabotageResetTimerBuilding` (the command centre and superweapon sabotage).
+    SabotageResetTimerBuilding,
+    /// batch R13: `MiscAudio::m_moneyWithdrawSound` (the supply centre and drop zone sabotage).
+    MoneyWithdraw,
+    /// batch R13: `MiscAudio::m_sabotageShutDownBuilding` (the other sabotage).
+    SabotageShutDownBuilding,
     // --- end p1w11-sonnet ---
 }
 
@@ -61,6 +67,10 @@ pub enum EvaMessage {
     BuildingLost,
     /// `EVA_UnitLost`.
     UnitLost,
+    /// batch R13: `EVA_BuildingSabotaged`.
+    BuildingSabotaged,
+    /// batch R13: `EVA_CashStolen`.
+    CashStolen,
 }
 
 // --- p1w11-sonnet ---

@@ -177,6 +177,25 @@ impl World {
 
     // ---- findModule and the interface lookups ----------------------------------
 
+    // --- p1w13-sonnet --- (batch R13: the sabotage crates)
+    /// `for (u = getBehaviorModules(); *u; ++u) if ((*u)->getSpyVisionUpdate())`: the `SpyVisionUpdate` modules of `id`, in module order.
+    pub fn modules_with_spy_vision(&self, id: ObjectId) -> Vec<ModuleIndex> {
+        match self.objects.find(id) {
+            Some(o) => o.modules.iter().enumerate().filter(|(_, m)| m.name == b"SpyVisionUpdate").map(|(i, _)| i as ModuleIndex).collect(),
+            None => Vec::new(),
+        }
+    }
+
+    /// The objects `player->iterateObjects(func)` visits: the test's list when it gives one (`cuts.player_objects`), else the objects the player
+    /// controls, in the order of the object list. (Upstream walks the player's teams' member lists; the teams are layer 10's.)
+    pub fn player_iterate_objects(&self, p: crate::logic::world::ids::PlayerIndex) -> Vec<ObjectId> {
+        if let Some(v) = self.cuts.player_objects.get(&p) {
+            return v.clone();
+        }
+        self.objects.ids_in_order().into_iter().filter(|&id| self.get_controlling_player(id) == Some(p)).collect()
+    }
+    // --- end p1w13-sonnet ---
+
     /// `findModule(key)`: the first module with that class name.
     pub fn find_module(&self, id: ObjectId, class_name: &[u8]) -> Option<ModuleIndex> {
         self.objects.find(id)?.find_module(class_name)

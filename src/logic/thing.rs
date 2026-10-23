@@ -174,6 +174,11 @@ impl<T: ThingTemplateView> Thing<T> {
         &self.template
     }
 
+    /// Replaces the template (no upstream counterpart: a test's scene re-kinding an object between calls, as its C++ driver does).
+    pub fn friend_set_template(&mut self, template: Arc<T>) {
+        self.template = template;
+    }
+
     /// `isKindOf(t)`: forwarded to the template.
     pub fn is_kind_of(&self, t: KindOfType) -> bool {
         self.template.is_kind_of(t)
