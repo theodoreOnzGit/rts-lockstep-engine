@@ -370,8 +370,31 @@ static unsigned g_ctInRange[CT_OBJS + 1];
 GameClient g_ctGameClient;
 GameClient *TheGameClient = &g_ctGameClient;
 void ctClearEffects() { for (std::map<DrawableID, Drawable *>::iterator it = g_ctEffects.begin(); it != g_ctEffects.end(); ++it) delete it->second; g_ctEffects.clear(); g_ctNextEffect = 1000; }
-Drawable *ThingFactory::newDrawable(const ThingTemplate *) { Drawable *d = new Drawable; d->m_effectId = (DrawableID)g_ctNextEffect++; g_ctEffects[d->m_effectId] = d; ulog("effnew %d", (int)d->m_effectId); return d; }
-void GameClient::destroyDrawable(Drawable *d) { ulog("effdestroy %d", (int)d->m_effectId); g_ctEffects.erase(d->m_effectId); delete d; }
+/* p1w13-sonnet, batch R26 (differential/l9_stealth_r26.inc): with the pool set, a destroyed drawable is kept and the next new drawable is that block,
+** as the game's memory pool (last in, first out) gives it back; the calls are lines naming the object and the template, and the object is unbound */
+bool g_r26DrawPool = false;
+Drawable *g_r26Freed = 0;
+Drawable *ThingFactory::newDrawable(const ThingTemplate *t)
+{
+	if (g_r26DrawPool) {
+		ulog("newdraw %s", t ? t->getName().str() : "(null)");
+		Drawable *d = g_r26Freed;
+		g_r26Freed = 0;
+		if (d) d->m_ownerObject = 0;
+		return d;
+	}
+	Drawable *d = new Drawable; d->m_effectId = (DrawableID)g_ctNextEffect++; g_ctEffects[d->m_effectId] = d; ulog("effnew %d", (int)d->m_effectId); return d; }
+void GameClient::destroyDrawable(Drawable *d)
+{
+	if (g_r26DrawPool) {
+		/* GameClient.cpp lines 837-844: the object lets go of its drawable */
+		Object *obj = d->getObject();
+		ulog("destroydraw %d", obj ? (int)obj->m_oid : 0);
+		if (obj) obj->m_drawable = 0;
+		g_r26Freed = d;
+		return;
+	}
+	ulog("effdestroy %d", (int)d->m_effectId); g_ctEffects.erase(d->m_effectId); delete d; }
 Drawable *GameClient::findDrawableByID(const DrawableID id) { std::map<DrawableID, Drawable *>::iterator it = g_ctEffects.find(id); return it == g_ctEffects.end() ? 0 : it->second; }
 void Drawable::setPosition(const Coord3D *p) { ulog("effpos %d %08x %08x %08x", (int)m_effectId, realBits(p->x), realBits(p->y), realBits(p->z)); }
 void Drawable::setOrientation(Real angle) { ulog("efforient %d %08x", (int)m_effectId, realBits(angle)); }
@@ -519,7 +542,12 @@ VeterancyLevel ExperienceTracker::getVeterancyLevel() const { return m_owner->m_
 void ExperienceTracker::setVeterancyLevel(VeterancyLevel l, Bool) { ulog("xplevel %d %d", (int)m_owner->m_oid, (int)l); m_owner->m_level = l; }
 void ExperienceTracker::setExperienceAndLevel(Int xp, Bool) { ulog("xpset %d %d", (int)m_owner->m_oid, (int)xp); }
 void ExperienceTracker::setExperienceSink(ObjectID sink) { ulog("xpsink %d %d", (int)m_owner->m_oid, (int)sink); m_sink = sink; }   /* batch R6 */
-int ctDrawOwner(const Drawable *d) { for (int k = 0; k < g_ctN; ++k) if (&g_ctObjs[k].draw == d) return k + 1; return 0; }
+int ctDrawOwner(const Drawable *d)
+{
+	for (int k = 0; k < g_ctN; ++k) if (&g_ctObjs[k].draw == d) return k + 1;
+	if (g_r26DrawPool && d && d->m_ownerObject) return (int)d->m_ownerObject->m_oid;   /* batch R26: the stealth driver's drawable names its owner */
+	return 0;
+}
 void InGameUI::selectDrawable(Drawable *d) { ulog("uiselect %d", ctDrawOwner(d)); }
 void InGameUI::deselectDrawable(Drawable *d) { ulog("uideselect %d", ctDrawOwner(d)); }
 void InGameUI::setDisplayedMaxWarning(Bool b) { ulog("maxwarning %d", b ? 1 : 0); }

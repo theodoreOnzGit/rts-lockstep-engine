@@ -578,6 +578,22 @@ pub enum ModuleCall {
     // --- end p1w13-sonnet ---
     /// `StealthUpdate::markAsDetected()`.
     StealthMarkAsDetected,
+    // --- p1w13-sonnet --- (batch R26: StealthUpdate)
+    /// `StealthUpdate::markAsDetected(numFrames)` with a count of frames.
+    StealthMarkAsDetectedFor(u32),
+    /// `StealthUpdate::disguiseAsObject(target)` (`INVALID_ID` for `NULL`).
+    StealthDisguiseAsObject(ObjectId),
+    /// `SpawnBehaviorInterface::areAllSlavesStealthed()`; replies [`ModuleReply::Bool`].
+    SpawnAreAllSlavesStealthed,
+    /// `SpawnBehaviorInterface::revealSlaves()`.
+    SpawnRevealSlaves,
+    /// `AIUpdateInterface::getLastCommandSource()`; replies [`ModuleReply::Int`] (a `CommandSourceType`).
+    AiGetLastCommandSource,
+    /// `PhysicsBehavior::getVelocityMagnitude()`; replies [`ModuleReply::Real`].
+    PhysicsGetVelocityMagnitude,
+    /// `PhysicsBehavior::resetDynamicPhysics()`.
+    PhysicsResetDynamicPhysics,
+    // --- end p1w13-sonnet ---
     /// `SpawnBehaviorInterface::getClosestSlave(pos)` (`HiveStructureBody`); replies [`ModuleReply::Id`] (`INVALID_ID`: no slave).
     GetClosestSlave(Coord3D),
     /// `ContainModuleInterface::getClosestRider(pos)` (`HiveStructureBody`); replies [`ModuleReply::Id`] (`INVALID_ID`: no rider).

@@ -123,6 +123,7 @@ pub mod production_exit;
 pub mod weapon_bonus_update;
 pub mod pilot_find_vehicle_update;
 pub mod horde_update;
+pub mod stealth_update;
 pub mod overcharge_behavior;
 pub mod grant_stealth_behavior;
 pub mod dynamic_geometry_info_update;
@@ -499,6 +500,17 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
             horde_update::HordeUpdate::get_interface_mask(),
             horde_update::HordeUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::HordeUpdate(m))),
         )),
+        // `getStealth()` answers this module
+        ModuleDataKind::StealthUpdate(d) => Some(
+            made_update(
+                stealth_update::StealthUpdate::get_interface_mask(),
+                stealth_update::StealthUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::StealthUpdate(m))),
+            )
+            .map(|mut m| {
+                m.is_stealth = true;
+                m
+            }),
+        ),
         ModuleDataKind::OverchargeBehavior(d) => Some(made_update(
             overcharge_behavior::OverchargeBehavior::get_interface_mask(),
             overcharge_behavior::OverchargeBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::OverchargeBehavior(m))),

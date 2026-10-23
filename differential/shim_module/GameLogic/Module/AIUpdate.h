@@ -91,6 +91,9 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	Coord3D m_victimPos;
 	Int m_freeToExit = 0;
 	Bool m_hasLoco = false;
+	/* batch R26: StealthUpdate drops a temporary grant on a player's command (differential/l9_stealth_r26.inc) */
+	CommandSourceType getLastCommandSource() const { return (CommandSourceType)m_lastCmdSource; }
+	Int m_lastCmdSource = 0;
 	/* --- end p1w13-sonnet --- */
 	/* --- end p1w13-sonnet --- */
 };

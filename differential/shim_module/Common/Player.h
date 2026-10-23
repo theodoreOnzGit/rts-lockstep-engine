@@ -114,5 +114,6 @@ class PowerAcademyStats { public: void recordSpecialPowerUsed(const SpecialPower
 	void recordClearedGarrisonedBuilding();
 	void recordUnitEnteredTunnelNetwork();   /* batch R10: TunnelContain (differential/l9_open_contain_r.inc) */
 	void recordBuildingGarrisoned();   /* batch R12: GarrisonContain (differential/l9_open_contain_r.inc) */
+	void recordVehicleDisguised();   /* batch R26: StealthUpdate (a count: differential/l9_stealth_r26.inc) */
 	/* --- end p1w13-sonnet --- */ };
 #endif

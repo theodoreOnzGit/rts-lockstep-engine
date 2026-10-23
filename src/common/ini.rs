@@ -260,6 +260,10 @@ pub enum Undefined {
     /// drawable dereferences a null `Drawable` pointer.
     NullDrawable,
     // --- end p1l9-upgrades ---
+    // --- p1w13-sonnet ---
+    /// batch R26: `StealthUpdate::changeVisualDisguise` resets the physics of an object that has none (`getPhysics()` unchecked).
+    NullPhysics,
+    // --- end p1w13-sonnet ---
     // --- p1w1-armor ---
     /// A `DamageType` outside `[0, DAMAGE_NUM_TYPES)` indexes an array
     /// (`parseArmorCoefficients` and `DamageFX`'s parsers with an unknown

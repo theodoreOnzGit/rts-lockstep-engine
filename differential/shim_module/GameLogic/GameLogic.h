@@ -20,6 +20,7 @@ public:
 	UnsignedInt getFrame() const { return m_frame; }
 	void friend_awakenUpdateModule(Object *obj, UpdateModule *u, UnsignedInt whenToWakeUp)
 	{
+		if (m_awakenHook) m_awakenHook(obj, u, whenToWakeUp);   /* p1w13-sonnet, batch R26: a driver that applies each call */
 		m_awakenCalls++;
 		m_awakenObject = obj;
 		m_awakenModule = u;
@@ -35,6 +36,9 @@ public:
 	Object *m_awakenObject = 0;
 	UpdateModule *m_awakenModule = 0;
 	UnsignedInt m_awakenFrame = 0;
+	/* p1w13-sonnet, batch R26: a driver that applies each wake call (differential/l9_stealth_r26.inc). Right after m_awakenFrame, as in
+	** shim_updates' copy of this class: the inline friend_awakenUpdateModule is one function for both builds, so it must find it at the same place */
+	void (*m_awakenHook)( Object *obj, UpdateModule *u, UnsignedInt whenToWakeUp ) = 0;
 	/* --- p1w12-sonnet --- (crate batch F; appended: the other builds' copy of this class keeps the layout of what comes before) */
 	Bool getDrawIconUI() const { return m_drawIconUI; }
 	Bool m_drawIconUI = true;
@@ -45,6 +49,10 @@ public:
 	/* --- p1w13-sonnet --- (SlowDeathBehavior) */
 	Int getHulkMaxLifetimeOverride() const { return m_hulkOverride; }
 	Int m_hulkOverride = -1;
+	/* --- end p1w13-sonnet --- */
+	/* --- p1w13-sonnet --- (batch R26: StealthUpdate rebinds its object to a new drawable (a line: differential/l9_stealth_r26.inc), and its
+	** driver applies each wake call as GameLogic::friend_awakenUpdateModule does) */
+	void bindObjectAndDrawable( Object *obj, class Drawable *draw );
 	/* --- end p1w13-sonnet --- */
 };
 extern GameLogic *TheGameLogic;

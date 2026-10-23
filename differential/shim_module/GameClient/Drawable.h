@@ -31,6 +31,19 @@ enum TintStatus
 	TINT_STATUS_GAINING_SUBDUAL_DAMAGE		= 0x00000008,
 	TINT_STATUS_FRENZY			= 0x00000010,
 };
+/* --- p1w13-sonnet --- (batch R26: StealthUpdate; GameClient/Drawable.h lines 216-226, verbatim) */
+enum StealthLookType
+{
+	STEALTHLOOK_NONE,								///< unit is not stealthed at all
+	STEALTHLOOK_VISIBLE_FRIENDLY,		///< unit is stealthed-but-visible due to friendly status
+	STEALTHLOOK_DISGUISED_ENEMY,		///< we can have units that are disguised (instead of invisible)
+	STEALTHLOOK_VISIBLE_DETECTED,		///< unit is stealthed and invisible, but a second material pass
+																						///< is added to reveal the invisible unit as with heat vision
+	STEALTHLOOK_VISIBLE_FRIENDLY_DETECTED,		///< unit is stealthed-but-visible due to being detected, 
+																						///< and rendered in heatvision effect second material pass
+	STEALTHLOOK_INVISIBLE						///< unit is stealthed-and-invisible
+};
+/* --- end p1w13-sonnet --- */
 class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModelConditionState(ModelConditionFlagType a);
 	void setTintStatus(TintStatus statusBits); void clearTintStatus(TintStatus statusBits);
 	/* SubObjectsUpgrade (batch B) */
@@ -98,6 +111,15 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	/* --- end p1w13-sonnet --- */
 	Bool m_selected = false;
 	ModelConditionFlags m_condFlags;
+	/* --- p1w13-sonnet --- (batch R26: StealthUpdate; the calls are lines of the effect log, differential/l9_stealth_r26.inc) */
+	void setEffectiveOpacity( Real pulseFactor, Real explicitOpacity = -1.0f );
+	void setSecondMaterialPassOpacity( Real op );
+	void setStealthLook( StealthLookType look );
+	Bool isDrawableEffectivelyHidden() const { return m_hiddenR26; }
+	void setModelConditionFlags( const ModelConditionFlags &set );
+	void updateDrawable();
+	Bool m_hiddenR26 = false;
+	/* --- end p1w13-sonnet --- */
 	/* --- end p1w13-sonnet --- */ };
 /* --- end p1w10-sonnet --- */
 #endif

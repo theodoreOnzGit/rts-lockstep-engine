@@ -247,7 +247,12 @@ fn tpl(store: &WeaponStore, i: usize) -> &crate::logic::weapon::WeaponTemplate {
 impl Weapon {
     /// `Weapon::Weapon(tmpl, wslot)` ("weapons start empty; you must reload before use").
     pub fn new<H: WeaponHost>(host: &H, template: usize, wslot: i32) -> Weapon {
-        let t = tpl(host.store(), template);
+        Weapon::new_in_store(host.store(), host.frame(), template, wslot)
+    }
+
+    /// `Weapon::Weapon(tmpl, wslot)` with what it reads of the host given directly: the store that holds `template` and the frame now.
+    pub fn new_in_store(store: &WeaponStore, frame: u32, template: usize, wslot: i32) -> Weapon {
+        let t = tpl(store, template);
         Weapon {
             template,
             wslot,
@@ -257,7 +262,7 @@ impl Weapon {
             when_pre_attack_finished: 0,
             when_last_reload_started: 0,
             last_fire_frame: 0,
-            suspend_fx_frame: host.frame().wrapping_add(t.suspend_fx_delay),
+            suspend_fx_frame: frame.wrapping_add(t.suspend_fx_delay),
             projectile_stream_id: INVALID_ID,
             max_shot_count: NO_MAX_SHOTS_LIMIT,
             cur_barrel: 0,
@@ -353,6 +358,10 @@ impl Weapon {
     /// `getLastShotFrame()`.
     pub fn last_shot_frame(&self) -> u32 {
         self.last_fire_frame
+    }
+    /// `m_lastFireFrame` set directly (batch R26): the state a reader of `getLastShotFrame()` sees, for a test of such a reader (`StealthUpdate`).
+    pub fn friend_set_last_shot_frame(&mut self, frame: u32) {
+        self.last_fire_frame = frame;
     }
     /// `getSuspendFXFrame()`.
     pub fn suspend_fx_frame(&self) -> u32 {

@@ -121,6 +121,17 @@ pub struct ProbeAnswers {
     pub turning: i32,
     /// batch R25: a horde interface and its `isTrueHordeMember()` (`None`: no interface).
     pub horde: Option<bool>,
+    /// batch R26: `areAllSlavesStealthed()` of the spawn behaviour (`revealSlaves` is a line of the trace).
+    pub slaves_stealthed: bool,
+    /// batch R26: `getLastCommandSource()` of the AI.
+    pub last_command_source: i32,
+    /// batch R26: the contain module answers `isAnyRiderAttacking()` with `yes`... and traces `recalcApparentControllingPlayer` (`false`: both
+    /// unhandled, as before).
+    pub stealth_contain: bool,
+    /// batch R26: the body's `getLastDamageTimestamp()` and the damage type of `getLastDamageInfo()`, when the test gives them.
+    pub last_damage: Option<(u32, i32)>,
+    /// batch R26: `forceRefreshUpgrade()` is a line of the trace.
+    pub trace_refresh: bool,
     pub back_crushed: Option<bool>,
     /// `getVelocity()` of the physics.
     pub velocity: Coord3D,
@@ -492,6 +503,16 @@ impl ProbeModule {
             // batch R14a: the body's previous health, subdual damage and last damage source, when the test gives them
             ModuleCall::GetPreviousHealth if self.answers.previous_health.is_some() => ModuleReply::Real(self.answers.previous_health.unwrap_or(0.0)),
             ModuleCall::GetCurrentSubdualDamageAmount if self.answers.subdual_damage.is_some() => ModuleReply::Real(self.answers.subdual_damage.unwrap_or(0.0)),
+            ModuleCall::GetLastDamageTimestamp if self.answers.last_damage.is_some() => ModuleReply::Int(self.answers.last_damage.map_or(0, |d| d.0) as i32),
+            ModuleCall::GetLastDamageInfo if self.answers.last_damage.is_some() => {
+                let mut d = crate::logic::damage::DamageInfo::default();
+                d.input.damage_type = self.answers.last_damage.map_or(0, |d| d.1);
+                ModuleReply::Damage(d)
+            }
+            ModuleCall::ForceRefreshUpgrade if self.answers.trace_refresh => {
+                world.body_trace(format!("refreshsub {}", me.object));
+                ModuleReply::Done
+            }
             ModuleCall::GetLastDamageInfo if self.answers.last_damage_source.is_some() => {
                 let mut d = crate::logic::damage::DamageInfo::default();
                 d.input.source_id = self.answers.last_damage_source.unwrap_or(INVALID_ID);
@@ -754,6 +775,31 @@ impl ProbeModule {
             ModuleCall::PhysicsGetAllowToFall => ModuleReply::Bool(self.answers.can_fall),
             ModuleCall::StealthMarkAsDetected => {
                 world.body_trace(format!("markdetected {}", me.object));
+                ModuleReply::Done
+            }
+            // batch R26: StealthUpdate's calls
+            ModuleCall::StealthMarkAsDetectedFor(frames) => {
+                world.body_trace(format!("markdetected {} {frames}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::StealthDisguiseAsObject(_) => ModuleReply::Unhandled,
+            ModuleCall::SpawnAreAllSlavesStealthed => ModuleReply::Bool(self.answers.slaves_stealthed),
+            ModuleCall::SpawnRevealSlaves => {
+                world.body_trace(format!("revealslaves {}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiGetLastCommandSource => ModuleReply::Int(self.answers.last_command_source),
+            ModuleCall::PhysicsGetVelocityMagnitude => {
+                let v = self.answers.velocity;
+                ModuleReply::Real((v.x * v.x + v.y * v.y + v.z * v.z).sqrt())
+            }
+            ModuleCall::PhysicsResetDynamicPhysics => {
+                world.body_trace(format!("resetphysics {}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::IsAnyRiderAttacking if self.answers.stealth_contain => ModuleReply::Bool(self.answers.yes),
+            ModuleCall::RecalcApparentControllingPlayer if self.answers.stealth_contain => {
+                world.body_trace(format!("recalcapparent {}", me.object));
                 ModuleReply::Done
             }
             // the contain module's own interface: a probe is a damage and die module, and answers the contain questions as it did before (the scripted answers)

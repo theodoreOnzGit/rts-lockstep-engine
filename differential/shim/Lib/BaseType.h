@@ -55,7 +55,9 @@ struct ICoord2D { Int x, y; };
 struct Region2D { Coord2D lo, hi; };
 struct IRegion2D { ICoord2D lo, hi; };
 struct Coord3D { Real x, y, z; void zero( void ) { x = 0.0f; y = 0.0f; z = 0.0f; } void set( const Coord3D *c ) { x = c->x; y = c->y; z = c->z; } void set( Real ax, Real ay, Real az ) { x = ax; y = ay; z = az; } /* (p1w12-sonnet: BaseType.h's own, AutoDepositUpdate, AutoHealBehavior) */
-	void add( const Coord3D *a ) { x += a->x; y += a->y; z += a->z; }   /* p1w13-sonnet, batch R21 (CashHackSpecialPower): BaseType.h lines 364-369 */ };
+	void add( const Coord3D *a ) { x += a->x; y += a->y; z += a->z; }   /* p1w13-sonnet, batch R21 (CashHackSpecialPower): BaseType.h lines 364-369 */
+	void sub( const Coord3D *a ) { x -= a->x; y -= a->y; z -= a->z; }   /* p1w13-sonnet, batch R26 (StealthUpdate): BaseType.h lines 371-376 */
+	Real length( void ) const { return (Real)sqrt( x*x + y*y + z*z ); }   /* batch R26: BaseType.h line 335 */ };
 struct ICoord3D { Int x, y, z; void zero( void ) { x = 0; y = 0; z = 0; } };
 struct Region3D { Coord3D lo, hi; };
 struct IRegion3D { ICoord3D lo, hi; };

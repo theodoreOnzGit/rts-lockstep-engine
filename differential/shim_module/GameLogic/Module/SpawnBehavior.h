@@ -13,5 +13,9 @@ public:
 	Object *getClosestSlave(const Coord3D *pos);
 	Object *m_closestSlave;
 	int m_ownerId;
+	/* p1w13-sonnet, batch R26: StealthUpdate asks whether the slaves all stealth, and reveals them (a line: differential/l9_stealth_r26.inc) */
+	Bool areAllSlavesStealthed() const { return m_allStealthed; }
+	void revealSlaves();
+	Bool m_allStealthed = false;
 };
 #endif

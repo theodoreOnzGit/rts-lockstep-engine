@@ -134,6 +134,30 @@ pub enum ModelConditionOp {
 }
 
 // --- p1w13-sonnet ---
+/// batch R26: what a `StealthUpdate` does to its object's drawable. The decisions that only change what is drawn are the client's: whether the
+/// drawable is selected (the control bar, the new drawable's selection) and whether it is hidden (a disguise restored after a load).
+#[derive(Clone, Debug, PartialEq)]
+pub enum StealthClientOp {
+    /// `draw->setEffectiveOpacity(opacity, explicit)` (`explicit` -1: the default argument).
+    EffectiveOpacity { opacity: f32, explicit: f32 },
+    /// `draw->setSecondMaterialPassOpacity(opacity)`.
+    SecondMaterialPassOpacity(f32),
+    /// `draw->setStealthLook(look)` (a `StealthLookType` number).
+    StealthLook(i32),
+    /// `changeVisualDisguise`'s swap: the client destroys the drawable and makes one of `template` with the old one's position, orientation and
+    /// model condition flags (then `updateDrawable`).
+    ReplaceDrawable { template: Vec<u8> },
+    /// `draw->setIndicatorColor(color)` (the new drawable's).
+    IndicatorColor(i32),
+    /// `if( selected ) TheInGameUI->selectDrawable( draw );`: the new drawable is selected if the old one was.
+    SelectIfWasSelected,
+    /// `if( wasHidden && draw ) draw->setDrawableHidden( TRUE );`: after a disguise restored after a load, the new drawable is hidden if the old one
+    /// was.
+    HideIfWasHidden,
+    /// `if( draw->isSelected() ) TheControlBar->markUIDirty();` (`disguiseAsObject`).
+    MarkUiDirtyIfSelected,
+}
+
 /// What a module does to one `RadiusDecal` (see [`ObjectClientEvent::GridDecal`]).
 #[derive(Clone, Debug, PartialEq)]
 pub enum GridDecalOp {
@@ -238,6 +262,8 @@ pub enum ObjectClientEvent {
     UiDeselectDrawable { object_id: ObjectId },
     /// `TheInGameUI->setDisplayedMaxWarning(on)`.
     UiSetDisplayedMaxWarning { on: bool },
+    /// batch R26: what a `StealthUpdate` does to the object's drawable (see [`StealthClientOp`]).
+    Stealth { object_id: ObjectId, op: StealthClientOp },
     // --- end p1w13-sonnet ---
     // --- p1w11-sonnet ---
     /// `draw->flashAsSelected(&color)` (`ObjectDefectionHelper`'s white flash when the period ends).

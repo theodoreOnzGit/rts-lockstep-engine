@@ -602,6 +602,11 @@ impl AcademyStats {
         self.vehicles_disguised = self.vehicles_disguised.wrapping_add(1);
     }
 
+    /// The count `recordVehicleDisguised()` keeps (batch R26: the stealth test reads it).
+    pub fn vehicles_disguised(&self) -> u32 {
+        self.vehicles_disguised
+    }
+
     /// `recordFirestormCreated()`.
     pub fn record_firestorm_created(&mut self) {
         self.firestorms_created = self.firestorms_created.wrapping_add(1);

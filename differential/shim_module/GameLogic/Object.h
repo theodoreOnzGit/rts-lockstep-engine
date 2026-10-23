@@ -61,6 +61,7 @@ class Team;
 /* --- end p1w12-sonnet --- */
 /* --- p1w13-sonnet --- */
 #include "GameLogic/Damage.h"
+#include "GameLogic/ObjectScriptStatusBits.h"   /* batch R26 */
 #include "Common/SpecialPowerType.h"
 class PhysicsBehavior;
 class SpecialAbilityUpdate;
@@ -319,6 +320,21 @@ public:
 	UnsignedInt m_containedByFrame = 0;
 	PathfindLayerEnum m_layer = LAYER_GROUND;
 	class StealthUpdate *m_stealth = 0;
+	/* --- end p1w13-sonnet --- */
+	/* --- p1w13-sonnet --- (batch R26: the REAL StealthUpdate, compiled as R26StealthUpdate, reads its object's stealth update and physics through
+	** these, which differential/l9_stealth_r26.inc names getStealth and getPhysics while it includes StealthUpdate.cpp; the rest is Object.h and
+	** Object.cpp, verbatim where it says so) */
+	class R26StealthUpdate *r26GetStealth() const { return m_r26Stealth; }
+	class R26PhysicsBehavior *r26GetPhysics() const { return m_r26Physics; }
+	class R26StealthUpdate *m_r26Stealth = 0;
+	class R26PhysicsBehavior *m_r26Physics = 0;
+	inline Bool isContained() const { return m_containedBy != NULL; }   /* Object.h line 445 */
+	inline Bool testScriptStatusBit(ObjectScriptStatusBit b) const { return BitTest(m_scriptStatus, b); }   /* Object.h line 352 */
+	UnsignedByte m_scriptStatus = 0;
+	Color getIndicatorColor() const;   /* Object.cpp lines 1645-1666, in differential/l9_stealth_r26.inc */
+	Color getNightIndicatorColor() const;   /* Object.cpp lines 1669-1690 */
+	Color m_indicatorColor = 0;
+	void forceRefreshSubObjectUpgradeStatus();   /* a line */
 	/* --- end p1w13-sonnet --- */
 protected:
 	virtual Object *asObjectMeth() { return this; }
