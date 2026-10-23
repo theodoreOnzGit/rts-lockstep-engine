@@ -152,6 +152,13 @@ impl World {
         Some((health, max_health))
     }
 
+    /// `TheTerrainLogic->findFarthestEdgePoint(&pos)` (batch R22): `pos` moved by `cuts.farthest_edge_point_offset` (the real terrain logic is the
+    /// adapter's).
+    pub fn terrain_find_farthest_edge_point(&self, pos: Coord3D) -> Coord3D {
+        let o = self.cuts.farthest_edge_point_offset;
+        Coord3D { x: pos.x + o.x, y: pos.y + o.y, z: pos.z + o.z }
+    }
+
     /// `TheTerrainLogic->findClosestEdgePoint(&pos)`: `pos` moved by `cuts.edge_point_offset` (the real terrain logic is the adapter's).
     pub fn terrain_find_closest_edge_point(&self, pos: crate::common::base_type::Coord3D) -> crate::common::base_type::Coord3D {
         let o = self.cuts.edge_point_offset;
@@ -598,6 +605,9 @@ pub enum CutCall {
     /// `ObjectCreationList::create(ocl, primary, &primaryPos, &secondaryPos, angle)` for the list named `ocl` (`OCLUpdate`); like [`CutCall::OclCreate`], a
     /// name that is no list makes nothing.
     OclCreateAt { primary: ObjectId, ocl: Vec<u8>, primary_pos: crate::common::base_type::Coord3D, secondary_pos: crate::common::base_type::Coord3D, angle: f32 },
+    /// batch R22: `ObjectCreationList::create(ocl, primary, &primaryPos, &secondaryPos, createOwner)` for the list named `ocl` (`OCLSpecialPower::
+    /// doSpecialPower`); like [`CutCall::OclCreate`], a name that is no list makes nothing.
+    OclCreateOwner { primary: ObjectId, ocl: Vec<u8>, primary_pos: Coord3D, secondary_pos: Coord3D, create_owner: bool },
     // --- end p1w12-sonnet ---
     // --- p1w13-sonnet ---
     /// `TheTerrainLogic->getGroundHeight(x, y)` (`HeightDieUpdate`); `ObjectCuts::terrain_ground` answers.
@@ -926,6 +936,8 @@ pub struct ObjectCuts {
     pub player_sides: BTreeMap<PlayerIndex, Vec<u8>>,
     /// What `TheTerrainLogic->findClosestEdgePoint(pos)` adds to `pos` until the layer-12 adapter plugs the terrain in.
     pub edge_point_offset: crate::common::base_type::Coord3D,
+    /// batch R22: what `TheTerrainLogic->findFarthestEdgePoint(pos)` adds to `pos` (the same stand-in until the layer-12 adapter).
+    pub farthest_edge_point_offset: Coord3D,
     /// The handle of the last audio event added (`AudioManager::addAudioEvent` hands out 1, 2, 3, ...).
     pub last_audio_handle: u32,
     /// The objects for which `TheAI->findClosestEnemy` finds an enemy.
@@ -1039,6 +1051,7 @@ impl Default for ObjectCuts {
             range_scan: Vec::new(),
             player_sides: BTreeMap::new(),
             edge_point_offset: crate::common::base_type::Coord3D { x: 0.0, y: 0.0, z: 0.0 },
+            farthest_edge_point_offset: Coord3D { x: 0.0, y: 0.0, z: 0.0 },
             last_audio_handle: 0,
             ai_enemy_near: BTreeSet::new(),
             ai_ally_near: BTreeSet::new(),

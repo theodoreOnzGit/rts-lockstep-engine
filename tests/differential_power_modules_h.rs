@@ -80,6 +80,24 @@
 //! | 1902 | CashHackSpecialPower | the theft not capped by the victim's money | 1,218 |
 //! | 1903 | CashHackSpecialPower | the victim's floating text at the thief's height | 1,312 |
 //!
+//! # Batch R22: `OCLSpecialPower` (2026-10-23, `p1w13-sonnet`)
+//!
+//! `OCLSpecialPower.cpp` is compiled unchanged at the end of `wrap_module.cpp`'s unit (`differential/l9_ocl_power_r22.inc`), after the stand-ins it
+//! reaches, and run as kind 7 through that file's hooks: the lists `OCL_A`/`OCL_B` (any other name, and `None`, is `NULL`), both `createInternal`
+//! overloads as lines (`oclat` with an angle, `oclown` with `createOwner`), the map edges as offsets the test sets (ops 23 and 24) and
+//! `findPositionAround` as the contain driver's answer (op 25). Its own test (`ocl_power_r22_matches_upstream`, seed `0x0022_0C15`,
+//! `L9R22_CASES`).
+//!
+//! Results, 9,000 cases: 8,107 reads and 66,643 dump lines compared (5,367 cases run), **0 mismatches**; 893 excluded as undefined upstream,
+//! 2,740 data blocks threw on both sides; 3,770 `oclat`, 2,024 `oclown` and 2,777 `findpos` lines.
+//!
+//! | plant | what is broken | mismatches |
+//! |---|---|---|
+//! | 1911 | the science upgrades ignored | 228 |
+//! | 1912 | `doSpecialPower`'s `createOwner` true | 2,024 |
+//! | 1913 | the target never moved to a clear cell | 2,796 |
+//! | 1914 | `CREATE_ABOVE_LOCATION` at the target's height | 557 |
+//!
 //! # Upstream facts the test exposed
 //!
 //! - `SpecialPowerModule.h` declares TWO `getReadyFrame`: the interface's `const` one (the shared timer, or `m_availableOnFrame` plus the paused frames)
@@ -143,6 +161,7 @@ use rts_lockstep_engine::logic::modules::cash_bounty_power::CashBountyPowerModul
 use rts_lockstep_engine::logic::modules::cash_hack_special_power::CashHackSpecialPowerModuleData;
 use rts_lockstep_engine::logic::modules::cleanup_area_power::CleanupAreaPowerModuleData;
 use rts_lockstep_engine::logic::modules::defector_special_power::DefectorSpecialPowerModuleData;
+use rts_lockstep_engine::logic::modules::ocl_special_power::OCLSpecialPowerModuleData;
 use rts_lockstep_engine::logic::modules::special_power_body::SpecialPowerBehavior;
 use rts_lockstep_engine::logic::modules::special_power_module_impl::SpecialPowerModuleImpl;
 use rts_lockstep_engine::logic::modules::spy_vision_special_power::SpyVisionSpecialPowerModuleData;
@@ -152,6 +171,7 @@ use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleReply};
 use rts_lockstep_engine::logic::world::module_probe::{ProbeAnswers, ProbeModule};
 use rts_lockstep_engine::logic::world::object_create::{NewModule, NewObject};
+use rts_lockstep_engine::logic::world::contain_cuts::ContainCall;
 use rts_lockstep_engine::logic::world::object_cuts::CutCall;
 use rts_lockstep_engine::logic::world::object_events::{EvaSuperweapon, EvaWhose, ModelConditionOp, ObjectClientEvent};
 use rts_lockstep_engine::logic::world::statics::GameStatics;
@@ -168,7 +188,7 @@ const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9power_h.bi
 const XFER_FILE: &str = "l9power_h.bin";
 
 /// The class names of the kinds, in the order of the driver's `kind` (the base is never registered with the module factory).
-const CLASSES: [&str; 7] = [
+const CLASSES: [&str; 8] = [
     "SpecialPowerModule",
     "CleanupAreaPower",
     "BaikonurLaunchPower",
@@ -176,6 +196,7 @@ const CLASSES: [&str; 7] = [
     "DefectorSpecialPower",
     "CashBountyPower",
     "CashHackSpecialPower",
+    "OCLSpecialPower",
 ];
 /// The power types the cases give the special powers (`Enum = `).
 const TYPES: [&str; 13] = [
@@ -265,6 +286,7 @@ fn read_block(ini: &mut Ini<'_>, out: &mut (usize, Option<ModuleDataKind>)) -> I
         3 => ModuleDataKind::SpyVisionSpecialPower(Arc::new(SpyVisionSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
         5 => ModuleDataKind::CashBountyPower(Arc::new(CashBountyPowerModuleData::friend_new_module_data(Some(ini))?)),
         6 => ModuleDataKind::CashHackSpecialPower(Arc::new(CashHackSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
+        7 => ModuleDataKind::OCLSpecialPower(Arc::new(OCLSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
         _ => ModuleDataKind::DefectorSpecialPower(Arc::new(DefectorSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
     });
     Ok(())
@@ -286,6 +308,7 @@ fn base_of(data: &ModuleDataKind) -> &SpecialPowerModuleData {
         ModuleDataKind::DefectorSpecialPower(d) => &d.special_power,
         ModuleDataKind::CashBountyPower(d) => &d.special_power,
         ModuleDataKind::CashHackSpecialPower(d) => &d.special_power,
+        ModuleDataKind::OCLSpecialPower(d) => &d.special_power,
         _ => unreachable!("not a special power module"),
     }
 }
@@ -318,7 +341,27 @@ fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, store: &SpecialPowerStore) {
             }
             put_i32(v, d.default_amount_to_steal);
         }
+        ModuleDataKind::OCLSpecialPower(d) => {
+            put_u32(v, d.upgrade_ocl.len() as u32);
+            for u in &d.upgrade_ocl {
+                put_str(v, &u.science);
+                put_u32(v, ocl_code(u.ocl.as_deref()));
+            }
+            put_u32(v, ocl_code(d.default_ocl.as_deref()));
+            put_i32(v, d.create_loc);
+            put_u32(v, u32::from(d.is_ocl_adjust_position_to_passable));
+            put_str(v, &d.reference_thing_name);
+        }
         _ => {}
+    }
+}
+
+/// The driver's code of a list: 1 `OCL_A`, 2 `OCL_B` (case matters), 0 for `NULL` and any other name (batch R22).
+fn ocl_code(ocl: Option<&[u8]>) -> u32 {
+    match ocl {
+        Some(b"OCL_A") => 1,
+        Some(b"OCL_B") => 2,
+        _ => 0,
     }
 }
 
@@ -358,6 +401,13 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
             let ups: Vec<String> = (0..n).map(|_| format!("{}={}", str_(&mut p), u32_(&mut p) as i32)).collect();
             let def = u32_(&mut p) as i32;
             out.push(format!("cash hack {ups:?} default {def}"));
+        }
+        7 => {
+            let n = u32_(&mut p);
+            let ups: Vec<String> = (0..n).map(|_| format!("{}={}", str_(&mut p), u32_(&mut p))).collect();
+            let (def, loc, adjust) = (u32_(&mut p), u32_(&mut p) as i32, u32_(&mut p));
+            let reference = str_(&mut p);
+            out.push(format!("ocl power {ups:?} default {def} location {loc} adjust {adjust} reference {reference:?}"));
         }
         _ => {}
     }
@@ -494,6 +544,26 @@ fn gen_text(g: &mut Gen, kind: usize, clean: bool) -> Vec<u8> {
             }
             if g.below(100) < 85 {
                 lines.push(format!("MoneyAmount = {}", pick(g, &["0", "100", "500", "1000", "-5"])));
+            }
+        }
+        7 => {
+            let ocl = |g: &mut Gen| pick(g, &["OCL_A", "OCL_B", "OCL_A", "None", "OCL_C", "ocl_a"]).to_string();
+            for _ in 0..g.below(3) {
+                let (sci, list) = (pick(g, &SCIENCES).to_string(), ocl(g));
+                lines.push(format!("UpgradeOCL = {sci} {list}"));
+            }
+            if g.below(100) < 85 {
+                let list = ocl(g);
+                lines.push(format!("OCL = {list}"));
+            }
+            if g.below(100) < 85 {
+                lines.push(format!("CreateLocation = {}", pick(g, &rts_lockstep_engine::logic::modules::ocl_special_power::OCL_CREATE_LOC_TYPE_NAMES)));
+            }
+            if g.below(100) < 50 {
+                lines.push(format!("OCLAdjustPositionToPassable = {}", gen_bool(g, true)));
+            }
+            if g.below(100) < 30 {
+                lines.push(format!("ReferenceObject = {}", pick(g, &["RO_A", "Thing"])));
             }
         }
         _ => {}
@@ -649,6 +719,37 @@ fn effects(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClientEvent
                 CutCall::PlayerMoneyWithdraw { player, amount } => log.push(format!("withdraw {player} {amount} 1")),
                 CutCall::PlayerMoneyDeposit { player, amount } => log.push(format!("deposit {player} {amount} 1")),
                 CutCall::PlayerScoreAddMoneyEarned { player, amount } => log.push(format!("earned {player} {amount}")),
+                // batch R22: the OCL power's lists (a name that is no list makes nothing) and the clear cell it asks for
+                CutCall::OclCreateAt { ocl, primary_pos: a, secondary_pos: b, angle, .. } if ocl_code(Some(&ocl)) != 0 => log.push(format!(
+                    "oclat {} {:08x},{:08x},{:08x} {:08x},{:08x},{:08x} {:08x}",
+                    ocl_code(Some(&ocl)) - 1,
+                    a.x.to_bits(),
+                    a.y.to_bits(),
+                    a.z.to_bits(),
+                    b.x.to_bits(),
+                    b.y.to_bits(),
+                    b.z.to_bits(),
+                    angle.to_bits()
+                )),
+                CutCall::OclCreateOwner { ocl, primary_pos: a, secondary_pos: b, create_owner, .. } if ocl_code(Some(&ocl)) != 0 => log.push(format!(
+                    "oclown {} {:08x},{:08x},{:08x} {:08x},{:08x},{:08x} {} 0",
+                    ocl_code(Some(&ocl)) - 1,
+                    a.x.to_bits(),
+                    a.y.to_bits(),
+                    a.z.to_bits(),
+                    b.x.to_bits(),
+                    b.y.to_bits(),
+                    b.z.to_bits(),
+                    i32::from(create_owner)
+                )),
+                CutCall::Contain(ContainCall::PartitionFindPositionAround { position: p, min_radius, max_radius, flags }) => log.push(format!(
+                    "findpos {:08x} {:08x} {:08x} {:08x} {:08x} {flags}",
+                    p.x.to_bits(),
+                    p.y.to_bits(),
+                    p.z.to_bits(),
+                    min_radius.to_bits(),
+                    max_radius.to_bits()
+                )),
                 CutCall::InGameUiAddFloatingTextNamed { text, amount, position: p, color } => {
                     log.push(format!("float {} {amount} {},{},{} {:08x}", String::from_utf8_lossy(&text), p.x.to_bits(), p.y.to_bits(), p.z.to_bits(), color as u32))
                 }
@@ -690,6 +791,7 @@ fn state_words(w: &World, me: ObjectId, idx: u16) -> Vec<u32> {
         UpdateBody::DefectorSpecialPower(m) => m.power(),
         UpdateBody::CashBountyPower(m) => m.power(),
         UpdateBody::CashHackSpecialPower(m) => m.power(),
+        UpdateBody::OCLSpecialPower(m) => m.power(),
         _ => unreachable!("not a special power module"),
     };
     vec![power.get_available_on_frame(), power.paused_count() as u32, power.paused_on_frame(), power.paused_percent().to_bits()]
@@ -904,6 +1006,10 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
                 w.module_call(me, idx, ModuleCall::OnObjectCreated);
             }
             22 => w.players.get_nth_mut((o[1] % 3) as i32).unwrap().cash_bounty_percent = f32::from_bits(o[2]),
+            // batch R22: the map edges and the clear cell
+            23 => w.cuts.edge_point_offset = loc(o[1], o[2], o[3]),
+            24 => w.cuts.farthest_edge_point_offset = loc(o[1], o[2], o[3]),
+            25 => w.cuts.contain.find_position = (o[1] != 0).then(|| loc(o[2], o[3], o[4])),
             21 => {
                 let mut events = Vec::new();
                 let p = w.players.get_nth_mut((o[1] % 3) as i32).unwrap();
@@ -1014,6 +1120,13 @@ fn cash_powers_r21_match_upstream() {
     run_suite(&[5, 6], 0x0021_CA54, cases, "cash powers R21");
 }
 
+/// Batch R22: `OCLSpecialPower` on the same driver (its own seed and case count).
+#[test]
+fn ocl_power_r22_matches_upstream() {
+    let cases = std::env::var("L9R22_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000);
+    run_suite(&[7], 0x0022_0C15, cases, "OCL power R22");
+}
+
 /// The cases of `kinds` (in turn), from the seed: each a set of special powers, a data block, a scene and ops, run on both sides and compared.
 fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
     let _lock = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -1023,7 +1136,7 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
     let mut run = Check::new(&format!("{label} ops (data, effects, state, objects)"));
     let (mut read_failed, mut ops_run, mut excluded) = (0u64, 0u64, 0u64);
     let mut tally = Tally::default();
-    let mut per_kind = [0u64; 7];
+    let mut per_kind = [0u64; 8];
     let mut counts: BTreeMap<String, u64> = BTreeMap::new();
     let mut shown = 0;
     for case in 0..cases {
@@ -1102,7 +1215,22 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
                 _ => [17, g.below(3) | (g.below(3) << 2) | (g.below(3) << 4), 0, 0, 0, 0],
             })
             .collect();
-        if kind >= 5 {
+        if kind == 7 {
+            // batch R22: the edges, the clear cell and the players' sciences; the power mostly runs
+            for o in &mut ops {
+                match g.below(10) {
+                    0 => *o = [23, f32_bits(&mut g, 100.0), f32_bits(&mut g, 100.0), f32_bits(&mut g, 10.0), 0, 0],
+                    1 => *o = [24, f32_bits(&mut g, 100.0), f32_bits(&mut g, 100.0), f32_bits(&mut g, 10.0), 0, 0],
+                    2 => *o = [25, g.below(2), f32_bits(&mut g, 200.0), f32_bits(&mut g, 200.0), f32_bits(&mut g, 20.0), 0],
+                    3 => *o = [19, g.below(3), 1, ctx.sciences[g.below(SCIENCES.len() as u32) as usize].0, 0, 0],
+                    4 => *o = [0, gen_options(&mut g), 0, 0, 0, 0],
+                    5 => *o = [1, gen_options(&mut g), 0, 0, 0, 0],
+                    6 => *o = [2, f32_bits(&mut g, 200.0), f32_bits(&mut g, 200.0), f32_bits(&mut g, 20.0), gen_options(&mut g), 0],
+                    _ => {}
+                }
+            }
+        }
+        if (5..7).contains(&kind) {
             // batch R21: the players' money, and ops on their sciences, money and `onObjectCreated`; the cash hack mostly hacks
             for word in &mut cfg[8..11] {
                 *word = *pick(&mut g, &[&0u32, &50, &500, &100_000]);
@@ -1174,7 +1302,7 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
         };
         let (dr, dc) = (decode(kind, &rd, ops.len()), decode(kind, &buf, ops.len()));
         for l in &dr {
-            for key in ["\"eva ", "\"script ", "\"academy ", "\"audio ", "\"addsuper ", "\"defect ", "\"cleanup ", "\"spied ", "\"intent ", "\"mc ", "\"withdraw ", "\"float "] {
+            for key in ["\"eva ", "\"script ", "\"academy ", "\"audio ", "\"addsuper ", "\"defect ", "\"cleanup ", "\"spied ", "\"intent ", "\"mc ", "\"withdraw ", "\"float ", "\"oclat ", "\"oclown ", "\"findpos "] {
                 *counts.entry(key.trim_matches('"').trim().to_string()).or_default() += l.matches(key).count() as u64;
             }
             if l.contains(" bounties [") && !l.contains(" bounties [0, 0, 0]") {
@@ -1204,6 +1332,10 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
     read.finish();
     run.finish();
     assert!(read_failed * 40 > cases as u64 && ops_run * 5 > cases as u64 * 4, "the generator must reach every path");
+    if kinds.contains(&7) {
+        let n = |k: &str| counts.get(k).copied().unwrap_or(0);
+        assert!(n("oclat") * 4 > cases as u64 && n("oclown") * 20 > cases as u64 && n("findpos") * 20 > cases as u64, "the generator must reach every list");
+    }
     if kinds.contains(&5) {
         let n = |k: &str| counts.get(k).copied().unwrap_or(0);
         assert!(n("withdraw") * 20 > cases as u64 && n("bounty set") * 20 > cases as u64, "the generator must reach the theft and the bounty");

@@ -829,4 +829,5 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_exits_r18.inc"   /* p1w13-sonnet, batch R18: DefaultProductionExitUpdate, QueueProductionExitUpdate */
 #include "l9_find_r19.inc"   /* p1w13-sonnet, batch R19: AutoFindHealingUpdate, PilotFindVehicleUpdate */
 #include "l9_decal_steer_r20.inc"   /* p1w13-sonnet, batch R20: RadiusDecalUpdate, AnimationSteeringUpdate */
+#include "l9_ocl_power_r22.inc"   /* p1w13-sonnet, batch R22: OCLSpecialPower (run by l9_powers_h.inc, kind 7) */
 /* --- end p1w13-sonnet --- */

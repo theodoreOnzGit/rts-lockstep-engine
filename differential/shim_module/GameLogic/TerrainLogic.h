@@ -8,6 +8,7 @@ class TerrainLogic
 {
 public:
 	Coord3D findClosestEdgePoint( const Coord3D *closestTo ) const;
+	Coord3D findFarthestEdgePoint( const Coord3D *farthestFrom ) const;   /* p1w13-sonnet, batch R22: OCLSpecialPower (differential/l9_ocl_power_r22.inc) */
 	/* --- p1w13-sonnet --- (update batch O: HeightDieUpdate; differential/l9_height_die_o.inc) */
 	Real getGroundHeight( Real x, Real y, Coord3D* normal = NULL ) const;
 	Real getLayerHeight(Real x, Real y, PathfindLayerEnum layer, Coord3D* normal = NULL, Bool clip = true) const;

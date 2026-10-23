@@ -18,6 +18,14 @@
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/SpecialPower/CashHackSpecialPower.cpp"
 #undef min
 
+/* batch R22: OCLSpecialPower (kind 7) is compiled at the end of the unit, after the stand-ins it reaches (differential/l9_ocl_power_r22.inc) */
+ModuleData *r22ReadOcl(INI *ini);
+SpecialPowerModule *r22NewOcl(Object *obj, const ModuleData *d);
+void r22PutOclData(const ModuleData *d);
+void r22Begin();
+void r22End();
+void r22Op(const unsigned *o);
+
 namespace {
 
 /* the shared special power timers of the three players, by template id */
@@ -98,6 +106,7 @@ ModuleData *l9spRead(int kind, const char *filename)
 			case 3: data = SpyVisionSpecialPower::friend_newModuleData(&ini); break;
 			case 5: data = CashBountyPower::friend_newModuleData(&ini); break;
 			case 6: data = CashHackSpecialPower::friend_newModuleData(&ini); break;
+			case 7: data = r22ReadOcl(&ini); break;
 			default: data = DefectorSpecialPower::friend_newModuleData(&ini); break;
 			}
 		} catch (...) {
@@ -227,6 +236,7 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 			putI32(ch->m_defaultAmountToSteal);
 			break;
 		}
+		case 7: r22PutOclData(d); break;
 		default: break;
 		}
 	}
@@ -270,6 +280,7 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 	ThePlayerList = &g_spList;
 	TheScriptEngine = &g_spScript;
 	TheInGameUI = &g_spUi;
+	r22Begin();   /* (batch R22: the terrain, the partition manager, the edge offsets, findPositionAround's answer) */
 	TheGameText = &g_spText;   /* (batch R21: the cash hack's floating texts, whose lines are l9_updates_l.inc's addFloatingText) */
 	ThingFactory factory;
 	TheThingFactory = &factory;
@@ -314,6 +325,7 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 	case 3: m = new SpyVisionSpecialPower(obj, d); break;
 	case 5: m = new CashBountyPower(obj, d); break;
 	case 6: m = new CashHackSpecialPower(obj, d); break;
+	case 7: m = r22NewOcl(obj, d); break;
 	default: m = new DefectorSpecialPower(obj, d); break;
 	}
 	m->onObjectCreated();   /* (batch R21) Object's constructor, once every module is made (Object.cpp:485); only CashBountyPower has one */
@@ -379,6 +391,7 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 			case 20: m->onObjectCreated(); break;
 			case 21: players[o[1] % 3].m_money.m_count = o[2]; break;
 			case 22: { Real r; memcpy(&r, &o[2], 4); players[o[1] % 3].setCashBounty(r); break; }
+			case 23: case 24: case 25: r22Op(o); break;   /* batch R22 */
 			}
 		}
 		CATCH_ALL(st, &c2, m2, 16)
@@ -440,6 +453,7 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 	TheScriptEngine = 0;
 	TheInGameUI = 0;
 	TheGameText = 0;
+	r22End();
 	TheThingFactory = 0;
 	return 0;
 }

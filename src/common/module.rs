@@ -392,6 +392,8 @@ pub enum ModuleDataKind {
     SpyVisionSpecialPower(Arc<crate::logic::modules::spy_vision_special_power::SpyVisionSpecialPowerModuleData>),
     /// `DefectorSpecialPowerModuleData`.
     DefectorSpecialPower(Arc<crate::logic::modules::defector_special_power::DefectorSpecialPowerModuleData>),
+    /// `OCLSpecialPower` (batch R22).
+    OCLSpecialPower(Arc<crate::logic::modules::ocl_special_power::OCLSpecialPowerModuleData>),
     /// `CashHackSpecialPower` (batch R21).
     CashHackSpecialPower(Arc<crate::logic::modules::cash_hack_special_power::CashHackSpecialPowerModuleData>),
     /// `CashBountyPower` (batch R21).
@@ -573,6 +575,7 @@ impl ModuleDataKind {
             ModuleDataKind::BaikonurLaunchPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::SpyVisionSpecialPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::DefectorSpecialPower(d) => &d.special_power.behavior.module_data,
+            ModuleDataKind::OCLSpecialPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::CashHackSpecialPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::CashBountyPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::SpyVisionUpdate(d) => &d.update.behavior.module_data,
@@ -903,6 +906,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::DefectorSpecialPower(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.special_power.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::OCLSpecialPower(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.special_power.behavior.module_data.set_module_tag_name_key(key);
                     true
