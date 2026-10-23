@@ -54,6 +54,9 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	void setShadowsEnabled(Bool enable);   /* SlowDeathBehavior */
 	void setTerrainDecalFadeTarget(Real target, Real rate);
 	void setTerrainDecalSize(Real x, Real y);   /* batch R14c: CreateCrateDie (differential/l9_dies_r14.inc) */
+	/* batch R25: HordeUpdate reads the decal it set (Drawable.h line 527); setTerrainDecal keeps it (l9_upgrades.inc) */
+	TerrainDecalType getTerrainDecalType( void ) const { return m_terrainDecalType; }
+	TerrainDecalType m_terrainDecalType = TERRAIN_DECAL_NONE;
 	/* --- end p1w13-sonnet --- */
 	/* --- p1w13-sonnet --- (batch R: OpenContain; differential/l9_open_contain_r.inc) */
 	Bool isSelected() const { return m_selected; }

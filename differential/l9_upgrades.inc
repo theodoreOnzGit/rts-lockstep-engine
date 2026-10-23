@@ -42,7 +42,7 @@ void Object::setWeaponBonusCondition(WeaponBonusConditionType wst) { m_weaponBon
 void Object::setShroudRange(Real r) { m_shroudRange = r; }
 void Object::handlePartitionCellMaintenance() { ulog("partition"); }
 void Object::setModelConditionState(ModelConditionFlagType a) { if (m_drawable) m_drawable->setModelConditionState(a); }
-void Drawable::setTerrainDecal(TerrainDecalType t) { ulog("decal %d", (int)t); }
+void Drawable::setTerrainDecal(TerrainDecalType t) { ulog("decal %d", (int)t); m_terrainDecalType = t; }
 void Drawable::setModelConditionState(ModelConditionFlagType a) { ulog("mc %d", (int)a); }
 void Player::grantScience(ScienceType st) { ulog("science %d", (int)st); }
 /* ScienceStore::getScienceFromInternalName is the REAL one (Science.cpp, in the Science archive; it reads nothing of the store); the shim

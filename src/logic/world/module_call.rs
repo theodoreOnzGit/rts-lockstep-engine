@@ -264,6 +264,17 @@ pub enum ModuleCall {
     OverchargeToggle,
     /// `OverchargeBehaviorInterface::enable(enable)` (batch R24).
     OverchargeEnable(bool),
+    /// `getHordeUpdateInterface()->isTrueHordeMember()` (batch R25): [`ModuleReply::Bool`]; [`ModuleReply::Unhandled`] from a module with no
+    /// horde interface.
+    HordeIsTrueMember,
+    /// `HordeUpdateInterface::isInHorde()` (batch R25).
+    HordeIsInHorde,
+    /// `HordeUpdateInterface::hasFlag()` (batch R25).
+    HordeHasFlag,
+    /// `HordeUpdateInterface::isAllowedNationalism()` (batch R25).
+    HordeIsAllowedNationalism,
+    /// `getAIUpdateInterface()->evaluateMoraleBonus()` (batch R25).
+    AiEvaluateMoraleBonus,
     /// `AutoHealBehavior::undoUpgrade()`.
     UndoUpgrade,
     // --- p1w12-sonnet ---

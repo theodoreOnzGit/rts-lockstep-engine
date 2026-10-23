@@ -413,6 +413,9 @@ pub struct Object {
     /// `m_drawable`: the client's id of the drawable bound to this object
     /// (`INVALID_DRAWABLE_ID` = none).
     pub drawable: DrawableId,
+    /// batch R25: the drawable's `getTerrainDecalType()`, the last `setTerrainDecal` the logic gave it (`TERRAIN_DECAL_NONE`, 8, for a new
+    /// drawable): `HordeUpdate` reads it, so that it sets a decal only when it changes.
+    pub terrain_decal_type: i32,
     /// `m_name`.
     pub name: Vec<u8>,
     /// `m_status`.
@@ -569,6 +572,7 @@ impl Object {
             producer_id: INVALID_ID,
             builder_id: INVALID_ID,
             drawable: INVALID_DRAWABLE_ID,
+            terrain_decal_type: 8,
             name: Vec::new(),
             status: ObjectStatusMaskType::new(),
             geometry_info,

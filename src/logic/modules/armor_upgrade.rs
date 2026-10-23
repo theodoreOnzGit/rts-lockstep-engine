@@ -43,7 +43,6 @@ use crate::upgrade_module_data_field_parse;
 use crate::logic::armor_set::ARMORSET_PLAYER_UPGRADE;
 use crate::common::ini::Undefined;
 use crate::common::game_type::INVALID_DRAWABLE_ID;
-use crate::logic::world::object_events::ObjectClientEvent;
 /// `TERRAIN_DECAL_CHEMSUIT` (`GameClient/Drawable.h`, the enum `TerrainDecalType`):
 /// the eighth value with `ALLOW_DEMORALIZE` undefined (as the shipped build).
 pub const TERRAIN_DECAL_CHEMSUIT: i32 = 7;
@@ -184,7 +183,7 @@ impl UpgradeBehavior for ArmorUpgrade {
         match plan.chem_suit_decal {
             ChemSuitDecal::None => {}
             ChemSuitDecal::SetChemSuit => {
-                world.emit(ObjectClientEvent::DrawableSetTerrainDecal { object_id: me.object, decal: TERRAIN_DECAL_CHEMSUIT + crate::logic::modules::plant(7) as i32 });
+                world.drawable_set_terrain_decal(me.object, TERRAIN_DECAL_CHEMSUIT + crate::logic::modules::plant(7) as i32);
             }
             ChemSuitDecal::NullDrawable => return Err(IniError::undefined(Undefined::NullDrawable)),
         }

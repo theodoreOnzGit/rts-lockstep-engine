@@ -119,6 +119,8 @@ pub struct ProbeAnswers {
     pub collide_with: Option<Vec<ObjectId>>,
     /// batch R20: `getTurning()` of the physics.
     pub turning: i32,
+    /// batch R25: a horde interface and its `isTrueHordeMember()` (`None`: no interface).
+    pub horde: Option<bool>,
     pub back_crushed: Option<bool>,
     /// `getVelocity()` of the physics.
     pub velocity: Coord3D,
@@ -656,6 +658,12 @@ impl ProbeModule {
             }
             ModuleCall::AiIsDoingGroundMovement => ModuleReply::Bool(self.answers.ground_movement),
             ModuleCall::PhysicsGetTurning => ModuleReply::Int(self.answers.turning),
+            ModuleCall::HordeIsTrueMember => self.answers.horde.map_or(ModuleReply::Unhandled, ModuleReply::Bool),
+            ModuleCall::HordeIsInHorde | ModuleCall::HordeHasFlag | ModuleCall::HordeIsAllowedNationalism => ModuleReply::Unhandled,
+            ModuleCall::AiEvaluateMoraleBonus => {
+                world.body_trace(format!("morale {}", me.object));
+                ModuleReply::Done
+            }
             ModuleCall::RadiusDecalCreate { .. } | ModuleCall::RadiusDecalKill | ModuleCall::RadiusDecalKillWhenNoLongerAttacking(_) => ModuleReply::Unhandled,
             ModuleCall::AiGetHealed { target, command_source } => {
                 world.body_trace(format!("aiheal {} {target} {command_source}", me.object));

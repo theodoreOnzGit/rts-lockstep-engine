@@ -175,7 +175,8 @@ public:
 	Object *getNextObject() const { return m_next; }
 	const Coord3D *getPosition() const { return &m_pos; }
 	ObjectID getID() const { return (ObjectID)m_oid; }
-	const ThingTemplate *getTemplate() const { return &m_tmpl; }
+	const ThingTemplate *getTemplate() const { return m_tmplShared ? m_tmplShared : &m_tmpl; }   /* batch R25: a template the test shares */
+	const ThingTemplate *m_tmplShared = 0;
 	void clearDisabled(DisabledType type);              /* differential/l9_dies_d.inc */
 	Bool isSignificantlyAboveTerrain() const __asm__("l9m_Object_isSignificantlyAboveTerrain");   /* differential/l9_dies_d.inc (const as Thing's, batch R13b; the label keeps it apart from wrap_l9updates.cpp's) */
 	/* crate batch F: what CrateCollide asks of the object that collides (the test's) and of the crate (differential/l9_crates_f.inc) */
@@ -311,6 +312,7 @@ public:
 	Bool getSingleLogicalBonePositionOnTurret( WhichTurretType whichTurret, const char *boneName, Coord3D *position, Matrix3D *transform ) const;
 	void clearAndSetModelConditionState( ModelConditionFlagType clr, ModelConditionFlagType set );
 	UnsignedInt getWeaponBonusCondition() const { return m_weaponBonusCondition; }
+	Bool testWeaponBonusCondition(WeaponBonusConditionType wst) const { return (m_weaponBonusCondition & (1 << wst)) != 0; }   /* batch R25: Object.h line 564, verbatim */
 	void friend_setContainedBy( Object *containedBy ) { m_containedBy = containedBy; }
 	/* p1w13-sonnet, batch R7: HealContain reads when the object went in (Object.h) */
 	UnsignedInt getContainedByFrame() const { return m_containedByFrame; }

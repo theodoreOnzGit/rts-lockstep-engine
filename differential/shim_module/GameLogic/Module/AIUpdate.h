@@ -39,6 +39,7 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	/* p1w13-sonnet, batch R19: AutoFindHealingUpdate, PilotFindVehicleUpdate (differential/l9_find_r19.inc) */
 	void aiGetHealed(Object *healDepot, CommandSourceType cmdSource);
 	void aiEnter(Object *obj, CommandSourceType cmdSource);
+	void evaluateMoraleBonus( void );   /* batch R25: HordeUpdate (differential/l9_horde_r25.inc) */
 	/* p1w13-sonnet, batch R18: the production exits (differential/l9_exits_r18.inc) */
 	Bool isDoingGroundMovement() const { return m_groundMovement; }
 	Bool m_groundMovement = false;

@@ -422,11 +422,27 @@ impl World {
     /// `TERRAIN_DECAL_CRATE` (`GameClient/Drawable.h`, the enum `TerrainDecalType`: the sixth value).
     pub const TERRAIN_DECAL_CRATE: i32 = 5;
 
+    /// `getDrawable()->setTerrainDecal(decal)` (batch R25): the logic's copy of the drawable's decal type, and the client told; the caller has a
+    /// drawable.
+    pub fn drawable_set_terrain_decal(&mut self, id: ObjectId, decal: i32) {
+        if let Some(o) = self.objects.find_mut(id) {
+            o.terrain_decal_type = decal;
+        }
+        self.emit(ObjectClientEvent::DrawableSetTerrainDecal { object_id: id, decal });
+    }
+
+    /// `ThePartitionManager->iterateObjectsInRange(obj, range, dc, filters)` (batch R25, `HordeUpdate`): the candidates, in iteration order; the
+    /// caller applies its own filter (`ObjectCuts::range_scan` answers).
+    pub fn partition_iterate_objects_in_range_of(&mut self, object: ObjectId, range: f32, dc: i32) -> Vec<ObjectId> {
+        self.cut(CutCall::PartitionIterateObjectsInRangeOf { object, range, dc });
+        self.cuts.range_scan.clone()
+    }
+
     /// The crate decal `CreateCrateDie` gives a new crate's drawable: `setTerrainDecal(TERRAIN_DECAL_CRATE)`, a size of 2.5 times the crate's major
     /// radius each way, `setTerrainDecalFadeTarget(1.0f, 0.03f)`.
     pub fn crate_drawable_crate_decal(&mut self, id: ObjectId) {
         let size = 2.5 * self.objects.find(id).map_or(0.0, |o| o.geometry_info.get_major_radius());
-        self.emit(ObjectClientEvent::DrawableSetTerrainDecal { object_id: id, decal: Self::TERRAIN_DECAL_CRATE + crate::logic::modules::plant(1777) as i32 });
+        self.drawable_set_terrain_decal(id, Self::TERRAIN_DECAL_CRATE + crate::logic::modules::plant(1777) as i32);
         self.emit(ObjectClientEvent::DrawableSetTerrainDecalSize { object_id: id, x: size, y: size });
         self.emit(ObjectClientEvent::DrawableTerrainDecalFadeTarget { object_id: id, target: 1.0, rate: 0.03 });
     }
@@ -553,6 +569,8 @@ pub enum CutCall {
     /// batch R19: `ThePartitionManager->iterateObjectsInRange(obj->getPosition(), range, FROM_CENTER_2D, { KINDOF_VEHICLE, alive, obj's player,
     /// same map status }, ITER_SORTED_NEAR_TO_FAR)` (`PilotFindVehicleUpdate`); `ObjectCuts::range_scan` answers.
     PartitionIterateVehiclesNearToFar { object: ObjectId, range: f32 },
+    /// batch R25: `ThePartitionManager->iterateObjectsInRange(obj, range, dc, filters)`; `ObjectCuts::range_scan` answers, the caller filters.
+    PartitionIterateObjectsInRangeOf { object: ObjectId, range: f32, dc: i32 },
     /// batch R19: `ThePartitionManager->getDistanceSquared(obj, other, FROM_CENTER_2D)`.
     PartitionGetDistanceSquaredCenter2D { object: ObjectId, other: ObjectId },
     /// batch R19: `player->getAiBaseCenter(&pos)`; `ObjectCuts::ai_base_center` answers.

@@ -39,6 +39,7 @@ ParticleSystemManager g_hdPsm;
 Real g_hdGround[8], g_hdLayerHeight[8];
 int g_hdLayer[8];
 std::vector<Object *> g_hdScan;
+bool g_hdApplyFilters = false;   /* batch R25 */
 
 /* the Rust side's terrain_cell (object_cuts.rs) */
 unsigned hdCell(Real x, Real y)
@@ -73,6 +74,16 @@ SimpleObjectIterator *PartitionManager::iterateObjectsInRange( const Object *obj
 	ulog("scan %d %08x %d", (int)obj->m_oid, realBits(maxDist), (int)dc);
 	SimpleObjectIterator *it = new SimpleObjectIterator;
 	it->m_list = g_hdScan;
+	/* batch R25: HordeUpdate's filter is its own code; with g_hdApplyFilters the candidates are filtered as the partition manager does */
+	if (g_hdApplyFilters && filters) {
+		std::vector<Object *> kept;
+		for (size_t i = 0; i < g_hdScan.size(); ++i) {
+			bool ok = true;
+			for (PartitionFilter **f = filters; *f && ok; ++f) ok = (*f)->allow(g_hdScan[i]) != 0;
+			if (ok) kept.push_back(g_hdScan[i]);
+		}
+		it->m_list = kept;
+	}
 	return it;
 }
 void ParticleSystemManager::destroyAttachedSystems( Object *obj ) { ulog("psdestroy %d", (int)obj->m_oid); }
