@@ -1660,6 +1660,34 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    /// p1w13-sonnet, batch R17: WeaponBonusUpdate (differential/l9_weapon_bonus_r17.inc).
+    pub fn ref_l9r17w_run(
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+    /// p1w13-sonnet, batch R17: SupplyWarehouseCripplingBehavior (differential/l9_crippling_r17.inc).
+    pub fn ref_l9r17_run(
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
     /// p1w13-sonnet, batch R16: PoisonedBehavior (differential/l9_poisoned_r16.inc).
     pub fn ref_l9r16p_run(
         filename: *const c_char,

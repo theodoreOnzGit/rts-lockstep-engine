@@ -872,6 +872,10 @@ impl ProbeModule {
                 self.answers.free_fall = on;
                 ModuleReply::Done
             }
+            ModuleCall::DockSetDockCrippled(c) => {
+                world.body_trace(format!("crippled {} {}", me.object, i32::from(c)));
+                ModuleReply::Done
+            }
             ModuleCall::DockSetOpen(open) => {
                 world.body_trace(format!("docksetopen {} {}", me.object, i32::from(open)));
                 self.answers.dock_open = open;

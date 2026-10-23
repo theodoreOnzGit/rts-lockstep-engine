@@ -824,4 +824,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_hole_r15.inc"   /* p1w13-sonnet, batch R15: RebuildHoleExposeDie, RebuildHoleBehavior */
 #include "l9_instant_death_r16.inc"   /* p1w13-sonnet, batch R16: InstantDeathBehavior */
 #include "l9_poisoned_r16.inc"   /* p1w13-sonnet, batch R16: PoisonedBehavior */
+#include "l9_crippling_r17.inc"   /* p1w13-sonnet, batch R17: SupplyWarehouseCripplingBehavior */
+#include "l9_weapon_bonus_r17.inc"   /* p1w13-sonnet, batch R17: WeaponBonusUpdate */
 /* --- end p1w13-sonnet --- */

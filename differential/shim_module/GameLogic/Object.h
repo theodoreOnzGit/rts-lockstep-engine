@@ -130,6 +130,7 @@ public:
 	ObjectID getProducerID() const { return m_producerID; }
 	void setProducer(const Object *obj);   /* batch R15: RebuildHoleBehavior (differential/l9_hole_r15.inc) */
 	void maskObject(Bool mask);   /* batch R15 */
+	void doTempWeaponBonus(WeaponBonusConditionType status, UnsignedInt duration);   /* batch R17: WeaponBonusUpdate (differential/l9_weapon_bonus_r17.inc) */
 	Bool hasUpgrade(const UpgradeTemplate *upgradeT) const;   /* Object.cpp:4456, in l9_helpers.inc */
 	ObjectID m_producerID;
 	/* --- end p1w10-sonnet --- */

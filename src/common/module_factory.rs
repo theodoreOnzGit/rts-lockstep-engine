@@ -755,6 +755,16 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::poisoned_behavior::new_module_data),
             which_interfaces: Some(crate::logic::modules::poisoned_behavior::PoisonedBehavior::get_interface_mask()),
         }),
+        "WeaponBonusUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::weapon_bonus_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::weapon_bonus_update::WeaponBonusUpdate::get_interface_mask()),
+        }),
+        "SupplyWarehouseCripplingBehavior" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::supply_warehouse_crippling_behavior::new_module_data),
+            which_interfaces: Some(crate::logic::modules::supply_warehouse_crippling_behavior::SupplyWarehouseCripplingBehavior::get_interface_mask()),
+        }),
         "OCLUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::ocl_update::new_module_data),
@@ -971,6 +981,8 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::CheckpointUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::FlammableUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::PoisonedBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::WeaponBonusUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::SupplyWarehouseCripplingBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::OclUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         // --- end p1w12-sonnet ---
         // --- p1w13-sonnet ---

@@ -242,6 +242,22 @@ impl World {
         self.cuts.range_scan.clone()
     }
 
+    /// `ThePartitionManager->iterateObjectsInRange(obj->getPosition(), range, FROM_CENTER_2D, { PartitionFilterRelationship(obj, ALLOW_ALLIES),
+    /// PartitionFilterAlive, PartitionFilterSameMapStatus(obj) })`: the objects, in iteration order (`WeaponBonusUpdate`, batch R17).
+    pub fn partition_iterate_allies_in_range(&mut self, object: ObjectId, range: f32) -> Vec<ObjectId> {
+        self.cut(CutCall::PartitionIterateAlliesInRange { object, range });
+        self.cuts.range_scan.clone()
+    }
+
+    /// `obj->doTempWeaponBonus(type, duration)` (`WeaponBonusUpdate`, batch R17): a record under `crate_stub_object_calls`, else the helper's.
+    pub fn crate_do_temp_weapon_bonus(&mut self, object: ObjectId, bonus: i32, duration: u32) {
+        if self.cuts.crate_stub_object_calls {
+            self.cut(CutCall::ObjectDoTempWeaponBonus { object, bonus, duration });
+        } else {
+            self.do_temp_weapon_bonus(object, bonus, duration);
+        }
+    }
+
     /// `TheThingFactory->newObject(template, team)` for a crate (`UnitCrateCollide`): `INVALID_ID` when the factory made nothing. Under
     /// `crate_stub_object_calls` the call is a record and the object a bare one of the template (no modules but the standard helpers).
     pub fn crate_new_object(&mut self, template: u16, team: Option<TeamId>) -> ObjectId {
@@ -486,6 +502,10 @@ pub enum CutCall {
     /// `ThePartitionManager->iterateObjectsInRange(obj, range, FROM_CENTER_2D, { SamePlayer(obj's player), SameMapStatus(obj) })`
     /// (`VeterancyCrateCollide`); `ObjectCuts::range_scan` answers.
     PartitionIterateSamePlayerInRange { object: ObjectId, range: f32 },
+    /// batch R17: `ThePartitionManager->iterateObjectsInRange(obj->getPosition(), range, FROM_CENTER_2D, { allies, alive, same map status })`.
+    PartitionIterateAlliesInRange { object: ObjectId, range: f32 },
+    /// batch R17: `obj->doTempWeaponBonus(type, duration)` under `crate_stub_object_calls`.
+    ObjectDoTempWeaponBonus { object: ObjectId, bonus: i32, duration: u32 },
     /// `TheScriptEngine->transferObjectName(name, obj)` (`VeterancyCrateCollide`'s pilot).
     ScriptEngineTransferObjectName { name: Vec<u8>, object: ObjectId },
     /// `player->getAcademyStats()->recordSalvageCollected()` (`SalvageCrateCollide`, batch R13c).

@@ -412,6 +412,10 @@ pub enum ModuleDataKind {
     FlammableUpdate(Arc<crate::logic::modules::flammable_update::FlammableUpdateModuleData>),
     /// `PoisonedBehavior` (batch R16).
     PoisonedBehavior(Arc<crate::logic::modules::poisoned_behavior::PoisonedBehaviorModuleData>),
+    /// `WeaponBonusUpdate` (batch R17).
+    WeaponBonusUpdate(Arc<crate::logic::modules::weapon_bonus_update::WeaponBonusUpdateModuleData>),
+    /// `SupplyWarehouseCripplingBehavior` (batch R17).
+    SupplyWarehouseCripplingBehavior(Arc<crate::logic::modules::supply_warehouse_crippling_behavior::SupplyWarehouseCripplingBehaviorModuleData>),
     /// `OclUpdateModuleData`.
     OclUpdate(Arc<crate::logic::modules::ocl_update::OclUpdateModuleData>),
     // --- end p1w12-sonnet ---
@@ -564,6 +568,8 @@ impl ModuleDataKind {
             ModuleDataKind::CheckpointUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::FlammableUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::PoisonedBehavior(d) => &d.update.behavior.module_data,
+            ModuleDataKind::WeaponBonusUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::SupplyWarehouseCripplingBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::OclUpdate(d) => &d.update.behavior.module_data,
             // --- end p1w12-sonnet ---
             // --- p1w13-sonnet ---
@@ -938,6 +944,20 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::PoisonedBehavior(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::WeaponBonusUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::SupplyWarehouseCripplingBehavior(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

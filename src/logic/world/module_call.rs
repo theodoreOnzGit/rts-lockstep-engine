@@ -205,6 +205,8 @@ pub enum ModuleCall {
     DockIsOpen,
     /// `DockUpdateInterface::setDockOpen(open)`.
     DockSetOpen(bool),
+    /// `DockUpdateInterface::setDockCrippled(setting)` (`SupplyWarehouseCripplingBehavior`, batch R17).
+    DockSetDockCrippled(bool),
     /// `StealthUpdate::receiveGrant(active, frames)` (batch R4).
     StealthReceiveGrant { active: bool, frames: u32 },
     /// `AIUpdateInterface::chooseLocomotorSet(set)` (batch R5).

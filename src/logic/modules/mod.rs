@@ -116,6 +116,8 @@ pub mod auto_heal_behavior;
 pub mod checkpoint_update;
 pub mod flammable_update;
 pub mod poisoned_behavior;
+pub mod weapon_bonus_update;
+pub mod supply_warehouse_crippling_behavior;
 pub mod ocl_update;
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -458,6 +460,14 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::PoisonedBehavior(d) => Some(made_update(
             poisoned_behavior::PoisonedBehavior::get_interface_mask(),
             poisoned_behavior::PoisonedBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::PoisonedBehavior(m))),
+        )),
+        ModuleDataKind::WeaponBonusUpdate(d) => Some(made_update(
+            weapon_bonus_update::WeaponBonusUpdate::get_interface_mask(),
+            weapon_bonus_update::WeaponBonusUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::WeaponBonusUpdate(m))),
+        )),
+        ModuleDataKind::SupplyWarehouseCripplingBehavior(d) => Some(made_update(
+            supply_warehouse_crippling_behavior::SupplyWarehouseCripplingBehavior::get_interface_mask(),
+            supply_warehouse_crippling_behavior::SupplyWarehouseCripplingBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::SupplyWarehouseCripplingBehavior(m))),
         )),
         ModuleDataKind::OclUpdate(d) => Some(made_update(
             UpdateModule::get_interface_mask(),

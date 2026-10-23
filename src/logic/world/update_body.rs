@@ -223,6 +223,10 @@ pub enum UpdateBody {
     FlammableUpdate(crate::logic::modules::flammable_update::FlammableUpdate),
     /// `PoisonedBehavior` (batch R16).
     PoisonedBehavior(crate::logic::modules::poisoned_behavior::PoisonedBehavior),
+    /// `WeaponBonusUpdate` (batch R17).
+    WeaponBonusUpdate(crate::logic::modules::weapon_bonus_update::WeaponBonusUpdate),
+    /// `SupplyWarehouseCripplingBehavior` (batch R17).
+    SupplyWarehouseCripplingBehavior(crate::logic::modules::supply_warehouse_crippling_behavior::SupplyWarehouseCripplingBehavior),
     /// `OclUpdate`.
     OclUpdate(crate::logic::modules::ocl_update::OclUpdate),
     // --- end p1w12-sonnet ---
@@ -388,6 +392,8 @@ impl UpdateBody {
             UpdateBody::CheckpointUpdate(m) => m.world_update(world, me),
             UpdateBody::FlammableUpdate(m) => m.world_update(world, me),
             UpdateBody::PoisonedBehavior(m) => m.world_update(world, me),
+            UpdateBody::WeaponBonusUpdate(m) => m.world_update(world, me),
+            UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.world_update(world, me),
             UpdateBody::OclUpdate(m) => m.world_update(world, me),
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -521,6 +527,8 @@ impl UpdateBody {
             UpdateBody::CheckpointUpdate(m) => m.module_call(world, me, call),
             UpdateBody::FlammableUpdate(m) => m.module_call(world, me, call),
             UpdateBody::PoisonedBehavior(m) => m.module_call(world, me, call),
+            UpdateBody::WeaponBonusUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.module_call(world, me, call),
             UpdateBody::OclUpdate(m) => m.module_call(world, me, call),
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -638,6 +646,8 @@ impl UpdateBody {
             UpdateBody::CheckpointUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::FlammableUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::PoisonedBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::WeaponBonusUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::SupplyWarehouseCripplingBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::OclUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -729,6 +739,8 @@ impl UpdateBody {
             UpdateBody::CheckpointUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::FlammableUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::PoisonedBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::WeaponBonusUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::SupplyWarehouseCripplingBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::OclUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -820,6 +832,8 @@ impl UpdateBody {
             UpdateBody::CheckpointUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::FlammableUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::PoisonedBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::WeaponBonusUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::SupplyWarehouseCripplingBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::OclUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -945,6 +959,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::CheckpointUpdate(m) => m.crc(xfer),
             UpdateBody::FlammableUpdate(m) => m.crc(xfer),
             UpdateBody::PoisonedBehavior(m) => m.crc(xfer),
+            UpdateBody::WeaponBonusUpdate(m) => m.crc(xfer),
+            UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.crc(xfer),
             UpdateBody::OclUpdate(m) => m.crc(xfer),
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -1074,6 +1090,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::CheckpointUpdate(m) => m.xfer(xfer),
             UpdateBody::FlammableUpdate(m) => m.xfer(xfer),
             UpdateBody::PoisonedBehavior(m) => m.xfer(xfer),
+            UpdateBody::WeaponBonusUpdate(m) => m.xfer(xfer),
+            UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.xfer(xfer),
             UpdateBody::OclUpdate(m) => m.xfer(xfer),
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -1203,6 +1221,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::CheckpointUpdate(m) => m.load_post_process(),
             UpdateBody::FlammableUpdate(m) => m.load_post_process(),
             UpdateBody::PoisonedBehavior(m) => m.load_post_process(),
+            UpdateBody::WeaponBonusUpdate(m) => m.load_post_process(),
+            UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.load_post_process(),
             UpdateBody::OclUpdate(m) => m.load_post_process(),
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -1406,6 +1426,8 @@ impl UpdateBody {
             UpdateBody::CheckpointUpdate(m) => m.world_construct(world, me),
             UpdateBody::FlammableUpdate(m) => m.world_construct(world, me),
             UpdateBody::PoisonedBehavior(m) => m.world_construct(world, me),
+            UpdateBody::WeaponBonusUpdate(m) => m.world_construct(world, me),
+            UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.world_construct(world, me),
             UpdateBody::OclUpdate(m) => m.world_construct(world, me),
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---

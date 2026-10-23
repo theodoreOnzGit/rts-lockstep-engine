@@ -90,3 +90,48 @@ public:
 const Int NO_MAX_SHOTS_LIMIT = 0x7fffffff;
 /* --- end p1w13-sonnet --- */
 #endif
+/* --- p1w13-sonnet --- (batch R17: WeaponBonusUpdate.cpp defines DEFINE_WEAPONBONUSCONDITION_NAMES and includes this header again, after the
+** include guard above has closed: the names are outside it, under their own guard) Weapon.h lines 211-249, verbatim */
+#ifdef DEFINE_WEAPONBONUSCONDITION_NAMES
+#ifndef SHIM_MODULE_WEAPON_BONUS_NAMES
+#define SHIM_MODULE_WEAPON_BONUS_NAMES
+static const char *TheWeaponBonusNames[] = 
+{
+	// This is a RHS enum (weapon.ini will have WeaponBonus = IT) so it is all caps
+	"GARRISONED",
+	"HORDE",
+	"CONTINUOUS_FIRE_MEAN",
+	"CONTINUOUS_FIRE_FAST",
+	"NATIONALISM",
+	"PLAYER_UPGRADE",
+	"DRONE_SPOTTING",
+#ifdef ALLOW_DEMORALIZE
+	"DEMORALIZED",
+#else
+	"DEMORALIZED_OBSOLETE",
+#endif
+	"ENTHUSIASTIC",
+	"VETERAN",
+	"ELITE",
+	"HERO",
+	"BATTLEPLAN_BOMBARDMENT",
+	"BATTLEPLAN_HOLDTHELINE",
+	"BATTLEPLAN_SEARCHANDDESTROY",
+	"SUBLIMINAL",
+	"SOLO_HUMAN_EASY",
+	"SOLO_HUMAN_NORMAL",
+	"SOLO_HUMAN_HARD",
+	"SOLO_AI_EASY",
+	"SOLO_AI_NORMAL",
+	"SOLO_AI_HARD",
+	"TARGET_FAERIE_FIRE",
+  "FANATICISM", // FOR THE NEW GC INFANTRY GENERAL... adds to nationalism
+	"FRENZY_ONE",
+	"FRENZY_TWO",
+	"FRENZY_THREE",
+
+	NULL
+};
+#endif
+#endif
+/* --- end p1w13-sonnet --- */
