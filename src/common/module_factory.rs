@@ -708,6 +708,16 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::defector_special_power::new_module_data),
             which_interfaces: Some(crate::logic::module::special_power_module::SpecialPowerModule::get_interface_mask()),
         }),
+        "CashHackSpecialPower" => Some(ModuleTemplate {
+            create_proc: Some(new_special_power_base),
+            create_data_proc: Some(crate::logic::modules::cash_hack_special_power::new_module_data),
+            which_interfaces: Some(crate::logic::module::special_power_module::SpecialPowerModule::get_interface_mask()),
+        }),
+        "CashBountyPower" => Some(ModuleTemplate {
+            create_proc: Some(new_special_power_base),
+            create_data_proc: Some(crate::logic::modules::cash_bounty_power::new_module_data),
+            which_interfaces: Some(crate::logic::module::special_power_module::SpecialPowerModule::get_interface_mask()),
+        }),
         "SpyVisionUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::spy_vision_update::new_module_data),
@@ -1075,6 +1085,8 @@ fn new_special_power_base(object: ObjectId, data: Option<ModuleDataKind>) -> Res
         Some(ModuleDataKind::BaikonurLaunchPower(d)) => Some(std::sync::Arc::new(d.special_power.clone())),
         Some(ModuleDataKind::SpyVisionSpecialPower(d)) => Some(std::sync::Arc::new(d.special_power.clone())),
         Some(ModuleDataKind::DefectorSpecialPower(d)) => Some(std::sync::Arc::new(d.special_power.clone())),
+        Some(ModuleDataKind::CashHackSpecialPower(d)) => Some(std::sync::Arc::new(d.special_power.clone())),
+        Some(ModuleDataKind::CashBountyPower(d)) => Some(std::sync::Arc::new(d.special_power.clone())),
         // --- end p1w11-sonnet ---
         _ => None,
     };

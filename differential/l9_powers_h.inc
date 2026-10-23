@@ -12,6 +12,11 @@
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/SpecialPower/BaikonurLaunchPower.cpp"
 #include "SpyVisionSpecialPower_nokey.cpp"        /* (build.rs: the function-local static name key made a plain local) */
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/SpecialPower/DefectorSpecialPower.cpp"
+/* p1w13-sonnet, batch R21: the cash powers (CashHackSpecialPower.cpp's min, the macro of Lib/BaseType.h:101, verbatim: the module build leaves it out) */
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/SpecialPower/CashBountyPower.cpp"
+#define min(x,y) (((x)<(y)) ? (x) : (y))
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/SpecialPower/CashHackSpecialPower.cpp"
+#undef min
 
 namespace {
 
@@ -32,6 +37,7 @@ Eva g_spEva;
 PlayerList g_spList;
 ScriptEngine g_spScript;
 InGameUI g_spUi;
+GameTextInterface g_spText;   /* batch R21 */
 
 class SpCleanup { public: int m_dummy; };
 SpCleanup g_spCleanup;
@@ -90,6 +96,8 @@ ModuleData *l9spRead(int kind, const char *filename)
 			case 1: data = CleanupAreaPower::friend_newModuleData(&ini); break;
 			case 2: data = BaikonurLaunchPower::friend_newModuleData(&ini); break;
 			case 3: data = SpyVisionSpecialPower::friend_newModuleData(&ini); break;
+			case 5: data = CashBountyPower::friend_newModuleData(&ini); break;
+			case 6: data = CashHackSpecialPower::friend_newModuleData(&ini); break;
 			default: data = DefectorSpecialPower::friend_newModuleData(&ini); break;
 			}
 		} catch (...) {
@@ -172,9 +180,11 @@ extern "C" {
 ** 1 doSpecialPowerAtObject(object 2, options a)  2 doSpecialPowerAtLocation((a, b, c) float bits, options d)  3 doSpecialPowerUsingWaypoints(a)  4 pauseCountdown(a & 1)
 ** 5 onSpecialPowerCreation  6 setReadyFrame(a)  7 markSpecialPowerTriggered(a != 0: location (b, c, d))  8 startPowerRecharge  9 queries only  10 the frame = a
 ** 11 the objects' disabled = a & 1 and controlling player = b - 1 (0 none)  12 xfer save  13 xfer load of the last save  14 xfer CRC  15 loadPostProcess
-** 16 the local player = a - 1 (0 none)  17 the relationships = a (2 bits each)  18 the relationships to the default teams = a. Each op appends: the CATCH_ALL status, isReady, getPercentReady (bits),
+** 16 the local player = a - 1 (0 none)  17 the relationships = a (2 bits each)  18 the relationships to the default teams = a  19 (batch R21) player a gets
+** science c (its key) if b, else loses every science  20 onObjectCreated  21 player a's money = b. cfg[8..10] (batch R21): the players' money. Kinds 5
+** CashBountyPower and 6 CashHackSpecialPower (batch R21); the constructor is followed by onObjectCreated, as Object's (only CashBountyPower has one). Each op appends: the CATCH_ALL status, isReady, getPercentReady (bits),
 ** getReadyFrame, isScriptOnly, the effect log (count, then each as a string), the xfer status, bytes and CRC, the module's four state words, and the
-** objects the module made (count, then id, team, position and shroud range bits of each). The constructor's effect log (count, then each as a string) comes
+** players' cash bounties (batch R21), the objects the module made (count, then id, team, position and shroud range bits of each). The constructor's effect log (count, then each as a string) comes
 ** before the first op. */
 int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const unsigned *cfg, int n, const unsigned *ops, unsigned char *buf, int cap,
 	int *len, char *msg, int msgCap, unsigned *code)
@@ -205,6 +215,18 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 			break;
 		}
 		case 4: putU32(realBits(((DefectorSpecialPowerModuleData *)d)->m_fatCursorRadius)); break;
+		case 5: putU32(realBits(((CashBountyPowerModuleData *)d)->m_defaultBounty)); break;
+		case 6: {
+			const CashHackSpecialPowerModuleData *ch = (const CashHackSpecialPowerModuleData *)d;
+			putU32((unsigned)ch->m_upgrades.size());
+			for (size_t j = 0; j < ch->m_upgrades.size(); ++j) {
+				AsciiString nm = TheNameKeyGenerator->keyToName((NameKeyType)ch->m_upgrades[j].m_science);
+				putStr(nm.str(), (int)nm.getLength());
+				putI32(ch->m_upgrades[j].m_amountToSteal);
+			}
+			putI32(ch->m_defaultAmountToSteal);
+			break;
+		}
 		default: break;
 		}
 	}
@@ -212,6 +234,12 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 	for (int i = 0; i < 3; ++i) {
 		players[i].m_idx = i;
 		players[i].m_defaultTeam = (Team *)(size_t)(101 + i);
+		/* batch R21: the money (cfg[8 + i]) and the score keeper, whose calls are lines (l9_crates_f.inc, l9_sabotage_r13.inc), no sciences */
+		players[i].m_money.m_idx = i;
+		players[i].m_money.m_count = cfg[8 + i];
+		players[i].m_score.m_idx = i;
+		players[i].m_sciences.clear();
+		players[i].m_cashBountyPercent = 0.0f;
 		g_spTimers[i].clear();
 		g_roPlayers[i] = 0;
 	}
@@ -242,6 +270,7 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 	ThePlayerList = &g_spList;
 	TheScriptEngine = &g_spScript;
 	TheInGameUI = &g_spUi;
+	TheGameText = &g_spText;   /* (batch R21: the cash hack's floating texts, whose lines are l9_updates_l.inc's addFloatingText) */
 	ThingFactory factory;
 	TheThingFactory = &factory;
 	g_modDestroyHook = 0;
@@ -283,8 +312,11 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 	case 1: m = new CleanupAreaPower(obj, d); break;
 	case 2: m = new BaikonurLaunchPower(obj, d); break;
 	case 3: m = new SpyVisionSpecialPower(obj, d); break;
+	case 5: m = new CashBountyPower(obj, d); break;
+	case 6: m = new CashHackSpecialPower(obj, d); break;
 	default: m = new DefectorSpecialPower(obj, d); break;
 	}
+	m->onObjectCreated();   /* (batch R21) Object's constructor, once every module is made (Object.cpp:485); only CashBountyPower has one */
 	{
 		/* the constructor's effects, then the objects it made */
 		std::vector<std::string> log;
@@ -343,6 +375,10 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 			case 16: g_spLocal = o[1] ? &players[o[1] - 1] : 0; break;
 			case 17: for (int p = 0; p < 3; ++p) g_spRelations[p] = (o[1] >> (2 * p)) & 3; break;
 			case 18: for (int a = 0; a < 3; ++a) for (int b = 0; b < 3; ++b) g_spMatrix[a][b] = (o[1] >> (2 * (3 * a + b))) & 3; break;
+			case 19: if (o[2]) players[o[1] % 3].m_sciences.push_back((ScienceType)o[3]); else players[o[1] % 3].m_sciences.clear(); break;   /* batch R21 */
+			case 20: m->onObjectCreated(); break;
+			case 21: players[o[1] % 3].m_money.m_count = o[2]; break;
+			case 22: { Real r; memcpy(&r, &o[2], 4); players[o[1] % 3].setCashBounty(r); break; }
 			}
 		}
 		CATCH_ALL(st, &c2, m2, 16)
@@ -373,6 +409,7 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 		putU32(g_spSpyReal ? 1 : 0);                 /* the object's real SpyVisionUpdate: its deactivate frame and whether it is on */
 		putU32(g_spSpyReal ? g_spSpyReal->m_deactivateFrame : 0);
 		putU32(g_spSpyReal ? (g_spSpyReal->m_currentlyActive ? 1 : 0) : 0);
+		for (int p = 0; p < 3; ++p) putU32(realBits(players[p].getCashBounty()));   /* batch R21 */
 		putU32((unsigned)(g_roObjects.size()));
 		for (size_t j = 0; j < g_roObjects.size(); ++j) {
 			const Object *ob = g_roObjects[j];
@@ -402,6 +439,7 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 	ThePlayerList = 0;
 	TheScriptEngine = 0;
 	TheInGameUI = 0;
+	TheGameText = 0;
 	TheThingFactory = 0;
 	return 0;
 }

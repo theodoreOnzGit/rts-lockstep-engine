@@ -523,6 +523,12 @@ pub fn special_power_module_call<M: SpecialPowerBehavior>(m: &mut M, world: &mut
     }
 }
 
+/// `getRequiredScience()`: `SpecialPowerTemplate::getRequiredScience()` of the module's template (`None`: a `NULL` template, batch R21).
+pub fn template_required_science(world: &World, power: &SpecialPowerModule) -> Option<crate::common::science::ScienceType> {
+    let id = template_id(world, power)?;
+    world.statics.special_power_store.find_special_power_template_by_id(id).map(|t| t.required_science())
+}
+
 /// `SpecialPowerTemplate::getDetectionTime()` of the module's template.
 pub fn template_detection_time(world: &World, power: &SpecialPowerModule) -> Option<u32> {
     let id = template_id(world, power)?;

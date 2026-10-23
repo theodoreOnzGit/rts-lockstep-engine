@@ -104,6 +104,8 @@ pub mod cleanup_area_power;
 pub mod baikonur_launch_power;
 pub mod spy_vision_special_power;
 pub mod defector_special_power;
+pub mod cash_hack_special_power;
+pub mod cash_bounty_power;
 pub mod spy_vision_update;
 pub mod upgrade_mux_user;
 pub mod fx_list_die;
@@ -429,6 +431,14 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::DefectorSpecialPower(d) => Some(made(
             defector_special_power::DefectorSpecialPower::get_interface_mask(),
             defector_special_power::DefectorSpecialPower::new(object, Some(d.clone())).map(UpdateBody::DefectorSpecialPower),
+        )),
+        ModuleDataKind::CashHackSpecialPower(d) => Some(made(
+            cash_hack_special_power::CashHackSpecialPower::get_interface_mask(),
+            cash_hack_special_power::CashHackSpecialPower::new(object, Some(d.clone())).map(UpdateBody::CashHackSpecialPower),
+        )),
+        ModuleDataKind::CashBountyPower(d) => Some(made(
+            cash_bounty_power::CashBountyPower::get_interface_mask(),
+            cash_bounty_power::CashBountyPower::new(object, Some(d.clone())).map(UpdateBody::CashBountyPower),
         )),
         ModuleDataKind::SpyVisionUpdate(d) => Some(made_update(
             spy_vision_update::SpyVisionUpdate::get_interface_mask(),

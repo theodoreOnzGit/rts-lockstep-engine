@@ -53,6 +53,33 @@
 //! `SpyVisionUpdate` was a logging stand-in when this batch was first written (a `spyvision <duration>` line); it is now the real class on both sides
 //! (update batch I), so the duration the power computes is seen as the update's deactivate frame and the activation as the `spied` lines.
 //!
+//! # Batch R21: `CashBountyPower` and `CashHackSpecialPower` (2026-10-23, `p1w13-sonnet`)
+//!
+//! The driver also compiles `CashBountyPower.cpp` and `CashHackSpecialPower.cpp` unchanged (kinds 5 and 6; `min` defined around the second, as
+//! `Lib/BaseType.h:101` does; the module build's `Coord3D` gained `BaseType.h`'s `add`, the `Player` stand-in its cash bounty, verbatim), gives
+//! the players money (the cash hack's money calls and floating texts are lines), calls `onObjectCreated` after the constructor as `Object`'s does
+//! (`Object.cpp:485`; only `CashBountyPower` has one), and dumps each player's cash bounty after every op. New ops: a player's sciences (19),
+//! `onObjectCreated` (20), a player's money (21) and cash bounty (22). Their own test (`cash_powers_r21_match_upstream`, seed `0x0021_CA54`,
+//! `L9R21_CASES`) adds `RequiredScience` to half the powers; the five kinds above keep their stream (re-run: the same 7,805 reads and 61,698 lines).
+//!
+//! Results, 9,000 cases: 8,145 reads and 67,621 dump lines compared (2,778 `CashBountyPower`, 2,669 `CashHackSpecialPower`), **0 mismatches**;
+//! 855 excluded as undefined upstream, 2,698 data blocks threw on both sides; 1,312 thefts (`withdraw`), 2,624 floating texts, 8,426 dump
+//! lines with a cash bounty set.
+//!
+//! A translation fix on the way: `CashBountyPower.h` defines `doSpecialPower` as `{ return; }`; the first translation ran the base's (220
+//! mismatches in a 2,000-case run, every one an `academy`/`script`/`audio` line the C++ did not have). Not generated: a science name
+//! `UpgradeMoneyAmount` does not declare (an `INI_INVALID_DATA` throw upstream at read; the Rust keeps the name, see
+//! `modules::cash_hack_special_power`).
+//!
+//! | plant | module | what is broken | mismatches |
+//! |---|---|---|---|
+//! | 1891 | CashBountyPower | `onObjectCreated`'s science test inverted | 11,981 |
+//! | 1892 | CashBountyPower | the bounty set even when it is not more (caught once op 22 gave players another bounty) | 54 |
+//! | 1893 | CashBountyPower | `doSpecialPower` runs the base's | 734 |
+//! | 1901 | CashHackSpecialPower | the science upgrades ignored | 73 |
+//! | 1902 | CashHackSpecialPower | the theft not capped by the victim's money | 1,218 |
+//! | 1903 | CashHackSpecialPower | the victim's floating text at the thief's height | 1,312 |
+//!
 //! # Upstream facts the test exposed
 //!
 //! - `SpecialPowerModule.h` declares TWO `getReadyFrame`: the interface's `const` one (the shared timer, or `m_availableOnFrame` plus the paused frames)
@@ -99,7 +126,7 @@ use rts_lockstep_engine::common::module::{ModuleDataKind, ObjectId, MODULEINTERF
 use rts_lockstep_engine::common::module_factory::ModuleFactory;
 use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
 use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_UNDER_CONSTRUCTION};
-use rts_lockstep_engine::common::science::{GameTextFetch, ScienceStore};
+use rts_lockstep_engine::common::science::{GameTextFetch, ScienceStore, ScienceType};
 use rts_lockstep_engine::common::special_power::SpecialPowerStore;
 use rts_lockstep_engine::common::thing_factory::ThingFactory;
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingParseEnv, ThingTemplate};
@@ -112,6 +139,8 @@ use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::armor::ArmorStore;
 use rts_lockstep_engine::logic::module::special_power_module::{SpecialPowerModule, SpecialPowerModuleData};
 use rts_lockstep_engine::logic::modules::baikonur_launch_power::BaikonurLaunchPowerModuleData;
+use rts_lockstep_engine::logic::modules::cash_bounty_power::CashBountyPowerModuleData;
+use rts_lockstep_engine::logic::modules::cash_hack_special_power::CashHackSpecialPowerModuleData;
 use rts_lockstep_engine::logic::modules::cleanup_area_power::CleanupAreaPowerModuleData;
 use rts_lockstep_engine::logic::modules::defector_special_power::DefectorSpecialPowerModuleData;
 use rts_lockstep_engine::logic::modules::special_power_body::SpecialPowerBehavior;
@@ -139,7 +168,15 @@ const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9power_h.bi
 const XFER_FILE: &str = "l9power_h.bin";
 
 /// The class names of the kinds, in the order of the driver's `kind` (the base is never registered with the module factory).
-const CLASSES: [&str; 5] = ["SpecialPowerModule", "CleanupAreaPower", "BaikonurLaunchPower", "SpyVisionSpecialPower", "DefectorSpecialPower"];
+const CLASSES: [&str; 7] = [
+    "SpecialPowerModule",
+    "CleanupAreaPower",
+    "BaikonurLaunchPower",
+    "SpyVisionSpecialPower",
+    "DefectorSpecialPower",
+    "CashBountyPower",
+    "CashHackSpecialPower",
+];
 /// The power types the cases give the special powers (`Enum = `).
 const TYPES: [&str; 13] = [
     "SPECIAL_PARTICLE_UPLINK_CANNON",
@@ -226,6 +263,8 @@ fn read_block(ini: &mut Ini<'_>, out: &mut (usize, Option<ModuleDataKind>)) -> I
         1 => ModuleDataKind::CleanupAreaPower(Arc::new(CleanupAreaPowerModuleData::friend_new_module_data(Some(ini))?)),
         2 => ModuleDataKind::BaikonurLaunchPower(Arc::new(BaikonurLaunchPowerModuleData::friend_new_module_data(Some(ini))?)),
         3 => ModuleDataKind::SpyVisionSpecialPower(Arc::new(SpyVisionSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
+        5 => ModuleDataKind::CashBountyPower(Arc::new(CashBountyPowerModuleData::friend_new_module_data(Some(ini))?)),
+        6 => ModuleDataKind::CashHackSpecialPower(Arc::new(CashHackSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
         _ => ModuleDataKind::DefectorSpecialPower(Arc::new(DefectorSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
     });
     Ok(())
@@ -245,6 +284,8 @@ fn base_of(data: &ModuleDataKind) -> &SpecialPowerModuleData {
         ModuleDataKind::BaikonurLaunchPower(d) => &d.special_power,
         ModuleDataKind::SpyVisionSpecialPower(d) => &d.special_power,
         ModuleDataKind::DefectorSpecialPower(d) => &d.special_power,
+        ModuleDataKind::CashBountyPower(d) => &d.special_power,
+        ModuleDataKind::CashHackSpecialPower(d) => &d.special_power,
         _ => unreachable!("not a special power module"),
     }
 }
@@ -268,6 +309,15 @@ fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, store: &SpecialPowerStore) {
             put_u32(v, d.max_duration_in_frames);
         }
         ModuleDataKind::DefectorSpecialPower(d) => put_u32(v, d.fat_cursor_radius.to_bits()),
+        ModuleDataKind::CashBountyPower(d) => put_u32(v, d.default_bounty.to_bits()),
+        ModuleDataKind::CashHackSpecialPower(d) => {
+            put_u32(v, d.upgrades.len() as u32);
+            for u in &d.upgrades {
+                put_str(v, &u.science);
+                put_i32(v, u.amount_to_steal);
+            }
+            put_i32(v, d.default_amount_to_steal);
+        }
         _ => {}
     }
 }
@@ -302,6 +352,13 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
             out.push(format!("spy {a} {c} {d}"));
         }
         4 => out.push(format!("fat cursor {:#x}", u32_(&mut p))),
+        5 => out.push(format!("bounty {:#x}", u32_(&mut p))),
+        6 => {
+            let n = u32_(&mut p);
+            let ups: Vec<String> = (0..n).map(|_| format!("{}={}", str_(&mut p), u32_(&mut p) as i32)).collect();
+            let def = u32_(&mut p) as i32;
+            out.push(format!("cash hack {ups:?} default {def}"));
+        }
         _ => {}
     }
     let n = u32_(&mut p);
@@ -321,6 +378,7 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
         let crc = u32_(&mut p);
         let state: Vec<u32> = (0..4).map(|_| u32_(&mut p)).collect();
         let spy: Vec<u32> = (0..3).map(|_| u32_(&mut p)).collect();
+        let bounties: Vec<u32> = (0..3).map(|_| u32_(&mut p)).collect();
         let n_objs = u32_(&mut p);
         let objs: Vec<String> = (0..n_objs)
             .map(|_| {
@@ -330,7 +388,7 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
             })
             .collect();
         out.push(format!(
-            "op {i}: status {st} ready {ready} percent {percent:#x} frame {frame} scriptonly {script_only} log {log:?} xfer {xst} bytes {bytes:?} crc {crc:#x} state {state:x?} spy {spy:?} objects {objs:?}"
+            "op {i}: status {st} ready {ready} percent {percent:#x} frame {frame} scriptonly {script_only} log {log:?} xfer {xst} bytes {bytes:?} crc {crc:#x} state {state:x?} spy {spy:?} bounties {bounties:x?} objects {objs:?}"
         ));
     }
     out
@@ -427,6 +485,17 @@ fn gen_text(g: &mut Gen, kind: usize, clean: bool) -> Vec<u8> {
             }
         }
         4 if g.below(100) < 80 => lines.push(format!("FatCursorRadius = {}", gen_real(g, clean))),
+        5 if g.below(100) < 85 => lines.push(format!("Bounty = {}", pick(g, &["0%", "10%", "25%", "50%", "12.5%"]))),
+        6 => {
+            // (only declared sciences: an unknown one throws upstream when read, and is looked up only when used here; see the module docs)
+            for _ in 0..g.below(3) {
+                let (sci, amount) = (pick(g, &SCIENCES).to_string(), pick(g, &["0", "200", "750", "5000"]).to_string());
+                lines.push(format!("UpgradeMoneyAmount = {sci} {amount}"));
+            }
+            if g.below(100) < 85 {
+                lines.push(format!("MoneyAmount = {}", pick(g, &["0", "100", "500", "1000", "-5"])));
+            }
+        }
         _ => {}
     }
     if !clean {
@@ -576,6 +645,13 @@ fn effects(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClientEvent
                 CutCall::ScriptNotifyOfTriggeredSpecialPower { player, name, source } => log.push(format!("script {player} {} {source}", String::from_utf8_lossy(&name))),
                 CutCall::PlayerAcademyRecordSpecialPowerUsed { player, template } => log.push(format!("academy {player} {template}")),
                 CutCall::PlayerSetUnitsVisionSpied { player, setting, which_units, by_whom } => log.push(format!("spied {player} {} {by_whom} {}", i32::from(setting), kind_words(&which_units))),
+                // batch R21: the cash hack (the stand-ins' lines, l9_crates_f.inc, l9_sabotage_r13.inc, l9_updates_l.inc)
+                CutCall::PlayerMoneyWithdraw { player, amount } => log.push(format!("withdraw {player} {amount} 1")),
+                CutCall::PlayerMoneyDeposit { player, amount } => log.push(format!("deposit {player} {amount} 1")),
+                CutCall::PlayerScoreAddMoneyEarned { player, amount } => log.push(format!("earned {player} {amount}")),
+                CutCall::InGameUiAddFloatingTextNamed { text, amount, position: p, color } => {
+                    log.push(format!("float {} {amount} {},{},{} {:08x}", String::from_utf8_lossy(&text), p.x.to_bits(), p.y.to_bits(), p.z.to_bits(), color as u32))
+                }
                 _ => {}
             }
         } else if t.starts_with("evt ObjectCreated") || t.starts_with("evt ObjectDestroyed") {
@@ -612,6 +688,8 @@ fn state_words(w: &World, me: ObjectId, idx: u16) -> Vec<u32> {
         UpdateBody::BaikonurLaunchPower(m) => m.power(),
         UpdateBody::SpyVisionSpecialPower(m) => m.power(),
         UpdateBody::DefectorSpecialPower(m) => m.power(),
+        UpdateBody::CashBountyPower(m) => m.power(),
+        UpdateBody::CashHackSpecialPower(m) => m.power(),
         _ => unreachable!("not a special power module"),
     };
     vec![power.get_available_on_frame(), power.paused_count() as u32, power.paused_on_frame(), power.paused_percent().to_bits()]
@@ -635,13 +713,34 @@ fn power_module(kind: usize, id: ObjectId, data: &ModuleDataKind) -> NewModule {
 
 /// Runs the ops on a fresh world and returns the dump (after the data dump) and the world.
 #[allow(clippy::too_many_arguments)]
-fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data: ModuleDataKind, cfg: &[u32; 8], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
+fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data: ModuleDataKind, cfg: &[u32; 11], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     put_data(&mut v, &data, &store);
 
     let mut w = World::new();
+    // batch R21: the declared sciences, for the cash hack's `UpgradeMoneyAmount` (their keys are the ones the context gave them)
+    let mut names = names;
+    let mut sciences = ScienceStore::new();
+    {
+        struct SciCtx<'a> {
+            store: &'a mut ScienceStore,
+            names: &'a mut NameKeyGenerator,
+        }
+        fn science_block(ini: &mut Ini<'_>, c: &mut SciCtx<'_>) -> IniResult<()> {
+            c.store.parse_science_definition(ini, c.names, &Text)
+        }
+        let defs: String = SCIENCES.iter().map(|s| format!("Science {s}\nEnd\n")).collect();
+        let blocks = [BlockParse { token: "Science", parse: science_block }];
+        let mut c = SciCtx { store: &mut sciences, names: &mut names };
+        Ini::load(b"Data\\INI\\Science.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &blocks, &mut c).expect("sciences load");
+    }
     w.names = names;
-    w.statics = Arc::new(GameStatics { special_power_store: store, thing_factory: build_factory(cfg[2] >> 8 & 1 != 0), ..Default::default() });
+    w.statics = Arc::new(GameStatics {
+        special_power_store: store,
+        thing_factory: build_factory(cfg[2] >> 8 & 1 != 0),
+        science_store: sciences,
+        ..Default::default()
+    });
     w.cuts.probe_effect_trace = true;
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
@@ -654,6 +753,12 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
     w.players.set_player_count(3);
     for i in 0..3 {
         w.players.get_nth_mut(i).unwrap().default_team = Some(101 + i as u32);
+        // batch R21: the money (the driver's `m_count`; the cash hack only counts it, its calls are cuts)
+        let mut events = Vec::new();
+        let p = w.players.get_nth_mut(i).unwrap();
+        p.money.init();
+        p.money.set_player_index(i);
+        p.money.deposit(cfg[8 + i as usize], false, &mut events);
     }
     set_local(&mut w, (cfg[1] < 3).then_some(cfg[1] as i32));
     set_relationships(&mut w, cfg[4]);
@@ -786,6 +891,25 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
             16 => set_local(&mut w, (o[1] != 0).then(|| o[1] as i32 - 1)),
             17 => set_relationships(&mut w, o[1]),
             18 => set_matrix(&mut w, o[1]),
+            // batch R21
+            19 => {
+                let p = w.players.get_nth_mut((o[1] % 3) as i32).unwrap();
+                if o[2] != 0 {
+                    p.sciences.push(ScienceType(o[3] as i32));
+                } else {
+                    p.sciences.clear();
+                }
+            }
+            20 => {
+                w.module_call(me, idx, ModuleCall::OnObjectCreated);
+            }
+            22 => w.players.get_nth_mut((o[1] % 3) as i32).unwrap().cash_bounty_percent = f32::from_bits(o[2]),
+            21 => {
+                let mut events = Vec::new();
+                let p = w.players.get_nth_mut((o[1] % 3) as i32).unwrap();
+                p.money.init();
+                p.money.deposit(o[2], false, &mut events);
+            }
             _ => unreachable!(),
         }
         let threw = w.cuts.module_errors.len() > errors_before;
@@ -831,6 +955,9 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
         put_u32(&mut v, u32::from(spy.is_some()));
         put_u32(&mut v, spy.as_ref().map_or(0, |s| s[0]));
         put_u32(&mut v, spy.as_ref().map_or(0, |s| s[1]));
+        for p in 0..3 {
+            put_u32(&mut v, w.players.get_nth(p).unwrap().cash_bounty_percent.to_bits());
+        }
         // the objects the module made (the ids after the two it was given, in creation order)
         let made: Vec<ObjectId> = (3..).take_while(|id| w.objects.find(*id).is_some()).collect();
         tally.made = tally.made.max(made.len() as u64);
@@ -876,20 +1003,44 @@ fn gen_frame(g: &mut Gen) -> u32 {
 
 #[test]
 fn power_modules_h_match_upstream() {
+    run_suite(&[0, 1, 2, 3, 4], 0x1091_4A55, cases(), "special power modules H");
+}
+
+/// Batch R21: `CashBountyPower` and `CashHackSpecialPower`, on the same driver (their own seed and case count, so the five kinds above keep their
+/// random stream).
+#[test]
+fn cash_powers_r21_match_upstream() {
+    let cases = std::env::var("L9R21_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000);
+    run_suite(&[5, 6], 0x0021_CA54, cases, "cash powers R21");
+}
+
+/// The cases of `kinds` (in turn), from the seed: each a set of special powers, a data block, a scene and ops, run on both sides and compared.
+fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
     let _lock = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let cases = cases();
-    let mut g = Gen::new(0x1091_4A55);
+    let mut g = Gen::new(seed);
     let table = blocks();
-    let mut read = Check::new("special power module H data read (throw, message)");
-    let mut run = Check::new("special power module H ops (data, effects, state, objects)");
+    let mut read = Check::new(&format!("{label} data read (throw, message)"));
+    let mut run = Check::new(&format!("{label} ops (data, effects, state, objects)"));
     let (mut read_failed, mut ops_run, mut excluded) = (0u64, 0u64, 0u64);
     let mut tally = Tally::default();
-    let mut per_kind = [0u64; 5];
+    let mut per_kind = [0u64; 7];
     let mut counts: BTreeMap<String, u64> = BTreeMap::new();
     let mut shown = 0;
     for case in 0..cases {
-        let kind = case % 5;
-        let defs = gen_powers(&mut g);
+        let kind = kinds[case % kinds.len()];
+        let mut defs = gen_powers(&mut g);
+        if kind >= 5 {
+            // batch R21: some powers require a science (the cash bounty's `onObjectCreated` tests it)
+            let mut out = String::new();
+            for part in defs.split_inclusive("End\n") {
+                if g.below(2) == 0 {
+                    out.push_str(&part.replace("End\n", &format!(" RequiredScience = {}\nEnd\n", pick(&mut g, &SCIENCES))));
+                } else {
+                    out.push_str(part);
+                }
+            }
+            defs = out;
+        }
         let mut ctx = Ctx::new(true, true);
         Ini::load(b"Data\\INI\\Sp.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ctx).expect("special powers load");
         cpp_reset(true, true);
@@ -907,7 +1058,7 @@ fn power_modules_h_match_upstream() {
             }
         };
         // [the object's player, the local player, flags, the contain count, the relationships, the first new id, the frame]
-        let mut cfg = [0u32; 8];
+        let mut cfg = [0u32; 11];
         cfg[0] = if g.below(12) == 0 { NO_PLAYER } else { g.below(3) };
         cfg[1] = g.below(3); // (a local player always exists once the list is set up: `setLocalPlayer(NULL)` selects the neutral player)
         let dis = u32::from(g.below(5) == 0);
@@ -928,7 +1079,7 @@ fn power_modules_h_match_upstream() {
         cfg[6] = gen_frame(&mut g);
         cfg[7] = (0..9).fold(0u32, |acc, i| acc | (g.below(3) << (2 * i)));
         let n_ops = 1 + g.below(16) as usize;
-        let ops: Vec<[u32; 6]> = (0..n_ops)
+        let mut ops: Vec<[u32; 6]> = (0..n_ops)
             .map(|_| match g.below(60) {
                 0..=7 => [0, gen_options(&mut g), 0, 0, 0, 0],
                 8..=12 => [1, gen_options(&mut g), 0, 0, 0, 0],
@@ -951,6 +1102,23 @@ fn power_modules_h_match_upstream() {
                 _ => [17, g.below(3) | (g.below(3) << 2) | (g.below(3) << 4), 0, 0, 0, 0],
             })
             .collect();
+        if kind >= 5 {
+            // batch R21: the players' money, and ops on their sciences, money and `onObjectCreated`; the cash hack mostly hacks
+            for word in &mut cfg[8..11] {
+                *word = *pick(&mut g, &[&0u32, &50, &500, &100_000]);
+            }
+            for o in &mut ops {
+                match g.below(9) {
+                    0..=1 => *o = [19, g.below(3), 1, ctx.sciences[g.below(SCIENCES.len() as u32) as usize].0, 0, 0],
+                    2 => *o = [19, g.below(3), 0, 0, 0, 0],
+                    3 => *o = [20, 0, 0, 0, 0, 0],
+                    4 => *o = [21, g.below(3), *pick(&mut g, &[&0u32, &30, &800, &100_000]), 0, 0, 0],
+                    5 if kind == 6 => *o = [1, gen_options(&mut g), 0, 0, 0, 0],
+                    6 if kind == 5 => *o = [22, g.below(3), (*pick(&mut g, &[&0.0f32, &0.1, &0.3])).to_bits(), 0, 0, 0],
+                    _ => {}
+                }
+            }
+        }
 
         // Rust first: a case that reaches upstream undefined behaviour is counted and never sent to the C++
         let rust = if outcome.status == 0 {
@@ -1006,8 +1174,11 @@ fn power_modules_h_match_upstream() {
         };
         let (dr, dc) = (decode(kind, &rd, ops.len()), decode(kind, &buf, ops.len()));
         for l in &dr {
-            for key in ["\"eva ", "\"script ", "\"academy ", "\"audio ", "\"addsuper ", "\"defect ", "\"cleanup ", "\"spied ", "\"intent ", "\"mc "] {
+            for key in ["\"eva ", "\"script ", "\"academy ", "\"audio ", "\"addsuper ", "\"defect ", "\"cleanup ", "\"spied ", "\"intent ", "\"mc ", "\"withdraw ", "\"float "] {
                 *counts.entry(key.trim_matches('"').trim().to_string()).or_default() += l.matches(key).count() as u64;
+            }
+            if l.contains(" bounties [") && !l.contains(" bounties [0, 0, 0]") {
+                *counts.entry("bounty set".to_string()).or_default() += 1;
             }
         }
         if dr != dc && shown < 6 {
@@ -1023,7 +1194,7 @@ fn power_modules_h_match_upstream() {
         per_kind[kind] += 1;
     }
     println!(
-        "special power modules H: {cases} cases ({per_kind:?} compared per kind), {read_failed} data blocks threw, {excluded} excluded (undefined upstream), \
+        "{label}: {cases} cases ({per_kind:?} compared per kind), {read_failed} data blocks threw, {excluded} excluded (undefined upstream), \
          {ops_run} ops, {} powers done, {} xfers, {} effect lines, at most {} objects made",
         tally.powers, tally.xfers, tally.effects, tally.made
     );
@@ -1033,4 +1204,8 @@ fn power_modules_h_match_upstream() {
     read.finish();
     run.finish();
     assert!(read_failed * 40 > cases as u64 && ops_run * 5 > cases as u64 * 4, "the generator must reach every path");
+    if kinds.contains(&5) {
+        let n = |k: &str| counts.get(k).copied().unwrap_or(0);
+        assert!(n("withdraw") * 20 > cases as u64 && n("bounty set") * 20 > cases as u64, "the generator must reach the theft and the bounty");
+    }
 }

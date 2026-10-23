@@ -217,6 +217,9 @@ pub enum Undefined {
     FloatToUnsignedOutOfRange,
     /// `CrateCollide::isValidToExecute`: the `PickupScience` the store does not know (upstream's `INI::parseScience` threw `INI_INVALID_DATA` when the data was read).
     UnknownPickupScience,
+    /// A science a module's data keeps as a name (`CashHackSpecialPower`'s `UpgradeMoneyAmount`, batch R21) that the store does not know when it
+    /// is used (upstream's `INI::parseScience` threw `INI_INVALID_DATA` when the data was read).
+    UnknownScience,
     /// `parseUpgradePair`: `stricmp(token, "Boost")` of a `NULL` token (the line ended after the upgrade's name).
     NullTokenCompared,
     /// `SubdualDamageHelper::update`: `getObject()->getBodyModule()` is `NULL` and the helper calls through it.

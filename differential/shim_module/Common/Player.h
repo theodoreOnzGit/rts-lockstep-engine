@@ -50,6 +50,10 @@ public:
 	Int getPlayerIndex() const { return m_idx; }
 	/* batch R15: RebuildHoleExposeDie (Player.h's isPlayerActive: not dead, not an observer) */
 	Bool isPlayerActive() const { return !m_dead && !m_observer; }
+	/* batch R21: CashBountyPower (Player.h lines 657-658, verbatim) */
+	Real getCashBounty() const { return m_cashBountyPercent; }
+	void setCashBounty(Real percentage) { m_cashBountyPercent = percentage; }
+	Real m_cashBountyPercent = 0.0f;
 	Bool getAiBaseCenter(Coord3D *pos);   /* batch R19: PilotFindVehicleUpdate (differential/l9_find_r19.inc) */
 	Bool m_dead = false, m_observer = false;   /* the dies: SpecialPowerCompletionDie, EjectPilotDie */
 	/* crate batch F: the crates ask a player its type and sciences, and heal all its objects (a line of the effect log) */

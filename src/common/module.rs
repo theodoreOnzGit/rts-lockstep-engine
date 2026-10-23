@@ -392,6 +392,10 @@ pub enum ModuleDataKind {
     SpyVisionSpecialPower(Arc<crate::logic::modules::spy_vision_special_power::SpyVisionSpecialPowerModuleData>),
     /// `DefectorSpecialPowerModuleData`.
     DefectorSpecialPower(Arc<crate::logic::modules::defector_special_power::DefectorSpecialPowerModuleData>),
+    /// `CashHackSpecialPower` (batch R21).
+    CashHackSpecialPower(Arc<crate::logic::modules::cash_hack_special_power::CashHackSpecialPowerModuleData>),
+    /// `CashBountyPower` (batch R21).
+    CashBountyPower(Arc<crate::logic::modules::cash_bounty_power::CashBountyPowerModuleData>),
     /// `SpyVisionUpdateModuleData`.
     SpyVisionUpdate(Arc<crate::logic::modules::spy_vision_update::SpyVisionUpdateModuleData>),
     /// `FXListDieModuleData`.
@@ -569,6 +573,8 @@ impl ModuleDataKind {
             ModuleDataKind::BaikonurLaunchPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::SpyVisionSpecialPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::DefectorSpecialPower(d) => &d.special_power.behavior.module_data,
+            ModuleDataKind::CashHackSpecialPower(d) => &d.special_power.behavior.module_data,
+            ModuleDataKind::CashBountyPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::SpyVisionUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::FXListDie(d) => &d.die.behavior.module_data,
             ModuleDataKind::FireWeaponWhenDeadBehavior(d) => &d.die.behavior.module_data,
@@ -897,6 +903,20 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::DefectorSpecialPower(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.special_power.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::CashHackSpecialPower(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.special_power.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::CashBountyPower(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.special_power.behavior.module_data.set_module_tag_name_key(key);
                     true
