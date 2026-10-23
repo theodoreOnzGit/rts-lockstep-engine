@@ -112,6 +112,11 @@ pub struct ProbeAnswers {
     pub rebuild_hole: bool,
     /// batch R15: the probe is a `StickyBombUpdate` whose `getTargetObject` answers this (`None`: not a sticky bomb); `setTargetObject` is a line.
     pub sticky_target: Option<ObjectId>,
+    /// batch R18: `isDoingGroundMovement()` of the AI.
+    pub ground_movement: bool,
+    /// batch R19: what `wouldLikeToCollideWith(other)` answers, as a collide module: `None` for `FALSE` and no trace (the probe's old
+    /// answer), `Some(list)` for whether `other` is in the list, with a trace line.
+    pub collide_with: Option<Vec<ObjectId>>,
     pub back_crushed: Option<bool>,
     /// `getVelocity()` of the physics.
     pub velocity: Coord3D,
@@ -296,6 +301,10 @@ impl ProbeModule {
             ModuleCall::GetSubdualDamageHealRate => ModuleReply::Int(self.answers.subdual_rate as i32),
             ModuleCall::GetSubdualDamageHealAmount => ModuleReply::Real(self.answers.subdual_amount),
             ModuleCall::HasAnySubdualDamage => ModuleReply::Bool(self.answers.subdual_has),
+            ModuleCall::WouldLikeToCollideWith { other } if self.answers.collide_with.is_some() => {
+                world.body_trace(format!("wouldcollide {} {other}", me.object));
+                ModuleReply::Bool(self.answers.collide_with.as_ref().is_some_and(|l| l.contains(&other)))
+            }
             ModuleCall::WouldLikeToCollideWith { .. }
             | ModuleCall::IsRailroad
             | ModuleCall::IsCarBombCrateCollide
@@ -643,6 +652,24 @@ impl ProbeModule {
                 world.body_trace(format!("transferattack {} {from} {to}", me.object));
                 ModuleReply::Done
             }
+            ModuleCall::AiIsDoingGroundMovement => ModuleReply::Bool(self.answers.ground_movement),
+            ModuleCall::AiGetHealed { target, command_source } => {
+                world.body_trace(format!("aiheal {} {target} {command_source}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiEnter { target, command_source } => {
+                world.body_trace(format!("aienter {} {target} {command_source}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiFollowExitProductionPath { path, ignore_object, command_source } => {
+                let pts: Vec<String> = path.iter().map(|p| format!("{:08x},{:08x},{:08x}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits())).collect();
+                world.body_trace(format!("aiexitpath {} {ignore_object} {command_source} {}", me.object, pts.join(";")));
+                ModuleReply::Done
+            }
+            ModuleCall::UnreserveDoorForExit(_)
+            | ModuleCall::ExitObjectByBudding { .. }
+            | ModuleCall::GetExitPosition
+            | ModuleCall::GetNaturalRallyPointWithOffset(_) => ModuleReply::Unhandled,
             ModuleCall::AiConstruct { template, pos, angle, owner, is_rebuild } => {
                 world.body_trace(format!(
                     "construct {} {} {:08x} {:08x} {:08x} {:08x} {} {}",

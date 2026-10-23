@@ -64,6 +64,7 @@ public:
 	const Player *m_player; Int m_affiliation; Bool m_allow;
 };
 class PartitionFilterOnMap : public PartitionFilter { public: PartitionFilterOnMap() {} };
+class PartitionFilterPlayer : public PartitionFilter { public: PartitionFilterPlayer( const Player *player, Bool match ) {} };   /* batch R19: PilotFindVehicleUpdate */
 /* --- end p1w13-sonnet --- */
 /* --- p1w13-sonnet --- (batch R8: ParachuteContain; PartitionManager.h lines 110-148, verbatim) */
 enum FindPositionFlags

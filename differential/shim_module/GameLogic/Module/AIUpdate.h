@@ -36,6 +36,13 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	DozerAIInterface *getDozerAIInterface();   /* p1w13-sonnet, batch R13e: differential/l9_crates_r13e.inc */
 	void transferAttack(ObjectID fromID, ObjectID toID);   /* p1w13-sonnet, batch R14a: differential/l9_dies_r14.inc */
 	void notifyCrate(ObjectID id);
+	/* p1w13-sonnet, batch R19: AutoFindHealingUpdate, PilotFindVehicleUpdate (differential/l9_find_r19.inc) */
+	void aiGetHealed(Object *healDepot, CommandSourceType cmdSource);
+	void aiEnter(Object *obj, CommandSourceType cmdSource);
+	/* p1w13-sonnet, batch R18: the production exits (differential/l9_exits_r18.inc) */
+	Bool isDoingGroundMovement() const { return m_groundMovement; }
+	Bool m_groundMovement = false;
+	void aiFollowExitProductionPath(const std::vector<Coord3D> *path, Object *ignoreObject, CommandSourceType cmdSource);
 	/* batch R15: RebuildHoleBehavior (differential/l9_hole_r15.inc) */
 	Object *construct(const ThingTemplate *what, const Coord3D *pos, Real angle, Player *owner, Bool isRebuild);
 	void aiResumeConstruction(Object *obj, CommandSourceType cmdSource);   /* p1w13-sonnet, batch R14c: differential/l9_dies_r14.inc */

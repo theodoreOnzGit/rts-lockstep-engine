@@ -1818,6 +1818,8 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                         ContainCall::PathfindUpdatePos { object, position } => log.push(format!("pathupdatepos {object} {}", hex3(&position))),
                         ContainCall::PathfindUpdateGoal { object, position, layer } => log.push(format!("pathupdategoal {object} {} {layer}", hex3(&position))),
                         ContainCall::PathfindAdjustToPossibleDestination { object, before } => log.push(format!("pathadjust {object} {}", hex3(&before))),
+                        ContainCall::PathfindAdjustDestination { object, before } => log.push(format!("adjustdest {object} {}", hex3(&before))),
+                        ContainCall::PathfindSnapPosition { object, before } => log.push(format!("snap {object} {}", hex3(&before))),
                         ContainCall::TerrainGetLayerForDestination { position } => log.push(format!("destlayer {}", hex3(&position))),
                         ContainCall::LeaveGroup { object } => log.push(format!("leavegroup {object}")),
                         ContainCall::CheckAndDetonateBoobyTrap { container, rider, result } => log.push(format!("booby {container} {rider} {}", i32::from(result))),

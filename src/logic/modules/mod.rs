@@ -116,7 +116,12 @@ pub mod auto_heal_behavior;
 pub mod checkpoint_update;
 pub mod flammable_update;
 pub mod poisoned_behavior;
+pub mod production_exit;
 pub mod weapon_bonus_update;
+pub mod pilot_find_vehicle_update;
+pub mod auto_find_healing_update;
+pub mod queue_production_exit_update;
+pub mod default_production_exit_update;
 pub mod supply_warehouse_crippling_behavior;
 pub mod ocl_update;
 // --- end p1w12-sonnet ---
@@ -464,6 +469,22 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::WeaponBonusUpdate(d) => Some(made_update(
             weapon_bonus_update::WeaponBonusUpdate::get_interface_mask(),
             weapon_bonus_update::WeaponBonusUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::WeaponBonusUpdate(m))),
+        )),
+        ModuleDataKind::PilotFindVehicleUpdate(d) => Some(made_update(
+            pilot_find_vehicle_update::PilotFindVehicleUpdate::get_interface_mask(),
+            pilot_find_vehicle_update::PilotFindVehicleUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::PilotFindVehicleUpdate(m))),
+        )),
+        ModuleDataKind::AutoFindHealingUpdate(d) => Some(made_update(
+            auto_find_healing_update::AutoFindHealingUpdate::get_interface_mask(),
+            auto_find_healing_update::AutoFindHealingUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::AutoFindHealingUpdate(m))),
+        )),
+        ModuleDataKind::QueueProductionExitUpdate(d) => Some(made_update(
+            queue_production_exit_update::QueueProductionExitUpdate::get_interface_mask(),
+            queue_production_exit_update::QueueProductionExitUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::QueueProductionExitUpdate(m))),
+        )),
+        ModuleDataKind::DefaultProductionExitUpdate(d) => Some(made_update(
+            default_production_exit_update::DefaultProductionExitUpdate::get_interface_mask(),
+            default_production_exit_update::DefaultProductionExitUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::DefaultProductionExitUpdate(m))),
         )),
         ModuleDataKind::SupplyWarehouseCripplingBehavior(d) => Some(made_update(
             supply_warehouse_crippling_behavior::SupplyWarehouseCripplingBehavior::get_interface_mask(),

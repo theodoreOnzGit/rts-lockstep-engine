@@ -50,6 +50,7 @@ public:
 	Int getPlayerIndex() const { return m_idx; }
 	/* batch R15: RebuildHoleExposeDie (Player.h's isPlayerActive: not dead, not an observer) */
 	Bool isPlayerActive() const { return !m_dead && !m_observer; }
+	Bool getAiBaseCenter(Coord3D *pos);   /* batch R19: PilotFindVehicleUpdate (differential/l9_find_r19.inc) */
 	Bool m_dead = false, m_observer = false;   /* the dies: SpecialPowerCompletionDie, EjectPilotDie */
 	/* crate batch F: the crates ask a player its type and sciences, and heal all its objects (a line of the effect log) */
 	PlayerType getPlayerType() const { return m_type; }

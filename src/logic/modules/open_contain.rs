@@ -1824,7 +1824,7 @@ pub fn contain_module_call<T: OpenContainVirtuals>(t: &mut T, world: &mut World,
                 ModuleReply::Unhandled
             }
         }
-        ModuleCall::GetNaturalRallyPoint => ModuleReply::Coord(get_natural_rally_point(t, world, me)),
+        ModuleCall::GetNaturalRallyPoint | ModuleCall::GetNaturalRallyPointWithOffset(_) => ModuleReply::Coord(get_natural_rally_point(t, world, me)),
         ModuleCall::ClientVisibleContainedFlashAsSelected | ModuleCall::SetOverrideDestination(_) | ModuleCall::SetEvacDisposition(_) | ModuleCall::RecalcApparentControllingPlayer => {
             let r = t.other_call(world, me, call);
             if matches!(r, ModuleReply::Unhandled) {

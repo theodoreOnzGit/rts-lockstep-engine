@@ -1660,6 +1660,36 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    /// p1w13-sonnet, batch R19: AutoFindHealingUpdate (kind 0), PilotFindVehicleUpdate (kind 1) (differential/l9_find_r19.inc).
+    pub fn ref_l9r19_run(
+        kind: c_int,
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
+    /// p1w13-sonnet, batch R18: DefaultProductionExitUpdate (kind 0), QueueProductionExitUpdate (kind 1) (differential/l9_exits_r18.inc).
+    pub fn ref_l9r18_run(
+        kind: c_int,
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
     /// p1w13-sonnet, batch R17: WeaponBonusUpdate (differential/l9_weapon_bonus_r17.inc).
     pub fn ref_l9r17w_run(
         filename: *const c_char,

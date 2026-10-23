@@ -41,6 +41,8 @@ public:
 	void updatePos(Object *obj, const Coord3D *newPos);
 	void updateGoal(Object *obj, const Coord3D *newGoal, PathfindLayerEnum layer);
 	Bool adjustToPossibleDestination(Object *obj, const class LocomotorSet *locomotorSet, Coord3D *dest);
+	Bool adjustDestination(Object *obj, const class LocomotorSet *locomotorSet, Coord3D *dest, const Coord3D *groupDest = NULL);   /* batch R18: the production exits (differential/l9_exits_r18.inc) */
+	void snapPosition(Object *obj, Coord3D *pos);   /* batch R18 */
 	/* --- p1w13-sonnet --- (batch R2: TransportContain) */
 	Bool validMovementTerrain( PathfindLayerEnum layer, const Locomotor* locomotor, const Coord3D *pos );
 	/* --- end p1w13-sonnet --- */

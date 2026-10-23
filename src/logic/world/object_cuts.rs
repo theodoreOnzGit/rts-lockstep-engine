@@ -50,6 +50,7 @@
 //! | bone positions (`Drawable::getPristineBonePositions` and friends) | `getSingleLogicalBonePosition*`, `getMultiLogicalBonePosition` | **not translated** (the model's bone data is a client read) |
 
 use std::collections::{BTreeMap, BTreeSet};
+use crate::common::base_type::Coord3D;
 
 use crate::common::game_common::{ObjectShroudStatus, PlayerMaskType, Relationship, VeterancyLevel};
 use crate::common::game_type::{DrawableId, ObjectId, INVALID_DRAWABLE_ID, INVALID_ID};
@@ -256,6 +257,39 @@ impl World {
         } else {
             self.do_temp_weapon_bonus(object, bonus, duration);
         }
+    }
+
+    /// `ThePartitionManager->iterateObjectsInRange(obj->getPosition(), range, FROM_CENTER_2D)`, no filters: the objects, in iteration order
+    /// (`AutoFindHealingUpdate`, batch R19).
+    pub fn partition_iterate_objects_in_range(&mut self, object: ObjectId, range: f32) -> Vec<ObjectId> {
+        self.cut(CutCall::PartitionIterateObjectsInRange { object, range });
+        self.cuts.range_scan.clone()
+    }
+
+    /// `ThePartitionManager->iterateObjectsInRange(obj->getPosition(), range, FROM_CENTER_2D, { PartitionFilterAcceptByKindOf(VEHICLE),
+    /// PartitionFilterAlive, PartitionFilterPlayer(obj's player, TRUE), PartitionFilterSameMapStatus(obj) }, ITER_SORTED_NEAR_TO_FAR)`: the
+    /// objects, nearest first (`PilotFindVehicleUpdate`, batch R19).
+    pub fn partition_iterate_vehicles_near_to_far(&mut self, object: ObjectId, range: f32) -> Vec<ObjectId> {
+        self.cut(CutCall::PartitionIterateVehiclesNearToFar { object, range });
+        self.cuts.range_scan.clone()
+    }
+
+    /// `ThePartitionManager->getDistanceSquared(obj, other, FROM_CENTER_2D)` (batch R19): the table's entry, else the squared distance in the plane.
+    pub fn partition_get_distance_squared_center_2d(&mut self, object: ObjectId, other: ObjectId) -> f32 {
+        self.cut(CutCall::PartitionGetDistanceSquaredCenter2D { object, other });
+        if let Some(d) = self.cuts.distance_squared_center_2d.get(&(object, other)) {
+            return *d;
+        }
+        let pos = |w: &World, id: ObjectId| w.objects.find(id).map(|o| o.get_position()).unwrap_or_default();
+        let (a, b) = (pos(self, object), pos(self, other));
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        dx * dx + dy * dy
+    }
+
+    /// `player->getAiBaseCenter(&pos)` (batch R19): the centre of the player AI's base, `None` for `FALSE` (`ObjectCuts::ai_base_center`).
+    pub fn player_get_ai_base_center(&mut self, player: PlayerIndex) -> Option<Coord3D> {
+        self.cut(CutCall::PlayerGetAiBaseCenter { player });
+        self.cuts.ai_base_center.get(&player).copied()
     }
 
     /// `TheThingFactory->newObject(template, team)` for a crate (`UnitCrateCollide`): `INVALID_ID` when the factory made nothing. Under
@@ -506,6 +540,16 @@ pub enum CutCall {
     PartitionIterateAlliesInRange { object: ObjectId, range: f32 },
     /// batch R17: `obj->doTempWeaponBonus(type, duration)` under `crate_stub_object_calls`.
     ObjectDoTempWeaponBonus { object: ObjectId, bonus: i32, duration: u32 },
+    /// batch R19: `ThePartitionManager->iterateObjectsInRange(obj->getPosition(), range, FROM_CENTER_2D)` with no filters
+    /// (`AutoFindHealingUpdate`); `ObjectCuts::range_scan` answers.
+    PartitionIterateObjectsInRange { object: ObjectId, range: f32 },
+    /// batch R19: `ThePartitionManager->iterateObjectsInRange(obj->getPosition(), range, FROM_CENTER_2D, { KINDOF_VEHICLE, alive, obj's player,
+    /// same map status }, ITER_SORTED_NEAR_TO_FAR)` (`PilotFindVehicleUpdate`); `ObjectCuts::range_scan` answers.
+    PartitionIterateVehiclesNearToFar { object: ObjectId, range: f32 },
+    /// batch R19: `ThePartitionManager->getDistanceSquared(obj, other, FROM_CENTER_2D)`.
+    PartitionGetDistanceSquaredCenter2D { object: ObjectId, other: ObjectId },
+    /// batch R19: `player->getAiBaseCenter(&pos)`; `ObjectCuts::ai_base_center` answers.
+    PlayerGetAiBaseCenter { player: PlayerIndex },
     /// `TheScriptEngine->transferObjectName(name, obj)` (`VeterancyCrateCollide`'s pilot).
     ScriptEngineTransferObjectName { name: Vec<u8>, object: ObjectId },
     /// `player->getAcademyStats()->recordSalvageCollected()` (`SalvageCrateCollide`, batch R13c).
@@ -805,6 +849,11 @@ pub struct ObjectCuts {
     /// batch R14c: under `crate_stub_object_calls`, whether the object `crate_new_object` makes is bound to a drawable (`CreateCrateDie`'s decal;
     /// otherwise it has none).
     pub crate_new_object_drawable: bool,
+    /// batch R19: `getDistanceSquared(obj, other, FROM_CENTER_2D)` by `(obj, other)`; without an entry, the distance in the plane between the two
+    /// positions.
+    pub distance_squared_center_2d: BTreeMap<(ObjectId, ObjectId), f32>,
+    /// batch R19: what `player->getAiBaseCenter(&pos)` gives, per player (no entry: `FALSE`; the player AI is layer 10's).
+    pub ai_base_center: BTreeMap<PlayerIndex, Coord3D>,
     /// batch R15: under `crate_stub_object_calls`, the modules the object `crate_new_object` makes is given (after the parachute's contain).
     pub crate_new_object_modules: Vec<NewModule>,
     /// batch R14a: what `ObjectCreationList::create` returns, per list name (`CreateObjectDie`; no entry: `NULL`).
@@ -952,6 +1001,8 @@ impl Default for ObjectCuts {
             crate_booby_trapped: false,
             crate_new_object_contain: None,
             crate_new_object_drawable: false,
+            distance_squared_center_2d: BTreeMap::new(),
+            ai_base_center: BTreeMap::new(),
             crate_new_object_modules: Vec::new(),
             ocl_create_result: BTreeMap::new(),
             crate_stub_object_calls: false,

@@ -414,6 +414,14 @@ pub enum ModuleDataKind {
     PoisonedBehavior(Arc<crate::logic::modules::poisoned_behavior::PoisonedBehaviorModuleData>),
     /// `WeaponBonusUpdate` (batch R17).
     WeaponBonusUpdate(Arc<crate::logic::modules::weapon_bonus_update::WeaponBonusUpdateModuleData>),
+    /// `PilotFindVehicleUpdate` (batch R19).
+    PilotFindVehicleUpdate(Arc<crate::logic::modules::pilot_find_vehicle_update::PilotFindVehicleUpdateModuleData>),
+    /// `AutoFindHealingUpdate` (batch R19).
+    AutoFindHealingUpdate(Arc<crate::logic::modules::auto_find_healing_update::AutoFindHealingUpdateModuleData>),
+    /// `QueueProductionExitUpdate` (batch R18).
+    QueueProductionExitUpdate(Arc<crate::logic::modules::queue_production_exit_update::QueueProductionExitUpdateModuleData>),
+    /// `DefaultProductionExitUpdate` (batch R18).
+    DefaultProductionExitUpdate(Arc<crate::logic::modules::default_production_exit_update::DefaultProductionExitUpdateModuleData>),
     /// `SupplyWarehouseCripplingBehavior` (batch R17).
     SupplyWarehouseCripplingBehavior(Arc<crate::logic::modules::supply_warehouse_crippling_behavior::SupplyWarehouseCripplingBehaviorModuleData>),
     /// `OclUpdateModuleData`.
@@ -569,6 +577,10 @@ impl ModuleDataKind {
             ModuleDataKind::FlammableUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::PoisonedBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::WeaponBonusUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::PilotFindVehicleUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::AutoFindHealingUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::QueueProductionExitUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::DefaultProductionExitUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::SupplyWarehouseCripplingBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::OclUpdate(d) => &d.update.behavior.module_data,
             // --- end p1w12-sonnet ---
@@ -951,6 +963,34 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::WeaponBonusUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::PilotFindVehicleUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::AutoFindHealingUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::QueueProductionExitUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::DefaultProductionExitUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

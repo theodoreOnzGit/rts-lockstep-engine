@@ -760,6 +760,26 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::weapon_bonus_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::weapon_bonus_update::WeaponBonusUpdate::get_interface_mask()),
         }),
+        "PilotFindVehicleUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::pilot_find_vehicle_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::pilot_find_vehicle_update::PilotFindVehicleUpdate::get_interface_mask()),
+        }),
+        "AutoFindHealingUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::auto_find_healing_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::auto_find_healing_update::AutoFindHealingUpdate::get_interface_mask()),
+        }),
+        "QueueProductionExitUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::queue_production_exit_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::queue_production_exit_update::QueueProductionExitUpdate::get_interface_mask()),
+        }),
+        "DefaultProductionExitUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::default_production_exit_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::default_production_exit_update::DefaultProductionExitUpdate::get_interface_mask()),
+        }),
         "SupplyWarehouseCripplingBehavior" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::supply_warehouse_crippling_behavior::new_module_data),
@@ -982,6 +1002,10 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::FlammableUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::PoisonedBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::WeaponBonusUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::PilotFindVehicleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::AutoFindHealingUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::QueueProductionExitUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::DefaultProductionExitUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::SupplyWarehouseCripplingBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::OclUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         // --- end p1w12-sonnet ---

@@ -103,6 +103,11 @@ pub struct ContainCutTables {
     pub bone_condition: BTreeMap<ObjectId, i32>,
     /// `drawable->getFullyObscuredByShroud()`: the objects whose drawable is.
     pub obscured: BTreeSet<ObjectId>,
+    /// batch R18: `TheAI->pathfinder()->adjustDestination(obj, locomotorSet, &pos)`: the position it writes and answers true with, by object (no
+    /// entry: false, `pos` left as it is).
+    pub adjust_destination: BTreeMap<ObjectId, Coord3D>,
+    /// batch R18: `TheAI->pathfinder()->snapPosition(obj, &pos)`: the position it writes (`None`: left as it is).
+    pub snap_position: Option<Coord3D>,
     // --- end p1w13-sonnet ---
 }
 
@@ -129,6 +134,10 @@ pub enum ContainCall {
     PathfindUpdateGoal { object: ObjectId, position: Coord3D, layer: PathfindLayer },
     /// `TheAI->pathfinder()->adjustToPossibleDestination(obj, locomotorSet, &pos)`, `before` the position it was given.
     PathfindAdjustToPossibleDestination { object: ObjectId, before: Coord3D },
+    /// batch R18: `TheAI->pathfinder()->adjustDestination(obj, locomotorSet, &pos)`, `before` the position it was given.
+    PathfindAdjustDestination { object: ObjectId, before: Coord3D },
+    /// batch R18: `TheAI->pathfinder()->snapPosition(obj, &pos)`, `before` the position it was given.
+    PathfindSnapPosition { object: ObjectId, before: Coord3D },
     /// `TheTerrainLogic->getLayerForDestination(pos)`.
     TerrainGetLayerForDestination { position: Coord3D },
     /// `obj->leaveGroup()`.
@@ -281,6 +290,28 @@ impl World {
     }
 
     /// `TheAI->pathfinder()->adjustToPossibleDestination(obj, locomotorSet, &pos)`: `pos` is written when the table has an answer for the object.
+    /// `TheAI->pathfinder()->adjustDestination(obj, locomotorSet, &pos)` (the production exits, batch R18): true and `pos` moved where the table
+    /// says ([`ContainCutTables::adjust_destination`]).
+    pub fn contain_pathfind_adjust_destination(&mut self, id: ObjectId, pos: &mut Coord3D) -> bool {
+        self.contain_cut(ContainCall::PathfindAdjustDestination { object: id, before: *pos });
+        match self.cuts.contain.adjust_destination.get(&id) {
+            Some(p) => {
+                *pos = *p;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// `TheAI->pathfinder()->snapPosition(obj, &pos)` (`QueueProductionExitUpdate`, batch R18): `pos` moved where the table says
+    /// ([`ContainCutTables::snap_position`]).
+    pub fn contain_pathfind_snap_position(&mut self, id: ObjectId, pos: &mut Coord3D) {
+        self.contain_cut(ContainCall::PathfindSnapPosition { object: id, before: *pos });
+        if let Some(p) = self.cuts.contain.snap_position {
+            *pos = p;
+        }
+    }
+
     pub fn contain_pathfind_adjust_to_possible_destination(&mut self, id: ObjectId, pos: &mut Coord3D) {
         self.contain_cut(ContainCall::PathfindAdjustToPossibleDestination { object: id, before: *pos });
         if let Some(p) = self.cuts.contain.adjusted_destination.get(&id) {

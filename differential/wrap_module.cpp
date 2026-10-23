@@ -826,4 +826,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_poisoned_r16.inc"   /* p1w13-sonnet, batch R16: PoisonedBehavior */
 #include "l9_crippling_r17.inc"   /* p1w13-sonnet, batch R17: SupplyWarehouseCripplingBehavior */
 #include "l9_weapon_bonus_r17.inc"   /* p1w13-sonnet, batch R17: WeaponBonusUpdate */
+#include "l9_exits_r18.inc"   /* p1w13-sonnet, batch R18: DefaultProductionExitUpdate, QueueProductionExitUpdate */
+#include "l9_find_r19.inc"   /* p1w13-sonnet, batch R19: AutoFindHealingUpdate, PilotFindVehicleUpdate */
 /* --- end p1w13-sonnet --- */

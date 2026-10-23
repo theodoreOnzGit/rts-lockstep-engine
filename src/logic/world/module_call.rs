@@ -488,6 +488,23 @@ pub enum ModuleCall {
     AiTransferAttack { from: ObjectId, to: ObjectId },
     /// `getAIUpdateInterface()->notifyCrate(crateID)` (`CreateCrateDie`, batch R14c).
     AiNotifyCrate(ObjectId),
+    /// `getAIUpdateInterface()->isDoingGroundMovement()` (the production exits, batch R18); replies [`ModuleReply::Bool`].
+    AiIsDoingGroundMovement,
+    /// `getAIUpdateInterface()->aiGetHealed(healDepot, cmdSource)` (`AutoFindHealingUpdate`, batch R19).
+    AiGetHealed { target: ObjectId, command_source: i32 },
+    /// `getAIUpdateInterface()->aiEnter(obj, cmdSource)` (`PilotFindVehicleUpdate`, batch R19).
+    AiEnter { target: ObjectId, command_source: i32 },
+    /// `getAIUpdateInterface()->aiFollowExitProductionPath(&path, ignoreObject, cmdSource)` (the production exits, batch R18).
+    AiFollowExitProductionPath { path: Vec<Coord3D>, ignore_object: ObjectId, command_source: i32 },
+    /// `ExitInterface::unreserveDoorForExit(door)` (batch R18).
+    UnreserveDoorForExit(i32),
+    /// `ExitInterface::exitObjectByBudding(newObj, budHost)` (batch R18; `INVALID_ID` for a `NULL` host).
+    ExitObjectByBudding { obj: ObjectId, bud_host: ObjectId },
+    /// `ExitInterface::getExitPosition(&pos)` (batch R18); replies [`ModuleReply::Coord`] (`Unhandled`: false).
+    GetExitPosition,
+    /// `ExitInterface::getNaturalRallyPoint(&pos, offset)` with the offset given (batch R18; [`ModuleCall::GetNaturalRallyPoint`] is `offset` true);
+    /// replies [`ModuleReply::Coord`] (`Unhandled`: false).
+    GetNaturalRallyPointWithOffset(bool),
     /// `getAIUpdateInterface()->construct(template, pos, angle, owner, isRebuild)` (`RebuildHoleBehavior`, batch R15): the template by id
     /// (`None`: `NULL`), the owner a player index; replies [`ModuleReply::Id`] (`INVALID_ID`: `NULL`).
     AiConstruct { template: Option<u16>, pos: Coord3D, angle: f32, owner: Option<crate::logic::world::ids::PlayerIndex>, is_rebuild: bool },
