@@ -254,6 +254,58 @@ impl World {
         self.new_object(crate::logic::world::object_create::NewObject { template: tt, status: Default::default(), team, modules: Vec::new() }).unwrap_or(INVALID_ID)
     }
 
+    /// `other->checkAndDetonateBoobyTrap(victim)` for a crate (batch R13d): a record under `crate_stub_object_calls`, answered by
+    /// `crate_booby_trapped`.
+    pub fn crate_check_and_detonate_booby_trap(&mut self, id: ObjectId, victim: ObjectId) -> bool {
+        if !self.cuts.crate_stub_object_calls {
+            return self.check_and_detonate_booby_trap(id, Some(victim));
+        }
+        let result = self.cuts.crate_booby_trapped;
+        self.cut(CutCall::ObjectCheckAndDetonateBoobyTrap { object: id, victim, result });
+        result
+    }
+
+    /// `obj->defect(team, detectionTime)` for a crate (batch R13d): a record under `crate_stub_object_calls`.
+    pub fn crate_defect(&mut self, id: ObjectId, team: Option<TeamId>, detection_time: u32) {
+        if self.cuts.crate_stub_object_calls {
+            self.cut(CutCall::ObjectDefect { object: id, team, detection_time });
+        } else if let Some(team) = team {
+            self.defect(id, team, detection_time);
+        }
+    }
+
+    /// `obj->getExperienceTracker()->setVeterancyLevel(level, provideFeedback)` for a crate (batch R13d): under `crate_stub_object_calls` a record
+    /// and the level only.
+    pub fn crate_experience_set_veterancy_level(&mut self, id: ObjectId, level: i32, provide_feedback: bool) {
+        let new_level = crate::logic::world::object::veterancy_from_i32(level);
+        if self.cuts.crate_stub_object_calls {
+            self.cut(CutCall::ExperienceSetVeterancyLevel { object: id, level, provide_feedback });
+            if let Some(o) = self.objects.find_mut(id) {
+                o.experience.level = new_level;
+            }
+        } else {
+            self.cut_experience_set_veterancy_level(id, new_level, provide_feedback);
+        }
+    }
+
+    /// `TheRadar->removeObject(obj)` for a crate (batch R13d): a record under `crate_stub_object_calls`.
+    pub fn crate_radar_remove_object(&mut self, id: ObjectId) {
+        if self.cuts.crate_stub_object_calls {
+            self.cut(CutCall::RadarRemoveObject { object: id });
+        } else {
+            self.radar_remove_object(id);
+        }
+    }
+
+    /// `TheRadar->addObject(obj)` for a crate (batch R13d): a record under `crate_stub_object_calls`.
+    pub fn crate_radar_add_object(&mut self, id: ObjectId) {
+        if self.cuts.crate_stub_object_calls {
+            self.cut(CutCall::RadarAddObject { object: id });
+        } else {
+            self.radar_add_object(id);
+        }
+    }
+
     /// `obj->setOrientation(angle)` for a crate's new unit: a record under `crate_stub_object_calls`.
     pub fn crate_set_orientation(&mut self, id: ObjectId, angle: f32) {
         if self.cuts.crate_stub_object_calls {
@@ -375,6 +427,18 @@ pub enum CutCall {
     ScriptEngineTransferObjectName { name: Vec<u8>, object: ObjectId },
     /// `player->getAcademyStats()->recordSalvageCollected()` (`SalvageCrateCollide`, batch R13c).
     PlayerAcademyRecordSalvageCollected { player: PlayerIndex },
+    // --- p1w13-sonnet --- (batch R13d: ConvertToCarBombCrateCollide; records under `ObjectCuts::crate_stub_object_calls`)
+    /// `obj->checkAndDetonateBoobyTrap(victim)`; `ObjectCuts::crate_booby_trapped` answers.
+    ObjectCheckAndDetonateBoobyTrap { object: ObjectId, victim: ObjectId, result: bool },
+    /// `obj->defect(team, detectionTime)` (`None`: a `NULL` team).
+    ObjectDefect { object: ObjectId, team: Option<TeamId>, detection_time: u32 },
+    /// `obj->getExperienceTracker()->setVeterancyLevel(level, provideFeedback)`.
+    ExperienceSetVeterancyLevel { object: ObjectId, level: i32, provide_feedback: bool },
+    /// `TheRadar->removeObject(obj)`.
+    RadarRemoveObject { object: ObjectId },
+    /// `TheRadar->addObject(obj)`.
+    RadarAddObject { object: ObjectId },
+    // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     /// `TheScriptEngine->notifyOfTriggeredSpecialPower(playerIndex, specialPowerName, sourceObject)` (`SpecialPowerModule::aboutToDoSpecialPower`).
@@ -648,6 +712,8 @@ pub struct ObjectCuts {
     /// batch R13: the crate tests' explicit ablation: the Object-level calls of the sabotage crates that cascade (`setDisabledUntil`, `attemptDamage`)
     /// are records only (see `modules::sabotage_crate_collide`).
     pub crate_stub_object_calls: bool,
+    /// What `checkAndDetonateBoobyTrap` answers under `crate_stub_object_calls` (batch R13d).
+    pub crate_booby_trapped: bool,
     /// batch R13: `Player::iterateObjects` per player, when the test lists them (no entry: the objects the player controls, in id order).
     pub player_objects: BTreeMap<PlayerIndex, Vec<ObjectId>>,
     /// The function-local `static` of `AutoDepositUpdate::getUpgradedSupplyBoost` (its own, not `MoneyCrateCollide`'s), the same way.
@@ -788,6 +854,7 @@ impl Default for ObjectCuts {
             untranslated_modules: Vec::new(),
             probe_effect_trace: false,
             money_crate_upgrade_static: None,
+            crate_booby_trapped: false,
             crate_stub_object_calls: false,
             player_objects: BTreeMap::new(),
             auto_deposit_upgrade_static: None,

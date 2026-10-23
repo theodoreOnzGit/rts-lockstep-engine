@@ -225,6 +225,7 @@ public:
 	Bool m_offMap = false;
 	/* update batch N: CheckpointUpdate */
 	Real getVisionRange() const { return m_vision; }
+	void setVisionRange(Real r) { m_vision = r; }   /* p1w13-sonnet, batch R13d */
 	Real getOrientation() const { return m_orientation; }   /* update batch N: OCLUpdate */
 	const AsciiString &getName() const { return m_name; }   /* p1w13-sonnet, batch R13b: VeterancyCrateCollide's pilot hands it on */
 	/* p1w13-sonnet, batch R13c: SalvageCrateCollide (the armor set flags are the body's, Object.cpp:1211-1226, in differential/l9_crates_r13c.inc) */

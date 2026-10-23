@@ -175,6 +175,8 @@ pub enum UpdateBody {
     VeterancyCrateCollide(crate::logic::modules::veterancy_crate_collide::VeterancyCrateCollide),
     /// `SalvageCrateCollide` (batch R13c).
     SalvageCrateCollide(crate::logic::modules::salvage_crate_collide::SalvageCrateCollide),
+    /// `ConvertToCarBombCrateCollide` (batch R13d).
+    ConvertToCarBombCrateCollide(crate::logic::modules::convert_to_car_bomb_crate_collide::ConvertToCarBombCrateCollide),
     /// `SubdualDamageHelper`.
     SubdualDamageHelper(crate::logic::modules::subdual_damage_helper::SubdualDamageHelper),
     /// `ObjectDefectionHelper`.
@@ -343,6 +345,7 @@ impl UpdateBody {
             UpdateBody::UnitCrateCollide(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::VeterancyCrateCollide(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SalvageCrateCollide(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::ConvertToCarBombCrateCollide(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SubdualDamageHelper(m) => m.world_update(world, me),
             UpdateBody::ObjectDefectionHelper(m) => m.world_update(world, me),
             UpdateBody::CleanupAreaPower(_) => UPDATE_SLEEP_FOREVER,
@@ -466,6 +469,7 @@ impl UpdateBody {
             UpdateBody::UnitCrateCollide(m) => m.module_call(world, me, call),
             UpdateBody::VeterancyCrateCollide(m) => m.module_call(world, me, call),
             UpdateBody::SalvageCrateCollide(m) => m.module_call(world, me, call),
+            UpdateBody::ConvertToCarBombCrateCollide(m) => m.module_call(world, me, call),
             UpdateBody::SubdualDamageHelper(m) => m.module_call(world, me, call),
             UpdateBody::ObjectDefectionHelper(m) => m.module_call(world, me, call),
             UpdateBody::CleanupAreaPower(m) => m.module_call(world, me, call),
@@ -871,6 +875,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::UnitCrateCollide(m) => m.crc(xfer),
             UpdateBody::VeterancyCrateCollide(m) => m.crc(xfer),
             UpdateBody::SalvageCrateCollide(m) => m.crc(xfer),
+            UpdateBody::ConvertToCarBombCrateCollide(m) => m.crc(xfer),
             UpdateBody::SubdualDamageHelper(m) => m.crc(xfer),
             UpdateBody::ObjectDefectionHelper(m) => m.crc(xfer),
             UpdateBody::CleanupAreaPower(m) => m.crc(xfer),
@@ -990,6 +995,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::UnitCrateCollide(m) => m.xfer(xfer),
             UpdateBody::VeterancyCrateCollide(m) => m.xfer(xfer),
             UpdateBody::SalvageCrateCollide(m) => m.xfer(xfer),
+            UpdateBody::ConvertToCarBombCrateCollide(m) => m.xfer(xfer),
             UpdateBody::SubdualDamageHelper(m) => m.xfer(xfer),
             UpdateBody::ObjectDefectionHelper(m) => m.xfer(xfer),
             UpdateBody::CleanupAreaPower(m) => m.xfer(xfer),
@@ -1109,6 +1115,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::UnitCrateCollide(m) => m.load_post_process(),
             UpdateBody::VeterancyCrateCollide(m) => m.load_post_process(),
             UpdateBody::SalvageCrateCollide(m) => m.load_post_process(),
+            UpdateBody::ConvertToCarBombCrateCollide(m) => m.load_post_process(),
             UpdateBody::SubdualDamageHelper(m) => m.load_post_process(),
             UpdateBody::ObjectDefectionHelper(m) => m.load_post_process(),
             UpdateBody::CleanupAreaPower(m) => m.load_post_process(),

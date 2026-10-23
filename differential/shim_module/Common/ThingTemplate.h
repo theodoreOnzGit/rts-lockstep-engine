@@ -11,6 +11,23 @@
 #include "GameLogic/ArmorSet.h"
 /* --- end p1w13-sonnet --- */
 #include "Common/KindOf.h"   /* p1w13-sonnet, batch R13c */
+/* --- p1w13-sonnet --- (batch R13d: ConvertToCarBombCrateCollide asks the template for its best weapon set; the real WeaponSet.h needs the weapon
+** layer, so this is upstream WeaponSet.h:124-170's matching interface of WeaponTemplateSet, and the finder is the real SparseMatchFinder) */
+#include "GameLogic/WeaponSetFlags.h"
+#include "Common/SparseMatchFinder.h"
+#include <vector>
+class WeaponTemplateSet
+{
+public:
+	WeaponSetFlags m_types;
+	Bool testWeaponSetFlag( WeaponSetType wst ) const { return m_types.test( wst ); }
+	inline Int getConditionsYesCount() const { return 1; }
+	inline const WeaponSetFlags& getNthConditionsYes(Int i) const { return m_types; }
+	inline AsciiString getDescription() const { return AsciiString("ArmorTemplateSet"); }
+};
+typedef std::vector<WeaponTemplateSet> WeaponTemplateSetVector;
+typedef SparseMatchFinder<WeaponTemplateSet, WeaponSetFlags> WeaponTemplateSetFinder;
+/* --- end p1w13-sonnet --- */
 class ThingTemplate
 {
 public:
@@ -22,6 +39,10 @@ public:
 	/* p1w13-sonnet, batch R13c: SalvageCrateCollide asks the template (the test keeps it equal to the object's kinds) */
 	KindOfMaskType m_kindOf;
 	Bool isKindOf(KindOfType t) const { return m_kindOf.test(t); }
+	/* batch R13d: ThingTemplate.h's findWeaponTemplateSet, verbatim */
+	WeaponTemplateSetVector m_weaponTemplateSets;
+	mutable WeaponTemplateSetFinder m_weaponTemplateSetFinder;
+	const WeaponTemplateSet* findWeaponTemplateSet(const WeaponSetFlags& t) const { return m_weaponTemplateSetFinder.findBestInfo(m_weaponTemplateSets, t); }
 	AudioEventRTS m_voiceEject;
 	AudioEventRTS m_soundEject;
 	/* --- p1w13-sonnet --- (batch P) */

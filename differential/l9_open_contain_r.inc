@@ -41,16 +41,29 @@ public:
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/HelixContain.cpp"
 /* batch R5, unchanged; its header from build.rs (the forward enum declarations), and stand-ins for what it reaches that the module build lacks */
 #include "RiderChangeContain_edit.h"
-/* WeaponSetFlags::getBitNames(): WeaponSet.cpp's s_bitNameList, verbatim */
-struct WeaponSetFlags
+/* WeaponSetFlags::getBitNames()'s list: WeaponSet.cpp:66-87, verbatim (batch R13d: the real BitFlags typedef replaced a stand-in struct here; weak,
+** as the other builds that compile WeaponSet.cpp define it too) */
+template<> __attribute__((weak)) const char* WeaponSetFlags::s_bitNameList[] =
 {
-	static const char *const *getBitNames()
-	{
-		static const char *const s_bitNameList[] = { "VETERAN", "ELITE", "HERO", "PLAYER_UPGRADE", "CRATEUPGRADE_ONE", "CRATEUPGRADE_TWO", "VEHICLE_HIJACK",
-			"CARBOMB", "MINE_CLEARING_DETAIL", "WEAPON_RIDER1", "WEAPON_RIDER2", "WEAPON_RIDER3", "WEAPON_RIDER4", "WEAPON_RIDER5", "WEAPON_RIDER6",
-			"WEAPON_RIDER7", "WEAPON_RIDER8", NULL };
-		return s_bitNameList;
-	}
+	"VETERAN",
+	"ELITE",
+	"HERO",
+	"PLAYER_UPGRADE",
+	"CRATEUPGRADE_ONE",
+	"CRATEUPGRADE_TWO",
+	"VEHICLE_HIJACK",
+	"CARBOMB",
+	"MINE_CLEARING_DETAIL",
+	"WEAPON_RIDER1", //Kris: Added these for different combat-bike riders.
+	"WEAPON_RIDER2",
+	"WEAPON_RIDER3",
+	"WEAPON_RIDER4",
+	"WEAPON_RIDER5",
+	"WEAPON_RIDER6",
+	"WEAPON_RIDER7",
+	"WEAPON_RIDER8",
+
+	NULL
 };
 /* the message stream: each append is a line of the log */
 class GameMessage

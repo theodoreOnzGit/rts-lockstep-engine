@@ -92,6 +92,7 @@ pub mod sabotage_crate_collide;
 pub mod unit_crate_collide;
 pub mod veterancy_crate_collide;
 pub mod salvage_crate_collide;
+pub mod convert_to_car_bomb_crate_collide;
 pub mod money_crate_collide;
 pub mod cleanup_area_power;
 pub mod baikonur_launch_power;
@@ -362,6 +363,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::SalvageCrateCollide(d) => Some(made(
             salvage_crate_collide::SalvageCrateCollide::get_interface_mask(),
             salvage_crate_collide::SalvageCrateCollide::new(object, Some(d.clone())).map(UpdateBody::SalvageCrateCollide),
+        )),
+        ModuleDataKind::ConvertToCarBombCrateCollide(d) => Some(made(
+            convert_to_car_bomb_crate_collide::ConvertToCarBombCrateCollide::get_interface_mask(),
+            convert_to_car_bomb_crate_collide::ConvertToCarBombCrateCollide::new(object, Some(d.clone())).map(UpdateBody::ConvertToCarBombCrateCollide),
         )),
         ModuleDataKind::MoneyCrateCollide(d) => Some(made(
             money_crate_collide::MoneyCrateCollide::get_interface_mask(),
