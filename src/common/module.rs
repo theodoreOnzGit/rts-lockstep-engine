@@ -352,6 +352,8 @@ pub enum ModuleDataKind {
     SpecialPowerCompletionDie(Arc<crate::logic::modules::special_power_completion_die::SpecialPowerCompletionDieModuleData>),
     /// `EjectPilotDieModuleData`.
     EjectPilotDie(Arc<crate::logic::modules::eject_pilot_die::EjectPilotDieModuleData>),
+    /// `InstantDeathBehavior` (batch R16).
+    InstantDeathBehavior(Arc<crate::logic::modules::instant_death_behavior::InstantDeathBehaviorModuleData>),
     /// `RebuildHoleExposeDie` (batch R15).
     RebuildHoleExposeDie(Arc<crate::logic::modules::rebuild_hole_expose_die::RebuildHoleExposeDieModuleData>),
     /// `CreateCrateDie` (batch R14c).
@@ -408,6 +410,8 @@ pub enum ModuleDataKind {
     CheckpointUpdate(Arc<crate::logic::modules::checkpoint_update::CheckpointUpdateModuleData>),
     /// `FlammableUpdateModuleData`.
     FlammableUpdate(Arc<crate::logic::modules::flammable_update::FlammableUpdateModuleData>),
+    /// `PoisonedBehavior` (batch R16).
+    PoisonedBehavior(Arc<crate::logic::modules::poisoned_behavior::PoisonedBehaviorModuleData>),
     /// `OclUpdateModuleData`.
     OclUpdate(Arc<crate::logic::modules::ocl_update::OclUpdateModuleData>),
     // --- end p1w12-sonnet ---
@@ -529,6 +533,7 @@ impl ModuleDataKind {
             ModuleDataKind::DamDie(d) => &d.die.behavior.module_data,
             ModuleDataKind::SpecialPowerCompletionDie(d) => &d.die.behavior.module_data,
             ModuleDataKind::EjectPilotDie(d) => &d.die.behavior.module_data,
+            ModuleDataKind::InstantDeathBehavior(d) => &d.die.behavior.module_data,
             ModuleDataKind::RebuildHoleExposeDie(d) => &d.die.behavior.module_data,
             ModuleDataKind::CreateCrateDie(d) => &d.die.behavior.module_data,
             ModuleDataKind::CrushDie(d) => &d.die.behavior.module_data,
@@ -558,6 +563,7 @@ impl ModuleDataKind {
             ModuleDataKind::AutoHealBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::CheckpointUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::FlammableUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::PoisonedBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::OclUpdate(d) => &d.update.behavior.module_data,
             // --- end p1w12-sonnet ---
             // --- p1w13-sonnet ---
@@ -727,6 +733,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::EjectPilotDie(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.die.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::InstantDeathBehavior(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.die.behavior.module_data.set_module_tag_name_key(key);
                     true
@@ -918,6 +931,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::FlammableUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::PoisonedBehavior(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

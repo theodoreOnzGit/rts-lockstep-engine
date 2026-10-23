@@ -157,6 +157,8 @@ pub enum UpdateBody {
     SpecialPowerCompletionDie(crate::logic::modules::special_power_completion_die::SpecialPowerCompletionDie),
     /// `EjectPilotDie`.
     EjectPilotDie(crate::logic::modules::eject_pilot_die::EjectPilotDie),
+    /// `InstantDeathBehavior` (batch R16).
+    InstantDeathBehavior(crate::logic::modules::instant_death_behavior::InstantDeathBehavior),
     /// `RebuildHoleExposeDie` (batch R15).
     RebuildHoleExposeDie(crate::logic::modules::rebuild_hole_expose_die::RebuildHoleExposeDie),
     /// `CreateCrateDie` (batch R14c).
@@ -219,6 +221,8 @@ pub enum UpdateBody {
     CheckpointUpdate(crate::logic::modules::checkpoint_update::CheckpointUpdate),
     /// `FlammableUpdate`.
     FlammableUpdate(crate::logic::modules::flammable_update::FlammableUpdate),
+    /// `PoisonedBehavior` (batch R16).
+    PoisonedBehavior(crate::logic::modules::poisoned_behavior::PoisonedBehavior),
     /// `OclUpdate`.
     OclUpdate(crate::logic::modules::ocl_update::OclUpdate),
     // --- end p1w12-sonnet ---
@@ -350,6 +354,7 @@ impl UpdateBody {
             UpdateBody::DamDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SpecialPowerCompletionDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::EjectPilotDie(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::InstantDeathBehavior(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::RebuildHoleExposeDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::CreateCrateDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::CrushDie(_) => UPDATE_SLEEP_FOREVER,
@@ -382,6 +387,7 @@ impl UpdateBody {
             UpdateBody::AutoHealBehavior(m) => m.world_update(world, me),
             UpdateBody::CheckpointUpdate(m) => m.world_update(world, me),
             UpdateBody::FlammableUpdate(m) => m.world_update(world, me),
+            UpdateBody::PoisonedBehavior(m) => m.world_update(world, me),
             UpdateBody::OclUpdate(m) => m.world_update(world, me),
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -481,6 +487,7 @@ impl UpdateBody {
             UpdateBody::DamDie(m) => m.module_call(world, me, call),
             UpdateBody::SpecialPowerCompletionDie(m) => m.module_call(world, me, call),
             UpdateBody::EjectPilotDie(m) => m.module_call(world, me, call),
+            UpdateBody::InstantDeathBehavior(m) => m.module_call(world, me, call),
             UpdateBody::RebuildHoleExposeDie(m) => m.module_call(world, me, call),
             UpdateBody::CreateCrateDie(m) => m.module_call(world, me, call),
             UpdateBody::CrushDie(m) => m.module_call(world, me, call),
@@ -513,6 +520,7 @@ impl UpdateBody {
             UpdateBody::AutoHealBehavior(m) => m.module_call(world, me, call),
             UpdateBody::CheckpointUpdate(m) => m.module_call(world, me, call),
             UpdateBody::FlammableUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::PoisonedBehavior(m) => m.module_call(world, me, call),
             UpdateBody::OclUpdate(m) => m.module_call(world, me, call),
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -629,6 +637,7 @@ impl UpdateBody {
             UpdateBody::AutoHealBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::CheckpointUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::FlammableUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::PoisonedBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::OclUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -719,6 +728,7 @@ impl UpdateBody {
             UpdateBody::AutoHealBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::CheckpointUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::FlammableUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::PoisonedBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::OclUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -809,6 +819,7 @@ impl UpdateBody {
             UpdateBody::AutoHealBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::CheckpointUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::FlammableUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::PoisonedBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::OclUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -900,6 +911,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::DamDie(m) => m.crc(xfer),
             UpdateBody::SpecialPowerCompletionDie(m) => m.crc(xfer),
             UpdateBody::EjectPilotDie(m) => m.crc(xfer),
+            UpdateBody::InstantDeathBehavior(m) => m.crc(xfer),
             UpdateBody::RebuildHoleExposeDie(m) => m.crc(xfer),
             UpdateBody::CreateCrateDie(m) => m.crc(xfer),
             UpdateBody::CrushDie(m) => m.crc(xfer),
@@ -932,6 +944,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::AutoHealBehavior(m) => m.crc(xfer),
             UpdateBody::CheckpointUpdate(m) => m.crc(xfer),
             UpdateBody::FlammableUpdate(m) => m.crc(xfer),
+            UpdateBody::PoisonedBehavior(m) => m.crc(xfer),
             UpdateBody::OclUpdate(m) => m.crc(xfer),
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -1027,6 +1040,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::DamDie(m) => m.xfer(xfer),
             UpdateBody::SpecialPowerCompletionDie(m) => m.xfer(xfer),
             UpdateBody::EjectPilotDie(m) => m.xfer(xfer),
+            UpdateBody::InstantDeathBehavior(m) => m.xfer(xfer),
             UpdateBody::RebuildHoleExposeDie(m) => m.xfer(xfer),
             UpdateBody::CreateCrateDie(m) => m.xfer(xfer),
             UpdateBody::CrushDie(m) => m.xfer(xfer),
@@ -1059,6 +1073,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::AutoHealBehavior(m) => m.xfer(xfer),
             UpdateBody::CheckpointUpdate(m) => m.xfer(xfer),
             UpdateBody::FlammableUpdate(m) => m.xfer(xfer),
+            UpdateBody::PoisonedBehavior(m) => m.xfer(xfer),
             UpdateBody::OclUpdate(m) => m.xfer(xfer),
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -1154,6 +1169,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::DamDie(m) => m.load_post_process(),
             UpdateBody::SpecialPowerCompletionDie(m) => m.load_post_process(),
             UpdateBody::EjectPilotDie(m) => m.load_post_process(),
+            UpdateBody::InstantDeathBehavior(m) => m.load_post_process(),
             UpdateBody::RebuildHoleExposeDie(m) => m.load_post_process(),
             UpdateBody::CreateCrateDie(m) => m.load_post_process(),
             UpdateBody::CrushDie(m) => m.load_post_process(),
@@ -1186,6 +1202,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::AutoHealBehavior(m) => m.load_post_process(),
             UpdateBody::CheckpointUpdate(m) => m.load_post_process(),
             UpdateBody::FlammableUpdate(m) => m.load_post_process(),
+            UpdateBody::PoisonedBehavior(m) => m.load_post_process(),
             UpdateBody::OclUpdate(m) => m.load_post_process(),
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -1388,6 +1405,7 @@ impl UpdateBody {
             UpdateBody::AutoHealBehavior(m) => m.world_construct(world, me),
             UpdateBody::CheckpointUpdate(m) => m.world_construct(world, me),
             UpdateBody::FlammableUpdate(m) => m.world_construct(world, me),
+            UpdateBody::PoisonedBehavior(m) => m.world_construct(world, me),
             UpdateBody::OclUpdate(m) => m.world_construct(world, me),
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---

@@ -84,6 +84,7 @@ pub mod replace_object_upgrade;
 pub mod dam_die;
 pub mod special_power_completion_die;
 pub mod eject_pilot_die;
+pub mod instant_death_behavior;
 pub mod rebuild_hole_expose_die;
 pub mod create_crate_die;
 pub mod crush_die;
@@ -114,6 +115,7 @@ pub mod fire_ocl_after_weapon_cooldown_update;
 pub mod auto_heal_behavior;
 pub mod checkpoint_update;
 pub mod flammable_update;
+pub mod poisoned_behavior;
 pub mod ocl_update;
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
@@ -339,6 +341,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
             DieModule::get_interface_mask(),
             eject_pilot_die::EjectPilotDie::new(object, Some(d.clone())).map(UpdateBody::EjectPilotDie),
         )),
+        ModuleDataKind::InstantDeathBehavior(d) => Some(made(
+            DieModule::get_interface_mask(),
+            instant_death_behavior::InstantDeathBehavior::new(object, Some(d.clone())).map(UpdateBody::InstantDeathBehavior),
+        )),
         ModuleDataKind::RebuildHoleExposeDie(d) => Some(made(
             DieModule::get_interface_mask(),
             rebuild_hole_expose_die::RebuildHoleExposeDie::new(object, Some(d.clone())).map(UpdateBody::RebuildHoleExposeDie),
@@ -448,6 +454,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::FlammableUpdate(d) => Some(made_update(
             flammable_update::FlammableUpdate::get_interface_mask(),
             flammable_update::FlammableUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::FlammableUpdate(m))),
+        )),
+        ModuleDataKind::PoisonedBehavior(d) => Some(made_update(
+            poisoned_behavior::PoisonedBehavior::get_interface_mask(),
+            poisoned_behavior::PoisonedBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::PoisonedBehavior(m))),
         )),
         ModuleDataKind::OclUpdate(d) => Some(made_update(
             UpdateModule::get_interface_mask(),
