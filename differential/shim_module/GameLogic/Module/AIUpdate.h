@@ -31,7 +31,9 @@ enum AIFreeToExitType // Note - written out in save/load xfer, don't change thes
 	WAIT_TO_EXIT=2
 };
 /* --- end p1w13-sonnet --- */
+class DozerAIInterface;
 class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
+	DozerAIInterface *getDozerAIInterface();   /* p1w13-sonnet, batch R13e: differential/l9_crates_r13e.inc */
 	/* --- p1w13-sonnet --- (update batch O: SquishCollide asks what the AI is going for) */
 	Object *getGoalObject() const { return m_goal; }
 	Object *m_goal = 0;

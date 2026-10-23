@@ -251,7 +251,15 @@ impl World {
         self.cut(CutCall::ThingFactoryNewObject { template, team });
         let Some(t) = self.statics.thing_factory.find_by_template_id(template) else { return INVALID_ID };
         let tt = std::sync::Arc::new(t.get_final_override().data.clone());
-        self.new_object(crate::logic::world::object_create::NewObject { template: tt, status: Default::default(), team, modules: Vec::new() }).unwrap_or(INVALID_ID)
+        let mut modules = Vec::new();
+        if let Some(valid) = self.cuts.crate_new_object_contain {
+            let mut c = NewModule::plain(b"CtChute", b"ModuleTag_Chute");
+            c.interfaces = crate::common::module::MODULEINTERFACE_CONTAIN;
+            let answers = crate::logic::world::module_probe::ProbeAnswers { parachute: true, yes: valid, ..Default::default() };
+            c.body = Some(crate::logic::world::update_body::UpdateBody::ModuleProbe(crate::logic::world::module_probe::ProbeModule::new(answers, 0.0, Default::default())));
+            modules.push(c);
+        }
+        self.new_object(crate::logic::world::object_create::NewObject { template: tt, status: Default::default(), team, modules }).unwrap_or(INVALID_ID)
     }
 
     /// `other->checkAndDetonateBoobyTrap(victim)` for a crate (batch R13d): a record under `crate_stub_object_calls`, answered by
@@ -294,6 +302,15 @@ impl World {
             self.cut(CutCall::RadarRemoveObject { object: id });
         } else {
             self.radar_remove_object(id);
+        }
+    }
+
+    /// `obj->setTeam(team)` for a crate (batch R13e): a record under `crate_stub_object_calls`.
+    pub fn crate_set_team(&mut self, id: ObjectId, team: Option<TeamId>) {
+        if self.cuts.crate_stub_object_calls {
+            self.cut(CutCall::ObjectSetTeam { object: id, team });
+        } else {
+            self.set_team(id, team);
         }
     }
 
@@ -438,6 +455,8 @@ pub enum CutCall {
     RadarRemoveObject { object: ObjectId },
     /// `TheRadar->addObject(obj)`.
     RadarAddObject { object: ObjectId },
+    /// `obj->setTeam(team)` (batch R13e; `None`: a `NULL` team).
+    ObjectSetTeam { object: ObjectId, team: Option<TeamId> },
     // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
@@ -714,6 +733,9 @@ pub struct ObjectCuts {
     pub crate_stub_object_calls: bool,
     /// What `checkAndDetonateBoobyTrap` answers under `crate_stub_object_calls` (batch R13d).
     pub crate_booby_trapped: bool,
+    /// batch R13e: under `crate_stub_object_calls`, the object `crate_new_object` makes has a probe contain whose `isValidContainerFor` answers this
+    /// (`None`: no contain).
+    pub crate_new_object_contain: Option<bool>,
     /// batch R13: `Player::iterateObjects` per player, when the test lists them (no entry: the objects the player controls, in id order).
     pub player_objects: BTreeMap<PlayerIndex, Vec<ObjectId>>,
     /// The function-local `static` of `AutoDepositUpdate::getUpgradedSupplyBoost` (its own, not `MoneyCrateCollide`'s), the same way.
@@ -855,6 +877,7 @@ impl Default for ObjectCuts {
             probe_effect_trace: false,
             money_crate_upgrade_static: None,
             crate_booby_trapped: false,
+            crate_new_object_contain: None,
             crate_stub_object_calls: false,
             player_objects: BTreeMap::new(),
             auto_deposit_upgrade_static: None,

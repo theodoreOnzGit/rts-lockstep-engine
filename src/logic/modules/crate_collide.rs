@@ -148,6 +148,15 @@ pub trait CrateBehavior: Clone + PartialEq + Sized {
     }
 }
 
+/// `TheGameLogic->destroyObject(obj)` for a crate (the crate itself, or `ConvertToHijackedVehicleCrateCollide`'s hijacker): a trace line for the tests
+/// that compare the call, then the destruction.
+pub fn crate_destroy_object(world: &mut World, id: ObjectId) {
+    if let Some(t) = &mut world.cuts.trace {
+        t.push(format!("destroy {id}"));
+    }
+    world.destroy_object(id);
+}
+
 /// `CrateCollide::isValidToExecute(other)`. An error is upstream's undefined behaviour (a pickup science the store does not know).
 pub fn crate_is_valid_to_execute(md: &CrateCollideModuleData, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<bool, IniError> {
     // `other == NULL`
@@ -224,10 +233,7 @@ pub fn crate_on_collide<M: CrateBehavior>(m: &mut M, world: &mut World, me: Modu
                         world.emit(ObjectClientEvent::FxListDoFxObj { fx: fx.clone(), object_id: other });
                     }
                     if !crate::logic::modules::plant(757) {
-                        if let Some(t) = &mut world.cuts.trace {
-                            t.push(format!("destroy {}", me.object));
-                        }
-                        world.destroy_object(me.object);
+                        crate_destroy_object(world, me.object);
                     }
                 }
                 Ok(false) => {}

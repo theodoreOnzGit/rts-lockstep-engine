@@ -75,6 +75,8 @@ pub enum EvaMessage {
     BuildingSabotaged,
     /// batch R13: `EVA_CashStolen`.
     CashStolen,
+    /// batch R13e: `EVA_VehicleStolen`.
+    VehicleStolen,
 }
 
 // --- p1w11-sonnet ---

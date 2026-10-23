@@ -95,6 +95,10 @@ pub struct ProbeAnswers {
     // --- p1w13-sonnet ---
     /// `getGoalObject()` of the AI (`INVALID_ID`: none).
     pub goal_object: ObjectId,
+    /// batch R13e: `getDozerAIInterface()` of the AI is not `NULL` (its `cancelTask` is a line of the trace).
+    pub dozer: bool,
+    /// batch R13e: the probe is a parachute's contain: `isValidContainerFor` answers `yes` and it and `addToContain` are lines of the trace.
+    pub parachute: bool,
     /// `getVelocity()` of the physics.
     pub velocity: Coord3D,
     /// `isMoving()` of the AI.
@@ -597,6 +601,21 @@ impl ProbeModule {
             }
             ModuleCall::AiHackInternet { command_source } => {
                 world.body_trace(format!("aihack {} {command_source}", me.object));
+                ModuleReply::Done
+            }
+            // batch R13e: the hijacker's own module's calls (a probe is not one)
+            ModuleCall::HijackerSetTargetObject(_) | ModuleCall::HijackerSetIsInVehicle(_) | ModuleCall::HijackerSetUpdate(_) => ModuleReply::Unhandled,
+            ModuleCall::AiGetDozerAIInterface => ModuleReply::Bool(self.answers.dozer),
+            ModuleCall::IsValidContainerFor { obj, check_capacity } if self.answers.parachute => {
+                world.body_trace(format!("validfor {} {obj} {}", me.object, i32::from(check_capacity)));
+                ModuleReply::Bool(self.answers.yes)
+            }
+            ModuleCall::AddToContain(obj) if self.answers.parachute => {
+                world.body_trace(format!("addtocontain {} {obj}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::DozerCancelTask(task) => {
+                world.body_trace(format!("canceltask {} {task}", me.object));
                 ModuleReply::Done
             }
             ModuleCall::AiMoveToPosition { pos, command_source } => {

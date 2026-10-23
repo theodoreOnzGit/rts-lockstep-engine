@@ -652,6 +652,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::convert_to_car_bomb_crate_collide::new_module_data),
             which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
         }),
+        "ConvertToHijackedVehicleCrateCollide" => Some(ModuleTemplate {
+            create_proc: Some(new_collide_base),
+            create_data_proc: Some(crate::logic::modules::convert_to_hijacked_vehicle_crate_collide::new_module_data),
+            which_interfaces: Some(crate::logic::module::collide_module::CollideModule::get_interface_mask()),
+        }),
         // --- end p1w13-sonnet ---
         "MoneyCrateCollide" => Some(ModuleTemplate {
             create_proc: Some(new_collide_base),
@@ -755,6 +760,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
         "FloatUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::float_update::new_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        "HijackerUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::hijacker_update::new_module_data),
             which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
         }),
         "TechBuildingBehavior" => Some(ModuleTemplate {
@@ -933,6 +943,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::ProneUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::EnemyNearUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::FloatUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::HijackerUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::TechBuildingBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::FireSpreadUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::SlowDeathBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
@@ -993,6 +1004,7 @@ fn new_collide_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mo
         Some(ModuleDataKind::VeterancyCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
         Some(ModuleDataKind::SalvageCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
         Some(ModuleDataKind::ConvertToCarBombCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
+        Some(ModuleDataKind::ConvertToHijackedVehicleCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
         // --- end p1w11-sonnet ---
         _ => None,
     };

@@ -372,6 +372,8 @@ pub enum ModuleDataKind {
     SalvageCrateCollide(Arc<crate::logic::modules::salvage_crate_collide::SalvageCrateCollideModuleData>),
     /// `ConvertToCarBombCrateCollide`'s data (batch R13d).
     ConvertToCarBombCrateCollide(Arc<crate::logic::modules::convert_to_car_bomb_crate_collide::ConvertToCarBombCrateCollideModuleData>),
+    /// `ConvertToHijackedVehicleCrateCollide`'s data (batch R13e).
+    ConvertToHijackedVehicleCrateCollide(Arc<crate::logic::modules::convert_to_hijacked_vehicle_crate_collide::ConvertToHijackedVehicleCrateCollideModuleData>),
     /// `CleanupAreaPowerModuleData`.
     CleanupAreaPower(Arc<crate::logic::modules::cleanup_area_power::CleanupAreaPowerModuleData>),
     /// `BaikonurLaunchPowerModuleData`.
@@ -412,6 +414,8 @@ pub enum ModuleDataKind {
     EnemyNearUpdate(Arc<crate::logic::modules::enemy_near_update::EnemyNearUpdateModuleData>),
     /// `FloatUpdateModuleData`.
     FloatUpdate(Arc<crate::logic::modules::float_update::FloatUpdateModuleData>),
+    /// `HijackerUpdateModuleData` (batch R13e).
+    HijackerUpdate(Arc<crate::logic::modules::hijacker_update::HijackerUpdateModuleData>),
     /// `TechBuildingBehaviorModuleData`.
     TechBuildingBehavior(Arc<crate::logic::modules::tech_building_behavior::TechBuildingBehaviorModuleData>),
     /// `FireSpreadUpdateModuleData`.
@@ -525,6 +529,7 @@ impl ModuleDataKind {
             ModuleDataKind::VeterancyCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::SalvageCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::ConvertToCarBombCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
+            ModuleDataKind::ConvertToHijackedVehicleCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::CleanupAreaPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::BaikonurLaunchPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::SpyVisionSpecialPower(d) => &d.special_power.behavior.module_data,
@@ -547,6 +552,7 @@ impl ModuleDataKind {
             ModuleDataKind::ProneUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::EnemyNearUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::FloatUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::HijackerUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::TechBuildingBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::FireSpreadUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::ActiveBody(d) => &d.body.behavior.module_data,
@@ -775,6 +781,13 @@ impl ModuleDataKind {
                 }
                 None => false,
             },
+            ModuleDataKind::ConvertToHijackedVehicleCrateCollide(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
             ModuleDataKind::MoneyCrateCollide(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
@@ -906,6 +919,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::FloatUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::HijackerUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

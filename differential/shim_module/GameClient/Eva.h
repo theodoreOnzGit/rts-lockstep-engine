@@ -10,7 +10,8 @@ enum EvaMessage
 	EVA_SuperweaponLaunched_Enemy_ParticleCannon, EVA_SuperweaponLaunched_Enemy_Nuke, EVA_SuperweaponLaunched_Enemy_ScudStorm,
 	EVA_SuperweaponLaunched_Own_GPS_Scrambler, EVA_SuperweaponLaunched_Ally_GPS_Scrambler, EVA_SuperweaponLaunched_Enemy_GPS_Scrambler,
 	EVA_SuperweaponLaunched_Own_Sneak_Attack, EVA_SuperweaponLaunched_Ally_Sneak_Attack, EVA_SuperweaponLaunched_Enemy_Sneak_Attack,
-	EVA_BuildingSabotaged, EVA_CashStolen   /* p1w13-sonnet, batch R13: the sabotage crates */
+	EVA_BuildingSabotaged, EVA_CashStolen,   /* p1w13-sonnet, batch R13: the sabotage crates */
+	EVA_VehicleStolen   /* batch R13e: the hijacker */
 };
 class Eva
 {

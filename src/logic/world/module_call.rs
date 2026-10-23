@@ -471,6 +471,18 @@ pub enum ModuleCall {
     AiHackInternet { command_source: i32 },
     /// `aiMoveToPosition(pos, commandSource)`.
     AiMoveToPosition { pos: Coord3D, command_source: i32 },
+    // --- p1w13-sonnet --- (batch R13e: HijackerUpdate, set by ConvertToHijackedVehicleCrateCollide)
+    /// `HijackerUpdate::setTargetObject(object)` (`INVALID_ID` for `NULL`).
+    HijackerSetTargetObject(ObjectId),
+    /// `HijackerUpdate::setIsInVehicle(i)`.
+    HijackerSetIsInVehicle(bool),
+    /// `HijackerUpdate::setUpdate(u)`.
+    HijackerSetUpdate(bool),
+    /// `getAIUpdateInterface()->getDozerAIInterface() != NULL` (`ConvertToHijackedVehicleCrateCollide`).
+    AiGetDozerAIInterface,
+    /// `getDozerAIInterface()->cancelTask(task)`.
+    DozerCancelTask(i32),
+    // --- end p1w13-sonnet ---
     /// `ignoreObstacle(obstacle)` (`INVALID_ID` for `NULL`).
     AiIgnoreObstacle { obstacle: ObjectId },
     /// `getEnterTarget()`; replies [`ModuleReply::Id`].

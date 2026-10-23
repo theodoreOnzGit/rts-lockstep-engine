@@ -235,6 +235,8 @@ pub enum Undefined {
     UninitialisedLocal,
     /// `getAI()` is `NULL` and the module calls through it (`ActiveBody`'s `DAMAGE_KILLPILOT` of a rider-change vehicle).
     NullAi,
+    /// `getContain()` is `NULL` and the module calls through it (`HijackerUpdate`: a parachute template whose object has no contain module).
+    NullContainModule,
     /// `*(getContainedItemsList()->begin())` of a list with nothing in it (`ActiveBody`'s `DAMAGE_KILLPILOT` of a rider-change vehicle).
     EmptyContainedList,
     /// An array indexed by an enum value outside its range (`TheGlobalData->m_healthBonus[level]`).

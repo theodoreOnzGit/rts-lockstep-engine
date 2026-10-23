@@ -93,6 +93,7 @@ pub mod unit_crate_collide;
 pub mod veterancy_crate_collide;
 pub mod salvage_crate_collide;
 pub mod convert_to_car_bomb_crate_collide;
+pub mod convert_to_hijacked_vehicle_crate_collide;
 pub mod money_crate_collide;
 pub mod cleanup_area_power;
 pub mod baikonur_launch_power;
@@ -118,6 +119,7 @@ pub mod squish_collide;
 pub mod prone_update;
 pub mod enemy_near_update;
 pub mod float_update;
+pub mod hijacker_update;
 pub mod tech_building_behavior;
 pub mod fire_spread_update;
 pub mod active_body;
@@ -368,6 +370,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
             convert_to_car_bomb_crate_collide::ConvertToCarBombCrateCollide::get_interface_mask(),
             convert_to_car_bomb_crate_collide::ConvertToCarBombCrateCollide::new(object, Some(d.clone())).map(UpdateBody::ConvertToCarBombCrateCollide),
         )),
+        ModuleDataKind::ConvertToHijackedVehicleCrateCollide(d) => Some(made(
+            convert_to_hijacked_vehicle_crate_collide::ConvertToHijackedVehicleCrateCollide::get_interface_mask(),
+            convert_to_hijacked_vehicle_crate_collide::ConvertToHijackedVehicleCrateCollide::new(object, Some(d.clone())).map(UpdateBody::ConvertToHijackedVehicleCrateCollide),
+        )),
         ModuleDataKind::MoneyCrateCollide(d) => Some(made(
             money_crate_collide::MoneyCrateCollide::get_interface_mask(),
             money_crate_collide::MoneyCrateCollide::new(object, Some(d.clone())).map(UpdateBody::MoneyCrateCollide),
@@ -451,6 +457,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::FloatUpdate(d) => Some(made_update(
             UpdateModule::get_interface_mask(),
             float_update::FloatUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::FloatUpdate(m))),
+        )),
+        ModuleDataKind::HijackerUpdate(d) => Some(made_update(
+            UpdateModule::get_interface_mask(),
+            hijacker_update::HijackerUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::HijackerUpdate(m))),
         )),
         ModuleDataKind::TechBuildingBehavior(d) => Some(made_update(
             tech_building_behavior::TechBuildingBehavior::get_interface_mask(),
