@@ -88,6 +88,7 @@ const ObjectCreationList *ObjectCreationListStore::findObjectCreationList(const 
 	if (strcmp(name, "OCL_B") == 0) return &g_upOcls[1];
 	return 0;
 }
+Object *(*g_oclResultHook)(int list) = 0;   /* p1w13-sonnet, batch R14a */
 /* ObjectCreationList::create(ocl, primary, NULL) reaches this */
 Object *ObjectCreationList::createInternal(const Object *primary, const Object *secondary, UnsignedInt lifetimeFrames) const
 {
@@ -98,6 +99,9 @@ Object *ObjectCreationList::createInternal(const Object *primary, const Object *
 	/* --- p1w12-sonnet --- (FireOCLAfterWeaponCooldownUpdate passes a lifetime; the others pass 0) */
 	if (lifetimeFrames) ulog("ocllife %u", lifetimeFrames);
 	/* --- end p1w12-sonnet --- */
+	/* --- p1w13-sonnet --- (batch R14a: CreateObjectDie uses the object the list makes; the other drivers leave the hook unset: NULL) */
+	if (g_oclResultHook) return g_oclResultHook(this == &g_upOcls[0] ? 0 : 1);
+	/* --- end p1w13-sonnet --- */
 	return 0;
 }
 

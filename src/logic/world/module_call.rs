@@ -482,6 +482,8 @@ pub enum ModuleCall {
     AiGetDozerAIInterface,
     /// `getDozerAIInterface()->cancelTask(task)`.
     DozerCancelTask(i32),
+    /// `getAI()->transferAttack(fromID, toID)` (`CreateObjectDie`, batch R14a).
+    AiTransferAttack { from: ObjectId, to: ObjectId },
     // --- end p1w13-sonnet ---
     /// `ignoreObstacle(obstacle)` (`INVALID_ID` for `NULL`).
     AiIgnoreObstacle { obstacle: ObjectId },

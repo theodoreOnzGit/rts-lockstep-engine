@@ -99,6 +99,11 @@ pub struct ProbeAnswers {
     pub dozer: bool,
     /// batch R13e: the probe is a parachute's contain: `isValidContainerFor` answers `yes` and it and `addToContain` are lines of the trace.
     pub parachute: bool,
+    /// batch R14a: the body's `getPreviousHealth()`, `getCurrentSubdualDamageAmount()` and the source of `getLastDamageInfo()`, when the test gives them
+    /// (`None`: the probe leaves the question to a concrete body, as before).
+    pub previous_health: Option<f32>,
+    pub subdual_damage: Option<f32>,
+    pub last_damage_source: Option<ObjectId>,
     /// `getVelocity()` of the physics.
     pub velocity: Coord3D,
     /// `isMoving()` of the AI.
@@ -451,6 +456,14 @@ impl ProbeModule {
                     ModuleReply::Unhandled
                 }
             }
+            // batch R14a: the body's previous health, subdual damage and last damage source, when the test gives them
+            ModuleCall::GetPreviousHealth if self.answers.previous_health.is_some() => ModuleReply::Real(self.answers.previous_health.unwrap_or(0.0)),
+            ModuleCall::GetCurrentSubdualDamageAmount if self.answers.subdual_damage.is_some() => ModuleReply::Real(self.answers.subdual_damage.unwrap_or(0.0)),
+            ModuleCall::GetLastDamageInfo if self.answers.last_damage_source.is_some() => {
+                let mut d = crate::logic::damage::DamageInfo::default();
+                d.input.source_id = self.answers.last_damage_source.unwrap_or(INVALID_ID);
+                ModuleReply::Damage(d)
+            }
             // batch R12: the damage state, when the test gives one
             ModuleCall::GetDamageState if self.answers.damage_state.is_some() => ModuleReply::Int(self.answers.damage_state.unwrap_or(0)),
             // the body half of BodyModuleInterface belongs to the concrete bodies: the probe's body answers its own few
@@ -606,6 +619,10 @@ impl ProbeModule {
             // batch R13e: the hijacker's own module's calls (a probe is not one)
             ModuleCall::HijackerSetTargetObject(_) | ModuleCall::HijackerSetIsInVehicle(_) | ModuleCall::HijackerSetUpdate(_) => ModuleReply::Unhandled,
             ModuleCall::AiGetDozerAIInterface => ModuleReply::Bool(self.answers.dozer),
+            ModuleCall::AiTransferAttack { from, to } => {
+                world.body_trace(format!("transferattack {} {from} {to}", me.object));
+                ModuleReply::Done
+            }
             ModuleCall::IsValidContainerFor { obj, check_capacity } if self.answers.parachute => {
                 world.body_trace(format!("validfor {} {obj} {}", me.object, i32::from(check_capacity)));
                 ModuleReply::Bool(self.answers.yes)

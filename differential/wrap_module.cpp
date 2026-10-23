@@ -820,4 +820,5 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_crates_r13c.inc"   /* p1w13-sonnet, batch R13c: SalvageCrateCollide */
 #include "l9_crates_r13d.inc"   /* p1w13-sonnet, batch R13d: ConvertToCarBombCrateCollide */
 #include "l9_crates_r13e.inc"   /* p1w13-sonnet, batch R13e: ConvertToHijackedVehicleCrateCollide, HijackerUpdate */
+#include "l9_dies_r14.inc"   /* p1w13-sonnet, batch R14: die modules */
 /* --- end p1w13-sonnet --- */

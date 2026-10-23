@@ -323,6 +323,13 @@ impl World {
         }
     }
 
+    /// `ObjectCreationList::create(ocl, primary, secondary)` for a list that exists, and the object it makes (`CreateObjectDie`, batch R14a): the call is
+    /// [`CutCall::OclCreateWithSecondary`] and the object is `ocl_create_result`'s for the name (`INVALID_ID` for `NULL`).
+    pub fn ocl_create_returning(&mut self, primary: ObjectId, secondary: ObjectId, ocl: &[u8]) -> ObjectId {
+        self.cut(CutCall::OclCreateWithSecondary { primary, secondary, ocl: ocl.to_vec() });
+        self.cuts.ocl_create_result.get(ocl).copied().filter(|&id| self.objects.find(id).is_some()).unwrap_or(INVALID_ID)
+    }
+
     /// `obj->setOrientation(angle)` for a crate's new unit: a record under `crate_stub_object_calls`.
     pub fn crate_set_orientation(&mut self, id: ObjectId, angle: f32) {
         if self.cuts.crate_stub_object_calls {
@@ -736,6 +743,8 @@ pub struct ObjectCuts {
     /// batch R13e: under `crate_stub_object_calls`, the object `crate_new_object` makes has a probe contain whose `isValidContainerFor` answers this
     /// (`None`: no contain).
     pub crate_new_object_contain: Option<bool>,
+    /// batch R14a: what `ObjectCreationList::create` returns, per list name (`CreateObjectDie`; no entry: `NULL`).
+    pub ocl_create_result: BTreeMap<Vec<u8>, ObjectId>,
     /// batch R13: `Player::iterateObjects` per player, when the test lists them (no entry: the objects the player controls, in id order).
     pub player_objects: BTreeMap<PlayerIndex, Vec<ObjectId>>,
     /// The function-local `static` of `AutoDepositUpdate::getUpgradedSupplyBoost` (its own, not `MoneyCrateCollide`'s), the same way.
@@ -878,6 +887,7 @@ impl Default for ObjectCuts {
             money_crate_upgrade_static: None,
             crate_booby_trapped: false,
             crate_new_object_contain: None,
+            ocl_create_result: BTreeMap::new(),
             crate_stub_object_calls: false,
             player_objects: BTreeMap::new(),
             auto_deposit_upgrade_static: None,
