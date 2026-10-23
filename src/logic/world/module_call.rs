@@ -494,6 +494,15 @@ pub enum ModuleCall {
     AiGetHealed { target: ObjectId, command_source: i32 },
     /// `getAIUpdateInterface()->aiEnter(obj, cmdSource)` (`PilotFindVehicleUpdate`, batch R19).
     AiEnter { target: ObjectId, command_source: i32 },
+    /// `RadiusDecalUpdate::createRadiusDecal(tmpl, radius, pos)` (batch R20; `ObjectCreationList`'s attack nugget calls it).
+    RadiusDecalCreate { template: crate::logic::radius_decal::RadiusDecalTemplate, radius: f32, pos: Coord3D },
+    /// `RadiusDecalUpdate::killRadiusDecal()` (batch R20).
+    RadiusDecalKill,
+    /// `RadiusDecalUpdate::killWhenNoLongerAttacking(v)` (batch R20).
+    RadiusDecalKillWhenNoLongerAttacking(bool),
+    /// `getPhysics()->getTurning()` (`AnimationSteeringUpdate`, batch R20): replies [`ModuleReply::Int`], `TURN_NEGATIVE` -1, `TURN_NONE` 0,
+    /// `TURN_POSITIVE` 1.
+    PhysicsGetTurning,
     /// `getAIUpdateInterface()->aiFollowExitProductionPath(&path, ignoreObject, cmdSource)` (the production exits, batch R18).
     AiFollowExitProductionPath { path: Vec<Coord3D>, ignore_object: ObjectId, command_source: i32 },
     /// `ExitInterface::unreserveDoorForExit(door)` (batch R18).

@@ -119,6 +119,8 @@ pub mod poisoned_behavior;
 pub mod production_exit;
 pub mod weapon_bonus_update;
 pub mod pilot_find_vehicle_update;
+pub mod animation_steering_update;
+pub mod radius_decal_update;
 pub mod auto_find_healing_update;
 pub mod queue_production_exit_update;
 pub mod default_production_exit_update;
@@ -473,6 +475,14 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::PilotFindVehicleUpdate(d) => Some(made_update(
             pilot_find_vehicle_update::PilotFindVehicleUpdate::get_interface_mask(),
             pilot_find_vehicle_update::PilotFindVehicleUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::PilotFindVehicleUpdate(m))),
+        )),
+        ModuleDataKind::AnimationSteeringUpdate(d) => Some(made_update(
+            animation_steering_update::AnimationSteeringUpdate::get_interface_mask(),
+            animation_steering_update::AnimationSteeringUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::AnimationSteeringUpdate(m))),
+        )),
+        ModuleDataKind::RadiusDecalUpdate(d) => Some(made_update(
+            radius_decal_update::RadiusDecalUpdate::get_interface_mask(),
+            radius_decal_update::RadiusDecalUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::RadiusDecalUpdate(m))),
         )),
         ModuleDataKind::AutoFindHealingUpdate(d) => Some(made_update(
             auto_find_healing_update::AutoFindHealingUpdate::get_interface_mask(),

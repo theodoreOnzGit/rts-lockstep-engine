@@ -416,6 +416,10 @@ pub enum ModuleDataKind {
     WeaponBonusUpdate(Arc<crate::logic::modules::weapon_bonus_update::WeaponBonusUpdateModuleData>),
     /// `PilotFindVehicleUpdate` (batch R19).
     PilotFindVehicleUpdate(Arc<crate::logic::modules::pilot_find_vehicle_update::PilotFindVehicleUpdateModuleData>),
+    /// `AnimationSteeringUpdate` (batch R20).
+    AnimationSteeringUpdate(Arc<crate::logic::modules::animation_steering_update::AnimationSteeringUpdateModuleData>),
+    /// `RadiusDecalUpdate` (batch R20).
+    RadiusDecalUpdate(Arc<crate::logic::modules::radius_decal_update::RadiusDecalUpdateModuleData>),
     /// `AutoFindHealingUpdate` (batch R19).
     AutoFindHealingUpdate(Arc<crate::logic::modules::auto_find_healing_update::AutoFindHealingUpdateModuleData>),
     /// `QueueProductionExitUpdate` (batch R18).
@@ -578,6 +582,8 @@ impl ModuleDataKind {
             ModuleDataKind::PoisonedBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::WeaponBonusUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::PilotFindVehicleUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::AnimationSteeringUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::RadiusDecalUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::AutoFindHealingUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::QueueProductionExitUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::DefaultProductionExitUpdate(d) => &d.update.behavior.module_data,
@@ -970,6 +976,20 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::PilotFindVehicleUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::AnimationSteeringUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::RadiusDecalUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

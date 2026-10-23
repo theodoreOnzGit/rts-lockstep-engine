@@ -145,6 +145,8 @@ pub enum GridDecalOp {
     SetPosition(Coord3D),
     /// `setOpacity(o)`.
     SetOpacity(f32),
+    /// `update()` (batch R20, `RadiusDecalUpdate`): the client throbs the opacity of the decal it drew, if it drew one.
+    Update,
 }
 // --- end p1w13-sonnet ---
 

@@ -17,16 +17,22 @@
 //! `RadiusDecalTemplate`, wave 7 (`p1w10-sonnet`): the INI-parsed description of the circle a superweapon or an attack draws on the ground
 //! (a texture, a style, the opacity throb, a colour).
 //!
-//! Only the data half of `RadiusDecal.h/.cpp` is here: the template, its constructor, and its `DeliveryDecal` block parser, which
-//! `ObjectCreationList.cpp` (`AttackNugget`, `DeliverPayloadNugget`) and `DeliverPayloadData` embed. `RadiusDecal` itself (the instance
+//! The data half of `RadiusDecal.h/.cpp` is here: the template, its constructor, and its `DeliveryDecal` block parser, which
+//! `ObjectCreationList.cpp` (`AttackNugget`, `DeliverPayloadNugget`) and `DeliverPayloadData` embed. ~~`RadiusDecal` itself (the instance
 //! that owns a client `Shadow`, `createRadiusDecal`, `update`, `xfer`) draws through the projected shadow manager, which is the client's,
-//! and is not translated; `xferRadiusDecalTemplate` goes with it, because nothing in the logic that is translated xfers a template.
+//! and is not translated~~ **CORRECTED 2026-10-23 (batch R20)**: the logic half of `RadiusDecal` (its `m_empty`, which `RadiusDecalUpdate`
+//! sleeps by, `clear`, `update`, `xferRadiusDecal` and the template's `createRadiusDecal`) is [`RadiusDecal`]; the drawing through the
+//! projected shadow manager stays the client's. `xferRadiusDecalTemplate` is not translated: nothing in the logic xfers a template.
 //!
 //! Verified through `differential_object_creation_list.rs`, which parses the block with the real `RadiusDecalTemplate` constructor and
 //! parser (verbatim text of `RadiusDecal.cpp`, cut out by `build.rs`) inside `Attack` and `DeliverPayload` blocks.
 
+use crate::common::base_type::Coord3D;
+use crate::common::game_type::ObjectId;
 use crate::common::ini::{FieldParse, Ini, IniResult, UserData};
 use crate::common::thing_template::SHADOW_NAMES;
+use crate::logic::world::game_logic::World;
+use crate::logic::world::object_events::{GridDecalOp, ObjectClientEvent};
 
 /// `SHADOW_ALPHA_DECAL` (`Shadow.h`): bit 5 of `ShadowType`, named `SHADOW_NAMES[5]`.
 pub const SHADOW_ALPHA_DECAL: u32 = 0x20;
@@ -90,6 +96,69 @@ impl RadiusDecalTemplate {
     /// `self`; an earlier value is kept for any field the block leaves out).
     pub fn parse_radius_decal_template(ini: &mut Ini<'_>, store: &mut RadiusDecalTemplate) -> IniResult<()> {
         ini.init_from_ini(store, &RADIUS_DECAL_FIELDS)
+    }
+}
+
+/// `class RadiusDecal`, its logic half (batch R20, `RadiusDecalUpdate`): whether the decal is empty. The rest (the client's `Shadow`, the template
+/// it was drawn from) is the client's: each call is an [`ObjectClientEvent::GridDecal`] of the owning object and the decal's index in its module.
+/// "It is very important, for game/net sync reasons, to ensure that isEmpty() returns the same value, regardless of whether this decal will be
+/// visible to the local player or not": it is set by the logic alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RadiusDecal {
+    /// `m_empty`.
+    pub empty: bool,
+}
+
+impl Default for RadiusDecal {
+    /// `RadiusDecal()`: empty.
+    fn default() -> Self {
+        RadiusDecal { empty: true }
+    }
+}
+
+impl RadiusDecal {
+    /// `isEmpty()`.
+    pub fn is_empty(&self) -> bool {
+        self.empty
+    }
+
+    /// `clear()`: empty, and the client lets its shadow go.
+    pub fn clear(&mut self, world: &mut World, owner: ObjectId, index: u32) {
+        self.empty = true;
+        world.emit(ObjectClientEvent::GridDecal { object_id: owner, index, op: GridDecalOp::Clear });
+    }
+
+    /// `update()`: the client's opacity throb.
+    pub fn update(&self, world: &mut World, owner: ObjectId, index: u32) {
+        world.emit(ObjectClientEvent::GridDecal { object_id: owner, index, op: GridDecalOp::Update });
+    }
+
+    /// `xferRadiusDecal(xfer)`: nothing saved ("@todo implement me"); a load clears the decal. The load has no world, so the client is not told
+    /// (it rebuilds its drawing after a load anyway).
+    pub fn xfer_radius_decal(&mut self, loading: bool) {
+        if loading {
+            self.empty = true;
+        }
+    }
+}
+
+impl RadiusDecalTemplate {
+    /// `createRadiusDecal(pos, radius, owningPlayer, result)`: `result` is cleared, then not empty if there is an owning player, a texture
+    /// and a positive radius ("it is now considered nonEmpty, regardless of the state of m_decal"). Whether the client draws it (only for the
+    /// local player, its colour) is the client's, told by one [`GridDecalOp::Create`] (which stands for the whole call, the clear included).
+    /// `decal` is the owning object and the decal's index in its module (the client event's address).
+    pub fn create_radius_decal(&self, world: &mut World, decal: (ObjectId, u32), pos: Coord3D, radius: f32, owning_player: Option<i32>, result: &mut RadiusDecal) {
+        let (owner, index) = decal;
+        result.empty = true;
+        world.emit(ObjectClientEvent::GridDecal {
+            object_id: owner,
+            index,
+            op: GridDecalOp::Create { template: self.clone(), radius, position: pos, player: owning_player },
+        });
+        if owning_player.is_none() || self.name.is_empty() || radius <= 0.0 || crate::logic::modules::plant(1871) {
+            return;
+        }
+        result.empty = false;
     }
 }
 

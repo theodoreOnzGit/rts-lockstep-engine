@@ -63,7 +63,18 @@ RadiusDecal::RadiusDecal() : m_template(0), m_decal(0), m_empty(true) {}
 RadiusDecal::RadiusDecal(const RadiusDecal& that) : m_template(that.m_template), m_decal(that.m_decal), m_empty(that.m_empty) {}
 RadiusDecal& RadiusDecal::operator=(const RadiusDecal& that) { m_template = that.m_template; m_decal = that.m_decal; m_empty = that.m_empty; return *this; }
 RadiusDecal::~RadiusDecal() {}
-void RadiusDecal::clear() { ulog("dclear %d", dsIndex(this)); }
+/* batch R20 (RadiusDecalUpdate sleeps by isEmpty()): clear() and createRadiusDecal() also keep RadiusDecal.cpp's m_empty, as upstream (the stand-in
+** never makes a client Shadow, so m_decal stays NULL); update() is a line; xferRadiusDecal() is RadiusDecal.cpp's body, verbatim */
+void RadiusDecal::clear() { ulog("dclear %d", dsIndex(this)); m_template = NULL; m_decal = NULL; m_empty = true; }
+void RadiusDecal::update() { ulog("dupdate %d", dsIndex(this)); }
+void RadiusDecal::xferRadiusDecal( Xfer *xfer )
+{
+	/// @todo implement me
+	if (xfer->getXferMode() == XFER_LOAD)
+	{
+		clear();
+	}
+}
 void RadiusDecal::setPosition(const Coord3D& pos) { ulog("dpos %d %08x %08x %08x", dsIndex(this), realBits(pos.x), realBits(pos.y), realBits(pos.z)); }
 void RadiusDecal::setOpacity( const Real o ) { ulog("dopacity %d %08x", dsIndex(this), realBits(o)); }
 void RadiusDecalTemplate::createRadiusDecal(const Coord3D& pos, Real radius, const Player* owningPlayer, RadiusDecal& result) const
@@ -71,6 +82,15 @@ void RadiusDecalTemplate::createRadiusDecal(const Coord3D& pos, Real radius, con
 	ulog("dcreate %d %s %u %08x %08x %u %d %d %08x %08x,%08x,%08x %d", dsIndex(&result), m_name.str(), (unsigned)m_shadowType, realBits(m_minOpacity), realBits(m_maxOpacity),
 		m_opacityThrobTime, (int)m_color, (int)m_onlyVisibleToOwningPlayer, realBits(radius), realBits(pos.x), realBits(pos.y), realBits(pos.z),
 		owningPlayer ? (int)owningPlayer->m_idx : -1);
+	/* RadiusDecal.cpp: result.clear() (its line is this call's), then "it is now considered nonEmpty, regardless of the state of m_decal" */
+	result.m_template = NULL;
+	result.m_decal = NULL;
+	result.m_empty = true;
+	if (owningPlayer == NULL)
+		return;
+	if (m_name.isEmpty() || radius <= 0.0f)
+		return;
+	result.m_empty = false;
 }
 
 extern "C" {

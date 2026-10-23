@@ -329,6 +329,7 @@ fn decal_lines(events: &[ClientEvent], tally: &RefCell<Tally>) -> Vec<String> {
                 log.push(format!("dpos {index} {:08x} {:08x} {:08x}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits()))
             }
             GridDecalOp::SetOpacity(o) => log.push(format!("dopacity {index} {:08x}", o.to_bits())),
+            GridDecalOp::Update => log.push(format!("dupdate {index}")),
         }
     }
     log

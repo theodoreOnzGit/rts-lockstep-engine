@@ -117,6 +117,8 @@ pub struct ProbeAnswers {
     /// batch R19: what `wouldLikeToCollideWith(other)` answers, as a collide module: `None` for `FALSE` and no trace (the probe's old
     /// answer), `Some(list)` for whether `other` is in the list, with a trace line.
     pub collide_with: Option<Vec<ObjectId>>,
+    /// batch R20: `getTurning()` of the physics.
+    pub turning: i32,
     pub back_crushed: Option<bool>,
     /// `getVelocity()` of the physics.
     pub velocity: Coord3D,
@@ -653,6 +655,8 @@ impl ProbeModule {
                 ModuleReply::Done
             }
             ModuleCall::AiIsDoingGroundMovement => ModuleReply::Bool(self.answers.ground_movement),
+            ModuleCall::PhysicsGetTurning => ModuleReply::Int(self.answers.turning),
+            ModuleCall::RadiusDecalCreate { .. } | ModuleCall::RadiusDecalKill | ModuleCall::RadiusDecalKillWhenNoLongerAttacking(_) => ModuleReply::Unhandled,
             ModuleCall::AiGetHealed { target, command_source } => {
                 world.body_trace(format!("aiheal {} {target} {command_source}", me.object));
                 ModuleReply::Done

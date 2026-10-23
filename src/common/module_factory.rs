@@ -765,6 +765,16 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::pilot_find_vehicle_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::pilot_find_vehicle_update::PilotFindVehicleUpdate::get_interface_mask()),
         }),
+        "AnimationSteeringUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::animation_steering_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::animation_steering_update::AnimationSteeringUpdate::get_interface_mask()),
+        }),
+        "RadiusDecalUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::radius_decal_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::radius_decal_update::RadiusDecalUpdate::get_interface_mask()),
+        }),
         "AutoFindHealingUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::auto_find_healing_update::new_module_data),
@@ -1003,6 +1013,8 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::PoisonedBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::WeaponBonusUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::PilotFindVehicleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::AnimationSteeringUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::RadiusDecalUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::AutoFindHealingUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::QueueProductionExitUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::DefaultProductionExitUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),

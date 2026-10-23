@@ -1660,6 +1660,21 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    /// p1w13-sonnet, batch R20: RadiusDecalUpdate (kind 0), AnimationSteeringUpdate (kind 1) (differential/l9_decal_steer_r20.inc).
+    pub fn ref_l9r20_run(
+        kind: c_int,
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
     /// p1w13-sonnet, batch R19: AutoFindHealingUpdate (kind 0), PilotFindVehicleUpdate (kind 1) (differential/l9_find_r19.inc).
     pub fn ref_l9r19_run(
         kind: c_int,
