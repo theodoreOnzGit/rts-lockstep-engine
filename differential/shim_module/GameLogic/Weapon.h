@@ -78,11 +78,59 @@ extern WeaponStore *TheWeaponStore;
 ** ModTestWeapon by module_prelude.h so that no inline member clashes with the weapon fixtures' real Weapon */
 #include "Common/GameType.h"
 /* --- p1w13-sonnet --- (batch R2: TransportContain) */
+#include "GameLogic/Damage.h"   /* batch R39: the template's damage and death types */
+/* --- p1w13-sonnet --- (batch R39: StickyBombUpdate's detonation reads a template's damage through a null bonus) Weapon.h lines 257-291, verbatim but
+** for appendBonuses, which nothing here calls */
+class WeaponBonus
+{
+public:
+
+	enum Field
+	{
+		DAMAGE = 0,
+		RADIUS,
+		RANGE,
+		RATE_OF_FIRE,
+		PRE_ATTACK,
+
+		FIELD_COUNT	// keep last
+	};
+
+	WeaponBonus()
+	{
+		clear();
+	}
+
+	inline void clear()
+	{
+		for (int i = 0; i < FIELD_COUNT; ++i)
+			m_field[i] = 1.0f;
+	}
+
+	inline Real getField(Field f) const { return m_field[f]; }
+	inline void setField(Field f, Real v) { m_field[f] = v; }
+
+private:
+	Real m_field[FIELD_COUNT];
+
+};
+/* --- end p1w13-sonnet --- */
 class WeaponTemplate
 {
 public:
 	Bool isContactWeapon() const { return m_contact; }
 	Bool m_contact = false;
+	/* --- p1w13-sonnet --- (batch R39) the damage numbers, as Weapon.cpp's getters compute them (the field times the bonus's), and the three types */
+	Real m_primaryDamage = 0.0f, m_primaryDamageRadius = 0.0f, m_secondaryDamage = 0.0f, m_secondaryDamageRadius = 0.0f;
+	Int m_damageTypeT = 0, m_deathTypeT = 0, m_damageStatusTypeT = 0;
+	Real getPrimaryDamage(const WeaponBonus& bonus) const { return m_primaryDamage * bonus.getField(WeaponBonus::DAMAGE); }
+	Real getPrimaryDamageRadius(const WeaponBonus& bonus) const { return m_primaryDamageRadius * bonus.getField(WeaponBonus::RADIUS); }
+	Real getSecondaryDamage(const WeaponBonus& bonus) const { return m_secondaryDamage * bonus.getField(WeaponBonus::DAMAGE); }
+	Real getSecondaryDamageRadius(const WeaponBonus& bonus) const { return m_secondaryDamageRadius * bonus.getField(WeaponBonus::RADIUS); }
+	DamageType getDamageType() const { return (DamageType)m_damageTypeT; }
+	DeathType getDeathType() const { return (DeathType)m_deathTypeT; }
+	ObjectStatusTypes getDamageStatusType() const { return (ObjectStatusTypes)m_damageStatusTypeT; }
+	/* --- end p1w13-sonnet --- */
 };
 /* --- end p1w13-sonnet --- */
 class Weapon

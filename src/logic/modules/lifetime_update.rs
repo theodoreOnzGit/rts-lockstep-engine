@@ -251,6 +251,8 @@ impl LifetimeUpdate {
     /// The module's answer to one of `Object`'s calls.
     pub fn module_call(&mut self, world: &mut World, _me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
+            // batch R39: StickyBombUpdate asks
+            ModuleCall::LifetimeGetDieFrame => ModuleReply::Int(self.die_frame as i32),
             ModuleCall::SetLifetimeRange { min_frames, max_frames } => {
                 let mut rng = std::mem::take(&mut world.random);
                 self.set_lifetime_range(world, &mut rng, min_frames, max_frames);

@@ -38,9 +38,11 @@ void Object::clearDisabled(DisabledType t)
 	m_disabledBits &= ~(1u << (unsigned)t);
 }
 Bool Object::isSignificantlyAboveTerrain() const { return m_pos.z > (Real)(-(3 * 3)) * g_ddGravity; }
+const AudioEventRTS *(*g_perUnitSoundHook)(const AsciiString &) = 0;   /* batch R39: StickyBombUpdate's two sounds (null: none) */
 const AudioEventRTS *ModTestThingTemplate::getPerUnitSound(const AsciiString &name) const
 {
 	if (name.isEmpty()) return &g_ddNoSound;
+	if (g_perUnitSoundHook) { const AudioEventRTS *e = g_perUnitSoundHook(name); if (e) return e; }
 	if (strcmp(name.str(), "VoiceEject") == 0) return &m_voiceEject;
 	if (strcmp(name.str(), "SoundEject") == 0) return &m_soundEject;
 	return &g_ddNoSound;

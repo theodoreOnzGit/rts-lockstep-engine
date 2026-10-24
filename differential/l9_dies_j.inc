@@ -39,9 +39,11 @@ std::vector<unsigned char> g_fjSaved;
 
 }  // namespace
 
+bool g_fxPosRadius = false;   /* batch R39: StickyBombUpdate's FX has an override radius, a fifth word of the line */
 void FXList::doFXPos(const FXList *fx, const Coord3D *primary, const Matrix3D *primaryMtx, const Real primarySpeed, const Coord3D *secondary, const Real overrideRadius)
 {
-	if (fx) ulog("fxpos %d %u,%u,%u", fxId(fx), realBits(primary->x), realBits(primary->y), realBits(primary->z));
+	if (fx && g_fxPosRadius) ulog("fxpos %d %u,%u,%u r%08x", fxId(fx), realBits(primary->x), realBits(primary->y), realBits(primary->z), realBits(overrideRadius));
+	else if (fx) ulog("fxpos %d %u,%u,%u", fxId(fx), realBits(primary->x), realBits(primary->y), realBits(primary->z));
 }
 
 extern "C" {

@@ -430,6 +430,8 @@ pub enum ModuleDataKind {
     ToppleUpdate(Arc<crate::logic::modules::topple_update::ToppleUpdateModuleData>),
     /// `PropagandaTowerBehavior` (batch R37).
     PropagandaTowerBehavior(Arc<crate::logic::modules::propaganda_tower_behavior::PropagandaTowerBehaviorModuleData>),
+    /// `StickyBombUpdate` (batch R39).
+    StickyBombUpdate(Arc<crate::logic::modules::sticky_bomb_update::StickyBombUpdateModuleData>),
     /// `StructureToppleUpdate` (batch R36).
     StructureToppleUpdate(Arc<crate::logic::modules::structure_topple_update::StructureToppleUpdateModuleData>),
     /// `NeutronBlastBehavior` (batch R35).
@@ -628,6 +630,7 @@ impl ModuleDataKind {
             ModuleDataKind::HordeUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::ToppleUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::PropagandaTowerBehavior(d) => &d.update.behavior.module_data,
+            ModuleDataKind::StickyBombUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::StructureToppleUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::NeutronBlastBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::TensileFormationUpdate(d) => &d.update.behavior.module_data,
@@ -1078,6 +1081,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::PropagandaTowerBehavior(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::StickyBombUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

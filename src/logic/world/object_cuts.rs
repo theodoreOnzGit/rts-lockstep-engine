@@ -214,6 +214,13 @@ impl World {
         out
     }
 
+    /// batch R39: `ThePartitionManager->iterateObjectsInRange(&position, range, dc)` walked with `firstWithNumeric`/`nextWithNumeric`: each
+    /// candidate with its numeric (`ObjectCuts::range_scan` and `range_scan_numeric` answer).
+    pub fn partition_iterate_objects_in_range_numeric_at(&mut self, position: Coord3D, range: f32, dc: i32) -> Vec<(ObjectId, f32)> {
+        self.cut(CutCall::PartitionIterateObjectsInRangeAt { position, range, dc });
+        self.cuts.range_scan.iter().enumerate().map(|(i, &id)| (id, self.cuts.range_scan_numeric.get(i).copied().unwrap_or(0.0))).collect()
+    }
+
     /// batch R32: `ThePartitionManager->iterateObjectsInRange(&position, range, dc, NULL)`: the candidates, in iteration order
     /// (`ObjectCuts::range_scan` answers).
     pub fn partition_iterate_objects_in_range_at(&mut self, position: Coord3D, range: f32, dc: i32) -> Vec<ObjectId> {
@@ -1105,6 +1112,9 @@ pub struct ObjectCuts {
     /// What `ThePartitionManager->iterateObjectsInRange(..)` returns for a module that scans around its object (`AutoHealBehavior`'s allies in a
     /// radius), in the order it is visited: the filters are the partition manager's.
     pub range_scan: Vec<ObjectId>,
+    /// batch R39: the numeric `firstWithNumeric`/`nextWithNumeric` give each of [`ObjectCuts::range_scan`]'s objects (the distance squared;
+    /// 0 for one past its end).
+    pub range_scan_numeric: Vec<f32>,
     /// `Player::getPlayerTemplate()->getSide()` per player (`None`: no template).
     pub player_sides: BTreeMap<PlayerIndex, Vec<u8>>,
     /// What `TheTerrainLogic->findClosestEdgePoint(pos)` adds to `pos` until the layer-12 adapter plugs the terrain in.
@@ -1230,6 +1240,7 @@ impl Default for ObjectCuts {
             // --- p1w12-sonnet ---
             cur_weapon: BTreeMap::new(),
             range_scan: Vec::new(),
+            range_scan_numeric: Vec::new(),
             player_sides: BTreeMap::new(),
             edge_point_offset: crate::common::base_type::Coord3D { x: 0.0, y: 0.0, z: 0.0 },
             farthest_edge_point_offset: Coord3D { x: 0.0, y: 0.0, z: 0.0 },

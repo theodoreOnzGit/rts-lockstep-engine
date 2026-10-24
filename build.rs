@@ -3415,6 +3415,24 @@ mod differential {
                 let cut = text.replace(loop_head, "Real j; for (j = m_lastCrushedLocation;");
                 std::fs::write(mod_gen.join("StructureToppleUpdate_edit.cpp"), cut).expect("write StructureToppleUpdate_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R39 (differential/l9_sticky_bomb_r39.inc): StickyBombUpdate.cpp's initStickyBomb keeps LifetimeUpdate's name key in a
+                // function-local `static`, which the test's per-case reset of the name key generator would leave stale; the `static` dropped
+                // (asserted once), into mod_gen/StickyBombUpdate_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Update/StickyBombUpdate.cpp");
+                let text = std::fs::read_to_string(&path).expect("read StickyBombUpdate.cpp");
+                let key = "static NameKeyType key_LifetimeUpdate";
+                assert_eq!(text.matches(key).count(), 1, "StickyBombUpdate.cpp: initStickyBomb's static name key must occur once");
+                let cut = text.replace(key, "NameKeyType key_LifetimeUpdate");
+                std::fs::write(mod_gen.join("StickyBombUpdate_edit.cpp"), cut).expect("write StickyBombUpdate_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
+                // The header is already in the unit (RebuildHoleBehavior's driver, batch R15, stands in for two of the bomb's methods), so the
+                // driver compiles the class under another name from a copy of the header whose include guard is renamed (asserted twice).
+                let path = up.join("GameEngine/Include/GameLogic/Module/StickyBombUpdate.h");
+                let text = std::fs::read_to_string(&path).expect("read StickyBombUpdate.h");
+                let guard = "__STICK_BOMB_UPDATE_H";
+                assert_eq!(text.matches(guard).count(), 3, "StickyBombUpdate.h: the include guard must occur three times (two lines and the end comment)");
+                std::fs::write(mod_gen.join("StickyBombUpdate_r39.h"), text.replace(guard, "__STICK_BOMB_UPDATE_H_R39")).expect("write StickyBombUpdate_r39.h");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();

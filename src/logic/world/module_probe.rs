@@ -192,6 +192,8 @@ pub struct ProbeAnswers {
     pub trace_damage_state: bool,
     /// batch R35: `killAllContained()` is a line of the trace (`bt killall <object>`).
     pub trace_kill_contained: bool,
+    /// batch R39: `LifetimeUpdate::getDieFrame()`, for a probe that stands in for one (`None`: it does not answer).
+    pub lifetime_die_frame: Option<u32>,
     // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     // --- p1w7-sonnet ---
@@ -1040,7 +1042,15 @@ impl ProbeModule {
             | ModuleCall::ScaffoldSetVerticalSpeed(_)
             | ModuleCall::BridgeTowerSetBridge(_)
             | ModuleCall::BridgeTowerGetBridgeId
-            | ModuleCall::BridgeTowerSetTowerType(_) => ModuleReply::Unhandled,
+            | ModuleCall::BridgeTowerSetTowerType(_)
+            | ModuleCall::StickyBombInit { .. }
+            | ModuleCall::StickyBombIsTimedBomb
+            | ModuleCall::StickyBombGetDetonationFrame => ModuleReply::Unhandled,
+            // batch R39: a probe named LifetimeUpdate stands in for one (`lifetime_die_frame`)
+            ModuleCall::LifetimeGetDieFrame => match self.answers.lifetime_die_frame {
+                Some(f) => ModuleReply::Int(f as i32),
+                None => ModuleReply::Unhandled,
+            },
             ModuleCall::DoesSpecialPowerHaveOverridableDestinationActive | ModuleCall::DoesSpecialPowerHaveOverridableDestination => {
                 if self.answers.has & (1 << 8) != 0 {
                     ModuleReply::Bool(self.answers.yes)

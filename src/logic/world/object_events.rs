@@ -335,6 +335,8 @@ pub enum ObjectClientEvent {
     FxListDoFxObjSecondary { fx: Vec<u8>, object_id: ObjectId, secondary: ObjectId },
     /// `FXList::doFXPos(fx, &position)` (`FXListDie` with `OrientToObject = No`).
     FxListDoFxPos { fx: Vec<u8>, position: Coord3D },
+    /// batch R39: `FXList::doFXPos(fx, &position, NULL, 0, NULL, overrideRadius)` (`StickyBombUpdate::detonate`).
+    FxListDoFxPosRadius { fx: Vec<u8>, position: Coord3D, radius: f32 },
     // --- end p1w11-sonnet ---
     // --- end p1l9-example ---
 }

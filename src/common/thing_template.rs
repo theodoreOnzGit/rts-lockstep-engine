@@ -1164,6 +1164,11 @@ impl ThingTemplate {
         self.per_unit_sounds.get(sound_name).unwrap_or(&NO_SOUND)
     }
 
+    /// batch R39: a per-unit sound set directly (a test seam: the differential tests' templates are not read from INI).
+    pub fn friend_set_per_unit_sound(&mut self, sound_name: &[u8], event: AudioEventName) {
+        self.per_unit_sounds.insert(sound_name.to_vec(), event);
+    }
+
     /// `getAllPerUnitSounds()`.
     pub fn get_all_per_unit_sounds(&self) -> &BTreeMap<Vec<u8>, AudioEventName> {
         &self.per_unit_sounds

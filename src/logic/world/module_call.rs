@@ -664,6 +664,16 @@ pub enum ModuleCall {
     /// `setVerticalSpeed(verticalSpeed)`.
     ScaffoldSetVerticalSpeed(f32),
     // --- end p1w13-sonnet ---
+    // --- p1w13-sonnet --- (batch R39: StickyBombUpdate and what it asks of LifetimeUpdate)
+    /// `LifetimeUpdate::getDieFrame()`; replies [`ModuleReply::Int`] (the frame's bits).
+    LifetimeGetDieFrame,
+    /// `StickyBombUpdate::initStickyBomb(target, bomber, specificPos)` (an id that is no object is `NULL`).
+    StickyBombInit { target: ObjectId, bomber: ObjectId, specific_pos: Option<Coord3D> },
+    /// `StickyBombUpdate::isTimedBomb()`; replies [`ModuleReply::Bool`].
+    StickyBombIsTimedBomb,
+    /// `StickyBombUpdate::getDetonationFrame()`; replies [`ModuleReply::Int`] (the frame's bits).
+    StickyBombGetDetonationFrame,
+    // --- end p1w13-sonnet ---
     // --- p1w13-sonnet --- (batch R38: `BridgeTowerBehaviorInterface`, which `TerrainLogic`'s `Bridge::createTower` drives)
     /// `setBridge(bridge)` (the bridge's id; one that is no object is `setBridge(NULL)`).
     BridgeTowerSetBridge(ObjectId),

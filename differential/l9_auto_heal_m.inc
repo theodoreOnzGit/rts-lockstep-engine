@@ -19,6 +19,7 @@ ParticleSystemID g_ahPsLastId = 0;
 ParticleSystemManager g_ahPsm;
 PartitionManager g_ahPm;
 std::vector<Object *> g_ahRange;
+std::vector<Real> g_ahRangeNums;   /* batch R39: the numerics of g_ahRange's objects (StickyBombUpdate) */
 
 ModuleData *l9ahRead(const char *filename)
 {
@@ -95,6 +96,7 @@ SimpleObjectIterator *PartitionManager::iterateObjectsInRange( const Coord3D *po
 	if (g_ahRangeHook) g_ahRangeHook(pos, maxDist, filters);
 	SimpleObjectIterator *it = new SimpleObjectIterator;
 	it->m_list = g_ahRange;
+	it->m_nums = g_ahRangeNums;
 	return it;
 }
 

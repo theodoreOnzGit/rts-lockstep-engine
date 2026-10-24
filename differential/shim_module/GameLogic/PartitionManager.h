@@ -22,9 +22,11 @@ class SimpleObjectIterator : public ObjectIterator
 public:
 	Object *first() { m_i = 0; return next(); }
 	Object *next() { return m_i < m_list.size() ? m_list[m_i++] : 0; }
-	/* batch R33: EMPUpdate (the numeric is the iteration's distance; EMPUpdate never reads it) */
-	Object *firstWithNumeric(Real *num) { if (num) *num = 0.0f; return first(); }
-	Object *nextWithNumeric(Real *num) { if (num) *num = 0.0f; return next(); }
+	/* batch R33: EMPUpdate (the numeric is the iteration's distance; EMPUpdate never reads it); batch R39: StickyBombUpdate reads it, the
+	** test's m_nums (0 past their end) */
+	Object *firstWithNumeric(Real *num) { m_i = 0; return nextWithNumeric(num); }
+	Object *nextWithNumeric(Real *num) { if (num) *num = m_i < m_nums.size() ? m_nums[m_i] : 0.0f; return next(); }
+	std::vector<Real> m_nums;
 	Int getCount() { return (Int)m_list.size(); }   /* batch R25: HordeUpdate (ObjectIter.h's, the number of objects) */
 	std::vector<Object *> m_list;
 	size_t m_i = 0;
