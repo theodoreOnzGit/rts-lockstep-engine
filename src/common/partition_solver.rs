@@ -87,11 +87,7 @@ pub struct PartitionSolver {
 
 impl PartitionSolver {
     /// `PartitionSolver(elements, spaces, solveHow)`.
-    pub fn new(
-        elements: &[PairObjectIdAndUInt],
-        spaces: &[PairObjectIdAndUInt],
-        solve_how: SolutionType,
-    ) -> Self {
+    pub fn new(elements: &[PairObjectIdAndUInt], spaces: &[PairObjectIdAndUInt], solve_how: SolutionType) -> Self {
         PartitionSolver {
             how_to_solve: solve_how,
             data: elements.to_vec(),
@@ -196,11 +192,7 @@ mod tests {
     /// The documented tie order: a stable sort by size, largest first.
     #[test]
     fn tie_order_is_stable_by_input_index() {
-        let mut p = PartitionSolver::new(
-            &[(1, 2), (2, 7), (3, 2), (4, 7), (5, 2)],
-            &[(10, 4), (20, 4), (30, 9)],
-            PreferFastSolution,
-        );
+        let mut p = PartitionSolver::new(&[(1, 2), (2, 7), (3, 2), (4, 7), (5, 2)], &[(10, 4), (20, 4), (30, 9)], PreferFastSolution);
         p.solve();
         assert_eq!(p.data(), &vec![(2, 7), (4, 7), (1, 2), (3, 2), (5, 2)]);
         assert_eq!(p.spaces(), &vec![(30, 9), (10, 4), (20, 4)]);
@@ -221,11 +213,7 @@ mod tests {
     /// the sort is stable).
     #[test]
     fn solve_is_repeatable() {
-        let mut p = PartitionSolver::new(
-            &[(1, 2), (2, 7), (3, 2)],
-            &[(10, 4), (20, 4), (30, 9)],
-            PreferFastSolution,
-        );
+        let mut p = PartitionSolver::new(&[(1, 2), (2, 7), (3, 2)], &[(10, 4), (20, 4), (30, 9)], PreferFastSolution);
         p.solve();
         let first = p.get_solution().clone();
         p.solve();

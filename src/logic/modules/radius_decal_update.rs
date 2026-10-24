@@ -24,22 +24,19 @@
 
 use std::sync::Arc;
 
-use crate::common::base_type::Coord3D;
 use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse};
 use crate::common::module::{ModuleDataKind, ObjectId};
-use crate::common::object_status_types::OBJECT_STATUS_IS_ATTACKING;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER,
-    UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{UpdateModule, UpdateModuleData, SleepyUpdatePhase, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
-use crate::logic::radius_decal::{RadiusDecal, RadiusDecalTemplate};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::sleepy::UpdateHandle;
 use crate::logic::world::update_body::UpdateBody;
+use crate::common::object_status_types::OBJECT_STATUS_IS_ATTACKING;
+use crate::logic::radius_decal::{RadiusDecal, RadiusDecalTemplate};
+use crate::common::base_type::Coord3D;
 
 /// `class RadiusDecalUpdateModuleData : public UpdateModuleData`: no fields of its own.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -53,24 +50,17 @@ static FIELD_PARSE: [FieldParse<RadiusDecalUpdateModuleData>; 1] = [FieldParse::
 
 impl RadiusDecalUpdateModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, RadiusDecalUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, RadiusDecalUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<RadiusDecalUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<RadiusDecalUpdateModuleData> {
         let mut data = RadiusDecalUpdateModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                RadiusDecalUpdateModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, RadiusDecalUpdateModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -106,19 +96,11 @@ impl RadiusDecalUpdate {
     }
 
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and an empty decal, the kill flag false.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<RadiusDecalUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<RadiusDecalUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(RadiusDecalUpdate {
-            update,
-            data,
-            delivery_decal: RadiusDecal::default(),
-            kill_when_no_longer_attacking: false,
-        })
+        Ok(RadiusDecalUpdate { update, data, delivery_decal: RadiusDecal::default(), kill_when_no_longer_attacking: false })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -142,12 +124,7 @@ impl RadiusDecalUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -168,41 +145,17 @@ impl RadiusDecalUpdate {
 
     /// The state the test compares: the decal is empty, the kill flag.
     pub fn state_words(&self) -> [u32; 2] {
-        [
-            u32::from(self.delivery_decal.is_empty()),
-            u32::from(self.kill_when_no_longer_attacking),
-        ]
+        [u32::from(self.delivery_decal.is_empty()), u32::from(self.kill_when_no_longer_attacking)]
     }
 
     /// `createRadiusDecal(tmpl, radius, pos)`: the old decal cleared, the new one made for the controlling player, and awake while it is not
     /// empty.
-    pub fn create_radius_decal(
-        &mut self,
-        world: &mut World,
-        me: ObjectId,
-        tmpl: &RadiusDecalTemplate,
-        radius: f32,
-        pos: Coord3D,
-    ) {
+    pub fn create_radius_decal(&mut self, world: &mut World, me: ObjectId, tmpl: &RadiusDecalTemplate, radius: f32, pos: Coord3D) {
         self.delivery_decal.clear(world, me, 0);
         let player = world.get_controlling_player(me);
-        tmpl.create_radius_decal(
-            world,
-            (me, 0),
-            pos,
-            radius,
-            player,
-            &mut self.delivery_decal,
-        );
+        tmpl.create_radius_decal(world, (me, 0), pos, radius, player, &mut self.delivery_decal);
         let empty = self.delivery_decal.is_empty() != crate::logic::modules::plant(1872);
-        update_behavior::set_wake_frame(
-            world,
-            if empty {
-                UPDATE_SLEEP_FOREVER
-            } else {
-                UPDATE_SLEEP_NONE
-            },
-        );
+        update_behavior::set_wake_frame(world, if empty { UPDATE_SLEEP_FOREVER } else { UPDATE_SLEEP_NONE });
     }
 
     /// `killRadiusDecal()`: the decal cleared, asleep.
@@ -218,10 +171,7 @@ impl UpdateBehavior for RadiusDecalUpdate {
         &self.update
     }
     fn update(&mut self, world: &mut World, me: ModuleHandle) -> UpdateSleepTime {
-        let attacking = world
-            .objects
-            .find(me.object)
-            .is_some_and(|o| o.test_status(OBJECT_STATUS_IS_ATTACKING));
+        let attacking = world.objects.find(me.object).is_some_and(|o| o.test_status(OBJECT_STATUS_IS_ATTACKING));
         if self.kill_when_no_longer_attacking && !attacking && !crate::logic::modules::plant(1873) {
             self.delivery_decal.clear(world, me.object, 0);
             return UPDATE_SLEEP_FOREVER;
@@ -236,8 +186,7 @@ impl UpdateBehavior for RadiusDecalUpdate {
     }
     /// The fields after the base: the decal (nothing saved; a load clears it), then the kill flag.
     fn xfer_fields(&mut self, xfer: &mut dyn Xfer, _version: XferVersion) -> XferResult<()> {
-        self.delivery_decal
-            .xfer_radius_decal(xfer.get_xfer_mode() == crate::common::xfer::XferMode::Load);
+        self.delivery_decal.xfer_radius_decal(xfer.get_xfer_mode() == crate::common::xfer::XferMode::Load);
         if crate::logic::modules::plant(1874) {
             return Ok(());
         }
@@ -255,11 +204,7 @@ impl UpdateBehavior for RadiusDecalUpdate {
     /// `createRadiusDecal`, `killRadiusDecal` and `killWhenNoLongerAttacking`.
     fn other_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
-            ModuleCall::RadiusDecalCreate {
-                template,
-                radius,
-                pos,
-            } => {
+            ModuleCall::RadiusDecalCreate { template, radius, pos } => {
                 self.create_radius_decal(world, me.object, &template, radius, pos);
                 ModuleReply::Done
             }
@@ -295,7 +240,5 @@ impl Snapshot for RadiusDecalUpdate {
 
 /// The factory's `NewModuleDataProc` for `RadiusDecalUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::RadiusDecalUpdate(Arc::new(
-        RadiusDecalUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::RadiusDecalUpdate(Arc::new(RadiusDecalUpdateModuleData::friend_new_module_data(ini)?)))
 }

@@ -35,9 +35,7 @@
 //! modules and arrive with them.
 
 use crate::common::ini::{IniResult, MultiIniFieldParse};
-use crate::common::module::{
-    ModuleBase, ModuleData, ModuleDataKind, ModuleType, ObjectId, ObjectModule,
-};
+use crate::common::module::{ModuleBase, ModuleData, ModuleDataKind, ModuleType, ObjectId, ObjectModule};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 
 /// `class BehaviorModuleData : public ModuleData`.
@@ -50,9 +48,7 @@ pub struct BehaviorModuleData {
 impl BehaviorModuleData {
     /// `BehaviorModuleData()`.
     pub fn new() -> Self {
-        BehaviorModuleData {
-            module_data: ModuleData::new(),
-        }
+        BehaviorModuleData { module_data: ModuleData::new() }
     }
 
     /// `BehaviorModuleData::buildFieldParse(p)`: `ModuleData::buildFieldParse`,
@@ -73,9 +69,7 @@ impl BehaviorModule {
     /// `BehaviorModule(thing, moduleData)`: `ObjectModule`'s checks
     /// (`INI_INVALID_DATA` for null data).
     pub fn new(object: ObjectId, module_data: Option<ModuleDataKind>) -> IniResult<Self> {
-        Ok(BehaviorModule {
-            object_module: ObjectModule::new(object, module_data)?,
-        })
+        Ok(BehaviorModule { object_module: ObjectModule::new(object, module_data)? })
     }
 
     /// `BehaviorModule::getInterfaceMask()`: 0.
@@ -140,10 +134,7 @@ mod tests {
         assert_eq!(save_bytes(&mut m).unwrap(), [1, 1, 1]);
         load_bytes(&mut m, vec![1, 1, 1]).unwrap();
         assert_eq!(crc_of(&mut m).unwrap(), 0);
-        assert!(
-            load_bytes(&mut m, vec![1, 2, 1]).is_err(),
-            "ObjectModule's version 2 is above its current 1"
-        );
+        assert!(load_bytes(&mut m, vec![1, 2, 1]).is_err(), "ObjectModule's version 2 is above its current 1");
         assert!(BehaviorModule::new(9, None).is_err());
         let mut p: MultiIniFieldParse<'_, BehaviorModuleData> = MultiIniFieldParse::new();
         BehaviorModuleData::build_field_parse(&mut p).unwrap();

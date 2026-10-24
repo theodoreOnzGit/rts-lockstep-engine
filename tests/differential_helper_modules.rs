@@ -84,9 +84,7 @@ mod support;
 mod up_common;
 
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
-use rts_lockstep_engine::common::object_status_types::{
-    ObjectStatusMaskType, ObjectStatusTypes, OBJECT_STATUS_COUNT, OBJECT_STATUS_DESTROYED,
-};
+use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, ObjectStatusTypes, OBJECT_STATUS_COUNT, OBJECT_STATUS_DESTROYED};
 use rts_lockstep_engine::common::upgrade::UpgradeMaskType;
 use rts_lockstep_engine::common::xfer::{Snapshot, Xfer};
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
@@ -115,16 +113,8 @@ const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9helpers.bi
 const XFER_FILE: &str = "l9helpers.bin";
 
 /// The kinds, in the order of the driver's `kind`.
-const CLASSES: [&str; 8] = [
-    "ObjectSMCHelper",
-    "ObjectRepulsorHelper",
-    "ObjectWeaponStatusHelper",
-    "StatusDamageHelper",
-    "TempWeaponBonusHelper",
-    "DestroyDie",
-    "KeepObjectDie",
-    "UpgradeDie",
-];
+const CLASSES: [&str; 8] =
+    ["ObjectSMCHelper", "ObjectRepulsorHelper", "ObjectWeaponStatusHelper", "StatusDamageHelper", "TempWeaponBonusHelper", "DestroyDie", "KeepObjectDie", "UpgradeDie"];
 
 const LOG_SET_STATUS: i32 = 1;
 const LOG_CLEAR_STATUS: i32 = 2;
@@ -155,11 +145,7 @@ struct Sim {
 
 impl Sim {
     fn upgrade_number(name: &[u8]) -> u32 {
-        let s: String = name
-            .iter()
-            .skip_while(|c| !c.is_ascii_digit())
-            .map(|&c| c as char)
-            .collect();
+        let s: String = name.iter().skip_while(|c| !c.is_ascii_digit()).map(|&c| c as char).collect();
         s.parse().unwrap_or(0)
     }
 }
@@ -225,12 +211,10 @@ impl DieHost for Sim {
         matches!(c.center.find_upgrade(&mut c.names, name), Ok(Some(_)))
     }
     fn producer_has_upgrade(&mut self, name: &[u8]) -> bool {
-        self.template_mask(name)
-            .is_some_and(|t| self.producer_mask.test_for_all(&t))
+        self.template_mask(name).is_some_and(|t| self.producer_mask.test_for_all(&t))
     }
     fn producer_remove_upgrade(&mut self, name: &[u8]) {
-        self.log
-            .push((LOG_REMOVE_UPGRADE, Sim::upgrade_number(name)));
+        self.log.push((LOG_REMOVE_UPGRADE, Sim::upgrade_number(name)));
         if let Some(t) = self.template_mask(name) {
             self.producer_mask.clear_mask(&t);
         }
@@ -241,12 +225,7 @@ impl Sim {
     fn template_mask(&self, name: &[u8]) -> Option<UpgradeMaskType> {
         // read-only lookup by the key the center assigned (names is only read through a clone of the generator's lookup)
         let mut names = self.center.names.clone();
-        self.center
-            .center
-            .find_upgrade(&mut names, name)
-            .ok()
-            .flatten()
-            .map(|t| t.upgrade_mask())
+        self.center.center.find_upgrade(&mut names, name).ok().flatten().map(|t| t.upgrade_mask())
     }
 }
 
@@ -383,13 +362,7 @@ struct Tally {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn rust_run(
-    kind: usize,
-    slot: &Slot,
-    ctx: up_common::Ctx,
-    ops: &[[u32; 6]],
-    t: &mut Tally,
-) -> (Vec<u8>, Vec<u8>) {
+fn rust_run(kind: usize, slot: &Slot, ctx: up_common::Ctx, ops: &[[u32; 6]], t: &mut Tally) -> (Vec<u8>, Vec<u8>) {
     let mut v = Vec::new();
     let mut pre = Vec::new();
     let mut sim = Sim {
@@ -453,16 +426,13 @@ fn rust_run(
                     .0
                 }
                 1 => match &mut m {
-                    Module::StatusDamage(h) => {
-                        h.do_status_damage(&mut sim, o[1] as i32, f32::from_bits(o[2]))
-                    }
+                    Module::StatusDamage(h) => h.do_status_damage(&mut sim, o[1] as i32, f32::from_bits(o[2])),
                     Module::TempBonus(h) => h.do_temp_weapon_bonus(&mut sim, o[1] as i32, o[2]),
                     _ => {}
                 },
                 2 => sim.frame = o[1],
                 3 => {
-                    sim.status
-                        .set(OBJECT_STATUS_DESTROYED, i32::from(o[1] & 1 != 0));
+                    sim.status.set(OBJECT_STATUS_DESTROYED, i32::from(o[1] & 1 != 0));
                     sim.drawable = o[1] & 2 != 0;
                 }
                 4 => {
@@ -482,11 +452,7 @@ fn rust_run(
                     xst = st;
                     crc = c;
                 }
-                8 => m
-                    .helper()
-                    .unwrap()
-                    .update_module_mut()
-                    .friend_set_next_call_frame(o[1]),
+                8 => m.helper().unwrap().update_module_mut().friend_set_next_call_frame(o[1]),
                 _ => {
                     if o[1] < OBJECT_STATUS_COUNT as u32 {
                         sim.status.set(o[1] as i32, i32::from(o[2] & 1 != 0));
@@ -497,12 +463,7 @@ fn rust_run(
             match o[0] {
                 0 => {
                     sim.level = o[2] as i32;
-                    sim.status = ObjectStatusMaskType::from_words([
-                        u64::from(o[3]) | u64::from(o[4]) << 32,
-                        0,
-                        0,
-                        0,
-                    ]);
+                    sim.status = ObjectStatusMaskType::from_words([u64::from(o[3]) | u64::from(o[4]) << 32, 0, 0, 0]);
                     let d = o[1] as i32;
                     match &mut m {
                         Module::Destroy(h) => h.on_die(&mut sim, d),
@@ -546,11 +507,7 @@ fn rust_run(
         put_i32(&mut v, 0);
         put_i32(&mut v, sim.awakes);
         put_u32(&mut v, sim.last_wake);
-        let named = if helper_kind {
-            u32::from(sim.awakes > 0)
-        } else {
-            0
-        };
+        let named = if helper_kind { u32::from(sim.awakes > 0) } else { 0 };
         put_u32(&mut v, named);
         put_u32(&mut v, if helper_kind { named } else { 1 });
         put_u32(&mut v, last_sleep);
@@ -577,10 +534,7 @@ fn rust_run(
             put_u32(&mut v, um.friend_get_priority());
             put_i32(&mut v, um.friend_get_index_in_logic());
             put_u32(&mut v, um.get_update_phase() as u32);
-            put_u32(
-                &mut v,
-                disabled.unwrap_or_else(|| um.get_disabled_types_to_process().count()) as u32,
-            );
+            put_u32(&mut v, disabled.unwrap_or_else(|| um.get_disabled_types_to_process().count()) as u32);
         }
         match &m {
             Module::StatusDamage(h) => {
@@ -602,26 +556,8 @@ fn rust_run(
 // -- the generators --
 
 const DEATH_NAMES: [&str; 20] = [
-    "NONE",
-    "CRUSHED",
-    "BURNED",
-    "EXPLODED",
-    "POISONED",
-    "TOPPLED",
-    "FLOODED",
-    "SUICIDED",
-    "LASERED",
-    "DETONATED",
-    "SPLATTED",
-    "POISONED_BETA",
-    "EXTRA_2",
-    "EXTRA_3",
-    "EXTRA_4",
-    "EXTRA_5",
-    "EXTRA_6",
-    "EXTRA_7",
-    "EXTRA_8",
-    "POISONED_GAMMA",
+    "NONE", "CRUSHED", "BURNED", "EXPLODED", "POISONED", "TOPPLED", "FLOODED", "SUICIDED", "LASERED", "DETONATED", "SPLATTED", "POISONED_BETA",
+    "EXTRA_2", "EXTRA_3", "EXTRA_4", "EXTRA_5", "EXTRA_6", "EXTRA_7", "EXTRA_8", "POISONED_GAMMA",
 ];
 
 fn death_tokens(g: &mut Gen) -> String {
@@ -754,14 +690,7 @@ fn gen_ops(g: &mut Gen, kind: usize, n_up: usize) -> Vec<[u32; 6]> {
                     _ => 9,
                 };
                 match op {
-                    1 if kind == 3 => [
-                        1,
-                        g.below(OBJECT_STATUS_COUNT as u32),
-                        gen_duration(g).to_bits(),
-                        0,
-                        0,
-                        0,
-                    ],
+                    1 if kind == 3 => [1, g.below(OBJECT_STATUS_COUNT as u32), gen_duration(g).to_bits(), 0, 0, 0],
                     1 if kind == 4 => {
                         let dur = match g.below(5) {
                             0 => 0,
@@ -774,23 +703,9 @@ fn gen_ops(g: &mut Gen, kind: usize, n_up: usize) -> Vec<[u32; 6]> {
                     1 => [1, 0, 0, 0, 0, 0],
                     2 => [2, pick_frame(g), 0, 0, 0, 0],
                     3 => [3, g.below(4), 0, 0, 0, 0],
-                    4 => [
-                        4,
-                        if g.below(6) == 0 { 0 } else { pick_frame(g) },
-                        0,
-                        0,
-                        0,
-                        0,
-                    ],
+                    4 => [4, if g.below(6) == 0 { 0 } else { pick_frame(g) }, 0, 0, 0, 0],
                     8 => [8, pick_frame(g), 0, 0, 0, 0],
-                    9 => [
-                        9,
-                        g.below(OBJECT_STATUS_COUNT as u32 + 2),
-                        g.below(2),
-                        0,
-                        0,
-                        0,
-                    ],
+                    9 => [9, g.below(OBJECT_STATUS_COUNT as u32 + 2), g.below(2), 0, 0, 0],
                     _ => [op, 0, 0, 0, 0, 0],
                 }
             } else {
@@ -807,14 +722,7 @@ fn gen_ops(g: &mut Gen, kind: usize, n_up: usize) -> Vec<[u32; 6]> {
                 match g.below(12) {
                     0..=5 => {
                         let status = g.u64() & g.u64() & ((1u64 << 45) - 1);
-                        [
-                            0,
-                            1 + g.below(20),
-                            1 + g.below(3),
-                            status as u32,
-                            (status >> 32) as u32,
-                            0,
-                        ]
+                        [0, 1 + g.below(20), 1 + g.below(3), status as u32, (status >> 32) as u32, 0]
                     }
                     6..=8 => {
                         let mut m = [0u32; 4];
@@ -837,10 +745,7 @@ fn gen_ops(g: &mut Gen, kind: usize, n_up: usize) -> Vec<[u32; 6]> {
 #[test]
 fn helper_and_die_modules_match_upstream() {
     let _lock = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let cases: usize = std::env::var("L9HELP_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(12_000);
+    let cases: usize = std::env::var("L9HELP_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(12_000);
     let mut g = Gen::new(0x1091_7E1B);
     let table = blocks();
     let mut read = Check::new("die data read (throw, message)");
@@ -854,65 +759,23 @@ fn helper_and_die_modules_match_upstream() {
         let kind = case % 8;
         let n_up = 1 + g.below(6) as usize;
         let upgrades: Vec<String> = (0..n_up).map(|i| format!("Up{i}")).collect();
-        let defs: String = upgrades
-            .iter()
-            .map(|u| format!("Upgrade {u}\nEnd\n"))
-            .collect();
+        let defs: String = upgrades.iter().map(|u| format!("Upgrade {u}\nEnd\n")).collect();
         let mut ctx = Ctx::new(true, true);
-        Ini::load(
-            b"Data\\INI\\Up.ini",
-            defs.as_bytes(),
-            IniLoadType::Overwrite,
-            None,
-            &table,
-            &mut ctx,
-        )
-        .expect("upgrades load");
+        Ini::load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ctx).expect("upgrades load");
         cpp_reset(true, true);
-        assert_eq!(
-            cpp_load(
-                b"Data\\INI\\Up.ini",
-                defs.as_bytes(),
-                IniLoadType::Overwrite,
-                false
-            )
-            .status,
-            0
-        );
-        let mut slot = Slot {
-            kind,
-            ..Default::default()
-        };
+        assert_eq!(cpp_load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, false).status, 0);
+        let mut slot = Slot { kind, ..Default::default() };
         let name = format!("Data\\INI\\Hm{}.ini", case % 5).into_bytes();
         let clean = g.below(10) < 7;
-        let text = if kind >= 5 {
-            gen_die_text(&mut g, kind, n_up, clean)
-        } else {
-            Vec::new()
-        };
+        let text = if kind >= 5 { gen_die_text(&mut g, kind, n_up, clean) } else { Vec::new() };
         let mut read_outcome = None;
         if kind >= 5 {
-            let blocks = [BlockParse {
-                token: "D",
-                parse: read_block,
-            }];
-            let r = Ini::load(
-                &name,
-                &text,
-                IniLoadType::Overwrite,
-                None,
-                &blocks,
-                &mut slot,
-            );
-            read_outcome =
-                Some(rust_outcome(r, 0).expect("no undefined input in the die generator"));
+            let blocks = [BlockParse { token: "D", parse: read_block }];
+            let r = Ini::load(&name, &text, IniLoadType::Overwrite, None, &blocks, &mut slot);
+            read_outcome = Some(rust_outcome(r, 0).expect("no undefined input in the die generator"));
         }
         let ops = gen_ops(&mut g, kind, n_up);
-        let rust = if read_outcome.as_ref().is_none_or(|o| o.status == 0) {
-            Some(rust_run(kind, &slot, ctx, &ops, &mut tally))
-        } else {
-            None
-        };
+        let rust = if read_outcome.as_ref().is_none_or(|o| o.status == 0) { Some(rust_run(kind, &slot, ctx, &ops, &mut tally)) } else { None };
         let cfile = CString::new(name.clone()).unwrap();
         let cxfer = CString::new(XFER_FILE_PATH).unwrap();
         let flat: Vec<u32> = ops.iter().flatten().copied().collect();
@@ -937,13 +800,7 @@ fn helper_and_die_modules_match_upstream() {
             )
         };
         buf.truncate(len as usize);
-        let what = || {
-            format!(
-                "case {case} ({}): file {:?}, ops {ops:?}",
-                CLASSES[kind],
-                show(&text)
-            )
-        };
+        let what = || format!("case {case} ({}): file {:?}, ops {ops:?}", CLASSES[kind], show(&text));
         if let Some(ro) = &read_outcome {
             let detail = match status {
                 0 | 4 => Vec::new(),
@@ -951,25 +808,13 @@ fn helper_and_die_modules_match_upstream() {
                 2 | 3 => code.to_le_bytes().to_vec(),
                 _ => panic!("C++ threw something unexpected (status {status})"),
             };
-            read.eq(
-                ro,
-                &Outcome {
-                    status,
-                    detail,
-                    crc: 0,
-                },
-                what,
-            );
+            read.eq(ro, &Outcome { status, detail, crc: 0 }, what);
         } else {
             assert_eq!(status, 0);
         }
         let Some((pre, body)) = rust else {
             if std::env::var("L9HELP_SHOW").is_ok() && read_failed < 6 {
-                eprintln!(
-                    "read failed: {:?} {:?}",
-                    read_outcome.as_ref().map(|o| (o.status, show(&o.detail))),
-                    show(&text)
-                );
+                eprintln!("read failed: {:?} {:?}", read_outcome.as_ref().map(|o| (o.status, show(&o.detail))), show(&text));
             }
             read_failed += 1;
             continue;
@@ -978,11 +823,7 @@ fn helper_and_die_modules_match_upstream() {
         let cbody = &buf[pre.len().min(buf.len())..];
         if body != cbody && shown < 4 {
             shown += 1;
-            let i = body
-                .chunks(4)
-                .zip(cbody.chunks(4))
-                .position(|(a, b)| a != b)
-                .unwrap_or(0);
+            let i = body.chunks(4).zip(cbody.chunks(4)).position(|(a, b)| a != b).unwrap_or(0);
             eprintln!("--- case {case} ({}) file {:?} ops {ops:?}\n  word {i}: rust {:?} c++ {:?} (lengths {} {})", CLASSES[kind], show(&text), body.chunks(4).nth(i), cbody.chunks(4).nth(i), body.len(), cbody.len());
         }
         run.eq(&body.len(), &cbody.len(), what);
@@ -1002,11 +843,7 @@ fn helper_and_die_modules_match_upstream() {
     data.finish();
     run.finish();
     assert!(
-        compared_cases * 2 > cases as u64
-            && tally.effects > cases as u64
-            && tally.xfers > cases as u64 / 2
-            && tally.removals * 100 > cases as u64
-            && tally.destroys > 20,
+        compared_cases * 2 > cases as u64 && tally.effects > cases as u64 && tally.xfers > cases as u64 / 2 && tally.removals * 100 > cases as u64 && tally.destroys > 20,
         "the generator must reach every path"
     );
 }

@@ -60,21 +60,15 @@ use std::sync::Arc;
 use crate::common::disabled_types::{DISABLED_HELD, DISABLED_UNMANNED};
 use crate::common::game_common::SECONDS_PER_LOGICFRAME_REAL;
 use crate::common::game_type::{ObjectId, INVALID_ID, WEAPONSLOT_COUNT};
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::kind_of::{KINDOF_CLIFF_JUMPER, KINDOF_HERO, KINDOF_INFANTRY, KINDOF_SALVAGER};
 use crate::common::model_state::MODELCONDITION_LOADED;
 use crate::common::module::ModuleDataKind;
 use crate::common::object_status_types::ObjectStatusMaskType;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    ExitDoorType, UpdateModule, UpdateSleepTime, DOOR_1, DOOR_NONE_AVAILABLE,
-};
-use crate::logic::modules::open_contain::{
-    self, out, OpenContain, OpenContainModuleData, OpenContainVirtuals, CMD_FROM_AI,
-};
+use crate::logic::module::update_module::{ExitDoorType, UpdateModule, UpdateSleepTime, DOOR_1, DOOR_NONE_AVAILABLE};
+use crate::logic::modules::open_contain::{self, out, OpenContain, OpenContainModuleData, OpenContainVirtuals, CMD_FROM_AI};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::weapon_types::WEAPONSET_PLAYER_UPGRADE;
 use crate::logic::world::game_logic::World;
@@ -145,10 +139,7 @@ impl Default for TransportContainModuleData {
             slot_capacity: 0,
             exit_pitch_rate: 0.0,
             exit_bone: Vec::new(),
-            initial_payload: InitialPayload {
-                name: Vec::new(),
-                count: 0,
-            },
+            initial_payload: InitialPayload { name: Vec::new(), count: 0 },
             health_regen: 0.0,
             exit_delay: 0,
             scatter_nearby_on_exit: true,
@@ -164,12 +155,7 @@ impl Default for TransportContainModuleData {
 }
 
 /// Lifts entry `k` of `OpenContainModuleData`'s own table onto the `open` base.
-fn lift_open(
-    k: usize,
-    i: &mut Ini<'_>,
-    d: &mut TransportContainModuleData,
-    u: &UserData,
-) -> IniResult<()> {
+fn lift_open(k: usize, i: &mut Ini<'_>, d: &mut TransportContainModuleData, u: &UserData) -> IniResult<()> {
     match open_contain::FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.open, u),
         None => Ok(()),
@@ -177,12 +163,7 @@ fn lift_open(
 }
 
 /// Lifts entry `k` of the die mux table onto the `open` base.
-fn lift_die(
-    k: usize,
-    i: &mut Ini<'_>,
-    d: &mut TransportContainModuleData,
-    u: &UserData,
-) -> IniResult<()> {
+fn lift_die(k: usize, i: &mut Ini<'_>, d: &mut TransportContainModuleData, u: &UserData) -> IniResult<()> {
     match open_contain::DIE_MUX_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.open, u),
         None => Ok(()),
@@ -191,107 +172,35 @@ fn lift_die(
 
 /// `OpenContainModuleData::buildFieldParse`'s two tables, on the `open` base.
 pub(crate) static OPEN_BASE_FIELD_PARSE: [FieldParse<TransportContainModuleData>; 16] = [
-    FieldParse::new(
-        "ContainMax",
-        |i, d, u| lift_open(0, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "EnterSound",
-        |i, d, u| lift_open(1, i, d, u),
-        UserData::None,
-    ),
+    FieldParse::new("ContainMax", |i, d, u| lift_open(0, i, d, u), UserData::None),
+    FieldParse::new("EnterSound", |i, d, u| lift_open(1, i, d, u), UserData::None),
     FieldParse::new("ExitSound", |i, d, u| lift_open(2, i, d, u), UserData::None),
-    FieldParse::new(
-        "DamagePercentToUnits",
-        |i, d, u| lift_open(3, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "BurnedDeathToUnits",
-        |i, d, u| lift_open(4, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AllowInsideKindOf",
-        |i, d, u| lift_open(5, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ForbidInsideKindOf",
-        |i, d, u| lift_open(6, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "PassengersAllowedToFire",
-        |i, d, u| lift_open(7, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "PassengersInTurret",
-        |i, d, u| lift_open(8, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "NumberOfExitPaths",
-        |i, d, u| lift_open(9, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DoorOpenTime",
-        |i, d, u| lift_open(10, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "WeaponBonusPassedToPassengers",
-        |i, d, u| lift_open(11, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AllowAlliesInside",
-        |i, d, u| lift_open(12, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AllowEnemiesInside",
-        |i, d, u| lift_open(13, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AllowNeutralInside",
-        |i, d, u| lift_open(14, i, d, u),
-        UserData::None,
-    ),
+    FieldParse::new("DamagePercentToUnits", |i, d, u| lift_open(3, i, d, u), UserData::None),
+    FieldParse::new("BurnedDeathToUnits", |i, d, u| lift_open(4, i, d, u), UserData::None),
+    FieldParse::new("AllowInsideKindOf", |i, d, u| lift_open(5, i, d, u), UserData::None),
+    FieldParse::new("ForbidInsideKindOf", |i, d, u| lift_open(6, i, d, u), UserData::None),
+    FieldParse::new("PassengersAllowedToFire", |i, d, u| lift_open(7, i, d, u), UserData::None),
+    FieldParse::new("PassengersInTurret", |i, d, u| lift_open(8, i, d, u), UserData::None),
+    FieldParse::new("NumberOfExitPaths", |i, d, u| lift_open(9, i, d, u), UserData::None),
+    FieldParse::new("DoorOpenTime", |i, d, u| lift_open(10, i, d, u), UserData::None),
+    FieldParse::new("WeaponBonusPassedToPassengers", |i, d, u| lift_open(11, i, d, u), UserData::None),
+    FieldParse::new("AllowAlliesInside", |i, d, u| lift_open(12, i, d, u), UserData::None),
+    FieldParse::new("AllowEnemiesInside", |i, d, u| lift_open(13, i, d, u), UserData::None),
+    FieldParse::new("AllowNeutralInside", |i, d, u| lift_open(14, i, d, u), UserData::None),
     FieldParse::end(),
 ];
 
 /// The die mux table, on the `open` base.
 pub(crate) static DIE_BASE_FIELD_PARSE: [FieldParse<TransportContainModuleData>; 5] = [
     FieldParse::new("DeathTypes", |i, d, u| lift_die(0, i, d, u), UserData::None),
-    FieldParse::new(
-        "VeterancyLevels",
-        |i, d, u| lift_die(1, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExemptStatus",
-        |i, d, u| lift_die(2, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "RequiredStatus",
-        |i, d, u| lift_die(3, i, d, u),
-        UserData::None,
-    ),
+    FieldParse::new("VeterancyLevels", |i, d, u| lift_die(1, i, d, u), UserData::None),
+    FieldParse::new("ExemptStatus", |i, d, u| lift_die(2, i, d, u), UserData::None),
+    FieldParse::new("RequiredStatus", |i, d, u| lift_die(3, i, d, u), UserData::None),
     FieldParse::end(),
 ];
 
 /// `TransportContainModuleData::parseInitialPayload`: a name, then an optional count (`INI::scanInt`; 1 when there is none).
-fn parse_initial_payload(
-    ini: &mut Ini<'_>,
-    d: &mut TransportContainModuleData,
-    _u: &UserData,
-) -> IniResult<()> {
+fn parse_initial_payload(ini: &mut Ini<'_>, d: &mut TransportContainModuleData, _u: &UserData) -> IniResult<()> {
     let name = ini.get_next_token(None)?;
     let count = match ini.get_next_token_or_null(None) {
         Some(c) => Ini::scan_int(&c)?,
@@ -304,119 +213,26 @@ fn parse_initial_payload(
 
 /// `TransportContainModuleData::buildFieldParse`'s own table (`dataFieldParse`).
 pub(crate) static FIELD_PARSE: [FieldParse<TransportContainModuleData>; 15] = [
-    FieldParse::new(
-        "Slots",
-        |i, d, _| {
-            d.slot_capacity = i.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ScatterNearbyOnExit",
-        |i, d, _| {
-            d.scatter_nearby_on_exit = i.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "OrientLikeContainerOnExit",
-        |i, d, _| {
-            d.orient_like_container_on_exit = i.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "KeepContainerVelocityOnExit",
-        |i, d, _| {
-            d.keep_container_velocity_on_exit = i.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "GoAggressiveOnExit",
-        |i, d, _| {
-            d.go_aggressive_on_exit = i.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ResetMoodCheckTimeOnExit",
-        |i, d, _| {
-            d.reset_mood_check_time_on_exit = i.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DestroyRidersWhoAreNotFreeToExit",
-        |i, d, _| {
-            d.destroy_riders_who_are_not_free_to_exit = i.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExitBone",
-        |i, d, _| {
-            d.exit_bone = i.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExitPitchRate",
-        |i, d, _| {
-            d.exit_pitch_rate = i.parse_angular_velocity_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("Slots", |i, d, _| { d.slot_capacity = i.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("ScatterNearbyOnExit", |i, d, _| { d.scatter_nearby_on_exit = i.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("OrientLikeContainerOnExit", |i, d, _| { d.orient_like_container_on_exit = i.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("KeepContainerVelocityOnExit", |i, d, _| { d.keep_container_velocity_on_exit = i.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("GoAggressiveOnExit", |i, d, _| { d.go_aggressive_on_exit = i.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("ResetMoodCheckTimeOnExit", |i, d, _| { d.reset_mood_check_time_on_exit = i.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("DestroyRidersWhoAreNotFreeToExit", |i, d, _| { d.destroy_riders_who_are_not_free_to_exit = i.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("ExitBone", |i, d, _| { d.exit_bone = i.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("ExitPitchRate", |i, d, _| { d.exit_pitch_rate = i.parse_angular_velocity_real()?; Ok(()) }, UserData::None),
     FieldParse::new("InitialPayload", parse_initial_payload, UserData::None),
-    FieldParse::new(
-        "HealthRegen%PerSec",
-        |i, d, _| {
-            d.health_regen = i.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExitDelay",
-        |i, d, _| {
-            d.exit_delay = i.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ArmedRidersUpgradeMyWeaponSet",
-        |i, d, _| {
-            d.armed_riders_upgrade_weapon_set = i.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DelayExitInAir",
-        |i, d, _| {
-            d.is_delay_exit_in_air = i.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("HealthRegen%PerSec", |i, d, _| { d.health_regen = i.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("ExitDelay", |i, d, _| { d.exit_delay = i.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("ArmedRidersUpgradeMyWeaponSet", |i, d, _| { d.armed_riders_upgrade_weapon_set = i.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("DelayExitInAir", |i, d, _| { d.is_delay_exit_in_air = i.parse_bool()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl TransportContainModuleData {
     /// `TransportContainModuleData::buildFieldParse(p)`: `OpenContainModuleData::buildFieldParse(p)`, then this class's table.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, TransportContainModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, TransportContainModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&OPEN_BASE_FIELD_PARSE)?;
         p.add(&DIE_BASE_FIELD_PARSE)?;
@@ -425,9 +241,7 @@ impl TransportContainModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<TransportContainModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<TransportContainModuleData> {
         let mut data = TransportContainModuleData::default();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, TransportContainModuleData::build_field_parse)?;
@@ -438,9 +252,7 @@ impl TransportContainModuleData {
 
 /// The factory's `NewModuleDataProc` for `TransportContain`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::TransportContain(Arc::new(
-        TransportContainModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::TransportContain(Arc::new(TransportContainModuleData::friend_new_module_data(ini)?)))
 }
 
 /// `class TransportContain : public OpenContain`.
@@ -475,19 +287,10 @@ impl TransportContain {
 
     /// The constructor's first half: the base (on a copy of its part of the data), `m_extraSlotsInUse = 0`, `m_frameExitNotBusy = 0`;
     /// `m_payloadCreated` is the pool's zero.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<TransportContainModuleData>>,
-    ) -> IniResult<TransportContain> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<TransportContainModuleData>>) -> IniResult<TransportContain> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let oc = OpenContain::unconstructed(object, Some(Arc::new(data.open.clone())))?;
-        Ok(TransportContain {
-            oc,
-            data,
-            payload_created: false,
-            extra_slots_in_use: 0,
-            frame_exit_not_busy: 0,
-        })
+        Ok(TransportContain { oc, data, payload_created: false, extra_slots_in_use: 0, frame_exit_not_busy: 0 })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -530,12 +333,7 @@ impl TransportContain {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         open_contain::contain_module_call(self, world, me, call)
     }
 
@@ -576,12 +374,7 @@ pub trait TransportContainVirtuals: OpenContainVirtuals {
     /// The `TransportContain`, to change.
     fn tc_mut(&mut self) -> &mut TransportContain;
     /// `isSpecificRiderFreeToExit(obj)`.
-    fn is_specific_rider_free_to_exit(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        obj: ObjectId,
-    ) -> bool {
+    fn is_specific_rider_free_to_exit(&mut self, world: &mut World, me: ModuleHandle, obj: ObjectId) -> bool {
         tc_is_specific_rider_free_to_exit(self, world, me, obj)
     }
     /// `createPayload()`; `Err` for the throw of `newObject(NULL)`.
@@ -590,33 +383,15 @@ pub trait TransportContainVirtuals: OpenContainVirtuals {
     }
     // --- p1w13-sonnet --- (batch R3: the hooks of the derived transports)
     /// `isValidContainerFor(obj, checkCapacity)`.
-    fn t_is_valid_container_for(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        obj: ObjectId,
-        check_capacity: bool,
-    ) -> bool {
+    fn t_is_valid_container_for(&mut self, world: &mut World, me: ModuleHandle, obj: ObjectId, check_capacity: bool) -> bool {
         tc_is_valid_container_for(self, world, me, obj, check_capacity)
     }
     /// `onCapture(oldOwner, newOwner)`.
-    fn t_on_capture(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        old_owner: i32,
-        new_owner: i32,
-    ) {
+    fn t_on_capture(&mut self, world: &mut World, me: ModuleHandle, old_owner: i32, new_owner: i32) {
         tc_on_capture(self, world, me, old_owner, new_owner)
     }
     /// `onContaining(rider, wasSelected)`.
-    fn t_on_containing(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        rider: ObjectId,
-        was_selected: bool,
-    ) {
+    fn t_on_containing(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId, was_selected: bool) {
         tc_on_containing(self, world, me, rider, was_selected)
     }
     /// `onRemoving(rider)`.
@@ -648,12 +423,7 @@ pub trait TransportContainVirtuals: OpenContainVirtuals {
         tc_is_exit_busy(self, world, me)
     }
     /// `reserveDoorForExit(objType, specificObject)`.
-    fn t_reserve_door_for_exit(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        specific: ObjectId,
-    ) -> ExitDoorType {
+    fn t_reserve_door_for_exit(&mut self, world: &mut World, me: ModuleHandle, specific: ObjectId) -> ExitDoorType {
         tc_reserve_door_for_exit(self, world, me, specific)
     }
     /// `isDisplayedOnControlBar()`.
@@ -665,22 +435,11 @@ pub trait TransportContainVirtuals: OpenContainVirtuals {
         tc_kill_riders_who_are_not_free_to_exit(self, world, me)
     }
     /// `isPassengerAllowedToFire(id)`.
-    fn t_is_passenger_allowed_to_fire(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        id: ObjectId,
-    ) -> bool {
+    fn t_is_passenger_allowed_to_fire(&mut self, world: &mut World, me: ModuleHandle, id: ObjectId) -> bool {
         tc_is_passenger_allowed_to_fire(self, world, me, id)
     }
     /// `exitObjectViaDoor(exitObj, exitDoor)`: `OpenContain`'s.
-    fn t_exit_object_via_door(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        exit_obj: ObjectId,
-        exit_door: ExitDoorType,
-    ) {
+    fn t_exit_object_via_door(&mut self, world: &mut World, me: ModuleHandle, exit_obj: ObjectId, exit_door: ExitDoorType) {
         open_contain::base_exit_object_via_door(self, world, me, exit_obj, exit_door);
     }
     // batch R4 (HelixContain): the `OpenContain` virtuals the overlord-style containers override, each defaulting to `OpenContain`'s
@@ -693,22 +452,11 @@ pub trait TransportContainVirtuals: OpenContainVirtuals {
         open_contain::base_add_to_contain_list(self, world, me, rider);
     }
     /// `removeFromContain(rider, exposeStealthUnits)`.
-    fn t_remove_from_contain(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        rider: ObjectId,
-        expose_stealth_units: bool,
-    ) {
+    fn t_remove_from_contain(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId, expose_stealth_units: bool) {
         open_contain::base_remove_from_contain(self, world, me, rider, expose_stealth_units);
     }
     /// `isEnclosingContainerFor(obj)`: `TRUE`.
-    fn t_is_enclosing_container_for(
-        &mut self,
-        _world: &mut World,
-        _me: ModuleHandle,
-        _obj: ObjectId,
-    ) -> bool {
+    fn t_is_enclosing_container_for(&mut self, _world: &mut World, _me: ModuleHandle, _obj: ObjectId) -> bool {
         true
     }
     /// `friend_getRider()`: `NULL`.
@@ -720,12 +468,7 @@ pub trait TransportContainVirtuals: OpenContainVirtuals {
         open_contain::base_redeploy_occupants(self, world, me);
     }
     /// `onDie(damageInfo)`.
-    fn t_on_die(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        info: &crate::logic::damage::DamageInfo,
-    ) {
+    fn t_on_die(&mut self, world: &mut World, me: ModuleHandle, info: &crate::logic::damage::DamageInfo) {
         open_contain::base_on_die(self, world, me, info);
     }
     /// `onDelete()`.
@@ -733,16 +476,9 @@ pub trait TransportContainVirtuals: OpenContainVirtuals {
         open_contain::base_on_delete(self, world, me);
     }
     /// A call no `OpenContain` virtual answers: `isSpecificRiderFreeToExit`, else unhandled.
-    fn t_other_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    fn t_other_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
-            ModuleCall::IsSpecificRiderFreeToExit { obj } => {
-                ModuleReply::Bool(self.is_specific_rider_free_to_exit(world, me, obj))
-            }
+            ModuleCall::IsSpecificRiderFreeToExit { obj } => ModuleReply::Bool(self.is_specific_rider_free_to_exit(world, me, obj)),
             _ => ModuleReply::Unhandled,
         }
     }
@@ -772,12 +508,7 @@ pub trait TransportContainVirtuals: OpenContainVirtuals {
         false
     }
     /// `removeAllContained(exposeStealthUnits)`.
-    fn t_remove_all_contained(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        expose_stealth_units: bool,
-    ) {
+    fn t_remove_all_contained(&mut self, world: &mut World, me: ModuleHandle, expose_stealth_units: bool) {
         open_contain::base_remove_all_contained(self, world, me, expose_stealth_units);
     }
     /// `killAllContained()`.
@@ -787,15 +518,7 @@ pub trait TransportContainVirtuals: OpenContainVirtuals {
     /// `onObjectCreated()`: nothing.
     fn t_on_object_created(&mut self, _world: &mut World, _me: ModuleHandle) {}
     /// `onBodyDamageStateChange(damageInfo, oldState, newState)`: nothing.
-    fn t_on_body_damage_state_change(
-        &mut self,
-        _world: &mut World,
-        _me: ModuleHandle,
-        _info: &crate::logic::damage::DamageInfo,
-        _old_state: i32,
-        _new_state: i32,
-    ) {
-    }
+    fn t_on_body_damage_state_change(&mut self, _world: &mut World, _me: ModuleHandle, _info: &crate::logic::damage::DamageInfo, _old_state: i32, _new_state: i32) {}
     // --- end p1w13-sonnet ---
 }
 
@@ -810,13 +533,7 @@ pub fn tc_get_contain_max<T: TransportContainVirtuals>(t: &T) -> i32 {
 }
 
 /// `TransportContain::isValidContainerFor(rider, checkCapacity)`.
-pub fn tc_is_valid_container_for<T: TransportContainVirtuals>(
-    t: &mut T,
-    world: &mut World,
-    me: ModuleHandle,
-    rider: ObjectId,
-    check_capacity: bool,
-) -> bool {
+pub fn tc_is_valid_container_for<T: TransportContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, rider: ObjectId, check_capacity: bool) -> bool {
     // sanity
     if rider == INVALID_ID || world.objects.find(rider).is_none() {
         return false;
@@ -825,14 +542,8 @@ pub fn tc_is_valid_container_for<T: TransportContainVirtuals>(
 
     // "when we pass this object to contain in a transport plane, we want to check the infantry, not the parachute"
     if let Some(contain) = world.get_contain(rider) {
-        if out(t, world, me, |w| {
-            w.module_call(rider, contain, ModuleCall::IsSpecialZeroSlotContainer)
-        })
-        .as_bool()
-        {
-            if let ModuleReply::Ids(items) = out(t, world, me, |w| {
-                w.module_call(rider, contain, ModuleCall::GetContainedItems)
-            }) {
+        if out(t, world, me, |w| w.module_call(rider, contain, ModuleCall::IsSpecialZeroSlotContainer)).as_bool() {
+            if let ModuleReply::Ids(items) = out(t, world, me, |w| w.module_call(rider, contain, ModuleCall::GetContainedItems)) {
                 // replace the object we are checking with the *first* object contained within it
                 if let Some(&front) = items.first() {
                     if front != INVALID_ID && !crate::logic::modules::plant(1411) {
@@ -849,9 +560,7 @@ pub fn tc_is_valid_container_for<T: TransportContainVirtuals>(
     }
 
     // "no... actually, only OUR OWN units can be transported"
-    if (world.get_controlling_player(rider) != world.get_controlling_player(me.object))
-        != crate::logic::modules::plant(1412)
-    {
+    if (world.get_controlling_player(rider) != world.get_controlling_player(me.object)) != crate::logic::modules::plant(1412) {
         return false;
     }
 
@@ -875,11 +584,7 @@ pub fn tc_is_valid_container_for<T: TransportContainVirtuals>(
 
 /// `TransportContain::letRidersUpgradeWeaponSet`: the transport takes `WEAPONSET_PLAYER_UPGRADE` while any infantry rider has a weapon that is not a contact
 /// weapon and does damage.
-pub fn tc_let_riders_upgrade_weapon_set<T: TransportContainVirtuals>(
-    t: &mut T,
-    world: &mut World,
-    me: ModuleHandle,
-) {
+pub fn tc_let_riders_upgrade_weapon_set<T: TransportContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle) {
     if !t.tc().data.armed_riders_upgrade_weapon_set {
         return;
     }
@@ -887,19 +592,13 @@ pub fn tc_let_riders_upgrade_weapon_set<T: TransportContainVirtuals>(
     let mut any_rider_has_viable_weapon = false;
     let riders = t.get_contained_items_list(world);
     for rider in riders {
-        if world
-            .objects
-            .find(rider)
-            .is_none_or(|o| !o.template().is_kind_of(KINDOF_INFANTRY))
-        {
+        if world.objects.find(rider).is_none_or(|o| !o.template().is_kind_of(KINDOF_INFANTRY)) {
             continue;
         }
         for w in 0..WEAPONSLOT_COUNT {
             if let Some(f) = world.weapon_slot_facts(rider, w) {
                 // "THIS MAY NEED TO CHECK MORE WEAPON ATTRIBUTES TO WORK BEST"
-                if !f.is_contact_weapon
-                    && (f.is_damage_weapon != crate::logic::modules::plant(1414))
-                {
+                if !f.is_contact_weapon && (f.is_damage_weapon != crate::logic::modules::plant(1414)) {
                     any_rider_has_viable_weapon = true;
                     break;
                 }
@@ -910,41 +609,25 @@ pub fn tc_let_riders_upgrade_weapon_set<T: TransportContainVirtuals>(
     undefined(world, me, Undefined::EndIteratorDereferenced);
 
     if any_rider_has_viable_weapon {
-        out(t, world, me, |w| {
-            w.set_weapon_set_flag(us, WEAPONSET_PLAYER_UPGRADE)
-        });
+        out(t, world, me, |w| w.set_weapon_set_flag(us, WEAPONSET_PLAYER_UPGRADE));
     } else if !crate::logic::modules::plant(1415) {
-        out(t, world, me, |w| {
-            w.clear_weapon_set_flag(us, WEAPONSET_PLAYER_UPGRADE)
-        });
+        out(t, world, me, |w| w.clear_weapon_set_flag(us, WEAPONSET_PLAYER_UPGRADE));
     }
 }
 
 /// Whether the Patch 1.01 Jarmen Kell hack applies to this transport and rider.
 fn is_jarmen_kell(world: &World, transport: ObjectId, rider: ObjectId) -> bool {
-    let (Some(t), Some(r)) = (world.objects.find(transport), world.objects.find(rider)) else {
-        return false;
-    };
-    t.template().is_kind_of(KINDOF_CLIFF_JUMPER)
-        && r.template().is_kind_of(KINDOF_HERO)
-        && r.template().is_kind_of(KINDOF_SALVAGER)
+    let (Some(t), Some(r)) = (world.objects.find(transport), world.objects.find(rider)) else { return false };
+    t.template().is_kind_of(KINDOF_CLIFF_JUMPER) && r.template().is_kind_of(KINDOF_HERO) && r.template().is_kind_of(KINDOF_SALVAGER)
 }
 
 /// `TransportContain::onContaining(rider, wasSelected)`.
-pub fn tc_on_containing<T: TransportContainVirtuals>(
-    t: &mut T,
-    world: &mut World,
-    me: ModuleHandle,
-    rider: ObjectId,
-    was_selected: bool,
-) {
+pub fn tc_on_containing<T: TransportContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, rider: ObjectId, was_selected: bool) {
     open_contain::base_on_containing(t, world, me, rider, was_selected);
 
     // objects inside a transport are held
     if !crate::logic::modules::plant(1416) {
-        out(t, world, me, |w| {
-            w.contain_set_disabled(rider, DISABLED_HELD)
-        });
+        out(t, world, me, |w| w.contain_set_disabled(rider, DISABLED_HELD));
     }
 
     let transport_slot_count = out(t, world, me, |w| w.get_transport_slot_count(rider));
@@ -952,9 +635,7 @@ pub fn tc_on_containing<T: TransportContainVirtuals>(
 
     // when we go from holding nothing to holding something we have a model condition to visually show the change
     if t.get_contain_count(world) == 1 {
-        out(t, world, me, |w| {
-            w.contain_drawable_model_condition(me.object, MODELCONDITION_LOADED, true)
-        });
+        out(t, world, me, |w| w.contain_drawable_model_condition(me.object, MODELCONDITION_LOADED, true));
     }
 
     if t.tc().data.armed_riders_upgrade_weapon_set {
@@ -963,42 +644,27 @@ pub fn tc_on_containing<T: TransportContainVirtuals>(
 
     // Patch 1.01: "Force Jarmen Kell to transfer weapon timer for snipe to and from the combat bike." Rider to bike.
     if is_jarmen_kell(world, me.object, rider) && !crate::logic::modules::plant(1417) {
-        out(t, world, me, |w| {
-            w.weapon_transfer_next_shot_stats(me.object, SECONDARY_WEAPON, rider, SECONDARY_WEAPON)
-        });
+        out(t, world, me, |w| w.weapon_transfer_next_shot_stats(me.object, SECONDARY_WEAPON, rider, SECONDARY_WEAPON));
     }
 }
 
 /// `TransportContain::onRemoving(rider)`.
-pub fn tc_on_removing<T: TransportContainVirtuals>(
-    t: &mut T,
-    world: &mut World,
-    me: ModuleHandle,
-    rider: ObjectId,
-) {
+pub fn tc_on_removing<T: TransportContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, rider: ObjectId) {
     open_contain::base_on_removing(t, world, me, rider);
 
     // object is no longer held inside a transport
-    out(t, world, me, |w| {
-        w.contain_clear_disabled(rider, DISABLED_HELD)
-    });
+    out(t, world, me, |w| w.contain_clear_disabled(rider, DISABLED_HELD));
 
     let d = t.tc().data.clone();
     let us = me.object;
     if !d.exit_bone.is_empty() {
-        if let Some(world_pos) = out(t, world, me, |w| {
-            w.contain_exit_bone_world_position(us, &d.exit_bone)
-        }) {
+        if let Some(world_pos) = out(t, world, me, |w| w.contain_exit_bone_world_position(us, &d.exit_bone)) {
             out(t, world, me, |w| w.contain_set_position(rider, &world_pos));
         }
     }
 
     if d.orient_like_container_on_exit != crate::logic::modules::plant(1418) {
-        let angle = world
-            .objects
-            .find(us)
-            .map(|o| o.thing.orientation())
-            .unwrap_or(0.0);
+        let angle = world.objects.find(us).map(|o| o.thing.orientation()).unwrap_or(0.0);
         out(t, world, me, |w| w.contain_set_orientation(rider, angle));
     }
 
@@ -1006,35 +672,18 @@ pub fn tc_on_removing<T: TransportContainVirtuals>(
         let parent = world.objects.find(us).and_then(|o| o.physics);
         let child = world.objects.find(rider).and_then(|o| o.physics);
         if let (Some(parent), Some(child)) = (parent, child) {
-            let mut starting_force = out(t, world, me, |w| {
-                w.module_call(us, parent, ModuleCall::PhysicsGetVelocity)
-            })
-            .as_coord();
-            let mass = out(t, world, me, |w| {
-                w.module_call(rider, child, ModuleCall::PhysicsGetMass)
-            })
-            .as_real(0.0);
+            let mut starting_force = out(t, world, me, |w| w.module_call(us, parent, ModuleCall::PhysicsGetVelocity)).as_coord();
+            let mass = out(t, world, me, |w| w.module_call(rider, child, ModuleCall::PhysicsGetMass)).as_real(0.0);
             starting_force.x *= mass;
             starting_force.y *= mass;
             if !crate::logic::modules::plant(1419) {
                 starting_force.z *= mass;
             }
-            out(t, world, me, |w| {
-                w.module_call(
-                    rider,
-                    child,
-                    ModuleCall::PhysicsApplyMotiveForce(starting_force),
-                )
-            });
+            out(t, world, me, |w| w.module_call(rider, child, ModuleCall::PhysicsApplyMotiveForce(starting_force)));
 
-            let com = out(t, world, me, |w| {
-                w.module_call(rider, child, ModuleCall::PhysicsGetCenterOfMassOffset)
-            })
-            .as_real(0.0);
+            let com = out(t, world, me, |w| w.module_call(rider, child, ModuleCall::PhysicsGetCenterOfMassOffset)).as_real(0.0);
             let pitch_rate = com * d.exit_pitch_rate;
-            out(t, world, me, |w| {
-                w.module_call(rider, child, ModuleCall::PhysicsSetPitchRate(pitch_rate))
-            });
+            out(t, world, me, |w| w.module_call(rider, child, ModuleCall::PhysicsSetPitchRate(pitch_rate)));
         }
     }
 
@@ -1043,17 +692,13 @@ pub fn tc_on_removing<T: TransportContainVirtuals>(
 
     // when we are empty again, clear the model condition for loaded
     if t.get_contain_count(world) == 0 {
-        out(t, world, me, |w| {
-            w.contain_drawable_model_condition(us, MODELCONDITION_LOADED, false)
-        });
+        out(t, world, me, |w| w.contain_drawable_model_condition(us, MODELCONDITION_LOADED, false));
     }
 
     if out(t, world, me, |w| w.is_above_terrain(us)) != crate::logic::modules::plant(1420) {
         // "temporarily mark the guy as being allowed to fall (overriding his locomotor's stick-to-ground attribute)"
         if let Some(physics) = world.objects.find(rider).and_then(|o| o.physics) {
-            out(t, world, me, |w| {
-                w.module_call(rider, physics, ModuleCall::PhysicsSetAllowToFall(true))
-            });
+            out(t, world, me, |w| w.module_call(rider, physics, ModuleCall::PhysicsSetAllowToFall(true)));
         }
     }
 
@@ -1061,37 +706,21 @@ pub fn tc_on_removing<T: TransportContainVirtuals>(
     let rider_ai = world.objects.find(rider).and_then(|o| o.ai);
     if d.go_aggressive_on_exit {
         if let Some(ai) = rider_ai {
-            out(t, world, me, |w| {
-                w.module_call(rider, ai, ModuleCall::AiSetAttitude(AI_AGGRESSIVE))
-            });
+            out(t, world, me, |w| w.module_call(rider, ai, ModuleCall::AiSetAttitude(AI_AGGRESSIVE)));
         }
     }
 
-    if world
-        .objects
-        .find(us)
-        .is_some_and(|o| o.is_effectively_dead())
-        != crate::logic::modules::plant(1421)
-    {
+    if world.objects.find(us).is_some_and(|o| o.is_effectively_dead()) != crate::logic::modules::plant(1421) {
         open_contain::scatter_to_nearby_position(t, world, me, rider);
     }
 
     if d.reset_mood_check_time_on_exit {
         if let Some(ai) = world.objects.find(rider).and_then(|o| o.ai) {
-            out(t, world, me, |w| {
-                w.module_call(rider, ai, ModuleCall::AiWakeUpAndAttemptToTarget)
-            });
+            out(t, world, me, |w| w.module_call(rider, ai, ModuleCall::AiWakeUpAndAttemptToTarget));
         }
     }
 
-    t.tc_mut().frame_exit_not_busy =
-        world
-            .frame()
-            .wrapping_add(if crate::logic::modules::plant(1422) {
-                0
-            } else {
-                d.exit_delay
-            });
+    t.tc_mut().frame_exit_not_busy = world.frame().wrapping_add(if crate::logic::modules::plant(1422) { 0 } else { d.exit_delay });
 
     if d.armed_riders_upgrade_weapon_set {
         tc_let_riders_upgrade_weapon_set(t, world, me);
@@ -1100,23 +729,15 @@ pub fn tc_on_removing<T: TransportContainVirtuals>(
     // Patch 1.01, the way out: bike to rider
     if is_jarmen_kell(world, us, rider) {
         if crate::logic::modules::plant(1423) {
-            out(t, world, me, |w| {
-                w.weapon_transfer_next_shot_stats(us, SECONDARY_WEAPON, rider, SECONDARY_WEAPON)
-            });
+            out(t, world, me, |w| w.weapon_transfer_next_shot_stats(us, SECONDARY_WEAPON, rider, SECONDARY_WEAPON));
         } else {
-            out(t, world, me, |w| {
-                w.weapon_transfer_next_shot_stats(rider, SECONDARY_WEAPON, us, SECONDARY_WEAPON)
-            });
+            out(t, world, me, |w| w.weapon_transfer_next_shot_stats(rider, SECONDARY_WEAPON, us, SECONDARY_WEAPON));
         }
     }
 }
 
 /// `TransportContain::createPayload()`.
-pub fn tc_create_payload<T: TransportContainVirtuals>(
-    t: &mut T,
-    world: &mut World,
-    me: ModuleHandle,
-) -> Result<(), IniError> {
+pub fn tc_create_payload<T: TransportContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
     let d = t.tc().data.clone();
     let count = d.initial_payload.count;
     let payload_template = world.thing_factory_find_template(&d.initial_payload.name);
@@ -1135,11 +756,8 @@ pub fn tc_create_payload<T: TransportContainVirtuals>(
             // `newObject(NULL)` throws ERROR_BAD_ARG out of update: the load sounds stay off, the payload is not marked created
             return Err(IniError::new(IniErrorKind::BadArg));
         };
-        let payload = out(t, world, me, |w| {
-            w.contain_new_payload_object(template, team, ObjectStatusMaskType::new())
-        });
-        if t.is_valid_container_for(world, me, payload, true) && !crate::logic::modules::plant(1424)
-        {
+        let payload = out(t, world, me, |w| w.contain_new_payload_object(template, team, ObjectStatusMaskType::new()));
+        if t.is_valid_container_for(world, me, payload, true) && !crate::logic::modules::plant(1424) {
             t.add_to_contain(world, me, payload);
         }
         // else DEBUG_CRASH: "PutInContainer is full, or not valid for the payload" (nothing in a release build)
@@ -1150,11 +768,7 @@ pub fn tc_create_payload<T: TransportContainVirtuals>(
 }
 
 /// `TransportContain::update()`: the payload on the first call, the riders' healing, then the base's.
-pub fn tc_update<T: TransportContainVirtuals>(
-    t: &mut T,
-    world: &mut World,
-    me: ModuleHandle,
-) -> UpdateSleepTime {
+pub fn tc_update<T: TransportContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle) -> UpdateSleepTime {
     let d = t.tc().data.clone();
     if !t.tc().payload_created {
         if let Err(e) = t.create_payload(world, me) {
@@ -1188,11 +802,7 @@ pub fn tc_update<T: TransportContainVirtuals>(
 }
 
 /// `TransportContain::killRidersWhoAreNotFreeToExit`: destroyed or killed, by the data's choice, before `removeAllContained` forces them out.
-pub fn tc_kill_riders_who_are_not_free_to_exit<T: TransportContainVirtuals>(
-    t: &mut T,
-    world: &mut World,
-    me: ModuleHandle,
-) {
+pub fn tc_kill_riders_who_are_not_free_to_exit<T: TransportContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle) {
     let d = t.tc().data.clone();
     // "increment the iterator, since death will pull this guy from the list somewhere else": a snapshot of the module's own list
     let list: Vec<ObjectId> = t.oc().contain_list().to_vec();
@@ -1208,12 +818,7 @@ pub fn tc_kill_riders_who_are_not_free_to_exit<T: TransportContainVirtuals>(
 }
 
 /// `TransportContain::isSpecificRiderFreeToExit(specificObject)`: "an override, not an extend".
-pub fn tc_is_specific_rider_free_to_exit<T: TransportContainVirtuals>(
-    t: &mut T,
-    world: &mut World,
-    me: ModuleHandle,
-    specific: ObjectId,
-) -> bool {
+pub fn tc_is_specific_rider_free_to_exit<T: TransportContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, specific: ObjectId) -> bool {
     if specific == INVALID_ID {
         return true; // "I can, in general, exit people."
     }
@@ -1221,10 +826,7 @@ pub fn tc_is_specific_rider_free_to_exit<T: TransportContainVirtuals>(
 
     // "present solely for some transports to override, so that they can land before allowing people to exit"
     if let Some(ai) = world.objects.find(us).and_then(|o| o.ai) {
-        let free = out(t, world, me, |w| {
-            w.module_call(us, ai, ModuleCall::AiGetFreeToExit { exiter: specific })
-        })
-        .as_int(FREE_TO_EXIT);
+        let free = out(t, world, me, |w| w.module_call(us, ai, ModuleCall::AiGetFreeToExit { exiter: specific })).as_int(FREE_TO_EXIT);
         if (free != FREE_TO_EXIT) != crate::logic::modules::plant(1428) {
             return false;
         }
@@ -1238,36 +840,20 @@ pub fn tc_is_specific_rider_free_to_exit<T: TransportContainVirtuals>(
     let Some(his_ai) = world.objects.find(specific).and_then(|o| o.ai) else {
         return false;
     };
-    if !out(t, world, me, |w| {
-        w.module_call(specific, his_ai, ModuleCall::AiHasCurLocomotor)
-    })
-    .as_bool()
-    {
+    if !out(t, world, me, |w| w.module_call(specific, his_ai, ModuleCall::AiHasCurLocomotor)).as_bool() {
         return false;
     }
 
     // "He can't get to this spot naturally, so I can't force him there. (amphib transport)"
-    let my_position = world
-        .objects
-        .find(us)
-        .map(|o| o.position)
-        .unwrap_or_default();
-    if !out(t, world, me, |w| {
-        w.contain_valid_movement_terrain(us, specific, &my_position)
-    }) && !crate::logic::modules::plant(1429)
-    {
+    let my_position = world.objects.find(us).map(|o| o.position).unwrap_or_default();
+    if !out(t, world, me, |w| w.contain_valid_movement_terrain(us, specific, &my_position)) && !crate::logic::modules::plant(1429) {
         return false;
     }
     true
 }
 
 /// `TransportContain::isPassengerAllowedToFire(id)`: infantry only, and the rule of an overlord-style container that holds this transport.
-pub fn tc_is_passenger_allowed_to_fire<T: TransportContainVirtuals>(
-    t: &mut T,
-    world: &mut World,
-    me: ModuleHandle,
-    id: ObjectId,
-) -> bool {
+pub fn tc_is_passenger_allowed_to_fire<T: TransportContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, id: ObjectId) -> bool {
     if let Some(passenger) = world.objects.find(id) {
         // "only allow infantry, and turrets and such. no vehicles."
         if !passenger.template().is_kind_of(KINDOF_INFANTRY) != crate::logic::modules::plant(1430) {
@@ -1276,29 +862,11 @@ pub fn tc_is_passenger_allowed_to_fire<T: TransportContainVirtuals>(
     }
 
     // "but wait! I may be riding on an Overlord"
-    let he_who_contains_me = world
-        .objects
-        .find(me.object)
-        .map_or(INVALID_ID, |o| o.contained_by);
+    let he_who_contains_me = world.objects.find(me.object).map_or(INVALID_ID, |o| o.contained_by);
     if he_who_contains_me != INVALID_ID {
         if let Some(his_contain) = world.get_contain(he_who_contains_me) {
-            if out(t, world, me, |w| {
-                w.module_call(
-                    he_who_contains_me,
-                    his_contain,
-                    ModuleCall::IsSpecialOverlordStyleContainer,
-                )
-            })
-            .as_bool()
-            {
-                return out(t, world, me, |w| {
-                    w.module_call(
-                        he_who_contains_me,
-                        his_contain,
-                        ModuleCall::IsPassengerAllowedToFire(id),
-                    )
-                })
-                .as_bool();
+            if out(t, world, me, |w| w.module_call(he_who_contains_me, his_contain, ModuleCall::IsSpecialOverlordStyleContainer)).as_bool() {
+                return out(t, world, me, |w| w.module_call(he_who_contains_me, his_contain, ModuleCall::IsPassengerAllowedToFire(id))).as_bool();
             }
         }
     }
@@ -1307,12 +875,7 @@ pub fn tc_is_passenger_allowed_to_fire<T: TransportContainVirtuals>(
 }
 
 /// `TransportContain::reserveDoorForExit(objType, specificObject)`.
-pub fn tc_reserve_door_for_exit<T: TransportContainVirtuals>(
-    t: &mut T,
-    world: &mut World,
-    me: ModuleHandle,
-    specific: ObjectId,
-) -> ExitDoorType {
+pub fn tc_reserve_door_for_exit<T: TransportContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, specific: ObjectId) -> ExitDoorType {
     if t.is_specific_rider_free_to_exit(world, me, specific) {
         DOOR_1
     } else {
@@ -1321,11 +884,7 @@ pub fn tc_reserve_door_for_exit<T: TransportContainVirtuals>(
 }
 
 /// `TransportContain::isExitBusy()`.
-pub fn tc_is_exit_busy<T: TransportContainVirtuals>(
-    t: &mut T,
-    world: &mut World,
-    me: ModuleHandle,
-) -> bool {
+pub fn tc_is_exit_busy<T: TransportContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle) -> bool {
     if t.tc().data.is_delay_exit_in_air && out(t, world, me, |w| w.is_above_terrain(me.object)) {
         return true;
     }
@@ -1336,20 +895,9 @@ pub fn tc_is_exit_busy<T: TransportContainVirtuals>(
 }
 
 /// `TransportContain::onCapture(oldOwner, newOwner)`: everybody out.
-pub fn tc_on_capture<T: TransportContainVirtuals>(
-    t: &mut T,
-    world: &mut World,
-    me: ModuleHandle,
-    old_owner: i32,
-    new_owner: i32,
-) {
+pub fn tc_on_capture<T: TransportContainVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, old_owner: i32, new_owner: i32) {
     if old_owner != new_owner {
-        if world
-            .objects
-            .find(me.object)
-            .is_some_and(|o| o.is_disabled_by_type(DISABLED_UNMANNED))
-            != crate::logic::modules::plant(1432)
-        {
+        if world.objects.find(me.object).is_some_and(|o| o.is_disabled_by_type(DISABLED_UNMANNED)) != crate::logic::modules::plant(1432) {
             // "If this vehicle was sniped, then instantly eject everyone (otherwise, the next guy to eject will recapture it)."
             t.remove_all_contained(world, me, false);
         } else {
@@ -1498,35 +1046,20 @@ macro_rules! derived_transport_contain_glue {
             /// The constructor's first half: the base's.
             pub fn unconstructed(
                 object: $crate::common::game_type::ObjectId,
-                module_data: Option<
-                    std::sync::Arc<
-                        $crate::logic::modules::transport_contain::TransportContainModuleData,
-                    >,
-                >,
+                module_data: Option<std::sync::Arc<$crate::logic::modules::transport_contain::TransportContainModuleData>>,
             ) -> $crate::common::ini::IniResult<$ty> {
-                Ok($ty {
-                    tc: $crate::logic::modules::transport_contain::TransportContain::unconstructed(
-                        object,
-                        module_data,
-                    )?,
-                })
+                Ok($ty { tc: $crate::logic::modules::transport_contain::TransportContain::unconstructed(object, module_data)? })
             }
             /// The `UpdateModule` base, for the scheduler's bookkeeping.
             pub fn update_module(&self) -> &$crate::logic::module::update_module::UpdateModule {
                 self.tc.update_module()
             }
             /// The module data.
-            pub fn module_data(
-                &self,
-            ) -> &std::sync::Arc<
-                $crate::logic::modules::transport_contain::TransportContainModuleData,
-            > {
+            pub fn module_data(&self) -> &std::sync::Arc<$crate::logic::modules::transport_contain::TransportContainModuleData> {
                 self.tc.module_data()
             }
             /// The `TransportContain` base.
-            pub fn transport_contain(
-                &self,
-            ) -> &$crate::logic::modules::transport_contain::TransportContain {
+            pub fn transport_contain(&self) -> &$crate::logic::modules::transport_contain::TransportContain {
                 &self.tc
             }
             /// The state `xfer` writes, as words: the base's (no fields of its own).
@@ -1534,28 +1067,15 @@ macro_rules! derived_transport_contain_glue {
                 self.tc.state_words()
             }
             /// The constructor's second half: the base's.
-            pub fn world_construct(
-                &mut self,
-                world: &mut $crate::logic::world::game_logic::World,
-                me: $crate::logic::world::module_call::ModuleHandle,
-            ) {
+            pub fn world_construct(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle) {
                 self.tc.world_construct(world, me);
             }
             /// `update()` as the scheduler runs it.
-            pub fn world_update(
-                &mut self,
-                world: &mut $crate::logic::world::game_logic::World,
-                me: $crate::logic::world::sleepy::UpdateHandle,
-            ) -> $crate::logic::module::update_module::UpdateSleepTime {
+            pub fn world_update(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::sleepy::UpdateHandle) -> $crate::logic::module::update_module::UpdateSleepTime {
                 $crate::logic::modules::update_behavior::world_update(self, world, me)
             }
             /// The module's answer to one of `Object`'s calls.
-            pub fn module_call(
-                &mut self,
-                world: &mut $crate::logic::world::game_logic::World,
-                me: $crate::logic::world::module_call::ModuleHandle,
-                call: $crate::logic::world::module_call::ModuleCall,
-            ) -> $crate::logic::world::module_call::ModuleReply {
+            pub fn module_call(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle, call: $crate::logic::world::module_call::ModuleCall) -> $crate::logic::world::module_call::ModuleReply {
                 $crate::logic::modules::open_contain::contain_module_call(self, world, me, call)
             }
             /// `xfer` with the scheduling half the slot holds: the version, then the base's.
@@ -1578,10 +1098,7 @@ macro_rules! derived_transport_contain_glue {
                 self.tc.crc_with(update, xfer)
             }
             /// `loadPostProcess` with the scheduling half: "extend base class".
-            pub fn load_post_process_with(
-                &mut self,
-                update: &mut $crate::logic::module::update_module::UpdateModule,
-            ) {
+            pub fn load_post_process_with(&mut self, update: &mut $crate::logic::module::update_module::UpdateModule) {
                 self.tc.load_post_process_with(update);
             }
         }
@@ -1591,11 +1108,7 @@ macro_rules! derived_transport_contain_glue {
             fn update_base(&self) -> &$crate::logic::module::update_module::UpdateModule {
                 self.tc.update_module()
             }
-            fn update(
-                &mut self,
-                world: &mut $crate::logic::world::game_logic::World,
-                me: $crate::logic::world::module_call::ModuleHandle,
-            ) -> $crate::logic::module::update_module::UpdateSleepTime {
+            fn update(&mut self, world: &mut $crate::logic::world::game_logic::World, me: $crate::logic::world::module_call::ModuleHandle) -> $crate::logic::module::update_module::UpdateSleepTime {
                 $crate::logic::modules::open_contain::OpenContainVirtuals::update(self, world, me)
             }
             fn into_body(self) -> $crate::logic::world::update_body::UpdateBody {
@@ -1607,29 +1120,18 @@ macro_rules! derived_transport_contain_glue {
                     _ => None,
                 }
             }
-            fn other_call(
-                &mut self,
-                _world: &mut $crate::logic::world::game_logic::World,
-                _me: $crate::logic::world::module_call::ModuleHandle,
-                _call: $crate::logic::world::module_call::ModuleCall,
-            ) -> $crate::logic::world::module_call::ModuleReply {
+            fn other_call(&mut self, _world: &mut $crate::logic::world::game_logic::World, _me: $crate::logic::world::module_call::ModuleHandle, _call: $crate::logic::world::module_call::ModuleCall) -> $crate::logic::world::module_call::ModuleReply {
                 $crate::logic::world::module_call::ModuleReply::Unhandled
             }
         }
 
         impl $crate::common::xfer::Snapshot for $ty {
             /// `crc`: "extend base class".
-            fn crc(
-                &mut self,
-                xfer: &mut dyn $crate::common::xfer::Xfer,
-            ) -> $crate::common::xfer::XferResult<()> {
+            fn crc(&mut self, xfer: &mut dyn $crate::common::xfer::Xfer) -> $crate::common::xfer::XferResult<()> {
                 $crate::common::xfer::Snapshot::crc(&mut self.tc, xfer)
             }
             /// `xfer` (version 1): the version, then `TransportContain::xfer`.
-            fn xfer(
-                &mut self,
-                xfer: &mut dyn $crate::common::xfer::Xfer,
-            ) -> $crate::common::xfer::XferResult<()> {
+            fn xfer(&mut self, xfer: &mut dyn $crate::common::xfer::Xfer) -> $crate::common::xfer::XferResult<()> {
                 let current: $crate::common::xfer::XferVersion = 1;
                 let mut version = current;
                 xfer.xfer_version(&mut version, current)?;
@@ -1673,12 +1175,7 @@ impl UpdateBehavior for TransportContain {
             _ => None,
         }
     }
-    fn other_call(
-        &mut self,
-        _world: &mut World,
-        _me: ModuleHandle,
-        _call: ModuleCall,
-    ) -> ModuleReply {
+    fn other_call(&mut self, _world: &mut World, _me: ModuleHandle, _call: ModuleCall) -> ModuleReply {
         ModuleReply::Unhandled
     }
 }

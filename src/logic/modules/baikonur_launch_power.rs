@@ -22,19 +22,17 @@ use std::sync::Arc;
 
 use crate::common::base_type::Coord3D;
 use crate::common::ini::{FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, UserData};
-use crate::common::model_state::MODELCONDITION_DOOR_1_OPENING;
 use crate::common::module::{ModuleDataKind, ObjectId};
-use crate::common::object_status_types::ObjectStatusMaskType;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::special_power_module::{SpecialPowerModule, SpecialPowerModuleData};
-use crate::logic::modules::special_power_body::{
-    self, special_power_module_call, SpecialPowerBehavior,
-};
+use crate::logic::modules::special_power_body::{self, special_power_module_call, SpecialPowerBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::update_body::UpdateBody;
 use crate::special_power_data_field_parse;
+use crate::common::model_state::MODELCONDITION_DOOR_1_OPENING;
+use crate::common::object_status_types::ObjectStatusMaskType;
 
 /// `class BaikonurLaunchPowerModuleData : public SpecialPowerModuleData`.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -55,9 +53,7 @@ impl BaikonurLaunchPowerModuleData {
     }
 
     /// `buildFieldParse(p)`: the behaviour base, the special power fields, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, BaikonurLaunchPowerModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, BaikonurLaunchPowerModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -65,34 +61,21 @@ impl BaikonurLaunchPowerModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<BaikonurLaunchPowerModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<BaikonurLaunchPowerModuleData> {
         let mut data = BaikonurLaunchPowerModuleData::new();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                BaikonurLaunchPowerModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, BaikonurLaunchPowerModuleData::build_field_parse)?;
         }
         Ok(data)
     }
 }
 
 /// `SpecialPowerModuleData::buildFieldParse`'s table, for this data class.
-static BASE_FIELD_PARSE: [FieldParse<BaikonurLaunchPowerModuleData>; 6] =
-    special_power_data_field_parse!(BaikonurLaunchPowerModuleData, special_power);
+static BASE_FIELD_PARSE: [FieldParse<BaikonurLaunchPowerModuleData>; 6] = special_power_data_field_parse!(BaikonurLaunchPowerModuleData, special_power);
 
 /// `BaikonurLaunchPowerModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<BaikonurLaunchPowerModuleData>; 2] = [
-    FieldParse::new(
-        "DetonationObject",
-        |ini, d, _| {
-            d.detonation_object = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("DetonationObject", |ini, d, _| { d.detonation_object = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
@@ -119,12 +102,8 @@ impl PartialEq for BaikonurLaunchPower {
 
 impl BaikonurLaunchPower {
     /// `BaikonurLaunchPower(thing, moduleData)`, the part that touches no world: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<BaikonurLaunchPowerModuleData>>,
-    ) -> IniResult<BaikonurLaunchPower> {
-        let data =
-            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(object: ObjectId, data: Option<Arc<BaikonurLaunchPowerModuleData>>) -> IniResult<BaikonurLaunchPower> {
+        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let power = SpecialPowerModule::new(object, Some(Arc::new(data.special_power.clone())))?;
         Ok(BaikonurLaunchPower { power, data })
     }
@@ -147,12 +126,7 @@ impl BaikonurLaunchPower {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         special_power_module_call(self, world, me, call)
     }
 }
@@ -173,17 +147,8 @@ impl SpecialPowerBehavior for BaikonurLaunchPower {
             _ => None,
         }
     }
-    fn do_special_power(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        command_options: u32,
-    ) -> Result<(), IniError> {
-        if world
-            .objects
-            .find(me.object)
-            .is_some_and(|o| o.is_disabled())
-        {
+    fn do_special_power(&mut self, world: &mut World, me: ModuleHandle, command_options: u32) -> Result<(), IniError> {
+        if world.objects.find(me.object).is_some_and(|o| o.is_disabled()) {
             return Ok(());
         }
         special_power_body::base_do_special_power(self, world, me, command_options)?;
@@ -192,34 +157,14 @@ impl SpecialPowerBehavior for BaikonurLaunchPower {
         }
         Ok(())
     }
-    fn do_special_power_at_location(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        loc: Coord3D,
-        angle: f32,
-        command_options: u32,
-    ) -> Result<(), IniError> {
-        if world
-            .objects
-            .find(me.object)
-            .is_some_and(|o| o.is_disabled())
-        {
+    fn do_special_power_at_location(&mut self, world: &mut World, me: ModuleHandle, loc: Coord3D, angle: f32, command_options: u32) -> Result<(), IniError> {
+        if world.objects.find(me.object).is_some_and(|o| o.is_disabled()) {
             return Ok(());
         }
-        special_power_body::base_do_special_power_at_location(
-            self,
-            world,
-            me,
-            loc,
-            angle,
-            command_options,
-        )?;
+        special_power_body::base_do_special_power_at_location(self, world, me, loc, angle, command_options)?;
         if let Some(template) = world.thing_factory_find_template(&self.data.detonation_object) {
             let team = world.get_team(me.object);
-            if let Ok(detonation) =
-                world.thing_factory_new_object(template, team, ObjectStatusMaskType::default())
-            {
+            if let Ok(detonation) = world.thing_factory_new_object(template, team, ObjectStatusMaskType::default()) {
                 world.set_position(detonation, &loc);
             }
         }
@@ -247,7 +192,6 @@ impl Snapshot for BaikonurLaunchPower {
 
 /// The factory's `NewModuleDataProc` for `BaikonurLaunchPower`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::BaikonurLaunchPower(Arc::new(
-        BaikonurLaunchPowerModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::BaikonurLaunchPower(Arc::new(BaikonurLaunchPowerModuleData::friend_new_module_data(ini)?)))
 }
+

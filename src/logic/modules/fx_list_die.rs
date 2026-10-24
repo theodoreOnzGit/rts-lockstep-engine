@@ -32,9 +32,7 @@ use std::sync::Arc;
 
 use crate::common::damage_fx::FxListName;
 use crate::common::game_type::INVALID_ID;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_UPGRADE};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::DamageInfo;
@@ -43,9 +41,7 @@ use crate::logic::module::die_module::{DieModule, DieModuleData, DIE_MODULE_DATA
 use crate::logic::module::upgrade_module::{UpgradeModuleData, UpgradeMux};
 use crate::logic::modules::crate_collide::CrateCollideModuleData;
 use crate::logic::modules::die_body::{die_module_call, DieBehavior};
-use crate::logic::modules::upgrade_mux_user::{
-    give_self_upgrade, upgrade_mux_call, UpgradeMuxUser,
-};
+use crate::logic::modules::upgrade_mux_user::{give_self_upgrade, upgrade_mux_call, UpgradeMuxUser};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::object_events::ObjectClientEvent;
@@ -70,23 +66,12 @@ pub struct FXListDieModuleData {
 impl Default for FXListDieModuleData {
     /// `FXListDieModuleData()`: no list, oriented, initially active.
     fn default() -> Self {
-        FXListDieModuleData {
-            die: DieModuleData::new(),
-            upgrade: Arc::new(UpgradeModuleData::new()),
-            default_death_fx: None,
-            orient_to_object: true,
-            initially_active: true,
-        }
+        FXListDieModuleData { die: DieModuleData::new(), upgrade: Arc::new(UpgradeModuleData::new()), default_death_fx: None, orient_to_object: true, initially_active: true }
     }
 }
 
 /// Lifts entry `k` of the layer-5 die field table onto `FXListDieModuleData::die`.
-fn lift_die_field(
-    k: usize,
-    i: &mut Ini<'_>,
-    d: &mut FXListDieModuleData,
-    u: &UserData,
-) -> IniResult<()> {
+fn lift_die_field(k: usize, i: &mut Ini<'_>, d: &mut FXListDieModuleData, u: &UserData) -> IniResult<()> {
     match DIE_MODULE_DATA_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.die, u),
         None => Ok(()),
@@ -95,56 +80,18 @@ fn lift_die_field(
 
 /// `DieModuleData::buildFieldParse`'s four fields, then this class's own.
 static OWN_FIELD_PARSE: [FieldParse<FXListDieModuleData>; 8] = [
-    FieldParse::new(
-        "DeathTypes",
-        |i, d, u| lift_die_field(0, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VeterancyLevels",
-        |i, d, u| lift_die_field(1, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExemptStatus",
-        |i, d, u| lift_die_field(2, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "RequiredStatus",
-        |i, d, u| lift_die_field(3, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "StartsActive",
-        |ini, d, _| {
-            d.initially_active = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DeathFX",
-        |ini, d, _| {
-            d.default_death_fx = CrateCollideModuleData::parse_fx_list(ini)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "OrientToObject",
-        |ini, d, _| {
-            d.orient_to_object = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("DeathTypes", |i, d, u| lift_die_field(0, i, d, u), UserData::None),
+    FieldParse::new("VeterancyLevels", |i, d, u| lift_die_field(1, i, d, u), UserData::None),
+    FieldParse::new("ExemptStatus", |i, d, u| lift_die_field(2, i, d, u), UserData::None),
+    FieldParse::new("RequiredStatus", |i, d, u| lift_die_field(3, i, d, u), UserData::None),
+    FieldParse::new("StartsActive", |ini, d, _| { d.initially_active = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("DeathFX", |ini, d, _| { d.default_death_fx = CrateCollideModuleData::parse_fx_list(ini)?; Ok(()) }, UserData::None),
+    FieldParse::new("OrientToObject", |ini, d, _| { d.orient_to_object = ini.parse_bool()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 /// `UpgradeMuxData::getFieldParse()`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<FXListDieModuleData>; 6] =
-    upgrade_module_data_field_parse!(FXListDieModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<FXListDieModuleData>; 6] = upgrade_module_data_field_parse!(FXListDieModuleData, upgrade);
 
 impl FXListDieModuleData {
     /// `buildFieldParse(p)`: the behaviour base, the die mux and this class's fields, then the upgrade mux's.
@@ -178,9 +125,7 @@ pub struct FXListDie {
 impl PartialEq for FXListDie {
     /// The same object, the same data object (upstream compares pointers) and the same executed flag.
     fn eq(&self, other: &Self) -> bool {
-        self.die.behavior().object() == other.die.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
-            && self.mux == other.mux
+        self.die.behavior().object() == other.die.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.mux == other.mux
     }
 }
 
@@ -194,11 +139,7 @@ impl FXListDie {
     pub fn new(object: ObjectId, data: Option<Arc<FXListDieModuleData>>) -> IniResult<FXListDie> {
         let data = data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let die = DieModule::new(object, Some(Arc::new(data.die.clone())))?;
-        Ok(FXListDie {
-            die,
-            data,
-            mux: UpgradeMux::new(),
-        })
+        Ok(FXListDie { die, data, mux: UpgradeMux::new() })
     }
 
     /// The data, as `getFXListDieModuleData()`.
@@ -221,12 +162,7 @@ impl FXListDie {
     }
 
     /// The module's answer to one of `Object`'s calls: `onDie` and the upgrade calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         if let Some(r) = upgrade_mux_call(self, world, me, call.clone()) {
             return r;
         }
@@ -247,11 +183,7 @@ impl DieBehavior for FXListDie {
             return;
         }
         let statics = world.statics.clone();
-        let masks = self
-            .data
-            .upgrade
-            .mux_data_mut()
-            .get_upgrade_activation_masks(&statics.upgrade_center, &mut world.names);
+        let masks = self.data.upgrade.mux_data_mut().get_upgrade_activation_masks(&statics.upgrade_center, &mut world.names);
         let conflicting = match masks {
             Ok((_activation, conflicting)) => conflicting,
             Err(e) => {
@@ -259,40 +191,19 @@ impl DieBehavior for FXListDie {
                 return;
             }
         };
-        let Some(obj) = world.objects.find(me.object) else {
-            return;
-        };
-        if obj.object_upgrades_completed.test_for_any(&conflicting)
-            && !crate::logic::modules::plant(882)
-        {
+        let Some(obj) = world.objects.find(me.object) else { return };
+        if obj.object_upgrades_completed.test_for_any(&conflicting) && !crate::logic::modules::plant(882) {
             return;
         }
         if let Some(player) = world.get_controlling_player(me.object) {
-            if world
-                .cuts
-                .player_completed_upgrade_mask(player)
-                .test_for_any(&conflicting)
-                && !crate::logic::modules::plant(883)
-            {
+            if world.cuts.player_completed_upgrade_mask(player).test_for_any(&conflicting) && !crate::logic::modules::plant(883) {
                 return;
             }
         }
-        let Some(fx) = self.data.default_death_fx.clone() else {
-            return;
-        };
+        let Some(fx) = self.data.default_death_fx.clone() else { return };
         if self.data.orient_to_object != crate::logic::modules::plant(884) {
-            let secondary = if crate::logic::modules::plant(885) {
-                INVALID_ID
-            } else {
-                world
-                    .find_object(info.input.source_id)
-                    .map_or(INVALID_ID, |o| o.id)
-            };
-            world.emit(ObjectClientEvent::FxListDoFxObjSecondary {
-                fx,
-                object_id: me.object,
-                secondary,
-            });
+            let secondary = if crate::logic::modules::plant(885) { INVALID_ID } else { world.find_object(info.input.source_id).map_or(INVALID_ID, |o| o.id) };
+            world.emit(ObjectClientEvent::FxListDoFxObjSecondary { fx, object_id: me.object, secondary });
         } else if let Some(o) = world.objects.find(me.object) {
             let position = o.get_position();
             world.emit(ObjectClientEvent::FxListDoFxPos { fx, position });
@@ -320,11 +231,7 @@ impl UpgradeMuxUser for FXListDie {
         &self.data.upgrade
     }
     /// `upgradeImplementation()`: "nothing!".
-    fn upgrade_implementation(
-        &mut self,
-        _world: &mut World,
-        _me: ModuleHandle,
-    ) -> Result<(), IniError> {
+    fn upgrade_implementation(&mut self, _world: &mut World, _me: ModuleHandle) -> Result<(), IniError> {
         Ok(())
     }
     fn mux_into_body(self) -> UpdateBody {
@@ -358,7 +265,5 @@ impl Snapshot for FXListDie {
 
 /// The factory's `NewModuleDataProc` for `FXListDie`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::FXListDie(Arc::new(
-        FXListDieModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::FXListDie(Arc::new(FXListDieModuleData::friend_new_module_data(ini)?)))
 }

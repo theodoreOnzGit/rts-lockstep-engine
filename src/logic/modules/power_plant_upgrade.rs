@@ -34,9 +34,9 @@ use crate::logic::module::upgrade_module::{UpgradeModule, UpgradeModuleData};
 use crate::logic::modules::upgrade_body::{upgrade_module_call, UpgradeBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
-use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::update_body::UpdateBody;
 use crate::upgrade_module_data_field_parse;
+use crate::logic::world::object_cuts::CutCall;
 
 /// `class PowerPlantUpgradeModuleData : public UpgradeModuleData`.
 #[derive(Debug)]
@@ -55,29 +55,21 @@ impl Default for PowerPlantUpgradeModuleData {
 }
 
 /// `UpgradeModuleData::buildFieldParse`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<PowerPlantUpgradeModuleData>; 6] =
-    upgrade_module_data_field_parse!(PowerPlantUpgradeModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<PowerPlantUpgradeModuleData>; 6] = upgrade_module_data_field_parse!(PowerPlantUpgradeModuleData, upgrade);
 
 impl PowerPlantUpgradeModuleData {
     /// `buildFieldParse(p)`: `BehaviorModuleData`'s, then `UpgradeModuleData`'s, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, PowerPlantUpgradeModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, PowerPlantUpgradeModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<PowerPlantUpgradeModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<PowerPlantUpgradeModuleData> {
         let mut data = PowerPlantUpgradeModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                PowerPlantUpgradeModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, PowerPlantUpgradeModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -95,19 +87,14 @@ pub struct PowerPlantUpgrade {
 impl PartialEq for PowerPlantUpgrade {
     /// The same data object and the same `m_upgradeExecuted` (upstream compares the data pointer).
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.data, &other.data)
-            && self.base.is_already_upgraded() == other.base.is_already_upgraded()
+        Arc::ptr_eq(&self.data, &other.data) && self.base.is_already_upgraded() == other.base.is_already_upgraded()
     }
 }
 
 impl PowerPlantUpgrade {
     /// `PowerPlantUpgrade(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<PowerPlantUpgradeModuleData>>,
-    ) -> IniResult<PowerPlantUpgrade> {
-        let data =
-            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(object: ObjectId, data: Option<Arc<PowerPlantUpgradeModuleData>>) -> IniResult<PowerPlantUpgrade> {
+        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let base = UpgradeModule::new(object, Some(data.upgrade.clone()))?;
         Ok(PowerPlantUpgrade { base, data })
     }
@@ -123,12 +110,7 @@ impl PowerPlantUpgrade {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         upgrade_module_call(self, world, me, call)
     }
 }
@@ -140,18 +122,11 @@ impl UpgradeBehavior for PowerPlantUpgrade {
     fn base_mut(&mut self) -> &mut UpgradeModule {
         &mut self.base
     }
-    fn upgrade_implementation(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-    ) -> Result<(), IniError> {
+    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
         // add the new power production to the object
         if let Some(player) = world.get_controlling_player(me.object) {
             if !crate::logic::modules::plant(653) {
-                world.cut(CutCall::PlayerAddPowerBonus {
-                    player,
-                    object: me.object,
-                });
+                world.cut(CutCall::PlayerAddPowerBonus { player, object: me.object });
             }
         }
         // for each behaviour module with a PowerPlantUpdateInterface: ppui->extendRods(TRUE)
@@ -159,13 +134,7 @@ impl UpgradeBehavior for PowerPlantUpgrade {
             if idx == me.index || (crate::logic::modules::plant(655) && idx == me.index + 1) {
                 continue;
             }
-            world.module_call(
-                me.object,
-                idx,
-                ModuleCall::ExtendRods {
-                    extend: !crate::logic::modules::plant(654),
-                },
-            );
+            world.module_call(me.object, idx, ModuleCall::ExtendRods { extend: !crate::logic::modules::plant(654) });
         }
         Ok(())
     }
@@ -181,10 +150,7 @@ impl UpgradeBehavior for PowerPlantUpgrade {
         }
         // remove the power bonus from the player
         if let Some(player) = world.get_controlling_player(me.object) {
-            world.cut(CutCall::PlayerRemovePowerBonus {
-                player,
-                object: me.object,
-            });
+            world.cut(CutCall::PlayerRemovePowerBonus { player, object: me.object });
         }
         // this upgrade module is now "not upgraded"
         if !crate::logic::modules::plant(658) {
@@ -197,33 +163,18 @@ impl UpgradeBehavior for PowerPlantUpgrade {
         if !self.base.is_already_upgraded() {
             return;
         }
-        if world
-            .objects
-            .find(me.object)
-            .is_some_and(|o| o.is_disabled())
-            && !crate::logic::modules::plant(651)
-        {
+        if world.objects.find(me.object).is_some_and(|o| o.is_disabled()) && !crate::logic::modules::plant(651) {
             return;
         }
-        let (old_owner, new_owner) = if crate::logic::modules::plant(652) {
-            (new_owner, old_owner)
-        } else {
-            (old_owner, new_owner)
-        };
+        let (old_owner, new_owner) = if crate::logic::modules::plant(652) { (new_owner, old_owner) } else { (old_owner, new_owner) };
         // remove power bonus from old owner
         if old_owner >= 0 {
-            world.cut(CutCall::PlayerRemovePowerBonus {
-                player: old_owner,
-                object: me.object,
-            });
+            world.cut(CutCall::PlayerRemovePowerBonus { player: old_owner, object: me.object });
             self.base.mux_mut().set_upgrade_executed(false);
         }
         // add power bonus to the new owner
         if new_owner >= 0 {
-            world.cut(CutCall::PlayerAddPowerBonus {
-                player: new_owner,
-                object: me.object,
-            });
+            world.cut(CutCall::PlayerAddPowerBonus { player: new_owner, object: me.object });
             self.base.mux_mut().set_upgrade_executed(true);
         }
     }
@@ -231,15 +182,10 @@ impl UpgradeBehavior for PowerPlantUpgrade {
     fn load_post_process_world(&mut self, world: &mut World, me: ModuleHandle) {
         // Most upgrade modules have state change effects that are themselves saved. This one is a fire and forget.
         // So we need to re-fire on load if we are turned on.
-        if (self.base.is_already_upgraded() || crate::logic::modules::plant(657))
-            && !crate::logic::modules::plant(656)
-        {
+        if (self.base.is_already_upgraded() || crate::logic::modules::plant(657)) && !crate::logic::modules::plant(656) {
             // add the new power production to the object
             if let Some(player) = world.get_controlling_player(me.object) {
-                world.cut(CutCall::PlayerAddPowerBonus {
-                    player,
-                    object: me.object,
-                });
+                world.cut(CutCall::PlayerAddPowerBonus { player, object: me.object });
             }
         }
     }
@@ -275,7 +221,5 @@ impl Snapshot for PowerPlantUpgrade {
 
 /// The factory's `NewModuleDataProc` for `PowerPlantUpgrade`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::PowerPlantUpgrade(Arc::new(
-        PowerPlantUpgradeModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::PowerPlantUpgrade(Arc::new(PowerPlantUpgradeModuleData::friend_new_module_data(ini)?)))
 }

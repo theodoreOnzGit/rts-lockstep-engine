@@ -14,6 +14,7 @@
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
 
+
 //! `VeterancyGainCreate`: when an object is produced, its veterancy level is
 //! raised to `StartingLevel` if the controlling player knows `ScienceRequired`
 //! (or no science is required). `setMinVeterancyLevel` never lowers a level.
@@ -34,9 +35,7 @@ use std::sync::Arc;
 
 use crate::common::game_common::{VeterancyLevel, VETERANCY_NAMES};
 use crate::common::game_type::ObjectId;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::logic::module::create_module::{CreateModule, CreateModuleData};
 use crate::logic::modules::create_host::CreateHost;
 use crate::logic::world::object::veterancy_from_i32;
@@ -54,11 +53,7 @@ pub struct VeterancyGainCreateModuleData {
 
 impl Default for VeterancyGainCreateModuleData {
     fn default() -> Self {
-        VeterancyGainCreateModuleData {
-            create: CreateModuleData::new(),
-            starting_level: VeterancyLevel::Regular as i32,
-            science_required: None,
-        }
+        VeterancyGainCreateModuleData { create: CreateModuleData::new(), starting_level: VeterancyLevel::Regular as i32, science_required: None }
     }
 }
 
@@ -69,28 +64,18 @@ impl VeterancyGainCreateModuleData {
     }
 
     /// `VeterancyGainCreateModuleData::buildFieldParse(p)`: the base has no fields.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, VeterancyGainCreateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, VeterancyGainCreateModuleData>) -> IniResult<()> {
         p.add(VETERANCY_GAIN_FIELDS)
     }
 
     /// `StartingLevel`, an index into `TheVeterancyNames`.
-    fn parse_starting_level(
-        ini: &mut Ini<'_>,
-        this: &mut VeterancyGainCreateModuleData,
-        _ud: &UserData,
-    ) -> IniResult<()> {
+    fn parse_starting_level(ini: &mut Ini<'_>, this: &mut VeterancyGainCreateModuleData, _ud: &UserData) -> IniResult<()> {
         this.starting_level = ini.parse_index_list(&VETERANCY_NAMES)?;
         Ok(())
     }
 
     /// `ScienceRequired`: one token, held for the host to resolve.
-    fn parse_science(
-        ini: &mut Ini<'_>,
-        this: &mut VeterancyGainCreateModuleData,
-        _ud: &UserData,
-    ) -> IniResult<()> {
+    fn parse_science(ini: &mut Ini<'_>, this: &mut VeterancyGainCreateModuleData, _ud: &UserData) -> IniResult<()> {
         let token = ini.get_next_token(None)?;
         this.science_required = Some(token);
         Ok(())
@@ -98,16 +83,8 @@ impl VeterancyGainCreateModuleData {
 }
 
 static VETERANCY_GAIN_FIELDS: &[FieldParse<VeterancyGainCreateModuleData>] = &[
-    FieldParse::new(
-        "StartingLevel",
-        VeterancyGainCreateModuleData::parse_starting_level,
-        UserData::Names(&VETERANCY_NAMES),
-    ),
-    FieldParse::new(
-        "ScienceRequired",
-        VeterancyGainCreateModuleData::parse_science,
-        UserData::None,
-    ),
+    FieldParse::new("StartingLevel", VeterancyGainCreateModuleData::parse_starting_level, UserData::Names(&VETERANCY_NAMES)),
+    FieldParse::new("ScienceRequired", VeterancyGainCreateModuleData::parse_science, UserData::None),
     FieldParse::end(),
 ];
 
@@ -122,10 +99,7 @@ pub struct VeterancyGainCreate {
 
 impl VeterancyGainCreate {
     /// `VeterancyGainCreate(thing, moduleData)`.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<VeterancyGainCreateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn new(object: ObjectId, data: Option<Arc<VeterancyGainCreateModuleData>>) -> IniResult<Self> {
         let data = data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let create = CreateModule::new(object, Some(Arc::new(data.create.clone())))?;
         Ok(VeterancyGainCreate { create, data })
@@ -153,10 +127,7 @@ impl VeterancyGainCreate {
         }
         if host.experience_is_trainable(obj) == Some(true) {
             // srj sez: use "setMin" here so that we never lose levels
-            host.experience_set_min_veterancy_level(
-                obj,
-                veterancy_from_i32(self.data.starting_level),
-            );
+            host.experience_set_min_veterancy_level(obj, veterancy_from_i32(self.data.starting_level));
         }
     }
 }
@@ -164,27 +135,18 @@ impl VeterancyGainCreate {
 // --- p1w10-sonnet ---
 impl VeterancyGainCreateModuleData {
     /// `VeterancyGainCreate::friend_newModuleData(ini)`: new data, read with `initFromINIMultiProc` if there is an `ini`.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<VeterancyGainCreateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<VeterancyGainCreateModuleData> {
         let mut data = VeterancyGainCreateModuleData::new();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                VeterancyGainCreateModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, VeterancyGainCreateModuleData::build_field_parse)?;
         }
         Ok(data)
     }
 }
 
 /// The factory's `NewModuleDataProc` for `VeterancyGainCreate`.
-pub fn new_module_data(
-    ini: Option<&mut Ini<'_>>,
-) -> IniResult<crate::common::module::ModuleDataKind> {
-    Ok(crate::common::module::ModuleDataKind::VeterancyGainCreate(
-        Arc::new(VeterancyGainCreateModuleData::friend_new_module_data(ini)?),
-    ))
+pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::VeterancyGainCreate(Arc::new(VeterancyGainCreateModuleData::friend_new_module_data(ini)?)))
 }
 // --- end p1w10-sonnet ---
 
@@ -194,12 +156,7 @@ create_module_eq!(VeterancyGainCreate, data);
 
 impl VeterancyGainCreate {
     /// The module's answer to one of `Object`'s calls (`onCreate` and `onBuildComplete` of the create interface).
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         let _ = me;
         match call {
             ModuleCall::OnCreate => {
@@ -231,12 +188,7 @@ mod tests {
         let mut data = VeterancyGainCreateModuleData::new();
         data.starting_level = 2;
         data.science_required = Some(b"SCIENCE_X".to_vec());
-        let mut h = Recorder {
-            controller: Some(0),
-            trainable: Some(true),
-            sciences: vec![b"SCIENCE_X".to_vec()],
-            ..Default::default()
-        };
+        let mut h = Recorder { controller: Some(0), trainable: Some(true), sciences: vec![b"SCIENCE_X".to_vec()], ..Default::default() };
         module(data.clone()).on_create(&mut h);
         assert_eq!(h.log, vec!["minvet 5 2"]);
         h.sciences.clear();
@@ -248,11 +200,7 @@ mod tests {
     #[test]
     fn no_science_needed_and_no_controller_or_tracker_cases() {
         let data = VeterancyGainCreateModuleData::new();
-        let mut h = Recorder {
-            controller: Some(0),
-            trainable: Some(false),
-            ..Default::default()
-        };
+        let mut h = Recorder { controller: Some(0), trainable: Some(false), ..Default::default() };
         module(data.clone()).on_create(&mut h);
         assert!(h.log.is_empty(), "not trainable");
         h.trainable = None;

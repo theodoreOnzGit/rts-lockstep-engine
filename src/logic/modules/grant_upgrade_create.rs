@@ -14,6 +14,7 @@
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
 
+
 //! `GrantUpgradeCreate`: grants the upgrade `UpgradeToGrant` when the object
 //! is created (unless `ExemptStatus` covers `UNDER_CONSTRUCTION` and the object
 //! is under construction) and again when it is finished building.
@@ -32,18 +33,14 @@
 //! where upstream dereferences it is [`CreateError::NoControllingPlayer`].
 
 // --- p1w10-sonnet ---
-use crate::logic::modules::create_host::{
-    create_module_eq, create_module_snapshot, report_create_error,
-};
+use crate::logic::modules::create_host::{create_module_eq, create_module_snapshot, report_create_error};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 // --- end p1w10-sonnet ---
 use std::sync::Arc;
 
 use crate::common::game_type::ObjectId;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_UNDER_CONSTRUCTION};
 use crate::logic::module::create_module::{CreateModule, CreateModuleData};
 use crate::logic::modules::create_host::{CreateError, CreateHost};
@@ -66,43 +63,25 @@ impl GrantUpgradeCreateModuleData {
     }
 
     /// `GrantUpgradeCreateModuleData::buildFieldParse(p)`: the base has no fields.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, GrantUpgradeCreateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, GrantUpgradeCreateModuleData>) -> IniResult<()> {
         p.add(GRANT_UPGRADE_FIELDS)
     }
 
     /// `UpgradeToGrant`: an ASCII name.
-    fn parse_upgrade_name(
-        ini: &mut Ini<'_>,
-        this: &mut GrantUpgradeCreateModuleData,
-        _ud: &UserData,
-    ) -> IniResult<()> {
+    fn parse_upgrade_name(ini: &mut Ini<'_>, this: &mut GrantUpgradeCreateModuleData, _ud: &UserData) -> IniResult<()> {
         this.upgrade_name = ini.parse_ascii_string()?;
         Ok(())
     }
 
     /// `ExemptStatus`: a list of object status names.
-    fn parse_exempt_status(
-        ini: &mut Ini<'_>,
-        this: &mut GrantUpgradeCreateModuleData,
-        _ud: &UserData,
-    ) -> IniResult<()> {
+    fn parse_exempt_status(ini: &mut Ini<'_>, this: &mut GrantUpgradeCreateModuleData, _ud: &UserData) -> IniResult<()> {
         this.exempt_status.parse_from_ini(ini)
     }
 }
 
 static GRANT_UPGRADE_FIELDS: &[FieldParse<GrantUpgradeCreateModuleData>] = &[
-    FieldParse::new(
-        "UpgradeToGrant",
-        GrantUpgradeCreateModuleData::parse_upgrade_name,
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExemptStatus",
-        GrantUpgradeCreateModuleData::parse_exempt_status,
-        UserData::None,
-    ),
+    FieldParse::new("UpgradeToGrant", GrantUpgradeCreateModuleData::parse_upgrade_name, UserData::None),
+    FieldParse::new("ExemptStatus", GrantUpgradeCreateModuleData::parse_exempt_status, UserData::None),
     FieldParse::end(),
 ];
 
@@ -117,10 +96,7 @@ pub struct GrantUpgradeCreate {
 
 impl GrantUpgradeCreate {
     /// `GrantUpgradeCreate(thing, moduleData)`.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<GrantUpgradeCreateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn new(object: ObjectId, data: Option<Arc<GrantUpgradeCreateModuleData>>) -> IniResult<Self> {
         let data = data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let create = CreateModule::new(object, Some(Arc::new(data.create.clone())))?;
         Ok(GrantUpgradeCreate { create, data })
@@ -136,17 +112,13 @@ impl GrantUpgradeCreate {
         let obj = self.create.behavior().object();
         let exempt = &self.data.exempt_status;
         let current = host.object_status_bits(obj);
-        if !(exempt.test(OBJECT_STATUS_UNDER_CONSTRUCTION)
-            && !current.test(OBJECT_STATUS_UNDER_CONSTRUCTION))
-        {
+        if !(exempt.test(OBJECT_STATUS_UNDER_CONSTRUCTION) && !current.test(OBJECT_STATUS_UNDER_CONSTRUCTION)) {
             return Ok(());
         }
         let Some(upgrade) = host.find_upgrade(&self.data.upgrade_name) else {
             return Ok(()); // DEBUG_ASSERTCRASH: debug-only, nothing in release
         };
-        let player = host
-            .controlling_player(obj)
-            .ok_or(CreateError::NoControllingPlayer)?;
+        let player = host.controlling_player(obj).ok_or(CreateError::NoControllingPlayer)?;
         if upgrade.player_type {
             host.player_add_upgrade_complete(player, upgrade);
         } else {
@@ -167,9 +139,7 @@ impl GrantUpgradeCreate {
             return Ok(()); // DEBUG_ASSERTCRASH: debug-only, nothing in release
         };
         if upgrade.player_type {
-            let player = host
-                .controlling_player(obj)
-                .ok_or(CreateError::NoControllingPlayer)?;
+            let player = host.controlling_player(obj).ok_or(CreateError::NoControllingPlayer)?;
             host.player_add_upgrade_complete(player, upgrade);
         } else {
             host.object_give_upgrade(obj, upgrade);
@@ -181,27 +151,18 @@ impl GrantUpgradeCreate {
 // --- p1w10-sonnet ---
 impl GrantUpgradeCreateModuleData {
     /// `GrantUpgradeCreate::friend_newModuleData(ini)`: new data, read with `initFromINIMultiProc` if there is an `ini`.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<GrantUpgradeCreateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<GrantUpgradeCreateModuleData> {
         let mut data = GrantUpgradeCreateModuleData::new();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                GrantUpgradeCreateModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, GrantUpgradeCreateModuleData::build_field_parse)?;
         }
         Ok(data)
     }
 }
 
 /// The factory's `NewModuleDataProc` for `GrantUpgradeCreate`.
-pub fn new_module_data(
-    ini: Option<&mut Ini<'_>>,
-) -> IniResult<crate::common::module::ModuleDataKind> {
-    Ok(crate::common::module::ModuleDataKind::GrantUpgradeCreate(
-        Arc::new(GrantUpgradeCreateModuleData::friend_new_module_data(ini)?),
-    ))
+pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::GrantUpgradeCreate(Arc::new(GrantUpgradeCreateModuleData::friend_new_module_data(ini)?)))
 }
 // --- end p1w10-sonnet ---
 
@@ -211,12 +172,7 @@ create_module_eq!(GrantUpgradeCreate, data);
 
 impl GrantUpgradeCreate {
     /// The module's answer to one of `Object`'s calls (`onCreate` and `onBuildComplete` of the create interface).
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         let _ = me;
         match call {
             ModuleCall::OnCreate => {
@@ -251,29 +207,18 @@ mod tests {
     }
 
     fn upgrade(player_type: bool) -> UpgradeRef {
-        UpgradeRef {
-            id: 42,
-            player_type,
-        }
+        UpgradeRef { id: 42, player_type }
     }
 
     #[test]
     fn create_grants_to_the_player_or_the_object_and_records_it() {
         let mut m = GrantUpgradeCreate::new(6, Some(data(true, b"U_P"))).unwrap();
-        let mut h = Recorder {
-            controller: Some(2),
-            upgrades: vec![(b"U_P".to_vec(), upgrade(true))],
-            ..Default::default()
-        };
+        let mut h = Recorder { controller: Some(2), upgrades: vec![(b"U_P".to_vec(), upgrade(true))], ..Default::default() };
         m.on_create(&mut h).unwrap();
         assert_eq!(h.log, vec!["player-upgrade 2 42", "academy 2 42 true"]);
 
         let mut m = GrantUpgradeCreate::new(6, Some(data(true, b"U_O"))).unwrap();
-        let mut h = Recorder {
-            controller: Some(2),
-            upgrades: vec![(b"U_O".to_vec(), upgrade(false))],
-            ..Default::default()
-        };
+        let mut h = Recorder { controller: Some(2), upgrades: vec![(b"U_O".to_vec(), upgrade(false))], ..Default::default() };
         m.on_create(&mut h).unwrap();
         assert_eq!(h.log, vec!["object-upgrade 6 42", "academy 2 42 true"]);
     }
@@ -281,11 +226,7 @@ mod tests {
     #[test]
     fn exempt_status_under_construction_blocks_the_create_grant() {
         let mut m = GrantUpgradeCreate::new(6, Some(data(false, b"U_O"))).unwrap();
-        let mut h = Recorder {
-            controller: Some(2),
-            upgrades: vec![(b"U_O".to_vec(), upgrade(false))],
-            ..Default::default()
-        };
+        let mut h = Recorder { controller: Some(2), upgrades: vec![(b"U_O".to_vec(), upgrade(false))], ..Default::default() };
         m.on_create(&mut h).unwrap();
         assert!(h.log.is_empty());
     }
@@ -293,11 +234,7 @@ mod tests {
     #[test]
     fn build_complete_grants_once_without_the_academy_record() {
         let mut m = GrantUpgradeCreate::new(6, Some(data(false, b"U_P"))).unwrap();
-        let mut h = Recorder {
-            controller: Some(2),
-            upgrades: vec![(b"U_P".to_vec(), upgrade(true))],
-            ..Default::default()
-        };
+        let mut h = Recorder { controller: Some(2), upgrades: vec![(b"U_P".to_vec(), upgrade(true))], ..Default::default() };
         m.on_build_complete(&mut h).unwrap();
         m.on_build_complete(&mut h).unwrap();
         assert_eq!(h.log, vec!["player-upgrade 2 42"]);
@@ -306,19 +243,12 @@ mod tests {
     #[test]
     fn unknown_upgrade_is_silent_and_no_player_is_an_error() {
         let mut m = GrantUpgradeCreate::new(6, Some(data(true, b"NOPE"))).unwrap();
-        let mut h = Recorder {
-            controller: Some(2),
-            ..Default::default()
-        };
+        let mut h = Recorder { controller: Some(2), ..Default::default() };
         m.on_create(&mut h).unwrap();
         assert!(h.log.is_empty());
 
         let mut m = GrantUpgradeCreate::new(6, Some(data(true, b"U_P"))).unwrap();
-        let mut h = Recorder {
-            controller: None,
-            upgrades: vec![(b"U_P".to_vec(), upgrade(true))],
-            ..Default::default()
-        };
+        let mut h = Recorder { controller: None, upgrades: vec![(b"U_P".to_vec(), upgrade(true))], ..Default::default() };
         assert_eq!(m.on_create(&mut h), Err(CreateError::NoControllingPlayer));
     }
 }

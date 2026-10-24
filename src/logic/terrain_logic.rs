@@ -170,7 +170,7 @@ use std::cmp::Ordering;
 
 use crate::common::ascii_string::{AsciiString, AsciiStringError};
 use crate::common::base_type::{
-    real_to_int_floor, Coord2D, Coord3D, ICoord2D, ICoord3D, Region2D, Region3D, PI,
+    real_to_int_floor, Coord2D, Coord3D, ICoord2D, ICoord3D, PI, Region2D, Region3D,
 };
 use crate::common::dict::Dict;
 use crate::common::game_common::LOGICFRAMES_PER_SECOND;
@@ -182,16 +182,12 @@ use crate::common::global_data::GlobalData;
 use crate::common::name_key_generator::NameKeyType;
 use crate::common::trig;
 use crate::common::xfer::{Xfer, XferMode, XferStatus};
-use crate::formats::data_chunk::{
-    CachedFileInputStream, ChunkError, ChunkResult, ChunkUndefined, DataChunkInfo, DataChunkInput,
-};
-use crate::logic::damage::{
-    DamageInfo, DAMAGE_FALLING, DAMAGE_WATER, DEATH_NORMAL, HUGE_DAMAGE_AMOUNT,
-};
+use crate::formats::data_chunk::{CachedFileInputStream, ChunkError, ChunkResult, ChunkUndefined, DataChunkInfo, DataChunkInput};
+use crate::logic::damage::{DamageInfo, DEATH_NORMAL, DAMAGE_FALLING, DAMAGE_WATER, HUGE_DAMAGE_AMOUNT};
 use crate::logic::module::body_module::{BodyDamageType, BODY_PRISTINE, BODY_RUBBLE};
 use crate::logic::terrain_visual::{
-    LogicHeightMap, TerrainUndefined, TerrainVisualEvent, TerrainVisualState, WaterGridSample,
-    K_MAX_HEIGHT, MAP_HEIGHT_SCALE, MAP_XY_FACTOR,
+    LogicHeightMap, TerrainUndefined, TerrainVisualEvent, TerrainVisualState, WaterGridSample, K_MAX_HEIGHT,
+    MAP_HEIGHT_SCALE, MAP_XY_FACTOR,
 };
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::plane::PlaneClass;
@@ -233,12 +229,8 @@ pub enum BridgeTowerType {
 
 impl BridgeTowerType {
     /// The four, in enum order.
-    pub const ALL: [BridgeTowerType; BRIDGE_MAX_TOWERS] = [
-        BridgeTowerType::FromLeft,
-        BridgeTowerType::FromRight,
-        BridgeTowerType::ToLeft,
-        BridgeTowerType::ToRight,
-    ];
+    pub const ALL: [BridgeTowerType; BRIDGE_MAX_TOWERS] =
+        [BridgeTowerType::FromLeft, BridgeTowerType::FromRight, BridgeTowerType::ToLeft, BridgeTowerType::ToRight];
 }
 
 /// Why a [`TerrainLogic`] call failed.
@@ -262,10 +254,7 @@ impl TerrainLogicError {
     /// Whether this is one of the inputs the C++ does not define (and the
     /// differential test therefore does not compare).
     pub fn is_undefined_upstream(&self) -> bool {
-        matches!(
-            self,
-            TerrainLogicError::Undefined(_) | TerrainLogicError::Chunk(_)
-        )
+        matches!(self, TerrainLogicError::Undefined(_) | TerrainLogicError::Chunk(_))
     }
 }
 
@@ -330,32 +319,19 @@ pub enum TriggerAreaError {
 impl TriggerArea {
     /// The view of a translated `PolygonTrigger`: its name, id, water flag and
     /// points, in order.
-    pub fn from_polygon_trigger(
-        t: &crate::logic::polygon_trigger::PolygonTrigger,
-    ) -> Result<Self, TriggerAreaError> {
+    pub fn from_polygon_trigger(t: &crate::logic::polygon_trigger::PolygonTrigger) -> Result<Self, TriggerAreaError> {
         let name = AsciiString::try_from_bytes(t.trigger_name()).map_err(TriggerAreaError::Name)?;
         let points = (0..t.num_points()).filter_map(|i| t.get_point(i)).collect();
-        TriggerArea::new(name, t.id(), t.is_water_area(), points)
-            .map_err(TriggerAreaError::Undefined)
+        TriggerArea::new(name, t.id(), t.is_water_area(), points).map_err(TriggerAreaError::Undefined)
     }
 
     /// A trigger area. Fewer than one point is undefined upstream
     /// (`getPoint(0)` indexes before the array).
-    pub fn new(
-        name: AsciiString,
-        id: i32,
-        water_area: bool,
-        points: Vec<ICoord3D>,
-    ) -> Result<Self, TerrainUndefined> {
+    pub fn new(name: AsciiString, id: i32, water_area: bool, points: Vec<ICoord3D>) -> Result<Self, TerrainUndefined> {
         if points.is_empty() {
             return Err(TerrainUndefined::TriggerWithoutPoints);
         }
-        Ok(TriggerArea {
-            name,
-            id,
-            water_area,
-            points,
-        })
+        Ok(TriggerArea { name, id, water_area, points })
     }
 
     /// `getTriggerName()`.
@@ -422,11 +398,7 @@ impl TriggerArea {
         let n = self.points.len();
         for i in 0..n {
             let pt1 = self.points[i];
-            let pt2 = if i == n - 1 {
-                self.points[0]
-            } else {
-                self.points[i + 1]
-            };
+            let pt2 = if i == n - 1 { self.points[0] } else { self.points[i + 1] };
             if pt1.y == pt2.y {
                 continue; // ignore horizontal lines.
             }
@@ -442,8 +414,7 @@ impl TriggerArea {
             // Line segment crosses ray from point x->infinity.
             let dy = pt2.y.wrapping_sub(pt1.y);
             let dx = pt2.x.wrapping_sub(pt1.x);
-            let intersection_x =
-                pt1.x as f32 + (dx.wrapping_mul(point.y.wrapping_sub(pt1.y)) as f32) / (dy as f32);
+            let intersection_x = pt1.x as f32 + (dx.wrapping_mul(point.y.wrapping_sub(pt1.y)) as f32) / (dy as f32);
             if intersection_x >= point.x as f32 {
                 inside = !inside;
             }
@@ -467,11 +438,7 @@ impl WaypointMapObject {
     /// The view of a translated `MapObject`: whether it is a waypoint, its
     /// location and its properties.
     pub fn from_map_object(o: &crate::logic::map_object::MapObject) -> Self {
-        WaypointMapObject {
-            is_waypoint: o.is_waypoint(),
-            location: o.location(),
-            properties: o.properties().clone(),
-        }
+        WaypointMapObject { is_waypoint: o.is_waypoint(), location: o.location(), properties: o.properties().clone() }
     }
 }
 
@@ -514,15 +481,7 @@ pub struct Waypoint {
 
 impl Waypoint {
     /// `Waypoint(id, name, pLoc, label1, label2, label3, biDirectional)`.
-    pub fn new(
-        id: i32,
-        name: AsciiString,
-        loc: Coord3D,
-        label1: AsciiString,
-        label2: AsciiString,
-        label3: AsciiString,
-        bi_directional: bool,
-    ) -> Self {
+    pub fn new(id: i32, name: AsciiString, loc: Coord3D, label1: AsciiString, label2: AsciiString, label3: AsciiString, bi_directional: bool) -> Self {
         Waypoint {
             id,
             name,
@@ -786,14 +745,7 @@ pub fn line_in_region(p1: &Coord2D, p2: &Coord2D, clip_region: &Region2D) -> boo
     }
 
     // Line is visible
-    x1 >= clip_left
-        && x1 <= clip_right
-        && y1 >= clip_top
-        && y1 <= clip_bottom
-        && x2 >= clip_left
-        && x2 <= clip_right
-        && y2 >= clip_top
-        && y2 <= clip_bottom
+    x1 >= clip_left && x1 <= clip_right && y1 >= clip_top && y1 <= clip_bottom && x2 >= clip_left && x2 <= clip_right && y2 >= clip_top && y2 <= clip_bottom
 }
 
 /// `class Bridge`.
@@ -856,18 +808,8 @@ impl Bridge {
     /// bridge drawn in the map. Creates the `GenericBridge` object through
     /// the world (cut point 2); when that template does not exist the
     /// bridge keeps the object id of `info`.
-    pub fn from_map<W: TerrainWorld>(
-        world: &mut W,
-        info: &BridgeInfo,
-        props: &Dict,
-        bridge_template_name: &AsciiString,
-    ) -> Bridge {
-        let mut b = Bridge {
-            template_name: bridge_template_name.clone(),
-            info: *info,
-            bounds: Region2D::default(),
-            layer: 0,
-        };
+    pub fn from_map<W: TerrainWorld>(world: &mut W, info: &BridgeInfo, props: &Dict, bridge_template_name: &AsciiString) -> Bridge {
+        let mut b = Bridge { template_name: bridge_template_name.clone(), info: *info, bounds: Region2D::default(), layer: 0 };
         b.bounds = Bridge::compute_bounds(&b.info);
         b.info.cur_damage_state = BODY_PRISTINE;
 
@@ -879,10 +821,7 @@ impl Bridge {
         };
         // we'll say the angle of this object representing the bridge is from
         // the 'from' side to the 'to' side.
-        let v = Coord2D {
-            x: i.to_left.x - i.from_left.x,
-            y: i.to_left.y - i.from_left.y,
-        };
+        let v = Coord2D { x: i.to_left.x - i.from_left.x, y: i.to_left.y - i.from_left.y };
         let orientation = v.to_angle();
         match world.create_generic_bridge_object(&center, orientation, props) {
             None => return b, // "GenericBridge template not found"
@@ -897,12 +836,7 @@ impl Bridge {
     /// `Bridge(Object *bridgeObj)`: a landmark bridge. Looks the bridge
     /// template and the four tower templates up and creates the towers.
     pub fn from_landmark<W: TerrainWorld>(world: &mut W, obj: &LandmarkBridgeObject) -> Bridge {
-        let mut b = Bridge {
-            template_name: obj.template_name.clone(),
-            info: BridgeInfo::default(),
-            bounds: Region2D::default(),
-            layer: 0,
-        };
+        let mut b = Bridge { template_name: obj.template_name.clone(), info: BridgeInfo::default(), bounds: Region2D::default(), layer: 0 };
         let pos = obj.position;
         let angle = obj.orientation;
         let halfsize_x = obj.geometry.get_major_radius();
@@ -912,26 +846,10 @@ impl Bridge {
         let c = trig::cos(angle);
         let s = trig::sin(angle);
 
-        b.info.from_left.set(
-            pos.x - halfsize_x * c - halfsize_y * s,
-            pos.y + halfsize_y * c - halfsize_x * s,
-            pos.z,
-        );
-        b.info.to_left.set(
-            pos.x + halfsize_x * c - halfsize_y * s,
-            pos.y + halfsize_y * c + halfsize_x * s,
-            pos.z,
-        );
-        b.info.from_right.set(
-            pos.x - halfsize_x * c + halfsize_y * s,
-            pos.y - halfsize_y * c - halfsize_x * s,
-            pos.z,
-        );
-        b.info.to_right.set(
-            pos.x + halfsize_x * c + halfsize_y * s,
-            pos.y - halfsize_y * c + halfsize_x * s,
-            pos.z,
-        );
+        b.info.from_left.set(pos.x - halfsize_x * c - halfsize_y * s, pos.y + halfsize_y * c - halfsize_x * s, pos.z);
+        b.info.to_left.set(pos.x + halfsize_x * c - halfsize_y * s, pos.y + halfsize_y * c + halfsize_x * s, pos.z);
+        b.info.from_right.set(pos.x - halfsize_x * c + halfsize_y * s, pos.y - halfsize_y * c - halfsize_x * s, pos.z);
+        b.info.to_right.set(pos.x + halfsize_x * c + halfsize_y * s, pos.y - halfsize_y * c + halfsize_x * s, pos.z);
 
         let i = &mut b.info;
         i.from.x = (i.from_left.x + i.from_right.x) / 2.0f32;
@@ -951,19 +869,11 @@ impl Bridge {
             return b;
         }
 
-        let mut v = Coord2D {
-            x: b.info.to_left.x - b.info.to_right.x,
-            y: b.info.to_left.y - b.info.to_right.y,
-        };
+        let mut v = Coord2D { x: b.info.to_left.x - b.info.to_right.x, y: b.info.to_left.y - b.info.to_right.y };
         v.normalize();
 
         // initialize each of the tower positions to that of the bridge info bounding rect
-        let tower_pos = [
-            b.info.from_left,
-            b.info.from_right,
-            b.info.to_left,
-            b.info.to_right,
-        ];
+        let tower_pos = [b.info.from_left, b.info.from_right, b.info.to_left, b.info.to_right];
 
         let mut offset = PATHFIND_CELL_SIZE_F / 2.0f32;
         // create objects targetable objects for the 4 tower pieces
@@ -1093,25 +1003,13 @@ impl Bridge {
         to_right.x -= end_vector.x;
         to_right.y -= end_vector.y;
 
-        let line1 = Coord2D {
-            x: from_left.x,
-            y: from_left.y,
-        };
-        let line2 = Coord2D {
-            x: from_right.x,
-            y: from_right.y,
-        };
+        let line1 = Coord2D { x: from_left.x, y: from_left.y };
+        let line2 = Coord2D { x: from_right.x, y: from_right.y };
         if line_in_region(&line1, &line2, cell) {
             return true;
         }
-        let line1 = Coord2D {
-            x: to_left.x,
-            y: to_left.y,
-        };
-        let line2 = Coord2D {
-            x: to_right.x,
-            y: to_right.y,
-        };
+        let line1 = Coord2D { x: to_left.x, y: to_left.y };
+        let line2 = Coord2D { x: to_right.x, y: to_right.y };
         if line_in_region(&line1, &line2, cell) {
             return true;
         }
@@ -1141,25 +1039,13 @@ impl Bridge {
         to_right.x += end_vector.x;
         to_right.y += end_vector.y;
 
-        let line1 = Coord2D {
-            x: from_left.x,
-            y: from_left.y,
-        };
-        let line2 = Coord2D {
-            x: to_left.x,
-            y: to_left.y,
-        };
+        let line1 = Coord2D { x: from_left.x, y: from_left.y };
+        let line2 = Coord2D { x: to_left.x, y: to_left.y };
         if line_in_region(&line1, &line2, cell) {
             return true;
         }
-        let line1 = Coord2D {
-            x: from_right.x,
-            y: from_right.y,
-        };
-        let line2 = Coord2D {
-            x: to_right.x,
-            y: to_right.y,
-        };
+        let line1 = Coord2D { x: from_right.x, y: from_right.y };
+        let line2 = Coord2D { x: to_right.x, y: to_right.y };
         if line_in_region(&line1, &line2, cell) {
             return true;
         }
@@ -1175,25 +1061,13 @@ impl Bridge {
         to_right.x += end_vector.x;
         to_right.y += end_vector.y;
 
-        let line1 = Coord2D {
-            x: from_left.x,
-            y: from_left.y,
-        };
-        let line2 = Coord2D {
-            x: to_left.x,
-            y: to_left.y,
-        };
+        let line1 = Coord2D { x: from_left.x, y: from_left.y };
+        let line2 = Coord2D { x: to_left.x, y: to_left.y };
         if line_in_region(&line1, &line2, cell) {
             return true;
         }
-        let line1 = Coord2D {
-            x: from_right.x,
-            y: from_right.y,
-        };
-        let line2 = Coord2D {
-            x: to_right.x,
-            y: to_right.y,
-        };
+        let line1 = Coord2D { x: from_right.x, y: from_right.y };
+        let line2 = Coord2D { x: to_right.x, y: to_right.y };
         if line_in_region(&line1, &line2, cell) {
             return true;
         }
@@ -1241,25 +1115,13 @@ impl Bridge {
         to_right.x -= end_vector.x;
         to_right.y -= end_vector.y;
 
-        let line1 = Coord2D {
-            x: from_left.x,
-            y: from_left.y,
-        };
-        let line2 = Coord2D {
-            x: from_right.x,
-            y: from_right.y,
-        };
+        let line1 = Coord2D { x: from_left.x, y: from_left.y };
+        let line2 = Coord2D { x: from_right.x, y: from_right.y };
         if line_in_region(&line1, &line2, cell) {
             return true;
         }
-        let line1 = Coord2D {
-            x: to_left.x,
-            y: to_left.y,
-        };
-        let line2 = Coord2D {
-            x: to_right.x,
-            y: to_right.y,
-        };
+        let line1 = Coord2D { x: to_left.x, y: to_left.y };
+        let line2 = Coord2D { x: to_right.x, y: to_right.y };
         if line_in_region(&line1, &line2, cell) {
             return true;
         }
@@ -1268,11 +1130,7 @@ impl Bridge {
 
     /// The plane of the deck: through `fromLeft`, `fromRight`, `toLeft`.
     fn plane(&self) -> PlaneClass {
-        PlaneClass::from_points(
-            &vec3(&self.info.from_left),
-            &vec3(&self.info.from_right),
-            &vec3(&self.info.to_left),
-        )
+        PlaneClass::from_points(&vec3(&self.info.from_left), &vec3(&self.info.from_right), &vec3(&self.info.to_left))
     }
 
     /// `getBridgeHeight(pLoc, normal)`: the deck's height at the point's x
@@ -1285,45 +1143,23 @@ impl Bridge {
         let top = Vector3::new(p_loc.x, p_loc.y, FACTOR);
         let (_, t) = plane.compute_intersection(&bottom, &top);
         let t = t.ok_or(TerrainUndefined::BridgePlaneParallel)?;
-        Ok((
-            t * FACTOR,
-            Coord3D {
-                x: plane.n.x,
-                y: plane.n.y,
-                z: plane.n.z,
-            },
-        ))
+        Ok((t * FACTOR, Coord3D { x: plane.n.x, y: plane.n.y, z: plane.n.z }))
     }
 
     /// `Bridge::pickBridge(from, to, &pos)`: where the segment meets the
     /// deck, if that is on the bridge; and the bridge object's drawable
     /// (cut point 2).
-    fn pick<W: TerrainWorld>(
-        &self,
-        world: &W,
-        from: &Vector3,
-        to: &Vector3,
-    ) -> Result<BridgePick, TerrainUndefined> {
+    fn pick<W: TerrainWorld>(&self, world: &W, from: &Vector3, to: &Vector3) -> Result<BridgePick, TerrainUndefined> {
         let plane = self.plane();
         let (_, t) = plane.compute_intersection(from, to);
         let t = t.ok_or(TerrainUndefined::BridgePlaneParallel)?;
         let intersect_pos = *from + (*to - *from) * t;
 
-        let loc = Coord3D {
-            x: intersect_pos.x,
-            y: intersect_pos.y,
-            z: intersect_pos.z,
-        };
+        let loc = Coord3D { x: intersect_pos.x, y: intersect_pos.y, z: intersect_pos.z };
         if self.is_point_on_bridge(&loc) {
-            return Ok(BridgePick {
-                pos: Some(intersect_pos),
-                drawable: world.object_drawable(self.info.bridge_object_id),
-            });
+            return Ok(BridgePick { pos: Some(intersect_pos), drawable: world.object_drawable(self.info.bridge_object_id) });
         }
-        Ok(BridgePick {
-            pos: None,
-            drawable: None,
-        })
+        Ok(BridgePick { pos: None, drawable: None })
     }
 }
 
@@ -1420,33 +1256,18 @@ pub trait TerrainWorld {
     /// "GenericBridge")` (`None` if there is none), then `newObject`,
     /// `setPosition(center)`, `updateObjValuesFromMapProperties(props)` and
     /// `setOrientation(orientation)`; the new object's id.
-    fn create_generic_bridge_object(
-        &mut self,
-        center: &Coord3D,
-        orientation: f32,
-        props: &Dict,
-    ) -> Option<ObjectId>;
+    fn create_generic_bridge_object(&mut self, center: &Coord3D, orientation: f32, props: &Dict) -> Option<ObjectId>;
     /// `TheTerrainRoads->findBridge(name) != NULL`.
     fn find_bridge_road_template(&self, name: &AsciiString) -> bool;
     /// `TheThingFactory->findTemplate(findBridge(bridge)->getTowerObjectName(
     /// tower))`: the tower template's `getTemplateGeometryInfo().
     /// getMajorRadius()`, or `None` if the template does not exist.
-    fn find_bridge_tower_template(
-        &self,
-        bridge_template: &AsciiString,
-        tower: BridgeTowerType,
-    ) -> Option<f32>;
+    fn find_bridge_tower_template(&self, bridge_template: &AsciiString, tower: BridgeTowerType) -> Option<f32>;
     /// `Bridge::createTower`'s object work for a tower whose template
     /// exists: `newObject(template, bridge->getTeam())`,
     /// `setPosition(pos)`, `setOrientation(angle)`, the behaviour
     /// interfaces, and the indestructible flag; the new object's id.
-    fn create_bridge_tower(
-        &mut self,
-        bridge: ObjectId,
-        tower: BridgeTowerType,
-        pos: &Coord3D,
-        angle: f32,
-    ) -> ObjectId;
+    fn create_bridge_tower(&mut self, bridge: ObjectId, tower: BridgeTowerType, pos: &Coord3D, angle: f32) -> ObjectId;
     /// `setActiveBoundary`, before the boundary index changes:
     /// `processEntirePendingUndoShroudRevealQueue()` and
     /// `storeFoggedCells(store, TRUE)`.
@@ -1478,13 +1299,7 @@ pub struct DynamicWaterEntry {
 
 impl Default for DynamicWaterEntry {
     fn default() -> Self {
-        DynamicWaterEntry {
-            water_table: None,
-            change_per_frame: 0.0,
-            target_height: 0.0,
-            damage_amount: 0.0,
-            current_height: 0.0,
-        }
+        DynamicWaterEntry { water_table: None, change_per_frame: 0.0, target_height: 0.0, damage_amount: 0.0, current_height: 0.0 }
     }
 }
 
@@ -1575,10 +1390,7 @@ impl TerrainLogic {
     /// headless client: [`WaterGrid::without_render_object`](
     /// super::terrain_visual::WaterGrid::without_render_object)).
     pub fn with_visual(ground: GroundSource, visual: TerrainVisualState) -> Self {
-        TerrainLogic {
-            visual,
-            ..TerrainLogic::new(ground)
-        }
+        TerrainLogic { visual, ..TerrainLogic::new(ground) }
     }
 
     /// How many undefined-upstream inputs this object has refused.
@@ -1745,9 +1557,7 @@ impl TerrainLogic {
 
         if !query {
             // tell the game interface a new terrain file has been loaded up
-            self.visual_write(TerrainVisualEvent::Load {
-                filename: self.filename.clone(),
-            })?;
+            self.visual_write(TerrainVisualEvent::Load { filename: self.filename.clone() })?;
         }
 
         Ok(true)
@@ -1829,15 +1639,7 @@ impl TerrainLogic {
         let (id, _) = obj.properties.get_int(keys.id);
         let (name, _) = obj.properties.get_ascii_string(keys.name);
         let ascii = |b: Vec<u8>| AsciiString::try_from_bytes(&b).unwrap_or_default();
-        self.waypoints.push(Waypoint::new(
-            id,
-            ascii(name),
-            loc,
-            ascii(label1),
-            ascii(label2),
-            ascii(label3),
-            bi_directional,
-        ));
+        self.waypoints.push(Waypoint::new(id, ascii(name), loc, ascii(label1), ascii(label2), ascii(label3), bi_directional));
     }
 
     /// `addWaypointLink(id1, id2)`: the last waypoint in list order with
@@ -1909,10 +1711,7 @@ impl TerrainLogic {
 
     /// All waypoints in list order (`getFirstWaypoint()` then `getNext()`).
     pub fn waypoint_handles(&self) -> Vec<WaypointHandle> {
-        (0..self.waypoints.len())
-            .rev()
-            .map(WaypointHandle)
-            .collect()
+        (0..self.waypoints.len()).rev().map(WaypointHandle).collect()
     }
 
     /// A waypoint by handle.
@@ -1922,27 +1721,19 @@ impl TerrainLogic {
 
     /// `getWaypointByName(name)`.
     pub fn waypoint_by_name(&self, name: &AsciiString) -> Option<WaypointHandle> {
-        self.waypoint_handles()
-            .into_iter()
-            .find(|&h| self.waypoints[h.0].name == *name)
+        self.waypoint_handles().into_iter().find(|&h| self.waypoints[h.0].name == *name)
     }
 
     /// `getWaypointByID(id)`.
     pub fn waypoint_by_id(&self, id: u32) -> Option<WaypointHandle> {
-        self.waypoint_handles()
-            .into_iter()
-            .find(|&h| self.waypoints[h.0].id as u32 == id)
+        self.waypoint_handles().into_iter().find(|&h| self.waypoints[h.0].id as u32 == id)
     }
 
     /// `getClosestWaypointOnPath(pos, label)`: the nearest (by squared
     /// distance in x and y) waypoint with a path label equal, ignoring
     /// case, to `label`; the first in list order wins a tie. An empty label
     /// finds nothing.
-    pub fn closest_waypoint_on_path(
-        &self,
-        pos: &Coord3D,
-        label: &AsciiString,
-    ) -> Option<WaypointHandle> {
+    pub fn closest_waypoint_on_path(&self, pos: &Coord3D, label: &AsciiString) -> Option<WaypointHandle> {
         let mut dist_sqr = 0.0f32;
         let mut p_closest_way: Option<WaypointHandle> = None;
         if label.is_empty() {
@@ -1963,8 +1754,7 @@ impl TerrainLogic {
             }
             if matched {
                 let cur_pos = way.location;
-                let new_dist_sqr = (cur_pos.x - pos.x) * (cur_pos.x - pos.x)
-                    + (cur_pos.y - pos.y) * (cur_pos.y - pos.y);
+                let new_dist_sqr = (cur_pos.x - pos.x) * (cur_pos.x - pos.x) + (cur_pos.y - pos.y) * (cur_pos.y - pos.y);
                 if p_closest_way.is_none() || new_dist_sqr < dist_sqr {
                     p_closest_way = Some(h);
                     dist_sqr = new_dist_sqr;
@@ -2006,40 +1796,18 @@ impl TerrainLogic {
             GroundSource::Base => (0.0, want_normal.then(Coord3D::default)),
             GroundSource::LogicHeightMap => match &self.visual.height_map {
                 Some(map) => map.height_map_height(x, y, want_normal),
-                None => (
-                    0.0,
-                    want_normal.then_some(Coord3D {
-                        x: 0.0,
-                        y: 0.0,
-                        z: 1.0,
-                    }),
-                ),
+                None => (0.0, want_normal.then_some(Coord3D { x: 0.0, y: 0.0, z: 1.0 })),
             },
         }
     }
 
     /// `getLayerHeight(x, y, layer, normal, clip)`.
-    pub fn layer_height<W: TerrainWorld>(
-        &mut self,
-        world: &W,
-        x: f32,
-        y: f32,
-        layer: PathfindLayer,
-        want_normal: bool,
-        clip: bool,
-    ) -> TlResult<(f32, Option<Coord3D>)> {
+    pub fn layer_height<W: TerrainWorld>(&mut self, world: &W, x: f32, y: f32, layer: PathfindLayer, want_normal: bool, clip: bool) -> TlResult<(f32, Option<Coord3D>)> {
         match self.ground {
             GroundSource::Base => Ok((0.0, want_normal.then(Coord3D::default))),
             GroundSource::LogicHeightMap => {
                 let Some(map) = &self.visual.height_map else {
-                    return Ok((
-                        0.0,
-                        want_normal.then_some(Coord3D {
-                            x: 0.0,
-                            y: 0.0,
-                            z: 1.0,
-                        }),
-                    ));
+                    return Ok((0.0, want_normal.then_some(Coord3D { x: 0.0, y: 0.0, z: 1.0 })));
                 };
                 let (height, mut normal) = map.height_map_height(x, y, want_normal);
 
@@ -2131,11 +1899,7 @@ impl TerrainLogic {
         match self.ground {
             GroundSource::Base => Err(TerrainUndefined::ExtentNotImplemented),
             GroundSource::LogicHeightMap => {
-                let map = self
-                    .visual
-                    .height_map
-                    .as_ref()
-                    .ok_or(TerrainUndefined::HeightMapShape)?;
+                let map = self.visual.height_map.as_ref().ok_or(TerrainUndefined::HeightMapShape)?;
                 let mut extent = Region2D::default();
                 extent.lo.x = 0.0;
                 extent.lo.y = 0.0;
@@ -2155,9 +1919,7 @@ impl TerrainLogic {
     pub fn is_clear_line_of_sight(&self, _pos: &Coord3D, _pos_other: &Coord3D) -> TlResult<bool> {
         match self.ground {
             GroundSource::Base => Ok(false),
-            GroundSource::LogicHeightMap => Err(TerrainLogicError::NotTranslated(
-                "TheTerrainRenderObject->isClearLineOfSight",
-            )),
+            GroundSource::LogicHeightMap => Err(TerrainLogicError::NotTranslated("TheTerrainRenderObject->isClearLineOfSight")),
         }
     }
 
@@ -2166,9 +1928,7 @@ impl TerrainLogic {
     pub fn is_cliff_cell(&self, _x: f32, _y: f32) -> TlResult<bool> {
         match self.ground {
             GroundSource::Base => Ok(false),
-            GroundSource::LogicHeightMap => Err(TerrainLogicError::NotTranslated(
-                "BaseHeightMapRenderObjClass::isCliffCell",
-            )),
+            GroundSource::LogicHeightMap => Err(TerrainLogicError::NotTranslated("BaseHeightMapRenderObjClass::isCliffCell")),
         }
     }
 
@@ -2226,18 +1986,11 @@ impl TerrainLogic {
 
     /// `alignOnTerrain(angle, pos, stickToGround, mtx)`: the layer and the
     /// matrix that stands an object on the terrain (or bridge) at `pos`.
-    pub fn align_on_terrain<W: TerrainWorld>(
-        &mut self,
-        world: &W,
-        angle: f32,
-        pos: &Coord3D,
-        stick_to_ground: bool,
-    ) -> TlResult<(PathfindLayer, Matrix3D)> {
+    pub fn align_on_terrain<W: TerrainWorld>(&mut self, world: &W, angle: f32, pos: &Coord3D, stick_to_ground: bool) -> TlResult<(PathfindLayer, Matrix3D)> {
         let layer = self.layer_for_destination(world, pos)?;
 
         // get the normal of the terrain at our position
-        let (mut terrain_at_pos, normal) =
-            self.layer_height(world, pos.x, pos.y, layer, true, true)?;
+        let (mut terrain_at_pos, normal) = self.layer_height(world, pos.x, pos.y, layer, true, true)?;
         let terrain_normal = normal.unwrap_or_default();
         if layer != LAYER_GROUND {
             // brutal hack for bridges that are too high. jba
@@ -2260,13 +2013,7 @@ impl TerrainLogic {
     }
 
     /// `addBridgeToLogic(pInfo, props, bridgeTemplateName)`.
-    pub fn add_bridge_to_logic<W: TerrainWorld>(
-        &mut self,
-        world: &mut W,
-        info: &BridgeInfo,
-        props: &Dict,
-        bridge_template_name: &AsciiString,
-    ) {
+    pub fn add_bridge_to_logic<W: TerrainWorld>(&mut self, world: &mut W, info: &BridgeInfo, props: &Dict, bridge_template_name: &AsciiString) {
         let bridge = Bridge::from_map(world, info, props, bridge_template_name);
         self.bridges.insert(0, bridge);
         let layer = world.pathfinder_add_bridge(&self.bridges[0]);
@@ -2274,11 +2021,7 @@ impl TerrainLogic {
     }
 
     /// `addLandmarkBridgeToLogic(bridgeObj)`.
-    pub fn add_landmark_bridge_to_logic<W: TerrainWorld>(
-        &mut self,
-        world: &mut W,
-        bridge_obj: &LandmarkBridgeObject,
-    ) {
+    pub fn add_landmark_bridge_to_logic<W: TerrainWorld>(&mut self, world: &mut W, bridge_obj: &LandmarkBridgeObject) {
         let bridge = Bridge::from_landmark(world, bridge_obj);
         self.bridges.insert(0, bridge);
         let layer = world.pathfinder_add_bridge(&self.bridges[0]);
@@ -2287,22 +2030,14 @@ impl TerrainLogic {
 
     /// `Bridge::getBridgeHeight(pLoc, normal)` of the bridge at position
     /// `bridge_index`, counting an undefined input (a vertical deck).
-    pub fn bridge_height(
-        &mut self,
-        bridge_index: usize,
-        p_loc: &Coord3D,
-    ) -> TlResult<(f32, Coord3D)> {
+    pub fn bridge_height(&mut self, bridge_index: usize, p_loc: &Coord3D) -> TlResult<(f32, Coord3D)> {
         let r = self.bridges[bridge_index].bridge_height(p_loc);
         self.count(r)
     }
 
     /// `Waypoint::getLink(ndx)` of a waypoint, counting an undefined input
     /// (`ndx == MAX_LINKS`).
-    pub fn waypoint_link(
-        &mut self,
-        w: WaypointHandle,
-        ndx: i32,
-    ) -> TlResult<Option<WaypointHandle>> {
+    pub fn waypoint_link(&mut self, w: WaypointHandle, ndx: i32) -> TlResult<Option<WaypointHandle>> {
         let r = self.waypoints[w.0].link(ndx);
         self.count(r)
     }
@@ -2310,43 +2045,25 @@ impl TerrainLogic {
     /// `findBridgeAt(pLoc)`: the position in the list of the first bridge
     /// the point is on.
     pub fn find_bridge_at(&self, p_loc: &Coord3D) -> Option<usize> {
-        self.bridges
-            .iter()
-            .position(|b| b.is_point_on_bridge(p_loc))
+        self.bridges.iter().position(|b| b.is_point_on_bridge(p_loc))
     }
 
-    fn find_bridge_layer_at_index(
-        &self,
-        p_loc: &Coord3D,
-        layer: PathfindLayer,
-        clip: bool,
-    ) -> Option<usize> {
+    fn find_bridge_layer_at_index(&self, p_loc: &Coord3D, layer: PathfindLayer, clip: bool) -> Option<usize> {
         if layer == LAYER_GROUND {
             return None;
         }
-        self.bridges
-            .iter()
-            .position(|b| b.layer == layer && (!clip || b.is_point_on_bridge(p_loc)))
+        self.bridges.iter().position(|b| b.layer == layer && (!clip || b.is_point_on_bridge(p_loc)))
     }
 
     /// `findBridgeLayerAt(pLoc, layer, clip)`: the first bridge on that
     /// layer (and, when `clip`, under the point).
-    pub fn find_bridge_layer_at(
-        &self,
-        p_loc: &Coord3D,
-        layer: PathfindLayer,
-        clip: bool,
-    ) -> Option<usize> {
+    pub fn find_bridge_layer_at(&self, p_loc: &Coord3D, layer: PathfindLayer, clip: bool) -> Option<usize> {
         self.find_bridge_layer_at_index(p_loc, layer, clip)
     }
 
     /// `getLayerForDestination(pos)`: the layer whose surface is closest to
     /// the position's height.
-    pub fn layer_for_destination<W: TerrainWorld>(
-        &mut self,
-        world: &W,
-        pos: &Coord3D,
-    ) -> TlResult<PathfindLayer> {
+    pub fn layer_for_destination<W: TerrainWorld>(&mut self, world: &W, pos: &Coord3D) -> TlResult<PathfindLayer> {
         let mut best_layer = LAYER_GROUND;
         let mut best_distance = (pos.z - self.ground_height(pos.x, pos.y, false).0).abs();
 
@@ -2378,12 +2095,7 @@ impl TerrainLogic {
     /// `getHighestLayerForDestination(pos, onlyHealthyBridges)`: like
     /// [`TerrainLogic::layer_for_destination`], but always the highest layer
     /// that is at or below the position.
-    pub fn highest_layer_for_destination<W: TerrainWorld>(
-        &mut self,
-        world: &W,
-        pos: &Coord3D,
-        only_healthy_bridges: bool,
-    ) -> TlResult<PathfindLayer> {
+    pub fn highest_layer_for_destination<W: TerrainWorld>(&mut self, world: &W, pos: &Coord3D, only_healthy_bridges: bool) -> TlResult<PathfindLayer> {
         let mut best_layer = LAYER_GROUND;
         let mut best_distance = pos.z - self.ground_height(pos.x, pos.y, false).0; // NOT fabs in this case.
 
@@ -2435,13 +2147,7 @@ impl TerrainLogic {
     /// `objectInteractsWithBridgeLayer(obj, layer, considerBridgeHealth)`:
     /// whether the object is close enough to the bridge on that layer to
     /// interact with it for pathfinding.
-    pub fn object_interacts_with_bridge_layer<W: TerrainWorld>(
-        &mut self,
-        world: &W,
-        obj: &ObjectView,
-        layer: i32,
-        consider_bridge_health: bool,
-    ) -> TlResult<bool> {
+    pub fn object_interacts_with_bridge_layer<W: TerrainWorld>(&mut self, world: &W, obj: &ObjectView, layer: i32, consider_bridge_health: bool) -> TlResult<bool> {
         if layer == LAYER_GROUND {
             return Ok(false);
         }
@@ -2475,9 +2181,7 @@ impl TerrainLogic {
                     }
 
                     // make sure it's not destroyed. can't interact with dead bridges.
-                    if consider_bridge_health
-                        && self.bridges[i].info.cur_damage_state == BODY_RUBBLE
-                    {
+                    if consider_bridge_health && self.bridges[i].info.cur_damage_state == BODY_RUBBLE {
                         return Ok(false);
                     }
                     return Ok(true);
@@ -2491,11 +2195,7 @@ impl TerrainLogic {
     /// `objectInteractsWithBridgeEnd(obj, layer)`: whether the object is
     /// close to one end of the bridge on that layer. (Returns `NULL` for the
     /// ground layer, upstream's way of writing false.)
-    pub fn object_interacts_with_bridge_end(
-        &mut self,
-        obj: &ObjectView,
-        layer: i32,
-    ) -> TlResult<bool> {
+    pub fn object_interacts_with_bridge_end(&mut self, obj: &ObjectView, layer: i32) -> TlResult<bool> {
         if layer == LAYER_GROUND {
             return Ok(false);
         }
@@ -2534,11 +2234,7 @@ impl TerrainLogic {
     }
 
     /// `Bridge::updateDamageState()` of the bridge at position `i`.
-    fn update_bridge_damage_state<W: TerrainWorld>(
-        &mut self,
-        world: &mut W,
-        i: usize,
-    ) -> TlResult<()> {
+    fn update_bridge_damage_state<W: TerrainWorld>(&mut self, world: &mut W, i: usize) -> TlResult<()> {
         self.bridges[i].info.damage_state_changed = false;
         let id = self.bridges[i].info.bridge_object_id;
         if id == 0 {
@@ -2557,9 +2253,7 @@ impl TerrainLogic {
                     for obj in world.objects() {
                         if obj.layer == layer {
                             // don't consider the bridge health, 'cuz it's already dead. (srj)
-                            if self.object_interacts_with_bridge_layer(
-                                &*world, &obj, obj.layer, false,
-                            )? {
+                            if self.object_interacts_with_bridge_layer(&*world, &obj, obj.layer, false)? {
                                 // The object fell off the bridge. Destroy it.
                                 let mut extra = DamageInfo::default();
                                 extra.input.damage_type = DAMAGE_FALLING;
@@ -2633,20 +2327,12 @@ impl TerrainLogic {
     /// `getBridgeAttackPoints(bridge, info)`: the two points of a bridge
     /// that can be attacked; for a bridge object not in the list, both are
     /// the object's position.
-    pub fn bridge_attack_points(
-        &self,
-        bridge_id: ObjectId,
-        bridge_position: &Coord3D,
-    ) -> BridgeAttackInfo {
+    pub fn bridge_attack_points(&self, bridge_id: ObjectId, bridge_position: &Coord3D) -> BridgeAttackInfo {
         for b in &self.bridges {
             let info = &b.info;
             if info.bridge_object_id == bridge_id {
                 // found the right bridge.
-                let mut delta = Coord3D {
-                    x: info.to.x - info.from.x,
-                    y: info.to.y - info.from.y,
-                    z: info.to.z - info.from.z,
-                };
+                let mut delta = Coord3D { x: info.to.x - info.from.x, y: info.to.y - info.from.y, z: info.to.z - info.from.z };
                 delta.normalize();
                 let width = Coord3D {
                     x: info.from_right.x - info.from_left.x,
@@ -2656,32 +2342,16 @@ impl TerrainLogic {
                 let mut len = width.length();
                 len /= 2.0f32;
                 return BridgeAttackInfo {
-                    attack_point1: Coord3D {
-                        x: info.from.x + delta.x * len,
-                        y: info.from.y + delta.y * len,
-                        z: info.from.z + delta.z * len,
-                    },
-                    attack_point2: Coord3D {
-                        x: info.to.x - delta.x * len,
-                        y: info.to.y - delta.y * len,
-                        z: info.to.z - delta.z * len,
-                    },
+                    attack_point1: Coord3D { x: info.from.x + delta.x * len, y: info.from.y + delta.y * len, z: info.from.z + delta.z * len },
+                    attack_point2: Coord3D { x: info.to.x - delta.x * len, y: info.to.y - delta.y * len, z: info.to.z - delta.z * len },
                 };
             }
         }
-        BridgeAttackInfo {
-            attack_point1: *bridge_position,
-            attack_point2: *bridge_position,
-        }
+        BridgeAttackInfo { attack_point1: *bridge_position, attack_point2: *bridge_position }
     }
 
     /// `pickBridge(from, to, pos)`.
-    pub fn pick_bridge<W: TerrainWorld>(
-        &mut self,
-        world: &W,
-        from: &Vector3,
-        to: &Vector3,
-    ) -> TlResult<PickedBridge> {
+    pub fn pick_bridge<W: TerrainWorld>(&mut self, world: &W, from: &Vector3, to: &Vector3) -> TlResult<PickedBridge> {
         let mut cur_draw: Option<DrawableId> = None;
         // `Vector3 curPos(0,0,0)`; None once it holds an unwritten value
         let mut cur_pos: Option<Vector3> = Some(Vector3::new(0.0, 0.0, 0.0));
@@ -2694,10 +2364,7 @@ impl TerrainLogic {
                 cur_pos = this.pos;
             }
         }
-        Ok(PickedBridge {
-            drawable: cur_draw,
-            pos: cur_pos,
-        })
+        Ok(PickedBridge { drawable: cur_draw, pos: cur_pos })
     }
 
     /// `deleteBridge(bridge)`: unlink the bridge at position `i`, turn its
@@ -2797,9 +2464,7 @@ impl TerrainLogic {
         // until we have a real way to specify different water planes in the map, we will check
         // for a special waypoint name that we will put in maps that we want to have a
         // water grid
-        let waypoint = self.waypoint_by_name(
-            &AsciiString::try_from_bytes(WAVE_GUIDE_WAYPOINT).unwrap_or_default(),
-        );
+        let waypoint = self.waypoint_by_name(&AsciiString::try_from_bytes(WAVE_GUIDE_WAYPOINT).unwrap_or_default());
         let enable = waypoint.is_some();
         self.enable_water_grid(enable, global_data)
     }
@@ -2896,11 +2561,7 @@ impl TerrainLogic {
         // get the water handle at this location
         let Some(water_handle) = self.water_handle(x, y)? else {
             // if no water here, no height, no nuttin; but we have to return the terrain Z
-            return Ok(Underwater {
-                underwater: false,
-                water_z: None,
-                terrain_z: self.ground_height(x, y, false).0,
-            });
+            return Ok(Underwater { underwater: false, water_z: None, terrain_z: self.ground_height(x, y, false).0 });
         };
 
         // if this water handle is a grid water use the grid height function, otherwise look into
@@ -2916,11 +2577,7 @@ impl TerrainLogic {
 
         // see if the terrain height here is below the water
         let terrain_height = self.ground_height(x, y, false).0;
-        Ok(Underwater {
-            underwater: terrain_height < w_z,
-            water_z: Some(w_z),
-            terrain_z: terrain_height,
-        })
+        Ok(Underwater { underwater: terrain_height < w_z, water_z: Some(w_z), terrain_z: terrain_height })
     }
 
     /// `getWaterHandle(x, y)`: the water table with the highest water Z value
@@ -2929,11 +2586,7 @@ impl TerrainLogic {
         let mut water_handle: Option<WaterHandle> = None;
         let mut water_z = 0.0f32;
 
-        let i_loc = ICoord3D {
-            x: real_to_int_floor(x + 0.5f32),
-            y: real_to_int_floor(y + 0.5f32),
-            z: 0,
-        };
+        let i_loc = ICoord3D { x: real_to_int_floor(x + 0.5f32), y: real_to_int_floor(y + 0.5f32), z: 0 };
 
         // Look for water areas in the polygon triggers
         for (ti, trig) in self.triggers.iter().enumerate() {
@@ -2959,9 +2612,7 @@ impl TerrainLogic {
                 }
             }
             // `Real meshZ;` is read without having been written
-            WaterGridSample::OnGridUnset => {
-                return Err(self.undef(TerrainUndefined::WaterGridHeightUnset))
-            }
+            WaterGridSample::OnGridUnset => return Err(self.undef(TerrainUndefined::WaterGridHeightUnset)),
         }
 
         Ok(water_handle)
@@ -3004,14 +2655,7 @@ impl TerrainLogic {
     /// `setWaterHeight(water, height, damageAmount, forcePathfindUpdate)`.
     /// If the water rises, objects that find themselves underwater are
     /// damaged by `damage_amount`.
-    pub fn set_water_height<W: TerrainWorld>(
-        &mut self,
-        world: &mut W,
-        water: Option<WaterHandle>,
-        mut height: f32,
-        damage_amount: f32,
-        force_pathfind_update: bool,
-    ) -> TlResult<()> {
+    pub fn set_water_height<W: TerrainWorld>(&mut self, world: &mut W, water: Option<WaterHandle>, mut height: f32, damage_amount: f32, force_pathfind_update: bool) -> TlResult<()> {
         // sanity
         let Some(water) = water else {
             return Ok(());
@@ -3076,17 +2720,13 @@ impl TerrainLogic {
             };
 
             // the max radius to scan around us is the diagonal of the bounding region
-            let sum = affected_region.width() * affected_region.width()
-                + affected_region.height() * affected_region.height();
+            let sum = affected_region.width() * affected_region.width() + affected_region.height() * affected_region.height();
             let max_dist = petir::Real::sqrt(f64::from(sum)) as f32;
 
             // scan the objects in the area of the water affected
             for obj in world.objects_in_range_2d(&center, max_dist) {
                 // if this object is underwater, do some damage
-                if self
-                    .is_underwater(obj.position.x, obj.position.y)?
-                    .underwater
-                {
+                if self.is_underwater(obj.position.x, obj.position.y)?.underwater {
                     // do a lot of water damage
                     let mut damage_info = DamageInfo::default();
                     damage_info.input.damage_type = DAMAGE_WATER;
@@ -3104,13 +2744,7 @@ impl TerrainLogic {
     /// damageAmount)`: queue a gradual change. At most `MAX_DYNAMIC_WATER`
     /// run at once (more is dropped). A zero transition time makes
     /// `changePerFrame` infinite or NaN, which upstream allows.
-    pub fn change_water_height_over_time(
-        &mut self,
-        water: Option<WaterHandle>,
-        final_height: f32,
-        transition_time_in_seconds: f32,
-        damage_amount: f32,
-    ) -> TlResult<()> {
+    pub fn change_water_height_over_time(&mut self, water: Option<WaterHandle>, final_height: f32, transition_time_in_seconds: f32, damage_amount: f32) -> TlResult<()> {
         // if we don't have room, oops!
         if self.num_water_to_update >= MAX_DYNAMIC_WATER as i32 {
             return Ok(());
@@ -3126,8 +2760,7 @@ impl TerrainLogic {
         while i < self.num_water_to_update {
             if self.water_to_update[i as usize].water_table == Some(water_h) {
                 // put the entry at the end of the list here
-                self.water_to_update[i as usize] =
-                    self.water_to_update[(self.num_water_to_update - 1) as usize];
+                self.water_to_update[i as usize] = self.water_to_update[(self.num_water_to_update - 1) as usize];
 
                 // we now have one less entry
                 self.num_water_to_update -= 1;
@@ -3145,8 +2778,7 @@ impl TerrainLogic {
         let n = self.num_water_to_update as usize;
         self.water_to_update[n] = DynamicWaterEntry {
             water_table: Some(water_h),
-            change_per_frame: (final_height - current_height)
-                / (LOGICFRAMES_PER_SECOND as f32 * transition_time_in_seconds),
+            change_per_frame: (final_height - current_height) / (LOGICFRAMES_PER_SECOND as f32 * transition_time_in_seconds),
             target_height: final_height,
             damage_amount,
             current_height,
@@ -3164,11 +2796,7 @@ impl TerrainLogic {
 
     /// `findAxisAlignedBoundingRect(waterHandle, region)`: the box around a
     /// water table. The grid's corners are computed in `Int`s, as upstream.
-    pub fn find_axis_aligned_bounding_rect(
-        &mut self,
-        water: Option<WaterHandle>,
-        region: Option<&mut Region3D>,
-    ) -> TlResult<()> {
+    pub fn find_axis_aligned_bounding_rect(&mut self, water: Option<WaterHandle>, region: Option<&mut Region3D>) -> TlResult<()> {
         // sanity
         let (Some(water), Some(region)) = (water, region) else {
             return Ok(());
@@ -3192,21 +2820,9 @@ impl TerrainLogic {
             let r = (|| -> Result<[ICoord3D; 4], TerrainUndefined> {
                 Ok([
                     ICoord3D { x: 0, y: 0, z: 0 },
-                    ICoord3D {
-                        x: to_int(grid_x * cell_size)?,
-                        y: 0,
-                        z: 0,
-                    },
-                    ICoord3D {
-                        x: to_int(grid_x * cell_size)?,
-                        y: to_int(grid_y * cell_size)?,
-                        z: 0,
-                    },
-                    ICoord3D {
-                        x: 0,
-                        y: to_int(grid_y * cell_size)?,
-                        z: 0,
-                    },
+                    ICoord3D { x: to_int(grid_x * cell_size)?, y: 0, z: 0 },
+                    ICoord3D { x: to_int(grid_x * cell_size)?, y: to_int(grid_y * cell_size)?, z: 0 },
+                    ICoord3D { x: 0, y: to_int(grid_y * cell_size)?, z: 0 },
                 ])
             })();
             let p = self.count(r)?;
@@ -3308,11 +2924,7 @@ impl TerrainLogic {
     }
 
     /// `setActiveBoundary(newActiveBoundary)`.
-    pub fn set_active_boundary<W: TerrainWorld>(
-        &mut self,
-        world: &mut W,
-        new_active_boundary: i32,
-    ) {
+    pub fn set_active_boundary<W: TerrainWorld>(&mut self, world: &mut W, new_active_boundary: i32) {
         if new_active_boundary < 0 || new_active_boundary as usize >= self.boundaries.len() {
             // probably should DEBUG_ASSERT here
             return;
@@ -3355,26 +2967,10 @@ impl TerrainLogic {
                 let c = trig::cos(angle);
                 let s = trig::sin(angle);
 
-                let top_left = Vector3::new(
-                    pos.x - halfsize_x * c - halfsize_y * s,
-                    pos.y + halfsize_y * c - halfsize_x * s,
-                    0.0,
-                );
-                let top_right = Vector3::new(
-                    pos.x + halfsize_x * c - halfsize_y * s,
-                    pos.y + halfsize_y * c + halfsize_x * s,
-                    0.0,
-                );
-                let bottom_right = Vector3::new(
-                    pos.x + halfsize_x * c + halfsize_y * s,
-                    pos.y - halfsize_y * c + halfsize_x * s,
-                    0.0,
-                );
-                let bottom_left = Vector3::new(
-                    pos.x - halfsize_x * c + halfsize_y * s,
-                    pos.y - halfsize_y * c - halfsize_x * s,
-                    0.0,
-                );
+                let top_left = Vector3::new(pos.x - halfsize_x * c - halfsize_y * s, pos.y + halfsize_y * c - halfsize_x * s, 0.0);
+                let top_right = Vector3::new(pos.x + halfsize_x * c - halfsize_y * s, pos.y + halfsize_y * c + halfsize_x * s, 0.0);
+                let bottom_right = Vector3::new(pos.x + halfsize_x * c + halfsize_y * s, pos.y - halfsize_y * c + halfsize_x * s, 0.0);
+                let bottom_left = Vector3::new(pos.x - halfsize_x * c + halfsize_y * s, pos.y - halfsize_y * c - halfsize_x * s, 0.0);
 
                 let mut min_x = top_left.x;
                 if min_x > top_right.x {
@@ -3418,38 +3014,16 @@ impl TerrainLogic {
                     max_y = bottom_left.y;
                 }
 
-                let i_min = ICoord2D {
-                    x: real_to_int_floor(min_x / MAP_XY_FACTOR),
-                    y: real_to_int_floor(min_y / MAP_XY_FACTOR),
-                };
-                let i_max = ICoord2D {
-                    x: real_to_int_floor(max_x / MAP_XY_FACTOR),
-                    y: real_to_int_floor(max_y / MAP_XY_FACTOR),
-                };
+                let i_min = ICoord2D { x: real_to_int_floor(min_x / MAP_XY_FACTOR), y: real_to_int_floor(min_y / MAP_XY_FACTOR) };
+                let i_max = ICoord2D { x: real_to_int_floor(max_x / MAP_XY_FACTOR), y: real_to_int_floor(max_y / MAP_XY_FACTOR) };
 
                 let inside = |test_pt: &Vector3| -> bool {
                     let mut flags = 0u8;
                     let mut matched = false;
-                    if point_in_triangle_2d(
-                        &top_left,
-                        &top_right,
-                        &bottom_left,
-                        test_pt,
-                        0,
-                        1,
-                        &mut flags,
-                    ) {
+                    if point_in_triangle_2d(&top_left, &top_right, &bottom_left, test_pt, 0, 1, &mut flags) {
                         matched = true;
                     }
-                    if point_in_triangle_2d(
-                        &top_right,
-                        &bottom_right,
-                        &bottom_left,
-                        test_pt,
-                        0,
-                        1,
-                        &mut flags,
-                    ) {
+                    if point_in_triangle_2d(&top_right, &bottom_right, &bottom_left, test_pt, 0, 1, &mut flags) {
                         matched = true;
                     }
                     matched
@@ -3459,8 +3033,7 @@ impl TerrainLogic {
                 let mut num_samples = 0;
                 for i in i_min.x..=i_max.x {
                     for j in 0..=i_max.y {
-                        let test_pt =
-                            Vector3::new(i as f32 * MAP_XY_FACTOR, j as f32 * MAP_XY_FACTOR, 0.0);
+                        let test_pt = Vector3::new(i as f32 * MAP_XY_FACTOR, j as f32 * MAP_XY_FACTOR, 0.0);
                         if inside(&test_pt) {
                             total_height += self.ground_height(test_pt.x, test_pt.y, false).0;
                             num_samples += 1;
@@ -3475,16 +3048,14 @@ impl TerrainLogic {
 
                 // Compare to the height at the building's origin, because setRawMapHeight will only lower,
                 // not raise.  jba
-                let center_height =
-                    real_to_int_floor(self.ground_height(pos.x, pos.y, false).0 / MAP_HEIGHT_SCALE);
+                let center_height = real_to_int_floor(self.ground_height(pos.x, pos.y, false).0 / MAP_HEIGHT_SCALE);
                 if raw_data_height > center_height {
                     raw_data_height = center_height;
                 }
 
                 for i in i_min.x..=i_max.x {
                     for j in 0..=i_max.y {
-                        let test_pt =
-                            Vector3::new(i as f32 * MAP_XY_FACTOR, j as f32 * MAP_XY_FACTOR, 0.0);
+                        let test_pt = Vector3::new(i as f32 * MAP_XY_FACTOR, j as f32 * MAP_XY_FACTOR, 0.0);
                         if inside(&test_pt) {
                             self.set_raw_map_height_3x3(i, j, raw_data_height)?;
                         }
@@ -3496,14 +3067,8 @@ impl TerrainLogic {
                 // fill in all cells that overlap as obstacle cells
                 let radius = obj.geometry.get_major_radius();
                 let radius_sqr = radius * radius;
-                let i_min = ICoord2D {
-                    x: real_to_int_floor((pos.x - radius) / MAP_XY_FACTOR),
-                    y: real_to_int_floor((pos.y - radius) / MAP_XY_FACTOR),
-                };
-                let i_max = ICoord2D {
-                    x: real_to_int_floor((pos.x + radius) / MAP_XY_FACTOR),
-                    y: real_to_int_floor((pos.y + radius) / MAP_XY_FACTOR),
-                };
+                let i_min = ICoord2D { x: real_to_int_floor((pos.x - radius) / MAP_XY_FACTOR), y: real_to_int_floor((pos.y - radius) / MAP_XY_FACTOR) };
+                let i_max = ICoord2D { x: real_to_int_floor((pos.x + radius) / MAP_XY_FACTOR), y: real_to_int_floor((pos.y + radius) / MAP_XY_FACTOR) };
 
                 let inside = |test_pt: &Vector3| -> bool {
                     let dx = test_pt.x - pos.x;
@@ -3515,8 +3080,7 @@ impl TerrainLogic {
                 let mut num_samples = 0;
                 for i in i_min.x..=i_max.x {
                     for j in 0..=i_max.y {
-                        let test_pt =
-                            Vector3::new(i as f32 * MAP_XY_FACTOR, j as f32 * MAP_XY_FACTOR, 0.0);
+                        let test_pt = Vector3::new(i as f32 * MAP_XY_FACTOR, j as f32 * MAP_XY_FACTOR, 0.0);
                         if inside(&test_pt) {
                             total_height += self.ground_height(test_pt.x, test_pt.y, false).0;
                             num_samples += 1;
@@ -3530,8 +3094,7 @@ impl TerrainLogic {
                 let raw_data_height = real_to_int_floor(0.5f32 + avg_height / MAP_HEIGHT_SCALE);
                 for i in i_min.x..=i_max.x {
                     for j in 0..=i_max.y {
-                        let test_pt =
-                            Vector3::new(i as f32 * MAP_XY_FACTOR, j as f32 * MAP_XY_FACTOR, 0.0);
+                        let test_pt = Vector3::new(i as f32 * MAP_XY_FACTOR, j as f32 * MAP_XY_FACTOR, 0.0);
                         if inside(&test_pt) {
                             self.set_raw_map_height_3x3(i, j, raw_data_height)?;
                         }
@@ -3545,23 +3108,9 @@ impl TerrainLogic {
     /// The nine `setRawMapHeight` calls `flattenTerrain` makes for one cell:
     /// the cell, its four neighbours, then the four corners.
     fn set_raw_map_height_3x3(&mut self, i: i32, j: i32, raw_data_height: i32) -> TlResult<()> {
-        let offsets: [(i32, i32); 9] = [
-            (0, 0),
-            (-1, 0),
-            (1, 0),
-            (0, -1),
-            (0, 1),
-            (-1, -1),
-            (1, 1),
-            (1, -1),
-            (-1, 1),
-        ];
+        let offsets: [(i32, i32); 9] = [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, 1), (1, -1), (-1, 1)];
         for (dx, dy) in offsets {
-            self.visual_write(TerrainVisualEvent::SetRawMapHeight {
-                x: i.wrapping_add(dx),
-                y: j.wrapping_add(dy),
-                height: raw_data_height,
-            })?;
+            self.visual_write(TerrainVisualEvent::SetRawMapHeight { x: i.wrapping_add(dx), y: j.wrapping_add(dy), height: raw_data_height })?;
         }
         Ok(())
     }
@@ -3579,14 +3128,8 @@ impl TerrainLogic {
             return Ok(()); // sanity
         }
 
-        let i_min = ICoord2D {
-            x: real_to_int_floor((pos.x - radius) / MAP_XY_FACTOR),
-            y: real_to_int_floor((pos.y - radius) / MAP_XY_FACTOR),
-        };
-        let i_max = ICoord2D {
-            x: real_to_int_floor((pos.x + radius) / MAP_XY_FACTOR),
-            y: real_to_int_floor((pos.y + radius) / MAP_XY_FACTOR),
-        };
+        let i_min = ICoord2D { x: real_to_int_floor((pos.x - radius) / MAP_XY_FACTOR), y: real_to_int_floor((pos.y - radius) / MAP_XY_FACTOR) };
+        let i_max = ICoord2D { x: real_to_int_floor((pos.x + radius) / MAP_XY_FACTOR), y: real_to_int_floor((pos.y + radius) / MAP_XY_FACTOR) };
 
         for i in i_min.x..=i_max.x {
             for j in 0..=i_max.y {
@@ -3613,11 +3156,7 @@ impl TerrainLogic {
                         self.count(r)?
                     };
 
-                    self.visual_write(TerrainVisualEvent::SetRawMapHeight {
-                        x: grid_pos.x,
-                        y: grid_pos.y,
-                        height: target_height,
-                    })?;
+                    self.visual_write(TerrainVisualEvent::SetRawMapHeight { x: grid_pos.x, y: grid_pos.y, height: target_height })?;
                 }
             }
         }
@@ -3635,11 +3174,7 @@ impl TerrainLogic {
 
     /// `xfer(xfer)`. Version 1: the active boundary. Version 2: the water
     /// changes in progress (each saved as the id of its polygon trigger).
-    pub fn xfer<X: Xfer + ?Sized, W: TerrainWorld>(
-        &mut self,
-        xfer: &mut X,
-        world: &mut W,
-    ) -> TlResult<()> {
+    pub fn xfer<X: Xfer + ?Sized, W: TerrainWorld>(&mut self, xfer: &mut X, world: &mut W) -> TlResult<()> {
         // version
         const CURRENT_VERSION: u8 = 2;
         let mut version = CURRENT_VERSION;
@@ -3741,11 +3276,7 @@ pub fn make_align_to_normal_matrix(angle: f32, pos: &Coord3D, normal: &Coord3D) 
 
     // It is extremely important that the resulting matrix is such that the xvector points in
     // the angle we specified; specifically, that atan2(xvec.y, xvec.x) == angle.
-    let mut x = Coord3D {
-        x: trig::cos(angle),
-        y: trig::sin(angle),
-        z: 0.0,
-    };
+    let mut x = Coord3D { x: trig::cos(angle), y: trig::sin(angle), z: 0.0 };
     // x.normalize() -- redundant; is normalized by definition
 
     // dot of two unit vectors is cos of angle between them; we want there to be a 90-deg angle
@@ -3759,18 +3290,12 @@ pub fn make_align_to_normal_matrix(angle: f32, pos: &Coord3D, normal: &Coord3D) 
     let mut y = Coord3D::cross_product(&z, &x);
     y.normalize();
 
-    Matrix3D::new(
-        x.x, y.x, z.x, pos.x, x.y, y.y, z.y, pos.y, x.z, y.z, z.z, pos.z,
-    )
+    Matrix3D::new(x.x, y.x, z.x, pos.x, x.y, y.y, z.y, pos.y, x.z, y.z, z.z, pos.z)
 }
 
 /// `TerrainLogic::parseWaypointDataChunk`/`parseWaypointData`: the links
 /// between waypoints, as pairs of ids.
-fn parse_waypoint_data_chunk(
-    file: &mut DataChunkInput<TerrainLogic>,
-    _info: &DataChunkInfo,
-    terrain: &mut TerrainLogic,
-) -> ChunkResult<bool> {
+fn parse_waypoint_data_chunk(file: &mut DataChunkInput<TerrainLogic>, _info: &DataChunkInfo, terrain: &mut TerrainLogic) -> ChunkResult<bool> {
     let num_waypoint_links = file.read_int()?;
     for _ in 0..num_waypoint_links {
         let waypoint1 = file.read_int()?;
@@ -3796,33 +3321,16 @@ mod tests {
             t.add_point(ICoord3D { x, y, z: 3 });
         }
         let a = TriggerArea::from_polygon_trigger(&t).unwrap();
-        assert_eq!(
-            (a.name().str(), a.id(), a.is_water_area()),
-            (&b"Lake"[..], 7, true)
-        );
+        assert_eq!((a.name().str(), a.id(), a.is_water_area()), (&b"Lake"[..], 7, true));
         assert_eq!(a.num_points(), 3);
-        assert_eq!(
-            (*a.point(0), *a.point(1), *a.point(2)),
-            (
-                ICoord3D { x: 0, y: 0, z: 3 },
-                ICoord3D { x: 10, y: 0, z: 3 },
-                ICoord3D { x: 10, y: 10, z: 3 }
-            )
-        );
+        assert_eq!((*a.point(0), *a.point(1), *a.point(2)), (ICoord3D { x: 0, y: 0, z: 3 }, ICoord3D { x: 10, y: 0, z: 3 }, ICoord3D { x: 10, y: 10, z: 3 }));
         let empty = PolygonTrigger::new(8);
         assert_eq!(
             TriggerArea::from_polygon_trigger(&empty),
-            Err(TriggerAreaError::Undefined(
-                TerrainUndefined::TriggerWithoutPoints
-            ))
+            Err(TriggerAreaError::Undefined(TerrainUndefined::TriggerWithoutPoints))
         );
-        let loc = Coord3D {
-            x: 1.0,
-            y: 2.0,
-            z: 3.0,
-        };
-        let mut o =
-            MapObject::new(loc, b"*Waypoints/Waypoint", 0.0, 0, &Dict::new(), None).unwrap();
+        let loc = Coord3D { x: 1.0, y: 2.0, z: 3.0 };
+        let mut o = MapObject::new(loc, b"*Waypoints/Waypoint", 0.0, 0, &Dict::new(), None).unwrap();
         assert!(!WaypointMapObject::from_map_object(&o).is_waypoint);
         o.set_is_waypoint();
         let w = WaypointMapObject::from_map_object(&o);
@@ -3872,12 +3380,7 @@ mod tests {
         fn pathfinder_is_point_on_wall(&self, _p: &Coord3D) -> bool {
             false
         }
-        fn create_generic_bridge_object(
-            &mut self,
-            _c: &Coord3D,
-            _o: f32,
-            _p: &Dict,
-        ) -> Option<ObjectId> {
+        fn create_generic_bridge_object(&mut self, _c: &Coord3D, _o: f32, _p: &Dict) -> Option<ObjectId> {
             None
         }
         fn find_bridge_road_template(&self, _n: &AsciiString) -> bool {
@@ -3886,13 +3389,7 @@ mod tests {
         fn find_bridge_tower_template(&self, _b: &AsciiString, _t: BridgeTowerType) -> Option<f32> {
             None
         }
-        fn create_bridge_tower(
-            &mut self,
-            _b: ObjectId,
-            _t: BridgeTowerType,
-            _p: &Coord3D,
-            _a: f32,
-        ) -> ObjectId {
+        fn create_bridge_tower(&mut self, _b: ObjectId, _t: BridgeTowerType, _p: &Coord3D, _a: f32) -> ObjectId {
             0
         }
         fn before_map_boundary_change(&mut self) {}
@@ -3906,30 +3403,18 @@ mod tests {
             ICoord3D { x: 100, y: 100, z },
             ICoord3D { x: 0, y: 100, z },
         ];
-        TriggerArea::new(
-            AsciiString::try_from_bytes(name.as_bytes()).unwrap(),
-            id,
-            true,
-            pts,
-        )
-        .unwrap()
+        TriggerArea::new(AsciiString::try_from_bytes(name.as_bytes()).unwrap(), id, true, pts).unwrap()
     }
 
     #[test]
     fn death_splatted_is_the_name_at_its_index() {
-        assert_eq!(
-            crate::logic::damage::DEATH_NAMES[DEATH_SPLATTED as usize],
-            "SPLATTED"
-        );
+        assert_eq!(crate::logic::damage::DEATH_NAMES[DEATH_SPLATTED as usize], "SPLATTED");
     }
 
     /// A terrain over a flat 16 x 16 height map at raw height `raw`.
     fn flat_terrain(raw: u8) -> TerrainLogic {
         let mut t = TerrainLogic::new(GroundSource::LogicHeightMap);
-        t.set_logic_height_map(Some(
-            LogicHeightMap::new(16, 16, 0, vec![ICoord2D { x: 16, y: 16 }], vec![raw; 256])
-                .unwrap(),
-        ));
+        t.set_logic_height_map(Some(LogicHeightMap::new(16, 16, 0, vec![ICoord2D { x: 16, y: 16 }], vec![raw; 256]).unwrap()));
         t.set_boundaries(vec![ICoord2D { x: 16, y: 16 }], 0);
         t
     }
@@ -3956,9 +3441,7 @@ mod tests {
         b.set_triggers(vec![water_area("Lake", 7, 5)]);
         assert_eq!(
             b.set_water_height(&mut world, Some(WaterHandle::Polygon(0)), 1.0, 0.0, false),
-            Err(TerrainLogicError::Undefined(
-                TerrainUndefined::ExtentNotImplemented
-            ))
+            Err(TerrainLogicError::Undefined(TerrainUndefined::ExtentNotImplemented))
         );
         assert_eq!(b.undefined_inputs(), 1);
     }
@@ -3966,12 +3449,7 @@ mod tests {
     #[test]
     fn undefined_extent_is_counted() {
         let mut t = TerrainLogic::new(GroundSource::Base);
-        assert_eq!(
-            t.find_closest_edge_point(&Coord3D::default()),
-            Err(TerrainLogicError::Undefined(
-                TerrainUndefined::ExtentNotImplemented
-            ))
-        );
+        assert_eq!(t.find_closest_edge_point(&Coord3D::default()), Err(TerrainLogicError::Undefined(TerrainUndefined::ExtentNotImplemented)));
         assert_eq!(t.undefined_inputs(), 1);
     }
 
@@ -3980,8 +3458,7 @@ mod tests {
         let mut world = EmptyWorld::default();
         let mut t = flat_terrain(0);
         t.set_triggers(vec![water_area("Lake", 1, 0)]);
-        t.change_water_height_over_time(Some(WaterHandle::Polygon(0)), 3.0, 0.1, 0.0)
-            .unwrap();
+        t.change_water_height_over_time(Some(WaterHandle::Polygon(0)), 3.0, 0.1, 0.0).unwrap();
         assert_eq!(t.water_changes().len(), 1);
         // 3 frames (0.1 s at 30 frames/s) at 1.0 per frame
         for expect_left in [1, 1, 0] {
@@ -3997,19 +3474,7 @@ mod tests {
         let mut t = TerrainLogic::new(GroundSource::Base);
         let ascii = |s: &str| AsciiString::try_from_bytes(s.as_bytes()).unwrap();
         for (id, name, bi) in [(1, "A", true), (2, "B", false), (3, "C", false)] {
-            t.waypoints.push(Waypoint::new(
-                id,
-                ascii(name),
-                Coord3D {
-                    x: id as f32 * 10.0,
-                    y: 0.0,
-                    z: 0.0,
-                },
-                ascii("Path"),
-                ascii(""),
-                ascii(""),
-                bi,
-            ));
+            t.waypoints.push(Waypoint::new(id, ascii(name), Coord3D { x: id as f32 * 10.0, y: 0.0, z: 0.0 }, ascii("Path"), ascii(""), ascii(""), bi));
         }
         t.add_waypoint_link(1, 2);
         t.add_waypoint_link(1, 2); // already linked
@@ -4022,23 +3487,10 @@ mod tests {
         assert_eq!(t.waypoint_by_id(3), Some(WaypointHandle(2)));
         assert_eq!(t.first_waypoint(), Some(WaypointHandle(2)));
         // closest on path "path" (case-insensitive) to x = 14 is B (x = 20)? A is 4 away
-        assert_eq!(
-            t.closest_waypoint_on_path(
-                &Coord3D {
-                    x: 14.0,
-                    y: 0.0,
-                    z: 0.0
-                },
-                &ascii("path")
-            ),
-            Some(WaypointHandle(0))
-        );
+        assert_eq!(t.closest_waypoint_on_path(&Coord3D { x: 14.0, y: 0.0, z: 0.0 }, &ascii("path")), Some(WaypointHandle(0)));
         assert!(t.is_purpose_of_path(Some(WaypointHandle(0)), &ascii("Path")));
         assert!(!t.is_purpose_of_path(Some(WaypointHandle(0)), &ascii("path"))); // case-sensitive
-        assert_eq!(
-            t.waypoint(WaypointHandle(0)).unwrap().link(8),
-            Err(TerrainUndefined::WaypointLinkIndex)
-        );
+        assert_eq!(t.waypoint(WaypointHandle(0)).unwrap().link(8), Err(TerrainUndefined::WaypointLinkIndex));
     }
 
     #[test]
@@ -4048,70 +3500,30 @@ mod tests {
         let obj = LandmarkBridgeObject {
             id: 12,
             template_name: AsciiString::try_from_bytes(b"Bridge").unwrap(),
-            position: Coord3D {
-                x: 100.0,
-                y: 100.0,
-                z: 20.0,
-            },
+            position: Coord3D { x: 100.0, y: 100.0, z: 20.0 },
             orientation: 0.0,
             geometry: GeometryInfo::new(GeometryType::Box, false, 5.0, 50.0, 10.0),
         };
         t.add_landmark_bridge_to_logic(&mut world, &obj);
         assert_eq!(t.bridges()[0].layer(), 2);
         let b = &t.bridges()[0];
-        assert!(b.is_point_on_bridge(&Coord3D {
-            x: 100.0,
-            y: 100.0,
-            z: 20.0
-        }));
-        assert!(!b.is_point_on_bridge(&Coord3D {
-            x: 100.0,
-            y: 130.0,
-            z: 20.0
-        }));
-        let (h, n) = b
-            .bridge_height(&Coord3D {
-                x: 100.0,
-                y: 100.0,
-                z: 0.0,
-            })
-            .unwrap();
+        assert!(b.is_point_on_bridge(&Coord3D { x: 100.0, y: 100.0, z: 20.0 }));
+        assert!(!b.is_point_on_bridge(&Coord3D { x: 100.0, y: 130.0, z: 20.0 }));
+        let (h, n) = b.bridge_height(&Coord3D { x: 100.0, y: 100.0, z: 0.0 }).unwrap();
         assert_eq!(h, 20.0);
-        assert_eq!(
-            n,
-            Coord3D {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0
-            }
-        );
-        assert_eq!(
-            t.find_bridge_at(&Coord3D {
-                x: 90.0,
-                y: 100.0,
-                z: 20.0
-            }),
-            Some(0)
-        );
+        assert_eq!(n, Coord3D { x: 0.0, y: 0.0, z: 1.0 });
+        assert_eq!(t.find_bridge_at(&Coord3D { x: 90.0, y: 100.0, z: 20.0 }), Some(0));
     }
 
     #[test]
     fn height_map_ground_and_extent() {
         let mut t = TerrainLogic::new(GroundSource::LogicHeightMap);
-        t.set_logic_height_map(Some(
-            LogicHeightMap::new(16, 16, 0, vec![ICoord2D { x: 16, y: 16 }], vec![80; 256]).unwrap(),
-        ));
+        t.set_logic_height_map(Some(LogicHeightMap::new(16, 16, 0, vec![ICoord2D { x: 16, y: 16 }], vec![80; 256]).unwrap()));
         t.set_boundaries(vec![ICoord2D { x: 16, y: 16 }], 0);
         assert_eq!(t.ground_height(55.0, 62.0, false).0, 50.0);
         let e = t.extent().unwrap();
         assert_eq!((e.hi.x, e.hi.y), (160.0, 160.0));
-        let edge = t
-            .find_closest_edge_point(&Coord3D {
-                x: 10.0,
-                y: 70.0,
-                z: 0.0,
-            })
-            .unwrap();
+        let edge = t.find_closest_edge_point(&Coord3D { x: 10.0, y: 70.0, z: 0.0 }).unwrap();
         assert_eq!((edge.x, edge.y, edge.z), (0.0, 70.0, 50.0));
     }
 }

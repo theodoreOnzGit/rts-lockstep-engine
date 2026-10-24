@@ -26,14 +26,12 @@ use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::special_power_module::{SpecialPowerModule, SpecialPowerModuleData};
-use crate::logic::modules::special_power_body::{
-    self, special_power_module_call, SpecialPowerBehavior,
-};
+use crate::logic::modules::special_power_body::{self, special_power_module_call, SpecialPowerBehavior};
 use crate::logic::world::game_logic::World;
-use crate::logic::world::module_call::ModuleCall as Call;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::update_body::UpdateBody;
 use crate::special_power_data_field_parse;
+use crate::logic::world::module_call::ModuleCall as Call;
 
 /// `class CleanupAreaPowerModuleData : public SpecialPowerModuleData`.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -54,9 +52,7 @@ impl CleanupAreaPowerModuleData {
     }
 
     /// `buildFieldParse(p)`: the behaviour base, the special power fields, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, CleanupAreaPowerModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, CleanupAreaPowerModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -64,9 +60,7 @@ impl CleanupAreaPowerModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<CleanupAreaPowerModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<CleanupAreaPowerModuleData> {
         let mut data = CleanupAreaPowerModuleData::new();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, CleanupAreaPowerModuleData::build_field_parse)?;
@@ -76,19 +70,11 @@ impl CleanupAreaPowerModuleData {
 }
 
 /// `SpecialPowerModuleData::buildFieldParse`'s table, for this data class.
-static BASE_FIELD_PARSE: [FieldParse<CleanupAreaPowerModuleData>; 6] =
-    special_power_data_field_parse!(CleanupAreaPowerModuleData, special_power);
+static BASE_FIELD_PARSE: [FieldParse<CleanupAreaPowerModuleData>; 6] = special_power_data_field_parse!(CleanupAreaPowerModuleData, special_power);
 
 /// `CleanupAreaPowerModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<CleanupAreaPowerModuleData>; 2] = [
-    FieldParse::new(
-        "MaxMoveDistanceFromLocation",
-        |ini, d, _| {
-            d.cleanup_move_range = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("MaxMoveDistanceFromLocation", |ini, d, _| { d.cleanup_move_range = ini.parse_real()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
@@ -115,12 +101,8 @@ impl PartialEq for CleanupAreaPower {
 
 impl CleanupAreaPower {
     /// `CleanupAreaPower(thing, moduleData)`, the part that touches no world: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<CleanupAreaPowerModuleData>>,
-    ) -> IniResult<CleanupAreaPower> {
-        let data =
-            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(object: ObjectId, data: Option<Arc<CleanupAreaPowerModuleData>>) -> IniResult<CleanupAreaPower> {
+        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let power = SpecialPowerModule::new(object, Some(Arc::new(data.special_power.clone())))?;
         Ok(CleanupAreaPower { power, data })
     }
@@ -143,12 +125,7 @@ impl CleanupAreaPower {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         special_power_module_call(self, world, me, call)
     }
 }
@@ -169,32 +146,13 @@ impl SpecialPowerBehavior for CleanupAreaPower {
             _ => None,
         }
     }
-    fn do_special_power_at_location(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        loc: Coord3D,
-        _angle: f32,
-        _command_options: u32,
-    ) -> Result<(), IniError> {
-        if world
-            .objects
-            .find(me.object)
-            .is_some_and(|o| o.is_disabled())
-        {
+    fn do_special_power_at_location(&mut self, world: &mut World, me: ModuleHandle, loc: Coord3D, _angle: f32, _command_options: u32) -> Result<(), IniError> {
+        if world.objects.find(me.object).is_some_and(|o| o.is_disabled()) {
             return Ok(());
         }
         if let Some(idx) = world.find_module(me.object, b"CleanupHazardUpdate") {
-            let range = if crate::logic::modules::plant(801) {
-                0.0
-            } else {
-                self.data.cleanup_move_range
-            };
-            world.module_call(
-                me.object,
-                idx,
-                Call::SetCleanupAreaParameters { loc, range },
-            );
+            let range = if crate::logic::modules::plant(801) { 0.0 } else { self.data.cleanup_move_range };
+            world.module_call(me.object, idx, Call::SetCleanupAreaParameters { loc, range });
         }
         Ok(())
     }
@@ -220,7 +178,6 @@ impl Snapshot for CleanupAreaPower {
 
 /// The factory's `NewModuleDataProc` for `CleanupAreaPower`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::CleanupAreaPower(Arc::new(
-        CleanupAreaPowerModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::CleanupAreaPower(Arc::new(CleanupAreaPowerModuleData::friend_new_module_data(ini)?)))
 }
+

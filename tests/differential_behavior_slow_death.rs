@@ -112,9 +112,7 @@ use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTem
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
 use rts_lockstep_engine::logic::damage::DamageInfo;
-use rts_lockstep_engine::logic::modules::slow_death_behavior::{
-    SlowDeathBehaviorModuleData, SD_PHASE_COUNT,
-};
+use rts_lockstep_engine::logic::modules::slow_death_behavior::{SlowDeathBehaviorModuleData, SD_PHASE_COUNT};
 use rts_lockstep_engine::logic::world::body_cuts::BodyCall;
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -138,17 +136,12 @@ const WEAPONS: [&str; 2] = ["WEAP_A", "WEAP_B"];
 const CFG_INFOS: usize = 37;
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::SlowDeathBehavior(Arc::new(
-        SlowDeathBehaviorModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::SlowDeathBehavior(Arc::new(SlowDeathBehaviorModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -208,9 +201,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let nlog = r.u32();
         let log: Vec<String> = (0..nlog).map(|_| r.str()).collect();
         let (wakes, last_mod, last_frame) = (r.u32(), r.u32() as i32, r.u32());
-        let mods: Vec<Vec<u32>> = (0..n_mods)
-            .map(|_| (0..5).map(|_| r.u32()).collect())
-            .collect();
+        let mods: Vec<Vec<u32>> = (0..n_mods).map(|_| (0..5).map(|_| r.u32()).collect()).collect();
         let mut x = String::new();
         if i > 0 {
             x = r.xfer();
@@ -224,26 +215,8 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 // -- generators --
 
 const DEATH_NAMES: [&str; 20] = [
-    "NONE",
-    "CRUSHED",
-    "BURNED",
-    "EXPLODED",
-    "POISONED",
-    "TOPPLED",
-    "FLOODED",
-    "SUICIDED",
-    "LASERED",
-    "DETONATED",
-    "SPLATTED",
-    "POISONED_BETA",
-    "EXTRA_2",
-    "EXTRA_3",
-    "EXTRA_4",
-    "EXTRA_5",
-    "EXTRA_6",
-    "EXTRA_7",
-    "EXTRA_8",
-    "POISONED_GAMMA",
+    "NONE", "CRUSHED", "BURNED", "EXPLODED", "POISONED", "TOPPLED", "FLOODED", "SUICIDED", "LASERED", "DETONATED", "SPLATTED", "POISONED_BETA",
+    "EXTRA_2", "EXTRA_3", "EXTRA_4", "EXTRA_5", "EXTRA_6", "EXTRA_7", "EXTRA_8", "POISONED_GAMMA",
 ];
 
 fn death_tokens(g: &mut Gen) -> String {
@@ -321,12 +294,7 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     field(&mut lines, g, 80, "ProbabilityModifier", v);
     let v = real_text(g, &["0%", "50%", "100%", "200%", "-50%", "25%"], clean);
     field(&mut lines, g, 55, "ModifierBonusPerOverkillPercent", v);
-    for name in [
-        "SinkDelay",
-        "SinkDelayVariance",
-        "DestructionDelay",
-        "DestructionDelayVariance",
-    ] {
+    for name in ["SinkDelay", "SinkDelayVariance", "DestructionDelay", "DestructionDelayVariance"] {
         let v = match g.below(8) {
             0 => "0".to_string(),
             1..=4 => format!("{}", g.below(3000)),
@@ -339,16 +307,8 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     let v = real_text(g, &["-10", "0", "5.5", "100"], clean);
     field(&mut lines, g, 30, "DestructionAltitude", v);
     for ph in ["INITIAL", "MIDPOINT", "FINAL", "BOGUS"] {
-        for (name, names) in [
-            ("FX", &["FX_A", "FX_B", "None", "FX_A"][..]),
-            ("OCL", &["OCL_A", "OCL_B", "None", "OCL_C", "ocl_a"][..]),
-            (
-                "Weapon",
-                &["WEAP_A", "WEAP_B", "None", "WEAP_X", "weap_a"][..],
-            ),
-        ] {
-            if (ph != "BOGUS" && g.below(100) < 28) || (ph == "BOGUS" && !clean && g.below(100) < 3)
-            {
+        for (name, names) in [("FX", &["FX_A", "FX_B", "None", "FX_A"][..]), ("OCL", &["OCL_A", "OCL_B", "None", "OCL_C", "ocl_a"][..]), ("Weapon", &["WEAP_A", "WEAP_B", "None", "WEAP_X", "weap_a"][..])] {
+            if (ph != "BOGUS" && g.below(100) < 28) || (ph == "BOGUS" && !clean && g.below(100) < 3) {
                 let n = 1 + g.below(3);
                 let list: Vec<&str> = (0..n).map(|_| pick(g, names)).collect();
                 let sep = gen_sep(g);
@@ -373,19 +333,7 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     let v = status_tokens(g);
     field(&mut lines, g, 10, "RequiredStatus", v);
     if !clean && g.below(14) == 0 {
-        lines.push(
-            pick(
-                g,
-                &[
-                    "NoSuchField = 1",
-                    "DeathTypes = +BOGUS",
-                    "FX = NOPHASE FX_A",
-                    "FX = INITIAL",
-                    "OCL",
-                ],
-            )
-            .to_string(),
-        );
+        lines.push(pick(g, &["NoSuchField = 1", "DeathTypes = +BOGUS", "FX = NOPHASE FX_A", "FX = INITIAL", "OCL"]).to_string());
     }
     let mut s = String::from("D\n");
     for l in &lines {
@@ -403,12 +351,7 @@ fn f(x: f32) -> u32 {
     x.to_bits()
 }
 
-fn gen_case(
-    g: &mut Gen,
-    _data: &Option<ModuleDataKind>,
-    _n_up: usize,
-    _upgrades: &[String],
-) -> (Vec<u32>, Vec<[u32; 5]>) {
+fn gen_case(g: &mut Gen, _data: &Option<ModuleDataKind>, _n_up: usize, _upgrades: &[String]) -> (Vec<u32>, Vec<[u32; 5]>) {
     let n_mods = *pick(g, &[&1u32, &1, &1, &2, &2, &3]);
     let scale = match g.below(20) {
         0..=13 => 1.0,
@@ -418,10 +361,10 @@ fn gen_case(
         _ => 3.0,
     };
     let mut cfg = vec![
-        g.below(2000),                                     // 0 the frame
-        f(scale),                                          // 1 the slow death scale
-        if g.below(5) == 0 { 18 } else { (-1i32) as u32 }, // 2 the hulk override
-        n_mods,                                            // 3
+        g.below(2000),                                         // 0 the frame
+        f(scale),                                              // 1 the slow death scale
+        if g.below(5) == 0 { 18 } else { (-1i32) as u32 },     // 2 the hulk override
+        n_mods,                                                // 3
         (if g.below(100) < 55 { 1 } else { 0 }) | (if g.below(100) < 30 { 2 } else { 0 }), // 4 the kinds
         (u32::from(g.below(100) < 85))                         // 5 flags
             | (u32::from(g.below(100) < 55) << 1)
@@ -431,31 +374,26 @@ fn gen_case(
             | (u32::from(g.below(100) < 20) << 5)
             | (u32::from(g.below(100) < 15) << 6)
             | (u32::from(g.below(100) < 40) << 7),
-        1 + g.below(3), // 6 the veterancy (not REGULAR: see the module docs)
-        f(*pick(
-            g,
-            &[
-                &100.0f32, &200.0, &50.0, &1000.0, &100.0, &1.0, &100.0, &200.0, &0.5, &300.0, &0.0,
-            ],
-        )), // 7 the maximum health
-        f(*pick(g, &[&0.0f32, &10.0, &-5.5])), // 8..10 the position
+        1 + g.below(3),                                        // 6 the veterancy (not REGULAR: see the module docs)
+        f(*pick(g, &[&100.0f32, &200.0, &50.0, &1000.0, &100.0, &1.0, &100.0, &200.0, &0.5, &300.0, &0.0])), // 7 the maximum health
+        f(*pick(g, &[&0.0f32, &10.0, &-5.5])),                 // 8..10 the position
         f(*pick(g, &[&0.0f32, &20.0, &-3.0])),
         f(*pick(g, &[&0.0f32, &5.0, &0.5, &20.0, &-3.0, &1.0])),
-        *pick(g, &[&0u32, &2, &7, &2]), // 11 the last collidee
-        g.below(256) & g.below(256),    // 12 the status bits
+        *pick(g, &[&0u32, &2, &7, &2]),                        // 11 the last collidee
+        g.below(256) & g.below(256),                           // 12 the status bits
     ];
     // the data of modules 1 and 2
     for _ in 0..2 {
-        cfg.push(1 + g.below(30)); // the probability modifier
+        cfg.push(1 + g.below(30));                             // the probability modifier
         cfg.push(f(*pick(g, &[&0.0f32, &0.5, &2.0, &-1.0, &10.0]))); // the overkill bonus
-        cfg.push(f(*pick(g, &[&0.0f32, &0.1, &0.5, &1.0]))); // the sink rate
-        cfg.push(*pick(g, &[&0u32, &10, &30, &100])); // the sink delay
+        cfg.push(f(*pick(g, &[&0.0f32, &0.1, &0.5, &1.0])));   // the sink rate
+        cfg.push(*pick(g, &[&0u32, &10, &30, &100]));          // the sink delay
         cfg.push(*pick(g, &[&0u32, &5, &20]));
-        cfg.push(*pick(g, &[&0u32, &30, &90, &300, &10])); // the destruction delay
+        cfg.push(*pick(g, &[&0u32, &30, &90, &300, &10]));     // the destruction delay
         cfg.push(*pick(g, &[&0u32, &5, &40]));
-        cfg.push(f(*pick(g, &[&0.0f32, &0.0, &5.0, &10.0]))); // the fling force
+        cfg.push(f(*pick(g, &[&0.0f32, &0.0, &5.0, &10.0])));  // the fling force
         cfg.push(f(*pick(g, &[&0.0f32, &3.0])));
-        cfg.push(f(*pick(g, &[&0.0f32, &0.5, &0.8]))); // the fling pitch (radians)
+        cfg.push(f(*pick(g, &[&0.0f32, &0.5, &0.8])));         // the fling pitch (radians)
         cfg.push(f(*pick(g, &[&0.0f32, &0.2])));
     }
     cfg.push(g.u32()); // 35 the logic seed
@@ -484,13 +422,7 @@ fn gen_case(
             640..=729 => [6, g.below(2500), 0, 0, 0],
             730..=769 => [7, f(*pick(g, &[&1.0f32, &0.0, &0.5, &2.0, &3.0])), 0, 0, 0],
             770..=789 => [8, *pick(g, &[&(-1i32 as u32), &18, &5]), 0, 0, 0],
-            790..=829 => [
-                9,
-                f(*pick(g, &[&0.0f32, &5.0, &-2.0])),
-                f(*pick(g, &[&0.0f32, &3.0])),
-                f(*pick(g, &[&0.0f32, &0.4, &6.0, &-1.0, &30.0])),
-                0,
-            ],
+            790..=829 => [9, f(*pick(g, &[&0.0f32, &5.0, &-2.0])), f(*pick(g, &[&0.0f32, &3.0])), f(*pick(g, &[&0.0f32, &0.4, &6.0, &-1.0, &30.0])), 0],
             830..=849 => [10, g.below(4), 0, 0, 0],
             850..=869 => [11, g.below(2), 0, 0, 0],
             870..=889 => [12, *pick(g, &[&0u32, &2, &7]), 0, 0, 0],
@@ -554,18 +486,10 @@ fn info_of(cfg: &[u32], i: u32) -> DamageInfo {
     info
 }
 
-fn rust_run(
-    ctx: Ctx,
-    data: ModuleDataKind,
-    cfg: &[u32],
-    ops: &[[u32; 5]],
-    tally: &RefCell<Tally>,
-) -> RunOut {
+fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally: &RefCell<Tally>) -> RunOut {
     let mut v = Vec::new();
     {
-        let ModuleDataKind::SlowDeathBehavior(d) = &data else {
-            unreachable!("not a SlowDeathBehavior")
-        };
+        let ModuleDataKind::SlowDeathBehavior(d) = &data else { unreachable!("not a SlowDeathBehavior") };
         for x in [
             d.sink_rate.to_bits(),
             d.probability_modifier as u32,
@@ -600,10 +524,7 @@ fn rust_run(
                 has_weapon |= weapon_code(n) != 0;
             }
         }
-        put_u32(
-            &mut v,
-            u32::from(has_fx) | u32::from(has_ocl) << 1 | u32::from(has_weapon) << 2,
-        );
+        put_u32(&mut v, u32::from(has_fx) | u32::from(has_ocl) << 1 | u32::from(has_weapon) << 2);
     }
     let n_mods = cfg[3] as usize;
     put_u32(&mut v, n_mods as u32);
@@ -613,9 +534,7 @@ fn rust_run(
     let mut scratch = rts_lockstep_engine::common::name_key_generator::NameKeyGenerator::new();
     scratch.reset();
     for n in WEAPONS {
-        weapon_store
-            .new_weapon_template(&mut scratch, n.as_bytes())
-            .unwrap();
+        weapon_store.new_weapon_template(&mut scratch, n.as_bytes()).unwrap();
     }
     w.names = ctx.names;
     // the object creation lists are keyed in the world's own name key generator
@@ -623,13 +542,7 @@ fn rust_run(
     for n in [&b"OCL_A"[..], b"OCL_B"] {
         ocls.ocls.insert(w.names.name_to_key(n), Default::default());
     }
-    w.statics = Arc::new(GameStatics {
-        upgrade_center: ctx.center,
-        special_power_store: ctx.store,
-        object_creation_list_store: ocls,
-        weapon_store,
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, object_creation_list_store: ocls, weapon_store, ..Default::default() });
     w.set_frame(cfg[0]);
     w.random.init_game_logic_random(cfg[35]);
     w.cuts.globals.slow_death_scale = f32::from_bits(cfg[1]);
@@ -644,10 +557,7 @@ fn rust_run(
     if cfg[4] & 2 != 0 {
         kinds.push(KINDOF_HULK);
     }
-    let template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues {
-        kind_of: kinds,
-        ..Default::default()
-    }));
+    let template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues { kind_of: kinds, ..Default::default() }));
     let flags = cfg[5];
 
     let mut modules = Vec::new();
@@ -656,10 +566,7 @@ fn rust_run(
             data.clone()
         } else {
             let o = &cfg[13 + 11 * (k - 1)..];
-            let mut x = SlowDeathBehaviorModuleData {
-                probability_modifier: o[0] as i32,
-                ..Default::default()
-            };
+            let mut x = SlowDeathBehaviorModuleData { probability_modifier: o[0] as i32, ..Default::default() };
             x.modifier_bonus_per_overkill_percent = f32::from_bits(o[1]);
             x.sink_rate = f32::from_bits(o[2]);
             x.sink_delay = o[3];
@@ -672,24 +579,11 @@ fn rust_run(
             x.fling_pitch_variance = f32::from_bits(o[10]);
             ModuleDataKind::SlowDeathBehavior(Arc::new(x))
         };
-        modules.push(
-            rts_lockstep_engine::logic::modules::new_module(
-                w.next_object_id(),
-                b"SlowDeathBehavior",
-                format!("ModuleTag_SD{k}").as_bytes(),
-                &d,
-            )
-            .unwrap()
-            .unwrap(),
-        );
+        modules.push(rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"SlowDeathBehavior", format!("ModuleTag_SD{k}").as_bytes(), &d).unwrap().unwrap());
     }
     let probe = |name: &[u8], answers: ProbeAnswers, max: f32| {
         let mut pm = NewModule::plain(name, b"ModuleTag_Probe");
-        pm.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-            answers,
-            max,
-            Default::default(),
-        )));
+        pm.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(answers, max, Default::default())));
         pm
     };
     let mut body_idx = None;
@@ -701,14 +595,7 @@ fn rust_run(
     }
     let mut ai_idx = None;
     if flags >> 1 & 1 != 0 {
-        let mut pm = probe(
-            b"SdAi",
-            ProbeAnswers {
-                ai_dead: flags >> 6 & 1 != 0,
-                ..Default::default()
-            },
-            0.0,
-        );
+        let mut pm = probe(b"SdAi", ProbeAnswers { ai_dead: flags >> 6 & 1 != 0, ..Default::default() }, 0.0);
         pm.is_ai = true;
         ai_idx = Some(modules.len());
         modules.push(pm);
@@ -716,53 +603,25 @@ fn rust_run(
     let mut phys_idx = None;
     if flags >> 2 & 1 != 0 {
         phys_idx = Some(modules.len());
-        modules.push(probe(
-            b"PhysicsBehavior",
-            ProbeAnswers {
-                collidee: cfg[11] as i32,
-                ..Default::default()
-            },
-            0.0,
-        ));
+        modules.push(probe(b"PhysicsBehavior", ProbeAnswers { collidee: cfg[11] as i32, ..Default::default() }, 0.0));
     }
     if flags >> 3 & 1 != 0 {
         modules.push(probe(b"SlavedUpdate", ProbeAnswers::default(), 0.0));
     }
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
-    let me = w
-        .new_object(NewObject {
-            template: template.clone(),
-            status: Default::default(),
-            team: None,
-            modules,
-        })
-        .unwrap();
+    let me = w.new_object(NewObject { template: template.clone(), status: Default::default(), team: None, modules }).unwrap();
     assert_eq!(me, 1);
     // the helper modules the world makes come first: module indices are relative to the first slow death behaviour
     let base = w.find_module(me, b"SlowDeathBehavior").expect("the module") as usize;
     if flags >> 7 & 1 != 0 {
-        let tree_template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues {
-            kind_of: vec![KINDOF_SHRUBBERY],
-            ..Default::default()
-        }));
-        let tree = w
-            .new_object(NewObject {
-                template: tree_template,
-                status: Default::default(),
-                team: None,
-                modules: Vec::new(),
-            })
-            .unwrap();
+        let tree_template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues { kind_of: vec![KINDOF_SHRUBBERY], ..Default::default() }));
+        let tree = w.new_object(NewObject { template: tree_template, status: Default::default(), team: None, modules: Vec::new() }).unwrap();
         assert_eq!(tree, 2);
     }
     {
         let o = w.objects.find_mut(me).unwrap();
-        o.drawable = if flags & 1 != 0 {
-            7
-        } else {
-            rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID
-        };
+        o.drawable = if flags & 1 != 0 { 7 } else { rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID };
         o.experience.level = veterancy(cfg[6]);
         for b in 0..8 {
             if cfg[12] >> b & 1 != 0 {
@@ -773,14 +632,7 @@ fn rust_run(
             o.disabled.set(DISABLED_HELD, 1);
         }
     }
-    w.set_position(
-        me,
-        &Coord3D {
-            x: f32::from_bits(cfg[8]),
-            y: f32::from_bits(cfg[9]),
-            z: f32::from_bits(cfg[10]),
-        },
-    );
+    w.set_position(me, &Coord3D { x: f32::from_bits(cfg[8]), y: f32::from_bits(cfg[9]), z: f32::from_bits(cfg[10]) });
     let first_trace = w.cuts.trace.take().unwrap_or_default();
     let mut first_trace = Some(first_trace);
     let first_events = w.events.events().len();
@@ -792,24 +644,15 @@ fn rust_run(
         let mut events_before = w.events.events().len();
         let mut cuts_before = w.cuts.log.as_ref().map_or(0, |l| l.len());
         w.cuts.trace = Some(Vec::new());
-        let (mut xst, mut xbytes, mut crc, mut sleep, mut result) =
-            (-2i32, Vec::new(), 0u32, 0u32, 0u32);
+        let (mut xst, mut xbytes, mut crc, mut sleep, mut result) = (-2i32, Vec::new(), 0u32, 0u32, 0u32);
         if phase > 0 {
             let o = &ops[phase - 1];
             let k = o[1] as usize % n_mods;
             let mod_idx = (base + k) as u16;
             match o[0] {
                 0 => {
-                    let u = w
-                        .update_handle_of_module(ModuleHandle {
-                            object: me,
-                            index: mod_idx,
-                        })
-                        .expect("an update module");
-                    sleep = w
-                        .with_body(u, |b, w| b.update(w, u))
-                        .expect("the module is in its slot")
-                        .0;
+                    let u = w.update_handle_of_module(ModuleHandle { object: me, index: mod_idx }).expect("an update module");
+                    sleep = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
                     tally.borrow_mut().updates += 1;
                 }
                 1 => {
@@ -827,46 +670,21 @@ fn rust_run(
                     w.module_call(me, mod_idx, ModuleCall::BeginSlowDeath(info_of(cfg, o[2])));
                 }
                 4 => {
-                    result = match w.module_call(
-                        me,
-                        mod_idx,
-                        ModuleCall::GetProbabilityModifier(info_of(cfg, o[2])),
-                    ) {
+                    result = match w.module_call(me, mod_idx, ModuleCall::GetProbabilityModifier(info_of(cfg, o[2]))) {
                         ModuleReply::Int(i) => i as u32,
                         _ => 0,
                     };
                 }
-                5 => {
-                    result = u32::from(
-                        w.module_call(me, mod_idx, ModuleCall::IsDieApplicable(info_of(cfg, o[2])))
-                            .as_bool(),
-                    )
-                }
+                5 => result = u32::from(w.module_call(me, mod_idx, ModuleCall::IsDieApplicable(info_of(cfg, o[2]))).as_bool()),
                 6 => w.set_frame(o[1]),
                 7 => w.cuts.globals.slow_death_scale = f32::from_bits(o[1]),
                 8 => w.cuts.globals.hulk_max_lifetime_override = o[1] as i32,
-                9 => w.set_position(
-                    me,
-                    &Coord3D {
-                        x: f32::from_bits(o[1]),
-                        y: f32::from_bits(o[2]),
-                        z: f32::from_bits(o[3]),
-                    },
-                ),
+                9 => w.set_position(me, &Coord3D { x: f32::from_bits(o[1]), y: f32::from_bits(o[2]), z: f32::from_bits(o[3]) }),
                 10 => {}
-                11 => w
-                    .objects
-                    .find_mut(me)
-                    .unwrap()
-                    .disabled
-                    .set(DISABLED_HELD, i32::from(o[1] != 0)),
+                11 => w.objects.find_mut(me).unwrap().disabled.set(DISABLED_HELD, i32::from(o[1] != 0)),
                 12 => {
                     if let Some(i) = phys_idx {
-                        if let Some(UpdateBody::ModuleProbe(p)) =
-                            w.objects.find_mut(me).unwrap().modules[base + i]
-                                .body
-                                .as_mut()
-                        {
+                        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(me).unwrap().modules[base + i].body.as_mut() {
                             p.answers.collidee = o[1] as i32;
                         }
                     }
@@ -874,30 +692,16 @@ fn rust_run(
                 13 => {
                     ai_dead = o[1] != 0;
                     if let Some(i) = ai_idx {
-                        if let Some(UpdateBody::ModuleProbe(p)) =
-                            w.objects.find_mut(me).unwrap().modules[base + i]
-                                .body
-                                .as_mut()
-                        {
+                        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(me).unwrap().modules[base + i].body.as_mut() {
                             p.answers.ai_dead = ai_dead;
                         }
                     }
                 }
-                14 => {
-                    w.objects.find_mut(me).unwrap().drawable = if o[1] != 0 {
-                        7
-                    } else {
-                        rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID
-                    }
-                }
+                14 => w.objects.find_mut(me).unwrap().drawable = if o[1] != 0 { 7 } else { rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID },
                 15 => w.objects.find_mut(me).unwrap().experience.level = veterancy(o[1]),
                 16 => {
                     if let Some(i) = body_idx {
-                        if let Some(UpdateBody::ModuleProbe(p)) =
-                            w.objects.find_mut(me).unwrap().modules[base + i]
-                                .body
-                                .as_mut()
-                        {
+                        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(me).unwrap().modules[base + i].body.as_mut() {
                             p.max_health = f32::from_bits(o[1]);
                         }
                     }
@@ -939,16 +743,8 @@ fn rust_run(
                 _ => None,
             })
             .collect();
-        let cuts: Vec<CutCall> = w
-            .cuts
-            .log
-            .as_ref()
-            .map_or(Vec::new(), |l| l[cuts_before..].to_vec());
-        let trace = if phase == 0 {
-            first_trace.take().unwrap_or_default()
-        } else {
-            w.cuts.trace.take().unwrap()
-        };
+        let cuts: Vec<CutCall> = w.cuts.log.as_ref().map_or(Vec::new(), |l| l[cuts_before..].to_vec());
+        let trace = if phase == 0 { first_trace.take().unwrap_or_default() } else { w.cuts.trace.take().unwrap() };
         let (mut log, mut wakes, mut last_mod, mut last_frame) = (Vec::new(), 0u32, -1i32, 0u32);
         let (mut cut_iter, mut ev_iter) = (cuts.into_iter(), events.into_iter());
         for t in trace {
@@ -963,39 +759,20 @@ fn rust_run(
                 }
             } else if t.starts_with("cut ") {
                 match cut_iter.next() {
-                    Some(CutCall::Body(BodyCall::SetDisabled {
-                        object,
-                        disabled_type,
-                    })) => log.push(format!("setdisabled {object} {disabled_type}")),
+                    Some(CutCall::Body(BodyCall::SetDisabled { object, disabled_type })) => log.push(format!("setdisabled {object} {disabled_type}")),
                     Some(CutCall::Body(BodyCall::DestroyObject { object })) => {
                         tally.borrow_mut().destroyed += 1;
                         log.push(format!("destroy {object}"))
                     }
-                    Some(CutCall::GameLogicDeselectObject {
-                        object,
-                        player_mask,
-                        affect_client,
-                    }) => log.push(format!(
-                        "deselect {object} {player_mask} {}",
-                        i32::from(affect_client)
-                    )),
+                    Some(CutCall::GameLogicDeselectObject { object, player_mask, affect_client }) => log.push(format!("deselect {object} {player_mask} {}", i32::from(affect_client))),
                     Some(CutCall::OclCreate { ocl, .. }) => {
                         tally.borrow_mut().phase_ocl += 1;
                         log.push(format!("ocl {}", ocl_code(&ocl) - 1))
                     }
-                    Some(CutCall::WeaponCreateAndFireTemp {
-                        weapon,
-                        source,
-                        position,
-                    }) => {
+                    Some(CutCall::WeaponCreateAndFireTemp { weapon, source, position }) => {
                         tally.borrow_mut().phase_weapon += 1;
                         let name = WEAPONS[weapon_code(&weapon) as usize - 1];
-                        log.push(format!(
-                            "weapon {name} {source} {},{},{}",
-                            position.x.to_bits(),
-                            position.y.to_bits(),
-                            position.z.to_bits()
-                        ))
+                        log.push(format!("weapon {name} {source} {},{},{}", position.x.to_bits(), position.y.to_bits(), position.z.to_bits()))
                     }
                     _ => {}
                 }
@@ -1005,30 +782,11 @@ fn rust_run(
                         tally.borrow_mut().phase_fx += 1;
                         log.push(format!("fx {}", String::from_utf8_lossy(&fx)))
                     }
-                    Some(ObjectClientEvent::DrawableModelCondition {
-                        op: ModelConditionOp::Set(f),
-                        ..
-                    }) => log.push(format!("mc {}", f[0])),
-                    Some(ObjectClientEvent::DrawableModelCondition {
-                        op: ModelConditionOp::Clear(f),
-                        ..
-                    }) => log.push(format!("mcclear {}", f[0])),
-                    Some(ObjectClientEvent::DrawableModelCondition {
-                        op: ModelConditionOp::ClearAndSet { clear, set },
-                        ..
-                    }) => log.push(format!("clearset {} {}", clear[0], set[0])),
-                    Some(ObjectClientEvent::DrawableSetShadowsEnabled { enabled, .. }) => {
-                        log.push(format!("shadows {}", i32::from(enabled)))
-                    }
-                    Some(ObjectClientEvent::DrawableTerrainDecalFadeTarget {
-                        target,
-                        rate,
-                        ..
-                    }) => log.push(format!(
-                        "decalfade {:08x} {:08x}",
-                        target.to_bits(),
-                        rate.to_bits()
-                    )),
+                    Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Set(f), .. }) => log.push(format!("mc {}", f[0])),
+                    Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Clear(f), .. }) => log.push(format!("mcclear {}", f[0])),
+                    Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::ClearAndSet { clear, set }, .. }) => log.push(format!("clearset {} {}", clear[0], set[0])),
+                    Some(ObjectClientEvent::DrawableSetShadowsEnabled { enabled, .. }) => log.push(format!("shadows {}", i32::from(enabled))),
+                    Some(ObjectClientEvent::DrawableTerrainDecalFadeTarget { target, rate, .. }) => log.push(format!("decalfade {:08x} {:08x}", target.to_bits(), rate.to_bits())),
                     _ => {}
                 }
             } else if let Some(line) = t.strip_prefix("bt ") {
@@ -1049,16 +807,8 @@ fn rust_run(
         }
         tally.borrow_mut().effects += log.len() as u64;
         if let Some((_, e)) = w.cuts.module_errors.first() {
-            *tally
-                .borrow_mut()
-                .excluded
-                .entry(format!("{e:?}").chars().take(60).collect())
-                .or_insert(0) += 1;
-            return RunOut {
-                dump: Vec::new(),
-                keys: Vec::new(),
-                excluded: true,
-            };
+            *tally.borrow_mut().excluded.entry(format!("{e:?}").chars().take(60).collect()).or_insert(0) += 1;
+            return RunOut { dump: Vec::new(), keys: Vec::new(), excluded: true };
         }
         if phase > 0 {
             put_i32(&mut v, 0);
@@ -1073,15 +823,7 @@ fn rust_run(
         put_i32(&mut v, if wakes > 0 { last_mod } else { -1 });
         put_u32(&mut v, if wakes > 0 { last_frame } else { 0 });
         for j in 0..n_mods {
-            let Some(UpdateBody::SlowDeathBehavior(m)) = w.peek_module_body(ModuleHandle {
-                object: me,
-                index: (base + j) as u16,
-            }) else {
-                panic!(
-                    "the module {j} is in its slot (phase {phase}, {n_mods} modules, op {:?})",
-                    ops.get(phase.wrapping_sub(1))
-                )
-            };
+            let Some(UpdateBody::SlowDeathBehavior(m)) = w.peek_module_body(ModuleHandle { object: me, index: (base + j) as u16 }) else { panic!("the module {j} is in its slot (phase {phase}, {n_mods} modules, op {:?})", ops.get(phase.wrapping_sub(1))) };
             for x in m.state_words() {
                 put_u32(&mut v, x);
             }
@@ -1099,23 +841,13 @@ fn rust_run(
         put_u32(&mut v, pos.x.to_bits());
         put_u32(&mut v, pos.y.to_bits());
         put_u32(&mut v, pos.z.to_bits());
-        put_u32(
-            &mut v,
-            if ob.is_disabled_by_type(DISABLED_HELD) {
-                1 << DISABLED_HELD
-            } else {
-                0
-            },
-        );
+        put_u32(&mut v, if ob.is_disabled_by_type(DISABLED_HELD) { 1 << DISABLED_HELD } else { 0 });
         put_u32(&mut v, u32::from(ai_dead));
         put_u32(&mut v, u32::from(phys.fall));
         put_u32(&mut v, u32::from(phys.bounce));
         put_u32(&mut v, phys.extra_bounciness);
         put_u32(&mut v, phys.extra_friction);
-        let sd_state: Vec<u32> = match w.peek_module_body(ModuleHandle {
-            object: me,
-            index: base as u16,
-        }) {
+        let sd_state: Vec<u32> = match w.peek_module_body(ModuleHandle { object: me, index: base as u16 }) {
             Some(UpdateBody::SlowDeathBehavior(m)) => m.state_words(),
             _ => Vec::new(),
         };
@@ -1126,11 +858,7 @@ fn rust_run(
             tally.borrow_mut().flung += 1;
         }
     }
-    RunOut {
-        dump: v,
-        keys: Vec::new(),
-        excluded: false,
-    }
+    RunOut { dump: v, keys: Vec::new(), excluded: false }
 }
 
 #[test]
@@ -1158,11 +886,5 @@ fn slow_death_behavior_matches_upstream() {
         c.cases, c.read_failed, c.excluded, c.ops_run, t.updates, t.deaths, t.begun, t.flung, t.destroyed, t.xfers, t.effects, t.phase_fx, t.phase_ocl, t.phase_weapon
     );
     println!("excluded by: {:?}", t.excluded);
-    assert!(
-        c.read_failed * 40 > c.cases as u64
-            && c.ops_run * 5 > c.cases as u64 * 4
-            && t.begun * 10 > c.cases as u64
-            && t.flung * 50 > c.cases as u64,
-        "the generator must reach every path"
-    );
+    assert!(c.read_failed * 40 > c.cases as u64 && c.ops_run * 5 > c.cases as u64 * 4 && t.begun * 10 > c.cases as u64 && t.flung * 50 > c.cases as u64, "the generator must reach every path");
 }

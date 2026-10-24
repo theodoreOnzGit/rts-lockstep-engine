@@ -190,13 +190,10 @@ use std::collections::BTreeSet;
 use std::ffi::CString;
 
 use rts_lockstep_engine::common::base_type::{Coord3D, Region3D, PI};
-use rts_lockstep_engine::common::disabled_types::{DisabledType, DISABLED_SUBDUED};
 use rts_lockstep_engine::common::game_common::Relationship;
-use rts_lockstep_engine::common::game_common::{CellShroudStatus, ObjectShroudStatus};
 use rts_lockstep_engine::common::game_type::{ObjectId, PathfindLayer};
 use rts_lockstep_engine::common::geometry::{GeometryInfo, GeometryType};
 use rts_lockstep_engine::common::kind_of::{KindOfMaskType, KindOfType};
-use rts_lockstep_engine::common::model_state::{ModelConditionFlags, MODELCONDITION_COUNT};
 use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
 use rts_lockstep_engine::common::object_status_types::ObjectStatusTypes;
 use rts_lockstep_engine::common::random_value::RandomValues;
@@ -206,33 +203,30 @@ use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
-use rts_lockstep_engine::logic::action_manager::{
-    self as am, ActionHost, CanEnterType, CollideFacts, DozerFacts, NamedUpdateModule,
-    ParkingFacts, SpecialAbilityFacts, SpecialPowerTemplateRef, SupplyTruckFacts,
-};
-use rts_lockstep_engine::logic::damage::{
-    DamageInfo, DamageInfoInput, DAMAGE_EXPLOSION, DAMAGE_SMALL_ARMS,
-};
+use rts_lockstep_engine::logic::damage::{DamageInfo, DamageInfoInput, DAMAGE_EXPLOSION, DAMAGE_SMALL_ARMS};
 use rts_lockstep_engine::logic::weapon::{FxName, WeaponError, WeaponStore};
-use rts_lockstep_engine::logic::weapon_bonus::{
-    WeaponBonus, WeaponBonusSet, WEAPON_BONUS_FIELD_COUNT,
-};
+use rts_lockstep_engine::logic::weapon_bonus::{WeaponBonus, WeaponBonusSet, WEAPON_BONUS_FIELD_COUNT};
 use rts_lockstep_engine::logic::weapon_fire::{
     create_and_fire_temp_weapon, create_and_fire_temp_weapon_at_pos, deal_damage_internal,
-    estimate_weapon_template_damage, handle_projectile_detonation, should_projectile_collide_with,
-    weapon_store_update, Weapon, WeaponSnapshot, WeaponXferError,
+    estimate_weapon_template_damage, handle_projectile_detonation, should_projectile_collide_with, weapon_store_update, Weapon, WeaponSnapshot,
+    WeaponXferError,
 };
 use rts_lockstep_engine::logic::weapon_host::{
-    AbleToAttackType, CanAttackResult, CommandSourceType, ContainFacts, DistanceCalculationType,
-    LaunchOffset, WeaponFx, WeaponHost, WeaponTemplateSetRef, WeaponXferLookups,
+    AbleToAttackType, CanAttackResult, CommandSourceType, ContainFacts, DistanceCalculationType, LaunchOffset, WeaponFx, WeaponHost,
+    WeaponTemplateSetRef, WeaponXferLookups,
 };
 use rts_lockstep_engine::logic::weapon_set::WeaponTemplateSet;
 use rts_lockstep_engine::logic::weapon_set_flags::WeaponSetFlags;
 use rts_lockstep_engine::logic::weapon_set_state::WeaponSet;
 use rts_lockstep_engine::logic::weapon_types::WeaponStatus;
-use rts_lockstep_engine::logic::world::object_weapons::{
-    self as ow, FireAt, ObjectBoneHost, ObjectWeaponHost,
+use rts_lockstep_engine::common::model_state::{ModelConditionFlags, MODELCONDITION_COUNT};
+use rts_lockstep_engine::logic::action_manager::{
+    self as am, ActionHost, CanEnterType, CollideFacts, DozerFacts, NamedUpdateModule, ParkingFacts, SpecialAbilityFacts, SpecialPowerTemplateRef,
+    SupplyTruckFacts,
 };
+use rts_lockstep_engine::common::game_common::{CellShroudStatus, ObjectShroudStatus};
+use rts_lockstep_engine::common::disabled_types::{DisabledType, DISABLED_SUBDUED};
+use rts_lockstep_engine::logic::world::object_weapons::{self as ow, FireAt, ObjectBoneHost, ObjectWeaponHost};
 use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 use rts_lockstep_engine::ww::vector3::Vector3;
 use support::{Check, Gen};
@@ -437,11 +431,7 @@ fn weapon_set_flags_of(mask: u32) -> WeaponSetFlags {
 /// One object record (the words of `readObject` in fire_driver.h).
 fn read_object(r: &mut Reader<'_>, things: usize) -> Obj {
     let tmpl_id = r.i();
-    let tmpl = if tmpl_id >= 1 && tmpl_id as usize <= things {
-        tmpl_id as usize - 1
-    } else {
-        0
-    };
+    let tmpl = if tmpl_id >= 1 && tmpl_id as usize <= things { tmpl_id as usize - 1 } else { 0 };
     let player = r.i();
     let pos = r.coord();
     let orientation = r.f();
@@ -512,27 +502,8 @@ fn read_object(r: &mut Reader<'_>, things: usize) -> Obj {
     let disguised_player = r.i();
     let has_spawn = r.b();
     let spawn_result = r.i();
-    let (
-        has_land_mine,
-        has_pui,
-        has_parking,
-        has_spc_die,
-        has_stream,
-        has_assist,
-        assist_free,
-        has_cm,
-        has_phys,
-    ) = (
-        r.b(),
-        r.b(),
-        r.b(),
-        r.b(),
-        r.b(),
-        r.b(),
-        r.b(),
-        r.b(),
-        r.b(),
-    );
+    let (has_land_mine, has_pui, has_parking, has_spc_die, has_stream, has_assist, assist_free, has_cm, has_phys) =
+        (r.b(), r.b(), r.b(), r.b(), r.b(), r.b(), r.b(), r.b(), r.b());
     let launcher = r.i();
     let mut reserved = BTreeSet::new();
     for _ in 0..r.u() {
@@ -783,14 +754,10 @@ fn wpn_dist(a: &Coord3D, ra: f32, b: &Coord3D, rb: f32, t: DistanceCalculationTy
     let dy = a.y - b.y;
     let dz = a.z - b.z;
     let mut d = dx * dx + dy * dy;
-    if t == DistanceCalculationType::FromCenter3D
-        || t == DistanceCalculationType::FromBoundingSphere3D
-    {
+    if t == DistanceCalculationType::FromCenter3D || t == DistanceCalculationType::FromBoundingSphere3D {
         d += dz * dz;
     }
-    if t == DistanceCalculationType::FromBoundingSphere2D
-        || t == DistanceCalculationType::FromBoundingSphere3D
-    {
+    if t == DistanceCalculationType::FromBoundingSphere2D || t == DistanceCalculationType::FromBoundingSphere3D {
         let r = ra + rb;
         d -= r * r;
         if d < 0.0 {
@@ -822,37 +789,19 @@ impl WeaponXferLookups for Sim {
     fn thing_template_name(&self, id: u16) -> Vec<u8> {
         format!("T{id}").into_bytes()
     }
-    fn find_weapon_template_set_by_flags(
-        &mut self,
-        thing_template: u16,
-        flags: &WeaponSetFlags,
-    ) -> Option<WeaponTemplateSetRef> {
+    fn find_weapon_template_set_by_flags(&mut self, thing_template: u16, flags: &WeaponSetFlags) -> Option<WeaponTemplateSetRef> {
         let t = &mut self.things[thing_template as usize - 1];
         let index = t.finder.find_best_info(&t.sets, flags)?;
-        Some(WeaponTemplateSetRef {
-            thing_template,
-            index,
-        })
+        Some(WeaponTemplateSetRef { thing_template, index })
     }
     fn weapon_template_set(&self, r: WeaponTemplateSetRef) -> &WeaponTemplateSet {
         &self.things[r.thing_template as usize - 1].sets[r.index]
     }
     fn weapon_template_names(&self) -> Vec<(Vec<u8>, usize)> {
-        self.store
-            .templates()
-            .iter()
-            .enumerate()
-            .map(|(i, t)| (t.name.clone(), i))
-            .collect()
+        self.store.templates().iter().enumerate().map(|(i, t)| (t.name.clone(), i)).collect()
     }
-    fn weapon_template_index(
-        &self,
-        key: rts_lockstep_engine::common::name_key_generator::NameKeyType,
-    ) -> Option<usize> {
-        self.store
-            .templates()
-            .iter()
-            .position(|t| t.name_key == key)
+    fn weapon_template_index(&self, key: rts_lockstep_engine::common::name_key_generator::NameKeyType) -> Option<usize> {
+        self.store.templates().iter().position(|t| t.name_key == key)
     }
     fn weapon_template_name(&self, index: usize) -> Vec<u8> {
         self.store.templates()[index].name.clone()
@@ -907,15 +856,8 @@ impl WeaponHost for Sim {
     fn is_kind_of(&self, o: ObjectId, kind: KindOfType) -> bool {
         self.ob(o).kind.test(kind)
     }
-    fn is_kind_of_multi(
-        &self,
-        o: ObjectId,
-        must_be_set: &KindOfMaskType,
-        must_be_clear: &KindOfMaskType,
-    ) -> bool {
-        self.ob(o)
-            .kind
-            .test_set_and_clear(must_be_set, must_be_clear)
+    fn is_kind_of_multi(&self, o: ObjectId, must_be_set: &KindOfMaskType, must_be_clear: &KindOfMaskType) -> bool {
+        self.ob(o).kind.test_set_and_clear(must_be_set, must_be_clear)
     }
     fn test_status(&self, o: ObjectId, status: ObjectStatusTypes) -> bool {
         (self.ob(o).status >> status) & 1 != 0
@@ -961,10 +903,7 @@ impl WeaponHost for Sim {
         self.ob(o).above
     }
     fn is_airborne_target(&self, o: ObjectId) -> bool {
-        self.test_status(
-            o,
-            rts_lockstep_engine::common::object_status_types::OBJECT_STATUS_AIRBORNE_TARGET,
-        )
+        self.test_status(o, rts_lockstep_engine::common::object_status_types::OBJECT_STATUS_AIRBORNE_TARGET)
     }
     fn is_significantly_above_terrain(&self, o: ObjectId) -> bool {
         self.ob(o).signif
@@ -1004,8 +943,7 @@ impl WeaponHost for Sim {
     fn team_relationship_to_player_index(&self, o: ObjectId, player_index: i32) -> Relationship {
         if self.ob(o).player < 0 {
             // `getTeam()` is NULL and `->getRelationship(..)` is called on it
-            self.ub
-                .set(Some("the team of a team-less object is dereferenced"));
+            self.ub.set(Some("the team of a team-less object is dereferenced"));
             return Relationship::Neutral;
         }
         match self.players[self.ob(o).player as usize].rel[player_index as usize] {
@@ -1018,20 +956,10 @@ impl WeaponHost for Sim {
         let (ti, flags) = (self.ob(o).tmpl, self.ob(o).ws_flags);
         let t = &mut self.things[ti];
         let index = t.finder.find_best_info(&t.sets, &flags)?;
-        Some(WeaponTemplateSetRef {
-            thing_template: ti as u16 + 1,
-            index,
-        })
+        Some(WeaponTemplateSetRef { thing_template: ti as u16 + 1, index })
     }
     fn estimate_damage(&self, o: ObjectId, input: &DamageInfoInput) -> f32 {
-        self.rec(format!(
-            "est victim={} src={} dt={} death={} amt={}",
-            o,
-            input.source_id,
-            input.damage_type,
-            input.death_type,
-            fb(input.amount)
-        ));
+        self.rec(format!("est victim={} src={} dt={} death={} amt={}", o, input.source_id, input.damage_type, input.death_type, fb(input.amount)));
         self.ob(o).estimate
     }
     fn attempt_damage(&mut self, o: ObjectId, info: &mut DamageInfo) {
@@ -1062,12 +990,8 @@ impl WeaponHost for Sim {
         let p = self.ob(o).player;
         (p >= 0).then_some(p)
     }
-    fn controlling_player_mask(
-        &self,
-        o: ObjectId,
-    ) -> Option<rts_lockstep_engine::common::game_common::PlayerMaskType> {
-        self.controlling_player(o)
-            .map(|p| self.players[p as usize].mask)
+    fn controlling_player_mask(&self, o: ObjectId) -> Option<rts_lockstep_engine::common::game_common::PlayerMaskType> {
+        self.controlling_player(o).map(|p| self.players[p as usize].mask)
     }
     fn controlling_player_battle_plans(&self, o: ObjectId) -> i32 {
         self.players[self.ob(o).player as usize].battle_plans
@@ -1085,20 +1009,12 @@ impl WeaponHost for Sim {
         if p < 0 {
             return Vec::new();
         }
-        self.objs
-            .iter()
-            .filter(|x| x.player == p && !x.destroyed)
-            .map(|x| x.id)
-            .collect()
+        self.objs.iter().filter(|x| x.player == p && !x.destroyed).map(|x| x.id).collect()
     }
 
     fn contain_facts(&self, o: ObjectId) -> Option<ContainFacts> {
         let c = self.ob(o);
-        c.has_contain.then_some(ContainFacts {
-            count: c.contain_count,
-            garrisonable: c.garrisonable,
-            immune_to_clear_building_attacks: c.immune_clear,
-        })
+        c.has_contain.then_some(ContainFacts { count: c.contain_count, garrisonable: c.garrisonable, immune_to_clear_building_attacks: c.immune_clear })
     }
     fn contain_is_enclosing_container_for(&self, container: ObjectId, inner: ObjectId) -> bool {
         self.ob(container).enclosing.contains(&inner)
@@ -1106,16 +1022,8 @@ impl WeaponHost for Sim {
     fn contain_is_garrisonable(&self, container: ObjectId) -> bool {
         self.ob(container).garrisonable
     }
-    fn contain_calc_best_garrison_position(
-        &self,
-        container: ObjectId,
-        target_pos: &Coord3D,
-    ) -> Option<Coord3D> {
-        self.ob(container).best_garrison.then_some(Coord3D {
-            x: target_pos.x + 1.0,
-            y: target_pos.y + 2.0,
-            z: target_pos.z + 3.0,
-        })
+    fn contain_calc_best_garrison_position(&self, container: ObjectId, target_pos: &Coord3D) -> Option<Coord3D> {
+        self.ob(container).best_garrison.then_some(Coord3D { x: target_pos.x + 1.0, y: target_pos.y + 2.0, z: target_pos.z + 3.0 })
     }
     fn contain_is_passenger_allowed_to_fire(&self, o: ObjectId) -> bool {
         self.ob(o).passenger_fire
@@ -1123,11 +1031,7 @@ impl WeaponHost for Sim {
     fn contain_items(&self, o: ObjectId) -> Option<Vec<ObjectId>> {
         self.ob(o).has_items.then(|| self.ob(o).items.clone())
     }
-    fn contain_apparent_controlling_player(
-        &self,
-        o: ObjectId,
-        _observer: Option<i32>,
-    ) -> Option<i32> {
+    fn contain_apparent_controlling_player(&self, o: ObjectId, _observer: Option<i32>) -> Option<i32> {
         let a = self.ob(o).apparent;
         (a >= 0).then_some(a)
     }
@@ -1138,11 +1042,7 @@ impl WeaponHost for Sim {
         let s = self.ob(o);
         (s.has_stealth && s.disguised).then_some(s.disguised_player)
     }
-    fn player_relationship_to_player(
-        &self,
-        observer: Option<i32>,
-        other_index: i32,
-    ) -> Option<Relationship> {
+    fn player_relationship_to_player(&self, observer: Option<i32>, other_index: i32) -> Option<Relationship> {
         let o = observer?;
         if other_index < 0 || other_index as usize >= self.players.len() {
             return None;
@@ -1177,17 +1077,7 @@ impl WeaponHost for Sim {
         pos: Option<Coord3D>,
         command_source: CommandSourceType,
     ) -> Result<CanAttackResult, WeaponError> {
-        self.ob(member)
-            .weapon_set
-            .get_able_to_use_weapon_against_target(
-                self,
-                attack_type,
-                member,
-                victim,
-                pos,
-                command_source,
-                -1,
-            )
+        self.ob(member).weapon_set.get_able_to_use_weapon_against_target(self, attack_type, member, victim, pos, command_source, -1)
     }
 
     fn ai_sneaky_targeting_offset(&self, o: ObjectId) -> Option<Coord3D> {
@@ -1210,114 +1100,39 @@ impl WeaponHost for Sim {
     }
     fn ai_which_turret_for_weapon_slot(&self, o: ObjectId, wslot: i32) -> Option<(i32, f32, f32)> {
         let s = self.ob(o);
-        s.has_ai.then(|| {
-            (
-                s.turret[wslot as usize],
-                s.turret_angle[wslot as usize],
-                s.turret_pitch[wslot as usize],
-            )
-        })
+        s.has_ai.then(|| (s.turret[wslot as usize], s.turret_angle[wslot as usize], s.turret_pitch[wslot as usize]))
     }
-    fn ai_is_weapon_slot_on_turret_and_aiming_at_target(
-        &self,
-        o: ObjectId,
-        wslot: i32,
-        _victim: ObjectId,
-    ) -> bool {
+    fn ai_is_weapon_slot_on_turret_and_aiming_at_target(&self, o: ObjectId, wslot: i32, _victim: ObjectId) -> bool {
         let s = self.ob(o);
         s.has_ai && s.aiming[wslot as usize]
     }
-    fn adjust_target_destination(
-        &mut self,
-        source: ObjectId,
-        target: Option<ObjectId>,
-        _pos: Option<Coord3D>,
-        template: usize,
-        approach: &mut Coord3D,
-    ) {
-        self.rec(format!(
-            "adjust src={} target={} tpl={}",
-            source,
-            target.unwrap_or(0),
-            template
-        ));
+    fn adjust_target_destination(&mut self, source: ObjectId, target: Option<ObjectId>, _pos: Option<Coord3D>, template: usize, approach: &mut Coord3D) {
+        self.rec(format!("adjust src={} target={} tpl={}", source, target.unwrap_or(0), template));
         approach.x += 1.0;
         approach.y += 2.0;
     }
 
-    fn distance_squared_to_object(
-        &self,
-        a: ObjectId,
-        b: ObjectId,
-        calc: DistanceCalculationType,
-    ) -> f32 {
-        wpn_dist(
-            &self.ob(a).pos,
-            self.rad(a, calc),
-            &self.ob(b).pos,
-            self.rad(b, calc),
-            calc,
-        )
+    fn distance_squared_to_object(&self, a: ObjectId, b: ObjectId, calc: DistanceCalculationType) -> f32 {
+        wpn_dist(&self.ob(a).pos, self.rad(a, calc), &self.ob(b).pos, self.rad(b, calc), calc)
     }
-    fn distance_squared_to_pos(
-        &self,
-        a: ObjectId,
-        pos: &Coord3D,
-        calc: DistanceCalculationType,
-    ) -> f32 {
+    fn distance_squared_to_pos(&self, a: ObjectId, pos: &Coord3D, calc: DistanceCalculationType) -> f32 {
         wpn_dist(&self.ob(a).pos, self.rad(a, calc), pos, 0.0, calc)
     }
-    fn goal_distance_squared_to_object(
-        &self,
-        a: ObjectId,
-        goal: &Coord3D,
-        b: ObjectId,
-        calc: DistanceCalculationType,
-    ) -> f32 {
-        wpn_dist(
-            goal,
-            self.rad(a, calc),
-            &self.ob(b).pos,
-            self.rad(b, calc),
-            calc,
-        )
+    fn goal_distance_squared_to_object(&self, a: ObjectId, goal: &Coord3D, b: ObjectId, calc: DistanceCalculationType) -> f32 {
+        wpn_dist(goal, self.rad(a, calc), &self.ob(b).pos, self.rad(b, calc), calc)
     }
-    fn goal_distance_squared_to_pos(
-        &self,
-        a: ObjectId,
-        goal: &Coord3D,
-        pos: &Coord3D,
-        calc: DistanceCalculationType,
-    ) -> f32 {
+    fn goal_distance_squared_to_pos(&self, a: ObjectId, goal: &Coord3D, pos: &Coord3D, calc: DistanceCalculationType) -> f32 {
         wpn_dist(goal, self.rad(a, calc), pos, 0.0, calc)
     }
-    fn vector_to_object(
-        &self,
-        a: ObjectId,
-        b: ObjectId,
-        _calc: DistanceCalculationType,
-    ) -> Coord3D {
+    fn vector_to_object(&self, a: ObjectId, b: ObjectId, _calc: DistanceCalculationType) -> Coord3D {
         let (pa, pb) = (self.ob(a).pos, self.ob(b).pos);
-        Coord3D {
-            x: pb.x - pa.x,
-            y: pb.y - pa.y,
-            z: pb.z - pa.z,
-        }
+        Coord3D { x: pb.x - pa.x, y: pb.y - pa.y, z: pb.z - pa.z }
     }
     fn vector_to_pos(&self, a: ObjectId, pos: &Coord3D, _calc: DistanceCalculationType) -> Coord3D {
         let pa = self.ob(a).pos;
-        Coord3D {
-            x: pos.x - pa.x,
-            y: pos.y - pa.y,
-            z: pos.z - pa.z,
-        }
+        Coord3D { x: pos.x - pa.x, y: pos.y - pa.y, z: pos.z - pa.z }
     }
-    fn objects_in_range(
-        &self,
-        pos: &Coord3D,
-        radius: f32,
-        calc: DistanceCalculationType,
-    ) -> Vec<(ObjectId, f32)> {
+    fn objects_in_range(&self, pos: &Coord3D, radius: f32, calc: DistanceCalculationType) -> Vec<(ObjectId, f32)> {
         let mut v = Vec::new();
         for o in &self.objs {
             let d = wpn_dist(pos, 0.0, &o.pos, self.rad(o.id, calc), calc);
@@ -1328,30 +1143,14 @@ impl WeaponHost for Sim {
         v
     }
     fn potential_collisions(&self, source: ObjectId) -> Vec<ObjectId> {
-        self.ob(source)
-            .collides
-            .iter()
-            .copied()
-            .filter(|&c| self.exists(c))
-            .collect()
+        self.ob(source).collides.iter().copied().filter(|&c| self.exists(c)).collect()
     }
     fn is_clear_line_of_sight_terrain(&self, from: &Coord3D, to: &Coord3D) -> bool {
         from.z + 0.5 * to.z >= 3.0
     }
     fn bridge_attack_points(&self, bridge: ObjectId) -> (Coord3D, Coord3D) {
         let p = self.ob(bridge).pos;
-        (
-            Coord3D {
-                x: p.x + 10.0,
-                y: p.y,
-                z: p.z,
-            },
-            Coord3D {
-                x: p.x - 10.0,
-                y: p.y + 5.0,
-                z: p.z,
-            },
-        )
+        (Coord3D { x: p.x + 10.0, y: p.y, z: p.z }, Coord3D { x: p.x - 10.0, y: p.y + 5.0, z: p.z })
     }
     fn layer_height(&self, x: f32, y: f32, layer: PathfindLayer) -> f32 {
         x * 0.01 + y * 0.02 + (layer as f32) * 1.5
@@ -1367,18 +1166,12 @@ impl WeaponHost for Sim {
         let player = self.ob(source).player;
         let id = self.next_id;
         self.rec(format!("newobj tpl={template} team={player} -> {id}"));
-        let proto = self.things[(template as usize - 1) % self.things.len()]
-            .proto
-            .clone();
+        let proto = self.things[(template as usize - 1) % self.things.len()].proto.clone();
         let mut o = read_object(&mut Reader { w: &proto, p: 0 }, self.things.len());
         o.id = id;
         self.next_id += 1;
         o.player = player;
-        o.pos = Coord3D {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        };
+        o.pos = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
         o.xform = Matrix3D::identity();
         self.objs.push(o);
         id
@@ -1443,54 +1236,24 @@ impl WeaponHost for Sim {
     fn disarm_land_mine(&mut self, o: ObjectId) {
         self.rec(format!("lm.disarm o={o}"));
     }
-    fn projectile_stream_add(
-        &mut self,
-        stream: ObjectId,
-        source: ObjectId,
-        projectile: ObjectId,
-        victim: Option<ObjectId>,
-        victim_pos: Option<Coord3D>,
-    ) -> bool {
+    fn projectile_stream_add(&mut self, stream: ObjectId, source: ObjectId, projectile: ObjectId, victim: Option<ObjectId>, victim_pos: Option<Coord3D>) -> bool {
         if !self.ob(stream).has_stream {
             return false;
         }
         let sp = self.ob(source).pos;
         self.rec(format!("stream.pos o={} {}", stream, fb3(&sp)));
-        let vp = victim_pos.unwrap_or(Coord3D {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        });
-        self.rec(format!(
-            "stream.add o={} src={} proj={} victim={} pos={}",
-            stream,
-            source,
-            projectile,
-            victim.unwrap_or(0),
-            fb3(&vp)
-        ));
+        let vp = victim_pos.unwrap_or(Coord3D { x: 0.0, y: 0.0, z: 0.0 });
+        self.rec(format!("stream.add o={} src={} proj={} victim={} pos={}", stream, source, projectile, victim.unwrap_or(0), fb3(&vp)));
         true
     }
     fn assisted_targeting_is_free(&self, o: ObjectId) -> Option<bool> {
         let s = self.ob(o);
         s.has_assist.then_some(s.assist_free)
     }
-    fn assisted_targeting_assist_attack(
-        &mut self,
-        o: ObjectId,
-        requesting: ObjectId,
-        victim: ObjectId,
-    ) {
+    fn assisted_targeting_assist_attack(&mut self, o: ObjectId, requesting: ObjectId, victim: ObjectId) {
         self.rec(format!("assist o={o} req={requesting} victim={victim}"));
     }
-    fn laser_init(
-        &mut self,
-        laser: ObjectId,
-        source: ObjectId,
-        victim: Option<ObjectId>,
-        pos: &Coord3D,
-        bone_name: &[u8],
-    ) {
+    fn laser_init(&mut self, laser: ObjectId, source: ObjectId, victim: Option<ObjectId>, pos: &Coord3D, bone_name: &[u8]) {
         let l = self.ob(laser);
         if l.has_drawable && l.has_laser {
             let sp = self.ob(source).pos;
@@ -1513,19 +1276,9 @@ impl WeaponHost for Sim {
         let s = self.ob(o);
         s.has_drawable.then(|| s.barrels[wslot as usize])
     }
-    fn projectile_launch_offset(
-        &self,
-        o: ObjectId,
-        _wslot: i32,
-        _barrel: i32,
-        _turret: i32,
-    ) -> Option<LaunchOffset> {
+    fn projectile_launch_offset(&self, o: ObjectId, _wslot: i32, _barrel: i32, _turret: i32) -> Option<LaunchOffset> {
         let s = self.ob(o);
-        (s.has_drawable && s.has_launch).then_some(LaunchOffset {
-            attach_transform: s.launch_xform,
-            turret_rot_pos: s.turret_rot_pos,
-            turret_pitch_pos: s.turret_pitch_pos,
-        })
+        (s.has_drawable && s.has_launch).then_some(LaunchOffset { attach_transform: s.launch_xform, turret_rot_pos: s.turret_rot_pos, turret_pitch_pos: s.turret_pitch_pos })
     }
     fn convert_bone_transform_to_world(&self, o: ObjectId, bone_transform: &Matrix3D) -> Matrix3D {
         let mut w = Matrix3D::identity();
@@ -1534,18 +1287,7 @@ impl WeaponHost for Sim {
     }
     fn weapon_fx(&mut self, fx: WeaponFx) {
         match fx {
-            WeaponFx::Fire {
-                source,
-                weapon_slot,
-                barrel,
-                fx,
-                speed,
-                recoil_amount,
-                recoil_dir,
-                target,
-                radius,
-                contact_weapon,
-            } => {
+            WeaponFx::Fire { source, weapon_slot, barrel, fx, speed, recoil_amount, recoil_dir, target, radius, contact_weapon } => {
                 self.rec(format!(
                     "fx.fire src={} slot={} bar={} fx={} spd={} ra={} rd={} t={} rad={}",
                     source,
@@ -1560,31 +1302,13 @@ impl WeaponHost for Sim {
                 ));
                 if !self.ob(source).fx_handled && fx.is_some() {
                     // bah. just play it at the drawable's pos.
-                    let at = if contact_weapon {
-                        target
-                    } else {
-                        self.ob(source).pos
-                    };
-                    self.rec(format!(
-                        "fx.pos fx={} at={} spd={} t={} rad={}",
-                        fx_str(&fx),
-                        fb3(&at),
-                        fb(speed),
-                        fb3(&target),
-                        fb(radius)
-                    ));
+                    let at = if contact_weapon { target } else { self.ob(source).pos };
+                    self.rec(format!("fx.pos fx={} at={} spd={} t={} rad={}", fx_str(&fx), fb3(&at), fb(speed), fb3(&target), fb(radius)));
                 }
             }
             WeaponFx::Disarm { fx, at } => {
                 let p = self.ob(at).pos;
-                self.rec(format!(
-                    "fx.pos fx={} at={} spd={} t={} rad={}",
-                    fx_str(&fx),
-                    fb3(&p),
-                    fb(0.0),
-                    fb3(&p),
-                    fb(0.0)
-                ));
+                self.rec(format!("fx.pos fx={} at={} spd={} t={} rad={}", fx_str(&fx), fb3(&p), fb(0.0), fb3(&p), fb(0.0)));
             }
         }
     }
@@ -1600,11 +1324,7 @@ impl WeaponHost for Sim {
     fn set_experience_sink(&mut self, o: ObjectId, sink: ObjectId) {
         self.rec(format!("xpsink o={o} sink={sink}"));
     }
-    fn transfer_velocity_and_ignore_collisions(
-        &mut self,
-        launcher: ObjectId,
-        projectile: ObjectId,
-    ) {
+    fn transfer_velocity_and_ignore_collisions(&mut self, launcher: ObjectId, projectile: ObjectId) {
         if self.ob(launcher).has_phys && self.ob(projectile).has_phys {
             self.rec(format!("phys.transfer from={launcher} to={projectile}"));
             self.rec(format!("phys.ignore o={projectile} with={launcher}"));
@@ -1647,10 +1367,7 @@ fn build_sim(r: &mut Reader<'_>, names: &mut NameKeyGenerator) -> Sim {
     let n_tpl = r.u();
     let mut hist_weapon = Vec::new();
     for k in 0..n_tpl {
-        let idx = store
-            .new_weapon_template(names, format!("W{k}").as_bytes())
-            .expect("keys")
-            .expect("name");
+        let idx = store.new_weapon_template(names, format!("W{k}").as_bytes()).expect("keys").expect("name");
         let t = &mut store.templates_mut()[idx];
         t.primary_damage = r.f();
         t.primary_damage_radius = r.f();
@@ -1667,8 +1384,7 @@ fn build_sim(r: &mut Reader<'_>, names: &mut NameKeyGenerator) -> Sim {
         t.scatter_target_scalar = r.f();
         for _ in 0..r.u() {
             let (x, y) = (r.f(), r.f());
-            t.scatter_targets
-                .push(rts_lockstep_engine::common::base_type::Coord2D { x, y });
+            t.scatter_targets.push(rts_lockstep_engine::common::base_type::Coord2D { x, y });
         }
         t.damage_type = r.i();
         t.death_type = r.i();
@@ -1753,12 +1469,7 @@ fn build_sim(r: &mut Reader<'_>, names: &mut NameKeyGenerator) -> Sim {
         let mask = r.u() as u16;
         let rel = [r.i(), r.i(), r.i(), r.i()];
         let is_human = r.i() != 0;
-        players.push(PlayerCfg {
-            battle_plans,
-            mask,
-            rel,
-            is_human,
-        });
+        players.push(PlayerCfg { battle_plans, mask, rel, is_human });
     }
     let n_thing = r.u();
     let mut things = Vec::new();
@@ -1767,13 +1478,7 @@ fn build_sim(r: &mut Reader<'_>, names: &mut NameKeyGenerator) -> Sim {
         let fence = r.f();
         let len = r.u() as usize;
         let proto: Vec<u32> = (0..len).map(|_| r.u()).collect();
-        things.push(Thing {
-            group,
-            fence,
-            proto,
-            sets: Vec::new(),
-            finder: SparseMatchFinder::new(),
-        });
+        things.push(Thing { group, fence, proto, sets: Vec::new(), finder: SparseMatchFinder::new() });
     }
     for _ in 0..r.u() {
         let tid = r.i();
@@ -1791,17 +1496,7 @@ fn build_sim(r: &mut Reader<'_>, names: &mut NameKeyGenerator) -> Sim {
             }
         }
         let (shared, lock_shared) = (r.b(), r.b());
-        things[tid as usize - 1]
-            .sets
-            .push(WeaponTemplateSet::from_parts(
-                Some(tid as u16),
-                weapon_set_flags_of(flags),
-                template,
-                masks,
-                pref,
-                shared,
-                lock_shared,
-            ));
+        things[tid as usize - 1].sets.push(WeaponTemplateSet::from_parts(Some(tid as u16), weapon_set_flags_of(flags), template, masks, pref, shared, lock_shared));
     }
     let mut sim = Sim {
         frame,
@@ -1820,10 +1515,7 @@ fn build_sim(r: &mut Reader<'_>, names: &mut NameKeyGenerator) -> Sim {
     let n_obj = r.u();
     for _ in 0..n_obj {
         let len = r.u() as usize;
-        let mut sub = Reader {
-            w: &r.w[..r.p + len],
-            p: r.p,
-        };
+        let mut sub = Reader { w: &r.w[..r.p + len], p: r.p };
         let mut o = read_object(&mut sub, sim.things.len());
         r.p += len;
         o.id = sim.next_id;
@@ -1832,12 +1524,7 @@ fn build_sim(r: &mut Reader<'_>, names: &mut NameKeyGenerator) -> Sim {
     }
     let count = sim.objs.len() as i32;
     for o in sim.objs.iter_mut() {
-        o.items = o
-            .item_ids
-            .iter()
-            .copied()
-            .filter(|&i| i >= 1 && i <= count)
-            .collect();
+        o.items = o.item_ids.iter().copied().filter(|&i| i >= 1 && i <= count).collect();
     }
     sim
 }
@@ -1847,11 +1534,7 @@ fn build_sim(r: &mut Reader<'_>, names: &mut NameKeyGenerator) -> Sim {
 // ---------------------------------------------------------------------------------------------------------------------
 
 fn dump_weapon(w: &Weapon) -> String {
-    let sc: String = w
-        .scatter_targets_unused()
-        .iter()
-        .map(|x| format!("{x},"))
-        .collect();
+    let sc: String = w.scatter_targets_unused().iter().map(|x| format!("{x},")).collect();
     format!(
         "tpl={} slot={} st={} ammo={} next={} pre={} rel={} last={} sfx={} strm={} max={} bar={} nsb={} pl={} lr={} sc=[{}]",
         w.template(),
@@ -1874,11 +1557,7 @@ fn dump_weapon(w: &Weapon) -> String {
 }
 
 fn dump_snapshot(sim: &Sim, reg: &[Option<Weapon>]) {
-    sim.rec(format!(
-        "frame={} rng={:08x}",
-        sim.frame,
-        sim.rng.get_game_logic_random_seed_crc()
-    ));
+    sim.rec(format!("frame={} rng={:08x}", sim.frame, sim.rng.get_game_logic_random_seed_crc()));
     for (i, w) in reg.iter().enumerate() {
         if let Some(w) = w {
             sim.rec(format!("W{} {}", i, dump_weapon(w)));
@@ -1917,20 +1596,11 @@ fn dump_snapshot(sim: &Sim, reg: &[Option<Weapon>]) {
         if t.historic_damage.is_empty() {
             continue;
         }
-        let s: String = t
-            .historic_damage
-            .iter()
-            .map(|h| format!("{}:{} ", h.frame, fb3(&h.location)))
-            .collect();
+        let s: String = t.historic_damage.iter().map(|h| format!("{}:{} ", h.frame, fb3(&h.location))).collect();
         sim.rec(format!("H{i} {s}"));
     }
     for d in sim.store.delayed_damage() {
-        let tpl = sim
-            .store
-            .templates()
-            .iter()
-            .position(|t| t.name_key == d.delayed_weapon)
-            .map_or(-1, |i| i as i32);
+        let tpl = sim.store.templates().iter().position(|t| t.name_key == d.delayed_weapon).map_or(-1, |i| i as i32);
         sim.rec(format!(
             "DD tpl={} pos={} frame={} src={} victim={} bonus={},{},{},{},{}",
             tpl,
@@ -1982,9 +1652,7 @@ fn rd_bonus(r: &mut Reader<'_>) -> WeaponBonus {
 fn xfer_status(r: Result<(), WeaponXferError>) -> Result<u32, Excluded> {
     match r {
         Ok(()) => Ok(0),
-        Err(WeaponXferError::Xfer(XferStatus::ErrorUnknown)) => {
-            Err(Excluded("a weapon without a template set is loaded"))
-        }
+        Err(WeaponXferError::Xfer(XferStatus::ErrorUnknown)) => Err(Excluded("a weapon without a template set is loaded")),
         Err(WeaponXferError::Xfer(s)) => Ok(1 + s as u32),
         Err(WeaponXferError::InvalidData) => Ok(100),
     }
@@ -2028,11 +1696,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let mode = r.u();
                 let shared = sim.is_reload_time_shared(src);
                 let w = reg[wi].as_mut().expect("weapon");
-                let e = if mode == 0 {
-                    w.load_ammo_now(&sim, src, shared)
-                } else {
-                    w.reload_ammo(&sim, src, shared)
-                };
+                let e = if mode == 0 { w.load_ammo_now(&sim, src, shared) } else { w.reload_ammo(&sim, src, shared) };
                 if let Some(e) = e {
                     e.apply_via_host(&mut sim, src);
                 }
@@ -2054,20 +1718,13 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let wi = r.u() as usize;
                 let p = r.f();
                 let a = r.b();
-                reg[wi]
-                    .as_mut()
-                    .expect("weapon")
-                    .set_clip_percent_full(&sim, p, a);
+                reg[wi].as_mut().expect("weapon").set_clip_percent_full(&sim, p, a);
             }
             7 => {
                 let wi = r.u() as usize;
                 let src = r.i();
                 let shared = sim.is_reload_time_shared(src);
-                if let Some(e) = reg[wi]
-                    .as_mut()
-                    .expect("weapon")
-                    .on_weapon_bonus_change(&mut sim, src, shared)
-                {
+                if let Some(e) = reg[wi].as_mut().expect("weapon").on_weapon_bonus_change(&mut sim, src, shared) {
                     e.apply_via_host(&mut sim, src);
                 }
             }
@@ -2091,17 +1748,12 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                         o.shared
                     }
                     1 => {
-                        let o =
-                            w.fire_weapon_at_pos(&mut sim, src, &pos, Some(&mut pid), shared)?;
+                        let o = w.fire_weapon_at_pos(&mut sim, src, &pos, Some(&mut pid), shared)?;
                         res = o.reloaded;
                         o.shared
                     }
-                    2 => w.fire_projectile_detonation_weapon(
-                        &mut sim, src, victim, extra, inflict, shared,
-                    )?,
-                    3 => w.fire_projectile_detonation_weapon_at_pos(
-                        &mut sim, src, &pos, extra, inflict, shared,
-                    )?,
+                    2 => w.fire_projectile_detonation_weapon(&mut sim, src, victim, extra, inflict, shared)?,
+                    3 => w.fire_projectile_detonation_weapon_at_pos(&mut sim, src, &pos, extra, inflict, shared)?,
                     _ => {
                         let (f, o) = w.force_fire_weapon(&mut sim, src, &pos, shared)?;
                         forced = f.unwrap_or(0);
@@ -2111,20 +1763,14 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 if let Some(e) = effect {
                     e.apply_via_host(&mut sim, src);
                 }
-                sim.rec(format!(
-                    "ret fire kind={kind} reloaded={} pid={pid} forced={forced}",
-                    res as i32
-                ));
+                sim.rec(format!("ret fire kind={kind} reloaded={} pid={pid} forced={forced}", res as i32));
             }
             9 => {
                 let wi = r.u() as usize;
                 let src = r.i();
                 let victim = r.i();
                 let v = sim.opt(victim);
-                reg[wi]
-                    .as_mut()
-                    .expect("weapon")
-                    .pre_fire_weapon(&mut sim, src, v)?;
+                reg[wi].as_mut().expect("weapon").pre_fire_weapon(&mut sim, src, v)?;
             }
             10 => {
                 let w = reg[r.u() as usize].as_ref().expect("weapon");
@@ -2139,20 +1785,8 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let closeobj = v.map_or(-1, |v| b(w.is_too_close(&sim, src, v)));
                 let closepos = b(w.is_too_close_pos(&sim, src, &pos));
                 let goalpos = b(w.is_goal_pos_within_attack_range(&sim, src, &goal, v, &pos));
-                let sg1 = b(w.is_source_object_with_goal_position_within_attack_range(
-                    &sim,
-                    src,
-                    &goal,
-                    v,
-                    Some(&pos),
-                ));
-                let sg2 = b(w.is_source_object_with_goal_position_within_attack_range(
-                    &sim,
-                    src,
-                    &goal,
-                    None,
-                    Some(&pos),
-                ));
+                let sg1 = b(w.is_source_object_with_goal_position_within_attack_range(&sim, src, &goal, v, Some(&pos)));
+                let sg2 = b(w.is_source_object_with_goal_position_within_attack_range(&sim, src, &goal, None, Some(&pos)));
                 let range = fb(w.get_attack_range(&sim, src));
                 let dist = fb(w.get_attack_distance(&sim, src, v));
                 let pdr = fb(w.get_primary_damage_radius(&sim, src));
@@ -2160,20 +1794,13 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let dmgw = b(w.is_damage_weapon(&sim.store));
                 let pitch = v.map_or(-1, |v| b(w.is_within_target_pitch(&sim, src, v)));
                 let est = match v {
-                    Some(v) => w
-                        .estimate_weapon_damage(&sim, src, Some(v), None)?
-                        .to_bits(),
+                    Some(v) => w.estimate_weapon_damage(&sim, src, Some(v), None)?.to_bits(),
                     None => 0,
                 };
-                let los1 = v.map_or(-1, |v| {
-                    b(w.is_clear_firing_line_of_sight_terrain(&sim, src, v))
-                });
+                let los1 = v.map_or(-1, |v| b(w.is_clear_firing_line_of_sight_terrain(&sim, src, v)));
                 let los2 = b(w.is_clear_firing_line_of_sight_terrain_pos(&sim, src, &pos));
-                let los3 = v.map_or(-1, |v| {
-                    b(w.is_clear_goal_firing_line_of_sight_terrain(&sim, src, &goal, v))
-                });
-                let los4 =
-                    b(w.is_clear_goal_firing_line_of_sight_terrain_pos(&sim, src, &goal, &pos));
+                let los3 = v.map_or(-1, |v| b(w.is_clear_goal_firing_line_of_sight_terrain(&sim, src, &goal, v)));
+                let los4 = b(w.is_clear_goal_firing_line_of_sight_terrain_pos(&sim, src, &goal, &pos));
                 sim.rec(format!(
                     "ret ranges inobj={inobj} inpos={inpos} closeobj={closeobj} closepos={closepos} goalpos={goalpos} srcgoal={sg1},{sg2} range={range} dist={dist} pdr={pdr} crt={crt} dmgw={dmgw} pitch={pitch} est={est:08x} los={los1},{los2},{los3},{los4}"
                 ));
@@ -2187,14 +1814,9 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let ao = r.f();
                 let t = sim.opt(target);
                 let w = reg[wi].take().expect("weapon");
-                let (close, out) =
-                    w.compute_approach_target(&mut sim, src, t, has_pos.then_some(pos), ao);
+                let (close, out) = w.compute_approach_target(&mut sim, src, t, has_pos.then_some(pos), ao);
                 reg[wi] = Some(w);
-                sim.rec(format!(
-                    "ret approach close={} out={}",
-                    close as i32,
-                    fb3(&out)
-                ));
+                sim.rec(format!("ret approach close={} out={}", close as i32, fb3(&out)));
             }
             12 => {
                 let ti = r.u() as usize;
@@ -2204,14 +1826,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let pos = r.coord();
                 let bonus = rd_bonus(&mut r);
                 let v = sim.opt(victim);
-                let e = estimate_weapon_template_damage(
-                    &sim,
-                    ti,
-                    Some(src),
-                    v,
-                    has_pos.then_some(pos),
-                    &bonus,
-                )?;
+                let e = estimate_weapon_template_damage(&sim, ti, Some(src), v, has_pos.then_some(pos), &bonus)?;
                 sim.rec(format!("ret estimate {}", fb(e)));
             }
             13 => {
@@ -2220,14 +1835,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let proj = r.i();
                 let thing = r.i();
                 let intended = r.i();
-                let c = should_projectile_collide_with(
-                    &sim,
-                    ti,
-                    sim.opt(launcher),
-                    sim.opt(proj),
-                    sim.opt(thing),
-                    intended,
-                );
+                let c = should_projectile_collide_with(&sim, ti, sim.opt(launcher), sim.opt(proj), sim.opt(thing), intended);
                 sim.rec(format!("ret collide {}", c as i32));
             }
             14 => {
@@ -2260,11 +1868,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let barrel = r.i();
                 let (m, p) = Weapon::calc_projectile_launch_position(&sim, launcher, wslot, barrel);
                 let words: Vec<String> = m.to_array().iter().map(|&x| fb(x)).collect();
-                sim.rec(format!(
-                    "ret launchpos pos={} m={} ",
-                    fb3(&p),
-                    words.join(" ")
-                ));
+                sim.rec(format!("ret launchpos pos={} m={} ", fb3(&p), words.join(" ")));
             }
             18 => {
                 let proj = r.i();
@@ -2274,9 +1878,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let l = sim.opt(launcher);
                 if l.is_some() && !sim.ob(proj).has_drawable {
                     // `projectile->getDrawable()->setDrawableHidden(false)` on a NULL drawable
-                    return Err(Excluded(
-                        "positionProjectileForLaunch of a projectile with no drawable",
-                    ));
+                    return Err(Excluded("positionProjectileForLaunch of a projectile with no drawable"));
                 }
                 Weapon::position_projectile_for_launch(&mut sim, proj, l, wslot, barrel);
             }
@@ -2296,18 +1898,9 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 w.xfer_with_names(&name, &[], &mut save).unwrap();
                 save.close().unwrap();
                 let bytes = save.take_bytes();
-                sim.rec(format!(
-                    "ret xfer-save len={} hash={:08x}",
-                    bytes.len(),
-                    hash_bytes(&bytes)
-                ));
+                sim.rec(format!("ret xfer-save len={} hash={:08x}", bytes.len(), hash_bytes(&bytes)));
                 let c = Weapon::for_load(w.template(), w.weapon_slot());
-                let mut snap = WeaponSnapshot {
-                    weapon: c,
-                    current_name: name.clone(),
-                    templates: sim.weapon_template_names(),
-                    error: None,
-                };
+                let mut snap = WeaponSnapshot { weapon: c, current_name: name.clone(), templates: sim.weapon_template_names(), error: None };
                 let mut load = XferLoad::new(bytes);
                 load.open(b"w").unwrap();
                 let status = match load.xfer_snapshot(&mut snap) {
@@ -2318,11 +1911,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                     },
                 };
                 let _ = load.close();
-                sim.rec(format!(
-                    "ret xfer-load {} {}",
-                    status,
-                    dump_weapon(&snap.weapon)
-                ));
+                sim.rec(format!("ret xfer-load {} {}", status, dump_weapon(&snap.weapon)));
                 reg[wi] = Some(w);
             }
             20 => {
@@ -2351,8 +1940,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let cmd = r.i();
                 let victim = sim.opt(v);
                 let mut ws = std::mem::take(&mut sim.ob_mut(o).weapon_set);
-                let res =
-                    ws.choose_best_weapon_for_target(&sim, o, victim, crit, command_source(cmd));
+                let res = ws.choose_best_weapon_for_target(&sim, o, victim, crit, command_source(cmd));
                 sim.ob_mut(o).weapon_set = ws;
                 sim.rec(format!("ret choose {}", res? as i32));
             }
@@ -2362,14 +1950,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let at = r.i();
                 let cmd = r.i();
                 let slot = r.i();
-                let res = sim.ob(o).weapon_set.get_able_to_attack_specific_object(
-                    &sim,
-                    at as AbleToAttackType,
-                    o,
-                    v,
-                    command_source(cmd),
-                    slot,
-                )?;
+                let res = sim.ob(o).weapon_set.get_able_to_attack_specific_object(&sim, at as AbleToAttackType, o, v, command_source(cmd), slot)?;
                 sim.rec(format!("ret able {}", res as i32));
             }
             25 => {
@@ -2381,15 +1962,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let cmd = r.i();
                 let slot = r.i();
                 let victim = sim.opt(v);
-                let res = sim.ob(o).weapon_set.get_able_to_use_weapon_against_target(
-                    &sim,
-                    at,
-                    o,
-                    victim,
-                    has_pos.then_some(pos),
-                    command_source(cmd),
-                    slot,
-                )?;
+                let res = sim.ob(o).weapon_set.get_able_to_use_weapon_against_target(&sim, at, o, victim, has_pos.then_some(pos), command_source(cmd), slot)?;
                 sim.rec(format!("ret ableuse {}", res as i32));
             }
             26 => {
@@ -2408,12 +1981,8 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let o = r.i();
                 let now = sim.frame;
                 let mut ws = std::mem::take(&mut sim.ob_mut(o).weapon_set);
-                let pip = ws
-                    .find_ammo_pip_showing_weapon(&sim)
-                    .map_or(-1, |w| w.weapon_slot());
-                let wp = ws
-                    .find_waypoint_following_capable_weapon(&sim)
-                    .map_or(-1, |w| w.weapon_slot());
+                let pip = ws.find_ammo_pip_showing_weapon(&sim).map_or(-1, |w| w.weapon_slot());
+                let wp = ws.find_waypoint_following_capable_weapon(&sim).map_or(-1, |w| w.weapon_slot());
                 let line = format!(
                     "ret setq oom={} any={} anydmg={} single={},{} locked={} slot={} shared={} pip={} wp={} most={} cmd={},{},{} cur={}",
                     ws.is_out_of_ammo(now) as i32,
@@ -2440,16 +2009,11 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let mut ws = std::mem::take(&mut sim.ob_mut(o).weapon_set);
                 let mut save = XferSave::new();
                 save.open(b"s").unwrap();
-                ws.xfer(&mut sim, &mut save)
-                    .map_err(|_| Excluded("save of a weapon set failed"))?;
+                ws.xfer(&mut sim, &mut save).map_err(|_| Excluded("save of a weapon set failed"))?;
                 save.close().unwrap();
                 sim.ob_mut(o).weapon_set = ws;
                 let bytes = save.take_bytes();
-                sim.rec(format!(
-                    "ret setxfer-save len={} hash={:08x}",
-                    bytes.len(),
-                    hash_bytes(&bytes)
-                ));
+                sim.rec(format!("ret setxfer-save len={} hash={:08x}", bytes.len(), hash_bytes(&bytes)));
                 let mut copy = WeaponSet::new();
                 let mut load = XferLoad::new(bytes);
                 load.open(b"s").unwrap();
@@ -2477,9 +2041,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
             }
             30 => {
                 let o = r.i();
-                sim.ob_mut(o)
-                    .weapon_set
-                    .clear_leech_range_mode_for_all_weapons();
+                sim.ob_mut(o).weapon_set.clear_leech_range_mode_for_all_weapons();
             }
             31 => {
                 let slot = r.i();
@@ -2581,11 +2143,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let pos = r.coord();
                 let has_pos = r.b();
                 let at_pos = r.b();
-                let at = if at_pos {
-                    FireAt::Position(has_pos.then_some(pos))
-                } else {
-                    FireAt::Object(sim.opt(v))
-                };
+                let at = if at_pos { FireAt::Position(has_pos.then_some(pos)) } else { FireAt::Object(sim.opt(v)) };
                 ow::fire_current_weapon(&mut sim, o, at)?;
             }
             42 => {
@@ -2607,36 +2165,15 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let victim = sim.opt(v);
                 match kind {
                     0 => {
-                        let res = ow::get_able_to_attack_specific_object(
-                            &sim,
-                            o,
-                            at as AbleToAttackType,
-                            v,
-                            command_source(cmd),
-                            slot,
-                        )?;
+                        let res = ow::get_able_to_attack_specific_object(&sim, o, at as AbleToAttackType, v, command_source(cmd), slot)?;
                         sim.rec(format!("ret oable {}", res as i32));
                     }
                     1 => {
-                        let res = ow::get_able_to_use_weapon_against_target(
-                            &sim,
-                            o,
-                            at,
-                            victim,
-                            has_pos.then_some(pos),
-                            command_source(cmd),
-                            slot,
-                        )?;
+                        let res = ow::get_able_to_use_weapon_against_target(&sim, o, at, victim, has_pos.then_some(pos), command_source(cmd), slot)?;
                         sim.rec(format!("ret oableuse {}", res as i32));
                     }
                     _ => {
-                        let res = ow::choose_best_weapon_for_target(
-                            &mut sim,
-                            o,
-                            victim,
-                            crit,
-                            command_source(cmd),
-                        )?;
+                        let res = ow::choose_best_weapon_for_target(&mut sim, o, victim, crit, command_source(cmd))?;
                         sim.rec(format!("ret ochoose {}", res as i32));
                     }
                 }
@@ -2659,11 +2196,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let o = r.i();
                 let slot = r.i();
                 let victim = r.i();
-                let weapon = sim
-                    .ob(o)
-                    .weapon_set
-                    .get_weapon_in_weapon_slot(slot)
-                    .cloned();
+                let weapon = sim.ob(o).weapon_set.get_weapon_in_weapon_slot(slot).cloned();
                 if let Some(w) = weapon {
                     ow::notify_firing_tracker_shot_fired(&mut sim, o, &w, victim);
                 }
@@ -2680,11 +2213,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 const NAMES: [&[u8]; 4] = [b"Bone", b"Muzzle", b"Turret01", b"FXBone"];
                 let name = NAMES[(name_idx & 3) as usize];
                 let fmt_pos = |p: Option<Coord3D>| {
-                    let p = p.unwrap_or(Coord3D {
-                        x: -99.0,
-                        y: -99.0,
-                        z: -99.0,
-                    });
+                    let p = p.unwrap_or(Coord3D { x: -99.0, y: -99.0, z: -99.0 });
                     format!("{},{},{}", fb(p.x), fb(p.y), fb(p.z))
                 };
                 let untouched = {
@@ -2696,29 +2225,15 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                     let q = if kind == 0 {
                         ow::get_single_logical_bone_position(&sim, o, name, want_pos, want_tr)
                     } else {
-                        ow::get_single_logical_bone_position_on_turret(
-                            &sim, o, turret, name, want_pos, want_tr,
-                        )?
+                        ow::get_single_logical_bone_position_on_turret(&sim, o, turret, name, want_pos, want_tr)?
                     };
-                    sim.rec(format!(
-                        "ret bone{} found={} pos={} tr={}",
-                        kind,
-                        q.found as i32,
-                        fmt_pos(q.position),
-                        mtx_str(&q.transform.unwrap_or(untouched))
-                    ));
+                    sim.rec(format!("ret bone{} found={} pos={} tr={}", kind, q.found as i32, fmt_pos(q.position), mtx_str(&q.transform.unwrap_or(untouched))));
                 } else {
-                    let bones = ow::get_multi_logical_bone_position(
-                        &sim, o, name, max_bones, want_pos, want_tr, to_world,
-                    );
+                    let bones = ow::get_multi_logical_bone_position(&sim, o, name, max_bones, want_pos, want_tr, to_world);
                     let mut s = String::new();
                     for i in 0..4 {
                         let (p, t) = bones.get(i).copied().unwrap_or((None, None));
-                        s.push_str(&format!(
-                            "[{} {}]",
-                            fmt_pos(p),
-                            mtx_str(&t.unwrap_or(untouched))
-                        ));
+                        s.push_str(&format!("[{} {}]", fmt_pos(p), mtx_str(&t.unwrap_or(untouched))));
                     }
                     sim.rec(format!("ret bonemulti n={} {}", bones.len(), s));
                 }
@@ -2740,12 +2255,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let v: i32 = match kind {
                     0 => am::can_get_repaired_at(&sim, o, t, cs)? as i32,
                     1 => am::can_transfer_supplies_at(&sim, o, t) as i32,
-                    2 => am::can_dock_at(
-                        &sim,
-                        o.expect("canDockAt takes objects"),
-                        t.expect("canDockAt takes objects"),
-                        cs,
-                    ) as i32,
+                    2 => am::can_dock_at(&sim, o.expect("canDockAt takes objects"), t.expect("canDockAt takes objects"), cs) as i32,
                     3 => am::can_get_healed_at(&sim, o, t, cs) as i32,
                     4 => am::can_repair_object(&sim, o, t, cs)? as i32,
                     5 => am::can_resume_construction_of(&sim, o, t, cs) as i32,
@@ -2771,12 +2281,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                     18 => am::can_make_object_defector(&sim, o, t, cs) as i32,
                     19 => am::can_fire_weapon_at_object(&sim, o, t, cs, ex % 3)? as i32,
                     20 => am::can_garrison(&sim, o, t, cs)? as i32,
-                    _ => am::can_player_garrison(
-                        &sim,
-                        (0..sim.players.len() as i32).contains(&ex).then_some(ex),
-                        t,
-                        cs,
-                    )? as i32,
+                    _ => am::can_player_garrison(&sim, (0..sim.players.len() as i32).contains(&ex).then_some(ex), t, cs)? as i32,
                 };
                 sim.rec(format!("ret act k={kind} v={v}"));
             }
@@ -2792,28 +2297,14 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let opts = r.u();
                 let slot = r.i();
                 let way = sim.opt(r.i());
-                let tmpl = SpecialPowerTemplateRef {
-                    id: 1000 + sp_type as u32,
-                    sp_type,
-                };
+                let tmpl = SpecialPowerTemplateRef { id: 1000 + sp_type as u32, sp_type };
                 let v: i32 = match kind {
-                    0 => am::can_do_special_power_at_location(
-                        &sim, o, &loc, cs, &tmpl, way, opts, check,
-                    )? as i32,
-                    1 => am::can_do_special_power_at_object(&sim, o, t, cs, &tmpl, opts, check)?
-                        as i32,
+                    0 => am::can_do_special_power_at_location(&sim, o, &loc, cs, &tmpl, way, opts, check)? as i32,
+                    1 => am::can_do_special_power_at_object(&sim, o, t, cs, &tmpl, opts, check)? as i32,
                     2 => am::can_do_special_power(&sim, o, &tmpl, cs, opts, check) as i32,
-                    3 => am::can_fire_weapon_at_location(
-                        &sim,
-                        sim.opt(o),
-                        has_loc.then_some(&loc),
-                        cs,
-                        slot % 3,
-                        way,
-                    ) as i32,
+                    3 => am::can_fire_weapon_at_location(&sim, sim.opt(o), has_loc.then_some(&loc), cs, slot % 3, way) as i32,
                     4 => am::can_fire_weapon(&sim, sim.opt(o), slot % 3, cs) as i32,
-                    _ => am::can_override_special_power_destination(&sim, o, &loc, sp_type, cs)?
-                        as i32,
+                    _ => am::can_override_special_power_destination(&sim, o, &loc, sp_type, cs)? as i32,
                 };
                 sim.rec(format!("ret actsp k={kind} v={v}"));
             }
@@ -2887,34 +2378,14 @@ impl ActionHost for Sim {
     fn special_power_percent_ready_by_type(&self, o: ObjectId, t: i32) -> Option<f32> {
         self.ob(o).sp_modules.iter().find(|m| m.0 == t).map(|m| m.1)
     }
-    fn special_power_percent_ready_by_template(
-        &self,
-        o: ObjectId,
-        template: &SpecialPowerTemplateRef,
-    ) -> Option<f32> {
+    fn special_power_percent_ready_by_template(&self, o: ObjectId, template: &SpecialPowerTemplateRef) -> Option<f32> {
         self.special_power_percent_ready_by_type(o, template.sp_type)
     }
     fn special_ability_update(&self, o: ObjectId, t: i32) -> Option<SpecialAbilityFacts> {
-        self.ob(o)
-            .sa
-            .iter()
-            .find(|s| s.0 == t)
-            .map(|s| SpecialAbilityFacts {
-                object_count: s.1,
-                object_max: s.2,
-            })
+        self.ob(o).sa.iter().find(|s| s.0 == t).map(|s| SpecialAbilityFacts { object_count: s.1, object_max: s.2 })
     }
-    fn special_ability_has_object_with_producer(
-        &self,
-        o: ObjectId,
-        t: i32,
-        target: ObjectId,
-    ) -> bool {
-        self.ob(o)
-            .sa
-            .iter()
-            .find(|s| s.0 == t)
-            .is_some_and(|s| s.3.contains(&target))
+    fn special_ability_has_object_with_producer(&self, o: ObjectId, t: i32, target: ObjectId) -> bool {
+        self.ob(o).sa.iter().find(|s| s.0 == t).is_some_and(|s| s.3.contains(&target))
     }
     fn special_power_overridable_destination_active(&self, o: ObjectId, t: i32) -> bool {
         (self.ob(o).sp_override[(t >> 5) as usize] >> (t & 31)) & 1 != 0
@@ -2936,17 +2407,11 @@ impl ActionHost for Sim {
     }
     fn supply_truck_ai(&self, o: ObjectId) -> Option<SupplyTruckFacts> {
         let s = self.ob(o);
-        s.has_supply_truck.then_some(SupplyTruckFacts {
-            number_boxes: s.st_boxes,
-            available_for_supplying: s.st_avail,
-        })
+        s.has_supply_truck.then_some(SupplyTruckFacts { number_boxes: s.st_boxes, available_for_supplying: s.st_avail })
     }
     fn dozer_ai(&self, o: ObjectId) -> Option<DozerFacts> {
         let s = self.ob(o);
-        s.has_dozer.then_some(DozerFacts {
-            current_task: s.dz_task,
-            build_task_target: s.dz_target,
-        })
+        s.has_dozer.then_some(DozerFacts { current_task: s.dz_task, build_task_target: s.dz_target })
     }
     fn has_dock_update_interface(&self, o: ObjectId) -> bool {
         self.ob(o).has_dock
@@ -2955,22 +2420,13 @@ impl ActionHost for Sim {
         self.ob(o)
             .colliders
             .iter()
-            .map(|(likes, car_bomb, hijack, sabotage)| CollideFacts {
-                would_like: likes.contains(&other),
-                car_bomb: *car_bomb,
-                hijack: *hijack,
-                sabotage: *sabotage,
-            })
+            .map(|(likes, car_bomb, hijack, sabotage)| CollideFacts { would_like: likes.contains(&other), car_bomb: *car_bomb, hijack: *hijack, sabotage: *sabotage })
             .collect()
     }
     fn parking_facts(&self, dest: ObjectId, obj: ObjectId) -> Vec<ParkingFacts> {
         let d = self.ob(dest);
         if d.has_parking {
-            vec![ParkingFacts {
-                has_reserved_space: d.reserved.contains(&obj),
-                should_reserve_door: d.park_should,
-                has_available_space: d.park_avail,
-            }]
+            vec![ParkingFacts { has_reserved_space: d.reserved.contains(&obj), should_reserve_door: d.park_should, has_available_space: d.park_avail }]
         } else {
             Vec::new()
         }
@@ -2981,12 +2437,7 @@ impl ActionHost for Sim {
     fn contain_stealth_units_contained(&self, o: ObjectId) -> i32 {
         self.ob(o).stealth_count
     }
-    fn contain_is_valid_container_for(
-        &self,
-        container: ObjectId,
-        _obj: ObjectId,
-        check_capacity: bool,
-    ) -> bool {
+    fn contain_is_valid_container_for(&self, container: ObjectId, _obj: ObjectId, check_capacity: bool) -> bool {
         (self.ob(container).valid_mask >> (if check_capacity { 0 } else { 1 })) & 1 != 0
     }
     fn contain_closest_rider(&self, container: ObjectId, _pos: &Coord3D) -> Option<ObjectId> {
@@ -3009,22 +2460,12 @@ impl ActionHost for Sim {
 }
 
 fn mtx_str(m: &Matrix3D) -> String {
-    m.to_array()
-        .iter()
-        .map(|&x| fb(x))
-        .collect::<Vec<_>>()
-        .join(",")
+    m.to_array().iter().map(|&x| fb(x)).collect::<Vec<_>>().join(",")
 }
 
 /// The drawable, the AI and the control bar as `fire_driver.h` stands them in (the formulas are the same operations).
 impl ObjectBoneHost for Sim {
-    fn pristine_bone_positions(
-        &self,
-        _o: ObjectId,
-        prefix: &[u8],
-        start_index: i32,
-        max_bones: i32,
-    ) -> Vec<(Coord3D, Matrix3D)> {
+    fn pristine_bone_positions(&self, _o: ObjectId, prefix: &[u8], start_index: i32, max_bones: i32) -> Vec<(Coord3D, Matrix3D)> {
         let mut h: u32 = 0;
         for &c in prefix {
             h = h.wrapping_mul(31).wrapping_add(u32::from(c));
@@ -3035,11 +2476,7 @@ impl ObjectBoneHost for Sim {
         }
         (0..count)
             .map(|i| {
-                let p = Coord3D {
-                    x: (h % 97) as f32 + i as f32,
-                    y: (i * 2) as f32,
-                    z: start_index as f32 + 0.5,
-                };
+                let p = Coord3D { x: (h % 97) as f32 + i as f32, y: (i * 2) as f32, z: start_index as f32 + 0.5 };
                 let mut t = Matrix3D::identity();
                 t.rotate_z(0.25 * (i + 1) as f32);
                 t.set_translation(&Vector3::new(p.x, p.y, p.z));
@@ -3047,24 +2484,11 @@ impl ObjectBoneHost for Sim {
             })
             .collect()
     }
-    fn convert_bone_pos_to_world_pos(
-        &self,
-        o: ObjectId,
-        bone_pos: Option<&Coord3D>,
-        bone_transform: Option<&Matrix3D>,
-    ) -> (Option<Coord3D>, Option<Matrix3D>) {
+    fn convert_bone_pos_to_world_pos(&self, o: ObjectId, bone_pos: Option<&Coord3D>, bone_transform: Option<&Matrix3D>) -> (Option<Coord3D>, Option<Matrix3D>) {
         let s = self.ob(o);
-        let mut p = Coord3D {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        };
+        let mut p = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
         if let Some(b) = bone_pos {
-            p = Coord3D {
-                x: b.x + s.pos.x,
-                y: b.y + s.pos.y,
-                z: b.z + s.pos.z,
-            };
+            p = Coord3D { x: b.x + s.pos.x, y: b.y + s.pos.y, z: b.z + s.pos.z };
         }
         let mut t = Matrix3D::identity();
         if let Some(b) = bone_transform {
@@ -3076,19 +2500,11 @@ impl ObjectBoneHost for Sim {
         self.ob(o).has_ai
     }
     fn ai_turret_rot_and_pitch(&self, o: ObjectId, turret: i32) -> Option<(f32, f32)> {
-        (0..=2).contains(&turret).then(|| {
-            (
-                self.ob(o).turret_angle[turret as usize],
-                self.ob(o).turret_pitch[turret as usize],
-            )
-        })
+        (0..=2).contains(&turret).then(|| (self.ob(o).turret_angle[turret as usize], self.ob(o).turret_pitch[turret as usize]))
     }
     fn command_set_upgrades(&self, name: &[u8]) -> Option<Vec<Option<u32>>> {
         let rest = name.strip_prefix(b"Cmd")?;
-        let k: i32 = rest
-            .iter()
-            .take_while(|c| c.is_ascii_digit())
-            .fold(0i32, |a, &c| a * 10 + i32::from(c - b'0'));
+        let k: i32 = rest.iter().take_while(|c| c.is_ascii_digit()).fold(0i32, |a, &c| a * 10 + i32::from(c - b'0'));
         Some(
             (0..18)
                 .map(|i| {
@@ -3120,10 +2536,7 @@ impl ObjectBoneHost for Sim {
 }
 
 fn mc_flags_str(f: &ModelConditionFlags) -> String {
-    (0..MODELCONDITION_COUNT)
-        .filter(|&b| f.test(b))
-        .map(|b| format!("{b},"))
-        .collect()
+    (0..MODELCONDITION_COUNT).filter(|&b| f.test(b)).map(|b| format!("{b},")).collect()
 }
 
 /// The weapon half of `Object` on the scenario host (`Drawable`, `FiringTracker` and the rest write the trace lines
@@ -3153,12 +2566,7 @@ impl ObjectWeaponHost for Sim {
     fn set_last_weapon_condition(&mut self, o: ObjectId, slot: usize, v: i8) {
         self.ob_mut(o).last_cond[slot] = v;
     }
-    fn firing_tracker_shot_fired(
-        &mut self,
-        o: ObjectId,
-        weapon: &Weapon,
-        victim: ObjectId,
-    ) -> bool {
+    fn firing_tracker_shot_fired(&mut self, o: ObjectId, weapon: &Weapon, victim: ObjectId) -> bool {
         if !self.ob(o).has_tracker {
             return false;
         }
@@ -3175,30 +2583,11 @@ impl ObjectWeaponHost for Sim {
     fn friend_set_undetected_defector(&mut self, o: ObjectId, undetected: bool) {
         self.rec(format!("undetected o={} v={}", o, undetected as i32));
     }
-    fn drawable_update_clip_status(
-        &mut self,
-        o: ObjectId,
-        ammo_in_clip: u32,
-        max_clip_size: i32,
-        slot: i32,
-    ) {
-        self.rec(format!(
-            "clipstatus o={} ammo={} clip={} slot={}",
-            o, ammo_in_clip, max_clip_size as u32, slot
-        ));
+    fn drawable_update_clip_status(&mut self, o: ObjectId, ammo_in_clip: u32, max_clip_size: i32, slot: i32) {
+        self.rec(format!("clipstatus o={} ammo={} clip={} slot={}", o, ammo_in_clip, max_clip_size as u32, slot));
     }
-    fn drawable_clear_and_set_model_condition_flags(
-        &mut self,
-        o: ObjectId,
-        clear: &ModelConditionFlags,
-        set: &ModelConditionFlags,
-    ) {
-        self.rec(format!(
-            "mcflags o={} clear=[{}] set=[{}]",
-            o,
-            mc_flags_str(clear),
-            mc_flags_str(set)
-        ));
+    fn drawable_clear_and_set_model_condition_flags(&mut self, o: ObjectId, clear: &ModelConditionFlags, set: &ModelConditionFlags) {
+        self.rec(format!("mcflags o={} clear=[{}] set=[{}]", o, mc_flags_str(clear), mc_flags_str(set)));
     }
     fn drawable_set_animation_loop_duration(&mut self, o: ObjectId, frames: u32) {
         self.rec(format!("animloop o={} frames={}", o, frames));
@@ -3228,16 +2617,14 @@ fn hash_bytes(v: &[u8]) -> u32 {
 // ---------------------------------------------------------------------------------------------------------------------
 
 use rts_lockstep_engine::common::kind_of::{
-    KINDOF_BALLISTIC_MISSILE, KINDOF_BOOBY_TRAP, KINDOF_BRIDGE, KINDOF_DEMOTRAP, KINDOF_DISGUISER,
-    KINDOF_FS_AIRFIELD, KINDOF_HERO, KINDOF_IMMOBILE, KINDOF_INFANTRY, KINDOF_MINE,
-    KINDOF_PARACHUTE, KINDOF_PROJECTILE, KINDOF_SHRUBBERY, KINDOF_SMALL_MISSILE,
-    KINDOF_SPAWNS_ARE_THE_WEAPONS, KINDOF_STRUCTURE, KINDOF_UNATTACKABLE, KINDOF_VEHICLE,
+    KINDOF_BALLISTIC_MISSILE, KINDOF_BOOBY_TRAP, KINDOF_BRIDGE, KINDOF_DEMOTRAP, KINDOF_DISGUISER, KINDOF_FS_AIRFIELD, KINDOF_HERO, KINDOF_IMMOBILE,
+    KINDOF_INFANTRY, KINDOF_MINE, KINDOF_PARACHUTE, KINDOF_PROJECTILE, KINDOF_SHRUBBERY, KINDOF_SMALL_MISSILE, KINDOF_SPAWNS_ARE_THE_WEAPONS,
+    KINDOF_STRUCTURE, KINDOF_UNATTACKABLE, KINDOF_VEHICLE,
 };
 use rts_lockstep_engine::common::object_status_types::{
-    OBJECT_STATUS_AIRBORNE_TARGET, OBJECT_STATUS_BURNED, OBJECT_STATUS_DETECTED,
-    OBJECT_STATUS_DISGUISED, OBJECT_STATUS_IGNORING_STEALTH, OBJECT_STATUS_IS_AIMING_WEAPON,
-    OBJECT_STATUS_IS_ATTACKING, OBJECT_STATUS_IS_FIRING_WEAPON, OBJECT_STATUS_MASKED,
-    OBJECT_STATUS_NO_ATTACK_FROM_AI, OBJECT_STATUS_STEALTHED,
+    OBJECT_STATUS_AIRBORNE_TARGET, OBJECT_STATUS_BURNED, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_IGNORING_STEALTH,
+    OBJECT_STATUS_IS_AIMING_WEAPON, OBJECT_STATUS_IS_ATTACKING, OBJECT_STATUS_IS_FIRING_WEAPON, OBJECT_STATUS_MASKED, OBJECT_STATUS_NO_ATTACK_FROM_AI,
+    OBJECT_STATUS_STEALTHED,
 };
 
 const KIND_POOL: [KindOfType; 18] = [
@@ -3312,15 +2699,7 @@ fn pick<T: Copy>(g: &mut Gen, xs: &[T]) -> T {
 }
 
 fn gen_coord(g: &mut Gen, spread: f32) -> [f32; 3] {
-    [
-        g.uniform(0.0, spread),
-        g.uniform(0.0, spread),
-        if chance(g, 30) {
-            g.uniform(0.0, 40.0)
-        } else {
-            0.0
-        },
-    ]
+    [g.uniform(0.0, spread), g.uniform(0.0, spread), if chance(g, 30) { g.uniform(0.0, 40.0) } else { 0.0 }]
 }
 
 fn gen_bonus_entries(g: &mut Gen, w: &mut W) {
@@ -3344,51 +2723,19 @@ struct World {
 
 fn gen_template(g: &mut Gen, w: &mut W, k: usize, n_tpl: usize, n_things: usize) -> bool {
     let radius_roll = g.below(10);
-    let pr = if radius_roll < 4 {
-        0.0
-    } else {
-        g.uniform(5.0, 60.0)
-    };
-    let sr = if pr == 0.0 || chance(g, 50) {
-        if chance(g, 30) {
-            g.uniform(5.0, 90.0)
-        } else {
-            0.0
-        }
-    } else {
-        pr + g.uniform(0.0, 40.0)
-    };
-    w.f(if chance(g, 10) {
-        0.0
-    } else {
-        g.uniform(5.0, 200.0)
-    });
+    let pr = if radius_roll < 4 { 0.0 } else { g.uniform(5.0, 60.0) };
+    let sr = if pr == 0.0 || chance(g, 50) { if chance(g, 30) { g.uniform(5.0, 90.0) } else { 0.0 } } else { pr + g.uniform(0.0, 40.0) };
+    w.f(if chance(g, 10) { 0.0 } else { g.uniform(5.0, 200.0) });
     w.f(pr);
-    w.f(if chance(g, 30) {
-        0.0
-    } else {
-        g.uniform(1.0, 100.0)
-    });
+    w.f(if chance(g, 30) { 0.0 } else { g.uniform(1.0, 100.0) });
     w.f(sr);
     let shock = chance(g, 25);
     w.f(if shock { g.uniform(5.0, 60.0) } else { 0.0 });
     w.f(g.uniform(5.0, 50.0));
     w.f(g.uniform(0.0, 1.0));
-    w.f(if chance(g, 10) {
-        g.uniform(1.0, 8.0)
-    } else {
-        g.uniform(20.0, 400.0)
-    }); // attack range (some are contact weapons)
-    w.f(if chance(g, 30) {
-        g.uniform(5.0, 120.0)
-    } else {
-        0.0
-    });
-    w.f(if chance(g, 20) {
-        g.uniform(40.0, 250.0)
-    } else {
-        0.0
-    });
+    w.f(if chance(g, 10) { g.uniform(1.0, 8.0) } else { g.uniform(20.0, 400.0) }); // attack range (some are contact weapons)
+    w.f(if chance(g, 30) { g.uniform(5.0, 120.0) } else { 0.0 });
+    w.f(if chance(g, 20) { g.uniform(40.0, 250.0) } else { 0.0 });
     w.f(g.uniform(0.0, 1.0));
     let scatter = chance(g, 30);
     w.f(if scatter { g.uniform(3.0, 40.0) } else { 0.0 });
@@ -3400,11 +2747,7 @@ fn gen_template(g: &mut Gen, w: &mut W, k: usize, n_tpl: usize, n_things: usize)
         w.f(g.uniform(-10.0, 10.0));
     }
     // damage type: the ones the code treats specially more often
-    let dt = if chance(g, 55) {
-        pick(g, &[13, 20, 15, 14, 8, 6, 22, 16, 11, 5])
-    } else {
-        g.below(38) as i32
-    };
+    let dt = if chance(g, 55) { pick(g, &[13, 20, 15, 14, 8, 6, 22, 16, 11, 5]) } else { g.below(38) as i32 };
     w.i(dt);
     w.i(if chance(g, 30) { 3 } else { g.below(21) as i32 });
     w.f(match g.below(5) {
@@ -3412,35 +2755,15 @@ fn gen_template(g: &mut Gen, w: &mut W, k: usize, n_tpl: usize, n_things: usize)
         1 => 999999.0,
         _ => g.uniform(20.0, 300.0),
     });
-    w.f(if chance(g, 25) {
-        g.uniform(0.05, 0.5)
-    } else {
-        0.0
-    });
+    w.f(if chance(g, 25) { g.uniform(0.05, 0.5) } else { 0.0 });
     let narrow = chance(g, 25);
     // a limit on one side only is its own case (`minTargetPitch > -PI || maxTargetPitch < PI`)
     let side = g.below(3);
-    w.f(if narrow && side != 2 {
-        g.uniform(-0.6, 0.0)
-    } else {
-        -PI
-    });
-    w.f(if narrow && side != 1 {
-        g.uniform(0.0, 0.8)
-    } else {
-        PI
-    });
-    w.f(if chance(g, 20) {
-        g.uniform(0.3, 3.0)
-    } else {
-        PI
-    });
+    w.f(if narrow && side != 2 { g.uniform(-0.6, 0.0) } else { -PI });
+    w.f(if narrow && side != 1 { g.uniform(0.0, 0.8) } else { PI });
+    w.f(if chance(g, 20) { g.uniform(0.3, 3.0) } else { PI });
     let projectile = chance(g, 40);
-    w.u(if projectile {
-        1 + g.below(n_things as u32)
-    } else {
-        0
-    });
+    w.u(if projectile { 1 + g.below(n_things as u32) } else { 0 });
     w.u(if chance(g, 15) { 1 + g.below(2) } else { 0 }); // laser
     w.u(if chance(g, 20) { 1 + g.below(2) } else { 0 }); // stream
     for _ in 0..16 {
@@ -3454,11 +2777,7 @@ fn gen_template(g: &mut Gen, w: &mut W, k: usize, n_tpl: usize, n_things: usize)
     if extra {
         gen_bonus_entries(g, w);
     }
-    let clip = if chance(g, 40) {
-        0
-    } else {
-        1 + g.below(6) as i32
-    };
+    let clip = if chance(g, 40) { 0 } else { 1 + g.below(6) as i32 };
     w.i(clip);
     w.i(if chance(g, 30) { 0 } else { g.below(90) as i32 });
     let (dmin, dmax) = if chance(g, 40) {
@@ -3470,16 +2789,8 @@ fn gen_template(g: &mut Gen, w: &mut W, k: usize, n_tpl: usize, n_things: usize)
     };
     w.i(dmin);
     w.i(dmax);
-    w.i(if chance(g, 40) {
-        i32::MAX
-    } else {
-        g.below(6) as i32
-    });
-    w.i(if chance(g, 40) {
-        i32::MAX
-    } else {
-        g.below(12) as i32
-    });
+    w.i(if chance(g, 40) { i32::MAX } else { g.below(6) as i32 });
+    w.i(if chance(g, 40) { i32::MAX } else { g.below(12) as i32 });
     w.u(g.below(60));
     w.u(if chance(g, 30) { g.below(100) } else { 0 });
     w.i(1 + g.below(3) as i32);
@@ -3502,11 +2813,7 @@ fn gen_template(g: &mut Gen, w: &mut W, k: usize, n_tpl: usize, n_things: usize)
     w.u(if hist { g.below(24) } else { g.below(30) });
     w.f(g.uniform(5.0, 90.0));
     w.i(if hist { 1 + g.below(4) as i32 } else { 0 });
-    w.i(if hist {
-        (k + 1 + g.below((n_tpl - k - 1) as u32) as usize) as i32
-    } else {
-        -1
-    });
+    w.i(if hist { (k + 1 + g.below((n_tpl - k - 1) as u32) as usize) as i32 } else { -1 });
     w.b(chance(g, 12)); // leech
     w.b(chance(g, 15));
     w.b(chance(g, 15));
@@ -3514,11 +2821,7 @@ fn gen_template(g: &mut Gen, w: &mut W, k: usize, n_tpl: usize, n_things: usize)
     w.b(chance(g, 15));
     w.i(if chance(g, 40) { g.below(30) as i32 } else { 0 });
     w.f(g.uniform(0.0, 50.0));
-    w.f(if chance(g, 20) {
-        g.uniform(1.0, 20.0)
-    } else {
-        0.0
-    });
+    w.f(if chance(g, 20) { g.uniform(1.0, 20.0) } else { 0.0 });
     w.i(g.below(45) as i32);
     w.u(if chance(g, 25) { g.below(15) } else { 0 });
     projectile
@@ -3553,11 +2856,7 @@ fn gen_object(
     w.f(g.uniform(2.0, 30.0));
     w.f(g.uniform(2.0, 25.0));
     w.f(g.uniform(2.0, 25.0));
-    let mut kinds: Vec<KindOfType> = KIND_POOL
-        .iter()
-        .copied()
-        .filter(|_| chance(g, 12))
-        .collect();
+    let mut kinds: Vec<KindOfType> = KIND_POOL.iter().copied().filter(|_| chance(g, 12)).collect();
     if projectile_proto {
         if chance(g, 60) {
             kinds.push(KINDOF_PROJECTILE);
@@ -3579,11 +2878,7 @@ fn gen_object(
     let clean = tr.aircraft || tr.pad;
     if clean {
         use rts_lockstep_engine::common::kind_of::*;
-        kinds.retain(|&k| {
-            k != KINDOF_IGNORED_IN_GUI
-                && k != KINDOF_MOB_NEXUS
-                && !(tr.aircraft && (k == KINDOF_STRUCTURE || k == KINDOF_IMMOBILE))
-        });
+        kinds.retain(|&k| k != KINDOF_IGNORED_IN_GUI && k != KINDOF_MOB_NEXUS && !(tr.aircraft && (k == KINDOF_STRUCTURE || k == KINDOF_IMMOBILE)));
     }
     w.u(kinds.len() as u32);
     for k in kinds {
@@ -3601,14 +2896,11 @@ fn gen_object(
         }
     }
     if clean {
-        use rts_lockstep_engine::common::object_status_types::{
-            OBJECT_STATUS_SOLD, OBJECT_STATUS_UNDER_CONSTRUCTION,
-        };
+        use rts_lockstep_engine::common::object_status_types::{OBJECT_STATUS_SOLD, OBJECT_STATUS_UNDER_CONSTRUCTION};
         status &= !((1u64 << OBJECT_STATUS_SOLD) | (1u64 << OBJECT_STATUS_UNDER_CONSTRUCTION));
     }
     if tr.aircraft && chance(g, 60) {
-        status |= 1u64
-            << rts_lockstep_engine::common::object_status_types::OBJECT_STATUS_DECK_HEIGHT_OFFSET;
+        status |= 1u64 << rts_lockstep_engine::common::object_status_types::OBJECT_STATUS_DECK_HEIGHT_OFFSET;
     }
     w.u(status as u32);
     w.u((status >> 32) as u32);
@@ -3617,39 +2909,16 @@ fn gen_object(
     w.b(chance(g, 30));
     w.u(if chance(g, 40) { g.below(1 << 27) } else { 0 });
     w.i(container);
-    w.i(if chance(g, 15) {
-        1 + g.below(n_obj as u32) as i32
-    } else {
-        0
-    });
+    w.i(if chance(g, 15) { 1 + g.below(n_obj as u32) as i32 } else { 0 });
     w.b(chance(g, 6));
     w.b(chance(g, 5));
     w.b(chance(g, 85));
-    w.i(if chance(g, 90) {
-        1
-    } else if chance(g, 50) {
-        15
-    } else {
-        2
-    });
+    w.i(if chance(g, 90) { 1 } else if chance(g, 50) { 15 } else { 2 });
     w.b(chance(g, 25) || (tr.aircraft && chance(g, 80))); // above terrain
     w.b(chance(g, 25));
     w.i(g.below(4) as i32);
-    w.f(if chance(g, 30) {
-        0.0
-    } else {
-        g.uniform(1.0, 80.0)
-    });
-    let ws_mask = if chance(g, 45) {
-        0
-    } else {
-        (1u32 << g.below(17))
-            | if chance(g, 30) {
-                1u32 << g.below(17)
-            } else {
-                0
-            }
-    };
+    w.f(if chance(g, 30) { 0.0 } else { g.uniform(1.0, 80.0) });
+    let ws_mask = if chance(g, 45) { 0 } else { (1u32 << g.below(17)) | if chance(g, 30) { 1u32 << g.below(17) } else { 0 } };
     w.u(ws_mask);
     let has_drawable = force_drawable || chance(g, 90);
     w.b(has_drawable);
@@ -3660,30 +2929,14 @@ fn gen_object(
     let has_launch = chance(g, 70);
     w.b(has_launch);
     w.f(g.uniform(-1.0, 1.0));
-    w.c([
-        g.uniform(-3.0, 3.0),
-        g.uniform(-3.0, 3.0),
-        g.uniform(0.0, 8.0),
-    ]);
-    w.c([
-        g.uniform(-2.0, 2.0),
-        g.uniform(-2.0, 2.0),
-        g.uniform(0.0, 4.0),
-    ]);
-    w.c([
-        g.uniform(-2.0, 2.0),
-        g.uniform(-2.0, 2.0),
-        g.uniform(0.0, 4.0),
-    ]);
+    w.c([g.uniform(-3.0, 3.0), g.uniform(-3.0, 3.0), g.uniform(0.0, 8.0)]);
+    w.c([g.uniform(-2.0, 2.0), g.uniform(-2.0, 2.0), g.uniform(0.0, 4.0)]);
+    w.c([g.uniform(-2.0, 2.0), g.uniform(-2.0, 2.0), g.uniform(0.0, 4.0)]);
     w.b(chance(g, 50)); // laser update
     let has_ai = chance(g, 70) || tr.vehicle || tr.dozer || tr.supply || tr.infantry;
     w.b(has_ai);
     w.b(chance(g, 15)); // sneaky
-    w.c([
-        g.uniform(-4.0, 4.0),
-        g.uniform(-4.0, 4.0),
-        g.uniform(0.0, 3.0),
-    ]);
+    w.c([g.uniform(-4.0, 4.0), g.uniform(-4.0, 4.0), g.uniform(0.0, 3.0)]);
     w.i(if chance(g, 25) { 6 } else { g.below(8) as i32 });
     w.b(chance(g, 20));
     w.b(chance(g, 30));
@@ -3732,26 +2985,14 @@ fn gen_object(
     for i in items {
         w.i(i);
     }
-    w.i(if chance(g, 30) {
-        g.below(n_players as u32) as i32
-    } else {
-        -2
-    });
+    w.i(if chance(g, 30) { g.below(n_players as u32) as i32 } else { -2 });
     w.b(chance(g, 15)); // stealth
     w.b(chance(g, 50)); // disguised
-    w.i(if chance(g, 80) {
-        g.below(n_players as u32 + 1) as i32
-    } else {
-        -1
-    });
+    w.i(if chance(g, 80) { g.below(n_players as u32 + 1) as i32 } else { -1 });
     w.b(chance(g, 15)); // spawn
     w.i(g.below(4) as i32);
     w.b(chance(g, 12)); // land mine
-    w.b(if projectile_proto {
-        chance(g, 75)
-    } else {
-        chance(g, 15)
-    }); // projectile update
+    w.b(if projectile_proto { chance(g, 75) } else { chance(g, 15) }); // projectile update
     w.b(chance(g, 12) || (tr.pad && chance(g, 70))); // parking
     w.b(chance(g, 15)); // special power completion die
     w.b(chance(g, 20)); // projectile stream
@@ -3848,21 +3089,9 @@ const RELEVANT_SP: [i32; 14] = [27, 28, 29, 30, 25, 10, 7, 22, 23, 24, 34, 33, 6
 
 /// The facts `ActionManager.cpp` reads of an object (the words after the weapon-set facts of `gen_object`).
 fn gen_action_facts(g: &mut Gen, w: &mut W, n_obj: usize, tr: Traits, id: i32, pos_z: f32) {
-    let some_obj = |g: &mut Gen| {
-        if chance(g, 25) {
-            0
-        } else {
-            1 + g.below(n_obj as u32) as i32
-        }
-    };
+    let some_obj = |g: &mut Gen| if chance(g, 25) { 0 } else { 1 + g.below(n_obj as u32) as i32 };
     w.b(chance(g, 80) || (tr.vehicle && chance(g, 95))); // mobile
-    w.f(if chance(g, 40) {
-        0.0
-    } else if chance(g, 50) {
-        pos_z
-    } else {
-        g.uniform(0.0, 50.0)
-    });
+    w.f(if chance(g, 40) { 0.0 } else if chance(g, 50) { pos_z } else { g.uniform(0.0, 50.0) });
     let mut dis = 0u32;
     for b in 0..2 {
         if chance(g, 15) {
@@ -3874,11 +3103,7 @@ fn gen_action_facts(g: &mut Gen, w: &mut W, n_obj: usize, tr: Traits, id: i32, p
     w.b(has_body);
     let h = g.uniform(1.0, 100.0);
     w.f(h);
-    w.f(if chance(g, 35) && !tr.vehicle {
-        h
-    } else {
-        h + g.uniform(1.0, 50.0)
-    });
+    w.f(if chance(g, 35) && !tr.vehicle { h } else { h + g.uniform(1.0, 50.0) });
     w.i(g.below(4) as i32);
     w.b(chance(g, 15));
     for _ in 0..4 {
@@ -3922,11 +3147,7 @@ fn gen_action_facts(g: &mut Gen, w: &mut W, n_obj: usize, tr: Traits, id: i32, p
     w.u(mods.len() as u32);
     for &t in &mods {
         w.i(t);
-        w.f(if tr.special {
-            pick(g, &[1.0f32, 1.0, 1.0, 0.5])
-        } else {
-            pick(g, &[0.0f32, 0.5, 1.0, 1.0, 0.999])
-        });
+        w.f(if tr.special { pick(g, &[1.0f32, 1.0, 1.0, 0.5]) } else { pick(g, &[0.0f32, 0.5, 1.0, 1.0, 0.999]) });
     }
     // special ability updates (the charges)
     let mut sas: Vec<i32> = Vec::new();
@@ -3958,37 +3179,17 @@ fn gen_action_facts(g: &mut Gen, w: &mut W, n_obj: usize, tr: Traits, id: i32, p
     for _ in 0..4 {
         w.b(chance(g, 25) || (tr.supply && chance(g, 30)));
     }
-    w.i(if chance(g, 50) && !tr.supply {
-        0
-    } else {
-        1 + g.below(3) as i32
-    });
+    w.i(if chance(g, 50) && !tr.supply { 0 } else { 1 + g.below(3) as i32 });
     let st = chance(g, 35) || (tr.supply && chance(g, 85));
     w.b(st);
-    w.i(if tr.supply {
-        1 + g.below(2) as i32
-    } else {
-        g.below(3) as i32
-    });
+    w.i(if tr.supply { 1 + g.below(2) as i32 } else { g.below(3) as i32 });
     w.b(chance(g, 70));
     let dz = chance(g, 35) || (tr.dozer && chance(g, 85));
     w.b(dz);
-    w.i(if tr.dozer && chance(g, 60) {
-        0
-    } else {
-        g.below(4) as i32 - 1
-    });
-    w.i(if tr.dozer && id > 1 && chance(g, 60) {
-        id - 1
-    } else {
-        some_obj(g)
-    });
+    w.i(if tr.dozer && chance(g, 60) { 0 } else { g.below(4) as i32 - 1 });
+    w.i(if tr.dozer && id > 1 && chance(g, 60) { id - 1 } else { some_obj(g) });
     w.b(chance(g, 25) || (tr.supply && chance(g, 60))); // a dock update interface
-    let nc = if chance(g, 40) || (tr.special && chance(g, 50)) {
-        1 + g.below(2)
-    } else {
-        0
-    };
+    let nc = if chance(g, 40) || (tr.special && chance(g, 50)) { 1 + g.below(2) } else { 0 };
     w.u(nc);
     for _ in 0..nc {
         let (pl, pf) = if tr.special { (80, 65) } else { (35, 35) };
@@ -4015,11 +3216,7 @@ fn gen_action_facts(g: &mut Gen, w: &mut W, n_obj: usize, tr: Traits, id: i32, p
 
 fn gen_header(g: &mut Gen, w: &mut W) -> World {
     w.u(g.u32()); // seed
-    w.u(if chance(g, 6) {
-        u32::MAX - g.below(50)
-    } else {
-        g.below(3000)
-    }); // frame
+    w.u(if chance(g, 6) { u32::MAX - g.below(50) } else { g.below(3000) }); // frame
     w.u(g.below(300)); // historic damage limit
     w.c([0.0, 0.0, 0.0]);
     let spread = pick(g, &[120.0f32, 300.0, 600.0]);
@@ -4054,54 +3251,21 @@ fn gen_header(g: &mut Gen, w: &mut W) -> World {
         w.f(if chance(g, 25) { 5.0 } else { 0.0 });
         // the prototype dynamic objects copy: it has a drawable
         let contains_none = vec![false; n_obj];
-        let rec = gen_object(
-            g,
-            n_things,
-            n_players,
-            n_obj,
-            t,
-            true,
-            -1,
-            &contains_none,
-            0,
-            spread,
-            true,
-        );
+        let rec = gen_object(g, n_things, n_players, n_obj, t, true, -1, &contains_none, 0, spread, true);
         w.u(rec.len() as u32);
         w.0.extend(rec);
     }
     let n_sets = n_things + g.below(3) as usize;
     w.u(n_sets as u32);
     for s in 0..n_sets {
-        let tid = if s < n_things {
-            s + 1
-        } else {
-            1 + g.below(n_things as u32) as usize
-        };
+        let tid = if s < n_things { s + 1 } else { 1 + g.below(n_things as u32) as usize };
         w.i(tid as i32);
-        w.u(if s < n_things {
-            0
-        } else {
-            (1u32 << g.below(17))
-                | if chance(g, 40) {
-                    1u32 << g.below(17)
-                } else {
-                    0
-                }
-        });
+        w.u(if s < n_things { 0 } else { (1u32 << g.below(17)) | if chance(g, 40) { 1u32 << g.below(17) } else { 0 } });
         for _ in 0..3 {
-            w.i(if chance(g, 55) {
-                g.below(n_tpl as u32) as i32
-            } else {
-                -1
-            });
+            w.i(if chance(g, 55) { g.below(n_tpl as u32) as i32 } else { -1 });
         }
         for _ in 0..3 {
-            w.u(if chance(g, 60) {
-                0xffff_ffff
-            } else {
-                g.below(32)
-            });
+            w.u(if chance(g, 60) { 0xffff_ffff } else { g.below(32) });
         }
         for _ in 0..3 {
             let n = if chance(g, 30) { 1 + g.below(2) } else { 0 };
@@ -4116,11 +3280,7 @@ fn gen_header(g: &mut Gen, w: &mut W) -> World {
     w.u(n_obj as u32);
     let mut fire = Vec::new();
     for i in 0..n_obj {
-        let player = if i < 3 || chance(g, 85) {
-            g.below(n_players as u32) as i32
-        } else {
-            -1
-        };
+        let player = if i < 3 || chance(g, 85) { g.below(n_players as u32) as i32 } else { -1 };
         let container = {
             let cands: Vec<usize> = (0..n_obj).filter(|&j| j != i && contains[j]).collect();
             if !cands.is_empty() && chance(g, 20) {
@@ -4129,19 +3289,7 @@ fn gen_header(g: &mut Gen, w: &mut W) -> World {
                 0
             }
         };
-        let rec = gen_object(
-            g,
-            n_things,
-            n_players,
-            n_obj,
-            i,
-            i < 3,
-            player,
-            &contains,
-            container,
-            spread,
-            false,
-        );
+        let rec = gen_object(g, n_things, n_players, n_obj, i, i < 3, player, &contains, container, spread, false);
         // can it fire: a controlling player and a drawable (word 1 is the player; the drawable flag is found by the caller of
         // gen_object, so recompute it from the record: see `is_fire_source`)
         if player >= 0 && is_drawable(&rec) {
@@ -4150,12 +3298,7 @@ fn gen_header(g: &mut Gen, w: &mut W) -> World {
         w.u(rec.len() as u32);
         w.0.extend(rec);
     }
-    World {
-        n_tpl,
-        n_obj,
-        fire,
-        spread,
-    }
+    World { n_tpl, n_obj, fire, spread }
 }
 
 /// Whether an object record has a drawable (parse the record with the reader).
@@ -4177,13 +3320,7 @@ fn gen_ops(g: &mut Gen, world: &World, w: &mut W) {
     let mut made = 0usize;
     let obj = |g: &mut Gen| 1 + g.below(world.n_obj as u32) as i32;
     let src = |g: &mut Gen| world.fire[g.below(world.fire.len() as u32) as usize];
-    let victim_opt = |g: &mut Gen| {
-        if chance(g, 15) {
-            0
-        } else {
-            1 + g.below(world.n_obj as u32) as i32
-        }
-    };
+    let victim_opt = |g: &mut Gen| if chance(g, 15) { 0 } else { 1 + g.below(world.n_obj as u32) as i32 };
     let pos = |g: &mut Gen| gen_coord(g, world.spread);
     macro_rules! op {
         ($($body:tt)*) => {{
@@ -4255,9 +3392,7 @@ fn gen_ops(g: &mut Gen, world: &World, w: &mut W) {
                     let slot = if chance(g, 70) { -1 } else { g.below(3) as i32 };
                     op!(ops.u(43); ops.i(o); ops.i(v); ops.b(has_pos); ops.c(p); ops.i(at); ops.i(cmd); ops.i(slot); ops.i(g.below(2) as i32); ops.u(kind))
                 }
-                9 => {
-                    op!(ops.u(44); ops.i(o); ops.i(g.below(3) as i32); ops.i(g.below(3) as i32); ops.i(1 + g.below(2) as i32))
-                }
+                9 => op!(ops.u(44); ops.i(o); ops.i(g.below(3) as i32); ops.i(g.below(3) as i32); ops.i(1 + g.below(2) as i32)),
                 10 => {
                     let v = victim_opt(g);
                     op!(ops.u(45); ops.i(o); ops.i(g.below(3) as i32); ops.i(v))
@@ -4268,11 +3403,7 @@ fn gen_ops(g: &mut Gen, world: &World, w: &mut W) {
         }
         if chance(g, 14) {
             // ActionManager.cpp: what an object can do to another, and special powers
-            let sp = if chance(g, 75) {
-                pick(g, &RELEVANT_SP)
-            } else {
-                g.below(67) as i32
-            };
+            let sp = if chance(g, 75) { pick(g, &RELEVANT_SP) } else { g.below(67) as i32 };
             if chance(g, 62) {
                 let kind = g.below(22) as i32;
                 let nullable = !matches!(kind, 2);
@@ -4289,11 +3420,7 @@ fn gen_ops(g: &mut Gen, world: &World, w: &mut W) {
                 op!(ops.u(48); ops.i(kind); ops.i(o); ops.i(t); ops.i(g.below(5) as i32); ops.i(ex))
             } else {
                 let kind = g.below(6) as i32;
-                let o = if matches!(kind, 3 | 4) && chance(g, 10) {
-                    0
-                } else {
-                    obj(g)
-                };
+                let o = if matches!(kind, 3 | 4) && chance(g, 10) { 0 } else { obj(g) };
                 let p = pos(g);
                 let way = if chance(g, 40) { 0 } else { obj(g) };
                 op!(ops.u(49); ops.i(kind); ops.i(o); ops.i(obj(g)); ops.b(chance(g, 80)); ops.c(p); ops.i(g.below(5) as i32); ops.i(sp); ops.b(chance(g, 75)); ops.u(g.below(4)); ops.i(g.below(3) as i32); ops.i(way))
@@ -4311,9 +3438,7 @@ fn gen_ops(g: &mut Gen, world: &World, w: &mut W) {
             continue;
         }
         match g.below(100) {
-            0..=5 => {
-                op!(ops.u(0); ops.u(if chance(g, 15) { 100 + g.below(500) } else { g.below(40) }))
-            }
+            0..=5 => op!(ops.u(0); ops.u(if chance(g, 15) { 100 + g.below(500) } else { g.below(40) })),
             6..=7 => {
                 op!(ops.u(1); ops.u(g.below(world.n_tpl as u32)); ops.i(g.below(3) as i32));
                 weapons.push(made);
@@ -4371,11 +3496,7 @@ fn gen_ops(g: &mut Gen, world: &World, w: &mut W) {
                 let t = victim_opt(g);
                 let has_pos = chance(g, 50);
                 let p = pos(g);
-                let ao = if chance(g, 40) {
-                    g.uniform(-1.0, 1.0)
-                } else {
-                    0.0
-                };
+                let ao = if chance(g, 40) { g.uniform(-1.0, 1.0) } else { 0.0 };
                 op!(ops.u(11); ops.u(wi as u32); ops.i(s); ops.i(t); ops.b(has_pos); ops.c(p); ops.f(ao))
             }
             51..=53 => {
@@ -4389,12 +3510,7 @@ fn gen_ops(g: &mut Gen, world: &World, w: &mut W) {
             }
             54..=56 => {
                 let t = g.below(world.n_tpl as u32);
-                let (l, p, th, intended) = (
-                    victim_opt(g),
-                    obj(g),
-                    victim_opt(g),
-                    if chance(g, 20) { 0 } else { obj(g) },
-                );
+                let (l, p, th, intended) = (victim_opt(g), obj(g), victim_opt(g), if chance(g, 20) { 0 } else { obj(g) });
                 op!(ops.u(13); ops.u(t); ops.i(l); ops.i(p); ops.i(th); ops.i(intended))
             }
             57..=61 => {
@@ -4463,16 +3579,7 @@ fn gen_ops(g: &mut Gen, world: &World, w: &mut W) {
             }
             92 => {
                 let o = obj(g);
-                let m = if chance(g, 40) {
-                    0
-                } else {
-                    (1u32 << g.below(17))
-                        | if chance(g, 30) {
-                            1u32 << g.below(17)
-                        } else {
-                            0
-                        }
-                };
+                let m = if chance(g, 40) { 0 } else { (1u32 << g.below(17)) | if chance(g, 30) { 1u32 << g.below(17) } else { 0 } };
                 op!(ops.u(29); ops.i(o); ops.u(m))
             }
             93 => {
@@ -4520,40 +3627,21 @@ fn gen_program(seed: u64) -> Vec<u32> {
 // ---------------------------------------------------------------------------------------------------------------------
 
 fn cpp_run(words: &[u32]) -> Vec<String> {
-    let path = CString::new(format!(
-        "{}/wpnfire_{}.bin",
-        std::env::temp_dir().display(),
-        std::process::id()
-    ))
-    .unwrap();
+    let path = CString::new(format!("{}/wpnfire_{}.bin", std::env::temp_dir().display(), std::process::id())).unwrap();
     let mut cap = 1 << 20;
     loop {
         let mut buf = vec![0u8; cap];
-        let n = unsafe {
-            cpp::ref_weapon_fire_run(
-                words.as_ptr(),
-                words.len() as i32,
-                path.as_ptr(),
-                buf.as_mut_ptr() as *mut std::os::raw::c_char,
-                cap as i32,
-            )
-        } as usize;
+        let n = unsafe { cpp::ref_weapon_fire_run(words.as_ptr(), words.len() as i32, path.as_ptr(), buf.as_mut_ptr() as *mut std::os::raw::c_char, cap as i32) } as usize;
         if n <= cap {
             buf.truncate(n);
-            return String::from_utf8_lossy(&buf)
-                .lines()
-                .map(str::to_owned)
-                .collect();
+            return String::from_utf8_lossy(&buf).lines().map(str::to_owned).collect();
         }
         cap = n + 1;
     }
 }
 
 fn cases() -> u64 {
-    std::env::var("WEAPON_FIRE_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(3000)
+    std::env::var("WEAPON_FIRE_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(3000)
 }
 
 fn rust_run_fresh(words: &[u32]) -> Result<Vec<String>, Excluded> {
@@ -4570,61 +3658,15 @@ fn weapon_firing_matches_upstream() {
     let (mut programs, mut excluded, mut lines) = (0u64, 0u64, 0u64);
     let mut counts: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
     let mut why_counts: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
-    let mut true_counts: std::collections::BTreeMap<String, u64> =
-        std::collections::BTreeMap::new();
+    let mut true_counts: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
     let markers = [
-        "fx.fire",
-        "fx.pos",
-        "ocl ",
-        "dmg ",
-        "est ",
-        "newobj",
-        "launch ",
-        "stream.add",
-        "laser ",
-        "assist ",
-        "destroy",
-        "lm.disarm",
-        "cm.report",
-        "assault",
-        "spc.",
-        "battleplan",
-        "academy.mine",
-        "adjust",
-        "xform",
-        "phys.",
-        "ret fire",
-        "ret able",
-        "ret choose",
-        "ret xfer-load 0",
-        "ret setxfer-load 0",
-        "ret approach",
-        "ret estimate",
-        "ret collide 1",
-        "ret collide 0",
-        "ret launchpos",
-        "tracker ",
-        "undetected ",
-        "clipstatus ",
-        "mcflags ",
-        "animloop ",
-        "ret objq",
-        "ret oable ",
-        "ret oableuse",
-        "ret ochoose",
-        "ret olock",
-        "ret bone0",
-        "ret bone1",
-        "ret bonemulti",
-        "ret canproduce",
-        "ret act ",
-        "ret actsp",
+        "fx.fire", "fx.pos", "ocl ", "dmg ", "est ", "newobj", "launch ", "stream.add", "laser ", "assist ", "destroy", "lm.disarm", "cm.report", "assault",
+        "spc.", "battleplan", "academy.mine", "adjust", "xform", "phys.", "ret fire", "ret able", "ret choose", "ret xfer-load 0", "ret setxfer-load 0",
+        "ret approach", "ret estimate", "ret collide 1", "ret collide 0", "ret launchpos", "tracker ", "undetected ", "clipstatus ", "mcflags ", "animloop ",
+        "ret objq", "ret oable ", "ret oableuse", "ret ochoose", "ret olock", "ret bone0", "ret bone1", "ret bonemulti", "ret canproduce", "ret act ", "ret actsp",
     ];
     // (`WEAPON_FIRE_FROM` starts at another program, to look at one: `WEAPON_FIRE_FROM=7910 WEAPON_FIRE_CASES=1`)
-    let from: u64 = std::env::var("WEAPON_FIRE_FROM")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
+    let from: u64 = std::env::var("WEAPON_FIRE_FROM").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
     for case in from..from + cases() {
         let words = gen_program(0x57ea_0000 + case);
         programs += 1;
@@ -4646,25 +3688,14 @@ fn weapon_firing_matches_upstream() {
             }
         }
         for l in &rust {
-            if (l.starts_with("ret act k=") || l.starts_with("ret actsp k=")) && !l.ends_with("v=0")
-            {
-                let key = l.rsplit_once(' ').map_or(l.as_str(), |(a, b)| {
-                    if b.starts_with("v=") && b != "v=0" {
-                        a
-                    } else {
-                        l.as_str()
-                    }
-                });
+            if (l.starts_with("ret act k=") || l.starts_with("ret actsp k=")) && !l.ends_with("v=0") {
+                let key = l.rsplit_once(' ').map_or(l.as_str(), |(a, b)| if b.starts_with("v=") && b != "v=0" { a } else { l.as_str() });
                 *true_counts.entry(format!("{key} non-zero")).or_insert(0) += 1;
             }
         }
-        check.eq(rust.len(), cpp_lines.len(), || {
-            format!("program {case}: line count")
-        });
+        check.eq(rust.len(), cpp_lines.len(), || format!("program {case}: line count"));
         for (i, (a, b)) in rust.iter().zip(cpp_lines.iter()).enumerate() {
-            check.eq(a.as_str(), b.as_str(), || {
-                format!("program {case} line {i}")
-            });
+            check.eq(a.as_str(), b.as_str(), || format!("program {case} line {i}"));
         }
     }
     println!("RESULT programs {programs}, excluded (upstream undefined) {excluded}, lines compared {lines}");

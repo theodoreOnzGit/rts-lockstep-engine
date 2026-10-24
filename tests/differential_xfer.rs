@@ -115,13 +115,7 @@ fn log_ascii(lg: &mut Vec<u32>, s: &[u8]) {
 
 /// Runs one op, logging values; returns the status. Values are logged only
 /// on success, except for the sequence and snapshot ops (as the C++ does).
-fn run_op<X: Xfer>(
-    op: u32,
-    sc: &mut Script,
-    lg: &mut Vec<u32>,
-    x: &mut X,
-    crc: fn(&X) -> u32,
-) -> XferResult<()> {
+fn run_op<X: Xfer>(op: u32, sc: &mut Script, lg: &mut Vec<u32>, x: &mut X, crc: fn(&X) -> u32) -> XferResult<()> {
     macro_rules! reals {
         ($n:expr, $get:expr) => {{
             let mut v: Vec<f32> = (0..$n).map(|_| sc.real()).collect();
@@ -197,55 +191,25 @@ fn run_op<X: Xfer>(
             lg.extend(s.iter().map(|&c| u32::from(c)));
         }
         13 => reals!(3, |x: &mut X, v: &mut Vec<f32>| {
-            let mut c = Coord3D {
-                x: v[0],
-                y: v[1],
-                z: v[2],
-            };
+            let mut c = Coord3D { x: v[0], y: v[1], z: v[2] };
             let r = x.xfer_coord3d(&mut c);
             *v = vec![c.x, c.y, c.z];
             r
         }),
         14 => {
-            let mut c = ICoord3D {
-                x: sc.next() as i32,
-                y: sc.next() as i32,
-                z: sc.next() as i32,
-            };
+            let mut c = ICoord3D { x: sc.next() as i32, y: sc.next() as i32, z: sc.next() as i32 };
             x.xfer_icoord3d(&mut c)?;
             lg.extend([c.x as u32, c.y as u32, c.z as u32]);
         }
         15 => reals!(6, |x: &mut X, v: &mut Vec<f32>| {
-            let mut r = Region3D {
-                lo: Coord3D {
-                    x: v[0],
-                    y: v[1],
-                    z: v[2],
-                },
-                hi: Coord3D {
-                    x: v[3],
-                    y: v[4],
-                    z: v[5],
-                },
-            };
+            let mut r = Region3D { lo: Coord3D { x: v[0], y: v[1], z: v[2] }, hi: Coord3D { x: v[3], y: v[4], z: v[5] } };
             let res = x.xfer_region3d(&mut r);
             *v = vec![r.lo.x, r.lo.y, r.lo.z, r.hi.x, r.hi.y, r.hi.z];
             res
         }),
         16 => {
             let p: Vec<i32> = (0..6).map(|_| sc.next() as i32).collect();
-            let mut r = IRegion3D {
-                lo: ICoord3D {
-                    x: p[0],
-                    y: p[1],
-                    z: p[2],
-                },
-                hi: ICoord3D {
-                    x: p[3],
-                    y: p[4],
-                    z: p[5],
-                },
-            };
+            let mut r = IRegion3D { lo: ICoord3D { x: p[0], y: p[1], z: p[2] }, hi: ICoord3D { x: p[3], y: p[4], z: p[5] } };
             x.xfer_iregion3d(&mut r)?;
             lg.extend([r.lo.x, r.lo.y, r.lo.z, r.hi.x, r.hi.y, r.hi.z].map(|v| v as u32));
         }
@@ -256,28 +220,19 @@ fn run_op<X: Xfer>(
             r
         }),
         18 => {
-            let mut c = ICoord2D {
-                x: sc.next() as i32,
-                y: sc.next() as i32,
-            };
+            let mut c = ICoord2D { x: sc.next() as i32, y: sc.next() as i32 };
             x.xfer_icoord2d(&mut c)?;
             lg.extend([c.x as u32, c.y as u32]);
         }
         19 => reals!(4, |x: &mut X, v: &mut Vec<f32>| {
-            let mut r = Region2D {
-                lo: Coord2D { x: v[0], y: v[1] },
-                hi: Coord2D { x: v[2], y: v[3] },
-            };
+            let mut r = Region2D { lo: Coord2D { x: v[0], y: v[1] }, hi: Coord2D { x: v[2], y: v[3] } };
             let res = x.xfer_region2d(&mut r);
             *v = vec![r.lo.x, r.lo.y, r.hi.x, r.hi.y];
             res
         }),
         20 => {
             let p: Vec<i32> = (0..4).map(|_| sc.next() as i32).collect();
-            let mut r = IRegion2D {
-                lo: ICoord2D { x: p[0], y: p[1] },
-                hi: ICoord2D { x: p[2], y: p[3] },
-            };
+            let mut r = IRegion2D { lo: ICoord2D { x: p[0], y: p[1] }, hi: ICoord2D { x: p[2], y: p[3] } };
             x.xfer_iregion2d(&mut r)?;
             lg.extend([r.lo.x, r.lo.y, r.hi.x, r.hi.y].map(|v| v as u32));
         }
@@ -293,33 +248,19 @@ fn run_op<X: Xfer>(
             lg.push(c as u32);
         }
         23 => reals!(3, |x: &mut X, v: &mut Vec<f32>| {
-            let mut c = RGBColor {
-                red: v[0],
-                green: v[1],
-                blue: v[2],
-            };
+            let mut c = RGBColor { red: v[0], green: v[1], blue: v[2] };
             let r = x.xfer_rgb_color(&mut c);
             *v = vec![c.red, c.green, c.blue];
             r
         }),
         24 => reals!(4, |x: &mut X, v: &mut Vec<f32>| {
-            let mut c = RGBAColorReal {
-                red: v[0],
-                green: v[1],
-                blue: v[2],
-                alpha: v[3],
-            };
+            let mut c = RGBAColorReal { red: v[0], green: v[1], blue: v[2], alpha: v[3] };
             let r = x.xfer_rgba_color_real(&mut c);
             *v = vec![c.red, c.green, c.blue, c.alpha];
             r
         }),
         25 => {
-            let mut c = RGBAColorInt {
-                red: sc.next(),
-                green: sc.next(),
-                blue: sc.next(),
-                alpha: sc.next(),
-            };
+            let mut c = RGBAColorInt { red: sc.next(), green: sc.next(), blue: sc.next(), alpha: sc.next() };
             x.xfer_rgba_color_int(&mut c)?;
             lg.extend([c.red, c.green, c.blue, c.alpha]);
         }
@@ -336,11 +277,7 @@ fn run_op<X: Xfer>(
         28..=30 => {
             let cnt = sc.next() as usize;
             let items: Vec<i32> = (0..cnt).map(|_| sc.next() as i32).collect();
-            let mut v = if x.get_xfer_mode() == XferMode::Load {
-                Vec::new()
-            } else {
-                items
-            };
+            let mut v = if x.get_xfer_mode() == XferMode::Load { Vec::new() } else { items };
             let r = match op {
                 28 => x.xfer_stl_object_id_vector(&mut v),
                 29 => x.xfer_stl_object_id_list(&mut v),
@@ -382,11 +319,7 @@ fn run_op<X: Xfer>(
             lg.push(x.get_options());
         }
         38 => {
-            let mut s = TestSnapshot {
-                a: sc.next() as i32,
-                b: sc.real(),
-                s: Vec::new(),
-            };
+            let mut s = TestSnapshot { a: sc.next() as i32, b: sc.real(), s: Vec::new() };
             s.s = sc.ascii();
             let r = x.xfer_snapshot(&mut s);
             lg.push(s.a as u32);
@@ -410,13 +343,7 @@ fn run_op<X: Xfer>(
 
 /// Runs `script` on `x`; returns the log (the per-op log, then mode,
 /// options, getCRC and the post-process count).
-fn run_with<X: Xfer>(
-    x: &mut X,
-    script: &[u32],
-    crc: fn(&X) -> u32,
-    post: fn(&X) -> u32,
-    close: bool,
-) -> Vec<u32> {
+fn run_with<X: Xfer>(x: &mut X, script: &[u32], crc: fn(&X) -> u32, post: fn(&X) -> u32, close: bool) -> Vec<u32> {
     let mut lg = Vec::new();
     let mut sc = Script { w: script, i: 0 };
     while sc.i < script.len() {
@@ -440,16 +367,7 @@ fn run_with<X: Xfer>(
 /// Returns the log and the written file (save/deep) or nothing.
 fn run_rust(kind: i32, script: &[u32], load_file: &[u8]) -> (Vec<u32>, Vec<u8>) {
     match kind {
-        CRC => (
-            run_with(
-                &mut XferCrc::new_without_nan_guard(),
-                script,
-                |x| x.get_crc(),
-                |_| 0,
-                false,
-            ),
-            Vec::new(),
-        ),
+        CRC => (run_with(&mut XferCrc::new_without_nan_guard(), script, |x| x.get_crc(), |_| 0, false), Vec::new()),
         SAVE => {
             let mut x = XferSave::new();
             let lg = run_with(&mut x, script, |_| 0, |_| 0, true);
@@ -457,16 +375,7 @@ fn run_rust(kind: i32, script: &[u32], load_file: &[u8]) -> (Vec<u32>, Vec<u8>) 
         }
         LOAD => {
             let mut x = XferLoad::new(load_file.to_vec());
-            (
-                run_with(
-                    &mut x,
-                    script,
-                    |_| 0,
-                    |x| x.post_process_requests() as u32,
-                    true,
-                ),
-                Vec::new(),
-            )
+            (run_with(&mut x, script, |_| 0, |x| x.post_process_requests() as u32, true), Vec::new())
         }
         _ => {
             let mut x = XferDeepCrc::new_without_nan_guard();
@@ -478,10 +387,7 @@ fn run_rust(kind: i32, script: &[u32], load_file: &[u8]) -> (Vec<u32>, Vec<u8>) 
 
 fn temp_path(tag: &str) -> std::path::PathBuf {
     let mut p = std::env::temp_dir();
-    p.push(format!(
-        "rts-lockstep-xfer-{}-{tag}.bin",
-        std::process::id()
-    ));
+    p.push(format!("rts-lockstep-xfer-{}-{tag}.bin", std::process::id()));
     p
 }
 
@@ -501,24 +407,11 @@ fn run_cpp(kind: i32, script: &[u32], load_file: &[u8], tag: &str) -> (Vec<u32>,
     let cpath = std::ffi::CString::new(path.to_str().unwrap()).unwrap();
     let cap = script.len() * 2 + 4096;
     let mut log = vec![0u32; cap];
-    let n = unsafe {
-        cpp::ref_xfer_run(
-            kind,
-            cpath.as_ptr(),
-            script.as_ptr(),
-            script.len() as i32,
-            log.as_mut_ptr(),
-            cap as i32,
-        )
-    };
+    let n = unsafe { cpp::ref_xfer_run(kind, cpath.as_ptr(), script.as_ptr(), script.len() as i32, log.as_mut_ptr(), cap as i32) };
     assert!(n >= 0, "malformed script");
     assert!((n as usize) <= cap, "log overflow");
     log.truncate(n as usize);
-    let file = if kind == SAVE || kind == DEEP {
-        std::fs::read(&path).unwrap_or_default()
-    } else {
-        Vec::new()
-    };
+    let file = if kind == SAVE || kind == DEEP { std::fs::read(&path).unwrap_or_default() } else { Vec::new() };
     let _ = std::fs::remove_file(&path);
     (log, file)
 }
@@ -543,11 +436,7 @@ fn gen_real(g: &mut Gen, canon: bool) -> u32 {
 }
 
 fn gen_ascii(g: &mut Gen, out: &mut Vec<u32>, max: u32) {
-    let n = if g.below(10) == 0 {
-        g.below(max + 1)
-    } else {
-        g.below(12)
-    };
+    let n = if g.below(10) == 0 { g.below(max + 1) } else { g.below(12) };
     out.push(n);
     for _ in 0..n {
         out.push(if g.below(8) == 0 { 0 } else { 1 + g.below(255) });
@@ -570,11 +459,7 @@ fn gen_script_nan(g: &mut Gen, kind: i32, ops: usize, canon: bool) -> Vec<u32> {
             40 if kind != CRC => continue, // no mid-script close on file kinds
             35 => {
                 s.push(35);
-                let n = if aligned {
-                    g.below(9) as i32
-                } else {
-                    g.below(21) as i32 - 10
-                };
+                let n = if aligned { g.below(9) as i32 } else { g.below(21) as i32 - 10 };
                 s.push(n as u32);
                 continue;
             }
@@ -590,11 +475,7 @@ fn gen_script_nan(g: &mut Gen, kind: i32, ops: usize, canon: bool) -> Vec<u32> {
             9 => s.push(gen_real(g)),
             10 | 11 => gen_ascii(g, &mut s, max_str),
             12 => {
-                let n = if g.below(10) == 0 {
-                    g.below(max_str + 1)
-                } else {
-                    g.below(10)
-                };
+                let n = if g.below(10) == 0 { g.below(max_str + 1) } else { g.below(10) };
                 s.push(n);
                 for _ in 0..n {
                     s.push(if g.below(8) == 0 { 0 } else { g.u32() & 0xffff });
@@ -613,11 +494,7 @@ fn gen_script_nan(g: &mut Gen, kind: i32, ops: usize, canon: bool) -> Vec<u32> {
                 let n = g.below(6);
                 s.push(n);
                 for _ in 0..n {
-                    s.push(if op == 30 {
-                        g.u32()
-                    } else {
-                        g.below(0x0800_0000)
-                    });
+                    s.push(if op == 30 { g.u32() } else { g.below(0x0800_0000) });
                 }
             }
             31 => {
@@ -649,12 +526,7 @@ fn gen_script_nan(g: &mut Gen, kind: i32, ops: usize, canon: bool) -> Vec<u32> {
 
 fn compare(name: &str, script: &[u32], rust: &(Vec<u32>, Vec<u8>), cpp: &(Vec<u32>, Vec<u8>)) {
     if rust.0 != cpp.0 {
-        let i = rust
-            .0
-            .iter()
-            .zip(cpp.0.iter())
-            .position(|(a, b)| a != b)
-            .unwrap_or(rust.0.len().min(cpp.0.len()));
+        let i = rust.0.iter().zip(cpp.0.iter()).position(|(a, b)| a != b).unwrap_or(rust.0.len().min(cpp.0.len()));
         panic!(
             "{name}: logs differ at word {i} (rust len {}, c++ len {}): rust {:?} c++ {:?}\nscript {:?}",
             rust.0.len(),
@@ -664,10 +536,7 @@ fn compare(name: &str, script: &[u32], rust: &(Vec<u32>, Vec<u8>), cpp: &(Vec<u3
             script
         );
     }
-    assert_eq!(
-        rust.1, cpp.1,
-        "{name}: written files differ\nscript {script:?}"
-    );
+    assert_eq!(rust.1, cpp.1, "{name}: written files differ\nscript {script:?}");
 }
 
 const SCRIPTS: usize = 2_000;
@@ -685,10 +554,7 @@ fn xfer_crc_scripts_match() {
         words += r.0.len();
         ops += OPS;
     }
-    println!(
-        "DIFF {:<44} scripts {SCRIPTS}  ops {ops}  log words {words}  mismatches 0",
-        "XferCRC (scripts)"
-    );
+    println!("DIFF {:<44} scripts {SCRIPTS}  ops {ops}  log words {words}  mismatches 0", "XferCRC (scripts)");
 }
 
 #[test]
@@ -703,10 +569,7 @@ fn xfer_deep_crc_scripts_match() {
         words += r.0.len();
         bytes += r.1.len();
     }
-    println!(
-        "DIFF {:<44} scripts {SCRIPTS}  log words {words}  file bytes {bytes}  mismatches 0",
-        "XferDeepCRC (scripts)"
-    );
+    println!("DIFF {:<44} scripts {SCRIPTS}  log words {words}  file bytes {bytes}  mismatches 0", "XferDeepCRC (scripts)");
 }
 
 #[test]
@@ -756,24 +619,7 @@ fn xfer_fixed_edge_cases_match() {
         s.extend(long(200));
         s.push(12);
         s.extend(long(256));
-        s.extend([
-            35,
-            (-3i32) as u32,
-            4,
-            7,
-            35,
-            (-100i32) as u32,
-            4,
-            9,
-            0,
-            3,
-            2,
-            33,
-            4,
-            1,
-            34,
-            34,
-        ]);
+        s.extend([35, (-3i32) as u32, 4, 7, 35, (-100i32) as u32, 4, 9, 0, 3, 2, 33, 4, 1, 34, 34]);
         if kind != CRC {
             s.push(40);
         }
@@ -784,27 +630,7 @@ fn xfer_fixed_edge_cases_match() {
     let mut save = vec![39, 30, 2, 5, 6, 0, 3, 1, 4, 77, 4, 88];
     save.push(40);
     let file = run_cpp(SAVE, &save, &[], "fixed-save").1;
-    let load = vec![
-        39,
-        42,
-        9,
-        0,
-        3,
-        1,
-        35,
-        (-4i32) as u32,
-        4,
-        0,
-        35,
-        (-1000i32) as u32,
-        35,
-        1000,
-        4,
-        0,
-        33,
-        40,
-        40,
-    ];
+    let load = vec![39, 42, 9, 0, 3, 1, 35, (-4i32) as u32, 4, 0, 35, (-1000i32) as u32, 35, 1000, 4, 0, 33, 40, 40];
     for (kind, s) in &cases {
         let r = run_rust(*kind, s, &[]);
         let c = run_cpp(*kind, s, &[], "fixed");
@@ -816,11 +642,7 @@ fn xfer_fixed_edge_cases_match() {
     assert!(r.0.contains(&(XferStatus::ListNotEmpty as u32)));
     assert!(r.0.contains(&(XferStatus::InvalidVersion as u32)));
     assert!(r.0.contains(&(XferStatus::SkipError as u32)));
-    println!(
-        "DIFF {:<44} cases {}  mismatches 0",
-        "Xfer fixed edge cases",
-        cases.len() + 1
-    );
+    println!("DIFF {:<44} cases {}  mismatches 0", "Xfer fixed edge cases", cases.len() + 1);
 }
 
 /// PROPOSED NaN guard (release builds): a guarded Rust `XferCRC` /
@@ -844,10 +666,7 @@ fn nan_guard_equals_upstream_on_canonicalised_nans() {
             let lg = match kind {
                 CRC => {
                     let mut x = XferCrc::new();
-                    (
-                        run_with(&mut x, &s, |x| x.get_crc(), |_| 0, false),
-                        Vec::new(),
-                    )
+                    (run_with(&mut x, &s, |x| x.get_crc(), |_| 0, false), Vec::new())
                 }
                 _ => {
                     let mut x = XferDeepCrc::new();
@@ -857,22 +676,12 @@ fn nan_guard_equals_upstream_on_canonicalised_nans() {
             };
             let c = run_cpp(kind, &sc, &[], "nan-guard");
             let crc_at = |l: &Vec<u32>| l[l.len() - 2];
-            assert_eq!(
-                crc_at(&lg.0),
-                crc_at(&c.0),
-                "kind {kind} script {k}: guarded CRC differs"
-            );
-            assert_eq!(
-                lg.1, c.1,
-                "kind {kind} script {k}: guarded deep-CRC file differs"
-            );
+            assert_eq!(crc_at(&lg.0), crc_at(&c.0), "kind {kind} script {k}: guarded CRC differs");
+            assert_eq!(lg.1, c.1, "kind {kind} script {k}: guarded deep-CRC file differs");
         }
     }
     assert!(nan_scripts > 100, "too few scripts contained a NaN");
-    println!(
-        "DIFF {:<44} scripts 1000 ({nan_scripts} with NaNs)  mismatches 0",
-        "XferCRC NaN guard vs canonicalised C++"
-    );
+    println!("DIFF {:<44} scripts 1000 ({nan_scripts} with NaNs)  mismatches 0", "XferCRC NaN guard vs canonicalised C++");
 }
 
 /// PROPOSED NaN guard (debug builds): a NaN into a guarded CRC panics.

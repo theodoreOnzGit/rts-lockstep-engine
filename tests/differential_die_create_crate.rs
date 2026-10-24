@@ -103,12 +103,7 @@ const CLASS: &str = "CreateCrateDie";
 const NO_PLAYER: u32 = 0xFFFF_FFFF;
 
 /// The killer's kinds (and the templates' `KilledByType`), by bit (the driver's `g_r14cKinds`), with their INI names.
-const KINDS: [(KindOfType, &str); 4] = [
-    (KINDOF_VEHICLE, "VEHICLE"),
-    (KINDOF_INFANTRY, "INFANTRY"),
-    (KINDOF_AIRCRAFT, "AIRCRAFT"),
-    (KINDOF_STRUCTURE, "STRUCTURE"),
-];
+const KINDS: [(KindOfType, &str); 4] = [(KINDOF_VEHICLE, "VEHICLE"), (KINDOF_INFANTRY, "INFANTRY"), (KINDOF_AIRCRAFT, "AIRCRAFT"), (KINDOF_STRUCTURE, "STRUCTURE")];
 /// The crates a template may make (the driver's `kCrateNames`).
 const CRATES: [&str; 3] = ["U1", "U2", "Missing"];
 
@@ -144,17 +139,12 @@ fn status_from(w: &[u32]) -> ObjectStatusMaskType {
 }
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::CreateCrateDie(Arc::new(
-        CreateCrateDieModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::CreateCrateDie(Arc::new(CreateCrateDieModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -162,9 +152,7 @@ fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>
 
 /// The data dump of `ref_l9r14c_run`: the die mux, then the crate names.
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind) {
-    let ModuleDataKind::CreateCrateDie(d) = data else {
-        unreachable!("not a CreateCrateDie")
-    };
+    let ModuleDataKind::CreateCrateDie(d) = data else { unreachable!("not a CreateCrateDie") };
     put_die_mux(v, &d.die.die_mux_data);
     put_u32(v, d.crate_name_list.len() as u32);
     for n in &d.crate_name_list {
@@ -207,17 +195,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let bytes: Vec<u32> = (0..blen).map(|_| u32_(&mut p)).collect();
         let crc = u32_(&mut p);
         let n_made = u32_(&mut p);
-        let made: Vec<[u32; 5]> = (0..n_made)
-            .map(|_| {
-                [
-                    u32_(&mut p),
-                    u32_(&mut p),
-                    u32_(&mut p),
-                    u32_(&mut p),
-                    u32_(&mut p),
-                ]
-            })
-            .collect();
+        let made: Vec<[u32; 5]> = (0..n_made).map(|_| [u32_(&mut p), u32_(&mut p), u32_(&mut p), u32_(&mut p), u32_(&mut p)]).collect();
         out.push(format!("op {i}: status {st} log {log:?} xfer {xst} bytes {bytes:?} crc {crc:#x} made {made:x?}"));
     }
     out
@@ -226,26 +204,8 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 // -- generators --
 
 const DEATH_NAMES: [&str; 20] = [
-    "NONE",
-    "CRUSHED",
-    "BURNED",
-    "EXPLODED",
-    "POISONED",
-    "TOPPLED",
-    "FLOODED",
-    "SUICIDED",
-    "LASERED",
-    "DETONATED",
-    "SPLATTED",
-    "POISONED_BETA",
-    "EXTRA_2",
-    "EXTRA_3",
-    "EXTRA_4",
-    "EXTRA_5",
-    "EXTRA_6",
-    "EXTRA_7",
-    "EXTRA_8",
-    "POISONED_GAMMA",
+    "NONE", "CRUSHED", "BURNED", "EXPLODED", "POISONED", "TOPPLED", "FLOODED", "SUICIDED", "LASERED", "DETONATED", "SPLATTED", "POISONED_BETA",
+    "EXTRA_2", "EXTRA_3", "EXTRA_4", "EXTRA_5", "EXTRA_6", "EXTRA_7", "EXTRA_8", "POISONED_GAMMA",
 ];
 
 fn death_tokens(g: &mut Gen) -> String {
@@ -311,10 +271,7 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
         lines.push(format!("RequiredStatus = {}", status_tokens(g)));
     }
     for _ in 0..g.below(5) {
-        lines.push(format!(
-            "CrateData = {}",
-            pick(g, &["C0", "C1", "C2", "C3", "C0", "C1", "Unknown"])
-        ));
+        lines.push(format!("CrateData = {}", pick(g, &["C0", "C1", "C2", "C3", "C0", "C1", "Unknown"])));
     }
     if !clean {
         lines.push(match g.below(3) {
@@ -342,41 +299,24 @@ fn gen_crates(g: &mut Gen) -> Vec<u8> {
     let count = *pick(g, &[&0usize, &1, &2, &2, &3, &4]);
     for n in names.into_iter().take(count) {
         s.push_str(&format!("CrateData C{n}\n"));
-        s.push_str(&format!(
-            "  CreationChance = {}\n",
-            pick(g, &["1.0", "1.0", "0.5", "0.75", "0.1", "0"])
-        ));
+        s.push_str(&format!("  CreationChance = {}\n", pick(g, &["1.0", "1.0", "0.5", "0.75", "0.1", "0"])));
         if g.below(4) == 0 {
-            s.push_str(&format!(
-                "  VeterancyLevel = {}\n",
-                pick(g, &["REGULAR", "VETERAN", "ELITE", "HEROIC"])
-            ));
+            s.push_str(&format!("  VeterancyLevel = {}\n", pick(g, &["REGULAR", "VETERAN", "ELITE", "HEROIC"])));
         }
         if g.below(4) == 0 {
-            let k: Vec<&str> = KINDS
-                .iter()
-                .filter(|_| g.below(3) == 0)
-                .map(|k| k.1)
-                .collect();
+            let k: Vec<&str> = KINDS.iter().filter(|_| g.below(3) == 0).map(|k| k.1).collect();
             if !k.is_empty() {
                 s.push_str(&format!("  KilledByType = {}\n", k.join(" ")));
             }
         }
         if g.below(4) == 0 {
-            s.push_str(&format!(
-                "  KillerScience = {}\n",
-                SCIENCES[g.below(5) as usize]
-            ));
+            s.push_str(&format!("  KillerScience = {}\n", SCIENCES[g.below(5) as usize]));
         }
         if g.below(3) == 0 {
             s.push_str("  OwnedByMaker = Yes\n");
         }
         for _ in 0..g.below(4) {
-            s.push_str(&format!(
-                "  CrateObject = {} {}\n",
-                pick(g, &["U1", "U1", "U2", "Missing"]),
-                pick(g, &["1.0", "0.5", "0.25", "0.6"])
-            ));
+            s.push_str(&format!("  CrateObject = {} {}\n", pick(g, &["U1", "U1", "U2", "Missing"]), pick(g, &["1.0", "0.5", "0.25", "0.6"])));
         }
         s.push_str("End\n");
     }
@@ -402,28 +342,10 @@ fn crate_block(ini: &mut Ini<'_>, c: &mut CrateCtx) -> IniResult<()> {
 }
 
 /// The crate system read from `text`, and the driver's 14 words of each template (its values as the Rust read them).
-fn read_crates(
-    names: NameKeyGenerator,
-    sciences: &[rts_lockstep_engine::common::name_key_generator::NameKeyType],
-    text: &[u8],
-) -> (CrateSystem, NameKeyGenerator, Vec<u32>) {
-    static BLOCKS: [BlockParse<CrateCtx>; 1] = [BlockParse {
-        token: "CrateData",
-        parse: crate_block,
-    }];
-    let mut c = CrateCtx {
-        crates: CrateSystem::new(),
-        names,
-    };
-    Ini::load(
-        b"Data\\INI\\Crate.ini",
-        text,
-        IniLoadType::Overwrite,
-        None,
-        &BLOCKS,
-        &mut c,
-    )
-    .expect("crates load");
+fn read_crates(names: NameKeyGenerator, sciences: &[rts_lockstep_engine::common::name_key_generator::NameKeyType], text: &[u8]) -> (CrateSystem, NameKeyGenerator, Vec<u32>) {
+    static BLOCKS: [BlockParse<CrateCtx>; 1] = [BlockParse { token: "CrateData", parse: crate_block }];
+    let mut c = CrateCtx { crates: CrateSystem::new(), names };
+    Ini::load(b"Data\\INI\\Crate.ini", text, IniLoadType::Overwrite, None, &BLOCKS, &mut c).expect("crates load");
     let mut words = Vec::new();
     for chain in c.crates.chains() {
         let t = &chain.get_final_override().data;
@@ -432,25 +354,12 @@ fn read_crates(
         w[0] = u32::from(name[1] - b'0');
         w[1] = t.creation_chance().to_bits();
         w[2] = t.veterancy_level().map_or(4, |l| l as u32);
-        w[3] = KINDS
-            .iter()
-            .enumerate()
-            .filter(|(_, k)| t.killed_by_type_kindof().test(k.0))
-            .map(|(i, _)| 1u32 << i)
-            .sum();
-        w[4] = t.killer_science().map_or(5, |k| {
-            sciences
-                .iter()
-                .position(|s| *s == k)
-                .expect("a test science") as u32
-        });
+        w[3] = KINDS.iter().enumerate().filter(|(_, k)| t.killed_by_type_kindof().test(k.0)).map(|(i, _)| 1u32 << i).sum();
+        w[4] = t.killer_science().map_or(5, |k| sciences.iter().position(|s| *s == k).expect("a test science") as u32);
         w[5] = u32::from(t.is_owned_by_maker());
         w[6] = t.possible_crates().len() as u32;
         for (e, entry) in t.possible_crates().iter().enumerate() {
-            w[7 + 2 * e] = CRATES
-                .iter()
-                .position(|c| c.as_bytes() == entry.crate_name.as_slice())
-                .unwrap() as u32;
+            w[7 + 2 * e] = CRATES.iter().position(|c| c.as_bytes() == entry.crate_name.as_slice()).unwrap() as u32;
             w[8 + 2 * e] = entry.crate_chance.to_bits();
         }
         words.extend_from_slice(&w);
@@ -458,13 +367,7 @@ fn read_crates(
     (c.crates, c.names, words)
 }
 
-fn run_xfer(
-    w: &mut World,
-    me: ObjectId,
-    idx: usize,
-    how: u32,
-    saved: &[u8],
-) -> (i32, Vec<u8>, u32) {
+fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -523,11 +426,7 @@ fn set_kinds(w: &mut World, id: ObjectId, bits: u32) {
             values.kind_of.push(*k);
         }
     }
-    w.objects
-        .find_mut(id)
-        .unwrap()
-        .thing
-        .friend_set_template(Arc::new(ThingTemplate::from_object_values(&values)));
+    w.objects.find_mut(id).unwrap().thing.friend_set_template(Arc::new(ThingTemplate::from_object_values(&values)));
 }
 
 /// The flags (bit 0 the killer has an AI, 1 the crates made have a drawable, 2-3 the relationship, 4-6 the computers, 8 a position is found),
@@ -542,48 +441,26 @@ fn apply_flags(w: &mut World, flags: u32, ai: Option<u16>, find: Coord3D) {
     };
     w.cuts.team_relationships.insert((2, 1), rel);
     for p in 0..3u32 {
-        w.players.get_nth_mut(p as i32).unwrap().player_type = if flags >> (4 + p) & 1 != 0 {
-            PlayerType::Computer
-        } else {
-            PlayerType::Human
-        };
+        w.players.get_nth_mut(p as i32).unwrap().player_type = if flags >> (4 + p) & 1 != 0 { PlayerType::Computer } else { PlayerType::Human };
     }
     w.cuts.contain.find_position = (flags & 256 != 0).then_some(find);
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(
-    ctx: &Ctx,
-    data: ModuleDataKind,
-    crate_text: &[u8],
-    cfg: &[u32; 12],
-    ops: &[[u32; 6]],
-    tally: &mut Tally,
-) -> (Vec<u8>, World) {
+fn rust_run(ctx: &Ctx, data: ModuleDataKind, crate_text: &[u8], cfg: &[u32; 12], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     put_data(&mut v, &data);
     let (crates, names, _) = read_crates(ctx.names.clone(), &ctx.sciences, crate_text);
     let mut factory = ThingFactory::new();
     let mut template_names: BTreeMap<u16, String> = BTreeMap::new();
     for name in ["U1", "U2"] {
-        factory
-            .new_template(name.as_bytes(), 0)
-            .expect("a template");
-        let id = factory
-            .find_template(name.as_bytes())
-            .expect("the new template")
-            .data
-            .get_template_id();
+        factory.new_template(name.as_bytes(), 0).expect("a template");
+        let id = factory.find_template(name.as_bytes()).expect("the new template").data.get_template_id();
         template_names.insert(id, name.to_string());
     }
     let mut w = World::new();
     w.names = names;
-    w.statics = Arc::new(GameStatics {
-        upgrade_center: ctx.center.clone(),
-        thing_factory: factory,
-        crate_system: crates,
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), thing_factory: factory, crate_system: crates, ..Default::default() });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.crate_stub_object_calls = true;
@@ -595,67 +472,26 @@ fn rust_run(
     for p in 0..3u32 {
         let pl = w.players.get_nth_mut(p as i32).unwrap();
         pl.default_team = Some(11 + p);
-        pl.sciences = (0..5)
-            .filter(|s| cfg[4 + p as usize] >> s & 1 != 0)
-            .map(|s| ScienceType(ctx.sciences[s].0 as i32))
-            .collect();
+        pl.sciences = (0..5).filter(|s| cfg[4 + p as usize] >> s & 1 != 0).map(|s| ScienceType(ctx.sciences[s].0 as i32)).collect();
         set_player_of_team(&mut w, 11 + p, Some(p));
     }
     set_player_of_team(&mut w, 1, (cfg[0] != NO_PLAYER).then_some(cfg[0]));
     set_player_of_team(&mut w, 2, (cfg[1] != NO_PLAYER).then_some(cfg[1]));
-    let plain = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        CLASS.as_bytes(),
-        b"ModuleTag_Die",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
-    let me = w
-        .new_object(NewObject {
-            template: plain.clone(),
-            status: ObjectStatusMaskType::default(),
-            team: Some(1),
-            modules: vec![m],
-        })
-        .unwrap();
+    let plain = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), CLASS.as_bytes(), b"ModuleTag_Die", &data).unwrap().unwrap();
+    let me = w.new_object(NewObject { template: plain.clone(), status: ObjectStatusMaskType::default(), team: Some(1), modules: vec![m] }).unwrap();
     assert_eq!(me, 1);
     let mut ai = NewModule::plain(b"CtProbe", b"ModuleTag_AI");
     ai.is_ai = true;
-    ai.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-        ProbeAnswers::default(),
-        0.0,
-        Default::default(),
-    )));
-    let killer = w
-        .new_object(NewObject {
-            template: plain.clone(),
-            status: ObjectStatusMaskType::default(),
-            team: Some(2),
-            modules: vec![ai],
-        })
-        .unwrap();
+    ai.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
+    let killer = w.new_object(NewObject { template: plain.clone(), status: ObjectStatusMaskType::default(), team: Some(2), modules: vec![ai] }).unwrap();
     assert_eq!(killer, 2);
     let killer_ai = w.objects.find(killer).unwrap().ai;
     set_kinds(&mut w, killer, cfg[2]);
-    w.set_position(
-        me,
-        &Coord3D {
-            x: f32::from_bits(cfg[8]),
-            y: f32::from_bits(cfg[9]),
-            z: f32::from_bits(cfg[10]),
-        },
-    );
+    w.set_position(me, &Coord3D { x: f32::from_bits(cfg[8]), y: f32::from_bits(cfg[9]), z: f32::from_bits(cfg[10]) });
     w.objects.find_mut(me).unwrap().layer = cfg[11] as i32;
     let mut flags = cfg[3];
-    let mut find = Coord3D {
-        x: 7.5,
-        y: -3.25,
-        z: 0.0,
-    };
+    let mut find = Coord3D { x: 7.5, y: -3.25, z: 0.0 };
     let idx = w.find_module(me, CLASS.as_bytes()).unwrap();
     let first_made = w.next_object_id();
     let mut saved: Vec<u8> = Vec::new();
@@ -666,11 +502,7 @@ fn rust_run(
             3 => set_kinds(&mut w, killer, o[1]),
             4 => {
                 flags = (flags & !256) | (o[1] & 1) << 8;
-                find = Coord3D {
-                    x: f32::from_bits(o[2]),
-                    y: f32::from_bits(o[3]),
-                    z: 0.0,
-                };
+                find = Coord3D { x: f32::from_bits(o[2]), y: f32::from_bits(o[3]), z: 0.0 };
             }
             5 => w.objects.find_mut(me).unwrap().layer = o[1] as i32,
             _ => {}
@@ -707,9 +539,7 @@ fn rust_run(
             }
             _ => unreachable!(),
         }
-        let threw = w.cuts.module_errors[errors_before..]
-            .iter()
-            .any(|(_, e)| !e.is_undefined());
+        let threw = w.cuts.module_errors[errors_before..].iter().any(|(_, e)| !e.is_undefined());
         put_i32(&mut v, if threw { 2 } else { 0 });
         // every client event has its `evt` line, so the lines and the events are paired before choosing
         let events: Vec<Option<ObjectClientEvent>> = w.events.events()[events_before..]
@@ -727,19 +557,10 @@ fn rust_run(
             if t.starts_with("cut ") {
                 match cut_iter.next().expect("a cut line has a cut call") {
                     CutCall::ThingFactoryNewObject { template, team } => {
-                        log.push(format!(
-                            "newobject {} {}",
-                            template_names[template],
-                            team.map_or(-1, |t| t as i32)
-                        ));
+                        log.push(format!("newobject {} {}", template_names[template], team.map_or(-1, |t| t as i32)));
                         tally.made += 1;
                     }
-                    CutCall::Contain(ContainCall::PartitionFindPositionAround {
-                        position: p,
-                        min_radius,
-                        max_radius,
-                        flags,
-                    }) => log.push(format!(
+                    CutCall::Contain(ContainCall::PartitionFindPositionAround { position: p, min_radius, max_radius, flags }) => log.push(format!(
                         "findpos {:08x} {:08x} {:08x} {:08x} {:08x} {flags}",
                         p.x.to_bits(),
                         p.y.to_bits(),
@@ -747,37 +568,20 @@ fn rust_run(
                         min_radius.to_bits(),
                         max_radius.to_bits()
                     )),
-                    CutCall::ObjectSetOrientation { object, angle } => {
-                        log.push(format!("setorient {object} {:08x}", angle.to_bits()))
-                    }
-                    CutCall::ObjectSetLayer { object, layer } => {
-                        log.push(format!("setlayer {object} {layer}"))
-                    }
-                    CutCall::ObjectSetTeam { object, team } => log.push(format!(
-                        "setteam {object} {}",
-                        team.map_or(-1, |t| t as i32)
-                    )),
+                    CutCall::ObjectSetOrientation { object, angle } => log.push(format!("setorient {object} {:08x}", angle.to_bits())),
+                    CutCall::ObjectSetLayer { object, layer } => log.push(format!("setlayer {object} {layer}")),
+                    CutCall::ObjectSetTeam { object, team } => log.push(format!("setteam {object} {}", team.map_or(-1, |t| t as i32))),
                     _ => {}
                 }
             } else if let Some(r) = t.strip_prefix("bt ") {
                 log.push(r.to_string());
             } else if t.starts_with("evt ") {
                 match event_iter.next().flatten() {
-                    Some(ObjectClientEvent::DrawableSetTerrainDecal { decal, .. }) => {
-                        log.push(format!("decal {decal}"))
+                    Some(ObjectClientEvent::DrawableSetTerrainDecal { decal, .. }) => log.push(format!("decal {decal}")),
+                    Some(ObjectClientEvent::DrawableSetTerrainDecalSize { x, y, .. }) => log.push(format!("decalsize {:08x} {:08x}", x.to_bits(), y.to_bits())),
+                    Some(ObjectClientEvent::DrawableTerrainDecalFadeTarget { target, rate, .. }) => {
+                        log.push(format!("decalfade {:08x} {:08x}", target.to_bits(), rate.to_bits()))
                     }
-                    Some(ObjectClientEvent::DrawableSetTerrainDecalSize { x, y, .. }) => {
-                        log.push(format!("decalsize {:08x} {:08x}", x.to_bits(), y.to_bits()))
-                    }
-                    Some(ObjectClientEvent::DrawableTerrainDecalFadeTarget {
-                        target,
-                        rate,
-                        ..
-                    }) => log.push(format!(
-                        "decalfade {:08x} {:08x}",
-                        target.to_bits(),
-                        rate.to_bits()
-                    )),
                     _ => {}
                 }
             }
@@ -793,9 +597,7 @@ fn rust_run(
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let made: Vec<ObjectId> = (first_made..w.next_object_id())
-            .filter(|id| w.objects.find(*id).is_some())
-            .collect();
+        let made: Vec<ObjectId> = (first_made..w.next_object_id()).filter(|id| w.objects.find(*id).is_some()).collect();
         put_u32(&mut v, made.len() as u32);
         for id in made {
             let o = w.objects.find(id).unwrap();
@@ -811,10 +613,7 @@ fn rust_run(
 }
 
 fn cases() -> usize {
-    std::env::var("L9R14C_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9R14C_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 #[test]
@@ -879,11 +678,7 @@ fn create_crate_die_matches_upstream() {
                     // not DEATH_NORMAL nor LEVEL_REGULAR (see the module docs)
                     let death = 1 + g.below(11);
                     let level = 1 + g.below(3);
-                    let st = if g.below(4) == 0 {
-                        g.u32() & g.u32()
-                    } else {
-                        0
-                    };
+                    let st = if g.below(4) == 0 { g.u32() & g.u32() } else { 0 };
                     // mostly the killer as the source, now and then nobody or one not found
                     let src = *pick(&mut g, &[&2u32, &2, &2, &0, &9]);
                     [0, death, level, st, 0, src]
@@ -891,14 +686,7 @@ fn create_crate_die_matches_upstream() {
                 11..=12 => [1, gen_flags(&mut g), 0, 0, 0, 0],
                 13 => [2, g.below(4), 0, 0, 0, 0],
                 14 => [3, g.u32() & 15, 0, 0, 0, 0],
-                15..=16 => [
-                    4,
-                    g.below(4).min(1),
-                    pick(&mut g, &coords).to_bits(),
-                    pick(&mut g, &coords).to_bits(),
-                    0,
-                    0,
-                ],
+                15..=16 => [4, g.below(4).min(1), pick(&mut g, &coords).to_bits(), pick(&mut g, &coords).to_bits(), 0, 0],
                 17 => [5, *pick(&mut g, &[&1u32, &1, &0, &2]), 0, 0, 0, 0],
                 18..=19 => [7, 0, 0, 0, 0, 0],
                 20..=21 => [8, 0, 0, 0, 0, 0],
@@ -908,14 +696,7 @@ fn create_crate_die_matches_upstream() {
 
         // Rust first: a case that reaches upstream undefined behaviour is counted and never sent to the C++
         let rust = if outcome.status == 0 {
-            let (rd, w) = rust_run(
-                &ctx,
-                data.expect("read ok"),
-                &crate_text,
-                &cfg,
-                &ops,
-                &mut tally,
-            );
+            let (rd, w) = rust_run(&ctx, data.expect("read ok"), &crate_text, &cfg, &ops, &mut tally);
             if w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined()) {
                 excluded += 1;
                 continue;
@@ -956,50 +737,21 @@ fn create_crate_die_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!(
-                "case {case}: cfg {cfg:x?}, file {:?}, crates {:?}, ops {ops:?}",
-                show(&text),
-                show(&crate_text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case}: cfg {cfg:x?}, file {:?}, crates {:?}, ops {ops:?}", show(&text), show(&crate_text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
         };
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         for l in &dr {
-            for key in [
-                "findpos",
-                "newobject",
-                "setorient",
-                "setlayer",
-                "decal ",
-                "decalsize",
-                "decalfade",
-                "setteam",
-                "notifycrate",
-            ] {
-                *counts.entry(key.trim().to_string()).or_default() +=
-                    l.matches(&format!("\"{key}")).count() as u64;
+            for key in ["findpos", "newobject", "setorient", "setlayer", "decal ", "decalsize", "decalfade", "setteam", "notifycrate"] {
+                *counts.entry(key.trim().to_string()).or_default() += l.matches(&format!("\"{key}")).count() as u64;
             }
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
             eprintln!("--- case {case} cfg {cfg:x?} file {:?} crates {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), show(&crate_text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
@@ -1019,8 +771,5 @@ fn create_crate_die_matches_upstream() {
     }
     read.finish();
     run.finish();
-    assert!(
-        tally.made * 10 > cases as u64,
-        "the generator must reach the crates"
-    );
+    assert!(tally.made * 10 > cases as u64, "the generator must reach the crates");
 }

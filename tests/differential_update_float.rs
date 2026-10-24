@@ -83,26 +83,19 @@ const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9flr_o.bin"
 const XFER_FILE: &str = "l9flr_o.bin";
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::FloatUpdate(Arc::new(
-        FloatUpdateModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::FloatUpdate(Arc::new(FloatUpdateModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
 }
 
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind) {
-    let ModuleDataKind::FloatUpdate(d) = data else {
-        unreachable!("not a FloatUpdate")
-    };
+    let ModuleDataKind::FloatUpdate(d) = data else { unreachable!("not a FloatUpdate") };
     put_u32(v, u32::from(d.enabled));
 }
 
@@ -123,9 +116,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let log: Vec<String> = (0..nlog).map(|_| r.str()).collect();
         let x = r.xfer();
         let state: Vec<u32> = (0..4).map(|_| r.u32()).collect();
-        out.push(format!(
-            "op {i}: status {st} sleep {sleep} log {log:?} {x} state {state:x?}"
-        ));
+        out.push(format!("op {i}: status {st} sleep {sleep} log {log:?} {x} state {state:x?}"));
     }
     out
 }
@@ -162,42 +153,18 @@ fn gen_z(g: &mut Gen) -> f32 {
     *pick(g, &[&-5.0f32, &0.0, &1.0, &5.0, &10.0])
 }
 
-fn gen_case(
-    g: &mut Gen,
-    _data: &Option<ModuleDataKind>,
-    _n_up: usize,
-    _upgrades: &[String],
-) -> (Vec<u32>, Vec<[u32; 5]>) {
+fn gen_case(g: &mut Gen, _data: &Option<ModuleDataKind>, _n_up: usize, _upgrades: &[String]) -> (Vec<u32>, Vec<[u32; 5]>) {
     // [the frame, x, y, z, the drawable]
-    let cfg = vec![
-        g.below(2000),
-        bits(gen_xy(g)),
-        bits(gen_xy(g)),
-        bits(gen_z(g)),
-        u32::from(g.below(100) < 80),
-    ];
+    let cfg = vec![g.below(2000), bits(gen_xy(g)), bits(gen_xy(g)), bits(gen_z(g)), u32::from(g.below(100) < 80)];
     let n_ops = 1 + g.below(40) as usize;
     // most cases begin with water in every cell, so that an enabled update has a surface to follow
-    let prefix: Vec<[u32; 5]> = if g.below(100) < 80 {
-        (0..8)
-            .map(|i| [3, i, 1, bits(*pick(g, &[&-2.0f32, &0.0, &1.5, &7.0])), 0])
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let ops: Vec<[u32; 5]> = prefix
-        .into_iter()
-        .chain((0..n_ops).map(|_| match g.below(100) {
+    let prefix: Vec<[u32; 5]> = if g.below(100) < 80 { (0..8).map(|i| [3, i, 1, bits(*pick(g, &[&-2.0f32, &0.0, &1.5, &7.0])), 0]).collect() } else { Vec::new() };
+    let ops: Vec<[u32; 5]> = prefix.into_iter().chain((0..n_ops)
+        .map(|_| match g.below(100) {
             0..=39 => [0, 0, 0, 0, 0],
             40..=49 => [1, bits(gen_xy(g)), bits(gen_xy(g)), bits(gen_z(g)), 0],
             50..=56 => [2, g.below(5000), 0, 0, 0],
-            57..=72 => [
-                3,
-                g.below(8),
-                u32::from(g.below(100) < 93),
-                bits(*pick(g, &[&-2.0f32, &0.0, &1.5, &7.0, &-0.0])),
-                0,
-            ],
+            57..=72 => [3, g.below(8), u32::from(g.below(100) < 93), bits(*pick(g, &[&-2.0f32, &0.0, &1.5, &7.0, &-0.0])), 0],
             73..=80 => [4, g.below(2), 0, 0, 0],
             81..=85 => [5, g.below(2), 0, 0, 0],
             86..=91 => [6, 0, 0, 0, 0],
@@ -217,62 +184,24 @@ struct Tally {
     bobs: u64,
 }
 
-fn rust_run(
-    ctx: Ctx,
-    data: ModuleDataKind,
-    cfg: &[u32],
-    ops: &[[u32; 5]],
-    tally: &RefCell<Tally>,
-) -> RunOut {
+fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally: &RefCell<Tally>) -> RunOut {
     let mut v = Vec::new();
     put_data(&mut v, &data);
 
     let mut w = World::new();
-    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics {
-        upgrade_center: ctx.center,
-        special_power_store: ctx.store,
-        ..Default::default()
-    });
+    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
     w.names = ctx.names;
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.set_frame(cfg[0]);
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        b"FloatUpdate",
-        b"ModuleTag_Float",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
-    let template = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
-    let me = w
-        .new_object(NewObject {
-            template,
-            status: Default::default(),
-            team: None,
-            modules: vec![m],
-        })
-        .unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"FloatUpdate", b"ModuleTag_Float", &data).unwrap().unwrap();
+    let template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
+    let me = w.new_object(NewObject { template, status: Default::default(), team: None, modules: vec![m] }).unwrap();
     assert_eq!(me, 1);
-    w.set_position(
-        me,
-        &Coord3D {
-            x: f32::from_bits(cfg[1]),
-            y: f32::from_bits(cfg[2]),
-            z: f32::from_bits(cfg[3]),
-        },
-    );
+    w.set_position(me, &Coord3D { x: f32::from_bits(cfg[1]), y: f32::from_bits(cfg[2]), z: f32::from_bits(cfg[3]) });
     w.friend_bind_to_drawable(me, if cfg[4] != 0 { 7 } else { INVALID_DRAWABLE_ID });
     let idx = w.find_module(me, b"FloatUpdate").unwrap();
-    let u = w
-        .update_handle_of_module(ModuleHandle {
-            object: me,
-            index: idx,
-        })
-        .expect("an update module");
+    let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
     let mut saved: Vec<u8> = Vec::new();
     let mut excluded = false;
     for phase in 0..=ops.len() {
@@ -285,20 +214,10 @@ fn rust_run(
             let o = &ops[phase - 1];
             match o[0] {
                 0 => {
-                    sleep = w
-                        .with_body(u, |b, w| b.update(w, u))
-                        .expect("the module is in its slot")
-                        .0;
+                    sleep = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
                     tally.borrow_mut().updates += 1;
                 }
-                1 => w.set_position(
-                    me,
-                    &Coord3D {
-                        x: f32::from_bits(o[1]),
-                        y: f32::from_bits(o[2]),
-                        z: f32::from_bits(o[3]),
-                    },
-                ),
+                1 => w.set_position(me, &Coord3D { x: f32::from_bits(o[1]), y: f32::from_bits(o[2]), z: f32::from_bits(o[3]) }),
                 2 => w.set_frame(o[1]),
                 3 => {
                     w.cuts.terrain_has_water[o[1] as usize & 7] = o[2] != 0;
@@ -328,13 +247,7 @@ fn rust_run(
             events_before = w.events.events().len();
         }
         if w.cuts.module_errors.len() > errors_before {
-            assert!(
-                w.cuts.module_errors[errors_before..]
-                    .iter()
-                    .all(|(_, e)| e.is_undefined()),
-                "{:?}",
-                w.cuts.module_errors
-            );
+            assert!(w.cuts.module_errors[errors_before..].iter().all(|(_, e)| e.is_undefined()), "{:?}", w.cuts.module_errors);
             excluded = true;
         }
         let events: Vec<ObjectClientEvent> = w.events.events()[events_before..]
@@ -351,11 +264,7 @@ fn rust_run(
         for t in trace {
             if t.starts_with("cut ") {
                 if let Some(CutCall::TerrainIsUnderwater { x, y }) = cut_iter.next() {
-                    log.push(format!(
-                        "underwater {:08x} {:08x}",
-                        x.to_bits(),
-                        y.to_bits()
-                    ));
+                    log.push(format!("underwater {:08x} {:08x}", x.to_bits(), y.to_bits()));
                 }
             } else if t.starts_with("evt ") {
                 if let Some(ObjectClientEvent::DrawableFloatTilt { frame, .. }) = ev_iter.next() {
@@ -377,16 +286,10 @@ fn rust_run(
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let state =
-            w.objects
-                .find(me)
-                .unwrap()
-                .behaviors
-                .iter()
-                .find_map(|b| match b.body.as_ref() {
-                    Some(UpdateBody::FloatUpdate(m)) => Some(m.state_words()),
-                    _ => None,
-                });
+        let state = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
+            Some(UpdateBody::FloatUpdate(m)) => Some(m.state_words()),
+            _ => None,
+        });
         for s in state.expect("the module is back in its slot") {
             put_u32(&mut v, s);
         }
@@ -398,11 +301,7 @@ fn rust_run(
         put_u32(&mut v, p.y.to_bits());
         put_u32(&mut v, p.z.to_bits());
     }
-    RunOut {
-        dump: v,
-        keys: Vec::new(),
-        excluded,
-    }
+    RunOut { dump: v, keys: Vec::new(), excluded }
 }
 
 #[test]
@@ -429,11 +328,5 @@ fn float_update_matches_upstream() {
         "update module O6: {} cases, {} data blocks threw, {} excluded (undefined upstream), {} ops, {} updates, {} xfers, {} effect lines, {} bobs, {} op results with z moved",
         c.cases, c.read_failed, c.excluded, c.ops_run, t.updates, t.xfers, t.effects, t.bobs, t.moves
     );
-    assert!(
-        c.read_failed * 40 > c.cases as u64
-            && c.ops_run * 5 > c.cases as u64 * 4
-            && t.bobs * 4 > c.cases as u64
-            && t.moves * 10 > c.cases as u64,
-        "the generator must reach every path"
-    );
+    assert!(c.read_failed * 40 > c.cases as u64 && c.ops_run * 5 > c.cases as u64 * 4 && t.bobs * 4 > c.cases as u64 && t.moves * 10 > c.cases as u64, "the generator must reach every path");
 }

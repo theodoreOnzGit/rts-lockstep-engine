@@ -58,9 +58,7 @@ use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::world::module_probe::{ProbeAnswers, ProbeModule};
 use rts_lockstep_engine::logic::world::object_create::{NewModule, NewObject};
-use rts_lockstep_engine::logic::world::resource_gathering_manager::{
-    ResourceError, ResourceGatheringManager,
-};
+use rts_lockstep_engine::logic::world::resource_gathering_manager::{ResourceError, ResourceGatheringManager};
 use rts_lockstep_engine::logic::world::team::Team;
 use rts_lockstep_engine::logic::world::update_body::UpdateBody;
 use rts_lockstep_engine::logic::world::World;
@@ -158,61 +156,28 @@ impl Run {
                 let mut m = NewModule::plain(b"AIUpdate", b"ModuleTag_AI");
                 m.is_ai = true;
                 m.interfaces = MODULEINTERFACE_BODY;
-                let answers = ProbeAnswers {
-                    supply_truck: fl & F_TRUCK != 0,
-                    preferred_dock: preferred,
-                    scan_distance: scan,
-                    ..Default::default()
-                };
-                m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-                    answers,
-                    1.0,
-                    Default::default(),
-                )));
+                let answers = ProbeAnswers { supply_truck: fl & F_TRUCK != 0, preferred_dock: preferred, scan_distance: scan, ..Default::default() };
+                m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(answers, 1.0, Default::default())));
                 ai[n] = Some(modules.len() as u16);
                 modules.push(m);
             }
             if fl & F_DOCK != 0 {
                 let mut m = NewModule::plain(b"DockProbe", b"ModuleTag_Dock");
-                let answers = ProbeAnswers {
-                    has: 1 << 2,
-                    clear_to_approach: fl & F_CLEAR != 0,
-                    ..Default::default()
-                };
-                m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-                    answers,
-                    1.0,
-                    Default::default(),
-                )));
+                let answers = ProbeAnswers { has: 1 << 2, clear_to_approach: fl & F_CLEAR != 0, ..Default::default() };
+                m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(answers, 1.0, Default::default())));
                 dock[n] = Some(modules.len() as u16);
                 modules.push(m);
             }
             if fl & F_WAREHOUSE_MODULE != 0 {
-                modules.push(NewModule::plain(
-                    b"SupplyWarehouseDockUpdate",
-                    b"ModuleTag_Warehouse",
-                ));
+                modules.push(NewModule::plain(b"SupplyWarehouseDockUpdate", b"ModuleTag_Warehouse"));
             }
             if fl & F_CENTER_MODULE != 0 {
-                modules.push(NewModule::plain(
-                    b"SupplyCenterDockUpdate",
-                    b"ModuleTag_Center",
-                ));
+                modules.push(NewModule::plain(b"SupplyCenterDockUpdate", b"ModuleTag_Center"));
             }
             let tt = Arc::new(ThingTemplate::new(0));
-            let id = w
-                .new_object(NewObject {
-                    template: tt,
-                    status: Default::default(),
-                    team: None,
-                    modules,
-                })
-                .expect("object");
+            let id = w.new_object(NewObject { template: tt, status: Default::default(), team: None, modules }).expect("object");
             assert_eq!(id, n as i32);
-            w.set_position(
-                id,
-                &rts_lockstep_engine::common::base_type::Coord3D { x, y, z },
-            );
+            w.set_position(id, &rts_lockstep_engine::common::base_type::Coord3D { x, y, z });
         }
         for q in 1..=8i32 {
             let row = r.u();
@@ -227,13 +192,7 @@ impl Run {
                 let _ = w.objects.remove(n as i32);
             }
         }
-        let mut run = Run {
-            w,
-            m: ResourceGatheringManager::new(),
-            lines: Vec::new(),
-            ai,
-            dock,
-        };
+        let mut run = Run { w, m: ResourceGatheringManager::new(), lines: Vec::new(), ai, dock };
         run.fix_indices();
         run.w.cuts.trace.as_mut().unwrap().clear();
         run.state("M");
@@ -263,11 +222,7 @@ impl Run {
     }
 
     fn state(&mut self, name: &str) {
-        let s = format!(
-            "state {name} warehouses[{}] centers[{}]",
-            ids(self.m.supply_warehouses()),
-            ids(self.m.supply_centers())
-        );
+        let s = format!("state {name} warehouses[{}] centers[{}]", ids(self.m.supply_warehouses()), ids(self.m.supply_centers()));
         self.line(s);
     }
 
@@ -319,9 +274,7 @@ impl Run {
                 5 => {
                     let id = r.i();
                     self.line("op findWarehouse".into());
-                    let res = self
-                        .m
-                        .find_best_supply_warehouse(&mut self.w, (id != 0).then_some(id));
+                    let res = self.m.find_best_supply_warehouse(&mut self.w, (id != 0).then_some(id));
                     self.flush_log();
                     let got = res.expect("an undefined input reached the comparison");
                     self.line(format!("ret {}", got.unwrap_or(0)));
@@ -329,9 +282,7 @@ impl Run {
                 6 => {
                     let id = r.i();
                     self.line("op findCenter".into());
-                    let res = self
-                        .m
-                        .find_best_supply_center(&mut self.w, (id != 0).then_some(id));
+                    let res = self.m.find_best_supply_center(&mut self.w, (id != 0).then_some(id));
                     self.flush_log();
                     let got = res.expect("an undefined input reached the comparison");
                     self.line(format!("ret {}", got.unwrap_or(0)));
@@ -399,11 +350,7 @@ impl Run {
                         let _ = x.close();
                     }
                     let bytes = x.take_bytes();
-                    self.line(format!(
-                        "ret save {st} len {} hash {:08x}",
-                        bytes.len(),
-                        fnv_hex(&bytes)
-                    ));
+                    self.line(format!("ret save {st} len {} hash {:08x}", bytes.len(), fnv_hex(&bytes)));
                     let mut fresh = ResourceGatheringManager::new();
                     let mut lx = XferLoad::new(bytes);
                     let mut lst = 0;
@@ -417,11 +364,7 @@ impl Run {
                         let _ = lx.close();
                     }
                     self.line(format!("ret load {lst}"));
-                    let s = format!(
-                        "state loaded warehouses[{}] centers[{}]",
-                        ids(fresh.supply_warehouses()),
-                        ids(fresh.supply_centers())
-                    );
+                    let s = format!("state loaded warehouses[{}] centers[{}]", ids(fresh.supply_warehouses()), ids(fresh.supply_centers()));
                     self.line(s);
                     fresh.load_post_process();
                 }
@@ -445,24 +388,13 @@ fn run_cpp(prog: &[u32]) -> Vec<String> {
     loop {
         let mut buf = vec![0u8; cap];
         // SAFETY: the buffer is valid for `cap` bytes, which the wrapper does not exceed; the program is valid for its length.
-        let n = unsafe {
-            cpp::ref_resource_run(
-                prog.as_ptr(),
-                prog.len() as i32,
-                buf.as_mut_ptr() as *mut _,
-                cap as i32,
-            )
-        };
+        let n = unsafe { cpp::ref_resource_run(prog.as_ptr(), prog.len() as i32, buf.as_mut_ptr() as *mut _, cap as i32) };
         if n < 0 {
             cap = (-n) as usize + 16;
             continue;
         }
         buf.truncate(n as usize);
-        return String::from_utf8(buf)
-            .expect("utf-8 lines")
-            .lines()
-            .map(str::to_string)
-            .collect();
+        return String::from_utf8(buf).expect("utf-8 lines").lines().map(str::to_string).collect();
     }
 }
 
@@ -470,11 +402,7 @@ fn first_difference(r: &[String], c: &[String]) -> Option<String> {
     for i in 0..r.len().max(c.len()) {
         let (a, b) = (r.get(i), c.get(i));
         if a != b {
-            return Some(format!(
-                "line {i}:\n  rust: {}\n  cpp:  {}",
-                a.map_or("(none)", |s| s),
-                b.map_or("(none)", |s| s)
-            ));
+            return Some(format!("line {i}:\n  rust: {}\n  cpp:  {}", a.map_or("(none)", |s| s), b.map_or("(none)", |s| s)));
         }
     }
     None
@@ -499,16 +427,8 @@ impl Model {
     /// Whether `find_*` for `q` can reach a destination that the transfer table accepts and that has no dock
     /// interface (or a vanished center): both undefined upstream.
     fn undefined_for(&self, q: i32, centers: bool) -> bool {
-        let list = if centers {
-            &self.centers
-        } else {
-            &self.warehouses
-        };
-        let mut cands: Vec<i32> = list
-            .iter()
-            .copied()
-            .filter(|d| self.exists[*d as usize])
-            .collect();
+        let list = if centers { &self.centers } else { &self.warehouses };
+        let mut cands: Vec<i32> = list.iter().copied().filter(|d| self.exists[*d as usize]).collect();
         if self.flags[q as usize] & F_TRUCK != 0 && self.flags[q as usize] & F_AI != 0 {
             let p = self.preferred[q as usize];
             if (1..=8).contains(&p) && self.exists[p as usize] {
@@ -518,9 +438,7 @@ impl Model {
         if centers && list.iter().any(|d| !self.exists[*d as usize]) {
             return true;
         }
-        cands
-            .iter()
-            .any(|d| self.transfer(q, *d) && self.flags[*d as usize] & F_DOCK == 0)
+        cands.iter().any(|d| self.transfer(q, *d) && self.flags[*d as usize] & F_DOCK == 0)
     }
 }
 
@@ -540,42 +458,18 @@ fn pick_scan(g: &mut Gen) -> f32 {
 fn gen_program(seed: u64, n_ops: usize) -> Prog {
     let mut g = Gen::new(seed);
     let mut p = Prog::default();
-    let mut m = Model {
-        exists: [false; 9],
-        flags: [0; 9],
-        preferred: [0; 9],
-        rows: [0; 9],
-        warehouses: Vec::new(),
-        centers: Vec::new(),
-    };
+    let mut m = Model { exists: [false; 9], flags: [0; 9], preferred: [0; 9], rows: [0; 9], warehouses: Vec::new(), centers: Vec::new() };
     for n in 1..=8usize {
         let exists = g.below(12) != 0;
         let mut fl = 0;
-        for (bit, odds) in [
-            (F_AI, 3),
-            (F_TRUCK, 3),
-            (F_DOCK, 4),
-            (F_WAREHOUSE_MODULE, 3),
-            (F_CENTER_MODULE, 3),
-            (F_CLEAR, 4),
-        ] {
+        for (bit, odds) in [(F_AI, 3), (F_TRUCK, 3), (F_DOCK, 4), (F_WAREHOUSE_MODULE, 3), (F_CENTER_MODULE, 3), (F_CLEAR, 4)] {
             // `odds` out of 4: a flag is more often set than not
             if g.below(4) < odds {
                 fl |= bit;
             }
         }
-        let preferred = if g.below(3) == 0 {
-            0
-        } else {
-            1 + g.below(8) as i32
-        };
-        p.u(u32::from(exists))
-            .u(fl)
-            .i(preferred)
-            .f(pick_scan(&mut g))
-            .f(pick_coord(&mut g))
-            .f(pick_coord(&mut g))
-            .f(pick_coord(&mut g));
+        let preferred = if g.below(3) == 0 { 0 } else { 1 + g.below(8) as i32 };
+        p.u(u32::from(exists)).u(fl).i(preferred).f(pick_scan(&mut g)).f(pick_coord(&mut g)).f(pick_coord(&mut g)).f(pick_coord(&mut g));
         m.exists[n] = exists;
         m.flags[n] = fl;
         m.preferred[n] = preferred;
@@ -621,11 +515,7 @@ fn gen_program(seed: u64, n_ops: usize) -> Prog {
                 if ex.is_empty() {
                     continue;
                 }
-                let q = if g.below(10) == 0 {
-                    0
-                } else {
-                    ex[g.below(ex.len() as u32) as usize]
-                };
+                let q = if g.below(10) == 0 { 0 } else { ex[g.below(ex.len() as u32) as usize] };
                 if q == 0 || !m.undefined_for(q, false) {
                     p.i(5).i(q);
                     // (the warehouses that vanished are dropped from upstream's list when met; the model needs only
@@ -637,11 +527,7 @@ fn gen_program(seed: u64, n_ops: usize) -> Prog {
                 if ex.is_empty() {
                     continue;
                 }
-                let q = if g.below(10) == 0 {
-                    0
-                } else {
-                    ex[g.below(ex.len() as u32) as usize]
-                };
+                let q = if g.below(10) == 0 { 0 } else { ex[g.below(ex.len() as u32) as usize] };
                 if q == 0 || !m.undefined_for(q, true) {
                     p.i(6).i(q);
                 }
@@ -703,10 +589,7 @@ fn gen_program(seed: u64, n_ops: usize) -> Prog {
 
 #[test]
 fn resource_gathering_manager_matches_upstream() {
-    let cases: u64 = std::env::var("RGM_CASES")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1500);
+    let cases: u64 = std::env::var("RGM_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(1500);
     let (mut lines, mut bad) = (0usize, 0);
     let mut kinds: std::collections::BTreeMap<String, usize> = Default::default();
     for case in 0..cases {
@@ -759,19 +642,13 @@ fn undefined_inputs_are_errors() {
         run.m.add_supply_center(Some(4));
         run.m.add_supply_center(Some(5));
         let _ = run.w.objects.remove(5);
-        assert_eq!(
-            run.m.find_best_supply_center(&mut run.w, Some(1)),
-            Err(ResourceError::EraseFromWrongList(5))
-        );
+        assert_eq!(run.m.find_best_supply_center(&mut run.w, Some(1)), Err(ResourceError::EraseFromWrongList(5)));
         counted += 1;
         // a warehouse that no longer exists is fine: it is dropped
         run.m.add_supply_warehouse(Some(4));
         run.m.add_supply_warehouse(Some(6));
         let _ = run.w.objects.remove(6);
-        assert_eq!(
-            run.m.find_best_supply_warehouse(&mut run.w, Some(1)),
-            Ok(Some(4))
-        );
+        assert_eq!(run.m.find_best_supply_warehouse(&mut run.w, Some(1)), Ok(Some(4)));
         assert_eq!(run.m.supply_warehouses(), &[4]);
     }
     // 2. a destination without a dock interface that the transfer table accepts
@@ -779,17 +656,10 @@ fn undefined_inputs_are_errors() {
         let mut r = Rd { w: &p.0, at: 0 };
         let mut run = Run::new(&mut r);
         run.m.add_supply_warehouse(Some(2));
-        assert_eq!(
-            run.m.find_best_supply_warehouse(&mut run.w, Some(1)),
-            Err(ResourceError::NoDockInterface(2))
-        );
+        assert_eq!(run.m.find_best_supply_warehouse(&mut run.w, Some(1)), Err(ResourceError::NoDockInterface(2)));
         counted += 1;
     }
     println!("RESULT {counted} classes of undefined input are errors in Rust (and are never sent to the C++)");
     assert_eq!(counted, 2);
-    let _ = (
-        INVALID_ID,
-        Snapshot::load_post_process as fn(&mut ResourceGatheringManager),
-        Xfer::get_xfer_mode as fn(&XferSave) -> _,
-    );
+    let _ = (INVALID_ID, Snapshot::load_post_process as fn(&mut ResourceGatheringManager), Xfer::get_xfer_mode as fn(&XferSave) -> _);
 }

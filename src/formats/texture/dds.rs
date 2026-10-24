@@ -355,9 +355,7 @@ pub fn rgb565_to_argb8888(rgb: u16) -> u32 {
 /// `ARGB8888_To_RGB565`.
 pub fn argb8888_to_rgb565(argb: u32) -> u16 {
     let b = argb.to_le_bytes();
-    ((u16::from(b[2]) & 0xf8) << 8)
-        | ((u16::from(b[1]) & 0xfc) << 3)
-        | ((u16::from(b[0]) & 0xf8) >> 3)
+    ((u16::from(b[2]) & 0xf8) << 8) | ((u16::from(b[1]) & 0xfc) << 3) | ((u16::from(b[0]) & 0xf8) >> 3)
 }
 
 /// `Combine_Colors(col1, col2, rel)`: `(col1*rel + col2*(255-rel)) >> 8` per
@@ -366,16 +364,8 @@ pub fn combine_colors(col1: u32, col2: u32, rel: u32) -> u32 {
     const R_B_MASK: u32 = 0x00ff_00ff;
     const G_MASK: u32 = 0x0000_ff00;
     let rel2 = 255u32.wrapping_sub(rel);
-    let rb = ((col1 & R_B_MASK)
-        .wrapping_mul(rel)
-        .wrapping_add((col2 & R_B_MASK).wrapping_mul(rel2))
-        >> 8)
-        & R_B_MASK;
-    let g = ((col1 & G_MASK)
-        .wrapping_mul(rel)
-        .wrapping_add((col2 & G_MASK).wrapping_mul(rel2))
-        >> 8)
-        & G_MASK;
+    let rb = ((col1 & R_B_MASK).wrapping_mul(rel).wrapping_add((col2 & R_B_MASK).wrapping_mul(rel2)) >> 8) & R_B_MASK;
+    let g = ((col1 & G_MASK).wrapping_mul(rel).wrapping_add((col2 & G_MASK).wrapping_mul(rel2)) >> 8) & G_MASK;
     rb | g
 }
 
@@ -384,9 +374,7 @@ pub fn calculate_dxtc_surface_size(width: u32, height: u32, format: Ww3dFormat) 
     let n = (width / 4).wrapping_mul(height / 4);
     match format {
         Ww3dFormat::Dxt1 => n.wrapping_mul(8),
-        Ww3dFormat::Dxt2 | Ww3dFormat::Dxt3 | Ww3dFormat::Dxt4 | Ww3dFormat::Dxt5 => {
-            n.wrapping_mul(16)
-        }
+        Ww3dFormat::Dxt2 | Ww3dFormat::Dxt3 | Ww3dFormat::Dxt4 | Ww3dFormat::Dxt5 => n.wrapping_mul(16),
         _ => n,
     }
 }
@@ -407,13 +395,8 @@ struct Dest<'d> {
 impl Dest<'_> {
     fn put(&mut self, at: u64, bytes: &[u8]) -> DdsResult<()> {
         let at = usize::try_from(at).map_err(|_| DdsUndefined::WriteOutOfRange)?;
-        let end = at
-            .checked_add(bytes.len())
-            .ok_or(DdsUndefined::WriteOutOfRange)?;
-        self.buf
-            .get_mut(at..end)
-            .ok_or(DdsUndefined::WriteOutOfRange)?
-            .copy_from_slice(bytes);
+        let end = at.checked_add(bytes.len()).ok_or(DdsUndefined::WriteOutOfRange)?;
+        self.buf.get_mut(at..end).ok_or(DdsUndefined::WriteOutOfRange)?.copy_from_slice(bytes);
         Ok(())
     }
 
@@ -458,16 +441,12 @@ impl<'a> DdsFile<'a> {
             return Ok(d);
         };
         let mut header = [0u8; 4];
-        let n = file
-            .read(&mut header, 4)
-            .map_err(|_| DdsUndefined::ReadOutOfRange)?;
+        let n = file.read(&mut header, 4).map_err(|_| DdsUndefined::ReadOutOfRange)?;
         if n == 0 {
             return Ok(d);
         }
         let mut sd = [0u8; LEGACY_DDSURFACEDESC2_SIZE];
-        let read_bytes = file
-            .read(&mut sd, LEGACY_DDSURFACEDESC2_SIZE as i32)
-            .map_err(|_| DdsUndefined::ReadOutOfRange)? as usize;
+        let read_bytes = file.read(&mut sd, LEGACY_DDSURFACEDESC2_SIZE as i32).map_err(|_| DdsUndefined::ReadOutOfRange)? as usize;
         d.surface_desc_read = read_bytes;
         d.surface_desc = LegacyDdSurfaceDesc2::from_bytes(&sd);
         if read_bytes == 0 {
@@ -530,11 +509,7 @@ impl<'a> DdsFile<'a> {
                 level_size /= level_mip_dec;
             }
         }
-        let table = LevelTable {
-            count: d.mip_levels,
-            first: level_size,
-            dec: level_mip_dec,
-        };
+        let table = LevelTable { count: d.mip_levels, first: level_size, dec: level_mip_dec };
         d.levels = Some(table);
 
         if d.dds_type == DdsType::CubeMap {
@@ -604,9 +579,7 @@ impl<'a> DdsFile<'a> {
             return Ok(false);
         };
         let sd = self.surface_desc;
-        let mut size = (file.file_size() as u32)
-            .wrapping_sub(sd.size)
-            .wrapping_sub(4);
+        let mut size = (file.file_size() as u32).wrapping_sub(sd.size).wrapping_sub(4);
         if size == 0 {
             return Ok(false);
         }
@@ -620,15 +593,10 @@ impl<'a> DdsFile<'a> {
             }
         }
         // Seek(pos) is SEEK_CUR, from 0 on the freshly opened file
-        file.seek(
-            sd.size.wrapping_add(4).wrapping_add(skipped_offset) as i32,
-            SeekFrom::Cur,
-        );
+        file.seek(sd.size.wrapping_add(4).wrapping_add(skipped_offset) as i32, SeekFrom::Cur);
         if size != 0 && size < 0x8000_0000 {
             let mut buf = vec![0u8; (size as usize).min(self.data.len())];
-            let n = file
-                .read(&mut buf, size as i32)
-                .map_err(|_| DdsUndefined::ReadOutOfRange)?;
+            let n = file.read(&mut buf, size as i32).map_err(|_| DdsUndefined::ReadOutOfRange)?;
             buf.truncate(n.max(0) as usize);
             self.memory = Some(DdsMemory { size, bytes: buf });
         }
@@ -644,19 +612,11 @@ impl<'a> DdsFile<'a> {
     }
 
     fn mem_u16(&self, off: u64) -> DdsResult<u16> {
-        Ok(u16::from_le_bytes([
-            self.mem_byte(off)?,
-            self.mem_byte(off + 1)?,
-        ]))
+        Ok(u16::from_le_bytes([self.mem_byte(off)?, self.mem_byte(off + 1)?]))
     }
 
     fn mem_u32(&self, off: u64) -> DdsResult<u32> {
-        Ok(u32::from_le_bytes([
-            self.mem_byte(off)?,
-            self.mem_byte(off + 1)?,
-            self.mem_byte(off + 2)?,
-            self.mem_byte(off + 3)?,
-        ]))
+        Ok(u32::from_le_bytes([self.mem_byte(off)?, self.mem_byte(off + 1)?, self.mem_byte(off + 2)?, self.mem_byte(off + 3)?]))
     }
 
     /// `Get_Memory_Pointer(level)`, as an offset into the payload.
@@ -669,9 +629,7 @@ impl<'a> DdsFile<'a> {
         let base = self.level_ptr(level)?;
         let blocks_per_row = self.get_width(level)? / 4;
         let a = (x / 4).wrapping_mul(block_bytes);
-        let b = (y / 4)
-            .wrapping_mul(blocks_per_row)
-            .wrapping_mul(block_bytes);
+        let b = (y / 4).wrapping_mul(blocks_per_row).wrapping_mul(block_bytes);
         Ok(base + u64::from(a) + u64::from(b))
     }
 
@@ -709,9 +667,7 @@ impl<'a> DdsFile<'a> {
                 bit_idx %= 8;
                 let mut alpha_index = 0u32;
                 for i in 0..3 {
-                    let bit = (u32::from(self.mem_byte(alpha_block + 2 + u64::from(byte_idx))?)
-                        >> bit_idx)
-                        & 1;
+                    let bit = (u32::from(self.mem_byte(alpha_block + 2 + u64::from(byte_idx))?) >> bit_idx) & 1;
                     alpha_index |= bit << i;
                     bit_idx += 1;
                     if bit_idx >= 8 {
@@ -723,8 +679,7 @@ impl<'a> DdsFile<'a> {
                 let color_block = alpha_block + 8;
                 let col0 = rgb565_to_argb8888(self.mem_u16(color_block)?);
                 let col1 = rgb565_to_argb8888(self.mem_u16(color_block + 2)?);
-                let line =
-                    (self.mem_byte(color_block + 4 + u64::from(y % 4))? >> ((x % 4) * 2)) & 3;
+                let line = (self.mem_byte(color_block + 4 + u64::from(y % 4))? >> ((x % 4) * 2)) & 3;
                 Ok(match line {
                     0 => col0 | alpha_value,
                     1 => col1 | alpha_value,
@@ -753,16 +708,7 @@ impl<'a> DdsFile<'a> {
         source_y: u32,
         hsv_shift: [f32; 3],
     ) -> DdsResult<bool> {
-        self.block_4x4(
-            &mut Dest { buf: dest },
-            at,
-            dest_pitch,
-            dest_format,
-            level,
-            source_x,
-            source_y,
-            hsv_shift,
-        )
+        self.block_4x4(&mut Dest { buf: dest }, at, dest_pitch, dest_format, level, source_x, source_y, hsv_shift)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -815,10 +761,7 @@ impl<'a> DdsFile<'a> {
             }
             Ww3dFormat::Dxt5 => {
                 let alpha_block = self.block_ptr(level, source_x, source_y, 16)?;
-                let alphas = dxt5_alphas(
-                    u32::from(self.mem_byte(alpha_block)?),
-                    u32::from(self.mem_byte(alpha_block + 1)?),
-                );
+                let alphas = dxt5_alphas(u32::from(self.mem_byte(alpha_block)?), u32::from(self.mem_byte(alpha_block + 1)?));
                 let color_block = alpha_block + 8;
                 let mut col0 = rgb565_to_argb8888(self.mem_u16(color_block)?);
                 let mut col1 = rgb565_to_argb8888(self.mem_u16(color_block + 2)?);
@@ -887,25 +830,13 @@ impl<'a> DdsFile<'a> {
             return Ok(());
         }
         let src = self.level_ptr(level)?;
-        self.copy_to_surface(
-            src,
-            level,
-            dest_format,
-            dest_width,
-            dest_height,
-            &mut Dest { buf: dest },
-            dest_pitch,
-            hsv_shift,
-        )
+        self.copy_to_surface(src, level, dest_format, dest_width, dest_height, &mut Dest { buf: dest }, dest_pitch, hsv_shift)
     }
 
     /// `Get_CubeMap_Memory_Pointer(face, level)`, as an offset into the
     /// payload: `CubeFaceSize*face + LevelOffsets[level]` in `unsigned`.
     pub fn get_cube_map_offset(&self, face: u32, level: u32) -> DdsResult<u32> {
-        Ok(self
-            .cube_face_size
-            .wrapping_mul(face)
-            .wrapping_add(self.get_level_offset(level)?))
+        Ok(self.cube_face_size.wrapping_mul(face).wrapping_add(self.get_level_offset(level)?))
     }
 
     /// `Copy_CubeMap_Level_To_Surface(face, level, ...)`: as
@@ -927,16 +858,7 @@ impl<'a> DdsFile<'a> {
             return Ok(());
         }
         let src = u64::from(self.get_cube_map_offset(face, level)?);
-        self.copy_to_surface(
-            src,
-            level,
-            dest_format,
-            dest_width,
-            dest_height,
-            &mut Dest { buf: dest },
-            dest_pitch,
-            hsv_shift,
-        )
+        self.copy_to_surface(src, level, dest_format, dest_width, dest_height, &mut Dest { buf: dest }, dest_pitch, hsv_shift)
     }
 
     /// `Copy_Volume_Level_To_Surface(...)`: copies nothing
@@ -959,10 +881,7 @@ impl<'a> DdsFile<'a> {
     ) -> DdsResult<()> {
         let has_hsv = has_hsv_shift(hsv_shift);
         let blocks = |w: u32, h: u32| u64::from(w.div_ceil(4)) * u64::from(h.div_ceil(4));
-        if dest_format == self.format
-            && dest_width == self.get_width(level)?
-            && dest_height == self.get_height(level)?
-        {
+        if dest_format == self.format && dest_width == self.get_width(level)? && dest_height == self.get_height(level)? {
             if has_hsv {
                 let n = blocks(dest_width, dest_height);
                 let mut d = 0u64;
@@ -1003,11 +922,7 @@ impl<'a> DdsFile<'a> {
                     dest.put(d, &[0xff; 8])?;
                     d += 8;
                     let cols = self.mem_u32(src)?;
-                    let cols = if has_hsv {
-                        self.recolor_block_colours(cols, hsv_shift)?
-                    } else {
-                        cols
-                    };
+                    let cols = if has_hsv { self.recolor_block_colours(cols, hsv_shift)? } else { cols };
                     src += 4;
                     dest.put(d, &cols.to_le_bytes())?;
                     d += 4;
@@ -1122,13 +1037,9 @@ mod tests {
         assert_eq!(d.load(), Ok(false));
         assert_eq!(d.get_pixel(0, 0, 0), Ok(0xfff8_fcf8)); // 565 expands without replicating bits
         assert_eq!(d.get_pixel(0, 1, 0), Ok(0xff00_0000));
-        assert_eq!(
-            d.get_pixel(0, 2, 0),
-            Ok(combine_colors(0, 0x00f8_fcf8, 85) | 0xff00_0000)
-        );
+        assert_eq!(d.get_pixel(0, 2, 0), Ok(combine_colors(0, 0x00f8_fcf8, 85) | 0xff00_0000));
         let mut out = vec![0u8; 8 * 8 * 4];
-        d.copy_level_to_surface(0, Ww3dFormat::A8R8G8B8, 8, 8, &mut out, 32, [0.0; 3])
-            .unwrap();
+        d.copy_level_to_surface(0, Ww3dFormat::A8R8G8B8, 8, 8, &mut out, 32, [0.0; 3]).unwrap();
         assert_eq!(&out[..8], &[0xf8, 0xfc, 0xf8, 0xff, 0, 0, 0, 0xff]);
         // the R3G3B2 quirk writes one byte past an exactly sized surface
         let mut small = vec![0u8; 64];
@@ -1140,11 +1051,7 @@ mod tests {
 
     #[test]
     fn level_offsets_closed_form() {
-        let t = LevelTable {
-            count: 100,
-            first: 4096,
-            dec: 4,
-        };
+        let t = LevelTable { count: 100, first: 4096, dec: 4 };
         let mut s = 4096u32;
         let mut off = 0u32;
         for l in 0..100 {

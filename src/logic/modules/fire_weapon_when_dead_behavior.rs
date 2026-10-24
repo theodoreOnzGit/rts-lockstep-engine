@@ -31,9 +31,7 @@
 use std::sync::Arc;
 
 use crate::common::game_type::INVALID_ID;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_UPGRADE};
 use crate::common::object_status_types::OBJECT_STATUS_UNDER_CONSTRUCTION;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
@@ -42,9 +40,7 @@ use crate::logic::module::behavior_module::{BehaviorModule, BehaviorModuleData};
 use crate::logic::module::die_module::{DieModule, DieModuleData, DIE_MODULE_DATA_FIELD_PARSE};
 use crate::logic::module::upgrade_module::{UpgradeModuleData, UpgradeMux};
 use crate::logic::modules::lend_clone;
-use crate::logic::modules::upgrade_mux_user::{
-    give_self_upgrade, upgrade_mux_call, UpgradeMuxUser,
-};
+use crate::logic::modules::upgrade_mux_user::{give_self_upgrade, upgrade_mux_call, UpgradeMuxUser};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::object_cuts::CutCall;
@@ -68,22 +64,12 @@ pub struct FireWeaponWhenDeadBehaviorModuleData {
 impl Default for FireWeaponWhenDeadBehaviorModuleData {
     /// `FireWeaponWhenDeadBehaviorModuleData()`: inactive, no weapon.
     fn default() -> Self {
-        FireWeaponWhenDeadBehaviorModuleData {
-            die: DieModuleData::new(),
-            upgrade: Arc::new(UpgradeModuleData::new()),
-            initially_active: false,
-            death_weapon: None,
-        }
+        FireWeaponWhenDeadBehaviorModuleData { die: DieModuleData::new(), upgrade: Arc::new(UpgradeModuleData::new()), initially_active: false, death_weapon: None }
     }
 }
 
 /// Lifts entry `k` of the layer-5 die field table onto `FireWeaponWhenDeadBehaviorModuleData::die`.
-fn lift_die_field(
-    k: usize,
-    i: &mut Ini<'_>,
-    d: &mut FireWeaponWhenDeadBehaviorModuleData,
-    u: &UserData,
-) -> IniResult<()> {
+fn lift_die_field(k: usize, i: &mut Ini<'_>, d: &mut FireWeaponWhenDeadBehaviorModuleData, u: &UserData) -> IniResult<()> {
     match DIE_MODULE_DATA_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.die, u),
         None => Ok(()),
@@ -92,56 +78,23 @@ fn lift_die_field(
 
 /// `dataFieldParse`, then `DieMuxData::getFieldParse()` (the order the fields are added in).
 static OWN_FIELD_PARSE: [FieldParse<FireWeaponWhenDeadBehaviorModuleData>; 8] = [
-    FieldParse::new(
-        "StartsActive",
-        |ini, d, _| {
-            d.initially_active = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DeathWeapon",
-        |ini, d, _| {
-            d.death_weapon = Some(ini.get_next_token(None)?);
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DeathTypes",
-        |i, d, u| lift_die_field(0, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VeterancyLevels",
-        |i, d, u| lift_die_field(1, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExemptStatus",
-        |i, d, u| lift_die_field(2, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "RequiredStatus",
-        |i, d, u| lift_die_field(3, i, d, u),
-        UserData::None,
-    ),
+    FieldParse::new("StartsActive", |ini, d, _| { d.initially_active = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("DeathWeapon", |ini, d, _| { d.death_weapon = Some(ini.get_next_token(None)?); Ok(()) }, UserData::None),
+    FieldParse::new("DeathTypes", |i, d, u| lift_die_field(0, i, d, u), UserData::None),
+    FieldParse::new("VeterancyLevels", |i, d, u| lift_die_field(1, i, d, u), UserData::None),
+    FieldParse::new("ExemptStatus", |i, d, u| lift_die_field(2, i, d, u), UserData::None),
+    FieldParse::new("RequiredStatus", |i, d, u| lift_die_field(3, i, d, u), UserData::None),
     FieldParse::end(),
     FieldParse::end(),
 ];
 
 /// `UpgradeMuxData::getFieldParse()`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<FireWeaponWhenDeadBehaviorModuleData>; 6] =
-    upgrade_module_data_field_parse!(FireWeaponWhenDeadBehaviorModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<FireWeaponWhenDeadBehaviorModuleData>; 6] = upgrade_module_data_field_parse!(FireWeaponWhenDeadBehaviorModuleData, upgrade);
 
 impl FireWeaponWhenDeadBehaviorModuleData {
     /// `buildFieldParse(p)`: the behaviour base, this class's fields (and the die mux's), then the upgrade mux's. (Upstream adds the upgrade mux's table
     /// before the die mux's; the tables name different fields, so the order cannot be seen.)
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, FireWeaponWhenDeadBehaviorModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, FireWeaponWhenDeadBehaviorModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&OWN_FIELD_PARSE)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
@@ -149,15 +102,10 @@ impl FireWeaponWhenDeadBehaviorModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<FireWeaponWhenDeadBehaviorModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<FireWeaponWhenDeadBehaviorModuleData> {
         let mut data = FireWeaponWhenDeadBehaviorModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                FireWeaponWhenDeadBehaviorModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, FireWeaponWhenDeadBehaviorModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -177,9 +125,7 @@ pub struct FireWeaponWhenDeadBehavior {
 impl PartialEq for FireWeaponWhenDeadBehavior {
     /// The same object, the same data object (upstream compares pointers) and the same executed flag.
     fn eq(&self, other: &Self) -> bool {
-        self.behavior.object() == other.behavior.object()
-            && Arc::ptr_eq(&self.data, &other.data)
-            && self.mux == other.mux
+        self.behavior.object() == other.behavior.object() && Arc::ptr_eq(&self.data, &other.data) && self.mux == other.mux
     }
 }
 
@@ -190,20 +136,10 @@ impl FireWeaponWhenDeadBehavior {
     }
 
     /// The constructor, the part that touches no world: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<FireWeaponWhenDeadBehaviorModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn new(object: ObjectId, data: Option<Arc<FireWeaponWhenDeadBehaviorModuleData>>) -> IniResult<Self> {
         let data = data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
-        let behavior = BehaviorModule::new(
-            object,
-            Some(ModuleDataKind::Die(Arc::new(data.die.clone()))),
-        )?;
-        Ok(FireWeaponWhenDeadBehavior {
-            behavior,
-            data,
-            mux: UpgradeMux::new(),
-        })
+        let behavior = BehaviorModule::new(object, Some(ModuleDataKind::Die(Arc::new(data.die.clone()))))?;
+        Ok(FireWeaponWhenDeadBehavior { behavior, data, mux: UpgradeMux::new() })
     }
 
     /// The data, as `getFireWeaponWhenDeadBehaviorModuleData()`.
@@ -221,25 +157,13 @@ impl FireWeaponWhenDeadBehavior {
     }
 
     /// The module's answer to one of `Object`'s calls: `onDie`, the upgrade calls, `onDelete` and `onCapture` (empty here).
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         if let Some(r) = upgrade_mux_call(self, world, me, call.clone()) {
             return r;
         }
         match call {
             ModuleCall::OnDie(info) => {
-                lend_clone(
-                    world,
-                    me,
-                    self,
-                    UpdateBody::FireWeaponWhenDeadBehavior,
-                    Self::mux_from_body,
-                    |w, m| m.on_die(w, me, &info),
-                );
+                lend_clone(world, me, self, UpdateBody::FireWeaponWhenDeadBehavior, Self::mux_from_body, |w, m| m.on_die(w, me, &info));
                 ModuleReply::Done
             }
             _ => ModuleReply::Unhandled,
@@ -252,15 +176,8 @@ impl FireWeaponWhenDeadBehavior {
             return;
         }
         // right type?
-        let Some(obj) = world.objects.find(me.object) else {
-            return;
-        };
-        if !self.data.die.die_mux_data.is_die_applicable(
-            info.input.death_type,
-            obj.get_veterancy_level() as i32,
-            &obj.status,
-        ) && !crate::logic::modules::plant(897)
-        {
+        let Some(obj) = world.objects.find(me.object) else { return };
+        if !self.data.die.die_mux_data.is_die_applicable(info.input.death_type, obj.get_veterancy_level() as i32, &obj.status) && !crate::logic::modules::plant(897) {
             return;
         }
         // This will never apply until built.
@@ -268,11 +185,7 @@ impl FireWeaponWhenDeadBehavior {
             return;
         }
         let statics = world.statics.clone();
-        let masks = self
-            .data
-            .upgrade
-            .mux_data_mut()
-            .get_upgrade_activation_masks(&statics.upgrade_center, &mut world.names);
+        let masks = self.data.upgrade.mux_data_mut().get_upgrade_activation_masks(&statics.upgrade_center, &mut world.names);
         let conflicting = match masks {
             Ok((_activation, conflicting)) => conflicting,
             Err(e) => {
@@ -280,52 +193,22 @@ impl FireWeaponWhenDeadBehavior {
                 return;
             }
         };
-        let Some(obj) = world.objects.find(me.object) else {
-            return;
-        };
-        if obj.object_upgrades_completed.test_for_any(&conflicting)
-            && !crate::logic::modules::plant(894)
-        {
+        let Some(obj) = world.objects.find(me.object) else { return };
+        if obj.object_upgrades_completed.test_for_any(&conflicting) && !crate::logic::modules::plant(894) {
             return;
         }
         if let Some(player) = world.get_controlling_player(me.object) {
-            if world
-                .cuts
-                .player_completed_upgrade_mask(player)
-                .test_for_any(&conflicting)
-                && !crate::logic::modules::plant(895)
-            {
+            if world.cuts.player_completed_upgrade_mask(player).test_for_any(&conflicting) && !crate::logic::modules::plant(895) {
                 return;
             }
         }
         // fire the default weapon
-        let Some(name) = self.data.death_weapon.as_deref() else {
-            return;
-        };
-        let weapon = statics
-            .weapon_store
-            .templates()
-            .iter()
-            .find(|t| t.name.eq_ignore_ascii_case(name))
-            .map(|t| t.name.clone());
-        let (Some(weapon), Some(obj)) = (weapon, world.objects.find(me.object)) else {
-            return;
-        };
-        let position = if crate::logic::modules::plant(891) {
-            crate::common::base_type::Coord3D::default()
-        } else {
-            obj.get_position()
-        };
-        let source = if crate::logic::modules::plant(892) {
-            INVALID_ID
-        } else {
-            me.object
-        };
-        world.cut(CutCall::WeaponCreateAndFireTemp {
-            weapon,
-            source,
-            position,
-        });
+        let Some(name) = self.data.death_weapon.as_deref() else { return };
+        let weapon = statics.weapon_store.templates().iter().find(|t| t.name.eq_ignore_ascii_case(name)).map(|t| t.name.clone());
+        let (Some(weapon), Some(obj)) = (weapon, world.objects.find(me.object)) else { return };
+        let position = if crate::logic::modules::plant(891) { crate::common::base_type::Coord3D::default() } else { obj.get_position() };
+        let source = if crate::logic::modules::plant(892) { INVALID_ID } else { me.object };
+        world.cut(CutCall::WeaponCreateAndFireTemp { weapon, source, position });
     }
 }
 
@@ -340,11 +223,7 @@ impl UpgradeMuxUser for FireWeaponWhenDeadBehavior {
         &self.data.upgrade
     }
     /// `upgradeImplementation()`: "nothing!".
-    fn upgrade_implementation(
-        &mut self,
-        _world: &mut World,
-        _me: ModuleHandle,
-    ) -> Result<(), IniError> {
+    fn upgrade_implementation(&mut self, _world: &mut World, _me: ModuleHandle) -> Result<(), IniError> {
         Ok(())
     }
     fn mux_into_body(self) -> UpdateBody {
@@ -384,7 +263,5 @@ impl Snapshot for FireWeaponWhenDeadBehavior {
 
 /// The factory's `NewModuleDataProc` for `FireWeaponWhenDeadBehavior`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::FireWeaponWhenDeadBehavior(Arc::new(
-        FireWeaponWhenDeadBehaviorModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::FireWeaponWhenDeadBehavior(Arc::new(FireWeaponWhenDeadBehaviorModuleData::friend_new_module_data(ini)?)))
 }

@@ -50,18 +50,13 @@ use support::{Check, Gen};
 /// Programs per run.
 const PROGRAMS: usize = 3000;
 /// The shared name table (`NAMES` in wrap_object_types.cpp, same order).
-const NAMES: [&str; 10] = [
-    "ALPHA", "BETA", "GAMMA", "DELTA", "EPSILON", "ZETA", "ETA", "THETA", "", "alpha",
-];
+const NAMES: [&str; 10] = ["ALPHA", "BETA", "GAMMA", "DELTA", "EPSILON", "ZETA", "ETA", "THETA", "", "alpha"];
 /// The names the factory knows: indices below this.
 const KNOWN: usize = 6;
 
 /// `findTemplate`: the template index of a known name.
 fn find(name: &AsciiString) -> Option<usize> {
-    NAMES
-        .iter()
-        .position(|n| n.as_bytes() == name.str())
-        .filter(|&i| i < KNOWN)
+    NAMES.iter().position(|n| n.as_bytes() == name.str()).filter(|&i| i < KNOWN)
 }
 
 fn name(i: usize) -> AsciiString {
@@ -253,10 +248,7 @@ fn random_program(g: &mut Gen) -> (Vec<[i32; 3]>, Vec<u8>) {
 }
 
 fn temp_path(tag: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!(
-        "p1w6-object-types-{}-{tag}.bin",
-        std::process::id()
-    ))
+    std::env::temp_dir().join(format!("p1w6-object-types-{}-{tag}.bin", std::process::id()))
 }
 
 #[test]

@@ -31,50 +31,25 @@ pub fn transform_point(world: &World, object: ObjectId, point: &Coord3D) -> Coor
         Some(o) => Matrix3D::transform_vector(o.thing.transform_matrix(), &v),
         None => v,
     };
-    Coord3D {
-        x: out.x,
-        y: out.y,
-        z: out.z,
-    }
+    Coord3D { x: out.x, y: out.y, z: out.z }
 }
 
 /// `getExitPosition(exitPosition)`: the create point in the world (false only without an object).
-pub fn exit_position(
-    world: &World,
-    object: ObjectId,
-    unit_create_point: &Coord3D,
-) -> Option<Coord3D> {
+pub fn exit_position(world: &World, object: ObjectId, unit_create_point: &Coord3D) -> Option<Coord3D> {
     world.objects.find(object)?;
     Some(transform_point(world, object, unit_create_point))
 }
 
 /// `getNaturalRallyPoint(rallyPoint, offset)`: the natural rally point, pushed out by two pathfinding cells along itself when `offset`, in the world.
-pub fn natural_rally_point(
-    world: &World,
-    object: ObjectId,
-    natural_rally_point: &Coord3D,
-    offset: bool,
-) -> Coord3D {
-    let mut p = Vector3::new(
-        natural_rally_point.x,
-        natural_rally_point.y,
-        natural_rally_point.z,
-    );
+pub fn natural_rally_point(world: &World, object: ObjectId, natural_rally_point: &Coord3D, offset: bool) -> Coord3D {
+    let mut p = Vector3::new(natural_rally_point.x, natural_rally_point.y, natural_rally_point.z);
     if offset {
         let mut off = p;
         off.normalize();
         off *= 2.0 * PATHFIND_CELL_SIZE_F;
         p += off;
     }
-    transform_point(
-        world,
-        object,
-        &Coord3D {
-            x: p.x,
-            y: p.y,
-            z: p.z,
-        },
-    )
+    transform_point(world, object, &Coord3D { x: p.x, y: p.y, z: p.z })
 }
 
 /// The rally point the player sets: `m_rallyPoint` and `m_rallyPointExists`.

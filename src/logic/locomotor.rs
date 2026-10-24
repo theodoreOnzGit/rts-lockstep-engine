@@ -132,20 +132,14 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::common::base_type::{clamp, sqr, Coord3D, PI};
-use crate::common::game_common::{
-    normalize_angle, std_angle_diff, LOGICFRAMES_PER_SECOND, SECONDS_PER_LOGICFRAME_REAL,
-};
+use crate::common::game_common::{normalize_angle, std_angle_diff, LOGICFRAMES_PER_SECOND, SECONDS_PER_LOGICFRAME_REAL};
 use crate::common::game_type::{PathfindLayer, LAYER_GROUND};
 use crate::common::global_data::GlobalData;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Undefined, UserData};
 use crate::common::kind_of::{KindOfType, KINDOF_DOZER, KINDOF_PROJECTILE};
 use crate::common::model_state::{ModelConditionFlagType, MODELCONDITION_OVER_WATER};
 use crate::common::name_key_generator::{NameKeyGenerator, NameKeyType};
-use crate::common::object_status_types::{
-    ObjectStatusTypes, OBJECT_STATUS_BRAKING, OBJECT_STATUS_DECK_HEIGHT_OFFSET,
-};
+use crate::common::object_status_types::{ObjectStatusTypes, OBJECT_STATUS_BRAKING, OBJECT_STATUS_DECK_HEIGHT_OFFSET};
 use crate::common::overridable::Overridable;
 use crate::common::random_value::RandomValues;
 use crate::common::trig;
@@ -215,17 +209,8 @@ impl LocomotorAppearance {
 }
 
 /// `TheLocomotorAppearanceNames`.
-pub const LOCO_APPEARANCE_NAMES: [&str; 9] = [
-    "TWO_LEGS",
-    "FOUR_WHEELS",
-    "TREADS",
-    "HOVER",
-    "THRUST",
-    "WINGS",
-    "CLIMBER",
-    "OTHER",
-    "MOTORCYCLE",
-];
+pub const LOCO_APPEARANCE_NAMES: [&str; 9] =
+    ["TWO_LEGS", "FOUR_WHEELS", "TREADS", "HOVER", "THRUST", "WINGS", "CLIMBER", "OTHER", "MOTORCYCLE"];
 
 /// `enum LocomotorPriority`: where in a group this one moves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -457,12 +442,7 @@ pub trait LocomotorHost: LocomotorGlobals {
 
     // ---- AI / Pathfinder (layer 10) ----
     /// `TheAI->pathfinder()->validMovementTerrain(layer, loco, &pos)`.
-    fn valid_movement_terrain(
-        &mut self,
-        layer: PathfindLayer,
-        loco: &Locomotor,
-        pos: &Coord3D,
-    ) -> bool;
+    fn valid_movement_terrain(&mut self, layer: PathfindLayer, loco: &Locomotor, pos: &Coord3D) -> bool;
 }
 
 // ---------------------------------------------------------------------------
@@ -505,12 +485,7 @@ fn is_nearly_zero(a: f32) -> bool {
 
 /// `tryToRotateVector3D`: return the angle delta (in 3-space) we turned.
 /// `max_angle` negative is a fraction (0...1) of the distance to rotate.
-fn try_to_rotate_vector_3d(
-    mut max_angle: f32,
-    in_cur_dir: &Vector3,
-    in_goal_dir: &Vector3,
-    actual_dir: &mut Vector3,
-) -> f32 {
+fn try_to_rotate_vector_3d(mut max_angle: f32, in_cur_dir: &Vector3, in_goal_dir: &Vector3, actual_dir: &mut Vector3) -> f32 {
     if is_nearly_zero(max_angle) {
         *actual_dir = *in_cur_dir;
         return 0.0;
@@ -553,11 +528,7 @@ fn try_to_rotate_vector_3d(
 }
 
 /// `tryToOrientInThisDirection3D(obj, maxTurnRate, desiredDir)`.
-fn try_to_orient_in_this_direction_3d<H: LocomotorHost>(
-    obj: &mut H,
-    max_turn_rate: f32,
-    desired_dir: &Vector3,
-) -> f32 {
+fn try_to_orient_in_this_direction_3d<H: LocomotorHost>(obj: &mut H, max_turn_rate: f32, desired_dir: &Vector3) -> f32 {
     let mut actual_dir = Vector3::default();
     let x_vector = obj.transform_matrix().get_x_vector();
     let rel_angle = try_to_rotate_vector_3d(max_turn_rate, &x_vector, desired_dir, &mut actual_dir);
@@ -574,12 +545,7 @@ fn try_to_orient_in_this_direction_3d<H: LocomotorHost>(
 }
 
 /// `calcDirectionToApplyThrust`.
-fn calc_direction_to_apply_thrust<H: LocomotorHost>(
-    obj: &H,
-    ingoal_pos: &Coord3D,
-    max_accel: f32,
-    goal_dir: &mut Vector3,
-) {
+fn calc_direction_to_apply_thrust<H: LocomotorHost>(obj: &H, ingoal_pos: &Coord3D, max_accel: f32, goal_dir: &mut Vector3) {
     /*
         our meta-goal here is to calculate the direction we should apply our motive force
         in order to minimize the angle between (our velocity) and (direction towards goalpos).
@@ -894,10 +860,7 @@ impl LocomotorTemplate {
         }
 
         if self.appearance == LocomotorAppearance::LocoThrust {
-            if self.behavior_z != LocomotorBehaviorZ::ZNoZMotiveForce
-                || self.lift != 0.0
-                || self.lift_damaged != 0.0
-            {
+            if self.behavior_z != LocomotorBehaviorZ::ZNoZMotiveForce || self.lift != 0.0 || self.lift_damaged != 0.0 {
                 // THRUST locos may not use ZAxisBehavior or lift!
                 return Err(IniError::new(IniErrorKind::InvalidData));
             }
@@ -917,11 +880,7 @@ impl LocomotorTemplate {
 }
 
 /// `parseFrictionPerSec`.
-fn parse_friction_per_sec(
-    ini: &mut Ini<'_>,
-    t: &mut LocomotorTemplate,
-    _ud: &UserData,
-) -> IniResult<()> {
+fn parse_friction_per_sec(ini: &mut Ini<'_>, t: &mut LocomotorTemplate, _ud: &UserData) -> IniResult<()> {
     let fric_per_sec = Ini::scan_real(&ini.get_next_token(None)?)?;
     let fric_per_frame = fric_per_sec * SECONDS_PER_LOGICFRAME_REAL;
     t.extra_2d_friction = fric_per_frame;
@@ -969,28 +928,16 @@ pub static LOCOMOTOR_TEMPLATE_FIELDS: [FieldParse<LocomotorTemplate>; 61] = [
     real_field!("Speed", parse_velocity_real, max_speed),
     real_field!("SpeedDamaged", parse_velocity_real, max_speed_damaged),
     real_field!("TurnRate", parse_angular_velocity_real, max_turn_rate),
-    real_field!(
-        "TurnRateDamaged",
-        parse_angular_velocity_real,
-        max_turn_rate_damaged
-    ),
+    real_field!("TurnRateDamaged", parse_angular_velocity_real, max_turn_rate_damaged),
     real_field!("Acceleration", parse_acceleration_real, acceleration),
-    real_field!(
-        "AccelerationDamaged",
-        parse_acceleration_real,
-        acceleration_damaged
-    ),
+    real_field!("AccelerationDamaged", parse_acceleration_real, acceleration_damaged),
     real_field!("Lift", parse_acceleration_real, lift),
     real_field!("LiftDamaged", parse_acceleration_real, lift_damaged),
     real_field!("Braking", parse_acceleration_real, braking),
     real_field!("MinSpeed", parse_velocity_real, min_speed),
     real_field!("MinTurnSpeed", parse_velocity_real, min_turn_speed),
     real_field!("PreferredHeight", parse_real, preferred_height),
-    real_field!(
-        "PreferredHeightDamping",
-        parse_real,
-        preferred_height_damping
-    ),
+    real_field!("PreferredHeightDamping", parse_real, preferred_height_damping),
     real_field!("CirclingRadius", parse_real, circling_radius),
     FieldParse::new("Extra2DFriction", parse_friction_per_sec, UserData::None),
     real_field!("SpeedLimitZ", parse_velocity_real, speed_limit_z),
@@ -1000,8 +947,7 @@ pub static LOCOMOTOR_TEMPLATE_FIELDS: [FieldParse<LocomotorTemplate>; 61] = [
         "ZAxisBehavior",
         |ini, t, ud| {
             let i = ini.parse_index_list(ud.names())?;
-            t.behavior_z = LocomotorBehaviorZ::from_index(i)
-                .ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
+            t.behavior_z = LocomotorBehaviorZ::from_index(i).ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
             Ok(())
         },
         UserData::Names(&LOCO_Z_NAMES),
@@ -1010,8 +956,7 @@ pub static LOCOMOTOR_TEMPLATE_FIELDS: [FieldParse<LocomotorTemplate>; 61] = [
         "Appearance",
         |ini, t, ud| {
             let i = ini.parse_index_list(ud.names())?;
-            t.appearance = LocomotorAppearance::from_index(i)
-                .ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
+            t.appearance = LocomotorAppearance::from_index(i).ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
             Ok(())
         },
         UserData::Names(&LOCO_APPEARANCE_NAMES),
@@ -1020,22 +965,13 @@ pub static LOCOMOTOR_TEMPLATE_FIELDS: [FieldParse<LocomotorTemplate>; 61] = [
         "GroupMovementPriority",
         |ini, t, ud| {
             let i = ini.parse_index_list(ud.names())?;
-            t.move_priority = LocomotorPriority::from_index(i)
-                .ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
+            t.move_priority = LocomotorPriority::from_index(i).ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
             Ok(())
         },
         UserData::Names(&LOCO_PRIORITY_NAMES),
     ),
-    real_field!(
-        "AccelerationPitchLimit",
-        parse_angle_real,
-        accel_pitch_limit
-    ),
-    real_field!(
-        "DecelerationPitchLimit",
-        parse_angle_real,
-        decel_pitch_limit
-    ),
+    real_field!("AccelerationPitchLimit", parse_angle_real, accel_pitch_limit),
+    real_field!("DecelerationPitchLimit", parse_angle_real, decel_pitch_limit),
     real_field!("BounceAmount", parse_angular_velocity_real, bounce_kick),
     real_field!("PitchStiffness", parse_real, pitch_stiffness),
     real_field!("RollStiffness", parse_real, roll_stiffness),
@@ -1045,80 +981,34 @@ pub static LOCOMOTOR_TEMPLATE_FIELDS: [FieldParse<LocomotorTemplate>; 61] = [
     real_field!("ThrustWobbleRate", parse_real, wobble_rate),
     real_field!("ThrustMinWobble", parse_real, min_wobble),
     real_field!("ThrustMaxWobble", parse_real, max_wobble),
-    real_field!(
-        "PitchInDirectionOfZVelFactor",
-        parse_real,
-        pitch_by_z_vel_coef
-    ),
+    real_field!("PitchInDirectionOfZVelFactor", parse_real, pitch_by_z_vel_coef),
     real_field!("ForwardVelocityPitchFactor", parse_real, forward_vel_coef),
     real_field!("LateralVelocityRollFactor", parse_real, lateral_vel_coef),
-    real_field!(
-        "ForwardAccelerationPitchFactor",
-        parse_real,
-        forward_accel_coef
-    ),
-    real_field!(
-        "LateralAccelerationRollFactor",
-        parse_real,
-        lateral_accel_coef
-    ),
+    real_field!("ForwardAccelerationPitchFactor", parse_real, forward_accel_coef),
+    real_field!("LateralAccelerationRollFactor", parse_real, lateral_accel_coef),
     real_field!("UniformAxialDamping", parse_real, uniform_axial_damping),
     real_field!("TurnPivotOffset", parse_real, turn_pivot_offset),
-    bool_field!(
-        "Apply2DFrictionWhenAirborne",
-        apply_2d_friction_when_airborne
-    ),
+    bool_field!("Apply2DFrictionWhenAirborne", apply_2d_friction_when_airborne),
     bool_field!("DownhillOnly", downhill_only),
-    bool_field!(
-        "AllowAirborneMotiveForce",
-        allow_motive_force_while_airborne
-    ),
+    bool_field!("AllowAirborneMotiveForce", allow_motive_force_while_airborne),
     bool_field!("LocomotorWorksWhenDead", locomotor_works_when_dead),
-    real_field!(
-        "AirborneTargetingHeight",
-        parse_int,
-        airborne_targeting_height
-    ),
+    real_field!("AirborneTargetingHeight", parse_int, airborne_targeting_height),
     bool_field!("StickToGround", stick_to_ground),
     bool_field!("CanMoveBackwards", can_move_backward),
     bool_field!("HasSuspension", has_suspension),
     real_field!("FrontWheelTurnAngle", parse_angle_real, wheel_turn_angle),
     real_field!("MaximumWheelExtension", parse_real, maximum_wheel_extension),
-    real_field!(
-        "MaximumWheelCompression",
-        parse_real,
-        maximum_wheel_compression
-    ),
+    real_field!("MaximumWheelCompression", parse_real, maximum_wheel_compression),
     real_field!("CloseEnoughDist", parse_real, close_enough_dist),
     bool_field!("CloseEnoughDist3D", is_close_enough_dist_3d),
-    real_field!(
-        "SlideIntoPlaceTime",
-        parse_duration_real,
-        ultra_accurate_slide_into_place_factor
-    ),
+    real_field!("SlideIntoPlaceTime", parse_duration_real, ultra_accurate_slide_into_place_factor),
     real_field!("WanderWidthFactor", parse_real, wander_width_factor),
     real_field!("WanderLengthFactor", parse_real, wander_length_factor),
-    real_field!(
-        "WanderAboutPointRadius",
-        parse_real,
-        wander_about_point_radius
-    ),
-    real_field!(
-        "RudderCorrectionDegree",
-        parse_real,
-        rudder_correction_degree
-    ),
+    real_field!("WanderAboutPointRadius", parse_real, wander_about_point_radius),
+    real_field!("RudderCorrectionDegree", parse_real, rudder_correction_degree),
     real_field!("RudderCorrectionRate", parse_real, rudder_correction_rate),
-    real_field!(
-        "ElevatorCorrectionDegree",
-        parse_real,
-        elevator_correction_degree
-    ),
-    real_field!(
-        "ElevatorCorrectionRate",
-        parse_real,
-        elevator_correction_rate
-    ),
+    real_field!("ElevatorCorrectionDegree", parse_real, elevator_correction_degree),
+    real_field!("ElevatorCorrectionRate", parse_real, elevator_correction_rate),
     FieldParse::end(),
 ];
 
@@ -1158,10 +1048,7 @@ impl LocomotorStore {
     /// `findLocomotorTemplate(namekey) const`: the template (the head of its
     /// chain), or `None` for `NAMEKEY_INVALID` or an unknown key. Read it
     /// through [`Overridable::get_final_override`] as `OVERRIDE<T>` does.
-    pub fn find_locomotor_template(
-        &self,
-        namekey: NameKeyType,
-    ) -> Option<&Overridable<LocomotorTemplate>> {
+    pub fn find_locomotor_template(&self, namekey: NameKeyType) -> Option<&Overridable<LocomotorTemplate>> {
         if namekey == NameKeyType::INVALID {
             return None;
         }
@@ -1170,18 +1057,9 @@ impl LocomotorStore {
 
     /// `newLocomotor(tmpl)` for the template of `namekey`: a `Locomotor` on the
     /// template's final override. `None` if there is no such template.
-    pub fn new_locomotor(
-        &self,
-        namekey: NameKeyType,
-        rng: &mut RandomValues,
-        frame: u32,
-    ) -> Option<Locomotor> {
+    pub fn new_locomotor(&self, namekey: NameKeyType, rng: &mut RandomValues, frame: u32) -> Option<Locomotor> {
         let tmpl = self.find_locomotor_template(namekey)?;
-        Some(Locomotor::new(
-            Arc::new(tmpl.get_final_override().data.clone()),
-            rng,
-            frame,
-        ))
+        Some(Locomotor::new(Arc::new(tmpl.get_final_override().data.clone()), rng, frame))
     }
 
     /// `reset()`: clean up overrides; a template that was itself made by an
@@ -1201,11 +1079,7 @@ impl LocomotorStore {
     /// `End`, then `validate()`. A new template is stored only if both
     /// succeed; an override is linked before it is filled and stays linked if
     /// either fails.
-    pub fn parse_locomotor_template_definition(
-        &mut self,
-        ini: &mut Ini<'_>,
-        names: &mut NameKeyGenerator,
-    ) -> IniResult<()> {
+    pub fn parse_locomotor_template_definition(&mut self, ini: &mut Ini<'_>, names: &mut NameKeyGenerator) -> IniResult<()> {
         // read the Locomotor name
         let token = ini.get_next_token(None)?;
         let namekey = names
@@ -1309,11 +1183,7 @@ impl Locomotor {
     /// at `frame` plus 2.5 seconds.
     pub fn new(template: Arc<LocomotorTemplate>, rng: &mut RandomValues, frame: u32) -> Self {
         let mut l = Locomotor {
-            maintain_pos: Coord3D {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
+            maintain_pos: Coord3D { x: 0.0, y: 0.0, z: 0.0 },
             braking_factor: 1.0,
             max_lift: BIGNUM,
             max_speed: BIGNUM,
@@ -1332,8 +1202,7 @@ impl Locomotor {
         };
         l.set_flag(IS_CLOSE_ENOUGH_DIST_3D, l.template.is_close_enough_dist_3d);
         l.angle_offset = rng.game_logic_random_value_real(-PI / 6.0, PI / 6.0);
-        l.offset_increment = (PI / 40.0)
-            * (rng.game_logic_random_value_real(0.8, 1.2) / l.template.wander_length_factor);
+        l.offset_increment = (PI / 40.0) * (rng.game_logic_random_value_real(0.8, 1.2) / l.template.wander_length_factor);
         let increasing = rng.game_logic_random_value(0, 1) != 0;
         l.set_flag(OFFSET_INCREASING, increasing);
         l.donut_timer = Self::donut_deadline(frame);
@@ -1649,11 +1518,7 @@ impl Locomotor {
     // ---- condition-dependent limits ----
 
     /// `getMaxSpeedForCondition(condition)`.
-    pub fn get_max_speed_for_condition<G: LocomotorGlobals + ?Sized>(
-        &self,
-        g: &G,
-        condition: BodyDamageType,
-    ) -> f32 {
+    pub fn get_max_speed_for_condition<G: LocomotorGlobals + ?Sized>(&self, g: &G, condition: BodyDamageType) -> f32 {
         let mut speed = if is_condition_better(condition, g.movement_penalty_damage_state()) {
             self.template.max_speed
         } else {
@@ -1668,11 +1533,7 @@ impl Locomotor {
     }
 
     /// `getMaxTurnRate(condition)`.
-    pub fn get_max_turn_rate<G: LocomotorGlobals + ?Sized>(
-        &self,
-        g: &G,
-        condition: BodyDamageType,
-    ) -> f32 {
+    pub fn get_max_turn_rate<G: LocomotorGlobals + ?Sized>(&self, g: &G, condition: BodyDamageType) -> f32 {
         let mut turn = if is_condition_better(condition, g.movement_penalty_damage_state()) {
             self.template.max_turn_rate
         } else {
@@ -1692,11 +1553,7 @@ impl Locomotor {
     }
 
     /// `getMaxAcceleration(condition)`.
-    pub fn get_max_acceleration<G: LocomotorGlobals + ?Sized>(
-        &self,
-        g: &G,
-        condition: BodyDamageType,
-    ) -> f32 {
+    pub fn get_max_acceleration<G: LocomotorGlobals + ?Sized>(&self, g: &G, condition: BodyDamageType) -> f32 {
         let mut accel = if is_condition_better(condition, g.movement_penalty_damage_state()) {
             self.template.acceleration
         } else {
@@ -1722,11 +1579,7 @@ impl Locomotor {
     }
 
     /// `getMaxLift(condition)`.
-    pub fn get_max_lift<G: LocomotorGlobals + ?Sized>(
-        &self,
-        g: &G,
-        condition: BodyDamageType,
-    ) -> f32 {
+    pub fn get_max_lift<G: LocomotorGlobals + ?Sized>(&self, g: &G, condition: BodyDamageType) -> f32 {
         let mut lift = if is_condition_better(condition, g.movement_penalty_damage_state()) {
             self.template.lift
         } else {
@@ -1742,26 +1595,14 @@ impl Locomotor {
 
     /// `calcMinTurnRadius(condition, &timeToTravelThatDist)`: the minimum turn
     /// radius, and the time to travel it (0 if it cannot move).
-    pub fn calc_min_turn_radius<G: LocomotorGlobals + ?Sized>(
-        &self,
-        g: &G,
-        condition: BodyDamageType,
-    ) -> (f32, f32) {
+    pub fn calc_min_turn_radius<G: LocomotorGlobals + ?Sized>(&self, g: &G, condition: BodyDamageType) -> (f32, f32) {
         let min_speed = self.get_min_speed(); // in dist/frame
         let max_turn_rate = self.get_max_turn_rate(g, condition); // in rads/frame
 
         // if we can't turn, return a huge-but-finite radius rather than NAN...
-        let min_turn_radius = if max_turn_rate > 0.0 {
-            min_speed / max_turn_rate
-        } else {
-            BIGNUM
-        };
+        let min_turn_radius = if max_turn_rate > 0.0 { min_speed / max_turn_rate } else { BIGNUM };
 
-        let time_to_travel_that_dist = if min_speed > 0.0 {
-            min_turn_radius / min_speed
-        } else {
-            0.0
-        };
+        let time_to_travel_that_dist = if min_speed > 0.0 { min_turn_radius / min_speed } else { 0.0 };
         (min_turn_radius, time_to_travel_that_dist)
     }
 
@@ -1775,11 +1616,7 @@ impl Locomotor {
 
         // crank up the friction in ultra-accurate mode to increase movement precision.
         const EXTRA_FRIC: f32 = 0.5;
-        let extra_extra_friction = if self.get_flag(ULTRA_ACCURATE) {
-            EXTRA_FRIC
-        } else {
-            0.0
-        };
+        let extra_extra_friction = if self.get_flag(ULTRA_ACCURATE) { EXTRA_FRIC } else { 0.0 };
         obj.set_extra_friction(self.template.extra_2d_friction + extra_extra_friction);
         // you'd think we wouldn't want friction in the air, but it's needed for realistic behavior.
         obj.set_allow_airborne_friction(self.get_apply_2d_friction_when_airborne());
@@ -1788,11 +1625,7 @@ impl Locomotor {
     }
 
     /// `locoUpdate_moveTowardsAngle(obj, goalAngle)`.
-    pub fn loco_update_move_towards_angle<H: LocomotorHost>(
-        &mut self,
-        obj: &mut H,
-        goal_angle: f32,
-    ) {
+    pub fn loco_update_move_towards_angle<H: LocomotorHost>(&mut self, obj: &mut H, goal_angle: f32) {
         self.set_flag(MAINTAIN_POS_IS_VALID, false);
 
         if !obj.has_physics() {
@@ -1814,13 +1647,7 @@ impl Locomotor {
             // our destination and thus slow down...
             let on_path_dist_to_goal = 99999.0f32;
             let mut blocked = false;
-            self.loco_update_move_towards_position(
-                obj,
-                &desired_pos,
-                on_path_dist_to_goal,
-                min_speed,
-                &mut blocked,
-            );
+            self.loco_update_move_towards_position(obj, &desired_pos, on_path_dist_to_goal, min_speed, &mut blocked);
 
             // don't need to call handleBehaviorZ() here, since locoUpdate_moveTowardsPosition() will do so
         } else {
@@ -1835,12 +1662,7 @@ impl Locomotor {
     }
 
     /// `rotateTowardsPosition(obj, goalPos, relAngle)`.
-    fn rotate_towards_position<H: LocomotorHost>(
-        &mut self,
-        obj: &mut H,
-        goal_pos: &Coord3D,
-        rel_angle: Option<&mut f32>,
-    ) -> PhysicsTurningType {
+    fn rotate_towards_position<H: LocomotorHost>(&mut self, obj: &mut H, goal_pos: &Coord3D, rel_angle: Option<&mut f32>) -> PhysicsTurningType {
         let bdt = obj.damage_state();
         let turn_rate = self.get_max_turn_rate(obj, bdt);
 
@@ -1867,9 +1689,7 @@ impl Locomotor {
         }
 
         let dist_to_stop_at_max_speed = (max_speed / self.get_braking()) * (max_speed) / 2.0;
-        if on_path_dist_to_goal > PATHFIND_CELL_SIZE_F
-            && on_path_dist_to_goal > dist_to_stop_at_max_speed
-        {
+        if on_path_dist_to_goal > PATHFIND_CELL_SIZE_F && on_path_dist_to_goal > dist_to_stop_at_max_speed {
             self.set_flag(IS_BRAKING, false);
             self.braking_factor = 1.0;
         }
@@ -1890,9 +1710,7 @@ impl Locomotor {
             let layer = obj.layer();
             let here = obj.position();
             // the pathfinder is asked first, whether or not invalid positions are allowed
-            if !obj.valid_movement_terrain(layer, self, &here)
-                && !self.get_flag(ALLOW_INVALID_POSITION)
-            {
+            if !obj.valid_movement_terrain(layer, self, &here) && !self.get_flag(ALLOW_INVALID_POSITION) {
                 // Somehow, we have gotten to an invalid location.
                 if self.fix_invalid_position(obj) {
                     // the we adjusted us toward a legal position, so just return.
@@ -1930,11 +1748,7 @@ impl Locomotor {
         // We apply a zero acceleration to all units, as the call to
         // applyMotiveForce flags an object as being "driven" by a locomotor, rather
         // than being pushed around by objects bumping it.
-        let null_accel = Coord3D {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        };
+        let null_accel = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
         obj.apply_motive_force(&null_accel);
 
         if *blocked {
@@ -1952,8 +1766,7 @@ impl Locomotor {
             let bdt = obj.damage_state();
             let turn_rate = self.get_max_turn_rate(obj, bdt);
             if self.template.wander_width_factor == 0.0 {
-                *blocked = PhysicsTurningType::TurnNone
-                    != self.rotate_obj_around_loco_pivot(obj, goal_pos, turn_rate, None);
+                *blocked = PhysicsTurningType::TurnNone != self.rotate_obj_around_loco_pivot(obj, goal_pos, turn_rate, None);
             }
 
             // it is very important to be sure to call this in all situations, even if not moving in 2d space.
@@ -1972,55 +1785,16 @@ impl Locomotor {
         obj.set_turning(PhysicsTurningType::TurnNone);
         if self.get_allow_motive_force_while_airborne() || !treat_as_airborne {
             match self.template.appearance {
-                LocomotorAppearance::LocoLegsTwo => self.move_towards_position_legs(
-                    obj,
-                    goal_pos,
-                    on_path_dist_to_goal,
-                    desired_speed,
-                ),
-                LocomotorAppearance::LocoClimber => self.move_towards_position_climb(
-                    obj,
-                    goal_pos,
-                    on_path_dist_to_goal,
-                    desired_speed,
-                ),
-                LocomotorAppearance::LocoWheelsFour | LocomotorAppearance::LocoMotorcycle => self
-                    .move_towards_position_wheels(
-                        obj,
-                        goal_pos,
-                        on_path_dist_to_goal,
-                        desired_speed,
-                    ),
-                LocomotorAppearance::LocoTreads => self.move_towards_position_treads(
-                    obj,
-                    goal_pos,
-                    on_path_dist_to_goal,
-                    desired_speed,
-                ),
-                LocomotorAppearance::LocoHover => self.move_towards_position_hover(
-                    obj,
-                    goal_pos,
-                    on_path_dist_to_goal,
-                    desired_speed,
-                ),
-                LocomotorAppearance::LocoWings => self.move_towards_position_wings(
-                    obj,
-                    goal_pos,
-                    on_path_dist_to_goal,
-                    desired_speed,
-                ),
-                LocomotorAppearance::LocoThrust => self.move_towards_position_thrust(
-                    obj,
-                    goal_pos,
-                    on_path_dist_to_goal,
-                    desired_speed,
-                ),
-                LocomotorAppearance::LocoOther => self.move_towards_position_other(
-                    obj,
-                    goal_pos,
-                    on_path_dist_to_goal,
-                    desired_speed,
-                ),
+                LocomotorAppearance::LocoLegsTwo => self.move_towards_position_legs(obj, goal_pos, on_path_dist_to_goal, desired_speed),
+                LocomotorAppearance::LocoClimber => self.move_towards_position_climb(obj, goal_pos, on_path_dist_to_goal, desired_speed),
+                LocomotorAppearance::LocoWheelsFour | LocomotorAppearance::LocoMotorcycle => {
+                    self.move_towards_position_wheels(obj, goal_pos, on_path_dist_to_goal, desired_speed)
+                }
+                LocomotorAppearance::LocoTreads => self.move_towards_position_treads(obj, goal_pos, on_path_dist_to_goal, desired_speed),
+                LocomotorAppearance::LocoHover => self.move_towards_position_hover(obj, goal_pos, on_path_dist_to_goal, desired_speed),
+                LocomotorAppearance::LocoWings => self.move_towards_position_wings(obj, goal_pos, on_path_dist_to_goal, desired_speed),
+                LocomotorAppearance::LocoThrust => self.move_towards_position_thrust(obj, goal_pos, on_path_dist_to_goal, desired_speed),
+                LocomotorAppearance::LocoOther => self.move_towards_position_other(obj, goal_pos, on_path_dist_to_goal, desired_speed),
             }
         }
 
@@ -2078,13 +1852,7 @@ impl Locomotor {
     }
 
     /// `moveTowardsPositionTreads`.
-    fn move_towards_position_treads<H: LocomotorHost>(
-        &mut self,
-        obj: &mut H,
-        goal_pos: &Coord3D,
-        on_path_dist_to_goal: f32,
-        mut desired_speed: f32,
-    ) {
+    fn move_towards_position_treads<H: LocomotorHost>(&mut self, obj: &mut H, goal_pos: &Coord3D, on_path_dist_to_goal: f32, mut desired_speed: f32) {
         // sanity, we cannot use desired speed that is greater than our max speed we are capable of moving at
         let bdt = obj.damage_state();
         let max_speed = self.get_max_speed_for_condition(obj, bdt);
@@ -2133,18 +1901,13 @@ impl Locomotor {
             goal_speed = actual_speed * 0.6;
         }
 
-        if on_path_dist_to_goal < slow_down_dist
-            && !self.get_flag(IS_BRAKING)
-            && !self.get_flag(NO_SLOW_DOWN_AS_APPROACHING_DEST)
-        {
+        if on_path_dist_to_goal < slow_down_dist && !self.get_flag(IS_BRAKING) && !self.get_flag(NO_SLOW_DOWN_AS_APPROACHING_DEST) {
             self.set_flag(IS_BRAKING, true);
             self.braking_factor = 1.1;
         }
 
         // double: `2.0*slowDownDist`
-        if on_path_dist_to_goal > PATHFIND_CELL_SIZE_F
-            && f64::from(on_path_dist_to_goal) > 2.0f64 * f64::from(slow_down_dist)
-        {
+        if on_path_dist_to_goal > PATHFIND_CELL_SIZE_F && f64::from(on_path_dist_to_goal) > 2.0f64 * f64::from(slow_down_dist) {
             self.set_flag(IS_BRAKING, false);
         }
 
@@ -2175,11 +1938,7 @@ impl Locomotor {
         let speed_delta = goal_speed - actual_speed;
         if speed_delta != 0.0 {
             let mass = obj.mass();
-            let acceleration = if speed_delta > 0.0 {
-                max_acceleration
-            } else {
-                -self.braking_factor * self.get_braking()
-            };
+            let acceleration = if speed_delta > 0.0 { max_acceleration } else { -self.braking_factor * self.get_braking() };
             let mut accel_force = mass * acceleration;
 
             /*
@@ -2193,11 +1952,7 @@ impl Locomotor {
 
             let dir = obj.unit_direction_vector_2d();
 
-            let force = Coord3D {
-                x: accel_force * dir.x,
-                y: accel_force * dir.y,
-                z: 0.0,
-            };
+            let force = Coord3D { x: accel_force * dir.x, y: accel_force * dir.y, z: 0.0 };
 
             // apply forces to object
             obj.apply_motive_force(&force);
@@ -2205,13 +1960,7 @@ impl Locomotor {
     }
 
     /// `moveTowardsPositionWheels`.
-    fn move_towards_position_wheels<H: LocomotorHost>(
-        &mut self,
-        obj: &mut H,
-        goal_pos: &Coord3D,
-        on_path_dist_to_goal: f32,
-        mut desired_speed: f32,
-    ) {
+    fn move_towards_position_wheels<H: LocomotorHost>(&mut self, obj: &mut H, goal_pos: &Coord3D, on_path_dist_to_goal: f32, mut desired_speed: f32) {
         let bdt = obj.damage_state();
         let max_speed = self.get_max_speed_for_condition(obj, bdt);
         let max_turn_rate = self.get_max_turn_rate(obj, bdt);
@@ -2245,10 +1994,7 @@ impl Locomotor {
             self.set_flag(MOVING_BACKWARDS, false);
             if self.template.can_move_backward && rel_angle.abs() > PI / 2.0 {
                 self.set_flag(MOVING_BACKWARDS, true);
-                self.set_flag(
-                    DOING_THREE_POINT_TURN,
-                    on_path_dist_to_goal > 5.0 * obj.major_radius(),
-                );
+                self.set_flag(DOING_THREE_POINT_TURN, on_path_dist_to_goal > 5.0 * obj.major_radius());
             }
         }
         if self.get_flag(MOVING_BACKWARDS) {
@@ -2257,10 +2003,7 @@ impl Locomotor {
                 self.set_flag(MOVING_BACKWARDS, false);
             } else {
                 move_backwards = true;
-                self.set_flag(
-                    DOING_THREE_POINT_TURN,
-                    on_path_dist_to_goal > 5.0 * obj.major_radius(),
-                );
+                self.set_flag(DOING_THREE_POINT_TURN, on_path_dist_to_goal > 5.0 * obj.major_radius());
                 do_3_point_turn = self.get_flag(DOING_THREE_POINT_TURN);
                 if !do_3_point_turn {
                     desired_angle = std_angle_diff(desired_angle, PI);
@@ -2303,27 +2046,15 @@ impl Locomotor {
             } else {
                 target_angle += turn_amount;
             }
-            let offset = Coord3D {
-                x: trig::cos(target_angle) * distance,
-                y: trig::sin(target_angle) * distance,
-                z: 0.0,
-            };
+            let offset = Coord3D { x: trig::cos(target_angle) * distance, y: trig::sin(target_angle) * distance, z: 0.0 };
 
             let pos = obj.position();
 
-            let next_pos = Coord3D {
-                x: pos.x + offset.x,
-                y: pos.y + offset.y,
-                z: pos.z,
-            };
+            let next_pos = Coord3D { x: pos.x + offset.x, y: pos.y + offset.y, z: pos.z };
 
             let pos = obj.position();
 
-            let half_pos = Coord3D {
-                x: pos.x + offset.x / 2.0,
-                y: pos.y + offset.y / 2.0,
-                z: pos.z,
-            };
+            let half_pos = Coord3D { x: pos.x + offset.x / 2.0, y: pos.y + offset.y / 2.0, z: pos.z };
 
             let layer = obj.layer();
             if !obj.valid_movement_terrain(layer, self, &half_pos) || {
@@ -2334,28 +2065,19 @@ impl Locomotor {
                 obj.set_turning(rotating);
 
                 // apply a zero force to object so that it acts "driven"
-                let force = Coord3D {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 0.0,
-                };
+                let force = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
                 obj.apply_motive_force(&force);
                 return;
             }
         }
 
-        if on_path_dist_to_goal < effective_slow_down_dist
-            && !self.get_flag(IS_BRAKING)
-            && !self.get_flag(NO_SLOW_DOWN_AS_APPROACHING_DEST)
-        {
+        if on_path_dist_to_goal < effective_slow_down_dist && !self.get_flag(IS_BRAKING) && !self.get_flag(NO_SLOW_DOWN_AS_APPROACHING_DEST) {
             self.set_flag(IS_BRAKING, true);
             self.braking_factor = 1.1;
         }
 
         // double: `2.0*slowDownDist`
-        if on_path_dist_to_goal > PATHFIND_CELL_SIZE_F
-            && f64::from(on_path_dist_to_goal) > 2.0f64 * f64::from(slow_down_dist)
-        {
+        if on_path_dist_to_goal > PATHFIND_CELL_SIZE_F && f64::from(on_path_dist_to_goal) > 2.0f64 * f64::from(slow_down_dist) {
             self.set_flag(IS_BRAKING, false);
         }
 
@@ -2442,11 +2164,7 @@ impl Locomotor {
 
             let dir = obj.unit_direction_vector_2d();
 
-            let force = Coord3D {
-                x: accel_force * dir.x,
-                y: accel_force * dir.y,
-                z: 0.0,
-            };
+            let force = Coord3D { x: accel_force * dir.x, y: accel_force * dir.y, z: 0.0 };
 
             // apply forces to object
             obj.apply_motive_force(&force);
@@ -2486,19 +2204,14 @@ impl Locomotor {
         if dx != 0 || dy != 0 {
             let mass = obj.mass();
             // `dx*physics->getMass()/5`: int * float / int
-            let correction = Coord3D {
-                x: (dx as f32) * mass / 5.0,
-                y: (dy as f32) * mass / 5.0,
-                z: 0.0,
-            };
+            let correction = Coord3D { x: (dx as f32) * mass / 5.0, y: (dy as f32) * mass / 5.0, z: 0.0 };
 
             let mut correction_normalized = correction;
             correction_normalized.normalize();
 
             // Kill current velocity in the direction of the correction.
             let velocity = obj.velocity();
-            let mut dot =
-                (velocity.x * correction_normalized.x) + (velocity.y * correction_normalized.y);
+            let mut dot = (velocity.x * correction_normalized.x) + (velocity.y * correction_normalized.y);
             if dot > 0.25 {
                 // It was already leaving.
                 return false;
@@ -2520,13 +2233,7 @@ impl Locomotor {
     }
 
     /// `moveTowardsPositionLegs`.
-    fn move_towards_position_legs<H: LocomotorHost>(
-        &mut self,
-        obj: &mut H,
-        goal_pos: &Coord3D,
-        on_path_dist_to_goal: f32,
-        mut desired_speed: f32,
-    ) {
+    fn move_towards_position_legs<H: LocomotorHost>(&mut self, obj: &mut H, goal_pos: &Coord3D, on_path_dist_to_goal: f32, mut desired_speed: f32) {
         if self.get_is_downhill_only() && obj.position().z < goal_pos.z {
             return;
         }
@@ -2581,10 +2288,8 @@ impl Locomotor {
 
         let mut goal_speed = (1.0 - angle_coeff) * desired_speed;
 
-        let slow_down_dist =
-            calc_slow_down_dist(actual_speed, self.template.min_speed, self.get_braking());
-        if on_path_dist_to_goal < slow_down_dist && !self.get_flag(NO_SLOW_DOWN_AS_APPROACHING_DEST)
-        {
+        let slow_down_dist = calc_slow_down_dist(actual_speed, self.template.min_speed, self.get_braking());
+        if on_path_dist_to_goal < slow_down_dist && !self.get_flag(NO_SLOW_DOWN_AS_APPROACHING_DEST) {
             goal_speed = self.template.min_speed;
         }
 
@@ -2594,11 +2299,7 @@ impl Locomotor {
         let speed_delta = goal_speed - actual_speed;
         if speed_delta != 0.0 {
             let mass = obj.mass();
-            let acceleration = if speed_delta > 0.0 {
-                max_acceleration
-            } else {
-                -self.get_braking()
-            };
+            let acceleration = if speed_delta > 0.0 { max_acceleration } else { -self.get_braking() };
             let mut accel_force = mass * acceleration;
 
             /*
@@ -2612,11 +2313,7 @@ impl Locomotor {
 
             let dir = obj.unit_direction_vector_2d();
 
-            let force = Coord3D {
-                x: accel_force * dir.x,
-                y: accel_force * dir.y,
-                z: 0.0,
-            };
+            let force = Coord3D { x: accel_force * dir.x, y: accel_force * dir.y, z: 0.0 };
 
             // apply forces to object
             obj.apply_motive_force(&force);
@@ -2624,13 +2321,7 @@ impl Locomotor {
     }
 
     /// `moveTowardsPositionClimb`.
-    fn move_towards_position_climb<H: LocomotorHost>(
-        &mut self,
-        obj: &mut H,
-        goal_pos: &Coord3D,
-        on_path_dist_to_goal: f32,
-        mut desired_speed: f32,
-    ) {
+    fn move_towards_position_climb<H: LocomotorHost>(&mut self, obj: &mut H, goal_pos: &Coord3D, on_path_dist_to_goal: f32, mut desired_speed: f32) {
         let bdt = obj.damage_state();
         let max_acceleration = self.get_max_acceleration(obj, bdt);
 
@@ -2714,10 +2405,8 @@ impl Locomotor {
             actual_speed = -actual_speed;
         }
 
-        let slow_down_dist =
-            calc_slow_down_dist(actual_speed, self.template.min_speed, self.get_braking());
-        if on_path_dist_to_goal < slow_down_dist && !self.get_flag(NO_SLOW_DOWN_AS_APPROACHING_DEST)
-        {
+        let slow_down_dist = calc_slow_down_dist(actual_speed, self.template.min_speed, self.get_braking());
+        if on_path_dist_to_goal < slow_down_dist && !self.get_flag(NO_SLOW_DOWN_AS_APPROACHING_DEST) {
             goal_speed = self.template.min_speed;
         }
 
@@ -2754,11 +2443,7 @@ impl Locomotor {
 
             let dir = obj.unit_direction_vector_2d();
 
-            let force = Coord3D {
-                x: accel_force * dir.x,
-                y: accel_force * dir.y,
-                z: 0.0,
-            };
+            let force = Coord3D { x: accel_force * dir.x, y: accel_force * dir.y, z: 0.0 };
 
             // apply forces to object
             obj.apply_motive_force(&force);
@@ -2766,25 +2451,13 @@ impl Locomotor {
     }
 
     /// `moveTowardsPositionWings` (the `CIRCLE_FOR_LANDING` part is not compiled upstream).
-    fn move_towards_position_wings<H: LocomotorHost>(
-        &mut self,
-        obj: &mut H,
-        goal_pos: &Coord3D,
-        on_path_dist_to_goal: f32,
-        desired_speed: f32,
-    ) {
+    fn move_towards_position_wings<H: LocomotorHost>(&mut self, obj: &mut H, goal_pos: &Coord3D, on_path_dist_to_goal: f32, desired_speed: f32) {
         // handle the 2D component.
         self.move_towards_position_other(obj, goal_pos, on_path_dist_to_goal, desired_speed);
     }
 
     /// `moveTowardsPositionHover`.
-    fn move_towards_position_hover<H: LocomotorHost>(
-        &mut self,
-        obj: &mut H,
-        goal_pos: &Coord3D,
-        on_path_dist_to_goal: f32,
-        desired_speed: f32,
-    ) {
+    fn move_towards_position_hover<H: LocomotorHost>(&mut self, obj: &mut H, goal_pos: &Coord3D, on_path_dist_to_goal: f32, desired_speed: f32) {
         // handle the 2D component.
         self.move_towards_position_other(obj, goal_pos, on_path_dist_to_goal, desired_speed);
 
@@ -2804,13 +2477,7 @@ impl Locomotor {
     }
 
     /// `moveTowardsPositionThrust`.
-    fn move_towards_position_thrust<H: LocomotorHost>(
-        &mut self,
-        obj: &mut H,
-        goal_pos: &Coord3D,
-        on_path_dist_to_goal: f32,
-        desired_speed: f32,
-    ) {
+    fn move_towards_position_thrust<H: LocomotorHost>(&mut self, obj: &mut H, goal_pos: &Coord3D, on_path_dist_to_goal: f32, desired_speed: f32) {
         let bdt = obj.damage_state();
 
         let mut max_forward_speed = self.get_max_speed_for_condition(obj, bdt);
@@ -2818,14 +2485,8 @@ impl Locomotor {
         let actual_forward_speed = obj.forward_speed_3d();
 
         if self.get_braking() > 0.0 {
-            let slow_down_dist = calc_slow_down_dist(
-                actual_forward_speed,
-                self.template.min_speed,
-                self.get_braking(),
-            );
-            if on_path_dist_to_goal < slow_down_dist
-                && !self.get_flag(NO_SLOW_DOWN_AS_APPROACHING_DEST)
-            {
+            let slow_down_dist = calc_slow_down_dist(actual_forward_speed, self.template.min_speed, self.get_braking());
+            if on_path_dist_to_goal < slow_down_dist && !self.get_flag(NO_SLOW_DOWN_AS_APPROACHING_DEST) {
                 desired_speed = self.template.min_speed;
             }
         }
@@ -2847,11 +2508,7 @@ impl Locomotor {
 
         // Maintain goal speed
         let forward_speed_delta = desired_speed - actual_forward_speed;
-        let max_accel = if forward_speed_delta > 0.0 || self.get_braking() == 0.0 {
-            self.get_max_acceleration(obj, bdt)
-        } else {
-            -self.get_braking()
-        };
+        let max_accel = if forward_speed_delta > 0.0 || self.get_braking() == 0.0 { self.get_max_acceleration(obj, bdt) } else { -self.get_braking() };
         let mut max_turn_rate = self.get_max_turn_rate(obj, bdt);
 
         // what direction do we need to thrust in, in order to reach the goalpos?
@@ -2859,18 +2516,9 @@ impl Locomotor {
         calc_direction_to_apply_thrust(obj, &local_goal_pos, max_accel, &mut desired_thrust_dir);
 
         // we might not be able to thrust in that dir, so thrust as closely as we can
-        let max_thrust_angle = if max_turn_rate > 0.0 {
-            self.template.max_thrust_angle
-        } else {
-            0.0
-        };
+        let max_thrust_angle = if max_turn_rate > 0.0 { self.template.max_thrust_angle } else { 0.0 };
         let mut thrust_dir = Vector3::default();
-        let thrust_angle = try_to_rotate_vector_3d(
-            max_thrust_angle,
-            &forward_dir,
-            &desired_thrust_dir,
-            &mut thrust_dir,
-        );
+        let thrust_angle = try_to_rotate_vector_3d(max_thrust_angle, &forward_dir, &desired_thrust_dir, &mut thrust_dir);
 
         // note that we are trying to orient in the direction of our vel, not the dir of our thrust.
         if !is_nearly_zero(obj.velocity_magnitude()) {
@@ -2904,11 +2552,7 @@ impl Locomotor {
 
             let mass = obj.mass();
 
-            let force = Coord3D {
-                x: mass * accel_vec.x,
-                y: mass * accel_vec.y,
-                z: mass * accel_vec.z,
-            };
+            let force = Coord3D { x: mass * accel_vec.x, y: mass * accel_vec.y, z: mass * accel_vec.z };
 
             // apply forces to object
             obj.apply_motive_force(&force);
@@ -2930,13 +2574,7 @@ impl Locomotor {
     }
 
     /// `calcLiftToUseAtPt(obj, physics, curZ, surfaceAtPt, preferredHeight)`.
-    fn calc_lift_to_use_at_pt<H: LocomotorHost>(
-        &self,
-        obj: &H,
-        cur_z: f32,
-        _surface_at_pt: f32,
-        preferred_height: f32,
-    ) -> f32 {
+    fn calc_lift_to_use_at_pt<H: LocomotorHost>(&self, obj: &H, cur_z: f32, _surface_at_pt: f32, preferred_height: f32) -> f32 {
         /*
             take the classic equation:
 
@@ -3126,16 +2764,10 @@ impl Locomotor {
                 true
             }
 
-            LocomotorBehaviorZ::ZFixedSurfaceRelativeHeight
-            | LocomotorBehaviorZ::ZFixedAbsoluteHeight => {
+            LocomotorBehaviorZ::ZFixedSurfaceRelativeHeight | LocomotorBehaviorZ::ZFixedAbsoluteHeight => {
                 let mut pos = obj.position();
-                let surface_rel =
-                    self.template.behavior_z == LocomotorBehaviorZ::ZFixedSurfaceRelativeHeight;
-                let surface_ht = if surface_rel {
-                    self.get_surface_ht_at_pt(obj, pos.x, pos.y)
-                } else {
-                    0.0
-                };
+                let surface_rel = self.template.behavior_z == LocomotorBehaviorZ::ZFixedSurfaceRelativeHeight;
+                let surface_ht = if surface_rel { self.get_surface_ht_at_pt(obj, pos.x, pos.y) } else { 0.0 };
                 pos.z = self.preferred_height + (if surface_rel { surface_ht } else { 0.0 });
                 obj.set_position(&pos);
                 true
@@ -3174,15 +2806,10 @@ impl Locomotor {
                     delta *= self.get_preferred_height_damping();
                     preferred_height = pos.z + delta;
 
-                    let lift_to_use =
-                        self.calc_lift_to_use_at_pt(obj, pos.z, surface_ht, preferred_height);
+                    let lift_to_use = self.calc_lift_to_use_at_pt(obj, pos.z, surface_ht, preferred_height);
 
                     if lift_to_use != 0.0 {
-                        let force = Coord3D {
-                            x: 0.0,
-                            y: 0.0,
-                            z: lift_to_use * obj.mass(),
-                        };
+                        let force = Coord3D { x: 0.0, y: 0.0, z: lift_to_use * obj.mass() };
                         obj.apply_motive_force(&force);
                     }
                 }
@@ -3193,15 +2820,9 @@ impl Locomotor {
                 if self.preferred_height != 0.0 || self.get_flag(PRECISE_Z_POS) {
                     let pos = obj.position();
 
-                    let surface_rel =
-                        self.template.behavior_z == LocomotorBehaviorZ::ZSurfaceRelativeHeight;
-                    let surface_ht = if surface_rel {
-                        self.get_surface_ht_at_pt(obj, pos.x, pos.y)
-                    } else {
-                        0.0
-                    };
-                    let mut preferred_height =
-                        self.preferred_height + (if surface_rel { surface_ht } else { 0.0 });
+                    let surface_rel = self.template.behavior_z == LocomotorBehaviorZ::ZSurfaceRelativeHeight;
+                    let surface_ht = if surface_rel { self.get_surface_ht_at_pt(obj, pos.x, pos.y) } else { 0.0 };
+                    let mut preferred_height = self.preferred_height + (if surface_rel { surface_ht } else { 0.0 });
                     if self.get_flag(PRECISE_Z_POS) {
                         preferred_height = goal_pos.z;
                     }
@@ -3210,15 +2831,10 @@ impl Locomotor {
                     delta *= self.get_preferred_height_damping();
                     preferred_height = pos.z + delta;
 
-                    let lift_to_use =
-                        self.calc_lift_to_use_at_pt(obj, pos.z, surface_ht, preferred_height);
+                    let lift_to_use = self.calc_lift_to_use_at_pt(obj, pos.z, surface_ht, preferred_height);
 
                     if lift_to_use != 0.0 {
-                        let force = Coord3D {
-                            x: 0.0,
-                            y: 0.0,
-                            z: lift_to_use * obj.mass(),
-                        };
+                        let force = Coord3D { x: 0.0, y: 0.0, z: lift_to_use * obj.mass() };
                         obj.apply_motive_force(&force);
                     }
                 }
@@ -3228,13 +2844,7 @@ impl Locomotor {
     }
 
     /// `moveTowardsPositionOther`.
-    fn move_towards_position_other<H: LocomotorHost>(
-        &mut self,
-        obj: &mut H,
-        goal_pos: &Coord3D,
-        on_path_dist_to_goal: f32,
-        mut desired_speed: f32,
-    ) {
+    fn move_towards_position_other<H: LocomotorHost>(&mut self, obj: &mut H, goal_pos: &Coord3D, on_path_dist_to_goal: f32, mut desired_speed: f32) {
         let bdt = obj.damage_state();
         let max_acceleration = self.get_max_acceleration(obj, bdt);
 
@@ -3257,10 +2867,8 @@ impl Locomotor {
         let mut dir_to_apply_force = obj.unit_direction_vector_2d();
 
         if self.get_flag(ULTRA_ACCURATE)
-            && (goal_pos.y - pos.y).abs()
-                <= goal_speed * self.template.ultra_accurate_slide_into_place_factor
-            && (goal_pos.x - pos.x).abs()
-                <= goal_speed * self.template.ultra_accurate_slide_into_place_factor
+            && (goal_pos.y - pos.y).abs() <= goal_speed * self.template.ultra_accurate_slide_into_place_factor
+            && (goal_pos.x - pos.x).abs() <= goal_speed * self.template.ultra_accurate_slide_into_place_factor
         {
             // don't turn, just slide in the right direction
             obj.set_turning(PhysicsTurningType::TurnNone);
@@ -3274,8 +2882,7 @@ impl Locomotor {
         }
 
         if !self.get_flag(NO_SLOW_DOWN_AS_APPROACHING_DEST) {
-            let slow_down_dist =
-                calc_slow_down_dist(actual_speed, self.template.min_speed, self.get_braking());
+            let slow_down_dist = calc_slow_down_dist(actual_speed, self.template.min_speed, self.get_braking());
             if on_path_dist_to_goal < slow_down_dist {
                 goal_speed = self.template.min_speed;
             }
@@ -3287,11 +2894,7 @@ impl Locomotor {
         let speed_delta = goal_speed - actual_speed;
         if speed_delta != 0.0 {
             let mass = obj.mass();
-            let acceleration = if speed_delta > 0.0 {
-                max_acceleration
-            } else {
-                -self.get_braking()
-            };
+            let acceleration = if speed_delta > 0.0 { max_acceleration } else { -self.get_braking() };
             let mut accel_force = mass * acceleration;
 
             /*
@@ -3303,11 +2906,7 @@ impl Locomotor {
                 accel_force = max_force_needed;
             }
 
-            let force = Coord3D {
-                x: accel_force * dir_to_apply_force.x,
-                y: accel_force * dir_to_apply_force.y,
-                z: 0.0,
-            };
+            let force = Coord3D { x: accel_force * dir_to_apply_force.x, y: accel_force * dir_to_apply_force.y, z: 0.0 };
 
             // apply forces to object
             obj.apply_motive_force(&force);
@@ -3342,9 +2941,7 @@ impl Locomotor {
                 self.maintain_current_position_other(obj);
                 requires_constant_calling = false;
             }
-            LocomotorAppearance::LocoWheelsFour
-            | LocomotorAppearance::LocoMotorcycle
-            | LocomotorAppearance::LocoTreads => {
+            LocomotorAppearance::LocoWheelsFour | LocomotorAppearance::LocoMotorcycle | LocomotorAppearance::LocoTreads => {
                 self.maintain_current_position_other(obj);
                 requires_constant_calling = false;
             }
@@ -3395,11 +2992,7 @@ impl Locomotor {
             let pos = obj.position();
             let dx = self.maintain_pos.x - pos.x;
             let dy = self.maintain_pos.y - pos.y;
-            let mut angle_toward_maintain_pos = if is_nearly_zero(dx) && is_nearly_zero(dy) {
-                obj.orientation()
-            } else {
-                atan2_d(dy, dx)
-            };
+            let mut angle_toward_maintain_pos = if is_nearly_zero(dx) && is_nearly_zero(dy) { obj.orientation() } else { atan2_d(dy, dx) };
 
             let mut aim_dir = PI - PI / 8.0;
             if turn_radius < 0.0 {
@@ -3432,11 +3025,7 @@ impl Locomotor {
             let speed_delta = min_speed - actual_speed;
             if speed_delta.abs() > min_speed {
                 let mass = obj.mass();
-                let acceleration = if speed_delta > 0.0 {
-                    max_acceleration
-                } else {
-                    -self.get_braking()
-                };
+                let acceleration = if speed_delta > 0.0 { max_acceleration } else { -self.get_braking() };
                 let mut accel_force = mass * acceleration;
 
                 /*
@@ -3450,11 +3039,7 @@ impl Locomotor {
 
                 let dir = obj.unit_direction_vector_2d();
 
-                let force = Coord3D {
-                    x: accel_force * dir.x,
-                    y: accel_force * dir.y,
-                    z: 0.0,
-                };
+                let force = Coord3D { x: accel_force * dir.x, y: accel_force * dir.y, z: 0.0 };
 
                 // apply forces to object
                 obj.apply_motive_force(&force);
@@ -3566,16 +3151,8 @@ impl LocomotorSet {
     /// `addLocomotor(lt)`: a new `Locomotor` on the template of `namekey`
     /// (`TheLocomotorStore->newLocomotor(lt)`), appended; its surfaces join
     /// the valid ones, and a downhill-only one marks the set.
-    pub fn add_locomotor(
-        &mut self,
-        store: &LocomotorStore,
-        namekey: NameKeyType,
-        rng: &mut RandomValues,
-        frame: u32,
-    ) -> Result<(), LocomotorSetError> {
-        let loco = store
-            .new_locomotor(namekey, rng, frame)
-            .ok_or(LocomotorSetError::UnknownTemplate)?;
+    pub fn add_locomotor(&mut self, store: &LocomotorStore, namekey: NameKeyType, rng: &mut RandomValues, frame: u32) -> Result<(), LocomotorSetError> {
+        let loco = store.new_locomotor(namekey, rng, frame).ok_or(LocomotorSetError::UnknownTemplate)?;
         self.valid_locomotor_surfaces |= loco.get_legal_surfaces();
         if loco.get_is_downhill_only() {
             self.downhill_only = true;
@@ -3587,9 +3164,7 @@ impl LocomotorSet {
 
     /// `findLocomotor(t)`: the index of the first locomotor with a legal surface in `t`.
     pub fn find_locomotor(&self, t: LocomotorSurfaceTypeMask) -> Option<usize> {
-        self.locomotors
-            .iter()
-            .position(|l| (l.get_legal_surfaces() & t) != 0)
+        self.locomotors.iter().position(|l| (l.get_legal_surfaces() & t) != 0)
     }
 
     /// The locomotor at `index` (what `findLocomotor` returned).
@@ -3660,12 +3235,8 @@ impl LocomotorSet {
                 let mut name = Vec::new();
                 xfer.xfer_ascii_string(&mut name)?;
 
-                let key = names
-                    .try_name_to_key(&name)
-                    .map_err(|_| LocomotorSetError::UnknownString(name.clone()))?;
-                let mut loco = store
-                    .new_locomotor(key, rng, frame)
-                    .ok_or_else(|| LocomotorSetError::UnknownString(name.clone()))?;
+                let key = names.try_name_to_key(&name).map_err(|_| LocomotorSetError::UnknownString(name.clone()))?;
+                let mut loco = store.new_locomotor(key, rng, frame).ok_or_else(|| LocomotorSetError::UnknownString(name.clone()))?;
                 xfer.xfer_snapshot(&mut loco)?;
                 self.locomotors.push(loco);
             }
@@ -3702,11 +3273,7 @@ impl LocomotorSet {
             if name.is_empty() {
                 *loco = None;
             } else {
-                match self
-                    .locomotors
-                    .iter()
-                    .position(|l| l.get_template_name() == name.as_slice())
-                {
+                match self.locomotors.iter().position(|l| l.get_template_name() == name.as_slice()) {
                     Some(i) => {
                         *loco = Some(i);
                         return Ok(());
@@ -3750,35 +3317,10 @@ mod tests {
 
     impl Host {
         fn new() -> Self {
-            Host {
-                pos: Coord3D {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 0.0,
-                },
-                angle: 0.0,
-                vel: Coord3D {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 0.0,
-                },
-                mass: 2.0,
-                motive: false,
-                calls: Vec::new(),
-                frame: 100,
-            }
+            Host { pos: Coord3D { x: 0.0, y: 0.0, z: 0.0 }, angle: 0.0, vel: Coord3D { x: 0.0, y: 0.0, z: 0.0 }, mass: 2.0, motive: false, calls: Vec::new(), frame: 100 }
         }
         fn forces(&self) -> Vec<Coord3D> {
-            self.calls
-                .iter()
-                .filter_map(|c| {
-                    if let Call::Force(f) = c {
-                        Some(*f)
-                    } else {
-                        None
-                    }
-                })
-                .collect()
+            self.calls.iter().filter_map(|c| if let Call::Force(f) = c { Some(*f) } else { None }).collect()
         }
     }
 
@@ -3809,11 +3351,7 @@ mod tests {
             self.angle = angle;
         }
         fn unit_direction_vector_2d(&mut self) -> Coord3D {
-            Coord3D {
-                x: trig::cos(self.angle),
-                y: trig::sin(self.angle),
-                z: 0.0,
-            }
+            Coord3D { x: trig::cos(self.angle), y: trig::sin(self.angle), z: 0.0 }
         }
         fn transform_matrix(&self) -> Matrix3D {
             let mut m = Matrix3D::identity();
@@ -3822,11 +3360,7 @@ mod tests {
             m
         }
         fn set_transform_matrix(&mut self, mtx: &Matrix3D) {
-            self.pos = Coord3D {
-                x: mtx.get_x_translation(),
-                y: mtx.get_y_translation(),
-                z: mtx.get_z_translation(),
-            };
+            self.pos = Coord3D { x: mtx.get_x_translation(), y: mtx.get_y_translation(), z: mtx.get_z_translation() };
             self.angle = mtx.get_z_rotation();
         }
         fn layer(&self) -> PathfindLayer {
@@ -3880,11 +3414,7 @@ mod tests {
             self.vel.length()
         }
         fn forward_speed_2d(&self) -> f32 {
-            let d = Coord3D {
-                x: trig::cos(self.angle),
-                y: trig::sin(self.angle),
-                z: 0.0,
-            };
+            let d = Coord3D { x: trig::cos(self.angle), y: trig::sin(self.angle), z: 0.0 };
             self.vel.x * d.x + self.vel.y * d.y
         }
         fn forward_speed_3d(&self) -> f32 {
@@ -3912,11 +3442,7 @@ mod tests {
             0.0
         }
         fn underwater(&mut self, _x: f32, _y: f32) -> Underwater {
-            Underwater {
-                underwater: false,
-                water_z: None,
-                terrain_z: 0.0,
-            }
+            Underwater { underwater: false, water_z: None, terrain_z: 0.0 }
         }
         fn highest_layer_for_destination(&mut self, _pos: &Coord3D) -> PathfindLayer {
             LAYER_GROUND
@@ -3924,12 +3450,7 @@ mod tests {
         fn ground_or_structure_height(&mut self, _x: f32, _y: f32) -> f32 {
             0.0
         }
-        fn valid_movement_terrain(
-            &mut self,
-            _layer: PathfindLayer,
-            _loco: &Locomotor,
-            _pos: &Coord3D,
-        ) -> bool {
+        fn valid_movement_terrain(&mut self, _layer: PathfindLayer, _loco: &Locomotor, _pos: &Coord3D) -> bool {
             true
         }
     }
@@ -3940,24 +3461,17 @@ mod tests {
     }
 
     fn block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-        c.store
-            .parse_locomotor_template_definition(ini, &mut c.names)
+        c.store.parse_locomotor_template_definition(ini, &mut c.names)
     }
 
-    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse {
-        token: "Locomotor",
-        parse: block,
-    }];
+    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse { token: "Locomotor", parse: block }];
 
     fn load_as(text: &[u8], ty: IniLoadType, c: &mut Ctx) -> IniResult<()> {
         Ini::load(b"l.ini", text, ty, None, &BLOCKS, c)
     }
 
     fn ctx() -> Ctx {
-        let mut c = Ctx {
-            store: LocomotorStore::new(),
-            names: NameKeyGenerator::new(),
-        };
+        let mut c = Ctx { store: LocomotorStore::new(), names: NameKeyGenerator::new() };
         c.names.init();
         c
     }
@@ -3977,20 +3491,11 @@ mod tests {
         let key = c.names.name_to_key(b"Tank");
         let t = &c.store.find_locomotor_template(key).unwrap().data;
         assert_eq!(t.name, b"Tank");
-        assert_eq!(
-            t.surfaces,
-            LOCOMOTORSURFACE_GROUND | LOCOMOTORSURFACE_RUBBLE
-        );
+        assert_eq!(t.surfaces, LOCOMOTORSURFACE_GROUND | LOCOMOTORSURFACE_RUBBLE);
         assert_eq!(t.appearance, LocomotorAppearance::LocoTreads);
         // per second to per frame, as the INI converters do
-        assert_eq!(
-            t.max_speed,
-            crate::common::game_common::convert_velocity_in_secs_to_frames(30.0)
-        );
-        assert_eq!(
-            t.max_speed_damaged,
-            crate::common::game_common::convert_velocity_in_secs_to_frames(15.0)
-        );
+        assert_eq!(t.max_speed, crate::common::game_common::convert_velocity_in_secs_to_frames(30.0));
+        assert_eq!(t.max_speed_damaged, crate::common::game_common::convert_velocity_in_secs_to_frames(15.0));
         // not given: "damaged" copies the undamaged value
         assert_eq!(t.max_turn_rate_damaged, t.max_turn_rate);
         assert_eq!(t.acceleration_damaged, t.acceleration);
@@ -4016,10 +3521,7 @@ mod tests {
         let mut t = LocomotorTemplate::new();
         t.appearance = LocomotorAppearance::LocoThrust;
         t.validate().unwrap();
-        assert_eq!(
-            (t.max_speed, t.max_speed_damaged, t.min_speed),
-            (0.01, 0.01, 0.01)
-        );
+        assert_eq!((t.max_speed, t.max_speed_damaged, t.min_speed), (0.01, 0.01, 0.01));
         t.lift = 1.0;
         assert_eq!(t.validate().unwrap_err().kind, IniErrorKind::InvalidData);
         let mut t = LocomotorTemplate::new();
@@ -4032,46 +3534,24 @@ mod tests {
     fn ini_errors_and_overrides() {
         let mut c = ctx();
         // a THRUST block with lift is rejected, and the template is not stored
-        let r = load_as(
-            b"Locomotor T\n Appearance = THRUST\n Lift = 5\nEnd\n",
-            IniLoadType::Overwrite,
-            &mut c,
-        );
+        let r = load_as(b"Locomotor T\n Appearance = THRUST\n Lift = 5\nEnd\n", IniLoadType::Overwrite, &mut c);
         assert_eq!(r.unwrap_err().kind, IniErrorKind::InvalidData);
         assert!(c.store.is_empty());
         // an unknown field
-        let r = load_as(
-            b"Locomotor T\n Wibble = 5\nEnd\n",
-            IniLoadType::Overwrite,
-            &mut c,
-        );
+        let r = load_as(b"Locomotor T\n Wibble = 5\nEnd\n", IniLoadType::Overwrite, &mut c);
         assert_eq!(r.unwrap_err().kind, IniErrorKind::UnknownToken);
         assert!(c.store.is_empty());
 
         load_as(TANK, IniLoadType::Overwrite, &mut c).unwrap();
         // an override load hangs a copy off the final override and fills it
-        load_as(
-            b"Locomotor Tank\n Speed = 60\nEnd\n",
-            IniLoadType::CreateOverrides,
-            &mut c,
-        )
-        .unwrap();
+        load_as(b"Locomotor Tank\n Speed = 60\nEnd\n", IniLoadType::CreateOverrides, &mut c).unwrap();
         let key = c.names.name_to_key(b"Tank");
         let head = c.store.find_locomotor_template(key).unwrap();
-        assert_eq!(
-            head.data.max_speed,
-            crate::common::game_common::convert_velocity_in_secs_to_frames(30.0)
-        );
+        assert_eq!(head.data.max_speed, crate::common::game_common::convert_velocity_in_secs_to_frames(30.0));
         let fin = &head.get_final_override().data;
-        assert_eq!(
-            fin.max_speed,
-            crate::common::game_common::convert_velocity_in_secs_to_frames(60.0)
-        );
+        assert_eq!(fin.max_speed, crate::common::game_common::convert_velocity_in_secs_to_frames(60.0));
         // everything not mentioned is the copied value
-        assert_eq!(
-            fin.max_speed_damaged,
-            crate::common::game_common::convert_velocity_in_secs_to_frames(15.0)
-        );
+        assert_eq!(fin.max_speed_damaged, crate::common::game_common::convert_velocity_in_secs_to_frames(15.0));
         let loco = c.store.new_locomotor(key, &mut rng(), 0).unwrap();
         assert_eq!(loco.template().max_speed, fin.max_speed);
         // reset removes the override
@@ -4079,12 +3559,7 @@ mod tests {
         let head = c.store.find_locomotor_template(key).unwrap();
         assert!(head.get_next_override().is_none());
         // a template created by an override load disappears with it
-        load_as(
-            b"Locomotor Other\nEnd\n",
-            IniLoadType::CreateOverrides,
-            &mut c,
-        )
-        .unwrap();
+        load_as(b"Locomotor Other\nEnd\n", IniLoadType::CreateOverrides, &mut c).unwrap();
         assert_eq!(c.store.len(), 2);
         c.store.reset();
         assert_eq!(c.store.len(), 1);
@@ -4128,56 +3603,18 @@ mod tests {
         let mut h = Host::new();
         let mut blocked = false;
         // goal straight ahead: full acceleration along +x, no turning
-        loco.loco_update_move_towards_position(
-            &mut h,
-            &Coord3D {
-                x: 500.0,
-                y: 0.0,
-                z: 0.0,
-            },
-            500.0,
-            1000.0,
-            &mut blocked,
-        );
+        loco.loco_update_move_towards_position(&mut h, &Coord3D { x: 500.0, y: 0.0, z: 0.0 }, 500.0, 1000.0, &mut blocked);
         let forces = h.forces();
         // a null force flags the object as driven, then the real one
-        assert_eq!(
-            forces[0],
-            Coord3D {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0
-            }
-        );
+        assert_eq!(forces[0], Coord3D { x: 0.0, y: 0.0, z: 0.0 });
         let accel = crate::common::game_common::convert_acceleration_in_secs_to_frames(60.0);
-        assert_eq!(
-            forces[1],
-            Coord3D {
-                x: h.mass * accel,
-                y: 0.0,
-                z: 0.0
-            }
-        );
-        assert!(h
-            .calls
-            .contains(&Call::Turning(PhysicsTurningType::TurnNone)));
+        assert_eq!(forces[1], Coord3D { x: h.mass * accel, y: 0.0, z: 0.0 });
+        assert!(h.calls.contains(&Call::Turning(PhysicsTurningType::TurnNone)));
         assert!(!blocked);
         // goal behind: the tank turns by its turn rate and, being > 45 degrees off, does not accelerate
         let mut h = Host::new();
-        loco.loco_update_move_towards_position(
-            &mut h,
-            &Coord3D {
-                x: -500.0,
-                y: 1.0,
-                z: 0.0,
-            },
-            500.0,
-            1000.0,
-            &mut blocked,
-        );
-        assert!(h
-            .calls
-            .contains(&Call::Turning(PhysicsTurningType::TurnPositive)));
+        loco.loco_update_move_towards_position(&mut h, &Coord3D { x: -500.0, y: 1.0, z: 0.0 }, 500.0, 1000.0, &mut blocked);
+        assert!(h.calls.contains(&Call::Turning(PhysicsTurningType::TurnPositive)));
         assert_eq!(h.forces().len(), 1);
         assert_eq!(h.angle, crate::common::game_common::convert_angular_velocity_in_degrees_per_sec_to_rads_per_frame(90.0));
     }
@@ -4188,34 +3625,13 @@ mod tests {
         let mut loco = make(&mut c, TANK, b"Tank");
         let mut h = Host::new();
         h.motive = true;
-        h.pos = Coord3D {
-            x: 3.0,
-            y: 4.0,
-            z: 0.0,
-        };
+        h.pos = Coord3D { x: 3.0, y: 4.0, z: 0.0 };
         assert!(!loco.loco_update_maintain_current_position(&mut h));
         assert!(h.calls.contains(&Call::Scrub(0.0)));
-        assert_eq!(
-            loco.maintain_pos(),
-            Coord3D {
-                x: 3.0,
-                y: 4.0,
-                z: 0.0
-            }
-        );
+        assert_eq!(loco.maintain_pos(), Coord3D { x: 3.0, y: 4.0, z: 0.0 });
         // moving clears the validity of the maintain position
         let mut blocked = false;
-        loco.loco_update_move_towards_position(
-            &mut h,
-            &Coord3D {
-                x: 9.0,
-                y: 4.0,
-                z: 0.0,
-            },
-            6.0,
-            1.0,
-            &mut blocked,
-        );
+        loco.loco_update_move_towards_position(&mut h, &Coord3D { x: 9.0, y: 4.0, z: 0.0 }, 6.0, 1.0, &mut blocked);
         assert!(!loco.get_flag(MAINTAIN_POS_IS_VALID));
         // hover and other things need constant calling
         let mut c = ctx();
@@ -4234,19 +3650,11 @@ mod tests {
         let mut h = Host::new();
         h.pos.z = 5.0;
         assert!(loco.loco_update_maintain_current_position(&mut h));
-        let lift = h
-            .forces()
-            .into_iter()
-            .find(|f| f.z != 0.0)
-            .expect("a lift force");
+        let lift = h.forces().into_iter().find(|f| f.z != 0.0).expect("a lift force");
         assert!(lift.z > 0.0 && lift.x == 0.0 && lift.y == 0.0);
         // fixed height: the position is written, no force
         let mut c = ctx();
-        let mut fixed = make(
-            &mut c,
-            b"Locomotor F\n ZAxisBehavior = FIXED_ABSOLUTE_HEIGHT\n PreferredHeight = 7\nEnd\n",
-            b"F",
-        );
+        let mut fixed = make(&mut c, b"Locomotor F\n ZAxisBehavior = FIXED_ABSOLUTE_HEIGHT\n PreferredHeight = 7\nEnd\n", b"F");
         let mut h = Host::new();
         assert!(fixed.loco_update_maintain_current_position(&mut h));
         assert_eq!(h.pos.z, 7.0);
@@ -4256,31 +3664,17 @@ mod tests {
     fn locomotor_set_finds_by_surface_and_round_trips_through_xfer() {
         let mut c = ctx();
         load_as(TANK, IniLoadType::Overwrite, &mut c).unwrap();
-        load_as(
-            b"Locomotor Boat\n Surfaces = WATER\n Appearance = HOVER\n DownhillOnly = No\nEnd\n",
-            IniLoadType::Overwrite,
-            &mut c,
-        )
-        .unwrap();
+        load_as(b"Locomotor Boat\n Surfaces = WATER\n Appearance = HOVER\n DownhillOnly = No\nEnd\n", IniLoadType::Overwrite, &mut c).unwrap();
         let tank = c.names.name_to_key(b"Tank");
         let boat = c.names.name_to_key(b"Boat");
         let mut r = rng();
         let mut set = LocomotorSet::new();
         set.add_locomotor(&c.store, tank, &mut r, 10).unwrap();
         set.add_locomotor(&c.store, boat, &mut r, 10).unwrap();
-        assert_eq!(
-            set.add_locomotor(&c.store, NameKeyType(999_999), &mut r, 10),
-            Err(LocomotorSetError::UnknownTemplate)
-        );
-        assert_eq!(
-            set.get_valid_surfaces(),
-            LOCOMOTORSURFACE_GROUND | LOCOMOTORSURFACE_RUBBLE | LOCOMOTORSURFACE_WATER
-        );
+        assert_eq!(set.add_locomotor(&c.store, NameKeyType(999_999), &mut r, 10), Err(LocomotorSetError::UnknownTemplate));
+        assert_eq!(set.get_valid_surfaces(), LOCOMOTORSURFACE_GROUND | LOCOMOTORSURFACE_RUBBLE | LOCOMOTORSURFACE_WATER);
         assert_eq!(set.find_locomotor(LOCOMOTORSURFACE_WATER), Some(1));
-        assert_eq!(
-            set.find_locomotor(LOCOMOTORSURFACE_GROUND | LOCOMOTORSURFACE_WATER),
-            Some(0)
-        );
+        assert_eq!(set.find_locomotor(LOCOMOTORSURFACE_GROUND | LOCOMOTORSURFACE_WATER), Some(0));
         assert_eq!(set.find_locomotor(LOCOMOTORSURFACE_AIR), None);
         assert!(!set.is_downhill_only());
         set.get_mut(0).unwrap().set_max_speed(1.5);
@@ -4289,8 +3683,7 @@ mod tests {
         save.open(b"t").unwrap();
         let mut cur = Some(1usize);
         let mut r2 = rng();
-        set.xfer_self_and_cur_loco_ptr(&mut save, &c.store, &mut c.names, &mut r2, 0, &mut cur)
-            .unwrap();
+        set.xfer_self_and_cur_loco_ptr(&mut save, &c.store, &mut c.names, &mut r2, 0, &mut cur).unwrap();
         save.close().unwrap();
         let bytes = save.bytes().to_vec();
 
@@ -4298,8 +3691,7 @@ mod tests {
         load.open(b"t").unwrap();
         let mut back = LocomotorSet::new();
         let mut cur2 = None;
-        back.xfer_self_and_cur_loco_ptr(&mut load, &c.store, &mut c.names, &mut r2, 0, &mut cur2)
-            .unwrap();
+        back.xfer_self_and_cur_loco_ptr(&mut load, &c.store, &mut c.names, &mut r2, 0, &mut cur2).unwrap();
         load.close().unwrap();
         assert_eq!(cur2, Some(1));
         assert_eq!(back.len(), 2);
@@ -4317,16 +3709,6 @@ mod tests {
         let mut load = XferLoad::new(bytes);
         load.open(b"t").unwrap();
         let mut cur3 = None;
-        assert_eq!(
-            set.xfer_self_and_cur_loco_ptr(
-                &mut load,
-                &c.store,
-                &mut c.names,
-                &mut r2,
-                0,
-                &mut cur3
-            ),
-            Err(LocomotorSetError::NotEmpty)
-        );
+        assert_eq!(set.xfer_self_and_cur_loco_ptr(&mut load, &c.store, &mut c.names, &mut r2, 0, &mut cur3), Err(LocomotorSetError::NotEmpty));
     }
 }

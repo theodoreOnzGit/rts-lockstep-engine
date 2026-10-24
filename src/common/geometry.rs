@@ -167,13 +167,7 @@ fn is_within(a: f32, b: f32, c: f32) -> bool {
 
 impl GeometryInfo {
     /// `GeometryInfo(type, isSmall, height, majorRadius, minorRadius)`.
-    pub fn new(
-        geom_type: GeometryType,
-        is_small: bool,
-        height: f32,
-        major_radius: f32,
-        minor_radius: f32,
-    ) -> Self {
+    pub fn new(geom_type: GeometryType, is_small: bool, height: f32, major_radius: f32, minor_radius: f32) -> Self {
         let mut g = GeometryInfo {
             geom_type,
             is_small: false,
@@ -213,11 +207,7 @@ impl GeometryInfo {
                 let half = f64::from(self.height) * 0.5;
                 let sum = f64::from(planar) + half * half;
                 // (a NaN as `sqrtsd` returns it: see `c_sqrt`)
-                self.bounding_sphere_radius = if sum.is_nan() {
-                    sum as f32
-                } else {
-                    Real::sqrt(sum) as f32
-                };
+                self.bounding_sphere_radius = if sum.is_nan() { sum as f32 } else { Real::sqrt(sum) as f32 };
             }
         }
     }
@@ -225,14 +215,7 @@ impl GeometryInfo {
     /// `set(type, isSmall, height, majorRadius, minorRadius)`: which of the
     /// arguments a shape keeps (a sphere takes its radius for all three
     /// extents, a cylinder its radius and height, a box all of them).
-    pub fn set(
-        &mut self,
-        geom_type: GeometryType,
-        is_small: bool,
-        height: f32,
-        major_radius: f32,
-        minor_radius: f32,
-    ) {
+    pub fn set(&mut self, geom_type: GeometryType, is_small: bool, height: f32, major_radius: f32, minor_radius: f32) {
         self.geom_type = geom_type;
         self.is_small = is_small;
         match geom_type {
@@ -301,12 +284,7 @@ impl GeometryInfo {
 
     /// `isIntersectedByLineSegment`: upstream treats every shape as a sphere
     /// ("does not work properly for nonspheres yet").
-    pub fn is_intersected_by_line_segment(
-        &self,
-        loc: &Coord3D,
-        from: &Coord3D,
-        to: &Coord3D,
-    ) -> bool {
+    pub fn is_intersected_by_line_segment(&self, loc: &Coord3D, from: &Coord3D, to: &Coord3D) -> bool {
         let dist_squared = calc_point_to_line_dist_squared(loc, from, to);
         dist_squared <= sqr(self.get_bounding_sphere_radius())
     }
@@ -366,12 +344,7 @@ impl GeometryInfo {
     /// `calcPitches(thisPos, that, thatPos, minPitch, maxPitch)`: the lowest
     /// and highest pitch, as `(minPitch, maxPitch)`, from this geometry's
     /// centre to `that` (taken at its top-centre and bottom-centre).
-    pub fn calc_pitches(
-        &self,
-        this_pos: &Coord3D,
-        that: &GeometryInfo,
-        that_pos: &Coord3D,
-    ) -> (f32, f32) {
+    pub fn calc_pitches(&self, this_pos: &Coord3D, that: &GeometryInfo, that_pos: &Coord3D) -> (f32, f32) {
         let this_center = self.get_center_position(this_pos);
 
         let dxy = c_sqrt(sqr(that_pos.x - this_center.x) + sqr(that_pos.y - this_center.y));
@@ -548,15 +521,8 @@ impl GeometryInfo {
                 radius <= self.major_radius
             }
             GeometryType::Box => {
-                is_within(
-                    geom_center.x - self.major_radius,
-                    pt.x,
-                    geom_center.x + self.major_radius,
-                ) && is_within(
-                    geom_center.y - self.minor_radius,
-                    pt.y,
-                    geom_center.y + self.minor_radius,
-                )
+                is_within(geom_center.x - self.major_radius, pt.x, geom_center.x + self.major_radius)
+                    && is_within(geom_center.y - self.minor_radius, pt.y, geom_center.y + self.minor_radius)
             }
         }
     }
@@ -600,11 +566,7 @@ impl Snapshot for GeometryInfo {
 // ---------------------------------------------------------------------------
 
 /// `GeometryInfo::parseGeometryType`: `Geometry = SPHERE | CYLINDER | BOX`.
-pub fn parse_geometry_type(
-    ini: &mut Ini<'_>,
-    g: &mut GeometryInfo,
-    _ud: &UserData,
-) -> IniResult<()> {
+pub fn parse_geometry_type(ini: &mut Ini<'_>, g: &mut GeometryInfo, _ud: &UserData) -> IniResult<()> {
     let index = ini.parse_index_list(GEOMETRY_NAMES)?;
     // `scanIndexList` returns an index into `GEOMETRY_NAMES`, always in range.
     g.geom_type = GeometryType::from_index(index)
@@ -614,44 +576,28 @@ pub fn parse_geometry_type(
 }
 
 /// `GeometryInfo::parseGeometryIsSmall`: `GeometryIsSmall = Yes | No`.
-pub fn parse_geometry_is_small(
-    ini: &mut Ini<'_>,
-    g: &mut GeometryInfo,
-    _ud: &UserData,
-) -> IniResult<()> {
+pub fn parse_geometry_is_small(ini: &mut Ini<'_>, g: &mut GeometryInfo, _ud: &UserData) -> IniResult<()> {
     g.is_small = ini.parse_bool()?;
     g.calc_bounding_stuff();
     Ok(())
 }
 
 /// `GeometryInfo::parseGeometryHeight`.
-pub fn parse_geometry_height(
-    ini: &mut Ini<'_>,
-    g: &mut GeometryInfo,
-    _ud: &UserData,
-) -> IniResult<()> {
+pub fn parse_geometry_height(ini: &mut Ini<'_>, g: &mut GeometryInfo, _ud: &UserData) -> IniResult<()> {
     g.height = ini.parse_real()?;
     g.calc_bounding_stuff();
     Ok(())
 }
 
 /// `GeometryInfo::parseGeometryMajorRadius`.
-pub fn parse_geometry_major_radius(
-    ini: &mut Ini<'_>,
-    g: &mut GeometryInfo,
-    _ud: &UserData,
-) -> IniResult<()> {
+pub fn parse_geometry_major_radius(ini: &mut Ini<'_>, g: &mut GeometryInfo, _ud: &UserData) -> IniResult<()> {
     g.major_radius = ini.parse_real()?;
     g.calc_bounding_stuff();
     Ok(())
 }
 
 /// `GeometryInfo::parseGeometryMinorRadius`.
-pub fn parse_geometry_minor_radius(
-    ini: &mut Ini<'_>,
-    g: &mut GeometryInfo,
-    _ud: &UserData,
-) -> IniResult<()> {
+pub fn parse_geometry_minor_radius(ini: &mut Ini<'_>, g: &mut GeometryInfo, _ud: &UserData) -> IniResult<()> {
     g.minor_radius = ini.parse_real()?;
     g.calc_bounding_stuff();
     Ok(())
@@ -661,16 +607,8 @@ pub fn parse_geometry_minor_radius(
 /// the thing-template parser will use them.
 pub static GEOMETRY_FIELDS: [FieldParse<GeometryInfo>; 6] = [
     FieldParse::new("Geometry", parse_geometry_type, UserData::None),
-    FieldParse::new(
-        "GeometryMajorRadius",
-        parse_geometry_major_radius,
-        UserData::None,
-    ),
-    FieldParse::new(
-        "GeometryMinorRadius",
-        parse_geometry_minor_radius,
-        UserData::None,
-    ),
+    FieldParse::new("GeometryMajorRadius", parse_geometry_major_radius, UserData::None),
+    FieldParse::new("GeometryMinorRadius", parse_geometry_minor_radius, UserData::None),
     FieldParse::new("GeometryHeight", parse_geometry_height, UserData::None),
     FieldParse::new("GeometryIsSmall", parse_geometry_is_small, UserData::None),
     FieldParse::end(),
@@ -686,14 +624,7 @@ mod tests {
 
     #[test]
     fn type_index_round_trips_and_rejects_outside_the_names() {
-        for (i, t) in [
-            GeometryType::Sphere,
-            GeometryType::Cylinder,
-            GeometryType::Box,
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        for (i, t) in [GeometryType::Sphere, GeometryType::Cylinder, GeometryType::Box].into_iter().enumerate() {
             assert_eq!(GeometryType::from_index(i as i32), Some(t));
             assert_eq!(t as i32, i as i32);
         }
@@ -744,16 +675,8 @@ mod tests {
     #[test]
     fn a_point_on_a_segment_intersects_and_a_far_point_does_not() {
         let g = GeometryInfo::new(GeometryType::Sphere, false, 0.0, 2.0, 2.0);
-        assert!(g.is_intersected_by_line_segment(
-            &c(5.0, 0.0, 0.0),
-            &c(0.0, 0.0, 0.0),
-            &c(10.0, 0.0, 0.0)
-        ));
-        assert!(!g.is_intersected_by_line_segment(
-            &c(5.0, 9.0, 0.0),
-            &c(0.0, 0.0, 0.0),
-            &c(10.0, 0.0, 0.0)
-        ));
+        assert!(g.is_intersected_by_line_segment(&c(5.0, 0.0, 0.0), &c(0.0, 0.0, 0.0), &c(10.0, 0.0, 0.0)));
+        assert!(!g.is_intersected_by_line_segment(&c(5.0, 9.0, 0.0), &c(0.0, 0.0, 0.0), &c(10.0, 0.0, 0.0)));
     }
 
     #[test]
@@ -808,13 +731,7 @@ mod tests {
         let names: Vec<&str> = GEOMETRY_FIELDS.iter().filter_map(|f| f.token).collect();
         assert_eq!(
             names,
-            [
-                "Geometry",
-                "GeometryMajorRadius",
-                "GeometryMinorRadius",
-                "GeometryHeight",
-                "GeometryIsSmall"
-            ]
+            ["Geometry", "GeometryMajorRadius", "GeometryMinorRadius", "GeometryHeight", "GeometryIsSmall"]
         );
     }
 }

@@ -75,16 +75,14 @@ mod up_common;
 use mux_common::*;
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
 use rts_lockstep_engine::common::module::ModuleDataKind;
-use rts_lockstep_engine::common::object_status_types::{
-    ObjectStatusMaskType, OBJECT_STATUS_UNDER_CONSTRUCTION,
-};
+use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_UNDER_CONSTRUCTION};
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::modules::fire_ocl_after_weapon_cooldown_update::FireOCLAfterWeaponCooldownUpdateModuleData;
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleHandle};
-use rts_lockstep_engine::logic::world::object_create::NewObject;
 use rts_lockstep_engine::logic::world::object_cuts::{CutCall, WeaponFacts};
+use rts_lockstep_engine::logic::world::object_create::NewObject;
 use rts_lockstep_engine::logic::world::statics::GameStatics;
 use rts_lockstep_engine::logic::world::team::Team;
 use rts_lockstep_engine::logic::world::update_body::UpdateBody;
@@ -104,17 +102,12 @@ const OBJECT_TEAM: u32 = 100;
 // -- reading the data --
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(Arc::new(
-        FireOCLAfterWeaponCooldownUpdateModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(Arc::new(FireOCLAfterWeaponCooldownUpdateModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -131,9 +124,7 @@ fn ocl_code(name: &Option<Vec<u8>>) -> u32 {
 
 /// The data dump of `ref_l9fo_run`: the mux, then the module's own fields.
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, fx: &mut FxIds) {
-    let ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d) = data else {
-        unreachable!("not a FireOCLAfterWeaponCooldownUpdate")
-    };
+    let ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d) = data else { unreachable!("not a FireOCLAfterWeaponCooldownUpdate") };
     put_mux(v, &d.upgrade.mux_data(), fx);
     put_u32(v, ocl_code(&d.ocl));
     put_i32(v, d.weapon_slot);
@@ -151,9 +142,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
     let mut r = Reader::new(b);
     r.mux(&mut out);
     let (ocl, slot, min, rate, cap) = (r.u32(), r.u32() as i32, r.u32(), r.u32(), r.u32());
-    out.push(format!(
-        "data ocl {ocl} slot {slot} min {min} rate {rate} cap {cap}"
-    ));
+    out.push(format!("data ocl {ocl} slot {slot} min {min} rate {rate} cap {cap}"));
     for i in 0..n_ops {
         if r.at_end() {
             break;
@@ -165,9 +154,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let log: Vec<String> = (0..nlog).map(|_| r.str()).collect();
         let x = r.xfer();
         let state: Vec<u32> = (0..3).map(|_| r.u32()).collect();
-        out.push(format!(
-            "op {i}: status {st} result {res} upgraded {up} log {log:?} {x} state {state:?}"
-        ));
+        out.push(format!("op {i}: status {st} result {res} upgraded {up} log {log:?} {x} state {state:?}"));
     }
     out
 }
@@ -179,9 +166,7 @@ fn gen_uint(g: &mut Gen, clean: bool, small: bool) -> String {
         0..=2 => "0".to_string(),
         3..=8 => pick(g, &["1", "2", "3", "4", "5", "10"]).to_string(),
         9 if !clean => pick(g, &["x", "", "-1", "12abc", "4294967296"]).to_string(),
-        10 if !small => {
-            pick(g, &["100", "500", "1000", "2000", "100000", "4294967295"]).to_string()
-        }
+        10 if !small => pick(g, &["100", "500", "1000", "2000", "100000", "4294967295"]).to_string(),
         _ => format!("{}", g.below(20)),
     }
 }
@@ -205,30 +190,9 @@ fn gen_data(g: &mut Gen, upgrades: &[String], clean: bool) -> Vec<u8> {
             lines.push(format!("{name}{sep}{value}"));
         }
     };
-    let v = if clean {
-        pick(g, &["PRIMARY", "SECONDARY", "TERTIARY"]).to_string()
-    } else {
-        pick(
-            g,
-            &[
-                "PRIMARY",
-                "SECONDARY",
-                "TERTIARY",
-                "primary",
-                "Secondary",
-                "QUATERNARY",
-                "1",
-                "",
-            ],
-        )
-        .to_string()
-    };
+    let v = if clean { pick(g, &["PRIMARY", "SECONDARY", "TERTIARY"]).to_string() } else { pick(g, &["PRIMARY", "SECONDARY", "TERTIARY", "primary", "Secondary", "QUATERNARY", "1", ""]).to_string() };
     field(g, 55, "WeaponSlot", v);
-    let v = pick(
-        g,
-        &["OCL_A", "OCL_B", "OCL_A", "None", "none", "ocl_a", "OCL_Z"],
-    )
-    .to_string();
+    let v = pick(g, &["OCL_A", "OCL_B", "OCL_A", "None", "none", "ocl_a", "OCL_Z"]).to_string();
     field(g, 75, "OCL", v);
     let v = gen_uint(g, clean, true);
     field(g, 60, "MinShotsToCreateOCL", v);
@@ -239,11 +203,7 @@ fn gen_data(g: &mut Gen, upgrades: &[String], clean: bool) -> Vec<u8> {
     let mut mux_lines = Vec::new();
     gen_mux_lines(g, upgrades, clean, &mut mux_lines);
     // a quarter as many TriggeredBy lines: the module should reach its OCL often
-    lines.extend(
-        mux_lines
-            .into_iter()
-            .filter(|l| !l.starts_with("TriggeredBy") || g.below(100) < 35),
-    );
+    lines.extend(mux_lines.into_iter().filter(|l| !l.starts_with("TriggeredBy") || g.below(100) < 35));
     if !clean && g.below(25) == 0 {
         lines.push(format!("Bogus{}1", gen_sep(g)));
     }
@@ -271,24 +231,13 @@ struct Tally {
 }
 
 /// The effect lines of a trace, in the driver's format.
-fn effects(
-    trace: Vec<String>,
-    cuts: Vec<CutCall>,
-    fxs: Vec<Vec<u8>>,
-    fx: &mut FxIds,
-) -> Vec<String> {
+fn effects(trace: Vec<String>, cuts: Vec<CutCall>, fxs: Vec<Vec<u8>>, fx: &mut FxIds) -> Vec<String> {
     let mut log = Vec::new();
     let mut cut_iter = cuts.into_iter();
     let mut fx_iter = fxs.into_iter();
     for t in trace {
         if t.starts_with("cut ") {
-            if let Some(CutCall::OclCreateWithLifetime {
-                secondary,
-                ocl,
-                lifetime_frames,
-                ..
-            }) = cut_iter.next()
-            {
+            if let Some(CutCall::OclCreateWithLifetime { secondary, ocl, lifetime_frames, .. }) = cut_iter.next() {
                 let i = match ocl.as_slice() {
                     b"OCL_A" => 0,
                     b"OCL_B" => 1,
@@ -322,36 +271,16 @@ fn set_controller(w: &mut World, player: Option<u32>) {
     }
 }
 
-const PROBE: [&str; 9] = [
-    "none",
-    "Up0",
-    "Up3",
-    "Unknown0",
-    "Unknown2",
-    "Up9",
-    "SCIENCE_Pathfinder",
-    "zz_fresh",
-    "FireOCLAfterWeaponCooldownUpdate",
-];
+const PROBE: [&str; 9] = ["none", "Up0", "Up3", "Unknown0", "Unknown2", "Up9", "SCIENCE_Pathfinder", "zz_fresh", "FireOCLAfterWeaponCooldownUpdate"];
 
 /// Runs the ops on a fresh world and returns the dump (after the data dump), the name keys afterwards and the world.
-fn rust_run(
-    ctx: Ctx,
-    data: ModuleDataKind,
-    cfg: &[u32; 2],
-    ops: &[[u32; 5]],
-    tally: &mut Tally,
-) -> (Vec<u8>, Vec<u32>, World) {
+fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; 2], ops: &[[u32; 5]], tally: &mut Tally) -> (Vec<u8>, Vec<u32>, World) {
     let mut v = Vec::new();
     let mut fx = FxIds::default();
     put_data(&mut v, &data, &mut fx);
 
     let mut w = World::new();
-    w.statics = Arc::new(GameStatics {
-        upgrade_center: ctx.center,
-        special_power_store: ctx.store,
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
     w.names = ctx.names;
     w.cuts.probe_effect_trace = true;
     w.cuts.trace = Some(Vec::new());
@@ -366,42 +295,17 @@ fn rust_run(
     set_controller(&mut w, (cfg[0] != NO_PLAYER).then_some(cfg[0]));
     w.set_frame(cfg[1]);
 
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        b"FireOCLAfterWeaponCooldownUpdate",
-        b"ModuleTag_Ocl",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
-    let template = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"FireOCLAfterWeaponCooldownUpdate", b"ModuleTag_Ocl", &data).unwrap().unwrap();
+    let template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
     // made under construction, as batch C does: `initObject` runs the upgrade pass of a finished object, which resolves the mux's names; the C++ driver
     // makes the object with no such pass
     let mut status = ObjectStatusMaskType::default();
     status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, 1);
-    let me = w
-        .new_object(NewObject {
-            template,
-            status,
-            team: Some(OBJECT_TEAM),
-            modules: vec![m],
-        })
-        .unwrap();
+    let me = w.new_object(NewObject { template, status, team: Some(OBJECT_TEAM), modules: vec![m] }).unwrap();
     assert_eq!(me, 1, "the first object of a fresh world has the id 1");
-    w.objects
-        .find_mut(me)
-        .unwrap()
-        .status
-        .set(OBJECT_STATUS_UNDER_CONSTRUCTION, 0);
-    let idx = w
-        .find_module(me, b"FireOCLAfterWeaponCooldownUpdate")
-        .unwrap();
-    let handle = ModuleHandle {
-        object: me,
-        index: idx,
-    };
+    w.objects.find_mut(me).unwrap().status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, 0);
+    let idx = w.find_module(me, b"FireOCLAfterWeaponCooldownUpdate").unwrap();
+    let handle = ModuleHandle { object: me, index: idx };
     let u = w.update_handle_of_module(handle).expect("an update module");
     let mut saved: Vec<u8> = Vec::new();
     for o in ops {
@@ -413,10 +317,7 @@ fn rust_run(
         let (mut xst, mut xbytes, mut crc, mut res) = (-2i32, Vec::new(), 0u32, 0u32);
         match o[0] {
             0 => {
-                res = w
-                    .with_body(u, |b, w| b.update(w, u))
-                    .expect("the module is in its slot")
-                    .0;
+                res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
                 tally.updates += 1;
             }
             1 => w.set_frame(o[1]),
@@ -434,14 +335,7 @@ fn rust_run(
                 if o[1] == 0 {
                     w.cuts.cur_weapon.remove(&me);
                 } else {
-                    w.cuts.cur_weapon.insert(
-                        me,
-                        WeaponFacts {
-                            slot: o[1] as i32 - 1,
-                            last_shot_frame: o[2],
-                            possible_next_shot_frame: o[3],
-                        },
-                    );
+                    w.cuts.cur_weapon.insert(me, WeaponFacts { slot: o[1] as i32 - 1, last_shot_frame: o[2], possible_next_shot_frame: o[3] });
                 }
             }
             4 => {
@@ -461,30 +355,12 @@ fn rust_run(
             }
             7 => set_controller(&mut w, (o[1] != 0).then(|| o[1] - 1)),
             8 => {
-                res = u32::from(
-                    w.module_call(me, idx, ModuleCall::AttemptUpgrade(mask))
-                        .as_bool(),
-                );
+                res = u32::from(w.module_call(me, idx, ModuleCall::AttemptUpgrade(mask)).as_bool());
                 tally.fired += u64::from(res);
             }
-            9 => {
-                res = u32::from(
-                    w.module_call(me, idx, ModuleCall::WouldUpgrade(mask))
-                        .as_bool(),
-                )
-            }
-            10 => {
-                res = u32::from(
-                    w.module_call(me, idx, ModuleCall::ResetUpgrade(mask))
-                        .as_bool(),
-                )
-            }
-            11 => {
-                res = u32::from(
-                    w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded)
-                        .as_bool(),
-                )
-            }
+            9 => res = u32::from(w.module_call(me, idx, ModuleCall::WouldUpgrade(mask)).as_bool()),
+            10 => res = u32::from(w.module_call(me, idx, ModuleCall::ResetUpgrade(mask)).as_bool()),
+            11 => res = u32::from(w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded).as_bool()),
             12 => {
                 w.module_call(me, idx, ModuleCall::ForceRefreshUpgrade);
             }
@@ -503,13 +379,7 @@ fn rust_run(
         let threw = w.cuts.module_errors.len() > errors_before;
         put_i32(&mut v, if threw { 2 } else { 0 });
         put_u32(&mut v, if threw { 0 } else { res });
-        put_u32(
-            &mut v,
-            u32::from(
-                w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded)
-                    .as_bool(),
-            ),
-        );
+        put_u32(&mut v, u32::from(w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded).as_bool()));
         let fxs: Vec<Vec<u8>> = w.events.events()[events_before..]
             .iter()
             .filter_map(|e| match e {
@@ -517,12 +387,7 @@ fn rust_run(
                 _ => None,
             })
             .collect();
-        let log = effects(
-            w.cuts.trace.take().unwrap(),
-            w.cuts.log.take().unwrap(),
-            fxs,
-            &mut fx,
-        );
+        let log = effects(w.cuts.trace.take().unwrap(), w.cuts.log.take().unwrap(), fxs, &mut fx);
         tally.effects += log.len() as u64;
         tally.ocls += log.iter().filter(|l| l.starts_with("ocl ")).count() as u64;
         put_u32(&mut v, log.len() as u32);
@@ -535,33 +400,21 @@ fn rust_run(
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let state =
-            w.objects
-                .find(me)
-                .unwrap()
-                .behaviors
-                .iter()
-                .find_map(|b| match b.body.as_ref() {
-                    Some(UpdateBody::FireOCLAfterWeaponCooldownUpdate(m)) => Some(m.state_words()),
-                    _ => None,
-                });
+        let state = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
+            Some(UpdateBody::FireOCLAfterWeaponCooldownUpdate(m)) => Some(m.state_words()),
+            _ => None,
+        });
         let state = state.expect("the module is back in its slot");
         for s in &state[..3] {
             put_u32(&mut v, *s);
         }
     }
-    let keys = PROBE
-        .iter()
-        .map(|n| w.names.name_to_key(n.as_bytes()).0)
-        .collect();
+    let keys = PROBE.iter().map(|n| w.names.name_to_key(n.as_bytes()).0).collect();
     (v, keys, w)
 }
 
 fn cases() -> usize {
-    std::env::var("L9FO_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9FO_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 #[test]
@@ -579,37 +432,13 @@ fn fire_ocl_after_weapon_cooldown_update_matches_upstream() {
     for case in 0..cases {
         let init_names = g.below(3) != 0;
         let init_center = g.below(5) != 0;
-        let n_up = if g.below(10) == 0 {
-            0
-        } else {
-            1 + g.below(8) as usize
-        };
+        let n_up = if g.below(10) == 0 { 0 } else { 1 + g.below(8) as usize };
         let upgrades: Vec<String> = (0..n_up).map(|i| format!("Up{i}")).collect();
-        let defs: String = upgrades
-            .iter()
-            .map(|u| format!("Upgrade {u}\nEnd\n"))
-            .collect();
+        let defs: String = upgrades.iter().map(|u| format!("Upgrade {u}\nEnd\n")).collect();
         let mut ctx = Ctx::new(init_names, init_center);
-        Ini::load(
-            b"Data\\INI\\Up.ini",
-            defs.as_bytes(),
-            IniLoadType::Overwrite,
-            None,
-            &table,
-            &mut ctx,
-        )
-        .expect("upgrades load");
+        Ini::load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ctx).expect("upgrades load");
         cpp_reset(init_names, init_center);
-        assert_eq!(
-            cpp_load(
-                b"Data\\INI\\Up.ini",
-                defs.as_bytes(),
-                IniLoadType::Overwrite,
-                false
-            )
-            .status,
-            0
-        );
+        assert_eq!(cpp_load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, false).status, 0);
 
         let clean = g.below(10) < 7;
         let text = gen_data(&mut g, &upgrades, clean);
@@ -625,11 +454,7 @@ fn fire_ocl_after_weapon_cooldown_update_matches_upstream() {
         };
         // [the object's player, the frame]
         let mut cfg = [0u32; 2];
-        cfg[0] = if g.below(12) == 0 {
-            NO_PLAYER
-        } else {
-            g.below(3)
-        };
+        cfg[0] = if g.below(12) == 0 { NO_PLAYER } else { g.below(3) };
         cfg[1] = g.below(300);
         // The generator follows the frame a little, so that the shots it makes are the last frame's more often than by chance.
         let n_ops = 1 + g.below(24) as usize;
@@ -644,13 +469,7 @@ fn fire_ocl_after_weapon_cooldown_update_matches_upstream() {
         if g.below(100) < 60 {
             // every upgrade but the ones the module conflicts with
             let conflicts: Vec<String> = match &data {
-                Some(ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d)) => d
-                    .upgrade
-                    .mux_data()
-                    .conflicting_upgrade_names
-                    .iter()
-                    .map(|n| String::from_utf8_lossy(n).to_lowercase())
-                    .collect(),
+                Some(ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d)) => d.upgrade.mux_data().conflicting_upgrade_names.iter().map(|n| String::from_utf8_lossy(n).to_lowercase()).collect(),
                 _ => Vec::new(),
             };
             let mut all = [0u32; 4];
@@ -660,20 +479,8 @@ fn fire_ocl_after_weapon_cooldown_update_matches_upstream() {
                 }
             }
             ops.push([6, all[0], all[1], all[2], all[3]]);
-            ops.push([
-                7,
-                if g.below(10) == 0 { 0 } else { 1 + g.below(3) },
-                0,
-                0,
-                0,
-            ]);
-            ops.push([
-                3,
-                want_slot + 1,
-                frame.wrapping_sub(1),
-                frame.wrapping_add(2),
-                0,
-            ]);
+            ops.push([7, if g.below(10) == 0 { 0 } else { 1 + g.below(3) }, 0, 0, 0]);
+            ops.push([3, want_slot + 1, frame.wrapping_sub(1), frame.wrapping_add(2), 0]);
             for _ in 0..1 + g.below(6) {
                 ops.push([2, 1, 0, 0, 0]);
                 ops.push([0, 0, 0, 0, 0]);
@@ -685,58 +492,59 @@ fn fire_ocl_after_weapon_cooldown_update_matches_upstream() {
             }
             frame = frame.wrapping_add(9);
         }
-        ops.extend((0..n_ops).map(|_| match g.below(80) {
-            0..=13 => [0, 0, 0, 0, 0],
-            14..=15 => {
-                frame = gen_frame(&mut g);
-                [1, frame, 0, 0, 0]
-            }
-            16..=29 => {
-                frame = frame.wrapping_add(1);
-                [2, g.below(2), 0, 0, 0]
-            }
-            30..=37 => {
-                cur_slot = if g.below(8) == 0 { 0 } else { 1 + g.below(3) };
-                let last = match g.below(4) {
-                    0 => g.below(400),
-                    _ => frame.wrapping_sub(1),
-                };
-                let next = match g.below(4) {
-                    0 => frame.wrapping_add(3),
-                    1 => g.below(400),
-                    _ => frame.wrapping_sub(1),
-                };
-                [3, cur_slot, last, next, 0]
-            }
-            38..=41 => [4, g.below(8), 0, 0, 0],
-            42..=47 => {
-                let m = gen_mask(&mut g, n_up, 0);
-                [5, m[0], m[1], m[2], m[3]]
-            }
-            48..=54 => {
-                let m = gen_mask(&mut g, n_up, 1);
-                [6, m[0], m[1], m[2], m[3]]
-            }
-            55..=56 => [7, g.below(4), 0, 0, 0],
-            57..=61 => {
-                let m = gen_mask(&mut g, n_up, 1);
-                [8, m[0], m[1], m[2], m[3]]
-            }
-            62 => {
-                let m = gen_mask(&mut g, n_up, 1);
-                [9, m[0], m[1], m[2], m[3]]
-            }
-            63..=64 => {
-                let m = gen_mask(&mut g, n_up, 1);
-                [10, m[0], m[1], m[2], m[3]]
-            }
-            65..=66 => [11, 0, 0, 0, 0],
-            67 => [12, 0, 0, 0, 0],
-            68..=70 => [13, 0, 0, 0, 0],
-            71..=72 => [14, 0, 0, 0, 0],
-            73..=74 => [15, 0, 0, 0, 0],
-            _ => [0, 0, 0, 0, 0],
-        }));
+        ops.extend((0..n_ops)
+            .map(|_| match g.below(80) {
+                0..=13 => [0, 0, 0, 0, 0],
+                14..=15 => {
+                    frame = gen_frame(&mut g);
+                    [1, frame, 0, 0, 0]
+                }
+                16..=29 => {
+                    frame = frame.wrapping_add(1);
+                    [2, g.below(2), 0, 0, 0]
+                }
+                30..=37 => {
+                    cur_slot = if g.below(8) == 0 { 0 } else { 1 + g.below(3) };
+                    let last = match g.below(4) {
+                        0 => g.below(400),
+                        _ => frame.wrapping_sub(1),
+                    };
+                    let next = match g.below(4) {
+                        0 => frame.wrapping_add(3),
+                        1 => g.below(400),
+                        _ => frame.wrapping_sub(1),
+                    };
+                    [3, cur_slot, last, next, 0]
+                }
+                38..=41 => [4, g.below(8), 0, 0, 0],
+                42..=47 => {
+                    let m = gen_mask(&mut g, n_up, 0);
+                    [5, m[0], m[1], m[2], m[3]]
+                }
+                48..=54 => {
+                    let m = gen_mask(&mut g, n_up, 1);
+                    [6, m[0], m[1], m[2], m[3]]
+                }
+                55..=56 => [7, g.below(4), 0, 0, 0],
+                57..=61 => {
+                    let m = gen_mask(&mut g, n_up, 1);
+                    [8, m[0], m[1], m[2], m[3]]
+                }
+                62 => {
+                    let m = gen_mask(&mut g, n_up, 1);
+                    [9, m[0], m[1], m[2], m[3]]
+                }
+                63..=64 => {
+                    let m = gen_mask(&mut g, n_up, 1);
+                    [10, m[0], m[1], m[2], m[3]]
+                }
+                65..=66 => [11, 0, 0, 0, 0],
+                67 => [12, 0, 0, 0, 0],
+                68..=70 => [13, 0, 0, 0, 0],
+                71..=72 => [14, 0, 0, 0, 0],
+                73..=74 => [15, 0, 0, 0, 0],
+                _ => [0, 0, 0, 0, 0],
+            }));
 
         // Rust first: a case that reaches upstream undefined behaviour is counted and never sent to the C++
         let rust = if outcome.status == 0 {
@@ -775,12 +583,7 @@ fn fire_ocl_after_weapon_cooldown_update_matches_upstream() {
         };
         if status == 99 {
             // the C++ crashed on a case the planted Rust steered past upstream undefined behaviour: a mismatch, not a process kill
-            run.eq(&"C++ crashed", &"no crash", || {
-                format!(
-                    "case {case}: upgrades {upgrades:?} cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                    show(&text)
-                )
-            });
+            run.eq(&"C++ crashed", &"no crash", || format!("case {case}: upgrades {upgrades:?} cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text)));
             continue;
         }
         buf.truncate(len as usize);
@@ -790,21 +593,8 @@ fn fire_ocl_after_weapon_cooldown_update_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!(
-                "case {case}: upgrades {upgrades:?} cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                show(&text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case}: upgrades {upgrades:?} cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some((rd, rk)) = rust else {
             read_failed += 1;
             continue;
@@ -812,17 +602,8 @@ fn fire_ocl_after_weapon_cooldown_update_matches_upstream() {
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
-            eprintln!(
-                "--- case {case} cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}",
-                show(&text),
-                dr.get(i),
-                dc.get(i)
-            );
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            eprintln!("--- case {case} cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -847,11 +628,5 @@ fn fire_ocl_after_weapon_cooldown_update_matches_upstream() {
     run.finish();
     keys.finish();
     let _ = BTreeMap::<u8, u8>::new();
-    assert!(
-        read_failed * 40 > cases as u64
-            && ops_run * 5 > cases as u64 * 4
-            && tally.fired * 50 > cases as u64
-            && tally.ocls * 10 > cases as u64,
-        "the generator must reach every path"
-    );
+    assert!(read_failed * 40 > cases as u64 && ops_run * 5 > cases as u64 * 4 && tally.fired * 50 > cases as u64 && tally.ocls * 10 > cases as u64, "the generator must reach every path");
 }

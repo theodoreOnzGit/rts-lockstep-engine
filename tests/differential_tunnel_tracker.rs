@@ -67,13 +67,9 @@ mod support;
 use std::sync::Arc;
 
 use rts_lockstep_engine::common::game_type::{ObjectId, INVALID_DRAWABLE_ID, INVALID_ID};
-use rts_lockstep_engine::common::kind_of::{
-    KINDOF_AIRCRAFT, KINDOF_INFANTRY, KINDOF_SELECTABLE, KINDOF_STRUCTURE, KINDOF_VEHICLE,
-};
+use rts_lockstep_engine::common::kind_of::{KINDOF_AIRCRAFT, KINDOF_INFANTRY, KINDOF_SELECTABLE, KINDOF_STRUCTURE, KINDOF_VEHICLE};
 use rts_lockstep_engine::common::module::{MODULEINTERFACE_BODY, MODULEINTERFACE_DAMAGE};
-use rts_lockstep_engine::common::object_status_types::{
-    OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_STEALTHED,
-};
+use rts_lockstep_engine::common::object_status_types::{OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_STEALTHED};
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
 use rts_lockstep_engine::common::xfer::{Snapshot, Xfer, XferResult, XferStatus};
 use rts_lockstep_engine::common::xfer_load::XferLoad;
@@ -246,11 +242,7 @@ impl Run {
         }
         let mut health = [0.0f32; 9];
         for (n, c) in cfgs.iter().enumerate() {
-            let mut v = ObjectTemplateValues {
-                name: format!("T{n}").into_bytes(),
-                template_id: n as u16 + 1,
-                ..Default::default()
-            };
+            let mut v = ObjectTemplateValues { name: format!("T{n}").into_bytes(), template_id: n as u16 + 1, ..Default::default() };
             for k in 0..32 {
                 if c.kinds & (1 << k) != 0 {
                     v.kind_of.push(k);
@@ -261,26 +253,14 @@ impl Run {
             if c.flags & FLAG_BODY != 0 {
                 let mut m = NewModule::plain(b"ProbeBody", b"ModuleTag_Body");
                 m.interfaces = MODULEINTERFACE_BODY | MODULEINTERFACE_DAMAGE;
-                let mut p =
-                    ProbeModule::new(ProbeAnswers::default(), c.max_health, Default::default());
+                let mut p = ProbeModule::new(ProbeAnswers::default(), c.max_health, Default::default());
                 p.health = c.health;
                 m.body = Some(UpdateBody::ModuleProbe(p));
                 modules.push(m);
             }
-            let id = w
-                .new_object(NewObject {
-                    template: tt,
-                    status: Default::default(),
-                    team: None,
-                    modules,
-                })
-                .expect("object");
+            let id = w.new_object(NewObject { template: tt, status: Default::default(), team: None, modules }).expect("object");
             assert_eq!(id, n as i32 + 1);
-            health[n + 1] = if c.flags & FLAG_BODY != 0 {
-                c.health
-            } else {
-                0.0
-            };
+            health[n + 1] = if c.flags & FLAG_BODY != 0 { c.health } else { 0.0 };
             let o = w.objects.find_mut(id).unwrap();
             if c.status & 1 != 0 {
                 o.status.set(OBJECT_STATUS_STEALTHED, 1);
@@ -294,11 +274,7 @@ impl Run {
             if c.flags & FLAG_DEAD != 0 {
                 o.private_status |= PRIVATE_EFFECTIVELY_DEAD;
             }
-            o.drawable = if c.flags & FLAG_DRAWABLE != 0 {
-                id
-            } else {
-                INVALID_DRAWABLE_ID
-            };
+            o.drawable = if c.flags & FLAG_DRAWABLE != 0 { id } else { INVALID_DRAWABLE_ID };
             o.group = u32::from(c.flags & FLAG_GROUP != 0);
             o.contained_by = c.by;
             o.contained_by_frame = c.by_frame;
@@ -306,25 +282,12 @@ impl Run {
         let mut frozen = [(0, 0, 0, 0, 0); 9];
         for (n, c) in cfgs.iter().enumerate() {
             if c.flags & FLAG_EXISTS == 0 {
-                frozen[n + 1] = (
-                    c.by,
-                    c.by_frame,
-                    u32::from(c.flags & FLAG_DEAD != 0),
-                    0,
-                    u32::from(c.flags & FLAG_GROUP != 0),
-                );
+                frozen[n + 1] = (c.by, c.by_frame, u32::from(c.flags & FLAG_DEAD != 0), 0, u32::from(c.flags & FLAG_GROUP != 0));
                 let _ = w.objects.remove(n as i32 + 1);
             }
         }
         w.cuts.trace.as_mut().unwrap().clear();
-        let mut run = Run {
-            w,
-            t: TunnelTracker::new(),
-            lines: Vec::new(),
-            hidden: [false; 9],
-            health,
-            frozen,
-        };
+        let mut run = Run { w, t: TunnelTracker::new(), lines: Vec::new(), hidden: [false; 9], health, frozen };
         run.world_state();
         run
     }
@@ -338,9 +301,7 @@ impl Run {
         if which == 0 {
             f(&mut self.t, &mut self.w)
         } else {
-            self.w
-                .with_cave_tracker(which - 1, f)
-                .expect("the generator only names a tracker that exists")
+            self.w.with_cave_tracker(which - 1, f).expect("the generator only names a tracker that exists")
         }
     }
 
@@ -352,28 +313,19 @@ impl Run {
                 self.lines.push(l);
             } else if let Some(rest) = l.strip_prefix("cut AiGroupRemove { group: ") {
                 // `cut AiGroupRemove { group: 1, object: 3 }`
-                let obj: i32 = rest
-                    .split("object: ")
-                    .nth(1)
-                    .unwrap()
-                    .trim_end_matches(" }")
-                    .parse()
-                    .unwrap();
+                let obj: i32 = rest.split("object: ").nth(1).unwrap().trim_end_matches(" }").parse().unwrap();
                 self.lines.push(format!("tt leaveGroup {obj}"));
             } else if let Some(rest) = l.strip_prefix("cut PartitionUnregisterObject { object: ") {
                 let obj: i32 = rest.trim_end_matches(" }").parse().unwrap();
                 self.lines.push(format!("tt unregister {obj}"));
-            } else if let Some(rest) =
-                l.strip_prefix("cut PathfinderRemoveObjectFromPathfindMap { object: ")
-            {
+            } else if let Some(rest) = l.strip_prefix("cut PathfinderRemoveObjectFromPathfindMap { object: ") {
                 let obj: i32 = rest.trim_end_matches(" }").parse().unwrap();
                 self.lines.push(format!("tt pathfind {obj}"));
             } else if let Some(rest) = l.strip_prefix("evt DrawableSetHidden { object_id: ") {
                 let obj: i32 = rest.split(',').next().unwrap().parse().unwrap();
                 let hidden = rest.contains("hidden: true");
                 self.hidden[obj as usize] = hidden;
-                self.lines
-                    .push(format!("tt hide {obj} {}", u32::from(hidden)));
+                self.lines.push(format!("tt hide {obj} {}", u32::from(hidden)));
             }
         }
     }
@@ -404,39 +356,22 @@ impl Run {
         let n = self.w.cave_system.len();
         let mut cave = String::new();
         for i in 0..n {
-            match self
-                .w
-                .cave_system
-                .get_tunnel_tracker_for_cave_index(i as i32)
-            {
+            match self.w.cave_system.get_tunnel_tracker_for_cave_index(i as i32) {
                 None => cave.push_str(" -"),
                 Some(t) => cave.push_str(&format!(" {}", t.get_contain_list_size())),
             }
         }
         self.line(format!("state cave[{cave}]"));
         for i in 0..n {
-            let t = self
-                .w
-                .cave_system
-                .get_tunnel_tracker_for_cave_index(i as i32)
-                .cloned();
+            let t = self.w.cave_system.get_tunnel_tracker_for_cave_index(i as i32).cloned();
             self.tracker_state(&format!("C{i}"), t.as_ref());
         }
         for i in 1..=8i32 {
-            let live = self.w.objects.find(i).map(|o| {
-                (
-                    o.contained_by,
-                    o.contained_by_frame,
-                    u32::from(o.is_effectively_dead()),
-                    u32::from(o.is_destroyed()),
-                    o.group,
-                )
-            });
+            let live = self.w.objects.find(i).map(|o| (o.contained_by, o.contained_by_frame, u32::from(o.is_effectively_dead()), u32::from(o.is_destroyed()), o.group));
             let exists = u32::from(live.is_some());
             if live.is_some() {
                 if let Some(b) = self.w.get_body_module(i) {
-                    self.health[i as usize] =
-                        self.w.module_call(i, b, ModuleCall::GetHealth).as_real(0.0);
+                    self.health[i as usize] = self.w.module_call(i, b, ModuleCall::GetHealth).as_real(0.0);
                 }
             }
             let (by, frame, dead, destroyed, group) = live.unwrap_or(self.frozen[i as usize]);
@@ -480,9 +415,7 @@ impl Run {
                 5 => {
                     let (wh, id, chk) = (r.i(), r.i(), r.i());
                     self.line("op isValid".into());
-                    let b = self.with(wh, |t, w| {
-                        t.is_valid_container_for(w, (id != 0).then_some(id), chk != 0)
-                    });
+                    let b = self.with(wh, |t, w| t.is_valid_container_for(w, (id != 0).then_some(id), chk != 0));
                     self.line(format!("ret {}", u32::from(b)));
                 }
                 6 => {
@@ -494,20 +427,14 @@ impl Run {
                     let (wh, id) = (r.i(), r.i());
                     self.line("op tunnelDestroyed".into());
                     let res = self.with(wh, |t, w| t.on_tunnel_destroyed(w, id));
-                    assert!(
-                        res.is_ok(),
-                        "an undefined input reached the comparison: {res:?}"
-                    );
+                    assert!(res.is_ok(), "an undefined input reached the comparison: {res:?}");
                 }
                 8 => {
                     let wh = r.i();
                     let frames = r.f();
                     self.line("op heal".into());
                     let res = self.with(wh, |t, w| t.heal_objects(w, frames));
-                    assert!(
-                        res.is_ok(),
-                        "an undefined input reached the comparison: {res:?}"
-                    );
+                    assert!(res.is_ok(), "an undefined input reached the comparison: {res:?}");
                 }
                 9 => {
                     let (wh, id) = (r.i(), r.i());
@@ -530,13 +457,8 @@ impl Run {
                     if field == 4 && v == 0 {
                         // the stand-in keeps the fields of an object that left the world
                         if let Some(o) = self.w.objects.find(id) {
-                            self.frozen[id as usize] = (
-                                o.contained_by,
-                                o.contained_by_frame,
-                                u32::from(o.is_effectively_dead()),
-                                u32::from(o.is_destroyed()),
-                                o.group,
-                            );
+                            self.frozen[id as usize] =
+                                (o.contained_by, o.contained_by_frame, u32::from(o.is_effectively_dead()), u32::from(o.is_destroyed()), o.group);
                         }
                         let _ = self.w.objects.remove(id);
                     } else if let Some(o) = self.w.objects.find_mut(id) {
@@ -561,15 +483,7 @@ impl Run {
                     let wh = r.i();
                     self.line("op saveLoad".into());
                     // save, load into a fresh tracker, post-process it
-                    let mut tracker = if wh == 0 {
-                        self.t.clone()
-                    } else {
-                        self.w
-                            .cave_system
-                            .get_tunnel_tracker_for_cave_index(wh - 1)
-                            .cloned()
-                            .unwrap()
-                    };
+                    let mut tracker = if wh == 0 { self.t.clone() } else { self.w.cave_system.get_tunnel_tracker_for_cave_index(wh - 1).cloned().unwrap() };
                     let (st, len, h) = save_snapshot(&mut tracker);
                     self.line(format!("ret save {st} len {len} hash {h:08x}"));
                     let bytes = save_bytes(&mut tracker);
@@ -586,10 +500,7 @@ impl Run {
                     let idx = r.i();
                     self.line("op caveRegister".into());
                     let res = self.w.cave_system.register_new_cave(idx);
-                    assert!(
-                        res.is_ok(),
-                        "an undefined input reached the comparison: {res:?}"
-                    );
+                    assert!(res.is_ok(), "an undefined input reached the comparison: {res:?}");
                 }
                 21 => {
                     let (a, b) = (r.i(), r.i());
@@ -600,11 +511,7 @@ impl Run {
                 22 => {
                     let idx = r.i();
                     self.line("op caveGet".into());
-                    let has = self
-                        .w
-                        .cave_system
-                        .get_tunnel_tracker_for_cave_index(idx)
-                        .is_some();
+                    let has = self.w.cave_system.get_tunnel_tracker_for_cave_index(idx).is_some();
                     self.line(format!("ret {}", u32::from(has)));
                 }
                 23 => {
@@ -664,24 +571,13 @@ fn run_cpp(prog: &[u32]) -> Vec<String> {
     loop {
         let mut buf = vec![0u8; cap];
         // SAFETY: the buffer is valid for `cap` bytes, which the wrapper does not exceed; the program is valid for its length.
-        let n = unsafe {
-            cpp::ref_tunnel_run(
-                prog.as_ptr(),
-                prog.len() as i32,
-                buf.as_mut_ptr() as *mut _,
-                cap as i32,
-            )
-        };
+        let n = unsafe { cpp::ref_tunnel_run(prog.as_ptr(), prog.len() as i32, buf.as_mut_ptr() as *mut _, cap as i32) };
         if n < 0 {
             cap = (-n) as usize + 16;
             continue;
         }
         buf.truncate(n as usize);
-        return String::from_utf8(buf)
-            .expect("utf-8 lines")
-            .lines()
-            .map(str::to_string)
-            .collect();
+        return String::from_utf8(buf).expect("utf-8 lines").lines().map(str::to_string).collect();
     }
 }
 
@@ -689,11 +585,7 @@ fn first_difference(r: &[String], c: &[String]) -> Option<String> {
     for i in 0..r.len().max(c.len()) {
         let (a, b) = (r.get(i), c.get(i));
         if a != b {
-            return Some(format!(
-                "line {i}:\n  rust: {}\n  cpp:  {}",
-                a.map_or("(none)", |s| s),
-                b.map_or("(none)", |s| s)
-            ));
+            return Some(format!("line {i}:\n  rust: {}\n  cpp:  {}", a.map_or("(none)", |s| s), b.map_or("(none)", |s| s)));
         }
     }
     None
@@ -760,13 +652,7 @@ fn gen_header(g: &mut Gen, p: &mut Prog, m: &mut Model) {
     m.nemesis_frame = frame;
     for i in 1..=8usize {
         let mut kinds = 0;
-        for k in [
-            KINDOF_AIRCRAFT,
-            KINDOF_VEHICLE,
-            KINDOF_STRUCTURE,
-            KINDOF_INFANTRY,
-            KINDOF_SELECTABLE,
-        ] {
+        for k in [KINDOF_AIRCRAFT, KINDOF_VEHICLE, KINDOF_STRUCTURE, KINDOF_INFANTRY, KINDOF_SELECTABLE] {
             if g.below(3) == 0 {
                 kinds |= kind_bit(k);
             }
@@ -789,25 +675,11 @@ fn gen_header(g: &mut Gen, p: &mut Prog, m: &mut Model) {
             flags |= FLAG_GROUP;
         }
         let max_health = [50.0f32, 100.0, 150.5, 1000.0][g.below(4) as usize];
-        let health = if flags & FLAG_BODY != 0 {
-            max_health * [0.0, 0.25, 0.5, 1.0][g.below(4) as usize]
-        } else {
-            0.0
-        };
-        let by = if g.below(2) == 0 {
-            0
-        } else {
-            1 + g.below(8) as i32
-        };
+        let health = if flags & FLAG_BODY != 0 { max_health * [0.0, 0.25, 0.5, 1.0][g.below(4) as usize] } else { 0.0 };
+        let by = if g.below(2) == 0 { 0 } else { 1 + g.below(8) as i32 };
         let by_frame = frame.wrapping_sub(g.below(500));
         m.by_frame[i] = by_frame;
-        p.u(kinds)
-            .u(status)
-            .u(flags)
-            .f(max_health)
-            .f(health)
-            .i(by)
-            .u(by_frame);
+        p.u(kinds).u(status).u(flags).f(max_health).f(health).i(by).u(by_frame);
         m.exists[i] = flags & FLAG_EXISTS != 0;
         m.body[i] = flags & FLAG_BODY != 0;
     }
@@ -829,32 +701,13 @@ fn heal_frames(g: &mut Gen, m: &Model) -> f32 {
         let elapsed = m.frame.wrapping_sub(m.by_frame[i]) as f32;
         return elapsed + [-1.0, 0.0, 1.0][g.below(3) as usize];
     }
-    [
-        0.0,
-        1.0,
-        5.0,
-        30.0,
-        100.0,
-        450.0,
-        1.0e6,
-        f32::INFINITY,
-        -3.0,
-        0.5,
-    ][g.below(10) as usize]
+    [0.0, 1.0, 5.0, 30.0, 100.0, 450.0, 1.0e6, f32::INFINITY, -3.0, 0.5][g.below(10) as usize]
 }
 
 fn gen_program(seed: u64, n_ops: usize) -> Prog {
     let mut g = Gen::new(seed);
     let mut p = Prog::default();
-    let mut m = Model {
-        frame: 0,
-        by_frame: [0; 9],
-        nemesis_frame: 0,
-        exists: [false; 9],
-        body: [false; 9],
-        t: Tm::default(),
-        caves: Vec::new(),
-    };
+    let mut m = Model { frame: 0, by_frame: [0; 9], nemesis_frame: 0, exists: [false; 9], body: [false; 9], t: Tm::default(), caves: Vec::new() };
     gen_header(&mut g, &mut p, &mut m);
     for _ in 0..n_ops {
         let trackers = m.trackers();
@@ -879,11 +732,7 @@ fn gen_program(seed: u64, n_ops: usize) -> Prog {
                 p.i(4).i(wh).i(g.below(9) as i32);
             }
             10..=11 => {
-                let id = if g.below(5) == 0 {
-                    Some(0)
-                } else {
-                    pick_existing(&mut g, &m)
-                };
+                let id = if g.below(5) == 0 { Some(0) } else { pick_existing(&mut g, &m) };
                 if let Some(id) = id {
                     p.i(5).i(wh).i(id).i(g.below(2) as i32);
                 }
@@ -923,11 +772,7 @@ fn gen_program(seed: u64, n_ops: usize) -> Prog {
                 }
             }
             22..=24 => {
-                let id = if g.below(4) == 0 {
-                    Some(0)
-                } else {
-                    pick_existing(&mut g, &m)
-                };
+                let id = if g.below(4) == 0 { Some(0) } else { pick_existing(&mut g, &m) };
                 if let Some(id) = id {
                     p.i(9).i(wh).i(id);
                     m.nemesis_frame = m.frame;
@@ -943,13 +788,7 @@ fn gen_program(seed: u64, n_ops: usize) -> Prog {
                 // change an object
                 if let Some(id) = pick_existing(&mut g, &m) {
                     let field = [0, 1, 2, 3, 4, 5, 6][g.below(7) as usize];
-                    let v = if field == 5 {
-                        g.below(9) as i32
-                    } else if field == 6 {
-                        g.below(3) as i32
-                    } else {
-                        g.below(2) as i32
-                    };
+                    let v = if field == 5 { g.below(9) as i32 } else if field == 6 { g.below(3) as i32 } else { g.below(2) as i32 };
                     if field == 4 {
                         // leaving the world is only defined for an object nobody holds
                         if m.contained_anywhere(id) || g.below(3) != 0 {
@@ -967,11 +806,7 @@ fn gen_program(seed: u64, n_ops: usize) -> Prog {
             }
             32..=33 => {
                 // a new frame: sometimes the boundary of the nemesis's four seconds (30 frames a second)
-                let f = if g.below(2) == 0 {
-                    m.nemesis_frame.wrapping_add(118 + g.below(5))
-                } else {
-                    pick_frame(&mut g)
-                };
+                let f = if g.below(2) == 0 { m.nemesis_frame.wrapping_add(118 + g.below(5)) } else { pick_frame(&mut g) };
                 p.i(1).u(f);
                 m.frame = f;
             }
@@ -1012,10 +847,7 @@ fn gen_program(seed: u64, n_ops: usize) -> Prog {
 
 #[test]
 fn tunnel_tracker_matches_upstream() {
-    let cases: u64 = std::env::var("TUNNEL_CASES")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1500);
+    let cases: u64 = std::env::var("TUNNEL_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(1500);
     let (mut lines, mut bad) = (0usize, 0);
     let mut kinds: std::collections::BTreeMap<String, usize> = Default::default();
     for case in 0..cases {
@@ -1024,14 +856,7 @@ fn tunnel_tracker_matches_upstream() {
         let r = run_rust(&prog.0);
         lines += c.len();
         for l in &c {
-            let key: Vec<&str> = l
-                .split(' ')
-                .take(if l.starts_with("tt") || l.starts_with("ret") {
-                    2
-                } else {
-                    1
-                })
-                .collect();
+            let key: Vec<&str> = l.split(' ').take(if l.starts_with("tt") || l.starts_with("ret") { 2 } else { 1 }).collect();
             if !l.starts_with("state") && !l.starts_with("obj") {
                 *kinds.entry(key.join(" ")).or_default() += 1;
             }
@@ -1059,13 +884,7 @@ fn undefined_inputs_are_errors() {
     let mut p = Prog::default();
     p.i(5).u(10);
     for _ in 0..8 {
-        p.u(kind_bit(KINDOF_INFANTRY))
-            .u(0)
-            .u(FLAG_EXISTS | FLAG_BODY)
-            .f(100.0)
-            .f(50.0)
-            .i(0)
-            .u(0);
+        p.u(kind_bit(KINDOF_INFANTRY)).u(0).u(FLAG_EXISTS | FLAG_BODY).f(100.0).f(50.0).i(0).u(0);
     }
     p.i(99);
     let mut counted = 0;
@@ -1084,10 +903,7 @@ fn undefined_inputs_are_errors() {
         assert!(run.t.on_tunnel_destroyed(&mut run.w, 4).is_ok());
         assert_eq!(run.t.friend_get_tunnel_count(), u32::MAX);
         // destroying id 2 empties the list while the count stays non-zero: front() of an empty list
-        assert_eq!(
-            run.t.on_tunnel_destroyed(&mut run.w, 2),
-            Err(TunnelError::NoTunnelIds)
-        );
+        assert_eq!(run.t.on_tunnel_destroyed(&mut run.w, 2), Err(TunnelError::NoTunnelIds));
         counted += 1;
     }
     // 2. a contained id that names no object
@@ -1097,15 +913,9 @@ fn undefined_inputs_are_errors() {
         run.t.add_to_contain_list(3);
         run.t.on_tunnel_created(1);
         let _ = run.w.objects.remove(3);
-        assert_eq!(
-            run.t.on_tunnel_destroyed(&mut run.w, 1),
-            Err(TunnelError::ContainedObjectGone(3))
-        );
+        assert_eq!(run.t.on_tunnel_destroyed(&mut run.w, 1), Err(TunnelError::ContainedObjectGone(3)));
         counted += 1;
-        assert_eq!(
-            run.t.heal_objects(&mut run.w, 30.0),
-            Err(TunnelError::ContainedObjectGone(3))
-        );
+        assert_eq!(run.t.heal_objects(&mut run.w, 30.0), Err(TunnelError::ContainedObjectGone(3)));
         counted += 1;
     }
     // 3. healing an object with no body module
@@ -1113,31 +923,19 @@ fn undefined_inputs_are_errors() {
         let mut q = Prog::default();
         q.i(5).u(10);
         for _ in 0..8 {
-            q.u(kind_bit(KINDOF_INFANTRY))
-                .u(0)
-                .u(FLAG_EXISTS)
-                .f(100.0)
-                .f(0.0)
-                .i(0)
-                .u(0);
+            q.u(kind_bit(KINDOF_INFANTRY)).u(0).u(FLAG_EXISTS).f(100.0).f(0.0).i(0).u(0);
         }
         q.i(99);
         let mut r = Rd { w: &q.0, at: 0 };
         let mut run = Run::new(&mut r);
         run.t.add_to_contain_list(2);
-        assert_eq!(
-            run.t.heal_objects(&mut run.w, 30.0),
-            Err(TunnelError::NoBodyModule(2))
-        );
+        assert_eq!(run.t.heal_objects(&mut run.w, 30.0), Err(TunnelError::NoBodyModule(2)));
         counted += 1;
     }
     // 4. a negative cave index in registerNewCave
     {
         let mut cave = CaveSystem::new();
-        assert_eq!(
-            cave.register_new_cave(-1),
-            Err(CaveError::NegativeIndex(-1))
-        );
+        assert_eq!(cave.register_new_cave(-1), Err(CaveError::NegativeIndex(-1)));
         assert!(cave.is_empty(), "nothing was allocated");
         counted += 1;
     }
@@ -1155,10 +953,7 @@ fn undefined_inputs_are_errors() {
         x.xfer_int(&mut size).unwrap();
         x.close().unwrap();
         let st = load_snapshot(&mut t, x.take_bytes());
-        assert_ne!(
-            st, 0,
-            "the read ends in an error, as the missing bytes do upstream"
-        );
+        assert_ne!(st, 0, "the read ends in an error, as the missing bytes do upstream");
         counted += 1;
     }
     println!("RESULT {counted} classes of undefined input are errors in Rust (and are never sent to the C++)");

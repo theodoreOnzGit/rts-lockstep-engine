@@ -35,22 +35,15 @@ pub struct UpgradePair {
 
 /// `parseUpgradePair(ini, instance, store, userData)`: reads one pair and appends it to `store` (`std::list<upgradePair>`).
 pub fn parse_upgrade_pair(ini: &mut Ini<'_>, store: &mut Vec<UpgradePair>) -> IniResult<()> {
-    let mut info = UpgradePair {
-        type_name: Vec::new(),
-        amount: 0,
-    };
+    let mut info = UpgradePair { type_name: Vec::new(), amount: 0 };
     let token = ini.get_next_token(Some(SEPS_COLON))?;
     if token.eq_ignore_ascii_case(b"UpgradeType") {
-        let token = ini
-            .get_next_token_or_null(Some(SEPS_COLON))
-            .ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
+        let token = ini.get_next_token_or_null(Some(SEPS_COLON)).ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         info.type_name = token;
     } else {
         return Err(IniError::new(IniErrorKind::InvalidData));
     }
-    let token = ini
-        .get_next_token_or_null(Some(SEPS_COLON))
-        .ok_or_else(|| IniError::undefined(Undefined::NullTokenCompared))?;
+    let token = ini.get_next_token_or_null(Some(SEPS_COLON)).ok_or_else(|| IniError::undefined(Undefined::NullTokenCompared))?;
     if token.eq_ignore_ascii_case(b"Boost") {
         info.amount = Ini::scan_int(&ini.get_next_token(Some(SEPS_COLON))?)?;
         if crate::logic::modules::plant(774) {
@@ -73,19 +66,9 @@ mod tests {
         fn block(ini: &mut Ini<'_>, out: &mut Vec<UpgradePair>) -> IniResult<()> {
             parse_upgrade_pair(ini, out)
         }
-        static BLOCKS: [BlockParse<Vec<UpgradePair>>; 1] = [BlockParse {
-            token: "P",
-            parse: block,
-        }];
+        static BLOCKS: [BlockParse<Vec<UpgradePair>>; 1] = [BlockParse { token: "P", parse: block }];
         let mut out = Vec::new();
-        let r = Ini::load(
-            b"p.ini",
-            text,
-            IniLoadType::Overwrite,
-            None,
-            &BLOCKS,
-            &mut out,
-        );
+        let r = Ini::load(b"p.ini", text, IniLoadType::Overwrite, None, &BLOCKS, &mut out);
         (r, out)
     }
 
@@ -93,35 +76,14 @@ mod tests {
     fn a_pair_is_read_and_appended() {
         let (r, out) = read(b"P UpgradeType:Up_A Boost:25\nP UpgradeType = Up_B Boost = -3\n");
         assert!(r.is_ok());
-        assert_eq!(
-            out,
-            vec![
-                UpgradePair {
-                    type_name: b"Up_A".to_vec(),
-                    amount: 25
-                },
-                UpgradePair {
-                    type_name: b"Up_B".to_vec(),
-                    amount: -3
-                }
-            ]
-        );
+        assert_eq!(out, vec![UpgradePair { type_name: b"Up_A".to_vec(), amount: 25 }, UpgradePair { type_name: b"Up_B".to_vec(), amount: -3 }]);
     }
 
     #[test]
     fn a_wrong_word_is_invalid_data_and_a_missing_one_is_undefined() {
-        assert_eq!(
-            read(b"P Type:Up_A Boost:1\n").0.unwrap_err().kind,
-            IniErrorKind::InvalidData
-        );
-        assert_eq!(
-            read(b"P UpgradeType:Up_A Bonus:1\n").0.unwrap_err().kind,
-            IniErrorKind::InvalidData
-        );
-        assert_eq!(
-            read(b"P UpgradeType\n").0.unwrap_err().kind,
-            IniErrorKind::InvalidData
-        );
+        assert_eq!(read(b"P Type:Up_A Boost:1\n").0.unwrap_err().kind, IniErrorKind::InvalidData);
+        assert_eq!(read(b"P UpgradeType:Up_A Bonus:1\n").0.unwrap_err().kind, IniErrorKind::InvalidData);
+        assert_eq!(read(b"P UpgradeType\n").0.unwrap_err().kind, IniErrorKind::InvalidData);
         assert!(read(b"P UpgradeType:Up_A\n").0.unwrap_err().is_undefined());
     }
 }

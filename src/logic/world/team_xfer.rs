@@ -120,11 +120,7 @@ pub fn xfer_team<H: TeamHost>(h: &mut H, xfer: &mut dyn Xfer, team: TeamId) -> T
             let mut member_id: ObjectId = 0;
             xfer.xfer_object_id(&mut member_id)?;
             // put on pending list for later processing
-            h.teams_mut()
-                .team_mut(team)
-                .ok_or(TeamError::Null)?
-                .xfer_member_id_list
-                .push(member_id);
+            h.teams_mut().team_mut(team).ok_or(TeamError::Null)?.xfer_member_id_list.push(member_id);
         }
     }
 
@@ -176,11 +172,7 @@ pub fn xfer_team<H: TeamHost>(h: &mut H, xfer: &mut dyn Xfer, team: TeamId) -> T
     // the fields are written back at the end (a failure above leaves the team as the failed call left it upstream:
     // members already queued, the rest untouched is not reproduced; the error ends the load)
     let slot = h.teams_mut().team_mut(team).ok_or(TeamError::Null)?;
-    let (member_head, xfer_list, state) = (
-        slot.member_head,
-        std::mem::take(&mut slot.xfer_member_id_list),
-        std::mem::take(&mut slot.state),
-    );
+    let (member_head, xfer_list, state) = (slot.member_head, std::mem::take(&mut slot.xfer_member_id_list), std::mem::take(&mut slot.state));
     *slot = t;
     slot.member_head = member_head;
     slot.xfer_member_id_list = xfer_list;
@@ -191,12 +183,7 @@ pub fn xfer_team<H: TeamHost>(h: &mut H, xfer: &mut dyn Xfer, team: TeamId) -> T
 /// `Team::loadPostProcess()`: the queued member ids must name objects that are on the team's list; the queue is
 /// then cleared.
 pub fn team_load_post_process<H: TeamHost>(h: &mut H, team: TeamId) -> TResult<()> {
-    let ids = h
-        .teams()
-        .team(team)
-        .ok_or(TeamError::Null)?
-        .xfer_member_id_list
-        .clone();
+    let ids = h.teams().team(team).ok_or(TeamError::Null)?.xfer_member_id_list.clone();
     for id in ids {
         // find object
         if !h.game_logic_find_object(id) {
@@ -208,11 +195,7 @@ pub fn team_load_post_process<H: TeamHost>(h: &mut H, team: TeamId) -> TResult<(
         }
     }
     // we're done with the xfer list now
-    h.teams_mut()
-        .team_mut(team)
-        .ok_or(TeamError::Null)?
-        .xfer_member_id_list
-        .clear();
+    h.teams_mut().team_mut(team).ok_or(TeamError::Null)?.xfer_member_id_list.clear();
     Ok(())
 }
 
@@ -225,59 +208,27 @@ pub fn xfer_team_prototype<H: TeamHost>(h: &mut H, xfer: &mut dyn Xfer, proto: u
     // owning player index
     let mut owning_player_index: i32 = 0;
     if xfer.get_xfer_mode() == XferMode::Save {
-        owning_player_index = h
-            .teams()
-            .prototype(proto)
-            .ok_or(TeamError::Null)?
-            .owning_player
-            .ok_or(TeamError::Null)?;
+        owning_player_index = h.teams().prototype(proto).ok_or(TeamError::Null)?.owning_player.ok_or(TeamError::Null)?;
     }
     xfer.xfer_int(&mut owning_player_index)?;
     let owner = h.player_list_nth(owning_player_index);
-    h.teams_mut()
-        .prototype_mut(proto)
-        .ok_or(TeamError::Null)?
-        .owning_player = owner;
+    h.teams_mut().prototype_mut(proto).ok_or(TeamError::Null)?.owning_player = owner;
 
     if version >= 2 {
-        let mut name = h
-            .teams()
-            .prototype(proto)
-            .ok_or(TeamError::Null)?
-            .attack_priority_name
-            .clone();
+        let mut name = h.teams().prototype(proto).ok_or(TeamError::Null)?.attack_priority_name.clone();
         xfer.xfer_ascii_string(&mut name)?;
-        h.teams_mut()
-            .prototype_mut(proto)
-            .ok_or(TeamError::Null)?
-            .attack_priority_name = name;
+        h.teams_mut().prototype_mut(proto).ok_or(TeamError::Null)?.attack_priority_name = name;
     }
 
     // production condition
-    let mut always_false = h
-        .teams()
-        .prototype(proto)
-        .ok_or(TeamError::Null)?
-        .production_condition_always_false;
+    let mut always_false = h.teams().prototype(proto).ok_or(TeamError::Null)?.production_condition_always_false;
     xfer.xfer_bool(&mut always_false)?;
-    h.teams_mut()
-        .prototype_mut(proto)
-        .ok_or(TeamError::Null)?
-        .production_condition_always_false = always_false;
+    h.teams_mut().prototype_mut(proto).ok_or(TeamError::Null)?.production_condition_always_false = always_false;
 
     // team template information
-    let mut template = h
-        .teams()
-        .prototype(proto)
-        .ok_or(TeamError::Null)?
-        .team_template
-        .clone();
+    let mut template = h.teams().prototype(proto).ok_or(TeamError::Null)?.team_template.clone();
     xfer.xfer_snapshot(&mut template)?;
-    h.teams_mut()
-        .prototype_mut(proto)
-        .ok_or(TeamError::Null)?
-        .team_template
-        .production_priority = template.production_priority;
+    h.teams_mut().prototype_mut(proto).ok_or(TeamError::Null)?.team_template.production_priority = template.production_priority;
 
     // xfer team instance count
     let mut team_instance_count = h.teams().instances(proto).len() as u16;

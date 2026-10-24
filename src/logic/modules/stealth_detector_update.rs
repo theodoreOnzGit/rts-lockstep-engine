@@ -46,21 +46,13 @@ use crate::common::audio_event_name::AudioEventName;
 use crate::common::base_type::Coord3D;
 use crate::common::disabled_types::DISABLED_HELD;
 use crate::common::game_common::{ObjectShroudStatus, Relationship};
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::kind_of::{KindOfMaskType, KINDOF_BOOBY_TRAP, KINDOF_DEMOTRAP, KINDOF_MINE};
 use crate::common::module::{ModuleDataKind, ObjectId};
-use crate::common::object_status_types::{
-    OBJECT_STATUS_DETECTED, OBJECT_STATUS_SOLD, OBJECT_STATUS_STEALTHED,
-    OBJECT_STATUS_UNDER_CONSTRUCTION,
-};
+use crate::common::object_status_types::{OBJECT_STATUS_DETECTED, OBJECT_STATUS_SOLD, OBJECT_STATUS_STEALTHED, OBJECT_STATUS_UNDER_CONSTRUCTION};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime,
-    UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
 use crate::logic::modules::stealth_update::EVA_INVALID;
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
@@ -76,11 +68,7 @@ pub const RADAR_EVENT_STEALTH_DISCOVERED: i32 = 8;
 /// `RADAR_EVENT_STEALTH_NEUTRALIZED`.
 pub const RADAR_EVENT_STEALTH_NEUTRALIZED: i32 = 9;
 /// The IR ping's position when the drawable has no such bone (`Coord3D bonePosition = {-1.66f,5.5f,15}`).
-pub const IR_DEFAULT_BONE_POSITION: Coord3D = Coord3D {
-    x: -1.66,
-    y: 5.5,
-    z: 15.0,
-};
+pub const IR_DEFAULT_BONE_POSITION: Coord3D = Coord3D { x: -1.66, y: 5.5, z: 15.0 };
 
 /// `class StealthDetectorUpdateModuleData : public UpdateModuleData`.
 #[derive(Clone, Debug, PartialEq)]
@@ -148,129 +136,36 @@ fn parse_particle_system(ini: &mut Ini<'_>) -> IniResult<Option<Vec<u8>>> {
 
 /// `StealthDetectorUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<StealthDetectorUpdateModuleData>; 15] = [
-    FieldParse::new(
-        "DetectionRate",
-        |ini, d, _| {
-            d.update_rate = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DetectionRange",
-        |ini, d, _| {
-            d.detection_range = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "InitiallyDisabled",
-        |ini, d, _| {
-            d.initially_disabled = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "PingSound",
-        |ini, d, _| d.ping_sound.parse(ini),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "LoudPingSound",
-        |ini, d, _| d.loud_ping_sound.parse(ini),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "IRBeaconParticleSysName",
-        |ini, d, _| {
-            d.ir_beacon_particle_sys = parse_particle_system(ini)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "IRParticleSysName",
-        |ini, d, _| {
-            d.ir_particle_sys = parse_particle_system(ini)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "IRBrightParticleSysName",
-        |ini, d, _| {
-            d.ir_bright_particle_sys = parse_particle_system(ini)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "IRGridParticleSysName",
-        |ini, d, _| {
-            d.ir_grid_particle_sys = parse_particle_system(ini)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "IRParticleSysBone",
-        |ini, d, _| {
-            d.ir_particle_sys_bone = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExtraRequiredKindOf",
-        |ini, d, _| d.extra_detect_kindof.parse_from_ini(ini),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExtraForbiddenKindOf",
-        |ini, d, _| d.extra_detect_kindof_not.parse_from_ini(ini),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "CanDetectWhileGarrisoned",
-        |ini, d, _| {
-            d.can_detect_while_garrisoned = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "CanDetectWhileContained",
-        |ini, d, _| {
-            d.can_detect_while_transported = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("DetectionRate", |ini, d, _| { d.update_rate = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("DetectionRange", |ini, d, _| { d.detection_range = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("InitiallyDisabled", |ini, d, _| { d.initially_disabled = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("PingSound", |ini, d, _| d.ping_sound.parse(ini), UserData::None),
+    FieldParse::new("LoudPingSound", |ini, d, _| d.loud_ping_sound.parse(ini), UserData::None),
+    FieldParse::new("IRBeaconParticleSysName", |ini, d, _| { d.ir_beacon_particle_sys = parse_particle_system(ini)?; Ok(()) }, UserData::None),
+    FieldParse::new("IRParticleSysName", |ini, d, _| { d.ir_particle_sys = parse_particle_system(ini)?; Ok(()) }, UserData::None),
+    FieldParse::new("IRBrightParticleSysName", |ini, d, _| { d.ir_bright_particle_sys = parse_particle_system(ini)?; Ok(()) }, UserData::None),
+    FieldParse::new("IRGridParticleSysName", |ini, d, _| { d.ir_grid_particle_sys = parse_particle_system(ini)?; Ok(()) }, UserData::None),
+    FieldParse::new("IRParticleSysBone", |ini, d, _| { d.ir_particle_sys_bone = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("ExtraRequiredKindOf", |ini, d, _| d.extra_detect_kindof.parse_from_ini(ini), UserData::None),
+    FieldParse::new("ExtraForbiddenKindOf", |ini, d, _| d.extra_detect_kindof_not.parse_from_ini(ini), UserData::None),
+    FieldParse::new("CanDetectWhileGarrisoned", |ini, d, _| { d.can_detect_while_garrisoned = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("CanDetectWhileContained", |ini, d, _| { d.can_detect_while_transported = ini.parse_bool()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl StealthDetectorUpdateModuleData {
     /// `buildFieldParse(p)`: `ModuleData`'s (no fields of its own besides the behaviour base's), then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, StealthDetectorUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, StealthDetectorUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<StealthDetectorUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<StealthDetectorUpdateModuleData> {
         let mut data = StealthDetectorUpdateModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                StealthDetectorUpdateModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, StealthDetectorUpdateModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -290,9 +185,7 @@ pub struct StealthDetectorUpdate {
 impl PartialEq for StealthDetectorUpdate {
     /// The same object, the same data object (upstream compares pointers) and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
-            && self.enabled == other.enabled
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.enabled == other.enabled
     }
 }
 
@@ -304,10 +197,7 @@ impl StealthDetectorUpdate {
 
     /// The first half of the constructor, which touches no world: the base (processing `DISABLED_HELD` too), the data (`INI_INVALID_DATA` for
     /// null data) and `m_enabled`.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<StealthDetectorUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<StealthDetectorUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let mut update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
@@ -316,11 +206,7 @@ impl StealthDetectorUpdate {
         mask.set(DISABLED_HELD, 1);
         update.set_disabled_types_to_process(mask);
         let enabled = !data.initially_disabled;
-        Ok(StealthDetectorUpdate {
-            update,
-            data,
-            enabled,
-        })
+        Ok(StealthDetectorUpdate { update, data, enabled })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -341,14 +227,7 @@ impl StealthDetectorUpdate {
     /// `setSDEnabled(enabled)`: the flag, and awake now or asleep forever.
     pub fn set_sd_enabled(&mut self, world: &mut World, enabled: bool) {
         self.enabled = enabled;
-        update_behavior::set_wake_frame(
-            world,
-            if self.enabled {
-                UPDATE_SLEEP_NONE
-            } else {
-                UPDATE_SLEEP_FOREVER
-            },
-        );
+        update_behavior::set_wake_frame(world, if self.enabled { UPDATE_SLEEP_NONE } else { UPDATE_SLEEP_FOREVER });
     }
 
     /// `update()` as the scheduler runs it (see [`update_behavior::world_update`]).
@@ -362,12 +241,7 @@ impl StealthDetectorUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -392,20 +266,14 @@ impl StealthDetectorUpdate {
 
     /// `ContainModuleInterface::isGarrisonable() && getStealthUnitsContained()` of `obj`'s contain module.
     fn garrisons_stealth_units(world: &mut World, obj: ObjectId) -> bool {
-        let Some(contain) = world.get_contain(obj) else {
-            return false;
-        };
-        world
-            .module_call(obj, contain, ModuleCall::IsGarrisonable)
-            .as_bool()
+        let Some(contain) = world.get_contain(obj) else { return false };
+        world.module_call(obj, contain, ModuleCall::IsGarrisonable).as_bool()
             && matches!(world.module_call(obj, contain, ModuleCall::GetStealthUnitsContained), ModuleReply::Int(n) if n != 0)
     }
 
     /// `PartitionFilterStealthedOrStealthGarrisoned::allow`.
     fn stealthed_or_stealth_garrisoned(world: &mut World, other: ObjectId) -> bool {
-        let Some(o) = world.objects.find(other) else {
-            return false;
-        };
+        let Some(o) = world.objects.find(other) else { return false };
         if o.test_status(OBJECT_STATUS_STEALTHED) {
             return true;
         }
@@ -413,12 +281,7 @@ impl StealthDetectorUpdate {
     }
 
     /// The Eva event a stealth update answers (`EVA_Invalid` for none).
-    fn eva_of(
-        world: &mut World,
-        obj: ObjectId,
-        stealth: crate::logic::world::object::ModuleIndex,
-        call: ModuleCall,
-    ) -> i32 {
+    fn eva_of(world: &mut World, obj: ObjectId, stealth: crate::logic::world::object::ModuleIndex, call: ModuleCall) -> i32 {
         match world.module_call(obj, stealth, call) {
             ModuleReply::Int(e) => e,
             _ => EVA_INVALID,
@@ -426,31 +289,14 @@ impl StealthDetectorUpdate {
     }
 
     /// The feedback to the local player for a detection of `them`: `UpdateSleepTime`-free, `Err` where upstream is undefined.
-    fn feedback(
-        &self,
-        world: &mut World,
-        id: ObjectId,
-        them: ObjectId,
-        stealth: crate::logic::world::object::ModuleIndex,
-    ) -> Result<(), Undefined> {
+    fn feedback(&self, world: &mut World, id: ObjectId, them: ObjectId, stealth: crate::logic::world::object::ModuleIndex) -> Result<(), Undefined> {
         let local = world.players.local_index();
         let relationship = world.get_relationship(id, them);
-        let position = world
-            .objects
-            .find(them)
-            .map(|o| o.get_position())
-            .unwrap_or_default();
+        let position = world.objects.find(them).map(|o| o.get_position()).unwrap_or_default();
         // for the player revealing the stealth unit do some UI feedback
-        if local == world.get_controlling_player(id)
-            && (relationship != Relationship::Allies || crate::logic::modules::plant(1972))
-        {
+        if local == world.get_controlling_player(id) && (relationship != Relationship::Allies || crate::logic::modules::plant(1972)) {
             let player_index = world.get_controlling_player(id);
-            let eva = Self::eva_of(
-                world,
-                them,
-                stealth,
-                ModuleCall::StealthGetEnemyDetectionEvaEvent,
-            );
+            let eva = Self::eva_of(world, them, stealth, ModuleCall::StealthGetEnemyDetectionEvaEvent);
             world.emit(ObjectClientEvent::StealthDetectorFeedback {
                 feedback: StealthFeedback::Discovered,
                 try_radar_event: true,
@@ -461,22 +307,13 @@ impl StealthDetectorUpdate {
         }
         // for the unit being revealed, do some UI feedback
         if local == world.get_controlling_player(them) && relationship != Relationship::Allies {
-            let mine = world.objects.find(them).is_some_and(|o| {
-                o.is_kind_of(KINDOF_MINE)
-                    || o.is_kind_of(KINDOF_BOOBY_TRAP)
-                    || o.is_kind_of(KINDOF_DEMOTRAP)
-            });
+            let mine = world.objects.find(them).is_some_and(|o| o.is_kind_of(KINDOF_MINE) || o.is_kind_of(KINDOF_BOOBY_TRAP) || o.is_kind_of(KINDOF_DEMOTRAP));
             let player_index = world.get_controlling_player(them);
             if player_index.is_none() && !mine {
                 // the radar event is created and the feedback always plays: `them->getControllingPlayer()->getPlayerIndex()`
                 return Err(Undefined::NullControllingPlayer);
             }
-            let eva = Self::eva_of(
-                world,
-                them,
-                stealth,
-                ModuleCall::StealthGetOwnDetectionEvaEvent,
-            );
+            let eva = Self::eva_of(world, them, stealth, ModuleCall::StealthGetOwnDetectionEvaEvent);
             world.emit(ObjectClientEvent::StealthDetectorFeedback {
                 feedback: StealthFeedback::Neutralized,
                 try_radar_event: mine,
@@ -488,16 +325,10 @@ impl StealthDetectorUpdate {
         Ok(())
     }
 
-    fn update_inner(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-    ) -> Result<UpdateSleepTime, Undefined> {
+    fn update_inner(&mut self, world: &mut World, me: ModuleHandle) -> Result<UpdateSleepTime, Undefined> {
         let id = me.object;
         let d = self.data.clone();
-        let Some(o) = world.objects.find(id) else {
-            return Ok(update_sleep(d.update_rate));
-        };
+        let Some(o) = world.objects.find(id) else { return Ok(update_sleep(d.update_rate)) };
         if o.is_effectively_dead() {
             return Ok(UPDATE_SLEEP_FOREVER);
         }
@@ -513,10 +344,7 @@ impl StealthDetectorUpdate {
         let contained_by = o.contained_by;
         if world.objects.find(contained_by).is_some() {
             if let Some(contain) = world.get_contain(contained_by) {
-                if world
-                    .module_call(contained_by, contain, ModuleCall::IsGarrisonable)
-                    .as_bool()
-                {
+                if world.module_call(contained_by, contain, ModuleCall::IsGarrisonable).as_bool() {
                     if !d.can_detect_while_garrisoned && !crate::logic::modules::plant(1977) {
                         // But we can't detect stuff while inside.
                         return Ok(update_sleep(d.update_rate));
@@ -527,22 +355,15 @@ impl StealthDetectorUpdate {
                 }
             }
         }
-        let vision_range = if d.detection_range > 0.0 {
-            d.detection_range
-        } else {
-            world.get_vision_range(id)
-        };
+        let vision_range = if d.detection_range > 0.0 { d.detection_range } else { world.get_vision_range(id) };
         let mut found_someone = false;
-        let candidates =
-            world.partition_iterate_objects_in_range_of(id, vision_range, FROM_CENTER_2D);
+        let candidates = world.partition_iterate_objects_in_range_of(id, vision_range, FROM_CENTER_2D);
         for them in candidates {
             // only consider items that are currently stealthed (the module's own filter; the manager's are the scan's)
             if !Self::stealthed_or_stealth_garrisoned(world, them) {
                 continue;
             }
-            let Some(t) = world.objects.find(them) else {
-                continue;
-            };
+            let Some(t) = world.objects.find(them) else { continue };
             if t.is_effectively_dead() {
                 continue;
             }
@@ -556,28 +377,13 @@ impl StealthDetectorUpdate {
                     self.feedback(world, id, them, stealth)?;
                 }
                 // updateRate PLUS 1 is necessary to ensure it stays detected 'till we are called again...
-                world.module_call(
-                    them,
-                    stealth,
-                    ModuleCall::StealthMarkAsDetectedFor(
-                        d.update_rate
-                            .wrapping_add(u32::from(!crate::logic::modules::plant(1971))),
-                    ),
-                );
+                world.module_call(them, stealth, ModuleCall::StealthMarkAsDetectedFor(d.update_rate.wrapping_add(u32::from(!crate::logic::modules::plant(1971)))));
                 if world.has_drawable(them) && not_mine {
-                    world.emit(ObjectClientEvent::Stealth {
-                        object_id: them,
-                        op: StealthClientOp::SecondMaterialPassOpacity(1.0),
-                    });
+                    world.emit(ObjectClientEvent::Stealth { object_id: them, op: StealthClientOp::SecondMaterialPassOpacity(1.0) });
                 }
                 if let Some(grid) = d.ir_grid_particle_sys.clone() {
-                    let mut grid_position = world
-                        .objects
-                        .find(them)
-                        .map(|o| o.get_position())
-                        .unwrap_or_default();
-                    grid_position.z =
-                        world.objects.find(id).map_or(0.0, |o| o.get_position().z) + 17.0;
+                    let mut grid_position = world.objects.find(them).map(|o| o.get_position()).unwrap_or_default();
+                    grid_position.z = world.objects.find(id).map_or(0.0, |o| o.get_position().z) + 17.0;
                     grid_position.x -= ((grid_position.x as i32) % 12) as f32;
                     if !crate::logic::modules::plant(1974) {
                         grid_position.y -= ((grid_position.y as i32) % 12) as f32;
@@ -592,63 +398,28 @@ impl StealthDetectorUpdate {
                     _ => Vec::new(),
                 };
                 for rider in riders {
-                    let Some(stealth) = world.objects.find(rider).and_then(|o| o.stealth) else {
-                        continue;
-                    };
+                    let Some(stealth) = world.objects.find(rider).and_then(|o| o.stealth) else { continue };
                     // we have found someone
                     found_someone = true;
-                    if world.get_controlling_player(id) != world.get_controlling_player(rider)
-                        && world.get_relationship(id, rider) != Relationship::Allies
-                    {
-                        world.module_call(
-                            rider,
-                            stealth,
-                            ModuleCall::StealthMarkAsDetectedFor(d.update_rate.wrapping_add(2)),
-                        );
+                    if world.get_controlling_player(id) != world.get_controlling_player(rider) && world.get_relationship(id, rider) != Relationship::Allies {
+                        world.module_call(rider, stealth, ModuleCall::StealthMarkAsDetectedFor(d.update_rate.wrapping_add(2)));
                     }
                 }
             }
         }
-        let local = world
-            .players
-            .local_index()
-            .ok_or(Undefined::NullLocalPlayer)?;
+        let local = world.players.local_index().ok_or(Undefined::NullLocalPlayer)?;
         // Make sure the detector is visible to the local player before we add effects or sounds.
         let shrouded = world.get_shrouded_status(id, local);
         if shrouded <= ObjectShroudStatus::PartialClear {
-            let stealthed = world
-                .objects
-                .find(id)
-                .is_some_and(|o| o.test_status(OBJECT_STATUS_STEALTHED));
+            let stealthed = world.objects.find(id).is_some_and(|o| o.test_status(OBJECT_STATUS_STEALTHED));
             if !stealthed || world.get_controlling_player(id) == Some(local) {
                 let to_drawable = world.has_drawable(id);
-                let ping = if found_someone != crate::logic::modules::plant(1975) {
-                    d.ir_bright_particle_sys.clone()
-                } else {
-                    d.ir_particle_sys.clone()
-                };
-                for template in [ping, d.ir_beacon_particle_sys.clone()]
-                    .into_iter()
-                    .flatten()
-                {
-                    world.create_particle_system_at_bone(
-                        template,
-                        id,
-                        to_drawable,
-                        d.ir_particle_sys_bone.clone(),
-                    );
+                let ping = if found_someone != crate::logic::modules::plant(1975) { d.ir_bright_particle_sys.clone() } else { d.ir_particle_sys.clone() };
+                for template in [ping, d.ir_beacon_particle_sys.clone()].into_iter().flatten() {
+                    world.create_particle_system_at_bone(template, id, to_drawable, d.ir_particle_sys_bone.clone());
                 }
-                let sound = if found_someone {
-                    d.loud_ping_sound.event_name.clone()
-                } else {
-                    d.ping_sound.event_name.clone()
-                };
-                world.emit(ObjectClientEvent::AudioAddEvent {
-                    name: sound,
-                    object_id: id,
-                    position: None,
-                    player_index: None,
-                });
+                let sound = if found_someone { d.loud_ping_sound.event_name.clone() } else { d.ping_sound.event_name.clone() };
+                world.emit(ObjectClientEvent::AudioAddEvent { name: sound, object_id: id, position: None, player_index: None });
             }
         }
         Ok(update_sleep(d.update_rate))
@@ -672,12 +443,7 @@ impl UpdateBehavior for StealthDetectorUpdate {
     fn construct(&mut self, world: &mut World, _me: ModuleHandle) {
         // start these guys with random phasings so that we don't have all of 'em check on the same frame.
         let wake = if self.enabled {
-            update_sleep(
-                world
-                    .random
-                    .game_logic_random_value(1, self.data.update_rate as i32)
-                    as u32,
-            )
+            update_sleep(world.random.game_logic_random_value(1, self.data.update_rate as i32) as u32)
         } else {
             UPDATE_SLEEP_FOREVER
         };
@@ -691,12 +457,7 @@ impl UpdateBehavior for StealthDetectorUpdate {
         xfer.xfer_bool(&mut self.enabled)
     }
     /// `setSDEnabled` and `isSDEnabled` (`BattlePlanUpdate`'s calls).
-    fn other_call(
-        &mut self,
-        world: &mut World,
-        _me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    fn other_call(&mut self, world: &mut World, _me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
             ModuleCall::StealthDetectorSetEnabled(enabled) => {
                 self.set_sd_enabled(world, enabled);
@@ -736,7 +497,5 @@ impl Snapshot for StealthDetectorUpdate {
 
 /// The factory's `NewModuleDataProc` for `StealthDetectorUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::StealthDetectorUpdate(Arc::new(
-        StealthDetectorUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::StealthDetectorUpdate(Arc::new(StealthDetectorUpdateModuleData::friend_new_module_data(ini)?)))
 }

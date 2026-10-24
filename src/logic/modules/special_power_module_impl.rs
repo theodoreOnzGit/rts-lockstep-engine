@@ -26,9 +26,7 @@ use crate::common::ini::{IniError, IniErrorKind, IniResult};
 use crate::common::module::ObjectId;
 use crate::common::xfer::{Snapshot, Xfer, XferResult};
 use crate::logic::module::special_power_module::{SpecialPowerModule, SpecialPowerModuleData};
-use crate::logic::modules::special_power_body::{
-    self, special_power_module_call, SpecialPowerBehavior,
-};
+use crate::logic::modules::special_power_body::{self, special_power_module_call, SpecialPowerBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::update_body::UpdateBody;
@@ -44,10 +42,7 @@ impl PartialEq for SpecialPowerModuleImpl {
     /// The same object, the same data object and the same state (the real by bits).
     fn eq(&self, other: &Self) -> bool {
         self.power.behavior().object() == other.power.behavior().object()
-            && Arc::ptr_eq(
-                self.power.special_power_module_data(),
-                other.power.special_power_module_data(),
-            )
+            && Arc::ptr_eq(self.power.special_power_module_data(), other.power.special_power_module_data())
             && self.power.get_available_on_frame() == other.power.get_available_on_frame()
             && self.power.paused_count() == other.power.paused_count()
             && self.power.paused_on_frame() == other.power.paused_on_frame()
@@ -59,19 +54,12 @@ impl SpecialPowerModuleImpl {
     /// `SpecialPowerModule(thing, moduleData)`, the part that touches no world; `INI_INVALID_DATA` for no data.
     pub fn new(object: ObjectId, data: Option<Arc<SpecialPowerModuleData>>) -> IniResult<Self> {
         let data = data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
-        Ok(SpecialPowerModuleImpl {
-            power: SpecialPowerModule::new(object, Some(data))?,
-        })
+        Ok(SpecialPowerModuleImpl { power: SpecialPowerModule::new(object, Some(data))? })
     }
 
     /// The module's own state as words, for the tests that compare it with upstream's.
     pub fn state_words(&self) -> Vec<u32> {
-        vec![
-            self.power.get_available_on_frame(),
-            self.power.paused_count() as u32,
-            self.power.paused_on_frame(),
-            self.power.paused_percent().to_bits(),
-        ]
+        vec![self.power.get_available_on_frame(), self.power.paused_count() as u32, self.power.paused_on_frame(), self.power.paused_percent().to_bits()]
     }
 
     /// The world half of the constructor, run once the module is part of its object.
@@ -82,12 +70,7 @@ impl SpecialPowerModuleImpl {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         special_power_module_call(self, world, me, call)
     }
 }

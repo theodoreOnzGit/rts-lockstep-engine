@@ -77,12 +77,7 @@ const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9_r17w.bin"
 const XFER_FILE: &str = "l9_r17w.bin";
 const CLASS: &str = "WeaponBonusUpdate";
 /// The kinds the objects are given, by bit (the driver's `g_r17wKinds`), with their INI names.
-const KINDS: [(KindOfType, &str); 4] = [
-    (KINDOF_INFANTRY, "INFANTRY"),
-    (KINDOF_VEHICLE, "VEHICLE"),
-    (KINDOF_STRUCTURE, "STRUCTURE"),
-    (KINDOF_AIRCRAFT, "AIRCRAFT"),
-];
+const KINDS: [(KindOfType, &str); 4] = [(KINDOF_INFANTRY, "INFANTRY"), (KINDOF_VEHICLE, "VEHICLE"), (KINDOF_STRUCTURE, "STRUCTURE"), (KINDOF_AIRCRAFT, "AIRCRAFT")];
 
 fn put_u32(v: &mut Vec<u8>, x: u32) {
     v.extend_from_slice(&x.to_le_bytes());
@@ -95,17 +90,12 @@ fn put_str(v: &mut Vec<u8>, s: &[u8]) {
     v.extend_from_slice(s);
 }
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::WeaponBonusUpdate(Arc::new(
-        WeaponBonusUpdateModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::WeaponBonusUpdate(Arc::new(WeaponBonusUpdateModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -113,9 +103,7 @@ fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>
 
 /// The data dump of `ref_l9r17w_run`.
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind) {
-    let ModuleDataKind::WeaponBonusUpdate(d) = data else {
-        unreachable!("not a WeaponBonusUpdate")
-    };
+    let ModuleDataKind::WeaponBonusUpdate(d) = data else { unreachable!("not a WeaponBonusUpdate") };
     for i in 0..KINDOF_COUNT {
         put_u32(v, u32::from(d.required_affect_kind_of.test(i)));
     }
@@ -148,12 +136,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         return out;
     }
     let kinds: Vec<u32> = (0..2 * KINDOF_COUNT).map(|_| u32_(&mut p)).collect();
-    let set: Vec<usize> = kinds
-        .iter()
-        .enumerate()
-        .filter(|(_, v)| **v != 0)
-        .map(|(i, _)| i)
-        .collect();
+    let set: Vec<usize> = kinds.iter().enumerate().filter(|(_, v)| **v != 0).map(|(i, _)| i).collect();
     let f: Vec<u32> = (0..4).map(|_| u32_(&mut p)).collect();
     out.push(format!("data kinds {set:?} fields {f:x?}"));
     for i in 0..n_ops {
@@ -196,28 +179,16 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
         lines.push(format!("ForbiddenAffectKindOf = {}", kind_tokens(g)));
     }
     if g.below(100) < 80 {
-        lines.push(format!(
-            "BonusDuration = {}",
-            pick(g, &["0", "100", "1000", "3000"])
-        ));
+        lines.push(format!("BonusDuration = {}", pick(g, &["0", "100", "1000", "3000"])));
     }
     if g.below(100) < 80 {
-        lines.push(format!(
-            "BonusDelay = {}",
-            pick(g, &["0", "33", "500", "1000"])
-        ));
+        lines.push(format!("BonusDelay = {}", pick(g, &["0", "33", "500", "1000"])));
     }
     if g.below(100) < 80 {
-        lines.push(format!(
-            "BonusRange = {}",
-            pick(g, &["0", "50", "150.5", "-1"])
-        ));
+        lines.push(format!("BonusRange = {}", pick(g, &["0", "50", "150.5", "-1"])));
     }
     if g.below(100) < 85 {
-        lines.push(format!(
-            "BonusConditionType = {}",
-            pick(g, &["ENTHUSIASTIC", "SUBLIMINAL", "FRENZY_ONE", "HORDE"])
-        ));
+        lines.push(format!("BonusConditionType = {}", pick(g, &["ENTHUSIASTIC", "SUBLIMINAL", "FRENZY_ONE", "HORDE"])));
     }
     if !clean {
         lines.push(match g.below(3) {
@@ -245,13 +216,7 @@ struct Tally {
     bonuses: u64,
 }
 
-fn run_xfer(
-    w: &mut World,
-    me: ObjectId,
-    idx: usize,
-    how: u32,
-    saved: &[u8],
-) -> (i32, Vec<u8>, u32) {
+fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -299,19 +264,12 @@ fn set_kinds(w: &mut World, id: ObjectId, bits: u32) {
             values.kind_of.push(*k);
         }
     }
-    w.objects
-        .find_mut(id)
-        .unwrap()
-        .thing
-        .friend_set_template(Arc::new(ThingTemplate::from_object_values(&values)));
+    w.objects.find_mut(id).unwrap().thing.friend_set_template(Arc::new(ThingTemplate::from_object_values(&values)));
 }
 
 /// The scan or a contain's passengers: the objects of `bits` (`from` onwards), in order, reversed by `rev`.
 fn list(bits: u32, first: i32, n: i32, rev: u32) -> Vec<ObjectId> {
-    let mut v: Vec<ObjectId> = (0..n)
-        .filter(|k| bits >> k & 1 != 0)
-        .map(|k| first + k)
-        .collect();
+    let mut v: Vec<ObjectId> = (0..n).filter(|k| bits >> k & 1 != 0).map(|k| first + k).collect();
     if bits & rev != 0 {
         v.reverse();
     }
@@ -319,86 +277,36 @@ fn list(bits: u32, first: i32, n: i32, rev: u32) -> Vec<ObjectId> {
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(
-    ctx: &Ctx,
-    data: ModuleDataKind,
-    cfg: &[u32; 12],
-    ops: &[[u32; 6]],
-    tally: &mut Tally,
-) -> (Vec<u8>, World) {
+fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 12], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     put_data(&mut v, &data);
     let mut w = World::new();
     w.names = ctx.names.clone();
-    w.statics = Arc::new(GameStatics {
-        upgrade_center: ctx.center.clone(),
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), ..Default::default() });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.crate_stub_object_calls = true;
-    let plain = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
+    let plain = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
     let contain = || {
         let mut c = NewModule::plain(b"CtContain", b"ModuleTag_Contain");
         c.interfaces = MODULEINTERFACE_CONTAIN;
-        c.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-            ProbeAnswers::default(),
-            0.0,
-            Default::default(),
-        )));
+        c.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
         c
     };
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        CLASS.as_bytes(),
-        b"ModuleTag_Bonus",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
-    let me = w
-        .new_object(NewObject {
-            template: plain.clone(),
-            status: ObjectStatusMaskType::default(),
-            team: None,
-            modules: vec![m, contain()],
-        })
-        .unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), CLASS.as_bytes(), b"ModuleTag_Bonus", &data).unwrap().unwrap();
+    let me = w.new_object(NewObject { template: plain.clone(), status: ObjectStatusMaskType::default(), team: None, modules: vec![m, contain()] }).unwrap();
     assert_eq!(me, 1);
     for k in 2..=5 {
-        let id = w
-            .new_object(NewObject {
-                template: plain.clone(),
-                status: ObjectStatusMaskType::default(),
-                team: None,
-                modules: vec![contain()],
-            })
-            .unwrap();
+        let id = w.new_object(NewObject { template: plain.clone(), status: ObjectStatusMaskType::default(), team: None, modules: vec![contain()] }).unwrap();
         assert_eq!(id, k);
     }
-    let slots: Vec<Option<u16>> = (1..=5)
-        .map(|k| w.objects.find(k).unwrap().contain)
-        .collect();
+    let slots: Vec<Option<u16>> = (1..=5).map(|k| w.objects.find(k).unwrap().contain).collect();
     for (k, bits) in cfg[0..5].iter().enumerate() {
         set_kinds(&mut w, k as ObjectId + 1, *bits);
     }
-    w.set_position(
-        me,
-        &Coord3D {
-            x: 10.0,
-            y: -2.5,
-            z: 1.0,
-        },
-    );
+    w.set_position(me, &Coord3D { x: 10.0, y: -2.5, z: 1.0 });
     let idx = w.find_module(me, CLASS.as_bytes()).unwrap();
-    let u = w
-        .update_handle_of_module(ModuleHandle {
-            object: me,
-            index: idx,
-        })
-        .expect("an update module");
+    let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
     let (mut scan, mut has_contain) = (cfg[11], cfg[5]);
     let mut pass: [u32; 5] = [cfg[6], cfg[7], cfg[8], cfg[9], cfg[10]];
     let mut saved: Vec<u8> = Vec::new();
@@ -416,16 +324,8 @@ fn rust_run(
         w.cuts.range_scan = list(scan, 1, 5, 32);
         for k in 0..5usize {
             let id = k as ObjectId + 1;
-            w.objects.find_mut(id).unwrap().contain = if has_contain >> k & 1 != 0 {
-                slots[k]
-            } else {
-                None
-            };
-            if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(id).unwrap().modules
-                [slots[k].unwrap() as usize]
-                .body
-                .as_mut()
-            {
+            w.objects.find_mut(id).unwrap().contain = if has_contain >> k & 1 != 0 { slots[k] } else { None };
+            if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(id).unwrap().modules[slots[k].unwrap() as usize].body.as_mut() {
                 p.answers.contained = list(pass[k], 2, 4, 16);
             }
         }
@@ -435,10 +335,7 @@ fn rust_run(
         let (mut xst, mut xbytes, mut crc, mut res) = (-2i32, Vec::new(), 0u32, 0u32);
         match o[0] {
             0 => {
-                res = w
-                    .with_body(u, |b, w| b.update(w, u))
-                    .expect("the module is in its slot")
-                    .0;
+                res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
                 tally.updates += 1;
             }
             1..=3 => {}
@@ -454,9 +351,7 @@ fn rust_run(
             }
             _ => unreachable!(),
         }
-        let threw = w.cuts.module_errors[errors_before..]
-            .iter()
-            .any(|(_, e)| !e.is_undefined());
+        let threw = w.cuts.module_errors[errors_before..].iter().any(|(_, e)| !e.is_undefined());
         put_i32(&mut v, if threw { 2 } else { 0 });
         put_u32(&mut v, res);
         let cuts = w.cuts.log.take().unwrap();
@@ -468,19 +363,9 @@ fn rust_run(
                     CutCall::PartitionIterateAlliesInRange { object, range } => {
                         let p = w.objects.find(*object).unwrap().get_position();
                         // the three filters: the relationship, alive, the same map status
-                        log.push(format!(
-                            "scan {:08x} {:08x} {:08x} {:08x} 3",
-                            p.x.to_bits(),
-                            p.y.to_bits(),
-                            p.z.to_bits(),
-                            range.to_bits()
-                        ));
+                        log.push(format!("scan {:08x} {:08x} {:08x} {:08x} 3", p.x.to_bits(), p.y.to_bits(), p.z.to_bits(), range.to_bits()));
                     }
-                    CutCall::ObjectDoTempWeaponBonus {
-                        object,
-                        bonus,
-                        duration,
-                    } => {
+                    CutCall::ObjectDoTempWeaponBonus { object, bonus, duration } => {
                         tally.bonuses += 1;
                         log.push(format!("tempbonus {object} {bonus} {duration}"));
                     }
@@ -504,10 +389,7 @@ fn rust_run(
 }
 
 fn cases() -> usize {
-    std::env::var("L9R17W_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9R17W_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 #[test]
@@ -596,21 +478,8 @@ fn weapon_bonus_update_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!(
-                "case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                show(&text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
@@ -618,17 +487,8 @@ fn weapon_bonus_update_matches_upstream() {
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
-            eprintln!(
-                "--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}",
-                show(&text),
-                dr.get(i),
-                dc.get(i)
-            );
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            eprintln!("--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -645,8 +505,5 @@ fn weapon_bonus_update_matches_upstream() {
     );
     read.finish();
     run.finish();
-    assert!(
-        tally.bonuses > cases as u64,
-        "the generator must reach the bonus"
-    );
+    assert!(tally.bonuses > cases as u64, "the generator must reach the bonus");
 }

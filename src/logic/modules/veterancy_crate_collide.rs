@@ -26,17 +26,13 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::crate_collide_data_field_parse;
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::collide_module::CollideModule;
-use crate::logic::modules::crate_collide::{
-    crate_is_valid_to_execute, crate_module_call, CrateBehavior, CrateCollideModuleData,
-};
+use crate::logic::modules::crate_collide::{crate_is_valid_to_execute, crate_module_call, CrateBehavior, CrateCollideModuleData};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::object_cuts::CutCall;
@@ -58,18 +54,11 @@ pub struct VeterancyCrateCollideModuleData {
 impl VeterancyCrateCollideModuleData {
     /// `VeterancyCrateCollideModuleData()`.
     pub fn new() -> Self {
-        VeterancyCrateCollideModuleData {
-            crate_data: CrateCollideModuleData::new(),
-            range_of_effect: 0,
-            adds_owner_veterancy: false,
-            is_pilot: false,
-        }
+        VeterancyCrateCollideModuleData { crate_data: CrateCollideModuleData::new(), range_of_effect: 0, adds_owner_veterancy: false, is_pilot: false }
     }
 
     /// `buildFieldParse(p)`: the module data base, the crate fields, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, VeterancyCrateCollideModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, VeterancyCrateCollideModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -77,50 +66,23 @@ impl VeterancyCrateCollideModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<VeterancyCrateCollideModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<VeterancyCrateCollideModuleData> {
         let mut data = VeterancyCrateCollideModuleData::new();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                VeterancyCrateCollideModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, VeterancyCrateCollideModuleData::build_field_parse)?;
         }
         Ok(data)
     }
 }
 
 /// `CrateCollideModuleData::buildFieldParse`'s table, for this data class.
-static BASE_FIELD_PARSE: [FieldParse<VeterancyCrateCollideModuleData>; 12] =
-    crate_collide_data_field_parse!(VeterancyCrateCollideModuleData, crate_data);
+static BASE_FIELD_PARSE: [FieldParse<VeterancyCrateCollideModuleData>; 12] = crate_collide_data_field_parse!(VeterancyCrateCollideModuleData, crate_data);
 
 /// `VeterancyCrateCollideModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<VeterancyCrateCollideModuleData>; 4] = [
-    FieldParse::new(
-        "EffectRange",
-        |ini, d, _| {
-            d.range_of_effect = ini.parse_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AddsOwnerVeterancy",
-        |ini, d, _| {
-            d.adds_owner_veterancy = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "IsPilot",
-        |ini, d, _| {
-            d.is_pilot = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("EffectRange", |ini, d, _| { d.range_of_effect = ini.parse_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("AddsOwnerVeterancy", |ini, d, _| { d.adds_owner_veterancy = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("IsPilot", |ini, d, _| { d.is_pilot = ini.parse_bool()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
@@ -136,17 +98,13 @@ pub struct VeterancyCrateCollide {
 impl PartialEq for VeterancyCrateCollide {
     /// The same object and the same data object (upstream compares pointers).
     fn eq(&self, other: &Self) -> bool {
-        self.collide.behavior().object() == other.collide.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
+        self.collide.behavior().object() == other.collide.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
 impl VeterancyCrateCollide {
     /// `VeterancyCrateCollide(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<VeterancyCrateCollideModuleData>>,
-    ) -> IniResult<VeterancyCrateCollide> {
+    pub fn new(object: ObjectId, data: Option<Arc<VeterancyCrateCollideModuleData>>) -> IniResult<VeterancyCrateCollide> {
         let data = data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let collide = CollideModule::new(object, Some(Arc::new(data.crate_data.collide.clone())))?;
         Ok(VeterancyCrateCollide { collide, data })
@@ -167,19 +125,11 @@ impl VeterancyCrateCollide {
         if !self.data.adds_owner_veterancy || crate::logic::modules::plant(1671) {
             return 1;
         }
-        world
-            .objects
-            .find(us)
-            .map_or(0, |o| o.experience.level as i32)
+        world.objects.find(us).map_or(0, |o| o.experience.level as i32)
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         crate_module_call(self, world, me, call)
     }
 }
@@ -193,18 +143,11 @@ impl CrateBehavior for VeterancyCrateCollide {
     }
 
     /// `isValidToExecute(other)`.
-    fn is_valid_to_execute(
-        &self,
-        world: &mut World,
-        me: ModuleHandle,
-        other: ObjectId,
-    ) -> Result<bool, IniError> {
+    fn is_valid_to_execute(&self, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<bool, IniError> {
         if !crate_is_valid_to_execute(&self.data.crate_data, world, me, other)? {
             return Ok(false);
         }
-        let Some(o) = world.objects.find(other) else {
-            return Ok(false);
-        };
+        let Some(o) = world.objects.find(other) else { return Ok(false) };
         if o.is_effectively_dead() {
             return Ok(false);
         }
@@ -225,9 +168,7 @@ impl CrateBehavior for VeterancyCrateCollide {
         }
         if self.data.is_pilot {
             // "the pilot is entering a vehicle on the same team"
-            if world.get_controlling_player(other) != world.get_controlling_player(me.object)
-                && !crate::logic::modules::plant(1674)
-            {
+            if world.get_controlling_player(other) != world.get_controlling_player(me.object) && !crate::logic::modules::plant(1674) {
                 return Ok(false);
             }
             // "Can't upgrade a helicopter or plane"
@@ -239,23 +180,11 @@ impl CrateBehavior for VeterancyCrateCollide {
     }
 
     /// `executeCrateBehavior(other)`.
-    fn execute_crate_behavior(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        other: ObjectId,
-    ) -> Result<bool, IniError> {
+    fn execute_crate_behavior(&mut self, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<bool, IniError> {
         let us = me.object;
         // "Make sure the pilot is actually *TRYING* to enter the object"
-        let Some(ai) = world.objects.find(us).and_then(|o| o.ai) else {
-            return Ok(false);
-        };
-        if world
-            .module_call(us, ai, ModuleCall::AiGetGoalObject)
-            .as_id()
-            != other
-            && !crate::logic::modules::plant(1676)
-        {
+        let Some(ai) = world.objects.find(us).and_then(|o| o.ai) else { return Ok(false) };
+        if world.module_call(us, ai, ModuleCall::AiGetGoalObject).as_id() != other && !crate::logic::modules::plant(1676) {
             return Ok(false);
         }
         let levels_to_gain = self.levels_to_gain(world, us);
@@ -265,11 +194,7 @@ impl CrateBehavior for VeterancyCrateCollide {
             // "do just the collider"
             world.cut_experience_gain_for_level(other, levels_to_gain, can_scale_for_bonus);
         } else {
-            let range = if crate::logic::modules::plant(1678) {
-                range / 2
-            } else {
-                range
-            };
+            let range = if crate::logic::modules::plant(1678) { range / 2 } else { range };
             for potential in world.partition_iterate_same_player_in_range(other, range as f32) {
                 // "This function will give just enough exp for the Object to gain a level, if it can"
                 world.cut_experience_gain_for_level(potential, levels_to_gain, can_scale_for_bonus);
@@ -277,15 +202,8 @@ impl CrateBehavior for VeterancyCrateCollide {
         }
         // "we are going to transfer the terrorist name to the car"
         if self.data.is_pilot && !crate::logic::modules::plant(1679) {
-            let name = world
-                .objects
-                .find(us)
-                .map(|o| o.name.clone())
-                .unwrap_or_default();
-            world.cut(CutCall::ScriptEngineTransferObjectName {
-                name,
-                object: other,
-            });
+            let name = world.objects.find(us).map(|o| o.name.clone()).unwrap_or_default();
+            world.cut(CutCall::ScriptEngineTransferObjectName { name, object: other });
         }
         Ok(true)
     }
@@ -323,7 +241,5 @@ impl Snapshot for VeterancyCrateCollide {
 
 /// The factory's `NewModuleDataProc` for `VeterancyCrateCollide`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::VeterancyCrateCollide(Arc::new(
-        VeterancyCrateCollideModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::VeterancyCrateCollide(Arc::new(VeterancyCrateCollideModuleData::friend_new_module_data(ini)?)))
 }

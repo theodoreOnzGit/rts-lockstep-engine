@@ -76,59 +76,13 @@ impl Default for RadiusDecalTemplate {
 
 /// `dataFieldParse` of `parseRadiusDecalTemplate`.
 static RADIUS_DECAL_FIELDS: [FieldParse<RadiusDecalTemplate>; 8] = [
-    FieldParse::new(
-        "Texture",
-        |ini, t, _| {
-            t.name = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "Style",
-        |ini, t, _| ini.parse_bit_string32(&mut t.shadow_type, &SHADOW_NAMES),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "OpacityMin",
-        |ini, t, _| {
-            t.min_opacity = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "OpacityMax",
-        |ini, t, _| {
-            t.max_opacity = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "OpacityThrobTime",
-        |ini, t, _| {
-            t.opacity_throb_time = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "Color",
-        |ini, t, _| {
-            t.color = ini.parse_color_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "OnlyVisibleToOwningPlayer",
-        |ini, t, _| {
-            t.only_visible_to_owning_player = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("Texture", |ini, t, _| { t.name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("Style", |ini, t, _| ini.parse_bit_string32(&mut t.shadow_type, &SHADOW_NAMES), UserData::None),
+    FieldParse::new("OpacityMin", |ini, t, _| { t.min_opacity = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("OpacityMax", |ini, t, _| { t.max_opacity = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("OpacityThrobTime", |ini, t, _| { t.opacity_throb_time = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("Color", |ini, t, _| { t.color = ini.parse_color_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("OnlyVisibleToOwningPlayer", |ini, t, _| { t.only_visible_to_owning_player = ini.parse_bool()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
@@ -140,10 +94,7 @@ impl RadiusDecalTemplate {
 
     /// `parseRadiusDecalTemplate(ini, instance, store, userData)`: the block's field lines up to `End`, into `store` (the template that is
     /// `self`; an earlier value is kept for any field the block leaves out).
-    pub fn parse_radius_decal_template(
-        ini: &mut Ini<'_>,
-        store: &mut RadiusDecalTemplate,
-    ) -> IniResult<()> {
+    pub fn parse_radius_decal_template(ini: &mut Ini<'_>, store: &mut RadiusDecalTemplate) -> IniResult<()> {
         ini.init_from_ini(store, &RADIUS_DECAL_FIELDS)
     }
 }
@@ -174,20 +125,12 @@ impl RadiusDecal {
     /// `clear()`: empty, and the client lets its shadow go.
     pub fn clear(&mut self, world: &mut World, owner: ObjectId, index: u32) {
         self.empty = true;
-        world.emit(ObjectClientEvent::GridDecal {
-            object_id: owner,
-            index,
-            op: GridDecalOp::Clear,
-        });
+        world.emit(ObjectClientEvent::GridDecal { object_id: owner, index, op: GridDecalOp::Clear });
     }
 
     /// `update()`: the client's opacity throb.
     pub fn update(&self, world: &mut World, owner: ObjectId, index: u32) {
-        world.emit(ObjectClientEvent::GridDecal {
-            object_id: owner,
-            index,
-            op: GridDecalOp::Update,
-        });
+        world.emit(ObjectClientEvent::GridDecal { object_id: owner, index, op: GridDecalOp::Update });
     }
 
     /// `xferRadiusDecal(xfer)`: nothing saved ("@todo implement me"); a load clears the decal. The load has no world, so the client is not told
@@ -204,32 +147,15 @@ impl RadiusDecalTemplate {
     /// and a positive radius ("it is now considered nonEmpty, regardless of the state of m_decal"). Whether the client draws it (only for the
     /// local player, its colour) is the client's, told by one [`GridDecalOp::Create`] (which stands for the whole call, the clear included).
     /// `decal` is the owning object and the decal's index in its module (the client event's address).
-    pub fn create_radius_decal(
-        &self,
-        world: &mut World,
-        decal: (ObjectId, u32),
-        pos: Coord3D,
-        radius: f32,
-        owning_player: Option<i32>,
-        result: &mut RadiusDecal,
-    ) {
+    pub fn create_radius_decal(&self, world: &mut World, decal: (ObjectId, u32), pos: Coord3D, radius: f32, owning_player: Option<i32>, result: &mut RadiusDecal) {
         let (owner, index) = decal;
         result.empty = true;
         world.emit(ObjectClientEvent::GridDecal {
             object_id: owner,
             index,
-            op: GridDecalOp::Create {
-                template: self.clone(),
-                radius,
-                position: pos,
-                player: owning_player,
-            },
+            op: GridDecalOp::Create { template: self.clone(), radius, position: pos, player: owning_player },
         });
-        if owning_player.is_none()
-            || self.name.is_empty()
-            || radius <= 0.0
-            || crate::logic::modules::plant(1871)
-        {
+        if owning_player.is_none() || self.name.is_empty() || radius <= 0.0 || crate::logic::modules::plant(1871) {
             return;
         }
         result.empty = false;
@@ -249,31 +175,12 @@ mod tests {
     fn defaults_and_parse() {
         let d = RadiusDecalTemplate::default();
         assert!(!d.valid());
-        assert_eq!(
-            (
-                d.shadow_type,
-                d.opacity_throb_time,
-                d.color,
-                d.only_visible_to_owning_player
-            ),
-            (0x20, 30, 0, true)
-        );
+        assert_eq!((d.shadow_type, d.opacity_throb_time, d.color, d.only_visible_to_owning_player), (0x20, 30, 0, true));
         assert_eq!(SHADOW_NAMES[5], "SHADOW_ALPHA_DECAL");
         let text = b"Decal\n Texture = Ring\n Style = SHADOW_ADDITIVE_DECAL\n OpacityMin = 25%\n OpacityThrobTime = 2000\n Color = R:1 G:2 B:3\n OnlyVisibleToOwningPlayer = No\nEnd\n";
-        let blocks = [BlockParse {
-            token: "Decal",
-            parse: block,
-        }];
+        let blocks = [BlockParse { token: "Decal", parse: block }];
         let mut t = RadiusDecalTemplate::default();
-        Ini::load(
-            b"t.ini",
-            text,
-            IniLoadType::Overwrite,
-            None,
-            &blocks,
-            &mut t,
-        )
-        .unwrap();
+        Ini::load(b"t.ini", text, IniLoadType::Overwrite, None, &blocks, &mut t).unwrap();
         assert_eq!(t.name, b"Ring");
         assert_eq!(t.shadow_type, 0x40);
         assert_eq!(t.min_opacity, 0.25);

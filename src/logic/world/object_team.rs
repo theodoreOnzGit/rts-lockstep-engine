@@ -25,9 +25,7 @@
 use crate::common::game_common::Relationship;
 use crate::common::game_type::ObjectId;
 use crate::common::kind_of::{KINDOF_CAPTURABLE, KINDOF_MINE};
-use crate::common::object_status_types::{
-    OBJECT_STATUS_IS_CARBOMB, OBJECT_STATUS_SOLD, OBJECT_STATUS_UNDER_CONSTRUCTION,
-};
+use crate::common::object_status_types::{OBJECT_STATUS_IS_CARBOMB, OBJECT_STATUS_SOLD, OBJECT_STATUS_UNDER_CONSTRUCTION};
 use crate::logic::object_script_status_bits::OBJECT_STATUS_SCRIPT_UNSELLABLE;
 use crate::logic::world::game_logic::World;
 use crate::logic::world::ids::{PlayerIndex, TeamId};
@@ -73,8 +71,7 @@ impl World {
         if other.is_undetected_defector() {
             return Relationship::Allies;
         }
-        self.cuts
-            .team_relationship(me.team, Some(other.team).filter(|&t| t != 0))
+        self.cuts.team_relationship(me.team, Some(other.team).filter(|&t| t != 0))
     }
 
     /// `isLocallyControlled()`: the controlling player is the local player
@@ -118,9 +115,7 @@ impl World {
     /// `restoreOriginalTeam()`: back to the team of birth, if it still exists
     /// and is not the current one.
     pub fn restore_original_team(&mut self, id: ObjectId) {
-        let Some(o) = self.objects.find(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find(id) else { return };
         if o.team == 0 || o.original_team_name.is_empty() {
             return;
         }
@@ -141,9 +136,7 @@ impl World {
     /// and tell the UI the object changed hands.
     pub fn set_or_restore_team(&mut self, id: ObjectId, team: Option<TeamId>, restoring: bool) {
         let new_team = team.unwrap_or(0);
-        let Some(o) = self.objects.find(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find(id) else { return };
         // don't do anything if the team hasn't changed
         if o.team == new_team {
             return;
@@ -154,11 +147,7 @@ impl World {
         if old_team != 0 && self.cuts.team_member_list_contains(old_team, id) {
             self.cuts.team_member_list_remove(old_team, id);
             if let Some(p) = self.cuts.team_player(old_team) {
-                self.cut(CutCall::PlayerBecomingTeamMember {
-                    player: p,
-                    object: id,
-                    incoming: false,
-                });
+                self.cut(CutCall::PlayerBecomingTeamMember { player: p, object: id, incoming: false });
             }
         }
 
@@ -172,26 +161,14 @@ impl World {
             if !self.cuts.team_member_list_contains(new_team, id) {
                 self.cuts.team_member_list_prepend(new_team, id);
                 if let Some(p) = self.cuts.team_player(new_team) {
-                    self.cut(CutCall::PlayerBecomingTeamMember {
-                        player: p,
-                        object: id,
-                        incoming: true,
-                    });
+                    self.cut(CutCall::PlayerBecomingTeamMember { player: p, object: id, incoming: true });
                 }
             }
             // now, adjust the attitude of the unit to its new team.
-            if self.cuts.team_has_template_info(new_team)
-                && self.objects.find(id).is_some_and(|o| o.ai.is_some())
-            {
-                self.cut(CutCall::AiSetAttitude {
-                    object: id,
-                    team: new_team,
-                });
+            if self.cuts.team_has_template_info(new_team) && self.objects.find(id).is_some_and(|o| o.ai.is_some()) {
+                self.cut(CutCall::AiSetAttitude { object: id, team: new_team });
                 if self.cuts.team_attack_info(new_team) {
-                    self.cut(CutCall::AiSetAttackInfo {
-                        object: id,
-                        team: new_team,
-                    });
+                    self.cut(CutCall::AiSetAttackInfo { object: id, team: new_team });
                 }
             }
             // emit message announcing object's new alliance
@@ -204,10 +181,7 @@ impl World {
         // setting a new team needs to tell the modules and do other important stuff.
         // And it needs to happen after the switch.
         if old_team != 0 && new_team != 0 && !restoring {
-            if let (Some(old_p), Some(new_p)) = (
-                self.cuts.team_player(old_team),
-                self.cuts.team_player(new_team),
-            ) {
+            if let (Some(old_p), Some(new_p)) = (self.cuts.team_player(old_team), self.cuts.team_player(new_team)) {
                 self.on_capture(id, old_p, new_p);
             }
         }
@@ -221,30 +195,16 @@ impl World {
         }
 
         // Tell TheInGameUI that the object has changed hands
-        let old_player_index = if old_team != 0 {
-            self.cuts.team_player(old_team).unwrap_or(-1)
-        } else {
-            -1
-        };
-        let new_player_index = if new_team != 0 {
-            self.cuts.team_player(new_team).unwrap_or(-1)
-        } else {
-            -1
-        };
+        let old_player_index = if old_team != 0 { self.cuts.team_player(old_team).unwrap_or(-1) } else { -1 };
+        let new_player_index = if new_team != 0 { self.cuts.team_player(new_team).unwrap_or(-1) } else { -1 };
         if old_player_index != new_player_index {
-            self.emit(ObjectClientEvent::ObjectChangedTeam {
-                object_id: id,
-                old_player: old_player_index,
-                new_player: new_player_index,
-            });
+            self.emit(ObjectClientEvent::ObjectChangedTeam { object_id: id, old_player: old_player_index, new_player: new_player_index });
         }
     }
 
     /// `hasDrawable`: `m_drawable != NULL`.
     pub fn has_drawable(&self, id: ObjectId) -> bool {
-        self.objects
-            .find(id)
-            .is_some_and(|o| o.drawable != crate::common::game_type::INVALID_DRAWABLE_ID)
+        self.objects.find(id).is_some_and(|o| o.drawable != crate::common::game_type::INVALID_DRAWABLE_ID)
     }
 
     // ---- indicator colours ----------------------------------------------------------------------
@@ -252,9 +212,7 @@ impl World {
     /// `getIndicatorColor()`: the custom colour, else the controlling
     /// player's, else opaque black.
     pub fn get_indicator_color(&self, id: ObjectId) -> i32 {
-        let Some(o) = self.objects.find(id) else {
-            return 0;
-        };
+        let Some(o) = self.objects.find(id) else { return 0 };
         if o.indicator_color == 0 {
             if let Some(p) = self.get_controlling_player(id) {
                 return self.cuts.player_color(p);
@@ -266,9 +224,7 @@ impl World {
 
     /// `getNightIndicatorColor()`: "used to make blue/purple easier to see on night models".
     pub fn get_night_indicator_color(&self, id: ObjectId) -> i32 {
-        let Some(o) = self.objects.find(id) else {
-            return 0;
-        };
+        let Some(o) = self.objects.find(id) else { return 0 };
         if o.indicator_color == 0 {
             if let Some(p) = self.get_controlling_player(id) {
                 return self.cuts.player_night_color(p);
@@ -280,9 +236,7 @@ impl World {
 
     /// `setCustomIndicatorColor(c)`: the drawable is told on a change.
     pub fn set_custom_indicator_color(&mut self, id: ObjectId, c: i32) {
-        let Some(o) = self.objects.find_mut(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find_mut(id) else { return };
         if o.indicator_color != c {
             o.indicator_color = c;
             if self.has_drawable(id) {
@@ -311,18 +265,9 @@ impl World {
             self.cut(CutCall::AiIdle { object: id });
         }
         // this gets the new owner some points
-        self.cut(CutCall::PlayerScoreAddObjectCaptured {
-            player: new_owner,
-            object: id,
-        });
+        self.cut(CutCall::PlayerScoreAddObjectCaptured { player: new_owner, object: id });
         // rip through the behavior modules and call the onCapture for any modules that care
-        self.call_all_modules(
-            id,
-            ModuleCall::OnCapture {
-                old_owner,
-                new_owner,
-            },
-        );
+        self.call_all_modules(id, ModuleCall::OnCapture { old_owner, new_owner });
         // We have to undo our look for the old team and redo it for the new.
         // onCapture is used now, so it better be called after ownership changes and not before.
         self.handle_partition_cell_maintenance(id);
@@ -340,17 +285,12 @@ impl World {
 
     /// `isFactionStructure()`: `isAnyKindOf(KINDOFMASK_FS)`.
     pub fn is_faction_structure(&self, id: ObjectId) -> bool {
-        self.objects
-            .find(id)
-            .is_some_and(|o| o.is_any_kind_of(&crate::common::kind_of::kindofmask_fs()))
+        self.objects.find(id).is_some_and(|o| o.is_any_kind_of(&crate::common::kind_of::kindofmask_fs()))
     }
 
     /// `isNonFactionStructure()`.
     pub fn is_non_faction_structure(&self, id: ObjectId) -> bool {
-        self.objects
-            .find(id)
-            .is_some_and(|o| o.is_kind_of(crate::common::kind_of::KINDOF_STRUCTURE))
-            && !self.is_faction_structure(id)
+        self.objects.find(id).is_some_and(|o| o.is_kind_of(crate::common::kind_of::KINDOF_STRUCTURE)) && !self.is_faction_structure(id)
     }
 
     /// `defect(newTeam, detectionTime)`: change sides in secret. Not while
@@ -371,21 +311,15 @@ impl World {
         if self.is_contained(id) {
             return; // @todo make contained units unselectable, until then... lorenzen
         }
-        let Some(player) = self.get_controlling_player(id) else {
-            return;
-        };
+        let Some(player) = self.get_controlling_player(id) else { return };
         let my_team = self.cuts.player_default_team(player);
         if my_team == new_team {
             return; // can't defect from my own team, that would be silly
         }
         // things that are under construction, or sold, cannot defect.
         {
-            let o = self
-                .objects
-                .find(id)
-                .expect("get_controlling_player found it");
-            if o.test_status(OBJECT_STATUS_UNDER_CONSTRUCTION) || o.test_status(OBJECT_STATUS_SOLD)
-            {
+            let o = self.objects.find(id).expect("get_controlling_player found it");
+            if o.test_status(OBJECT_STATUS_UNDER_CONSTRUCTION) || o.test_status(OBJECT_STATUS_SOLD) {
                 return;
             }
         }
@@ -400,33 +334,16 @@ impl World {
         // do this first, since after setTeam() the infiltrator becomes the controllingplayer, not me
         // But don't do this is if the new team is not a real team.
         if self.objects.find(id).is_some_and(|o| o.on_radar) {
-            let new_playable = self
-                .cuts
-                .team_player(new_team)
-                .is_some_and(|p| self.cuts.player_is_playable_side(p));
-            let mine_playable = self
-                .cuts
-                .team_player(my_team)
-                .is_some_and(|p| self.cuts.player_is_playable_side(p));
+            let new_playable = self.cuts.team_player(new_team).is_some_and(|p| self.cuts.player_is_playable_side(p));
+            let mine_playable = self.cuts.team_player(my_team).is_some_and(|p| self.cuts.player_is_playable_side(p));
             if new_playable && mine_playable {
-                self.emit(ObjectClientEvent::Radar {
-                    call: RadarCall::TryInfiltrationEvent,
-                    object_id: id,
-                    position: None,
-                });
+                self.emit(ObjectClientEvent::Radar { call: RadarCall::TryInfiltrationEvent, object_id: id, position: None });
             }
         }
 
         self.friend_set_undetected_defector(id, detection_time > 0);
         if let Some(h) = self.objects.find(id).and_then(|o| o.helpers.defection) {
-            self.module_call(
-                id,
-                h,
-                ModuleCall::StartDefectionTimer {
-                    time: detection_time,
-                    with_defector_fx: true,
-                },
-            );
+            self.module_call(id, h, ModuleCall::StartDefectionTimer { time: detection_time, with_defector_fx: true });
         }
 
         // Switch ////////////////////////////////////////
@@ -440,53 +357,26 @@ impl World {
         }
 
         // Play our sound indicating we've been defected. (weird verbage, but true.)
-        self.emit(ObjectClientEvent::Sound {
-            sound: ObjectSound::VoiceDefect,
-            object_id: id,
-            position: None,
-        });
+        self.emit(ObjectClientEvent::Sound { sound: ObjectSound::VoiceDefect, object_id: id, position: None });
 
         // make the new recruit the only selected thing, awaiting new command to move, attack, etc...
         if self.has_drawable(id) {
             // This is the first of several flashes which get cue'd by doDefectorUpdateStuff()
             self.emit(ObjectClientEvent::DrawableFlashAsSelected { object_id: id });
-            self.emit(ObjectClientEvent::Sound {
-                sound: ObjectSound::DefectorTimerTick,
-                object_id: id,
-                position: None,
-            });
+            self.emit(ObjectClientEvent::Sound { sound: ObjectSound::DefectorTimerTick, object_id: id, position: None });
         }
 
         if let Some(ct) = self.get_contain(id) {
-            if self
-                .module_call(id, ct, ModuleCall::IsKickOutOnCapture)
-                .as_bool()
-            {
+            if self.module_call(id, ct, ModuleCall::IsKickOutOnCapture).as_bool() {
                 // Caves really really don't want to do this.
-                self.module_call(
-                    id,
-                    ct,
-                    ModuleCall::RemoveAllContained {
-                        expose_stealth_units: true,
-                    },
-                );
+                self.module_call(id, ct, ModuleCall::RemoveAllContained { expose_stealth_units: true });
             }
         }
 
         // if it has parking places, defect anything parked there.
         for idx in self.all_modules(id) {
-            if self
-                .module_call(id, idx, ModuleCall::HasParkingPlaceInterface)
-                .as_bool()
-            {
-                self.module_call(
-                    id,
-                    idx,
-                    ModuleCall::DefectAllParkedUnits {
-                        new_team,
-                        detection_time,
-                    },
-                );
+            if self.module_call(id, idx, ModuleCall::HasParkingPlaceInterface).as_bool() {
+                self.module_call(id, idx, ModuleCall::DefectAllParkedUnits { new_team, detection_time });
                 break;
             }
         }
@@ -495,9 +385,7 @@ impl World {
         // unfortunately, structures don't keep list of mines they own, so we must do
         // this the hard way :-( [fortunately, this doens't happen very often]
         for mine in self.objects.ids_in_order() {
-            let Some(m) = self.objects.find(mine) else {
-                continue;
-            };
+            let Some(m) = self.objects.find(mine) else { continue };
             if m.is_kind_of(KINDOF_MINE) && m.producer_id == id {
                 self.set_team(mine, Some(new_team));
             }
@@ -509,14 +397,7 @@ impl World {
     pub fn go_invulnerable(&mut self, id: ObjectId, time: u32) {
         self.friend_set_undetected_defector(id, time > 0);
         if let Some(h) = self.objects.find(id).and_then(|o| o.helpers.defection) {
-            self.module_call(
-                id,
-                h,
-                ModuleCall::StartDefectionTimer {
-                    time,
-                    with_defector_fx: false,
-                },
-            );
+            self.module_call(id, h, ModuleCall::StartDefectionTimer { time, with_defector_fx: false });
         }
     }
 
@@ -524,15 +405,11 @@ impl World {
     /// leaves its player's grid. A disabled producer does neither ("disabledness
     /// only affects Producers, not Consumers").
     pub fn friend_adjust_power_for_player(&mut self, id: ObjectId, incoming: bool) {
-        let Some(o) = self.objects.find(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find(id) else { return };
         if o.is_disabled() && o.template().get_energy_production() > 0 {
             return;
         }
-        let Some(player) = self.get_controlling_player(id) else {
-            return;
-        };
+        let Some(player) = self.get_controlling_player(id) else { return };
         if incoming {
             self.cut(CutCall::EnergyObjectEnteringInfluence { player, object: id });
         } else {
@@ -542,19 +419,13 @@ impl World {
 
     /// `setReceivingDifficultyBonus(receive)`.
     pub fn set_receiving_difficulty_bonus(&mut self, id: ObjectId, receive: bool) {
-        let Some(o) = self.objects.find_mut(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find_mut(id) else { return };
         if receive == o.is_receiving_difficulty_bonus {
             return;
         }
         o.is_receiving_difficulty_bonus = receive;
         if let Some(player) = self.get_controlling_player(id) {
-            self.cut(CutCall::PlayerApplyDifficultyBonusesForObject {
-                player,
-                object: id,
-                apply: receive,
-            });
+            self.cut(CutCall::PlayerApplyDifficultyBonusesForObject { player, object: id, apply: receive });
         }
     }
 
@@ -585,9 +456,7 @@ impl World {
 
     /// `leaveGroup()`: "to avoid recursion, set m_group to NULL before removing".
     pub fn leave_group(&mut self, id: ObjectId) {
-        let Some(o) = self.objects.find_mut(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find_mut(id) else { return };
         if o.group != 0 {
             let group = o.group;
             o.group = 0;
@@ -600,37 +469,24 @@ impl World {
     /// `getRadarPriority()`: the template's, else structure for a garrisonable
     /// or capturable object; a car bomb is always a unit.
     pub fn get_radar_priority(&mut self, id: ObjectId) -> u8 {
-        let Some(o) = self.objects.find(id) else {
-            return crate::common::thing_template::RADAR_PRIORITY_INVALID;
-        };
+        let Some(o) = self.objects.find(id) else { return crate::common::thing_template::RADAR_PRIORITY_INVALID };
         // first, get the priority at the thing template level
         let mut priority = o.template().get_default_radar_priority();
         // there are some objects that we want to show up on the radar when they have certain properties...
         if priority == crate::common::thing_template::RADAR_PRIORITY_INVALID {
             // objects that are "garrisonable" show up on the radar
             if let Some(cmi) = self.get_contain(id) {
-                if self
-                    .module_call(id, cmi, ModuleCall::IsGarrisonable)
-                    .as_bool()
-                {
+                if self.module_call(id, cmi, ModuleCall::IsGarrisonable).as_bool() {
                     priority = RADAR_PRIORITY_STRUCTURE;
                 }
             }
             // objects that are "capturable" show up on the radar
-            if self
-                .objects
-                .find(id)
-                .is_some_and(|o| o.is_kind_of(KINDOF_CAPTURABLE))
-            {
+            if self.objects.find(id).is_some_and(|o| o.is_kind_of(KINDOF_CAPTURABLE)) {
                 priority = RADAR_PRIORITY_STRUCTURE;
             }
         }
         // Carbombs will show up as units regardless of their default priority
-        if self
-            .objects
-            .find(id)
-            .is_some_and(|o| o.test_status(OBJECT_STATUS_IS_CARBOMB))
-        {
+        if self.objects.find(id).is_some_and(|o| o.test_status(OBJECT_STATUS_IS_CARBOMB)) {
             priority = RADAR_PRIORITY_UNIT;
         }
         priority
@@ -642,34 +498,22 @@ impl World {
     pub fn radar_add_object(&mut self, id: ObjectId) {
         let priority = self.get_radar_priority(id);
         // isPriorityVisible: INVALID and NOT_ON_RADAR are not
-        if priority == crate::common::thing_template::RADAR_PRIORITY_INVALID
-            || priority == RADAR_PRIORITY_NOT_ON_RADAR
-        {
+        if priority == crate::common::thing_template::RADAR_PRIORITY_INVALID || priority == RADAR_PRIORITY_NOT_ON_RADAR {
             return;
         }
         if let Some(o) = self.objects.find_mut(id) {
             o.on_radar = true;
-            self.emit(ObjectClientEvent::Radar {
-                call: RadarCall::AddObject,
-                object_id: id,
-                position: None,
-            });
+            self.emit(ObjectClientEvent::Radar { call: RadarCall::AddObject, object_id: id, position: None });
         }
     }
 
     /// `TheRadar->removeObject(obj)`: nothing for an object with no radar data.
     pub fn radar_remove_object(&mut self, id: ObjectId) {
-        let Some(o) = self.objects.find_mut(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find_mut(id) else { return };
         if !o.on_radar {
             return;
         }
         o.on_radar = false;
-        self.emit(ObjectClientEvent::Radar {
-            call: RadarCall::RemoveObject,
-            object_id: id,
-            position: None,
-        });
+        self.emit(ObjectClientEvent::Radar { call: RadarCall::RemoveObject, object_id: id, position: None });
     }
 }

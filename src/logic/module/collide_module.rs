@@ -155,19 +155,12 @@ mod tests {
         let mut m = CollideModule::new(2, Some(Arc::new(CollideModuleData::new()))).unwrap();
         assert!(!m.would_like_to_collide_with());
         assert!(!m.is_hijacked_vehicle_crate_collide() && !m.is_sabotage_building_crate_collide());
-        assert!(
-            !m.is_car_bomb_crate_collide() && !m.is_railroad() && !m.is_salvage_crate_collide()
-        );
+        assert!(!m.is_car_bomb_crate_collide() && !m.is_railroad() && !m.is_salvage_crate_collide());
         assert_eq!(CollideModule::get_interface_mask(), 0x10);
         assert_eq!(save_bytes(&mut m).unwrap(), [1, 1, 1, 1]);
         load_bytes(&mut m, vec![1, 1, 1, 1]).unwrap();
         assert!(CollideModule::new(2, None).is_err());
-        assert!(m
-            .collide_module_data()
-            .behavior
-            .module_data
-            .module_tag_name_key()
-            .is_err());
+        assert!(m.collide_module_data().behavior.module_data.module_tag_name_key().is_err());
     }
 
     #[test]
@@ -176,19 +169,9 @@ mod tests {
             out.push(CollideModuleData::friend_new_module_data(Some(ini)));
             Ok(())
         }
-        static BLOCKS: [BlockParse<Vec<IniResult<CollideModuleData>>>; 1] = [BlockParse {
-            token: "D",
-            parse: block,
-        }];
+        static BLOCKS: [BlockParse<Vec<IniResult<CollideModuleData>>>; 1] = [BlockParse { token: "D", parse: block }];
         let mut out = Vec::new();
-        let _ = Ini::load(
-            b"c.ini",
-            b"D\nEnd\nD\n Foo = 1\nEnd\n",
-            IniLoadType::Overwrite,
-            None,
-            &BLOCKS,
-            &mut out,
-        );
+        let _ = Ini::load(b"c.ini", b"D\nEnd\nD\n Foo = 1\nEnd\n", IniLoadType::Overwrite, None, &BLOCKS, &mut out);
         assert!(out[0].is_ok());
         assert_eq!(out[1].clone().unwrap_err().kind, IniErrorKind::UnknownToken);
     }

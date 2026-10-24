@@ -173,12 +173,7 @@ pub enum GridDecalOp {
     /// `clear()`.
     Clear,
     /// `tmpl.createRadiusDecal(pos, radius, owningPlayer, decal)`; `player` is the owning player's index (`None`: `NULL`).
-    Create {
-        template: crate::logic::radius_decal::RadiusDecalTemplate,
-        radius: f32,
-        position: Coord3D,
-        player: Option<i32>,
-    },
+    Create { template: crate::logic::radius_decal::RadiusDecalTemplate, radius: f32, position: Coord3D, player: Option<i32> },
     /// `setPosition(pos)`.
     SetPosition(Coord3D),
     /// `setOpacity(o)`.
@@ -193,38 +188,20 @@ pub enum GridDecalOp {
 pub enum ObjectClientEvent {
     /// `TheAudio->addAudioEvent(&sound)` with `sound.setObjectID(id)` or
     /// `sound.setPosition(getPosition())` (whichever the call site does).
-    Sound {
-        sound: ObjectSound,
-        object_id: ObjectId,
-        position: Option<Coord3D>,
-    },
+    Sound { sound: ObjectSound, object_id: ObjectId, position: Option<Coord3D> },
     /// `TheRadar->...(obj)`; `position` for [`RadarCall::TryFakeEvent`].
-    Radar {
-        call: RadarCall,
-        object_id: ObjectId,
-        position: Option<Coord3D>,
-    },
+    Radar { call: RadarCall, object_id: ObjectId, position: Option<Coord3D> },
     /// `TheEva->setShouldPlay(message)`.
     Eva { message: EvaMessage },
     /// `TheInGameUI->objectChangedTeam(obj, oldPlayerIndex, newPlayerIndex)`.
-    ObjectChangedTeam {
-        object_id: ObjectId,
-        old_player: i32,
-        new_player: i32,
-    },
+    ObjectChangedTeam { object_id: ObjectId, old_player: i32, new_player: i32 },
     /// `TheInGameUI->removeIdleWorker(obj, playerIndex)`.
-    RemoveIdleWorker {
-        object_id: ObjectId,
-        player_index: i32,
-    },
+    RemoveIdleWorker { object_id: ObjectId, player_index: i32 },
     /// `TheInGameUI->addWorldAnimation(levelGainAnimation, pos, ..)`
     /// (`onVeterancyLevelChanged`); `position` already includes the health
     /// box offset. The animation's name and timing are global data the
     /// client reads.
-    LevelGainAnimation {
-        object_id: ObjectId,
-        position: Coord3D,
-    },
+    LevelGainAnimation { object_id: ObjectId, position: Coord3D },
     /// `TheControlBar->markUIDirty()`.
     ControlBarMarkUiDirty,
     // --- p1l9-upgrades ---
@@ -240,28 +217,14 @@ pub enum ObjectClientEvent {
     /// `m_drawable->reactToGeometryChange()`.
     DrawableReactToGeometryChange { object_id: ObjectId },
     /// `m_drawable->setSelectable(selectable)`.
-    DrawableSetSelectable {
-        object_id: ObjectId,
-        selectable: bool,
-    },
+    DrawableSetSelectable { object_id: ObjectId, selectable: bool },
     /// `m_drawable->setTintStatus(status)` (`on`) or `clearTintStatus(status)`.
-    DrawableTint {
-        object_id: ObjectId,
-        status: i32,
-        on: bool,
-    },
+    DrawableTint { object_id: ObjectId, status: i32, on: bool },
     /// The model-condition calls on `m_drawable`.
-    DrawableModelCondition {
-        object_id: ObjectId,
-        op: ModelConditionOp,
-    },
+    DrawableModelCondition { object_id: ObjectId, op: ModelConditionOp },
     // --- p1w10-sonnet ---
     /// `draw->showSubObject(name, show)` (`SubObjectsUpgrade`).
-    DrawableShowSubObject {
-        object_id: ObjectId,
-        name: Vec<u8>,
-        show: bool,
-    },
+    DrawableShowSubObject { object_id: ObjectId, name: Vec<u8>, show: bool },
     /// `draw->updateSubObjects()` (`SubObjectsUpgrade`).
     DrawableUpdateSubObjects { object_id: ObjectId },
     // --- end p1w10-sonnet ---
@@ -271,11 +234,7 @@ pub enum ObjectClientEvent {
     // --- end p1w12-sonnet ---
     // --- p1w13-sonnet ---
     /// One call on the `index`th grid decal of an object's `DynamicShroudClearingRangeUpdate` (a `RadiusDecal`, which the client's shadow manager draws).
-    GridDecal {
-        object_id: ObjectId,
-        index: u32,
-        op: GridDecalOp,
-    },
+    GridDecal { object_id: ObjectId, index: u32, op: GridDecalOp },
     /// `FloatUpdate`: the drawable's instance matrix is set to a tilt that depends on the frame (`sin(frame * 0.0291) * 0.05` of yaw, `sin(frame * 0.0515) * 0.05` of
     /// pitch, keeping its Z rotation); the client's maths, since the matrix is client data.
     DrawableFloatTilt { object_id: ObjectId, frame: u32 },
@@ -285,33 +244,21 @@ pub enum ObjectClientEvent {
     // --- p1w11-sonnet ---
     /// `TheAudio->addAudioEvent(&event)` for an event copied from the template's per-unit sounds (`EjectPilotDie`): the event's name, the object
     /// it is attached to (`INVALID_ID` for none), the position it was set to and the player index it was set to, if any.
-    AudioAddEvent {
-        name: Vec<u8>,
-        object_id: ObjectId,
-        position: Option<Coord3D>,
-        player_index: Option<i32>,
-    },
+    AudioAddEvent { name: Vec<u8>, object_id: ObjectId, position: Option<Coord3D>, player_index: Option<i32> },
     // --- end p1w11-sonnet ---
     // --- p1w13-sonnet ---
     /// `m_drawable->setShadowsEnabled(enabled)`.
     DrawableSetShadowsEnabled { object_id: ObjectId, enabled: bool },
     // --- end p1w13-sonnet ---
     /// `m_drawable->setTerrainDecalFadeTarget(target, rate)`.
-    DrawableTerrainDecalFadeTarget {
-        object_id: ObjectId,
-        target: f32,
-        rate: f32,
-    },
+    DrawableTerrainDecalFadeTarget { object_id: ObjectId, target: f32, rate: f32 },
     /// `m_drawable->setDrawableHidden(hidden)` (`TunnelTracker::loadPostProcess`).
     DrawableSetHidden { object_id: ObjectId, hidden: bool },
     /// `m_drawable->flashAsSelected()`.
     DrawableFlashAsSelected { object_id: ObjectId },
     // --- p1w13-sonnet --- (batch R5: RiderChangeContain moves the selection between bike and rider)
     /// `TheMessageStream->appendMessage(MSG_CREATE_SELECTED_GROUP)` with `appendBooleanArgument(createNew)` and `appendObjectIDArgument(object)`.
-    MessageCreateSelectedGroup {
-        create_new: bool,
-        object_id: ObjectId,
-    },
+    MessageCreateSelectedGroup { create_new: bool, object_id: ObjectId },
     /// `TheMessageStream->appendMessage(MSG_REMOVE_FROM_SELECTED_GROUP)` with `appendObjectIDArgument(object)`.
     MessageRemoveFromSelectedGroup { object_id: ObjectId },
     /// batch R24: `TheInGameUI->message(label)` (the string manager's label, shown to the local player).
@@ -325,28 +272,16 @@ pub enum ObjectClientEvent {
     /// `TheInGameUI->setDisplayedMaxWarning(on)`.
     UiSetDisplayedMaxWarning { on: bool },
     /// batch R26: what a `StealthUpdate` does to the object's drawable (see [`StealthClientOp`]).
-    Stealth {
-        object_id: ObjectId,
-        op: StealthClientOp,
-    },
+    Stealth { object_id: ObjectId, op: StealthClientOp },
     /// batch R27: a `StealthDetectorUpdate`'s feedback to the local player for a detection. With `try_radar_event`, `TheRadar->tryEvent(type,
     /// &position)` decides whether the rest plays; without, `TheRadar->createEvent(&position, type)` and the rest always plays: the misc audio's
     /// `m_stealthDiscoveredSound` or `m_stealthNeutralizedSound` with `setPlayerIndex(player_index)` (`None`: upstream reads a `NULL` player
     /// there), `TheInGameUI->message(TheGameText->fetch("MESSAGE:StealthDiscovered"))` or `"MESSAGE:StealthNeutralized"`, and, unless `eva` is
     /// `EVA_Invalid` (-1), `TheEva->setShouldPlay(eva)`.
-    StealthDetectorFeedback {
-        feedback: StealthFeedback,
-        try_radar_event: bool,
-        position: Coord3D,
-        player_index: Option<i32>,
-        eva: i32,
-    },
+    StealthDetectorFeedback { feedback: StealthFeedback, try_radar_event: bool, position: Coord3D, player_index: Option<i32>, eva: i32 },
     /// batch R29: `getDrawable()->setInstanceMatrix(&m)` with `m` the drawable's instance matrix (`getInstanceMatrix()`, the client's) with its
     /// translation set to `translation` (`StructureCollapseUpdate`'s shudder and sinking).
-    DrawableSetInstanceTranslation {
-        object_id: ObjectId,
-        translation: Coord3D,
-    },
+    DrawableSetInstanceTranslation { object_id: ObjectId, translation: Coord3D },
     /// batch R30: `BoneFXUpdate` stops the particle system it just made (`id`) if the object's drawable is effectively hidden
     /// (`drawable->isDrawableEffectivelyHidden()`, the client's): `psys->stop()`.
     ParticleSystemStopIfDrawableHidden { id: u32, object_id: ObjectId },
@@ -356,85 +291,40 @@ pub enum ObjectClientEvent {
     /// batch R33: `drawable->setInstanceScale(scale)` (`EMPUpdate`).
     DrawableSetInstanceScale { object_id: ObjectId, scale: f32 },
     /// batch R33: `drawable->colorTint(&color)`.
-    DrawableColorTint {
-        object_id: ObjectId,
-        color: crate::common::base_type::RGBColor,
-    },
+    DrawableColorTint { object_id: ObjectId, color: crate::common::base_type::RGBColor },
     /// batch R33: `drawable->colorFlash(&color, decayFrames, attackFrames, sustainAtPeak)`.
-    DrawableColorFlash {
-        object_id: ObjectId,
-        color: crate::common::base_type::RGBColor,
-        decay_frames: u32,
-        attack_frames: u32,
-        sustain_at_peak: bool,
-    },
+    DrawableColorFlash { object_id: ObjectId, color: crate::common::base_type::RGBColor, decay_frames: u32, attack_frames: u32, sustain_at_peak: bool },
     /// batch R32: `TheGameClient->addScorch(&position, radius, type)`.
-    GameClientAddScorch {
-        position: Coord3D,
-        radius: f32,
-        scorch_type: i32,
-    },
+    GameClientAddScorch { position: Coord3D, radius: f32, scorch_type: i32 },
     /// batch R28: `ToppleUpdate` tells the drawable to stop swaying (its `SwayClientUpdate` client modules' `stopSway()`).
     DrawableStopSway { object_id: ObjectId },
     /// batch R28: `ToppleUpdate`'s stump burns if the toppled object's drawable is burned: `if (draw->getModelConditionFlags().test(
     /// MODELCONDITION_BURNED)) stump->getDrawable()->setModelConditionState(MODELCONDITION_BURNED)` (the flags are the client's).
-    DrawableBurnStumpIfBurned {
-        object_id: ObjectId,
-        stump: ObjectId,
-    },
+    DrawableBurnStumpIfBurned { object_id: ObjectId, stump: ObjectId },
     /// batch R27: `TheParticleSystemManager->createParticleSystem(template)` (the system the client numbers `id`), attached to the object's
     /// drawable (or the object), at the position of the drawable's pristine bone `bone` (the IR ping's default, `{-1.66, 5.5, 15}`, if it has
     /// none).
-    ParticleSystemAtBone {
-        template: Vec<u8>,
-        id: u32,
-        object_id: ObjectId,
-        attach_to_drawable: bool,
-        bone: Vec<u8>,
-    },
+    ParticleSystemAtBone { template: Vec<u8>, id: u32, object_id: ObjectId, attach_to_drawable: bool, bone: Vec<u8> },
     // --- end p1w13-sonnet ---
     // --- p1w11-sonnet ---
     /// `draw->flashAsSelected(&color)` (`ObjectDefectionHelper`'s white flash when the period ends).
-    DrawableFlashAsSelectedColor {
-        object_id: ObjectId,
-        r: f32,
-        g: f32,
-        b: f32,
-    },
+    DrawableFlashAsSelectedColor { object_id: ObjectId, r: f32, g: f32, b: f32 },
     /// `TheEva->setShouldPlay(EVA_SuperweaponLaunched_<whose>_<weapon>)` (`SpecialPowerModule::aboutToDoSpecialPower`).
-    EvaSuperweaponLaunched {
-        weapon: EvaSuperweapon,
-        whose: EvaWhose,
-    },
+    EvaSuperweaponLaunched { weapon: EvaSuperweapon, whose: EvaWhose },
     /// `TheInGameUI->addSuperweapon(playerIndex, powerName, id, powerTemplate)` (`SpecialPowerModule`'s constructor, `onSpecialPowerCreation`
     /// and `loadPostProcess`); the template by id.
-    UiAddSuperweapon {
-        player_index: i32,
-        power_name: Vec<u8>,
-        object_id: ObjectId,
-        template: u32,
-    },
+    UiAddSuperweapon { player_index: i32, power_name: Vec<u8>, object_id: ObjectId, template: u32 },
     // --- end p1w11-sonnet ---
     /// `draw->setID(drawableID)` (`Object::xfer` on a load): the drawable of
     /// this object takes the id it had when it was saved.
-    DrawableSetId {
-        object_id: ObjectId,
-        drawable_id: i32,
-    },
+    DrawableSetId { object_id: ObjectId, drawable_id: i32 },
     /// The ambient-sound customisation of `updateObjValuesFromMapProperties`
     /// (the `objectSoundAmbient*` properties of the map object): the client
     /// builds its `DynamicAudioEventInfo` from these. `None` = property absent.
-    DrawableAmbientSoundProperties {
-        object_id: ObjectId,
-        properties: AmbientSoundProperties,
-    },
+    DrawableAmbientSoundProperties { object_id: ObjectId, properties: AmbientSoundProperties },
     /// `m_drawable->clearAndSetModelConditionFlags(..)` for the day/night and
     /// weather properties of the map object (`objectTime`, `objectWeather`).
-    DrawableTimeOrWeather {
-        object_id: ObjectId,
-        night: Option<bool>,
-        snow: Option<bool>,
-    },
+    DrawableTimeOrWeather { object_id: ObjectId, night: Option<bool>, snow: Option<bool> },
     // --- p1l9-example ---
     /// `FXList::doFXObj(fx, obj)`: an effect list played on the object (FX
     /// lists are client data; logic only names it). `UpgradeMux::performUpgradeFX`
@@ -442,11 +332,7 @@ pub enum ObjectClientEvent {
     FxListDoFxObj { fx: Vec<u8>, object_id: ObjectId },
     // --- p1w11-sonnet ---
     /// `FXList::doFXObj(fx, primary, secondary)` with a secondary object (`FXListDie`: the damage dealer; `INVALID_ID` for none).
-    FxListDoFxObjSecondary {
-        fx: Vec<u8>,
-        object_id: ObjectId,
-        secondary: ObjectId,
-    },
+    FxListDoFxObjSecondary { fx: Vec<u8>, object_id: ObjectId, secondary: ObjectId },
     /// `FXList::doFXPos(fx, &position)` (`FXListDie` with `OrientToObject = No`).
     FxListDoFxPos { fx: Vec<u8>, position: Coord3D },
     // --- end p1w11-sonnet ---

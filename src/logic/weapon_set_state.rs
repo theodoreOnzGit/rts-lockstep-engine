@@ -55,38 +55,31 @@ use crate::common::base_type::Coord3D;
 use crate::common::game_common::Relationship;
 use crate::common::game_type::ObjectId;
 use crate::common::kind_of::{
-    KINDOFMASK_NONE, KINDOF_BALLISTIC_MISSILE, KINDOF_DEMOTRAP, KINDOF_DISGUISER, KINDOF_HERO,
-    KINDOF_IMMOBILE, KINDOF_INFANTRY, KINDOF_MINE, KINDOF_PARACHUTE, KINDOF_PROJECTILE,
-    KINDOF_SMALL_MISSILE, KINDOF_SPAWNS_ARE_THE_WEAPONS, KINDOF_UNATTACKABLE, KINDOF_VEHICLE,
+    KINDOFMASK_NONE,
+    KINDOF_DISGUISER, KINDOF_HERO, KINDOF_IMMOBILE, KINDOF_MINE, KINDOF_SMALL_MISSILE, KINDOF_SPAWNS_ARE_THE_WEAPONS, KINDOF_UNATTACKABLE,
+    KINDOF_BALLISTIC_MISSILE, KINDOF_DEMOTRAP, KINDOF_INFANTRY, KINDOF_PARACHUTE, KINDOF_PROJECTILE, KINDOF_VEHICLE,
 };
 use crate::common::model_state::{
-    ModelConditionFlags, MODELCONDITION_BETWEEN_FIRING_SHOTS_A,
-    MODELCONDITION_BETWEEN_FIRING_SHOTS_B, MODELCONDITION_BETWEEN_FIRING_SHOTS_C,
-    MODELCONDITION_FIRING_A, MODELCONDITION_FIRING_B, MODELCONDITION_FIRING_C,
-    MODELCONDITION_INVALID, MODELCONDITION_PREATTACK_A, MODELCONDITION_PREATTACK_B,
-    MODELCONDITION_PREATTACK_C, MODELCONDITION_RELOADING_A, MODELCONDITION_RELOADING_B,
-    MODELCONDITION_RELOADING_C, MODELCONDITION_USING_WEAPON_A, MODELCONDITION_USING_WEAPON_B,
-    MODELCONDITION_USING_WEAPON_C,
+    ModelConditionFlags, MODELCONDITION_BETWEEN_FIRING_SHOTS_A, MODELCONDITION_BETWEEN_FIRING_SHOTS_B, MODELCONDITION_BETWEEN_FIRING_SHOTS_C,
+    MODELCONDITION_FIRING_A, MODELCONDITION_FIRING_B, MODELCONDITION_FIRING_C, MODELCONDITION_INVALID, MODELCONDITION_PREATTACK_A,
+    MODELCONDITION_PREATTACK_B, MODELCONDITION_PREATTACK_C, MODELCONDITION_RELOADING_A, MODELCONDITION_RELOADING_B, MODELCONDITION_RELOADING_C,
+    MODELCONDITION_USING_WEAPON_A, MODELCONDITION_USING_WEAPON_B, MODELCONDITION_USING_WEAPON_C,
 };
 use crate::common::object_status_types::{
-    OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_IGNORING_STEALTH,
-    OBJECT_STATUS_MASKED, OBJECT_STATUS_NO_ATTACK_FROM_AI, OBJECT_STATUS_STEALTHED,
+    OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_IGNORING_STEALTH, OBJECT_STATUS_MASKED, OBJECT_STATUS_NO_ATTACK_FROM_AI,
+    OBJECT_STATUS_STEALTHED,
 };
 use crate::common::xfer::{Xfer, XferMode, XferResult, XferStatus, XferVersion};
 use crate::logic::damage::{DamageTypeFlags, DAMAGE_KILLPILOT, DAMAGE_UNRESISTABLE};
 use crate::logic::object_script_status_bits::OBJECT_STATUS_SCRIPT_TARGETABLE;
 use crate::logic::weapon::{
-    WeaponError, WEAPON_ANTI_AIRBORNE_INFANTRY, WEAPON_ANTI_AIRBORNE_VEHICLE,
-    WEAPON_ANTI_BALLISTIC_MISSILE, WEAPON_ANTI_GROUND, WEAPON_ANTI_MINE, WEAPON_ANTI_PARACHUTE,
-    WEAPON_ANTI_PROJECTILE, WEAPON_ANTI_SMALL_MISSILE,
+    WeaponError, WEAPON_ANTI_AIRBORNE_INFANTRY, WEAPON_ANTI_AIRBORNE_VEHICLE, WEAPON_ANTI_BALLISTIC_MISSILE, WEAPON_ANTI_GROUND, WEAPON_ANTI_MINE,
+    WEAPON_ANTI_PARACHUTE, WEAPON_ANTI_PROJECTILE, WEAPON_ANTI_SMALL_MISSILE,
 };
-use crate::logic::weapon_fire::{
-    float_to_unsigned, SharedReload, Slots, Weapon, WeaponSnapshot, WeaponXferError,
-    PRIMARY_WEAPON, SLOTS,
-};
+use crate::logic::weapon_fire::{float_to_unsigned, SharedReload, Slots, Weapon, WeaponSnapshot, WeaponXferError, PRIMARY_WEAPON, SLOTS};
 use crate::logic::weapon_host::{
-    is_forced_attack, AbleToAttackType, CanAttackResult, CommandSourceType, WeaponHost,
-    WeaponTemplateSetRef, WeaponXferLookups, ATTACK_TUNNEL_NETWORK_GUARD,
+    is_forced_attack, AbleToAttackType, CanAttackResult, CommandSourceType, WeaponHost, WeaponTemplateSetRef, WeaponXferLookups,
+    ATTACK_TUNNEL_NETWORK_GUARD,
 };
 use crate::logic::weapon_types::WeaponStatus;
 
@@ -225,15 +218,11 @@ impl WeaponSet {
     }
     /// `getCurWeapon()`: the weapon in the current slot (`None` for `NULL`).
     pub fn get_cur_weapon(&self) -> Option<&Weapon> {
-        self.weapons
-            .get(self.cur_weapon as usize)
-            .and_then(|w| w.as_ref())
+        self.weapons.get(self.cur_weapon as usize).and_then(|w| w.as_ref())
     }
     /// `getCurWeapon()`, to change.
     pub fn get_cur_weapon_mut(&mut self) -> Option<&mut Weapon> {
-        self.weapons
-            .get_mut(self.cur_weapon as usize)
-            .and_then(|w| w.as_mut())
+        self.weapons.get_mut(self.cur_weapon as usize).and_then(|w| w.as_mut())
     }
     /// `getCurWeaponSlot()`.
     pub fn get_cur_weapon_slot(&self) -> i32 {
@@ -265,9 +254,7 @@ impl WeaponSet {
     }
     /// `getWeaponInWeaponSlot(wslot)`, to change.
     pub fn get_weapon_in_weapon_slot_mut(&mut self, wslot: i32) -> Option<&mut Weapon> {
-        self.weapons
-            .get_mut(wslot as usize)
-            .and_then(|w| w.as_mut())
+        self.weapons.get_mut(wslot as usize).and_then(|w| w.as_mut())
     }
     /// The weapons, for the owner that hands them out.
     pub fn slots(&self) -> &Slots {
@@ -314,11 +301,7 @@ impl WeaponSet {
     }
 
     /// `WeaponSet::xfer` (version 1). `lookups` are the thing factory, the thing templates and the weapon store.
-    pub fn xfer<L: WeaponXferLookups>(
-        &mut self,
-        lookups: &mut L,
-        xfer: &mut dyn Xfer,
-    ) -> Result<(), WeaponXferError> {
+    pub fn xfer<L: WeaponXferLookups>(&mut self, lookups: &mut L, xfer: &mut dyn Xfer) -> Result<(), WeaponXferError> {
         // version
         let current_version: XferVersion = 1;
         let mut version = current_version;
@@ -334,14 +317,9 @@ impl WeaponSet {
             if tt_name.is_empty() {
                 self.cur_weapon_template_set = None;
             } else {
-                let tt = lookups
-                    .find_thing_template(&tt_name)
-                    .ok_or(WeaponXferError::InvalidData)?; // throw INI_INVALID_DATA
-                self.cur_weapon_template_set = Some(
-                    lookups
-                        .find_weapon_template_set_by_flags(tt, &ws_flags)
-                        .ok_or(WeaponXferError::InvalidData)?,
-                );
+                let tt = lookups.find_thing_template(&tt_name).ok_or(WeaponXferError::InvalidData)?; // throw INI_INVALID_DATA
+                self.cur_weapon_template_set =
+                    Some(lookups.find_weapon_template_set_by_flags(tt, &ws_flags).ok_or(WeaponXferError::InvalidData)?);
             }
         } else if xfer.get_xfer_mode() == XferMode::Save {
             let mut tt_name: Vec<u8> = Vec::new(); // leave 'em empty in case we're null
@@ -362,35 +340,20 @@ impl WeaponSet {
             if has_weapon_in_slot {
                 if xfer.get_xfer_mode() == XferMode::Load && self.weapons[i].is_none() {
                     // (a weapon but no template set is a null dereference upstream)
-                    let r = self
-                        .cur_weapon_template_set
-                        .ok_or(WeaponXferError::Xfer(XferStatus::ErrorUnknown))?;
+                    let r = self.cur_weapon_template_set.ok_or(WeaponXferError::Xfer(XferStatus::ErrorUnknown))?;
                     let mut key = lookups.weapon_template_set(r).get_nth(i);
                     if key.is_none() {
                         // "xfer backwards compatibility code - old save file???"
                         key = lookups.weapon_template_set(r).get_nth(0);
                     }
-                    let template = key
-                        .and_then(|k| lookups.weapon_template_index(k))
-                        .ok_or(WeaponXferError::Xfer(XferStatus::ErrorUnknown))?;
+                    let template = key.and_then(|k| lookups.weapon_template_index(k)).ok_or(WeaponXferError::Xfer(XferStatus::ErrorUnknown))?;
                     self.weapons[i] = Some(Weapon::for_load(template, i as i32));
                 }
                 // xferSnapshot(m_weapons[i])
-                let weapon = self.weapons[i]
-                    .take()
-                    .ok_or(WeaponXferError::Xfer(XferStatus::ErrorUnknown))?;
+                let weapon = self.weapons[i].take().ok_or(WeaponXferError::Xfer(XferStatus::ErrorUnknown))?;
                 let current_name = lookups.weapon_template_name(weapon.template());
-                let templates = if xfer.get_xfer_mode() == XferMode::Load {
-                    lookups.weapon_template_names()
-                } else {
-                    Vec::new()
-                };
-                let mut snap = WeaponSnapshot {
-                    weapon,
-                    current_name,
-                    templates,
-                    error: None,
-                };
+                let templates = if xfer.get_xfer_mode() == XferMode::Load { lookups.weapon_template_names() } else { Vec::new() };
+                let mut snap = WeaponSnapshot { weapon, current_name, templates, error: None };
                 let r = xfer.xfer_snapshot(&mut snap);
                 self.weapons[i] = Some(snap.weapon);
                 if let Some(e) = snap.error {
@@ -430,10 +393,7 @@ impl WeaponSet {
         let set = host.find_weapon_template_set(obj);
         if let Some(set) = set {
             if Some(set) != self.cur_weapon_template_set {
-                if !host
-                    .weapon_template_set(set)
-                    .is_weapon_lock_shared_across_sets()
-                {
+                if !host.weapon_template_set(set).is_weapon_lock_shared_across_sets() {
                     // "changing WeaponSet while Weapon is Locked... implicit unlock occurring!"
                     self.release_weapon_lock(LOCKED_PERMANENTLY); // release all locks. sorry!
                     self.cur_weapon = PRIMARY_WEAPON;
@@ -450,9 +410,7 @@ impl WeaponSet {
 
                     if let Some(key) = host.weapon_template_set(set).get_nth(i) {
                         // (a template the store does not have cannot be in a set: the INI parser took it from there)
-                        let Some(template) = host.weapon_template_index(key) else {
-                            continue;
-                        };
+                        let Some(template) = host.weapon_template_index(key) else { continue };
                         let mut weapon = Weapon::new(host, template, i as i32);
                         // m_curWeaponTemplateSet is still the old set here, so is its shared reload time
                         let shared = self.is_shared_reload_time(host);
@@ -486,37 +444,14 @@ impl WeaponSet {
     }
 
     /// `WeaponSet::getModelConditionForWeaponSlot(wslot, a)`.
-    pub fn get_model_condition_for_weapon_slot(
-        wslot: i32,
-        a: WeaponSetConditionType,
-    ) -> ModelConditionFlags {
-        const NOTHING: [i32; SLOTS] = [
-            MODELCONDITION_INVALID,
-            MODELCONDITION_INVALID,
-            MODELCONDITION_INVALID,
-        ];
-        const FIRING: [i32; SLOTS] = [
-            MODELCONDITION_FIRING_A,
-            MODELCONDITION_FIRING_B,
-            MODELCONDITION_FIRING_C,
-        ];
-        const BETWEENING: [i32; SLOTS] = [
-            MODELCONDITION_BETWEEN_FIRING_SHOTS_A,
-            MODELCONDITION_BETWEEN_FIRING_SHOTS_B,
-            MODELCONDITION_BETWEEN_FIRING_SHOTS_C,
-        ];
-        const RELOADING: [i32; SLOTS] = [
-            MODELCONDITION_RELOADING_A,
-            MODELCONDITION_RELOADING_B,
-            MODELCONDITION_RELOADING_C,
-        ];
-        const PRE_ATTACK: [i32; SLOTS] = [
-            MODELCONDITION_PREATTACK_A,
-            MODELCONDITION_PREATTACK_B,
-            MODELCONDITION_PREATTACK_C,
-        ];
-        const LOOKUP: [[i32; SLOTS]; WSF_COUNT as usize] =
-            [NOTHING, FIRING, BETWEENING, RELOADING, PRE_ATTACK];
+    pub fn get_model_condition_for_weapon_slot(wslot: i32, a: WeaponSetConditionType) -> ModelConditionFlags {
+        const NOTHING: [i32; SLOTS] = [MODELCONDITION_INVALID, MODELCONDITION_INVALID, MODELCONDITION_INVALID];
+        const FIRING: [i32; SLOTS] = [MODELCONDITION_FIRING_A, MODELCONDITION_FIRING_B, MODELCONDITION_FIRING_C];
+        const BETWEENING: [i32; SLOTS] =
+            [MODELCONDITION_BETWEEN_FIRING_SHOTS_A, MODELCONDITION_BETWEEN_FIRING_SHOTS_B, MODELCONDITION_BETWEEN_FIRING_SHOTS_C];
+        const RELOADING: [i32; SLOTS] = [MODELCONDITION_RELOADING_A, MODELCONDITION_RELOADING_B, MODELCONDITION_RELOADING_C];
+        const PRE_ATTACK: [i32; SLOTS] = [MODELCONDITION_PREATTACK_A, MODELCONDITION_PREATTACK_B, MODELCONDITION_PREATTACK_C];
+        const LOOKUP: [[i32; SLOTS]; WSF_COUNT as usize] = [NOTHING, FIRING, BETWEENING, RELOADING, PRE_ATTACK];
 
         let mut flags = ModelConditionFlags::new(); // defaults to all clear
 
@@ -525,11 +460,7 @@ impl WeaponSet {
             flags.set(f, 1);
         }
 
-        const USING: [i32; SLOTS] = [
-            MODELCONDITION_USING_WEAPON_A,
-            MODELCONDITION_USING_WEAPON_B,
-            MODELCONDITION_USING_WEAPON_C,
-        ];
+        const USING: [i32; SLOTS] = [MODELCONDITION_USING_WEAPON_A, MODELCONDITION_USING_WEAPON_B, MODELCONDITION_USING_WEAPON_C];
         if a != WSF_NONE {
             flags.set(USING[wslot as usize], 1);
         }
@@ -542,11 +473,7 @@ impl WeaponSet {
         for i in 0..SLOTS {
             let shared = self.is_shared_reload_time(host);
             if let Some(weapon) = self.weapons[i].as_mut() {
-                let effect = if now {
-                    weapon.load_ammo_now(host, obj, shared)
-                } else {
-                    weapon.reload_ammo(host, obj, shared)
-                };
+                let effect = if now { weapon.load_ammo_now(host, obj, shared) } else { weapon.reload_ammo(host, obj, shared) };
                 self.apply(effect);
             }
         }
@@ -564,31 +491,19 @@ impl WeaponSet {
 
     /// `findAmmoPipShowingWeapon()`.
     pub fn find_ammo_pip_showing_weapon<H: WeaponHost>(&self, host: &H) -> Option<&Weapon> {
-        self.weapons
-            .iter()
-            .flatten()
-            .find(|w| host.store().templates()[w.template()].is_shows_ammo_pips)
+        self.weapons.iter().flatten().find(|w| host.store().templates()[w.template()].is_shows_ammo_pips)
     }
 
     /// `findWaypointFollowingCapableWeapon()`: the last slot first.
-    pub fn find_waypoint_following_capable_weapon<H: WeaponHost>(
-        &mut self,
-        host: &H,
-    ) -> Option<&mut Weapon> {
-        let i = (PRIMARY_WEAPON as usize..SLOTS).rev().find(|&i| {
-            self.weapons[i].as_ref().is_some_and(|w| {
-                host.store().templates()[w.template()].capable_of_following_waypoint
-            })
-        })?;
+    pub fn find_waypoint_following_capable_weapon<H: WeaponHost>(&mut self, host: &H) -> Option<&mut Weapon> {
+        let i = (PRIMARY_WEAPON as usize..SLOTS)
+            .rev()
+            .find(|&i| self.weapons[i].as_ref().is_some_and(|w| host.store().templates()[w.template()].capable_of_following_waypoint))?;
         self.weapons[i].as_mut()
     }
 
     /// `weaponSetOnWeaponBonusChange(source)`.
-    pub fn weapon_set_on_weapon_bonus_change<H: WeaponHost>(
-        &mut self,
-        host: &mut H,
-        source: ObjectId,
-    ) {
+    pub fn weapon_set_on_weapon_bonus_change<H: WeaponHost>(&mut self, host: &mut H, source: ObjectId) {
         for i in 0..SLOTS {
             let shared = self.is_shared_reload_time(host);
             if let Some(weapon) = self.weapons[i].as_mut() {
@@ -614,12 +529,7 @@ impl WeaponSet {
     }
 
     /// `isAnyWithinTargetPitch(obj, victim)`.
-    fn is_any_within_target_pitch<H: WeaponHost>(
-        &self,
-        host: &H,
-        obj: ObjectId,
-        victim: ObjectId,
-    ) -> bool {
+    fn is_any_within_target_pitch<H: WeaponHost>(&self, host: &H, obj: ObjectId, victim: ObjectId) -> bool {
         if !self.has_pitch_limit {
             return true;
         }
@@ -652,9 +562,7 @@ impl WeaponSet {
             return Ok(CanAttackResult::NotPossible);
         }
 
-        let same_owner_force_attack = host.controlling_player(source)
-            == host.controlling_player(victim)
-            && is_forced_attack(attack_type);
+        let same_owner_force_attack = host.controlling_player(source) == host.controlling_player(victim) && is_forced_attack(attack_type);
 
         // ----- examine VICTIM to determine legality of attack
 
@@ -672,9 +580,7 @@ impl WeaponSet {
         }
 
         // this object is not currently auto-acquireable
-        if host.test_status(victim, OBJECT_STATUS_NO_ATTACK_FROM_AI)
-            && command_source == CommandSourceType::FromAi
-        {
+        if host.test_status(victim, OBJECT_STATUS_NO_ATTACK_FROM_AI) && command_source == CommandSourceType::FromAi {
             return Ok(CanAttackResult::NotPossible);
         }
 
@@ -692,19 +598,14 @@ impl WeaponSet {
         }
 
         // if an object is stealthed and hasn't been detected yet, then it is not a valid target to fire on
-        if allow_stealth_to_prevent_attacks
-            && host.test_status(victim, OBJECT_STATUS_STEALTHED)
-            && !host.test_status(victim, OBJECT_STATUS_DETECTED)
-        {
+        if allow_stealth_to_prevent_attacks && host.test_status(victim, OBJECT_STATUS_STEALTHED) && !host.test_status(victim, OBJECT_STATUS_DETECTED) {
             if !host.is_kind_of(victim, KINDOF_DISGUISER) {
                 return Ok(CanAttackResult::NotPossible);
             } else {
                 // exception case -- don't return false if we are a bomb truck disguised as an enemy vehicle
                 if let Some(disguised_player_index) = host.stealth_disguised_player_index(victim) {
                     let our_player = host.controlling_player(source);
-                    if let Some(rel) =
-                        host.player_relationship_to_player(our_player, disguised_player_index)
-                    {
+                    if let Some(rel) = host.player_relationship_to_player(our_player, disguised_player_index) {
                         if rel != Relationship::Enemies {
                             // our stealthed & undetected object is disguised as a unit not perceived to be our enemy
                             return Ok(CanAttackResult::NotPossible);
@@ -723,17 +624,10 @@ impl WeaponSet {
         // -- attack mode is force attack
         // if none of the above is true, we can't attack. sorry!
         let r = host.relationship(source, victim);
-        if r != Relationship::Enemies
-            && !is_forced_attack(attack_type)
-            && !(host.is_kind_of(victim, KINDOF_MINE) && r != Relationship::Allies)
-        {
+        if r != Relationship::Enemies && !is_forced_attack(attack_type) && !(host.is_kind_of(victim, KINDOF_MINE) && r != Relationship::Allies) {
             // only reject this if the command is from a player. If scripts or AI order attacks, they don't care
             // about relationships (and fixes broken scripts).
-            if command_source == CommandSourceType::FromPlayer
-                && (!host
-                    .test_script_status_bit(victim, u32::from(OBJECT_STATUS_SCRIPT_TARGETABLE))
-                    || r == Relationship::Allies)
-            {
+            if command_source == CommandSourceType::FromPlayer && (!host.test_script_status_bit(victim, u32::from(OBJECT_STATUS_SCRIPT_TARGETABLE)) || r == Relationship::Allies) {
                 // unless the object has a map property that sets it to be targetable (and not allied), then give up
                 return Ok(CanAttackResult::NotPossible);
             }
@@ -749,19 +643,13 @@ impl WeaponSet {
         // check if the container has an apparent controller, that controller must be an enemy (unless this is a
         // force-attack)
         if !is_forced_attack(attack_type) && host.has_contain(victim) {
-            let victim_apparent_controller =
-                host.contain_apparent_controlling_player(victim, host.controlling_player(source));
+            let victim_apparent_controller = host.contain_apparent_controlling_player(victim, host.controlling_player(source));
             if let Some(controller) = victim_apparent_controller {
-                if host.team_relationship_to_player_index(source, controller)
-                    != Relationship::Enemies
-                {
+                if host.team_relationship_to_player_index(source, controller) != Relationship::Enemies {
                     // only reject this if the command is from a player. If scripts or AI order attacks, they don't
                     // care about relationships (and fixes broken scripts).
                     if command_source == CommandSourceType::FromPlayer
-                        && (!host.test_script_status_bit(
-                            victim,
-                            u32::from(OBJECT_STATUS_SCRIPT_TARGETABLE),
-                        ) || r == Relationship::Allies)
+                        && (!host.test_script_status_bit(victim, u32::from(OBJECT_STATUS_SCRIPT_TARGETABLE)) || r == Relationship::Allies)
                     {
                         // unless the object has a map property that sets it to be targetable (and not allied), then
                         // give up
@@ -773,15 +661,7 @@ impl WeaponSet {
 
         // check if the shot itself is valid!
         let pos = host.position(victim);
-        self.get_able_to_use_weapon_against_target(
-            host,
-            attack_type,
-            source,
-            Some(victim),
-            Some(pos),
-            command_source,
-            specific_slot,
-        )
+        self.get_able_to_use_weapon_against_target(host, attack_type, source, Some(victim), Some(pos), command_source, specific_slot)
     }
 
     /// `getAbleToUseWeaponAgainstTarget(attackType, source, victim, pos, commandSource, specificSlot)`: when all
@@ -819,10 +699,7 @@ impl WeaponSet {
         let mut has_a_weapon_in_range = false;
         let mut has_a_weapon = false;
         for _slot in 0..(SLOTS - 1) {
-            let weapon_to_test_for_range = self
-                .weapons
-                .get(self.cur_weapon as usize)
-                .and_then(|w| w.as_ref());
+            let weapon_to_test_for_range = self.weapons.get(self.cur_weapon as usize).and_then(|w| w.as_ref());
             if let Some(weapon_to_test_for_range) = weapon_to_test_for_range {
                 has_a_weapon = true;
                 if (self.total_anti_mask & target_anti_mask as i32) == 0 {
@@ -831,36 +708,25 @@ impl WeaponSet {
                 }
 
                 let contain = contained_by.filter(|&c| host.has_contain(c));
-                let garrison = contain.is_some_and(|c| {
-                    host.contain_is_garrisonable(c)
-                        && host.contain_is_enclosing_container_for(c, source)
-                });
+                let garrison = contain.is_some_and(|c| host.contain_is_garrisonable(c) && host.contain_is_enclosing_container_for(c, source));
                 if garrison {
                     // non enclosing garrison containers do not use firepoints. Lorenzen, 6/11/03
                     // for contained things, we need to fake-move objects to the best garrison point in order to get
                     // precise range checks
                     let target_pos = pos.ok_or(WeaponError::NullObject)?;
-                    if let Some(goal_pos) = contain
-                        .and_then(|c| host.contain_calc_best_garrison_position(c, &target_pos))
-                    {
-                        within_attack_range = weapon_to_test_for_range
-                            .is_source_object_with_goal_position_within_attack_range(
-                                host,
-                                source,
-                                &goal_pos,
-                                victim,
-                                Some(&target_pos),
-                            );
+                    if let Some(goal_pos) = contain.and_then(|c| host.contain_calc_best_garrison_position(c, &target_pos)) {
+                        within_attack_range = weapon_to_test_for_range.is_source_object_with_goal_position_within_attack_range(
+                            host,
+                            source,
+                            &goal_pos,
+                            victim,
+                            Some(&target_pos),
+                        );
                     }
                 } else if let Some(v) = victim {
-                    within_attack_range =
-                        weapon_to_test_for_range.is_within_attack_range(host, source, v);
+                    within_attack_range = weapon_to_test_for_range.is_within_attack_range(host, source, v);
                 } else {
-                    within_attack_range = weapon_to_test_for_range.is_within_attack_range_pos(
-                        host,
-                        source,
-                        &pos.ok_or(WeaponError::NullObject)?,
-                    );
+                    within_attack_range = weapon_to_test_for_range.is_within_attack_range_pos(host, source, &pos.ok_or(WeaponError::NullObject)?);
                 }
                 if within_attack_range {
                     has_a_weapon_in_range = true;
@@ -869,9 +735,7 @@ impl WeaponSet {
             }
         }
 
-        if (host.is_kind_of(source, KINDOF_IMMOBILE)
-            || host.is_kind_of(source, KINDOF_SPAWNS_ARE_THE_WEAPONS)
-            || contained_by.is_some())
+        if (host.is_kind_of(source, KINDOF_IMMOBILE) || host.is_kind_of(source, KINDOF_SPAWNS_ARE_THE_WEAPONS) || contained_by.is_some())
             && has_a_weapon
             && !has_a_weapon_in_range
             && attack_type != ATTACK_TUNNEL_NETWORK_GUARD
@@ -879,11 +743,7 @@ impl WeaponSet {
             return Ok(CanAttackResult::InvalidShot);
         }
 
-        let mut ok_result = if within_attack_range {
-            CanAttackResult::Possible
-        } else {
-            CanAttackResult::PossibleAfterMoving
-        };
+        let mut ok_result = if within_attack_range { CanAttackResult::Possible } else { CanAttackResult::PossibleAfterMoving };
 
         // ----- things we examine about SOURCE to determine legality of attack
 
@@ -894,9 +754,7 @@ impl WeaponSet {
 
             // if we don't have a victim, we are force attacking a position. Because of the weapon mask check
             // preceding this, the attack is possible!
-            let Some(v) = victim else {
-                return Ok(ok_result);
-            };
+            let Some(v) = victim else { return Ok(ok_result) };
 
             if !self.is_any_within_target_pitch(host, source, v) {
                 return Ok(CanAttackResult::InvalidShot);
@@ -921,8 +779,7 @@ impl WeaponSet {
                     if weapon.estimate_weapon_damage(host, source, Some(v), None)? != 0.0 {
                         // Kris: Aug 22, 2003: surgical fix so Jarmen Kell doesn't get a targeting cursor on enemy
                         // vehicles unless he is in snipe mode.
-                        if host.store().templates()[weapon.template()].damage_type
-                            == DAMAGE_KILLPILOT
+                        if host.store().templates()[weapon.template()].damage_type == DAMAGE_KILLPILOT
                             && host.is_kind_of(source, KINDOF_HERO)
                             && self.cur_weapon == PRIMARY_WEAPON
                             && specific_slot == -1
@@ -945,16 +802,8 @@ impl WeaponSet {
             if let Some(items) = host.contain_items(source) {
                 for garrisoned_member in items {
                     if host.is_able_to_attack(garrisoned_member) {
-                        let result = host.member_able_to_use_weapon_against_target(
-                            garrisoned_member,
-                            attack_type,
-                            victim,
-                            pos,
-                            command_source,
-                        )?;
-                        if result == CanAttackResult::Possible
-                            || result == CanAttackResult::PossibleAfterMoving
-                        {
+                        let result = host.member_able_to_use_weapon_against_target(garrisoned_member, attack_type, victim, pos, command_source)?;
+                        if result == CanAttackResult::Possible || result == CanAttackResult::PossibleAfterMoving {
                             return Ok(result);
                         }
                     }
@@ -963,13 +812,7 @@ impl WeaponSet {
         }
 
         // do a check to see if we have a hive object that has slaved objects
-        if let Some(slaves) = host.spawn_slaves_can_use_weapon_against_target(
-            source,
-            attack_type,
-            victim,
-            pos,
-            command_source,
-        ) {
+        if let Some(slaves) = host.spawn_slaves_can_use_weapon_against_target(source, attack_type, victim, pos, command_source) {
             if slaves == CanAttackResult::Possible {
                 // srj sez: this bit is intended to fix the situation where you have a stinger site selected and get
                 // the "attack if I move" cursor against an enemy. since the stinger site can't move or fire, you
@@ -1029,21 +872,13 @@ impl WeaponSet {
             // first: eliminate the weapons that cannot be used.
 
             // no weapon in this slot
-            let Some(weapon) = self.weapons[i as usize].as_ref() else {
-                continue;
-            };
+            let Some(weapon) = self.weapons[i as usize].as_ref() else { continue };
 
             // weapon not allowed to be specified via this command source
-            let set = self
-                .cur_weapon_template_set
-                .ok_or(WeaponError::NullObject)?;
-            let ok_srcs = host
-                .weapon_template_set(set)
-                .get_nth_command_source_mask(i as usize);
+            let set = self.cur_weapon_template_set.ok_or(WeaponError::NullObject)?;
+            let ok_srcs = host.weapon_template_set(set).get_nth_command_source_mask(i as usize);
             // (`CMD_DEFAULT_SWITCH_WEAPON` is the enum value 4, tested here as a mask: it is the `FROM_AI` bit)
-            if (ok_srcs & (1u32.wrapping_shl(cmd_source as u32))) == 0
-                && (ok_srcs & CommandSourceType::DefaultSwitchWeapon as u32) == 0
-            {
+            if (ok_srcs & (1u32.wrapping_shl(cmd_source as u32))) == 0 && (ok_srcs & CommandSourceType::DefaultSwitchWeapon as u32) == 0 {
                 continue;
             }
 
@@ -1082,12 +917,8 @@ impl WeaponSet {
             // of actual damage/range. (eg, the Comanche cannon, which is always preferred against infantry, rather
             // than its antitank missiles.) we accomplish this cheesily, by magnifying the damage/range, and by
             // declaring the weapon "ready" in a more liberal manner.
-            let preferred_against = *host
-                .weapon_template_set(set)
-                .get_nth_preferred_against_mask(i as usize);
-            if preferred_against.any()
-                && host.is_kind_of_multi(victim, &preferred_against, &KINDOFMASK_NONE)
-            {
+            let preferred_against = *host.weapon_template_set(set).get_nth_preferred_against_mask(i as usize);
+            if preferred_against.any() && host.is_kind_of_multi(victim, &preferred_against, &KINDOFMASK_NONE) {
                 const HUGE_DAMAGE: f32 = 1e10; // wow, that's a lot of damage
                 const HUGE_RANGE: f32 = 1e10;
                 damage = HUGE_DAMAGE;
@@ -1152,16 +983,9 @@ impl WeaponSet {
         }
 
         // verify the asked for weapon exists, choose it, and then lock it as chosen until unlocked
-        if self
-            .weapons
-            .get(weapon_slot as usize)
-            .is_some_and(|w| w.is_some())
-        {
+        if self.weapons.get(weapon_slot as usize).is_some_and(|w| w.is_some()) {
             // upstream has two branches with the same body: permanent, or temporary over a non-permanent lock
-            if lock_type == LOCKED_PERMANENTLY
-                || (lock_type == LOCKED_TEMPORARILY
-                    && self.cur_weapon_locked_status != LOCKED_PERMANENTLY)
-            {
+            if lock_type == LOCKED_PERMANENTLY || (lock_type == LOCKED_TEMPORARILY && self.cur_weapon_locked_status != LOCKED_PERMANENTLY) {
                 self.cur_weapon = weapon_slot;
                 self.cur_weapon_locked_status = lock_type;
             }

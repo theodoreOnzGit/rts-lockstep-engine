@@ -41,10 +41,7 @@ pub enum ClientEvent {
     /// of `MiscAudio` with `setPlayerIndex(player_index)`. The client looks
     /// up the sound's name in its own `MiscAudio`, so logic never holds a
     /// `AudioEventRTS`.
-    MoneySound {
-        sound: MoneySound,
-        player_index: i32,
-    },
+    MoneySound { sound: MoneySound, player_index: i32 },
     // --- p1w4-thingtemplate ---
     /// `TheGameClient->friend_createDrawable(tmplate, statusBits)`, which
     /// `ThingFactory::newDrawable` calls (and `GameLogic::registerObject`
@@ -54,11 +51,7 @@ pub enum ClientEvent {
     /// bound to (`GameLogic::sendObjectCreated` binds them), so the client
     /// can pair a drawable with its object; `ObjectDestroyed` is the matching
     /// end (added by `p1w6-object`, lead decision 2026-10-18).
-    ObjectCreated {
-        template_id: u16,
-        drawable_status_bits: u32,
-        object_id: i32,
-    },
+    ObjectCreated { template_id: u16, drawable_status_bits: u32, object_id: i32 },
     // --- end p1w4-thingtemplate ---
     // --- p1w5-world ---
     /// `TheGameClient->destroyDrawable(obj->getDrawable())`, which
@@ -71,11 +64,7 @@ pub enum ClientEvent {
     /// (`setPlayerIndex`, -1 for none). The client resolves the name in its
     /// own audio tables. Position, volume and the other `AudioEventRTS`
     /// setters are added by the first caller that needs them.
-    Audio {
-        event_name: Vec<u8>,
-        object_id: i32,
-        player_index: i32,
-    },
+    Audio { event_name: Vec<u8>, object_id: i32, player_index: i32 },
     /// The `TheTerrainVisual` writes of `TerrainLogic`
     /// ([`TerrainVisualEvent`]), nested: `TerrainLogic` still queues its own
     /// events (its differential tests read them) and

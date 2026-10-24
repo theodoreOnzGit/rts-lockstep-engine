@@ -77,14 +77,10 @@ mod support;
 
 use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::common::game_common::try_normalize_angle;
-use rts_lockstep_engine::common::kind_of::{
-    KindOfMaskType, KindOfType, KINDOF_COUNT, KINDOF_STICK_TO_TERRAIN_SLOPE,
-};
+use rts_lockstep_engine::common::kind_of::{KindOfMaskType, KindOfType, KINDOF_COUNT, KINDOF_STICK_TO_TERRAIN_SLOPE};
 use rts_lockstep_engine::common::trig;
 use rts_lockstep_engine::differential as cpp;
-use rts_lockstep_engine::logic::thing::{
-    Thing, ThingContext, ThingError, ThingTemplateView, TransformChange,
-};
+use rts_lockstep_engine::logic::thing::{Thing, ThingContext, ThingError, ThingTemplateView, TransformChange};
 use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 use std::sync::Arc;
 use support::{Check, Gen};
@@ -95,24 +91,11 @@ const KIND_COUNT: u32 = KINDOF_COUNT as u32;
 const PROGRAMS: usize = 4000;
 /// Operation codes (see the table in the module doc).
 const OP_NAMES: [&str; 18] = [
-    "setPosition",
-    "setPositionZ",
-    "setOrientation",
-    "setTransformMatrix",
-    "transformPoint",
-    "transformPoint(NULL in)",
-    "transformPoint(NULL out)",
-    "convertBonePosToWorldPos",
-    "getUnitDirectionVector2D",
-    "getUnitDirectionVector3D",
-    "getHeightAboveTerrain",
-    "getHeightAboveTerrainOrWater",
-    "isSignificantlyAboveTerrain",
-    "isAboveTerrain",
-    "isAboveTerrainOrWater",
-    "isKindOf",
-    "isKindOfMulti",
-    "isAnyKindOf",
+    "setPosition", "setPositionZ", "setOrientation", "setTransformMatrix", "transformPoint",
+    "transformPoint(NULL in)", "transformPoint(NULL out)", "convertBonePosToWorldPos",
+    "getUnitDirectionVector2D", "getUnitDirectionVector3D", "getHeightAboveTerrain",
+    "getHeightAboveTerrainOrWater", "isSignificantlyAboveTerrain", "isAboveTerrain",
+    "isAboveTerrainOrWater", "isKindOf", "isKindOfMulti", "isAnyKindOf",
 ];
 
 // ---------------------------------------------------------------------------
@@ -129,11 +112,7 @@ impl ThingTemplateView for StubTemplate {
     fn is_kind_of(&self, t: KindOfType) -> bool {
         self.kinds.test(t)
     }
-    fn is_kind_of_multi(
-        &self,
-        must_be_set: &KindOfMaskType,
-        must_be_clear: &KindOfMaskType,
-    ) -> bool {
+    fn is_kind_of_multi(&self, must_be_set: &KindOfMaskType, must_be_clear: &KindOfMaskType) -> bool {
         self.kinds.test_set_and_clear(must_be_set, must_be_clear)
     }
     fn is_any_kind_of(&self, any_kind_of: &KindOfMaskType) -> bool {
@@ -165,11 +144,7 @@ impl ThingContext for PlaneTerrain {
         }
     }
     fn align_on_terrain(&self, orientation: f32, pos: &Coord3D, stick_to_ground: bool) -> Matrix3D {
-        let z = if stick_to_ground {
-            self.ground_height(pos.x, pos.y)
-        } else {
-            pos.z
-        };
+        let z = if stick_to_ground { self.ground_height(pos.x, pos.y) } else { pos.z };
         let c = trig::cos(orientation);
         let s = trig::sin(orientation);
         Matrix3D::new(c, -s, 0.0, pos.x, s, c, 0.0, pos.y, 0.0, 0.0, 1.0, z)
@@ -213,11 +188,7 @@ fn mat(g: &mut Gen) -> [f32; 12] {
         m.rotate_z(g.uniform(-4.0, 4.0));
         m.rotate_y(g.uniform(-4.0, 4.0));
         m.rotate_x(g.uniform(-4.0, 4.0));
-        m.set_translation(&rts_lockstep_engine::ww::vector3::Vector3::new(
-            g.geom(),
-            g.geom(),
-            g.geom(),
-        ));
+        m.set_translation(&rts_lockstep_engine::ww::vector3::Vector3::new(g.geom(), g.geom(), g.geom()));
         m.to_array()
     } else {
         g.vec::<12>(Gen::geom)
@@ -226,11 +197,7 @@ fn mat(g: &mut Gen) -> [f32; 12] {
 
 fn gen_angle(g: &mut Gen, und: &mut Undefined) -> f32 {
     loop {
-        let a = if g.below(4) == 0 {
-            g.mixed()
-        } else {
-            g.uniform(-4.0, 4.0)
-        };
+        let a = if g.below(4) == 0 { g.mixed() } else { g.uniform(-4.0, 4.0) };
         if try_normalize_angle(a).is_ok() {
             return a;
         }
@@ -240,12 +207,7 @@ fn gen_angle(g: &mut Gen, und: &mut Undefined) -> f32 {
 
 fn gen_op(g: &mut Gen, und: &mut Undefined) -> Op {
     let code = g.below(18) as i32;
-    let mut op = Op {
-        code,
-        a1: 0,
-        a2: 0,
-        p: [0.0; 16],
-    };
+    let mut op = Op { code, a1: 0, a2: 0, p: [0.0; 16] };
     op.p = g.vec::<16>(Gen::geom);
     match code {
         2 => op.p[0] = gen_angle(g, und),
@@ -259,24 +221,10 @@ fn gen_op(g: &mut Gen, und: &mut Undefined) -> Op {
         }
         15 => op.a1 = g.below(KIND_COUNT) as i32,
         16 => {
-            op.a1 = if g.below(5) == 0 {
-                -1
-            } else {
-                g.below(KIND_COUNT) as i32
-            };
-            op.a2 = if g.below(5) == 0 {
-                -1
-            } else {
-                g.below(KIND_COUNT) as i32
-            };
+            op.a1 = if g.below(5) == 0 { -1 } else { g.below(KIND_COUNT) as i32 };
+            op.a2 = if g.below(5) == 0 { -1 } else { g.below(KIND_COUNT) as i32 };
         }
-        17 => {
-            op.a1 = if g.below(5) == 0 {
-                -1
-            } else {
-                g.below(KIND_COUNT) as i32
-            }
-        }
+        17 => op.a1 = if g.below(5) == 0 { -1 } else { g.below(KIND_COUNT) as i32 },
         _ => {}
     }
     op
@@ -303,11 +251,7 @@ fn gen_program(g: &mut Gen, und: &mut Undefined) -> Program {
     ];
     let n = 1 + g.below(14) as usize;
     let ops = (0..n).map(|_| gen_op(g, und)).collect();
-    Program {
-        kinds: [words[0], words[1]],
-        terrain,
-        ops,
-    }
+    Program { kinds: [words[0], words[1]], terrain, ops }
 }
 
 // ---------------------------------------------------------------------------
@@ -364,31 +308,17 @@ fn run_rust(p: &Program) -> Trace {
         let mut change: Option<TransformChange> = None;
         match op.code {
             0 => {
-                let pos = Coord3D {
-                    x: q[0],
-                    y: q[1],
-                    z: q[2],
-                };
+                let pos = Coord3D { x: q[0], y: q[1], z: q[2] };
                 change = Some(thing.set_position(&ctx, Some(&pos)).expect("a position"));
             }
             1 => change = Some(thing.set_position_z(&ctx, q[0])),
-            2 => {
-                change = Some(
-                    thing
-                        .set_orientation(&ctx, q[0])
-                        .expect("a finite-normalising angle"),
-                )
-            }
+            2 => change = Some(thing.set_orientation(&ctx, q[0]).expect("a finite-normalising angle")),
             3 => {
                 let m = Matrix3D::from_array(arr::<12>(&q));
                 change = Some(thing.set_transform_matrix(&m));
             }
             4 => {
-                let input = Coord3D {
-                    x: q[0],
-                    y: q[1],
-                    z: q[2],
-                };
+                let input = Coord3D { x: q[0], y: q[1], z: q[2] };
                 let mut out = Coord3D::default();
                 thing.transform_point(Some(&input), Some(&mut out));
                 push_coord(&mut words, &out);
@@ -399,19 +329,11 @@ fn run_rust(p: &Program) -> Trace {
                 push_coord(&mut words, &out);
             }
             6 => {
-                let input = Coord3D {
-                    x: q[0],
-                    y: q[1],
-                    z: q[2],
-                };
+                let input = Coord3D { x: q[0], y: q[1], z: q[2] };
                 thing.transform_point(Some(&input), None);
             }
             7 => {
-                let bone_pos = Coord3D {
-                    x: q[0],
-                    y: q[1],
-                    z: q[2],
-                };
+                let bone_pos = Coord3D { x: q[0], y: q[1], z: q[2] };
                 let bone_tm = Matrix3D::from_array(arr::<12>(&q[3..]));
                 let (wp, wt) = thing.convert_bone_pos_to_world_pos(&bone_pos, &bone_tm);
                 push_coord(&mut words, &wp);
@@ -426,24 +348,12 @@ fn run_rust(p: &Program) -> Trace {
             14 => words.push(u32::from(thing.is_above_terrain_or_water(&ctx))),
             15 => words.push(u32::from(thing.is_kind_of(op.a1))),
             16 => {
-                let set = if op.a1 >= 0 {
-                    KindOfMaskType::from_indices(&[op.a1])
-                } else {
-                    KindOfMaskType::new()
-                };
-                let clr = if op.a2 >= 0 {
-                    KindOfMaskType::from_indices(&[op.a2])
-                } else {
-                    KindOfMaskType::new()
-                };
+                let set = if op.a1 >= 0 { KindOfMaskType::from_indices(&[op.a1]) } else { KindOfMaskType::new() };
+                let clr = if op.a2 >= 0 { KindOfMaskType::from_indices(&[op.a2]) } else { KindOfMaskType::new() };
                 words.push(u32::from(thing.is_kind_of_multi(&set, &clr)));
             }
             17 => {
-                let any = if op.a1 >= 0 {
-                    KindOfMaskType::from_indices(&[op.a1])
-                } else {
-                    KindOfMaskType::new()
-                };
+                let any = if op.a1 >= 0 { KindOfMaskType::from_indices(&[op.a1]) } else { KindOfMaskType::new() };
                 words.push(u32::from(thing.is_any_kind_of(&any)));
             }
             c => panic!("unknown op {c}"),
@@ -501,10 +411,7 @@ fn run_cpp(p: &Program) -> Vec<u32> {
 fn thing_programs_match_cpp() {
     let mut g = Gen::new(0x7417);
     let mut und = Undefined::default();
-    let mut checks: Vec<Check> = OP_NAMES
-        .iter()
-        .map(|n| Check::new(&format!("Thing {n}")))
-        .collect();
+    let mut checks: Vec<Check> = OP_NAMES.iter().map(|n| Check::new(&format!("Thing {n}"))).collect();
     let mut lengths = Check::new("Thing words per program");
     let mut programs = 0u64;
     let mut ops_run = 0u64;
@@ -514,9 +421,7 @@ fn thing_programs_match_cpp() {
         let cppw = run_cpp(&p);
         programs += 1;
         ops_run += p.ops.len() as u64;
-        lengths.eq(trace.words.len(), cppw.len(), || {
-            format!("program {i}: {p:?}")
-        });
+        lengths.eq(trace.words.len(), cppw.len(), || format!("program {i}: {p:?}"));
         if trace.words.len() != cppw.len() {
             continue;
         }
@@ -525,9 +430,7 @@ fn thing_programs_match_cpp() {
             for k in range.clone() {
                 let r = f32::from_bits(trace.words[k]);
                 let cc = f32::from_bits(cppw[k]);
-                c.f32(r, cc, || {
-                    format!("program {i} op {j} (code {code}) word {k}: {p:?}")
-                });
+                c.f32(r, cc, || format!("program {i} op {j} (code {code}) word {k}: {p:?}"));
             }
         }
     }
@@ -555,33 +458,12 @@ fn thing_undefined_inputs_are_errors() {
     assert_eq!(Thing::new(none).err(), Some(ThingError::NoTemplate));
     n_null_template += 1;
 
-    let ctx = PlaneTerrain {
-        ga: 0.5,
-        gb: -0.25,
-        gc: 3.0,
-        wx: -10.0,
-        wz: 2.0,
-        gravity: -1.0,
-    };
-    let mut thing = Thing::new(Some(Arc::new(StubTemplate {
-        kinds: KindOfMaskType::new(),
-    })))
-    .expect("template");
-    let before = (
-        *thing.transform_matrix(),
-        *thing.position(),
-        thing.orientation(),
-    );
-    assert_eq!(
-        thing.set_position(&ctx, None).err(),
-        Some(ThingError::NullPosition)
-    );
+    let ctx = PlaneTerrain { ga: 0.5, gb: -0.25, gc: 3.0, wx: -10.0, wz: 2.0, gravity: -1.0 };
+    let mut thing = Thing::new(Some(Arc::new(StubTemplate { kinds: KindOfMaskType::new() }))).expect("template");
+    let before = (*thing.transform_matrix(), *thing.position(), thing.orientation());
+    assert_eq!(thing.set_position(&ctx, None).err(), Some(ThingError::NullPosition));
     n_null_position += 1;
-    let after = (
-        *thing.transform_matrix(),
-        *thing.position(),
-        thing.orientation(),
-    );
+    let after = (*thing.transform_matrix(), *thing.position(), thing.orientation());
     if before == after {
         unchanged += 1;
     }
@@ -590,25 +472,13 @@ fn thing_undefined_inputs_are_errors() {
     for _ in 0..1000 {
         // angles that no finite subtraction of 2*PI reduces, and infinities
         let sign = if g.below(2) == 0 { 1.0f32 } else { -1.0 };
-        let a = if g.below(2) == 0 {
-            sign * f32::INFINITY
-        } else {
-            sign * 1.0e10 * g.uniform(1.0, 2.0)
-        };
-        let before = (
-            *thing.transform_matrix(),
-            *thing.position(),
-            thing.orientation(),
-        );
+        let a = if g.below(2) == 0 { sign * f32::INFINITY } else { sign * 1.0e10 * g.uniform(1.0, 2.0) };
+        let before = (*thing.transform_matrix(), *thing.position(), thing.orientation());
         match thing.set_orientation(&ctx, a) {
             Err(ThingError::AngleNeverNormalizes) => n_hanging += 1,
             other => panic!("angle {a}: expected AngleNeverNormalizes, got {other:?}"),
         }
-        let after = (
-            *thing.transform_matrix(),
-            *thing.position(),
-            thing.orientation(),
-        );
+        let after = (*thing.transform_matrix(), *thing.position(), thing.orientation());
         if before == after {
             unchanged += 1;
         }
@@ -618,9 +488,5 @@ fn thing_undefined_inputs_are_errors() {
          hanging angles {n_hanging}; the thing unchanged in {unchanged} of {}",
         n_null_position + n_hanging
     );
-    assert_eq!(
-        unchanged,
-        n_null_position + n_hanging,
-        "an error changed the thing"
-    );
+    assert_eq!(unchanged, n_null_position + n_hanging, "an error changed the thing");
 }

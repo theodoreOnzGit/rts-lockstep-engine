@@ -49,22 +49,18 @@
 use crate::common::base_type::Coord3D;
 use crate::common::game_type::{ObjectId, WEAPONSLOT_COUNT};
 use crate::common::model_state::{
-    ModelConditionFlags, MODELCONDITION_BETWEEN_FIRING_SHOTS_A,
-    MODELCONDITION_BETWEEN_FIRING_SHOTS_B, MODELCONDITION_BETWEEN_FIRING_SHOTS_C,
-    MODELCONDITION_FIRING_A, MODELCONDITION_FIRING_B, MODELCONDITION_FIRING_C,
-    MODELCONDITION_PREATTACK_A, MODELCONDITION_PREATTACK_B, MODELCONDITION_PREATTACK_C,
-    MODELCONDITION_RELOADING_A, MODELCONDITION_RELOADING_B, MODELCONDITION_RELOADING_C,
+    ModelConditionFlags, MODELCONDITION_BETWEEN_FIRING_SHOTS_A, MODELCONDITION_BETWEEN_FIRING_SHOTS_B, MODELCONDITION_BETWEEN_FIRING_SHOTS_C,
+    MODELCONDITION_FIRING_A, MODELCONDITION_FIRING_B, MODELCONDITION_FIRING_C, MODELCONDITION_PREATTACK_A, MODELCONDITION_PREATTACK_B,
+    MODELCONDITION_PREATTACK_C, MODELCONDITION_RELOADING_A, MODELCONDITION_RELOADING_B, MODELCONDITION_RELOADING_C,
     MODELCONDITION_USING_WEAPON_A, MODELCONDITION_USING_WEAPON_B, MODELCONDITION_USING_WEAPON_C,
 };
-use crate::common::object_status_types::{
-    OBJECT_STATUS_IS_AIMING_WEAPON, OBJECT_STATUS_IS_ATTACKING, OBJECT_STATUS_IS_FIRING_WEAPON,
-};
+use crate::common::object_status_types::{OBJECT_STATUS_IS_AIMING_WEAPON, OBJECT_STATUS_IS_ATTACKING, OBJECT_STATUS_IS_FIRING_WEAPON};
 use crate::logic::weapon::WeaponError;
 use crate::logic::weapon_fire::{Weapon, SLOTS};
 use crate::logic::weapon_host::{AbleToAttackType, CanAttackResult, CommandSourceType, WeaponHost};
 use crate::logic::weapon_set_state::{
-    WeaponChoiceCriteria, WeaponLockType, WeaponSet, WeaponSetConditionType, LOCKED_TEMPORARILY,
-    WSF_BETWEEN, WSF_FIRING, WSF_INVALID, WSF_NONE, WSF_PREATTACK, WSF_RELOADING,
+    WeaponChoiceCriteria, WeaponLockType, WeaponSet, WeaponSetConditionType, LOCKED_TEMPORARILY, WSF_BETWEEN, WSF_FIRING, WSF_INVALID, WSF_NONE,
+    WSF_PREATTACK, WSF_RELOADING,
 };
 use crate::logic::weapon_types::WeaponStatus;
 use crate::ww::matrix3d::Matrix3D;
@@ -94,25 +90,13 @@ pub trait ObjectWeaponHost: WeaponHost {
     /// `m_lastWeaponCondition[slot] = v`.
     fn set_last_weapon_condition(&mut self, o: ObjectId, slot: usize, v: i8);
     /// `m_firingTracker->shotFired(weapon, victimID)`; false (and nothing done) if the object has no firing tracker.
-    fn firing_tracker_shot_fired(&mut self, o: ObjectId, weapon: &Weapon, victim: ObjectId)
-        -> bool;
+    fn firing_tracker_shot_fired(&mut self, o: ObjectId, weapon: &Weapon, victim: ObjectId) -> bool;
     /// `friend_setUndetectedDefector(undetected)`.
     fn friend_set_undetected_defector(&mut self, o: ObjectId, undetected: bool);
     /// `m_drawable->updateDrawableClipStatus(ammoInClip, maxClipSize, slot)`.
-    fn drawable_update_clip_status(
-        &mut self,
-        o: ObjectId,
-        ammo_in_clip: u32,
-        max_clip_size: i32,
-        slot: i32,
-    );
+    fn drawable_update_clip_status(&mut self, o: ObjectId, ammo_in_clip: u32, max_clip_size: i32, slot: i32);
     /// `m_drawable->clearAndSetModelConditionFlags(clear, set)`.
-    fn drawable_clear_and_set_model_condition_flags(
-        &mut self,
-        o: ObjectId,
-        clear: &ModelConditionFlags,
-        set: &ModelConditionFlags,
-    );
+    fn drawable_clear_and_set_model_condition_flags(&mut self, o: ObjectId, clear: &ModelConditionFlags, set: &ModelConditionFlags);
     /// `m_drawable->setAnimationLoopDuration(frames)`.
     fn drawable_set_animation_loop_duration(&mut self, o: ObjectId, frames: u32);
 }
@@ -150,11 +134,7 @@ pub fn all_weapon_fire_flags(slot: usize) -> ModelConditionFlags {
 }
 
 /// Runs `f` on the set of `o` taken out of it, then puts it back (also on an error).
-fn with_set<H: ObjectWeaponHost, T>(
-    host: &mut H,
-    o: ObjectId,
-    f: impl FnOnce(&mut H, &mut WeaponSet) -> T,
-) -> T {
+fn with_set<H: ObjectWeaponHost, T>(host: &mut H, o: ObjectId, f: impl FnOnce(&mut H, &mut WeaponSet) -> T) -> T {
     let mut set = host.take_weapon_set(o);
     let r = f(host, &mut set);
     host.put_weapon_set(o, set);
@@ -184,31 +164,20 @@ pub fn has_any_damage_weapon<H: ObjectWeaponHost>(host: &H, o: ObjectId) -> bool
 }
 
 /// `Object::getMostPercentReadyToFireAnyWeapon()`.
-pub fn get_most_percent_ready_to_fire_any_weapon<H: ObjectWeaponHost>(
-    host: &H,
-    o: ObjectId,
-) -> u32 {
-    host.weapon_set(o)
-        .get_most_percent_ready_to_fire_any_weapon(host.frame())
+pub fn get_most_percent_ready_to_fire_any_weapon<H: ObjectWeaponHost>(host: &H, o: ObjectId) -> u32 {
+    host.weapon_set(o).get_most_percent_ready_to_fire_any_weapon(host.frame())
 }
 
 /// `Object::hasWeaponToDealDamageType(typeToDeal)`.
-pub fn has_weapon_to_deal_damage_type<H: ObjectWeaponHost>(
-    host: &H,
-    o: ObjectId,
-    type_to_deal: i32,
-) -> bool {
-    host.weapon_set(o)
-        .has_weapon_to_deal_damage_type(type_to_deal)
+pub fn has_weapon_to_deal_damage_type<H: ObjectWeaponHost>(host: &H, o: ObjectId, type_to_deal: i32) -> bool {
+    host.weapon_set(o).has_weapon_to_deal_damage_type(type_to_deal)
 }
 
 /// `Object::getLargestWeaponRange()`.
 pub fn get_largest_weapon_range<H: ObjectWeaponHost>(host: &H, o: ObjectId) -> f32 {
     let mut ret_val = -1.0f32;
     for i in 0..WEAPONSLOT_COUNT {
-        let Some(weapon) = host.weapon_set(o).get_weapon_in_weapon_slot(i) else {
-            continue;
-        };
+        let Some(weapon) = host.weapon_set(o).get_weapon_in_weapon_slot(i) else { continue };
         let tmp_val = weapon.get_attack_range(host, o);
         if tmp_val > ret_val {
             ret_val = tmp_val;
@@ -222,11 +191,7 @@ pub fn set_firing_condition_for_current_weapon<H: ObjectWeaponHost>(host: &mut H
     if host.has_drawable(o) {
         let wslot = host.weapon_set(o).get_cur_weapon_slot();
         let c = WeaponSet::get_model_condition_for_weapon_slot(wslot, WSF_FIRING);
-        host.drawable_clear_and_set_model_condition_flags(
-            o,
-            &all_weapon_fire_flags(wslot as usize),
-            &c,
-        );
+        host.drawable_clear_and_set_model_condition_flags(o, &all_weapon_fire_flags(wslot as usize), &c);
     }
 }
 
@@ -245,36 +210,21 @@ pub struct CurrentWeapon {
 pub fn get_current_weapon<H: ObjectWeaponHost>(host: &H, o: ObjectId) -> CurrentWeapon {
     let set = host.weapon_set(o);
     if !set.has_any_weapon() {
-        return CurrentWeapon {
-            slot: None,
-            has_weapon: false,
-        };
+        return CurrentWeapon { slot: None, has_weapon: false };
     }
-    CurrentWeapon {
-        slot: Some(set.get_cur_weapon_slot()),
-        has_weapon: set.get_cur_weapon().is_some(),
-    }
+    CurrentWeapon { slot: Some(set.get_cur_weapon_slot()), has_weapon: set.get_cur_weapon().is_some() }
 }
 
 /// `Object::findWaypointFollowingCapableWeapon()`: the slot of the weapon.
-pub fn find_waypoint_following_capable_weapon<H: ObjectWeaponHost>(
-    host: &mut H,
-    o: ObjectId,
-) -> Option<i32> {
-    with_set(host, o, |host, set| {
-        set.find_waypoint_following_capable_weapon(host)
-            .map(|w| w.weapon_slot())
-    })
+pub fn find_waypoint_following_capable_weapon<H: ObjectWeaponHost>(host: &mut H, o: ObjectId) -> Option<i32> {
+    with_set(host, o, |host, set| set.find_waypoint_following_capable_weapon(host).map(|w| w.weapon_slot()))
 }
 
 /// `Object::getAmmoPipShowingInfo(numTotal, numFull)`.
 pub fn get_ammo_pip_showing_info<H: ObjectWeaponHost>(host: &H, o: ObjectId) -> Option<(i32, i32)> {
     // @todo srj -- may need to cache this inside weaponset.
     let w = host.weapon_set(o).find_ammo_pip_showing_weapon(host)?;
-    Some((
-        host.store().templates()[w.template()].clip_size,
-        w.remaining_ammo(host.frame()) as i32,
-    ))
+    Some((host.store().templates()[w.template()].clip_size, w.remaining_ammo(host.frame()) as i32))
 }
 
 /// `Object::getAbleToAttackSpecificObject(t, target, commandSource, specificSlot)`: "NO LONGER internally calls
@@ -287,14 +237,7 @@ pub fn get_able_to_attack_specific_object<H: ObjectWeaponHost>(
     command_source: CommandSourceType,
     specific_slot: i32,
 ) -> WResult<CanAttackResult> {
-    host.weapon_set(o).get_able_to_attack_specific_object(
-        host,
-        t,
-        o,
-        target,
-        command_source,
-        specific_slot,
-    )
+    host.weapon_set(o).get_able_to_attack_specific_object(host, t, o, target, command_source, specific_slot)
 }
 
 /// `Object::getAbleToUseWeaponAgainstTarget(attackType, victim, pos, commandSource, specificSlot)`.
@@ -307,15 +250,7 @@ pub fn get_able_to_use_weapon_against_target<H: ObjectWeaponHost>(
     command_source: CommandSourceType,
     specific_slot: i32,
 ) -> WResult<CanAttackResult> {
-    host.weapon_set(o).get_able_to_use_weapon_against_target(
-        host,
-        attack_type,
-        o,
-        victim,
-        pos,
-        command_source,
-        specific_slot,
-    )
+    host.weapon_set(o).get_able_to_use_weapon_against_target(host, attack_type, o, victim, pos, command_source, specific_slot)
 }
 
 /// `Object::chooseBestWeaponForTarget(target, criteria, cmdSource)`.
@@ -326,9 +261,7 @@ pub fn choose_best_weapon_for_target<H: ObjectWeaponHost>(
     criteria: WeaponChoiceCriteria,
     cmd_source: CommandSourceType,
 ) -> WResult<bool> {
-    with_set(host, o, |host, set| {
-        set.choose_best_weapon_for_target(host, o, target, criteria, cmd_source)
-    })
+    with_set(host, o, |host, set| set.choose_best_weapon_for_target(host, o, target, criteria, cmd_source))
 }
 
 /// What `fireCurrentWeapon` fires at: an object (`None` is "victim may have already been destroyed") or a position.
@@ -345,11 +278,7 @@ pub enum FireAt {
 /// The weapon is taken out of its slot while it fires, not the whole set: firing reaches the world (damage, a
 /// temporary weapon for the historic bonus) and what it reaches asks the source's set whether its reload time is
 /// shared, and sets the other weapons' reload (`apply_shared_reload`), which must find the live set.
-pub fn fire_current_weapon<H: ObjectWeaponHost>(
-    host: &mut H,
-    o: ObjectId,
-    at: FireAt,
-) -> WResult<()> {
+pub fn fire_current_weapon<H: ObjectWeaponHost>(host: &mut H, o: ObjectId, at: FireAt) -> WResult<()> {
     // victim may have already been destroyed
     let (target, pos) = match at {
         FireAt::Object(None) | FireAt::Position(None) => return Ok(()),
@@ -359,9 +288,7 @@ pub fn fire_current_weapon<H: ObjectWeaponHost>(
     let now = host.frame();
     let shared = host.weapon_set(o).is_shared_reload_time(host);
     let slot = host.weapon_set(o).get_cur_weapon_slot();
-    let Some(mut weapon) = host.take_weapon(o, slot) else {
-        return Ok(());
-    };
+    let Some(mut weapon) = host.take_weapon(o, slot) else { return Ok(()) };
     if weapon.get_status(now) != WeaponStatus::ReadyToFire {
         host.put_weapon(o, slot, weapon);
         return Ok(());
@@ -378,50 +305,30 @@ pub fn fire_current_weapon<H: ObjectWeaponHost>(
             return Err(e);
         }
     };
-    host.firing_tracker_shot_fired(
-        o,
-        &weapon,
-        target.unwrap_or(crate::common::game_type::INVALID_ID),
-    );
+    host.firing_tracker_shot_fired(o, &weapon, target.unwrap_or(crate::common::game_type::INVALID_ID));
     host.put_weapon(o, slot, weapon);
     // the siblings' shared reload is the last thing `fireWeapon` does
     host.weapon_set_mut(o).apply_shared_reload(outcome.shared);
     if outcome.reloaded {
-        host.weapon_set_mut(o)
-            .release_weapon_lock(LOCKED_TEMPORARILY); // release any temporary locks.
+        host.weapon_set_mut(o).release_weapon_lock(LOCKED_TEMPORARILY); // release any temporary locks.
     }
     host.friend_set_undetected_defector(o, false); // My secret is out
     Ok(())
 }
 
 /// `Object::notifyFiringTrackerShotFired(weaponFired, victimID)`.
-pub fn notify_firing_tracker_shot_fired<H: ObjectWeaponHost>(
-    host: &mut H,
-    o: ObjectId,
-    weapon: &Weapon,
-    victim_id: ObjectId,
-) {
+pub fn notify_firing_tracker_shot_fired<H: ObjectWeaponHost>(host: &mut H, o: ObjectId, weapon: &Weapon, victim_id: ObjectId) {
     host.firing_tracker_shot_fired(o, weapon, victim_id);
 }
 
 /// `Object::preFireCurrentWeapon(victim)`: "if we are going to be capable of firing our weapon NEXT frame, set
 /// the pre-attack up now".
-pub fn pre_fire_current_weapon<H: ObjectWeaponHost>(
-    host: &mut H,
-    o: ObjectId,
-    victim: Option<ObjectId>,
-) -> WResult<()> {
+pub fn pre_fire_current_weapon<H: ObjectWeaponHost>(host: &mut H, o: ObjectId, victim: Option<ObjectId>) -> WResult<()> {
     let now = host.frame();
     let slot = host.weapon_set(o).get_cur_weapon_slot();
-    let Some(mut weapon) = host.take_weapon(o, slot) else {
-        return Ok(());
-    };
+    let Some(mut weapon) = host.take_weapon(o, slot) else { return Ok(()) };
     let fire = now.wrapping_add(1) >= weapon.possible_next_shot_frame();
-    let result = if fire {
-        weapon.pre_fire_weapon(host, o, victim)
-    } else {
-        Ok(())
-    };
+    let result = if fire { weapon.pre_fire_weapon(host, o, victim) } else { Ok(()) };
     host.put_weapon(o, slot, weapon);
     result?;
     if fire {
@@ -445,23 +352,12 @@ pub fn get_last_shot_fired_frame<H: ObjectWeaponHost>(host: &H, o: ObjectId) -> 
 }
 
 /// `Object::setWeaponLock(weaponSlot, lockType)`.
-pub fn set_weapon_lock<H: ObjectWeaponHost>(
-    host: &mut H,
-    o: ObjectId,
-    weapon_slot: i32,
-    lock_type: WeaponLockType,
-) -> bool {
-    with_set(host, o, |_, set| {
-        set.set_weapon_lock(weapon_slot, lock_type)
-    })
+pub fn set_weapon_lock<H: ObjectWeaponHost>(host: &mut H, o: ObjectId, weapon_slot: i32, lock_type: WeaponLockType) -> bool {
+    with_set(host, o, |_, set| set.set_weapon_lock(weapon_slot, lock_type))
 }
 
 /// `Object::releaseWeaponLock(lockType)`.
-pub fn release_weapon_lock<H: ObjectWeaponHost>(
-    host: &mut H,
-    o: ObjectId,
-    lock_type: WeaponLockType,
-) {
+pub fn release_weapon_lock<H: ObjectWeaponHost>(host: &mut H, o: ObjectId, lock_type: WeaponLockType) {
     with_set(host, o, |_, set| set.release_weapon_lock(lock_type));
 }
 
@@ -471,11 +367,7 @@ pub fn is_cur_weapon_locked<H: ObjectWeaponHost>(host: &H, o: ObjectId) -> bool 
 }
 
 /// `Object::getWeaponInWeaponSlotCommandSourceMask(wSlot)`.
-pub fn get_weapon_in_weapon_slot_command_source_mask<H: ObjectWeaponHost>(
-    host: &H,
-    o: ObjectId,
-    w_slot: usize,
-) -> u32 {
+pub fn get_weapon_in_weapon_slot_command_source_mask<H: ObjectWeaponHost>(host: &H, o: ObjectId, w_slot: usize) -> u32 {
     host.weapon_set(o).get_nth_command_source_mask(host, w_slot)
 }
 
@@ -486,9 +378,7 @@ pub fn is_reload_time_shared<H: ObjectWeaponHost>(host: &H, o: ObjectId) -> bool
 
 /// `Object::clearLeechRangeModeForAllWeapons()`.
 pub fn clear_leech_range_mode_for_all_weapons<H: ObjectWeaponHost>(host: &mut H, o: ObjectId) {
-    with_set(host, o, |_, set| {
-        set.clear_leech_range_mode_for_all_weapons()
-    });
+    with_set(host, o, |_, set| set.clear_leech_range_mode_for_all_weapons());
 }
 
 /// `Object::adjustModelConditionForWeaponStatus()`: "a weapon cannot be in charge of maintaining condition flags as
@@ -500,23 +390,17 @@ pub fn adjust_model_condition_for_weapon_status<H: ObjectWeaponHost>(host: &mut 
 
     for i in 0..WEAPONSLOT_COUNT {
         // (the facts of the weapon, read while the set is in the host)
-        let Some((
-            last_shot_frame,
-            status,
-            remaining_ammo,
-            clip_size,
-            weapon_slot,
-            pre_attack_done,
-        )) = host.weapon_set(o).get_weapon_in_weapon_slot(i).map(|w| {
-            (
-                w.last_shot_frame(),
-                w.get_status(now),
-                w.remaining_ammo(now),
-                host.store().templates()[w.template()].clip_size,
-                w.weapon_slot(),
-                w.pre_attack_finished_frame(),
-            )
-        })
+        let Some((last_shot_frame, status, remaining_ammo, clip_size, weapon_slot, pre_attack_done)) =
+            host.weapon_set(o).get_weapon_in_weapon_slot(i).map(|w| {
+                (
+                    w.last_shot_frame(),
+                    w.get_status(now),
+                    w.remaining_ammo(now),
+                    host.store().templates()[w.template()].clip_size,
+                    w.weapon_slot(),
+                    w.pre_attack_finished_frame(),
+                )
+            })
         else {
             host.set_last_weapon_condition(o, i as usize, WSF_NONE as i8);
             continue;
@@ -556,8 +440,7 @@ pub fn adjust_model_condition_for_weapon_status<H: ObjectWeaponHost>(host: &mut 
             if new_status == WeaponStatus::ReadyToFire
                 && condition_to_set == WSF_NONE
                 && host.test_status(o, OBJECT_STATUS_IS_ATTACKING)
-                && (host.test_status(o, OBJECT_STATUS_IS_AIMING_WEAPON)
-                    || host.test_status(o, OBJECT_STATUS_IS_FIRING_WEAPON))
+                && (host.test_status(o, OBJECT_STATUS_IS_AIMING_WEAPON) || host.test_status(o, OBJECT_STATUS_IS_FIRING_WEAPON))
             {
                 condition_to_set = WSF_BETWEEN;
             }
@@ -565,16 +448,10 @@ pub fn adjust_model_condition_for_weapon_status<H: ObjectWeaponHost>(host: &mut 
 
         if host.has_drawable(o) {
             host.drawable_update_clip_status(o, remaining_ammo, clip_size, weapon_slot);
-            if condition_to_set != WSF_INVALID
-                && condition_to_set != host.last_weapon_condition(o, i as usize) as i32
-            {
+            if condition_to_set != WSF_INVALID && condition_to_set != host.last_weapon_condition(o, i as usize) as i32 {
                 host.set_last_weapon_condition(o, i as usize, condition_to_set as i8);
                 let c = WeaponSet::get_model_condition_for_weapon_slot(i, condition_to_set);
-                host.drawable_clear_and_set_model_condition_flags(
-                    o,
-                    &all_weapon_fire_flags(i as usize),
-                    &c,
-                );
+                host.drawable_clear_and_set_model_condition_flags(o, &all_weapon_fire_flags(i as usize), &c);
                 if condition_to_set == WSF_PREATTACK {
                     // in the preattack state, adjust the speed of the preattack anim to match the actual time it will take
                     let pre_attack_done: u32 = pre_attack_done;
@@ -593,21 +470,10 @@ pub fn adjust_model_condition_for_weapon_status<H: ObjectWeaponHost>(host: &mut 
 pub trait ObjectBoneHost: WeaponHost {
     /// `m_drawable->getPristineBonePositions(prefix, startIndex, ..., maxBones)`: the bones found (at most
     /// `max_bones`), each as its position and transform. Only asked of an object with a drawable.
-    fn pristine_bone_positions(
-        &self,
-        o: ObjectId,
-        bone_name_prefix: &[u8],
-        start_index: i32,
-        max_bones: i32,
-    ) -> Vec<(Coord3D, Matrix3D)>;
+    fn pristine_bone_positions(&self, o: ObjectId, bone_name_prefix: &[u8], start_index: i32, max_bones: i32) -> Vec<(Coord3D, Matrix3D)>;
     /// `convertBonePosToWorldPos(bonePos, boneTransform, worldPos, worldTransform)` of the drawable and of `Thing`:
     /// a world value is made for each of the inputs that is given (an output pointer upstream is the input's).
-    fn convert_bone_pos_to_world_pos(
-        &self,
-        o: ObjectId,
-        bone_pos: Option<&Coord3D>,
-        bone_transform: Option<&Matrix3D>,
-    ) -> (Option<Coord3D>, Option<Matrix3D>);
+    fn convert_bone_pos_to_world_pos(&self, o: ObjectId, bone_pos: Option<&Coord3D>, bone_transform: Option<&Matrix3D>) -> (Option<Coord3D>, Option<Matrix3D>);
     /// `getAI() != NULL`.
     fn has_ai(&self, o: ObjectId) -> bool;
     /// `getAI()->getTurretRotAndPitch(turret, &rot, &pitch)`: `None` when it returns false (and writes neither).
@@ -634,13 +500,7 @@ pub struct BoneQuery {
 
 /// `Object::getSingleLogicalBonePosition(boneName, position, transform)`; `want_position` and `want_transform` say
 /// which pointers are non-null.
-pub fn get_single_logical_bone_position<H: ObjectBoneHost>(
-    host: &H,
-    o: ObjectId,
-    bone_name: &[u8],
-    want_position: bool,
-    want_transform: bool,
-) -> BoneQuery {
+pub fn get_single_logical_bone_position<H: ObjectBoneHost>(host: &H, o: ObjectId, bone_name: &[u8], want_position: bool, want_transform: bool) -> BoneQuery {
     if host.has_drawable(o) {
         let bones = host.pristine_bone_positions(o, bone_name, 0, 1);
         if bones.len() == 1 {
@@ -648,11 +508,7 @@ pub fn get_single_logical_bone_position<H: ObjectBoneHost>(
             let pos = want_position.then_some(p);
             let tr = want_transform.then_some(t);
             let (wp, wt) = host.convert_bone_pos_to_world_pos(o, pos.as_ref(), tr.as_ref());
-            return BoneQuery {
-                found: true,
-                position: wp,
-                transform: wt,
-            };
+            return BoneQuery { found: true, position: wp, transform: wt };
         }
     }
     BoneQuery {
@@ -673,11 +529,7 @@ pub fn get_single_logical_bone_position_on_turret<H: ObjectBoneHost>(
     want_position: bool,
     want_transform: bool,
 ) -> WResult<BoneQuery> {
-    let none = BoneQuery {
-        found: false,
-        position: None,
-        transform: None,
-    };
+    let none = BoneQuery { found: false, position: None, transform: None };
     if !host.has_drawable(o) || !host.has_ai(o) {
         return Ok(none);
     }
@@ -692,16 +544,10 @@ pub fn get_single_logical_bone_position_on_turret<H: ObjectBoneHost>(
     let bone_position = bones[0].0;
     let turret_position = launch.ok_or(WeaponError::UninitialisedRead)?.turret_rot_pos;
     // Then we mojo the Logic position of the required bone like Missile firing does. Using the logic twist of the turret
-    let (turret_rotation, _) = host
-        .ai_turret_rot_and_pitch(o, which_turret)
-        .ok_or(WeaponError::UninitialisedRead)?;
+    let (turret_rotation, _) = host.ai_turret_rot_and_pitch(o, which_turret).ok_or(WeaponError::UninitialisedRead)?;
 
     let mut bone_offset = Matrix3D::identity(); // This will be from the turret to the requested bone
-    bone_offset.translate_v(&Vector3::new(
-        bone_position.x,
-        bone_position.y,
-        bone_position.z,
-    ));
+    bone_offset.translate_v(&Vector3::new(bone_position.x, bone_position.y, bone_position.z));
 
     let mut turn_adjustment = Matrix3D::identity(); // this is the turret twist to be applied to the final answer
     turn_adjustment.translate(turret_position.x, turret_position.y, turret_position.z);
@@ -711,23 +557,12 @@ pub fn get_single_logical_bone_position_on_turret<H: ObjectBoneHost>(
     let mut bone_logic_transform = Matrix3D::identity();
     bone_logic_transform.mul(&turn_adjustment, &bone_offset);
 
-    let world_transform = host
-        .convert_bone_pos_to_world_pos(o, None, Some(&bone_logic_transform))
-        .1
-        .ok_or(WeaponError::UninitialisedRead)?;
+    let world_transform = host.convert_bone_pos_to_world_pos(o, None, Some(&bone_logic_transform)).1.ok_or(WeaponError::UninitialisedRead)?;
 
     let tmp = world_transform.get_translation();
-    let world_pos = Coord3D {
-        x: tmp.x,
-        y: tmp.y,
-        z: tmp.z,
-    };
+    let world_pos = Coord3D { x: tmp.x, y: tmp.y, z: tmp.z };
 
-    Ok(BoneQuery {
-        found: true,
-        position: want_position.then_some(world_pos),
-        transform: want_transform.then_some(world_transform),
-    })
+    Ok(BoneQuery { found: true, position: want_position.then_some(world_pos), transform: want_transform.then_some(world_transform) })
 }
 
 /// `Object::getMultiLogicalBonePosition(prefix, maxBones, positions, transforms, convertToWorld)`: the bones found
@@ -745,10 +580,7 @@ pub fn get_multi_logical_bone_position<H: ObjectBoneHost>(
         return Vec::new();
     }
     let bones = host.pristine_bone_positions(o, bone_name_prefix, 1, max_bones);
-    let mut out: Vec<(Option<Coord3D>, Option<Matrix3D>)> = bones
-        .iter()
-        .map(|&(p, t)| (want_positions.then_some(p), want_transforms.then_some(t)))
-        .collect();
+    let mut out: Vec<(Option<Coord3D>, Option<Matrix3D>)> = bones.iter().map(|&(p, t)| (want_positions.then_some(p), want_transforms.then_some(t))).collect();
     if !out.is_empty() && convert_to_world {
         for e in out.iter_mut() {
             *e = host.convert_bone_pos_to_world_pos(o, e.0.as_ref(), e.1.as_ref());
@@ -769,15 +601,9 @@ pub fn get_command_set_string<H: ObjectBoneHost>(host: &H, o: ObjectId) -> Vec<u
 /// `Object::canProduceUpgrade(upgrade)`: "we need to have the button to make the upgrade. CommandSets are a weird
 /// Logic/Client hybrid." A name that names no command set dereferences a null `CommandSet*` upstream:
 /// [`WeaponError::NullObject`].
-pub fn can_produce_upgrade<H: ObjectBoneHost>(
-    host: &H,
-    o: ObjectId,
-    upgrade: u32,
-) -> WResult<bool> {
+pub fn can_produce_upgrade<H: ObjectBoneHost>(host: &H, o: ObjectId, upgrade: u32) -> WResult<bool> {
     let name = get_command_set_string(host, o);
-    let set = host
-        .command_set_upgrades(&name)
-        .ok_or(WeaponError::NullObject)?;
+    let set = host.command_set_upgrades(&name).ok_or(WeaponError::NullObject)?;
     for button_upgrade in set {
         if button_upgrade == Some(upgrade) {
             return Ok(true); // getUpgradeTemplate only returns something if it is actually an upgrade

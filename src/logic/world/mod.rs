@@ -35,23 +35,23 @@ pub mod object_events;
 pub mod object_modules;
 pub mod object_state;
 pub mod object_team;
-#[cfg(test)]
-mod object_tests;
 pub mod object_transform;
 pub mod object_xfer;
+#[cfg(test)]
+mod object_tests;
 // --- end p1w6-object ---
 pub mod player;
 // --- p1w10-sonnet ---
-pub mod build_assistant;
-pub mod create_host_world;
-pub mod helper_host_world;
+pub mod player_objects;
+pub mod player_squads;
 pub mod player_init;
 pub mod player_list;
-pub mod player_objects;
-pub mod player_ops;
-pub mod player_squads;
 pub mod player_xfer;
+pub mod player_ops;
+pub mod build_assistant;
+pub mod create_host_world;
 pub mod update_host_world;
+pub mod helper_host_world;
 // --- end p1w10-sonnet ---
 pub mod sleepy;
 pub mod team;
@@ -85,8 +85,8 @@ pub mod partition;
 pub mod statics;
 // --- end p1l9-example ---
 // --- p1w11-sonnet ---
-pub mod object_queries;
 pub mod thing_factory_world;
+pub mod object_queries;
 // --- end p1w11-sonnet ---
 // --- p1w13-sonnet ---
 pub mod body_cuts;

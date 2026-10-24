@@ -64,12 +64,12 @@
 mod support;
 mod up_common;
 
-use rts_lockstep_engine::common::game_common::VeterancyLevel;
 use rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID;
 use rts_lockstep_engine::common::geometry::{GeometryInfo, GeometryType};
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniErrorKind, IniLoadType, IniResult};
 use rts_lockstep_engine::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_BODY};
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
+use rts_lockstep_engine::common::game_common::VeterancyLevel;
 use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::common::xfer_load::XferLoad;
@@ -77,9 +77,7 @@ use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
 use rts_lockstep_engine::logic::damage::DamageInfo;
-use rts_lockstep_engine::logic::modules::structure_collapse_update::{
-    StructureCollapseUpdateModuleData, SC_PHASE_COUNT,
-};
+use rts_lockstep_engine::logic::modules::structure_collapse_update::{StructureCollapseUpdateModuleData, SC_PHASE_COUNT};
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleHandle};
 use rts_lockstep_engine::logic::world::module_probe::{ProbeAnswers, ProbeModule};
@@ -108,17 +106,12 @@ fn put_str(v: &mut Vec<u8>, s: &[u8]) {
     v.extend_from_slice(s);
 }
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::StructureCollapseUpdate(Arc::new(
-        StructureCollapseUpdateModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::StructureCollapseUpdate(Arc::new(StructureCollapseUpdateModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -149,12 +142,7 @@ fn ocl_code(n: &[u8]) -> i32 {
 }
 
 fn put_data(v: &mut Vec<u8>, d: &StructureCollapseUpdateModuleData, fx: &mut FxIds) {
-    for x in [
-        d.min_collapse_delay,
-        d.max_collapse_delay,
-        d.min_burst_delay,
-        d.big_burst_frequency,
-    ] {
+    for x in [d.min_collapse_delay, d.max_collapse_delay, d.min_burst_delay, d.big_burst_frequency] {
         put_i32(v, x);
     }
     put_u32(v, d.collapse_damping.to_bits());
@@ -203,9 +191,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         lists.push((fx, ocl, counts));
     }
     let (w, l) = (u32_(&mut p), u32_(&mut p));
-    out.push(format!(
-        "data {head:x?} {lists:?} constructor wakes {w} last {l}"
-    ));
+    out.push(format!("data {head:x?} {lists:?} constructor wakes {w} last {l}"));
     for i in 0..n_ops {
         if p >= b.len() {
             break;
@@ -226,26 +212,8 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 }
 
 const DEATH_NAMES: [&str; 20] = [
-    "NONE",
-    "CRUSHED",
-    "BURNED",
-    "EXPLODED",
-    "POISONED",
-    "TOPPLED",
-    "FLOODED",
-    "SUICIDED",
-    "LASERED",
-    "DETONATED",
-    "SPLATTED",
-    "POISONED_BETA",
-    "EXTRA_2",
-    "EXTRA_3",
-    "EXTRA_4",
-    "EXTRA_5",
-    "EXTRA_6",
-    "EXTRA_7",
-    "EXTRA_8",
-    "POISONED_GAMMA",
+    "NONE", "CRUSHED", "BURNED", "EXPLODED", "POISONED", "TOPPLED", "FLOODED", "SUICIDED", "LASERED", "DETONATED", "SPLATTED", "POISONED_BETA",
+    "EXTRA_2", "EXTRA_3", "EXTRA_4", "EXTRA_5", "EXTRA_6", "EXTRA_7", "EXTRA_8", "POISONED_GAMMA",
 ];
 
 fn death_tokens(g: &mut Gen) -> String {
@@ -316,10 +284,7 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
     let v = pick(g, &["0", "1", "3", "8"]).to_string();
     field(&mut lines, g, 60, "BigBurstFrequency", v);
     for ph in ["INITIAL", "DELAY", "BURST", "FINAL"] {
-        for (name, names) in [
-            ("FXList", &["FX_A", "FX_B", "None"][..]),
-            ("OCL", &["OCL_A", "OCL_B", "None", "OCL_C"][..]),
-        ] {
+        for (name, names) in [("FXList", &["FX_A", "FX_B", "None"][..]), ("OCL", &["OCL_A", "OCL_B", "None", "OCL_C"][..])] {
             if g.below(100) < 40 {
                 let n = 1 + g.below(3);
                 let list: Vec<&str> = (0..n).map(|_| pick(g, names)).collect();
@@ -336,19 +301,7 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
     let v = status_tokens(g);
     field(&mut lines, g, 10, "RequiredStatus", v);
     if !clean {
-        lines.push(
-            pick(
-                g,
-                &[
-                    "NoSuchField = 1",
-                    "FXList = NOPHASE FX_A",
-                    "OCL = BURST",
-                    "MaxShudder = x",
-                    "DeathTypes = +BOGUS",
-                ],
-            )
-            .to_string(),
-        );
+        lines.push(pick(g, &["NoSuchField = 1", "FXList = NOPHASE FX_A", "OCL = BURST", "MaxShudder = x", "DeathTypes = +BOGUS"]).to_string());
     }
     let mut s = String::from("D\n");
     for l in &lines {
@@ -374,13 +327,7 @@ struct Tally {
     body_particles: u64,
 }
 
-fn run_xfer(
-    w: &mut World,
-    me: ObjectId,
-    idx: usize,
-    how: u32,
-    saved: &[u8],
-) -> (i32, Vec<u8>, u32) {
+fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -432,11 +379,7 @@ fn veterancy(i: u32) -> VeterancyLevel {
 /// The scene of the configuration (the driver's `scene`); the modules are the case's, the drawable comes and goes.
 fn set_scene(w: &mut World, cfg: &[u32; 12]) {
     let o = w.objects.find_mut(1).unwrap();
-    o.drawable = if cfg[3] & 1 != 0 {
-        7
-    } else {
-        INVALID_DRAWABLE_ID
-    };
+    o.drawable = if cfg[3] & 1 != 0 { 7 } else { INVALID_DRAWABLE_ID };
     o.experience.level = veterancy(cfg[4]);
     o.status = Default::default();
     for b in 0..8 {
@@ -444,30 +387,18 @@ fn set_scene(w: &mut World, cfg: &[u32; 12]) {
             o.status.set(b, 1);
         }
     }
-    let pos = rts_lockstep_engine::common::base_type::Coord3D {
-        x: f32::from_bits(cfg[6]),
-        y: f32::from_bits(cfg[7]),
-        z: f32::from_bits(cfg[8]),
-    };
+    let pos = rts_lockstep_engine::common::base_type::Coord3D { x: f32::from_bits(cfg[6]), y: f32::from_bits(cfg[7]), z: f32::from_bits(cfg[8]) };
     w.set_position(1, &pos);
     w.set_orientation(1, f32::from_bits(cfg[9]));
     w.cuts.globals.gravity = f32::from_bits(cfg[11]);
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(
-    ctx: &Ctx,
-    data: ModuleDataKind,
-    cfg_in: &[u32; 12],
-    ops: &[[u32; 4]],
-    tally: &mut Tally,
-) -> (Vec<u8>, World) {
+fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 12], ops: &[[u32; 4]], tally: &mut Tally) -> (Vec<u8>, World) {
     let mut cfg = *cfg_in;
     let mut v = Vec::new();
     let mut fx = FxIds::default();
-    let ModuleDataKind::StructureCollapseUpdate(d) = &data else {
-        unreachable!()
-    };
+    let ModuleDataKind::StructureCollapseUpdate(d) = &data else { unreachable!() };
     put_data(&mut v, d, &mut fx);
     let mut w = World::new();
     w.names = ctx.names.clone();
@@ -475,11 +406,7 @@ fn rust_run(
     for n in [&b"OCL_A"[..], b"OCL_B"] {
         ocls.ocls.insert(w.names.name_to_key(n), Default::default());
     }
-    w.statics = Arc::new(GameStatics {
-        upgrade_center: ctx.center.clone(),
-        object_creation_list_store: ocls,
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), object_creation_list_store: ocls, ..Default::default() });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.probe_effect_trace = true;
@@ -487,21 +414,10 @@ fn rust_run(
     w.set_frame(cfg[0]);
     w.random.init_random(cfg[2]);
     w.random.init_game_logic_random(cfg[1]);
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        b"StructureCollapseUpdate",
-        b"ModuleTag_Collapse",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"StructureCollapseUpdate", b"ModuleTag_Collapse", &data).unwrap().unwrap();
     let probe = |name: &[u8]| {
         let mut pm = NewModule::plain(name, b"ModuleTag_Probe");
-        pm.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-            ProbeAnswers::default(),
-            100.0,
-            Default::default(),
-        )));
+        pm.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 100.0, Default::default())));
         pm
     };
     let mut modules = vec![m];
@@ -518,33 +434,10 @@ fn rust_run(
     if cfg[3] >> 3 & 1 != 0 {
         modules.push(probe(b"BoneFXUpdate"));
     }
-    let values = ObjectTemplateValues {
-        geometry: Some(GeometryInfo::new(
-            GeometryType::Box,
-            false,
-            f32::from_bits(cfg[10]),
-            10.0,
-            10.0,
-        )),
-        ..Default::default()
-    };
-    assert_eq!(
-        w.new_object(NewObject {
-            template: Arc::new(ThingTemplate::from_object_values(&values)),
-            status: Default::default(),
-            team: None,
-            modules
-        })
-        .unwrap(),
-        1
-    );
+    let values = ObjectTemplateValues { geometry: Some(GeometryInfo::new(GeometryType::Box, false, f32::from_bits(cfg[10]), 10.0, 10.0)), ..Default::default() };
+    assert_eq!(w.new_object(NewObject { template: Arc::new(ThingTemplate::from_object_values(&values)), status: Default::default(), team: None, modules }).unwrap(), 1);
     let idx = w.find_module(1, b"StructureCollapseUpdate").unwrap();
-    let u = w
-        .update_handle_of_module(ModuleHandle {
-            object: 1,
-            index: idx,
-        })
-        .expect("an update module");
+    let u = w.update_handle_of_module(ModuleHandle { object: 1, index: idx }).expect("an update module");
     let mine = |l: &str| -> Option<u32> {
         let (i, f) = l.split_once(' ').unwrap();
         (i.parse::<i32>().unwrap() == i32::from(idx)).then(|| f.parse().unwrap())
@@ -575,10 +468,7 @@ fn rust_run(
         let (mut xst, mut xbytes, mut crc, mut res) = (-2i32, Vec::new(), 0u32, 0u32);
         match o[0] {
             0 => {
-                res = w
-                    .with_body(u, |b, w| b.update(w, u))
-                    .expect("the module is in its slot")
-                    .0;
+                res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
                 tally.updates += 1;
             }
             1 => {
@@ -605,10 +495,7 @@ fn rust_run(
             _ => unreachable!(),
         }
         let new_errors = &w.cuts.module_errors[errors_before..];
-        let status = if new_errors
-            .iter()
-            .any(|(_, e)| e.kind == IniErrorKind::BadArg)
-        {
+        let status = if new_errors.iter().any(|(_, e)| e.kind == IniErrorKind::BadArg) {
             3
         } else if new_errors.iter().any(|(_, e)| !e.is_undefined()) {
             2
@@ -624,71 +511,28 @@ fn rust_run(
                 _ => None,
             })
             .collect();
-        let (mut ev_iter, mut cut_iter) =
-            (events.into_iter(), w.cuts.log.take().unwrap().into_iter());
+        let (mut ev_iter, mut cut_iter) = (events.into_iter(), w.cuts.log.take().unwrap().into_iter());
         let (mut log, mut wakes, mut last) = (Vec::new(), 0u32, 0u32);
         let b = |x: f32| x.to_bits();
         for t in w.cuts.trace.take().unwrap() {
             if t.starts_with("cut ") {
                 match cut_iter.next() {
-                    Some(CutCall::GameLogicDeselectObject {
-                        object,
-                        player_mask,
-                        affect_client,
-                    }) => log.push(format!(
-                        "deselect {object} {player_mask} {}",
-                        i32::from(affect_client)
-                    )),
-                    Some(CutCall::OclCreateAtPrimary {
-                        ocl,
-                        primary_pos: p,
-                        angle,
-                        ..
-                    }) => {
+                    Some(CutCall::GameLogicDeselectObject { object, player_mask, affect_client }) => log.push(format!("deselect {object} {player_mask} {}", i32::from(affect_client))),
+                    Some(CutCall::OclCreateAtPrimary { ocl, primary_pos: p, angle, .. }) => {
                         tally.phase_lines += 1;
-                        log.push(format!(
-                            "oclat {} {:08x},{:08x},{:08x} null {:08x}",
-                            ocl_code(&ocl) - 1,
-                            b(p.x),
-                            b(p.y),
-                            b(p.z),
-                            b(angle)
-                        ))
+                        log.push(format!("oclat {} {:08x},{:08x},{:08x} null {:08x}", ocl_code(&ocl) - 1, b(p.x), b(p.y), b(p.z), b(angle)))
                     }
                     _ => {}
                 }
             } else if t.starts_with("evt ") {
                 match ev_iter.next() {
-                    Some(ObjectClientEvent::DrawableModelCondition {
-                        op: ModelConditionOp::Set(a),
-                        ..
-                    }) => log.push(format!("mc {}", a[0])),
-                    Some(ObjectClientEvent::DrawableModelCondition {
-                        op: ModelConditionOp::Clear(a),
-                        ..
-                    }) => log.push(format!("mcclear {}", a[0])),
-                    Some(ObjectClientEvent::FxListDoFxPos {
-                        fx: name,
-                        position: p,
-                    }) => {
+                    Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Set(a), .. }) => log.push(format!("mc {}", a[0])),
+                    Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Clear(a), .. }) => log.push(format!("mcclear {}", a[0])),
+                    Some(ObjectClientEvent::FxListDoFxPos { fx: name, position: p }) => {
                         tally.phase_lines += 1;
-                        log.push(format!(
-                            "fxpos {} {},{},{}",
-                            fx.id(&Some(name)),
-                            b(p.x),
-                            b(p.y),
-                            b(p.z)
-                        ))
+                        log.push(format!("fxpos {} {},{},{}", fx.id(&Some(name)), b(p.x), b(p.y), b(p.z)))
                     }
-                    Some(ObjectClientEvent::DrawableSetInstanceTranslation {
-                        translation: p,
-                        ..
-                    }) => log.push(format!(
-                        "instance {:08x} {:08x} {:08x}",
-                        b(p.x),
-                        b(p.y),
-                        b(p.z)
-                    )),
+                    Some(ObjectClientEvent::DrawableSetInstanceTranslation { translation: p, .. }) => log.push(format!("instance {:08x} {:08x} {:08x}", b(p.x), b(p.y), b(p.z))),
                     _ => {}
                 }
             } else if let Some(f) = t.strip_prefix("awaken ").and_then(mine) {
@@ -715,9 +559,7 @@ fn rust_run(
         put_u32(&mut v, crc);
         let ob = w.objects.find(1).unwrap();
         let slot = &ob.behaviors[u.index as usize];
-        let Some(UpdateBody::StructureCollapseUpdate(m)) = slot.body.as_ref() else {
-            panic!("the module is back in its slot")
-        };
+        let Some(UpdateBody::StructureCollapseUpdate(m)) = slot.body.as_ref() else { panic!("the module is back in its slot") };
         let state = m.state_words();
         match state[2] {
             1 => tally.waiting += 1,
@@ -733,10 +575,7 @@ fn rust_run(
 }
 
 fn cases() -> usize {
-    std::env::var("L9R29_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9R29_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 #[test]
@@ -766,10 +605,7 @@ fn structure_collapse_update_matches_upstream() {
                 continue;
             }
         };
-        let flags = u32::from(g.below(8) != 0)
-            | u32::from(g.below(2) == 0) << 1
-            | u32::from(g.below(8) != 0) << 2
-            | g.below(2) << 3;
+        let flags = u32::from(g.below(8) != 0) | u32::from(g.below(2) == 0) << 1 | u32::from(g.below(8) != 0) << 2 | g.below(2) << 3;
         let cfg = [
             g.below(200),
             g.u32(),
@@ -836,19 +672,7 @@ fn structure_collapse_update_matches_upstream() {
         let status = unsafe {
             cpp::ref_ini_reset();
             cpp::ref_ini_add_file(cfile.as_ptr(), text.as_ptr() as *const _, text.len() as i32);
-            cpp::ref_l9r29_run(
-                cfile.as_ptr(),
-                cxfer.as_ptr(),
-                cfg.as_ptr(),
-                ops.len() as i32,
-                flat.as_ptr(),
-                buf.as_mut_ptr(),
-                buf.len() as i32,
-                &mut len,
-                msg.as_mut_ptr() as *mut _,
-                msg.len() as i32,
-                &mut code,
-            )
+            cpp::ref_l9r29_run(cfile.as_ptr(), cxfer.as_ptr(), cfg.as_ptr(), ops.len() as i32, flat.as_ptr(), buf.as_mut_ptr(), buf.len() as i32, &mut len, msg.as_mut_ptr() as *mut _, msg.len() as i32, &mut code)
         };
         buf.truncate(len as usize);
         let detail = match status {
@@ -857,21 +681,8 @@ fn structure_collapse_update_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!(
-                "case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                show(&text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
@@ -879,17 +690,8 @@ fn structure_collapse_update_matches_upstream() {
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
-            eprintln!(
-                "--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}",
-                show(&text),
-                dr.get(i),
-                dc.get(i)
-            );
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            eprintln!("--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
             if std::env::var("R29_FULL").is_ok() {
                 eprintln!("RUST {dr:#?}\nCPP {dc:#?}");
             }
@@ -909,11 +711,5 @@ fn structure_collapse_update_matches_upstream() {
     println!("R29 excluded: {reasons:?}");
     read.finish();
     run.finish();
-    assert!(
-        tally.waiting > cases as u64
-            && tally.collapsing > cases as u64
-            && tally.done > cases as u64
-            && tally.bone_fx_stops * 20 > cases as u64,
-        "the generator must reach every state"
-    );
+    assert!(tally.waiting > cases as u64 && tally.collapsing > cases as u64 && tally.done > cases as u64 && tally.bone_fx_stops * 20 > cases as u64, "the generator must reach every state");
 }

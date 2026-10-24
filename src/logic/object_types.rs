@@ -85,10 +85,7 @@ impl ObjectTypes {
 
     /// `ObjectTypes(const AsciiString& listName)`: an empty list with a name.
     pub fn with_list_name(list_name: AsciiString) -> Self {
-        ObjectTypes {
-            list_name,
-            object_types: Vec::new(),
-        }
+        ObjectTypes { list_name, object_types: Vec::new() }
     }
 
     /// `addObjectType`: appends the name unless it is already in the list.
@@ -197,8 +194,7 @@ impl ObjectTypes {
         let mut name = self.list_name.str().to_vec();
         xfer.xfer_ascii_string(&mut name)?;
         if xfer.get_xfer_mode() != XferMode::Save {
-            self.list_name =
-                AsciiString::try_from_bytes(&name).map_err(|_| XferStatus::StringError)?;
+            self.list_name = AsciiString::try_from_bytes(&name).map_err(|_| XferStatus::StringError)?;
         }
 
         // size of object types vector: an UnsignedShort, so the count wraps
@@ -219,9 +215,8 @@ impl ObjectTypes {
             for _ in 0..count {
                 let mut bytes = Vec::new();
                 xfer.xfer_ascii_string(&mut bytes)?;
-                self.object_types.push(
-                    AsciiString::try_from_bytes(&bytes).map_err(|_| XferStatus::StringError)?,
-                );
+                self.object_types
+                    .push(AsciiString::try_from_bytes(&bytes).map_err(|_| XferStatus::StringError)?);
             }
         }
         Ok(())
@@ -356,9 +351,6 @@ mod tests {
     #[test]
     fn loading_into_a_non_empty_list_is_refused() {
         let mut busy = sample();
-        assert_eq!(
-            load_into(&mut busy, save_of(&ObjectTypes::new())),
-            Err(XferStatus::ListNotEmpty)
-        );
+        assert_eq!(load_into(&mut busy, save_of(&ObjectTypes::new())), Err(XferStatus::ListNotEmpty));
     }
 }

@@ -68,18 +68,14 @@
 
 use crate::common::base_type::Coord3D;
 use crate::common::dict::Dict;
-use crate::common::game_common::{
-    GameDifficulty, PlayerType, Relationship, LOGICFRAMES_PER_SECOND,
-};
+use crate::common::game_common::{GameDifficulty, PlayerType, Relationship, LOGICFRAMES_PER_SECOND};
 use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::kind_of::{
-    KindOfMaskType, KindOfType, KINDOFMASK_NONE, KINDOF_AIRCRAFT, KINDOF_INERT, KINDOF_MINE,
-    KINDOF_PROJECTILE, KINDOF_STRUCTURE, KINDOF_TECH_BUILDING,
+    KindOfMaskType, KindOfType, KINDOFMASK_NONE, KINDOF_AIRCRAFT, KINDOF_INERT, KINDOF_MINE, KINDOF_PROJECTILE, KINDOF_STRUCTURE, KINDOF_TECH_BUILDING,
 };
 use crate::common::name_key_generator::{NameKeyGenerator, NameKeyType};
 use crate::common::object_status_types::{
-    ObjectStatusTypes, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_STEALTHED,
-    OBJECT_STATUS_UNDER_CONSTRUCTION,
+    ObjectStatusTypes, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_STEALTHED, OBJECT_STATUS_UNDER_CONSTRUCTION,
 };
 use crate::common::well_known_keys::{WellKnownKeys, TEAM_IS_SINGLETON, TEAM_NAME, TEAM_OWNER};
 use crate::logic::locomotor::LOCOMOTORSURFACE_GROUND;
@@ -174,12 +170,7 @@ pub trait TeamHost {
     /// `script->getName()`.
     fn script_name(&self, s: ScriptRef) -> Vec<u8>;
     /// `TheScriptEngine->evaluateConditions(script, team, player)`.
-    fn script_evaluate_conditions(
-        &mut self,
-        s: ScriptRef,
-        team: Option<TeamId>,
-        player: Option<PlayerIndex>,
-    ) -> bool;
+    fn script_evaluate_conditions(&mut self, s: ScriptRef, team: Option<TeamId>, player: Option<PlayerIndex>) -> bool;
     /// `TheScriptEngine->friend_executeAction(script->getAction(), team)`.
     fn script_execute_action(&mut self, s: ScriptRef, team: Option<TeamId>);
     /// `TheScriptEngine->runScript(name, team)`.
@@ -203,12 +194,7 @@ pub trait TeamHost {
     /// `t->isKindOf(kind)`.
     fn tmpl_is_kind_of(&self, t: TemplateRef, kind: KindOfType) -> bool;
     /// `t->isKindOfMulti(set, clear)`.
-    fn tmpl_is_kind_of_multi(
-        &self,
-        t: TemplateRef,
-        set: &KindOfMaskType,
-        clear: &KindOfMaskType,
-    ) -> bool;
+    fn tmpl_is_kind_of_multi(&self, t: TemplateRef, set: &KindOfMaskType, clear: &KindOfMaskType) -> bool;
     /// `t->isBuildFacility()`.
     fn tmpl_is_build_facility(&self, t: TemplateRef) -> bool;
     /// `t->getName()`.
@@ -224,12 +210,7 @@ pub trait TeamHost {
     /// `obj->isKindOf(kind)`.
     fn obj_is_kind_of(&self, o: ObjectId, kind: KindOfType) -> bool;
     /// `obj->isKindOfMulti(set, clear)`.
-    fn obj_is_kind_of_multi(
-        &self,
-        o: ObjectId,
-        set: &KindOfMaskType,
-        clear: &KindOfMaskType,
-    ) -> bool;
+    fn obj_is_kind_of_multi(&self, o: ObjectId, set: &KindOfMaskType, clear: &KindOfMaskType) -> bool;
     /// `obj->testStatus(status)` / `obj->getStatusBits().test(status)`.
     fn obj_test_status(&self, o: ObjectId, status: ObjectStatusTypes) -> bool;
     /// `obj->isDisabledByType(DISABLED_HELD)`.
@@ -326,19 +307,12 @@ fn proto_ref<H: TeamHost>(h: &H, p: TeamPrototypeId) -> TResult<&TeamPrototype> 
 
 /// `Team::Team(proto, id)` for a new instance: stores the team, prepends it to its prototype's instance list, and,
 /// when the prototype has scripts for it, keeps the enemy-sighted check; the script engine is told in the debug log.
-pub fn create_team_instance<H: TeamHost>(
-    h: &mut H,
-    proto: TeamPrototypeId,
-    id: TeamId,
-) -> TResult<TeamId> {
+pub fn create_team_instance<H: TeamHost>(h: &mut H, proto: TeamPrototypeId, id: TeamId) -> TResult<TeamId> {
     h.teams_mut().insert_team(Team::new(id, proto))?;
     let (check, name) = match h.teams().prototype(proto) {
         Some(p) => {
             let i = &p.team_template;
-            (
-                !i.script_on_all_clear.is_empty() || !i.script_on_enemy_sighted.is_empty(),
-                Some(p.name.clone()),
-            )
+            (!i.script_on_all_clear.is_empty() || !i.script_on_enemy_sighted.is_empty(), Some(p.name.clone()))
         }
         None => (false, None),
     };
@@ -385,19 +359,12 @@ pub fn delete_team_instance<H: TeamHost>(h: &mut H, id: TeamId) -> TResult<()> {
 }
 
 /// `Team::getControllingPlayer()`: the prototype's.
-pub fn team_get_controlling_player<H: TeamHost>(
-    h: &H,
-    team: TeamId,
-) -> TResult<Option<PlayerIndex>> {
+pub fn team_get_controlling_player<H: TeamHost>(h: &H, team: TeamId) -> TResult<Option<PlayerIndex>> {
     Ok(proto_of(h, team)?.owning_player)
 }
 
 /// `Team::setControllingPlayer(newController)`: the prototype changes hands, and every member relooks.
-pub fn team_set_controlling_player<H: TeamHost>(
-    h: &mut H,
-    team: TeamId,
-    new_controller: Option<PlayerIndex>,
-) -> TResult<()> {
+pub fn team_set_controlling_player<H: TeamHost>(h: &mut H, team: TeamId, new_controller: Option<PlayerIndex>) -> TResult<()> {
     let proto = team_ref(h, team)?.proto;
     // NULL is not allowed, but is caught by TeamPrototype::setControllingPlayer()
     proto_set_controlling_player(h, proto, new_controller)?;
@@ -412,11 +379,7 @@ pub fn team_set_controlling_player<H: TeamHost>(
 }
 
 /// `Team::setAttackPriorityName(name)`.
-pub fn team_set_attack_priority_name<H: TeamHost>(
-    h: &mut H,
-    team: TeamId,
-    name: &[u8],
-) -> TResult<()> {
+pub fn team_set_attack_priority_name<H: TeamHost>(h: &mut H, team: TeamId, name: &[u8]) -> TResult<()> {
     let proto = team_ref(h, team)?.proto;
     if let Some(p) = h.teams_mut().prototype_mut(proto) {
         p.attack_priority_name = name.to_vec();
@@ -439,9 +402,7 @@ pub fn team_get_targetable_count<H: TeamHost>(h: &H, team: TeamId) -> i32 {
     let mut ret_val = 0;
     let mut cur = h.teams().first_member(team);
     while let Some(obj) = cur {
-        if !(h.obj_is_effectively_dead(obj)
-            || (!h.obj_has_ai(obj) && !h.obj_is_kind_of(obj, KINDOF_STRUCTURE)))
-        {
+        if !(h.obj_is_effectively_dead(obj) || (!h.obj_has_ai(obj) && !h.obj_is_kind_of(obj, KINDOF_STRUCTURE))) {
             ret_val += 1;
         }
         cur = h.teams().next_member(obj);
@@ -451,11 +412,7 @@ pub fn team_get_targetable_count<H: TeamHost>(h: &H, team: TeamId) -> i32 {
 
 /// `Team::getRelationship(that)`: this team's override for that team, else for that team's player, else the
 /// controlling player's.
-pub fn team_get_relationship<H: TeamHost>(
-    h: &H,
-    team: TeamId,
-    that: Option<TeamId>,
-) -> TResult<Relationship> {
+pub fn team_get_relationship<H: TeamHost>(h: &H, team: TeamId, that: Option<TeamId>) -> TResult<Relationship> {
     let t = team_ref(h, team)?;
     // do we have an override for that particular team? if so, return it.
     if !t.team_relations.map.is_empty() {
@@ -482,11 +439,7 @@ pub fn team_get_relationship<H: TeamHost>(
 }
 
 /// `Team::setTeamTargetObject(target)`: only computer players, and not on easy, keep a common target.
-pub fn team_set_team_target_object<H: TeamHost>(
-    h: &mut H,
-    team: TeamId,
-    target: Option<ObjectId>,
-) -> TResult<()> {
+pub fn team_set_team_target_object<H: TeamHost>(h: &mut H, team: TeamId, target: Option<ObjectId>) -> TResult<()> {
     let Some(target) = target else {
         team_mut(h, team)?.common_attack_target = INVALID_ID;
         return Ok(());
@@ -507,25 +460,15 @@ fn team_mut<H: TeamHost>(h: &mut H, t: TeamId) -> TResult<&mut Team> {
 }
 
 /// `Team::getTeamTargetObject()`: the common target if it is still a fair target, else it is forgotten.
-pub fn team_get_team_target_object<H: TeamHost>(
-    h: &mut H,
-    team: TeamId,
-) -> TResult<Option<ObjectId>> {
+pub fn team_get_team_target_object<H: TeamHost>(h: &mut H, team: TeamId) -> TResult<Option<ObjectId>> {
     let id = team_ref(h, team)?.common_attack_target;
     if id == INVALID_ID {
         return Ok(None);
     }
-    let mut target = if h.game_logic_find_object(id) {
-        Some(id)
-    } else {
-        None
-    };
+    let mut target = if h.game_logic_find_object(id) { Some(id) } else { None };
     if let Some(t) = target {
         // If the enemy unit is stealthed and not detected, then we can't attack it!
-        if h.obj_test_status(t, OBJECT_STATUS_STEALTHED)
-            && !h.obj_test_status(t, OBJECT_STATUS_DETECTED)
-            && !h.obj_test_status(t, OBJECT_STATUS_DISGUISED)
-        {
+        if h.obj_test_status(t, OBJECT_STATUS_STEALTHED) && !h.obj_test_status(t, OBJECT_STATUS_DETECTED) && !h.obj_test_status(t, OBJECT_STATUS_DISGUISED) {
             target = None;
         }
     }
@@ -552,12 +495,7 @@ pub fn team_get_team_target_object<H: TeamHost>(
 }
 
 /// `Team::setOverrideTeamRelationship(teamID, r)`.
-pub fn team_set_override_team_relationship<H: TeamHost>(
-    h: &mut H,
-    team: TeamId,
-    team_id: TeamId,
-    r: Relationship,
-) -> TResult<()> {
+pub fn team_set_override_team_relationship<H: TeamHost>(h: &mut H, team: TeamId, team_id: TeamId, r: Relationship) -> TResult<()> {
     if team_id != TEAM_ID_INVALID {
         // note that this creates the entry if it doesn't exist.
         team_mut(h, team)?.team_relations.map.insert(team_id, r);
@@ -566,11 +504,7 @@ pub fn team_set_override_team_relationship<H: TeamHost>(
 }
 
 /// `Team::removeOverrideTeamRelationship(teamID)`: `TEAM_ID_INVALID` removes them all.
-pub fn team_remove_override_team_relationship<H: TeamHost>(
-    h: &mut H,
-    team: TeamId,
-    team_id: TeamId,
-) -> TResult<bool> {
+pub fn team_remove_override_team_relationship<H: TeamHost>(h: &mut H, team: TeamId, team_id: TeamId) -> TResult<bool> {
     let t = team_mut(h, team)?;
     if !t.team_relations.map.is_empty() {
         if team_id == TEAM_ID_INVALID {
@@ -586,28 +520,16 @@ pub fn team_remove_override_team_relationship<H: TeamHost>(
 pub const PLAYER_INDEX_INVALID: PlayerIndex = -1;
 
 /// `Team::setOverridePlayerRelationship(playerIndex, r)`.
-pub fn team_set_override_player_relationship<H: TeamHost>(
-    h: &mut H,
-    team: TeamId,
-    player_index: PlayerIndex,
-    r: Relationship,
-) -> TResult<()> {
+pub fn team_set_override_player_relationship<H: TeamHost>(h: &mut H, team: TeamId, player_index: PlayerIndex, r: Relationship) -> TResult<()> {
     if player_index != PLAYER_INDEX_INVALID {
         // note that this creates the entry if it doesn't exist.
-        team_mut(h, team)?
-            .player_relations
-            .map
-            .insert(player_index, r);
+        team_mut(h, team)?.player_relations.map.insert(player_index, r);
     }
     Ok(())
 }
 
 /// `Team::removeOverridePlayerRelationship(playerIndex)`: `PLAYER_INDEX_INVALID` removes them all.
-pub fn team_remove_override_player_relationship<H: TeamHost>(
-    h: &mut H,
-    team: TeamId,
-    player_index: PlayerIndex,
-) -> TResult<bool> {
+pub fn team_remove_override_player_relationship<H: TeamHost>(h: &mut H, team: TeamId, player_index: PlayerIndex) -> TResult<bool> {
     let t = team_mut(h, team)?;
     if !t.player_relations.map.is_empty() {
         if player_index == PLAYER_INDEX_INVALID {
@@ -670,12 +592,7 @@ pub fn team_count_buildings<H: TeamHost>(h: &H, team: TeamId) -> i32 {
 }
 
 /// `Team::countObjects(setMask, clearMask)`.
-pub fn team_count_objects<H: TeamHost>(
-    h: &H,
-    team: TeamId,
-    set_mask: &KindOfMaskType,
-    clear_mask: &KindOfMaskType,
-) -> i32 {
+pub fn team_count_objects<H: TeamHost>(h: &H, team: TeamId, set_mask: &KindOfMaskType, clear_mask: &KindOfMaskType) -> i32 {
     let mut ret_val = 0;
     let mut cur = h.teams().first_member(team);
     while let Some(o) = cur {
@@ -699,11 +616,7 @@ pub fn team_heal_all_objects<H: TeamHost>(h: &mut H, team: TeamId) {
 }
 
 /// `Team::iterateObjects(func, userData)`.
-pub fn team_iterate_objects<H: TeamHost>(
-    h: &mut H,
-    team: TeamId,
-    mut func: impl FnMut(&mut H, ObjectId),
-) {
+pub fn team_iterate_objects<H: TeamHost>(h: &mut H, team: TeamId, mut func: impl FnMut(&mut H, ObjectId)) {
     let mut cur = h.teams().first_member(team);
     while let Some(o) = cur {
         func(h, o);
@@ -715,10 +628,7 @@ pub fn team_iterate_objects<H: TeamHost>(
 pub fn team_has_any_buildings<H: TeamHost>(h: &H, team: TeamId) -> bool {
     let mut cur = h.teams().first_member(team);
     while let Some(o) = cur {
-        if !h.obj_is_effectively_dead(o)
-            && !h.obj_is_destroyed(o)
-            && h.obj_is_kind_of(o, KINDOF_STRUCTURE)
-        {
+        if !h.obj_is_effectively_dead(o) && !h.obj_is_destroyed(o) && h.obj_is_kind_of(o, KINDOF_STRUCTURE) {
             return true;
         }
         cur = h.teams().next_member(o);
@@ -727,11 +637,7 @@ pub fn team_has_any_buildings<H: TeamHost>(h: &H, team: TeamId) -> bool {
 }
 
 /// `Team::hasAnyBuildings(kindOf)`: the mask is the caller's copy, and gets `KINDOF_STRUCTURE` set.
-pub fn team_has_any_buildings_kind_of<H: TeamHost>(
-    h: &H,
-    team: TeamId,
-    mut kind_of: KindOfMaskType,
-) -> bool {
+pub fn team_has_any_buildings_kind_of<H: TeamHost>(h: &H, team: TeamId, mut kind_of: KindOfMaskType) -> bool {
     let mut cur = h.teams().first_member(team);
     while let Some(o) = cur {
         if !h.obj_is_effectively_dead(o) && !h.obj_is_destroyed(o) {
@@ -818,9 +724,7 @@ pub fn team_update_state<H: TeamHost>(h: &mut H, team: TeamId) -> TResult<()> {
             }
             let t = team_mut(h, team)?;
             // m_curUnits - (m_curUnits * pInfo->m_destroyedThreshold): an Int and a Real, in Real
-            t.destroy_threshold = real_to_int_trunc(
-                t.cur_units as f32 - (t.cur_units as f32 * info.destroyed_threshold),
-            );
+            t.destroy_threshold = real_to_int_trunc(t.cur_units as f32 - (t.cur_units as f32 * info.destroyed_threshold));
             if t.destroy_threshold > t.cur_units - 1 {
                 t.destroy_threshold = t.cur_units - 1;
             }
@@ -838,7 +742,7 @@ pub fn team_update_state<H: TeamHost>(h: &mut H, team: TeamId) -> TResult<()> {
             t.see_enemy = false;
         }
         let mut any_alive_in_team = false; // If we're all dead, don't do all clear.
-                                           // only consider enemies.
+        // only consider enemies.
         let mut cur = h.teams().first_member(team);
         while let Some(o) = cur {
             if !h.obj_is_effectively_dead(o) {
@@ -908,10 +812,7 @@ pub fn team_update_state<H: TeamHost>(h: &mut H, team: TeamId) -> TResult<()> {
 
 /// `Team::notifyTeamOfObjectDeath()`.
 pub fn team_notify_team_of_object_death<H: TeamHost>(h: &mut H, team: TeamId) -> TResult<()> {
-    let name = proto_of(h, team)?
-        .team_template
-        .script_on_unit_destroyed
-        .clone();
+    let name = proto_of(h, team)?.team_template.script_on_unit_destroyed.clone();
     if name.is_empty() {
         return Ok(());
     }
@@ -942,38 +843,17 @@ fn considers<H: TeamHost>(h: &H, o: ObjectId, which_to_consider: u32) -> bool {
     }
 }
 
-fn trigger_query<H: TeamHost>(
-    h: &H,
-    team: TeamId,
-    trigger: TriggerRef,
-    which: u32,
-    q: TriggerQuery,
-) -> TResult<bool> {
+fn trigger_query<H: TeamHost>(h: &H, team: TeamId, trigger: TriggerRef, which: u32, q: TriggerQuery) -> TResult<bool> {
     let t = team_ref(h, team)?;
     // If any units entered or exited, they set this flag.
-    if matches!(
-        q,
-        TriggerQuery::DidAllEnter
-            | TriggerQuery::DidPartialEnter
-            | TriggerQuery::DidPartialExit
-            | TriggerQuery::DidAllExit
-    ) && !t.entered_or_exited
-    {
+    if matches!(q, TriggerQuery::DidAllEnter | TriggerQuery::DidPartialEnter | TriggerQuery::DidPartialExit | TriggerQuery::DidAllExit) && !t.entered_or_exited {
         return Ok(false);
     }
     // empty teams are not inside.
     if q == TriggerQuery::AllInside && !team_has_any_objects(h, team) {
         return Ok(false);
     }
-    let (
-        mut any_considered,
-        mut entered,
-        mut outside,
-        mut exited,
-        mut inside,
-        mut any_outside,
-        mut any_inside,
-    ) = (false, false, false, false, false, false, false);
+    let (mut any_considered, mut entered, mut outside, mut exited, mut inside, mut any_outside, mut any_inside) = (false, false, false, false, false, false, false);
     let mut cur = h.teams().first_member(team);
     while let Some(o) = cur {
         'member: {
@@ -1049,72 +929,37 @@ fn trigger_query<H: TeamHost>(
 }
 
 /// `Team::didAllEnter(pTrigger, whichToConsider)`: all members entered the area.
-pub fn team_did_all_enter<H: TeamHost>(
-    h: &H,
-    team: TeamId,
-    trigger: TriggerRef,
-    which: u32,
-) -> TResult<bool> {
+pub fn team_did_all_enter<H: TeamHost>(h: &H, team: TeamId, trigger: TriggerRef, which: u32) -> TResult<bool> {
     trigger_query(h, team, trigger, which, TriggerQuery::DidAllEnter)
 }
 
 /// `Team::didPartialEnter(...)`: one member entered the area.
-pub fn team_did_partial_enter<H: TeamHost>(
-    h: &H,
-    team: TeamId,
-    trigger: TriggerRef,
-    which: u32,
-) -> TResult<bool> {
+pub fn team_did_partial_enter<H: TeamHost>(h: &H, team: TeamId, trigger: TriggerRef, which: u32) -> TResult<bool> {
     trigger_query(h, team, trigger, which, TriggerQuery::DidPartialEnter)
 }
 
 /// `Team::didPartialExit(...)`: one member exited the area.
-pub fn team_did_partial_exit<H: TeamHost>(
-    h: &H,
-    team: TeamId,
-    trigger: TriggerRef,
-    which: u32,
-) -> TResult<bool> {
+pub fn team_did_partial_exit<H: TeamHost>(h: &H, team: TeamId, trigger: TriggerRef, which: u32) -> TResult<bool> {
     trigger_query(h, team, trigger, which, TriggerQuery::DidPartialExit)
 }
 
 /// `Team::didAllExit(...)`: all members exited the area.
-pub fn team_did_all_exit<H: TeamHost>(
-    h: &H,
-    team: TeamId,
-    trigger: TriggerRef,
-    which: u32,
-) -> TResult<bool> {
+pub fn team_did_all_exit<H: TeamHost>(h: &H, team: TeamId, trigger: TriggerRef, which: u32) -> TResult<bool> {
     trigger_query(h, team, trigger, which, TriggerQuery::DidAllExit)
 }
 
 /// `Team::allInside(...)`: all members are inside the area.
-pub fn team_all_inside<H: TeamHost>(
-    h: &H,
-    team: TeamId,
-    trigger: TriggerRef,
-    which: u32,
-) -> TResult<bool> {
+pub fn team_all_inside<H: TeamHost>(h: &H, team: TeamId, trigger: TriggerRef, which: u32) -> TResult<bool> {
     trigger_query(h, team, trigger, which, TriggerQuery::AllInside)
 }
 
 /// `Team::noneInside(...)`: no member is in the area.
-pub fn team_none_inside<H: TeamHost>(
-    h: &H,
-    team: TeamId,
-    trigger: TriggerRef,
-    which: u32,
-) -> TResult<bool> {
+pub fn team_none_inside<H: TeamHost>(h: &H, team: TeamId, trigger: TriggerRef, which: u32) -> TResult<bool> {
     trigger_query(h, team, trigger, which, TriggerQuery::NoneInside)
 }
 
 /// `Team::someInsideSomeOutside(...)`: one or more in, one or more out.
-pub fn team_some_inside_some_outside<H: TeamHost>(
-    h: &H,
-    team: TeamId,
-    trigger: TriggerRef,
-    which: u32,
-) -> TResult<bool> {
+pub fn team_some_inside_some_outside<H: TeamHost>(h: &H, team: TeamId, trigger: TriggerRef, which: u32) -> TResult<bool> {
     trigger_query(h, team, trigger, which, TriggerQuery::SomeInsideSomeOutside)
 }
 
@@ -1159,14 +1004,8 @@ pub fn team_delete_team<H: TeamHost>(h: &mut H, team: TeamId, ignore_dead: bool)
 }
 
 /// `Team::transferUnitsTo(newTeam)`: every member moves to the new team.
-pub fn team_transfer_units_to<H: TeamHost>(
-    h: &mut H,
-    team: TeamId,
-    new_team: Option<TeamId>,
-) -> TResult<()> {
-    let Some(new_team) = new_team else {
-        return Ok(());
-    };
+pub fn team_transfer_units_to<H: TeamHost>(h: &mut H, team: TeamId, new_team: Option<TeamId>) -> TResult<()> {
+    let Some(new_team) = new_team else { return Ok(()) };
     if team == new_team {
         return Ok(());
     }
@@ -1182,11 +1021,7 @@ pub fn team_transfer_units_to<H: TeamHost>(
 }
 
 /// `isInBuildVariations(ttWithVariations, b)`.
-fn is_in_build_variations<H: TeamHost>(
-    h: &H,
-    tt_with_variations: TemplateRef,
-    b: Option<TemplateRef>,
-) -> TResult<bool> {
+fn is_in_build_variations<H: TeamHost>(h: &H, tt_with_variations: TemplateRef, b: Option<TemplateRef>) -> TResult<bool> {
     let bv = h.tmpl_build_variations(tt_with_variations);
     if bv.is_empty() {
         return Ok(false);
@@ -1197,13 +1032,7 @@ fn is_in_build_variations<H: TeamHost>(
 }
 
 /// `Team::tryToRecruit(tTemplate, teamHome, maxDist)`: the closest suitable unit of this player's other teams.
-pub fn team_try_to_recruit<H: TeamHost>(
-    h: &H,
-    team: TeamId,
-    t_template: TemplateRef,
-    team_home: Coord3D,
-    max_dist: f32,
-) -> TResult<Option<ObjectId>> {
+pub fn team_try_to_recruit<H: TeamHost>(h: &H, team: TeamId, t_template: TemplateRef, team_home: Coord3D, max_dist: f32) -> TResult<Option<ObjectId>> {
     let my_player = team_get_controlling_player(h, team)?.ok_or(TeamError::Null)?;
     let mut dist_sqr = max_dist * max_dist;
     let mut recruit: Option<ObjectId> = None;
@@ -1302,11 +1131,10 @@ pub fn team_kill_team<H: TeamHost>(h: &mut H, team: TeamId) -> TResult<()> {
     let mut objects_to_process = Vec::new();
     let mut cur = h.teams().first_member(team);
     while let Some(obj) = cur {
-        let skip = h.obj_is_destroyed(obj)
-            || (h.obj_is_effectively_dead(obj) && {
-                let t = h.obj_template(obj).ok_or(TeamError::Null)?;
-                !h.tmpl_is_equivalent_to(t, beacon_template)
-            });
+        let skip = h.obj_is_destroyed(obj) || (h.obj_is_effectively_dead(obj) && {
+            let t = h.obj_template(obj).ok_or(TeamError::Null)?;
+            !h.tmpl_is_equivalent_to(t, beacon_template)
+        });
         if !skip {
             // the object's team could change after having all the passengers get out.
             if h.obj_team(obj) == Some(team) {
@@ -1412,14 +1240,7 @@ pub fn set_team_id<H: TeamHost>(h: &mut H, team: TeamId, id: TeamId) -> TResult<
 /// `TeamPrototype::TeamPrototype(tf, name, ownerPlayer, isSingleton, d, id)`: the template info is read from the
 /// dictionary (member-initialiser order: before the body), then the prototype enters the factory's map under its
 /// name key and the owner's list.
-pub fn create_team_prototype<H: TeamHost>(
-    h: &mut H,
-    name: &[u8],
-    owner: Option<PlayerIndex>,
-    is_singleton: bool,
-    d: &Dict,
-    id: TeamPrototypeId,
-) -> TResult<TeamPrototypeId> {
+pub fn create_team_prototype<H: TeamHost>(h: &mut H, name: &[u8], owner: Option<PlayerIndex>, is_singleton: bool, d: &Dict, id: TeamPrototypeId) -> TResult<TeamPrototypeId> {
     let waypoints = h.terrain_waypoints();
     let template = {
         let (gen, keys) = h.names();
@@ -1478,19 +1299,12 @@ pub fn delete_team_prototype<H: TeamHost>(h: &mut H, id: TeamPrototypeId) -> TRe
 }
 
 /// `TeamPrototype::getControllingPlayer()`.
-pub fn proto_get_controlling_player<H: TeamHost>(
-    h: &H,
-    proto: TeamPrototypeId,
-) -> TResult<Option<PlayerIndex>> {
+pub fn proto_get_controlling_player<H: TeamHost>(h: &H, proto: TeamPrototypeId) -> TResult<Option<PlayerIndex>> {
     Ok(proto_ref(h, proto)?.owning_player)
 }
 
 /// `TeamPrototype::findTeamByID(teamID)`: the instance in this prototype's list with that id.
-pub fn proto_find_team_by_id<H: TeamHost>(
-    h: &H,
-    proto: TeamPrototypeId,
-    team_id: TeamId,
-) -> Option<TeamId> {
+pub fn proto_find_team_by_id<H: TeamHost>(h: &H, proto: TeamPrototypeId, team_id: TeamId) -> Option<TeamId> {
     let mut cur = h.teams().first_instance(proto);
     while let Some(t) = cur {
         if t == team_id {
@@ -1502,22 +1316,13 @@ pub fn proto_find_team_by_id<H: TeamHost>(
 }
 
 /// `TeamPrototype::setControllingPlayer(newController)`: `NULL` is ignored.
-pub fn proto_set_controlling_player<H: TeamHost>(
-    h: &mut H,
-    proto: TeamPrototypeId,
-    new_controller: Option<PlayerIndex>,
-) -> TResult<()> {
-    let Some(new_controller) = new_controller else {
-        return Ok(());
-    };
+pub fn proto_set_controlling_player<H: TeamHost>(h: &mut H, proto: TeamPrototypeId, new_controller: Option<PlayerIndex>) -> TResult<()> {
+    let Some(new_controller) = new_controller else { return Ok(()) };
     let old = proto_ref(h, proto)?.owning_player;
     if let Some(o) = old {
         h.player_remove_team_from_list(o, proto);
     }
-    h.teams_mut()
-        .prototype_mut(proto)
-        .ok_or(TeamError::Null)?
-        .owning_player = Some(new_controller);
+    h.teams_mut().prototype_mut(proto).ok_or(TeamError::Null)?.owning_player = Some(new_controller);
     // impossible to get here with a NULL pointer.
     h.player_add_team_to_list(new_controller, proto);
     Ok(())
@@ -1540,24 +1345,13 @@ pub fn proto_count_objects_by_thing_template<H: TeamHost>(
 ) {
     let mut cur = first_instance(h, proto);
     while let Some(t) = cur {
-        team_count_objects_by_thing_template(
-            h,
-            t,
-            things,
-            ignore_dead,
-            counts,
-            ignore_under_construction,
-        );
+        team_count_objects_by_thing_template(h, t, things, ignore_dead, counts, ignore_under_construction);
         cur = h.teams().next_instance(t);
     }
 }
 
 /// `TeamPrototype::teamAboutToBeDeleted(team)`: no instance keeps an override for the dying team.
-pub fn proto_team_about_to_be_deleted<H: TeamHost>(
-    h: &mut H,
-    proto: TeamPrototypeId,
-    team: Option<TeamId>,
-) -> TResult<()> {
+pub fn proto_team_about_to_be_deleted<H: TeamHost>(h: &mut H, proto: TeamPrototypeId, team: Option<TeamId>) -> TResult<()> {
     let mut cur = first_instance(h, proto);
     while let Some(t) = cur {
         team_remove_override_team_relationship(h, t, team.unwrap_or(TEAM_ID_INVALID))?;
@@ -1567,17 +1361,10 @@ pub fn proto_team_about_to_be_deleted<H: TeamHost>(
 }
 
 /// `TeamPrototype::getGenericScript(scriptToRetrieve)`: the first call duplicates every named script.
-pub fn proto_get_generic_script<H: TeamHost>(
-    h: &mut H,
-    proto: TeamPrototypeId,
-    script_to_retrieve: i32,
-) -> TResult<Option<ScriptRef>> {
+pub fn proto_get_generic_script<H: TeamHost>(h: &mut H, proto: TeamPrototypeId, script_to_retrieve: i32) -> TResult<Option<ScriptRef>> {
     if !proto_ref(h, proto)?.retrieved_generic_scripts {
         // set this to true so we won't do the lookup again.
-        h.teams_mut()
-            .prototype_mut(proto)
-            .ok_or(TeamError::Null)?
-            .retrieved_generic_scripts = true;
+        h.teams_mut().prototype_mut(proto).ok_or(TeamError::Null)?.retrieved_generic_scripts = true;
         // Go get them from the script engine, and duplicate each one.
         for i in 0..MAX_GENERIC_SCRIPTS {
             let mut script_to_save = None;
@@ -1588,42 +1375,24 @@ pub fn proto_get_generic_script<H: TeamHost>(
                 }
             }
             // I now own this one. I'm responsible for cleaning it up on destruction.
-            h.teams_mut()
-                .prototype_mut(proto)
-                .ok_or(TeamError::Null)?
-                .generic_scripts_to_run[i] = script_to_save;
+            h.teams_mut().prototype_mut(proto).ok_or(TeamError::Null)?.generic_scripts_to_run[i] = script_to_save;
         }
     }
     let i = usize::try_from(script_to_retrieve).map_err(|_| TeamError::Null)?;
-    Ok(*proto_ref(h, proto)?
-        .generic_scripts_to_run
-        .get(i)
-        .ok_or(TeamError::Null)?)
+    Ok(*proto_ref(h, proto)?.generic_scripts_to_run.get(i).ok_or(TeamError::Null)?)
 }
 
 /// `TeamPrototype::increaseAIPriorityForSuccess()`.
-pub fn proto_increase_ai_priority_for_success<H: TeamHost>(
-    h: &mut H,
-    proto: TeamPrototypeId,
-) -> TResult<()> {
+pub fn proto_increase_ai_priority_for_success<H: TeamHost>(h: &mut H, proto: TeamPrototypeId) -> TResult<()> {
     let p = h.teams_mut().prototype_mut(proto).ok_or(TeamError::Null)?;
-    p.team_template.production_priority = p
-        .team_template
-        .production_priority
-        .wrapping_add(p.team_template.production_priority_success_increase);
+    p.team_template.production_priority = p.team_template.production_priority.wrapping_add(p.team_template.production_priority_success_increase);
     Ok(())
 }
 
 /// `TeamPrototype::decreaseAIPriorityForFailure()`.
-pub fn proto_decrease_ai_priority_for_failure<H: TeamHost>(
-    h: &mut H,
-    proto: TeamPrototypeId,
-) -> TResult<()> {
+pub fn proto_decrease_ai_priority_for_failure<H: TeamHost>(h: &mut H, proto: TeamPrototypeId) -> TResult<()> {
     let p = h.teams_mut().prototype_mut(proto).ok_or(TeamError::Null)?;
-    p.team_template.production_priority = p
-        .team_template
-        .production_priority
-        .wrapping_sub(p.team_template.production_priority_failure_decrease);
+    p.team_template.production_priority = p.team_template.production_priority.wrapping_sub(p.team_template.production_priority_failure_decrease);
     Ok(())
 }
 
@@ -1639,12 +1408,7 @@ pub fn proto_count_buildings<H: TeamHost>(h: &H, proto: TeamPrototypeId) -> i32 
 }
 
 /// `TeamPrototype::countObjects(setMask, clearMask)`.
-pub fn proto_count_objects<H: TeamHost>(
-    h: &H,
-    proto: TeamPrototypeId,
-    set_mask: &KindOfMaskType,
-    clear_mask: &KindOfMaskType,
-) -> i32 {
+pub fn proto_count_objects<H: TeamHost>(h: &H, proto: TeamPrototypeId, set_mask: &KindOfMaskType, clear_mask: &KindOfMaskType) -> i32 {
     let mut ret_val = 0;
     let mut cur = first_instance(h, proto);
     while let Some(t) = cur {
@@ -1664,11 +1428,7 @@ pub fn proto_heal_all_objects<H: TeamHost>(h: &mut H, proto: TeamPrototypeId) {
 }
 
 /// `TeamPrototype::iterateObjects(func, userData)`.
-pub fn proto_iterate_objects<H: TeamHost>(
-    h: &mut H,
-    proto: TeamPrototypeId,
-    mut func: impl FnMut(&mut H, ObjectId),
-) {
+pub fn proto_iterate_objects<H: TeamHost>(h: &mut H, proto: TeamPrototypeId, mut func: impl FnMut(&mut H, ObjectId)) {
     let mut cur = first_instance(h, proto);
     while let Some(t) = cur {
         team_iterate_objects(h, t, &mut func);
@@ -1694,11 +1454,7 @@ pub fn proto_has_any_buildings<H: TeamHost>(h: &H, proto: TeamPrototypeId) -> bo
 }
 
 /// `TeamPrototype::hasAnyBuildings(kindOf)`.
-pub fn proto_has_any_buildings_kind_of<H: TeamHost>(
-    h: &H,
-    proto: TeamPrototypeId,
-    kind_of: &KindOfMaskType,
-) -> bool {
+pub fn proto_has_any_buildings_kind_of<H: TeamHost>(h: &H, proto: TeamPrototypeId, kind_of: &KindOfMaskType) -> bool {
     let mut cur = first_instance(h, proto);
     while let Some(t) = cur {
         if team_has_any_buildings_kind_of(h, t, *kind_of) {
@@ -1808,10 +1564,7 @@ pub fn proto_update_state<H: TeamHost>(h: &mut H, proto: TeamPrototypeId) -> TRe
 }
 
 /// `TeamPrototype::evaluateProductionCondition()`.
-pub fn proto_evaluate_production_condition<H: TeamHost>(
-    h: &mut H,
-    proto: TeamPrototypeId,
-) -> TResult<bool> {
+pub fn proto_evaluate_production_condition<H: TeamHost>(h: &mut H, proto: TeamPrototypeId) -> TResult<bool> {
     if proto_ref(h, proto)?.production_condition_always_false {
         // Set if we don't have a script.
         return Ok(false);
@@ -1823,25 +1576,17 @@ pub fn proto_evaluate_production_condition<H: TeamHost>(
         }
         let delay_seconds = h.script_delay_eval_seconds(s);
         if delay_seconds > 0 {
-            let f = h
-                .frame()
-                .wrapping_add(delay_seconds.wrapping_mul(LOGICFRAMES_PER_SECOND) as u32);
+            let f = h.frame().wrapping_add(delay_seconds.wrapping_mul(LOGICFRAMES_PER_SECOND) as u32);
             h.script_set_frame_to_evaluate(s, f);
         }
         let owner = proto_get_controlling_player(h, proto)?;
         return Ok(h.script_evaluate_conditions(s, None, owner));
     }
     // We don't have a script yet, so check for one.
-    let cond = proto_ref(h, proto)?
-        .team_template
-        .production_condition
-        .clone();
+    let cond = proto_ref(h, proto)?.team_template.production_condition.clone();
     if cond.is_empty() {
         // No script defined.
-        h.teams_mut()
-            .prototype_mut(proto)
-            .ok_or(TeamError::Null)?
-            .production_condition_always_false = true;
+        h.teams_mut().prototype_mut(proto).ok_or(TeamError::Null)?.production_condition_always_false = true;
         return Ok(false);
     }
     if let Some(p_script) = h.script_find_by_name(&cond) {
@@ -1853,27 +1598,18 @@ pub fn proto_evaluate_production_condition<H: TeamHost>(
             GameDifficulty::Hard => h.script_is_hard(p_script),
         };
         if !ok {
-            h.teams_mut()
-                .prototype_mut(proto)
-                .ok_or(TeamError::Null)?
-                .production_condition_always_false = true;
+            h.teams_mut().prototype_mut(proto).ok_or(TeamError::Null)?.production_condition_always_false = true;
             return Ok(false);
         }
 
         // Make a copy of the script locally, just for paranoia's sake.
         let copy = h.script_duplicate(p_script);
-        h.teams_mut()
-            .prototype_mut(proto)
-            .ok_or(TeamError::Null)?
-            .production_condition_script = Some(copy);
+        h.teams_mut().prototype_mut(proto).ok_or(TeamError::Null)?.production_condition_script = Some(copy);
         let owner = proto_get_controlling_player(h, proto)?;
         return Ok(h.script_evaluate_conditions(copy, None, owner));
     }
     // Couldn't find a script.
-    h.teams_mut()
-        .prototype_mut(proto)
-        .ok_or(TeamError::Null)?
-        .production_condition_always_false = true;
+    h.teams_mut().prototype_mut(proto).ok_or(TeamError::Null)?.production_condition_always_false = true;
     Ok(false)
 }
 
@@ -1927,13 +1663,7 @@ pub fn factory_init_from_sides<H: TeamHost>(h: &mut H, sides: &SidesList) -> TRe
 
 /// `TeamFactory::initTeam(name, owner, isSingleton, d)`: a prototype owned by the named player (the neutral player
 /// when there is none), and for a singleton its one team.
-pub fn factory_init_team<H: TeamHost>(
-    h: &mut H,
-    name: &[u8],
-    owner: &[u8],
-    is_singleton: bool,
-    d: &Dict,
-) -> TResult<()> {
+pub fn factory_init_team<H: TeamHost>(h: &mut H, name: &[u8], owner: &[u8], is_singleton: bool, d: &Dict) -> TResult<()> {
     let nk = h.name_to_key(owner);
     let mut p_owner = h.player_list_find_with_name_key(nk);
     if p_owner.is_none() {
@@ -1950,18 +1680,14 @@ pub fn factory_init_team<H: TeamHost>(
 
 /// `TeamFactory::addTeamPrototypeToList(team)`: under its name key, unless the key is taken.
 pub fn factory_add_team_prototype_to_list<H: TeamHost>(h: &mut H, proto: TeamPrototypeId) {
-    let Some(name) = h.teams().prototype(proto).map(|p| p.name.clone()) else {
-        return;
-    };
+    let Some(name) = h.teams().prototype(proto).map(|p| p.name.clone()) else { return };
     let nk = h.name_to_key(&name);
     h.teams_mut().add_prototype_to_list(nk, proto);
 }
 
 /// `TeamFactory::removeTeamPrototypeFromList(team)`: by name key, whoever holds it.
 pub fn factory_remove_team_prototype_from_list<H: TeamHost>(h: &mut H, proto: TeamPrototypeId) {
-    let Some(name) = h.teams().prototype(proto).map(|p| p.name.clone()) else {
-        return;
-    };
+    let Some(name) = h.teams().prototype(proto).map(|p| p.name.clone()) else { return };
     let nk = h.name_to_key(&name);
     h.teams_mut().remove_prototype_from_list(nk);
 }
@@ -1973,14 +1699,8 @@ pub fn factory_find_team_prototype<H: TeamHost>(h: &mut H, name: &[u8]) -> Optio
 }
 
 /// `TeamFactory::findTeamPrototypeByID(id)`: the map walked in key order.
-pub fn factory_find_team_prototype_by_id<H: TeamHost>(
-    h: &H,
-    id: TeamPrototypeId,
-) -> Option<TeamPrototypeId> {
-    h.teams()
-        .by_key()
-        .map(|(_, p)| p)
-        .find(|p| h.teams().prototype(*p).is_some_and(|x| x.id == id))
+pub fn factory_find_team_prototype_by_id<H: TeamHost>(h: &H, id: TeamPrototypeId) -> Option<TeamPrototypeId> {
+    h.teams().by_key().map(|(_, p)| p).find(|p| h.teams().prototype(*p).is_some_and(|x| x.id == id))
 }
 
 /// `TeamFactory::findTeamByID(teamID)`: every prototype of the map, in key order, searched for the id.
@@ -2044,10 +1764,7 @@ pub fn team_set_active<H: TeamHost>(h: &mut H, team: TeamId) -> TResult<()> {
 
 /// `TeamFactory::createTeamOnPrototype(prototype)`: throws `ERROR_BAD_ARG` for `NULL`; a singleton gives its one
 /// team back.
-pub fn factory_create_team_on_prototype<H: TeamHost>(
-    h: &mut H,
-    prototype: Option<TeamPrototypeId>,
-) -> TResult<TeamId> {
+pub fn factory_create_team_on_prototype<H: TeamHost>(h: &mut H, prototype: Option<TeamPrototypeId>) -> TResult<TeamId> {
     let prototype = prototype.ok_or(TeamError::BadArg)?;
     if proto_ref(h, prototype)?.get_is_singleton() {
         if let Some(t) = h.teams().first_instance(prototype) {
@@ -2063,9 +1780,7 @@ pub fn factory_create_team_on_prototype<H: TeamHost>(
 /// `TeamFactory::findTeam(name)`: the newest team of the prototype, making one if it has none and is not a
 /// singleton.
 pub fn factory_find_team<H: TeamHost>(h: &mut H, name: &[u8]) -> TResult<Option<TeamId>> {
-    let Some(tp) = factory_find_team_prototype(h, name) else {
-        return Ok(None);
-    };
+    let Some(tp) = factory_find_team_prototype(h, name) else { return Ok(None) };
     let mut t = h.teams().first_instance(tp);
     if t.is_none() && !proto_ref(h, tp)?.get_is_singleton() {
         t = Some(factory_create_inactive_team(h, name)?);
@@ -2075,10 +1790,7 @@ pub fn factory_find_team<H: TeamHost>(h: &mut H, name: &[u8]) -> TResult<Option<
 
 /// `TeamFactory::teamAboutToBeDeleted(team)`: every prototype of the map drops its overrides for the team, then
 /// the player list is told.
-pub fn factory_team_about_to_be_deleted<H: TeamHost>(
-    h: &mut H,
-    team: Option<TeamId>,
-) -> TResult<()> {
+pub fn factory_team_about_to_be_deleted<H: TeamHost>(h: &mut H, team: Option<TeamId>) -> TResult<()> {
     let protos: Vec<TeamPrototypeId> = h.teams().by_key().map(|(_, p)| p).collect();
     for p in protos {
         proto_team_about_to_be_deleted(h, p, team)?;

@@ -28,20 +28,13 @@
 use std::sync::Arc;
 
 use crate::common::base_type::Coord3D;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, DOOR_1,
-    DOOR_NONE_AVAILABLE, UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, DOOR_1, DOOR_NONE_AVAILABLE, UPDATE_SLEEP_NONE};
 use crate::logic::modules::open_contain::CMD_FROM_AI;
-use crate::logic::modules::production_exit::{
-    exit_position, natural_rally_point, transform_point, RallyPoint,
-};
+use crate::logic::modules::production_exit::{exit_position, natural_rally_point, transform_point, RallyPoint};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -70,69 +63,27 @@ pub struct QueueProductionExitUpdateModuleData {
 
 /// `QueueProductionExitUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<QueueProductionExitUpdateModuleData>; 6] = [
-    FieldParse::new(
-        "UnitCreatePoint",
-        |ini, d, _| {
-            d.unit_create_point = ini.parse_coord3d()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "NaturalRallyPoint",
-        |ini, d, _| {
-            d.natural_rally_point = ini.parse_coord3d()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExitDelay",
-        |ini, d, _| {
-            d.exit_delay_data = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AllowAirborneCreation",
-        |ini, d, _| {
-            d.allow_airborne_creation_data = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "InitialBurst",
-        |ini, d, _| {
-            d.initial_burst = ini.parse_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("UnitCreatePoint", |ini, d, _| { d.unit_create_point = ini.parse_coord3d()?; Ok(()) }, UserData::None),
+    FieldParse::new("NaturalRallyPoint", |ini, d, _| { d.natural_rally_point = ini.parse_coord3d()?; Ok(()) }, UserData::None),
+    FieldParse::new("ExitDelay", |ini, d, _| { d.exit_delay_data = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("AllowAirborneCreation", |ini, d, _| { d.allow_airborne_creation_data = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("InitialBurst", |ini, d, _| { d.initial_burst = ini.parse_unsigned_int()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl QueueProductionExitUpdateModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, QueueProductionExitUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, QueueProductionExitUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<QueueProductionExitUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<QueueProductionExitUpdateModuleData> {
         let mut data = QueueProductionExitUpdateModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                QueueProductionExitUpdateModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, QueueProductionExitUpdateModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -158,9 +109,7 @@ pub struct QueueProductionExitUpdate {
 impl PartialEq for QueueProductionExitUpdate {
     /// The same object, the same data object (upstream compares pointers) and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
-            && self.state_words() == other.state_words()
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.state_words() == other.state_words()
     }
 }
 
@@ -172,22 +121,12 @@ impl QueueProductionExitUpdate {
 
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data), no delay or rally point,
     /// the burst count `InitialBurst`.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<QueueProductionExitUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<QueueProductionExitUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
         let current_burst_count = data.initial_burst;
-        Ok(QueueProductionExitUpdate {
-            update,
-            data,
-            current_delay: 0,
-            rally: RallyPoint::default(),
-            creation_clear_distance: 0.0,
-            current_burst_count,
-        })
+        Ok(QueueProductionExitUpdate { update, data, current_delay: 0, rally: RallyPoint::default(), creation_clear_distance: 0.0, current_burst_count })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -211,12 +150,7 @@ impl QueueProductionExitUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -269,9 +203,7 @@ impl QueueProductionExitUpdate {
 
     /// `exitObjectViaDoor(newObj, exitDoor)`.
     fn exit_object_via_door(&mut self, world: &mut World, creation: ObjectId, new_obj: ObjectId) {
-        let Some(exit_angle) = world.objects.find(creation).map(|o| o.thing.orientation()) else {
-            return;
-        };
+        let Some(exit_angle) = world.objects.find(creation).map(|o| o.thing.orientation()) else { return };
         let d = self.data.clone();
         let mut loc = transform_point(world, creation, &d.unit_create_point);
         // "make sure the point is on the terrain"
@@ -284,26 +216,16 @@ impl QueueProductionExitUpdate {
         let new_physics = world.objects.find(new_obj).and_then(|o| o.physics);
         let my_physics = world.objects.find(creation).and_then(|o| o.physics);
         if let (Some(mine), true, Some(theirs)) = (my_physics, creation_in_air, new_physics) {
-            let mut starting_force =
-                match world.module_call(creation, mine, ModuleCall::PhysicsGetVelocity) {
-                    ModuleReply::Coord(c) => c,
-                    _ => Coord3D::default(),
-                };
-            let mass = world
-                .module_call(new_obj, theirs, ModuleCall::PhysicsGetMass)
-                .as_real(0.0);
+            let mut starting_force = match world.module_call(creation, mine, ModuleCall::PhysicsGetVelocity) {
+                ModuleReply::Coord(c) => c,
+                _ => Coord3D::default(),
+            };
+            let mass = world.module_call(new_obj, theirs, ModuleCall::PhysicsGetMass).as_real(0.0);
             starting_force.x *= mass;
             starting_force.y *= mass;
             starting_force.z *= mass;
-            world.module_call(
-                new_obj,
-                theirs,
-                ModuleCall::PhysicsApplyMotiveForce(starting_force),
-            );
-            let pitch_rate = world
-                .module_call(new_obj, theirs, ModuleCall::PhysicsGetCenterOfMassOffset)
-                .as_real(0.0)
-                * STARTING_PITCH_COEFF;
+            world.module_call(new_obj, theirs, ModuleCall::PhysicsApplyMotiveForce(starting_force));
+            let pitch_rate = world.module_call(new_obj, theirs, ModuleCall::PhysicsGetCenterOfMassOffset).as_real(0.0) * STARTING_PITCH_COEFF;
             world.module_call(new_obj, theirs, ModuleCall::PhysicsSetPitchRate(pitch_rate));
         }
         // "@todo This really should be automatically wrapped up in an actication sequence for objects in general"
@@ -315,11 +237,7 @@ impl QueueProductionExitUpdate {
         if self.rally.exists {
             tmp = self.rally.point;
             if let Some(ai) = ai {
-                if world
-                    .module_call(new_obj, ai, ModuleCall::AiIsDoingGroundMovement)
-                    .as_bool()
-                    && world.contain_pathfind_adjust_destination(new_obj, &mut tmp)
-                {
+                if world.module_call(new_obj, ai, ModuleCall::AiIsDoingGroundMovement).as_bool() && world.contain_pathfind_adjust_destination(new_obj, &mut tmp) {
                     exit_path.push(tmp);
                 }
             }
@@ -327,61 +245,28 @@ impl QueueProductionExitUpdate {
             exit_path.push(tmp);
         }
         if let Some(ai) = ai {
-            world.module_call(
-                new_obj,
-                ai,
-                ModuleCall::AiFollowExitProductionPath {
-                    path: exit_path,
-                    ignore_object: creation,
-                    command_source: CMD_FROM_AI,
-                },
-            );
+            world.module_call(new_obj, ai, ModuleCall::AiFollowExitProductionPath { path: exit_path, ignore_object: creation, command_source: CMD_FROM_AI });
         }
         self.after_exit();
     }
 
     /// `exitObjectByBudding(newObj, budHost)`.
-    fn exit_object_by_budding(
-        &mut self,
-        world: &mut World,
-        me: ObjectId,
-        new_obj: ObjectId,
-        bud_host: ObjectId,
-    ) {
-        if let Some((pos, angle, layer)) = world
-            .objects
-            .find(bud_host)
-            .map(|o| (o.get_position(), o.thing.orientation(), o.layer))
-        {
+    fn exit_object_by_budding(&mut self, world: &mut World, me: ObjectId, new_obj: ObjectId, bud_host: ObjectId) {
+        if let Some((pos, angle, layer)) = world.objects.find(bud_host).map(|o| (o.get_position(), o.thing.orientation(), o.layer)) {
             // "object has provided a host for us"
             world.contain_set_position(new_obj, &pos);
             world.contain_set_orientation(new_obj, angle);
             world.contain_set_layer(new_obj, layer);
         } else {
             // "we need to just copy the host object"
-            let (pos, angle) = world
-                .objects
-                .find(me)
-                .map(|o| (o.get_position(), o.thing.orientation()))
-                .unwrap_or_default();
+            let (pos, angle) = world.objects.find(me).map(|o| (o.get_position(), o.thing.orientation())).unwrap_or_default();
             world.contain_set_position(new_obj, &pos);
             world.contain_set_orientation(new_obj, angle);
         }
         if let Some(ai) = world.objects.find(new_obj).and_then(|o| o.ai) {
             // "IOW, I cant stay here, if somebody else is here"
-            let pos = world
-                .objects
-                .find(new_obj)
-                .map(|o| o.get_position())
-                .unwrap_or_default();
-            world.module_call(
-                new_obj,
-                ai,
-                ModuleCall::AiMoveToPosition {
-                    pos,
-                    command_source: CMD_FROM_AI,
-                },
-            );
+            let pos = world.objects.find(new_obj).map(|o| o.get_position()).unwrap_or_default();
+            world.module_call(new_obj, ai, ModuleCall::AiMoveToPosition { pos, command_source: CMD_FROM_AI });
         }
         self.after_exit();
     }
@@ -397,9 +282,7 @@ impl UpdateBehavior for QueueProductionExitUpdate {
             self.current_delay = 0;
             return UPDATE_SLEEP_NONE;
         }
-        self.current_delay = self
-            .current_delay
-            .wrapping_sub(1 + u32::from(crate::logic::modules::plant(1845)));
+        self.current_delay = self.current_delay.wrapping_sub(1 + u32::from(crate::logic::modules::plant(1845)));
         UPDATE_SLEEP_NONE
     }
     /// The fields after the base: the delay, the rally point and whether it exists, the clear distance, the burst count.
@@ -414,11 +297,7 @@ impl UpdateBehavior for QueueProductionExitUpdate {
         match call {
             ModuleCall::HasUpdateExitInterface => ModuleReply::Bool(true),
             ModuleCall::IsExitBusy => ModuleReply::Bool(false),
-            ModuleCall::ReserveDoorForExit { .. } => ModuleReply::Int(if self.is_free_to_exit() {
-                DOOR_1
-            } else {
-                DOOR_NONE_AVAILABLE
-            }),
+            ModuleCall::ReserveDoorForExit { .. } => ModuleReply::Int(if self.is_free_to_exit() { DOOR_1 } else { DOOR_NONE_AVAILABLE }),
             ModuleCall::ExitObjectViaDoor { obj, .. } => {
                 self.exit_object_via_door(world, me.object, obj);
                 ModuleReply::Done
@@ -432,23 +311,10 @@ impl UpdateBehavior for QueueProductionExitUpdate {
                 self.rally.set(&p);
                 ModuleReply::Done
             }
-            ModuleCall::GetRallyPoint => self
-                .rally
-                .get()
-                .map_or(ModuleReply::Unhandled, ModuleReply::Coord),
-            ModuleCall::GetNaturalRallyPoint => ModuleReply::Coord(natural_rally_point(
-                world,
-                me.object,
-                &self.data.natural_rally_point,
-                true,
-            )),
-            ModuleCall::GetNaturalRallyPointWithOffset(offset) => ModuleReply::Coord(
-                natural_rally_point(world, me.object, &self.data.natural_rally_point, offset),
-            ),
-            ModuleCall::GetExitPosition => {
-                exit_position(world, me.object, &self.data.unit_create_point)
-                    .map_or(ModuleReply::Unhandled, ModuleReply::Coord)
-            }
+            ModuleCall::GetRallyPoint => self.rally.get().map_or(ModuleReply::Unhandled, ModuleReply::Coord),
+            ModuleCall::GetNaturalRallyPoint => ModuleReply::Coord(natural_rally_point(world, me.object, &self.data.natural_rally_point, true)),
+            ModuleCall::GetNaturalRallyPointWithOffset(offset) => ModuleReply::Coord(natural_rally_point(world, me.object, &self.data.natural_rally_point, offset)),
+            ModuleCall::GetExitPosition => exit_position(world, me.object, &self.data.unit_create_point).map_or(ModuleReply::Unhandled, ModuleReply::Coord),
             _ => ModuleReply::Unhandled,
         }
     }
@@ -482,7 +348,5 @@ impl Snapshot for QueueProductionExitUpdate {
 
 /// The factory's `NewModuleDataProc` for `QueueProductionExitUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::QueueProductionExitUpdate(Arc::new(
-        QueueProductionExitUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::QueueProductionExitUpdate(Arc::new(QueueProductionExitUpdateModuleData::friend_new_module_data(ini)?)))
 }

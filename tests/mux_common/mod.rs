@@ -137,9 +137,7 @@ pub fn gen_name(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
     }
     match g.below(100) {
         0..=64 if !upgrades.is_empty() => upgrades[g.below(upgrades.len() as u32) as usize].clone(),
-        65..=74 if !upgrades.is_empty() => {
-            upgrades[g.below(upgrades.len() as u32) as usize].to_lowercase()
-        }
+        65..=74 if !upgrades.is_empty() => upgrades[g.below(upgrades.len() as u32) as usize].to_lowercase(),
         75..=76 => format!("Unknown{}", g.below(3)),
         77 => "Up9".to_string(),
         78..=79 => pick(g, &["None", "none", "NONE"]).to_string(),
@@ -150,10 +148,7 @@ pub fn gen_name(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
 
 pub fn gen_list(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
     let n = 1 + g.below(3);
-    (0..n)
-        .map(|_| gen_name(g, upgrades, clean))
-        .collect::<Vec<_>>()
-        .join(" ")
+    (0..n).map(|_| gen_name(g, upgrades, clean)).collect::<Vec<_>>().join(" ")
 }
 
 /// The five fields of the mux, each present with the probability the module's tests have always used.
@@ -181,11 +176,7 @@ pub fn gen_mask(g: &mut Gen, n_up: usize, at_least: u32) -> [u32; 4] {
     let mut w = [0u32; 4];
     if n_up > 0 {
         // a third of the masks name most of the upgrades, so that a TriggeredBy list is met more often than by chance
-        let extra = if g.below(3) == 0 {
-            g.below(n_up as u32 + 1)
-        } else {
-            g.below(3)
-        };
+        let extra = if g.below(3) == 0 { g.below(n_up as u32 + 1) } else { g.below(3) };
         for _ in 0..at_least + extra {
             let b = g.below(n_up as u32) as usize;
             w[b / 32] |= 1 << (b % 32);
@@ -205,14 +196,7 @@ pub fn gen_frame(g: &mut Gen) -> u32 {
 }
 
 /// Runs an xfer of module slot `idx` of object `me`: `how` 0 saves (to the file `file`), 1 loads `saved` (cut to 512 bytes), 2 computes the CRC.
-pub fn run_xfer(
-    w: &mut World,
-    me: ObjectId,
-    idx: usize,
-    how: u32,
-    saved: &[u8],
-    file: &str,
-) -> (i32, Vec<u8>, u32) {
+pub fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8], file: &str) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,

@@ -34,9 +34,7 @@
 
 mod support;
 
-use rts_lockstep_engine::common::partition_solver::{
-    PairObjectIdAndUInt, PartitionSolver, SolutionType,
-};
+use rts_lockstep_engine::common::partition_solver::{PairObjectIdAndUInt, PartitionSolver, SolutionType};
 use rts_lockstep_engine::differential as cpp;
 use support::{Check, Gen};
 
@@ -55,13 +53,7 @@ fn sizes(g: &mut Gen, n: usize, distinct: bool) -> Vec<u32> {
             0 => 0,
             1 => 0x8000_0000 - g.below(3),
             2 => 0x8000_0000 + g.below(3),
-            _ => {
-                if range == u32::MAX {
-                    g.u32()
-                } else {
-                    g.u32() % range
-                }
-            }
+            _ => if range == u32::MAX { g.u32() } else { g.u32() % range },
         };
         if !distinct || !v.contains(&x) {
             v.push(x);
@@ -78,32 +70,13 @@ fn cpp_solve(how: i32, e: &[PairObjectIdAndUInt], s: &[PairObjectIdAndUInt]) -> 
     let (ei, es): (Vec<i32>, Vec<u32>) = e.iter().copied().unzip();
     let (si, ss): (Vec<i32>, Vec<u32>) = s.iter().copied().unzip();
     let mut out = vec![0i32; 2 * 32];
-    let n = unsafe {
-        cpp::ref_partition_solve(
-            how,
-            ei.as_ptr(),
-            es.as_ptr(),
-            e.len() as i32,
-            si.as_ptr(),
-            ss.as_ptr(),
-            s.len() as i32,
-            out.as_mut_ptr(),
-            32,
-        )
-    };
+    let n = unsafe { cpp::ref_partition_solve(how, ei.as_ptr(), es.as_ptr(), e.len() as i32, si.as_ptr(), ss.as_ptr(), s.len() as i32, out.as_mut_ptr(), 32) };
     assert!(n >= 0, "output buffer");
-    (0..n as usize)
-        .map(|i| (out[2 * i], out[2 * i + 1]))
-        .collect()
+    (0..n as usize).map(|i| (out[2 * i], out[2 * i + 1])).collect()
 }
 
 /// The planted-bug variants, written out: `(spaces smallest first, strict fit)`.
-fn planted(
-    e: &[PairObjectIdAndUInt],
-    s: &[PairObjectIdAndUInt],
-    smallest_first: bool,
-    strict: bool,
-) -> Vec<(i32, i32)> {
+fn planted(e: &[PairObjectIdAndUInt], s: &[PairObjectIdAndUInt], smallest_first: bool, strict: bool) -> Vec<(i32, i32)> {
     let mut data = e.to_vec();
     let mut spaces = s.to_vec();
     data.sort_by_key(|e| std::cmp::Reverse(e.1));
@@ -150,33 +123,19 @@ fn partition_solver_matches() {
         let want = cpp_solve(0, &e, &s);
         placed += want.len() as u64;
         skipped += (e.len() - want.len()) as u64;
-        ok.eq(p.get_solution().clone(), want.clone(), || {
-            format!("entries {e:?} spaces {s:?}")
-        });
-        bug_order.eq(planted(&e, &s, true, false), want.clone(), || {
-            format!("entries {e:?} spaces {s:?}")
-        });
-        bug_fit.eq(planted(&e, &s, false, true), want, || {
-            format!("entries {e:?} spaces {s:?}")
-        });
+        ok.eq(p.get_solution().clone(), want.clone(), || format!("entries {e:?} spaces {s:?}"));
+        bug_order.eq(planted(&e, &s, true, false), want.clone(), || format!("entries {e:?} spaces {s:?}"));
+        bug_fit.eq(planted(&e, &s, false, true), want, || format!("entries {e:?} spaces {s:?}"));
         let mut q = PartitionSolver::new(&e, &s, SolutionType::PreferCorrectSolution);
         q.solve();
-        correct.eq(q.get_solution().clone(), cpp_solve(1, &e, &s), || {
-            format!("entries {e:?} spaces {s:?}")
-        });
+        correct.eq(q.get_solution().clone(), cpp_solve(1, &e, &s), || format!("entries {e:?} spaces {s:?}"));
     }
     println!(
         "PartitionSolver: {total} problems generated, {tied} had a tie in the entry or space sizes (kept out), {} compared; {placed} placements, {skipped} entries left unplaced",
         total - tied
     );
-    assert!(
-        tied > 1000 && total - tied > 5000,
-        "the generator must give both tied and tie-free problems"
-    );
-    assert!(
-        placed > 5000 && skipped > 1000,
-        "the problems must exercise both placing and skipping"
-    );
+    assert!(tied > 1000 && total - tied > 5000, "the generator must give both tied and tie-free problems");
+    assert!(placed > 5000 && skipped > 1000, "the problems must exercise both placing and skipping");
     ok.finish();
     correct.finish();
     bug_order.finish_planted();

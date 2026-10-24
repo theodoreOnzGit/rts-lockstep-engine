@@ -75,13 +75,8 @@ pub const SLOTS: usize = WEAPONSLOT_COUNT as usize;
 pub const WEAPON_SLOT_TYPE_NAMES: [&str; SLOTS] = ["PRIMARY", "SECONDARY", "TERTIARY"];
 
 /// `TheCommandSourceMaskNames[]` (AI.h), without the `NULL`.
-pub const COMMAND_SOURCE_MASK_NAMES: [&str; 5] = [
-    "FROM_PLAYER",
-    "FROM_SCRIPT",
-    "FROM_AI",
-    "FROM_DOZER",
-    "DEFAULT_SWITCH_WEAPON",
-];
+pub const COMMAND_SOURCE_MASK_NAMES: [&str; 5] =
+    ["FROM_PLAYER", "FROM_SCRIPT", "FROM_AI", "FROM_DOZER", "DEFAULT_SWITCH_WEAPON"];
 
 /// The part of `TheWeaponStore` that `findWeaponTemplate` uses: which weapon
 /// templates exist, by name key (a cut point, see the module docs).
@@ -109,17 +104,11 @@ impl WeaponTemplateTable {
     /// `findWeaponTemplate(name)`: `None` for `None` (any case) without
     /// touching the name keys; otherwise `nameToKey(name)` and the template
     /// under it, if any.
-    pub fn find_weapon_template(
-        &self,
-        names: &mut NameKeyGenerator,
-        name: &[u8],
-    ) -> IniResult<Option<NameKeyType>> {
+    pub fn find_weapon_template(&self, names: &mut NameKeyGenerator, name: &[u8]) -> IniResult<Option<NameKeyType>> {
         if name.eq_ignore_ascii_case(b"None") {
             return Ok(None);
         }
-        let key = names
-            .try_name_to_key(name)
-            .map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
+        let key = names.try_name_to_key(name).map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
         Ok(self.keys.contains(&key).then_some(key))
     }
 }
@@ -169,11 +158,7 @@ impl WeaponTemplateSet {
     /// A set for tests and the differential test, built without INI: the
     /// conditions, and whether the primary slot has a weapon (a name key of
     /// 1; no weapon store is consulted).
-    pub fn from_values(
-        thing_template: Option<u16>,
-        types: WeaponSetFlags,
-        has_primary_weapon: bool,
-    ) -> Self {
+    pub fn from_values(thing_template: Option<u16>, types: WeaponSetFlags, has_primary_weapon: bool) -> Self {
         let mut s = WeaponTemplateSet::new();
         s.thing_template = thing_template;
         s.types = types;
@@ -197,15 +182,7 @@ impl WeaponTemplateSet {
         is_reload_time_shared: bool,
         is_weapon_lock_shared_across_sets: bool,
     ) -> Self {
-        WeaponTemplateSet {
-            thing_template,
-            types,
-            template,
-            auto_choose_mask,
-            preferred_against,
-            is_reload_time_shared,
-            is_weapon_lock_shared_across_sets,
-        }
+        WeaponTemplateSet { thing_template, types, template, auto_choose_mask, preferred_against, is_reload_time_shared, is_weapon_lock_shared_across_sets }
     }
     // --- end p1w8-sonnet ---
 
@@ -278,11 +255,7 @@ impl WeaponTemplateSet {
         names: &mut NameKeyGenerator,
         weapons: &WeaponTemplateTable,
     ) -> IniResult<()> {
-        let mut fill = WeaponFill {
-            set: self,
-            names,
-            weapons,
-        };
+        let mut fill = WeaponFill { set: self, names, weapons };
         ini.init_from_ini(&mut fill, &weapon_set_fields())?;
         self.thing_template = Some(tt);
         Ok(())
@@ -330,10 +303,7 @@ fn f_weapon(ini: &mut Ini<'_>, w: &mut WeaponFill<'_>, _: &UserData) -> IniResul
 /// over the command source names, into that slot's mask.
 fn f_auto_choose(ini: &mut Ini<'_>, w: &mut WeaponFill<'_>, _: &UserData) -> IniResult<()> {
     let slot = next_slot(ini)?;
-    ini.parse_bit_string32(
-        &mut w.set.auto_choose_mask[slot],
-        &COMMAND_SOURCE_MASK_NAMES,
-    )
+    ini.parse_bit_string32(&mut w.set.auto_choose_mask[slot], &COMMAND_SOURCE_MASK_NAMES)
 }
 
 /// `WeaponTemplateSet::parsePreferredAgainst`: the slot, then a kind-of mask.
@@ -386,10 +356,7 @@ mod tests {
         Ok(())
     }
 
-    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse {
-        token: "Set",
-        parse: block,
-    }];
+    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse { token: "Set", parse: block }];
 
     fn load(text: &[u8]) -> (Ctx, IniResult<()>) {
         let mut names = NameKeyGenerator::new();
@@ -399,19 +366,8 @@ mod tests {
             let k = names.name_to_key(w.as_bytes());
             weapons.add(k);
         }
-        let mut c = Ctx {
-            sets: Vec::new(),
-            names,
-            weapons,
-        };
-        let r = Ini::load(
-            b"w.ini",
-            text,
-            IniLoadType::Overwrite,
-            None,
-            &BLOCKS,
-            &mut c,
-        );
+        let mut c = Ctx { sets: Vec::new(), names, weapons };
+        let r = Ini::load(b"w.ini", text, IniLoadType::Overwrite, None, &BLOCKS, &mut c);
         (c, r)
     }
 
@@ -424,24 +380,15 @@ ShareWeaponReloadTime = Yes\n WeaponLockSharedAcrossSets = Yes\nEnd\n",
         );
         r.unwrap();
         let s = &c.sets[0];
-        assert!(
-            s.test_weapon_set_flag(WEAPONSET_VETERAN) && s.test_weapon_set_flag(WEAPONSET_ELITE)
-        );
+        assert!(s.test_weapon_set_flag(WEAPONSET_VETERAN) && s.test_weapon_set_flag(WEAPONSET_ELITE));
         assert_eq!(s.thing_template(), Some(9));
         assert!(s.get_nth(0).is_some());
         assert_eq!(s.get_nth(1), None, "None is no weapon");
-        assert_eq!(
-            s.get_nth(2),
-            None,
-            "a weapon the store does not hold is null"
-        );
+        assert_eq!(s.get_nth(2), None, "a weapon the store does not hold is null");
         assert!(s.has_any_weapons());
         assert_eq!(s.get_nth_command_source_mask(0), 0xffff_ffff);
         assert_eq!(s.get_nth_command_source_mask(1), 0b110);
-        assert!(
-            s.get_nth_preferred_against_mask(0).test(KINDOF_INFANTRY)
-                && s.get_nth_preferred_against_mask(0).test(KINDOF_VEHICLE)
-        );
+        assert!(s.get_nth_preferred_against_mask(0).test(KINDOF_INFANTRY) && s.get_nth_preferred_against_mask(0).test(KINDOF_VEHICLE));
         assert!(!s.get_nth_preferred_against_mask(1).any());
         assert!(s.is_shared_reload_time() && s.is_weapon_lock_shared_across_sets());
     }
@@ -460,15 +407,9 @@ ShareWeaponReloadTime = Yes\n WeaponLockSharedAcrossSets = Yes\nEnd\n",
         let mut names = NameKeyGenerator::new();
         names.reset();
         let table = WeaponTemplateTable::new();
-        assert_eq!(
-            table.find_weapon_template(&mut names, b"nOnE").unwrap(),
-            None
-        );
+        assert_eq!(table.find_weapon_template(&mut names, b"nOnE").unwrap(), None);
         assert_eq!(names.name_to_key(b"Next"), NameKeyType(1));
-        assert_eq!(
-            table.find_weapon_template(&mut names, b"Gone").unwrap(),
-            None
-        );
+        assert_eq!(table.find_weapon_template(&mut names, b"Gone").unwrap(), None);
         assert_eq!(names.name_to_key(b"After"), NameKeyType(3));
     }
 

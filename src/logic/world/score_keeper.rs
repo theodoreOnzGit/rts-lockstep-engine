@@ -62,8 +62,8 @@ use std::collections::BTreeMap;
 use super::ids::PlayerIndex;
 use crate::common::game_common::MAX_PLAYER_COUNT;
 use crate::common::kind_of::{
-    KindOfMaskType, KINDOFMASK_NONE, KINDOF_INFANTRY, KINDOF_SCORE, KINDOF_SCORE_CREATE,
-    KINDOF_SCORE_DESTROY, KINDOF_STRUCTURE, KINDOF_VEHICLE,
+    KindOfMaskType, KINDOF_INFANTRY, KINDOF_SCORE, KINDOF_SCORE_CREATE, KINDOF_SCORE_DESTROY,
+    KINDOF_STRUCTURE, KINDOF_VEHICLE, KINDOFMASK_NONE,
 };
 use crate::common::xfer::{Xfer, XferResult, XferStatus, XferVersion};
 
@@ -213,9 +213,7 @@ impl ScoreKeeper {
 
     /// `getTotalUnitsDestroyed()`: over every owner, ours included.
     pub fn total_units_destroyed(&self) -> i32 {
-        self.total_units_destroyed
-            .iter()
-            .fold(0i32, |c, &n| c.wrapping_add(n))
+        self.total_units_destroyed.iter().fold(0i32, |c, &n| c.wrapping_add(n))
     }
 
     /// `getTotalUnitsBuilt()`.
@@ -230,9 +228,7 @@ impl ScoreKeeper {
 
     /// `getTotalBuildingsDestroyed()`: over every owner, ours included.
     pub fn total_buildings_destroyed(&self) -> i32 {
-        self.total_buildings_destroyed
-            .iter()
-            .fold(0i32, |c, &n| c.wrapping_add(n))
+        self.total_buildings_destroyed.iter().fold(0i32, |c, &n| c.wrapping_add(n))
     }
 
     /// `getTotalBuildingsBuilt()`.
@@ -269,9 +265,7 @@ impl ScoreKeeper {
         {
             self.total_buildings_built = self.total_buildings_built.wrapping_add(1);
             add_to_count = true;
-        } else if (k.test(KINDOF_INFANTRY) || k.test(KINDOF_VEHICLE))
-            && (k.test(KINDOF_SCORE) || k.test(KINDOF_SCORE_CREATE))
-        {
+        } else if (k.test(KINDOF_INFANTRY) || k.test(KINDOF_VEHICLE)) && (k.test(KINDOF_SCORE) || k.test(KINDOF_SCORE_CREATE)) {
             self.total_units_built = self.total_units_built.wrapping_add(1);
             add_to_count = true;
         }
@@ -293,9 +287,7 @@ impl ScoreKeeper {
         {
             self.total_buildings_built = self.total_buildings_built.wrapping_sub(1);
             remove_from_count = true;
-        } else if (k.test(KINDOF_INFANTRY) || k.test(KINDOF_VEHICLE))
-            && (k.test(KINDOF_SCORE) || k.test(KINDOF_SCORE_CREATE))
-        {
+        } else if (k.test(KINDOF_INFANTRY) || k.test(KINDOF_VEHICLE)) && (k.test(KINDOF_SCORE) || k.test(KINDOF_SCORE_CREATE)) {
             self.total_units_built = self.total_units_built.wrapping_sub(1);
             remove_from_count = true;
         }
@@ -347,11 +339,9 @@ impl ScoreKeeper {
         let mut add_to_count = false;
         if o.kind_of.test(KINDOF_STRUCTURE) {
             if o.kind_of.test(KINDOF_SCORE) {
-                self.total_faction_buildings_captured =
-                    self.total_faction_buildings_captured.wrapping_add(1);
+                self.total_faction_buildings_captured = self.total_faction_buildings_captured.wrapping_add(1);
             } else {
-                self.total_tech_buildings_captured =
-                    self.total_tech_buildings_captured.wrapping_add(1);
+                self.total_tech_buildings_captured = self.total_tech_buildings_captured.wrapping_add(1);
             }
             add_to_count = true;
         }
@@ -376,8 +366,7 @@ impl ScoreKeeper {
             || k.test_set_and_clear(&scoring_building_destroy_mask(), &KINDOFMASK_NONE)
         {
             if !o.under_construction {
-                self.total_buildings_destroyed[slot] =
-                    self.total_buildings_destroyed[slot].wrapping_add(1);
+                self.total_buildings_destroyed[slot] = self.total_buildings_destroyed[slot].wrapping_add(1);
                 add_to_count = true;
             }
         } else if (k.test(KINDOF_INFANTRY) || k.test(KINDOF_VEHICLE))
@@ -484,11 +473,7 @@ impl ScoreKeeper {
     ///
     /// The per-owner arrays go out as 16 native-endian `Int`s (`xferUser`),
     /// and the per-owner maps as a count of 16 followed by 16 maps.
-    pub fn xfer<X: Xfer + ?Sized>(
-        &mut self,
-        xfer: &mut X,
-        known: &mut impl FnMut(&[u8]) -> bool,
-    ) -> XferResult<()> {
+    pub fn xfer<X: Xfer + ?Sized>(&mut self, xfer: &mut X, known: &mut impl FnMut(&[u8]) -> bool) -> XferResult<()> {
         let current: XferVersion = 1;
         let mut version = current;
         xfer.xfer_version(&mut version, current)?;
@@ -520,22 +505,14 @@ impl ScoreKeeper {
 
 /// `xferUser(array, sizeof(Int) * MAX_PLAYER_COUNT)`: the raw bytes of the
 /// array, native (little-endian) `Int`s.
-fn xfer_int_array<X: Xfer + ?Sized>(
-    xfer: &mut X,
-    values: &mut [i32; MAX_PLAYER_COUNT as usize],
-) -> XferResult<()> {
+fn xfer_int_array<X: Xfer + ?Sized>(xfer: &mut X, values: &mut [i32; MAX_PLAYER_COUNT as usize]) -> XferResult<()> {
     let mut bytes = [0u8; 4 * MAX_PLAYER_COUNT as usize];
     for (i, v) in values.iter().enumerate() {
         bytes[4 * i..4 * i + 4].copy_from_slice(&v.to_le_bytes());
     }
     xfer.xfer_user(&mut bytes)?;
     for (i, v) in values.iter_mut().enumerate() {
-        *v = i32::from_le_bytes([
-            bytes[4 * i],
-            bytes[4 * i + 1],
-            bytes[4 * i + 2],
-            bytes[4 * i + 3],
-        ]);
+        *v = i32::from_le_bytes([bytes[4 * i], bytes[4 * i + 1], bytes[4 * i + 2], bytes[4 * i + 3]]);
     }
     Ok(())
 }
@@ -561,19 +538,8 @@ mod tests {
         s.add_object_built(&tank, true);
         assert_eq!(s.total_units_built(), 2);
         assert_eq!(s.calculate_score(), 200);
-        assert_eq!(
-            s.get_total_objects_built(|n| n == b"Tank"),
-            1,
-            "entries, not counts"
-        );
-        assert_eq!(
-            s.get_total_units_built(
-                &KindOfMaskType::from_indices(&[KINDOF_VEHICLE]),
-                &KINDOFMASK_NONE,
-                |_| Some(tank.kind_of)
-            ),
-            2
-        );
+        assert_eq!(s.get_total_objects_built(|n| n == b"Tank"), 1, "entries, not counts");
+        assert_eq!(s.get_total_units_built(&KindOfMaskType::from_indices(&[KINDOF_VEHICLE]), &KINDOFMASK_NONE, |_| Some(tank.kind_of)), 2);
         s.remove_object_built(&tank, true);
         assert_eq!(s.total_units_built(), 1);
     }
@@ -593,10 +559,7 @@ mod tests {
     #[test]
     fn scoring_off_changes_nothing() {
         let mut s = ScoreKeeper::new();
-        s.add_object_built(
-            &object("X", &[KINDOF_STRUCTURE, KINDOF_SCORE], 0, false),
-            false,
-        );
+        s.add_object_built(&object("X", &[KINDOF_STRUCTURE, KINDOF_SCORE], 0, false), false);
         s.add_money_earned(5);
         assert_eq!(s.total_buildings_built(), 0);
         assert_eq!(s.total_money_earned(), 5, "the money totals are not gated");
@@ -605,18 +568,9 @@ mod tests {
     #[test]
     fn a_capture_is_faction_or_tech_by_the_score_kind() {
         let mut s = ScoreKeeper::new();
-        s.add_object_captured(
-            &object("Barracks", &[KINDOF_STRUCTURE, KINDOF_SCORE], 0, false),
-            true,
-        );
+        s.add_object_captured(&object("Barracks", &[KINDOF_STRUCTURE, KINDOF_SCORE], 0, false), true);
         s.add_object_captured(&object("Radar", &[KINDOF_STRUCTURE], 0, false), true);
-        assert_eq!(
-            (
-                s.total_faction_buildings_captured(),
-                s.total_tech_buildings_captured()
-            ),
-            (1, 1)
-        );
+        assert_eq!((s.total_faction_buildings_captured(), s.total_tech_buildings_captured()), (1, 1));
     }
 
     #[test]
@@ -625,10 +579,7 @@ mod tests {
         let site = object("Dozer", &[KINDOF_STRUCTURE, KINDOF_SCORE_DESTROY], 1, true);
         s.add_object_destroyed(&site, true);
         s.add_object_lost(&site, true);
-        assert_eq!(
-            (s.total_buildings_destroyed(), s.total_buildings_lost()),
-            (0, 0)
-        );
+        assert_eq!((s.total_buildings_destroyed(), s.total_buildings_lost()), (0, 0));
         let built = object("Dozer", &[KINDOF_STRUCTURE, KINDOF_SCORE_DESTROY], 1, false);
         s.add_object_destroyed(&built, true);
         assert_eq!(s.total_buildings_destroyed(), 1);

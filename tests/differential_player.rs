@@ -132,50 +132,40 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use rts_lockstep_engine::common::base_type::{Coord2D, Coord3D};
 use rts_lockstep_engine::common::dict::Dict;
-use rts_lockstep_engine::common::game_common::{
-    GameDifficulty, PlayerType, Relationship, VeterancyLevel,
-};
+use rts_lockstep_engine::common::game_common::{GameDifficulty, PlayerType, Relationship, VeterancyLevel};
 use rts_lockstep_engine::common::game_type::ObjectId;
 use rts_lockstep_engine::common::handicap::{Handicap, HandicapType};
 use rts_lockstep_engine::common::kind_of::{
-    KindOfMaskType, KindOfType, KINDOF_AIRCRAFT, KINDOF_COMMANDCENTER, KINDOF_COUNT,
-    KINDOF_DISGUISER, KINDOF_DOZER, KINDOF_FS_POWER, KINDOF_HARVESTER, KINDOF_IGNORES_SELECT_ALL,
-    KINDOF_INERT, KINDOF_INFANTRY, KINDOF_MINE, KINDOF_POWERED, KINDOF_PROJECTILE,
-    KINDOF_STRUCTURE, KINDOF_TECH_BUILDING, KINDOF_VEHICLE,
+    KindOfMaskType, KindOfType, KINDOF_AIRCRAFT, KINDOF_COMMANDCENTER, KINDOF_COUNT, KINDOF_DOZER, KINDOF_HARVESTER, KINDOF_INERT, KINDOF_INFANTRY, KINDOF_MINE, KINDOF_POWERED,
+    KINDOF_PROJECTILE, KINDOF_STRUCTURE, KINDOF_TECH_BUILDING, KINDOF_VEHICLE, KINDOF_DISGUISER, KINDOF_FS_POWER, KINDOF_IGNORES_SELECT_ALL,
 };
 use rts_lockstep_engine::common::money::Money;
 use rts_lockstep_engine::common::name_key_generator::{NameKeyGenerator, NameKeyType};
 use rts_lockstep_engine::common::object_status_types::{
-    ObjectStatusTypes, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_SOLD,
-    OBJECT_STATUS_STEALTHED, OBJECT_STATUS_UNDER_CONSTRUCTION,
+    ObjectStatusTypes, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_SOLD, OBJECT_STATUS_STEALTHED, OBJECT_STATUS_UNDER_CONSTRUCTION,
 };
 use rts_lockstep_engine::common::science::ScienceType;
 use rts_lockstep_engine::common::special_power_type::*;
 use rts_lockstep_engine::common::unicode_string::UnicodeString;
-use rts_lockstep_engine::common::upgrade::{
-    UpgradeCenter, UpgradeMaskType, UPGRADE_STATUS_COMPLETE, UPGRADE_STATUS_INVALID,
-    UPGRADE_STATUS_IN_PRODUCTION,
-};
-use rts_lockstep_engine::common::well_known_keys::WellKnownKeys;
+use rts_lockstep_engine::common::upgrade::{UpgradeCenter, UpgradeMaskType, UPGRADE_STATUS_COMPLETE, UPGRADE_STATUS_IN_PRODUCTION, UPGRADE_STATUS_INVALID};
 use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
+use rts_lockstep_engine::common::well_known_keys::WellKnownKeys;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
 use rts_lockstep_engine::logic::damage::{DAMAGE_UNRESISTABLE, DEATH_NORMAL};
 use rts_lockstep_engine::logic::sides_list::BuildListInfo;
 use rts_lockstep_engine::logic::world::ids::{PlayerIndex, TeamId, TeamPrototypeId};
 use rts_lockstep_engine::logic::world::player::*;
-use rts_lockstep_engine::logic::world::player_init::*;
-use rts_lockstep_engine::logic::world::player_list::*;
 use rts_lockstep_engine::logic::world::player_objects::*;
 use rts_lockstep_engine::logic::world::player_ops::*;
 use rts_lockstep_engine::logic::world::player_squads::*;
+use rts_lockstep_engine::logic::world::player_init::*;
+use rts_lockstep_engine::logic::world::player_list::*;
 use rts_lockstep_engine::logic::world::player_xfer::*;
-use rts_lockstep_engine::logic::world::team::{
-    ScriptRef, TeamArena, TeamError, WaypointId, WaypointInfo,
-};
+use rts_lockstep_engine::logic::world::team::{ScriptRef, TeamArena, TeamError, WaypointId, WaypointInfo};
 use rts_lockstep_engine::logic::world::team_ops::*;
 use support::{Check, Gen};
 
@@ -274,13 +264,7 @@ const KIND_POOL: [KindOfType; 15] = [
     KINDOF_FS_POWER,
     KINDOF_IGNORES_SELECT_ALL,
 ];
-const STATUS_POOL: [ObjectStatusTypes; 5] = [
-    OBJECT_STATUS_STEALTHED,
-    OBJECT_STATUS_DETECTED,
-    OBJECT_STATUS_DISGUISED,
-    OBJECT_STATUS_UNDER_CONSTRUCTION,
-    OBJECT_STATUS_SOLD,
-];
+const STATUS_POOL: [ObjectStatusTypes; 5] = [OBJECT_STATUS_STEALTHED, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_UNDER_CONSTRUCTION, OBJECT_STATUS_SOLD];
 
 fn kind_mask(bits: u32) -> KindOfMaskType {
     let mut m = KindOfMaskType::new();
@@ -539,9 +523,7 @@ impl Sim {
                 0 => d.set_bool(k, e.bits != 0).unwrap(),
                 1 => d.set_int(k, e.bits as i32).unwrap(),
                 2 => d.set_real(k, f32::from_bits(e.bits)).unwrap(),
-                4 => d
-                    .set_unicode_string(k, &e.s.iter().map(|b| u16::from(*b)).collect::<Vec<u16>>())
-                    .unwrap(),
+                4 => d.set_unicode_string(k, &e.s.iter().map(|b| u16::from(*b)).collect::<Vec<u16>>()).unwrap(),
                 _ => d.set_ascii_string(k, &e.s).unwrap(),
             }
         }
@@ -582,16 +564,10 @@ impl TeamHost for Sim {
     }
     fn player_list_find_with_name_key(&mut self, key: NameKeyType) -> Option<PlayerIndex> {
         // the program's players by their fixed names first, then as the real function does (see shim_player/player_driver.h)
-        if let Some(i) = self
-            .player_by_key
-            .get(&key.0)
-            .filter(|i| (**i as i32) < self.players.player_count())
-        {
+        if let Some(i) = self.player_by_key.get(&key.0).filter(|i| (**i as i32) < self.players.player_count()) {
             return Some(*i as PlayerIndex);
         }
-        self.players
-            .find_with_name_key(key.0 as i32)
-            .map(|p| p.player_index)
+        self.players.find_with_name_key(key.0 as i32).map(|p| p.player_index)
     }
     fn player_list_neutral(&self) -> Option<PlayerIndex> {
         Some(0)
@@ -636,10 +612,7 @@ impl TeamHost for Sim {
         }
     }
     fn player_type(&self, p: PlayerIndex) -> PlayerType {
-        self.players
-            .get_nth(p)
-            .map(|x| x.player_type)
-            .unwrap_or(PlayerType::Human)
+        self.players.get_nth(p).map(|x| x.player_type).unwrap_or(PlayerType::Human)
     }
     fn player_difficulty(&self, p: PlayerIndex) -> GameDifficulty {
         player_get_player_difficulty(self, p).unwrap_or(GameDifficulty::Normal)
@@ -650,16 +623,10 @@ impl TeamHost for Sim {
             return None;
         };
         let b = &self.ptpls[t as usize].beacon_template;
-        self.tpls
-            .iter()
-            .position(|t| t.name == *b)
-            .map(|i| i as TemplateRef)
+        self.tpls.iter().position(|t| t.name == *b).map(|i| i as TemplateRef)
     }
     fn script_find_by_name(&mut self, name: &[u8]) -> Option<ScriptRef> {
-        self.scripts[..self.originals]
-            .iter()
-            .find(|s| s.name == name)
-            .map(|s| s.serial)
+        self.scripts[..self.originals].iter().find(|s| s.name == name).map(|s| s.serial)
     }
     fn script_duplicate(&mut self, s: ScriptRef) -> ScriptRef {
         let mut c = self.scripts[s as usize - 1].clone();
@@ -698,21 +665,11 @@ impl TeamHost for Sim {
     fn script_name(&self, s: ScriptRef) -> Vec<u8> {
         self.scripts[s as usize - 1].name.clone()
     }
-    fn script_evaluate_conditions(
-        &mut self,
-        s: ScriptRef,
-        team: Option<TeamId>,
-        player: Option<PlayerIndex>,
-    ) -> bool {
+    fn script_evaluate_conditions(&mut self, s: ScriptRef, team: Option<TeamId>, player: Option<PlayerIndex>) -> bool {
         let sc = &mut self.scripts[s as usize - 1];
         let r = (sc.pattern >> (sc.calls & 31)) & 1 != 0;
         sc.calls += 1;
-        self.rec(format!(
-            "eval {s} team={} player={} -> {}",
-            tid(team),
-            player.unwrap_or(-1),
-            r as u32
-        ));
+        self.rec(format!("eval {s} team={} player={} -> {}", tid(team), player.unwrap_or(-1), r as u32));
         r
     }
     fn script_execute_action(&mut self, s: ScriptRef, team: Option<TeamId>) {
@@ -725,11 +682,7 @@ impl TeamHost for Sim {
         self.rec(format!("notify-destroy team={team}"));
     }
     fn script_append_debug_message(&mut self, msg: &[u8], force_pause: bool) {
-        self.rec(format!(
-            "dbg {} {}",
-            String::from_utf8_lossy(msg),
-            force_pause as u32
-        ));
+        self.rec(format!("dbg {} {}", String::from_utf8_lossy(msg), force_pause as u32));
     }
     fn terrain_waypoints(&self) -> Vec<WaypointInfo> {
         self.ways.iter().map(|(w, _)| w.clone()).collect()
@@ -749,12 +702,7 @@ impl TeamHost for Sim {
     fn tmpl_is_kind_of(&self, t: TemplateRef, kind: KindOfType) -> bool {
         self.tpls[t as usize].kinds.test(kind)
     }
-    fn tmpl_is_kind_of_multi(
-        &self,
-        t: TemplateRef,
-        set: &KindOfMaskType,
-        clear: &KindOfMaskType,
-    ) -> bool {
+    fn tmpl_is_kind_of_multi(&self, t: TemplateRef, set: &KindOfMaskType, clear: &KindOfMaskType) -> bool {
         self.tpls[t as usize].kinds.test_set_and_clear(set, clear)
     }
     fn tmpl_is_build_facility(&self, t: TemplateRef) -> bool {
@@ -775,12 +723,7 @@ impl TeamHost for Sim {
     fn obj_is_kind_of(&self, o: ObjectId, kind: KindOfType) -> bool {
         self.tpl_of(o).kinds.test(kind)
     }
-    fn obj_is_kind_of_multi(
-        &self,
-        o: ObjectId,
-        set: &KindOfMaskType,
-        clear: &KindOfMaskType,
-    ) -> bool {
+    fn obj_is_kind_of_multi(&self, o: ObjectId, set: &KindOfMaskType, clear: &KindOfMaskType) -> bool {
         self.tpl_of(o).kinds.test_set_and_clear(set, clear)
     }
     fn obj_test_status(&self, o: ObjectId, status: ObjectStatusTypes) -> bool {
@@ -812,13 +755,7 @@ impl TeamHost for Sim {
         self.apply_reaction(o, 1);
     }
     fn obj_attempt_damage(&mut self, o: ObjectId, amount: f32) {
-        self.rec(format!(
-            "damage {o} amt={} type={} death={} src={}",
-            fb(amount),
-            DAMAGE_UNRESISTABLE,
-            DEATH_NORMAL,
-            0
-        ));
+        self.rec(format!("damage {o} amt={} type={} death={} src={}", fb(amount), DAMAGE_UNRESISTABLE, DEATH_NORMAL, 0));
         self.apply_reaction(o, 8);
     }
     fn obj_set_team(&mut self, o: ObjectId, team: Option<TeamId>) {
@@ -913,17 +850,10 @@ impl PlayerHost for Sim {
     }
     fn client_event(&mut self, e: ClientEvent) {
         let line = match e {
-            ClientEvent::Player(PlayerClientEvent::RadarSound {
-                online,
-                player_index,
-            }) => format!("audio {} player={player_index}", if online { 3 } else { 4 }),
+            ClientEvent::Player(PlayerClientEvent::RadarSound { online, player_index }) => format!("audio {} player={player_index}", if online { 3 } else { 4 }),
             ClientEvent::Player(PlayerClientEvent::ControlBarDirty) => "ui.dirty".to_string(),
-            ClientEvent::Player(PlayerClientEvent::SciencePurchasePointsChanged {
-                player_index,
-            }) => format!("ui.spp {player_index}"),
-            ClientEvent::Player(PlayerClientEvent::RankChanged { player_index }) => {
-                format!("ui.rank {player_index}")
-            }
+            ClientEvent::Player(PlayerClientEvent::SciencePurchasePointsChanged { player_index }) => format!("ui.spp {player_index}"),
+            ClientEvent::Player(PlayerClientEvent::RankChanged { player_index }) => format!("ui.rank {player_index}"),
             ClientEvent::Player(PlayerClientEvent::Eva(m)) => format!(
                 "eva {}",
                 match m {
@@ -940,35 +870,13 @@ impl PlayerHost for Sim {
                 }
             ),
             // --- p1w10-sonnet --- (slice 2)
-            ClientEvent::MoneySound {
-                sound,
-                player_index,
-            } => format!(
-                "audio {} player={player_index}",
-                if sound == rts_lockstep_engine::logic::client_event::MoneySound::Deposit {
-                    1
-                } else {
-                    2
-                }
-            ),
-            ClientEvent::Player(PlayerClientEvent::ControlBarSchemeByPlayer { player_index }) => {
-                format!("ui.scheme.player {player_index}")
-            }
-            ClientEvent::Player(PlayerClientEvent::ControlBarSchemeByPlayerTemplate {
-                template,
-            }) => format!("ui.scheme.template {}", template.map_or(-1, |t| t as i32)),
-            ClientEvent::Player(PlayerClientEvent::SetTeamColor { red, green, blue }) => {
-                format!("teamcolor {red} {green} {blue}")
-            }
-            ClientEvent::Player(PlayerClientEvent::RadarRemoveObject { object }) => {
-                format!("radar- {object}")
-            }
-            ClientEvent::Player(PlayerClientEvent::RadarAddObject { object }) => {
-                format!("radar+ {object}")
-            }
-            ClientEvent::Player(PlayerClientEvent::IndicatorColor { object, color }) => {
-                format!("indicator {object} {color:08x}")
-            }
+            ClientEvent::MoneySound { sound, player_index } => format!("audio {} player={player_index}", if sound == rts_lockstep_engine::logic::client_event::MoneySound::Deposit { 1 } else { 2 }),
+            ClientEvent::Player(PlayerClientEvent::ControlBarSchemeByPlayer { player_index }) => format!("ui.scheme.player {player_index}"),
+            ClientEvent::Player(PlayerClientEvent::ControlBarSchemeByPlayerTemplate { template }) => format!("ui.scheme.template {}", template.map_or(-1, |t| t as i32)),
+            ClientEvent::Player(PlayerClientEvent::SetTeamColor { red, green, blue }) => format!("teamcolor {red} {green} {blue}"),
+            ClientEvent::Player(PlayerClientEvent::RadarRemoveObject { object }) => format!("radar- {object}"),
+            ClientEvent::Player(PlayerClientEvent::RadarAddObject { object }) => format!("radar+ {object}"),
+            ClientEvent::Player(PlayerClientEvent::IndicatorColor { object, color }) => format!("indicator {object} {color:08x}"),
             ClientEvent::Player(PlayerClientEvent::FloatingText { amount, pos, color }) => {
                 // `TheGameText->fetch("GUI:AddCash")` comes first, then the text is formatted with the amount
                 self.rec("text GUI:AddCash".to_string());
@@ -996,12 +904,8 @@ impl PlayerHost for Sim {
         self.sciences.get(&science.0).map_or(0, |c| c.cost)
     }
     fn science_has_prereqs(&self, p: PlayerIndex, science: ScienceType) -> bool {
-        let Some(c) = self.sciences.get(&science.0) else {
-            return false;
-        };
-        c.prereqs
-            .iter()
-            .all(|s| player_has_science(self, p, ScienceType(*s)).unwrap_or(false))
+        let Some(c) = self.sciences.get(&science.0) else { return false };
+        c.prereqs.iter().all(|s| player_has_science(self, p, ScienceType(*s)).unwrap_or(false))
     }
     fn game_text_general_name(&mut self) -> UnicodeString {
         self.rec("text SCIENCE:GeneralName".to_string());
@@ -1011,11 +915,7 @@ impl PlayerHost for Sim {
     fn script_notify_of_object_creation_or_destruction(&mut self) {
         self.rec("script.objchange".to_string());
     }
-    fn script_notify_of_acquired_science(
-        &mut self,
-        player_index: PlayerIndex,
-        science: ScienceType,
-    ) {
+    fn script_notify_of_acquired_science(&mut self, player_index: PlayerIndex, science: ScienceType) {
         self.rec(format!("script.science {player_index} {}", science.0));
     }
     fn victory_has_single_player_been_defeated(&self, p: PlayerIndex) -> bool {
@@ -1038,8 +938,7 @@ impl PlayerHost for Sim {
         self.rec("academy.income".to_string());
     }
     fn academy_record_generals_points_spent(&mut self, p: PlayerIndex, points: i32) {
-        self.academy_points[p as usize] =
-            self.academy_points[p as usize].wrapping_add(points as u32);
+        self.academy_points[p as usize] = self.academy_points[p as usize].wrapping_add(points as u32);
     }
     fn score_reset(&mut self, _p: PlayerIndex, player_idx: PlayerIndex) {
         self.rec(format!("score.reset {player_idx}"));
@@ -1071,19 +970,9 @@ impl PlayerHost for Sim {
         }
     }
     fn ai_is_skirmish(&self, p: PlayerIndex) -> bool {
-        self.players
-            .get_nth(p)
-            .and_then(|x| x.ai)
-            .is_some_and(|a| a.skirmish)
+        self.players.get_nth(p).and_then(|x| x.ai).is_some_and(|a| a.skirmish)
     }
-    fn ai_compute_superweapon_target(
-        &mut self,
-        p: PlayerIndex,
-        _power: SpecialPowerTemplateRef,
-        pos: &mut Coord3D,
-        player_ndx: i32,
-        weapon_radius: f32,
-    ) -> bool {
+    fn ai_compute_superweapon_target(&mut self, p: PlayerIndex, _power: SpecialPowerTemplateRef, pos: &mut Coord3D, player_ndx: i32, weapon_radius: f32) -> bool {
         self.rec(format!("ai.super {p} {player_ndx} {}", fb(weapon_radius)));
         let c = self.ai_cfg_of(p);
         if c.super_ok {
@@ -1099,17 +988,8 @@ impl PlayerHost for Sim {
             None
         }
     }
-    fn ai_check_bridges(
-        &mut self,
-        p: PlayerIndex,
-        unit: Option<ObjectId>,
-        way: Option<WaypointId>,
-    ) -> bool {
-        self.rec(format!(
-            "ai.bridges {p} {} {}",
-            unit.unwrap_or(0),
-            way.unwrap_or(0)
-        ));
+    fn ai_check_bridges(&mut self, p: PlayerIndex, unit: Option<ObjectId>, way: Option<WaypointId>) -> bool {
+        self.rec(format!("ai.bridges {p} {} {}", unit.unwrap_or(0), way.unwrap_or(0)));
         self.ai_cfg_of(p).bridges
     }
     fn ai_base_center(&mut self, p: PlayerIndex, pos: &mut Coord3D) -> bool {
@@ -1123,29 +1003,11 @@ impl PlayerHost for Sim {
     fn ai_repair_structure(&mut self, p: PlayerIndex, id: ObjectId) {
         self.rec(format!("ai.repair {p} {id}"));
     }
-    fn ai_on_unit_produced(
-        &mut self,
-        p: PlayerIndex,
-        factory: Option<ObjectId>,
-        unit: Option<ObjectId>,
-    ) {
-        self.rec(format!(
-            "ai.unit {p} {} {}",
-            factory.unwrap_or(0),
-            unit.unwrap_or(0)
-        ));
+    fn ai_on_unit_produced(&mut self, p: PlayerIndex, factory: Option<ObjectId>, unit: Option<ObjectId>) {
+        self.rec(format!("ai.unit {p} {} {}", factory.unwrap_or(0), unit.unwrap_or(0)));
     }
-    fn ai_on_structure_produced(
-        &mut self,
-        p: PlayerIndex,
-        builder: Option<ObjectId>,
-        structure: Option<ObjectId>,
-    ) {
-        self.rec(format!(
-            "ai.structure {p} {} {}",
-            builder.unwrap_or(0),
-            structure.unwrap_or(0)
-        ));
+    fn ai_on_structure_produced(&mut self, p: PlayerIndex, builder: Option<ObjectId>, structure: Option<ObjectId>) {
+        self.rec(format!("ai.structure {p} {} {}", builder.unwrap_or(0), structure.unwrap_or(0)));
     }
     fn ai_is_supply_source_safe(&mut self, p: PlayerIndex, min_supplies: i32) -> bool {
         self.rec(format!("ai.safe {p} {min_supplies}"));
@@ -1167,70 +1029,31 @@ impl PlayerHost for Sim {
     fn ai_select_skillset(&mut self, p: PlayerIndex, skill_set: i32) {
         self.rec(format!("ai.skillset {p} {skill_set}"));
     }
-    fn ai_build_specific_team(
-        &mut self,
-        p: PlayerIndex,
-        proto: Option<TeamPrototypeId>,
-        priority: bool,
-    ) {
-        self.rec(format!(
-            "ai.buildteam {p} {} {}",
-            proto.unwrap_or(0),
-            priority as u32
-        ));
+    fn ai_build_specific_team(&mut self, p: PlayerIndex, proto: Option<TeamPrototypeId>, priority: bool) {
+        self.rec(format!("ai.buildteam {p} {} {}", proto.unwrap_or(0), priority as u32));
     }
     fn ai_build_base_defense(&mut self, p: PlayerIndex, flank: bool) {
         self.rec(format!("ai.basedef {p} {}", flank as u32));
     }
     fn ai_build_base_defense_structure(&mut self, p: PlayerIndex, name: &[u8], flank: bool) {
-        self.rec(format!(
-            "ai.basedefstruct {p} {} {}",
-            String::from_utf8_lossy(name),
-            flank as u32
-        ));
+        self.rec(format!("ai.basedefstruct {p} {} {}", String::from_utf8_lossy(name), flank as u32));
     }
     fn ai_build_specific_building(&mut self, p: PlayerIndex, name: &[u8]) {
         self.rec(format!("ai.building {p} {}", String::from_utf8_lossy(name)));
     }
     fn ai_build_by_supplies(&mut self, p: PlayerIndex, minimum_cash: i32, name: &[u8]) {
-        self.rec(format!(
-            "ai.bysupplies {p} {minimum_cash} {}",
-            String::from_utf8_lossy(name)
-        ));
+        self.rec(format!("ai.bysupplies {p} {minimum_cash} {}", String::from_utf8_lossy(name)));
     }
-    fn ai_build_specific_building_nearest_team(
-        &mut self,
-        p: PlayerIndex,
-        name: &[u8],
-        team: Option<TeamId>,
-    ) {
-        self.rec(format!(
-            "ai.nearest {p} {} {}",
-            String::from_utf8_lossy(name),
-            tid(team)
-        ));
+    fn ai_build_specific_building_nearest_team(&mut self, p: PlayerIndex, name: &[u8], team: Option<TeamId>) {
+        self.rec(format!("ai.nearest {p} {} {}", String::from_utf8_lossy(name), tid(team)));
     }
     fn ai_build_upgrade(&mut self, p: PlayerIndex, name: &[u8]) {
         self.rec(format!("ai.upgrade {p} {}", String::from_utf8_lossy(name)));
     }
-    fn ai_recruit_specific_team(
-        &mut self,
-        p: PlayerIndex,
-        proto: Option<TeamPrototypeId>,
-        radius: f32,
-    ) {
-        self.rec(format!(
-            "ai.recruit {p} {} {}",
-            proto.unwrap_or(0),
-            fb(radius)
-        ));
+    fn ai_recruit_specific_team(&mut self, p: PlayerIndex, proto: Option<TeamPrototypeId>, radius: f32) {
+        self.rec(format!("ai.recruit {p} {} {}", proto.unwrap_or(0), fb(radius)));
     }
-    fn ai_calc_closest_construction_zone_location(
-        &mut self,
-        p: PlayerIndex,
-        template: TemplateRef,
-        location: &mut Coord3D,
-    ) -> bool {
+    fn ai_calc_closest_construction_zone_location(&mut self, p: PlayerIndex, template: TemplateRef, location: &mut Coord3D) -> bool {
         let name = String::from_utf8_lossy(&self.tpls[template as usize].name).into_owned();
         self.rec(format!("ai.zone {p} {name}"));
         let c = self.ai_cfg_of(p);
@@ -1258,12 +1081,7 @@ impl PlayerHost for Sim {
         self.rec(format!("enable {o} {}", DISABLED_UNDERPOWERED));
     }
     fn obj_special_power_modules(&self, o: ObjectId) -> Vec<SpecialPowerModuleRef> {
-        self.obj(o)
-            .modules
-            .iter()
-            .filter(|m| m.has_sp)
-            .map(|m| m.serial as u32)
-            .collect()
+        self.obj(o).modules.iter().filter(|m| m.has_sp).map(|m| m.serial as u32).collect()
     }
     fn sp_required_science(&self, m: SpecialPowerModuleRef) -> ScienceType {
         for o in &self.objs {
@@ -1295,13 +1113,10 @@ impl PlayerHost for Sim {
 impl Sim {
     /// The special power module the opaque reference (its serial) names.
     fn module(&self, m: SpecialPowerModuleRef) -> &ModSim {
-        self.objs
-            .iter()
-            .flat_map(|o| o.modules.iter())
-            .find(|x| x.has_sp && x.serial as u32 == m)
-            .expect("module")
+        self.objs.iter().flat_map(|o| o.modules.iter()).find(|x| x.has_sp && x.serial as u32 == m).expect("module")
     }
 }
+
 
 impl PlayerObjectHost for Sim {
     fn obj_friend_adjust_power_for_player(&mut self, o: ObjectId, yes: bool) {
@@ -1349,25 +1164,13 @@ impl PlayerObjectHost for Sim {
         self.obj(o).modules.iter().any(|m| m.has_sp)
     }
     fn obj_find_any_shortcut_special_power(&self, o: ObjectId) -> Option<SpecialPowerModuleRef> {
-        self.obj(o)
-            .modules
-            .iter()
-            .find(|m| m.has_sp)
-            .map(|m| m.serial as u32)
+        self.obj(o).modules.iter().find(|m| m.has_sp).map(|m| m.serial as u32)
     }
     fn obj_has_special_power(&self, o: ObjectId, t: SpecialPowerType) -> bool {
         self.obj(o).modules.iter().any(|m| m.has_sp && m.ty == t)
     }
-    fn obj_find_special_power(
-        &self,
-        o: ObjectId,
-        t: SpecialPowerType,
-    ) -> Option<SpecialPowerModuleRef> {
-        self.obj(o)
-            .modules
-            .iter()
-            .find(|m| m.has_sp && m.ty == t)
-            .map(|m| m.serial as u32)
+    fn obj_find_special_power(&self, o: ObjectId, t: SpecialPowerType) -> Option<SpecialPowerModuleRef> {
+        self.obj(o).modules.iter().find(|m| m.has_sp && m.ty == t).map(|m| m.serial as u32)
     }
     fn sp_is_script_only(&self, m: SpecialPowerModuleRef) -> bool {
         self.module(m).script_only
@@ -1403,10 +1206,7 @@ impl PlayerObjectHost for Sim {
         self.rec(format!("ai.enter {o} {building} {source}"));
     }
     fn ai_evacuate(&mut self, o: ObjectId, expose_stealth_units: bool, source: CommandSource) {
-        self.rec(format!(
-            "ai.evacuate {o} {} {source}",
-            expose_stealth_units as u32
-        ));
+        self.rec(format!("ai.evacuate {o} {} {source}", expose_stealth_units as u32));
     }
     fn ai_move_to_position(&mut self, o: ObjectId, pos: Coord3D, source: CommandSource) {
         self.rec(format!("ai.move {o} {} {source}", coord_str(&pos)));
@@ -1455,12 +1255,7 @@ impl PlayerObjectHost for Sim {
     fn obj_has_contain(&self, o: ObjectId) -> bool {
         self.obj(o).contain_count >= 0
     }
-    fn action_can_enter_object(
-        &mut self,
-        o: ObjectId,
-        building: ObjectId,
-        source: CommandSource,
-    ) -> bool {
+    fn action_can_enter_object(&mut self, o: ObjectId, building: ObjectId, source: CommandSource) -> bool {
         self.rec(format!("canenter {o} {building} {source}"));
         (self.obj(o).can_enter >> (building & 31)) & 1 != 0
     }
@@ -1541,20 +1336,13 @@ impl PlayerObjectHost for Sim {
             self.observer_template.map(|i| i as PlayerTemplateRef)
         } else if let Some(digits) = name.strip_prefix(b"Faction") {
             // "Faction" and a number written as `to_string` writes it, naming one of the program's player templates
-            std::str::from_utf8(digits)
-                .ok()
-                .and_then(|t| t.parse::<usize>().ok())
-                .filter(|i| i.to_string().as_bytes() == digits && *i < self.ptpls.len())
-                .map(|i| i as PlayerTemplateRef)
+            std::str::from_utf8(digits).ok().and_then(|t| t.parse::<usize>().ok()).filter(|i| i.to_string().as_bytes() == digits && *i < self.ptpls.len()).map(|i| i as PlayerTemplateRef)
         } else {
             None
         }
     }
     fn thing_factory_find_template(&mut self, name: &[u8]) -> Option<TemplateRef> {
-        self.tpls
-            .iter()
-            .position(|t| t.name == name)
-            .map(|i| i as TemplateRef)
+        self.tpls.iter().position(|t| t.name == name).map(|i| i as TemplateRef)
     }
     fn find_object_by_id(&self, id: ObjectId) -> Option<ObjectId> {
         if self.objs.iter().any(|o| o.id == id) {
@@ -1573,8 +1361,7 @@ impl PlayerObjectHost for Sim {
 // --- end p1w10-sonnet ---
 
 /// `DISABLED_UNDERPOWERED`.
-const DISABLED_UNDERPOWERED: i32 =
-    rts_lockstep_engine::common::disabled_types::DISABLED_UNDERPOWERED;
+const DISABLED_UNDERPOWERED: i32 = rts_lockstep_engine::common::disabled_types::DISABLED_UNDERPOWERED;
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The state dump (the same text as dumpState of player_driver.h)
@@ -1584,20 +1371,14 @@ fn id_list<T: std::fmt::Display>(v: &[T]) -> String {
     if v.is_empty() {
         return "-".into();
     }
-    v.iter()
-        .map(|x| x.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
+    v.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
 }
 
 fn rel_map_str<K: std::fmt::Display>(m: &BTreeMap<K, Relationship>) -> String {
     if m.is_empty() {
         return "-".into();
     }
-    m.iter()
-        .map(|(k, v)| format!("{k}:{}", *v as i32))
-        .collect::<Vec<_>>()
-        .join(",")
+    m.iter().map(|(k, v)| format!("{k}:{}", *v as i32)).collect::<Vec<_>>().join(",")
 }
 
 fn dash(v: Vec<u8>) -> String {
@@ -1609,11 +1390,7 @@ fn dash(v: Vec<u8>) -> String {
 }
 
 fn uni_str(u: &UnicodeString) -> String {
-    let s: String = u
-        .str()
-        .iter()
-        .map(|c| if *c < 128 { *c as u8 as char } else { '?' })
-        .collect();
+    let s: String = u.str().iter().map(|c| if *c < 128 { *c as u8 as char } else { '?' }).collect();
     if s.is_empty() {
         "-".into()
     } else {
@@ -1625,10 +1402,7 @@ fn sci_str(v: &[ScienceType]) -> String {
     if v.is_empty() {
         "-".into()
     } else {
-        v.iter()
-            .map(|s| s.0.to_string())
-            .collect::<Vec<_>>()
-            .join(",")
+        v.iter().map(|s| s.0.to_string()).collect::<Vec<_>>().join(",")
     }
 }
 
@@ -1636,27 +1410,18 @@ fn pmap_str(m: &BTreeMap<NameKeyType, f32>) -> String {
     if m.is_empty() {
         return "-".into();
     }
-    m.iter()
-        .map(|(k, v)| format!("{}:{}", k.0, fb(*v)))
-        .collect::<Vec<_>>()
-        .join(",")
+    m.iter().map(|(k, v)| format!("{}:{}", k.0, fb(*v))).collect::<Vec<_>>().join(",")
 }
 
 fn vmap_str(m: &BTreeMap<NameKeyType, VeterancyLevel>) -> String {
     if m.is_empty() {
         return "-".into();
     }
-    m.iter()
-        .map(|(k, v)| format!("{}:{}", k.0, *v as i32))
-        .collect::<Vec<_>>()
-        .join(",")
+    m.iter().map(|(k, v)| format!("{}:{}", k.0, *v as i32)).collect::<Vec<_>>().join(",")
 }
 
 fn kind_bits(m: &KindOfMaskType) -> String {
-    let v: Vec<String> = (0..KINDOF_COUNT)
-        .filter(|k| m.test(*k))
-        .map(|k| k.to_string())
-        .collect();
+    let v: Vec<String> = (0..KINDOF_COUNT).filter(|k| m.test(*k)).map(|k| k.to_string()).collect();
     if v.is_empty() {
         "-".into()
     } else {
@@ -1726,11 +1491,7 @@ fn dump_player(sim: &mut Sim, idx: usize, out: &mut Vec<String>) {
                 e.object_timestamp,
                 e.desired_gatherers,
                 e.current_gatherers,
-                e.resource_gatherers
-                    .iter()
-                    .map(|g| g.to_string())
-                    .collect::<Vec<_>>()
-                    .join(",")
+                e.resource_gatherers.iter().map(|g| g.to_string()).collect::<Vec<_>>().join(",")
             )
         })
         .collect::<Vec<_>>()
@@ -1739,11 +1500,7 @@ fn dump_player(sim: &mut Sim, idx: usize, out: &mut Vec<String>) {
         build = "-".into();
     }
     let ai = match p.ai {
-        Some(a) => format!(
-            "{}/{}",
-            a.skirmish as u32,
-            sim.ai_difficulty(idx as i32) as i32
-        ),
+        Some(a) => format!("{}/{}", a.skirmish as u32, sim.ai_difficulty(idx as i32) as i32),
         None => "-".into(),
     };
     let tpl = p.template.map_or(-1, |t| t as i32);
@@ -1787,35 +1544,16 @@ fn dump_player(sim: &mut Sim, idx: usize, out: &mut Vec<String>) {
         p.tunnel_system.is_some() as u32,
         tid(p.default_team),
     ));
-    let att: String = p
-        .attacked_by
-        .iter()
-        .map(|b| if *b { '1' } else { '0' })
-        .collect();
+    let att: String = p.attacked_by.iter().map(|b| if *b { '1' } else { '0' }).collect();
     let kop = if p.kind_of_production_changes.is_empty() {
         "-".to_string()
     } else {
-        p.kind_of_production_changes
-            .iter()
-            .map(|t| {
-                format!(
-                    "{}/{}/{}",
-                    kind_bits(&t.kind_of),
-                    fb(t.percent),
-                    t.ref_count
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(";")
+        p.kind_of_production_changes.iter().map(|t| format!("{}/{}/{}", kind_bits(&t.kind_of), fb(t.percent), t.ref_count)).collect::<Vec<_>>().join(";")
     };
     let spt = if p.special_power_timers.is_empty() {
         "-".to_string()
     } else {
-        p.special_power_timers
-            .iter()
-            .map(|t| format!("{}/{}", t.template_id, t.ready_frame))
-            .collect::<Vec<_>>()
-            .join(";")
+        p.special_power_timers.iter().map(|t| format!("{}/{}", t.template_id, t.ready_frame)).collect::<Vec<_>>().join(";")
     };
     out.push(format!(
         "D player2 {} sci={} dis={} hid={} rank={},{},{},{},{} gen={} protos={} prel={} trel={} flags={}{}{}{}{}{}{}{} mod={} att={} attf={} bounty={} kop={} spt={} squads={},{} gpts={}",
@@ -1852,56 +1590,17 @@ fn dump_player(sim: &mut Sim, idx: usize, out: &mut Vec<String>) {
     ));
     // --- p1w10-sonnet --- (slice 2b and 3): the upgrades, their masks, the squads and their caches
     let mask_str = |m: &UpgradeMaskType| -> String {
-        let v: Vec<String> = (0..128)
-            .filter(|i| m.test(*i))
-            .map(|i| i.to_string())
-            .collect();
-        if v.is_empty() {
-            "-".into()
-        } else {
-            v.join(",")
-        }
+        let v: Vec<String> = (0..128).filter(|i| m.test(*i)).map(|i| i.to_string()).collect();
+        if v.is_empty() { "-".into() } else { v.join(",") }
     };
     let ups = if p.upgrades.is_empty() {
         "-".to_string()
     } else {
-        p.upgrades
-            .iter()
-            .map(|u| {
-                format!(
-                    "{}:{}",
-                    sim.upgrade_keys
-                        .iter()
-                        .position(|k| *k == u.template)
-                        .map_or(-1, |i| i as i32),
-                    u.status
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(";")
+        p.upgrades.iter().map(|u| format!("{}:{}", sim.upgrade_keys.iter().position(|k| *k == u.template).map_or(-1, |i| i as i32), u.status)).collect::<Vec<_>>().join(";")
     };
-    let squads = if p.squads.is_empty() {
-        "-".to_string()
-    } else {
-        p.squads
-            .iter()
-            .map(|s| format!("{}/{}", squad_str(s), id_list(&s.objects_cached)))
-            .collect::<Vec<_>>()
-            .join("|")
-    };
-    let sel = p.current_selection.as_ref().map_or("-".to_string(), |s| {
-        format!("{}/{}", squad_str(s), id_list(&s.objects_cached))
-    });
-    out.push(format!(
-        "D player4 {} gused={} up={} inprog={} comp={} squads={} sel={}",
-        p.player_index,
-        sim.groups_used[idx],
-        ups,
-        mask_str(&p.upgrades_in_progress),
-        mask_str(&p.upgrades_completed),
-        squads,
-        sel
-    ));
+    let squads = if p.squads.is_empty() { "-".to_string() } else { p.squads.iter().map(|s| format!("{}/{}", squad_str(s), id_list(&s.objects_cached))).collect::<Vec<_>>().join("|") };
+    let sel = p.current_selection.as_ref().map_or("-".to_string(), |s| format!("{}/{}", squad_str(s), id_list(&s.objects_cached)));
+    out.push(format!("D player4 {} gused={} up={} inprog={} comp={} squads={} sel={}", p.player_index, sim.groups_used[idx], ups, mask_str(&p.upgrades_in_progress), mask_str(&p.upgrades_completed), squads, sel));
     // --- end p1w10-sonnet ---
 }
 
@@ -1918,46 +1617,21 @@ fn dump_state(sim: &mut Sim) {
     for pid in alive_protos(sim) {
         let p = sim.teams.prototype(pid).expect("alive prototype");
         let insts = sim.teams.instances(pid);
-        out.push(format!(
-            "D proto id={} name={} owner={} insts={}",
-            p.id,
-            String::from_utf8_lossy(&p.name),
-            p.owning_player.unwrap_or(-1),
-            id_list(&insts)
-        ));
+        out.push(format!("D proto id={} name={} owner={} insts={}", p.id, String::from_utf8_lossy(&p.name), p.owning_player.unwrap_or(-1), id_list(&insts)));
     }
     for tid_ in alive_teams(sim) {
         let t = sim.teams.team(tid_).expect("alive team");
         let mem = sim.teams.members(tid_);
-        out.push(format!(
-            "D team id={} proto={} members={} act={}",
-            t.id,
-            t.proto,
-            id_list(&mem),
-            t.active as u32
-        ));
+        out.push(format!("D team id={} proto={} members={} act={}", t.id, t.proto, id_list(&mem), t.active as u32));
     }
     for o in &sim.objs {
         let next = sim.teams.next_member(o.id).unwrap_or(0);
         let prev = sim.teams.prev_member(o.id).unwrap_or(0);
-        out.push(format!(
-            "D obj id={} team={} next={} prev={}",
-            o.id,
-            tid(o.team),
-            next,
-            prev
-        ));
+        out.push(format!("D obj id={} team={} next={} prev={}", o.id, tid(o.team), next, prev));
     }
     // --- p1w10-sonnet --- (slice 2)
     for o in &sim.objs {
-        out.push(format!(
-            "D obj2 {} health={} vision={} shroud={} wb={:08x}",
-            o.id,
-            fb(o.health),
-            fb(o.vision),
-            fb(o.shroud),
-            o.wb
-        ));
+        out.push(format!("D obj2 {} health={} vision={} shroud={} wb={:08x}", o.id, fb(o.health), fb(o.vision), fb(o.shroud), o.wb));
     }
     // --- end p1w10-sonnet ---
     for i in 0..sim.np_now() {
@@ -1977,26 +1651,13 @@ fn dump_state(sim: &mut Sim) {
             ),
             None => "-".to_string(),
         };
-        out.push(format!(
-            "D player3 {i} spent={} earned={} bonus={bonus}",
-            sim.spent[i], sim.earned[i]
-        ));
+        out.push(format!("D player3 {i} spent={} earned={} bonus={bonus}", sim.spent[i], sim.earned[i]));
         // --- end p1w10-sonnet ---
     }
     // --- p1w10-sonnet --- (slice 4): the sides list
     {
-        let scripts = |v: &Vec<SideSim>| {
-            v.iter()
-                .map(|x| x.scripts.map_or("-".to_string(), |i| i.to_string()))
-                .collect::<Vec<_>>()
-                .join(",")
-        };
-        let builds = sim
-            .sides
-            .iter()
-            .map(|x| x.build.len().to_string())
-            .collect::<Vec<_>>()
-            .join(",");
+        let scripts = |v: &Vec<SideSim>| v.iter().map(|x| x.scripts.map_or("-".to_string(), |i| i.to_string())).collect::<Vec<_>>().join(",");
+        let builds = sim.sides.iter().map(|x| x.build.len().to_string()).collect::<Vec<_>>().join(",");
         let teams = if sim.side_teams.is_empty() {
             "-".to_string()
         } else {
@@ -2004,24 +1665,11 @@ fn dump_state(sim: &mut Sim) {
             let ko = sim.names.name_to_key(b"teamOwner");
             sim.side_teams
                 .iter()
-                .map(|d| {
-                    format!(
-                        "{}@{}",
-                        String::from_utf8_lossy(&d.get_ascii_string(kn).0),
-                        String::from_utf8_lossy(&d.get_ascii_string(ko).0)
-                    )
-                })
+                .map(|d| format!("{}@{}", String::from_utf8_lossy(&d.get_ascii_string(kn).0), String::from_utf8_lossy(&d.get_ascii_string(ko).0)))
                 .collect::<Vec<_>>()
                 .join(",")
         };
-        out.push(format!(
-            "D sides scripts={} sk={} builds={} teams={} count={}",
-            scripts(&sim.sides),
-            scripts(&sim.skirmish_sides),
-            builds,
-            teams,
-            sim.players.player_count()
-        ));
+        out.push(format!("D sides scripts={} sk={} builds={} teams={} count={}", scripts(&sim.sides), scripts(&sim.skirmish_sides), builds, teams, sim.players.player_count()));
     }
     // --- end p1w10-sonnet ---
     sim.lines.extend(out);
@@ -2050,10 +1698,7 @@ fn thing_name(v: u32) -> Vec<u8> {
 }
 
 fn count_str(c: &[i32]) -> String {
-    c.iter()
-        .map(|x| x.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
+    c.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
 }
 
 /// How an error ends a program: a throw upstream makes (the line to write), or an exclusion.
@@ -2062,18 +1707,10 @@ fn thrown(e: PlayerError) -> Result<String, Excluded> {
         PlayerError::Team(TeamError::BadArg) => Ok("threw badarg".to_string()),
         PlayerError::Team(TeamError::InvalidData) => Ok("threw invaliddata".to_string()),
         PlayerError::Team(TeamError::Xfer(s)) => Ok(format!("threw xfer {}", s as i32)),
-        PlayerError::Team(TeamError::Null) | PlayerError::NoPlayer => {
-            Err(Excluded("a NULL or dangling pointer dereferenced"))
-        }
-        PlayerError::Team(TeamError::Hang) | PlayerError::Hang => {
-            Err(Excluded("a loop that never ends"))
-        }
-        PlayerError::Team(TeamError::IdCollision) => {
-            Err(Excluded("an id shared by two live teams after reset"))
-        }
-        PlayerError::NoRank => Err(Excluded(
-            "a rank level the table does not have, dereferenced",
-        )),
+        PlayerError::Team(TeamError::Null) | PlayerError::NoPlayer => Err(Excluded("a NULL or dangling pointer dereferenced")),
+        PlayerError::Team(TeamError::Hang) | PlayerError::Hang => Err(Excluded("a loop that never ends")),
+        PlayerError::Team(TeamError::IdCollision) => Err(Excluded("an id shared by two live teams after reset")),
+        PlayerError::NoRank => Err(Excluded("a rank level the table does not have, dereferenced")),
         PlayerError::InvalidData => Ok("threw invaliddata".to_string()),
         PlayerError::Xfer(s) => Ok(format!("threw xfer {}", s as i32)),
         PlayerError::Null => Err(Excluded("a NULL or dangling pointer dereferenced")),
@@ -2266,11 +1903,7 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
         let spp = r.i();
         let ng = r.i();
         let sciences_granted = (0..ng).map(|_| ScienceType(sim.sci_key(r.i()))).collect();
-        sim.ranks.push(RankInfoView {
-            skill_points_needed: needed,
-            science_purchase_points_granted: spp,
-            sciences_granted,
-        });
+        sim.ranks.push(RankInfoView { skill_points_needed: needed, science_purchase_points_granted: spp, sciences_granted });
     }
     let nsci = r.i();
     for _ in 0..nsci {
@@ -2279,21 +1912,12 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
         let grantable = r.b();
         let np2 = r.i();
         let prereqs = (0..np2).map(|_| sim.sci_key(r.i())).collect();
-        sim.sciences.insert(
-            id,
-            SciCfg {
-                cost,
-                grantable,
-                prereqs,
-            },
-        );
+        sim.sciences.insert(id, SciCfg { cost, grantable, prereqs });
     }
     let nup = r.i();
     for i in 0..nup {
         let name = format!("Upg{i}");
-        sim.upgrades
-            .new_upgrade(&mut sim.names, name.as_bytes())
-            .expect("new upgrade");
+        sim.upgrades.new_upgrade(&mut sim.names, name.as_bytes()).expect("new upgrade");
         let key = sim.names.name_to_key(name.as_bytes());
         sim.upgrade_keys.push(key);
     }
@@ -2302,11 +1926,7 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
         let id = r.u();
         let reload_time = r.u();
         let shared_n_sync = r.b();
-        sim.sp_templates.push(SpecialPowerView {
-            id,
-            reload_time,
-            shared_n_sync,
-        });
+        sim.sp_templates.push(SpecialPowerView { id, reload_time, shared_n_sync });
     }
     let npt = r.i();
     for _ in 0..npt {
@@ -2381,18 +2001,7 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
         let at = r.c();
         let enemy = r.i();
         let diff = r.u() % 3;
-        sim.ai_cfg.push(AiCfg {
-            safe,
-            attacked,
-            bridges,
-            has_base,
-            base,
-            super_ok,
-            construct,
-            at,
-            enemy,
-            diff,
-        });
+        sim.ai_cfg.push(AiCfg { safe, attacked, bridges, has_base, base, super_ok, construct, at, enemy, diff });
     }
     // PlayerList::PlayerList makes all MAX_PLAYER_COUNT players, each ending in init( NULL )
     sim.np = np as usize;
@@ -2461,16 +2070,7 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
         let nm = (r.i() % 4) as usize;
         let mut modules = Vec::new();
         for _ in 0..nm {
-            modules.push(ModSim {
-                has_sp: r.b(),
-                serial: r.i(),
-                required: sim.sci_key(r.i()),
-                ty: 0,
-                script_only: false,
-                ready: 0,
-                percent: 0,
-                shared: false,
-            });
+            modules.push(ModSim { has_sp: r.b(), serial: r.i(), required: sim.sci_key(r.i()), ty: 0, script_only: false, ready: 0, percent: 0, shared: false });
         }
         sim.objs.push(ObjSim {
             id,
@@ -2525,18 +2125,7 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
         let delay = r.i();
         let (easy, normal, hard, one_shot) = (r.b(), r.b(), r.b(), r.b());
         let pattern = r.u();
-        sim.scripts.push(ScriptSim {
-            serial: i as u32 + 1,
-            name: format!("Scr{i}").into_bytes(),
-            frame,
-            delay,
-            easy,
-            normal,
-            hard,
-            one_shot,
-            pattern,
-            calls: 0,
-        });
+        sim.scripts.push(ScriptSim { serial: i as u32 + 1, name: format!("Scr{i}").into_bytes(), frame, delay, easy, normal, hard, one_shot, pattern, calls: 0 });
     }
     let nw = r.i();
     for _ in 0..nw {
@@ -2558,11 +2147,7 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
 fn read_header2(r: &mut Reader<'_>, sim: &mut Sim) {
     let has_observer = r.b();
     let observer_idx = r.u() as usize;
-    sim.observer_template = if has_observer && !sim.ptpls.is_empty() {
-        Some(observer_idx % sim.ptpls.len())
-    } else {
-        None
-    };
+    sim.observer_template = if has_observer && !sim.ptpls.is_empty() { Some(observer_idx % sim.ptpls.len()) } else { None };
     for t in sim.tpls.iter_mut() {
         t.cost = r.i();
         t.buildable = (r.u() % 4) as u8;
@@ -2570,11 +2155,7 @@ fn read_header2(r: &mut Reader<'_>, sim: &mut Sim) {
         t.prereq_mask = r.u();
         t.max_simul = r.u() % 4;
         let lk = r.i();
-        t.link_key = if lk == 0 {
-            NameKeyType::INVALID
-        } else {
-            sim.names.name_to_key(format!("Link{lk}").as_bytes())
-        };
+        t.link_key = if lk == 0 { NameKeyType::INVALID } else { sim.names.name_to_key(format!("Link{lk}").as_bytes()) };
         t.owning_side = r.u() % 4;
     }
     read_header2_objects(r, sim);
@@ -2644,30 +2225,19 @@ fn run_rust_inner(words: &[u32], pre: &mut Option<Prefix>) -> Result<Vec<String>
         let op = r.u();
         let res = do_op(&mut sim, op, &mut r);
         if let Some(why) = sim.undefined.get() {
-            *pre = Some(Prefix {
-                pos_n,
-                ops: i,
-                lines: sim.lines[..ok_lines].to_vec(),
-            });
+            *pre = Some(Prefix { pos_n, ops: i, lines: sim.lines[..ok_lines].to_vec() });
             return Err(Excluded(why));
         }
         match res {
             Ok(()) => dump_state(&mut sim),
             Err(e) => {
                 if std::env::var_os("PLAYER_WHY").is_some() {
-                    eprintln!(
-                        "WHY {e:?} at op {op} sub {}",
-                        LAST_SUB.load(std::sync::atomic::Ordering::Relaxed)
-                    );
+                    eprintln!("WHY {e:?} at op {op} sub {}", LAST_SUB.load(std::sync::atomic::Ordering::Relaxed));
                 }
                 let line = match thrown(e) {
                     Ok(line) => line,
                     Err(x) => {
-                        *pre = Some(Prefix {
-                            pos_n,
-                            ops: i,
-                            lines: sim.lines[..ok_lines].to_vec(),
-                        });
+                        *pre = Some(Prefix { pos_n, ops: i, lines: sim.lines[..ok_lines].to_vec() });
                         return Err(x);
                     }
                 };
@@ -2676,11 +2246,7 @@ fn run_rust_inner(words: &[u32], pre: &mut Option<Prefix>) -> Result<Vec<String>
                 if e == PlayerError::Team(TeamError::BadArg) {
                     dump_state(&mut sim);
                     if let Some(why) = sim.undefined.get() {
-                        *pre = Some(Prefix {
-                            pos_n,
-                            ops: i,
-                            lines: sim.lines[..ok_lines].to_vec(),
-                        });
+                        *pre = Some(Prefix { pos_n, ops: i, lines: sim.lines[..ok_lines].to_vec() });
                         return Err(Excluded(why));
                     }
                     continue;
@@ -2690,11 +2256,7 @@ fn run_rust_inner(words: &[u32], pre: &mut Option<Prefix>) -> Result<Vec<String>
             }
         }
         if let Some(why) = sim.undefined.get() {
-            *pre = Some(Prefix {
-                pos_n,
-                ops: i,
-                lines: sim.lines[..ok_lines].to_vec(),
-            });
+            *pre = Some(Prefix { pos_n, ops: i, lines: sim.lines[..ok_lines].to_vec() });
             return Err(Excluded(why));
         }
     }
@@ -2708,11 +2270,7 @@ fn run_rust_inner(words: &[u32], pre: &mut Option<Prefix>) -> Result<Vec<String>
 }
 
 fn coord_of(a: u32, b: u32, c: u32) -> Coord3D {
-    Coord3D {
-        x: f32::from_bits(a),
-        y: f32::from_bits(b),
-        z: f32::from_bits(c),
-    }
+    Coord3D { x: f32::from_bits(a), y: f32::from_bits(b), z: f32::from_bits(c) }
 }
 
 fn rel_of(v: u32) -> Relationship {
@@ -2771,11 +2329,7 @@ fn obj_op(sim: &mut Sim, o: ObjectId, sub: u32, a: &[u32; 8]) {
             let ob = sim.obj_mut(o);
             ob.prod_queue = (a[0] % 4) as i32 - 1;
             ob.can_enter = a[1];
-            ob.who_entered = if !a[2].is_multiple_of(2) {
-                1u32 << (a[3] % 4)
-            } else {
-                0
-            };
+            ob.who_entered = if !a[2].is_multiple_of(2) { 1u32 << (a[3] % 4) } else { 0 };
         }
         14 => {
             let ob = sim.obj_mut(o);
@@ -2790,15 +2344,7 @@ fn obj_op(sim: &mut Sim, o: ObjectId, sub: u32, a: &[u32; 8]) {
 
 fn thing_list(sim: &Sim, a: &[u32; 8]) -> (Vec<Option<TemplateRef>>, Vec<i32>) {
     let n = (a[0] % 5) as usize;
-    let things = (0..n)
-        .map(|k| {
-            if a[1 + k] != 0 {
-                Some(((a[1 + k] - 1) as usize % sim.tpls.len()) as TemplateRef)
-            } else {
-                None
-            }
-        })
-        .collect();
+    let things = (0..n).map(|k| if a[1 + k] != 0 { Some(((a[1 + k] - 1) as usize % sim.tpls.len()) as TemplateRef) } else { None }).collect();
     (things, vec![7; n])
 }
 
@@ -2853,29 +2399,15 @@ impl PlayerInitHost for Sim {
             return false;
         }
         let k = self.names.name_to_key(b"teamName");
-        self.side_teams
-            .iter()
-            .any(|d| d.get_ascii_string(k).0 == name)
+        self.side_teams.iter().any(|d| d.get_ascii_string(k).0 == name)
     }
     fn sides_add_team(&mut self, d: &Dict) {
         let get = |sim: &mut Sim, name: &str| -> String {
             let k = sim.names.name_to_key(name.as_bytes());
             String::from_utf8_lossy(&d.get_ascii_string(k).0).into_owned()
         };
-        let mut line = format!(
-            "sides.addteam owner={} name={}",
-            get(self, "teamOwner"),
-            get(self, "teamName")
-        );
-        for n in [
-            "teamOnCreateScript",
-            "teamOnIdleScript",
-            "teamOnUnitDestroyedScript",
-            "teamOnDestroyedScript",
-            "teamEnemySightedScript",
-            "teamAllClearScript",
-            "teamProductionCondition",
-        ] {
+        let mut line = format!("sides.addteam owner={} name={}", get(self, "teamOwner"), get(self, "teamName"));
+        for n in ["teamOnCreateScript", "teamOnIdleScript", "teamOnUnitDestroyedScript", "teamOnDestroyedScript", "teamEnemySightedScript", "teamAllClearScript", "teamProductionCondition"] {
             line.push(' ');
             line.push_str(&get(self, n));
         }
@@ -2887,13 +2419,7 @@ impl PlayerInitHost for Sim {
         self.rec(line);
         self.side_teams.push(d.clone());
     }
-    fn script_list_duplicate_and_qualify(
-        &mut self,
-        list: ScriptListRef,
-        qualifier: &[u8],
-        qual_template_player_name: &[u8],
-        new_player_name: &[u8],
-    ) -> ScriptListRef {
+    fn script_list_duplicate_and_qualify(&mut self, list: ScriptListRef, qualifier: &[u8], qual_template_player_name: &[u8], new_player_name: &[u8]) -> ScriptListRef {
         let id = self.next_script;
         self.next_script += 1;
         self.rec(format!(
@@ -2977,11 +2503,7 @@ fn read_sides(r: &mut Reader<'_>, sim: &mut Sim) {
             e.template_name = thing_name((i + k) as u32);
             build.push(e);
         }
-        sim.sides.push(SideSim {
-            dict,
-            scripts,
-            build,
-        });
+        sim.sides.push(SideSim { dict, scripts, build });
     }
     let nss = r.i();
     for _ in 0..nss {
@@ -2993,11 +2515,7 @@ fn read_sides(r: &mut Reader<'_>, sim: &mut Sim) {
         } else {
             None
         };
-        sim.skirmish_sides.push(SideSim {
-            dict,
-            scripts,
-            build: Vec::new(),
-        });
+        sim.skirmish_sides.push(SideSim { dict, scripts, build: Vec::new() });
     }
     let nt = r.i();
     for _ in 0..nt {
@@ -3023,19 +2541,11 @@ fn list_op(sim: &mut Sim, a: &[u32; 8], sub: u32) -> Result<(), PlayerError> {
             sim.rec(format!("ret vteam {}", tid(t)));
         }
         4 => {
-            let p = if a[0] != 0 {
-                Some(((a[0] - 1) as usize % np) as PlayerIndex)
-            } else {
-                None
-            };
+            let p = if a[0] != 0 { Some(((a[0] - 1) as usize % np) as PlayerIndex) } else { None };
             player_list_set_local_player(sim, p)?;
         }
         5 => {
-            let mask: u16 = if a[0].is_multiple_of(3) {
-                1u16 << (a[1] % 16)
-            } else {
-                (a[1] & 0xffff) as u16
-            };
+            let mask: u16 = if a[0].is_multiple_of(3) { 1u16 << (a[1] % 16) } else { (a[1] & 0xffff) as u16 };
             let p = player_list_get_player_from_mask(sim, mask);
             sim.rec(format!("ret pfm {}", p.unwrap_or(-1)));
         }
@@ -3076,11 +2586,7 @@ fn list_op(sim: &mut Sim, a: &[u32; 8], sub: u32) -> Result<(), PlayerError> {
             r?;
             sim.saved_list = save.take_bytes();
             sim.have_list = true;
-            sim.rec(format!(
-                "ret lsave len={} hash={:08x}",
-                sim.saved_list.len(),
-                hash_bytes(&sim.saved_list)
-            ));
+            sim.rec(format!("ret lsave len={} hash={:08x}", sim.saved_list.len(), hash_bytes(&sim.saved_list)));
         }
         13 => {
             if !sim.have_list {
@@ -3108,11 +2614,7 @@ fn list_op(sim: &mut Sim, a: &[u32; 8], sub: u32) -> Result<(), PlayerError> {
             player_list_load_post_process(sim);
         }
         _ => {
-            let t = if a[0] != 0 {
-                pick_team(sim, a[0] - 1)
-            } else {
-                None
-            };
+            let t = if a[0] != 0 { pick_team(sim, a[0] - 1) } else { None };
             match t {
                 Some(t) => player_list_team_about_to_be_deleted(sim, t)?,
                 None => sim.rec("skip".into()),
@@ -3126,10 +2628,7 @@ fn list_op(sim: &mut Sim, a: &[u32; 8], sub: u32) -> Result<(), PlayerError> {
 // --- p1w10-sonnet --- (slice 2b and 3)
 impl PlayerSquadHost for Sim {
     fn upgrade_mask(&self, t: NameKeyType) -> UpgradeMaskType {
-        self.upgrades
-            .find_upgrade_by_key(t)
-            .map(|u| u.upgrade_mask())
-            .expect("an upgrade of the program")
+        self.upgrades.find_upgrade_by_key(t).map(|u| u.upgrade_mask()).expect("an upgrade of the program")
     }
     fn obj_update_upgrade_modules(&mut self, o: ObjectId) {
         self.rec(format!("upgrademods {o}"));
@@ -3220,11 +2719,7 @@ fn upgrade_op(sim: &mut Sim, p: PlayerIndex, a: &[u32; 8]) -> Result<(), PlayerE
     let key = sim.upgrade_keys[a[1] as usize % n];
     match a[0] % 8 {
         0 => {
-            let status = [
-                UPGRADE_STATUS_INVALID,
-                UPGRADE_STATUS_IN_PRODUCTION,
-                UPGRADE_STATUS_COMPLETE,
-            ][a[2] as usize % 3];
+            let status = [UPGRADE_STATUS_INVALID, UPGRADE_STATUS_IN_PRODUCTION, UPGRADE_STATUS_COMPLETE][a[2] as usize % 3];
             let idx = player_add_upgrade(sim, p, key, status)?;
             sim.rec(format!("ret addupg {idx}"));
         }
@@ -3250,11 +2745,7 @@ fn upgrade_op(sim: &mut Sim, p: PlayerIndex, a: &[u32; 8]) -> Result<(), PlayerE
         _ => {
             let m = upgrade_mask_of(sim, a, 3);
             let me = sim.players.get_nth_mut(p).unwrap();
-            let target = if a[2].is_multiple_of(2) {
-                &mut me.upgrades_in_progress
-            } else {
-                &mut me.upgrades_completed
-            };
+            let target = if a[2].is_multiple_of(2) { &mut me.upgrades_in_progress } else { &mut me.upgrades_completed };
             if a[6].is_multiple_of(3) {
                 target.clear_mask(&m);
             } else {
@@ -3270,13 +2761,7 @@ fn squad_op(sim: &mut Sim, p: PlayerIndex, a: &[u32; 8]) -> Result<(), PlayerErr
     let hk = (a[1] % 13) as i32 - 1;
     let n = (a[2] % 5) as usize;
     let ids: Vec<ObjectId> = (0..n).map(|i| obj_id_of(sim, a[3 + i % 4])).collect();
-    let group = |w: u32| -> Option<GroupRef> {
-        if w.is_multiple_of(4) {
-            None
-        } else {
-            Some(w % 3 + 1)
-        }
-    };
+    let group = |w: u32| -> Option<GroupRef> { if w.is_multiple_of(4) { None } else { Some(w % 3 + 1) } };
     match a[0] % 12 {
         0..=2 => {
             sim.msgs.push(ids);
@@ -3291,10 +2776,7 @@ fn squad_op(sim: &mut Sim, p: PlayerIndex, a: &[u32; 8]) -> Result<(), PlayerErr
         4 => player_set_currently_selected_ai_group(sim, p, group(a[2]))?,
         5 => {
             let sq = player_get_hotkey_squad(sim, p, hk)?;
-            sim.rec(format!(
-                "ret hotkey {}",
-                sq.map_or(-1, |s| squad_get_size_of_group(&s))
-            ));
+            sim.rec(format!("ret hotkey {}", sq.map_or(-1, |s| squad_get_size_of_group(&s))));
         }
         6 => {
             let o = real_obj_id(sim, a[2]);
@@ -3302,11 +2784,7 @@ fn squad_op(sim: &mut Sim, p: PlayerIndex, a: &[u32; 8]) -> Result<(), PlayerErr
             sim.rec(format!("ret squadno {r}"));
         }
         7 => {
-            let o = if a[2].is_multiple_of(4) {
-                None
-            } else {
-                Some(real_obj_id(sim, a[2]))
-            };
+            let o = if a[2].is_multiple_of(4) { None } else { Some(real_obj_id(sim, a[2])) };
             player_remove_object_from_hotkey_squad(sim, p, o)?;
         }
         8 => player_add_ai_group_to_current_selection(sim, p, group(a[2]))?,
@@ -3325,15 +2803,7 @@ fn squad_op(sim: &mut Sim, p: PlayerIndex, a: &[u32; 8]) -> Result<(), PlayerErr
                     }
                 }
             } else {
-                match sim
-                    .players
-                    .get_nth_mut(p)
-                    .unwrap()
-                    .squads
-                    .get_mut(hk as usize)
-                    .filter(|_| hk >= 0)
-                    .map(std::mem::take)
-                {
+                match sim.players.get_nth_mut(p).unwrap().squads.get_mut(hk as usize).filter(|_| hk >= 0).map(std::mem::take) {
                     Some(s) => s,
                     None => {
                         sim.rec("skip nosquad".into());
@@ -3353,11 +2823,7 @@ fn squad_op(sim: &mut Sim, p: PlayerIndex, a: &[u32; 8]) -> Result<(), PlayerErr
                     }
                     _ => {
                         let o = real_obj_id(sim, a[3]);
-                        sim.rec(format!(
-                            "ret squadsize {} {}",
-                            squad_get_size_of_group(&sq),
-                            squad_is_on_squad(&sq, o) as u32
-                        ));
+                        sim.rec(format!("ret squadsize {} {}", squad_get_size_of_group(&sq), squad_is_on_squad(&sq, o) as u32));
                     }
                 }
             } else if a[3].is_multiple_of(2) {
@@ -3388,13 +2854,7 @@ fn xfer_op(sim: &mut Sim, p: PlayerIndex, a: &[u32; 8]) -> Result<(), PlayerErro
             sim.rec(format!("ret pcrc {:08x}", xc.get_crc()));
             if std::env::var_os("PCRC_DBG").is_some() {
                 let me = sim.players.get_nth(p).unwrap();
-                eprintln!(
-                    "RUST bonus={} crc={:08x} sp={} spp={}",
-                    me.battle_plan_bonuses.is_some() as u32,
-                    xc.get_crc(),
-                    me.skill_points,
-                    me.science_purchase_points
-                );
+                eprintln!("RUST bonus={} crc={:08x} sp={} spp={}", me.battle_plan_bonuses.is_some() as u32, xc.get_crc(), me.skill_points, me.science_purchase_points);
                 if let Some(b) = me.battle_plan_bonuses.clone() {
                     let mut x2 = XferCrc::new();
                     x2.open(b"q").unwrap();
@@ -3409,11 +2869,7 @@ fn xfer_op(sim: &mut Sim, p: PlayerIndex, a: &[u32; 8]) -> Result<(), PlayerErro
             save.close().unwrap();
             sim.saved = save.take_bytes();
             sim.have_save = true;
-            sim.rec(format!(
-                "ret psave len={} hash={:08x}",
-                sim.saved.len(),
-                hash_bytes(&sim.saved)
-            ));
+            sim.rec(format!("ret psave len={} hash={:08x}", sim.saved.len(), hash_bytes(&sim.saved)));
         }
         _ if !sim.have_save => sim.rec("skip".into()),
         _ => {
@@ -3451,11 +2907,7 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
         0 => player_update(sim, p)?,
         1 => player_new_map(sim, p)?,
         2 => {
-            let t = if a[0].is_multiple_of(2) {
-                PlayerType::Human
-            } else {
-                PlayerType::Computer
-            };
+            let t = if a[0].is_multiple_of(2) { PlayerType::Human } else { PlayerType::Computer };
             player_set_player_type(sim, p, t, a[1] != 0)?;
         }
         3 => player_set_default_team(sim, p)?,
@@ -3468,19 +2920,11 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
             sim.rec(format!("ret rel {}", r as i32));
         }
         6 => {
-            let o = if a[0] != 0 {
-                Some(((a[0] - 1) as usize % np) as PlayerIndex)
-            } else {
-                None
-            };
+            let o = if a[0] != 0 { Some(((a[0] - 1) as usize % np) as PlayerIndex) } else { None };
             player_set_player_relationship(sim, p, o, rel_of(a[1]))?;
         }
         7 => {
-            let o = if a[0] != 0 {
-                Some(((a[0] - 1) as usize % np) as PlayerIndex)
-            } else {
-                None
-            };
+            let o = if a[0] != 0 { Some(((a[0] - 1) as usize % np) as PlayerIndex) } else { None };
             let r = player_remove_player_relationship(sim, p, o)?;
             sim.rec(format!("ret rmprel {}", r as u32));
         }
@@ -3513,10 +2957,7 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
                 e.is_supply_building = a[4] & 64 != 0;
                 e.building_name = format!("B{}", a[5] % 5).into_bytes();
                 e.script = format!("S{}", (a[5] / 8) % 3).into_bytes();
-                e.rally_point_offset = Coord2D {
-                    x: (a[6] % 50) as f32,
-                    y: k as f32,
-                };
+                e.rally_point_offset = Coord2D { x: (a[6] % 50) as f32, y: k as f32 };
                 e.desired_gatherers = (a[7] % 6) as i32;
                 e.current_gatherers = ((a[7] / 8) % 6) as i32;
                 e.object_timestamp = a[7];
@@ -3534,37 +2975,18 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
         }
         12 => {
             let pos = coord_of(a[1], a[2], a[3]);
-            player_add_to_priority_build_list(
-                sim,
-                p,
-                &thing_name(a[0] % 16),
-                pos,
-                f32::from_bits(a[4]),
-            )?;
+            player_add_to_priority_build_list(sim, p, &thing_name(a[0] % 16), pos, f32::from_bits(a[4]))?;
         }
         13 => {
-            let pt = if a[0] != 0 && !sim.ptpls.is_empty() {
-                Some((a[0] as usize - 1) % sim.ptpls.len())
-            } else {
-                None
-            };
+            let pt = if a[0] != 0 && !sim.ptpls.is_empty() { Some((a[0] as usize - 1) % sim.ptpls.len()) } else { None };
             player_init(sim, p, pt.map(|t| t as PlayerTemplateRef))?;
         }
         14 => {
             let frame = sim.frame;
-            let notice = sim.players.get_nth_mut(p).unwrap().energy.adjust_power(
-                frame,
-                a[0] as i32,
-                a[1] != 0,
-            );
+            let notice = sim.players.get_nth_mut(p).unwrap().energy.adjust_power(frame, a[0] as i32, a[1] != 0);
             player_deliver_brown_out_notice(sim, p, notice)?;
         }
-        15 => sim
-            .players
-            .get_nth_mut(p)
-            .unwrap()
-            .energy
-            .set_power_sabotaged_till_frame(a[0]),
+        15 => sim.players.get_nth_mut(p).unwrap().energy.set_power_sabotaged_till_frame(a[0]),
         16 => {
             let r = player_is_skirmish_ai_player(sim, p)?;
             sim.rec(format!("ret skirmish {}", r as u32));
@@ -3572,14 +2994,7 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
         17 => {
             let t = (a[0] as usize % sim.sp_templates.len()) as SpecialPowerTemplateRef;
             let mut pos = coord_of(a[2], a[3], a[4]);
-            let r = player_compute_superweapon_target(
-                sim,
-                p,
-                t,
-                &mut pos,
-                (a[5] % 4) as i32,
-                f32::from_bits(a[1]),
-            )?;
+            let r = player_compute_superweapon_target(sim, p, t, &mut pos, (a[5] % 4) as i32, f32::from_bits(a[1]))?;
             sim.rec(format!("ret super {} {}", r as u32, coord_str(&pos)));
         }
         18 => {
@@ -3592,11 +3007,7 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
         }
         20 => {
             let o = pick_opt_obj(sim, a[0]);
-            let w = if a[1] != 0 && !sim.ways.is_empty() {
-                Some(sim.ways[(a[1] as usize - 1) % sim.ways.len()].1)
-            } else {
-                None
-            };
+            let w = if a[1] != 0 && !sim.ways.is_empty() { Some(sim.ways[(a[1] as usize - 1) % sim.ways.len()].1) } else { None };
             let r = player_check_bridges(sim, p, o, w)?;
             sim.rec(format!("ret bridges {}", r as u32));
         }
@@ -3653,14 +3064,7 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
         }
         35 => {
             let (things, mut counts) = thing_list(sim, a);
-            player_count_objects_by_thing_template(
-                sim,
-                p,
-                &things,
-                a[5] != 0,
-                &mut counts,
-                a[6] != 0,
-            )?;
+            player_count_objects_by_thing_template(sim, p, &things, a[5] != 0, &mut counts, a[6] != 0)?;
             sim.rec(format!("ret count {}", count_str(&counts)));
         }
         36 => {
@@ -3798,20 +3202,11 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
             }
         }
         72 => {
-            let (o, d, ac, pl_) = (
-                player_is_player_observer(sim, p)?,
-                player_is_player_dead(sim, p)?,
-                player_is_player_active(sim, p)?,
-                player_is_playable_side(sim, p)?,
-            );
-            sim.rec(format!(
-                "ret status {}{}{}{}",
-                o as u32, d as u32, ac as u32, pl_ as u32
-            ));
+            let (o, d, ac, pl_) = (player_is_player_observer(sim, p)?, player_is_player_dead(sim, p)?, player_is_player_active(sim, p)?, player_is_playable_side(sim, p)?);
+            sim.rec(format!("ret status {}{}{}{}", o as u32, d as u32, ac as u32, pl_ as u32));
         }
         73 => {
-            sim.players
-                .set_local_player(Some((a[0] as usize % np) as PlayerIndex));
+            sim.players.set_local_player(Some((a[0] as usize % np) as PlayerIndex));
         }
         74 => {
             let s = ScienceType(sim.sci_key((a[1] % 8) as i32));
@@ -3841,10 +3236,7 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
                     sim.rec(format!("ret capable {}", r as u32));
                 }
                 5 => {
-                    let (d, h) = (
-                        player_is_science_disabled(sim, p, s)?,
-                        player_is_science_hidden(sim, p, s)?,
-                    );
+                    let (d, h) = (player_is_science_disabled(sim, p, s)?, player_is_science_hidden(sim, p, s)?);
                     sim.rec(format!("ret disabledhidden {}{}", d as u32, h as u32));
                 }
                 6 => {
@@ -3853,9 +3245,7 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
                 }
                 7 => {
                     let names: [&[u8]; 4] = [b"Available", b"disabled", b"HIDDEN", b"other"];
-                    let r = player_get_science_availability_type_from_string(
-                        names[(a[2] % 4) as usize],
-                    );
+                    let r = player_get_science_availability_type_from_string(names[(a[2] % 4) as usize]);
                     sim.rec(format!("ret avail {}", r as i32));
                 }
                 8 => player_add_science_purchase_points(sim, p, a[2] as i32)?,
@@ -3915,8 +3305,7 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
                     sim.rec(format!("ret mrw {} {pct}", o.unwrap_or(0)));
                 }
                 3 => {
-                    let (o, pct) =
-                        player_find_most_ready_shortcut_special_power_for_thing(sim, p, th)?;
+                    let (o, pct) = player_find_most_ready_shortcut_special_power_for_thing(sim, p, th)?;
                     sim.rec(format!("ret mrst {} {pct}", o.unwrap_or(0)));
                 }
                 4 => {
@@ -3961,11 +3350,7 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
         }
         86 => {
             let n = sim.tpls.len();
-            let t = if a[0] % 3 == 1 && a[1] != 0 {
-                ((a[1] - 1) as usize % n) as TemplateRef
-            } else {
-                (a[1] as usize % n) as TemplateRef
-            };
+            let t = if a[0] % 3 == 1 && a[1] != 0 { ((a[1] - 1) as usize % n) as TemplateRef } else { (a[1] as usize % n) as TemplateRef };
             let none = a[0] % 3 == 1 && a[1] == 0;
             match a[0] % 3 {
                 0 => {
@@ -4000,19 +3385,8 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
                         invalid_kind_of: kind_mask(a[6]),
                     };
                     if a[0].is_multiple_of(6) {
-                        let plan = [
-                            BattlePlanStatus::None,
-                            BattlePlanStatus::Bombardment,
-                            BattlePlanStatus::HoldTheLine,
-                            BattlePlanStatus::SearchAndDestroy,
-                        ][(a[1] % 4) as usize];
-                        player_change_battle_plan(
-                            sim,
-                            p,
-                            plan,
-                            if !a[2].is_multiple_of(2) { 1 } else { -1 },
-                            &mut b,
-                        )?;
+                        let plan = [BattlePlanStatus::None, BattlePlanStatus::Bombardment, BattlePlanStatus::HoldTheLine, BattlePlanStatus::SearchAndDestroy][(a[1] % 4) as usize];
+                        player_change_battle_plan(sim, p, plan, if !a[2].is_multiple_of(2) { 1 } else { -1 }, &mut b)?;
                     } else {
                         player_apply_battle_plan_bonuses_for_player_objects(sim, p, &b)?;
                     }
@@ -4033,27 +3407,13 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
                     sim.rec(format!("ret qualifies {}", r as u32));
                 }
                 2 => {
-                    let plan = [
-                        BattlePlanStatus::None,
-                        BattlePlanStatus::Bombardment,
-                        BattlePlanStatus::HoldTheLine,
-                        BattlePlanStatus::SearchAndDestroy,
-                    ][(a[1] % 4) as usize];
+                    let plan = [BattlePlanStatus::None, BattlePlanStatus::Bombardment, BattlePlanStatus::HoldTheLine, BattlePlanStatus::SearchAndDestroy][(a[1] % 4) as usize];
                     let x = player_get_battle_plans_active_specific(sim, p, plan)?;
                     let y = player_get_num_battle_plans_active(sim, p)?;
                     sim.rec(format!("ret plans {x} {y}"));
                 }
                 // without bonuses upstream dereferences NULL: the operation is skipped (the program is not excluded)
-                3 | 4
-                    if sim
-                        .players
-                        .get_nth(p)
-                        .unwrap()
-                        .battle_plan_bonuses
-                        .is_none() =>
-                {
-                    sim.rec("skip nobonus".into())
-                }
+                3 | 4 if sim.players.get_nth(p).unwrap().battle_plan_bonuses.is_none() => sim.rec("skip nobonus".into()),
                 3 => {
                     let o = pick_obj(sim, a[1]);
                     player_apply_battle_plan_bonuses_for_object(sim, p, o)?;
@@ -4066,20 +3426,10 @@ fn player_op(sim: &mut Sim, p: PlayerIndex, sub: u32, a: &[u32; 8]) -> Result<()
         }
         89 => {
             let mask = kind_mask(a[1]);
-            player_set_units_vision_spied(
-                sim,
-                p,
-                a[0] != 0,
-                &mask,
-                (a[2] as usize % np) as PlayerIndex,
-            )?;
+            player_set_units_vision_spied(sim, p, a[0] != 0, &mask, (a[2] as usize % np) as PlayerIndex)?;
         }
         90 => {
-            let amount = if a[0].is_multiple_of(3) {
-                a[1]
-            } else {
-                a[1] % 4000
-            };
+            let amount = if a[0].is_multiple_of(3) { a[1] } else { a[1] % 4000 };
             let me = sim.players.get_nth_mut(p).unwrap();
             let idx = me.money.player_index();
             me.money = money_of(amount, idx);
@@ -4110,11 +3460,7 @@ fn do_op(sim: &mut Sim, op: u32, r: &mut Reader<'_>) -> Result<(), PlayerError> 
         }
         1 => {
             let (name_id, owner_sel, singleton, dict_idx) = (r.u(), r.u(), r.b(), r.u());
-            let owner = if (owner_sel as usize % (np + 1)) < np {
-                format!("Player{}", owner_sel as usize % (np + 1))
-            } else {
-                "Nobody".to_string()
-            };
+            let owner = if (owner_sel as usize % (np + 1)) < np { format!("Player{}", owner_sel as usize % (np + 1)) } else { "Nobody".to_string() };
             let d = if sim.dicts.is_empty() {
                 Dict::new()
             } else {
@@ -4135,11 +3481,7 @@ fn do_op(sim: &mut Sim, op: u32, r: &mut Reader<'_>) -> Result<(), PlayerError> 
         }
         4 => {
             let (ok, ts) = (r.u(), r.u());
-            let t = if ts != 0 {
-                pick_team(sim, ts - 1)
-            } else {
-                None
-            };
+            let t = if ts != 0 { pick_team(sim, ts - 1) } else { None };
             if ts != 0 && t.is_none() {
                 sim.rec("skip".into());
             } else {
@@ -4192,11 +3534,7 @@ fn chance(g: &mut Gen, percent: u32) -> bool {
 }
 
 fn gen_coord(g: &mut Gen, spread: f32) -> [f32; 3] {
-    [
-        g.uniform(-spread, spread),
-        g.uniform(-spread, spread),
-        g.uniform(0.0, 20.0),
-    ]
+    [g.uniform(-spread, spread), g.uniform(-spread, spread), g.uniform(0.0, 20.0)]
 }
 
 /// A real from a short list (so values tie and repeat) or a free one.
@@ -4212,20 +3550,13 @@ fn gen_real(g: &mut Gen) -> f32 {
 /// A dictionary: a random subset of the properties of a team and of a handicap, with values of the right type.
 fn gen_dict(g: &mut Gen, w: &mut W, n_players: u32, n_tpls: u32, n_ways: u32, n_scripts: u32) {
     let mut entries: Vec<(i32, String, u32, String)> = Vec::new();
-    let mut add = |ty: i32, key: &str, bits: u32, s: &str| {
-        entries.push((ty, key.to_string(), bits, s.to_string()))
-    };
+    let mut add = |ty: i32, key: &str, bits: u32, s: &str| entries.push((ty, key.to_string(), bits, s.to_string()));
     let script = |g: &mut Gen| format!("Scr{}", g.below(n_scripts.max(1) + 1));
     if chance(g, 60) {
         add(3, "teamName", 0, &format!("Team{}", g.below(4)));
     }
     if chance(g, 60) {
-        add(
-            3,
-            "teamOwner",
-            0,
-            &format!("Player{}", g.below(n_players + 1)),
-        );
+        add(3, "teamOwner", 0, &format!("Player{}", g.below(n_players + 1)));
     }
     if chance(g, 40) {
         add(0, "teamIsSingleton", g.below(2), "");
@@ -4235,34 +3566,16 @@ fn gen_dict(g: &mut Gen, w: &mut W, n_players: u32, n_tpls: u32, n_ways: u32, n_
     }
     for k in 1..=7u32 {
         if chance(g, 25) {
-            add(
-                3,
-                &format!("teamUnitType{k}"),
-                0,
-                &format!("Tpl{}", g.below(n_tpls + 2)),
-            );
+            add(3, &format!("teamUnitType{k}"), 0, &format!("Tpl{}", g.below(n_tpls + 2)));
         }
         if chance(g, 25) {
             add(1, &format!("teamUnitMinCount{k}"), g.below(5), "");
         }
         if chance(g, 25) {
-            add(
-                1,
-                &format!("teamUnitMaxCount{k}"),
-                (g.below(7) as i32 - 1) as u32,
-                "",
-            );
+            add(1, &format!("teamUnitMaxCount{k}"), (g.below(7) as i32 - 1) as u32, "");
         }
     }
-    for key in [
-        "teamOnCreateScript",
-        "teamOnIdleScript",
-        "teamOnUnitDestroyedScript",
-        "teamOnDestroyedScript",
-        "teamEnemySightedScript",
-        "teamAllClearScript",
-        "teamProductionCondition",
-    ] {
+    for key in ["teamOnCreateScript", "teamOnIdleScript", "teamOnUnitDestroyedScript", "teamOnDestroyedScript", "teamEnemySightedScript", "teamAllClearScript", "teamProductionCondition"] {
         if chance(g, 50) {
             let s = script(g);
             add(3, key, 0, &s);
@@ -4284,14 +3597,7 @@ fn gen_dict(g: &mut Gen, w: &mut W, n_players: u32, n_tpls: u32, n_ways: u32, n_
             add(0, key, g.below(2), "");
         }
     }
-    for key in [
-        "teamInitialIdleFrames",
-        "teamMaxInstances",
-        "teamProductionPriority",
-        "teamProductionPrioritySuccessIncrease",
-        "teamProductionPriorityFailureDecrease",
-        "teamVeterancy",
-    ] {
+    for key in ["teamInitialIdleFrames", "teamMaxInstances", "teamProductionPriority", "teamProductionPrioritySuccessIncrease", "teamProductionPriorityFailureDecrease", "teamVeterancy"] {
         if chance(g, 40) {
             add(1, key, (g.below(12) as i32 - 3) as u32, "");
         }
@@ -4300,9 +3606,7 @@ fn gen_dict(g: &mut Gen, w: &mut W, n_players: u32, n_tpls: u32, n_ways: u32, n_
         add(1, "teamAggressiveness", (g.below(6) as i32 - 2) as u32, "");
     }
     if chance(g, 50) {
-        let v = *[0.0f32, 0.25, 0.5, 0.75, 1.0, 1.5, -0.5]
-            .get(g.below(7) as usize)
-            .unwrap();
+        let v = *[0.0f32, 0.25, 0.5, 0.75, 1.0, 1.5, -0.5].get(g.below(7) as usize).unwrap();
         add(2, "teamDestroyedThreshold", v.to_bits(), "");
     }
     for key in ["teamTransport", "teamReinforcementOrigin"] {
@@ -4317,12 +3621,7 @@ fn gen_dict(g: &mut Gen, w: &mut W, n_players: u32, n_tpls: u32, n_ways: u32, n_
         }
     }
     // the handicap keys (Handicap::readFromDict reads these four)
-    for key in [
-        "HANDICAP_BUILDCOST_GENERIC",
-        "HANDICAP_BUILDCOST_BUILDINGS",
-        "HANDICAP_BUILDTIME_GENERIC",
-        "HANDICAP_BUILDTIME_BUILDINGS",
-    ] {
+    for key in ["HANDICAP_BUILDCOST_GENERIC", "HANDICAP_BUILDCOST_BUILDINGS", "HANDICAP_BUILDTIME_GENERIC", "HANDICAP_BUILDTIME_BUILDINGS"] {
         if chance(g, 45) {
             let v = gen_real(g);
             add(2, key, v.to_bits(), "");
@@ -4369,9 +3668,7 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32, [u32; 3]) {
     w.b(chance(g, 50));
     w.u(g.below(300));
     for _ in 0..6 {
-        let v = *[0.5f32, 1.0, 1.0, 1.25, 1.5, 2.0]
-            .get(g.below(6) as usize)
-            .unwrap();
+        let v = *[0.5f32, 1.0, 1.0, 1.25, 1.5, 2.0].get(g.below(6) as usize).unwrap();
         w.f(v);
     }
     gen_money(g, w);
@@ -4400,11 +3697,7 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32, [u32; 3]) {
         for _ in 0..ng {
             w.i(g.below(8) as i32);
         }
-        needed += if (ri == 0 && chance(g, 30)) || chance(g, 10) {
-            0
-        } else {
-            1 + g.below(300) as i32
-        };
+        needed += if (ri == 0 && chance(g, 30)) || chance(g, 10) { 0 } else { 1 + g.below(300) as i32 };
     }
     // the sciences 0..7
     w.i(8);
@@ -4435,11 +3728,7 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32, [u32; 3]) {
     for ti in 0..npt {
         w.i(g.below(8) as i32);
         // the side: 7 is `Civilian`, whose skirmish side a human player takes the scripts of
-        w.i(if chance(g, if ti == 0 { 55 } else { 25 }) {
-            7
-        } else {
-            g.below(3) as i32
-        });
+        w.i(if chance(g, if ti == 0 { 55 } else { 25 }) { 7 } else { g.below(3) as i32 });
         w.i(g.below(3) as i32);
         w.i(g.below(0x100_0000) as i32);
         gen_money(g, w);
@@ -4477,11 +3766,7 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32, [u32; 3]) {
         w.b(chance(g, 50));
         w.b(chance(g, 50));
         w.c(gen_coord(g, 300.0));
-        w.i(if chance(g, 40) {
-            -1
-        } else {
-            g.below(np) as i32
-        });
+        w.i(if chance(g, 40) { -1 } else { g.below(np) as i32 });
         w.u(g.below(3));
     }
     // the thing templates
@@ -4491,11 +3776,7 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32, [u32; 3]) {
         w.i(nk as i32);
         for _ in 0..nk {
             // --- p1w10-sonnet --- (slice 2): often one of the kinds the object-facing operations look at
-            w.u(if chance(g, 40) {
-                [0u32, 11, 9, 12, 1][g.below(5) as usize]
-            } else {
-                g.below(15)
-            });
+            w.u(if chance(g, 40) { [0u32, 11, 9, 12, 1][g.below(5) as usize] } else { g.below(15) });
         }
         w.b(chance(g, 25));
         w.i(g.below(2) as i32);
@@ -4538,11 +3819,7 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32, [u32; 3]) {
         w.u(g.below(32));
         w.i(if chance(g, 50) { -1 } else { g.below(4) as i32 });
         if chance(g, 50) {
-            w.c([
-                (g.below(3) as f32 - 1.0) * 10.0,
-                (g.below(3) as f32 - 1.0) * 10.0,
-                0.0,
-            ]);
+            w.c([(g.below(3) as f32 - 1.0) * 10.0, (g.below(3) as f32 - 1.0) * 10.0, 0.0]);
         } else {
             w.c(gen_coord(g, 300.0));
         }
@@ -4580,36 +3857,11 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32, [u32; 3]) {
         w.c(gen_coord(g, 300.0));
     }
     // the frame: often a whole number of seconds, which is when Player::update posts its message
-    let frame0 = if chance(g, 15) {
-        0
-    } else if chance(g, 60) {
-        30 * g.below(40)
-    } else {
-        g.below(1000)
-    };
+    let frame0 = if chance(g, 15) { 0 } else if chance(g, 60) { 30 * g.below(40) } else { g.below(1000) };
     w.u(frame0);
-    let palette = gen_header2(
-        g,
-        w,
-        np,
-        nt,
-        &used.iter().copied().collect::<Vec<_>>(),
-        &mod_counts,
-        frame0,
-    );
+    let palette = gen_header2(g, w, np, nt, &used.iter().copied().collect::<Vec<_>>(), &mod_counts, frame0);
     // the name keys to look at at the end
-    let probes = [
-        "",
-        "Player0",
-        "Player3",
-        "Tpl3",
-        "Tpl9",
-        "teamName",
-        "HANDICAP_BUILDCOST_GENERIC",
-        "HANDICAP_BUILDTIME_BUILDINGS",
-        "TeamOwner",
-        "never-used",
-    ];
+    let probes = ["", "Player0", "Player3", "Tpl3", "Tpl9", "teamName", "HANDICAP_BUILDCOST_GENERIC", "HANDICAP_BUILDTIME_BUILDINGS", "TeamOwner", "never-used"];
     w.i(probes.len() as i32);
     for name in probes {
         w.s(name);
@@ -4623,15 +3875,7 @@ fn gen_header(g: &mut Gen, w: &mut W) -> (u32, u32, u32, [u32; 3]) {
 /// The number of player templates of the program being generated (`gen_sides` names factions).
 static NPT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
 
-fn gen_header2(
-    g: &mut Gen,
-    w: &mut W,
-    np: u32,
-    nt: u32,
-    ids: &[u32],
-    mod_counts: &[u32],
-    frame0: u32,
-) -> [u32; 3] {
+fn gen_header2(g: &mut Gen, w: &mut W, np: u32, nt: u32, ids: &[u32], mod_counts: &[u32], frame0: u32) -> [u32; 3] {
     // the special powers of the program come from a palette of three (so that objects share a type)
     let palette = [g.below(9), g.below(9), g.below(9)];
     w.b(chance(g, 60));
@@ -4649,11 +3893,7 @@ fn gen_header2(
         w.u(g.below(4));
         w.u(g.u32());
         w.u(if chance(g, 50) { 0 } else { 1 + g.below(3) });
-        w.i(if chance(g, 50) {
-            0
-        } else {
-            1 + g.below(3) as i32
-        });
+        w.i(if chance(g, 50) { 0 } else { 1 + g.below(3) as i32 });
         w.u(g.below(4));
     }
     for &nm in mod_counts {
@@ -4663,38 +3903,20 @@ fn gen_header2(
         w.b(chance(g, 30));
         w.b(chance(g, 30));
         w.b(chance(g, 80));
-        w.u(if chance(g, 80) {
-            [0u32, 100, 100, 101, 129, 129][g.below(6) as usize]
-        } else {
-            g.below(130)
-        });
+        w.u(if chance(g, 80) { [0u32, 100, 100, 101, 129, 129][g.below(6) as usize] } else { g.below(130) });
         w.b(chance(g, 70));
         w.b(chance(g, 25));
-        w.i(if chance(g, 50) {
-            -1
-        } else {
-            g.below(np) as i32
-        });
+        w.i(if chance(g, 50) { -1 } else { g.below(np) as i32 });
         w.u(g.u32());
         w.u(g.u32());
-        w.u(if chance(g, 50) {
-            0
-        } else if chance(g, 70) {
-            ids[g.below(ids.len() as u32) as usize]
-        } else {
-            1 + g.below(200)
-        });
+        w.u(if chance(g, 50) { 0 } else if chance(g, 70) { ids[g.below(ids.len() as u32) as usize] } else { 1 + g.below(200) });
         w.f(g.uniform(50.0, 500.0));
         w.f(g.uniform(0.0, 300.0));
         w.u(if chance(g, 50) { 0 } else { 1 << g.below(np) });
         w.u(g.u32());
         w.i(if chance(g, 50) { -1 } else { g.below(4) as i32 });
         for _ in 0..nm {
-            w.u(if chance(g, 85) {
-                palette[g.below(3) as usize]
-            } else {
-                g.below(9)
-            });
+            w.u(if chance(g, 85) { palette[g.below(3) as usize] } else { g.below(9) });
             w.b(chance(g, 20));
             w.u(match g.below(8) {
                 0 => 0,
@@ -4704,11 +3926,7 @@ fn gen_header2(
                 6 => frame0 + 2,
                 _ => g.below(2000),
             });
-            w.u(if chance(g, 70) {
-                [0u32, 50, 99, 100, 101, 129][g.below(6) as usize]
-            } else {
-                g.below(130)
-            });
+            w.u(if chance(g, 70) { [0u32, 50, 99, 100, 101, 129][g.below(6) as usize] } else { g.below(130) });
             w.b(chance(g, 40));
         }
     }
@@ -4756,24 +3974,13 @@ fn gen_sides(g: &mut Gen, w: &mut W) {
         }
         if chance(g, 70) {
             let n = format!("Name{}", g.below(100));
-            entries.push(Box::new(move |w| {
-                w_entry_str(w, 4, "playerDisplayName", &n)
-            }));
+            entries.push(Box::new(move |w| w_entry_str(w, 4, "playerDisplayName", &n)));
         }
         if chance(g, 85) {
-            let n = if chance(g, 8) {
-                String::new()
-            } else {
-                format!("PN{}", g.below(6))
-            };
+            let n = if chance(g, 8) { String::new() } else { format!("PN{}", g.below(6)) };
             entries.push(Box::new(move |w| w_entry_str(w, 3, "playerName", &n)));
         }
-        for key in [
-            "playerIsSkirmish",
-            "playerIsHuman",
-            "playerIsPreorder",
-            "multiplayerIsLocal",
-        ] {
+        for key in ["playerIsSkirmish", "playerIsHuman", "playerIsPreorder", "multiplayerIsLocal"] {
             if chance(g, 40) {
                 let v = chance(g, 55) as u32;
                 entries.push(Box::new(move |w| w_entry_bits(w, 0, key, v)));
@@ -4781,16 +3988,12 @@ fn gen_sides(g: &mut Gen, w: &mut W) {
         }
         if chance(g, 60) {
             let v = g.below(8);
-            entries.push(Box::new(move |w| {
-                w_entry_bits(w, 1, "multiplayerStartIndex", v)
-            }));
+            entries.push(Box::new(move |w| w_entry_bits(w, 1, "multiplayerStartIndex", v)));
         }
         if chance(g, 50) {
             // a value the enum names (upstream stores any int in it; the Rust enum holds the three)
             let v = g.below(3);
-            entries.push(Box::new(move |w| {
-                w_entry_bits(w, 1, "skirmishDifficulty", v)
-            }));
+            entries.push(Box::new(move |w| w_entry_bits(w, 1, "skirmishDifficulty", v)));
         }
         for key in ["playerColor", "playerNightColor"] {
             if chance(g, 40) {
@@ -4805,20 +4008,13 @@ fn gen_sides(g: &mut Gen, w: &mut W) {
         for key in ["playerEnemies", "playerAllies"] {
             if chance(g, 45) {
                 let n = 1 + g.below(3);
-                let v = (0..n)
-                    .map(|_| format!("PN{}", g.below(6)))
-                    .collect::<Vec<_>>()
-                    .join(" ");
+                let v = (0..n).map(|_| format!("PN{}", g.below(6))).collect::<Vec<_>>().join(" ");
                 entries.push(Box::new(move |w| w_entry_str(w, 3, key, &v)));
             }
         }
         if chance(g, 40) {
             let v = gen_real(g).to_bits();
-            let key = [
-                "HANDICAP_BUILDCOST_GENERIC",
-                "HANDICAP_BUILDTIME_BUILDINGS",
-                "HANDICAP_BUILDCOST_BUILDINGS",
-            ][g.below(3) as usize];
+            let key = ["HANDICAP_BUILDCOST_GENERIC", "HANDICAP_BUILDTIME_BUILDINGS", "HANDICAP_BUILDCOST_BUILDINGS"][g.below(3) as usize];
             entries.push(Box::new(move |w| w_entry_bits(w, 2, key, v)));
         }
         w.i(entries.len() as i32);
@@ -4836,41 +4032,17 @@ fn gen_sides(g: &mut Gen, w: &mut W) {
     for _ in 0..ntd {
         // a team: an owner (a player of the map or a skirmish side), a name, script names, hooks
         let mut entries: Vec<(i32, String, String)> = Vec::new();
-        let owner = if chance(g, 50) && nsk > 0 {
-            format!("SK{}", g.below(nsk))
-        } else {
-            format!("PN{}", g.below(6))
-        };
+        let owner = if chance(g, 50) && nsk > 0 { format!("SK{}", g.below(nsk)) } else { format!("PN{}", g.below(6)) };
         entries.push((3, "teamOwner".into(), owner));
         entries.push((3, "teamName".into(), format!("ST{}", g.below(4))));
-        for key in [
-            "teamOnCreateScript",
-            "teamOnIdleScript",
-            "teamOnUnitDestroyedScript",
-            "teamOnDestroyedScript",
-            "teamEnemySightedScript",
-            "teamAllClearScript",
-            "teamProductionCondition",
-        ] {
+        for key in ["teamOnCreateScript", "teamOnIdleScript", "teamOnUnitDestroyedScript", "teamOnDestroyedScript", "teamEnemySightedScript", "teamAllClearScript", "teamProductionCondition"] {
             if chance(g, 40) {
-                entries.push((
-                    3,
-                    key.into(),
-                    if chance(g, 15) {
-                        String::new()
-                    } else {
-                        format!("Scr{}", g.below(5))
-                    },
-                ));
+                entries.push((3, key.into(), if chance(g, 15) { String::new() } else { format!("Scr{}", g.below(5)) }));
             }
         }
         for j in 0..16 {
             if chance(g, 12) {
-                entries.push((
-                    3,
-                    format!("teamGenericScriptHook{j}"),
-                    format!("Hook{}", g.below(4)),
-                ));
+                entries.push((3, format!("teamGenericScriptHook{j}"), format!("Hook{}", g.below(4))));
             }
         }
         w.i(entries.len() as i32);
@@ -4881,19 +4053,9 @@ fn gen_sides(g: &mut Gen, w: &mut W) {
     let total = npd + nsk + ntd;
     // the sixteen sides: a player dictionary for some of the first, a script list for some, a build list for some
     for i in 0..16u32 {
-        w.u(
-            if i < if wide { 16 } else { 6 } && chance(g, if wide { 92 } else { 55 }) {
-                1 + g.below(npd)
-            } else {
-                0
-            },
-        );
+        w.u(if i < if wide { 16 } else { 6 } && chance(g, if wide { 92 } else { 55 }) { 1 + g.below(npd) } else { 0 });
         w.b(chance(g, 30));
-        w.i(if chance(g, 30) {
-            1 + g.below(2) as i32
-        } else {
-            0
-        });
+        w.i(if chance(g, 30) { 1 + g.below(2) as i32 } else { 0 });
     }
     // the skirmish sides and the teams
     w.i(nsk as i32);
@@ -4904,20 +4066,12 @@ fn gen_sides(g: &mut Gen, w: &mut W) {
     let nst = g.below(4);
     w.i(nst as i32);
     for _ in 0..nst {
-        w.u(if ntd > 0 {
-            1 + npd + nsk + g.below(ntd)
-        } else {
-            0
-        });
+        w.u(if ntd > 0 { 1 + npd + nsk + g.below(ntd) } else { 0 });
     }
     let nkt = g.below(4);
     w.i(nkt as i32);
     for _ in 0..nkt {
-        w.u(if ntd > 0 {
-            1 + npd + nsk + g.below(ntd)
-        } else {
-            0
-        });
+        w.u(if ntd > 0 { 1 + npd + nsk + g.below(ntd) } else { 0 });
     }
     let _ = total;
 }
@@ -4931,17 +4085,9 @@ fn gen_bits(g: &mut Gen) -> u32 {
 /// A grid coordinate (ties in distances) or a free one.
 fn gen_pos(g: &mut Gen) -> [f32; 3] {
     if chance(g, 50) {
-        [
-            (g.below(3) as f32 - 1.0) * 10.0,
-            (g.below(3) as f32 - 1.0) * 10.0,
-            0.0,
-        ]
+        [(g.below(3) as f32 - 1.0) * 10.0, (g.below(3) as f32 - 1.0) * 10.0, 0.0]
     } else {
-        [
-            g.uniform(-300.0, 300.0),
-            g.uniform(-300.0, 300.0),
-            g.uniform(0.0, 20.0),
-        ]
+        [g.uniform(-300.0, 300.0), g.uniform(-300.0, 300.0), g.uniform(0.0, 20.0)]
     }
 }
 
@@ -4983,14 +4129,12 @@ fn gen_player_args(g: &mut Gen, sub: u32, st: &GenState) -> [u32; 8] {
             a[4] = gen_bits(g);
         }
         14 => a[0] = (g.below(101) as i32 - 50) as u32,
-        15 => {
-            a[0] = match g.below(4) {
-                0 => frame,
-                1 => frame + 1,
-                2 => frame.saturating_sub(1),
-                _ => g.below(2000),
-            }
-        }
+        15 => a[0] = match g.below(4) {
+            0 => frame,
+            1 => frame + 1,
+            2 => frame.saturating_sub(1),
+            _ => g.below(2000),
+        },
         17 => {
             a[1] = gen_bits(g);
             bits3(g, &mut a, 2);
@@ -5031,16 +4175,8 @@ fn gen_player_args(g: &mut Gen, sub: u32, st: &GenState) -> [u32; 8] {
         }
         74 => {
             a[0] = g.below(10);
-            a[1] = if chance(g, 70) {
-                g.below(4)
-            } else {
-                g.below(8)
-            };
-            a[2] = if a[0] == 8 {
-                (g.below(13) as i32 - 6) as u32
-            } else {
-                g.below(8)
-            };
+            a[1] = if chance(g, 70) { g.below(4) } else { g.below(8) };
+            a[2] = if a[0] == 8 { (g.below(13) as i32 - 6) as u32 } else { g.below(8) };
         }
         75 => {
             a[0] = g.below(5);
@@ -5053,11 +4189,7 @@ fn gen_player_args(g: &mut Gen, sub: u32, st: &GenState) -> [u32; 8] {
         // --- p1w10-sonnet --- (slice 2)
         79 => {
             a[0] = [0u32, 1, 1, 1, 2, 3, 4, 5, 6, 6][g.below(10) as usize];
-            a[1] = if chance(g, 75) {
-                st.palette[g.below(3) as usize]
-            } else {
-                g.below(9)
-            };
+            a[1] = if chance(g, 75) { st.palette[g.below(3) as usize] } else { g.below(9) };
             a[2] = g.below(8);
         }
         84 => a[0] = g.below(4),
@@ -5091,17 +4223,9 @@ fn gen_player_args(g: &mut Gen, sub: u32, st: &GenState) -> [u32; 8] {
                 *x = g.u32();
             }
             a[0] = g.below(12);
-            a[1] = if chance(g, 85) {
-                1 + g.below(10)
-            } else {
-                g.below(13)
-            };
+            a[1] = if chance(g, 85) { 1 + g.below(10) } else { g.below(13) };
             // most squad operations come as a fill (a group, a message with objects) and a use of what was filled
-            a[2] = if chance(g, 50) {
-                1 + g.below(3) + 4 * g.below(2)
-            } else {
-                g.u32()
-            };
+            a[2] = if chance(g, 50) { 1 + g.below(3) + 4 * g.below(2) } else { g.u32() };
             if chance(g, 40) {
                 a[0] = [0u32, 9, 8, 4, 2, 1][g.below(6) as usize];
             }
@@ -5226,18 +4350,7 @@ fn emit_player_args(w: &mut W, pk: u32, sub: u32, a: [u32; 8]) {
 fn directed_sequence(g: &mut Gen, np: u32, kind: u32) -> Vec<(u32, u32, [u32; 8])> {
     let mut v: Vec<(u32, u32, [u32; 8])> = Vec::new();
     let pk = g.below(np.max(1));
-    let rnd = |g: &mut Gen| -> [u32; 8] {
-        [
-            g.u32(),
-            g.u32(),
-            g.u32(),
-            g.u32(),
-            g.u32(),
-            g.u32(),
-            g.u32(),
-            g.u32(),
-        ]
-    };
+    let rnd = |g: &mut Gen| -> [u32; 8] { [g.u32(), g.u32(), g.u32(), g.u32(), g.u32(), g.u32(), g.u32(), g.u32()] };
     match kind {
         // hotkey squads: filled from an AI group that holds objects that do not exist, then asked for their objects
         0 => {
@@ -5279,11 +4392,7 @@ fn directed_sequence(g: &mut Gen, np: u32, kind: u32) -> Vec<(u32, u32, [u32; 8]
         // slice 4: a player initialised from a dictionary (it then has a resource gathering manager and a tunnel tracker)
         // saved, and the save loaded into another player that has not (plants 359, 360), and the other way round
         6 => {
-            let pk2 = if np > 1 {
-                (pk + 1 + g.below(np - 1)) % np
-            } else {
-                pk
-            };
+            let pk2 = if np > 1 { (pk + 1 + g.below(np - 1)) % np } else { pk };
             let dsel = g.u32();
             v.push((pk, 94, [dsel, 0, 0, 0, 0, 0, 0, 0]));
             v.push((pk, 93, [0, 3, 0, 0, 0, 0, 0, 0]));
@@ -5343,17 +4452,7 @@ fn directed_sequence(g: &mut Gen, np: u32, kind: u32) -> Vec<(u32, u32, [u32; 8]
         // team relationships: set, read, removed (a team that is not in the map, then one that is, then again)
         4 => {
             let (t1, t2) = (1 + g.below(12), 1 + g.below(12));
-            for (sub, team, rel) in [
-                (8u32, t1, g.below(3)),
-                (8, t2, g.below(3)),
-                (5, t1, 0),
-                (5, t2, 0),
-                (9, 1 + g.below(12), 0),
-                (9, t1, 0),
-                (9, t1, 0),
-                (5, t1, 0),
-                (5, t2, 0),
-            ] {
+            for (sub, team, rel) in [(8u32, t1, g.below(3)), (8, t2, g.below(3)), (5, t1, 0), (5, t2, 0), (9, 1 + g.below(12), 0), (9, t1, 0), (9, t1, 0), (5, t1, 0), (5, t2, 0)] {
                 let mut a = rnd(g);
                 a[0] = team;
                 a[1] = rel;
@@ -5423,11 +4522,7 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
         }
         10..=13 => {
             w.u(2);
-            w.u(if chance(g, 30) {
-                100 + g.below(4)
-            } else {
-                g.below(4)
-            });
+            w.u(if chance(g, 30) { 100 + g.below(4) } else { g.below(4) });
         }
         14..=15 => {
             w.u(3);
@@ -5461,11 +4556,7 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
                 2 => a[0] = g.below(5),
                 11 => {
                     a[0] = g.below(4);
-                    a[1] = if chance(g, 50) {
-                        0
-                    } else {
-                        st.frame.saturating_sub(1) + g.below(3)
-                    };
+                    a[1] = if chance(g, 50) { 0 } else { st.frame.saturating_sub(1) + g.below(3) };
                     a[2] = g.below(130);
                 }
                 12 => a[1] = g.below(130),
@@ -5488,24 +4579,14 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
         // --- p1w10-sonnet --- (slice 4): an operation on the player list
         35..=37 => {
             // the heavy ones (init, reset, newGame) are rarer than the queries
-            let sub = if chance(g, 25) {
-                [8u32, 9, 10, 10, 10][g.below(5) as usize]
-            } else {
-                g.below(15)
-            };
+            let sub = if chance(g, 25) { [8u32, 9, 10, 10, 10][g.below(5) as usize] } else { g.below(15) };
             let mut a = [0u32; 8];
             for x in a.iter_mut() {
                 *x = g.u32();
             }
             a[0] = match sub {
                 // slice 4: a name that is no team and no player reaches validateTeam's last resort (neutral's default team)
-                3 => {
-                    if chance(g, 30) {
-                        100 + g.below(40)
-                    } else {
-                        g.below(8)
-                    }
-                }
+                3 => if chance(g, 30) { 100 + g.below(40) } else { g.below(8) },
                 4 => g.below(6),
                 14 => g.below(8),
                 _ => g.u32(),
@@ -5671,30 +4752,15 @@ fn gen_one(g: &mut Gen, w: &mut W, n: &mut u32, st: &mut GenState) {
                 }
                 // --- end p1w10-sonnet ---
                 // the subs: all, with a bias to the loops over objects and the sciences
-                let sub = if chance(g, 14) {
-                    [92u32, 92, 92, 92, 92, 91, 93, 93, 94, 94][g.below(10) as usize]
-                } else if chance(g, 20) {
-                    [
-                        0u32, 33, 34, 35, 36, 37, 38, 44, 68, 74, 75, 3, 69, 69, 62, 63, 64, 65,
-                        70, 50, 14, 13, 2, 5, 6, 8, 76, 85, 85, 79, 79, 79, 79, 79, 79,
-                    ][g.below(35) as usize]
-                } else if chance(g, 45) {
-                    77 + g.below(18)
-                } else {
-                    g.below(95)
-                };
+                let sub = if chance(g, 14) { [92u32, 92, 92, 92, 92, 91, 93, 93, 94, 94][g.below(10) as usize] } else if chance(g, 20) { [0u32, 33, 34, 35, 36, 37, 38, 44, 68, 74, 75, 3, 69, 69, 62, 63, 64, 65, 70, 50, 14, 13, 2, 5, 6, 8, 76, 85, 85, 79, 79, 79, 79, 79, 79][g.below(35) as usize] } else if chance(g, 45) { 77 + g.below(18) } else { g.below(95) };
                 let mut a = gen_player_args(g, sub, st);
                 if sub == 88 && chance(g, 50) {
                     a[0] = 0;
                 }
                 if sub == 88 && a[0].is_multiple_of(6) {
                     // switch a plan off again that was switched on, half of the time
-                    let on: Vec<u32> = (1..4u32)
-                        .filter(|k| st.plans[(pk % st.np) as usize][*k as usize] > 0)
-                        .collect();
-                    let neg: Vec<u32> = (1..4u32)
-                        .filter(|k| st.plans[(pk % st.np) as usize][*k as usize] < 0)
-                        .collect();
+                    let on: Vec<u32> = (1..4u32).filter(|k| st.plans[(pk % st.np) as usize][*k as usize] > 0).collect();
+                    let neg: Vec<u32> = (1..4u32).filter(|k| st.plans[(pk % st.np) as usize][*k as usize] < 0).collect();
                     if !neg.is_empty() && chance(g, 70) {
                         // a plan that was switched off without being on: switched on, back to zero
                         a[1] = neg[g.below(neg.len() as u32) as usize];
@@ -5767,14 +4833,7 @@ fn gen_ops(g: &mut Gen, w: &mut W, np: u32, frame0: u32, palette: [u32; 3]) {
         }
         if wide {
             // sixteen players: the last one's new map, team states, the teams about to be deleted, the players it has relations to
-            for (sub, a0, a1) in [
-                (1u32, 0u32, 0u32),
-                (2, 0, 0),
-                (14, 1 + g.below(8), 0),
-                (14, 1 + g.below(8), 0),
-                (7, 15, 1 + g.below(15)),
-                (7, 15, 14),
-            ] {
+            for (sub, a0, a1) in [(1u32, 0u32, 0u32), (2, 0, 0), (14, 1 + g.below(8), 0), (14, 1 + g.below(8), 0), (7, 15, 1 + g.below(15)), (7, 15, 14)] {
                 emit_list_op(g, &mut ops, sub, a0, a1);
                 n += 1;
             }
@@ -5802,13 +4861,7 @@ fn gen_ops(g: &mut Gen, w: &mut W, np: u32, frame0: u32, palette: [u32; 3]) {
     }
     // --- end p1w10-sonnet ---
     gen_setup(g, &mut ops, &mut n, np);
-    let mut st = GenState {
-        frame: frame0,
-        last: None,
-        palette,
-        plans: [[0; 4]; 16],
-        np,
-    };
+    let mut st = GenState { frame: frame0, last: None, palette, plans: [[0; 4]; 16], np };
     // --- p1w10-sonnet --- (slice 2): most programs start with a battle plan on for a player or two (the bonuses it hands out
     // are what later operations remove, apply to new team members and read back)
     for pk in 0..np {
@@ -5817,16 +4870,7 @@ fn gen_ops(g: &mut Gen, w: &mut W, np: u32, frame0: u32, palette: [u32; 3]) {
             ops.u(6);
             ops.u(pk);
             ops.u(88);
-            for x in [
-                0,
-                plan,
-                1,
-                g.u32(),
-                g.u32(),
-                (0..15).fold(0u32, |m, k| if chance(g, 45) { m | (1 << k) } else { m }),
-                if chance(g, 55) { 0 } else { gen_mask(g) },
-                0,
-            ] {
+            for x in [0, plan, 1, g.u32(), g.u32(), (0..15).fold(0u32, |m, k| if chance(g, 45) { m | (1 << k) } else { m }), if chance(g, 55) { 0 } else { gen_mask(g) }, 0] {
                 ops.u(x);
             }
             n += 1;
@@ -5855,40 +4899,21 @@ fn gen_program(seed: u64) -> Vec<u32> {
 // ---------------------------------------------------------------------------------------------------------------------
 
 fn cpp_run(words: &[u32]) -> Vec<String> {
-    let path = std::ffi::CString::new(format!(
-        "{}/player_{}.bin",
-        std::env::temp_dir().display(),
-        std::process::id()
-    ))
-    .unwrap();
+    let path = std::ffi::CString::new(format!("{}/player_{}.bin", std::env::temp_dir().display(), std::process::id())).unwrap();
     let mut cap = 1 << 20;
     loop {
         let mut buf = vec![0u8; cap];
-        let n = unsafe {
-            cpp::ref_player_run(
-                words.as_ptr(),
-                words.len() as i32,
-                path.as_ptr(),
-                buf.as_mut_ptr() as *mut std::os::raw::c_char,
-                cap as i32,
-            )
-        } as usize;
+        let n = unsafe { cpp::ref_player_run(words.as_ptr(), words.len() as i32, path.as_ptr(), buf.as_mut_ptr() as *mut std::os::raw::c_char, cap as i32) } as usize;
         if n <= cap {
             buf.truncate(n);
-            return String::from_utf8_lossy(&buf)
-                .lines()
-                .map(str::to_owned)
-                .collect();
+            return String::from_utf8_lossy(&buf).lines().map(str::to_owned).collect();
         }
         cap = n + 1;
     }
 }
 
 fn cases() -> u64 {
-    std::env::var("PLAYER_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1000)
+    std::env::var("PLAYER_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(1000)
 }
 
 #[test]
@@ -5900,154 +4925,24 @@ fn player_matches_upstream() {
     let mut why_counts: BTreeMap<&str, u64> = BTreeMap::new();
     let mut counts: BTreeMap<String, u64> = BTreeMap::new();
     let markers = [
-        "ret rel ",
-        "ret rmprel ",
-        "ret rmtrel ",
-        "ret skirmish",
-        "ret super ",
-        "ret enemy",
-        "ret diff",
-        "ret bridges",
-        "ret base ",
-        "ret safe",
-        "ret attacked ",
-        "ret count ",
-        "ret buildings",
-        "ret objects",
-        "ret closest",
-        "ret anybuildings",
-        "ret anyunits",
-        "ret anyobjects",
-        "ret buildfacility",
-        "ret local",
-        "ret prod ",
-        "ret allowed",
-        "ret zone ",
-        "ret radar ",
-        "ret radarok",
-        "ret spready",
-        "ret kopc",
-        "ret attackedby",
-        "ret status",
-        "ret hasscience",
-        "ret purchase",
-        "ret grant",
-        "ret capable",
-        "ret prereqs",
-        "ret avail",
-        "ret setrank",
-        "ret addskill",
-        "ret killskill",
-        "audio ",
-        "ui.dirty",
-        "ui.spp",
-        "ui.rank",
-        "eva ",
-        "msg.append",
-        "script.science",
-        "script.objchange",
-        "sp.created",
-        "sp.ready",
-        "disable ",
-        "enable ",
-        "script-status",
-        "ai.new",
-        "ai.delete",
-        "ai.update",
-        "ai.buildteam",
+        "ret rel ", "ret rmprel ", "ret rmtrel ", "ret skirmish", "ret super ", "ret enemy", "ret diff", "ret bridges", "ret base ", "ret safe", "ret attacked ", "ret count ", "ret buildings",
+        "ret objects", "ret closest", "ret anybuildings", "ret anyunits", "ret anyobjects", "ret buildfacility", "ret local", "ret prod ", "ret allowed", "ret zone ", "ret radar ", "ret radarok",
+        "ret spready", "ret kopc", "ret attackedby", "ret status", "ret hasscience", "ret purchase", "ret grant", "ret capable", "ret prereqs", "ret avail", "ret setrank", "ret addskill",
+        "ret killskill", "audio ", "ui.dirty", "ui.spp", "ui.rank", "eva ", "msg.append", "script.science", "script.objchange", "sp.created", "sp.ready", "disable ", "enable ", "script-status",
+        "ai.new", "ai.delete", "ai.update", "ai.buildteam",
         // --- p1w10-sonnet --- (slice 2)
-        "ret ncc",
-        "ret mrsp",
-        "ret mrw",
-        "ret mrst",
-        "ret anyobj ",
-        "ret anysp",
-        "ret countsp",
-        "ret morethan",
-        "ret canbuild",
-        "ret afford",
-        "ret qualifies",
-        "ret plans",
-        "bonus ",
-        "skip nobonus",
-        "skip notemplate",
-        "adjustpower",
-        "capturebonus",
-        "ui.idle+",
-        "ui.idle-",
-        "leavegroup",
-        "ai.hunt",
-        "ai.idle",
-        "ai.enter",
-        "ai.evacuate",
-        "ai.move",
-        "ai.force",
-        "path.remove",
-        "path.add",
-        "partition.valuable",
-        "recalc",
-        "canenter",
-        "sell ",
-        "health ",
-        "armor ",
-        "wb+",
-        "wb-",
-        "vision ",
-        "shroud ",
-        "spied",
-        "radar+",
-        "radar-",
-        "indicator",
-        "teamcolor",
-        "ui.scheme.player",
-        "ui.scheme.template",
-        "ui.float",
-        "D obj2",
-        "D player3 ",
+        "ret ncc", "ret mrsp", "ret mrw", "ret mrst", "ret anyobj ", "ret anysp", "ret countsp", "ret morethan", "ret canbuild", "ret afford", "ret qualifies", "ret plans", "bonus ", "skip nobonus",
+        "skip notemplate", "adjustpower", "capturebonus", "ui.idle+", "ui.idle-", "leavegroup", "ai.hunt", "ai.idle", "ai.enter", "ai.evacuate", "ai.move", "ai.force", "path.remove", "path.add",
+        "partition.valuable", "recalc", "canenter", "sell ", "health ", "armor ", "wb+", "wb-", "vision ", "shroud ", "spied", "radar+", "radar-", "indicator", "teamcolor", "ui.scheme.player",
+        "ui.scheme.template", "ui.float", "D obj2", "D player3 ",
         // --- p1w10-sonnet --- (slice 2b and 3)
-        "ret addupg",
-        "ret findupg",
-        "ret upgcomplete",
-        "ret upgmask",
-        "ret upginprod",
-        "upgrademods",
-        "ret hotkey",
-        "ret squadno",
-        "ret squadall",
-        "ret squadlive",
-        "ret squadsize",
-        "group.add",
-        "skip nosel",
-        "skip nosquad",
-        "skip noupgrades",
-        "ret pcrc",
-        "ret psave",
-        "ret pload",
-        "threw invaliddata",
-        "threw xfer",
-        "D player4 ",
+        "ret addupg", "ret findupg", "ret upgcomplete", "ret upgmask", "ret upginprod", "upgrademods", "ret hotkey", "ret squadno", "ret squadall", "ret squadlive", "ret squadsize", "group.add", "skip nosel",
+        "skip nosquad", "skip noupgrades", "ret pcrc", "ret psave", "ret pload", "threw invaliddata", "threw xfer", "D player4 ",
         // --- p1w10-sonnet --- (slice 4)
-        "ret newgame",
-        "scripts.qualify",
-        "scripts.delete",
-        "sides.removeteam",
-        "sides.addteam",
-        "ai.diff",
-        "ret vteam",
-        "ret pfm",
-        "ret each",
-        "ret pwr",
-        "ret lcrc",
-        "ret lsave",
-        "ret lload",
-        "skip nosdicts",
-        "D sides",
+        "ret newgame", "scripts.qualify", "scripts.delete", "sides.removeteam", "sides.addteam", "ai.diff", "ret vteam", "ret pfm", "ret each", "ret pwr", "ret lcrc", "ret lsave", "ret lload", "skip nosdicts", "D sides",
         // --- end p1w10-sonnet --- "score.", "academy.", "setteam ", "kill ", "damage ", "heal ", "iter ", "skip", "threw badarg", "D team ",
     ];
-    let from: u64 = std::env::var("PLAYER_FROM")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
+    let from: u64 = std::env::var("PLAYER_FROM").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
     for case in from..from + cases() {
         let words = gen_program(0x91a7_0000 + case);
         programs += 1;
@@ -6063,13 +4958,9 @@ fn player_matches_upstream() {
                     let cpp_lines = cpp_run(&short);
                     prefix_programs += 1;
                     prefix_lines += pre.lines.len() as u64;
-                    check.eq(cpp_lines.len() >= pre.lines.len(), true, || {
-                        format!("program {case}: prefix line count")
-                    });
+                    check.eq(cpp_lines.len() >= pre.lines.len(), true, || format!("program {case}: prefix line count"));
                     for (i, (a, b)) in pre.lines.iter().zip(cpp_lines.iter()).enumerate() {
-                        check.eq(a.as_str(), b.as_str(), || {
-                            format!("program {case} prefix line {i}")
-                        });
+                        check.eq(a.as_str(), b.as_str(), || format!("program {case} prefix line {i}"));
                     }
                 }
                 continue;
@@ -6084,19 +4975,7 @@ fn player_matches_upstream() {
         lines += rust.len() as u64;
         for l in &rust {
             // --- p1w10-sonnet --- (slice 2): how often a search found something, a build was allowed, a plan was on
-            for m in [
-                "ret ncc ",
-                "ret mrsp ",
-                "ret mrw ",
-                "ret mrst ",
-                "ret anyobj ",
-                "ret anysp ",
-                "ret countsp ",
-                "ret morethan ",
-                "ret canbuild ",
-                "ret afford ",
-                "ret qualifies ",
-            ] {
+            for m in ["ret ncc ", "ret mrsp ", "ret mrw ", "ret mrst ", "ret anyobj ", "ret anysp ", "ret countsp ", "ret morethan ", "ret canbuild ", "ret afford ", "ret qualifies "] {
                 if let Some(v) = l.strip_prefix(m) {
                     if !v.starts_with('0') {
                         *counts.entry(format!("{m}(non-zero)")).or_insert(0) += 1;
@@ -6110,13 +4989,9 @@ fn player_matches_upstream() {
                 }
             }
         }
-        check.eq(rust.len(), cpp_lines.len(), || {
-            format!("program {case}: line count")
-        });
+        check.eq(rust.len(), cpp_lines.len(), || format!("program {case}: line count"));
         for (i, (a, b)) in rust.iter().zip(cpp_lines.iter()).enumerate() {
-            check.eq(a.as_str(), b.as_str(), || {
-                format!("program {case} line {i}")
-            });
+            check.eq(a.as_str(), b.as_str(), || format!("program {case} line {i}"));
         }
         // `PLAYER_SHOW=1`: the lines before the first difference of a program (what the operations did), for debugging
         if std::env::var_os("PLAYER_SHOW").is_some() {
@@ -6144,9 +5019,7 @@ fn player_matches_upstream() {
     if from == 0 {
         for (n, expected) in [(1000u64, 91u64), (2000, 188), (3000, 278)] {
             if cases() == n {
-                check.eq(excluded, expected, || {
-                    format!("programs excluded as undefined upstream, of {n}")
-                });
+                check.eq(excluded, expected, || format!("programs excluded as undefined upstream, of {n}"));
             }
         }
     }

@@ -55,8 +55,8 @@
 //! `KindOfMaskType` names, [`super::kind_of`].)
 
 use super::base_type::{
-    Coord2D, Coord3D, ICoord2D, ICoord3D, IRegion2D, IRegion3D, RGBAColorInt, RGBAColorReal,
-    RGBColor, RealRange, Region2D, Region3D,
+    Coord2D, Coord3D, ICoord2D, ICoord3D, IRegion2D, IRegion3D, RGBAColorInt, RGBAColorReal, RGBColor, RealRange,
+    Region2D, Region3D,
 };
 use super::kind_of::{KindOfMaskType, KindOfType};
 use crate::ww::matrix3d::Matrix3D;
@@ -166,11 +166,7 @@ impl XferState {
     /// `Xfer::Xfer()`: no options, `XFER_INVALID` (the derived constructors
     /// then set their mode).
     pub fn new(mode: XferMode) -> Self {
-        XferState {
-            options: XO_NONE,
-            mode,
-            identifier: Vec::new(),
-        }
+        XferState { options: XO_NONE, mode, identifier: Vec::new() }
     }
 
     /// `Xfer::open`: save the identifier.
@@ -238,11 +234,7 @@ pub trait Xfer {
     fn xfer_implementation(&mut self, data: &mut [u8]) -> XferResult<()>;
 
     /// `xferVersion`: after the xfer the version may not exceed `current`.
-    fn xfer_version(
-        &mut self,
-        version_data: &mut XferVersion,
-        current_version: XferVersion,
-    ) -> XferResult<()> {
+    fn xfer_version(&mut self, version_data: &mut XferVersion, current_version: XferVersion) -> XferResult<()> {
         let mut b = [*version_data];
         self.xfer_implementation(&mut b)?;
         *version_data = b[0];
@@ -465,10 +457,7 @@ pub trait Xfer {
         self.xfer_version(&mut version, current)?;
         match self.get_xfer_mode() {
             XferMode::Save => {
-                let mut name = KindOfMaskType::get_name_from_single_bit(*kind)
-                    .unwrap_or("")
-                    .as_bytes()
-                    .to_vec();
+                let mut name = KindOfMaskType::get_name_from_single_bit(*kind).unwrap_or("").as_bytes().to_vec();
                 self.xfer_ascii_string(&mut name)
             }
             XferMode::Load => {

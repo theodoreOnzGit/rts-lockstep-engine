@@ -112,17 +112,12 @@ fn status_from(w: &[u32]) -> ObjectStatusMaskType {
 }
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::InstantDeathBehavior(Arc::new(
-        InstantDeathBehaviorModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::InstantDeathBehavior(Arc::new(InstantDeathBehaviorModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -143,17 +138,12 @@ fn ocl_code(n: &[u8]) -> i32 {
     }
 }
 fn weapon_code(n: &[u8]) -> i32 {
-    WEAPONS
-        .iter()
-        .position(|w| n.eq_ignore_ascii_case(w.as_bytes()))
-        .map_or(0, |i| i as i32 + 1)
+    WEAPONS.iter().position(|w| n.eq_ignore_ascii_case(w.as_bytes())).map_or(0, |i| i as i32 + 1)
 }
 
 /// The data dump of `ref_l9r16_run`: the die mux, then the three lists as codes.
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind) {
-    let ModuleDataKind::InstantDeathBehavior(d) = data else {
-        unreachable!("not an InstantDeathBehavior")
-    };
+    let ModuleDataKind::InstantDeathBehavior(d) = data else { unreachable!("not an InstantDeathBehavior") };
     put_die_mux(v, &d.die.die_mux_data);
     put_u32(v, d.fx.len() as u32);
     for f in &d.fx {
@@ -207,9 +197,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let bytes: Vec<u32> = (0..blen).map(|_| u32_(&mut p)).collect();
         let crc = u32_(&mut p);
         let dead = u32_(&mut p);
-        out.push(format!(
-            "op {i}: status {st} log {log:?} xfer {xst} bytes {bytes:?} crc {crc:#x} dead {dead}"
-        ));
+        out.push(format!("op {i}: status {st} log {log:?} xfer {xst} bytes {bytes:?} crc {crc:#x} dead {dead}"));
     }
     out
 }
@@ -217,26 +205,8 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 // -- generators --
 
 const DEATH_NAMES: [&str; 20] = [
-    "NONE",
-    "CRUSHED",
-    "BURNED",
-    "EXPLODED",
-    "POISONED",
-    "TOPPLED",
-    "FLOODED",
-    "SUICIDED",
-    "LASERED",
-    "DETONATED",
-    "SPLATTED",
-    "POISONED_BETA",
-    "EXTRA_2",
-    "EXTRA_3",
-    "EXTRA_4",
-    "EXTRA_5",
-    "EXTRA_6",
-    "EXTRA_7",
-    "EXTRA_8",
-    "POISONED_GAMMA",
+    "NONE", "CRUSHED", "BURNED", "EXPLODED", "POISONED", "TOPPLED", "FLOODED", "SUICIDED", "LASERED", "DETONATED", "SPLATTED", "POISONED_BETA",
+    "EXTRA_2", "EXTRA_3", "EXTRA_4", "EXTRA_5", "EXTRA_6", "EXTRA_7", "EXTRA_8", "POISONED_GAMMA",
 ];
 
 fn death_tokens(g: &mut Gen) -> String {
@@ -287,10 +257,7 @@ fn status_tokens(g: &mut Gen) -> String {
 
 /// A list line's tokens: 1 to 3 names of the stores' and others.
 fn list_tokens(g: &mut Gen, names: &[&str]) -> String {
-    (0..1 + g.below(3))
-        .map(|_| names[g.below(names.len() as u32) as usize])
-        .collect::<Vec<_>>()
-        .join(" ")
+    (0..1 + g.below(3)).map(|_| names[g.below(names.len() as u32) as usize]).collect::<Vec<_>>().join(" ")
 }
 
 /// The block `D`: the die mux and the three lists (each present with some probability), now and then a bogus token or an unknown field.
@@ -309,22 +276,13 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
         lines.push(format!("RequiredStatus = {}", status_tokens(g)));
     }
     for _ in 0..g.below(3) {
-        lines.push(format!(
-            "FX = {}",
-            list_tokens(g, &["FX_A", "FX_B", "None"])
-        ));
+        lines.push(format!("FX = {}", list_tokens(g, &["FX_A", "FX_B", "None"])));
     }
     for _ in 0..g.below(3) {
-        lines.push(format!(
-            "OCL = {}",
-            list_tokens(g, &["OCL_A", "OCL_B", "OCL_X"])
-        ));
+        lines.push(format!("OCL = {}", list_tokens(g, &["OCL_A", "OCL_B", "OCL_X"])));
     }
     for _ in 0..g.below(3) {
-        lines.push(format!(
-            "Weapon = {}",
-            list_tokens(g, &["WEAP_A", "weap_b", "WEAP_X"])
-        ));
+        lines.push(format!("Weapon = {}", list_tokens(g, &["WEAP_A", "weap_b", "WEAP_X"])));
     }
     if !clean {
         lines.push(match g.below(3) {
@@ -351,13 +309,7 @@ struct Tally {
     xfers: u64,
 }
 
-fn run_xfer(
-    w: &mut World,
-    me: ObjectId,
-    idx: usize,
-    how: u32,
-    saved: &[u8],
-) -> (i32, Vec<u8>, u32) {
+fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -398,13 +350,7 @@ fn run_xfer(
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(
-    ctx: &Ctx,
-    data: ModuleDataKind,
-    cfg: &[u32; 6],
-    ops: &[[u32; 6]],
-    tally: &mut Tally,
-) -> (Vec<u8>, World) {
+fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 6], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     put_data(&mut v, &data);
     let mut w = World::new();
@@ -412,9 +358,7 @@ fn rust_run(
     let mut scratch = rts_lockstep_engine::common::name_key_generator::NameKeyGenerator::new();
     scratch.reset();
     for n in WEAPONS {
-        weapon_store
-            .new_weapon_template(&mut scratch, n.as_bytes())
-            .unwrap();
+        weapon_store.new_weapon_template(&mut scratch, n.as_bytes()).unwrap();
     }
     w.names = ctx.names.clone();
     // the object creation lists are keyed in the world's own name key generator
@@ -422,59 +366,23 @@ fn rust_run(
     for n in [&b"OCL_A"[..], b"OCL_B"] {
         ocls.ocls.insert(w.names.name_to_key(n), Default::default());
     }
-    w.statics = Arc::new(GameStatics {
-        upgrade_center: ctx.center.clone(),
-        object_creation_list_store: ocls,
-        weapon_store,
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), object_creation_list_store: ocls, weapon_store, ..Default::default() });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.body.probe_trace = true;
     w.random.init_game_logic_random(cfg[4]);
     w.teams.insert_team(Team::new(1, 0)).unwrap();
-    let plain = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        CLASS.as_bytes(),
-        b"ModuleTag_Die",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
+    let plain = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), CLASS.as_bytes(), b"ModuleTag_Die", &data).unwrap().unwrap();
     let mut ai = NewModule::plain(b"CtProbe", b"ModuleTag_AI");
     ai.is_ai = true;
-    ai.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-        ProbeAnswers::default(),
-        0.0,
-        Default::default(),
-    )));
-    let me: ObjectId = w
-        .new_object(NewObject {
-            template: plain,
-            status: ObjectStatusMaskType::default(),
-            team: Some(1),
-            modules: vec![m, ai],
-        })
-        .unwrap();
+    ai.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
+    let me: ObjectId = w.new_object(NewObject { template: plain, status: ObjectStatusMaskType::default(), team: Some(1), modules: vec![m, ai] }).unwrap();
     assert_eq!(me, 1);
     let ai_idx = w.objects.find(me).unwrap().ai;
-    w.set_position(
-        me,
-        &Coord3D {
-            x: f32::from_bits(cfg[1]),
-            y: f32::from_bits(cfg[2]),
-            z: f32::from_bits(cfg[3]),
-        },
-    );
+    w.set_position(me, &Coord3D { x: f32::from_bits(cfg[1]), y: f32::from_bits(cfg[2]), z: f32::from_bits(cfg[3]) });
     let set_dead = |w: &mut World, dead: bool| {
-        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(me).unwrap().modules
-            [ai_idx.unwrap() as usize]
-            .body
-            .as_mut()
-        {
+        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(me).unwrap().modules[ai_idx.unwrap() as usize].body.as_mut() {
             p.answers.ai_dead = dead;
         }
     };
@@ -518,9 +426,7 @@ fn rust_run(
             }
             _ => unreachable!(),
         }
-        let threw = w.cuts.module_errors[errors_before..]
-            .iter()
-            .any(|(_, e)| !e.is_undefined());
+        let threw = w.cuts.module_errors[errors_before..].iter().any(|(_, e)| !e.is_undefined());
         put_i32(&mut v, if threw { 2 } else { 0 });
         let events: Vec<Option<ObjectClientEvent>> = w.events.events()[events_before..]
             .iter()
@@ -536,28 +442,15 @@ fn rust_run(
         for t in w.cuts.trace.take().unwrap() {
             if t.starts_with("cut ") {
                 match cut_iter.next().expect("a cut line has a cut call") {
-                    CutCall::OclCreate { ocl, .. } => {
-                        log.push(format!("ocl {}", ocl_code(ocl) - 1))
-                    }
-                    CutCall::WeaponCreateAndFireTemp {
-                        weapon,
-                        source,
-                        position,
-                    } => {
+                    CutCall::OclCreate { ocl, .. } => log.push(format!("ocl {}", ocl_code(ocl) - 1)),
+                    CutCall::WeaponCreateAndFireTemp { weapon, source, position } => {
                         let name = WEAPONS[weapon_code(weapon) as usize - 1];
-                        log.push(format!(
-                            "weapon {name} {source} {},{},{}",
-                            position.x.to_bits(),
-                            position.y.to_bits(),
-                            position.z.to_bits()
-                        ))
+                        log.push(format!("weapon {name} {source} {},{},{}", position.x.to_bits(), position.y.to_bits(), position.z.to_bits()))
                     }
                     _ => {}
                 }
             } else if t.starts_with("evt ") {
-                if let Some(ObjectClientEvent::FxListDoFxObj { fx, .. }) =
-                    event_iter.next().flatten()
-                {
+                if let Some(ObjectClientEvent::FxListDoFxObj { fx, .. }) = event_iter.next().flatten() {
                     log.push(format!("fx {}", String::from_utf8_lossy(&fx)));
                 }
             } else if let Some(r) = t.strip_prefix("bt ") {
@@ -577,10 +470,7 @@ fn rust_run(
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let dead = match w.objects.find(me).unwrap().modules[ai_idx.unwrap() as usize]
-            .body
-            .as_ref()
-        {
+        let dead = match w.objects.find(me).unwrap().modules[ai_idx.unwrap() as usize].body.as_ref() {
             Some(UpdateBody::ModuleProbe(p)) => p.answers.ai_dead,
             _ => panic!("the AI"),
         };
@@ -590,10 +480,7 @@ fn rust_run(
 }
 
 fn cases() -> usize {
-    std::env::var("L9R16_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9R16_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 #[test]
@@ -634,21 +521,10 @@ fn instant_death_behavior_matches_upstream() {
             .map(|_| match g.below(16) {
                 0..=7 => {
                     // not DEATH_NORMAL nor LEVEL_REGULAR (see the CreateObjectDie test)
-                    let st = if g.below(4) == 0 {
-                        g.u32() & g.u32()
-                    } else {
-                        0
-                    };
+                    let st = if g.below(4) == 0 { g.u32() & g.u32() } else { 0 };
                     [0, 1 + g.below(11), 1 + g.below(3), st, 0, 0]
                 }
-                8..=9 => [
-                    1,
-                    u32::from(g.below(5) != 0) | u32::from(g.below(4) == 0) << 1,
-                    0,
-                    0,
-                    0,
-                    0,
-                ],
+                8..=9 => [1, u32::from(g.below(5) != 0) | u32::from(g.below(4) == 0) << 1, 0, 0, 0, 0],
                 10..=11 => [7, 0, 0, 0, 0, 0],
                 12..=13 => [8, 0, 0, 0, 0, 0],
                 _ => [9, 0, 0, 0, 0, 0],
@@ -694,21 +570,8 @@ fn instant_death_behavior_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!(
-                "case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                show(&text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
@@ -716,23 +579,13 @@ fn instant_death_behavior_matches_upstream() {
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         for l in &dr {
             for key in ["markdead", "fx", "ocl", "weapon", "destroy"] {
-                *counts.entry(key.to_string()).or_default() +=
-                    l.matches(&format!("\"{key} ")).count() as u64;
+                *counts.entry(key.to_string()).or_default() += l.matches(&format!("\"{key} ")).count() as u64;
             }
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
-            eprintln!(
-                "--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}",
-                show(&text),
-                dr.get(i),
-                dc.get(i)
-            );
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            eprintln!("--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -751,8 +604,5 @@ fn instant_death_behavior_matches_upstream() {
     }
     read.finish();
     run.finish();
-    assert!(
-        counts.get("destroy").copied().unwrap_or(0) * 4 > cases as u64,
-        "the generator must reach the death"
-    );
+    assert!(counts.get("destroy").copied().unwrap_or(0) * 4 > cases as u64, "the generator must reach the death");
 }

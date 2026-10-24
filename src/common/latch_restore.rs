@@ -58,10 +58,7 @@ impl<'a, T> LatchRestore<'a, T> {
     /// in it. Upstream copies `src`; here it is moved in.
     pub fn new(dest: &'a mut T, src: T) -> Self {
         let saved = std::mem::replace(dest, src);
-        LatchRestore {
-            where_to_restore: dest,
-            value_to_restore: Some(saved),
-        }
+        LatchRestore { where_to_restore: dest, value_to_restore: Some(saved) }
     }
 }
 

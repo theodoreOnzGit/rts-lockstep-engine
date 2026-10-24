@@ -77,26 +77,19 @@ const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9en_o.bin")
 const XFER_FILE: &str = "l9en_o.bin";
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::EnemyNearUpdate(Arc::new(
-        EnemyNearUpdateModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::EnemyNearUpdate(Arc::new(EnemyNearUpdateModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
 }
 
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind) {
-    let ModuleDataKind::EnemyNearUpdate(d) = data else {
-        unreachable!("not an EnemyNearUpdate")
-    };
+    let ModuleDataKind::EnemyNearUpdate(d) = data else { unreachable!("not an EnemyNearUpdate") };
     put_u32(v, d.enemy_scan_delay_time);
 }
 
@@ -117,9 +110,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let log: Vec<String> = (0..nlog).map(|_| r.str()).collect();
         let x = r.xfer();
         let state: Vec<u32> = (0..2).map(|_| r.u32()).collect();
-        out.push(format!(
-            "op {i}: status {st} sleep {sleep} log {log:?} {x} state {state:?}"
-        ));
+        out.push(format!("op {i}: status {st} sleep {sleep} log {log:?} {x} state {state:?}"));
     }
     out
 }
@@ -155,12 +146,7 @@ fn gen_vision(g: &mut Gen) -> u32 {
     pick(g, &[&0.0f32, &30.0, &150.0, &75.5]).to_bits()
 }
 
-fn gen_case(
-    g: &mut Gen,
-    _data: &Option<ModuleDataKind>,
-    _n_up: usize,
-    _upgrades: &[String],
-) -> (Vec<u32>, Vec<[u32; 5]>) {
+fn gen_case(g: &mut Gen, _data: &Option<ModuleDataKind>, _n_up: usize, _upgrades: &[String]) -> (Vec<u32>, Vec<[u32; 5]>) {
     // [the drawable, the random seed, the vision range]
     let cfg = vec![u32::from(g.below(100) < 85), g.u32(), gen_vision(g)];
     let n_ops = 1 + g.below(60) as usize;
@@ -188,63 +174,28 @@ struct Tally {
     conditions: u64,
 }
 
-fn rust_run(
-    ctx: Ctx,
-    data: ModuleDataKind,
-    cfg: &[u32],
-    ops: &[[u32; 5]],
-    tally: &RefCell<Tally>,
-) -> RunOut {
+fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally: &RefCell<Tally>) -> RunOut {
     let mut v = Vec::new();
     put_data(&mut v, &data);
 
     let mut w = World::new();
-    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics {
-        upgrade_center: ctx.center,
-        special_power_store: ctx.store,
-        ..Default::default()
-    });
+    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
     w.names = ctx.names;
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.random.init_game_logic_random(cfg[1]);
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        b"EnemyNearUpdate",
-        b"ModuleTag_EnemyNear",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"EnemyNearUpdate", b"ModuleTag_EnemyNear", &data).unwrap().unwrap();
     let values = ObjectTemplateValues {
-        geometry: Some(GeometryInfo::new(
-            GeometryType::Sphere,
-            false,
-            1.0,
-            1.0,
-            1.0,
-        )),
+        geometry: Some(GeometryInfo::new(GeometryType::Sphere, false, 1.0, 1.0, 1.0)),
         vision_range: f32::from_bits(cfg[2]),
         ..Default::default()
     };
     let template = Arc::new(ThingTemplate::from_object_values(&values));
-    let me = w
-        .new_object(NewObject {
-            template,
-            status: Default::default(),
-            team: None,
-            modules: vec![m],
-        })
-        .unwrap();
+    let me = w.new_object(NewObject { template, status: Default::default(), team: None, modules: vec![m] }).unwrap();
     assert_eq!(me, 1);
     w.friend_bind_to_drawable(me, if cfg[0] != 0 { 7 } else { INVALID_DRAWABLE_ID });
     let idx = w.find_module(me, b"EnemyNearUpdate").unwrap();
-    let u = w
-        .update_handle_of_module(ModuleHandle {
-            object: me,
-            index: idx,
-        })
-        .expect("an update module");
+    let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
     let mut saved: Vec<u8> = Vec::new();
     for phase in 0..=ops.len() {
         let mut events_before = w.events.events().len();
@@ -255,10 +206,7 @@ fn rust_run(
             let o = &ops[phase - 1];
             match o[0] {
                 0 => {
-                    sleep = w
-                        .with_body(u, |b, w| b.update(w, u))
-                        .expect("the module is in its slot")
-                        .0;
+                    sleep = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
                     tally.borrow_mut().updates += 1;
                 }
                 1 => {
@@ -304,33 +252,17 @@ fn rust_run(
         let (mut cut_iter, mut ev_iter) = (cuts.into_iter(), events.into_iter());
         for t in trace {
             if t.starts_with("cut ") {
-                if let Some(CutCall::AiFindClosestEnemy {
-                    range,
-                    qualifiers,
-                    minor_radius,
-                    ..
-                }) = cut_iter.next()
-                {
+                if let Some(CutCall::AiFindClosestEnemy { range, qualifiers, minor_radius, .. }) = cut_iter.next() {
                     tally.borrow_mut().scans += 1;
-                    log.push(format!(
-                        "ai enemy {:08x} {qualifiers} {:08x}",
-                        range.to_bits(),
-                        minor_radius.to_bits()
-                    ));
+                    log.push(format!("ai enemy {:08x} {qualifiers} {:08x}", range.to_bits(), minor_radius.to_bits()));
                 }
             } else if t.starts_with("evt ") {
                 match ev_iter.next() {
-                    Some(ObjectClientEvent::DrawableModelCondition {
-                        op: ModelConditionOp::Set(f),
-                        ..
-                    }) => {
+                    Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Set(f), .. }) => {
                         tally.borrow_mut().conditions += 1;
                         log.push(format!("mc {}", f[0]));
                     }
-                    Some(ObjectClientEvent::DrawableModelCondition {
-                        op: ModelConditionOp::Clear(f),
-                        ..
-                    }) => {
+                    Some(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Clear(f), .. }) => {
                         tally.borrow_mut().conditions += 1;
                         log.push(format!("mcclear {}", f[0]));
                     }
@@ -351,25 +283,15 @@ fn rust_run(
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let state =
-            w.objects
-                .find(me)
-                .unwrap()
-                .behaviors
-                .iter()
-                .find_map(|b| match b.body.as_ref() {
-                    Some(UpdateBody::EnemyNearUpdate(m)) => Some(m.state_words()),
-                    _ => None,
-                });
+        let state = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
+            Some(UpdateBody::EnemyNearUpdate(m)) => Some(m.state_words()),
+            _ => None,
+        });
         for s in state.expect("the module is back in its slot") {
             put_u32(&mut v, s);
         }
     }
-    RunOut {
-        dump: v,
-        keys: Vec::new(),
-        excluded: false,
-    }
+    RunOut { dump: v, keys: Vec::new(), excluded: false }
 }
 
 #[test]
@@ -396,11 +318,5 @@ fn enemy_near_update_matches_upstream() {
         "update module O5: {} cases, {} data blocks threw, {} excluded, {} ops, {} updates, {} xfers, {} effect lines, {} scans, {} model-condition changes",
         c.cases, c.read_failed, c.excluded, c.ops_run, t.updates, t.xfers, t.effects, t.scans, t.conditions
     );
-    assert!(
-        c.read_failed * 40 > c.cases as u64
-            && c.ops_run * 5 > c.cases as u64 * 4
-            && t.scans * 4 > c.cases as u64
-            && t.conditions * 8 > c.cases as u64,
-        "the generator must reach every path"
-    );
+    assert!(c.read_failed * 40 > c.cases as u64 && c.ops_run * 5 > c.cases as u64 * 4 && t.scans * 4 > c.cases as u64 && t.conditions * 8 > c.cases as u64, "the generator must reach every path");
 }

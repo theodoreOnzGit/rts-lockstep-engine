@@ -53,15 +53,10 @@ use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::ini::{FieldParse, Ini, IniResult, MultiIniFieldParse, UserData};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::armor_set::ARMORSET_SECOND_LIFE;
-use crate::logic::damage::{
-    is_health_damaging_damage, DamageInfo, DamageTypeFlags, DAMAGE_TYPE_FLAGS_NONE,
-    DAMAGE_UNRESISTABLE,
-};
+use crate::logic::damage::{is_health_damaging_damage, DamageInfo, DamageTypeFlags, DAMAGE_TYPE_FLAGS_NONE, DAMAGE_UNRESISTABLE};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::body_module::FULLY_HEAL;
-use crate::logic::modules::active_body::{
-    self, ActiveBody, ActiveBodyModuleData, ActiveBodyVirtuals,
-};
+use crate::logic::modules::active_body::{self, ActiveBody, ActiveBodyModuleData, ActiveBodyVirtuals};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::update_body::UpdateBody;
@@ -194,20 +189,9 @@ impl HighlanderBody {
     }
 
     /// `HighlanderBody::attemptDamage`: "bind to one hitpoint remaining afterwards, unless it is Unresistable damage".
-    fn attempt_damage_override(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        info: &mut DamageInfo,
-    ) {
+    fn attempt_damage_override(&mut self, world: &mut World, me: ModuleHandle, info: &mut DamageInfo) {
         if (info.input.damage_type != DAMAGE_UNRESISTABLE) != crate::logic::modules::plant(1261) {
-            info.input.amount = if crate::logic::modules::plant(1262) {
-                min(info.input.amount, self.ab.get_health())
-            } else if crate::logic::modules::plant(1263) {
-                max(info.input.amount, self.ab.get_health() - 1.0)
-            } else {
-                min(info.input.amount, self.ab.get_health() - 1.0)
-            };
+            info.input.amount = if crate::logic::modules::plant(1262) { min(info.input.amount, self.ab.get_health()) } else if crate::logic::modules::plant(1263) { max(info.input.amount, self.ab.get_health() - 1.0) } else { min(info.input.amount, self.ab.get_health() - 1.0) };
         }
         active_body::attempt_damage(self, world, me, info);
     }
@@ -226,24 +210,13 @@ impl ImmortalBody {
         Ok(())
     }
 
-    fn attempt_damage_override(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        info: &mut DamageInfo,
-    ) {
+    fn attempt_damage_override(&mut self, world: &mut World, me: ModuleHandle, info: &mut DamageInfo) {
         active_body::attempt_damage(self, world, me, info);
     }
 
     /// `ImmortalBody::internalChangeHealth`: "don't let anything change us to below one hit point", then the base.
     fn internal_change_health_override(&mut self, world: &mut World, me: ModuleHandle, delta: f32) {
-        let delta = if crate::logic::modules::plant(1264) {
-            max(delta, -self.ab.get_health())
-        } else if crate::logic::modules::plant(1265) {
-            min(delta, -self.ab.get_health() + 1.0)
-        } else {
-            max(delta, -self.ab.get_health() + 1.0)
-        };
+        let delta = if crate::logic::modules::plant(1264) { max(delta, -self.ab.get_health()) } else if crate::logic::modules::plant(1265) { min(delta, -self.ab.get_health() + 1.0) } else { max(delta, -self.ab.get_health() + 1.0) };
         active_body::internal_change_health(self, world, me, delta);
     }
 }
@@ -267,9 +240,7 @@ impl StructureBody {
                 self.set_constructor_object(*obj);
                 Some(ModuleReply::Done)
             }
-            ModuleCall::GetConstructorObjectId => {
-                Some(ModuleReply::Id(self.get_constructor_object_id()))
-            }
+            ModuleCall::GetConstructorObjectId => Some(ModuleReply::Id(self.get_constructor_object_id())),
             _ => None,
         }
     }
@@ -282,12 +253,7 @@ impl StructureBody {
         xfer.xfer_object_id(&mut self.extra)
     }
 
-    fn attempt_damage_override(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        info: &mut DamageInfo,
-    ) {
+    fn attempt_damage_override(&mut self, world: &mut World, me: ModuleHandle, info: &mut DamageInfo) {
         active_body::attempt_damage(self, world, me, info);
     }
 
@@ -310,20 +276,12 @@ pub struct UndeadBodyModuleData {
 impl Default for UndeadBodyModuleData {
     /// `UndeadBodyModuleData()`: "m_secondLifeMaxHealth = 1".
     fn default() -> Self {
-        UndeadBodyModuleData {
-            active: ActiveBodyModuleData::default(),
-            second_life_max_health: 1.0,
-        }
+        UndeadBodyModuleData { active: ActiveBodyModuleData::default(), second_life_max_health: 1.0 }
     }
 }
 
 /// Lifts entry `k` of `ActiveBodyModuleData`'s table onto the `active` base of a derived class's data.
-fn lift_active_field(
-    k: usize,
-    i: &mut Ini<'_>,
-    d: &mut ActiveBodyModuleData,
-    u: &UserData,
-) -> IniResult<()> {
+fn lift_active_field(k: usize, i: &mut Ini<'_>, d: &mut ActiveBodyModuleData, u: &UserData) -> IniResult<()> {
     match active_body::FIELD_PARSE[k].parse {
         Some(f) => f(i, d, u),
         None => Ok(()),
@@ -332,52 +290,21 @@ fn lift_active_field(
 
 /// `ActiveBodyModuleData::buildFieldParse`'s own table, on the `active` base of `UndeadBodyModuleData`.
 static UNDEAD_BASE_FIELD_PARSE: [FieldParse<UndeadBodyModuleData>; 6] = [
-    FieldParse::new(
-        "MaxHealth",
-        |i, d, u| lift_active_field(0, i, &mut d.active, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "InitialHealth",
-        |i, d, u| lift_active_field(1, i, &mut d.active, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SubdualDamageCap",
-        |i, d, u| lift_active_field(2, i, &mut d.active, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SubdualDamageHealRate",
-        |i, d, u| lift_active_field(3, i, &mut d.active, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SubdualDamageHealAmount",
-        |i, d, u| lift_active_field(4, i, &mut d.active, u),
-        UserData::None,
-    ),
+    FieldParse::new("MaxHealth", |i, d, u| lift_active_field(0, i, &mut d.active, u), UserData::None),
+    FieldParse::new("InitialHealth", |i, d, u| lift_active_field(1, i, &mut d.active, u), UserData::None),
+    FieldParse::new("SubdualDamageCap", |i, d, u| lift_active_field(2, i, &mut d.active, u), UserData::None),
+    FieldParse::new("SubdualDamageHealRate", |i, d, u| lift_active_field(3, i, &mut d.active, u), UserData::None),
+    FieldParse::new("SubdualDamageHealAmount", |i, d, u| lift_active_field(4, i, &mut d.active, u), UserData::None),
     FieldParse::end(),
 ];
 
 /// `UndeadBodyModuleData::buildFieldParse`'s own table.
-static UNDEAD_FIELD_PARSE: [FieldParse<UndeadBodyModuleData>; 2] = [
-    FieldParse::new(
-        "SecondLifeMaxHealth",
-        |i, d, _| {
-            d.second_life_max_health = i.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::end(),
-];
+static UNDEAD_FIELD_PARSE: [FieldParse<UndeadBodyModuleData>; 2] =
+    [FieldParse::new("SecondLifeMaxHealth", |i, d, _| { d.second_life_max_health = i.parse_real()?; Ok(()) }, UserData::None), FieldParse::end()];
 
 impl UndeadBodyModuleData {
     /// `buildFieldParse(p)`: `ActiveBodyModuleData::buildFieldParse` (the module base, then the active table), then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, UndeadBodyModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, UndeadBodyModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&UNDEAD_BASE_FIELD_PARSE)?;
         p.add(&UNDEAD_FIELD_PARSE)?;
@@ -395,12 +322,8 @@ impl UndeadBodyModuleData {
 }
 
 /// The factory's `NewModuleDataProc` for `UndeadBody`.
-pub fn new_undead_module_data(
-    ini: Option<&mut Ini<'_>>,
-) -> IniResult<crate::common::module::ModuleDataKind> {
-    Ok(crate::common::module::ModuleDataKind::UndeadBody(Arc::new(
-        UndeadBodyModuleData::friend_new_module_data(ini)?,
-    )))
+pub fn new_undead_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::UndeadBody(Arc::new(UndeadBodyModuleData::friend_new_module_data(ini)?)))
 }
 
 /// `class UndeadBody : public ActiveBody`: "a body that gets a second life": the first fatal hit leaves it with one health point and starts a slow death, then
@@ -428,17 +351,10 @@ impl UndeadBody {
     }
 
     /// The constructor's first half (see [`ActiveBody::unconstructed`]): `m_isSecondLife = FALSE`.
-    pub fn new(
-        object: ObjectId,
-        module_data: Option<Arc<UndeadBodyModuleData>>,
-    ) -> IniResult<UndeadBody> {
+    pub fn new(object: ObjectId, module_data: Option<Arc<UndeadBodyModuleData>>) -> IniResult<UndeadBody> {
         let base = module_data.as_ref().map(|d| Arc::new(d.active.clone()));
         let ab = ActiveBody::new(object, base)?;
-        Ok(UndeadBody {
-            ab,
-            data: module_data.unwrap_or_default(),
-            is_second_life: false,
-        })
+        Ok(UndeadBody { ab, data: module_data.unwrap_or_default(), is_second_life: false })
     }
 
     /// The constructor's second half, run by the world.
@@ -457,45 +373,20 @@ impl UndeadBody {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         active_body::body_module_call(self, world, me, call)
     }
 
     /// `UndeadBody::attemptDamage`: "if we are on our first life, see if this damage will kill us. If it will, bind it to one hitpoint remaining, then go ahead
     /// and take it."
-    fn attempt_damage_override(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        info: &mut DamageInfo,
-    ) {
+    fn attempt_damage_override(&mut self, world: &mut World, me: ModuleHandle, info: &mut DamageInfo) {
         use crate::logic::modules::plant;
         let mut should_start_second_life = false;
-        let unresistable = if plant(1331) {
-            info.input.damage_type == DAMAGE_UNRESISTABLE
-        } else {
-            info.input.damage_type != DAMAGE_UNRESISTABLE
-        };
+        let unresistable = if plant(1331) { info.input.damage_type == DAMAGE_UNRESISTABLE } else { info.input.damage_type != DAMAGE_UNRESISTABLE };
         let first_life = plant(1332) || !self.is_second_life;
-        let lethal = if plant(1333) {
-            info.input.amount > self.ab.get_health()
-        } else {
-            info.input.amount >= self.ab.get_health()
-        };
-        if unresistable
-            && first_life
-            && lethal
-            && (plant(1334) || is_health_damaging_damage(info.input.damage_type))
-        {
-            info.input.amount = min(
-                info.input.amount,
-                self.ab.get_health() - if plant(1335) { 0.0 } else { 1.0 },
-            );
+        let lethal = if plant(1333) { info.input.amount > self.ab.get_health() } else { info.input.amount >= self.ab.get_health() };
+        if unresistable && first_life && lethal && (plant(1334) || is_health_damaging_damage(info.input.damage_type)) {
+            info.input.amount = min(info.input.amount, self.ab.get_health() - if plant(1335) { 0.0 } else { 1.0 });
             should_start_second_life = true;
         }
 
@@ -519,16 +410,8 @@ impl UndeadBody {
         self.is_second_life = !plant(1337);
 
         // modify ActiveBody's max health and initial health
-        let max = if plant(1338) {
-            self.data.active.max_health
-        } else {
-            self.data.second_life_max_health
-        };
-        let change = if plant(1339) {
-            crate::logic::module::body_module::PRESERVE_RATIO
-        } else {
-            FULLY_HEAL
-        };
+        let max = if plant(1338) { self.data.active.max_health } else { self.data.second_life_max_health };
+        let change = if plant(1339) { crate::logic::module::body_module::PRESERVE_RATIO } else { FULLY_HEAL };
         active_body::set_max_health(self, world, me, max, change);
 
         // set armor set flag to use second life armor
@@ -542,43 +425,29 @@ impl UndeadBody {
         let mut total: i32 = 0;
         for &idx in &modules {
             let i = info.clone();
-            let applicable = active_body::out(self, world, me, |w| {
-                w.module_call(obj, idx, ModuleCall::IsDieApplicable(i))
-            })
-            .as_bool();
+            let applicable = active_body::out(self, world, me, |w| w.module_call(obj, idx, ModuleCall::IsDieApplicable(i))).as_bool();
             if applicable || plant(1341) {
                 let i = info.clone();
-                if let ModuleReply::Int(m) = active_body::out(self, world, me, |w| {
-                    w.module_call(obj, idx, ModuleCall::GetProbabilityModifier(i))
-                }) {
+                if let ModuleReply::Int(m) = active_body::out(self, world, me, |w| w.module_call(obj, idx, ModuleCall::GetProbabilityModifier(i))) {
                     total += m;
                 }
             }
         }
 
         // this returns a value from 1...total, inclusive
-        let mut roll = world
-            .random
-            .game_logic_random_value(if plant(1342) { 0 } else { 1 }, total);
+        let mut roll = world.random.game_logic_random_value(if plant(1342) { 0 } else { 1 }, total);
 
         for &idx in &modules {
             let i = info.clone();
-            let applicable = active_body::out(self, world, me, |w| {
-                w.module_call(obj, idx, ModuleCall::IsDieApplicable(i))
-            })
-            .as_bool();
+            let applicable = active_body::out(self, world, me, |w| w.module_call(obj, idx, ModuleCall::IsDieApplicable(i))).as_bool();
             if applicable {
                 let i = info.clone();
-                if let ModuleReply::Int(m) = active_body::out(self, world, me, |w| {
-                    w.module_call(obj, idx, ModuleCall::GetProbabilityModifier(i))
-                }) {
+                if let ModuleReply::Int(m) = active_body::out(self, world, me, |w| w.module_call(obj, idx, ModuleCall::GetProbabilityModifier(i))) {
                     roll -= if plant(1343) { 1 } else { m };
                 }
                 if if plant(1344) { roll < 0 } else { roll <= 0 } || plant(1345) {
                     let i = info.clone();
-                    active_body::out(self, world, me, |w| {
-                        w.module_call(obj, idx, ModuleCall::BeginSlowDeath(i))
-                    });
+                    active_body::out(self, world, me, |w| w.module_call(obj, idx, ModuleCall::BeginSlowDeath(i)));
                     if !plant(1346) {
                         return;
                     }
@@ -659,60 +528,24 @@ impl Default for HiveStructureBodyModuleData {
 
 /// `ActiveBodyModuleData::buildFieldParse`'s own table, on the `active` base of `HiveStructureBodyModuleData`.
 static HIVE_BASE_FIELD_PARSE: [FieldParse<HiveStructureBodyModuleData>; 6] = [
-    FieldParse::new(
-        "MaxHealth",
-        |i, d, u| lift_active_field(0, i, &mut d.active, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "InitialHealth",
-        |i, d, u| lift_active_field(1, i, &mut d.active, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SubdualDamageCap",
-        |i, d, u| lift_active_field(2, i, &mut d.active, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SubdualDamageHealRate",
-        |i, d, u| lift_active_field(3, i, &mut d.active, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SubdualDamageHealAmount",
-        |i, d, u| lift_active_field(4, i, &mut d.active, u),
-        UserData::None,
-    ),
+    FieldParse::new("MaxHealth", |i, d, u| lift_active_field(0, i, &mut d.active, u), UserData::None),
+    FieldParse::new("InitialHealth", |i, d, u| lift_active_field(1, i, &mut d.active, u), UserData::None),
+    FieldParse::new("SubdualDamageCap", |i, d, u| lift_active_field(2, i, &mut d.active, u), UserData::None),
+    FieldParse::new("SubdualDamageHealRate", |i, d, u| lift_active_field(3, i, &mut d.active, u), UserData::None),
+    FieldParse::new("SubdualDamageHealAmount", |i, d, u| lift_active_field(4, i, &mut d.active, u), UserData::None),
     FieldParse::end(),
 ];
 
 /// `HiveStructureBodyModuleData::buildFieldParse`'s own table.
 static HIVE_FIELD_PARSE: [FieldParse<HiveStructureBodyModuleData>; 3] = [
-    FieldParse::new(
-        "PropagateDamageTypesToSlavesWhenExisting",
-        |i, d, _| {
-            d.damage_types_to_propagate_to_slaves = i.parse_damage_type_flags()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SwallowDamageTypesIfSlavesNotExisting",
-        |i, d, _| {
-            d.damage_types_to_swallow = i.parse_damage_type_flags()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("PropagateDamageTypesToSlavesWhenExisting", |i, d, _| { d.damage_types_to_propagate_to_slaves = i.parse_damage_type_flags()?; Ok(()) }, UserData::None),
+    FieldParse::new("SwallowDamageTypesIfSlavesNotExisting", |i, d, _| { d.damage_types_to_swallow = i.parse_damage_type_flags()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl HiveStructureBodyModuleData {
     /// `buildFieldParse(p)`: `StructureBodyModuleData::buildFieldParse` (which adds nothing to the active body's), then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, HiveStructureBodyModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, HiveStructureBodyModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&HIVE_BASE_FIELD_PARSE)?;
         p.add(&HIVE_FIELD_PARSE)?;
@@ -720,27 +553,18 @@ impl HiveStructureBodyModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<HiveStructureBodyModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<HiveStructureBodyModuleData> {
         let mut data = HiveStructureBodyModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                HiveStructureBodyModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, HiveStructureBodyModuleData::build_field_parse)?;
         }
         Ok(data)
     }
 }
 
 /// The factory's `NewModuleDataProc` for `HiveStructureBody`.
-pub fn new_hive_module_data(
-    ini: Option<&mut Ini<'_>>,
-) -> IniResult<crate::common::module::ModuleDataKind> {
-    Ok(crate::common::module::ModuleDataKind::HiveStructureBody(
-        Arc::new(HiveStructureBodyModuleData::friend_new_module_data(ini)?),
-    ))
+pub fn new_hive_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::HiveStructureBody(Arc::new(HiveStructureBodyModuleData::friend_new_module_data(ini)?)))
 }
 
 /// `class HiveStructureBody : public StructureBody`: "a structure body that passes the damage it takes on to its spawn (or its riders), the closest to the
@@ -767,16 +591,10 @@ impl HiveStructureBody {
     }
 
     /// The constructor's first half.
-    pub fn new(
-        object: ObjectId,
-        module_data: Option<Arc<HiveStructureBodyModuleData>>,
-    ) -> IniResult<HiveStructureBody> {
+    pub fn new(object: ObjectId, module_data: Option<Arc<HiveStructureBodyModuleData>>) -> IniResult<HiveStructureBody> {
         let base = module_data.as_ref().map(|d| Arc::new(d.active.clone()));
         let sb = StructureBody::new(object, base)?;
-        Ok(HiveStructureBody {
-            sb,
-            data: module_data.unwrap_or_default(),
-        })
+        Ok(HiveStructureBody { sb, data: module_data.unwrap_or_default() })
     }
 
     /// The constructor's second half, run by the world.
@@ -795,12 +613,7 @@ impl HiveStructureBody {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match self.sb.derived_call(&call) {
             Some(r) => r,
             None => active_body::body_module_call(self, world, me, call),
@@ -808,13 +621,7 @@ impl HiveStructureBody {
     }
 
     /// Gives the damage to `target` (`target->attemptDamage(damageInfo)`), with the body lent out.
-    fn pass_on(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        target: ObjectId,
-        info: &mut DamageInfo,
-    ) {
+    fn pass_on(&mut self, world: &mut World, me: ModuleHandle, target: ObjectId, info: &mut DamageInfo) {
         active_body::out(self, world, me, |w| w.attempt_damage(target, info));
     }
 
@@ -829,80 +636,45 @@ impl HiveStructureBody {
     }
 
     /// `HiveStructureBody::attemptDamage`.
-    fn attempt_damage_override(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        info: &mut DamageInfo,
-    ) {
+    fn attempt_damage_override(&mut self, world: &mut World, me: ModuleHandle, info: &mut DamageInfo) {
         use crate::logic::modules::plant;
         let data = self.data.clone();
         let hive = me.object;
-        let propagate_set = if plant(1355) {
-            &data.damage_types_to_swallow
-        } else {
-            &data.damage_types_to_propagate_to_slaves
-        };
+        let propagate_set = if plant(1355) { &data.damage_types_to_swallow } else { &data.damage_types_to_propagate_to_slaves };
         let propagate = propagate_set.test(info.input.damage_type) != plant(1353);
         if propagate {
             // we have the right type of damage types incoming to propagate to slaves. Do we have slaves?
             let spawn = active_body::out(self, world, me, |w| w.get_spawn_behavior_interface(hive));
             let contain = world.get_contain(hive);
-            let (spawn, contain) = if plant(1356) && contain.is_some() {
-                (None, contain)
-            } else {
-                (spawn, contain)
-            };
+            let (spawn, contain) = if plant(1356) && contain.is_some() { (None, contain) } else { (spawn, contain) };
             // `shooter->getPosition()`
             let shooter_pos = match world.objects.find(info.input.source_id) {
-                Some(o) => Some(if plant(1357) {
-                    Coord3D {
-                        x: 0.0,
-                        y: 0.0,
-                        z: 0.0,
-                    }
-                } else {
-                    o.get_position()
-                }),
-                None => plant(1358).then_some(Coord3D {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 0.0,
-                }),
+                Some(o) => Some(if plant(1357) { Coord3D { x: 0.0, y: 0.0, z: 0.0 } } else { o.get_position() }),
+                None => plant(1358).then_some(Coord3D { x: 0.0, y: 0.0, z: 0.0 }),
             };
             if let Some(spawn) = spawn {
                 // we found the spawn interface, now get some slaves!
                 if let Some(pos) = shooter_pos {
-                    let slave = active_body::out(self, world, me, |w| {
-                        w.module_call(hive, spawn, ModuleCall::GetClosestSlave(pos))
-                    })
-                    .as_id();
+                    let slave = active_body::out(self, world, me, |w| w.module_call(hive, spawn, ModuleCall::GetClosestSlave(pos))).as_id();
                     if slave != INVALID_ID {
                         // propagate damage and return!
                         self.pass_on(world, me, slave, info);
                         if !plant(1359) {
                             return;
                         }
-                    } else if data.damage_types_to_swallow.test(info.input.damage_type)
-                        != plant(1354)
-                    {
+                    } else if data.damage_types_to_swallow.test(info.input.damage_type) != plant(1354) {
                         Self::swallow(info);
                         return;
                     }
                 }
             } else if let Some(contain) = contain {
                 if let Some(pos) = shooter_pos {
-                    let rider = active_body::out(self, world, me, |w| {
-                        w.module_call(hive, contain, ModuleCall::GetClosestRider(pos))
-                    })
-                    .as_id();
+                    let rider = active_body::out(self, world, me, |w| w.module_call(hive, contain, ModuleCall::GetClosestRider(pos))).as_id();
                     if rider != INVALID_ID {
                         // propagate damage and return!
                         self.pass_on(world, me, rider, info);
                         return;
-                    } else if data.damage_types_to_swallow.test(info.input.damage_type)
-                        != plant(1360)
-                    {
+                    } else if data.damage_types_to_swallow.test(info.input.damage_type) != plant(1360) {
                         Self::swallow(info);
                         return;
                     }

@@ -61,8 +61,8 @@ use rts_lockstep_engine::logic::modules::poisoned_behavior::PoisonedBehaviorModu
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleHandle};
 use rts_lockstep_engine::logic::world::module_probe::{ProbeAnswers, ProbeModule};
-use rts_lockstep_engine::logic::world::object::PRIVATE_EFFECTIVELY_DEAD;
 use rts_lockstep_engine::logic::world::object_create::{NewModule, NewObject};
+use rts_lockstep_engine::logic::world::object::PRIVATE_EFFECTIVELY_DEAD;
 use rts_lockstep_engine::logic::world::object_events::ObjectClientEvent;
 use rts_lockstep_engine::logic::world::update_body::UpdateBody;
 use std::cell::RefCell;
@@ -79,26 +79,19 @@ const BIG: u32 = 0x4974_2400;
 const POISON: u32 = 9;
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::PoisonedBehavior(Arc::new(
-        PoisonedBehaviorModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::PoisonedBehavior(Arc::new(PoisonedBehaviorModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
 }
 
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind) {
-    let ModuleDataKind::PoisonedBehavior(d) = data else {
-        unreachable!("not a PoisonedBehavior")
-    };
+    let ModuleDataKind::PoisonedBehavior(d) = data else { unreachable!("not a PoisonedBehavior") };
     put_u32(v, d.poison_damage_interval_data);
     put_u32(v, d.poison_duration_data);
 }
@@ -138,11 +131,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 fn gen_dur(g: &mut Gen, clean: bool) -> String {
     match g.below(12) {
         0..=1 => "0".to_string(),
-        2..=7 => pick(
-            g,
-            &["100", "300", "500", "1000", "3000", "33", "34", "67", "200"],
-        )
-        .to_string(),
+        2..=7 => pick(g, &["100", "300", "500", "1000", "3000", "33", "34", "67", "200"]).to_string(),
         8 => format!("{}", g.below(20_000)),
         9 if !clean => pick(g, &["x", "", "-", "12abc"]).to_string(),
         _ => "1000".to_string(),
@@ -176,12 +165,7 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     s.into_bytes()
 }
 
-fn gen_case(
-    g: &mut Gen,
-    _data: &Option<ModuleDataKind>,
-    _n_up: usize,
-    _upgrades: &[String],
-) -> (Vec<u32>, Vec<[u32; 5]>) {
+fn gen_case(g: &mut Gen, _data: &Option<ModuleDataKind>, _n_up: usize, _upgrades: &[String]) -> (Vec<u32>, Vec<[u32; 5]>) {
     // [the frame, the health, the maximum, the body is present]
     let cfg = vec![gen_frame(g), BIG, BIG, u32::from(g.below(10) != 0)];
     let n_ops = 1 + g.below(30) as usize;
@@ -205,11 +189,7 @@ fn gen_case(
         }
         45..=50 => [2, 0, 0, 0, 0],
         51..=70 => {
-            frame = if g.below(8) == 0 {
-                gen_frame(g)
-            } else {
-                frame.wrapping_add(1 + g.below(60))
-            };
+            frame = if g.below(8) == 0 { gen_frame(g) } else { frame.wrapping_add(1 + g.below(60)) };
             [4, frame, 0, 0, 0]
         }
         71..=75 => [5, u32::from(g.below(3) == 0), 0, 0, 0],
@@ -230,22 +210,12 @@ struct Tally {
     tints: u64,
 }
 
-fn rust_run(
-    ctx: Ctx,
-    data: ModuleDataKind,
-    cfg: &[u32],
-    ops: &[[u32; 5]],
-    tally: &RefCell<Tally>,
-) -> RunOut {
+fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally: &RefCell<Tally>) -> RunOut {
     let mut v = Vec::new();
     put_data(&mut v, &data);
 
     let mut w = World::new();
-    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics {
-        upgrade_center: ctx.center,
-        special_power_store: ctx.store,
-        ..Default::default()
-    });
+    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
     w.names = ctx.names;
     w.cuts.probe_effect_trace = true;
     w.cuts.trace = Some(Vec::new());
@@ -256,42 +226,15 @@ fn rust_run(
     if cfg[3] != 0 {
         let mut m = NewModule::plain(b"ProbeBody", b"ModuleTag_Body");
         m.interfaces = MODULEINTERFACE_BODY;
-        m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-            ProbeAnswers::default(),
-            f32::from_bits(cfg[2]),
-            Default::default(),
-        )));
+        m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), f32::from_bits(cfg[2]), Default::default())));
         modules.push(m);
     }
-    modules.push(
-        rts_lockstep_engine::logic::modules::new_module(
-            w.next_object_id(),
-            b"PoisonedBehavior",
-            b"ModuleTag_Poison",
-            &data,
-        )
-        .unwrap()
-        .unwrap(),
-    );
-    let template = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
-    let me = w
-        .new_object(NewObject {
-            template,
-            status: Default::default(),
-            team: None,
-            modules,
-        })
-        .unwrap();
+    modules.push(rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"PoisonedBehavior", b"ModuleTag_Poison", &data).unwrap().unwrap());
+    let template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
+    let me = w.new_object(NewObject { template, status: Default::default(), team: None, modules }).unwrap();
     assert_eq!(me, 1, "the first object of a fresh world has the id 1");
     let idx = w.find_module(me, b"PoisonedBehavior").unwrap();
-    let u = w
-        .update_handle_of_module(ModuleHandle {
-            object: me,
-            index: idx,
-        })
-        .expect("an update module");
+    let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
     let constructor_trace = w.cuts.trace.take().unwrap_or_default();
     // a new object has the drawable the client made for it: the test binds one, as batch E does
     w.friend_bind_to_drawable(me, 7);
@@ -307,10 +250,7 @@ fn rust_run(
             let o = &ops[phase - 1];
             match o[0] {
                 0 => {
-                    res = w
-                        .with_body(u, |b, w| b.update(w, u))
-                        .expect("the module is in its slot")
-                        .0;
+                    res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
                     tally.borrow_mut().updates += 1;
                 }
                 1 => {
@@ -358,18 +298,12 @@ fn rust_run(
         let tints: Vec<(u32, u32)> = events
             .iter()
             .filter_map(|e| match e {
-                ObjectClientEvent::DrawableTint { status, on, .. } => {
-                    Some((*status as u32, u32::from(*on)))
-                }
+                ObjectClientEvent::DrawableTint { status, on, .. } => Some((*status as u32, u32::from(*on))),
                 _ => None,
             })
             .collect();
         tally.borrow_mut().tints += tints.len() as u64;
-        let trace = if phase == 0 {
-            first_trace.take().unwrap_or_default()
-        } else {
-            w.cuts.trace.take().unwrap()
-        };
+        let trace = if phase == 0 { first_trace.take().unwrap_or_default() } else { w.cuts.trace.take().unwrap() };
         let (mut log, mut wakes, mut last) = (Vec::new(), 0u32, 0u32);
         for t in trace {
             if let Some(f) = t.strip_prefix("awaken ") {
@@ -409,49 +343,24 @@ fn rust_run(
             }
             put_u32(&mut v, crc);
         }
-        let state =
-            w.objects
-                .find(me)
-                .unwrap()
-                .behaviors
-                .iter()
-                .find_map(|b| match b.body.as_ref() {
-                    Some(UpdateBody::PoisonedBehavior(m)) => Some(m.state_words()),
-                    _ => None,
-                });
+        let state = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
+            Some(UpdateBody::PoisonedBehavior(m)) => Some(m.state_words()),
+            _ => None,
+        });
         for s in state.expect("the module is back in its slot") {
             put_u32(&mut v, s);
         }
-        let health = w
-            .objects
-            .find_mut(me)
-            .unwrap()
-            .modules
-            .iter_mut()
-            .find_map(|b| match b.body.as_mut() {
-                Some(UpdateBody::ModuleProbe(p)) if b.name == b"ProbeBody" => Some(p.health),
-                _ => None,
-            });
+        let health = w.objects.find_mut(me).unwrap().modules.iter_mut().find_map(|b| match b.body.as_mut() {
+            Some(UpdateBody::ModuleProbe(p)) if b.name == b"ProbeBody" => Some(p.health),
+            _ => None,
+        });
         put_u32(&mut v, health.map_or(0, f32::to_bits));
         // the body's record: only damage that reached a body
-        let last_fx = if cfg[3] != 0 {
-            w.objects
-                .find(me)
-                .unwrap()
-                .damage_received
-                .last()
-                .map_or(-1, |d| d.input.damage_fx_override)
-        } else {
-            -1
-        };
+        let last_fx = if cfg[3] != 0 { w.objects.find(me).unwrap().damage_received.last().map_or(-1, |d| d.input.damage_fx_override) } else { -1 };
         put_i32(&mut v, last_fx);
     }
     let excluded = w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined());
-    RunOut {
-        dump: v,
-        keys: Vec::new(),
-        excluded,
-    }
+    RunOut { dump: v, keys: Vec::new(), excluded }
 }
 
 #[test]
@@ -478,8 +387,5 @@ fn poisoned_behavior_matches_upstream() {
         "PoisonedBehavior R16: {} cases, {} data blocks threw, {} excluded (undefined upstream), {} ops, {} updates, {} xfers, {} damages, {} tints",
         c.cases, c.read_failed, c.excluded, c.ops_run, t.updates, t.xfers, t.damages, t.tints
     );
-    assert!(
-        t.damages * 4 > c.cases as u64 && t.tints * 4 > c.cases as u64,
-        "the generator must reach every path"
-    );
+    assert!(t.damages * 4 > c.cases as u64 && t.tints * 4 > c.cases as u64, "the generator must reach every path");
 }

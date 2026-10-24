@@ -59,14 +59,10 @@
 
 mod support;
 
-use rts_lockstep_engine::common::ini::{
-    BlockParse, FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Thrown, UserData,
-    TYPE_TABLE,
-};
+use rts_lockstep_engine::common::ini::{BlockParse, FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Thrown, UserData, TYPE_TABLE};
 use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
 use rts_lockstep_engine::common::science::{
-    xfer_science_type, xfer_science_vec, GameTextFetch, ScienceStore, ScienceType, ScienceVec,
-    SCIENCE_INVALID,
+    xfer_science_type, xfer_science_vec, GameTextFetch, ScienceStore, ScienceType, ScienceVec, SCIENCE_INVALID,
 };
 use rts_lockstep_engine::common::unicode_string::UnicodeString;
 use rts_lockstep_engine::common::xfer::Xfer;
@@ -119,22 +115,15 @@ impl Ctx {
     fn new() -> Self {
         let mut names = NameKeyGenerator::new();
         names.reset();
-        Ctx {
-            sciences: ScienceStore::new(),
-            ranks: RankInfoStore::new(),
-            names,
-            web: Vec::new(),
-        }
+        Ctx { sciences: ScienceStore::new(), ranks: RankInfoStore::new(), names, web: Vec::new() }
     }
 }
 
 fn h_science(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-    c.sciences
-        .parse_science_definition(ini, &mut c.names, &StandInText)
+    c.sciences.parse_science_definition(ini, &mut c.names, &StandInText)
 }
 fn h_rank(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-    c.ranks
-        .parse_rank_definition(ini, &mut c.names, &c.sciences, &StandInText)
+    c.ranks.parse_rank_definition(ini, &mut c.names, &c.sciences, &StandInText)
 }
 
 struct WebFill<'a> {
@@ -147,21 +136,13 @@ fn w_one(ini: &mut Ini<'_>, w: &mut WebFill<'_>, _: &UserData) -> IniResult<()> 
     Ok(())
 }
 fn w_vec(ini: &mut Ini<'_>, w: &mut WebFill<'_>, _: &UserData) -> IniResult<()> {
-    w.sciences
-        .parse_science_vector(ini, w.names, &mut w.rec.vec)
+    w.sciences.parse_science_vector(ini, w.names, &mut w.rec.vec)
 }
 /// The `WebpageURL` handler of `wrap_science.cpp`.
 fn h_web(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-    c.web.push(WebRec {
-        one: SCIENCE_INVALID,
-        vec: Vec::new(),
-    });
+    c.web.push(WebRec { one: SCIENCE_INVALID, vec: Vec::new() });
     let rec = c.web.last_mut().unwrap();
-    let mut fill = WebFill {
-        rec,
-        names: &mut c.names,
-        sciences: &c.sciences,
-    };
+    let mut fill = WebFill { rec, names: &mut c.names, sciences: &c.sciences };
     let table = [
         FieldParse::new("Science", w_one, UserData::None),
         FieldParse::new("Sciences", w_vec, UserData::None),
@@ -268,14 +249,7 @@ fn rust_web_dump(web: &[WebRec], bug: u32) -> Vec<u8> {
     put_u32(&mut v, web.len() as u32);
     for w in web {
         put_i32(&mut v, w.one.0);
-        put_vec(
-            &mut v,
-            if bug == 1 && !w.vec.is_empty() {
-                &w.vec[1..]
-            } else {
-                &w.vec
-            },
-        );
+        put_vec(&mut v, if bug == 1 && !w.vec.is_empty() { &w.vec[1..] } else { &w.vec });
     }
     v
 }
@@ -283,10 +257,7 @@ fn rust_web_dump(web: &[WebRec], bug: u32) -> Vec<u8> {
 /// `ref_science_probe`. `bug` 1 reports every science as grantable.
 fn rust_probe(c: &Ctx, st: i32, bug: u32) -> Vec<u8> {
     let s = ScienceType(st);
-    let mut v = vec![
-        u8::from(c.sciences.is_valid_science(s)),
-        u8::from(c.sciences.is_science_grantable(s) || bug == 1),
-    ];
+    let mut v = vec![u8::from(c.sciences.is_valid_science(s)), u8::from(c.sciences.is_science_grantable(s) || bug == 1)];
     let nd = c.sciences.get_name_and_description(s);
     v.push(u8::from(nd.is_some()));
     let (n, d) = nd.unwrap_or_default();
@@ -303,13 +274,7 @@ fn rust_probe(c: &Ctx, st: i32, bug: u32) -> Vec<u8> {
 /// key), then `friend_lookupScience`.
 fn rust_name_probe(c: &mut Ctx, name: &[u8]) -> Vec<u8> {
     let mut v = Vec::new();
-    put_i32(
-        &mut v,
-        c.sciences
-            .get_science_from_internal_name(&mut c.names, name)
-            .unwrap()
-            .0,
-    );
+    put_i32(&mut v, c.sciences.get_science_from_internal_name(&mut c.names, name).unwrap().0);
     match c.sciences.friend_lookup_science(&mut c.names, name) {
         Ok(s) => {
             put_i32(&mut v, s.0);
@@ -371,29 +336,11 @@ fn pick<'a, T: ?Sized>(g: &mut Gen, xs: &[&'a T]) -> &'a T {
 
 /// Names differing only in case are different sciences (`nameToKey` is `strcmp`).
 const SCI_POOL: [&str; 10] = [
-    "Science_A",
-    "Science_B",
-    "Science_C",
-    "Science_D",
-    "Science_E",
-    "Science_F",
-    "SCIENCE_A",
-    "science_b",
-    "Science_G",
-    "Science_H",
+    "Science_A", "Science_B", "Science_C", "Science_D", "Science_E", "Science_F", "SCIENCE_A", "science_b", "Science_G", "Science_H",
 ];
 const GHOSTS: [&str; 4] = ["Science_Ghost", "Nope", "science_a", "Science_AA"];
 const LABELS: [&str; 10] = [
-    "SCIENCE:Alpha",
-    "SCIENCE:Beta",
-    "Label_A",
-    "X",
-    "SCIENCE:Gamma",
-    "Rank:Recruit",
-    "Rank:Colonel",
-    "NOTEXT_Missing",
-    "notext",
-    "NoTextLabel",
+    "SCIENCE:Alpha", "SCIENCE:Beta", "Label_A", "X", "SCIENCE:Gamma", "Rank:Recruit", "Rank:Colonel", "NOTEXT_Missing", "notext", "NoTextLabel",
 ];
 
 fn gen_sep(g: &mut Gen) -> &'static str {
@@ -422,11 +369,7 @@ impl Known {
 
     /// A name for a new definition: one nothing defines yet, when there is one.
     fn fresh(&self, g: &mut Gen) -> String {
-        let free: Vec<&str> = SCI_POOL
-            .iter()
-            .copied()
-            .filter(|n| !self.names.iter().any(|k| k == n))
-            .collect();
+        let free: Vec<&str> = SCI_POOL.iter().copied().filter(|n| !self.names.iter().any(|k| k == n)).collect();
         if !free.is_empty() && (self.clean || g.below(10) < 8) {
             free[g.below(free.len() as u32) as usize].to_string()
         } else {
@@ -461,24 +404,12 @@ fn gen_sci_list(g: &mut Gen, k: &Known, not: &str) -> String {
             3 => return pick(g, &GHOSTS).to_string(),
             4 => return format!("{} {}", one(g).unwrap_or_default(), pick(g, &GHOSTS)),
             5 => return String::new(),
-            6 => {
-                return format!(
-                    "{},{}",
-                    one(g).unwrap_or_default(),
-                    one(g).unwrap_or_default()
-                )
-            }
+            6 => return format!("{},{}", one(g).unwrap_or_default(), one(g).unwrap_or_default()),
             7 => {
                 let a = one(g).unwrap_or_default();
                 return format!("{a} {a}");
             }
-            8 => {
-                return format!(
-                    "{}={}",
-                    one(g).unwrap_or_default(),
-                    one(g).unwrap_or_default()
-                )
-            }
+            8 => return format!("{}={}", one(g).unwrap_or_default(), one(g).unwrap_or_default()),
             _ => {}
         }
     }
@@ -544,13 +475,7 @@ fn gen_indent(g: &mut Gen) -> &'static str {
 
 fn gen_end(g: &mut Gen, clean: bool, lines: &mut Vec<String>) {
     if clean || g.below(15) != 0 {
-        lines.push(
-            pick(
-                g,
-                &["End", "End", "End", "END", "end", "  End  ", "End ; done"],
-            )
-            .to_string(),
-        );
+        lines.push(pick(g, &["End", "End", "End", "END", "end", "  End  ", "End ; done"]).to_string());
     }
 }
 
@@ -564,19 +489,7 @@ fn gen_science_block(g: &mut Gen, lines: &mut Vec<String>, k: &mut Known, overri
     for _ in 0..g.below(7) {
         let sep = gen_sep(g);
         let body = match g.below(30) {
-            0 if !k.clean => pick(
-                g,
-                &[
-                    "Foo = 1",
-                    "PrerequisiteSciences",
-                    "IsGrantable =",
-                    "DisplayName",
-                    "Description =",
-                    "prerequisitesciences = Science_A",
-                    "Dead = 1",
-                ],
-            )
-            .to_string(),
+            0 if !k.clean => pick(g, &["Foo = 1", "PrerequisiteSciences", "IsGrantable =", "DisplayName", "Description =", "prerequisitesciences = Science_A", "Dead = 1"]).to_string(),
             0..=7 => format!("PrerequisiteSciences{sep}{}", gen_sci_list(g, k, &name)),
             8..=12 => format!("SciencePurchasePointCost{sep}{}", gen_int(g, k.clean)),
             13..=16 => format!("IsGrantable{sep}{}", gen_bool(g, k.clean)),
@@ -589,14 +502,7 @@ fn gen_science_block(g: &mut Gen, lines: &mut Vec<String>, k: &mut Known, overri
     k.add(&name);
 }
 
-fn gen_rank_block(
-    g: &mut Gen,
-    lines: &mut Vec<String>,
-    k: &Known,
-    overrides: bool,
-    n_ranks: i32,
-    next_rank: &mut i32,
-) {
+fn gen_rank_block(g: &mut Gen, lines: &mut Vec<String>, k: &Known, overrides: bool, n_ranks: i32, next_rank: &mut i32) {
     let level: String = if overrides {
         if n_ranks > 0 && (k.clean || g.below(10) < 8) {
             format!("{}", 1 + g.below(n_ranks as u32))
@@ -614,16 +520,7 @@ fn gen_rank_block(
     for _ in 0..g.below(6) {
         let sep = gen_sep(g);
         let body = match g.below(26) {
-            0 if !k.clean => pick(
-                g,
-                &[
-                    "Foo = 1",
-                    "RankName",
-                    "SkillPointsNeeded =",
-                    "SciencesGranted",
-                ],
-            )
-            .to_string(),
+            0 if !k.clean => pick(g, &["Foo = 1", "RankName", "SkillPointsNeeded =", "SciencesGranted"]).to_string(),
             0..=6 => format!("RankName{sep}{}", gen_label(g, k.clean)),
             7..=12 => format!("SkillPointsNeeded{sep}{}", gen_int(g, k.clean)),
             13..=19 => format!("SciencesGranted{sep}{}", gen_sci_list(g, k, "")),
@@ -662,10 +559,7 @@ fn gen_web_block(g: &mut Gen, lines: &mut Vec<String>, k: &Known) {
 /// A share of the files (`clean`) holds only well-formed blocks.
 fn gen_file(g: &mut Gen, known: &[String], n_ranks: i32, overrides: bool) -> Vec<u8> {
     let clean = g.below(10) < 4;
-    let mut k = Known {
-        names: known.to_vec(),
-        clean,
-    };
+    let mut k = Known { names: known.to_vec(), clean };
     let mut lines = Vec::new();
     let mut next_rank = n_ranks + 1;
     for _ in 0..1 + g.below(5) {
@@ -674,9 +568,7 @@ fn gen_file(g: &mut Gen, known: &[String], n_ranks: i32, overrides: bool) -> Vec
             10..=14 => gen_rank_block(g, &mut lines, &k, overrides, n_ranks, &mut next_rank),
             15..=17 => gen_web_block(g, &mut lines, &k),
             18 => lines.push(pick(g, &["; a comment", "", "   ", ";", "\t"]).to_string()),
-            _ if !clean => {
-                lines.push(pick(g, &["Unknown block", "=", "  =  ", "End", "AIData"]).to_string())
-            }
+            _ if !clean => lines.push(pick(g, &["Unknown block", "=", "  =  ", "End", "AIData"]).to_string()),
             _ => lines.push("; noise".to_string()),
         }
     }
@@ -729,11 +621,7 @@ fn rust_outcome(r: IniResult<()>, crc: u32) -> Result<Outcome, IniError> {
             Some(Thrown::OutOfRange) => (4, Vec::new()),
         },
     };
-    Ok(Outcome {
-        status,
-        detail,
-        crc,
-    })
+    Ok(Outcome { status, detail, crc })
 }
 
 fn cpp_load(name: &[u8], data: &[u8], load_type: IniLoadType, with_xfer: bool) -> Outcome {
@@ -743,15 +631,7 @@ fn cpp_load(name: &[u8], data: &[u8], load_type: IniLoadType, with_xfer: bool) -
     let status = unsafe {
         cpp::ref_ini_reset();
         cpp::ref_ini_add_file(cname.as_ptr(), data.as_ptr() as *const _, data.len() as i32);
-        cpp::ref_science_load(
-            cname.as_ptr(),
-            load_type as i32,
-            i32::from(with_xfer),
-            &mut crc,
-            msg.as_mut_ptr() as *mut _,
-            msg.len() as i32,
-            &mut code,
-        )
+        cpp::ref_science_load(cname.as_ptr(), load_type as i32, i32::from(with_xfer), &mut crc, msg.as_mut_ptr() as *mut _, msg.len() as i32, &mut code)
     };
     let detail = match status {
         0 | 4 => Vec::new(),
@@ -759,11 +639,7 @@ fn cpp_load(name: &[u8], data: &[u8], load_type: IniLoadType, with_xfer: bool) -
         2 | 3 => code.to_le_bytes().to_vec(),
         _ => panic!("C++ threw something unexpected (status {status})"),
     };
-    Outcome {
-        status,
-        detail,
-        crc: if with_xfer { crc } else { 0 },
-    }
+    Outcome { status, detail, crc: if with_xfer { crc } else { 0 } }
 }
 
 fn show(b: &[u8]) -> String {
@@ -901,15 +777,9 @@ fn science_and_rank_blocks_match_upstream() {
                     unsafe { cpp::ref_science_op(if kind == 2 { 0 } else { 1 }) };
                 }
                 _ => {
-                    let known: Vec<String> = ctx
-                        .sciences
-                        .friend_get_science_names(&ctx.names)
-                        .iter()
-                        .map(|n| show(n))
-                        .collect();
+                    let known: Vec<String> = ctx.sciences.friend_get_science_names(&ctx.names).iter().map(|n| show(n)).collect();
                     let overrides = kind == 1;
-                    let data =
-                        gen_file(&mut g, &known, ctx.ranks.get_rank_level_count(), overrides);
+                    let data = gen_file(&mut g, &known, ctx.ranks.get_rank_level_count(), overrides);
                     let load_type = if overrides {
                         IniLoadType::CreateOverrides
                     } else if g.below(12) == 0 {
@@ -924,11 +794,7 @@ fn science_and_rank_blocks_match_upstream() {
                         &name,
                         &data,
                         load_type,
-                        if with_xfer {
-                            Some(&mut crc as &mut dyn Xfer)
-                        } else {
-                            None
-                        },
+                        if with_xfer { Some(&mut crc as &mut dyn Xfer) } else { None },
                         &table,
                         &mut ctx,
                     );
@@ -945,20 +811,10 @@ fn science_and_rank_blocks_match_upstream() {
                     if overrides {
                         t.overrides_loads += 1;
                     }
-                    if rust.status == 0 {
-                        t.loads_ok += 1
-                    } else {
-                        t.loads_failed += 1
-                    }
+                    if rust.status == 0 { t.loads_ok += 1 } else { t.loads_failed += 1 }
                     let c = cpp_load(&name, &data, load_type, with_xfer);
-                    ck.outcome.eq(&rust, &c, || {
-                        format!("{tag}: {load_type:?} file {:?}", show(&data))
-                    });
-                    let wrong = Outcome {
-                        status: rust.status ^ 4,
-                        detail: rust.detail.clone(),
-                        crc: rust.crc,
-                    };
+                    ck.outcome.eq(&rust, &c, || format!("{tag}: {load_type:?} file {:?}", show(&data)));
+                    let wrong = Outcome { status: rust.status ^ 4, detail: rust.detail.clone(), crc: rust.crc };
                     ck.outcome_bug.eq(&wrong, &c, || tag.clone());
                 }
             }
@@ -966,16 +822,12 @@ fn science_and_rank_blocks_match_upstream() {
             // the stores, after the step
             let file = || tag.clone();
             let cs = cpp_buf(|b, n| unsafe { cpp::ref_science_dump(b, n) });
-            ck.sci
-                .eq(rust_science_dump(&ctx.sciences, 0), cs.clone(), file);
-            ck.sci_bug_roots
-                .eq(rust_science_dump(&ctx.sciences, 1), cs.clone(), file);
-            ck.sci_bug_flag
-                .eq(rust_science_dump(&ctx.sciences, 2), cs, file);
+            ck.sci.eq(rust_science_dump(&ctx.sciences, 0), cs.clone(), file);
+            ck.sci_bug_roots.eq(rust_science_dump(&ctx.sciences, 1), cs.clone(), file);
+            ck.sci_bug_flag.eq(rust_science_dump(&ctx.sciences, 2), cs, file);
             let cr = cpp_buf(|b, n| unsafe { cpp::ref_rank_dump(b, n) });
             ck.rank.eq(rust_rank_dump(&ctx.ranks, 0), cr.clone(), file);
-            ck.rank_bug_swap
-                .eq(rust_rank_dump(&ctx.ranks, 1), cr.clone(), file);
+            ck.rank_bug_swap.eq(rust_rank_dump(&ctx.ranks, 1), cr.clone(), file);
             ck.rank_bug_flag.eq(rust_rank_dump(&ctx.ranks, 2), cr, file);
             let cw = cpp_buf(|b, n| unsafe { cpp::ref_science_web_dump(b, n) });
             ck.web.eq(rust_web_dump(&ctx.web, 0), cw.clone(), file);
@@ -1002,20 +854,13 @@ fn science_and_rank_blocks_match_upstream() {
                 }
             }
             t.ranks += ctx.ranks.get_rank_level_count() as u64;
-            t.rank_overrides += ctx
-                .ranks
-                .chains()
-                .filter(|h| h.get_next_override().is_some())
-                .count() as u64;
+            t.rank_overrides += ctx.ranks.chains().filter(|h| h.get_next_override().is_some()).count() as u64;
 
             // the lookups, after the step (they give unseen names their keys)
             for st in (-3..16).chain([1000, i32::MAX, i32::MIN]) {
                 let cp = cpp_buf(|b, n| unsafe { cpp::ref_science_probe(st, b, n) });
-                ck.probe.eq(rust_probe(&ctx, st, 0), cp.clone(), || {
-                    format!("{tag}: id {st}")
-                });
-                ck.probe_bug
-                    .eq(rust_probe(&ctx, st, 1), cp, || format!("{tag}: id {st}"));
+                ck.probe.eq(rust_probe(&ctx, st, 0), cp.clone(), || format!("{tag}: id {st}"));
+                ck.probe_bug.eq(rust_probe(&ctx, st, 1), cp, || format!("{tag}: id {st}"));
                 t.probes += 1;
             }
             for (i, n) in probes.iter().enumerate() {
@@ -1023,11 +868,9 @@ fn science_and_rank_blocks_match_upstream() {
                     continue;
                 }
                 let cn = CString::new(n.as_str()).unwrap();
-                let cp =
-                    cpp_buf(|b, cap| unsafe { cpp::ref_science_name_probe(cn.as_ptr(), b, cap) });
+                let cp = cpp_buf(|b, cap| unsafe { cpp::ref_science_name_probe(cn.as_ptr(), b, cap) });
                 let rp = rust_name_probe(&mut ctx, n.as_bytes());
-                ck.names
-                    .eq(rp.clone(), cp.clone(), || format!("{tag}: name {n:?}"));
+                ck.names.eq(rp.clone(), cp.clone(), || format!("{tag}: name {n:?}"));
                 let mut wrong = rp;
                 wrong[0] ^= 1;
                 ck.names_bug.eq(wrong, cp, || format!("{tag}: name {n:?}"));
@@ -1037,14 +880,8 @@ fn science_and_rank_blocks_match_upstream() {
             ck.name_list.eq(rust_names(&ctx), cn, || tag.clone());
             for level in -1..ctx.ranks.get_rank_level_count() + 3 {
                 let cp = cpp_buf(|b, cap| unsafe { cpp::ref_rank_probe(level, b, cap) });
-                ck.rank_probe
-                    .eq(rust_rank_probe(&ctx, level, 0), cp.clone(), || {
-                        format!("{tag}: level {level}")
-                    });
-                ck.rank_probe_bug
-                    .eq(rust_rank_probe(&ctx, level, 1), cp, || {
-                        format!("{tag}: level {level}")
-                    });
+                ck.rank_probe.eq(rust_rank_probe(&ctx, level, 0), cp.clone(), || format!("{tag}: level {level}"));
+                ck.rank_probe_bug.eq(rust_rank_probe(&ctx, level, 1), cp, || format!("{tag}: level {level}"));
                 t.probes += 1;
             }
         }
@@ -1056,20 +893,9 @@ fn science_and_rank_blocks_match_upstream() {
         t.sessions, t.loads, t.overrides_loads, t.loads_ok, t.loads_failed, t.resets, t.inits, t.sciences, t.chains_over_1,
         t.science_nodes_with_roots, t.multi_root_nodes, t.ranks, t.rank_overrides, t.web_records, t.probes, excluded.total(), excluded.0
     );
-    assert!(
-        t.loads_ok > 2000 && t.loads_failed > 2000,
-        "the generator must reach both outcomes: {} ok, {} threw",
-        t.loads_ok,
-        t.loads_failed
-    );
-    assert!(
-        t.sciences > 5000 && t.chains_over_1 > 500 && t.multi_root_nodes > 200,
-        "too few sciences, overrides or roots compared"
-    );
-    assert!(
-        t.ranks > 2000 && t.rank_overrides > 300 && t.web_records > 2000,
-        "too few ranks or records compared"
-    );
+    assert!(t.loads_ok > 2000 && t.loads_failed > 2000, "the generator must reach both outcomes: {} ok, {} threw", t.loads_ok, t.loads_failed);
+    assert!(t.sciences > 5000 && t.chains_over_1 > 500 && t.multi_root_nodes > 200, "too few sciences, overrides or roots compared");
+    assert!(t.ranks > 2000 && t.rank_overrides > 300 && t.web_records > 2000, "too few ranks or records compared");
     ck.outcome.finish();
     ck.outcome_bug.finish_planted();
     ck.sci.finish();
@@ -1108,10 +934,7 @@ fn xfer_status(e: &rts_lockstep_engine::common::science::ScienceXferError) -> i3
 }
 
 fn tmp_path(tag: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!(
-        "rts-lockstep-science-{}-{tag}.bin",
-        std::process::id()
-    ))
+    std::env::temp_dir().join(format!("rts-lockstep-science-{}-{tag}.bin", std::process::id()))
 }
 
 /// Runs `xferScienceType` (kind 0, on `v[0]`) or `xferScienceVec` (kind 1).
@@ -1172,31 +995,15 @@ fn science_xfer_matches_upstream() {
         // save
         let mut cbytes = vec![0u8; 4096];
         let mut clen = 0i32;
-        let cst = unsafe {
-            cpp::ref_science_save(
-                kind,
-                vals.as_ptr(),
-                vals.len() as i32,
-                cpath.as_ptr(),
-                cbytes.as_mut_ptr(),
-                4096,
-                &mut clen,
-            )
-        };
+        let cst = unsafe { cpp::ref_science_save(kind, vals.as_ptr(), vals.len() as i32, cpath.as_ptr(), cbytes.as_mut_ptr(), 4096, &mut clen) };
         cbytes.truncate(clen as usize);
         let mut xs = XferSave::new();
         xs.open(b"rust").unwrap();
         let rst = rust_xfer(&mut xs, &mut names, kind, &mut v);
         let _ = xs.close();
         let rbytes = xs.bytes().to_vec();
-        if rst == 0 {
-            saved_ok += 1
-        } else {
-            save_failed += 1
-        }
-        save.eq((rst, &rbytes), (cst, &cbytes), || {
-            format!("case {case} kind {kind}: {vals:?}")
-        });
+        if rst == 0 { saved_ok += 1 } else { save_failed += 1 }
+        save.eq((rst, &rbytes), (cst, &cbytes), || format!("case {case} kind {kind}: {vals:?}"));
         let mut planted = rbytes.clone();
         if planted.len() > 3 {
             planted[3] ^= 1; // planted: a byte of the count or a name changes
@@ -1209,7 +1016,7 @@ fn science_xfer_matches_upstream() {
         let mut file = cbytes.clone();
         match g.below(9) {
             1 if !file.is_empty() => file[0] = g.below(4) as u8, // the version byte
-            2 if file.len() > 1 => file[1] = g.below(10) as u8,  // the count
+            2 if file.len() > 1 => file[1] = g.below(10) as u8, // the count
             3 if !file.is_empty() => {
                 let p = g.below(file.len() as u32) as usize;
                 file[p] = g.u32() as u8;
@@ -1227,31 +1034,15 @@ fn science_xfer_matches_upstream() {
         let mut cvals = vec![0i32; 64];
         cvals[..start.len()].copy_from_slice(&start);
         let mut cn = start.len() as i32;
-        let cst = unsafe {
-            cpp::ref_science_load_xfer(
-                kind,
-                cvals.as_mut_ptr(),
-                64,
-                &mut cn,
-                file.as_ptr(),
-                file.len() as i32,
-                cpath.as_ptr(),
-            )
-        };
+        let cst = unsafe { cpp::ref_science_load_xfer(kind, cvals.as_mut_ptr(), 64, &mut cn, file.as_ptr(), file.len() as i32, cpath.as_ptr()) };
         let cres: Vec<i32> = cvals[..cn as usize].to_vec();
         let mut r: ScienceVec = start.iter().map(|&x| ScienceType(x)).collect();
         let mut xl = XferLoad::new(file.clone());
         xl.open(b"rust").unwrap();
         let rst = rust_xfer(&mut xl, &mut names, kind, &mut r);
         let rres: Vec<i32> = r.iter().map(|s| s.0).collect();
-        if rst == 0 {
-            load_ok += 1
-        } else {
-            load_failed += 1
-        }
-        load.eq((rst, rres.clone()), (cst, cres.clone()), || {
-            format!("case {case} kind {kind}: file {file:?} start {start:?}")
-        });
+        if rst == 0 { load_ok += 1 } else { load_failed += 1 }
+        load.eq((rst, rres.clone()), (cst, cres.clone()), || format!("case {case} kind {kind}: file {file:?} start {start:?}"));
         let mut wrong = rres.clone();
         if let Some(x) = wrong.first_mut() {
             *x += 1; // planted: the first science is off by one
@@ -1262,11 +1053,7 @@ fn science_xfer_matches_upstream() {
         // the keys the load assigned: the next unseen name gets the same key
         let probe = format!("Fresh_Name_{case}");
         let cprobe = CString::new(probe.as_str()).unwrap();
-        keys_after.eq(
-            names.name_to_key(probe.as_bytes()).0,
-            unsafe { cpp::ref_science_name_key(cprobe.as_ptr()) },
-            || format!("case {case}"),
-        );
+        keys_after.eq(names.name_to_key(probe.as_bytes()).0, unsafe { cpp::ref_science_name_key(cprobe.as_ptr()) }, || format!("case {case}"));
 
         // CRC
         let mut cc = 7u32;
@@ -1275,12 +1062,8 @@ fn science_xfer_matches_upstream() {
         xc.open(b"crc").unwrap();
         let mut v2: ScienceVec = vals.iter().map(|&x| ScienceType(x)).collect();
         let rst = rust_xfer(&mut xc, &mut names, kind, &mut v2);
-        crc.eq((rst, xc.get_crc()), (cst, cc), || {
-            format!("case {case} kind {kind}: {vals:?}")
-        });
-        crc_bug.eq((rst, xc.get_crc() ^ 1), (cst, cc), || {
-            format!("case {case}")
-        });
+        crc.eq((rst, xc.get_crc()), (cst, cc), || format!("case {case} kind {kind}: {vals:?}"));
+        crc_bug.eq((rst, xc.get_crc() ^ 1), (cst, cc), || format!("case {case}"));
     }
     let _ = std::fs::remove_file(&path);
     println!("Science xfer: {CASES} vectors; saves {saved_ok} ok, {save_failed} failed; loads {load_ok} ok, {load_failed} failed");

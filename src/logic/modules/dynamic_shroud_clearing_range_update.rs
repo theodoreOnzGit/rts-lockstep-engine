@@ -38,16 +38,12 @@
 use std::sync::Arc;
 
 use crate::common::base_type::{Coord3D, PI};
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::trig;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::radius_decal::RadiusDecalTemplate;
 use crate::logic::world::game_logic::World;
@@ -128,92 +124,30 @@ impl Default for DynamicShroudClearingRangeUpdateModuleData {
 
 /// `DynamicShroudClearingRangeUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<DynamicShroudClearingRangeUpdateModuleData>; 9] = [
-    FieldParse::new(
-        "ChangeInterval",
-        |ini, d, _| {
-            d.change_interval = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "GrowInterval",
-        |ini, d, _| {
-            d.grow_interval = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShrinkDelay",
-        |ini, d, _| {
-            d.shrink_delay = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShrinkTime",
-        |ini, d, _| {
-            d.shrink_time = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "GrowDelay",
-        |ini, d, _| {
-            d.grow_delay = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "GrowTime",
-        |ini, d, _| {
-            d.grow_time = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FinalVision",
-        |ini, d, _| {
-            d.final_vision = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "GridDecalTemplate",
-        |ini, d, _| {
-            RadiusDecalTemplate::parse_radius_decal_template(ini, &mut d.grid_decal_template)
-        },
-        UserData::None,
-    ),
+    FieldParse::new("ChangeInterval", |ini, d, _| { d.change_interval = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("GrowInterval", |ini, d, _| { d.grow_interval = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("ShrinkDelay", |ini, d, _| { d.shrink_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("ShrinkTime", |ini, d, _| { d.shrink_time = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("GrowDelay", |ini, d, _| { d.grow_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("GrowTime", |ini, d, _| { d.grow_time = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("FinalVision", |ini, d, _| { d.final_vision = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("GridDecalTemplate", |ini, d, _| RadiusDecalTemplate::parse_radius_decal_template(ini, &mut d.grid_decal_template), UserData::None),
     FieldParse::end(),
 ];
 
 impl DynamicShroudClearingRangeUpdateModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, DynamicShroudClearingRangeUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, DynamicShroudClearingRangeUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<DynamicShroudClearingRangeUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<DynamicShroudClearingRangeUpdateModuleData> {
         let mut data = DynamicShroudClearingRangeUpdateModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                DynamicShroudClearingRangeUpdateModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, DynamicShroudClearingRangeUpdateModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -266,8 +200,7 @@ impl PartialEq for DynamicShroudClearingRangeUpdate {
             && self.done_forever_frame == other.done_forever_frame
             && self.change_interval_countdown == other.change_interval_countdown
             && self.decals_created == other.decals_created
-            && self.vision_change_per_interval.to_bits()
-                == other.vision_change_per_interval.to_bits()
+            && self.vision_change_per_interval.to_bits() == other.vision_change_per_interval.to_bits()
             && self.native_clearing_range.to_bits() == other.native_clearing_range.to_bits()
             && self.current_clearing_range.to_bits() == other.current_clearing_range.to_bits()
     }
@@ -285,10 +218,7 @@ fn float_to_int(x: f32) -> Result<i32, IniError> {
 impl DynamicShroudClearingRangeUpdate {
     /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data); the state the
     /// constructor computes from the data is [`UpdateBehavior::construct`]'s.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<DynamicShroudClearingRangeUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<DynamicShroudClearingRangeUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
@@ -350,12 +280,7 @@ impl DynamicShroudClearingRangeUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls (none).
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -376,36 +301,15 @@ impl DynamicShroudClearingRangeUpdate {
 
     /// `m_gridDecal[index].<op>`.
     fn decal(world: &mut World, me: ObjectId, index: u32, op: GridDecalOp) {
-        world.emit(ObjectClientEvent::GridDecal {
-            object_id: me,
-            index,
-            op,
-        });
+        world.emit(ObjectClientEvent::GridDecal { object_id: me, index, op });
     }
 
     /// `createGridDecals(tmpl, radius, pos)`.
-    fn create_grid_decals(
-        &self,
-        world: &mut World,
-        me: ObjectId,
-        tmpl: &RadiusDecalTemplate,
-        radius: f32,
-        pos: Coord3D,
-    ) {
+    fn create_grid_decals(&self, world: &mut World, me: ObjectId, tmpl: &RadiusDecalTemplate, radius: f32, pos: Coord3D) {
         for d in 0..GRID_FX_DECAL_COUNT {
             Self::decal(world, me, d, GridDecalOp::Clear);
             let player = world.get_controlling_player(me);
-            Self::decal(
-                world,
-                me,
-                d,
-                GridDecalOp::Create {
-                    template: tmpl.clone(),
-                    radius,
-                    position: pos,
-                    player,
-                },
-            );
+            Self::decal(world, me, d, GridDecalOp::Create { template: tmpl.clone(), radius, position: pos, player });
             Self::decal(world, me, d, GridDecalOp::SetPosition(pos));
         }
     }
@@ -419,22 +323,11 @@ impl DynamicShroudClearingRangeUpdate {
 
     /// `animateGridDecals()`. An error is upstream's undefined behaviour.
     fn animate_grid_decals(&self, world: &mut World, me: ObjectId) -> Result<(), IniError> {
-        let ctr = world
-            .objects
-            .find(me)
-            .map_or_else(Coord3D::default, |o| o.get_position());
-        let mut pos = Coord3D {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        };
+        let ctr = world.objects.find(me).map_or_else(Coord3D::default, |o| o.get_position());
+        let mut pos = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
 
         // `(m_totalFrames - m_stateCountDown) * 2` is an `Int` expression
-        let frames = self
-            .total_frames
-            .checked_sub(self.state_count_down)
-            .and_then(|f| f.checked_mul(2))
-            .ok_or_else(|| IniError::undefined(Undefined::SignedIntOverflow))?;
+        let frames = self.total_frames.checked_sub(self.state_count_down).and_then(|f| f.checked_mul(2)).ok_or_else(|| IniError::undefined(Undefined::SignedIntOverflow))?;
         let radius = self.current_clearing_range + frames as f32;
         let mut angle = 0.0f32;
         let angle_inc = (PI * 2.0f32) / GRID_FX_DECAL_COUNT as f32;
@@ -448,11 +341,7 @@ impl DynamicShroudClearingRangeUpdate {
             pos.x = ctr.x + (trig::sin(angle) * radius);
             pos.y = ctr.y + (trig::cos(angle) * radius);
 
-            let modulus = if crate::logic::modules::plant(1127) {
-                22
-            } else {
-                23
-            };
+            let modulus = if crate::logic::modules::plant(1127) { 22 } else { 23 };
             pos.x -= (float_to_int(pos.x)? % modulus) as f32;
             pos.y -= (float_to_int(pos.y)? % modulus) as f32;
 
@@ -473,32 +362,15 @@ impl DynamicShroudClearingRangeUpdate {
         let current_frame = world.frame();
 
         if !self.decals_created {
-            let pos = world
-                .objects
-                .find(me)
-                .map_or_else(Coord3D::default, |o| o.get_position());
-            self.create_grid_decals(
-                world,
-                me,
-                &md.grid_decal_template,
-                if crate::logic::modules::plant(1125) {
-                    99.0
-                } else {
-                    100.0
-                },
-                pos,
-            );
+            let pos = world.objects.find(me).map_or_else(Coord3D::default, |o| o.get_position());
+            self.create_grid_decals(world, me, &md.grid_decal_template, if crate::logic::modules::plant(1125) { 99.0 } else { 100.0 }, pos);
             self.decals_created = true;
         }
         // -----------------------------------------------------
 
         // `m_stateCountDown` (an `Int`) is compared with the `UnsignedInt` deadlines as an unsigned value
         let count = self.state_count_down as u32;
-        let past_done = if crate::logic::modules::plant(1135) {
-            current_frame >= self.done_forever_frame
-        } else {
-            current_frame > self.done_forever_frame
-        };
+        let past_done = if crate::logic::modules::plant(1135) { current_frame >= self.done_forever_frame } else { current_frame > self.done_forever_frame };
         if self.state_count_down <= 0 || past_done {
             self.state = DscruState::DoneForever;
         } else if count <= self.shrink_start_deadline {
@@ -517,13 +389,7 @@ impl DynamicShroudClearingRangeUpdate {
                 self.animate_grid_decals(world, me)?;
 
                 let grow_time = md.grow_time as f32;
-                let divisor = if crate::logic::modules::plant(1128) {
-                    grow_time + 1.0
-                } else if 1.0f32 > grow_time {
-                    1.0f32
-                } else {
-                    grow_time
-                };
+                let divisor = if crate::logic::modules::plant(1128) { grow_time + 1.0 } else if 1.0f32 > grow_time { 1.0f32 } else { grow_time };
                 self.current_clearing_range += self.native_clearing_range / divisor;
                 if self.current_clearing_range >= self.native_clearing_range {
                     self.state = DscruState::Sustaining;
@@ -537,24 +403,12 @@ impl DynamicShroudClearingRangeUpdate {
             }
             DscruState::Shrinking => {
                 let shrink_time = md.shrink_time as f32;
-                let divisor = if 1.0f32 > shrink_time {
-                    1.0f32
-                } else {
-                    shrink_time
-                };
-                self.current_clearing_range -= (if crate::logic::modules::plant(1129) {
-                    self.native_clearing_range
-                } else {
-                    self.native_clearing_range - md.final_vision
-                }) / divisor;
+                let divisor = if 1.0f32 > shrink_time { 1.0f32 } else { shrink_time };
+                self.current_clearing_range -= (if crate::logic::modules::plant(1129) { self.native_clearing_range } else { self.native_clearing_range - md.final_vision }) / divisor;
             }
             DscruState::DoneForever => {
                 Self::kill_grid_decals(world, me);
-                self.current_clearing_range = if crate::logic::modules::plant(1133) {
-                    self.native_clearing_range
-                } else {
-                    md.final_vision
-                };
+                self.current_clearing_range = if crate::logic::modules::plant(1133) { self.native_clearing_range } else { md.final_vision };
             }
             DscruState::Sleeping => {}
         }
@@ -569,12 +423,7 @@ impl DynamicShroudClearingRangeUpdate {
             self.change_interval_countdown -= 1;
         } else {
             // reset per change timer
-            self.change_interval_countdown =
-                if self.state == DscruState::Growing && !crate::logic::modules::plant(1131) {
-                    md.grow_interval
-                } else {
-                    md.change_interval
-                };
+            self.change_interval_countdown = if self.state == DscruState::Growing && !crate::logic::modules::plant(1131) { md.grow_interval } else { md.change_interval };
             world.set_shroud_clearing_range(me, self.current_clearing_range);
             if self.state == DscruState::DoneForever && !crate::logic::modules::plant(1130) {
                 // We are done forever, and have done the final update, so sleep.
@@ -608,18 +457,9 @@ impl UpdateBehavior for DynamicShroudClearingRangeUpdate {
         self.vision_change_per_interval = 0.0;
 
         self.state_count_down = md.shrink_delay.wrapping_add(md.shrink_time) as i32; // total time
-        self.total_frames = if crate::logic::modules::plant(1121) {
-            self.state_count_down
-        } else {
-            std::cmp::max(1, self.state_count_down)
-        };
+        self.total_frames = if crate::logic::modules::plant(1121) { self.state_count_down } else { std::cmp::max(1, self.state_count_down) };
         self.shrink_start_deadline = (self.state_count_down as u32).wrapping_sub(md.shrink_delay);
-        self.grow_start_deadline =
-            (self.state_count_down as u32).wrapping_sub(if crate::logic::modules::plant(1122) {
-                md.shrink_delay
-            } else {
-                md.grow_delay
-            });
+        self.grow_start_deadline = (self.state_count_down as u32).wrapping_sub(if crate::logic::modules::plant(1122) { md.shrink_delay } else { md.grow_delay });
         self.sustain_deadline = if crate::logic::modules::plant(1123) {
             self.grow_start_deadline.wrapping_add(md.grow_time)
         } else {
@@ -627,11 +467,7 @@ impl UpdateBehavior for DynamicShroudClearingRangeUpdate {
         };
 
         // a failsafe to force a shutdown on schedule
-        self.done_forever_frame = if crate::logic::modules::plant(1124) {
-            world.frame()
-        } else {
-            world.frame().wrapping_add(self.state_count_down as u32)
-        };
+        self.done_forever_frame = if crate::logic::modules::plant(1124) { world.frame() } else { world.frame().wrapping_add(self.state_count_down as u32) };
 
         self.decals_created = false;
         self.native_clearing_range = 200.0; // a sensible default
@@ -647,8 +483,7 @@ impl UpdateBehavior for DynamicShroudClearingRangeUpdate {
         }
 
         if !crate::logic::modules::plant(1134) {
-            self.native_clearing_range = world.get_shroud_clearing_range(me.object);
-            // capture this before we start monkeying with it
+            self.native_clearing_range = world.get_shroud_clearing_range(me.object); // capture this before we start monkeying with it
         }
 
         Self::kill_grid_decals(world, me.object);
@@ -700,7 +535,5 @@ impl Snapshot for DynamicShroudClearingRangeUpdate {
 
 /// The factory's `NewModuleDataProc` for `DynamicShroudClearingRangeUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::DynamicShroudClearingRangeUpdate(Arc::new(
-        DynamicShroudClearingRangeUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::DynamicShroudClearingRangeUpdate(Arc::new(DynamicShroudClearingRangeUpdateModuleData::friend_new_module_data(ini)?)))
 }

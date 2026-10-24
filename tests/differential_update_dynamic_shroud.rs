@@ -102,26 +102,19 @@ const XFER_FILE: &str = "l9ds_o.bin";
 const TEAM: u32 = 100;
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::DynamicShroudClearingRangeUpdate(Arc::new(
-        DynamicShroudClearingRangeUpdateModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::DynamicShroudClearingRangeUpdate(Arc::new(DynamicShroudClearingRangeUpdateModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
 }
 
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind) {
-    let ModuleDataKind::DynamicShroudClearingRangeUpdate(d) = data else {
-        unreachable!("not a DynamicShroudClearingRangeUpdate")
-    };
+    let ModuleDataKind::DynamicShroudClearingRangeUpdate(d) = data else { unreachable!("not a DynamicShroudClearingRangeUpdate") };
     put_u32(v, d.shrink_delay);
     put_u32(v, d.shrink_time);
     put_u32(v, d.grow_delay);
@@ -169,13 +162,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 fn gen_dur(g: &mut Gen, clean: bool) -> String {
     match g.below(12) {
         0..=1 => "0".to_string(),
-        2..=8 => pick(
-            g,
-            &[
-                "33", "67", "100", "200", "300", "500", "700", "1000", "34", "133",
-            ],
-        )
-        .to_string(),
+        2..=8 => pick(g, &["33", "67", "100", "200", "300", "500", "700", "1000", "34", "133"]).to_string(),
         9 if !clean => pick(g, &["x", "", "-", "12abc"]).to_string(),
         _ => format!("{}", g.below(1500)),
     }
@@ -228,15 +215,7 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
         };
         let v = pick(g, &["Ring", "Grid", "", "ring"]).to_string();
         tf(g, 80, "Texture", v);
-        let v = pick(
-            g,
-            &[
-                "SHADOW_ALPHA_DECAL",
-                "SHADOW_ADDITIVE_DECAL",
-                "SHADOW_DECAL SHADOW_ALPHA_DECAL",
-            ],
-        )
-        .to_string();
+        let v = pick(g, &["SHADOW_ALPHA_DECAL", "SHADOW_ADDITIVE_DECAL", "SHADOW_DECAL SHADOW_ALPHA_DECAL"]).to_string();
         tf(g, 40, "Style", v);
         let v = pick(g, &["25%", "100%", "0%", "50%"]).to_string();
         tf(g, 40, "OpacityMin", v);
@@ -274,47 +253,20 @@ fn gen_xy(g: &mut Gen) -> f32 {
     match g.below(40) {
         0 => 1.0e10,
         1 => -1.0e10,
-        _ => *pick(
-            g,
-            &[&-10.0f32, &0.0, &5.5, &100.0, &33.25, &-250.75, &1000.0],
-        ),
+        _ => *pick(g, &[&-10.0f32, &0.0, &5.5, &100.0, &33.25, &-250.75, &1000.0]),
     }
 }
 
-fn gen_case(
-    g: &mut Gen,
-    _data: &Option<ModuleDataKind>,
-    _n_up: usize,
-    _upgrades: &[String],
-) -> (Vec<u32>, Vec<[u32; 5]>) {
+fn gen_case(g: &mut Gen, _data: &Option<ModuleDataKind>, _n_up: usize, _upgrades: &[String]) -> (Vec<u32>, Vec<[u32; 5]>) {
     let range = *pick(g, &[&0.0f32, &100.0, &200.0, &300.0, &75.5, &200.0]);
-    let cfg = vec![
-        g.below(60),
-        if g.below(100) < 85 { 1 + g.below(3) } else { 0 },
-        bits(range),
-        bits(gen_xy(g)),
-        bits(gen_xy(g)),
-        bits(*pick(g, &[&0.0f32, &5.0, &-3.0])),
-    ];
+    let cfg = vec![g.below(60), if g.below(100) < 85 { 1 + g.below(3) } else { 0 }, bits(range), bits(gen_xy(g)), bits(gen_xy(g)), bits(*pick(g, &[&0.0f32, &5.0, &-3.0]))];
     let n_ops = 1 + g.below(30) as usize;
     let ops = (0..n_ops)
         .map(|_| match g.below(100) {
             0..=59 => [0, *pick(g, &[&1u32, &1, &2, &3, &5, &8, &13, &21]), 0, 0, 0],
-            60..=66 => [
-                1,
-                bits(gen_xy(g)),
-                bits(gen_xy(g)),
-                bits(*pick(g, &[&0.0f32, &5.0, &-3.0])),
-                0,
-            ],
+            60..=66 => [1, bits(gen_xy(g)), bits(gen_xy(g)), bits(*pick(g, &[&0.0f32, &5.0, &-3.0])), 0],
             67..=71 => [2, g.below(200), 0, 0, 0],
-            72..=77 => [
-                3,
-                bits(*pick(g, &[&0.0f32, &100.0, &200.0, &50.0, &300.0])),
-                0,
-                0,
-                0,
-            ],
+            72..=77 => [3, bits(*pick(g, &[&0.0f32, &100.0, &200.0, &50.0, &300.0])), 0, 0, 0],
             78..=81 => [4, g.below(4), 0, 0, 0],
             82..=88 => [5, 0, 0, 0, 0],
             89..=95 => [6, 0, 0, 0, 0],
@@ -351,17 +303,10 @@ fn fnv(mut h: u64, s: &str) -> u64 {
 fn decal_lines(events: &[ClientEvent], tally: &RefCell<Tally>) -> Vec<String> {
     let mut log = Vec::new();
     for e in events {
-        let ClientEvent::Object(ObjectClientEvent::GridDecal { index, op, .. }) = e else {
-            continue;
-        };
+        let ClientEvent::Object(ObjectClientEvent::GridDecal { index, op, .. }) = e else { continue };
         match op {
             GridDecalOp::Clear => log.push(format!("dclear {index}")),
-            GridDecalOp::Create {
-                template: t,
-                radius,
-                position,
-                player,
-            } => {
+            GridDecalOp::Create { template: t, radius, position, player } => {
                 tally.borrow_mut().creates += 1;
                 log.push(format!(
                     "dcreate {index} {} {} {:08x} {:08x} {} {} {} {:08x} {:08x},{:08x},{:08x} {}",
@@ -381,12 +326,7 @@ fn decal_lines(events: &[ClientEvent], tally: &RefCell<Tally>) -> Vec<String> {
             }
             GridDecalOp::SetPosition(p) => {
                 tally.borrow_mut().positions += 1;
-                log.push(format!(
-                    "dpos {index} {:08x} {:08x} {:08x}",
-                    p.x.to_bits(),
-                    p.y.to_bits(),
-                    p.z.to_bits()
-                ))
+                log.push(format!("dpos {index} {:08x} {:08x} {:08x}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits()))
             }
             GridDecalOp::SetOpacity(o) => log.push(format!("dopacity {index} {:08x}", o.to_bits())),
             GridDecalOp::Update => log.push(format!("dupdate {index}")),
@@ -395,22 +335,12 @@ fn decal_lines(events: &[ClientEvent], tally: &RefCell<Tally>) -> Vec<String> {
     log
 }
 
-fn rust_run(
-    ctx: Ctx,
-    data: ModuleDataKind,
-    cfg: &[u32],
-    ops: &[[u32; 5]],
-    tally: &RefCell<Tally>,
-) -> RunOut {
+fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally: &RefCell<Tally>) -> RunOut {
     let mut v = Vec::new();
     put_data(&mut v, &data);
 
     let mut w = World::new();
-    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics {
-        upgrade_center: ctx.center,
-        special_power_store: ctx.store,
-        ..Default::default()
-    });
+    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
     w.names = ctx.names;
     w.set_frame(cfg[0]);
     w.teams.insert_team(Team::new(TEAM, 0)).unwrap();
@@ -422,47 +352,16 @@ fn rust_run(
         }
     };
     set_player(&mut w, cfg[1]);
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        b"DynamicShroudClearingRangeUpdate",
-        b"ModuleTag_Dsc",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
-    let values = ObjectTemplateValues {
-        shroud_clearing_range: f32::from_bits(cfg[2]),
-        ..Default::default()
-    };
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"DynamicShroudClearingRangeUpdate", b"ModuleTag_Dsc", &data).unwrap().unwrap();
+    let values = ObjectTemplateValues { shroud_clearing_range: f32::from_bits(cfg[2]), ..Default::default() };
     let template = Arc::new(ThingTemplate::from_object_values(&values));
     let events_before = w.events.events().len();
-    let me = w
-        .new_object(NewObject {
-            template,
-            status: Default::default(),
-            team: Some(TEAM),
-            modules: vec![m],
-        })
-        .unwrap();
+    let me = w.new_object(NewObject { template, status: Default::default(), team: Some(TEAM), modules: vec![m] }).unwrap();
     assert_eq!(me, 1, "the first object of a fresh world has the id 1");
     let constructor = decal_lines(&w.events.events()[events_before..], tally);
-    w.set_position(
-        me,
-        &Coord3D {
-            x: f32::from_bits(cfg[3]),
-            y: f32::from_bits(cfg[4]),
-            z: f32::from_bits(cfg[5]),
-        },
-    );
-    let idx = w
-        .find_module(me, b"DynamicShroudClearingRangeUpdate")
-        .unwrap();
-    let u = w
-        .update_handle_of_module(ModuleHandle {
-            object: me,
-            index: idx,
-        })
-        .expect("an update module");
+    w.set_position(me, &Coord3D { x: f32::from_bits(cfg[3]), y: f32::from_bits(cfg[4]), z: f32::from_bits(cfg[5]) });
+    let idx = w.find_module(me, b"DynamicShroudClearingRangeUpdate").unwrap();
+    let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
     let mut saved: Vec<u8> = Vec::new();
     let mut excluded = !w.cuts.module_errors.is_empty();
     for phase in 0..=ops.len() {
@@ -474,21 +373,11 @@ fn rust_run(
             match o[0] {
                 0 => {
                     for _ in 0..o[1] {
-                        sleep = w
-                            .with_body(u, |b, w| b.update(w, u))
-                            .expect("the module is in its slot")
-                            .0;
+                        sleep = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
                         tally.borrow_mut().updates += 1;
                     }
                 }
-                1 => w.set_position(
-                    me,
-                    &Coord3D {
-                        x: f32::from_bits(o[1]),
-                        y: f32::from_bits(o[2]),
-                        z: f32::from_bits(o[3]),
-                    },
-                ),
+                1 => w.set_position(me, &Coord3D { x: f32::from_bits(o[1]), y: f32::from_bits(o[2]), z: f32::from_bits(o[3]) }),
                 2 => w.set_frame(o[1]),
                 3 => {
                     w.objects.find_mut(me).unwrap().shroud_clearing_range = f32::from_bits(o[1]);
@@ -509,20 +398,10 @@ fn rust_run(
             }
         }
         if w.cuts.module_errors.len() > errors_before {
-            assert!(
-                w.cuts.module_errors[errors_before..]
-                    .iter()
-                    .all(|(_, e)| e.is_undefined()),
-                "{:?}",
-                w.cuts.module_errors
-            );
+            assert!(w.cuts.module_errors[errors_before..].iter().all(|(_, e)| e.is_undefined()), "{:?}", w.cuts.module_errors);
             excluded = true;
         }
-        let log = if phase == 0 {
-            constructor.clone()
-        } else {
-            decal_lines(&w.events.events()[events_before..], tally)
-        };
+        let log = if phase == 0 { constructor.clone() } else { decal_lines(&w.events.events()[events_before..], tally) };
         tally.borrow_mut().effects += log.len() as u64;
         put_i32(&mut v, 0);
         put_u32(&mut v, sleep);
@@ -539,16 +418,10 @@ fn rust_run(
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let state =
-            w.objects
-                .find(me)
-                .unwrap()
-                .behaviors
-                .iter()
-                .find_map(|b| match b.body.as_ref() {
-                    Some(UpdateBody::DynamicShroudClearingRangeUpdate(m)) => Some(m.state_words()),
-                    _ => None,
-                });
+        let state = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
+            Some(UpdateBody::DynamicShroudClearingRangeUpdate(m)) => Some(m.state_words()),
+            _ => None,
+        });
         let state = state.expect("the module is back in its slot");
         tally.borrow_mut().states[state[0] as usize] += 1;
         for s in state {
@@ -561,11 +434,7 @@ fn rust_run(
         put_u32(&mut v, p.y.to_bits());
         put_u32(&mut v, p.z.to_bits());
     }
-    RunOut {
-        dump: v,
-        keys: Vec::new(),
-        excluded,
-    }
+    RunOut { dump: v, keys: Vec::new(), excluded }
 }
 
 #[test]
@@ -593,11 +462,7 @@ fn dynamic_shroud_clearing_range_update_matches_upstream() {
         c.cases, c.read_failed, c.excluded, c.ops_run, t.updates, t.xfers, t.effects, t.creates, t.positions, t.states
     );
     assert!(
-        c.read_failed * 40 > c.cases as u64
-            && c.ops_run * 5 > c.cases as u64 * 4
-            && t.creates * 10 > c.cases as u64 * 30
-            && t.positions * 20 > c.cases as u64
-            && t.states.iter().all(|&n| n * 50 > c.cases as u64),
+        c.read_failed * 40 > c.cases as u64 && c.ops_run * 5 > c.cases as u64 * 4 && t.creates * 10 > c.cases as u64 * 30 && t.positions * 20 > c.cases as u64 && t.states.iter().all(|&n| n * 50 > c.cases as u64),
         "the generator must reach every path"
     );
 }

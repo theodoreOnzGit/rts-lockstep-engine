@@ -164,13 +164,9 @@ fn run_rust(ops: &[Op]) -> Option<Vec<u8>> {
             }
             Op::CopyPair(d, t, k) => {
                 let that = slot[*t as usize].clone();
-                slot[*d as usize]
-                    .copy_pair_from(&that, NameKeyType(*k))
-                    .expect("within MAX_LEN");
+                slot[*d as usize].copy_pair_from(&that, NameKeyType(*k)).expect("within MAX_LEN");
             }
-            Op::Assign(d, t) | Op::CopyConstruct(d, t) => {
-                slot[*d as usize] = slot[*t as usize].clone()
-            }
+            Op::Assign(d, t) | Op::CopyConstruct(d, t) => slot[*d as usize] = slot[*t as usize].clone(),
             Op::Dump(d) => {
                 let dict = &slot[*d as usize];
                 let c = dict.get_pair_count();
@@ -184,9 +180,7 @@ fn run_rust(ops: &[Op]) -> Option<Vec<u8>> {
                         DataType::Int => lg.i32(dict.try_get_nth_int(n).ok()?),
                         DataType::Real => lg.f32(dict.try_get_nth_real(n).ok()?),
                         DataType::AsciiString => lg.ascii(&dict.try_get_nth_ascii_string(n).ok()?),
-                        DataType::UnicodeString => {
-                            lg.uni(&dict.try_get_nth_unicode_string(n).ok()?)
-                        }
+                        DataType::UnicodeString => lg.uni(&dict.try_get_nth_unicode_string(n).ok()?),
                         DataType::None => {}
                     }
                 }
@@ -249,13 +243,7 @@ fn run_planted(ops: &[Op], bug: Bug) -> Vec<u8> {
     // pairs: (stored name, value), plus whether storage exists
     let mut slot: Vec<(bool, Vec<(u32, DictValue)>)> = vec![(false, Vec::new()); 4];
     let mut lg = Log::default();
-    let store = |k: u32| {
-        if bug == Bug::UntruncatedKeys {
-            k
-        } else {
-            k & 0xff_ffff
-        }
-    };
+    let store = |k: u32| if bug == Bug::UntruncatedKeys { k } else { k & 0xff_ffff };
     let find = |p: &[(u32, DictValue)], k: u32| -> Option<usize> {
         let (mut lo, mut hi) = (0i32, p.len() as i32);
         while lo < hi {
@@ -302,9 +290,7 @@ fn run_planted(ops: &[Op], bug: Bug) -> Vec<u8> {
             Op::Clear(d) => slot[*d as usize] = (false, Vec::new()),
             Op::Set(d, k, v) => {
                 let v = match v {
-                    DictValue::AsciiString(a) => DictValue::AsciiString(
-                        a[..a.iter().position(|&b| b == 0).unwrap_or(a.len())].to_vec(),
-                    ),
+                    DictValue::AsciiString(a) => DictValue::AsciiString(a[..a.iter().position(|&b| b == 0).unwrap_or(a.len())].to_vec()),
                     v => v.clone(),
                 };
                 let s = &mut slot[*d as usize];
@@ -355,20 +341,12 @@ fn run_planted(ops: &[Op], bug: Bug) -> Vec<u8> {
                     }
                 }
             }
-            Op::Assign(d, t) | Op::CopyConstruct(d, t) => {
-                slot[*d as usize] = slot[*t as usize].clone()
-            }
+            Op::Assign(d, t) | Op::CopyConstruct(d, t) => slot[*d as usize] = slot[*t as usize].clone(),
             Op::Dump(d) => {
                 let s = &slot[*d as usize];
                 lg.i32(s.1.len() as i32);
                 for (k, v) in &s.1 {
-                    lg.u32(
-                        *k & if bug == Bug::UntruncatedKeys {
-                            u32::MAX
-                        } else {
-                            0xff_ffff
-                        },
-                    );
+                    lg.u32(*k & if bug == Bug::UntruncatedKeys { u32::MAX } else { 0xff_ffff });
                     lg.i32(ty(v));
                     match v {
                         DictValue::Bool(b) => lg.u8(*b),
@@ -386,29 +364,13 @@ fn run_planted(ops: &[Op], bug: Bug) -> Vec<u8> {
                 let b = matches!(p, Some(DictValue::Bool(true)));
                 lg.u8(b);
                 lg.u8(matches!(p, Some(DictValue::Bool(_))));
-                lg.i32(if let Some(DictValue::Int(i)) = p {
-                    *i
-                } else {
-                    0
-                });
+                lg.i32(if let Some(DictValue::Int(i)) = p { *i } else { 0 });
                 lg.u8(matches!(p, Some(DictValue::Int(_))));
-                lg.f32(if let Some(DictValue::Real(f)) = p {
-                    *f
-                } else {
-                    0.0
-                });
+                lg.f32(if let Some(DictValue::Real(f)) = p { *f } else { 0.0 });
                 lg.u8(matches!(p, Some(DictValue::Real(_))));
-                lg.ascii(if let Some(DictValue::AsciiString(a)) = p {
-                    a
-                } else {
-                    &[]
-                });
+                lg.ascii(if let Some(DictValue::AsciiString(a)) = p { a } else { &[] });
                 lg.u8(matches!(p, Some(DictValue::AsciiString(_))));
-                lg.uni(if let Some(DictValue::UnicodeString(u)) = p {
-                    u
-                } else {
-                    &[]
-                });
+                lg.uni(if let Some(DictValue::UnicodeString(u)) = p { u } else { &[] });
                 lg.u8(matches!(p, Some(DictValue::UnicodeString(_))));
             }
             Op::NthKeyType(d, n) => {
@@ -426,31 +388,12 @@ fn run_planted(ops: &[Op], bug: Bug) -> Vec<u8> {
             }
             Op::NthValues(d, n) => {
                 let s = &slot[*d as usize];
-                let p = (*n >= 0)
-                    .then(|| s.1.get(*n as usize))
-                    .flatten()
-                    .map(|e| &e.1);
+                let p = (*n >= 0).then(|| s.1.get(*n as usize)).flatten().map(|e| &e.1);
                 lg.u8(matches!(p, Some(DictValue::Bool(true))));
-                lg.i32(if let Some(DictValue::Int(i)) = p {
-                    *i
-                } else {
-                    0
-                });
-                lg.f32(if let Some(DictValue::Real(f)) = p {
-                    *f
-                } else {
-                    0.0
-                });
-                lg.ascii(if let Some(DictValue::AsciiString(a)) = p {
-                    a
-                } else {
-                    &[]
-                });
-                lg.uni(if let Some(DictValue::UnicodeString(u)) = p {
-                    u
-                } else {
-                    &[]
-                });
+                lg.i32(if let Some(DictValue::Int(i)) = p { *i } else { 0 });
+                lg.f32(if let Some(DictValue::Real(f)) = p { *f } else { 0.0 });
+                lg.ascii(if let Some(DictValue::AsciiString(a)) = p { a } else { &[] });
+                lg.uni(if let Some(DictValue::UnicodeString(u)) = p { u } else { &[] });
             }
         }
     }
@@ -460,14 +403,7 @@ fn run_planted(ops: &[Op], bug: Bug) -> Vec<u8> {
 fn run_cpp(ops: &[Op]) -> Vec<u8> {
     let script = encode(ops);
     let mut log = vec![0u8; 8 * 1024 * 1024];
-    let n = unsafe {
-        cpp::ref_dict_run(
-            script.as_ptr(),
-            script.len() as i32,
-            log.as_mut_ptr(),
-            log.len() as i32,
-        )
-    };
+    let n = unsafe { cpp::ref_dict_run(script.as_ptr(), script.len() as i32, log.as_mut_ptr(), log.len() as i32) };
     assert!(n >= 0, "C++ log overflow");
     log.truncate(n as usize);
     log
@@ -540,13 +476,9 @@ fn dict_matches_cpp() {
         }
         let rust = run_rust(&defined).expect("defined script");
         let c = run_cpp(&defined);
-        ok.eq(&rust, &c, || {
-            format!("script {script} ({} ops)", defined.len())
-        });
+        ok.eq(&rust, &c, || format!("script {script} ({} ops)", defined.len()));
         for (bug, check) in planted.iter_mut() {
-            check.eq(run_planted(&defined, *bug), c.clone(), || {
-                format!("script {script}")
-            });
+            check.eq(run_planted(&defined, *bug), c.clone(), || format!("script {script}"));
         }
     }
     println!("     {ops_total} operations; {undefined} getNth* reads left out (out of range with storage, undefined upstream; Rust returned Err)");

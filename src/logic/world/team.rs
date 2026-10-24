@@ -66,9 +66,7 @@ use crate::common::name_key_generator::{NameKeyGenerator, NameKeyType};
 use crate::common::well_known_keys::*;
 use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferStatus};
 
-use super::ids::{
-    PlayerIndex, TeamId, TeamPrototypeId, TEAM_ID_INVALID, TEAM_PROTOTYPE_ID_INVALID,
-};
+use super::ids::{PlayerIndex, TeamId, TeamPrototypeId, TEAM_ID_INVALID, TEAM_PROTOTYPE_ID_INVALID};
 use super::player::PlayerRelationMap;
 
 /// `MAX_GENERIC_SCRIPTS`.
@@ -133,10 +131,7 @@ struct Link<K> {
 
 impl<K> Default for Link<K> {
     fn default() -> Self {
-        Link {
-            prev: None,
-            next: None,
-        }
+        Link { prev: None, next: None }
     }
 }
 
@@ -149,9 +144,7 @@ pub struct DLinks<K: Ord + Copy> {
 
 impl<K: Ord + Copy> Default for DLinks<K> {
     fn default() -> Self {
-        DLinks {
-            links: BTreeMap::new(),
-        }
+        DLinks { links: BTreeMap::new() }
     }
 }
 
@@ -282,8 +275,7 @@ impl Snapshot for TeamRelationMap {
                 let team_id = u32::from_le_bytes(b);
                 let mut rb = [0u8; 4];
                 xfer.xfer_user(&mut rb)?;
-                let r = relationship_from_i32(i32::from_le_bytes(rb))
-                    .ok_or(XferStatus::InvalidParameters)?;
+                let r = relationship_from_i32(i32::from_le_bytes(rb)).ok_or(XferStatus::InvalidParameters)?;
                 self.map.insert(team_id, r);
             }
         }
@@ -391,20 +383,11 @@ pub struct TeamTemplateInfo {
 impl TeamTemplateInfo {
     /// `TeamTemplateInfo::TeamTemplateInfo(Dict *d)`. Every `TheKey_*` is looked up where upstream looks it up (the
     /// first use of a `StaticNameKey` allocates its name key, so the order is observable in every later key).
-    pub fn from_dict(
-        d: &Dict,
-        gen: &mut NameKeyGenerator,
-        keys: &WellKnownKeys,
-        waypoints: &[WaypointInfo],
-    ) -> TeamTemplateInfo {
+    pub fn from_dict(d: &Dict, gen: &mut NameKeyGenerator, keys: &WellKnownKeys, waypoints: &[WaypointInfo]) -> TeamTemplateInfo {
         let mut t = TeamTemplateInfo {
             units_info: Default::default(),
             num_units_info: 0,
-            home_location: Coord3D {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
+            home_location: Coord3D { x: 0.0, y: 0.0, z: 0.0 },
             has_home_location: false,
             script_on_create: Vec::new(),
             script_on_idle: Vec::new(),
@@ -451,21 +434,13 @@ impl TeamTemplateInfo {
             let (name, exists) = d.get_ascii_string(keys.key(ktype, gen));
             if max > 0 && exists {
                 let n = t.num_units_info as usize;
-                t.units_info[n] = TCreateUnitsInfo {
-                    min_units: min,
-                    max_units: max,
-                    unit_thing_name: name,
-                };
+                t.units_info[n] = TCreateUnitsInfo { min_units: min, max_units: max, unit_thing_name: name };
                 t.num_units_info += 1;
             }
         }
 
         let (waypoint, exists) = d.get_ascii_string(keys.key(TEAM_HOME, gen));
-        t.home_location = Coord3D {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        };
+        t.home_location = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
         t.has_home_location = false;
         if exists {
             // no `break`: the last waypoint of that name wins
@@ -500,30 +475,18 @@ impl TeamTemplateInfo {
 
         t.script_on_idle = d.get_ascii_string(keys.key(TEAM_ON_IDLE_SCRIPT, gen)).0;
         t.initial_idle_frames = d.get_int(keys.key(TEAM_INITIAL_IDLE_FRAMES, gen)).0;
-        t.script_on_enemy_sighted = d
-            .get_ascii_string(keys.key(TEAM_ENEMY_SIGHTED_SCRIPT, gen))
-            .0;
+        t.script_on_enemy_sighted = d.get_ascii_string(keys.key(TEAM_ENEMY_SIGHTED_SCRIPT, gen)).0;
         t.script_on_all_clear = d.get_ascii_string(keys.key(TEAM_ALL_CLEAR_SCRIPT, gen)).0;
-        t.script_on_destroyed = d
-            .get_ascii_string(keys.key(TEAM_ON_DESTROYED_SCRIPT, gen))
-            .0;
+        t.script_on_destroyed = d.get_ascii_string(keys.key(TEAM_ON_DESTROYED_SCRIPT, gen)).0;
         t.destroyed_threshold = d.get_real(keys.key(TEAM_DESTROYED_THRESHOLD, gen)).0;
-        t.script_on_unit_destroyed = d
-            .get_ascii_string(keys.key(TEAM_ON_UNIT_DESTROYED_SCRIPT, gen))
-            .0;
+        t.script_on_unit_destroyed = d.get_ascii_string(keys.key(TEAM_ON_UNIT_DESTROYED_SCRIPT, gen)).0;
 
         t.production_priority = d.get_int(keys.key(TEAM_PRODUCTION_PRIORITY, gen)).0;
-        t.production_priority_success_increase = d
-            .get_int(keys.key(TEAM_PRODUCTION_PRIORITY_SUCCESS_INCREASE, gen))
-            .0;
-        t.production_priority_failure_decrease = d
-            .get_int(keys.key(TEAM_PRODUCTION_PRIORITY_FAILURE_DECREASE, gen))
-            .0;
+        t.production_priority_success_increase = d.get_int(keys.key(TEAM_PRODUCTION_PRIORITY_SUCCESS_INCREASE, gen)).0;
+        t.production_priority_failure_decrease = d.get_int(keys.key(TEAM_PRODUCTION_PRIORITY_FAILURE_DECREASE, gen)).0;
 
         // Production scripts stuff
-        t.production_condition = d
-            .get_ascii_string(keys.key(TEAM_PRODUCTION_CONDITION, gen))
-            .0;
+        t.production_condition = d.get_ascii_string(keys.key(TEAM_PRODUCTION_CONDITION, gen)).0;
         t.execute_actions = d.get_bool(keys.key(TEAM_EXECUTES_ACTIONS_ON_CREATE, gen)).0;
 
         // Which scripts to attempt during run?
@@ -543,9 +506,7 @@ impl TeamTemplateInfo {
         t.transport_unit_type = d.get_ascii_string(keys.key(TEAM_TRANSPORT, gen)).0;
         t.transports_exit = d.get_bool(keys.key(TEAM_TRANSPORTS_EXIT, gen)).0;
         t.team_starts_full = d.get_bool(keys.key(TEAM_STARTS_FULL, gen)).0;
-        t.start_reinforce_waypoint = d
-            .get_ascii_string(keys.key(TEAM_REINFORCEMENT_ORIGIN, gen))
-            .0;
+        t.start_reinforce_waypoint = d.get_ascii_string(keys.key(TEAM_REINFORCEMENT_ORIGIN, gen)).0;
         t.veterancy = d.get_int(keys.key(TEAM_VETERANCY, gen)).0;
         t
     }
@@ -756,11 +717,7 @@ pub struct TeamArena {
 impl TeamArena {
     /// `TeamFactory::TeamFactory()`: both counters at the invalid id.
     pub fn new() -> TeamArena {
-        TeamArena {
-            unique_team_id: TEAM_ID_INVALID,
-            unique_prototype_id: TEAM_PROTOTYPE_ID_INVALID,
-            ..TeamArena::default()
-        }
+        TeamArena { unique_team_id: TEAM_ID_INVALID, unique_prototype_id: TEAM_PROTOTYPE_ID_INVALID, ..TeamArena::default() }
     }
 
     /// `++m_uniqueTeamID`.
@@ -1119,15 +1076,9 @@ mod tests {
         let (mut a, mut b) = (None, None);
         l.prepend(&mut a, 1);
         l.prepend(&mut a, 2); // a: 2 -> 1
-        assert!(
-            l.is_in_list(b, 1),
-            "1 is in a's list, which b's check cannot tell"
-        );
+        assert!(l.is_in_list(b, 1), "1 is in a's list, which b's check cannot tell");
         l.prepend(&mut b, 1);
-        assert_eq!(
-            b, None,
-            "prependTo of an object already in some list does nothing"
-        );
+        assert_eq!(b, None, "prependTo of an object already in some list does nothing");
         l.remove_from(&mut b, 2); // 2 is a's head: unlinked from a, and b's head is set to what followed it
         assert_eq!(b, Some(1));
         assert_eq!(a, Some(2), "a still points at the removed head");

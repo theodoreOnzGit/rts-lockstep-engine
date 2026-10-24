@@ -145,58 +145,28 @@ impl ResourceGatheringManager {
 
     /// `computeRelativeCost(queryObject, destObject, pureDistanceSquared)`: "a good score is a very small
     /// number"; `FLT_MAX` for anything that cannot be used. The distance is written only when it is computed.
-    fn compute_relative_cost(
-        world: &mut World,
-        query: Option<ObjectId>,
-        dest: Option<ObjectId>,
-        pure_distance_squared: Option<&mut f32>,
-    ) -> Result<f32, ResourceError> {
-        let (Some(q), Some(d)) = (query, dest) else {
-            return Ok(f32::MAX);
-        };
+    fn compute_relative_cost(world: &mut World, query: Option<ObjectId>, dest: Option<ObjectId>, pure_distance_squared: Option<&mut f32>) -> Result<f32, ResourceError> {
+        let (Some(q), Some(d)) = (query, dest) else { return Ok(f32::MAX) };
         if world.objects.find(q).is_none() || world.objects.find(d).is_none() {
             return Ok(f32::MAX);
         }
         let can = world.can_transfer_supplies_at(q, d);
-        trace(world, || {
-            format!("rgm canTransfer {q} {d} -> {}", u32::from(can))
-        });
+        trace(world, || format!("rgm canTransfer {q} {d} -> {}", u32::from(can)));
         if !can {
             return Ok(f32::MAX); // handles emptyness and alliances
         }
-        let Some(dock) = world.get_dock_update_interface(d) else {
-            return Err(ResourceError::NoDockInterface(d));
-        };
-        let clear = world
-            .module_call(d, dock, ModuleCall::IsClearToApproach { docker: q })
-            .as_bool();
-        trace(world, || {
-            format!("rgm clear {d} {q} -> {}", u32::from(clear))
-        });
+        let Some(dock) = world.get_dock_update_interface(d) else { return Err(ResourceError::NoDockInterface(d)) };
+        let clear = world.module_call(d, dock, ModuleCall::IsClearToApproach { docker: q }).as_bool();
+        trace(world, || format!("rgm clear {d} {q} -> {}", u32::from(clear)));
         if !clear {
             return Ok(f32::MAX);
         }
         // since we don't care about the distance as a distance per se, but rather as a goodness-factor, save some
         // time by getting the dist-sqr (srj)
-        let (pa, pb) = (
-            world.objects.find(q).map(|o| o.get_position()),
-            world.objects.find(d).map(|o| o.get_position()),
-        );
-        let (Some(pa), Some(pb)) = (pa, pb) else {
-            return Ok(f32::MAX);
-        };
-        let dist_squared = dist_calc(
-            DistanceCalculationType::FromCenter3D,
-            &pa,
-            None,
-            &pb,
-            None,
-            HUGE_DIST_SQR,
-        )
-        .dist_sqr;
-        trace(world, || {
-            format!("rgm dist {q} {d} -> {:08x}", dist_squared.to_bits())
-        });
+        let (pa, pb) = (world.objects.find(q).map(|o| o.get_position()), world.objects.find(d).map(|o| o.get_position()));
+        let (Some(pa), Some(pb)) = (pa, pb) else { return Ok(f32::MAX) };
+        let dist_squared = dist_calc(DistanceCalculationType::FromCenter3D, &pa, None, &pb, None, HUGE_DIST_SQR).dist_sqr;
+        trace(world, || format!("rgm dist {q} {d} -> {:08x}", dist_squared.to_bits()));
         if let Some(p) = pure_distance_squared {
             *p = dist_squared;
         }
@@ -219,18 +189,12 @@ impl ResourceGatheringManager {
     /// dock wins if it is a warehouse and usable; otherwise the nearest usable warehouse within the truck's scan
     /// distance (100000 squared when the truck has none). Warehouses that no longer exist are dropped from the
     /// list as they are met.
-    pub fn find_best_supply_warehouse(
-        &mut self,
-        world: &mut World,
-        query: Option<ObjectId>,
-    ) -> Result<Option<ObjectId>, ResourceError> {
+    pub fn find_best_supply_warehouse(&mut self, world: &mut World, query: Option<ObjectId>) -> Result<Option<ObjectId>, ResourceError> {
         let mut best_warehouse = None;
         let mut max_distance_squared: f32 = 100000.0;
 
         let Some(q) = query else { return Ok(None) };
-        let Some(qo) = world.objects.find(q) else {
-            return Ok(None);
-        };
+        let Some(qo) = world.objects.find(q) else { return Ok(None) };
         if qo.ai.is_none() {
             return Ok(None);
         }
@@ -239,18 +203,14 @@ impl ResourceGatheringManager {
             // check for a dock override being set
             if let Some(dock) = world.find_object(dock_id).map(|o| o.id) {
                 // if remotely okay, let user win
-                if world
-                    .find_module(dock, b"SupplyWarehouseDockUpdate")
-                    .is_some()
+                if world.find_module(dock, b"SupplyWarehouseDockUpdate").is_some()
                     && Self::compute_relative_cost(world, Some(q), Some(dock), None)? != f32::MAX
                 {
                     return Ok(Some(dock));
                 }
             }
             // "Design wants a harvester to give up and return to base if it is 'too far' to the warehouse."
-            let scan = world
-                .module_call(q, ai, ModuleCall::GetSupplyTruckWarehouseScanDistance)
-                .as_real(0.0);
+            let scan = world.module_call(q, ai, ModuleCall::GetSupplyTruckWarehouseScanDistance).as_real(0.0);
             max_distance_squared = scan * scan;
         }
 
@@ -265,12 +225,7 @@ impl ResourceGatheringManager {
                 }
                 Some(current) => {
                     let mut distance_squared = 0.0f32;
-                    let current_cost = Self::compute_relative_cost(
-                        world,
-                        Some(q),
-                        Some(current),
-                        Some(&mut distance_squared),
-                    )?;
+                    let current_cost = Self::compute_relative_cost(world, Some(q), Some(current), Some(&mut distance_squared))?;
                     if current_cost < best_cost && distance_squared < max_distance_squared {
                         best_warehouse = Some(current);
                         best_cost = current_cost;
@@ -284,17 +239,11 @@ impl ResourceGatheringManager {
 
     /// `findBestSupplyCenter(queryObject)`: "what center should this truck return to?". As for warehouses, with
     /// no distance limit; a center that no longer exists is undefined behaviour upstream (see the module docs).
-    pub fn find_best_supply_center(
-        &mut self,
-        world: &mut World,
-        query: Option<ObjectId>,
-    ) -> Result<Option<ObjectId>, ResourceError> {
+    pub fn find_best_supply_center(&mut self, world: &mut World, query: Option<ObjectId>) -> Result<Option<ObjectId>, ResourceError> {
         let mut best_center = None;
 
         let Some(q) = query else { return Ok(None) };
-        let Some(qo) = world.objects.find(q) else {
-            return Ok(None);
-        };
+        let Some(qo) = world.objects.find(q) else { return Ok(None) };
         if qo.ai.is_none() {
             return Ok(None);
         }
@@ -315,8 +264,7 @@ impl ResourceGatheringManager {
             match world.find_object(current_id).map(|o| o.id) {
                 None => return Err(ResourceError::EraseFromWrongList(current_id)),
                 Some(current) => {
-                    let current_cost =
-                        Self::compute_relative_cost(world, Some(q), Some(current), None)?;
+                    let current_cost = Self::compute_relative_cost(world, Some(q), Some(current), None)?;
                     if current_cost < best_cost {
                         best_center = Some(current);
                         best_cost = current_cost;
@@ -350,6 +298,7 @@ impl Snapshot for ResourceGatheringManager {
     fn load_post_process(&mut self) {}
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,56 +323,26 @@ mod tests {
 
     /// An object at (x, 0, 0) with these modules: `truck` is a supply truck with `(preferred, scan)`; `dock` is a
     /// dock interface that is clear to approach if `clear`; `module` is the class name of an extra named module.
-    fn make(
-        w: &mut World,
-        x: f32,
-        truck: Option<(ObjectId, f32)>,
-        dock: Option<bool>,
-        module: Option<&[u8]>,
-    ) -> ObjectId {
+    fn make(w: &mut World, x: f32, truck: Option<(ObjectId, f32)>, dock: Option<bool>, module: Option<&[u8]>) -> ObjectId {
         let mut modules = Vec::new();
         if let Some((preferred_dock, scan_distance)) = truck {
             let mut m = NewModule::plain(b"AIUpdate", b"ModuleTag_AI");
             m.is_ai = true;
             m.interfaces = MODULEINTERFACE_BODY;
-            let answers = ProbeAnswers {
-                supply_truck: true,
-                preferred_dock,
-                scan_distance,
-                ..Default::default()
-            };
-            m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-                answers,
-                1.0,
-                Default::default(),
-            )));
+            let answers = ProbeAnswers { supply_truck: true, preferred_dock, scan_distance, ..Default::default() };
+            m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(answers, 1.0, Default::default())));
             modules.push(m);
         }
         if let Some(clear) = dock {
             let mut m = NewModule::plain(b"DockProbe", b"ModuleTag_Dock");
-            let answers = ProbeAnswers {
-                has: 1 << 2,
-                clear_to_approach: clear,
-                ..Default::default()
-            };
-            m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-                answers,
-                1.0,
-                Default::default(),
-            )));
+            let answers = ProbeAnswers { has: 1 << 2, clear_to_approach: clear, ..Default::default() };
+            m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(answers, 1.0, Default::default())));
             modules.push(m);
         }
         if let Some(name) = module {
             modules.push(NewModule::plain(name, b"ModuleTag_Named"));
         }
-        let id = w
-            .new_object(NewObject {
-                template: Arc::new(ThingTemplate::new(0)),
-                status: Default::default(),
-                team: None,
-                modules,
-            })
-            .expect("object");
+        let id = w.new_object(NewObject { template: Arc::new(ThingTemplate::new(0)), status: Default::default(), team: None, modules }).expect("object");
         w.set_position(id, &Coord3D { x, y: 0.0, z: 0.0 });
         id
     }
@@ -452,20 +371,10 @@ mod tests {
         }
         m.add_supply_warehouse(None);
         let _ = w.objects.remove(dead);
-        assert_eq!(
-            m.find_best_supply_warehouse(&mut w, Some(truck)),
-            Ok(Some(near))
-        );
-        assert_eq!(
-            m.supply_warehouses(),
-            &[far, blocked, near, out_of_reach],
-            "the vanished one is dropped"
-        );
+        assert_eq!(m.find_best_supply_warehouse(&mut w, Some(truck)), Ok(Some(near)));
+        assert_eq!(m.supply_warehouses(), &[far, blocked, near, out_of_reach], "the vanished one is dropped");
         let trace = w.cuts.trace.clone().unwrap().join("\n");
-        assert!(
-            trace.contains(&format!("rgm clear {blocked} {truck} -> 0"))
-                && trace.contains("rgm dist")
-        );
+        assert!(trace.contains(&format!("rgm clear {blocked} {truck} -> 0")) && trace.contains("rgm dist"));
         m.remove_supply_warehouse(Some(far));
         m.remove_supply_warehouse(None);
         assert_eq!(m.supply_warehouses(), &[blocked, near, out_of_reach]);
@@ -478,20 +387,11 @@ mod tests {
     #[test]
     fn a_preferred_dock_that_is_a_usable_warehouse_wins_at_any_distance() {
         let mut w = world();
-        let wh = make(
-            &mut w,
-            5000.0,
-            None,
-            Some(true),
-            Some(b"SupplyWarehouseDockUpdate"),
-        );
+        let wh = make(&mut w, 5000.0, None, Some(true), Some(b"SupplyWarehouseDockUpdate"));
         let truck = make(&mut w, 0.0, Some((wh, 10.0)), None, None);
         allow(&mut w, truck, wh);
         let mut m = ResourceGatheringManager::new();
-        assert_eq!(
-            m.find_best_supply_warehouse(&mut w, Some(truck)),
-            Ok(Some(wh))
-        );
+        assert_eq!(m.find_best_supply_warehouse(&mut w, Some(truck)), Ok(Some(wh)));
         // not usable: the search finds nothing in reach
         w.cuts.can_transfer_supplies.clear();
         assert_eq!(m.find_best_supply_warehouse(&mut w, Some(truck)), Ok(None));
@@ -501,10 +401,7 @@ mod tests {
     fn centers_have_no_distance_limit_and_a_vanished_one_is_undefined() {
         let mut w = world();
         let truck = make(&mut w, 0.0, Some((0, 1.0)), None, None);
-        let (c1, c2) = (
-            make(&mut w, 9000.0, None, Some(true), None),
-            make(&mut w, 8000.0, None, Some(true), None),
-        );
+        let (c1, c2) = (make(&mut w, 9000.0, None, Some(true), None), make(&mut w, 8000.0, None, Some(true), None));
         allow(&mut w, truck, c1);
         allow(&mut w, truck, c2);
         let mut m = ResourceGatheringManager::new();
@@ -514,28 +411,18 @@ mod tests {
         // (the object leaves the sleepy list first, as `processDestroyList` does: its helpers are update modules now)
         w.sched.erase_object_updates(&mut w.objects, c1);
         let _ = w.objects.remove(c1);
-        assert_eq!(
-            m.find_best_supply_center(&mut w, Some(truck)),
-            Err(ResourceError::EraseFromWrongList(c1))
-        );
+        assert_eq!(m.find_best_supply_center(&mut w, Some(truck)), Err(ResourceError::EraseFromWrongList(c1)));
         m.remove_supply_center(Some(c1));
         m.remove_supply_center(None);
         assert_eq!(m.supply_centers(), &[c2]);
         assert_eq!(m.find_best_supply_center(&mut w, None), Ok(None));
-        assert_eq!(
-            m.find_best_supply_center(&mut w, Some(c2)),
-            Ok(None),
-            "no AI"
-        );
+        assert_eq!(m.find_best_supply_center(&mut w, Some(c2)), Ok(None), "no AI");
         assert_eq!(m.find_best_supply_center(&mut w, Some(999)), Ok(None));
         // a destination the table accepts but that has no dock interface: undefined
         let nodock = make(&mut w, 1.0, None, None, None);
         allow(&mut w, truck, nodock);
         m.add_supply_center(Some(nodock));
-        assert_eq!(
-            m.find_best_supply_center(&mut w, Some(truck)),
-            Err(ResourceError::NoDockInterface(nodock))
-        );
+        assert_eq!(m.find_best_supply_center(&mut w, Some(truck)), Err(ResourceError::NoDockInterface(nodock)));
     }
 
     #[test]

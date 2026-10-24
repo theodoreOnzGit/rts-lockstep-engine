@@ -97,24 +97,20 @@ use petir::Real;
 
 use crate::common::base_type::{Coord2D, PI};
 use crate::common::game_common::{convert_duration_from_msecs_to_frames, VETERANCY_NAMES};
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniLoadType, IniResult, Undefined, UserData, SEPS_COLON,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniLoadType, IniResult, Undefined, UserData, SEPS_COLON};
 use crate::common::name_key_generator::{NameKeyGenerator, NameKeyType};
 use crate::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_NONE};
 use crate::common::random_value::RandomValues;
-use crate::logic::damage::{DamageType, DeathType};
 use crate::logic::damage::{DamageTypeFlags, DAMAGE_EXPLOSION, DEATH_NAMES, DEATH_NORMAL};
-use crate::logic::weapon_bonus::{
-    WeaponBonus, WeaponBonusSet, FIELD_DAMAGE, FIELD_PRE_ATTACK, FIELD_RADIUS, FIELD_RANGE,
-    FIELD_RATE_OF_FIRE,
-};
+use crate::logic::damage::{DamageType, DeathType};
+use crate::logic::weapon_bonus::{WeaponBonus, WeaponBonusSet, FIELD_DAMAGE, FIELD_PRE_ATTACK, FIELD_RADIUS, FIELD_RANGE, FIELD_RATE_OF_FIRE};
 
 /// `LEVEL_COUNT` as a `usize`.
 pub const LEVELS: usize = 4;
 
 /// `PATHFIND_CELL_SIZE_F` (`AIPathfind.h`).
 pub const PATHFIND_CELL_SIZE_F: f32 = 10.0;
+
 
 /// `NO_MAX_SHOTS_LIMIT`.
 pub const NO_MAX_SHOTS_LIMIT: i32 = 0x7fff_ffff;
@@ -173,15 +169,7 @@ pub const WEAPON_DOESNT_AFFECT_SIMILAR: u32 = 0x20;
 /// `WEAPON_DOESNT_AFFECT_AIRBORNE`.
 pub const WEAPON_DOESNT_AFFECT_AIRBORNE: u32 = 0x40;
 /// `TheWeaponAffectsMaskNames`.
-pub const WEAPON_AFFECTS_MASK_NAMES: [&str; 7] = [
-    "SELF",
-    "ALLIES",
-    "ENEMIES",
-    "NEUTRALS",
-    "SUICIDE",
-    "NOT_SIMILAR",
-    "NOT_AIRBORNE",
-];
+pub const WEAPON_AFFECTS_MASK_NAMES: [&str; 7] = ["SELF", "ALLIES", "ENEMIES", "NEUTRALS", "SUICIDE", "NOT_SIMILAR", "NOT_AIRBORNE"];
 
 /// `WEAPON_COLLIDE_ALLIES`.
 pub const WEAPON_COLLIDE_ALLIES: u32 = 0x0001;
@@ -202,17 +190,8 @@ pub const WEAPON_COLLIDE_BALLISTIC_MISSILES: u32 = 0x0080;
 /// `WEAPON_COLLIDE_CONTROLLED_STRUCTURES`: "only structures belonging to the projectile's controller".
 pub const WEAPON_COLLIDE_CONTROLLED_STRUCTURES: u32 = 0x0100;
 /// `TheWeaponCollideMaskNames`.
-pub const WEAPON_COLLIDE_MASK_NAMES: [&str; 9] = [
-    "ALLIES",
-    "ENEMIES",
-    "STRUCTURES",
-    "SHRUBBERY",
-    "PROJECTILES",
-    "WALLS",
-    "SMALL_MISSILES",
-    "BALLISTIC_MISSILES",
-    "CONTROLLED_STRUCTURES",
-];
+pub const WEAPON_COLLIDE_MASK_NAMES: [&str; 9] =
+    ["ALLIES", "ENEMIES", "STRUCTURES", "SHRUBBERY", "PROJECTILES", "WALLS", "SMALL_MISSILES", "BALLISTIC_MISSILES", "CONTROLLED_STRUCTURES"];
 
 /// A client effect (`FXList*`, `ParticleSystemTemplate*`) kept as its name: `None` is upstream's `NULL`.
 pub type FxName = Option<Vec<u8>>;
@@ -479,31 +458,15 @@ impl WeaponTemplate {
 
     /// `postProcessLoad()`: find the projectile's thing template and the OCLs by name, with the factory and the
     /// store given as lookups (`None` = not found, upstream's `NULL`); the OCL names are then cleared.
-    pub fn post_process_load(
-        &mut self,
-        find_template: &impl Fn(&[u8]) -> Option<u16>,
-        find_ocl: &impl Fn(&[u8]) -> Option<u32>,
-    ) {
-        self.projectile_tmpl = if self.projectile_name.is_empty() {
-            None
-        } else {
-            find_template(&self.projectile_name)
-        };
+    pub fn post_process_load(&mut self, find_template: &impl Fn(&[u8]) -> Option<u16>, find_ocl: &impl Fn(&[u8]) -> Option<u32>) {
+        self.projectile_tmpl = if self.projectile_name.is_empty() { None } else { find_template(&self.projectile_name) };
         for i in 0..LEVELS {
             // and the OCL if there is one
-            self.fire_ocls[i] = if self.fire_ocl_names[i].is_empty() {
-                None
-            } else {
-                find_ocl(&self.fire_ocl_names[i])
-            };
+            self.fire_ocls[i] = if self.fire_ocl_names[i].is_empty() { None } else { find_ocl(&self.fire_ocl_names[i]) };
             self.fire_ocl_names[i].clear();
             // and the other OCL if there is one
             self.projectile_detonation_ocls[i] =
-                if self.projectile_detonation_ocl_names[i].is_empty() {
-                    None
-                } else {
-                    find_ocl(&self.projectile_detonation_ocl_names[i])
-                };
+                if self.projectile_detonation_ocl_names[i].is_empty() { None } else { find_ocl(&self.projectile_detonation_ocl_names[i]) };
             self.projectile_detonation_ocl_names[i].clear();
         }
     }
@@ -548,9 +511,7 @@ impl WeaponTemplate {
 
     /// `getClipReloadTime(bonus)`.
     pub fn get_clip_reload_time(&self, bonus: &WeaponBonus) -> i32 {
-        crate::common::base_type::real_to_int_floor(
-            self.clip_reload_time as f32 / bonus.get_field(FIELD_RATE_OF_FIRE),
-        )
+        crate::common::base_type::real_to_int_floor(self.clip_reload_time as f32 / bonus.get_field(FIELD_RATE_OF_FIRE))
     }
 
     /// `getPreAttackDelay(bonus)`: `m_preAttackDelay * bonus` truncated to an `Int`.
@@ -605,11 +566,7 @@ struct Fill<'a> {
 /// `INI::parseFXList`, as far as the token goes: `None` (any case) is `NULL`.
 fn fx_name(ini: &mut Ini<'_>) -> IniResult<FxName> {
     let token = ini.get_next_token(None)?;
-    Ok(if token.eq_ignore_ascii_case(b"None") {
-        None
-    } else {
-        Some(token)
-    })
+    Ok(if token.eq_ignore_ascii_case(b"None") { None } else { Some(token) })
 }
 
 /// `INI::scanIndexList(ini->getNextToken(), TheVeterancyNames)`.
@@ -630,11 +587,7 @@ macro_rules! real_field {
 real_field!(f_primary_damage, primary_damage, parse_real);
 real_field!(f_primary_damage_radius, primary_damage_radius, parse_real);
 real_field!(f_secondary_damage, secondary_damage, parse_real);
-real_field!(
-    f_secondary_damage_radius,
-    secondary_damage_radius,
-    parse_real
-);
+real_field!(f_secondary_damage_radius, secondary_damage_radius, parse_real);
 real_field!(f_shock_wave_amount, shock_wave_amount, parse_real);
 real_field!(f_shock_wave_radius, shock_wave_radius, parse_real);
 real_field!(f_shock_wave_taper_off, shock_wave_taper_off, parse_real);
@@ -809,17 +762,13 @@ fn f_exhaust_vet(ini: &mut Ini<'_>, w: &mut Fill<'_>, _: &UserData) -> IniResult
 fn f_shot_delay(ini: &mut Ini<'_>, w: &mut Fill<'_>, _: &UserData) -> IniResult<()> {
     let token = ini.get_next_token_or_null(Some(SEPS_COLON));
     // `stricmp(token, ...)` of a missing token is a read through NULL
-    let Some(token) = token else {
-        return Err(IniError::undefined(Undefined::NullTokenString));
-    };
+    let Some(token) = token else { return Err(IniError::undefined(Undefined::NullTokenString)) };
     let (min, max);
     if token.eq_ignore_ascii_case(b"Min") {
         // two entry min/max
         min = Ini::scan_int(&ini.get_next_token(Some(SEPS_COLON))?)?;
         let token = ini.get_next_token_or_null(Some(SEPS_COLON));
-        let Some(token) = token else {
-            return Err(IniError::undefined(Undefined::NullTokenString));
-        };
+        let Some(token) = token else { return Err(IniError::undefined(Undefined::NullTokenString)) };
         if !token.eq_ignore_ascii_case(b"Max") {
             // messed up double entry
             max = min;
@@ -833,10 +782,8 @@ fn f_shot_delay(ini: &mut Ini<'_>, w: &mut Fill<'_>, _: &UserData) -> IniResult<
     }
     // no matter what we have now, we want to convert it to frames from msec
     // `m_minDelayBetweenShots = ceilf(...)`: a float stored into an `Int` (the values it can reach fit)
-    w.t.min_delay_between_shots =
-        Real::ceil(convert_duration_from_msecs_to_frames(min as f32)) as i32;
-    w.t.max_delay_between_shots =
-        Real::ceil(convert_duration_from_msecs_to_frames(max as f32)) as i32;
+    w.t.min_delay_between_shots = Real::ceil(convert_duration_from_msecs_to_frames(min as f32)) as i32;
+    w.t.max_delay_between_shots = Real::ceil(convert_duration_from_msecs_to_frames(max as f32)) as i32;
     Ok(())
 }
 
@@ -895,10 +842,7 @@ fn f_historic_bonus_weapon(ini: &mut Ini<'_>, w: &mut Fill<'_>, _: &UserData) ->
     w.t.historic_bonus_weapon = if token.eq_ignore_ascii_case(b"None") {
         None
     } else {
-        let key = w
-            .names
-            .try_name_to_key(&token)
-            .map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
+        let key = w.names.try_name_to_key(&token).map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
         w.keys.contains(&key).then_some(key)
     };
     Ok(())
@@ -917,17 +861,9 @@ fn field_table<'a>() -> Vec<FieldParse<Fill<'a>>> {
     let e = FieldParse::<Fill<'a>>::new;
     vec![
         e("PrimaryDamage", f_primary_damage, UserData::None),
-        e(
-            "PrimaryDamageRadius",
-            f_primary_damage_radius,
-            UserData::None,
-        ),
+        e("PrimaryDamageRadius", f_primary_damage_radius, UserData::None),
         e("SecondaryDamage", f_secondary_damage, UserData::None),
-        e(
-            "SecondaryDamageRadius",
-            f_secondary_damage_radius,
-            UserData::None,
-        ),
+        e("SecondaryDamageRadius", f_secondary_damage_radius, UserData::None),
         e("ShockWaveAmount", f_shock_wave_amount, UserData::None),
         e("ShockWaveRadius", f_shock_wave_radius, UserData::None),
         e("ShockWaveTaperOff", f_shock_wave_taper_off, UserData::None),
@@ -936,16 +872,8 @@ fn field_table<'a>() -> Vec<FieldParse<Fill<'a>>> {
         e("RequestAssistRange", f_request_assist_range, UserData::None),
         e("AcceptableAimDelta", f_aim_delta, UserData::None),
         e("ScatterRadius", f_scatter_radius, UserData::None),
-        e(
-            "ScatterTargetScalar",
-            f_scatter_target_scalar,
-            UserData::None,
-        ),
-        e(
-            "ScatterRadiusVsInfantry",
-            f_infantry_inaccuracy,
-            UserData::None,
-        ),
+        e("ScatterTargetScalar", f_scatter_target_scalar, UserData::None),
+        e("ScatterRadiusVsInfantry", f_infantry_inaccuracy, UserData::None),
         e("DamageType", f_damage_type, UserData::None),
         e("DamageStatusType", f_damage_status_type, UserData::None),
         e("DeathType", f_death_type, UserData::None),
@@ -962,24 +890,12 @@ fn field_table<'a>() -> Vec<FieldParse<Fill<'a>>> {
         e("FireFX", f_fire_fx_all, UserData::None),
         e("ProjectileDetonationFX", f_detonate_fx_all, UserData::None),
         e("FireOCL", f_fire_ocl_all, UserData::None),
-        e(
-            "ProjectileDetonationOCL",
-            f_detonate_ocl_all,
-            UserData::None,
-        ),
+        e("ProjectileDetonationOCL", f_detonate_ocl_all, UserData::None),
         e("ProjectileExhaust", f_exhaust_all, UserData::None),
         e("VeterancyFireFX", f_fire_fx_vet, UserData::None),
-        e(
-            "VeterancyProjectileDetonationFX",
-            f_detonate_fx_vet,
-            UserData::None,
-        ),
+        e("VeterancyProjectileDetonationFX", f_detonate_fx_vet, UserData::None),
         e("VeterancyFireOCL", f_fire_ocl_vet, UserData::None),
-        e(
-            "VeterancyProjectileDetonationOCL",
-            f_detonate_ocl_vet,
-            UserData::None,
-        ),
+        e("VeterancyProjectileDetonationOCL", f_detonate_ocl_vet, UserData::None),
         e("VeterancyProjectileExhaust", f_exhaust_vet, UserData::None),
         e("ClipSize", f_clip_size, UserData::None),
         e("ContinuousFireOne", f_continuous_one, UserData::None),
@@ -989,95 +905,35 @@ fn field_table<'a>() -> Vec<FieldParse<Fill<'a>>> {
         e("ClipReloadTime", f_clip_reload_time, UserData::None),
         e("DelayBetweenShots", f_shot_delay, UserData::None),
         e("ShotsPerBarrel", f_shots_per_barrel, UserData::None),
-        e(
-            "DamageDealtAtSelfPosition",
-            f_damage_dealt_at_self,
-            UserData::None,
-        ),
-        e(
-            "RadiusDamageAffects",
-            f_radius_damage_affects,
-            UserData::None,
-        ),
-        e(
-            "ProjectileCollidesWith",
-            f_projectile_collides_with,
-            UserData::None,
-        ),
-        e(
-            "AntiAirborneVehicle",
-            f_anti,
-            UserData::Mask(WEAPON_ANTI_AIRBORNE_VEHICLE),
-        ),
+        e("DamageDealtAtSelfPosition", f_damage_dealt_at_self, UserData::None),
+        e("RadiusDamageAffects", f_radius_damage_affects, UserData::None),
+        e("ProjectileCollidesWith", f_projectile_collides_with, UserData::None),
+        e("AntiAirborneVehicle", f_anti, UserData::Mask(WEAPON_ANTI_AIRBORNE_VEHICLE)),
         e("AntiGround", f_anti, UserData::Mask(WEAPON_ANTI_GROUND)),
-        e(
-            "AntiProjectile",
-            f_anti,
-            UserData::Mask(WEAPON_ANTI_PROJECTILE),
-        ),
-        e(
-            "AntiSmallMissile",
-            f_anti,
-            UserData::Mask(WEAPON_ANTI_SMALL_MISSILE),
-        ),
+        e("AntiProjectile", f_anti, UserData::Mask(WEAPON_ANTI_PROJECTILE)),
+        e("AntiSmallMissile", f_anti, UserData::Mask(WEAPON_ANTI_SMALL_MISSILE)),
         e("AntiMine", f_anti, UserData::Mask(WEAPON_ANTI_MINE)),
-        e(
-            "AntiParachute",
-            f_anti,
-            UserData::Mask(WEAPON_ANTI_PARACHUTE),
-        ),
-        e(
-            "AntiAirborneInfantry",
-            f_anti,
-            UserData::Mask(WEAPON_ANTI_AIRBORNE_INFANTRY),
-        ),
-        e(
-            "AntiBallisticMissile",
-            f_anti,
-            UserData::Mask(WEAPON_ANTI_BALLISTIC_MISSILE),
-        ),
+        e("AntiParachute", f_anti, UserData::Mask(WEAPON_ANTI_PARACHUTE)),
+        e("AntiAirborneInfantry", f_anti, UserData::Mask(WEAPON_ANTI_AIRBORNE_INFANTRY)),
+        e("AntiBallisticMissile", f_anti, UserData::Mask(WEAPON_ANTI_BALLISTIC_MISSILE)),
         e("AutoReloadsClip", f_auto_reloads_clip, UserData::None),
-        e(
-            "ProjectileStreamName",
-            f_projectile_stream_name,
-            UserData::None,
-        ),
+        e("ProjectileStreamName", f_projectile_stream_name, UserData::None),
         e("LaserName", f_laser_name, UserData::None),
         e("LaserBoneName", f_laser_bone_name, UserData::None),
         e("WeaponBonus", f_weapon_bonus, UserData::None),
         e("HistoricBonusTime", f_historic_bonus_time, UserData::None),
-        e(
-            "HistoricBonusRadius",
-            f_historic_bonus_radius,
-            UserData::None,
-        ),
+        e("HistoricBonusRadius", f_historic_bonus_radius, UserData::None),
         e("HistoricBonusCount", f_historic_bonus_count, UserData::None),
-        e(
-            "HistoricBonusWeapon",
-            f_historic_bonus_weapon,
-            UserData::None,
-        ),
+        e("HistoricBonusWeapon", f_historic_bonus_weapon, UserData::None),
         e("LeechRangeWeapon", f_leech_range, UserData::None),
         e("ScatterTarget", f_scatter_target, UserData::None),
-        e(
-            "CapableOfFollowingWaypoints",
-            f_follow_waypoints,
-            UserData::None,
-        ),
+        e("CapableOfFollowingWaypoints", f_follow_waypoints, UserData::None),
         e("ShowsAmmoPips", f_ammo_pips, UserData::None),
-        e(
-            "AllowAttackGarrisonedBldgs",
-            f_attack_garrisoned,
-            UserData::None,
-        ),
+        e("AllowAttackGarrisonedBldgs", f_attack_garrisoned, UserData::None),
         e("PlayFXWhenStealthed", f_fx_when_stealthed, UserData::None),
         e("PreAttackDelay", f_pre_attack_delay, UserData::None),
         e("PreAttackType", f_prefire_type, UserData::None),
-        e(
-            "ContinueAttackRange",
-            f_continue_attack_range,
-            UserData::None,
-        ),
+        e("ContinueAttackRange", f_continue_attack_range, UserData::None),
         e("SuspendFXDelay", f_suspend_fx_delay, UserData::None),
         e("MissileCallsOnDie", f_die_on_detonate, UserData::None),
         FieldParse::end(),
@@ -1133,17 +989,11 @@ impl WeaponStore {
 
     /// `findWeaponTemplate(name)`: `None` for `None` (any case) without touching the name keys; otherwise
     /// `nameToKey(name)` and the template under it, if any.
-    pub fn find_weapon_template(
-        &self,
-        names: &mut NameKeyGenerator,
-        name: &[u8],
-    ) -> IniResult<Option<&WeaponTemplate>> {
+    pub fn find_weapon_template(&self, names: &mut NameKeyGenerator, name: &[u8]) -> IniResult<Option<&WeaponTemplate>> {
         if name.eq_ignore_ascii_case(b"None") {
             return Ok(None);
         }
-        let key = names
-            .try_name_to_key(name)
-            .map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
+        let key = names.try_name_to_key(name).map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
         Ok(self.find_weapon_template_private(key))
     }
 
@@ -1153,20 +1003,14 @@ impl WeaponStore {
     }
 
     /// `newWeaponTemplate(name)`: `None` for an empty name; otherwise a new template, last in the store.
-    pub fn new_weapon_template(
-        &mut self,
-        names: &mut NameKeyGenerator,
-        name: &[u8],
-    ) -> IniResult<Option<usize>> {
+    pub fn new_weapon_template(&mut self, names: &mut NameKeyGenerator, name: &[u8]) -> IniResult<Option<usize>> {
         // sanity
         if name.is_empty() {
             return Ok(None);
         }
         let mut wt = WeaponTemplate::new();
         wt.name = name.to_vec();
-        wt.name_key = names
-            .try_name_to_key(name)
-            .map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
+        wt.name_key = names.try_name_to_key(name).map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
         self.templates.push(wt);
         Ok(Some(self.templates.len() - 1))
     }
@@ -1218,11 +1062,7 @@ impl WeaponStore {
     }
 
     /// `postProcessLoad()`: every template finds its projectile and OCLs.
-    pub fn post_process_load(
-        &mut self,
-        find_template: &impl Fn(&[u8]) -> Option<u16>,
-        find_ocl: &impl Fn(&[u8]) -> Option<u32>,
-    ) {
+    pub fn post_process_load(&mut self, find_template: &impl Fn(&[u8]) -> Option<u16>, find_ocl: &impl Fn(&[u8]) -> Option<u32>) {
         for wt in &mut self.templates {
             wt.post_process_load(find_template, find_ocl);
         }
@@ -1232,17 +1072,11 @@ impl WeaponStore {
     /// `INI::parseWeaponTemplateDefinition`): the weapon's name, then its fields until `End`. A known name, when
     /// loading overrides, is parsed into a copy that is dropped (see the module docs); a known name otherwise
     /// returns without reading the block.
-    pub fn parse_weapon_template_definition(
-        &mut self,
-        ini: &mut Ini<'_>,
-        names: &mut NameKeyGenerator,
-    ) -> IniResult<()> {
+    pub fn parse_weapon_template_definition(&mut self, ini: &mut Ini<'_>, names: &mut NameKeyGenerator) -> IniResult<()> {
         // read the weapon name
         let name = ini.get_next_token(None)?;
         // find existing item if present
-        let key = names
-            .try_name_to_key(&name)
-            .map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
+        let key = names.try_name_to_key(&name).map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
         let existing = self.templates.iter().position(|t| t.name_key == key);
         let keys: BTreeSet<NameKeyType>;
         // `scratch` is the template being filled; `stored` is where it goes when the block ends (a new template),
@@ -1261,9 +1095,7 @@ impl WeaponStore {
                 shared_with = self.templates[i].extra_bonus.is_some().then_some(i);
             }
             None => {
-                let Some(i) = self.new_weapon_template(names, &name)? else {
-                    return Ok(());
-                };
+                let Some(i) = self.new_weapon_template(names, &name)? else { return Ok(()) };
                 keys = self.templates.iter().map(|t| t.name_key).collect();
                 scratch = std::mem::take(&mut self.templates[i]);
                 stored = Some(i);
@@ -1273,11 +1105,7 @@ impl WeaponStore {
         // parse the ini weapon definition
         let table = field_table();
         let r = {
-            let mut fill = Fill {
-                t: &mut scratch,
-                names,
-                keys: &keys,
-            };
+            let mut fill = Fill { t: &mut scratch, names, keys: &keys };
             ini.init_from_ini(&mut fill, &table)
         };
         // `if (weapon->m_projectileName.isNone()) weapon->m_projectileName.clear();`: after `initFromINI`, which
@@ -1311,16 +1139,10 @@ mod tests {
         c.store.parse_weapon_template_definition(ini, &mut c.names)
     }
 
-    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse {
-        token: "Weapon",
-        parse: block,
-    }];
+    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse { token: "Weapon", parse: block }];
 
     fn ctx() -> Ctx {
-        let mut c = Ctx {
-            store: WeaponStore::new(),
-            names: NameKeyGenerator::new(),
-        };
+        let mut c = Ctx { store: WeaponStore::new(), names: NameKeyGenerator::new() };
         c.names.init();
         c
     }
@@ -1343,15 +1165,8 @@ mod tests {
         let t = &c.store.templates()[0];
         assert_eq!(t.name, b"Rifle");
         assert_eq!(t.primary_damage, 12.5);
-        assert!(
-            (t.weapon_speed - 10.0).abs() < 1e-5,
-            "per second to per frame"
-        );
-        assert_eq!(
-            (t.min_delay_between_shots, t.max_delay_between_shots),
-            (3, 6),
-            "milliseconds to frames, rounded up"
-        );
+        assert!((t.weapon_speed - 10.0).abs() < 1e-5, "per second to per frame");
+        assert_eq!((t.min_delay_between_shots, t.max_delay_between_shots), (3, 6), "milliseconds to frames, rounded up");
         assert_eq!(t.clip_reload_time, 30);
         assert_eq!(t.reload_type, RETURN_TO_BASE_TO_RELOAD);
         assert_eq!(t.anti_mask, WEAPON_ANTI_AIRBORNE_VEHICLE);
@@ -1360,10 +1175,7 @@ mod tests {
         assert_eq!(t.fire_sound, b"RifleFire");
         assert_eq!(t.fire_fxs[0], Some(b"FX_A".to_vec()));
         assert_eq!(t.fire_fxs[2], Some(b"FX_B".to_vec()));
-        assert!(
-            t.projectile_name.is_empty(),
-            "None is cleared after the block"
-        );
+        assert!(t.projectile_name.is_empty(), "None is cleared after the block");
         assert_eq!(t.scatter_targets, vec![Coord2D { x: 1.0, y: 2.0 }]);
         assert!(t.extra_bonus.is_none());
         assert!(!t.get_auto_reloads_clip());
@@ -1399,18 +1211,8 @@ mod tests {
         c.store.post_process_load(&find_t, &find_o);
         let t = &c.store.templates()[0];
         assert_eq!(t.projectile_tmpl, Some(77));
-        assert_eq!(
-            (
-                t.fire_ocls[0],
-                t.projectile_detonation_ocls[3],
-                t.projectile_detonation_ocls[0]
-            ),
-            (Some(5), Some(5), None)
-        );
-        assert!(
-            t.fire_ocl_names.iter().all(|n| n.is_empty()),
-            "the names are cleared once resolved"
-        );
+        assert_eq!((t.fire_ocls[0], t.projectile_detonation_ocls[3], t.projectile_detonation_ocls[0]), (Some(5), Some(5), None));
+        assert!(t.fire_ocl_names.iter().all(|n| n.is_empty()), "the names are cleared once resolved");
     }
 
     #[test]
@@ -1422,64 +1224,31 @@ mod tests {
         rng.init_game_logic_random(5);
         let d = t.get_delay_between_shots(&WeaponBonus::new(), &mut rng);
         assert!((10..=20).contains(&d));
-        let draws: std::collections::BTreeSet<_> = (0..50)
-            .map(|_| t.get_delay_between_shots(&WeaponBonus::new(), &mut rng))
-            .collect();
+        let draws: std::collections::BTreeSet<_> = (0..50).map(|_| t.get_delay_between_shots(&WeaponBonus::new(), &mut rng)).collect();
         assert!(draws.len() > 1, "a range draws varying values");
         t.max_delay_between_shots = 10;
         let seed = rng.get_game_logic_random_seed();
         assert_eq!(t.get_delay_between_shots(&WeaponBonus::new(), &mut rng), 10);
-        assert_eq!(
-            rng.get_game_logic_random_seed(),
-            seed,
-            "a fixed delay does not"
-        );
+        assert_eq!(rng.get_game_logic_random_seed(), seed, "a fixed delay does not");
     }
 
     #[test]
     fn redefining_a_weapon_without_overrides_returns_and_overrides_never_join_the_store() {
         let mut c = ctx();
-        load(
-            &mut c,
-            b"Weapon A\n PrimaryDamage = 1\n WeaponBonus = VETERAN DAMAGE 150%\nEnd\n",
-            IniLoadType::Overwrite,
-        )
-        .unwrap();
+        load(&mut c, b"Weapon A\n PrimaryDamage = 1\n WeaponBonus = VETERAN DAMAGE 150%\nEnd\n", IniLoadType::Overwrite).unwrap();
         // the same name again: the block is not read, so its first line is an unknown top-level token
-        let r = load(
-            &mut c,
-            b"Weapon A\n PrimaryDamage = 2\nEnd\n",
-            IniLoadType::Overwrite,
-        );
+        let r = load(&mut c, b"Weapon A\n PrimaryDamage = 2\nEnd\n", IniLoadType::Overwrite);
         assert_eq!(r.unwrap_err().kind, IniErrorKind::UnknownToken);
         assert_eq!(c.store.templates()[0].primary_damage, 1.0);
         // as an override: parsed into a copy that is dropped, except for the shared bonus set
-        load(
-            &mut c,
-            b"Weapon A\n PrimaryDamage = 99\n WeaponBonus = VETERAN DAMAGE 200%\nEnd\n",
-            IniLoadType::CreateOverrides,
-        )
-        .unwrap();
+        load(&mut c, b"Weapon A\n PrimaryDamage = 99\n WeaponBonus = VETERAN DAMAGE 200%\nEnd\n", IniLoadType::CreateOverrides).unwrap();
         assert_eq!(c.store.templates().len(), 1);
-        assert_eq!(
-            c.store.templates()[0].primary_damage,
-            1.0,
-            "the override never joins the store"
-        );
+        assert_eq!(c.store.templates()[0].primary_damage, 1.0, "the override never joins the store");
         let set = c.store.templates()[0].extra_bonus.unwrap();
-        assert_eq!(
-            set.bonus(crate::logic::weapon_bonus::condition::VETERAN as usize)
-                .get_field(FIELD_DAMAGE),
-            2.0,
-            "but its bonus line reached the original"
-        );
+        assert_eq!(set.bonus(crate::logic::weapon_bonus::condition::VETERAN as usize).get_field(FIELD_DAMAGE), 2.0, "but its bonus line reached the original");
         // a failing project name keeps `None` as read
         let mut c2 = ctx();
-        let r = load(
-            &mut c2,
-            b"Weapon B\n ProjectileObject = None\n Bogus = 1\nEnd\n",
-            IniLoadType::Overwrite,
-        );
+        let r = load(&mut c2, b"Weapon B\n ProjectileObject = None\n Bogus = 1\nEnd\n", IniLoadType::Overwrite);
         assert!(r.is_err());
         assert_eq!(c2.store.templates()[0].projectile_name, b"None");
     }
@@ -1488,51 +1257,14 @@ mod tests {
     fn the_store_finds_by_name_and_keeps_delayed_and_historic_damage_until_reset() {
         let mut c = ctx();
         load(&mut c, b"Weapon A\n HistoricBonusWeapon = A\n HistoricBonusWeapon = None\nEnd\nWeapon B\n HistoricBonusWeapon = A\nEnd\n", IniLoadType::Overwrite).unwrap();
-        assert!(c
-            .store
-            .find_weapon_template(&mut c.names, b"None")
-            .unwrap()
-            .is_none());
-        let a = c
-            .store
-            .find_weapon_template(&mut c.names, b"A")
-            .unwrap()
-            .unwrap()
-            .name_key;
-        assert_eq!(
-            c.store.templates()[0].historic_bonus_weapon,
-            None,
-            "the last line said None"
-        );
+        assert!(c.store.find_weapon_template(&mut c.names, b"None").unwrap().is_none());
+        let a = c.store.find_weapon_template(&mut c.names, b"A").unwrap().unwrap().name_key;
+        assert_eq!(c.store.templates()[0].historic_bonus_weapon, None, "the last line said None");
         assert_eq!(c.store.templates()[1].historic_bonus_weapon, Some(a));
-        assert!(c
-            .store
-            .find_weapon_template(&mut c.names, b"Nope")
-            .unwrap()
-            .is_none());
-        assert!(c
-            .store
-            .new_weapon_template(&mut c.names, b"")
-            .unwrap()
-            .is_none());
-        c.store.set_delayed_damage(
-            a,
-            &crate::common::base_type::Coord3D {
-                x: 1.0,
-                y: 2.0,
-                z: 3.0,
-            },
-            9,
-            4,
-            5,
-            &WeaponBonus::new(),
-        );
-        c.store.templates_mut()[0]
-            .historic_damage
-            .push(HistoricWeaponDamageInfo {
-                frame: 3,
-                location: Default::default(),
-            });
+        assert!(c.store.find_weapon_template(&mut c.names, b"Nope").unwrap().is_none());
+        assert!(c.store.new_weapon_template(&mut c.names, b"").unwrap().is_none());
+        c.store.set_delayed_damage(a, &crate::common::base_type::Coord3D { x: 1.0, y: 2.0, z: 3.0 }, 9, 4, 5, &WeaponBonus::new());
+        c.store.templates_mut()[0].historic_damage.push(HistoricWeaponDamageInfo { frame: 3, location: Default::default() });
         assert_eq!(c.store.delayed_damage().len(), 1);
         c.store.reset();
         assert!(c.store.delayed_damage().is_empty());
@@ -1543,26 +1275,13 @@ mod tests {
     #[test]
     fn undefined_inputs_are_errors() {
         let mut c = ctx();
-        let r = load(
-            &mut c,
-            b"Weapon A\n DelayBetweenShots =\nEnd\n",
-            IniLoadType::Overwrite,
-        );
+        let r = load(&mut c, b"Weapon A\n DelayBetweenShots =\nEnd\n", IniLoadType::Overwrite);
         assert!(r.unwrap_err().is_undefined());
         let mut t = WeaponTemplate::new();
         t.pre_attack_delay = i32::MAX;
         let mut b = WeaponBonus::new();
         b.set_field(FIELD_PRE_ATTACK, 2.0);
-        assert_eq!(
-            t.get_pre_attack_delay(&b),
-            Err(WeaponError::FloatToIntOutOfRange)
-        );
-        let _ = (
-            NO_MAX_SHOTS_LIMIT,
-            PREFIRE_PER_ATTACK,
-            PREFIRE_PER_CLIP,
-            WEAPON_COLLIDE_ALLIES,
-            WEAPON_KILLS_SELF,
-        );
+        assert_eq!(t.get_pre_attack_delay(&b), Err(WeaponError::FloatToIntOutOfRange));
+        let _ = (NO_MAX_SHOTS_LIMIT, PREFIRE_PER_ATTACK, PREFIRE_PER_CLIP, WEAPON_COLLIDE_ALLIES, WEAPON_KILLS_SELF);
     }
 }

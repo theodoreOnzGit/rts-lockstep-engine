@@ -53,10 +53,10 @@ mod up_common;
 
 use harness::*;
 use mux_common::*;
-use rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID;
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
 use rts_lockstep_engine::common::module::ModuleDataKind;
 use rts_lockstep_engine::common::object_status_types::OBJECT_STATUS_NO_ATTACK;
+use rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID;
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
@@ -77,26 +77,19 @@ const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9pr_o.bin")
 const XFER_FILE: &str = "l9pr_o.bin";
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::ProneUpdate(Arc::new(
-        ProneUpdateModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::ProneUpdate(Arc::new(ProneUpdateModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
 }
 
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind) {
-    let ModuleDataKind::ProneUpdate(d) = data else {
-        unreachable!("not a ProneUpdate")
-    };
+    let ModuleDataKind::ProneUpdate(d) = data else { unreachable!("not a ProneUpdate") };
     put_u32(v, d.damage_to_frames_ratio.to_bits());
 }
 
@@ -117,9 +110,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let log: Vec<String> = (0..nlog).map(|_| r.str()).collect();
         let x = r.xfer();
         let state: Vec<u32> = (0..2).map(|_| r.u32()).collect();
-        out.push(format!(
-            "op {i}: status {st} sleep {sleep} log {log:?} {x} state {state:x?}"
-        ));
+        out.push(format!("op {i}: status {st} sleep {sleep} log {log:?} {x} state {state:x?}"));
     }
     out
 }
@@ -165,12 +156,7 @@ fn gen_damage(g: &mut Gen) -> u32 {
     .to_bits()
 }
 
-fn gen_case(
-    g: &mut Gen,
-    _data: &Option<ModuleDataKind>,
-    _n_up: usize,
-    _upgrades: &[String],
-) -> (Vec<u32>, Vec<[u32; 5]>) {
+fn gen_case(g: &mut Gen, _data: &Option<ModuleDataKind>, _n_up: usize, _upgrades: &[String]) -> (Vec<u32>, Vec<[u32; 5]>) {
     let cfg = vec![u32::from(g.below(100) < 97)];
     let n_ops = 1 + g.below(40) as usize;
     let ops = (0..n_ops)
@@ -194,51 +180,20 @@ struct Tally {
     prones: u64,
 }
 
-fn rust_run(
-    ctx: Ctx,
-    data: ModuleDataKind,
-    cfg: &[u32],
-    ops: &[[u32; 5]],
-    tally: &RefCell<Tally>,
-) -> RunOut {
+fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally: &RefCell<Tally>) -> RunOut {
     let mut v = Vec::new();
     put_data(&mut v, &data);
 
     let mut w = World::new();
-    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics {
-        upgrade_center: ctx.center,
-        special_power_store: ctx.store,
-        ..Default::default()
-    });
+    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
     w.names = ctx.names;
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        b"ProneUpdate",
-        b"ModuleTag_Prone",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
-    let template = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
-    let me = w
-        .new_object(NewObject {
-            template,
-            status: Default::default(),
-            team: None,
-            modules: vec![m],
-        })
-        .unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"ProneUpdate", b"ModuleTag_Prone", &data).unwrap().unwrap();
+    let template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
+    let me = w.new_object(NewObject { template, status: Default::default(), team: None, modules: vec![m] }).unwrap();
     assert_eq!(me, 1);
     w.friend_bind_to_drawable(me, if cfg[0] != 0 { 7 } else { INVALID_DRAWABLE_ID });
     let idx = w.find_module(me, b"ProneUpdate").unwrap();
-    let u = w
-        .update_handle_of_module(ModuleHandle {
-            object: me,
-            index: idx,
-        })
-        .expect("an update module");
+    let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
     let mut saved: Vec<u8> = Vec::new();
     let mut excluded = false;
     for phase in 0..=ops.len() {
@@ -249,10 +204,7 @@ fn rust_run(
             let o = &ops[phase - 1];
             match o[0] {
                 0 => {
-                    sleep = w
-                        .with_body(u, |b, w| b.update(w, u))
-                        .expect("the module is in its slot")
-                        .0;
+                    sleep = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
                     tally.borrow_mut().updates += 1;
                 }
                 1 => {
@@ -282,26 +234,14 @@ fn rust_run(
             events_before = w.events.events().len();
         }
         if w.cuts.module_errors.len() > errors_before {
-            assert!(
-                w.cuts.module_errors[errors_before..]
-                    .iter()
-                    .all(|(_, e)| e.is_undefined()),
-                "{:?}",
-                w.cuts.module_errors
-            );
+            assert!(w.cuts.module_errors[errors_before..].iter().all(|(_, e)| e.is_undefined()), "{:?}", w.cuts.module_errors);
             excluded = true;
         }
         let mut log = Vec::new();
         for e in &w.events.events()[events_before..] {
             match e {
-                ClientEvent::Object(ObjectClientEvent::DrawableModelCondition {
-                    op: ModelConditionOp::Set(f),
-                    ..
-                }) => log.push(format!("mc {}", f[0])),
-                ClientEvent::Object(ObjectClientEvent::DrawableModelCondition {
-                    op: ModelConditionOp::Clear(f),
-                    ..
-                }) => log.push(format!("mcclear {}", f[0])),
+                ClientEvent::Object(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Set(f), .. }) => log.push(format!("mc {}", f[0])),
+                ClientEvent::Object(ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Clear(f), .. }) => log.push(format!("mcclear {}", f[0])),
                 _ => {}
             }
         }
@@ -318,35 +258,16 @@ fn rust_run(
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let state =
-            w.objects
-                .find(me)
-                .unwrap()
-                .behaviors
-                .iter()
-                .find_map(|b| match b.body.as_ref() {
-                    Some(UpdateBody::ProneUpdate(m)) => Some(m.state_words()),
-                    _ => None,
-                });
+        let state = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
+            Some(UpdateBody::ProneUpdate(m)) => Some(m.state_words()),
+            _ => None,
+        });
         for s in state.expect("the module is back in its slot") {
             put_u32(&mut v, s);
         }
-        put_u32(
-            &mut v,
-            u32::from(
-                w.objects
-                    .find(me)
-                    .unwrap()
-                    .status
-                    .test(OBJECT_STATUS_NO_ATTACK),
-            ),
-        );
+        put_u32(&mut v, u32::from(w.objects.find(me).unwrap().status.test(OBJECT_STATUS_NO_ATTACK)));
     }
-    RunOut {
-        dump: v,
-        keys: Vec::new(),
-        excluded,
-    }
+    RunOut { dump: v, keys: Vec::new(), excluded }
 }
 
 #[test]
@@ -373,10 +294,5 @@ fn prone_update_matches_upstream() {
         "update module O4: {} cases, {} data blocks threw, {} excluded (undefined upstream), {} ops, {} updates, {} goProne calls, {} xfers, {} effect lines",
         c.cases, c.read_failed, c.excluded, c.ops_run, t.updates, t.prones, t.xfers, t.effects
     );
-    assert!(
-        c.read_failed * 40 > c.cases as u64
-            && c.ops_run * 5 > c.cases as u64 * 4
-            && t.effects * 5 > c.cases as u64,
-        "the generator must reach every path"
-    );
+    assert!(c.read_failed * 40 > c.cases as u64 && c.ops_run * 5 > c.cases as u64 * 4 && t.effects * 5 > c.cases as u64, "the generator must reach every path");
 }

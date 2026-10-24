@@ -131,16 +131,8 @@ pub struct Registration {
 /// The 205 `addModule` calls of `ModuleFactory::init`, in order (see the
 /// module docs).
 pub const REGISTRATIONS: [Registration; 205] = {
-    const fn r(
-        name: &'static str,
-        module_type: ModuleType,
-        in_shipped_build: bool,
-    ) -> Registration {
-        Registration {
-            name,
-            module_type,
-            in_shipped_build,
-        }
+    const fn r(name: &'static str, module_type: ModuleType, in_shipped_build: bool) -> Registration {
+        Registration { name, module_type, in_shipped_build }
     }
     [
         // behavior modules
@@ -156,11 +148,7 @@ pub const REGISTRATIONS: [Registration; 205] = {
         r("InstantDeathBehavior", ModuleType::Behavior, true),
         r("SlowDeathBehavior", ModuleType::Behavior, true),
         r("HelicopterSlowDeathBehavior", ModuleType::Behavior, true),
-        r(
-            "NeutronMissileSlowDeathBehavior",
-            ModuleType::Behavior,
-            true,
-        ),
+        r("NeutronMissileSlowDeathBehavior", ModuleType::Behavior, true),
         r("CaveContain", ModuleType::Behavior, true),
         r("OpenContain", ModuleType::Behavior, true),
         r("OverchargeBehavior", ModuleType::Behavior, true),
@@ -187,11 +175,7 @@ pub const REGISTRATIONS: [Registration; 205] = {
         r("FlightDeckBehavior", ModuleType::Behavior, true),
         r("PoisonedBehavior", ModuleType::Behavior, true),
         r("RebuildHoleBehavior", ModuleType::Behavior, true),
-        r(
-            "SupplyWarehouseCripplingBehavior",
-            ModuleType::Behavior,
-            true,
-        ),
+        r("SupplyWarehouseCripplingBehavior", ModuleType::Behavior, true),
         r("TechBuildingBehavior", ModuleType::Behavior, true),
         r("MinefieldBehavior", ModuleType::Behavior, true),
         r("BattleBusSlowDeathBehavior", ModuleType::Behavior, true),
@@ -218,11 +202,7 @@ pub const REGISTRATIONS: [Registration; 205] = {
         r("StealthUpdate", ModuleType::Behavior, true),
         r("DeletionUpdate", ModuleType::Behavior, true),
         r("SmartBombTargetHomingUpdate", ModuleType::Behavior, true),
-        r(
-            "DynamicShroudClearingRangeUpdate",
-            ModuleType::Behavior,
-            true,
-        ),
+        r("DynamicShroudClearingRangeUpdate", ModuleType::Behavior, true),
         r("DeployStyleAIUpdate", ModuleType::Behavior, true),
         r("AssaultTransportAIUpdate", ModuleType::Behavior, true),
         r("HordeUpdate", ModuleType::Behavior, true),
@@ -249,11 +229,7 @@ pub const REGISTRATIONS: [Registration; 205] = {
         r("DeliverPayloadAIUpdate", ModuleType::Behavior, true),
         r("HackInternetAIUpdate", ModuleType::Behavior, true),
         r("DynamicGeometryInfoUpdate", ModuleType::Behavior, true),
-        r(
-            "FirestormDynamicGeometryInfoUpdate",
-            ModuleType::Behavior,
-            true,
-        ),
+        r("FirestormDynamicGeometryInfoUpdate", ModuleType::Behavior, true),
         r("LaserUpdate", ModuleType::ClientUpdate, true),
         r("PointDefenseLaserUpdate", ModuleType::Behavior, true),
         r("CleanupHazardUpdate", ModuleType::Behavior, true),
@@ -278,11 +254,7 @@ pub const REGISTRATIONS: [Registration; 205] = {
         r("OCLUpdate", ModuleType::Behavior, true),
         r("SpecialAbilityUpdate", ModuleType::Behavior, true),
         r("MissileLauncherBuildingUpdate", ModuleType::Behavior, true),
-        r(
-            "SupplyCenterProductionExitUpdate",
-            ModuleType::Behavior,
-            true,
-        ),
+        r("SupplyCenterProductionExitUpdate", ModuleType::Behavior, true),
         r("SupplyCenterDockUpdate", ModuleType::Behavior, true),
         r("SupplyWarehouseDockUpdate", ModuleType::Behavior, true),
         r("DozerAIUpdate", ModuleType::Behavior, true),
@@ -291,11 +263,7 @@ pub const REGISTRATIONS: [Registration; 205] = {
         r("ProductionUpdate", ModuleType::Behavior, true),
         r("ProneUpdate", ModuleType::Behavior, true),
         r("StickyBombUpdate", ModuleType::Behavior, true),
-        r(
-            "FireOCLAfterWeaponCooldownUpdate",
-            ModuleType::Behavior,
-            true,
-        ),
+        r("FireOCLAfterWeaponCooldownUpdate", ModuleType::Behavior, true),
         r("HijackerUpdate", ModuleType::Behavior, true),
         r("StructureToppleUpdate", ModuleType::Behavior, true),
         r("StructureCollapseUpdate", ModuleType::Behavior, true),
@@ -350,47 +318,15 @@ pub const REGISTRATIONS: [Registration; 205] = {
         r("UnitCrateCollide", ModuleType::Behavior, true),
         r("VeterancyCrateCollide", ModuleType::Behavior, true),
         r("ConvertToCarBombCrateCollide", ModuleType::Behavior, true),
-        r(
-            "ConvertToHijackedVehicleCrateCollide",
-            ModuleType::Behavior,
-            true,
-        ),
-        r(
-            "SabotageCommandCenterCrateCollide",
-            ModuleType::Behavior,
-            true,
-        ),
-        r(
-            "SabotageFakeBuildingCrateCollide",
-            ModuleType::Behavior,
-            true,
-        ),
-        r(
-            "SabotageInternetCenterCrateCollide",
-            ModuleType::Behavior,
-            true,
-        ),
-        r(
-            "SabotageMilitaryFactoryCrateCollide",
-            ModuleType::Behavior,
-            true,
-        ),
+        r("ConvertToHijackedVehicleCrateCollide", ModuleType::Behavior, true),
+        r("SabotageCommandCenterCrateCollide", ModuleType::Behavior, true),
+        r("SabotageFakeBuildingCrateCollide", ModuleType::Behavior, true),
+        r("SabotageInternetCenterCrateCollide", ModuleType::Behavior, true),
+        r("SabotageMilitaryFactoryCrateCollide", ModuleType::Behavior, true),
         r("SabotagePowerPlantCrateCollide", ModuleType::Behavior, true),
-        r(
-            "SabotageSuperweaponCrateCollide",
-            ModuleType::Behavior,
-            true,
-        ),
-        r(
-            "SabotageSupplyCenterCrateCollide",
-            ModuleType::Behavior,
-            true,
-        ),
-        r(
-            "SabotageSupplyDropzoneCrateCollide",
-            ModuleType::Behavior,
-            true,
-        ),
+        r("SabotageSuperweaponCrateCollide", ModuleType::Behavior, true),
+        r("SabotageSupplyCenterCrateCollide", ModuleType::Behavior, true),
+        r("SabotageSupplyDropzoneCrateCollide", ModuleType::Behavior, true),
         r("SalvageCrateCollide", ModuleType::Behavior, true),
         // body modules
         r("InactiveBody", ModuleType::Behavior, true),
@@ -411,11 +347,7 @@ pub const REGISTRATIONS: [Registration; 205] = {
         r("CashBountyPower", ModuleType::Behavior, true),
         r("CleanupAreaPower", ModuleType::Behavior, true),
         // client update modules
-        r(
-            "AnimatedParticleSysBoneClientUpdate",
-            ModuleType::ClientUpdate,
-            true,
-        ),
+        r("AnimatedParticleSysBoneClientUpdate", ModuleType::ClientUpdate, true),
         r("SwayClientUpdate", ModuleType::ClientUpdate, true),
         r("BeaconClientUpdate", ModuleType::ClientUpdate, true),
     ]
@@ -1127,9 +1059,7 @@ fn new_create_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::VeterancyGainCreate(d)) => Some(std::sync::Arc::new(d.create.clone())),
         _ => None,
     };
-    Ok(Module::Create(
-        crate::logic::module::create_module::CreateModule::new(object, base)?,
-    ))
+    Ok(Module::Create(crate::logic::module::create_module::CreateModule::new(object, base)?))
 }
 
 /// The `NewModuleProc` of a translated update module: its `UpdateModule` base, made from the `UpdateModuleData` base of its
@@ -1139,126 +1069,74 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::Update(d)) => Some(d),
         Some(ModuleDataKind::LifetimeUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::DeletionUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
-        Some(ModuleDataKind::BaseRegenerateUpdate(d)) => {
-            Some(std::sync::Arc::new(d.update.clone()))
-        }
-        Some(ModuleDataKind::SmartBombTargetHomingUpdate(d)) => {
-            Some(std::sync::Arc::new(d.update.clone()))
-        }
+        Some(ModuleDataKind::BaseRegenerateUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::SmartBombTargetHomingUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         // --- p1w11-sonnet ---
         Some(ModuleDataKind::PowerPlantUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::RadarUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::SpyVisionUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::AutoDepositUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::OpenContain(d)) => Some(std::sync::Arc::new(d.update.clone())),
-        Some(ModuleDataKind::TransportContain(d)) => {
-            Some(std::sync::Arc::new(d.open.update.clone()))
-        }
-        Some(ModuleDataKind::GarrisonContain(d)) => {
-            Some(std::sync::Arc::new(d.open.update.clone()))
-        }
+        Some(ModuleDataKind::TransportContain(d)) => Some(std::sync::Arc::new(d.open.update.clone())),
+        Some(ModuleDataKind::GarrisonContain(d)) => Some(std::sync::Arc::new(d.open.update.clone())),
         Some(ModuleDataKind::CaveContain(d)) => Some(std::sync::Arc::new(d.open.update.clone())),
         Some(ModuleDataKind::TunnelContain(d)) => Some(std::sync::Arc::new(d.open.update.clone())),
-        Some(ModuleDataKind::MobNexusContain(d)) => {
-            Some(std::sync::Arc::new(d.open.update.clone()))
-        }
-        Some(ModuleDataKind::ParachuteContain(d)) => {
-            Some(std::sync::Arc::new(d.open.update.clone()))
-        }
+        Some(ModuleDataKind::MobNexusContain(d)) => Some(std::sync::Arc::new(d.open.update.clone())),
+        Some(ModuleDataKind::ParachuteContain(d)) => Some(std::sync::Arc::new(d.open.update.clone())),
         Some(ModuleDataKind::HealContain(d)) => Some(std::sync::Arc::new(d.open.update.clone())),
-        Some(ModuleDataKind::OverlordContain(d)) => {
-            Some(std::sync::Arc::new(d.transport.open.update.clone()))
-        }
-        Some(ModuleDataKind::RiderChangeContain(d)) => {
-            Some(std::sync::Arc::new(d.transport.open.update.clone()))
-        }
-        Some(ModuleDataKind::HelixContain(d)) => {
-            Some(std::sync::Arc::new(d.transport.open.update.clone()))
-        }
-        Some(ModuleDataKind::RailedTransportContain(d)) => {
-            Some(std::sync::Arc::new(d.open.update.clone()))
-        }
-        Some(ModuleDataKind::InternetHackContain(d)) => {
-            Some(std::sync::Arc::new(d.open.update.clone()))
-        }
+        Some(ModuleDataKind::OverlordContain(d)) => Some(std::sync::Arc::new(d.transport.open.update.clone())),
+        Some(ModuleDataKind::RiderChangeContain(d)) => Some(std::sync::Arc::new(d.transport.open.update.clone())),
+        Some(ModuleDataKind::HelixContain(d)) => Some(std::sync::Arc::new(d.transport.open.update.clone())),
+        Some(ModuleDataKind::RailedTransportContain(d)) => Some(std::sync::Arc::new(d.open.update.clone())),
+        Some(ModuleDataKind::InternetHackContain(d)) => Some(std::sync::Arc::new(d.open.update.clone())),
         // --- end p1w11-sonnet ---
         // --- p1w12-sonnet ---
-        Some(ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d)) => {
-            Some(std::sync::Arc::new(d.update.clone()))
-        }
+        Some(ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::AutoHealBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::CheckpointUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::FlammableUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::PoisonedBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::WeaponBonusUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
-        Some(ModuleDataKind::PilotFindVehicleUpdate(d)) => {
-            Some(std::sync::Arc::new(d.update.clone()))
-        }
+        Some(ModuleDataKind::PilotFindVehicleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::HordeUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::ToppleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::LeafletDropBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::EmpUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::BoneFxUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
-        Some(ModuleDataKind::StructureCollapseUpdate(d)) => {
-            Some(std::sync::Arc::new(d.update.clone()))
-        }
-        Some(ModuleDataKind::StealthDetectorUpdate(d)) => {
-            Some(std::sync::Arc::new(d.update.clone()))
-        }
+        Some(ModuleDataKind::StructureCollapseUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::StealthDetectorUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::StealthUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::OverchargeBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
-        Some(ModuleDataKind::GrantStealthBehavior(d)) => {
-            Some(std::sync::Arc::new(d.update.clone()))
-        }
-        Some(ModuleDataKind::DynamicGeometryInfoUpdate(d)) => {
-            Some(std::sync::Arc::new(d.update.clone()))
-        }
-        Some(ModuleDataKind::FirestormDynamicGeometryInfoUpdate(d)) => {
-            Some(std::sync::Arc::new(d.geom.update.clone()))
-        }
-        Some(ModuleDataKind::AnimationSteeringUpdate(d)) => {
-            Some(std::sync::Arc::new(d.update.clone()))
-        }
+        Some(ModuleDataKind::GrantStealthBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::DynamicGeometryInfoUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::FirestormDynamicGeometryInfoUpdate(d)) => Some(std::sync::Arc::new(d.geom.update.clone())),
+        Some(ModuleDataKind::AnimationSteeringUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::RadiusDecalUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
-        Some(ModuleDataKind::AutoFindHealingUpdate(d)) => {
-            Some(std::sync::Arc::new(d.update.clone()))
-        }
-        Some(ModuleDataKind::QueueProductionExitUpdate(d)) => {
-            Some(std::sync::Arc::new(d.update.clone()))
-        }
-        Some(ModuleDataKind::DefaultProductionExitUpdate(d)) => {
-            Some(std::sync::Arc::new(d.update.clone()))
-        }
-        Some(ModuleDataKind::SupplyWarehouseCripplingBehavior(d)) => {
-            Some(std::sync::Arc::new(d.update.clone()))
-        }
+        Some(ModuleDataKind::AutoFindHealingUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::QueueProductionExitUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::DefaultProductionExitUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::SupplyWarehouseCripplingBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::OclUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         // --- end p1w12-sonnet ---
         // --- p1w13-sonnet ---
         Some(ModuleDataKind::HeightDieUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
-        Some(ModuleDataKind::DynamicShroudClearingRangeUpdate(d)) => {
-            Some(std::sync::Arc::new(d.update.clone()))
-        }
+        Some(ModuleDataKind::DynamicShroudClearingRangeUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::ProneUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::EnemyNearUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::FloatUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::HijackerUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
-        Some(ModuleDataKind::TechBuildingBehavior(d)) => {
-            Some(std::sync::Arc::new(d.update.clone()))
-        }
+        Some(ModuleDataKind::TechBuildingBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::FireSpreadUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::SlowDeathBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::RebuildHoleBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         // --- end p1w13-sonnet ---
         _ => None,
     };
-    Ok(Module::Update(
-        crate::logic::module::update_module::UpdateModule::new(
-            object,
-            base,
-            crate::logic::module::update_module::SleepyUpdatePhase::Normal,
-        )?,
-    ))
+    Ok(Module::Update(crate::logic::module::update_module::UpdateModule::new(
+        object,
+        base,
+        crate::logic::module::update_module::SleepyUpdatePhase::Normal,
+    )?))
 }
 
 /// The `NewModuleProc` of a translated die module: its `DieModule` base, made from the `DieModuleData` base of its data.
@@ -1268,9 +1146,7 @@ fn new_die_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module
         Some(ModuleDataKind::UpgradeDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
         // --- p1w11-sonnet ---
         Some(ModuleDataKind::DamDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
-        Some(ModuleDataKind::SpecialPowerCompletionDie(d)) => {
-            Some(std::sync::Arc::new(d.die.clone()))
-        }
+        Some(ModuleDataKind::SpecialPowerCompletionDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
         Some(ModuleDataKind::EjectPilotDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
         Some(ModuleDataKind::InstantDeathBehavior(d)) => Some(std::sync::Arc::new(d.die.clone())),
         Some(ModuleDataKind::RebuildHoleExposeDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
@@ -1278,15 +1154,11 @@ fn new_die_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module
         Some(ModuleDataKind::CrushDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
         Some(ModuleDataKind::CreateObjectDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
         Some(ModuleDataKind::FXListDie(d)) => Some(std::sync::Arc::new(d.die.clone())),
-        Some(ModuleDataKind::FireWeaponWhenDeadBehavior(d)) => {
-            Some(std::sync::Arc::new(d.die.clone()))
-        }
+        Some(ModuleDataKind::FireWeaponWhenDeadBehavior(d)) => Some(std::sync::Arc::new(d.die.clone())),
         // --- end p1w11-sonnet ---
         _ => None,
     };
-    Ok(Module::Die(
-        crate::logic::module::die_module::DieModule::new(object, base)?,
-    ))
+    Ok(Module::Die(crate::logic::module::die_module::DieModule::new(object, base)?))
 }
 // --- end p1w10-sonnet ---
 
@@ -1298,48 +1170,27 @@ fn new_damage_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::TransitionDamageFx(d)) => Some(std::sync::Arc::new(d.damage.clone())),
         _ => None,
     };
-    Ok(Module::Damage(
-        crate::logic::module::damage_module::DamageModule::new(object, base)?,
-    ))
+    Ok(Module::Damage(crate::logic::module::damage_module::DamageModule::new(object, base)?))
 }
 // --- end p1w13-sonnet ---
 
 // --- p1w11-sonnet ---
 /// The `NewModuleProc` of a translated special power module: its `SpecialPowerModule` base, made from the `SpecialPowerModuleData` base of its data.
-fn new_special_power_base(
-    object: ObjectId,
-    data: Option<ModuleDataKind>,
-) -> Result<Module, IniError> {
+fn new_special_power_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module, IniError> {
     let base = match data {
         Some(ModuleDataKind::SpecialPower(d)) => Some(d),
         // --- p1w11-sonnet ---
-        Some(ModuleDataKind::CleanupAreaPower(d)) => {
-            Some(std::sync::Arc::new(d.special_power.clone()))
-        }
-        Some(ModuleDataKind::BaikonurLaunchPower(d)) => {
-            Some(std::sync::Arc::new(d.special_power.clone()))
-        }
-        Some(ModuleDataKind::SpyVisionSpecialPower(d)) => {
-            Some(std::sync::Arc::new(d.special_power.clone()))
-        }
-        Some(ModuleDataKind::DefectorSpecialPower(d)) => {
-            Some(std::sync::Arc::new(d.special_power.clone()))
-        }
-        Some(ModuleDataKind::OCLSpecialPower(d)) => {
-            Some(std::sync::Arc::new(d.special_power.clone()))
-        }
-        Some(ModuleDataKind::CashHackSpecialPower(d)) => {
-            Some(std::sync::Arc::new(d.special_power.clone()))
-        }
-        Some(ModuleDataKind::CashBountyPower(d)) => {
-            Some(std::sync::Arc::new(d.special_power.clone()))
-        }
+        Some(ModuleDataKind::CleanupAreaPower(d)) => Some(std::sync::Arc::new(d.special_power.clone())),
+        Some(ModuleDataKind::BaikonurLaunchPower(d)) => Some(std::sync::Arc::new(d.special_power.clone())),
+        Some(ModuleDataKind::SpyVisionSpecialPower(d)) => Some(std::sync::Arc::new(d.special_power.clone())),
+        Some(ModuleDataKind::DefectorSpecialPower(d)) => Some(std::sync::Arc::new(d.special_power.clone())),
+        Some(ModuleDataKind::OCLSpecialPower(d)) => Some(std::sync::Arc::new(d.special_power.clone())),
+        Some(ModuleDataKind::CashHackSpecialPower(d)) => Some(std::sync::Arc::new(d.special_power.clone())),
+        Some(ModuleDataKind::CashBountyPower(d)) => Some(std::sync::Arc::new(d.special_power.clone())),
         // --- end p1w11-sonnet ---
         _ => None,
     };
-    Ok(Module::SpecialPower(
-        crate::logic::module::special_power_module::SpecialPowerModule::new(object, base)?,
-    ))
+    Ok(Module::SpecialPower(crate::logic::module::special_power_module::SpecialPowerModule::new(object, base)?))
 }
 
 /// The `NewModuleProc` of a translated collide module: its `CollideModule` base, made from the `CollideModuleData` base of its data.
@@ -1347,39 +1198,19 @@ fn new_collide_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mo
     let base = match data {
         Some(ModuleDataKind::Collide(d)) => Some(d),
         // --- p1w11-sonnet ---
-        Some(ModuleDataKind::HealCrateCollide(d)) => {
-            Some(std::sync::Arc::new(d.crate_data.collide.clone()))
-        }
-        Some(ModuleDataKind::ShroudCrateCollide(d)) => {
-            Some(std::sync::Arc::new(d.crate_data.collide.clone()))
-        }
-        Some(ModuleDataKind::MoneyCrateCollide(d)) => {
-            Some(std::sync::Arc::new(d.crate_data.collide.clone()))
-        }
-        Some(ModuleDataKind::SabotageCrateCollide(d)) => {
-            Some(std::sync::Arc::new(d.crate_data.collide.clone()))
-        }
-        Some(ModuleDataKind::UnitCrateCollide(d)) => {
-            Some(std::sync::Arc::new(d.crate_data.collide.clone()))
-        }
-        Some(ModuleDataKind::VeterancyCrateCollide(d)) => {
-            Some(std::sync::Arc::new(d.crate_data.collide.clone()))
-        }
-        Some(ModuleDataKind::SalvageCrateCollide(d)) => {
-            Some(std::sync::Arc::new(d.crate_data.collide.clone()))
-        }
-        Some(ModuleDataKind::ConvertToCarBombCrateCollide(d)) => {
-            Some(std::sync::Arc::new(d.crate_data.collide.clone()))
-        }
-        Some(ModuleDataKind::ConvertToHijackedVehicleCrateCollide(d)) => {
-            Some(std::sync::Arc::new(d.crate_data.collide.clone()))
-        }
+        Some(ModuleDataKind::HealCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
+        Some(ModuleDataKind::ShroudCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
+        Some(ModuleDataKind::MoneyCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
+        Some(ModuleDataKind::SabotageCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
+        Some(ModuleDataKind::UnitCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
+        Some(ModuleDataKind::VeterancyCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
+        Some(ModuleDataKind::SalvageCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
+        Some(ModuleDataKind::ConvertToCarBombCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
+        Some(ModuleDataKind::ConvertToHijackedVehicleCrateCollide(d)) => Some(std::sync::Arc::new(d.crate_data.collide.clone())),
         // --- end p1w11-sonnet ---
         _ => None,
     };
-    Ok(Module::Collide(
-        crate::logic::module::collide_module::CollideModule::new(object, base)?,
-    ))
+    Ok(Module::Collide(crate::logic::module::collide_module::CollideModule::new(object, base)?))
 }
 // --- end p1w11-sonnet ---
 // --- p1w13-sonnet ---
@@ -1390,19 +1221,13 @@ fn new_body_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Modul
         Some(ModuleDataKind::Body(d)) => Some(d),
         // --- p1w13-sonnet ---
         Some(ModuleDataKind::ActiveBody(d)) => Some(std::sync::Arc::new(d.body.clone())),
-        Some(ModuleDataKind::Module(d)) => Some(std::sync::Arc::new(
-            crate::logic::module::body_module::BodyModuleData {
-                behavior: crate::logic::module::behavior_module::BehaviorModuleData {
-                    module_data: (*d).clone(),
-                },
-            },
-        )),
+        Some(ModuleDataKind::Module(d)) => Some(std::sync::Arc::new(crate::logic::module::body_module::BodyModuleData {
+            behavior: crate::logic::module::behavior_module::BehaviorModuleData { module_data: (*d).clone() },
+        })),
         // --- end p1w13-sonnet ---
         _ => None,
     };
-    Ok(Module::Body(
-        crate::logic::module::body_module::BodyModule::new(object, base)?,
-    ))
+    Ok(Module::Body(crate::logic::module::body_module::BodyModule::new(object, base)?))
 }
 // --- end p1w13-sonnet ---
 
@@ -1458,9 +1283,7 @@ fn new_upgrade_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mo
         // --- end p1w11-sonnet ---
         _ => None,
     };
-    Ok(Module::Upgrade(
-        crate::logic::module::upgrade_module::UpgradeModule::new(object, base)?,
-    ))
+    Ok(Module::Upgrade(crate::logic::module::upgrade_module::UpgradeModule::new(object, base)?))
 }
 
 /// Whether the class a registered name stands for is translated.
@@ -1482,11 +1305,7 @@ pub struct ModuleTemplate {
 
 impl ModuleTemplate {
     /// The record of a registration that has no Rust class yet.
-    pub const UNTRANSLATED: ModuleTemplate = ModuleTemplate {
-        create_proc: None,
-        create_data_proc: None,
-        which_interfaces: None,
-    };
+    pub const UNTRANSLATED: ModuleTemplate = ModuleTemplate { create_proc: None, create_data_proc: None, which_interfaces: None };
 
     /// Whether a class is behind it.
     pub fn is_translated(&self) -> bool {
@@ -1500,24 +1319,14 @@ pub enum ModuleFactoryError {
     /// `newModule` for an empty name ("attempting to create module with empty name").
     EmptyName,
     /// A name (with the type asked for) that is not registered.
-    UnknownModule {
-        name: Vec<u8>,
-        module_type: ModuleType,
-    },
+    UnknownModule { name: Vec<u8>, module_type: ModuleType },
     /// One of the six registrations that are not compiled into the shipped game.
     NotInShippedBuild { name: Vec<u8> },
     /// Registered upstream, but its class is not translated yet (see the module docs).
-    NotTranslated {
-        name: Vec<u8>,
-        module_type: ModuleType,
-    },
+    NotTranslated { name: Vec<u8>, module_type: ModuleType },
     /// `newModule` made a module whose accessors disagree with the mask it was
     /// registered with (upstream's `_DEBUG` assertion).
-    InterfaceMaskMismatch {
-        name: Vec<u8>,
-        registered: ModuleInterfaceType,
-        actual: ModuleInterfaceType,
-    },
+    InterfaceMaskMismatch { name: Vec<u8>, registered: ModuleInterfaceType, actual: ModuleInterfaceType },
     /// The data a data constructor returned was already shared, so its tag
     /// could not be set (cannot happen with a constructor that returns a new one).
     ModuleDataShared { name: Vec<u8> },
@@ -1531,38 +1340,18 @@ impl std::fmt::Display for ModuleFactoryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let n = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
         match self {
-            ModuleFactoryError::EmptyName => {
-                write!(f, "attempting to create module with empty name")
-            }
-            ModuleFactoryError::UnknownModule { name, module_type } => write!(
-                f,
-                "module name '{}' (type {:?}) not found",
-                n(name),
-                module_type
-            ),
+            ModuleFactoryError::EmptyName => write!(f, "attempting to create module with empty name"),
+            ModuleFactoryError::UnknownModule { name, module_type } => write!(f, "module name '{}' (type {:?}) not found", n(name), module_type),
             ModuleFactoryError::NotInShippedBuild { name } => {
                 write!(f, "module '{}' is registered only under ALLOW_SURRENDER / ALLOW_DEMORALIZE, which the shipped game does not define", n(name))
             }
             ModuleFactoryError::NotTranslated { name, module_type } => {
-                write!(
-                    f,
-                    "module '{}' (type {:?}) is registered upstream but not translated yet",
-                    n(name),
-                    module_type
-                )
+                write!(f, "module '{}' (type {:?}) is registered upstream but not translated yet", n(name), module_type)
             }
-            ModuleFactoryError::InterfaceMaskMismatch {
-                name,
-                registered,
-                actual,
-            } => {
+            ModuleFactoryError::InterfaceMaskMismatch { name, registered, actual } => {
                 write!(f, "getInterfaceMask bad for '{}': registered {registered:#x}, accessors answer {actual:#x}", n(name))
             }
-            ModuleFactoryError::ModuleDataShared { name } => write!(
-                f,
-                "module data of '{}' is shared; cannot set its tag",
-                n(name)
-            ),
+            ModuleFactoryError::ModuleDataShared { name } => write!(f, "module data of '{}' is shared; cannot set its tag", n(name)),
             ModuleFactoryError::Ini(e) => e.fmt(f),
             ModuleFactoryError::NameKey(e) => e.fmt(f),
         }
@@ -1600,11 +1389,7 @@ impl ModuleFactory {
 
     /// `makeDecoratedNameKey(name, type)`: the name key of `'0' + type`
     /// followed by the name.
-    pub fn make_decorated_name_key(
-        names: &mut NameKeyGenerator,
-        name: &[u8],
-        module_type: ModuleType,
-    ) -> Result<NameKeyType, NameKeyError> {
+    pub fn make_decorated_name_key(names: &mut NameKeyGenerator, name: &[u8], module_type: ModuleType) -> Result<NameKeyType, NameKeyError> {
         let mut tmp = Vec::with_capacity(name.len() + 1);
         tmp.push(b'0' + module_type as u8);
         tmp.extend_from_slice(name);
@@ -1656,18 +1441,10 @@ impl ModuleFactory {
         let key = Self::make_decorated_name_key(names, name, module_type)?;
         match self.module_template_map.get(&key) {
             Some(t) if t.is_translated() => Ok(*t),
-            Some(_) => Err(ModuleFactoryError::NotTranslated {
-                name: name.to_vec(),
-                module_type,
-            }),
+            Some(_) => Err(ModuleFactoryError::NotTranslated { name: name.to_vec(), module_type }),
             None => match Self::registration_of(name) {
-                Some(r) if !r.in_shipped_build => Err(ModuleFactoryError::NotInShippedBuild {
-                    name: name.to_vec(),
-                }),
-                _ => Err(ModuleFactoryError::UnknownModule {
-                    name: name.to_vec(),
-                    module_type,
-                }),
+                Some(r) if !r.in_shipped_build => Err(ModuleFactoryError::NotInShippedBuild { name: name.to_vec() }),
+                _ => Err(ModuleFactoryError::UnknownModule { name: name.to_vec(), module_type }),
             },
         }
     }
@@ -1687,22 +1464,13 @@ impl ModuleFactory {
             return Err(ModuleFactoryError::EmptyName);
         }
         let mt = self.find_module_template(names, name, module_type)?;
-        let create = mt
-            .create_proc
-            .ok_or_else(|| ModuleFactoryError::NotTranslated {
-                name: name.to_vec(),
-                module_type,
-            })?;
+        let create = mt.create_proc.ok_or_else(|| ModuleFactoryError::NotTranslated { name: name.to_vec(), module_type })?;
         let module = create(object, module_data)?;
         if module_type == ModuleType::Behavior {
             if let Some(registered) = mt.which_interfaces {
                 let actual = module.interfaces_present();
                 if registered != actual {
-                    return Err(ModuleFactoryError::InterfaceMaskMismatch {
-                        name: name.to_vec(),
-                        registered,
-                        actual,
-                    });
+                    return Err(ModuleFactoryError::InterfaceMaskMismatch { name: name.to_vec(), registered, actual });
                 }
             }
         }
@@ -1725,18 +1493,11 @@ impl ModuleFactory {
             return Ok(None);
         }
         let mt = self.find_module_template(names, name, module_type)?;
-        let create_data = mt
-            .create_data_proc
-            .ok_or_else(|| ModuleFactoryError::NotTranslated {
-                name: name.to_vec(),
-                module_type,
-            })?;
+        let create_data = mt.create_data_proc.ok_or_else(|| ModuleFactoryError::NotTranslated { name: name.to_vec(), module_type })?;
         let mut md = create_data(ini)?;
         let tag = names.try_name_to_key(module_tag)?;
         if !md.set_module_tag_name_key(tag) {
-            return Err(ModuleFactoryError::ModuleDataShared {
-                name: name.to_vec(),
-            });
+            return Err(ModuleFactoryError::ModuleDataShared { name: name.to_vec() });
         }
         self.module_data_list.push(md.clone());
         Ok(Some(md))
@@ -1754,11 +1515,7 @@ impl ModuleFactory {
             return Ok(0);
         }
         let mt = self.find_module_template(names, name, module_type)?;
-        mt.which_interfaces
-            .ok_or_else(|| ModuleFactoryError::NotTranslated {
-                name: name.to_vec(),
-                module_type,
-            })
+        mt.which_interfaces.ok_or_else(|| ModuleFactoryError::NotTranslated { name: name.to_vec(), module_type })
     }
 
     /// The number of records in the map (`m_moduleTemplateMap.size()`).
@@ -1815,42 +1572,18 @@ mod tests {
     #[test]
     fn the_table_has_205_registrations_199_in_the_shipped_build() {
         assert_eq!(REGISTRATIONS.len(), NUM_REGISTRATIONS);
-        let not_shipped: Vec<&str> = REGISTRATIONS
-            .iter()
-            .filter(|r| !r.in_shipped_build)
-            .map(|r| r.name)
-            .collect();
+        let not_shipped: Vec<&str> = REGISTRATIONS.iter().filter(|r| !r.in_shipped_build).map(|r| r.name).collect();
         assert_eq!(
             not_shipped,
-            [
-                "POWTruckBehavior",
-                "PrisonBehavior",
-                "PropagandaCenterBehavior",
-                "PrisonDockUpdate",
-                "POWTruckAIUpdate",
-                "DemoralizeSpecialPower"
-            ]
+            ["POWTruckBehavior", "PrisonBehavior", "PropagandaCenterBehavior", "PrisonDockUpdate", "POWTruckAIUpdate", "DemoralizeSpecialPower"]
         );
-        assert_eq!(
-            REGISTRATIONS.iter().filter(|r| r.in_shipped_build).count(),
-            199
-        );
+        assert_eq!(REGISTRATIONS.iter().filter(|r| r.in_shipped_build).count(), 199);
         // the order of init(): first, last, and a few in between
         assert_eq!(REGISTRATIONS[0].name, "AutoHealBehavior");
         assert_eq!(REGISTRATIONS[204].name, "BeaconClientUpdate");
         let at = |n: &str| REGISTRATIONS.iter().position(|r| r.name == n).unwrap();
-        assert_eq!(
-            (
-                at("SpawnBehavior"),
-                at("DestroyDie"),
-                at("AssistedTargetingUpdate")
-            ),
-            (45, 46, 57)
-        );
-        assert!(
-            at("OpenContain") < at("POWTruckBehavior")
-                && at("POWTruckBehavior") < at("PropagandaTowerBehavior")
-        );
+        assert_eq!((at("SpawnBehavior"), at("DestroyDie"), at("AssistedTargetingUpdate")), (45, 46, 57));
+        assert!(at("OpenContain") < at("POWTruckBehavior") && at("POWTruckBehavior") < at("PropagandaTowerBehavior"));
         // only WeaponBonusUpgrade is there twice
         let mut seen = std::collections::BTreeMap::new();
         for r in &REGISTRATIONS {
@@ -1859,44 +1592,21 @@ mod tests {
         let twice: Vec<_> = seen.iter().filter(|(_, c)| **c > 1).collect();
         assert_eq!(twice, [(&"WeaponBonusUpgrade", &2)]);
         // the types: the four client update modules, LaserUpdate among the update modules
-        let client: Vec<&str> = REGISTRATIONS
-            .iter()
-            .filter(|r| r.module_type == ModuleType::ClientUpdate)
-            .map(|r| r.name)
-            .collect();
-        assert_eq!(
-            client,
-            [
-                "LaserUpdate",
-                "AnimatedParticleSysBoneClientUpdate",
-                "SwayClientUpdate",
-                "BeaconClientUpdate"
-            ]
-        );
-        assert!(REGISTRATIONS
-            .iter()
-            .all(|r| r.module_type != ModuleType::Draw));
+        let client: Vec<&str> = REGISTRATIONS.iter().filter(|r| r.module_type == ModuleType::ClientUpdate).map(|r| r.name).collect();
+        assert_eq!(client, ["LaserUpdate", "AnimatedParticleSysBoneClientUpdate", "SwayClientUpdate", "BeaconClientUpdate"]);
+        assert!(REGISTRATIONS.iter().all(|r| r.module_type != ModuleType::Draw));
     }
 
     // ~~no_concrete_module_is_translated_yet~~ CORRECTED 2026-10-20: layer 9 has begun.
     #[test]
     fn only_the_translated_modules_are_translated() {
         // --- p1l9-example ---
-        let translated: Vec<&str> = REGISTRATIONS
-            .iter()
-            .map(|r| r.name)
-            .filter(|n| is_translated(n))
-            .collect();
+        let translated: Vec<&str> = REGISTRATIONS.iter().map(|r| r.name).filter(|n| is_translated(n)).collect();
         assert!(translated.contains(&"CommandSetUpgrade"));
         // every translated name is registered, and has all three parts
         for n in &translated {
             let t = translated_module(n).unwrap();
-            assert!(
-                t.create_proc.is_some()
-                    && t.create_data_proc.is_some()
-                    && t.which_interfaces.is_some(),
-                "{n}"
-            );
+            assert!(t.create_proc.is_some() && t.create_data_proc.is_some() && t.which_interfaces.is_some(), "{n}");
         }
         // some registered module is always still untranslated until the port is complete
         assert!(REGISTRATIONS.iter().any(|r| !is_translated(r.name)));
@@ -1909,11 +1619,7 @@ mod tests {
         let mut names = fresh_names();
         let mut f = ModuleFactory::new();
         f.init(&mut names).unwrap();
-        assert_eq!(
-            f.template_count(),
-            198,
-            "199 shipped calls, WeaponBonusUpgrade twice"
-        );
+        assert_eq!(f.template_count(), 198, "199 shipped calls, WeaponBonusUpgrade twice");
         // the keys are consecutive in order of first registration (looking a registered name up assigns nothing new)
         let mut expect: Option<u32> = None;
         let mut done = std::collections::BTreeSet::new();
@@ -1941,107 +1647,41 @@ mod tests {
         let mut f = ModuleFactory::new();
         f.init(&mut names).unwrap();
         let name = |s: &str| s.as_bytes().to_vec();
-        let find = |f: &ModuleFactory, names: &mut NameKeyGenerator, n: &str, t| {
-            f.find_module_template(names, n.as_bytes(), t).unwrap_err()
-        };
+        let find = |f: &ModuleFactory, names: &mut NameKeyGenerator, n: &str, t| f.find_module_template(names, n.as_bytes(), t).unwrap_err();
         assert_eq!(
             find(&f, &mut names, "SpectreGunshipUpdate", ModuleType::Behavior),
-            ModuleFactoryError::NotTranslated {
-                name: name("SpectreGunshipUpdate"),
-                module_type: ModuleType::Behavior
-            }
+            ModuleFactoryError::NotTranslated { name: name("SpectreGunshipUpdate"), module_type: ModuleType::Behavior }
         );
         assert_eq!(
-            find(
-                &f,
-                &mut names,
-                "BeaconClientUpdate",
-                ModuleType::ClientUpdate
-            ),
-            ModuleFactoryError::NotTranslated {
-                name: name("BeaconClientUpdate"),
-                module_type: ModuleType::ClientUpdate
-            }
+            find(&f, &mut names, "BeaconClientUpdate", ModuleType::ClientUpdate),
+            ModuleFactoryError::NotTranslated { name: name("BeaconClientUpdate"), module_type: ModuleType::ClientUpdate }
         );
         // the right name with the wrong type is a different key: unknown
         assert_eq!(
             find(&f, &mut names, "LaserUpdate", ModuleType::Behavior),
-            ModuleFactoryError::UnknownModule {
-                name: name("LaserUpdate"),
-                module_type: ModuleType::Behavior
-            }
+            ModuleFactoryError::UnknownModule { name: name("LaserUpdate"), module_type: ModuleType::Behavior }
         );
-        assert!(matches!(
-            find(&f, &mut names, "LaserUpdate", ModuleType::ClientUpdate),
-            ModuleFactoryError::NotTranslated { .. }
-        ));
+        assert!(matches!(find(&f, &mut names, "LaserUpdate", ModuleType::ClientUpdate), ModuleFactoryError::NotTranslated { .. }));
         // the six that the shipped game does not register
-        assert_eq!(
-            find(&f, &mut names, "PrisonBehavior", ModuleType::Behavior),
-            ModuleFactoryError::NotInShippedBuild {
-                name: name("PrisonBehavior")
-            }
-        );
-        assert_eq!(
-            find(
-                &f,
-                &mut names,
-                "DemoralizeSpecialPower",
-                ModuleType::Behavior
-            ),
-            ModuleFactoryError::NotInShippedBuild {
-                name: name("DemoralizeSpecialPower")
-            }
-        );
+        assert_eq!(find(&f, &mut names, "PrisonBehavior", ModuleType::Behavior), ModuleFactoryError::NotInShippedBuild { name: name("PrisonBehavior") });
+        assert_eq!(find(&f, &mut names, "DemoralizeSpecialPower", ModuleType::Behavior), ModuleFactoryError::NotInShippedBuild { name: name("DemoralizeSpecialPower") });
         // a name upstream has never heard of (and case counts in a key)
-        assert!(matches!(
-            find(&f, &mut names, "NoSuchModule", ModuleType::Behavior),
-            ModuleFactoryError::UnknownModule { .. }
-        ));
-        assert!(matches!(
-            find(&f, &mut names, "autohealbehavior", ModuleType::Behavior),
-            ModuleFactoryError::NotTranslated { .. } | ModuleFactoryError::UnknownModule { .. }
-        ));
+        assert!(matches!(find(&f, &mut names, "NoSuchModule", ModuleType::Behavior), ModuleFactoryError::UnknownModule { .. }));
+        assert!(matches!(find(&f, &mut names, "autohealbehavior", ModuleType::Behavior), ModuleFactoryError::NotTranslated { .. } | ModuleFactoryError::UnknownModule { .. }));
         // the three public entry points, for an untranslated name
-        let pending = REGISTRATIONS
-            .iter()
-            .find(|r| r.module_type == ModuleType::Behavior && !is_translated(r.name))
-            .map(|r| r.name.as_bytes().to_vec())
-            .unwrap();
+        let pending = REGISTRATIONS.iter().find(|r| r.module_type == ModuleType::Behavior && !is_translated(r.name)).map(|r| r.name.as_bytes().to_vec()).unwrap();
         let pending = &pending[..];
-        let e = f
-            .new_module(&mut names, 1, pending, None, ModuleType::Behavior)
-            .unwrap_err();
+        let e = f.new_module(&mut names, 1, pending, None, ModuleType::Behavior).unwrap_err();
         assert!(matches!(e, ModuleFactoryError::NotTranslated { .. }));
-        let e = f
-            .new_module_data_from_ini(
-                &mut names,
-                None,
-                pending,
-                ModuleType::Behavior,
-                b"ModuleTag_01",
-            )
-            .unwrap_err();
+        let e = f.new_module_data_from_ini(&mut names, None, pending, ModuleType::Behavior, b"ModuleTag_01").unwrap_err();
         assert!(matches!(e, ModuleFactoryError::NotTranslated { .. }));
-        let e = f
-            .find_module_interface_mask(&mut names, pending, ModuleType::Behavior)
-            .unwrap_err();
+        let e = f.find_module_interface_mask(&mut names, pending, ModuleType::Behavior).unwrap_err();
         assert!(matches!(e, ModuleFactoryError::NotTranslated { .. }));
         assert!(f.module_data_list().is_empty());
         // an empty name
-        assert_eq!(
-            f.new_module(&mut names, 1, b"", None, ModuleType::Behavior)
-                .unwrap_err(),
-            ModuleFactoryError::EmptyName
-        );
-        assert_eq!(
-            f.find_module_interface_mask(&mut names, b"", ModuleType::Behavior),
-            Ok(0)
-        );
-        assert!(matches!(
-            f.new_module_data_from_ini(&mut names, None, b"", ModuleType::Behavior, b"x"),
-            Ok(None)
-        ));
+        assert_eq!(f.new_module(&mut names, 1, b"", None, ModuleType::Behavior).unwrap_err(), ModuleFactoryError::EmptyName);
+        assert_eq!(f.find_module_interface_mask(&mut names, b"", ModuleType::Behavior), Ok(0));
+        assert!(matches!(f.new_module_data_from_ini(&mut names, None, b"", ModuleType::Behavior, b"x"), Ok(None)));
     }
 
     fn make_update(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module, IniError> {
@@ -2049,23 +1689,13 @@ mod tests {
             Some(ModuleDataKind::Update(d)) => Some(d),
             _ => None,
         };
-        Ok(Module::Update(UpdateModule::new(
-            object,
-            d,
-            SleepyUpdatePhase::Normal,
-        )?))
+        Ok(Module::Update(UpdateModule::new(object, d, SleepyUpdatePhase::Normal)?))
     }
     fn make_update_data(ini: Option<&mut Ini<'_>>) -> Result<ModuleDataKind, IniError> {
-        Ok(ModuleDataKind::Update(Arc::new(
-            UpdateModuleData::friend_new_module_data(ini)?,
-        )))
+        Ok(ModuleDataKind::Update(Arc::new(UpdateModuleData::friend_new_module_data(ini)?)))
     }
     fn test_template(mask: ModuleInterfaceType) -> ModuleTemplate {
-        ModuleTemplate {
-            create_proc: Some(make_update),
-            create_data_proc: Some(make_update_data),
-            which_interfaces: Some(mask),
-        }
+        ModuleTemplate { create_proc: Some(make_update), create_data_proc: Some(make_update_data), which_interfaces: Some(mask) }
     }
 
     #[test]
@@ -2073,18 +1703,9 @@ mod tests {
         let mut names = fresh_names();
         let mut f = ModuleFactory::new();
         f.init(&mut names).unwrap();
-        f.add_module_internal(
-            &mut names,
-            test_template(MODULEINTERFACE_UPDATE),
-            ModuleType::Behavior,
-            "TestUpdate",
-        )
-        .unwrap();
+        f.add_module_internal(&mut names, test_template(MODULEINTERFACE_UPDATE), ModuleType::Behavior, "TestUpdate").unwrap();
         assert_eq!(f.template_count(), 199);
-        assert_eq!(
-            f.find_module_interface_mask(&mut names, b"TestUpdate", ModuleType::Behavior),
-            Ok(MODULEINTERFACE_UPDATE)
-        );
+        assert_eq!(f.find_module_interface_mask(&mut names, b"TestUpdate", ModuleType::Behavior), Ok(MODULEINTERFACE_UPDATE));
 
         // the data from an ini block, tagged and kept
         struct C {
@@ -2093,68 +1714,31 @@ mod tests {
             out: Vec<Option<ModuleDataKind>>,
         }
         fn block(ini: &mut Ini<'_>, c: &mut C) -> IniResult<()> {
-            let r = c.f.new_module_data_from_ini(
-                &mut c.names,
-                Some(ini),
-                b"TestUpdate",
-                ModuleType::Behavior,
-                b"ModuleTag_Test",
-            );
+            let r = c.f.new_module_data_from_ini(&mut c.names, Some(ini), b"TestUpdate", ModuleType::Behavior, b"ModuleTag_Test");
             c.out.push(r.map_err(|e| match e {
                 ModuleFactoryError::Ini(i) => i,
                 other => panic!("{other}"),
             })?);
             Ok(())
         }
-        let blocks = [BlockParse {
-            token: "B",
-            parse: block,
-        }];
-        let mut c = C {
-            f,
-            names,
-            out: Vec::new(),
-        };
-        let r = Ini::load(
-            b"f.ini",
-            b"B\nEnd\nB\n Bad = 1\nEnd\n",
-            IniLoadType::Overwrite,
-            None,
-            &blocks,
-            &mut c,
-        );
+        let blocks = [BlockParse { token: "B", parse: block }];
+        let mut c = C { f, names, out: Vec::new() };
+        let r = Ini::load(b"f.ini", b"B\nEnd\nB\n Bad = 1\nEnd\n", IniLoadType::Overwrite, None, &blocks, &mut c);
         assert_eq!(r.unwrap_err().kind, IniErrorKind::UnknownToken);
         assert_eq!(c.out.len(), 1);
         let md = c.out[0].clone().unwrap();
         let tag = c.names.try_name_to_key(b"ModuleTag_Test").unwrap();
         assert_eq!(md.module_tag_name_key().unwrap(), tag);
-        assert_eq!(
-            c.f.module_data_list().len(),
-            1,
-            "a data that failed to read is not kept"
-        );
+        assert_eq!(c.f.module_data_list().len(), 1, "a data that failed to read is not kept");
 
         // the module
-        let m =
-            c.f.new_module(
-                &mut c.names,
-                5,
-                b"TestUpdate",
-                Some(md.clone()),
-                ModuleType::Behavior,
-            )
-            .unwrap();
+        let m = c.f.new_module(&mut c.names, 5, b"TestUpdate", Some(md.clone()), ModuleType::Behavior).unwrap();
         assert_eq!(m.interface_mask(), MODULEINTERFACE_UPDATE);
         assert_eq!(m.module_tag_name_key().unwrap(), tag);
         assert!(m.get_update().is_some());
         // a module without data: the constructor's INI_INVALID_DATA
-        let e =
-            c.f.new_module(&mut c.names, 5, b"TestUpdate", None, ModuleType::Behavior)
-                .unwrap_err();
-        assert_eq!(
-            e,
-            ModuleFactoryError::Ini(IniError::new(IniErrorKind::InvalidData))
-        );
+        let e = c.f.new_module(&mut c.names, 5, b"TestUpdate", None, ModuleType::Behavior).unwrap_err();
+        assert_eq!(e, ModuleFactoryError::Ini(IniError::new(IniErrorKind::InvalidData)));
 
         // the snapshot: a version, and nothing from data that has nothing to save
         assert_eq!(save_bytes(&mut c.f).unwrap(), [1]);
@@ -2164,70 +1748,31 @@ mod tests {
     fn a_wrong_mask_is_caught_when_the_module_is_made() {
         let mut names = fresh_names();
         let mut f = ModuleFactory::new();
-        f.add_module_internal(
-            &mut names,
-            test_template(MODULEINTERFACE_DIE),
-            ModuleType::Behavior,
-            "BadMask",
-        )
-        .unwrap();
+        f.add_module_internal(&mut names, test_template(MODULEINTERFACE_DIE), ModuleType::Behavior, "BadMask").unwrap();
         let data = ModuleDataKind::Update(Arc::new(UpdateModuleData::new()));
-        let e = f
-            .new_module(&mut names, 1, b"BadMask", Some(data), ModuleType::Behavior)
-            .unwrap_err();
-        assert_eq!(
-            e,
-            ModuleFactoryError::InterfaceMaskMismatch {
-                name: b"BadMask".to_vec(),
-                registered: MODULEINTERFACE_DIE,
-                actual: MODULEINTERFACE_UPDATE
-            }
-        );
+        let e = f.new_module(&mut names, 1, b"BadMask", Some(data), ModuleType::Behavior).unwrap_err();
+        assert_eq!(e, ModuleFactoryError::InterfaceMaskMismatch { name: b"BadMask".to_vec(), registered: MODULEINTERFACE_DIE, actual: MODULEINTERFACE_UPDATE });
     }
 
     #[test]
     fn a_second_registration_of_a_key_replaces_the_first() {
         let mut names = fresh_names();
         let mut f = ModuleFactory::new();
-        f.add_module_internal(&mut names, test_template(1), ModuleType::Behavior, "Twice")
-            .unwrap();
-        f.add_module_internal(&mut names, test_template(2), ModuleType::Behavior, "Twice")
-            .unwrap();
+        f.add_module_internal(&mut names, test_template(1), ModuleType::Behavior, "Twice").unwrap();
+        f.add_module_internal(&mut names, test_template(2), ModuleType::Behavior, "Twice").unwrap();
         assert_eq!(f.template_count(), 1);
-        assert_eq!(
-            f.find_module_interface_mask(&mut names, b"Twice", ModuleType::Behavior),
-            Ok(2)
-        );
+        assert_eq!(f.find_module_interface_mask(&mut names, b"Twice", ModuleType::Behavior), Ok(2));
         // another type is another key
-        f.add_module_internal(
-            &mut names,
-            test_template(4),
-            ModuleType::ClientUpdate,
-            "Twice",
-        )
-        .unwrap();
+        f.add_module_internal(&mut names, test_template(4), ModuleType::ClientUpdate, "Twice").unwrap();
         assert_eq!(f.template_count(), 2);
-        assert_eq!(
-            f.find_module_interface_mask(&mut names, b"Twice", ModuleType::ClientUpdate),
-            Ok(4)
-        );
+        assert_eq!(f.find_module_interface_mask(&mut names, b"Twice", ModuleType::ClientUpdate), Ok(4));
     }
 
     #[test]
     fn the_error_texts_name_the_module() {
-        let e = ModuleFactoryError::NotTranslated {
-            name: b"ActiveBody".to_vec(),
-            module_type: ModuleType::Behavior,
-        };
+        let e = ModuleFactoryError::NotTranslated { name: b"ActiveBody".to_vec(), module_type: ModuleType::Behavior };
         assert!(e.to_string().contains("ActiveBody") && e.to_string().contains("not translated"));
-        assert!(ModuleFactoryError::UnknownModule {
-            name: b"X".to_vec(),
-            module_type: ModuleType::Behavior
-        }
-        .to_string()
-        .contains("not found"));
-        assert!(ModuleFactoryError::EmptyName
-            .to_string()
-            .contains("empty name"));
+        assert!(ModuleFactoryError::UnknownModule { name: b"X".to_vec(), module_type: ModuleType::Behavior }.to_string().contains("not found"));
+        assert!(ModuleFactoryError::EmptyName.to_string().contains("empty name"));
     }
 }

@@ -23,13 +23,10 @@
 //! change of transform, the height above the terrain (which accounts for the
 //! bridge layer), the trigger areas the object is in, and the map boundary.
 
-use crate::common::base_type::{
-    fast_float2long_round, fast_float_trunc, Coord2D, Coord3D, ICoord3D, Region3D,
-};
+use crate::common::base_type::{fast_float2long_round, fast_float_trunc, Coord2D, Coord3D, ICoord3D, Region3D};
 use crate::common::game_type::{ObjectId, PathfindLayer, INVALID_ID, LAYER_GROUND};
 use crate::common::kind_of::{
-    KINDOF_IMMOBILE, KINDOF_INERT, KINDOF_INFANTRY, KINDOF_PROJECTILE,
-    KINDOF_STICK_TO_TERRAIN_SLOPE, KINDOF_VEHICLE,
+    KINDOF_IMMOBILE, KINDOF_INERT, KINDOF_INFANTRY, KINDOF_PROJECTILE, KINDOF_STICK_TO_TERRAIN_SLOPE, KINDOF_VEHICLE,
 };
 use crate::logic::terrain_logic::{make_align_to_normal_matrix, TerrainLogic};
 use crate::logic::thing::{ThingContext, TransformChange};
@@ -85,12 +82,7 @@ impl ThingContext for SetterContext {
     fn underwater_level(&self, _x: f32, _y: f32) -> Option<f32> {
         None // not used by the setters
     }
-    fn align_on_terrain(
-        &self,
-        _orientation: f32,
-        _pos: &Coord3D,
-        _stick_to_ground: bool,
-    ) -> Matrix3D {
+    fn align_on_terrain(&self, _orientation: f32, _pos: &Coord3D, _stick_to_ground: bool) -> Matrix3D {
         self.aligned.unwrap_or(Matrix3D::IDENTITY)
     }
     fn gravity(&self) -> f32 {
@@ -102,13 +94,7 @@ impl ThingContext for SetterContext {
 /// ground height, or on a bridge layer the bridge's height where it is above
 /// the ground. The wall layer's height is the pathfinder's (a cut point,
 /// `cuts.wall_height`).
-pub fn layer_height(
-    terrain: &TerrainLogic,
-    wall_height: f32,
-    x: f32,
-    y: f32,
-    layer: PathfindLayer,
-) -> f32 {
+pub fn layer_height(terrain: &TerrainLogic, wall_height: f32, x: f32, y: f32, layer: PathfindLayer) -> f32 {
     let (height, _) = terrain.ground_height(x, y, false);
     if layer == LAYER_GROUND {
         return height;
@@ -142,21 +128,14 @@ impl World {
         mtx
     }
 
-    pub(crate) fn setter_context(
-        &self,
-        id: ObjectId,
-        align: Option<(f32, Coord3D)>,
-    ) -> Option<SetterContext> {
+    pub(crate) fn setter_context(&self, id: ObjectId, align: Option<(f32, Coord3D)>) -> Option<SetterContext> {
         let o = self.objects.find(id)?;
         let aligned = if o.is_kind_of(KINDOF_STICK_TO_TERRAIN_SLOPE) {
             align.map(|(angle, pos)| self.align_on_ground(angle, &pos, true))
         } else {
             None
         };
-        Some(SetterContext {
-            gravity: self.cuts.globals.gravity,
-            aligned,
-        })
+        Some(SetterContext { gravity: self.cuts.globals.gravity, aligned })
     }
 
     fn after_thing_change(&mut self, id: ObjectId, change: TransformChange) {
@@ -174,9 +153,7 @@ impl World {
             Some(o) => o.thing.orientation(),
             None => return,
         };
-        let Some(ctx) = self.setter_context(id, Some((angle, *pos))) else {
-            return;
-        };
+        let Some(ctx) = self.setter_context(id, Some((angle, *pos))) else { return };
         let o = self.objects.find_mut(id).expect("setter_context found it");
         if let Ok(change) = o.thing.set_position(&ctx, Some(pos)) {
             self.after_thing_change(id, change);
@@ -185,15 +162,11 @@ impl World {
 
     /// `setPositionZ(z)`.
     pub fn set_position_z(&mut self, id: ObjectId, z: f32) {
-        let Some(o) = self.objects.find(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find(id) else { return };
         let mut pos = *o.thing.position();
         let angle = o.thing.orientation();
         pos.z = z;
-        let Some(ctx) = self.setter_context(id, Some((angle, pos))) else {
-            return;
-        };
+        let Some(ctx) = self.setter_context(id, Some((angle, pos))) else { return };
         let o = self.objects.find_mut(id).expect("setter_context found it");
         let change = o.thing.set_position_z(&ctx, z);
         self.after_thing_change(id, change);
@@ -201,18 +174,10 @@ impl World {
 
     /// `setOrientation(angle)`.
     pub fn set_orientation(&mut self, id: ObjectId, angle: f32) {
-        let Some(o) = self.objects.find(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find(id) else { return };
         let t = o.thing.transform_matrix();
-        let pos = Coord3D {
-            x: t.get_x_translation(),
-            y: t.get_y_translation(),
-            z: t.get_z_translation(),
-        };
-        let Some(ctx) = self.setter_context(id, Some((angle, pos))) else {
-            return;
-        };
+        let pos = Coord3D { x: t.get_x_translation(), y: t.get_y_translation(), z: t.get_z_translation() };
+        let Some(ctx) = self.setter_context(id, Some((angle, pos))) else { return };
         let o = self.objects.find_mut(id).expect("setter_context found it");
         if let Ok(change) = o.thing.set_orientation(&ctx, angle) {
             self.after_thing_change(id, change);
@@ -221,9 +186,7 @@ impl World {
 
     /// `setTransformMatrix(mx)`.
     pub fn set_transform_matrix(&mut self, id: ObjectId, mx: &Matrix3D) {
-        let Some(o) = self.objects.find_mut(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find_mut(id) else { return };
         let change = o.thing.set_transform_matrix(mx);
         self.after_thing_change(id, change);
     }
@@ -234,17 +197,13 @@ impl World {
     /// change of position updates the trigger areas and whether the object is
     /// off the map. (The drawable's transform is pulled by the client.)
     pub fn react_to_transform_change(&mut self, id: ObjectId, change: &TransformChange) {
-        let Some(o) = self.objects.find(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find(id) else { return };
         let pos = *o.thing.position();
         if pos.x.is_nan() || pos.y.is_nan() || pos.z.is_nan() {
             // "Object pos is nan."
             self.destroy_object(id);
         }
-        let Some(o) = self.objects.find(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find(id) else { return };
         let pos = *o.thing.position();
         let angle = o.thing.orientation();
         let pos_diff = is_pos_different(&change.old_position, &pos);
@@ -271,9 +230,7 @@ impl World {
     /// `calculateHeightAboveTerrain()`: the actual height above the terrain
     /// of the object's layer. Doesn't use the cache.
     pub fn calculate_height_above_terrain(&self, id: ObjectId) -> f32 {
-        let Some(o) = self.objects.find(id) else {
-            return 0.0;
-        };
+        let Some(o) = self.objects.find(id) else { return 0.0 };
         let pos = o.thing.position();
         let terrain_z = layer_height(&self.terrain, self.cuts.wall_height, pos.x, pos.y, o.layer);
         pos.z - terrain_z
@@ -283,9 +240,7 @@ impl World {
     pub fn get_height_above_terrain(&mut self, id: ObjectId) -> f32 {
         let wall = self.cuts.wall_height;
         let terrain = &self.terrain;
-        let Some(o) = self.objects.find_mut(id) else {
-            return 0.0;
-        };
+        let Some(o) = self.objects.find_mut(id) else { return 0.0 };
         let layer = o.layer;
         o.thing.height_above_terrain_by(|t| {
             let pos = t.position();
@@ -300,9 +255,7 @@ impl World {
     /// inside. (Kept as upstream wrote it: the test reads `m_triggerInfo[j]`,
     /// the slot being filled, and not `m_triggerInfo[i]`.)
     fn update_trigger_area_flags(&mut self, id: ObjectId) {
-        let Some(o) = self.objects.find_mut(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find_mut(id) else { return };
         let mut j = 0usize;
         for i in 0..o.num_trigger_areas_active.max(0) as usize {
             if !o.trigger_info[j].is_inside {
@@ -324,25 +277,18 @@ impl World {
     /// Upstream tests an area for "exited" with `m_iPos`, the position from
     /// the *previous* call, and only then stores the new one (kept).
     pub(crate) fn set_trigger_area_flags_for_change_in_position(&mut self, id: ObjectId) {
-        let Some(o) = self.objects.find(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find(id) else { return };
         // projectiles cannot trigger areas. neither can inert objects, like the radar ping, etc.
         if o.is_kind_of(KINDOF_PROJECTILE) || o.is_kind_of(KINDOF_INERT) {
             return;
         }
         let pos = *o.thing.position();
         // REAL_TO_INT: `fast_float2long_round(fast_float_trunc(x))`
-        let i_pos = ICoord3D {
-            x: real_to_int(pos.x),
-            y: real_to_int(pos.y),
-            z: 0,
-        }; // Trigger areas compare on xy only.
+        let i_pos = ICoord3D { x: real_to_int(pos.x), y: real_to_int(pos.y), z: 0 }; // Trigger areas compare on xy only.
         if o.i_pos.x == i_pos.x && o.i_pos.y == i_pos.y {
             return; // didn't move enough to change integer position.
         }
-        let moved_terrain_object = !o.is_kind_of(KINDOF_IMMOBILE)
-            && (o.is_kind_of(KINDOF_INFANTRY) || o.is_kind_of(KINDOF_VEHICLE));
+        let moved_terrain_object = !o.is_kind_of(KINDOF_IMMOBILE) && (o.is_kind_of(KINDOF_INFANTRY) || o.is_kind_of(KINDOF_VEHICLE));
         let has_ai = o.ai.is_some();
         if moved_terrain_object {
             self.emit(ObjectClientEvent::TerrainObjectMoved { object_id: id });
@@ -358,24 +304,12 @@ impl World {
 
         // Check for exited.
         let team = self.get_team(id);
-        let active = self
-            .objects
-            .find(id)
-            .expect("checked above")
-            .num_trigger_areas_active
-            .max(0) as usize;
+        let active = self.objects.find(id).expect("checked above").num_trigger_areas_active.max(0) as usize;
         for i in 0..active {
             let o = self.objects.find(id).expect("checked above");
-            let Some(trigger_id) = o.trigger_info[i].trigger else {
-                continue;
-            };
+            let Some(trigger_id) = o.trigger_info[i].trigger else { continue };
             let old_i_pos = o.i_pos;
-            let inside = self
-                .terrain
-                .triggers()
-                .iter()
-                .find(|t| t.id() == trigger_id)
-                .is_some_and(|t| t.point_in_trigger(&old_i_pos));
+            let inside = self.terrain.triggers().iter().find(|t| t.id() == trigger_id).is_some_and(|t| t.point_in_trigger(&old_i_pos));
             if !inside {
                 let o = self.objects.find_mut(id).expect("checked above");
                 o.trigger_info[i].is_inside = false;
@@ -392,12 +326,7 @@ impl World {
             o.i_pos = i_pos;
         }
 
-        let trigger_ids: Vec<(i32, bool)> = self
-            .terrain
-            .triggers()
-            .iter()
-            .map(|t| (t.id(), t.point_in_trigger(&i_pos)))
-            .collect();
+        let trigger_ids: Vec<(i32, bool)> = self.terrain.triggers().iter().map(|t| (t.id(), t.point_in_trigger(&i_pos))).collect();
         for (trig_id, point_in) in trigger_ids {
             let o = self.objects.find(id).expect("checked above");
             let mut skip = false;
@@ -415,12 +344,7 @@ impl World {
                 let n = o.num_trigger_areas_active.max(0) as usize;
                 if n < MAX_TRIGGER_AREA_INFOS {
                     let o = self.objects.find_mut(id).expect("checked above");
-                    o.trigger_info[n] = TriggerInfo {
-                        trigger: Some(trig_id),
-                        entered: true,
-                        exited: false,
-                        is_inside: true,
-                    };
+                    o.trigger_info[n] = TriggerInfo { trigger: Some(trig_id), entered: true, exited: false, is_inside: true };
                     o.entered_or_exited_frame = now;
                     if let Some(team) = team {
                         self.cut(CutCall::TeamSetEnteredExited { team });
@@ -430,9 +354,7 @@ impl World {
                     o.num_trigger_areas_active += 1;
                 } else {
                     // Shouldn't happen: "Too many nested trigger areas."
-                    self.cut(CutCall::ScriptEngineAppendDebugMessage {
-                        too_many_trigger_areas: true,
-                    });
+                    self.cut(CutCall::ScriptEngineAppendDebugMessage { too_many_trigger_areas: true });
                 }
             }
         }
@@ -443,9 +365,7 @@ impl World {
     /// then ObjectUpdates, enter/exits detected in ObjectUpdate on frame N
     /// won't be noticed by the ScriptEngine till frame N+1").
     fn did_enter_or_exit(&self, id: ObjectId) -> bool {
-        let Some(o) = self.objects.find(id) else {
-            return false;
-        };
+        let Some(o) = self.objects.find(id) else { return false };
         if o.is_kind_of(KINDOF_INERT) {
             return false;
         }
@@ -459,8 +379,7 @@ impl World {
             return false;
         }
         let o = self.objects.find(id).expect("did_enter_or_exit found it");
-        (0..o.num_trigger_areas_active.max(0) as usize)
-            .any(|i| o.trigger_info[i].entered && o.trigger_info[i].trigger == trigger)
+        (0..o.num_trigger_areas_active.max(0) as usize).any(|i| o.trigger_info[i].entered && o.trigger_info[i].trigger == trigger)
     }
 
     /// `didExit(trigger)`.
@@ -469,17 +388,13 @@ impl World {
             return false;
         }
         let o = self.objects.find(id).expect("did_enter_or_exit found it");
-        (0..o.num_trigger_areas_active.max(0) as usize)
-            .any(|i| o.trigger_info[i].exited && o.trigger_info[i].trigger == trigger)
+        (0..o.num_trigger_areas_active.max(0) as usize).any(|i| o.trigger_info[i].exited && o.trigger_info[i].trigger == trigger)
     }
 
     /// `isInside(trigger)`.
     pub fn is_inside(&self, id: ObjectId, trigger: Option<i32>) -> bool {
-        let Some(o) = self.objects.find(id) else {
-            return false;
-        };
-        (0..o.num_trigger_areas_active.max(0) as usize)
-            .any(|i| o.trigger_info[i].is_inside && o.trigger_info[i].trigger == trigger)
+        let Some(o) = self.objects.find(id) else { return false };
+        (0..o.num_trigger_areas_active.max(0) as usize).any(|i| o.trigger_info[i].is_inside && o.trigger_info[i].trigger == trigger)
     }
 
     // ---- the map boundary --------------------------------------------------------------------------------
@@ -509,9 +424,7 @@ impl World {
         self.cut(CutCall::PathfinderAddObjectToPathfindMap { object: id });
         // Now that the PartitionManager has finished its reset, we need to relook
         self.handle_partition_cell_maintenance(id);
-        let Some(o) = self.objects.find(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find(id) else { return };
         let pos = *o.thing.position();
         if let Ok(map_extent) = self.terrain.extent() {
             let r: Region3D = map_extent;
@@ -524,9 +437,7 @@ impl World {
     /// `setLayer(layer)`: the pathfinder forgets the old layer's position and
     /// learns the new one.
     pub fn set_layer(&mut self, id: ObjectId, layer: PathfindLayer) {
-        let Some(o) = self.objects.find(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find(id) else { return };
         if layer != o.layer {
             self.cut(CutCall::PathfinderRemovePos { object: id });
             if let Some(o) = self.objects.find_mut(id) {
@@ -561,13 +472,8 @@ impl World {
         if self.objects.find(producer).is_some() {
             // Find a parking place behavior.
             for idx in self.all_modules(producer) {
-                if self
-                    .module_call(producer, idx, ModuleCall::HasParkingPlaceInterface)
-                    .as_bool()
-                {
-                    return self
-                        .module_call(producer, idx, ModuleCall::GetLandingDeckHeightOffset)
-                        .as_real(0.0);
+                if self.module_call(producer, idx, ModuleCall::HasParkingPlaceInterface).as_bool() {
+                    return self.module_call(producer, idx, ModuleCall::GetLandingDeckHeightOffset).as_real(0.0);
                 }
             }
         }

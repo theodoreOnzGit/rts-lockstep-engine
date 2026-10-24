@@ -53,19 +53,14 @@ use std::sync::Arc;
 
 use crate::common::base_type::Coord3D;
 use crate::common::game_common::PLAYERMASK_ALL;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::model_state::{MODELCONDITION_POST_COLLAPSE, MODELCONDITION_RUBBLE};
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_DIE};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::DamageInfo;
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::die_module::{DieModuleData, DIE_MODULE_DATA_FIELD_PARSE};
-use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER,
-    UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
 use crate::logic::modules::lend_clone;
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
@@ -165,12 +160,7 @@ fn parse_phase(ini: &mut Ini<'_>) -> IniResult<usize> {
 }
 
 /// Lifts entry `k` of the layer-5 die field table onto `StructureCollapseUpdateModuleData::die`.
-fn lift_die_field(
-    k: usize,
-    i: &mut Ini<'_>,
-    d: &mut StructureCollapseUpdateModuleData,
-    u: &UserData,
-) -> IniResult<()> {
+fn lift_die_field(k: usize, i: &mut Ini<'_>, d: &mut StructureCollapseUpdateModuleData, u: &UserData) -> IniResult<()> {
     match DIE_MODULE_DATA_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.die, u),
         None => Ok(()),
@@ -179,137 +169,53 @@ fn lift_die_field(
 
 /// `dataFieldParse`, then `DieMuxData::getFieldParse()`.
 static FIELD_PARSE: [FieldParse<StructureCollapseUpdateModuleData>; 14] = [
-    FieldParse::new(
-        "MinCollapseDelay",
-        |i, d, _| {
-            d.min_collapse_delay = i.parse_duration_unsigned_int()? as i32;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxCollapseDelay",
-        |i, d, _| {
-            d.max_collapse_delay = i.parse_duration_unsigned_int()? as i32;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MinBurstDelay",
-        |i, d, _| {
-            d.min_burst_delay = i.parse_duration_unsigned_int()? as i32;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxBurstDelay",
-        |i, d, _| {
-            d.max_burst_delay = Some(i.parse_duration_unsigned_int()? as i32);
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "CollapseDamping",
-        |i, d, _| {
-            d.collapse_damping = i.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxShudder",
-        |i, d, _| {
-            d.max_shudder = i.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "BigBurstFrequency",
-        |i, d, _| {
-            d.big_burst_frequency = i.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "OCL",
-        |i, d, _| {
-            let phase = parse_phase(i)?;
-            // `for (token = ini->getNextToken(); token != NULL; token = ini->getNextTokenOrNull())`: the first token is required
-            let mut token = Some(i.get_next_token(None)?);
-            while let Some(t) = token {
-                d.ocls[phase].push(t);
-                token = i.get_next_token_or_null(None);
-            }
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FXList",
-        |i, d, _| {
-            let phase = parse_phase(i)?;
-            let mut token = Some(i.get_next_token(None)?);
-            while let Some(t) = token {
-                // `findFXList(token)`: "could be null! this is OK!"
-                d.fxs[phase].push(if t.eq_ignore_ascii_case(b"None") {
-                    None
-                } else {
-                    Some(t)
-                });
-                token = i.get_next_token_or_null(None);
-            }
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DeathTypes",
-        |i, d, u| lift_die_field(0, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VeterancyLevels",
-        |i, d, u| lift_die_field(1, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExemptStatus",
-        |i, d, u| lift_die_field(2, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "RequiredStatus",
-        |i, d, u| lift_die_field(3, i, d, u),
-        UserData::None,
-    ),
+    FieldParse::new("MinCollapseDelay", |i, d, _| { d.min_collapse_delay = i.parse_duration_unsigned_int()? as i32; Ok(()) }, UserData::None),
+    FieldParse::new("MaxCollapseDelay", |i, d, _| { d.max_collapse_delay = i.parse_duration_unsigned_int()? as i32; Ok(()) }, UserData::None),
+    FieldParse::new("MinBurstDelay", |i, d, _| { d.min_burst_delay = i.parse_duration_unsigned_int()? as i32; Ok(()) }, UserData::None),
+    FieldParse::new("MaxBurstDelay", |i, d, _| { d.max_burst_delay = Some(i.parse_duration_unsigned_int()? as i32); Ok(()) }, UserData::None),
+    FieldParse::new("CollapseDamping", |i, d, _| { d.collapse_damping = i.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxShudder", |i, d, _| { d.max_shudder = i.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("BigBurstFrequency", |i, d, _| { d.big_burst_frequency = i.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("OCL", |i, d, _| {
+        let phase = parse_phase(i)?;
+        // `for (token = ini->getNextToken(); token != NULL; token = ini->getNextTokenOrNull())`: the first token is required
+        let mut token = Some(i.get_next_token(None)?);
+        while let Some(t) = token {
+            d.ocls[phase].push(t);
+            token = i.get_next_token_or_null(None);
+        }
+        Ok(())
+    }, UserData::None),
+    FieldParse::new("FXList", |i, d, _| {
+        let phase = parse_phase(i)?;
+        let mut token = Some(i.get_next_token(None)?);
+        while let Some(t) = token {
+            // `findFXList(token)`: "could be null! this is OK!"
+            d.fxs[phase].push(if t.eq_ignore_ascii_case(b"None") { None } else { Some(t) });
+            token = i.get_next_token_or_null(None);
+        }
+        Ok(())
+    }, UserData::None),
+    FieldParse::new("DeathTypes", |i, d, u| lift_die_field(0, i, d, u), UserData::None),
+    FieldParse::new("VeterancyLevels", |i, d, u| lift_die_field(1, i, d, u), UserData::None),
+    FieldParse::new("ExemptStatus", |i, d, u| lift_die_field(2, i, d, u), UserData::None),
+    FieldParse::new("RequiredStatus", |i, d, u| lift_die_field(3, i, d, u), UserData::None),
     FieldParse::end(),
 ];
 
 impl StructureCollapseUpdateModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's fields and the die mux's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, StructureCollapseUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, StructureCollapseUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<StructureCollapseUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<StructureCollapseUpdateModuleData> {
         let mut data = StructureCollapseUpdateModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                StructureCollapseUpdateModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, StructureCollapseUpdateModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -337,19 +243,12 @@ pub struct StructureCollapseUpdate {
 impl PartialEq for StructureCollapseUpdate {
     /// The same object, the same data object (upstream compares pointers) and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
-            && self.state_words() == other.state_words()
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.state_words() == other.state_words()
     }
 }
 
 /// `buildNonDupRandomIndexList(range, count, idxList)`: `count` different indices below `range`, each drawn until it is new.
-fn build_non_dup_random_index_list(
-    world: &mut World,
-    range: i32,
-    count: usize,
-    idx_list: &mut [i32; MAX_IDX],
-) {
+fn build_non_dup_random_index_list(world: &mut World, range: i32, count: usize, idx_list: &mut [i32; MAX_IDX]) {
     for i in 0..count {
         let idx = loop {
             let idx = world.random.game_logic_random_value(0, range - 1);
@@ -368,10 +267,7 @@ impl StructureCollapseUpdate {
     }
 
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and the state.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<StructureCollapseUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<StructureCollapseUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
@@ -398,13 +294,7 @@ impl StructureCollapseUpdate {
 
     /// The state `xfer` writes, as words: the two frames, the state, the velocity and the height.
     pub fn state_words(&self) -> [u32; 5] {
-        [
-            self.collapse_frame,
-            self.burst_frame,
-            self.collapse_state as u32,
-            self.collapse_velocity.to_bits(),
-            self.current_height.to_bits(),
-        ]
+        [self.collapse_frame, self.burst_frame, self.collapse_state as u32, self.collapse_velocity.to_bits(), self.current_height.to_bits()]
     }
 
     /// `update()` as the scheduler runs it (see [`update_behavior::world_update`]).
@@ -418,12 +308,7 @@ impl StructureCollapseUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -449,25 +334,14 @@ impl StructureCollapseUpdate {
 
     /// `isDieApplicable(damageInfo)`: the die mux's, of this object's death.
     fn is_die_applicable(&self, world: &World, me: ModuleHandle, info: &DamageInfo) -> bool {
-        let Some(o) = world.objects.find(me.object) else {
-            return false;
-        };
-        self.data.die.die_mux_data.is_die_applicable(
-            info.input.death_type,
-            o.get_veterancy_level() as i32,
-            &o.status,
-        )
+        let Some(o) = world.objects.find(me.object) else { return false };
+        self.data.die.die_mux_data.is_die_applicable(info.input.death_type, o.get_veterancy_level() as i32, &o.status)
     }
 
     /// `GameLogicRandomValue(m_minBurstDelay, m_maxBurstDelay)`.
     fn random_burst_delay(&self, world: &mut World) -> Result<i32, Undefined> {
-        let max = self
-            .data
-            .max_burst_delay
-            .ok_or(Undefined::UninitialisedModuleData)?;
-        Ok(world
-            .random
-            .game_logic_random_value(self.data.min_burst_delay, max))
+        let max = self.data.max_burst_delay.ok_or(Undefined::UninitialisedModuleData)?;
+        Ok(world.random.game_logic_random_value(self.data.min_burst_delay, max))
     }
 
     /// `beginStructureCollapse(damageInfo)`.
@@ -475,28 +349,9 @@ impl StructureCollapseUpdate {
         let d = self.data.clone();
         let now = world.frame();
         // "This has to use a game logic random value since the bursts can spawn debris, and debris is sync'd."
-        self.collapse_frame = now.wrapping_add_signed(if crate::logic::modules::plant(1992) {
-            d.min_collapse_delay
-        } else {
-            world
-                .random
-                .game_logic_random_value(d.min_collapse_delay, d.max_collapse_delay)
-        });
-        let pos = world
-            .objects
-            .find(me.object)
-            .map(|o| o.get_position())
-            .unwrap_or_default();
-        self.do_phase_stuff(
-            world,
-            me,
-            if crate::logic::modules::plant(1999) {
-                SCPHASE_BURST
-            } else {
-                SCPHASE_INITIAL
-            },
-            &pos,
-        );
+        self.collapse_frame = now.wrapping_add_signed(if crate::logic::modules::plant(1992) { d.min_collapse_delay } else { world.random.game_logic_random_value(d.min_collapse_delay, d.max_collapse_delay) });
+        let pos = world.objects.find(me.object).map(|o| o.get_position()).unwrap_or_default();
+        self.do_phase_stuff(world, me, if crate::logic::modules::plant(1999) { SCPHASE_BURST } else { SCPHASE_INITIAL }, &pos);
         self.collapse_state = CollapseState::WaitingForCollapseStart;
         self.current_height = 0.0;
         update_behavior::set_wake_frame(world, UPDATE_SLEEP_NONE);
@@ -508,31 +363,16 @@ impl StructureCollapseUpdate {
             return;
         }
         let obj = me.object;
-        if let Some(ai) = world
-            .objects
-            .find(obj)
-            .and_then(|o| o.ai)
-            .filter(|_| !crate::logic::modules::plant(1991))
-        {
+        if let Some(ai) = world.objects.find(obj).and_then(|o| o.ai).filter(|_| !crate::logic::modules::plant(1991)) {
             world.module_call(obj, ai, ModuleCall::AiMarkAsDead);
         }
         // deselect this object for all players.
-        world.cut(CutCall::GameLogicDeselectObject {
-            object: obj,
-            player_mask: PLAYERMASK_ALL,
-            affect_client: true,
-        });
+        world.cut(CutCall::GameLogicDeselectObject { object: obj, player_mask: PLAYERMASK_ALL, affect_client: true });
         self.begin_structure_collapse(world, me);
     }
 
     /// `doPhaseStuff(scphase, target)`: `m_fxCount` entries of the FX lists and `m_oclCount` of the object creation lists, different ones, at random.
-    fn do_phase_stuff(
-        &self,
-        world: &mut World,
-        me: ModuleHandle,
-        scphase: usize,
-        target: &Coord3D,
-    ) {
+    fn do_phase_stuff(&self, world: &mut World, me: ModuleHandle, scphase: usize, target: &Coord3D) {
         let d = self.data.clone();
         let mut idx_list = [0i32; MAX_IDX];
         let list_size = d.fxs[scphase].len();
@@ -541,10 +381,7 @@ impl StructureCollapseUpdate {
             build_non_dup_random_index_list(world, list_size as i32, count, &mut idx_list);
             for &idx in &idx_list[..count] {
                 if let Some(Some(fx)) = d.fxs[scphase].get(idx as usize) {
-                    world.emit(ObjectClientEvent::FxListDoFxPos {
-                        fx: fx.clone(),
-                        position: *target,
-                    });
+                    world.emit(ObjectClientEvent::FxListDoFxPos { fx: fx.clone(), position: *target });
                 }
             }
         }
@@ -555,23 +392,10 @@ impl StructureCollapseUpdate {
             for &idx in &idx_list[..count] {
                 if let Some(ocl) = d.ocls[scphase].get(idx as usize) {
                     // `ObjectCreationList::create(NULL, ...)` makes nothing
-                    let found = world
-                        .statics
-                        .clone()
-                        .object_creation_list_store
-                        .find_object_creation_list(&mut world.names, ocl)
-                        .is_some();
+                    let found = world.statics.clone().object_creation_list_store.find_object_creation_list(&mut world.names, ocl).is_some();
                     if found {
-                        let angle = world
-                            .objects
-                            .find(me.object)
-                            .map_or(0.0, |o| o.thing.orientation());
-                        world.cut(CutCall::OclCreateAtPrimary {
-                            primary: me.object,
-                            ocl: ocl.clone(),
-                            primary_pos: *target,
-                            angle,
-                        });
+                        let angle = world.objects.find(me.object).map_or(0.0, |o| o.thing.orientation());
+                        world.cut(CutCall::OclCreateAtPrimary { primary: me.object, ocl: ocl.clone(), primary_pos: *target, angle });
                     }
                 }
             }
@@ -580,33 +404,22 @@ impl StructureCollapseUpdate {
 
     /// `doCollapseDoneStuff()`: the object's `BoneFXUpdate` stops its bone FX.
     fn do_collapse_done_stuff(world: &mut World, obj: ObjectId) {
-        if let Some(bfxu) = world
-            .find_module(obj, b"BoneFXUpdate")
-            .filter(|_| !crate::logic::modules::plant(1994))
-        {
+        if let Some(bfxu) = world.find_module(obj, b"BoneFXUpdate").filter(|_| !crate::logic::modules::plant(1994)) {
             world.module_call(obj, bfxu, ModuleCall::BoneFxStopAll);
         }
     }
 
     /// The shudder: `GameClientRandomValueReal(-m_maxShudder, m_maxShudder)` for `x` and `y` (drawn `x` first, see the module docs), `z` given.
     fn shudder(world: &mut World, max_shudder: f32, z: f32) -> Coord3D {
-        let x = world
-            .random
-            .game_client_random_value_real(-max_shudder, max_shudder);
-        let y = world
-            .random
-            .game_client_random_value_real(-max_shudder, max_shudder);
+        let x = world.random.game_client_random_value_real(-max_shudder, max_shudder);
+        let y = world.random.game_client_random_value_real(-max_shudder, max_shudder);
         if crate::logic::modules::plant(1998) {
             return Coord3D { x: y, y: x, z };
         }
         Coord3D { x, y, z }
     }
 
-    fn update_inner(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-    ) -> Result<UpdateSleepTime, Undefined> {
+    fn update_inner(&mut self, world: &mut World, me: ModuleHandle) -> Result<UpdateSleepTime, Undefined> {
         // static const Real COLLAPSE_ACCELERATION_FACTOR = 0.02f; (unused)
         let d = self.data.clone();
         let id = me.object;
@@ -617,19 +430,12 @@ impl StructureCollapseUpdate {
         // "We are in the dramatic pause between when the building has lost all its hit points and when it starts toppling over."
         if self.collapse_state == CollapseState::WaitingForCollapseStart {
             let now = world.frame();
-            let current_position = world
-                .objects
-                .find(id)
-                .map(|o| o.get_position())
-                .unwrap_or_default();
+            let current_position = world.objects.find(id).map(|o| o.get_position()).unwrap_or_default();
             let shudder = Self::shudder(world, d.max_shudder, 0.0);
             if !world.has_drawable(id) {
                 return Err(Undefined::NullDrawable);
             }
-            world.emit(ObjectClientEvent::DrawableSetInstanceTranslation {
-                object_id: id,
-                translation: shudder,
-            });
+            world.emit(ObjectClientEvent::DrawableSetInstanceTranslation { object_id: id, translation: shudder });
             if now >= self.collapse_frame {
                 self.collapse_state = CollapseState::Collapsing;
                 self.do_phase_stuff(world, me, SCPHASE_BURST, &current_position);
@@ -640,74 +446,35 @@ impl StructureCollapseUpdate {
         if self.collapse_state == CollapseState::Collapsing {
             let now = world.frame();
             self.current_height -= self.collapse_velocity;
-            self.collapse_velocity = (f64::from(self.collapse_velocity)
-                - f64::from(world.cuts.globals.gravity)
-                    * (1.0
-                        - if crate::logic::modules::plant(1993) {
-                            0.0
-                        } else {
-                            f64::from(d.collapse_damping)
-                        })) as f32;
-            let current_position = world
-                .objects
-                .find(id)
-                .map(|o| o.get_position())
-                .unwrap_or_default();
+            self.collapse_velocity = (f64::from(self.collapse_velocity) - f64::from(world.cuts.globals.gravity) * (1.0 - if crate::logic::modules::plant(1993) { 0.0 } else { f64::from(d.collapse_damping) })) as f32;
+            let current_position = world.objects.find(id).map(|o| o.get_position()).unwrap_or_default();
             let shudder = Self::shudder(world, d.max_shudder, self.current_height);
             if !world.has_drawable(id) {
                 return Err(Undefined::NullDrawable);
             }
-            world.emit(ObjectClientEvent::DrawableSetInstanceTranslation {
-                object_id: id,
-                translation: shudder,
-            });
+            world.emit(ObjectClientEvent::DrawableSetInstanceTranslation { object_id: id, translation: shudder });
             if now >= self.burst_frame {
-                if (world
-                    .random
-                    .game_logic_random_value(1, d.big_burst_frequency)
-                    == 1)
-                    != crate::logic::modules::plant(1995)
-                {
+                if (world.random.game_logic_random_value(1, d.big_burst_frequency) == 1) != crate::logic::modules::plant(1995) {
                     self.do_phase_stuff(world, me, SCPHASE_BURST, &current_position);
                 } else {
                     self.do_phase_stuff(world, me, SCPHASE_DELAY, &current_position);
                 }
-                self.burst_frame = if crate::logic::modules::plant(1996) {
-                    now
-                } else {
-                    self.burst_frame
-                }
-                .wrapping_add_signed(self.random_burst_delay(world)?);
+                self.burst_frame = if crate::logic::modules::plant(1996) { now } else { self.burst_frame }.wrapping_add_signed(self.random_burst_delay(world)?);
             }
-            let max_height = world.objects.find(id).map_or(0.0, |o| {
-                o.thing
-                    .template()
-                    .get_template_geometry_info()
-                    .get_max_height_above_position()
-            });
+            let max_height = world.objects.find(id).map_or(0.0, |o| o.thing.template().get_template_geometry_info().get_max_height_above_position());
             if self.current_height + max_height <= 0.0 {
                 self.collapse_state = CollapseState::Done;
-                let pos = world
-                    .objects
-                    .find(id)
-                    .map(|o| o.get_position())
-                    .unwrap_or_default();
+                let pos = world.objects.find(id).map(|o| o.get_position()).unwrap_or_default();
                 self.do_phase_stuff(world, me, SCPHASE_FINAL, &pos);
                 Self::do_collapse_done_stuff(world, id);
                 world.clear_model_condition_state(id, MODELCONDITION_RUBBLE);
                 world.set_model_condition_state(id, MODELCONDITION_POST_COLLAPSE);
-                let angle = world
-                    .objects
-                    .find(id)
-                    .map_or(0.0, |o| o.thing.orientation());
+                let angle = world.objects.find(id).map_or(0.0, |o| o.thing.orientation());
                 world.set_orientation(id, angle);
                 // "Need to update body particle systems, now"
                 let body = world.get_body_module(id).ok_or(Undefined::NullBodyModule)?;
                 world.module_call(id, body, ModuleCall::UpdateBodyParticleSystems);
-                world.emit(ObjectClientEvent::DrawableSetInstanceTranslation {
-                    object_id: id,
-                    translation: Coord3D::default(),
-                });
+                world.emit(ObjectClientEvent::DrawableSetInstanceTranslation { object_id: id, translation: Coord3D::default() });
                 return Ok(UPDATE_SLEEP_FOREVER);
             }
         }
@@ -755,14 +522,7 @@ impl UpdateBehavior for StructureCollapseUpdate {
     fn other_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
             ModuleCall::OnDie(info) => {
-                lend_clone(
-                    world,
-                    me,
-                    self,
-                    UpdateBody::StructureCollapseUpdate,
-                    Self::from_body,
-                    |w, m| m.on_die(w, me, &info),
-                );
+                lend_clone(world, me, self, UpdateBody::StructureCollapseUpdate, Self::from_body, |w, m| m.on_die(w, me, &info));
                 ModuleReply::Done
             }
             _ => ModuleReply::Unhandled,
@@ -798,9 +558,7 @@ impl Snapshot for StructureCollapseUpdate {
 
 /// The factory's `NewModuleDataProc` for `StructureCollapseUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::StructureCollapseUpdate(Arc::new(
-        StructureCollapseUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::StructureCollapseUpdate(Arc::new(StructureCollapseUpdateModuleData::friend_new_module_data(ini)?)))
 }
 
 #[cfg(test)]
@@ -810,22 +568,9 @@ mod tests {
     #[test]
     fn the_defaults_are_the_constructors() {
         let d = StructureCollapseUpdateModuleData::default();
-        assert_eq!(
-            (
-                d.min_burst_delay,
-                d.max_burst_delay,
-                d.ocl_count,
-                d.fx_count
-            ),
-            (9999, None, [1; 4], [1; 4])
-        );
+        assert_eq!((d.min_burst_delay, d.max_burst_delay, d.ocl_count, d.fx_count), (9999, None, [1; 4], [1; 4]));
         let m = StructureCollapseUpdate::unconstructed(3, Some(Arc::new(d))).unwrap();
         assert_eq!(m.state_words(), [0, 0, 0, 0, 0]);
-        assert_eq!(
-            StructureCollapseUpdate::unconstructed(3, None)
-                .unwrap_err()
-                .kind,
-            IniErrorKind::InvalidData
-        );
+        assert_eq!(StructureCollapseUpdate::unconstructed(3, None).unwrap_err().kind, IniErrorKind::InvalidData);
     }
 }

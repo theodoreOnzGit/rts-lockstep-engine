@@ -29,24 +29,20 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::Undefined;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::crate_collide_data_field_parse;
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::collide_module::CollideModule;
-use crate::logic::modules::crate_collide::{
-    crate_module_call, CrateBehavior, CrateCollideModuleData,
-};
-use crate::logic::modules::upgrade_pair::{parse_upgrade_pair, UpgradePair};
+use crate::logic::modules::crate_collide::{crate_module_call, CrateBehavior, CrateCollideModuleData};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+use crate::logic::world::update_body::UpdateBody;
+use crate::common::ini::Undefined;
+use crate::logic::modules::upgrade_pair::{parse_upgrade_pair, UpgradePair};
 use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::object_events::{ObjectClientEvent, ObjectSound};
-use crate::logic::world::update_body::UpdateBody;
 
 /// `class MoneyCrateCollideModuleData : public CrateCollideModuleData`.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -70,9 +66,7 @@ impl MoneyCrateCollideModuleData {
     }
 
     /// `buildFieldParse(p)`: the module data base, the crate fields, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, MoneyCrateCollideModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, MoneyCrateCollideModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -80,39 +74,22 @@ impl MoneyCrateCollideModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<MoneyCrateCollideModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<MoneyCrateCollideModuleData> {
         let mut data = MoneyCrateCollideModuleData::new();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                MoneyCrateCollideModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, MoneyCrateCollideModuleData::build_field_parse)?;
         }
         Ok(data)
     }
 }
 
 /// `CrateCollideModuleData::buildFieldParse`'s table, for this data class.
-static BASE_FIELD_PARSE: [FieldParse<MoneyCrateCollideModuleData>; 12] =
-    crate_collide_data_field_parse!(MoneyCrateCollideModuleData, crate_data);
+static BASE_FIELD_PARSE: [FieldParse<MoneyCrateCollideModuleData>; 12] = crate_collide_data_field_parse!(MoneyCrateCollideModuleData, crate_data);
 
 /// `MoneyCrateCollideModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<MoneyCrateCollideModuleData>; 3] = [
-    FieldParse::new(
-        "MoneyProvided",
-        |ini, d, _| {
-            d.money_provided = ini.parse_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "UpgradedBoost",
-        |ini, d, _| parse_upgrade_pair(ini, &mut d.upgrade_boost),
-        UserData::None,
-    ),
+    FieldParse::new("MoneyProvided", |ini, d, _| { d.money_provided = ini.parse_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("UpgradedBoost", |ini, d, _| { parse_upgrade_pair(ini, &mut d.upgrade_boost) }, UserData::None),
     FieldParse::end(),
 ];
 
@@ -128,17 +105,13 @@ pub struct MoneyCrateCollide {
 impl PartialEq for MoneyCrateCollide {
     /// The same object and the same data object (upstream compares pointers).
     fn eq(&self, other: &Self) -> bool {
-        self.collide.behavior().object() == other.collide.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
+        self.collide.behavior().object() == other.collide.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
 impl MoneyCrateCollide {
     /// `MoneyCrateCollide(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<MoneyCrateCollideModuleData>>,
-    ) -> IniResult<MoneyCrateCollide> {
+    pub fn new(object: ObjectId, data: Option<Arc<MoneyCrateCollideModuleData>>) -> IniResult<MoneyCrateCollide> {
         let data = data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let collide = CollideModule::new(object, Some(Arc::new(data.crate_data.collide.clone())))?;
         Ok(MoneyCrateCollide { collide, data })
@@ -157,28 +130,15 @@ impl MoneyCrateCollide {
     /// `getUpgradedSupplyBoost(other)`: the boost of the first pair whose upgrade the collecting player has completed; 0 with no player. See the module
     /// docs for the `static` that makes the template of the FIRST pair ever looked at the template of every pair.
     pub fn upgraded_supply_boost(&self, world: &mut World, other: ObjectId) -> i32 {
-        let Some(player) = world.get_controlling_player(other) else {
-            return 0;
-        };
+        let Some(player) = world.get_controlling_player(other) else { return 0 };
         for info in &self.data.upgrade_boost {
             // the function-local `static`, initialised the first time control reaches it
-            if world.cuts.money_crate_upgrade_static.is_none() || crate::logic::modules::plant(773)
-            {
-                let found = world
-                    .statics
-                    .upgrade_center
-                    .find_upgrade(&mut world.names, &info.type_name)
-                    .ok()
-                    .flatten()
-                    .map(|t| t.upgrade_mask());
+            if world.cuts.money_crate_upgrade_static.is_none() || crate::logic::modules::plant(773) {
+                let found = world.statics.upgrade_center.find_upgrade(&mut world.names, &info.type_name).ok().flatten().map(|t| t.upgrade_mask());
                 world.cuts.money_crate_upgrade_static = Some(found);
             }
             if let Some(mask) = world.cuts.money_crate_upgrade_static.flatten() {
-                if world
-                    .players
-                    .get_nth(player)
-                    .is_some_and(|p| p.upgrades_completed.test_for_all(&mask))
-                {
+                if world.players.get_nth(player).is_some_and(|p| p.upgrades_completed.test_for_all(&mask)) {
                     return info.amount;
                 }
             }
@@ -187,12 +147,7 @@ impl MoneyCrateCollide {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         crate_module_call(self, world, me, call)
     }
 }
@@ -204,40 +159,15 @@ impl CrateBehavior for MoneyCrateCollide {
     fn crate_data(&self) -> &CrateCollideModuleData {
         &self.data.crate_data
     }
-    fn execute_crate_behavior(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        other: ObjectId,
-    ) -> Result<bool, IniError> {
+    fn execute_crate_behavior(&mut self, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<bool, IniError> {
         let _ = (&world, &me, &other);
         let mut money = self.data.money_provided;
-        let boost = if crate::logic::modules::plant(771) {
-            0
-        } else {
-            self.upgraded_supply_boost(world, other)
-        };
+        let boost = if crate::logic::modules::plant(771) { 0 } else { self.upgraded_supply_boost(world, other) };
         money = money.wrapping_add(boost as u32);
-        let player = world
-            .get_controlling_player(other)
-            .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
-        world.cut(CutCall::PlayerMoneyDeposit {
-            player,
-            amount: money,
-        });
-        world.cut(CutCall::PlayerScoreAddMoneyEarned {
-            player,
-            amount: if crate::logic::modules::plant(772) {
-                0
-            } else {
-                money as i32
-            },
-        });
-        world.emit(ObjectClientEvent::Sound {
-            sound: ObjectSound::CrateMoney,
-            object_id: other,
-            position: None,
-        });
+        let player = world.get_controlling_player(other).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+        world.cut(CutCall::PlayerMoneyDeposit { player, amount: money });
+        world.cut(CutCall::PlayerScoreAddMoneyEarned { player, amount: if crate::logic::modules::plant(772) { 0 } else { money as i32 } });
+        world.emit(ObjectClientEvent::Sound { sound: ObjectSound::CrateMoney, object_id: other, position: None });
         Ok(true)
     }
     fn into_body(self) -> UpdateBody {
@@ -273,7 +203,6 @@ impl Snapshot for MoneyCrateCollide {
 
 /// The factory's `NewModuleDataProc` for `MoneyCrateCollide`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::MoneyCrateCollide(Arc::new(
-        MoneyCrateCollideModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::MoneyCrateCollide(Arc::new(MoneyCrateCollideModuleData::friend_new_module_data(ini)?)))
 }
+

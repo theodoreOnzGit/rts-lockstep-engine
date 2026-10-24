@@ -25,23 +25,19 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::Undefined;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
-use crate::common::model_state::{MODELCONDITION_RADAR_EXTENDING, MODELCONDITION_RADAR_UPGRADED};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::UPDATE_SLEEP_NONE;
-use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime,
-};
+use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::sleepy::UpdateHandle;
 use crate::logic::world::update_body::UpdateBody;
+use crate::common::ini::Undefined;
+use crate::common::model_state::{MODELCONDITION_RADAR_EXTENDING, MODELCONDITION_RADAR_UPGRADED};
+use crate::logic::module::update_module::UPDATE_SLEEP_NONE;
 
 /// `class RadarUpdateModuleData : public UpdateModuleData`.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -62,9 +58,7 @@ impl RadarUpdateModuleData {
     }
 
     /// `buildFieldParse(p)`: the behaviour base, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, RadarUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, RadarUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
@@ -82,14 +76,7 @@ impl RadarUpdateModuleData {
 
 /// `RadarUpdateModuleData::dataFieldParse`.
 static FIELD_PARSE: [FieldParse<RadarUpdateModuleData>; 2] = [
-    FieldParse::new(
-        "RadarExtendTime",
-        |ini, d, _| {
-            d.radar_extend_time = ini.parse_duration_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("RadarExtendTime", |ini, d, _| { d.radar_extend_time = ini.parse_duration_real()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
@@ -111,30 +98,17 @@ pub struct RadarUpdate {
 impl PartialEq for RadarUpdate {
     /// The same object, the same data object (upstream compares pointers) and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
-            && self.extend_done_frame == other.extend_done_frame
-            && self.extend_complete == other.extend_complete
-            && self.radar_active == other.radar_active
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.extend_done_frame == other.extend_done_frame && self.extend_complete == other.extend_complete && self.radar_active == other.radar_active
     }
 }
 
 impl RadarUpdate {
     /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data).
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<RadarUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<RadarUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(RadarUpdate {
-            update,
-            data,
-            extend_done_frame: 0,
-            extend_complete: false,
-            radar_active: false,
-        })
+        Ok(RadarUpdate { update, data, extend_done_frame: 0, extend_complete: false, radar_active: false })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -149,11 +123,7 @@ impl RadarUpdate {
 
     /// The module's own state as words, for the tests that compare it with upstream's.
     pub fn state_words(&self) -> Vec<u32> {
-        vec![
-            self.extend_done_frame,
-            u32::from(self.extend_complete),
-            u32::from(self.radar_active),
-        ]
+        vec![self.extend_done_frame, u32::from(self.extend_complete), u32::from(self.radar_active)]
     }
 
     /// `update()` as the scheduler runs it (see [`update_behavior::world_update`]).
@@ -167,12 +137,7 @@ impl RadarUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -198,13 +163,7 @@ impl RadarUpdate {
             world.set_model_condition_state(me.object, MODELCONDITION_RADAR_EXTENDING);
         }
         // mark the frame that the extension will be done on: `UnsignedInt + Real` is a float sum
-        let sum = if crate::logic::modules::plant(733) {
-            world
-                .frame()
-                .wrapping_add(self.data.radar_extend_time as u32) as f32
-        } else {
-            world.frame() as f32 + self.data.radar_extend_time
-        };
+        let sum = if crate::logic::modules::plant(733) { world.frame().wrapping_add(self.data.radar_extend_time as u32) as f32 } else { world.frame() as f32 + self.data.radar_extend_time };
         if !(0.0..4_294_967_296.0).contains(&sum) {
             return Err(IniError::undefined(Undefined::FloatToUnsignedOutOfRange));
         }
@@ -229,18 +188,12 @@ impl UpdateBehavior for RadarUpdate {
             return UPDATE_SLEEP_NONE;
         }
         // see if it's time to stop the extension
-        if world.frame() > self.extend_done_frame
-            || (crate::logic::modules::plant(734) && world.frame() == self.extend_done_frame)
-        {
+        if world.frame() > self.extend_done_frame || (crate::logic::modules::plant(734) && world.frame() == self.extend_done_frame) {
             // mark extend as done
             self.extend_complete = true;
             self.extend_done_frame = 0; // just to be clean
-                                        // remove the extending condition and set the extened condition
-            world.clear_and_set_model_condition_state(
-                me.object,
-                MODELCONDITION_RADAR_EXTENDING,
-                MODELCONDITION_RADAR_UPGRADED,
-            );
+            // remove the extending condition and set the extened condition
+            world.clear_and_set_model_condition_state(me.object, MODELCONDITION_RADAR_EXTENDING, MODELCONDITION_RADAR_UPGRADED);
         }
         UPDATE_SLEEP_NONE
     }
@@ -292,7 +245,5 @@ impl Snapshot for RadarUpdate {
 
 /// The factory's `NewModuleDataProc` for `RadarUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::RadarUpdate(Arc::new(
-        RadarUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::RadarUpdate(Arc::new(RadarUpdateModuleData::friend_new_module_data(ini)?)))
 }

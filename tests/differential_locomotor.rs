@@ -98,12 +98,8 @@ mod support;
 
 use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::common::game_type::{PathfindLayer, LAYER_GROUND, LAYER_WALL};
-use rts_lockstep_engine::common::ini::{
-    BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Thrown, TYPE_TABLE,
-};
-use rts_lockstep_engine::common::kind_of::{
-    KindOfMaskType, KindOfType, KINDOF_DOZER, KINDOF_PROJECTILE,
-};
+use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Thrown, TYPE_TABLE};
+use rts_lockstep_engine::common::kind_of::{KindOfMaskType, KindOfType, KINDOF_DOZER, KINDOF_PROJECTILE};
 use rts_lockstep_engine::common::model_state::ModelConditionFlagType;
 use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
 use rts_lockstep_engine::common::object_status_types::ObjectStatusTypes;
@@ -204,12 +200,7 @@ struct Host {
 
 impl Host {
     fn new() -> Self {
-        Host {
-            thing: Thing::new(Some(Arc::new(TplView))).unwrap(),
-            env: Env::default(),
-            status: 0,
-            log: Vec::new(),
-        }
+        Host { thing: Thing::new(Some(Arc::new(TplView))).unwrap(), env: Env::default(), status: 0, log: Vec::new() }
     }
 
     fn l(&mut self, code: u32, w: &[u32]) {
@@ -224,12 +215,7 @@ impl Host {
         let m = self.thing.transform_matrix().to_array();
         let p = *self.thing.position();
         let mut w: Vec<u32> = m.iter().map(|f| f.to_bits()).collect();
-        w.extend([
-            p.x.to_bits(),
-            p.y.to_bits(),
-            p.z.to_bits(),
-            self.thing.orientation().to_bits(),
-        ]);
+        w.extend([p.x.to_bits(), p.y.to_bits(), p.z.to_bits(), self.thing.orientation().to_bits()]);
         self.l(L_TRANSFORM, &w);
     }
 
@@ -255,10 +241,7 @@ impl LocomotorHost for Host {
         *self.thing.position()
     }
     fn set_position(&mut self, pos: &Coord3D) {
-        let _ = self
-            .thing
-            .set_position(&TCtx(&self.env), Some(pos))
-            .unwrap();
+        let _ = self.thing.set_position(&TCtx(&self.env), Some(pos)).unwrap();
         self.react();
     }
     fn orientation(&self) -> f32 {
@@ -282,8 +265,7 @@ impl LocomotorHost for Host {
         self.env.layer
     }
     fn is_kind_of(&self, kind: KindOfType) -> bool {
-        (kind == KINDOF_PROJECTILE && self.env.kind_mask & 1 != 0)
-            || (kind == KINDOF_DOZER && self.env.kind_mask & 2 != 0)
+        (kind == KINDOF_PROJECTILE && self.env.kind_mask & 1 != 0) || (kind == KINDOF_DOZER && self.env.kind_mask & 2 != 0)
     }
     fn status_test(&self, status: ObjectStatusTypes) -> bool {
         (self.status >> status) & 1 != 0
@@ -324,10 +306,7 @@ impl LocomotorHost for Host {
         self.env.stunned != 0
     }
     fn apply_motive_force(&mut self, force: &Coord3D) {
-        self.l(
-            L_APPLY_FORCE,
-            &[force.x.to_bits(), force.y.to_bits(), force.z.to_bits()],
-        );
+        self.l(L_APPLY_FORCE, &[force.x.to_bits(), force.y.to_bits(), force.z.to_bits()]);
     }
     fn scrub_velocity_2d(&mut self, desired_speed: f32) {
         self.l(L_SCRUB, &[desired_speed.to_bits()]);
@@ -336,11 +315,7 @@ impl LocomotorHost for Host {
         self.l(L_SET_TURNING, &[turning as i32 as u32]);
     }
     fn velocity(&self) -> Coord3D {
-        Coord3D {
-            x: self.env.vel[0],
-            y: self.env.vel[1],
-            z: self.env.vel[2],
-        }
+        Coord3D { x: self.env.vel[0], y: self.env.vel[1], z: self.env.vel[2] }
     }
     fn velocity_magnitude(&self) -> f32 {
         self.env.vel_mag
@@ -393,51 +368,23 @@ impl LocomotorHost for Host {
         self.l(L_UNDERWATER, &[x.to_bits(), y.to_bits()]);
         let terrain_z = self.ground(x, y);
         if x < self.env.wx {
-            Underwater {
-                underwater: true,
-                water_z: Some(self.env.wz),
-                terrain_z,
-            }
+            Underwater { underwater: true, water_z: Some(self.env.wz), terrain_z }
         } else {
-            Underwater {
-                underwater: false,
-                water_z: None,
-                terrain_z,
-            }
+            Underwater { underwater: false, water_z: None, terrain_z }
         }
     }
     fn highest_layer_for_destination(&mut self, pos: &Coord3D) -> PathfindLayer {
-        self.l(
-            L_HIGHEST_LAYER,
-            &[pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()],
-        );
+        self.l(L_HIGHEST_LAYER, &[pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
         self.env.highest_layer
     }
     fn ground_or_structure_height(&mut self, x: f32, y: f32) -> f32 {
         self.l(L_STRUCT_HEIGHT, &[x.to_bits(), y.to_bits()]);
         self.ground(x, y) + self.env.struct_offset
     }
-    fn valid_movement_terrain(
-        &mut self,
-        layer: PathfindLayer,
-        _loco: &Locomotor,
-        pos: &Coord3D,
-    ) -> bool {
-        self.l(
-            L_VALID_TERRAIN,
-            &[
-                layer as u32,
-                pos.x.to_bits(),
-                pos.y.to_bits(),
-                pos.z.to_bits(),
-            ],
-        );
+    fn valid_movement_terrain(&mut self, layer: PathfindLayer, _loco: &Locomotor, pos: &Coord3D) -> bool {
+        self.l(L_VALID_TERRAIN, &[layer as u32, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
         let b = self.env.inv_box;
-        !(self.env.inv_enabled != 0
-            && pos.x >= b[0]
-            && pos.x <= b[1]
-            && pos.y >= b[2]
-            && pos.y <= b[3])
+        !(self.env.inv_enabled != 0 && pos.x >= b[0] && pos.x <= b[1] && pos.y >= b[2] && pos.y <= b[3])
     }
 }
 
@@ -458,24 +405,11 @@ struct WordCheck {
 
 impl WordCheck {
     fn new(name: &str) -> Self {
-        WordCheck {
-            name: name.to_string(),
-            compared: 0,
-            mismatches: 0,
-            nan_only: 0,
-            max_ulp: 0,
-            examples: Vec::new(),
-        }
+        WordCheck { name: name.to_string(), compared: 0, mismatches: 0, nan_only: 0, max_ulp: 0, examples: Vec::new() }
     }
 
     /// One comparison (one frame's array): true if equal.
-    fn words(
-        &mut self,
-        rust: &[u32],
-        cpp: &[u32],
-        float_at: impl Fn(usize) -> bool,
-        ctx: impl FnOnce() -> String,
-    ) -> bool {
+    fn words(&mut self, rust: &[u32], cpp: &[u32], float_at: impl Fn(usize) -> bool, ctx: impl FnOnce() -> String) -> bool {
         self.compared += 1;
         if rust == cpp {
             return true;
@@ -525,19 +459,14 @@ impl WordCheck {
             self.name, self.compared, self.mismatches, self.nan_only, self.max_ulp
         );
         assert!(self.compared > 0, "{}: nothing compared", self.name);
-        assert_eq!(
-            self.mismatches, 0,
-            "{}: {} of {} differ from the C++ reference; first: {:#?}",
-            self.name, self.mismatches, self.compared, self.examples
-        );
+        assert_eq!(self.mismatches, 0, "{}: {} of {} differ from the C++ reference; first: {:#?}", self.name, self.mismatches, self.compared, self.examples);
     }
 }
 
 /// Which words of a log record are floats: everything but the integer arguments.
 fn log_float_mask(code: u32, i: usize) -> bool {
     match code {
-        L_TRANSFORM | L_APPLY_FORCE | L_SCRUB | L_SET_EXTRA_FRICTION | L_GROUND_HEIGHT
-        | L_UNDERWATER | L_HIGHEST_LAYER | L_STRUCT_HEIGHT => true,
+        L_TRANSFORM | L_APPLY_FORCE | L_SCRUB | L_SET_EXTRA_FRICTION | L_GROUND_HEIGHT | L_UNDERWATER | L_HIGHEST_LAYER | L_STRUCT_HEIGHT => true,
         L_LAYER_HEIGHT => i < 2,
         L_VALID_TERRAIN => i >= 1,
         _ => false,
@@ -546,12 +475,7 @@ fn log_float_mask(code: u32, i: usize) -> bool {
 
 /// Compare two logs record by record; on a miss describe the first differing record. The ULP
 /// of a differing float word is reported through `check`.
-fn compare_logs(
-    check: &mut WordCheck,
-    rust: &[u32],
-    cpp: &[u32],
-    ctx: impl Fn() -> String,
-) -> bool {
+fn compare_logs(check: &mut WordCheck, rust: &[u32], cpp: &[u32], ctx: impl Fn() -> String) -> bool {
     check.compared += 1;
     if rust == cpp {
         return true;
@@ -563,11 +487,7 @@ fn compare_logs(
     while i < rust.len() || j < cpp.len() {
         if i >= rust.len() || j >= cpp.len() {
             nan_only = false;
-            desc = format!(
-                "one log ends early (rust {} words, c++ {})",
-                rust.len(),
-                cpp.len()
-            );
+            desc = format!("one log ends early (rust {} words, c++ {})", rust.len(), cpp.len());
             break;
         }
         let (rc, rn) = (rust[i], rust[i + 1] as usize);
@@ -594,11 +514,7 @@ fn compare_logs(
                 }
                 nan_only = false;
                 if desc.is_empty() {
-                    desc = format!(
-                        "record {rc} word {k}: rust {a:#010x} ({}) c++ {b:#010x} ({})",
-                        f32::from_bits(*a),
-                        f32::from_bits(*b)
-                    );
+                    desc = format!("record {rc} word {k}: rust {a:#010x} ({}) c++ {b:#010x} ({})", f32::from_bits(*a), f32::from_bits(*b));
                 }
             }
             if !nan_only {
@@ -629,8 +545,7 @@ struct IniCtx {
 }
 
 fn h_locomotor(ini: &mut Ini<'_>, c: &mut IniCtx) -> IniResult<()> {
-    c.store
-        .parse_locomotor_template_definition(ini, &mut c.names)
+    c.store.parse_locomotor_template_definition(ini, &mut c.names)
 }
 
 fn h_stub(_: &mut Ini<'_>, _: &mut IniCtx) -> IniResult<()> {
@@ -640,27 +555,14 @@ fn h_stub(_: &mut Ini<'_>, _: &mut IniCtx) -> IniResult<()> {
 /// The block table: `Locomotor` is translated; the other handlers throw `ERROR_BUG`, as the
 /// stubs of wrap_ini.cpp do.
 fn blocks() -> Vec<BlockParse<IniCtx>> {
-    TYPE_TABLE
-        .iter()
-        .map(|&(token, _, _)| BlockParse {
-            token,
-            parse: if token == "Locomotor" {
-                h_locomotor
-            } else {
-                h_stub
-            },
-        })
-        .collect()
+    TYPE_TABLE.iter().map(|&(token, _, _)| BlockParse { token, parse: if token == "Locomotor" { h_locomotor } else { h_stub } }).collect()
 }
 
 impl IniCtx {
     fn new() -> Self {
         let mut names = NameKeyGenerator::new();
         names.reset();
-        IniCtx {
-            store: LocomotorStore::new(),
-            names,
-        }
+        IniCtx { store: LocomotorStore::new(), names }
     }
 }
 
@@ -692,23 +594,8 @@ fn cpp_load(name: &str, data: &[u8], load_type: IniLoadType) -> Outcome {
     let (mut log_len, mut crc, mut code) = (0i32, 0u32, 0u32);
     let status = unsafe {
         cpp::ref_ini_reset();
-        cpp::ref_ini_add_file(
-            cname.as_ptr(),
-            data.as_ptr() as *const c_char,
-            data.len() as c_int,
-        );
-        cpp::ref_ini_load_typed(
-            cname.as_ptr(),
-            load_type as c_int,
-            0,
-            log.as_mut_ptr(),
-            log.len() as c_int,
-            &mut log_len,
-            &mut crc,
-            msg.as_mut_ptr() as *mut c_char,
-            msg.len() as c_int,
-            &mut code,
-        )
+        cpp::ref_ini_add_file(cname.as_ptr(), data.as_ptr() as *const c_char, data.len() as c_int);
+        cpp::ref_ini_load_typed(cname.as_ptr(), load_type as c_int, 0, log.as_mut_ptr(), log.len() as c_int, &mut log_len, &mut crc, msg.as_mut_ptr() as *mut c_char, msg.len() as c_int, &mut code)
     };
     assert_eq!(log_len, 0, "the real block handlers log nothing");
     let detail = match status {
@@ -869,11 +756,7 @@ fn value_text(g: &mut Gen, kind: &str, bad: bool) -> String {
             match g.below(6) {
                 0 => "NONE".to_string(),
                 1 => format!("+{}", names[g.below(5) as usize]),
-                2 => format!(
-                    "-{} +{}",
-                    names[g.below(5) as usize],
-                    names[g.below(5) as usize]
-                ),
+                2 => format!("-{} +{}", names[g.below(5) as usize], names[g.below(5) as usize]),
                 _ => {
                     let mut s = Vec::new();
                     for _ in 0..1 + g.below(4) {
@@ -969,11 +852,7 @@ fn gen_block(g: &mut Gen, out: &mut String) {
         let (f, kind) = FIELDS[g.below(FIELDS.len() as u32) as usize];
         let bad = g.below(70) == 0;
         let sep = ["= ", " = ", "=", "\t= "][g.below(4) as usize];
-        let field = if g.below(10) == 0 {
-            f.to_uppercase()
-        } else {
-            f.to_string()
-        };
+        let field = if g.below(10) == 0 { f.to_uppercase() } else { f.to_string() };
         out.push_str(&format!("  {field} {sep}{}\n", value_text(g, kind, bad)));
         lines += 1;
         match g.below(120) {
@@ -1015,60 +894,29 @@ fn gen_ini(g: &mut Gen) -> String {
 
 #[test]
 fn locomotor_ini_matches_upstream() {
-    let _lock = cpp::GLOBAL_RNG_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _lock = cpp::GLOBAL_RNG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut g = Gen::new(0x10C0_0001);
     let table = blocks();
     let mut outcomes = WordCheck::new("Locomotor INI outcome");
     let mut dumps = WordCheck::new("Locomotor INI store");
     let mut resets = WordCheck::new("Locomotor store reset");
     let mut statuses: BTreeMap<i32, u64> = BTreeMap::new();
-    let (mut templates, mut chains, mut overrides_made, mut skipped_resets) =
-        (0u64, 0u64, 0u64, 0u64);
+    let (mut templates, mut chains, mut overrides_made, mut skipped_resets) = (0u64, 0u64, 0u64, 0u64);
     for case in 0..4000 {
         unsafe { cpp::ref_loco_reset() };
         let mut ctx = IniCtx::new();
         // up to three files: plain loads, then override loads
         for round in 0..1 + g.below(3) {
-            let load_type = if (round == 0 && g.below(3) != 0) || g.below(4) == 0 {
-                IniLoadType::Overwrite
-            } else {
-                IniLoadType::CreateOverrides
-            };
+            let load_type = if (round == 0 && g.below(3) != 0) || g.below(4) == 0 { IniLoadType::Overwrite } else { IniLoadType::CreateOverrides };
             let text = gen_ini(&mut g);
             let r = Ini::load(b"l.ini", text.as_bytes(), load_type, None, &table, &mut ctx);
             let rust = rust_outcome(r);
             let cpp_out = cpp_load("l.ini", text.as_bytes(), load_type);
             *statuses.entry(rust.status).or_default() += 1;
-            if std::env::var("LOCO_DEBUG").is_ok() && case < 12 {
-                println!(
-                    "case {case} status {} {}\n{text}",
-                    rust.status,
-                    String::from_utf8_lossy(&rust.detail)
-                );
-            }
+            if std::env::var("LOCO_DEBUG").is_ok() && case < 12 { println!("case {case} status {} {}\n{text}", rust.status, String::from_utf8_lossy(&rust.detail)); }
             let ctxs = || format!("case {case} round {round} ({load_type:?}) text:\n{text}");
-            outcomes.words(
-                &[rust.status as u32],
-                &[cpp_out.status as u32],
-                |_| false,
-                ctxs,
-            );
-            outcomes.words(
-                &rust
-                    .detail
-                    .iter()
-                    .map(|&b| u32::from(b))
-                    .collect::<Vec<_>>(),
-                &cpp_out
-                    .detail
-                    .iter()
-                    .map(|&b| u32::from(b))
-                    .collect::<Vec<_>>(),
-                |_| false,
-                ctxs,
-            );
+            outcomes.words(&[rust.status as u32], &[cpp_out.status as u32], |_| false, ctxs);
+            outcomes.words(&rust.detail.iter().map(|&b| u32::from(b)).collect::<Vec<_>>(), &cpp_out.detail.iter().map(|&b| u32::from(b)).collect::<Vec<_>>(), |_| false, ctxs);
             let (rd, cd) = (rust_store_dump(&ctx.store), cpp_store_dump());
             dumps.words(&rd, &cd, any_float, ctxs);
         }
@@ -1090,21 +938,13 @@ fn locomotor_ini_matches_upstream() {
         if ctx.store.chains().all(|(_, head)| !head.is_override()) {
             ctx.store.reset();
             unsafe { cpp::ref_loco_store_reset() };
-            resets.words(
-                &rust_store_dump(&ctx.store),
-                &cpp_store_dump(),
-                any_float,
-                || format!("case {case} after reset"),
-            );
+            resets.words(&rust_store_dump(&ctx.store), &cpp_store_dump(), any_float, || format!("case {case} after reset"));
         } else {
             skipped_resets += 1;
         }
     }
     println!("COVERAGE INI: outcomes by status {statuses:?}; {templates} templates left in stores, {chains} chains, {overrides_made} override nodes; {skipped_resets} resets skipped (undefined upstream)");
-    assert!(
-        statuses.get(&0).copied().unwrap_or(0) > 1000,
-        "enough successful loads"
-    );
+    assert!(statuses.get(&0).copied().unwrap_or(0) > 1000, "enough successful loads");
     assert!(statuses.keys().count() >= 3, "several kinds of failure");
     assert!(overrides_made > 100, "override chains were exercised");
     outcomes.finish();
@@ -1132,22 +972,10 @@ fn gen_template(g: &mut Gen, name: &str, appearance: usize) -> (String, Meta) {
     let flyer = matches!(appearance, 4 | 5) || (appearance == 7 && g.below(2) == 0);
     let speed = g.uniform(20.0, 160.0);
     put("Appearance", APPEARANCES[appearance].to_string());
-    put(
-        "Surfaces",
-        if flyer {
-            "AIR".to_string()
-        } else if appearance == 3 {
-            "GROUND WATER".to_string()
-        } else {
-            "GROUND CLIFF".to_string()
-        },
-    );
+    put("Surfaces", if flyer { "AIR".to_string() } else if appearance == 3 { "GROUND WATER".to_string() } else { "GROUND CLIFF".to_string() });
     put("Speed", format!("{speed:.3}"));
     if g.below(2) == 0 {
-        put(
-            "SpeedDamaged",
-            format!("{:.3}", speed * g.uniform(0.2, 1.0)),
-        );
+        put("SpeedDamaged", format!("{:.3}", speed * g.uniform(0.2, 1.0)));
     }
     put("TurnRate", format!("{:.3}", g.uniform(30.0, 400.0)));
     if g.below(3) == 0 {
@@ -1155,10 +983,7 @@ fn gen_template(g: &mut Gen, name: &str, appearance: usize) -> (String, Meta) {
     }
     put("Acceleration", format!("{:.3}", g.uniform(20.0, 400.0)));
     if g.below(3) == 0 {
-        put(
-            "AccelerationDamaged",
-            format!("{:.3}", g.uniform(10.0, 200.0)),
-        );
+        put("AccelerationDamaged", format!("{:.3}", g.uniform(10.0, 200.0)));
     }
     put("Braking", format!("{:.3}", g.uniform(20.0, 400.0)));
     // LEGS and CLIMBER must not have a minimum speed: moveTowardsPosition -> Legs -> moveTowardsAngle ->
@@ -1189,11 +1014,7 @@ fn gen_template(g: &mut Gen, name: &str, appearance: usize) -> (String, Meta) {
         0
     };
     put("ZAxisBehavior", Z_NAMES[z].to_string());
-    let preferred_height = if z != 0 || appearance == 4 {
-        g.uniform(0.0, 60.0)
-    } else {
-        0.0
-    };
+    let preferred_height = if z != 0 || appearance == 4 { g.uniform(0.0, 60.0) } else { 0.0 };
     if preferred_height != 0.0 || g.below(3) == 0 {
         put("PreferredHeight", format!("{preferred_height:.3}"));
     }
@@ -1204,10 +1025,7 @@ fn gen_template(g: &mut Gen, name: &str, appearance: usize) -> (String, Meta) {
         }
     }
     if g.below(2) == 0 {
-        put(
-            "PreferredHeightDamping",
-            format!("{:.3}", g.uniform(0.1, 1.0)),
-        );
+        put("PreferredHeightDamping", format!("{:.3}", g.uniform(0.1, 1.0)));
     }
     if g.below(4) == 0 {
         put("SpeedLimitZ", format!("{:.3}", g.uniform(10.0, 200.0)));
@@ -1235,10 +1053,7 @@ fn gen_template(g: &mut Gen, name: &str, appearance: usize) -> (String, Meta) {
         put("WanderLengthFactor", format!("{:.3}", g.uniform(0.3, 3.0)));
     }
     if g.below(3) == 0 {
-        put(
-            "SlideIntoPlaceTime",
-            format!("{:.1}", g.uniform(0.0, 2000.0)),
-        );
+        put("SlideIntoPlaceTime", format!("{:.1}", g.uniform(0.0, 2000.0)));
     }
     if g.below(3) == 0 {
         put("Extra2DFriction", format!("{:.3}", g.uniform(0.0, 3.0)));
@@ -1257,38 +1072,15 @@ fn gen_template(g: &mut Gen, name: &str, appearance: usize) -> (String, Meta) {
     }
     if g.below(3) == 0 {
         put("HasSuspension", "Yes".to_string());
-        put(
-            "FrontWheelTurnAngle",
-            format!("{:.3}", g.uniform(0.0, 45.0)),
-        );
-        put(
-            "MaximumWheelExtension",
-            format!("{:.3}", g.uniform(-3.0, 0.0)),
-        );
-        put(
-            "MaximumWheelCompression",
-            format!("{:.3}", g.uniform(0.0, 3.0)),
-        );
-        put(
-            "AccelerationPitchLimit",
-            format!("{:.3}", g.uniform(0.0, 20.0)),
-        );
-        put(
-            "RudderCorrectionDegree",
-            format!("{:.3}", g.uniform(0.0, 20.0)),
-        );
+        put("FrontWheelTurnAngle", format!("{:.3}", g.uniform(0.0, 45.0)));
+        put("MaximumWheelExtension", format!("{:.3}", g.uniform(-3.0, 0.0)));
+        put("MaximumWheelCompression", format!("{:.3}", g.uniform(0.0, 3.0)));
+        put("AccelerationPitchLimit", format!("{:.3}", g.uniform(0.0, 20.0)));
+        put("RudderCorrectionDegree", format!("{:.3}", g.uniform(0.0, 20.0)));
     }
     s.push_str("End\n");
     let f = speed * (1.0 / 30.0);
-    (
-        s,
-        Meta {
-            appearance,
-            z,
-            air: flyer,
-            max_speed: f,
-        },
-    )
+    (s, Meta { appearance, z, air: flyer, max_speed: f })
 }
 
 fn finite3(v: &[f32; 3]) -> bool {
@@ -1303,10 +1095,7 @@ fn rust_state_words(loco: &mut Locomotor) -> Vec<u32> {
     save.close().unwrap();
     let b = save.bytes();
     assert_eq!(b.len(), 1 + 64, "version byte and 16 words");
-    b[1..]
-        .chunks(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
-        .collect()
+    b[1..].chunks(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect()
 }
 
 fn cpp_state_words(handle: c_int) -> Vec<u32> {
@@ -1320,20 +1109,9 @@ fn state_is_float(i: usize) -> bool {
 }
 
 fn rust_obj_words(h: &Host) -> Vec<u32> {
-    let mut w: Vec<u32> = h
-        .thing
-        .transform_matrix()
-        .to_array()
-        .iter()
-        .map(|f| f.to_bits())
-        .collect();
+    let mut w: Vec<u32> = h.thing.transform_matrix().to_array().iter().map(|f| f.to_bits()).collect();
     let p = h.thing.position();
-    w.extend([
-        p.x.to_bits(),
-        p.y.to_bits(),
-        p.z.to_bits(),
-        h.thing.orientation().to_bits(),
-    ]);
+    w.extend([p.x.to_bits(), p.y.to_bits(), p.z.to_bits(), h.thing.orientation().to_bits()]);
     w.push(h.status as u32);
     w.push((h.status >> 32) as u32);
     w
@@ -1352,47 +1130,15 @@ fn obj_is_float(i: usize) -> bool {
     i < 16
 }
 
-fn cpp_call(
-    handle: c_int,
-    op: c_int,
-    env: &Env,
-    fa: &[f32; 8],
-    ia: &[c_int; 4],
-) -> (Vec<u32>, [u32; 16], [c_int; 4]) {
+fn cpp_call(handle: c_int, op: c_int, env: &Env, fa: &[f32; 8], ia: &[c_int; 4]) -> (Vec<u32>, [u32; 16], [c_int; 4]) {
     let mut rf = [0u32; 16];
     let mut ri = [0 as c_int; 4];
     let mut log = vec![0u32; 1 << 12];
     let mut n: c_int = 0;
-    unsafe {
-        cpp::ref_loco_call(
-            handle,
-            op,
-            env,
-            fa.as_ptr(),
-            ia.as_ptr(),
-            rf.as_mut_ptr(),
-            ri.as_mut_ptr(),
-            log.as_mut_ptr(),
-            log.len() as c_int,
-            &mut n,
-        )
-    };
+    unsafe { cpp::ref_loco_call(handle, op, env, fa.as_ptr(), ia.as_ptr(), rf.as_mut_ptr(), ri.as_mut_ptr(), log.as_mut_ptr(), log.len() as c_int, &mut n) };
     if n as usize > log.len() {
         log = vec![0u32; n as usize];
-        unsafe {
-            cpp::ref_loco_call(
-                handle,
-                op,
-                env,
-                fa.as_ptr(),
-                ia.as_ptr(),
-                rf.as_mut_ptr(),
-                ri.as_mut_ptr(),
-                log.as_mut_ptr(),
-                log.len() as c_int,
-                &mut n,
-            )
-        };
+        unsafe { cpp::ref_loco_call(handle, op, env, fa.as_ptr(), ia.as_ptr(), rf.as_mut_ptr(), ri.as_mut_ptr(), log.as_mut_ptr(), log.len() as c_int, &mut n) };
         panic!("a call must not be repeated: the log outgrew its buffer ({n} words)");
     }
     log.truncate(n as usize);
@@ -1463,11 +1209,7 @@ impl Sim {
         self.vel[0] *= friction;
         self.vel[1] *= friction;
         let p = host.position();
-        let mut np = Coord3D {
-            x: p.x + self.vel[0],
-            y: p.y + self.vel[1],
-            z: p.z + self.vel[2],
-        };
+        let mut np = Coord3D { x: p.x + self.vel[0], y: p.y + self.vel[1], z: p.z + self.vel[2] };
         let ground = host.ground(np.x, np.y);
         if np.z < ground {
             np.z = ground;
@@ -1482,11 +1224,7 @@ impl Sim {
 /// The scene constants of a program.
 fn gen_scene(g: &mut Gen, meta: &Meta) -> Env {
     let mut e = Env {
-        gravity: if g.below(4) == 0 {
-            -1.0
-        } else {
-            -60.0 * (1.0 / 30.0) * (1.0 / 30.0)
-        },
+        gravity: if g.below(4) == 0 { -1.0 } else { -60.0 * (1.0 / 30.0) * (1.0 / 30.0) },
         penalty: 1 + g.below(2) as i32,
         has_physics: 1,
         mass: g.uniform(1.0, 60.0),
@@ -1503,19 +1241,11 @@ fn gen_scene(g: &mut Gen, meta: &Meta) -> Env {
     e.ga = g.uniform(-0.25, 0.25);
     e.gb = g.uniform(-0.25, 0.25);
     e.gc = g.uniform(-10.0, 10.0);
-    e.wx = if g.below(3) == 0 {
-        g.uniform(-150.0, 150.0)
-    } else {
-        -1.0e9
-    };
+    e.wx = if g.below(3) == 0 { g.uniform(-150.0, 150.0) } else { -1.0e9 };
     e.wz = g.uniform(-5.0, 15.0);
     e.layer_offset = g.uniform(-4.0, 12.0);
     e.struct_offset = g.uniform(0.0, 20.0);
-    e.highest_layer = if g.below(2) == 0 {
-        LAYER_GROUND
-    } else {
-        LAYER_WALL
-    };
+    e.highest_layer = if g.below(2) == 0 { LAYER_GROUND } else { LAYER_WALL };
     if !meta.air && g.below(2) == 0 {
         e.inv_enabled = 1;
         let (cx, cy) = (g.uniform(-150.0, 150.0), g.uniform(-150.0, 150.0));
@@ -1537,28 +1267,12 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
     unsafe { cpp::ref_loco_reset() };
     let mut ictx = IniCtx::new();
     let table = blocks();
-    Ini::load(
-        b"t.ini",
-        ini.as_bytes(),
-        IniLoadType::Overwrite,
-        None,
-        &table,
-        &mut ictx,
-    )
-    .unwrap_or_else(|e| panic!("generated template rejected: {e:?}\n{ini}"));
+    Ini::load(b"t.ini", ini.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ictx).unwrap_or_else(|e| panic!("generated template rejected: {e:?}\n{ini}"));
     let o = cpp_load("t.ini", ini.as_bytes(), IniLoadType::Overwrite);
     assert_eq!(o.status, 0, "generated template rejected by C++:\n{ini}");
-    checks.template.words(
-        &rust_store_dump(&ictx.store),
-        &cpp_store_dump(),
-        any_float,
-        || format!("seed {:#x}\n{ini}", p.seed),
-    );
+    checks.template.words(&rust_store_dump(&ictx.store), &cpp_store_dump(), any_float, || format!("seed {:#x}\n{ini}", p.seed));
     let key = ictx.names.name_to_key(name.as_bytes());
-    assert_eq!(
-        unsafe { cpp::ref_loco_name_key(cstr(name).as_ptr()) },
-        key.0
-    );
+    assert_eq!(unsafe { cpp::ref_loco_name_key(cstr(name).as_ptr()) }, key.0);
 
     // the locomotor: the constructor draws three logic random values
     let seed = g.u32();
@@ -1566,18 +1280,10 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
     unsafe { cpp::ref_init_game_logic_random(seed) };
     let mut rng = RandomValues::default();
     rng.init_game_logic_random(seed);
-    let mut loco = ictx
-        .store
-        .new_locomotor(key, &mut rng, start_frame)
-        .unwrap();
+    let mut loco = ictx.store.new_locomotor(key, &mut rng, start_frame).unwrap();
     let handle = unsafe { cpp::ref_loco_new(cstr(name).as_ptr(), start_frame) };
     assert!(handle >= 0);
-    let ok = checks.state.words(
-        &rust_state_words(&mut loco),
-        &cpp_state_words(handle),
-        state_is_float,
-        || format!("seed {:#x} after construction", p.seed),
-    );
+    let ok = checks.state.words(&rust_state_words(&mut loco), &cpp_state_words(handle), state_is_float, || format!("seed {:#x} after construction", p.seed));
     if !ok {
         return false;
     }
@@ -1588,11 +1294,7 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
     let base = host.env;
     let (px, py) = (g.uniform(-100.0, 100.0), g.uniform(-100.0, 100.0));
     let ground0 = host.ground(px, py);
-    let z0 = if meta.air {
-        ground0 + g.uniform(0.0, 80.0)
-    } else {
-        ground0
-    };
+    let z0 = if meta.air { ground0 + g.uniform(0.0, 80.0) } else { ground0 };
     let mut m = Matrix3D::identity();
     m.translate(px, py, z0);
     m.rotate_z(g.uniform(-3.1, 3.1));
@@ -1602,15 +1304,8 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
     cpp_obj(0, &fa12, &[0, 0]);
     host.log.clear();
 
-    let mut sim = Sim {
-        vel: [0.0; 3],
-        mass: base.mass,
-    };
-    let mut goal = Coord3D {
-        x: px + g.uniform(-300.0, 300.0),
-        y: py + g.uniform(-300.0, 300.0),
-        z: z0 + g.uniform(-5.0, 30.0),
-    };
+    let mut sim = Sim { vel: [0.0; 3], mass: base.mass };
+    let mut goal = Coord3D { x: px + g.uniform(-300.0, 300.0), y: py + g.uniform(-300.0, 300.0), z: z0 + g.uniform(-5.0, 30.0) };
     let mut frame = start_frame;
     let mut body_state = 0i32;
     let gravity = base.gravity;
@@ -1619,29 +1314,17 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
         frame += 1;
         // the world changes now and then
         if g.below(40) == 0 {
-            goal = Coord3D {
-                x: px + g.uniform(-300.0, 300.0),
-                y: py + g.uniform(-300.0, 300.0),
-                z: z0 + g.uniform(-5.0, 30.0),
-            };
+            goal = Coord3D { x: px + g.uniform(-300.0, 300.0), y: py + g.uniform(-300.0, 300.0), z: z0 + g.uniform(-5.0, 30.0) };
             if g.below(3) == 0 {
                 let p = host.position();
-                goal = Coord3D {
-                    x: p.x + g.uniform(-8.0, 8.0),
-                    y: p.y + g.uniform(-8.0, 8.0),
-                    z: p.z + g.uniform(-2.0, 2.0),
-                };
+                goal = Coord3D { x: p.x + g.uniform(-8.0, 8.0), y: p.y + g.uniform(-8.0, 8.0), z: p.z + g.uniform(-2.0, 2.0) };
             }
         }
         if g.below(30) == 0 {
             body_state = g.below(4) as i32;
         }
         let pos = host.position();
-        let dir = Coord3D {
-            x: trig::cos(host.thing.orientation()),
-            y: trig::sin(host.thing.orientation()),
-            z: 0.0,
-        };
+        let dir = Coord3D { x: trig::cos(host.thing.orientation()), y: trig::sin(host.thing.orientation()), z: 0.0 };
         let xv = host.thing.transform_matrix().get_x_vector();
         let v = sim.vel;
         let mut env = base;
@@ -1654,18 +1337,10 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
         env.fwd2d = v[0] * dir.x + v[1] * dir.y;
         env.fwd3d = v[0] * xv.x + v[1] * xv.y + v[2] * xv.z;
         env.motive = i32::from(env.vel_mag > 0.01);
-        env.layer = if g.below(25) == 0 {
-            LAYER_WALL
-        } else {
-            LAYER_GROUND
-        };
+        env.layer = if g.below(25) == 0 { LAYER_WALL } else { LAYER_GROUND };
         env.disabled_held = i32::from(g.below(20) == 0);
         if g.below(15) == 0 {
-            env.highest_layer = if g.below(2) == 0 {
-                LAYER_GROUND
-            } else {
-                LAYER_WALL
-            };
+            env.highest_layer = if g.below(2) == 0 { LAYER_GROUND } else { LAYER_WALL };
         }
         let _ = pos;
 
@@ -1676,8 +1351,7 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
         let op: c_int = match r {
             0..=54 => {
                 let p = host.position();
-                let real =
-                    ((goal.x - p.x) * (goal.x - p.x) + (goal.y - p.y) * (goal.y - p.y)).sqrt();
+                let real = ((goal.x - p.x) * (goal.x - p.x) + (goal.y - p.y) * (goal.y - p.y)).sqrt();
                 let on_path = match g.below(5) {
                     0 => real * g.uniform(0.2, 1.0),
                     1 => 99999.0,
@@ -1688,8 +1362,7 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
                 // evaluation of its quotient (upstream's is a double) would flip the comparison
                 let on_path = if g.below(6) == 0 {
                     let d = env.fwd2d - loco.template().min_speed;
-                    let sd = (((d * d) as f64 / f64::from(loco.get_braking().abs())) * 0.5) as f32
-                        * 1.05;
+                    let sd = (((d * d) as f64 / f64::from(loco.get_braking().abs())) * 0.5) as f32 * 1.05;
                     f32::from_bits((sd.to_bits() as i64 + g.below(5) as i64 - 2).max(0) as u32)
                 } else {
                     on_path
@@ -1705,16 +1378,11 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
                 if meta.appearance == 6 && g.below(5) == 0 {
                     // a climber whose look-ahead ground is 0.1 (+- ulps) below it: the edge of
                     // moveTowardsPositionClimb's `delta.z < pos.z-0.1` (a double comparison)
-                    let mut d = Coord3D {
-                        x: goal.x - p.x,
-                        y: goal.y - p.y,
-                        z: 0.0,
-                    };
+                    let mut d = Coord3D { x: goal.x - p.x, y: goal.y - p.y, z: 0.0 };
                     d.normalize();
                     let ahead = host.ground(d.x + p.x, d.y + p.y);
                     let z = ahead + 0.1f32;
-                    let z =
-                        f32::from_bits((z.to_bits() as i64 + g.below(7) as i64 - 3).max(0) as u32);
+                    let z = f32::from_bits((z.to_bits() as i64 + g.below(7) as i64 - 3).max(0) as u32);
                     let np = Coord3D { x: p.x, y: p.y, z };
                     host.set_position(&np);
                     host.log.clear();
@@ -1759,14 +1427,7 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
         };
         // statuses the engine sets from outside now and then
         if g.below(25) == 0 {
-            let (bit, set) = (
-                if g.below(2) == 0 {
-                    OBJECT_STATUS_BRAKING
-                } else {
-                    OBJECT_STATUS_DECK_HEIGHT_OFFSET
-                },
-                g.below(2) as i32,
-            );
+            let (bit, set) = (if g.below(2) == 0 { OBJECT_STATUS_BRAKING } else { OBJECT_STATUS_DECK_HEIGHT_OFFSET }, g.below(2) as i32);
             host.set_status(bit, set != 0);
             host.log.clear();
             cpp_obj(3, &[0.0; 12], &[bit, set]);
@@ -1781,17 +1442,7 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
         match op {
             0 => {
                 let mut blocked = ia[0] != 0;
-                loco.loco_update_move_towards_position(
-                    &mut host,
-                    &Coord3D {
-                        x: fa[0],
-                        y: fa[1],
-                        z: fa[2],
-                    },
-                    fa[3],
-                    fa[4],
-                    &mut blocked,
-                );
+                loco.loco_update_move_towards_position(&mut host, &Coord3D { x: fa[0], y: fa[1], z: fa[2] }, fa[3], fa[4], &mut blocked);
                 blocked_out = i32::from(blocked);
                 ri0 = blocked_out;
             }
@@ -1833,12 +1484,7 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
             return true;
         }
         let (cpp_log, rf_c, ri_c) = cpp_call(handle, op, &env, &fa, &ia);
-        let ctxs = || {
-            format!(
-                "seed {:#x} (appearance {}, z {}) step {step} op {op} fa {fa:?} ia {ia:?}\n{ini}",
-                p.seed, meta.appearance, meta.z
-            )
-        };
+        let ctxs = || format!("seed {:#x} (appearance {}, z {}) step {step} op {op} fa {fa:?} ia {ia:?}\n{ini}", p.seed, meta.appearance, meta.z);
 
         if !compare_logs(&mut checks.log, &rust_log, &cpp_log, ctxs) {
             return false;
@@ -1846,23 +1492,13 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
         let ret_ok = if op == 5 {
             checks.results.words(&rf_r[..7], &rf_c[..7], |_| true, ctxs)
         } else if op == 0 || op == 2 {
-            checks
-                .results
-                .words(&[ri0 as u32], &[ri_c[0] as u32], |_| false, ctxs)
+            checks.results.words(&[ri0 as u32], &[ri_c[0] as u32], |_| false, ctxs)
         } else {
             true
         };
         let _ = blocked_out;
-        let obj_ok =
-            checks
-                .object
-                .words(&rust_obj_words(&host), &cpp_obj_words(), obj_is_float, ctxs);
-        let st_ok = checks.state.words(
-            &rust_state_words(&mut loco),
-            &cpp_state_words(handle),
-            state_is_float,
-            ctxs,
-        );
+        let obj_ok = checks.object.words(&rust_obj_words(&host), &cpp_obj_words(), obj_is_float, ctxs);
+        let st_ok = checks.state.words(&rust_state_words(&mut loco), &cpp_state_words(handle), state_is_float, ctxs);
         if !(ret_ok && obj_ok && st_ok) {
             return false;
         }
@@ -1893,23 +1529,11 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
 
         // sampled xfer: the bytes of the real XferSave against the Rust xfer, then a load
         if step % 17 == 0 {
-            let path = std::env::temp_dir().join(format!(
-                "loco_xfer_{}_{}.bin",
-                std::process::id(),
-                p.seed
-            ));
+            let path = std::env::temp_dir().join(format!("loco_xfer_{}_{}.bin", std::process::id(), p.seed));
             let cpath = cstr(path.to_str().unwrap());
             let mut out = vec![0u8; 256];
             let mut len = 0;
-            let st = unsafe {
-                cpp::ref_loco_xfer_save(
-                    handle,
-                    cpath.as_ptr(),
-                    out.as_mut_ptr(),
-                    out.len() as c_int,
-                    &mut len,
-                )
-            };
+            let st = unsafe { cpp::ref_loco_xfer_save(handle, cpath.as_ptr(), out.as_mut_ptr(), out.len() as c_int, &mut len) };
             assert_eq!(st, 0);
             let mut save = XferSave::new();
             save.open(path.to_str().unwrap().as_bytes()).unwrap();
@@ -1918,12 +1542,7 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
             let rb = save.bytes().to_vec();
             let cb = out[..len as usize].to_vec();
             // the identifier is not in the file: the bytes are the data
-            checks.xfer_bytes.words(
-                &rb.iter().map(|&b| u32::from(b)).collect::<Vec<_>>(),
-                &cb.iter().map(|&b| u32::from(b)).collect::<Vec<_>>(),
-                |_| false,
-                ctxs,
-            );
+            checks.xfer_bytes.words(&rb.iter().map(|&b| u32::from(b)).collect::<Vec<_>>(), &cb.iter().map(|&b| u32::from(b)).collect::<Vec<_>>(), |_| false, ctxs);
             // load into a fresh locomotor on both sides
             let mut rng2 = RandomValues::default();
             rng2.init_game_logic_random(seed ^ 1);
@@ -1934,15 +1553,9 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
             load.close().unwrap();
             unsafe { cpp::ref_init_game_logic_random(seed ^ 1) };
             let mut nh: c_int = -1;
-            let st =
-                unsafe { cpp::ref_loco_xfer_load(cstr(name).as_ptr(), 7, cpath.as_ptr(), &mut nh) };
+            let st = unsafe { cpp::ref_loco_xfer_load(cstr(name).as_ptr(), 7, cpath.as_ptr(), &mut nh) };
             assert_eq!(st, 0);
-            checks.xfer_load.words(
-                &rust_state_words(&mut fresh),
-                &cpp_state_words(nh),
-                state_is_float,
-                ctxs,
-            );
+            checks.xfer_load.words(&rust_state_words(&mut fresh), &cpp_state_words(nh), state_is_float, ctxs);
             // the loaded state is the saved one
             assert_eq!(rust_state_words(&mut fresh), rust_state_words(&mut loco));
             let _ = std::fs::remove_file(&path);
@@ -1959,18 +1572,10 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
 
         // physics: integrate on the Rust side, give both sides the new position
         if env.has_physics != 0 {
-            let friction =
-                if (host.position().z - host.ground(host.position().x, host.position().y)) < 0.5 {
-                    0.96
-                } else {
-                    0.995
-                };
+            let friction = if (host.position().z - host.ground(host.position().x, host.position().y)) < 0.5 { 0.96 } else { 0.995 };
             sim.integrate_and_move(&mut host, &rust_log, gravity, friction, &mut stuck);
             let np = host.position();
-            if !finite3(&sim.vel)
-                || !finite3(&[np.x, np.y, np.z])
-                || !host.thing.orientation().is_finite()
-            {
+            if !finite3(&sim.vel) || !finite3(&[np.x, np.y, np.z]) || !host.thing.orientation().is_finite() {
                 cov.add("program ended: not finite");
                 return true;
             }
@@ -1986,14 +1591,7 @@ fn run_program(p: &Program, frames: usize, checks: &mut Checks, cov: &mut Covera
 }
 
 impl Sim {
-    fn integrate_and_move(
-        &mut self,
-        host: &mut Host,
-        log: &[u32],
-        gravity: f32,
-        friction: f32,
-        _stuck: &mut i32,
-    ) {
+    fn integrate_and_move(&mut self, host: &mut Host, log: &[u32], gravity: f32, friction: f32, _stuck: &mut i32) {
         let np = self.integrate(host, log, gravity, friction);
         host.set_position(&np);
     }
@@ -2092,21 +1690,14 @@ impl Checks {
     }
 }
 
-fn run_all_programs(
-    programs_per_appearance: usize,
-    frames: usize,
-    seed: u64,
-) -> (Checks, Coverage, usize) {
+fn run_all_programs(programs_per_appearance: usize, frames: usize, seed: u64) -> (Checks, Coverage, usize) {
     let mut checks = Checks::new();
     let mut cov = Coverage::default();
     let mut total_frames = 0usize;
     let mut failed = 0;
     for n in 0..programs_per_appearance {
         for appearance in 0..9 {
-            let p = Program {
-                seed: seed ^ ((n as u64) << 8) ^ (appearance as u64) << 40 | 1,
-                appearance,
-            };
+            let p = Program { seed: seed ^ ((n as u64) << 8) ^ (appearance as u64) << 40 | 1, appearance };
             if !run_program(&p, frames, &mut checks, &mut cov) {
                 failed += 1;
             } else {
@@ -2120,9 +1711,7 @@ fn run_all_programs(
 
 #[test]
 fn locomotor_movement_matches_upstream() {
-    let _lock = cpp::GLOBAL_RNG_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _lock = cpp::GLOBAL_RNG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let (checks, cov, frames) = run_all_programs(250, 300, 0x10C0_2000);
     println!("COVERAGE movement: {frames} frames of {} programs", 250 * 9);
     for (k, v) in &cov.counts {
@@ -2130,29 +1719,10 @@ fn locomotor_movement_matches_upstream() {
     }
     // the programs must have reached the interesting corners
     for need in [
-        "log code 5",
-        "log code 6",
-        "log code 7",
-        "log code 2",
-        "log code 1",
-        "log code 20",
-        "log code 21",
-        "log code 22",
-        "log code 23",
-        "log code 24",
-        "log code 25",
-        "flag 0",
-        "flag 7",
-        "flag 8",
-        "flag 9",
-        "flag 5",
-        "status braking",
-        "still blocked",
+        "log code 5", "log code 6", "log code 7", "log code 2", "log code 1", "log code 20", "log code 21", "log code 22", "log code 23", "log code 24", "log code 25",
+        "flag 0", "flag 7", "flag 8", "flag 9", "flag 5", "status braking", "still blocked",
     ] {
-        assert!(
-            cov.counts.get(need).copied().unwrap_or(0) > 0,
-            "never reached: {need}"
-        );
+        assert!(cov.counts.get(need).copied().unwrap_or(0) > 0, "never reached: {need}");
     }
     checks.finish();
 }
@@ -2171,28 +1741,11 @@ Locomotor Cart\n Surfaces = GROUND RUBBLE\n DownhillOnly = Yes\nEnd\n\
 Locomotor Ghost\nEnd\n\
 Locomotor Amphibian\n Surfaces = GROUND WATER\n Appearance = TREADS\nEnd\n";
 
-const SET_NAMES: [&str; 8] = [
-    "Walker",
-    "Truck",
-    "Boat",
-    "Heli",
-    "Cart",
-    "Ghost",
-    "Amphibian",
-    "NoSuchTemplate",
-];
+const SET_NAMES: [&str; 8] = ["Walker", "Truck", "Boat", "Heli", "Cart", "Ghost", "Amphibian", "NoSuchTemplate"];
 
 fn load_both(ini: &str, ictx: &mut IniCtx) {
     let table = blocks();
-    Ini::load(
-        b"s.ini",
-        ini.as_bytes(),
-        IniLoadType::Overwrite,
-        None,
-        &table,
-        ictx,
-    )
-    .unwrap();
+    Ini::load(b"s.ini", ini.as_bytes(), IniLoadType::Overwrite, None, &table, ictx).unwrap();
     let o = cpp_load("s.ini", ini.as_bytes(), IniLoadType::Overwrite);
     assert_eq!(o.status, 0);
 }
@@ -2216,11 +1769,7 @@ fn cpp_set_dump(set: c_int) -> Vec<u32> {
 }
 
 fn rust_set_dump(set: &LocomotorSet) -> Vec<u32> {
-    let mut v = vec![
-        set.len() as u32,
-        set.get_valid_surfaces() as u32,
-        u32::from(set.is_downhill_only()),
-    ];
+    let mut v = vec![set.len() as u32, set.get_valid_surfaces() as u32, u32::from(set.is_downhill_only())];
     for i in 0..set.len() {
         put_str(&mut v, set.get(i).unwrap().get_template_name());
     }
@@ -2229,17 +1778,14 @@ fn rust_set_dump(set: &LocomotorSet) -> Vec<u32> {
 
 #[test]
 fn locomotor_set_matches_upstream() {
-    let _lock = cpp::GLOBAL_RNG_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _lock = cpp::GLOBAL_RNG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut g = Gen::new(0x10C0_5E70);
     let mut adds = WordCheck::new("LocomotorSet add (result)");
     let mut dumps = WordCheck::new("LocomotorSet contents");
     let mut finds = WordCheck::new("LocomotorSet::findLocomotor");
     let mut saves = WordCheck::new("LocomotorSet xfer save bytes");
     let mut loads = WordCheck::new("LocomotorSet xfer load (result, set, locomotors)");
-    let (mut saved_sets, mut unknown_string, mut not_empty, mut empty_cur) =
-        (0u64, 0u64, 0u64, 0u64);
+    let (mut saved_sets, mut unknown_string, mut not_empty, mut empty_cur) = (0u64, 0u64, 0u64, 0u64);
     let table = blocks();
     for case in 0..600 {
         unsafe { cpp::ref_loco_reset() };
@@ -2259,104 +1805,44 @@ fn locomotor_set_matches_upstream() {
             let key = ictx.names.name_to_key(name.as_bytes());
             let rust_r = set.add_locomotor(&ictx.store, key, &mut rng, frame);
             let cpp_r = unsafe { cpp::ref_locoset_add(set_h, cstr(name).as_ptr(), frame) };
-            adds.words(
-                &[u32::from(rust_r.is_err())],
-                &[cpp_r as u32],
-                |_| false,
-                ctxs,
-            );
+            adds.words(&[u32::from(rust_r.is_err())], &[cpp_r as u32], |_| false, ctxs);
             if g.below(12) == 0 {
                 set.clear();
                 unsafe { cpp::ref_locoset_clear(set_h) };
             }
             dumps.words(&rust_set_dump(&set), &cpp_set_dump(set_h), |_| false, ctxs);
         }
-        for mask in [
-            0,
-            1,
-            2,
-            4,
-            8,
-            16,
-            3,
-            9,
-            17,
-            0xffff,
-            0x20,
-            6,
-            12,
-            g.below(64) as i32,
-        ] {
-            finds.words(
-                &[set.find_locomotor(mask).map_or(-1, |i| i as i32) as u32],
-                &[unsafe { cpp::ref_locoset_find(set_h, mask) } as u32],
-                |_| false,
-                || format!("case {case} mask {mask:#x}"),
-            );
+        for mask in [0, 1, 2, 4, 8, 16, 3, 9, 17, 0xffff, 0x20, 6, 12, g.below(64) as i32] {
+            finds.words(&[set.find_locomotor(mask).map_or(-1, |i| i as i32) as u32], &[unsafe { cpp::ref_locoset_find(set_h, mask) } as u32], |_| false, || format!("case {case} mask {mask:#x}"));
         }
 
         // xferSelfAndCurLocoPtr: save with a current locomotor (or none), then load
-        let cur = if set.is_empty() || g.below(4) == 0 {
-            -1
-        } else {
-            g.below(set.len() as u32) as i32
-        };
+        let cur = if set.is_empty() || g.below(4) == 0 { -1 } else { g.below(set.len() as u32) as i32 };
         if cur < 0 {
             empty_cur += 1;
         }
-        let path =
-            std::env::temp_dir().join(format!("locoset_xfer_{}_{case}.bin", std::process::id()));
+        let path = std::env::temp_dir().join(format!("locoset_xfer_{}_{case}.bin", std::process::id()));
         let cpath = cstr(path.to_str().unwrap());
         let mut out = vec![0u8; 4096];
         let mut len = 0;
-        let st = unsafe {
-            cpp::ref_locoset_xfer_save(
-                set_h,
-                cur,
-                cpath.as_ptr(),
-                out.as_mut_ptr(),
-                out.len() as c_int,
-                &mut len,
-            )
-        };
+        let st = unsafe { cpp::ref_locoset_xfer_save(set_h, cur, cpath.as_ptr(), out.as_mut_ptr(), out.len() as c_int, &mut len) };
         assert_eq!(st, 0);
         let mut save = XferSave::new();
         save.open(path.to_str().unwrap().as_bytes()).unwrap();
         let mut cur_r = if cur < 0 { None } else { Some(cur as usize) };
-        set.xfer_self_and_cur_loco_ptr(
-            &mut save,
-            &ictx.store,
-            &mut ictx.names,
-            &mut rng,
-            frame,
-            &mut cur_r,
-        )
-        .unwrap();
+        set.xfer_self_and_cur_loco_ptr(&mut save, &ictx.store, &mut ictx.names, &mut rng, frame, &mut cur_r).unwrap();
         save.close().unwrap();
         let (rb, cb) = (save.bytes().to_vec(), out[..len as usize].to_vec());
-        saves.words(
-            &rb.iter().map(|&b| u32::from(b)).collect::<Vec<_>>(),
-            &cb.iter().map(|&b| u32::from(b)).collect::<Vec<_>>(),
-            |_| false,
-            || format!("case {case}"),
-        );
+        saves.words(&rb.iter().map(|&b| u32::from(b)).collect::<Vec<_>>(), &cb.iter().map(|&b| u32::from(b)).collect::<Vec<_>>(), |_| false, || format!("case {case}"));
         saved_sets += 1;
 
         // a second phase: load the file into a new set, in a store that lacks one template half the time
-        let drop_name = if g.below(2) == 0 {
-            Some(SET_NAMES[g.below(7) as usize])
-        } else {
-            None
-        };
+        let drop_name = if g.below(2) == 0 { Some(SET_NAMES[g.below(7) as usize]) } else { None };
         unsafe { cpp::ref_loco_reset() };
         ictx = IniCtx::new();
         let ini2: String = match drop_name {
             None => SET_INI.to_string(),
-            Some(d) => SET_INI
-                .split("End\n")
-                .filter(|b| !b.trim().is_empty() && !b.starts_with(&format!("Locomotor {d}\n")))
-                .map(|b| format!("{b}End\n"))
-                .collect(),
+            Some(d) => SET_INI.split("End\n").filter(|b| !b.trim().is_empty() && !b.starts_with(&format!("Locomotor {d}\n"))).map(|b| format!("{b}End\n")).collect(),
         };
         load_both(&ini2, &mut ictx);
         let _ = &table;
@@ -2378,14 +1864,7 @@ fn locomotor_set_matches_upstream() {
         let mut load = XferLoad::new(cb.clone());
         load.open(b"x").unwrap();
         let mut cur2_r = None;
-        let rust_status = match set2.xfer_self_and_cur_loco_ptr(
-            &mut load,
-            &ictx.store,
-            &mut ictx.names,
-            &mut rng2,
-            77,
-            &mut cur2_r,
-        ) {
+        let rust_status = match set2.xfer_self_and_cur_loco_ptr(&mut load, &ictx.store, &mut ictx.names, &mut rng2, 77, &mut cur2_r) {
             Ok(()) => 0,
             Err(e) => xfer_status(&e),
         };
@@ -2395,37 +1874,22 @@ fn locomotor_set_matches_upstream() {
         loads.words(&[rust_status as u32], &[cpp_status as u32], |_| false, ctxs);
         match rust_status {
             0 => {}
-            x if x == rts_lockstep_engine::common::xfer::XferStatus::UnknownString as i32 => {
-                unknown_string += 1
-            }
+            x if x == rts_lockstep_engine::common::xfer::XferStatus::UnknownString as i32 => unknown_string += 1,
             _ => not_empty += 1,
         }
         loads.words(&rust_set_dump(&set2), &cpp_set_dump(h2), |_| false, ctxs);
         if rust_status == 0 {
-            loads.words(
-                &[cur2_r.map_or(-1, |i| i as i32) as u32],
-                &[cur2_c as u32],
-                |_| false,
-                ctxs,
-            );
+            loads.words(&[cur2_r.map_or(-1, |i| i as i32) as u32], &[cur2_c as u32], |_| false, ctxs);
         }
         for i in 0..set2.len() {
             let mut w = [0u32; 16];
             unsafe { cpp::ref_locoset_state(h2, i as c_int, w.as_mut_ptr()) };
-            loads.words(
-                &rust_state_words(set2.get_mut(i).unwrap()),
-                &w,
-                state_is_float,
-                ctxs,
-            );
+            loads.words(&rust_state_words(set2.get_mut(i).unwrap()), &w, state_is_float, ctxs);
         }
         let _ = std::fs::remove_file(&path);
     }
     println!("COVERAGE set: {saved_sets} saved sets ({empty_cur} with no current locomotor), loads refused: {unknown_string} unknown template, {not_empty} not empty");
-    assert!(
-        unknown_string > 5 && not_empty > 5,
-        "both refusals were exercised"
-    );
+    assert!(unknown_string > 5 && not_empty > 5, "both refusals were exercised");
     adds.finish();
     dumps.finish();
     finds.finish();

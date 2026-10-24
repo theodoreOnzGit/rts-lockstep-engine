@@ -399,20 +399,14 @@ pub struct IniError {
 
 impl IniError {
     pub fn new(kind: IniErrorKind) -> Self {
-        IniError {
-            kind,
-            exception: None,
-        }
+        IniError { kind, exception: None }
     }
     pub fn undefined(u: Undefined) -> Self {
         IniError::new(IniErrorKind::Undefined(u))
     }
     /// Whether this is `Undefined::EndIteratorDereferenced` (`processDamageToContained`'s read of `list::end()`).
     pub fn is_end_iterator_dereferenced(&self) -> bool {
-        matches!(
-            self.kind,
-            IniErrorKind::Undefined(Undefined::EndIteratorDereferenced)
-        )
+        matches!(self.kind, IniErrorKind::Undefined(Undefined::EndIteratorDereferenced))
     }
     /// Whether upstream's behaviour is undefined for this input.
     pub fn is_undefined(&self) -> bool {
@@ -425,10 +419,7 @@ impl IniError {
             return None;
         }
         // --- p1w4-thingtemplate ---
-        if let IniErrorKind::ModuleNotTranslated(_)
-        | IniErrorKind::ModuleUnknown(_)
-        | IniErrorKind::ModuleNotInShippedBuild(_) = self.kind
-        {
+        if let IniErrorKind::ModuleNotTranslated(_) | IniErrorKind::ModuleUnknown(_) | IniErrorKind::ModuleNotInShippedBuild(_) = self.kind {
             return None; // not something upstream throws, wrapped or not
         }
         // --- end p1w4-thingtemplate ---
@@ -440,9 +431,7 @@ impl IniError {
             IniErrorKind::BadArg => Thrown::ErrorCode(crate::common::errors::ERROR_BAD_ARG),
             IniErrorKind::BitIndexOutOfRange => Thrown::OutOfRange,
             IniErrorKind::Xfer(_) => return None,
-            IniErrorKind::ModuleNotTranslated(_)
-            | IniErrorKind::ModuleUnknown(_)
-            | IniErrorKind::ModuleNotInShippedBuild(_) => return None,
+            IniErrorKind::ModuleNotTranslated(_) | IniErrorKind::ModuleUnknown(_) | IniErrorKind::ModuleNotInShippedBuild(_) => return None,
             _ => Thrown::Status(ERROR_BAD_INI),
         })
     }
@@ -454,22 +443,14 @@ impl IniError {
         if message.len() + 1 > EXCEPTION_BUFFER {
             return IniError::undefined(Undefined::MessageOverflow);
         }
-        IniError {
-            kind: self.kind,
-            exception: Some(message),
-        }
+        IniError { kind: self.kind, exception: Some(message) }
     }
 }
 
 impl std::fmt::Display for IniError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.exception {
-            Some(m) => write!(
-                f,
-                "{} ({:?})",
-                String::from_utf8_lossy(m).trim_end(),
-                self.kind
-            ),
+            Some(m) => write!(f, "{} ({:?})", String::from_utf8_lossy(m).trim_end(), self.kind),
             None => write!(f, "INI error {:?}", self.kind),
         }
     }
@@ -548,35 +529,19 @@ pub struct FieldParse<T> {
 impl<T> FieldParse<T> {
     /// An ordinary entry.
     pub const fn new(token: &'static str, parse: FieldParseFn<T>, user_data: UserData) -> Self {
-        FieldParse {
-            token: Some(token),
-            parse: Some(parse),
-            user_data,
-        }
+        FieldParse { token: Some(token), parse: Some(parse), user_data }
     }
     /// An entry with a token and a `NULL` parse function.
     pub const fn without_parse(token: &'static str) -> Self {
-        FieldParse {
-            token: Some(token),
-            parse: None,
-            user_data: UserData::None,
-        }
+        FieldParse { token: Some(token), parse: None, user_data: UserData::None }
     }
     /// A terminating entry that catches every unknown field.
     pub const fn catch_all(parse: FieldParseFn<T>) -> Self {
-        FieldParse {
-            token: None,
-            parse: Some(parse),
-            user_data: UserData::None,
-        }
+        FieldParse { token: None, parse: Some(parse), user_data: UserData::None }
     }
     /// The `{ 0, 0, 0, 0 }` terminator.
     pub const fn end() -> Self {
-        FieldParse {
-            token: None,
-            parse: None,
-            user_data: UserData::None,
-        }
+        FieldParse { token: None, parse: None, user_data: UserData::None }
     }
 }
 
@@ -629,300 +594,68 @@ pub struct BlockParse<C> {
 /// `ObjectCreationListStore::parse_object_creation_list_definition`, ...); this table lists every block type and the file upstream
 /// defines its handler in (checked against `grep "fn parse_.*_definition" src`).
 pub const TYPE_TABLE: [(&str, &str, &str); 62] = [
-    (
-        "AIData",
-        "INI::parseAIDataDefinition",
-        "Common/INI/INIAiData.cpp",
-    ),
-    (
-        "Animation",
-        "INI::parseAnim2DDefinition",
-        "Common/INI/INIAnimation.cpp",
-    ),
-    (
-        "Armor",
-        "INI::parseArmorDefinition",
-        "GameLogic/Object/Armor.cpp",
-    ),
-    (
-        "AudioEvent",
-        "INI::parseAudioEventDefinition",
-        "Common/INI/INIAudioEventInfo.cpp",
-    ),
-    (
-        "AudioSettings",
-        "INI::parseAudioSettingsDefinition",
-        "Common/Audio/GameAudio.cpp",
-    ),
-    (
-        "Bridge",
-        "INI::parseTerrainBridgeDefinition",
-        "Common/INI/INITerrainBridge.cpp",
-    ),
-    (
-        "Campaign",
-        "INI::parseCampaignDefinition",
-        "GameClient/System/CampaignManager.cpp",
-    ),
-    (
-        "ChallengeGenerals",
-        "INI::parseChallengeModeDefinition",
-        "GameClient/GUI/ChallengeGenerals.cpp",
-    ),
-    (
-        "CommandButton",
-        "INI::parseCommandButtonDefinition",
-        "Common/INI/INICommandButton.cpp",
-    ),
-    (
-        "CommandMap",
-        "INI::parseMetaMapDefinition",
-        "GameClient/MessageStream/MetaEvent.cpp",
-    ),
-    (
-        "CommandSet",
-        "INI::parseCommandSetDefinition",
-        "Common/INI/INICommandSet.cpp",
-    ),
-    (
-        "ControlBarScheme",
-        "INI::parseControlBarSchemeDefinition",
-        "Common/INI/INIControlBarScheme.cpp",
-    ),
-    (
-        "ControlBarResizer",
-        "INI::parseControlBarResizerDefinition",
-        "GameClient/GUI/ControlBar/ControlBarResizer.cpp",
-    ),
-    (
-        "CrateData",
-        "INI::parseCrateTemplateDefinition",
-        "Common/INI/INICrate.cpp",
-    ),
+    ("AIData", "INI::parseAIDataDefinition", "Common/INI/INIAiData.cpp"),
+    ("Animation", "INI::parseAnim2DDefinition", "Common/INI/INIAnimation.cpp"),
+    ("Armor", "INI::parseArmorDefinition", "GameLogic/Object/Armor.cpp"),
+    ("AudioEvent", "INI::parseAudioEventDefinition", "Common/INI/INIAudioEventInfo.cpp"),
+    ("AudioSettings", "INI::parseAudioSettingsDefinition", "Common/Audio/GameAudio.cpp"),
+    ("Bridge", "INI::parseTerrainBridgeDefinition", "Common/INI/INITerrainBridge.cpp"),
+    ("Campaign", "INI::parseCampaignDefinition", "GameClient/System/CampaignManager.cpp"),
+    ("ChallengeGenerals", "INI::parseChallengeModeDefinition", "GameClient/GUI/ChallengeGenerals.cpp"),
+    ("CommandButton", "INI::parseCommandButtonDefinition", "Common/INI/INICommandButton.cpp"),
+    ("CommandMap", "INI::parseMetaMapDefinition", "GameClient/MessageStream/MetaEvent.cpp"),
+    ("CommandSet", "INI::parseCommandSetDefinition", "Common/INI/INICommandSet.cpp"),
+    ("ControlBarScheme", "INI::parseControlBarSchemeDefinition", "Common/INI/INIControlBarScheme.cpp"),
+    ("ControlBarResizer", "INI::parseControlBarResizerDefinition", "GameClient/GUI/ControlBar/ControlBarResizer.cpp"),
+    ("CrateData", "INI::parseCrateTemplateDefinition", "Common/INI/INICrate.cpp"),
     ("Credits", "INI::parseCredits", "GameClient/Credits.cpp"),
-    (
-        "WindowTransition",
-        "INI::parseWindowTransitions",
-        "GameClient/GUI/GameWindowTransitions.cpp",
-    ),
-    (
-        "DamageFX",
-        "INI::parseDamageFXDefinition",
-        "Common/INI/INIDamageFX.cpp",
-    ),
-    (
-        "DialogEvent",
-        "INI::parseDialogDefinition",
-        "Common/INI/INIAudioEventInfo.cpp",
-    ),
-    (
-        "DrawGroupInfo",
-        "INI::parseDrawGroupNumberDefinition",
-        "Common/INI/INIDrawGroupInfo.cpp",
-    ),
+    ("WindowTransition", "INI::parseWindowTransitions", "GameClient/GUI/GameWindowTransitions.cpp"),
+    ("DamageFX", "INI::parseDamageFXDefinition", "Common/INI/INIDamageFX.cpp"),
+    ("DialogEvent", "INI::parseDialogDefinition", "Common/INI/INIAudioEventInfo.cpp"),
+    ("DrawGroupInfo", "INI::parseDrawGroupNumberDefinition", "Common/INI/INIDrawGroupInfo.cpp"),
     ("EvaEvent", "INI::parseEvaEvent", "GameClient/Eva.cpp"),
-    (
-        "FXList",
-        "INI::parseFXListDefinition",
-        "GameClient/FXList.cpp",
-    ),
-    (
-        "GameData",
-        "INI::parseGameDataDefinition",
-        "Common/INI/INIGameData.cpp",
-    ),
-    (
-        "InGameUI",
-        "INI::parseInGameUIDefinition",
-        "GameClient/InGameUI.cpp",
-    ),
-    (
-        "Locomotor",
-        "INI::parseLocomotorTemplateDefinition",
-        "GameLogic/Object/Locomotor.cpp",
-    ),
-    (
-        "Language",
-        "INI::parseLanguageDefinition",
-        "GameClient/GlobalLanguage.cpp",
-    ),
-    (
-        "MapCache",
-        "INI::parseMapCacheDefinition",
-        "Common/INI/INIMapCache.cpp",
-    ),
-    (
-        "MapData",
-        "INI::parseMapDataDefinition",
-        "Common/INI/INIMapData.cpp",
-    ),
-    (
-        "MappedImage",
-        "INI::parseMappedImageDefinition",
-        "Common/INI/INIMappedImage.cpp",
-    ),
-    (
-        "MiscAudio",
-        "INI::parseMiscAudio",
-        "Common/INI/INIMiscAudio.cpp",
-    ),
-    (
-        "Mouse",
-        "INI::parseMouseDefinition",
-        "GameClient/Input/Mouse.cpp",
-    ),
-    (
-        "MouseCursor",
-        "INI::parseMouseCursorDefinition",
-        "GameClient/Input/Mouse.cpp",
-    ),
-    (
-        "MultiplayerColor",
-        "INI::parseMultiplayerColorDefinition",
-        "Common/INI/INIMultiplayer.cpp",
-    ),
-    (
-        "MultiplayerStartingMoneyChoice",
-        "INI::parseMultiplayerStartingMoneyChoiceDefinition",
-        "Common/INI/INIMultiplayer.cpp",
-    ),
-    (
-        "OnlineChatColors",
-        "INI::parseOnlineChatColorDefinition",
-        "GameNetwork/GameSpy/Chat.cpp",
-    ),
-    (
-        "MultiplayerSettings",
-        "INI::parseMultiplayerSettingsDefinition",
-        "Common/INI/INIMultiplayer.cpp",
-    ),
-    (
-        "MusicTrack",
-        "INI::parseMusicTrackDefinition",
-        "Common/INI/INIAudioEventInfo.cpp",
-    ),
-    (
-        "Object",
-        "INI::parseObjectDefinition",
-        "Common/INI/INIObject.cpp",
-    ),
-    (
-        "ObjectCreationList",
-        "INI::parseObjectCreationListDefinition",
-        "GameLogic/Object/ObjectCreationList.cpp",
-    ),
-    (
-        "ObjectReskin",
-        "INI::parseObjectReskinDefinition",
-        "Common/INI/INIObject.cpp",
-    ),
-    (
-        "ParticleSystem",
-        "INI::parseParticleSystemDefinition",
-        "Common/INI/INIParticleSys.cpp",
-    ),
-    (
-        "PlayerTemplate",
-        "INI::parsePlayerTemplateDefinition",
-        "Common/RTS/PlayerTemplate.cpp",
-    ),
-    (
-        "Road",
-        "INI::parseTerrainRoadDefinition",
-        "Common/INI/INITerrainRoad.cpp",
-    ),
-    (
-        "Science",
-        "INI::parseScienceDefinition",
-        "Common/RTS/Science.cpp",
-    ),
-    (
-        "Rank",
-        "INI::parseRankDefinition",
-        "GameLogic/System/RankInfo.cpp",
-    ),
-    (
-        "SpecialPower",
-        "INI::parseSpecialPowerDefinition",
-        "Common/INI/INISpecialPower.cpp",
-    ),
-    (
-        "ShellMenuScheme",
-        "INI::parseShellMenuSchemeDefinition",
-        "GameClient/GUI/Shell/ShellMenuScheme.cpp",
-    ),
-    (
-        "Terrain",
-        "INI::parseTerrainDefinition",
-        "Common/INI/INITerrain.cpp",
-    ),
-    (
-        "Upgrade",
-        "INI::parseUpgradeDefinition",
-        "Common/INI/INIUpgrade.cpp",
-    ),
-    (
-        "Video",
-        "INI::parseVideoDefinition",
-        "Common/INI/INIVideo.cpp",
-    ),
-    (
-        "WaterSet",
-        "INI::parseWaterSettingDefinition",
-        "Common/INI/INIWater.cpp",
-    ),
-    (
-        "WaterTransparency",
-        "INI::parseWaterTransparencyDefinition",
-        "Common/INI/INIWater.cpp",
-    ),
-    (
-        "Weather",
-        "INI::parseWeatherDefinition",
-        "GameClient/Snow.cpp",
-    ),
-    (
-        "Weapon",
-        "INI::parseWeaponTemplateDefinition",
-        "Common/INI/INIWeapon.cpp",
-    ),
-    (
-        "WebpageURL",
-        "INI::parseWebpageURLDefinition",
-        "Common/INI/INIWebpageURL.cpp",
-    ),
-    (
-        "HeaderTemplate",
-        "INI::parseHeaderTemplateDefinition",
-        "GameClient/GUI/HeaderTemplate.cpp",
-    ),
-    (
-        "StaticGameLOD",
-        "INI::parseStaticGameLODDefinition",
-        "Common/GameLOD.cpp",
-    ),
-    (
-        "DynamicGameLOD",
-        "INI::parseDynamicGameLODDefinition",
-        "Common/GameLOD.cpp",
-    ),
+    ("FXList", "INI::parseFXListDefinition", "GameClient/FXList.cpp"),
+    ("GameData", "INI::parseGameDataDefinition", "Common/INI/INIGameData.cpp"),
+    ("InGameUI", "INI::parseInGameUIDefinition", "GameClient/InGameUI.cpp"),
+    ("Locomotor", "INI::parseLocomotorTemplateDefinition", "GameLogic/Object/Locomotor.cpp"),
+    ("Language", "INI::parseLanguageDefinition", "GameClient/GlobalLanguage.cpp"),
+    ("MapCache", "INI::parseMapCacheDefinition", "Common/INI/INIMapCache.cpp"),
+    ("MapData", "INI::parseMapDataDefinition", "Common/INI/INIMapData.cpp"),
+    ("MappedImage", "INI::parseMappedImageDefinition", "Common/INI/INIMappedImage.cpp"),
+    ("MiscAudio", "INI::parseMiscAudio", "Common/INI/INIMiscAudio.cpp"),
+    ("Mouse", "INI::parseMouseDefinition", "GameClient/Input/Mouse.cpp"),
+    ("MouseCursor", "INI::parseMouseCursorDefinition", "GameClient/Input/Mouse.cpp"),
+    ("MultiplayerColor", "INI::parseMultiplayerColorDefinition", "Common/INI/INIMultiplayer.cpp"),
+    ("MultiplayerStartingMoneyChoice", "INI::parseMultiplayerStartingMoneyChoiceDefinition", "Common/INI/INIMultiplayer.cpp"),
+    ("OnlineChatColors", "INI::parseOnlineChatColorDefinition", "GameNetwork/GameSpy/Chat.cpp"),
+    ("MultiplayerSettings", "INI::parseMultiplayerSettingsDefinition", "Common/INI/INIMultiplayer.cpp"),
+    ("MusicTrack", "INI::parseMusicTrackDefinition", "Common/INI/INIAudioEventInfo.cpp"),
+    ("Object", "INI::parseObjectDefinition", "Common/INI/INIObject.cpp"),
+    ("ObjectCreationList", "INI::parseObjectCreationListDefinition", "GameLogic/Object/ObjectCreationList.cpp"),
+    ("ObjectReskin", "INI::parseObjectReskinDefinition", "Common/INI/INIObject.cpp"),
+    ("ParticleSystem", "INI::parseParticleSystemDefinition", "Common/INI/INIParticleSys.cpp"),
+    ("PlayerTemplate", "INI::parsePlayerTemplateDefinition", "Common/RTS/PlayerTemplate.cpp"),
+    ("Road", "INI::parseTerrainRoadDefinition", "Common/INI/INITerrainRoad.cpp"),
+    ("Science", "INI::parseScienceDefinition", "Common/RTS/Science.cpp"),
+    ("Rank", "INI::parseRankDefinition", "GameLogic/System/RankInfo.cpp"),
+    ("SpecialPower", "INI::parseSpecialPowerDefinition", "Common/INI/INISpecialPower.cpp"),
+    ("ShellMenuScheme", "INI::parseShellMenuSchemeDefinition", "GameClient/GUI/Shell/ShellMenuScheme.cpp"),
+    ("Terrain", "INI::parseTerrainDefinition", "Common/INI/INITerrain.cpp"),
+    ("Upgrade", "INI::parseUpgradeDefinition", "Common/INI/INIUpgrade.cpp"),
+    ("Video", "INI::parseVideoDefinition", "Common/INI/INIVideo.cpp"),
+    ("WaterSet", "INI::parseWaterSettingDefinition", "Common/INI/INIWater.cpp"),
+    ("WaterTransparency", "INI::parseWaterTransparencyDefinition", "Common/INI/INIWater.cpp"),
+    ("Weather", "INI::parseWeatherDefinition", "GameClient/Snow.cpp"),
+    ("Weapon", "INI::parseWeaponTemplateDefinition", "Common/INI/INIWeapon.cpp"),
+    ("WebpageURL", "INI::parseWebpageURLDefinition", "Common/INI/INIWebpageURL.cpp"),
+    ("HeaderTemplate", "INI::parseHeaderTemplateDefinition", "GameClient/GUI/HeaderTemplate.cpp"),
+    ("StaticGameLOD", "INI::parseStaticGameLODDefinition", "Common/GameLOD.cpp"),
+    ("DynamicGameLOD", "INI::parseDynamicGameLODDefinition", "Common/GameLOD.cpp"),
     ("LODPreset", "INI::parseLODPreset", "Common/GameLOD.cpp"),
-    (
-        "BenchProfile",
-        "INI::parseBenchProfile",
-        "Common/GameLOD.cpp",
-    ),
+    ("BenchProfile", "INI::parseBenchProfile", "Common/GameLOD.cpp"),
     ("ReallyLowMHz", "parseReallyLowMHz", "Common/GameLOD.cpp"),
-    (
-        "ScriptAction",
-        "ScriptEngine::parseScriptAction",
-        "GameLogic/ScriptEngine/ScriptEngine.cpp",
-    ),
-    (
-        "ScriptCondition",
-        "ScriptEngine::parseScriptCondition",
-        "GameLogic/ScriptEngine/ScriptEngine.cpp",
-    ),
+    ("ScriptAction", "ScriptEngine::parseScriptAction", "GameLogic/ScriptEngine/ScriptEngine.cpp"),
+    ("ScriptCondition", "ScriptEngine::parseScriptCondition", "GameLogic/ScriptEngine/ScriptEngine.cpp"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -959,9 +692,7 @@ fn scan_decimal(token: &[u8]) -> Option<(bool, u64)> {
     let start = i;
     let mut mag: u64 = 0;
     while i < token.len() && token[i].is_ascii_digit() {
-        mag = mag
-            .saturating_mul(10)
-            .saturating_add(u64::from(token[i] - b'0'));
+        mag = mag.saturating_mul(10).saturating_add(u64::from(token[i] - b'0'));
         i += 1;
     }
     if i == start {
@@ -1015,11 +746,8 @@ fn scan_float(token: &[u8]) -> IniResult<f32> {
         }
     }
     // The matched text is ASCII by construction.
-    let text = std::str::from_utf8(&token[begin..i])
-        .map_err(|_| IniError::new(IniErrorKind::InvalidData))?;
-    let v: f32 = text
-        .parse()
-        .map_err(|_| IniError::new(IniErrorKind::InvalidData))?;
+    let text = std::str::from_utf8(&token[begin..i]).map_err(|_| IniError::new(IniErrorKind::InvalidData))?;
+    let v: f32 = text.parse().map_err(|_| IniError::new(IniErrorKind::InvalidData))?;
     if v.is_infinite() {
         return undefined(Undefined::RealOutOfRange);
     }
@@ -1039,8 +767,7 @@ fn int_bit(index: i32) -> IniResult<u32> {
 /// `GameMakeColor(red, green, blue, alpha)` (GameClient/Color.h): the
 /// `Color` (an `Int`) `alpha << 24 | red << 16 | green << 8 | blue`.
 pub fn game_make_color(red: u8, green: u8, blue: u8, alpha: u8) -> i32 {
-    ((u32::from(alpha) << 24) | (u32::from(red) << 16) | (u32::from(green) << 8) | u32::from(blue))
-        as i32
+    ((u32::from(alpha) << 24) | (u32::from(red) << 16) | (u32::from(green) << 8) | u32::from(blue)) as i32
 }
 
 // ---------------------------------------------------------------------------
@@ -1149,10 +876,7 @@ impl<'x> Ini<'x> {
             self.read_line()?;
             let current_line = c_str(&self.buffer).to_vec();
             if let Some(token) = self.strtok(true, SEPS) {
-                match blocks
-                    .iter()
-                    .find(|b| b.token.as_bytes() == token.as_slice())
-                {
+                match blocks.iter().find(|b| b.token.as_bytes() == token.as_slice()) {
                     Some(block) => {
                         if let Err(e) = (block.parse)(self, ctx) {
                             let mut m = b"Error parsing INI file '".to_vec();
@@ -1198,8 +922,7 @@ impl<'x> Ini<'x> {
                 let tempname = &name[dir_len..];
                 let nested = tempname.iter().any(|&c| c == b'\\' || c == b'/');
                 if nested == in_subdir {
-                    let data =
-                        open(name).ok_or_else(|| IniError::new(IniErrorKind::CantOpenFile))?;
+                    let data = open(name).ok_or_else(|| IniError::new(IniErrorKind::CantOpenFile))?;
                     let x: Option<&mut dyn Xfer> = match xfer {
                         Some(ref mut x) => Some(&mut **x),
                         None => None,
@@ -1243,8 +966,7 @@ impl<'x> Ini<'x> {
         }
         if let Some(x) = self.xfer.as_mut() {
             let n = c_str(&self.buffer).len();
-            x.xfer_user(&mut self.buffer[..n])
-                .map_err(|s| IniError::new(IniErrorKind::Xfer(s)))?;
+            x.xfer_user(&mut self.buffer[..n]).map_err(|s| IniError::new(IniErrorKind::Xfer(s)))?;
         }
         Ok(())
     }
@@ -1296,8 +1018,7 @@ impl<'x> Ini<'x> {
     /// `getNextToken(seps)`: the next token (default separators if `None`);
     /// `INI_INVALID_DATA` if there is none.
     pub fn get_next_token(&mut self, seps: Option<&[u8]>) -> IniResult<Vec<u8>> {
-        self.strtok(false, seps.unwrap_or(SEPS))
-            .ok_or_else(|| IniError::new(IniErrorKind::InvalidData))
+        self.strtok(false, seps.unwrap_or(SEPS)).ok_or_else(|| IniError::new(IniErrorKind::InvalidData))
     }
 
     /// `getNextTokenOrNull(seps)`.
@@ -1322,11 +1043,7 @@ impl<'x> Ini<'x> {
         if token[0] != b'"' {
             return token;
         }
-        let mut buff = if token.len() > 1 {
-            token[1..].to_vec()
-        } else {
-            Vec::new()
-        };
+        let mut buff = if token.len() > 1 { token[1..].to_vec() } else { Vec::new() };
         match self.get_next_token_or_null(Some(SEPS_QUOTE)) {
             Some(t) => {
                 if t.len() > 1 && t[1] != b'\t' {
@@ -1382,21 +1099,15 @@ impl<'x> Ini<'x> {
 
     /// `scanInt`: `sscanf("%d")`.
     pub fn scan_int(token: &[u8]) -> IniResult<i32> {
-        let (neg, mag) =
-            scan_decimal(token).ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
-        let v = if neg {
-            -i128::from(mag)
-        } else {
-            i128::from(mag)
-        };
+        let (neg, mag) = scan_decimal(token).ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
+        let v = if neg { -i128::from(mag) } else { i128::from(mag) };
         i32::try_from(v).or_else(|_| undefined(Undefined::IntOutOfRange))
     }
 
     /// `scanUnsignedInt`: `sscanf("%u")`, which negates in unsigned
     /// arithmetic (`"-1"` is 4294967295).
     pub fn scan_unsigned_int(token: &[u8]) -> IniResult<u32> {
-        let (neg, mag) =
-            scan_decimal(token).ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
+        let (neg, mag) = scan_decimal(token).ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let m = u32::try_from(mag).or_else(|_| undefined(Undefined::UnsignedOutOfRange))?;
         Ok(if neg { m.wrapping_neg() } else { m })
     }
@@ -1452,11 +1163,7 @@ impl<'x> Ini<'x> {
     /// `isDeclarationOfType(blockType, blockName, buffer)`: whether the line
     /// is `[ws] blockType [ws] blockName [ws]` (types and names compared
     /// case-insensitively; at least one byte must follow each).
-    pub fn is_declaration_of_type(
-        block_type: &[u8],
-        block_name: &[u8],
-        buffer: &[u8],
-    ) -> IniResult<bool> {
+    pub fn is_declaration_of_type(block_type: &[u8], block_name: &[u8], buffer: &[u8]) -> IniResult<bool> {
         if block_type.is_empty() || block_name.is_empty() {
             return Ok(false);
         }
@@ -1504,11 +1211,7 @@ impl<'x> Ini<'x> {
     // -- the parse-table mechanism ------------------------------------------
 
     /// `initFromINI(what, parseTable)`.
-    pub fn init_from_ini<T>(
-        &mut self,
-        what: &mut T,
-        parse_table: &[FieldParse<T>],
-    ) -> IniResult<()> {
+    pub fn init_from_ini<T>(&mut self, what: &mut T, parse_table: &[FieldParse<T>]) -> IniResult<()> {
         let mut p = MultiIniFieldParse::new();
         p.add(parse_table)?;
         self.init_from_ini_multi(what, &p)
@@ -1527,11 +1230,7 @@ impl<'x> Ini<'x> {
 
     /// `initFromINIMulti(what, parseTableList)`: read field lines into
     /// `what` until `End`.
-    pub fn init_from_ini_multi<T>(
-        &mut self,
-        what: &mut T,
-        list: &MultiIniFieldParse<'_, T>,
-    ) -> IniResult<()> {
+    pub fn init_from_ini_multi<T>(&mut self, what: &mut T, list: &MultiIniFieldParse<'_, T>) -> IniResult<()> {
         let mut done = false;
         while !done {
             self.read_line()?;
@@ -1543,8 +1242,7 @@ impl<'x> Ini<'x> {
                     for table in &list.tables {
                         if let Some((parse, user_data)) = find_field_parse(table, &field) {
                             if let Err(e) = parse(self, what, &user_data) {
-                                let mut m = format!("[LINE: {} - FILE: '", self.line_num as i32)
-                                    .into_bytes();
+                                let mut m = format!("[LINE: {} - FILE: '", self.line_num as i32).into_bytes();
                                 m.extend_from_slice(&self.filename);
                                 m.extend_from_slice(b"'] Error reading field '");
                                 // `field` points into m_buffer: if the parser read
@@ -1803,20 +1501,13 @@ impl<'x> Ini<'x> {
     /// `parseRGBAColorInt`: `R:100 G:114 B:245 [A:233]`, alpha 255 if absent.
     pub fn parse_rgba_color_int(&mut self) -> IniResult<RGBAColorInt> {
         let c = self.color_components()?;
-        Ok(RGBAColorInt {
-            red: c[0] as u32,
-            green: c[1] as u32,
-            blue: c[2] as u32,
-            alpha: c[3] as u32,
-        })
+        Ok(RGBAColorInt { red: c[0] as u32, green: c[1] as u32, blue: c[2] as u32, alpha: c[3] as u32 })
     }
 
     /// `parseColorInt`: as `parseRGBAColorInt`, packed by `GameMakeColor`.
     pub fn parse_color_int(&mut self) -> IniResult<i32> {
         let c = self.color_components()?;
-        Ok(game_make_color(
-            c[0] as u8, c[1] as u8, c[2] as u8, c[3] as u8,
-        ))
+        Ok(game_make_color(c[0] as u8, c[1] as u8, c[2] as u8, c[3] as u8))
     }
 
     /// `parseCoord3D`: `X:400 Y:-214.3 Z:8.6`.
@@ -1861,10 +1552,7 @@ impl<'x> Ini<'x> {
     }
 
     /// `parseGameClientRandomVariable`: `low high [distribution]`.
-    pub fn parse_game_client_random_variable(
-        &mut self,
-        var: &mut GameClientRandomVariable,
-    ) -> IniResult<()> {
+    pub fn parse_game_client_random_variable(&mut self, var: &mut GameClientRandomVariable) -> IniResult<()> {
         let low = Self::scan_real(&self.get_next_token(None)?)?;
         let high = Self::scan_real(&self.get_next_token(None)?)?;
         let mut kind = DistributionType::Uniform;
@@ -2025,10 +1713,7 @@ fn trailing_space(buf: &[u8], mut t: usize, mut ret: bool) -> IniResult<bool> {
 }
 
 /// `findFieldParse(parseTable, token, offset, userData)`.
-fn find_field_parse<T>(
-    table: &[FieldParse<T>],
-    token: &[u8],
-) -> Option<(FieldParseFn<T>, UserData)> {
+fn find_field_parse<T>(table: &[FieldParse<T>], token: &[u8]) -> Option<(FieldParseFn<T>, UserData)> {
     for entry in table {
         match entry.token {
             Some(t) => {
@@ -2060,35 +1745,10 @@ mod tests {
     static NAMES: [&str; 3] = ["ALPHA", "BETA", "GAMMA"];
 
     static FIELDS: [FieldParse<Rec>; 6] = [
-        FieldParse::new(
-            "Int",
-            |ini, r, _| {
-                r.i = ini.parse_int()?;
-                Ok(())
-            },
-            UserData::None,
-        ),
-        FieldParse::new(
-            "Real",
-            |ini, r, _| {
-                r.r = ini.parse_real()?;
-                Ok(())
-            },
-            UserData::None,
-        ),
-        FieldParse::new(
-            "Str",
-            |ini, r, _| {
-                r.s = ini.parse_quoted_ascii_string()?;
-                Ok(())
-            },
-            UserData::None,
-        ),
-        FieldParse::new(
-            "Bits",
-            |ini, r, ud| ini.parse_bit_string32(&mut r.bits, ud.names()),
-            UserData::Names(&NAMES),
-        ),
+        FieldParse::new("Int", |ini, r, _| { r.i = ini.parse_int()?; Ok(()) }, UserData::None),
+        FieldParse::new("Real", |ini, r, _| { r.r = ini.parse_real()?; Ok(()) }, UserData::None),
+        FieldParse::new("Str", |ini, r, _| { r.s = ini.parse_quoted_ascii_string()?; Ok(()) }, UserData::None),
+        FieldParse::new("Bits", |ini, r, ud| ini.parse_bit_string32(&mut r.bits, ud.names()), UserData::Names(&NAMES)),
         FieldParse::without_parse("Dead"),
         FieldParse::catch_all(|_, r, ud| {
             if let UserData::Token(t) = ud {
@@ -2099,40 +1759,23 @@ mod tests {
     ];
 
     fn block(ini: &mut Ini<'_>, out: &mut Vec<Rec>) -> IniResult<()> {
-        let mut r = Rec {
-            name: ini.get_next_token(None)?,
-            ..Rec::default()
-        };
+        let mut r = Rec { name: ini.get_next_token(None)?, ..Rec::default() };
         ini.init_from_ini(&mut r, &FIELDS)?;
         out.push(r);
         Ok(())
     }
 
-    static BLOCKS: [BlockParse<Vec<Rec>>; 1] = [BlockParse {
-        token: "Thing",
-        parse: block,
-    }];
+    static BLOCKS: [BlockParse<Vec<Rec>>; 1] = [BlockParse { token: "Thing", parse: block }];
 
     #[test]
     fn a_block_with_fields() {
         let text = b"; header\nThing Foo\n  Int = -12 ; c\n  Real = 2.5e1\n  Str = \"Hello  World\"\n  Bits = BETA gamma\n  Other = 1\nEND\n";
         let mut out = Vec::new();
         let mut crc = XferCrc::new();
-        Ini::load(
-            b"t.ini",
-            text,
-            IniLoadType::Overwrite,
-            Some(&mut crc),
-            &BLOCKS,
-            &mut out,
-        )
-        .unwrap();
+        Ini::load(b"t.ini", text, IniLoadType::Overwrite, Some(&mut crc), &BLOCKS, &mut out).unwrap();
         assert_eq!(out.len(), 1);
         let r = &out[0];
-        assert_eq!(
-            (r.name.as_slice(), r.i, r.r, r.s.as_slice(), r.bits),
-            (&b"Foo"[..], -12, 25.0, &b"Hello  World"[..], 6)
-        );
+        assert_eq!((r.name.as_slice(), r.i, r.r, r.s.as_slice(), r.bits), (&b"Foo"[..], -12, 25.0, &b"Hello  World"[..], 6));
         assert_eq!(r.fields, vec![b"Other".to_vec()]);
         assert_ne!(crc.get_crc(), 0);
     }
@@ -2140,77 +1783,31 @@ mod tests {
     #[test]
     fn errors_are_wrapped_as_upstream() {
         let mut out = Vec::new();
-        let e = Ini::load(
-            b"t.ini",
-            b"Thing A\nInt = x\nEnd\n",
-            IniLoadType::Overwrite,
-            None,
-            &BLOCKS,
-            &mut out,
-        )
-        .unwrap_err();
+        let e = Ini::load(b"t.ini", b"Thing A\nInt = x\nEnd\n", IniLoadType::Overwrite, None, &BLOCKS, &mut out).unwrap_err();
         assert_eq!(e.kind, IniErrorKind::InvalidData);
-        assert_eq!(
-            e.thrown(),
-            Some(Thrown::Exception(
-                b"Error parsing INI file 't.ini' (Line: 'Thing A')\n".to_vec()
-            ))
-        );
-        let e = Ini::load(
-            b"t.ini",
-            b"Thing A\nDead 1\nEnd\n",
-            IniLoadType::Overwrite,
-            None,
-            &BLOCKS,
-            &mut out,
-        )
-        .unwrap_err();
+        assert_eq!(e.thrown(), Some(Thrown::Exception(b"Error parsing INI file 't.ini' (Line: 'Thing A')\n".to_vec())));
+        let e = Ini::load(b"t.ini", b"Thing A\nDead 1\nEnd\n", IniLoadType::Overwrite, None, &BLOCKS, &mut out).unwrap_err();
         assert_eq!(e.kind, IniErrorKind::UnknownToken);
-        let e = Ini::load(
-            b"t.ini",
-            b"Nope\n",
-            IniLoadType::Overwrite,
-            None,
-            &BLOCKS,
-            &mut out,
-        )
-        .unwrap_err();
+        let e = Ini::load(b"t.ini", b"Nope\n", IniLoadType::Overwrite, None, &BLOCKS, &mut out).unwrap_err();
         assert_eq!(e.thrown(), Some(Thrown::Status(ERROR_BAD_INI)));
-        let e = Ini::load(
-            b"t.ini",
-            b"Thing A\nInt 1",
-            IniLoadType::Overwrite,
-            None,
-            &BLOCKS,
-            &mut out,
-        )
-        .unwrap_err();
+        let e = Ini::load(b"t.ini", b"Thing A\nInt 1", IniLoadType::Overwrite, None, &BLOCKS, &mut out).unwrap_err();
         assert_eq!(e.kind, IniErrorKind::MissingEndToken);
     }
 
     #[test]
     fn scanners() {
         assert_eq!(Ini::scan_int(b"12abc"), Ok(12));
-        assert_eq!(
-            Ini::scan_int(b"2147483648").unwrap_err().kind,
-            IniErrorKind::Undefined(Undefined::IntOutOfRange)
-        );
+        assert_eq!(Ini::scan_int(b"2147483648").unwrap_err().kind, IniErrorKind::Undefined(Undefined::IntOutOfRange));
         assert_eq!(Ini::scan_unsigned_int(b"-1"), Ok(u32::MAX));
         assert_eq!(Ini::scan_real(b"1e"), Ok(1.0));
         assert_eq!(Ini::scan_real(b"-.5x"), Ok(-0.5));
-        assert_eq!(
-            Ini::scan_real(b"."),
-            Err(IniError::new(IniErrorKind::InvalidData))
-        );
+        assert_eq!(Ini::scan_real(b"."), Err(IniError::new(IniErrorKind::InvalidData)));
         assert!(Ini::scan_real(b"inf").unwrap_err().is_undefined());
         assert!(Ini::scan_real(b"1e39").unwrap_err().is_undefined());
         assert_eq!(Ini::scan_percent_to_real(b"50"), Ok(0.5));
         assert_eq!(Ini::is_end_of_block(b"  end  "), Ok(true));
         assert_eq!(Ini::is_end_of_block(b"End"), Ok(false));
-        assert_eq!(
-            Ini::is_declaration_of_type(b"Object", b"Tank", b" object tank "),
-            Ok(true)
-        );
+        assert_eq!(Ini::is_declaration_of_type(b"Object", b"Tank", b" object tank "), Ok(true));
         assert!(Ini::is_valid_ini_filename(b"a.INI"));
     }
 }

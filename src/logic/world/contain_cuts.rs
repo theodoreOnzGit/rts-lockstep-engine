@@ -131,11 +131,7 @@ pub enum ContainCall {
     /// `TheAI->pathfinder()->updatePos(obj, pos)`.
     PathfindUpdatePos { object: ObjectId, position: Coord3D },
     /// `TheAI->pathfinder()->updateGoal(obj, pos, layer)`.
-    PathfindUpdateGoal {
-        object: ObjectId,
-        position: Coord3D,
-        layer: PathfindLayer,
-    },
+    PathfindUpdateGoal { object: ObjectId, position: Coord3D, layer: PathfindLayer },
     /// `TheAI->pathfinder()->adjustToPossibleDestination(obj, locomotorSet, &pos)`, `before` the position it was given.
     PathfindAdjustToPossibleDestination { object: ObjectId, before: Coord3D },
     /// batch R18: `TheAI->pathfinder()->adjustDestination(obj, locomotorSet, &pos)`, `before` the position it was given.
@@ -147,38 +143,21 @@ pub enum ContainCall {
     /// `obj->leaveGroup()`.
     LeaveGroup { object: ObjectId },
     /// `container->checkAndDetonateBoobyTrap(rider)`; `result` is the answer.
-    CheckAndDetonateBoobyTrap {
-        container: ObjectId,
-        rider: ObjectId,
-        result: bool,
-    },
+    CheckAndDetonateBoobyTrap { container: ObjectId, rider: ObjectId, result: bool },
     /// `rider->onContainedBy(container)`.
-    OnContainedBy {
-        rider: ObjectId,
-        container: ObjectId,
-    },
+    OnContainedBy { rider: ObjectId, container: ObjectId },
     /// `rider->onRemovedFrom(container)`.
-    OnRemovedFrom {
-        rider: ObjectId,
-        container: ObjectId,
-    },
+    OnRemovedFrom { rider: ObjectId, container: ObjectId },
     /// `rider->kill()`: the damage it does is the body's maximum health, `kill` true.
     Kill { object: ObjectId, amount: f32 },
     /// `rider->attemptDamage(info)`; `has_body` is whether the object has a body to give it to (`Object::attemptDamage` does nothing without one).
-    AttemptDamage {
-        object: ObjectId,
-        info: DamageInfo,
-        has_body: bool,
-    },
+    AttemptDamage { object: ObjectId, info: DamageInfo, has_body: bool },
     /// `obj->setPosition(pos)`.
     SetPosition { object: ObjectId, position: Coord3D },
     /// `obj->setOrientation(angle)`.
     SetOrientation { object: ObjectId, angle: f32 },
     /// `obj->setLayer(layer)`.
-    SetLayer {
-        object: ObjectId,
-        layer: PathfindLayer,
-    },
+    SetLayer { object: ObjectId, layer: PathfindLayer },
     /// `obj->setTransformMatrix(matrix)`.
     SetTransformMatrix { object: ObjectId, matrix: Matrix3D },
     /// `TheGameLogic->destroyObject(obj)`.
@@ -186,11 +165,7 @@ pub enum ContainCall {
     /// `getSingleLogicalBonePosition(name, &pos, NULL)`.
     GetSingleLogicalBonePosition { object: ObjectId, name: Vec<u8> },
     /// `getMultiLogicalBonePosition(prefix, max, NULL, transforms, TRUE)`.
-    GetMultiLogicalBonePosition {
-        object: ObjectId,
-        prefix: Vec<u8>,
-        max: i32,
-    },
+    GetMultiLogicalBonePosition { object: ObjectId, prefix: Vec<u8>, max: i32 },
     /// `getSingleLogicalBonePositionOnTurret(TURRET_MAIN, name, NULL, &matrix)`.
     GetSingleLogicalBonePositionOnTurret { object: ObjectId, name: Vec<u8> },
     // --- p1w13-sonnet --- (batch R2: TransportContain)
@@ -206,45 +181,24 @@ pub enum ContainCall {
     /// `portable->getBodyModule()->setDamageState(state)`.
     SetDamageState { object: ObjectId, state: i32 },
     /// `obj->getStealth()->receiveGrant(active, frames)` (the object has a stealth update).
-    StealthReceiveGrant {
-        object: ObjectId,
-        active: bool,
-        frames: u32,
-    },
+    StealthReceiveGrant { object: ObjectId, active: bool, frames: u32 },
     // batch R5 (RiderChangeContain)
     /// `obj->getExperienceTracker()->setVeterancyLevel(level, FALSE)`.
     ExperienceSetVeterancyLevel { object: ObjectId, level: i32 },
     /// `obj->getExperienceTracker()->setExperienceAndLevel(experience, FALSE)`.
     ExperienceSetExperienceAndLevel { object: ObjectId, experience: i32 },
     /// `obj->kill(damageType, deathType)`: unresistable damage of the body's maximum health.
-    KillWith {
-        object: ObjectId,
-        amount: f32,
-        damage_type: i32,
-        death_type: i32,
-    },
+    KillWith { object: ObjectId, amount: f32, damage_type: i32, death_type: i32 },
     // batch R6 (OverlordContain)
     /// `obj->getExperienceTracker()->setExperienceSink(sink)`.
     ExperienceSetSink { object: ObjectId, sink: ObjectId },
     // batch R8 (ParachuteContain)
     /// `ThePartitionManager->findPositionAround(&pos, options, &pos)` (`minRadius`, `maxRadius`, `flags`; no relationship object).
-    PartitionFindPositionAround {
-        position: Coord3D,
-        min_radius: f32,
-        max_radius: f32,
-        flags: i32,
-    },
+    PartitionFindPositionAround { position: Coord3D, min_radius: f32, max_radius: f32, flags: i32 },
     /// `TheAI->pathfinder()->getCell(layer, x, y)`.
-    PathfindGetCell {
-        layer: PathfindLayer,
-        x: i32,
-        y: i32,
-    },
+    PathfindGetCell { layer: PathfindLayer, x: i32, y: i32 },
     /// `obj->getDrawable()->setInstanceMatrix(matrix)` (`None` for `NULL`).
-    DrawableSetInstanceMatrix {
-        object: ObjectId,
-        matrix: Option<Matrix3D>,
-    },
+    DrawableSetInstanceMatrix { object: ObjectId, matrix: Option<Matrix3D> },
     // batch R10 (TunnelContain)
     /// `player->getAcademyStats()->recordUnitEnteredTunnelNetwork()`.
     AcademyUnitEnteredTunnelNetwork { player: i32 },
@@ -254,55 +208,26 @@ pub enum ContainCall {
     SetSafeOcclusionFrame { object: ObjectId, frame: u32 },
     // batch R11 (CaveContain)
     /// `obj->defect(newTeam, detectionTime)` (`None` for a `NULL` team).
-    Defect {
-        object: ObjectId,
-        team: Option<crate::logic::world::ids::TeamId>,
-        detection_time: u32,
-    },
+    Defect { object: ObjectId, team: Option<crate::logic::world::ids::TeamId>, detection_time: u32 },
     // --- p1w13-sonnet --- (batch R12: GarrisonContain)
     /// `TheThingFactory->newDrawable(muzzle)`: the new drawable.
-    EffectNew {
-        drawable: crate::common::game_type::DrawableId,
-    },
+    EffectNew { drawable: crate::common::game_type::DrawableId },
     /// `draw->setPosition(pos)`.
-    EffectSetPosition {
-        drawable: crate::common::game_type::DrawableId,
-        position: Coord3D,
-    },
+    EffectSetPosition { drawable: crate::common::game_type::DrawableId, position: Coord3D },
     /// `draw->setFullyObscuredByShroud(obscured)`.
-    EffectSetObscured {
-        drawable: crate::common::game_type::DrawableId,
-        obscured: bool,
-    },
+    EffectSetObscured { drawable: crate::common::game_type::DrawableId, obscured: bool },
     /// `draw->setOrientation(angle)`.
-    EffectSetOrientation {
-        drawable: crate::common::game_type::DrawableId,
-        angle: f32,
-    },
+    EffectSetOrientation { drawable: crate::common::game_type::DrawableId, angle: f32 },
     /// `draw->setModelConditionState(a)` (`set`) or `clearModelConditionState(a)`.
-    EffectModelCondition {
-        drawable: crate::common::game_type::DrawableId,
-        condition: i32,
-        set: bool,
-    },
+    EffectModelCondition { drawable: crate::common::game_type::DrawableId, condition: i32, set: bool },
     /// `TheGameClient->destroyDrawable(draw)`.
-    EffectDestroy {
-        drawable: crate::common::game_type::DrawableId,
-    },
+    EffectDestroy { drawable: crate::common::game_type::DrawableId },
     /// `weapon->isWithinAttackRange(source, victim)` or `(source, pos)` for a weapon of the table.
-    WeaponWithinAttackRange {
-        source: ObjectId,
-        victim: ObjectId,
-        position: Option<Coord3D>,
-    },
+    WeaponWithinAttackRange { source: ObjectId, victim: ObjectId, position: Option<Coord3D> },
     /// `draw->setIndicatorColor(color)`.
     DrawableSetIndicatorColor { object: ObjectId, color: i32 },
     /// `obj->clearAndSetModelConditionFlags(clr, set)`, with a drawable.
-    ClearAndSetModelConditionFlags {
-        object: ObjectId,
-        clear: Vec<i32>,
-        set: Vec<i32>,
-    },
+    ClearAndSetModelConditionFlags { object: ObjectId, clear: Vec<i32>, set: Vec<i32> },
     /// `draw->replaceModelConditionFlags(flags)`: the flags set.
     DrawableReplaceModelConditionFlags { object: ObjectId, flags: Vec<i32> },
     /// `player->getAcademyStats()->recordBuildingGarrisoned()`.
@@ -328,18 +253,8 @@ impl World {
 
     /// `ThePartitionManager->getDistanceSquared(obj, pos, FROM_CENTER_2D)`: the squared distance in the plane from the object's centre.
     pub fn contain_partition_get_distance_squared(&mut self, id: ObjectId, pos: &Coord3D) -> f32 {
-        self.contain_cut(ContainCall::PartitionGetDistanceSquared {
-            object: id,
-            position: *pos,
-        });
-        let p = self.objects.find(id).map_or(
-            Coord3D {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
-            |o| o.get_position(),
-        );
+        self.contain_cut(ContainCall::PartitionGetDistanceSquared { object: id, position: *pos });
+        let p = self.objects.find(id).map_or(Coord3D { x: 0.0, y: 0.0, z: 0.0 }, |o| o.get_position());
         let (dx, dy) = (p.x - pos.x, p.y - pos.y);
         dx * dx + dy * dy
     }
@@ -366,34 +281,19 @@ impl World {
 
     /// `TheAI->pathfinder()->updatePos(obj, pos)`.
     pub fn contain_pathfind_update_pos(&mut self, id: ObjectId, pos: &Coord3D) {
-        self.contain_cut(ContainCall::PathfindUpdatePos {
-            object: id,
-            position: *pos,
-        });
+        self.contain_cut(ContainCall::PathfindUpdatePos { object: id, position: *pos });
     }
 
     /// `TheAI->pathfinder()->updateGoal(obj, pos, layer)`.
-    pub fn contain_pathfind_update_goal(
-        &mut self,
-        id: ObjectId,
-        pos: &Coord3D,
-        layer: PathfindLayer,
-    ) {
-        self.contain_cut(ContainCall::PathfindUpdateGoal {
-            object: id,
-            position: *pos,
-            layer,
-        });
+    pub fn contain_pathfind_update_goal(&mut self, id: ObjectId, pos: &Coord3D, layer: PathfindLayer) {
+        self.contain_cut(ContainCall::PathfindUpdateGoal { object: id, position: *pos, layer });
     }
 
     /// `TheAI->pathfinder()->adjustToPossibleDestination(obj, locomotorSet, &pos)`: `pos` is written when the table has an answer for the object.
     /// `TheAI->pathfinder()->adjustDestination(obj, locomotorSet, &pos)` (the production exits, batch R18): true and `pos` moved where the table
     /// says ([`ContainCutTables::adjust_destination`]).
     pub fn contain_pathfind_adjust_destination(&mut self, id: ObjectId, pos: &mut Coord3D) -> bool {
-        self.contain_cut(ContainCall::PathfindAdjustDestination {
-            object: id,
-            before: *pos,
-        });
+        self.contain_cut(ContainCall::PathfindAdjustDestination { object: id, before: *pos });
         match self.cuts.contain.adjust_destination.get(&id) {
             Some(p) => {
                 *pos = *p;
@@ -406,24 +306,14 @@ impl World {
     /// `TheAI->pathfinder()->snapPosition(obj, &pos)` (`QueueProductionExitUpdate`, batch R18): `pos` moved where the table says
     /// ([`ContainCutTables::snap_position`]).
     pub fn contain_pathfind_snap_position(&mut self, id: ObjectId, pos: &mut Coord3D) {
-        self.contain_cut(ContainCall::PathfindSnapPosition {
-            object: id,
-            before: *pos,
-        });
+        self.contain_cut(ContainCall::PathfindSnapPosition { object: id, before: *pos });
         if let Some(p) = self.cuts.contain.snap_position {
             *pos = p;
         }
     }
 
-    pub fn contain_pathfind_adjust_to_possible_destination(
-        &mut self,
-        id: ObjectId,
-        pos: &mut Coord3D,
-    ) {
-        self.contain_cut(ContainCall::PathfindAdjustToPossibleDestination {
-            object: id,
-            before: *pos,
-        });
+    pub fn contain_pathfind_adjust_to_possible_destination(&mut self, id: ObjectId, pos: &mut Coord3D) {
+        self.contain_cut(ContainCall::PathfindAdjustToPossibleDestination { object: id, before: *pos });
         if let Some(p) = self.cuts.contain.adjusted_destination.get(&id) {
             *pos = *p;
         }
@@ -445,21 +335,9 @@ impl World {
     }
 
     /// `container->checkAndDetonateBoobyTrap(rider)`.
-    pub fn contain_check_and_detonate_booby_trap(
-        &mut self,
-        container: ObjectId,
-        rider: ObjectId,
-    ) -> bool {
-        let result = if self.cuts.contain.stub_object_calls {
-            self.cuts.contain.booby_trapped.contains(&rider)
-        } else {
-            self.check_and_detonate_booby_trap(container, Some(rider))
-        };
-        self.contain_cut(ContainCall::CheckAndDetonateBoobyTrap {
-            container,
-            rider,
-            result,
-        });
+    pub fn contain_check_and_detonate_booby_trap(&mut self, container: ObjectId, rider: ObjectId) -> bool {
+        let result = if self.cuts.contain.stub_object_calls { self.cuts.contain.booby_trapped.contains(&rider) } else { self.check_and_detonate_booby_trap(container, Some(rider)) };
+        self.contain_cut(ContainCall::CheckAndDetonateBoobyTrap { container, rider, result });
         result
     }
 
@@ -494,23 +372,11 @@ impl World {
     /// `rider->kill()` (`DAMAGE_UNRESISTABLE`, `DEATH_NORMAL`): `Object::kill` takes the amount from `getBodyModule()->getMaxHealth()`, so `false` is a body that
     /// is `NULL` (a call through a null pointer upstream; nothing is done).
     pub fn contain_kill(&mut self, id: ObjectId) -> bool {
-        let Some(body) = self.objects.find(id).and_then(|o| o.body) else {
-            return false;
-        };
-        let amount = self
-            .module_call(
-                id,
-                body,
-                crate::logic::world::module_call::ModuleCall::GetMaxHealth,
-            )
-            .as_real(0.0);
+        let Some(body) = self.objects.find(id).and_then(|o| o.body) else { return false };
+        let amount = self.module_call(id, body, crate::logic::world::module_call::ModuleCall::GetMaxHealth).as_real(0.0);
         self.contain_cut(ContainCall::Kill { object: id, amount });
         if !self.cuts.contain.stub_object_calls {
-            self.kill(
-                id,
-                crate::logic::damage::DAMAGE_UNRESISTABLE,
-                crate::logic::damage::DEATH_NORMAL,
-            );
+            self.kill(id, crate::logic::damage::DAMAGE_UNRESISTABLE, crate::logic::damage::DEATH_NORMAL);
         }
         true
     }
@@ -518,11 +384,7 @@ impl World {
     /// `object->attemptDamage(info)`; the info comes back as the body wrote it.
     pub fn contain_attempt_damage(&mut self, id: ObjectId, info: &mut DamageInfo) {
         let has_body = self.objects.find(id).is_some_and(|o| o.body.is_some());
-        self.contain_cut(ContainCall::AttemptDamage {
-            object: id,
-            info: info.clone(),
-            has_body,
-        });
+        self.contain_cut(ContainCall::AttemptDamage { object: id, info: info.clone(), has_body });
         if !self.cuts.contain.stub_object_calls {
             self.attempt_damage(id, info);
         }
@@ -530,10 +392,7 @@ impl World {
 
     /// `obj->setPosition(pos)`.
     pub fn contain_set_position(&mut self, id: ObjectId, pos: &Coord3D) {
-        self.contain_cut(ContainCall::SetPosition {
-            object: id,
-            position: *pos,
-        });
+        self.contain_cut(ContainCall::SetPosition { object: id, position: *pos });
         if self.cuts.contain.stub_object_calls {
             self.stub_move(id, pos);
         } else {
@@ -544,9 +403,7 @@ impl World {
     /// batch R12: the object's angle set with none of `reactToTransformChange`'s cascade (the contain test's scene, as the driver sets
     /// `m_orientation`: the cascade would redeploy a garrison's riders before the first op).
     pub fn contain_scene_set_orientation(&mut self, id: ObjectId, angle: f32) {
-        let Some(pos) = self.objects.find(id).map(|o| o.get_position()) else {
-            return;
-        };
+        let Some(pos) = self.objects.find(id).map(|o| o.get_position()) else { return };
         if let Some(ctx) = self.setter_context(id, Some((angle, pos))) {
             if let Some(o) = self.objects.find_mut(id) {
                 let _ = o.thing.set_orientation(&ctx, angle);
@@ -588,10 +445,7 @@ impl World {
 
     /// `obj->setTransformMatrix(matrix)`.
     pub fn contain_set_transform_matrix(&mut self, id: ObjectId, matrix: &Matrix3D) {
-        self.contain_cut(ContainCall::SetTransformMatrix {
-            object: id,
-            matrix: *matrix,
-        });
+        self.contain_cut(ContainCall::SetTransformMatrix { object: id, matrix: *matrix });
         if !self.cuts.contain.stub_object_calls {
             self.set_transform_matrix(id, matrix);
         }
@@ -606,54 +460,22 @@ impl World {
     }
 
     /// `obj->getSingleLogicalBonePosition(name, &pos, NULL)`: the bone's position, or the object's own when there is no such bone.
-    pub fn contain_get_single_logical_bone_position(
-        &mut self,
-        id: ObjectId,
-        name: &[u8],
-    ) -> Coord3D {
-        self.contain_cut(ContainCall::GetSingleLogicalBonePosition {
-            object: id,
-            name: name.to_vec(),
-        });
+    pub fn contain_get_single_logical_bone_position(&mut self, id: ObjectId, name: &[u8]) -> Coord3D {
+        self.contain_cut(ContainCall::GetSingleLogicalBonePosition { object: id, name: name.to_vec() });
         match self.cuts.contain.single_bones.get(&(id, name.to_vec())) {
             Some(p) => *p,
-            None => self.objects.find(id).map_or(
-                Coord3D {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 0.0,
-                },
-                |o| o.get_position(),
-            ),
+            None => self.objects.find(id).map_or(Coord3D { x: 0.0, y: 0.0, z: 0.0 }, |o| o.get_position()),
         }
     }
 
     /// `obj->getMultiLogicalBonePosition(prefix, max, NULL, transforms, TRUE)`: the transforms found.
-    pub fn contain_get_multi_logical_bone_position(
-        &mut self,
-        id: ObjectId,
-        prefix: &[u8],
-        max: i32,
-    ) -> Vec<Matrix3D> {
-        self.contain_cut(ContainCall::GetMultiLogicalBonePosition {
-            object: id,
-            prefix: prefix.to_vec(),
-            max,
-        });
-        let has_drawable = self
-            .objects
-            .find(id)
-            .is_some_and(|o| o.drawable != crate::common::game_type::INVALID_DRAWABLE_ID);
+    pub fn contain_get_multi_logical_bone_position(&mut self, id: ObjectId, prefix: &[u8], max: i32) -> Vec<Matrix3D> {
+        self.contain_cut(ContainCall::GetMultiLogicalBonePosition { object: id, prefix: prefix.to_vec(), max });
+        let has_drawable = self.objects.find(id).is_some_and(|o| o.drawable != crate::common::game_type::INVALID_DRAWABLE_ID);
         if !has_drawable {
             return Vec::new();
         }
-        let mut found = self
-            .cuts
-            .contain
-            .fire_points
-            .get(&id)
-            .cloned()
-            .unwrap_or_default();
+        let mut found = self.cuts.contain.fire_points.get(&id).cloned().unwrap_or_default();
         found.truncate(max.max(0) as usize);
         // batch R12: the bones rise by the condition the art was last put in
         if let Some(&c) = self.cuts.contain.bone_condition.get(&id) {
@@ -665,48 +487,23 @@ impl World {
     }
 
     /// `obj->getSingleLogicalBonePositionOnTurret(TURRET_MAIN, name, NULL, &matrix)`: the transform, `None` when the call gives false.
-    pub fn contain_get_single_logical_bone_position_on_turret(
-        &mut self,
-        id: ObjectId,
-        name: &[u8],
-    ) -> Option<Matrix3D> {
-        self.contain_cut(ContainCall::GetSingleLogicalBonePositionOnTurret {
-            object: id,
-            name: name.to_vec(),
-        });
-        self.cuts
-            .contain
-            .turret_bones
-            .get(&(id, name.to_vec()))
-            .copied()
+    pub fn contain_get_single_logical_bone_position_on_turret(&mut self, id: ObjectId, name: &[u8]) -> Option<Matrix3D> {
+        self.contain_cut(ContainCall::GetSingleLogicalBonePositionOnTurret { object: id, name: name.to_vec() });
+        self.cuts.contain.turret_bones.get(&(id, name.to_vec())).copied()
     }
 
     // --- p1w13-sonnet --- (batch R2: TransportContain)
     /// `rider->setDisabled(type)`. The stub records the call only (the test's stand-in logs it and keeps no bit).
-    pub fn contain_set_disabled(
-        &mut self,
-        id: ObjectId,
-        disabled: crate::common::disabled_types::DisabledType,
-    ) {
-        self.contain_cut(ContainCall::SetDisabled {
-            object: id,
-            disabled,
-        });
+    pub fn contain_set_disabled(&mut self, id: ObjectId, disabled: crate::common::disabled_types::DisabledType) {
+        self.contain_cut(ContainCall::SetDisabled { object: id, disabled });
         if !self.cuts.contain.stub_object_calls {
             self.set_disabled(id, disabled);
         }
     }
 
     /// `rider->clearDisabled(type)`. The stub records the call and clears the bit (the bookkeeping the stand-in keeps).
-    pub fn contain_clear_disabled(
-        &mut self,
-        id: ObjectId,
-        disabled: crate::common::disabled_types::DisabledType,
-    ) {
-        self.contain_cut(ContainCall::ClearDisabled {
-            object: id,
-            disabled,
-        });
+    pub fn contain_clear_disabled(&mut self, id: ObjectId, disabled: crate::common::disabled_types::DisabledType) {
+        self.contain_cut(ContainCall::ClearDisabled { object: id, disabled });
         if self.cuts.contain.stub_object_calls {
             if let Some(o) = self.objects.find_mut(id) {
                 o.disabled.set(disabled, 0);
@@ -727,11 +524,7 @@ impl World {
 
     /// The world position of a transport's exit bone, if it has a drawable and the art has the bone: `getPristineBonePositions` then
     /// `convertBonePosToWorldPos` (see [`ContainCutTables::pristine_bones`]).
-    pub fn contain_exit_bone_world_position(
-        &mut self,
-        id: ObjectId,
-        bone: &[u8],
-    ) -> Option<Coord3D> {
+    pub fn contain_exit_bone_world_position(&mut self, id: ObjectId, bone: &[u8]) -> Option<Coord3D> {
         let pos = self.contain_drawable_pristine_bone(id, bone)?;
         Some(self.contain_convert_bone_pos_to_world_pos(id, &pos))
     }
@@ -743,35 +536,18 @@ impl World {
         if !self.has_drawable(id) {
             return None;
         }
-        self.cuts
-            .contain
-            .pristine_bones
-            .get(&(id, bone.to_vec()))
-            .copied()
+        self.cuts.contain.pristine_bones.get(&(id, bone.to_vec())).copied()
     }
 
     /// `obj->convertBonePosToWorldPos(&bonePos, NULL, &worldPos, NULL)`: the position pushed through the object's transform (`Thing`'s, translated).
     pub fn contain_convert_bone_pos_to_world_pos(&self, id: ObjectId, bone: &Coord3D) -> Coord3D {
-        self.objects
-            .find(id)
-            .map_or(*bone, |o| o.thing.bone_position_to_world(bone))
+        self.objects.find(id).map_or(*bone, |o| o.thing.bone_position_to_world(bone))
     }
 
     /// `ThePartitionManager->findPositionAround(&pos, options, &pos)`: `pos` is written when a position is found (see
     /// [`ContainCutTables::find_position`]).
-    pub fn contain_partition_find_position_around(
-        &mut self,
-        pos: &mut Coord3D,
-        min_radius: f32,
-        max_radius: f32,
-        flags: i32,
-    ) -> bool {
-        self.contain_cut(ContainCall::PartitionFindPositionAround {
-            position: *pos,
-            min_radius,
-            max_radius,
-            flags,
-        });
+    pub fn contain_partition_find_position_around(&mut self, pos: &mut Coord3D, min_radius: f32, max_radius: f32, flags: i32) -> bool {
+        self.contain_cut(ContainCall::PartitionFindPositionAround { position: *pos, min_radius, max_radius, flags });
         match self.cuts.contain.find_position {
             Some(p) => {
                 *pos = p;
@@ -782,32 +558,20 @@ impl World {
     }
 
     /// `TheAI->pathfinder()->getCell(layer, x, y)`, then `getType()`: `None` for a `NULL` cell (see [`ContainCutTables::cell_types`]).
-    pub fn contain_pathfind_cell_type(
-        &mut self,
-        layer: PathfindLayer,
-        x: i32,
-        y: i32,
-    ) -> Option<i32> {
+    pub fn contain_pathfind_cell_type(&mut self, layer: PathfindLayer, x: i32, y: i32) -> Option<i32> {
         self.contain_cut(ContainCall::PathfindGetCell { layer, x, y });
-        let t = self.cuts.contain.cell_types
-            [crate::logic::world::object_cuts::terrain_cell(x as f32, y as f32)];
+        let t = self.cuts.contain.cell_types[crate::logic::world::object_cuts::terrain_cell(x as f32, y as f32)];
         (t >= 0).then_some(t)
     }
 
     /// `player->isSkirmishAIPlayer()` (see [`ContainCutTables::skirmish_ai_players`]).
-    pub fn contain_player_is_skirmish_ai(
-        &self,
-        player: crate::logic::world::ids::PlayerIndex,
-    ) -> bool {
+    pub fn contain_player_is_skirmish_ai(&self, player: crate::logic::world::ids::PlayerIndex) -> bool {
         self.cuts.contain.skirmish_ai_players.contains(&player)
     }
 
     // batch R10 (TunnelContain)
     /// `player->getAcademyStats()->recordUnitEnteredTunnelNetwork()`. The stub records the call only.
-    pub fn contain_record_unit_entered_tunnel_network(
-        &mut self,
-        player: crate::logic::world::ids::PlayerIndex,
-    ) {
+    pub fn contain_record_unit_entered_tunnel_network(&mut self, player: crate::logic::world::ids::PlayerIndex) {
         self.contain_cut(ContainCall::AcademyUnitEnteredTunnelNetwork { player });
         if !self.cuts.contain.stub_object_calls {
             if let Some(p) = self.players.get_nth_mut(player) {
@@ -836,17 +600,8 @@ impl World {
 
     // batch R11 (CaveContain)
     /// `obj->defect(newTeam, detectionTime)`. The stub records the call only; a `NULL` team is not run (`World::defect` takes a team).
-    pub fn contain_defect(
-        &mut self,
-        id: ObjectId,
-        team: Option<crate::logic::world::ids::TeamId>,
-        detection_time: u32,
-    ) {
-        self.contain_cut(ContainCall::Defect {
-            object: id,
-            team,
-            detection_time,
-        });
+    pub fn contain_defect(&mut self, id: ObjectId, team: Option<crate::logic::world::ids::TeamId>, detection_time: u32) {
+        self.contain_cut(ContainCall::Defect { object: id, team, detection_time });
         if !self.cuts.contain.stub_object_calls {
             if let Some(t) = team {
                 self.defect(id, t, detection_time);
@@ -882,53 +637,23 @@ impl World {
     }
 
     /// `draw->setPosition(pos)` of a muzzle flash.
-    pub fn contain_effect_set_position(
-        &mut self,
-        id: crate::common::game_type::DrawableId,
-        pos: &Coord3D,
-    ) {
-        self.contain_cut(ContainCall::EffectSetPosition {
-            drawable: id,
-            position: *pos,
-        });
+    pub fn contain_effect_set_position(&mut self, id: crate::common::game_type::DrawableId, pos: &Coord3D) {
+        self.contain_cut(ContainCall::EffectSetPosition { drawable: id, position: *pos });
     }
 
     /// `draw->setFullyObscuredByShroud(obscured)` of a muzzle flash.
-    pub fn contain_effect_set_fully_obscured_by_shroud(
-        &mut self,
-        id: crate::common::game_type::DrawableId,
-        obscured: bool,
-    ) {
-        self.contain_cut(ContainCall::EffectSetObscured {
-            drawable: id,
-            obscured,
-        });
+    pub fn contain_effect_set_fully_obscured_by_shroud(&mut self, id: crate::common::game_type::DrawableId, obscured: bool) {
+        self.contain_cut(ContainCall::EffectSetObscured { drawable: id, obscured });
     }
 
     /// `draw->setOrientation(angle)` of a muzzle flash.
-    pub fn contain_effect_set_orientation(
-        &mut self,
-        id: crate::common::game_type::DrawableId,
-        angle: f32,
-    ) {
-        self.contain_cut(ContainCall::EffectSetOrientation {
-            drawable: id,
-            angle,
-        });
+    pub fn contain_effect_set_orientation(&mut self, id: crate::common::game_type::DrawableId, angle: f32) {
+        self.contain_cut(ContainCall::EffectSetOrientation { drawable: id, angle });
     }
 
     /// `draw->setModelConditionState(a)` (`set`) or `clearModelConditionState(a)` of a muzzle flash.
-    pub fn contain_effect_model_condition(
-        &mut self,
-        id: crate::common::game_type::DrawableId,
-        condition: i32,
-        set: bool,
-    ) {
-        self.contain_cut(ContainCall::EffectModelCondition {
-            drawable: id,
-            condition,
-            set,
-        });
+    pub fn contain_effect_model_condition(&mut self, id: crate::common::game_type::DrawableId, condition: i32, set: bool) {
+        self.contain_cut(ContainCall::EffectModelCondition { drawable: id, condition, set });
     }
 
     /// `TheGameClient->destroyDrawable(draw)` of a muzzle flash.
@@ -951,72 +676,35 @@ impl World {
     pub fn contain_current_weapon(&self, id: ObjectId) -> Option<i32> {
         let o = self.objects.find(id)?;
         if let Some(w) = o.weapon_set.get_cur_weapon() {
-            return self
-                .statics
-                .weapon_store
-                .templates()
-                .get(w.template())
-                .map(|t| t.damage_type);
+            return self.statics.weapon_store.templates().get(w.template()).map(|t| t.damage_type);
         }
         self.cuts.contain.cur_weapon_damage_type.get(&id).copied()
     }
 
     /// `obj->getCurrentWeapon()->isWithinAttackRange(obj, victim)` (`victim` `INVALID_ID`: `(obj, pos)`): the range check is layer 10's weapon host,
     /// not on the world yet; the table answers ([`ContainCutTables::in_range`]). The caller checks the weapon.
-    pub fn contain_weapon_within_attack_range(
-        &mut self,
-        source: ObjectId,
-        victim: ObjectId,
-        position: Option<Coord3D>,
-    ) -> bool {
-        self.contain_cut(ContainCall::WeaponWithinAttackRange {
-            source,
-            victim,
-            position,
-        });
+    pub fn contain_weapon_within_attack_range(&mut self, source: ObjectId, victim: ObjectId, position: Option<Coord3D>) -> bool {
+        self.contain_cut(ContainCall::WeaponWithinAttackRange { source, victim, position });
         self.cuts.contain.in_range.contains(&(source, victim))
     }
 
     /// `obj->getLastShotFiredFrame()`: the weapon set's, or the table's for an object with no weapon.
     pub fn contain_last_shot_fired_frame(&self, id: ObjectId) -> u32 {
-        let Some(o) = self.objects.find(id) else {
-            return 0;
-        };
-        if (0..crate::common::game_type::WEAPONSLOT_COUNT)
-            .any(|s| o.weapon_set.get_weapon_in_weapon_slot(s).is_some())
-        {
-            return (0..crate::common::game_type::WEAPONSLOT_COUNT)
-                .filter_map(|s| o.weapon_set.get_weapon_in_weapon_slot(s))
-                .map(|w| w.last_shot_frame())
-                .max()
-                .unwrap_or(0);
+        let Some(o) = self.objects.find(id) else { return 0 };
+        if (0..crate::common::game_type::WEAPONSLOT_COUNT).any(|s| o.weapon_set.get_weapon_in_weapon_slot(s).is_some()) {
+            return (0..crate::common::game_type::WEAPONSLOT_COUNT).filter_map(|s| o.weapon_set.get_weapon_in_weapon_slot(s)).map(|w| w.last_shot_frame()).max().unwrap_or(0);
         }
-        self.cuts
-            .contain
-            .last_shot_fired_frame
-            .get(&id)
-            .copied()
-            .unwrap_or(0)
+        self.cuts.contain.last_shot_fired_frame.get(&id).copied().unwrap_or(0)
     }
 
     /// `team->getControllingPlayer()`: the world's team-to-player table (what `getControllingPlayer` of an object reads).
-    pub fn contain_team_controlling_player(
-        &self,
-        team: crate::logic::world::ids::TeamId,
-    ) -> Option<crate::logic::world::ids::PlayerIndex> {
+    pub fn contain_team_controlling_player(&self, team: crate::logic::world::ids::TeamId) -> Option<crate::logic::world::ids::PlayerIndex> {
         self.cuts.team_player(team)
     }
 
     /// `obj->setTeam(team)` for a team that may be `NULL` (the stub records -1 for it).
-    pub fn contain_set_team_opt(
-        &mut self,
-        id: ObjectId,
-        team: Option<crate::logic::world::ids::TeamId>,
-    ) {
-        self.contain_cut(ContainCall::SetTeam {
-            object: id,
-            team: team.map_or(-1, |t| t as i32),
-        });
+    pub fn contain_set_team_opt(&mut self, id: ObjectId, team: Option<crate::logic::world::ids::TeamId>) {
+        self.contain_cut(ContainCall::SetTeam { object: id, team: team.map_or(-1, |t| t as i32) });
         if !self.cuts.contain.stub_object_calls {
             self.set_team(id, team);
         }
@@ -1028,46 +716,22 @@ impl World {
     }
 
     /// `obj->clearAndSetModelConditionFlags(clr, set)`, if the object has a drawable.
-    pub fn contain_clear_and_set_model_condition_flags(
-        &mut self,
-        id: ObjectId,
-        clear: &[i32],
-        set: &[i32],
-    ) {
+    pub fn contain_clear_and_set_model_condition_flags(&mut self, id: ObjectId, clear: &[i32], set: &[i32]) {
         if self.has_drawable(id) {
-            self.contain_cut(ContainCall::ClearAndSetModelConditionFlags {
-                object: id,
-                clear: clear.to_vec(),
-                set: set.to_vec(),
-            });
-            self.cuts
-                .contain
-                .bone_condition
-                .insert(id, set.iter().min().copied().unwrap_or(0));
+            self.contain_cut(ContainCall::ClearAndSetModelConditionFlags { object: id, clear: clear.to_vec(), set: set.to_vec() });
+            self.cuts.contain.bone_condition.insert(id, set.iter().min().copied().unwrap_or(0));
         }
     }
 
     /// `obj->getDrawable()->replaceModelConditionFlags(flags)`: the client's; the caller checks the drawable.
-    pub fn contain_drawable_replace_model_condition_flags(
-        &mut self,
-        id: ObjectId,
-        flags: &crate::common::model_state::ModelConditionFlags,
-    ) {
-        let set: Vec<i32> = (0..crate::common::model_state::MODELCONDITION_COUNT)
-            .filter(|&i| flags.test(i))
-            .collect();
+    pub fn contain_drawable_replace_model_condition_flags(&mut self, id: ObjectId, flags: &crate::common::model_state::ModelConditionFlags) {
+        let set: Vec<i32> = (0..crate::common::model_state::MODELCONDITION_COUNT).filter(|&i| flags.test(i)).collect();
         self.cuts.contain.bone_condition.remove(&id);
-        self.contain_cut(ContainCall::DrawableReplaceModelConditionFlags {
-            object: id,
-            flags: set,
-        });
+        self.contain_cut(ContainCall::DrawableReplaceModelConditionFlags { object: id, flags: set });
     }
 
     /// `player->getAcademyStats()->recordBuildingGarrisoned()`. The stub records the call only.
-    pub fn contain_record_building_garrisoned(
-        &mut self,
-        player: crate::logic::world::ids::PlayerIndex,
-    ) {
+    pub fn contain_record_building_garrisoned(&mut self, player: crate::logic::world::ids::PlayerIndex) {
         self.contain_cut(ContainCall::AcademyBuildingGarrisoned { player });
         if !self.cuts.contain.stub_object_calls {
             if let Some(p) = self.players.get_nth_mut(player) {
@@ -1078,9 +742,7 @@ impl World {
 
     /// `obj->setPositionZ(z)`: the stub moves the object only (the driver's `Object` does the same, with no line).
     pub fn contain_set_position_z(&mut self, id: ObjectId, z: f32) {
-        let Some(mut pos) = self.objects.find(id).map(|o| o.get_position()) else {
-            return;
-        };
+        let Some(mut pos) = self.objects.find(id).map(|o| o.get_position()) else { return };
         pos.z = z;
         if self.cuts.contain.stub_object_calls {
             self.stub_move(id, &pos);
@@ -1090,55 +752,29 @@ impl World {
     }
 
     /// `obj->getDrawable()->setInstanceMatrix(matrix)`: the client's; the caller checks the drawable.
-    pub fn contain_drawable_set_instance_matrix(
-        &mut self,
-        id: ObjectId,
-        matrix: Option<&Matrix3D>,
-    ) {
-        self.contain_cut(ContainCall::DrawableSetInstanceMatrix {
-            object: id,
-            matrix: matrix.copied(),
-        });
+    pub fn contain_drawable_set_instance_matrix(&mut self, id: ObjectId, matrix: Option<&Matrix3D>) {
+        self.contain_cut(ContainCall::DrawableSetInstanceMatrix { object: id, matrix: matrix.copied() });
     }
 
     /// `TheAI->pathfinder()->validMovementTerrain(transport's layer, rider's locomotor, pos)` (see [`ContainCutTables::valid_movement_terrain`]).
-    pub fn contain_valid_movement_terrain(
-        &mut self,
-        _transport: ObjectId,
-        rider: ObjectId,
-        pos: &Coord3D,
-    ) -> bool {
+    pub fn contain_valid_movement_terrain(&mut self, _transport: ObjectId, rider: ObjectId, pos: &Coord3D) -> bool {
         let cells = self.cuts.contain.valid_movement_cells;
-        self.cuts.contain.valid_movement_terrain.contains(&rider)
-            && (cells == 0
-                || cells >> crate::logic::world::object_cuts::terrain_cell(pos.x, pos.y) & 1 != 0)
+        self.cuts.contain.valid_movement_terrain.contains(&rider) && (cells == 0 || cells >> crate::logic::world::object_cuts::terrain_cell(pos.x, pos.y) & 1 != 0)
     }
 
     /// `TheThingFactory->newObject(template, team)` for a payload; `INVALID_ID` when the stub records it (the test's factory makes nothing).
-    pub fn contain_new_payload_object(
-        &mut self,
-        template: u16,
-        team: crate::logic::world::ids::TeamId,
-        status: crate::common::object_status_types::ObjectStatusMaskType,
-    ) -> ObjectId {
-        self.contain_cut(ContainCall::NewObject {
-            template,
-            team: team as i32,
-        });
+    pub fn contain_new_payload_object(&mut self, template: u16, team: crate::logic::world::ids::TeamId, status: crate::common::object_status_types::ObjectStatusMaskType) -> ObjectId {
+        self.contain_cut(ContainCall::NewObject { template, team: team as i32 });
         if self.cuts.contain.stub_object_calls {
             return INVALID_ID;
         }
-        self.thing_factory_new_object(template, Some(team), status)
-            .unwrap_or(INVALID_ID)
+        self.thing_factory_new_object(template, Some(team), status).unwrap_or(INVALID_ID)
     }
 
     // batch R4 (HelixContain)
     /// `obj->setTeam(team)`. The stub records the call only.
     pub fn contain_set_team(&mut self, id: ObjectId, team: crate::logic::world::ids::TeamId) {
-        self.contain_cut(ContainCall::SetTeam {
-            object: id,
-            team: team as i32,
-        });
+        self.contain_cut(ContainCall::SetTeam { object: id, team: team as i32 });
         if !self.cuts.contain.stub_object_calls {
             self.set_team(id, Some(team));
         }
@@ -1146,39 +782,20 @@ impl World {
 
     /// `obj->getBodyModule()->setDamageState(state)`: `false` when the object has no body (the call would be through `NULL`).
     pub fn contain_set_damage_state(&mut self, id: ObjectId, state: i32) -> bool {
-        let Some(body) = self.objects.find(id).and_then(|o| o.body) else {
-            return false;
-        };
+        let Some(body) = self.objects.find(id).and_then(|o| o.body) else { return false };
         self.contain_cut(ContainCall::SetDamageState { object: id, state });
         if !self.cuts.contain.stub_object_calls {
-            self.module_call(
-                id,
-                body,
-                crate::logic::world::module_call::ModuleCall::SetDamageState(state),
-            );
+            self.module_call(id, body, crate::logic::world::module_call::ModuleCall::SetDamageState(state));
         }
         true
     }
 
     /// `obj->getStealth()`, then `receiveGrant(active, frames)` if there is one.
     pub fn contain_stealth_receive_grant(&mut self, id: ObjectId, active: bool, frames: u32) {
-        let Some(stealth) = self.objects.find(id).and_then(|o| o.stealth) else {
-            return;
-        };
-        self.contain_cut(ContainCall::StealthReceiveGrant {
-            object: id,
-            active,
-            frames,
-        });
+        let Some(stealth) = self.objects.find(id).and_then(|o| o.stealth) else { return };
+        self.contain_cut(ContainCall::StealthReceiveGrant { object: id, active, frames });
         if !self.cuts.contain.stub_object_calls {
-            self.module_call(
-                id,
-                stealth,
-                crate::logic::world::module_call::ModuleCall::StealthReceiveGrant {
-                    active,
-                    frames,
-                },
-            );
+            self.module_call(id, stealth, crate::logic::world::module_call::ModuleCall::StealthReceiveGrant { active, frames });
         }
     }
 
@@ -1204,10 +821,7 @@ impl World {
 
     /// `obj->getExperienceTracker()->setExperienceAndLevel(experience, FALSE)`. The stub records the call only.
     pub fn contain_experience_set_experience_and_level(&mut self, id: ObjectId, experience: i32) {
-        self.contain_cut(ContainCall::ExperienceSetExperienceAndLevel {
-            object: id,
-            experience,
-        });
+        self.contain_cut(ContainCall::ExperienceSetExperienceAndLevel { object: id, experience });
         if !self.cuts.contain.stub_object_calls {
             self.cut_experience_set_experience_and_level(id, experience, false);
         }
@@ -1216,33 +830,18 @@ impl World {
     /// `obj->clearModelConditionFlags(flags)`, if the object has a drawable (one client event naming them all).
     pub fn contain_clear_model_condition_flags(&mut self, id: ObjectId, flags: &[i32]) {
         if self.has_drawable(id) {
-            self.emit(
-                crate::logic::world::object_events::ObjectClientEvent::DrawableModelCondition {
-                    object_id: id,
-                    op: crate::logic::world::object_events::ModelConditionOp::Clear(flags.to_vec()),
-                },
-            );
+            self.emit(crate::logic::world::object_events::ObjectClientEvent::DrawableModelCondition {
+                object_id: id,
+                op: crate::logic::world::object_events::ModelConditionOp::Clear(flags.to_vec()),
+            });
         }
     }
 
     /// `obj->kill(damageType, deathType)`; `false` when the object has no body (the maximum health is read through `NULL`).
     pub fn contain_kill_with(&mut self, id: ObjectId, damage_type: i32, death_type: i32) -> bool {
-        let Some(body) = self.objects.find(id).and_then(|o| o.body) else {
-            return false;
-        };
-        let amount = self
-            .module_call(
-                id,
-                body,
-                crate::logic::world::module_call::ModuleCall::GetMaxHealth,
-            )
-            .as_real(0.0);
-        self.contain_cut(ContainCall::KillWith {
-            object: id,
-            amount,
-            damage_type,
-            death_type,
-        });
+        let Some(body) = self.objects.find(id).and_then(|o| o.body) else { return false };
+        let amount = self.module_call(id, body, crate::logic::world::module_call::ModuleCall::GetMaxHealth).as_real(0.0);
+        self.contain_cut(ContainCall::KillWith { object: id, amount, damage_type, death_type });
         if !self.cuts.contain.stub_object_calls {
             self.kill(id, damage_type, death_type);
         }

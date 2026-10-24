@@ -101,11 +101,7 @@ impl<O: Copy> Default for SimpleObjectIterator<O> {
 impl<O: Copy> SimpleObjectIterator<O> {
     /// `SimpleObjectIterator()`: empty.
     pub fn new() -> Self {
-        SimpleObjectIterator {
-            clumps: Vec::new(),
-            first_clump: None,
-            cur_clump: None,
-        }
+        SimpleObjectIterator { clumps: Vec::new(), first_clump: None, cur_clump: None }
     }
 
     /// `getCount()`.
@@ -116,11 +112,7 @@ impl<O: Copy> SimpleObjectIterator<O> {
     /// `insert(obj, numeric)`: added at the head of the list, as upstream does.
     pub fn insert(&mut self, obj: Option<O>, numeric: f32) -> Result<(), ObjectIterError> {
         let obj = obj.ok_or(ObjectIterError::NullObject)?;
-        self.clumps.push(Clump {
-            next: self.first_clump,
-            obj,
-            numeric,
-        });
+        self.clumps.push(Clump { next: self.first_clump, obj, numeric });
         self.first_clump = Some(self.clumps.len() - 1);
         Ok(())
     }
@@ -171,25 +163,15 @@ impl<O: Copy> SimpleObjectIterator<O> {
 
     /// The comparison of upstream's `theClumpCompareProcs`, for the two
     /// numeric orders and the two cost orders. `Fastest` has none.
-    fn compare(
-        &self,
-        order: IterOrderType,
-        a: usize,
-        b: usize,
-        build_cost: &impl Fn(&O) -> i32,
-    ) -> Option<f32> {
+    fn compare(&self, order: IterOrderType, a: usize, b: usize, build_cost: &impl Fn(&O) -> i32) -> Option<f32> {
         let (ca, cb) = (&self.clumps[a], &self.clumps[b]);
         Some(match order {
             IterOrderType::Fastest => return None,
             IterOrderType::SortedNearToFar => ca.numeric - cb.numeric,
             IterOrderType::SortedFarToNear => cb.numeric - ca.numeric,
             // `Int` subtraction, then the conversion to `Real`.
-            IterOrderType::SortedCheapToExpensive => {
-                build_cost(&ca.obj).wrapping_sub(build_cost(&cb.obj)) as f32
-            }
-            IterOrderType::SortedExpensiveToCheap => {
-                build_cost(&cb.obj).wrapping_sub(build_cost(&ca.obj)) as f32
-            }
+            IterOrderType::SortedCheapToExpensive => build_cost(&ca.obj).wrapping_sub(build_cost(&cb.obj)) as f32,
+            IterOrderType::SortedExpensiveToCheap => build_cost(&cb.obj).wrapping_sub(build_cost(&ca.obj)) as f32,
         })
     }
 
@@ -248,11 +230,7 @@ impl<O: Copy> SimpleObjectIterator<O> {
                         let t = to_do.expect("to_do_count > 0");
                         let s = sub.expect("sub_count > 0");
                         // `cmp <= 0` is false for NaN, so the second run is taken, as upstream.
-                        if self
-                            .compare(order, t, s, &build_cost)
-                            .expect("order has a comparison")
-                            <= 0.0
-                        {
+                        if self.compare(order, t, s, &build_cost).expect("order has a comparison") <= 0.0 {
                             to_do = self.clumps[t].next;
                             to_do_count -= 1;
                             t

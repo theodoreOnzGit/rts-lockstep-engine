@@ -35,7 +35,7 @@ use crate::common::game_type::ObjectId;
 use crate::logic::client_event::ClientEvent;
 use crate::logic::damage::DamageInfo;
 use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime,
+    UpdateModule, UpdateModuleData, UpdateSleepTime, SleepyUpdatePhase,
 };
 use crate::logic::world::game_logic::World;
 use crate::logic::world::object::{BehaviorSlot, Object};
@@ -354,7 +354,7 @@ impl UpdateBody {
             // --- p1l9-example ---
             // not an update module: the scheduler never holds it
             UpdateBody::CommandSetUpgrade(_) => UPDATE_SLEEP_FOREVER,
-            // --- p1l9-upgrades ---
+// --- p1l9-upgrades ---
             UpdateBody::WeaponSetUpgrade(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::WeaponBonusUpgrade(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::ArmorUpgrade(_) => UPDATE_SLEEP_FOREVER,
@@ -369,9 +369,9 @@ impl UpdateBody {
             UpdateBody::StealthUpgrade(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SubObjectsUpgrade(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::ObjectCreationUpgrade(_) => UPDATE_SLEEP_FOREVER,
-            // --- p1w10-sonnet ---
+// --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(_) => UPDATE_SLEEP_FOREVER,
-            // --- p1w10-sonnet (helpers and dies) ---
+// --- p1w10-sonnet (helpers and dies) ---
             UpdateBody::ObjectSMCHelper(m) => m.world_update(world, me),
             UpdateBody::ObjectRepulsorHelper(m) => m.world_update(world, me),
             UpdateBody::ObjectWeaponStatusHelper(m) => m.world_update(world, me),
@@ -382,22 +382,22 @@ impl UpdateBody {
             UpdateBody::TransitionDamageFx(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::KeepObjectDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::UpgradeDie(_) => UPDATE_SLEEP_FOREVER,
-            // --- end p1w10-sonnet (helpers and dies) ---
-            // --- p1w10-sonnet (update modules) ---
+// --- end p1w10-sonnet (helpers and dies) ---
+// --- p1w10-sonnet (update modules) ---
             UpdateBody::LifetimeUpdate(m) => m.world_update(world, me),
             UpdateBody::DeletionUpdate(m) => m.world_update(world, me),
             UpdateBody::BaseRegenerateUpdate(m) => m.world_update(world, me),
             UpdateBody::SmartBombTargetHomingUpdate(m) => m.world_update(world, me),
-            // --- end p1w10-sonnet (update modules) ---
+// --- end p1w10-sonnet (update modules) ---
             UpdateBody::SpecialPowerCreate(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SupplyCenterCreate(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SupplyWarehouseCreate(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::LockWeaponCreate(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::VeterancyGainCreate(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::GrantUpgradeCreate(_) => UPDATE_SLEEP_FOREVER,
-            // --- end p1w10-sonnet ---
-            // --- end p1l9-upgrades ---
-            // --- p1w11-sonnet ---
+// --- end p1w10-sonnet ---
+// --- end p1l9-upgrades ---
+// --- p1w11-sonnet ---
             UpdateBody::CostModifierUpgrade(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::PowerPlantUpgrade(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::RadarUpgrade(_) => UPDATE_SLEEP_FOREVER,
@@ -436,8 +436,8 @@ impl UpdateBody {
             UpdateBody::FXListDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::FireWeaponWhenDeadBehavior(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::AutoDepositUpdate(m) => m.world_update(world, me),
-            // --- end p1w11-sonnet ---
-            // --- p1w12-sonnet ---
+// --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.world_update(world, me),
             UpdateBody::AutoHealBehavior(m) => m.world_update(world, me),
             UpdateBody::CheckpointUpdate(m) => m.world_update(world, me),
@@ -464,8 +464,8 @@ impl UpdateBody {
             UpdateBody::DefaultProductionExitUpdate(m) => m.world_update(world, me),
             UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.world_update(world, me),
             UpdateBody::OclUpdate(m) => m.world_update(world, me),
-            // --- end p1w12-sonnet ---
-            // --- p1w13-sonnet ---
+// --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.world_update(world, me),
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.world_update(world, me),
             UpdateBody::SquishCollide(_) => UPDATE_SLEEP_FOREVER,
@@ -497,7 +497,7 @@ impl UpdateBody {
             UpdateBody::HelixContain(m) => m.world_update(world, me),
             UpdateBody::RailedTransportContain(m) => m.world_update(world, me),
             UpdateBody::InternetHackContain(m) => m.world_update(world, me),
-            // --- end p1w13-sonnet ---
+// --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -506,18 +506,13 @@ impl UpdateBody {
     /// The interface calls of `Object` (see `module_call.rs`): the body's
     /// answer to `call`. A module answers [`ModuleReply::Unhandled`] to a call
     /// it has no behaviour for (upstream's empty virtual).
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match self {
             UpdateBody::Probe(_) => ModuleReply::Unhandled,
             UpdateBody::ModuleProbe(m) => m.handle(world, me, call),
             // --- p1l9-example ---
             UpdateBody::CommandSetUpgrade(m) => m.module_call(world, me, call),
-            // --- p1l9-upgrades ---
+// --- p1l9-upgrades ---
             UpdateBody::WeaponSetUpgrade(m) => m.module_call(world, me, call),
             UpdateBody::WeaponBonusUpgrade(m) => m.module_call(world, me, call),
             UpdateBody::ArmorUpgrade(m) => m.module_call(world, me, call),
@@ -532,9 +527,9 @@ impl UpdateBody {
             UpdateBody::StealthUpgrade(m) => m.module_call(world, me, call),
             UpdateBody::SubObjectsUpgrade(m) => m.module_call(world, me, call),
             UpdateBody::ObjectCreationUpgrade(m) => m.module_call(world, me, call),
-            // --- p1w10-sonnet ---
+// --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.module_call(world, me, call),
-            // --- p1w10-sonnet (helpers and dies) ---
+// --- p1w10-sonnet (helpers and dies) ---
             UpdateBody::ObjectSMCHelper(m) => m.module_call(world, me, call),
             UpdateBody::ObjectRepulsorHelper(m) => m.module_call(world, me, call),
             UpdateBody::ObjectWeaponStatusHelper(m) => m.module_call(world, me, call),
@@ -545,22 +540,22 @@ impl UpdateBody {
             UpdateBody::TransitionDamageFx(m) => m.module_call(world, me, call),
             UpdateBody::KeepObjectDie(m) => m.module_call(world, me, call),
             UpdateBody::UpgradeDie(m) => m.module_call(world, me, call),
-            // --- end p1w10-sonnet (helpers and dies) ---
-            // --- p1w10-sonnet (update modules) ---
+// --- end p1w10-sonnet (helpers and dies) ---
+// --- p1w10-sonnet (update modules) ---
             UpdateBody::LifetimeUpdate(m) => m.module_call(world, me, call),
             UpdateBody::DeletionUpdate(m) => m.module_call(world, me, call),
             UpdateBody::BaseRegenerateUpdate(m) => m.module_call(world, me, call),
             UpdateBody::SmartBombTargetHomingUpdate(m) => m.module_call(world, me, call),
-            // --- end p1w10-sonnet (update modules) ---
+// --- end p1w10-sonnet (update modules) ---
             UpdateBody::SpecialPowerCreate(m) => m.module_call(world, me, call),
             UpdateBody::SupplyCenterCreate(m) => m.module_call(world, me, call),
             UpdateBody::SupplyWarehouseCreate(m) => m.module_call(world, me, call),
             UpdateBody::LockWeaponCreate(m) => m.module_call(world, me, call),
             UpdateBody::VeterancyGainCreate(m) => m.module_call(world, me, call),
             UpdateBody::GrantUpgradeCreate(m) => m.module_call(world, me, call),
-            // --- end p1w10-sonnet ---
-            // --- end p1l9-upgrades ---
-            // --- p1w11-sonnet ---
+// --- end p1w10-sonnet ---
+// --- end p1l9-upgrades ---
+// --- p1w11-sonnet ---
             UpdateBody::CostModifierUpgrade(m) => m.module_call(world, me, call),
             UpdateBody::PowerPlantUpgrade(m) => m.module_call(world, me, call),
             UpdateBody::RadarUpgrade(m) => m.module_call(world, me, call),
@@ -599,8 +594,8 @@ impl UpdateBody {
             UpdateBody::FXListDie(m) => m.module_call(world, me, call),
             UpdateBody::FireWeaponWhenDeadBehavior(m) => m.module_call(world, me, call),
             UpdateBody::AutoDepositUpdate(m) => m.module_call(world, me, call),
-            // --- end p1w11-sonnet ---
-            // --- p1w12-sonnet ---
+// --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.module_call(world, me, call),
             UpdateBody::AutoHealBehavior(m) => m.module_call(world, me, call),
             UpdateBody::CheckpointUpdate(m) => m.module_call(world, me, call),
@@ -627,8 +622,8 @@ impl UpdateBody {
             UpdateBody::DefaultProductionExitUpdate(m) => m.module_call(world, me, call),
             UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.module_call(world, me, call),
             UpdateBody::OclUpdate(m) => m.module_call(world, me, call),
-            // --- end p1w12-sonnet ---
-            // --- p1w13-sonnet ---
+// --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.module_call(world, me, call),
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.module_call(world, me, call),
             UpdateBody::SquishCollide(m) => m.module_call(world, me, call),
@@ -660,7 +655,7 @@ impl UpdateBody {
             UpdateBody::HelixContain(m) => m.module_call(world, me, call),
             UpdateBody::RailedTransportContain(m) => m.module_call(world, me, call),
             UpdateBody::InternetHackContain(m) => m.module_call(world, me, call),
-            // --- end p1w13-sonnet ---
+// --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -684,15 +679,11 @@ impl UpdateBody {
     /// The whole chain's `xfer` for a module that [owns it](UpdateBody::owns_base_chain):
     /// `update` is the scheduling half (`UpdateModule`) for an update module,
     /// `None` for any other.
-    pub fn xfer_chain(
-        &mut self,
-        update: Option<&mut UpdateModule>,
-        xfer: &mut dyn Xfer,
-    ) -> XferResult<()> {
+    pub fn xfer_chain(&mut self, update: Option<&mut UpdateModule>, xfer: &mut dyn Xfer) -> XferResult<()> {
         let _ = &update; // used by the update modules' arms
         match self {
             UpdateBody::CommandSetUpgrade(m) => m.xfer(xfer),
-            // --- p1l9-upgrades ---
+// --- p1l9-upgrades ---
             UpdateBody::WeaponSetUpgrade(m) => m.xfer(xfer),
             UpdateBody::WeaponBonusUpgrade(m) => m.xfer(xfer),
             UpdateBody::ArmorUpgrade(m) => m.xfer(xfer),
@@ -707,301 +698,105 @@ impl UpdateBody {
             UpdateBody::StealthUpgrade(m) => m.xfer(xfer),
             UpdateBody::SubObjectsUpgrade(m) => m.xfer(xfer),
             UpdateBody::ObjectCreationUpgrade(m) => m.xfer(xfer),
-            // --- p1w10-sonnet ---
+// --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.xfer(xfer),
-            // --- p1w10-sonnet (helpers and dies) ---
-            UpdateBody::ObjectSMCHelper(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::ObjectRepulsorHelper(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::ObjectWeaponStatusHelper(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::StatusDamageHelper(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::TempWeaponBonusHelper(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
+// --- p1w10-sonnet (helpers and dies) ---
+            UpdateBody::ObjectSMCHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::ObjectRepulsorHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::ObjectWeaponStatusHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::StatusDamageHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::TempWeaponBonusHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::DestroyDie(m) => m.xfer(xfer),
             UpdateBody::BoneFxDamage(m) => m.xfer(xfer),
             UpdateBody::TransitionDamageFx(m) => m.xfer(xfer),
             UpdateBody::KeepObjectDie(m) => m.xfer(xfer),
             UpdateBody::UpgradeDie(m) => m.xfer(xfer),
-            // --- end p1w10-sonnet (helpers and dies) ---
-            // --- p1w10-sonnet (update modules) ---
-            UpdateBody::LifetimeUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::DeletionUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::BaseRegenerateUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::SmartBombTargetHomingUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            // --- end p1w10-sonnet (update modules) ---
+// --- end p1w10-sonnet (helpers and dies) ---
+// --- p1w10-sonnet (update modules) ---
+            UpdateBody::LifetimeUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::DeletionUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::BaseRegenerateUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::SmartBombTargetHomingUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+// --- end p1w10-sonnet (update modules) ---
             UpdateBody::SpecialPowerCreate(m) => m.xfer(xfer),
             UpdateBody::SupplyCenterCreate(m) => m.xfer(xfer),
             UpdateBody::SupplyWarehouseCreate(m) => m.xfer(xfer),
             UpdateBody::LockWeaponCreate(m) => m.xfer(xfer),
             UpdateBody::VeterancyGainCreate(m) => m.xfer(xfer),
             UpdateBody::GrantUpgradeCreate(m) => m.xfer(xfer),
-            // --- end p1w10-sonnet ---
-            // --- end p1l9-upgrades ---
-            // --- p1w11-sonnet ---
-            UpdateBody::PowerPlantUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::RadarUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::SubdualDamageHelper(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::ObjectDefectionHelper(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::SpyVisionUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::AutoDepositUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            // --- end p1w11-sonnet ---
-            // --- p1w12-sonnet ---
-            UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::AutoHealBehavior(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::CheckpointUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::FlammableUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::PoisonedBehavior(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::WeaponBonusUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::PilotFindVehicleUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::HordeUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::ToppleUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::LeafletDropBehavior(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::EmpUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::BoneFxUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::StructureCollapseUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::StealthDetectorUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::StealthUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::OverchargeBehavior(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::GrantStealthBehavior(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::DynamicGeometryInfoUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::FirestormDynamicGeometryInfoUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::AnimationSteeringUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::RadiusDecalUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::AutoFindHealingUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::QueueProductionExitUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::DefaultProductionExitUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::SupplyWarehouseCripplingBehavior(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::OclUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            // --- end p1w12-sonnet ---
-            // --- p1w13-sonnet ---
-            UpdateBody::HeightDieUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::DynamicShroudClearingRangeUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::ProneUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::EnemyNearUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::FloatUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::HijackerUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::TechBuildingBehavior(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::FireSpreadUpdate(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::SlowDeathBehavior(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::RebuildHoleBehavior(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::OpenContain(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::TransportContain(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::GarrisonContain(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::CaveContain(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::TunnelContain(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::MobNexusContain(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::ParachuteContain(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::HealContain(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::OverlordContain(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::RiderChangeContain(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::HelixContain(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::RailedTransportContain(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            UpdateBody::InternetHackContain(m) => match update {
-                Some(u) => m.xfer_with(u, xfer),
-                None => m.xfer(xfer),
-            },
-            // --- end p1w13-sonnet ---
+// --- end p1w10-sonnet ---
+// --- end p1l9-upgrades ---
+// --- p1w11-sonnet ---
+            UpdateBody::PowerPlantUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::RadarUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::SubdualDamageHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::ObjectDefectionHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::SpyVisionUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::AutoDepositUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+// --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
+            UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::AutoHealBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::CheckpointUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::FlammableUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::PoisonedBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::WeaponBonusUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::PilotFindVehicleUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::HordeUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::ToppleUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::LeafletDropBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::EmpUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::BoneFxUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::StructureCollapseUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::StealthDetectorUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::StealthUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::OverchargeBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::GrantStealthBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::DynamicGeometryInfoUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::FirestormDynamicGeometryInfoUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::AnimationSteeringUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::RadiusDecalUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::AutoFindHealingUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::QueueProductionExitUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::DefaultProductionExitUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::SupplyWarehouseCripplingBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::OclUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+// --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
+            UpdateBody::HeightDieUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::DynamicShroudClearingRangeUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::ProneUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::EnemyNearUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::FloatUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::HijackerUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::TechBuildingBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::FireSpreadUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::SlowDeathBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::RebuildHoleBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::OpenContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::TransportContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::GarrisonContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::CaveContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::TunnelContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::MobNexusContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::ParachuteContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::HealContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::OverlordContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::RiderChangeContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::HelixContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::RailedTransportContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::InternetHackContain(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+// --- end p1w13-sonnet ---
             _ => self.xfer(xfer),
         }
     }
 
     /// The whole chain's `crc` (see [`UpdateBody::xfer_chain`]).
-    pub fn crc_chain(
-        &mut self,
-        update: Option<&mut UpdateModule>,
-        xfer: &mut dyn Xfer,
-    ) -> XferResult<()> {
+    pub fn crc_chain(&mut self, update: Option<&mut UpdateModule>, xfer: &mut dyn Xfer) -> XferResult<()> {
         let _ = &update;
         match self {
             UpdateBody::CommandSetUpgrade(m) => m.crc(xfer),
-            // --- p1l9-upgrades ---
+// --- p1l9-upgrades ---
             UpdateBody::WeaponSetUpgrade(m) => m.crc(xfer),
             UpdateBody::WeaponBonusUpgrade(m) => m.crc(xfer),
             UpdateBody::ArmorUpgrade(m) => m.crc(xfer),
@@ -1016,287 +811,95 @@ impl UpdateBody {
             UpdateBody::StealthUpgrade(m) => m.crc(xfer),
             UpdateBody::SubObjectsUpgrade(m) => m.crc(xfer),
             UpdateBody::ObjectCreationUpgrade(m) => m.crc(xfer),
-            // --- p1w10-sonnet ---
+// --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.crc(xfer),
-            // --- p1w10-sonnet (helpers and dies) ---
-            UpdateBody::ObjectSMCHelper(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::ObjectRepulsorHelper(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::ObjectWeaponStatusHelper(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::StatusDamageHelper(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::TempWeaponBonusHelper(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
+// --- p1w10-sonnet (helpers and dies) ---
+            UpdateBody::ObjectSMCHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::ObjectRepulsorHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::ObjectWeaponStatusHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::StatusDamageHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::TempWeaponBonusHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::DestroyDie(m) => m.crc(xfer),
             UpdateBody::BoneFxDamage(m) => m.crc(xfer),
             UpdateBody::TransitionDamageFx(m) => m.crc(xfer),
             UpdateBody::KeepObjectDie(m) => m.crc(xfer),
             UpdateBody::UpgradeDie(m) => m.crc(xfer),
-            // --- end p1w10-sonnet (helpers and dies) ---
-            // --- p1w10-sonnet (update modules) ---
-            UpdateBody::LifetimeUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::DeletionUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::BaseRegenerateUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::SmartBombTargetHomingUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            // --- end p1w10-sonnet (update modules) ---
+// --- end p1w10-sonnet (helpers and dies) ---
+// --- p1w10-sonnet (update modules) ---
+            UpdateBody::LifetimeUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::DeletionUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::BaseRegenerateUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::SmartBombTargetHomingUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+// --- end p1w10-sonnet (update modules) ---
             UpdateBody::SpecialPowerCreate(m) => m.crc(xfer),
             UpdateBody::SupplyCenterCreate(m) => m.crc(xfer),
             UpdateBody::SupplyWarehouseCreate(m) => m.crc(xfer),
             UpdateBody::LockWeaponCreate(m) => m.crc(xfer),
             UpdateBody::VeterancyGainCreate(m) => m.crc(xfer),
             UpdateBody::GrantUpgradeCreate(m) => m.crc(xfer),
-            // --- end p1w10-sonnet ---
-            // --- end p1l9-upgrades ---
-            // --- p1w11-sonnet ---
-            UpdateBody::PowerPlantUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::RadarUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::SubdualDamageHelper(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::ObjectDefectionHelper(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::SpyVisionUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::AutoDepositUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            // --- end p1w11-sonnet ---
-            // --- p1w12-sonnet ---
-            UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::AutoHealBehavior(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::CheckpointUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::FlammableUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::PoisonedBehavior(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::WeaponBonusUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::PilotFindVehicleUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::HordeUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::ToppleUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::LeafletDropBehavior(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::EmpUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::BoneFxUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::StructureCollapseUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::StealthDetectorUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::StealthUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::OverchargeBehavior(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::GrantStealthBehavior(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::DynamicGeometryInfoUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::FirestormDynamicGeometryInfoUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::AnimationSteeringUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::RadiusDecalUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::AutoFindHealingUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::QueueProductionExitUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::DefaultProductionExitUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::SupplyWarehouseCripplingBehavior(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::OclUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            // --- end p1w12-sonnet ---
-            // --- p1w13-sonnet ---
-            UpdateBody::HeightDieUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::DynamicShroudClearingRangeUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::ProneUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::EnemyNearUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::FloatUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::HijackerUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::TechBuildingBehavior(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::FireSpreadUpdate(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::SlowDeathBehavior(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::RebuildHoleBehavior(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::OpenContain(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::TransportContain(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::GarrisonContain(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::CaveContain(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::TunnelContain(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::MobNexusContain(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::ParachuteContain(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::HealContain(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::OverlordContain(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::RiderChangeContain(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::HelixContain(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::RailedTransportContain(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            UpdateBody::InternetHackContain(m) => match update {
-                Some(u) => m.crc_with(u, xfer),
-                None => m.crc(xfer),
-            },
-            // --- end p1w13-sonnet ---
+// --- end p1w10-sonnet ---
+// --- end p1l9-upgrades ---
+// --- p1w11-sonnet ---
+            UpdateBody::PowerPlantUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::RadarUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::SubdualDamageHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::ObjectDefectionHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::SpyVisionUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::AutoDepositUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+// --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
+            UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::AutoHealBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::CheckpointUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::FlammableUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::PoisonedBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::WeaponBonusUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::PilotFindVehicleUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::HordeUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::ToppleUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::LeafletDropBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::EmpUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::BoneFxUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::StructureCollapseUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::StealthDetectorUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::StealthUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::OverchargeBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::GrantStealthBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::DynamicGeometryInfoUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::FirestormDynamicGeometryInfoUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::AnimationSteeringUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::RadiusDecalUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::AutoFindHealingUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::QueueProductionExitUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::DefaultProductionExitUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::SupplyWarehouseCripplingBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::OclUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+// --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
+            UpdateBody::HeightDieUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::DynamicShroudClearingRangeUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::ProneUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::EnemyNearUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::FloatUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::HijackerUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::TechBuildingBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::FireSpreadUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::SlowDeathBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::RebuildHoleBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::OpenContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::TransportContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::GarrisonContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::CaveContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::TunnelContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::MobNexusContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::ParachuteContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::HealContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::OverlordContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::RiderChangeContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::HelixContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::RailedTransportContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::InternetHackContain(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+// --- end p1w13-sonnet ---
             _ => self.crc(xfer),
         }
     }
@@ -1306,7 +909,7 @@ impl UpdateBody {
         let _ = &update;
         match self {
             UpdateBody::CommandSetUpgrade(m) => m.load_post_process(),
-            // --- p1l9-upgrades ---
+// --- p1l9-upgrades ---
             UpdateBody::WeaponSetUpgrade(m) => m.load_post_process(),
             UpdateBody::WeaponBonusUpgrade(m) => m.load_post_process(),
             UpdateBody::ArmorUpgrade(m) => m.load_post_process(),
@@ -1321,287 +924,95 @@ impl UpdateBody {
             UpdateBody::StealthUpgrade(m) => m.load_post_process(),
             UpdateBody::SubObjectsUpgrade(m) => m.load_post_process(),
             UpdateBody::ObjectCreationUpgrade(m) => m.load_post_process(),
-            // --- p1w10-sonnet ---
+// --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.load_post_process(),
-            // --- p1w10-sonnet (helpers and dies) ---
-            UpdateBody::ObjectSMCHelper(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::ObjectRepulsorHelper(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::ObjectWeaponStatusHelper(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::StatusDamageHelper(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::TempWeaponBonusHelper(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
+// --- p1w10-sonnet (helpers and dies) ---
+            UpdateBody::ObjectSMCHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::ObjectRepulsorHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::ObjectWeaponStatusHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::StatusDamageHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::TempWeaponBonusHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::DestroyDie(m) => m.load_post_process(),
             UpdateBody::BoneFxDamage(m) => m.load_post_process(),
             UpdateBody::TransitionDamageFx(m) => m.load_post_process(),
             UpdateBody::KeepObjectDie(m) => m.load_post_process(),
             UpdateBody::UpgradeDie(m) => m.load_post_process(),
-            // --- end p1w10-sonnet (helpers and dies) ---
-            // --- p1w10-sonnet (update modules) ---
-            UpdateBody::LifetimeUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::DeletionUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::BaseRegenerateUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::SmartBombTargetHomingUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            // --- end p1w10-sonnet (update modules) ---
+// --- end p1w10-sonnet (helpers and dies) ---
+// --- p1w10-sonnet (update modules) ---
+            UpdateBody::LifetimeUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::DeletionUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::BaseRegenerateUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::SmartBombTargetHomingUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+// --- end p1w10-sonnet (update modules) ---
             UpdateBody::SpecialPowerCreate(m) => m.load_post_process(),
             UpdateBody::SupplyCenterCreate(m) => m.load_post_process(),
             UpdateBody::SupplyWarehouseCreate(m) => m.load_post_process(),
             UpdateBody::LockWeaponCreate(m) => m.load_post_process(),
             UpdateBody::VeterancyGainCreate(m) => m.load_post_process(),
             UpdateBody::GrantUpgradeCreate(m) => m.load_post_process(),
-            // --- end p1w10-sonnet ---
-            // --- end p1l9-upgrades ---
-            // --- p1w11-sonnet ---
-            UpdateBody::PowerPlantUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::RadarUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::SubdualDamageHelper(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::ObjectDefectionHelper(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::SpyVisionUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::AutoDepositUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            // --- end p1w11-sonnet ---
-            // --- p1w12-sonnet ---
-            UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::AutoHealBehavior(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::CheckpointUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::FlammableUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::PoisonedBehavior(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::WeaponBonusUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::PilotFindVehicleUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::HordeUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::ToppleUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::LeafletDropBehavior(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::EmpUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::BoneFxUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::StructureCollapseUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::StealthDetectorUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::StealthUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::OverchargeBehavior(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::GrantStealthBehavior(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::DynamicGeometryInfoUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::FirestormDynamicGeometryInfoUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::AnimationSteeringUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::RadiusDecalUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::AutoFindHealingUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::QueueProductionExitUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::DefaultProductionExitUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::SupplyWarehouseCripplingBehavior(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::OclUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            // --- end p1w12-sonnet ---
-            // --- p1w13-sonnet ---
-            UpdateBody::HeightDieUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::DynamicShroudClearingRangeUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::ProneUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::EnemyNearUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::FloatUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::HijackerUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::TechBuildingBehavior(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::FireSpreadUpdate(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::SlowDeathBehavior(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::RebuildHoleBehavior(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::OpenContain(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::TransportContain(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::GarrisonContain(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::CaveContain(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::TunnelContain(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::MobNexusContain(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::ParachuteContain(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::HealContain(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::OverlordContain(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::RiderChangeContain(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::HelixContain(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::RailedTransportContain(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            UpdateBody::InternetHackContain(m) => match update {
-                Some(u) => m.load_post_process_with(u),
-                None => m.load_post_process(),
-            },
-            // --- end p1w13-sonnet ---
+// --- end p1w10-sonnet ---
+// --- end p1l9-upgrades ---
+// --- p1w11-sonnet ---
+            UpdateBody::PowerPlantUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::RadarUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::SubdualDamageHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::ObjectDefectionHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::SpyVisionUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::AutoDepositUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+// --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
+            UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::AutoHealBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::CheckpointUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::FlammableUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::PoisonedBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::WeaponBonusUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::PilotFindVehicleUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::HordeUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::ToppleUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::LeafletDropBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::EmpUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::BoneFxUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::StructureCollapseUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::StealthDetectorUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::StealthUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::OverchargeBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::GrantStealthBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::DynamicGeometryInfoUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::FirestormDynamicGeometryInfoUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::AnimationSteeringUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::RadiusDecalUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::AutoFindHealingUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::QueueProductionExitUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::DefaultProductionExitUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::SupplyWarehouseCripplingBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::OclUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+// --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
+            UpdateBody::HeightDieUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::DynamicShroudClearingRangeUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::ProneUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::EnemyNearUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::FloatUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::HijackerUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::TechBuildingBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::FireSpreadUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::SlowDeathBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::RebuildHoleBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::OpenContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::TransportContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::GarrisonContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::CaveContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::TunnelContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::MobNexusContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::ParachuteContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::HealContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::OverlordContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::RiderChangeContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::HelixContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::RailedTransportContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::InternetHackContain(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+// --- end p1w13-sonnet ---
             _ => self.load_post_process(),
         }
     }
@@ -1616,7 +1027,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::ModuleProbe(m) => m.crc(xfer),
             // --- p1l9-example ---
             UpdateBody::CommandSetUpgrade(m) => m.crc(xfer),
-            // --- p1l9-upgrades ---
+// --- p1l9-upgrades ---
             UpdateBody::WeaponSetUpgrade(m) => m.crc(xfer),
             UpdateBody::WeaponBonusUpgrade(m) => m.crc(xfer),
             UpdateBody::ArmorUpgrade(m) => m.crc(xfer),
@@ -1631,9 +1042,9 @@ impl Snapshot for UpdateBody {
             UpdateBody::StealthUpgrade(m) => m.crc(xfer),
             UpdateBody::SubObjectsUpgrade(m) => m.crc(xfer),
             UpdateBody::ObjectCreationUpgrade(m) => m.crc(xfer),
-            // --- p1w10-sonnet ---
+// --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.crc(xfer),
-            // --- p1w10-sonnet (helpers and dies) ---
+// --- p1w10-sonnet (helpers and dies) ---
             UpdateBody::ObjectSMCHelper(m) => m.crc(xfer),
             UpdateBody::ObjectRepulsorHelper(m) => m.crc(xfer),
             UpdateBody::ObjectWeaponStatusHelper(m) => m.crc(xfer),
@@ -1644,22 +1055,22 @@ impl Snapshot for UpdateBody {
             UpdateBody::TransitionDamageFx(m) => m.crc(xfer),
             UpdateBody::KeepObjectDie(m) => m.crc(xfer),
             UpdateBody::UpgradeDie(m) => m.crc(xfer),
-            // --- end p1w10-sonnet (helpers and dies) ---
-            // --- p1w10-sonnet (update modules) ---
+// --- end p1w10-sonnet (helpers and dies) ---
+// --- p1w10-sonnet (update modules) ---
             UpdateBody::LifetimeUpdate(m) => m.crc(xfer),
             UpdateBody::DeletionUpdate(m) => m.crc(xfer),
             UpdateBody::BaseRegenerateUpdate(m) => m.crc(xfer),
             UpdateBody::SmartBombTargetHomingUpdate(m) => m.crc(xfer),
-            // --- end p1w10-sonnet (update modules) ---
+// --- end p1w10-sonnet (update modules) ---
             UpdateBody::SpecialPowerCreate(m) => m.crc(xfer),
             UpdateBody::SupplyCenterCreate(m) => m.crc(xfer),
             UpdateBody::SupplyWarehouseCreate(m) => m.crc(xfer),
             UpdateBody::LockWeaponCreate(m) => m.crc(xfer),
             UpdateBody::VeterancyGainCreate(m) => m.crc(xfer),
             UpdateBody::GrantUpgradeCreate(m) => m.crc(xfer),
-            // --- end p1w10-sonnet ---
-            // --- end p1l9-upgrades ---
-            // --- p1w11-sonnet ---
+// --- end p1w10-sonnet ---
+// --- end p1l9-upgrades ---
+// --- p1w11-sonnet ---
             UpdateBody::CostModifierUpgrade(m) => m.crc(xfer),
             UpdateBody::PowerPlantUpgrade(m) => m.crc(xfer),
             UpdateBody::RadarUpgrade(m) => m.crc(xfer),
@@ -1698,8 +1109,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::FXListDie(m) => m.crc(xfer),
             UpdateBody::FireWeaponWhenDeadBehavior(m) => m.crc(xfer),
             UpdateBody::AutoDepositUpdate(m) => m.crc(xfer),
-            // --- end p1w11-sonnet ---
-            // --- p1w12-sonnet ---
+// --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.crc(xfer),
             UpdateBody::AutoHealBehavior(m) => m.crc(xfer),
             UpdateBody::CheckpointUpdate(m) => m.crc(xfer),
@@ -1726,8 +1137,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::DefaultProductionExitUpdate(m) => m.crc(xfer),
             UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.crc(xfer),
             UpdateBody::OclUpdate(m) => m.crc(xfer),
-            // --- end p1w12-sonnet ---
-            // --- p1w13-sonnet ---
+// --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.crc(xfer),
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.crc(xfer),
             UpdateBody::SquishCollide(m) => m.crc(xfer),
@@ -1759,7 +1170,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::HelixContain(m) => m.crc(xfer),
             UpdateBody::RailedTransportContain(m) => m.crc(xfer),
             UpdateBody::InternetHackContain(m) => m.crc(xfer),
-            // --- end p1w13-sonnet ---
+// --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -1770,7 +1181,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::ModuleProbe(m) => m.xfer(xfer),
             // --- p1l9-example ---
             UpdateBody::CommandSetUpgrade(m) => m.xfer(xfer),
-            // --- p1l9-upgrades ---
+// --- p1l9-upgrades ---
             UpdateBody::WeaponSetUpgrade(m) => m.xfer(xfer),
             UpdateBody::WeaponBonusUpgrade(m) => m.xfer(xfer),
             UpdateBody::ArmorUpgrade(m) => m.xfer(xfer),
@@ -1785,9 +1196,9 @@ impl Snapshot for UpdateBody {
             UpdateBody::StealthUpgrade(m) => m.xfer(xfer),
             UpdateBody::SubObjectsUpgrade(m) => m.xfer(xfer),
             UpdateBody::ObjectCreationUpgrade(m) => m.xfer(xfer),
-            // --- p1w10-sonnet ---
+// --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.xfer(xfer),
-            // --- p1w10-sonnet (helpers and dies) ---
+// --- p1w10-sonnet (helpers and dies) ---
             UpdateBody::ObjectSMCHelper(m) => m.xfer(xfer),
             UpdateBody::ObjectRepulsorHelper(m) => m.xfer(xfer),
             UpdateBody::ObjectWeaponStatusHelper(m) => m.xfer(xfer),
@@ -1798,22 +1209,22 @@ impl Snapshot for UpdateBody {
             UpdateBody::TransitionDamageFx(m) => m.xfer(xfer),
             UpdateBody::KeepObjectDie(m) => m.xfer(xfer),
             UpdateBody::UpgradeDie(m) => m.xfer(xfer),
-            // --- end p1w10-sonnet (helpers and dies) ---
-            // --- p1w10-sonnet (update modules) ---
+// --- end p1w10-sonnet (helpers and dies) ---
+// --- p1w10-sonnet (update modules) ---
             UpdateBody::LifetimeUpdate(m) => m.xfer(xfer),
             UpdateBody::DeletionUpdate(m) => m.xfer(xfer),
             UpdateBody::BaseRegenerateUpdate(m) => m.xfer(xfer),
             UpdateBody::SmartBombTargetHomingUpdate(m) => m.xfer(xfer),
-            // --- end p1w10-sonnet (update modules) ---
+// --- end p1w10-sonnet (update modules) ---
             UpdateBody::SpecialPowerCreate(m) => m.xfer(xfer),
             UpdateBody::SupplyCenterCreate(m) => m.xfer(xfer),
             UpdateBody::SupplyWarehouseCreate(m) => m.xfer(xfer),
             UpdateBody::LockWeaponCreate(m) => m.xfer(xfer),
             UpdateBody::VeterancyGainCreate(m) => m.xfer(xfer),
             UpdateBody::GrantUpgradeCreate(m) => m.xfer(xfer),
-            // --- end p1w10-sonnet ---
-            // --- end p1l9-upgrades ---
-            // --- p1w11-sonnet ---
+// --- end p1w10-sonnet ---
+// --- end p1l9-upgrades ---
+// --- p1w11-sonnet ---
             UpdateBody::CostModifierUpgrade(m) => m.xfer(xfer),
             UpdateBody::PowerPlantUpgrade(m) => m.xfer(xfer),
             UpdateBody::RadarUpgrade(m) => m.xfer(xfer),
@@ -1852,8 +1263,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::FXListDie(m) => m.xfer(xfer),
             UpdateBody::FireWeaponWhenDeadBehavior(m) => m.xfer(xfer),
             UpdateBody::AutoDepositUpdate(m) => m.xfer(xfer),
-            // --- end p1w11-sonnet ---
-            // --- p1w12-sonnet ---
+// --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.xfer(xfer),
             UpdateBody::AutoHealBehavior(m) => m.xfer(xfer),
             UpdateBody::CheckpointUpdate(m) => m.xfer(xfer),
@@ -1880,8 +1291,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::DefaultProductionExitUpdate(m) => m.xfer(xfer),
             UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.xfer(xfer),
             UpdateBody::OclUpdate(m) => m.xfer(xfer),
-            // --- end p1w12-sonnet ---
-            // --- p1w13-sonnet ---
+// --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.xfer(xfer),
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.xfer(xfer),
             UpdateBody::SquishCollide(m) => m.xfer(xfer),
@@ -1913,7 +1324,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::HelixContain(m) => m.xfer(xfer),
             UpdateBody::RailedTransportContain(m) => m.xfer(xfer),
             UpdateBody::InternetHackContain(m) => m.xfer(xfer),
-            // --- end p1w13-sonnet ---
+// --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -1924,7 +1335,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::ModuleProbe(m) => m.load_post_process(),
             // --- p1l9-example ---
             UpdateBody::CommandSetUpgrade(m) => m.load_post_process(),
-            // --- p1l9-upgrades ---
+// --- p1l9-upgrades ---
             UpdateBody::WeaponSetUpgrade(m) => m.load_post_process(),
             UpdateBody::WeaponBonusUpgrade(m) => m.load_post_process(),
             UpdateBody::ArmorUpgrade(m) => m.load_post_process(),
@@ -1939,9 +1350,9 @@ impl Snapshot for UpdateBody {
             UpdateBody::StealthUpgrade(m) => m.load_post_process(),
             UpdateBody::SubObjectsUpgrade(m) => m.load_post_process(),
             UpdateBody::ObjectCreationUpgrade(m) => m.load_post_process(),
-            // --- p1w10-sonnet ---
+// --- p1w10-sonnet ---
             UpdateBody::PreorderCreate(m) => m.load_post_process(),
-            // --- p1w10-sonnet (helpers and dies) ---
+// --- p1w10-sonnet (helpers and dies) ---
             UpdateBody::ObjectSMCHelper(m) => m.load_post_process(),
             UpdateBody::ObjectRepulsorHelper(m) => m.load_post_process(),
             UpdateBody::ObjectWeaponStatusHelper(m) => m.load_post_process(),
@@ -1952,22 +1363,22 @@ impl Snapshot for UpdateBody {
             UpdateBody::TransitionDamageFx(m) => m.load_post_process(),
             UpdateBody::KeepObjectDie(m) => m.load_post_process(),
             UpdateBody::UpgradeDie(m) => m.load_post_process(),
-            // --- end p1w10-sonnet (helpers and dies) ---
-            // --- p1w10-sonnet (update modules) ---
+// --- end p1w10-sonnet (helpers and dies) ---
+// --- p1w10-sonnet (update modules) ---
             UpdateBody::LifetimeUpdate(m) => m.load_post_process(),
             UpdateBody::DeletionUpdate(m) => m.load_post_process(),
             UpdateBody::BaseRegenerateUpdate(m) => m.load_post_process(),
             UpdateBody::SmartBombTargetHomingUpdate(m) => m.load_post_process(),
-            // --- end p1w10-sonnet (update modules) ---
+// --- end p1w10-sonnet (update modules) ---
             UpdateBody::SpecialPowerCreate(m) => m.load_post_process(),
             UpdateBody::SupplyCenterCreate(m) => m.load_post_process(),
             UpdateBody::SupplyWarehouseCreate(m) => m.load_post_process(),
             UpdateBody::LockWeaponCreate(m) => m.load_post_process(),
             UpdateBody::VeterancyGainCreate(m) => m.load_post_process(),
             UpdateBody::GrantUpgradeCreate(m) => m.load_post_process(),
-            // --- end p1w10-sonnet ---
-            // --- end p1l9-upgrades ---
-            // --- p1w11-sonnet ---
+// --- end p1w10-sonnet ---
+// --- end p1l9-upgrades ---
+// --- p1w11-sonnet ---
             UpdateBody::CostModifierUpgrade(m) => m.load_post_process(),
             UpdateBody::PowerPlantUpgrade(m) => m.load_post_process(),
             UpdateBody::RadarUpgrade(m) => m.load_post_process(),
@@ -2006,8 +1417,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::FXListDie(m) => m.load_post_process(),
             UpdateBody::FireWeaponWhenDeadBehavior(m) => m.load_post_process(),
             UpdateBody::AutoDepositUpdate(m) => m.load_post_process(),
-            // --- end p1w11-sonnet ---
-            // --- p1w12-sonnet ---
+// --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.load_post_process(),
             UpdateBody::AutoHealBehavior(m) => m.load_post_process(),
             UpdateBody::CheckpointUpdate(m) => m.load_post_process(),
@@ -2034,8 +1445,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::DefaultProductionExitUpdate(m) => m.load_post_process(),
             UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.load_post_process(),
             UpdateBody::OclUpdate(m) => m.load_post_process(),
-            // --- end p1w12-sonnet ---
-            // --- p1w13-sonnet ---
+// --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.load_post_process(),
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.load_post_process(),
             UpdateBody::SquishCollide(m) => m.load_post_process(),
@@ -2067,7 +1478,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::HelixContain(m) => m.load_post_process(),
             UpdateBody::RailedTransportContain(m) => m.load_post_process(),
             UpdateBody::InternetHackContain(m) => m.load_post_process(),
-            // --- end p1w13-sonnet ---
+// --- end p1w13-sonnet ---
             // --- end p1l9-example ---
         }
     }
@@ -2148,10 +1559,7 @@ impl ProbeUpdate {
     /// The module's `update()`.
     pub fn update(&mut self, world: &mut World, me: UpdateHandle) -> UpdateSleepTime {
         let step = if self.script.is_empty() {
-            ProbeStep {
-                actions: Vec::new(),
-                sleep: 1,
-            }
+            ProbeStep { actions: Vec::new(), sleep: 1 }
         } else {
             self.script[self.calls as usize % self.script.len()].clone()
         };
@@ -2176,11 +1584,7 @@ impl ProbeUpdate {
                     world.attempt_damage(*target, &mut info);
                 }
                 ProbeAction::Sound(name) => {
-                    world.events.push(ClientEvent::Audio {
-                        event_name: name.clone(),
-                        object_id: me.object,
-                        player_index: -1,
-                    });
+                    world.events.push(ClientEvent::Audio { event_name: name.clone(), object_id: me.object, player_index: -1 });
                 }
             }
         }
@@ -2197,15 +1601,11 @@ pub fn probe_object(id: ObjectId, specs: &[ProbeModuleSpec]) -> Object {
     let mut obj = Object::new(id);
     for spec in specs {
         let data = Arc::new(UpdateModuleData::new());
-        let mut update =
-            UpdateModule::new(id, Some(data), spec.phase).expect("module data is present");
+        let mut update = UpdateModule::new(id, Some(data), spec.phase).expect("module data is present");
         if spec.initial_call_frame != 0 {
             update.friend_set_next_call_frame(spec.initial_call_frame);
         }
-        obj.behaviors.push(BehaviorSlot {
-            update,
-            body: Some(UpdateBody::Probe(ProbeUpdate::new(spec.script.clone()))),
-        });
+        obj.behaviors.push(BehaviorSlot { update, body: Some(UpdateBody::Probe(ProbeUpdate::new(spec.script.clone()))) });
     }
     obj
 }
@@ -2226,7 +1626,7 @@ impl UpdateBody {
             UpdateBody::ObjectWeaponStatusHelper(m) => m.world_construct(world, me),
             UpdateBody::StatusDamageHelper(m) => m.world_construct(world, me),
             UpdateBody::TempWeaponBonusHelper(m) => m.world_construct(world, me),
-            // --- p1w11-sonnet ---
+// --- p1w11-sonnet ---
             UpdateBody::PowerPlantUpdate(m) => m.world_construct(world, me),
             UpdateBody::RadarUpdate(m) => m.world_construct(world, me),
             UpdateBody::SubdualDamageHelper(m) => m.world_construct(world, me),
@@ -2243,8 +1643,8 @@ impl UpdateBody {
             UpdateBody::FXListDie(m) => m.world_construct(world, me),
             UpdateBody::FireWeaponWhenDeadBehavior(m) => m.world_construct(world, me),
             UpdateBody::AutoDepositUpdate(m) => m.world_construct(world, me),
-            // --- end p1w11-sonnet ---
-            // --- p1w12-sonnet ---
+// --- end p1w11-sonnet ---
+// --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.world_construct(world, me),
             UpdateBody::AutoHealBehavior(m) => m.world_construct(world, me),
             UpdateBody::CheckpointUpdate(m) => m.world_construct(world, me),
@@ -2271,8 +1671,8 @@ impl UpdateBody {
             UpdateBody::DefaultProductionExitUpdate(m) => m.world_construct(world, me),
             UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.world_construct(world, me),
             UpdateBody::OclUpdate(m) => m.world_construct(world, me),
-            // --- end p1w12-sonnet ---
-            // --- p1w13-sonnet ---
+// --- end p1w12-sonnet ---
+// --- p1w13-sonnet ---
             UpdateBody::HeightDieUpdate(m) => m.world_construct(world, me),
             UpdateBody::DynamicShroudClearingRangeUpdate(m) => m.world_construct(world, me),
             UpdateBody::ProneUpdate(m) => m.world_construct(world, me),
@@ -2303,7 +1703,7 @@ impl UpdateBody {
             UpdateBody::HelixContain(m) => m.world_construct(world, me),
             UpdateBody::RailedTransportContain(m) => m.world_construct(world, me),
             UpdateBody::InternetHackContain(m) => m.world_construct(world, me),
-            // --- end p1w13-sonnet ---
+// --- end p1w13-sonnet ---
             _ => {}
         }
     }

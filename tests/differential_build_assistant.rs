@@ -319,10 +319,7 @@ fn dist2(a: &Coord3D, b: &Coord3D) -> f32 {
 }
 
 fn list_of(v: &[i32]) -> String {
-    v.iter()
-        .map(|x| x.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
+    v.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
 }
 
 struct TmplS {
@@ -393,18 +390,7 @@ struct Sim {
 }
 
 fn region(a: &[f32; 6]) -> Region3D {
-    Region3D {
-        lo: Coord3D {
-            x: a[0],
-            y: a[1],
-            z: a[2],
-        },
-        hi: Coord3D {
-            x: a[3],
-            y: a[4],
-            z: a[5],
-        },
-    }
+    Region3D { lo: Coord3D { x: a[0], y: a[1], z: a[2] }, hi: Coord3D { x: a[3], y: a[4], z: a[5] } }
 }
 
 fn status_list(bits: &[ObjectStatusTypes]) -> Vec<i32> {
@@ -431,17 +417,8 @@ impl Sim {
             .tmpls
             .iter()
             .map(|t| TmplS {
-                kinds: (0..11)
-                    .filter(|b| (t.kind_mask >> b) & 1 != 0)
-                    .map(|b| KIND_TABLE[b])
-                    .collect(),
-                geom: GeometryInfo::new(
-                    geom_type(t.geom_type),
-                    t.small != 0,
-                    t.height,
-                    t.major,
-                    t.minor,
-                ),
+                kinds: (0..11).filter(|b| (t.kind_mask >> b) & 1 != 0).map(|b| KIND_TABLE[b]).collect(),
+                geom: GeometryInfo::new(geom_type(t.geom_type), t.small != 0, t.height, t.major, t.minor),
                 exit_width: t.exit_width,
                 extra_bib: t.extra_bib,
                 vision: t.vision,
@@ -466,17 +443,11 @@ impl Sim {
                 more_mask: q.more_mask,
             })
             .collect();
-        let rel = (0..n_p)
-            .map(|a| (0..n_p).map(|b| p.rel[a * n_p + b] % 3).collect())
-            .collect();
+        let rel = (0..n_p).map(|a| (0..n_p).map(|b| p.rel[a * n_p + b] % 3).collect()).collect();
         let sets = p
             .sets
             .iter()
-            .map(|s| {
-                s.iter()
-                    .map(|slot| slot.map(|(ty, t)| (ty, (t as usize) % n_t)))
-                    .collect()
-            })
+            .map(|s| s.iter().map(|slot| slot.map(|(ty, t)| (ty, (t as usize) % n_t))).collect())
             .collect();
         let mut sim = Sim {
             globals: BuildGlobals {
@@ -506,46 +477,24 @@ impl Sim {
         };
         let n_cs = p.sets.len() as u32;
         for o in &p.objs {
-            let owner = if o.owner >= n_p as u32 {
-                None
-            } else {
-                Some(o.owner as usize)
-            };
+            let owner = if o.owner >= n_p as u32 { None } else { Some(o.owner as usize) };
             let id = sim.make_object(o.tmpl as usize % n_t, owner);
             let ob = &mut sim.objs[id as usize - 1];
-            ob.pos = Coord3D {
-                x: o.pos[0],
-                y: o.pos[1],
-                z: o.pos[2],
-            };
+            ob.pos = Coord3D { x: o.pos[0], y: o.pos[1], z: o.pos[2] };
             ob.orient = o.orient;
             ob.status = o.status;
             ob.disabled = o.disabled != 0;
             ob.dead = o.dead != 0;
             ob.script_bits = o.script_bits as u8;
             ob.ai_busy = o.ai_busy != 0;
-            ob.cmd_set = if o.cmd_set >= n_cs {
-                -1
-            } else {
-                o.cmd_set as i32
-            };
+            ob.cmd_set = if o.cmd_set >= n_cs { -1 } else { o.cmd_set as i32 };
             ob.quick_path = o.quick_path != 0;
             ob.cpct = o.cpct;
             ob.producer = o.producer as ObjectId;
-            ob.sp_cons = if o.sp_cons < 0 || o.sp_cons as usize >= n_t {
-                -1
-            } else {
-                o.sp_cons
-            };
+            ob.sp_cons = if o.sp_cons < 0 || o.sp_cons as usize >= n_t { -1 } else { o.sp_cons };
             ob.can_queue = (o.can_queue % 7) as i32;
             if o.geom_override != 0 {
-                ob.geom = GeometryInfo::new(
-                    geom_type(o.geom_type % 3),
-                    false,
-                    o.geom_h,
-                    o.geom_major,
-                    o.geom_minor,
-                );
+                ob.geom = GeometryInfo::new(geom_type(o.geom_type % 3), false, o.geom_h, o.geom_major, o.geom_minor);
             }
         }
         sim
@@ -601,11 +550,7 @@ impl Sim {
 
     fn dump(&mut self) {
         let mut out: Vec<String> = Vec::new();
-        out.push(format!(
-            "W frame={} next={}",
-            self.frame,
-            self.objs.len() + 1
-        ));
+        out.push(format!("W frame={} next={}", self.frame, self.objs.len() + 1));
         for o in self.objs.iter().filter(|o| !o.removed) {
             out.push(format!(
                 "O {} t={} p={} pos={:08x},{:08x},{:08x} o={:08x} cp={:08x} st={:x} d{} dead{} dst{} sb{} pr={} mc={:x},{:x}",
@@ -632,21 +577,9 @@ impl Sim {
             .build_positions
             .iter()
             .take((self.ba.build_position_size.max(0) as usize).min(4))
-            .map(|c| {
-                format!(
-                    "{:08x},{:08x},{:08x}",
-                    c.x.to_bits(),
-                    c.y.to_bits(),
-                    c.z.to_bits()
-                )
-            })
+            .map(|c| format!("{:08x},{:08x},{:08x}", c.x.to_bits(), c.y.to_bits(), c.z.to_bits()))
             .collect();
-        let sells: Vec<String> = self
-            .ba
-            .sell_list
-            .iter()
-            .map(|s| format!("{}:{}", s.id, s.sell_frame))
-            .collect();
+        let sells: Vec<String> = self.ba.sell_list.iter().map(|s| format!("{}:{}", s.id, s.sell_frame)).collect();
         out.push(format!(
             "B size={} alloc={} pos=[{}] sells=[{}]",
             self.ba.build_position_size,
@@ -751,14 +684,7 @@ impl BuildAssistantHost for Sim {
     fn ai_idle(&mut self, o: ObjectId) {
         self.rec(format!("ai.idle {o}"));
     }
-    fn ai_construct(
-        &mut self,
-        o: ObjectId,
-        what: TemplateRef,
-        pos: Coord3D,
-        angle: f32,
-        player: PlayerIndex,
-    ) -> Option<ObjectId> {
+    fn ai_construct(&mut self, o: ObjectId, what: TemplateRef, pos: Coord3D, angle: f32, player: PlayerIndex) -> Option<ObjectId> {
         self.rec(format!(
             "ai.construct {o} tmpl={what} pos={:08x},{:08x},{:08x} angle={:08x} player={player}",
             pos.x.to_bits(),
@@ -780,12 +706,7 @@ impl BuildAssistantHost for Sim {
         self.o(o).quick_path
     }
     fn ai_move_to_position_even_if_sleeping(&mut self, o: ObjectId, pos: Coord3D) {
-        self.rec(format!(
-            "ai.move {o} {:08x} {:08x} {:08x}",
-            pos.x.to_bits(),
-            pos.y.to_bits(),
-            pos.z.to_bits()
-        ));
+        self.rec(format!("ai.move {o} {:08x} {:08x} {:08x}", pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()));
     }
     fn obj_producer_id(&self, o: ObjectId) -> ObjectId {
         self.o(o).producer
@@ -797,19 +718,10 @@ impl BuildAssistantHost for Sim {
         self.rec(format!("cpct {o} {:08x}", p.to_bits()));
         self.om(o).cpct = p;
     }
-    fn obj_clear_and_set_model_condition(
-        &mut self,
-        o: ObjectId,
-        clear: &[ModelConditionFlagType],
-        set: &[ModelConditionFlagType],
-    ) {
+    fn obj_clear_and_set_model_condition(&mut self, o: ObjectId, clear: &[ModelConditionFlagType], set: &[ModelConditionFlagType]) {
         let c = status_list(clear);
         let s = status_list(set);
-        self.rec(format!(
-            "mc.clearset {o} clear={} set={}",
-            list_of(&c),
-            list_of(&s)
-        ));
+        self.rec(format!("mc.clearset {o} clear={} set={}", list_of(&c), list_of(&s)));
         let ob = self.om(o);
         for i in c {
             mc_bit(&mut ob.mc, i, false);
@@ -896,33 +808,20 @@ impl BuildAssistantHost for Sim {
         self.rec(format!("producer {o} {p}"));
     }
     fn obj_set_position(&mut self, o: ObjectId, pos: Coord3D) {
-        self.rec(format!(
-            "pos {o} {:08x} {:08x} {:08x}",
-            pos.x.to_bits(),
-            pos.y.to_bits(),
-            pos.z.to_bits()
-        ));
+        self.rec(format!("pos {o} {:08x} {:08x} {:08x}", pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()));
         self.om(o).pos = pos;
     }
     fn obj_set_orientation(&mut self, o: ObjectId, angle: f32) {
         self.rec(format!("orient {o} {:08x}", angle.to_bits()));
         self.om(o).orient = angle;
     }
-    fn thing_factory_new_object(
-        &mut self,
-        what: TemplateRef,
-        owner: PlayerIndex,
-        status: &[ObjectStatusTypes],
-    ) -> ObjectId {
+    fn thing_factory_new_object(&mut self, what: TemplateRef, owner: PlayerIndex, status: &[ObjectStatusTypes]) -> ObjectId {
         let id = self.make_object(what as usize, Some(owner as usize));
         let v = status_list(status);
         for i in &v {
             self.om(id).status |= 1u64 << i;
         }
-        self.rec(format!(
-            "new tmpl={what} owner={owner} status={} -> {id}",
-            list_of(&v)
-        ));
+        self.rec(format!("new tmpl={what} owner={owner} status={} -> {id}", list_of(&v)));
         id
     }
     fn pathfinder_add_object(&mut self, o: ObjectId) {
@@ -945,14 +844,10 @@ impl BuildAssistantHost for Sim {
         }
     }
     fn button_command_type(&self, button: u32) -> i32 {
-        self.sets[(button / 32) as usize][(button % 32) as usize]
-            .unwrap()
-            .0
+        self.sets[(button / 32) as usize][(button % 32) as usize].unwrap().0
     }
     fn button_template(&self, button: u32) -> TemplateRef {
-        self.sets[(button / 32) as usize][(button % 32) as usize]
-            .unwrap()
-            .1 as TemplateRef
+        self.sets[(button / 32) as usize][(button % 32) as usize].unwrap().1 as TemplateRef
     }
     fn tmpl_geometry(&self, t: TemplateRef) -> GeometryInfo {
         self.tmpls[t as usize].geom.clone()
@@ -1014,35 +909,14 @@ impl BuildAssistantHost for Sim {
         let m = &mut self.players[p as usize].money;
         *m = m.wrapping_add(amount);
     }
-    fn player_on_structure_created(
-        &mut self,
-        p: PlayerIndex,
-        constructor: Option<ObjectId>,
-        o: ObjectId,
-    ) {
-        self.rec(format!(
-            "p.structcreated {p} {} {o}",
-            constructor.unwrap_or(0)
-        ));
+    fn player_on_structure_created(&mut self, p: PlayerIndex, constructor: Option<ObjectId>, o: ObjectId) {
+        self.rec(format!("p.structcreated {p} {} {o}", constructor.unwrap_or(0)));
     }
-    fn player_on_structure_construction_complete(
-        &mut self,
-        p: PlayerIndex,
-        constructor: Option<ObjectId>,
-        o: ObjectId,
-    ) {
+    fn player_on_structure_construction_complete(&mut self, p: PlayerIndex, constructor: Option<ObjectId>, o: ObjectId) {
         self.rec(format!("p.structdone {p} {} {o}", constructor.unwrap_or(0)));
     }
-    fn player_on_unit_created(
-        &mut self,
-        p: PlayerIndex,
-        constructor: Option<ObjectId>,
-        o: ObjectId,
-    ) {
-        self.rec(format!(
-            "p.unitcreated {p} {} {o}",
-            constructor.unwrap_or(0)
-        ));
+    fn player_on_unit_created(&mut self, p: PlayerIndex, constructor: Option<ObjectId>, o: ObjectId) {
+        self.rec(format!("p.unitcreated {p} {} {o}", constructor.unwrap_or(0)));
     }
     fn terrain_ground_height(&self, x: f32, y: f32) -> f32 {
         (h3(cell_of(x) as u32, cell_of(y) as u32, self.seed_h) & 7) as f32 * 0.75
@@ -1055,10 +929,7 @@ impl BuildAssistantHost for Sim {
     }
     fn terrain_layer_for_destination(&self, pos: Coord3D) -> PathfindLayer {
         let seed = self.seed_h ^ 0x4444;
-        if self.layer_density > 0
-            && h3(cell_of(pos.x) as u32, cell_of(pos.y) as u32, seed)
-                .is_multiple_of(self.layer_density)
-        {
+        if self.layer_density > 0 && h3(cell_of(pos.x) as u32, cell_of(pos.y) as u32, seed).is_multiple_of(self.layer_density) {
             15
         } else {
             1
@@ -1072,18 +943,9 @@ impl BuildAssistantHost for Sim {
         Some(self.tile_density > 0 && hh.is_multiple_of(self.tile_density))
     }
     fn terrain_visual_add_faction_bib(&mut self, o: ObjectId, highlight: bool, extra: f32) {
-        self.rec(format!(
-            "bib {o} {} {:08x}",
-            highlight as i32,
-            extra.to_bits()
-        ));
+        self.rec(format!("bib {o} {} {:08x}", highlight as i32, extra.to_bits()));
     }
-    fn terrain_visual_remove_trees_and_props(
-        &mut self,
-        pos: Coord3D,
-        geom: &GeometryInfo,
-        angle: f32,
-    ) {
+    fn terrain_visual_remove_trees_and_props(&mut self, pos: Coord3D, geom: &GeometryInfo, angle: f32) {
         self.rec(format!(
             "trees {:08x} {:08x} {:08x} geom={},{:08x},{:08x} angle={:08x}",
             pos.x.to_bits(),
@@ -1095,12 +957,7 @@ impl BuildAssistantHost for Sim {
             angle.to_bits()
         ));
     }
-    fn partition_iterate_potential_collisions(
-        &mut self,
-        pos: Coord3D,
-        geom: &GeometryInfo,
-        _angle: f32,
-    ) -> Vec<ObjectId> {
+    fn partition_iterate_potential_collisions(&mut self, pos: Coord3D, geom: &GeometryInfo, _angle: f32) -> Vec<ObjectId> {
         let mut max_dist = geom.get_bounding_circle_radius();
         max_dist *= 1.1;
         self.objs
@@ -1126,9 +983,7 @@ impl BuildAssistantHost for Sim {
     }
     fn partition_closest_supply_source(&mut self, pos: Coord3D, range: f32) -> Option<ObjectId> {
         let mut best: Option<(ObjectId, f32)> = None;
-        for o in self.objs.iter().filter(|o| {
-            !o.removed && !o.destroyed && self.structure_filter(o, KINDOF_SUPPLY_SOURCE)
-        }) {
+        for o in self.objs.iter().filter(|o| !o.removed && !o.destroyed && self.structure_filter(o, KINDOF_SUPPLY_SOURCE)) {
             let r = range + o.geom.get_bounding_circle_radius();
             let d = dist2(&pos, &o.pos);
             if d <= r * r && best.is_none_or(|(_, bd)| d < bd) {
@@ -1137,35 +992,18 @@ impl BuildAssistantHost for Sim {
         }
         best.map(|(id, _)| id)
     }
-    fn partition_geom_collides_with_geom(
-        &self,
-        pos1: Coord3D,
-        geom1: &GeometryInfo,
-        _a1: f32,
-        pos2: Coord3D,
-        geom2: &GeometryInfo,
-        _a2: f32,
-    ) -> bool {
+    fn partition_geom_collides_with_geom(&self, pos1: Coord3D, geom1: &GeometryInfo, _a1: f32, pos2: Coord3D, geom2: &GeometryInfo, _a2: f32) -> bool {
         let r = geom1.get_bounding_circle_radius() + geom2.get_bounding_circle_radius();
         dist2(&pos1, &pos2) < r * r
     }
     fn partition_world_to_cell(&self, x: f32, y: f32) -> (i32, i32) {
         (cell_of(x), cell_of(y))
     }
-    fn partition_shroud_status_for_player(
-        &self,
-        player_index: i32,
-        x: i32,
-        y: i32,
-    ) -> CellShroudStatus {
+    fn partition_shroud_status_for_player(&self, player_index: i32, x: i32, y: i32) -> CellShroudStatus {
         if self.shroud_density == 0 {
             return CellShroudStatus::Clear;
         }
-        let hh = h3(
-            x as u32,
-            y as u32,
-            (self.seed_h ^ 0x3333).wrapping_add(player_index as u32),
-        );
+        let hh = h3(x as u32, y as u32, (self.seed_h ^ 0x3333).wrapping_add(player_index as u32));
         if !hh.is_multiple_of(self.shroud_density) {
             return CellShroudStatus::Clear;
         }
@@ -1175,12 +1013,7 @@ impl BuildAssistantHost for Sim {
             CellShroudStatus::Shrouded
         }
     }
-    fn pathfinder_cell_type(
-        &self,
-        _layer: PathfindLayer,
-        x: i32,
-        y: i32,
-    ) -> Option<PathfindCellType> {
+    fn pathfinder_cell_type(&self, _layer: PathfindLayer, x: i32, y: i32) -> Option<PathfindCellType> {
         let hh = h3(x as u32, y as u32, self.seed_h ^ 0x2222);
         if hh.is_multiple_of(23) {
             return None;
@@ -1259,14 +1092,7 @@ impl Sim {
         r
     }
 
-    fn do_op_inner(
-        &mut self,
-        op: u32,
-        q: &mut Rd<'_>,
-        n_t: usize,
-        n_p: usize,
-        ba: &mut BuildAssistant,
-    ) -> Result<(), BuildError> {
+    fn do_op_inner(&mut self, op: u32, q: &mut Rd<'_>, n_t: usize, n_p: usize, ba: &mut BuildAssistant) -> Result<(), BuildError> {
         match op {
             0 => {
                 build_assistant_init(self, ba);
@@ -1290,11 +1116,7 @@ impl Sim {
                 build_assistant_xfer_the_sell_list(ba, &mut x)?;
                 x.close().unwrap();
                 let bytes = x.take_bytes();
-                self.rec(format!(
-                    "ret save len={} hash={:08x}",
-                    bytes.len(),
-                    hash_bytes(&bytes)
-                ));
+                self.rec(format!("ret save len={} hash={:08x}", bytes.len(), hash_bytes(&bytes)));
                 self.saved = Some(bytes);
             }
             4 => match self.saved.clone() {
@@ -1341,21 +1163,13 @@ impl Sim {
                     self.rec("skip".into());
                     return Ok(());
                 }
-                let pl = if ps == 0 {
-                    None
-                } else {
-                    Some(((ps - 1) as usize % n_p) as PlayerIndex)
-                };
+                let pl = if ps == 0 { None } else { Some(((ps - 1) as usize % n_p) as PlayerIndex) };
                 let t = (ti as usize % n_t) as TemplateRef;
                 if op == 7 {
-                    let c = build_assistant_is_location_legal_to_build(
-                        self, pos, t, angle, options, b, pl,
-                    );
+                    let c = build_assistant_is_location_legal_to_build(self, pos, t, angle, options, b, pl);
                     self.rec(format!("ret legal {}", c as i32));
                 } else {
-                    let c = build_assistant_is_location_clear_of_objects(
-                        self, pos, t, angle, b, options, pl,
-                    );
+                    let c = build_assistant_is_location_clear_of_objects(self, pos, t, angle, b, options, pl);
                     self.rec(format!("ret clear {}", c as i32));
                 }
             }
@@ -1382,35 +1196,14 @@ impl Sim {
                     self.rec("skip".into());
                     return Ok(());
                 }
-                let info = build_assistant_build_tiled_locations(
-                    self,
-                    ba,
-                    (ti as usize % n_t) as TemplateRef,
-                    angle,
-                    s,
-                    e,
-                    tiling,
-                    max_tiles,
-                    b,
-                )?;
+                let info = build_assistant_build_tiled_locations(self, ba, (ti as usize % n_t) as TemplateRef, angle, s, e, tiling, max_tiles, b)?;
                 let ps: Vec<String> = info
                     .positions
                     .iter()
                     .take(info.tiles_used.max(0) as usize)
-                    .map(|c| {
-                        format!(
-                            "{:08x},{:08x},{:08x}",
-                            c.x.to_bits(),
-                            c.y.to_bits(),
-                            c.z.to_bits()
-                        )
-                    })
+                    .map(|c| format!("{:08x},{:08x},{:08x}", c.x.to_bits(), c.y.to_bits(), c.z.to_bits()))
                     .collect();
-                self.rec(format!(
-                    "ret tiled used={} [{}]",
-                    info.tiles_used,
-                    ps.join(" ")
-                ));
+                self.rec(format!("ret tiled used={} [{}]", info.tiles_used, ps.join(" ")));
             }
             11 => {
                 let ti = q.u();
@@ -1418,10 +1211,7 @@ impl Sim {
                     self.rec("skip".into());
                     return Ok(());
                 }
-                let r = build_assistant_is_line_build_template(
-                    self,
-                    (ti as usize % n_t) as TemplateRef,
-                );
+                let r = build_assistant_is_line_build_template(self, (ti as usize % n_t) as TemplateRef);
                 self.rec(format!("ret isline {}", r as i32));
             }
             12 | 13 => {
@@ -1501,11 +1291,7 @@ impl Sim {
                     _ => {
                         if n_p > 0 {
                             let p = q.u() as usize;
-                            let owner = if p % (n_p + 1) == n_p {
-                                None
-                            } else {
-                                Some(p % (n_p + 1))
-                            };
+                            let owner = if p % (n_p + 1) == n_p { None } else { Some(p % (n_p + 1)) };
                             self.om(id).player = owner;
                         }
                     }
@@ -1550,23 +1336,10 @@ fn chance(g: &mut Gen, percent: u32) -> bool {
 
 fn gen_status(g: &mut Gen) -> u64 {
     if chance(g, 35) {
-        (if chance(g, 50) {
-            1u64 << OBJECT_STATUS_STEALTHED
-        } else {
-            0
-        }) | (if chance(g, 40) {
-            1u64 << OBJECT_STATUS_DETECTED
-        } else {
-            0
-        }) | (if chance(g, 20) {
-            1u64 << OBJECT_STATUS_DISGUISED
-        } else {
-            0
-        }) | (if chance(g, 25) {
-            1u64 << OBJECT_STATUS_IS_USING_ABILITY
-        } else {
-            0
-        })
+        (if chance(g, 50) { 1u64 << OBJECT_STATUS_STEALTHED } else { 0 })
+            | (if chance(g, 40) { 1u64 << OBJECT_STATUS_DETECTED } else { 0 })
+            | (if chance(g, 20) { 1u64 << OBJECT_STATUS_DISGUISED } else { 0 })
+            | (if chance(g, 25) { 1u64 << OBJECT_STATUS_IS_USING_ABILITY } else { 0 })
     } else {
         0
     }
@@ -1574,22 +1347,12 @@ fn gen_status(g: &mut Gen) -> u64 {
 
 /// A third of the placement queries ask for a template with a factory exit, for a skirmish AI player when there is one (the padding of
 /// `isLocationClearOfObjects`), with the overlap flags that reach the exit rectangles.
-fn directed_exit_case(
-    g: &mut Gen,
-    a: &mut [u32; 16],
-    tmpls: &[TmplCfg],
-    players: &[PlayerCfg],
-    objs: &[ObjCfg],
-) {
+fn directed_exit_case(g: &mut Gen, a: &mut [u32; 16], tmpls: &[TmplCfg], players: &[PlayerCfg], objs: &[ObjCfg]) {
     if !chance(g, 35) {
         return;
     }
-    let with_exit: Vec<u32> = (0..tmpls.len() as u32)
-        .filter(|k| tmpls[*k as usize].exit_width > 0.0)
-        .collect();
-    let skirmish: Vec<u32> = (0..players.len() as u32)
-        .filter(|k| players[*k as usize].skirmish != 0)
-        .collect();
+    let with_exit: Vec<u32> = (0..tmpls.len() as u32).filter(|k| tmpls[*k as usize].exit_width > 0.0).collect();
+    let skirmish: Vec<u32> = (0..players.len() as u32).filter(|k| players[*k as usize].skirmish != 0).collect();
     if !with_exit.is_empty() {
         a[3] = with_exit[g.below(with_exit.len() as u32) as usize];
     }
@@ -1638,27 +1401,11 @@ fn gen_prog(seed: u64) -> Prog {
                 height: g.uniform(2.0, 30.0),
                 major: g.uniform(4.0, 40.0),
                 minor: g.uniform(4.0, 30.0),
-                exit_width: if chance(g, 40) {
-                    0.0
-                } else {
-                    g.uniform(5.0, 100.0)
-                },
-                extra_bib: if chance(g, 45) {
-                    0.0
-                } else {
-                    g.uniform(1.0, 45.0)
-                },
+                exit_width: if chance(g, 40) { 0.0 } else { g.uniform(5.0, 100.0) },
+                extra_bib: if chance(g, 45) { 0.0 } else { g.uniform(1.0, 45.0) },
                 vision: g.uniform(30.0, 300.0),
-                refund: if chance(g, 65) {
-                    0
-                } else {
-                    g.below(2000) as i32
-                },
-                cost: if chance(g, 4) {
-                    -(g.below(500) as i32)
-                } else {
-                    g.below(3000) as i32
-                },
+                refund: if chance(g, 65) { 0 } else { g.below(2000) as i32 },
+                cost: if chance(g, 4) { -(g.below(500) as i32) } else { g.below(3000) as i32 },
                 equiv: g.below(4),
                 flags: (if chance(g, 55) { 1 } else { 0 })
                     | (if chance(g, 55) { 2 } else { 0 })
@@ -1674,11 +1421,7 @@ fn gen_prog(seed: u64) -> Prog {
             computer: g.below(2),
             skirmish: if chance(g, 50) { 1 } else { 0 },
             has_team: if chance(g, 94) { 1 } else { 0 },
-            money: if chance(g, 30) {
-                g.below(300)
-            } else {
-                g.below(10000)
-            },
+            money: if chance(g, 30) { g.below(300) } else { g.below(10000) },
             can_mask: if chance(g, 15) { 0 } else { g.u32() },
             more_mask: if chance(g, 15) { 0 } else { g.u32() },
         })
@@ -1707,11 +1450,7 @@ fn gen_prog(seed: u64) -> Prog {
                 let extra = if chance(g, 6) { 1 } else { 0 };
                 g.below(n_p as u32 + extra)
             },
-            pos: [
-                g.uniform(0.0, size),
-                g.uniform(0.0, size),
-                g.uniform(0.0, 6.0),
-            ],
+            pos: [g.uniform(0.0, size), g.uniform(0.0, size), g.uniform(0.0, 6.0)],
             orient: g.uniform(0.0, std::f32::consts::TAU),
             status: gen_status(g),
             disabled: if chance(g, 12) { 1 } else { 0 },
@@ -1720,17 +1459,9 @@ fn gen_prog(seed: u64) -> Prog {
             ai_busy: if chance(g, 20) { 1 } else { 0 },
             cmd_set: g.below(n_cs as u32 + 1),
             quick_path: if chance(g, 65) { 1 } else { 0 },
-            cpct: if chance(g, 70) {
-                -1.0
-            } else {
-                g.uniform(0.0, 100.0)
-            },
+            cpct: if chance(g, 70) { -1.0 } else { g.uniform(0.0, 100.0) },
             producer: if chance(g, 70) { 0 } else { 1 + g.below(14) },
-            sp_cons: if chance(g, 75) {
-                -1
-            } else {
-                g.below(n_t as u32) as i32
-            },
+            sp_cons: if chance(g, 75) { -1 } else { g.below(n_t as u32) as i32 },
             can_queue: if chance(g, 55) { 0 } else { g.below(7) },
             geom_override: if chance(g, 30) { 1 } else { 0 },
             geom_h: g.uniform(2.0, 30.0),
@@ -1754,18 +1485,10 @@ fn gen_prog(seed: u64) -> Prog {
         }
         let near_obj = |g: &mut Gen, objs: &[ObjCfg]| -> [f32; 3] {
             if objs.is_empty() || chance(g, 40) {
-                [
-                    g.uniform(-20.0, ext_hi + 20.0),
-                    g.uniform(-20.0, ext_hi + 20.0),
-                    g.uniform(0.0, 6.0),
-                ]
+                [g.uniform(-20.0, ext_hi + 20.0), g.uniform(-20.0, ext_hi + 20.0), g.uniform(0.0, 6.0)]
             } else {
                 let o = &objs[g.below(objs.len() as u32) as usize];
-                [
-                    o.pos[0] + g.uniform(-40.0, 40.0),
-                    o.pos[1] + g.uniform(-40.0, 40.0),
-                    o.pos[2],
-                ]
+                [o.pos[0] + g.uniform(-40.0, 40.0), o.pos[1] + g.uniform(-40.0, 40.0), o.pos[2]]
             }
         };
         let put3 = |a: &mut [u32; 16], at: usize, v: [f32; 3]| {
@@ -1800,11 +1523,7 @@ fn gen_prog(seed: u64) -> Prog {
             20..=27 => {
                 put3(&mut a, 0, near_obj(g, &objs));
                 a[4] = g.uniform(0.0, std::f32::consts::TAU).to_bits();
-                a[5] = if chance(g, 30) {
-                    NO_ENEMY_OBJECT_OVERLAP
-                } else {
-                    g.u32() & 0xff
-                };
+                a[5] = if chance(g, 30) { NO_ENEMY_OBJECT_OVERLAP } else { g.u32() & 0xff };
                 if chance(g, 25) {
                     a[6] = 0;
                 }
@@ -1831,19 +1550,7 @@ fn gen_prog(seed: u64) -> Prog {
                 let s = near_obj(g, &objs);
                 put3(&mut a, 2, s);
                 a[5] = g.uniform(0.0, std::f32::consts::TAU).to_bits();
-                put3(
-                    &mut a,
-                    7,
-                    [
-                        s[0] + g.uniform(-80.0, 80.0),
-                        s[1] + g.uniform(-80.0, 80.0),
-                        if chance(g, 50) {
-                            s[2]
-                        } else {
-                            s[2] + g.uniform(-30.0, 30.0)
-                        },
-                    ],
-                );
+                put3(&mut a, 7, [s[0] + g.uniform(-80.0, 80.0), s[1] + g.uniform(-80.0, 80.0), if chance(g, 50) { s[2] } else { s[2] + g.uniform(-30.0, 30.0) }]);
                 6
             }
             46..=53 => {
@@ -1851,19 +1558,7 @@ fn gen_prog(seed: u64) -> Prog {
                 a[1] = g.uniform(0.0, std::f32::consts::TAU).to_bits();
                 let s = near_obj(g, &objs);
                 put3(&mut a, 2, s);
-                put3(
-                    &mut a,
-                    5,
-                    [
-                        s[0] + g.uniform(-120.0, 120.0),
-                        s[1] + g.uniform(-120.0, 120.0),
-                        if chance(g, 50) {
-                            s[2]
-                        } else {
-                            s[2] + g.uniform(-30.0, 30.0)
-                        },
-                    ],
-                );
+                put3(&mut a, 5, [s[0] + g.uniform(-120.0, 120.0), s[1] + g.uniform(-120.0, 120.0), if chance(g, 50) { s[2] } else { s[2] + g.uniform(-30.0, 30.0) }]);
                 a[8] = g.uniform(2.0, 40.0).to_bits();
                 a[9] = g.below(14);
                 if chance(g, 25) {
@@ -1880,11 +1575,7 @@ fn gen_prog(seed: u64) -> Prog {
             62..=65 => 13,
             66..=73 => 14,
             74..=81 => {
-                a[0] = if chance(g, 55) {
-                    100 + g.below(70)
-                } else {
-                    g.below(40)
-                };
+                a[0] = if chance(g, 55) { 100 + g.below(70) } else { g.below(40) };
                 2
             }
             82..=84 => {
@@ -1898,13 +1589,7 @@ fn gen_prog(seed: u64) -> Prog {
                 a[1] = g.below(6);
                 match a[1] {
                     0 => put3(&mut a, 2, near_obj(g, &objs)),
-                    3 => {
-                        a[2] = if chance(g, 35) {
-                            0.0f32.to_bits()
-                        } else {
-                            g.uniform(-60.0, 100.0).to_bits()
-                        }
-                    }
+                    3 => a[2] = if chance(g, 35) { 0.0f32.to_bits() } else { g.uniform(-60.0, 100.0).to_bits() },
                     1 => {
                         let s = gen_status(g);
                         a[2] = s as u32;
@@ -1943,32 +1628,13 @@ fn gen_prog(seed: u64) -> Prog {
     }
     Prog {
         seed: g.u32(),
-        max_line: if chance(g, 3) {
-            0
-        } else {
-            1 + g.below(14) as i32
-        },
-        min_edge: if chance(g, 50) {
-            0.0
-        } else {
-            g.uniform(2.0, 30.0)
-        },
+        max_line: if chance(g, 3) { 0 } else { 1 + g.below(14) as i32 },
+        min_edge: if chance(g, 50) { 0.0 } else { g.uniform(2.0, 30.0) },
         height_var: g.uniform(0.5, 8.0),
-        supply_border: if chance(g, 40) {
-            0.0
-        } else {
-            g.uniform(3.0, 40.0)
-        },
+        supply_border: if chance(g, 40) { 0.0 } else { g.uniform(3.0, 40.0) },
         sell_pct: g.uniform(0.2, 1.0),
         extent: [0.0, 0.0, 0.0, ext_hi, ext_hi, 20.0],
-        pf_extent: [
-            if chance(g, 50) { 0.0 } else { 10.0 },
-            5.0,
-            -3.0,
-            ext_hi - 5.0,
-            ext_hi - 10.0,
-            25.0,
-        ],
+        pf_extent: [if chance(g, 50) { 0.0 } else { 10.0 }, 5.0, -3.0, ext_hi - 5.0, ext_hi - 10.0, 25.0],
         seed_h: g.u32(),
         tile_density: if chance(g, 45) { 0 } else { 6 + g.below(60) },
         cell_density: if chance(g, 45) { 0 } else { 8 + g.below(80) },
@@ -2001,10 +1667,7 @@ fn run_rust(p: &Prog) -> (Vec<String>, Option<usize>) {
             if std::env::var_os("BA_OPS").is_some() {
                 eprintln!("  -> {e:?}");
             }
-            assert!(
-                e.is_undefined(),
-                "program failed with a defined error: {e:?}"
-            );
+            assert!(e.is_undefined(), "program failed with a defined error: {e:?}");
             // the C++ crashes where upstream is undefined: the lines of the operation are dropped and the program ends
             sim.lines.truncate(before);
             sim.lines.push(format!("UNDEF op={k}"));
@@ -2020,31 +1683,17 @@ fn cpp_run(w: &[u32]) -> Vec<String> {
     let mut cap = 1 << 20;
     loop {
         let mut buf = vec![0u8; cap];
-        let n = unsafe {
-            cpp::ref_ba_run(
-                w.as_ptr(),
-                w.len() as i32,
-                path.as_ptr(),
-                buf.as_mut_ptr() as *mut std::os::raw::c_char,
-                cap as i32,
-            )
-        } as usize;
+        let n = unsafe { cpp::ref_ba_run(w.as_ptr(), w.len() as i32, path.as_ptr(), buf.as_mut_ptr() as *mut std::os::raw::c_char, cap as i32) } as usize;
         if n <= cap {
             buf.truncate(n);
-            return String::from_utf8_lossy(&buf)
-                .lines()
-                .map(str::to_owned)
-                .collect();
+            return String::from_utf8_lossy(&buf).lines().map(str::to_owned).collect();
         }
         cap = n + 1;
     }
 }
 
 fn cases() -> u64 {
-    std::env::var("BA_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1000)
+    std::env::var("BA_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(1000)
 }
 
 #[test]
@@ -2053,67 +1702,13 @@ fn build_assistant_matches_upstream() {
     let mut check = Check::new("build assistant, trace lines");
     let (mut programs, mut excluded, mut lines) = (0u64, 0u64, 0u64);
     let mut counts: BTreeMap<String, u64> = BTreeMap::new();
-    let from: u64 = std::env::var("BA_FROM")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
+    let from: u64 = std::env::var("BA_FROM").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
     let markers = [
-        "ret legal 0",
-        "ret legal 1",
-        "ret legal 2",
-        "ret legal 3",
-        "ret legal 4",
-        "ret legal 5",
-        "ret legal 6",
-        "ret clear 0",
-        "ret clear 3",
-        "ret clear 7",
-        "ret build ",
-        "ret buildline",
-        "ret tiled",
-        "ret canmake 0",
-        "ret canmake 1",
-        "ret canmake 2",
-        "ret canmake 3",
-        "ret canmake 4",
-        "ret canmake 5",
-        "ret canmake 6",
-        "ret possible",
-        "ret sell",
-        "ret update",
-        "ret save",
-        "ret load",
-        "ret isline",
-        "ret bibs",
-        "bib ",
-        "trees ",
-        "ai.move",
-        "ai.idle",
-        "ai.construct",
-        "new ",
-        "destroy",
-        "deselect",
-        "deposit",
-        "cpct",
-        "mc.clearset",
-        "mc.set",
-        "status ",
-        "contain.sell",
-        "prod.cancel",
-        "parking.kill",
-        "oncreate.done",
-        "partition.maint",
-        "pf.add",
-        "audio",
-        "p.structcreated",
-        "p.structdone",
-        "p.unitcreated",
-        "removed",
-        "skip",
-        "draw.anim",
-        "producer",
-        "pos ",
-        "orient ",
+        "ret legal 0", "ret legal 1", "ret legal 2", "ret legal 3", "ret legal 4", "ret legal 5", "ret legal 6", "ret clear 0", "ret clear 3", "ret clear 7", "ret build ", "ret buildline",
+        "ret tiled", "ret canmake 0", "ret canmake 1", "ret canmake 2", "ret canmake 3", "ret canmake 4", "ret canmake 5", "ret canmake 6", "ret possible", "ret sell", "ret update", "ret save",
+        "ret load", "ret isline", "ret bibs", "bib ", "trees ", "ai.move", "ai.idle", "ai.construct", "new ", "destroy", "deselect", "deposit", "cpct", "mc.clearset", "mc.set", "status ",
+        "contain.sell", "prod.cancel", "parking.kill", "oncreate.done", "partition.maint", "pf.add", "audio", "p.structcreated", "p.structdone", "p.unitcreated", "removed", "skip",
+        "draw.anim", "producer", "pos ", "orient ",
     ];
     for case in from..from + cases() {
         let prog = gen_prog(0xba5e_0000 + case);
@@ -2131,13 +1726,9 @@ fn build_assistant_matches_upstream() {
                 }
             }
         }
-        check.eq(rust.len(), cpp_lines.len(), || {
-            format!("program {case}: line count")
-        });
+        check.eq(rust.len(), cpp_lines.len(), || format!("program {case}: line count"));
         for (i, (a, b)) in rust.iter().zip(cpp_lines.iter()).enumerate() {
-            check.eq(a.as_str(), b.as_str(), || {
-                format!("program {case} line {i}")
-            });
+            check.eq(a.as_str(), b.as_str(), || format!("program {case} line {i}"));
         }
         if std::env::var_os("BA_SHOW").is_some() {
             if let Some(i) = rust.iter().zip(cpp_lines.iter()).position(|(a, b)| a != b) {

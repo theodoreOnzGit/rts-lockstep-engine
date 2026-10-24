@@ -27,17 +27,12 @@
 use std::sync::Arc;
 
 use crate::common::game_common::LOGICFRAMES_PER_SECOND;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_DAMAGE};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::{DamageInfo, DAMAGE_PENALTY, DEATH_NORMAL};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER,
-    UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -62,45 +57,24 @@ pub struct OverchargeBehaviorModuleData {
 
 /// `OverchargeBehaviorModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<OverchargeBehaviorModuleData>; 3] = [
-    FieldParse::new(
-        "HealthPercentToDrainPerSecond",
-        |ini, d, _| {
-            d.health_percent_to_drain_per_second = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "NotAllowedWhenHealthBelowPercent",
-        |ini, d, _| {
-            d.not_allowed_when_health_below_percent = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("HealthPercentToDrainPerSecond", |ini, d, _| { d.health_percent_to_drain_per_second = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("NotAllowedWhenHealthBelowPercent", |ini, d, _| { d.not_allowed_when_health_below_percent = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl OverchargeBehaviorModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, OverchargeBehaviorModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, OverchargeBehaviorModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults (both 0), filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<OverchargeBehaviorModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<OverchargeBehaviorModuleData> {
         let mut data = OverchargeBehaviorModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                OverchargeBehaviorModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, OverchargeBehaviorModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -120,9 +94,7 @@ pub struct OverchargeBehavior {
 impl PartialEq for OverchargeBehavior {
     /// The same object, the same data object (upstream compares pointers) and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
-            && self.overcharge_active == other.overcharge_active
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.overcharge_active == other.overcharge_active
     }
 }
 
@@ -134,18 +106,11 @@ impl OverchargeBehavior {
 
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and
     /// `m_overchargeActive` false.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<OverchargeBehaviorModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<OverchargeBehaviorModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(OverchargeBehavior {
-            update,
-            data,
-            overcharge_active: false,
-        })
+        Ok(OverchargeBehavior { update, data, overcharge_active: false })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -174,12 +139,7 @@ impl OverchargeBehavior {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -210,27 +170,10 @@ impl OverchargeBehavior {
             }
         }
         if let Some(player) = world.get_controlling_player(me.object) {
-            world.cut(if enable {
-                CutCall::PlayerAddPowerBonus {
-                    player,
-                    object: me.object,
-                }
-            } else {
-                CutCall::PlayerRemovePowerBonus {
-                    player,
-                    object: me.object,
-                }
-            });
+            world.cut(if enable { CutCall::PlayerAddPowerBonus { player, object: me.object } } else { CutCall::PlayerRemovePowerBonus { player, object: me.object } });
         }
         self.overcharge_active = enable;
-        update_behavior::set_wake_frame(
-            world,
-            if enable {
-                UPDATE_SLEEP_NONE
-            } else {
-                UPDATE_SLEEP_FOREVER
-            },
-        );
+        update_behavior::set_wake_frame(world, if enable { UPDATE_SLEEP_NONE } else { UPDATE_SLEEP_FOREVER });
     }
 
     /// `onDelete()`: the bonus off the player, if on.
@@ -239,10 +182,7 @@ impl OverchargeBehavior {
             return;
         }
         if let Some(player) = world.get_controlling_player(me.object) {
-            world.cut(CutCall::PlayerRemovePowerBonus {
-                player,
-                object: me.object,
-            });
+            world.cut(CutCall::PlayerRemovePowerBonus { player, object: me.object });
         }
         self.overcharge_active = false;
     }
@@ -252,25 +192,14 @@ impl OverchargeBehavior {
         if !self.overcharge_active {
             return;
         }
-        if world
-            .objects
-            .find(me.object)
-            .is_some_and(|o| o.is_disabled())
-            && !crate::logic::modules::plant(1942)
-        {
+        if world.objects.find(me.object).is_some_and(|o| o.is_disabled()) && !crate::logic::modules::plant(1942) {
             return;
         }
         if old_owner >= 0 {
-            world.cut(CutCall::PlayerRemovePowerBonus {
-                player: old_owner,
-                object: me.object,
-            });
+            world.cut(CutCall::PlayerRemovePowerBonus { player: old_owner, object: me.object });
         }
         if new_owner >= 0 {
-            world.cut(CutCall::PlayerAddPowerBonus {
-                player: new_owner,
-                object: me.object,
-            });
+            world.cut(CutCall::PlayerAddPowerBonus { player: new_owner, object: me.object });
         }
     }
 }
@@ -286,15 +215,11 @@ impl UpdateBehavior for OverchargeBehavior {
         }
         let d = self.data.clone();
         let Some((_, max_health)) = world.body_health(me.object) else {
-            world
-                .cuts
-                .module_errors
-                .push((me, IniError::undefined(Undefined::NullBodyModule)));
+            world.cuts.module_errors.push((me, IniError::undefined(Undefined::NullBodyModule)));
             return UPDATE_SLEEP_NONE;
         };
         let mut info = DamageInfo::default();
-        info.input.amount =
-            (max_health * d.health_percent_to_drain_per_second) / LOGICFRAMES_PER_SECOND as f32;
+        info.input.amount = (max_health * d.health_percent_to_drain_per_second) / LOGICFRAMES_PER_SECOND as f32;
         info.input.source_id = me.object;
         info.input.damage_type = DAMAGE_PENALTY;
         info.input.death_type = DEATH_NORMAL;
@@ -305,21 +230,10 @@ impl UpdateBehavior for OverchargeBehavior {
         if health < max_health * d.not_allowed_when_health_below_percent {
             self.enable(world, me, crate::logic::modules::plant(1944));
             // (pointers compared: no local player and no controlling player are equal too)
-            if world.players.local_index() == world.get_controlling_player(me.object)
-                && !crate::logic::modules::plant(1945)
-            {
-                world.emit(ObjectClientEvent::UiMessage {
-                    label: b"GUI:OverchargeExhausted".to_vec(),
-                });
-                let position = world
-                    .objects
-                    .find(me.object)
-                    .map(|o| o.get_position())
-                    .unwrap_or_default();
-                world.emit(ObjectClientEvent::RadarCreateEvent {
-                    position,
-                    event_type: RADAR_EVENT_INFORMATION,
-                });
+            if world.players.local_index() == world.get_controlling_player(me.object) && !crate::logic::modules::plant(1945) {
+                world.emit(ObjectClientEvent::UiMessage { label: b"GUI:OverchargeExhausted".to_vec() });
+                let position = world.objects.find(me.object).map(|o| o.get_position()).unwrap_or_default();
+                world.emit(ObjectClientEvent::RadarCreateEvent { position, event_type: RADAR_EVENT_INFORMATION });
             }
             return UPDATE_SLEEP_NONE;
         }
@@ -350,20 +264,14 @@ impl UpdateBehavior for OverchargeBehavior {
                 self.on_delete(world, me);
                 ModuleReply::Done
             }
-            ModuleCall::OnCapture {
-                old_owner,
-                new_owner,
-            } => {
+            ModuleCall::OnCapture { old_owner, new_owner } => {
                 self.on_capture(world, me, old_owner, new_owner);
                 ModuleReply::Done
             }
             ModuleCall::LoadPostProcess => {
                 if self.overcharge_active && !crate::logic::modules::plant(1946) {
                     if let Some(player) = world.get_controlling_player(me.object) {
-                        world.cut(CutCall::PlayerAddPowerBonus {
-                            player,
-                            object: me.object,
-                        });
+                        world.cut(CutCall::PlayerAddPowerBonus { player, object: me.object });
                     }
                 }
                 ModuleReply::Done
@@ -401,7 +309,5 @@ impl Snapshot for OverchargeBehavior {
 
 /// The factory's `NewModuleDataProc` for `OverchargeBehavior`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::OverchargeBehavior(Arc::new(
-        OverchargeBehaviorModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::OverchargeBehavior(Arc::new(OverchargeBehaviorModuleData::friend_new_module_data(ini)?)))
 }

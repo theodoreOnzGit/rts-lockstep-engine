@@ -41,23 +41,17 @@
 use std::sync::Arc;
 
 use crate::common::disabled_types::DISABLED_HELD;
-use crate::common::game_common::{Relationship, SECONDS_PER_LOGICFRAME_REAL};
 use crate::common::game_type::{ObjectId, INVALID_ID};
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::game_common::{Relationship, SECONDS_PER_LOGICFRAME_REAL};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::kind_of::{KINDOF_INFANTRY, KINDOF_STEALTH_GARRISON};
 use crate::common::model_state::MODELCONDITION_LOADED;
 use crate::common::module::ModuleDataKind;
 use crate::common::object_status_types::ObjectStatusMaskType;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    ExitDoorType, UpdateModule, UpdateSleepTime, DOOR_1, DOOR_NONE_AVAILABLE,
-};
-use crate::logic::modules::open_contain::{
-    self, out, OpenContain, OpenContainModuleData, OpenContainVirtuals,
-};
+use crate::logic::module::update_module::{ExitDoorType, UpdateModule, UpdateSleepTime, DOOR_1, DOOR_NONE_AVAILABLE};
+use crate::logic::modules::open_contain::{self, out, OpenContain, OpenContainModuleData, OpenContainVirtuals};
 use crate::logic::modules::transport_contain::{InitialPayload, FREE_TO_EXIT};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
@@ -103,22 +97,14 @@ impl Default for MobNexusContainModuleData {
             orient_like_container_on_exit: false,
             keep_container_velocity_on_exit: false,
             exit_bone: Vec::new(),
-            initial_payload: InitialPayload {
-                name: Vec::new(),
-                count: 0,
-            },
+            initial_payload: InitialPayload { name: Vec::new(), count: 0 },
             health_regen: 0.0,
         }
     }
 }
 
 /// Lifts entry `k` of `OpenContainModuleData`'s table onto the `open` base.
-fn lift_open(
-    k: usize,
-    i: &mut Ini<'_>,
-    d: &mut MobNexusContainModuleData,
-    u: &UserData,
-) -> IniResult<()> {
+fn lift_open(k: usize, i: &mut Ini<'_>, d: &mut MobNexusContainModuleData, u: &UserData) -> IniResult<()> {
     match open_contain::FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.open, u),
         None => Ok(()),
@@ -126,12 +112,7 @@ fn lift_open(
 }
 
 /// Lifts entry `k` of the die mux table onto the `open` base.
-fn lift_die(
-    k: usize,
-    i: &mut Ini<'_>,
-    d: &mut MobNexusContainModuleData,
-    u: &UserData,
-) -> IniResult<()> {
+fn lift_die(k: usize, i: &mut Ini<'_>, d: &mut MobNexusContainModuleData, u: &UserData) -> IniResult<()> {
     match open_contain::DIE_MUX_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.open, u),
         None => Ok(()),
@@ -139,106 +120,34 @@ fn lift_die(
 }
 
 static LIFTED_OPEN: [FieldParse<MobNexusContainModuleData>; 16] = [
-    FieldParse::new(
-        "ContainMax",
-        |i, d, u| lift_open(0, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "EnterSound",
-        |i, d, u| lift_open(1, i, d, u),
-        UserData::None,
-    ),
+    FieldParse::new("ContainMax", |i, d, u| lift_open(0, i, d, u), UserData::None),
+    FieldParse::new("EnterSound", |i, d, u| lift_open(1, i, d, u), UserData::None),
     FieldParse::new("ExitSound", |i, d, u| lift_open(2, i, d, u), UserData::None),
-    FieldParse::new(
-        "DamagePercentToUnits",
-        |i, d, u| lift_open(3, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "BurnedDeathToUnits",
-        |i, d, u| lift_open(4, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AllowInsideKindOf",
-        |i, d, u| lift_open(5, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ForbidInsideKindOf",
-        |i, d, u| lift_open(6, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "PassengersAllowedToFire",
-        |i, d, u| lift_open(7, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "PassengersInTurret",
-        |i, d, u| lift_open(8, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "NumberOfExitPaths",
-        |i, d, u| lift_open(9, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DoorOpenTime",
-        |i, d, u| lift_open(10, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "WeaponBonusPassedToPassengers",
-        |i, d, u| lift_open(11, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AllowAlliesInside",
-        |i, d, u| lift_open(12, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AllowEnemiesInside",
-        |i, d, u| lift_open(13, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AllowNeutralInside",
-        |i, d, u| lift_open(14, i, d, u),
-        UserData::None,
-    ),
+    FieldParse::new("DamagePercentToUnits", |i, d, u| lift_open(3, i, d, u), UserData::None),
+    FieldParse::new("BurnedDeathToUnits", |i, d, u| lift_open(4, i, d, u), UserData::None),
+    FieldParse::new("AllowInsideKindOf", |i, d, u| lift_open(5, i, d, u), UserData::None),
+    FieldParse::new("ForbidInsideKindOf", |i, d, u| lift_open(6, i, d, u), UserData::None),
+    FieldParse::new("PassengersAllowedToFire", |i, d, u| lift_open(7, i, d, u), UserData::None),
+    FieldParse::new("PassengersInTurret", |i, d, u| lift_open(8, i, d, u), UserData::None),
+    FieldParse::new("NumberOfExitPaths", |i, d, u| lift_open(9, i, d, u), UserData::None),
+    FieldParse::new("DoorOpenTime", |i, d, u| lift_open(10, i, d, u), UserData::None),
+    FieldParse::new("WeaponBonusPassedToPassengers", |i, d, u| lift_open(11, i, d, u), UserData::None),
+    FieldParse::new("AllowAlliesInside", |i, d, u| lift_open(12, i, d, u), UserData::None),
+    FieldParse::new("AllowEnemiesInside", |i, d, u| lift_open(13, i, d, u), UserData::None),
+    FieldParse::new("AllowNeutralInside", |i, d, u| lift_open(14, i, d, u), UserData::None),
     FieldParse::end(),
 ];
 
 static LIFTED_DIE: [FieldParse<MobNexusContainModuleData>; 5] = [
     FieldParse::new("DeathTypes", |i, d, u| lift_die(0, i, d, u), UserData::None),
-    FieldParse::new(
-        "VeterancyLevels",
-        |i, d, u| lift_die(1, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExemptStatus",
-        |i, d, u| lift_die(2, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "RequiredStatus",
-        |i, d, u| lift_die(3, i, d, u),
-        UserData::None,
-    ),
+    FieldParse::new("VeterancyLevels", |i, d, u| lift_die(1, i, d, u), UserData::None),
+    FieldParse::new("ExemptStatus", |i, d, u| lift_die(2, i, d, u), UserData::None),
+    FieldParse::new("RequiredStatus", |i, d, u| lift_die(3, i, d, u), UserData::None),
     FieldParse::end(),
 ];
 
 /// `MobNexusContainModuleData::parseInitialPayload`: a name, then an optional count (`INI::scanInt`; 1 when there is none).
-fn parse_initial_payload(
-    ini: &mut Ini<'_>,
-    d: &mut MobNexusContainModuleData,
-    _u: &UserData,
-) -> IniResult<()> {
+fn parse_initial_payload(ini: &mut Ini<'_>, d: &mut MobNexusContainModuleData, _u: &UserData) -> IniResult<()> {
     let name = ini.get_next_token(None)?;
     let count = match ini.get_next_token_or_null(None) {
         Some(c) => Ini::scan_int(&c)?,
@@ -251,71 +160,20 @@ fn parse_initial_payload(
 
 /// `MobNexusContainModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<MobNexusContainModuleData>; 9] = [
-    FieldParse::new(
-        "Slots",
-        |i, d, _| {
-            d.slot_capacity = i.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ScatterNearbyOnExit",
-        |i, d, _| {
-            d.scatter_nearby_on_exit = i.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "OrientLikeContainerOnExit",
-        |i, d, _| {
-            d.orient_like_container_on_exit = i.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "KeepContainerVelocityOnExit",
-        |i, d, _| {
-            d.keep_container_velocity_on_exit = i.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExitBone",
-        |i, d, _| {
-            d.exit_bone = i.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExitPitchRate",
-        |i, d, _| {
-            d.exit_pitch_rate = i.parse_angular_velocity_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("Slots", |i, d, _| { d.slot_capacity = i.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("ScatterNearbyOnExit", |i, d, _| { d.scatter_nearby_on_exit = i.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("OrientLikeContainerOnExit", |i, d, _| { d.orient_like_container_on_exit = i.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("KeepContainerVelocityOnExit", |i, d, _| { d.keep_container_velocity_on_exit = i.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("ExitBone", |i, d, _| { d.exit_bone = i.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("ExitPitchRate", |i, d, _| { d.exit_pitch_rate = i.parse_angular_velocity_real()?; Ok(()) }, UserData::None),
     FieldParse::new("InitialPayload", parse_initial_payload, UserData::None),
-    FieldParse::new(
-        "HealthRegen%PerSec",
-        |i, d, _| {
-            d.health_regen = i.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("HealthRegen%PerSec", |i, d, _| { d.health_regen = i.parse_real()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl MobNexusContainModuleData {
     /// `MobNexusContainModuleData::buildFieldParse(p)`: `OpenContainModuleData::buildFieldParse(p)`, then this class's table.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, MobNexusContainModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, MobNexusContainModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&LIFTED_OPEN)?;
         p.add(&LIFTED_DIE)?;
@@ -324,9 +182,7 @@ impl MobNexusContainModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<MobNexusContainModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<MobNexusContainModuleData> {
         let mut data = MobNexusContainModuleData::default();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, MobNexusContainModuleData::build_field_parse)?;
@@ -337,9 +193,7 @@ impl MobNexusContainModuleData {
 
 /// The factory's `NewModuleDataProc` for `MobNexusContain`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::MobNexusContain(Arc::new(
-        MobNexusContainModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::MobNexusContain(Arc::new(MobNexusContainModuleData::friend_new_module_data(ini)?)))
 }
 
 /// `class MobNexusContain : public OpenContain, public TransportPassengerInterface`.
@@ -364,17 +218,10 @@ impl MobNexusContain {
     }
 
     /// The constructor's first half: the base's (on a copy of its part of the data); no slots in use.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<MobNexusContainModuleData>>,
-    ) -> IniResult<MobNexusContain> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<MobNexusContainModuleData>>) -> IniResult<MobNexusContain> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let oc = OpenContain::unconstructed(object, Some(Arc::new(data.open.clone())))?;
-        Ok(MobNexusContain {
-            oc,
-            data,
-            extra_slots_in_use: 0,
-        })
+        Ok(MobNexusContain { oc, data, extra_slots_in_use: 0 })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -405,12 +252,7 @@ impl MobNexusContain {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         open_contain::contain_module_call(self, world, me, call)
     }
 
@@ -438,27 +280,17 @@ impl MobNexusContain {
 
     /// `tryToEvacuate(exposeStealthedUnits)`: every rider a door is reserved for goes out (stealth-garrison riders detected when asked); whether anyone
     /// went. The list is the module's own, the iterator advanced before the exit.
-    pub fn try_to_evacuate(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        expose_stealthed_units: bool,
-    ) -> bool {
+    pub fn try_to_evacuate(&mut self, world: &mut World, me: ModuleHandle, expose_stealthed_units: bool) -> bool {
         let mut exited_anyone = false;
         for obj in self.oc.contain_list().to_vec() {
             let exit_door = self.reserve_door_for_exit(world, me, obj);
             if exit_door != DOOR_NONE_AVAILABLE {
                 self.exit_object_via_door(world, me, obj, exit_door);
                 exited_anyone = !crate::logic::modules::plant(1542);
-                let garrison = world
-                    .objects
-                    .find(obj)
-                    .is_some_and(|o| o.is_kind_of(KINDOF_STEALTH_GARRISON));
+                let garrison = world.objects.find(obj).is_some_and(|o| o.is_kind_of(KINDOF_STEALTH_GARRISON));
                 if garrison && expose_stealthed_units {
                     if let Some(stealth) = world.objects.find(obj).and_then(|o| o.stealth) {
-                        out(self, world, me, |w| {
-                            w.module_call(obj, stealth, ModuleCall::StealthMarkAsDetected)
-                        });
+                        out(self, world, me, |w| w.module_call(obj, stealth, ModuleCall::StealthMarkAsDetected));
                     }
                 }
             }
@@ -495,13 +327,7 @@ impl OpenContainVirtuals for MobNexusContain {
     }
 
     /// `MobNexusContain::isValidContainerFor(rider, checkCapacity)`: a parachute is judged by what it holds; then the base's, an ally, slots.
-    fn is_valid_container_for(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        rider: ObjectId,
-        check_capacity: bool,
-    ) -> bool {
+    fn is_valid_container_for(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId, check_capacity: bool) -> bool {
         // sanity
         if rider == INVALID_ID || world.objects.find(rider).is_none() {
             return false;
@@ -510,15 +336,9 @@ impl OpenContainVirtuals for MobNexusContain {
         // "Check if we are a fake container, and if so, get an object inside it to see what kind this object *is*."
         // (the calls lend this module back to its slot: the rider may be the container itself)
         if let Some(c) = world.get_contain(rider) {
-            if out(self, world, me, |w| {
-                w.module_call(rider, c, ModuleCall::IsSpecialZeroSlotContainer)
-            })
-            .as_bool()
-            {
+            if out(self, world, me, |w| w.module_call(rider, c, ModuleCall::IsSpecialZeroSlotContainer)).as_bool() {
                 // "Report the first thing inside it!" (`*begin()`, unchecked)
-                let items = out(self, world, me, |w| {
-                    open_contain::view_contained_items_list(w, rider)
-                });
+                let items = out(self, world, me, |w| open_contain::view_contained_items_list(w, rider));
                 match items.unwrap_or_default().first() {
                     Some(&first) if !crate::logic::modules::plant(1543) => rider = first,
                     Some(_) => {}
@@ -533,9 +353,7 @@ impl OpenContainVirtuals for MobNexusContain {
         }
 
         // "only allied objects can be MobNexused." "order matters: we want to know if IT considers ME to be an ally"
-        if world.get_relationship(rider, me.object) != Relationship::Allies
-            && !crate::logic::modules::plant(1544)
-        {
+        if world.get_relationship(rider, me.object) != Relationship::Allies && !crate::logic::modules::plant(1544) {
             return false;
         }
 
@@ -551,29 +369,18 @@ impl OpenContainVirtuals for MobNexusContain {
                 return count + slots <= self.get_contain_max(world);
             }
             // `Int + UnsignedInt + Int <= Int` (`getContainCount()` is unsigned): C++ compares unsigned, so a maximum of -1 takes anything
-            (self.extra_slots_in_use as u32)
-                .wrapping_add(count as u32)
-                .wrapping_add(slots as u32)
-                <= self.get_contain_max(world) as u32
+            (self.extra_slots_in_use as u32).wrapping_add(count as u32).wrapping_add(slots as u32) <= self.get_contain_max(world) as u32
         } else {
             true
         }
     }
 
     /// `MobNexusContain::onContaining(rider, wasSelected)`: held, its slots counted, and LOADED on the first.
-    fn on_containing(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        rider: ObjectId,
-        was_selected: bool,
-    ) {
+    fn on_containing(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId, was_selected: bool) {
         open_contain::base_on_containing(self, world, me, rider, was_selected);
 
         // "objects inside a MobNexus are held"
-        out(self, world, me, |w| {
-            w.contain_set_disabled(rider, DISABLED_HELD)
-        });
+        out(self, world, me, |w| w.contain_set_disabled(rider, DISABLED_HELD));
 
         let slots = out(self, world, me, |w| w.get_transport_slot_count(rider));
         if !crate::logic::modules::plant(1546) {
@@ -582,9 +389,7 @@ impl OpenContainVirtuals for MobNexusContain {
 
         // "when we go from holding nothing to holding something we have a model condition to visually show the change"
         if self.get_contain_count(world) == 1 {
-            out(self, world, me, |w| {
-                w.contain_drawable_model_condition(me.object, MODELCONDITION_LOADED, true)
-            });
+            out(self, world, me, |w| w.contain_drawable_model_condition(me.object, MODELCONDITION_LOADED, true));
         }
     }
 
@@ -594,26 +399,17 @@ impl OpenContainVirtuals for MobNexusContain {
         let us = me.object;
 
         // "object is no longer held inside a MobNexus"
-        out(self, world, me, |w| {
-            w.contain_clear_disabled(rider, DISABLED_HELD)
-        });
+        out(self, world, me, |w| w.contain_clear_disabled(rider, DISABLED_HELD));
 
         let d = self.data.clone();
         if !d.exit_bone.is_empty() {
-            if let Some(world_pos) = out(self, world, me, |w| {
-                w.contain_exit_bone_world_position(us, &d.exit_bone)
-            }) {
-                out(self, world, me, |w| {
-                    w.contain_set_position(rider, &world_pos)
-                });
+            if let Some(world_pos) = out(self, world, me, |w| w.contain_exit_bone_world_position(us, &d.exit_bone)) {
+                out(self, world, me, |w| w.contain_set_position(rider, &world_pos));
             }
         }
 
         if d.orient_like_container_on_exit != crate::logic::modules::plant(1547) {
-            let angle = world
-                .objects
-                .find(us)
-                .map_or(0.0, |o| o.thing.orientation());
+            let angle = world.objects.find(us).map_or(0.0, |o| o.thing.orientation());
             out(self, world, me, |w| w.contain_set_orientation(rider, angle));
         }
 
@@ -621,35 +417,18 @@ impl OpenContainVirtuals for MobNexusContain {
             let parent = world.objects.find(us).and_then(|o| o.physics);
             let child = world.objects.find(rider).and_then(|o| o.physics);
             if let (Some(parent), Some(child)) = (parent, child) {
-                let mut starting_force = out(self, world, me, |w| {
-                    w.module_call(us, parent, ModuleCall::PhysicsGetVelocity)
-                })
-                .as_coord();
-                let mass = out(self, world, me, |w| {
-                    w.module_call(rider, child, ModuleCall::PhysicsGetMass)
-                })
-                .as_real(0.0);
+                let mut starting_force = out(self, world, me, |w| w.module_call(us, parent, ModuleCall::PhysicsGetVelocity)).as_coord();
+                let mass = out(self, world, me, |w| w.module_call(rider, child, ModuleCall::PhysicsGetMass)).as_real(0.0);
                 starting_force.x *= mass;
                 starting_force.y *= mass;
                 if !crate::logic::modules::plant(1548) {
                     starting_force.z *= mass;
                 }
-                out(self, world, me, |w| {
-                    w.module_call(
-                        rider,
-                        child,
-                        ModuleCall::PhysicsApplyMotiveForce(starting_force),
-                    )
-                });
+                out(self, world, me, |w| w.module_call(rider, child, ModuleCall::PhysicsApplyMotiveForce(starting_force)));
 
-                let com = out(self, world, me, |w| {
-                    w.module_call(rider, child, ModuleCall::PhysicsGetCenterOfMassOffset)
-                })
-                .as_real(0.0);
+                let com = out(self, world, me, |w| w.module_call(rider, child, ModuleCall::PhysicsGetCenterOfMassOffset)).as_real(0.0);
                 let pitch_rate = com * d.exit_pitch_rate;
-                out(self, world, me, |w| {
-                    w.module_call(rider, child, ModuleCall::PhysicsSetPitchRate(pitch_rate))
-                });
+                out(self, world, me, |w| w.module_call(rider, child, ModuleCall::PhysicsSetPitchRate(pitch_rate)));
             }
         }
 
@@ -662,17 +441,13 @@ impl OpenContainVirtuals for MobNexusContain {
 
         // "when we are empty again, clear the model condition for loaded"
         if self.get_contain_count(world) == 0 && !crate::logic::modules::plant(1550) {
-            out(self, world, me, |w| {
-                w.contain_drawable_model_condition(us, MODELCONDITION_LOADED, false)
-            });
+            out(self, world, me, |w| w.contain_drawable_model_condition(us, MODELCONDITION_LOADED, false));
         }
 
         if out(self, world, me, |w| w.is_above_terrain(us)) {
             // "temporarily mark the guy as being allowed to fall (overriding his locomotor's stick-to-ground attribute)"
             if let Some(physics) = world.objects.find(rider).and_then(|o| o.physics) {
-                out(self, world, me, |w| {
-                    w.module_call(rider, physics, ModuleCall::PhysicsSetAllowToFall(true))
-                });
+                out(self, world, me, |w| w.module_call(rider, physics, ModuleCall::PhysicsSetAllowToFall(true)));
             }
         }
     }
@@ -692,18 +467,11 @@ impl OpenContainVirtuals for MobNexusContain {
             let team = world.cuts.player_default_team(player);
             let Some(template) = payload_template else {
                 // `newObject(NULL)` throws ERROR_BAD_ARG out of `onObjectCreated`
-                world
-                    .cuts
-                    .module_errors
-                    .push((me, IniError::new(IniErrorKind::BadArg)));
+                world.cuts.module_errors.push((me, IniError::new(IniErrorKind::BadArg)));
                 return;
             };
-            let payload = out(self, world, me, |w| {
-                w.contain_new_payload_object(template, team, ObjectStatusMaskType::new())
-            });
-            if self.is_valid_container_for(world, me, payload, true)
-                && !crate::logic::modules::plant(1551)
-            {
+            let payload = out(self, world, me, |w| w.contain_new_payload_object(template, team, ObjectStatusMaskType::new()));
+            if self.is_valid_container_for(world, me, payload, true) && !crate::logic::modules::plant(1551) {
                 self.add_to_contain(world, me, payload);
             }
             // else DEBUG_CRASH: "PutInContainer is full, or not valid for the payload" (nothing in a release build)
@@ -737,12 +505,7 @@ impl OpenContainVirtuals for MobNexusContain {
     }
 
     /// `MobNexusContain::reserveDoorForExit(objType, specificObject)`: "an override, not an extend".
-    fn reserve_door_for_exit(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        specific: ObjectId,
-    ) -> ExitDoorType {
+    fn reserve_door_for_exit(&mut self, world: &mut World, me: ModuleHandle, specific: ObjectId) -> ExitDoorType {
         if specific == INVALID_ID {
             return DOOR_1; // "I can, in general, exit people."
         }
@@ -750,10 +513,7 @@ impl OpenContainVirtuals for MobNexusContain {
 
         // "this is present solely for some MobNexuss to override, so that they can land before allowing people to exit..."
         if let Some(ai) = world.objects.find(us).and_then(|o| o.ai) {
-            let free = out(self, world, me, |w| {
-                w.module_call(us, ai, ModuleCall::AiGetFreeToExit { exiter: us })
-            })
-            .as_int(FREE_TO_EXIT);
+            let free = out(self, world, me, |w| w.module_call(us, ai, ModuleCall::AiGetFreeToExit { exiter: us })).as_int(FREE_TO_EXIT);
             if (free != FREE_TO_EXIT) != crate::logic::modules::plant(1554) {
                 return DOOR_NONE_AVAILABLE;
             }
@@ -769,15 +529,8 @@ impl OpenContainVirtuals for MobNexusContain {
         }
 
         // "He can't get to this spot naturally, so I can't force him there. (amphib MobNexus)" (his locomotor may be NULL: the pathfinder is asked anyway)
-        let my_position = world
-            .objects
-            .find(us)
-            .map(|o| o.position)
-            .unwrap_or_default();
-        if !out(self, world, me, |w| {
-            w.contain_valid_movement_terrain(us, specific, &my_position)
-        }) && !crate::logic::modules::plant(1555)
-        {
+        let my_position = world.objects.find(us).map(|o| o.position).unwrap_or_default();
+        if !out(self, world, me, |w| w.contain_valid_movement_terrain(us, specific, &my_position)) && !crate::logic::modules::plant(1555) {
             return DOOR_NONE_AVAILABLE;
         }
         DOOR_1
@@ -786,9 +539,7 @@ impl OpenContainVirtuals for MobNexusContain {
     /// `tryToEvacuate(exposeStealthedUnits)` (the test's op 62).
     fn other_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
-            ModuleCall::TryToEvacuate {
-                expose_stealthed_units,
-            } => ModuleReply::Bool(self.try_to_evacuate(world, me, expose_stealthed_units)),
+            ModuleCall::TryToEvacuate { expose_stealthed_units } => ModuleReply::Bool(self.try_to_evacuate(world, me, expose_stealthed_units)),
             _ => ModuleReply::Unhandled,
         }
     }
@@ -811,12 +562,7 @@ impl UpdateBehavior for MobNexusContain {
             _ => None,
         }
     }
-    fn other_call(
-        &mut self,
-        _world: &mut World,
-        _me: ModuleHandle,
-        _call: ModuleCall,
-    ) -> ModuleReply {
+    fn other_call(&mut self, _world: &mut World, _me: ModuleHandle, _call: ModuleCall) -> ModuleReply {
         ModuleReply::Unhandled
     }
 }

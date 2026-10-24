@@ -1000,2784 +1000,341 @@ impl GlobalData {
 
 /// `s_GlobalDataFieldParseTable` (retail): 336 fields, in upstream's order, then the terminator.
 pub static GLOBAL_DATA_FIELDS: [FieldParse<GlobalData>; 337] = [
-    FieldParse::new(
-        "Windowed",
-        |ini, g, _| {
-            g.windowed = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "XResolution",
-        |ini, g, _| {
-            g.x_resolution = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "YResolution",
-        |ini, g, _| {
-            g.y_resolution = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MapName",
-        |ini, g, _| {
-            g.map_name = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MoveHintName",
-        |ini, g, _| {
-            g.move_hint_name = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "UseTrees",
-        |ini, g, _| {
-            g.use_trees = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "UseFPSLimit",
-        |ini, g, _| {
-            g.use_fps_limit = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DumpAssetUsage",
-        |ini, g, _| {
-            g.dump_asset_usage = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FramesPerSecondLimit",
-        |ini, g, _| {
-            g.frames_per_second_limit = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ChipsetType",
-        |ini, g, _| {
-            g.chip_set_type = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxShellScreens",
-        |ini, g, _| {
-            g.max_shell_screens = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "UseCloudMap",
-        |ini, g, _| {
-            g.use_cloud_map = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "UseLightMap",
-        |ini, g, _| {
-            g.use_light_map = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "BilinearTerrainTex",
-        |ini, g, _| {
-            g.bilinear_terrain_tex = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TrilinearTerrainTex",
-        |ini, g, _| {
-            g.trilinear_terrain_tex = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MultiPassTerrain",
-        |ini, g, _| {
-            g.multi_pass_terrain = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AdjustCliffTextures",
-        |ini, g, _| {
-            g.adjust_cliff_textures = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "Use3WayTerrainBlends",
-        |ini, g, _| {
-            g.use_3way_terrain_blends = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "StretchTerrain",
-        |ini, g, _| {
-            g.stretch_terrain = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "UseHalfHeightMap",
-        |ini, g, _| {
-            g.use_half_height_map = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DrawEntireTerrain",
-        |ini, g, _| {
-            g.draw_entire_terrain = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLOD",
-        |ini, g, ud| {
-            g.terrain_lod = ini.parse_index_list(ud.names())?;
-            Ok(())
-        },
-        UserData::Names(&TERRAIN_LOD_NAMES),
-    ),
-    FieldParse::new(
-        "TerrainLODTargetTimeMS",
-        |ini, g, _| {
-            g.terrain_lod_target_time_ms = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "RightMouseAlwaysScrolls",
-        |ini, g, _| {
-            g.right_mouse_always_scrolls = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "UseWaterPlane",
-        |ini, g, _| {
-            g.use_water_plane = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "UseCloudPlane",
-        |ini, g, _| {
-            g.use_cloud_plane = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DownwindAngle",
-        |ini, g, _| {
-            g.downwind_angle = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "UseShadowVolumes",
-        |ini, g, _| {
-            g.use_shadow_volumes = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "UseShadowDecals",
-        |ini, g, _| {
-            g.use_shadow_decals = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TextureReductionFactor",
-        |ini, g, _| {
-            g.texture_reduction_factor = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "UseBehindBuildingMarker",
-        |ini, g, _| {
-            g.enable_behind_building_markers = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "WaterPositionX",
-        |ini, g, _| {
-            g.water_position_x = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "WaterPositionY",
-        |ini, g, _| {
-            g.water_position_y = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "WaterPositionZ",
-        |ini, g, _| {
-            g.water_position_z = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "WaterExtentX",
-        |ini, g, _| {
-            g.water_extent_x = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "WaterExtentY",
-        |ini, g, _| {
-            g.water_extent_y = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "WaterType",
-        |ini, g, _| {
-            g.water_type = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FeatherWater",
-        |ini, g, _| {
-            g.feather_water = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShowSoftWaterEdge",
-        |ini, g, _| {
-            g.show_soft_water_edge = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAvailableMaps1",
-        |ini, g, _| {
-            g.vertex_water_available_maps[0] = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterHeightClampLow1",
-        |ini, g, _| {
-            g.vertex_water_height_clamp_low[0] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterHeightClampHi1",
-        |ini, g, _| {
-            g.vertex_water_height_clamp_hi[0] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAngle1",
-        |ini, g, _| {
-            g.vertex_water_angle[0] = ini.parse_angle_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterXPosition1",
-        |ini, g, _| {
-            g.vertex_water_x_position[0] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterYPosition1",
-        |ini, g, _| {
-            g.vertex_water_y_position[0] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterZPosition1",
-        |ini, g, _| {
-            g.vertex_water_z_position[0] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterXGridCells1",
-        |ini, g, _| {
-            g.vertex_water_x_grid_cells[0] = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterYGridCells1",
-        |ini, g, _| {
-            g.vertex_water_y_grid_cells[0] = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterGridSize1",
-        |ini, g, _| {
-            g.vertex_water_grid_size[0] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAttenuationA1",
-        |ini, g, _| {
-            g.vertex_water_attenuation_a[0] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAttenuationB1",
-        |ini, g, _| {
-            g.vertex_water_attenuation_b[0] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAttenuationC1",
-        |ini, g, _| {
-            g.vertex_water_attenuation_c[0] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAttenuationRange1",
-        |ini, g, _| {
-            g.vertex_water_attenuation_range[0] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAvailableMaps2",
-        |ini, g, _| {
-            g.vertex_water_available_maps[1] = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterHeightClampLow2",
-        |ini, g, _| {
-            g.vertex_water_height_clamp_low[1] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterHeightClampHi2",
-        |ini, g, _| {
-            g.vertex_water_height_clamp_hi[1] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAngle2",
-        |ini, g, _| {
-            g.vertex_water_angle[1] = ini.parse_angle_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterXPosition2",
-        |ini, g, _| {
-            g.vertex_water_x_position[1] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterYPosition2",
-        |ini, g, _| {
-            g.vertex_water_y_position[1] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterZPosition2",
-        |ini, g, _| {
-            g.vertex_water_z_position[1] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterXGridCells2",
-        |ini, g, _| {
-            g.vertex_water_x_grid_cells[1] = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterYGridCells2",
-        |ini, g, _| {
-            g.vertex_water_y_grid_cells[1] = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterGridSize2",
-        |ini, g, _| {
-            g.vertex_water_grid_size[1] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAttenuationA2",
-        |ini, g, _| {
-            g.vertex_water_attenuation_a[1] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAttenuationB2",
-        |ini, g, _| {
-            g.vertex_water_attenuation_b[1] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAttenuationC2",
-        |ini, g, _| {
-            g.vertex_water_attenuation_c[1] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAttenuationRange2",
-        |ini, g, _| {
-            g.vertex_water_attenuation_range[1] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAvailableMaps3",
-        |ini, g, _| {
-            g.vertex_water_available_maps[2] = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterHeightClampLow3",
-        |ini, g, _| {
-            g.vertex_water_height_clamp_low[2] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterHeightClampHi3",
-        |ini, g, _| {
-            g.vertex_water_height_clamp_hi[2] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAngle3",
-        |ini, g, _| {
-            g.vertex_water_angle[2] = ini.parse_angle_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterXPosition3",
-        |ini, g, _| {
-            g.vertex_water_x_position[2] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterYPosition3",
-        |ini, g, _| {
-            g.vertex_water_y_position[2] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterZPosition3",
-        |ini, g, _| {
-            g.vertex_water_z_position[2] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterXGridCells3",
-        |ini, g, _| {
-            g.vertex_water_x_grid_cells[2] = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterYGridCells3",
-        |ini, g, _| {
-            g.vertex_water_y_grid_cells[2] = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterGridSize3",
-        |ini, g, _| {
-            g.vertex_water_grid_size[2] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAttenuationA3",
-        |ini, g, _| {
-            g.vertex_water_attenuation_a[2] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAttenuationB3",
-        |ini, g, _| {
-            g.vertex_water_attenuation_b[2] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAttenuationC3",
-        |ini, g, _| {
-            g.vertex_water_attenuation_c[2] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAttenuationRange3",
-        |ini, g, _| {
-            g.vertex_water_attenuation_range[2] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAvailableMaps4",
-        |ini, g, _| {
-            g.vertex_water_available_maps[3] = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterHeightClampLow4",
-        |ini, g, _| {
-            g.vertex_water_height_clamp_low[3] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterHeightClampHi4",
-        |ini, g, _| {
-            g.vertex_water_height_clamp_hi[3] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAngle4",
-        |ini, g, _| {
-            g.vertex_water_angle[3] = ini.parse_angle_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterXPosition4",
-        |ini, g, _| {
-            g.vertex_water_x_position[3] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterYPosition4",
-        |ini, g, _| {
-            g.vertex_water_y_position[3] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterZPosition4",
-        |ini, g, _| {
-            g.vertex_water_z_position[3] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterXGridCells4",
-        |ini, g, _| {
-            g.vertex_water_x_grid_cells[3] = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterYGridCells4",
-        |ini, g, _| {
-            g.vertex_water_y_grid_cells[3] = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterGridSize4",
-        |ini, g, _| {
-            g.vertex_water_grid_size[3] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAttenuationA4",
-        |ini, g, _| {
-            g.vertex_water_attenuation_a[3] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAttenuationB4",
-        |ini, g, _| {
-            g.vertex_water_attenuation_b[3] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAttenuationC4",
-        |ini, g, _| {
-            g.vertex_water_attenuation_c[3] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VertexWaterAttenuationRange4",
-        |ini, g, _| {
-            g.vertex_water_attenuation_range[3] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SkyBoxPositionZ",
-        |ini, g, _| {
-            g.sky_box_position_z = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SkyBoxScale",
-        |ini, g, _| {
-            g.sky_box_scale = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DrawSkyBox",
-        |ini, g, _| {
-            g.draw_sky_box =
-                f32::from_bits((g.draw_sky_box.to_bits() & !0xff) | u32::from(ini.parse_bool()?));
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "CameraPitch",
-        |ini, g, _| {
-            g.camera_pitch = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "CameraYaw",
-        |ini, g, _| {
-            g.camera_yaw = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "CameraHeight",
-        |ini, g, _| {
-            g.camera_height = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxCameraHeight",
-        |ini, g, _| {
-            g.max_camera_height = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MinCameraHeight",
-        |ini, g, _| {
-            g.min_camera_height = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainHeightAtEdgeOfMap",
-        |ini, g, _| {
-            g.terrain_height_at_edge_of_map = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "UnitDamagedThreshold",
-        |ini, g, _| {
-            g.unit_damaged_thresh = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "UnitReallyDamagedThreshold",
-        |ini, g, _| {
-            g.unit_really_damaged_thresh = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "GroundStiffness",
-        |ini, g, _| {
-            g.ground_stiffness = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "StructureStiffness",
-        |ini, g, _| {
-            g.structure_stiffness = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "Gravity",
-        |ini, g, _| {
-            g.gravity = ini.parse_acceleration_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "StealthFriendlyOpacity",
-        |ini, g, _| {
-            g.stealth_friendly_opacity = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DefaultOcclusionDelay",
-        |ini, g, _| {
-            g.default_occlusion_delay = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "PartitionCellSize",
-        |ini, g, _| {
-            g.partition_cell_size = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AmmoPipScaleFactor",
-        |ini, g, _| {
-            g.ammo_pip_scale_factor = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ContainerPipScaleFactor",
-        |ini, g, _| {
-            g.container_pip_scale_factor = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AmmoPipWorldOffset",
-        |ini, g, _| {
-            g.ammo_pip_world_offset.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.ammo_pip_world_offset.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.ammo_pip_world_offset.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ContainerPipWorldOffset",
-        |ini, g, _| {
-            g.container_pip_world_offset.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.container_pip_world_offset.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.container_pip_world_offset.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AmmoPipScreenOffset",
-        |ini, g, _| {
-            g.ammo_pip_screen_offset.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.ammo_pip_screen_offset.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ContainerPipScreenOffset",
-        |ini, g, _| {
-            g.container_pip_screen_offset.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.container_pip_screen_offset.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "HistoricDamageLimit",
-        |ini, g, _| {
-            g.historic_damage_limit = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxTerrainTracks",
-        |ini, g, _| {
-            g.max_terrain_tracks = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TimeOfDay",
-        |ini, g, ud| {
-            g.time_of_day = ini.parse_index_list(ud.names())?;
-            Ok(())
-        },
-        UserData::Names(&TIME_OF_DAY_NAMES),
-    ),
-    FieldParse::new(
-        "Weather",
-        |ini, g, ud| {
-            g.weather = ini.parse_index_list(ud.names())?;
-            Ok(())
-        },
-        UserData::Names(&WEATHER_NAMES),
-    ),
-    FieldParse::new(
-        "MakeTrackMarks",
-        |ini, g, _| {
-            g.make_track_marks = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "HideGarrisonFlags",
-        |ini, g, _| {
-            g.hide_garrison_flags = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ForceModelsToFollowTimeOfDay",
-        |ini, g, _| {
-            g.force_models_to_follow_time_of_day = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ForceModelsToFollowWeather",
-        |ini, g, _| {
-            g.force_models_to_follow_weather = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "LevelGainAnimationName",
-        |ini, g, _| {
-            g.level_gain_animation_name = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "LevelGainAnimationTime",
-        |ini, g, _| {
-            g.level_gain_animation_display_time_in_seconds = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "LevelGainAnimationZRise",
-        |ini, g, _| {
-            g.level_gain_animation_z_rise_per_second = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "GetHealedAnimationName",
-        |ini, g, _| {
-            g.get_healed_animation_name = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "GetHealedAnimationTime",
-        |ini, g, _| {
-            g.get_healed_animation_display_time_in_seconds = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "GetHealedAnimationZRise",
-        |ini, g, _| {
-            g.get_healed_animation_z_rise_per_second = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingMorningAmbient",
-        |ini, g, _| {
-            g.terrain_lighting[1][0].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingMorningDiffuse",
-        |ini, g, _| {
-            g.terrain_lighting[1][0].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingMorningLightPos",
-        |ini, g, _| {
-            g.terrain_lighting[1][0].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_lighting[1][0].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_lighting[1][0].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingAfternoonAmbient",
-        |ini, g, _| {
-            g.terrain_lighting[2][0].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingAfternoonDiffuse",
-        |ini, g, _| {
-            g.terrain_lighting[2][0].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingAfternoonLightPos",
-        |ini, g, _| {
-            g.terrain_lighting[2][0].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_lighting[2][0].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_lighting[2][0].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingEveningAmbient",
-        |ini, g, _| {
-            g.terrain_lighting[3][0].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingEveningDiffuse",
-        |ini, g, _| {
-            g.terrain_lighting[3][0].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingEveningLightPos",
-        |ini, g, _| {
-            g.terrain_lighting[3][0].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_lighting[3][0].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_lighting[3][0].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingNightAmbient",
-        |ini, g, _| {
-            g.terrain_lighting[4][0].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingNightDiffuse",
-        |ini, g, _| {
-            g.terrain_lighting[4][0].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingNightLightPos",
-        |ini, g, _| {
-            g.terrain_lighting[4][0].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_lighting[4][0].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_lighting[4][0].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingMorningAmbient",
-        |ini, g, _| {
-            g.terrain_objects_lighting[1][0].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingMorningDiffuse",
-        |ini, g, _| {
-            g.terrain_objects_lighting[1][0].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingMorningLightPos",
-        |ini, g, _| {
-            g.terrain_objects_lighting[1][0].light_pos.x =
-                Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_objects_lighting[1][0].light_pos.y =
-                Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_objects_lighting[1][0].light_pos.z =
-                Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingAfternoonAmbient",
-        |ini, g, _| {
-            g.terrain_objects_lighting[2][0].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingAfternoonDiffuse",
-        |ini, g, _| {
-            g.terrain_objects_lighting[2][0].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingAfternoonLightPos",
-        |ini, g, _| {
-            g.terrain_objects_lighting[2][0].light_pos.x =
-                Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_objects_lighting[2][0].light_pos.y =
-                Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_objects_lighting[2][0].light_pos.z =
-                Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingEveningAmbient",
-        |ini, g, _| {
-            g.terrain_objects_lighting[3][0].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingEveningDiffuse",
-        |ini, g, _| {
-            g.terrain_objects_lighting[3][0].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingEveningLightPos",
-        |ini, g, _| {
-            g.terrain_objects_lighting[3][0].light_pos.x =
-                Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_objects_lighting[3][0].light_pos.y =
-                Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_objects_lighting[3][0].light_pos.z =
-                Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingNightAmbient",
-        |ini, g, _| {
-            g.terrain_objects_lighting[4][0].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingNightDiffuse",
-        |ini, g, _| {
-            g.terrain_objects_lighting[4][0].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingNightLightPos",
-        |ini, g, _| {
-            g.terrain_objects_lighting[4][0].light_pos.x =
-                Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_objects_lighting[4][0].light_pos.y =
-                Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_objects_lighting[4][0].light_pos.z =
-                Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingMorningAmbient2",
-        |ini, g, _| {
-            g.terrain_lighting[1][1].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingMorningDiffuse2",
-        |ini, g, _| {
-            g.terrain_lighting[1][1].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingMorningLightPos2",
-        |ini, g, _| {
-            g.terrain_lighting[1][1].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_lighting[1][1].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_lighting[1][1].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingAfternoonAmbient2",
-        |ini, g, _| {
-            g.terrain_lighting[2][1].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingAfternoonDiffuse2",
-        |ini, g, _| {
-            g.terrain_lighting[2][1].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingAfternoonLightPos2",
-        |ini, g, _| {
-            g.terrain_lighting[2][1].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_lighting[2][1].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_lighting[2][1].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingEveningAmbient2",
-        |ini, g, _| {
-            g.terrain_lighting[3][1].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingEveningDiffuse2",
-        |ini, g, _| {
-            g.terrain_lighting[3][1].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingEveningLightPos2",
-        |ini, g, _| {
-            g.terrain_lighting[3][1].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_lighting[3][1].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_lighting[3][1].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingNightAmbient2",
-        |ini, g, _| {
-            g.terrain_lighting[4][1].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingNightDiffuse2",
-        |ini, g, _| {
-            g.terrain_lighting[4][1].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingNightLightPos2",
-        |ini, g, _| {
-            g.terrain_lighting[4][1].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_lighting[4][1].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_lighting[4][1].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingMorningAmbient2",
-        |ini, g, _| {
-            g.terrain_objects_lighting[1][1].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingMorningDiffuse2",
-        |ini, g, _| {
-            g.terrain_objects_lighting[1][1].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingMorningLightPos2",
-        |ini, g, _| {
-            g.terrain_objects_lighting[1][1].light_pos.x =
-                Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_objects_lighting[1][1].light_pos.y =
-                Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_objects_lighting[1][1].light_pos.z =
-                Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingAfternoonAmbient2",
-        |ini, g, _| {
-            g.terrain_objects_lighting[2][1].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingAfternoonDiffuse2",
-        |ini, g, _| {
-            g.terrain_objects_lighting[2][1].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingAfternoonLightPos2",
-        |ini, g, _| {
-            g.terrain_objects_lighting[2][1].light_pos.x =
-                Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_objects_lighting[2][1].light_pos.y =
-                Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_objects_lighting[2][1].light_pos.z =
-                Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingEveningAmbient2",
-        |ini, g, _| {
-            g.terrain_objects_lighting[3][1].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingEveningDiffuse2",
-        |ini, g, _| {
-            g.terrain_objects_lighting[3][1].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingEveningLightPos2",
-        |ini, g, _| {
-            g.terrain_objects_lighting[3][1].light_pos.x =
-                Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_objects_lighting[3][1].light_pos.y =
-                Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_objects_lighting[3][1].light_pos.z =
-                Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingNightAmbient2",
-        |ini, g, _| {
-            g.terrain_objects_lighting[4][1].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingNightDiffuse2",
-        |ini, g, _| {
-            g.terrain_objects_lighting[4][1].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingNightLightPos2",
-        |ini, g, _| {
-            g.terrain_objects_lighting[4][1].light_pos.x =
-                Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_objects_lighting[4][1].light_pos.y =
-                Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_objects_lighting[4][1].light_pos.z =
-                Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingMorningAmbient3",
-        |ini, g, _| {
-            g.terrain_lighting[1][2].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingMorningDiffuse3",
-        |ini, g, _| {
-            g.terrain_lighting[1][2].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingMorningLightPos3",
-        |ini, g, _| {
-            g.terrain_lighting[1][2].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_lighting[1][2].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_lighting[1][2].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingAfternoonAmbient3",
-        |ini, g, _| {
-            g.terrain_lighting[2][2].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingAfternoonDiffuse3",
-        |ini, g, _| {
-            g.terrain_lighting[2][2].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingAfternoonLightPos3",
-        |ini, g, _| {
-            g.terrain_lighting[2][2].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_lighting[2][2].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_lighting[2][2].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingEveningAmbient3",
-        |ini, g, _| {
-            g.terrain_lighting[3][2].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingEveningDiffuse3",
-        |ini, g, _| {
-            g.terrain_lighting[3][2].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingEveningLightPos3",
-        |ini, g, _| {
-            g.terrain_lighting[3][2].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_lighting[3][2].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_lighting[3][2].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingNightAmbient3",
-        |ini, g, _| {
-            g.terrain_lighting[4][2].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingNightDiffuse3",
-        |ini, g, _| {
-            g.terrain_lighting[4][2].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainLightingNightLightPos3",
-        |ini, g, _| {
-            g.terrain_lighting[4][2].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_lighting[4][2].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_lighting[4][2].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingMorningAmbient3",
-        |ini, g, _| {
-            g.terrain_objects_lighting[1][2].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingMorningDiffuse3",
-        |ini, g, _| {
-            g.terrain_objects_lighting[1][2].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingMorningLightPos3",
-        |ini, g, _| {
-            g.terrain_objects_lighting[1][2].light_pos.x =
-                Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_objects_lighting[1][2].light_pos.y =
-                Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_objects_lighting[1][2].light_pos.z =
-                Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingAfternoonAmbient3",
-        |ini, g, _| {
-            g.terrain_objects_lighting[2][2].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingAfternoonDiffuse3",
-        |ini, g, _| {
-            g.terrain_objects_lighting[2][2].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingAfternoonLightPos3",
-        |ini, g, _| {
-            g.terrain_objects_lighting[2][2].light_pos.x =
-                Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_objects_lighting[2][2].light_pos.y =
-                Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_objects_lighting[2][2].light_pos.z =
-                Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingEveningAmbient3",
-        |ini, g, _| {
-            g.terrain_objects_lighting[3][2].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingEveningDiffuse3",
-        |ini, g, _| {
-            g.terrain_objects_lighting[3][2].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingEveningLightPos3",
-        |ini, g, _| {
-            g.terrain_objects_lighting[3][2].light_pos.x =
-                Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_objects_lighting[3][2].light_pos.y =
-                Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_objects_lighting[3][2].light_pos.z =
-                Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingNightAmbient3",
-        |ini, g, _| {
-            g.terrain_objects_lighting[4][2].ambient = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingNightDiffuse3",
-        |ini, g, _| {
-            g.terrain_objects_lighting[4][2].diffuse = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TerrainObjectsLightingNightLightPos3",
-        |ini, g, _| {
-            g.terrain_objects_lighting[4][2].light_pos.x =
-                Ini::scan_real(&ini.get_next_sub_token(b"X")?)?;
-            g.terrain_objects_lighting[4][2].light_pos.y =
-                Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?;
-            g.terrain_objects_lighting[4][2].light_pos.z =
-                Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "NumberGlobalLights",
-        |ini, g, _| {
-            g.num_global_lights = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "InfantryLightMorningScale",
-        |ini, g, _| {
-            g.infantry_light_scale[1] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "InfantryLightAfternoonScale",
-        |ini, g, _| {
-            g.infantry_light_scale[2] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "InfantryLightEveningScale",
-        |ini, g, _| {
-            g.infantry_light_scale[3] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "InfantryLightNightScale",
-        |ini, g, _| {
-            g.infantry_light_scale[4] = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxTranslucentObjects",
-        |ini, g, _| {
-            g.max_visible_translucent_objects = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "OccludedColorLuminanceScale",
-        |ini, g, _| {
-            g.occluded_luminance_scale = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxRoadSegments",
-        |ini, g, _| {
-            g.max_road_segments = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxRoadVertex",
-        |ini, g, _| {
-            g.max_road_vertex = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxRoadIndex",
-        |ini, g, _| {
-            g.max_road_index = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxRoadTypes",
-        |ini, g, _| {
-            g.max_road_types = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ValuePerSupplyBox",
-        |ini, g, _| {
-            g.base_value_per_supply_box = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AudioOn",
-        |ini, g, _| {
-            g.audio_on = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MusicOn",
-        |ini, g, _| {
-            g.music_on = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SoundsOn",
-        |ini, g, _| {
-            g.sounds_on = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "Sounds3DOn",
-        |ini, g, _| {
-            g.sounds_3d_on = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SpeechOn",
-        |ini, g, _| {
-            g.speech_on = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VideoOn",
-        |ini, g, _| {
-            g.video_on = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DisableCameraMovements",
-        |ini, g, _| {
-            g.disable_camera_movement = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DebugAI",
-        |ini, g, _| {
-            g.debug_ai = (g.debug_ai & !0xff) | i32::from(ini.parse_bool()?);
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DebugAIObstacles",
-        |ini, g, _| {
-            g.debug_ai_obstacles = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShowClientPhysics",
-        |ini, g, _| {
-            g.show_client_physics = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShowTerrainNormals",
-        |ini, g, _| {
-            g.show_terrain_normals = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShowObjectHealth",
-        |ini, g, _| {
-            g.show_object_health = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ParticleScale",
-        |ini, g, _| {
-            g.particle_scale = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoFireParticleSmallPrefix",
-        |ini, g, _| {
-            g.auto_fire_particle_small_prefix = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoFireParticleSmallSystem",
-        |ini, g, _| {
-            g.auto_fire_particle_small_system = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoFireParticleSmallMax",
-        |ini, g, _| {
-            g.auto_fire_particle_small_max = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoFireParticleMediumPrefix",
-        |ini, g, _| {
-            g.auto_fire_particle_medium_prefix = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoFireParticleMediumSystem",
-        |ini, g, _| {
-            g.auto_fire_particle_medium_system = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoFireParticleMediumMax",
-        |ini, g, _| {
-            g.auto_fire_particle_medium_max = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoFireParticleLargePrefix",
-        |ini, g, _| {
-            g.auto_fire_particle_large_prefix = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoFireParticleLargeSystem",
-        |ini, g, _| {
-            g.auto_fire_particle_large_system = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoFireParticleLargeMax",
-        |ini, g, _| {
-            g.auto_fire_particle_large_max = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoSmokeParticleSmallPrefix",
-        |ini, g, _| {
-            g.auto_smoke_particle_small_prefix = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoSmokeParticleSmallSystem",
-        |ini, g, _| {
-            g.auto_smoke_particle_small_system = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoSmokeParticleSmallMax",
-        |ini, g, _| {
-            g.auto_smoke_particle_small_max = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoSmokeParticleMediumPrefix",
-        |ini, g, _| {
-            g.auto_smoke_particle_medium_prefix = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoSmokeParticleMediumSystem",
-        |ini, g, _| {
-            g.auto_smoke_particle_medium_system = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoSmokeParticleMediumMax",
-        |ini, g, _| {
-            g.auto_smoke_particle_medium_max = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoSmokeParticleLargePrefix",
-        |ini, g, _| {
-            g.auto_smoke_particle_large_prefix = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoSmokeParticleLargeSystem",
-        |ini, g, _| {
-            g.auto_smoke_particle_large_system = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoSmokeParticleLargeMax",
-        |ini, g, _| {
-            g.auto_smoke_particle_large_max = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoAflameParticlePrefix",
-        |ini, g, _| {
-            g.auto_aflame_particle_prefix = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoAflameParticleSystem",
-        |ini, g, _| {
-            g.auto_aflame_particle_system = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AutoAflameParticleMax",
-        |ini, g, _| {
-            g.auto_aflame_particle_max = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "BuildSpeed",
-        |ini, g, _| {
-            g.build_speed = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MinDistFromEdgeOfMapForBuild",
-        |ini, g, _| {
-            g.min_dist_from_edge_of_map_for_build = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SupplyBuildBorder",
-        |ini, g, _| {
-            g.supply_build_border = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AllowedHeightVariationForBuilding",
-        |ini, g, _| {
-            g.allowed_height_variation_for_building = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MinLowEnergyProductionSpeed",
-        |ini, g, _| {
-            g.min_low_energy_production_speed = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxLowEnergyProductionSpeed",
-        |ini, g, _| {
-            g.max_low_energy_production_speed = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "LowEnergyPenaltyModifier",
-        |ini, g, _| {
-            g.low_energy_penalty_modifier = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MultipleFactory",
-        |ini, g, _| {
-            g.multiple_factory = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "RefundPercent",
-        |ini, g, _| {
-            g.refund_percent = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "CommandCenterHealRange",
-        |ini, g, _| {
-            g.command_center_heal_range = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "CommandCenterHealAmount",
-        |ini, g, _| {
-            g.command_center_heal_amount = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "StandardMinefieldDensity",
-        |ini, g, _| {
-            g.standard_minefield_density = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "StandardMinefieldDistance",
-        |ini, g, _| {
-            g.standard_minefield_distance = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxLineBuildObjects",
-        |ini, g, _| {
-            g.max_line_build_objects = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxTunnelCapacity",
-        |ini, g, _| {
-            g.max_tunnel_capacity = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxParticleCount",
-        |ini, g, _| {
-            g.max_particle_count = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxFieldParticleCount",
-        |ini, g, _| {
-            g.max_field_particle_count = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "HorizontalScrollSpeedFactor",
-        |ini, g, _| {
-            g.horizontal_scroll_speed_factor = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VerticalScrollSpeedFactor",
-        |ini, g, _| {
-            g.vertical_scroll_speed_factor = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ScrollAmountCutoff",
-        |ini, g, _| {
-            g.scroll_amount_cutoff = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "CameraAdjustSpeed",
-        |ini, g, _| {
-            g.camera_adjust_speed = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "EnforceMaxCameraHeight",
-        |ini, g, _| {
-            g.enforce_max_camera_height = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "KeyboardScrollSpeedFactor",
-        |ini, g, _| {
-            g.keyboard_scroll_factor = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "KeyboardDefaultScrollSpeedFactor",
-        |ini, g, _| {
-            g.keyboard_default_scroll_factor = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MovementPenaltyDamageState",
-        |ini, g, ud| {
-            g.movement_penalty_damage_state = ini.parse_index_list(ud.names())?;
-            Ok(())
-        },
-        UserData::Names(&BODY_DAMAGE_TYPE_NAMES),
-    ),
-    FieldParse::new(
-        "HealthBonus_Veteran",
-        |ini, g, _| {
-            g.health_bonus[1] = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "HealthBonus_Elite",
-        |ini, g, _| {
-            g.health_bonus[2] = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "HealthBonus_Heroic",
-        |ini, g, _| {
-            g.health_bonus[3] = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "HumanSoloPlayerHealthBonus_Easy",
-        |ini, g, _| {
-            g.solo_player_health_bonus_for_difficulty[0][0] = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "HumanSoloPlayerHealthBonus_Normal",
-        |ini, g, _| {
-            g.solo_player_health_bonus_for_difficulty[0][1] = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "HumanSoloPlayerHealthBonus_Hard",
-        |ini, g, _| {
-            g.solo_player_health_bonus_for_difficulty[0][2] = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AISoloPlayerHealthBonus_Easy",
-        |ini, g, _| {
-            g.solo_player_health_bonus_for_difficulty[1][0] = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AISoloPlayerHealthBonus_Normal",
-        |ini, g, _| {
-            g.solo_player_health_bonus_for_difficulty[1][1] = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AISoloPlayerHealthBonus_Hard",
-        |ini, g, _| {
-            g.solo_player_health_bonus_for_difficulty[1][2] = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "WeaponBonus",
-        |ini, g, _| {
-            g.weapon_bonus_set.parse_weapon_bonus_set(ini)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DefaultStructureRubbleHeight",
-        |ini, g, _| {
-            g.default_structure_rubble_height = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FixedSeed",
-        |ini, g, _| {
-            g.fixed_seed = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShellMapName",
-        |ini, g, _| {
-            g.shell_map_name = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShellMapOn",
-        |ini, g, _| {
-            g.shell_map_on = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "PlayIntro",
-        |ini, g, _| {
-            g.play_intro = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FirewallBehavior",
-        |ini, g, _| {
-            g.firewall_behavior = ini.parse_int()? as u32;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FirewallPortOverride",
-        |ini, g, _| {
-            g.firewall_port_override = ini.parse_int()? as u32;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FirewallPortAllocationDelta",
-        |ini, g, _| {
-            g.firewall_port_allocation_delta = ini.parse_int()? as i16;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "GroupSelectMinSelectSize",
-        |ini, g, _| {
-            g.group_select_min_select_size = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "GroupSelectVolumeBase",
-        |ini, g, _| {
-            g.group_select_volume_base = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "GroupSelectVolumeIncrement",
-        |ini, g, _| {
-            g.group_select_volume_increment = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxUnitSelectSounds",
-        |ini, g, _| {
-            g.max_unit_select_sounds = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SelectionFlashSaturationFactor",
-        |ini, g, _| {
-            g.selection_flash_saturation_factor = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SelectionFlashHouseColor",
-        |ini, g, _| {
-            g.selection_flash_house_color = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "CameraAudibleRadius",
-        |ini, g, _| {
-            g.camera_audible_radius = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "GroupMoveClickToGatherAreaFactor",
-        |ini, g, _| {
-            g.group_move_click_to_gather_factor = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShakeSubtleIntensity",
-        |ini, g, _| {
-            g.shake_subtle_intensity = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShakeNormalIntensity",
-        |ini, g, _| {
-            g.shake_normal_intensity = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShakeStrongIntensity",
-        |ini, g, _| {
-            g.shake_strong_intensity = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShakeSevereIntensity",
-        |ini, g, _| {
-            g.shake_severe_intensity = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShakeCineExtremeIntensity",
-        |ini, g, _| {
-            g.shake_cine_extreme_intensity = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShakeCineInsaneIntensity",
-        |ini, g, _| {
-            g.shake_cine_insane_intensity = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxShakeIntensity",
-        |ini, g, _| {
-            g.max_shake_intensity = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxShakeRange",
-        |ini, g, _| {
-            g.max_shake_range = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SellPercentage",
-        |ini, g, _| {
-            g.sell_percentage = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "BaseRegenHealthPercentPerSecond",
-        |ini, g, _| {
-            g.base_regen_health_percent_per_second = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "BaseRegenDelay",
-        |ini, g, _| {
-            g.base_regen_delay = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SpecialPowerViewObject",
-        |ini, g, _| {
-            g.special_power_view_object_name = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "StandardPublicBone",
-        |ini, g, _| {
-            ini.parse_ascii_string_vector_append(&mut g.standard_public_bones)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShowMetrics",
-        |ini, g, _| {
-            g.show_metrics = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DefaultStartingCash",
-        |ini, g, ud| {
-            parse_money_amount(ini, &mut g.default_starting_cash, ud)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShroudColor",
-        |ini, g, _| {
-            g.shroud_color = ini.parse_rgb_color()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ClearAlpha",
-        |ini, g, _| {
-            g.clear_alpha = ini.parse_unsigned_byte()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FogAlpha",
-        |ini, g, _| {
-            g.fog_alpha = ini.parse_unsigned_byte()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShroudAlpha",
-        |ini, g, _| {
-            g.shroud_alpha = ini.parse_unsigned_byte()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "HotKeyTextColor",
-        |ini, g, _| {
-            g.hot_key_text_color = ini.parse_color_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "PowerBarBase",
-        |ini, g, _| {
-            g.power_bar_base = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "PowerBarIntervals",
-        |ini, g, _| {
-            g.power_bar_intervals = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "PowerBarYellowRange",
-        |ini, g, _| {
-            g.power_bar_yellow_range = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "UnlookPersistDuration",
-        |ini, g, _| {
-            g.unlook_persist_duration = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "NetworkFPSHistoryLength",
-        |ini, g, _| {
-            g.network_fps_history_length = ini.parse_int()? as u32;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "NetworkLatencyHistoryLength",
-        |ini, g, _| {
-            g.network_latency_history_length = ini.parse_int()? as u32;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "NetworkRunAheadMetricsTime",
-        |ini, g, _| {
-            g.network_run_ahead_metrics_time = ini.parse_int()? as u32;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "NetworkCushionHistoryLength",
-        |ini, g, _| {
-            g.network_cushion_history_length = ini.parse_int()? as u32;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "NetworkRunAheadSlack",
-        |ini, g, _| {
-            g.network_run_ahead_slack = ini.parse_int()? as u32;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "NetworkKeepAliveDelay",
-        |ini, g, _| {
-            g.network_keep_alive_delay = ini.parse_int()? as u32;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "NetworkDisconnectTime",
-        |ini, g, _| {
-            g.network_disconnect_time = ini.parse_int()? as u32;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "NetworkPlayerTimeoutTime",
-        |ini, g, _| {
-            g.network_player_timeout_time = ini.parse_int()? as u32;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "NetworkDisconnectScreenNotifyTime",
-        |ini, g, _| {
-            g.network_disconnect_screen_notify_time = ini.parse_int()? as u32;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "KeyboardCameraRotateSpeed",
-        |ini, g, _| {
-            g.keyboard_camera_rotate_speed = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "PlayStats",
-        |ini, g, _| {
-            g.play_stats = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("Windowed", |ini, g, _| { g.windowed = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("XResolution", |ini, g, _| { g.x_resolution = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("YResolution", |ini, g, _| { g.y_resolution = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("MapName", |ini, g, _| { g.map_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("MoveHintName", |ini, g, _| { g.move_hint_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("UseTrees", |ini, g, _| { g.use_trees = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("UseFPSLimit", |ini, g, _| { g.use_fps_limit = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("DumpAssetUsage", |ini, g, _| { g.dump_asset_usage = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("FramesPerSecondLimit", |ini, g, _| { g.frames_per_second_limit = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("ChipsetType", |ini, g, _| { g.chip_set_type = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxShellScreens", |ini, g, _| { g.max_shell_screens = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("UseCloudMap", |ini, g, _| { g.use_cloud_map = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("UseLightMap", |ini, g, _| { g.use_light_map = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("BilinearTerrainTex", |ini, g, _| { g.bilinear_terrain_tex = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("TrilinearTerrainTex", |ini, g, _| { g.trilinear_terrain_tex = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("MultiPassTerrain", |ini, g, _| { g.multi_pass_terrain = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("AdjustCliffTextures", |ini, g, _| { g.adjust_cliff_textures = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("Use3WayTerrainBlends", |ini, g, _| { g.use_3way_terrain_blends = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("StretchTerrain", |ini, g, _| { g.stretch_terrain = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("UseHalfHeightMap", |ini, g, _| { g.use_half_height_map = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("DrawEntireTerrain", |ini, g, _| { g.draw_entire_terrain = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLOD", |ini, g, ud| { g.terrain_lod = ini.parse_index_list(ud.names())?; Ok(()) }, UserData::Names(&TERRAIN_LOD_NAMES)),
+    FieldParse::new("TerrainLODTargetTimeMS", |ini, g, _| { g.terrain_lod_target_time_ms = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("RightMouseAlwaysScrolls", |ini, g, _| { g.right_mouse_always_scrolls = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("UseWaterPlane", |ini, g, _| { g.use_water_plane = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("UseCloudPlane", |ini, g, _| { g.use_cloud_plane = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("DownwindAngle", |ini, g, _| { g.downwind_angle = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("UseShadowVolumes", |ini, g, _| { g.use_shadow_volumes = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("UseShadowDecals", |ini, g, _| { g.use_shadow_decals = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("TextureReductionFactor", |ini, g, _| { g.texture_reduction_factor = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("UseBehindBuildingMarker", |ini, g, _| { g.enable_behind_building_markers = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("WaterPositionX", |ini, g, _| { g.water_position_x = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("WaterPositionY", |ini, g, _| { g.water_position_y = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("WaterPositionZ", |ini, g, _| { g.water_position_z = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("WaterExtentX", |ini, g, _| { g.water_extent_x = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("WaterExtentY", |ini, g, _| { g.water_extent_y = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("WaterType", |ini, g, _| { g.water_type = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("FeatherWater", |ini, g, _| { g.feather_water = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("ShowSoftWaterEdge", |ini, g, _| { g.show_soft_water_edge = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAvailableMaps1", |ini, g, _| { g.vertex_water_available_maps[0] = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterHeightClampLow1", |ini, g, _| { g.vertex_water_height_clamp_low[0] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterHeightClampHi1", |ini, g, _| { g.vertex_water_height_clamp_hi[0] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAngle1", |ini, g, _| { g.vertex_water_angle[0] = ini.parse_angle_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterXPosition1", |ini, g, _| { g.vertex_water_x_position[0] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterYPosition1", |ini, g, _| { g.vertex_water_y_position[0] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterZPosition1", |ini, g, _| { g.vertex_water_z_position[0] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterXGridCells1", |ini, g, _| { g.vertex_water_x_grid_cells[0] = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterYGridCells1", |ini, g, _| { g.vertex_water_y_grid_cells[0] = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterGridSize1", |ini, g, _| { g.vertex_water_grid_size[0] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAttenuationA1", |ini, g, _| { g.vertex_water_attenuation_a[0] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAttenuationB1", |ini, g, _| { g.vertex_water_attenuation_b[0] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAttenuationC1", |ini, g, _| { g.vertex_water_attenuation_c[0] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAttenuationRange1", |ini, g, _| { g.vertex_water_attenuation_range[0] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAvailableMaps2", |ini, g, _| { g.vertex_water_available_maps[1] = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterHeightClampLow2", |ini, g, _| { g.vertex_water_height_clamp_low[1] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterHeightClampHi2", |ini, g, _| { g.vertex_water_height_clamp_hi[1] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAngle2", |ini, g, _| { g.vertex_water_angle[1] = ini.parse_angle_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterXPosition2", |ini, g, _| { g.vertex_water_x_position[1] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterYPosition2", |ini, g, _| { g.vertex_water_y_position[1] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterZPosition2", |ini, g, _| { g.vertex_water_z_position[1] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterXGridCells2", |ini, g, _| { g.vertex_water_x_grid_cells[1] = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterYGridCells2", |ini, g, _| { g.vertex_water_y_grid_cells[1] = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterGridSize2", |ini, g, _| { g.vertex_water_grid_size[1] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAttenuationA2", |ini, g, _| { g.vertex_water_attenuation_a[1] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAttenuationB2", |ini, g, _| { g.vertex_water_attenuation_b[1] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAttenuationC2", |ini, g, _| { g.vertex_water_attenuation_c[1] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAttenuationRange2", |ini, g, _| { g.vertex_water_attenuation_range[1] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAvailableMaps3", |ini, g, _| { g.vertex_water_available_maps[2] = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterHeightClampLow3", |ini, g, _| { g.vertex_water_height_clamp_low[2] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterHeightClampHi3", |ini, g, _| { g.vertex_water_height_clamp_hi[2] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAngle3", |ini, g, _| { g.vertex_water_angle[2] = ini.parse_angle_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterXPosition3", |ini, g, _| { g.vertex_water_x_position[2] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterYPosition3", |ini, g, _| { g.vertex_water_y_position[2] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterZPosition3", |ini, g, _| { g.vertex_water_z_position[2] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterXGridCells3", |ini, g, _| { g.vertex_water_x_grid_cells[2] = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterYGridCells3", |ini, g, _| { g.vertex_water_y_grid_cells[2] = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterGridSize3", |ini, g, _| { g.vertex_water_grid_size[2] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAttenuationA3", |ini, g, _| { g.vertex_water_attenuation_a[2] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAttenuationB3", |ini, g, _| { g.vertex_water_attenuation_b[2] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAttenuationC3", |ini, g, _| { g.vertex_water_attenuation_c[2] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAttenuationRange3", |ini, g, _| { g.vertex_water_attenuation_range[2] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAvailableMaps4", |ini, g, _| { g.vertex_water_available_maps[3] = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterHeightClampLow4", |ini, g, _| { g.vertex_water_height_clamp_low[3] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterHeightClampHi4", |ini, g, _| { g.vertex_water_height_clamp_hi[3] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAngle4", |ini, g, _| { g.vertex_water_angle[3] = ini.parse_angle_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterXPosition4", |ini, g, _| { g.vertex_water_x_position[3] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterYPosition4", |ini, g, _| { g.vertex_water_y_position[3] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterZPosition4", |ini, g, _| { g.vertex_water_z_position[3] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterXGridCells4", |ini, g, _| { g.vertex_water_x_grid_cells[3] = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterYGridCells4", |ini, g, _| { g.vertex_water_y_grid_cells[3] = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterGridSize4", |ini, g, _| { g.vertex_water_grid_size[3] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAttenuationA4", |ini, g, _| { g.vertex_water_attenuation_a[3] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAttenuationB4", |ini, g, _| { g.vertex_water_attenuation_b[3] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAttenuationC4", |ini, g, _| { g.vertex_water_attenuation_c[3] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VertexWaterAttenuationRange4", |ini, g, _| { g.vertex_water_attenuation_range[3] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("SkyBoxPositionZ", |ini, g, _| { g.sky_box_position_z = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("SkyBoxScale", |ini, g, _| { g.sky_box_scale = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("DrawSkyBox", |ini, g, _| { g.draw_sky_box = f32::from_bits((g.draw_sky_box.to_bits() & !0xff) | u32::from(ini.parse_bool()?)); Ok(()) }, UserData::None),
+    FieldParse::new("CameraPitch", |ini, g, _| { g.camera_pitch = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("CameraYaw", |ini, g, _| { g.camera_yaw = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("CameraHeight", |ini, g, _| { g.camera_height = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxCameraHeight", |ini, g, _| { g.max_camera_height = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MinCameraHeight", |ini, g, _| { g.min_camera_height = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainHeightAtEdgeOfMap", |ini, g, _| { g.terrain_height_at_edge_of_map = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("UnitDamagedThreshold", |ini, g, _| { g.unit_damaged_thresh = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("UnitReallyDamagedThreshold", |ini, g, _| { g.unit_really_damaged_thresh = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("GroundStiffness", |ini, g, _| { g.ground_stiffness = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("StructureStiffness", |ini, g, _| { g.structure_stiffness = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("Gravity", |ini, g, _| { g.gravity = ini.parse_acceleration_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("StealthFriendlyOpacity", |ini, g, _| { g.stealth_friendly_opacity = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("DefaultOcclusionDelay", |ini, g, _| { g.default_occlusion_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("PartitionCellSize", |ini, g, _| { g.partition_cell_size = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("AmmoPipScaleFactor", |ini, g, _| { g.ammo_pip_scale_factor = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("ContainerPipScaleFactor", |ini, g, _| { g.container_pip_scale_factor = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("AmmoPipWorldOffset", |ini, g, _| { g.ammo_pip_world_offset.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.ammo_pip_world_offset.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.ammo_pip_world_offset.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("ContainerPipWorldOffset", |ini, g, _| { g.container_pip_world_offset.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.container_pip_world_offset.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.container_pip_world_offset.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("AmmoPipScreenOffset", |ini, g, _| { g.ammo_pip_screen_offset.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.ammo_pip_screen_offset.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("ContainerPipScreenOffset", |ini, g, _| { g.container_pip_screen_offset.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.container_pip_screen_offset.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("HistoricDamageLimit", |ini, g, _| { g.historic_damage_limit = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxTerrainTracks", |ini, g, _| { g.max_terrain_tracks = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("TimeOfDay", |ini, g, ud| { g.time_of_day = ini.parse_index_list(ud.names())?; Ok(()) }, UserData::Names(&TIME_OF_DAY_NAMES)),
+    FieldParse::new("Weather", |ini, g, ud| { g.weather = ini.parse_index_list(ud.names())?; Ok(()) }, UserData::Names(&WEATHER_NAMES)),
+    FieldParse::new("MakeTrackMarks", |ini, g, _| { g.make_track_marks = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("HideGarrisonFlags", |ini, g, _| { g.hide_garrison_flags = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("ForceModelsToFollowTimeOfDay", |ini, g, _| { g.force_models_to_follow_time_of_day = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("ForceModelsToFollowWeather", |ini, g, _| { g.force_models_to_follow_weather = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("LevelGainAnimationName", |ini, g, _| { g.level_gain_animation_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("LevelGainAnimationTime", |ini, g, _| { g.level_gain_animation_display_time_in_seconds = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("LevelGainAnimationZRise", |ini, g, _| { g.level_gain_animation_z_rise_per_second = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("GetHealedAnimationName", |ini, g, _| { g.get_healed_animation_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("GetHealedAnimationTime", |ini, g, _| { g.get_healed_animation_display_time_in_seconds = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("GetHealedAnimationZRise", |ini, g, _| { g.get_healed_animation_z_rise_per_second = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingMorningAmbient", |ini, g, _| { g.terrain_lighting[1][0].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingMorningDiffuse", |ini, g, _| { g.terrain_lighting[1][0].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingMorningLightPos", |ini, g, _| { g.terrain_lighting[1][0].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_lighting[1][0].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_lighting[1][0].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingAfternoonAmbient", |ini, g, _| { g.terrain_lighting[2][0].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingAfternoonDiffuse", |ini, g, _| { g.terrain_lighting[2][0].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingAfternoonLightPos", |ini, g, _| { g.terrain_lighting[2][0].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_lighting[2][0].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_lighting[2][0].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingEveningAmbient", |ini, g, _| { g.terrain_lighting[3][0].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingEveningDiffuse", |ini, g, _| { g.terrain_lighting[3][0].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingEveningLightPos", |ini, g, _| { g.terrain_lighting[3][0].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_lighting[3][0].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_lighting[3][0].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingNightAmbient", |ini, g, _| { g.terrain_lighting[4][0].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingNightDiffuse", |ini, g, _| { g.terrain_lighting[4][0].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingNightLightPos", |ini, g, _| { g.terrain_lighting[4][0].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_lighting[4][0].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_lighting[4][0].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingMorningAmbient", |ini, g, _| { g.terrain_objects_lighting[1][0].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingMorningDiffuse", |ini, g, _| { g.terrain_objects_lighting[1][0].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingMorningLightPos", |ini, g, _| { g.terrain_objects_lighting[1][0].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_objects_lighting[1][0].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_objects_lighting[1][0].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingAfternoonAmbient", |ini, g, _| { g.terrain_objects_lighting[2][0].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingAfternoonDiffuse", |ini, g, _| { g.terrain_objects_lighting[2][0].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingAfternoonLightPos", |ini, g, _| { g.terrain_objects_lighting[2][0].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_objects_lighting[2][0].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_objects_lighting[2][0].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingEveningAmbient", |ini, g, _| { g.terrain_objects_lighting[3][0].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingEveningDiffuse", |ini, g, _| { g.terrain_objects_lighting[3][0].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingEveningLightPos", |ini, g, _| { g.terrain_objects_lighting[3][0].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_objects_lighting[3][0].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_objects_lighting[3][0].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingNightAmbient", |ini, g, _| { g.terrain_objects_lighting[4][0].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingNightDiffuse", |ini, g, _| { g.terrain_objects_lighting[4][0].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingNightLightPos", |ini, g, _| { g.terrain_objects_lighting[4][0].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_objects_lighting[4][0].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_objects_lighting[4][0].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingMorningAmbient2", |ini, g, _| { g.terrain_lighting[1][1].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingMorningDiffuse2", |ini, g, _| { g.terrain_lighting[1][1].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingMorningLightPos2", |ini, g, _| { g.terrain_lighting[1][1].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_lighting[1][1].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_lighting[1][1].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingAfternoonAmbient2", |ini, g, _| { g.terrain_lighting[2][1].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingAfternoonDiffuse2", |ini, g, _| { g.terrain_lighting[2][1].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingAfternoonLightPos2", |ini, g, _| { g.terrain_lighting[2][1].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_lighting[2][1].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_lighting[2][1].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingEveningAmbient2", |ini, g, _| { g.terrain_lighting[3][1].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingEveningDiffuse2", |ini, g, _| { g.terrain_lighting[3][1].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingEveningLightPos2", |ini, g, _| { g.terrain_lighting[3][1].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_lighting[3][1].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_lighting[3][1].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingNightAmbient2", |ini, g, _| { g.terrain_lighting[4][1].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingNightDiffuse2", |ini, g, _| { g.terrain_lighting[4][1].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingNightLightPos2", |ini, g, _| { g.terrain_lighting[4][1].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_lighting[4][1].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_lighting[4][1].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingMorningAmbient2", |ini, g, _| { g.terrain_objects_lighting[1][1].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingMorningDiffuse2", |ini, g, _| { g.terrain_objects_lighting[1][1].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingMorningLightPos2", |ini, g, _| { g.terrain_objects_lighting[1][1].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_objects_lighting[1][1].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_objects_lighting[1][1].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingAfternoonAmbient2", |ini, g, _| { g.terrain_objects_lighting[2][1].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingAfternoonDiffuse2", |ini, g, _| { g.terrain_objects_lighting[2][1].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingAfternoonLightPos2", |ini, g, _| { g.terrain_objects_lighting[2][1].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_objects_lighting[2][1].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_objects_lighting[2][1].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingEveningAmbient2", |ini, g, _| { g.terrain_objects_lighting[3][1].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingEveningDiffuse2", |ini, g, _| { g.terrain_objects_lighting[3][1].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingEveningLightPos2", |ini, g, _| { g.terrain_objects_lighting[3][1].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_objects_lighting[3][1].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_objects_lighting[3][1].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingNightAmbient2", |ini, g, _| { g.terrain_objects_lighting[4][1].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingNightDiffuse2", |ini, g, _| { g.terrain_objects_lighting[4][1].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingNightLightPos2", |ini, g, _| { g.terrain_objects_lighting[4][1].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_objects_lighting[4][1].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_objects_lighting[4][1].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingMorningAmbient3", |ini, g, _| { g.terrain_lighting[1][2].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingMorningDiffuse3", |ini, g, _| { g.terrain_lighting[1][2].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingMorningLightPos3", |ini, g, _| { g.terrain_lighting[1][2].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_lighting[1][2].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_lighting[1][2].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingAfternoonAmbient3", |ini, g, _| { g.terrain_lighting[2][2].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingAfternoonDiffuse3", |ini, g, _| { g.terrain_lighting[2][2].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingAfternoonLightPos3", |ini, g, _| { g.terrain_lighting[2][2].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_lighting[2][2].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_lighting[2][2].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingEveningAmbient3", |ini, g, _| { g.terrain_lighting[3][2].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingEveningDiffuse3", |ini, g, _| { g.terrain_lighting[3][2].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingEveningLightPos3", |ini, g, _| { g.terrain_lighting[3][2].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_lighting[3][2].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_lighting[3][2].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingNightAmbient3", |ini, g, _| { g.terrain_lighting[4][2].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingNightDiffuse3", |ini, g, _| { g.terrain_lighting[4][2].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainLightingNightLightPos3", |ini, g, _| { g.terrain_lighting[4][2].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_lighting[4][2].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_lighting[4][2].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingMorningAmbient3", |ini, g, _| { g.terrain_objects_lighting[1][2].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingMorningDiffuse3", |ini, g, _| { g.terrain_objects_lighting[1][2].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingMorningLightPos3", |ini, g, _| { g.terrain_objects_lighting[1][2].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_objects_lighting[1][2].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_objects_lighting[1][2].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingAfternoonAmbient3", |ini, g, _| { g.terrain_objects_lighting[2][2].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingAfternoonDiffuse3", |ini, g, _| { g.terrain_objects_lighting[2][2].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingAfternoonLightPos3", |ini, g, _| { g.terrain_objects_lighting[2][2].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_objects_lighting[2][2].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_objects_lighting[2][2].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingEveningAmbient3", |ini, g, _| { g.terrain_objects_lighting[3][2].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingEveningDiffuse3", |ini, g, _| { g.terrain_objects_lighting[3][2].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingEveningLightPos3", |ini, g, _| { g.terrain_objects_lighting[3][2].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_objects_lighting[3][2].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_objects_lighting[3][2].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingNightAmbient3", |ini, g, _| { g.terrain_objects_lighting[4][2].ambient = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingNightDiffuse3", |ini, g, _| { g.terrain_objects_lighting[4][2].diffuse = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("TerrainObjectsLightingNightLightPos3", |ini, g, _| { g.terrain_objects_lighting[4][2].light_pos.x = Ini::scan_real(&ini.get_next_sub_token(b"X")?)?; g.terrain_objects_lighting[4][2].light_pos.y = Ini::scan_real(&ini.get_next_sub_token(b"Y")?)?; g.terrain_objects_lighting[4][2].light_pos.z = Ini::scan_real(&ini.get_next_sub_token(b"Z")?)?; Ok(()) }, UserData::None),
+    FieldParse::new("NumberGlobalLights", |ini, g, _| { g.num_global_lights = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("InfantryLightMorningScale", |ini, g, _| { g.infantry_light_scale[1] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("InfantryLightAfternoonScale", |ini, g, _| { g.infantry_light_scale[2] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("InfantryLightEveningScale", |ini, g, _| { g.infantry_light_scale[3] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("InfantryLightNightScale", |ini, g, _| { g.infantry_light_scale[4] = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxTranslucentObjects", |ini, g, _| { g.max_visible_translucent_objects = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("OccludedColorLuminanceScale", |ini, g, _| { g.occluded_luminance_scale = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxRoadSegments", |ini, g, _| { g.max_road_segments = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxRoadVertex", |ini, g, _| { g.max_road_vertex = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxRoadIndex", |ini, g, _| { g.max_road_index = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxRoadTypes", |ini, g, _| { g.max_road_types = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("ValuePerSupplyBox", |ini, g, _| { g.base_value_per_supply_box = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("AudioOn", |ini, g, _| { g.audio_on = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("MusicOn", |ini, g, _| { g.music_on = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("SoundsOn", |ini, g, _| { g.sounds_on = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("Sounds3DOn", |ini, g, _| { g.sounds_3d_on = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("SpeechOn", |ini, g, _| { g.speech_on = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("VideoOn", |ini, g, _| { g.video_on = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("DisableCameraMovements", |ini, g, _| { g.disable_camera_movement = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("DebugAI", |ini, g, _| { g.debug_ai = (g.debug_ai & !0xff) | i32::from(ini.parse_bool()?); Ok(()) }, UserData::None),
+    FieldParse::new("DebugAIObstacles", |ini, g, _| { g.debug_ai_obstacles = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("ShowClientPhysics", |ini, g, _| { g.show_client_physics = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("ShowTerrainNormals", |ini, g, _| { g.show_terrain_normals = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("ShowObjectHealth", |ini, g, _| { g.show_object_health = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("ParticleScale", |ini, g, _| { g.particle_scale = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoFireParticleSmallPrefix", |ini, g, _| { g.auto_fire_particle_small_prefix = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoFireParticleSmallSystem", |ini, g, _| { g.auto_fire_particle_small_system = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoFireParticleSmallMax", |ini, g, _| { g.auto_fire_particle_small_max = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoFireParticleMediumPrefix", |ini, g, _| { g.auto_fire_particle_medium_prefix = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoFireParticleMediumSystem", |ini, g, _| { g.auto_fire_particle_medium_system = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoFireParticleMediumMax", |ini, g, _| { g.auto_fire_particle_medium_max = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoFireParticleLargePrefix", |ini, g, _| { g.auto_fire_particle_large_prefix = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoFireParticleLargeSystem", |ini, g, _| { g.auto_fire_particle_large_system = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoFireParticleLargeMax", |ini, g, _| { g.auto_fire_particle_large_max = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoSmokeParticleSmallPrefix", |ini, g, _| { g.auto_smoke_particle_small_prefix = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoSmokeParticleSmallSystem", |ini, g, _| { g.auto_smoke_particle_small_system = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoSmokeParticleSmallMax", |ini, g, _| { g.auto_smoke_particle_small_max = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoSmokeParticleMediumPrefix", |ini, g, _| { g.auto_smoke_particle_medium_prefix = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoSmokeParticleMediumSystem", |ini, g, _| { g.auto_smoke_particle_medium_system = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoSmokeParticleMediumMax", |ini, g, _| { g.auto_smoke_particle_medium_max = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoSmokeParticleLargePrefix", |ini, g, _| { g.auto_smoke_particle_large_prefix = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoSmokeParticleLargeSystem", |ini, g, _| { g.auto_smoke_particle_large_system = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoSmokeParticleLargeMax", |ini, g, _| { g.auto_smoke_particle_large_max = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoAflameParticlePrefix", |ini, g, _| { g.auto_aflame_particle_prefix = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoAflameParticleSystem", |ini, g, _| { g.auto_aflame_particle_system = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("AutoAflameParticleMax", |ini, g, _| { g.auto_aflame_particle_max = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("BuildSpeed", |ini, g, _| { g.build_speed = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MinDistFromEdgeOfMapForBuild", |ini, g, _| { g.min_dist_from_edge_of_map_for_build = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("SupplyBuildBorder", |ini, g, _| { g.supply_build_border = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("AllowedHeightVariationForBuilding", |ini, g, _| { g.allowed_height_variation_for_building = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MinLowEnergyProductionSpeed", |ini, g, _| { g.min_low_energy_production_speed = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxLowEnergyProductionSpeed", |ini, g, _| { g.max_low_energy_production_speed = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("LowEnergyPenaltyModifier", |ini, g, _| { g.low_energy_penalty_modifier = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MultipleFactory", |ini, g, _| { g.multiple_factory = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("RefundPercent", |ini, g, _| { g.refund_percent = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("CommandCenterHealRange", |ini, g, _| { g.command_center_heal_range = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("CommandCenterHealAmount", |ini, g, _| { g.command_center_heal_amount = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("StandardMinefieldDensity", |ini, g, _| { g.standard_minefield_density = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("StandardMinefieldDistance", |ini, g, _| { g.standard_minefield_distance = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxLineBuildObjects", |ini, g, _| { g.max_line_build_objects = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxTunnelCapacity", |ini, g, _| { g.max_tunnel_capacity = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxParticleCount", |ini, g, _| { g.max_particle_count = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxFieldParticleCount", |ini, g, _| { g.max_field_particle_count = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("HorizontalScrollSpeedFactor", |ini, g, _| { g.horizontal_scroll_speed_factor = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("VerticalScrollSpeedFactor", |ini, g, _| { g.vertical_scroll_speed_factor = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("ScrollAmountCutoff", |ini, g, _| { g.scroll_amount_cutoff = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("CameraAdjustSpeed", |ini, g, _| { g.camera_adjust_speed = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("EnforceMaxCameraHeight", |ini, g, _| { g.enforce_max_camera_height = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("KeyboardScrollSpeedFactor", |ini, g, _| { g.keyboard_scroll_factor = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("KeyboardDefaultScrollSpeedFactor", |ini, g, _| { g.keyboard_default_scroll_factor = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MovementPenaltyDamageState", |ini, g, ud| { g.movement_penalty_damage_state = ini.parse_index_list(ud.names())?; Ok(()) }, UserData::Names(&BODY_DAMAGE_TYPE_NAMES)),
+    FieldParse::new("HealthBonus_Veteran", |ini, g, _| { g.health_bonus[1] = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("HealthBonus_Elite", |ini, g, _| { g.health_bonus[2] = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("HealthBonus_Heroic", |ini, g, _| { g.health_bonus[3] = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("HumanSoloPlayerHealthBonus_Easy", |ini, g, _| { g.solo_player_health_bonus_for_difficulty[0][0] = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("HumanSoloPlayerHealthBonus_Normal", |ini, g, _| { g.solo_player_health_bonus_for_difficulty[0][1] = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("HumanSoloPlayerHealthBonus_Hard", |ini, g, _| { g.solo_player_health_bonus_for_difficulty[0][2] = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("AISoloPlayerHealthBonus_Easy", |ini, g, _| { g.solo_player_health_bonus_for_difficulty[1][0] = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("AISoloPlayerHealthBonus_Normal", |ini, g, _| { g.solo_player_health_bonus_for_difficulty[1][1] = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("AISoloPlayerHealthBonus_Hard", |ini, g, _| { g.solo_player_health_bonus_for_difficulty[1][2] = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("WeaponBonus", |ini, g, _| { g.weapon_bonus_set.parse_weapon_bonus_set(ini)?; Ok(()) }, UserData::None),
+    FieldParse::new("DefaultStructureRubbleHeight", |ini, g, _| { g.default_structure_rubble_height = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("FixedSeed", |ini, g, _| { g.fixed_seed = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("ShellMapName", |ini, g, _| { g.shell_map_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("ShellMapOn", |ini, g, _| { g.shell_map_on = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("PlayIntro", |ini, g, _| { g.play_intro = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("FirewallBehavior", |ini, g, _| { g.firewall_behavior = ini.parse_int()? as u32; Ok(()) }, UserData::None),
+    FieldParse::new("FirewallPortOverride", |ini, g, _| { g.firewall_port_override = ini.parse_int()? as u32; Ok(()) }, UserData::None),
+    FieldParse::new("FirewallPortAllocationDelta", |ini, g, _| { g.firewall_port_allocation_delta = ini.parse_int()? as i16; Ok(()) }, UserData::None),
+    FieldParse::new("GroupSelectMinSelectSize", |ini, g, _| { g.group_select_min_select_size = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("GroupSelectVolumeBase", |ini, g, _| { g.group_select_volume_base = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("GroupSelectVolumeIncrement", |ini, g, _| { g.group_select_volume_increment = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxUnitSelectSounds", |ini, g, _| { g.max_unit_select_sounds = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("SelectionFlashSaturationFactor", |ini, g, _| { g.selection_flash_saturation_factor = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("SelectionFlashHouseColor", |ini, g, _| { g.selection_flash_house_color = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("CameraAudibleRadius", |ini, g, _| { g.camera_audible_radius = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("GroupMoveClickToGatherAreaFactor", |ini, g, _| { g.group_move_click_to_gather_factor = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("ShakeSubtleIntensity", |ini, g, _| { g.shake_subtle_intensity = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("ShakeNormalIntensity", |ini, g, _| { g.shake_normal_intensity = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("ShakeStrongIntensity", |ini, g, _| { g.shake_strong_intensity = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("ShakeSevereIntensity", |ini, g, _| { g.shake_severe_intensity = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("ShakeCineExtremeIntensity", |ini, g, _| { g.shake_cine_extreme_intensity = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("ShakeCineInsaneIntensity", |ini, g, _| { g.shake_cine_insane_intensity = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxShakeIntensity", |ini, g, _| { g.max_shake_intensity = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxShakeRange", |ini, g, _| { g.max_shake_range = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("SellPercentage", |ini, g, _| { g.sell_percentage = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("BaseRegenHealthPercentPerSecond", |ini, g, _| { g.base_regen_health_percent_per_second = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("BaseRegenDelay", |ini, g, _| { g.base_regen_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("SpecialPowerViewObject", |ini, g, _| { g.special_power_view_object_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("StandardPublicBone", |ini, g, _| { ini.parse_ascii_string_vector_append(&mut g.standard_public_bones)?; Ok(()) }, UserData::None),
+    FieldParse::new("ShowMetrics", |ini, g, _| { g.show_metrics = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("DefaultStartingCash", |ini, g, ud| { parse_money_amount(ini, &mut g.default_starting_cash, ud)?; Ok(()) }, UserData::None),
+    FieldParse::new("ShroudColor", |ini, g, _| { g.shroud_color = ini.parse_rgb_color()?; Ok(()) }, UserData::None),
+    FieldParse::new("ClearAlpha", |ini, g, _| { g.clear_alpha = ini.parse_unsigned_byte()?; Ok(()) }, UserData::None),
+    FieldParse::new("FogAlpha", |ini, g, _| { g.fog_alpha = ini.parse_unsigned_byte()?; Ok(()) }, UserData::None),
+    FieldParse::new("ShroudAlpha", |ini, g, _| { g.shroud_alpha = ini.parse_unsigned_byte()?; Ok(()) }, UserData::None),
+    FieldParse::new("HotKeyTextColor", |ini, g, _| { g.hot_key_text_color = ini.parse_color_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("PowerBarBase", |ini, g, _| { g.power_bar_base = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("PowerBarIntervals", |ini, g, _| { g.power_bar_intervals = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("PowerBarYellowRange", |ini, g, _| { g.power_bar_yellow_range = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("UnlookPersistDuration", |ini, g, _| { g.unlook_persist_duration = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("NetworkFPSHistoryLength", |ini, g, _| { g.network_fps_history_length = ini.parse_int()? as u32; Ok(()) }, UserData::None),
+    FieldParse::new("NetworkLatencyHistoryLength", |ini, g, _| { g.network_latency_history_length = ini.parse_int()? as u32; Ok(()) }, UserData::None),
+    FieldParse::new("NetworkRunAheadMetricsTime", |ini, g, _| { g.network_run_ahead_metrics_time = ini.parse_int()? as u32; Ok(()) }, UserData::None),
+    FieldParse::new("NetworkCushionHistoryLength", |ini, g, _| { g.network_cushion_history_length = ini.parse_int()? as u32; Ok(()) }, UserData::None),
+    FieldParse::new("NetworkRunAheadSlack", |ini, g, _| { g.network_run_ahead_slack = ini.parse_int()? as u32; Ok(()) }, UserData::None),
+    FieldParse::new("NetworkKeepAliveDelay", |ini, g, _| { g.network_keep_alive_delay = ini.parse_int()? as u32; Ok(()) }, UserData::None),
+    FieldParse::new("NetworkDisconnectTime", |ini, g, _| { g.network_disconnect_time = ini.parse_int()? as u32; Ok(()) }, UserData::None),
+    FieldParse::new("NetworkPlayerTimeoutTime", |ini, g, _| { g.network_player_timeout_time = ini.parse_int()? as u32; Ok(()) }, UserData::None),
+    FieldParse::new("NetworkDisconnectScreenNotifyTime", |ini, g, _| { g.network_disconnect_screen_notify_time = ini.parse_int()? as u32; Ok(()) }, UserData::None),
+    FieldParse::new("KeyboardCameraRotateSpeed", |ini, g, _| { g.keyboard_camera_rotate_speed = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("PlayStats", |ini, g, _| { g.play_stats = ini.parse_int()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];

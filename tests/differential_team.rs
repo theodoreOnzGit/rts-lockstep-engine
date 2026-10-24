@@ -88,13 +88,12 @@ use rts_lockstep_engine::common::dict::Dict;
 use rts_lockstep_engine::common::game_common::{GameDifficulty, PlayerType, Relationship};
 use rts_lockstep_engine::common::game_type::ObjectId;
 use rts_lockstep_engine::common::kind_of::{
-    KindOfMaskType, KindOfType, KINDOF_AIRCRAFT, KINDOF_INERT, KINDOF_INFANTRY, KINDOF_MINE,
-    KINDOF_PROJECTILE, KINDOF_STRUCTURE, KINDOF_TECH_BUILDING, KINDOF_VEHICLE,
+    KindOfMaskType, KindOfType, KINDOF_AIRCRAFT, KINDOF_INERT, KINDOF_INFANTRY, KINDOF_MINE, KINDOF_PROJECTILE, KINDOF_STRUCTURE, KINDOF_TECH_BUILDING,
+    KINDOF_VEHICLE,
 };
 use rts_lockstep_engine::common::name_key_generator::{NameKeyGenerator, NameKeyType};
 use rts_lockstep_engine::common::object_status_types::{
-    ObjectStatusTypes, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_STEALTHED,
-    OBJECT_STATUS_UNDER_CONSTRUCTION,
+    ObjectStatusTypes, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_STEALTHED, OBJECT_STATUS_UNDER_CONSTRUCTION,
 };
 use rts_lockstep_engine::common::well_known_keys::{WellKnownKeys, WELL_KNOWN_KEY_NAMES};
 use rts_lockstep_engine::common::xfer::Xfer;
@@ -105,9 +104,7 @@ use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::damage::{DAMAGE_UNRESISTABLE, DEATH_NORMAL};
 use rts_lockstep_engine::logic::sides_list::SidesList;
 use rts_lockstep_engine::logic::world::ids::{PlayerIndex, TeamId, TeamPrototypeId};
-use rts_lockstep_engine::logic::world::team::{
-    ScriptRef, TeamArena, TeamError, WaypointId, WaypointInfo, MAX_GENERIC_SCRIPTS,
-};
+use rts_lockstep_engine::logic::world::team::{ScriptRef, TeamArena, TeamError, WaypointId, WaypointInfo, MAX_GENERIC_SCRIPTS};
 use rts_lockstep_engine::logic::world::team_ops::*;
 use rts_lockstep_engine::logic::world::team_xfer::*;
 use support::{Check, Gen};
@@ -188,22 +185,8 @@ fn fb(f: f32) -> String {
 // The world of a program: the same configuration as differential/shim_team
 // ---------------------------------------------------------------------------------------------------------------------
 
-const KIND_POOL: [KindOfType; 8] = [
-    KINDOF_STRUCTURE,
-    KINDOF_PROJECTILE,
-    KINDOF_MINE,
-    KINDOF_INERT,
-    KINDOF_TECH_BUILDING,
-    KINDOF_AIRCRAFT,
-    KINDOF_INFANTRY,
-    KINDOF_VEHICLE,
-];
-const STATUS_POOL: [ObjectStatusTypes; 4] = [
-    OBJECT_STATUS_STEALTHED,
-    OBJECT_STATUS_DETECTED,
-    OBJECT_STATUS_DISGUISED,
-    OBJECT_STATUS_UNDER_CONSTRUCTION,
-];
+const KIND_POOL: [KindOfType; 8] = [KINDOF_STRUCTURE, KINDOF_PROJECTILE, KINDOF_MINE, KINDOF_INERT, KINDOF_TECH_BUILDING, KINDOF_AIRCRAFT, KINDOF_INFANTRY, KINDOF_VEHICLE];
+const STATUS_POOL: [ObjectStatusTypes; 4] = [OBJECT_STATUS_STEALTHED, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_UNDER_CONSTRUCTION];
 
 fn kind_mask(bits: u32) -> KindOfMaskType {
     let mut m = KindOfMaskType::new();
@@ -403,11 +386,7 @@ impl TeamHost for Sim {
         self.players[p as usize].default_team
     }
     fn player_relationship(&self, p: PlayerIndex, that: Option<TeamId>) -> Relationship {
-        let v = self.players[p as usize]
-            .rel_salt
-            .wrapping_add(5u32.wrapping_mul(p as u32))
-            .wrapping_add(11u32.wrapping_mul(that.unwrap_or(0)))
-            % 3;
+        let v = self.players[p as usize].rel_salt.wrapping_add(5u32.wrapping_mul(p as u32)).wrapping_add(11u32.wrapping_mul(that.unwrap_or(0))) % 3;
         match v {
             0 => Relationship::Enemies,
             1 => Relationship::Neutral,
@@ -422,16 +401,10 @@ impl TeamHost for Sim {
     }
     fn player_beacon_template(&self, p: PlayerIndex) -> Option<TemplateRef> {
         let b = &self.players[p as usize].beacon;
-        self.tpls
-            .iter()
-            .position(|t| t.name == *b)
-            .map(|i| i as TemplateRef)
+        self.tpls.iter().position(|t| t.name == *b).map(|i| i as TemplateRef)
     }
     fn script_find_by_name(&mut self, name: &[u8]) -> Option<ScriptRef> {
-        self.scripts[..self.originals]
-            .iter()
-            .find(|s| s.name == name)
-            .map(|s| s.serial)
+        self.scripts[..self.originals].iter().find(|s| s.name == name).map(|s| s.serial)
     }
     fn script_duplicate(&mut self, s: ScriptRef) -> ScriptRef {
         let mut c = self.scripts[s as usize - 1].clone();
@@ -470,21 +443,11 @@ impl TeamHost for Sim {
     fn script_name(&self, s: ScriptRef) -> Vec<u8> {
         self.scripts[s as usize - 1].name.clone()
     }
-    fn script_evaluate_conditions(
-        &mut self,
-        s: ScriptRef,
-        team: Option<TeamId>,
-        player: Option<PlayerIndex>,
-    ) -> bool {
+    fn script_evaluate_conditions(&mut self, s: ScriptRef, team: Option<TeamId>, player: Option<PlayerIndex>) -> bool {
         let sc = &mut self.scripts[s as usize - 1];
         let r = (sc.pattern >> (sc.calls & 31)) & 1 != 0;
         sc.calls += 1;
-        self.rec(format!(
-            "eval {s} team={} player={} -> {}",
-            tid(team),
-            player.unwrap_or(-1),
-            r as u32
-        ));
+        self.rec(format!("eval {s} team={} player={} -> {}", tid(team), player.unwrap_or(-1), r as u32));
         r
     }
     fn script_execute_action(&mut self, s: ScriptRef, team: Option<TeamId>) {
@@ -497,11 +460,7 @@ impl TeamHost for Sim {
         self.rec(format!("notify-destroy team={team}"));
     }
     fn script_append_debug_message(&mut self, msg: &[u8], force_pause: bool) {
-        self.rec(format!(
-            "dbg {} {}",
-            String::from_utf8_lossy(msg),
-            force_pause as u32
-        ));
+        self.rec(format!("dbg {} {}", String::from_utf8_lossy(msg), force_pause as u32));
     }
     fn terrain_waypoints(&self) -> Vec<WaypointInfo> {
         self.ways.iter().map(|(w, _)| w.clone()).collect()
@@ -521,12 +480,7 @@ impl TeamHost for Sim {
     fn tmpl_is_kind_of(&self, t: TemplateRef, kind: KindOfType) -> bool {
         self.tpls[t as usize].kinds.test(kind)
     }
-    fn tmpl_is_kind_of_multi(
-        &self,
-        t: TemplateRef,
-        set: &KindOfMaskType,
-        clear: &KindOfMaskType,
-    ) -> bool {
+    fn tmpl_is_kind_of_multi(&self, t: TemplateRef, set: &KindOfMaskType, clear: &KindOfMaskType) -> bool {
         self.tpls[t as usize].kinds.test_set_and_clear(set, clear)
     }
     fn tmpl_is_build_facility(&self, t: TemplateRef) -> bool {
@@ -547,12 +501,7 @@ impl TeamHost for Sim {
     fn obj_is_kind_of(&self, o: ObjectId, kind: KindOfType) -> bool {
         self.tpl_of(o).kinds.test(kind)
     }
-    fn obj_is_kind_of_multi(
-        &self,
-        o: ObjectId,
-        set: &KindOfMaskType,
-        clear: &KindOfMaskType,
-    ) -> bool {
+    fn obj_is_kind_of_multi(&self, o: ObjectId, set: &KindOfMaskType, clear: &KindOfMaskType) -> bool {
         self.tpl_of(o).kinds.test_set_and_clear(set, clear)
     }
     fn obj_test_status(&self, o: ObjectId, status: ObjectStatusTypes) -> bool {
@@ -584,13 +533,7 @@ impl TeamHost for Sim {
         self.apply_reaction(o, 1);
     }
     fn obj_attempt_damage(&mut self, o: ObjectId, amount: f32) {
-        self.rec(format!(
-            "damage {o} amt={} type={} death={} src={}",
-            fb(amount),
-            DAMAGE_UNRESISTABLE,
-            DEATH_NORMAL,
-            0
-        ));
+        self.rec(format!("damage {o} amt={} type={} death={} src={}", fb(amount), DAMAGE_UNRESISTABLE, DEATH_NORMAL, 0));
         self.apply_reaction(o, 8);
     }
     fn obj_set_team(&mut self, o: ObjectId, team: Option<TeamId>) {
@@ -676,20 +619,14 @@ fn id_list<T: std::fmt::Display>(v: &[T]) -> String {
     if v.is_empty() {
         return "-".into();
     }
-    v.iter()
-        .map(|x| x.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
+    v.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
 }
 
 fn rel_map_str<K: std::fmt::Display>(m: &BTreeMap<K, Relationship>) -> String {
     if m.is_empty() {
         return "-".into();
     }
-    m.iter()
-        .map(|(k, v)| format!("{k}:{}", *v as i32))
-        .collect::<Vec<_>>()
-        .join(",")
+    m.iter().map(|(k, v)| format!("{k}:{}", *v as i32)).collect::<Vec<_>>().join(",")
 }
 
 /// The prototypes alive: the union of the players' lists, in id order.
@@ -737,25 +674,13 @@ fn dump_state(sim: &mut Sim) {
     for pid in alive_protos(sim) {
         let p = sim.teams.prototype(pid).expect("alive prototype");
         let insts = sim.teams.instances(pid);
-        let gens = p
-            .generic_scripts_to_run
-            .iter()
-            .map(|s| s.unwrap_or(0).to_string())
-            .collect::<Vec<_>>()
-            .join(",");
+        let gens = p.generic_scripts_to_run.iter().map(|s| s.unwrap_or(0).to_string()).collect::<Vec<_>>().join(",");
         let t = &p.team_template;
         let units = if t.num_units_info == 0 {
             "-".to_string()
         } else {
             (0..t.num_units_info as usize)
-                .map(|k| {
-                    format!(
-                        "{}/{}/{}",
-                        t.units_info[k].min_units,
-                        t.units_info[k].max_units,
-                        String::from_utf8_lossy(&t.units_info[k].unit_thing_name)
-                    )
-                })
+                .map(|k| format!("{}/{}/{}", t.units_info[k].min_units, t.units_info[k].max_units, String::from_utf8_lossy(&t.units_info[k].unit_thing_name)))
                 .collect::<Vec<_>>()
                 .join(",")
         };
@@ -798,11 +723,7 @@ fn dump_state(sim: &mut Sim) {
             t.initial_team_attitude
         ));
         let s = |v: &[u8]| String::from_utf8_lossy(v).into_owned();
-        let g: String = t
-            .team_generic_scripts
-            .iter()
-            .map(|x| format!("{};", s(x)))
-            .collect();
+        let g: String = t.team_generic_scripts.iter().map(|x| format!("{};", s(x))).collect();
         out.push(format!(
             "D tmpl2 id={} create={} idlescr={} sight={} clear={} unitdead={} dead={} trans={} wp={} full={} exit={} vet={} cond={} exec={} gs={}",
             p.id,
@@ -825,11 +746,7 @@ fn dump_state(sim: &mut Sim) {
     for id in alive_teams(sim) {
         let t = sim.teams.team(id).expect("alive team");
         let mem = sim.teams.members(id);
-        let gen: String = t
-            .should_attempt_generic_script
-            .iter()
-            .map(|b| if *b { '1' } else { '0' })
-            .collect();
+        let gen: String = t.should_attempt_generic_script.iter().map(|b| if *b { '1' } else { '0' }).collect();
         let tr: BTreeMap<u32, Relationship> = t.team_relations.map.clone();
         let pr: BTreeMap<i32, Relationship> = t.player_relations.map.clone();
         out.push(format!(
@@ -868,11 +785,7 @@ fn dump_state(sim: &mut Sim) {
         ));
     }
     for (i, p) in sim.players.iter().enumerate() {
-        out.push(format!(
-            "D player {i} default={} protos={}",
-            tid(p.default_team),
-            id_list(&p.protos)
-        ));
+        out.push(format!("D player {i} default={} protos={}", tid(p.default_team), id_list(&p.protos)));
     }
     sim.lines.extend(out);
 }
@@ -896,10 +809,7 @@ fn team_name(id: u32) -> Vec<u8> {
 }
 
 fn count_str(c: &[i32]) -> String {
-    c.iter()
-        .map(|x| x.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
+    c.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
 }
 
 /// How an error ends a program: a throw upstream makes (the line to write), or an exclusion.
@@ -956,11 +866,7 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
     };
     let np = r.i();
     for i in 0..np {
-        let ty = if r.i() == 0 {
-            PlayerType::Human
-        } else {
-            PlayerType::Computer
-        };
+        let ty = if r.i() == 0 { PlayerType::Human } else { PlayerType::Computer };
         let diff = match r.i() {
             0 => GameDifficulty::Easy,
             1 => GameDifficulty::Normal,
@@ -968,19 +874,8 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
         };
         let rel_salt = r.u();
         let bt = r.i();
-        let beacon = if bt >= 0 {
-            format!("Tpl{bt}").into_bytes()
-        } else {
-            b"NoSuchTemplate".to_vec()
-        };
-        sim.players.push(PlayerSim {
-            ty,
-            diff,
-            rel_salt,
-            beacon,
-            default_team: None,
-            protos: Vec::new(),
-        });
+        let beacon = if bt >= 0 { format!("Tpl{bt}").into_bytes() } else { b"NoSuchTemplate".to_vec() };
+        sim.players.push(PlayerSim { ty, diff, rel_salt, beacon, default_team: None, protos: Vec::new() });
         let k = sim.names.name_to_key(format!("Player{i}").as_bytes());
         sim.player_by_key.insert(k.0, i as usize);
     }
@@ -1005,13 +900,7 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
                 }
             })
             .collect();
-        sim.tpls.push(TplSim {
-            kinds,
-            build_facility,
-            equiv,
-            name,
-            variations,
-        });
+        sim.tpls.push(TplSim { kinds, build_facility, equiv, name, variations });
     }
     let no = r.i();
     for _ in 0..no {
@@ -1058,18 +947,7 @@ fn read_sim(r: &mut Reader<'_>) -> (Sim, Vec<Vec<u8>>) {
         let delay = r.i();
         let (easy, normal, hard, one_shot) = (r.b(), r.b(), r.b(), r.b());
         let pattern = r.u();
-        sim.scripts.push(ScriptSim {
-            serial: i as u32 + 1,
-            name: format!("Scr{i}").into_bytes(),
-            frame,
-            delay,
-            easy,
-            normal,
-            hard,
-            one_shot,
-            pattern,
-            calls: 0,
-        });
+        sim.scripts.push(ScriptSim { serial: i as u32 + 1, name: format!("Scr{i}").into_bytes(), frame, delay, easy, normal, hard, one_shot, pattern, calls: 0 });
     }
     let nw = r.i();
     for _ in 0..nw {
@@ -1116,21 +994,12 @@ fn run_rust(words: &[u32], tmp: &mut Vec<u8>) -> Result<Vec<String>, Excluded> {
             Ok(()) => {
                 dump_state(&mut sim);
                 if sim.dangling.get() {
-                    return Err(Excluded(
-                        "a player's list names a prototype that was deleted",
-                    ));
+                    return Err(Excluded("a player's list names a prototype that was deleted"));
                 }
             }
             Err(e) => {
                 if std::env::var_os("TEAM_WHY").is_some() {
-                    eprintln!(
-                        "WHY {e:?} at op {op} sub {}",
-                        if op == 15 || op == 16 {
-                            words.get(args_at + 1).copied().unwrap_or(0)
-                        } else {
-                            0
-                        }
-                    );
+                    eprintln!("WHY {e:?} at op {op} sub {}", if op == 15 || op == 16 { words.get(args_at + 1).copied().unwrap_or(0) } else { 0 });
                 }
                 let line = thrown(e)?;
                 sim.rec(line);
@@ -1155,15 +1024,7 @@ fn run_rust(words: &[u32], tmp: &mut Vec<u8>) -> Result<Vec<String>, Excluded> {
 
 fn thing_list(sim: &Sim, a: &[u32; 8]) -> (Vec<Option<TemplateRef>>, Vec<i32>) {
     let n = (a[0] % 5) as usize;
-    let things = (0..n)
-        .map(|k| {
-            if a[1 + k] != 0 {
-                Some(((a[1 + k] - 1) as usize % sim.tpls.len()) as TemplateRef)
-            } else {
-                None
-            }
-        })
-        .collect();
+    let things = (0..n).map(|k| if a[1 + k] != 0 { Some(((a[1 + k] - 1) as usize % sim.tpls.len()) as TemplateRef) } else { None }).collect();
     (things, vec![0; n])
 }
 
@@ -1176,11 +1037,7 @@ fn do_op(sim: &mut Sim, op: u32, r: &mut Reader<'_>) -> Result<(), TeamError> {
         }
         1 => {
             let (name_id, owner_sel, singleton, dict_idx) = (r.u(), r.u(), r.b(), r.u());
-            let owner = if (owner_sel as usize % (np + 1)) < np {
-                format!("Player{}", owner_sel as usize % (np + 1))
-            } else {
-                "Nobody".to_string()
-            };
+            let owner = if (owner_sel as usize % (np + 1)) < np { format!("Player{}", owner_sel as usize % (np + 1)) } else { "Nobody".to_string() };
             let d = if sim.dicts.is_empty() {
                 Dict::new()
             } else {
@@ -1219,11 +1076,7 @@ fn do_op(sim: &mut Sim, op: u32, r: &mut Reader<'_>) -> Result<(), TeamError> {
         }
         8 => {
             let sel = r.u();
-            let p = if sel != 0 {
-                pick_proto(sim, sel - 1)
-            } else {
-                None
-            };
+            let p = if sel != 0 { pick_proto(sim, sel - 1) } else { None };
             let t = factory_create_team_on_prototype(sim, p)?;
             sim.rec(format!("ret team {t}"));
         }
@@ -1251,11 +1104,7 @@ fn do_op(sim: &mut Sim, op: u32, r: &mut Reader<'_>) -> Result<(), TeamError> {
         }
         13 => {
             let (ok, ts) = (r.u(), r.u());
-            let t = if ts != 0 {
-                pick_team(sim, ts - 1)
-            } else {
-                None
-            };
+            let t = if ts != 0 { pick_team(sim, ts - 1) } else { None };
             if ts != 0 && t.is_none() {
                 sim.rec("skip".into());
             } else {
@@ -1265,11 +1114,7 @@ fn do_op(sim: &mut Sim, op: u32, r: &mut Reader<'_>) -> Result<(), TeamError> {
         }
         14 => {
             let (pk, ts) = (r.u(), r.u());
-            let t = if ts != 0 {
-                pick_team(sim, ts - 1)
-            } else {
-                None
-            };
+            let t = if ts != 0 { pick_team(sim, ts - 1) } else { None };
             if ts != 0 && t.is_none() {
                 sim.rec("skip".into());
             } else {
@@ -1323,11 +1168,7 @@ fn do_op(sim: &mut Sim, op: u32, r: &mut Reader<'_>) -> Result<(), TeamError> {
                 sim.saved = bytes;
                 sim.have_save = true;
                 sim.saved_obj_team = sim.objs.iter().map(|o| (o.id, tid(o.team))).collect();
-                sim.rec(format!(
-                    "ret xfer-save len={} hash={:08x}",
-                    sim.saved.len(),
-                    hash_bytes(&sim.saved)
-                ));
+                sim.rec(format!("ret xfer-save len={} hash={:08x}", sim.saved.len(), hash_bytes(&sim.saved)));
             } else if !sim.have_save {
                 sim.rec("skip".into());
             } else {
@@ -1340,11 +1181,7 @@ fn do_op(sim: &mut Sim, op: u32, r: &mut Reader<'_>) -> Result<(), TeamError> {
                 let ids: Vec<ObjectId> = sim.objs.iter().map(|o| o.id).collect();
                 for id in ids {
                     let saved = sim.saved_obj_team.get(&id).copied().unwrap_or(0);
-                    let t = if saved != 0 {
-                        factory_find_team_by_id(sim, saved)
-                    } else {
-                        None
-                    };
+                    let t = if saved != 0 { factory_find_team_by_id(sim, saved) } else { None };
                     sim.obj_set_team(id, t);
                 }
                 // post process: the teams (in id order), then the factory
@@ -1356,11 +1193,7 @@ fn do_op(sim: &mut Sim, op: u32, r: &mut Reader<'_>) -> Result<(), TeamError> {
         }
         19 => {
             let ts = r.u();
-            let t = if ts != 0 {
-                pick_team(sim, ts - 1)
-            } else {
-                None
-            };
+            let t = if ts != 0 { pick_team(sim, ts - 1) } else { None };
             if ts != 0 && t.is_none() {
                 sim.rec("skip".into());
             } else {
@@ -1380,20 +1213,12 @@ fn team_op(sim: &mut Sim, t: TeamId, sub: u32, a: &[u32; 8]) -> Result<(), TeamE
             sim.rec(format!("ret targetable {v}"));
         }
         1 => {
-            let that = if a[0] != 0 {
-                pick_team(sim, a[0] - 1)
-            } else {
-                None
-            };
+            let that = if a[0] != 0 { pick_team(sim, a[0] - 1) } else { None };
             let v = team_get_relationship(sim, t, that)?;
             sim.rec(format!("ret rel {}", v as i32));
         }
         2 => {
-            let o = if a[0] != 0 {
-                Some(sim.objs[(a[0] - 1) as usize % sim.objs.len()].id)
-            } else {
-                None
-            };
+            let o = if a[0] != 0 { Some(sim.objs[(a[0] - 1) as usize % sim.objs.len()].id) } else { None };
             team_set_team_target_object(sim, t, o)?;
         }
         3 => {
@@ -1412,14 +1237,7 @@ fn team_op(sim: &mut Sim, t: TeamId, sub: u32, a: &[u32; 8]) -> Result<(), TeamE
         }
         8 => {
             let (things, mut counts) = thing_list(sim, a);
-            team_count_objects_by_thing_template(
-                sim,
-                t,
-                &things,
-                a[5] != 0,
-                &mut counts,
-                a[6] != 0,
-            );
+            team_count_objects_by_thing_template(sim, t, &things, a[5] != 0, &mut counts, a[6] != 0);
             sim.rec(format!("ret count {}", count_str(&counts)));
         }
         9 => {
@@ -1474,19 +1292,11 @@ fn team_op(sim: &mut Sim, t: TeamId, sub: u32, a: &[u32; 8]) -> Result<(), TeamE
         },
         22 => team_delete_team(sim, t, a[0] != 0)?,
         23 => {
-            let other = if a[0] != 0 {
-                pick_team(sim, a[0] - 1)
-            } else {
-                None
-            };
+            let other = if a[0] != 0 { pick_team(sim, a[0] - 1) } else { None };
             team_transfer_units_to(sim, t, other)?;
         }
         24 => {
-            let home = Coord3D {
-                x: f32::from_bits(a[1]),
-                y: f32::from_bits(a[2]),
-                z: f32::from_bits(a[3]),
-            };
+            let home = Coord3D { x: f32::from_bits(a[1]), y: f32::from_bits(a[2]), z: f32::from_bits(a[3]) };
             let md = f32::from_bits(a[4]);
             let tpl = (a[0] as usize % sim.tpls.len()) as TemplateRef;
             let o = team_try_to_recruit(sim, t, tpl, home, md)?;
@@ -1498,15 +1308,7 @@ fn team_op(sim: &mut Sim, t: TeamId, sub: u32, a: &[u32; 8]) -> Result<(), TeamE
             let v = team_damage_team_members(sim, t, f32::from_bits(a[0]));
             sim.rec(format!("ret damage {}", v as u32));
         }
-        28 => team_move_team_to(
-            sim,
-            t,
-            Coord3D {
-                x: f32::from_bits(a[0]),
-                y: f32::from_bits(a[1]),
-                z: f32::from_bits(a[2]),
-            },
-        ),
+        28 => team_move_team_to(sim, t, Coord3D { x: f32::from_bits(a[0]), y: f32::from_bits(a[1]), z: f32::from_bits(a[2]) }),
         29 => {
             let v = team_has_any_build_facility(sim, t)?;
             sim.rec(format!("ret buildfacility {}", v as u32));
@@ -1514,46 +1316,22 @@ fn team_op(sim: &mut Sim, t: TeamId, sub: u32, a: &[u32; 8]) -> Result<(), TeamE
         30 => team_update_generic_scripts(sim, t)?,
         31 => team_set_active(sim, t)?,
         32 => {
-            sim.teams
-                .team_mut(t)
-                .ok_or(TeamError::Null)?
-                .set_state(&team_name(a[0]));
-            let s = String::from_utf8_lossy(sim.teams.team(t).ok_or(TeamError::Null)?.get_state())
-                .into_owned();
+            sim.teams.team_mut(t).ok_or(TeamError::Null)?.set_state(&team_name(a[0]));
+            let s = String::from_utf8_lossy(sim.teams.team(t).ok_or(TeamError::Null)?.get_state()).into_owned();
             sim.rec(format!("ret state {s}"));
         }
-        33 => sim
-            .teams
-            .team_mut(t)
-            .ok_or(TeamError::Null)?
-            .set_recruitable(a[0] != 0),
-        34 => sim
-            .teams
-            .team_mut(t)
-            .ok_or(TeamError::Null)?
-            .set_entered_exited(),
+        33 => sim.teams.team_mut(t).ok_or(TeamError::Null)?.set_recruitable(a[0] != 0),
+        34 => sim.teams.team_mut(t).ok_or(TeamError::Null)?.set_entered_exited(),
         35 => {
-            let w = if a[0] != 0 && !sim.ways.is_empty() {
-                Some(sim.ways[(a[0] - 1) as usize % sim.ways.len()].1)
-            } else {
-                None
-            };
-            sim.teams
-                .team_mut(t)
-                .ok_or(TeamError::Null)?
-                .set_current_waypoint(w);
-            let w = sim
-                .teams
-                .team(t)
-                .ok_or(TeamError::Null)?
-                .get_current_waypoint();
+            let w = if a[0] != 0 && !sim.ways.is_empty() { Some(sim.ways[(a[0] - 1) as usize % sim.ways.len()].1) } else { None };
+            sim.teams.team_mut(t).ok_or(TeamError::Null)?.set_current_waypoint(w);
+            let w = sim.teams.team(t).ok_or(TeamError::Null)?.get_current_waypoint();
             sim.rec(format!("ret waypoint {}", w.unwrap_or(0)));
         }
         36 => team_set_attack_priority_name(sim, t, &team_name(a[0]))?,
         37 => {
             let p = team_get_controlling_player(sim, t)?;
-            let name = String::from_utf8_lossy(sim.teams.team_name(t).ok_or(TeamError::Null)?)
-                .into_owned();
+            let name = String::from_utf8_lossy(sim.teams.team_name(t).ok_or(TeamError::Null)?).into_owned();
             let tm = sim.teams.team(t).ok_or(TeamError::Null)?;
             let line = format!(
                 "ret getters name={} player={} active={} created={} eoe={} proto={}",
@@ -1567,19 +1345,11 @@ fn team_op(sim: &mut Sim, t: TeamId, sub: u32, a: &[u32; 8]) -> Result<(), TeamE
             sim.rec(line);
         }
         38 => {
-            let p = if a[0] != 0 {
-                Some(((a[0] - 1) as usize % np) as PlayerIndex)
-            } else {
-                None
-            };
+            let p = if a[0] != 0 { Some(((a[0] - 1) as usize % np) as PlayerIndex) } else { None };
             team_set_controlling_player(sim, t, p)?;
         }
         39 => {
-            let g = if a[0] != 0 {
-                Some((a[0] - 1) % 3 + 1)
-            } else {
-                None
-            };
+            let g = if a[0] != 0 { Some((a[0] - 1) % 3 + 1) } else { None };
             team_get_team_as_ai_group(sim, t, g);
         }
         _ => sim.rec("ret nop".into()),
@@ -1607,23 +1377,12 @@ fn proto_op(sim: &mut Sim, p: TeamPrototypeId, sub: u32, a: &[u32; 8]) -> Result
             sim.rec(format!("ret findteam {}", tid(t)));
         }
         2 => {
-            let pl = if a[0] != 0 {
-                Some(((a[0] - 1) as usize % np) as PlayerIndex)
-            } else {
-                None
-            };
+            let pl = if a[0] != 0 { Some(((a[0] - 1) as usize % np) as PlayerIndex) } else { None };
             proto_set_controlling_player(sim, p, pl)?;
         }
         3 => {
             let (things, mut counts) = thing_list(sim, a);
-            proto_count_objects_by_thing_template(
-                sim,
-                p,
-                &things,
-                a[5] != 0,
-                &mut counts,
-                a[6] != 0,
-            );
+            proto_count_objects_by_thing_template(sim, p, &things, a[5] != 0, &mut counts, a[6] != 0);
             sim.rec(format!("ret count {}", count_str(&counts)));
         }
         4 => {
@@ -1632,22 +1391,12 @@ fn proto_op(sim: &mut Sim, p: TeamPrototypeId, sub: u32, a: &[u32; 8]) -> Result
         }
         5 => {
             proto_increase_ai_priority_for_success(sim, p)?;
-            let v = sim
-                .teams
-                .prototype(p)
-                .ok_or(TeamError::Null)?
-                .team_template
-                .production_priority;
+            let v = sim.teams.prototype(p).ok_or(TeamError::Null)?.team_template.production_priority;
             sim.rec(format!("ret prio {v}"));
         }
         6 => {
             proto_decrease_ai_priority_for_failure(sim, p)?;
-            let v = sim
-                .teams
-                .prototype(p)
-                .ok_or(TeamError::Null)?
-                .team_template
-                .production_priority;
+            let v = sim.teams.prototype(p).ok_or(TeamError::Null)?.team_template.production_priority;
             sim.rec(format!("ret prio {v}"));
         }
         7 => {
@@ -1685,15 +1434,7 @@ fn proto_op(sim: &mut Sim, p: TeamPrototypeId, sub: u32, a: &[u32; 8]) -> Result
             sim.rec(format!("ret buildfacility {}", v as u32));
         }
         17 => proto_damage_team_members(sim, p, f32::from_bits(a[0])),
-        18 => proto_move_team_to(
-            sim,
-            p,
-            Coord3D {
-                x: f32::from_bits(a[0]),
-                y: f32::from_bits(a[1]),
-                z: f32::from_bits(a[2]),
-            },
-        ),
+        18 => proto_move_team_to(sim, p, Coord3D { x: f32::from_bits(a[0]), y: f32::from_bits(a[1]), z: f32::from_bits(a[2]) }),
         19 => proto_update_state(sim, p)?,
         20 => {
             let v = proto_evaluate_production_condition(sim, p)?;
@@ -1701,35 +1442,16 @@ fn proto_op(sim: &mut Sim, p: TeamPrototypeId, sub: u32, a: &[u32; 8]) -> Result
         }
         21 => {
             let pr = sim.teams.prototype(p).ok_or(TeamError::Null)?;
-            let line = format!(
-                "ret getters id={} name={} singleton={} maxi={}",
-                pr.id,
-                String::from_utf8_lossy(&pr.name),
-                pr.get_is_singleton() as u32,
-                pr.team_template.max_instances
-            );
+            let line = format!("ret getters id={} name={} singleton={} maxi={}", pr.id, String::from_utf8_lossy(&pr.name), pr.get_is_singleton() as u32, pr.team_template.max_instances);
             sim.rec(line);
         }
         22 => {
-            let t = if a[0] != 0 {
-                pick_team(sim, a[0] - 1)
-            } else {
-                None
-            };
+            let t = if a[0] != 0 { pick_team(sim, a[0] - 1) } else { None };
             proto_team_about_to_be_deleted(sim, p, t)?;
         }
         23 => {
-            sim.teams
-                .prototype_mut(p)
-                .ok_or(TeamError::Null)?
-                .attack_priority_name = team_name(a[0]);
-            let s = String::from_utf8_lossy(
-                &sim.teams
-                    .prototype(p)
-                    .ok_or(TeamError::Null)?
-                    .attack_priority_name,
-            )
-            .into_owned();
+            sim.teams.prototype_mut(p).ok_or(TeamError::Null)?.attack_priority_name = team_name(a[0]);
+            let s = String::from_utf8_lossy(&sim.teams.prototype(p).ok_or(TeamError::Null)?.attack_priority_name).into_owned();
             sim.rec(format!("ret attack {s}"));
         }
         _ => sim.rec("ret nop".into()),
@@ -1765,13 +1487,7 @@ fn obj_op(sim: &mut Sim, o: ObjectId, sub: u32, a: &[u32; 8]) {
             ob.surfaces = a[2];
             ob.has_ai = a[3] != 0;
         }
-        9 => {
-            ob.pos = Coord3D {
-                x: f32::from_bits(a[0]),
-                y: f32::from_bits(a[1]),
-                z: f32::from_bits(a[2]),
-            }
-        }
+        9 => ob.pos = Coord3D { x: f32::from_bits(a[0]), y: f32::from_bits(a[1]), z: f32::from_bits(a[2]) },
         10 => ob.reactions = a[0],
         11 => ob.vision = f32::from_bits(a[0]),
         _ => {}
@@ -1787,30 +1503,19 @@ fn chance(g: &mut Gen, percent: u32) -> bool {
 }
 
 fn gen_coord(g: &mut Gen, spread: f32) -> [f32; 3] {
-    [
-        g.uniform(-spread, spread),
-        g.uniform(-spread, spread),
-        g.uniform(0.0, 20.0),
-    ]
+    [g.uniform(-spread, spread), g.uniform(-spread, spread), g.uniform(0.0, 20.0)]
 }
 
 /// A dictionary: a random subset of the properties of a team, with values of the right type.
 fn gen_dict(g: &mut Gen, w: &mut W, n_players: u32, n_tpls: u32, n_ways: u32, n_scripts: u32) {
     let mut entries: Vec<(i32, String, u32, String)> = Vec::new();
-    let mut add = |ty: i32, key: &str, bits: u32, s: &str| {
-        entries.push((ty, key.to_string(), bits, s.to_string()))
-    };
+    let mut add = |ty: i32, key: &str, bits: u32, s: &str| entries.push((ty, key.to_string(), bits, s.to_string()));
     let script = |g: &mut Gen| format!("Scr{}", g.below(n_scripts.max(1) + 1));
     if chance(g, 60) {
         add(3, "teamName", 0, &format!("Team{}", g.below(4)));
     }
     if chance(g, 60) {
-        add(
-            3,
-            "teamOwner",
-            0,
-            &format!("Player{}", g.below(n_players + 1)),
-        );
+        add(3, "teamOwner", 0, &format!("Player{}", g.below(n_players + 1)));
     }
     if chance(g, 40) {
         add(0, "teamIsSingleton", g.below(2), "");
@@ -1820,34 +1525,16 @@ fn gen_dict(g: &mut Gen, w: &mut W, n_players: u32, n_tpls: u32, n_ways: u32, n_
     }
     for k in 1..=7u32 {
         if chance(g, 25) {
-            add(
-                3,
-                &format!("teamUnitType{k}"),
-                0,
-                &format!("Tpl{}", g.below(n_tpls + 2)),
-            );
+            add(3, &format!("teamUnitType{k}"), 0, &format!("Tpl{}", g.below(n_tpls + 2)));
         }
         if chance(g, 25) {
             add(1, &format!("teamUnitMinCount{k}"), g.below(5), "");
         }
         if chance(g, 25) {
-            add(
-                1,
-                &format!("teamUnitMaxCount{k}"),
-                (g.below(7) as i32 - 1) as u32,
-                "",
-            );
+            add(1, &format!("teamUnitMaxCount{k}"), (g.below(7) as i32 - 1) as u32, "");
         }
     }
-    for key in [
-        "teamOnCreateScript",
-        "teamOnIdleScript",
-        "teamOnUnitDestroyedScript",
-        "teamOnDestroyedScript",
-        "teamEnemySightedScript",
-        "teamAllClearScript",
-        "teamProductionCondition",
-    ] {
+    for key in ["teamOnCreateScript", "teamOnIdleScript", "teamOnUnitDestroyedScript", "teamOnDestroyedScript", "teamEnemySightedScript", "teamAllClearScript", "teamProductionCondition"] {
         if chance(g, 50) {
             let s = script(g);
             add(3, key, 0, &s);
@@ -1869,14 +1556,7 @@ fn gen_dict(g: &mut Gen, w: &mut W, n_players: u32, n_tpls: u32, n_ways: u32, n_
             add(0, key, g.below(2), "");
         }
     }
-    for key in [
-        "teamInitialIdleFrames",
-        "teamMaxInstances",
-        "teamProductionPriority",
-        "teamProductionPrioritySuccessIncrease",
-        "teamProductionPriorityFailureDecrease",
-        "teamVeterancy",
-    ] {
+    for key in ["teamInitialIdleFrames", "teamMaxInstances", "teamProductionPriority", "teamProductionPrioritySuccessIncrease", "teamProductionPriorityFailureDecrease", "teamVeterancy"] {
         if chance(g, 40) {
             add(1, key, (g.below(12) as i32 - 3) as u32, "");
         }
@@ -1885,9 +1565,7 @@ fn gen_dict(g: &mut Gen, w: &mut W, n_players: u32, n_tpls: u32, n_ways: u32, n_
         add(1, "teamAggressiveness", (g.below(6) as i32 - 2) as u32, "");
     }
     if chance(g, 50) {
-        let v = *[0.0f32, 0.25, 0.5, 0.75, 1.0, 1.5, -0.5]
-            .get(g.below(7) as usize)
-            .unwrap();
+        let v = *[0.0f32, 0.25, 0.5, 0.75, 1.0, 1.5, -0.5].get(g.below(7) as usize).unwrap();
         add(2, "teamDestroyedThreshold", v.to_bits(), "");
     }
     for key in ["teamTransport", "teamReinforcementOrigin"] {
@@ -1971,11 +1649,7 @@ fn gen_header(g: &mut Gen, w: &mut W) -> u32 {
         w.u(g.below(32));
         w.i(if chance(g, 50) { -1 } else { g.below(4) as i32 });
         if chance(g, 50) {
-            w.c([
-                (g.below(3) as f32 - 1.0) * 10.0,
-                (g.below(3) as f32 - 1.0) * 10.0,
-                0.0,
-            ]);
+            w.c([(g.below(3) as f32 - 1.0) * 10.0, (g.below(3) as f32 - 1.0) * 10.0, 0.0]);
         } else {
             w.c(gen_coord(g, 300.0));
         }
@@ -2021,17 +1695,9 @@ fn gen_header(g: &mut Gen, w: &mut W) -> u32 {
 /// A grid coordinate (ties in distances) or a free one.
 fn gen_pos(g: &mut Gen) -> [f32; 3] {
     if chance(g, 50) {
-        [
-            (g.below(3) as f32 - 1.0) * 10.0,
-            (g.below(3) as f32 - 1.0) * 10.0,
-            0.0,
-        ]
+        [(g.below(3) as f32 - 1.0) * 10.0, (g.below(3) as f32 - 1.0) * 10.0, 0.0]
     } else {
-        [
-            g.uniform(-300.0, 300.0),
-            g.uniform(-300.0, 300.0),
-            g.uniform(0.0, 20.0),
-        ]
+        [g.uniform(-300.0, 300.0), g.uniform(-300.0, 300.0), g.uniform(0.0, 20.0)]
     }
 }
 
@@ -2072,19 +1738,9 @@ fn gen_team_op(g: &mut Gen, w: &mut W, tk: u32, sub: u32) {
             a[1] = p[0].to_bits();
             a[2] = p[1].to_bits();
             a[3] = p[2].to_bits();
-            a[4] = if chance(g, 50) {
-                (g.below(4) as f32 * 10.0).to_bits()
-            } else {
-                g.uniform(0.0, 400.0).to_bits()
-            };
+            a[4] = if chance(g, 50) { (g.below(4) as f32 * 10.0).to_bits() } else { g.uniform(0.0, 400.0).to_bits() };
         }
-        27 => {
-            a[0] = if chance(g, 15) {
-                0f32.to_bits()
-            } else {
-                g.uniform(-5.0, 120.0).to_bits()
-            }
-        }
+        27 => a[0] = if chance(g, 15) { 0f32.to_bits() } else { g.uniform(-5.0, 120.0).to_bits() },
         28 => {
             let p = gen_pos(g);
             a[0] = p[0].to_bits();
@@ -2124,13 +1780,7 @@ fn gen_proto_op(g: &mut Gen, w: &mut W, pk: u32, sub: u32) {
             a[0] = g.below(256);
             a[1] = g.below(256);
         }
-        17 => {
-            a[0] = if chance(g, 15) {
-                0f32.to_bits()
-            } else {
-                g.uniform(-5.0, 120.0).to_bits()
-            }
-        }
+        17 => a[0] = if chance(g, 15) { 0f32.to_bits() } else { g.uniform(-5.0, 120.0).to_bits() },
         18 => {
             let p = gen_pos(g);
             a[0] = p[0].to_bits();
@@ -2409,40 +2059,21 @@ fn gen_program(seed: u64) -> Vec<u32> {
 // ---------------------------------------------------------------------------------------------------------------------
 
 fn cpp_run(words: &[u32]) -> Vec<String> {
-    let path = CString::new(format!(
-        "{}/team_{}.bin",
-        std::env::temp_dir().display(),
-        std::process::id()
-    ))
-    .unwrap();
+    let path = CString::new(format!("{}/team_{}.bin", std::env::temp_dir().display(), std::process::id())).unwrap();
     let mut cap = 1 << 20;
     loop {
         let mut buf = vec![0u8; cap];
-        let n = unsafe {
-            cpp::ref_team_run(
-                words.as_ptr(),
-                words.len() as i32,
-                path.as_ptr(),
-                buf.as_mut_ptr() as *mut std::os::raw::c_char,
-                cap as i32,
-            )
-        } as usize;
+        let n = unsafe { cpp::ref_team_run(words.as_ptr(), words.len() as i32, path.as_ptr(), buf.as_mut_ptr() as *mut std::os::raw::c_char, cap as i32) } as usize;
         if n <= cap {
             buf.truncate(n);
-            return String::from_utf8_lossy(&buf)
-                .lines()
-                .map(str::to_owned)
-                .collect();
+            return String::from_utf8_lossy(&buf).lines().map(str::to_owned).collect();
         }
         cap = n + 1;
     }
 }
 
 fn cases() -> u64 {
-    std::env::var("TEAM_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1500)
+    std::env::var("TEAM_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(1500)
 }
 
 #[test]
@@ -2453,43 +2084,11 @@ fn team_matches_upstream() {
     let mut why_counts: BTreeMap<&str, u64> = BTreeMap::new();
     let mut counts: BTreeMap<String, u64> = BTreeMap::new();
     let markers = [
-        "ret team ",
-        "ret proto ",
-        "ret rel ",
-        "ret count ",
-        "ret trigger ",
-        "ret recruit ",
-        "ret xfer-load",
-        "ret xfer-save",
-        "threw badarg",
-        "threw invaliddata",
-        "setteam ",
-        "kill ",
-        "damage ",
-        "heal ",
-        "destroy ",
-        "remove-all-contained",
-        "group.add",
-        "script.dup",
-        "eval ",
-        "exec ",
-        "run ",
-        "dbg ",
-        "closest ",
-        "pcm ",
-        "p.add",
-        "p.remove",
-        "p.pre",
-        "pl.about",
-        "notify-destroy",
-        "iter ",
-        "skip",
-        "D team ",
+        "ret team ", "ret proto ", "ret rel ", "ret count ", "ret trigger ", "ret recruit ", "ret xfer-load", "ret xfer-save", "threw badarg", "threw invaliddata",
+        "setteam ", "kill ", "damage ", "heal ", "destroy ", "remove-all-contained", "group.add", "script.dup", "eval ", "exec ", "run ", "dbg ", "closest ", "pcm ",
+        "p.add", "p.remove", "p.pre", "pl.about", "notify-destroy", "iter ", "skip", "D team ",
     ];
-    let from: u64 = std::env::var("TEAM_FROM")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
+    let from: u64 = std::env::var("TEAM_FROM").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
     let mut tmp = Vec::new();
     for case in from..from + cases() {
         let words = gen_program(0x7ea0_0000 + case);
@@ -2511,26 +2110,16 @@ fn team_matches_upstream() {
                 }
             }
         }
-        check.eq(rust.len(), cpp_lines.len(), || {
-            format!("program {case}: line count")
-        });
+        check.eq(rust.len(), cpp_lines.len(), || format!("program {case}: line count"));
         for (i, (a, b)) in rust.iter().zip(cpp_lines.iter()).enumerate() {
-            check.eq(a.as_str(), b.as_str(), || {
-                format!("program {case} line {i}")
-            });
+            check.eq(a.as_str(), b.as_str(), || format!("program {case} line {i}"));
         }
     }
     println!("RESULT programs {programs}, excluded (upstream undefined) {excluded}, lines compared {lines}");
     // A corruption of the Rust arena surfaces as a dereference of a `NULL` or dangling team, which is also what an
     // undefined upstream input looks like; the clean translation has a steady rate of the latter, so a jump in it is a defect.
-    let nulls = why_counts
-        .get("a NULL or dangling pointer dereferenced")
-        .copied()
-        .unwrap_or(0);
-    assert!(
-        nulls * 100 <= programs * 13,
-        "{nulls} of {programs} programs dereference a NULL or dangling team: the arena is corrupt"
-    );
+    let nulls = why_counts.get("a NULL or dangling pointer dereferenced").copied().unwrap_or(0);
+    assert!(nulls * 100 <= programs * 13, "{nulls} of {programs} programs dereference a NULL or dangling team: the arena is corrupt");
     for (why, c) in &why_counts {
         println!("RESULT   excluded: {why}: {c}");
     }

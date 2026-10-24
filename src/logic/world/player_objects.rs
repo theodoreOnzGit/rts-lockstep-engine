@@ -49,15 +49,14 @@ use crate::common::base_type::{real_to_int_ceil, Coord3D};
 use crate::common::game_common::{PlayerType, Relationship};
 use crate::common::game_type::ObjectId;
 use crate::common::kind_of::{
-    KindOfMaskType, KINDOF_COMMANDCENTER, KINDOF_DISGUISER, KINDOF_DOZER, KINDOF_FS_POWER,
-    KINDOF_HARVESTER, KINDOF_IGNORES_SELECT_ALL, KINDOF_PROJECTILE, KINDOF_STRUCTURE,
+    KindOfMaskType, KINDOF_COMMANDCENTER, KINDOF_DISGUISER, KINDOF_DOZER, KINDOF_FS_POWER, KINDOF_HARVESTER, KINDOF_IGNORES_SELECT_ALL, KINDOF_PROJECTILE,
+    KINDOF_STRUCTURE,
 };
 use crate::common::name_key_generator::NameKeyType;
 use crate::common::object_status_types::{OBJECT_STATUS_SOLD, OBJECT_STATUS_UNDER_CONSTRUCTION};
 use crate::common::special_power_type::{
-    SpecialPowerType, LAZR_SPECIAL_PARTICLE_UPLINK_CANNON, NUKE_SPECIAL_NEUTRON_MISSILE,
-    SPECIAL_INVALID, SPECIAL_NEUTRON_MISSILE, SPECIAL_PARTICLE_UPLINK_CANNON, SPECIAL_SCUD_STORM,
-    SUPW_SPECIAL_NEUTRON_MISSILE, SUPW_SPECIAL_PARTICLE_UPLINK_CANNON,
+    SpecialPowerType, LAZR_SPECIAL_PARTICLE_UPLINK_CANNON, NUKE_SPECIAL_NEUTRON_MISSILE, SPECIAL_INVALID, SPECIAL_NEUTRON_MISSILE, SPECIAL_PARTICLE_UPLINK_CANNON,
+    SPECIAL_SCUD_STORM, SUPW_SPECIAL_NEUTRON_MISSILE, SUPW_SPECIAL_PARTICLE_UPLINK_CANNON,
 };
 use crate::logic::client_event::ClientEvent;
 use crate::logic::weapon_bonus::condition as wbc;
@@ -137,11 +136,7 @@ pub trait PlayerObjectHost: PlayerHost {
     /// `obj->hasSpecialPower(type)`.
     fn obj_has_special_power(&self, o: ObjectId, t: SpecialPowerType) -> bool;
     /// `obj->findSpecialPowerModuleInterface(type)`.
-    fn obj_find_special_power(
-        &self,
-        o: ObjectId,
-        t: SpecialPowerType,
-    ) -> Option<SpecialPowerModuleRef>;
+    fn obj_find_special_power(&self, o: ObjectId, t: SpecialPowerType) -> Option<SpecialPowerModuleRef>;
     /// `sp->isScriptOnly()`.
     fn sp_is_script_only(&self, m: SpecialPowerModuleRef) -> bool;
     /// `sp->getReadyFrame()`.
@@ -191,12 +186,7 @@ pub trait PlayerObjectHost: PlayerHost {
     /// `obj->getContain() != NULL`.
     fn obj_has_contain(&self, o: ObjectId) -> bool;
     /// `TheActionManager->canEnterObject(obj, building, source, CHECK_CAPACITY)`.
-    fn action_can_enter_object(
-        &mut self,
-        o: ObjectId,
-        building: ObjectId,
-        source: CommandSource,
-    ) -> bool;
+    fn action_can_enter_object(&mut self, o: ObjectId, building: ObjectId, source: CommandSource) -> bool;
     /// `TheBuildAssistant->sellObject(obj)`.
     fn build_assistant_sell_object(&mut self, o: ObjectId);
     /// `obj->isFactionStructure()`.
@@ -248,6 +238,7 @@ pub trait PlayerObjectHost: PlayerHost {
     fn player_template_find(&self, key: NameKeyType) -> Option<PlayerTemplateRef>;
 }
 
+
 fn pl<H: PlayerObjectHost>(h: &H, p: PlayerIndex) -> PResult<&Player> {
     h.players().get_nth(p).ok_or(PlayerError::NoPlayer)
 }
@@ -257,11 +248,7 @@ fn plm<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex) -> PResult<&mut Player> {
 }
 
 /// The team instances' members of every prototype of the player, as `for_each_member` of `player_ops.rs` walks them.
-pub(super) fn for_each_member<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    mut body: impl FnMut(&mut H, ObjectId),
-) -> PResult<()> {
+pub(super) fn for_each_member<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, mut body: impl FnMut(&mut H, ObjectId)) -> PResult<()> {
     for proto in pl(h, p)?.team_prototypes.clone() {
         let mut cur_t = h.teams().first_instance(proto);
         while let Some(t) = cur_t {
@@ -277,20 +264,14 @@ pub(super) fn for_each_member<H: PlayerObjectHost>(
 }
 
 fn not_under_construction_or_sold<H: PlayerObjectHost>(h: &H, o: ObjectId) -> bool {
-    !h.obj_test_status(o, OBJECT_STATUS_UNDER_CONSTRUCTION)
-        && !h.obj_test_status(o, OBJECT_STATUS_SOLD)
+    !h.obj_test_status(o, OBJECT_STATUS_UNDER_CONSTRUCTION) && !h.obj_test_status(o, OBJECT_STATUS_SOLD)
 }
 
 // ---- team membership and the local player ---------------------------------------------------------------------------
 
 /// `Player::becomingTeamMember(obj, yes)`: the object has just become (or ceased to be) a member of one of the
 /// player's teams.
-pub fn player_becoming_team_member<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    obj: Option<ObjectId>,
-    yes: bool,
-) -> PResult<()> {
+pub fn player_becoming_team_member<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, obj: Option<ObjectId>, yes: bool) -> PResult<()> {
     let Some(obj) = obj else { return Ok(()) };
     if !h.obj_test_status(obj, OBJECT_STATUS_UNDER_CONSTRUCTION) || plant(101) {
         h.obj_friend_adjust_power_for_player(obj, yes);
@@ -308,8 +289,7 @@ pub fn player_becoming_team_member<H: PlayerObjectHost>(
             player_remove_battle_plan_bonuses_for_object(h, p, obj)?;
         }
     }
-    if h.obj_is_kind_of(obj, KINDOF_DOZER) && h.obj_has_ai(obj) && (h.ai_is_idle(obj) || plant(105))
-    {
+    if h.obj_is_kind_of(obj, KINDOF_DOZER) && h.obj_has_ai(obj) && (h.ai_is_idle(obj) || plant(105)) {
         if yes {
             h.ui_add_idle_worker(obj);
         } else {
@@ -320,20 +300,14 @@ pub fn player_becoming_team_member<H: PlayerObjectHost>(
 }
 
 /// `Player::becomingLocalPlayer(yes)`: the player becomes (or ceases to be) the local player.
-pub fn player_becoming_local_player<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    yes: bool,
-) -> PResult<()> {
+pub fn player_becoming_local_player<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, yes: bool) -> PResult<()> {
     if yes {
         // TheGameClient->setTeamColor(REAL_TO_INT(rgb.red*255), ...) with rgb.setFromInt(m_color)
         let color = pl(h, p)?.color;
         let mut rgb = crate::common::base_type::RGBColor::default();
         rgb.set_from_int(color as i32);
         h.client_event(ClientEvent::Player(PlayerClientEvent::SetTeamColor {
-            red: crate::common::base_type::real_to_int(
-                rgb.red * if plant(107) { 256.0 } else { 255.0 },
-            ),
+            red: crate::common::base_type::real_to_int(rgb.red * if plant(107) { 256.0 } else { 255.0 }),
             green: crate::common::base_type::real_to_int(rgb.green * 255.0),
             blue: crate::common::base_type::real_to_int(rgb.blue * 255.0),
         }));
@@ -341,22 +315,14 @@ pub fn player_becoming_local_player<H: PlayerObjectHost>(
         for object in h.partition_all_objects() {
             if h.obj_has_contain(object) {
                 h.contain_recalc_apparent_controlling_player(object);
-                h.client_event(ClientEvent::Player(PlayerClientEvent::RadarRemoveObject {
-                    object,
-                }));
-                h.client_event(ClientEvent::Player(PlayerClientEvent::RadarAddObject {
-                    object,
-                }));
+                h.client_event(ClientEvent::Player(PlayerClientEvent::RadarRemoveObject { object }));
+                h.client_event(ClientEvent::Player(PlayerClientEvent::RadarAddObject { object }));
             }
-            if h.obj_is_kind_of(object, KINDOF_DISGUISER)
-                && (h.obj_has_drawable(object) || plant(108))
-            {
+            if h.obj_is_kind_of(object, KINDOF_DISGUISER) && (h.obj_has_drawable(object) || plant(108)) {
                 if let Some(disguised) = h.obj_stealth_disguised_player_index(object) {
                     let relationship = player_get_relationship(h, p, h.obj_team(object))?;
                     let night = h.globals().time_of_day_is_night;
-                    let color = if (relationship != Relationship::Allies || plant(109))
-                        && player_is_player_active(h, p)?
-                    {
+                    let color = if (relationship != Relationship::Allies || plant(109)) && player_is_player_active(h, p)? {
                         let d = pl(h, disguised)?;
                         if night {
                             d.night_color
@@ -368,16 +334,9 @@ pub fn player_becoming_local_player<H: PlayerObjectHost>(
                     } else {
                         h.obj_indicator_color(object)
                     };
-                    h.client_event(ClientEvent::Player(PlayerClientEvent::IndicatorColor {
-                        object,
-                        color,
-                    }));
-                    h.client_event(ClientEvent::Player(PlayerClientEvent::RadarRemoveObject {
-                        object,
-                    }));
-                    h.client_event(ClientEvent::Player(PlayerClientEvent::RadarAddObject {
-                        object,
-                    }));
+                    h.client_event(ClientEvent::Player(PlayerClientEvent::IndicatorColor { object, color }));
+                    h.client_event(ClientEvent::Player(PlayerClientEvent::RadarRemoveObject { object }));
+                    h.client_event(ClientEvent::Player(PlayerClientEvent::RadarAddObject { object }));
                 }
             }
         }
@@ -391,18 +350,13 @@ pub fn player_becoming_local_player<H: PlayerObjectHost>(
 
 /// `Player::findNaturalCommandCenter()`: the first command centre of the player's own side that is neither being
 /// built nor sold.
-pub fn player_find_natural_command_center<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-) -> PResult<Option<ObjectId>> {
+pub fn player_find_natural_command_center<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex) -> PResult<Option<ObjectId>> {
     let side = pl(h, p)?.side.clone();
     let mut found: Option<ObjectId> = None;
     for_each_member(h, p, |h, obj| {
         if found.is_none()
             && h.obj_is_kind_of(obj, KINDOF_COMMANDCENTER)
-            && (plant(111)
-                || h.obj_template(obj)
-                    .is_some_and(|t| h.tmpl_default_owning_side(t) == side))
+            && (plant(111) || h.obj_template(obj).is_some_and(|t| h.tmpl_default_owning_side(t) == side))
             && !h.obj_test_status(obj, OBJECT_STATUS_UNDER_CONSTRUCTION)
             && (!h.obj_test_status(obj, OBJECT_STATUS_SOLD) || plant(112))
         {
@@ -414,11 +368,7 @@ pub fn player_find_natural_command_center<H: PlayerObjectHost>(
 
 /// `doFindSpecialPowerSourceObject` over the player's objects with the given type (`SPECIAL_INVALID` = any), starting
 /// from `lowestReadyFrame = 0xffffffff`.
-fn find_special_power_source<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    sp_type: SpecialPowerType,
-) -> PResult<Option<ObjectId>> {
+fn find_special_power_source<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, sp_type: SpecialPowerType) -> PResult<Option<ObjectId>> {
     let mut found: Option<ObjectId> = None;
     let mut lowest_ready_frame: u32 = 0xffff_ffff;
     for_each_member(h, p, |h, obj| {
@@ -427,11 +377,7 @@ fn find_special_power_source<H: PlayerObjectHost>(
         }
         if not_under_construction_or_sold(h, obj) && !h.obj_is_effectively_dead(obj) {
             if sp_type == SPECIAL_INVALID && h.obj_has_any_special_power(obj) {
-                if let Some(m) = if plant(114) {
-                    h.obj_find_special_power(obj, sp_type)
-                } else {
-                    h.obj_find_any_shortcut_special_power(obj)
-                } {
+                if let Some(m) = if plant(114) { h.obj_find_special_power(obj, sp_type) } else { h.obj_find_any_shortcut_special_power(obj) } {
                     if !h.sp_is_script_only(m) {
                         found = Some(obj);
                         lowest_ready_frame = 0;
@@ -444,18 +390,10 @@ fn find_special_power_source<H: PlayerObjectHost>(
                         if h.obj_is_disabled(obj) && !plant(115) {
                             ready_frame = u32::MAX - 10;
                         }
-                        if if plant(116) {
-                            ready_frame <= h.frame()
-                        } else {
-                            ready_frame < h.frame()
-                        } {
+                        if if plant(116) { ready_frame <= h.frame() } else { ready_frame < h.frame() } {
                             found = Some(obj);
                             lowest_ready_frame = 0;
-                        } else if if plant(117) {
-                            ready_frame <= lowest_ready_frame
-                        } else {
-                            ready_frame < lowest_ready_frame
-                        } {
+                        } else if if plant(117) { ready_frame <= lowest_ready_frame } else { ready_frame < lowest_ready_frame } {
                             found = Some(obj);
                             lowest_ready_frame = ready_frame;
                         }
@@ -468,35 +406,21 @@ fn find_special_power_source<H: PlayerObjectHost>(
 }
 
 /// `Player::findMostReadyShortcutSpecialPowerOfType(spType)`.
-pub fn player_find_most_ready_shortcut_special_power_of_type<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    sp_type: SpecialPowerType,
-) -> PResult<Option<ObjectId>> {
+pub fn player_find_most_ready_shortcut_special_power_of_type<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, sp_type: SpecialPowerType) -> PResult<Option<ObjectId>> {
     find_special_power_source(h, p, sp_type)
 }
 
 /// `Player::hasAnyShortcutSpecialPower()`.
-pub fn player_has_any_shortcut_special_power<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-) -> PResult<bool> {
+pub fn player_has_any_shortcut_special_power<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex) -> PResult<bool> {
     Ok(find_special_power_source(h, p, SPECIAL_INVALID)?.is_some())
 }
 
 /// `Player::countReadyShortcutSpecialPowersOfType(spType)`: `doCountSpecialPowersReady` (a shared-and-synced power counts
 /// once).
-pub fn player_count_ready_shortcut_special_powers_of_type<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    sp_type: SpecialPowerType,
-) -> PResult<i32> {
+pub fn player_count_ready_shortcut_special_powers_of_type<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, sp_type: SpecialPowerType) -> PResult<i32> {
     let mut num_ready: u32 = 0;
     for_each_member(h, p, |h, obj| {
-        if not_under_construction_or_sold(h, obj)
-            && !h.obj_is_effectively_dead(obj)
-            && h.obj_has_special_power(obj, sp_type)
-        {
+        if not_under_construction_or_sold(h, obj) && !h.obj_is_effectively_dead(obj) && h.obj_has_special_power(obj, sp_type) {
             if let Some(m) = h.obj_find_special_power(obj, sp_type) {
                 if !h.sp_is_script_only(m) {
                     if h.sp_is_shared_n_sync(m) && num_ready == if plant(118) { 2 } else { 1 } {
@@ -506,12 +430,7 @@ pub fn player_count_ready_shortcut_special_powers_of_type<H: PlayerObjectHost>(
                     if h.obj_is_disabled(obj) && !plant(176) {
                         ready_frame = u32::MAX - 10;
                     }
-                    if (if plant(177) {
-                        ready_frame <= h.frame()
-                    } else {
-                        ready_frame < h.frame()
-                    }) || plant(119)
-                    {
+                    if (if plant(177) { ready_frame <= h.frame() } else { ready_frame < h.frame() }) || plant(119) {
                         num_ready += 1;
                     }
                 }
@@ -522,31 +441,17 @@ pub fn player_count_ready_shortcut_special_powers_of_type<H: PlayerObjectHost>(
 }
 
 /// `Player::findMostReadyShortcutWeaponForThing(thing, mostReadyPercentage)`: the object and the highest percentage.
-pub fn player_find_most_ready_shortcut_weapon_for_thing<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    thing: TemplateRef,
-) -> PResult<(Option<ObjectId>, u32)> {
+pub fn player_find_most_ready_shortcut_weapon_for_thing<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, thing: TemplateRef) -> PResult<(Option<ObjectId>, u32)> {
     let mut found: Option<ObjectId> = None;
     let mut highest: u32 = 0;
     for_each_member(h, p, |h, obj| {
         if highest >= if plant(120) { 101 } else { 100 } {
             return;
         }
-        let equivalent = h
-            .obj_template(obj)
-            .is_some_and(|t| h.tmpl_is_equivalent_to(thing, Some(t)));
-        if equivalent
-            && not_under_construction_or_sold(h, obj)
-            && !h.obj_is_effectively_dead(obj)
-            && h.obj_has_any_weapon(obj)
-        {
+        let equivalent = h.obj_template(obj).is_some_and(|t| h.tmpl_is_equivalent_to(thing, Some(t)));
+        if equivalent && not_under_construction_or_sold(h, obj) && !h.obj_is_effectively_dead(obj) && h.obj_has_any_weapon(obj) {
             let percentage = h.obj_most_percent_ready_to_fire_any_weapon(obj);
-            if if plant(121) {
-                percentage >= highest
-            } else {
-                percentage > highest
-            } {
+            if if plant(121) { percentage >= highest } else { percentage > highest } {
                 found = Some(obj);
                 highest = percentage;
             }
@@ -556,20 +461,14 @@ pub fn player_find_most_ready_shortcut_weapon_for_thing<H: PlayerObjectHost>(
 }
 
 /// `Player::findMostReadyShortcutSpecialPowerForThing(thing, mostReadyPercentage)`.
-pub fn player_find_most_ready_shortcut_special_power_for_thing<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    thing: TemplateRef,
-) -> PResult<(Option<ObjectId>, u32)> {
+pub fn player_find_most_ready_shortcut_special_power_for_thing<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, thing: TemplateRef) -> PResult<(Option<ObjectId>, u32)> {
     let mut found: Option<ObjectId> = None;
     let mut highest: u32 = 0;
     for_each_member(h, p, |h, obj| {
         if highest >= 100 {
             return;
         }
-        let equivalent = h
-            .obj_template(obj)
-            .is_some_and(|t| h.tmpl_is_equivalent_to(thing, Some(t)));
+        let equivalent = h.obj_template(obj).is_some_and(|t| h.tmpl_is_equivalent_to(thing, Some(t)));
         if equivalent && not_under_construction_or_sold(h, obj) && !h.obj_is_effectively_dead(obj) {
             for m in h.obj_special_power_modules(obj) {
                 let percentage = h.sp_percent_ready(m);
@@ -584,23 +483,14 @@ pub fn player_find_most_ready_shortcut_special_power_for_thing<H: PlayerObjectHo
 }
 
 /// `Player::findAnyExistingObjectWithThingTemplate(thing)`.
-pub fn player_find_any_existing_object_with_thing_template<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    thing: TemplateRef,
-) -> PResult<Option<ObjectId>> {
+pub fn player_find_any_existing_object_with_thing_template<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, thing: TemplateRef) -> PResult<Option<ObjectId>> {
     let mut found: Option<ObjectId> = None;
     for_each_member(h, p, |h, obj| {
         if found.is_some() {
             return;
         }
-        let equivalent = h
-            .obj_template(obj)
-            .is_some_and(|t| h.tmpl_is_equivalent_to(thing, Some(t)));
-        if equivalent
-            && (not_under_construction_or_sold(h, obj) || plant(123))
-            && !h.obj_is_effectively_dead(obj)
-        {
+        let equivalent = h.obj_template(obj).is_some_and(|t| h.tmpl_is_equivalent_to(thing, Some(t)));
+        if equivalent && (not_under_construction_or_sold(h, obj) || plant(123)) && !h.obj_is_effectively_dead(obj) {
             found = Some(obj);
         }
     })?;
@@ -637,66 +527,40 @@ pub fn player_on_structure_construction_complete<H: PlayerObjectHost>(
     h.client_event(ClientEvent::Player(PlayerClientEvent::ControlBarDirty));
     let local = h.players().local_index();
     let controlling = h.obj_controlling_player(structure);
-    let eva_for =
-        |h: &mut H, own: EvaMessage, ally: EvaMessage, enemy: EvaMessage| -> PResult<()> {
-            let m = if (local == controlling && local.is_some()
-                || (local.is_none() && controlling.is_none()))
-                && !plant(126)
-            {
-                own
+    let eva_for = |h: &mut H, own: EvaMessage, ally: EvaMessage, enemy: EvaMessage| -> PResult<()> {
+        let m = if (local == controlling && local.is_some() || (local.is_none() && controlling.is_none())) && !plant(126) {
+            own
+        } else {
+            let lp = local.ok_or(PlayerError::NoPlayer)?;
+            if (player_get_relationship(h, lp, h.obj_team(structure))? != Relationship::Enemies) != plant(127) {
+                ally
             } else {
-                let lp = local.ok_or(PlayerError::NoPlayer)?;
-                if (player_get_relationship(h, lp, h.obj_team(structure))? != Relationship::Enemies)
-                    != plant(127)
-                {
-                    ally
-                } else {
-                    enemy
-                }
-            };
-            h.client_event(ClientEvent::Player(PlayerClientEvent::Eva(m)));
-            Ok(())
+                enemy
+            }
         };
+        h.client_event(ClientEvent::Player(PlayerClientEvent::Eva(m)));
+        Ok(())
+    };
     if h.obj_has_special_power(structure, SPECIAL_PARTICLE_UPLINK_CANNON)
         || h.obj_has_special_power(structure, SUPW_SPECIAL_PARTICLE_UPLINK_CANNON)
         || (h.obj_has_special_power(structure, LAZR_SPECIAL_PARTICLE_UPLINK_CANNON) && !plant(128))
     {
-        eva_for(
-            h,
-            EvaMessage::SuperweaponDetectedOwnParticleCannon,
-            EvaMessage::SuperweaponDetectedAllyParticleCannon,
-            EvaMessage::SuperweaponDetectedEnemyParticleCannon,
-        )?;
+        eva_for(h, EvaMessage::SuperweaponDetectedOwnParticleCannon, EvaMessage::SuperweaponDetectedAllyParticleCannon, EvaMessage::SuperweaponDetectedEnemyParticleCannon)?;
     }
     if h.obj_has_special_power(structure, SPECIAL_NEUTRON_MISSILE)
         || h.obj_has_special_power(structure, NUKE_SPECIAL_NEUTRON_MISSILE)
         || (h.obj_has_special_power(structure, SUPW_SPECIAL_NEUTRON_MISSILE) && !plant(129))
     {
-        eva_for(
-            h,
-            EvaMessage::SuperweaponDetectedOwnNuke,
-            EvaMessage::SuperweaponDetectedAllyNuke,
-            EvaMessage::SuperweaponDetectedEnemyNuke,
-        )?;
+        eva_for(h, EvaMessage::SuperweaponDetectedOwnNuke, EvaMessage::SuperweaponDetectedAllyNuke, EvaMessage::SuperweaponDetectedEnemyNuke)?;
     }
     if h.obj_has_special_power(structure, SPECIAL_SCUD_STORM) {
-        eva_for(
-            h,
-            EvaMessage::SuperweaponDetectedOwnScudStorm,
-            EvaMessage::SuperweaponDetectedAllyScudStorm,
-            EvaMessage::SuperweaponDetectedEnemyScudStorm,
-        )?;
+        eva_for(h, EvaMessage::SuperweaponDetectedOwnScudStorm, EvaMessage::SuperweaponDetectedAllyScudStorm, EvaMessage::SuperweaponDetectedEnemyScudStorm)?;
     }
     Ok(())
 }
 
 /// `Player::setUnitsShouldHunt(unitsShouldHunt, source)`.
-pub fn player_set_units_should_hunt<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    units_should_hunt: bool,
-    source: CommandSource,
-) -> PResult<()> {
+pub fn player_set_units_should_hunt<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, units_should_hunt: bool, source: CommandSource) -> PResult<()> {
     plm(h, p)?.units_should_hunt = units_should_hunt;
     h.partition_get_most_valuable_location(p);
     let mut disqualifying = KindOfMaskType::new();
@@ -747,15 +611,11 @@ pub fn player_kill_player<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex) -> PRe
     if player_is_local_player(h, p) && (!g.in_shell_game || plant(134)) {
         player_becoming_local_player(h, p, true)?; // recalc disguises, etc
         if player_is_player_active(h, p)? {
-            h.client_event(ClientEvent::Player(
-                PlayerClientEvent::ControlBarSchemeByPlayer { player_index: p },
-            ));
+            h.client_event(ClientEvent::Player(PlayerClientEvent::ControlBarSchemeByPlayer { player_index: p }));
         } else {
             let key = h.name_to_key(b"FactionObserver");
             let template = h.player_template_find(key);
-            h.client_event(ClientEvent::Player(
-                PlayerClientEvent::ControlBarSchemeByPlayerTemplate { template },
-            ));
+            h.client_event(ClientEvent::Player(PlayerClientEvent::ControlBarSchemeByPlayerTemplate { template }));
         }
     }
     // force $$$ to 0 on death
@@ -767,12 +627,7 @@ pub fn player_kill_player<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex) -> PRe
 }
 
 /// `m_money.withdraw(amount, playSound)` and the events it makes.
-pub fn player_money_withdraw<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    amount: u32,
-    play_sound: bool,
-) -> PResult<u32> {
+pub fn player_money_withdraw<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, amount: u32, play_sound: bool) -> PResult<u32> {
     let mut events = Vec::new();
     let r = plm(h, p)?.money.withdraw(amount, play_sound, &mut events);
     for e in events {
@@ -783,19 +638,11 @@ pub fn player_money_withdraw<H: PlayerObjectHost>(
 
 /// `m_money.deposit(amount, playSound)`: the events it makes, and the income record it asks the player it was made
 /// for (`ThePlayerList->getNthPlayer(m_playerIndex)->getAcademyStats()->recordIncome()`).
-pub fn player_money_deposit<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    amount: u32,
-    play_sound: bool,
-) -> PResult<()> {
+pub fn player_money_deposit<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, amount: u32, play_sound: bool) -> PResult<()> {
     let mut events = Vec::new();
     let (record, money_player) = {
         let me = plm(h, p)?;
-        (
-            me.money.deposit(amount, play_sound, &mut events),
-            me.money.player_index(),
-        )
+        (me.money.deposit(amount, play_sound, &mut events), me.money.player_index())
     };
     for e in events {
         h.client_event(e);
@@ -807,14 +654,8 @@ pub fn player_money_deposit<H: PlayerObjectHost>(
 }
 
 /// `Player::transferAssetsFromThat(that)`.
-pub fn player_transfer_assets_from_that<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    that: PlayerIndex,
-) -> PResult<()> {
-    let Some(default_team) = pl(h, p)?.default_team else {
-        return Ok(());
-    };
+pub fn player_transfer_assets_from_that<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, that: PlayerIndex) -> PResult<()> {
+    let Some(default_team) = pl(h, p)?.default_team else { return Ok(()) };
     let that_template = pl(h, that)?.template.ok_or(PlayerError::NoPlayer)?;
     let beacon_name = h.player_template(that_template).beacon_template;
     let beacon = h.thing_factory_find_template(&beacon_name);
@@ -824,9 +665,7 @@ pub fn player_transfer_assets_from_that<H: PlayerObjectHost>(
         while let Some(t) = cur_t {
             let mut cur_o = h.teams().first_member(t);
             while let Some(o) = cur_o {
-                let is_beacon = h
-                    .obj_template(o)
-                    .is_some_and(|ot| h.tmpl_is_equivalent_to(ot, beacon));
+                let is_beacon = h.obj_template(o).is_some_and(|ot| h.tmpl_is_equivalent_to(ot, beacon));
                 if !is_beacon || plant(136) {
                     to_transfer.push(o); // don't transfer NULL objs or beacons
                 }
@@ -847,24 +686,14 @@ pub fn player_transfer_assets_from_that<H: PlayerObjectHost>(
 }
 
 /// `Player::garrisonAllUnits(source)`.
-pub fn player_garrison_all_units<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    source: CommandSource,
-) -> PResult<()> {
-    let buildings = h.partition_structures_near_to_far(Coord3D {
-        x: 50.0,
-        y: 50.0,
-        z: 50.0,
-    });
+pub fn player_garrison_all_units<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, source: CommandSource) -> PResult<()> {
+    let buildings = h.partition_structures_near_to_far(Coord3D { x: 50.0, y: 50.0, z: 50.0 });
     let my_mask: u32 = 1u32 << (p as u32);
     for_each_member(h, p, |h, obj| {
         if !h.obj_has_ai(obj) {
             return;
         }
-        let obj_mask: u32 = h
-            .obj_controlling_player(obj)
-            .map_or(0, |c| 1u32 << (c as u32));
+        let obj_mask: u32 = h.obj_controlling_player(obj).map_or(0, |c| 1u32 << (c as u32));
         let _ = my_mask;
         for &building in buildings.iter() {
             if let Some(player) = h.contain_player_who_entered(building) {
@@ -881,11 +710,7 @@ pub fn player_garrison_all_units<H: PlayerObjectHost>(
 }
 
 /// `Player::ungarrisonAllUnits(source)`.
-pub fn player_ungarrison_all_units<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    source: CommandSource,
-) -> PResult<()> {
+pub fn player_ungarrison_all_units<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, source: CommandSource) -> PResult<()> {
     for_each_member(h, p, |h, obj| {
         if !h.obj_has_ai(obj) {
             return;
@@ -897,11 +722,7 @@ pub fn player_ungarrison_all_units<H: PlayerObjectHost>(
 }
 
 /// `Player::setUnitsShouldIdleOrResume(idle)`.
-pub fn player_set_units_should_idle_or_resume<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    idle: bool,
-) -> PResult<()> {
+pub fn player_set_units_should_idle_or_resume<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, idle: bool) -> PResult<()> {
     for_each_member(h, p, |h, obj| {
         if h.obj_is_kind_of(obj, KINDOF_STRUCTURE) {
             return;
@@ -919,30 +740,17 @@ pub fn player_set_units_should_idle_or_resume<H: PlayerObjectHost>(
 }
 
 /// `Player::sellEverythingUnderTheSun()`.
-pub fn player_sell_everything_under_the_sun<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-) -> PResult<()> {
+pub fn player_sell_everything_under_the_sun<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex) -> PResult<()> {
     player_iterate_objects(h, p, |h, obj| {
-        if h.obj_is_faction_structure(obj)
-            || h.obj_is_kind_of(obj, KINDOF_COMMANDCENTER)
-            || (h.obj_is_kind_of(obj, KINDOF_FS_POWER) && !plant(141))
-        {
+        if h.obj_is_faction_structure(obj) || h.obj_is_kind_of(obj, KINDOF_COMMANDCENTER) || (h.obj_is_kind_of(obj, KINDOF_FS_POWER) && !plant(141)) {
             h.build_assistant_sell_object(obj);
         }
     })
 }
 
 /// `Player::doBountyForKill(killer, victim)`.
-pub fn player_do_bounty_for_kill<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    killer: Option<ObjectId>,
-    victim: Option<ObjectId>,
-) -> PResult<()> {
-    let (Some(killer), Some(victim)) = (killer, victim) else {
-        return Ok(());
-    };
+pub fn player_do_bounty_for_kill<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, killer: Option<ObjectId>, victim: Option<ObjectId>) -> PResult<()> {
+    let (Some(killer), Some(victim)) = (killer, victim) else { return Ok(()) };
     if h.obj_test_status(victim, OBJECT_STATUS_UNDER_CONSTRUCTION) && !plant(142) {
         return Ok(());
     }
@@ -951,47 +759,31 @@ pub fn player_do_bounty_for_kill<H: PlayerObjectHost>(
         (Some(t), Some(o)) => player_calc_cost_to_build(h, o, t)?,
         _ => 0,
     };
-    let bounty = if plant(143) {
-        (cost_to_build as f32 * pl(h, p)?.cash_bounty_percent) as i32
-    } else {
-        real_to_int_ceil(cost_to_build as f32 * pl(h, p)?.cash_bounty_percent)
-    };
+    let bounty = if plant(143) { (cost_to_build as f32 * pl(h, p)?.cash_bounty_percent) as i32 } else { real_to_int_ceil(cost_to_build as f32 * pl(h, p)?.cash_bounty_percent) };
     if bounty != 0 {
         player_money_deposit(h, p, bounty as u32, true)?;
         h.score_add_money_earned(p, bounty);
         let mut pos = h.obj_position(killer);
         pos.z += if plant(144) { 1.0 } else { 10.0 }; // add a little z to make it show up above the unit.
-        h.client_event(ClientEvent::Player(PlayerClientEvent::FloatingText {
-            amount: bounty,
-            pos,
-            color: 0xffff_ff00,
-        }));
+        h.client_event(ClientEvent::Player(PlayerClientEvent::FloatingText { amount: bounty, pos, color: 0xffff_ff00 }));
     }
     Ok(())
 }
 
 /// `Player::canBuildMoreOfType(whatToBuild)`: `MaxSimultaneousOfType`, counting the objects (and, for a unit, the
 /// production queues) of the type.
-pub fn player_can_build_more_of_type<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    what_to_build: TemplateRef,
-) -> PResult<bool> {
+pub fn player_can_build_more_of_type<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, what_to_build: TemplateRef) -> PResult<bool> {
     let max_simultaneous = h.tmpl_max_simultaneous_of_type(what_to_build);
     if max_simultaneous != 0 {
         let link_key = h.tmpl_max_simultaneous_link_key(what_to_build);
-        let check_production_interface =
-            h.tmpl_is_kind_of(what_to_build, KINDOF_STRUCTURE) == plant(145);
+        let check_production_interface = h.tmpl_is_kind_of(what_to_build, KINDOF_STRUCTURE) == plant(145);
         let mut count: u32 = 0;
         player_iterate_objects(h, p, |h, obj| {
             if h.obj_is_effectively_dead(obj) && !plant(147) {
                 return;
             }
             let t = h.obj_template(obj);
-            if h.tmpl_is_equivalent_to(what_to_build, t)
-                || ((link_key.0 != 0 || plant(148))
-                    && t.is_some_and(|t| link_key == h.tmpl_max_simultaneous_link_key(t)))
-            {
+            if h.tmpl_is_equivalent_to(what_to_build, t) || ((link_key.0 != 0 || plant(148)) && t.is_some_and(|t| link_key == h.tmpl_max_simultaneous_link_key(t))) {
                 count = count.wrapping_add(1);
             }
             if check_production_interface {
@@ -1000,11 +792,7 @@ pub fn player_can_build_more_of_type<H: PlayerObjectHost>(
                 }
             }
         })?;
-        if if plant(146) {
-            count > max_simultaneous
-        } else {
-            count >= max_simultaneous
-        } {
+        if if plant(146) { count > max_simultaneous } else { count >= max_simultaneous } {
             return Ok(false);
         }
     }
@@ -1012,11 +800,7 @@ pub fn player_can_build_more_of_type<H: PlayerObjectHost>(
 }
 
 /// `Player::canBuild(tmplate)`.
-pub fn player_can_build<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    tmplate: Option<TemplateRef>,
-) -> PResult<bool> {
+pub fn player_can_build<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, tmplate: Option<TemplateRef>) -> PResult<bool> {
     let Some(t) = tmplate else { return Ok(false) };
     if !player_allowed_to_build(h, p, t)? {
         return Ok(false);
@@ -1028,9 +812,7 @@ pub fn player_can_build<H: PlayerObjectHost>(
     if buildable == BSTATUS_IGNORE_PREREQUISITES && !plant(149) {
         return Ok(true);
     }
-    if buildable == BSTATUS_ONLY_BY_AI
-        && (pl(h, p)?.player_type != PlayerType::Computer) != plant(150)
-    {
+    if buildable == BSTATUS_ONLY_BY_AI && (pl(h, p)?.player_type != PlayerType::Computer) != plant(150) {
         return Ok(false);
     }
     let mut prereqs_ok = true;
@@ -1049,53 +831,25 @@ pub fn player_can_build<H: PlayerObjectHost>(
 }
 
 /// `Player::canAffordBuild(whatToBuild)`.
-pub fn player_can_afford_build<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    what_to_build: TemplateRef,
-) -> PResult<bool> {
+pub fn player_can_afford_build<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, what_to_build: TemplateRef) -> PResult<bool> {
     // `Int <= UnsignedInt`: the cost is converted to unsigned, as in C++.
     let cost = player_calc_cost_to_build(h, p, what_to_build)?;
-    Ok(if plant(152) {
-        (cost as i64) <= pl(h, p)?.money.count_money() as i64
-    } else {
-        (cost as u32) <= pl(h, p)?.money.count_money()
-    })
+    Ok(if plant(152) { (cost as i64) <= pl(h, p)?.money.count_money() as i64 } else { (cost as u32) <= pl(h, p)?.money.count_money() })
 }
 
 /// `ThingTemplate::calcCostToBuild(player)`, for an existing player (`player == NULL` is `0` upstream, and a `None`
 /// here is the host's, not this function's).
-pub fn player_calc_cost_to_build<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    t: TemplateRef,
-) -> PResult<i32> {
+pub fn player_calc_cost_to_build<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, t: TemplateRef) -> PResult<i32> {
     pl(h, p)?;
     let name = h.tmpl_name(t);
     // changePercent format is "-.2 equals 20% cheaper"
-    let mut faction_modifier = 1.0f32
-        + if plant(153) {
-            0.0
-        } else {
-            player_get_production_cost_change_percent(h, p, &name)?
-        };
+    let mut faction_modifier = 1.0f32 + if plant(153) { 0.0 } else { player_get_production_cost_change_percent(h, p, &name)? };
     let mask = h.tmpl_kind_of_mask(t);
     if !plant(154) {
         faction_modifier *= player_get_production_cost_change_based_on_kind_of(h, p, &mask)?;
     }
-    let hc = pl(h, p)?.handicap.get_handicap(
-        if plant(155) {
-            crate::common::handicap::HandicapType::BuildTime
-        } else {
-            crate::common::handicap::HandicapType::BuildCost
-        },
-        h.tmpl_is_kind_of(t, KINDOF_STRUCTURE),
-    );
-    let cost = if plant(156) {
-        h.tmpl_build_cost(t) as f32 * (faction_modifier * hc)
-    } else {
-        h.tmpl_build_cost(t) as f32 * faction_modifier * hc
-    };
+    let hc = pl(h, p)?.handicap.get_handicap(if plant(155) { crate::common::handicap::HandicapType::BuildTime } else { crate::common::handicap::HandicapType::BuildCost }, h.tmpl_is_kind_of(t, KINDOF_STRUCTURE));
+    let cost = if plant(156) { h.tmpl_build_cost(t) as f32 * (faction_modifier * hc) } else { h.tmpl_build_cost(t) as f32 * faction_modifier * hc };
     // the `Int` return converts the float: out of range (or NaN) is undefined in C++ (x86 gives INT_MIN), an error here
     if !(-2_147_483_648.0..2_147_483_648.0).contains(&cost) {
         return Err(PlayerError::OutOfRange);
@@ -1106,12 +860,7 @@ pub fn player_calc_cost_to_build<H: PlayerObjectHost>(
 // ---- difficulty and battle plans --------------------------------------------------------------------------------
 
 /// `Player::friend_applyDifficultyBonusesForObject(obj, apply)`.
-pub fn player_friend_apply_difficulty_bonuses_for_object<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    obj: ObjectId,
-    apply: bool,
-) -> PResult<()> {
+pub fn player_friend_apply_difficulty_bonuses_for_object<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, obj: ObjectId, apply: bool) -> PResult<()> {
     let g = h.globals();
     if g.in_single_player_game {
         let ty = pl(h, p)?.player_type as usize;
@@ -1125,14 +874,8 @@ pub fn player_friend_apply_difficulty_bonuses_for_object<H: PlayerObjectHost>(
                 h.obj_body_set_max_health(obj, max / health_factor);
             }
         }
-        const WBONUS: [[i32; 3]; 2] = [
-            [
-                wbc::SOLO_HUMAN_EASY,
-                wbc::SOLO_HUMAN_NORMAL,
-                wbc::SOLO_HUMAN_HARD,
-            ],
-            [wbc::SOLO_AI_EASY, wbc::SOLO_AI_NORMAL, wbc::SOLO_AI_HARD],
-        ];
+        const WBONUS: [[i32; 3]; 2] =
+            [[wbc::SOLO_HUMAN_EASY, wbc::SOLO_HUMAN_NORMAL, wbc::SOLO_HUMAN_HARD], [wbc::SOLO_AI_EASY, wbc::SOLO_AI_NORMAL, wbc::SOLO_AI_HARD]];
         if apply || plant(159) {
             h.obj_set_weapon_bonus_condition(obj, WBONUS[ty][diff]);
         } else {
@@ -1143,27 +886,15 @@ pub fn player_friend_apply_difficulty_bonuses_for_object<H: PlayerObjectHost>(
 }
 
 /// `Player::getNumBattlePlansActive()`.
-pub fn player_get_num_battle_plans_active<H: PlayerObjectHost>(
-    h: &H,
-    p: PlayerIndex,
-) -> PResult<i32> {
+pub fn player_get_num_battle_plans_active<H: PlayerObjectHost>(h: &H, p: PlayerIndex) -> PResult<i32> {
     let me = pl(h, p)?;
-    Ok(me
-        .bombard_battle_plans
-        .wrapping_add(me.hold_the_line_battle_plans)
-        .wrapping_add(me.search_and_destroy_battle_plans))
+    Ok(me.bombard_battle_plans.wrapping_add(me.hold_the_line_battle_plans).wrapping_add(me.search_and_destroy_battle_plans))
 }
 
 /// `Player::doesObjectQualifyForBattlePlan(obj)`.
-pub fn player_does_object_qualify_for_battle_plan<H: PlayerObjectHost>(
-    h: &H,
-    p: PlayerIndex,
-    obj: Option<ObjectId>,
-) -> PResult<bool> {
+pub fn player_does_object_qualify_for_battle_plan<H: PlayerObjectHost>(h: &H, p: PlayerIndex, obj: Option<ObjectId>) -> PResult<bool> {
     if let (Some(b), Some(o)) = (&pl(h, p)?.battle_plan_bonuses, obj) {
-        if h.obj_is_any_kind_of(o, &b.valid_kind_of)
-            && (!h.obj_is_any_kind_of(o, &b.invalid_kind_of) || plant(160))
-        {
+        if h.obj_is_any_kind_of(o, &b.valid_kind_of) && (!h.obj_is_any_kind_of(o, &b.invalid_kind_of) || plant(160)) {
             return Ok(true);
         }
     }
@@ -1171,32 +902,18 @@ pub fn player_does_object_qualify_for_battle_plan<H: PlayerObjectHost>(
 }
 
 /// `Player::getBattlePlansActiveSpecific(plan)`.
-pub fn player_get_battle_plans_active_specific<H: PlayerObjectHost>(
-    h: &H,
-    p: PlayerIndex,
-    plan: BattlePlanStatus,
-) -> PResult<i32> {
+pub fn player_get_battle_plans_active_specific<H: PlayerObjectHost>(h: &H, p: PlayerIndex, plan: BattlePlanStatus) -> PResult<i32> {
     let me = pl(h, p)?;
     Ok(match plan {
         BattlePlanStatus::Bombardment => me.bombard_battle_plans,
         BattlePlanStatus::HoldTheLine => me.hold_the_line_battle_plans,
-        BattlePlanStatus::SearchAndDestroy => {
-            if plant(161) {
-                me.bombard_battle_plans
-            } else {
-                me.search_and_destroy_battle_plans
-            }
-        }
+        BattlePlanStatus::SearchAndDestroy => if plant(161) { me.bombard_battle_plans } else { me.search_and_destroy_battle_plans },
         BattlePlanStatus::None => 0,
     })
 }
 
 /// `localApplyBattlePlanBonusesToObject(obj, bonus)`.
-fn local_apply_battle_plan_bonuses_to_object<H: PlayerObjectHost>(
-    h: &mut H,
-    obj: ObjectId,
-    bonus: &BattlePlanBonuses,
-) {
+fn local_apply_battle_plan_bonuses_to_object<H: PlayerObjectHost>(h: &mut H, obj: ObjectId, bonus: &BattlePlanBonuses) {
     let mut object_to_validate = Some(obj);
     let object_to_modify = obj;
     let is_projectile = h.obj_is_kind_of(obj, KINDOF_PROJECTILE);
@@ -1205,27 +922,15 @@ fn local_apply_battle_plan_bonuses_to_object<H: PlayerObjectHost>(
         object_to_validate = h.find_object_by_id(producer);
     }
     if let Some(v) = object_to_validate {
-        if h.obj_is_any_kind_of(v, &bonus.valid_kind_of)
-            && !h.obj_is_any_kind_of(v, &bonus.invalid_kind_of)
-        {
+        if h.obj_is_any_kind_of(v, &bonus.valid_kind_of) && !h.obj_is_any_kind_of(v, &bonus.invalid_kind_of) {
             if !is_projectile || plant(163) {
                 if bonus.armor_scalar != 1.0 {
                     h.obj_body_apply_damage_scalar(object_to_modify, bonus.armor_scalar);
                 }
                 if bonus.sight_range_scalar != 1.0 {
-                    let vr = h.obj_vision_range(obj)
-                        * if plant(164) {
-                            bonus.armor_scalar
-                        } else {
-                            bonus.sight_range_scalar
-                        };
+                    let vr = h.obj_vision_range(obj) * if plant(164) { bonus.armor_scalar } else { bonus.sight_range_scalar };
                     h.obj_set_vision_range(object_to_modify, vr);
-                    let sr = h.obj_shroud_clearing_range(obj)
-                        * if plant(165) {
-                            1.0
-                        } else {
-                            bonus.sight_range_scalar
-                        };
+                    let sr = h.obj_shroud_clearing_range(obj) * if plant(165) { 1.0 } else { bonus.sight_range_scalar };
                     h.obj_set_shroud_clearing_range(object_to_modify, sr);
                 }
             }
@@ -1240,15 +945,9 @@ fn local_apply_battle_plan_bonuses_to_object<H: PlayerObjectHost>(
                 h.obj_clear_weapon_bonus_condition(object_to_modify, wbc::BATTLEPLAN_HOLDTHELINE);
             }
             if bonus.search_and_destroy > 0 {
-                h.obj_set_weapon_bonus_condition(
-                    object_to_modify,
-                    wbc::BATTLEPLAN_SEARCHANDDESTROY,
-                );
+                h.obj_set_weapon_bonus_condition(object_to_modify, wbc::BATTLEPLAN_SEARCHANDDESTROY);
             } else {
-                h.obj_clear_weapon_bonus_condition(
-                    object_to_modify,
-                    wbc::BATTLEPLAN_SEARCHANDDESTROY,
-                );
+                h.obj_clear_weapon_bonus_condition(object_to_modify, wbc::BATTLEPLAN_SEARCHANDDESTROY);
             }
         }
     }
@@ -1256,35 +955,16 @@ fn local_apply_battle_plan_bonuses_to_object<H: PlayerObjectHost>(
 
 /// `Player::applyBattlePlanBonusesForObject(obj)`: `localApplyBattlePlanBonusesToObject(obj, m_battlePlanBonuses)`;
 /// upstream passes the (possibly `NULL`) pointer on and dereferences it.
-pub fn player_apply_battle_plan_bonuses_for_object<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    obj: ObjectId,
-) -> PResult<()> {
-    let bonus = pl(h, p)?
-        .battle_plan_bonuses
-        .clone()
-        .ok_or(PlayerError::NoPlayer)?;
+pub fn player_apply_battle_plan_bonuses_for_object<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, obj: ObjectId) -> PResult<()> {
+    let bonus = pl(h, p)?.battle_plan_bonuses.clone().ok_or(PlayerError::NoPlayer)?;
     local_apply_battle_plan_bonuses_to_object(h, obj, &bonus);
     Ok(())
 }
 
 /// `Player::removeBattlePlanBonusesForObject(obj)`.
-pub fn player_remove_battle_plan_bonuses_for_object<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    obj: ObjectId,
-) -> PResult<()> {
-    let mut bonus = pl(h, p)?
-        .battle_plan_bonuses
-        .clone()
-        .ok_or(PlayerError::NoPlayer)?;
-    bonus.armor_scalar = 1.0
-        / if plant(167) {
-            bonus.armor_scalar
-        } else {
-            bonus.armor_scalar.max(0.01)
-        };
+pub fn player_remove_battle_plan_bonuses_for_object<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, obj: ObjectId) -> PResult<()> {
+    let mut bonus = pl(h, p)?.battle_plan_bonuses.clone().ok_or(PlayerError::NoPlayer)?;
+    bonus.armor_scalar = 1.0 / if plant(167) { bonus.armor_scalar } else { bonus.armor_scalar.max(0.01) };
     bonus.sight_range_scalar = 1.0 / bonus.sight_range_scalar.max(0.01);
     bonus.bombardment = -ALL_PLANS; // Safe to remove as it clears the weapon bonus flag
     bonus.search_and_destroy = if plant(168) { ALL_PLANS } else { -ALL_PLANS };
@@ -1294,47 +974,25 @@ pub fn player_remove_battle_plan_bonuses_for_object<H: PlayerObjectHost>(
 }
 
 /// `Player::applyBattlePlanBonusesForPlayerObjects(bonus)`.
-pub fn player_apply_battle_plan_bonuses_for_player_objects<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    bonus: &BattlePlanBonuses,
-) -> PResult<()> {
+pub fn player_apply_battle_plan_bonuses_for_player_objects<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, bonus: &BattlePlanBonuses) -> PResult<()> {
     {
         let me = plm(h, p)?;
         match &mut me.battle_plan_bonuses {
             None => me.battle_plan_bonuses = Some(bonus.clone()),
             Some(m) => {
-                m.armor_scalar = if plant(169) {
-                    bonus.armor_scalar
-                } else {
-                    m.armor_scalar * bonus.armor_scalar
-                };
+                m.armor_scalar = if plant(169) { bonus.armor_scalar } else { m.armor_scalar * bonus.armor_scalar };
                 m.sight_range_scalar *= bonus.sight_range_scalar;
                 m.bombardment = m.bombardment.wrapping_add(bonus.bombardment).max(0);
-                m.hold_the_line = m
-                    .hold_the_line
-                    .wrapping_add(bonus.hold_the_line)
-                    .max(if plant(170) { -5 } else { 0 });
-                m.search_and_destroy = m
-                    .search_and_destroy
-                    .wrapping_add(bonus.search_and_destroy)
-                    .max(0);
+                m.hold_the_line = m.hold_the_line.wrapping_add(bonus.hold_the_line).max(if plant(170) { -5 } else { 0 });
+                m.search_and_destroy = m.search_and_destroy.wrapping_add(bonus.search_and_destroy).max(0);
             }
         }
     }
-    player_iterate_objects(h, p, |h, obj| {
-        local_apply_battle_plan_bonuses_to_object(h, obj, bonus)
-    })
+    player_iterate_objects(h, p, |h, obj| local_apply_battle_plan_bonuses_to_object(h, obj, bonus))
 }
 
 /// `Player::changeBattlePlan(plan, delta, bonus)`: `bonus` is rewritten when the last plan of a kind goes.
-pub fn player_change_battle_plan<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    plan: BattlePlanStatus,
-    delta: i32,
-    bonus: &mut BattlePlanBonuses,
-) -> PResult<()> {
+pub fn player_change_battle_plan<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, plan: BattlePlanStatus, delta: i32, bonus: &mut BattlePlanBonuses) -> PResult<()> {
     let mut add_bonus = false;
     let mut remove_bonus = false;
     {
@@ -1378,16 +1036,11 @@ pub fn player_change_battle_plan<H: PlayerObjectHost>(
 }
 
 /// `Player::setUnitsVisionSpied(setting, whichUnits, byWhom)`.
-pub fn player_set_units_vision_spied<H: PlayerObjectHost>(
-    h: &mut H,
-    p: PlayerIndex,
-    setting: bool,
-    which_units: &KindOfMaskType,
-    by_whom: PlayerIndex,
-) -> PResult<()> {
+pub fn player_set_units_vision_spied<H: PlayerObjectHost>(h: &mut H, p: PlayerIndex, setting: bool, which_units: &KindOfMaskType, by_whom: PlayerIndex) -> PResult<()> {
     player_iterate_objects(h, p, |h, obj| {
         if h.obj_is_any_kind_of(obj, which_units) {
             h.obj_set_vision_spied(obj, setting != plant(175), by_whom);
         }
     })
 }
+

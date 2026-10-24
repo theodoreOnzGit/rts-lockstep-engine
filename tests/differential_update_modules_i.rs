@@ -76,9 +76,7 @@ use rts_lockstep_engine::common::game_common::Relationship;
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
 use rts_lockstep_engine::common::kind_of::{KindOfMaskType, KINDOF_COUNT};
 use rts_lockstep_engine::common::module::{ModuleDataKind, ObjectId};
-use rts_lockstep_engine::common::object_status_types::{
-    ObjectStatusMaskType, OBJECT_STATUS_UNDER_CONSTRUCTION,
-};
+use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_UNDER_CONSTRUCTION};
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
 use rts_lockstep_engine::common::upgrade::UpgradeMaskType;
 use rts_lockstep_engine::common::xfer::Xfer;
@@ -165,10 +163,7 @@ fn kind_words(m: &KindOfMaskType) -> String {
 }
 /// A kind-of mask as the driver prints it in the data dump: the indices of its set bits, each followed by a comma.
 fn kind_str(m: &KindOfMaskType) -> String {
-    (0..KINDOF_COUNT)
-        .filter(|&i| m.test(i))
-        .map(|i| format!("{i},"))
-        .collect()
+    (0..KINDOF_COUNT).filter(|&i| m.test(i)).map(|i| format!("{i},")).collect()
 }
 
 fn mask_from(w: &[u32]) -> UpgradeMaskType {
@@ -184,17 +179,12 @@ fn mask_from(w: &[u32]) -> UpgradeMaskType {
 // -- reading the data --
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::SpyVisionUpdate(Arc::new(
-        SpyVisionUpdateModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::SpyVisionUpdate(Arc::new(SpyVisionUpdateModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -202,9 +192,7 @@ fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>
 
 /// The data dump of `ref_l9ui_run`: the mux, then the module's own fields.
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, fx: &mut FxIds) {
-    let ModuleDataKind::SpyVisionUpdate(d) = data else {
-        unreachable!("not a SpyVisionUpdate")
-    };
+    let ModuleDataKind::SpyVisionUpdate(d) = data else { unreachable!("not a SpyVisionUpdate") };
     put_mux(v, &d.upgrade.mux_data(), fx);
     put_u32(v, u32::from(d.needs_upgrade));
     put_u32(v, u32::from(d.self_powered));
@@ -250,9 +238,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
     out.push(format!("mux fx {fx} act {act:x?} con {con:x?} all {all}"));
     let (needs, selfp, dur, int) = (u32_(&mut p), u32_(&mut p), u32_(&mut p), u32_(&mut p));
     let kinds = str_(&mut p);
-    out.push(format!(
-        "data needs {needs} selfpowered {selfp} duration {dur} interval {int} kinds [{kinds}]"
-    ));
+    out.push(format!("data needs {needs} selfpowered {selfp} duration {dur} interval {int} kinds [{kinds}]"));
     let (n, f) = (u32_(&mut p), u32_(&mut p));
     out.push(format!("constructor wakes {n} last {f}"));
     for i in 0..n_ops {
@@ -287,9 +273,7 @@ fn gen_name(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
     }
     match g.below(100) {
         0..=64 if !upgrades.is_empty() => upgrades[g.below(upgrades.len() as u32) as usize].clone(),
-        65..=74 if !upgrades.is_empty() => {
-            upgrades[g.below(upgrades.len() as u32) as usize].to_lowercase()
-        }
+        65..=74 if !upgrades.is_empty() => upgrades[g.below(upgrades.len() as u32) as usize].to_lowercase(),
         75..=76 => format!("Unknown{}", g.below(3)),
         77 => "Up9".to_string(),
         78..=79 => pick(g, &["None", "none", "NONE"]).to_string(),
@@ -300,44 +284,18 @@ fn gen_name(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
 
 fn gen_list(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
     let n = 1 + g.below(3);
-    (0..n)
-        .map(|_| gen_name(g, upgrades, clean))
-        .collect::<Vec<_>>()
-        .join(" ")
+    (0..n).map(|_| gen_name(g, upgrades, clean)).collect::<Vec<_>>().join(" ")
 }
 
-const KIND_NAMES: [&str; 8] = [
-    "STRUCTURE",
-    "INFANTRY",
-    "VEHICLE",
-    "AIRCRAFT",
-    "SELECTABLE",
-    "CAN_ATTACK",
-    "SCORE",
-    "HUGE_VEHICLE",
-];
+const KIND_NAMES: [&str; 8] = ["STRUCTURE", "INFANTRY", "VEHICLE", "AIRCRAFT", "SELECTABLE", "CAN_ATTACK", "SCORE", "HUGE_VEHICLE"];
 
 fn gen_kind_list(g: &mut Gen, clean: bool) -> String {
     match g.below(8) {
         0 => "NONE".to_string(),
-        1 if !clean => pick(
-            g,
-            &[
-                "Bogus",
-                "+STRUCTURE",
-                "STRUCTURE +VEHICLE",
-                "",
-                "-INFANTRY",
-                "KINDOF_VEHICLE",
-            ],
-        )
-        .to_string(),
+        1 if !clean => pick(g, &["Bogus", "+STRUCTURE", "STRUCTURE +VEHICLE", "", "-INFANTRY", "KINDOF_VEHICLE"]).to_string(),
         2 => format!("+{}", pick(g, &KIND_NAMES)),
         3 => format!("-{}", pick(g, &KIND_NAMES)),
-        _ => (0..1 + g.below(3))
-            .map(|_| pick(g, &KIND_NAMES).to_string())
-            .collect::<Vec<_>>()
-            .join(" "),
+        _ => (0..1 + g.below(3)).map(|_| pick(g, &KIND_NAMES).to_string()).collect::<Vec<_>>().join(" "),
     }
 }
 
@@ -399,11 +357,7 @@ fn gen_mask(g: &mut Gen, n_up: usize, at_least: u32) -> [u32; 4] {
     let mut w = [0u32; 4];
     if n_up > 0 {
         // a third of the masks name most of the upgrades, so that a TriggeredBy list is met more often than by chance
-        let extra = if g.below(3) == 0 {
-            g.below(n_up as u32 + 1)
-        } else {
-            g.below(3)
-        };
+        let extra = if g.below(3) == 0 { g.below(n_up as u32 + 1) } else { g.below(3) };
         for _ in 0..at_least + extra {
             let b = g.below(n_up as u32) as usize;
             w[b / 32] |= 1 << (b % 32);
@@ -432,13 +386,7 @@ struct Tally {
     fired: u64,
 }
 
-fn run_xfer(
-    w: &mut World,
-    me: ObjectId,
-    idx: usize,
-    how: u32,
-    saved: &[u8],
-) -> (i32, Vec<u8>, u32) {
+fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -490,9 +438,7 @@ fn relationship(v: u32) -> Relationship {
 fn set_matrix(w: &mut World, word: u32) {
     for a in 0..3 {
         for b in 0..3 {
-            w.cuts
-                .player_relationships
-                .insert((a, 101 + b as u32), relationship(word >> (2 * (3 * a + b))));
+            w.cuts.player_relationships.insert((a, 101 + b as u32), relationship(word >> (2 * (3 * a + b))));
         }
     }
 }
@@ -509,13 +455,7 @@ fn set_controller(w: &mut World, player: Option<u32>) {
 }
 
 /// The effect lines of a trace, in the driver's format, and the wake calls of module `idx` among them.
-fn effects(
-    trace: Vec<String>,
-    cuts: Vec<CutCall>,
-    fxs: Vec<Vec<u8>>,
-    idx: u16,
-    fx: &mut FxIds,
-) -> (Vec<String>, u32, u32) {
+fn effects(trace: Vec<String>, cuts: Vec<CutCall>, fxs: Vec<Vec<u8>>, idx: u16, fx: &mut FxIds) -> (Vec<String>, u32, u32) {
     let (mut log, mut wakes, mut last) = (Vec::new(), 0u32, 0u32);
     let mut cut_iter = cuts.into_iter();
     let mut fx_iter = fxs.into_iter();
@@ -527,18 +467,8 @@ fn effects(
                 last = f.parse().unwrap();
             }
         } else if t.starts_with("cut ") {
-            if let Some(CutCall::PlayerSetUnitsVisionSpied {
-                player,
-                setting,
-                which_units,
-                by_whom,
-            }) = cut_iter.next()
-            {
-                log.push(format!(
-                    "spied {player} {} {by_whom} {}",
-                    i32::from(setting),
-                    kind_words(&which_units)
-                ));
+            if let Some(CutCall::PlayerSetUnitsVisionSpied { player, setting, which_units, by_whom }) = cut_iter.next() {
+                log.push(format!("spied {player} {} {by_whom} {}", i32::from(setting), kind_words(&which_units)));
             }
         } else if t.starts_with("evt FxListDoFxObj") {
             log.push(format!("fx{}", fx.id(&fx_iter.next())));
@@ -549,36 +479,16 @@ fn effects(
     (log, wakes, last)
 }
 
-const PROBE: [&str; 9] = [
-    "none",
-    "Up0",
-    "Up3",
-    "Unknown0",
-    "Unknown2",
-    "Up9",
-    "SCIENCE_Pathfinder",
-    "zz_fresh",
-    "SpyVisionUpdate",
-];
+const PROBE: [&str; 9] = ["none", "Up0", "Up3", "Unknown0", "Unknown2", "Up9", "SCIENCE_Pathfinder", "zz_fresh", "SpyVisionUpdate"];
 
 /// Runs the ops on a fresh world and returns the dump (after the data dump), the name keys afterwards and the world.
-fn rust_run(
-    ctx: Ctx,
-    data: ModuleDataKind,
-    cfg: &[u32; 3],
-    ops: &[[u32; 5]],
-    tally: &mut Tally,
-) -> (Vec<u8>, Vec<u32>, World) {
+fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; 3], ops: &[[u32; 5]], tally: &mut Tally) -> (Vec<u8>, Vec<u32>, World) {
     let mut v = Vec::new();
     let mut fx = FxIds::default();
     put_data(&mut v, &data, &mut fx);
 
     let mut w = World::new();
-    w.statics = Arc::new(GameStatics {
-        upgrade_center: ctx.center,
-        special_power_store: ctx.store,
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
     w.names = ctx.names;
     w.cuts.probe_effect_trace = true;
     w.cuts.trace = Some(Vec::new());
@@ -594,49 +504,20 @@ fn rust_run(
     set_controller(&mut w, (cfg[0] != NO_PLAYER).then_some(cfg[0]));
     w.set_frame(cfg[2]);
 
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        b"SpyVisionUpdate",
-        b"ModuleTag_Spy",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
-    let template = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"SpyVisionUpdate", b"ModuleTag_Spy", &data).unwrap().unwrap();
+    let template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
     // made under construction, as batch C does: `initObject` runs the upgrade pass (`updateUpgradeModules`) of a finished object, which resolves the mux's
     // names; the C++ driver makes the object with no such pass
     let mut status = ObjectStatusMaskType::default();
     status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, 1);
-    let me = w
-        .new_object(NewObject {
-            template,
-            status,
-            team: Some(OBJECT_TEAM),
-            modules: vec![m],
-        })
-        .unwrap();
+    let me = w.new_object(NewObject { template, status, team: Some(OBJECT_TEAM), modules: vec![m] }).unwrap();
     assert_eq!(me, 1, "the first object of a fresh world has the id 1");
-    w.objects
-        .find_mut(me)
-        .unwrap()
-        .status
-        .set(OBJECT_STATUS_UNDER_CONSTRUCTION, 0);
+    w.objects.find_mut(me).unwrap().status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, 0);
     let idx = w.find_module(me, b"SpyVisionUpdate").unwrap();
-    let handle = ModuleHandle {
-        object: me,
-        index: idx,
-    };
+    let handle = ModuleHandle { object: me, index: idx };
     let u = w.update_handle_of_module(handle).expect("an update module");
     // the constructor's wake calls
-    let (_, wakes, last) = effects(
-        w.cuts.trace.take().unwrap_or_default(),
-        Vec::new(),
-        Vec::new(),
-        idx,
-        &mut fx,
-    );
+    let (_, wakes, last) = effects(w.cuts.trace.take().unwrap_or_default(), Vec::new(), Vec::new(), idx, &mut fx);
     put_u32(&mut v, wakes);
     put_u32(&mut v, last);
     let mut saved: Vec<u8> = Vec::new();
@@ -649,69 +530,31 @@ fn rust_run(
         let (mut xst, mut xbytes, mut crc, mut res) = (-2i32, Vec::new(), 0u32, 0u32);
         match o[0] {
             0 => {
-                res = w
-                    .with_body(u, |b, w| b.update(w, u))
-                    .expect("the module is in its slot")
-                    .0;
+                res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
                 tally.updates += 1;
             }
             1 => {
                 w.module_call(me, idx, ModuleCall::ActivateSpyVision { duration: o[1] });
             }
             2 => {
-                w.module_call(
-                    me,
-                    idx,
-                    ModuleCall::SetSpyVisionDisabledUntilFrame { frame: o[1] },
-                );
+                w.module_call(me, idx, ModuleCall::SetSpyVisionDisabledUntilFrame { frame: o[1] });
             }
             3 => {
-                w.module_call(
-                    me,
-                    idx,
-                    ModuleCall::OnCapture {
-                        old_owner: o[1] as i32 - 1,
-                        new_owner: o[2] as i32 - 1,
-                    },
-                );
+                w.module_call(me, idx, ModuleCall::OnCapture { old_owner: o[1] as i32 - 1, new_owner: o[2] as i32 - 1 });
             }
             4 => {
-                w.module_call(
-                    me,
-                    idx,
-                    ModuleCall::OnDisabledEdge {
-                        becoming_disabled: o[1] & 1 != 0,
-                    },
-                );
+                w.module_call(me, idx, ModuleCall::OnDisabledEdge { becoming_disabled: o[1] & 1 != 0 });
             }
             5 => {
                 w.module_call(me, idx, ModuleCall::OnDelete);
             }
             6 => {
-                res = u32::from(
-                    w.module_call(me, idx, ModuleCall::AttemptUpgrade(mask))
-                        .as_bool(),
-                );
+                res = u32::from(w.module_call(me, idx, ModuleCall::AttemptUpgrade(mask)).as_bool());
                 tally.fired += u64::from(res);
             }
-            7 => {
-                res = u32::from(
-                    w.module_call(me, idx, ModuleCall::WouldUpgrade(mask))
-                        .as_bool(),
-                )
-            }
-            8 => {
-                res = u32::from(
-                    w.module_call(me, idx, ModuleCall::ResetUpgrade(mask))
-                        .as_bool(),
-                )
-            }
-            9 => {
-                res = u32::from(
-                    w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded)
-                        .as_bool(),
-                )
-            }
+            7 => res = u32::from(w.module_call(me, idx, ModuleCall::WouldUpgrade(mask)).as_bool()),
+            8 => res = u32::from(w.module_call(me, idx, ModuleCall::ResetUpgrade(mask)).as_bool()),
+            9 => res = u32::from(w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded).as_bool()),
             10 => {
                 w.module_call(me, idx, ModuleCall::ForceRefreshUpgrade);
             }
@@ -733,13 +576,7 @@ fn rust_run(
         let threw = w.cuts.module_errors.len() > errors_before;
         put_i32(&mut v, if threw { 2 } else { 0 });
         put_u32(&mut v, if threw { 0 } else { res });
-        put_u32(
-            &mut v,
-            u32::from(
-                w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded)
-                    .as_bool(),
-            ),
-        );
+        put_u32(&mut v, u32::from(w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded).as_bool()));
         let fxs: Vec<Vec<u8>> = w.events.events()[events_before..]
             .iter()
             .filter_map(|e| match e {
@@ -747,13 +584,7 @@ fn rust_run(
                 _ => None,
             })
             .collect();
-        let (log, wakes, last) = effects(
-            w.cuts.trace.take().unwrap(),
-            w.cuts.log.take().unwrap(),
-            fxs,
-            idx,
-            &mut fx,
-        );
+        let (log, wakes, last) = effects(w.cuts.trace.take().unwrap(), w.cuts.log.take().unwrap(), fxs, idx, &mut fx);
         tally.effects += log.len() as u64;
         put_u32(&mut v, log.len() as u32);
         for l in &log {
@@ -767,33 +598,21 @@ fn rust_run(
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let state =
-            w.objects
-                .find(me)
-                .unwrap()
-                .behaviors
-                .iter()
-                .find_map(|b| match b.body.as_ref() {
-                    Some(UpdateBody::SpyVisionUpdate(m)) => Some(m.state_words()),
-                    _ => None,
-                });
+        let state = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
+            Some(UpdateBody::SpyVisionUpdate(m)) => Some(m.state_words()),
+            _ => None,
+        });
         let state = state.expect("the module is back in its slot");
         for s in &state[..4] {
             put_u32(&mut v, *s);
         }
     }
-    let keys = PROBE
-        .iter()
-        .map(|n| w.names.name_to_key(n.as_bytes()).0)
-        .collect();
+    let keys = PROBE.iter().map(|n| w.names.name_to_key(n.as_bytes()).0).collect();
     (v, keys, w)
 }
 
 fn cases() -> usize {
-    std::env::var("L9UI_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9UI_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 #[test]
@@ -812,37 +631,13 @@ fn spy_vision_update_matches_upstream() {
     for case in 0..cases {
         let init_names = g.below(3) != 0;
         let init_center = g.below(5) != 0;
-        let n_up = if g.below(10) == 0 {
-            0
-        } else {
-            1 + g.below(8) as usize
-        };
+        let n_up = if g.below(10) == 0 { 0 } else { 1 + g.below(8) as usize };
         let upgrades: Vec<String> = (0..n_up).map(|i| format!("Up{i}")).collect();
-        let defs: String = upgrades
-            .iter()
-            .map(|u| format!("Upgrade {u}\nEnd\n"))
-            .collect();
+        let defs: String = upgrades.iter().map(|u| format!("Upgrade {u}\nEnd\n")).collect();
         let mut ctx = Ctx::new(init_names, init_center);
-        Ini::load(
-            b"Data\\INI\\Up.ini",
-            defs.as_bytes(),
-            IniLoadType::Overwrite,
-            None,
-            &table,
-            &mut ctx,
-        )
-        .expect("upgrades load");
+        Ini::load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ctx).expect("upgrades load");
         cpp_reset(init_names, init_center);
-        assert_eq!(
-            cpp_load(
-                b"Data\\INI\\Up.ini",
-                defs.as_bytes(),
-                IniLoadType::Overwrite,
-                false
-            )
-            .status,
-            0
-        );
+        assert_eq!(cpp_load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, false).status, 0);
 
         let clean = g.below(10) < 7;
         let text = gen_data(&mut g, &upgrades, clean);
@@ -858,31 +653,15 @@ fn spy_vision_update_matches_upstream() {
         };
         // [the object's player, the relationships to the default teams, the frame]
         let mut cfg = [0u32; 3];
-        cfg[0] = if g.below(8) == 0 {
-            NO_PLAYER
-        } else {
-            g.below(3)
-        };
+        cfg[0] = if g.below(8) == 0 { NO_PLAYER } else { g.below(3) };
         cfg[1] = (0..9).fold(0u32, |acc, i| acc | (g.below(3) << (2 * i)));
         cfg[2] = gen_frame(&mut g);
         let n_ops = 1 + g.below(14) as usize;
         let ops: Vec<[u32; 5]> = (0..n_ops)
             .map(|_| match g.below(60) {
                 0..=9 => [0, 0, 0, 0, 0],
-                10..=14 => [
-                    1,
-                    pick(&mut g, &[&0u32, &0, &30, &100, &900, &3000]).to_owned(),
-                    0,
-                    0,
-                    0,
-                ],
-                15..=17 => [
-                    2,
-                    pick(&mut g, &[&0u32, &u32::MAX, &50, &10_000, &1]).to_owned(),
-                    0,
-                    0,
-                    0,
-                ],
+                10..=14 => [1, pick(&mut g, &[&0u32, &0, &30, &100, &900, &3000]).to_owned(), 0, 0, 0],
+                15..=17 => [2, pick(&mut g, &[&0u32, &u32::MAX, &50, &10_000, &1]).to_owned(), 0, 0, 0],
                 18..=20 => [3, g.below(4), g.below(4), 0, 0],
                 21..=24 => [4, g.below(2), 0, 0, 0],
                 25..=26 => [5, 0, 0, 0, 0],
@@ -902,13 +681,7 @@ fn spy_vision_update_matches_upstream() {
                 42..=43 => [10, 0, 0, 0, 0],
                 44..=48 => [11, gen_frame(&mut g), 0, 0, 0],
                 49..=50 => [12, g.below(4), 0, 0, 0],
-                51..=52 => [
-                    13,
-                    (0..9).fold(0u32, |acc, i| acc | (g.below(3) << (2 * i))),
-                    0,
-                    0,
-                    0,
-                ],
+                51..=52 => [13, (0..9).fold(0u32, |acc, i| acc | (g.below(3) << (2 * i))), 0, 0, 0],
                 53..=54 => [14, 0, 0, 0, 0],
                 55..=56 => [15, 0, 0, 0, 0],
                 _ => [16, 0, 0, 0, 0],
@@ -957,21 +730,8 @@ fn spy_vision_update_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!(
-                "case {case}: upgrades {upgrades:?} cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                show(&text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case}: upgrades {upgrades:?} cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some((rd, rk)) = rust else {
             read_failed += 1;
             continue;
@@ -979,23 +739,13 @@ fn spy_vision_update_matches_upstream() {
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         for l in &dr {
             for key in ["spied", "remove ", "fx"] {
-                *counts.entry(key.trim().to_string()).or_default() +=
-                    l.matches(&format!("\"{key}")).count() as u64;
+                *counts.entry(key.trim().to_string()).or_default() += l.matches(&format!("\"{key}")).count() as u64;
             }
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
-            eprintln!(
-                "--- case {case} cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}",
-                show(&text),
-                dr.get(i),
-                dc.get(i)
-            );
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            eprintln!("--- case {case} cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -1022,10 +772,5 @@ fn spy_vision_update_matches_upstream() {
     read.finish();
     run.finish();
     keys.finish();
-    assert!(
-        read_failed * 40 > cases as u64
-            && ops_run * 5 > cases as u64 * 4
-            && tally.fired * 20 > cases as u64,
-        "the generator must reach every path"
-    );
+    assert!(read_failed * 40 > cases as u64 && ops_run * 5 > cases as u64 * 4 && tally.fired * 20 > cases as u64, "the generator must reach every path");
 }

@@ -111,11 +111,7 @@ impl ProductionPrerequisite {
     pub fn add_unit_prereq(&mut self, unit: &[u8], or_unit_with_previous: bool) {
         self.prereq_units.push(PrereqUnitRec {
             unit: None,
-            flags: if or_unit_with_previous {
-                UNIT_OR_WITH_PREV
-            } else {
-                0
-            },
+            flags: if or_unit_with_previous { UNIT_OR_WITH_PREV } else { 0 },
             name: unit.to_vec(),
         });
     }
@@ -205,11 +201,7 @@ mod tests {
         let mut asked = Vec::new();
         p.resolve_names(|n| {
             asked.push(n.to_vec());
-            if n == b"Two" {
-                None
-            } else {
-                Some(n.len() as u16)
-            }
+            if n == b"Two" { None } else { Some(n.len() as u16) }
         });
         assert_eq!(asked, [b"One".to_vec(), b"Two".to_vec(), b"Three".to_vec()]);
         let units: Vec<Option<u16>> = p.prereq_units().iter().map(|r| r.unit).collect();
@@ -226,16 +218,8 @@ mod tests {
         p.add_unit_prereqs(&[b"A".to_vec(), b"B".to_vec(), b"C".to_vec()]);
         p.add_unit_prereq(b"D", false);
         p.resolve_names(|n| Some(u16::from(n[0])));
-        assert_eq!(
-            p.all_possible_build_facility_templates(32),
-            [Some(65), Some(66), Some(67)]
-        );
-        assert_eq!(
-            p.all_possible_build_facility_templates(2),
-            [Some(65), Some(66)]
-        );
-        assert!(ProductionPrerequisite::new()
-            .all_possible_build_facility_templates(32)
-            .is_empty());
+        assert_eq!(p.all_possible_build_facility_templates(32), [Some(65), Some(66), Some(67)]);
+        assert_eq!(p.all_possible_build_facility_templates(2), [Some(65), Some(66)]);
+        assert!(ProductionPrerequisite::new().all_possible_build_facility_templates(32).is_empty());
     }
 }

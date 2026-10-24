@@ -166,9 +166,7 @@ fn level_from_index(index: i32) -> Option<VeterancyLevel> {
 /// level up to `i` has its requirement met (`levelIndex` of upstream's loop).
 fn level_for_experience(experience: i32, rules: &ExperienceRules) -> i32 {
     let mut level_index = 0;
-    while level_index + 1 < LEVEL_COUNT
-        && experience >= rules.experience_required[(level_index + 1) as usize]
-    {
+    while level_index + 1 < LEVEL_COUNT && experience >= rules.experience_required[(level_index + 1) as usize] {
         level_index += 1;
     }
     level_index
@@ -257,12 +255,7 @@ impl ExperienceTracker {
             let old = self.current_level;
             self.current_level = new_level;
             self.current_experience = rules.experience_required[new_level as usize];
-            changes.push(LevelChange {
-                object: self.owner,
-                old,
-                new: new_level,
-                provide_feedback,
-            });
+            changes.push(LevelChange { object: self.owner, old, new: new_level, provide_feedback });
         }
     }
 
@@ -278,12 +271,7 @@ impl ExperienceTracker {
             let old = self.current_level;
             self.current_level = new_level;
             self.current_experience = rules.experience_required[new_level as usize];
-            changes.push(LevelChange {
-                object: self.owner,
-                old,
-                new: new_level,
-                provide_feedback: true,
-            });
+            changes.push(LevelChange { object: self.owner, old, new: new_level, provide_feedback: true });
         }
     }
 
@@ -334,12 +322,7 @@ impl ExperienceTracker {
         let new_level = level_for_experience(self.current_experience, rules);
         self.current_level = level_from_index(new_level).expect("level index is below LEVEL_COUNT");
         if old != self.current_level {
-            changes.push(LevelChange {
-                object: self.owner,
-                old,
-                new: self.current_level,
-                provide_feedback,
-            });
+            changes.push(LevelChange { object: self.owner, old, new: self.current_level, provide_feedback });
         }
     }
 
@@ -453,13 +436,7 @@ pub fn gain_exp_for_level<A: ExperienceArena>(
     if new_level > tracker.current_level as i32 {
         let experience_needed =
             rules.experience_required[new_level as usize].wrapping_sub(tracker.current_experience);
-        add_experience_points(
-            arena,
-            owner,
-            experience_needed,
-            can_scale_for_bonus,
-            changes,
-        );
+        add_experience_points(arena, owner, experience_needed, can_scale_for_bonus, changes);
         return true;
     }
     false
@@ -474,11 +451,7 @@ mod tests {
 
     /// The rules of a template with requirements 0, 100, 250, 500 and values 1, 2, 3, 4.
     fn rules() -> ExperienceRules {
-        ExperienceRules {
-            experience_values: [1, 2, 3, 4],
-            experience_required: [0, 100, 250, 500],
-            trainable: true,
-        }
+        ExperienceRules { experience_values: [1, 2, 3, 4], experience_required: [0, 100, 250, 500], trainable: true }
     }
 
     /// Objects by id, each with its tracker and rules: the arena of the tests.
@@ -488,10 +461,7 @@ mod tests {
     }
 
     impl ExperienceArena for Arena {
-        fn experience_of(
-            &mut self,
-            id: ObjectId,
-        ) -> Option<(&mut ExperienceTracker, ExperienceRules)> {
+        fn experience_of(&mut self, id: ObjectId) -> Option<(&mut ExperienceTracker, ExperienceRules)> {
             self.objects.get_mut(&id).map(|(t, r)| (t, *r))
         }
     }
@@ -579,10 +549,7 @@ mod tests {
         let mut a = arena_with(&[1, 2]);
         let mut changes = Vec::new();
         set_experience_and_level(&mut a, 1, 300, false, &mut changes);
-        assert_eq!(
-            a.objects.get(&1).unwrap().0.veterancy_level(),
-            VeterancyLevel::Elite
-        );
+        assert_eq!(a.objects.get(&1).unwrap().0.veterancy_level(), VeterancyLevel::Elite);
         assert!(!changes[0].provide_feedback);
         a.objects.get_mut(&1).unwrap().0.set_experience_sink(2);
         set_experience_and_level(&mut a, 1, 40, true, &mut changes);
@@ -662,20 +629,12 @@ mod tests {
 
         // a gain whose scaled product overflows Int adds the indefinite value, and the sum wraps
         let mut a = arena_with(&[1]);
-        a.objects
-            .get_mut(&1)
-            .unwrap()
-            .0
-            .set_experience_scalar(1.0e9);
+        a.objects.get_mut(&1).unwrap().0.set_experience_scalar(1.0e9);
         let mut changes = Vec::new();
         add_experience_points(&mut a, 1, 100, true, &mut changes);
         assert_eq!(a.objects.get(&1).unwrap().0.current_experience(), i32::MIN);
         add_experience_points(&mut a, 1, i32::MIN, false, &mut changes);
-        assert_eq!(
-            a.objects.get(&1).unwrap().0.current_experience(),
-            0,
-            "i32::MIN + i32::MIN wraps"
-        );
+        assert_eq!(a.objects.get(&1).unwrap().0.current_experience(), 0, "i32::MIN + i32::MIN wraps");
     }
 
     #[test]

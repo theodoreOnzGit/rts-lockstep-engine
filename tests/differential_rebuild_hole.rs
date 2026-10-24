@@ -72,10 +72,7 @@ use rts_lockstep_engine::common::geometry::{GeometryInfo, GeometryType};
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniErrorKind, IniLoadType, IniResult};
 use rts_lockstep_engine::common::kind_of::KINDOF_MINE;
 use rts_lockstep_engine::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_BODY};
-use rts_lockstep_engine::common::object_status_types::{
-    ObjectStatusMaskType, OBJECT_STATUS_COUNT, OBJECT_STATUS_UNDER_CONSTRUCTION,
-    OBJECT_STATUS_UNSELECTABLE,
-};
+use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_COUNT, OBJECT_STATUS_UNDER_CONSTRUCTION, OBJECT_STATUS_UNSELECTABLE};
 use rts_lockstep_engine::common::thing_factory::ThingFactory;
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
 use rts_lockstep_engine::common::xfer::Xfer;
@@ -141,23 +138,16 @@ fn status_from(w: &[u32]) -> ObjectStatusMaskType {
 
 type Read = Option<ModuleDataKind>;
 fn read_die(ini: &mut Ini<'_>, out: &mut Read) -> IniResult<()> {
-    *out = Some(ModuleDataKind::RebuildHoleExposeDie(Arc::new(
-        RebuildHoleExposeDieModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::RebuildHoleExposeDie(Arc::new(RebuildHoleExposeDieModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 fn read_behavior(ini: &mut Ini<'_>, out: &mut Read) -> IniResult<()> {
-    *out = Some(ModuleDataKind::RebuildHoleBehavior(Arc::new(
-        RebuildHoleBehaviorModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::RebuildHoleBehavior(Arc::new(RebuildHoleBehaviorModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(kind: u32, name: &[u8], text: &[u8]) -> (IniResult<()>, Read) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: if kind == 0 { read_die } else { read_behavior },
-    }];
+    let blocks = [BlockParse { token: "D", parse: if kind == 0 { read_die } else { read_behavior } }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -204,9 +194,7 @@ fn decode(kind: u32, b: &[u8], n_ops: usize) -> Vec<String> {
         let mux: Vec<u32> = (0..18).map(|_| u32_(&mut p)).collect();
         let name = str_(&mut p);
         let (h, t) = (u32_(&mut p), u32_(&mut p));
-        out.push(format!(
-            "data mux {mux:x?} hole {name:?} health {h:#x} transfer {t}"
-        ));
+        out.push(format!("data mux {mux:x?} hole {name:?} health {h:#x} transfer {t}"));
     } else {
         let name = str_(&mut p);
         let (d, r) = (u32_(&mut p), u32_(&mut p));
@@ -231,9 +219,7 @@ fn decode(kind: u32, b: &[u8], n_ops: usize) -> Vec<String> {
         };
         let obj: Vec<u32> = (0..3).map(|_| u32_(&mut p)).collect();
         let n_made = u32_(&mut p);
-        let made: Vec<Vec<u32>> = (0..n_made)
-            .map(|_| (0..8).map(|_| u32_(&mut p)).collect())
-            .collect();
+        let made: Vec<Vec<u32>> = (0..n_made).map(|_| (0..8).map(|_| u32_(&mut p)).collect()).collect();
         out.push(format!("op {i}: status {st} log {log:?} xfer {xst} bytes {bytes:?} crc {crc:#x} state {state} obj {obj:x?} made {made:x?}"));
     }
     out
@@ -242,26 +228,8 @@ fn decode(kind: u32, b: &[u8], n_ops: usize) -> Vec<String> {
 // -- generators --
 
 const DEATH_NAMES: [&str; 20] = [
-    "NONE",
-    "CRUSHED",
-    "BURNED",
-    "EXPLODED",
-    "POISONED",
-    "TOPPLED",
-    "FLOODED",
-    "SUICIDED",
-    "LASERED",
-    "DETONATED",
-    "SPLATTED",
-    "POISONED_BETA",
-    "EXTRA_2",
-    "EXTRA_3",
-    "EXTRA_4",
-    "EXTRA_5",
-    "EXTRA_6",
-    "EXTRA_7",
-    "EXTRA_8",
-    "POISONED_GAMMA",
+    "NONE", "CRUSHED", "BURNED", "EXPLODED", "POISONED", "TOPPLED", "FLOODED", "SUICIDED", "LASERED", "DETONATED", "SPLATTED", "POISONED_BETA",
+    "EXTRA_2", "EXTRA_3", "EXTRA_4", "EXTRA_5", "EXTRA_6", "EXTRA_7", "EXTRA_8", "POISONED_GAMMA",
 ];
 
 fn death_tokens(g: &mut Gen) -> String {
@@ -327,49 +295,28 @@ fn gen_text(g: &mut Gen, kind: u32, clean: bool) -> Vec<u8> {
             lines.push(format!("RequiredStatus = {}", status_tokens(g)));
         }
         if g.below(100) < 90 {
-            lines.push(format!(
-                "HoleName = {}",
-                pick(g, &["U1", "U1", "U2", "Missing"])
-            ));
+            lines.push(format!("HoleName = {}", pick(g, &["U1", "U1", "U2", "Missing"])));
         }
         if g.below(100) < 60 {
-            lines.push(format!(
-                "HoleMaxHealth = {}",
-                pick(g, &["100", "250.5", "0", "1e3"])
-            ));
+            lines.push(format!("HoleMaxHealth = {}", pick(g, &["100", "250.5", "0", "1e3"])));
         }
         if g.below(100) < 30 {
             lines.push(format!("TransferAttackers = {}", gen_bool(g, clean)));
         }
     } else {
         if g.below(100) < 85 {
-            lines.push(format!(
-                "WorkerObjectName = {}",
-                pick(g, &["U1", "U1", "U2", "Missing"])
-            ));
+            lines.push(format!("WorkerObjectName = {}", pick(g, &["U1", "U1", "U2", "Missing"])));
         }
         if g.below(100) < 70 {
-            lines.push(format!(
-                "WorkerRespawnDelay = {}",
-                pick(g, &["0", "33", "100", "100", "150", "150", "1000", "-500"])
-            ));
+            lines.push(format!("WorkerRespawnDelay = {}", pick(g, &["0", "33", "100", "100", "150", "150", "1000", "-500"])));
         }
         if g.below(100) < 50 {
-            lines.push(format!(
-                "HoleHealthRegen%PerSecond = {}",
-                pick(g, &["10%", "25%", "0%", "150%"])
-            ));
+            lines.push(format!("HoleHealthRegen%PerSecond = {}", pick(g, &["10%", "25%", "0%", "150%"])));
         }
     }
     if !clean {
         lines.push(match g.below(3) {
-            0 => {
-                if kind == 0 {
-                    "HoleMaxHealth = lots".to_string()
-                } else {
-                    "WorkerRespawnDelay = soon".to_string()
-                }
-            }
+            0 => if kind == 0 { "HoleMaxHealth = lots".to_string() } else { "WorkerRespawnDelay = soon".to_string() },
             1 => "HoleName".to_string(),
             _ => "NoSuchField = 1".to_string(),
         });
@@ -391,13 +338,7 @@ struct Tally {
     ops: BTreeMap<u32, u64>,
 }
 
-fn run_xfer(
-    w: &mut World,
-    me: ObjectId,
-    idx: usize,
-    how: u32,
-    saved: &[u8],
-) -> (i32, Vec<u8>, u32) {
+fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -457,36 +398,18 @@ fn made_modules(bits: u32, max: f32, construct: ObjectId) -> Vec<NewModule> {
     if bits & 1 != 0 {
         let mut b = NewModule::plain(b"CtBody", b"ModuleTag_Body");
         b.interfaces = MODULEINTERFACE_BODY;
-        b.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-            ProbeAnswers::default(),
-            max,
-            Default::default(),
-        )));
+        b.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), max, Default::default())));
         v.push(b);
     }
     if bits & 2 != 0 {
         let mut h = NewModule::plain(b"RebuildHoleBehavior", b"ModuleTag_Hole");
-        h.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-            ProbeAnswers {
-                rebuild_hole: true,
-                ..Default::default()
-            },
-            0.0,
-            Default::default(),
-        )));
+        h.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers { rebuild_hole: true, ..Default::default() }, 0.0, Default::default())));
         v.push(h);
     }
     if bits & 4 != 0 {
         let mut ai = NewModule::plain(b"CtProbe", b"ModuleTag_AI");
         ai.is_ai = true;
-        ai.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-            ProbeAnswers {
-                construct_result: construct,
-                ..Default::default()
-            },
-            0.0,
-            Default::default(),
-        )));
+        ai.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers { construct_result: construct, ..Default::default() }, 0.0, Default::default())));
         v.push(ai);
     }
     v
@@ -494,62 +417,29 @@ fn made_modules(bits: u32, max: f32, construct: ObjectId) -> Vec<NewModule> {
 
 /// The probe in slot `idx` of `id`.
 fn probe_mut(w: &mut World, id: ObjectId, idx: u16) -> &mut ProbeModule {
-    match w.objects.find_mut(id).unwrap().modules[idx as usize]
-        .body
-        .as_mut()
-    {
+    match w.objects.find_mut(id).unwrap().modules[idx as usize].body.as_mut() {
         Some(UpdateBody::ModuleProbe(p)) => p,
         _ => panic!("a probe"),
     }
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(
-    ctx: &Ctx,
-    kind: u32,
-    data: ModuleDataKind,
-    cfg: &[u32; 12],
-    ops: &[[u32; 6]],
-    tally: &mut Tally,
-) -> (Vec<u8>, World) {
+fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 12], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     put_data(&mut v, &data);
     let mut factory = ThingFactory::new();
     let mut template_names: BTreeMap<u16, String> = BTreeMap::new();
     for name in ["U1", "U2"] {
-        factory
-            .new_template(name.as_bytes(), 0)
-            .expect("a template");
-        let id = factory
-            .find_template(name.as_bytes())
-            .expect("the new template")
-            .data
-            .get_template_id();
+        factory.new_template(name.as_bytes(), 0).expect("a template");
+        let id = factory.find_template(name.as_bytes()).expect("the new template").data.get_template_id();
         template_names.insert(id, name.to_string());
     }
-    let u2 = Arc::new(
-        factory
-            .find_template(b"U2")
-            .unwrap()
-            .get_final_override()
-            .data
-            .clone(),
-    );
-    let tid = |name: &str| {
-        *template_names
-            .iter()
-            .find(|(_, n)| n.as_str() == name)
-            .unwrap()
-            .0
-    };
+    let u2 = Arc::new(factory.find_template(b"U2").unwrap().get_final_override().data.clone());
+    let tid = |name: &str| *template_names.iter().find(|(_, n)| n.as_str() == name).unwrap().0;
     let (u1_id, u2_id) = (tid("U1"), tid("U2"));
     let mut w = World::new();
     w.names = ctx.names.clone();
-    w.statics = Arc::new(GameStatics {
-        upgrade_center: ctx.center.clone(),
-        thing_factory: factory,
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), thing_factory: factory, ..Default::default() });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.crate_stub_object_calls = true;
@@ -565,58 +455,27 @@ fn rust_run(
     set_player_of_team(&mut w, 1, (cfg[0] != NO_PLAYER).then_some(cfg[0]));
     let mut construct = cfg[4] as ObjectId;
     w.cuts.crate_new_object_modules = made_modules(cfg[2], f32::from_bits(cfg[3]), construct);
-    let plain = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
+    let plain = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
     let ai = || {
         let mut a = NewModule::plain(b"CtProbe", b"ModuleTag_AI");
         a.is_ai = true;
-        a.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-            ProbeAnswers::default(),
-            0.0,
-            Default::default(),
-        )));
+        a.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
         a
     };
     // object 1: the module, a body, an AI
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        CLASSES[kind as usize].as_bytes(),
-        b"ModuleTag_Hole",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), CLASSES[kind as usize].as_bytes(), b"ModuleTag_Hole", &data).unwrap().unwrap();
     let mut body = NewModule::plain(b"CtBody", b"ModuleTag_Body");
     body.interfaces = MODULEINTERFACE_BODY;
-    let mut bp = ProbeModule::new(
-        ProbeAnswers::default(),
-        f32::from_bits(cfg[7]),
-        Default::default(),
-    );
+    let mut bp = ProbeModule::new(ProbeAnswers::default(), f32::from_bits(cfg[7]), Default::default());
     bp.health = f32::from_bits(cfg[6]);
     body.body = Some(UpdateBody::ModuleProbe(bp));
-    let me = w
-        .new_object(NewObject {
-            template: u2,
-            status: ObjectStatusMaskType::default(),
-            team: Some(1),
-            modules: vec![m, body, ai()],
-        })
-        .unwrap();
+    let me = w.new_object(NewObject { template: u2, status: ObjectStatusMaskType::default(), team: Some(1), modules: vec![m, body, ai()] }).unwrap();
     assert_eq!(me, 1);
     for k in 2..=4u32 {
         let mut mods = vec![ai()];
         if k == 4 {
             let mut b = NewModule::plain(b"StickyBombUpdate", b"ModuleTag_Bomb");
-            b.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-                ProbeAnswers {
-                    sticky_target: Some(cfg[5] as ObjectId),
-                    ..Default::default()
-                },
-                0.0,
-                Default::default(),
-            )));
+            b.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers { sticky_target: Some(cfg[5] as ObjectId), ..Default::default() }, 0.0, Default::default())));
             mods.push(b);
         }
         let template = if k == 4 {
@@ -626,41 +485,19 @@ fn rust_run(
         } else {
             plain.clone()
         };
-        let id = w
-            .new_object(NewObject {
-                template,
-                status: ObjectStatusMaskType::default(),
-                team: Some(k),
-                modules: mods,
-            })
-            .unwrap();
+        let id = w.new_object(NewObject { template, status: ObjectStatusMaskType::default(), team: Some(k), modules: mods }).unwrap();
         assert_eq!(id, k as ObjectId);
     }
     {
         let o = w.objects.find_mut(me).unwrap();
         o.name = b"Hole1".to_vec();
-        o.geometry_info = GeometryInfo::new(
-            GeometryType::Box,
-            false,
-            10.0,
-            f32::from_bits(cfg[11]),
-            f32::from_bits(cfg[11]),
-        );
+        o.geometry_info = GeometryInfo::new(GeometryType::Box, false, 10.0, f32::from_bits(cfg[11]), f32::from_bits(cfg[11]));
     }
-    w.set_position(
-        me,
-        &Coord3D {
-            x: f32::from_bits(cfg[8]),
-            y: f32::from_bits(cfg[9]),
-            z: 0.0,
-        },
-    );
+    w.set_position(me, &Coord3D { x: f32::from_bits(cfg[8]), y: f32::from_bits(cfg[9]), z: 0.0 });
     w.contain_scene_set_orientation(me, f32::from_bits(cfg[10]));
     let ais: Vec<Option<u16>> = (1..=4).map(|k| w.objects.find(k).unwrap().ai).collect();
     let body_idx = w.objects.find(me).unwrap().body;
-    let idx = w
-        .find_module(me, CLASSES[kind as usize].as_bytes())
-        .unwrap();
+    let idx = w.find_module(me, CLASSES[kind as usize].as_bytes()).unwrap();
     let first_made = w.next_object_id();
     let mut flags = cfg[1];
     let mut gone = [false; 4];
@@ -681,8 +518,7 @@ fn rust_run(
             5 => probe_mut(&mut w, me, body_idx.unwrap()).health = f32::from_bits(o[1]),
             6 => {
                 construct = o[1] as ObjectId;
-                w.cuts.crate_new_object_modules =
-                    made_modules(cfg[2], f32::from_bits(cfg[3]), construct);
+                w.cuts.crate_new_object_modules = made_modules(cfg[2], f32::from_bits(cfg[3]), construct);
                 // every AI the factory made asks the same `construct`
                 for id in first_made..w.next_object_id() {
                     if let Some(a) = w.objects.find(id).and_then(|ob| ob.ai) {
@@ -697,19 +533,11 @@ fn rust_run(
             if gone[k as usize - 1] {
                 continue;
             }
-            w.objects.find_mut(k as ObjectId).unwrap().ai = if flags >> (k - 1) & 1 != 0 {
-                ais[k as usize - 1]
-            } else {
-                None
-            };
+            w.objects.find_mut(k as ObjectId).unwrap().ai = if flags >> (k - 1) & 1 != 0 { ais[k as usize - 1] } else { None };
         }
         w.objects.find_mut(me).unwrap().body = if flags & 16 != 0 { body_idx } else { None };
         if !gone[2] {
-            w.objects
-                .find_mut(3)
-                .unwrap()
-                .status
-                .set(OBJECT_STATUS_UNDER_CONSTRUCTION, i32::from(flags & 32 != 0));
+            w.objects.find_mut(3).unwrap().status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, i32::from(flags & 32 != 0));
         }
         for p in 0..3u32 {
             let pl = w.players.get_nth_mut(p as i32).unwrap();
@@ -734,25 +562,12 @@ fn rust_run(
                 w.module_call(me, idx, ModuleCall::OnDie(info));
             }
             1 => {
-                let u = w
-                    .update_handle_of_module(ModuleHandle {
-                        object: me,
-                        index: idx,
-                    })
-                    .expect("an update module");
-                w.with_body(u, |b, w| b.update(w, u))
-                    .expect("the module is in its slot");
+                let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
+                w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot");
             }
             3 => {
                 let template = if o[1] == 1 { u1_id } else { u2_id };
-                w.module_call(
-                    me,
-                    idx,
-                    ModuleCall::StartRebuildProcess {
-                        template,
-                        spawner: o[2] as ObjectId,
-                    },
-                );
+                w.module_call(me, idx, ModuleCall::StartRebuildProcess { template, spawner: o[2] as ObjectId });
             }
             7..=9 => {
                 let r = run_xfer(&mut w, me, idx as usize, o[0] - 7, &saved);
@@ -765,17 +580,8 @@ fn rust_run(
             }
             _ => {}
         }
-        let errs: Vec<_> = w.cuts.module_errors[errors_before..]
-            .iter()
-            .filter(|(_, e)| !e.is_undefined())
-            .collect();
-        let st = if errs.iter().any(|(_, e)| e.kind == IniErrorKind::BadArg) {
-            3
-        } else if errs.is_empty() {
-            0
-        } else {
-            2
-        };
+        let errs: Vec<_> = w.cuts.module_errors[errors_before..].iter().filter(|(_, e)| !e.is_undefined()).collect();
+        let st = if errs.iter().any(|(_, e)| e.kind == IniErrorKind::BadArg) { 3 } else if errs.is_empty() { 0 } else { 2 };
         put_i32(&mut v, st);
         let cuts = w.cuts.log.take().unwrap();
         let mut cut_iter = cuts.iter();
@@ -790,24 +596,11 @@ fn rust_run(
         for t in w.cuts.trace.take().unwrap() {
             if t.starts_with("cut ") {
                 match cut_iter.next().expect("a cut line has a cut call") {
-                    CutCall::ThingFactoryNewObject { template, team } => log.push(format!(
-                        "newobject {} {}",
-                        template_names[template],
-                        team.map_or(-1, |t| t as i32)
-                    )),
-                    CutCall::ObjectSetOrientation { object, angle } => {
-                        log.push(format!("setorient {object} {:08x}", angle.to_bits()))
-                    }
-                    CutCall::ScriptEngineTransferObjectName { name, object } => log.push(format!(
-                        "transfername {} {object}",
-                        String::from_utf8_lossy(name)
-                    )),
-                    CutCall::PathfinderAddObjectToPathfindMap { object } => {
-                        log.push(format!("pathadd {object}"))
-                    }
-                    CutCall::ObjectMaskObject { object, mask } => {
-                        log.push(format!("mask {object} {}", i32::from(*mask)))
-                    }
+                    CutCall::ThingFactoryNewObject { template, team } => log.push(format!("newobject {} {}", template_names[template], team.map_or(-1, |t| t as i32))),
+                    CutCall::ObjectSetOrientation { object, angle } => log.push(format!("setorient {object} {:08x}", angle.to_bits())),
+                    CutCall::ScriptEngineTransferObjectName { name, object } => log.push(format!("transfername {} {object}", String::from_utf8_lossy(name))),
+                    CutCall::PathfinderAddObjectToPathfindMap { object } => log.push(format!("pathadd {object}")),
+                    CutCall::ObjectMaskObject { object, mask } => log.push(format!("mask {object} {}", i32::from(*mask))),
                     _ => {}
                 }
             } else if let Some(r) = t.strip_prefix("bt ") {
@@ -846,26 +639,14 @@ fn rust_run(
                 _ => panic!("the RebuildHoleBehavior"),
             }
         }
-        let bp = match w.objects.find(me).unwrap().modules[body_idx.unwrap() as usize]
-            .body
-            .as_ref()
-        {
+        let bp = match w.objects.find(me).unwrap().modules[body_idx.unwrap() as usize].body.as_ref() {
             Some(UpdateBody::ModuleProbe(p)) => (p.health, p.max_health),
             _ => panic!("the body"),
         };
         put_u32(&mut v, bp.0.to_bits());
         put_u32(&mut v, bp.1.to_bits());
-        put_u32(
-            &mut v,
-            if gone[2] {
-                0
-            } else {
-                w.objects.find(3).unwrap().producer_id as u32
-            },
-        );
-        let made: Vec<ObjectId> = (first_made..w.next_object_id())
-            .filter(|id| w.objects.find(*id).is_some())
-            .collect();
+        put_u32(&mut v, if gone[2] { 0 } else { w.objects.find(3).unwrap().producer_id as u32 });
+        let made: Vec<ObjectId> = (first_made..w.next_object_id()).filter(|id| w.objects.find(*id).is_some()).collect();
         put_u32(&mut v, made.len() as u32);
         for id in made {
             let o = w.objects.find(id).unwrap();
@@ -876,12 +657,10 @@ fn rust_run(
             put_u32(&mut v, p.y.to_bits());
             put_u32(&mut v, p.z.to_bits());
             put_u32(&mut v, o.geometry_info.get_major_radius().to_bits());
-            let max = o
-                .body
-                .and_then(|b| match o.modules[b as usize].body.as_ref() {
-                    Some(UpdateBody::ModuleProbe(p)) => Some(p.max_health),
-                    _ => None,
-                });
+            let max = o.body.and_then(|b| match o.modules[b as usize].body.as_ref() {
+                Some(UpdateBody::ModuleProbe(p)) => Some(p.max_health),
+                _ => None,
+            });
             put_u32(&mut v, max.map_or(0, f32::to_bits));
             put_u32(&mut v, u32::from(o.test_status(OBJECT_STATUS_UNSELECTABLE)));
         }
@@ -890,10 +669,7 @@ fn rust_run(
 }
 
 fn cases() -> usize {
-    std::env::var("L9R15_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9R15_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 #[test]
@@ -933,14 +709,7 @@ fn rebuild_hole_matches_upstream() {
             _ => 1 + g.below(2),
         };
         let gen_flags = |g: &mut Gen| {
-            (g.u32() & 15)
-                | 1 << 4
-                | u32::from(g.below(3) != 0) << 5
-                | (if g.below(5) == 0 {
-                    g.u32() & 0xFC0 & g.u32()
-                } else {
-                    0
-                })
+            (g.u32() & 15) | 1 << 4 | u32::from(g.below(3) != 0) << 5 | (if g.below(5) == 0 { g.u32() & 0xFC0 & g.u32() } else { 0 })
         };
         cfg[1] = gen_flags(&mut g);
         cfg[2] = if g.below(6) == 0 { g.below(8) } else { 7 };
@@ -965,19 +734,8 @@ fn rebuild_hole_matches_upstream() {
             let op = match g.below(30) {
                 0..=4 if kind == 0 || g.below(4) == 0 => {
                     // not DEATH_NORMAL nor LEVEL_REGULAR (see the CreateObjectDie test)
-                    let st = if g.below(4) == 0 {
-                        g.u32() & g.u32()
-                    } else {
-                        0
-                    };
-                    [
-                        0,
-                        1 + g.below(11),
-                        1 + g.below(3),
-                        st,
-                        0,
-                        *pick(&mut g, &[&2u32, &0]),
-                    ]
+                    let st = if g.below(4) == 0 { g.u32() & g.u32() } else { 0 };
+                    [0, 1 + g.below(11), 1 + g.below(3), st, 0, *pick(&mut g, &[&2u32, &0])]
                 }
                 5..=16 if kind == 1 => [1, 0, 0, 0, 0, 0],
                 17 if kind == 1 => [3, 1 + g.below(2), *pick(&mut g, &[&1u32, &2, &9]), 0, 0, 0],
@@ -994,14 +752,7 @@ fn rebuild_hole_matches_upstream() {
                         [4, k, 0, 0, 0, 0]
                     }
                 }
-                20 => [
-                    5,
-                    (*pick(&mut g, &[&10.0f32, &99.5, &100.0])).to_bits(),
-                    0,
-                    0,
-                    0,
-                    0,
-                ],
+                20 => [5, (*pick(&mut g, &[&10.0f32, &99.5, &100.0])).to_bits(), 0, 0, 0, 0],
                 21 => [6, *pick(&mut g, &[&3u32, &2, &0]), 0, 0, 0, 0],
                 22..=24 => [7, 0, 0, 0, 0, 0],
                 25..=27 => [8, 0, 0, 0, 0, 0],
@@ -1009,16 +760,8 @@ fn rebuild_hole_matches_upstream() {
                 _ => [1, 0, 0, 0, 0, 0],
             };
             // an update only for the behaviour; construct never names an object that is gone
-            let op = if kind == 0 && op[0] == 1 {
-                [9, 0, 0, 0, 0, 0]
-            } else {
-                op
-            };
-            let op = if op[0] == 6 && op[1] != 0 && gone[op[1] as usize - 1] {
-                [6, 0, 0, 0, 0, 0]
-            } else {
-                op
-            };
+            let op = if kind == 0 && op[0] == 1 { [9, 0, 0, 0, 0, 0] } else { op };
+            let op = if op[0] == 6 && op[1] != 0 && gone[op[1] as usize - 1] { [6, 0, 0, 0, 0, 0] } else { op };
             ops.push(op);
         }
 
@@ -1064,52 +807,21 @@ fn rebuild_hole_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!(
-                "case {case} kind {kind}: cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                show(&text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case} kind {kind}: cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
         };
         let (dr, dc) = (decode(kind, &rd, ops.len()), decode(kind, &buf, ops.len()));
         for l in &dr {
-            for key in [
-                "newobject",
-                "setorient",
-                "transfername",
-                "pathadd",
-                "startrebuild",
-                "transferattack",
-                "construct",
-                "resume",
-                "mask",
-                "bombtarget",
-                "heal",
-                "destroy",
-            ] {
-                *counts.entry(key.to_string()).or_default() +=
-                    l.matches(&format!("\"{key} ")).count() as u64;
+            for key in ["newobject", "setorient", "transfername", "pathadd", "startrebuild", "transferattack", "construct", "resume", "mask", "bombtarget", "heal", "destroy"] {
+                *counts.entry(key.to_string()).or_default() += l.matches(&format!("\"{key} ")).count() as u64;
             }
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
             eprintln!("--- case {case} kind {kind} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
@@ -1129,8 +841,5 @@ fn rebuild_hole_matches_upstream() {
     }
     read.finish();
     run.finish();
-    assert!(
-        counts.get("construct").copied().unwrap_or(0) * 40 > cases as u64,
-        "the generator must reach the reconstruction"
-    );
+    assert!(counts.get("construct").copied().unwrap_or(0) * 40 > cases as u64, "the generator must reach the reconstruction");
 }

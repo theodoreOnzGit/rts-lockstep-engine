@@ -45,11 +45,9 @@ use super::host::PartitionHost;
 use super::manager::{PartitionClientEvent, PartitionManager};
 use crate::common::base_type::{real_to_unsigned_int, Coord3D};
 use crate::common::discrete_circle::{DiscreteCircle, DiscreteCircleError};
-use crate::common::game_common::Relationship;
-use crate::common::game_common::{
-    CellShroudStatus, ObjectShroudStatus, PlayerMaskType, MAX_PLAYER_COUNT,
-};
+use crate::common::game_common::{CellShroudStatus, ObjectShroudStatus, PlayerMaskType, MAX_PLAYER_COUNT};
 use crate::common::kind_of::{KINDOF_IMMOBILE, KINDOF_MINE};
+use crate::common::game_common::Relationship;
 use crate::logic::world::ids::ObjectId;
 use petir::Real;
 
@@ -136,22 +134,14 @@ impl PartitionManager {
     /// The edge trigger shared by `addLooker`, `removeLooker`, `addShrouder`:
     /// on a change of status, tell the objects to think about their
     /// shroudedness, and update the client if this is the local player.
-    fn cell_shroud_edge<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        cell: usize,
-        player: usize,
-        old: CellShroudStatus,
-        new: CellShroudStatus,
-    ) {
+    fn cell_shroud_edge<H: PartitionHost>(&mut self, host: &H, cell: usize, player: usize, old: CellShroudStatus, new: CellShroudStatus) {
         if old != new {
             self.invalidate_shrouded_status_for_all_cois(cell, player);
             if host.local_player_index() == Some(player as i32) {
                 // and if this is the local player, do the Client update.
                 let c = &self.cells[cell];
                 let (x, y) = (c.get_cell_x(), c.get_cell_y());
-                self.events
-                    .push(PartitionClientEvent::SetShroudLevel { x, y, status: new });
+                self.events.push(PartitionClientEvent::SetShroudLevel { x, y, status: new });
             }
         }
     }
@@ -169,12 +159,7 @@ impl PartitionManager {
     }
 
     /// `PartitionCell::removeLooker(playerIndex)`.
-    pub(super) fn cell_remove_looker<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        cell: usize,
-        player: i32,
-    ) {
+    pub(super) fn cell_remove_looker<H: PartitionHost>(&mut self, host: &H, cell: usize, player: i32) {
         if !(0..MAX_PLAYER_COUNT).contains(&player) {
             return;
         }
@@ -186,12 +171,7 @@ impl PartitionManager {
     }
 
     /// `PartitionCell::addShrouder(playerIndex)`.
-    pub(super) fn cell_add_shrouder<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        cell: usize,
-        player: i32,
-    ) {
+    pub(super) fn cell_add_shrouder<H: PartitionHost>(&mut self, host: &H, cell: usize, player: i32) {
         if !(0..MAX_PLAYER_COUNT).contains(&player) {
             return;
         }
@@ -213,12 +193,7 @@ impl PartitionManager {
     /// `PartitionData::getShroudedStatus(playerIndex)`: how much of the object
     /// the player can see, recomputed lazily from the cells the object touches.
     /// `INVALID` until the first `update()` after a reset.
-    pub(super) fn module_shrouded_status<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        slot: usize,
-        player: usize,
-    ) -> ObjectShroudStatus {
+    pub(super) fn module_shrouded_status<H: PartitionHost>(&mut self, host: &H, slot: usize, player: usize) -> ObjectShroudStatus {
         if !self.updated_since_last_reset {
             // The shroud should be invalid until update has been called. Set myself as invalid so
             // the next time you ask I'll recompute.
@@ -258,10 +233,7 @@ impl PartitionManager {
                 if let Some(g) = ghost {
                     if previous == ObjectShroudStatus::Fogged {
                         // we are shrouding an area that used to be fogged so release our memory of what was there.
-                        self.events.push(PartitionClientEvent::GhostFreeSnapShot {
-                            ghost: g,
-                            player: player as i32,
-                        });
+                        self.events.push(PartitionClientEvent::GhostFreeSnapShot { ghost: g, player: player as i32 });
                     }
                 }
             } else if shrouded_cells + fogged_cells == in_use {
@@ -270,9 +242,7 @@ impl PartitionManager {
                     // object does not exist for modules holding only GhostObjects
                     // fogged but may not be visible if faction unit or faction building that has not been seen before
                     let ever_seen = self.md(slot).ever_seen_by_player[player];
-                    if host.player_relationship_to_object_team(player as i32, obj)
-                        == Relationship::Neutral
-                    {
+                    if host.player_relationship_to_object_team(player as i32, obj) == Relationship::Neutral {
                         // anything neutral that moves around will not be rendered inside fog.
                         if !host.is_kind_of(obj, KINDOF_IMMOBILE) {
                             self.md_mut(slot).shroudedness[player] = ObjectShroudStatus::Shrouded;
@@ -280,9 +250,7 @@ impl PartitionManager {
                     } else {
                         // Not neutral: enemy unit will always be shrouded unless it's a building that's already
                         // been seen by the player. Fogged Mines are also always shrouded no matter what.
-                        if !(host.is_kind_of(obj, KINDOF_IMMOBILE) && ever_seen)
-                            || host.is_kind_of(obj, KINDOF_MINE)
-                        {
+                        if !(host.is_kind_of(obj, KINDOF_IMMOBILE) && ever_seen) || host.is_kind_of(obj, KINDOF_MINE) {
                             self.md_mut(slot).shroudedness[player] = ObjectShroudStatus::Shrouded;
                         }
                     }
@@ -290,10 +258,7 @@ impl PartitionManager {
                         // successfully applied fog to object so check if we need to freeze its state
                         if previous < ObjectShroudStatus::Fogged {
                             // object was not previously fogged but now is: record its current state
-                            self.events.push(PartitionClientEvent::GhostSnapShot {
-                                ghost: g,
-                                player: player as i32,
-                            });
+                            self.events.push(PartitionClientEvent::GhostSnapShot { ghost: g, player: player as i32 });
                         }
                     }
                 }
@@ -305,10 +270,7 @@ impl PartitionManager {
                 if let Some(g) = ghost {
                     if previous == ObjectShroudStatus::Fogged {
                         // previously fogged but now visible, so we no longer need a ghost snapshot.
-                        self.events.push(PartitionClientEvent::GhostFreeSnapShot {
-                            ghost: g,
-                            player: player as i32,
-                        });
+                        self.events.push(PartitionClientEvent::GhostFreeSnapShot { ghost: g, player: player as i32 });
                     }
                 }
             } else {
@@ -318,10 +280,7 @@ impl PartitionManager {
                 m.shroudedness[player] = ObjectShroudStatus::PartialClear;
                 if let Some(g) = ghost {
                     if previous == ObjectShroudStatus::Fogged {
-                        self.events.push(PartitionClientEvent::GhostFreeSnapShot {
-                            ghost: g,
-                            player: player as i32,
-                        });
+                        self.events.push(PartitionClientEvent::GhostFreeSnapShot { ghost: g, player: player as i32 });
                     }
                 }
             }
@@ -340,19 +299,12 @@ impl PartitionManager {
     /// `PartitionFilterFreeOfFog` and the AI call: `KINDOF_ALWAYS_VISIBLE`
     /// objects are always clear, an object outside the partition system
     /// (garrisoned, say) is clear, otherwise the module's answer.
-    pub fn get_object_shrouded_status<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        object: ObjectId,
-        player: i32,
-    ) -> ObjectShroudStatus {
+    pub fn get_object_shrouded_status<H: PartitionHost>(&mut self, host: &H, object: ObjectId, player: i32) -> ObjectShroudStatus {
         if host.is_kind_of(object, crate::common::kind_of::KINDOF_ALWAYS_VISIBLE) {
             return ObjectShroudStatus::Clear;
         }
         match self.by_object.get(&object) {
-            Some(&slot) if (0..MAX_PLAYER_COUNT).contains(&player) => {
-                self.module_shrouded_status(host, slot, player as usize)
-            }
+            Some(&slot) if (0..MAX_PLAYER_COUNT).contains(&player) => self.module_shrouded_status(host, slot, player as usize),
             Some(_) => ObjectShroudStatus::Invalid,
             None => ObjectShroudStatus::Clear,
         }
@@ -362,40 +314,25 @@ impl PartitionManager {
 
     /// `getShroudStatusForPlayer(playerIndex, x, y)`: shrouded for a bad
     /// player or a cell off the grid.
-    pub fn get_shroud_status_for_player_at_cell(
-        &self,
-        player_index: i32,
-        x: i32,
-        y: i32,
-    ) -> CellShroudStatus {
+    pub fn get_shroud_status_for_player_at_cell(&self, player_index: i32, x: i32, y: i32) -> CellShroudStatus {
         if player_index < 0 {
             return CellShroudStatus::Shrouded; // Safety.
         }
         match self.cell_index(x, y) {
-            Some(c) if player_index < MAX_PLAYER_COUNT => {
-                self.cells[c].get_shroud_status_for_player(player_index as usize)
-            }
+            Some(c) if player_index < MAX_PLAYER_COUNT => self.cells[c].get_shroud_status_for_player(player_index as usize),
             _ => CellShroudStatus::Shrouded,
         }
     }
 
     /// `getShroudStatusForPlayer(playerIndex, loc)`.
-    pub fn get_shroud_status_for_player(
-        &self,
-        player_index: i32,
-        loc: &Coord3D,
-    ) -> CellShroudStatus {
+    pub fn get_shroud_status_for_player(&self, player_index: i32, loc: &Coord3D) -> CellShroudStatus {
         let (x, y) = self.world_to_cell(loc.x, loc.y);
         self.get_shroud_status_for_player_at_cell(player_index, x, y)
     }
 
     /// `getPropShroudStatusForPlayer(playerIndex, loc)`: a prop is a point on a
     /// cell corner, so the four cells around it are compared.
-    pub fn get_prop_shroud_status_for_player(
-        &self,
-        player_index: i32,
-        loc: &Coord3D,
-    ) -> ObjectShroudStatus {
+    pub fn get_prop_shroud_status_for_player(&self, player_index: i32, loc: &Coord3D) -> ObjectShroudStatus {
         let (x, y) = self.world_to_cell(loc.x - self.cell_size * 0.5, loc.y - self.cell_size * 0.5);
 
         let cell_stat = self.get_shroud_status_for_player_at_cell(player_index, x, y);
@@ -420,15 +357,7 @@ impl PartitionManager {
     // ---- looking and shrouding in circles -------------------------------------
 
     /// One row of a circle: `hLineAddLooker` and its siblings.
-    fn h_line_look<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        x1: i32,
-        x2: i32,
-        y: i32,
-        player: i32,
-        op: LineOp,
-    ) {
+    fn h_line_look<H: PartitionHost>(&mut self, host: &H, x1: i32, x2: i32, y: i32, player: i32, op: LineOp) {
         if y < 0 || y >= self.cell_count_y || x1 >= self.cell_count_x || x2 < 0 {
             return;
         }
@@ -451,15 +380,7 @@ impl PartitionManager {
     /// The common shape of `doShroudReveal`, `undoShroudReveal`, `doShroudCover`
     /// and `undoShroudCover`: a circle of cells, once for each player in the
     /// mask, from the last player down to the first.
-    fn shroud_circle<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        center_x: f32,
-        center_y: f32,
-        radius: f32,
-        player_mask: PlayerMaskType,
-        op: LineOp,
-    ) -> Result<(), DiscreteCircleError> {
+    fn shroud_circle<H: PartitionHost>(&mut self, host: &H, center_x: f32, center_y: f32, radius: f32, player_mask: PlayerMaskType, op: LineOp) -> Result<(), DiscreteCircleError> {
         let (cell_center_x, cell_center_y) = self.world_to_cell(center_x, center_y);
 
         let mut cell_radius = self.world_to_cell_dist(radius);
@@ -475,9 +396,7 @@ impl PartitionManager {
             // and all of those players will have an active looker applied to a bunch of cells.
             if let Some(mask) = host.player_mask(current_index) {
                 if player_mask & mask != 0 {
-                    circle.draw_circle(|x1, x2, y| {
-                        self.h_line_look(host, x1, x2, y, current_index, op)
-                    })?;
+                    circle.draw_circle(|x1, x2, y| self.h_line_look(host, x1, x2, y, current_index, op))?;
                 }
             }
             current_index -= 1;
@@ -487,100 +406,33 @@ impl PartitionManager {
 
     /// `doShroudReveal(centerX, centerY, radius, playerMask)`: the main accessor
     /// of the shroud system. Allies are the caller's business (`Object::look`).
-    pub fn do_shroud_reveal<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        center_x: f32,
-        center_y: f32,
-        radius: f32,
-        player_mask: PlayerMaskType,
-    ) -> Result<(), DiscreteCircleError> {
-        self.shroud_circle(
-            host,
-            center_x,
-            center_y,
-            radius,
-            player_mask,
-            LineOp::AddLooker,
-        )
+    pub fn do_shroud_reveal<H: PartitionHost>(&mut self, host: &H, center_x: f32, center_y: f32, radius: f32, player_mask: PlayerMaskType) -> Result<(), DiscreteCircleError> {
+        self.shroud_circle(host, center_x, center_y, radius, player_mask, LineOp::AddLooker)
     }
 
     /// `undoShroudReveal(...)`.
-    pub fn undo_shroud_reveal<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        center_x: f32,
-        center_y: f32,
-        radius: f32,
-        player_mask: PlayerMaskType,
-    ) -> Result<(), DiscreteCircleError> {
-        self.shroud_circle(
-            host,
-            center_x,
-            center_y,
-            radius,
-            player_mask,
-            LineOp::RemoveLooker,
-        )
+    pub fn undo_shroud_reveal<H: PartitionHost>(&mut self, host: &H, center_x: f32, center_y: f32, radius: f32, player_mask: PlayerMaskType) -> Result<(), DiscreteCircleError> {
+        self.shroud_circle(host, center_x, center_y, radius, player_mask, LineOp::RemoveLooker)
     }
 
     /// `doShroudCover(...)`.
-    pub fn do_shroud_cover<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        center_x: f32,
-        center_y: f32,
-        radius: f32,
-        player_mask: PlayerMaskType,
-    ) -> Result<(), DiscreteCircleError> {
-        self.shroud_circle(
-            host,
-            center_x,
-            center_y,
-            radius,
-            player_mask,
-            LineOp::AddShrouder,
-        )
+    pub fn do_shroud_cover<H: PartitionHost>(&mut self, host: &H, center_x: f32, center_y: f32, radius: f32, player_mask: PlayerMaskType) -> Result<(), DiscreteCircleError> {
+        self.shroud_circle(host, center_x, center_y, radius, player_mask, LineOp::AddShrouder)
     }
 
     /// `undoShroudCover(...)`.
-    pub fn undo_shroud_cover<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        center_x: f32,
-        center_y: f32,
-        radius: f32,
-        player_mask: PlayerMaskType,
-    ) -> Result<(), DiscreteCircleError> {
-        self.shroud_circle(
-            host,
-            center_x,
-            center_y,
-            radius,
-            player_mask,
-            LineOp::RemoveShrouder,
-        )
+    pub fn undo_shroud_cover<H: PartitionHost>(&mut self, host: &H, center_x: f32, center_y: f32, radius: f32, player_mask: PlayerMaskType) -> Result<(), DiscreteCircleError> {
+        self.shroud_circle(host, center_x, center_y, radius, player_mask, LineOp::RemoveShrouder)
     }
 
     // ---- the unlook queue ------------------------------------------------------
 
     /// `queueUndoShroudReveal(...)`: the unlook happens `m_unlookPersistDuration`
     /// frames from now. The queue is in order because the delay is a constant.
-    pub fn queue_undo_shroud_reveal<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        center_x: f32,
-        center_y: f32,
-        radius: f32,
-        player_mask: PlayerMaskType,
-    ) {
+    pub fn queue_undo_shroud_reveal<H: PartitionHost>(&mut self, host: &H, center_x: f32, center_y: f32, radius: f32, player_mask: PlayerMaskType) {
         let now = host.frame();
         let new_info = SightingInfo {
-            where_: Coord3D {
-                x: center_x,
-                y: center_y,
-                z: 0.0,
-            },
+            where_: Coord3D { x: center_x, y: center_y, z: 0.0 },
             how_far: radius,
             for_whom: player_mask,
             data: now.wrapping_add(host.unlook_persist_duration()),
@@ -590,33 +442,15 @@ impl PartitionManager {
 
     /// `processPendingUndoShroudRevealQueue(considerTimestamp)`: keep popping
     /// and processing until the front one is in the future.
-    pub(super) fn process_pending_undo_shroud_reveal_queue<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        consider_timestamp: bool,
-    ) {
-        let compare_time = if consider_timestamp {
-            host.frame()
-        } else {
-            u32::MAX
-        };
+    pub(super) fn process_pending_undo_shroud_reveal_queue<H: PartitionHost>(&mut self, host: &H, consider_timestamp: bool) {
+        let compare_time = if consider_timestamp { host.frame() } else { u32::MAX };
 
-        while self
-            .pending_undo_shroud_reveals
-            .front()
-            .is_some_and(|f| f.data < compare_time)
-        {
+        while self.pending_undo_shroud_reveals.front().is_some_and(|f| f.data < compare_time) {
             let Some(this_info) = self.pending_undo_shroud_reveals.pop_front() else {
                 break;
             };
             // (a circle too large to draw is skipped; upstream's is undefined there)
-            let _ = self.undo_shroud_reveal(
-                host,
-                this_info.where_.x,
-                this_info.where_.y,
-                this_info.how_far,
-                this_info.for_whom,
-            );
+            let _ = self.undo_shroud_reveal(host, this_info.where_.x, this_info.where_.y, this_info.how_far, this_info.for_whom);
         }
     }
 
@@ -649,11 +483,7 @@ impl PartitionManager {
 
     /// `revealMapForPlayerPermanently(playerIndex)`: skip the remove, so the
     /// player counts as actively looking at everything (Observer mode).
-    pub fn reveal_map_for_player_permanently<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        player_index: i32,
-    ) {
+    pub fn reveal_map_for_player_permanently<H: PartitionHost>(&mut self, host: &H, player_index: i32) {
         for i in 0..self.cells.len() {
             self.cell_add_looker(host, i, player_index);
         }
@@ -661,11 +491,7 @@ impl PartitionManager {
 
     /// `undoRevealMapForPlayerPermanently(playerIndex)`: adds a layer of
     /// permanent blindness (debugging only).
-    pub fn undo_reveal_map_for_player_permanently<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        player_index: i32,
-    ) {
+    pub fn undo_reveal_map_for_player_permanently<H: PartitionHost>(&mut self, host: &H, player_index: i32) {
         // First make sure no lingering looks will leave holes when they aren't wanted.
         self.process_entire_pending_undo_shroud_reveal_queue(host);
 
@@ -700,8 +526,7 @@ impl PartitionManager {
             let (x, y) = (self.cells[i].get_cell_x(), self.cells[i].get_cell_y());
             if (0..MAX_PLAYER_COUNT).contains(&player_index) {
                 let status = self.cells[i].get_shroud_status_for_player(player_index as usize);
-                self.events
-                    .push(PartitionClientEvent::SetShroudLevel { x, y, status });
+                self.events.push(PartitionClientEvent::SetShroudLevel { x, y, status });
                 self.invalidate_shrouded_status_for_all_cois(i, player_index as usize);
             }
         }
@@ -749,16 +574,7 @@ impl PartitionManager {
     /// The common shape of `doThreatAffect`, `undoThreatAffect`, `doValueAffect`
     /// and `undoValueAffect`.
     #[allow(clippy::too_many_arguments)] // one function behind upstream's four `*ThreatAffect`/`*ValueAffect`
-    fn value_circle<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        center_x: f32,
-        center_y: f32,
-        radius: f32,
-        value: u32,
-        player_mask: PlayerMaskType,
-        op: ValueOp,
-    ) -> Result<(), DiscreteCircleError> {
+    fn value_circle<H: PartitionHost>(&mut self, host: &H, center_x: f32, center_y: f32, radius: f32, value: u32, player_mask: PlayerMaskType, op: ValueOp) -> Result<(), DiscreteCircleError> {
         let (cell_center_x, cell_center_y) = self.world_to_cell(center_x, center_y);
         let f_cell_center_x = cell_center_x as f32;
         let f_cell_center_y = cell_center_y as f32;
@@ -772,13 +588,7 @@ impl PartitionManager {
 
         let circle = DiscreteCircle::new(cell_center_x, cell_center_y, cell_radius)?;
 
-        let mut parms = ThreatValueParms {
-            player_index: 0,
-            x_center: f_cell_center_x,
-            y_center: f_cell_center_y,
-            radius: f_cell_radius,
-            threat_or_value: value,
-        };
+        let mut parms = ThreatValueParms { player_index: 0, x_center: f_cell_center_x, y_center: f_cell_center_y, radius: f_cell_radius, threat_or_value: value };
 
         let mut current_index = host.player_count() - 1;
         while current_index >= 0 {
@@ -794,87 +604,23 @@ impl PartitionManager {
     }
 
     /// `doThreatAffect(...)`.
-    pub fn do_threat_affect<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        center_x: f32,
-        center_y: f32,
-        radius: f32,
-        threat_val: u32,
-        player_mask: PlayerMaskType,
-    ) -> Result<(), DiscreteCircleError> {
-        self.value_circle(
-            host,
-            center_x,
-            center_y,
-            radius,
-            threat_val,
-            player_mask,
-            ValueOp::AddThreat,
-        )
+    pub fn do_threat_affect<H: PartitionHost>(&mut self, host: &H, center_x: f32, center_y: f32, radius: f32, threat_val: u32, player_mask: PlayerMaskType) -> Result<(), DiscreteCircleError> {
+        self.value_circle(host, center_x, center_y, radius, threat_val, player_mask, ValueOp::AddThreat)
     }
 
     /// `undoThreatAffect(...)`.
-    pub fn undo_threat_affect<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        center_x: f32,
-        center_y: f32,
-        radius: f32,
-        threat_val: u32,
-        player_mask: PlayerMaskType,
-    ) -> Result<(), DiscreteCircleError> {
-        self.value_circle(
-            host,
-            center_x,
-            center_y,
-            radius,
-            threat_val,
-            player_mask,
-            ValueOp::RemoveThreat,
-        )
+    pub fn undo_threat_affect<H: PartitionHost>(&mut self, host: &H, center_x: f32, center_y: f32, radius: f32, threat_val: u32, player_mask: PlayerMaskType) -> Result<(), DiscreteCircleError> {
+        self.value_circle(host, center_x, center_y, radius, threat_val, player_mask, ValueOp::RemoveThreat)
     }
 
     /// `doValueAffect(...)`.
-    pub fn do_value_affect<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        center_x: f32,
-        center_y: f32,
-        radius: f32,
-        value_val: u32,
-        player_mask: PlayerMaskType,
-    ) -> Result<(), DiscreteCircleError> {
-        self.value_circle(
-            host,
-            center_x,
-            center_y,
-            radius,
-            value_val,
-            player_mask,
-            ValueOp::AddValue,
-        )
+    pub fn do_value_affect<H: PartitionHost>(&mut self, host: &H, center_x: f32, center_y: f32, radius: f32, value_val: u32, player_mask: PlayerMaskType) -> Result<(), DiscreteCircleError> {
+        self.value_circle(host, center_x, center_y, radius, value_val, player_mask, ValueOp::AddValue)
     }
 
     /// `undoValueAffect(...)`.
-    pub fn undo_value_affect<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        center_x: f32,
-        center_y: f32,
-        radius: f32,
-        value_val: u32,
-        player_mask: PlayerMaskType,
-    ) -> Result<(), DiscreteCircleError> {
-        self.value_circle(
-            host,
-            center_x,
-            center_y,
-            radius,
-            value_val,
-            player_mask,
-            ValueOp::RemoveValue,
-        )
+    pub fn undo_value_affect<H: PartitionHost>(&mut self, host: &H, center_x: f32, center_y: f32, radius: f32, value_val: u32, player_mask: PlayerMaskType) -> Result<(), DiscreteCircleError> {
+        self.value_circle(host, center_x, center_y, radius, value_val, player_mask, ValueOp::RemoveValue)
     }
 
     /// The masks of every player slot (`allPlayerMasks[i] = getNthPlayer(i)->getPlayerMask()`).
@@ -893,13 +639,7 @@ impl PartitionManager {
     /// (cell-corner) location of the cell with the largest value, or `None`
     /// where upstream leaves `outLocation` untouched (no players of those
     /// types, or no cells).
-    pub fn get_most_valuable_location<H: PartitionHost>(
-        &self,
-        host: &H,
-        player_index: i32,
-        which_player_types: u32,
-        val_type: ValueOrThreat,
-    ) -> Option<Coord3D> {
+    pub fn get_most_valuable_location<H: PartitionHost>(&self, host: &H, player_index: i32, which_player_types: u32, val_type: ValueOrThreat) -> Option<Coord3D> {
         let player_mask = host.players_with_relationship(player_index, which_player_types);
         if player_mask == 0 {
             return None;
@@ -915,11 +655,7 @@ impl PartitionManager {
             for player in 0..MAX_PLAYER_COUNT {
                 // (upstream's BitTest argument order is (allPlayerMasks[player], playerMask); symmetric)
                 if all_player_masks[player as usize] & player_mask != 0 {
-                    let v = if val_type == ValueOrThreat::CashValue {
-                        self.cells[i].get_cash_value(player)
-                    } else {
-                        self.cells[i].get_threat_value(player)
-                    };
+                    let v = if val_type == ValueOrThreat::CashValue { self.cells[i].get_cash_value(player) } else { self.cells[i].get_threat_value(player) };
                     cell_value = cell_value.wrapping_add(v as i32);
                 }
             }
@@ -936,11 +672,7 @@ impl PartitionManager {
 
         let c = &self.cells[greatest_value_cell as usize];
         let size = host.partition_cell_size();
-        Some(Coord3D {
-            x: c.get_cell_x() as f32 * size,
-            y: c.get_cell_y() as f32 * size,
-            z: 0.0,
-        })
+        Some(Coord3D { x: c.get_cell_x() as f32 * size, y: c.get_cell_y() as f32 * size, z: 0.0 })
     }
 
     /// `getNearestGroupWithValue(...)`: the (cell-corner) location of the first
@@ -959,8 +691,7 @@ impl PartitionManager {
         value_required: i32,
         _greater_than: bool,
     ) -> (Option<Coord3D>, bool) {
-        let allowed_players_masks =
-            host.players_with_relationship(player_index, which_player_types);
+        let allowed_players_masks = host.players_with_relationship(player_index, which_player_types);
         if allowed_players_masks == 0 {
             return (None, false);
         }
@@ -970,33 +701,25 @@ impl PartitionManager {
         // upstream: `parms.greaterThan = valueRequired;` (an Int stored in a Bool)
         let greater_than = value_required != 0;
 
-        let (nearest_great, undefined_reached) =
-            self.iterate_cells_breadth_first(source_location, |cell| {
-                let mut val: u32 = 0;
-                for i in 0..MAX_PLAYER_COUNT {
-                    if allowed_players_masks & all_players_mask[i as usize] != 0 {
-                        if val_type == ValueOrThreat::CashValue {
-                            val = val.wrapping_add(cell.get_cash_value(i));
-                        } else {
-                            val = val.wrapping_add(cell.get_threat_value(i));
-                        }
+        let (nearest_great, undefined_reached) = self.iterate_cells_breadth_first(source_location, |cell| {
+            let mut val: u32 = 0;
+            for i in 0..MAX_PLAYER_COUNT {
+                if allowed_players_masks & all_players_mask[i as usize] != 0 {
+                    if val_type == ValueOrThreat::CashValue {
+                        val = val.wrapping_add(cell.get_cash_value(i));
+                    } else {
+                        val = val.wrapping_add(cell.get_threat_value(i));
                     }
                 }
-                // `val > valueRequired` compares unsigned with the Int converted to unsigned
-                let required = value_required as u32;
-                (val > required && greater_than) || (val < required && !greater_than)
-            });
+            }
+            // `val > valueRequired` compares unsigned with the Int converted to unsigned
+            let required = value_required as u32;
+            (val > required && greater_than) || (val < required && !greater_than)
+        });
         if nearest_great != -1 {
             let c = &self.cells[nearest_great as usize];
             let size = host.partition_cell_size();
-            return (
-                Some(Coord3D {
-                    x: c.get_cell_x() as f32 * size,
-                    y: c.get_cell_y() as f32 * size,
-                    z: 0.0,
-                }),
-                undefined_reached,
-            );
+            return (Some(Coord3D { x: c.get_cell_x() as f32 * size, y: c.get_cell_y() as f32 * size, z: 0.0 }), undefined_reached);
         }
         (None, undefined_reached)
     }
@@ -1013,8 +736,7 @@ impl PartitionManager {
 
             // Resize all of our arrays.
             for p in 0..MAX_PLAYER_COUNT as usize {
-                out.fogged_or_revealed[p] =
-                    vec![STORE_DONTTOUCH; self.total_cell_count.max(0) as usize];
+                out.fogged_or_revealed[p] = vec![STORE_DONTTOUCH; self.total_cell_count.max(0) as usize];
             }
         }
 
@@ -1039,12 +761,7 @@ impl PartitionManager {
     }
 
     /// `restoreFoggedCells(inPartitionStore, restoreToFog)`.
-    pub fn restore_fogged_cells<H: PartitionHost>(
-        &mut self,
-        host: &H,
-        input: &ShroudStatusStoreRestore,
-        restore_to_fog: bool,
-    ) {
+    pub fn restore_fogged_cells<H: PartitionHost>(&mut self, host: &H, input: &ShroudStatusStoreRestore, restore_to_fog: bool) {
         let store_width = input.cells_wide;
         if store_width <= 0 {
             return; // upstream divides by it
@@ -1064,9 +781,7 @@ impl PartitionManager {
                         break;
                     }
 
-                    let Some(&byte_to_restore) =
-                        input.fogged_or_revealed[p].get((j * store_width + i) as usize)
-                    else {
+                    let Some(&byte_to_restore) = input.fogged_or_revealed[p].get((j * store_width + i) as usize) else {
                         continue;
                     };
                     if byte_to_restore == STORE_DONTTOUCH {

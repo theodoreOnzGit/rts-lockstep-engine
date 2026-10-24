@@ -64,22 +64,16 @@ mod support;
 mod up_common;
 
 use rts_lockstep_engine::common::damage_fx::DamageFxStore;
-use rts_lockstep_engine::common::ini::{
-    BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult,
-};
+use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult};
 use rts_lockstep_engine::common::module::{
     Module, ModuleData, ModuleDataKind, ModuleType, ObjectId, MODULEINTERFACE_CREATE,
 };
 use rts_lockstep_engine::common::module_factory::{ModuleFactory, ModuleTemplate};
 use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
-use rts_lockstep_engine::common::object_status_types::{
-    ObjectStatusMaskType, OBJECT_STATUS_UNDER_CONSTRUCTION,
-};
+use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_UNDER_CONSTRUCTION};
 use rts_lockstep_engine::common::science::{GameTextFetch, ScienceStore};
 use rts_lockstep_engine::common::thing_factory::ThingFactory;
-use rts_lockstep_engine::common::thing_template::{
-    ObjectTemplateValues, ThingParseEnv, ThingTemplate,
-};
+use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingParseEnv, ThingTemplate};
 use rts_lockstep_engine::common::unicode_string::UnicodeString;
 use rts_lockstep_engine::common::upgrade::UpgradeMaskType;
 use rts_lockstep_engine::differential as cpp;
@@ -89,8 +83,8 @@ use rts_lockstep_engine::logic::modules::replace_object_upgrade::ReplaceObjectUp
 use rts_lockstep_engine::logic::weapon_set::WeaponTemplateTable;
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::ModuleCall;
-use rts_lockstep_engine::logic::world::object_create::NewObject;
 use rts_lockstep_engine::logic::world::object_cuts::CutCall;
+use rts_lockstep_engine::logic::world::object_create::NewObject;
 use rts_lockstep_engine::logic::world::statics::GameStatics;
 use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 use std::collections::BTreeMap;
@@ -170,9 +164,7 @@ fn never(_: ObjectId, _: Option<ModuleDataKind>) -> Result<Module, IniError> {
     Err(IniError::new(IniErrorKind::Bug))
 }
 fn base_data(ini: Option<&mut Ini<'_>>) -> Result<ModuleDataKind, IniError> {
-    Ok(ModuleDataKind::Module(Arc::new(
-        ModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::Module(Arc::new(ModuleData::friend_new_module_data(ini)?)))
 }
 
 struct FactoryCtx {
@@ -205,14 +197,8 @@ fn build_factory(templates: &[u32; 3]) -> ThingFactory {
     names.reset();
     let mut modules = ModuleFactory::new();
     for (name, mask) in [("TestCreate", MODULEINTERFACE_CREATE), ("TestPlain", 0)] {
-        let t = ModuleTemplate {
-            create_proc: Some(never),
-            create_data_proc: Some(base_data),
-            which_interfaces: Some(mask),
-        };
-        modules
-            .add_module_internal(&mut names, t, ModuleType::Behavior, name)
-            .unwrap();
+        let t = ModuleTemplate { create_proc: Some(never), create_data_proc: Some(base_data), which_interfaces: Some(mask) };
+        modules.add_module_internal(&mut names, t, ModuleType::Behavior, name).unwrap();
     }
     let mut c = FactoryCtx {
         factory: ThingFactory::new(),
@@ -230,54 +216,32 @@ fn build_factory(templates: &[u32; 3]) -> ThingFactory {
         }
         text.push_str(&format!("Object RO_{}\n", ["A", "B", "C"][i]));
         for k in 0..(w >> 4 & 7).min(4) {
-            let class = if w >> k & 1 != 0 {
-                "TestCreate"
-            } else {
-                "TestPlain"
-            };
+            let class = if w >> k & 1 != 0 { "TestCreate" } else { "TestPlain" };
             text.push_str(&format!(" Behavior = {class} ModuleTag_{k}\n End\n"));
         }
         text.push_str("End\n");
     }
-    static BLOCKS: [BlockParse<FactoryCtx>; 1] = [BlockParse {
-        token: "Object",
-        parse: object_block,
-    }];
-    Ini::load(
-        b"Objects.ini",
-        text.as_bytes(),
-        IniLoadType::Overwrite,
-        None,
-        &BLOCKS,
-        &mut c,
-    )
-    .expect("objects load");
+    static BLOCKS: [BlockParse<FactoryCtx>; 1] = [BlockParse { token: "Object", parse: object_block }];
+    Ini::load(b"Objects.ini", text.as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut c).expect("objects load");
     c.factory
 }
 
 // -- reading the data --
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::ReplaceObjectUpgrade(Arc::new(
-        ReplaceObjectUpgradeModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::ReplaceObjectUpgrade(Arc::new(ReplaceObjectUpgradeModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
 }
 
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, fx: &mut FxIds) {
-    let ModuleDataKind::ReplaceObjectUpgrade(d) = data else {
-        unreachable!("not a ReplaceObjectUpgrade")
-    };
+    let ModuleDataKind::ReplaceObjectUpgrade(d) = data else { unreachable!("not a ReplaceObjectUpgrade") };
     put_mux(v, &d.upgrade.mux_data(), fx);
     put_str(v, &d.replace_object_name);
 }
@@ -339,9 +303,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
             let m: Vec<u32> = (0..12).map(|_| u32_(&mut p)).collect();
             objs.push(format!("object {id} destroyed {destroyed} template {tmpl} team {team} player {player} matrix {m:x?}"));
         }
-        out.push(format!(
-            "op {i}: status {st} res {res} upgraded {up} log {log:?}"
-        ));
+        out.push(format!("op {i}: status {st} res {res} upgraded {up} log {log:?}"));
         out.extend(objs.into_iter().map(|o| format!("op {i}: {o}")));
     }
     out
@@ -355,9 +317,7 @@ fn gen_name(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
     }
     match g.below(100) {
         0..=64 if !upgrades.is_empty() => upgrades[g.below(upgrades.len() as u32) as usize].clone(),
-        65..=74 if !upgrades.is_empty() => {
-            upgrades[g.below(upgrades.len() as u32) as usize].to_lowercase()
-        }
+        65..=74 if !upgrades.is_empty() => upgrades[g.below(upgrades.len() as u32) as usize].to_lowercase(),
         75..=76 => format!("Unknown{}", g.below(3)),
         77 => "Up9".to_string(),
         78..=79 => pick(g, &["None", "none", "NONE"]).to_string(),
@@ -368,10 +328,7 @@ fn gen_name(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
 
 fn gen_list(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
     let n = 1 + g.below(3);
-    (0..n)
-        .map(|_| gen_name(g, upgrades, clean))
-        .collect::<Vec<_>>()
-        .join(" ")
+    (0..n).map(|_| gen_name(g, upgrades, clean)).collect::<Vec<_>>().join(" ")
 }
 
 fn gen_data(g: &mut Gen, upgrades: &[String], clean: bool) -> Vec<u8> {
@@ -392,13 +349,7 @@ fn gen_data(g: &mut Gen, upgrades: &[String], clean: bool) -> Vec<u8> {
     field(g, 35, "FXListUpgrade", v);
     let v = gen_bool(g, clean);
     field(g, 30, "RequiresAllTriggers", v);
-    let v = pick(
-        g,
-        &[
-            "RO_A", "RO_B", "RO_C", "RO_A", "RO_B", "ro_a", "None", "RO_D", "",
-        ],
-    )
-    .to_string();
+    let v = pick(g, &["RO_A", "RO_B", "RO_C", "RO_A", "RO_B", "ro_a", "None", "RO_D", ""]).to_string();
     field(g, 90, "ReplaceObject", v);
     if !clean && g.below(25) == 0 {
         lines.push(format!("Bogus{}1", gen_sep(g)));
@@ -419,11 +370,7 @@ fn gen_mask(g: &mut Gen, n_up: usize, at_least: u32) -> [u32; 4] {
     let mut w = [0u32; 4];
     if n_up > 0 {
         // a third of the masks name most of the upgrades, so that a TriggeredBy list is met more often than by chance
-        let extra = if g.below(3) == 0 {
-            g.below(n_up as u32 + 1)
-        } else {
-            g.below(3)
-        };
+        let extra = if g.below(3) == 0 { g.below(n_up as u32 + 1) } else { g.below(3) };
         for _ in 0..at_least + extra {
             let b = g.below(n_up as u32) as usize;
             w[b / 32] |= 1 << (b % 32);
@@ -445,16 +392,8 @@ fn cut_line(c: &CutCall) -> Option<String> {
     Some(match c {
         CutCall::PathfinderRemoveObjectFromPathfindMap { object } => format!("pathremove {object}"),
         CutCall::PathfinderAddObjectToPathfindMap { object } => format!("pathadd {object}"),
-        CutCall::PlayerOnStructureConstructionComplete {
-            player,
-            builder,
-            structure,
-            is_rebuild,
-        } => {
-            format!(
-                "structdone {player} {builder} {structure} {}",
-                i32::from(*is_rebuild)
-            )
+        CutCall::PlayerOnStructureConstructionComplete { player, builder, structure, is_rebuild } => {
+            format!("structdone {player} {builder} {structure} {}", i32::from(*is_rebuild))
         }
         _ => return None,
     })
@@ -466,36 +405,20 @@ fn translation(x: f32, y: f32, z: f32) -> Matrix3D {
 
 /// Runs the ops on a fresh world and returns the dump (after the data dump), the key probes and the world.
 #[allow(clippy::too_many_arguments)]
-fn rust_run(
-    ctx: Ctx,
-    data: ModuleDataKind,
-    player_mask: [u32; 4],
-    obj_mask: [u32; 4],
-    cfg: &mut [u32; 8],
-    ops: &[[u32; 5]],
-    tally: &mut Tally,
-) -> (Vec<u8>, Vec<u32>, World) {
+fn rust_run(ctx: Ctx, data: ModuleDataKind, player_mask: [u32; 4], obj_mask: [u32; 4], cfg: &mut [u32; 8], ops: &[[u32; 5]], tally: &mut Tally) -> (Vec<u8>, Vec<u32>, World) {
     let mut v = Vec::new();
     let mut fx = FxIds::default();
     put_data(&mut v, &data, &mut fx);
 
     let mut w = World::new();
     let factory = build_factory(&[cfg[2], cfg[3], cfg[4]]);
-    w.statics = Arc::new(GameStatics {
-        upgrade_center: ctx.center,
-        thing_factory: factory,
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, thing_factory: factory, ..Default::default() });
     w.names = ctx.names;
     w.cuts.neutral_default_team = 1;
     for t in 1..=3 {
-        w.teams
-            .insert_team(rts_lockstep_engine::logic::world::team::Team::new(t, 0))
-            .unwrap();
+        w.teams.insert_team(rts_lockstep_engine::logic::world::team::Team::new(t, 0)).unwrap();
         if cfg[4 + t as usize] != 0 {
-            w.cuts
-                .team_players
-                .insert(t, cfg[4 + t as usize] as i32 - 1);
+            w.cuts.team_players.insert(t, cfg[4 + t as usize] as i32 - 1);
         }
     }
     for p in 0..3 {
@@ -503,21 +426,12 @@ fn rust_run(
     }
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        b"ReplaceObjectUpgrade",
-        b"ModuleTag_Up",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"ReplaceObjectUpgrade", b"ModuleTag_Up", &data).unwrap().unwrap();
     let mut status = ObjectStatusMaskType::default();
     status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, 1);
     let me = w
         .new_object(NewObject {
-            template: Arc::new(ThingTemplate::from_object_values(
-                &ObjectTemplateValues::default(),
-            )),
+            template: Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default())),
             status,
             team: Some(cfg[1] as _),
             modules: vec![m],
@@ -538,26 +452,18 @@ fn rust_run(
         w.cuts.trace = Some(Vec::new());
         w.cuts.log = Some(Vec::new());
         let res = match o[0] {
-            0 => w
-                .module_call(me, idx, ModuleCall::WouldUpgrade(mask))
-                .as_bool(),
+            0 => w.module_call(me, idx, ModuleCall::WouldUpgrade(mask)).as_bool(),
             1 => {
-                let r = w
-                    .module_call(me, idx, ModuleCall::AttemptUpgrade(mask))
-                    .as_bool();
+                let r = w.module_call(me, idx, ModuleCall::AttemptUpgrade(mask)).as_bool();
                 tally.fired += u64::from(r);
                 r
             }
-            2 => w
-                .module_call(me, idx, ModuleCall::ResetUpgrade(mask))
-                .as_bool(),
+            2 => w.module_call(me, idx, ModuleCall::ResetUpgrade(mask)).as_bool(),
             3 => {
                 w.module_call(me, idx, ModuleCall::ForceRefreshUpgrade);
                 false
             }
-            4 => w
-                .module_call(me, idx, ModuleCall::IsAlreadyUpgraded)
-                .as_bool(),
+            4 => w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded).as_bool(),
             5 => {
                 w.objects.find_mut(me).unwrap().object_upgrades_completed = mask;
                 false
@@ -577,10 +483,7 @@ fn rust_run(
         let threw = w.cuts.module_errors.len() > errors_before;
         put_i32(&mut v, if threw { 2 } else { 0 });
         v.push(u8::from(res && !threw));
-        v.push(u8::from(
-            w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded)
-                .as_bool(),
-        ));
+        v.push(u8::from(w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded).as_bool()));
         let fxs: Vec<Vec<u8>> = w.events.events()[events_before..]
             .iter()
             .filter_map(|e| match e {
@@ -610,20 +513,13 @@ fn rust_run(
             } else if let Some(n) = t.strip_prefix("replace newobject ") {
                 last_new = n.parse().unwrap();
                 // the position of the replacement's first behaviour module: the driver counts from it
-                let first = ["TestCreate", "TestPlain"]
-                    .iter()
-                    .filter_map(|c| w.find_module(last_new as ObjectId, c.as_bytes()))
-                    .min()
-                    .map_or(0, i32::from);
+                let first = ["TestCreate", "TestPlain"].iter().filter_map(|c| w.find_module(last_new as ObjectId, c.as_bytes())).min().map_or(0, i32::from);
                 new_ids.insert(last_new, first);
                 log.push(format!("newobject {n}"));
             } else if t == "replace settransform" {
                 log.push(format!("settransform {last_new}"));
             } else if let Some(i) = t.strip_prefix("replace buildcomplete ") {
-                log.push(format!(
-                    "buildcomplete {last_new} {}",
-                    i.parse::<i32>().unwrap() - new_ids[&last_new]
-                ));
+                log.push(format!("buildcomplete {last_new} {}", i.parse::<i32>().unwrap() - new_ids[&last_new]));
             }
         }
         tally.effects += log.len() as u64;
@@ -653,30 +549,14 @@ fn rust_run(
             }
         }
     }
-    let keys = PROBE
-        .iter()
-        .map(|n| w.names.name_to_key(n.as_bytes()).0)
-        .collect();
+    let keys = PROBE.iter().map(|n| w.names.name_to_key(n.as_bytes()).0).collect();
     (v, keys, w)
 }
 
-const PROBE: [&str; 9] = [
-    "none",
-    "Up0",
-    "Up3",
-    "Unknown0",
-    "Unknown2",
-    "Up9",
-    "SCIENCE_Pathfinder",
-    "Sci_X",
-    "zz_fresh",
-];
+const PROBE: [&str; 9] = ["none", "Up0", "Up3", "Unknown0", "Unknown2", "Up9", "SCIENCE_Pathfinder", "Sci_X", "zz_fresh"];
 
 fn cases() -> usize {
-    std::env::var("L9RO_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9RO_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 #[test]
@@ -696,37 +576,13 @@ fn replace_object_upgrade_matches_upstream() {
     for case in 0..cases {
         let init_names = g.below(3) != 0;
         let init_center = g.below(5) != 0;
-        let n_up = if g.below(10) == 0 {
-            0
-        } else {
-            1 + g.below(8) as usize
-        };
+        let n_up = if g.below(10) == 0 { 0 } else { 1 + g.below(8) as usize };
         let upgrades: Vec<String> = (0..n_up).map(|i| format!("Up{i}")).collect();
-        let defs: String = upgrades
-            .iter()
-            .map(|u| format!("Upgrade {u}\nEnd\n"))
-            .collect();
+        let defs: String = upgrades.iter().map(|u| format!("Upgrade {u}\nEnd\n")).collect();
         let mut ctx = Ctx::new(init_names, init_center);
-        Ini::load(
-            b"Data\\INI\\Up.ini",
-            defs.as_bytes(),
-            IniLoadType::Overwrite,
-            None,
-            &table,
-            &mut ctx,
-        )
-        .expect("upgrades load");
+        Ini::load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ctx).expect("upgrades load");
         cpp_reset(init_names, init_center);
-        assert_eq!(
-            cpp_load(
-                b"Data\\INI\\Up.ini",
-                defs.as_bytes(),
-                IniLoadType::Overwrite,
-                false
-            )
-            .status,
-            0
-        );
+        assert_eq!(cpp_load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, false).status, 0);
 
         let clean = g.below(10) < 7;
         let text = gen_data(&mut g, &upgrades, clean);
@@ -765,13 +621,7 @@ fn replace_object_upgrade_matches_upstream() {
                     _ => 7,
                 };
                 if op == 7 {
-                    [
-                        7,
-                        (g.below(2000) as f32 - 1000.0).to_bits(),
-                        (g.below(2000) as f32 - 1000.0).to_bits(),
-                        g.uniform(-50.0, 50.0).to_bits(),
-                        0,
-                    ]
+                    [7, (g.below(2000) as f32 - 1000.0).to_bits(), (g.below(2000) as f32 - 1000.0).to_bits(), g.uniform(-50.0, 50.0).to_bits(), 0]
                 } else {
                     let m = gen_mask(&mut g, n_up, 1);
                     [op, m[0], m[1], m[2], m[3]]
@@ -781,15 +631,7 @@ fn replace_object_upgrade_matches_upstream() {
 
         // Rust first: a case that reaches upstream undefined behaviour is counted and never sent to the C++
         let rust = if outcome.status == 0 {
-            let (rd, rk, w) = rust_run(
-                ctx,
-                data.expect("read ok"),
-                player_mask,
-                obj_mask,
-                &mut cfg,
-                &ops,
-                &mut tally,
-            );
+            let (rd, rk, w) = rust_run(ctx, data.expect("read ok"), player_mask, obj_mask, &mut cfg, &ops, &mut tally);
             if w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined()) {
                 excluded += 1;
                 continue;
@@ -831,55 +673,22 @@ fn replace_object_upgrade_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!(
-                "case {case}: upgrades {upgrades:?} cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                show(&text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case}: upgrades {upgrades:?} cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some((rd, rk, w)) = rust else {
             read_failed += 1;
             continue;
         };
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         for l in &dr {
-            for key in [
-                "pathremove",
-                "destroy",
-                "newobject",
-                "settransform",
-                "pathadd",
-                "buildcomplete",
-                "structdone",
-                "remove ",
-                "fx",
-            ] {
-                *counts.entry(key.trim().to_string()).or_default() +=
-                    l.matches(&format!("\"{key}")).count() as u64;
+            for key in ["pathremove", "destroy", "newobject", "settransform", "pathadd", "buildcomplete", "structdone", "remove ", "fx"] {
+                *counts.entry(key.trim().to_string()).or_default() += l.matches(&format!("\"{key}")).count() as u64;
             }
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
-            eprintln!(
-                "--- case {case} cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}",
-                show(&text),
-                dr.get(i),
-                dc.get(i)
-            );
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            eprintln!("--- case {case} cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -908,11 +717,5 @@ fn replace_object_upgrade_matches_upstream() {
     read.finish();
     run.finish();
     keys.finish();
-    assert!(
-        read_failed * 40 > cases as u64
-            && ops_run * 5 > cases as u64 * 4
-            && tally.fired * 6 > cases as u64
-            && tally.effects * 4 > cases as u64,
-        "the generator must reach every path"
-    );
+    assert!(read_failed * 40 > cases as u64 && ops_run * 5 > cases as u64 * 4 && tally.fired * 6 > cases as u64 && tally.effects * 4 > cases as u64, "the generator must reach every path");
 }

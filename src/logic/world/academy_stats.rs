@@ -91,10 +91,9 @@
 use crate::common::academy_classification::AcademyClassificationType;
 use crate::common::game_common::LOGICFRAMES_PER_SECOND;
 use crate::common::kind_of::{
-    KindOfMaskType, KINDOF_DISGUISER, KINDOF_DOZER, KINDOF_FS_ADVANCED_TECH, KINDOF_FS_BARRACKS,
-    KINDOF_FS_BLACK_MARKET, KINDOF_FS_STRATEGY_CENTER, KINDOF_FS_SUPPLY_CENTER,
-    KINDOF_FS_SUPPLY_DROPZONE, KINDOF_FS_WARFACTORY, KINDOF_HARVESTER, KINDOF_HERO,
-    KINDOF_INFANTRY, KINDOF_MONEY_HACKER, KINDOF_VEHICLE,
+    KindOfMaskType, KINDOF_DISGUISER, KINDOF_DOZER, KINDOF_FS_ADVANCED_TECH, KINDOF_FS_BARRACKS, KINDOF_FS_BLACK_MARKET,
+    KINDOF_FS_STRATEGY_CENTER, KINDOF_FS_SUPPLY_CENTER, KINDOF_FS_SUPPLY_DROPZONE, KINDOF_FS_WARFACTORY, KINDOF_HARVESTER,
+    KINDOF_HERO, KINDOF_INFANTRY, KINDOF_MONEY_HACKER, KINDOF_VEHICLE,
 };
 use crate::common::random_value::RandomValues;
 use crate::common::xfer::{Xfer, XferResult, XferVersion};
@@ -299,8 +298,7 @@ impl Default for AcademyStats {
 
 /// `strcmp`-style `compareNoCase(s) == 0`.
 fn side_is(side: &Option<Vec<u8>>, name: &str) -> bool {
-    side.as_deref()
-        .is_some_and(|s| s.eq_ignore_ascii_case(name.as_bytes()))
+    side.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(name.as_bytes()))
 }
 
 /// One pass of the advice: whether it is choosing, how many tips are still
@@ -315,11 +313,7 @@ impl Pass {
     /// `evaluateTierN(info, numAvailableTips)`: `None` is the counting pass
     /// (`-1`), `Some(n)` the choosing pass over `n` applicable tips.
     fn new(num_available: Option<i32>) -> Pass {
-        Pass {
-            choosing: num_available.is_some(),
-            num_available: num_available.unwrap_or(-1),
-            available: 0,
-        }
+        Pass { choosing: num_available.is_some(), num_available: num_available.unwrap_or(-1), available: 0 }
     }
 
     /// One tip's block of upstream: it applies, so it is counted, a client
@@ -344,9 +338,7 @@ impl AcademyStats {
         self.next_update_frame = frame.wrapping_add(FRAMES_BETWEEN_UPDATES);
         self.first_update = true;
         self.side = side.map(|s| s.to_vec());
-        self.unknown_side = !(side_is(&self.side, "USA")
-            || side_is(&self.side, "China")
-            || side_is(&self.side, "GLA"));
+        self.unknown_side = !(side_is(&self.side, "USA") || side_is(&self.side, "China") || side_is(&self.side, "GLA"));
         // The supply-center template is never found upstream: the cost is the default.
         self.supply_center_cost = DEFAULT_SUPPLY_CENTER_COST;
         self.spent_cash_before_building_supply_center = false;
@@ -427,13 +419,7 @@ impl AcademyStats {
     /// (each change of sufficiency, and how long a brown-out lasted).
     /// `money` and `has_power` are `None` when the player has no money or no
     /// energy object (upstream skips the check).
-    pub fn update(
-        &mut self,
-        frame: u32,
-        money: Option<u32>,
-        has_power: Option<bool>,
-        objects: &[AcademyObject],
-    ) {
+    pub fn update(&mut self, frame: u32, money: Option<u32>, has_power: Option<bool>, objects: &[AcademyObject]) {
         if self.unknown_side {
             return;
         }
@@ -489,10 +475,7 @@ impl AcademyStats {
             self.peons_built = self.peons_built.wrapping_add(1);
         }
         // 9) How idle was the player in building military units?
-        if (k.test(KINDOF_INFANTRY) || k.test(KINDOF_VEHICLE))
-            && !k.test(KINDOF_DOZER)
-            && !k.test(KINDOF_HARVESTER)
-        {
+        if (k.test(KINDOF_INFANTRY) || k.test(KINDOF_VEHICLE)) && !k.test(KINDOF_DOZER) && !k.test(KINDOF_HARVESTER) {
             // How long has it been since we built our last unit?
             let idle_frames = now.wrapping_sub(self.last_unit_built_frame);
             // If it was longer than our max time... then record it.
@@ -519,10 +502,7 @@ impl AcademyStats {
             self.had_a_tunnel_network = true;
         }
         // 18) Built secondary income building?
-        if k.test(KINDOF_MONEY_HACKER)
-            || k.test(KINDOF_FS_BLACK_MARKET)
-            || k.test(KINDOF_FS_SUPPLY_DROPZONE)
-        {
+        if k.test(KINDOF_MONEY_HACKER) || k.test(KINDOF_FS_BLACK_MARKET) || k.test(KINDOF_FS_SUPPLY_DROPZONE) {
             self.secondary_income_units_built = self.secondary_income_units_built.wrapping_add(1);
         }
         // 27) Built barracks within 5 minutes?
@@ -649,8 +629,7 @@ impl AcademyStats {
 
     /// `recordDoubleClickAttackMoveOrderGiven()`.
     pub fn record_double_click_attack_move_order_given(&mut self) {
-        self.double_click_attack_move_orders_given =
-            self.double_click_attack_move_orders_given.wrapping_add(1);
+        self.double_click_attack_move_orders_given = self.double_click_attack_move_orders_given.wrapping_add(1);
     }
 
     /// `recordMineCleared()`.
@@ -671,12 +650,7 @@ impl AcademyStats {
     /// `calculateAcademyAdvice(info)`: up to [`MAX_ADVICE_TIPS`] tips, from
     /// tier 1, then (when there is room) tier 2, then tier 3. Nothing is given
     /// for an unknown side. `rng` is the client random stream (`GameClientRandomValue`).
-    pub fn calculate_academy_advice(
-        &mut self,
-        frame: u32,
-        inputs: &AdviceInputs,
-        rng: &mut RandomValues,
-    ) -> AcademyAdvice {
+    pub fn calculate_academy_advice(&mut self, frame: u32, inputs: &AdviceInputs, rng: &mut RandomValues) -> AcademyAdvice {
         let mut info = AcademyAdvice::default();
         if self.unknown_side {
             return info;
@@ -693,13 +667,7 @@ impl AcademyStats {
 
     /// `evaluateTier1Advice(info, numAvailableTips)`. The counting pass runs
     /// first (`None`); if any tip applies, the choosing pass over those runs.
-    fn evaluate_tier1(
-        &mut self,
-        frame: u32,
-        info: &mut AcademyAdvice,
-        rng: &mut RandomValues,
-        num_available: Option<i32>,
-    ) {
+    fn evaluate_tier1(&mut self, frame: u32, info: &mut AcademyAdvice, rng: &mut RandomValues, num_available: Option<i32>) {
         let now = frame;
         let mut pass = Pass::new(num_available);
         // 2) Did player run out of money before building a supply center?
@@ -735,9 +703,7 @@ impl AcademyStats {
         if idle_frames > self.idle_building_units_max_frames {
             self.idle_building_units_max_frames = idle_frames;
         }
-        if self.idle_building_units_max_frames > 300 * LOGICFRAMES_PER_SECOND as u32
-            || self.last_unit_built_frame == 0
-        {
+        if self.idle_building_units_max_frames > 300 * LOGICFRAMES_PER_SECOND as u32 || self.last_unit_built_frame == 0 {
             pass.offer(info, rng, "ACADEMY:IdleBuildingUnits");
         }
         // 10) Did player drag select units?
@@ -773,12 +739,7 @@ impl AcademyStats {
     }
 
     /// `evaluateTier2Advice(info, numAvailableTips)`.
-    fn evaluate_tier2(
-        &mut self,
-        info: &mut AcademyAdvice,
-        rng: &mut RandomValues,
-        num_available: Option<i32>,
-    ) {
+    fn evaluate_tier2(&mut self, info: &mut AcademyAdvice, rng: &mut RandomValues, num_available: Option<i32>) {
         let mut pass = Pass::new(num_available);
         // 15) Selected a strategy center battle plan?
         if self.had_a_strategy_center && !self.chose_a_strategy_for_center {
@@ -819,14 +780,7 @@ impl AcademyStats {
     }
 
     /// `evaluateTier3Advice(info, numAvailableTips)`.
-    fn evaluate_tier3(
-        &mut self,
-        frame: u32,
-        inputs: &AdviceInputs,
-        info: &mut AcademyAdvice,
-        rng: &mut RandomValues,
-        num_available: Option<i32>,
-    ) {
+    fn evaluate_tier3(&mut self, frame: u32, inputs: &AdviceInputs, info: &mut AcademyAdvice, rng: &mut RandomValues, num_available: Option<i32>) {
         let now = frame;
         let mut pass = Pass::new(num_available);
         // 25) Did the player use the new alternate interface in the options?
@@ -854,9 +808,7 @@ impl AcademyStats {
         if delta > self.max_frames_between_income {
             self.max_frames_between_income = delta;
         }
-        if self.max_frames_between_income > LOGICFRAMES_PER_SECOND as u32 * 120
-            || self.last_income_frame == 0
-        {
+        if self.max_frames_between_income > LOGICFRAMES_PER_SECOND as u32 * 120 || self.last_income_frame == 0 {
             pass.offer(info, rng, "ACADEMY:NoIncome");
         }
         // 31) Did the Player ever use Dozers/Workers to clear out mines? (the
@@ -943,10 +895,7 @@ mod tests {
     use super::*;
 
     fn obj(kinds: &[i32]) -> AcademyObject {
-        AcademyObject {
-            kind_of: KindOfMaskType::from_indices(kinds),
-            tunnel_contain: false,
-        }
+        AcademyObject { kind_of: KindOfMaskType::from_indices(kinds), tunnel_contain: false }
     }
 
     #[test]
@@ -955,11 +904,7 @@ mod tests {
         a.init(0, Some(b"Civilian"));
         let mut rng = RandomValues::new(1);
         let before = rng.clone();
-        assert_eq!(
-            a.calculate_academy_advice(0, &AdviceInputs::default(), &mut rng)
-                .num_tips(),
-            0
-        );
+        assert_eq!(a.calculate_academy_advice(0, &AdviceInputs::default(), &mut rng).num_tips(), 0);
         assert_eq!(rng, before, "no client random number is drawn");
     }
 
@@ -1002,24 +947,11 @@ mod tests {
         a.record_production(1, &obj(&[KINDOF_HARVESTER, KINDOF_VEHICLE]));
         a.record_production(1, &obj(&[KINDOF_HERO, KINDOF_INFANTRY]));
         a.record_production(1, &obj(&[KINDOF_DISGUISER]));
-        a.record_production(
-            1,
-            &obj(&[
-                KINDOF_FS_BARRACKS,
-                KINDOF_FS_WARFACTORY,
-                KINDOF_FS_ADVANCED_TECH,
-            ]),
-        );
+        a.record_production(1, &obj(&[KINDOF_FS_BARRACKS, KINDOF_FS_WARFACTORY, KINDOF_FS_ADVANCED_TECH]));
         a.record_production(1, &obj(&[KINDOF_MONEY_HACKER]));
         let mut rng = RandomValues::new(3);
-        let inputs = AdviceInputs {
-            use_alternate_mouse: true,
-            ..AdviceInputs::default()
-        };
-        assert_eq!(
-            a.calculate_academy_advice(5, &inputs, &mut rng).tips,
-            vec!["ACADEMY:NoIncome"]
-        );
+        let inputs = AdviceInputs { use_alternate_mouse: true, ..AdviceInputs::default() };
+        assert_eq!(a.calculate_academy_advice(5, &inputs, &mut rng).tips, vec!["ACADEMY:NoIncome"]);
     }
 
     #[test]

@@ -34,23 +34,16 @@
 use std::sync::Arc;
 
 use crate::common::game_common::LOGICFRAMES_PER_SECOND;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::model_state::{MODELCONDITION_AFLAME, MODELCONDITION_SMOLDERING};
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_DAMAGE};
-use crate::common::object_status_types::{
-    ObjectStatusMaskType, OBJECT_STATUS_AFLAME, OBJECT_STATUS_BURNED,
-};
+use crate::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_AFLAME, OBJECT_STATUS_BURNED};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::{DamageInfo, DAMAGE_FLAME, DAMAGE_PARTICLE_BEAM};
-use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime,
-    UPDATE_SLEEP_FOREVER,
-};
-use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::weapon_fire::DEATH_BURNED;
+use crate::logic::module::behavior_module::BehaviorModuleData;
+use crate::logic::module::update_module::{update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER};
+use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::sleepy::UpdateHandle;
@@ -102,79 +95,26 @@ impl Default for FlammableUpdateModuleData {
 
 /// `FlammableUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<FlammableUpdateModuleData>; 8] = [
-    FieldParse::new(
-        "BurnedDelay",
-        |ini, d, _| {
-            d.burned_delay = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AflameDuration",
-        |ini, d, _| {
-            d.aflame_duration = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AflameDamageDelay",
-        |ini, d, _| {
-            d.aflame_damage_delay = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AflameDamageAmount",
-        |ini, d, _| {
-            d.aflame_damage_amount = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "BurningSoundName",
-        |ini, d, _| {
-            d.burning_sound_name = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FlameDamageLimit",
-        |ini, d, _| {
-            d.flame_damage_limit_data = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FlameDamageExpiration",
-        |ini, d, _| {
-            d.flame_damage_expiration_delay = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("BurnedDelay", |ini, d, _| { d.burned_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("AflameDuration", |ini, d, _| { d.aflame_duration = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("AflameDamageDelay", |ini, d, _| { d.aflame_damage_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("AflameDamageAmount", |ini, d, _| { d.aflame_damage_amount = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("BurningSoundName", |ini, d, _| { d.burning_sound_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("FlameDamageLimit", |ini, d, _| { d.flame_damage_limit_data = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("FlameDamageExpiration", |ini, d, _| { d.flame_damage_expiration_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl FlammableUpdateModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, FlammableUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, FlammableUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<FlammableUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<FlammableUpdateModuleData> {
         let mut data = FlammableUpdateModuleData::default();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, FlammableUpdateModuleData::build_field_parse)?;
@@ -228,10 +168,7 @@ impl FlammableUpdate {
     }
 
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and the state.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<FlammableUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<FlammableUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
@@ -284,12 +221,7 @@ impl FlammableUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -309,35 +241,18 @@ impl FlammableUpdate {
     }
 
     /// `onDamage(damageInfo)`.
-    pub fn on_damage(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        info: &DamageInfo,
-    ) -> Result<(), IniError> {
-        if info.input.damage_type == DAMAGE_FLAME || info.input.damage_type == DAMAGE_PARTICLE_BEAM
-        {
+    pub fn on_damage(&mut self, world: &mut World, me: ModuleHandle, info: &DamageInfo) -> Result<(), IniError> {
+        if info.input.damage_type == DAMAGE_FLAME || info.input.damage_type == DAMAGE_PARTICLE_BEAM {
             let now = world.frame();
-            if now.wrapping_sub(self.data.flame_damage_expiration_delay)
-                > self.last_flame_damage_dealt
-            {
+            if now.wrapping_sub(self.data.flame_damage_expiration_delay) > self.last_flame_damage_dealt {
                 // If it has been a long time since our last flame damage, reset the threshold
                 if !crate::logic::modules::plant(984) {
                     self.flame_damage_limit = self.data.flame_damage_limit_data;
                 }
             }
-            self.last_flame_damage_dealt = if crate::logic::modules::plant(981) {
-                self.last_flame_damage_dealt
-            } else {
-                now
-            };
+            self.last_flame_damage_dealt = if crate::logic::modules::plant(981) { self.last_flame_damage_dealt } else { now };
 
-            let (aflame, burned) = world.objects.find(me.object).map_or((false, false), |o| {
-                (
-                    o.test_status(OBJECT_STATUS_AFLAME),
-                    o.test_status(OBJECT_STATUS_BURNED),
-                )
-            });
+            let (aflame, burned) = world.objects.find(me.object).map_or((false, false), |o| (o.test_status(OBJECT_STATUS_AFLAME), o.test_status(OBJECT_STATUS_BURNED)));
             if !aflame && !burned {
                 // If I'm not on fire, and I haven't burned up, see if I should try to catch fire.
                 self.flame_damage_limit -= info.out.actual_damage_dealt;
@@ -354,17 +269,10 @@ impl FlammableUpdate {
         let now = world.frame();
         if self.status == FS_AFLAME && self.aflame_end_frame != 0 && self.aflame_end_frame > now {
             let mut soonest = self.aflame_end_frame;
-            if self.burned_end_frame != 0
-                && self.burned_end_frame < soonest
-                && self.burned_end_frame > now
-            {
+            if self.burned_end_frame != 0 && self.burned_end_frame < soonest && self.burned_end_frame > now {
                 soonest = self.burned_end_frame;
             }
-            if self.damage_end_frame != 0
-                && self.damage_end_frame < soonest
-                && self.damage_end_frame > now
-                && !crate::logic::modules::plant(985)
-            {
+            if self.damage_end_frame != 0 && self.damage_end_frame < soonest && self.damage_end_frame > now && !crate::logic::modules::plant(985) {
                 soonest = self.damage_end_frame;
             }
             // UPDATE_SLEEP requires a count-of-frames, not an absolute-frame, so subtract 'now'
@@ -384,10 +292,7 @@ impl FlammableUpdate {
             self.start_burning_sound(world, me.object);
 
             // bleah. this sucks. (srj)
-            if let Some(fu) = world
-                .find_module(me.object, b"FireSpreadUpdate")
-                .filter(|_| !crate::logic::modules::plant(986))
-            {
+            if let Some(fu) = world.find_module(me.object, b"FireSpreadUpdate").filter(|_| !crate::logic::modules::plant(986)) {
                 world.module_call(me.object, fu, ModuleCall::StartFireSpreading);
             }
 
@@ -396,16 +301,8 @@ impl FlammableUpdate {
             let d = self.data.clone();
             let now = world.frame();
             self.aflame_end_frame = now.wrapping_add(d.aflame_duration);
-            self.burned_end_frame = if d.burned_delay != 0 || crate::logic::modules::plant(989) {
-                now.wrapping_add(d.burned_delay)
-            } else {
-                0
-            };
-            self.damage_end_frame = if d.aflame_damage_delay != 0 {
-                now.wrapping_add(d.aflame_damage_delay)
-            } else {
-                0
-            };
+            self.burned_end_frame = if d.burned_delay != 0 || crate::logic::modules::plant(989) { now.wrapping_add(d.burned_delay) } else { 0 };
+            self.damage_end_frame = if d.aflame_damage_delay != 0 { now.wrapping_add(d.aflame_damage_delay) } else { 0 };
 
             let t = self.calc_sleep_time(world);
             update_behavior::set_wake_frame(world, t);
@@ -419,15 +316,8 @@ impl FlammableUpdate {
     }
 
     /// `me->getBodyModule()->setAflame(setting)`; `NULL` body is dereferenced.
-    fn set_body_aflame(
-        &self,
-        world: &mut World,
-        me: ObjectId,
-        setting: bool,
-    ) -> Result<(), IniError> {
-        let body = world
-            .get_body_module(me)
-            .ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
+    fn set_body_aflame(&self, world: &mut World, me: ObjectId, setting: bool) -> Result<(), IniError> {
+        let body = world.get_body_module(me).ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
         world.module_call(me, body, ModuleCall::SetAflame(setting));
         Ok(())
     }
@@ -475,12 +365,7 @@ impl FlammableUpdate {
 
         if self.aflame_end_frame != 0 && now >= self.aflame_end_frame {
             // This is the important one. I am no longer on fire.
-            if world
-                .objects
-                .find(me.object)
-                .is_some_and(|o| o.test_status(OBJECT_STATUS_BURNED))
-                && !crate::logic::modules::plant(982)
-            {
+            if world.objects.find(me.object).is_some_and(|o| o.test_status(OBJECT_STATUS_BURNED)) && !crate::logic::modules::plant(982) {
                 // If I am burned, then I will never catch fire again.
                 self.status = FS_BURNED;
             } else {
@@ -577,7 +462,5 @@ impl Snapshot for FlammableUpdate {
 
 /// The factory's `NewModuleDataProc` for `FlammableUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::FlammableUpdate(Arc::new(
-        FlammableUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::FlammableUpdate(Arc::new(FlammableUpdateModuleData::friend_new_module_data(ini)?)))
 }

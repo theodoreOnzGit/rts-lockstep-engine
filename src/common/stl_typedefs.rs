@@ -134,15 +134,9 @@ mod tests {
 
     #[test]
     fn unicode_nocase_order_and_equality() {
-        let w = |t: &str| {
-            UnicodeString::try_from_chars(&t.encode_utf16().collect::<Vec<u16>>())
-                .expect("short string")
-        };
+        let w = |t: &str| UnicodeString::try_from_chars(&t.encode_utf16().collect::<Vec<u16>>()).expect("short string");
         assert!(less_than_nocase_unicode(&w("apple"), &w("BANANA")));
-        assert!(
-            !less_than_nocase_unicode(&w("Abc"), &w("aBC")),
-            "neither is less: equal keys"
-        );
+        assert!(!less_than_nocase_unicode(&w("Abc"), &w("aBC")), "neither is less: equal keys");
         assert!(equal_to_unicode(&UnicodeString::new(), &w("")));
         assert!(!equal_to_unicode(&w("a"), &w("A")));
     }

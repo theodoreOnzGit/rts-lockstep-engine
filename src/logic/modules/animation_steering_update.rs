@@ -24,25 +24,21 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
-use crate::common::model_state::{
-    ModelConditionFlagType, MODELCONDITION_CENTER_TO_LEFT, MODELCONDITION_CENTER_TO_RIGHT,
-    MODELCONDITION_INVALID, MODELCONDITION_LEFT_TO_CENTER, MODELCONDITION_RIGHT_TO_CENTER,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{UpdateModule, UpdateModuleData, SleepyUpdatePhase, UpdateSleepTime, UPDATE_SLEEP_NONE};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
-use crate::logic::world::object_events::{ModelConditionOp, ObjectClientEvent};
 use crate::logic::world::sleepy::UpdateHandle;
 use crate::logic::world::update_body::UpdateBody;
+use crate::common::model_state::{
+    ModelConditionFlagType, MODELCONDITION_CENTER_TO_LEFT, MODELCONDITION_CENTER_TO_RIGHT, MODELCONDITION_INVALID, MODELCONDITION_LEFT_TO_CENTER,
+    MODELCONDITION_RIGHT_TO_CENTER,
+};
+use crate::logic::world::object_events::{ModelConditionOp, ObjectClientEvent};
 
 /// `TURN_NEGATIVE` (`PhysicsUpdate.h`).
 const TURN_NEGATIVE: i32 = -1;
@@ -62,37 +58,23 @@ pub struct AnimationSteeringUpdateModuleData {
 
 /// `AnimationSteeringUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<AnimationSteeringUpdateModuleData>; 2] = [
-    FieldParse::new(
-        "MinTransitionTime",
-        |ini, d, _| {
-            d.transition_frames = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("MinTransitionTime", |ini, d, _| { d.transition_frames = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl AnimationSteeringUpdateModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, AnimationSteeringUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, AnimationSteeringUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<AnimationSteeringUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<AnimationSteeringUpdateModuleData> {
         let mut data = AnimationSteeringUpdateModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                AnimationSteeringUpdateModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, AnimationSteeringUpdateModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -128,19 +110,11 @@ impl AnimationSteeringUpdate {
     }
 
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and straight with no transition pending.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<AnimationSteeringUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<AnimationSteeringUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(AnimationSteeringUpdate {
-            update,
-            data,
-            current_turn_anim: MODELCONDITION_INVALID,
-            next_transition_frame: 0,
-        })
+        Ok(AnimationSteeringUpdate { update, data, current_turn_anim: MODELCONDITION_INVALID, next_transition_frame: 0 })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -164,12 +138,7 @@ impl AnimationSteeringUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -209,71 +178,34 @@ impl UpdateBehavior for AnimationSteeringUpdate {
         let id = me.object;
         let physics = world.objects.find(id).and_then(|o| o.physics);
         let now = world.frame();
-        if let Some(physics) = physics.filter(|_| {
-            world.has_drawable(id)
-                && (now >= self.next_transition_frame || crate::logic::modules::plant(1881))
-        }) {
-            let current_turn = world
-                .module_call(id, physics, ModuleCall::PhysicsGetTurning)
-                .as_int(TURN_NONE);
-            let model = |world: &mut World, op: ModelConditionOp| {
-                world.emit(ObjectClientEvent::DrawableModelCondition { object_id: id, op })
-            };
+        if let Some(physics) = physics.filter(|_| world.has_drawable(id) && (now >= self.next_transition_frame || crate::logic::modules::plant(1881))) {
+            let current_turn = world.module_call(id, physics, ModuleCall::PhysicsGetTurning).as_int(TURN_NONE);
+            let model = |world: &mut World, op: ModelConditionOp| world.emit(ObjectClientEvent::DrawableModelCondition { object_id: id, op });
             match self.current_turn_anim {
                 MODELCONDITION_INVALID => {
                     if current_turn == TURN_NEGATIVE {
-                        model(
-                            world,
-                            ModelConditionOp::Set(vec![MODELCONDITION_CENTER_TO_RIGHT]),
-                        );
+                        model(world, ModelConditionOp::Set(vec![MODELCONDITION_CENTER_TO_RIGHT]));
                         self.transition(now, MODELCONDITION_CENTER_TO_RIGHT);
                     } else if current_turn == TURN_POSITIVE {
-                        model(
-                            world,
-                            ModelConditionOp::Set(vec![MODELCONDITION_CENTER_TO_LEFT]),
-                        );
+                        model(world, ModelConditionOp::Set(vec![MODELCONDITION_CENTER_TO_LEFT]));
                         self.transition(now, MODELCONDITION_CENTER_TO_LEFT);
                     }
                 }
                 MODELCONDITION_CENTER_TO_RIGHT => {
                     if current_turn != TURN_NEGATIVE {
-                        model(
-                            world,
-                            ModelConditionOp::ClearAndSet {
-                                clear: vec![MODELCONDITION_CENTER_TO_RIGHT],
-                                set: vec![MODELCONDITION_RIGHT_TO_CENTER],
-                            },
-                        );
+                        model(world, ModelConditionOp::ClearAndSet { clear: vec![MODELCONDITION_CENTER_TO_RIGHT], set: vec![MODELCONDITION_RIGHT_TO_CENTER] });
                         self.transition(now, MODELCONDITION_RIGHT_TO_CENTER);
                     }
                 }
                 MODELCONDITION_CENTER_TO_LEFT => {
                     if current_turn != TURN_POSITIVE || crate::logic::modules::plant(1882) {
-                        model(
-                            world,
-                            ModelConditionOp::ClearAndSet {
-                                clear: vec![MODELCONDITION_CENTER_TO_LEFT],
-                                set: vec![MODELCONDITION_LEFT_TO_CENTER],
-                            },
-                        );
+                        model(world, ModelConditionOp::ClearAndSet { clear: vec![MODELCONDITION_CENTER_TO_LEFT], set: vec![MODELCONDITION_LEFT_TO_CENTER] });
                         self.transition(now, MODELCONDITION_LEFT_TO_CENTER);
                     }
                 }
-                MODELCONDITION_LEFT_TO_CENTER | MODELCONDITION_RIGHT_TO_CENTER
-                    if current_turn == TURN_NONE =>
-                {
-                    model(
-                        world,
-                        ModelConditionOp::Clear(vec![
-                            MODELCONDITION_LEFT_TO_CENTER,
-                            MODELCONDITION_RIGHT_TO_CENTER,
-                        ]),
-                    );
-                    self.next_transition_frame = if crate::logic::modules::plant(1883) {
-                        now.wrapping_add(self.data.transition_frames)
-                    } else {
-                        now
-                    };
+                MODELCONDITION_LEFT_TO_CENTER | MODELCONDITION_RIGHT_TO_CENTER if current_turn == TURN_NONE => {
+                    model(world, ModelConditionOp::Clear(vec![MODELCONDITION_LEFT_TO_CENTER, MODELCONDITION_RIGHT_TO_CENTER]));
+                    self.next_transition_frame = if crate::logic::modules::plant(1883) { now.wrapping_add(self.data.transition_frames) } else { now };
                     self.current_turn_anim = MODELCONDITION_INVALID;
                 }
                 _ => {}
@@ -317,7 +249,5 @@ impl Snapshot for AnimationSteeringUpdate {
 
 /// The factory's `NewModuleDataProc` for `AnimationSteeringUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::AnimationSteeringUpdate(Arc::new(
-        AnimationSteeringUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::AnimationSteeringUpdate(Arc::new(AnimationSteeringUpdateModuleData::friend_new_module_data(ini)?)))
 }

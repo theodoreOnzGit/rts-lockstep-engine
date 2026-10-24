@@ -28,11 +28,11 @@ use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::upgrade_module::{UpgradeModule, UpgradeModuleData};
 use crate::logic::modules::upgrade_body::{upgrade_module_call, UpgradeBehavior};
-use crate::logic::weapon_bonus::condition::PLAYER_UPGRADE;
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::update_body::UpdateBody;
 use crate::upgrade_module_data_field_parse;
+use crate::logic::weapon_bonus::condition::PLAYER_UPGRADE;
 /// `class WeaponBonusUpgradeModuleData : public UpgradeModuleData`.
 #[derive(Debug)]
 pub struct WeaponBonusUpgradeModuleData {
@@ -50,29 +50,21 @@ impl Default for WeaponBonusUpgradeModuleData {
 }
 
 /// `UpgradeModuleData::buildFieldParse`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<WeaponBonusUpgradeModuleData>; 6] =
-    upgrade_module_data_field_parse!(WeaponBonusUpgradeModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<WeaponBonusUpgradeModuleData>; 6] = upgrade_module_data_field_parse!(WeaponBonusUpgradeModuleData, upgrade);
 
 impl WeaponBonusUpgradeModuleData {
     /// `buildFieldParse(p)`: `BehaviorModuleData`'s, then `UpgradeModuleData`'s, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, WeaponBonusUpgradeModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, WeaponBonusUpgradeModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<WeaponBonusUpgradeModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<WeaponBonusUpgradeModuleData> {
         let mut data = WeaponBonusUpgradeModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                WeaponBonusUpgradeModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, WeaponBonusUpgradeModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -90,21 +82,19 @@ pub struct WeaponBonusUpgrade {
 impl PartialEq for WeaponBonusUpgrade {
     /// The same data object and the same `m_upgradeExecuted` (upstream compares the data pointer).
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.data, &other.data)
-            && self.base.is_already_upgraded() == other.base.is_already_upgraded()
+        Arc::ptr_eq(&self.data, &other.data) && self.base.is_already_upgraded() == other.base.is_already_upgraded()
     }
 }
 
 impl WeaponBonusUpgrade {
     /// `WeaponBonusUpgrade(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<WeaponBonusUpgradeModuleData>>,
-    ) -> IniResult<WeaponBonusUpgrade> {
-        let data =
-            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(object: ObjectId, data: Option<Arc<WeaponBonusUpgradeModuleData>>) -> IniResult<WeaponBonusUpgrade> {
+        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let base = UpgradeModule::new(object, Some(data.upgrade.clone()))?;
-        Ok(WeaponBonusUpgrade { base, data })
+        Ok(WeaponBonusUpgrade {
+            base,
+            data,
+        })
     }
 
     /// `getInterfaceMask()`: the `UpgradeModule` one.
@@ -118,12 +108,7 @@ impl WeaponBonusUpgrade {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         upgrade_module_call(self, world, me, call)
     }
 }
@@ -135,16 +120,9 @@ impl UpgradeBehavior for WeaponBonusUpgrade {
     fn base_mut(&mut self) -> &mut UpgradeModule {
         &mut self.base
     }
-    fn upgrade_implementation(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-    ) -> Result<(), IniError> {
+    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
         if !crate::logic::modules::plant(4) {
-            world.set_weapon_bonus_condition(
-                me.object,
-                PLAYER_UPGRADE + crate::logic::modules::plant(3) as i32,
-            );
+            world.set_weapon_bonus_condition(me.object, PLAYER_UPGRADE + crate::logic::modules::plant(3) as i32);
         }
         Ok(())
     }
@@ -184,9 +162,7 @@ impl Snapshot for WeaponBonusUpgrade {
 
 /// The factory's `NewModuleDataProc` for `WeaponBonusUpgrade`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::WeaponBonusUpgrade(Arc::new(
-        WeaponBonusUpgradeModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::WeaponBonusUpgrade(Arc::new(WeaponBonusUpgradeModuleData::friend_new_module_data(ini)?)))
 }
 
 #[cfg(test)]

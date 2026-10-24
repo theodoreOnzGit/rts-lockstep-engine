@@ -118,21 +118,14 @@ fn put_str(v: &mut Vec<u8>, s: &[u8]) {
 fn read_block(ini: &mut Ini<'_>, out: &mut (usize, Option<ModuleDataKind>)) -> IniResult<()> {
     let kind = out.0;
     out.1 = Some(match kind {
-        0 => ModuleDataKind::PowerPlantUpdate(Arc::new(
-            PowerPlantUpdateModuleData::friend_new_module_data(Some(ini))?,
-        )),
-        _ => ModuleDataKind::RadarUpdate(Arc::new(RadarUpdateModuleData::friend_new_module_data(
-            Some(ini),
-        )?)),
+        0 => ModuleDataKind::PowerPlantUpdate(Arc::new(PowerPlantUpdateModuleData::friend_new_module_data(Some(ini))?)),
+        _ => ModuleDataKind::RadarUpdate(Arc::new(RadarUpdateModuleData::friend_new_module_data(Some(ini))?)),
     });
     Ok(())
 }
 
 fn rust_read(kind: usize, name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = (kind, None);
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out.1)
@@ -228,13 +221,7 @@ struct Tally {
     extends: u64,
 }
 
-fn run_xfer(
-    w: &mut World,
-    me: ObjectId,
-    idx: usize,
-    how: u32,
-    saved: &[u8],
-) -> (i32, Vec<u8>, u32) {
+fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -286,46 +273,15 @@ fn effects(trace: Vec<String>, idx: u16) -> (Vec<String>, u32, u32) {
             }
         } else if let Some(rest) = t.strip_prefix("evt DrawableModelCondition") {
             // `{ object_id: N, op: Set([x]) }`, `Clear([a, b])`, `ClearAndSet { clear: [a], set: [b] }`
-            let nums = |s: &str| -> Vec<String> {
-                s.split(|c: char| !c.is_ascii_digit() && c != '-')
-                    .filter(|x| !x.is_empty())
-                    .map(str::to_string)
-                    .collect()
-            };
-            if let Some(x) = rest
-                .split("Set([")
-                .nth(1)
-                .filter(|_| !rest.contains("ClearAndSet"))
-            {
-                log.push(format!(
-                    "mc {}",
-                    nums(x.split("])").next().unwrap()).join(",")
-                ));
+            let nums = |s: &str| -> Vec<String> { s.split(|c: char| !c.is_ascii_digit() && c != '-').filter(|x| !x.is_empty()).map(str::to_string).collect() };
+            if let Some(x) = rest.split("Set([").nth(1).filter(|_| !rest.contains("ClearAndSet")) {
+                log.push(format!("mc {}", nums(x.split("])").next().unwrap()).join(",")));
             } else if rest.contains("ClearAndSet") {
-                let clr = rest
-                    .split("clear: [")
-                    .nth(1)
-                    .unwrap()
-                    .split(']')
-                    .next()
-                    .unwrap();
-                let set = rest
-                    .split("set: [")
-                    .nth(1)
-                    .unwrap()
-                    .split(']')
-                    .next()
-                    .unwrap();
-                log.push(format!(
-                    "clearset {} {}",
-                    nums(clr).join(","),
-                    nums(set).join(",")
-                ));
+                let clr = rest.split("clear: [").nth(1).unwrap().split(']').next().unwrap();
+                let set = rest.split("set: [").nth(1).unwrap().split(']').next().unwrap();
+                log.push(format!("clearset {} {}", nums(clr).join(","), nums(set).join(",")));
             } else if let Some(x) = rest.split("Clear([").nth(1) {
-                log.push(format!(
-                    "clearflags {}",
-                    nums(x.split("])").next().unwrap()).join(",")
-                ));
+                log.push(format!("clearflags {}", nums(x.split("])").next().unwrap()).join(",")));
             }
         }
     }
@@ -333,13 +289,7 @@ fn effects(trace: Vec<String>, idx: u16) -> (Vec<String>, u32, u32) {
 }
 
 /// Runs the ops on a fresh world and returns the dump (after the data dump) and the world.
-fn rust_run(
-    kind: usize,
-    data: ModuleDataKind,
-    cfg: &[u32; 1],
-    ops: &[[u32; 6]],
-    tally: &mut Tally,
-) -> (Vec<u8>, World) {
+fn rust_run(kind: usize, data: ModuleDataKind, cfg: &[u32; 1], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     put_data(&mut v, &data);
     let mut w = World::new();
@@ -349,32 +299,13 @@ fn rust_run(
     w.cuts.probe_effect_trace = true;
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        CLASSES[kind].as_bytes(),
-        b"ModuleTag_Update",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
-    let template = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
-    let me = w
-        .new_object(NewObject {
-            template,
-            status: ObjectStatusMaskType::default(),
-            team: None,
-            modules: vec![m],
-        })
-        .unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), CLASSES[kind].as_bytes(), b"ModuleTag_Update", &data).unwrap().unwrap();
+    let template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
+    let me = w.new_object(NewObject { template, status: ObjectStatusMaskType::default(), team: None, modules: vec![m] }).unwrap();
     assert_eq!(me, 1, "the first object of a fresh world has the id 1");
     w.friend_bind_to_drawable(me, if cfg[0] != 0 { 7 } else { INVALID_DRAWABLE_ID });
     let idx = w.find_module(me, CLASSES[kind].as_bytes()).unwrap();
-    let handle = ModuleHandle {
-        object: me,
-        index: idx,
-    };
+    let handle = ModuleHandle { object: me, index: idx };
     let u = w.update_handle_of_module(handle).expect("an update module");
     // the constructor's wake calls
     let (_, wakes, last) = effects(w.cuts.trace.take().unwrap_or_default(), idx);
@@ -388,18 +319,11 @@ fn rust_run(
         let (mut xst, mut xbytes, mut crc, mut sleep) = (-2i32, Vec::new(), 0u32, 0i32);
         match o[0] {
             0 => {
-                sleep = w
-                    .with_body(u, |b, w| b.update(w, u))
-                    .expect("the module is in its slot")
-                    .0 as i32;
+                sleep = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0 as i32;
                 tally.updates += 1;
             }
             1 => {
-                let call = if kind == 0 {
-                    ModuleCall::ExtendRods { extend: o[1] != 0 }
-                } else {
-                    ModuleCall::ExtendRadar
-                };
+                let call = if kind == 0 { ModuleCall::ExtendRods { extend: o[1] != 0 } } else { ModuleCall::ExtendRadar };
                 w.module_call(me, idx, call);
                 tally.extends += 1;
             }
@@ -438,17 +362,11 @@ fn rust_run(
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let state =
-            w.objects
-                .find(me)
-                .unwrap()
-                .behaviors
-                .iter()
-                .find_map(|b| match b.body.as_ref() {
-                    Some(UpdateBody::PowerPlantUpdate(m)) => Some(m.state_words()),
-                    Some(UpdateBody::RadarUpdate(m)) => Some(m.state_words()),
-                    _ => None,
-                });
+        let state = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
+            Some(UpdateBody::PowerPlantUpdate(m)) => Some(m.state_words()),
+            Some(UpdateBody::RadarUpdate(m)) => Some(m.state_words()),
+            _ => None,
+        });
         let state = state.expect("the module is back in its slot");
         put_u32(&mut v, state.len() as u32);
         for s in state {
@@ -459,10 +377,7 @@ fn rust_run(
 }
 
 fn cases() -> usize {
-    std::env::var("L9UE_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9UE_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 /// A frame: small, around where a float stops counting by ones, or near the top of the range.
@@ -560,22 +475,8 @@ fn update_modules_e_match_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!(
-                "case {case} ({}): cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                CLASSES[kind],
-                show(&text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case} ({}): cfg {cfg:x?}, file {:?}, ops {ops:?}", CLASSES[kind], show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
@@ -583,24 +484,13 @@ fn update_modules_e_match_upstream() {
         let (dr, dc) = (decode(kind, &rd, ops.len()), decode(kind, &buf, ops.len()));
         for l in &dr {
             for key in ["\"mc ", "\"clearset ", "\"clearflags "] {
-                *counts.entry(key.trim_matches('"').to_string()).or_default() +=
-                    l.matches(key).count() as u64;
+                *counts.entry(key.trim_matches('"').to_string()).or_default() += l.matches(key).count() as u64;
             }
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
-            eprintln!(
-                "--- case {case} ({}) cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}",
-                CLASSES[kind],
-                show(&text),
-                dr.get(i),
-                dc.get(i)
-            );
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            eprintln!("--- case {case} ({}) cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}", CLASSES[kind], show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -619,10 +509,5 @@ fn update_modules_e_match_upstream() {
     }
     read.finish();
     run.finish();
-    assert!(
-        read_failed * 40 > cases as u64
-            && ops_run * 5 > cases as u64 * 4
-            && tally.effects * 4 > cases as u64,
-        "the generator must reach every path"
-    );
+    assert!(read_failed * 40 > cases as u64 && ops_run * 5 > cases as u64 * 4 && tally.effects * 4 > cases as u64, "the generator must reach every path");
 }

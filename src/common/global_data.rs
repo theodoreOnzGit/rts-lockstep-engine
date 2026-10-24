@@ -141,9 +141,7 @@
 //! [`Undefined`]: crate::common::ini::Undefined
 //! [`Ini::parse_coord3d`]: crate::common::ini::Ini::parse_coord3d
 
-use crate::common::game_common::{
-    DIFFICULTY_COUNT, LEVEL_COUNT, LOGICFRAMES_PER_SECOND, PLAYERTYPE_COUNT,
-};
+use crate::common::game_common::{DIFFICULTY_COUNT, LEVEL_COUNT, LOGICFRAMES_PER_SECOND, PLAYERTYPE_COUNT};
 use crate::common::game_type::{TimeOfDay, Weather, TIME_OF_DAY_COUNT, TIME_OF_DAY_FIRST};
 use crate::common::ini::{game_make_color, Ini, IniLoadType, IniResult};
 use crate::logic::weapon_bonus::WeaponBonusSet;
@@ -181,18 +179,8 @@ pub const TERRAIN_LOD_DISABLE: i32 = 9;
 
 /// `TerrainLODNames[]` (`GameClient/TerrainVisual.h`), without the `NULL`
 /// terminator.
-pub const TERRAIN_LOD_NAMES: [&str; 10] = [
-    "NONE",
-    "MIN",
-    "STRETCH_NO_CLOUDS",
-    "HALF_CLOUDS",
-    "NO_CLOUDS",
-    "STRETCH_CLOUDS",
-    "NO_WATER",
-    "MAX",
-    "AUTOMATIC",
-    "DISABLE",
-];
+pub const TERRAIN_LOD_NAMES: [&str; 10] =
+    ["NONE", "MIN", "STRETCH_NO_CLOUDS", "HALF_CLOUDS", "NO_CLOUDS", "STRETCH_CLOUDS", "NO_WATER", "MAX", "AUTOMATIC", "DISABLE"];
 
 /// `BODY_PRISTINE` (`BodyDamageType`, `GameLogic/Module/BodyModule.h`).
 pub const BODY_PRISTINE: i32 = 0;
@@ -763,9 +751,7 @@ pub fn parse_game_data_definition(ini: &mut Ini<'_>, store: &mut GlobalDataStore
     // If we're multifile, then continue loading stuff into the Global Data as normal.
 
     // parse the ini weapon definition
-    let what = store
-        .the_writable_global_data()
-        .expect("an instance exists");
+    let what = store.the_writable_global_data().expect("an instance exists");
     ini.init_from_ini(what, &GLOBAL_DATA_FIELDS)
 }
 
@@ -773,9 +759,7 @@ pub fn parse_game_data_definition(ini: &mut Ini<'_>, store: &mut GlobalDataStore
 mod tests {
     use super::*;
     use crate::common::base_type::PI;
-    use crate::common::game_common::{
-        convert_acceleration_in_secs_to_frames, convert_duration_from_msecs_to_frames,
-    };
+    use crate::common::game_common::{convert_acceleration_in_secs_to_frames, convert_duration_from_msecs_to_frames};
     use crate::common::ini::{BlockParse, IniErrorKind, TYPE_TABLE};
     use crate::common::money::Money;
     use petir::Real;
@@ -789,10 +773,7 @@ mod tests {
     fn blocks() -> Vec<BlockParse<GlobalDataStore>> {
         TYPE_TABLE
             .iter()
-            .map(|&(token, _, _)| BlockParse {
-                token,
-                parse: if token == "GameData" { handler } else { stub },
-            })
+            .map(|&(token, _, _)| BlockParse { token, parse: if token == "GameData" { handler } else { stub } })
             .collect()
     }
 
@@ -810,14 +791,7 @@ mod tests {
         assert_eq!(g.default_occlusion_delay, 90);
         assert_eq!(g.time_of_day, TimeOfDay::Afternoon as i32);
         assert_eq!(g.hot_key_text_color, game_make_color(255, 255, 0, 255));
-        assert_eq!(
-            (
-                g.shroud_color.red,
-                g.shroud_color.green,
-                g.shroud_color.blue
-            ),
-            (1.0, 1.0, 1.0)
-        );
+        assert_eq!((g.shroud_color.red, g.shroud_color.green, g.shroud_color.blue), (1.0, 1.0, 1.0));
         assert_eq!((g.clear_alpha, g.fog_alpha, g.shroud_alpha), (255, 127, 0));
         assert_eq!(g.shell_map_name, b"Maps\\ShellMap1\\ShellMap1.map");
         assert_eq!(g.movement_penalty_damage_state, BODY_REALLYDAMAGED);
@@ -836,9 +810,7 @@ mod tests {
     #[test]
     fn set_time_of_day_copies_that_times_lighting() {
         let mut g = GlobalData::new();
-        g.terrain_lighting[TimeOfDay::Night as usize][1]
-            .diffuse
-            .green = 0.25;
+        g.terrain_lighting[TimeOfDay::Night as usize][1].diffuse.green = 0.25;
         g.terrain_lighting[TimeOfDay::Night as usize][2].light_pos.y = 7.0;
         assert!(g.set_time_of_day(TimeOfDay::Night as i32));
         assert_eq!(g.time_of_day, 4);
@@ -861,11 +833,7 @@ mod tests {
         assert_eq!(t[0], "Windowed");
         assert_eq!(*t.last().unwrap(), "PlayStats");
         // the debug-only and commented-out tokens are not there
-        assert!(
-            !t.contains(&"Wireframe")
-                && !t.contains(&"HealthBonus_Regular")
-                && !t.contains(&"DoubleClickTimeMS")
-        );
+        assert!(!t.contains(&"Wireframe") && !t.contains(&"HealthBonus_Regular") && !t.contains(&"DoubleClickTimeMS"));
     }
 
     #[test]
@@ -892,26 +860,17 @@ mod tests {
         assert_eq!(g.map_name, b"Maps\\Foo\\Foo.map");
         assert_eq!(g.gravity, convert_acceleration_in_secs_to_frames(-60.0));
         assert_eq!(g.stealth_friendly_opacity, 0.25);
-        assert_eq!(
-            g.default_occlusion_delay,
-            Real::ceil(convert_duration_from_msecs_to_frames(1000.0)) as u32
-        );
+        assert_eq!(g.default_occlusion_delay, Real::ceil(convert_duration_from_msecs_to_frames(1000.0)) as u32);
         assert_eq!(g.vertex_water_angle[1], 90.0 * (PI / 180.0));
         assert_eq!(g.time_of_day, 4);
-        assert_eq!(
-            g.terrain_ambient[0].red, 0.0,
-            "TimeOfDay in the file does not call setTimeOfDay"
-        );
+        assert_eq!(g.terrain_ambient[0].red, 0.0, "TimeOfDay in the file does not call setTimeOfDay");
         assert_eq!(g.terrain_lod, TERRAIN_LOD_MAX);
         assert_eq!(g.movement_penalty_damage_state, BODY_DAMAGED);
         assert_eq!(g.terrain_lighting[4][1].ambient.green, 51.0 / 255.0);
         assert_eq!(g.terrain_lighting[4][1].light_pos.z, 3.0);
         assert_eq!(g.ammo_pip_screen_offset.y, 5.0);
         assert_eq!(g.hot_key_text_color, game_make_color(1, 2, 3, 4));
-        assert_eq!(
-            g.standard_public_bones,
-            vec![b"A".to_vec(), b"B".to_vec(), b"C".to_vec()]
-        );
+        assert_eq!(g.standard_public_bones, vec![b"A".to_vec(), b"B".to_vec(), b"C".to_vec()]);
         assert_eq!(g.default_starting_cash.count_money(), 7500);
         assert_eq!(g.health_bonus[2], 1.5);
         assert_eq!(g.solo_player_health_bonus_for_difficulty[1][2], 0.8);
@@ -929,12 +888,7 @@ mod tests {
         assert!(g.draw_sky_box != 0.0);
         assert_eq!(g.debug_ai, 1);
         assert_eq!(g.firewall_port_allocation_delta, (70000i32 as i16));
-        load(
-            &mut store,
-            b"GameData\n DrawSkyBox = no\n DebugAI = no\nEnd\n",
-            IniLoadType::Overwrite,
-        )
-        .unwrap();
+        load(&mut store, b"GameData\n DrawSkyBox = no\n DebugAI = no\nEnd\n", IniLoadType::Overwrite).unwrap();
         let g = store.the_global_data().unwrap();
         assert_eq!(g.draw_sky_box.to_bits(), 0);
         assert_eq!(g.debug_ai, 0);
@@ -942,13 +896,7 @@ mod tests {
 
     #[test]
     fn unknown_debug_only_and_commented_out_fields_throw() {
-        for line in [
-            "Wireframe = yes",
-            "HealthBonus_Regular = 100%",
-            "DoubleClickTimeMS = 10",
-            "PrisonBountyMultiplier = 1.0",
-            "windowed = yes",
-        ] {
+        for line in ["Wireframe = yes", "HealthBonus_Regular = 100%", "DoubleClickTimeMS = 10", "PrisonBountyMultiplier = 1.0", "windowed = yes"] {
             let mut store = GlobalDataStore::new();
             let text = format!("GameData\n {line}\nEnd\n");
             let e = load(&mut store, text.as_bytes(), IniLoadType::Overwrite).unwrap_err();
@@ -959,60 +907,25 @@ mod tests {
     #[test]
     fn overrides_start_from_the_defaults_and_reset_returns_to_the_original() {
         let mut store = GlobalDataStore::new();
-        load(
-            &mut store,
-            b"GameData\n XResolution = 1024\n Gravity = -5\nEnd\n",
-            IniLoadType::Overwrite,
-        )
-        .unwrap();
+        load(&mut store, b"GameData\n XResolution = 1024\n Gravity = -5\nEnd\n", IniLoadType::Overwrite).unwrap();
         // a second overwrite load goes into the same instance
-        load(
-            &mut store,
-            b"GameData\n YResolution = 768\nEnd\n",
-            IniLoadType::Overwrite,
-        )
-        .unwrap();
+        load(&mut store, b"GameData\n YResolution = 768\nEnd\n", IniLoadType::Overwrite).unwrap();
         assert_eq!(store.len(), 1);
         assert_eq!(store.the_global_data().unwrap().x_resolution, 1024);
         // MULTIFILE: also the same instance
-        load(
-            &mut store,
-            b"GameData\n MaxShellScreens = 3\nEnd\n",
-            IniLoadType::Multifile,
-        )
-        .unwrap();
+        load(&mut store, b"GameData\n MaxShellScreens = 3\nEnd\n", IniLoadType::Multifile).unwrap();
         assert_eq!(store.len(), 1);
         // CREATE_OVERRIDES: a new instance, which does NOT inherit
-        load(
-            &mut store,
-            b"GameData\n WaterType = 2\nEnd\n",
-            IniLoadType::CreateOverrides,
-        )
-        .unwrap();
+        load(&mut store, b"GameData\n WaterType = 2\nEnd\n", IniLoadType::CreateOverrides).unwrap();
         assert_eq!(store.len(), 2);
         let head = store.the_global_data().unwrap();
         assert_eq!(head.water_type, 2);
         assert_eq!((head.x_resolution, head.y_resolution), (800, 600));
         assert_eq!(head.gravity, -1.0);
         let original = store.original().unwrap();
-        assert_eq!(
-            (
-                original.x_resolution,
-                original.y_resolution,
-                original.max_shell_screens
-            ),
-            (1024, 768, 3)
-        );
-        assert_eq!(
-            store.instances().map(|g| g.water_type).collect::<Vec<_>>(),
-            vec![2, 0]
-        );
-        load(
-            &mut store,
-            b"GameData\n WaterType = 3\nEnd\n",
-            IniLoadType::CreateOverrides,
-        )
-        .unwrap();
+        assert_eq!((original.x_resolution, original.y_resolution, original.max_shell_screens), (1024, 768, 3));
+        assert_eq!(store.instances().map(|g| g.water_type).collect::<Vec<_>>(), vec![2, 0]);
+        load(&mut store, b"GameData\n WaterType = 3\nEnd\n", IniLoadType::CreateOverrides).unwrap();
         assert_eq!(store.len(), 3);
         store.reset();
         assert_eq!(store.len(), 1);
@@ -1020,12 +933,7 @@ mod tests {
         store.destroy();
         assert!(store.is_empty() && store.the_global_data().is_none());
         // MULTIFILE and CREATE_OVERRIDES with no instance create the original
-        load(
-            &mut store,
-            b"GameData\n WaterType = 4\nEnd\n",
-            IniLoadType::CreateOverrides,
-        )
-        .unwrap();
+        load(&mut store, b"GameData\n WaterType = 4\nEnd\n", IniLoadType::CreateOverrides).unwrap();
         assert_eq!(store.len(), 1);
         assert_eq!(store.the_global_data().unwrap().water_type, 4);
     }
@@ -1034,12 +942,7 @@ mod tests {
     fn a_failed_override_stays_linked_as_far_as_it_was_filled() {
         let mut store = GlobalDataStore::new();
         store.create_original();
-        let e = load(
-            &mut store,
-            b"GameData\n WaterType = 9\n XResolution = x\nEnd\n",
-            IniLoadType::CreateOverrides,
-        )
-        .unwrap_err();
+        let e = load(&mut store, b"GameData\n WaterType = 9\n XResolution = x\nEnd\n", IniLoadType::CreateOverrides).unwrap_err();
         assert_eq!(e.kind, IniErrorKind::InvalidData);
         assert_eq!(store.len(), 2);
         assert_eq!(store.the_global_data().unwrap().water_type, 9);

@@ -22,34 +22,24 @@
 //! module calls (the body's `attemptDamage`, each die module's `onDie`).
 
 use crate::common::base_type::Coord3D;
-use crate::common::disabled_types::{
-    DISABLED_EMP, DISABLED_HACKED, DISABLED_SUBDUED, DISABLED_UNMANNED,
-};
+use crate::common::disabled_types::{DISABLED_EMP, DISABLED_HACKED, DISABLED_SUBDUED, DISABLED_UNMANNED};
 use crate::common::game_common::{Relationship, VeterancyLevel};
 use crate::common::game_type::{ObjectId, INVALID_ID, WEAPONSLOT_COUNT};
 use crate::common::kind_of::{
-    KINDOF_CAN_ATTACK, KINDOF_IGNORED_IN_GUI, KINDOF_IMMOBILE, KINDOF_INFANTRY,
-    KINDOF_MP_COUNT_FOR_VICTORY, KINDOF_PORTABLE_STRUCTURE, KINDOF_PROJECTILE,
-    KINDOF_SPAWNS_ARE_THE_WEAPONS, KINDOF_STRUCTURE, KINDOF_VEHICLE,
+    KINDOF_CAN_ATTACK, KINDOF_IGNORED_IN_GUI, KINDOF_IMMOBILE, KINDOF_INFANTRY, KINDOF_MP_COUNT_FOR_VICTORY, KINDOF_PORTABLE_STRUCTURE,
+    KINDOF_PROJECTILE, KINDOF_SPAWNS_ARE_THE_WEAPONS, KINDOF_STRUCTURE, KINDOF_VEHICLE,
 };
 use crate::common::object_status_types::{
-    OBJECT_STATUS_AIRBORNE_TARGET, OBJECT_STATUS_BOOBY_TRAPPED, OBJECT_STATUS_CAN_ATTACK,
-    OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_NO_ATTACK,
-    OBJECT_STATUS_RECONSTRUCTING, OBJECT_STATUS_SOLD, OBJECT_STATUS_STEALTHED,
-    OBJECT_STATUS_UNDER_CONSTRUCTION,
+    OBJECT_STATUS_AIRBORNE_TARGET, OBJECT_STATUS_BOOBY_TRAPPED, OBJECT_STATUS_CAN_ATTACK, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED,
+    OBJECT_STATUS_NO_ATTACK, OBJECT_STATUS_RECONSTRUCTING, OBJECT_STATUS_SOLD, OBJECT_STATUS_STEALTHED, OBJECT_STATUS_UNDER_CONSTRUCTION,
 };
-use crate::logic::damage::{
-    DamageInfo, DamageInfoInput, DamageType, DeathType, DAMAGE_HEALING, DAMAGE_PENALTY,
-    HUGE_DAMAGE_AMOUNT,
-};
+use crate::logic::damage::{DamageInfo, DamageInfoInput, DamageType, DeathType, DAMAGE_HEALING, DAMAGE_PENALTY, HUGE_DAMAGE_AMOUNT};
 use crate::logic::weapon_bonus::condition as wbc;
 use crate::logic::weapon_types::{WEAPONSET_ELITE, WEAPONSET_HERO, WEAPONSET_VETERAN};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleReply};
 use crate::logic::world::object_cuts::CutCall;
-use crate::logic::world::object_events::{
-    EvaMessage, ModelConditionOp, ObjectClientEvent, ObjectSound, RadarCall,
-};
+use crate::logic::world::object_events::{EvaMessage, ModelConditionOp, ObjectClientEvent, ObjectSound, RadarCall};
 
 /// `DEATH_NONE` (`enum DeathType`, `Damage.h`).
 pub const DEATH_NONE: DeathType = 1;
@@ -82,14 +72,10 @@ impl World {
     /// Every call is first appended to [`Object::damage_received`](crate::logic::world::object::Object::damage_received),
     /// the record of this cut point that predates the body module.
     pub fn attempt_damage(&mut self, id: ObjectId, info: &mut DamageInfo) {
-        let Some(o) = self.objects.find_mut(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find_mut(id) else { return };
         o.damage_received.push(info.clone());
         if let Some(body) = self.get_body_module(id) {
-            if let ModuleReply::Damage(d) =
-                self.module_call(id, body, ModuleCall::AttemptDamage(info.clone()))
-            {
+            if let ModuleReply::Damage(d) = self.module_call(id, body, ModuleCall::AttemptDamage(info.clone())) {
                 *info = d;
             }
         }
@@ -99,15 +85,13 @@ impl World {
             let o = self.objects.find(id).expect("checked above");
             let physics = o.physics;
             if let Some(physics) = physics {
-                if !o.test_status(OBJECT_STATUS_AIRBORNE_TARGET) && !o.is_kind_of(KINDOF_PROJECTILE)
-                {
+                if !o.test_status(OBJECT_STATUS_AIRBORNE_TARGET) && !o.is_kind_of(KINDOF_PROJECTILE) {
                     // Calculate the shockwave taperoff amount due to distance from ground zero
                     let shock_wave_scalar = info.input.shock_wave_vector.length();
                     let ratio = shock_wave_scalar / info.input.shock_wave_radius;
                     // MSVC's min(1.0f, x) is `(1.0f < x) ? 1.0f : x`
                     let distance_from_center = if 1.0f32 < ratio { 1.0f32 } else { ratio };
-                    let distance_taper =
-                        distance_from_center * (1.0f32 - info.input.shock_wave_taper_off);
+                    let distance_taper = distance_from_center * (1.0f32 - info.input.shock_wave_taper_off);
                     let shock_taper_mult = 1.0f32 - distance_taper;
 
                     // Set up the shockwave force to use apply on object
@@ -122,10 +106,7 @@ impl World {
                     self.module_call(id, physics, ModuleCall::PhysicsApplyRandomRotation);
                     // Set stunned state due to the shock for the object
                     self.module_call(id, physics, ModuleCall::PhysicsSetStunned(true));
-                    self.set_model_condition_state(
-                        id,
-                        crate::common::model_state::MODELCONDITION_STUNNED_FLAILING,
-                    );
+                    self.set_model_condition_state(id, crate::common::model_state::MODELCONDITION_STUNNED_FLAILING);
                 }
             }
         }
@@ -133,21 +114,14 @@ impl World {
         // if actual damage occurred, and this is an object owned by the local player we might do a radar event for
         // under attack. Note that we do not even try to do radar events for DAMAGE_PENALTY as that damage type is a
         // type of damage that occurs with explicit player knowledge
-        if info.out.actual_damage_dealt > 0.0
-            && info.input.damage_type != DAMAGE_PENALTY
-            && info.input.damage_type != DAMAGE_HEALING
-        {
+        if info.out.actual_damage_dealt > 0.0 && info.input.damage_type != DAMAGE_PENALTY && info.input.damage_type != DAMAGE_HEALING {
             if let Some(player) = self.get_controlling_player(id) {
                 let o = self.objects.find(id).expect("checked above");
                 if info.input.source_player_mask & self.cuts.player_mask(player) == 0
                     && o.on_radar
                     && self.players.local_index() == Some(player)
                 {
-                    self.emit(ObjectClientEvent::Radar {
-                        call: RadarCall::TryUnderAttackEvent,
-                        object_id: id,
-                        position: None,
-                    });
+                    self.emit(ObjectClientEvent::Radar { call: RadarCall::TryUnderAttackEvent, object_id: id, position: None });
                 }
             }
         }
@@ -159,11 +133,7 @@ impl World {
             let mut damage_info = DamageInfo::default();
             damage_info.input.damage_type = DAMAGE_HEALING;
             damage_info.input.death_type = DEATH_NONE;
-            damage_info.input.source_id = if self.objects.find(source).is_some() {
-                source
-            } else {
-                INVALID_ID
-            };
+            damage_info.input.source_id = if self.objects.find(source).is_some() { source } else { INVALID_ID };
             damage_info.input.amount = amount;
             self.module_call(id, body, ModuleCall::AttemptHealing(damage_info));
         }
@@ -172,9 +142,7 @@ impl World {
     /// `getSoleHealingBenefactor()`: who the only healer is, until the
     /// expiration frame.
     pub fn get_sole_healing_benefactor(&self, id: ObjectId) -> ObjectId {
-        let Some(o) = self.objects.find(id) else {
-            return INVALID_ID;
-        };
+        let Some(o) = self.objects.find(id) else { return INVALID_ID };
         if self.frame() > o.sole_healing_benefactor_expiration_frame {
             return INVALID_ID;
         }
@@ -184,24 +152,14 @@ impl World {
     /// `attemptHealingFromSoleBenefactor(amount, source, duration)`: "for the
     /// non-stacking healers like ambulance and propaganda". False without a
     /// source, or while another healer holds the benefit.
-    pub fn attempt_healing_from_sole_benefactor(
-        &mut self,
-        id: ObjectId,
-        amount: f32,
-        source: ObjectId,
-        duration: u32,
-    ) -> bool {
+    pub fn attempt_healing_from_sole_benefactor(&mut self, id: ObjectId, amount: f32, source: ObjectId, duration: u32) -> bool {
         if self.objects.find(source).is_none() {
             return false; // sanity
         }
         let now = self.frame();
-        let Some(o) = self.objects.find_mut(id) else {
-            return false;
-        };
+        let Some(o) = self.objects.find_mut(id) else { return false };
         // Either it is ok to accept healing from any who offer or this is my guy, calling again
-        if now > o.sole_healing_benefactor_expiration_frame
-            || o.sole_healing_benefactor_id == source
-        {
+        if now > o.sole_healing_benefactor_expiration_frame || o.sole_healing_benefactor_id == source {
             o.sole_healing_benefactor_id = source;
             o.sole_healing_benefactor_expiration_frame = now.wrapping_add(duration);
             if let Some(body) = self.get_body_module(id) {
@@ -220,9 +178,7 @@ impl World {
     /// `estimateDamage(damageInfo)`: the body's estimate, 0 without a body.
     pub fn estimate_damage(&mut self, id: ObjectId, damage_info: &DamageInfoInput) -> f32 {
         match self.get_body_module(id) {
-            Some(body) => self
-                .module_call(id, body, ModuleCall::EstimateDamage(damage_info.clone()))
-                .as_real(0.0),
+            Some(body) => self.module_call(id, body, ModuleCall::EstimateDamage(damage_info.clone())).as_real(0.0),
             None => 0.0,
         }
     }
@@ -237,9 +193,7 @@ impl World {
         damage_info.input.death_type = death_type;
         damage_info.input.source_id = INVALID_ID;
         damage_info.input.amount = match self.get_body_module(id) {
-            Some(body) => self
-                .module_call(id, body, ModuleCall::GetMaxHealth)
-                .as_real(0.0),
+            Some(body) => self.module_call(id, body, ModuleCall::GetMaxHealth).as_real(0.0),
             None => 0.0,
         };
         damage_info.input.kill = true; // Triggers object to die no matter what.
@@ -275,11 +229,7 @@ impl World {
 
     /// `doTempWeaponBonus(status, duration)`: the temp-weapon-bonus helper's.
     pub fn do_temp_weapon_bonus(&mut self, id: ObjectId, status: i32, duration: u32) {
-        if let Some(h) = self
-            .objects
-            .find(id)
-            .and_then(|o| o.helpers.temp_weapon_bonus)
-        {
+        if let Some(h) = self.objects.find(id).and_then(|o| o.helpers.temp_weapon_bonus) {
             self.module_call(id, h, ModuleCall::DoTempWeaponBonus { status, duration });
         }
     }
@@ -309,25 +259,14 @@ impl World {
 
         // Just in case I have been sporting one of thise fancy Terrain Decals, I naturally lose it now, because I'm dead.
         if self.has_drawable(id) {
-            self.emit(ObjectClientEvent::DrawableTerrainDecalFadeTarget {
-                object_id: id,
-                target: 0.0,
-                rate: -0.03,
-            });
+            self.emit(ObjectClientEvent::DrawableTerrainDecalFadeTarget { object_id: id, target: 0.0, rate: -0.03 });
         }
 
         // objects that were spawned from something, need to tell their spawner that they have died
         let producer = self.objects.find(id).map_or(INVALID_ID, |o| o.producer_id);
         if self.objects.find(producer).is_some() {
             if let Some(sbi) = self.get_spawn_behavior_interface(producer) {
-                self.module_call(
-                    producer,
-                    sbi,
-                    ModuleCall::OnSpawnDeath {
-                        dead: id,
-                        info: damage_info.clone(),
-                    },
-                );
+                self.module_call(producer, sbi, ModuleCall::OnSpawnDeath { dead: id, info: damage_info.clone() });
             }
         }
 
@@ -338,70 +277,38 @@ impl World {
 
         if self.is_locally_controlled(id) && !self_inflicted {
             // wasLocallyControlled? :-)
-            let o = self
-                .objects
-                .find(id)
-                .expect("is_locally_controlled found it");
+            let o = self.objects.find(id).expect("is_locally_controlled found it");
             if o.is_kind_of(KINDOF_STRUCTURE) && o.is_kind_of(KINDOF_MP_COUNT_FOR_VICTORY) {
-                self.emit(ObjectClientEvent::Eva {
-                    message: EvaMessage::BuildingLost,
-                });
+                self.emit(ObjectClientEvent::Eva { message: EvaMessage::BuildingLost });
             } else if o.is_kind_of(KINDOF_INFANTRY) || o.is_kind_of(KINDOF_VEHICLE) {
                 let position = o.get_position();
-                self.emit(ObjectClientEvent::Eva {
-                    message: EvaMessage::UnitLost,
-                });
+                self.emit(ObjectClientEvent::Eva { message: EvaMessage::UnitLost });
                 // Create a fake radar event so the user can use the spacebar to quickly jump to this!
-                self.emit(ObjectClientEvent::Radar {
-                    call: RadarCall::TryFakeEvent,
-                    object_id: INVALID_ID,
-                    position: Some(position),
-                });
+                self.emit(ObjectClientEvent::Radar { call: RadarCall::TryFakeEvent, object_id: INVALID_ID, position: Some(position) });
             }
         }
 
         // This call won't do anything if we aren't actually in the list.
         // Kris: Added NULL check to prevent crash with combat bikes & their riders getting deleted on exit.
         if let Some(player) = self.get_controlling_player(id) {
-            self.emit(ObjectClientEvent::RemoveIdleWorker {
-                object_id: id,
-                player_index: player,
-            });
+            self.emit(ObjectClientEvent::RemoveIdleWorker { object_id: id, player_index: player });
         }
 
         // When a GLA hole is in the process of rebuilding, and that rebuild is lost, we need to
         // tell anyone attacking it to transfer the attack to the hole that still exists.
-        if self
-            .objects
-            .find(id)
-            .is_some_and(|o| o.test_status(OBJECT_STATUS_RECONSTRUCTING))
-        {
+        if self.objects.find(id).is_some_and(|o| o.test_status(OBJECT_STATUS_RECONSTRUCTING)) {
             let hole_id = self.objects.find(id).map_or(INVALID_ID, |o| o.producer_id);
             if self.objects.find(hole_id).is_some() {
                 // set the information in the hole about what to build
                 if let Some(rhbi) = self.find_module(hole_id, b"RebuildHoleBehavior") {
                     // start the rebuild process
-                    let template = self
-                        .objects
-                        .find(id)
-                        .map_or(0, |o| o.template().get_template_id());
-                    self.module_call(
-                        hole_id,
-                        rhbi,
-                        ModuleCall::StartRebuildProcess {
-                            template,
-                            spawner: id,
-                        },
-                    );
+                    let template = self.objects.find(id).map_or(0, |o| o.template().get_template_id());
+                    self.module_call(hole_id, rhbi, ModuleCall::StartRebuildProcess { template, spawner: id });
                 }
                 // Transfer any attackers from the destroyed building to the hole.
                 for obj in self.objects.ids_in_order() {
                     if self.objects.find(obj).is_some_and(|o| o.ai.is_some()) {
-                        self.cut(CutCall::AiTransferAttack {
-                            object: obj,
-                            old_victim: id,
-                            new_victim: hole_id,
-                        });
+                        self.cut(CutCall::AiTransferAttack { object: obj, old_victim: id, new_victim: hole_id });
                     }
                 }
             }
@@ -412,14 +319,8 @@ impl World {
     /// finds the sticky bomb it produced near itself (nearest first) and
     /// detonates it, unless the victim is the bomb owner's ally. True if one
     /// went off.
-    pub fn check_and_detonate_booby_trap(
-        &mut self,
-        id: ObjectId,
-        victim: Option<ObjectId>,
-    ) -> bool {
-        let Some(o) = self.objects.find(id) else {
-            return false;
-        };
+    pub fn check_and_detonate_booby_trap(&mut self, id: ObjectId, victim: Option<ObjectId>) -> bool {
+        let Some(o) = self.objects.find(id) else { return false };
         if !o.test_status(OBJECT_STATUS_BOOBY_TRAPPED) {
             return false;
         }
@@ -427,11 +328,7 @@ impl World {
         let mut our_booby_trap = None;
         for other in self.cut_partition_booby_traps_in_range(id, radius) {
             // Sticky bombs call the thing they are on their producer for just such an occasion
-            if self
-                .objects
-                .find(other)
-                .is_some_and(|o| o.producer_id == id)
-            {
+            if self.objects.find(other).is_some_and(|o| o.producer_id == id) {
                 our_booby_trap = Some(other);
                 break;
             }
@@ -443,9 +340,7 @@ impl World {
                     let trap_player = self.get_controlling_player(trap);
                     let victim_team = self.get_team(victim);
                     if let Some(p) = trap_player {
-                        if self.cuts.player_relationship_to_team(p, victim_team)
-                            == Relationship::Allies
-                        {
+                        if self.cuts.player_relationship_to_team(p, victim_team) == Relationship::Allies {
                             return false;
                         }
                     }
@@ -461,9 +356,7 @@ impl World {
 
     /// `getVeterancyLevel()`.
     pub fn get_veterancy_level(&self, id: ObjectId) -> VeterancyLevel {
-        self.objects
-            .find(id)
-            .map_or(VeterancyLevel::Regular, |o| o.get_veterancy_level())
+        self.objects.find(id).map_or(VeterancyLevel::Regular, |o| o.get_veterancy_level())
     }
 
     /// `scoreTheKill(victim)`: "I just killed this object". Nothing for a
@@ -473,12 +366,8 @@ impl World {
     /// gets skill points and bounty, and the killer gains the experience the
     /// victim is worth (not for a victim still under construction).
     pub fn score_the_kill(&mut self, id: ObjectId, victim: ObjectId) {
-        let Some(v) = self.objects.find(victim) else {
-            return;
-        };
-        let Some(victim_controller) = self.get_controlling_player(victim) else {
-            return;
-        };
+        let Some(v) = self.objects.find(victim) else { return };
+        let Some(victim_controller) = self.get_controlling_player(victim) else { return };
         // if the other player is not a playable side (i.e. they are civilian, observer, whatever)
         // we shouldn't count the kill.
         if !self.cuts.player_is_playable_side(victim_controller) {
@@ -488,10 +377,7 @@ impl World {
             return;
         }
         let controller = self.get_controlling_player(id);
-        self.cut(CutCall::PlayerScoreAddObjectLost {
-            player: victim_controller,
-            object: victim,
-        });
+        self.cut(CutCall::PlayerScoreAddObjectLost { player: victim_controller, object: victim });
         if self.get_relationship(id, victim) != Relationship::Enemies {
             return;
         }
@@ -500,29 +386,14 @@ impl World {
             return;
         }
         if let Some(controller) = controller {
-            self.cut(CutCall::PlayerScoreAddObjectDestroyed {
-                player: controller,
-                object: victim,
-            });
-            self.cut(CutCall::PlayerAddSkillPointsForKill {
-                player: controller,
-                killer: id,
-                victim,
-            });
-            self.cut(CutCall::PlayerDoBountyForKill {
-                player: controller,
-                killer: id,
-                victim,
-            });
+            self.cut(CutCall::PlayerScoreAddObjectDestroyed { player: controller, object: victim });
+            self.cut(CutCall::PlayerAddSkillPointsForKill { player: controller, killer: id, victim });
+            self.cut(CutCall::PlayerDoBountyForKill { player: controller, killer: id, victim });
         }
         // Now handle experience, if we can gain any
         if self.cut_experience_is_accepting_points(id) {
             // srj sez: per dustin, no experience (et al) for killing things under construction.
-            if !self
-                .objects
-                .find(victim)
-                .is_some_and(|v| v.test_status(OBJECT_STATUS_UNDER_CONSTRUCTION))
-            {
+            if !self.objects.find(victim).is_some_and(|v| v.test_status(OBJECT_STATUS_UNDER_CONSTRUCTION)) {
                 let experience_value = self.cut_experience_value(victim, id);
                 self.cut_experience_add_points(id, experience_value, true);
             }
@@ -552,25 +423,17 @@ impl World {
             self.module_call(
                 id,
                 body,
-                ModuleCall::OnVeterancyLevelChanged {
-                    old_level: old_level as i32,
-                    new_level: new_level as i32,
-                    provide_feedback,
-                },
+                ModuleCall::OnVeterancyLevelChanged { old_level: old_level as i32, new_level: new_level as i32, provide_feedback },
             );
         }
 
-        let Some(o) = self.objects.find(id) else {
-            return;
-        };
+        let Some(o) = self.objects.find(id) else { return };
         let hide_animation_for_stealth = !self.is_locally_controlled(id)
             && o.test_status(OBJECT_STATUS_STEALTHED)
             && !o.test_status(OBJECT_STATUS_DETECTED)
             && !o.test_status(OBJECT_STATUS_DISGUISED);
         // First, we plan to do the animation if the level went up
-        let mut do_animation = !hide_animation_for_stealth
-            && (new_level as i32 > old_level as i32)
-            && !o.is_kind_of(KINDOF_IGNORED_IN_GUI);
+        let mut do_animation = !hide_animation_for_stealth && (new_level as i32 > old_level as i32) && !o.is_kind_of(KINDOF_IGNORED_IN_GUI);
 
         match new_level {
             VeterancyLevel::Regular => {
@@ -613,16 +476,9 @@ impl World {
                 let o = self.objects.find(id).expect("checked above");
                 let mut pos = o.get_position();
                 pos.add(&o.health_box_offset);
-                self.emit(ObjectClientEvent::LevelGainAnimation {
-                    object_id: id,
-                    position: pos,
-                });
+                self.emit(ObjectClientEvent::LevelGainAnimation { object_id: id, position: pos });
             }
-            self.emit(ObjectClientEvent::Sound {
-                sound: ObjectSound::UnitPromoted,
-                object_id: id,
-                position: None,
-            });
+            self.emit(ObjectClientEvent::Sound { sound: ObjectSound::UnitPromoted, object_id: id, position: None });
         }
     }
 
@@ -630,16 +486,12 @@ impl World {
 
     /// `getCrusherLevel()`.
     pub fn get_crusher_level(&self, id: ObjectId) -> u8 {
-        self.objects
-            .find(id)
-            .map_or(0, |o| o.template().get_crusher_level())
+        self.objects.find(id).map_or(0, |o| o.template().get_crusher_level())
     }
 
     /// `getCrushableLevel()`.
     pub fn get_crushable_level(&self, id: ObjectId) -> u8 {
-        self.objects
-            .find(id)
-            .map_or(0, |o| o.template().get_crushable_level())
+        self.objects.find(id).map_or(0, |o| o.template().get_crushable_level())
     }
 
     /// `canCrushOrSquish(otherObj, testType)`: returns true iff the object can
@@ -648,18 +500,11 @@ impl World {
     /// or when this has no crusher level. A squishable victim (it has a
     /// `SquishCollide` module) is squished; otherwise this must out-rank the
     /// victim's crushable level.
-    pub fn can_crush_or_squish(
-        &self,
-        id: ObjectId,
-        other: Option<ObjectId>,
-        test_type: CrushSquishTestType,
-    ) -> bool {
+    pub fn can_crush_or_squish(&self, id: ObjectId, other: Option<ObjectId>, test_type: CrushSquishTestType) -> bool {
         let Some(other_id) = other else {
             return false; // Can't crush anything.
         };
-        let Some(me) = self.objects.find(id) else {
-            return false;
-        };
+        let Some(me) = self.objects.find(id) else { return false };
         if me.is_disabled_by_type(DISABLED_UNMANNED) {
             // Unmanned vehicles cannot crush troops. This was happening when Jarmen Kell sniped
             // the vehicle and booted the guys out while still moving.
@@ -674,21 +519,14 @@ impl World {
             return false; // Can't crush anything!
         }
         // Test this case for generic infantry getting squished by vehicles!
-        if test_type == CrushSquishTestType::SquishOnly
-            || test_type == CrushSquishTestType::CrushOrSquish
-        {
+        if test_type == CrushSquishTestType::SquishOnly || test_type == CrushSquishTestType::CrushOrSquish {
             // See if other is squishable
-            if self
-                .objects
-                .find(other_id)
-                .is_some_and(|o| o.find_module(b"SquishCollide").is_some())
-            {
+            if self.objects.find(other_id).is_some_and(|o| o.find_module(b"SquishCollide").is_some()) {
                 return true; // squishable.
             }
         }
         let crushable_level = self.get_crushable_level(other_id);
-        if (test_type == CrushSquishTestType::CrushOnly
-            || test_type == CrushSquishTestType::CrushOrSquish)
+        if (test_type == CrushSquishTestType::CrushOnly || test_type == CrushSquishTestType::CrushOrSquish)
             && crusher_level > crushable_level
         {
             return true;
@@ -699,20 +537,9 @@ impl World {
     /// `topple(toppleDirection, toppleSpeed, options)`: "topple an object, if possible".
     pub fn topple(&mut self, id: ObjectId, direction: Option<Coord3D>, speed: f32, options: u32) {
         if let Some(m) = self.find_module(id, b"ToppleUpdate") {
-            if self
-                .module_call(id, m, ModuleCall::IsAbleToBeToppled)
-                .as_bool()
-            {
+            if self.module_call(id, m, ModuleCall::IsAbleToBeToppled).as_bool() {
                 // apply the topple force
-                self.module_call(
-                    id,
-                    m,
-                    ModuleCall::ApplyTopplingForce {
-                        direction,
-                        speed,
-                        options,
-                    },
-                );
+                self.module_call(id, m, ModuleCall::ApplyTopplingForce { direction, speed, options });
             }
         }
     }
@@ -721,9 +548,7 @@ impl World {
 
     /// `isMobile()`: "returns true if object is currently able to move".
     pub fn is_mobile(&self, id: ObjectId) -> bool {
-        let Some(o) = self.objects.find(id) else {
-            return false;
-        };
+        let Some(o) = self.objects.find(id) else { return false };
         if o.is_kind_of(KINDOF_IMMOBILE) {
             return false;
         }
@@ -738,9 +563,7 @@ impl World {
         //******************************************************
         //********* AUTOMATICALLY FALSE CONDITIONS *************
         //******************************************************
-        let Some(o) = self.objects.find(id) else {
-            return false;
-        };
+        let Some(o) = self.objects.find(id) else { return false };
 
         // For things that may or may not be able to normally attack, but are under a status condition
         if o.test_status(OBJECT_STATUS_NO_ATTACK) {
@@ -751,10 +574,7 @@ impl World {
         let contained_by = o.contained_by;
         if contained_by != INVALID_ID && self.objects.find(contained_by).is_some() {
             if let Some(c) = self.get_contain(contained_by) {
-                if !self
-                    .module_call(contained_by, c, ModuleCall::IsPassengerAllowedToFire(id))
-                    .as_bool()
-                {
+                if !self.module_call(contained_by, c, ModuleCall::IsPassengerAllowedToFire(id)).as_bool() {
                     return false;
                 }
             }
@@ -782,9 +602,7 @@ impl World {
                 // I must be a stinger soldier or similar
                 for idx in self.all_modules(id) {
                     // expensive search, limited only to stinger soldiers
-                    if let ModuleReply::Id(slaver_id) =
-                        self.module_call(id, idx, ModuleCall::GetSlaverId)
-                    {
+                    if let ModuleReply::Id(slaver_id) = self.module_call(id, idx, ModuleCall::GetSlaverId) {
                         if slaver_id != INVALID_ID {
                             if let Some(slaver) = self.objects.find(slaver_id) {
                                 if slaver.is_disabled_by_type(DISABLED_SUBDUED) {
@@ -807,9 +625,7 @@ impl World {
             for i in 0..WEAPONSLOT_COUNT {
                 // Find the weapon in this slot.
                 // (the object's own weapon, or one a cut table gives it: the tables are how a test world gives an object weapons)
-                if o.weapon_set.get_weapon_in_weapon_slot(i).is_none()
-                    && !self.cuts.weapon_in_slot(id, i)
-                {
+                if o.weapon_set.get_weapon_in_weapon_slot(i).is_none() && !self.cuts.weapon_in_slot(id, i) {
                     continue;
                 }
                 any_weapon = true;
@@ -851,37 +667,23 @@ impl World {
         // for weaponless transports. This will make me think I can, but I will check if I literally can by looking
         // at passenger weapons in CanAttack.
         if let Some(contain) = self.get_contain(id) {
-            if self
-                .module_call(id, contain, ModuleCall::IsPassengerAllowedToFire(id))
-                .as_bool()
-                && self
-                    .module_call(id, contain, ModuleCall::GetContainCount)
-                    .as_int(0)
-                    > 0
+            if self.module_call(id, contain, ModuleCall::IsPassengerAllowedToFire(id)).as_bool()
+                && self.module_call(id, contain, ModuleCall::GetContainCount).as_int(0) > 0
             {
                 return true;
             }
         }
         // if we have AI and a weapon, assume we know how to use it
         let o = self.objects.find(id).expect("checked above");
-        if o.ai.is_some()
-            && (o.weapon_set.has_any_weapon() || self.cuts.weapon_set_has_any_weapon(id))
-        {
+        if o.ai.is_some() && (o.weapon_set.has_any_weapon() || self.cuts.weapon_set_has_any_weapon(id)) {
             return true;
         }
         if let Some(spawn) = self.get_spawn_behavior_interface(id) {
-            if self
-                .module_call(id, spawn, ModuleCall::CanAnySlavesAttack)
-                .as_bool()
-            {
+            if self.module_call(id, spawn, ModuleCall::CanAnySlavesAttack).as_bool() {
                 return true;
             }
         }
-        if self
-            .objects
-            .find(id)
-            .is_some_and(|o| o.template().is_enter_guard())
-        {
+        if self.objects.find(id).is_some_and(|o| o.template().is_enter_guard()) {
             return true;
         }
         // Default is no
@@ -893,20 +695,14 @@ impl World {
     /// `setModelConditionState(a)`: the drawable's, nothing without one.
     pub fn set_model_condition_state(&mut self, id: ObjectId, a: i32) {
         if self.has_drawable(id) {
-            self.emit(ObjectClientEvent::DrawableModelCondition {
-                object_id: id,
-                op: ModelConditionOp::Set(vec![a]),
-            });
+            self.emit(ObjectClientEvent::DrawableModelCondition { object_id: id, op: ModelConditionOp::Set(vec![a]) });
         }
     }
 
     /// `clearModelConditionState(a)`.
     pub fn clear_model_condition_state(&mut self, id: ObjectId, a: i32) {
         if self.has_drawable(id) {
-            self.emit(ObjectClientEvent::DrawableModelCondition {
-                object_id: id,
-                op: ModelConditionOp::Clear(vec![a]),
-            });
+            self.emit(ObjectClientEvent::DrawableModelCondition { object_id: id, op: ModelConditionOp::Clear(vec![a]) });
         }
     }
 
@@ -915,10 +711,7 @@ impl World {
         if self.has_drawable(id) {
             self.emit(ObjectClientEvent::DrawableModelCondition {
                 object_id: id,
-                op: ModelConditionOp::ClearAndSet {
-                    clear: vec![clr],
-                    set: vec![set],
-                },
+                op: ModelConditionOp::ClearAndSet { clear: vec![clr], set: vec![set] },
             });
         }
     }
@@ -943,9 +736,7 @@ impl World {
         if self.has_drawable(id) {
             self.emit(ObjectClientEvent::DrawableModelCondition {
                 object_id: id,
-                op: ModelConditionOp::Clear(vec![
-                    crate::common::model_state::MODELCONDITION_SPECIAL_CHEERING,
-                ]),
+                op: ModelConditionOp::Clear(vec![crate::common::model_state::MODELCONDITION_SPECIAL_CHEERING]),
             });
         }
         if let Some(o) = self.objects.find_mut(id) {

@@ -46,7 +46,7 @@
 mod support;
 
 use rts_lockstep_engine::common::latch_restore::LatchRestore;
-use rts_lockstep_engine::common::overridable::{Overridable, Override};
+use rts_lockstep_engine::common::overridable::{Override, Overridable};
 use rts_lockstep_engine::differential as cpp;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -121,12 +121,7 @@ fn exec<T: Copy>(
     }
 }
 
-fn rust_latch<T: Copy>(
-    ops: &[Op],
-    mk: fn(i32) -> T,
-    emit: fn(&T, &mut Vec<i32>),
-    planted: bool,
-) -> Vec<i32> {
+fn rust_latch<T: Copy>(ops: &[Op], mk: fn(i32) -> T, emit: fn(&T, &mut Vec<i32>), planted: bool) -> Vec<i32> {
     let mut var = mk(0);
     let mut out = Vec::new();
     let mut pos = 0;
@@ -179,15 +174,7 @@ fn encode_latch(ops: &[Op]) -> Vec<i32> {
 fn cpp_latch(pair: bool, ops: &[Op]) -> Vec<i32> {
     let flat = encode_latch(ops);
     let mut out = vec![0i32; OUT_CAP];
-    let n = unsafe {
-        cpp::ref_latch_restore(
-            pair as i32,
-            flat.as_ptr(),
-            ops.len() as i32,
-            out.as_mut_ptr(),
-            OUT_CAP as i32,
-        )
-    };
+    let n = unsafe { cpp::ref_latch_restore(pair as i32, flat.as_ptr(), ops.len() as i32, out.as_mut_ptr(), OUT_CAP as i32) };
     assert!(n >= 0, "latch log exceeds the buffer");
     out.truncate(n as usize);
     out
@@ -205,19 +192,11 @@ fn latch_restore_matches() {
         let input = || format!("{ops:?}");
 
         let cpp_int = cpp_latch(false, &ops);
-        int_ok.eq(
-            rust_latch(&ops, mk_int, emit_int, false),
-            cpp_int.clone(),
-            input,
-        );
+        int_ok.eq(rust_latch(&ops, mk_int, emit_int, false), cpp_int.clone(), input);
         int_bug.eq(rust_latch(&ops, mk_int, emit_int, true), cpp_int, input);
 
         let cpp_pair = cpp_latch(true, &ops);
-        pair_ok.eq(
-            rust_latch(&ops, mk_pair, emit_pair, false),
-            cpp_pair.clone(),
-            input,
-        );
+        pair_ok.eq(rust_latch(&ops, mk_pair, emit_pair, false), cpp_pair.clone(), input);
         pair_bug.eq(rust_latch(&ops, mk_pair, emit_pair, true), cpp_pair, input);
     }
     int_ok.finish();
@@ -290,11 +269,7 @@ fn rust_chains(spec: &[i32], planted: bool) -> Vec<i32> {
     let mut table: Vec<Option<Box<Overridable<Payload>>>> = (0..n).map(|_| None).collect();
     for i in (0..n).rev() {
         let (value, next, flags) = (spec[3 * i], spec[3 * i + 1], spec[3 * i + 2]);
-        let mut node = Box::new(Overridable::new(Payload {
-            id: i,
-            value,
-            alive: Rc::clone(&alive),
-        }));
+        let mut node = Box::new(Overridable::new(Payload { id: i, value, alive: Rc::clone(&alive) }));
         if next >= 0 {
             let j = next as usize;
             let child = table[j].take().expect("a node has one predecessor");
@@ -332,10 +307,7 @@ fn rust_chains(spec: &[i32], planted: bool) -> Vec<i32> {
             log.push(id_of(read));
             log.push(id_of(read));
             log.push(id_of(read));
-            log.push(
-                ov.get_non_overloaded_pointer()
-                    .map_or(-1, |p| p.data.id as i32),
-            );
+            log.push(ov.get_non_overloaded_pointer().map_or(-1, |p| p.data.id as i32));
             match cur.get_next_override() {
                 Some(next) => cur = next,
                 None => break,
@@ -354,9 +326,7 @@ fn rust_chains(spec: &[i32], planted: bool) -> Vec<i32> {
 fn cpp_chains(spec: &[i32]) -> Vec<i32> {
     let n = spec.len() / 3;
     let mut out = vec![0i32; OUT_CAP];
-    let len = unsafe {
-        cpp::ref_overridable_chains(spec.as_ptr(), n as i32, out.as_mut_ptr(), OUT_CAP as i32)
-    };
+    let len = unsafe { cpp::ref_overridable_chains(spec.as_ptr(), n as i32, out.as_mut_ptr(), OUT_CAP as i32) };
     assert!(len >= 0, "override log exceeds the buffer");
     out.truncate(len as usize);
     out

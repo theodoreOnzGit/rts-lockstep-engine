@@ -109,9 +109,7 @@ use crate::common::base_type::Coord3D;
 use crate::common::kind_of::KindOfMaskType;
 use crate::common::name_key_generator::{NameKeyGenerator, NameKeyType};
 use crate::common::object_status_types::ObjectStatusMaskType;
-use crate::formats::data_chunk::{
-    ChunkError, ChunkResult, ChunkUndefined, DataChunkInfo, DataChunkInput,
-};
+use crate::formats::data_chunk::{ChunkError, ChunkResult, ChunkUndefined, DataChunkInfo, DataChunkInput};
 use crate::formats::data_chunk_output::DataChunkOutput;
 
 /// `MAX_PARMS`: parameters in a condition or an action.
@@ -339,15 +337,8 @@ pub mod action_type {
 }
 
 /// `TheObjectFlagsNames` (the object panel flags the actions can change).
-pub const OBJECT_FLAGS_NAMES: [&str; 7] = [
-    "Enabled",
-    "Powered",
-    "Indestructible",
-    "Unsellable",
-    "Selectable",
-    "AI Recruitable",
-    "Player Targetable",
-];
+pub const OBJECT_FLAGS_NAMES: [&str; 7] =
+    ["Enabled", "Powered", "Indestructible", "Unsellable", "Selectable", "AI Recruitable", "Player Targetable"];
 
 /// Where upstream is undefined (see the module docs).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -408,9 +399,7 @@ impl std::fmt::Display for MapDataError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             MapDataError::Thrown(c) => write!(f, "map data error {c:#010x}"),
-            MapDataError::Undefined(u) => {
-                write!(f, "map data outside what the original code defines: {u:?}")
-            }
+            MapDataError::Undefined(u) => write!(f, "map data outside what the original code defines: {u:?}"),
         }
     }
 }
@@ -477,33 +466,19 @@ impl ScriptTemplates {
     pub fn new(conditions: Vec<ScriptTemplate>, actions: Vec<ScriptTemplate>) -> Option<Self> {
         let ok = conditions.len() == condition_type::NUM_ITEMS as usize
             && actions.len() == action_type::NUM_ITEMS as usize
-            && conditions
-                .iter()
-                .chain(&actions)
-                .all(|t| t.parameters.len() <= MAX_PARMS);
-        ok.then_some(ScriptTemplates {
-            conditions,
-            actions,
-        })
+            && conditions.iter().chain(&actions).all(|t| t.parameters.len() <= MAX_PARMS);
+        ok.then_some(ScriptTemplates { conditions, actions })
     }
 
     /// `getConditionTemplate(ndx)`: index 0 when out of range.
     pub fn get_condition_template(&self, ndx: i32) -> &ScriptTemplate {
-        let ndx = if (0..condition_type::NUM_ITEMS).contains(&ndx) {
-            ndx
-        } else {
-            0
-        };
+        let ndx = if (0..condition_type::NUM_ITEMS).contains(&ndx) { ndx } else { 0 };
         &self.conditions[ndx as usize]
     }
 
     /// `getActionTemplate(ndx)`: index 0 when out of range.
     pub fn get_action_template(&self, ndx: i32) -> &ScriptTemplate {
-        let ndx = if (0..action_type::NUM_ITEMS).contains(&ndx) {
-            ndx
-        } else {
-            0
-        };
+        let ndx = if (0..action_type::NUM_ITEMS).contains(&ndx) { ndx } else { 0 };
         &self.actions[ndx as usize]
     }
 }
@@ -569,12 +544,7 @@ impl Parameter {
     /// `qualify(qualifier, playerTemplateName, newPlayerName)`: how a script
     /// is made for another player (the names it refers to get the qualifier;
     /// a `SIDE` that names the template player becomes the new player).
-    pub fn qualify(
-        &mut self,
-        qualifier: &[u8],
-        player_template_name: &[u8],
-        new_player_name: &[u8],
-    ) {
+    pub fn qualify(&mut self, qualifier: &[u8], player_template_name: &[u8], new_player_name: &[u8]) {
         match self.param_type {
             parameter_type::SIDE => {
                 let mut tmp = self.string.clone();
@@ -588,10 +558,7 @@ impl Parameter {
                     self.string.extend_from_slice(qualifier);
                 }
             }
-            parameter_type::SCRIPT
-            | parameter_type::COUNTER
-            | parameter_type::FLAG
-            | parameter_type::SCRIPT_SUBROUTINE => {
+            parameter_type::SCRIPT | parameter_type::COUNTER | parameter_type::FLAG | parameter_type::SCRIPT_SUBROUTINE => {
                 self.string.extend_from_slice(qualifier);
             }
             _ => {}
@@ -603,8 +570,7 @@ impl Parameter {
     pub fn write_parameter(&mut self, out: &mut DataChunkOutput) {
         out.write_int(self.param_type);
         if self.param_type == parameter_type::KIND_OF_PARAM {
-            self.string = KindOfMaskType::get_name_from_single_bit(self.int)
-                .map_or_else(Vec::new, |n| n.as_bytes().to_vec());
+            self.string = KindOfMaskType::get_name_from_single_bit(self.int).map_or_else(Vec::new, |n| n.as_bytes().to_vec());
         }
         if self.param_type == parameter_type::COORD3D {
             out.write_real(self.coord.x);
@@ -700,10 +666,7 @@ impl Parameter {
                 found = true;
                 break;
             }
-            if eq(&self.string, "CRUSHER")
-                || eq(&self.string, "CRUSHABLE")
-                || eq(&self.string, "OVERLAPPABLE")
-            {
+            if eq(&self.string, "CRUSHER") || eq(&self.string, "CRUSHABLE") || eq(&self.string, "OVERLAPPABLE") {
                 self.int = i as i32;
                 found = true;
                 break;
@@ -748,11 +711,7 @@ fn parms_from_template(t: &ScriptTemplate) -> (i32, [Option<Parameter>; MAX_PARM
 /// Copy the parameters of `src` over those of `dst` as `duplicate` and
 /// `duplicateAndQualify` do: `*pNew->m_parms[i] = *m_parms[i]`, qualified
 /// when `q` is given.
-fn copy_parm(
-    dst: &mut Option<Parameter>,
-    src: &Option<Parameter>,
-    q: Option<(&[u8], &[u8], &[u8])>,
-) -> MapResult<()> {
+fn copy_parm(dst: &mut Option<Parameter>, src: &Option<Parameter>, q: Option<(&[u8], &[u8], &[u8])>) -> MapResult<()> {
     let (Some(d), Some(s)) = (dst.as_mut(), src.as_ref()) else {
         return Err(MapUndefined::NullParameter.into());
     };
@@ -825,10 +784,7 @@ impl Condition {
     /// the original copied over. (A condition after the first whose
     /// parameter count exceeds its type's template count dereferences an
     /// empty slot: [`MapUndefined::NullParameter`].)
-    pub fn duplicate_chain(
-        chain: &[Condition],
-        templates: &ScriptTemplates,
-    ) -> MapResult<Vec<Condition>> {
+    pub fn duplicate_chain(chain: &[Condition], templates: &ScriptTemplates) -> MapResult<Vec<Condition>> {
         Self::copy_chain(chain, templates, None)
     }
 
@@ -840,28 +796,16 @@ impl Condition {
         player_template_name: &[u8],
         new_player_name: &[u8],
     ) -> MapResult<Vec<Condition>> {
-        Self::copy_chain(
-            chain,
-            templates,
-            Some((qualifier, player_template_name, new_player_name)),
-        )
+        Self::copy_chain(chain, templates, Some((qualifier, player_template_name, new_player_name)))
     }
 
-    fn copy_chain(
-        chain: &[Condition],
-        templates: &ScriptTemplates,
-        q: Option<(&[u8], &[u8], &[u8])>,
-    ) -> MapResult<Vec<Condition>> {
+    fn copy_chain(chain: &[Condition], templates: &ScriptTemplates, q: Option<(&[u8], &[u8], &[u8])>) -> MapResult<Vec<Condition>> {
         let mut out = Vec::with_capacity(chain.len());
         for (k, src) in chain.iter().enumerate() {
             let mut new = Condition::new(src.condition_type, templates);
             // the head is copied up to both counts; the rest up to the
             // original's count (so a short template is an empty slot)
-            let n = if k == 0 {
-                src.num_parms.min(new.num_parms)
-            } else {
-                src.num_parms
-            };
+            let n = if k == 0 { src.num_parms.min(new.num_parms) } else { src.num_parms };
             for i in 0..n.max(0) {
                 if i as usize >= MAX_PARMS {
                     return Err(MapUndefined::ParameterIndexOutOfRange.into());
@@ -886,21 +830,13 @@ impl Condition {
         for c in chain {
             out.open_data_chunk(b"Condition", version::SCRIPT_CONDITION_4);
             out.write_int(c.condition_type);
-            out.write_name_key(
-                templates
-                    .get_condition_template(c.condition_type)
-                    .internal_name_key,
-                names,
-            );
+            out.write_name_key(templates.get_condition_template(c.condition_type).internal_name_key, names);
             out.write_int(c.num_parms);
             for i in 0..c.num_parms.max(0) {
                 if i as usize >= MAX_PARMS {
                     return Err(MapUndefined::ParameterIndexOutOfRange.into());
                 }
-                c.parms[i as usize]
-                    .as_mut()
-                    .ok_or(MapUndefined::NullParameter)?
-                    .write_parameter(out);
+                c.parms[i as usize].as_mut().ok_or(MapUndefined::NullParameter)?.write_parameter(out);
             }
             out.close_data_chunk();
         }
@@ -917,17 +853,10 @@ pub struct OrCondition {
 
 impl OrCondition {
     /// `duplicate()` of the head of an OR chain.
-    pub fn duplicate_chain(
-        chain: &[OrCondition],
-        templates: &ScriptTemplates,
-    ) -> MapResult<Vec<OrCondition>> {
+    pub fn duplicate_chain(chain: &[OrCondition], templates: &ScriptTemplates) -> MapResult<Vec<OrCondition>> {
         chain
             .iter()
-            .map(|o| {
-                Ok(OrCondition {
-                    conditions: Condition::duplicate_chain(&o.conditions, templates)?,
-                })
-            })
+            .map(|o| Ok(OrCondition { conditions: Condition::duplicate_chain(&o.conditions, templates)? }))
             .collect()
     }
 
@@ -943,13 +872,7 @@ impl OrCondition {
             .iter()
             .map(|o| {
                 Ok(OrCondition {
-                    conditions: Condition::duplicate_and_qualify_chain(
-                        &o.conditions,
-                        templates,
-                        qualifier,
-                        player_template_name,
-                        new_player_name,
-                    )?,
+                    conditions: Condition::duplicate_and_qualify_chain(&o.conditions, templates, qualifier, player_template_name, new_player_name)?,
                 })
             })
             .collect()
@@ -1012,12 +935,7 @@ impl ScriptAction {
     /// `ScriptAction()`, the protected constructor for reading: `NO_OP`
     /// without parameters.
     pub fn new_for_read() -> Self {
-        ScriptAction {
-            action_type: action_type::NO_OP,
-            num_parms: 0,
-            parms: empty_parms(),
-            has_warnings: false,
-        }
+        ScriptAction { action_type: action_type::NO_OP, num_parms: 0, parms: empty_parms(), has_warnings: false }
     }
 
     /// `ScriptAction(type)`: with the parameters the template lists.
@@ -1048,10 +966,7 @@ impl ScriptAction {
     /// `duplicate()` of the head of an action chain: each action is made
     /// from its type's template and gets the parameters of the original
     /// where both have one.
-    pub fn duplicate_chain(
-        chain: &[ScriptAction],
-        templates: &ScriptTemplates,
-    ) -> Vec<ScriptAction> {
+    pub fn duplicate_chain(chain: &[ScriptAction], templates: &ScriptTemplates) -> Vec<ScriptAction> {
         Self::copy_chain(chain, templates, None)
     }
 
@@ -1063,18 +978,10 @@ impl ScriptAction {
         player_template_name: &[u8],
         new_player_name: &[u8],
     ) -> Vec<ScriptAction> {
-        Self::copy_chain(
-            chain,
-            templates,
-            Some((qualifier, player_template_name, new_player_name)),
-        )
+        Self::copy_chain(chain, templates, Some((qualifier, player_template_name, new_player_name)))
     }
 
-    fn copy_chain(
-        chain: &[ScriptAction],
-        templates: &ScriptTemplates,
-        q: Option<(&[u8], &[u8], &[u8])>,
-    ) -> Vec<ScriptAction> {
+    fn copy_chain(chain: &[ScriptAction], templates: &ScriptTemplates, q: Option<(&[u8], &[u8], &[u8])>) -> Vec<ScriptAction> {
         chain
             .iter()
             .map(|src| {
@@ -1104,30 +1011,15 @@ impl ScriptAction {
         names: &NameKeyGenerator,
     ) -> MapResult<()> {
         for a in chain {
-            out.open_data_chunk(
-                if false_chain {
-                    b"ScriptActionFalse"
-                } else {
-                    b"ScriptAction"
-                },
-                version::SCRIPT_ACTION_2,
-            );
+            out.open_data_chunk(if false_chain { b"ScriptActionFalse" } else { b"ScriptAction" }, version::SCRIPT_ACTION_2);
             out.write_int(a.action_type);
-            out.write_name_key(
-                templates
-                    .get_action_template(a.action_type)
-                    .internal_name_key,
-                names,
-            );
+            out.write_name_key(templates.get_action_template(a.action_type).internal_name_key, names);
             out.write_int(a.num_parms);
             for i in 0..a.num_parms.max(0) {
                 if i as usize >= MAX_PARMS {
                     return Err(MapUndefined::ParameterIndexOutOfRange.into());
                 }
-                a.parms[i as usize]
-                    .as_mut()
-                    .ok_or(MapUndefined::NullParameter)?
-                    .write_parameter(out);
+                a.parms[i as usize].as_mut().ok_or(MapUndefined::NullParameter)?.write_parameter(out);
             }
             out.close_data_chunk();
         }
@@ -1234,17 +1126,10 @@ impl Script {
         player_template_name: &[u8],
         new_player_name: &[u8],
     ) -> MapResult<Script> {
-        self.copy(
-            templates,
-            Some((qualifier, player_template_name, new_player_name)),
-        )
+        self.copy(templates, Some((qualifier, player_template_name, new_player_name)))
     }
 
-    fn copy(
-        &self,
-        templates: &ScriptTemplates,
-        q: Option<(&[u8], &[u8], &[u8])>,
-    ) -> MapResult<Script> {
+    fn copy(&self, templates: &ScriptTemplates, q: Option<(&[u8], &[u8], &[u8])>) -> MapResult<Script> {
         let mut n = Script::new();
         n.script_name = self.script_name.clone();
         if let Some((qualifier, ..)) = q {
@@ -1267,27 +1152,9 @@ impl Script {
                 n.actions_false = ScriptAction::duplicate_chain(&self.actions_false, templates);
             }
             Some((qualifier, tpl, new_name)) => {
-                n.conditions = OrCondition::duplicate_and_qualify_chain(
-                    &self.conditions,
-                    templates,
-                    qualifier,
-                    tpl,
-                    new_name,
-                )?;
-                n.actions = ScriptAction::duplicate_and_qualify_chain(
-                    &self.actions,
-                    templates,
-                    qualifier,
-                    tpl,
-                    new_name,
-                );
-                n.actions_false = ScriptAction::duplicate_and_qualify_chain(
-                    &self.actions_false,
-                    templates,
-                    qualifier,
-                    tpl,
-                    new_name,
-                );
+                n.conditions = OrCondition::duplicate_and_qualify_chain(&self.conditions, templates, qualifier, tpl, new_name)?;
+                n.actions = ScriptAction::duplicate_and_qualify_chain(&self.actions, templates, qualifier, tpl, new_name);
+                n.actions_false = ScriptAction::duplicate_and_qualify_chain(&self.actions_false, templates, qualifier, tpl, new_name);
             }
         }
         Ok(n)
@@ -1360,13 +1227,7 @@ impl Script {
             out.write_int(s.delay_evaluation_seconds);
             OrCondition::write_or_condition_data_chunk(out, &mut s.conditions, templates, names)?;
             ScriptAction::write_action_data_chunk(out, &mut s.actions, false, templates, names)?;
-            ScriptAction::write_action_data_chunk(
-                out,
-                &mut s.actions_false,
-                true,
-                templates,
-                names,
-            )?;
+            ScriptAction::write_action_data_chunk(out, &mut s.actions_false, true, templates, names)?;
             out.close_data_chunk();
         }
         Ok(())
@@ -1423,11 +1284,7 @@ impl ScriptGroup {
 
     /// `duplicate()`: the group with its scripts copied (and a number of
     /// the counter used up by the new group's constructor).
-    pub fn duplicate(
-        &self,
-        cur_id: &mut i32,
-        templates: &ScriptTemplates,
-    ) -> MapResult<ScriptGroup> {
+    pub fn duplicate(&self, cur_id: &mut i32, templates: &ScriptTemplates) -> MapResult<ScriptGroup> {
         let mut n = ScriptGroup::new(cur_id);
         for s in &self.scripts {
             n.scripts.push(s.duplicate(templates)?);
@@ -1449,12 +1306,7 @@ impl ScriptGroup {
     ) -> MapResult<ScriptGroup> {
         let mut n = ScriptGroup::new(cur_id);
         for s in &self.scripts {
-            n.scripts.push(s.duplicate_and_qualify(
-                templates,
-                qualifier,
-                player_template_name,
-                new_player_name,
-            )?);
+            n.scripts.push(s.duplicate_and_qualify(templates, qualifier, player_template_name, new_player_name)?);
         }
         n.group_name = self.group_name.clone();
         n.group_name.extend_from_slice(qualifier);
@@ -1561,9 +1413,7 @@ impl ScriptsState {
         let u = self.undefined.take();
         match r {
             Ok(v) => Ok(v),
-            Err(ChunkError::Undefined(_)) if u.is_some() => {
-                Err(MapDataError::Undefined(u.expect("checked")))
-            }
+            Err(ChunkError::Undefined(_)) if u.is_some() => Err(MapDataError::Undefined(u.expect("checked"))),
             Err(e) => Err(e.into()),
         }
     }
@@ -1616,11 +1466,7 @@ impl ScriptList {
     }
 
     /// `duplicate()`: a deep copy.
-    pub fn duplicate(
-        &self,
-        cur_id: &mut i32,
-        templates: &ScriptTemplates,
-    ) -> MapResult<ScriptList> {
+    pub fn duplicate(&self, cur_id: &mut i32, templates: &ScriptTemplates) -> MapResult<ScriptList> {
         let mut n = ScriptList::new();
         for g in &self.groups {
             n.groups.push(g.duplicate(cur_id, templates)?);
@@ -1643,21 +1489,10 @@ impl ScriptList {
     ) -> MapResult<ScriptList> {
         let mut n = ScriptList::new();
         for g in &self.groups {
-            n.groups.push(g.duplicate_and_qualify(
-                cur_id,
-                templates,
-                qualifier,
-                player_template_name,
-                new_player_name,
-            )?);
+            n.groups.push(g.duplicate_and_qualify(cur_id, templates, qualifier, player_template_name, new_player_name)?);
         }
         for s in &self.scripts {
-            n.scripts.push(s.duplicate_and_qualify(
-                templates,
-                qualifier,
-                player_template_name,
-                new_player_name,
-            )?);
+            n.scripts.push(s.duplicate_and_qualify(templates, qualifier, player_template_name, new_player_name)?);
         }
         Ok(n)
     }
@@ -1743,16 +1578,8 @@ impl ScriptList {
 /// Reads its `ScriptList` chunks into the state (see
 /// [`ScriptList::get_read_scripts`]); false if there are more than
 /// [`MAX_PLAYER_COUNT`].
-pub fn parse_scripts_data_chunk<C: ScriptsContext>(
-    file: &mut DataChunkInput<C>,
-    info: &DataChunkInfo,
-    ctx: &mut C,
-) -> ChunkResult<bool> {
-    file.register_parser(
-        b"ScriptList",
-        &info.label,
-        parse_script_list_data_chunk::<C>,
-    );
+pub fn parse_scripts_data_chunk<C: ScriptsContext>(file: &mut DataChunkInput<C>, info: &DataChunkInfo, ctx: &mut C) -> ChunkResult<bool> {
+    file.register_parser(b"ScriptList", &info.label, parse_script_list_data_chunk::<C>);
     let st = ctx.scripts_state();
     // DEBUG_ASSERTCRASH(s_numInReadList==0) is compiled out; leftovers are dropped
     for i in 0..st.num_in_read_list.clamp(0, MAX_PLAYER_COUNT as i32) as usize {
@@ -1773,11 +1600,7 @@ pub fn parse_scripts_data_chunk<C: ScriptsContext>(
 }
 
 /// `ParseScriptListDataChunk`: one player's list.
-fn parse_script_list_data_chunk<C: ScriptsContext>(
-    file: &mut DataChunkInput<C>,
-    info: &DataChunkInfo,
-    ctx: &mut C,
-) -> ChunkResult<bool> {
+fn parse_script_list_data_chunk<C: ScriptsContext>(file: &mut DataChunkInput<C>, info: &DataChunkInfo, ctx: &mut C) -> ChunkResult<bool> {
     let st = ctx.scripts_state();
     let Some(ri) = st.read_info.as_mut() else {
         return Err(to_chunk_err(MapUndefined::NullUserData.into(), st));
@@ -1786,29 +1609,18 @@ fn parse_script_list_data_chunk<C: ScriptsContext>(
         return Ok(false);
     }
     ri.read_lists.push(ScriptList::new());
-    file.register_parser(
-        b"Script",
-        &info.label,
-        parse_script_from_list_data_chunk::<C>,
-    );
+    file.register_parser(b"Script", &info.label, parse_script_from_list_data_chunk::<C>);
     file.register_parser(b"ScriptGroup", &info.label, parse_group_data_chunk::<C>);
     file.parse(ctx)
 }
 
 /// The list being read: the last one `ParseScriptListDataChunk` added.
 fn current_list(st: &mut ScriptsState) -> Result<&mut ScriptList, MapDataError> {
-    st.read_info
-        .as_mut()
-        .and_then(|ri| ri.read_lists.last_mut())
-        .ok_or(MapUndefined::NullUserData.into())
+    st.read_info.as_mut().and_then(|ri| ri.read_lists.last_mut()).ok_or(MapUndefined::NullUserData.into())
 }
 
 /// `ParseGroupDataChunk`.
-fn parse_group_data_chunk<C: ScriptsContext>(
-    file: &mut DataChunkInput<C>,
-    info: &DataChunkInfo,
-    ctx: &mut C,
-) -> ChunkResult<bool> {
+fn parse_group_data_chunk<C: ScriptsContext>(file: &mut DataChunkInput<C>, info: &DataChunkInfo, ctx: &mut C) -> ChunkResult<bool> {
     let mut group = ScriptGroup::new(&mut ctx.scripts_state().cur_id);
     group.group_name = file.read_ascii_string()?;
     group.is_group_active = file.read_byte()? != 0;
@@ -1820,21 +1632,13 @@ fn parse_group_data_chunk<C: ScriptsContext>(
         Ok(l) => l.add_group(group, AT_END),
         Err(e) => return Err(to_chunk_err(e, st)),
     }
-    file.register_parser(
-        b"Script",
-        &info.label,
-        parse_script_from_group_data_chunk::<C>,
-    );
+    file.register_parser(b"Script", &info.label, parse_script_from_group_data_chunk::<C>);
     file.parse(ctx)
 }
 
 /// `ParseScript`: the fields of a `Script` chunk, then its children. `None`
 /// if the children failed to parse (upstream returns `NULL`).
-fn parse_script<C: ScriptsContext>(
-    file: &mut DataChunkInput<C>,
-    version: u16,
-    ctx: &mut C,
-) -> ChunkResult<Option<Script>> {
+fn parse_script<C: ScriptsContext>(file: &mut DataChunkInput<C>, version: u16, ctx: &mut C) -> ChunkResult<Option<Script>> {
     let mut s = Script::new();
     s.script_name = file.read_ascii_string()?;
     s.comment = file.read_ascii_string()?;
@@ -1849,17 +1653,9 @@ fn parse_script<C: ScriptsContext>(
     if version >= self::version::SCRIPT_2 {
         s.delay_evaluation_seconds = file.read_int()?;
     }
-    file.register_parser(
-        b"OrCondition",
-        b"Script",
-        parse_or_condition_data_chunk::<C>,
-    );
+    file.register_parser(b"OrCondition", b"Script", parse_or_condition_data_chunk::<C>);
     file.register_parser(b"ScriptAction", b"Script", parse_action_data_chunk::<C>);
-    file.register_parser(
-        b"ScriptActionFalse",
-        b"Script",
-        parse_action_false_data_chunk::<C>,
-    );
+    file.register_parser(b"ScriptActionFalse", b"Script", parse_action_false_data_chunk::<C>);
     let st = ctx.scripts_state();
     let depth = st.script_stack.len();
     st.script_stack.push(s);
@@ -1869,11 +1665,7 @@ fn parse_script<C: ScriptsContext>(
 }
 
 /// `ParseScriptFromListDataChunk`.
-fn parse_script_from_list_data_chunk<C: ScriptsContext>(
-    file: &mut DataChunkInput<C>,
-    info: &DataChunkInfo,
-    ctx: &mut C,
-) -> ChunkResult<bool> {
+fn parse_script_from_list_data_chunk<C: ScriptsContext>(file: &mut DataChunkInput<C>, info: &DataChunkInfo, ctx: &mut C) -> ChunkResult<bool> {
     let script = parse_script(file, info.version, ctx)?;
     let st = ctx.scripts_state();
     let Some(script) = script else {
@@ -1887,11 +1679,7 @@ fn parse_script_from_list_data_chunk<C: ScriptsContext>(
 }
 
 /// `ParseScriptFromGroupDataChunk`.
-fn parse_script_from_group_data_chunk<C: ScriptsContext>(
-    file: &mut DataChunkInput<C>,
-    info: &DataChunkInfo,
-    ctx: &mut C,
-) -> ChunkResult<bool> {
+fn parse_script_from_group_data_chunk<C: ScriptsContext>(file: &mut DataChunkInput<C>, info: &DataChunkInfo, ctx: &mut C) -> ChunkResult<bool> {
     let script = parse_script(file, info.version, ctx)?;
     let st = ctx.scripts_state();
     let Some(script) = script else {
@@ -1908,17 +1696,11 @@ fn parse_script_from_group_data_chunk<C: ScriptsContext>(
 
 /// The script being read.
 fn current_script(st: &mut ScriptsState) -> Result<&mut Script, MapDataError> {
-    st.script_stack
-        .last_mut()
-        .ok_or(MapUndefined::NullUserData.into())
+    st.script_stack.last_mut().ok_or(MapUndefined::NullUserData.into())
 }
 
 /// `ParseOrConditionDataChunk`.
-fn parse_or_condition_data_chunk<C: ScriptsContext>(
-    file: &mut DataChunkInput<C>,
-    info: &DataChunkInfo,
-    ctx: &mut C,
-) -> ChunkResult<bool> {
+fn parse_or_condition_data_chunk<C: ScriptsContext>(file: &mut DataChunkInput<C>, info: &DataChunkInfo, ctx: &mut C) -> ChunkResult<bool> {
     let st = ctx.scripts_state();
     match current_script(st) {
         Ok(s) => s.conditions.push(OrCondition::default()),
@@ -1929,11 +1711,7 @@ fn parse_or_condition_data_chunk<C: ScriptsContext>(
 }
 
 /// `ParseConditionDataChunk`.
-fn parse_condition_data_chunk<C: ScriptsContext>(
-    file: &mut DataChunkInput<C>,
-    info: &DataChunkInfo,
-    ctx: &mut C,
-) -> ChunkResult<bool> {
+fn parse_condition_data_chunk<C: ScriptsContext>(file: &mut DataChunkInput<C>, info: &DataChunkInfo, ctx: &mut C) -> ChunkResult<bool> {
     match read_condition(file, info, ctx) {
         Ok(()) => Ok(true),
         Err(e) => Err(to_chunk_err(e, ctx.scripts_state())),
@@ -1941,11 +1719,7 @@ fn parse_condition_data_chunk<C: ScriptsContext>(
 }
 
 /// The body of `ParseConditionDataChunk`.
-fn read_condition<C: ScriptsContext>(
-    file: &mut DataChunkInput<C>,
-    info: &DataChunkInfo,
-    ctx: &mut C,
-) -> MapResult<()> {
+fn read_condition<C: ScriptsContext>(file: &mut DataChunkInput<C>, info: &DataChunkInfo, ctx: &mut C) -> MapResult<()> {
     let mut c = Condition::new_for_read();
     c.condition_type = file.read_int()?;
     if !(0..=127).contains(&c.condition_type) {
@@ -1953,10 +1727,7 @@ fn read_condition<C: ScriptsContext>(
     }
     // `ct`: the template of the type read, then of whatever the search for
     // the name key last looked at
-    let mut ct = ctx
-        .templates()
-        .get_condition_template(c.condition_type)
-        .clone();
+    let mut ct = ctx.templates().get_condition_template(c.condition_type).clone();
     if info.version >= version::SCRIPT_CONDITION_4 {
         let key = file.read_name_key(ctx.names())?;
         let mut matched = ct.internal_name_key == key;
@@ -1997,10 +1768,7 @@ fn read_condition<C: ScriptsContext>(
         ] {
             if c.condition_type == j {
                 // m_parms[m_numParms] = ...; m_numParms = 3
-                let at = usize::try_from(c.num_parms)
-                    .ok()
-                    .filter(|&n| n < MAX_PARMS)
-                    .ok_or(MapUndefined::ParameterIndexOutOfRange)?;
+                let at = usize::try_from(c.num_parms).ok().filter(|&n| n < MAX_PARMS).ok_or(MapUndefined::ParameterIndexOutOfRange)?;
                 c.parms[at] = Some(Parameter::new(parameter_type::SURFACES_ALLOWED, 3));
                 c.num_parms = 3;
             }
@@ -2021,38 +1789,22 @@ fn read_condition<C: ScriptsContext>(
         c.parms = empty_parms();
     }
     let st = ctx.scripts_state();
-    let or = current_script(st)?
-        .conditions
-        .last_mut()
-        .ok_or(MapUndefined::NullUserData)?;
+    let or = current_script(st)?.conditions.last_mut().ok_or(MapUndefined::NullUserData)?;
     or.conditions.push(c);
     Ok(())
 }
 
 /// `ParseActionDataChunk`.
-fn parse_action_data_chunk<C: ScriptsContext>(
-    file: &mut DataChunkInput<C>,
-    info: &DataChunkInfo,
-    ctx: &mut C,
-) -> ChunkResult<bool> {
+fn parse_action_data_chunk<C: ScriptsContext>(file: &mut DataChunkInput<C>, info: &DataChunkInfo, ctx: &mut C) -> ChunkResult<bool> {
     parse_action_into(file, info, ctx, false)
 }
 
 /// `ParseActionFalseDataChunk`.
-fn parse_action_false_data_chunk<C: ScriptsContext>(
-    file: &mut DataChunkInput<C>,
-    info: &DataChunkInfo,
-    ctx: &mut C,
-) -> ChunkResult<bool> {
+fn parse_action_false_data_chunk<C: ScriptsContext>(file: &mut DataChunkInput<C>, info: &DataChunkInfo, ctx: &mut C) -> ChunkResult<bool> {
     parse_action_into(file, info, ctx, true)
 }
 
-fn parse_action_into<C: ScriptsContext>(
-    file: &mut DataChunkInput<C>,
-    info: &DataChunkInfo,
-    ctx: &mut C,
-    false_list: bool,
-) -> ChunkResult<bool> {
+fn parse_action_into<C: ScriptsContext>(file: &mut DataChunkInput<C>, info: &DataChunkInfo, ctx: &mut C, false_list: bool) -> ChunkResult<bool> {
     let a = match read_action(file, info, ctx) {
         Ok(a) => a,
         Err(e) => return Err(to_chunk_err(e, ctx.scripts_state())),
@@ -2072,11 +1824,7 @@ fn parse_action_into<C: ScriptsContext>(
 }
 
 /// `ScriptAction::ParseAction`.
-fn read_action<C: ScriptsContext>(
-    file: &mut DataChunkInput<C>,
-    info: &DataChunkInfo,
-    ctx: &mut C,
-) -> MapResult<ScriptAction> {
+fn read_action<C: ScriptsContext>(file: &mut DataChunkInput<C>, info: &DataChunkInfo, ctx: &mut C) -> MapResult<ScriptAction> {
     use action_type as at;
     let mut a = ScriptAction::new_for_read();
     a.action_type = file.read_int()?;
@@ -2153,10 +1901,7 @@ fn read_action<C: ScriptsContext>(
                 a.parms[2] = new_p(parameter_type::SIDE, 0);
             }
         }
-        at::MAP_REVEAL_ALL
-        | at::MAP_REVEAL_ALL_PERM
-        | at::MAP_REVEAL_ALL_UNDO_PERM
-        | at::MAP_SHROUD_ALL => {
+        at::MAP_REVEAL_ALL | at::MAP_REVEAL_ALL_PERM | at::MAP_REVEAL_ALL_UNDO_PERM | at::MAP_SHROUD_ALL => {
             if a.num_parms == 0 {
                 a.num_parms = 1;
                 a.parms[0] = new_p(parameter_type::SIDE, 0);
@@ -2178,9 +1923,7 @@ fn read_action<C: ScriptsContext>(
                 a.parms[2] = new_p(parameter_type::PERCENT, 0);
             }
         }
-        at::MOVE_CAMERA_TO
-        | at::MOVE_CAMERA_ALONG_WAYPOINT_PATH
-        | at::CAMERA_LOOK_TOWARD_OBJECT => {
+        at::MOVE_CAMERA_TO | at::MOVE_CAMERA_ALONG_WAYPOINT_PATH | at::CAMERA_LOOK_TOWARD_OBJECT => {
             if a.num_parms == 3 {
                 a.num_parms = 5;
                 a.parms[3] = new_p(parameter_type::REAL, 0);
@@ -2226,16 +1969,10 @@ mod tests {
     /// own and the parameter types of `types(i)`.
     fn templates(names: &mut NameKeyGenerator, types: impl Fn(i32) -> Vec<i32>) -> ScriptTemplates {
         let conds = (0..condition_type::NUM_ITEMS)
-            .map(|i| ScriptTemplate {
-                internal_name_key: names.name_to_key(format!("Cond{i}").as_bytes()),
-                parameters: types(i),
-            })
+            .map(|i| ScriptTemplate { internal_name_key: names.name_to_key(format!("Cond{i}").as_bytes()), parameters: types(i) })
             .collect();
         let acts = (0..action_type::NUM_ITEMS)
-            .map(|i| ScriptTemplate {
-                internal_name_key: names.name_to_key(format!("Act{i}").as_bytes()),
-                parameters: types(i + 1000),
-            })
+            .map(|i| ScriptTemplate { internal_name_key: names.name_to_key(format!("Act{i}").as_bytes()), parameters: types(i + 1000) })
             .collect();
         ScriptTemplates::new(conds, acts).expect("table sizes")
     }
@@ -2248,39 +1985,19 @@ mod tests {
             0 => vec![],
             1 => vec![parameter_type::INT],
             2 => vec![parameter_type::SIDE, parameter_type::TEAM],
-            3 => vec![
-                parameter_type::SIDE,
-                parameter_type::INT,
-                parameter_type::SCRIPT,
-            ],
+            3 => vec![parameter_type::SIDE, parameter_type::INT, parameter_type::SCRIPT],
             _ => vec![parameter_type::COORD3D],
         });
-        ScriptsCtx {
-            state: ScriptsState::new(),
-            names,
-            templates,
-        }
+        ScriptsCtx { state: ScriptsState::new(), names, templates }
     }
 
     #[test]
     fn templates_clamp_and_check_sizes() {
         let c = ctx();
-        assert_eq!(
-            c.templates.get_condition_template(-1).internal_name_key,
-            c.templates.get_condition_template(0).internal_name_key
-        );
-        assert_eq!(
-            c.templates.get_action_template(344).internal_name_key,
-            c.templates.get_action_template(0).internal_name_key
-        );
-        assert_eq!(
-            c.templates.get_condition_template(3).get_parameter_type(1),
-            parameter_type::INT
-        );
-        assert_eq!(
-            c.templates.get_condition_template(3).get_parameter_type(7),
-            parameter_type::INT
-        );
+        assert_eq!(c.templates.get_condition_template(-1).internal_name_key, c.templates.get_condition_template(0).internal_name_key);
+        assert_eq!(c.templates.get_action_template(344).internal_name_key, c.templates.get_action_template(0).internal_name_key);
+        assert_eq!(c.templates.get_condition_template(3).get_parameter_type(1), parameter_type::INT);
+        assert_eq!(c.templates.get_condition_template(3).get_parameter_type(7), parameter_type::INT);
         assert!(ScriptTemplates::new(vec![], vec![]).is_none());
     }
 
@@ -2293,10 +2010,7 @@ mod tests {
         assert_eq!(b.group_name, b"Script Group 2");
         assert_eq!(id, 2);
         let mut l = ScriptList::new();
-        let named = |n: &str| Script {
-            script_name: n.as_bytes().to_vec(),
-            ..Script::new()
-        };
+        let named = |n: &str| Script { script_name: n.as_bytes().to_vec(), ..Script::new() };
         l.add_script(named("a"), AT_END);
         l.add_script(named("b"), AT_END);
         l.add_script(named("c"), 0);
@@ -2319,19 +2033,9 @@ mod tests {
     fn script_editing_helpers() {
         let c = ctx();
         let mut s = Script::new();
-        s.conditions = vec![
-            OrCondition::default(),
-            OrCondition::default(),
-            OrCondition::default(),
-        ];
-        s.conditions[1].conditions = vec![
-            Condition::new(3, &c.templates),
-            Condition::new(1, &c.templates),
-        ];
-        s.actions = vec![
-            ScriptAction::new(3, &c.templates),
-            ScriptAction::new(4, &c.templates),
-        ];
+        s.conditions = vec![OrCondition::default(), OrCondition::default(), OrCondition::default()];
+        s.conditions[1].conditions = vec![Condition::new(3, &c.templates), Condition::new(1, &c.templates)];
+        s.actions = vec![ScriptAction::new(3, &c.templates), ScriptAction::new(4, &c.templates)];
         s.actions_false = vec![ScriptAction::new(3, &c.templates)];
         assert_eq!(s.find_previous_or_condition(0).unwrap(), None);
         assert_eq!(s.find_previous_or_condition(2).unwrap(), Some(1));
@@ -2344,44 +2048,23 @@ mod tests {
         s.delete_or_condition(0).unwrap();
         s.delete_action(1).unwrap();
         s.delete_false_action(0).unwrap();
-        assert!(
-            s.delete_action(1).is_err()
-                && s.delete_false_action(0).is_err()
-                && s.delete_or_condition(2).is_err()
-        );
+        assert!(s.delete_action(1).is_err() && s.delete_false_action(0).is_err() && s.delete_or_condition(2).is_err());
         let mut src = Script::new();
         src.script_name = b"new".to_vec();
         src.is_active = false;
         src.actions = vec![ScriptAction::new(2, &c.templates)];
         s.update_from(&mut src);
-        assert_eq!(
-            (
-                s.script_name.as_slice(),
-                s.is_active,
-                s.actions.len(),
-                s.conditions.len()
-            ),
-            (&b"new"[..], false, 1, 0)
-        );
+        assert_eq!((s.script_name.as_slice(), s.is_active, s.actions.len(), s.conditions.len()), (&b"new"[..], false, 1, 0));
         assert!(src.actions.is_empty());
-        assert_eq!(
-            s.actions[0].get_parameter(1).map(|p| p.param_type),
-            Some(parameter_type::TEAM)
-        );
+        assert_eq!(s.actions[0].get_parameter(1).map(|p| p.param_type), Some(parameter_type::TEAM));
         assert!(s.actions[0].get_parameter(2).is_none());
         // template 3 of the test table: (Side, Int, Script)
         let cond = Condition::new(3, &c.templates);
-        assert_eq!(
-            cond.get_parameter(0).map(|p| p.get_parameter_type()),
-            Some(parameter_type::SIDE)
-        );
+        assert_eq!(cond.get_parameter(0).map(|p| p.get_parameter_type()), Some(parameter_type::SIDE));
         assert!(cond.get_parameter(3).is_none() && cond.get_parameter(-1).is_none());
         let mut retyped = ScriptAction::new(2, &c.templates);
         retyped.set_action_type(3, &c.templates);
-        assert_eq!(
-            retyped.num_parms, 3,
-            "action 3 has template 1003 % 5 = 3: three parameters"
-        );
+        assert_eq!(retyped.num_parms, 3, "action 3 has template 1003 % 5 = 3: three parameters");
     }
 
     #[test]
@@ -2399,12 +2082,7 @@ mod tests {
         assert_eq!(s.string, b"PlyrNew");
         s.qualify(b"A", b"PlyrA", b"PlyrNew");
         assert_eq!(s.string, b"PlyrNew", "PlyrNewA is not the template player");
-        for t in [
-            parameter_type::SCRIPT,
-            parameter_type::COUNTER,
-            parameter_type::FLAG,
-            parameter_type::SCRIPT_SUBROUTINE,
-        ] {
+        for t in [parameter_type::SCRIPT, parameter_type::COUNTER, parameter_type::FLAG, parameter_type::SCRIPT_SUBROUTINE] {
             let mut p = Parameter::new(t, 0);
             p.string = b"n".to_vec();
             p.qualify(b"!", b"", b"");
@@ -2415,18 +2093,10 @@ mod tests {
         other.qualify(b"!", b"", b"");
         assert_eq!(other.string, b"n");
         let mut c = Parameter::new(parameter_type::COORD3D, 0);
-        c.set_coord3d(Coord3D {
-            x: 1.0,
-            y: 2.0,
-            z: 3.0,
-        });
+        c.set_coord3d(Coord3D { x: 1.0, y: 2.0, z: 3.0 });
         assert_eq!(c.get_coord3d().y, 2.0);
         let mut i = Parameter::new(parameter_type::INT, 0);
-        i.set_coord3d(Coord3D {
-            x: 1.0,
-            y: 2.0,
-            z: 3.0,
-        });
+        i.set_coord3d(Coord3D { x: 1.0, y: 2.0, z: 3.0 });
         assert_eq!(i.get_coord3d(), Coord3D::default());
     }
 
@@ -2470,8 +2140,7 @@ mod tests {
         let mut file: Vec<u8> = b"CkMp".to_vec();
         file.extend_from_slice(&0i32.to_le_bytes());
         file.extend(bytes);
-        let mut input =
-            DataChunkInput::<()>::new(CachedFileInputStream::new(file).unwrap()).unwrap();
+        let mut input = DataChunkInput::<()>::new(CachedFileInputStream::new(file).unwrap()).unwrap();
         Parameter::read_parameter(&mut input)
     }
 
@@ -2488,32 +2157,17 @@ mod tests {
         long.extend(vec![b'x'; 300]);
         let mut b = Vec::new();
         parm(&mut b, pt::OBJECT_TYPE, 0, 0.0, &long);
-        assert_eq!(
-            read_p(b).unwrap_err(),
-            MapDataError::Undefined(MapUndefined::NameTooLong)
-        );
+        assert_eq!(read_p(b).unwrap_err(), MapDataError::Undefined(MapUndefined::NameTooLong));
         let mut b = Vec::new();
-        parm(
-            &mut b,
-            pt::UPGRADE,
-            0,
-            0.0,
-            b"Upgrade_ChinaRedguardCaptureBuilding",
-        );
-        assert_eq!(
-            read_p(b).unwrap().string,
-            b"Upgrade_InfantryCaptureBuilding"
-        );
+        parm(&mut b, pt::UPGRADE, 0, 0.0, b"Upgrade_ChinaRedguardCaptureBuilding");
+        assert_eq!(read_p(b).unwrap().string, b"Upgrade_InfantryCaptureBuilding");
         let mut b = Vec::new();
         parm(&mut b, pt::OBJECT_STATUS, 0, 0.0, b"disguised");
         let p = read_p(b).unwrap();
         assert_eq!(p.object_status.count(), 1);
         let mut b = Vec::new();
         parm(&mut b, 64, 0, 0.0, b"");
-        assert_eq!(
-            read_p(b).unwrap_err(),
-            MapDataError::Undefined(MapUndefined::ParameterTypeOutOfRange)
-        );
+        assert_eq!(read_p(b).unwrap_err(), MapDataError::Undefined(MapUndefined::ParameterTypeOutOfRange));
         let mut b = Vec::new();
         parm(&mut b, pt::COORD3D, 0, 0.0, b"");
         let p = read_p(b).unwrap();
@@ -2524,10 +2178,7 @@ mod tests {
     fn read_parameter_kind_of() {
         use parameter_type as pt;
         let names = KindOfMaskType::get_bit_names();
-        let small = names
-            .iter()
-            .position(|n| *n == "SMALL_MISSILE")
-            .expect("name exists") as i32;
+        let small = names.iter().position(|n| *n == "SMALL_MISSILE").expect("name exists") as i32;
         for (s, want) in [
             ("selectable", 1),
             ("CRUSHER", 0),
@@ -2551,10 +2202,7 @@ mod tests {
         assert_eq!(read_p(b).unwrap().string, b"");
         let mut b = Vec::new();
         parm(&mut b, pt::KIND_OF_PARAM, -1, 0.0, b"");
-        assert_eq!(
-            read_p(b).unwrap_err(),
-            MapDataError::Undefined(MapUndefined::KindOfIndexOutOfRange)
-        );
+        assert_eq!(read_p(b).unwrap_err(), MapDataError::Undefined(MapUndefined::KindOfIndexOutOfRange));
     }
 
     #[test]
@@ -2569,11 +2217,7 @@ mod tests {
         q.write_parameter(&mut out);
         assert_eq!(q.string, b"");
         let mut c = Parameter::new(parameter_type::COORD3D, 0);
-        c.set_coord3d(Coord3D {
-            x: 1.0,
-            y: 2.0,
-            z: 3.0,
-        });
+        c.set_coord3d(Coord3D { x: 1.0, y: 2.0, z: 3.0 });
         c.write_parameter(&mut out);
         assert!(!out.finish().is_empty());
     }
@@ -2599,15 +2243,7 @@ mod tests {
         v
     }
 
-    const SCB_NAMES: [&str; 7] = [
-        "PlayerScriptsList",
-        "ScriptList",
-        "Script",
-        "OrCondition",
-        "Condition",
-        "ScriptAction",
-        "ScriptGroup",
-    ];
+    const SCB_NAMES: [&str; 7] = ["PlayerScriptsList", "ScriptList", "Script", "OrCondition", "Condition", "ScriptAction", "ScriptGroup"];
 
     fn script_body(tail: &[u8]) -> Vec<u8> {
         let mut b = Vec::new();
@@ -2622,13 +2258,8 @@ mod tests {
     }
 
     fn parse_scb(c: &mut ScriptsCtx, file: Vec<u8>) -> MapResult<bool> {
-        let mut input =
-            DataChunkInput::<ScriptsCtx>::new(CachedFileInputStream::new(file).unwrap())?;
-        input.register_parser(
-            b"PlayerScriptsList",
-            b"",
-            parse_scripts_data_chunk::<ScriptsCtx>,
-        );
+        let mut input = DataChunkInput::<ScriptsCtx>::new(CachedFileInputStream::new(file).unwrap())?;
+        input.register_parser(b"PlayerScriptsList", b"", parse_scripts_data_chunk::<ScriptsCtx>);
         let r = input.parse(c);
         c.state.finish(r)
     }
@@ -2663,28 +2294,11 @@ mod tests {
         let list = lists[0].as_mut().expect("one list");
         assert_eq!(list.scripts.len(), 1);
         let s = &list.scripts[0];
-        assert_eq!(
-            (
-                &s.script_name[..],
-                s.delay_evaluation_seconds,
-                s.is_one_shot,
-                s.easy,
-                s.normal,
-                s.hard,
-                s.is_subroutine
-            ),
-            (&b"name"[..], 9, false, true, true, false, true)
-        );
+        assert_eq!((&s.script_name[..], s.delay_evaluation_seconds, s.is_one_shot, s.easy, s.normal, s.hard, s.is_subroutine), (&b"name"[..], 9, false, true, true, false, true));
         let cd = &s.conditions[0].conditions[0];
-        assert_eq!(
-            (cd.condition_type, cd.num_parms),
-            (condition_type::CONDITION_FALSE, 0)
-        );
+        assert_eq!((cd.condition_type, cd.num_parms), (condition_type::CONDITION_FALSE, 0));
         assert_eq!(s.actions.len(), 1);
-        assert_eq!(
-            (s.actions[0].action_type, s.actions[0].num_parms),
-            (action_type::NO_OP, 0)
-        );
+        assert_eq!((s.actions[0].action_type, s.actions[0].num_parms), (action_type::NO_OP, 0));
         // write it back
         let mut out = DataChunkOutput::new();
         let mut refs = [Some(list)];
@@ -2720,17 +2334,7 @@ mod tests {
         c3.templates = {
             let mut n = NameKeyGenerator::new();
             n.init();
-            templates(&mut n, |i| {
-                if i == 1036 {
-                    vec![
-                        parameter_type::SCRIPT,
-                        parameter_type::SCRIPT,
-                        parameter_type::BOOLEAN,
-                    ]
-                } else {
-                    vec![]
-                }
-            })
+            templates(&mut n, |i| if i == 1036 { vec![parameter_type::SCRIPT, parameter_type::SCRIPT, parameter_type::BOOLEAN] } else { vec![] })
         };
         let mut act = 36i32.to_le_bytes().to_vec();
         act.extend_from_slice(&2i32.to_le_bytes());
@@ -2778,10 +2382,7 @@ mod tests {
         assert!(!parse_scb(&mut c, file).unwrap());
         assert_eq!(c.state.num_in_read_list(), 16);
         let taken = ScriptList::get_read_scripts(&mut c.state);
-        assert_eq!(
-            (taken.len(), taken.iter().filter(|l| l.is_some()).count()),
-            (16, 0)
-        );
+        assert_eq!((taken.len(), taken.iter().filter(|l| l.is_some()).count()), (16, 0));
     }
 
     #[test]
@@ -2800,15 +2401,7 @@ mod tests {
         let l = lists[0].as_ref().unwrap();
         assert_eq!((l.groups.len(), l.scripts.len()), (1, 1));
         let g = &l.groups[0];
-        assert_eq!(
-            (
-                &g.group_name[..],
-                g.is_group_active,
-                g.is_group_subroutine,
-                g.scripts.len()
-            ),
-            (&b"Group"[..], false, true, 1)
-        );
+        assert_eq!((&g.group_name[..], g.is_group_active, g.is_group_subroutine, g.scripts.len()), (&b"Group"[..], false, true, 1));
         // version 1 groups have no subroutine byte
         let mut grp = Vec::new();
         grp.extend_from_slice(&1u16.to_le_bytes());
@@ -2829,42 +2422,27 @@ mod tests {
         let mut cond = Condition::new(2, &c.templates);
         cond.parms[0].as_mut().unwrap().string = b"PlyrA".to_vec();
         cond.parms[1].as_mut().unwrap().string = b"team".to_vec();
-        sc.conditions = vec![OrCondition {
-            conditions: vec![cond],
-        }];
+        sc.conditions = vec![OrCondition { conditions: vec![cond] }];
         sc.actions = vec![ScriptAction::new(2, &c.templates)];
         sc.actions[0].parms[0].as_mut().unwrap().string = b"Plyr".to_vec();
         let mut g = ScriptGroup::new(&mut c.state.cur_id);
         g.group_name = b"G".to_vec();
         g.scripts.push(sc.clone());
-        let list = ScriptList {
-            groups: vec![g],
-            scripts: vec![sc],
-        };
+        let list = ScriptList { groups: vec![g], scripts: vec![sc] };
         let mut ids = 10;
         let d = list.duplicate(&mut ids, &c.templates).unwrap();
         assert_eq!(ids, 11);
         assert_eq!(d.scripts[0].script_name, b"S");
         assert!(!d.scripts[0].is_active);
-        let q = list
-            .duplicate_and_qualify(&mut ids, &c.templates, b"_2", b"PlyrA", b"PlyrB")
-            .unwrap();
+        let q = list.duplicate_and_qualify(&mut ids, &c.templates, b"_2", b"PlyrA", b"PlyrB").unwrap();
         assert_eq!(ids, 12);
         assert_eq!(q.groups[0].group_name, b"G_2");
         assert_eq!(q.scripts[0].script_name, b"S_2");
         let cc = &q.scripts[0].conditions[0].conditions[0];
-        assert_eq!(
-            cc.parms[0].as_ref().unwrap().string,
-            b"PlyrA",
-            "Plyr + _2 is not PlyrA"
-        );
+        assert_eq!(cc.parms[0].as_ref().unwrap().string, b"PlyrA", "Plyr + _2 is not PlyrA");
         assert_eq!(cc.parms[1].as_ref().unwrap().string, b"team_2");
         let a = &q.scripts[0].actions[0];
-        assert_eq!(
-            a.parms[0].as_ref().unwrap().string,
-            b"Plyr",
-            "SIDE: Plyr + _2 != PlyrA"
-        );
+        assert_eq!(a.parms[0].as_ref().unwrap().string, b"Plyr", "SIDE: Plyr + _2 != PlyrA");
         assert_eq!(OBJECT_FLAGS_NAMES[6], "Player Targetable");
     }
 }

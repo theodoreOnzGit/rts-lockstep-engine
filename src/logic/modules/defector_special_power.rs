@@ -21,19 +21,17 @@
 use std::sync::Arc;
 
 use crate::common::base_type::Coord3D;
-use crate::common::ini::Undefined;
 use crate::common::ini::{FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::special_power_module::{SpecialPowerModule, SpecialPowerModuleData};
-use crate::logic::modules::special_power_body::{
-    self, special_power_module_call, SpecialPowerBehavior,
-};
+use crate::logic::modules::special_power_body::{self, special_power_module_call, SpecialPowerBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::update_body::UpdateBody;
 use crate::special_power_data_field_parse;
+use crate::common::ini::Undefined;
 
 /// `class DefectorSpecialPowerModuleData : public SpecialPowerModuleData`.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -54,9 +52,7 @@ impl DefectorSpecialPowerModuleData {
     }
 
     /// `buildFieldParse(p)`: the behaviour base, the special power fields, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, DefectorSpecialPowerModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, DefectorSpecialPowerModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -64,34 +60,21 @@ impl DefectorSpecialPowerModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<DefectorSpecialPowerModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<DefectorSpecialPowerModuleData> {
         let mut data = DefectorSpecialPowerModuleData::new();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                DefectorSpecialPowerModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, DefectorSpecialPowerModuleData::build_field_parse)?;
         }
         Ok(data)
     }
 }
 
 /// `SpecialPowerModuleData::buildFieldParse`'s table, for this data class.
-static BASE_FIELD_PARSE: [FieldParse<DefectorSpecialPowerModuleData>; 6] =
-    special_power_data_field_parse!(DefectorSpecialPowerModuleData, special_power);
+static BASE_FIELD_PARSE: [FieldParse<DefectorSpecialPowerModuleData>; 6] = special_power_data_field_parse!(DefectorSpecialPowerModuleData, special_power);
 
 /// `DefectorSpecialPowerModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<DefectorSpecialPowerModuleData>; 2] = [
-    FieldParse::new(
-        "FatCursorRadius",
-        |ini, d, _| {
-            d.fat_cursor_radius = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("FatCursorRadius", |ini, d, _| { d.fat_cursor_radius = ini.parse_real()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
@@ -118,12 +101,8 @@ impl PartialEq for DefectorSpecialPower {
 
 impl DefectorSpecialPower {
     /// `DefectorSpecialPower(thing, moduleData)`, the part that touches no world: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<DefectorSpecialPowerModuleData>>,
-    ) -> IniResult<DefectorSpecialPower> {
-        let data =
-            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(object: ObjectId, data: Option<Arc<DefectorSpecialPowerModuleData>>) -> IniResult<DefectorSpecialPower> {
+        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let power = SpecialPowerModule::new(object, Some(Arc::new(data.special_power.clone())))?;
         Ok(DefectorSpecialPower { power, data })
     }
@@ -146,12 +125,7 @@ impl DefectorSpecialPower {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         special_power_module_call(self, world, me, call)
     }
 }
@@ -172,50 +146,20 @@ impl SpecialPowerBehavior for DefectorSpecialPower {
             _ => None,
         }
     }
-    fn do_special_power_at_location(
-        &mut self,
-        _world: &mut World,
-        _me: ModuleHandle,
-        _loc: Coord3D,
-        _angle: f32,
-        _command_options: u32,
-    ) -> Result<(), IniError> {
+    fn do_special_power_at_location(&mut self, _world: &mut World, _me: ModuleHandle, _loc: Coord3D, _angle: f32, _command_options: u32) -> Result<(), IniError> {
         Ok(())
     }
-    fn do_special_power_at_object(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        target: ObjectId,
-        command_options: u32,
-    ) -> Result<(), IniError> {
-        if world
-            .objects
-            .find(me.object)
-            .is_some_and(|o| o.is_disabled())
-        {
+    fn do_special_power_at_object(&mut self, world: &mut World, me: ModuleHandle, target: ObjectId, command_options: u32) -> Result<(), IniError> {
+        if world.objects.find(me.object).is_some_and(|o| o.is_disabled()) {
             return Ok(());
         }
         if world.objects.find(target).is_none() {
             return Ok(());
         }
-        special_power_body::base_do_special_power_at_object(
-            self,
-            world,
-            me,
-            target,
-            command_options,
-        )?;
-        let time = special_power_body::template_detection_time(world, self.power())
-            .ok_or_else(|| IniError::undefined(Undefined::NullSpecialPowerTemplate))?;
-        let player = world
-            .get_controlling_player(me.object)
-            .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
-        let team = world
-            .players
-            .get_nth(player)
-            .and_then(|p| p.default_team)
-            .ok_or_else(|| IniError::undefined(Undefined::NullDefaultTeam))?;
+        special_power_body::base_do_special_power_at_object(self, world, me, target, command_options)?;
+        let time = special_power_body::template_detection_time(world, self.power()).ok_or_else(|| IniError::undefined(Undefined::NullSpecialPowerTemplate))?;
+        let player = world.get_controlling_player(me.object).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+        let team = world.players.get_nth(player).and_then(|p| p.default_team).ok_or_else(|| IniError::undefined(Undefined::NullDefaultTeam))?;
         if !crate::logic::modules::plant(831) {
             world.defect(target, team, time);
         }
@@ -243,7 +187,6 @@ impl Snapshot for DefectorSpecialPower {
 
 /// The factory's `NewModuleDataProc` for `DefectorSpecialPower`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::DefectorSpecialPower(Arc::new(
-        DefectorSpecialPowerModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::DefectorSpecialPower(Arc::new(DefectorSpecialPowerModuleData::friend_new_module_data(ini)?)))
 }
+

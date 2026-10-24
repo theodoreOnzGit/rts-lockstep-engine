@@ -282,7 +282,12 @@ pub const DISTRIBUTION_TYPE_NAMES: [&str; 6] = [
 /// Only CONSTANT and UNIFORM are implemented upstream; the other types hit a
 /// `DEBUG_CRASH` (a no-op in release) and return `0.0f`. A CONSTANT with
 /// `low != high` falls through to UNIFORM, as upstream.
-fn variable_value(kind: DistributionType, low: f32, high: f32, seed: &mut [u32; 6]) -> f32 {
+fn variable_value(
+    kind: DistributionType,
+    low: f32,
+    high: f32,
+    seed: &mut [u32; 6],
+) -> f32 {
     match kind {
         DistributionType::Constant if low == high => low,
         DistributionType::Constant | DistributionType::Uniform => random_real(seed, low, high),
@@ -301,11 +306,7 @@ pub struct GameLogicRandomVariable {
 impl GameLogicRandomVariable {
     /// `setRange(low, high, type)` as a constructor.
     pub fn new(low: f32, high: f32, distribution: DistributionType) -> Self {
-        GameLogicRandomVariable {
-            distribution,
-            low,
-            high,
-        }
+        GameLogicRandomVariable { distribution, low, high }
     }
 
     /// `setRange(low, high, type = UNIFORM)`.
@@ -342,11 +343,7 @@ pub struct GameClientRandomVariable {
 impl GameClientRandomVariable {
     /// `setRange(low, high, type)` as a constructor.
     pub fn new(low: f32, high: f32, distribution: DistributionType) -> Self {
-        GameClientRandomVariable {
-            distribution,
-            low,
-            high,
-        }
+        GameClientRandomVariable { distribution, low, high }
     }
 
     /// `setRange(low, high, type = UNIFORM)`.
@@ -395,10 +392,7 @@ mod tests {
         for _ in 0..100 {
             a.game_client_random_value(0, 100);
         }
-        assert_eq!(
-            a.game_logic_random_value(0, 1000),
-            b.game_logic_random_value(0, 1000)
-        );
+        assert_eq!(a.game_logic_random_value(0, 1000), b.game_logic_random_value(0, 1000));
     }
 
     #[test]
@@ -408,9 +402,6 @@ mod tests {
         assert_eq!(c.get_value(&mut rv), 2.5);
         let g = GameClientRandomVariable::new(0.0, 1.0, DistributionType::Gaussian);
         assert_eq!(g.get_value(&mut rv), 0.0);
-        assert_eq!(
-            DISTRIBUTION_TYPE_NAMES[DistributionType::HighBias as usize],
-            "HIGH_BIAS"
-        );
+        assert_eq!(DISTRIBUTION_TYPE_NAMES[DistributionType::HighBias as usize], "HIGH_BIAS");
     }
 }

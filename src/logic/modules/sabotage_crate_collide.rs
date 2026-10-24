@@ -49,14 +49,10 @@ use std::sync::Arc;
 use crate::common::base_type::Coord3D;
 use crate::common::disabled_types::DISABLED_HACKED;
 use crate::common::game_common::Relationship;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::kind_of::{
-    KindOfType, KINDOF_AIRCRAFT_CARRIER, KINDOF_COMMANDCENTER, KINDOF_FS_AIRFIELD,
-    KINDOF_FS_BARRACKS, KINDOF_FS_FAKE, KINDOF_FS_INTERNET_CENTER, KINDOF_FS_POWER,
-    KINDOF_FS_STRATEGY_CENTER, KINDOF_FS_SUPERWEAPON, KINDOF_FS_SUPPLY_CENTER,
-    KINDOF_FS_SUPPLY_DROPZONE, KINDOF_FS_WARFACTORY,
+    KindOfType, KINDOF_AIRCRAFT_CARRIER, KINDOF_COMMANDCENTER, KINDOF_FS_AIRFIELD, KINDOF_FS_BARRACKS, KINDOF_FS_FAKE, KINDOF_FS_INTERNET_CENTER, KINDOF_FS_POWER,
+    KINDOF_FS_STRATEGY_CENTER, KINDOF_FS_SUPERWEAPON, KINDOF_FS_SUPPLY_CENTER, KINDOF_FS_SUPPLY_DROPZONE, KINDOF_FS_WARFACTORY,
 };
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_SPECIAL_POWER};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
@@ -64,9 +60,7 @@ use crate::crate_collide_data_field_parse;
 use crate::logic::damage::{DamageInfo, DAMAGE_UNRESISTABLE};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::collide_module::CollideModule;
-use crate::logic::modules::crate_collide::{
-    crate_is_valid_to_execute, crate_module_call, CrateBehavior, CrateCollideModuleData,
-};
+use crate::logic::modules::crate_collide::{crate_is_valid_to_execute, crate_module_call, CrateBehavior, CrateCollideModuleData};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::object_cuts::CutCall;
@@ -101,43 +95,19 @@ pub enum SabotageVictim {
 impl SabotageVictim {
     /// The eight, with their module names.
     pub const ALL: [(SabotageVictim, &'static str); 8] = [
-        (
-            SabotageVictim::CommandCenter,
-            "SabotageCommandCenterCrateCollide",
-        ),
-        (
-            SabotageVictim::FakeBuilding,
-            "SabotageFakeBuildingCrateCollide",
-        ),
-        (
-            SabotageVictim::InternetCenter,
-            "SabotageInternetCenterCrateCollide",
-        ),
-        (
-            SabotageVictim::MilitaryFactory,
-            "SabotageMilitaryFactoryCrateCollide",
-        ),
+        (SabotageVictim::CommandCenter, "SabotageCommandCenterCrateCollide"),
+        (SabotageVictim::FakeBuilding, "SabotageFakeBuildingCrateCollide"),
+        (SabotageVictim::InternetCenter, "SabotageInternetCenterCrateCollide"),
+        (SabotageVictim::MilitaryFactory, "SabotageMilitaryFactoryCrateCollide"),
         (SabotageVictim::PowerPlant, "SabotagePowerPlantCrateCollide"),
-        (
-            SabotageVictim::Superweapon,
-            "SabotageSuperweaponCrateCollide",
-        ),
-        (
-            SabotageVictim::SupplyCenter,
-            "SabotageSupplyCenterCrateCollide",
-        ),
-        (
-            SabotageVictim::SupplyDropzone,
-            "SabotageSupplyDropzoneCrateCollide",
-        ),
+        (SabotageVictim::Superweapon, "SabotageSuperweaponCrateCollide"),
+        (SabotageVictim::SupplyCenter, "SabotageSupplyCenterCrateCollide"),
+        (SabotageVictim::SupplyDropzone, "SabotageSupplyDropzoneCrateCollide"),
     ];
 
     /// The victim of a module name.
     pub fn from_name(name: &str) -> Option<SabotageVictim> {
-        SabotageVictim::ALL
-            .iter()
-            .find(|(_, n)| *n == name)
-            .map(|(v, _)| *v)
+        SabotageVictim::ALL.iter().find(|(_, n)| *n == name).map(|(v, _)| *v)
     }
 }
 
@@ -154,87 +124,48 @@ pub struct SabotageCrateCollideModuleData {
     pub steal_cash_amount: u32,
 }
 
-static BASE_FIELD_PARSE: [FieldParse<SabotageCrateCollideModuleData>; 12] =
-    crate_collide_data_field_parse!(SabotageCrateCollideModuleData, crate_data);
+static BASE_FIELD_PARSE: [FieldParse<SabotageCrateCollideModuleData>; 12] = crate_collide_data_field_parse!(SabotageCrateCollideModuleData, crate_data);
 
 static DURATION_FIELD_PARSE: [FieldParse<SabotageCrateCollideModuleData>; 2] = [
-    FieldParse::new(
-        "SabotageDuration",
-        |ini, d, _| {
-            d.sabotage_frames = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("SabotageDuration", |ini, d, _| { d.sabotage_frames = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 static POWER_FIELD_PARSE: [FieldParse<SabotageCrateCollideModuleData>; 2] = [
-    FieldParse::new(
-        "SabotagePowerDuration",
-        |ini, d, _| {
-            d.sabotage_frames = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("SabotagePowerDuration", |ini, d, _| { d.sabotage_frames = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 static CASH_FIELD_PARSE: [FieldParse<SabotageCrateCollideModuleData>; 2] = [
-    FieldParse::new(
-        "StealCashAmount",
-        |ini, d, _| {
-            d.steal_cash_amount = ini.parse_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("StealCashAmount", |ini, d, _| { d.steal_cash_amount = ini.parse_unsigned_int()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl SabotageCrateCollideModuleData {
     /// The constructor: the crate base's defaults, every own field 0.
     pub fn new(victim: SabotageVictim) -> Self {
-        SabotageCrateCollideModuleData {
-            crate_data: CrateCollideModuleData::new(),
-            victim,
-            sabotage_frames: 0,
-            steal_cash_amount: 0,
-        }
+        SabotageCrateCollideModuleData { crate_data: CrateCollideModuleData::new(), victim, sabotage_frames: 0, steal_cash_amount: 0 }
     }
 
     /// `buildFieldParse(p)`: the module data base, the crate fields, then the class's own (none for the command centre, superweapon and fake
     /// building).
-    pub fn build_field_parse(
-        victim: SabotageVictim,
-        p: &mut MultiIniFieldParse<'_, SabotageCrateCollideModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(victim: SabotageVictim, p: &mut MultiIniFieldParse<'_, SabotageCrateCollideModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_FIELD_PARSE)?;
         match victim {
-            SabotageVictim::InternetCenter | SabotageVictim::MilitaryFactory => {
-                p.add(&DURATION_FIELD_PARSE)?
-            }
+            SabotageVictim::InternetCenter | SabotageVictim::MilitaryFactory => p.add(&DURATION_FIELD_PARSE)?,
             SabotageVictim::PowerPlant => p.add(&POWER_FIELD_PARSE)?,
-            SabotageVictim::SupplyCenter | SabotageVictim::SupplyDropzone => {
-                p.add(&CASH_FIELD_PARSE)?
-            }
+            SabotageVictim::SupplyCenter | SabotageVictim::SupplyDropzone => p.add(&CASH_FIELD_PARSE)?,
             _ => {}
         }
         Ok(())
     }
 
     /// `friend_newModuleData(ini)` of the class `victim` names.
-    pub fn friend_new_module_data(
-        victim: SabotageVictim,
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<SabotageCrateCollideModuleData> {
+    pub fn friend_new_module_data(victim: SabotageVictim, ini: Option<&mut Ini<'_>>) -> IniResult<SabotageCrateCollideModuleData> {
         let mut data = SabotageCrateCollideModuleData::new(victim);
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, |p| {
-                SabotageCrateCollideModuleData::build_field_parse(victim, p)
-            })?;
+            ini.init_from_ini_multi_proc(&mut data, |p| SabotageCrateCollideModuleData::build_field_parse(victim, p))?;
         }
         Ok(data)
     }
@@ -263,9 +194,7 @@ sabotage_new_module_data!(
 );
 
 /// The factory's `NewModuleDataProc` for the module name `name` (one of [`SabotageVictim::ALL`]).
-pub fn new_module_data_proc(
-    name: &str,
-) -> Option<crate::common::module_factory::NewModuleDataProc> {
+pub fn new_module_data_proc(name: &str) -> Option<crate::common::module_factory::NewModuleDataProc> {
     Some(match SabotageVictim::from_name(name)? {
         SabotageVictim::CommandCenter => new_command_center_data,
         SabotageVictim::FakeBuilding => new_fake_building_data,
@@ -290,8 +219,7 @@ pub struct SabotageCrateCollide {
 impl PartialEq for SabotageCrateCollide {
     /// The same object and the same data object (upstream compares pointers).
     fn eq(&self, other: &Self) -> bool {
-        self.collide.behavior().object() == other.collide.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
+        self.collide.behavior().object() == other.collide.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
@@ -302,10 +230,7 @@ const fn game_make_color(r: u32, g: u32, b: u32, a: u32) -> i32 {
 
 impl SabotageCrateCollide {
     /// The constructor: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<SabotageCrateCollideModuleData>>,
-    ) -> IniResult<SabotageCrateCollide> {
+    pub fn new(object: ObjectId, data: Option<Arc<SabotageCrateCollideModuleData>>) -> IniResult<SabotageCrateCollide> {
         let data = data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let collide = CollideModule::new(object, Some(Arc::new(data.crate_data.collide.clone())))?;
         Ok(SabotageCrateCollide { collide, data })
@@ -322,12 +247,7 @@ impl SabotageCrateCollide {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         crate_module_call(self, world, me, call)
     }
 
@@ -338,14 +258,9 @@ impl SabotageCrateCollide {
             SabotageVictim::FakeBuilding => (&[KINDOF_FS_FAKE], None),
             SabotageVictim::InternetCenter => (&[KINDOF_FS_INTERNET_CENTER], None),
             // "Aircraft carriers are considered war factories, but cannot be sabotaged"
-            SabotageVictim::MilitaryFactory => (
-                &[KINDOF_FS_BARRACKS, KINDOF_FS_WARFACTORY, KINDOF_FS_AIRFIELD],
-                Some(KINDOF_AIRCRAFT_CARRIER),
-            ),
+            SabotageVictim::MilitaryFactory => (&[KINDOF_FS_BARRACKS, KINDOF_FS_WARFACTORY, KINDOF_FS_AIRFIELD], Some(KINDOF_AIRCRAFT_CARRIER)),
             SabotageVictim::PowerPlant => (&[KINDOF_FS_POWER], None),
-            SabotageVictim::Superweapon => {
-                (&[KINDOF_FS_SUPERWEAPON, KINDOF_FS_STRATEGY_CENTER], None)
-            }
+            SabotageVictim::Superweapon => (&[KINDOF_FS_SUPERWEAPON, KINDOF_FS_STRATEGY_CENTER], None),
             SabotageVictim::SupplyCenter => (&[KINDOF_FS_SUPPLY_CENTER], None),
             SabotageVictim::SupplyDropzone => (&[KINDOF_FS_SUPPLY_DROPZONE], None),
         }
@@ -356,12 +271,8 @@ impl SabotageCrateCollide {
         let sound = match self.data.victim {
             // "THIS NEEDS NO ADD'L FEEDBACK"
             SabotageVictim::FakeBuilding => return,
-            SabotageVictim::CommandCenter | SabotageVictim::Superweapon => {
-                ObjectSound::SabotageResetTimerBuilding
-            }
-            SabotageVictim::SupplyDropzone | SabotageVictim::SupplyCenter => {
-                ObjectSound::MoneyWithdraw
-            }
+            SabotageVictim::CommandCenter | SabotageVictim::Superweapon => ObjectSound::SabotageResetTimerBuilding,
+            SabotageVictim::SupplyDropzone | SabotageVictim::SupplyCenter => ObjectSound::MoneyWithdraw,
             _ => {
                 if crate::logic::modules::plant(1641) {
                     ObjectSound::MoneyWithdraw
@@ -371,11 +282,7 @@ impl SabotageCrateCollide {
             }
         };
         let position = world.objects.find(other).map(|o| o.get_position());
-        world.emit(ObjectClientEvent::Sound {
-            sound,
-            object_id: crate::common::game_type::INVALID_ID,
-            position,
-        });
+        world.emit(ObjectClientEvent::Sound { sound, object_id: crate::common::game_type::INVALID_ID, position });
         if world.has_drawable(other) && !crate::logic::modules::plant(1642) {
             world.emit(ObjectClientEvent::DrawableFlashAsSelected { object_id: other });
         }
@@ -392,11 +299,7 @@ impl SabotageCrateCollide {
     /// `obj->setDisabledUntil(type, frame)`: real, or a record under the crate tests' stub.
     fn set_disabled_until(world: &mut World, id: ObjectId, frame: u32) {
         if world.cuts.crate_stub_object_calls {
-            world.cut(CutCall::ObjectSetDisabledUntil {
-                object: id,
-                disabled: DISABLED_HACKED,
-                frame,
-            });
+            world.cut(CutCall::ObjectSetDisabledUntil { object: id, disabled: DISABLED_HACKED, frame });
         } else {
             world.set_disabled_until(id, DISABLED_HACKED, frame);
         }
@@ -413,70 +316,25 @@ impl SabotageCrateCollide {
     }
 
     /// The supply centre's and drop zone's theft: up to `StealCashAmount` of the victim's player's money to the saboteur's.
-    fn steal_cash(
-        &self,
-        world: &mut World,
-        me: ModuleHandle,
-        other: ObjectId,
-    ) -> Result<(), IniError> {
+    fn steal_cash(&self, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<(), IniError> {
         let us = me.object;
-        let target = world
-            .get_controlling_player(other)
-            .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
-        let thief = world
-            .get_controlling_player(us)
-            .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
-        let available = world
-            .players
-            .get_nth(target)
-            .map_or(0, |p| p.money.count_money());
+        let target = world.get_controlling_player(other).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+        let thief = world.get_controlling_player(us).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+        let available = world.players.get_nth(target).map_or(0, |p| p.money.count_money());
         let desired = self.data.steal_cash_amount;
-        let cash = if crate::logic::modules::plant(1644) {
-            desired
-        } else {
-            desired.min(available)
-        };
+        let cash = if crate::logic::modules::plant(1644) { desired } else { desired.min(available) };
         if cash > 0 {
-            world.cut(CutCall::PlayerMoneyWithdraw {
-                player: target,
-                amount: cash,
-            });
-            world.cut(CutCall::PlayerMoneyDeposit {
-                player: thief,
-                amount: cash,
-            });
-            world.cut(CutCall::PlayerScoreAddMoneyEarned {
-                player: thief,
-                amount: cash as i32,
-            });
+            world.cut(CutCall::PlayerMoneyWithdraw { player: target, amount: cash });
+            world.cut(CutCall::PlayerMoneyDeposit { player: thief, amount: cash });
+            world.cut(CutCall::PlayerScoreAddMoneyEarned { player: thief, amount: cash as i32 });
             Self::eva_if_local(world, other, EvaMessage::CashStolen);
             // "add a little z to make it show up above the unit"
-            let mut pos = world
-                .objects
-                .find(us)
-                .map_or(Coord3D::default(), |o| o.get_position());
+            let mut pos = world.objects.find(us).map_or(Coord3D::default(), |o| o.get_position());
             pos.z += 20.0;
-            world.cut(CutCall::InGameUiAddFloatingTextNamed {
-                text: b"GUI:AddCash".to_vec(),
-                amount: cash as i32,
-                position: pos,
-                color: game_make_color(0, 255, 0, 255),
-            });
-            let mut pos = world
-                .objects
-                .find(other)
-                .map_or(Coord3D::default(), |o| o.get_position());
-            pos.z += if crate::logic::modules::plant(1645) {
-                20.0
-            } else {
-                30.0
-            };
-            world.cut(CutCall::InGameUiAddFloatingTextNamed {
-                text: b"GUI:LoseCash".to_vec(),
-                amount: cash as i32,
-                position: pos,
-                color: game_make_color(255, 0, 0, 255),
-            });
+            world.cut(CutCall::InGameUiAddFloatingTextNamed { text: b"GUI:AddCash".to_vec(), amount: cash as i32, position: pos, color: game_make_color(0, 255, 0, 255) });
+            let mut pos = world.objects.find(other).map_or(Coord3D::default(), |o| o.get_position());
+            pos.z += if crate::logic::modules::plant(1645) { 20.0 } else { 30.0 };
+            world.cut(CutCall::InGameUiAddFloatingTextNamed { text: b"GUI:LoseCash".to_vec(), amount: cash as i32, position: pos, color: game_make_color(255, 0, 0, 255) });
         } else {
             Self::eva_if_local(world, other, EvaMessage::BuildingSabotaged);
         }
@@ -493,18 +351,11 @@ impl CrateBehavior for SabotageCrateCollide {
     }
 
     /// `isValidToExecute(other)`: the base's, a living victim of the class's kind, an enemy of the saboteur.
-    fn is_valid_to_execute(
-        &self,
-        world: &mut World,
-        me: ModuleHandle,
-        other: ObjectId,
-    ) -> Result<bool, IniError> {
+    fn is_valid_to_execute(&self, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<bool, IniError> {
         if !crate_is_valid_to_execute(&self.data.crate_data, world, me, other)? {
             return Ok(false);
         }
-        let Some(o) = world.objects.find(other) else {
-            return Ok(false);
-        };
+        let Some(o) = world.objects.find(other) else { return Ok(false) };
         if o.is_effectively_dead() && !crate::logic::modules::plant(1646) {
             return Ok(false);
         }
@@ -523,29 +374,15 @@ impl CrateBehavior for SabotageCrateCollide {
     }
 
     /// `executeCrateBehavior(other)`.
-    fn execute_crate_behavior(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        other: ObjectId,
-    ) -> Result<bool, IniError> {
+    fn execute_crate_behavior(&mut self, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<bool, IniError> {
         let us = me.object;
         // "only the object we are targeting"
         if let Some(ai) = world.objects.find(us).and_then(|o| o.ai) {
-            if world
-                .module_call(us, ai, ModuleCall::AiGetGoalObject)
-                .as_id()
-                != other
-                && !crate::logic::modules::plant(1649)
-            {
+            if world.module_call(us, ai, ModuleCall::AiGetGoalObject).as_id() != other && !crate::logic::modules::plant(1649) {
                 return Ok(false);
             }
         }
-        world.emit(ObjectClientEvent::Radar {
-            call: crate::logic::world::object_events::RadarCall::TryInfiltrationEvent,
-            object_id: other,
-            position: None,
-        });
+        world.emit(ObjectClientEvent::Radar { call: crate::logic::world::object_events::RadarCall::TryInfiltrationEvent, object_id: other, position: None });
         self.do_sabotage_feedback_fx(world, other);
         let frame = world.frame().wrapping_add(self.data.sabotage_frames);
         match self.data.victim {
@@ -556,16 +393,9 @@ impl CrateBehavior for SabotageCrateCollide {
             SabotageVictim::PowerPlant => {
                 Self::eva_if_local(world, other, EvaMessage::BuildingSabotaged);
                 if let Some(player) = world.get_controlling_player(other) {
-                    let frame = if crate::logic::modules::plant(1650) {
-                        world.frame()
-                    } else {
-                        frame
-                    };
+                    let frame = if crate::logic::modules::plant(1650) { world.frame() } else { frame };
                     world.cut(CutCall::PlayerSetPowerSabotagedTillFrame { player, frame });
-                    world.cut(CutCall::PlayerOnPowerBrownOutChange {
-                        player,
-                        brown_out: true,
-                    });
+                    world.cut(CutCall::PlayerOnPowerBrownOutChange { player, brown_out: true });
                 }
             }
             SabotageVictim::MilitaryFactory => {
@@ -574,33 +404,19 @@ impl CrateBehavior for SabotageCrateCollide {
             }
             SabotageVictim::InternetCenter => {
                 Self::eva_if_local(world, other, EvaMessage::BuildingSabotaged);
-                let player = world
-                    .get_controlling_player(other)
-                    .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+                let player = world.get_controlling_player(other).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
                 // `iterateObjects(disableInternetCenterSpyVision)`: the player's internet centres' spy vision
                 for obj in world.player_iterate_objects(player) {
-                    if world
-                        .objects
-                        .find(obj)
-                        .is_some_and(|o| o.is_kind_of(KINDOF_FS_INTERNET_CENTER))
-                        && !crate::logic::modules::plant(1651)
-                    {
+                    if world.objects.find(obj).is_some_and(|o| o.is_kind_of(KINDOF_FS_INTERNET_CENTER)) && !crate::logic::modules::plant(1651) {
                         for idx in world.modules_with_spy_vision(obj) {
-                            world.module_call(
-                                obj,
-                                idx,
-                                ModuleCall::SetSpyVisionDisabledUntilFrame { frame },
-                            );
+                            world.module_call(obj, idx, ModuleCall::SetSpyVisionDisabledUntilFrame { frame });
                         }
                     }
                 }
                 Self::set_disabled_until(world, other, frame);
                 // `getContain()->iterateContained(disableHacker)`: read unchecked
-                let contain = world
-                    .get_contain(other)
-                    .ok_or_else(|| IniError::undefined(Undefined::NullObject))?;
-                let hackers = match world.module_call(other, contain, ModuleCall::GetContainedItems)
-                {
+                let contain = world.get_contain(other).ok_or_else(|| IniError::undefined(Undefined::NullObject))?;
+                let hackers = match world.module_call(other, contain, ModuleCall::GetContainedItems) {
                     ModuleReply::Ids(v) => v,
                     _ => Vec::new(),
                 };
@@ -613,10 +429,7 @@ impl CrateBehavior for SabotageCrateCollide {
             SabotageVictim::SupplyCenter => self.steal_cash(world, me, other)?,
             SabotageVictim::SupplyDropzone => {
                 // `findUpdateModule(NAMEKEY("OCLUpdate"))->resetTimer()`
-                if let Some(idx) = world
-                    .find_module(other, b"OCLUpdate")
-                    .filter(|_| !crate::logic::modules::plant(1653))
-                {
+                if let Some(idx) = world.find_module(other, b"OCLUpdate").filter(|_| !crate::logic::modules::plant(1653)) {
                     world.module_call(other, idx, ModuleCall::OclUpdateResetTimer);
                 }
                 self.steal_cash(world, me, other)?;
@@ -624,24 +437,17 @@ impl CrateBehavior for SabotageCrateCollide {
             SabotageVictim::FakeBuilding => {
                 Self::eva_if_local(world, other, EvaMessage::BuildingSabotaged);
                 if world.get_controlling_player(other).is_some() {
-                    let body = world
-                        .get_body_module(other)
-                        .ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
+                    let body = world.get_body_module(other).ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
                     let mut info = DamageInfo::default();
                     info.input.damage_type = DAMAGE_UNRESISTABLE;
                     info.input.death_type = DEATH_DETONATED;
                     info.input.source_id = us;
-                    info.input.amount = world
-                        .module_call(other, body, ModuleCall::GetMaxHealth)
-                        .as_real(0.0);
+                    info.input.amount = world.module_call(other, body, ModuleCall::GetMaxHealth).as_real(0.0);
                     if crate::logic::modules::plant(1654) {
                         info.input.amount /= 2.0;
                     }
                     if world.cuts.crate_stub_object_calls {
-                        world.cut(CutCall::ObjectAttemptDamage {
-                            object: other,
-                            info,
-                        });
+                        world.cut(CutCall::ObjectAttemptDamage { object: other, info });
                     } else {
                         world.attempt_damage(other, &mut info);
                     }
@@ -662,16 +468,9 @@ impl CrateBehavior for SabotageCrateCollide {
     }
 
     /// `isSabotageBuildingCrateCollide()`: TRUE.
-    fn other_call(
-        &mut self,
-        _world: &mut World,
-        _me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    fn other_call(&mut self, _world: &mut World, _me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
-            ModuleCall::IsSabotageBuildingCrateCollide => {
-                ModuleReply::Bool(!crate::logic::modules::plant(1655))
-            }
+            ModuleCall::IsSabotageBuildingCrateCollide => ModuleReply::Bool(!crate::logic::modules::plant(1655)),
             _ => ModuleReply::Unhandled,
         }
     }

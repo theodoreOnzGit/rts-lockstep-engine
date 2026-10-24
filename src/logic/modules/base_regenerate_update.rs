@@ -42,8 +42,7 @@ use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::{DamageType, DAMAGE_HEALING};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::update_module::{
-    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime,
-    UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE,
+    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE,
 };
 // --- p1w10-sonnet ---
 use crate::logic::world::game_logic::World;
@@ -86,32 +85,23 @@ impl BaseRegenerateUpdateModuleData {
 
     /// `BaseRegenerateUpdateModuleData::buildFieldParse(p)`: the base's, then
     /// an empty table.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, BaseRegenerateUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, BaseRegenerateUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_REGENERATE_UPDATE_MODULE_DATA_FIELD_PARSE)
     }
 
     /// `BaseRegenerateUpdate::friend_newModuleData(ini)`.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<BaseRegenerateUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<BaseRegenerateUpdateModuleData> {
         let mut data = BaseRegenerateUpdateModuleData::new();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                BaseRegenerateUpdateModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, BaseRegenerateUpdateModuleData::build_field_parse)?;
         }
         Ok(data)
     }
 }
 
 /// The empty `dataFieldParse` table of the class.
-pub static BASE_REGENERATE_UPDATE_MODULE_DATA_FIELD_PARSE: [FieldParse<
-    BaseRegenerateUpdateModuleData,
->; 1] = [FieldParse::end()];
+pub static BASE_REGENERATE_UPDATE_MODULE_DATA_FIELD_PARSE: [FieldParse<BaseRegenerateUpdateModuleData>; 1] = [FieldParse::end()];
 
 /// `UpdateSleepTime` of `HEAL_RATE` frames between heals.
 const HEAL_RATE: i32 = 3;
@@ -129,11 +119,7 @@ impl BaseRegenerateUpdate {
     /// `BaseRegenerateUpdate(thing, moduleData)`: asleep for ever when the
     /// global rate is zero, else due next frame. `INI_INVALID_DATA` for null
     /// data.
-    pub fn new(
-        object: ObjectId,
-        module_data: Option<Arc<BaseRegenerateUpdateModuleData>>,
-        host: &mut impl BaseRegenHost,
-    ) -> IniResult<Self> {
+    pub fn new(object: ObjectId, module_data: Option<Arc<BaseRegenerateUpdateModuleData>>, host: &mut impl BaseRegenHost) -> IniResult<Self> {
         let mut me = BaseRegenerateUpdate::unconstructed(object, module_data)?;
         me.construct(host);
         Ok(me)
@@ -141,10 +127,7 @@ impl BaseRegenerateUpdate {
 
     // --- p1w10-sonnet ---
     /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data).
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<BaseRegenerateUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<BaseRegenerateUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let mut update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
@@ -158,11 +141,7 @@ impl BaseRegenerateUpdate {
     /// The second half of the constructor: `setWakeFrame` (forever when the global rate is zero, else every frame). The world
     /// runs it once the module is part of its object.
     pub fn construct(&mut self, host: &mut impl BaseRegenHost) {
-        let wake = if host.base_regen_health_percent_per_second() == 0.0 {
-            UPDATE_SLEEP_FOREVER
-        } else {
-            UPDATE_SLEEP_NONE
-        };
+        let wake = if host.base_regen_health_percent_per_second() == 0.0 { UPDATE_SLEEP_FOREVER } else { UPDATE_SLEEP_NONE };
         host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), wake));
     }
     // --- end p1w10-sonnet ---
@@ -171,12 +150,11 @@ impl BaseRegenerateUpdate {
     /// the delay before healing; anything else sleeps for ever. `damage_type`
     /// is `damageInfo->in.m_damageType`.
     pub fn on_damage(&mut self, host: &mut impl BaseRegenHost, damage_type: DamageType) {
-        let wake =
-            if host.base_regen_health_percent_per_second() > 0.0 && damage_type != DAMAGE_HEALING {
-                update_sleep(host.base_regen_delay())
-            } else {
-                UPDATE_SLEEP_FOREVER
-            };
+        let wake = if host.base_regen_health_percent_per_second() > 0.0 && damage_type != DAMAGE_HEALING {
+            update_sleep(host.base_regen_delay())
+        } else {
+            UPDATE_SLEEP_FOREVER
+        };
         host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), wake));
     }
 
@@ -193,8 +171,7 @@ impl BaseRegenerateUpdate {
         if max == host.health() {
             return UPDATE_SLEEP_FOREVER;
         }
-        let amount = (HEAL_RATE as f32 * (max * host.base_regen_health_percent_per_second()))
-            / LOGICFRAMES_PER_SECOND as f32;
+        let amount = (HEAL_RATE as f32 * (max * host.base_regen_health_percent_per_second())) / LOGICFRAMES_PER_SECOND as f32;
         host.attempt_healing(amount);
         update_sleep(HEAL_RATE as u32)
     }
@@ -231,18 +208,13 @@ impl Snapshot for BaseRegenerateUpdate {
 impl PartialEq for BaseRegenerateUpdate {
     /// The same state: the same data object (upstream compares pointers). (`UpdateBody` is compared in tests.)
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
 /// The factory's `NewModuleDataProc` for `BaseRegenerateUpdate`.
-pub fn new_module_data(
-    ini: Option<&mut Ini<'_>>,
-) -> IniResult<crate::common::module::ModuleDataKind> {
-    Ok(crate::common::module::ModuleDataKind::BaseRegenerateUpdate(
-        Arc::new(BaseRegenerateUpdateModuleData::friend_new_module_data(ini)?),
-    ))
+pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::BaseRegenerateUpdate(Arc::new(BaseRegenerateUpdateModuleData::friend_new_module_data(ini)?)))
 }
 
 impl BaseRegenerateUpdate {
@@ -267,12 +239,7 @@ impl BaseRegenerateUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls: `onDamage` of the damage interface.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        _me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, _me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
             ModuleCall::OnDamage(info) => {
                 self.on_damage(world, info.input.damage_type);
@@ -316,11 +283,7 @@ mod disabled_types_tests {
     #[test]
     fn it_processes_only_the_underpowered_disabled_type() {
         // `getDisabledTypesToProcess()` is `MAKE_DISABLED_MASK(DISABLED_UNDERPOWERED)`; the scheduler reads it from the module's `UpdateModule` base
-        let m = BaseRegenerateUpdate::unconstructed(
-            1,
-            Some(Arc::new(BaseRegenerateUpdateModuleData::default())),
-        )
-        .unwrap();
+        let m = BaseRegenerateUpdate::unconstructed(1, Some(Arc::new(BaseRegenerateUpdateModuleData::default()))).unwrap();
         let mask = m.update_module().get_disabled_types_to_process();
         assert_eq!(mask.count(), 1);
         assert!(mask.test(crate::common::disabled_types::DISABLED_UNDERPOWERED));

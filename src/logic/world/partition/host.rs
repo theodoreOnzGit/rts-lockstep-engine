@@ -24,9 +24,7 @@
 use super::collide::DistanceCalculationType;
 use super::manager::PartitionManager;
 use crate::common::base_type::{Coord3D, Region3D};
-use crate::common::game_common::{
-    AbleToAttackType, CommandSourceType, PlayerMaskType, Relationship,
-};
+use crate::common::game_common::{AbleToAttackType, CommandSourceType, PlayerMaskType, Relationship};
 use crate::common::geometry::GeometryInfo;
 use crate::common::kind_of::{KindOfMaskType, KindOfType};
 use crate::common::object_status_types::ObjectStatusMaskType;
@@ -146,17 +144,9 @@ pub trait PartitionHost {
     /// no local player.
     fn local_player_index(&self) -> Option<i32>;
     /// `ThePlayerList->getPlayersWithRelationship(playerIndex, whichPlayerTypes)`.
-    fn players_with_relationship(
-        &self,
-        player_index: i32,
-        which_player_types: u32,
-    ) -> PlayerMaskType;
+    fn players_with_relationship(&self, player_index: i32, which_player_types: u32) -> PlayerMaskType;
     /// `ThePlayerList->getNthPlayer(playerIndex)->getRelationship(object->getTeam())`.
-    fn player_relationship_to_object_team(
-        &self,
-        player_index: i32,
-        object: ObjectId,
-    ) -> Relationship;
+    fn player_relationship_to_object_team(&self, player_index: i32, object: ObjectId) -> Relationship;
 
     // ---- the objects -------------------------------------------------------
     /// Position, orientation and shape of an object; `None` if it does not exist.
@@ -183,14 +173,7 @@ pub trait PartitionHost {
     /// object's centre cell changed.
     fn on_partition_cell_change(&mut self, pm: &mut PartitionManager, id: ObjectId);
     /// `obj->onCollide(other, &loc, &normal)`.
-    fn on_collide(
-        &mut self,
-        pm: &mut PartitionManager,
-        id: ObjectId,
-        other: ObjectId,
-        loc: &Coord3D,
-        normal: &Coord3D,
-    );
+    fn on_collide(&mut self, pm: &mut PartitionManager, id: ObjectId, other: ObjectId, loc: &Coord3D, normal: &Coord3D);
 
     // ---- random numbers ----------------------------------------------------
     /// `GameLogicRandomValueReal(lo, hi)`.
@@ -209,12 +192,7 @@ pub trait PartitionHost {
     fn is_underwater(&self, x: f32, y: f32) -> bool;
     /// `TheAI->pathfinder()->getCell(layer, cellX, cellY)->getType()`; `None`
     /// when the cell is null.
-    fn pathfind_cell_type(
-        &self,
-        layer: PathfindLayer,
-        cell_x: i32,
-        cell_y: i32,
-    ) -> Option<PathfindCellType>;
+    fn pathfind_cell_type(&self, layer: PathfindLayer, cell_x: i32, cell_y: i32) -> Option<PathfindCellType>;
     /// `ai != NULL` for `options->sourceToPathToDest->getAIUpdateInterface()`,
     /// then `TheAI->pathfinder()->clientSafeQuickDoesPathExist(locomotorSet,
     /// source->getPosition(), &pos)`: `None` when the source has no AI
@@ -241,18 +219,11 @@ pub trait PartitionFilterHost: PartitionHost {
     /// `TheAI && TheAI->pathfinder()->isViewBlockedByObstacle(obj, other)`.
     fn is_view_blocked_by_obstacle(&self, obj: ObjectId, other: ObjectId) -> bool;
     /// `obj->getAbleToAttackSpecificObject(type, other, source)`.
-    fn able_to_attack_specific_object(
-        &self,
-        obj: ObjectId,
-        attack_type: AbleToAttackType,
-        other: ObjectId,
-        source: CommandSourceType,
-    ) -> CanAttackResult;
+    fn able_to_attack_specific_object(&self, obj: ObjectId, attack_type: AbleToAttackType, other: ObjectId, source: CommandSourceType) -> CanAttackResult;
     /// `TheActionManager->canEnterObject(obj, other, source, DONT_CHECK_CAPACITY)`.
     fn can_enter_object(&self, obj: ObjectId, other: ObjectId, source: CommandSourceType) -> bool;
     /// `TheActionManager->canHijackVehicle(obj, other, source)`.
-    fn can_hijack_vehicle(&self, obj: ObjectId, other: ObjectId, source: CommandSourceType)
-        -> bool;
+    fn can_hijack_vehicle(&self, obj: ObjectId, other: ObjectId, source: CommandSourceType) -> bool;
     /// `obj->getBodyModule()->getLastDamageInfo()->in.m_sourceID`, `None` when
     /// the object (or its body) is null.
     fn last_damage_source(&self, id: ObjectId) -> Option<ObjectId>;
@@ -270,11 +241,7 @@ pub trait PartitionFilterHost: PartitionHost {
     fn contain_facts(&self, id: ObjectId) -> Option<ContainFacts>;
     /// `contain->getApparentControllingPlayer(player)`, as a player index;
     /// `None` when the container has none (or there is no container).
-    fn apparent_controlling_player(
-        &self,
-        id: ObjectId,
-        observer_player: Option<i32>,
-    ) -> Option<i32>;
+    fn apparent_controlling_player(&self, id: ObjectId, observer_player: Option<i32>) -> Option<i32>;
     /// `a->getRelationship(b->getDefaultTeam())` for two players.
     fn player_relationship_to_player(&self, a: i32, b: i32) -> Relationship;
     /// `m_self->getControllingPlayer()->getPlayerType() == PLAYER_COMPUTER`.
@@ -290,22 +257,11 @@ pub trait PartitionFilterHost: PartitionHost {
     /// `m_tThing->isEquivalentTo(other->getTemplate())`, for a template named by `key`.
     fn template_is_equivalent_to(&self, template_key: i32, other: ObjectId) -> bool;
     /// `TheActionManager->canPlayerGarrison(player, other, source)`.
-    fn can_player_garrison(
-        &self,
-        player: Option<i32>,
-        other: ObjectId,
-        source: CommandSourceType,
-    ) -> bool;
+    fn can_player_garrison(&self, player: Option<i32>, other: ObjectId, source: CommandSourceType) -> bool;
     /// `other->isDisabledByType(DISABLED_UNMANNED)`.
     fn is_disabled_unmanned(&self, id: ObjectId) -> bool;
     /// `commandButton->isValidToUseOn(source, other, NULL, commandSource)`.
-    fn command_button_valid_target(
-        &self,
-        button: i32,
-        source: ObjectId,
-        other: ObjectId,
-        command_source: CommandSourceType,
-    ) -> bool;
+    fn command_button_valid_target(&self, button: i32, source: ObjectId, other: ObjectId, command_source: CommandSourceType) -> bool;
     /// `m_trigger->pointInTrigger(iPos)` for the trigger named by `trigger`.
     fn point_in_trigger(&self, trigger: i32, x: i32, y: i32) -> bool;
     /// `obj->getTemplate()->friend_getBuildCost()`, for the two cost sort orders.

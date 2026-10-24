@@ -48,22 +48,13 @@
 mod support;
 
 use rts_lockstep_engine::differential as cpp;
-use rts_lockstep_engine::logic::object_iter::{
-    IterOrderType, ObjectIterError, SimpleObjectIterator,
-};
+use rts_lockstep_engine::logic::object_iter::{IterOrderType, ObjectIterError, SimpleObjectIterator};
 use support::{Check, Gen};
 
 /// Programs per run.
 const PROGRAMS: usize = 6000;
 /// Operation codes, as `ref_object_iter_run` reads them.
-const OP_NAMES: [&str; 6] = [
-    "insert",
-    "sort",
-    "iterate with numeric",
-    "iterate ids",
-    "getCount",
-    "makeEmpty",
-];
+const OP_NAMES: [&str; 6] = ["insert", "sort", "iterate with numeric", "iterate ids", "getCount", "makeEmpty"];
 /// The end marker of a walk (no object has this id).
 const END: u32 = 0xFFFF_FFFF;
 
@@ -201,10 +192,7 @@ fn run_cpp(p: &Program) -> Vec<u32> {
 #[test]
 fn iter_programs_match_cpp() {
     let mut g = Gen::new(0x0173);
-    let mut checks: Vec<Check> = OP_NAMES
-        .iter()
-        .map(|n| Check::new(&format!("SimpleObjectIterator {n}")))
-        .collect();
+    let mut checks: Vec<Check> = OP_NAMES.iter().map(|n| Check::new(&format!("SimpleObjectIterator {n}"))).collect();
     let mut lengths = Check::new("SimpleObjectIterator words per program");
     let (mut programs, mut ops_run) = (0u64, 0u64);
     for i in 0..PROGRAMS {
@@ -213,9 +201,7 @@ fn iter_programs_match_cpp() {
         let cppw = run_cpp(&p);
         programs += 1;
         ops_run += p.ops.len() as u64;
-        lengths.eq(trace.words.len(), cppw.len(), || {
-            format!("program {i}: {p:?}")
-        });
+        lengths.eq(trace.words.len(), cppw.len(), || format!("program {i}: {p:?}"));
         if trace.words.len() != cppw.len() {
             continue;
         }
@@ -225,9 +211,7 @@ fn iter_programs_match_cpp() {
             }
             let c = &mut checks[*code as usize];
             for k in range.clone() {
-                c.eq(trace.words[k], cppw[k], || {
-                    format!("program {i} op {j} (code {code}) word {k}: {p:?}")
-                });
+                c.eq(trace.words[k], cppw[k], || format!("program {i} op {j} (code {code}) word {k}: {p:?}"));
             }
         }
     }
@@ -276,7 +260,5 @@ fn iter_undefined_inputs_are_errors() {
     };
     assert_eq!(before, after, "a refused insert changed the iterator");
     assert_eq!(it.count(), 2);
-    println!(
-        "DIFF iterator undefined inputs: insert(NULL) refused {n_null} times, the list unchanged"
-    );
+    println!("DIFF iterator undefined inputs: insert(NULL) refused {n_null} times, the list unchanged");
 }

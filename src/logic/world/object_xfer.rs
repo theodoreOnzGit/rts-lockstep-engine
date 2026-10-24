@@ -43,12 +43,12 @@ use crate::common::game_common::MAX_PLAYER_COUNT;
 use crate::common::game_type::{DrawableId, ObjectId, INVALID_ID, NO_FORMATION_ID};
 use crate::common::module::Module;
 use crate::common::name_key_generator::NameKeyGenerator;
-use crate::common::name_key_generator::NameKeyType;
 use crate::common::sparse_match_finder::SparseMatchFinder;
 use crate::common::thing_factory::ThingFactory;
 use crate::common::upgrade::{xfer_upgrade_mask, UpgradeCenter, XferUpgradeMaskError};
 use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferStatus, XferVersion};
 use crate::logic::module::update_module::UpdateModule;
+use crate::common::name_key_generator::NameKeyType;
 use crate::logic::weapon::WeaponStore;
 use crate::logic::weapon_fire::WeaponXferError;
 use crate::logic::weapon_host::{WeaponTemplateSetRef, WeaponXferLookups};
@@ -105,53 +105,26 @@ pub struct ObjectXferStores<'a> {
 /// What `WeaponSet::xfer` looks up: the thing factory and the weapon store.
 impl WeaponXferLookups for ObjectXferStores<'_> {
     fn find_thing_template(&self, name: &[u8]) -> Option<u16> {
-        self.factory
-            .find_template(name)
-            .map(|t| t.get_final_override().data.get_template_id())
+        self.factory.find_template(name).map(|t| t.get_final_override().data.get_template_id())
     }
     fn thing_template_name(&self, id: u16) -> Vec<u8> {
-        self.factory
-            .find_by_template_id(id)
-            .map(|t| t.get_final_override().data.get_name().to_vec())
-            .unwrap_or_default()
+        self.factory.find_by_template_id(id).map(|t| t.get_final_override().data.get_name().to_vec()).unwrap_or_default()
     }
-    fn find_weapon_template_set_by_flags(
-        &mut self,
-        thing_template: u16,
-        flags: &WeaponSetFlags,
-    ) -> Option<WeaponTemplateSetRef> {
+    fn find_weapon_template_set_by_flags(&mut self, thing_template: u16, flags: &WeaponSetFlags) -> Option<WeaponTemplateSetRef> {
         let t = self.factory.find_by_template_id(thing_template)?;
         let sets = t.get_final_override().data.get_weapon_template_sets();
         // (the template's match cache answers what the slow search does)
-        SparseMatchFinder::find_best_info_slow::<_, WeaponTemplateSet>(sets, flags).map(|index| {
-            WeaponTemplateSetRef {
-                thing_template,
-                index,
-            }
-        })
+        SparseMatchFinder::find_best_info_slow::<_, WeaponTemplateSet>(sets, flags).map(|index| WeaponTemplateSetRef { thing_template, index })
     }
     fn weapon_template_set(&self, r: WeaponTemplateSetRef) -> &WeaponTemplateSet {
-        &self
-            .factory
-            .find_by_template_id(r.thing_template)
-            .expect("a set ref names a template of the factory")
-            .get_final_override()
-            .data
-            .get_weapon_template_sets()[r.index]
+        &self.factory.find_by_template_id(r.thing_template).expect("a set ref names a template of the factory").get_final_override().data.get_weapon_template_sets()
+            [r.index]
     }
     fn weapon_template_names(&self) -> Vec<(Vec<u8>, usize)> {
-        self.weapon_store
-            .templates()
-            .iter()
-            .enumerate()
-            .map(|(i, t)| (t.name.to_vec(), i))
-            .collect()
+        self.weapon_store.templates().iter().enumerate().map(|(i, t)| (t.name.to_vec(), i)).collect()
     }
     fn weapon_template_index(&self, key: NameKeyType) -> Option<usize> {
-        self.weapon_store
-            .templates()
-            .iter()
-            .position(|t| t.name_key == key)
+        self.weapon_store.templates().iter().position(|t| t.name_key == key)
     }
     fn weapon_template_name(&self, index: usize) -> Vec<u8> {
         self.weapon_store.templates()[index].name.to_vec()
@@ -247,25 +220,16 @@ impl World {
     /// object: the private status, the transform (48 bytes), the id, the
     /// first 64 bits of the completed upgrades, the experience, the health,
     /// the weapon bonus conditions, the damage scalar and the weapons.
-    pub fn object_crc(
-        &mut self,
-        id: ObjectId,
-        xfer: &mut dyn Xfer,
-        weapon_store: &WeaponStore,
-    ) -> XferResult<()> {
+    pub fn object_crc(&mut self, id: ObjectId, xfer: &mut dyn Xfer, weapon_store: &WeaponStore) -> XferResult<()> {
         let health;
         let scalar;
         {
-            let Some(_) = self.objects.find(id) else {
-                return Ok(());
-            };
+            let Some(_) = self.objects.find(id) else { return Ok(()) };
         }
         match self.get_body_module(id) {
             Some(b) => {
                 health = self.module_call(id, b, ModuleCall::GetHealth).as_real(0.0);
-                scalar = self
-                    .module_call(id, b, ModuleCall::GetDamageScalar)
-                    .as_real(0.0);
+                scalar = self.module_call(id, b, ModuleCall::GetDamageScalar).as_real(0.0);
             }
             None => {
                 health = 0.0;
@@ -296,12 +260,7 @@ impl World {
     }
 
     /// `Object::xfer(xfer)`, version 9. See the module docs.
-    pub fn object_xfer(
-        &mut self,
-        id: ObjectId,
-        xfer: &mut dyn Xfer,
-        stores: &mut ObjectXferStores<'_>,
-    ) -> Result<(), ObjectXferError> {
+    pub fn object_xfer(&mut self, id: ObjectId, xfer: &mut dyn Xfer, stores: &mut ObjectXferStores<'_>) -> Result<(), ObjectXferError> {
         if self.objects.find(id).is_none() {
             return Ok(());
         }
@@ -316,12 +275,7 @@ impl World {
         let id = self.set_object_id(id, oid)?;
 
         if version >= 7 {
-            let mut mtx = *self
-                .objects
-                .find(id)
-                .expect("set_object_id kept it")
-                .thing
-                .transform_matrix();
+            let mut mtx = *self.objects.find(id).expect("set_object_id kept it").thing.transform_matrix();
             xfer.xfer_matrix3d(&mut mtx)?;
             self.set_transform_matrix(id, &mtx);
         } else {
@@ -354,10 +308,7 @@ impl World {
         if xfer.get_xfer_mode() == XferMode::Load {
             // change the ID of the drawable attached to be the same ID as it was when it was saved
             o.drawable = drawable_id;
-            self.emit(ObjectClientEvent::DrawableSetId {
-                object_id: id,
-                drawable_id,
-            });
+            self.emit(ObjectClientEvent::DrawableSetId { object_id: id, drawable_id });
         }
 
         let o = self.objects.find_mut(id).expect("kept");
@@ -389,9 +340,7 @@ impl World {
         // OK, now that we have xferred our status bits, it's safe to set the team...
         if xfer.get_xfer_mode() == XferMode::Load {
             if self.teams.find_team_by_id(team_id).is_none() {
-                return Err(ObjectXferError::InvalidData(
-                    "Object::xfer - Unable to load team",
-                ));
+                return Err(ObjectXferError::InvalidData("Object::xfer - Unable to load team"));
             }
             self.set_or_restore_team(id, Some(team_id), true);
         }
@@ -415,12 +364,7 @@ impl World {
         }
         xfer.xfer_user(&mut spied)?;
         for (i, v) in o.vision_spied_by.iter_mut().enumerate() {
-            *v = i32::from_le_bytes([
-                spied[4 * i],
-                spied[4 * i + 1],
-                spied[4 * i + 2],
-                spied[4 * i + 3],
-            ]);
+            *v = i32::from_le_bytes([spied[4 * i], spied[4 * i + 1], spied[4 * i + 2], spied[4 * i + 3]]);
         }
         // vision spied by mask
         let mut mask = o.vision_spied_mask.to_le_bytes();
@@ -451,12 +395,7 @@ impl World {
         }
         xfer.xfer_user(&mut till)?;
         for (i, v) in o.disabled_till_frame.iter_mut().enumerate() {
-            *v = u32::from_le_bytes([
-                till[4 * i],
-                till[4 * i + 1],
-                till[4 * i + 2],
-                till[4 * i + 3],
-            ]);
+            *v = u32::from_le_bytes([till[4 * i], till[4 * i + 1], till[4 * i + 2], till[4 * i + 3]]);
         }
 
         // special model condition until
@@ -488,12 +427,7 @@ impl World {
         // construction percent
         xfer.xfer_real(&mut o.construction_percent)?;
         // upgrades completed
-        xfer_upgrade_mask(
-            xfer,
-            &mut o.object_upgrades_completed,
-            stores.upgrade_center,
-            stores.names,
-        )?;
+        xfer_upgrade_mask(xfer, &mut o.object_upgrades_completed, stores.upgrade_center, stores.names)?;
         // original team name
         xfer.xfer_ascii_string(&mut o.original_team_name)?;
         // indicator color
@@ -505,24 +439,13 @@ impl World {
         xfer.xfer_byte(&mut o.num_trigger_areas_active)?;
         xfer.xfer_unsigned_int(&mut o.entered_or_exited_frame)?;
         xfer.xfer_icoord3d(&mut o.i_pos)?;
-        if o.num_trigger_areas_active < 0
-            || o.num_trigger_areas_active as usize
-                > crate::logic::world::object::MAX_TRIGGER_AREA_INFOS
-        {
-            return Err(ObjectXferError::InvalidData(
-                "Invalid m_numTriggerAreasActive",
-            ));
+        if o.num_trigger_areas_active < 0 || o.num_trigger_areas_active as usize > crate::logic::world::object::MAX_TRIGGER_AREA_INFOS {
+            return Err(ObjectXferError::InvalidData("Invalid m_numTriggerAreasActive"));
         }
         for i in 0..o.num_trigger_areas_active as usize {
             let o = self.objects.find(id).expect("kept");
             let mut trigger_name: Vec<u8> = match o.trigger_info[i].trigger {
-                Some(t) => self
-                    .terrain
-                    .triggers()
-                    .iter()
-                    .find(|a| a.id() == t)
-                    .map(|a| a.name().str().to_vec())
-                    .unwrap_or_default(),
+                Some(t) => self.terrain.triggers().iter().find(|a| a.id() == t).map(|a| a.name().str().to_vec()).unwrap_or_default(),
                 None => Vec::new(),
             };
             xfer.xfer_ascii_string(&mut trigger_name)?;
@@ -530,18 +453,12 @@ impl World {
             if xfer.get_xfer_mode() == XferMode::Load {
                 o.trigger_info[i].trigger = self
                     .terrain
-                    .trigger_area_by_name(
-                        &crate::common::ascii_string::AsciiString::try_from_bytes(&trigger_name)
-                            .unwrap_or_default(),
-                    )
+                    .trigger_area_by_name(&crate::common::ascii_string::AsciiString::try_from_bytes(&trigger_name).unwrap_or_default())
                     .map(|ix| self.terrain.triggers()[ix].id());
             }
             let o = self.objects.find_mut(id).expect("kept");
-            let (mut entered, mut exited, mut inside) = (
-                o.trigger_info[i].entered as i8,
-                o.trigger_info[i].exited as i8,
-                o.trigger_info[i].is_inside as i8,
-            );
+            let (mut entered, mut exited, mut inside) =
+                (o.trigger_info[i].entered as i8, o.trigger_info[i].exited as i8, o.trigger_info[i].is_inside as i8);
             xfer.xfer_byte(&mut entered)?;
             xfer.xfer_byte(&mut exited)?;
             xfer.xfer_byte(&mut inside)?;
@@ -570,9 +487,7 @@ impl World {
             // go through all modules
             for idx in 0..o.modules.len() {
                 let mut snap = self.take_slot_snapshot(id, idx);
-                let mut identifier = self.objects.find(id).expect("kept").modules[idx]
-                    .tag
-                    .clone();
+                let mut identifier = self.objects.find(id).expect("kept").modules[idx].tag.clone();
                 // write module identifier
                 xfer.xfer_ascii_string(&mut identifier)?;
                 // begin a data block
@@ -591,13 +506,7 @@ impl World {
                 let mut identifier = Vec::new();
                 xfer.xfer_ascii_string(&mut identifier)?;
                 // find the module with this identifier in the module list
-                let found = self
-                    .objects
-                    .find(id)
-                    .expect("kept")
-                    .modules
-                    .iter()
-                    .position(|m| m.tag == identifier);
+                let found = self.objects.find(id).expect("kept").modules.iter().position(|m| m.tag == identifier);
                 // start of a new block
                 let data_size = xfer.begin_block()?;
                 // if we didn't find the module, it's quite possible that we have removed it from the object
@@ -639,9 +548,7 @@ impl World {
             // do the weaponSet itself after all the weapon-related stuff, just in case
             o.weapon_set.xfer(stores, xfer).map_err(|e| match e {
                 WeaponXferError::Xfer(s) => ObjectXferError::Xfer(s),
-                WeaponXferError::InvalidData => {
-                    ObjectXferError::InvalidData("a weapon names no weapon template")
-                }
+                WeaponXferError::InvalidData => ObjectXferError::InvalidData("a weapon names no weapon template"),
             })?;
             o.special_power_bits.xfer(xfer)?;
             xfer.xfer_ascii_string(&mut o.command_set_string_override)?;
@@ -658,12 +565,8 @@ impl World {
 
     /// `Object::loadPostProcess()`: the container pointer is found again.
     pub fn object_load_post_process(&mut self, id: ObjectId) {
-        let Some(o) = self.objects.find(id) else {
-            return;
-        };
-        let contained_by = if o.xfer_contained_by_id != INVALID_ID
-            && self.objects.find(o.xfer_contained_by_id).is_some()
-        {
+        let Some(o) = self.objects.find(id) else { return };
+        let contained_by = if o.xfer_contained_by_id != INVALID_ID && self.objects.find(o.xfer_contained_by_id).is_some() {
             o.xfer_contained_by_id
         } else {
             INVALID_ID
@@ -677,17 +580,11 @@ impl World {
     /// entry and the list links move to the new id. Returns the id the
     /// object has afterwards. The sleepy heap and the destroy list are
     /// renamed too (upstream's hold pointers).
-    pub fn set_object_id(
-        &mut self,
-        old: ObjectId,
-        new: ObjectId,
-    ) -> Result<ObjectId, ObjectXferError> {
+    pub fn set_object_id(&mut self, old: ObjectId, new: ObjectId) -> Result<ObjectId, ObjectXferError> {
         if old == new {
             return Ok(old);
         }
-        self.objects
-            .rekey(old, new)
-            .map_err(|_| ObjectXferError::IdTaken(new))?;
+        self.objects.rekey(old, new).map_err(|_| ObjectXferError::IdTaken(new))?;
         self.sched.rename_object(old, new);
         self.rename_in_destroy_list(old, new);
         Ok(new)
@@ -696,29 +593,14 @@ impl World {
     // --- p1w11-sonnet ---
     /// `xfer->xferSnapshot(module)` for one module of an object, as the object's xfer does it: the scheduling half, the base state and the behaviour,
     /// checked out of the object for the call (a save, a load or a CRC, by the xfer's mode). The module tests use it to run one module's xfer.
-    pub fn xfer_module_slot(
-        &mut self,
-        id: ObjectId,
-        idx: usize,
-        xfer: &mut dyn Xfer,
-    ) -> XferResult<()> {
+    pub fn xfer_module_slot(&mut self, id: ObjectId, idx: usize, xfer: &mut dyn Xfer) -> XferResult<()> {
         let mut snap = self.take_slot_snapshot(id, idx);
         // batch R12: a garrison's save writes each point's object and effect through the pointer: one a load left (not found again) is undefined
         if xfer.get_xfer_mode() == crate::common::xfer::XferMode::Save {
-            if let Some(crate::logic::world::update_body::UpdateBody::GarrisonContain(g)) =
-                &snap.body
-            {
+            if let Some(crate::logic::world::update_body::UpdateBody::GarrisonContain(g)) = &snap.body {
                 if !g.check_save() {
-                    let me = crate::logic::world::module_call::ModuleHandle {
-                        object: id,
-                        index: idx as u16,
-                    };
-                    self.cuts.module_errors.push((
-                        me,
-                        crate::common::ini::IniError::undefined(
-                            crate::common::ini::Undefined::NullObject,
-                        ),
-                    ));
+                    let me = crate::logic::world::module_call::ModuleHandle { object: id, index: idx as u16 };
+                    self.cuts.module_errors.push((me, crate::common::ini::IniError::undefined(crate::common::ini::Undefined::NullObject)));
                 }
             }
         }
@@ -726,30 +608,16 @@ impl World {
         let r = xfer.xfer_snapshot(&mut snap);
         // batch R12: a `Bool` loaded from a byte that is no bool is undefined
         if crate::common::xfer::take_invalid_bool_read() {
-            let me = crate::logic::world::module_call::ModuleHandle {
-                object: id,
-                index: idx as u16,
-            };
-            self.cuts.module_errors.push((
-                me,
-                crate::common::ini::IniError::undefined(
-                    crate::common::ini::Undefined::InvalidBoolLoaded,
-                ),
-            ));
+            let me = crate::logic::world::module_call::ModuleHandle { object: id, index: idx as u16 };
+            self.cuts.module_errors.push((me, crate::common::ini::IniError::undefined(crate::common::ini::Undefined::InvalidBoolLoaded)));
         }
         // batch R11: a cave's load asks the team factory about the original team it read (it throws `SC_INVALID_DATA` for one it does not know)
         let r = match (&mut snap.body, r) {
-            (Some(crate::logic::world::update_body::UpdateBody::CaveContain(c)), Ok(())) => {
-                c.check_loaded_team(self)
-            }
+            (Some(crate::logic::world::update_body::UpdateBody::CaveContain(c)), Ok(())) => c.check_loaded_team(self),
             // batch R12: a garrison's too, whatever became of the rest of the xfer (upstream throws before it)
-            (Some(crate::logic::world::update_body::UpdateBody::GarrisonContain(g)), r) => {
-                g.check_loaded_team(self, r)
-            }
+            (Some(crate::logic::world::update_body::UpdateBody::GarrisonContain(g)), r) => g.check_loaded_team(self, r),
             // batch R15: a rebuild hole's load finds its two template names in the thing factory (it throws `SC_INVALID_DATA` for one it does not know)
-            (Some(crate::logic::world::update_body::UpdateBody::RebuildHoleBehavior(m)), r) => {
-                m.check_loaded_templates(self, r)
-            }
+            (Some(crate::logic::world::update_body::UpdateBody::RebuildHoleBehavior(m)), r) => m.check_loaded_templates(self, r),
             (_, r) => r,
         };
         self.put_slot_snapshot(id, idx, snap);
@@ -768,11 +636,7 @@ impl World {
             }
             None => (None, o.modules[idx].body.take()),
         };
-        SlotSnapshot {
-            update,
-            module,
-            body,
-        }
+        SlotSnapshot { update, module, body }
     }
 
     fn put_slot_snapshot(&mut self, id: ObjectId, idx: usize, snap: SlotSnapshot) {

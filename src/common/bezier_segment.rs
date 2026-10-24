@@ -61,12 +61,8 @@ pub enum BezierError {
 impl std::fmt::Display for BezierError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            BezierError::NegativeSegmentCount => {
-                "BezierSegment::getSegmentPoints: negative count (std::length_error upstream)"
-            }
-            BezierError::SubdivisionLimit => {
-                "BezierSegment::getApproximateLength: subdivision limit (stack overflow upstream)"
-            }
+            BezierError::NegativeSegmentCount => "BezierSegment::getSegmentPoints: negative count (std::length_error upstream)",
+            BezierError::SubdivisionLimit => "BezierSegment::getApproximateLength: subdivision limit (stack overflow upstream)",
         })
     }
 }
@@ -109,28 +105,18 @@ impl Default for BezierSegment {
 impl BezierSegment {
     /// `BezierSegment()`: four zero control points.
     pub fn new() -> Self {
-        BezierSegment {
-            control_points: [Coord3D::default(); 4],
-        }
+        BezierSegment { control_points: [Coord3D::default(); 4] }
     }
 
     /// `BezierSegment(cp0, cp1, cp2, cp3)`.
     pub fn from_points(cp0: Coord3D, cp1: Coord3D, cp2: Coord3D, cp3: Coord3D) -> Self {
-        BezierSegment {
-            control_points: [cp0, cp1, cp2, cp3],
-        }
+        BezierSegment { control_points: [cp0, cp1, cp2, cp3] }
     }
 
     /// `BezierSegment(Real cp[12])`: x, y, z of each control point in turn.
     pub fn from_floats(cp: &[f32; 12]) -> Self {
-        let p = |i: usize| Coord3D {
-            x: cp[3 * i],
-            y: cp[3 * i + 1],
-            z: cp[3 * i + 2],
-        };
-        BezierSegment {
-            control_points: [p(0), p(1), p(2), p(3)],
-        }
+        let p = |i: usize| Coord3D { x: cp[3 * i], y: cp[3 * i + 1], z: cp[3 * i + 2] };
+        BezierSegment { control_points: [p(0), p(1), p(2), p(3)] }
     }
 
     /// The control points (`m_controlPoints`).
@@ -152,11 +138,7 @@ impl BezierSegment {
 
     /// `getSegmentPoints(numSegments, outResult)`: `numSegments` points from
     /// [`BezFwdIterator`]. The output is cleared first, as upstream does.
-    pub fn get_segment_points(
-        &self,
-        num_segments: i32,
-        out: &mut Vec<Coord3D>,
-    ) -> Result<(), BezierError> {
+    pub fn get_segment_points(&self, num_segments: i32, out: &mut Vec<Coord3D>) -> Result<(), BezierError> {
         out.clear();
         if num_segments < 0 {
             return Err(BezierError::NegativeSegmentCount);
@@ -177,32 +159,12 @@ impl BezierSegment {
         self.approximate_length_at_depth(within_tolerance, 0)
     }
 
-    fn approximate_length_at_depth(
-        &self,
-        within_tolerance: f32,
-        depth: u32,
-    ) -> Result<f32, BezierError> {
+    fn approximate_length_at_depth(&self, within_tolerance: f32, depth: u32) -> Result<f32, BezierError> {
         let cp = &self.control_points;
-        let p0p1 = Coord3D {
-            x: cp[1].x - cp[0].x,
-            y: cp[1].y - cp[0].y,
-            z: cp[1].z - cp[0].z,
-        };
-        let p1p2 = Coord3D {
-            x: cp[2].x - cp[1].x,
-            y: cp[2].y - cp[1].y,
-            z: cp[2].z - cp[1].z,
-        };
-        let p2p3 = Coord3D {
-            x: cp[3].x - cp[2].x,
-            y: cp[3].y - cp[2].y,
-            z: cp[3].z - cp[2].z,
-        };
-        let p0p3 = Coord3D {
-            x: cp[3].x - cp[0].x,
-            y: cp[3].y - cp[0].y,
-            z: cp[3].z - cp[0].z,
-        };
+        let p0p1 = Coord3D { x: cp[1].x - cp[0].x, y: cp[1].y - cp[0].y, z: cp[1].z - cp[0].z };
+        let p1p2 = Coord3D { x: cp[2].x - cp[1].x, y: cp[2].y - cp[1].y, z: cp[2].z - cp[1].z };
+        let p2p3 = Coord3D { x: cp[3].x - cp[2].x, y: cp[3].y - cp[2].y, z: cp[3].z - cp[2].z };
+        let p0p3 = Coord3D { x: cp[3].x - cp[0].x, y: cp[3].y - cp[0].y, z: cp[3].z - cp[0].z };
 
         let length0 = p0p3.length();
         let length1 = p0p1.length() + p1p2.length() + p2p3.length();
@@ -224,21 +186,9 @@ impl BezierSegment {
     /// into the parts before and after `t`.
     pub fn split_segment_at_t(&self, t: f32) -> (BezierSegment, BezierSegment) {
         let cp = &self.control_points;
-        let mut p0p1 = Coord3D {
-            x: cp[1].x - cp[0].x,
-            y: cp[1].y - cp[0].y,
-            z: cp[1].z - cp[0].z,
-        };
-        let mut p1p2 = Coord3D {
-            x: cp[2].x - cp[1].x,
-            y: cp[2].y - cp[1].y,
-            z: cp[2].z - cp[1].z,
-        };
-        let mut p2p3 = Coord3D {
-            x: cp[3].x - cp[2].x,
-            y: cp[3].y - cp[2].y,
-            z: cp[3].z - cp[2].z,
-        };
+        let mut p0p1 = Coord3D { x: cp[1].x - cp[0].x, y: cp[1].y - cp[0].y, z: cp[1].z - cp[0].z };
+        let mut p1p2 = Coord3D { x: cp[2].x - cp[1].x, y: cp[2].y - cp[1].y, z: cp[2].z - cp[1].z };
+        let mut p2p3 = Coord3D { x: cp[3].x - cp[2].x, y: cp[3].y - cp[2].y, z: cp[3].z - cp[2].z };
         p0p1.scale(t);
         p1p2.scale(t);
         p2p3.scale(t);
@@ -246,16 +196,8 @@ impl BezierSegment {
         p1p2.add(&cp[1]);
         p2p3.add(&cp[2]);
 
-        let mut tri_left = Coord3D {
-            x: p1p2.x - p0p1.x,
-            y: p1p2.y - p0p1.y,
-            z: p1p2.z - p0p1.z,
-        };
-        let mut tri_right = Coord3D {
-            x: p2p3.x - p1p2.x,
-            y: p2p3.y - p1p2.y,
-            z: p2p3.z - p1p2.z,
-        };
+        let mut tri_left = Coord3D { x: p1p2.x - p0p1.x, y: p1p2.y - p0p1.y, z: p1p2.z - p0p1.z };
+        let mut tri_right = Coord3D { x: p2p3.x - p1p2.x, y: p2p3.y - p1p2.y, z: p2p3.z - p1p2.z };
         tri_left.scale(t);
         tri_right.scale(t);
         tri_left.add(&p0p1);
@@ -309,11 +251,7 @@ impl BezFwdIterator {
     /// `BezFwdIterator(stepsDesired, bezSeg)`. The derivatives are set by
     /// [`BezFwdIterator::start`].
     pub fn new_with(steps_desired: i32, bez_seg: &BezierSegment) -> Self {
-        BezFwdIterator {
-            steps_desired,
-            bez_seg: *bez_seg,
-            ..Self::default()
-        }
+        BezFwdIterator { steps_desired, bez_seg: *bez_seg, ..Self::default() }
     }
 
     /// `start()`: rewinds to the first sample and computes the differences.
@@ -383,32 +321,17 @@ mod tests {
 
     #[test]
     fn constructors_place_the_control_points_in_order() {
-        assert_eq!(
-            BezierSegment::new().control_points(),
-            &[Coord3D::default(); 4]
-        );
+        assert_eq!(BezierSegment::new().control_points(), &[Coord3D::default(); 4]);
         assert_eq!(BezierSegment::default(), BezierSegment::new());
-        let s = BezierSegment::from_points(
-            p(1.0, 2.0, 3.0),
-            p(4.0, 5.0, 6.0),
-            p(7.0, 8.0, 9.0),
-            p(10.0, 11.0, 12.0),
-        );
-        let f = BezierSegment::from_floats(&[
-            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
-        ]);
+        let s = BezierSegment::from_points(p(1.0, 2.0, 3.0), p(4.0, 5.0, 6.0), p(7.0, 8.0, 9.0), p(10.0, 11.0, 12.0));
+        let f = BezierSegment::from_floats(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0]);
         assert_eq!(s, f);
         assert_eq!(s.control_points()[3], p(10.0, 11.0, 12.0));
     }
 
     #[test]
     fn endpoints_are_the_first_and_last_control_points() {
-        let s = BezierSegment::from_points(
-            p(0.0, 0.0, 0.0),
-            p(1.0, 3.0, 0.0),
-            p(2.0, -3.0, 1.0),
-            p(3.0, 0.0, 2.0),
-        );
+        let s = BezierSegment::from_points(p(0.0, 0.0, 0.0), p(1.0, 3.0, 0.0), p(2.0, -3.0, 1.0), p(3.0, 0.0, 2.0));
         assert_eq!(s.evaluate_at_t(0.0), p(0.0, 0.0, 0.0));
         assert_eq!(s.evaluate_at_t(1.0), p(3.0, 0.0, 2.0));
     }
@@ -423,12 +346,7 @@ mod tests {
 
     #[test]
     fn one_sample_is_the_zero_point_as_upstream_returns_it() {
-        let s = BezierSegment::from_points(
-            p(5.0, 5.0, 5.0),
-            p(0.0, 0.0, 0.0),
-            p(0.0, 0.0, 0.0),
-            p(9.0, 9.0, 9.0),
-        );
+        let s = BezierSegment::from_points(p(5.0, 5.0, 5.0), p(0.0, 0.0, 0.0), p(0.0, 0.0, 0.0), p(9.0, 9.0, 9.0));
         let mut out = Vec::new();
         s.get_segment_points(1, &mut out).expect("one point");
         assert_eq!(out, vec![Coord3D::default()]);
@@ -438,20 +356,13 @@ mod tests {
     fn negative_counts_are_errors_and_clear_the_output() {
         let s = BezierSegment::new();
         let mut out = vec![p(1.0, 1.0, 1.0)];
-        assert_eq!(
-            s.get_segment_points(-1, &mut out),
-            Err(BezierError::NegativeSegmentCount)
-        );
+        assert_eq!(s.get_segment_points(-1, &mut out), Err(BezierError::NegativeSegmentCount));
         assert!(out.is_empty());
     }
 
     #[test]
     fn errors_have_messages() {
-        assert!(BezierError::NegativeSegmentCount
-            .to_string()
-            .contains("negative"));
-        assert!(BezierError::SubdivisionLimit
-            .to_string()
-            .contains("subdivision"));
+        assert!(BezierError::NegativeSegmentCount.to_string().contains("negative"));
+        assert!(BezierError::SubdivisionLimit.to_string().contains("subdivision"));
     }
 }

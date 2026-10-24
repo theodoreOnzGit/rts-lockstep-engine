@@ -43,10 +43,10 @@ use std::collections::BTreeMap;
 
 use super::academy_stats::AcademyStats;
 use super::energy::Energy;
-use super::ids::{ObjectId, PlayerIndex, TeamId, TeamPrototypeId};
 use super::mission_stats::MissionStats;
-use super::resource_gathering_manager::ResourceGatheringManager;
 use super::score_keeper::ScoreKeeper;
+use super::ids::{ObjectId, PlayerIndex, TeamId, TeamPrototypeId};
+use super::resource_gathering_manager::ResourceGatheringManager;
 use super::team::{relationship_from_i32, TeamRelationMap};
 use super::tunnel_tracker::TunnelTracker;
 use crate::common::game_common::{PlayerType, Relationship};
@@ -104,8 +104,7 @@ impl Snapshot for PlayerRelationMap {
                 xfer.xfer_int(&mut player_index)?;
                 let mut rb = [0u8; 4];
                 xfer.xfer_user(&mut rb)?;
-                let r = relationship_from_i32(i32::from_le_bytes(rb))
-                    .ok_or(XferStatus::InvalidParameters)?;
+                let r = relationship_from_i32(i32::from_le_bytes(rb)).ok_or(XferStatus::InvalidParameters)?;
                 self.map.insert(player_index, r);
             }
         }
@@ -431,11 +430,7 @@ impl Default for PlayerArena {
 impl PlayerArena {
     /// `PlayerList::PlayerList()`: 16 players, count 0, no local player.
     pub fn new() -> PlayerArena {
-        PlayerArena {
-            players: (0..MAX_PLAYER_COUNT).map(Player::new).collect(),
-            player_count: 0,
-            local: None,
-        }
+        PlayerArena { players: (0..MAX_PLAYER_COUNT).map(Player::new).collect(), player_count: 0, local: None }
     }
 
     /// `getNthPlayer(i)`: `None` outside `0..MAX_PLAYER_COUNT`.
@@ -476,10 +471,7 @@ impl PlayerArena {
 
     /// `findPlayerWithNameKey(key)`: the first of `0..m_playerCount` with the key.
     pub fn find_with_name_key(&self, key: i32) -> Option<&Player> {
-        self.players
-            .iter()
-            .take(self.player_count as usize)
-            .find(|p| p.name_key == key)
+        self.players.iter().take(self.player_count as usize).find(|p| p.name_key == key)
     }
 
     /// `getLocalPlayer()`: `None` before `init`.
@@ -541,39 +533,13 @@ mod tests {
     #[test]
     fn init_makes_neutral_local_and_null_selects_neutral() {
         let mut a = PlayerArena::new();
-        assert_eq!(
-            a.init(),
-            Some(LocalPlayerChange {
-                lost: None,
-                gained: 0
-            })
-        );
+        assert_eq!(a.init(), Some(LocalPlayerChange { lost: None, gained: 0 }));
         assert_eq!(a.player_count(), 1);
-        assert_eq!(
-            a.set_local_player(Some(0)),
-            None,
-            "no change, no notification"
-        );
-        assert_eq!(
-            a.set_local_player(Some(3)),
-            Some(LocalPlayerChange {
-                lost: Some(0),
-                gained: 3
-            })
-        );
+        assert_eq!(a.set_local_player(Some(0)), None, "no change, no notification");
+        assert_eq!(a.set_local_player(Some(3)), Some(LocalPlayerChange { lost: Some(0), gained: 3 }));
         assert_eq!(a.local().map(|p| p.player_index), Some(3));
-        assert_eq!(
-            a.set_local_player(None),
-            Some(LocalPlayerChange {
-                lost: Some(3),
-                gained: 0
-            })
-        );
-        assert_eq!(
-            a.set_local_player(Some(99)),
-            None,
-            "outside the array: neutral, already local"
-        );
+        assert_eq!(a.set_local_player(None), Some(LocalPlayerChange { lost: Some(3), gained: 0 }));
+        assert_eq!(a.set_local_player(Some(99)), None, "outside the array: neutral, already local");
     }
 
     #[test]
@@ -581,10 +547,7 @@ mod tests {
         let mut a = PlayerArena::new();
         a.get_nth_mut(2).unwrap().name_key = 77;
         a.set_player_count(2);
-        assert!(
-            a.find_with_name_key(77).is_none(),
-            "player 2 is beyond m_playerCount"
-        );
+        assert!(a.find_with_name_key(77).is_none(), "player 2 is beyond m_playerCount");
         a.set_player_count(3);
         assert_eq!(a.find_with_name_key(77).map(|p| p.player_index), Some(2));
         a.set_player_count(99);

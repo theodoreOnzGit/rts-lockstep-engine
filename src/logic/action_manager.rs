@@ -42,23 +42,19 @@ use crate::common::disabled_types::{DisabledType, DISABLED_SUBDUED, DISABLED_UNM
 use crate::common::game_common::{CellShroudStatus, ObjectShroudStatus, Relationship};
 use crate::common::game_type::{ObjectId, WEAPONSLOT_COUNT};
 use crate::common::kind_of::{
-    KINDOF_AIRCRAFT, KINDOF_BOAT, KINDOF_BRIDGE, KINDOF_BRIDGE_TOWER, KINDOF_CAPTURABLE,
-    KINDOF_CASH_GENERATOR, KINDOF_CLIFF_JUMPER, KINDOF_DOZER, KINDOF_DRONE, KINDOF_FS_AIRFIELD,
-    KINDOF_FS_TECHNOLOGY, KINDOF_HEAL_PAD, KINDOF_IGNORED_IN_GUI, KINDOF_IMMOBILE,
-    KINDOF_IMMUNE_TO_CAPTURE, KINDOF_INFANTRY, KINDOF_MOB_NEXUS, KINDOF_NO_GARRISON,
-    KINDOF_REBUILD_HOLE, KINDOF_REJECT_UNMANNED, KINDOF_REPAIR_PAD, KINDOF_SPAWNS_ARE_THE_WEAPONS,
-    KINDOF_STRUCTURE, KINDOF_VEHICLE,
+    KINDOF_AIRCRAFT, KINDOF_BOAT, KINDOF_BRIDGE, KINDOF_BRIDGE_TOWER, KINDOF_CAPTURABLE, KINDOF_CASH_GENERATOR, KINDOF_CLIFF_JUMPER,
+    KINDOF_DOZER, KINDOF_DRONE, KINDOF_FS_AIRFIELD, KINDOF_FS_TECHNOLOGY, KINDOF_HEAL_PAD, KINDOF_IGNORED_IN_GUI, KINDOF_IMMOBILE,
+    KINDOF_IMMUNE_TO_CAPTURE, KINDOF_INFANTRY, KINDOF_MOB_NEXUS, KINDOF_NO_GARRISON, KINDOF_REBUILD_HOLE, KINDOF_REJECT_UNMANNED, KINDOF_REPAIR_PAD,
+    KINDOF_SPAWNS_ARE_THE_WEAPONS, KINDOF_STRUCTURE, KINDOF_VEHICLE,
 };
 use crate::common::object_status_types::{
-    OBJECT_STATUS_DECK_HEIGHT_OFFSET, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED,
-    OBJECT_STATUS_SOLD, OBJECT_STATUS_STEALTHED, OBJECT_STATUS_UNDER_CONSTRUCTION,
+    OBJECT_STATUS_DECK_HEIGHT_OFFSET, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_SOLD, OBJECT_STATUS_STEALTHED,
+    OBJECT_STATUS_UNDER_CONSTRUCTION,
 };
 use crate::common::special_power_type::*;
 use crate::logic::damage::{DAMAGE_DISARM, DAMAGE_KILLPILOT};
 use crate::logic::weapon::WeaponError;
-use crate::logic::weapon_host::{
-    AbleToAttackType, CanAttackResult, CommandSourceType, ATTACK_NEW_TARGET,
-};
+use crate::logic::weapon_host::{AbleToAttackType, CanAttackResult, CommandSourceType, ATTACK_NEW_TARGET};
 use crate::logic::world::object_weapons::{self as ow, ObjectWeaponHost};
 
 type AResult<T> = Result<T, WeaponError>;
@@ -181,30 +177,13 @@ pub trait ActionHost: ObjectWeaponHost {
     /// `findSpecialPowerModuleInterface(type)->getPercentReady()`; `None` = no such module.
     fn special_power_percent_ready_by_type(&self, o: ObjectId, t: SpecialPowerType) -> Option<f32>;
     /// `getSpecialPowerModule(template)->getPercentReady()`; `None` = no such module.
-    fn special_power_percent_ready_by_template(
-        &self,
-        o: ObjectId,
-        template: &SpecialPowerTemplateRef,
-    ) -> Option<f32>;
+    fn special_power_percent_ready_by_template(&self, o: ObjectId, template: &SpecialPowerTemplateRef) -> Option<f32>;
     /// `findSpecialAbilityUpdate(type)`.
-    fn special_ability_update(
-        &self,
-        o: ObjectId,
-        t: SpecialPowerType,
-    ) -> Option<SpecialAbilityFacts>;
+    fn special_ability_update(&self, o: ObjectId, t: SpecialPowerType) -> Option<SpecialAbilityFacts>;
     /// `findSpecialAbilityUpdate(type)->findSpecialObjectWithProducerID(target) != NULL`.
-    fn special_ability_has_object_with_producer(
-        &self,
-        o: ObjectId,
-        t: SpecialPowerType,
-        target: ObjectId,
-    ) -> bool;
+    fn special_ability_has_object_with_producer(&self, o: ObjectId, t: SpecialPowerType, target: ObjectId) -> bool;
     /// `findSpecialPowerWithOverridableDestinationActive(type) != NULL`.
-    fn special_power_overridable_destination_active(
-        &self,
-        o: ObjectId,
-        t: SpecialPowerType,
-    ) -> bool;
+    fn special_power_overridable_destination_active(&self, o: ObjectId, t: SpecialPowerType) -> bool;
 
     // ---- modules --------------------------------------------------------------------------------------------------
     /// `findUpdateModule(key) != NULL`.
@@ -229,12 +208,7 @@ pub trait ActionHost: ObjectWeaponHost {
     /// `getContain()->getStealthUnitsContained()`.
     fn contain_stealth_units_contained(&self, o: ObjectId) -> i32;
     /// `container->getContain()->isValidContainerFor(obj, checkCapacity)`.
-    fn contain_is_valid_container_for(
-        &self,
-        container: ObjectId,
-        obj: ObjectId,
-        check_capacity: bool,
-    ) -> bool;
+    fn contain_is_valid_container_for(&self, container: ObjectId, obj: ObjectId, check_capacity: bool) -> bool;
     /// `getContain()->getClosestRider(pos)`.
     fn contain_closest_rider(&self, container: ObjectId, pos: &Coord3D) -> Option<ObjectId>;
     /// `getSpawnBehaviorInterface()->getClosestSlave(pos)`: `None` = no spawn behaviour.
@@ -249,20 +223,14 @@ pub trait ActionHost: ObjectWeaponHost {
 
 /// `appearsToContainFriendlies(obj, otherObject)`: "check if the object is a container containing stealth units
 /// tricking the player into thinking it isn't actually an enemy."
-fn appears_to_contain_friendlies<H: ActionHost>(
-    host: &H,
-    obj: ObjectId,
-    other_object: ObjectId,
-) -> AResult<bool> {
+fn appears_to_contain_friendlies<H: ActionHost>(host: &H, obj: ObjectId, other_object: ObjectId) -> AResult<bool> {
     if host.has_contain(other_object) {
-        let other_player =
-            host.contain_apparent_controlling_player(other_object, host.controlling_player(obj));
+        let other_player = host.contain_apparent_controlling_player(other_object, host.controlling_player(obj));
         // the test "other player's relationship to the object's team" is wrong; we want to know how WE consider THEM,
         // not how THEY consider US
         if let Some(p) = other_player {
             // (`obj->getTeam()` is dereferenced: an object with no team is undefined upstream)
-            host.controlling_player(obj)
-                .ok_or(WeaponError::NullObject)?;
+            host.controlling_player(obj).ok_or(WeaponError::NullObject)?;
             if host.team_relationship_to_player_index(obj, p) != Relationship::Enemies {
                 return Ok(true);
             }
@@ -273,20 +241,9 @@ fn appears_to_contain_friendlies<H: ActionHost>(
 
 /// `isObjectShroudedForAction(source, target, commandSource)`: the target is only shrouded for action if the asking
 /// player is human, the asking impetus is not from a script and the target object is Fogged or worse.
-fn is_object_shrouded_for_action<H: ActionHost>(
-    host: &H,
-    source: ObjectId,
-    target: ObjectId,
-    command_source: CommandSourceType,
-) -> bool {
-    if let (Some(human), Some(player)) = (
-        host.controlling_player_is_human(source),
-        host.controlling_player(source),
-    ) {
-        if human
-            && command_source != CommandSourceType::FromScript
-            && host.object_shrouded_status(target, player) >= ObjectShroudStatus::Fogged
-        {
+fn is_object_shrouded_for_action<H: ActionHost>(host: &H, source: ObjectId, target: ObjectId, command_source: CommandSourceType) -> bool {
+    if let (Some(human), Some(player)) = (host.controlling_player_is_human(source), host.controlling_player(source)) {
+        if human && command_source != CommandSourceType::FromScript && host.object_shrouded_status(target, player) >= ObjectShroudStatus::Fogged {
             return true;
         }
     }
@@ -296,22 +253,13 @@ fn is_object_shrouded_for_action<H: ActionHost>(
 /// A stealthed, undetected and undisguised target: "if the enemy unit is stealthed and not detected, then we can't
 /// attack it!"
 fn is_hidden_by_stealth<H: ActionHost>(host: &H, target: ObjectId) -> bool {
-    host.test_status(target, OBJECT_STATUS_STEALTHED)
-        && !host.test_status(target, OBJECT_STATUS_DETECTED)
-        && !host.test_status(target, OBJECT_STATUS_DISGUISED)
+    host.test_status(target, OBJECT_STATUS_STEALTHED) && !host.test_status(target, OBJECT_STATUS_DETECTED) && !host.test_status(target, OBJECT_STATUS_DISGUISED)
 }
 
 /// `ActionManager::canGetRepairedAt(obj, repairDest, commandSource)`.
-pub fn can_get_repaired_at<H: ActionHost>(
-    host: &H,
-    obj: Option<ObjectId>,
-    repair_dest: Option<ObjectId>,
-    command_source: CommandSourceType,
-) -> AResult<bool> {
+pub fn can_get_repaired_at<H: ActionHost>(host: &H, obj: Option<ObjectId>, repair_dest: Option<ObjectId>, command_source: CommandSourceType) -> AResult<bool> {
     // sanity
-    let (Some(obj), Some(repair_dest)) = (obj, repair_dest) else {
-        return Ok(false);
-    };
+    let (Some(obj), Some(repair_dest)) = (obj, repair_dest) else { return Ok(false) };
 
     let r = host.relationship(obj, repair_dest);
 
@@ -331,9 +279,7 @@ pub fn can_get_repaired_at<H: ActionHost>(
     }
 
     // nothing can be done with things that are under construction
-    if host.test_status(obj, OBJECT_STATUS_UNDER_CONSTRUCTION)
-        || host.test_status(repair_dest, OBJECT_STATUS_UNDER_CONSTRUCTION)
-    {
+    if host.test_status(obj, OBJECT_STATUS_UNDER_CONSTRUCTION) || host.test_status(repair_dest, OBJECT_STATUS_UNDER_CONSTRUCTION) {
         return Ok(false);
     }
 
@@ -373,24 +319,16 @@ pub fn can_get_repaired_at<H: ActionHost>(
 }
 
 /// `ActionManager::canTransferSuppliesAt(obj, transferDest)`: note that "dest" is typically a building.
-pub fn can_transfer_supplies_at<H: ActionHost>(
-    host: &H,
-    obj: Option<ObjectId>,
-    transfer_dest: Option<ObjectId>,
-) -> bool {
+pub fn can_transfer_supplies_at<H: ActionHost>(host: &H, obj: Option<ObjectId>, transfer_dest: Option<ObjectId>) -> bool {
     // sanity
-    let (Some(obj), Some(transfer_dest)) = (obj, transfer_dest) else {
-        return false;
-    };
+    let (Some(obj), Some(transfer_dest)) = (obj, transfer_dest) else { return false };
 
     if host.is_effectively_dead(transfer_dest) {
         return false;
     }
 
     // nothing can be done with things that are under construction
-    if host.test_status(obj, OBJECT_STATUS_UNDER_CONSTRUCTION)
-        || host.test_status(transfer_dest, OBJECT_STATUS_UNDER_CONSTRUCTION)
-    {
+    if host.test_status(obj, OBJECT_STATUS_UNDER_CONSTRUCTION) || host.test_status(transfer_dest, OBJECT_STATUS_UNDER_CONSTRUCTION) {
         return false;
     }
 
@@ -404,28 +342,18 @@ pub fn can_transfer_supplies_at<H: ActionHost>(
         return false;
     }
 
-    let Some(supply_truck) = host.supply_truck_ai(obj) else {
-        return false;
-    };
+    let Some(supply_truck) = host.supply_truck_ai(obj) else { return false };
 
     // If it is a warehouse, it must have boxes left and not be an enemy
-    let warehouse_module =
-        host.has_named_update_module(transfer_dest, NamedUpdateModule::SupplyWarehouseDock);
-    if warehouse_module
-        && (host.warehouse_boxes_stored(transfer_dest) == 0
-            || host.relationship(transfer_dest, obj) == Relationship::Enemies)
-    {
+    let warehouse_module = host.has_named_update_module(transfer_dest, NamedUpdateModule::SupplyWarehouseDock);
+    if warehouse_module && (host.warehouse_boxes_stored(transfer_dest) == 0 || host.relationship(transfer_dest, obj) == Relationship::Enemies) {
         return false;
     }
 
     // if it is a supply center, I must have boxes, and must be controlled by the same player (not merely an ally...
     // otherwise you may find yourself funding your allies. ick.)
-    let center_module =
-        host.has_named_update_module(transfer_dest, NamedUpdateModule::SupplyCenterDock);
-    if center_module
-        && (supply_truck.number_boxes == 0
-            || host.controlling_player(transfer_dest) != host.controlling_player(obj))
-    {
+    let center_module = host.has_named_update_module(transfer_dest, NamedUpdateModule::SupplyCenterDock);
+    if center_module && (supply_truck.number_boxes == 0 || host.controlling_player(transfer_dest) != host.controlling_player(obj)) {
         return false;
     }
 
@@ -441,13 +369,8 @@ pub fn can_transfer_supplies_at<H: ActionHost>(
     }
 
     // Fogged is okay for player, and anything is okay for AI.
-    if let (Some(human), Some(player)) = (
-        host.controlling_player_is_human(obj),
-        host.controlling_player(obj),
-    ) {
-        if human
-            && host.object_shrouded_status(transfer_dest, player) == ObjectShroudStatus::Shrouded
-        {
+    if let (Some(human), Some(player)) = (host.controlling_player_is_human(obj), host.controlling_player(obj)) {
+        if human && host.object_shrouded_status(transfer_dest, player) == ObjectShroudStatus::Shrouded {
             return false;
         }
     }
@@ -458,12 +381,7 @@ pub fn can_transfer_supplies_at<H: ActionHost>(
 
 /// `ActionManager::canDockAt(obj, dockDest, commandSource)`: can object 'obj' dock with object 'dockDest' for any
 /// reason.
-pub fn can_dock_at<H: ActionHost>(
-    host: &H,
-    obj: ObjectId,
-    dock_dest: ObjectId,
-    _command_source: CommandSourceType,
-) -> bool {
+pub fn can_dock_at<H: ActionHost>(host: &H, obj: ObjectId, dock_dest: ObjectId, _command_source: CommandSourceType) -> bool {
     // look for a dock interface
     if !host.has_dock_update_interface(dock_dest) {
         return false; // no dock update interface, can't possibly dock
@@ -475,9 +393,7 @@ pub fn can_dock_at<H: ActionHost>(
     }
 
     // units and infantry can dock with a railed transport
-    if host.has_named_update_module(dock_dest, NamedUpdateModule::RailedTransportDock)
-        && (host.is_kind_of(obj, KINDOF_VEHICLE) || host.is_kind_of(obj, KINDOF_INFANTRY))
-    {
+    if host.has_named_update_module(dock_dest, NamedUpdateModule::RailedTransportDock) && (host.is_kind_of(obj, KINDOF_VEHICLE) || host.is_kind_of(obj, KINDOF_INFANTRY)) {
         return true;
     }
 
@@ -486,16 +402,9 @@ pub fn can_dock_at<H: ActionHost>(
 }
 
 /// `ActionManager::canGetHealedAt(obj, healDest, commandSource)`.
-pub fn can_get_healed_at<H: ActionHost>(
-    host: &H,
-    obj: Option<ObjectId>,
-    heal_dest: Option<ObjectId>,
-    command_source: CommandSourceType,
-) -> bool {
+pub fn can_get_healed_at<H: ActionHost>(host: &H, obj: Option<ObjectId>, heal_dest: Option<ObjectId>, command_source: CommandSourceType) -> bool {
     // sanity
-    let (Some(obj), Some(heal_dest)) = (obj, heal_dest) else {
-        return false;
-    };
+    let (Some(obj), Some(heal_dest)) = (obj, heal_dest) else { return false };
 
     let r = host.relationship(obj, heal_dest);
 
@@ -510,9 +419,7 @@ pub fn can_get_healed_at<H: ActionHost>(
     }
 
     // nothing can be done with things that are under construction
-    if host.test_status(obj, OBJECT_STATUS_UNDER_CONSTRUCTION)
-        || host.test_status(heal_dest, OBJECT_STATUS_UNDER_CONSTRUCTION)
-    {
+    if host.test_status(obj, OBJECT_STATUS_UNDER_CONSTRUCTION) || host.test_status(heal_dest, OBJECT_STATUS_UNDER_CONSTRUCTION) {
         return false;
     }
 
@@ -548,16 +455,9 @@ pub fn can_get_healed_at<H: ActionHost>(
 }
 
 /// `ActionManager::canRepairObject(obj, objectToRepair, commandSource)`.
-pub fn can_repair_object<H: ActionHost>(
-    host: &H,
-    obj: Option<ObjectId>,
-    object_to_repair: Option<ObjectId>,
-    command_source: CommandSourceType,
-) -> AResult<bool> {
+pub fn can_repair_object<H: ActionHost>(host: &H, obj: Option<ObjectId>, object_to_repair: Option<ObjectId>, command_source: CommandSourceType) -> AResult<bool> {
     // sanity
-    let (Some(obj), Some(object_to_repair)) = (obj, object_to_repair) else {
-        return Ok(false);
-    };
+    let (Some(obj), Some(object_to_repair)) = (obj, object_to_repair) else { return Ok(false) };
 
     let r = host.relationship(obj, object_to_repair);
 
@@ -576,16 +476,12 @@ pub fn can_repair_object<H: ActionHost>(
     }
 
     // GS So here's the ensuring that they can't be repaired
-    if host.is_kind_of(object_to_repair, KINDOF_BRIDGE)
-        || host.is_kind_of(object_to_repair, KINDOF_BRIDGE_TOWER)
-    {
+    if host.is_kind_of(object_to_repair, KINDOF_BRIDGE) || host.is_kind_of(object_to_repair, KINDOF_BRIDGE_TOWER) {
         return Ok(false);
     }
 
     // nothing can be done with things that are under construction
-    if host.test_status(obj, OBJECT_STATUS_UNDER_CONSTRUCTION)
-        || host.test_status(object_to_repair, OBJECT_STATUS_UNDER_CONSTRUCTION)
-    {
+    if host.test_status(obj, OBJECT_STATUS_UNDER_CONSTRUCTION) || host.test_status(object_to_repair, OBJECT_STATUS_UNDER_CONSTRUCTION) {
         return Ok(false);
     }
 
@@ -605,9 +501,7 @@ pub fn can_repair_object<H: ActionHost>(
     }
 
     // get the body module from the object to repair
-    let (health, max_health) = host
-        .body_health(object_to_repair)
-        .ok_or(WeaponError::NullObject)?;
+    let (health, max_health) = host.body_health(object_to_repair).ok_or(WeaponError::NullObject)?;
 
     // buildings that are at full health cannot be repaired
     if health == max_health {
@@ -635,9 +529,7 @@ pub fn can_resume_construction_of<H: ActionHost>(
     command_source: CommandSourceType,
 ) -> bool {
     // sanity
-    let (Some(obj), Some(object_being_constructed)) = (obj, object_being_constructed) else {
-        return false;
-    };
+    let (Some(obj), Some(object_being_constructed)) = (obj, object_being_constructed) else { return false };
 
     // only dozers or workers can resume construction of things
     if !host.is_kind_of(obj, KINDOF_DOZER) {
@@ -666,9 +558,7 @@ pub fn can_resume_construction_of<H: ActionHost>(
     let builder = host.builder_id(object_being_constructed);
     if host.object_exists(builder) && host.has_ai_interface(builder) {
         if let Some(dozer) = host.dozer_ai(builder) {
-            if dozer.current_task == DOZER_TASK_BUILD
-                && dozer.build_task_target == object_being_constructed
-            {
+            if dozer.current_task == DOZER_TASK_BUILD && dozer.build_task_target == object_being_constructed {
                 return false;
             }
         }
@@ -692,9 +582,7 @@ pub fn can_enter_object<H: ActionHost>(
     mode: CanEnterType,
 ) -> AResult<bool> {
     // sanity
-    let (Some(obj), Some(object_to_enter)) = (obj, object_to_enter) else {
-        return Ok(false);
-    };
+    let (Some(obj), Some(object_to_enter)) = (obj, object_to_enter) else { return Ok(false) };
 
     if obj == object_to_enter {
         // You can't contain yourself (crash fix for pow truck reselection)
@@ -712,9 +600,7 @@ pub fn can_enter_object<H: ActionHost>(
     }
 
     // nothing can be done with things that are under construction
-    if host.test_status(obj, OBJECT_STATUS_UNDER_CONSTRUCTION)
-        || host.test_status(object_to_enter, OBJECT_STATUS_UNDER_CONSTRUCTION)
-    {
+    if host.test_status(obj, OBJECT_STATUS_UNDER_CONSTRUCTION) || host.test_status(object_to_enter, OBJECT_STATUS_UNDER_CONSTRUCTION) {
         return Ok(false);
     }
 
@@ -740,20 +626,14 @@ pub fn can_enter_object<H: ActionHost>(
     }
 
     // Special case for unmanned vehicles. Any infantry unit can take over any unmanned vehicle!
-    if host.is_kind_of(obj, KINDOF_INFANTRY)
-        && host.is_disabled_by_type(object_to_enter, DISABLED_UNMANNED)
-        && !host.is_kind_of(obj, KINDOF_REJECT_UNMANNED)
-    {
+    if host.is_kind_of(obj, KINDOF_INFANTRY) && host.is_disabled_by_type(object_to_enter, DISABLED_UNMANNED) && !host.is_kind_of(obj, KINDOF_REJECT_UNMANNED) {
         // But only if it's allowed to.
         return Ok(true);
     }
 
     // Special case for aircraft.
-    if host.is_kind_of(obj, KINDOF_AIRCRAFT) && host.is_kind_of(object_to_enter, KINDOF_FS_AIRFIELD)
-    {
-        if host.test_status(obj, OBJECT_STATUS_DECK_HEIGHT_OFFSET)
-            && host.carrier_deck_height(obj) >= host.position(obj).z
-        {
+    if host.is_kind_of(obj, KINDOF_AIRCRAFT) && host.is_kind_of(object_to_enter, KINDOF_FS_AIRFIELD) {
+        if host.test_status(obj, OBJECT_STATUS_DECK_HEIGHT_OFFSET) && host.carrier_deck_height(obj) >= host.position(obj).z {
             return Ok(false);
         }
 
@@ -859,13 +739,8 @@ pub fn get_can_attack_object<H: ActionHost>(
     attack_type: AbleToAttackType,
 ) -> AResult<CanAttackResult> {
     // sanity
-    let (Some(obj), Some(object_to_attack)) = (obj, object_to_attack) else {
-        return Ok(CanAttackResult::NotPossible);
-    };
-    if host.is_effectively_dead(obj)
-        || host.is_effectively_dead(object_to_attack)
-        || object_to_attack == obj
-    {
+    let (Some(obj), Some(object_to_attack)) = (obj, object_to_attack) else { return Ok(CanAttackResult::NotPossible) };
+    if host.is_effectively_dead(obj) || host.is_effectively_dead(object_to_attack) || object_to_attack == obj {
         return Ok(CanAttackResult::NotPossible);
     }
 
@@ -875,14 +750,7 @@ pub fn get_can_attack_object<H: ActionHost>(
 
     // has any weapons that are capable of inflicting damage. Special damage types are rejected such as hack
     // weapons... others can be added.
-    let mut result = ow::get_able_to_attack_specific_object(
-        host,
-        obj,
-        attack_type,
-        object_to_attack,
-        command_source,
-        -1,
-    )?;
+    let mut result = ow::get_able_to_attack_specific_object(host, obj, attack_type, object_to_attack, command_source, -1)?;
     if result != CanAttackResult::NotPossible {
         // Kris: August 5, 2003
         // Fix a case where the Demo_GLAInfantryWorker is able to attack using his passive bomb upgrade. We don't
@@ -892,8 +760,7 @@ pub fn get_can_attack_object<H: ActionHost>(
             // Check if it's got any weapons that can be used.
             let mut any_valid_weapon = false;
             for i in 0..WEAPONSLOT_COUNT {
-                let cmd_source_mask =
-                    ow::get_weapon_in_weapon_slot_command_source_mask(host, obj, i as usize);
+                let cmd_source_mask = ow::get_weapon_in_weapon_slot_command_source_mask(host, obj, i as usize);
                 if cmd_source_mask != 0 {
                     any_valid_weapon = true;
                     break;
@@ -925,14 +792,7 @@ pub fn get_can_attack_object<H: ActionHost>(
             Some(slave) => {
                 // We found the spawn interface, now get the closest slave to the target.
                 if let Some(slave) = slave {
-                    result = ow::get_able_to_attack_specific_object(
-                        host,
-                        slave,
-                        attack_type,
-                        object_to_attack,
-                        command_source,
-                        -1,
-                    )?;
+                    result = ow::get_able_to_attack_specific_object(host, slave, attack_type, object_to_attack, command_source, -1)?;
                     if result != CanAttackResult::NotPossible {
                         return Ok(result);
                     }
@@ -944,14 +804,7 @@ pub fn get_can_attack_object<H: ActionHost>(
                     // AmericaBuildingFirebase
                     if host.has_contain(obj) {
                         if let Some(rider) = host.contain_closest_rider(obj, &target_pos) {
-                            result = ow::get_able_to_attack_specific_object(
-                                host,
-                                rider,
-                                attack_type,
-                                object_to_attack,
-                                command_source,
-                                -1,
-                            )?;
+                            result = ow::get_able_to_attack_specific_object(host, rider, attack_type, object_to_attack, command_source, -1)?;
                             if result != CanAttackResult::NotPossible {
                                 return Ok(result);
                             }
@@ -973,9 +826,7 @@ pub fn can_convert_object_to_car_bomb<H: ActionHost>(
     command_source: CommandSourceType,
 ) -> bool {
     // sanity
-    let (Some(obj), Some(object_to_convert)) = (obj, object_to_convert) else {
-        return false;
-    };
+    let (Some(obj), Some(object_to_convert)) = (obj, object_to_convert) else { return false };
 
     if host.is_effectively_dead(object_to_convert) {
         return false;
@@ -996,16 +847,9 @@ pub fn can_convert_object_to_car_bomb<H: ActionHost>(
 }
 
 /// `ActionManager::canHijackVehicle(obj, objectToHijack, commandSource)` (LORENZEN).
-pub fn can_hijack_vehicle<H: ActionHost>(
-    host: &H,
-    obj: Option<ObjectId>,
-    object_to_hijack: Option<ObjectId>,
-    command_source: CommandSourceType,
-) -> bool {
+pub fn can_hijack_vehicle<H: ActionHost>(host: &H, obj: Option<ObjectId>, object_to_hijack: Option<ObjectId>, command_source: CommandSourceType) -> bool {
     // sanity
-    let (Some(obj), Some(object_to_hijack)) = (obj, object_to_hijack) else {
-        return false;
-    };
+    let (Some(obj), Some(object_to_hijack)) = (obj, object_to_hijack) else { return false };
 
     // Make sure it's alive.
     if host.is_effectively_dead(object_to_hijack) {
@@ -1049,16 +893,9 @@ pub fn can_hijack_vehicle<H: ActionHost>(
 }
 
 /// `ActionManager::canSabotageBuilding(obj, objectToSabotage, commandSource)`.
-pub fn can_sabotage_building<H: ActionHost>(
-    host: &H,
-    obj: Option<ObjectId>,
-    object_to_sabotage: Option<ObjectId>,
-    command_source: CommandSourceType,
-) -> bool {
+pub fn can_sabotage_building<H: ActionHost>(host: &H, obj: Option<ObjectId>, object_to_sabotage: Option<ObjectId>, command_source: CommandSourceType) -> bool {
     // sanity
-    let (Some(obj), Some(object_to_sabotage)) = (obj, object_to_sabotage) else {
-        return false;
-    };
+    let (Some(obj), Some(object_to_sabotage)) = (obj, object_to_sabotage) else { return false };
 
     // Make sure it's alive.
     if host.is_effectively_dead(object_to_sabotage) {
@@ -1094,9 +931,7 @@ pub fn can_make_object_defector<H: ActionHost>(
     command_source: CommandSourceType,
 ) -> bool {
     // sanity
-    let (Some(obj), Some(object_to_make_defector)) = (obj, object_to_make_defector) else {
-        return false;
-    };
+    let (Some(obj), Some(object_to_make_defector)) = (obj, object_to_make_defector) else { return false };
 
     let r = host.relationship(obj, object_to_make_defector);
 
@@ -1119,16 +954,9 @@ pub fn can_make_object_defector<H: ActionHost>(
 }
 
 /// `ActionManager::canCaptureBuilding(obj, objectToCapture, commandSource)`.
-pub fn can_capture_building<H: ActionHost>(
-    host: &H,
-    obj: Option<ObjectId>,
-    object_to_capture: Option<ObjectId>,
-    command_source: CommandSourceType,
-) -> AResult<bool> {
+pub fn can_capture_building<H: ActionHost>(host: &H, obj: Option<ObjectId>, object_to_capture: Option<ObjectId>, command_source: CommandSourceType) -> AResult<bool> {
     // sanity
-    let (Some(obj), Some(object_to_capture)) = (obj, object_to_capture) else {
-        return Ok(false);
-    };
+    let (Some(obj), Some(object_to_capture)) = (obj, object_to_capture) else { return Ok(false) };
 
     // Make sure our object has the capability of performing this special ability.
     let is_owner_black_lotus = host.has_special_power(obj, SPECIAL_BLACKLOTUS_CAPTURE_BUILDING);
@@ -1141,15 +969,11 @@ pub fn can_capture_building<H: ActionHost>(
         return Ok(false);
     }
 
-    let mut sp_percent =
-        host.special_power_percent_ready_by_type(obj, SPECIAL_INFANTRY_CAPTURE_BUILDING);
+    let mut sp_percent = host.special_power_percent_ready_by_type(obj, SPECIAL_INFANTRY_CAPTURE_BUILDING);
     if sp_percent.is_none() {
-        sp_percent =
-            host.special_power_percent_ready_by_type(obj, SPECIAL_BLACKLOTUS_CAPTURE_BUILDING);
+        sp_percent = host.special_power_percent_ready_by_type(obj, SPECIAL_BLACKLOTUS_CAPTURE_BUILDING);
     }
-    let Some(percent) = sp_percent else {
-        return Ok(false);
-    };
+    let Some(percent) = sp_percent else { return Ok(false) };
 
     if percent < 1.0 {
         // Special not ready or non-existent.
@@ -1167,9 +991,7 @@ pub fn can_capture_building<H: ActionHost>(
     }
 
     // can't capture things that are under construction, or sold.
-    if host.test_status(object_to_capture, OBJECT_STATUS_UNDER_CONSTRUCTION)
-        || host.test_status(object_to_capture, OBJECT_STATUS_SOLD)
-    {
+    if host.test_status(object_to_capture, OBJECT_STATUS_UNDER_CONSTRUCTION) || host.test_status(object_to_capture, OBJECT_STATUS_SOLD) {
         return Ok(false);
     }
 
@@ -1182,9 +1004,7 @@ pub fn can_capture_building<H: ActionHost>(
 
     // ensure that it's capturable, and not allied
     // exception: we can always capture enemy bldgs, regardless of kindof
-    if !(r == Relationship::Enemies
-        || (host.is_kind_of(object_to_capture, KINDOF_CAPTURABLE) && r != Relationship::Allies))
-    {
+    if !(r == Relationship::Enemies || (host.is_kind_of(object_to_capture, KINDOF_CAPTURABLE) && r != Relationship::Allies)) {
         return Ok(false);
     }
 
@@ -1223,9 +1043,7 @@ pub fn can_disable_vehicle_via_hacking<H: ActionHost>(
     check_source_requirements: bool,
 ) -> AResult<bool> {
     // sanity
-    let (Some(obj), Some(object_to_hack)) = (obj, object_to_hack) else {
-        return Ok(false);
-    };
+    let (Some(obj), Some(object_to_hack)) = (obj, object_to_hack) else { return Ok(false) };
 
     if check_source_requirements {
         // Make sure our object has the capability of performing this special ability.
@@ -1234,8 +1052,7 @@ pub fn can_disable_vehicle_via_hacking<H: ActionHost>(
         }
     }
 
-    let sp_percent =
-        host.special_power_percent_ready_by_type(obj, SPECIAL_BLACKLOTUS_DISABLE_VEHICLE_HACK);
+    let sp_percent = host.special_power_percent_ready_by_type(obj, SPECIAL_BLACKLOTUS_DISABLE_VEHICLE_HACK);
     if check_source_requirements {
         match sp_percent {
             Some(p) if p >= 1.0 => {}
@@ -1285,16 +1102,9 @@ pub fn can_disable_vehicle_via_hacking<H: ActionHost>(
 }
 
 /// `ActionManager::canStealCashViaHacking(obj, objectToHack, commandSource)`.
-pub fn can_steal_cash_via_hacking<H: ActionHost>(
-    host: &H,
-    obj: Option<ObjectId>,
-    object_to_hack: Option<ObjectId>,
-    command_source: CommandSourceType,
-) -> AResult<bool> {
+pub fn can_steal_cash_via_hacking<H: ActionHost>(host: &H, obj: Option<ObjectId>, object_to_hack: Option<ObjectId>, command_source: CommandSourceType) -> AResult<bool> {
     // sanity
-    let (Some(obj), Some(object_to_hack)) = (obj, object_to_hack) else {
-        return Ok(false);
-    };
+    let (Some(obj), Some(object_to_hack)) = (obj, object_to_hack) else { return Ok(false) };
 
     // Make sure our object has the capability of performing this special ability.
     if !host.has_special_power(obj, SPECIAL_BLACKLOTUS_STEAL_CASH_HACK) {
@@ -1337,9 +1147,7 @@ pub fn can_steal_cash_via_hacking<H: ActionHost>(
         }
 
         // Make sure the building is considered hackable (temp: using capturable)
-        if !host.is_kind_of(object_to_hack, KINDOF_CAPTURABLE)
-            || host.is_kind_of(object_to_hack, KINDOF_REBUILD_HOLE)
-        {
+        if !host.is_kind_of(object_to_hack, KINDOF_CAPTURABLE) || host.is_kind_of(object_to_hack, KINDOF_REBUILD_HOLE) {
             return Ok(false);
         }
 
@@ -1367,9 +1175,7 @@ pub fn can_disable_building_via_hacking<H: ActionHost>(
     command_source: CommandSourceType,
 ) -> AResult<bool> {
     // sanity
-    let (Some(obj), Some(object_to_hack)) = (obj, object_to_hack) else {
-        return Ok(false);
-    };
+    let (Some(obj), Some(object_to_hack)) = (obj, object_to_hack) else { return Ok(false) };
 
     // Make sure our object has the capability of performing this special ability.
     if !host.has_special_power(obj, SPECIAL_HACKER_DISABLE_BUILDING) {
@@ -1407,17 +1213,13 @@ pub fn can_disable_building_via_hacking<H: ActionHost>(
 
     // Make sure the building is considered hackable (temp: using capturable)
     // An exception is any TechFactionBuilding that is not explicitly immune to capture
-    if (!host.is_kind_of(object_to_hack, KINDOF_CAPTURABLE)
-        || host.is_kind_of(object_to_hack, KINDOF_REBUILD_HOLE))
-        && !(host.is_kind_of(object_to_hack, KINDOF_FS_TECHNOLOGY)
-            && !host.is_kind_of(object_to_hack, KINDOF_IMMUNE_TO_CAPTURE))
+    if (!host.is_kind_of(object_to_hack, KINDOF_CAPTURABLE) || host.is_kind_of(object_to_hack, KINDOF_REBUILD_HOLE))
+        && !(host.is_kind_of(object_to_hack, KINDOF_FS_TECHNOLOGY) && !host.is_kind_of(object_to_hack, KINDOF_IMMUNE_TO_CAPTURE))
     {
         return Ok(false);
     }
 
-    if host.is_kind_of(object_to_hack, KINDOF_REBUILD_HOLE)
-        || host.test_status(object_to_hack, OBJECT_STATUS_UNDER_CONSTRUCTION)
-    {
+    if host.is_kind_of(object_to_hack, KINDOF_REBUILD_HOLE) || host.test_status(object_to_hack, OBJECT_STATUS_UNDER_CONSTRUCTION) {
         return Ok(false);
     }
 
@@ -1436,34 +1238,19 @@ pub fn can_disable_building_via_hacking<H: ActionHost>(
 }
 
 /// `ActionManager::canBribeUnit`: always false.
-pub fn can_bribe_unit(
-    _obj: Option<ObjectId>,
-    _object_to_bribe: Option<ObjectId>,
-    _command_source: CommandSourceType,
-) -> bool {
+pub fn can_bribe_unit(_obj: Option<ObjectId>, _object_to_bribe: Option<ObjectId>, _command_source: CommandSourceType) -> bool {
     false
 }
 
 /// `ActionManager::canCutBuildingPower`: always false.
-pub fn can_cut_building_power(
-    _obj: Option<ObjectId>,
-    _building: Option<ObjectId>,
-    _command_source: CommandSourceType,
-) -> bool {
+pub fn can_cut_building_power(_obj: Option<ObjectId>, _building: Option<ObjectId>, _command_source: CommandSourceType) -> bool {
     false
 }
 
 /// `ActionManager::canSnipeVehicle(obj, objectToSnipe, commandSource)`.
-pub fn can_snipe_vehicle<H: ActionHost>(
-    host: &H,
-    obj: Option<ObjectId>,
-    object_to_snipe: Option<ObjectId>,
-    command_source: CommandSourceType,
-) -> bool {
+pub fn can_snipe_vehicle<H: ActionHost>(host: &H, obj: Option<ObjectId>, object_to_snipe: Option<ObjectId>, command_source: CommandSourceType) -> bool {
     // Sanity check
-    let (Some(obj), Some(object_to_snipe)) = (obj, object_to_snipe) else {
-        return false;
-    };
+    let (Some(obj), Some(object_to_snipe)) = (obj, object_to_snipe) else { return false };
 
     // Make sure it's alive.
     if host.is_effectively_dead(object_to_snipe) {
@@ -1531,9 +1318,7 @@ pub fn can_do_special_power_at_location<H: ActionHost>(
         }
     }
 
-    let Some(percent) = host.special_power_percent_ready_by_template(obj, sp_template) else {
-        return Ok(false);
-    };
+    let Some(percent) = host.special_power_percent_ready_by_template(obj, sp_template) else { return Ok(false) };
     if check_source_requirements && percent < 1.0 {
         // Not fully ready
         return Ok(false);
@@ -1541,12 +1326,7 @@ pub fn can_do_special_power_at_location<H: ActionHost>(
 
     // First check terrain type, if it is cared about. Don't return a true, since there are more checks.
     match sp_template.sp_type {
-        SPECIAL_PARADROP_AMERICA
-        | INFA_SPECIAL_PARADROP_AMERICA
-        | SPECIAL_CRATE_DROP
-        | SPECIAL_TANK_PARADROP
-            if host.is_underwater(loc.x, loc.y) =>
-        {
+        SPECIAL_PARADROP_AMERICA | INFA_SPECIAL_PARADROP_AMERICA | SPECIAL_CRATE_DROP | SPECIAL_TANK_PARADROP if host.is_underwater(loc.x, loc.y) => {
             return Ok(false);
         }
         _ => {}
@@ -1597,16 +1377,11 @@ pub fn can_do_special_power_at_location<H: ActionHost>(
         | SPECIAL_SNEAK_ATTACK
         | SPECIAL_BATTLESHIP_BOMBARDMENT => {
             // Don't allow "damaging" special powers in shrouded areas, but Fogged are okay.
-            let player = host
-                .controlling_player(obj)
-                .ok_or(WeaponError::NullObject)?;
+            let player = host.controlling_player(obj).ok_or(WeaponError::NullObject)?;
             Ok(host.cell_shroud_status_for_player(player, loc) != CellShroudStatus::Shrouded)
         }
 
-        SPECIAL_SPY_SATELLITE
-        | SPECIAL_RADAR_VAN_SCAN
-        | SPECIAL_SPY_DRONE
-        | SPECIAL_HELIX_NAPALM_BOMB => {
+        SPECIAL_SPY_SATELLITE | SPECIAL_RADAR_VAN_SCAN | SPECIAL_SPY_DRONE | SPECIAL_HELIX_NAPALM_BOMB => {
             // These specials can be used anywhere!
             Ok(is_point_on_map(host, loc))
         }
@@ -1658,9 +1433,7 @@ pub fn can_do_special_power_at_object<H: ActionHost>(
 
     let r = host.relationship(obj, target);
 
-    let Some(percent) = host.special_power_percent_ready_by_template(obj, sp_template) else {
-        return Ok(false);
-    };
+    let Some(percent) = host.special_power_percent_ready_by_template(obj, sp_template) else { return Ok(false) };
     if check_source_requirements && percent < 1.0 {
         // Not fully ready
         return Ok(false);
@@ -1682,19 +1455,14 @@ pub fn can_do_special_power_at_object<H: ActionHost>(
         }
 
         SPECIAL_TANKHUNTER_TNT_ATTACK => {
-            if host.is_kind_of(target, KINDOF_STRUCTURE)
-                || (host.is_kind_of(target, KINDOF_VEHICLE)
-                    && !host.is_kind_of(target, KINDOF_AIRCRAFT))
-            {
+            if host.is_kind_of(target, KINDOF_STRUCTURE) || (host.is_kind_of(target, KINDOF_VEHICLE) && !host.is_kind_of(target, KINDOF_AIRCRAFT)) {
                 return Ok(true);
             }
         }
 
         SPECIAL_BOOBY_TRAP => {
             // We can booby trap any building that is allied or neutral
-            if host.is_kind_of(target, KINDOF_STRUCTURE)
-                && (r == Relationship::Neutral || r == Relationship::Allies)
-            {
+            if host.is_kind_of(target, KINDOF_STRUCTURE) && (r == Relationship::Neutral || r == Relationship::Allies) {
                 return Ok(true);
             }
             return Ok(false);
@@ -1711,9 +1479,7 @@ pub fn can_do_special_power_at_object<H: ActionHost>(
             // Can only disable buildings...
             if host.is_kind_of(target, KINDOF_STRUCTURE) && r == Relationship::Enemies {
                 // Make sure the building is considered hackable (temp: using capturable)
-                if !host.is_kind_of(target, KINDOF_CAPTURABLE)
-                    || host.is_kind_of(target, KINDOF_REBUILD_HOLE)
-                {
+                if !host.is_kind_of(target, KINDOF_CAPTURABLE) || host.is_kind_of(target, KINDOF_REBUILD_HOLE) {
                     return Ok(false);
                 }
                 return Ok(true);
@@ -1725,13 +1491,7 @@ pub fn can_do_special_power_at_object<H: ActionHost>(
         }
 
         SPECIAL_BLACKLOTUS_DISABLE_VEHICLE_HACK => {
-            return can_disable_vehicle_via_hacking(
-                host,
-                Some(obj),
-                Some(target),
-                command_source,
-                false,
-            );
+            return can_disable_vehicle_via_hacking(host, Some(obj), Some(target), command_source, false);
         }
 
         SPECIAL_BLACKLOTUS_STEAL_CASH_HACK => {
@@ -1742,9 +1502,7 @@ pub fn can_do_special_power_at_object<H: ActionHost>(
             // Can only disable enemy supply centers.
             if host.is_kind_of(target, KINDOF_STRUCTURE) && r == Relationship::Enemies {
                 // Make sure the building is considered hackable (temp: using capturable)
-                if !host.is_kind_of(target, KINDOF_CAPTURABLE)
-                    || host.is_kind_of(target, KINDOF_REBUILD_HOLE)
-                {
+                if !host.is_kind_of(target, KINDOF_CAPTURABLE) || host.is_kind_of(target, KINDOF_REBUILD_HOLE) {
                     return Ok(false);
                 }
 
@@ -1780,12 +1538,7 @@ pub fn can_do_special_power_at_object<H: ActionHost>(
                 // only attacking type things will defect (no dozers, supply trucks, workers...)
                 // neutral or same-team units are worthless defectors
                 if r == Relationship::Enemies {
-                    return Ok(can_make_object_defector(
-                        host,
-                        Some(obj),
-                        Some(target),
-                        command_source,
-                    ));
+                    return Ok(can_make_object_defector(host, Some(obj), Some(target), command_source));
                 }
             }
         }
@@ -1838,25 +1591,17 @@ pub fn can_do_special_power_at_object<H: ActionHost>(
         | SPECIAL_SNEAK_ATTACK => return Ok(false),
 
         SPECIAL_REMOTE_CHARGES | SPECIAL_TIMED_CHARGES | SPECIAL_HELIX_NAPALM_BOMB => {
-            if host.is_effectively_dead(target)
-                || host.is_kind_of(target, KINDOF_BRIDGE)
-                || host.is_kind_of(target, KINDOF_BRIDGE_TOWER)
-            {
+            if host.is_effectively_dead(target) || host.is_kind_of(target, KINDOF_BRIDGE) || host.is_kind_of(target, KINDOF_BRIDGE_TOWER) {
                 return Ok(false);
             }
 
-            if host.is_kind_of(target, KINDOF_STRUCTURE) || host.is_kind_of(target, KINDOF_VEHICLE)
-            {
+            if host.is_kind_of(target, KINDOF_STRUCTURE) || host.is_kind_of(target, KINDOF_VEHICLE) {
                 if let Some(sp_update) = host.special_ability_update(obj, sp_template.sp_type) {
                     // Make sure we have enough equipment to place an additional charge.
                     if sp_update.object_count < sp_update.object_max {
                         // Also restrict the unit from placing more than one charge on the same building. We
                         // accomplish this by having the stickybomb update store the target as the producer ID.
-                        if host.special_ability_has_object_with_producer(
-                            obj,
-                            sp_template.sp_type,
-                            target,
-                        ) {
+                        if host.special_ability_has_object_with_producer(obj, sp_template.sp_type, target) {
                             return Ok(false);
                         }
 
@@ -1873,15 +1618,8 @@ pub fn can_do_special_power_at_object<H: ActionHost>(
                         };
                         // `spUpdate` keeps the first update when the type is neither
                         let other_has = match other_type {
-                            Some(t) => {
-                                host.special_ability_update(obj, t).is_some()
-                                    && host.special_ability_has_object_with_producer(obj, t, target)
-                            }
-                            None => host.special_ability_has_object_with_producer(
-                                obj,
-                                sp_template.sp_type,
-                                target,
-                            ),
+                            Some(t) => host.special_ability_update(obj, t).is_some() && host.special_ability_has_object_with_producer(obj, t, target),
+                            None => host.special_ability_has_object_with_producer(obj, sp_template.sp_type, target),
                         };
 
                         // If we have a valid pointer at this point, we found the other special. Make sure it isn't
@@ -1917,9 +1655,7 @@ pub fn can_do_special_power<H: ActionHost>(
         }
     }
 
-    let Some(percent) = host.special_power_percent_ready_by_template(obj, sp_template) else {
-        return false;
-    };
+    let Some(percent) = host.special_power_percent_ready_by_template(obj, sp_template) else { return false };
     if check_source_requirements && percent < 1.0 {
         // Not fully ready
         return false;
@@ -2002,14 +1738,10 @@ pub fn can_fire_weapon_at_location<H: ActionHost>(
     _object_in_way: Option<ObjectId>,
 ) -> bool {
     // Sanity check
-    let (Some(obj), Some(_)) = (obj, loc) else {
-        return false;
-    };
+    let (Some(obj), Some(_)) = (obj, loc) else { return false };
 
     // Make sure we have the right weapon.
-    host.weapon_set(obj)
-        .get_weapon_in_weapon_slot(slot)
-        .is_some()
+    host.weapon_set(obj).get_weapon_in_weapon_slot(slot).is_some()
 }
 
 /// `ActionManager::canFireWeaponAtObject(obj, target, commandSource, slot)`.
@@ -2021,14 +1753,10 @@ pub fn can_fire_weapon_at_object<H: ActionHost>(
     slot: i32,
 ) -> AResult<bool> {
     // Sanity check
-    let (Some(obj), Some(target)) = (obj, target) else {
-        return Ok(false);
-    };
+    let (Some(obj), Some(target)) = (obj, target) else { return Ok(false) };
 
     // Make sure we have the right weapon.
-    let Some(weapon) = host.weapon_set(obj).get_weapon_in_weapon_slot(slot) else {
-        return Ok(false);
-    };
+    let Some(weapon) = host.weapon_set(obj).get_weapon_in_weapon_slot(slot) else { return Ok(false) };
 
     let mut sniper = false;
     if host.store().templates()[weapon.template()].damage_type == DAMAGE_KILLPILOT {
@@ -2039,23 +1767,9 @@ pub fn can_fire_weapon_at_object<H: ActionHost>(
     }
 
     let result = if sniper {
-        ow::get_able_to_attack_specific_object(
-            host,
-            obj,
-            ATTACK_NEW_TARGET,
-            target,
-            command_source,
-            slot,
-        )?
+        ow::get_able_to_attack_specific_object(host, obj, ATTACK_NEW_TARGET, target, command_source, slot)?
     } else {
-        ow::get_able_to_attack_specific_object(
-            host,
-            obj,
-            ATTACK_NEW_TARGET,
-            target,
-            command_source,
-            -1,
-        )?
+        ow::get_able_to_attack_specific_object(host, obj, ATTACK_NEW_TARGET, target, command_source, -1)?
     };
 
     if result == CanAttackResult::Possible || result == CanAttackResult::PossibleAfterMoving {
@@ -2065,31 +1779,17 @@ pub fn can_fire_weapon_at_object<H: ActionHost>(
 }
 
 /// `ActionManager::canFireWeapon(obj, slot, commandSource)`.
-pub fn can_fire_weapon<H: ActionHost>(
-    host: &H,
-    obj: Option<ObjectId>,
-    slot: i32,
-    _command_source: CommandSourceType,
-) -> bool {
+pub fn can_fire_weapon<H: ActionHost>(host: &H, obj: Option<ObjectId>, slot: i32, _command_source: CommandSourceType) -> bool {
     // Sanity check
     let Some(obj) = obj else { return false };
 
     // Make sure we have the right weapon.
-    host.weapon_set(obj)
-        .get_weapon_in_weapon_slot(slot)
-        .is_some()
+    host.weapon_set(obj).get_weapon_in_weapon_slot(slot).is_some()
 }
 
 /// `ActionManager::canGarrison(obj, target, commandSource)`.
-pub fn can_garrison<H: ActionHost>(
-    host: &H,
-    obj: Option<ObjectId>,
-    target: Option<ObjectId>,
-    _command_source: CommandSourceType,
-) -> AResult<bool> {
-    let (Some(obj), Some(target)) = (obj, target) else {
-        return Ok(false);
-    };
+pub fn can_garrison<H: ActionHost>(host: &H, obj: Option<ObjectId>, target: Option<ObjectId>, _command_source: CommandSourceType) -> AResult<bool> {
+    let (Some(obj), Some(target)) = (obj, target) else { return Ok(false) };
 
     // The object was not an infantry, or is disallowed from being allowed to garrison stuff.
     if !host.is_kind_of(obj, KINDOF_INFANTRY) || host.is_kind_of(obj, KINDOF_NO_GARRISON) {
@@ -2104,9 +1804,7 @@ pub fn can_garrison<H: ActionHost>(
         return Ok(false);
     }
 
-    let Some(cmi) = host.contain_facts(target) else {
-        return Ok(false);
-    };
+    let Some(cmi) = host.contain_facts(target) else { return Ok(false) };
 
     if !cmi.garrisonable {
         return Ok(false);
@@ -2116,9 +1814,7 @@ pub fn can_garrison<H: ActionHost>(
         return Ok(host.contain_is_valid_container_for(target, obj, true));
     }
 
-    let player = host
-        .controlling_player(obj)
-        .ok_or(WeaponError::NullObject)?;
+    let player = host.controlling_player(obj).ok_or(WeaponError::NullObject)?;
     if host.player_relationship_to_team_of(player, target) == Relationship::Neutral {
         // needs to be empty if its not already ours.
         return Ok(cmi.count == 0 && host.contain_is_valid_container_for(target, obj, true));
@@ -2128,15 +1824,8 @@ pub fn can_garrison<H: ActionHost>(
 }
 
 /// `ActionManager::canPlayerGarrison(player, target, commandSource)`.
-pub fn can_player_garrison<H: ActionHost>(
-    host: &H,
-    player: Option<i32>,
-    target: Option<ObjectId>,
-    _command_source: CommandSourceType,
-) -> AResult<bool> {
-    let (Some(player), Some(target)) = (player, target) else {
-        return Ok(false);
-    };
+pub fn can_player_garrison<H: ActionHost>(host: &H, player: Option<i32>, target: Option<ObjectId>, _command_source: CommandSourceType) -> AResult<bool> {
+    let (Some(player), Some(target)) = (player, target) else { return Ok(false) };
 
     if host.is_effectively_dead(target) {
         return Ok(false);
@@ -2146,9 +1835,7 @@ pub fn can_player_garrison<H: ActionHost>(
         return Ok(false);
     }
 
-    let Some(cmi) = host.contain_facts(target) else {
-        return Ok(false);
-    };
+    let Some(cmi) = host.contain_facts(target) else { return Ok(false) };
 
     if !cmi.garrisonable {
         return Ok(false);
@@ -2176,9 +1863,7 @@ pub fn can_override_special_power_destination<H: ActionHost>(
 ) -> AResult<bool> {
     if host.special_power_overridable_destination_active(obj, sp_type) {
         // But so long as it's not in the black areas of the map.
-        let player = host
-            .controlling_player(obj)
-            .ok_or(WeaponError::NullObject)?;
+        let player = host.controlling_player(obj).ok_or(WeaponError::NullObject)?;
         return Ok(host.cell_shroud_status_for_player(player, loc) != CellShroudStatus::Shrouded);
     }
     Ok(false)

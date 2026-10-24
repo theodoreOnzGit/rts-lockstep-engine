@@ -42,15 +42,11 @@
 use std::sync::Arc;
 
 use crate::common::game_common::SECONDS_PER_LOGICFRAME_REAL;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_UPGRADE};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
 use crate::logic::module::upgrade_module::{UpgradeModuleData, UpgradeMux};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::modules::upgrade_mux_user::{upgrade_mux_call, UpgradeMuxUser};
@@ -103,14 +99,7 @@ static UPGRADE_BASE_FIELD_PARSE: [FieldParse<FireOCLAfterWeaponCooldownUpdateMod
 
 /// `FireOCLAfterWeaponCooldownUpdateModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<FireOCLAfterWeaponCooldownUpdateModuleData>; 6] = [
-    FieldParse::new(
-        "WeaponSlot",
-        |ini, d, _| {
-            d.weapon_slot = ini.parse_index_list(&WEAPON_SLOT_TYPE_NAMES)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("WeaponSlot", |ini, d, _| { d.weapon_slot = ini.parse_index_list(&WEAPON_SLOT_TYPE_NAMES)?; Ok(()) }, UserData::None),
     FieldParse::new(
         "OCL",
         |ini, d, _| {
@@ -121,38 +110,15 @@ static OWN_FIELD_PARSE: [FieldParse<FireOCLAfterWeaponCooldownUpdateModuleData>;
         },
         UserData::None,
     ),
-    FieldParse::new(
-        "MinShotsToCreateOCL",
-        |ini, d, _| {
-            d.min_shots_required = ini.parse_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "OCLLifetimePerSecond",
-        |ini, d, _| {
-            d.ocl_lifetime_per_second = ini.parse_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "OCLLifetimeMaxCap",
-        |ini, d, _| {
-            d.ocl_max_frames = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("MinShotsToCreateOCL", |ini, d, _| { d.min_shots_required = ini.parse_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("OCLLifetimePerSecond", |ini, d, _| { d.ocl_lifetime_per_second = ini.parse_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("OCLLifetimeMaxCap", |ini, d, _| { d.ocl_max_frames = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl FireOCLAfterWeaponCooldownUpdateModuleData {
     /// `buildFieldParse(p)`: the update base, this class's own fields, then the mux's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, FireOCLAfterWeaponCooldownUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, FireOCLAfterWeaponCooldownUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&OWN_FIELD_PARSE)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
@@ -160,15 +126,10 @@ impl FireOCLAfterWeaponCooldownUpdateModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<FireOCLAfterWeaponCooldownUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<FireOCLAfterWeaponCooldownUpdateModuleData> {
         let mut data = FireOCLAfterWeaponCooldownUpdateModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                FireOCLAfterWeaponCooldownUpdateModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, FireOCLAfterWeaponCooldownUpdateModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -211,21 +172,11 @@ impl FireOCLAfterWeaponCooldownUpdate {
 
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and `m_valid = false;
     /// resetStats()`.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<FireOCLAfterWeaponCooldownUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<FireOCLAfterWeaponCooldownUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(FireOCLAfterWeaponCooldownUpdate {
-            update,
-            data,
-            mux: UpgradeMux::new(),
-            valid: false,
-            consecutive_shots: 0,
-            start_frame: 0,
-        })
+        Ok(FireOCLAfterWeaponCooldownUpdate { update, data, mux: UpgradeMux::new(), valid: false, consecutive_shots: 0, start_frame: 0 })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -241,12 +192,7 @@ impl FireOCLAfterWeaponCooldownUpdate {
     /// The module's own state as words, for the tests that compare it with upstream's: the valid flag, the shot count, the start frame, and whether the
     /// upgrade ran.
     pub fn state_words(&self) -> Vec<u32> {
-        vec![
-            u32::from(self.valid),
-            self.consecutive_shots,
-            self.start_frame,
-            u32::from(self.mux.is_already_upgraded()),
-        ]
+        vec![u32::from(self.valid), self.consecutive_shots, self.start_frame, u32::from(self.mux.is_already_upgraded())]
     }
 
     /// `update()` as the scheduler runs it (see [`update_behavior::world_update`]).
@@ -260,12 +206,7 @@ impl FireOCLAfterWeaponCooldownUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -297,29 +238,15 @@ impl FireOCLAfterWeaponCooldownUpdate {
         // Calculate the lifetime of the OCL.
         let now = world.frame();
         let mut seconds = now.wrapping_sub(self.start_frame) as f32 * SECONDS_PER_LOGICFRAME_REAL;
-        seconds *= data.ocl_lifetime_per_second as f32
-            * if crate::logic::modules::plant(921) {
-                0.01
-            } else {
-                0.001
-            };
+        seconds *= data.ocl_lifetime_per_second as f32 * if crate::logic::modules::plant(921) { 0.01 } else { 0.001 };
         let frames = seconds * crate::common::game_common::LOGICFRAMES_PER_SECOND as f32;
         if !(0.0..4_294_967_296.0).contains(&frames) {
             return Err(IniError::undefined(Undefined::FloatToUnsignedOutOfRange));
         }
-        let ocl_frames = if crate::logic::modules::plant(922) {
-            frames as u32
-        } else {
-            (frames as u32).min(data.ocl_max_frames)
-        };
+        let ocl_frames = if crate::logic::modules::plant(922) { frames as u32 } else { (frames as u32).min(data.ocl_max_frames) };
 
         if let Some(ocl) = data.ocl.clone() {
-            world.cut(CutCall::OclCreateWithLifetime {
-                primary: me,
-                secondary: me,
-                ocl,
-                lifetime_frames: ocl_frames,
-            });
+            world.cut(CutCall::OclCreateWithLifetime { primary: me, secondary: me, ocl, lifetime_frames: ocl_frames });
         }
         self.reset_stats();
         Ok(())
@@ -337,11 +264,7 @@ impl UpgradeMuxUser for FireOCLAfterWeaponCooldownUpdate {
         &self.data.upgrade
     }
     /// `upgradeImplementation()`: "nothing!".
-    fn upgrade_implementation(
-        &mut self,
-        _world: &mut World,
-        _me: ModuleHandle,
-    ) -> Result<(), IniError> {
+    fn upgrade_implementation(&mut self, _world: &mut World, _me: ModuleHandle) -> Result<(), IniError> {
         Ok(())
     }
     fn mux_into_body(self) -> UpdateBody {
@@ -361,9 +284,7 @@ impl FireOCLAfterWeaponCooldownUpdate {
         let data = self.data.clone();
         let statics = world.statics.clone();
         // getUpgradeActivationMasks( activation, conflicting );
-        data.upgrade
-            .mux_data_mut()
-            .get_upgrade_activation_masks(&statics.upgrade_center, &mut world.names)?;
+        data.upgrade.mux_data_mut().get_upgrade_activation_masks(&statics.upgrade_center, &mut world.names)?;
         let mut valid_this_frame = true;
         let mut valid_to_fire_ocl = true;
 
@@ -382,14 +303,8 @@ impl FireOCLAfterWeaponCooldownUpdate {
             }
         }
 
-        let object_mask = world
-            .objects
-            .find(me.object)
-            .map(|o| o.object_upgrades_completed)
-            .unwrap_or_default();
-        let player = world
-            .get_controlling_player(me.object)
-            .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+        let object_mask = world.objects.find(me.object).map(|o| o.object_upgrades_completed).unwrap_or_default();
+        let player = world.get_controlling_player(me.object).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
         let player_mask = world.cuts.player_completed_upgrade_mask(player);
         let mut mask_to_check = player_mask;
         if !crate::logic::modules::plant(929) {
@@ -398,12 +313,7 @@ impl FireOCLAfterWeaponCooldownUpdate {
         if valid_this_frame {
             let holder = data.upgrade.clone();
             let mut mux_data = holder.mux_data_mut();
-            if !self.mux.test_upgrade_conditions(
-                &mut mux_data,
-                &statics.upgrade_center,
-                &mut world.names,
-                mask_to_check,
-            )? {
+            if !self.mux.test_upgrade_conditions(&mut mux_data, &statics.upgrade_center, &mut world.names, mask_to_check)? {
                 // Can't use this period if this object doesn't have any of the upgrades
                 valid_this_frame = false;
                 valid_to_fire_ocl = crate::logic::modules::plant(930);
@@ -413,13 +323,7 @@ impl FireOCLAfterWeaponCooldownUpdate {
         let now = world.frame();
         if valid_this_frame {
             let w = weapon.expect("a valid frame has a weapon");
-            if w.last_shot_frame
-                == if crate::logic::modules::plant(927) {
-                    now
-                } else {
-                    now.wrapping_sub(1)
-                }
-            {
+            if w.last_shot_frame == if crate::logic::modules::plant(927) { now } else { now.wrapping_sub(1) } {
                 self.consecutive_shots += 1;
                 if self.consecutive_shots == 1 && !crate::logic::modules::plant(928) {
                     // Our first shot -- so record the frame number so we can easily calculate the time we've been firing!
@@ -427,19 +331,14 @@ impl FireOCLAfterWeaponCooldownUpdate {
                 }
             } else if w.possible_next_shot_frame < now {
                 // Means we could have shot but didn't!
-                if data.min_shots_required <= self.consecutive_shots
-                    || crate::logic::modules::plant(923)
-                {
+                if data.min_shots_required <= self.consecutive_shots || crate::logic::modules::plant(923) {
                     // We have fired enough shots to create the OCL.
                     self.fire_ocl(world, me.object)?;
                 }
             }
         } else if valid_to_fire_ocl {
             // We've stopped being valid -- which means we may have stopped firing our weapon.
-            if (world.weapon_in_slot_exists(me.object, data.weapon_slot)
-                || crate::logic::modules::plant(931))
-                && data.min_shots_required <= self.consecutive_shots
-            {
+            if (world.weapon_in_slot_exists(me.object, data.weapon_slot) || crate::logic::modules::plant(931)) && data.min_shots_required <= self.consecutive_shots {
                 // We switched weapons! Fire OCL!
                 self.fire_ocl(world, me.object)?;
             }
@@ -516,7 +415,5 @@ impl Snapshot for FireOCLAfterWeaponCooldownUpdate {
 
 /// The factory's `NewModuleDataProc` for `FireOCLAfterWeaponCooldownUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(Arc::new(
-        FireOCLAfterWeaponCooldownUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(Arc::new(FireOCLAfterWeaponCooldownUpdateModuleData::friend_new_module_data(ini)?)))
 }

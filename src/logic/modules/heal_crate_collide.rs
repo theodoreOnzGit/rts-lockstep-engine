@@ -20,22 +20,20 @@
 
 use std::sync::Arc;
 
-use crate::common::game_type::INVALID_ID;
-use crate::common::ini::Undefined;
 use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::crate_collide_data_field_parse;
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::collide_module::CollideModule;
-use crate::logic::modules::crate_collide::{
-    crate_module_call, CrateBehavior, CrateCollideModuleData,
-};
+use crate::logic::modules::crate_collide::{crate_module_call, CrateBehavior, CrateCollideModuleData};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+use crate::logic::world::update_body::UpdateBody;
+use crate::common::game_type::INVALID_ID;
+use crate::common::ini::Undefined;
 use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::object_events::{ObjectClientEvent, ObjectSound};
-use crate::logic::world::update_body::UpdateBody;
 
 /// `class HealCrateCollideModuleData : public CrateCollideModuleData`.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -53,18 +51,14 @@ impl HealCrateCollideModuleData {
     }
 
     /// `buildFieldParse(p)`: the module data base, the crate fields, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, HealCrateCollideModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, HealCrateCollideModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<HealCrateCollideModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<HealCrateCollideModuleData> {
         let mut data = HealCrateCollideModuleData::new();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, HealCrateCollideModuleData::build_field_parse)?;
@@ -74,8 +68,7 @@ impl HealCrateCollideModuleData {
 }
 
 /// `CrateCollideModuleData::buildFieldParse`'s table, for this data class.
-static BASE_FIELD_PARSE: [FieldParse<HealCrateCollideModuleData>; 12] =
-    crate_collide_data_field_parse!(HealCrateCollideModuleData, crate_data);
+static BASE_FIELD_PARSE: [FieldParse<HealCrateCollideModuleData>; 12] = crate_collide_data_field_parse!(HealCrateCollideModuleData, crate_data);
 
 /// `class HealCrateCollide : public CrateCollide`.
 #[derive(Clone, Debug)]
@@ -89,17 +82,13 @@ pub struct HealCrateCollide {
 impl PartialEq for HealCrateCollide {
     /// The same object and the same data object (upstream compares pointers).
     fn eq(&self, other: &Self) -> bool {
-        self.collide.behavior().object() == other.collide.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
+        self.collide.behavior().object() == other.collide.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
 impl HealCrateCollide {
     /// `HealCrateCollide(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<HealCrateCollideModuleData>>,
-    ) -> IniResult<HealCrateCollide> {
+    pub fn new(object: ObjectId, data: Option<Arc<HealCrateCollideModuleData>>) -> IniResult<HealCrateCollide> {
         let data = data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let collide = CollideModule::new(object, Some(Arc::new(data.crate_data.collide.clone())))?;
         Ok(HealCrateCollide { collide, data })
@@ -116,12 +105,7 @@ impl HealCrateCollide {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         crate_module_call(self, world, me, call)
     }
 }
@@ -133,29 +117,14 @@ impl CrateBehavior for HealCrateCollide {
     fn crate_data(&self) -> &CrateCollideModuleData {
         &self.data.crate_data
     }
-    fn execute_crate_behavior(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        other: ObjectId,
-    ) -> Result<bool, IniError> {
+    fn execute_crate_behavior(&mut self, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<bool, IniError> {
         let _ = (&world, &me, &other);
-        let player = world
-            .get_controlling_player(other)
-            .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+        let player = world.get_controlling_player(other).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
         if !crate::logic::modules::plant(751) {
             world.cut(CutCall::PlayerHealAllObjects { player });
         }
         let position = world.objects.find(other).map(|o| o.get_position());
-        world.emit(ObjectClientEvent::Sound {
-            sound: ObjectSound::CrateHeal,
-            object_id: INVALID_ID,
-            position: if crate::logic::modules::plant(752) {
-                None
-            } else {
-                position
-            },
-        });
+        world.emit(ObjectClientEvent::Sound { sound: ObjectSound::CrateHeal, object_id: INVALID_ID, position: if crate::logic::modules::plant(752) { None } else { position } });
         Ok(true)
     }
     fn into_body(self) -> UpdateBody {
@@ -191,7 +160,6 @@ impl Snapshot for HealCrateCollide {
 
 /// The factory's `NewModuleDataProc` for `HealCrateCollide`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::HealCrateCollide(Arc::new(
-        HealCrateCollideModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::HealCrateCollide(Arc::new(HealCrateCollideModuleData::friend_new_module_data(ini)?)))
 }
+

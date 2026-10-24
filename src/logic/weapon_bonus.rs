@@ -157,8 +157,7 @@ pub const FIELD_RATE_OF_FIRE: usize = 3;
 pub const FIELD_PRE_ATTACK: usize = 4;
 
 /// `TheWeaponBonusFieldNames[]`, without the `NULL` terminator.
-pub const WEAPON_BONUS_FIELD_NAMES: [&str; WEAPON_BONUS_FIELD_COUNT] =
-    ["DAMAGE", "RADIUS", "RANGE", "RATE_OF_FIRE", "PRE_ATTACK"];
+pub const WEAPON_BONUS_FIELD_NAMES: [&str; WEAPON_BONUS_FIELD_COUNT] = ["DAMAGE", "RADIUS", "RANGE", "RATE_OF_FIRE", "PRE_ATTACK"];
 
 /// `class WeaponBonus`: a multiplier for each of damage, radius, range, rate
 /// of fire and pre-attack delay. 1 is no bonus.
@@ -171,9 +170,7 @@ pub struct WeaponBonus {
 impl Default for WeaponBonus {
     /// `WeaponBonus()`: `clear()`.
     fn default() -> Self {
-        WeaponBonus {
-            field: [1.0; WEAPON_BONUS_FIELD_COUNT],
-        }
+        WeaponBonus { field: [1.0; WEAPON_BONUS_FIELD_COUNT] }
     }
 }
 
@@ -217,9 +214,7 @@ pub struct WeaponBonusSet {
 impl Default for WeaponBonusSet {
     /// `WeaponBonusSet()`: every `WeaponBonus` constructed, so all 1.
     fn default() -> Self {
-        WeaponBonusSet {
-            bonus: [WeaponBonus::new(); WEAPONBONUSCONDITION_COUNT],
-        }
+        WeaponBonusSet { bonus: [WeaponBonus::new(); WEAPONBONUSCONDITION_COUNT] }
     }
 }
 
@@ -272,77 +267,36 @@ mod tests {
     fn parse_set(ini: &mut Ini<'_>, set: &mut WeaponBonusSet, _ud: &UserData) -> IniResult<()> {
         set.parse_weapon_bonus_set(ini)
     }
-    static SET_FIELDS: [FieldParse<WeaponBonusSet>; 2] = [
-        FieldParse::new("WeaponBonus", parse_set, UserData::None),
-        FieldParse::end(),
-    ];
+    static SET_FIELDS: [FieldParse<WeaponBonusSet>; 2] = [FieldParse::new("WeaponBonus", parse_set, UserData::None), FieldParse::end()];
 
     fn block(ini: &mut Ini<'_>, set: &mut WeaponBonusSet) -> IniResult<()> {
         ini.init_from_ini(set, &SET_FIELDS)
     }
-    static BLOCKS: [BlockParse<WeaponBonusSet>; 1] = [BlockParse {
-        token: "Bonus",
-        parse: block,
-    }];
+    static BLOCKS: [BlockParse<WeaponBonusSet>; 1] = [BlockParse { token: "Bonus", parse: block }];
 
     fn load(text: &[u8]) -> (WeaponBonusSet, IniResult<()>) {
         let mut set = WeaponBonusSet::new();
-        let r = Ini::load(
-            b"w.ini",
-            text,
-            IniLoadType::Overwrite,
-            None,
-            &BLOCKS,
-            &mut set,
-        );
+        let r = Ini::load(b"w.ini", text, IniLoadType::Overwrite, None, &BLOCKS, &mut set);
         (set, r)
     }
 
     #[test]
     fn names_match_the_condition_constants() {
-        assert_eq!(
-            WEAPON_BONUS_NAMES[condition::GARRISONED as usize],
-            "GARRISONED"
-        );
-        assert_eq!(
-            WEAPON_BONUS_NAMES[condition::DEMORALIZED_OBSOLETE as usize],
-            "DEMORALIZED_OBSOLETE"
-        );
-        assert_eq!(
-            WEAPON_BONUS_NAMES[condition::FANATICISM as usize],
-            "FANATICISM"
-        );
-        assert_eq!(
-            WEAPON_BONUS_NAMES[condition::FRENZY_THREE as usize],
-            "FRENZY_THREE"
-        );
-        assert_eq!(
-            condition::FRENZY_THREE as usize + 1,
-            WEAPONBONUSCONDITION_COUNT
-        );
+        assert_eq!(WEAPON_BONUS_NAMES[condition::GARRISONED as usize], "GARRISONED");
+        assert_eq!(WEAPON_BONUS_NAMES[condition::DEMORALIZED_OBSOLETE as usize], "DEMORALIZED_OBSOLETE");
+        assert_eq!(WEAPON_BONUS_NAMES[condition::FANATICISM as usize], "FANATICISM");
+        assert_eq!(WEAPON_BONUS_NAMES[condition::FRENZY_THREE as usize], "FRENZY_THREE");
+        assert_eq!(condition::FRENZY_THREE as usize + 1, WEAPONBONUSCONDITION_COUNT);
     }
 
     #[test]
     fn parse_sets_one_field_and_append_adds_the_difference() {
         let (set, r) = load(b"Bonus X\n WeaponBonus = HORDE DAMAGE 125%\n WeaponBonus = hero rate_of_fire 150%\n WeaponBonus = HORDE RANGE 90%\nEnd\n");
         r.unwrap();
-        assert_eq!(
-            set.bonus(condition::HORDE as usize).get_field(FIELD_DAMAGE),
-            1.25
-        );
-        assert_eq!(
-            set.bonus(condition::HORDE as usize).get_field(FIELD_RANGE),
-            0.9
-        );
-        assert_eq!(
-            set.bonus(condition::HORDE as usize).get_field(FIELD_RADIUS),
-            1.0
-        );
-        assert_eq!(
-            set.bonus(condition::HERO as usize)
-                .get_field(FIELD_RATE_OF_FIRE),
-            1.5
-        );
+        assert_eq!(set.bonus(condition::HORDE as usize).get_field(FIELD_DAMAGE), 1.25);
+        assert_eq!(set.bonus(condition::HORDE as usize).get_field(FIELD_RANGE), 0.9);
+        assert_eq!(set.bonus(condition::HORDE as usize).get_field(FIELD_RADIUS), 1.0);
+        assert_eq!(set.bonus(condition::HERO as usize).get_field(FIELD_RATE_OF_FIRE), 1.5);
         let mut total = WeaponBonus::new();
         set.append_bonuses(0, &mut total);
         assert_eq!(total, WeaponBonus::new());

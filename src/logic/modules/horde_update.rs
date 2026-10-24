@@ -31,17 +31,12 @@
 use std::sync::Arc;
 
 use crate::common::game_common::{Relationship, LOGICFRAMES_PER_SECOND};
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::kind_of::{KindOfMaskType, KINDOF_INFANTRY, KINDOF_PORTABLE_STRUCTURE};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime,
-    UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::weapon_bonus::condition;
 use crate::logic::world::game_logic::World;
@@ -113,88 +108,22 @@ impl Default for HordeUpdateModuleData {
 
 /// `HordeUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<HordeUpdateModuleData>; 11] = [
-    FieldParse::new(
-        "UpdateRate",
-        |ini, d, _| {
-            d.update_rate = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "KindOf",
-        |ini, d, _| d.kindof.parse_from_ini(ini),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "Count",
-        |ini, d, _| {
-            d.min_count = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "Radius",
-        |ini, d, _| {
-            d.min_dist = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "RubOffRadius",
-        |ini, d, _| {
-            d.rub_off_radius = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AlliesOnly",
-        |ini, d, _| {
-            d.allies_only = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExactMatch",
-        |ini, d, _| {
-            d.exact_match = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "Action",
-        |ini, d, _| {
-            d.action = ini.parse_index_list(&HORDE_ACTION_TYPE_NAMES)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FlagSubObjectNames",
-        |ini, d, _| ini.parse_ascii_string_vector(&mut d.flag_sub_obj_names),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AllowedNationalism",
-        |ini, d, _| {
-            d.allowed_nationalism = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("UpdateRate", |ini, d, _| { d.update_rate = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("KindOf", |ini, d, _| d.kindof.parse_from_ini(ini), UserData::None),
+    FieldParse::new("Count", |ini, d, _| { d.min_count = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("Radius", |ini, d, _| { d.min_dist = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("RubOffRadius", |ini, d, _| { d.rub_off_radius = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("AlliesOnly", |ini, d, _| { d.allies_only = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("ExactMatch", |ini, d, _| { d.exact_match = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("Action", |ini, d, _| { d.action = ini.parse_index_list(&HORDE_ACTION_TYPE_NAMES)?; Ok(()) }, UserData::None),
+    FieldParse::new("FlagSubObjectNames", |ini, d, _| ini.parse_ascii_string_vector(&mut d.flag_sub_obj_names), UserData::None),
+    FieldParse::new("AllowedNationalism", |ini, d, _| { d.allowed_nationalism = ini.parse_bool()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl HordeUpdateModuleData {
     /// `buildFieldParse(p)`: `ModuleData`'s (no fields of its own besides the behaviour base's), then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, HordeUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, HordeUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
@@ -230,9 +159,7 @@ pub struct HordeUpdate {
 impl PartialEq for HordeUpdate {
     /// The same object, the same data object (upstream compares pointers) and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
-            && self.state_words() == other.state_words()
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.state_words() == other.state_words()
     }
 }
 
@@ -255,21 +182,11 @@ impl HordeUpdate {
 
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and the flags
     /// false (the refresh frame is the world's, set by the constructor's second half).
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<HordeUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<HordeUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(HordeUpdate {
-            update,
-            data,
-            last_horde_refresh_frame: 0,
-            in_horde: false,
-            true_horde_member: false,
-            has_flag: false,
-        })
+        Ok(HordeUpdate { update, data, last_horde_refresh_frame: 0, in_horde: false, true_horde_member: false, has_flag: false })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -284,12 +201,7 @@ impl HordeUpdate {
 
     /// The state the test compares: the last refresh frame, the three flags.
     pub fn state_words(&self) -> [u32; 4] {
-        [
-            self.last_horde_refresh_frame,
-            u32::from(self.in_horde),
-            u32::from(self.true_horde_member),
-            u32::from(self.has_flag),
-        ]
+        [self.last_horde_refresh_frame, u32::from(self.in_horde), u32::from(self.true_horde_member), u32::from(self.has_flag)]
     }
 
     /// `update()` as the scheduler runs it (see [`update_behavior::world_update`]).
@@ -303,12 +215,7 @@ impl HordeUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -330,10 +237,7 @@ impl HordeUpdate {
     /// `PartitionFilterHordeMember::allow(objOther)`.
     pub fn is_horde_member(&self, world: &mut World, me: ObjectId, other: ObjectId) -> bool {
         let d = &self.data;
-        let (Some(mine), Some(theirs)) = (
-            world.objects.find(me).map(|o| o.template().clone()),
-            world.objects.find(other).map(|o| o.template().clone()),
-        ) else {
+        let (Some(mine), Some(theirs)) = (world.objects.find(me).map(|o| o.template().clone()), world.objects.find(other).map(|o| o.template().clone())) else {
             return false;
         };
         // must be exact same type as us (well, maybe)
@@ -371,21 +275,14 @@ impl HordeUpdate {
             return;
         }
         for name in &self.data.flag_sub_obj_names {
-            world.emit(ObjectClientEvent::DrawableShowSubObject {
-                object_id: me,
-                name: name.clone(),
-                show,
-            });
+            world.emit(ObjectClientEvent::DrawableShowSubObject { object_id: me, name: name.clone(), show });
         }
         world.emit(ObjectClientEvent::DrawableUpdateSubObjects { object_id: me });
     }
 
     /// The horde decal of a member: by the nationalism and fanaticism bonuses, else the infantry or the vehicle one.
     fn decal_type(world: &World, me: ObjectId, infantry_or_vehicle: i32) -> i32 {
-        let bonus = world
-            .objects
-            .find(me)
-            .map_or(0, |o| o.weapon_bonus_condition);
+        let bonus = world.objects.find(me).map_or(0, |o| o.weapon_bonus_condition);
         let test = |c: i32| bonus & (1 << c) != 0;
         if test(condition::NATIONALISM) {
             if test(condition::FANATICISM) {
@@ -408,22 +305,13 @@ impl UpdateBehavior for HordeUpdate {
         let id = me.object;
         let d = self.data.clone();
         let was_in_horde = self.in_horde;
-        let Some(template) = world.objects.find(id).map(|o| o.template().clone()) else {
-            return UPDATE_SLEEP_NONE;
-        };
+        let Some(template) = world.objects.find(id).map(|o| o.template().clone()) else { return UPDATE_SLEEP_NONE };
         let is_infantry = template.is_kind_of(KINDOF_INFANTRY);
         let now = world.frame();
-        if is_infantry
-            || now > self.last_horde_refresh_frame.wrapping_add(d.update_rate)
-            || crate::logic::modules::plant(1952)
-        {
+        if is_infantry || now > self.last_horde_refresh_frame.wrapping_add(d.update_rate) || crate::logic::modules::plant(1952) {
             self.last_horde_refresh_frame = now;
-            let candidates =
-                world.partition_iterate_objects_in_range_of(id, d.min_dist, FROM_BOUNDINGSPHERE_3D);
-            let members: Vec<ObjectId> = candidates
-                .into_iter()
-                .filter(|&o| self.is_horde_member(world, id, o))
-                .collect();
+            let candidates = world.partition_iterate_objects_in_range_of(id, d.min_dist, FROM_BOUNDINGSPHERE_3D);
+            let members: Vec<ObjectId> = candidates.into_iter().filter(|&o| self.is_horde_member(world, id, o)).collect();
             // "we really are in the thick part of the horde" (`getCount() >= m_minCount - 1`: an Int comparison)
             if members.len() as i64 >= i64::from(d.min_count) - 1 {
                 self.in_horde = true;
@@ -434,11 +322,7 @@ impl UpdateBehavior for HordeUpdate {
                 let rub_off_radius_sq = d.rub_off_radius * d.rub_off_radius;
                 for other in members {
                     // `getHUI(other)` on the object itself is this module, lent out of its slot here: its flags are the ones just cleared
-                    let true_member = if other == id {
-                        Some(self.is_true_horde_member())
-                    } else {
-                        horde_is_true_member(world, other)
-                    };
+                    let true_member = if other == id { Some(self.is_true_horde_member()) } else { horde_is_true_member(world, other) };
                     if true_member == Some(true) {
                         let dist = world.partition_get_distance_squared_center_2d(id, other);
                         if dist <= rub_off_radius_sq && !crate::logic::modules::plant(1953) {
@@ -452,33 +336,19 @@ impl UpdateBehavior for HordeUpdate {
                 world.module_call(id, ai, ModuleCall::AiEvaluateMoraleBonus);
             }
         }
-        let alive = world
-            .objects
-            .find(id)
-            .is_some_and(|o| !o.is_effectively_dead());
+        let alive = world.objects.find(id).is_some_and(|o| !o.is_effectively_dead());
         if world.has_drawable(id) && alive {
             if world.cuts.globals.draw_icon_ui {
                 if self.in_horde && !template.is_kind_of(KINDOF_PORTABLE_STRUCTURE) {
-                    let current = world
-                        .objects
-                        .find(id)
-                        .map_or(TERRAIN_DECAL_NONE, |o| o.terrain_decal_type);
+                    let current = world.objects.find(id).map_or(TERRAIN_DECAL_NONE, |o| o.terrain_decal_type);
                     if is_infantry {
                         let nu_type = Self::decal_type(world, id, TERRAIN_DECAL_HORDE);
                         if nu_type != current {
                             world.drawable_set_terrain_decal(id, nu_type);
                         }
                     } else {
-                        let size = 3.5
-                            * world
-                                .objects
-                                .find(id)
-                                .map_or(0.0, |o| o.geometry_info.get_major_radius());
-                        world.emit(ObjectClientEvent::DrawableSetTerrainDecalSize {
-                            object_id: id,
-                            x: size,
-                            y: size,
-                        });
+                        let size = 3.5 * world.objects.find(id).map_or(0.0, |o| o.geometry_info.get_major_radius());
+                        world.emit(ObjectClientEvent::DrawableSetTerrainDecalSize { object_id: id, x: size, y: size });
                         let nu_type = Self::decal_type(world, id, TERRAIN_DECAL_HORDE_VEHICLE);
                         if nu_type != current || crate::logic::modules::plant(1954) {
                             world.drawable_set_terrain_decal(id, nu_type);
@@ -489,17 +359,9 @@ impl UpdateBehavior for HordeUpdate {
                 world.drawable_set_terrain_decal(id, TERRAIN_DECAL_NONE);
             }
             if !was_in_horde && self.in_horde {
-                world.emit(ObjectClientEvent::DrawableTerrainDecalFadeTarget {
-                    object_id: id,
-                    target: 1.0,
-                    rate: 0.03,
-                });
+                world.emit(ObjectClientEvent::DrawableTerrainDecalFadeTarget { object_id: id, target: 1.0, rate: 0.03 });
             } else if was_in_horde && !self.in_horde {
-                world.emit(ObjectClientEvent::DrawableTerrainDecalFadeTarget {
-                    object_id: id,
-                    target: 0.0,
-                    rate: -0.03,
-                });
+                world.emit(ObjectClientEvent::DrawableTerrainDecalFadeTarget { object_id: id, target: 0.0, rate: -0.03 });
             }
         }
         if is_infantry {
@@ -528,9 +390,7 @@ impl UpdateBehavior for HordeUpdate {
             ModuleCall::HordeIsTrueMember => ModuleReply::Bool(self.is_true_horde_member()),
             ModuleCall::HordeIsInHorde => ModuleReply::Bool(self.in_horde),
             ModuleCall::HordeHasFlag => ModuleReply::Bool(self.has_flag),
-            ModuleCall::HordeIsAllowedNationalism => {
-                ModuleReply::Bool(self.data.allowed_nationalism)
-            }
+            ModuleCall::HordeIsAllowedNationalism => ModuleReply::Bool(self.data.allowed_nationalism),
             ModuleCall::OnDrawableBoundToObject => {
                 self.show_hide_flag(world, me.object, false);
                 ModuleReply::Done
@@ -568,7 +428,5 @@ impl Snapshot for HordeUpdate {
 
 /// The factory's `NewModuleDataProc` for `HordeUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::HordeUpdate(Arc::new(
-        HordeUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::HordeUpdate(Arc::new(HordeUpdateModuleData::friend_new_module_data(ini)?)))
 }

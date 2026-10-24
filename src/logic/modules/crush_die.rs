@@ -26,9 +26,7 @@ use std::sync::Arc;
 
 use crate::common::audio_event_name::AudioEventName;
 use crate::common::game_type::INVALID_ID;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::model_state::{MODELCONDITION_BACKCRUSHED, MODELCONDITION_FRONTCRUSHED};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
@@ -66,11 +64,7 @@ pub struct CrushDieModuleData {
 impl CrushDieModuleData {
     /// `CrushDieModuleData()`.
     pub fn new() -> Self {
-        CrushDieModuleData {
-            die: DieModuleData::new(),
-            crush_sounds: Default::default(),
-            crush_sound_percent: [100; CRUSH_COUNT],
-        }
+        CrushDieModuleData { die: DieModuleData::new(), crush_sounds: Default::default(), crush_sound_percent: [100; CRUSH_COUNT] }
     }
 
     /// `buildFieldParse(p)`: the behaviour base, the four die mux fields (read from the layer-5 table into `die`), then this class's.
@@ -90,12 +84,7 @@ impl CrushDieModuleData {
 }
 
 /// Lifts entry `k` of the layer-5 die field table onto `CrushDieModuleData::die`.
-fn lift_die_field(
-    k: usize,
-    i: &mut Ini<'_>,
-    d: &mut CrushDieModuleData,
-    u: &UserData,
-) -> IniResult<()> {
+fn lift_die_field(k: usize, i: &mut Ini<'_>, d: &mut CrushDieModuleData, u: &UserData) -> IniResult<()> {
     match DIE_MODULE_DATA_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.die, u),
         None => Ok(()),
@@ -104,65 +93,16 @@ fn lift_die_field(
 
 /// `DieModuleData::buildFieldParse`'s fields, then `CrushDieModuleData`'s.
 static FIELD_PARSE: [FieldParse<CrushDieModuleData>; 11] = [
-    FieldParse::new(
-        "DeathTypes",
-        |i, d, u| lift_die_field(0, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VeterancyLevels",
-        |i, d, u| lift_die_field(1, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExemptStatus",
-        |i, d, u| lift_die_field(2, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "RequiredStatus",
-        |i, d, u| lift_die_field(3, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TotalCrushSound",
-        |ini, d, _| d.crush_sounds[TOTAL_CRUSH].parse(ini),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "BackEndCrushSound",
-        |ini, d, _| d.crush_sounds[BACK_END_CRUSH].parse(ini),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FrontEndCrushSound",
-        |ini, d, _| d.crush_sounds[FRONT_END_CRUSH].parse(ini),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TotalCrushSoundPercent",
-        |ini, d, _| {
-            d.crush_sound_percent[TOTAL_CRUSH] = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "BackEndCrushSoundPercent",
-        |ini, d, _| {
-            d.crush_sound_percent[BACK_END_CRUSH] = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FrontEndCrushSoundPercent",
-        |ini, d, _| {
-            d.crush_sound_percent[FRONT_END_CRUSH] = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("DeathTypes", |i, d, u| lift_die_field(0, i, d, u), UserData::None),
+    FieldParse::new("VeterancyLevels", |i, d, u| lift_die_field(1, i, d, u), UserData::None),
+    FieldParse::new("ExemptStatus", |i, d, u| lift_die_field(2, i, d, u), UserData::None),
+    FieldParse::new("RequiredStatus", |i, d, u| lift_die_field(3, i, d, u), UserData::None),
+    FieldParse::new("TotalCrushSound", |ini, d, _| d.crush_sounds[TOTAL_CRUSH].parse(ini), UserData::None),
+    FieldParse::new("BackEndCrushSound", |ini, d, _| d.crush_sounds[BACK_END_CRUSH].parse(ini), UserData::None),
+    FieldParse::new("FrontEndCrushSound", |ini, d, _| d.crush_sounds[FRONT_END_CRUSH].parse(ini), UserData::None),
+    FieldParse::new("TotalCrushSoundPercent", |ini, d, _| { d.crush_sound_percent[TOTAL_CRUSH] = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("BackEndCrushSoundPercent", |ini, d, _| { d.crush_sound_percent[BACK_END_CRUSH] = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("FrontEndCrushSoundPercent", |ini, d, _| { d.crush_sound_percent[FRONT_END_CRUSH] = ini.parse_int()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
@@ -177,8 +117,7 @@ pub struct CrushDie {
 impl PartialEq for CrushDie {
     /// The same object, the same data object (upstream compares pointers).
     fn eq(&self, other: &Self) -> bool {
-        self.die.behavior().object() == other.die.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
+        self.die.behavior().object() == other.die.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
@@ -196,56 +135,27 @@ impl CrushDie {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         die_module_call(self, world, me, call)
     }
 
     /// `static crushLocationCheck(crusherObject, victimObject)`: the crush point nearest the crusher. An error is upstream's undefined behaviour (the
     /// victim has no body module).
-    pub fn crush_location_check(
-        world: &mut World,
-        crusher: ObjectId,
-        victim: ObjectId,
-    ) -> Result<usize, IniError> {
+    pub fn crush_location_check(world: &mut World, crusher: ObjectId, victim: ObjectId) -> Result<usize, IniError> {
         if world.objects.find(crusher).is_none() || world.objects.find(victim).is_none() {
             return Ok(NO_CRUSH);
         }
-        let body = world
-            .get_body_module(victim)
-            .ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
-        let front_crushed = world
-            .module_call(victim, body, ModuleCall::GetFrontCrushed)
-            .as_bool();
-        let back_crushed = world
-            .module_call(victim, body, ModuleCall::GetBackCrushed)
-            .as_bool();
-        let other_dir = world
-            .objects
-            .find_mut(victim)
-            .expect("checked above")
-            .thing
-            .unit_direction_vector_2d();
-        let pos = world
-            .objects
-            .find(crusher)
-            .expect("checked above")
-            .get_position();
+        let body = world.get_body_module(victim).ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
+        let front_crushed = world.module_call(victim, body, ModuleCall::GetFrontCrushed).as_bool();
+        let back_crushed = world.module_call(victim, body, ModuleCall::GetBackCrushed).as_bool();
+        let other_dir = world.objects.find_mut(victim).expect("checked above").thing.unit_direction_vector_2d();
+        let pos = world.objects.find(crusher).expect("checked above").get_position();
         let (other_pos, major) = {
             let o = world.objects.find(victim).expect("checked above");
             (o.get_position(), o.geometry_info.get_major_radius())
         };
         // `getMajorRadius() * 0.5`: a double product stored in a Real (exact)
-        let offset_distance = (f64::from(major)
-            * if crate::logic::modules::plant(1761) {
-                1.0
-            } else {
-                0.5
-            }) as f32;
+        let offset_distance = (f64::from(major) * if crate::logic::modules::plant(1761) { 1.0 } else { 0.5 }) as f32;
         let (off_x, off_y) = (other_dir.x * offset_distance, other_dir.y * offset_distance);
         let dist = |x: f32, y: f32| {
             let (dx, dy) = (x - pos.x, y - pos.y);
@@ -263,11 +173,7 @@ impl CrushDie {
             // Check the front point.
             let d = dist(other_pos.x + off_x, other_pos.y + off_y);
             if d < best_dist {
-                retval = if back_crushed {
-                    TOTAL_CRUSH
-                } else {
-                    FRONT_END_CRUSH
-                };
+                retval = if back_crushed { TOTAL_CRUSH } else { FRONT_END_CRUSH };
                 best_dist = d;
             }
         }
@@ -275,11 +181,7 @@ impl CrushDie {
             // Check back point
             let d = dist(other_pos.x - off_x, other_pos.y - off_y);
             if d < best_dist {
-                retval = if front_crushed {
-                    TOTAL_CRUSH
-                } else {
-                    BACK_END_CRUSH
-                };
+                retval = if front_crushed { TOTAL_CRUSH } else { BACK_END_CRUSH };
             }
         }
         Ok(retval)
@@ -290,16 +192,8 @@ impl CrushDie {
         if info.input.damage_type != DAMAGE_CRUSH && !crate::logic::modules::plant(1763) {
             return Ok(());
         }
-        let dealer = if world.objects.find(info.input.source_id).is_some() {
-            info.input.source_id
-        } else {
-            INVALID_ID
-        };
-        let crush_type = if dealer != INVALID_ID {
-            Self::crush_location_check(world, dealer, me)?
-        } else {
-            TOTAL_CRUSH
-        };
+        let dealer = if world.objects.find(info.input.source_id).is_some() { info.input.source_id } else { INVALID_ID };
+        let crush_type = if dealer != INVALID_ID { Self::crush_location_check(world, dealer, me)? } else { TOTAL_CRUSH };
         if crush_type == NO_CRUSH {
             return Ok(());
         }
@@ -307,44 +201,24 @@ impl CrushDie {
         if !sound.event_name.is_empty() {
             // "be sure that 0==never, 100==always"
             let draw = world.random.game_logic_random_value(0, 99);
-            if draw < self.data.crush_sound_percent[crush_type]
-                && !crate::logic::modules::plant(1764)
-            {
-                world.emit(ObjectClientEvent::AudioAddEvent {
-                    name: sound.event_name.clone(),
-                    object_id: me,
-                    position: None,
-                    player_index: None,
-                });
+            if draw < self.data.crush_sound_percent[crush_type] && !crate::logic::modules::plant(1764) {
+                world.emit(ObjectClientEvent::AudioAddEvent { name: sound.event_name.clone(), object_id: me, position: None, player_index: None });
             }
         }
         let front = crush_type == TOTAL_CRUSH || crush_type == FRONT_END_CRUSH;
-        let back = (crush_type == TOTAL_CRUSH || crush_type == BACK_END_CRUSH)
-            != crate::logic::modules::plant(1765);
-        let body = world
-            .get_body_module(me)
-            .ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
+        let back = (crush_type == TOTAL_CRUSH || crush_type == BACK_END_CRUSH) != crate::logic::modules::plant(1765);
+        let body = world.get_body_module(me).ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
         world.module_call(me, body, ModuleCall::SetFrontCrushed(front));
         world.module_call(me, body, ModuleCall::SetBackCrushed(back));
         if !world.has_drawable(me) {
             return Err(IniError::undefined(Undefined::NullDrawable));
         }
-        let set: Vec<i32> = [
-            (MODELCONDITION_FRONTCRUSHED, front),
-            (MODELCONDITION_BACKCRUSHED, back),
-        ]
-        .iter()
-        .filter(|(_, on)| *on)
-        .map(|(c, _)| *c)
-        .collect();
+        let set: Vec<i32> = [(MODELCONDITION_FRONTCRUSHED, front), (MODELCONDITION_BACKCRUSHED, back)].iter().filter(|(_, on)| *on).map(|(c, _)| *c).collect();
         let mut set = set;
         set.sort_unstable();
         let mut clear = vec![MODELCONDITION_BACKCRUSHED, MODELCONDITION_FRONTCRUSHED];
         clear.sort_unstable();
-        world.emit(ObjectClientEvent::DrawableModelCondition {
-            object_id: me,
-            op: ModelConditionOp::ClearAndSet { clear, set },
-        });
+        world.emit(ObjectClientEvent::DrawableModelCondition { object_id: me, op: ModelConditionOp::ClearAndSet { clear, set } });
         Ok(())
     }
 }
@@ -393,7 +267,5 @@ impl Snapshot for CrushDie {
 
 /// The factory's `NewModuleDataProc` for `CrushDie`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::CrushDie(Arc::new(
-        CrushDieModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::CrushDie(Arc::new(CrushDieModuleData::friend_new_module_data(ini)?)))
 }

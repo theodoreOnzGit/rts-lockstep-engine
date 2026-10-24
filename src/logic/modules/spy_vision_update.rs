@@ -33,17 +33,12 @@
 use std::sync::Arc;
 
 use crate::common::game_common::Relationship;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::kind_of::KindOfMaskType;
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_UPGRADE};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime,
-    UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
 use crate::logic::module::upgrade_module::{UpgradeModuleData, UpgradeMux};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::modules::upgrade_mux_user::{upgrade_mux_call, UpgradeMuxUser};
@@ -91,56 +86,21 @@ impl Default for SpyVisionUpdateModuleData {
 }
 
 /// `UpgradeMuxData::getFieldParse()`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<SpyVisionUpdateModuleData>; 6] =
-    upgrade_module_data_field_parse!(SpyVisionUpdateModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<SpyVisionUpdateModuleData>; 6] = upgrade_module_data_field_parse!(SpyVisionUpdateModuleData, upgrade);
 
 /// `SpyVisionUpdateModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<SpyVisionUpdateModuleData>; 6] = [
-    FieldParse::new(
-        "NeedsUpgrade",
-        |ini, d, _| {
-            d.needs_upgrade = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SelfPowered",
-        |ini, d, _| {
-            d.self_powered = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SelfPoweredDuration",
-        |ini, d, _| {
-            d.self_powered_duration = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SelfPoweredInterval",
-        |ini, d, _| {
-            d.self_powered_interval = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SpyOnKindof",
-        |ini, d, _| d.spy_on_kindof.parse_from_ini(ini),
-        UserData::None,
-    ),
+    FieldParse::new("NeedsUpgrade", |ini, d, _| { d.needs_upgrade = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("SelfPowered", |ini, d, _| { d.self_powered = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("SelfPoweredDuration", |ini, d, _| { d.self_powered_duration = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("SelfPoweredInterval", |ini, d, _| { d.self_powered_interval = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("SpyOnKindof", |ini, d, _| d.spy_on_kindof.parse_from_ini(ini), UserData::None),
     FieldParse::end(),
 ];
 
 impl SpyVisionUpdateModuleData {
     /// `buildFieldParse(p)`: the behaviour base, this class's own fields, then the mux's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, SpyVisionUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, SpyVisionUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&OWN_FIELD_PARSE)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
@@ -148,9 +108,7 @@ impl SpyVisionUpdateModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<SpyVisionUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<SpyVisionUpdateModuleData> {
         let mut data = SpyVisionUpdateModuleData::default();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, SpyVisionUpdateModuleData::build_field_parse)?;
@@ -198,22 +156,11 @@ impl SpyVisionUpdate {
     }
 
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and the zeroed state.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<SpyVisionUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<SpyVisionUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(SpyVisionUpdate {
-            update,
-            data,
-            mux: UpgradeMux::new(),
-            deactivate_frame: 0,
-            currently_active: false,
-            reset_timers_next_update: false,
-            disabled_until_frame: 0,
-        })
+        Ok(SpyVisionUpdate { update, data, mux: UpgradeMux::new(), deactivate_frame: 0, currently_active: false, reset_timers_next_update: false, disabled_until_frame: 0 })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -249,12 +196,7 @@ impl SpyVisionUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -276,21 +218,10 @@ impl SpyVisionUpdate {
     /// `activateSpyVision(duration)`: on now, off `duration` frames from now (never for 0).
     pub fn activate_spy_vision(&mut self, world: &mut World, me: ModuleHandle, duration: u32) {
         let now = world.frame();
-        self.deactivate_frame = if duration == 0 && !crate::logic::modules::plant(861) {
-            u32::MAX
-        } else {
-            now.wrapping_add(duration)
-        };
+        self.deactivate_frame = if duration == 0 && !crate::logic::modules::plant(861) { u32::MAX } else { now.wrapping_add(duration) };
         let player = world.get_controlling_player(me.object);
         self.do_activation_work(world, player, true);
-        update_behavior::set_wake_frame(
-            world,
-            if duration == 0 {
-                UPDATE_SLEEP_FOREVER
-            } else {
-                update_sleep(duration)
-            },
-        );
+        update_behavior::set_wake_frame(world, if duration == 0 { UPDATE_SLEEP_FOREVER } else { update_sleep(duration) });
     }
 
     /// `setDisabledUntilFrame(frame)`.
@@ -307,10 +238,7 @@ impl SpyVisionUpdate {
             // Mark it so we can turn it on again on next update.
             self.reset_timers_next_update = true;
             // Now sleep until the disabled has expired.
-            update_behavior::set_wake_frame(
-                world,
-                update_sleep(self.disabled_until_frame.wrapping_sub(now)),
-            );
+            update_behavior::set_wake_frame(world, update_sleep(self.disabled_until_frame.wrapping_sub(now)));
         } else {
             // Else it is a wakeup message.  Update does the turning on.
             self.disabled_until_frame = now;
@@ -344,28 +272,14 @@ impl SpyVisionUpdate {
     }
 
     /// `doActivationWork(playerToSetFor, setting)`: the switch for every player `playerToSetFor` considers an enemy of that player's default team.
-    fn do_activation_work(
-        &mut self,
-        world: &mut World,
-        player_to_set_for: Option<i32>,
-        setting: bool,
-    ) {
-        let Some(by_whom) = player_to_set_for else {
-            return;
-        };
+    fn do_activation_work(&mut self, world: &mut World, player_to_set_for: Option<i32>, setting: bool) {
+        let Some(by_whom) = player_to_set_for else { return };
         for i in 0..world.players.player_count() {
             let team = world.players.get_nth(i).and_then(|p| p.default_team);
             let related = world.cuts.player_relationship_to_team(by_whom, team);
-            if related == Relationship::Enemies
-                || (related == Relationship::Neutral && crate::logic::modules::plant(865))
-            {
+            if related == Relationship::Enemies || (related == Relationship::Neutral && crate::logic::modules::plant(865)) {
                 let which_units = self.data.spy_on_kindof;
-                world.cut(CutCall::PlayerSetUnitsVisionSpied {
-                    player: i,
-                    setting,
-                    which_units,
-                    by_whom,
-                });
+                world.cut(CutCall::PlayerSetUnitsVisionSpied { player: i, setting, which_units, by_whom });
             }
         }
         self.currently_active = setting;
@@ -383,15 +297,9 @@ impl UpgradeMuxUser for SpyVisionUpdate {
         &self.data.upgrade
     }
     /// `upgradeImplementation()`.
-    fn upgrade_implementation(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-    ) -> Result<(), IniError> {
+    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
         let data = self.data.clone();
-        if (data.needs_upgrade || crate::logic::modules::plant(868))
-            && !self.mux.is_already_upgraded()
-        {
+        if (data.needs_upgrade || crate::logic::modules::plant(868)) && !self.mux.is_already_upgraded() {
             // If zero, will turn on permanently.  And it does the wake up setting
             self.activate_spy_vision(world, me, data.self_powered_duration);
         }
@@ -433,10 +341,7 @@ impl UpdateBehavior for SpyVisionUpdate {
             }
         }
 
-        if self.currently_active
-            && (self.deactivate_frame < world.frame()
-                || (self.deactivate_frame == world.frame() && !crate::logic::modules::plant(862)))
-        {
+        if self.currently_active && (self.deactivate_frame < world.frame() || (self.deactivate_frame == world.frame() && !crate::logic::modules::plant(862))) {
             // Turn off SpyVision.
             let player = world.get_controlling_player(me.object);
             self.do_activation_work(world, player, false);
@@ -444,15 +349,7 @@ impl UpdateBehavior for SpyVisionUpdate {
         } else if !self.currently_active && data.self_powered {
             let player = world.get_controlling_player(me.object);
             self.do_activation_work(world, player, true);
-            self.deactivate_frame = if data.self_powered_duration == 0 {
-                u32::MAX
-            } else {
-                now.wrapping_add(if crate::logic::modules::plant(869) {
-                    data.self_powered_interval
-                } else {
-                    data.self_powered_duration
-                })
-            };
+            self.deactivate_frame = if data.self_powered_duration == 0 { u32::MAX } else { now.wrapping_add(if crate::logic::modules::plant(869) { data.self_powered_interval } else { data.self_powered_duration }) };
         }
 
         if data.self_powered {
@@ -503,10 +400,7 @@ impl UpdateBehavior for SpyVisionUpdate {
                 self.on_delete(world, me);
                 ModuleReply::Done
             }
-            ModuleCall::OnCapture {
-                old_owner,
-                new_owner,
-            } => {
+            ModuleCall::OnCapture { old_owner, new_owner } => {
                 self.on_capture(world, old_owner, new_owner);
                 ModuleReply::Done
             }
@@ -538,7 +432,5 @@ impl Snapshot for SpyVisionUpdate {
 
 /// The factory's `NewModuleDataProc` for `SpyVisionUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::SpyVisionUpdate(Arc::new(
-        SpyVisionUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::SpyVisionUpdate(Arc::new(SpyVisionUpdateModuleData::friend_new_module_data(ini)?)))
 }

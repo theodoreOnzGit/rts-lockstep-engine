@@ -264,10 +264,7 @@ impl MultiplayerSettings {
     /// `findMultiplayerColorDefinitionByName(name)`: the first colour (in key
     /// order) whose **tooltip name** is `name`. Upstream matches the tooltip,
     /// not the block's name.
-    pub fn find_multiplayer_color_definition_by_name(
-        &self,
-        name: &[u8],
-    ) -> Option<&MultiplayerColorDefinition> {
+    pub fn find_multiplayer_color_definition_by_name(&self, name: &[u8]) -> Option<&MultiplayerColorDefinition> {
         self.color_list.values().find(|d| d.tooltip_name == name)
     }
 
@@ -276,8 +273,7 @@ impl MultiplayerSettings {
     /// unused upstream too; the tooltip is set by the block's own fields.)
     pub fn new_multiplayer_color_definition(&mut self, _name: &[u8]) -> i32 {
         let key = self.get_num_colors();
-        self.color_list
-            .insert(key, MultiplayerColorDefinition::new());
+        self.color_list.insert(key, MultiplayerColorDefinition::new());
         key
     }
 
@@ -342,34 +338,21 @@ impl MultiplayerSettings {
         let definition = self.color_list.entry(key).or_default();
         ini.init_from_ini(definition, &MULTIPLAYER_COLOR_FIELDS)?;
         let rgb = definition.rgb_value();
-        definition
-            .set_color(rgb)
-            .map_err(|_| IniError::undefined(Undefined::ColorToInt))?;
+        definition.set_color(rgb).map_err(|_| IniError::undefined(Undefined::ColorToInt))?;
         let rgb_night = definition.rgb_night_value();
-        definition
-            .set_night_color(rgb_night)
-            .map_err(|_| IniError::undefined(Undefined::ColorToInt))?;
+        definition.set_night_color(rgb_night).map_err(|_| IniError::undefined(Undefined::ColorToInt))?;
         Ok(())
     }
 
     /// The key of the first colour (in key order) whose tooltip is `name`.
     fn color_key_by_tooltip(&self, name: &[u8]) -> Option<i32> {
-        self.color_list
-            .iter()
-            .find(|(_, d)| d.tooltip_name == name)
-            .map(|(k, _)| *k)
+        self.color_list.iter().find(|(_, d)| d.tooltip_name == name).map(|(k, _)| *k)
     }
 
     /// `INI::parseMultiplayerStartingMoneyChoiceDefinition`: `Value` and
     /// `Default`, then the choice is added.
-    pub fn parse_multiplayer_starting_money_choice_definition(
-        &mut self,
-        ini: &mut Ini<'_>,
-    ) -> IniResult<()> {
-        let mut settings = StartingMoneySettings {
-            money: Money::new(),
-            is_default: false,
-        };
+    pub fn parse_multiplayer_starting_money_choice_definition(&mut self, ini: &mut Ini<'_>) -> IniResult<()> {
+        let mut settings = StartingMoneySettings { money: Money::new(), is_default: false };
         ini.init_from_ini(&mut settings, &STARTING_MONEY_FIELDS)?;
         self.add_starting_money_choice(settings.money, settings.is_default);
         Ok(())
@@ -378,81 +361,41 @@ impl MultiplayerSettings {
 
 /// The block's `MultiplayerSettings` fields (`m_multiplayerSettingsFieldParseTable`).
 static MULTIPLAYER_SETTINGS_FIELDS: [FieldParse<MultiplayerSettings>; 7] = [
-    FieldParse::new(
-        "StartCountdownTimer",
-        parse_start_countdown_timer,
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxBeaconsPerPlayer",
-        parse_max_beacons_per_player,
-        UserData::None,
-    ),
+    FieldParse::new("StartCountdownTimer", parse_start_countdown_timer, UserData::None),
+    FieldParse::new("MaxBeaconsPerPlayer", parse_max_beacons_per_player, UserData::None),
     FieldParse::new("UseShroud", parse_use_shroud, UserData::None),
-    FieldParse::new(
-        "ShowRandomPlayerTemplate",
-        parse_show_random_player_template,
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShowRandomStartPos",
-        parse_show_random_start_pos,
-        UserData::None,
-    ),
+    FieldParse::new("ShowRandomPlayerTemplate", parse_show_random_player_template, UserData::None),
+    FieldParse::new("ShowRandomStartPos", parse_show_random_start_pos, UserData::None),
     FieldParse::new("ShowRandomColor", parse_show_random_color, UserData::None),
     FieldParse::end(),
 ];
 
-fn parse_start_countdown_timer(
-    ini: &mut Ini<'_>,
-    s: &mut MultiplayerSettings,
-    _ud: &UserData,
-) -> IniResult<()> {
+fn parse_start_countdown_timer(ini: &mut Ini<'_>, s: &mut MultiplayerSettings, _ud: &UserData) -> IniResult<()> {
     s.start_countdown_timer_seconds = ini.parse_int()?;
     Ok(())
 }
 
-fn parse_max_beacons_per_player(
-    ini: &mut Ini<'_>,
-    s: &mut MultiplayerSettings,
-    _ud: &UserData,
-) -> IniResult<()> {
+fn parse_max_beacons_per_player(ini: &mut Ini<'_>, s: &mut MultiplayerSettings, _ud: &UserData) -> IniResult<()> {
     s.max_beacons_per_player = ini.parse_int()?;
     Ok(())
 }
 
-fn parse_use_shroud(
-    ini: &mut Ini<'_>,
-    s: &mut MultiplayerSettings,
-    _ud: &UserData,
-) -> IniResult<()> {
+fn parse_use_shroud(ini: &mut Ini<'_>, s: &mut MultiplayerSettings, _ud: &UserData) -> IniResult<()> {
     s.is_shroud_in_multiplayer = ini.parse_bool()?;
     Ok(())
 }
 
-fn parse_show_random_player_template(
-    ini: &mut Ini<'_>,
-    s: &mut MultiplayerSettings,
-    _ud: &UserData,
-) -> IniResult<()> {
+fn parse_show_random_player_template(ini: &mut Ini<'_>, s: &mut MultiplayerSettings, _ud: &UserData) -> IniResult<()> {
     s.show_random_player_template = ini.parse_bool()?;
     Ok(())
 }
 
-fn parse_show_random_start_pos(
-    ini: &mut Ini<'_>,
-    s: &mut MultiplayerSettings,
-    _ud: &UserData,
-) -> IniResult<()> {
+fn parse_show_random_start_pos(ini: &mut Ini<'_>, s: &mut MultiplayerSettings, _ud: &UserData) -> IniResult<()> {
     s.show_random_start_pos = ini.parse_bool()?;
     Ok(())
 }
 
-fn parse_show_random_color(
-    ini: &mut Ini<'_>,
-    s: &mut MultiplayerSettings,
-    _ud: &UserData,
-) -> IniResult<()> {
+fn parse_show_random_color(ini: &mut Ini<'_>, s: &mut MultiplayerSettings, _ud: &UserData) -> IniResult<()> {
     s.show_random_color = ini.parse_bool()?;
     Ok(())
 }
@@ -465,29 +408,17 @@ static MULTIPLAYER_COLOR_FIELDS: [FieldParse<MultiplayerColorDefinition>; 4] = [
     FieldParse::end(),
 ];
 
-fn parse_tooltip_name(
-    ini: &mut Ini<'_>,
-    c: &mut MultiplayerColorDefinition,
-    _ud: &UserData,
-) -> IniResult<()> {
+fn parse_tooltip_name(ini: &mut Ini<'_>, c: &mut MultiplayerColorDefinition, _ud: &UserData) -> IniResult<()> {
     c.tooltip_name = ini.parse_ascii_string()?;
     Ok(())
 }
 
-fn parse_rgb_color(
-    ini: &mut Ini<'_>,
-    c: &mut MultiplayerColorDefinition,
-    _ud: &UserData,
-) -> IniResult<()> {
+fn parse_rgb_color(ini: &mut Ini<'_>, c: &mut MultiplayerColorDefinition, _ud: &UserData) -> IniResult<()> {
     c.rgb_value = ini.parse_rgb_color()?;
     Ok(())
 }
 
-fn parse_rgb_night_color(
-    ini: &mut Ini<'_>,
-    c: &mut MultiplayerColorDefinition,
-    _ud: &UserData,
-) -> IniResult<()> {
+fn parse_rgb_night_color(ini: &mut Ini<'_>, c: &mut MultiplayerColorDefinition, _ud: &UserData) -> IniResult<()> {
     c.rgb_value_night = ini.parse_rgb_color()?;
     Ok(())
 }
@@ -509,11 +440,7 @@ fn parse_value(ini: &mut Ini<'_>, s: &mut StartingMoneySettings, ud: &UserData) 
     parse_money_amount(ini, &mut s.money, ud)
 }
 
-fn parse_default(
-    ini: &mut Ini<'_>,
-    s: &mut StartingMoneySettings,
-    _ud: &UserData,
-) -> IniResult<()> {
+fn parse_default(ini: &mut Ini<'_>, s: &mut StartingMoneySettings, _ud: &UserData) -> IniResult<()> {
     s.is_default = ini.parse_bool()?;
     Ok(())
 }
@@ -534,37 +461,18 @@ mod tests {
         c.settings.parse_multiplayer_color_definition(ini)
     }
     fn money_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-        c.settings
-            .parse_multiplayer_starting_money_choice_definition(ini)
+        c.settings.parse_multiplayer_starting_money_choice_definition(ini)
     }
 
     static BLOCKS: [BlockParse<Ctx>; 3] = [
-        BlockParse {
-            token: "MultiplayerSettings",
-            parse: settings_block,
-        },
-        BlockParse {
-            token: "MultiplayerColor",
-            parse: color_block,
-        },
-        BlockParse {
-            token: "MultiplayerStartingMoneyChoice",
-            parse: money_block,
-        },
+        BlockParse { token: "MultiplayerSettings", parse: settings_block },
+        BlockParse { token: "MultiplayerColor", parse: color_block },
+        BlockParse { token: "MultiplayerStartingMoneyChoice", parse: money_block },
     ];
 
     fn load(text: &[u8]) -> (Ctx, IniResult<()>) {
-        let mut c = Ctx {
-            settings: MultiplayerSettings::new(),
-        };
-        let r = Ini::load(
-            b"m.ini",
-            text,
-            IniLoadType::Overwrite,
-            None,
-            &BLOCKS,
-            &mut c,
-        );
+        let mut c = Ctx { settings: MultiplayerSettings::new() };
+        let r = Ini::load(b"m.ini", text, IniLoadType::Overwrite, None, &BLOCKS, &mut c);
         (c, r)
     }
 
@@ -617,11 +525,7 @@ mod tests {
         );
         r.unwrap();
         let s = &mut c.settings;
-        assert_eq!(
-            s.get_num_colors(),
-            3,
-            "a block whose name is not a tooltip makes a new colour"
-        );
+        assert_eq!(s.get_num_colors(), 3, "a block whose name is not a tooltip makes a new colour");
         let red = s.get_color(0).unwrap().clone();
         assert_eq!(red.tooltip_name(), b"COLOR:Red");
         assert_eq!(red.color(), (0xFF << 24) | 0xFF_0000);
@@ -629,11 +533,7 @@ mod tests {
         assert_eq!(s.get_color(1).unwrap().color(), (0xFF << 24) | 0xFF);
         // the third block's RGBColor is kept by colour 2 (no tooltip matched "Red")
         assert_eq!(s.get_color(2).unwrap().color(), (0xFF << 24) | 0xFF00);
-        assert_eq!(
-            s.find_multiplayer_color_definition_by_name(b"COLOR:Blue")
-                .map(|d| d.color()),
-            Some((0xFF << 24) | 0xFF)
-        );
+        assert_eq!(s.find_multiplayer_color_definition_by_name(b"COLOR:Blue").map(|d| d.color()), Some((0xFF << 24) | 0xFF));
         assert!(s.get_color(3).is_none() && s.get_color(-3).is_none());
         assert_eq!(s.get_color(PLAYERTEMPLATE_RANDOM).unwrap().color(), -1);
         assert_eq!(s.get_color(PLAYERTEMPLATE_OBSERVER).unwrap().color(), -1);
@@ -648,17 +548,9 @@ mod tests {
         assert_eq!(r.unwrap_err().kind, IniErrorKind::InvalidData);
         // the direct call: a negative component is undefined upstream (getAsInt)
         let mut def = MultiplayerColorDefinition::new();
-        let negative = RGBColor {
-            red: -1.0,
-            green: 0.0,
-            blue: 0.0,
-        };
+        let negative = RGBColor { red: -1.0, green: 0.0, blue: 0.0 };
         assert!(def.set_color(negative).is_err());
-        assert_eq!(
-            def.color(),
-            -1,
-            "a failed set_color leaves the colour alone"
-        );
+        assert_eq!(def.color(), -1, "a failed set_color leaves the colour alone");
     }
 
     #[test]
@@ -670,11 +562,7 @@ mod tests {
         );
         r.unwrap();
         let s = &c.settings;
-        let amounts: Vec<u32> = s
-            .get_starting_money_list()
-            .iter()
-            .map(|m| m.count_money())
-            .collect();
+        let amounts: Vec<u32> = s.get_starting_money_list().iter().map(|m| m.count_money()).collect();
         assert_eq!(amounts, vec![5000, 10000, 20000]);
         assert_eq!(s.get_default_starting_money().count_money(), 10000);
         let (_, r) = load(b"MultiplayerStartingMoneyChoice\n Value = many\nEnd\n");

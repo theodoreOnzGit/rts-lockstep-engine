@@ -21,11 +21,7 @@
 
 use std::sync::Arc;
 
-use crate::common::disabled_types::DISABLED_DEFAULT;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
-use crate::common::kind_of::KINDOF_WAVEGUIDE;
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::DamageInfo;
@@ -35,6 +31,8 @@ use crate::logic::modules::die_body::{die_module_call, DieBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::update_body::UpdateBody;
+use crate::common::disabled_types::DISABLED_DEFAULT;
+use crate::common::kind_of::KINDOF_WAVEGUIDE;
 
 /// `class DamDieModuleData : public DieModuleData`.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -66,12 +64,7 @@ impl DamDieModuleData {
 }
 
 /// Lifts entry `k` of the layer-5 die field table onto `DamDieModuleData::die`.
-fn lift_die_field(
-    k: usize,
-    i: &mut Ini<'_>,
-    d: &mut DamDieModuleData,
-    u: &UserData,
-) -> IniResult<()> {
+fn lift_die_field(k: usize, i: &mut Ini<'_>, d: &mut DamDieModuleData, u: &UserData) -> IniResult<()> {
     match DIE_MODULE_DATA_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.die, u),
         None => Ok(()),
@@ -80,26 +73,10 @@ fn lift_die_field(
 
 /// `DamDieModuleData::m_dataFieldParse`: the die mux fields.
 static FIELD_PARSE: [FieldParse<DamDieModuleData>; 5] = [
-    FieldParse::new(
-        "DeathTypes",
-        |i, d, u| lift_die_field(0, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VeterancyLevels",
-        |i, d, u| lift_die_field(1, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExemptStatus",
-        |i, d, u| lift_die_field(2, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "RequiredStatus",
-        |i, d, u| lift_die_field(3, i, d, u),
-        UserData::None,
-    ),
+    FieldParse::new("DeathTypes", |i, d, u| lift_die_field(0, i, d, u), UserData::None),
+    FieldParse::new("VeterancyLevels", |i, d, u| lift_die_field(1, i, d, u), UserData::None),
+    FieldParse::new("ExemptStatus", |i, d, u| lift_die_field(2, i, d, u), UserData::None),
+    FieldParse::new("RequiredStatus", |i, d, u| lift_die_field(3, i, d, u), UserData::None),
     FieldParse::end(),
 ];
 
@@ -114,8 +91,7 @@ pub struct DamDie {
 impl PartialEq for DamDie {
     /// The same object, the same data object (upstream compares pointers).
     fn eq(&self, other: &Self) -> bool {
-        self.die.behavior().object() == other.die.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
+        self.die.behavior().object() == other.die.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
@@ -133,12 +109,7 @@ impl DamDie {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         die_module_call(self, world, me, call)
     }
 }
@@ -154,10 +125,7 @@ impl DieBehavior for DamDie {
         // enable all the water wave objects on the map
         for id in world.objects.ids_in_order() {
             // only care aboue water waves
-            let wave = world
-                .objects
-                .find(id)
-                .is_some_and(|o| o.is_kind_of(KINDOF_WAVEGUIDE));
+            let wave = world.objects.find(id).is_some_and(|o| o.is_kind_of(KINDOF_WAVEGUIDE));
             if !wave && !crate::logic::modules::plant(701) {
                 continue;
             }
@@ -202,7 +170,5 @@ impl Snapshot for DamDie {
 
 /// The factory's `NewModuleDataProc` for `DamDie`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::DamDie(Arc::new(
-        DamDieModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::DamDie(Arc::new(DamDieModuleData::friend_new_module_data(ini)?)))
 }

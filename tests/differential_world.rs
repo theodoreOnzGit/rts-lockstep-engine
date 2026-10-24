@@ -73,9 +73,7 @@ use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
 use rts_lockstep_engine::logic::module::update_module::SleepyUpdatePhase;
 use rts_lockstep_engine::logic::world::sleepy::UpdateHandle;
-use rts_lockstep_engine::logic::world::update_body::{
-    probe_object, ProbeAction, ProbeModuleSpec, ProbeStep,
-};
+use rts_lockstep_engine::logic::world::update_body::{probe_object, ProbeAction, ProbeModuleSpec, ProbeStep};
 use rts_lockstep_engine::logic::world::{World, WorldError};
 use support::{Check, Gen};
 
@@ -170,19 +168,13 @@ fn gen_case(g: &mut Gen, pure: bool) -> Case {
                 6 => 5 + g.below(10),
                 _ => [0x3fff_ffff, u32::MAX][g.below(2) as usize],
             };
-            mods.push(Mod {
-                phase: g.below(4) as i32,
-                initial,
-                script: g.below(n_scripts as u32) as i32,
-            });
+            mods.push(Mod { phase: g.below(4) as i32, initial, script: g.below(n_scripts as u32) as i32 });
         }
         groups.push(mods);
     }
     let mut scripts = Vec::new();
     for s in 0..n_scripts {
-        let spawnable: Vec<i32> = (0..n_groups)
-            .filter(|&j| groups[j as usize].iter().all(|m| m.script > s))
-            .collect();
+        let spawnable: Vec<i32> = (0..n_groups).filter(|&j| groups[j as usize].iter().all(|m| m.script > s)).collect();
         let mut steps = Vec::new();
         for _ in 0..1 + g.below(4) {
             let mut sleep = gen_sleep(g);
@@ -191,16 +183,10 @@ fn gen_case(g: &mut Gen, pure: bool) -> Case {
                 for _ in 0..g.below(3) {
                     match g.below(20) {
                         0..=5 => actions.push(Act::Destroy(g.below(12) as i32)),
-                        6..=15 => actions.push(Act::Awaken {
-                            obj: 1 + g.below(10) as i32,
-                            idx: g.below(4) as i32,
-                            delay: gen_delay(g),
-                        }),
+                        6..=15 => actions.push(Act::Awaken { obj: 1 + g.below(10) as i32, idx: g.below(4) as i32, delay: gen_delay(g) }),
                         16 | 17 if !spawnable.is_empty() => {
                             // spawning is rare and followed by a long sleep, so the population stays small
-                            actions.push(Act::Spawn(
-                                spawnable[g.below(spawnable.len() as u32) as usize],
-                            ));
+                            actions.push(Act::Spawn(spawnable[g.below(spawnable.len() as u32) as usize]));
                             sleep = sleep.clamp(6, 60);
                         }
                         _ => actions.push(Act::Destroy(1 + g.below(10) as i32)),
@@ -224,16 +210,9 @@ fn gen_case(g: &mut Gen, pure: bool) -> Case {
                 0..=29 => Op::Spawn(g.below(n_groups as u32) as i32),
                 30..=59 => Op::Frames(1 + g.below(4) as i32),
                 60..=69 => Op::Destroy(g.below(14) as i32),
-                70..=79 => Op::Awaken {
-                    obj: g.below(12) as i32,
-                    idx: g.below(5) as i32,
-                    when: gen_when(g),
-                },
+                70..=79 => Op::Awaken { obj: g.below(12) as i32, idx: g.below(5) as i32, when: gen_when(g) },
                 80..=84 => Op::ProcessDestroyList,
-                85..=89 => Op::Disable {
-                    obj: 1 + g.below(10) as i32,
-                    on: g.below(2) == 0,
-                },
+                85..=89 => Op::Disable { obj: 1 + g.below(10) as i32, on: g.below(2) == 0 },
                 90..=92 => Op::LoadPostProcess,
                 93 => Op::DestroyAll,
                 94 | 95 => Op::StartNewGame(g.below(2) == 0),
@@ -242,11 +221,7 @@ fn gen_case(g: &mut Gen, pure: bool) -> Case {
         };
         ops.push(op);
     }
-    Case {
-        scripts,
-        groups,
-        ops,
-    }
+    Case { scripts, groups, ops }
 }
 
 /// The program `ref_world_run` reads.
@@ -299,11 +274,7 @@ fn phase_of(i: i32) -> SleepyUpdatePhase {
 fn module_specs(c: &Case, group: i32) -> Vec<ProbeModuleSpec> {
     c.groups[group as usize]
         .iter()
-        .map(|m| ProbeModuleSpec {
-            phase: phase_of(m.phase),
-            initial_call_frame: m.initial,
-            script: probe_script(c, m.script),
-        })
+        .map(|m| ProbeModuleSpec { phase: phase_of(m.phase), initial_call_frame: m.initial, script: probe_script(c, m.script) })
         .collect()
 }
 
@@ -317,13 +288,7 @@ fn probe_script(c: &Case, script: i32) -> Vec<ProbeStep> {
                 .iter()
                 .map(|a| match *a {
                     Act::Destroy(id) => ProbeAction::Destroy(id),
-                    Act::Awaken { obj, idx, delay } => ProbeAction::Awaken {
-                        target: UpdateHandle {
-                            object: obj,
-                            index: idx as u16,
-                        },
-                        delay,
-                    },
+                    Act::Awaken { obj, idx, delay } => ProbeAction::Awaken { target: UpdateHandle { object: obj, index: idx as u16 }, delay },
                     Act::Spawn(gr) => ProbeAction::Spawn(module_specs(c, gr)),
                 })
                 .collect(),
@@ -362,13 +327,7 @@ fn parse(words: &[u32]) -> Vec<Record> {
 }
 
 fn snapshot(w: &World, op: usize, crash: u32, out: &mut Vec<u32>) {
-    out.extend([
-        2,
-        op as u32,
-        w.frame(),
-        w.next_object_id() as u32,
-        w.objects.lookup_len() as u32,
-    ]);
+    out.extend([2, op as u32, w.frame(), w.next_object_id() as u32, w.objects.lookup_len() as u32]);
     let ids = w.objects.ids_in_order();
     out.push(ids.len() as u32);
     out.extend(ids.iter().map(|&i| i as u32));
@@ -377,25 +336,14 @@ fn snapshot(w: &World, op: usize, crash: u32, out: &mut Vec<u32>) {
     out.push(w.sched.len() as u32);
     for u in w.sched.heap() {
         let m = w.objects.update_module(*u).expect("heap entry");
-        out.extend([
-            u.object as u32,
-            u32::from(u.index),
-            m.friend_get_priority(),
-            m.friend_get_index_in_logic() as u32,
-        ]);
+        out.extend([u.object as u32, u32::from(u.index), m.friend_get_priority(), m.friend_get_index_in_logic() as u32]);
     }
     out.push(crash);
 }
 
 fn collect(w: &mut World, out: &mut Vec<u32>) {
     for e in std::mem::take(w.sched.trace.as_mut().expect("tracing on")) {
-        out.extend([
-            1,
-            e.frame,
-            e.handle.object as u32,
-            u32::from(e.handle.index),
-            e.priority,
-        ]);
+        out.extend([1, e.frame, e.handle.object as u32, u32::from(e.handle.index), e.priority]);
     }
     for ev in w.take_client_events() {
         if let ClientEvent::ObjectDestroyed { object_id } = ev {
@@ -429,10 +377,7 @@ fn run_rust(c: &Case) -> Vec<u32> {
             Op::Awaken { obj, idx, when } => {
                 if let Some(o) = w.find_object(obj) {
                     if idx >= 0 && (idx as usize) < o.behaviors.len() {
-                        let u = UpdateHandle {
-                            object: obj,
-                            index: idx as u16,
-                        };
+                        let u = UpdateHandle { object: obj, index: idx as u16 };
                         match w.awaken_update_module(obj, u, when) {
                             Ok(()) => {}
                             Err(WorldError::SleepyIndexIllegal(_)) => crash = 1,
@@ -448,8 +393,7 @@ fn run_rust(c: &Case) -> Vec<u32> {
                         o.disabled.set(DISABLED_HELD, 1);
                         // p1w6-object: `checkDisabledStatus` (end of frame, now translated) clears a type whose
                         // frame has come; `setDisabled` sets FOREVER, and so does this stand-in for it
-                        o.disabled_till_frame[DISABLED_HELD as usize] =
-                            rts_lockstep_engine::common::game_common::FOREVER;
+                        o.disabled_till_frame[DISABLED_HELD as usize] = rts_lockstep_engine::common::game_common::FOREVER;
                     } else {
                         o.disabled.clear();
                     }
@@ -475,14 +419,7 @@ fn run_cpp(c: &Case) -> Vec<u32> {
     let mut cap = 1 << 16;
     loop {
         let mut out = vec![0u32; cap];
-        let n = unsafe {
-            cpp::ref_world_run(
-                prog.as_ptr(),
-                prog.len() as i32,
-                out.as_mut_ptr(),
-                cap as i32,
-            )
-        };
+        let n = unsafe { cpp::ref_world_run(prog.as_ptr(), prog.len() as i32, out.as_mut_ptr(), cap as i32) };
         if n >= 0 {
             out.truncate(n as usize);
             return out;
@@ -500,17 +437,10 @@ fn world_cases_match_cpp() {
     let mut snaps = Check::new("GameLogic snapshots (list, queue, heap, ids)");
     let mut lengths = Check::new("GameLogic records per case");
     let (mut n_updates, mut n_del, mut n_snap, mut ties) = (0u64, 0u64, 0u64, 0u64);
-    let cases = std::env::var("DIFF_WORLD_CASES")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(CASES);
+    let cases = std::env::var("DIFF_WORLD_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(CASES);
     for i in 0..cases {
         let c = gen_case(&mut g, false);
-        if std::env::var("DIFF_WORLD_DUMP")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            == Some(i)
-        {
+        if std::env::var("DIFF_WORLD_DUMP").ok().and_then(|v| v.parse::<usize>().ok()) == Some(i) {
             eprintln!("{c:#?}");
         }
         let rs = parse(&run_rust(&c));
@@ -575,22 +505,13 @@ fn naive_updates(c: &Case) -> Vec<Record> {
                 for (idx, m) in c.groups[gr as usize].iter().enumerate() {
                     let now = frame.max(1);
                     let when = if m.initial == 0 { now } else { m.initial };
-                    mods.push(M {
-                        obj,
-                        idx: idx as u32,
-                        phase: m.phase as u32,
-                        key: (when.min(0x3fff_ffff) << 2) | m.phase as u32,
-                        script: m.script,
-                        calls: 0,
-                    });
+                    mods.push(M { obj, idx: idx as u32, phase: m.phase as u32, key: (when.min(0x3fff_ffff) << 2) | m.phase as u32, script: m.script, calls: 0 });
                 }
             }
             Op::Frames(n) => {
                 for _ in 0..n {
                     loop {
-                        let pick = (0..mods.len())
-                            .filter(|&k| mods[k].key >> 2 <= frame)
-                            .min_by_key(|&k| (mods[k].key, k));
+                        let pick = (0..mods.len()).filter(|&k| mods[k].key >> 2 <= frame).min_by_key(|&k| (mods[k].key, k));
                         let Some(k) = pick else { break };
                         let m = &mut mods[k];
                         out.push((1, vec![1, frame, m.obj, m.idx, m.key]));
@@ -615,14 +536,9 @@ fn a_stable_sort_scheduler_is_caught() {
     let mut planted = Check::new("planted: stable-sort scheduler vs upstream's heap");
     for i in 0..400 {
         let c = gen_case(&mut g, true);
-        let upstream: Vec<Record> = parse(&run_cpp(&c))
-            .into_iter()
-            .filter(|r| r.0 == 1)
-            .collect();
+        let upstream: Vec<Record> = parse(&run_cpp(&c)).into_iter().filter(|r| r.0 == 1).collect();
         let wrong = naive_updates(&c);
-        planted.eq(wrong.len(), upstream.len(), || {
-            format!("case {i}: number of calls")
-        });
+        planted.eq(wrong.len(), upstream.len(), || format!("case {i}: number of calls"));
         if wrong.len() == upstream.len() {
             for (k, (a, b)) in wrong.iter().zip(upstream.iter()).enumerate() {
                 planted.eq(&a.1, &b.1, || format!("case {i} call {k}"));

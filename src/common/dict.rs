@@ -82,12 +82,8 @@ pub enum DictError {
 impl std::fmt::Display for DictError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            DictError::TooManyPairs => {
-                "Dict: more than MAX_LEN pairs (ERROR_OUT_OF_MEMORY upstream)"
-            }
-            DictError::IndexOutOfRange => {
-                "Dict::getNth*: index outside the pairs in use (undefined upstream)"
-            }
+            DictError::TooManyPairs => "Dict: more than MAX_LEN pairs (ERROR_OUT_OF_MEMORY upstream)",
+            DictError::IndexOutOfRange => "Dict::getNth*: index outside the pairs in use (undefined upstream)",
         })
     }
 }
@@ -227,8 +223,7 @@ impl Dict {
 
     /// `getType(key)`: `DICT_NONE` if there is no such pair.
     pub fn get_type(&self, key: NameKeyType) -> DataType {
-        self.find(key)
-            .map_or(DataType::None, |i| self.pairs()[i].value.data_type())
+        self.find(key).map_or(DataType::None, |i| self.pairs()[i].value.data_type())
     }
 
     /// `known(key, d)`.
@@ -406,15 +401,10 @@ impl Dict {
     /// keeps its value and any other becomes `false`; that is visible only if
     /// the sort leaves it in place of a real `0xffffff` pair.
     pub fn remove(&mut self, key: NameKeyType) -> bool {
-        let Some(i) = self.find(key) else {
-            return false;
-        };
+        let Some(i) = self.find(key) else { return false };
         let pairs = self.data.as_mut().expect("found a pair, so storage exists");
         let kept = matches!(pairs[i].value, DictValue::Bool(true));
-        pairs[i] = DictPair {
-            packed: create_key(NameKeyType(0x7fff_ffff), DataType::Bool),
-            value: DictValue::Bool(kept),
-        };
+        pairs[i] = DictPair { packed: create_key(NameKeyType(0x7fff_ffff), DataType::Bool), value: DictValue::Bool(kept) };
         self.sort_pairs();
         self.data.as_mut().expect("storage").pop();
         true

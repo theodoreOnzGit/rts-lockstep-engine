@@ -154,9 +154,6 @@ mod tests {
         // shifted by 800: 800 - 360 = 440, sector 7: the colour is unchanged
         assert_ne!(recolor(0x00FF_0000, [400.0, 0.0, 0.0]), Ok(0x00FF_0000));
         assert_eq!(recolor(0x00FF_0000, [800.0, 0.0, -0.5]), Ok(0x00FF_0000));
-        assert_eq!(
-            recolor(0x00FF_0000, [f32::NAN, 0.0, 0.0]),
-            Err(HueOutOfRange)
-        );
+        assert_eq!(recolor(0x00FF_0000, [f32::NAN, 0.0, 0.0]), Err(HueOutOfRange));
     }
 }

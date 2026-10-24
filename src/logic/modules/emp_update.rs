@@ -50,28 +50,20 @@
 
 use std::sync::Arc;
 
-use crate::common::base_type::{
-    min, real_to_int_ceil, real_to_unsigned_int, Coord3D, RGBColor, PI,
-};
+use crate::common::base_type::{min, real_to_int_ceil, real_to_unsigned_int, Coord3D, RGBColor, PI};
 use crate::common::bit_flags::BitFlags;
 use crate::common::disabled_types::DISABLED_EMP;
 use crate::common::game_common::Relationship;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::kind_of::{
-    KindOfMaskType, KINDOF_AIRCRAFT, KINDOF_EMP_HARDENED, KINDOF_INFANTRY,
-    KINDOF_SPAWNS_ARE_THE_WEAPONS, KINDOF_STRUCTURE, KINDOF_VEHICLE,
+    KindOfMaskType, KINDOF_AIRCRAFT, KINDOF_EMP_HARDENED, KINDOF_INFANTRY, KINDOF_SPAWNS_ARE_THE_WEAPONS, KINDOF_STRUCTURE, KINDOF_VEHICLE,
 };
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_DIE};
 use crate::common::object_status_types::OBJECT_STATUS_AIRBORNE_TARGET;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::{DAMAGE_UNRESISTABLE, DEATH_NORMAL};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER,
-    UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::weapon::{WEAPON_AFFECTS_ALLIES, WEAPON_AFFECTS_MASK_NAMES};
 use crate::logic::world::game_logic::World;
@@ -107,23 +99,12 @@ fn real_to_signed(x: f32) -> Option<i32> {
 
 /// `ThePartitionManager->iterateObjectsInRange(pos, radius, FROM_BOUNDINGSPHERE_3D)`, which runs only for a radius above zero (upstream reads an
 /// iterator it never set otherwise).
-fn scan(
-    world: &mut World,
-    id: ObjectId,
-    radius: f32,
-) -> Result<(ObjectId, Vec<ObjectId>), Undefined> {
+fn scan(world: &mut World, id: ObjectId, radius: f32) -> Result<(ObjectId, Vec<ObjectId>), Undefined> {
     if radius <= 0.0 {
         return Err(Undefined::UninitialisedLocal);
     }
-    let pos = world
-        .objects
-        .find(id)
-        .map(|o| o.get_position())
-        .unwrap_or_default();
-    Ok((
-        id,
-        world.partition_iterate_objects_in_range_at(pos, radius, FROM_BOUNDINGSPHERE_3D),
-    ))
+    let pos = world.objects.find(id).map(|o| o.get_position()).unwrap_or_default();
+    Ok((id, world.partition_iterate_objects_in_range_at(pos, radius, FROM_BOUNDINGSPHERE_3D)))
 }
 
 /// `class EMPUpdateModuleData : public UpdateModuleData`.
@@ -194,11 +175,7 @@ impl Default for EmpUpdateModuleData {
 /// `INI::parseParticleSystemTemplate`: the next token, `None` for `NULL`.
 fn parse_template(ini: &mut Ini<'_>) -> IniResult<Option<Vec<u8>>> {
     let name = ini.get_next_token(None)?;
-    Ok(if name.eq_ignore_ascii_case(b"None") {
-        None
-    } else {
-        Some(name)
-    })
+    Ok(if name.eq_ignore_ascii_case(b"None") { None } else { Some(name) })
 }
 
 /// `EMPUpdateModuleData::buildFieldParse`'s table.
@@ -291,11 +268,7 @@ static EMP_FIELD_PARSE: [FieldParse<EmpUpdateModuleData>; 16] = [
         },
         UserData::None,
     ),
-    FieldParse::new(
-        "DoesNotAffect",
-        |i, d, _| i.parse_bit_string32(&mut d.reject_mask, &WEAPON_AFFECTS_MASK_NAMES),
-        UserData::None,
-    ),
+    FieldParse::new("DoesNotAffect", |i, d, _| i.parse_bit_string32(&mut d.reject_mask, &WEAPON_AFFECTS_MASK_NAMES), UserData::None),
     FieldParse::new(
         "DoesNotAffectMyOwnBuildings",
         |i, d, _| {
@@ -304,16 +277,8 @@ static EMP_FIELD_PARSE: [FieldParse<EmpUpdateModuleData>; 16] = [
         },
         UserData::None,
     ),
-    FieldParse::new(
-        "VictimRequiredKindOf",
-        |i, d, _| d.victim_kind_of.parse_from_ini(i),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VictimForbiddenKindOf",
-        |i, d, _| d.victim_kind_of_not.parse_from_ini(i),
-        UserData::None,
-    ),
+    FieldParse::new("VictimRequiredKindOf", |i, d, _| d.victim_kind_of.parse_from_ini(i), UserData::None),
+    FieldParse::new("VictimForbiddenKindOf", |i, d, _| d.victim_kind_of_not.parse_from_ini(i), UserData::None),
     FieldParse::end(),
 ];
 
@@ -357,9 +322,7 @@ pub struct EmpUpdate {
 impl PartialEq for EmpUpdate {
     /// The same object, the same data object and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
-            && self.state_words() == other.state_words()
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.state_words() == other.state_words()
     }
 }
 
@@ -371,22 +334,11 @@ impl EmpUpdate {
 
     /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data); the frames and the
     /// scales are the second half's.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<EmpUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<EmpUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(EmpUpdate {
-            update,
-            current_scale: data.start_scale,
-            data,
-            die_frame: 0,
-            tint_env_fade_frames: 0,
-            tint_env_play_frame: 0,
-            target_scale: 1.0,
-        })
+        Ok(EmpUpdate { update, current_scale: data.start_scale, data, die_frame: 0, tint_env_fade_frames: 0, tint_env_play_frame: 0, target_scale: 1.0 })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -406,13 +358,7 @@ impl EmpUpdate {
 
     /// The state, as words: the three frames and the two scales.
     pub fn state_words(&self) -> [u32; 5] {
-        [
-            self.die_frame,
-            self.tint_env_fade_frames,
-            self.tint_env_play_frame,
-            self.target_scale.to_bits(),
-            self.current_scale.to_bits(),
-        ]
+        [self.die_frame, self.tint_env_fade_frames, self.tint_env_play_frame, self.target_scale.to_bits(), self.current_scale.to_bits()]
     }
 
     /// `update()` as the scheduler runs it (see [`update_behavior::world_update`]).
@@ -426,12 +372,7 @@ impl EmpUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -455,34 +396,14 @@ impl EmpUpdate {
         let d = self.data.clone();
         let object = me.object;
         let radius = d.effect_radius;
-        let pos = world
-            .objects
-            .find(object)
-            .map(|o| o.get_position())
-            .unwrap_or_default();
-        let producer = world
-            .objects
-            .find(object)
-            .map(|o| o.producer_id)
-            .filter(|&p| world.objects.find(p).is_some());
+        let pos = world.objects.find(object).map(|o| o.get_position()).unwrap_or_default();
+        let producer = world.objects.find(object).map(|o| o.producer_id).filter(|&p| world.objects.find(p).is_some());
         let mut intended_victim = None;
         let mut only_effect_airborne = false;
         let mut intended_victim_processed = false;
-        if let Some(ai) =
-            producer.and_then(|p| world.objects.find(p).and_then(|o| o.ai).map(|ai| (p, ai)))
-        {
-            intended_victim = Some(
-                world
-                    .module_call(ai.0, ai.1, ModuleCall::AiGetCurrentVictim)
-                    .as_id(),
-            )
-            .filter(|&v| world.objects.find(v).is_some());
-            if intended_victim.is_some_and(|v| {
-                world
-                    .objects
-                    .find(v)
-                    .is_some_and(|o| o.test_status(OBJECT_STATUS_AIRBORNE_TARGET))
-            }) {
+        if let Some(ai) = producer.and_then(|p| world.objects.find(p).and_then(|o| o.ai).map(|ai| (p, ai))) {
+            intended_victim = Some(world.module_call(ai.0, ai.1, ModuleCall::AiGetCurrentVictim).as_id()).filter(|&v| world.objects.find(v).is_some());
+            if intended_victim.is_some_and(|v| world.objects.find(v).is_some_and(|o| o.test_status(OBJECT_STATUS_AIRBORNE_TARGET))) {
                 only_effect_airborne = true;
             }
         }
@@ -506,10 +427,7 @@ impl EmpUpdate {
                 v.is_kind_of(KINDOF_AIRCRAFT),
                 v.is_kind_of(KINDOF_EMP_HARDENED),
             );
-            if d.does_not_affect_my_own_buildings
-                && structure
-                && world.get_controlling_player(cur) == world.get_controlling_player(object)
-            {
+            if d.does_not_affect_my_own_buildings && structure && world.get_controlling_player(cur) == world.get_controlling_player(object) {
                 continue;
             }
             if !vehicle && !structure && !spawns {
@@ -522,11 +440,7 @@ impl EmpUpdate {
                 world.kill(cur, DAMAGE_UNRESISTABLE, DEATH_NORMAL);
                 if world.has_drawable(cur) {
                     // paint it black
-                    world.emit(ObjectClientEvent::DrawableTint {
-                        object_id: cur,
-                        status: TINT_STATUS_DISABLED,
-                        on: true,
-                    });
+                    world.emit(ObjectClientEvent::DrawableTint { object_id: cur, status: TINT_STATUS_DISABLED, on: true });
                 }
                 continue;
             } else if structure {
@@ -539,39 +453,24 @@ impl EmpUpdate {
             {
                 continue;
             }
-            world.body_set_disabled_until(
-                cur,
-                DISABLED_EMP,
-                if crate::logic::modules::plant(2035) {
-                    now
-                } else {
-                    now.wrapping_add(d.disabled_duration)
-                },
-            );
+            world.body_set_disabled_until(cur, DISABLED_EMP, if crate::logic::modules::plant(2035) { now } else { now.wrapping_add(d.disabled_duration) });
             if intended_victim == Some(cur) {
                 intended_victim_processed = true;
             }
             if world.has_drawable(cur) {
                 if let Some(tmp) = &d.disable_fx_particle_system {
-                    let Some(geom) = world.objects.find(cur).map(|o| o.geometry_info.clone())
-                    else {
+                    let Some(geom) = world.objects.find(cur).map(|o| o.geometry_info.clone()) else {
                         continue;
                     };
                     let victim_height = geom.get_max_height_above_position();
                     let victim_volume = geom.get_footprint_area() * min(victim_height, 10.0);
-                    let emitter_count = (if crate::logic::modules::plant(2036) {
-                        10
-                    } else {
-                        15
-                    })
-                    .max(real_to_int_ceil(d.sparks_per_cubic_foot * victim_volume))
-                        as u32;
+                    let emitter_count =
+                        (if crate::logic::modules::plant(2036) { 10 } else { 15 }).max(real_to_int_ceil(d.sparks_per_cubic_foot * victim_volume)) as u32;
                     for _ in 0..emitter_count {
                         let sys = world.create_particle_system_unplaced(tmp.clone());
                         let mut offs = Coord3D::default();
                         geom.make_random_offset_within_footprint(&mut world.random, &mut offs);
-                        let hi =
-                            real_to_signed(victim_height).ok_or(Undefined::FloatToIntOutOfRange)?;
+                        let hi = real_to_signed(victim_height).ok_or(Undefined::FloatToIntOutOfRange)?;
                         offs.z = world.random.game_logic_random_value(3, hi) as f32;
                         if offs.length() > victim_height {
                             let (restore_x, restore_y) = (offs.x, offs.y);
@@ -582,10 +481,7 @@ impl EmpUpdate {
                         }
                         world.body_particle_attach_to_object(sys, cur);
                         world.particle_system_set_position(sys, offs);
-                        world.particle_system_set_lifetime(
-                            sys,
-                            d.disabled_duration.wrapping_sub(30),
-                        );
+                        world.particle_system_set_lifetime(sys, d.disabled_duration.wrapping_sub(30));
                         let delay = world.random.game_logic_random_value(1, 100);
                         world.particle_system_set_initial_delay(sys, delay as u32);
                     }
@@ -593,30 +489,16 @@ impl EmpUpdate {
             }
         }
         if let Some(v) = intended_victim.filter(|_| !intended_victim_processed) {
-            let Some((vpos, aircraft, hardened)) = world.objects.find(v).map(|o| {
-                (
-                    o.get_position(),
-                    o.is_kind_of(KINDOF_AIRCRAFT),
-                    o.is_kind_of(KINDOF_EMP_HARDENED),
-                )
-            }) else {
+            let Some((vpos, aircraft, hardened)) =
+                world.objects.find(v).map(|o| (o.get_position(), o.is_kind_of(KINDOF_AIRCRAFT), o.is_kind_of(KINDOF_EMP_HARDENED)))
+            else {
                 return Ok(());
             };
             if aircraft && !hardened {
-                let c = Coord3D {
-                    x: vpos.x - pos.x,
-                    y: vpos.y - pos.y,
-                    z: vpos.z - pos.z,
-                };
+                let c = Coord3D { x: vpos.x - pos.x, y: vpos.y - pos.y, z: vpos.z - pos.z };
                 let length_sqr = c.length_sqr();
-                if length_sqr <= radius * 2.0
-                    || (length_sqr <= 40.0 * 40.0 && !crate::logic::modules::plant(2037))
-                {
-                    world.body_set_disabled_until(
-                        v,
-                        DISABLED_EMP,
-                        now.wrapping_add(d.disabled_duration),
-                    );
+                if length_sqr <= radius * 2.0 || (length_sqr <= 40.0 * 40.0 && !crate::logic::modules::plant(2037)) {
+                    world.body_set_disabled_until(v, DISABLED_EMP, now.wrapping_add(d.disabled_duration));
                 }
             }
         }
@@ -631,24 +513,11 @@ impl EmpUpdate {
         }
         let now = world.frame();
         self.current_scale += (self.target_scale - self.current_scale) * 0.05;
-        world.emit(ObjectClientEvent::DrawableSetInstanceScale {
-            object_id: id,
-            scale: self.current_scale,
-        });
+        world.emit(ObjectClientEvent::DrawableSetInstanceScale { object_id: id, scale: self.current_scale });
         if now < self.tint_env_play_frame {
             let mut start = d.start_color;
-            saturate_rgb(
-                &mut start,
-                if crate::logic::modules::plant(2031) {
-                    3.0
-                } else {
-                    2.0
-                },
-            );
-            world.emit(ObjectClientEvent::DrawableColorTint {
-                object_id: id,
-                color: start,
-            });
+            saturate_rgb(&mut start, if crate::logic::modules::plant(2031) { 3.0 } else { 2.0 });
+            world.emit(ObjectClientEvent::DrawableColorTint { object_id: id, color: start });
         }
         if now == self.tint_env_play_frame {
             let mut end = d.end_color;
@@ -658,11 +527,7 @@ impl EmpUpdate {
                 object_id: id,
                 color: end,
                 decay_frames: 9999,
-                attack_frames: if crate::logic::modules::plant(2032) {
-                    self.die_frame
-                } else {
-                    self.tint_env_fade_frames
-                },
+                attack_frames: if crate::logic::modules::plant(2032) { self.die_frame } else { self.tint_env_fade_frames },
                 sustain_at_peak: true,
             });
             self.do_disable_attack(world, me)?;
@@ -691,12 +556,9 @@ impl UpdateBehavior for EmpUpdate {
         let now = world.frame();
         self.current_scale = d.start_scale;
         self.die_frame = real_to_unsigned_int(now.wrapping_add(d.life_frames) as f32);
-        self.tint_env_play_frame =
-            real_to_unsigned_int(now.wrapping_add(d.start_fade_frame) as f32);
+        self.tint_env_play_frame = real_to_unsigned_int(now.wrapping_add(d.start_fade_frame) as f32);
         self.tint_env_fade_frames = self.die_frame.wrapping_sub(self.tint_env_play_frame);
-        self.target_scale = world
-            .random
-            .game_logic_random_value_real(d.target_scale_min, d.target_scale_max);
+        self.target_scale = world.random.game_logic_random_value_real(d.target_scale_min, d.target_scale_max);
         let angle = world.random.game_logic_random_value_real(-PI, PI);
         world.set_orientation(me.object, angle);
     }
@@ -726,9 +588,7 @@ impl Snapshot for EmpUpdate {
 
 /// The factory's `NewModuleDataProc` for `EMPUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::EmpUpdate(Arc::new(
-        EmpUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::EmpUpdate(Arc::new(EmpUpdateModuleData::friend_new_module_data(ini)?)))
 }
 
 /// `class LeafletDropBehaviorModuleData : public UpdateModuleData`.
@@ -749,13 +609,7 @@ pub struct LeafletDropBehaviorModuleData {
 impl Default for LeafletDropBehaviorModuleData {
     /// `LeafletDropBehaviorModuleData()`.
     fn default() -> Self {
-        LeafletDropBehaviorModuleData {
-            update: UpdateModuleData::new(),
-            delay_frames: 1,
-            disabled_duration: 0,
-            radius: 60.0,
-            leaflet_fx_particle_system: None,
-        }
+        LeafletDropBehaviorModuleData { update: UpdateModuleData::new(), delay_frames: 1, disabled_duration: 0, radius: 60.0, leaflet_fx_particle_system: None }
     }
 }
 
@@ -798,24 +652,17 @@ static LEAFLET_FIELD_PARSE: [FieldParse<LeafletDropBehaviorModuleData>; 5] = [
 
 impl LeafletDropBehaviorModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's fields.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, LeafletDropBehaviorModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, LeafletDropBehaviorModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&LEAFLET_FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<LeafletDropBehaviorModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<LeafletDropBehaviorModuleData> {
         let mut data = LeafletDropBehaviorModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                LeafletDropBehaviorModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, LeafletDropBehaviorModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -837,9 +684,7 @@ pub struct LeafletDropBehavior {
 impl PartialEq for LeafletDropBehavior {
     /// The same object, the same data object and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
-            && self.state_words() == other.state_words()
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.state_words() == other.state_words()
     }
 }
 
@@ -850,19 +695,11 @@ impl LeafletDropBehavior {
     }
 
     /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data).
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<LeafletDropBehaviorModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<LeafletDropBehaviorModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(LeafletDropBehavior {
-            update,
-            data,
-            start_frame: 0,
-            fx_fired: false,
-        })
+        Ok(LeafletDropBehavior { update, data, start_frame: 0, fx_fired: false })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -891,12 +728,7 @@ impl LeafletDropBehavior {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -935,8 +767,7 @@ impl LeafletDropBehavior {
             }
             // only enemies
             if world.get_relationship(cur, object) == Relationship::Allies
-                || (!crate::logic::modules::plant(2038)
-                    && world.get_relationship(cur, object) != Relationship::Enemies)
+                || (!crate::logic::modules::plant(2038) && world.get_relationship(cur, object) != Relationship::Enemies)
             {
                 continue;
             }
@@ -1010,9 +841,7 @@ impl Snapshot for LeafletDropBehavior {
 
 /// The factory's `NewModuleDataProc` for `LeafletDropBehavior`.
 pub fn new_leaflet_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::LeafletDropBehavior(Arc::new(
-        LeafletDropBehaviorModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::LeafletDropBehavior(Arc::new(LeafletDropBehaviorModuleData::friend_new_module_data(ini)?)))
 }
 
 #[cfg(test)]
@@ -1022,22 +851,10 @@ mod tests {
     #[test]
     fn the_defaults_are_the_constructors() {
         let d = EmpUpdateModuleData::default();
-        assert_eq!(
-            (
-                d.life_frames,
-                d.effect_radius,
-                d.start_color.red,
-                d.end_color.red
-            ),
-            (1, 200.0, 1.0, 0.0)
-        );
+        assert_eq!((d.life_frames, d.effect_radius, d.start_color.red, d.end_color.red), (1, 200.0, 1.0, 0.0));
         let l = LeafletDropBehaviorModuleData::default();
         assert_eq!((l.delay_frames, l.radius), (1, 60.0));
-        let mut c = RGBColor {
-            red: 1.0,
-            green: 0.5,
-            blue: 0.0,
-        };
+        let mut c = RGBColor { red: 1.0, green: 0.5, blue: 0.0 };
         saturate_rgb(&mut c, 2.0);
         assert_eq!((c.red, c.green, c.blue), (1.0, 0.0, -1.0));
     }

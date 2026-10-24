@@ -59,9 +59,7 @@
 
 use crate::common::ascii_string::AsciiString;
 use crate::common::game_common::{VeterancyLevel, VETERANCY_NAMES};
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Undefined, UserData};
 use crate::common::kind_of::KindOfMaskType;
 use crate::common::name_key_generator::{NameKeyGenerator, NameKeyType};
 use crate::common::overridable::Overridable;
@@ -154,10 +152,7 @@ pub struct CrateSystem {
 impl Default for CrateSystem {
     /// `CrateSystem()`: no templates.
     fn default() -> Self {
-        CrateSystem {
-            name: AsciiString::default(),
-            crate_template_vector: Vec::new(),
-        }
+        CrateSystem { name: AsciiString::default(), crate_template_vector: Vec::new() }
     }
 }
 
@@ -192,17 +187,14 @@ impl CrateSystem {
 
     /// The position of the base template called `name`.
     fn index_of(&self, name: &[u8]) -> Option<usize> {
-        self.crate_template_vector
-            .iter()
-            .position(|o| o.data.name == name)
+        self.crate_template_vector.iter().position(|o| o.data.name == name)
     }
 
     /// `findCrateTemplate(name)`: the newest definition of the template
     /// (`OVERRIDE<CrateTemplate>` reads the final override). `None` if there
     /// is no such template.
     pub fn find_crate_template(&self, name: &[u8]) -> Option<&CrateTemplate> {
-        self.index_of(name)
-            .map(|i| &self.crate_template_vector[i].get_final_override().data)
+        self.index_of(name).map(|i| &self.crate_template_vector[i].get_final_override().data)
     }
 
     /// `newCrateTemplate(name)`: a new base template, copied from the
@@ -251,11 +243,7 @@ impl CrateSystem {
     /// A duplicate name outside an override load merges into the existing
     /// template (upstream's `DEBUG_CRASH` is empty here). The `names` are the
     /// [`NameKeyGenerator`] that `KillerScience` keys come from.
-    pub fn parse_crate_template_definition(
-        &mut self,
-        ini: &mut Ini<'_>,
-        names: &mut NameKeyGenerator,
-    ) -> IniResult<()> {
+    pub fn parse_crate_template_definition(&mut self, ini: &mut Ini<'_>, names: &mut NameKeyGenerator) -> IniResult<()> {
         let name = ini.get_next_token(None)?;
         let overrides = ini.get_load_type() == IniLoadType::CreateOverrides;
         let index = match self.index_of(&name) {
@@ -285,10 +273,7 @@ impl CrateSystem {
             let key = names
                 .try_name_to_key(&science)
                 .map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
-            self.crate_template_vector[index]
-                .friend_get_final_override()
-                .data
-                .killer_science = Some(key);
+            self.crate_template_vector[index].friend_get_final_override().data.killer_science = Some(key);
         }
         result
     }
@@ -309,11 +294,7 @@ impl CrateSystem {
 /// `CrateTemplate::TheCrateTemplateFieldParseTable`.
 static CRATE_TEMPLATE_FIELDS: [FieldParse<CrateTemplate>; 7] = [
     FieldParse::new("CreationChance", parse_creation_chance, UserData::None),
-    FieldParse::new(
-        "VeterancyLevel",
-        parse_veterancy_level,
-        UserData::Names(&VETERANCY_NAMES),
-    ),
+    FieldParse::new("VeterancyLevel", parse_veterancy_level, UserData::Names(&VETERANCY_NAMES)),
     FieldParse::new("KilledByType", parse_killed_by_type, UserData::None),
     FieldParse::new("CrateObject", parse_crate_creation_entry, UserData::None),
     FieldParse::new("KillerScience", parse_killer_science, UserData::None),
@@ -321,11 +302,7 @@ static CRATE_TEMPLATE_FIELDS: [FieldParse<CrateTemplate>; 7] = [
     FieldParse::end(),
 ];
 
-fn parse_creation_chance(
-    ini: &mut Ini<'_>,
-    c: &mut CrateTemplate,
-    _ud: &UserData,
-) -> IniResult<()> {
+fn parse_creation_chance(ini: &mut Ini<'_>, c: &mut CrateTemplate, _ud: &UserData) -> IniResult<()> {
     c.creation_chance = ini.parse_real()?;
     Ok(())
 }
@@ -349,18 +326,11 @@ fn parse_killed_by_type(ini: &mut Ini<'_>, c: &mut CrateTemplate, _ud: &UserData
 
 /// `CrateTemplate::parseCrateCreationEntry`: `CrateObject = <name> <chance>`.
 /// The chance is read with `sscanf("%f")`.
-fn parse_crate_creation_entry(
-    ini: &mut Ini<'_>,
-    c: &mut CrateTemplate,
-    _ud: &UserData,
-) -> IniResult<()> {
+fn parse_crate_creation_entry(ini: &mut Ini<'_>, c: &mut CrateTemplate, _ud: &UserData) -> IniResult<()> {
     let crate_name = ini.get_next_token(None)?;
     let token = ini.get_next_token(None)?;
     let crate_chance = Ini::scan_real(&token)?;
-    c.possible_crates.push(CrateCreationEntry {
-        crate_name,
-        crate_chance,
-    });
+    c.possible_crates.push(CrateCreationEntry { crate_name, crate_chance });
     Ok(())
 }
 
@@ -390,18 +360,12 @@ mod tests {
         c.crates.parse_crate_template_definition(ini, &mut c.names)
     }
 
-    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse {
-        token: "CrateData",
-        parse: block,
-    }];
+    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse { token: "CrateData", parse: block }];
 
     fn ctx() -> Ctx {
         let mut names = NameKeyGenerator::new();
         names.init();
-        Ctx {
-            crates: CrateSystem::new(),
-            names,
-        }
+        Ctx { crates: CrateSystem::new(), names }
     }
 
     fn load_into(c: &mut Ctx, load: IniLoadType, text: &[u8]) -> IniResult<()> {
@@ -423,60 +387,24 @@ mod tests {
         assert_eq!(s.veterancy_level(), Some(VeterancyLevel::Elite));
         assert!(s.is_owned_by_maker());
         assert_eq!(s.possible_crates().len(), 2);
-        assert_eq!(
-            s.possible_crates()[0],
-            CrateCreationEntry {
-                crate_name: b"SalvageMoney".to_vec(),
-                crate_chance: 0.25
-            }
-        );
+        assert_eq!(s.possible_crates()[0], CrateCreationEntry { crate_name: b"SalvageMoney".to_vec(), crate_chance: 0.25 });
         assert_eq!(s.killer_science(), Some(c.names.name_to_key(b"SCIENCE_A")));
-        assert_eq!(
-            c.crates.find_crate_template(b"salvagecrate"),
-            None,
-            "names are case-sensitive"
-        );
+        assert_eq!(c.crates.find_crate_template(b"salvagecrate"), None, "names are case-sensitive");
     }
 
     #[test]
     fn duplicate_base_merges_and_overrides_chain() {
         let mut c = ctx();
-        load_into(
-            &mut c,
-            IniLoadType::Overwrite,
-            b"CrateData A\n CreationChance = 0.1\nEnd\nCrateData A\n OwnedByMaker = Yes\nEnd\n",
-        )
-        .unwrap();
+        load_into(&mut c, IniLoadType::Overwrite, b"CrateData A\n CreationChance = 0.1\nEnd\nCrateData A\n OwnedByMaker = Yes\nEnd\n").unwrap();
         let a = c.crates.find_crate_template(b"A").unwrap();
         assert_eq!((a.creation_chance(), a.is_owned_by_maker()), (0.1, true));
         assert_eq!(c.crates.crate_template_vector.len(), 1);
-        load_into(
-            &mut c,
-            IniLoadType::CreateOverrides,
-            b"CrateData A\n CreationChance = 0.9\nEnd\n",
-        )
-        .unwrap();
-        assert_eq!(
-            c.crates
-                .find_crate_template(b"A")
-                .unwrap()
-                .creation_chance(),
-            0.9,
-            "the override is the one read"
-        );
+        load_into(&mut c, IniLoadType::CreateOverrides, b"CrateData A\n CreationChance = 0.9\nEnd\n").unwrap();
+        assert_eq!(c.crates.find_crate_template(b"A").unwrap().creation_chance(), 0.9, "the override is the one read");
         assert_eq!(c.crates.crate_template_vector.len(), 1);
-        assert!(c.crates.crate_template_vector[0]
-            .get_next_override()
-            .is_some());
+        assert!(c.crates.crate_template_vector[0].get_next_override().is_some());
         c.crates.reset();
-        assert_eq!(
-            c.crates
-                .find_crate_template(b"A")
-                .unwrap()
-                .creation_chance(),
-            0.1,
-            "reset removes the override"
-        );
+        assert_eq!(c.crates.find_crate_template(b"A").unwrap().creation_chance(), 0.1, "reset removes the override");
     }
 
     #[test]
@@ -488,29 +416,16 @@ mod tests {
         let mut names = NameKeyGenerator::new();
         names.init();
         let mut ctx = Ctx { crates: c, names };
-        load_into(
-            &mut ctx,
-            IniLoadType::CreateOverrides,
-            b"CrateData Mod\n CreationChance = 0.3\nEnd\n",
-        )
-        .unwrap();
+        load_into(&mut ctx, IniLoadType::CreateOverrides, b"CrateData Mod\n CreationChance = 0.3\nEnd\n").unwrap();
         ctx.crates.init();
-        assert!(
-            ctx.crates.find_crate_template(b"Mod").is_none(),
-            "init is reset"
-        );
+        assert!(ctx.crates.find_crate_template(b"Mod").is_none(), "init is reset");
         ctx.crates.reset();
     }
 
     #[test]
     fn override_block_creating_a_new_template_is_removed_by_reset() {
         let mut c = ctx();
-        load_into(
-            &mut c,
-            IniLoadType::CreateOverrides,
-            b"CrateData Mod\n CreationChance = 0.3\nEnd\n",
-        )
-        .unwrap();
+        load_into(&mut c, IniLoadType::CreateOverrides, b"CrateData Mod\n CreationChance = 0.3\nEnd\n").unwrap();
         assert!(c.crates.find_crate_template(b"Mod").is_some());
         c.crates.reset();
         assert!(c.crates.find_crate_template(b"Mod").is_none());
@@ -520,41 +435,14 @@ mod tests {
     #[test]
     fn errors_are_reported_and_partial_fields_stay() {
         let mut c = ctx();
-        let r = load_into(
-            &mut c,
-            IniLoadType::Overwrite,
-            b"CrateData A\n CreationChance = 0.2\n CrateObject = X nope\nEnd\n",
-        );
+        let r = load_into(&mut c, IniLoadType::Overwrite, b"CrateData A\n CreationChance = 0.2\n CrateObject = X nope\nEnd\n");
         assert_eq!(r.unwrap_err().kind, IniErrorKind::InvalidData);
-        assert_eq!(
-            c.crates
-                .find_crate_template(b"A")
-                .unwrap()
-                .creation_chance(),
-            0.2
-        );
-        let r = load_into(
-            &mut c,
-            IniLoadType::Overwrite,
-            b"CrateData B\n VeterancyLevel = LEGEND\nEnd\n",
-        );
+        assert_eq!(c.crates.find_crate_template(b"A").unwrap().creation_chance(), 0.2);
+        let r = load_into(&mut c, IniLoadType::Overwrite, b"CrateData B\n VeterancyLevel = LEGEND\nEnd\n");
         assert_eq!(r.unwrap_err().kind, IniErrorKind::InvalidData);
-        assert_eq!(
-            c.crates
-                .find_crate_template(b"B")
-                .unwrap()
-                .veterancy_level(),
-            None
-        );
-        let r = load_into(
-            &mut c,
-            IniLoadType::Overwrite,
-            b"CrateData C\n KillerScience\nEnd\n",
-        );
+        assert_eq!(c.crates.find_crate_template(b"B").unwrap().veterancy_level(), None);
+        let r = load_into(&mut c, IniLoadType::Overwrite, b"CrateData C\n KillerScience\nEnd\n");
         assert_eq!(r.unwrap_err().kind, IniErrorKind::InvalidData);
-        assert_eq!(
-            c.crates.find_crate_template(b"C").unwrap().killer_science(),
-            None
-        );
+        assert_eq!(c.crates.find_crate_template(b"C").unwrap().killer_science(), None);
     }
 }

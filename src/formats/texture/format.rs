@@ -95,14 +95,7 @@ impl Ww3dFormat {
 
     /// One of the DXTn formats.
     pub fn is_dxt(self) -> bool {
-        matches!(
-            self,
-            Ww3dFormat::Dxt1
-                | Ww3dFormat::Dxt2
-                | Ww3dFormat::Dxt3
-                | Ww3dFormat::Dxt4
-                | Ww3dFormat::Dxt5
-        )
+        matches!(self, Ww3dFormat::Dxt1 | Ww3dFormat::Dxt2 | Ww3dFormat::Dxt3 | Ww3dFormat::Dxt4 | Ww3dFormat::Dxt5)
     }
 }
 
@@ -192,27 +185,18 @@ pub fn bytes_per_pixel(format: Ww3dFormat) -> u32 {
 /// Upstream quirk, reproduced: `R3G3B2` is one byte per pixel but is stored
 /// through an `unsigned short*`, so it writes **two** bytes, the second 0
 /// (the next pixel's byte, or one past the end of the row).
-pub fn write_b8g8r8a8(
-    dest: &mut [u8],
-    at: usize,
-    dest_format: Ww3dFormat,
-    argb: u32,
-) -> Option<()> {
+pub fn write_b8g8r8a8(dest: &mut [u8], at: usize, dest_format: Ww3dFormat, argb: u32) -> Option<()> {
     use Ww3dFormat::*;
     let c = argb.to_le_bytes();
     let mut put = |bytes: &[u8]| -> Option<()> {
-        dest.get_mut(at..at.checked_add(bytes.len())?)?
-            .copy_from_slice(bytes);
+        dest.get_mut(at..at.checked_add(bytes.len())?)?.copy_from_slice(bytes);
         Some(())
     };
     match dest_format {
         A8R8G8B8 | X8R8G8B8 => put(&c),
         R8G8B8 => put(&c[..3]),
         A4R4G4B4 => {
-            let tmp = (u16::from(c[3]) & 0xf0) << 8
-                | (u16::from(c[2]) & 0xf0) << 4
-                | (u16::from(c[1]) & 0xf0)
-                | (u16::from(c[0]) & 0xf0) >> 4;
+            let tmp = (u16::from(c[3]) & 0xf0) << 8 | (u16::from(c[2]) & 0xf0) << 4 | (u16::from(c[1]) & 0xf0) | (u16::from(c[0]) & 0xf0) >> 4;
             put(&tmp.to_le_bytes())
         }
         A1R5G5B5 => {
@@ -223,9 +207,7 @@ pub fn write_b8g8r8a8(
             put(&tmp.to_le_bytes())
         }
         R5G6B5 => {
-            let tmp = (u16::from(c[2]) & 0xf8) << 8
-                | (u16::from(c[1]) & 0xfc) << 3
-                | (u16::from(c[0]) & 0xf8) >> 3;
+            let tmp = (u16::from(c[2]) & 0xf8) << 8 | (u16::from(c[1]) & 0xfc) << 3 | (u16::from(c[0]) & 0xf8) >> 3;
             put(&tmp.to_le_bytes())
         }
         R3G3B2 => {
@@ -233,9 +215,7 @@ pub fn write_b8g8r8a8(
             put(&u16::from(tmp).to_le_bytes())
         }
         L8 => {
-            let y =
-                (u32::from(c[0]) * 0x1275 + u32::from(c[1]) * 0xB725 + u32::from(c[2]) * 0x3666)
-                    >> 16;
+            let y = (u32::from(c[0]) * 0x1275 + u32::from(c[1]) * 0xB725 + u32::from(c[2]) * 0x3666) >> 16;
             put(&[y as u8])
         }
         A8 => put(&c[..1]),
@@ -246,11 +226,7 @@ pub fn write_b8g8r8a8(
 /// `Get_WW3D_Format(src_format, src_bpp, targa)`: the source format a
 /// texture loader assumes for a Targa, from its pixel depth (and, at 8 bits,
 /// its colour-map flag and image type). `(Unknown, 0)` for other depths.
-pub fn ww3d_format_of_targa(
-    pixel_depth: i8,
-    color_map_type: i8,
-    image_type: i8,
-) -> (Ww3dFormat, u32) {
+pub fn ww3d_format_of_targa(pixel_depth: i8, color_map_type: i8, image_type: i8) -> (Ww3dFormat, u32) {
     match pixel_depth {
         32 => (Ww3dFormat::A8R8G8B8, 4),
         24 => (Ww3dFormat::R8G8B8, 3),
@@ -285,10 +261,7 @@ mod tests {
     #[test]
     fn r3g3b2_writes_two_bytes() {
         let mut b = [0xAAu8; 3];
-        assert_eq!(
-            write_b8g8r8a8(&mut b, 0, Ww3dFormat::R3G3B2, 0x00FF_FFFF),
-            Some(())
-        );
+        assert_eq!(write_b8g8r8a8(&mut b, 0, Ww3dFormat::R3G3B2, 0x00FF_FFFF), Some(()));
         assert_eq!(b, [0xFF, 0x00, 0xAA]);
         assert_eq!(write_b8g8r8a8(&mut b, 2, Ww3dFormat::R3G3B2, 0), None);
     }

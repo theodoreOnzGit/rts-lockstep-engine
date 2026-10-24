@@ -50,9 +50,7 @@ use std::sync::Arc;
 
 use crate::common::disabled_types::DISABLED_HELD;
 use crate::common::game_type::{ObjectId, INVALID_ID};
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::kind_of::{KINDOF_INFANTRY, KINDOF_PORTABLE_STRUCTURE};
 use crate::common::module::ModuleDataKind;
 use crate::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_STEALTHED};
@@ -63,9 +61,8 @@ use crate::logic::module::body_module::BODY_RUBBLE;
 use crate::logic::module::update_module::{UpdateModule, UpdateSleepTime};
 use crate::logic::modules::open_contain::{self, out, OpenContainVirtuals};
 use crate::logic::modules::transport_contain::{
-    self, tc_is_passenger_allowed_to_fire, tc_is_valid_container_for, tc_on_containing,
-    tc_on_removing, tc_update, transport_open_contain_virtuals, TransportContain,
-    TransportContainModuleData, TransportContainVirtuals,
+    self, tc_is_passenger_allowed_to_fire, tc_is_valid_container_for, tc_on_containing, tc_on_removing, tc_update, transport_open_contain_virtuals,
+    TransportContain, TransportContainModuleData, TransportContainVirtuals,
 };
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::weapon_bonus::condition::GARRISONED;
@@ -89,21 +86,12 @@ pub struct HelixContainModuleData {
 impl Default for HelixContainModuleData {
     /// `HelixContainModuleData()`: the base's defaults, `m_drawPips = TRUE`.
     fn default() -> Self {
-        HelixContainModuleData {
-            transport: TransportContainModuleData::default(),
-            payload_template_name_data: Vec::new(),
-            draw_pips: true,
-        }
+        HelixContainModuleData { transport: TransportContainModuleData::default(), payload_template_name_data: Vec::new(), draw_pips: true }
     }
 }
 
 /// Lifts entry `k` of `OpenContainModuleData`'s table (as `TransportContain` lifts it) onto the `transport` base.
-fn lift_open(
-    k: usize,
-    i: &mut Ini<'_>,
-    d: &mut HelixContainModuleData,
-    u: &UserData,
-) -> IniResult<()> {
+fn lift_open(k: usize, i: &mut Ini<'_>, d: &mut HelixContainModuleData, u: &UserData) -> IniResult<()> {
     match transport_contain::OPEN_BASE_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.transport, u),
         None => Ok(()),
@@ -111,12 +99,7 @@ fn lift_open(
 }
 
 /// Lifts entry `k` of the die mux table onto the `transport` base.
-fn lift_die(
-    k: usize,
-    i: &mut Ini<'_>,
-    d: &mut HelixContainModuleData,
-    u: &UserData,
-) -> IniResult<()> {
+fn lift_die(k: usize, i: &mut Ini<'_>, d: &mut HelixContainModuleData, u: &UserData) -> IniResult<()> {
     match transport_contain::DIE_BASE_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.transport, u),
         None => Ok(()),
@@ -124,12 +107,7 @@ fn lift_die(
 }
 
 /// Lifts entry `k` of `TransportContainModuleData`'s own table onto the `transport` base.
-fn lift_transport(
-    k: usize,
-    i: &mut Ini<'_>,
-    d: &mut HelixContainModuleData,
-    u: &UserData,
-) -> IniResult<()> {
+fn lift_transport(k: usize, i: &mut Ini<'_>, d: &mut HelixContainModuleData, u: &UserData) -> IniResult<()> {
     match transport_contain::FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.transport, u),
         None => Ok(()),
@@ -137,197 +115,60 @@ fn lift_transport(
 }
 
 static LIFTED_OPEN: [FieldParse<HelixContainModuleData>; 16] = [
-    FieldParse::new(
-        "ContainMax",
-        |i, d, u| lift_open(0, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "EnterSound",
-        |i, d, u| lift_open(1, i, d, u),
-        UserData::None,
-    ),
+    FieldParse::new("ContainMax", |i, d, u| lift_open(0, i, d, u), UserData::None),
+    FieldParse::new("EnterSound", |i, d, u| lift_open(1, i, d, u), UserData::None),
     FieldParse::new("ExitSound", |i, d, u| lift_open(2, i, d, u), UserData::None),
-    FieldParse::new(
-        "DamagePercentToUnits",
-        |i, d, u| lift_open(3, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "BurnedDeathToUnits",
-        |i, d, u| lift_open(4, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AllowInsideKindOf",
-        |i, d, u| lift_open(5, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ForbidInsideKindOf",
-        |i, d, u| lift_open(6, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "PassengersAllowedToFire",
-        |i, d, u| lift_open(7, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "PassengersInTurret",
-        |i, d, u| lift_open(8, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "NumberOfExitPaths",
-        |i, d, u| lift_open(9, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DoorOpenTime",
-        |i, d, u| lift_open(10, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "WeaponBonusPassedToPassengers",
-        |i, d, u| lift_open(11, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AllowAlliesInside",
-        |i, d, u| lift_open(12, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AllowEnemiesInside",
-        |i, d, u| lift_open(13, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AllowNeutralInside",
-        |i, d, u| lift_open(14, i, d, u),
-        UserData::None,
-    ),
+    FieldParse::new("DamagePercentToUnits", |i, d, u| lift_open(3, i, d, u), UserData::None),
+    FieldParse::new("BurnedDeathToUnits", |i, d, u| lift_open(4, i, d, u), UserData::None),
+    FieldParse::new("AllowInsideKindOf", |i, d, u| lift_open(5, i, d, u), UserData::None),
+    FieldParse::new("ForbidInsideKindOf", |i, d, u| lift_open(6, i, d, u), UserData::None),
+    FieldParse::new("PassengersAllowedToFire", |i, d, u| lift_open(7, i, d, u), UserData::None),
+    FieldParse::new("PassengersInTurret", |i, d, u| lift_open(8, i, d, u), UserData::None),
+    FieldParse::new("NumberOfExitPaths", |i, d, u| lift_open(9, i, d, u), UserData::None),
+    FieldParse::new("DoorOpenTime", |i, d, u| lift_open(10, i, d, u), UserData::None),
+    FieldParse::new("WeaponBonusPassedToPassengers", |i, d, u| lift_open(11, i, d, u), UserData::None),
+    FieldParse::new("AllowAlliesInside", |i, d, u| lift_open(12, i, d, u), UserData::None),
+    FieldParse::new("AllowEnemiesInside", |i, d, u| lift_open(13, i, d, u), UserData::None),
+    FieldParse::new("AllowNeutralInside", |i, d, u| lift_open(14, i, d, u), UserData::None),
     FieldParse::end(),
 ];
 
 static LIFTED_DIE: [FieldParse<HelixContainModuleData>; 5] = [
     FieldParse::new("DeathTypes", |i, d, u| lift_die(0, i, d, u), UserData::None),
-    FieldParse::new(
-        "VeterancyLevels",
-        |i, d, u| lift_die(1, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExemptStatus",
-        |i, d, u| lift_die(2, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "RequiredStatus",
-        |i, d, u| lift_die(3, i, d, u),
-        UserData::None,
-    ),
+    FieldParse::new("VeterancyLevels", |i, d, u| lift_die(1, i, d, u), UserData::None),
+    FieldParse::new("ExemptStatus", |i, d, u| lift_die(2, i, d, u), UserData::None),
+    FieldParse::new("RequiredStatus", |i, d, u| lift_die(3, i, d, u), UserData::None),
     FieldParse::end(),
 ];
 
 static LIFTED_TRANSPORT: [FieldParse<HelixContainModuleData>; 15] = [
-    FieldParse::new(
-        "Slots",
-        |i, d, u| lift_transport(0, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ScatterNearbyOnExit",
-        |i, d, u| lift_transport(1, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "OrientLikeContainerOnExit",
-        |i, d, u| lift_transport(2, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "KeepContainerVelocityOnExit",
-        |i, d, u| lift_transport(3, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "GoAggressiveOnExit",
-        |i, d, u| lift_transport(4, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ResetMoodCheckTimeOnExit",
-        |i, d, u| lift_transport(5, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DestroyRidersWhoAreNotFreeToExit",
-        |i, d, u| lift_transport(6, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExitBone",
-        |i, d, u| lift_transport(7, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExitPitchRate",
-        |i, d, u| lift_transport(8, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "InitialPayload",
-        |i, d, u| lift_transport(9, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "HealthRegen%PerSec",
-        |i, d, u| lift_transport(10, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExitDelay",
-        |i, d, u| lift_transport(11, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ArmedRidersUpgradeMyWeaponSet",
-        |i, d, u| lift_transport(12, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DelayExitInAir",
-        |i, d, u| lift_transport(13, i, d, u),
-        UserData::None,
-    ),
+    FieldParse::new("Slots", |i, d, u| lift_transport(0, i, d, u), UserData::None),
+    FieldParse::new("ScatterNearbyOnExit", |i, d, u| lift_transport(1, i, d, u), UserData::None),
+    FieldParse::new("OrientLikeContainerOnExit", |i, d, u| lift_transport(2, i, d, u), UserData::None),
+    FieldParse::new("KeepContainerVelocityOnExit", |i, d, u| lift_transport(3, i, d, u), UserData::None),
+    FieldParse::new("GoAggressiveOnExit", |i, d, u| lift_transport(4, i, d, u), UserData::None),
+    FieldParse::new("ResetMoodCheckTimeOnExit", |i, d, u| lift_transport(5, i, d, u), UserData::None),
+    FieldParse::new("DestroyRidersWhoAreNotFreeToExit", |i, d, u| lift_transport(6, i, d, u), UserData::None),
+    FieldParse::new("ExitBone", |i, d, u| lift_transport(7, i, d, u), UserData::None),
+    FieldParse::new("ExitPitchRate", |i, d, u| lift_transport(8, i, d, u), UserData::None),
+    FieldParse::new("InitialPayload", |i, d, u| lift_transport(9, i, d, u), UserData::None),
+    FieldParse::new("HealthRegen%PerSec", |i, d, u| lift_transport(10, i, d, u), UserData::None),
+    FieldParse::new("ExitDelay", |i, d, u| lift_transport(11, i, d, u), UserData::None),
+    FieldParse::new("ArmedRidersUpgradeMyWeaponSet", |i, d, u| lift_transport(12, i, d, u), UserData::None),
+    FieldParse::new("DelayExitInAir", |i, d, u| lift_transport(13, i, d, u), UserData::None),
     FieldParse::end(),
 ];
 
 /// `HelixContainModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<HelixContainModuleData>; 3] = [
-    FieldParse::new(
-        "PayloadTemplateName",
-        |i, d, _| i.parse_ascii_string_vector_append(&mut d.payload_template_name_data),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ShouldDrawPips",
-        |i, d, _| {
-            d.draw_pips = i.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("PayloadTemplateName", |i, d, _| i.parse_ascii_string_vector_append(&mut d.payload_template_name_data), UserData::None),
+    FieldParse::new("ShouldDrawPips", |i, d, _| { d.draw_pips = i.parse_bool()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl HelixContainModuleData {
     /// `HelixContainModuleData::buildFieldParse(p)`: `TransportContainModuleData::buildFieldParse(p)`, then this class's table.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, HelixContainModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, HelixContainModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&LIFTED_OPEN)?;
         p.add(&LIFTED_DIE)?;
@@ -348,9 +189,7 @@ impl HelixContainModuleData {
 
 /// The factory's `NewModuleDataProc` for `HelixContain`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::HelixContain(Arc::new(
-        HelixContainModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::HelixContain(Arc::new(HelixContainModuleData::friend_new_module_data(ini)?)))
 }
 
 /// `class HelixContain : public TransportContain`.
@@ -375,20 +214,11 @@ impl HelixContain {
     }
 
     /// The constructor's first half: the base (on a copy of its part of the data), `m_payloadCreated = FALSE`, `m_portableStructureID = INVALID_ID`.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<HelixContainModuleData>>,
-    ) -> IniResult<HelixContain> {
-        let data = module_data
-            .ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
-        let mut tc =
-            TransportContain::unconstructed(object, Some(Arc::new(data.transport.clone())))?;
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<HelixContainModuleData>>) -> IniResult<HelixContain> {
+        let data = module_data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+        let mut tc = TransportContain::unconstructed(object, Some(Arc::new(data.transport.clone())))?;
         tc.payload_created = false;
-        Ok(HelixContain {
-            tc,
-            data,
-            portable_structure_id: INVALID_ID,
-        })
+        Ok(HelixContain { tc, data, portable_structure_id: INVALID_ID })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -419,12 +249,7 @@ impl HelixContain {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         open_contain::contain_module_call(self, world, me, call)
     }
 
@@ -446,11 +271,7 @@ impl HelixContain {
 
     /// The version (2), then (from version 2) `m_portableStructureID`: what `xfer` writes before the base.
     fn xfer_own_fields(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
-        let current: XferVersion = if crate::logic::modules::plant(1459) {
-            1
-        } else {
-            2
-        };
+        let current: XferVersion = if crate::logic::modules::plant(1459) { 1 } else { 2 };
         let mut version = current;
         xfer.xfer_version(&mut version, current)?;
         if version >= 2 {
@@ -461,9 +282,7 @@ impl HelixContain {
 
     /// `getPortableStructure()`: `findObjectByID(m_portableStructureID)`; `INVALID_ID` for none.
     fn get_portable_structure(&self, world: &World) -> ObjectId {
-        if self.portable_structure_id != INVALID_ID
-            && world.objects.find(self.portable_structure_id).is_some()
-        {
+        if self.portable_structure_id != INVALID_ID && world.objects.find(self.portable_structure_id).is_some() {
             self.portable_structure_id
         } else {
             INVALID_ID
@@ -482,16 +301,9 @@ impl HelixContain {
     }
 
     /// The shared head of `addToContain` and `addToContainList`: `true` when `obj` became the portable structure.
-    fn take_portable(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        obj: ObjectId,
-    ) -> Option<bool> {
+    fn take_portable(&mut self, world: &mut World, me: ModuleHandle, obj: ObjectId) -> Option<bool> {
         let portable = Self::is_portable(world, me, obj)?;
-        if portable
-            && (self.portable_structure_id == INVALID_ID) != crate::logic::modules::plant(1451)
-        {
+        if portable && (self.portable_structure_id == INVALID_ID) != crate::logic::modules::plant(1451) {
             let old = self.get_portable_structure(world);
             if old != INVALID_ID {
                 out(self, world, me, |w| w.contain_destroy_object(old));
@@ -515,12 +327,8 @@ impl HelixContain {
         for name in list {
             if let Some(template) = world.thing_factory_find_template(&name) {
                 let team = world.get_team(us).unwrap_or(0);
-                let payload = out(self, world, me, |w| {
-                    w.contain_new_payload_object(template, team, ObjectStatusMaskType::new())
-                });
-                if self.is_valid_container_for(world, me, payload, true)
-                    && !crate::logic::modules::plant(1452)
-                {
+                let payload = out(self, world, me, |w| w.contain_new_payload_object(template, team, ObjectStatusMaskType::new()));
+                if self.is_valid_container_for(world, me, payload, true) && !crate::logic::modules::plant(1452) {
                     self.add_to_contain(world, me, payload);
                 }
                 // else DEBUG_CRASH (nothing in a release build)
@@ -558,11 +366,7 @@ impl TransportContainVirtuals for HelixContain {
     fn t_update(&mut self, world: &mut World, me: ModuleHandle) -> UpdateSleepTime {
         let portable = self.get_portable_structure(world);
         if portable != INVALID_ID && !crate::logic::modules::plant(1454) {
-            let (pos, angle) = world
-                .objects
-                .find(me.object)
-                .map(|o| (o.position, o.thing.orientation()))
-                .unwrap_or_default();
+            let (pos, angle) = world.objects.find(me.object).map(|o| (o.position, o.thing.orientation())).unwrap_or_default();
             out(self, world, me, |w| {
                 w.contain_set_position(portable, &pos);
                 w.contain_set_orientation(portable, angle);
@@ -573,42 +377,20 @@ impl TransportContainVirtuals for HelixContain {
 
     /// `redeployOccupants()`: every rider to 8 above the Helix.
     fn t_redeploy_occupants(&mut self, world: &mut World, me: ModuleHandle) {
-        let mut fire_pos = world
-            .objects
-            .find(me.object)
-            .map(|o| o.position)
-            .unwrap_or_default();
-        fire_pos.z += if crate::logic::modules::plant(1455) {
-            0.0
-        } else {
-            8.0
-        };
+        let mut fire_pos = world.objects.find(me.object).map(|o| o.position).unwrap_or_default();
+        fire_pos.z += if crate::logic::modules::plant(1455) { 0.0 } else { 8.0 };
         // `m_containList`, the module's own
         for rider in self.oc().contain_list().to_vec() {
             if rider != INVALID_ID {
-                out(self, world, me, |w| {
-                    w.contain_set_position(rider, &fire_pos)
-                });
+                out(self, world, me, |w| w.contain_set_position(rider, &fire_pos));
             }
         }
     }
 
     /// `onBodyDamageStateChange(info, old, new)`: the portable structure takes the new state (not rubble).
-    fn t_on_body_damage_state_change(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        _info: &DamageInfo,
-        _old_state: i32,
-        new_state: i32,
-    ) {
+    fn t_on_body_damage_state_change(&mut self, world: &mut World, me: ModuleHandle, _info: &DamageInfo, _old_state: i32, new_state: i32) {
         let portable = self.get_portable_structure(world);
-        if (new_state != BODY_RUBBLE) != crate::logic::modules::plant(1456)
-            && portable != INVALID_ID
-            && !out(self, world, me, |w| {
-                w.contain_set_damage_state(portable, new_state)
-            })
-        {
+        if (new_state != BODY_RUBBLE) != crate::logic::modules::plant(1456) && portable != INVALID_ID && !out(self, world, me, |w| w.contain_set_damage_state(portable, new_state)) {
             undefined(world, me, Undefined::NullBodyModule);
         }
     }
@@ -633,13 +415,7 @@ impl TransportContainVirtuals for HelixContain {
     }
 
     /// `onCapture(old, new)`: "need to setteam() the portable structure, that's all".
-    fn t_on_capture(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        _old_owner: i32,
-        new_owner: i32,
-    ) {
+    fn t_on_capture(&mut self, world: &mut World, me: ModuleHandle, _old_owner: i32, new_owner: i32) {
         let portable = self.get_portable_structure(world);
         if portable == INVALID_ID {
             return;
@@ -669,20 +445,10 @@ impl TransportContainVirtuals for HelixContain {
     }
 
     /// `removeFromContain(obj, exposeStealthUnits)`: the portable structure is only forgotten (while it exists).
-    fn t_remove_from_contain(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        rider: ObjectId,
-        expose_stealth_units: bool,
-    ) {
-        let Some(portable) = Self::is_portable(world, me, rider) else {
-            return;
-        };
+    fn t_remove_from_contain(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId, expose_stealth_units: bool) {
+        let Some(portable) = Self::is_portable(world, me, rider) else { return };
         if portable && rider == self.portable_structure_id {
-            if self.get_portable_structure(world) != INVALID_ID
-                && !crate::logic::modules::plant(1458)
-            {
+            if self.get_portable_structure(world) != INVALID_ID && !crate::logic::modules::plant(1458) {
                 self.portable_structure_id = INVALID_ID;
             }
         } else {
@@ -691,16 +457,8 @@ impl TransportContainVirtuals for HelixContain {
     }
 
     /// `isValidContainerFor(obj, checkCapacity)`: a portable structure while none is held, else the base's.
-    fn t_is_valid_container_for(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        obj: ObjectId,
-        check_capacity: bool,
-    ) -> bool {
-        let Some(portable) = Self::is_portable(world, me, obj) else {
-            return false;
-        };
+    fn t_is_valid_container_for(&mut self, world: &mut World, me: ModuleHandle, obj: ObjectId, check_capacity: bool) -> bool {
+        let Some(portable) = Self::is_portable(world, me, obj) else { return false };
         if portable && self.portable_structure_id == INVALID_ID {
             return true;
         }
@@ -713,12 +471,7 @@ impl TransportContainVirtuals for HelixContain {
     }
 
     /// `isEnclosingContainerFor(obj)`: not for the portable structure.
-    fn t_is_enclosing_container_for(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        obj: ObjectId,
-    ) -> bool {
+    fn t_is_enclosing_container_for(&mut self, world: &mut World, me: ModuleHandle, obj: ObjectId) -> bool {
         if world.objects.find(obj).is_none() {
             undefined(world, me, Undefined::NullObject);
             return true;
@@ -730,63 +483,32 @@ impl TransportContainVirtuals for HelixContain {
     }
 
     /// `isPassengerAllowedToFire(id)`.
-    fn t_is_passenger_allowed_to_fire(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        id: ObjectId,
-    ) -> bool {
+    fn t_is_passenger_allowed_to_fire(&mut self, world: &mut World, me: ModuleHandle, id: ObjectId) -> bool {
         // "nested containment voids firing, always"
-        if world
-            .objects
-            .find(me.object)
-            .is_some_and(|o| o.contained_by != INVALID_ID)
-        {
+        if world.objects.find(me.object).is_some_and(|o| o.contained_by != INVALID_ID) {
             return false;
         }
         if self.portable_structure_id != INVALID_ID && self.portable_structure_id == id {
             return true;
         }
-        if world
-            .objects
-            .find(id)
-            .is_some_and(|o| o.is_kind_of(KINDOF_INFANTRY))
-        {
+        if world.objects.find(id).is_some_and(|o| o.is_kind_of(KINDOF_INFANTRY)) {
             return tc_is_passenger_allowed_to_fire(self, world, me, id);
         }
         false
     }
 
     /// `onContaining(obj, wasSelected)`: the base's, then the garrisoned weapon bonus, `DISABLED_HELD`, and stealth for a portable structure.
-    fn t_on_containing(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        rider: ObjectId,
-        was_selected: bool,
-    ) {
+    fn t_on_containing(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId, was_selected: bool) {
         tc_on_containing(self, world, me, rider, was_selected);
         // "give the object a garrisoned version of its weapon"
         if !crate::logic::modules::plant(1460) {
-            out(self, world, me, |w| {
-                w.set_weapon_bonus_condition(rider, GARRISONED)
-            });
+            out(self, world, me, |w| w.set_weapon_bonus_condition(rider, GARRISONED));
         }
-        out(self, world, me, |w| {
-            w.contain_set_disabled(rider, DISABLED_HELD)
-        });
-        let portable = world
-            .objects
-            .find(rider)
-            .is_some_and(|o| o.is_kind_of(KINDOF_PORTABLE_STRUCTURE));
-        let stealthed = world
-            .objects
-            .find(me.object)
-            .is_some_and(|o| o.test_status(OBJECT_STATUS_STEALTHED));
+        out(self, world, me, |w| w.contain_set_disabled(rider, DISABLED_HELD));
+        let portable = world.objects.find(rider).is_some_and(|o| o.is_kind_of(KINDOF_PORTABLE_STRUCTURE));
+        let stealthed = world.objects.find(me.object).is_some_and(|o| o.test_status(OBJECT_STATUS_STEALTHED));
         if portable && stealthed != crate::logic::modules::plant(1461) {
-            out(self, world, me, |w| {
-                w.contain_stealth_receive_grant(rider, true, 0)
-            });
+            out(self, world, me, |w| w.contain_stealth_receive_grant(rider, true, 0));
         }
     }
 
@@ -795,13 +517,9 @@ impl TransportContainVirtuals for HelixContain {
         tc_on_removing(self, world, me, rider);
         // "give the object back a regular weapon"
         if !crate::logic::modules::plant(1462) {
-            out(self, world, me, |w| {
-                w.clear_weapon_bonus_condition(rider, GARRISONED)
-            });
+            out(self, world, me, |w| w.clear_weapon_bonus_condition(rider, GARRISONED));
         }
-        out(self, world, me, |w| {
-            w.contain_clear_disabled(rider, DISABLED_HELD)
-        });
+        out(self, world, me, |w| w.contain_clear_disabled(rider, DISABLED_HELD));
     }
 
     /// `isSpecialOverlordStyleContainer()`: `TRUE`.
@@ -810,33 +528,18 @@ impl TransportContainVirtuals for HelixContain {
     }
 
     /// `clientVisibleContainedFlashAsSelected()`: the portable structure's drawable flashes; the rest as the base.
-    fn t_other_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    fn t_other_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
             ModuleCall::ClientVisibleContainedFlashAsSelected => {
                 if self.portable_structure_id != INVALID_ID {
                     let portable = self.get_portable_structure(world);
-                    if portable != INVALID_ID
-                        && world
-                            .objects
-                            .find(portable)
-                            .is_some_and(|o| o.is_kind_of(KINDOF_PORTABLE_STRUCTURE))
-                        && world.has_drawable(portable)
-                    {
-                        world.emit(ObjectClientEvent::DrawableFlashAsSelected {
-                            object_id: portable,
-                        });
+                    if portable != INVALID_ID && world.objects.find(portable).is_some_and(|o| o.is_kind_of(KINDOF_PORTABLE_STRUCTURE)) && world.has_drawable(portable) {
+                        world.emit(ObjectClientEvent::DrawableFlashAsSelected { object_id: portable });
                     }
                 }
                 ModuleReply::Done
             }
-            ModuleCall::IsSpecificRiderFreeToExit { obj } => {
-                ModuleReply::Bool(self.is_specific_rider_free_to_exit(world, me, obj))
-            }
+            ModuleCall::IsSpecificRiderFreeToExit { obj } => ModuleReply::Bool(self.is_specific_rider_free_to_exit(world, me, obj)),
             _ => ModuleReply::Unhandled,
         }
     }
@@ -859,12 +562,7 @@ impl UpdateBehavior for HelixContain {
             _ => None,
         }
     }
-    fn other_call(
-        &mut self,
-        _world: &mut World,
-        _me: ModuleHandle,
-        _call: ModuleCall,
-    ) -> ModuleReply {
+    fn other_call(&mut self, _world: &mut World, _me: ModuleHandle, _call: ModuleCall) -> ModuleReply {
         ModuleReply::Unhandled
     }
 }

@@ -25,21 +25,17 @@
 //! holds 0 (and saves and loads it as upstream does); nothing reads it.
 use std::sync::Arc;
 
-use crate::common::geometry::GeometryInfo;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::sleepy::UpdateHandle;
 use crate::logic::world::update_body::UpdateBody;
+use crate::common::geometry::GeometryInfo;
 
 /// `class DynamicGeometryInfoUpdateModuleData : public ModuleData`.
 #[derive(Clone, Debug, PartialEq)]
@@ -86,101 +82,31 @@ impl Default for DynamicGeometryInfoUpdateModuleData {
 
 /// `DynamicGeometryInfoUpdateModuleData::buildFieldParse`'s own table (batch R32: the firestorm's data lifts it).
 pub(crate) static FIELD_PARSE: [FieldParse<DynamicGeometryInfoUpdateModuleData>; 10] = [
-    FieldParse::new(
-        "InitialDelay",
-        |ini, d, _| {
-            d.initial_delay = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "InitialHeight",
-        |ini, d, _| {
-            d.initial_height = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "InitialMajorRadius",
-        |ini, d, _| {
-            d.initial_major_radius = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "InitialMinorRadius",
-        |ini, d, _| {
-            d.initial_minor_radius = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FinalHeight",
-        |ini, d, _| {
-            d.final_height = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FinalMajorRadius",
-        |ini, d, _| {
-            d.final_major_radius = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FinalMinorRadius",
-        |ini, d, _| {
-            d.final_minor_radius = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TransitionTime",
-        |ini, d, _| {
-            d.transition_time = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ReverseAtTransitionTime",
-        |ini, d, _| {
-            d.reverse_at_transition_time = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("InitialDelay", |ini, d, _| { d.initial_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("InitialHeight", |ini, d, _| { d.initial_height = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("InitialMajorRadius", |ini, d, _| { d.initial_major_radius = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("InitialMinorRadius", |ini, d, _| { d.initial_minor_radius = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("FinalHeight", |ini, d, _| { d.final_height = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("FinalMajorRadius", |ini, d, _| { d.final_major_radius = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("FinalMinorRadius", |ini, d, _| { d.final_minor_radius = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("TransitionTime", |ini, d, _| { d.transition_time = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("ReverseAtTransitionTime", |ini, d, _| { d.reverse_at_transition_time = ini.parse_bool()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl DynamicGeometryInfoUpdateModuleData {
     /// `buildFieldParse(p)`: the base's (no fields), then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, DynamicGeometryInfoUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, DynamicGeometryInfoUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<DynamicGeometryInfoUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<DynamicGeometryInfoUpdateModuleData> {
         let mut data = DynamicGeometryInfoUpdateModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                DynamicGeometryInfoUpdateModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, DynamicGeometryInfoUpdateModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -216,9 +142,7 @@ pub struct DynamicGeometryInfoUpdate {
 impl PartialEq for DynamicGeometryInfoUpdate {
     /// The same object, the same data object (upstream compares pointers) and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
-            && self.state_words() == other.state_words()
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.state_words() == other.state_words()
     }
 }
 
@@ -230,38 +154,21 @@ impl DynamicGeometryInfoUpdate {
 
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and
     /// the countdown `max(InitialDelay, 1)`, the data's reverse flag and sizes.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<DynamicGeometryInfoUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<DynamicGeometryInfoUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
         Ok(DynamicGeometryInfoUpdate {
             update,
-            starting_delay_countdown: data.initial_delay.max(
-                if crate::logic::modules::plant(1921) {
-                    0
-                } else {
-                    1
-                },
-            ),
+            starting_delay_countdown: data.initial_delay.max(if crate::logic::modules::plant(1921) { 0 } else { 1 }),
             time_active: 0,
             started: false,
             finished: false,
             reverse_at_transition_time: data.reverse_at_transition_time,
             direction: 0,
             switched_directions: false,
-            initial: [
-                data.initial_height,
-                data.initial_major_radius,
-                data.initial_minor_radius,
-            ],
-            final_: [
-                data.final_height,
-                data.final_major_radius,
-                data.final_minor_radius,
-            ],
+            initial: [data.initial_height, data.initial_major_radius, data.initial_minor_radius],
+            final_: [data.final_height, data.final_major_radius, data.final_minor_radius],
             data,
         })
     }
@@ -276,6 +183,7 @@ impl DynamicGeometryInfoUpdate {
         &self.data
     }
 
+
     /// `update()` as the scheduler runs it (see [`update_behavior::world_update`]).
     pub fn world_update(&mut self, world: &mut World, me: UpdateHandle) -> UpdateSleepTime {
         update_behavior::world_update(self, world, me)
@@ -287,12 +195,7 @@ impl DynamicGeometryInfoUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -310,6 +213,7 @@ impl DynamicGeometryInfoUpdate {
     pub fn load_post_process_with(&mut self, update: &mut UpdateModule) {
         update_behavior::load_post_process_with(self, update);
     }
+
 
     /// batch R32: the `UpdateModule` base, for `FirestormDynamicGeometryInfoUpdate`'s load.
     pub(crate) fn update_module_mut(&mut self) -> &mut UpdateModule {
@@ -361,27 +265,13 @@ impl UpdateBehavior for DynamicGeometryInfoUpdate {
             self.started = true;
         }
         let d = self.data.clone();
-        let t = if crate::logic::modules::plant(1922) {
-            self.time_active + 1
-        } else {
-            self.time_active
-        };
+        let t = if crate::logic::modules::plant(1922) { self.time_active + 1 } else { self.time_active };
         let ratio = t as f32 / d.transition_time as f32;
         let new_height = self.initial[0] + (ratio * (self.final_[0] - self.initial[0]));
         let new_major = self.initial[1] + (ratio * (self.final_[1] - self.initial[1]));
         let new_minor = self.initial[2] + (ratio * (self.final_[2] - self.initial[2]));
-        if let Some(old) = world
-            .objects
-            .find(me.object)
-            .map(|o| o.geometry_info.clone())
-        {
-            let new_geom = GeometryInfo::new(
-                old.get_geom_type(),
-                old.get_is_small(),
-                new_height,
-                new_major,
-                new_minor,
-            );
+        if let Some(old) = world.objects.find(me.object).map(|o| o.geometry_info.clone()) {
+            let new_geom = GeometryInfo::new(old.get_geom_type(), old.get_is_small(), new_height, new_major, new_minor);
             world.set_geometry_info(me.object, &new_geom);
         }
         self.time_active = self.time_active.wrapping_add(1);
@@ -391,11 +281,7 @@ impl UpdateBehavior for DynamicGeometryInfoUpdate {
                 self.time_active = 0;
                 self.reverse_at_transition_time = false;
                 self.initial = [d.final_height, d.final_major_radius, d.final_minor_radius];
-                self.final_ = [
-                    d.initial_height,
-                    d.initial_major_radius,
-                    d.initial_minor_radius,
-                ];
+                self.final_ = [d.initial_height, d.initial_major_radius, d.initial_minor_radius];
             } else {
                 self.finished = true;
             }
@@ -455,7 +341,5 @@ impl Snapshot for DynamicGeometryInfoUpdate {
 
 /// The factory's `NewModuleDataProc` for `DynamicGeometryInfoUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::DynamicGeometryInfoUpdate(Arc::new(
-        DynamicGeometryInfoUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::DynamicGeometryInfoUpdate(Arc::new(DynamicGeometryInfoUpdateModuleData::friend_new_module_data(ini)?)))
 }

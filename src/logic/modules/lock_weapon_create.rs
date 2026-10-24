@@ -14,6 +14,7 @@
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
 
+
 //! `LockWeaponCreate`: when the building is finished, its weapon choice is
 //! locked to the slot named by `SlotToLock` (`LOCKED_PERMANENTLY`).
 //!
@@ -38,9 +39,9 @@ use crate::common::game_type::ObjectId;
 use crate::common::ini::{FieldParse, Ini, IniResult, MultiIniFieldParse, UserData};
 use crate::logic::module::create_module::{CreateModule, CreateModuleData};
 use crate::logic::modules::create_host::CreateHost;
-use crate::logic::weapon_fire::PRIMARY_WEAPON;
-use crate::logic::weapon_set::WEAPON_SLOT_TYPE_NAMES;
 use crate::logic::weapon_set_state::LOCKED_PERMANENTLY;
+use crate::logic::weapon_set::WEAPON_SLOT_TYPE_NAMES;
+use crate::logic::weapon_fire::PRIMARY_WEAPON;
 
 /// `class LockWeaponCreateModuleData : public CreateModuleData`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,10 +54,7 @@ pub struct LockWeaponCreateModuleData {
 
 impl Default for LockWeaponCreateModuleData {
     fn default() -> Self {
-        LockWeaponCreateModuleData {
-            create: CreateModuleData::new(),
-            slot_to_lock: PRIMARY_WEAPON,
-        }
+        LockWeaponCreateModuleData { create: CreateModuleData::new(), slot_to_lock: PRIMARY_WEAPON }
     }
 }
 
@@ -67,18 +65,12 @@ impl LockWeaponCreateModuleData {
     }
 
     /// `LockWeaponCreateModuleData::buildFieldParse(p)`: the base has no fields.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, LockWeaponCreateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, LockWeaponCreateModuleData>) -> IniResult<()> {
         p.add(LOCK_WEAPON_FIELDS)
     }
 
     /// `SlotToLock`, by a weapon slot name.
-    fn parse_slot(
-        ini: &mut Ini<'_>,
-        this: &mut LockWeaponCreateModuleData,
-        user_data: &UserData,
-    ) -> IniResult<()> {
+    fn parse_slot(ini: &mut Ini<'_>, this: &mut LockWeaponCreateModuleData, user_data: &UserData) -> IniResult<()> {
         let names: &[&str] = match user_data {
             UserData::Names(n) => n,
             _ => &WEAPON_SLOT_TYPE_NAMES,
@@ -88,14 +80,8 @@ impl LockWeaponCreateModuleData {
     }
 }
 
-static LOCK_WEAPON_FIELDS: &[FieldParse<LockWeaponCreateModuleData>] = &[
-    FieldParse::new(
-        "SlotToLock",
-        LockWeaponCreateModuleData::parse_slot,
-        UserData::Names(&WEAPON_SLOT_TYPE_NAMES),
-    ),
-    FieldParse::end(),
-];
+static LOCK_WEAPON_FIELDS: &[FieldParse<LockWeaponCreateModuleData>] =
+    &[FieldParse::new("SlotToLock", LockWeaponCreateModuleData::parse_slot, UserData::Names(&WEAPON_SLOT_TYPE_NAMES)), FieldParse::end()];
 
 /// `class LockWeaponCreate : public CreateModule`.
 #[derive(Clone, Debug)]
@@ -109,9 +95,7 @@ pub struct LockWeaponCreate {
 impl LockWeaponCreate {
     /// `LockWeaponCreate(thing, moduleData)`: the base gets the create data of `data`.
     pub fn new(object: ObjectId, data: Option<Arc<LockWeaponCreateModuleData>>) -> IniResult<Self> {
-        let data = data.ok_or_else(|| {
-            crate::common::ini::IniError::new(crate::common::ini::IniErrorKind::InvalidData)
-        })?;
+        let data = data.ok_or_else(|| crate::common::ini::IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let create = CreateModule::new(object, Some(Arc::new(data.create.clone())))?;
         Ok(LockWeaponCreate { create, data })
     }
@@ -135,9 +119,7 @@ impl LockWeaponCreate {
 // --- p1w10-sonnet ---
 impl LockWeaponCreateModuleData {
     /// `LockWeaponCreate::friend_newModuleData(ini)`: new data, read with `initFromINIMultiProc` if there is an `ini`.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<LockWeaponCreateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<LockWeaponCreateModuleData> {
         let mut data = LockWeaponCreateModuleData::new();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, LockWeaponCreateModuleData::build_field_parse)?;
@@ -147,12 +129,8 @@ impl LockWeaponCreateModuleData {
 }
 
 /// The factory's `NewModuleDataProc` for `LockWeaponCreate`.
-pub fn new_module_data(
-    ini: Option<&mut Ini<'_>>,
-) -> IniResult<crate::common::module::ModuleDataKind> {
-    Ok(crate::common::module::ModuleDataKind::LockWeaponCreate(
-        Arc::new(LockWeaponCreateModuleData::friend_new_module_data(ini)?),
-    ))
+pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::LockWeaponCreate(Arc::new(LockWeaponCreateModuleData::friend_new_module_data(ini)?)))
 }
 // --- end p1w10-sonnet ---
 
@@ -162,12 +140,7 @@ create_module_eq!(LockWeaponCreate, data);
 
 impl LockWeaponCreate {
     /// The module's answer to one of `Object`'s calls (`onCreate` and `onBuildComplete` of the create interface).
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         let _ = me;
         match call {
             ModuleCall::OnCreate => {
@@ -191,10 +164,7 @@ mod tests {
 
     #[test]
     fn locks_the_configured_slot_after_the_base() {
-        let data = LockWeaponCreateModuleData {
-            slot_to_lock: 1,
-            ..Default::default()
-        };
+        let data = LockWeaponCreateModuleData { slot_to_lock: 1, ..Default::default() };
         let mut m = LockWeaponCreate::new(8, Some(Arc::new(data))).unwrap();
         let mut h = Recorder::default();
         m.on_build_complete(&mut h);
@@ -204,9 +174,6 @@ mod tests {
 
     #[test]
     fn defaults_to_the_primary_slot() {
-        assert_eq!(
-            LockWeaponCreateModuleData::new().slot_to_lock,
-            PRIMARY_WEAPON
-        );
+        assert_eq!(LockWeaponCreateModuleData::new().slot_to_lock, PRIMARY_WEAPON);
     }
 }

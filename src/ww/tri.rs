@@ -42,50 +42,29 @@ pub fn point_in_triangle_2d(
     axis_2: usize,
     flags: &mut u8,
 ) -> bool {
-    let p0p1 = Vector2::new(
-        tri_point1[axis_1] - tri_point0[axis_1],
-        tri_point1[axis_2] - tri_point0[axis_2],
-    );
-    let p1p2 = Vector2::new(
-        tri_point2[axis_1] - tri_point1[axis_1],
-        tri_point2[axis_2] - tri_point1[axis_2],
-    );
-    let p2p0 = Vector2::new(
-        tri_point0[axis_1] - tri_point2[axis_1],
-        tri_point0[axis_2] - tri_point2[axis_2],
-    );
+    let p0p1 = Vector2::new(tri_point1[axis_1] - tri_point0[axis_1], tri_point1[axis_2] - tri_point0[axis_2]);
+    let p1p2 = Vector2::new(tri_point2[axis_1] - tri_point1[axis_1], tri_point2[axis_2] - tri_point1[axis_2]);
+    let p2p0 = Vector2::new(tri_point0[axis_1] - tri_point2[axis_1], tri_point0[axis_2] - tri_point2[axis_2]);
 
     // Which side P2 is relative to P0P1 (also: is the triangle degenerate).
-    let p0p2 = Vector2::new(
-        tri_point2[axis_1] - tri_point0[axis_1],
-        tri_point2[axis_2] - tri_point0[axis_2],
-    );
+    let p0p2 = Vector2::new(tri_point2[axis_1] - tri_point0[axis_1], tri_point2[axis_2] - tri_point0[axis_2]);
     let p0p1p2 = Vector2::perp_dot_product(&p0p1, &p0p2);
     if p0p1p2 != 0.0f32 {
         // The triangle is not degenerate - test three sides.
         let side_factor = if p0p1p2 > 0.0f32 { 1.0f32 } else { -1.0f32 };
         let mut factors = [0.0f32; 3];
 
-        let p0p_t = Vector2::new(
-            test_point[axis_1] - tri_point0[axis_1],
-            test_point[axis_2] - tri_point0[axis_2],
-        );
+        let p0p_t = Vector2::new(test_point[axis_1] - tri_point0[axis_1], test_point[axis_2] - tri_point0[axis_2]);
         factors[0] = Vector2::perp_dot_product(&p0p1, &p0p_t);
         if factors[0] * side_factor < 0.0f32 {
             return false;
         }
-        let p1p_t = Vector2::new(
-            test_point[axis_1] - tri_point1[axis_1],
-            test_point[axis_2] - tri_point1[axis_2],
-        );
+        let p1p_t = Vector2::new(test_point[axis_1] - tri_point1[axis_1], test_point[axis_2] - tri_point1[axis_2]);
         factors[1] = Vector2::perp_dot_product(&p1p2, &p1p_t);
         if factors[1] * side_factor < 0.0f32 {
             return false;
         }
-        let p2p_t = Vector2::new(
-            test_point[axis_1] - tri_point2[axis_1],
-            test_point[axis_2] - tri_point2[axis_2],
-        );
+        let p2p_t = Vector2::new(test_point[axis_1] - tri_point2[axis_1], test_point[axis_2] - tri_point2[axis_2]);
         factors[2] = Vector2::perp_dot_product(&p2p0, &p2p_t);
         if factors[2] * side_factor < 0.0f32 {
             return false;
@@ -107,35 +86,23 @@ pub fn point_in_triangle_2d(
             if p0p1dist2 > p2p0dist2 {
                 // points 0 and 1 are the 'outer' points. 0 is 'start' and 1 is 'end'.
                 p_sp_e = p0p1;
-                p_sp_t = Vector2::new(
-                    test_point[axis_1] - tri_point0[axis_1],
-                    test_point[axis_2] - tri_point0[axis_2],
-                );
+                p_sp_t = Vector2::new(test_point[axis_1] - tri_point0[axis_1], test_point[axis_2] - tri_point0[axis_2]);
                 max_dist2 = p0p1dist2;
             } else {
                 // points 0 and 2 are the 'outer' points. 2 is 'start' and 0 is 'end'.
                 p_sp_e = p2p0;
-                p_sp_t = Vector2::new(
-                    test_point[axis_1] - tri_point2[axis_1],
-                    test_point[axis_2] - tri_point2[axis_2],
-                );
+                p_sp_t = Vector2::new(test_point[axis_1] - tri_point2[axis_1], test_point[axis_2] - tri_point2[axis_2]);
                 max_dist2 = p2p0dist2;
             }
         } else if p1p2dist2 > p2p0dist2 {
             // points 1 and 2 are the 'outer' points. 1 is 'start' and 2 is 'end'.
             p_sp_e = p1p2;
-            p_sp_t = Vector2::new(
-                test_point[axis_1] - tri_point1[axis_1],
-                test_point[axis_2] - tri_point1[axis_2],
-            );
+            p_sp_t = Vector2::new(test_point[axis_1] - tri_point1[axis_1], test_point[axis_2] - tri_point1[axis_2]);
             max_dist2 = p1p2dist2;
         } else {
             // points 0 and 2 are the 'outer' points. 2 is 'start' and 0 is 'end'.
             p_sp_e = p2p0;
-            p_sp_t = Vector2::new(
-                test_point[axis_1] - tri_point2[axis_1],
-                test_point[axis_2] - tri_point2[axis_2],
-            );
+            p_sp_t = Vector2::new(test_point[axis_1] - tri_point2[axis_1], test_point[axis_2] - tri_point2[axis_2]);
             max_dist2 = p2p0dist2;
         }
 
@@ -174,34 +141,10 @@ mod tests {
         let b = Vector3::new(4.0, 0.0, 0.0);
         let c = Vector3::new(0.0, 4.0, 0.0);
         let mut f = 0u8;
-        assert!(point_in_triangle_2d(
-            &a,
-            &b,
-            &c,
-            &Vector3::new(1.0, 1.0, 9.0),
-            0,
-            1,
-            &mut f
-        ));
+        assert!(point_in_triangle_2d(&a, &b, &c, &Vector3::new(1.0, 1.0, 9.0), 0, 1, &mut f));
         assert_eq!(f, 0);
-        assert!(!point_in_triangle_2d(
-            &a,
-            &b,
-            &c,
-            &Vector3::new(3.0, 3.0, 0.0),
-            0,
-            1,
-            &mut f
-        ));
-        assert!(point_in_triangle_2d(
-            &a,
-            &b,
-            &c,
-            &Vector3::new(2.0, 0.0, 0.0),
-            0,
-            1,
-            &mut f
-        ));
+        assert!(!point_in_triangle_2d(&a, &b, &c, &Vector3::new(3.0, 3.0, 0.0), 0, 1, &mut f));
+        assert!(point_in_triangle_2d(&a, &b, &c, &Vector3::new(2.0, 0.0, 0.0), 0, 1, &mut f));
         assert_eq!(f, TRI_RAYCAST_FLAG_HIT_EDGE);
     }
 
@@ -215,48 +158,16 @@ mod tests {
         // bug (`p2p0dist2` is the length of `p1p2`, 8 not 32) the segment
         // length is taken as 8, so (1,1), which is on the segment, is
         // reported outside, and (2,2) is the only point inside.
-        assert!(!point_in_triangle_2d(
-            &a,
-            &b,
-            &c,
-            &Vector3::new(1.0, 1.0, 0.0),
-            0,
-            1,
-            &mut f
-        ));
+        assert!(!point_in_triangle_2d(&a, &b, &c, &Vector3::new(1.0, 1.0, 0.0), 0, 1, &mut f));
         assert_eq!(f, 0);
-        assert!(point_in_triangle_2d(
-            &a,
-            &b,
-            &c,
-            &Vector3::new(2.0, 2.0, 0.0),
-            0,
-            1,
-            &mut f
-        ));
+        assert!(point_in_triangle_2d(&a, &b, &c, &Vector3::new(2.0, 2.0, 0.0), 0, 1, &mut f));
         assert_eq!(f, TRI_RAYCAST_FLAG_HIT_EDGE);
         // off the line
-        assert!(!point_in_triangle_2d(
-            &a,
-            &b,
-            &c,
-            &Vector3::new(1.0, 2.0, 0.0),
-            0,
-            1,
-            &mut f
-        ));
+        assert!(!point_in_triangle_2d(&a, &b, &c, &Vector3::new(1.0, 2.0, 0.0), 0, 1, &mut f));
         // all three coincide
         let mut f = 0u8;
         assert!(point_in_triangle_2d(&a, &a, &a, &a, 0, 1, &mut f));
         assert_eq!(f, TRI_RAYCAST_FLAG_HIT_EDGE);
-        assert!(!point_in_triangle_2d(
-            &a,
-            &a,
-            &a,
-            &Vector3::new(1.0, 0.0, 0.0),
-            0,
-            1,
-            &mut f
-        ));
+        assert!(!point_in_triangle_2d(&a, &a, &a, &Vector3::new(1.0, 0.0, 0.0), 0, 1, &mut f));
     }
 }

@@ -70,10 +70,10 @@
 //! - `getClosestObjects` with an empty ring table (no terrain): upstream
 //!   indexes `m_radiusVec[0]` of an empty vector; here nothing is found.
 
-use super::cell::{PartitionCell, SightingInfo};
 use super::collide::{self, CollideInfo, CollideLocAndNormal};
 use super::data::{Coi, CoiRef, DirtyStatus, PartitionData};
 use super::host::{GhostGeometry, PartitionHost};
+use super::cell::{PartitionCell, SightingInfo};
 use crate::common::base_type::{real_to_int_ceil, real_to_int_floor, ICoord2D, Region3D};
 use crate::common::game_common::{CellShroudStatus, MAX_PLAYER_COUNT};
 use crate::common::geometry::GeometryType;
@@ -95,11 +95,7 @@ const CONTACT_SOCKET_COUNT: usize = 5381;
 pub enum PartitionClientEvent {
     /// `TheDisplay->setShroudLevel(x, y, status)` and `TheRadar->setShroudLevel(x, y, status)`
     /// for a cell of the local player.
-    SetShroudLevel {
-        x: i32,
-        y: i32,
-        status: CellShroudStatus,
-    },
+    SetShroudLevel { x: i32, y: i32, status: CellShroudStatus },
     /// `TheDisplay->clearShroud()` and `TheRadar->clearShroud()`.
     ClearShroud,
     /// `ghost->snapShot(playerIndex)`: remember the object's look while fogged.
@@ -401,21 +397,11 @@ impl PartitionManager {
     /// (each can be anywhere in its cell).
     fn calc_min_radius(&self, cur: ICoord2D) -> i32 {
         let half_cell = (f64::from(self.cell_size) * 0.5) as f32;
-        let center_pos = [
-            (-half_cell, -half_cell),
-            (half_cell, -half_cell),
-            (-half_cell, half_cell),
-            (half_cell, half_cell),
-        ];
+        let center_pos = [(-half_cell, -half_cell), (half_cell, -half_cell), (-half_cell, half_cell), (half_cell, half_cell)];
 
         let x = cur.x as f32 * self.cell_size;
         let y = cur.y as f32 * self.cell_size;
-        let other_pos = [
-            (x - half_cell, y - half_cell),
-            (x + half_cell, y - half_cell),
-            (x - half_cell, y + half_cell),
-            (x + half_cell, y + half_cell),
-        ];
+        let other_pos = [(x - half_cell, y - half_cell), (x + half_cell, y - half_cell), (x - half_cell, y + half_cell), (x + half_cell, y + half_cell)];
 
         // double, not real
         let mut min_dist_sqr: f64 = 1e12;
@@ -452,8 +438,7 @@ impl PartitionManager {
         self.max_gco_radius = real_to_int_ceil((max_possible_dist / f64::from(cell_size)) as f32);
 
         self.radius_vec.clear();
-        self.radius_vec
-            .resize((self.max_gco_radius + 1).max(0) as usize, Vec::new());
+        self.radius_vec.resize((self.max_gco_radius + 1).max(0) as usize, Vec::new());
 
         let mut cur = ICoord2D { x: 0, y: 0 };
         cur.y = -cy + 1;
@@ -636,10 +621,7 @@ impl PartitionManager {
     pub(super) fn remove_all_touched_cells(&mut self, slot: usize) {
         let n = self.md(slot).coi_array.len();
         for i in 0..n {
-            let r = CoiRef {
-                module: slot as u32,
-                index: i as u32,
-            };
+            let r = CoiRef { module: slot as u32, index: i as u32 };
             if self.coi(r).module.is_some() {
                 self.coi_remove_all_coverage(r);
                 self.md_mut(slot).coi_in_use_count -= 1;
@@ -659,13 +641,7 @@ impl PartitionManager {
     /// `PartitionData::calcMaxCoiForShape`. Note upstream's missing `break`
     /// after the sphere/cylinder case: it falls into the box case, so every
     /// shape is sized by the box formula (see the module docs).
-    pub fn calc_max_coi_for_shape(
-        &self,
-        _geom: GeometryType,
-        major_radius: f32,
-        minor_radius: f32,
-        _is_small: bool,
-    ) -> i32 {
+    pub fn calc_max_coi_for_shape(&self, _geom: GeometryType, major_radius: f32, minor_radius: f32, _is_small: bool) -> i32 {
         // (SPHERE, CYLINDER) cells = worldToCellDist(majorRadius*2) + 1; result = cells*cells; then
         // falls through to:
         let diagonal = Real::sqrt(major_radius * major_radius + minor_radius * minor_radius);
@@ -680,12 +656,7 @@ impl PartitionManager {
     /// `PartitionData::allocCoiArray()` for the module's object.
     fn alloc_coi_array<H: PartitionHost>(&mut self, host: &H, slot: usize) {
         let count = match self.md(slot).object.and_then(|id| host.object_geometry(id)) {
-            Some(og) => self.calc_max_coi_for_shape(
-                og.geometry.get_geom_type(),
-                og.geometry.get_major_radius(),
-                og.geometry.get_minor_radius(),
-                og.geometry.get_is_small(),
-            ),
+            Some(og) => self.calc_max_coi_for_shape(og.geometry.get_geom_type(), og.geometry.get_major_radius(), og.geometry.get_minor_radius(), og.geometry.get_is_small()),
             None => 4,
         };
         let m = self.md_mut(slot);
@@ -801,8 +772,7 @@ impl PartitionManager {
             m.ghost.take()
         };
         if let Some(g) = ghost {
-            self.events
-                .push(PartitionClientEvent::GhostRemoved { ghost: g.handle });
+            self.events.push(PartitionClientEvent::GhostRemoved { ghost: g.handle });
         }
     }
 
@@ -822,8 +792,7 @@ impl PartitionManager {
                 self.by_object.remove(&object);
                 self.md_mut(slot).object = None;
                 // Tell the ghost object that its parent is dead.
-                self.events
-                    .push(PartitionClientEvent::GhostParentGone { ghost });
+                self.events.push(PartitionClientEvent::GhostParentGone { ghost });
                 return;
             }
         }
@@ -837,12 +806,7 @@ impl PartitionManager {
     /// a ghost (only used to restore after a reset). A ghost that is already
     /// registered is left alone.
     pub fn register_ghost_object(&mut self, ghost: GhostGeometry) {
-        if self
-            .modules
-            .iter()
-            .flatten()
-            .any(|m| m.ghost.as_ref().map(|g| g.handle) == Some(ghost.handle))
-        {
+        if self.modules.iter().flatten().any(|m| m.ghost.as_ref().map(|g| g.handle) == Some(ghost.handle)) {
             return;
         }
         let slot = self.alloc_module(PartitionData::new());
@@ -855,30 +819,19 @@ impl PartitionManager {
             m.ghost = Some(ghost.clone());
         }
         self.free_coi_array(slot);
-        let count = self.calc_max_coi_for_shape(
-            ghost.geometry.get_geom_type(),
-            ghost.geometry.get_major_radius(),
-            ghost.geometry.get_minor_radius(),
-            ghost.geometry.get_is_small(),
-        );
+        let count = self.calc_max_coi_for_shape(ghost.geometry.get_geom_type(), ghost.geometry.get_major_radius(), ghost.geometry.get_minor_radius(), ghost.geometry.get_is_small());
         {
             let m = self.md_mut(slot);
             m.coi_array = vec![Coi::default(); count.max(0) as usize];
             m.coi_in_use_count = 0;
         }
         self.make_dirty(slot, true);
-        self.events.push(PartitionClientEvent::GhostParentGone {
-            ghost: ghost.handle,
-        });
+        self.events.push(PartitionClientEvent::GhostParentGone { ghost: ghost.handle });
     }
 
     /// `unRegisterGhostObject(ghost)`: release the partition data held for a ghost.
     pub fn unregister_ghost_object(&mut self, handle: u32) {
-        let Some(slot) = (0..self.modules.len()).find(|&s| {
-            self.modules[s]
-                .as_ref()
-                .is_some_and(|m| m.ghost.as_ref().map(|g| g.handle) == Some(handle))
-        }) else {
+        let Some(slot) = (0..self.modules.len()).find(|&s| self.modules[s].as_ref().is_some_and(|m| m.ghost.as_ref().map(|g| g.handle) == Some(handle))) else {
             return;
         };
         // detachFromGhostObject
@@ -907,12 +860,7 @@ impl PartitionManager {
             .iter()
             .take(m.coi_in_use_count.max(0) as usize)
             .filter_map(|c| c.cell)
-            .map(|c| {
-                (
-                    self.cells[c as usize].get_cell_x(),
-                    self.cells[c as usize].get_cell_y(),
-                )
-            })
+            .map(|c| (self.cells[c as usize].get_cell_x(), self.cells[c as usize].get_cell_y()))
             .collect()
     }
 
@@ -1014,9 +962,7 @@ impl PartitionManager {
             let mut ids = Vec::new();
             let mut coi = cell.first_coi;
             while let Some(r) = coi {
-                ids.push(id_of(
-                    self.coi(r).module.and_then(|m| self.md(m as usize).object),
-                ));
+                ids.push(id_of(self.coi(r).module.and_then(|m| self.md(m as usize).object)));
                 coi = self.coi(r).next;
             }
             out.push(ids.len() as u32);
@@ -1024,10 +970,7 @@ impl PartitionManager {
             let (mut hs, mut ht, mut hc) = (2_166_136_261u32, 2_166_136_261u32, 2_166_136_261u32);
             for p in 0..MAX_PLAYER_COUNT as usize {
                 hs = fold(hs, u32::from(cell.shroud_level[p].current_shroud as u16));
-                hs = fold(
-                    hs,
-                    u32::from(cell.shroud_level[p].active_shroud_level as u16),
-                );
+                hs = fold(hs, u32::from(cell.shroud_level[p].active_shroud_level as u16));
                 ht = fold(ht, cell.threat_value[p] as u32);
                 hc = fold(hc, cell.cash_value[p] as u32);
             }
@@ -1035,13 +978,7 @@ impl PartitionManager {
         }
         out.push(self.pending_undo_shroud_reveals.len() as u32);
         for s in &self.pending_undo_shroud_reveals {
-            out.extend([
-                s.where_.x.to_bits(),
-                s.where_.y.to_bits(),
-                s.how_far.to_bits(),
-                u32::from(s.for_whom),
-                s.data,
-            ]);
+            out.extend([s.where_.x.to_bits(), s.where_.y.to_bits(), s.how_far.to_bits(), u32::from(s.for_whom), s.data]);
         }
         out
     }
@@ -1059,10 +996,7 @@ impl PartitionManager {
     /// Whether a module holds the ghost with this handle and no object (the
     /// state in which the ghost manager may call `unRegisterGhostObject`).
     pub fn has_objectless_ghost_module(&self, handle: u32) -> bool {
-        self.modules
-            .iter()
-            .flatten()
-            .any(|m| m.object.is_none() && m.ghost.as_ref().map(|g| g.handle) == Some(handle))
+        self.modules.iter().flatten().any(|m| m.object.is_none() && m.ghost.as_ref().map(|g| g.handle) == Some(handle))
     }
 
     /// `object->friend_getPartitionData() != NULL`.
@@ -1102,14 +1036,7 @@ impl PartitionManager {
             self.md_mut(slot).coi_in_use_count += 1;
         }
         if let Some(i) = coi_to_use {
-            self.coi_add_coverage(
-                CoiRef {
-                    module: slot as u32,
-                    index: i as u32,
-                },
-                cell,
-                slot,
-            );
+            self.coi_add_coverage(CoiRef { module: slot as u32, index: i as u32 }, cell, slot);
         }
     }
 
@@ -1139,30 +1066,10 @@ impl PartitionManager {
         let mut y = cell_radius.wrapping_sub(1);
         let mut dec = 3i32.wrapping_sub(cell_radius.wrapping_mul(2));
         for x in 0..cell_radius {
-            self.h_line_circle(
-                slot,
-                cell_center_x.wrapping_sub(x),
-                cell_center_x.wrapping_add(x),
-                cell_center_y.wrapping_add(y),
-            );
-            self.h_line_circle(
-                slot,
-                cell_center_x.wrapping_sub(x),
-                cell_center_x.wrapping_add(x),
-                cell_center_y.wrapping_sub(y),
-            );
-            self.h_line_circle(
-                slot,
-                cell_center_x.wrapping_sub(y),
-                cell_center_x.wrapping_add(y),
-                cell_center_y.wrapping_add(x),
-            );
-            self.h_line_circle(
-                slot,
-                cell_center_x.wrapping_sub(y),
-                cell_center_x.wrapping_add(y),
-                cell_center_y.wrapping_sub(x),
-            );
+            self.h_line_circle(slot, cell_center_x.wrapping_sub(x), cell_center_x.wrapping_add(x), cell_center_y.wrapping_add(y));
+            self.h_line_circle(slot, cell_center_x.wrapping_sub(x), cell_center_x.wrapping_add(x), cell_center_y.wrapping_sub(y));
+            self.h_line_circle(slot, cell_center_x.wrapping_sub(y), cell_center_x.wrapping_add(y), cell_center_y.wrapping_add(x));
+            self.h_line_circle(slot, cell_center_x.wrapping_sub(y), cell_center_x.wrapping_add(y), cell_center_y.wrapping_sub(x));
 
             if dec >= 0 {
                 dec = dec.wrapping_add((1i32.wrapping_sub(y)).wrapping_shl(2));
@@ -1192,14 +1099,7 @@ impl PartitionManager {
                     // upstream does not check the array size (see the module docs)
                     if (idx as usize) < self.md(slot).coi_array.len() {
                         self.md_mut(slot).coi_in_use_count += 1;
-                        self.coi_add_coverage(
-                            CoiRef {
-                                module: slot as u32,
-                                index: idx as u32,
-                            },
-                            cell,
-                            slot,
-                        );
+                        self.coi_add_coverage(CoiRef { module: slot as u32, index: idx as u32 }, cell, slot);
                     }
                 }
                 y += 1;
@@ -1210,15 +1110,7 @@ impl PartitionManager {
 
     /// `doRectFill`: the cells covered by a rotated rectangle, sampled at half
     /// a cell steps ("needs to be smaller to avoid aliasing problems").
-    fn do_rect_fill(
-        &mut self,
-        slot: usize,
-        center_x: f32,
-        center_y: f32,
-        halfsize_x: f32,
-        halfsize_y: f32,
-        angle: f32,
-    ) {
+    fn do_rect_fill(&mut self, slot: usize, center_x: f32, center_y: f32, halfsize_x: f32, halfsize_y: f32, angle: f32) {
         let c = crate::common::trig::cos(angle);
         let s = crate::common::trig::sin(angle);
 
@@ -1263,29 +1155,14 @@ impl PartitionManager {
     /// recalculate the cells the module's geometry touches.
     pub(super) fn update_cells_touched<H: PartitionHost>(&mut self, host: &mut H, slot: usize) {
         let object = self.md(slot).object;
-        let (geom_type, is_small, pos, angle, major_radius, minor_radius) = if let Some(id) = object
-        {
+        let (geom_type, is_small, pos, angle, major_radius, minor_radius) = if let Some(id) = object {
             match host.object_geometry(id) {
-                Some(og) => (
-                    og.geometry.get_geom_type(),
-                    og.geometry.get_is_small(),
-                    og.position,
-                    og.orientation,
-                    og.geometry.get_major_radius(),
-                    og.geometry.get_minor_radius(),
-                ),
+                Some(og) => (og.geometry.get_geom_type(), og.geometry.get_is_small(), og.position, og.orientation, og.geometry.get_major_radius(), og.geometry.get_minor_radius()),
                 None => return,
             }
         } else if let Some(g) = &self.md(slot).ghost {
             // we have no object using this PartitionData but we still have a GhostObject so copy its data.
-            (
-                g.geometry.get_geom_type(),
-                g.geometry.get_is_small(),
-                g.position,
-                g.angle,
-                g.geometry.get_major_radius(),
-                g.geometry.get_minor_radius(),
-            )
+            (g.geometry.get_geom_type(), g.geometry.get_is_small(), g.position, g.angle, g.geometry.get_major_radius(), g.geometry.get_minor_radius())
         } else {
             return;
         };
@@ -1295,12 +1172,8 @@ impl PartitionManager {
             self.do_small_fill(slot, pos.x, pos.y, major_radius);
         } else {
             match geom_type {
-                GeometryType::Sphere | GeometryType::Cylinder => {
-                    self.do_circle_fill(slot, pos.x, pos.y, major_radius)
-                }
-                GeometryType::Box => {
-                    self.do_rect_fill(slot, pos.x, pos.y, major_radius, minor_radius, angle)
-                }
+                GeometryType::Sphere | GeometryType::Cylinder => self.do_circle_fill(slot, pos.x, pos.y, major_radius),
+                GeometryType::Box => self.do_rect_fill(slot, pos.x, pos.y, major_radius, minor_radius, angle),
             }
         }
 
@@ -1363,9 +1236,7 @@ impl PartitionManager {
         let mut cd = cl.heads[hash_value];
         while let Some(i) = cd {
             let n = cl.nodes[i];
-            if (n.obj == Some(obj) && n.other == Some(other))
-                || (n.obj == Some(other) && n.other == Some(obj))
-            {
+            if (n.obj == Some(obj) && n.other == Some(other)) || (n.obj == Some(other) && n.other == Some(obj)) {
                 return; // already noted
             }
             cd = n.next_hash;
@@ -1373,11 +1244,7 @@ impl PartitionManager {
 
         // new hit: add to hash table and to the list of contacts for this frame
         let head = cl.heads[hash_value];
-        cl.nodes.push(ContactNode {
-            obj: Some(obj),
-            other: Some(other),
-            next_hash: head,
-        });
+        cl.nodes.push(ContactNode { obj: Some(obj), other: Some(other), next_hash: head });
         cl.heads[hash_value] = Some(cl.nodes.len() - 1);
     }
 
@@ -1408,25 +1275,14 @@ impl PartitionManager {
 
     /// `PartitionData::collidesWith(that, cinfo)`: a careful test of the
     /// geometries of the two modules' objects.
-    fn collides_with<H: PartitionHost>(
-        &self,
-        host: &H,
-        this: usize,
-        that: usize,
-        cinfo: Option<&mut CollideLocAndNormal>,
-    ) -> bool {
+    fn collides_with<H: PartitionHost>(&self, host: &H, this: usize, that: usize, cinfo: Option<&mut CollideLocAndNormal>) -> bool {
         let (Some(this_obj), Some(that_obj)) = (self.md(this).object, self.md(that).object) else {
             return false;
         };
-        if host.is_kind_of(this_obj, KINDOF_NO_COLLIDE)
-            || host.is_kind_of(that_obj, KINDOF_NO_COLLIDE)
-        {
+        if host.is_kind_of(this_obj, KINDOF_NO_COLLIDE) || host.is_kind_of(that_obj, KINDOF_NO_COLLIDE) {
             return false; // A collision extent of zero size is still a point and can collide, but we don't always want to.
         }
-        let (Some(a), Some(b)) = (
-            host.object_geometry(this_obj),
-            host.object_geometry(that_obj),
-        ) else {
+        let (Some(a), Some(b)) = (host.object_geometry(this_obj), host.object_geometry(that_obj)) else {
             return false;
         };
         let this_info = CollideInfo::new(&a.position, &a.geometry, a.orientation);
@@ -1461,14 +1317,11 @@ impl PartitionManager {
                 continue;
             }
 
-            let (Some(obj), Some(other)) = (self.md(obj_slot).object, self.md(other_slot).object)
-            else {
+            let (Some(obj), Some(other)) = (self.md(obj_slot).object, self.md(other_slot).object) else {
                 continue;
             };
 
-            if host.status_bits(obj).test(OBJECT_STATUS_NO_COLLISIONS)
-                || host.status_bits(other).test(OBJECT_STATUS_NO_COLLISIONS)
-            {
+            if host.status_bits(obj).test(OBJECT_STATUS_NO_COLLISIONS) || host.status_bits(other).test(OBJECT_STATUS_NO_COLLISIONS) {
                 continue;
             }
 
@@ -1519,10 +1372,7 @@ impl PartitionManager {
             // get this BEFORE removing from dirty list, since that clears the flag in question.
             let (update_em, collide_em) = {
                 let m = self.md(dirty);
-                (
-                    m.is_in_need_of_updating_cells(),
-                    m.is_in_need_of_collision_check() && m.object.is_some(),
-                ) // only update collisions if we have object
+                (m.is_in_need_of_updating_cells(), m.is_in_need_of_collision_check() && m.object.is_some()) // only update collisions if we have object
             };
 
             // detach it from the dirty list.

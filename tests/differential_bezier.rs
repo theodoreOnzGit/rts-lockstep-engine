@@ -53,9 +53,7 @@ fn canon(f: f32) -> u32 {
 }
 
 fn bits_of(p: &[Coord3D]) -> Vec<u32> {
-    p.iter()
-        .flat_map(|c| [canon(c.x), canon(c.y), canon(c.z)])
-        .collect()
+    p.iter().flat_map(|c| [canon(c.x), canon(c.y), canon(c.z)]).collect()
 }
 
 fn floats_of(cp: &[f32; 12]) -> BezierSegment {
@@ -83,11 +81,7 @@ fn gen_cp(g: &mut Gen) -> [f32; 12] {
 fn gen_cp_modest(g: &mut Gen) -> [f32; 12] {
     let mut cp = [0f32; 12];
     for v in cp.iter_mut() {
-        *v = if g.below(10) < 9 {
-            g.uniform(-100.0, 100.0)
-        } else {
-            g.uniform(-1.0, 1.0)
-        };
+        *v = if g.below(10) < 9 { g.uniform(-100.0, 100.0) } else { g.uniform(-1.0, 1.0) };
     }
     cp
 }
@@ -113,11 +107,7 @@ fn bezier_evaluate_matches() {
         let rust = floats_of(&cp).evaluate_at_t(t);
         let mut out = [0f32; 3];
         unsafe { cpp::ref_bez_eval(cp.as_ptr(), t, out.as_mut_ptr()) };
-        ok.eq(
-            bits_of(&[rust]),
-            out.iter().map(|&f| canon(f)).collect(),
-            input,
-        );
+        ok.eq(bits_of(&[rust]), out.iter().map(|&f| canon(f)).collect(), input);
 
         // Planted: control points 1 and 2 swapped before evaluating.
         let mut swapped = cp;
@@ -125,11 +115,7 @@ fn bezier_evaluate_matches() {
             swapped.swap(3 + k, 6 + k);
         }
         let planted = floats_of(&swapped).evaluate_at_t(t);
-        bug.eq(
-            bits_of(&[planted]),
-            out.iter().map(|&f| canon(f)).collect(),
-            input,
-        );
+        bug.eq(bits_of(&[planted]), out.iter().map(|&f| canon(f)).collect(), input);
     }
     ok.finish();
     bug.finish_planted();
@@ -148,19 +134,14 @@ fn bezier_split_matches() {
         let (a, b) = floats_of(&cp).split_segment_at_t(t);
         let mut out = [0f32; 24];
         unsafe { cpp::ref_bez_split(cp.as_ptr(), t, out.as_mut_ptr()) };
-        let rust: Vec<u32> = bits_of(a.control_points())
-            .into_iter()
-            .chain(bits_of(b.control_points()))
-            .collect();
+        let rust: Vec<u32> = bits_of(a.control_points()).into_iter().chain(bits_of(b.control_points())).collect();
         let cpp_bits: Vec<u32> = out.iter().map(|&f| canon(f)).collect();
         ok.eq(rust, cpp_bits.clone(), input);
 
         // Planted: the second half keeps its own first point instead of the
         // evaluated split point.
         let mut wrong = bits_of(a.control_points());
-        wrong.extend(bits_of(
-            &floats_of(&cp).control_points_after_split_planted(t),
-        ));
+        wrong.extend(bits_of(&floats_of(&cp).control_points_after_split_planted(t)));
         bug.eq(wrong, cpp_bits, input);
     }
     ok.finish();
@@ -198,12 +179,7 @@ fn bezier_length_matches() {
                 let c = unsafe { cpp::ref_bez_length(cp.as_ptr(), tol) };
                 ok.eq(canon(len), canon(c), input);
                 // Planted: the chord alone, not the average of chord and polygon.
-                let chord = Coord3D {
-                    x: cp[9] - cp[0],
-                    y: cp[10] - cp[1],
-                    z: cp[11] - cp[2],
-                }
-                .length();
+                let chord = Coord3D { x: cp[9] - cp[0], y: cp[10] - cp[1], z: cp[11] - cp[2] }.length();
                 bug.eq(canon(chord), canon(c), input);
             }
         }
@@ -233,15 +209,7 @@ fn bezier_points_and_iterator_match() {
         let rust = seg.get_segment_points(n, &mut pts);
         let mut cbuf = vec![0f32; 3 * (n.max(0) as usize) + 3];
         let mut count = 0i32;
-        let status = unsafe {
-            cpp::ref_bez_points(
-                cp.as_ptr(),
-                n,
-                cbuf.as_mut_ptr(),
-                cbuf.len() as i32,
-                &mut count,
-            )
-        };
+        let status = unsafe { cpp::ref_bez_points(cp.as_ptr(), n, cbuf.as_mut_ptr(), cbuf.len() as i32, &mut count) };
         match rust {
             Err(BezierError::NegativeSegmentCount) => {
                 errors += 1;
@@ -250,10 +218,7 @@ fn bezier_points_and_iterator_match() {
             Err(e) => panic!("unexpected error {e:?}"),
             Ok(()) => {
                 ok.eq(status, 0, input);
-                let cpp_pts: Vec<u32> = cbuf[..3 * count as usize]
-                    .iter()
-                    .map(|&f| canon(f))
-                    .collect();
+                let cpp_pts: Vec<u32> = cbuf[..3 * count as usize].iter().map(|&f| canon(f)).collect();
                 ok.eq(bits_of(&pts), cpp_pts.clone(), input);
                 // Planted: one point too many (the iterator's `<=` for `<`).
                 let mut more = bits_of(&pts);
@@ -272,10 +237,7 @@ fn bezier_points_and_iterator_match() {
         }
         let mut ibuf = vec![0f32; 3 * (n.max(0) as usize) + 3];
         unsafe { cpp::ref_bez_iter(cp.as_ptr(), n.max(0), ibuf.as_mut_ptr()) };
-        let expected: Vec<u32> = ibuf[..3 * iter_pts.len()]
-            .iter()
-            .map(|&f| canon(f))
-            .collect();
+        let expected: Vec<u32> = ibuf[..3 * iter_pts.len()].iter().map(|&f| canon(f)).collect();
         ok.eq(bits_of(&iter_pts), expected, input);
     }
     println!("points: {CASES} (count, segment) cases; {errors} with a negative count (an error on both sides)");
@@ -303,10 +265,7 @@ impl PlantedSplit for BezierSegment {
 fn bezier_length_rejects_nothing_on_a_straight_segment() {
     // A straight segment (collinear, evenly spaced control points) needs no
     // subdivision at any tolerance: its length is exact at the first level.
-    let seg =
-        BezierSegment::from_floats(&[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 0.0, 0.0]);
-    let len = seg
-        .get_approximate_length(1.0e-6)
-        .expect("no subdivision needed");
+    let seg = BezierSegment::from_floats(&[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 0.0, 0.0]);
+    let len = seg.get_approximate_length(1.0e-6).expect("no subdivision needed");
     assert_eq!(len.to_bits(), 3.0f32.to_bits());
 }

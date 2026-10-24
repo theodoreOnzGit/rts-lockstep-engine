@@ -38,17 +38,13 @@ use super::collide::{self, DistanceCalculationType, HUGE_DIST_SQR};
 use super::host::{CanAttackResult, PartitionFilterHost};
 use super::manager::PartitionManager;
 use crate::common::base_type::{Coord2D, Coord3D};
-use crate::common::game_common::{
-    AbleToAttackType, CommandSourceType, ObjectShroudStatus, Relationship,
-};
+use crate::common::game_common::{AbleToAttackType, CommandSourceType, ObjectShroudStatus, Relationship};
 use crate::common::geometry::GeometryInfo;
 use crate::common::kind_of::{
-    KindOfMaskType, KINDOF_DISGUISER, KINDOF_FS_BASE_DEFENSE, KINDOF_INERT, KINDOF_INFANTRY,
-    KINDOF_STRUCTURE, KINDOF_VEHICLE,
+    KindOfMaskType, KINDOF_DISGUISER, KINDOF_FS_BASE_DEFENSE, KINDOF_INERT, KINDOF_INFANTRY, KINDOF_STRUCTURE, KINDOF_VEHICLE,
 };
 use crate::common::object_status_types::{
-    ObjectStatusMaskType, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_REPULSOR,
-    OBJECT_STATUS_STEALTHED,
+    ObjectStatusMaskType, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_REPULSOR, OBJECT_STATUS_STEALTHED,
 };
 use crate::logic::world::ids::{ObjectId, TeamId};
 use crate::ww::vector3::Vector3;
@@ -75,10 +71,7 @@ pub mod allow_player {
 }
 
 /// `reallyFarPoint` of `Line2D.cpp`.
-const REALLY_FAR_POINT: Coord2D = Coord2D {
-    x: 1_000_000.0,
-    y: 1_000_000.0,
-};
+const REALLY_FAR_POINT: Coord2D = Coord2D { x: 1_000_000.0, y: 1_000_000.0 };
 
 /// `IntersectLine2D(a, b, c, d, NULL)`: whether segment ab crosses segment cd
 /// (Line2D.cpp; the FAQ 1.03 solution). Parallel lines do not intersect.
@@ -99,21 +92,12 @@ pub fn intersect_line_2d(a: &Coord2D, b: &Coord2D, c: &Coord2D, d: &Coord2D) -> 
 /// rule against a ray to a really far point, over the closed polygon.
 pub fn point_inside_area_2d(pt_to_test: &Coord3D, area: &[Coord3D]) -> bool {
     let mut num_intersections = 0;
-    let pt2d = Coord2D {
-        x: pt_to_test.x,
-        y: pt_to_test.y,
-    };
+    let pt2d = Coord2D { x: pt_to_test.x, y: pt_to_test.y };
     let n = area.len();
 
     for i in 0..n {
-        let area2d1 = Coord2D {
-            x: area[i].x,
-            y: area[i].y,
-        };
-        let area2d2 = Coord2D {
-            x: area[(i + 1) % n].x,
-            y: area[(i + 1) % n].y,
-        };
+        let area2d1 = Coord2D { x: area[i].x, y: area[i].y };
+        let area2d2 = Coord2D { x: area[(i + 1) % n].x, y: area[(i + 1) % n].y };
         if intersect_line_2d(&pt2d, &REALLY_FAR_POINT, &area2d1, &area2d2) {
             num_intersections += 1;
         }
@@ -127,12 +111,7 @@ pub enum PartitionFilter {
     /// `PartitionFilterIsFlying`: reject any objects that aren't currently flying.
     IsFlying,
     /// `PartitionFilterWouldCollide`: the geometry's collision with the object must equal `desired`.
-    WouldCollide {
-        position: Coord3D,
-        geom: GeometryInfo,
-        angle: f32,
-        desired: bool,
-    },
+    WouldCollide { position: Coord3D, geom: GeometryInfo, angle: f32, desired: bool },
     /// `PartitionFilterSamePlayer`: reject objects not controlled by the same player.
     SamePlayer { player: Option<i32> },
     /// `PartitionFilterRelationship`: accept the relationships in `flags` (`ALLOW_*`) with respect to `obj`.
@@ -144,45 +123,23 @@ pub enum PartitionFilter {
     /// `PartitionFilterLineOfSight`: terrain and obstacles.
     LineOfSight { obj: ObjectId },
     /// `PartitionFilterPossibleToAttack`.
-    PossibleToAttack {
-        attack_type: AbleToAttackType,
-        obj: Option<ObjectId>,
-        command_source: CommandSourceType,
-    },
+    PossibleToAttack { attack_type: AbleToAttackType, obj: Option<ObjectId>, command_source: CommandSourceType },
     /// `PartitionFilterPossibleToEnter`.
-    PossibleToEnter {
-        obj: Option<ObjectId>,
-        command_source: CommandSourceType,
-    },
+    PossibleToEnter { obj: Option<ObjectId>, command_source: CommandSourceType },
     /// `PartitionFilterPossibleToHijack`.
-    PossibleToHijack {
-        obj: Option<ObjectId>,
-        command_source: CommandSourceType,
-    },
+    PossibleToHijack { obj: Option<ObjectId>, command_source: CommandSourceType },
     /// `PartitionFilterLastAttackedBy`: accept only the last object who attacked `obj`.
     LastAttackedBy { last_attacked_by: ObjectId },
     /// `PartitionFilterAcceptByObjectStatus`.
-    AcceptByObjectStatus {
-        must_be_set: ObjectStatusMaskType,
-        must_be_clear: ObjectStatusMaskType,
-    },
+    AcceptByObjectStatus { must_be_set: ObjectStatusMaskType, must_be_clear: ObjectStatusMaskType },
     /// `PartitionFilterRejectByObjectStatus`.
-    RejectByObjectStatus {
-        must_be_set: ObjectStatusMaskType,
-        must_be_clear: ObjectStatusMaskType,
-    },
+    RejectByObjectStatus { must_be_set: ObjectStatusMaskType, must_be_clear: ObjectStatusMaskType },
     /// `PartitionFilterStealthedAndUndetected`.
     StealthedAndUndetected { obj: ObjectId, allow: bool },
     /// `PartitionFilterAcceptByKindOf`.
-    AcceptByKindOf {
-        must_be_set: KindOfMaskType,
-        must_be_clear: KindOfMaskType,
-    },
+    AcceptByKindOf { must_be_set: KindOfMaskType, must_be_clear: KindOfMaskType },
     /// `PartitionFilterRejectByKindOf`.
-    RejectByKindOf {
-        must_be_set: KindOfMaskType,
-        must_be_clear: KindOfMaskType,
-    },
+    RejectByKindOf { must_be_set: KindOfMaskType, must_be_clear: KindOfMaskType },
     /// `PartitionFilterRejectBehind`: reject any objects "behind" `obj` (a 3D check).
     RejectBehind { obj: ObjectId },
     /// `PartitionFilterAlive`.
@@ -192,15 +149,9 @@ pub enum PartitionFilter {
     /// `PartitionFilterOnMap`.
     OnMap,
     /// `PartitionFilterRejectBuildings`; `acquire_enemies` is set by [`PartitionFilter::reject_buildings`].
-    RejectBuildings {
-        self_obj: ObjectId,
-        acquire_enemies: bool,
-    },
+    RejectBuildings { self_obj: ObjectId, acquire_enemies: bool },
     /// `PartitionFilterInsignificantBuildings`.
-    InsignificantBuildings {
-        allow_non_buildings: bool,
-        allow_insignificant: bool,
-    },
+    InsignificantBuildings { allow_non_buildings: bool, allow_insignificant: bool },
     /// `PartitionFilterFreeOfFog`: accept if clear, not fogged or shrouded, to the player.
     FreeOfFog { comparison_index: i32 },
     /// `PartitionFilterRepulsor`.
@@ -212,84 +163,44 @@ pub enum PartitionFilter {
     /// `PartitionFilterPlayer`.
     Player { player: Option<i32>, match_: bool },
     /// `PartitionFilterPlayerAffiliation`; `affiliation` uses the `PlayerList.h` flags ([`allow_player`]).
-    PlayerAffiliation {
-        player: i32,
-        affiliation: u32,
-        match_: bool,
-    },
+    PlayerAffiliation { player: i32, affiliation: u32, match_: bool },
     /// `PartitionFilterThing` (the host names the template).
     Thing { template_key: i32, match_: bool },
     /// `PartitionFilterGarrisonable`.
     Garrisonable { match_: bool },
     /// `PartitionFilterGarrisonableByPlayer`.
-    GarrisonableByPlayer {
-        player: Option<i32>,
-        match_: bool,
-        command_source: CommandSourceType,
-    },
+    GarrisonableByPlayer { player: Option<i32>, match_: bool, command_source: CommandSourceType },
     /// `PartitionFilterUnmannedObject`.
     UnmannedObject { match_: bool },
     /// `PartitionFilterValidCommandButtonTarget`.
-    ValidCommandButtonTarget {
-        source: ObjectId,
-        command_button: i32,
-        match_: bool,
-        command_source: CommandSourceType,
-    },
+    ValidCommandButtonTarget { source: ObjectId, command_button: i32, match_: bool, command_source: CommandSourceType },
 }
 
 impl PartitionFilter {
     /// `PartitionFilterLastAttackedBy(obj)`: remembers who last damaged `obj`
     /// (`INVALID_ID` when it has no body).
-    pub fn last_attacked_by<H: PartitionFilterHost>(
-        host: &H,
-        obj: Option<ObjectId>,
-    ) -> PartitionFilter {
-        let last = obj
-            .and_then(|o| host.last_damage_source(o))
-            .unwrap_or(crate::logic::world::ids::INVALID_ID);
-        PartitionFilter::LastAttackedBy {
-            last_attacked_by: last,
-        }
+    pub fn last_attacked_by<H: PartitionFilterHost>(host: &H, obj: Option<ObjectId>) -> PartitionFilter {
+        let last = obj.and_then(|o| host.last_damage_source(o)).unwrap_or(crate::logic::world::ids::INVALID_ID);
+        PartitionFilter::LastAttackedBy { last_attacked_by: last }
     }
 
     /// `PartitionFilterRejectBuildings(o)`: a computer-controlled opponent auto-acquires
     /// enemy buildings.
     pub fn reject_buildings<H: PartitionFilterHost>(host: &H, o: ObjectId) -> PartitionFilter {
-        PartitionFilter::RejectBuildings {
-            self_obj: o,
-            acquire_enemies: host.controlling_player_is_computer(o),
-        }
+        PartitionFilter::RejectBuildings { self_obj: o, acquire_enemies: host.controlling_player_is_computer(o) }
     }
 
     /// `allow(objOther)`: whether `other` passes. Takes the manager mutably
     /// because `PartitionFilterFreeOfFog` recomputes a shroudedness.
-    pub fn allow<H: PartitionFilterHost>(
-        &self,
-        pm: &mut PartitionManager,
-        host: &H,
-        other: ObjectId,
-    ) -> bool {
+    pub fn allow<H: PartitionFilterHost>(&self, pm: &mut PartitionManager, host: &H, other: ObjectId) -> bool {
         match self {
             PartitionFilter::IsFlying => host.is_using_airborne_locomotor(other),
 
-            PartitionFilter::WouldCollide {
-                position,
-                geom,
-                angle,
-                desired,
-            } => {
+            PartitionFilter::WouldCollide { position, geom, angle, desired } => {
                 let Some(og) = host.object_geometry(other) else {
                     return !*desired;
                 };
-                let does_collide = collide::geom_collides_with_geom(
-                    position,
-                    geom,
-                    *angle,
-                    &og.position,
-                    &og.geometry,
-                    og.orientation,
-                );
+                let does_collide = collide::geom_collides_with_geom(position, geom, *angle, &og.position, &og.geometry, og.orientation);
                 does_collide == *desired
             }
 
@@ -308,17 +219,10 @@ impl PartitionFilter {
             },
 
             PartitionFilter::LineOfSight { obj } => {
-                let (Some(a), Some(b)) = (host.object_geometry(*obj), host.object_geometry(other))
-                else {
+                let (Some(a), Some(b)) = (host.object_geometry(*obj), host.object_geometry(other)) else {
                     return false;
                 };
-                if !pm.is_clear_line_of_sight_terrain(
-                    host,
-                    Some(*obj),
-                    &a.position,
-                    Some(other),
-                    &b.position,
-                ) {
+                if !pm.is_clear_line_of_sight_terrain(host, Some(*obj), &a.position, Some(other), &b.position) {
                     return false;
                 }
                 if host.is_view_blocked_by_obstacle(*obj, other) {
@@ -327,91 +231,52 @@ impl PartitionFilter {
                 true
             }
 
-            PartitionFilter::PossibleToAttack {
-                attack_type,
-                obj,
-                command_source,
-            } => {
+            PartitionFilter::PossibleToAttack { attack_type, obj, command_source } => {
                 // (upstream dereferences a null `m_obj` here; refused instead)
                 let Some(o) = obj else {
                     return false;
                 };
-                let result =
-                    host.able_to_attack_specific_object(*o, *attack_type, other, *command_source);
-                result == CanAttackResult::Possible
-                    || result == CanAttackResult::PossibleAfterMoving
+                let result = host.able_to_attack_specific_object(*o, *attack_type, other, *command_source);
+                result == CanAttackResult::Possible || result == CanAttackResult::PossibleAfterMoving
             }
 
-            PartitionFilter::PossibleToEnter {
-                obj,
-                command_source,
-            } => match obj {
+            PartitionFilter::PossibleToEnter { obj, command_source } => match obj {
                 Some(o) => host.can_enter_object(*o, other, *command_source),
                 None => false,
             },
 
-            PartitionFilter::PossibleToHijack {
-                obj,
-                command_source,
-            } => match obj {
+            PartitionFilter::PossibleToHijack { obj, command_source } => match obj {
                 Some(o) => host.can_hijack_vehicle(*o, other, *command_source),
                 None => false,
             },
 
             PartitionFilter::LastAttackedBy { last_attacked_by } => other == *last_attacked_by,
 
-            PartitionFilter::AcceptByObjectStatus {
-                must_be_set,
-                must_be_clear,
-            } => {
+            PartitionFilter::AcceptByObjectStatus { must_be_set, must_be_clear } => {
                 let status = host.status_bits(other);
                 status.test_for_all(must_be_set) && status.test_for_none(must_be_clear)
             }
 
-            PartitionFilter::RejectByObjectStatus {
-                must_be_set,
-                must_be_clear,
-            } => {
+            PartitionFilter::RejectByObjectStatus { must_be_set, must_be_clear } => {
                 let status = host.status_bits(other);
                 !(status.test_for_all(must_be_set) && status.test_for_none(must_be_clear))
             }
 
-            PartitionFilter::StealthedAndUndetected { obj, allow } => {
-                stealthed_and_undetected(host, *obj, *allow, other)
-            }
+            PartitionFilter::StealthedAndUndetected { obj, allow } => stealthed_and_undetected(host, *obj, *allow, other),
 
-            PartitionFilter::AcceptByKindOf {
-                must_be_set,
-                must_be_clear,
-            } => host
-                .kind_of_mask(other)
-                .test_set_and_clear(must_be_set, must_be_clear),
+            PartitionFilter::AcceptByKindOf { must_be_set, must_be_clear } => host.kind_of_mask(other).test_set_and_clear(must_be_set, must_be_clear),
 
-            PartitionFilter::RejectByKindOf {
-                must_be_set,
-                must_be_clear,
-            } => !host
-                .kind_of_mask(other)
-                .test_set_and_clear(must_be_set, must_be_clear),
+            PartitionFilter::RejectByKindOf { must_be_set, must_be_clear } => !host.kind_of_mask(other).test_set_and_clear(must_be_set, must_be_clear),
 
             PartitionFilter::RejectBehind { obj } => {
                 let x = host.transform_x_vector(*obj);
                 let mut dir = Vector3::new(x.x, x.y, x.z);
                 dir.normalize();
 
-                let (Some(a), Some(b)) = (host.object_geometry(*obj), host.object_geometry(other))
-                else {
+                let (Some(a), Some(b)) = (host.object_geometry(*obj), host.object_geometry(other)) else {
                     return false;
                 };
-                let v = collide::dist_calc(
-                    DistanceCalculationType::FromCenter3D,
-                    &a.position,
-                    Some(&a.geometry),
-                    &b.position,
-                    Some(&b.geometry),
-                    HUGE_DIST_SQR,
-                )
-                .vec;
+                let v = collide::dist_calc(DistanceCalculationType::FromCenter3D, &a.position, Some(&a.geometry), &b.position, Some(&b.geometry), HUGE_DIST_SQR).vec;
 
                 let dot = dir.x * v.x + dir.y * v.y + dir.z * v.z;
                 dot > 0.0
@@ -419,21 +284,13 @@ impl PartitionFilter {
 
             PartitionFilter::Alive => !host.is_effectively_dead(other),
 
-            PartitionFilter::SameMapStatus { obj } => {
-                host.is_off_map(other) == host.is_off_map(*obj)
-            }
+            PartitionFilter::SameMapStatus { obj } => host.is_off_map(other) == host.is_off_map(*obj),
 
             PartitionFilter::OnMap => !host.is_off_map(other),
 
-            PartitionFilter::RejectBuildings {
-                self_obj,
-                acquire_enemies,
-            } => reject_buildings_allow(host, *self_obj, *acquire_enemies, other),
+            PartitionFilter::RejectBuildings { self_obj, acquire_enemies } => reject_buildings_allow(host, *self_obj, *acquire_enemies, other),
 
-            PartitionFilter::InsignificantBuildings {
-                allow_non_buildings,
-                allow_insignificant,
-            } => {
+            PartitionFilter::InsignificantBuildings { allow_non_buildings, allow_insignificant } => {
                 if host.is_structure(other) {
                     if host.is_non_faction_structure(other) && !allow_insignificant {
                         if let Some(cmi) = host.contain_facts(other) {
@@ -448,10 +305,7 @@ impl PartitionFilter {
                 }
             }
 
-            PartitionFilter::FreeOfFog { comparison_index } => {
-                pm.get_object_shrouded_status(host, other, *comparison_index)
-                    == ObjectShroudStatus::Clear
-            }
+            PartitionFilter::FreeOfFog { comparison_index } => pm.get_object_shrouded_status(host, other, *comparison_index) == ObjectShroudStatus::Clear,
 
             PartitionFilter::Repulsor { self_obj } => {
                 if other == *self_obj {
@@ -497,15 +351,9 @@ impl PartitionFilter {
                 None => false,
             },
 
-            PartitionFilter::Player { player, match_ } => {
-                (*player == host.controlling_player(other)) == *match_
-            }
+            PartitionFilter::Player { player, match_ } => (*player == host.controlling_player(other)) == *match_,
 
-            PartitionFilter::PlayerAffiliation {
-                player,
-                affiliation,
-                match_,
-            } => {
+            PartitionFilter::PlayerAffiliation { player, affiliation, match_ } => {
                 let rel = host.player_relationship_to_team_of(*player, other);
                 match rel {
                     Relationship::Enemies => {
@@ -532,46 +380,26 @@ impl PartitionFilter {
                 !*match_
             }
 
-            PartitionFilter::Thing {
-                template_key,
-                match_,
-            } => host.template_is_equivalent_to(*template_key, other) == *match_,
+            PartitionFilter::Thing { template_key, match_ } => host.template_is_equivalent_to(*template_key, other) == *match_,
 
             PartitionFilter::Garrisonable { match_ } => match host.contain_facts(other) {
                 None => !*match_,
                 Some(cmi) => cmi.is_garrisonable == *match_,
             },
 
-            PartitionFilter::GarrisonableByPlayer {
-                player,
-                match_,
-                command_source,
-            } => host.can_player_garrison(*player, other, *command_source) == *match_,
+            PartitionFilter::GarrisonableByPlayer { player, match_, command_source } => host.can_player_garrison(*player, other, *command_source) == *match_,
 
-            PartitionFilter::UnmannedObject { match_ } => {
-                host.is_disabled_unmanned(other) == *match_
-            }
+            PartitionFilter::UnmannedObject { match_ } => host.is_disabled_unmanned(other) == *match_,
 
-            PartitionFilter::ValidCommandButtonTarget {
-                source,
-                command_button,
-                match_,
-                command_source,
-            } => {
-                host.command_button_valid_target(*command_button, *source, other, *command_source)
-                    == *match_
+            PartitionFilter::ValidCommandButtonTarget { source, command_button, match_, command_source } => {
+                host.command_button_valid_target(*command_button, *source, other, *command_source) == *match_
             }
         }
     }
 }
 
 /// `PartitionFilterRejectBuildings::allow`.
-fn reject_buildings_allow<H: PartitionFilterHost>(
-    host: &H,
-    self_obj: ObjectId,
-    acquire_enemies: bool,
-    other: ObjectId,
-) -> bool {
+fn reject_buildings_allow<H: PartitionFilterHost>(host: &H, self_obj: ObjectId, acquire_enemies: bool, other: ObjectId) -> bool {
     // this filter allows all non-buildings (and, um, no longer does)
     if !host.is_kind_of(other, KINDOF_STRUCTURE) {
         return true;
@@ -583,11 +411,7 @@ fn reject_buildings_allow<H: PartitionFilterHost>(
 
     // Get the controlling team of other.
     let contain = host.contain_facts(other);
-    let mut other_player = if contain.is_some() {
-        host.apparent_controlling_player(other, Some(my_player))
-    } else {
-        None
-    };
+    let mut other_player = if contain.is_some() { host.apparent_controlling_player(other, Some(my_player)) } else { None };
 
     if other_player.is_none() {
         other_player = host.controlling_player(other);
@@ -621,12 +445,7 @@ fn reject_buildings_allow<H: PartitionFilterHost>(
 }
 
 /// `PartitionFilterStealthedAndUndetected::allow`.
-fn stealthed_and_undetected<H: PartitionFilterHost>(
-    host: &H,
-    m_obj: ObjectId,
-    m_allow: bool,
-    obj_other: ObjectId,
-) -> bool {
+fn stealthed_and_undetected<H: PartitionFilterHost>(host: &H, m_obj: ObjectId, m_allow: bool, obj_other: ObjectId) -> bool {
     let status = host.status_bits(obj_other);
     let stealthed = status.test(OBJECT_STATUS_STEALTHED);
     let detected = status.test(OBJECT_STATUS_DETECTED);
@@ -643,15 +462,9 @@ fn stealthed_and_undetected<H: PartitionFilterHost>(
                     let our_player = host.controlling_player(m_obj);
                     let idx = update.disguised_player_index;
                     // ThePlayerList->getNthPlayer(idx) is null outside the 16 slots
-                    let other_player =
-                        if (0..crate::common::game_common::MAX_PLAYER_COUNT).contains(&idx) {
-                            Some(idx)
-                        } else {
-                            None
-                        };
+                    let other_player = if (0..crate::common::game_common::MAX_PLAYER_COUNT).contains(&idx) { Some(idx) } else { None };
                     if let (Some(ours), Some(theirs)) = (our_player, other_player) {
-                        if host.player_relationship_to_player(ours, theirs) == Relationship::Enemies
-                        {
+                        if host.player_relationship_to_player(ours, theirs) == Relationship::Enemies {
                             // Our stealthed & undetected object is disguised as a unit perceived to be our
                             // enemy, therefore it's not considered to be stealthed!
                             return !m_allow;
@@ -669,8 +482,7 @@ fn stealthed_and_undetected<H: PartitionFilterHost>(
         // hunt scripts would ignore this case -- units would acquire the building Jarmen Kell occupied
         // even though it was not stealth detected.
         if let Some(contain) = host.contain_facts(obj_other) {
-            let victim_apparent_controller =
-                host.apparent_controlling_player(obj_other, host.controlling_player(m_obj));
+            let victim_apparent_controller = host.apparent_controlling_player(obj_other, host.controlling_player(m_obj));
             // Check if it's stealthed!
             if contain.stealth_units_contained == contain.contain_count {
                 // Check if the first object inside is detected (if one is detected, all are detected).
@@ -678,9 +490,7 @@ fn stealthed_and_undetected<H: PartitionFilterHost>(
                     if !first_detected {
                         // Finally check the relationship!
                         if let Some(victim) = victim_apparent_controller {
-                            if host.team_relationship_to_player(m_obj, victim)
-                                == Relationship::Enemies
-                            {
+                            if host.team_relationship_to_player(m_obj, victim) == Relationship::Enemies {
                                 // Our object is a neutral building garrisoned by enemy units we can't see,
                                 // therefore it is stealthed.
                                 return m_allow;
@@ -697,12 +507,7 @@ fn stealthed_and_undetected<H: PartitionFilterHost>(
 }
 
 /// `filtersAllow(filters, objOther)`: every filter must accept, in order.
-pub fn filters_allow<H: PartitionFilterHost>(
-    pm: &mut PartitionManager,
-    host: &H,
-    filters: &[PartitionFilter],
-    obj_other: ObjectId,
-) -> bool {
+pub fn filters_allow<H: PartitionFilterHost>(pm: &mut PartitionManager, host: &H, filters: &[PartitionFilter], obj_other: ObjectId) -> bool {
     for f in filters {
         if !f.allow(pm, host, obj_other) {
             return false;

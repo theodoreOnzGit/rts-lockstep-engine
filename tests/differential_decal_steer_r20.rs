@@ -67,17 +67,15 @@
 mod support;
 mod up_common;
 
-use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
 use rts_lockstep_engine::common::module::{ModuleDataKind, ObjectId};
-use rts_lockstep_engine::common::object_status_types::{
-    ObjectStatusMaskType, OBJECT_STATUS_IS_ATTACKING,
-};
+use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_IS_ATTACKING};
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
 use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
+use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
 use rts_lockstep_engine::logic::modules::animation_steering_update::AnimationSteeringUpdateModuleData;
@@ -87,9 +85,7 @@ use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleHandle};
 use rts_lockstep_engine::logic::world::module_probe::{ProbeAnswers, ProbeModule};
 use rts_lockstep_engine::logic::world::object_create::{NewModule, NewObject};
-use rts_lockstep_engine::logic::world::object_events::{
-    GridDecalOp, ModelConditionOp, ObjectClientEvent,
-};
+use rts_lockstep_engine::logic::world::object_events::{GridDecalOp, ModelConditionOp, ObjectClientEvent};
 use rts_lockstep_engine::logic::world::object_state::mask_of;
 use rts_lockstep_engine::logic::world::statics::GameStatics;
 use rts_lockstep_engine::logic::world::team::Team;
@@ -119,23 +115,16 @@ fn put_str(v: &mut Vec<u8>, s: &[u8]) {
     v.extend_from_slice(s);
 }
 fn read_decal(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::RadiusDecalUpdate(Arc::new(
-        RadiusDecalUpdateModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::RadiusDecalUpdate(Arc::new(RadiusDecalUpdateModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 fn read_steer(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::AnimationSteeringUpdate(Arc::new(
-        AnimationSteeringUpdateModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::AnimationSteeringUpdate(Arc::new(AnimationSteeringUpdateModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(kind: u32, name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: if kind == 0 { read_decal } else { read_steer },
-    }];
+    let blocks = [BlockParse { token: "D", parse: if kind == 0 { read_decal } else { read_steer } }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -196,10 +185,7 @@ fn decode(kind: u32, b: &[u8], n_ops: usize) -> Vec<String> {
 fn gen_text(g: &mut Gen, kind: u32, clean: bool) -> Vec<u8> {
     let mut lines: Vec<String> = Vec::new();
     if kind == 1 && g.below(100) < 80 {
-        lines.push(format!(
-            "MinTransitionTime = {}",
-            pick(g, &["0", "33", "100", "500"])
-        ));
+        lines.push(format!("MinTransitionTime = {}", pick(g, &["0", "33", "100", "500"])));
     }
     if !clean {
         lines.push(match g.below(2) {
@@ -230,13 +216,7 @@ struct Tally {
     turns: [u64; 3],
 }
 
-fn run_xfer(
-    w: &mut World,
-    me: ObjectId,
-    idx: usize,
-    how: u32,
-    saved: &[u8],
-) -> (i32, Vec<u8>, u32) {
+fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -282,12 +262,7 @@ fn event_line(e: &ObjectClientEvent, tally: &mut Tally) -> Option<String> {
         ObjectClientEvent::GridDecal { index, op, .. } => Some(match op {
             GridDecalOp::Clear => format!("dclear {index}"),
             GridDecalOp::Update => format!("dupdate {index}"),
-            GridDecalOp::Create {
-                template: t,
-                radius,
-                position,
-                player,
-            } => {
+            GridDecalOp::Create { template: t, radius, position, player } => {
                 tally.creates += 1;
                 format!(
                     "dcreate {index} {} {} {:08x} {:08x} {} {} {} {:08x} {:08x},{:08x},{:08x} {}",
@@ -305,12 +280,7 @@ fn event_line(e: &ObjectClientEvent, tally: &mut Tally) -> Option<String> {
                     player.unwrap_or(-1)
                 )
             }
-            GridDecalOp::SetPosition(p) => format!(
-                "dpos {index} {:08x} {:08x} {:08x}",
-                p.x.to_bits(),
-                p.y.to_bits(),
-                p.z.to_bits()
-            ),
+            GridDecalOp::SetPosition(p) => format!("dpos {index} {:08x} {:08x} {:08x}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits()),
             GridDecalOp::SetOpacity(o) => format!("dopacity {index} {:08x}", o.to_bits()),
         }),
         ObjectClientEvent::DrawableModelCondition { op, .. } => {
@@ -328,13 +298,7 @@ fn event_line(e: &ObjectClientEvent, tally: &mut Tally) -> Option<String> {
                     tally.turns[2] += 1;
                     let mut f = f.clone();
                     f.sort_unstable();
-                    format!(
-                        "clearflags {}",
-                        f.iter()
-                            .map(|x| x.to_string())
-                            .collect::<Vec<_>>()
-                            .join(",")
-                    )
+                    format!("clearflags {}", f.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(","))
                 }
             })
         }
@@ -343,63 +307,28 @@ fn event_line(e: &ObjectClientEvent, tally: &mut Tally) -> Option<String> {
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(
-    ctx: &Ctx,
-    kind: u32,
-    data: ModuleDataKind,
-    cfg: &[u32; 1],
-    ops: &[[u32; 6]],
-    tally: &mut Tally,
-) -> (Vec<u8>, World) {
+fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 1], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     put_data(&mut v, &data);
     let mut w = World::new();
     w.names = ctx.names.clone();
-    w.statics = Arc::new(GameStatics {
-        upgrade_center: ctx.center.clone(),
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), ..Default::default() });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.probe_effect_trace = true;
     w.teams.insert_team(Team::new(1, 0)).unwrap();
-    let plain = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
+    let plain = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
     let class = CLASSES[kind as usize];
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        class.as_bytes(),
-        b"ModuleTag_R20",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class.as_bytes(), b"ModuleTag_R20", &data).unwrap().unwrap();
     let mut phys = NewModule::plain(b"CtPhysics", b"ModuleTag_Physics");
-    phys.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-        ProbeAnswers::default(),
-        0.0,
-        Default::default(),
-    )));
-    let me = w
-        .new_object(NewObject {
-            template: plain,
-            status: ObjectStatusMaskType::default(),
-            team: Some(1),
-            modules: vec![m, phys],
-        })
-        .unwrap();
+    phys.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
+    let me = w.new_object(NewObject { template: plain, status: ObjectStatusMaskType::default(), team: Some(1), modules: vec![m, phys] }).unwrap();
     assert_eq!(me, 1);
     let phys_slot = w.find_module(me, b"CtPhysics");
     w.friend_bind_to_drawable(me, 7);
     let drawable = w.objects.find(me).unwrap().drawable;
     let idx = w.find_module(me, class.as_bytes()).unwrap();
-    let u = w
-        .update_handle_of_module(ModuleHandle {
-            object: me,
-            index: idx,
-        })
-        .expect("an update module");
+    let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
     let mut flags = cfg[0];
     let mut saved: Vec<u8> = Vec::new();
     for o in ops {
@@ -414,18 +343,10 @@ fn rust_run(
         } else {
             w.cuts.team_players.remove(&1);
         }
-        w.objects.find_mut(me).unwrap().drawable = if flags & 2 != 0 {
-            drawable
-        } else {
-            rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID
-        };
+        w.objects.find_mut(me).unwrap().drawable = if flags & 2 != 0 { drawable } else { rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID };
         w.set_status(me, mask_of(OBJECT_STATUS_IS_ATTACKING), flags & 4 != 0);
         w.objects.find_mut(me).unwrap().physics = if flags & 8 != 0 { phys_slot } else { None };
-        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(me).unwrap().modules
-            [phys_slot.unwrap() as usize]
-            .body
-            .as_mut()
-        {
+        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(me).unwrap().modules[phys_slot.unwrap() as usize].body.as_mut() {
             p.answers.turning = match (flags >> 4) & 3 {
                 1 => -1,
                 2 => 1,
@@ -439,34 +360,15 @@ fn rust_run(
         let (mut xst, mut xbytes, mut crc, mut res) = (-2i32, Vec::new(), 0u32, 0u32);
         match o[0] {
             0 => {
-                res = w
-                    .with_body(u, |b, w| b.update(w, u))
-                    .expect("the module is in its slot")
-                    .0;
+                res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
                 tally.updates += 1;
             }
             1 | 2 | 6 => {}
             3 => {
                 if kind == 0 {
-                    let template = RadiusDecalTemplate {
-                        name: NAMES[(o[1] % 3) as usize].as_bytes().to_vec(),
-                        color: o[2] as i32,
-                        ..Default::default()
-                    };
-                    let pos = Coord3D {
-                        x: f32::from_bits(o[4]),
-                        y: f32::from_bits(o[5]),
-                        z: 0.0,
-                    };
-                    w.module_call(
-                        me,
-                        idx,
-                        ModuleCall::RadiusDecalCreate {
-                            template,
-                            radius: f32::from_bits(o[3]),
-                            pos,
-                        },
-                    );
+                    let template = RadiusDecalTemplate { name: NAMES[(o[1] % 3) as usize].as_bytes().to_vec(), color: o[2] as i32, ..Default::default() };
+                    let pos = Coord3D { x: f32::from_bits(o[4]), y: f32::from_bits(o[5]), z: 0.0 };
+                    w.module_call(me, idx, ModuleCall::RadiusDecalCreate { template, radius: f32::from_bits(o[3]), pos });
                 }
             }
             4 => {
@@ -476,11 +378,7 @@ fn rust_run(
             }
             5 => {
                 if kind == 0 {
-                    w.module_call(
-                        me,
-                        idx,
-                        ModuleCall::RadiusDecalKillWhenNoLongerAttacking(o[1] & 1 != 0),
-                    );
+                    w.module_call(me, idx, ModuleCall::RadiusDecalKillWhenNoLongerAttacking(o[1] & 1 != 0));
                 }
             }
             7..=9 => {
@@ -500,9 +398,7 @@ fn rust_run(
             }
             _ => unreachable!(),
         }
-        let threw = w.cuts.module_errors[errors_before..]
-            .iter()
-            .any(|(_, e)| !e.is_undefined());
+        let threw = w.cuts.module_errors[errors_before..].iter().any(|(_, e)| !e.is_undefined());
         put_i32(&mut v, if threw { 2 } else { 0 });
         put_u32(&mut v, res);
         let events: Vec<ObjectClientEvent> = w.events.events()[events_before..]
@@ -540,17 +436,11 @@ fn rust_run(
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let state =
-            w.objects
-                .find(me)
-                .unwrap()
-                .behaviors
-                .iter()
-                .find_map(|b| match b.body.as_ref() {
-                    Some(UpdateBody::RadiusDecalUpdate(m)) => Some(m.state_words()),
-                    Some(UpdateBody::AnimationSteeringUpdate(m)) => Some(m.state_words()),
-                    _ => None,
-                });
+        let state = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
+            Some(UpdateBody::RadiusDecalUpdate(m)) => Some(m.state_words()),
+            Some(UpdateBody::AnimationSteeringUpdate(m)) => Some(m.state_words()),
+            _ => None,
+        });
         let state = state.expect("the module is back in its slot");
         if kind == 0 && state[0] == 0 {
             tally.non_empty += 1;
@@ -566,21 +456,12 @@ fn drop_load_clears(kind: u32, d: Vec<String>, ops: &[[u32; 6]]) -> Vec<String> 
     let first = usize::from(kind == 1);
     d.into_iter()
         .enumerate()
-        .map(|(i, l)| {
-            if i >= first && ops.get(i - first).is_some_and(|o| o[0] == 8) {
-                l.replace("\"dclear 0\"", "").replace("log [, ", "log [")
-            } else {
-                l
-            }
-        })
+        .map(|(i, l)| if i >= first && ops.get(i - first).is_some_and(|o| o[0] == 8) { l.replace("\"dclear 0\"", "").replace("log [, ", "log [") } else { l })
         .collect()
 }
 
 fn cases() -> usize {
-    std::env::var("L9R20_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9R20_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 #[test]
@@ -610,13 +491,7 @@ fn radius_decal_and_animation_steering_updates_match_upstream() {
                 continue;
             }
         };
-        let gen_flags = |g: &mut Gen| {
-            u32::from(g.below(6) != 0)
-                | u32::from(g.below(6) != 0) << 1
-                | g.below(2) << 2
-                | u32::from(g.below(6) != 0) << 3
-                | g.below(3) << 4
-        };
+        let gen_flags = |g: &mut Gen| u32::from(g.below(6) != 0) | u32::from(g.below(6) != 0) << 1 | g.below(2) << 2 | u32::from(g.below(6) != 0) << 3 | g.below(3) << 4;
         let cfg = [gen_flags(&mut g)];
         let n_ops = 1 + g.below(24) as usize;
         let mut frame = 0u32;
@@ -715,36 +590,16 @@ fn radius_decal_and_animation_steering_updates_match_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!(
-                "case {case}: kind {kind} cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                show(&text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case}: kind {kind} cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
         };
-        let (dr, dc) = (
-            decode(kind, &rd, ops.len()),
-            drop_load_clears(kind, decode(kind, &buf, ops.len()), &ops),
-        );
+        let (dr, dc) = (decode(kind, &rd, ops.len()), drop_load_clears(kind, decode(kind, &buf, ops.len()), &ops));
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
             eprintln!("--- case {case} kind {kind} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
@@ -761,8 +616,5 @@ fn radius_decal_and_animation_steering_updates_match_upstream() {
     );
     read.finish();
     run.finish();
-    assert!(
-        tally.non_empty * 4 > cases as u64 && tally.turns.iter().all(|t| t * 20 > cases as u64),
-        "the generator must reach every path"
-    );
+    assert!(tally.non_empty * 4 > cases as u64 && tally.turns.iter().all(|t| t * 20 > cases as u64), "the generator must reach every path");
 }

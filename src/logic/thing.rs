@@ -87,11 +87,7 @@ pub trait ThingTemplateView {
     /// `ThingTemplate::isKindOf(t)`.
     fn is_kind_of(&self, t: KindOfType) -> bool;
     /// `ThingTemplate::isKindOfMulti(mustBeSet, mustBeClear)`.
-    fn is_kind_of_multi(
-        &self,
-        must_be_set: &KindOfMaskType,
-        must_be_clear: &KindOfMaskType,
-    ) -> bool;
+    fn is_kind_of_multi(&self, must_be_set: &KindOfMaskType, must_be_clear: &KindOfMaskType) -> bool;
     /// `ThingTemplate::isAnyKindOf(anyKindOf)`.
     fn is_any_kind_of(&self, any_kind_of: &KindOfMaskType) -> bool;
 }
@@ -189,11 +185,7 @@ impl<T: ThingTemplateView> Thing<T> {
     }
 
     /// `isKindOfMulti(mustBeSet, mustBeClear)`: forwarded to the template.
-    pub fn is_kind_of_multi(
-        &self,
-        must_be_set: &KindOfMaskType,
-        must_be_clear: &KindOfMaskType,
-    ) -> bool {
+    pub fn is_kind_of_multi(&self, must_be_set: &KindOfMaskType, must_be_clear: &KindOfMaskType) -> bool {
         self.template.is_kind_of_multi(must_be_set, must_be_clear)
     }
 
@@ -204,11 +196,7 @@ impl<T: ThingTemplateView> Thing<T> {
 
     /// `setPosition(pos)`. A thing that sticks to the terrain slope is
     /// aligned on the terrain at its current orientation instead.
-    pub fn set_position<C: ThingContext>(
-        &mut self,
-        ctx: &C,
-        pos: Option<&Coord3D>,
-    ) -> Result<TransformChange, ThingError> {
+    pub fn set_position<C: ThingContext>(&mut self, ctx: &C, pos: Option<&Coord3D>) -> Result<TransformChange, ThingError> {
         let pos = pos.ok_or(ThingError::NullPosition)?;
         if !self.is_kind_of(KINDOF_STICK_TO_TERRAIN_SLOPE) {
             let change = self.change_record();
@@ -251,16 +239,11 @@ impl<T: ThingTemplateView> Thing<T> {
     /// `setOrientation(angle)`. Upstream forces the thing straight up on the
     /// Z axis, or aligns it on the terrain for a sticking thing. Use
     /// [`Thing::set_transform_matrix`] to keep some other orientation.
-    pub fn set_orientation<C: ThingContext>(
-        &mut self,
-        ctx: &C,
-        angle: f32,
-    ) -> Result<TransformChange, ThingError> {
+    pub fn set_orientation<C: ThingContext>(&mut self, ctx: &C, angle: f32) -> Result<TransformChange, ThingError> {
         // Upstream normalises after writing the transform, and never returns
         // for an angle that does not reduce. Checking first leaves the thing
         // untouched on that undefined input.
-        let normalized =
-            try_normalize_angle(angle).map_err(|_| ThingError::AngleNeverNormalizes)?;
+        let normalized = try_normalize_angle(angle).map_err(|_| ThingError::AngleNeverNormalizes)?;
         let change = self.change_record();
         let pos = Coord3D {
             x: self.transform.get_x_translation(),
@@ -270,16 +253,8 @@ impl<T: ThingTemplateView> Thing<T> {
         if self.is_kind_of(KINDOF_STICK_TO_TERRAIN_SLOPE) {
             self.transform = ctx.align_on_terrain(angle, &pos, true);
         } else {
-            let z = Coord3D {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0,
-            };
-            let u = Coord3D {
-                x: trig::cos(angle),
-                y: trig::sin(angle),
-                z: 0.0,
-            };
+            let z = Coord3D { x: 0.0, y: 0.0, z: 1.0 };
+            let u = Coord3D { x: trig::cos(angle), y: trig::sin(angle), z: 0.0 };
             let y = Coord3D::cross_product(&z, &u);
             let x = Coord3D::cross_product(&y, &z);
             self.transform = Matrix3D::new(
@@ -314,11 +289,7 @@ impl<T: ThingTemplateView> Thing<T> {
     pub fn unit_direction_vector_2d(&mut self) -> Coord3D {
         if self.cache_flags & VALID_DIRVECTOR == 0 {
             let angle = self.orientation();
-            self.cached_dir_vector = Coord3D {
-                x: trig::cos(angle),
-                y: trig::sin(angle),
-                z: 0.0,
-            };
+            self.cached_dir_vector = Coord3D { x: trig::cos(angle), y: trig::sin(angle), z: 0.0 };
             self.cache_flags |= VALID_DIRVECTOR;
         }
         self.cached_dir_vector
@@ -328,11 +299,7 @@ impl<T: ThingTemplateView> Thing<T> {
     pub fn unit_direction_vector_3d(&self) -> Coord3D {
         let mut v = self.transform.get_x_vector();
         v.normalize();
-        Coord3D {
-            x: v.x,
-            y: v.y,
-            z: v.z,
-        }
+        Coord3D { x: v.x, y: v.y, z: v.z }
     }
 
     /// `getHeightAboveTerrain()`, cached, with the base terrain calculation.
@@ -407,28 +374,14 @@ impl<T: ThingTemplateView> Thing<T> {
     /// `convertBonePosToWorldPos`, the position part: the bone position
     /// pushed through the transform.
     pub fn bone_position_to_world(&self, bone_pos: &Coord3D) -> Coord3D {
-        let v = Matrix3D::transform_vector(
-            &self.transform,
-            &Vector3::new(bone_pos.x, bone_pos.y, bone_pos.z),
-        );
-        Coord3D {
-            x: v.x,
-            y: v.y,
-            z: v.z,
-        }
+        let v = Matrix3D::transform_vector(&self.transform, &Vector3::new(bone_pos.x, bone_pos.y, bone_pos.z));
+        Coord3D { x: v.x, y: v.y, z: v.z }
     }
 
     /// `convertBonePosToWorldPos(bonePos, boneTransform, &worldPos, &worldTransform)`
     /// with both outputs wanted.
-    pub fn convert_bone_pos_to_world_pos(
-        &self,
-        bone_pos: &Coord3D,
-        bone_transform: &Matrix3D,
-    ) -> (Coord3D, Matrix3D) {
-        (
-            self.bone_position_to_world(bone_pos),
-            self.bone_transform_to_world(bone_transform),
-        )
+    pub fn convert_bone_pos_to_world_pos(&self, bone_pos: &Coord3D, bone_transform: &Matrix3D) -> (Coord3D, Matrix3D) {
+        (self.bone_position_to_world(bone_pos), self.bone_transform_to_world(bone_transform))
     }
 
     /// `setTransformMatrix(mx)`: the world transform; every cache is

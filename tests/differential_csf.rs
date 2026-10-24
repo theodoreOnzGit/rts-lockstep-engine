@@ -72,19 +72,7 @@ fn gen_label(g: &mut Gen) -> Vec<u8> {
         _ => {
             let base = pick(
                 g,
-                &[
-                    &b"GUI:Ok"[..],
-                    b"GUI:Cancel",
-                    b"OBJECT:Tank",
-                    b"OBJECT:Ranger",
-                    b"MAP:Desc",
-                    b"gui:ok",
-                    b"GUI:OK",
-                    b"Gui:Ok2",
-                    b"CONTROLBAR:Build",
-                    b"a",
-                    b"_x",
-                ],
+                &[&b"GUI:Ok"[..], b"GUI:Cancel", b"OBJECT:Tank", b"OBJECT:Ranger", b"MAP:Desc", b"gui:ok", b"GUI:OK", b"Gui:Ok2", b"CONTROLBAR:Build", b"a", b"_x"],
             );
             let mut l = base.to_vec();
             if g.below(4) == 0 {
@@ -119,19 +107,7 @@ fn gen_len(g: &mut Gen, actual: usize) -> i32 {
         0 => actual as i32 + 1 + g.below(4) as i32,
         1 => (actual as i32 - 1 - g.below(4) as i32).max(0),
         2 => -(1 + g.below(40) as i32),
-        3 => pick(
-            g,
-            &[
-                &10239,
-                &10240,
-                &20479,
-                &20480,
-                &0x4000_0000,
-                &i32::MAX,
-                &i32::MIN,
-            ],
-        )
-        .to_owned(),
+        3 => pick(g, &[&10239, &10240, &20479, &20480, &0x4000_0000, &i32::MAX, &i32::MIN]).to_owned(),
         _ => actual as i32,
     }
 }
@@ -143,14 +119,7 @@ fn gen_csf(g: &mut Gen) -> (Vec<u8>, Vec<Vec<u8>>) {
     let mut body = Vec::new();
     for _ in 0..n_labels {
         let label = gen_label(g);
-        w(
-            &mut body,
-            if g.below(80) == 0 && !clean() {
-                CSF_STRING
-            } else {
-                CSF_LABEL
-            },
-        );
+        w(&mut body, if g.below(80) == 0 && !clean() { CSF_STRING } else { CSF_LABEL });
         let n_strings = match g.below(30) {
             0 | 1 if clean() => 1,
             0 => -1,
@@ -195,18 +164,8 @@ fn gen_csf(g: &mut Gen) -> (Vec<u8>, Vec<Vec<u8>>) {
         _ => n_labels as i32,
     };
     let mut data = Vec::new();
-    w(
-        &mut data,
-        if g.below(30) == 0 && !clean() {
-            CSF_LABEL
-        } else {
-            CSF_ID
-        },
-    );
-    w(
-        &mut data,
-        pick(g, &[&3, &3, &2, &1, &0, &4, &-1]).to_owned(),
-    );
+    w(&mut data, if g.below(30) == 0 && !clean() { CSF_LABEL } else { CSF_ID });
+    w(&mut data, pick(g, &[&3, &3, &2, &1, &0, &4, &-1]).to_owned());
     w(&mut data, declared);
     w(&mut data, g.below(100) as i32);
     w(&mut data, g.i32());
@@ -229,8 +188,7 @@ fn cpp_fetch(label: &[u8]) -> (bool, Vec<u16>) {
     let c = CString::new(label.to_vec()).unwrap();
     let mut out = vec![0u16; 1 << 16];
     let mut exists = 0;
-    let n =
-        unsafe { cpp::ref_csf_fetch(c.as_ptr(), out.as_mut_ptr(), out.len() as i32, &mut exists) };
+    let n = unsafe { cpp::ref_csf_fetch(c.as_ptr(), out.as_mut_ptr(), out.len() as i32, &mut exists) };
     out.truncate(n as usize);
     (exists == 1, out)
 }
@@ -238,8 +196,7 @@ fn cpp_fetch(label: &[u8]) -> (bool, Vec<u16>) {
 fn cpp_prefix(prefix: &[u8]) -> Vec<Vec<u8>> {
     let c = CString::new(prefix.to_vec()).unwrap();
     let mut out = vec![0u8; 1 << 20];
-    let n = unsafe { cpp::ref_csf_prefix(c.as_ptr(), out.as_mut_ptr() as *mut _, out.len() as i32) }
-        as usize;
+    let n = unsafe { cpp::ref_csf_prefix(c.as_ptr(), out.as_mut_ptr() as *mut _, out.len() as i32) } as usize;
     assert!(n <= out.len());
     let mut v = Vec::new();
     let mut cur = Vec::new();
@@ -258,11 +215,7 @@ fn show(b: &[u8]) -> String {
 }
 
 fn queries(g: &mut Gen, labels: &[Vec<u8>]) -> Vec<Vec<u8>> {
-    let mut q: Vec<Vec<u8>> = vec![
-        Vec::new(),
-        b"GUI:Command&ConquerGenerals".to_vec(),
-        b"nope".to_vec(),
-    ];
+    let mut q: Vec<Vec<u8>> = vec![Vec::new(), b"GUI:Command&ConquerGenerals".to_vec(), b"nope".to_vec()];
     for l in labels {
         let l: Vec<u8> = l.iter().take_while(|&&b| b != 0).copied().collect();
         q.push(l.clone());
@@ -282,15 +235,7 @@ fn csf_matches_upstream() {
     let mut prefixes = Check::new("GameText getStringsWithLabelPrefix");
     let mut failed_state = Check::new("GameText failed load (m_failed)");
     let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
-    let (
-        mut loaded,
-        mut not_loaded,
-        mut ambiguous,
-        mut unordered,
-        mut found,
-        mut too_large,
-        mut spin,
-    ) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+    let (mut loaded, mut not_loaded, mut ambiguous, mut unordered, mut found, mut too_large, mut spin) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
     const CASES: usize = 20_000;
     let failed: Vec<u16> = FAILED_TEXT.encode_utf16().collect();
     for case in 0..CASES {
@@ -301,8 +246,7 @@ fn csf_matches_upstream() {
             *excluded.entry(format!("{u:?}")).or_default() += 1;
             continue;
         }
-        let declared =
-            rts_lockstep_engine::formats::csf::CsfHeader::read(&data).map_or(0, |h| h.num_labels);
+        let declared = rts_lockstep_engine::formats::csf::CsfHeader::read(&data).map_or(0, |h| h.num_labels);
         if let Ok(t) = &rust {
             if t.eof_spin() > 100_000 {
                 spin += 1;
@@ -320,9 +264,7 @@ fn csf_matches_upstream() {
             Err(_) => {
                 not_loaded += 1;
                 for q in queries(&mut g, &labels) {
-                    failed_state.eq((false, failed.clone()), cpp_fetch(&q), || {
-                        format!("{}, fetch {}", d(), show(&q))
-                    });
+                    failed_state.eq((false, failed.clone()), cpp_fetch(&q), || format!("{}, fetch {}", d(), show(&q)));
                 }
             }
             Ok(t) => {
@@ -336,15 +278,12 @@ fn csf_matches_upstream() {
                     match t.fetch(&q) {
                         Some(text) => {
                             found += 1;
-                            fetches.eq((true, text.to_vec()), (ce, ct), || {
-                                format!("{}, fetch {}", d(), show(&q))
-                            });
+                            fetches.eq((true, text.to_vec()), (ce, ct), || format!("{}, fetch {}", d(), show(&q)));
                         }
                         None => fetches.eq(false, ce, || format!("{}, fetch {}", d(), show(&q))),
                     }
                 }
-                let mut ps: Vec<Vec<u8>> =
-                    vec![Vec::new(), b"G".to_vec(), b"GUI:".to_vec(), b"x".to_vec()];
+                let mut ps: Vec<Vec<u8>> = vec![Vec::new(), b"G".to_vec(), b"GUI:".to_vec(), b"x".to_vec()];
                 for l in labels.iter().take(3) {
                     let l: Vec<u8> = l.iter().take_while(|&&b| b != 0).copied().collect();
                     ps.push(l[..g.below(l.len() as u32 + 1) as usize].to_vec());
@@ -354,9 +293,8 @@ fn csf_matches_upstream() {
                     let mut c = cpp_prefix(&p);
                     // labels equal under stricmp but different bytes: their order is qsort's
                     let mut by_key: BTreeMap<Vec<u8>, &Vec<u8>> = BTreeMap::new();
-                    let order_unspecified = r
-                        .iter()
-                        .any(|l| *by_key.entry(l.to_ascii_lowercase()).or_insert(l) != l);
+                    let order_unspecified =
+                        r.iter().any(|l| *by_key.entry(l.to_ascii_lowercase()).or_insert(l) != l);
                     if order_unspecified {
                         unordered += 1;
                         r.sort();

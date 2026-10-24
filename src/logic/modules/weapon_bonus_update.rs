@@ -24,17 +24,12 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::kind_of::KindOfMaskType;
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime,
-    UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::weapon_bonus::{condition, WEAPON_BONUS_NAMES};
 use crate::logic::world::game_logic::World;
@@ -78,71 +73,28 @@ impl Default for WeaponBonusUpdateModuleData {
 
 /// `WeaponBonusUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<WeaponBonusUpdateModuleData>; 7] = [
-    FieldParse::new(
-        "RequiredAffectKindOf",
-        |ini, d, _| d.required_affect_kind_of.parse_from_ini(ini),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ForbiddenAffectKindOf",
-        |ini, d, _| d.forbidden_affect_kind_of.parse_from_ini(ini),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "BonusDuration",
-        |ini, d, _| {
-            d.bonus_duration = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "BonusDelay",
-        |ini, d, _| {
-            d.bonus_delay = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "BonusRange",
-        |ini, d, _| {
-            d.bonus_range = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "BonusConditionType",
-        |ini, d, _| {
-            d.bonus_condition_type = ini.parse_index_list(&WEAPON_BONUS_NAMES)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("RequiredAffectKindOf", |ini, d, _| d.required_affect_kind_of.parse_from_ini(ini), UserData::None),
+    FieldParse::new("ForbiddenAffectKindOf", |ini, d, _| d.forbidden_affect_kind_of.parse_from_ini(ini), UserData::None),
+    FieldParse::new("BonusDuration", |ini, d, _| { d.bonus_duration = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("BonusDelay", |ini, d, _| { d.bonus_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("BonusRange", |ini, d, _| { d.bonus_range = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("BonusConditionType", |ini, d, _| { d.bonus_condition_type = ini.parse_index_list(&WEAPON_BONUS_NAMES)?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl WeaponBonusUpdateModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, WeaponBonusUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, WeaponBonusUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<WeaponBonusUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<WeaponBonusUpdateModuleData> {
         let mut data = WeaponBonusUpdateModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                WeaponBonusUpdateModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, WeaponBonusUpdateModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -160,8 +112,7 @@ pub struct WeaponBonusUpdate {
 impl PartialEq for WeaponBonusUpdate {
     /// The same object and the same data object (upstream compares pointers).
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
@@ -172,10 +123,7 @@ impl WeaponBonusUpdate {
     }
 
     /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data).
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<WeaponBonusUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<WeaponBonusUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
@@ -203,12 +151,7 @@ impl WeaponBonusUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -229,12 +172,7 @@ impl WeaponBonusUpdate {
 
     /// `isKindOfMulti(required, forbidden)` of `obj`.
     fn qualifies(&self, world: &World, obj: ObjectId) -> bool {
-        world.objects.find(obj).is_some_and(|o| {
-            o.template().is_kind_of_multi(
-                &self.data.required_affect_kind_of,
-                &self.data.forbidden_affect_kind_of,
-            )
-        })
+        world.objects.find(obj).is_some_and(|o| o.template().is_kind_of_multi(&self.data.required_affect_kind_of, &self.data.forbidden_affect_kind_of))
     }
 }
 
@@ -249,25 +187,15 @@ impl UpdateBehavior for WeaponBonusUpdate {
             if self.qualifies(world, current) && !crate::logic::modules::plant(1831) {
                 world.crate_do_temp_weapon_bonus(current, d.bonus_condition_type, d.bonus_duration);
             }
-            if let Some(contain) = world
-                .objects
-                .find(current)
-                .and_then(|o| o.contain)
-                .filter(|_| !crate::logic::modules::plant(1832))
-            {
+            if let Some(contain) = world.objects.find(current).and_then(|o| o.contain).filter(|_| !crate::logic::modules::plant(1832)) {
                 // `containIteratingDoTempWeaponBonus`, over the passengers in order
-                let passengers =
-                    match world.module_call(current, contain, ModuleCall::GetContainedItems) {
-                        ModuleReply::Ids(items) => items,
-                        _ => Vec::new(),
-                    };
+                let passengers = match world.module_call(current, contain, ModuleCall::GetContainedItems) {
+                    ModuleReply::Ids(items) => items,
+                    _ => Vec::new(),
+                };
                 for passenger in passengers {
                     if self.qualifies(world, passenger) {
-                        world.crate_do_temp_weapon_bonus(
-                            passenger,
-                            d.bonus_condition_type,
-                            d.bonus_duration,
-                        );
+                        world.crate_do_temp_weapon_bonus(passenger, d.bonus_condition_type, d.bonus_duration);
                     }
                 }
             }
@@ -312,7 +240,5 @@ impl Snapshot for WeaponBonusUpdate {
 
 /// The factory's `NewModuleDataProc` for `WeaponBonusUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::WeaponBonusUpdate(Arc::new(
-        WeaponBonusUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::WeaponBonusUpdate(Arc::new(WeaponBonusUpdateModuleData::friend_new_module_data(ini)?)))
 }

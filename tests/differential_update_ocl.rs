@@ -93,17 +93,12 @@ const TEAM: u32 = 100;
 const SIDES: [&str; 3] = ["China", "USA", "GLA"];
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::OclUpdate(Arc::new(
-        OclUpdateModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::OclUpdate(Arc::new(OclUpdateModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -118,9 +113,7 @@ fn ocl_code(name: &Option<Vec<u8>>) -> u32 {
 }
 
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind) {
-    let ModuleDataKind::OclUpdate(d) = data else {
-        unreachable!("not an OCLUpdate")
-    };
+    let ModuleDataKind::OclUpdate(d) = data else { unreachable!("not an OCLUpdate") };
     put_u32(v, ocl_code(&d.ocl));
     put_u32(v, d.faction_ocl.len() as u32);
     for f in &d.faction_ocl {
@@ -157,19 +150,13 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
             x = r.xfer();
         }
         let state: Vec<u32> = (0..4).map(|_| r.u32()).collect();
-        out.push(format!(
-            "op {i}: status {st} result {res} log {log:?} {x} state {state:?}"
-        ));
+        out.push(format!("op {i}: status {st} result {res} log {log:?} {x} state {state:?}"));
     }
     out
 }
 
 fn gen_ocl_name(g: &mut Gen) -> String {
-    pick(
-        g,
-        &["OCL_A", "OCL_B", "OCL_A", "None", "none", "ocl_a", "OCL_Z"],
-    )
-    .to_string()
+    pick(g, &["OCL_A", "OCL_B", "OCL_A", "None", "none", "ocl_a", "OCL_Z"]).to_string()
 }
 
 fn gen_dur(g: &mut Gen, clean: bool) -> String {
@@ -235,12 +222,7 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     s.into_bytes()
 }
 
-fn gen_case(
-    g: &mut Gen,
-    _data: &Option<ModuleDataKind>,
-    _n_up: usize,
-    _upgrades: &[String],
-) -> (Vec<u32>, Vec<[u32; 5]>) {
+fn gen_case(g: &mut Gen, _data: &Option<ModuleDataKind>, _n_up: usize, _upgrades: &[String]) -> (Vec<u32>, Vec<[u32; 5]>) {
     // [the frame, the logic random seed, the controlling player]
     let cfg = vec![g.below(200), g.u32(), g.below(4)];
     let n_ops = 1 + g.below(40) as usize;
@@ -255,13 +237,7 @@ fn gen_case(
             48..=50 => [2, g.below(2), 0, 0, 0],
             51..=54 => [3, g.below(2), 0, 0, 0],
             55..=60 => [4, g.below(4), 0, 0, 0],
-            61..=63 => [
-                5,
-                0,
-                g.below(3),
-                pick(g, &[&100u32, &200, &300, &7]).to_owned(),
-                0,
-            ],
+            61..=63 => [5, 0, g.below(3), pick(g, &[&100u32, &200, &300, &7]).to_owned(), 0],
             64..=66 => [6, 0, g.below(3), g.below(2), 0],
             67..=69 => [7, 0, g.below(3), g.below(4), 0],
             70..=71 => [8, 0, 0, 0, 0],
@@ -270,21 +246,9 @@ fn gen_case(
             77..=80 => [11, 0, 0, 0, 0],
             81..=84 => [12, 0, 0, 0, 0],
             85..=87 => [13, 0, 0, 0, 0],
-            88..=90 => [
-                14,
-                g.uniform(-50.0, 50.0).to_bits(),
-                g.uniform(-50.0, 50.0).to_bits(),
-                g.uniform(0.0, 20.0).to_bits(),
-                0,
-            ],
+            88..=90 => [14, g.uniform(-50.0, 50.0).to_bits(), g.uniform(-50.0, 50.0).to_bits(), g.uniform(0.0, 20.0).to_bits(), 0],
             91..=93 => [15, g.uniform(-3.0, 3.0).to_bits(), 0, 0, 0],
-            94..=96 => [
-                16,
-                g.uniform(-9.0, 9.0).to_bits(),
-                g.uniform(-9.0, 9.0).to_bits(),
-                g.uniform(-9.0, 9.0).to_bits(),
-                0,
-            ],
+            94..=96 => [16, g.uniform(-9.0, 9.0).to_bits(), g.uniform(-9.0, 9.0).to_bits(), g.uniform(-9.0, 9.0).to_bits(), 0],
             _ => [0, 0, 0, 0, 0],
         })
         .collect();
@@ -299,22 +263,12 @@ struct Tally {
     creations: u64,
 }
 
-fn rust_run(
-    ctx: Ctx,
-    data: ModuleDataKind,
-    cfg: &[u32],
-    ops: &[[u32; 5]],
-    tally: &RefCell<Tally>,
-) -> RunOut {
+fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally: &RefCell<Tally>) -> RunOut {
     let mut v = Vec::new();
     put_data(&mut v, &data);
 
     let mut w = World::new();
-    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics {
-        upgrade_center: ctx.center,
-        special_power_store: ctx.store,
-        ..Default::default()
-    });
+    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
     w.names = ctx.names;
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
@@ -323,9 +277,7 @@ fn rust_run(
     w.teams.insert_team(Team::new(TEAM, 0)).unwrap();
     for p in 0..3i32 {
         w.cuts.player_colors.insert(p, 100 * (p + 1));
-        w.cuts
-            .player_sides
-            .insert(p, SIDES[p as usize].as_bytes().to_vec());
+        w.cuts.player_sides.insert(p, SIDES[p as usize].as_bytes().to_vec());
     }
     let set_controller = |w: &mut World, p: u32| {
         if p == 0 {
@@ -335,42 +287,14 @@ fn rust_run(
         }
     };
     set_controller(&mut w, cfg[2]);
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        b"OCLUpdate",
-        b"ModuleTag_Ocl",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
-    let template = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
-    let me = w
-        .new_object(NewObject {
-            template,
-            status: Default::default(),
-            team: Some(TEAM),
-            modules: vec![m],
-        })
-        .unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"OCLUpdate", b"ModuleTag_Ocl", &data).unwrap().unwrap();
+    let template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
+    let me = w.new_object(NewObject { template, status: Default::default(), team: Some(TEAM), modules: vec![m] }).unwrap();
     assert_eq!(me, 1, "the first object of a fresh world has the id 1");
-    w.set_position(
-        me,
-        &Coord3D {
-            x: 11.0,
-            y: 22.0,
-            z: 5.0,
-        },
-    );
+    w.set_position(me, &Coord3D { x: 11.0, y: 22.0, z: 5.0 });
     w.set_orientation(me, 0.5);
     let idx = w.find_module(me, b"OCLUpdate").unwrap();
-    let u = w
-        .update_handle_of_module(ModuleHandle {
-            object: me,
-            index: idx,
-        })
-        .expect("an update module");
+    let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
     let mut saved: Vec<u8> = Vec::new();
     for phase in 0..=ops.len() {
         w.cuts.trace = Some(Vec::new());
@@ -381,25 +305,12 @@ fn rust_run(
             let o = &ops[phase - 1];
             match o[0] {
                 0 => {
-                    res = w
-                        .with_body(u, |b, w| b.update(w, u))
-                        .expect("the module is in its slot")
-                        .0;
+                    res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
                     tally.borrow_mut().updates += 1;
                 }
                 1 => w.set_frame(o[1]),
-                2 => w
-                    .objects
-                    .find_mut(me)
-                    .unwrap()
-                    .disabled
-                    .set(DISABLED_HACKED, i32::from(o[1] != 0)),
-                3 => w
-                    .objects
-                    .find_mut(me)
-                    .unwrap()
-                    .status
-                    .set(OBJECT_STATUS_UNDER_CONSTRUCTION, i32::from(o[1] != 0)),
+                2 => w.objects.find_mut(me).unwrap().disabled.set(DISABLED_HACKED, i32::from(o[1] != 0)),
+                3 => w.objects.find_mut(me).unwrap().status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, i32::from(o[1] != 0)),
                 4 => set_controller(&mut w, o[1]),
                 5 => {
                     w.cuts.player_colors.insert((o[2] % 3) as i32, o[3] as i32);
@@ -417,25 +328,14 @@ fn rust_run(
                     if o[3] == 0 {
                         w.cuts.player_sides.remove(&p);
                     } else {
-                        w.cuts
-                            .player_sides
-                            .insert(p, SIDES[(o[3] as usize - 1) % 3].as_bytes().to_vec());
+                        w.cuts.player_sides.insert(p, SIDES[(o[3] as usize - 1) % 3].as_bytes().to_vec());
                     }
                 }
                 8 => {
                     w.module_call(me, idx, ModuleCall::OclUpdateResetTimer);
                 }
-                9 => {
-                    res = w
-                        .module_call(me, idx, ModuleCall::OclUpdateGetCountdownPercent)
-                        .as_real(0.0)
-                        .to_bits()
-                }
-                10 => {
-                    res = w
-                        .module_call(me, idx, ModuleCall::OclUpdateGetRemainingFrames)
-                        .as_int(0) as u32
-                }
+                9 => res = w.module_call(me, idx, ModuleCall::OclUpdateGetCountdownPercent).as_real(0.0).to_bits(),
+                10 => res = w.module_call(me, idx, ModuleCall::OclUpdateGetRemainingFrames).as_int(0) as u32,
                 11..=13 => {
                     let r = run_xfer(&mut w, me, idx as usize, o[0] - 11, &saved, XFER_FILE);
                     xst = r.0;
@@ -446,36 +346,16 @@ fn rust_run(
                     }
                     tally.borrow_mut().xfers += 1;
                 }
-                14 => w.set_position(
-                    me,
-                    &Coord3D {
-                        x: f32::from_bits(o[1]),
-                        y: f32::from_bits(o[2]),
-                        z: f32::from_bits(o[3]),
-                    },
-                ),
+                14 => w.set_position(me, &Coord3D { x: f32::from_bits(o[1]), y: f32::from_bits(o[2]), z: f32::from_bits(o[3]) }),
                 15 => w.set_orientation(me, f32::from_bits(o[1])),
-                _ => {
-                    w.cuts.edge_point_offset = Coord3D {
-                        x: f32::from_bits(o[1]),
-                        y: f32::from_bits(o[2]),
-                        z: f32::from_bits(o[3]),
-                    }
-                }
+                _ => w.cuts.edge_point_offset = Coord3D { x: f32::from_bits(o[1]), y: f32::from_bits(o[2]), z: f32::from_bits(o[3]) },
             }
         }
         let threw = w.cuts.module_errors.len() > errors_before;
         let cuts = w.cuts.log.take().unwrap_or_default();
         let mut log = Vec::new();
         for c in cuts {
-            if let CutCall::OclCreateAt {
-                ocl,
-                primary_pos,
-                secondary_pos,
-                angle,
-                ..
-            } = c
-            {
+            if let CutCall::OclCreateAt { ocl, primary_pos, secondary_pos, angle, .. } = c {
                 let i = match ocl.as_slice() {
                     b"OCL_A" => 0,
                     b"OCL_B" => 1,
@@ -509,26 +389,16 @@ fn rust_run(
             }
             put_u32(&mut v, crc);
         }
-        let state =
-            w.objects
-                .find(me)
-                .unwrap()
-                .behaviors
-                .iter()
-                .find_map(|b| match b.body.as_ref() {
-                    Some(UpdateBody::OclUpdate(m)) => Some(m.state_words()),
-                    _ => None,
-                });
+        let state = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
+            Some(UpdateBody::OclUpdate(m)) => Some(m.state_words()),
+            _ => None,
+        });
         for s in state.expect("the module is back in its slot") {
             put_u32(&mut v, s);
         }
     }
     let excluded = w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined());
-    RunOut {
-        dump: v,
-        keys: Vec::new(),
-        excluded,
-    }
+    RunOut { dump: v, keys: Vec::new(), excluded }
 }
 
 #[test]
@@ -555,10 +425,5 @@ fn ocl_update_matches_upstream() {
         "update module N3: {} cases, {} data blocks threw, {} excluded (undefined upstream), {} ops, {} updates, {} xfers, {} effect lines, {} lists created",
         c.cases, c.read_failed, c.excluded, c.ops_run, t.updates, t.xfers, t.effects, t.creations
     );
-    assert!(
-        c.read_failed * 40 > c.cases as u64
-            && c.ops_run * 5 > c.cases as u64 * 4
-            && t.creations * 10 > c.cases as u64,
-        "the generator must reach every path"
-    );
+    assert!(c.read_failed * 40 > c.cases as u64 && c.ops_run * 5 > c.cases as u64 * 4 && t.creations * 10 > c.cases as u64, "the generator must reach every path");
 }

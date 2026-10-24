@@ -71,19 +71,14 @@ use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
-use rts_lockstep_engine::logic::modules::stealth_detector_update::{
-    StealthDetectorUpdateModuleData, IR_DEFAULT_BONE_POSITION, RADAR_EVENT_STEALTH_DISCOVERED,
-    RADAR_EVENT_STEALTH_NEUTRALIZED,
-};
+use rts_lockstep_engine::logic::modules::stealth_detector_update::{StealthDetectorUpdateModuleData, IR_DEFAULT_BONE_POSITION, RADAR_EVENT_STEALTH_DISCOVERED, RADAR_EVENT_STEALTH_NEUTRALIZED};
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleHandle};
 use rts_lockstep_engine::logic::world::module_probe::{ProbeAnswers, ProbeModule};
 use rts_lockstep_engine::logic::world::object::PRIVATE_EFFECTIVELY_DEAD;
 use rts_lockstep_engine::logic::world::object_create::{NewModule, NewObject};
 use rts_lockstep_engine::logic::world::object_cuts::CutCall;
-use rts_lockstep_engine::logic::world::object_events::{
-    ObjectClientEvent, StealthClientOp, StealthFeedback,
-};
+use rts_lockstep_engine::logic::world::object_events::{ObjectClientEvent, StealthClientOp, StealthFeedback};
 use rts_lockstep_engine::logic::world::statics::GameStatics;
 use rts_lockstep_engine::logic::world::team::Team;
 use rts_lockstep_engine::logic::world::update_body::UpdateBody;
@@ -107,17 +102,12 @@ fn put_str(v: &mut Vec<u8>, s: &[u8]) {
     v.extend_from_slice(s);
 }
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::StealthDetectorUpdate(Arc::new(
-        StealthDetectorUpdateModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::StealthDetectorUpdate(Arc::new(StealthDetectorUpdateModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -129,12 +119,7 @@ fn put_data(v: &mut Vec<u8>, d: &StealthDetectorUpdateModuleData) {
     put_u32(v, u32::from(d.initially_disabled));
     put_str(v, &d.ping_sound.event_name);
     put_str(v, &d.loud_ping_sound.event_name);
-    for p in [
-        &d.ir_beacon_particle_sys,
-        &d.ir_particle_sys,
-        &d.ir_bright_particle_sys,
-        &d.ir_grid_particle_sys,
-    ] {
+    for p in [&d.ir_beacon_particle_sys, &d.ir_particle_sys, &d.ir_bright_particle_sys, &d.ir_grid_particle_sys] {
         put_str(v, p.as_deref().unwrap_or(b""));
     }
     put_str(v, &d.ir_particle_sys_bone);
@@ -143,10 +128,7 @@ fn put_data(v: &mut Vec<u8>, d: &StealthDetectorUpdateModuleData) {
             put_u32(v, u32::from(m.test(i)));
         }
     }
-    put_u32(
-        v,
-        u32::from(d.can_detect_while_garrisoned) | u32::from(d.can_detect_while_transported) << 1,
-    );
+    put_u32(v, u32::from(d.can_detect_while_garrisoned) | u32::from(d.can_detect_while_transported) << 1);
 }
 
 /// A dump as text, for the comparison.
@@ -170,21 +152,10 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
     }
     let head: Vec<u32> = (0..3).map(|_| u32_(&mut p)).collect();
     let names: Vec<String> = (0..7).map(|_| str_(&mut p)).collect();
-    let kinds: Vec<Vec<usize>> = (0..2)
-        .map(|_| {
-            (0..KINDOF_COUNT)
-                .map(|_| u32_(&mut p))
-                .enumerate()
-                .filter(|(_, v)| *v != 0)
-                .map(|(i, _)| i)
-                .collect()
-        })
-        .collect();
+    let kinds: Vec<Vec<usize>> = (0..2).map(|_| (0..KINDOF_COUNT).map(|_| u32_(&mut p)).enumerate().filter(|(_, v)| *v != 0).map(|(i, _)| i).collect()).collect();
     let flags = u32_(&mut p);
     let (w, l) = (u32_(&mut p), u32_(&mut p));
-    out.push(format!(
-        "data {head:x?} {names:?} {kinds:?} {flags} constructor wakes {w} last {l}"
-    ));
+    out.push(format!("data {head:x?} {names:?} {kinds:?} {flags} constructor wakes {w} last {l}"));
     for i in 0..n_ops {
         if p >= b.len() {
             break;
@@ -207,16 +178,10 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
     let mut lines: Vec<String> = Vec::new();
     if g.below(100) < 75 {
-        lines.push(format!(
-            "DetectionRate = {}",
-            pick(g, &["0", "33", "100", "500"])
-        ));
+        lines.push(format!("DetectionRate = {}", pick(g, &["0", "33", "100", "500"])));
     }
     if g.below(100) < 40 {
-        lines.push(format!(
-            "DetectionRange = {}",
-            pick(g, &["0", "50", "150.5"])
-        ));
+        lines.push(format!("DetectionRange = {}", pick(g, &["0", "50", "150.5"])));
     }
     if g.below(100) < 20 {
         lines.push(format!("InitiallyDisabled = {}", pick(g, &["Yes", "No"])));
@@ -225,50 +190,27 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
         lines.push(format!("PingSound = {}", pick(g, &["PingA", "NoSound"])));
     }
     if g.below(100) < 50 {
-        lines.push(format!(
-            "LoudPingSound = {}",
-            pick(g, &["PingLoud", "NoSound"])
-        ));
+        lines.push(format!("LoudPingSound = {}", pick(g, &["PingLoud", "NoSound"])));
     }
-    for f in [
-        "IRBeaconParticleSysName",
-        "IRParticleSysName",
-        "IRBrightParticleSysName",
-        "IRGridParticleSysName",
-    ] {
+    for f in ["IRBeaconParticleSysName", "IRParticleSysName", "IRBrightParticleSysName", "IRGridParticleSysName"] {
         if g.below(100) < 45 {
             lines.push(format!("{f} = {}", pick(g, &["PsA", "PsB", "None"])));
         }
     }
     if g.below(100) < 30 {
-        lines.push(format!(
-            "IRParticleSysBone = {}",
-            pick(g, &["IRBone", "Muzzle01"])
-        ));
+        lines.push(format!("IRParticleSysBone = {}", pick(g, &["IRBone", "Muzzle01"])));
     }
     if g.below(100) < 15 {
-        lines.push(format!(
-            "ExtraRequiredKindOf = {}",
-            pick(g, &["MINE", "INFANTRY"])
-        ));
+        lines.push(format!("ExtraRequiredKindOf = {}", pick(g, &["MINE", "INFANTRY"])));
     }
     if g.below(100) < 15 {
-        lines.push(format!(
-            "ExtraForbiddenKindOf = {}",
-            pick(g, &["DEMOTRAP", "VEHICLE"])
-        ));
+        lines.push(format!("ExtraForbiddenKindOf = {}", pick(g, &["DEMOTRAP", "VEHICLE"])));
     }
     if g.below(100) < 35 {
-        lines.push(format!(
-            "CanDetectWhileGarrisoned = {}",
-            pick(g, &["Yes", "No"])
-        ));
+        lines.push(format!("CanDetectWhileGarrisoned = {}", pick(g, &["Yes", "No"])));
     }
     if g.below(100) < 35 {
-        lines.push(format!(
-            "CanDetectWhileContained = {}",
-            pick(g, &["Yes", "No"])
-        ));
+        lines.push(format!("CanDetectWhileContained = {}", pick(g, &["Yes", "No"])));
     }
     if !clean {
         lines.push(match g.below(3) {
@@ -298,13 +240,7 @@ struct Tally {
     grids: u64,
 }
 
-fn run_xfer(
-    w: &mut World,
-    me: ObjectId,
-    idx: usize,
-    how: u32,
-    saved: &[u8],
-) -> (i32, Vec<u8>, u32) {
+fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -345,10 +281,7 @@ fn run_xfer(
 }
 
 fn template_of(kinds: &[KindOfType]) -> Arc<ThingTemplate> {
-    let values = ObjectTemplateValues {
-        kind_of: kinds.to_vec(),
-        ..Default::default()
-    };
+    let values = ObjectTemplateValues { kind_of: kinds.to_vec(), ..Default::default() };
     Arc::new(ThingTemplate::from_object_values(&values))
 }
 
@@ -377,10 +310,7 @@ struct Slots {
 }
 
 fn probe_mut(w: &mut World, id: ObjectId, slot: u16) -> &mut ProbeAnswers {
-    match w.objects.find_mut(id).unwrap().modules[slot as usize]
-        .body
-        .as_mut()
-    {
+    match w.objects.find_mut(id).unwrap().modules[slot as usize].body.as_mut() {
         Some(UpdateBody::ModuleProbe(p)) => &mut p.answers,
         _ => panic!("a probe in slot {slot}"),
     }
@@ -401,80 +331,42 @@ fn set_scene(w: &mut World, cfg: &[u32; 14], s: &Slots) {
     let f = cfg[2];
     {
         let o = w.objects.find_mut(1).unwrap();
-        o.drawable = if f & 1 != 0 {
-            if o.drawable == INVALID_DRAWABLE_ID {
-                7
-            } else {
-                o.drawable
-            }
-        } else {
-            INVALID_DRAWABLE_ID
-        };
+        o.drawable = if f & 1 != 0 { if o.drawable == INVALID_DRAWABLE_ID { 7 } else { o.drawable } } else { INVALID_DRAWABLE_ID };
         o.team = team(f >> 1 & 3);
         o.status = ObjectStatusMaskType::default();
-        o.status
-            .set(OBJECT_STATUS_UNDER_CONSTRUCTION, (f >> 4 & 1) as i32);
+        o.status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, (f >> 4 & 1) as i32);
         o.status.set(OBJECT_STATUS_SOLD, (f >> 5 & 1) as i32);
         o.status.set(OBJECT_STATUS_STEALTHED, (f >> 6 & 1) as i32);
-        o.contained_by = if f >> 7 & 1 != 0 {
-            2
-        } else {
-            rts_lockstep_engine::common::game_type::INVALID_ID
-        };
+        o.contained_by = if f >> 7 & 1 != 0 { 2 } else { rts_lockstep_engine::common::game_type::INVALID_ID };
         o.vision_range = cfg[3] as f32;
         o.in_partition = true;
     }
     set_private(w, 1, PRIVATE_EFFECTIVELY_DEAD, f >> 3 & 1 != 0);
-    w.set_position(
-        1,
-        &Coord3D {
-            x: 0.0,
-            y: 0.0,
-            z: cfg[4] as f32,
-        },
-    );
+    w.set_position(1, &Coord3D { x: 0.0, y: 0.0, z: cfg[4] as f32 });
     w.objects.find_mut(2).unwrap().contain = (f >> 9 & 1 != 0).then_some(s.contain[2]);
     probe_mut(w, 2, s.contain[2]).garrisonable = f >> 8 & 1 != 0;
     let local = cfg[5] & 3;
-    w.players
-        .friend_set_local_index((local < 3).then_some(local as i32));
+    w.players.friend_set_local_index((local < 3).then_some(local as i32));
     w.cuts.shrouded_status.clear();
     if local < 3 {
-        w.cuts
-            .shrouded_status
-            .insert((1, local as i32), shroud(cfg[5] >> 4 & 7));
+        w.cuts.shrouded_status.insert((1, local as i32), shroud(cfg[5] >> 4 & 7));
     }
     for i in 0..3u32 {
         for j in 0..3u32 {
-            w.cuts
-                .team_relationships
-                .insert((i + 1, j + 1), rel(cfg[6] >> (2 * (3 * i + j)) & 3));
+            w.cuts.team_relationships.insert((i + 1, j + 1), rel(cfg[6] >> (2 * (3 * i + j)) & 3));
         }
     }
-    w.cuts.range_scan = (0..4)
-        .map(|k| cfg[7] >> (4 * k) & 15)
-        .take_while(|&id| id != 0)
-        .filter(|id| (3..=6).contains(id))
-        .map(|id| id as ObjectId)
-        .collect();
+    w.cuts.range_scan = (0..4).map(|k| cfg[7] >> (4 * k) & 15).take_while(|&id| id != 0).filter(|id| (3..=6).contains(id)).map(|id| id as ObjectId).collect();
     for k in 3..=6usize {
         let g = cfg[8 + (k - 3)];
         let id = k as ObjectId;
         let mut kinds = Vec::new();
-        for (b, kind) in [
-            (3, KINDOF_MINE),
-            (4, KINDOF_BOOBY_TRAP),
-            (5, KINDOF_DEMOTRAP),
-        ] {
+        for (b, kind) in [(3, KINDOF_MINE), (4, KINDOF_BOOBY_TRAP), (5, KINDOF_DEMOTRAP)] {
             if g >> b & 1 != 0 {
                 kinds.push(kind);
             }
         }
-        w.objects
-            .find_mut(id)
-            .unwrap()
-            .thing
-            .friend_set_template(template_of(&kinds));
+        w.objects.find_mut(id).unwrap().thing.friend_set_template(template_of(&kinds));
         {
             let o = w.objects.find_mut(id).unwrap();
             o.status = ObjectStatusMaskType::default();
@@ -483,11 +375,7 @@ fn set_scene(w: &mut World, cfg: &[u32; 14], s: &Slots) {
             o.stealth = (g >> 6 & 1 != 0).then_some(s.stealth[k]);
             o.contain = (g >> 7 & 1 != 0).then_some(s.contain[k]);
             o.team = team(g >> 12 & 3);
-            o.drawable = if g >> 14 & 1 != 0 {
-                7
-            } else {
-                INVALID_DRAWABLE_ID
-            };
+            o.drawable = if g >> 14 & 1 != 0 { 7 } else { INVALID_DRAWABLE_ID };
         }
         set_private(w, id, PRIVATE_EFFECTIVELY_DEAD, g >> 2 & 1 != 0);
         {
@@ -504,18 +392,8 @@ fn set_scene(w: &mut World, cfg: &[u32; 14], s: &Slots) {
             }
         }
         let (ee, oe) = (g >> 15 & 3, g >> 17 & 3);
-        probe_mut(w, id, s.stealth[k]).eva_events = Some((
-            if ee != 0 { 29 + ee as i32 } else { -1 },
-            if oe != 0 { 29 + oe as i32 } else { -1 },
-        ));
-        w.set_position(
-            id,
-            &Coord3D {
-                x: (g >> 20 & 255) as f32,
-                y: 5.0,
-                z: 0.0,
-            },
-        );
+        probe_mut(w, id, s.stealth[k]).eva_events = Some((if ee != 0 { 29 + ee as i32 } else { -1 }, if oe != 0 { 29 + oe as i32 } else { -1 }));
+        w.set_position(id, &Coord3D { x: (g >> 20 & 255) as f32, y: 5.0, z: 0.0 });
     }
     for k in 0..2u32 {
         let r = cfg[12] >> (4 * k);
@@ -527,25 +405,14 @@ fn set_scene(w: &mut World, cfg: &[u32; 14], s: &Slots) {
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world, and whether a feedback that plays read a `NULL` player (undefined upstream).
-fn rust_run(
-    ctx: &Ctx,
-    data: ModuleDataKind,
-    cfg_in: &[u32; 14],
-    ops: &[[u32; 6]],
-    tally: &mut Tally,
-) -> (Vec<u8>, World, bool) {
+fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 14], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World, bool) {
     let mut cfg = *cfg_in;
     let mut v = Vec::new();
-    let ModuleDataKind::StealthDetectorUpdate(d) = &data else {
-        unreachable!()
-    };
+    let ModuleDataKind::StealthDetectorUpdate(d) = &data else { unreachable!() };
     put_data(&mut v, d);
     let mut w = World::new();
     w.names = ctx.names.clone();
-    w.statics = Arc::new(GameStatics {
-        upgrade_center: ctx.center.clone(),
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), ..Default::default() });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.probe_effect_trace = true;
@@ -559,11 +426,7 @@ fn rust_run(
     }
     let probe = |name: &[u8], answers: ProbeAnswers| {
         let mut m = NewModule::plain(name, b"ModuleTag_Probe");
-        m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-            answers,
-            0.0,
-            Default::default(),
-        )));
+        m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(answers, 0.0, Default::default())));
         m
     };
     let stealth_probe = || {
@@ -576,47 +439,13 @@ fn rust_run(
         m.interfaces = MODULEINTERFACE_CONTAIN;
         m
     };
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        b"StealthDetectorUpdate",
-        b"ModuleTag_Detector",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
-    assert_eq!(
-        w.new_object(NewObject {
-            template: template_of(&[]),
-            status: ObjectStatusMaskType::default(),
-            team: None,
-            modules: vec![m]
-        })
-        .unwrap(),
-        1
-    );
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"StealthDetectorUpdate", b"ModuleTag_Detector", &data).unwrap().unwrap();
+    assert_eq!(w.new_object(NewObject { template: template_of(&[]), status: ObjectStatusMaskType::default(), team: None, modules: vec![m] }).unwrap(), 1);
     for id in 2..=8 {
-        let modules = if (3..=6).contains(&id) {
-            vec![stealth_probe(), contain_probe()]
-        } else if id == 2 {
-            vec![contain_probe()]
-        } else {
-            vec![stealth_probe()]
-        };
-        assert_eq!(
-            w.new_object(NewObject {
-                template: template_of(&[]),
-                status: ObjectStatusMaskType::default(),
-                team: None,
-                modules
-            })
-            .unwrap(),
-            id
-        );
+        let modules = if (3..=6).contains(&id) { vec![stealth_probe(), contain_probe()] } else if id == 2 { vec![contain_probe()] } else { vec![stealth_probe()] };
+        assert_eq!(w.new_object(NewObject { template: template_of(&[]), status: ObjectStatusMaskType::default(), team: None, modules }).unwrap(), id);
     }
-    let mut slots = Slots {
-        stealth: [0; 9],
-        contain: [0; 9],
-    };
+    let mut slots = Slots { stealth: [0; 9], contain: [0; 9] };
     for id in 2..=8 {
         if let Some(s) = w.find_module(id, b"R27Stealth") {
             slots.stealth[id as usize] = s;
@@ -626,12 +455,7 @@ fn rust_run(
         }
     }
     let idx = w.find_module(1, b"StealthDetectorUpdate").unwrap();
-    let u = w
-        .update_handle_of_module(ModuleHandle {
-            object: 1,
-            index: idx,
-        })
-        .expect("an update module");
+    let u = w.update_handle_of_module(ModuleHandle { object: 1, index: idx }).expect("an update module");
     let mine = |l: &str| -> Option<u32> {
         let (i, f) = l.split_once(' ').unwrap();
         (i.parse::<i32>().unwrap() == i32::from(idx)).then(|| f.parse().unwrap())
@@ -663,10 +487,7 @@ fn rust_run(
         let (mut xst, mut xbytes, mut crc, mut res) = (-2i32, Vec::new(), 0u32, 0u32);
         match o[0] {
             0 => {
-                res = w
-                    .with_body(u, |b, w| b.update(w, u))
-                    .expect("the module is in its slot")
-                    .0;
+                res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
                 tally.updates += 1;
             }
             1 => {
@@ -689,9 +510,7 @@ fn rust_run(
             2 | 6 => {}
             _ => unreachable!(),
         }
-        let threw = w.cuts.module_errors[errors_before..]
-            .iter()
-            .any(|(_, e)| !e.is_undefined());
+        let threw = w.cuts.module_errors[errors_before..].iter().any(|(_, e)| !e.is_undefined());
         put_i32(&mut v, if threw { 2 } else { 0 });
         put_u32(&mut v, res);
         let events: Vec<ObjectClientEvent> = w.events.events()[events_before..]
@@ -701,66 +520,30 @@ fn rust_run(
                 _ => None,
             })
             .collect();
-        let (mut ev_iter, mut cut_iter) =
-            (events.into_iter(), w.cuts.log.take().unwrap().into_iter());
+        let (mut ev_iter, mut cut_iter) = (events.into_iter(), w.cuts.log.take().unwrap().into_iter());
         let (mut log, mut wakes, mut last) = (Vec::new(), 0u32, 0u32);
-        let bits = |p: &Coord3D| {
-            format!(
-                "{:08x} {:08x} {:08x}",
-                p.x.to_bits(),
-                p.y.to_bits(),
-                p.z.to_bits()
-            )
-        };
+        let bits = |p: &Coord3D| format!("{:08x} {:08x} {:08x}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits());
         for t in w.cuts.trace.take().unwrap() {
             if t.starts_with("cut ") {
                 match cut_iter.next() {
-                    Some(CutCall::PartitionIterateObjectsInRangeOf { object, range, dc }) => {
-                        log.push(format!("scan {object} {:08x} {dc}", range.to_bits()))
-                    }
-                    Some(CutCall::ParticleSystemCreate {
-                        template,
-                        position,
-                        id,
-                    }) => {
+                    Some(CutCall::PartitionIterateObjectsInRangeOf { object, range, dc }) => log.push(format!("scan {object} {:08x} {dc}", range.to_bits())),
+                    Some(CutCall::ParticleSystemCreate { template, position, id }) => {
                         tally.grids += 1;
-                        log.push(format!(
-                            "psys {} {id} {:08x},{:08x},{:08x}",
-                            String::from_utf8_lossy(&template),
-                            position.x.to_bits(),
-                            position.y.to_bits(),
-                            position.z.to_bits()
-                        ))
+                        log.push(format!("psys {} {id} {:08x},{:08x},{:08x}", String::from_utf8_lossy(&template), position.x.to_bits(), position.y.to_bits(), position.z.to_bits()))
                     }
                     _ => {}
                 }
             } else if t.starts_with("evt ") {
                 match ev_iter.next() {
-                    Some(ObjectClientEvent::StealthDetectorFeedback {
-                        feedback,
-                        try_radar_event,
-                        position,
-                        player_index,
-                        eva,
-                    }) => {
+                    Some(ObjectClientEvent::StealthDetectorFeedback { feedback, try_radar_event, position, player_index, eva }) => {
                         let (kind, bit, sound, label) = match feedback {
                             StealthFeedback::Discovered => {
                                 tally.discoveries += 1;
-                                (
-                                    RADAR_EVENT_STEALTH_DISCOVERED,
-                                    0,
-                                    "StealthDiscoveredSnd",
-                                    "MESSAGE:StealthDiscovered",
-                                )
+                                (RADAR_EVENT_STEALTH_DISCOVERED, 0, "StealthDiscoveredSnd", "MESSAGE:StealthDiscovered")
                             }
                             StealthFeedback::Neutralized => {
                                 tally.neutralisations += 1;
-                                (
-                                    RADAR_EVENT_STEALTH_NEUTRALIZED,
-                                    1,
-                                    "StealthNeutralizedSnd",
-                                    "MESSAGE:StealthNeutralized",
-                                )
+                                (RADAR_EVENT_STEALTH_NEUTRALIZED, 1, "StealthNeutralizedSnd", "MESSAGE:StealthNeutralized")
                             }
                         };
                         // the client's decision: the radar stand-in's answer (tryEvent), or always (createEvent)
@@ -768,11 +551,7 @@ fn rust_run(
                             log.push(format!("radartry {kind} {}", bits(&position)));
                             cfg[13] >> bit & 1 != 0
                         } else {
-                            log.push(format!(
-                                "radarevent {} {kind} {:08x}",
-                                bits(&position),
-                                4.0f32.to_bits()
-                            ));
+                            log.push(format!("radarevent {} {kind} {:08x}", bits(&position), 4.0f32.to_bits()));
                             true
                         };
                         if play {
@@ -786,39 +565,15 @@ fn rust_run(
                             }
                         }
                     }
-                    Some(ObjectClientEvent::ParticleSystemAtBone {
-                        template,
-                        id,
-                        object_id,
-                        attach_to_drawable,
-                        ..
-                    }) => {
+                    Some(ObjectClientEvent::ParticleSystemAtBone { template, id, object_id, attach_to_drawable, .. }) => {
                         tally.pings += 1;
-                        log.push(if attach_to_drawable {
-                            format!("psattachdraw {id} {object_id}")
-                        } else {
-                            format!("psattach {id} {object_id}")
-                        });
+                        log.push(if attach_to_drawable { format!("psattachdraw {id} {object_id}") } else { format!("psattach {id} {object_id}") });
                         // (the drawable stand-in has no such bone: the default position)
                         let pos = IR_DEFAULT_BONE_POSITION;
-                        log.push(format!(
-                            "psys {} {id} {:08x},{:08x},{:08x}",
-                            String::from_utf8_lossy(&template),
-                            pos.x.to_bits(),
-                            pos.y.to_bits(),
-                            pos.z.to_bits()
-                        ));
+                        log.push(format!("psys {} {id} {:08x},{:08x},{:08x}", String::from_utf8_lossy(&template), pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()));
                     }
-                    Some(ObjectClientEvent::Stealth {
-                        object_id,
-                        op: StealthClientOp::SecondMaterialPassOpacity(x),
-                    }) => log.push(format!("secondpass {object_id} {:08x}", x.to_bits())),
-                    Some(ObjectClientEvent::AudioAddEvent {
-                        name, object_id, ..
-                    }) => log.push(format!(
-                        "audio {} - -1 {object_id}",
-                        String::from_utf8_lossy(&name)
-                    )),
+                    Some(ObjectClientEvent::Stealth { object_id, op: StealthClientOp::SecondMaterialPassOpacity(x) }) => log.push(format!("secondpass {object_id} {:08x}", x.to_bits())),
+                    Some(ObjectClientEvent::AudioAddEvent { name, object_id, .. }) => log.push(format!("audio {} - -1 {object_id}", String::from_utf8_lossy(&name))),
                     _ => {}
                 }
             } else if let Some(f) = t.strip_prefix("awaken ").and_then(mine) {
@@ -846,9 +601,7 @@ fn rust_run(
         put_u32(&mut v, crc);
         let o = w.objects.find(1).unwrap();
         let slot = &o.behaviors[u.index as usize];
-        let Some(UpdateBody::StealthDetectorUpdate(m)) = slot.body.as_ref() else {
-            panic!("the module is back in its slot")
-        };
+        let Some(UpdateBody::StealthDetectorUpdate(m)) = slot.body.as_ref() else { panic!("the module is back in its slot") };
         put_u32(&mut v, u32::from(m.is_sd_enabled()));
         put_u32(&mut v, slot.update.friend_get_next_call_frame());
     }
@@ -856,10 +609,7 @@ fn rust_run(
 }
 
 fn cases() -> usize {
-    std::env::var("L9R27_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9R27_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 #[test]
@@ -918,11 +668,7 @@ fn stealth_detector_update_matches_upstream() {
                 | g.below(4) << 17
                 | g.below(256) << 20
         };
-        let gen_scan = |g: &mut Gen| {
-            (0..4).fold(0, |acc, k| {
-                acc | (if g.below(6) == 0 { 0 } else { 3 + g.below(4) }) << (4 * k)
-            })
-        };
+        let gen_scan = |g: &mut Gen| (0..4).fold(0, |acc, k| acc | (if g.below(6) == 0 { 0 } else { 3 + g.below(4) }) << (4 * k));
         let gen_rel = |g: &mut Gen| (0..9).fold(0, |acc, k| acc | g.below(3) << (2 * k));
         let mut cfg = [
             g.below(200),
@@ -930,8 +676,7 @@ fn stealth_detector_update_matches_upstream() {
             gen_det(&mut g),
             *pick(&mut g, &[&0u32, &100, &300]),
             g.below(20),
-            (if g.below(8) == 0 { 3 } else { g.below(3) })
-                | (if g.below(4) == 0 { g.below(6) } else { 1 }) << 4,
+            (if g.below(8) == 0 { 3 } else { g.below(3) }) | (if g.below(4) == 0 { g.below(6) } else { 1 }) << 4,
             gen_rel(&mut g),
             gen_scan(&mut g),
             gen_obj(&mut g),
@@ -972,17 +717,14 @@ fn stealth_detector_update_matches_upstream() {
             })
             .collect();
         let rust = if outcome.status == 0 {
-            let (rd, w, undefined_feedback) =
-                rust_run(&ctx, data.expect("read ok"), &cfg, &ops, &mut tally);
+            let (rd, w, undefined_feedback) = rust_run(&ctx, data.expect("read ok"), &cfg, &ops, &mut tally);
             if let Some((_, e)) = w.cuts.module_errors.iter().find(|(_, e)| e.is_undefined()) {
                 *reasons.entry(format!("{e}")).or_insert(0u64) += 1;
                 excluded += 1;
                 continue;
             }
             if undefined_feedback {
-                *reasons
-                    .entry("a feedback that plays reads a NULL player".to_string())
-                    .or_insert(0u64) += 1;
+                *reasons.entry("a feedback that plays reads a NULL player".to_string()).or_insert(0u64) += 1;
                 excluded += 1;
                 continue;
             }
@@ -999,19 +741,7 @@ fn stealth_detector_update_matches_upstream() {
         let status = unsafe {
             cpp::ref_ini_reset();
             cpp::ref_ini_add_file(cfile.as_ptr(), text.as_ptr() as *const _, text.len() as i32);
-            cpp::ref_l9r27_run(
-                cfile.as_ptr(),
-                cxfer.as_ptr(),
-                cfg.as_ptr(),
-                ops.len() as i32,
-                flat.as_ptr(),
-                buf.as_mut_ptr(),
-                buf.len() as i32,
-                &mut len,
-                msg.as_mut_ptr() as *mut _,
-                msg.len() as i32,
-                &mut code,
-            )
+            cpp::ref_l9r27_run(cfile.as_ptr(), cxfer.as_ptr(), cfg.as_ptr(), ops.len() as i32, flat.as_ptr(), buf.as_mut_ptr(), buf.len() as i32, &mut len, msg.as_mut_ptr() as *mut _, msg.len() as i32, &mut code)
         };
         buf.truncate(len as usize);
         let detail = match status {
@@ -1020,21 +750,8 @@ fn stealth_detector_update_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!(
-                "case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                show(&text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
@@ -1042,17 +759,8 @@ fn stealth_detector_update_matches_upstream() {
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
-            eprintln!(
-                "--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}",
-                show(&text),
-                dr.get(i),
-                dc.get(i)
-            );
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            eprintln!("--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -1070,11 +778,7 @@ fn stealth_detector_update_matches_upstream() {
     read.finish();
     run.finish();
     assert!(
-        tally.discoveries * 4 > cases as u64
-            && tally.neutralisations * 4 > cases as u64
-            && tally.marks > cases as u64
-            && tally.pings > cases as u64
-            && tally.grids * 4 > cases as u64,
+        tally.discoveries * 4 > cases as u64 && tally.neutralisations * 4 > cases as u64 && tally.marks > cases as u64 && tally.pings > cases as u64 && tally.grids * 4 > cases as u64,
         "the generator must reach every path"
     );
 }

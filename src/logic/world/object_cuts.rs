@@ -49,12 +49,10 @@
 //! | `CommandButton`, `TheControlBar->findCommandSet` | `doCommandButton*`, `canProduceUpgrade` | **not translated** (client/GUI types) |
 //! | bone positions (`Drawable::getPristineBonePositions` and friends) | `getSingleLogicalBonePosition*`, `getMultiLogicalBonePosition` | **not translated** (the model's bone data is a client read) |
 
-use crate::common::base_type::Coord3D;
 use std::collections::{BTreeMap, BTreeSet};
+use crate::common::base_type::Coord3D;
 
-use crate::common::game_common::{
-    ObjectShroudStatus, PlayerMaskType, Relationship, VeterancyLevel,
-};
+use crate::common::game_common::{ObjectShroudStatus, PlayerMaskType, Relationship, VeterancyLevel};
 use crate::common::game_type::{DrawableId, ObjectId, INVALID_DRAWABLE_ID, INVALID_ID};
 use crate::common::upgrade::UpgradeMaskType;
 use crate::logic::client_event::ClientEvent;
@@ -105,48 +103,24 @@ impl World {
         let o = self.objects.find(id)?;
         if let Some(w) = o.weapon_set.get_weapon_in_weapon_slot(slot) {
             let store = &self.statics.weapon_store;
-            let contact = store
-                .templates()
-                .get(w.template())
-                .is_some_and(|t| t.is_contact_weapon());
-            return Some(WeaponSlotFacts {
-                is_contact_weapon: contact,
-                is_damage_weapon: w.is_damage_weapon(store),
-            });
+            let contact = store.templates().get(w.template()).is_some_and(|t| t.is_contact_weapon());
+            return Some(WeaponSlotFacts { is_contact_weapon: contact, is_damage_weapon: w.is_damage_weapon(store) });
         }
         self.cuts.weapon_slot_facts.get(&(id, slot)).copied()
     }
 
     /// `toWeapon->transferNextShotStatsFrom(*fromWeapon)` when both objects have a weapon in those slots (the Patch 1.01 Jarmen Kell hack). Real weapons
     /// are changed; a weapon of the table is a [`CutCall::WeaponTransferNextShotStats`] record.
-    pub fn weapon_transfer_next_shot_stats(
-        &mut self,
-        to: ObjectId,
-        to_slot: i32,
-        from: ObjectId,
-        from_slot: i32,
-    ) {
-        if self.weapon_slot_facts(to, to_slot).is_none()
-            || self.weapon_slot_facts(from, from_slot).is_none()
-        {
+    pub fn weapon_transfer_next_shot_stats(&mut self, to: ObjectId, to_slot: i32, from: ObjectId, from_slot: i32) {
+        if self.weapon_slot_facts(to, to_slot).is_none() || self.weapon_slot_facts(from, from_slot).is_none() {
             return;
         }
         let now = self.frame();
-        let source = self
-            .objects
-            .find(from)
-            .and_then(|o| o.weapon_set.get_weapon_in_weapon_slot(from_slot).cloned());
-        let target_real = self
-            .objects
-            .find(to)
-            .is_some_and(|o| o.weapon_set.get_weapon_in_weapon_slot(to_slot).is_some());
+        let source = self.objects.find(from).and_then(|o| o.weapon_set.get_weapon_in_weapon_slot(from_slot).cloned());
+        let target_real = self.objects.find(to).is_some_and(|o| o.weapon_set.get_weapon_in_weapon_slot(to_slot).is_some());
         match (source, target_real) {
             (Some(src), true) => {
-                if let Some(w) = self
-                    .objects
-                    .find_mut(to)
-                    .and_then(|o| o.weapon_set.get_weapon_in_weapon_slot_mut(to_slot))
-                {
+                if let Some(w) = self.objects.find_mut(to).and_then(|o| o.weapon_set.get_weapon_in_weapon_slot_mut(to_slot)) {
                     w.transfer_next_shot_stats_from(&src, now);
                 }
             }
@@ -160,32 +134,21 @@ impl World {
     pub fn current_weapon_facts(&self, id: ObjectId) -> Option<WeaponFacts> {
         let o = self.objects.find(id)?;
         if let Some(w) = o.weapon_set.get_cur_weapon() {
-            return Some(WeaponFacts {
-                slot: w.weapon_slot(),
-                last_shot_frame: w.last_shot_frame(),
-                possible_next_shot_frame: w.possible_next_shot_frame(),
-            });
+            return Some(WeaponFacts { slot: w.weapon_slot(), last_shot_frame: w.last_shot_frame(), possible_next_shot_frame: w.possible_next_shot_frame() });
         }
         self.cuts.cur_weapon.get(&id).copied()
     }
 
     /// `Object::getWeaponInWeaponSlot(slot) != NULL`: the weapon set's, or the table `cuts.weapons`.
     pub fn weapon_in_slot_exists(&self, id: ObjectId, slot: i32) -> bool {
-        self.objects
-            .find(id)
-            .is_some_and(|o| o.weapon_set.get_weapon_in_weapon_slot(slot).is_some())
-            || self.cuts.weapon_in_slot(id, slot)
+        self.objects.find(id).is_some_and(|o| o.weapon_set.get_weapon_in_weapon_slot(slot).is_some()) || self.cuts.weapon_in_slot(id, slot)
     }
 
     /// `obj->getBodyModule()->getHealth()` and `getMaxHealth()`; `None` for an object with no body module (`NULL`).
     pub fn body_health(&mut self, id: ObjectId) -> Option<(f32, f32)> {
         let body = self.get_body_module(id)?;
-        let health = self
-            .module_call(id, body, ModuleCall::GetHealth)
-            .as_real(0.0);
-        let max_health = self
-            .module_call(id, body, ModuleCall::GetMaxHealth)
-            .as_real(0.0);
+        let health = self.module_call(id, body, ModuleCall::GetHealth).as_real(0.0);
+        let max_health = self.module_call(id, body, ModuleCall::GetMaxHealth).as_real(0.0);
         Some((health, max_health))
     }
 
@@ -193,34 +156,18 @@ impl World {
     /// adapter's).
     pub fn terrain_find_farthest_edge_point(&self, pos: Coord3D) -> Coord3D {
         let o = self.cuts.farthest_edge_point_offset;
-        Coord3D {
-            x: pos.x + o.x,
-            y: pos.y + o.y,
-            z: pos.z + o.z,
-        }
+        Coord3D { x: pos.x + o.x, y: pos.y + o.y, z: pos.z + o.z }
     }
 
     /// `TheTerrainLogic->findClosestEdgePoint(&pos)`: `pos` moved by `cuts.edge_point_offset` (the real terrain logic is the adapter's).
-    pub fn terrain_find_closest_edge_point(
-        &self,
-        pos: crate::common::base_type::Coord3D,
-    ) -> crate::common::base_type::Coord3D {
+    pub fn terrain_find_closest_edge_point(&self, pos: crate::common::base_type::Coord3D) -> crate::common::base_type::Coord3D {
         let o = self.cuts.edge_point_offset;
-        crate::common::base_type::Coord3D {
-            x: pos.x + o.x,
-            y: pos.y + o.y,
-            z: pos.z + o.z,
-        }
+        crate::common::base_type::Coord3D { x: pos.x + o.x, y: pos.y + o.y, z: pos.z + o.z }
     }
 
     /// `TheAudio->addAudioEvent(&AudioEventRTS(name, object))`: the handle the audio manager gave it (never 0).
     pub fn audio_add_event(&mut self, name: Vec<u8>, object_id: ObjectId) -> u32 {
-        self.emit(ObjectClientEvent::AudioAddEvent {
-            name,
-            object_id,
-            position: None,
-            player_index: None,
-        });
+        self.emit(ObjectClientEvent::AudioAddEvent { name, object_id, position: None, player_index: None });
         self.cuts.last_audio_handle = self.cuts.last_audio_handle.wrapping_add(1);
         self.cuts.last_audio_handle
     }
@@ -232,44 +179,22 @@ impl World {
 
     /// `TheAI->findClosestEnemy(obj, range, qualifiers) != NULL`.
     pub fn ai_find_closest_enemy(&mut self, id: ObjectId, range: f32, qualifiers: u32) -> bool {
-        let minor_radius = self
-            .objects
-            .find(id)
-            .map_or(0.0, |o| o.geometry_info.get_minor_radius());
-        self.cut(CutCall::AiFindClosestEnemy {
-            object: id,
-            range,
-            qualifiers,
-            minor_radius,
-        });
+        let minor_radius = self.objects.find(id).map_or(0.0, |o| o.geometry_info.get_minor_radius());
+        self.cut(CutCall::AiFindClosestEnemy { object: id, range, qualifiers, minor_radius });
         self.cuts.ai_enemy_near.contains(&id)
     }
 
     /// `TheAI->findClosestAlly(obj, range, qualifiers) != NULL`.
     pub fn ai_find_closest_ally(&mut self, id: ObjectId, range: f32, qualifiers: u32) -> bool {
-        let minor_radius = self
-            .objects
-            .find(id)
-            .map_or(0.0, |o| o.geometry_info.get_minor_radius());
-        self.cut(CutCall::AiFindClosestAlly {
-            object: id,
-            range,
-            qualifiers,
-            minor_radius,
-        });
+        let minor_radius = self.objects.find(id).map_or(0.0, |o| o.geometry_info.get_minor_radius());
+        self.cut(CutCall::AiFindClosestAlly { object: id, range, qualifiers, minor_radius });
         self.cuts.ai_ally_near.contains(&id)
     }
 
     /// batch R31: `drawable->getPristineBonePositions(prefix, startIndex, positions, NULL, maxBones)`: the art's bones (the client's), from
     /// `cuts.contain.pristine_bones`: for `start_index` 0 the bone named `prefix`, else `<prefix>01`, `<prefix>02`, ... (from `start_index`, to 99)
     /// while the art has them, at most `max_bones` (W3DModelDraw's loop). None for an object with no drawable.
-    pub fn drawable_pristine_bones(
-        &self,
-        id: ObjectId,
-        prefix: &[u8],
-        start_index: i32,
-        max_bones: i32,
-    ) -> Vec<Coord3D> {
+    pub fn drawable_pristine_bones(&self, id: ObjectId, prefix: &[u8], start_index: i32, max_bones: i32) -> Vec<Coord3D> {
         let mut out = Vec::new();
         if !self.has_drawable(id) || max_bones <= 0 {
             return out;
@@ -280,9 +205,7 @@ impl World {
             if i != 0 {
                 name.extend_from_slice(format!("{i:02}").as_bytes());
             }
-            let Some(p) = self.cuts.contain.pristine_bones.get(&(id, name)) else {
-                break;
-            };
+            let Some(p) = self.cuts.contain.pristine_bones.get(&(id, name)) else { break };
             out.push(*p);
             if out.len() as i32 >= max_bones {
                 break;
@@ -293,17 +216,8 @@ impl World {
 
     /// batch R32: `ThePartitionManager->iterateObjectsInRange(&position, range, dc, NULL)`: the candidates, in iteration order
     /// (`ObjectCuts::range_scan` answers).
-    pub fn partition_iterate_objects_in_range_at(
-        &mut self,
-        position: Coord3D,
-        range: f32,
-        dc: i32,
-    ) -> Vec<ObjectId> {
-        self.cut(CutCall::PartitionIterateObjectsInRangeAt {
-            position,
-            range,
-            dc,
-        });
+    pub fn partition_iterate_objects_in_range_at(&mut self, position: Coord3D, range: f32, dc: i32) -> Vec<ObjectId> {
+        self.cut(CutCall::PartitionIterateObjectsInRangeAt { position, range, dc });
         self.cuts.range_scan.clone()
     }
 
@@ -339,18 +253,11 @@ impl World {
     /// batch R28: `TheScriptEngine->adjustToppleDirection(object, direction)`: "if the object is named and has a specified topple direction,
     /// topple adjust direction to reflect it" (the first entry for its name, normalised).
     pub fn script_adjust_topple_direction(&mut self, id: ObjectId, direction: &mut Coord3D) {
-        let Some(name) = self.objects.find(id).map(|o| o.name.clone()) else {
-            return;
-        };
+        let Some(name) = self.objects.find(id).map(|o| o.name.clone()) else { return };
         if name.is_empty() {
             return;
         }
-        if let Some((_, d)) = self
-            .cuts
-            .script_topple_directions
-            .iter()
-            .find(|(n, _)| *n == name)
-        {
+        if let Some((_, d)) = self.cuts.script_topple_directions.iter().find(|(n, _)| *n == name) {
             *direction = *d;
             direction.normalize();
         }
@@ -358,40 +265,18 @@ impl World {
 
     /// batch R27: `createParticleSystem(tmpl)`, attached to the object's drawable (or the object) at the drawable's bone (see
     /// [`ObjectClientEvent::ParticleSystemAtBone`]); the id the client gives it, from the same count as [`World::create_particle_system`]'s.
-    pub fn create_particle_system_at_bone(
-        &mut self,
-        template: Vec<u8>,
-        object_id: ObjectId,
-        attach_to_drawable: bool,
-        bone: Vec<u8>,
-    ) -> u32 {
+    pub fn create_particle_system_at_bone(&mut self, template: Vec<u8>, object_id: ObjectId, attach_to_drawable: bool, bone: Vec<u8>) -> u32 {
         self.cuts.last_particle_system_id = self.cuts.last_particle_system_id.wrapping_add(1);
         let id = self.cuts.last_particle_system_id;
-        self.emit(
-            crate::logic::world::object_events::ObjectClientEvent::ParticleSystemAtBone {
-                template,
-                id,
-                object_id,
-                attach_to_drawable,
-                bone,
-            },
-        );
+        self.emit(crate::logic::world::object_events::ObjectClientEvent::ParticleSystemAtBone { template, id, object_id, attach_to_drawable, bone });
         id
     }
 
     /// `TheParticleSystemManager->createParticleSystem(tmpl)`, `system->setPosition(&position)` and `system->getSystemID()`: the id the client gave it.
-    pub fn create_particle_system(
-        &mut self,
-        template: Vec<u8>,
-        position: crate::common::base_type::Coord3D,
-    ) -> u32 {
+    pub fn create_particle_system(&mut self, template: Vec<u8>, position: crate::common::base_type::Coord3D) -> u32 {
         self.cuts.last_particle_system_id = self.cuts.last_particle_system_id.wrapping_add(1);
         let id = self.cuts.last_particle_system_id;
-        self.cut(CutCall::ParticleSystemCreate {
-            template,
-            position,
-            id,
-        });
+        self.cut(CutCall::ParticleSystemCreate { template, position, id });
         id
     }
 }
@@ -411,25 +296,13 @@ impl World {
     }
 
     /// `TheTerrainLogic->getHighestLayerForDestination(pos)`.
-    pub fn terrain_get_highest_layer_for_destination(
-        &mut self,
-        pos: &crate::common::base_type::Coord3D,
-    ) -> crate::common::game_type::PathfindLayer {
-        self.cut(CutCall::TerrainGetHighestLayerForDestination {
-            x: pos.x,
-            y: pos.y,
-            z: pos.z,
-        });
+    pub fn terrain_get_highest_layer_for_destination(&mut self, pos: &crate::common::base_type::Coord3D) -> crate::common::game_type::PathfindLayer {
+        self.cut(CutCall::TerrainGetHighestLayerForDestination { x: pos.x, y: pos.y, z: pos.z });
         self.cuts.terrain_layer[terrain_cell(pos.x, pos.y)]
     }
 
     /// `TheTerrainLogic->getLayerHeight(x, y, layer)`.
-    pub fn terrain_get_layer_height(
-        &mut self,
-        x: f32,
-        y: f32,
-        layer: crate::common::game_type::PathfindLayer,
-    ) -> f32 {
+    pub fn terrain_get_layer_height(&mut self, x: f32, y: f32, layer: crate::common::game_type::PathfindLayer) -> f32 {
         self.cut(CutCall::TerrainGetLayerHeight { x, y, layer });
         self.cuts.terrain_layer_height[terrain_cell(x, y)]
     }
@@ -443,11 +316,7 @@ impl World {
 
     /// `ThePartitionManager->iterateObjectsInRange(object, range, FROM_BOUNDINGSPHERE_3D, { PartitionFilterAcceptByKindOf(STRUCTURE) })`: the objects, in
     /// iteration order.
-    pub fn partition_iterate_structures_in_range(
-        &mut self,
-        object: ObjectId,
-        range: f32,
-    ) -> Vec<ObjectId> {
+    pub fn partition_iterate_structures_in_range(&mut self, object: ObjectId, range: f32) -> Vec<ObjectId> {
         self.cut(CutCall::PartitionIterateStructuresInRange { object, range });
         self.cuts.range_scan.clone()
     }
@@ -457,22 +326,14 @@ impl World {
     // --- p1w13-sonnet --- (batch R13b)
     /// `ThePartitionManager->iterateObjectsInRange(obj, range, FROM_CENTER_2D, { PartitionFilterSamePlayer(obj's player),
     /// PartitionFilterSameMapStatus(obj) })`: the objects, in iteration order (`VeterancyCrateCollide`).
-    pub fn partition_iterate_same_player_in_range(
-        &mut self,
-        object: ObjectId,
-        range: f32,
-    ) -> Vec<ObjectId> {
+    pub fn partition_iterate_same_player_in_range(&mut self, object: ObjectId, range: f32) -> Vec<ObjectId> {
         self.cut(CutCall::PartitionIterateSamePlayerInRange { object, range });
         self.cuts.range_scan.clone()
     }
 
     /// `ThePartitionManager->iterateObjectsInRange(obj->getPosition(), range, FROM_CENTER_2D, { PartitionFilterRelationship(obj, ALLOW_ALLIES),
     /// PartitionFilterAlive, PartitionFilterSameMapStatus(obj) })`: the objects, in iteration order (`WeaponBonusUpdate`, batch R17).
-    pub fn partition_iterate_allies_in_range(
-        &mut self,
-        object: ObjectId,
-        range: f32,
-    ) -> Vec<ObjectId> {
+    pub fn partition_iterate_allies_in_range(&mut self, object: ObjectId, range: f32) -> Vec<ObjectId> {
         self.cut(CutCall::PartitionIterateAlliesInRange { object, range });
         self.cuts.range_scan.clone()
     }
@@ -480,11 +341,7 @@ impl World {
     /// `obj->doTempWeaponBonus(type, duration)` (`WeaponBonusUpdate`, batch R17): a record under `crate_stub_object_calls`, else the helper's.
     pub fn crate_do_temp_weapon_bonus(&mut self, object: ObjectId, bonus: i32, duration: u32) {
         if self.cuts.crate_stub_object_calls {
-            self.cut(CutCall::ObjectDoTempWeaponBonus {
-                object,
-                bonus,
-                duration,
-            });
+            self.cut(CutCall::ObjectDoTempWeaponBonus { object, bonus, duration });
         } else {
             self.do_temp_weapon_bonus(object, bonus, duration);
         }
@@ -492,11 +349,7 @@ impl World {
 
     /// `ThePartitionManager->iterateObjectsInRange(obj->getPosition(), range, FROM_CENTER_2D)`, no filters: the objects, in iteration order
     /// (`AutoFindHealingUpdate`, batch R19).
-    pub fn partition_iterate_objects_in_range(
-        &mut self,
-        object: ObjectId,
-        range: f32,
-    ) -> Vec<ObjectId> {
+    pub fn partition_iterate_objects_in_range(&mut self, object: ObjectId, range: f32) -> Vec<ObjectId> {
         self.cut(CutCall::PartitionIterateObjectsInRange { object, range });
         self.cuts.range_scan.clone()
     }
@@ -504,31 +357,18 @@ impl World {
     /// `ThePartitionManager->iterateObjectsInRange(obj->getPosition(), range, FROM_CENTER_2D, { PartitionFilterAcceptByKindOf(VEHICLE),
     /// PartitionFilterAlive, PartitionFilterPlayer(obj's player, TRUE), PartitionFilterSameMapStatus(obj) }, ITER_SORTED_NEAR_TO_FAR)`: the
     /// objects, nearest first (`PilotFindVehicleUpdate`, batch R19).
-    pub fn partition_iterate_vehicles_near_to_far(
-        &mut self,
-        object: ObjectId,
-        range: f32,
-    ) -> Vec<ObjectId> {
+    pub fn partition_iterate_vehicles_near_to_far(&mut self, object: ObjectId, range: f32) -> Vec<ObjectId> {
         self.cut(CutCall::PartitionIterateVehiclesNearToFar { object, range });
         self.cuts.range_scan.clone()
     }
 
     /// `ThePartitionManager->getDistanceSquared(obj, other, FROM_CENTER_2D)` (batch R19): the table's entry, else the squared distance in the plane.
-    pub fn partition_get_distance_squared_center_2d(
-        &mut self,
-        object: ObjectId,
-        other: ObjectId,
-    ) -> f32 {
+    pub fn partition_get_distance_squared_center_2d(&mut self, object: ObjectId, other: ObjectId) -> f32 {
         self.cut(CutCall::PartitionGetDistanceSquaredCenter2D { object, other });
         if let Some(d) = self.cuts.distance_squared_center_2d.get(&(object, other)) {
             return *d;
         }
-        let pos = |w: &World, id: ObjectId| {
-            w.objects
-                .find(id)
-                .map(|o| o.get_position())
-                .unwrap_or_default()
-        };
+        let pos = |w: &World, id: ObjectId| w.objects.find(id).map(|o| o.get_position()).unwrap_or_default();
         let (a, b) = (pos(self, object), pos(self, other));
         let (dx, dy) = (b.x - a.x, b.y - a.y);
         dx * dx + dy * dy
@@ -544,51 +384,23 @@ impl World {
     /// `crate_stub_object_calls` the call is a record and the object a bare one of the template (no modules but the standard helpers).
     pub fn crate_new_object(&mut self, template: u16, team: Option<TeamId>) -> ObjectId {
         if !self.cuts.crate_stub_object_calls {
-            return self
-                .thing_factory_new_object(template, team, Default::default())
-                .unwrap_or(INVALID_ID);
+            return self.thing_factory_new_object(template, team, Default::default()).unwrap_or(INVALID_ID);
         }
         self.cut(CutCall::ThingFactoryNewObject { template, team });
-        let Some(t) = self.statics.thing_factory.find_by_template_id(template) else {
-            return INVALID_ID;
-        };
+        let Some(t) = self.statics.thing_factory.find_by_template_id(template) else { return INVALID_ID };
         let tt = std::sync::Arc::new(t.get_final_override().data.clone());
         let mut modules = Vec::new();
         if let Some(valid) = self.cuts.crate_new_object_contain {
             let mut c = NewModule::plain(b"CtChute", b"ModuleTag_Chute");
             c.interfaces = crate::common::module::MODULEINTERFACE_CONTAIN;
-            let answers = crate::logic::world::module_probe::ProbeAnswers {
-                parachute: true,
-                yes: valid,
-                ..Default::default()
-            };
-            c.body = Some(crate::logic::world::update_body::UpdateBody::ModuleProbe(
-                crate::logic::world::module_probe::ProbeModule::new(
-                    answers,
-                    0.0,
-                    Default::default(),
-                ),
-            ));
+            let answers = crate::logic::world::module_probe::ProbeAnswers { parachute: true, yes: valid, ..Default::default() };
+            c.body = Some(crate::logic::world::update_body::UpdateBody::ModuleProbe(crate::logic::world::module_probe::ProbeModule::new(answers, 0.0, Default::default())));
             modules.push(c);
         }
         modules.extend(self.cuts.crate_new_object_modules.iter().cloned());
-        let id = self
-            .new_object(crate::logic::world::object_create::NewObject {
-                template: tt,
-                status: Default::default(),
-                team,
-                modules,
-            })
-            .unwrap_or(INVALID_ID);
+        let id = self.new_object(crate::logic::world::object_create::NewObject { template: tt, status: Default::default(), team, modules }).unwrap_or(INVALID_ID);
         if id != INVALID_ID {
-            self.friend_bind_to_drawable(
-                id,
-                if self.cuts.crate_new_object_drawable {
-                    1000 + id
-                } else {
-                    INVALID_DRAWABLE_ID
-                },
-            );
+            self.friend_bind_to_drawable(id, if self.cuts.crate_new_object_drawable { 1000 + id } else { INVALID_DRAWABLE_ID });
         }
         id
     }
@@ -600,22 +412,14 @@ impl World {
             return self.check_and_detonate_booby_trap(id, Some(victim));
         }
         let result = self.cuts.crate_booby_trapped;
-        self.cut(CutCall::ObjectCheckAndDetonateBoobyTrap {
-            object: id,
-            victim,
-            result,
-        });
+        self.cut(CutCall::ObjectCheckAndDetonateBoobyTrap { object: id, victim, result });
         result
     }
 
     /// `obj->defect(team, detectionTime)` for a crate (batch R13d): a record under `crate_stub_object_calls`.
     pub fn crate_defect(&mut self, id: ObjectId, team: Option<TeamId>, detection_time: u32) {
         if self.cuts.crate_stub_object_calls {
-            self.cut(CutCall::ObjectDefect {
-                object: id,
-                team,
-                detection_time,
-            });
+            self.cut(CutCall::ObjectDefect { object: id, team, detection_time });
         } else if let Some(team) = team {
             self.defect(id, team, detection_time);
         }
@@ -623,19 +427,10 @@ impl World {
 
     /// `obj->getExperienceTracker()->setVeterancyLevel(level, provideFeedback)` for a crate (batch R13d): under `crate_stub_object_calls` a record
     /// and the level only.
-    pub fn crate_experience_set_veterancy_level(
-        &mut self,
-        id: ObjectId,
-        level: i32,
-        provide_feedback: bool,
-    ) {
+    pub fn crate_experience_set_veterancy_level(&mut self, id: ObjectId, level: i32, provide_feedback: bool) {
         let new_level = crate::logic::world::object::veterancy_from_i32(level);
         if self.cuts.crate_stub_object_calls {
-            self.cut(CutCall::ExperienceSetVeterancyLevel {
-                object: id,
-                level,
-                provide_feedback,
-            });
+            self.cut(CutCall::ExperienceSetVeterancyLevel { object: id, level, provide_feedback });
             if let Some(o) = self.objects.find_mut(id) {
                 o.experience.level = new_level;
             }
@@ -673,23 +468,9 @@ impl World {
 
     /// `ObjectCreationList::create(ocl, primary, secondary)` for a list that exists, and the object it makes (`CreateObjectDie`, batch R14a): the call is
     /// [`CutCall::OclCreateWithSecondary`] and the object is `ocl_create_result`'s for the name (`INVALID_ID` for `NULL`).
-    pub fn ocl_create_returning(
-        &mut self,
-        primary: ObjectId,
-        secondary: ObjectId,
-        ocl: &[u8],
-    ) -> ObjectId {
-        self.cut(CutCall::OclCreateWithSecondary {
-            primary,
-            secondary,
-            ocl: ocl.to_vec(),
-        });
-        self.cuts
-            .ocl_create_result
-            .get(ocl)
-            .copied()
-            .filter(|&id| self.objects.find(id).is_some())
-            .unwrap_or(INVALID_ID)
+    pub fn ocl_create_returning(&mut self, primary: ObjectId, secondary: ObjectId, ocl: &[u8]) -> ObjectId {
+        self.cut(CutCall::OclCreateWithSecondary { primary, secondary, ocl: ocl.to_vec() });
+        self.cuts.ocl_create_result.get(ocl).copied().filter(|&id| self.objects.find(id).is_some()).unwrap_or(INVALID_ID)
     }
 
     /// `obj->setOrientation(angle)` for a crate's new unit: a record under `crate_stub_object_calls`.
@@ -702,11 +483,7 @@ impl World {
     }
 
     /// `newCrate->setLayer(layer)` (`CreateCrateDie`, batch R14c): a record under `crate_stub_object_calls`.
-    pub fn crate_set_layer(
-        &mut self,
-        id: ObjectId,
-        layer: crate::common::game_type::PathfindLayer,
-    ) {
+    pub fn crate_set_layer(&mut self, id: ObjectId, layer: crate::common::game_type::PathfindLayer) {
         if self.cuts.crate_stub_object_calls {
             self.cut(CutCall::ObjectSetLayer { object: id, layer });
         } else {
@@ -732,20 +509,12 @@ impl World {
         if let Some(o) = self.objects.find_mut(id) {
             o.terrain_decal_type = decal;
         }
-        self.emit(ObjectClientEvent::DrawableSetTerrainDecal {
-            object_id: id,
-            decal,
-        });
+        self.emit(ObjectClientEvent::DrawableSetTerrainDecal { object_id: id, decal });
     }
 
     /// `ThePartitionManager->iterateObjectsInRange(obj, range, dc, filters)` (batch R25, `HordeUpdate`): the candidates, in iteration order; the
     /// caller applies its own filter (`ObjectCuts::range_scan` answers).
-    pub fn partition_iterate_objects_in_range_of(
-        &mut self,
-        object: ObjectId,
-        range: f32,
-        dc: i32,
-    ) -> Vec<ObjectId> {
+    pub fn partition_iterate_objects_in_range_of(&mut self, object: ObjectId, range: f32, dc: i32) -> Vec<ObjectId> {
         self.cut(CutCall::PartitionIterateObjectsInRangeOf { object, range, dc });
         self.cuts.range_scan.clone()
     }
@@ -753,25 +522,10 @@ impl World {
     /// The crate decal `CreateCrateDie` gives a new crate's drawable: `setTerrainDecal(TERRAIN_DECAL_CRATE)`, a size of 2.5 times the crate's major
     /// radius each way, `setTerrainDecalFadeTarget(1.0f, 0.03f)`.
     pub fn crate_drawable_crate_decal(&mut self, id: ObjectId) {
-        let size = 2.5
-            * self
-                .objects
-                .find(id)
-                .map_or(0.0, |o| o.geometry_info.get_major_radius());
-        self.drawable_set_terrain_decal(
-            id,
-            Self::TERRAIN_DECAL_CRATE + crate::logic::modules::plant(1777) as i32,
-        );
-        self.emit(ObjectClientEvent::DrawableSetTerrainDecalSize {
-            object_id: id,
-            x: size,
-            y: size,
-        });
-        self.emit(ObjectClientEvent::DrawableTerrainDecalFadeTarget {
-            object_id: id,
-            target: 1.0,
-            rate: 0.03,
-        });
+        let size = 2.5 * self.objects.find(id).map_or(0.0, |o| o.geometry_info.get_major_radius());
+        self.drawable_set_terrain_decal(id, Self::TERRAIN_DECAL_CRATE + crate::logic::modules::plant(1777) as i32);
+        self.emit(ObjectClientEvent::DrawableSetTerrainDecalSize { object_id: id, x: size, y: size });
+        self.emit(ObjectClientEvent::DrawableTerrainDecalFadeTarget { object_id: id, target: 1.0, rate: 0.03 });
     }
 
     // --- end p1w13-sonnet ---
@@ -793,59 +547,25 @@ impl World {
 pub enum CutCall {
     // ---- Player ----
     /// `player->becomingTeamMember(obj, incoming)`.
-    PlayerBecomingTeamMember {
-        player: PlayerIndex,
-        object: ObjectId,
-        incoming: bool,
-    },
+    PlayerBecomingTeamMember { player: PlayerIndex, object: ObjectId, incoming: bool },
     /// `player->getScoreKeeper()->addObjectCaptured(obj)`.
-    PlayerScoreAddObjectCaptured {
-        player: PlayerIndex,
-        object: ObjectId,
-    },
+    PlayerScoreAddObjectCaptured { player: PlayerIndex, object: ObjectId },
     /// `player->getScoreKeeper()->addObjectLost(obj)`.
-    PlayerScoreAddObjectLost {
-        player: PlayerIndex,
-        object: ObjectId,
-    },
+    PlayerScoreAddObjectLost { player: PlayerIndex, object: ObjectId },
     /// `player->getScoreKeeper()->addObjectDestroyed(obj)`.
-    PlayerScoreAddObjectDestroyed {
-        player: PlayerIndex,
-        object: ObjectId,
-    },
+    PlayerScoreAddObjectDestroyed { player: PlayerIndex, object: ObjectId },
     /// `player->addSkillPointsForKill(killer, victim)`.
-    PlayerAddSkillPointsForKill {
-        player: PlayerIndex,
-        killer: ObjectId,
-        victim: ObjectId,
-    },
+    PlayerAddSkillPointsForKill { player: PlayerIndex, killer: ObjectId, victim: ObjectId },
     /// `player->doBountyForKill(killer, victim)`.
-    PlayerDoBountyForKill {
-        player: PlayerIndex,
-        killer: ObjectId,
-        victim: ObjectId,
-    },
+    PlayerDoBountyForKill { player: PlayerIndex, killer: ObjectId, victim: ObjectId },
     /// `player->friend_applyDifficultyBonusesForObject(obj, apply)`.
-    PlayerApplyDifficultyBonusesForObject {
-        player: PlayerIndex,
-        object: ObjectId,
-        apply: bool,
-    },
+    PlayerApplyDifficultyBonusesForObject { player: PlayerIndex, object: ObjectId, apply: bool },
     /// `player->applyBattlePlanBonusesForObject(obj)`.
-    PlayerApplyBattlePlanBonusesForObject {
-        player: PlayerIndex,
-        object: ObjectId,
-    },
+    PlayerApplyBattlePlanBonusesForObject { player: PlayerIndex, object: ObjectId },
     /// `player->removeRadar(disableProof)`.
-    PlayerRemoveRadar {
-        player: PlayerIndex,
-        disable_proof: bool,
-    },
+    PlayerRemoveRadar { player: PlayerIndex, disable_proof: bool },
     /// `player->addRadar(disableProof)`.
-    PlayerAddRadar {
-        player: PlayerIndex,
-        disable_proof: bool,
-    },
+    PlayerAddRadar { player: PlayerIndex, disable_proof: bool },
     // --- p1l9-upgrades ---
     /// `player->grantScience(science)` (`GrantScienceUpgrade`).
     PlayerGrantScience { player: PlayerIndex, science: i32 },
@@ -855,11 +575,7 @@ pub enum CutCall {
     /// name key.
     PlayerAddUpgradeComplete { player: PlayerIndex, upgrade: u32 },
     /// `player->getAcademyStats()->recordUpgrade(upgrade, granted)` (`GrantUpgradeCreate`).
-    PlayerAcademyRecordUpgrade {
-        player: PlayerIndex,
-        upgrade: u32,
-        granted: bool,
-    },
+    PlayerAcademyRecordUpgrade { player: PlayerIndex, upgrade: u32, granted: bool },
     /// `adjustModelConditionForWeaponStatus()` (`ObjectWeaponStatusHelper::update`, every frame of an object that can have a
     /// weapon): the weapon half of the object is layer 12's.
     AdjustModelConditionForWeaponStatus { object: ObjectId },
@@ -875,47 +591,20 @@ pub enum CutCall {
     // --- end p1w10-sonnet ---
     // --- p1w11-sonnet ---
     /// `player->addKindOfProductionCostChange(kindOf, percent)` (`CostModifierUpgrade`).
-    PlayerAddKindOfProductionCostChange {
-        player: PlayerIndex,
-        kind_of: crate::common::kind_of::KindOfMaskType,
-        percent: f32,
-    },
+    PlayerAddKindOfProductionCostChange { player: PlayerIndex, kind_of: crate::common::kind_of::KindOfMaskType, percent: f32 },
     /// `player->removeKindOfProductionCostChange(kindOf, percent)` (`CostModifierUpgrade`).
-    PlayerRemoveKindOfProductionCostChange {
-        player: PlayerIndex,
-        kind_of: crate::common::kind_of::KindOfMaskType,
-        percent: f32,
-    },
+    PlayerRemoveKindOfProductionCostChange { player: PlayerIndex, kind_of: crate::common::kind_of::KindOfMaskType, percent: f32 },
     /// `player->addPowerBonus(obj)` (`PowerPlantUpgrade`): `m_energy.addPowerBonus(obj)`.
-    PlayerAddPowerBonus {
-        player: PlayerIndex,
-        object: ObjectId,
-    },
+    PlayerAddPowerBonus { player: PlayerIndex, object: ObjectId },
     /// `player->removePowerBonus(obj)` (`PowerPlantUpgrade`).
-    PlayerRemovePowerBonus {
-        player: PlayerIndex,
-        object: ObjectId,
-    },
+    PlayerRemovePowerBonus { player: PlayerIndex, object: ObjectId },
     /// `player->onStructureConstructionComplete(builder, structure, isRebuild)` (`ReplaceObjectUpgrade`).
-    PlayerOnStructureConstructionComplete {
-        player: PlayerIndex,
-        builder: ObjectId,
-        structure: ObjectId,
-        is_rebuild: bool,
-    },
+    PlayerOnStructureConstructionComplete { player: PlayerIndex, builder: ObjectId, structure: ObjectId, is_rebuild: bool },
     /// `ObjectCreationList::create(ocl, primary, secondary)` for the list named `ocl` with a secondary object (`EjectPilotDie`'s damage dealer;
     /// `INVALID_ID` for `NULL`); like [`CutCall::OclCreate`], a name that is no list makes nothing.
-    OclCreateWithSecondary {
-        primary: ObjectId,
-        secondary: ObjectId,
-        ocl: Vec<u8>,
-    },
+    OclCreateWithSecondary { primary: ObjectId, secondary: ObjectId, ocl: Vec<u8> },
     /// `TheScriptEngine->notifyOfCompletedSpecialPower(playerIndex, specialPowerName, sourceObject)` (`SpecialPowerCompletionDie`).
-    ScriptNotifyOfCompletedSpecialPower {
-        player: PlayerIndex,
-        name: Vec<u8>,
-        creator: ObjectId,
-    },
+    ScriptNotifyOfCompletedSpecialPower { player: PlayerIndex, name: Vec<u8>, creator: ObjectId },
     /// `player->healAllObjects()` (`HealCrateCollide`).
     PlayerHealAllObjects { player: PlayerIndex },
     /// `ThePartitionManager->revealMapForPlayer(playerIndex)` (`ShroudCrateCollide`).
@@ -930,57 +619,31 @@ pub enum CutCall {
     /// `player->getEnergy()->setPowerSabotagedTillFrame(frame)`.
     PlayerSetPowerSabotagedTillFrame { player: PlayerIndex, frame: u32 },
     /// `player->onPowerBrownOutChange(brownOut)`.
-    PlayerOnPowerBrownOutChange {
-        player: PlayerIndex,
-        brown_out: bool,
-    },
+    PlayerOnPowerBrownOutChange { player: PlayerIndex, brown_out: bool },
     /// `obj->setDisabledUntil(type, frame)` under `ObjectCuts::crate_stub_object_calls`.
-    ObjectSetDisabledUntil {
-        object: ObjectId,
-        disabled: i32,
-        frame: u32,
-    },
+    ObjectSetDisabledUntil { object: ObjectId, disabled: i32, frame: u32 },
     /// `obj->attemptDamage(&info)` under `ObjectCuts::crate_stub_object_calls`.
-    ObjectAttemptDamage {
-        object: ObjectId,
-        info: crate::logic::damage::DamageInfo,
-    },
+    ObjectAttemptDamage { object: ObjectId, info: crate::logic::damage::DamageInfo },
     /// `TheInGameUI->addFloatingText(format(TheGameText->fetch(text), amount), &pos, color)`.
-    InGameUiAddFloatingTextNamed {
-        text: Vec<u8>,
-        amount: i32,
-        position: crate::common::base_type::Coord3D,
-        color: i32,
-    },
+    InGameUiAddFloatingTextNamed { text: Vec<u8>, amount: i32, position: crate::common::base_type::Coord3D, color: i32 },
     // --- p1w13-sonnet --- (batch R13b: UnitCrateCollide, VeterancyCrateCollide)
     /// `TheThingFactory->newObject(template, team)` under `ObjectCuts::crate_stub_object_calls` (`UnitCrateCollide`; `None`: a `NULL` team).
     ThingFactoryNewObject { template: u16, team: Option<TeamId> },
     /// `obj->setOrientation(angle)` under `ObjectCuts::crate_stub_object_calls` (`UnitCrateCollide`).
     ObjectSetOrientation { object: ObjectId, angle: f32 },
     /// `obj->setLayer(layer)` (batch R14c).
-    ObjectSetLayer {
-        object: ObjectId,
-        layer: crate::common::game_type::PathfindLayer,
-    },
+    ObjectSetLayer { object: ObjectId, layer: crate::common::game_type::PathfindLayer },
     /// `obj->maskObject(mask)` (batch R15).
     ObjectMaskObject { object: ObjectId, mask: bool },
     /// `obj->getExperienceTracker()->gainExpForLevel(levels, canScaleForBonus)` under `ObjectCuts::crate_stub_object_calls` (`VeterancyCrateCollide`).
-    ExperienceGainForLevel {
-        object: ObjectId,
-        levels: i32,
-        can_scale_for_bonus: bool,
-    },
+    ExperienceGainForLevel { object: ObjectId, levels: i32, can_scale_for_bonus: bool },
     /// `ThePartitionManager->iterateObjectsInRange(obj, range, FROM_CENTER_2D, { SamePlayer(obj's player), SameMapStatus(obj) })`
     /// (`VeterancyCrateCollide`); `ObjectCuts::range_scan` answers.
     PartitionIterateSamePlayerInRange { object: ObjectId, range: f32 },
     /// batch R17: `ThePartitionManager->iterateObjectsInRange(obj->getPosition(), range, FROM_CENTER_2D, { allies, alive, same map status })`.
     PartitionIterateAlliesInRange { object: ObjectId, range: f32 },
     /// batch R17: `obj->doTempWeaponBonus(type, duration)` under `crate_stub_object_calls`.
-    ObjectDoTempWeaponBonus {
-        object: ObjectId,
-        bonus: i32,
-        duration: u32,
-    },
+    ObjectDoTempWeaponBonus { object: ObjectId, bonus: i32, duration: u32 },
     /// batch R19: `ThePartitionManager->iterateObjectsInRange(obj->getPosition(), range, FROM_CENTER_2D)` with no filters
     /// (`AutoFindHealingUpdate`); `ObjectCuts::range_scan` answers.
     PartitionIterateObjectsInRange { object: ObjectId, range: f32 },
@@ -988,11 +651,7 @@ pub enum CutCall {
     /// same map status }, ITER_SORTED_NEAR_TO_FAR)` (`PilotFindVehicleUpdate`); `ObjectCuts::range_scan` answers.
     PartitionIterateVehiclesNearToFar { object: ObjectId, range: f32 },
     /// batch R25: `ThePartitionManager->iterateObjectsInRange(obj, range, dc, filters)`; `ObjectCuts::range_scan` answers, the caller filters.
-    PartitionIterateObjectsInRangeOf {
-        object: ObjectId,
-        range: f32,
-        dc: i32,
-    },
+    PartitionIterateObjectsInRangeOf { object: ObjectId, range: f32, dc: i32 },
     /// batch R19: `ThePartitionManager->getDistanceSquared(obj, other, FROM_CENTER_2D)`.
     PartitionGetDistanceSquaredCenter2D { object: ObjectId, other: ObjectId },
     /// batch R19: `player->getAiBaseCenter(&pos)`; `ObjectCuts::ai_base_center` answers.
@@ -1003,135 +662,58 @@ pub enum CutCall {
     PlayerAcademyRecordSalvageCollected { player: PlayerIndex },
     // --- p1w13-sonnet --- (batch R13d: ConvertToCarBombCrateCollide; records under `ObjectCuts::crate_stub_object_calls`)
     /// `obj->checkAndDetonateBoobyTrap(victim)`; `ObjectCuts::crate_booby_trapped` answers.
-    ObjectCheckAndDetonateBoobyTrap {
-        object: ObjectId,
-        victim: ObjectId,
-        result: bool,
-    },
+    ObjectCheckAndDetonateBoobyTrap { object: ObjectId, victim: ObjectId, result: bool },
     /// `obj->defect(team, detectionTime)` (`None`: a `NULL` team).
-    ObjectDefect {
-        object: ObjectId,
-        team: Option<TeamId>,
-        detection_time: u32,
-    },
+    ObjectDefect { object: ObjectId, team: Option<TeamId>, detection_time: u32 },
     /// `obj->getExperienceTracker()->setVeterancyLevel(level, provideFeedback)`.
-    ExperienceSetVeterancyLevel {
-        object: ObjectId,
-        level: i32,
-        provide_feedback: bool,
-    },
+    ExperienceSetVeterancyLevel { object: ObjectId, level: i32, provide_feedback: bool },
     /// `TheRadar->removeObject(obj)`.
     RadarRemoveObject { object: ObjectId },
     /// `TheRadar->addObject(obj)`.
     RadarAddObject { object: ObjectId },
     /// `obj->setTeam(team)` (batch R13e; `None`: a `NULL` team).
-    ObjectSetTeam {
-        object: ObjectId,
-        team: Option<TeamId>,
-    },
+    ObjectSetTeam { object: ObjectId, team: Option<TeamId> },
     // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     /// `TheScriptEngine->notifyOfTriggeredSpecialPower(playerIndex, specialPowerName, sourceObject)` (`SpecialPowerModule::aboutToDoSpecialPower`).
-    ScriptNotifyOfTriggeredSpecialPower {
-        player: PlayerIndex,
-        name: Vec<u8>,
-        source: ObjectId,
-    },
+    ScriptNotifyOfTriggeredSpecialPower { player: PlayerIndex, name: Vec<u8>, source: ObjectId },
     /// `player->getAcademyStats()->recordSpecialPowerUsed(template)` (`SpecialPowerModule::initiateIntentToDoSpecialPower`), the template by id.
     PlayerAcademyRecordSpecialPowerUsed { player: PlayerIndex, template: u32 },
     /// `TheAnim2DCollection->findTemplate(name)` and `TheInGameUI->addWorldAnimation(template, pos, WORLD_ANIM_FADE_ON_EXPIRE, time, zRise)`
     /// (`CrateCollide::onCollide`).
-    InGameUiAddWorldAnimation {
-        template: Vec<u8>,
-        position: crate::common::base_type::Coord3D,
-        display_time_in_seconds: f32,
-        z_rise_per_second: f32,
-    },
+    InGameUiAddWorldAnimation { template: Vec<u8>, position: crate::common::base_type::Coord3D, display_time_in_seconds: f32, z_rise_per_second: f32 },
     /// `player->setUnitsVisionSpied(setting, whichUnits, byWhom)` (`SpyVisionUpdate::doActivationWork`).
-    PlayerSetUnitsVisionSpied {
-        player: PlayerIndex,
-        setting: bool,
-        which_units: crate::common::kind_of::KindOfMaskType,
-        by_whom: PlayerIndex,
-    },
+    PlayerSetUnitsVisionSpied { player: PlayerIndex, setting: bool, which_units: crate::common::kind_of::KindOfMaskType, by_whom: PlayerIndex },
     /// `TheWeaponStore->createAndFireTempWeapon(weapon, source, &position)` (`FireWeaponWhenDeadBehavior`), the weapon by its name in the store.
-    WeaponCreateAndFireTemp {
-        weapon: Vec<u8>,
-        source: ObjectId,
-        position: crate::common::base_type::Coord3D,
-    },
+    WeaponCreateAndFireTemp { weapon: Vec<u8>, source: ObjectId, position: crate::common::base_type::Coord3D },
     /// `TheInGameUI->addFloatingText(text, &position, color)` with `text` the format `GUI:AddCash` given `amount` (`AutoDepositUpdate`).
-    InGameUiAddFloatingText {
-        amount: i32,
-        position: crate::common::base_type::Coord3D,
-        color: i32,
-    },
+    InGameUiAddFloatingText { amount: i32, position: crate::common::base_type::Coord3D, color: i32 },
     // --- end p1w11-sonnet ---
     // --- p1w12-sonnet ---
     /// `ObjectCreationList::create(ocl, primary, secondary, lifetimeFrames)` for the list named `ocl` (`FireOCLAfterWeaponCooldownUpdate`); like
     /// [`CutCall::OclCreate`], a name that is no list makes nothing.
-    OclCreateWithLifetime {
-        primary: ObjectId,
-        secondary: ObjectId,
-        ocl: Vec<u8>,
-        lifetime_frames: u32,
-    },
+    OclCreateWithLifetime { primary: ObjectId, secondary: ObjectId, ocl: Vec<u8>, lifetime_frames: u32 },
     /// `TheParticleSystemManager->createParticleSystem(tmpl)` and `system->setPosition(&position)`; `id` is the system's id (`AutoHealBehavior`).
-    ParticleSystemCreate {
-        template: Vec<u8>,
-        position: crate::common::base_type::Coord3D,
-        id: u32,
-    },
+    ParticleSystemCreate { template: Vec<u8>, position: crate::common::base_type::Coord3D, id: u32 },
     /// `TheAI->findClosestEnemy(obj, range, qualifiers)` (`CheckpointUpdate`); `ObjectCuts::ai_enemy_near` answers.
     /// `minor_radius` is the object's geometry at the call, which the search measures from.
-    AiFindClosestEnemy {
-        object: ObjectId,
-        range: f32,
-        qualifiers: u32,
-        minor_radius: f32,
-    },
+    AiFindClosestEnemy { object: ObjectId, range: f32, qualifiers: u32, minor_radius: f32 },
     /// `TheAI->findClosestAlly(obj, range, qualifiers)` (`CheckpointUpdate`); `ObjectCuts::ai_ally_near` answers.
-    AiFindClosestAlly {
-        object: ObjectId,
-        range: f32,
-        qualifiers: u32,
-        minor_radius: f32,
-    },
+    AiFindClosestAlly { object: ObjectId, range: f32, qualifiers: u32, minor_radius: f32 },
     /// `ObjectCreationList::create(ocl, primary, &primaryPos, &secondaryPos, angle)` for the list named `ocl` (`OCLUpdate`); like [`CutCall::OclCreate`], a
     /// name that is no list makes nothing.
-    OclCreateAt {
-        primary: ObjectId,
-        ocl: Vec<u8>,
-        primary_pos: crate::common::base_type::Coord3D,
-        secondary_pos: crate::common::base_type::Coord3D,
-        angle: f32,
-    },
+    OclCreateAt { primary: ObjectId, ocl: Vec<u8>, primary_pos: crate::common::base_type::Coord3D, secondary_pos: crate::common::base_type::Coord3D, angle: f32 },
     /// batch R22: `ObjectCreationList::create(ocl, primary, &primaryPos, &secondaryPos, createOwner)` for the list named `ocl` (`OCLSpecialPower::
     /// doSpecialPower`); like [`CutCall::OclCreate`], a name that is no list makes nothing.
-    OclCreateOwner {
-        primary: ObjectId,
-        ocl: Vec<u8>,
-        primary_pos: Coord3D,
-        secondary_pos: Coord3D,
-        create_owner: bool,
-    },
+    OclCreateOwner { primary: ObjectId, ocl: Vec<u8>, primary_pos: Coord3D, secondary_pos: Coord3D, create_owner: bool },
     /// batch R29: `ObjectCreationList::create(ocl, primary, &primaryPos, NULL, angle)` for the list named `ocl` (`StructureCollapseUpdate::
     /// doPhaseStuff`); like [`CutCall::OclCreate`], a name that is no list makes nothing.
-    OclCreateAtPrimary {
-        primary: ObjectId,
-        ocl: Vec<u8>,
-        primary_pos: Coord3D,
-        angle: f32,
-    },
+    OclCreateAtPrimary { primary: ObjectId, ocl: Vec<u8>, primary_pos: Coord3D, angle: f32 },
     /// batch R31: `TheParticleSystemManager->destroyParticleSystemByID(id)` (`TransitionDamageFX`).
     ParticleSystemDestroyById { id: u32 },
     /// batch R32: `ThePartitionManager->iterateObjectsInRange(&position, range, dc, NULL)`; `ObjectCuts::range_scan` answers.
-    PartitionIterateObjectsInRangeAt {
-        position: Coord3D,
-        range: f32,
-        dc: i32,
-    },
+    PartitionIterateObjectsInRangeAt { position: Coord3D, range: f32, dc: i32 },
     /// batch R33: `TheParticleSystemManager->createParticleSystem(tmpl)` and `getSystemID()`, placed later (`id` the client's).
     ParticleSystemCreateUnplaced { template: Vec<u8>, id: u32 },
     /// batch R33: `system->setPosition(&position)`.
@@ -1169,21 +751,11 @@ pub enum CutCall {
     TeamSetEnteredExited { team: TeamId },
     // ---- Energy ----
     /// `player->getEnergy()->objectEnteringInfluence(obj)`.
-    EnergyObjectEnteringInfluence {
-        player: PlayerIndex,
-        object: ObjectId,
-    },
+    EnergyObjectEnteringInfluence { player: PlayerIndex, object: ObjectId },
     /// `player->getEnergy()->objectLeavingInfluence(obj)`.
-    EnergyObjectLeavingInfluence {
-        player: PlayerIndex,
-        object: ObjectId,
-    },
+    EnergyObjectLeavingInfluence { player: PlayerIndex, object: ObjectId },
     /// `player->getEnergy()->adjustPower(amount, add)`.
-    EnergyAdjustPower {
-        player: PlayerIndex,
-        amount: i32,
-        add: bool,
-    },
+    EnergyAdjustPower { player: PlayerIndex, amount: i32, add: bool },
     // ---- PartitionManager ----
     /// `ThePartitionManager->registerObject(obj)`.
     PartitionRegisterObject { object: ObjectId },
@@ -1192,65 +764,21 @@ pub enum CutCall {
     /// `m_partitionData->makeDirty(true)`.
     PartitionMakeDirty { object: ObjectId },
     /// `ThePartitionManager->doShroudReveal(x, y, range, mask)`.
-    PartitionDoShroudReveal {
-        x: f32,
-        y: f32,
-        range: f32,
-        mask: PlayerMaskType,
-    },
+    PartitionDoShroudReveal { x: f32, y: f32, range: f32, mask: PlayerMaskType },
     /// `ThePartitionManager->queueUndoShroudReveal(x, y, range, mask)`.
-    PartitionQueueUndoShroudReveal {
-        x: f32,
-        y: f32,
-        range: f32,
-        mask: PlayerMaskType,
-    },
+    PartitionQueueUndoShroudReveal { x: f32, y: f32, range: f32, mask: PlayerMaskType },
     /// `ThePartitionManager->doShroudCover(x, y, range, mask)`.
-    PartitionDoShroudCover {
-        x: f32,
-        y: f32,
-        range: f32,
-        mask: PlayerMaskType,
-    },
+    PartitionDoShroudCover { x: f32, y: f32, range: f32, mask: PlayerMaskType },
     /// `ThePartitionManager->undoShroudCover(x, y, range, mask)`.
-    PartitionUndoShroudCover {
-        x: f32,
-        y: f32,
-        range: f32,
-        mask: PlayerMaskType,
-    },
+    PartitionUndoShroudCover { x: f32, y: f32, range: f32, mask: PlayerMaskType },
     /// `ThePartitionManager->doValueAffect(x, y, howFar, data, forWhom)`.
-    PartitionDoValueAffect {
-        x: f32,
-        y: f32,
-        how_far: f32,
-        data: u32,
-        for_whom: PlayerMaskType,
-    },
+    PartitionDoValueAffect { x: f32, y: f32, how_far: f32, data: u32, for_whom: PlayerMaskType },
     /// `ThePartitionManager->undoValueAffect(x, y, howFar, data, forWhom)`.
-    PartitionUndoValueAffect {
-        x: f32,
-        y: f32,
-        how_far: f32,
-        data: u32,
-        for_whom: PlayerMaskType,
-    },
+    PartitionUndoValueAffect { x: f32, y: f32, how_far: f32, data: u32, for_whom: PlayerMaskType },
     /// `ThePartitionManager->doThreatAffect(x, y, howFar, data, forWhom)`.
-    PartitionDoThreatAffect {
-        x: f32,
-        y: f32,
-        how_far: f32,
-        data: u32,
-        for_whom: PlayerMaskType,
-    },
+    PartitionDoThreatAffect { x: f32, y: f32, how_far: f32, data: u32, for_whom: PlayerMaskType },
     /// `ThePartitionManager->undoThreatAffect(x, y, howFar, data, forWhom)`.
-    PartitionUndoThreatAffect {
-        x: f32,
-        y: f32,
-        how_far: f32,
-        data: u32,
-        for_whom: PlayerMaskType,
-    },
+    PartitionUndoThreatAffect { x: f32, y: f32, how_far: f32, data: u32, for_whom: PlayerMaskType },
     // ---- AI and pathfinder ----
     /// `ai->setAttitude(team's initial attitude)`.
     AiSetAttitude { object: ObjectId, team: TeamId },
@@ -1259,11 +787,7 @@ pub enum CutCall {
     /// `ai->aiIdle(CMD_FROM_AI)`.
     AiIdle { object: ObjectId },
     /// `ai->transferAttack(oldVictim, newVictim)`.
-    AiTransferAttack {
-        object: ObjectId,
-        old_victim: ObjectId,
-        new_victim: ObjectId,
-    },
+    AiTransferAttack { object: ObjectId, old_victim: ObjectId, new_victim: ObjectId },
     /// `group->remove(obj)` (`AIGroup`).
     AiGroupRemove { group: u32, object: ObjectId },
     /// `ai->setLocomotorGoalNone(); ai->destroyPath()` (`GameLogic::destroyObject`).
@@ -1294,22 +818,14 @@ pub enum CutCall {
     /// `ThePlayerList->getNeutralPlayer()->getAcademyStats()->recordMine()`.
     AcademyStatsRecordMine,
     /// `TheGameLogic->deselectObject(obj, playerMask, affectClient)`.
-    GameLogicDeselectObject {
-        object: ObjectId,
-        player_mask: PlayerMaskType,
-        affect_client: bool,
-    },
+    GameLogicDeselectObject { object: ObjectId, player_mask: PlayerMaskType, affect_client: bool },
     // ---- WeaponSet and helpers ----
     /// `m_weaponSet.updateWeaponSet(obj)`.
     WeaponSetUpdate { object: ObjectId },
     /// `m_weaponSet.weaponSetOnWeaponBonusChange(obj)`.
     WeaponSetOnWeaponBonusChange { object: ObjectId },
     /// `helper->sleepUntil(when)` for that helper.
-    HelperSleepUntil {
-        object: ObjectId,
-        kind: HelperKind,
-        when: u32,
-    },
+    HelperSleepUntil { object: ObjectId, kind: HelperKind, when: u32 },
     // --- p1w13-sonnet --- (batch R2: TransportContain)
     /// `toWeapon->transferNextShotStatsFrom(*fromWeapon)` for weapons of the table (`World::weapon_transfer_next_shot_stats`).
     WeaponTransferNextShotStats { to: ObjectId, from: ObjectId },
@@ -1650,16 +1166,8 @@ impl Default for ObjectCuts {
             cur_weapon: BTreeMap::new(),
             range_scan: Vec::new(),
             player_sides: BTreeMap::new(),
-            edge_point_offset: crate::common::base_type::Coord3D {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
-            farthest_edge_point_offset: Coord3D {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
+            edge_point_offset: crate::common::base_type::Coord3D { x: 0.0, y: 0.0, z: 0.0 },
+            farthest_edge_point_offset: Coord3D { x: 0.0, y: 0.0, z: 0.0 },
             last_audio_handle: 0,
             ai_enemy_near: BTreeSet::new(),
             ai_ally_near: BTreeSet::new(),
@@ -1704,10 +1212,7 @@ impl ObjectCuts {
 
     /// `TheTeamFactory->findTeam(name)`: the first team (lowest id) with that name.
     pub fn find_team_by_name(&self, name: &[u8]) -> Option<TeamId> {
-        self.team_names
-            .iter()
-            .find(|(_, n)| n.as_slice() == name)
-            .map(|(t, _)| *t)
+        self.team_names.iter().find(|(_, n)| n.as_slice() == name).map(|(t, _)| *t)
     }
 
     /// `Player::isPlayerActive()`.
@@ -1733,47 +1238,28 @@ impl ObjectCuts {
     /// `Team::getRelationship(that)`: `NEUTRAL` unless set. `that` of `None` is `NULL`.
     pub fn team_relationship(&self, team: TeamId, that: Option<TeamId>) -> Relationship {
         match that {
-            Some(that) => self
-                .team_relationships
-                .get(&(team, that))
-                .copied()
-                .unwrap_or(Relationship::Neutral),
+            Some(that) => self.team_relationships.get(&(team, that)).copied().unwrap_or(Relationship::Neutral),
             None => Relationship::Neutral,
         }
     }
 
     /// `Player::getRelationship(thatTeam)`: `NEUTRAL` unless set; `None` is `NULL`.
-    pub fn player_relationship_to_team(
-        &self,
-        p: PlayerIndex,
-        that: Option<TeamId>,
-    ) -> Relationship {
+    pub fn player_relationship_to_team(&self, p: PlayerIndex, that: Option<TeamId>) -> Relationship {
         match that {
-            Some(that) => self
-                .player_relationships
-                .get(&(p, that))
-                .copied()
-                .unwrap_or(Relationship::Neutral),
+            Some(that) => self.player_relationships.get(&(p, that)).copied().unwrap_or(Relationship::Neutral),
             None => Relationship::Neutral,
         }
     }
 
     /// `p->getRelationship(q->getDefaultTeam())`.
-    pub fn player_relationship_to_player_default_team(
-        &self,
-        p: PlayerIndex,
-        q: PlayerIndex,
-    ) -> Relationship {
+    pub fn player_relationship_to_player_default_team(&self, p: PlayerIndex, q: PlayerIndex) -> Relationship {
         let team = self.player_default_team(q);
         self.player_relationship_to_team(p, if team != 0 { Some(team) } else { None })
     }
 
     /// `Player::getPlayerMask()`: `1 << index` unless set.
     pub fn player_mask(&self, p: PlayerIndex) -> PlayerMaskType {
-        self.player_masks
-            .get(&p)
-            .copied()
-            .unwrap_or_else(|| 1u16.checked_shl(p as u32).unwrap_or(0))
+        self.player_masks.get(&p).copied().unwrap_or_else(|| 1u16.checked_shl(p as u32).unwrap_or(0))
     }
 
     /// `Player::getPlayerColor()`.
@@ -1802,22 +1288,13 @@ impl ObjectCuts {
     }
 
     /// `Player::getProductionVeterancyLevel(templateName)`.
-    pub fn player_production_veterancy_level(
-        &self,
-        p: PlayerIndex,
-        template_name: &[u8],
-    ) -> VeterancyLevel {
-        self.player_production_levels
-            .get(&(p, template_name.to_vec()))
-            .copied()
-            .unwrap_or(VeterancyLevel::Regular)
+    pub fn player_production_veterancy_level(&self, p: PlayerIndex, template_name: &[u8]) -> VeterancyLevel {
+        self.player_production_levels.get(&(p, template_name.to_vec())).copied().unwrap_or(VeterancyLevel::Regular)
     }
 
     /// `team->isInList_TeamMemberList(obj)`.
     pub fn team_member_list_contains(&self, team: TeamId, obj: ObjectId) -> bool {
-        self.team_members
-            .get(&team)
-            .is_some_and(|l| l.contains(&obj))
+        self.team_members.get(&team).is_some_and(|l| l.contains(&obj))
     }
 
     /// `team->removeFrom_TeamMemberList(obj)`.
@@ -1874,10 +1351,7 @@ impl ObjectCuts {
 
     /// `ai->getTurretRotAndPitch(turret)`'s rotation (0 if unset).
     pub fn ai_turret_rotation(&self, obj: ObjectId, turret: i32) -> f32 {
-        self.ai_turret_rotation
-            .get(&(obj, turret))
-            .copied()
-            .unwrap_or(0.0)
+        self.ai_turret_rotation.get(&(obj, turret)).copied().unwrap_or(0.0)
     }
 
     /// `GameClient::allocateNewDrawableID()`: 1, 2, 3, ...
@@ -1898,12 +1372,7 @@ impl ObjectCuts {
 
     /// `ThePlayerList->getPlayersWithRelationship(src, allowed)` for the
     /// players `0..player_count`.
-    pub fn players_with_relationship(
-        &self,
-        src: PlayerIndex,
-        player_count: i32,
-        allowed: u32,
-    ) -> PlayerMaskType {
+    pub fn players_with_relationship(&self, src: PlayerIndex, player_count: i32, allowed: u32) -> PlayerMaskType {
         let mut ret: PlayerMaskType = 0;
         if allowed == 0 {
             return ret;
@@ -1958,12 +1427,7 @@ impl World {
 
     /// `ThePlayerList->getPlayersWithRelationship(src, ALLOW_ENEMIES | ALLOW_NEUTRAL)`
     /// and its variants, with the list's current player count.
-    pub fn cut_players_with_relationship(
-        &self,
-        src: PlayerIndex,
-        enemies: bool,
-        neutral: bool,
-    ) -> PlayerMaskType {
+    pub fn cut_players_with_relationship(&self, src: PlayerIndex, enemies: bool, neutral: bool) -> PlayerMaskType {
         let mut allowed = 0;
         if enemies {
             allowed |= ALLOW_ENEMIES;
@@ -1971,8 +1435,7 @@ impl World {
         if neutral {
             allowed |= ALLOW_NEUTRAL;
         }
-        self.cuts
-            .players_with_relationship(src, self.players.player_count(), allowed)
+        self.cuts.players_with_relationship(src, self.players.player_count(), allowed)
     }
 
     /// `ThePartitionManager->iteratePotentialCollisions(..)` (scripted).
@@ -1982,11 +1445,7 @@ impl World {
 
     /// `ThePartitionManager->iterateObjectsInRange(pos, radius, FROM_CENTER_2D,
     /// {booby trap kind, same map status}, ITER_SORTED_NEAR_TO_FAR)` (scripted).
-    pub fn cut_partition_booby_traps_in_range(
-        &self,
-        _obj: ObjectId,
-        _radius: f32,
-    ) -> Vec<ObjectId> {
+    pub fn cut_partition_booby_traps_in_range(&self, _obj: ObjectId, _radius: f32) -> Vec<ObjectId> {
         self.cuts.booby_traps_in_range.clone()
     }
 
@@ -1999,9 +1458,7 @@ impl World {
 
     /// `ExperienceTracker::isAcceptingExperiencePoints()`: trainable, or has a sink.
     pub fn cut_experience_is_accepting_points(&self, id: ObjectId) -> bool {
-        self.objects
-            .find(id)
-            .is_some_and(|o| o.template().is_trainable() || o.experience.sink != INVALID_ID)
+        self.objects.find(id).is_some_and(|o| o.template().is_trainable() || o.experience.sink != INVALID_ID)
     }
 
     /// `ExperienceTracker::getExperienceValue(killer)`: "no experience for
@@ -2011,21 +1468,12 @@ impl World {
         if self.get_relationship(killer, victim) == Relationship::Allies {
             return 0;
         }
-        self.objects
-            .find(victim)
-            .map_or(0, |o| o.template().get_experience_value(o.experience.level))
+        self.objects.find(victim).map_or(0, |o| o.template().get_experience_value(o.experience.level))
     }
 
     /// `ExperienceTracker::setVeterancyLevel(newLevel, provideFeedback)`.
-    pub fn cut_experience_set_veterancy_level(
-        &mut self,
-        id: ObjectId,
-        new_level: VeterancyLevel,
-        provide_feedback: bool,
-    ) {
-        let Some(o) = self.objects.find_mut(id) else {
-            return;
-        };
+    pub fn cut_experience_set_veterancy_level(&mut self, id: ObjectId, new_level: VeterancyLevel, provide_feedback: bool) {
+        let Some(o) = self.objects.find_mut(id) else { return };
         if o.experience.level != new_level {
             let old_level = o.experience.level;
             o.experience.level = new_level;
@@ -2035,15 +1483,8 @@ impl World {
     }
 
     /// `ExperienceTracker::setExperienceAndLevel(experienceIn, provideFeedback)`.
-    pub fn cut_experience_set_experience_and_level(
-        &mut self,
-        id: ObjectId,
-        experience_in: i32,
-        provide_feedback: bool,
-    ) {
-        let Some(o) = self.objects.find(id) else {
-            return;
-        };
+    pub fn cut_experience_set_experience_and_level(&mut self, id: ObjectId, experience_in: i32, provide_feedback: bool) {
+        let Some(o) = self.objects.find(id) else { return };
         let sink = o.experience.sink;
         if sink != INVALID_ID && self.objects.find(sink).is_some() {
             // I have been set up to give my experience to someone else
@@ -2058,10 +1499,7 @@ impl World {
         o.experience.points = experience_in;
         let mut level_index = 0;
         while (level_index + 1) < crate::common::game_common::LEVEL_COUNT
-            && o.experience.points
-                >= o.template().get_experience_required(
-                    crate::logic::world::object::veterancy_from_i32(level_index + 1),
-                )
+            && o.experience.points >= o.template().get_experience_required(crate::logic::world::object::veterancy_from_i32(level_index + 1))
         {
             // If there is a level to qualify for, and I qualify for it, advance the index
             level_index += 1;
@@ -2077,44 +1515,23 @@ impl World {
     // --- p1w13-sonnet --- (batch R13b: VeterancyCrateCollide)
     /// `ExperienceTracker::canGainExpForLevel(levelsToGain)`: the level that many above the current one (no higher than `LEVEL_LAST`) is above it.
     pub fn cut_experience_can_gain_for_level(&self, id: ObjectId, levels_to_gain: i32) -> bool {
-        let Some(o) = self.objects.find(id) else {
-            return false;
-        };
+        let Some(o) = self.objects.find(id) else { return false };
         let current = o.experience.level as i32;
-        current
-            .wrapping_add(levels_to_gain)
-            .min(crate::common::game_common::LEVEL_COUNT - 1)
-            > current
+        current.wrapping_add(levels_to_gain).min(crate::common::game_common::LEVEL_COUNT - 1) > current
     }
 
     /// `ExperienceTracker::gainExpForLevel(levelsToGain, canScaleForBonus)`: the points from the current experience to the target level's
     /// requirement, through `addExperiencePoints`; whether the target is above the current level. A record under `crate_stub_object_calls`.
-    pub fn cut_experience_gain_for_level(
-        &mut self,
-        id: ObjectId,
-        levels_to_gain: i32,
-        can_scale_for_bonus: bool,
-    ) -> bool {
+    pub fn cut_experience_gain_for_level(&mut self, id: ObjectId, levels_to_gain: i32, can_scale_for_bonus: bool) -> bool {
         if self.cuts.crate_stub_object_calls {
-            self.cut(CutCall::ExperienceGainForLevel {
-                object: id,
-                levels: levels_to_gain,
-                can_scale_for_bonus,
-            });
+            self.cut(CutCall::ExperienceGainForLevel { object: id, levels: levels_to_gain, can_scale_for_bonus });
             return self.cut_experience_can_gain_for_level(id, levels_to_gain);
         }
-        let Some(o) = self.objects.find(id) else {
-            return false;
-        };
+        let Some(o) = self.objects.find(id) else { return false };
         let current = o.experience.level as i32;
-        let new_level = current
-            .wrapping_add(levels_to_gain)
-            .min(crate::common::game_common::LEVEL_COUNT - 1);
+        let new_level = current.wrapping_add(levels_to_gain).min(crate::common::game_common::LEVEL_COUNT - 1);
         if new_level > current {
-            let needed = o
-                .template()
-                .get_experience_required(crate::logic::world::object::veterancy_from_i32(new_level))
-                .wrapping_sub(o.experience.points);
+            let needed = o.template().get_experience_required(crate::logic::world::object::veterancy_from_i32(new_level)).wrapping_sub(o.experience.points);
             self.cut_experience_add_points(id, needed, can_scale_for_bonus);
             return true;
         }
@@ -2123,25 +1540,14 @@ impl World {
     // --- end p1w13-sonnet ---
 
     /// `ExperienceTracker::addExperiencePoints(experienceGain, canScaleForBonus)`.
-    pub fn cut_experience_add_points(
-        &mut self,
-        id: ObjectId,
-        experience_gain: i32,
-        can_scale_for_bonus: bool,
-    ) {
-        let Some(o) = self.objects.find(id) else {
-            return;
-        };
+    pub fn cut_experience_add_points(&mut self, id: ObjectId, experience_gain: i32, can_scale_for_bonus: bool) {
+        let Some(o) = self.objects.find(id) else { return };
         let sink = o.experience.sink;
         let scalar = o.experience.scalar;
         if sink != INVALID_ID && self.objects.find(sink).is_some() {
             // I have been set up to give my experience to someone else
             // (`experienceGain * m_experienceScalar` is a Real, converted to the Int parameter)
-            self.cut_experience_add_points(
-                sink,
-                (experience_gain as f32 * scalar) as i32,
-                can_scale_for_bonus,
-            );
+            self.cut_experience_add_points(sink, (experience_gain as f32 * scalar) as i32, can_scale_for_bonus);
             return;
         }
         let o = self.objects.find_mut(id).expect("checked above");
@@ -2156,10 +1562,7 @@ impl World {
         o.experience.points = o.experience.points.wrapping_add(amount_to_gain);
         let mut level_index = 0;
         while (level_index + 1) < crate::common::game_common::LEVEL_COUNT
-            && o.experience.points
-                >= o.template().get_experience_required(
-                    crate::logic::world::object::veterancy_from_i32(level_index + 1),
-                )
+            && o.experience.points >= o.template().get_experience_required(crate::logic::world::object::veterancy_from_i32(level_index + 1))
         {
             // If there is a higher level to qualify for, and I qualify for it, advance the index
             level_index += 1;
@@ -2178,9 +1581,7 @@ impl World {
     /// `TheActionManager->canTransferSuppliesAt(obj, transferObj)`: a table of the world (see
     /// [`ObjectCuts::can_transfer_supplies`]).
     pub fn can_transfer_supplies_at(&self, obj: ObjectId, transfer_obj: ObjectId) -> bool {
-        self.cuts
-            .can_transfer_supplies
-            .contains(&(obj, transfer_obj))
+        self.cuts.can_transfer_supplies.contains(&(obj, transfer_obj))
     }
 }
 // --- end p1w7-sonnet ---

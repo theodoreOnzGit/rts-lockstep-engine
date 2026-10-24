@@ -34,19 +34,15 @@
 
 use std::sync::Arc;
 
-use crate::common::base_type::Coord3D;
-use crate::common::game_type::INVALID_ANGLE;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::special_power_module::{SpecialPowerModule, SpecialPowerModuleData};
-use crate::logic::modules::special_power_body::{
-    self, special_power_module_call, SpecialPowerBehavior,
-};
+use crate::logic::modules::special_power_body::{self, special_power_module_call, SpecialPowerBehavior};
 use crate::logic::world::game_logic::World;
+use crate::common::base_type::Coord3D;
+use crate::common::game_type::INVALID_ANGLE;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::update_body::UpdateBody;
@@ -120,9 +116,7 @@ impl OCLSpecialPowerModuleData {
     }
 
     /// `buildFieldParse(p)`: the behaviour base, the special power fields, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, OCLSpecialPowerModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, OCLSpecialPowerModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -130,9 +124,7 @@ impl OCLSpecialPowerModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<OCLSpecialPowerModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<OCLSpecialPowerModuleData> {
         let mut data = OCLSpecialPowerModuleData::new();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, OCLSpecialPowerModuleData::build_field_parse)?;
@@ -142,8 +134,7 @@ impl OCLSpecialPowerModuleData {
 }
 
 /// `SpecialPowerModuleData::buildFieldParse`'s table, for this data class.
-static BASE_FIELD_PARSE: [FieldParse<OCLSpecialPowerModuleData>; 6] =
-    special_power_data_field_parse!(OCLSpecialPowerModuleData, special_power);
+static BASE_FIELD_PARSE: [FieldParse<OCLSpecialPowerModuleData>; 6] = special_power_data_field_parse!(OCLSpecialPowerModuleData, special_power);
 
 /// `INI::parseObjectCreationList`: `None` is no list; any other name is looked up when it is used.
 fn parse_ocl(ini: &mut Ini<'_>) -> IniResult<Option<Vec<u8>>> {
@@ -152,11 +143,7 @@ fn parse_ocl(ini: &mut Ini<'_>) -> IniResult<Option<Vec<u8>>> {
 }
 
 /// `parseOCLUpgradePair`: a science (`INI::parseScience`, kept as its name), then a list, appended.
-fn parse_ocl_upgrade_pair(
-    ini: &mut Ini<'_>,
-    d: &mut OCLSpecialPowerModuleData,
-    _ud: &UserData,
-) -> IniResult<()> {
+fn parse_ocl_upgrade_pair(ini: &mut Ini<'_>, d: &mut OCLSpecialPowerModuleData, _ud: &UserData) -> IniResult<()> {
     let science = ini.get_next_token(None)?;
     let ocl = parse_ocl(ini)?;
     d.upgrade_ocl.push(OclUpgrade { science, ocl });
@@ -166,38 +153,10 @@ fn parse_ocl_upgrade_pair(
 /// `OCLSpecialPowerModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<OCLSpecialPowerModuleData>; 6] = [
     FieldParse::new("UpgradeOCL", parse_ocl_upgrade_pair, UserData::None),
-    FieldParse::new(
-        "OCL",
-        |ini, d, _| {
-            d.default_ocl = parse_ocl(ini)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "CreateLocation",
-        |ini, d, _| {
-            d.create_loc = ini.parse_index_list(&OCL_CREATE_LOC_TYPE_NAMES)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ReferenceObject",
-        |ini, d, _| {
-            d.reference_thing_name = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "OCLAdjustPositionToPassable",
-        |ini, d, _| {
-            d.is_ocl_adjust_position_to_passable = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("OCL", |ini, d, _| { d.default_ocl = parse_ocl(ini)?; Ok(()) }, UserData::None),
+    FieldParse::new("CreateLocation", |ini, d, _| { d.create_loc = ini.parse_index_list(&OCL_CREATE_LOC_TYPE_NAMES)?; Ok(()) }, UserData::None),
+    FieldParse::new("ReferenceObject", |ini, d, _| { d.reference_thing_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("OCLAdjustPositionToPassable", |ini, d, _| { d.is_ocl_adjust_position_to_passable = ini.parse_bool()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
@@ -224,12 +183,8 @@ impl PartialEq for OCLSpecialPower {
 
 impl OCLSpecialPower {
     /// `OCLSpecialPower(thing, moduleData)`, the part that touches no world: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<OCLSpecialPowerModuleData>>,
-    ) -> IniResult<OCLSpecialPower> {
-        let data =
-            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(object: ObjectId, data: Option<Arc<OCLSpecialPowerModuleData>>) -> IniResult<OCLSpecialPower> {
+        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let power = SpecialPowerModule::new(object, Some(Arc::new(data.special_power.clone())))?;
         Ok(OCLSpecialPower { power, data })
     }
@@ -252,12 +207,7 @@ impl OCLSpecialPower {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         special_power_module_call(self, world, me, call)
     }
 
@@ -266,16 +216,8 @@ impl OCLSpecialPower {
         if let Some(p) = world.get_controlling_player(me) {
             for up in &self.data.upgrade_ocl {
                 let statics = world.statics.clone();
-                let science = statics
-                    .science_store
-                    .friend_lookup_science(&mut world.names, &up.science)
-                    .map_err(|_| IniError::undefined(Undefined::UnknownScience))?;
-                if world
-                    .players
-                    .get_nth(p)
-                    .is_some_and(|pl| pl.sciences.contains(&science))
-                    && !crate::logic::modules::plant(1911)
-                {
+                let science = statics.science_store.friend_lookup_science(&mut world.names, &up.science).map_err(|_| IniError::undefined(Undefined::UnknownScience))?;
+                if world.players.get_nth(p).is_some_and(|pl| pl.sciences.contains(&science)) && !crate::logic::modules::plant(1911) {
                     return Ok(up.ocl.clone());
                 }
             }
@@ -306,95 +248,38 @@ impl SpecialPowerBehavior for OCLSpecialPower {
         }
     }
     /// `doSpecialPower(commandOptions)`: the base's `doSpecialPowerAtLocation` at the object, then the list there (`createOwner` false).
-    fn do_special_power(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        command_options: u32,
-    ) -> Result<(), IniError> {
-        if world
-            .objects
-            .find(me.object)
-            .is_some_and(|o| o.is_disabled())
-        {
+    fn do_special_power(&mut self, world: &mut World, me: ModuleHandle, command_options: u32) -> Result<(), IniError> {
+        if world.objects.find(me.object).is_some_and(|o| o.is_disabled()) {
             return Ok(());
         }
-        let creation = world
-            .objects
-            .find(me.object)
-            .map_or(Coord3D::default(), |o| o.get_position());
-        special_power_body::base_do_special_power_at_location(
-            self,
-            world,
-            me,
-            creation,
-            INVALID_ANGLE,
-            command_options,
-        )?;
+        let creation = world.objects.find(me.object).map_or(Coord3D::default(), |o| o.get_position());
+        special_power_body::base_do_special_power_at_location(self, world, me, creation, INVALID_ANGLE, command_options)?;
         if let Some(ocl) = self.find_ocl(world, me.object)? {
-            world.cut(CutCall::OclCreateOwner {
-                primary: me.object,
-                ocl,
-                primary_pos: creation,
-                secondary_pos: creation,
-                create_owner: crate::logic::modules::plant(1912),
-            });
+            world.cut(CutCall::OclCreateOwner { primary: me.object, ocl, primary_pos: creation, secondary_pos: creation, create_owner: crate::logic::modules::plant(1912) });
         }
         Ok(())
     }
     /// `doSpecialPowerAtLocation(loc, angle, commandOptions)`.
-    fn do_special_power_at_location(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        loc: Coord3D,
-        angle: f32,
-        command_options: u32,
-    ) -> Result<(), IniError> {
-        if world
-            .objects
-            .find(me.object)
-            .is_some_and(|o| o.is_disabled())
-        {
+    fn do_special_power_at_location(&mut self, world: &mut World, me: ModuleHandle, loc: Coord3D, angle: f32, command_options: u32) -> Result<(), IniError> {
+        if world.objects.find(me.object).is_some_and(|o| o.is_disabled()) {
             return Ok(());
         }
         let d = self.data.clone();
         let mut target = loc;
         if d.is_ocl_adjust_position_to_passable && !crate::logic::modules::plant(1913) {
             // "if findPosition() fails, then don't monkey with target Coord!"
-            if !world.contain_partition_find_position_around(
-                &mut target,
-                0.0,
-                MAX_ADJUST_RADIUS,
-                FPF_CLEAR_CELLS_ONLY,
-            ) {
+            if !world.contain_partition_find_position_around(&mut target, 0.0, MAX_ADJUST_RADIUS, FPF_CLEAR_CELLS_ONLY) {
                 target = loc;
             }
         }
-        special_power_body::base_do_special_power_at_location(
-            self,
-            world,
-            me,
-            target,
-            angle,
-            command_options,
-        )?;
+        special_power_body::base_do_special_power_at_location(self, world, me, target, angle, command_options)?;
         let ocl = self.find_ocl(world, me.object)?;
         let at = |world: &mut World, ocl: Option<Vec<u8>>, creation: Coord3D| {
             if let Some(ocl) = ocl {
-                world.cut(CutCall::OclCreateAt {
-                    primary: me.object,
-                    ocl,
-                    primary_pos: creation,
-                    secondary_pos: target,
-                    angle,
-                });
+                world.cut(CutCall::OclCreateAt { primary: me.object, ocl, primary_pos: creation, secondary_pos: target, angle });
             }
         };
-        let own = world
-            .objects
-            .find(me.object)
-            .map_or(Coord3D::default(), |o| o.get_position());
+        let own = world.objects.find(me.object).map_or(Coord3D::default(), |o| o.get_position());
         match d.create_loc {
             CREATE_AT_EDGE_NEAR_SOURCE => {
                 let c = world.terrain_find_closest_edge_point(own);
@@ -412,11 +297,7 @@ impl SpecialPowerBehavior for OCLSpecialPower {
             CREATE_AT_LOCATION | USE_OWNER_OBJECT => at(world, ocl, target),
             CREATE_ABOVE_LOCATION => {
                 let mut c = target;
-                c.z += if crate::logic::modules::plant(1914) {
-                    0.0
-                } else {
-                    CREATE_ABOVE_LOCATION_HEIGHT
-                };
+                c.z += if crate::logic::modules::plant(1914) { 0.0 } else { CREATE_ABOVE_LOCATION_HEIGHT };
                 at(world, ocl, c);
             }
             _ => {}
@@ -424,23 +305,11 @@ impl SpecialPowerBehavior for OCLSpecialPower {
         Ok(())
     }
     /// `doSpecialPowerAtObject(obj, commandOptions)`: at the object's position, with no angle.
-    fn do_special_power_at_object(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        target: ObjectId,
-        command_options: u32,
-    ) -> Result<(), IniError> {
-        if world
-            .objects
-            .find(me.object)
-            .is_some_and(|o| o.is_disabled())
-        {
+    fn do_special_power_at_object(&mut self, world: &mut World, me: ModuleHandle, target: ObjectId, command_options: u32) -> Result<(), IniError> {
+        if world.objects.find(me.object).is_some_and(|o| o.is_disabled()) {
             return Ok(());
         }
-        let Some(pos) = world.objects.find(target).map(|o| o.get_position()) else {
-            return Ok(());
-        };
+        let Some(pos) = world.objects.find(target).map(|o| o.get_position()) else { return Ok(()) };
         self.do_special_power_at_location(world, me, pos, INVALID_ANGLE, command_options)
     }
 }
@@ -465,7 +334,5 @@ impl Snapshot for OCLSpecialPower {
 
 /// The factory's `NewModuleDataProc` for `OCLSpecialPower`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::OCLSpecialPower(Arc::new(
-        OCLSpecialPowerModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::OCLSpecialPower(Arc::new(OCLSpecialPowerModuleData::friend_new_module_data(ini)?)))
 }

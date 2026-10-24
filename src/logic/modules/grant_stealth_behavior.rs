@@ -25,23 +25,18 @@
 //! upstream; they are not here. The destructor's `destroyParticleSystemByID` has no Rust counterpart (no destruction hook).
 use std::sync::Arc;
 
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
-use crate::common::kind_of::KindOfMaskType;
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER,
-    UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
-use crate::logic::world::object_events::ObjectClientEvent;
 use crate::logic::world::sleepy::UpdateHandle;
 use crate::logic::world::update_body::UpdateBody;
+use crate::common::kind_of::KindOfMaskType;
+use crate::logic::world::object_events::ObjectClientEvent;
 
 /// `class GrantStealthBehaviorModuleData : public UpdateModuleData`.
 #[derive(Clone, Debug, PartialEq)]
@@ -84,66 +79,27 @@ fn parse_particle_system(ini: &mut Ini<'_>) -> IniResult<Option<Vec<u8>>> {
 
 /// `GrantStealthBehaviorModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<GrantStealthBehaviorModuleData>; 6] = [
-    FieldParse::new(
-        "StartRadius",
-        |ini, d, _| {
-            d.start_radius = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FinalRadius",
-        |ini, d, _| {
-            d.final_radius = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "RadiusGrowRate",
-        |ini, d, _| {
-            d.radius_grow_rate = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "KindOf",
-        |ini, d, _| d.kind_of.parse_from_ini(ini),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "RadiusParticleSystemName",
-        |ini, d, _| {
-            d.radius_particle_system = parse_particle_system(ini)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("StartRadius", |ini, d, _| { d.start_radius = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("FinalRadius", |ini, d, _| { d.final_radius = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("RadiusGrowRate", |ini, d, _| { d.radius_grow_rate = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("KindOf", |ini, d, _| d.kind_of.parse_from_ini(ini), UserData::None),
+    FieldParse::new("RadiusParticleSystemName", |ini, d, _| { d.radius_particle_system = parse_particle_system(ini)?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl GrantStealthBehaviorModuleData {
     /// `buildFieldParse(p)`: the base's (no fields), then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, GrantStealthBehaviorModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, GrantStealthBehaviorModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<GrantStealthBehaviorModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<GrantStealthBehaviorModuleData> {
         let mut data = GrantStealthBehaviorModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                GrantStealthBehaviorModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, GrantStealthBehaviorModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -165,10 +121,7 @@ pub struct GrantStealthBehavior {
 impl PartialEq for GrantStealthBehavior {
     /// The same object, the same data object (upstream compares pointers) and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
-            && self.radius_particle_system_id == other.radius_particle_system_id
-            && self.current_scan_radius.to_bits() == other.current_scan_radius.to_bits()
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.radius_particle_system_id == other.radius_particle_system_id && self.current_scan_radius.to_bits() == other.current_scan_radius.to_bits()
     }
 }
 
@@ -180,19 +133,11 @@ impl GrantStealthBehavior {
 
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and
     /// no particle system yet, the scan radius `StartRadius`.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<GrantStealthBehaviorModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<GrantStealthBehaviorModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(GrantStealthBehavior {
-            update,
-            radius_particle_system_id: 0,
-            current_scan_radius: data.start_radius,
-            data,
-        })
+        Ok(GrantStealthBehavior { update, radius_particle_system_id: 0, current_scan_radius: data.start_radius, data })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -205,6 +150,7 @@ impl GrantStealthBehavior {
         &self.data
     }
 
+
     /// `update()` as the scheduler runs it (see [`update_behavior::world_update`]).
     pub fn world_update(&mut self, world: &mut World, me: UpdateHandle) -> UpdateSleepTime {
         update_behavior::world_update(self, world, me)
@@ -216,12 +162,7 @@ impl GrantStealthBehavior {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -240,12 +181,10 @@ impl GrantStealthBehavior {
         update_behavior::load_post_process_with(self, update);
     }
 
+
     /// The state the test compares: the particle system id, the scan radius (bits).
     pub fn state_words(&self) -> [u32; 2] {
-        [
-            self.radius_particle_system_id,
-            self.current_scan_radius.to_bits(),
-        ]
+        [self.radius_particle_system_id, self.current_scan_radius.to_bits()]
     }
 
     /// `grantStealthToObject(obj)`.
@@ -253,10 +192,7 @@ impl GrantStealthBehavior {
         if obj == me && !crate::logic::modules::plant(1933) {
             return;
         }
-        let kinds = world
-            .objects
-            .find(obj)
-            .is_some_and(|o| o.template().is_any_kind_of(&self.data.kind_of));
+        let kinds = world.objects.find(obj).is_some_and(|o| o.template().is_any_kind_of(&self.data.kind_of));
         if !kinds && !crate::logic::modules::plant(1934) {
             return;
         }
@@ -275,11 +211,7 @@ impl UpdateBehavior for GrantStealthBehavior {
         &self.update
     }
     fn update(&mut self, world: &mut World, me: ModuleHandle) -> UpdateSleepTime {
-        if world
-            .objects
-            .find(me.object)
-            .is_some_and(|o| o.is_effectively_dead())
-        {
+        if world.objects.find(me.object).is_some_and(|o| o.is_effectively_dead()) {
             return UPDATE_SLEEP_FOREVER;
         }
         let d = self.data.clone();
@@ -303,11 +235,7 @@ impl UpdateBehavior for GrantStealthBehavior {
     /// The constructor: the particle system at the object, then awake now.
     fn construct(&mut self, world: &mut World, me: ModuleHandle) {
         if let Some(name) = self.data.radius_particle_system.clone() {
-            let pos = world
-                .objects
-                .find(me.object)
-                .map(|o| o.get_position())
-                .unwrap_or_default();
+            let pos = world.objects.find(me.object).map(|o| o.get_position()).unwrap_or_default();
             self.radius_particle_system_id = world.create_particle_system(name, pos);
         }
         update_behavior::set_wake_frame(world, UPDATE_SLEEP_NONE);
@@ -349,7 +277,5 @@ impl Snapshot for GrantStealthBehavior {
 
 /// The factory's `NewModuleDataProc` for `GrantStealthBehavior`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::GrantStealthBehavior(Arc::new(
-        GrantStealthBehaviorModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::GrantStealthBehavior(Arc::new(GrantStealthBehaviorModuleData::friend_new_module_data(ini)?)))
 }

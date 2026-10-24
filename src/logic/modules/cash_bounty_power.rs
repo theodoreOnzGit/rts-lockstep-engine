@@ -24,16 +24,12 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::special_power_module::{SpecialPowerModule, SpecialPowerModuleData};
-use crate::logic::modules::special_power_body::{
-    self, special_power_module_call, SpecialPowerBehavior,
-};
+use crate::logic::modules::special_power_body::{self, special_power_module_call, SpecialPowerBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::update_body::UpdateBody;
@@ -51,16 +47,11 @@ pub struct CashBountyPowerModuleData {
 impl CashBountyPowerModuleData {
     /// `CashBountyPowerModuleData()`.
     pub fn new() -> Self {
-        CashBountyPowerModuleData {
-            special_power: SpecialPowerModuleData::new(),
-            default_bounty: 0.0,
-        }
+        CashBountyPowerModuleData { special_power: SpecialPowerModuleData::new(), default_bounty: 0.0 }
     }
 
     /// `buildFieldParse(p)`: the behaviour base, the special power fields, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, CashBountyPowerModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, CashBountyPowerModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -68,9 +59,7 @@ impl CashBountyPowerModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<CashBountyPowerModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<CashBountyPowerModuleData> {
         let mut data = CashBountyPowerModuleData::new();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, CashBountyPowerModuleData::build_field_parse)?;
@@ -80,19 +69,11 @@ impl CashBountyPowerModuleData {
 }
 
 /// `SpecialPowerModuleData::buildFieldParse`'s table, for this data class.
-static BASE_FIELD_PARSE: [FieldParse<CashBountyPowerModuleData>; 6] =
-    special_power_data_field_parse!(CashBountyPowerModuleData, special_power);
+static BASE_FIELD_PARSE: [FieldParse<CashBountyPowerModuleData>; 6] = special_power_data_field_parse!(CashBountyPowerModuleData, special_power);
 
 /// `CashBountyPowerModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<CashBountyPowerModuleData>; 2] = [
-    FieldParse::new(
-        "Bounty",
-        |ini, d, _| {
-            d.default_bounty = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("Bounty", |ini, d, _| { d.default_bounty = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
@@ -119,12 +100,8 @@ impl PartialEq for CashBountyPower {
 
 impl CashBountyPower {
     /// `CashBountyPower(thing, moduleData)`, the part that touches no world: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<CashBountyPowerModuleData>>,
-    ) -> IniResult<CashBountyPower> {
-        let data =
-            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(object: ObjectId, data: Option<Arc<CashBountyPowerModuleData>>) -> IniResult<CashBountyPower> {
+        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let power = SpecialPowerModule::new(object, Some(Arc::new(data.special_power.clone())))?;
         Ok(CashBountyPower { power, data })
     }
@@ -147,12 +124,7 @@ impl CashBountyPower {
     }
 
     /// The module's answer to one of `Object`'s calls: `onObjectCreated`, and `onSpecialPowerCreation` after the base's.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
             ModuleCall::OnObjectCreated => {
                 if let Err(e) = self.on_object_created(world, me) {
@@ -161,8 +133,7 @@ impl CashBountyPower {
                 ModuleReply::Done
             }
             ModuleCall::OnSpecialPowerCreation => {
-                let r =
-                    special_power_module_call(self, world, me, ModuleCall::OnSpecialPowerCreation);
+                let r = special_power_module_call(self, world, me, ModuleCall::OnSpecialPowerCreation);
                 if let Some(p) = world.get_controlling_player(me.object) {
                     self.raise_bounty(world, p);
                 }
@@ -174,17 +145,9 @@ impl CashBountyPower {
 
     /// `onObjectCreated()`: a controlling player that has the required science gets the bounty.
     fn on_object_created(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
-        let Some(p) = world.get_controlling_player(me.object) else {
-            return Ok(());
-        };
-        let science = special_power_body::template_required_science(world, &self.power)
-            .ok_or_else(|| IniError::undefined(Undefined::NullSpecialPowerTemplate))?;
-        if world
-            .players
-            .get_nth(p)
-            .is_some_and(|pl| pl.sciences.contains(&science))
-            != crate::logic::modules::plant(1891)
-        {
+        let Some(p) = world.get_controlling_player(me.object) else { return Ok(()) };
+        let science = special_power_body::template_required_science(world, &self.power).ok_or_else(|| IniError::undefined(Undefined::NullSpecialPowerTemplate))?;
+        if world.players.get_nth(p).is_some_and(|pl| pl.sciences.contains(&science)) != crate::logic::modules::plant(1891) {
             self.raise_bounty(world, p);
         }
         Ok(())
@@ -218,12 +181,7 @@ impl SpecialPowerBehavior for CashBountyPower {
         }
     }
     /// `doSpecialPower(commandOptions)`: `{ return; }` (the header's), so not the base's.
-    fn do_special_power(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        command_options: u32,
-    ) -> Result<(), IniError> {
+    fn do_special_power(&mut self, world: &mut World, me: ModuleHandle, command_options: u32) -> Result<(), IniError> {
         if crate::logic::modules::plant(1893) {
             return special_power_body::base_do_special_power(self, world, me, command_options);
         }
@@ -251,7 +209,5 @@ impl Snapshot for CashBountyPower {
 
 /// The factory's `NewModuleDataProc` for `CashBountyPower`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::CashBountyPower(Arc::new(
-        CashBountyPowerModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::CashBountyPower(Arc::new(CashBountyPowerModuleData::friend_new_module_data(ini)?)))
 }

@@ -21,9 +21,7 @@
 //! absolute values.
 
 use super::wwmath;
-use std::ops::{
-    Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign,
-};
+use std::ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign};
 
 /// `class Vector2` (`U`/`V` are upstream aliases of `X`/`Y`).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -106,12 +104,7 @@ impl Vector2 {
     /// `Rotate_Towards_Vector(target, max_s, max_c, positive_turn)`.
     /// Returns `(reached_target, positive_turn)`.
     #[inline]
-    pub fn rotate_towards_vector_sc(
-        &mut self,
-        target: &Vector2,
-        max_s: f32,
-        max_c: f32,
-    ) -> (bool, bool) {
+    pub fn rotate_towards_vector_sc(&mut self, target: &Vector2, max_s: f32, max_c: f32) -> (bool, bool) {
         let mut return_value = false;
         let positive_turn = Vector2::perp_dot_product(target, self) > 0.0f32;
         if Vector2::dot_product(self, target) >= max_c {
@@ -354,11 +347,7 @@ mod tests {
     fn basics() {
         let mut v = Vector2::new(3.0, 4.0);
         assert_eq!(v.length(), 5.0);
-        assert_eq!(
-            normalize(&v),
-            Vector2::new(15.0, 20.0),
-            "upstream divides by 1/len"
-        );
+        assert_eq!(normalize(&v), Vector2::new(15.0, 20.0), "upstream divides by 1/len");
         v.normalize();
         assert!((v.x - 0.6).abs() < 1e-6);
         // x_diff = -2, y_diff = -4: upstream keeps the signs, giving -4 (not 5).

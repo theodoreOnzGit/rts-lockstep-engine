@@ -124,14 +124,9 @@
 //! could serve; a height map with a zero extent (`getClipHeight` indexes
 //! `data[-1]`). Each is an `Err`.
 
+use crate::common::base_type::{fast_float2long_round, fast_float_floor, real_to_int, Coord3D, ICoord2D};
 use crate::common::ascii_string::AsciiString;
-use crate::common::base_type::{
-    fast_float2long_round, fast_float_floor, real_to_int, Coord3D, ICoord2D,
-};
-use crate::formats::data_chunk::{
-    ChunkError, ChunkResult, ChunkUndefined, DataChunkInfo, DataChunkInput,
-    ERROR_CORRUPT_FILE_FORMAT,
-};
+use crate::formats::data_chunk::{ChunkError, ChunkResult, ChunkUndefined, DataChunkInfo, DataChunkInput, ERROR_CORRUPT_FILE_FORMAT};
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector2::Vector2;
 use crate::ww::vector3::Vector3;
@@ -224,11 +219,7 @@ pub enum TerrainVisualEvent {
     /// `setWaterTransform(&transform)` (the matrix overload).
     SetWaterTransformMatrix { transform: Matrix3D },
     /// `setWaterGridResolution(NULL, cellsX, cellsY, cellSize)`.
-    SetWaterGridResolution {
-        cells_x: f32,
-        cells_y: f32,
-        cell_size: f32,
-    },
+    SetWaterGridResolution { cells_x: f32, cells_y: f32, cell_size: f32 },
     /// `setWaterAttenuationFactors(NULL, a, b, c, range)`.
     SetWaterAttenuationFactors { a: f32, b: f32, c: f32, range: f32 },
     /// `setRawMapHeight(&gridPos, height)`.
@@ -319,10 +310,7 @@ impl WaterGrid {
     /// NULL`, as a headless client has): every write is ignored and
     /// `getWaterGridHeight` is false.
     pub fn without_render_object() -> Self {
-        WaterGrid {
-            render_object_present: false,
-            ..WaterGrid::default()
-        }
+        WaterGrid { render_object_present: false, ..WaterGrid::default() }
     }
 
     /// `m_isWaterGridRenderingEnabled`.
@@ -344,11 +332,7 @@ impl WaterGrid {
     /// when there is no render object (the callers' variables are then
     /// unwritten).
     pub fn resolution(&self) -> Option<(f32, f32, f32)> {
-        self.render_object_present.then_some((
-            self.cells_x as f32,
-            self.cells_y as f32,
-            self.cell_size,
-        ))
+        self.render_object_present.then_some((self.cells_x as f32, self.cells_y as f32, self.cell_size))
     }
 
     /// The number of mesh entries, `(cellsX+3) * (cellsY+3)`, or `None` when
@@ -426,12 +410,7 @@ impl WaterGrid {
     /// upstream's always-false `m_gridCellsY != m_gridCellsY`: the cell
     /// counts are taken, and the mesh reallocated, only when the X count
     /// (compared as a `Real`) differs.
-    pub fn set_resolution(
-        &mut self,
-        cells_x: f32,
-        cells_y: f32,
-        cell_size: f32,
-    ) -> Result<(), TerrainUndefined> {
+    pub fn set_resolution(&mut self, cells_x: f32, cells_y: f32, cell_size: f32) -> Result<(), TerrainUndefined> {
         if !self.render_object_present {
             return Ok(());
         }
@@ -455,18 +434,12 @@ impl WaterGrid {
     /// `WaterRenderObjClass::worldToGridSpace`: the grid coordinates of a
     /// world point, or `None` outside the grid. NaN is undefined upstream
     /// (it passes every comparison and reaches `REAL_TO_INT`).
-    fn world_to_grid_space(
-        &self,
-        world_x: f32,
-        world_y: f32,
-    ) -> Result<Option<(f32, f32)>, TerrainUndefined> {
+    fn world_to_grid_space(&self, world_x: f32, world_y: f32) -> Result<Option<(f32, f32)>, TerrainUndefined> {
         let oo_grid_cell_size = 1.0f32 / self.cell_size;
         let dx = world_x - self.grid_origin.x;
         let dy = world_y - self.grid_origin.y;
-        let grid_x =
-            oo_grid_cell_size * (dx * self.grid_direction_x.x + dy * self.grid_direction_x.y);
-        let grid_y =
-            oo_grid_cell_size * (dx * self.grid_direction_y.x + dy * self.grid_direction_y.y);
+        let grid_x = oo_grid_cell_size * (dx * self.grid_direction_x.x + dy * self.grid_direction_x.y);
+        let grid_y = oo_grid_cell_size * (dx * self.grid_direction_y.x + dy * self.grid_direction_y.y);
         if grid_x < 0.0 {
             return Ok(None);
         }
@@ -486,25 +459,15 @@ impl WaterGrid {
     }
 
     /// `W3DTerrainVisual::getWaterGridHeight(worldX, worldY, &height)`.
-    pub fn water_grid_height(
-        &self,
-        world_x: f32,
-        world_y: f32,
-    ) -> Result<WaterGridSample, TerrainUndefined> {
+    pub fn water_grid_height(&self, world_x: f32, world_y: f32) -> Result<WaterGridSample, TerrainUndefined> {
         if self.rendering_enabled && self.render_object_present {
             if let Some((gx, gy)) = self.world_to_grid_space(world_x, world_y)? {
                 // point falls within grid, return correct height
                 let (x, y) = (real_to_int(gx), real_to_int(gy));
                 return Ok(match &self.mesh {
                     Some(mesh) => {
-                        let idx = (i64::from(y) + 1) * (i64::from(self.cells_x) + 1 + 2)
-                            + i64::from(x)
-                            + 1;
-                        let h = usize::try_from(idx)
-                            .ok()
-                            .and_then(|i| mesh.get(i))
-                            .copied()
-                            .ok_or(TerrainUndefined::WaterGridSize)?;
+                        let idx = (i64::from(y) + 1) * (i64::from(self.cells_x) + 1 + 2) + i64::from(x) + 1;
+                        let h = usize::try_from(idx).ok().and_then(|i| mesh.get(i)).copied().ok_or(TerrainUndefined::WaterGridSize)?;
                         WaterGridSample::OnGrid(h + self.transform.get_z_translation())
                     }
                     None => WaterGridSample::OnGridUnset,
@@ -550,23 +513,11 @@ impl LogicHeightMap {
     /// the full data). The shape is undefined upstream when the extents are
     /// below 1 (`getClipHeight` indexes `data[-1]`) or the data is shorter
     /// than `width * height`.
-    pub fn new(
-        width: i32,
-        height: i32,
-        border_size: i32,
-        boundaries: Vec<ICoord2D>,
-        data: Vec<u8>,
-    ) -> Result<Self, TerrainUndefined> {
+    pub fn new(width: i32, height: i32, border_size: i32, boundaries: Vec<ICoord2D>, data: Vec<u8>) -> Result<Self, TerrainUndefined> {
         if width < 1 || height < 1 || i64::from(width) * i64::from(height) > data.len() as i64 {
             return Err(TerrainUndefined::HeightMapShape);
         }
-        Ok(LogicHeightMap {
-            width,
-            height,
-            border_size,
-            boundaries,
-            data,
-        })
+        Ok(LogicHeightMap { width, height, border_size, boundaries, data })
     }
 
     /// `getXExtent()`.
@@ -681,15 +632,8 @@ impl LogicHeightMap {
         // data for smoothed triangle points.
         if ix > (x_extent - 3) || iy > (self.height - 3) || iy < 1 || ix < 1 {
             // sample point is not on the heightmap
-            let normal = want_normal.then_some(Coord3D {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0,
-            });
-            return (
-                f32::from(self.clip_height(ix, iy)) * MAP_HEIGHT_SCALE,
-                normal,
-            );
+            let normal = want_normal.then_some(Coord3D { x: 0.0, y: 0.0, z: 1.0 });
+            return (f32::from(self.clip_height(ix, iy)) * MAP_HEIGHT_SCALE, normal);
         }
 
         let data = &self.data;
@@ -749,25 +693,16 @@ impl LogicHeightMap {
         // upstream, so the last step of each is in double.
         let delta_z_x_left = delta_z_x0 * (1.0f32 - fx) + fx * delta_z_x3;
         let delta_z_x_right = delta_z_x1 * (1.0f32 - fx) + fx * delta_z_x2;
-        let delta_z_x = (f64::from(delta_z_x_left) * (1.0f64 - f64::from(fy))
-            + f64::from(fy * delta_z_x_right)) as f32;
+        let delta_z_x = (f64::from(delta_z_x_left) * (1.0f64 - f64::from(fy)) + f64::from(fy * delta_z_x_right)) as f32;
 
         let delta_z_y_left = delta_z_y0 * (1.0f32 - fx) + fx * delta_z_y3;
         let delta_z_y_right = delta_z_y1 * (1.0f32 - fx) + fx * delta_z_y2;
-        let delta_z_y = (f64::from(delta_z_y_left) * (1.0f64 - f64::from(fy))
-            + f64::from(fy * delta_z_y_right)) as f32;
+        let delta_z_y = (f64::from(delta_z_y_left) * (1.0f64 - f64::from(fy)) + f64::from(fy * delta_z_y_right)) as f32;
 
         let l2r = Vector3::new(2.0f32 * MAP_XY_FACTOR / MAP_HEIGHT_SCALE, 0.0, delta_z_x);
         let n2f = Vector3::new(0.0, 2.0f32 * MAP_XY_FACTOR / MAP_HEIGHT_SCALE, delta_z_y);
         let normal_at_texel = Vector3::normalized_cross_product(&l2r, &n2f);
-        (
-            height,
-            Some(Coord3D {
-                x: normal_at_texel.x,
-                y: normal_at_texel.y,
-                z: normal_at_texel.z,
-            }),
-        )
+        (height, Some(Coord3D { x: normal_at_texel.x, y: normal_at_texel.y, z: normal_at_texel.z }))
     }
 
     /// `WorldHeightMap::ParseHeightMapData` (`size_only == false`, the
@@ -781,18 +716,10 @@ impl LogicHeightMap {
     /// The data size is allocated *before* it is checked upstream; a size
     /// that is not positive or not `width * height` throws
     /// `ERROR_CORRUPT_FILE_FORMAT`.
-    pub fn parse_chunk(
-        file: &mut DataChunkInput<HeightMapParse>,
-        info: &DataChunkInfo,
-        size_only: bool,
-    ) -> ChunkResult<HeightMapParse> {
+    pub fn parse_chunk(file: &mut DataChunkInput<HeightMapParse>, info: &DataChunkInfo, size_only: bool) -> ChunkResult<HeightMapParse> {
         let mut m_width = file.read_int()?;
         let mut m_height = file.read_int()?;
-        let border_size = if info.version >= K_HEIGHT_MAP_VERSION_3 {
-            file.read_int()?
-        } else {
-            0
-        };
+        let border_size = if info.version >= K_HEIGHT_MAP_VERSION_3 { file.read_int()? } else { 0 };
         let boundaries = if info.version >= K_HEIGHT_MAP_VERSION_4 {
             let num_borders = file.read_int()?;
             // `m_boundaries.resize(numBorders)` of a negative count is a
@@ -808,10 +735,7 @@ impl LogicHeightMap {
             }
             b
         } else {
-            vec![ICoord2D {
-                x: m_width.wrapping_sub(border_size.wrapping_mul(2)),
-                y: m_height.wrapping_sub(border_size.wrapping_mul(2)),
-            }]
+            vec![ICoord2D { x: m_width.wrapping_sub(border_size.wrapping_mul(2)), y: m_height.wrapping_sub(border_size.wrapping_mul(2)) }]
         };
         let data_size = file.read_int()?;
         if data_size <= 0 || data_size != m_width.wrapping_mul(m_height) {
@@ -836,13 +760,7 @@ impl LogicHeightMap {
                 m_height = new_height;
             }
         }
-        Ok(HeightMapParse {
-            width: m_width,
-            height: m_height,
-            border_size,
-            boundaries,
-            data,
-        })
+        Ok(HeightMapParse { width: m_width, height: m_height, border_size, boundaries, data })
     }
 }
 
@@ -869,32 +787,18 @@ impl HeightMapParse {
         }
         // version 1 through ParseHeightMapData keeps the old extents over
         // the compacted data: the data is still width*height long
-        LogicHeightMap::new(
-            self.width,
-            self.height,
-            self.border_size,
-            self.boundaries,
-            self.data,
-        )
+        LogicHeightMap::new(self.width, self.height, self.border_size, self.boundaries, self.data)
     }
 }
 
 /// `registerParser("HeightMapData", "", ParseHeightMapDataChunk)`.
-fn parse_height_map_data_chunk(
-    file: &mut DataChunkInput<HeightMapParse>,
-    info: &DataChunkInfo,
-    user: &mut HeightMapParse,
-) -> ChunkResult<bool> {
+fn parse_height_map_data_chunk(file: &mut DataChunkInput<HeightMapParse>, info: &DataChunkInfo, user: &mut HeightMapParse) -> ChunkResult<bool> {
     *user = LogicHeightMap::parse_chunk(file, info, false)?;
     Ok(true)
 }
 
 /// `registerParser("HeightMapData", "", ParseSizeOnlyInChunk)`.
-fn parse_size_only_chunk(
-    file: &mut DataChunkInput<HeightMapParse>,
-    info: &DataChunkInfo,
-    user: &mut HeightMapParse,
-) -> ChunkResult<bool> {
+fn parse_size_only_chunk(file: &mut DataChunkInput<HeightMapParse>, info: &DataChunkInfo, user: &mut HeightMapParse) -> ChunkResult<bool> {
     *user = LogicHeightMap::parse_chunk(file, info, true)?;
     Ok(true)
 }
@@ -906,19 +810,12 @@ impl LogicHeightMap {
     /// the file are skipped. `Ok(None)` is a file with no such chunk or that
     /// is not a chunk file (upstream: `parse` false, which the constructor
     /// turns into a thrown `ERROR_CORRUPT_FILE_FORMAT`).
-    pub fn from_map_file(
-        file: crate::formats::data_chunk::CachedFileInputStream,
-        size_only: bool,
-    ) -> ChunkResult<Option<Self>> {
+    pub fn from_map_file(file: crate::formats::data_chunk::CachedFileInputStream, size_only: bool) -> ChunkResult<Option<Self>> {
         let mut input = DataChunkInput::<HeightMapParse>::new(file)?;
         input.register_parser(
             b"HeightMapData",
             b"",
-            if size_only {
-                parse_size_only_chunk
-            } else {
-                parse_height_map_data_chunk
-            },
+            if size_only { parse_size_only_chunk } else { parse_height_map_data_chunk },
         );
         let mut parsed = HeightMapParse::default();
         if !input.parse(&mut parsed)? {
@@ -945,28 +842,12 @@ impl TerrainVisualState {
     pub fn apply(&mut self, event: &TerrainVisualEvent) -> Result<(), TerrainUndefined> {
         match event {
             TerrainVisualEvent::Load { .. } => {}
-            TerrainVisualEvent::EnableWaterGrid { enable } => {
-                self.water_grid.enable_water_grid(*enable)?
-            }
-            TerrainVisualEvent::SetWaterGridHeightClamps { min_z, max_z } => {
-                self.water_grid.set_height_clamps(*min_z, *max_z)
-            }
-            TerrainVisualEvent::SetWaterTransform { angle, x, y, z } => {
-                self.water_grid.set_transform_angle(*angle, *x, *y, *z)
-            }
-            TerrainVisualEvent::SetWaterTransformMatrix { transform } => {
-                self.water_grid.set_transform_matrix(transform)
-            }
-            TerrainVisualEvent::SetWaterGridResolution {
-                cells_x,
-                cells_y,
-                cell_size,
-            } => self
-                .water_grid
-                .set_resolution(*cells_x, *cells_y, *cell_size)?,
-            TerrainVisualEvent::SetWaterAttenuationFactors { a, b, c, range } => {
-                self.water_grid.set_attenuation_factors(*a, *b, *c, *range)
-            }
+            TerrainVisualEvent::EnableWaterGrid { enable } => self.water_grid.enable_water_grid(*enable)?,
+            TerrainVisualEvent::SetWaterGridHeightClamps { min_z, max_z } => self.water_grid.set_height_clamps(*min_z, *max_z),
+            TerrainVisualEvent::SetWaterTransform { angle, x, y, z } => self.water_grid.set_transform_angle(*angle, *x, *y, *z),
+            TerrainVisualEvent::SetWaterTransformMatrix { transform } => self.water_grid.set_transform_matrix(transform),
+            TerrainVisualEvent::SetWaterGridResolution { cells_x, cells_y, cell_size } => self.water_grid.set_resolution(*cells_x, *cells_y, *cell_size)?,
+            TerrainVisualEvent::SetWaterAttenuationFactors { a, b, c, range } => self.water_grid.set_attenuation_factors(*a, *b, *c, *range),
             TerrainVisualEvent::SetRawMapHeight { x, y, height } => {
                 if let Some(map) = &mut self.height_map {
                     map.set_raw_map_height(&ICoord2D { x: *x, y: *y }, *height);
@@ -978,9 +859,7 @@ impl TerrainVisualState {
 
     /// `getRawMapHeight(gridPos)`: 0 with no height map.
     pub fn raw_map_height(&self, grid_pos: &ICoord2D) -> i32 {
-        self.height_map
-            .as_ref()
-            .map_or(0, |m| m.raw_map_height(grid_pos))
+        self.height_map.as_ref().map_or(0, |m| m.raw_map_height(grid_pos))
     }
 }
 
@@ -989,14 +868,7 @@ mod tests {
     use super::*;
 
     fn flat_map(w: i32, h: i32, v: u8) -> LogicHeightMap {
-        LogicHeightMap::new(
-            w,
-            h,
-            0,
-            vec![ICoord2D { x: w, y: h }],
-            vec![v; (w * h) as usize],
-        )
-        .unwrap()
+        LogicHeightMap::new(w, h, 0, vec![ICoord2D { x: w, y: h }], vec![v; (w * h) as usize]).unwrap()
     }
 
     #[test]
@@ -1025,43 +897,21 @@ mod tests {
         // off the map: the border sample, normal straight up
         let (h, n) = m.height_map_height(-500.0, -500.0, true);
         assert_eq!(h, 80.0 * MAP_HEIGHT_SCALE);
-        assert_eq!(
-            n,
-            Some(Coord3D {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0
-            })
-        );
+        assert_eq!(n, Some(Coord3D { x: 0.0, y: 0.0, z: 1.0 }));
     }
 
     #[test]
     fn water_grid_off_by_default_and_on_after_enable() {
         let mut g = WaterGrid::default();
-        assert_eq!(
-            g.water_grid_height(5.0, 5.0),
-            Ok(WaterGridSample::NotOnGrid)
-        );
+        assert_eq!(g.water_grid_height(5.0, 5.0), Ok(WaterGridSample::NotOnGrid));
         g.enable_water_grid(true).unwrap();
         assert_eq!(g.mesh_len(), Some(131 * 131));
-        assert_eq!(
-            g.water_grid_height(5.0, 5.0),
-            Ok(WaterGridSample::OnGrid(0.0))
-        );
+        assert_eq!(g.water_grid_height(5.0, 5.0), Ok(WaterGridSample::OnGrid(0.0)));
         g.set_transform_angle(0.0, 0.0, 0.0, 7.0);
         g.set_mesh_height(0, 0, 2.5);
-        assert_eq!(
-            g.water_grid_height(5.0, 5.0),
-            Ok(WaterGridSample::OnGrid(9.5))
-        );
-        assert_eq!(
-            g.water_grid_height(-5.0, 5.0),
-            Ok(WaterGridSample::NotOnGrid)
-        );
-        assert_eq!(
-            g.water_grid_height(f32::NAN, 5.0),
-            Err(TerrainUndefined::NonFiniteWaterGridCoordinate)
-        );
+        assert_eq!(g.water_grid_height(5.0, 5.0), Ok(WaterGridSample::OnGrid(9.5)));
+        assert_eq!(g.water_grid_height(-5.0, 5.0), Ok(WaterGridSample::NotOnGrid));
+        assert_eq!(g.water_grid_height(f32::NAN, 5.0), Err(TerrainUndefined::NonFiniteWaterGridCoordinate));
     }
 
     #[test]

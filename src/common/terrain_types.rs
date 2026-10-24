@@ -140,9 +140,7 @@ pub const TERRAIN_TYPE_NAMES: [&str; 38] = [
 impl TerrainClass {
     /// The class with this enum value, or `None` outside `[0, TERRAIN_NUM_CLASSES)`.
     pub fn from_index(i: i32) -> Option<TerrainClass> {
-        usize::try_from(i)
-            .ok()
-            .and_then(|i| ALL_CLASSES.get(i).copied())
+        usize::try_from(i).ok().and_then(|i| ALL_CLASSES.get(i).copied())
     }
 }
 
@@ -261,10 +259,7 @@ pub struct TerrainTypeCollection {
 impl Default for TerrainTypeCollection {
     /// `TerrainTypeCollection()`: an empty list.
     fn default() -> Self {
-        TerrainTypeCollection {
-            name: AsciiString::default(),
-            terrain_list: Vec::new(),
-        }
+        TerrainTypeCollection { name: AsciiString::default(), terrain_list: Vec::new() }
     }
 }
 
@@ -356,11 +351,7 @@ static TERRAIN_TYPE_FIELDS: [FieldParse<TerrainType>; 5] = [
     FieldParse::new("Texture", parse_texture, UserData::None),
     FieldParse::new("BlendEdges", parse_blend_edges, UserData::None),
     FieldParse::new("Class", parse_class, UserData::Names(&TERRAIN_TYPE_NAMES)),
-    FieldParse::new(
-        "RestrictConstruction",
-        parse_restrict_construction,
-        UserData::None,
-    ),
+    FieldParse::new("RestrictConstruction", parse_restrict_construction, UserData::None),
     FieldParse::end(),
 ];
 
@@ -378,16 +369,11 @@ fn parse_blend_edges(ini: &mut Ini<'_>, t: &mut TerrainType, _ud: &UserData) -> 
 /// names', so the class always exists.
 fn parse_class(ini: &mut Ini<'_>, t: &mut TerrainType, ud: &UserData) -> IniResult<()> {
     let index = ini.parse_index_list(ud.names())?;
-    t.class =
-        TerrainClass::from_index(index).ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
+    t.class = TerrainClass::from_index(index).ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
     Ok(())
 }
 
-fn parse_restrict_construction(
-    ini: &mut Ini<'_>,
-    t: &mut TerrainType,
-    _ud: &UserData,
-) -> IniResult<()> {
+fn parse_restrict_construction(ini: &mut Ini<'_>, t: &mut TerrainType, _ud: &UserData) -> IniResult<()> {
     t.restrict_construction = ini.parse_bool()?;
     Ok(())
 }
@@ -401,21 +387,11 @@ mod tests {
         c.parse_terrain_definition(ini)
     }
 
-    static BLOCKS: [BlockParse<TerrainTypeCollection>; 1] = [BlockParse {
-        token: "Terrain",
-        parse: block,
-    }];
+    static BLOCKS: [BlockParse<TerrainTypeCollection>; 1] = [BlockParse { token: "Terrain", parse: block }];
 
     fn load(text: &[u8]) -> (TerrainTypeCollection, IniResult<()>) {
         let mut c = TerrainTypeCollection::new();
-        let r = Ini::load(
-            b"t.ini",
-            text,
-            IniLoadType::Overwrite,
-            None,
-            &BLOCKS,
-            &mut c,
-        );
+        let r = Ini::load(b"t.ini", text, IniLoadType::Overwrite, None, &BLOCKS, &mut c);
         (c, r)
     }
 
@@ -452,10 +428,7 @@ mod tests {
         assert!(!c.is_empty());
         // newest first, as upstream's list
         let names: Vec<&[u8]> = c.terrains().map(|t| t.name()).collect();
-        assert_eq!(
-            names,
-            vec![&b"dirt"[..], &b"Dirt"[..], &b"DefaultTerrain"[..]]
-        );
+        assert_eq!(names, vec![&b"dirt"[..], &b"Dirt"[..], &b"DefaultTerrain"[..]]);
     }
 
     #[test]
@@ -481,10 +454,7 @@ mod tests {
         c.new_terrain(b"Only");
         assert_eq!(c.len(), 1);
         assert!(!c.is_empty());
-        assert_eq!(
-            c.find_terrain(b"Only").map(|t| t.name()),
-            Some(&b"Only"[..])
-        );
+        assert_eq!(c.find_terrain(b"Only").map(|t| t.name()), Some(&b"Only"[..]));
     }
 
     #[test]

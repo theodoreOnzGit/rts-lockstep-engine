@@ -76,9 +76,7 @@ use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::common::game_type::INVALID_ID;
 use rts_lockstep_engine::common::geometry::{GeometryInfo, GeometryType};
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
-use rts_lockstep_engine::common::module::{
-    ModuleDataKind, MODULEINTERFACE_BODY, MODULEINTERFACE_DAMAGE,
-};
+use rts_lockstep_engine::common::module::{ModuleDataKind, MODULEINTERFACE_BODY, MODULEINTERFACE_DAMAGE};
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::modules::height_die_update::HeightDieUpdateModuleData;
@@ -98,26 +96,19 @@ const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9hd_o.bin")
 const XFER_FILE: &str = "l9hd_o.bin";
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::HeightDieUpdate(Arc::new(
-        HeightDieUpdateModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::HeightDieUpdate(Arc::new(HeightDieUpdateModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
 }
 
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind) {
-    let ModuleDataKind::HeightDieUpdate(d) = data else {
-        unreachable!("not a HeightDieUpdate")
-    };
+    let ModuleDataKind::HeightDieUpdate(d) = data else { unreachable!("not a HeightDieUpdate") };
     put_u32(v, d.target_height_above_terrain.to_bits());
     put_u32(v, u32::from(d.target_height_includes_structures));
     put_u32(v, u32::from(d.only_when_moving_down));
@@ -144,9 +135,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let log: Vec<String> = (0..nlog).map(|_| r.str()).collect();
         let x = r.xfer();
         let state: Vec<u32> = (0..10).map(|_| r.u32()).collect();
-        out.push(format!(
-            "op {i}: status {st} sleep {sleep} log {log:?} {x} state {state:x?}"
-        ));
+        out.push(format!("op {i}: status {st} sleep {sleep} log {log:?} {x} state {state:x?}"));
     }
     out
 }
@@ -210,20 +199,10 @@ fn gen_xy(g: &mut Gen) -> f32 {
 }
 
 fn gen_z(g: &mut Gen) -> f32 {
-    *pick(
-        g,
-        &[
-            &-5.0f32, &-1.0, &0.0, &0.5, &1.0, &2.0, &5.0, &10.0, &50.0, &3.0,
-        ],
-    )
+    *pick(g, &[&-5.0f32, &-1.0, &0.0, &0.5, &1.0, &2.0, &5.0, &10.0, &50.0, &3.0])
 }
 
-fn gen_case(
-    g: &mut Gen,
-    _data: &Option<ModuleDataKind>,
-    _n_up: usize,
-    _upgrades: &[String],
-) -> (Vec<u32>, Vec<[u32; 5]>) {
+fn gen_case(g: &mut Gen, _data: &Option<ModuleDataKind>, _n_up: usize, _upgrades: &[String]) -> (Vec<u32>, Vec<[u32; 5]>) {
     let max = *pick(g, &[&100.0f32, &1000.0]);
     let health = *pick(g, &[&max, &max, &1.0, &0.0]);
     let cfg = vec![
@@ -248,21 +227,9 @@ fn gen_case(
             0..=39 => [0, 0, 0, 0, 0],
             40..=54 => [1, bits(gen_xy(g)), bits(gen_xy(g)), bits(gen_z(g)), 0],
             55..=66 => match g.below(3) {
-                0 => [
-                    2,
-                    0,
-                    g.below(8),
-                    bits(*pick(g, &[&-2.0f32, &0.0, &1.0, &3.0, &8.0])),
-                    0,
-                ],
+                0 => [2, 0, g.below(8), bits(*pick(g, &[&-2.0f32, &0.0, &1.0, &3.0, &8.0])), 0],
                 1 => [2, 1, g.below(8), *pick(g, &[&1u32, &1, &2, &3, &15]), 0],
-                _ => [
-                    2,
-                    2,
-                    g.below(8),
-                    bits(*pick(g, &[&-1.0f32, &0.0, &2.0, &6.0, &20.0])),
-                    0,
-                ],
+                _ => [2, 2, g.below(8), bits(*pick(g, &[&-1.0f32, &0.0, &2.0, &6.0, &20.0])), 0],
             },
             67..=76 => [3, g.below(16), g.below(2), 0, 0],
             77..=80 => [4, g.below(2), 0, 0, 0],
@@ -286,22 +253,12 @@ struct Tally {
     psdestroys: u64,
 }
 
-fn rust_run(
-    ctx: Ctx,
-    data: ModuleDataKind,
-    cfg: &[u32],
-    ops: &[[u32; 5]],
-    tally: &RefCell<Tally>,
-) -> RunOut {
+fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally: &RefCell<Tally>) -> RunOut {
     let mut v = Vec::new();
     put_data(&mut v, &data);
 
     let mut w = World::new();
-    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics {
-        upgrade_center: ctx.center,
-        special_power_store: ctx.store,
-        ..Default::default()
-    });
+    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
     w.names = ctx.names;
     w.cuts.probe_effect_trace = true;
     w.cuts.trace = Some(Vec::new());
@@ -311,83 +268,26 @@ fn rust_run(
     if cfg[4] != 0 {
         let mut m = NewModule::plain(b"ProbeBody", b"ModuleTag_Body");
         m.interfaces = MODULEINTERFACE_BODY | MODULEINTERFACE_DAMAGE;
-        let mut p = ProbeModule::new(
-            ProbeAnswers::default(),
-            f32::from_bits(cfg[6]),
-            Default::default(),
-        );
+        let mut p = ProbeModule::new(ProbeAnswers::default(), f32::from_bits(cfg[6]), Default::default());
         p.health = f32::from_bits(cfg[5]);
         m.body = Some(UpdateBody::ModuleProbe(p));
         modules.push(m);
     }
-    modules.push(
-        rts_lockstep_engine::logic::modules::new_module(
-            w.next_object_id(),
-            b"HeightDieUpdate",
-            b"ModuleTag_HeightDie",
-            &data,
-        )
-        .unwrap()
-        .unwrap(),
-    );
-    let values = ObjectTemplateValues {
-        geometry: Some(GeometryInfo::new(
-            GeometryType::Box,
-            false,
-            f32::from_bits(cfg[10]),
-            f32::from_bits(cfg[8]),
-            f32::from_bits(cfg[9]),
-        )),
-        ..Default::default()
-    };
+    modules.push(rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"HeightDieUpdate", b"ModuleTag_HeightDie", &data).unwrap().unwrap());
+    let values = ObjectTemplateValues { geometry: Some(GeometryInfo::new(GeometryType::Box, false, f32::from_bits(cfg[10]), f32::from_bits(cfg[8]), f32::from_bits(cfg[9]))), ..Default::default() };
     let template = Arc::new(ThingTemplate::from_object_values(&values));
-    let me = w
-        .new_object(NewObject {
-            template,
-            status: Default::default(),
-            team: None,
-            modules,
-        })
-        .unwrap();
+    let me = w.new_object(NewObject { template, status: Default::default(), team: None, modules }).unwrap();
     assert_eq!(me, 1, "the first object of a fresh world has the id 1");
     for k in 0..3 {
-        let values = ObjectTemplateValues {
-            geometry: Some(GeometryInfo::new(
-                GeometryType::Box,
-                false,
-                f32::from_bits(cfg[11 + k]),
-                1.0,
-                1.0,
-            )),
-            ..Default::default()
-        };
+        let values = ObjectTemplateValues { geometry: Some(GeometryInfo::new(GeometryType::Box, false, f32::from_bits(cfg[11 + k]), 1.0, 1.0)), ..Default::default() };
         let template = Arc::new(ThingTemplate::from_object_values(&values));
-        let id = w
-            .new_object(NewObject {
-                template,
-                status: Default::default(),
-                team: None,
-                modules: Vec::new(),
-            })
-            .unwrap();
+        let id = w.new_object(NewObject { template, status: Default::default(), team: None, modules: Vec::new() }).unwrap();
         assert_eq!(id, 2 + k as i32);
     }
-    w.set_position(
-        me,
-        &Coord3D {
-            x: f32::from_bits(cfg[1]),
-            y: f32::from_bits(cfg[2]),
-            z: f32::from_bits(cfg[3]),
-        },
-    );
+    w.set_position(me, &Coord3D { x: f32::from_bits(cfg[1]), y: f32::from_bits(cfg[2]), z: f32::from_bits(cfg[3]) });
     w.objects.find_mut(me).unwrap().contained_by = if cfg[7] != 0 { 2 } else { INVALID_ID };
     let idx = w.find_module(me, b"HeightDieUpdate").unwrap();
-    let u = w
-        .update_handle_of_module(ModuleHandle {
-            object: me,
-            index: idx,
-        })
-        .expect("an update module");
+    let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
     let mut saved: Vec<u8> = Vec::new();
     let mut excluded = false;
     for phase in 0..=ops.len() {
@@ -399,39 +299,23 @@ fn rust_run(
             let o = &ops[phase - 1];
             match o[0] {
                 0 => {
-                    sleep = w
-                        .with_body(u, |b, w| b.update(w, u))
-                        .expect("the module is in its slot")
-                        .0;
+                    sleep = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
                     tally.borrow_mut().updates += 1;
                 }
-                1 => w.set_position(
-                    me,
-                    &Coord3D {
-                        x: f32::from_bits(o[1]),
-                        y: f32::from_bits(o[2]),
-                        z: f32::from_bits(o[3]),
-                    },
-                ),
+                1 => w.set_position(me, &Coord3D { x: f32::from_bits(o[1]), y: f32::from_bits(o[2]), z: f32::from_bits(o[3]) }),
                 2 => match o[1] {
                     0 => w.cuts.terrain_ground[o[2] as usize & 7] = f32::from_bits(o[3]),
                     1 => w.cuts.terrain_layer[o[2] as usize & 7] = o[3] as i32,
                     _ => w.cuts.terrain_layer_height[o[2] as usize & 7] = f32::from_bits(o[3]),
                 },
                 3 => {
-                    let mut ids: Vec<i32> = (0..4)
-                        .filter(|k| o[1] >> k & 1 != 0)
-                        .map(|k| k + 1)
-                        .collect();
+                    let mut ids: Vec<i32> = (0..4).filter(|k| o[1] >> k & 1 != 0).map(|k| k + 1).collect();
                     if o[2] != 0 {
                         ids.reverse();
                     }
                     w.cuts.range_scan = ids;
                 }
-                4 => {
-                    w.objects.find_mut(me).unwrap().contained_by =
-                        if o[1] != 0 { 2 } else { INVALID_ID }
-                }
+                4 => w.objects.find_mut(me).unwrap().contained_by = if o[1] != 0 { 2 } else { INVALID_ID },
                 5 => w.set_frame(o[1]),
                 6..=8 => {
                     let r = run_xfer(&mut w, me, idx as usize, o[0] - 6, &saved, XFER_FILE);
@@ -450,13 +334,7 @@ fn rust_run(
             w.cuts.trace = Some(Vec::new());
         }
         if w.cuts.module_errors.len() > errors_before {
-            assert!(
-                w.cuts.module_errors[errors_before..]
-                    .iter()
-                    .all(|(_, e)| e.is_undefined()),
-                "{:?}",
-                w.cuts.module_errors
-            );
+            assert!(w.cuts.module_errors[errors_before..].iter().all(|(_, e)| e.is_undefined()), "{:?}", w.cuts.module_errors);
             excluded = true;
         }
         let trace = w.cuts.trace.take().unwrap_or_default();
@@ -466,23 +344,12 @@ fn rust_run(
         for t in trace {
             if t.starts_with("cut ") {
                 match cut_iter.next() {
-                    Some(CutCall::TerrainGetGroundHeight { x, y }) => {
-                        log.push(format!("ground {:08x} {:08x}", x.to_bits(), y.to_bits()))
-                    }
+                    Some(CutCall::TerrainGetGroundHeight { x, y }) => log.push(format!("ground {:08x} {:08x}", x.to_bits(), y.to_bits())),
                     Some(CutCall::TerrainGetHighestLayerForDestination { x, y, z }) => {
                         tally.borrow_mut().layers += 1;
-                        log.push(format!(
-                            "highlayer {:08x} {:08x} {:08x}",
-                            x.to_bits(),
-                            y.to_bits(),
-                            z.to_bits()
-                        ))
+                        log.push(format!("highlayer {:08x} {:08x} {:08x}", x.to_bits(), y.to_bits(), z.to_bits()))
                     }
-                    Some(CutCall::TerrainGetLayerHeight { x, y, layer }) => log.push(format!(
-                        "layerheight {:08x} {:08x} {layer}",
-                        x.to_bits(),
-                        y.to_bits()
-                    )),
+                    Some(CutCall::TerrainGetLayerHeight { x, y, layer }) => log.push(format!("layerheight {:08x} {:08x} {layer}", x.to_bits(), y.to_bits())),
                     Some(CutCall::PartitionIterateStructuresInRange { object, range }) => {
                         tally.borrow_mut().scans += 1;
                         // FROM_BOUNDINGSPHERE_3D is 3
@@ -512,16 +379,10 @@ fn rust_run(
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let state =
-            w.objects
-                .find(me)
-                .unwrap()
-                .behaviors
-                .iter()
-                .find_map(|b| match b.body.as_ref() {
-                    Some(UpdateBody::HeightDieUpdate(m)) => Some(m.state_words()),
-                    _ => None,
-                });
+        let state = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
+            Some(UpdateBody::HeightDieUpdate(m)) => Some(m.state_words()),
+            _ => None,
+        });
         for s in state.expect("the module is back in its slot") {
             put_u32(&mut v, s);
         }
@@ -536,11 +397,7 @@ fn rust_run(
         });
         put_u32(&mut v, health.unwrap_or(0));
     }
-    RunOut {
-        dump: v,
-        keys: Vec::new(),
-        excluded,
-    }
+    RunOut { dump: v, keys: Vec::new(), excluded }
 }
 
 #[test]
@@ -568,11 +425,7 @@ fn height_die_update_matches_upstream() {
         c.cases, c.read_failed, c.excluded, c.ops_run, t.updates, t.xfers, t.effects, t.kills, t.scans, t.layers, t.psdestroys
     );
     assert!(
-        c.read_failed * 40 > c.cases as u64
-            && c.ops_run * 5 > c.cases as u64 * 4
-            && t.kills * 10 > c.cases as u64
-            && t.scans * 20 > c.cases as u64
-            && t.psdestroys * 20 > c.cases as u64,
+        c.read_failed * 40 > c.cases as u64 && c.ops_run * 5 > c.cases as u64 * 4 && t.kills * 10 > c.cases as u64 && t.scans * 20 > c.cases as u64 && t.psdestroys * 20 > c.cases as u64,
         "the generator must reach every path"
     );
 }

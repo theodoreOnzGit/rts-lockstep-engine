@@ -71,9 +71,7 @@ impl Default for Handicap {
 impl Handicap {
     /// `Handicap()`: every multiplier at 1.0.
     pub fn new() -> Self {
-        Handicap {
-            handicaps: [[1.0f32; THING_TYPE_COUNT]; HANDICAP_TYPE_COUNT],
-        }
+        Handicap { handicaps: [[1.0f32; THING_TYPE_COUNT]; HANDICAP_TYPE_COUNT] }
     }
 
     /// `init()`: every multiplier back to 1.0.
@@ -103,11 +101,7 @@ impl Handicap {
     /// `getHandicap(t, tmpl)`: the multiplier for `t` on a thing that is a
     /// structure (`is_structure`) or not.
     pub fn get_handicap(&self, ht: HandicapType, is_structure: bool) -> f32 {
-        let tt = if is_structure {
-            ThingType::Buildings
-        } else {
-            ThingType::Generic
-        };
+        let tt = if is_structure { ThingType::Buildings } else { ThingType::Generic };
         self.handicaps[ht as usize][tt as usize]
     }
 }
@@ -133,8 +127,7 @@ mod tests {
     fn read_from_dict_keeps_the_entries_it_does_not_find() {
         let mut keys = NameKeyGenerator::new();
         let mut dict = Dict::new();
-        dict.set_real(keys.name_to_key(b"HANDICAP_BUILDTIME_GENERIC"), 2.0)
-            .expect("set");
+        dict.set_real(keys.name_to_key(b"HANDICAP_BUILDTIME_GENERIC"), 2.0).expect("set");
         let mut h = Handicap::new();
         h.read_from_dict(&mut keys, &dict);
         assert_eq!(h.get_handicap(HandicapType::BuildTime, false), 2.0);

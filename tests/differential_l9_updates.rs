@@ -74,8 +74,8 @@
 
 mod support;
 
-use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
+use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::common::module::ObjectId;
 use rts_lockstep_engine::common::random_value::RandomValues;
 use rts_lockstep_engine::common::xfer::{Snapshot, Xfer};
@@ -83,18 +83,12 @@ use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
-use rts_lockstep_engine::logic::modules::base_regenerate_update::{
-    BaseRegenHost, BaseRegenerateUpdate, BaseRegenerateUpdateModuleData,
-};
-use rts_lockstep_engine::logic::modules::deletion_update::{
-    DeletionUpdate, DeletionUpdateModuleData,
-};
-use rts_lockstep_engine::logic::modules::lifetime_update::{
-    LifetimeUpdate, LifetimeUpdateModuleData,
-};
+use rts_lockstep_engine::logic::modules::base_regenerate_update::{BaseRegenHost, BaseRegenerateUpdate, BaseRegenerateUpdateModuleData};
+use rts_lockstep_engine::logic::modules::deletion_update::{DeletionUpdate, DeletionUpdateModuleData};
 use rts_lockstep_engine::logic::modules::smart_bomb_target_homing_update::{
     SmartBombHost, SmartBombTargetHomingUpdate, SmartBombTargetHomingUpdateModuleData,
 };
+use rts_lockstep_engine::logic::modules::lifetime_update::{LifetimeUpdate, LifetimeUpdateModuleData};
 use rts_lockstep_engine::logic::modules::UpdateHost;
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int};
@@ -149,15 +143,8 @@ fn read_block(ini: &mut Ini<'_>, s: &mut Slot) -> IniResult<()> {
     match s.kind {
         0 => s.life = Some(LifetimeUpdateModuleData::friend_new_module_data(Some(ini))?),
         1 => s.del = Some(DeletionUpdateModuleData::friend_new_module_data(Some(ini))?),
-        2 => {
-            s.regen = Some(BaseRegenerateUpdateModuleData::friend_new_module_data(
-                Some(ini),
-            )?)
-        }
-        _ => {
-            s.smart =
-                Some(SmartBombTargetHomingUpdateModuleData::friend_new_module_data(Some(ini))?)
-        }
+        2 => s.regen = Some(BaseRegenerateUpdateModuleData::friend_new_module_data(Some(ini))?),
+        _ => s.smart = Some(SmartBombTargetHomingUpdateModuleData::friend_new_module_data(Some(ini))?),
     }
     Ok(())
 }
@@ -230,47 +217,16 @@ impl BaseRegenHost for RegenHost {
 }
 
 /// The Rust side of a BaseRegenerateUpdate program: exactly the words `wrap_l9updates.cpp` writes.
-fn rust_regen_run(
-    text: &[u8],
-    pct: f32,
-    delay: u32,
-    seed: u32,
-    frame: u32,
-    ops: &[[u32; 6]],
-) -> Run {
-    let mut slot = Slot {
-        kind: 2,
-        ..Default::default()
-    };
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
-    if Ini::load(
-        b"l9updates.ini",
-        text,
-        IniLoadType::Overwrite,
-        None,
-        &blocks,
-        &mut slot,
-    )
-    .is_err()
-    {
-        return Run {
-            failed: true,
-            words: Vec::new(),
-        };
+fn rust_regen_run(text: &[u8], pct: f32, delay: u32, seed: u32, frame: u32, ops: &[[u32; 6]]) -> Run {
+    let mut slot = Slot { kind: 2, ..Default::default() };
+    let blocks = [BlockParse { token: "D", parse: read_block }];
+    if Ini::load(b"l9updates.ini", text, IniLoadType::Overwrite, None, &blocks, &mut slot).is_err() {
+        return Run { failed: true, words: Vec::new() };
     }
-    let mut host = RegenHost {
-        frame,
-        pct,
-        delay,
-        ..Default::default()
-    };
+    let mut host = RegenHost { frame, pct, delay, ..Default::default() };
     let mut rng = RandomValues::default();
     rng.init_game_logic_random(seed);
-    let mut regen =
-        BaseRegenerateUpdate::new(1, slot.regen.map(Arc::new), &mut host).expect("data present");
+    let mut regen = BaseRegenerateUpdate::new(1, slot.regen.map(Arc::new), &mut host).expect("data present");
     let mut words = Vec::new();
     let mut last_sleep: u32 = 1;
     let mut saved: Vec<u8> = Vec::new();
@@ -291,16 +247,7 @@ fn rust_regen_run(
         }
         let woke = u32::from(host.awakes > 0);
         let last_heal = host.heals.last().map_or(0, |h| h.to_bits());
-        words.extend_from_slice(&[
-            host.awakes,
-            host.last_wake,
-            woke,
-            woke,
-            last_sleep,
-            host.heals.len() as u32,
-            last_heal,
-            host.health.to_bits(),
-        ]);
+        words.extend_from_slice(&[host.awakes, host.last_wake, woke, woke, last_sleep, host.heals.len() as u32, last_heal, host.health.to_bits()]);
         words.extend_from_slice(&rng.logic);
         match op[0] {
             5 => {
@@ -344,21 +291,11 @@ fn rust_regen_run(
             _ => {}
         }
     }
-    Run {
-        failed: false,
-        words,
-    }
+    Run { failed: false, words }
 }
 
 /// The C++ side of a BaseRegenerateUpdate program.
-fn cpp_regen_run(
-    text: &[u8],
-    pct: f32,
-    delay: u32,
-    seed: u32,
-    frame: u32,
-    ops: &[[u32; 6]],
-) -> Run {
+fn cpp_regen_run(text: &[u8], pct: f32, delay: u32, seed: u32, frame: u32, ops: &[[u32; 6]]) -> Run {
     let flat: Vec<u32> = ops.iter().flat_map(|o| o.iter().copied()).collect();
     let mut out = vec![0u32; 1 << 16];
     let mut out_len: c_int = 0;
@@ -366,9 +303,7 @@ fn cpp_regen_run(
     let mut code: u32 = 0;
     let mut msg = vec![0 as c_char; 1024];
     let xfer_file = CString::new(XFER_FILE_PATH).expect("no NUL in the path");
-    let _guard = cpp::GLOBAL_RNG_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _guard = cpp::GLOBAL_RNG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         cpp::ref_l9updates_regen_run(
             text.as_ptr() as *const c_char,
@@ -390,19 +325,10 @@ fn cpp_regen_run(
         );
     }
     if status != 0 {
-        return Run {
-            failed: true,
-            words: Vec::new(),
-        };
+        return Run { failed: true, words: Vec::new() };
     }
-    assert!(
-        (out_len as usize) <= out.len(),
-        "the wrapper's output overflowed its buffer"
-    );
-    Run {
-        failed: false,
-        words: out[..out_len as usize].to_vec(),
-    }
+    assert!((out_len as usize) <= out.len(), "the wrapper's output overflowed its buffer");
+    Run { failed: false, words: out[..out_len as usize].to_vec() }
 }
 
 /// One random BaseRegenerateUpdate program: the INI text (empty, or with a field the class does not have), the global
@@ -423,11 +349,7 @@ fn gen_regen_program(g: &mut Gen) -> (Vec<u8>, f32, u32, u32, u32, Vec<[u32; 6]>
         _ => g.uniform(0.0, 0.2),
     };
     let delay = g.below(300);
-    let frame = if g.below(20) == 0 {
-        0xFFFF_FFF0u32.wrapping_add(g.below(16))
-    } else {
-        g.below(1_000_000)
-    };
+    let frame = if g.below(20) == 0 { 0xFFFF_FFF0u32.wrapping_add(g.below(16)) } else { g.below(1_000_000) };
     let n = 1 + g.below(40) as usize;
     let mut ops = Vec::with_capacity(n);
     for _ in 0..n {
@@ -467,50 +389,21 @@ struct Run {
 
 /// The Rust side of a program: exactly the words `wrap_l9updates.cpp` writes for it.
 fn rust_run(p: &Program) -> Run {
-    let mut slot = Slot {
-        kind: p.kind,
-        ..Default::default()
-    };
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
-    if Ini::load(
-        b"l9updates.ini",
-        &p.text,
-        IniLoadType::Overwrite,
-        None,
-        &blocks,
-        &mut slot,
-    )
-    .is_err()
-    {
-        return Run {
-            failed: true,
-            words: Vec::new(),
-        };
+    let mut slot = Slot { kind: p.kind, ..Default::default() };
+    let blocks = [BlockParse { token: "D", parse: read_block }];
+    if Ini::load(b"l9updates.ini", &p.text, IniLoadType::Overwrite, None, &blocks, &mut slot).is_err() {
+        return Run { failed: true, words: Vec::new() };
     }
-    let mut host = Host {
-        frame: p.frame,
-        hulk: p.hulk,
-        over: p.over,
-        ..Default::default()
-    };
+    let mut host = Host { frame: p.frame, hulk: p.hulk, over: p.over, ..Default::default() };
     let mut rng = RandomValues::default();
     rng.init_game_logic_random(p.seed);
     let obj: ObjectId = 1;
     let mut life: Option<LifetimeUpdate> = None;
     let mut del: Option<DeletionUpdate> = None;
     if p.kind == 0 {
-        life = Some(
-            LifetimeUpdate::new(obj, slot.life.map(Arc::new), &mut host, &mut rng)
-                .expect("data present"),
-        );
+        life = Some(LifetimeUpdate::new(obj, slot.life.map(Arc::new), &mut host, &mut rng).expect("data present"));
     } else {
-        del = Some(
-            DeletionUpdate::new(obj, slot.del.map(Arc::new), &mut host, &mut rng)
-                .expect("data present"),
-        );
+        del = Some(DeletionUpdate::new(obj, slot.del.map(Arc::new), &mut host, &mut rng).expect("data present"));
     }
     let mut words = Vec::new();
     let mut last_sleep: u32 = 1;
@@ -518,46 +411,23 @@ fn rust_run(p: &Program) -> Run {
     for op in &p.ops {
         match op[0] {
             0 => {
-                last_sleep = if let Some(l) = life.as_mut() {
-                    l.update(&mut host).0
-                } else {
-                    del.as_mut().unwrap().update(&mut host).0
-                };
+                last_sleep = if let Some(l) = life.as_mut() { l.update(&mut host).0 } else { del.as_mut().unwrap().update(&mut host).0 };
             }
             1 => {
                 if let Some(l) = life.as_mut() {
                     l.set_lifetime_range(&mut host, &mut rng, op[1], op[2]);
                 } else {
-                    del.as_mut()
-                        .unwrap()
-                        .set_lifetime_range(&mut host, &mut rng, op[1], op[2]);
+                    del.as_mut().unwrap().set_lifetime_range(&mut host, &mut rng, op[1], op[2]);
                 }
             }
             2 => host.frame = op[1],
             _ => {}
         }
-        let die = if let Some(l) = life.as_ref() {
-            l.get_die_frame()
-        } else {
-            del.as_ref().unwrap().get_die_frame()
-        };
+        let die = if let Some(l) = life.as_ref() { l.get_die_frame() } else { del.as_ref().unwrap().get_die_frame() };
         let woke = u32::from(host.awakes > 0);
-        words.extend_from_slice(&[
-            die,
-            host.kills,
-            host.destroys,
-            host.awakes,
-            host.last_wake,
-            woke,
-            woke,
-            last_sleep,
-        ]);
+        words.extend_from_slice(&[die, host.kills, host.destroys, host.awakes, host.last_wake, woke, woke, last_sleep]);
         words.extend_from_slice(&rng.logic);
-        let snap: &mut dyn Snapshot = if let Some(l) = life.as_mut() {
-            l
-        } else {
-            del.as_mut().unwrap()
-        };
+        let snap: &mut dyn Snapshot = if let Some(l) = life.as_mut() { l } else { del.as_mut().unwrap() };
         match op[0] {
             3 => {
                 let mut x = XferSave::new();
@@ -600,10 +470,7 @@ fn rust_run(p: &Program) -> Run {
             _ => {}
         }
     }
-    Run {
-        failed: false,
-        words,
-    }
+    Run { failed: false, words }
 }
 
 /// The C++ side of a program: the same words, from `ref_l9updates_run`.
@@ -615,9 +482,7 @@ fn cpp_run(p: &Program) -> Run {
     let mut code: u32 = 0;
     let mut msg = vec![0 as c_char; 1024];
     let xfer_file = CString::new(XFER_FILE_PATH).expect("no NUL in the path");
-    let _guard = cpp::GLOBAL_RNG_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _guard = cpp::GLOBAL_RNG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         cpp::ref_l9updates_run(
             p.kind as c_int,
@@ -640,19 +505,10 @@ fn cpp_run(p: &Program) -> Run {
         );
     }
     if status != 0 {
-        return Run {
-            failed: true,
-            words: Vec::new(),
-        };
+        return Run { failed: true, words: Vec::new() };
     }
-    assert!(
-        (out_len as usize) <= out.len(),
-        "the wrapper's output overflowed its buffer"
-    );
-    Run {
-        failed: false,
-        words: out[..out_len as usize].to_vec(),
-    }
+    assert!((out_len as usize) <= out.len(), "the wrapper's output overflowed its buffer");
+    Run { failed: false, words: out[..out_len as usize].to_vec() }
 }
 
 /// One random program of `kind`.
@@ -676,11 +532,7 @@ fn gen_program(g: &mut Gen, kind: u32) -> Program {
         }
     }
     text.push_str("End\n");
-    let frame = if g.below(20) == 0 {
-        0xFFFF_FFF0u32.wrapping_add(g.below(16))
-    } else {
-        g.below(1_000_000)
-    };
+    let frame = if g.below(20) == 0 { 0xFFFF_FFF0u32.wrapping_add(g.below(16)) } else { g.below(1_000_000) };
     let over = match g.below(3) {
         0 => -1,
         1 => g.below(5_000) as i32,
@@ -694,40 +546,18 @@ fn gen_program(g: &mut Gen, kind: u32) -> Program {
         let op = match g.below(100) {
             0..=29 => [0, 0, 0, 0, 0, 0],
             30..=54 => [1, a, b, 0, 0, 0],
-            55..=69 => [
-                2,
-                if g.below(4) == 0 {
-                    0xFFFF_FFFF
-                } else {
-                    g.below(2_000_000)
-                },
-                0,
-                0,
-                0,
-                0,
-            ],
+            55..=69 => [2, if g.below(4) == 0 { 0xFFFF_FFFF } else { g.below(2_000_000) }, 0, 0, 0, 0],
             70..=79 => [3, 0, 0, 0, 0, 0],
             80..=89 => [4, 0, 0, 0, 0, 0],
             _ => [5, 0, 0, 0, 0, 0],
         };
         ops.push(op);
     }
-    Program {
-        kind,
-        text: text.into_bytes(),
-        seed: g.u32(),
-        frame,
-        hulk: g.below(2) == 1,
-        over,
-        ops,
-    }
+    Program { kind, text: text.into_bytes(), seed: g.u32(), frame, hulk: g.below(2) == 1, over, ops }
 }
 
 fn cases() -> u32 {
-    std::env::var("L9U_CASES")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1500)
+    std::env::var("L9U_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(1500)
 }
 
 fn compare_module(name: &str, kind: u32, seed: u64) {
@@ -740,24 +570,15 @@ fn compare_module(name: &str, kind: u32, seed: u64) {
         let r = rust_run(&p);
         let c = cpp_run(&p);
         programs_run += 1;
-        check.eq(r.failed, c.failed, || {
-            format!(
-                "{name} program {case}: data status of {:?}",
-                String::from_utf8_lossy(&p.text)
-            )
-        });
+        check.eq(r.failed, c.failed, || format!("{name} program {case}: data status of {:?}", String::from_utf8_lossy(&p.text)));
         if c.failed {
             data_failures += 1;
             continue;
         }
         ops_run += p.ops.len() as u64;
-        check.eq(r.words.len(), c.words.len(), || {
-            format!("{name} program {case}: word count, {p:?}")
-        });
+        check.eq(r.words.len(), c.words.len(), || format!("{name} program {case}: word count, {p:?}"));
         for (i, (rw, cw)) in r.words.iter().zip(c.words.iter()).enumerate() {
-            check.eq(*rw, *cw, || {
-                format!("{name} program {case}: word {i}, {p:?}")
-            });
+            check.eq(*rw, *cw, || format!("{name} program {case}: word {i}, {p:?}"));
         }
     }
     println!("L9U {name}: {programs_run} programs, {ops_run} ops, {data_failures} with a refused INI block");
@@ -790,48 +611,22 @@ fn null_module_data_is_an_error() {
 fn accessors_report_the_module_and_its_data() {
     // The accessors are not reached by the differential programs (they are for the world's wiring): the module's
     // scheduling base, its phase, its data, and the constructor's wake frame (the die frame plus nothing).
-    let mut host = Host {
-        frame: 10,
-        hulk: false,
-        over: -1,
-        ..Default::default()
-    };
+    let mut host = Host { frame: 10, hulk: false, over: -1, ..Default::default() };
     let mut rng = RandomValues::default();
     rng.init_game_logic_random(7);
-    let data = Arc::new(LifetimeUpdateModuleData {
-        min_frames: 3,
-        max_frames: 3,
-        ..Default::default()
-    });
+    let data = Arc::new(LifetimeUpdateModuleData { min_frames: 3, max_frames: 3, ..Default::default() });
     let lu = LifetimeUpdate::new(4, Some(data.clone()), &mut host, &mut rng).expect("data present");
     assert_eq!(lu.module_data().min_frames, 3);
     assert_eq!(lu.module_data().max_frames, 3);
-    assert_eq!(
-        lu.update_module().get_update_phase(),
-        rts_lockstep_engine::logic::module::update_module::SleepyUpdatePhase::Normal
-    );
+    assert_eq!(lu.update_module().get_update_phase(), rts_lockstep_engine::logic::module::update_module::SleepyUpdatePhase::Normal);
     assert_eq!(lu.get_die_frame(), 13);
-    assert_eq!(
-        (host.awakes, host.last_wake),
-        (1, 13),
-        "the constructor wakes the module at its die frame"
-    );
-    let ddata = Arc::new(DeletionUpdateModuleData {
-        min_frames: 5,
-        max_frames: 5,
-        ..Default::default()
-    });
-    let mut host = Host {
-        frame: 20,
-        ..Default::default()
-    };
+    assert_eq!((host.awakes, host.last_wake), (1, 13), "the constructor wakes the module at its die frame");
+    let ddata = Arc::new(DeletionUpdateModuleData { min_frames: 5, max_frames: 5, ..Default::default() });
+    let mut host = Host { frame: 20, ..Default::default() };
     let du = DeletionUpdate::new(4, Some(ddata), &mut host, &mut rng).expect("data present");
     assert_eq!(du.module_data().min_frames, 5);
     assert_eq!(du.get_die_frame(), 25);
-    assert_eq!(
-        du.update_module().get_update_phase(),
-        rts_lockstep_engine::logic::module::update_module::SleepyUpdatePhase::Normal
-    );
+    assert_eq!(du.update_module().get_update_phase(), rts_lockstep_engine::logic::module::update_module::SleepyUpdatePhase::Normal);
 }
 
 fn compare_regen(seed: u64) {
@@ -844,23 +639,14 @@ fn compare_regen(seed: u64) {
         let r = rust_regen_run(&text, pct, delay, pseed, frame, &ops);
         let c = cpp_regen_run(&text, pct, delay, pseed, frame, &ops);
         programs_run += 1;
-        check.eq(r.failed, c.failed, || {
-            format!(
-                "{name} program {case}: data status of {:?}",
-                String::from_utf8_lossy(&text)
-            )
-        });
+        check.eq(r.failed, c.failed, || format!("{name} program {case}: data status of {:?}", String::from_utf8_lossy(&text)));
         if c.failed {
             data_failures += 1;
             continue;
         }
         ops_run += ops.len() as u64;
-        let input = || {
-            format!("{name} program {case}: pct {pct:?} delay {delay} seed {pseed} frame {frame} ops {ops:?}")
-        };
-        check.eq(r.words.len(), c.words.len(), || {
-            format!("{}: word count", input())
-        });
+        let input = || format!("{name} program {case}: pct {pct:?} delay {delay} seed {pseed} frame {frame} ops {ops:?}");
+        check.eq(r.words.len(), c.words.len(), || format!("{}: word count", input()));
         for (i, (rw, cw)) in r.words.iter().zip(c.words.iter()).enumerate() {
             check.eq(*rw, *cw, || format!("{}: word {i}", input()));
         }
@@ -920,68 +706,29 @@ fn bits3(c: Coord3D) -> [u32; 3] {
 
 /// The Rust side of a SmartBombTargetHomingUpdate program.
 fn rust_smart_run(text: &[u8], seed: u32, frame: u32, ops: &[[u32; 6]]) -> Run {
-    let mut slot = Slot {
-        kind: 3,
-        ..Default::default()
-    };
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
-    if Ini::load(
-        b"l9updates.ini",
-        text,
-        IniLoadType::Overwrite,
-        None,
-        &blocks,
-        &mut slot,
-    )
-    .is_err()
-    {
-        return Run {
-            failed: true,
-            words: Vec::new(),
-        };
+    let mut slot = Slot { kind: 3, ..Default::default() };
+    let blocks = [BlockParse { token: "D", parse: read_block }];
+    if Ini::load(b"l9updates.ini", text, IniLoadType::Overwrite, None, &blocks, &mut slot).is_err() {
+        return Run { failed: true, words: Vec::new() };
     }
-    let mut host = SmartHost {
-        frame,
-        ..Default::default()
-    };
+    let mut host = SmartHost { frame, ..Default::default() };
     let mut rng = RandomValues::default();
     rng.init_game_logic_random(seed);
-    let mut sb = SmartBombTargetHomingUpdate::new(1, slot.smart.map(Arc::new), &mut host)
-        .expect("data present");
+    let mut sb = SmartBombTargetHomingUpdate::new(1, slot.smart.map(Arc::new), &mut host).expect("data present");
     let mut words = Vec::new();
     let mut last_sleep: u32 = 1;
     let mut saved: Vec<u8> = Vec::new();
     for op in ops {
         match op[0] {
             0 => last_sleep = sb.update(&mut host).0,
-            1 => sb.set_target_position(Coord3D {
-                x: f32::from_bits(op[1]),
-                y: f32::from_bits(op[2]),
-                z: f32::from_bits(op[3]),
-            }),
+            1 => sb.set_target_position(Coord3D { x: f32::from_bits(op[1]), y: f32::from_bits(op[2]), z: f32::from_bits(op[3]) }),
             2 => host.frame = op[1],
             3 => host.above = op[1] & 1 != 0,
-            4 => {
-                host.pos = Coord3D {
-                    x: f32::from_bits(op[1]),
-                    y: f32::from_bits(op[2]),
-                    z: f32::from_bits(op[3]),
-                }
-            }
+            4 => host.pos = Coord3D { x: f32::from_bits(op[1]), y: f32::from_bits(op[2]), z: f32::from_bits(op[3]) },
             _ => {}
         }
         let woke = u32::from(host.awakes > 0);
-        words.extend_from_slice(&[
-            host.awakes,
-            host.last_wake,
-            woke,
-            woke,
-            last_sleep,
-            u32::from(sb.target_received()),
-        ]);
+        words.extend_from_slice(&[host.awakes, host.last_wake, woke, woke, last_sleep, u32::from(sb.target_received())]);
         words.extend_from_slice(&bits3(sb.target()));
         words.extend_from_slice(&bits3(host.pos));
         words.extend_from_slice(&rng.logic);
@@ -1027,10 +774,7 @@ fn rust_smart_run(text: &[u8], seed: u32, frame: u32, ops: &[[u32; 6]]) -> Run {
             _ => {}
         }
     }
-    Run {
-        failed: false,
-        words,
-    }
+    Run { failed: false, words }
 }
 
 /// The C++ side of a SmartBombTargetHomingUpdate program.
@@ -1042,9 +786,7 @@ fn cpp_smart_run(text: &[u8], seed: u32, frame: u32, ops: &[[u32; 6]]) -> Run {
     let mut code: u32 = 0;
     let mut msg = vec![0 as c_char; 1024];
     let xfer_file = CString::new(XFER_FILE_PATH).expect("no NUL in the path");
-    let _guard = cpp::GLOBAL_RNG_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _guard = cpp::GLOBAL_RNG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         cpp::ref_l9updates_smart_run(
             text.as_ptr() as *const c_char,
@@ -1064,19 +806,10 @@ fn cpp_smart_run(text: &[u8], seed: u32, frame: u32, ops: &[[u32; 6]]) -> Run {
         );
     }
     if status != 0 {
-        return Run {
-            failed: true,
-            words: Vec::new(),
-        };
+        return Run { failed: true, words: Vec::new() };
     }
-    assert!(
-        (out_len as usize) <= out.len(),
-        "the wrapper's output overflowed its buffer"
-    );
-    Run {
-        failed: false,
-        words: out[..out_len as usize].to_vec(),
-    }
+    assert!((out_len as usize) <= out.len(), "the wrapper's output overflowed its buffer");
+    Run { failed: false, words: out[..out_len as usize].to_vec() }
 }
 
 /// One random SmartBombTargetHomingUpdate program: the INI text (the scalar, or a refused field), the seed and frame, and
@@ -1087,11 +820,7 @@ fn gen_smart_program(g: &mut Gen) -> (Vec<u8>, u32, u32, Vec<[u32; 6]>) {
     match g.below(12) {
         0 => text.push_str("CourseCorrectionScalar = bogus\n"),
         1 => {}
-        _ => text.push_str(&format!(
-            "CourseCorrectionScalar = {}\n",
-            [0.0f32, 0.5, 0.99, 1.0, 1.5, -0.25][g.below(6) as usize]
-                + g.uniform(-0.001, 0.001) * (g.below(2) as f32)
-        )),
+        _ => text.push_str(&format!("CourseCorrectionScalar = {}\n", [0.0f32, 0.5, 0.99, 1.0, 1.5, -0.25][g.below(6) as usize] + g.uniform(-0.001, 0.001) * (g.below(2) as f32))),
     }
     text.push_str("End\n");
     let float = |g: &mut Gen| -> u32 {
@@ -1131,26 +860,14 @@ fn compare_smart(seed: u64) {
         let r = rust_smart_run(&text, pseed, frame, &ops);
         let c = cpp_smart_run(&text, pseed, frame, &ops);
         programs_run += 1;
-        check.eq(r.failed, c.failed, || {
-            format!(
-                "{name} program {case}: data status of {:?}",
-                String::from_utf8_lossy(&text)
-            )
-        });
+        check.eq(r.failed, c.failed, || format!("{name} program {case}: data status of {:?}", String::from_utf8_lossy(&text)));
         if c.failed {
             data_failures += 1;
             continue;
         }
         ops_run += ops.len() as u64;
-        let input = || {
-            format!(
-                "{name} program {case}: seed {pseed} frame {frame} ops {ops:?} text {:?}",
-                String::from_utf8_lossy(&text)
-            )
-        };
-        check.eq(r.words.len(), c.words.len(), || {
-            format!("{}: word count", input())
-        });
+        let input = || format!("{name} program {case}: seed {pseed} frame {frame} ops {ops:?} text {:?}", String::from_utf8_lossy(&text));
+        check.eq(r.words.len(), c.words.len(), || format!("{}: word count", input()));
         for (i, (rw, cw)) in r.words.iter().zip(c.words.iter()).enumerate() {
             check.eq(*rw, *cw, || format!("{}: word {i}", input()));
         }
@@ -1167,70 +884,23 @@ fn smart_bomb_target_homing_matches_upstream() {
 #[test]
 fn accessors_of_the_regen_and_smart_bomb_modules() {
     // The accessors not reached by the programs: the data, the base and the target of the homing module's constructor.
-    let mut host = RegenHost {
-        frame: 5,
-        pct: 0.01,
-        delay: 4,
-        ..Default::default()
-    };
+    let mut host = RegenHost { frame: 5, pct: 0.01, delay: 4, ..Default::default() };
     let rdata = Arc::new(BaseRegenerateUpdateModuleData::new());
     let regen = BaseRegenerateUpdate::new(1, Some(rdata), &mut host).expect("data present");
     assert_eq!(host.awakes, 1);
     assert_eq!(host.last_wake, 6, "a rate above zero: due the next frame");
-    assert_eq!(
-        regen.update_module().get_update_phase(),
-        rts_lockstep_engine::logic::module::update_module::SleepyUpdatePhase::Normal
-    );
-    assert_eq!(
-        regen.module_data().update.behavior,
-        Default::default(),
-        "the data is the one given"
-    );
-    let mut zero = RegenHost {
-        frame: 5,
-        pct: 0.0,
-        delay: 4,
-        ..Default::default()
-    };
-    let _ = BaseRegenerateUpdate::new(
-        1,
-        Some(Arc::new(BaseRegenerateUpdateModuleData::new())),
-        &mut zero,
-    )
-    .expect("data present");
-    assert_eq!(
-        zero.last_wake,
-        5 + 0x3fff_ffff,
-        "a rate of zero: asleep for ever"
-    );
-    let mut sb_host = SmartHost {
-        frame: 3,
-        ..Default::default()
-    };
+    assert_eq!(regen.update_module().get_update_phase(), rts_lockstep_engine::logic::module::update_module::SleepyUpdatePhase::Normal);
+    assert_eq!(regen.module_data().update.behavior, Default::default(), "the data is the one given");
+    let mut zero = RegenHost { frame: 5, pct: 0.0, delay: 4, ..Default::default() };
+    let _ = BaseRegenerateUpdate::new(1, Some(Arc::new(BaseRegenerateUpdateModuleData::new())), &mut zero).expect("data present");
+    assert_eq!(zero.last_wake, 5 + 0x3fff_ffff, "a rate of zero: asleep for ever");
+    let mut sb_host = SmartHost { frame: 3, ..Default::default() };
     let sdata = Arc::new(SmartBombTargetHomingUpdateModuleData::new());
-    let mut sb = SmartBombTargetHomingUpdate::new(1, Some(sdata.clone()), &mut sb_host)
-        .expect("data present");
-    assert!(
-        (sb.module_data().course_correction_scalar - 0.99).abs() < 1e-6,
-        "the default course correction"
-    );
+    let mut sb = SmartBombTargetHomingUpdate::new(1, Some(sdata.clone()), &mut sb_host).expect("data present");
+    assert!((sb.module_data().course_correction_scalar - 0.99).abs() < 1e-6, "the default course correction");
     assert!(!sb.target_received());
-    sb.set_target_position(Coord3D {
-        x: 1.0,
-        y: 2.0,
-        z: 3.0,
-    });
+    sb.set_target_position(Coord3D { x: 1.0, y: 2.0, z: 3.0 });
     assert!(sb.target_received());
-    assert_eq!(
-        sb.target(),
-        Coord3D {
-            x: 1.0,
-            y: 2.0,
-            z: 3.0
-        }
-    );
-    assert_eq!(
-        sb.update_module().get_update_phase(),
-        rts_lockstep_engine::logic::module::update_module::SleepyUpdatePhase::Normal
-    );
+    assert_eq!(sb.target(), Coord3D { x: 1.0, y: 2.0, z: 3.0 });
+    assert_eq!(sb.update_module().get_update_phase(), rts_lockstep_engine::logic::module::update_module::SleepyUpdatePhase::Normal);
 }

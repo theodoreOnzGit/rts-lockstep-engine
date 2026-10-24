@@ -74,10 +74,7 @@ use rts_lockstep_engine::common::game_common::Relationship;
 use rts_lockstep_engine::common::game_type::{INVALID_DRAWABLE_ID, INVALID_ID};
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
 use rts_lockstep_engine::common::kind_of::*;
-use rts_lockstep_engine::common::module::{
-    ModuleDataKind, ObjectId, MODULEINTERFACE_BODY, MODULEINTERFACE_CONTAIN,
-    MODULEINTERFACE_SPECIAL_POWER,
-};
+use rts_lockstep_engine::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_BODY, MODULEINTERFACE_CONTAIN, MODULEINTERFACE_SPECIAL_POWER};
 use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
 use rts_lockstep_engine::common::object_status_types::ObjectStatusMaskType;
 use rts_lockstep_engine::common::science::{GameTextFetch, ScienceStore};
@@ -89,18 +86,14 @@ use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
-use rts_lockstep_engine::logic::modules::sabotage_crate_collide::{
-    SabotageCrateCollideModuleData, SabotageVictim,
-};
+use rts_lockstep_engine::logic::modules::sabotage_crate_collide::{SabotageCrateCollideModuleData, SabotageVictim};
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleReply};
 use rts_lockstep_engine::logic::world::module_probe::{ProbeAnswers, ProbeModule};
 use rts_lockstep_engine::logic::world::object::PRIVATE_EFFECTIVELY_DEAD;
 use rts_lockstep_engine::logic::world::object_create::{NewModule, NewObject};
 use rts_lockstep_engine::logic::world::object_cuts::CutCall;
-use rts_lockstep_engine::logic::world::object_events::{
-    EvaMessage, ObjectClientEvent, ObjectSound, RadarCall,
-};
+use rts_lockstep_engine::logic::world::object_events::{EvaMessage, ObjectClientEvent, ObjectSound, RadarCall};
 use rts_lockstep_engine::logic::world::statics::GameStatics;
 use rts_lockstep_engine::logic::world::team::Team;
 use rts_lockstep_engine::logic::world::update_body::UpdateBody;
@@ -135,16 +128,7 @@ const KINDS: [(KindOfType, &str); 16] = [
     (KINDOF_VEHICLE, "VEHICLE"),
 ];
 /// The kind bits each class looks for (so that the generator mostly gives the victim the right one).
-const CLASS_KIND_BITS: [u32; 8] = [
-    1 << 2,
-    1 << 13,
-    1 << 4,
-    (1 << 5) | (1 << 6) | (1 << 7),
-    1 << 3,
-    (1 << 9) | (1 << 10),
-    1 << 11,
-    1 << 12,
-];
+const CLASS_KIND_BITS: [u32; 8] = [1 << 2, 1 << 13, 1 << 4, (1 << 5) | (1 << 6) | (1 << 7), 1 << 3, (1 << 9) | (1 << 10), 1 << 11, 1 << 12];
 
 fn put_u32(v: &mut Vec<u8>, x: u32) {
     v.extend_from_slice(&x.to_le_bytes());
@@ -176,17 +160,12 @@ fn victim_of(kind: usize) -> SabotageVictim {
 }
 
 fn read_block(ini: &mut Ini<'_>, out: &mut (usize, Option<ModuleDataKind>)) -> IniResult<()> {
-    out.1 = Some(ModuleDataKind::SabotageCrateCollide(Arc::new(
-        SabotageCrateCollideModuleData::friend_new_module_data(victim_of(out.0), Some(ini))?,
-    )));
+    out.1 = Some(ModuleDataKind::SabotageCrateCollide(Arc::new(SabotageCrateCollideModuleData::friend_new_module_data(victim_of(out.0), Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(kind: usize, name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = (kind, None);
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out.1)
@@ -194,9 +173,7 @@ fn rust_read(kind: usize, name: &[u8], text: &[u8]) -> (IniResult<()>, Option<Mo
 
 /// The data dump of `ref_l9sab_run`: the crate base, then the class's own field (0 for none).
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, fx: &mut FxIds) {
-    let ModuleDataKind::SabotageCrateCollide(d) = data else {
-        unreachable!("not a sabotage crate")
-    };
+    let ModuleDataKind::SabotageCrateCollide(d) = data else { unreachable!("not a sabotage crate") };
     let c = &d.crate_data;
     for i in 0..KINDOF_COUNT {
         put_u32(v, u32::from(c.kind_of.test(i)));
@@ -207,10 +184,7 @@ fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, fx: &mut FxIds) {
     put_u32(v, u32::from(c.is_forbid_owner_player));
     put_u32(v, u32::from(c.is_building_pickup));
     put_u32(v, u32::from(c.is_human_only_pickup));
-    let sci = SCIENCES
-        .iter()
-        .position(|s| s.as_bytes().eq_ignore_ascii_case(&c.pickup_science))
-        .map_or(-1, |i| i as i32);
+    let sci = SCIENCES.iter().position(|s| s.as_bytes().eq_ignore_ascii_case(&c.pickup_science)).map_or(-1, |i| i as i32);
     put_i32(v, sci);
     put_i32(v, fx.id(&c.execute_fx));
     put_str(v, &c.execution_animation_template);
@@ -220,9 +194,7 @@ fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, fx: &mut FxIds) {
     put_u32(
         v,
         match d.victim {
-            SabotageVictim::InternetCenter
-            | SabotageVictim::MilitaryFactory
-            | SabotageVictim::PowerPlant => d.sabotage_frames,
+            SabotageVictim::InternetCenter | SabotageVictim::MilitaryFactory | SabotageVictim::PowerPlant => d.sabotage_frames,
             SabotageVictim::SupplyCenter | SabotageVictim::SupplyDropzone => d.steal_cash_amount,
             _ => 0,
         },
@@ -249,12 +221,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         return out;
     }
     let kinds: Vec<u32> = (0..2 * KINDOF_COUNT).map(|_| u32_(&mut p)).collect();
-    let set: Vec<usize> = kinds
-        .iter()
-        .enumerate()
-        .filter(|(_, v)| **v != 0)
-        .map(|(i, _)| i)
-        .collect();
+    let set: Vec<usize> = kinds.iter().enumerate().filter(|(_, v)| **v != 0).map(|(i, _)| i).collect();
     let flags = [u32_(&mut p), u32_(&mut p), u32_(&mut p)];
     let sci = u32_(&mut p) as i32;
     let fx = u32_(&mut p) as i32;
@@ -301,23 +268,14 @@ fn kind_tokens(g: &mut Gen) -> String {
 fn gen_text(g: &mut Gen, kind: usize, clean: bool) -> Vec<u8> {
     let mut lines: Vec<String> = Vec::new();
     let own = match victim_of(kind) {
-        SabotageVictim::InternetCenter | SabotageVictim::MilitaryFactory => {
-            Some("SabotageDuration")
-        }
+        SabotageVictim::InternetCenter | SabotageVictim::MilitaryFactory => Some("SabotageDuration"),
         SabotageVictim::PowerPlant => Some("SabotagePowerDuration"),
         SabotageVictim::SupplyCenter | SabotageVictim::SupplyDropzone => Some("StealCashAmount"),
         _ => None,
     };
     if let Some(f) = own {
         if g.below(100) < 85 {
-            lines.push(format!(
-                "{f} = {}",
-                if f == "StealCashAmount" {
-                    gen_int(g, clean)
-                } else {
-                    pick(g, &["0", "33", "1000", "5000", "-5"]).to_string()
-                }
-            ));
+            lines.push(format!("{f} = {}", if f == "StealCashAmount" { gen_int(g, clean) } else { pick(g, &["0", "33", "1000", "5000", "-5"]).to_string() }));
         }
     }
     if g.below(100) < 8 {
@@ -336,10 +294,7 @@ fn gen_text(g: &mut Gen, kind: usize, clean: bool) -> Vec<u8> {
         lines.push(format!("HumanOnly = {}", gen_bool(g, clean)));
     }
     if g.below(100) < 30 {
-        lines.push(format!(
-            "ExecuteFX = {}",
-            pick(g, &["FX_A", "FX_B", "None"])
-        ));
+        lines.push(format!("ExecuteFX = {}", pick(g, &["FX_A", "FX_B", "None"])));
     }
     if !clean {
         lines.push(match g.below(3) {
@@ -381,13 +336,7 @@ fn science_block(ini: &mut Ini<'_>, c: &mut SciCtx) -> IniResult<()> {
     c.store.parse_science_definition(ini, &mut c.names, &Text)
 }
 
-fn run_xfer(
-    w: &mut World,
-    me: ObjectId,
-    idx: usize,
-    how: u32,
-    saved: &[u8],
-) -> (i32, Vec<u8>, u32) {
+fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -445,20 +394,14 @@ fn set_kinds(w: &mut World, id: ObjectId, bits: u32) {
             values.kind_of.push(*k);
         }
     }
-    w.objects
-        .find_mut(id)
-        .unwrap()
-        .thing
-        .friend_set_template(Arc::new(ThingTemplate::from_object_values(&values)));
+    w.objects.find_mut(id).unwrap().thing.friend_set_template(Arc::new(ThingTemplate::from_object_values(&values)));
 }
 
 /// The players' object lists (`Player::iterateObjects`), as the driver keeps them: each player's objects in id order.
 fn set_player_objects(w: &mut World) {
     w.cuts.player_objects.clear();
     for p in 0..3 {
-        let v: Vec<ObjectId> = (1..=4)
-            .filter(|&id| w.get_controlling_player(id) == Some(p))
-            .collect();
+        let v: Vec<ObjectId> = (1..=4).filter(|&id| w.get_controlling_player(id) == Some(p)).collect();
         w.cuts.player_objects.insert(p, v);
     }
 }
@@ -468,11 +411,7 @@ fn apply_flags(w: &mut World, flags: u32, sab_ai: Option<u16>) {
     let (saboteur, victim) = (1, 2);
     w.objects.find_mut(saboteur).unwrap().ai = if flags & 1 != 0 { sab_ai } else { None };
     if let Some(ai) = sab_ai {
-        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(saboteur).unwrap().modules
-            [ai as usize]
-            .body
-            .as_mut()
-        {
+        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(saboteur).unwrap().modules[ai as usize].body.as_mut() {
             p.answers.goal_object = if flags & 2 != 0 { victim } else { INVALID_ID };
         }
     }
@@ -483,81 +422,33 @@ fn apply_flags(w: &mut World, flags: u32, sab_ai: Option<u16>) {
     };
     w.cuts.team_relationships.insert((1, 2), rel);
     // the victim's AI is a module index nothing calls (only its presence is read)
-    w.objects.find_mut(victim).unwrap().ai = if flags & 16 != 0 {
-        Some(u16::MAX)
-    } else {
-        None
-    };
+    w.objects.find_mut(victim).unwrap().ai = if flags & 16 != 0 { Some(u16::MAX) } else { None };
     let o = w.objects.find_mut(victim).unwrap();
     if flags & 32 != 0 {
         o.private_status |= PRIVATE_EFFECTIVELY_DEAD;
     } else {
         o.private_status &= !PRIVATE_EFFECTIVELY_DEAD;
     }
-    w.friend_bind_to_drawable(
-        victim,
-        if flags & 64 != 0 {
-            7
-        } else {
-            INVALID_DRAWABLE_ID
-        },
-    );
+    w.friend_bind_to_drawable(victim, if flags & 64 != 0 { 7 } else { INVALID_DRAWABLE_ID });
     let local = flags >> 14 & 3;
-    w.players
-        .friend_set_local_index(if local == 3 { None } else { Some(local as i32) });
-    w.set_position(
-        saboteur,
-        &Coord3D {
-            x: 0.0,
-            y: 0.0,
-            z: if flags & 65536 != 0 { 5.0 } else { 0.0 },
-        },
-    );
+    w.players.friend_set_local_index(if local == 3 { None } else { Some(local as i32) });
+    w.set_position(saboteur, &Coord3D { x: 0.0, y: 0.0, z: if flags & 65536 != 0 { 5.0 } else { 0.0 } });
 }
 
 /// Runs the ops on a fresh world and returns the dump (after the data dump) and the world.
-fn rust_run(
-    kind: usize,
-    names: NameKeyGenerator,
-    center: UpgradeCenter,
-    data: ModuleDataKind,
-    cfg: &[u32; 12],
-    ops: &[[u32; 6]],
-    tally: &mut Tally,
-) -> (Vec<u8>, World) {
+fn rust_run(kind: usize, names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind, cfg: &[u32; 12], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     let mut fx = FxIds::default();
     put_data(&mut v, &data, &mut fx);
 
-    let mut sc = SciCtx {
-        store: ScienceStore::new(),
-        names,
-    };
-    let defs: String = SCIENCES
-        .iter()
-        .map(|s| format!("Science {s}\nEnd\n"))
-        .collect();
-    static BLOCKS: [BlockParse<SciCtx>; 1] = [BlockParse {
-        token: "Science",
-        parse: science_block,
-    }];
-    Ini::load(
-        b"Data\\INI\\Science.ini",
-        defs.as_bytes(),
-        IniLoadType::Overwrite,
-        None,
-        &BLOCKS,
-        &mut sc,
-    )
-    .expect("sciences load");
+    let mut sc = SciCtx { store: ScienceStore::new(), names };
+    let defs: String = SCIENCES.iter().map(|s| format!("Science {s}\nEnd\n")).collect();
+    static BLOCKS: [BlockParse<SciCtx>; 1] = [BlockParse { token: "Science", parse: science_block }];
+    Ini::load(b"Data\\INI\\Science.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut sc).expect("sciences load");
 
     let mut w = World::new();
     w.names = sc.names;
-    w.statics = Arc::new(GameStatics {
-        science_store: sc.store,
-        upgrade_center: center,
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { science_store: sc.store, upgrade_center: center, ..Default::default() });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.crate_stub_object_calls = true;
@@ -586,32 +477,12 @@ fn rust_run(
 
     // the saboteur: the crate module, then its AI
     let class = SabotageVictim::ALL[kind].1;
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        class.as_bytes(),
-        b"ModuleTag_Crate",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class.as_bytes(), b"ModuleTag_Crate", &data).unwrap().unwrap();
     let mut ai = NewModule::plain(b"CtProbe", b"ModuleTag_AI");
     ai.is_ai = true;
-    ai.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-        ProbeAnswers::default(),
-        0.0,
-        Default::default(),
-    )));
-    let plain_template = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
-    let me = w
-        .new_object(NewObject {
-            template: plain_template.clone(),
-            status: ObjectStatusMaskType::default(),
-            team: Some(1),
-            modules: vec![m, ai],
-        })
-        .unwrap();
+    ai.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
+    let plain_template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
+    let me = w.new_object(NewObject { template: plain_template.clone(), status: ObjectStatusMaskType::default(), team: Some(1), modules: vec![m, ai] }).unwrap();
     assert_eq!(me, 1);
     let sab_ai = w.objects.find(me).unwrap().ai;
 
@@ -621,98 +492,37 @@ fn rust_run(
     if flags & 128 != 0 {
         let mut pm = NewModule::plain(b"CtBody", b"ModuleTag_Body");
         pm.interfaces = MODULEINTERFACE_BODY;
-        pm.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-            ProbeAnswers::default(),
-            f32::from_bits(cfg[7]),
-            Default::default(),
-        )));
+        pm.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), f32::from_bits(cfg[7]), Default::default())));
         mods.push(pm);
     }
     for _ in 0..(flags >> 9 & 3) {
         let mut pm = NewModule::plain(b"CtPower", b"ModuleTag_Power");
         pm.interfaces = MODULEINTERFACE_SPECIAL_POWER;
-        pm.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-            ProbeAnswers::default(),
-            0.0,
-            Default::default(),
-        )));
+        pm.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
         mods.push(pm);
     }
     if flags & 2048 != 0 {
-        let d = ModuleDataKind::OclUpdate(Arc::new(
-            rts_lockstep_engine::logic::modules::ocl_update::OclUpdateModuleData {
-                min_delay: cfg[11],
-                max_delay: cfg[11],
-                ..Default::default()
-            },
-        ));
-        mods.push(
-            rts_lockstep_engine::logic::modules::new_module(
-                next,
-                b"OCLUpdate",
-                b"ModuleTag_OCL",
-                &d,
-            )
-            .unwrap()
-            .unwrap(),
-        );
+        let d = ModuleDataKind::OclUpdate(Arc::new(rts_lockstep_engine::logic::modules::ocl_update::OclUpdateModuleData { min_delay: cfg[11], max_delay: cfg[11], ..Default::default() }));
+        mods.push(rts_lockstep_engine::logic::modules::new_module(next, b"OCLUpdate", b"ModuleTag_OCL", &d).unwrap().unwrap());
     }
     for _ in 0..(flags >> 12 & 3) {
-        let d =
-            rts_lockstep_engine::logic::modules::spy_vision_update::new_module_data(None).unwrap();
-        mods.push(
-            rts_lockstep_engine::logic::modules::new_module(
-                next,
-                b"SpyVisionUpdate",
-                b"ModuleTag_Spy",
-                &d,
-            )
-            .unwrap()
-            .unwrap(),
-        );
+        let d = rts_lockstep_engine::logic::modules::spy_vision_update::new_module_data(None).unwrap();
+        mods.push(rts_lockstep_engine::logic::modules::new_module(next, b"SpyVisionUpdate", b"ModuleTag_Spy", &d).unwrap().unwrap());
     }
     if flags & 256 != 0 {
         let mut pm = NewModule::plain(b"CtContain", b"ModuleTag_Contain");
         pm.interfaces = MODULEINTERFACE_CONTAIN;
-        pm.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-            ProbeAnswers {
-                contained: vec![3, 4],
-                ..Default::default()
-            },
-            0.0,
-            Default::default(),
-        )));
+        pm.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers { contained: vec![3, 4], ..Default::default() }, 0.0, Default::default())));
         mods.push(pm);
     }
-    let victim = w
-        .new_object(NewObject {
-            template: plain_template.clone(),
-            status: ObjectStatusMaskType::default(),
-            team: Some(2),
-            modules: mods,
-        })
-        .unwrap();
+    let victim = w.new_object(NewObject { template: plain_template.clone(), status: ObjectStatusMaskType::default(), team: Some(2), modules: mods }).unwrap();
     assert_eq!(victim, 2);
     for team in 3..=4 {
-        let id = w
-            .new_object(NewObject {
-                template: plain_template.clone(),
-                status: ObjectStatusMaskType::default(),
-                team: Some(team),
-                modules: Vec::new(),
-            })
-            .unwrap();
+        let id = w.new_object(NewObject { template: plain_template.clone(), status: ObjectStatusMaskType::default(), team: Some(team), modules: Vec::new() }).unwrap();
         assert_eq!(id, team as i32);
     }
     set_kinds(&mut w, victim, cfg[2]);
-    w.set_position(
-        victim,
-        &Coord3D {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        },
-    );
+    w.set_position(victim, &Coord3D { x: 0.0, y: 0.0, z: 0.0 });
     let mut flags = flags;
     apply_flags(&mut w, flags, sab_ai);
     set_player_objects(&mut w);
@@ -721,14 +531,7 @@ fn rust_run(
     let idx = w.find_module(me, class.as_bytes()).unwrap();
     // where the victim's own modules start among its slots
     // where the victim's own modules start among its slots: after the object's standard helpers
-    let test_modules_from = w
-        .objects
-        .find(victim)
-        .unwrap()
-        .modules
-        .iter()
-        .take_while(|m| m.name.ends_with(b"Helper"))
-        .count();
+    let test_modules_from = w.objects.find(victim).unwrap().modules.iter().take_while(|m| m.name.ends_with(b"Helper")).count();
     // the constructors' scheduling and draws are done: the trace starts here
     let mut saved: Vec<u8> = Vec::new();
     for o in ops {
@@ -740,27 +543,10 @@ fn rust_run(
         let target = if o[1] != 0 { victim } else { INVALID_ID };
         match o[0] {
             0 => {
-                w.module_call(
-                    me,
-                    idx,
-                    ModuleCall::OnCollide {
-                        other: target,
-                        loc: None,
-                        normal: None,
-                    },
-                );
+                w.module_call(me, idx, ModuleCall::OnCollide { other: target, loc: None, normal: None });
                 tally.collides += 1;
             }
-            1 => {
-                res = i32::from(
-                    w.module_call(
-                        me,
-                        idx,
-                        ModuleCall::WouldLikeToCollideWith { other: target },
-                    )
-                    .as_bool(),
-                )
-            }
+            1 => res = i32::from(w.module_call(me, idx, ModuleCall::WouldLikeToCollideWith { other: target }).as_bool()),
             2 => {
                 set_player_of_team(&mut w, 2, (o[1] != 0).then(|| o[1] - 1));
                 set_player_objects(&mut w);
@@ -787,17 +573,10 @@ fn rust_run(
                 }
                 tally.xfers += 1;
             }
-            10 => {
-                res = i32::from(
-                    w.module_call(me, idx, ModuleCall::IsSabotageBuildingCrateCollide)
-                        .as_bool(),
-                )
-            }
+            10 => res = i32::from(w.module_call(me, idx, ModuleCall::IsSabotageBuildingCrateCollide).as_bool()),
             _ => unreachable!(),
         }
-        let threw = w.cuts.module_errors[errors_before..]
-            .iter()
-            .any(|(_, e)| !e.is_undefined());
+        let threw = w.cuts.module_errors[errors_before..].iter().any(|(_, e)| !e.is_undefined());
         put_i32(&mut v, if threw { 2 } else { 0 });
         put_i32(&mut v, res);
         let events: Vec<ObjectClientEvent> = w.events.events()[events_before..]
@@ -814,26 +593,12 @@ fn rust_run(
         for t in w.cuts.trace.take().unwrap() {
             if t.starts_with("cut ") {
                 match cut_iter.next().expect("a cut line has a cut call") {
-                    CutCall::PlayerMoneyDeposit { player, amount } => {
-                        log.push(format!("deposit {player} {amount} 1"))
-                    }
-                    CutCall::PlayerMoneyWithdraw { player, amount } => {
-                        log.push(format!("withdraw {player} {amount} 1"))
-                    }
-                    CutCall::PlayerScoreAddMoneyEarned { player, amount } => {
-                        log.push(format!("earned {player} {amount}"))
-                    }
-                    CutCall::PlayerSetPowerSabotagedTillFrame { player, frame } => {
-                        log.push(format!("powersabotage {player} {frame}"))
-                    }
-                    CutCall::PlayerOnPowerBrownOutChange { player, brown_out } => {
-                        log.push(format!("brownout {player} {}", i32::from(*brown_out)))
-                    }
-                    CutCall::ObjectSetDisabledUntil {
-                        object,
-                        disabled,
-                        frame,
-                    } => log.push(format!("disableduntil {object} {disabled} {frame}")),
+                    CutCall::PlayerMoneyDeposit { player, amount } => log.push(format!("deposit {player} {amount} 1")),
+                    CutCall::PlayerMoneyWithdraw { player, amount } => log.push(format!("withdraw {player} {amount} 1")),
+                    CutCall::PlayerScoreAddMoneyEarned { player, amount } => log.push(format!("earned {player} {amount}")),
+                    CutCall::PlayerSetPowerSabotagedTillFrame { player, frame } => log.push(format!("powersabotage {player} {frame}")),
+                    CutCall::PlayerOnPowerBrownOutChange { player, brown_out } => log.push(format!("brownout {player} {}", i32::from(*brown_out))),
+                    CutCall::ObjectSetDisabledUntil { object, disabled, frame } => log.push(format!("disableduntil {object} {disabled} {frame}")),
                     CutCall::ObjectAttemptDamage { object, info } => log.push(format!(
                         "damage {object} {} {} {} {:08x}",
                         info.input.damage_type,
@@ -841,28 +606,14 @@ fn rust_run(
                         info.input.source_id,
                         info.input.amount.to_bits()
                     )),
-                    CutCall::InGameUiAddFloatingTextNamed {
-                        text,
-                        amount,
-                        position: p,
-                        color,
-                    } => log.push(format!(
-                        "float {} {amount} {},{},{} {:08x}",
-                        String::from_utf8_lossy(text),
-                        p.x.to_bits(),
-                        p.y.to_bits(),
-                        p.z.to_bits(),
-                        *color as u32
-                    )),
+                    CutCall::InGameUiAddFloatingTextNamed { text, amount, position: p, color } => {
+                        log.push(format!("float {} {amount} {},{},{} {:08x}", String::from_utf8_lossy(text), p.x.to_bits(), p.y.to_bits(), p.z.to_bits(), *color as u32))
+                    }
                     _ => {}
                 }
             } else if t.starts_with("evt ") {
                 match event_iter.next() {
-                    Some(ObjectClientEvent::Sound {
-                        sound,
-                        object_id,
-                        position,
-                    }) => {
+                    Some(ObjectClientEvent::Sound { sound, object_id, position }) => {
                         let name = match sound {
                             ObjectSound::SabotageResetTimerBuilding => "sabotageResetTimer",
                             ObjectSound::MoneyWithdraw => "moneyWithdraw",
@@ -870,24 +621,14 @@ fn rust_run(
                             other => panic!("unexpected sound {other:?}"),
                         };
                         let pos = match position {
-                            Some(p) => {
-                                format!("{},{},{}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits())
-                            }
+                            Some(p) => format!("{},{},{}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits()),
                             None => "-".to_string(),
                         };
                         log.push(format!("audio {name} {pos} -1 {object_id}"));
                     }
-                    Some(ObjectClientEvent::FxListDoFxObj { fx: name, .. }) => {
-                        log.push(format!("fx{}", fx.id(&Some(name))))
-                    }
-                    Some(ObjectClientEvent::Radar {
-                        call: RadarCall::TryInfiltrationEvent,
-                        object_id,
-                        ..
-                    }) => log.push(format!("infiltrate {object_id}")),
-                    Some(ObjectClientEvent::DrawableFlashAsSelected { .. }) => {
-                        log.push("flash".to_string())
-                    }
+                    Some(ObjectClientEvent::FxListDoFxObj { fx: name, .. }) => log.push(format!("fx{}", fx.id(&Some(name)))),
+                    Some(ObjectClientEvent::Radar { call: RadarCall::TryInfiltrationEvent, object_id, .. }) => log.push(format!("infiltrate {object_id}")),
+                    Some(ObjectClientEvent::DrawableFlashAsSelected { .. }) => log.push("flash".to_string()),
                     Some(ObjectClientEvent::Eva { message }) => log.push(format!(
                         "eva {}",
                         match message {
@@ -923,22 +664,17 @@ fn rust_run(
         put_u32(
             &mut v,
             match ocl_idx {
-                Some(i) => {
-                    match w.module_call(victim, i, ModuleCall::OclUpdateGetRemainingFrames) {
-                        ModuleReply::Int(n) => n as u32,
-                        r => panic!("unexpected reply {r:?}"),
-                    }
-                }
+                Some(i) => match w.module_call(victim, i, ModuleCall::OclUpdateGetRemainingFrames) {
+                    ModuleReply::Int(n) => n as u32,
+                    r => panic!("unexpected reply {r:?}"),
+                },
                 None => 0xFFFF_FFFF,
             },
         );
         put_u32(&mut v, spy_idx.len() as u32);
         for &i in &spy_idx {
             let o = w.objects.find(victim).unwrap();
-            let words = match o.behaviors[o.modules[i as usize].update_index.unwrap() as usize]
-                .body
-                .as_ref()
-            {
+            let words = match o.behaviors[o.modules[i as usize].update_index.unwrap() as usize].body.as_ref() {
                 Some(UpdateBody::SpyVisionUpdate(s)) => s.state_words(),
                 _ => panic!("the SpyVisionUpdate"),
             };
@@ -950,10 +686,7 @@ fn rust_run(
 }
 
 fn cases() -> usize {
-    std::env::var("L9SAB_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9SAB_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 #[test]
@@ -985,23 +718,12 @@ fn sabotage_crates_match_upstream() {
             }
         };
         // mostly an enemy of another player, with the AI's goal on the victim and the class's kind
-        let player = |g: &mut Gen| {
-            if g.below(12) == 0 {
-                NO_PLAYER
-            } else {
-                g.below(3)
-            }
-        };
+        let player = |g: &mut Gen| if g.below(12) == 0 { NO_PLAYER } else { g.below(3) };
         let mut cfg = [0u32; 12];
         cfg[0] = player(&mut g);
         cfg[1] = player(&mut g);
-        cfg[2] = if g.below(6) != 0 {
-            CLASS_KIND_BITS[kind]
-                & (1 << (CLASS_KIND_BITS[kind].trailing_zeros()
-                    + g.below(CLASS_KIND_BITS[kind].count_ones())))
-        } else {
-            0
-        } | (g.u32() & g.u32() & g.u32() & 0xffff)
+        cfg[2] = if g.below(6) != 0 { CLASS_KIND_BITS[kind] & (1 << (CLASS_KIND_BITS[kind].trailing_zeros() + g.below(CLASS_KIND_BITS[kind].count_ones()))) } else { 0 }
+            | (g.u32() & g.u32() & g.u32() & 0xffff)
             | if g.below(2) == 0 { 1 } else { 0 };
         cfg[3] = u32::from(g.below(4) != 0)
             | u32::from(g.below(5) != 0) << 1
@@ -1032,14 +754,7 @@ fn sabotage_crates_match_upstream() {
                 20..=21 => [2, g.below(4), 0, 0, 0, 0],
                 22..=24 => [3, g.u32() & 0x1c1ff, 0, 0, 0, 0],
                 25..=26 => [4, (g.u32() & 0xffff) | CLASS_KIND_BITS[kind], 0, 0, 0, 0],
-                27..=28 => [
-                    5,
-                    g.below(3),
-                    *pick(&mut g, &[&0u32, &10, &1000, &99999]),
-                    0,
-                    0,
-                    0,
-                ],
+                27..=28 => [5, g.below(3), *pick(&mut g, &[&0u32, &10, &1000, &99999]), 0, 0, 0],
                 29..=30 => [6, g.below(400), 0, 0, 0, 0],
                 31..=33 => [7, 0, 0, 0, 0, 0],
                 34..=35 => [8, 0, 0, 0, 0, 0],
@@ -1050,15 +765,7 @@ fn sabotage_crates_match_upstream() {
 
         // Rust first: a case that reaches upstream undefined behaviour is counted and never sent to the C++
         let rust = if outcome.status == 0 {
-            let (rd, w) = rust_run(
-                kind,
-                ctx.names.clone(),
-                ctx.center.clone(),
-                data.expect("read ok"),
-                &cfg,
-                &ops,
-                &mut tally,
-            );
+            let (rd, w) = rust_run(kind, ctx.names.clone(), ctx.center.clone(), data.expect("read ok"), &cfg, &ops, &mut tally);
             if w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined()) {
                 excluded += 1;
                 continue;
@@ -1098,62 +805,22 @@ fn sabotage_crates_match_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!(
-                "case {case} ({}): cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                SabotageVictim::ALL[kind].1,
-                show(&text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case} ({}): cfg {cfg:x?}, file {:?}, ops {ops:?}", SabotageVictim::ALL[kind].1, show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
         };
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         for l in &dr {
-            for key in [
-                "infiltrate",
-                "audio",
-                "flash",
-                "eva",
-                "recharge",
-                "powersabotage",
-                "brownout",
-                "disableduntil",
-                "withdraw",
-                "deposit",
-                "earned",
-                "float",
-                "damage",
-                "destroy",
-            ] {
-                *counts.entry(key.to_string()).or_default() +=
-                    l.matches(&format!("\"{key}")).count() as u64;
+            for key in ["infiltrate", "audio", "flash", "eva", "recharge", "powersabotage", "brownout", "disableduntil", "withdraw", "deposit", "earned", "float", "damage", "destroy"] {
+                *counts.entry(key.to_string()).or_default() += l.matches(&format!("\"{key}")).count() as u64;
             }
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
-            eprintln!(
-                "--- case {case} ({}) cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}",
-                SabotageVictim::ALL[kind].1,
-                show(&text),
-                dr.get(i),
-                dc.get(i)
-            );
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            eprintln!("--- case {case} ({}) cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", SabotageVictim::ALL[kind].1, show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -1172,8 +839,5 @@ fn sabotage_crates_match_upstream() {
     }
     read.finish();
     run.finish();
-    assert!(
-        tally.destroyed * 10 > cases as u64,
-        "the generator must reach the crates' actions"
-    );
+    assert!(tally.destroyed * 10 > cases as u64, "the generator must reach the crates' actions");
 }

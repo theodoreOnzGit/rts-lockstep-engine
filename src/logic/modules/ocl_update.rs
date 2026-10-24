@@ -34,17 +34,12 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
-    SEPS_COLON,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData, SEPS_COLON};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::object_status_types::OBJECT_STATUS_UNDER_CONSTRUCTION;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -102,27 +97,17 @@ fn parse_ocl(ini: &mut Ini<'_>) -> IniResult<Option<Vec<u8>>> {
 }
 
 /// `parseFactionObjectCreationList(ini, instance, store, userData)`: `Faction:<side> OCL:<list>`, appended to `store`.
-pub fn parse_faction_object_creation_list(
-    ini: &mut Ini<'_>,
-    store: &mut Vec<FactionOclInfo>,
-) -> IniResult<()> {
-    let mut info = FactionOclInfo {
-        faction_name: Vec::new(),
-        ocl: None,
-    };
+pub fn parse_faction_object_creation_list(ini: &mut Ini<'_>, store: &mut Vec<FactionOclInfo>) -> IniResult<()> {
+    let mut info = FactionOclInfo { faction_name: Vec::new(), ocl: None };
     let token = ini.get_next_token(Some(SEPS_COLON))?;
     if token.eq_ignore_ascii_case(b"Faction") {
-        let token = ini
-            .get_next_token_or_null(Some(SEPS_COLON))
-            .ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
+        let token = ini.get_next_token_or_null(Some(SEPS_COLON)).ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         info.faction_name = token;
     } else {
         return Err(IniError::new(IniErrorKind::InvalidData));
     }
 
-    let token = ini
-        .get_next_token_or_null(Some(SEPS_COLON))
-        .ok_or_else(|| IniError::undefined(Undefined::NullTokenCompared))?;
+    let token = ini.get_next_token_or_null(Some(SEPS_COLON)).ok_or_else(|| IniError::undefined(Undefined::NullTokenCompared))?;
     if token.eq_ignore_ascii_case(b"OCL") {
         info.ocl = parse_ocl(ini)?;
     } else {
@@ -136,51 +121,12 @@ pub fn parse_faction_object_creation_list(
 
 /// `OCLUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<OclUpdateModuleData>; 7] = [
-    FieldParse::new(
-        "OCL",
-        |ini, d, _| {
-            d.ocl = parse_ocl(ini)?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FactionOCL",
-        |ini, d, _| parse_faction_object_creation_list(ini, &mut d.faction_ocl),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MinDelay",
-        |ini, d, _| {
-            d.min_delay = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxDelay",
-        |ini, d, _| {
-            d.max_delay = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "CreateAtEdge",
-        |ini, d, _| {
-            d.is_create_at_edge = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FactionTriggered",
-        |ini, d, _| {
-            d.is_faction_triggered = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("OCL", |ini, d, _| { d.ocl = parse_ocl(ini)?; Ok(()) }, UserData::None),
+    FieldParse::new("FactionOCL", |ini, d, _| parse_faction_object_creation_list(ini, &mut d.faction_ocl), UserData::None),
+    FieldParse::new("MinDelay", |ini, d, _| { d.min_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxDelay", |ini, d, _| { d.max_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("CreateAtEdge", |ini, d, _| { d.is_create_at_edge = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("FactionTriggered", |ini, d, _| { d.is_faction_triggered = ini.parse_bool()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
@@ -233,21 +179,11 @@ impl PartialEq for OclUpdate {
 
 impl OclUpdate {
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and the state.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<OclUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<OclUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(OclUpdate {
-            update,
-            data,
-            next_creation_frame: 0,
-            timer_started_frame: 0,
-            is_faction_neutral: true,
-            current_player_color: 0,
-        })
+        Ok(OclUpdate { update, data, next_creation_frame: 0, timer_started_frame: 0, is_faction_neutral: true, current_player_color: 0 })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -262,12 +198,7 @@ impl OclUpdate {
 
     /// The module's own state as words, for the tests that compare it with upstream's.
     pub fn state_words(&self) -> Vec<u32> {
-        vec![
-            self.next_creation_frame,
-            self.timer_started_frame,
-            u32::from(self.is_faction_neutral),
-            self.current_player_color as u32,
-        ]
+        vec![self.next_creation_frame, self.timer_started_frame, u32::from(self.is_faction_neutral), self.current_player_color as u32]
     }
 
     /// `update()` as the scheduler runs it (see [`update_behavior::world_update`]).
@@ -281,12 +212,7 @@ impl OclUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -315,12 +241,7 @@ impl OclUpdate {
         if world.frame() < self.next_creation_frame {
             return false; // too soon
         }
-        if world
-            .objects
-            .find(me)
-            .is_some_and(|o| o.test_status(OBJECT_STATUS_UNDER_CONSTRUCTION))
-            && !crate::logic::modules::plant(1001)
-        {
+        if world.objects.find(me).is_some_and(|o| o.test_status(OBJECT_STATUS_UNDER_CONSTRUCTION)) && !crate::logic::modules::plant(1001) {
             return false; // not built yet
         }
         true
@@ -328,14 +249,7 @@ impl OclUpdate {
 
     /// `setNextCreationFrame()`.
     fn set_next_creation_frame(&mut self, world: &mut World) {
-        let delay = world.random.game_logic_random_value(
-            self.data.min_delay as i32,
-            if crate::logic::modules::plant(1002) {
-                self.data.min_delay as i32
-            } else {
-                self.data.max_delay as i32
-            },
-        );
+        let delay = world.random.game_logic_random_value(self.data.min_delay as i32, if crate::logic::modules::plant(1002) { self.data.min_delay as i32 } else { self.data.max_delay as i32 });
         self.timer_started_frame = world.frame();
         self.next_creation_frame = self.timer_started_frame.wrapping_add(delay as u32);
     }
@@ -343,11 +257,7 @@ impl OclUpdate {
     /// `getCountdownPercent()`.
     pub fn get_countdown_percent(&self, world: &World) -> f32 {
         let now = world.frame();
-        1.0f32
-            - (self.next_creation_frame.wrapping_sub(now) as f32
-                / self
-                    .next_creation_frame
-                    .wrapping_sub(self.timer_started_frame) as f32)
+        1.0f32 - (self.next_creation_frame.wrapping_sub(now) as f32 / self.next_creation_frame.wrapping_sub(self.timer_started_frame) as f32)
     }
 
     /// `getRemainingFrames()`.
@@ -362,11 +272,7 @@ impl UpdateBehavior for OclUpdate {
         &self.update
     }
     fn update(&mut self, world: &mut World, me: ModuleHandle) -> UpdateSleepTime {
-        if world
-            .objects
-            .find(me.object)
-            .is_some_and(|o| o.is_disabled())
-        {
+        if world.objects.find(me.object).is_some_and(|o| o.is_disabled()) {
             if !crate::logic::modules::plant(1004) {
                 self.next_creation_frame = self.next_creation_frame.wrapping_add(1);
             }
@@ -381,9 +287,7 @@ impl UpdateBehavior for OclUpdate {
 
             // Test for when a player captures the building
             if self.is_faction_neutral {
-                if let Some(p) = player.filter(|p| {
-                    world.cuts.player_is_playable_side(*p) || crate::logic::modules::plant(1007)
-                }) {
+                if let Some(p) = player.filter(|p| world.cuts.player_is_playable_side(*p) || crate::logic::modules::plant(1007)) {
                     self.current_player_color = world.cuts.player_color(p);
                     self.is_faction_neutral = false;
                     self.set_next_creation_frame(world);
@@ -396,9 +300,7 @@ impl UpdateBehavior for OclUpdate {
                     None => self.is_faction_neutral = true,
                     // If another player has taken control, reset the timer
                     Some(p) => {
-                        if world.cuts.player_color(p) != self.current_player_color
-                            && !crate::logic::modules::plant(1008)
-                        {
+                        if world.cuts.player_color(p) != self.current_player_color && !crate::logic::modules::plant(1008) {
                             self.current_player_color = world.cuts.player_color(p);
                             self.set_next_creation_frame(world);
                         }
@@ -421,44 +323,20 @@ impl UpdateBehavior for OclUpdate {
 
             self.set_next_creation_frame(world);
 
-            let position = world
-                .objects
-                .find(me.object)
-                .map(|o| o.get_position())
-                .unwrap_or_default();
-            let creation_coord = if data.is_create_at_edge && !crate::logic::modules::plant(1006) {
-                world.terrain_find_closest_edge_point(position)
-            } else {
-                position
-            };
-            let angle = world
-                .objects
-                .find(me.object)
-                .map_or(0.0, |o| o.thing.orientation());
+            let position = world.objects.find(me.object).map(|o| o.get_position()).unwrap_or_default();
+            let creation_coord = if data.is_create_at_edge && !crate::logic::modules::plant(1006) { world.terrain_find_closest_edge_point(position) } else { position };
+            let angle = world.objects.find(me.object).map_or(0.0, |o| o.thing.orientation());
 
             // If this is faction triggered, search through the faction specific OCLs to find the match
             if data.is_faction_triggered {
-                let Some(player) = world.get_controlling_player(me.object) else {
-                    return UPDATE_SLEEP_NONE;
-                };
-                let Some(side) = world.cuts.player_side(player) else {
-                    return UPDATE_SLEEP_NONE;
-                };
+                let Some(player) = world.get_controlling_player(me.object) else { return UPDATE_SLEEP_NONE };
+                let Some(side) = world.cuts.player_side(player) else { return UPDATE_SLEEP_NONE };
 
                 // Loop through the list of faction ocls to find the matching faction that triggeres the specific ocls
                 for info in &data.faction_ocl {
-                    if side == info.faction_name
-                        || (crate::logic::modules::plant(1005)
-                            && side.eq_ignore_ascii_case(&info.faction_name))
-                    {
+                    if side == info.faction_name || (crate::logic::modules::plant(1005) && side.eq_ignore_ascii_case(&info.faction_name)) {
                         if let Some(ocl) = info.ocl.clone() {
-                            world.cut(CutCall::OclCreateAt {
-                                primary: me.object,
-                                ocl,
-                                primary_pos: creation_coord,
-                                secondary_pos: position,
-                                angle,
-                            });
+                            world.cut(CutCall::OclCreateAt { primary: me.object, ocl, primary_pos: creation_coord, secondary_pos: position, angle });
                         }
                         break;
                     }
@@ -466,13 +344,7 @@ impl UpdateBehavior for OclUpdate {
             }
             // Use the non faction OCL information
             else if let Some(ocl) = data.ocl.clone() {
-                world.cut(CutCall::OclCreateAt {
-                    primary: me.object,
-                    ocl,
-                    primary_pos: creation_coord,
-                    secondary_pos: position,
-                    angle,
-                });
+                world.cut(CutCall::OclCreateAt { primary: me.object, ocl, primary_pos: creation_coord, secondary_pos: position, angle });
             }
         }
         UPDATE_SLEEP_NONE
@@ -495,23 +367,14 @@ impl UpdateBehavior for OclUpdate {
             _ => None,
         }
     }
-    fn other_call(
-        &mut self,
-        world: &mut World,
-        _me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    fn other_call(&mut self, world: &mut World, _me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
             ModuleCall::OclUpdateResetTimer => {
                 self.reset_timer(world);
                 ModuleReply::Done
             }
-            ModuleCall::OclUpdateGetCountdownPercent => {
-                ModuleReply::Real(self.get_countdown_percent(world))
-            }
-            ModuleCall::OclUpdateGetRemainingFrames => {
-                ModuleReply::Int(self.get_remaining_frames(world) as i32)
-            }
+            ModuleCall::OclUpdateGetCountdownPercent => ModuleReply::Real(self.get_countdown_percent(world)),
+            ModuleCall::OclUpdateGetRemainingFrames => ModuleReply::Int(self.get_remaining_frames(world) as i32),
             _ => ModuleReply::Unhandled,
         }
     }
@@ -536,7 +399,5 @@ impl Snapshot for OclUpdate {
 
 /// The factory's `NewModuleDataProc` for `OCLUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::OclUpdate(Arc::new(
-        OclUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::OclUpdate(Arc::new(OclUpdateModuleData::friend_new_module_data(ini)?)))
 }

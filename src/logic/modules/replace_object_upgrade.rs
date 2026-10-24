@@ -38,21 +38,21 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::Undefined;
 use crate::common::ini::{FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, UserData};
-use crate::common::module::MODULEINTERFACE_CREATE;
 use crate::common::module::{ModuleDataKind, ObjectId};
-use crate::common::object_status_types::ObjectStatusMaskType;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::upgrade_module::{UpgradeModule, UpgradeModuleData};
-use crate::logic::modules::upgrade_body::lend;
 use crate::logic::modules::upgrade_body::{upgrade_module_call, UpgradeBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
-use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::update_body::UpdateBody;
 use crate::upgrade_module_data_field_parse;
+use crate::common::ini::Undefined;
+use crate::common::module::MODULEINTERFACE_CREATE;
+use crate::common::object_status_types::ObjectStatusMaskType;
+use crate::logic::modules::upgrade_body::lend;
+use crate::logic::world::object_cuts::CutCall;
 
 /// `class ReplaceObjectUpgradeModuleData : public UpgradeModuleData`.
 #[derive(Debug)]
@@ -74,30 +74,17 @@ impl Default for ReplaceObjectUpgradeModuleData {
 }
 
 /// `UpgradeModuleData::buildFieldParse`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<ReplaceObjectUpgradeModuleData>; 6] =
-    upgrade_module_data_field_parse!(ReplaceObjectUpgradeModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<ReplaceObjectUpgradeModuleData>; 6] = upgrade_module_data_field_parse!(ReplaceObjectUpgradeModuleData, upgrade);
 
 /// `ReplaceObjectUpgradeModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<ReplaceObjectUpgradeModuleData>; 2] = [
-    FieldParse::new(
-        "ReplaceObject",
-        |ini, d, _| {
-            d.replace_object_name = ini.parse_ascii_string()?;
-            if crate::logic::modules::plant(688) {
-                d.replace_object_name.make_ascii_uppercase();
-            }
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("ReplaceObject", |ini, d, _| { d.replace_object_name = ini.parse_ascii_string()?; if crate::logic::modules::plant(688) { d.replace_object_name.make_ascii_uppercase(); } Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl ReplaceObjectUpgradeModuleData {
     /// `buildFieldParse(p)`: `BehaviorModuleData`'s, then `UpgradeModuleData`'s, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, ReplaceObjectUpgradeModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, ReplaceObjectUpgradeModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -105,15 +92,10 @@ impl ReplaceObjectUpgradeModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<ReplaceObjectUpgradeModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ReplaceObjectUpgradeModuleData> {
         let mut data = ReplaceObjectUpgradeModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                ReplaceObjectUpgradeModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, ReplaceObjectUpgradeModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -131,19 +113,14 @@ pub struct ReplaceObjectUpgrade {
 impl PartialEq for ReplaceObjectUpgrade {
     /// The same data object and the same `m_upgradeExecuted` (upstream compares the data pointer).
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.data, &other.data)
-            && self.base.is_already_upgraded() == other.base.is_already_upgraded()
+        Arc::ptr_eq(&self.data, &other.data) && self.base.is_already_upgraded() == other.base.is_already_upgraded()
     }
 }
 
 impl ReplaceObjectUpgrade {
     /// `ReplaceObjectUpgrade(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<ReplaceObjectUpgradeModuleData>>,
-    ) -> IniResult<ReplaceObjectUpgrade> {
-        let data =
-            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(object: ObjectId, data: Option<Arc<ReplaceObjectUpgradeModuleData>>) -> IniResult<ReplaceObjectUpgrade> {
+        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let base = UpgradeModule::new(object, Some(data.upgrade.clone()))?;
         Ok(ReplaceObjectUpgrade { base, data })
     }
@@ -159,12 +136,7 @@ impl ReplaceObjectUpgrade {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         upgrade_module_call(self, world, me, call)
     }
 }
@@ -176,11 +148,7 @@ impl UpgradeBehavior for ReplaceObjectUpgrade {
     fn base_mut(&mut self) -> &mut UpgradeModule {
         &mut self.base
     }
-    fn upgrade_implementation(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-    ) -> Result<(), IniError> {
+    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
         let object = me.object;
         let trace = |world: &mut World, line: String| {
             if let Some(t) = &mut world.cuts.trace {
@@ -188,21 +156,9 @@ impl UpgradeBehavior for ReplaceObjectUpgrade {
             }
         };
         // Matrix3D myMatrix = *me->getTransformMatrix(); Team *myTeam = me->getTeam();
-        let Some(my_matrix) = world
-            .objects
-            .find(object)
-            .map(|o| *o.thing.transform_matrix())
-        else {
-            return Ok(());
-        };
-        let my_team = if crate::logic::modules::plant(687) {
-            None
-        } else {
-            world.get_team(object)
-        };
-        let Some(replacement_template) =
-            world.thing_factory_find_template(&self.data.replace_object_name)
-        else {
+        let Some(my_matrix) = world.objects.find(object).map(|o| *o.thing.transform_matrix()) else { return Ok(()) };
+        let my_team = if crate::logic::modules::plant(687) { None } else { world.get_team(object) };
+        let Some(replacement_template) = world.thing_factory_find_template(&self.data.replace_object_name) else {
             // DEBUG_ASSERTCRASH(replacementTemplate != NULL, ...); return;
             return Ok(());
         };
@@ -222,9 +178,7 @@ impl UpgradeBehavior for ReplaceObjectUpgrade {
         if !crate::logic::modules::plant(683) {
             world.set_transform_matrix(replacement, &my_matrix);
         }
-        world.cut(CutCall::PathfinderAddObjectToPathfindMap {
-            object: replacement,
-        });
+        world.cut(CutCall::PathfinderAddObjectToPathfindMap { object: replacement });
         // Now onCreates were called at the constructor. This magically created thing needs to be considered as Built for Game specific stuff.
         for idx in world.modules_with(replacement, MODULEINTERFACE_CREATE) {
             if crate::logic::modules::plant(684) {
@@ -235,12 +189,7 @@ impl UpgradeBehavior for ReplaceObjectUpgrade {
         }
         if let Some(player) = world.get_controlling_player(replacement) {
             if !crate::logic::modules::plant(685) {
-                world.cut(CutCall::PlayerOnStructureConstructionComplete {
-                    player,
-                    builder: object,
-                    structure: replacement,
-                    is_rebuild: crate::logic::modules::plant(686),
-                });
+                world.cut(CutCall::PlayerOnStructureConstructionComplete { player, builder: object, structure: replacement, is_rebuild: crate::logic::modules::plant(686) });
             }
         }
         Ok(())
@@ -281,7 +230,5 @@ impl Snapshot for ReplaceObjectUpgrade {
 
 /// The factory's `NewModuleDataProc` for `ReplaceObjectUpgrade`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::ReplaceObjectUpgrade(Arc::new(
-        ReplaceObjectUpgradeModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::ReplaceObjectUpgrade(Arc::new(ReplaceObjectUpgradeModuleData::friend_new_module_data(ini)?)))
 }

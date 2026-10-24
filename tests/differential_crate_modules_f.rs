@@ -102,8 +102,8 @@ use rts_lockstep_engine::logic::modules::shroud_crate_collide::ShroudCrateCollid
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleReply};
 use rts_lockstep_engine::logic::world::object::PRIVATE_EFFECTIVELY_DEAD;
-use rts_lockstep_engine::logic::world::object_create::NewObject;
 use rts_lockstep_engine::logic::world::object_cuts::CutCall;
+use rts_lockstep_engine::logic::world::object_create::NewObject;
 use rts_lockstep_engine::logic::world::object_events::{ObjectClientEvent, ObjectSound};
 use rts_lockstep_engine::logic::world::statics::GameStatics;
 use rts_lockstep_engine::logic::world::team::Team;
@@ -118,11 +118,7 @@ const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9crates_f.b
 const XFER_FILE: &str = "l9crates_f.bin";
 
 /// The class names of the kinds, in the order of the driver's `kind`.
-const CLASSES: [&str; 3] = [
-    "HealCrateCollide",
-    "ShroudCrateCollide",
-    "MoneyCrateCollide",
-];
+const CLASSES: [&str; 3] = ["HealCrateCollide", "ShroudCrateCollide", "MoneyCrateCollide"];
 /// The upgrades the cases define, `Up_0` first (they take the mask bits 0 to 3).
 const UPGRADES: [&str; 4] = ["Up_0", "Up_1", "Up_2", "Up_3"];
 /// The kinds a collecting object is given, by bit (the driver's `g_cfKinds`), with their INI names.
@@ -167,24 +163,15 @@ impl FxIds {
 
 fn read_block(ini: &mut Ini<'_>, out: &mut (usize, Option<ModuleDataKind>)) -> IniResult<()> {
     out.1 = Some(match out.0 {
-        0 => ModuleDataKind::HealCrateCollide(Arc::new(
-            HealCrateCollideModuleData::friend_new_module_data(Some(ini))?,
-        )),
-        1 => ModuleDataKind::ShroudCrateCollide(Arc::new(
-            ShroudCrateCollideModuleData::friend_new_module_data(Some(ini))?,
-        )),
-        _ => ModuleDataKind::MoneyCrateCollide(Arc::new(
-            MoneyCrateCollideModuleData::friend_new_module_data(Some(ini))?,
-        )),
+        0 => ModuleDataKind::HealCrateCollide(Arc::new(HealCrateCollideModuleData::friend_new_module_data(Some(ini))?)),
+        1 => ModuleDataKind::ShroudCrateCollide(Arc::new(ShroudCrateCollideModuleData::friend_new_module_data(Some(ini))?)),
+        _ => ModuleDataKind::MoneyCrateCollide(Arc::new(MoneyCrateCollideModuleData::friend_new_module_data(Some(ini))?)),
     });
     Ok(())
 }
 
 fn rust_read(kind: usize, name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = (kind, None);
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out.1)
@@ -211,10 +198,7 @@ fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, fx: &mut FxIds) {
     put_u32(v, u32::from(c.is_forbid_owner_player));
     put_u32(v, u32::from(c.is_building_pickup));
     put_u32(v, u32::from(c.is_human_only_pickup));
-    let sci = SCIENCES
-        .iter()
-        .position(|s| s.as_bytes().eq_ignore_ascii_case(&c.pickup_science))
-        .map_or(-1, |i| i as i32);
+    let sci = SCIENCES.iter().position(|s| s.as_bytes().eq_ignore_ascii_case(&c.pickup_science)).map_or(-1, |i| i as i32);
     put_i32(v, sci);
     put_i32(v, fx.id(&c.execute_fx));
     put_str(v, &c.execution_animation_template);
@@ -251,12 +235,7 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
         return out;
     }
     let kinds: Vec<u32> = (0..2 * KINDOF_COUNT).map(|_| u32_(&mut p)).collect();
-    let set: Vec<usize> = kinds
-        .iter()
-        .enumerate()
-        .filter(|(_, v)| **v != 0)
-        .map(|(i, _)| i)
-        .collect();
+    let set: Vec<usize> = kinds.iter().enumerate().filter(|(_, v)| **v != 0).map(|(i, _)| i).collect();
     let flags = [u32_(&mut p), u32_(&mut p), u32_(&mut p)];
     let sci = u32_(&mut p) as i32;
     let fx = u32_(&mut p) as i32;
@@ -266,9 +245,7 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
     if kind == 2 {
         let money = u32_(&mut p);
         let n = u32_(&mut p);
-        let pairs: Vec<(String, i32)> = (0..n)
-            .map(|_| (str_(&mut p), u32_(&mut p) as i32))
-            .collect();
+        let pairs: Vec<(String, i32)> = (0..n).map(|_| (str_(&mut p), u32_(&mut p) as i32)).collect();
         out.push(format!("money {money} boosts {pairs:?}"));
     }
     for i in 0..n_ops {
@@ -283,9 +260,7 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
         let blen = u32_(&mut p);
         let bytes: Vec<u32> = (0..blen).map(|_| u32_(&mut p)).collect();
         let crc = u32_(&mut p);
-        out.push(format!(
-            "op {i}: status {st} result {res} log {log:?} xfer {xst} bytes {bytes:?} crc {crc:#x}"
-        ));
+        out.push(format!("op {i}: status {st} result {res} log {log:?} xfer {xst} bytes {bytes:?} crc {crc:#x}"));
     }
     out
 }
@@ -343,16 +318,10 @@ fn gen_text(g: &mut Gen, kind: usize, clean: bool) -> Vec<u8> {
         lines.push(format!("PickupScience = {}", pick(g, &SCIENCES)));
     }
     if g.below(100) < 50 {
-        lines.push(format!(
-            "ExecuteFX = {}",
-            pick(g, &["FX_A", "FX_B", "None", "fx_c"])
-        ));
+        lines.push(format!("ExecuteFX = {}", pick(g, &["FX_A", "FX_B", "None", "fx_c"])));
     }
     if g.below(100) < 45 {
-        lines.push(format!(
-            "ExecuteAnimation = {}",
-            pick(g, &["Anim_A", "Anim_B", "anim_c"])
-        ));
+        lines.push(format!("ExecuteAnimation = {}", pick(g, &["Anim_A", "Anim_B", "anim_c"])));
     }
     if g.below(100) < 30 {
         lines.push(format!("ExecuteAnimationTime = {}", gen_real(g, clean)));
@@ -403,13 +372,7 @@ fn science_block(ini: &mut Ini<'_>, c: &mut SciCtx) -> IniResult<()> {
     c.store.parse_science_definition(ini, &mut c.names, &Text)
 }
 
-fn run_xfer(
-    w: &mut World,
-    me: ObjectId,
-    idx: usize,
-    how: u32,
-    saved: &[u8],
-) -> (i32, Vec<u8>, u32) {
+fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -480,49 +443,20 @@ fn set_dead(w: &mut World, id: ObjectId, dead: bool) {
 }
 
 /// Runs the ops on a fresh world and returns the dump (after the data dump) and the world.
-fn rust_run(
-    kind: usize,
-    names: NameKeyGenerator,
-    center: UpgradeCenter,
-    data: ModuleDataKind,
-    cfg: &[u32; 22],
-    ops: &[[u32; 6]],
-    tally: &mut Tally,
-) -> (Vec<u8>, World) {
+fn rust_run(kind: usize, names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind, cfg: &[u32; 22], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     let mut fx = FxIds::default();
     put_data(&mut v, &data, &mut fx);
 
     // the sciences the store knows
-    let mut sc = SciCtx {
-        store: ScienceStore::new(),
-        names,
-    };
-    let defs: String = SCIENCES
-        .iter()
-        .map(|s| format!("Science {s}\nEnd\n"))
-        .collect();
-    static BLOCKS: [BlockParse<SciCtx>; 1] = [BlockParse {
-        token: "Science",
-        parse: science_block,
-    }];
-    Ini::load(
-        b"Data\\INI\\Science.ini",
-        defs.as_bytes(),
-        IniLoadType::Overwrite,
-        None,
-        &BLOCKS,
-        &mut sc,
-    )
-    .expect("sciences load");
+    let mut sc = SciCtx { store: ScienceStore::new(), names };
+    let defs: String = SCIENCES.iter().map(|s| format!("Science {s}\nEnd\n")).collect();
+    static BLOCKS: [BlockParse<SciCtx>; 1] = [BlockParse { token: "Science", parse: science_block }];
+    Ini::load(b"Data\\INI\\Science.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut sc).expect("sciences load");
 
     let mut w = World::new();
     w.names = sc.names;
-    w.statics = Arc::new(GameStatics {
-        science_store: sc.store,
-        upgrade_center: center,
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { science_store: sc.store, upgrade_center: center, ..Default::default() });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.globals.draw_icon_ui = cfg[3] & 8 != 0;
@@ -531,43 +465,18 @@ fn rust_run(
         w.teams.insert_team(Team::new(team, 0)).unwrap();
     }
     for i in 0..3u32 {
-        let science_keys: Vec<ScienceType> = (0..5)
-            .filter(|k| cfg[9] >> (5 * i + k) & 1 != 0)
-            .map(|k| {
-                ScienceType::from_name_key(w.names.name_to_key(SCIENCES[k as usize].as_bytes()))
-            })
-            .collect();
+        let science_keys: Vec<ScienceType> = (0..5).filter(|k| cfg[9] >> (5 * i + k) & 1 != 0).map(|k| ScienceType::from_name_key(w.names.name_to_key(SCIENCES[k as usize].as_bytes()))).collect();
         let p = w.players.get_nth_mut(i as i32).unwrap();
-        p.player_type = if cfg[8] >> i & 1 != 0 {
-            PlayerType::Computer
-        } else {
-            PlayerType::Human
-        };
+        p.player_type = if cfg[8] >> i & 1 != 0 { PlayerType::Computer } else { PlayerType::Human };
         p.sciences = science_keys;
         p.upgrades_completed = mask_of_word(cfg[10 + 4 * i as usize]);
     }
     set_player_of_team(&mut w, 1, (cfg[0] != NO_PLAYER).then_some(cfg[0]));
     set_player_of_team(&mut w, 2, (cfg[1] != NO_PLAYER).then_some(cfg[1]));
 
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        CLASSES[kind].as_bytes(),
-        b"ModuleTag_Crate",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
-    let crate_template = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
-    let me = w
-        .new_object(NewObject {
-            template: crate_template,
-            status: ObjectStatusMaskType::default(),
-            team: Some(1),
-            modules: vec![m],
-        })
-        .unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), CLASSES[kind].as_bytes(), b"ModuleTag_Crate", &data).unwrap().unwrap();
+    let crate_template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
+    let me = w.new_object(NewObject { template: crate_template, status: ObjectStatusMaskType::default(), team: Some(1), modules: vec![m] }).unwrap();
     assert_eq!(me, 1, "the first object of a fresh world has the id 1");
     let mut values = ObjectTemplateValues::default();
     for (i, (k, _)) in KINDS.iter().enumerate() {
@@ -575,33 +484,12 @@ fn rust_run(
             values.kind_of.push(*k);
         }
     }
-    let other = w
-        .new_object(NewObject {
-            template: Arc::new(ThingTemplate::from_object_values(&values)),
-            status: ObjectStatusMaskType::default(),
-            team: Some(2),
-            modules: Vec::new(),
-        })
-        .unwrap();
+    let other = w.new_object(NewObject { template: Arc::new(ThingTemplate::from_object_values(&values)), status: ObjectStatusMaskType::default(), team: Some(2), modules: Vec::new() }).unwrap();
     assert_eq!(other, 2);
     w.objects.find_mut(other).unwrap().ai = if cfg[3] & 1 != 0 { Some(0) } else { None };
     set_dead(&mut w, other, cfg[3] & 2 != 0);
-    w.set_position(
-        me,
-        &Coord3D {
-            x: 0.0,
-            y: 0.0,
-            z: f32::from_bits(cfg[4]),
-        },
-    );
-    w.set_position(
-        other,
-        &Coord3D {
-            x: f32::from_bits(cfg[5]),
-            y: f32::from_bits(cfg[6]),
-            z: f32::from_bits(cfg[7]),
-        },
-    );
+    w.set_position(me, &Coord3D { x: 0.0, y: 0.0, z: f32::from_bits(cfg[4]) });
+    w.set_position(other, &Coord3D { x: f32::from_bits(cfg[5]), y: f32::from_bits(cfg[6]), z: f32::from_bits(cfg[7]) });
     let idx = w.find_module(me, CLASSES[kind].as_bytes()).unwrap();
 
     let mut saved: Vec<u8> = Vec::new();
@@ -614,23 +502,11 @@ fn rust_run(
         let target = if o[1] != 0 { other } else { INVALID_ID };
         match o[0] {
             0 => {
-                w.module_call(
-                    me,
-                    idx,
-                    ModuleCall::OnCollide {
-                        other: target,
-                        loc: None,
-                        normal: None,
-                    },
-                );
+                w.module_call(me, idx, ModuleCall::OnCollide { other: target, loc: None, normal: None });
                 tally.collides += 1;
             }
             1 => {
-                res = match w.module_call(
-                    me,
-                    idx,
-                    ModuleCall::WouldLikeToCollideWith { other: target },
-                ) {
+                res = match w.module_call(me, idx, ModuleCall::WouldLikeToCollideWith { other: target }) {
                     ModuleReply::Bool(b) => i32::from(b),
                     r => panic!("unexpected reply {r:?}"),
                 };
@@ -638,22 +514,8 @@ fn rust_run(
             2 => set_player_of_team(&mut w, 2, (o[1] != 0).then(|| o[1] - 1)),
             3 => w.objects.find_mut(other).unwrap().ai = if o[1] != 0 { Some(0) } else { None },
             4 => set_dead(&mut w, other, o[1] != 0),
-            6 => w.set_position(
-                other,
-                &Coord3D {
-                    x: f32::from_bits(o[1]),
-                    y: f32::from_bits(o[2]),
-                    z: f32::from_bits(o[3]),
-                },
-            ),
-            7 => w.set_position(
-                me,
-                &Coord3D {
-                    x: 0.0,
-                    y: 0.0,
-                    z: f32::from_bits(o[1]),
-                },
-            ),
+            6 => w.set_position(other, &Coord3D { x: f32::from_bits(o[1]), y: f32::from_bits(o[2]), z: f32::from_bits(o[3]) }),
+            7 => w.set_position(me, &Coord3D { x: 0.0, y: 0.0, z: f32::from_bits(o[1]) }),
             8 => {
                 w.cuts.globals.draw_icon_ui = o[1] & 8 != 0;
                 w.cuts.globals.anim2d_collection_present = o[1] & 4 != 0;
@@ -671,8 +533,7 @@ fn rust_run(
             12 => set_player_of_team(&mut w, 1, (o[1] != 0).then(|| o[1] - 1)),
             13 => {
                 for i in 0..3 {
-                    w.players.get_nth_mut(i as i32).unwrap().upgrades_completed =
-                        mask_of_word(o[1 + i]);
+                    w.players.get_nth_mut(i as i32).unwrap().upgrades_completed = mask_of_word(o[1 + i]);
                 }
             }
             _ => unreachable!(),
@@ -696,21 +557,10 @@ fn rust_run(
             if t.starts_with("cut ") {
                 match cut_iter.next().expect("a cut line has a cut call") {
                     CutCall::PlayerHealAllObjects { player } => log.push(format!("heal {player}")),
-                    CutCall::PartitionRevealMapForPlayer { player } => {
-                        log.push(format!("reveal {player}"))
-                    }
-                    CutCall::PlayerMoneyDeposit { player, amount } => {
-                        log.push(format!("deposit {player} {amount} 1"))
-                    }
-                    CutCall::PlayerScoreAddMoneyEarned { player, amount } => {
-                        log.push(format!("earned {player} {amount}"))
-                    }
-                    CutCall::InGameUiAddWorldAnimation {
-                        template,
-                        position,
-                        display_time_in_seconds,
-                        z_rise_per_second,
-                    } => {
+                    CutCall::PartitionRevealMapForPlayer { player } => log.push(format!("reveal {player}")),
+                    CutCall::PlayerMoneyDeposit { player, amount } => log.push(format!("deposit {player} {amount} 1")),
+                    CutCall::PlayerScoreAddMoneyEarned { player, amount } => log.push(format!("earned {player} {amount}")),
+                    CutCall::InGameUiAddWorldAnimation { template, position, display_time_in_seconds, z_rise_per_second } => {
                         log.push(format!("findanim {}", String::from_utf8_lossy(template)));
                         log.push(format!(
                             "anim {},{},{} 1 {} {}",
@@ -724,12 +574,7 @@ fn rust_run(
                     _ => {}
                 }
             } else if t.starts_with("evt Sound") {
-                if let Some(ObjectClientEvent::Sound {
-                    sound,
-                    object_id,
-                    position,
-                }) = event_iter.next()
-                {
+                if let Some(ObjectClientEvent::Sound { sound, object_id, position }) = event_iter.next() {
                     let name = match sound {
                         ObjectSound::CrateHeal => "crateHeal",
                         ObjectSound::CrateShroud => "crateShroud",
@@ -767,10 +612,7 @@ fn rust_run(
 }
 
 fn cases() -> usize {
-    std::env::var("L9CF_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9CF_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 fn f32_bits(g: &mut Gen, range: f32) -> u32 {
@@ -796,30 +638,10 @@ fn crate_modules_f_match_upstream() {
         let kind = case % 3;
         let mut ctx = Ctx::new(true, true);
         cpp_reset(true, true);
-        let defs: String = UPGRADES
-            .iter()
-            .map(|u| format!("Upgrade {u}\n Type = PLAYER\nEnd\n"))
-            .collect();
+        let defs: String = UPGRADES.iter().map(|u| format!("Upgrade {u}\n Type = PLAYER\nEnd\n")).collect();
         let table = blocks();
-        Ini::load(
-            b"Data\\INI\\Upgrade.ini",
-            defs.as_bytes(),
-            IniLoadType::Overwrite,
-            None,
-            &table,
-            &mut ctx,
-        )
-        .expect("upgrades load");
-        assert_eq!(
-            cpp_load(
-                b"Data\\INI\\Upgrade.ini",
-                defs.as_bytes(),
-                IniLoadType::Overwrite,
-                false
-            )
-            .status,
-            0
-        );
+        Ini::load(b"Data\\INI\\Upgrade.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ctx).expect("upgrades load");
+        assert_eq!(cpp_load(b"Data\\INI\\Upgrade.ini", defs.as_bytes(), IniLoadType::Overwrite, false).status, 0);
         let clean = g.below(10) < 7;
         let text = gen_text(&mut g, kind, clean);
         let name = format!("Data\\INI\\Uf{}.ini", case % 5).into_bytes();
@@ -833,21 +655,12 @@ fn crate_modules_f_match_upstream() {
             }
         };
         // [the crate's player, the other's player, the other's kinds, flags, the crate's z, the other's x, y, z, the types of the players, their sciences]
-        let player = |g: &mut Gen| {
-            if g.below(10) == 0 {
-                NO_PLAYER
-            } else {
-                1 + g.below(2) - u32::from(g.below(6) == 0)
-            }
-        };
+        let player = |g: &mut Gen| if g.below(10) == 0 { NO_PLAYER } else { 1 + g.below(2) - u32::from(g.below(6) == 0) };
         let mut cfg = [0u32; 22];
         cfg[0] = player(&mut g);
         cfg[1] = player(&mut g);
         cfg[2] = (g.u32() & g.u32() & 0xff) | if g.below(3) == 0 { 1 << g.below(8) } else { 0 };
-        cfg[3] = (u32::from(g.below(4) != 0))
-            | (u32::from(g.below(8) == 0) << 1)
-            | (u32::from(g.below(4) != 0) << 2)
-            | (u32::from(g.below(4) != 0) << 3);
+        cfg[3] = (u32::from(g.below(4) != 0)) | (u32::from(g.below(8) == 0) << 1) | (u32::from(g.below(4) != 0) << 2) | (u32::from(g.below(4) != 0) << 3);
         cfg[4] = pick_z(&mut g);
         cfg[5] = f32_bits(&mut g, 100.0);
         cfg[6] = f32_bits(&mut g, 100.0);
@@ -865,14 +678,7 @@ fn crate_modules_f_match_upstream() {
                 19..=21 => [2, g.below(4), 0, 0, 0, 0],
                 22..=23 => [3, g.below(2), 0, 0, 0, 0],
                 24..=25 => [4, g.below(2), 0, 0, 0, 0],
-                26..=27 => [
-                    6,
-                    f32_bits(&mut g, 100.0),
-                    f32_bits(&mut g, 100.0),
-                    pick_z(&mut g),
-                    0,
-                    0,
-                ],
+                26..=27 => [6, f32_bits(&mut g, 100.0), f32_bits(&mut g, 100.0), pick_z(&mut g), 0, 0],
                 28..=29 => [7, pick_z(&mut g), 0, 0, 0, 0],
                 30..=31 => [8, g.below(16), 0, 0, 0, 0],
                 32..=33 => [9, 0, 0, 0, 0, 0],
@@ -885,15 +691,7 @@ fn crate_modules_f_match_upstream() {
 
         // Rust first: a case that reaches upstream undefined behaviour is counted and never sent to the C++
         let rust = if outcome.status == 0 {
-            let (rd, w) = rust_run(
-                kind,
-                ctx.names.clone(),
-                ctx.center.clone(),
-                data.expect("read ok"),
-                &cfg,
-                &ops,
-                &mut tally,
-            );
+            let (rd, w) = rust_run(kind, ctx.names.clone(), ctx.center.clone(), data.expect("read ok"), &cfg, &ops, &mut tally);
             if w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined()) {
                 excluded += 1;
                 continue;
@@ -934,58 +732,22 @@ fn crate_modules_f_match_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!(
-                "case {case} ({}): cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                CLASSES[kind],
-                show(&text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case} ({}): cfg {cfg:x?}, file {:?}, ops {ops:?}", CLASSES[kind], show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
         };
         let (dr, dc) = (decode(kind, &rd, ops.len()), decode(kind, &buf, ops.len()));
         for l in &dr {
-            for key in [
-                "\"deposit ",
-                "\"earned ",
-                "\"heal ",
-                "\"reveal ",
-                "\"audio ",
-                "\"fx",
-                "\"destroy ",
-                "\"findanim ",
-                "\"anim ",
-            ] {
-                *counts
-                    .entry(key.trim_matches('"').trim().to_string())
-                    .or_default() += l.matches(key).count() as u64;
+            for key in ["\"deposit ", "\"earned ", "\"heal ", "\"reveal ", "\"audio ", "\"fx", "\"destroy ", "\"findanim ", "\"anim "] {
+                *counts.entry(key.trim_matches('"').trim().to_string()).or_default() += l.matches(key).count() as u64;
             }
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
-            eprintln!(
-                "--- case {case} ({}) cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}",
-                CLASSES[kind],
-                show(&text),
-                dr.get(i),
-                dc.get(i)
-            );
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            eprintln!("--- case {case} ({}) cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}", CLASSES[kind], show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -1005,10 +767,5 @@ fn crate_modules_f_match_upstream() {
     }
     read.finish();
     run.finish();
-    assert!(
-        read_failed * 40 > cases as u64
-            && ops_run * 5 > cases as u64 * 4
-            && tally.destroyed * 10 > cases as u64,
-        "the generator must reach every path"
-    );
+    assert!(read_failed * 40 > cases as u64 && ops_run * 5 > cases as u64 * 4 && tally.destroyed * 10 > cases as u64, "the generator must reach every path");
 }

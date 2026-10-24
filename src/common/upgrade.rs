@@ -140,11 +140,7 @@ pub fn test_upgrade_mask_any(m: &UpgradeMaskType, mask: &UpgradeMaskType) -> boo
 }
 
 /// `TEST_UPGRADE_MASK_MULTI(m, mustBeSet, mustBeClear)`.
-pub fn test_upgrade_mask_multi(
-    m: &UpgradeMaskType,
-    must_be_set: &UpgradeMaskType,
-    must_be_clear: &UpgradeMaskType,
-) -> bool {
+pub fn test_upgrade_mask_multi(m: &UpgradeMaskType, must_be_set: &UpgradeMaskType, must_be_clear: &UpgradeMaskType) -> bool {
     m.test_set_and_clear(must_be_set, must_be_clear)
 }
 
@@ -182,10 +178,7 @@ pub struct Upgrade {
 impl Upgrade {
     /// `Upgrade(upgradeTemplate)`: status `UPGRADE_STATUS_INVALID`.
     pub fn new(template: NameKeyType) -> Self {
-        Upgrade {
-            template,
-            status: UPGRADE_STATUS_INVALID,
-        }
+        Upgrade { template, status: UPGRADE_STATUS_INVALID }
     }
 
     /// `getTemplate()`, as the template's key.
@@ -360,11 +353,7 @@ impl UpgradeTemplate {
 
     /// `friend_makeVeterancyUpgrade(v)`: a free per-object upgrade named
     /// `Upgrade_Veterancy_<LEVEL>`. The mask is left alone.
-    pub fn friend_make_veterancy_upgrade(
-        &mut self,
-        names: &mut NameKeyGenerator,
-        v: VeterancyLevel,
-    ) -> Result<(), NameKeyError> {
+    pub fn friend_make_veterancy_upgrade(&mut self, names: &mut NameKeyGenerator, v: VeterancyLevel) -> Result<(), NameKeyError> {
         self.type_ = UpgradeType::Object;
         self.name = vet_upgrade_name(v);
         self.name_key = names.try_name_to_key(&self.name)?;
@@ -376,29 +365,16 @@ impl UpgradeTemplate {
 
     /// `parseUpgradeTemplate`'s field table is [`UPGRADE_FIELDS`]; the
     /// `Type` field.
-    fn parse_type(
-        ini: &mut Ini<'_>,
-        this: &mut UpgradeTemplate,
-        user_data: &UserData,
-    ) -> IniResult<()> {
+    fn parse_type(ini: &mut Ini<'_>, this: &mut UpgradeTemplate, user_data: &UserData) -> IniResult<()> {
         let i = ini.parse_index_list(user_data.names())?;
-        this.type_ = if i == 0 {
-            UpgradeType::Player
-        } else {
-            UpgradeType::Object
-        };
+        this.type_ = if i == 0 { UpgradeType::Player } else { UpgradeType::Object };
         Ok(())
     }
 
     /// The `AcademyClassify` field.
-    fn parse_academy(
-        ini: &mut Ini<'_>,
-        this: &mut UpgradeTemplate,
-        user_data: &UserData,
-    ) -> IniResult<()> {
+    fn parse_academy(ini: &mut Ini<'_>, this: &mut UpgradeTemplate, user_data: &UserData) -> IniResult<()> {
         let i = ini.parse_index_list(user_data.names())?;
-        this.academy_classification_type =
-            AcademyClassificationType::from_index(i).expect("index within the name list");
+        this.academy_classification_type = AcademyClassificationType::from_index(i).expect("index within the name list");
         Ok(())
     }
 }
@@ -420,11 +396,7 @@ static UPGRADE_FIELDS: [FieldParse<UpgradeTemplate>; 9] = [
         },
         UserData::None,
     ),
-    FieldParse::new(
-        "Type",
-        UpgradeTemplate::parse_type,
-        UserData::Names(&UPGRADE_TYPE_NAMES),
-    ),
+    FieldParse::new("Type", UpgradeTemplate::parse_type, UserData::Names(&UPGRADE_TYPE_NAMES)),
     FieldParse::new(
         "BuildTime",
         |ini, t, _| {
@@ -449,21 +421,9 @@ static UPGRADE_FIELDS: [FieldParse<UpgradeTemplate>; 9] = [
         },
         UserData::None,
     ),
-    FieldParse::new(
-        "ResearchSound",
-        |ini, t, _| t.research_sound.parse(ini),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "UnitSpecificSound",
-        |ini, t, _| t.unit_specific_sound.parse(ini),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "AcademyClassify",
-        UpgradeTemplate::parse_academy,
-        UserData::Names(&ACADEMY_CLASSIFICATION_TYPE_NAMES),
-    ),
+    FieldParse::new("ResearchSound", |ini, t, _| t.research_sound.parse(ini), UserData::None),
+    FieldParse::new("UnitSpecificSound", |ini, t, _| t.unit_specific_sound.parse(ini), UserData::None),
+    FieldParse::new("AcademyClassify", UpgradeTemplate::parse_academy, UserData::Names(&ACADEMY_CLASSIFICATION_TYPE_NAMES)),
     FieldParse::end(),
 ];
 
@@ -524,11 +484,7 @@ impl UpgradeCenter {
     /// `init()`: the three veterancy templates (there is "no upgrade" for
     /// `LEVEL_REGULAR`), each made by `newUpgrade("")` and then renamed.
     pub fn init(&mut self, names: &mut NameKeyGenerator) -> Result<(), UpgradeCenterError> {
-        for level in [
-            VeterancyLevel::Veteran,
-            VeterancyLevel::Elite,
-            VeterancyLevel::Heroic,
-        ] {
+        for level in [VeterancyLevel::Veteran, VeterancyLevel::Elite, VeterancyLevel::Heroic] {
             let i = self.new_upgrade(names, b"")?;
             self.upgrade_list[i].friend_make_veterancy_upgrade(names, level)?;
         }
@@ -568,18 +524,12 @@ impl UpgradeCenter {
 
     /// `findNonConstUpgradeByKey(key)`, as an index into `upgrade_list`.
     fn find_index_by_key(&self, key: NameKeyType) -> Option<usize> {
-        self.upgrade_list
-            .iter()
-            .rposition(|t| t.upgrade_name_key() == key)
+        self.upgrade_list.iter().rposition(|t| t.upgrade_name_key() == key)
     }
 
     /// `findUpgrade(name)`: `findUpgradeByKey(nameToKey(name))` (which assigns
     /// a key to a new name).
-    pub fn find_upgrade(
-        &self,
-        names: &mut NameKeyGenerator,
-        name: &[u8],
-    ) -> Result<Option<&UpgradeTemplate>, NameKeyError> {
+    pub fn find_upgrade(&self, names: &mut NameKeyGenerator, name: &[u8]) -> Result<Option<&UpgradeTemplate>, NameKeyError> {
         let key = names.try_name_to_key(name)?;
         Ok(self.find_upgrade_by_key(key))
     }
@@ -598,11 +548,7 @@ impl UpgradeCenter {
     /// first: its name gets a key), named, given the next mask bit and
     /// linked at the head. Returns its index in the list order of storage
     /// (the last one).
-    pub fn new_upgrade(
-        &mut self,
-        names: &mut NameKeyGenerator,
-        name: &[u8],
-    ) -> Result<usize, UpgradeCenterError> {
+    pub fn new_upgrade(&mut self, names: &mut NameKeyGenerator, name: &[u8]) -> Result<usize, UpgradeCenterError> {
         // copy data from the default upgrade
         let mut new_upgrade = match self.find_upgrade(names, b"DefaultUpgrade")? {
             Some(default) => default.clone(),
@@ -615,9 +561,7 @@ impl UpgradeCenter {
 
         // a unique bitmask for this template (the 129th throws)
         let mut new_mask = UpgradeMaskType::new();
-        new_mask
-            .try_set(self.next_template_mask_bit, 1)
-            .map_err(UpgradeCenterError::MaskBit)?;
+        new_mask.try_set(self.next_template_mask_bit, 1).map_err(UpgradeCenterError::MaskBit)?;
         self.next_template_mask_bit += 1;
         new_upgrade.upgrade_mask = new_mask;
 
@@ -629,9 +573,7 @@ impl UpgradeCenter {
     /// `getUpgradeNames()` ("for WorldBuilder only"): every template's name,
     /// newest first.
     pub fn get_upgrade_names(&self) -> Vec<Vec<u8>> {
-        self.templates()
-            .map(|t| t.upgrade_name().to_vec())
-            .collect()
+        self.templates().map(|t| t.upgrade_name().to_vec()).collect()
     }
 
     /// `UpgradeCenter::parseUpgradeDefinition(ini)` (reached through
@@ -639,18 +581,12 @@ impl UpgradeCenter {
     /// name, then its fields until `End`. A known name (by name key) is
     /// parsed over; a new one is made by [`UpgradeCenter::new_upgrade`]. A
     /// template stays as far as it was filled if a line fails.
-    pub fn parse_upgrade_definition(
-        &mut self,
-        ini: &mut Ini<'_>,
-        names: &mut NameKeyGenerator,
-    ) -> IniResult<()> {
+    pub fn parse_upgrade_definition(&mut self, ini: &mut Ini<'_>, names: &mut NameKeyGenerator) -> IniResult<()> {
         // read the name
         let name = ini.get_next_token(None)?;
 
         // find existing item if present
-        let key = names
-            .try_name_to_key(&name)
-            .map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
+        let key = names.try_name_to_key(&name).map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
         let index = match self.find_index_by_key(key) {
             Some(i) => i,
             // allocate a new item
@@ -681,9 +617,7 @@ impl std::fmt::Display for XferUpgradeMaskError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             XferUpgradeMaskError::Xfer(s) => write!(f, "xferUpgradeMask: {s:?}"),
-            XferUpgradeMaskError::NameKeysExhausted => {
-                f.write_str("xferUpgradeMask: name keys exhausted (undefined upstream)")
-            }
+            XferUpgradeMaskError::NameKeysExhausted => f.write_str("xferUpgradeMask: name keys exhausted (undefined upstream)"),
         }
     }
 }
@@ -740,9 +674,7 @@ pub fn xfer_upgrade_mask(
             let mut name = Vec::new();
             for _ in 0..count {
                 xfer.xfer_ascii_string(&mut name)?;
-                let template = center
-                    .find_upgrade(names, &name)
-                    .map_err(|_| XferUpgradeMaskError::NameKeysExhausted)?;
+                let template = center.find_upgrade(names, &name).map_err(|_| XferUpgradeMaskError::NameKeysExhausted)?;
                 match template {
                     Some(t) => mask.set_mask(&t.upgrade_mask()),
                     None => return Err(XferStatus::UnknownString.into()),
@@ -779,16 +711,10 @@ mod tests {
         c.center.parse_upgrade_definition(ini, &mut c.names)
     }
 
-    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse {
-        token: "Upgrade",
-        parse: block,
-    }];
+    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse { token: "Upgrade", parse: block }];
 
     fn ctx(init: bool) -> Ctx {
-        let mut c = Ctx {
-            center: UpgradeCenter::new(),
-            names: NameKeyGenerator::new(),
-        };
+        let mut c = Ctx { center: UpgradeCenter::new(), names: NameKeyGenerator::new() };
         c.names.init();
         if init {
             c.center.init(&mut c.names).unwrap();
@@ -798,14 +724,7 @@ mod tests {
 
     fn load(init: bool, text: &[u8]) -> (Ctx, IniResult<()>) {
         let mut c = ctx(init);
-        let r = Ini::load(
-            b"u.ini",
-            text,
-            IniLoadType::Overwrite,
-            None,
-            &BLOCKS,
-            &mut c,
-        );
+        let r = Ini::load(b"u.ini", text, IniLoadType::Overwrite, None, &BLOCKS, &mut c);
         (c, r)
     }
 
@@ -817,11 +736,7 @@ mod tests {
         let names = c.center.get_upgrade_names();
         assert_eq!(
             names,
-            vec![
-                b"Upgrade_Veterancy_HEROIC".to_vec(),
-                b"Upgrade_Veterancy_ELITE".to_vec(),
-                b"Upgrade_Veterancy_VETERAN".to_vec()
-            ]
+            vec![b"Upgrade_Veterancy_HEROIC".to_vec(), b"Upgrade_Veterancy_ELITE".to_vec(), b"Upgrade_Veterancy_VETERAN".to_vec()]
         );
         let first = c.center.first_upgrade_template().unwrap();
         assert_eq!(first.upgrade_name(), b"Upgrade_Veterancy_HEROIC");
@@ -842,37 +757,21 @@ mod tests {
         r.unwrap();
         assert_eq!(c.center.len(), 5);
         assert_eq!(c.center.next_template_mask_bit(), 5);
-        let radar = c
-            .center
-            .find_upgrade(&mut c.names, b"Radar")
-            .unwrap()
-            .unwrap()
-            .clone();
+        let radar = c.center.find_upgrade(&mut c.names, b"Radar").unwrap().unwrap().clone();
         // copied from DefaultUpgrade, then overridden field by field
         assert_eq!(radar.upgrade_type(), UpgradeType::Object);
         assert_eq!(radar.cost_to_build(), 99);
         assert_eq!(radar.research_complete_sound().event_name, b"Chime");
         assert_eq!(radar.unit_specific_sound().event_name, b"");
-        assert_eq!(
-            radar.academy_classification_type(),
-            AcademyClassificationType::Superpower
-        );
+        assert_eq!(radar.academy_classification_type(), AcademyClassificationType::Superpower);
         assert_eq!(radar.display_name_label(), b"UPGRADE:Radar");
         assert_eq!(radar.button_image_name(), b"SSRadar");
         assert_eq!(radar.time_to_build_frames(), Ok(75));
         // its own bit, not the default's
         assert_eq!(radar.upgrade_mask(), make_upgrade_mask(&[4]).unwrap());
         assert_eq!(c.center.find_upgrade(&mut c.names, b"Nope").unwrap(), None);
-        assert!(c
-            .center
-            .find_veterancy_upgrade(&mut c.names, VeterancyLevel::Elite)
-            .unwrap()
-            .is_some());
-        assert!(c
-            .center
-            .find_veterancy_upgrade(&mut c.names, VeterancyLevel::Regular)
-            .unwrap()
-            .is_none());
+        assert!(c.center.find_veterancy_upgrade(&mut c.names, VeterancyLevel::Elite).unwrap().is_some());
+        assert!(c.center.find_veterancy_upgrade(&mut c.names, VeterancyLevel::Regular).unwrap().is_none());
     }
 
     #[test]
@@ -886,10 +785,7 @@ mod tests {
         assert_eq!(e.kind, IniErrorKind::BitIndexOutOfRange);
         assert_eq!(c.center.len(), 128);
         assert_eq!(c.center.next_template_mask_bit(), 128);
-        assert_eq!(
-            c.center.first_upgrade_template().unwrap().upgrade_name(),
-            b"U124"
-        );
+        assert_eq!(c.center.first_upgrade_template().unwrap().upgrade_name(), b"U124");
     }
 
     #[test]
@@ -897,10 +793,7 @@ mod tests {
         let (c, r) = load(false, b"Upgrade A\n BuildCost = 5\n Type = SIDEWAYS\nEnd\n");
         assert_eq!(r.unwrap_err().kind, IniErrorKind::InvalidData);
         assert_eq!(c.center.len(), 1);
-        assert_eq!(
-            c.center.first_upgrade_template().unwrap().cost_to_build(),
-            5
-        );
+        assert_eq!(c.center.first_upgrade_template().unwrap().cost_to_build(), 5);
         let (_, r) = load(false, b"Upgrade A\n Foo = 1\nEnd\n");
         assert_eq!(r.unwrap_err().kind, IniErrorKind::UnknownToken);
         let (_, r) = load(false, b"Upgrade\n");
@@ -929,11 +822,7 @@ mod tests {
         assert_eq!(test_upgrade_mask(&a, 128), Err(BitIndexOutOfRange));
         assert!(test_upgrade_mask_any(&a, &b));
         assert!(!test_upgrade_mask_multi(&a, &b, &UpgradeMaskType::new()));
-        assert!(test_upgrade_mask_multi(
-            &a,
-            &make_upgrade_mask(&[1]).unwrap(),
-            &make_upgrade_mask(&[2]).unwrap()
-        ));
+        assert!(test_upgrade_mask_multi(&a, &make_upgrade_mask(&[1]).unwrap(), &make_upgrade_mask(&[2]).unwrap()));
         assert!(upgrade_mask_any_set(&a));
         let mut m = a;
         clear_upgrade_mask(&mut m);
@@ -999,10 +888,7 @@ mod tests {
         let mut load = XferLoad::new(bad);
         load.open(b"t").unwrap();
         let mut m = UpgradeMaskType::new();
-        assert_eq!(
-            xfer_upgrade_mask(&mut load, &mut m, &c.center, &mut c.names),
-            Err(XferStatus::UnknownString.into())
-        );
+        assert_eq!(xfer_upgrade_mask(&mut load, &mut m, &c.center, &mut c.names), Err(XferStatus::UnknownString.into()));
         // CRC hashes the 16 bytes of the mask
         let mut crc = XferCrc::new_without_nan_guard();
         crc.open(b"t").unwrap();

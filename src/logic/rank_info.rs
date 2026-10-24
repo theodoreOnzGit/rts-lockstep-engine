@@ -45,14 +45,10 @@
 //! forward declaration); the `Player` layer reads ranks through
 //! [`RankInfoStore::get_rank_info`].
 
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, UserData};
 use crate::common::name_key_generator::NameKeyGenerator;
 use crate::common::overridable::Overridable;
-use crate::common::science::{
-    parse_and_translate_label, parse_science_vector, GameTextFetch, ScienceStore, ScienceVec,
-};
+use crate::common::science::{parse_and_translate_label, parse_science_vector, GameTextFetch, ScienceStore, ScienceVec};
 use crate::common::unicode_string::UnicodeString;
 
 /// `class RankInfo`.
@@ -86,18 +82,9 @@ fn f_skill_points_needed(ini: &mut Ini<'_>, w: &mut RankFill<'_>, _: &UserData) 
 }
 fn f_sciences_granted(ini: &mut Ini<'_>, w: &mut RankFill<'_>, _: &UserData) -> IniResult<()> {
     let sciences = w.sciences;
-    parse_science_vector(
-        ini,
-        w.names,
-        |s| sciences.is_valid_science(s),
-        &mut w.info.sciences_granted,
-    )
+    parse_science_vector(ini, w.names, |s| sciences.is_valid_science(s), &mut w.info.sciences_granted)
 }
-fn f_science_purchase_points_granted(
-    ini: &mut Ini<'_>,
-    w: &mut RankFill<'_>,
-    _: &UserData,
-) -> IniResult<()> {
+fn f_science_purchase_points_granted(ini: &mut Ini<'_>, w: &mut RankFill<'_>, _: &UserData) -> IniResult<()> {
     w.info.science_purchase_points_granted = ini.parse_unsigned_int()? as i32;
     Ok(())
 }
@@ -108,11 +95,7 @@ fn rank_fields<'a>() -> [FieldParse<RankFill<'a>>; 5] {
         FieldParse::new("RankName", f_rank_name, UserData::None),
         FieldParse::new("SkillPointsNeeded", f_skill_points_needed, UserData::None),
         FieldParse::new("SciencesGranted", f_sciences_granted, UserData::None),
-        FieldParse::new(
-            "SciencePurchasePointsGranted",
-            f_science_purchase_points_granted,
-            UserData::None,
-        ),
+        FieldParse::new("SciencePurchasePointsGranted", f_science_purchase_points_granted, UserData::None),
         FieldParse::end(),
     ]
 }
@@ -154,11 +137,7 @@ impl RankInfoStore {
     /// **1..=n, not 0..=n-1**; `None` outside that range.
     pub fn get_rank_info(&self, level: i32) -> Option<&RankInfo> {
         if level >= 1 && level <= self.get_rank_level_count() {
-            return Some(
-                &self.rank_infos[(level - 1) as usize]
-                    .get_final_override()
-                    .data,
-            );
+            return Some(&self.rank_infos[(level - 1) as usize].get_final_override().data);
         }
         None
     }
@@ -194,15 +173,8 @@ impl RankInfoStore {
             let mut new_info = Overridable::new(fin.data.clone());
             new_info.mark_as_override();
             let _ = fin.set_next_override(Some(Box::new(new_info)));
-            let target = &mut self.rank_infos[(rank - 1) as usize]
-                .friend_get_final_override()
-                .data;
-            let mut fill = RankFill {
-                info: target,
-                names,
-                sciences,
-                text,
-            };
+            let target = &mut self.rank_infos[(rank - 1) as usize].friend_get_final_override().data;
+            let mut fill = RankFill { info: target, names, sciences, text };
             ini.init_from_ini(&mut fill, &rank_fields())
         } else {
             if i64::from(rank) != self.rank_infos.len() as i64 + 1 {
@@ -210,12 +182,7 @@ impl RankInfoStore {
             }
             let mut info = RankInfo::default();
             {
-                let mut fill = RankFill {
-                    info: &mut info,
-                    names,
-                    sciences,
-                    text,
-                };
+                let mut fill = RankFill { info: &mut info, names, sciences, text };
                 ini.init_from_ini(&mut fill, &rank_fields())?;
             }
             self.rank_infos.push(Overridable::new(info));
@@ -244,23 +211,12 @@ mod tests {
         names: NameKeyGenerator,
     }
     fn sci(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-        c.sciences
-            .parse_science_definition(ini, &mut c.names, &Text)
+        c.sciences.parse_science_definition(ini, &mut c.names, &Text)
     }
     fn rank(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-        c.ranks
-            .parse_rank_definition(ini, &mut c.names, &c.sciences, &Text)
+        c.ranks.parse_rank_definition(ini, &mut c.names, &c.sciences, &Text)
     }
-    static BLOCKS: [BlockParse<Ctx>; 2] = [
-        BlockParse {
-            token: "Science",
-            parse: sci,
-        },
-        BlockParse {
-            token: "Rank",
-            parse: rank,
-        },
-    ];
+    static BLOCKS: [BlockParse<Ctx>; 2] = [BlockParse { token: "Science", parse: sci }, BlockParse { token: "Rank", parse: rank }];
 
     fn load(c: &mut Ctx, text: &[u8], t: IniLoadType) -> IniResult<()> {
         Ini::load(b"r.ini", text, t, None, &BLOCKS, c)
@@ -270,53 +226,23 @@ mod tests {
     fn ranks_are_monotonic_and_overridable() {
         let mut names = NameKeyGenerator::new();
         names.reset();
-        let mut c = Ctx {
-            sciences: ScienceStore::new(),
-            ranks: RankInfoStore::new(),
-            names,
-        };
+        let mut c = Ctx { sciences: ScienceStore::new(), ranks: RankInfoStore::new(), names };
         let txt = b"Science S\nEnd\nRank 1\n RankName = One\n SkillPointsNeeded = 0\n SciencesGranted = S\n SciencePurchasePointsGranted = 1\nEnd\nRank 2\n SkillPointsNeeded = 5\nEnd\n";
         load(&mut c, txt, IniLoadType::Overwrite).unwrap();
         assert_eq!(c.ranks.get_rank_level_count(), 2);
         let r1 = c.ranks.get_rank_info(1).unwrap();
-        assert_eq!(
-            (
-                r1.skill_points_needed,
-                r1.science_purchase_points_granted,
-                r1.sciences_granted.len()
-            ),
-            (0, 1, 1)
-        );
+        assert_eq!((r1.skill_points_needed, r1.science_purchase_points_granted, r1.sciences_granted.len()), (0, 1, 1));
         assert!(c.ranks.get_rank_info(0).is_none() && c.ranks.get_rank_info(3).is_none());
         // out of order, and a failing block adds nothing
         assert!(load(&mut c, b"Rank 5\nEnd\n", IniLoadType::Overwrite).is_err());
-        assert!(load(
-            &mut c,
-            b"Rank 3\n SciencesGranted = Nope\nEnd\n",
-            IniLoadType::Overwrite
-        )
-        .is_err());
+        assert!(load(&mut c, b"Rank 3\n SciencesGranted = Nope\nEnd\n", IniLoadType::Overwrite).is_err());
         assert_eq!(c.ranks.get_rank_level_count(), 2);
         // overrides only for existing levels, copied from the final override
         assert!(load(&mut c, b"Rank 3\nEnd\n", IniLoadType::CreateOverrides).is_err());
-        load(
-            &mut c,
-            b"Rank 2\n SkillPointsNeeded = 50\n SciencePurchasePointsGranted = 4294967295\nEnd\n",
-            IniLoadType::CreateOverrides,
-        )
-        .unwrap();
+        load(&mut c, b"Rank 2\n SkillPointsNeeded = 50\n SciencePurchasePointsGranted = 4294967295\nEnd\n", IniLoadType::CreateOverrides).unwrap();
         let r2 = c.ranks.get_rank_info(2).unwrap();
-        assert_eq!(
-            (r2.skill_points_needed, r2.science_purchase_points_granted),
-            (50, -1)
-        );
-        assert_eq!(
-            c.ranks
-                .chains()
-                .filter(|h| h.get_next_override().is_some())
-                .count(),
-            1
-        );
+        assert_eq!((r2.skill_points_needed, r2.science_purchase_points_granted), (50, -1));
+        assert_eq!(c.ranks.chains().filter(|h| h.get_next_override().is_some()).count(), 1);
         c.ranks.reset();
         assert_eq!(c.ranks.get_rank_info(2).unwrap().skill_points_needed, 5);
         assert!(c.sciences.find_science_info(SCIENCE_INVALID).is_none());

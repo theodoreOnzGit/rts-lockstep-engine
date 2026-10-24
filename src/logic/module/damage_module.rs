@@ -129,25 +129,11 @@ mod tests {
             out.push(DamageModuleData::friend_new_module_data(Some(ini)));
             Ok(())
         }
-        static BLOCKS: [BlockParse<Vec<IniResult<DamageModuleData>>>; 1] = [BlockParse {
-            token: "D",
-            parse: block,
-        }];
+        static BLOCKS: [BlockParse<Vec<IniResult<DamageModuleData>>>; 1] = [BlockParse { token: "D", parse: block }];
         let mut out = Vec::new();
-        let _ = Ini::load(
-            b"d.ini",
-            b"D\nEnd\nD\n DamageTypes = ALL\nEnd\n",
-            IniLoadType::Overwrite,
-            None,
-            &BLOCKS,
-            &mut out,
-        );
+        let _ = Ini::load(b"d.ini", b"D\nEnd\nD\n DamageTypes = ALL\nEnd\n", IniLoadType::Overwrite, None, &BLOCKS, &mut out);
         assert!(out[0].is_ok());
-        assert_eq!(
-            out[1].clone().unwrap_err().kind,
-            IniErrorKind::UnknownToken,
-            "the DamageTypes line is commented out upstream"
-        );
+        assert_eq!(out[1].clone().unwrap_err().kind, IniErrorKind::UnknownToken, "the DamageTypes line is commented out upstream");
     }
 
     #[test]
@@ -156,16 +142,8 @@ mod tests {
         assert_eq!(DamageModule::get_interface_mask(), 4);
         assert_eq!(save_bytes(&mut m).unwrap(), [1, 1, 1, 1]);
         load_bytes(&mut m, vec![1, 1, 1, 1]).unwrap();
-        assert!(
-            load_bytes(&mut m, vec![1, 1, 2, 1]).is_err(),
-            "BehaviorModule's version 2 is above its current 1"
-        );
+        assert!(load_bytes(&mut m, vec![1, 1, 2, 1]).is_err(), "BehaviorModule's version 2 is above its current 1");
         assert!(DamageModule::new(2, None).is_err());
-        assert!(m
-            .damage_module_data()
-            .behavior
-            .module_data
-            .module_tag_name_key()
-            .is_err());
+        assert!(m.damage_module_data().behavior.module_data.module_tag_name_key().is_err());
     }
 }

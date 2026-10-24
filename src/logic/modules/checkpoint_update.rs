@@ -34,16 +34,12 @@
 use std::sync::Arc;
 
 use crate::common::game_common::LOGICFRAMES_PER_SECOND;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::model_state::{MODELCONDITION_DOOR_1_CLOSING, MODELCONDITION_DOOR_1_OPENING};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -62,40 +58,26 @@ pub struct CheckpointUpdateModuleData {
 impl Default for CheckpointUpdateModuleData {
     /// `CheckpointUpdateModuleData()`.
     fn default() -> Self {
-        CheckpointUpdateModuleData {
-            update: UpdateModuleData::new(),
-            enemy_scan_delay_time: LOGICFRAMES_PER_SECOND as u32,
-        }
+        CheckpointUpdateModuleData { update: UpdateModuleData::new(), enemy_scan_delay_time: LOGICFRAMES_PER_SECOND as u32 }
     }
 }
 
 /// `CheckpointUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<CheckpointUpdateModuleData>; 2] = [
-    FieldParse::new(
-        "ScanDelayTime",
-        |ini, d, _| {
-            d.enemy_scan_delay_time = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("ScanDelayTime", |ini, d, _| { d.enemy_scan_delay_time = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl CheckpointUpdateModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, CheckpointUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, CheckpointUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<CheckpointUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<CheckpointUpdateModuleData> {
         let mut data = CheckpointUpdateModuleData::default();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, CheckpointUpdateModuleData::build_field_parse)?;
@@ -135,21 +117,11 @@ impl PartialEq for CheckpointUpdate {
 
 impl CheckpointUpdate {
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and the zeroed state.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<CheckpointUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<CheckpointUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(CheckpointUpdate {
-            update,
-            data,
-            enemy_near: false,
-            ally_near: false,
-            max_minor_radius: 0.0,
-            enemy_scan_delay: 0,
-        })
+        Ok(CheckpointUpdate { update, data, enemy_near: false, ally_near: false, max_minor_radius: 0.0, enemy_scan_delay: 0 })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -165,12 +137,7 @@ impl CheckpointUpdate {
     /// The module's own state as words, for the tests that compare it with upstream's: the enemy flag, the ally flag, the maximum minor radius (float
     /// bits) and the scan delay.
     pub fn state_words(&self) -> Vec<u32> {
-        vec![
-            u32::from(self.enemy_near),
-            u32::from(self.ally_near),
-            self.max_minor_radius.to_bits(),
-            self.enemy_scan_delay,
-        ]
+        vec![u32::from(self.enemy_near), u32::from(self.ally_near), self.max_minor_radius.to_bits(), self.enemy_scan_delay]
     }
 
     /// `update()` as the scheduler runs it (see [`update_behavior::world_update`]).
@@ -184,12 +151,7 @@ impl CheckpointUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls (none).
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -215,16 +177,10 @@ impl CheckpointUpdate {
 
         // Kind of weird, but we have to set the geometry extents to the max extent before checking for nearest enemies and allies, or else the
         // stretch reaction to finding one will oscillate states open->closed->open...
-        let Some(o) = world.objects.find(me) else {
-            return;
-        };
+        let Some(o) = world.objects.find(me) else { return };
         let mut geom = o.geometry_info.clone();
         let restore_special_radius = geom.get_minor_radius();
-        geom.set_minor_radius(if crate::logic::modules::plant(961) {
-            restore_special_radius
-        } else {
-            self.max_minor_radius
-        });
+        geom.set_minor_radius(if crate::logic::modules::plant(961) { restore_special_radius } else { self.max_minor_radius });
         world.set_geometry_info(me, &geom);
 
         let vision_range = world.get_vision_range(me);
@@ -251,46 +207,28 @@ impl UpdateBehavior for CheckpointUpdate {
 
         self.check_for_allies_and_enemies(world, me.object);
 
-        let change = (was_an_ally != self.ally_near && !crate::logic::modules::plant(968))
-            || was_an_enemy != self.enemy_near;
+        let change = (was_an_ally != self.ally_near && !crate::logic::modules::plant(968)) || was_an_enemy != self.enemy_near;
         let open = !self.enemy_near && (self.ally_near || crate::logic::modules::plant(966));
 
         if world.has_drawable(me.object) {
             if change {
                 if open {
                     // change the state of the art to open the door!
-                    world.clear_and_set_model_condition_state(
-                        me.object,
-                        MODELCONDITION_DOOR_1_CLOSING,
-                        MODELCONDITION_DOOR_1_OPENING,
-                    );
+                    world.clear_and_set_model_condition_state(me.object, MODELCONDITION_DOOR_1_CLOSING, MODELCONDITION_DOOR_1_OPENING);
                 } else if !crate::logic::modules::plant(962) {
                     // change the state of the art to close the door!
-                    world.clear_and_set_model_condition_state(
-                        me.object,
-                        MODELCONDITION_DOOR_1_OPENING,
-                        MODELCONDITION_DOOR_1_CLOSING,
-                    );
+                    world.clear_and_set_model_condition_state(me.object, MODELCONDITION_DOOR_1_OPENING, MODELCONDITION_DOOR_1_CLOSING);
                 }
             }
 
-            let Some(o) = world.objects.find(me.object) else {
-                return UPDATE_SLEEP_NONE;
-            };
+            let Some(o) = world.objects.find(me.object) else { return UPDATE_SLEEP_NONE };
             let mut geom = o.geometry_info.clone();
 
             // This method is more accidental than above, but it works for an unimportant thing like checkpoint
             let radius = geom.get_minor_radius();
             if open {
                 if radius > 0.0 || (crate::logic::modules::plant(967) && radius == 0.0) {
-                    geom.set_minor_radius(
-                        radius
-                            - if crate::logic::modules::plant(963) {
-                                0.33
-                            } else {
-                                0.333
-                            },
-                    );
+                    geom.set_minor_radius(radius - if crate::logic::modules::plant(963) { 0.33 } else { 0.333 });
                 }
             } else if radius < self.max_minor_radius {
                 geom.set_minor_radius(radius + 0.333);
@@ -301,10 +239,7 @@ impl UpdateBehavior for CheckpointUpdate {
         UPDATE_SLEEP_NONE
     }
     fn construct(&mut self, world: &mut World, me: ModuleHandle) {
-        self.max_minor_radius = world
-            .objects
-            .find(me.object)
-            .map_or(0.0, |o| o.geometry_info.get_minor_radius());
+        self.max_minor_radius = world.objects.find(me.object).map_or(0.0, |o| o.geometry_info.get_minor_radius());
         // bias a random amount so everyone doesn't spike at once
         let delay = self.data.enemy_scan_delay_time;
         let r = world.random.game_logic_random_value(0, delay as i32);
@@ -349,7 +284,5 @@ impl Snapshot for CheckpointUpdate {
 
 /// The factory's `NewModuleDataProc` for `CheckpointUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::CheckpointUpdate(Arc::new(
-        CheckpointUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::CheckpointUpdate(Arc::new(CheckpointUpdateModuleData::friend_new_module_data(ini)?)))
 }

@@ -1325,90 +1325,33 @@ w3d_struct! {
 #[doc(hidden)]
 macro_rules! for_each_w3d_struct {
     ($m:ident) => {
-        $m!(W3dChunkHeader);
-        $m!(W3dVectorStruct);
-        $m!(W3dQuaternionStruct);
-        $m!(W3dTexCoordStruct);
-        $m!(W3dRGBStruct);
-        $m!(W3dRGBAStruct);
-        $m!(W3dMaterialInfoStruct);
-        $m!(W3dVertexMaterialStruct);
-        $m!(W3dShaderStruct);
-        $m!(W3dPS2ShaderStruct);
-        $m!(W3dTextureInfoStruct);
-        $m!(W3dTriStruct);
-        $m!(W3dMeshHeader3Struct);
-        $m!(W3dVertInfStruct);
-        $m!(W3dMeshDeform);
-        $m!(W3dDeformSetInfo);
-        $m!(W3dDeformKeyframeInfo);
-        $m!(W3dDeformData);
-        $m!(W3dMeshAABTreeHeader);
-        $m!(W3dMeshAABTreeNode);
-        $m!(W3dHierarchyStruct);
-        $m!(W3dPivotStruct);
-        $m!(W3dPivotFixupStruct);
-        $m!(W3dAnimHeaderStruct);
-        $m!(W3dCompressedAnimHeaderStruct);
-        $m!(W3dAnimChannelStruct);
-        $m!(W3dBitChannelStruct);
-        $m!(W3dTimeCodedAnimChannelStruct);
-        $m!(W3dTimeCodedBitChannelStruct);
-        $m!(W3dAdaptiveDeltaAnimChannelStruct);
-        $m!(W3dMorphAnimHeaderStruct);
-        $m!(W3dMorphAnimKeyStruct);
-        $m!(W3dHModelHeaderStruct);
-        $m!(W3dHModelNodeStruct);
-        $m!(W3dLODModelHeaderStruct);
-        $m!(W3dLODStruct);
-        $m!(W3dCollectionHeaderStruct);
-        $m!(W3dPlaceholderStruct);
-        $m!(W3dTransformNodeStruct);
-        $m!(W3dLightStruct);
-        $m!(W3dSpotLightStruct);
-        $m!(W3dLightAttenuationStruct);
-        $m!(W3dLightTransformStruct);
-        $m!(W3dEmitterHeaderStruct);
-        $m!(W3dEmitterUserInfoStruct);
-        $m!(W3dEmitterInfoStruct);
-        $m!(W3dEmitterExtraInfoStruct);
-        $m!(W3dVolumeRandomizerStruct);
-        $m!(W3dEmitterInfoStructV2);
-        $m!(W3dEmitterPropertyStruct);
-        $m!(W3dEmitterColorKeyframeStruct);
-        $m!(W3dEmitterOpacityKeyframeStruct);
-        $m!(W3dEmitterSizeKeyframeStruct);
-        $m!(W3dEmitterRotationHeaderStruct);
-        $m!(W3dEmitterRotationKeyframeStruct);
-        $m!(W3dEmitterFrameHeaderStruct);
-        $m!(W3dEmitterFrameKeyframeStruct);
-        $m!(W3dEmitterBlurTimeHeaderStruct);
-        $m!(W3dEmitterBlurTimeKeyframeStruct);
-        $m!(W3dEmitterLinePropertiesStruct);
-        $m!(W3dAggregateHeaderStruct);
-        $m!(W3dAggregateInfoStruct);
-        $m!(W3dAggregateSubobjectStruct);
-        $m!(W3dTextureReplacerHeaderStruct);
-        $m!(W3dTextureReplacerStruct);
-        $m!(W3dAggregateMiscInfo);
-        $m!(W3dHLodHeaderStruct);
-        $m!(W3dHLodArrayHeaderStruct);
-        $m!(W3dHLodSubObjectStruct);
-        $m!(W3dBoxStruct);
-        $m!(W3dNullObjectStruct);
-        $m!(W3dSoundRObjHeaderStruct);
-        $m!(W3dShdMeshHeaderStruct);
-        $m!(W3dShdSubMeshHeaderStruct);
-        $m!(W3dMaterialStruct);
-        $m!(W3dMaterial2Struct);
-        $m!(W3dMaterial3Struct);
-        $m!(W3dMap3Struct);
-        $m!(W3dSurrenderTriStruct);
-        $m!(W3dMeshHeaderStruct);
-        $m!(W3dMeshDamageStruct);
-        $m!(W3dMeshDamageVertexStruct);
-        $m!(W3dMeshDamageColorStruct);
-        $m!(W3dHModelAuxDataStruct);
+        $m!(W3dChunkHeader); $m!(W3dVectorStruct); $m!(W3dQuaternionStruct); $m!(W3dTexCoordStruct);
+        $m!(W3dRGBStruct); $m!(W3dRGBAStruct); $m!(W3dMaterialInfoStruct); $m!(W3dVertexMaterialStruct);
+        $m!(W3dShaderStruct); $m!(W3dPS2ShaderStruct); $m!(W3dTextureInfoStruct); $m!(W3dTriStruct);
+        $m!(W3dMeshHeader3Struct); $m!(W3dVertInfStruct); $m!(W3dMeshDeform); $m!(W3dDeformSetInfo);
+        $m!(W3dDeformKeyframeInfo); $m!(W3dDeformData); $m!(W3dMeshAABTreeHeader); $m!(W3dMeshAABTreeNode);
+        $m!(W3dHierarchyStruct); $m!(W3dPivotStruct); $m!(W3dPivotFixupStruct); $m!(W3dAnimHeaderStruct);
+        $m!(W3dCompressedAnimHeaderStruct); $m!(W3dAnimChannelStruct); $m!(W3dBitChannelStruct);
+        $m!(W3dTimeCodedAnimChannelStruct); $m!(W3dTimeCodedBitChannelStruct);
+        $m!(W3dAdaptiveDeltaAnimChannelStruct); $m!(W3dMorphAnimHeaderStruct); $m!(W3dMorphAnimKeyStruct);
+        $m!(W3dHModelHeaderStruct); $m!(W3dHModelNodeStruct); $m!(W3dLODModelHeaderStruct); $m!(W3dLODStruct);
+        $m!(W3dCollectionHeaderStruct); $m!(W3dPlaceholderStruct); $m!(W3dTransformNodeStruct);
+        $m!(W3dLightStruct); $m!(W3dSpotLightStruct); $m!(W3dLightAttenuationStruct);
+        $m!(W3dLightTransformStruct); $m!(W3dEmitterHeaderStruct); $m!(W3dEmitterUserInfoStruct);
+        $m!(W3dEmitterInfoStruct); $m!(W3dEmitterExtraInfoStruct); $m!(W3dVolumeRandomizerStruct);
+        $m!(W3dEmitterInfoStructV2); $m!(W3dEmitterPropertyStruct); $m!(W3dEmitterColorKeyframeStruct);
+        $m!(W3dEmitterOpacityKeyframeStruct); $m!(W3dEmitterSizeKeyframeStruct);
+        $m!(W3dEmitterRotationHeaderStruct); $m!(W3dEmitterRotationKeyframeStruct);
+        $m!(W3dEmitterFrameHeaderStruct); $m!(W3dEmitterFrameKeyframeStruct);
+        $m!(W3dEmitterBlurTimeHeaderStruct); $m!(W3dEmitterBlurTimeKeyframeStruct);
+        $m!(W3dEmitterLinePropertiesStruct); $m!(W3dAggregateHeaderStruct); $m!(W3dAggregateInfoStruct);
+        $m!(W3dAggregateSubobjectStruct); $m!(W3dTextureReplacerHeaderStruct); $m!(W3dTextureReplacerStruct);
+        $m!(W3dAggregateMiscInfo); $m!(W3dHLodHeaderStruct); $m!(W3dHLodArrayHeaderStruct);
+        $m!(W3dHLodSubObjectStruct); $m!(W3dBoxStruct); $m!(W3dNullObjectStruct); $m!(W3dSoundRObjHeaderStruct);
+        $m!(W3dShdMeshHeaderStruct); $m!(W3dShdSubMeshHeaderStruct); $m!(W3dMaterialStruct);
+        $m!(W3dMaterial2Struct); $m!(W3dMaterial3Struct); $m!(W3dMap3Struct); $m!(W3dSurrenderTriStruct);
+        $m!(W3dMeshHeaderStruct); $m!(W3dMeshDamageStruct); $m!(W3dMeshDamageVertexStruct);
+        $m!(W3dMeshDamageColorStruct); $m!(W3dHModelAuxDataStruct);
     };
 }
 
@@ -1428,19 +1371,11 @@ mod tests {
                     end = f.offset + f.size;
                 }
                 assert!(end <= <$t as W3dPod>::SIZE, "{} overruns", $t::C_NAME);
-                let bytes: Vec<u8> = (0..<$t as W3dPod>::SIZE)
-                    .map(|i| (i * 7 + 3) as u8)
-                    .collect();
+                let bytes: Vec<u8> = (0..<$t as W3dPod>::SIZE).map(|i| (i * 7 + 3) as u8).collect();
                 let v = <$t as W3dPod>::read_le(&bytes);
                 let back = v.to_bytes();
                 for f in $t::FIELDS {
-                    assert_eq!(
-                        &back[f.offset..f.offset + f.size],
-                        &bytes[f.offset..f.offset + f.size],
-                        "{}.{}",
-                        $t::C_NAME,
-                        f.name
-                    );
+                    assert_eq!(&back[f.offset..f.offset + f.size], &bytes[f.offset..f.offset + f.size], "{}.{}", $t::C_NAME, f.name);
                 }
             }};
         }

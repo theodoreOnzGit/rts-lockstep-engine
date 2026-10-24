@@ -33,16 +33,13 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::ObjectId;
 use crate::common::random_value::RandomValues;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::update_module::{
-    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime,
-    UPDATE_SLEEP_FOREVER,
+    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER,
 };
 // --- p1w10-sonnet ---
 use crate::logic::world::game_logic::World;
@@ -70,18 +67,14 @@ impl LifetimeUpdateModuleData {
 
     /// `LifetimeUpdateModuleData::buildFieldParse(p)`: the base's (which is
     /// the behaviour base's), then `MinLifetime` and `MaxLifetime`.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, LifetimeUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, LifetimeUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&LIFETIME_UPDATE_MODULE_DATA_FIELD_PARSE)
     }
 
     /// `LifetimeUpdate::friend_newModuleData(ini)`: new data, read with
     /// `initFromINIMultiProc` if there is an `ini`.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<LifetimeUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<LifetimeUpdateModuleData> {
         let mut data = LifetimeUpdateModuleData::new();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, LifetimeUpdateModuleData::build_field_parse)?;
@@ -140,18 +133,11 @@ impl LifetimeUpdate {
 
     // --- p1w10-sonnet ---
     /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data).
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<LifetimeUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<LifetimeUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(LifetimeUpdate {
-            update,
-            data,
-            die_frame: 0,
-        })
+        Ok(LifetimeUpdate { update, data, die_frame: 0 })
     }
 
     /// The second half of the constructor: draws the lifetime (the hulk override if the object is a hulk and the logic has one),
@@ -164,27 +150,15 @@ impl LifetimeUpdate {
         } else {
             self.calc_sleep_delay(host, rng, data.min_frames, data.max_frames)
         };
-        host.awaken_update_module(UpdateModule::set_wake_frame(
-            host.frame(),
-            update_sleep(delay),
-        ));
+        host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), update_sleep(delay)));
     }
     // --- end p1w10-sonnet ---
 
     /// `setLifetimeRange(minFrames, maxFrames)`: a new random lifetime, then
     /// `setWakeFrame`.
-    pub fn set_lifetime_range(
-        &mut self,
-        host: &mut impl UpdateHost,
-        rng: &mut RandomValues,
-        min_frames: u32,
-        max_frames: u32,
-    ) {
+    pub fn set_lifetime_range(&mut self, host: &mut impl UpdateHost, rng: &mut RandomValues, min_frames: u32, max_frames: u32) {
         let delay = self.calc_sleep_delay(host, rng, min_frames, max_frames);
-        host.awaken_update_module(UpdateModule::set_wake_frame(
-            host.frame(),
-            update_sleep(delay),
-        ));
+        host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), update_sleep(delay)));
     }
 
     /// `getDieFrame()`.
@@ -200,13 +174,7 @@ impl LifetimeUpdate {
 
     /// `calcSleepDelay(minFrames, maxFrames)`: a random delay in the range
     /// (at least 1), and `m_dieFrame` = the current frame plus it.
-    fn calc_sleep_delay(
-        &mut self,
-        host: &impl UpdateHost,
-        rng: &mut RandomValues,
-        min_frames: u32,
-        max_frames: u32,
-    ) -> u32 {
+    fn calc_sleep_delay(&mut self, host: &impl UpdateHost, rng: &mut RandomValues, min_frames: u32, max_frames: u32) -> u32 {
         let mut delay = rng.game_logic_random_value(min_frames as i32, max_frames as i32) as u32;
         if delay < 1 {
             delay = 1;
@@ -248,19 +216,13 @@ impl Snapshot for LifetimeUpdate {
 impl PartialEq for LifetimeUpdate {
     /// The same state: the same data object (upstream compares pointers) and the same `m_dieFrame`. (`UpdateBody` is compared in tests.)
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
-            && self.die_frame == other.die_frame
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.die_frame == other.die_frame
     }
 }
 
 /// The factory's `NewModuleDataProc` for `LifetimeUpdate`.
-pub fn new_module_data(
-    ini: Option<&mut Ini<'_>>,
-) -> IniResult<crate::common::module::ModuleDataKind> {
-    Ok(crate::common::module::ModuleDataKind::LifetimeUpdate(
-        Arc::new(LifetimeUpdateModuleData::friend_new_module_data(ini)?),
-    ))
+pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::LifetimeUpdate(Arc::new(LifetimeUpdateModuleData::friend_new_module_data(ini)?)))
 }
 
 impl LifetimeUpdate {
@@ -287,17 +249,9 @@ impl LifetimeUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        _me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, _me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
-            ModuleCall::SetLifetimeRange {
-                min_frames,
-                max_frames,
-            } => {
+            ModuleCall::SetLifetimeRange { min_frames, max_frames } => {
                 let mut rng = std::mem::take(&mut world.random);
                 self.set_lifetime_range(world, &mut rng, min_frames, max_frames);
                 world.random = rng;

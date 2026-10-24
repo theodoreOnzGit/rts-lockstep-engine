@@ -32,12 +32,7 @@ pub struct Quaternion {
 impl Quaternion {
     /// `Quaternion(float a, float b, float c, float d)` (no normalisation).
     pub const fn new(a: f32, b: f32, c: f32, d: f32) -> Self {
-        Quaternion {
-            x: a,
-            y: b,
-            z: c,
-            w: d,
-        }
+        Quaternion { x: a, y: b, z: c, w: d }
     }
 
     /// `Quaternion(true)`: the identity.

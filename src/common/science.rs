@@ -84,9 +84,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Undefined, UserData};
 use crate::common::name_key_generator::{NameKeyError, NameKeyGenerator, NameKeyType};
 use crate::common::overridable::Overridable;
 use crate::common::unicode_string::UnicodeString;
@@ -125,10 +123,7 @@ pub trait GameTextFetch {
 /// `INI::parseAndTranslateLabel`: one token, translated; an empty translation
 /// is `INI_INVALID_DATA`. The caller stores the result (upstream leaves the
 /// field untouched when it throws).
-pub fn parse_and_translate_label(
-    ini: &mut Ini<'_>,
-    text: &dyn GameTextFetch,
-) -> IniResult<UnicodeString> {
+pub fn parse_and_translate_label(ini: &mut Ini<'_>, text: &dyn GameTextFetch) -> IniResult<UnicodeString> {
     let token = ini.get_next_token(None)?;
     let translated = text.fetch(&token);
     if translated.is_empty() {
@@ -150,11 +145,7 @@ fn name_to_science(names: &mut NameKeyGenerator, name: &[u8]) -> IniResult<Scien
 /// `INI::scanScience(token)` = `friend_lookupScience`: the science named
 /// `token`, `INI_INVALID_DATA` if `is_valid` says it is not known. The name
 /// is given a key first either way.
-pub fn scan_science(
-    names: &mut NameKeyGenerator,
-    is_valid: impl Fn(ScienceType) -> bool,
-    token: &[u8],
-) -> IniResult<ScienceType> {
+pub fn scan_science(names: &mut NameKeyGenerator, is_valid: impl Fn(ScienceType) -> bool, token: &[u8]) -> IniResult<ScienceType> {
     let st = name_to_science(names, token)?;
     if !is_valid(st) {
         return Err(IniError::new(IniErrorKind::InvalidData));
@@ -256,24 +247,11 @@ struct ScienceFill<'a> {
     text: &'a dyn GameTextFetch,
 }
 
-fn f_prerequisite_sciences(
-    ini: &mut Ini<'_>,
-    w: &mut ScienceFill<'_>,
-    _: &UserData,
-) -> IniResult<()> {
+fn f_prerequisite_sciences(ini: &mut Ini<'_>, w: &mut ScienceFill<'_>, _: &UserData) -> IniResult<()> {
     let valid = w.valid;
-    parse_science_vector(
-        ini,
-        w.names,
-        |s| valid.contains(&s),
-        &mut w.info.prereq_sciences,
-    )
+    parse_science_vector(ini, w.names, |s| valid.contains(&s), &mut w.info.prereq_sciences)
 }
-fn f_science_purchase_point_cost(
-    ini: &mut Ini<'_>,
-    w: &mut ScienceFill<'_>,
-    _: &UserData,
-) -> IniResult<()> {
+fn f_science_purchase_point_cost(ini: &mut Ini<'_>, w: &mut ScienceFill<'_>, _: &UserData) -> IniResult<()> {
     w.info.science_purchase_point_cost = ini.parse_int()?;
     Ok(())
 }
@@ -293,16 +271,8 @@ fn f_description(ini: &mut Ini<'_>, w: &mut ScienceFill<'_>, _: &UserData) -> In
 /// `friend_parseScienceDefinition`'s `myFieldParse`.
 fn science_fields<'a>() -> [FieldParse<ScienceFill<'a>>; 6] {
     [
-        FieldParse::new(
-            "PrerequisiteSciences",
-            f_prerequisite_sciences,
-            UserData::None,
-        ),
-        FieldParse::new(
-            "SciencePurchasePointCost",
-            f_science_purchase_point_cost,
-            UserData::None,
-        ),
+        FieldParse::new("PrerequisiteSciences", f_prerequisite_sciences, UserData::None),
+        FieldParse::new("SciencePurchasePointCost", f_science_purchase_point_cost, UserData::None),
         FieldParse::new("IsGrantable", f_is_grantable, UserData::None),
         FieldParse::new("DisplayName", f_display_name, UserData::None),
         FieldParse::new("Description", f_description, UserData::None),
@@ -380,75 +350,47 @@ impl ScienceStore {
 
     /// `getNameAndDescription(st, name, description)`: `None` for an unknown
     /// science.
-    pub fn get_name_and_description(
-        &self,
-        st: ScienceType,
-    ) -> Option<(UnicodeString, UnicodeString)> {
-        self.find_science_info(st)
-            .map(|i| (i.name.clone(), i.description.clone()))
+    pub fn get_name_and_description(&self, st: ScienceType) -> Option<(UnicodeString, UnicodeString)> {
+        self.find_science_info(st).map(|i| (i.name.clone(), i.description.clone()))
     }
 
     /// `getSciencePurchaseCost(science)`: 0 for an unknown science.
     pub fn get_science_purchase_cost(&self, st: ScienceType) -> i32 {
-        self.find_science_info(st)
-            .map_or(0, |i| i.science_purchase_point_cost)
+        self.find_science_info(st).map_or(0, |i| i.science_purchase_point_cost)
     }
 
     /// `getScienceFromInternalName(name)`: `SCIENCE_INVALID` for the empty
     /// name, else the key of `name` (a new name gets a new key).
-    pub fn get_science_from_internal_name(
-        &self,
-        names: &mut NameKeyGenerator,
-        name: &[u8],
-    ) -> Result<ScienceType, NameKeyError> {
+    pub fn get_science_from_internal_name(&self, names: &mut NameKeyGenerator, name: &[u8]) -> Result<ScienceType, NameKeyError> {
         science_from_internal_name(names, name)
     }
 
     /// `getInternalNameForScience(science)`: the empty string for
     /// `SCIENCE_INVALID` (and for a key the generator does not know).
-    pub fn get_internal_name_for_science(
-        &self,
-        names: &NameKeyGenerator,
-        science: ScienceType,
-    ) -> Vec<u8> {
+    pub fn get_internal_name_for_science(&self, names: &NameKeyGenerator, science: ScienceType) -> Vec<u8> {
         internal_name_for_science(names, science)
     }
 
     /// `friend_getScienceNames()`: the internal name of every science, in
     /// store order.
     pub fn friend_get_science_names(&self, names: &NameKeyGenerator) -> Vec<Vec<u8>> {
-        self.infos()
-            .map(|i| names.key_to_name(i.science.to_name_key()).to_vec())
-            .collect()
+        self.infos().map(|i| names.key_to_name(i.science.to_name_key()).to_vec()).collect()
     }
 
     /// `friend_lookupScience(scienceName)` (also `INI::scanScience`): the
     /// science named `science_name`, `INI_INVALID_DATA` if there is none.
-    pub fn friend_lookup_science(
-        &self,
-        names: &mut NameKeyGenerator,
-        science_name: &[u8],
-    ) -> IniResult<ScienceType> {
+    pub fn friend_lookup_science(&self, names: &mut NameKeyGenerator, science_name: &[u8]) -> IniResult<ScienceType> {
         scan_science(names, |s| self.is_valid_science(s), science_name)
     }
 
     /// `INI::parseScience`: one token, a known science.
-    pub fn parse_science(
-        &self,
-        ini: &mut Ini<'_>,
-        names: &mut NameKeyGenerator,
-    ) -> IniResult<ScienceType> {
+    pub fn parse_science(&self, ini: &mut Ini<'_>, names: &mut NameKeyGenerator) -> IniResult<ScienceType> {
         let token = ini.get_next_token(None)?;
         self.friend_lookup_science(names, &token)
     }
 
     /// `INI::parseScienceVector`, against this store.
-    pub fn parse_science_vector(
-        &self,
-        ini: &mut Ini<'_>,
-        names: &mut NameKeyGenerator,
-        store: &mut ScienceVec,
-    ) -> IniResult<()> {
+    pub fn parse_science_vector(&self, ini: &mut Ini<'_>, names: &mut NameKeyGenerator, store: &mut ScienceVec) -> IniResult<()> {
         parse_science_vector(ini, names, |s| self.is_valid_science(s), store)
     }
 
@@ -456,12 +398,7 @@ impl ScienceStore {
     /// prerequisites is a root (added once); any other adds the roots of its
     /// prerequisites. `path` is the chain of sciences being expanded: a
     /// prerequisite cycle recurses forever upstream.
-    fn add_root_sciences(
-        &self,
-        info: &ScienceInfo,
-        v: &mut ScienceVec,
-        path: &mut Vec<*const ScienceInfo>,
-    ) -> IniResult<()> {
+    fn add_root_sciences(&self, info: &ScienceInfo, v: &mut ScienceVec, path: &mut Vec<*const ScienceInfo>) -> IniResult<()> {
         if info.prereq_sciences.is_empty() {
             if !v.contains(&info.science) {
                 v.push(info.science);
@@ -532,12 +469,7 @@ impl ScienceStore {
 
         {
             let target = &mut self.sciences[idx].friend_get_final_override().data;
-            let mut fill = ScienceFill {
-                info: target,
-                names,
-                valid: &valid,
-                text,
-            };
+            let mut fill = ScienceFill { info: target, names, valid: &valid, text };
             ini.init_from_ini(&mut fill, &science_fields())?;
             fill.info.science = st;
         }
@@ -545,19 +477,13 @@ impl ScienceStore {
         let info = &self.sciences[idx].get_final_override().data;
         let mut roots = info.root_sciences.clone();
         self.add_root_sciences(info, &mut roots, &mut Vec::new())?;
-        self.sciences[idx]
-            .friend_get_final_override()
-            .data
-            .root_sciences = roots;
+        self.sciences[idx].friend_get_final_override().data.root_sciences = roots;
         Ok(())
     }
 }
 
 /// `getScienceFromInternalName`.
-fn science_from_internal_name(
-    names: &mut NameKeyGenerator,
-    name: &[u8],
-) -> Result<ScienceType, NameKeyError> {
+fn science_from_internal_name(names: &mut NameKeyGenerator, name: &[u8]) -> Result<ScienceType, NameKeyError> {
     if name.is_empty() {
         return Ok(SCIENCE_INVALID);
     }
@@ -591,9 +517,7 @@ impl std::fmt::Display for ScienceXferError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ScienceXferError::Xfer(s) => write!(f, "{s}"),
-            ScienceXferError::NameKeysExhausted => {
-                f.write_str("name keys exhausted (undefined upstream)")
-            }
+            ScienceXferError::NameKeysExhausted => f.write_str("name keys exhausted (undefined upstream)"),
         }
     }
 }
@@ -604,11 +528,7 @@ impl std::error::Error for ScienceXferError {}
 /// `AsciiString`. Load: the name read, looked up with
 /// `getScienceFromInternalName` (an unknown name gets a key); an empty name
 /// is `XFER_UNKNOWN_STRING`. CRC: the 4 bytes of the `int`-sized enum.
-pub fn xfer_science_type(
-    xfer: &mut dyn Xfer,
-    names: &mut NameKeyGenerator,
-    science: &mut ScienceType,
-) -> Result<(), ScienceXferError> {
+pub fn xfer_science_type(xfer: &mut dyn Xfer, names: &mut NameKeyGenerator, science: &mut ScienceType) -> Result<(), ScienceXferError> {
     match xfer.get_xfer_mode() {
         XferMode::Save => {
             let mut name = internal_name_for_science(names, *science);
@@ -618,8 +538,7 @@ pub fn xfer_science_type(
         XferMode::Load => {
             let mut name = Vec::new();
             xfer.xfer_ascii_string(&mut name)?;
-            *science = science_from_internal_name(names, &name)
-                .map_err(|_| ScienceXferError::NameKeysExhausted)?;
+            *science = science_from_internal_name(names, &name).map_err(|_| ScienceXferError::NameKeysExhausted)?;
             if *science == SCIENCE_INVALID {
                 return Err(XferStatus::UnknownString.into());
             }
@@ -639,11 +558,7 @@ pub fn xfer_science_type(
 /// sciences. As upstream, the count is the size truncated to 16 bits while
 /// a save writes every science; a load replaces the contents, keeping the
 /// sciences read so far if one fails.
-pub fn xfer_science_vec(
-    xfer: &mut dyn Xfer,
-    names: &mut NameKeyGenerator,
-    science_vec: &mut ScienceVec,
-) -> Result<(), ScienceXferError> {
+pub fn xfer_science_vec(xfer: &mut dyn Xfer, names: &mut NameKeyGenerator, science_vec: &mut ScienceVec) -> Result<(), ScienceXferError> {
     let current_version: XferVersion = 1;
     let mut version = current_version;
     xfer.xfer_version(&mut version, current_version)?;
@@ -706,18 +621,12 @@ mod tests {
     fn block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
         c.store.parse_science_definition(ini, &mut c.names, &Text)
     }
-    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse {
-        token: "Science",
-        parse: block,
-    }];
+    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse { token: "Science", parse: block }];
 
     fn ctx() -> Ctx {
         let mut names = NameKeyGenerator::new();
         names.reset();
-        Ctx {
-            store: ScienceStore::new(),
-            names,
-        }
+        Ctx { store: ScienceStore::new(), names }
     }
 
     fn load(c: &mut Ctx, text: &[u8], t: IniLoadType) -> IniResult<()> {
@@ -744,58 +653,23 @@ Science B\n PrerequisiteSciences = A\n IsGrantable = No\nEnd\nScience C\n Prereq
         assert_eq!((n.str().len(), d.str().len()), (5, 5));
         assert!(c.store.get_name_and_description(ScienceType(99)).is_none());
         assert_eq!(c.store.get_internal_name_for_science(&c.names, b), b"B");
-        assert!(c
-            .store
-            .get_internal_name_for_science(&c.names, SCIENCE_INVALID)
-            .is_empty());
-        assert_eq!(
-            c.store
-                .get_science_from_internal_name(&mut c.names, b"")
-                .unwrap(),
-            SCIENCE_INVALID
-        );
-        assert_eq!(
-            c.store.friend_lookup_science(&mut c.names, b"C").unwrap(),
-            cc
-        );
-        assert_eq!(
-            c.store
-                .friend_lookup_science(&mut c.names, b"Z")
-                .unwrap_err()
-                .kind,
-            IniErrorKind::InvalidData
-        );
-        assert_eq!(
-            c.store.friend_get_science_names(&c.names),
-            vec![b"A".to_vec(), b"B".to_vec(), b"C".to_vec()]
-        );
+        assert!(c.store.get_internal_name_for_science(&c.names, SCIENCE_INVALID).is_empty());
+        assert_eq!(c.store.get_science_from_internal_name(&mut c.names, b"").unwrap(), SCIENCE_INVALID);
+        assert_eq!(c.store.friend_lookup_science(&mut c.names, b"C").unwrap(), cc);
+        assert_eq!(c.store.friend_lookup_science(&mut c.names, b"Z").unwrap_err().kind, IniErrorKind::InvalidData);
+        assert_eq!(c.store.friend_get_science_names(&c.names), vec![b"A".to_vec(), b"B".to_vec(), b"C".to_vec()]);
         assert_eq!(c.store.len(), 3);
         assert_eq!(c.store.chains().count(), 3);
         assert!(!c.store.is_empty());
         // a duplicate is invalid data; a self-prerequisite of a first definition too
-        assert_eq!(
-            load(&mut c, b"Science A\nEnd\n", IniLoadType::Overwrite)
-                .unwrap_err()
-                .kind,
-            IniErrorKind::InvalidData
-        );
+        assert_eq!(load(&mut c, b"Science A\nEnd\n", IniLoadType::Overwrite).unwrap_err().kind, IniErrorKind::InvalidData);
         let mut c2 = ctx();
-        assert!(load(
-            &mut c2,
-            b"Science A\n PrerequisiteSciences = A\nEnd\n",
-            IniLoadType::Overwrite
-        )
-        .is_err());
+        assert!(load(&mut c2, b"Science A\n PrerequisiteSciences = A\nEnd\n", IniLoadType::Overwrite).is_err());
         // the failed block stays, with SCIENCE_INVALID
         assert!(c2.store.is_valid_science(SCIENCE_INVALID));
         // an empty translation is invalid data
         let mut c3 = ctx();
-        assert!(load(
-            &mut c3,
-            b"Science A\n DisplayName = EMPTY\nEnd\n",
-            IniLoadType::Overwrite
-        )
-        .is_err());
+        assert!(load(&mut c3, b"Science A\n DisplayName = EMPTY\nEnd\n", IniLoadType::Overwrite).is_err());
     }
 
     #[test]
@@ -803,24 +677,14 @@ Science B\n PrerequisiteSciences = A\n IsGrantable = No\nEnd\nScience C\n Prereq
         let mut c = ctx();
         load(&mut c, BASE, IniLoadType::Overwrite).unwrap();
         let (a, b) = (st(&mut c, "A"), st(&mut c, "B"));
-        load(
-            &mut c,
-            b"Science A\n SciencePurchasePointCost = 9\nEnd\nScience New\nEnd\n",
-            IniLoadType::CreateOverrides,
-        )
-        .unwrap();
+        load(&mut c, b"Science A\n SciencePurchasePointCost = 9\nEnd\nScience New\nEnd\n", IniLoadType::CreateOverrides).unwrap();
         assert_eq!(c.store.get_science_purchase_cost(a), 9);
         assert_eq!(c.store.len(), 4);
         c.store.reset();
         assert_eq!(c.store.get_science_purchase_cost(a), 3);
         assert_eq!(c.store.len(), 3);
         // A needs B and B needs A: addRootSciences would recurse for ever
-        let e = load(
-            &mut c,
-            b"Science A\n PrerequisiteSciences = B\nEnd\n",
-            IniLoadType::CreateOverrides,
-        )
-        .unwrap_err();
+        let e = load(&mut c, b"Science A\n PrerequisiteSciences = B\nEnd\n", IniLoadType::CreateOverrides).unwrap_err();
         assert_eq!(e.kind, IniErrorKind::Undefined(Undefined::ScienceCycle));
         let _ = b;
         c.store.init();
@@ -845,46 +709,13 @@ Science B\n PrerequisiteSciences = A\n IsGrantable = No\nEnd\nScience C\n Prereq
             }
             Ok(())
         }
-        static T: [BlockParse<(Ctx, W)>; 1] = [BlockParse {
-            token: "Science",
-            parse: h,
-        }];
-        let mut w = (
-            c,
-            W {
-                one: SCIENCE_INVALID,
-                v: vec![],
-            },
-        );
-        Ini::load(
-            b"x",
-            b"Science one B\nScience vec A B\n",
-            IniLoadType::Overwrite,
-            None,
-            &T,
-            &mut w,
-        )
-        .unwrap();
+        static T: [BlockParse<(Ctx, W)>; 1] = [BlockParse { token: "Science", parse: h }];
+        let mut w = (c, W { one: SCIENCE_INVALID, v: vec![] });
+        Ini::load(b"x", b"Science one B\nScience vec A B\n", IniLoadType::Overwrite, None, &T, &mut w).unwrap();
         assert_eq!((w.1.one, w.1.v.clone()), (b, vec![a, b]));
-        Ini::load(
-            b"x",
-            b"Science vec A none B\n",
-            IniLoadType::Overwrite,
-            None,
-            &T,
-            &mut w,
-        )
-        .unwrap();
+        Ini::load(b"x", b"Science vec A none B\n", IniLoadType::Overwrite, None, &T, &mut w).unwrap();
         assert!(w.1.v.is_empty());
-        assert!(Ini::load(
-            b"x",
-            b"Science vec A Q\n",
-            IniLoadType::Overwrite,
-            None,
-            &T,
-            &mut w
-        )
-        .is_err());
+        assert!(Ini::load(b"x", b"Science vec A Q\n", IniLoadType::Overwrite, None, &T, &mut w).is_err());
         assert_eq!(w.1.v, vec![a]);
     }
 
@@ -910,10 +741,7 @@ Science B\n PrerequisiteSciences = A\n IsGrantable = No\nEnd\nScience C\n Prereq
         let mut xl = XferLoad::new(vec![0]);
         xl.open(b"l").unwrap();
         let mut s = a;
-        assert_eq!(
-            xfer_science_type(&mut xl, &mut c.names, &mut s),
-            Err(ScienceXferError::Xfer(XferStatus::UnknownString))
-        );
+        assert_eq!(xfer_science_type(&mut xl, &mut c.names, &mut s), Err(ScienceXferError::Xfer(XferStatus::UnknownString)));
         assert_eq!(s, SCIENCE_INVALID);
         let mut xc = XferCrc::new_without_nan_guard();
         xc.open(b"c").unwrap();

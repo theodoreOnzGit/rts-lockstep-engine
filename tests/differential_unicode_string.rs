@@ -42,9 +42,7 @@
 mod support;
 
 use rts_lockstep_engine::common::ascii_string::AsciiString;
-use rts_lockstep_engine::common::unicode_string::{
-    UnicodeString, UnicodeStringError, THE_EMPTY_STRING,
-};
+use rts_lockstep_engine::common::unicode_string::{UnicodeString, UnicodeStringError, THE_EMPTY_STRING};
 use rts_lockstep_engine::differential as cpp;
 use std::cmp::Ordering;
 use support::{Check, Gen};
@@ -253,20 +251,8 @@ fn step(slot: &mut [UnicodeString; 4], op: &Op, bug: Bug, lg: &mut Vec<u8>) -> O
                     }
                     _ => x.compare_no_case(y),
                 };
-                lg.extend_from_slice(&[
-                    ord(s.compare(p)),
-                    ord(nocase(s, p)),
-                    ord(s.compare_unicode(b)),
-                    ord(nocase(s, b.str())),
-                ]);
-                lg.extend_from_slice(&[
-                    u8::from(s == b),
-                    u8::from(s != b),
-                    u8::from(s < b),
-                    u8::from(s <= b),
-                    u8::from(s > b),
-                    u8::from(s >= b),
-                ]);
+                lg.extend_from_slice(&[ord(s.compare(p)), ord(nocase(s, p)), ord(s.compare_unicode(b)), ord(nocase(s, b.str()))]);
+                lg.extend_from_slice(&[u8::from(s == b), u8::from(s != b), u8::from(s < b), u8::from(s <= b), u8::from(s > b), u8::from(s >= b)]);
             }
             Op::ConcatU(a, t) => {
                 assert_ne!(a, t);
@@ -313,14 +299,7 @@ fn run_rust(ops: &[Op], bug: Bug) -> Vec<u8> {
 fn run_cpp(ops: &[Op]) -> Vec<u8> {
     let script = encode(ops);
     let mut log = vec![0u8; 64 * 1024 * 1024];
-    let n = unsafe {
-        cpp::ref_unicode_run(
-            script.as_ptr(),
-            script.len() as i32,
-            log.as_mut_ptr(),
-            log.len() as i32,
-        )
-    };
+    let n = unsafe { cpp::ref_unicode_run(script.as_ptr(), script.len() as i32, log.as_mut_ptr(), log.len() as i32) };
     assert!(n >= 0, "C++ log overflow");
     log.truncate(n as usize);
     log
@@ -358,9 +337,7 @@ fn units(g: &mut Gen) -> Vec<u16> {
             v[at] = 0x20;
             v
         }
-        5 => format!("  Alpha{}Beta  ", ["", " ", ",", "\t"][g.below(4) as usize])
-            .encode_utf16()
-            .collect(),
+        5 => format!("  Alpha{}Beta  ", ["", " ", ",", "\t"][g.below(4) as usize]).encode_utf16().collect(),
         6 => w(["a b\tc\nd\re", "AbC", "abc", "ABC", "a_c", "a`c"][g.below(6) as usize]),
         _ => {
             let n = g.below(14) as usize;
@@ -380,9 +357,7 @@ fn ascii_bytes(g: &mut Gen) -> Vec<u8> {
         0 => vec![b'q'; 16379 + g.below(5) as usize],
         1..=7 => Vec::new(),
         8..=14 => vec![0xe9, 0x80, b'A', 0xff],
-        _ => (0..g.below(12))
-            .map(|_| [b'a', b'Z', b' ', 0, 0x80, 0xe9, 0xff, b'_'][g.below(8) as usize])
-            .collect(),
+        _ => (0..g.below(12)).map(|_| [b'a', b'Z', b' ', 0, 0x80, 0xe9, 0xff, b'_'][g.below(8) as usize]).collect(),
     }
 }
 
@@ -391,22 +366,10 @@ fn unicode_string_matches_cpp() {
     let mut g = Gen::new(601);
     let mut ok = Check::new("UnicodeString script logs");
     let mut planted = [
-        (
-            Bug::RemoveLastReleases,
-            Check::new("UnicodeString (removeLastChar releases)"),
-        ),
-        (
-            Bug::CaseSensitiveNoCase,
-            Check::new("UnicodeString (case-sensitive compareNoCase)"),
-        ),
-        (
-            Bug::FoldsToUpper,
-            Check::new("UnicodeString (compareNoCase folds to upper case)"),
-        ),
-        (
-            Bug::TranslateZeroExtends,
-            Check::new("UnicodeString (translate zero-extends)"),
-        ),
+        (Bug::RemoveLastReleases, Check::new("UnicodeString (removeLastChar releases)")),
+        (Bug::CaseSensitiveNoCase, Check::new("UnicodeString (case-sensitive compareNoCase)")),
+        (Bug::FoldsToUpper, Check::new("UnicodeString (compareNoCase folds to upper case)")),
+        (Bug::TranslateZeroExtends, Check::new("UnicodeString (translate zero-extends)")),
     ];
     let mut undefined = 0u32;
     let mut ops_total = 0usize;
@@ -418,10 +381,7 @@ fn unicode_string_matches_cpp() {
             let op = match g.below(100) {
                 0..=14 => Op::Set(a, units(&mut g)),
                 15..=22 => Op::Concat(a, units(&mut g)),
-                23..=26 => Op::ConcatChar(
-                    a,
-                    [b'a' as u16, 0x20, 0, 0xe9, 0xffe9, b'N' as u16][g.below(6) as usize],
-                ),
+                23..=26 => Op::ConcatChar(a, [b'a' as u16, 0x20, 0, 0xe9, 0xffe9, b'N' as u16][g.below(6) as usize]),
                 27..=36 => Op::Trim(a),
                 37..=43 => Op::RemoveLast(a),
                 44..=47 => Op::Translate(a, ascii_bytes(&mut g)),
@@ -429,8 +389,7 @@ fn unicode_string_matches_cpp() {
                     a,
                     t,
                     match g.below(6) {
-                        0 | 1 => Delim::Literal(vec![b',' as u16, 0x20, 0x09, 0])
-                            .into_literal(g.below(3)),
+                        0 | 1 => Delim::Literal(vec![b',' as u16, 0x20, 0x09, 0]).into_literal(g.below(3)),
                         2 => Delim::Slot(g.below(4) as u8),
                         _ => Delim::Default,
                     },
@@ -476,22 +435,14 @@ fn unicode_string_matches_cpp() {
                     }
                     let n = r.len().min(cc.len());
                     let first = (0..n).find(|&i| r[i] != cc[i]).unwrap_or(n);
-                    println!(
-                        "first diff at byte {first}: rust {:?} c++ {:?}",
-                        &r[first..(first + 40).min(r.len())],
-                        &cc[first..(first + 40).min(cc.len())]
-                    );
+                    println!("first diff at byte {first}: rust {:?} c++ {:?}", &r[first..(first + 40).min(r.len())], &cc[first..(first + 40).min(cc.len())]);
                     break;
                 }
             }
         }
-        ok.eq(&rust, &c, || {
-            format!("script {script} ({} ops)", defined.len())
-        });
+        ok.eq(&rust, &c, || format!("script {script} ({} ops)", defined.len()));
         for (bug, check) in planted.iter_mut() {
-            check.eq(run_rust(&defined, *bug), c.clone(), || {
-                format!("script {script}")
-            });
+            check.eq(run_rust(&defined, *bug), c.clone(), || format!("script {script}"));
         }
     }
     println!(

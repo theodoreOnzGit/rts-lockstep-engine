@@ -93,18 +93,10 @@ pub enum AsciiStringError {
 impl std::fmt::Display for AsciiStringError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            AsciiStringError::TooLong => {
-                "AsciiString: longer than MAX_LEN (ERROR_OUT_OF_MEMORY upstream)"
-            }
-            AsciiStringError::NonAsciiCharClass => {
-                "AsciiString: isspace/tolower of a byte >= 0x80 (undefined upstream)"
-            }
-            AsciiStringError::FormatBufferOverflow => {
-                "AsciiString::toLower: 2048-byte buffer overflow (undefined upstream)"
-            }
-            AsciiStringError::IndexOutOfRange => {
-                "AsciiString::getCharAt: index past the string (undefined upstream)"
-            }
+            AsciiStringError::TooLong => "AsciiString: longer than MAX_LEN (ERROR_OUT_OF_MEMORY upstream)",
+            AsciiStringError::NonAsciiCharClass => "AsciiString: isspace/tolower of a byte >= 0x80 (undefined upstream)",
+            AsciiStringError::FormatBufferOverflow => "AsciiString::toLower: 2048-byte buffer overflow (undefined upstream)",
+            AsciiStringError::IndexOutOfRange => "AsciiString::getCharAt: index past the string (undefined upstream)",
         })
     }
 }
@@ -198,9 +190,7 @@ impl AsciiString {
 
     /// `isNone()`: a buffer holding `None` in any case.
     pub fn is_none(&self) -> bool {
-        self.data
-            .as_deref()
-            .is_some_and(|d| d.eq_ignore_ascii_case(b"None"))
+        self.data.as_deref().is_some_and(|d| d.eq_ignore_ascii_case(b"None"))
     }
 
     /// `isNotNone()`.
@@ -394,22 +384,14 @@ impl AsciiString {
     /// an empty string; false, with both cleared, when only separators are
     /// left. (Upstream also returns false when `tok` is this string, which
     /// Rust's borrow rules exclude.)
-    pub fn next_token(
-        &mut self,
-        tok: &mut AsciiString,
-        seps: Option<&[u8]>,
-    ) -> Result<bool, AsciiStringError> {
+    pub fn next_token(&mut self, tok: &mut AsciiString, seps: Option<&[u8]>) -> Result<bool, AsciiStringError> {
         if self.is_empty() {
             return Ok(false);
         }
         let seps = c_str(seps.unwrap_or(b" \n\r\t"));
         let s = self.str();
         let start = s.iter().position(|b| !seps.contains(b)).unwrap_or(s.len());
-        let end = start
-            + s[start..]
-                .iter()
-                .position(|b| seps.contains(b))
-                .unwrap_or(s.len() - start);
+        let end = start + s[start..].iter().position(|b| seps.contains(b)).unwrap_or(s.len() - start);
         if end > start {
             let len = end - start;
             // tok->getBufferForRead(len + 1): a buffer of len + 2 chars.
@@ -453,10 +435,7 @@ mod tests {
     fn buffer_state_and_tokens() {
         let mut a = AsciiString::try_from_bytes(b"x").unwrap();
         a.remove_last_char().unwrap();
-        assert!(
-            a.has_buffer() && a.is_empty(),
-            "removeLastChar keeps the buffer"
-        );
+        assert!(a.has_buffer() && a.is_empty(), "removeLastChar keeps the buffer");
         assert_eq!(a.try_get_char_at(0), Ok(0));
         assert_eq!(a.try_get_char_at(1), Err(AsciiStringError::IndexOutOfRange));
         a.to_lower().unwrap();
@@ -471,10 +450,7 @@ mod tests {
         assert_eq!(w.str(), b"AB", "0x100 has a zero low byte and is dropped");
         assert!(AsciiString::try_from_bytes(b"NONE").unwrap().is_none());
         let long = vec![b'a'; MAX_LEN - HEADER_BYTES];
-        assert_eq!(
-            AsciiString::try_from_bytes(&long),
-            Err(AsciiStringError::TooLong)
-        );
+        assert_eq!(AsciiString::try_from_bytes(&long), Err(AsciiStringError::TooLong));
         assert!(AsciiString::try_from_bytes(&long[1..]).is_ok());
     }
 }

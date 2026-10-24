@@ -27,16 +27,11 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_COLLIDE};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime,
-    UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
 use crate::logic::modules::auto_find_healing_update::controlled_by_human;
 use crate::logic::modules::open_contain::CMD_FROM_AI;
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
@@ -61,64 +56,31 @@ pub struct PilotFindVehicleUpdateModuleData {
 impl Default for PilotFindVehicleUpdateModuleData {
     /// `PilotFindVehicleUpdateModuleData()`: no scan rate or range, `MinHealth` 0.5.
     fn default() -> Self {
-        PilotFindVehicleUpdateModuleData {
-            update: UpdateModuleData::default(),
-            scan_frames: 0,
-            scan_range: 0.0,
-            min_health: 0.5,
-        }
+        PilotFindVehicleUpdateModuleData { update: UpdateModuleData::default(), scan_frames: 0, scan_range: 0.0, min_health: 0.5 }
     }
 }
 
 /// `PilotFindVehicleUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<PilotFindVehicleUpdateModuleData>; 4] = [
-    FieldParse::new(
-        "ScanRate",
-        |ini, d, _| {
-            d.scan_frames = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ScanRange",
-        |ini, d, _| {
-            d.scan_range = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MinHealth",
-        |ini, d, _| {
-            d.min_health = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("ScanRate", |ini, d, _| { d.scan_frames = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("ScanRange", |ini, d, _| { d.scan_range = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MinHealth", |ini, d, _| { d.min_health = ini.parse_real()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl PilotFindVehicleUpdateModuleData {
     /// `buildFieldParse(p)`: `ModuleData`'s (no fields of its own besides the behaviour base's), then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, PilotFindVehicleUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, PilotFindVehicleUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<PilotFindVehicleUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<PilotFindVehicleUpdateModuleData> {
         let mut data = PilotFindVehicleUpdateModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                PilotFindVehicleUpdateModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, PilotFindVehicleUpdateModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -138,9 +100,7 @@ pub struct PilotFindVehicleUpdate {
 impl PartialEq for PilotFindVehicleUpdate {
     /// The same object, the same data object (upstream compares pointers) and the same base flag.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
-            && self.did_move_to_base == other.did_move_to_base
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.did_move_to_base == other.did_move_to_base
     }
 }
 
@@ -152,18 +112,11 @@ impl PilotFindVehicleUpdate {
 
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and
     /// `m_didMoveToBase` false.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<PilotFindVehicleUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<PilotFindVehicleUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(PilotFindVehicleUpdate {
-            update,
-            data,
-            did_move_to_base: false,
-        })
+        Ok(PilotFindVehicleUpdate { update, data, did_move_to_base: false })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -192,12 +145,7 @@ impl PilotFindVehicleUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -220,17 +168,12 @@ impl PilotFindVehicleUpdate {
     /// module of the pilot would like to collide with; `None` for `NULL`.
     fn scan_closest_target(&self, world: &mut World, me: ObjectId) -> Option<ObjectId> {
         for other in world.partition_iterate_vehicles_near_to_far(me, self.data.scan_range) {
-            let Some((health, max_health)) = world.body_health(other) else {
-                continue;
-            };
+            let Some((health, max_health)) = world.body_health(other) else { continue };
             if health < max_health * self.data.min_health && !crate::logic::modules::plant(1861) {
                 continue;
             }
             for collide in world.modules_with(me, MODULEINTERFACE_COLLIDE) {
-                if world
-                    .module_call(me, collide, ModuleCall::WouldLikeToCollideWith { other })
-                    .as_bool()
-                {
+                if world.module_call(me, collide, ModuleCall::WouldLikeToCollideWith { other }).as_bool() {
                     return Some(other);
                 }
             }
@@ -246,47 +189,22 @@ impl UpdateBehavior for PilotFindVehicleUpdate {
     }
     fn update(&mut self, world: &mut World, me: ModuleHandle) -> UpdateSleepTime {
         if controlled_by_human(world, me) {
-            return if crate::logic::modules::plant(1863) {
-                UPDATE_SLEEP_NONE
-            } else {
-                UPDATE_SLEEP_FOREVER
-            };
+            return if crate::logic::modules::plant(1863) { UPDATE_SLEEP_NONE } else { UPDATE_SLEEP_FOREVER };
         }
         let d = self.data.clone();
-        let Some(ai) = world.objects.find(me.object).and_then(|o| o.ai) else {
-            return UPDATE_SLEEP_FOREVER;
-        };
-        if !world
-            .module_call(me.object, ai, ModuleCall::AiIsIdle)
-            .as_bool()
-        {
+        let Some(ai) = world.objects.find(me.object).and_then(|o| o.ai) else { return UPDATE_SLEEP_FOREVER };
+        if !world.module_call(me.object, ai, ModuleCall::AiIsIdle).as_bool() {
             return update_sleep(d.scan_frames);
         }
         if let Some(upgrade_unit) = self.scan_closest_target(world, me.object) {
-            world.module_call(
-                me.object,
-                ai,
-                ModuleCall::AiEnter {
-                    target: upgrade_unit,
-                    command_source: CMD_FROM_AI,
-                },
-            );
+            world.module_call(me.object, ai, ModuleCall::AiEnter { target: upgrade_unit, command_source: CMD_FROM_AI });
             if !crate::logic::modules::plant(1862) {
                 self.did_move_to_base = false;
             }
         } else if !self.did_move_to_base {
-            let base = world
-                .get_controlling_player(me.object)
-                .and_then(|p| world.player_get_ai_base_center(p));
+            let base = world.get_controlling_player(me.object).and_then(|p| world.player_get_ai_base_center(p));
             if let Some(pos) = base {
-                world.module_call(
-                    me.object,
-                    ai,
-                    ModuleCall::AiMoveToPosition {
-                        pos,
-                        command_source: CMD_FROM_AI,
-                    },
-                );
+                world.module_call(me.object, ai, ModuleCall::AiMoveToPosition { pos, command_source: CMD_FROM_AI });
                 self.did_move_to_base = true;
             }
         }
@@ -332,7 +250,5 @@ impl Snapshot for PilotFindVehicleUpdate {
 
 /// The factory's `NewModuleDataProc` for `PilotFindVehicleUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::PilotFindVehicleUpdate(Arc::new(
-        PilotFindVehicleUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::PilotFindVehicleUpdate(Arc::new(PilotFindVehicleUpdateModuleData::friend_new_module_data(ini)?)))
 }

@@ -57,56 +57,25 @@ mod tests {
     fn field(ini: &mut Ini<'_>, a: &mut AudioEventName, _: &UserData) -> IniResult<()> {
         a.parse(ini)
     }
-    static FIELDS: [FieldParse<AudioEventName>; 2] = [
-        FieldParse::new("Sound", field, UserData::None),
-        FieldParse::end(),
-    ];
+    static FIELDS: [FieldParse<AudioEventName>; 2] = [FieldParse::new("Sound", field, UserData::None), FieldParse::end()];
     fn block(ini: &mut Ini<'_>, a: &mut AudioEventName) -> IniResult<()> {
         ini.get_next_token(None)?;
         ini.init_from_ini(a, &FIELDS)
     }
-    static BLOCKS: [BlockParse<AudioEventName>; 1] = [BlockParse {
-        token: "Event",
-        parse: block,
-    }];
+    static BLOCKS: [BlockParse<AudioEventName>; 1] = [BlockParse { token: "Event", parse: block }];
 
     fn load(text: &[u8], start: &[u8]) -> (AudioEventName, IniResult<()>) {
-        let mut a = AudioEventName {
-            event_name: start.to_vec(),
-        };
-        let r = Ini::load(
-            b"a.ini",
-            text,
-            IniLoadType::Overwrite,
-            None,
-            &BLOCKS,
-            &mut a,
-        );
+        let mut a = AudioEventName { event_name: start.to_vec() };
+        let r = Ini::load(b"a.ini", text, IniLoadType::Overwrite, None, &BLOCKS, &mut a);
         (a, r)
     }
 
     #[test]
     fn name_is_kept_and_nosound_changes_nothing() {
-        assert_eq!(
-            load(b"Event E\n Sound = Boom\nEnd\n", b"").0.event_name,
-            b"Boom"
-        );
-        assert_eq!(
-            load(b"Event E\n Sound = nosound\nEnd\n", b"Old")
-                .0
-                .event_name,
-            b"Old"
-        );
-        assert_eq!(
-            load(b"Event E\n Sound = Boom\n Sound = NOSOUND\nEnd\n", b"")
-                .0
-                .event_name,
-            b"Boom"
-        );
+        assert_eq!(load(b"Event E\n Sound = Boom\nEnd\n", b"").0.event_name, b"Boom");
+        assert_eq!(load(b"Event E\n Sound = nosound\nEnd\n", b"Old").0.event_name, b"Old");
+        assert_eq!(load(b"Event E\n Sound = Boom\n Sound = NOSOUND\nEnd\n", b"").0.event_name, b"Boom");
         // a missing token throws
-        assert_eq!(
-            load(b"Event E\n Sound =\nEnd\n", b"").1.unwrap_err().kind,
-            IniErrorKind::InvalidData
-        );
+        assert_eq!(load(b"Event E\n Sound =\nEnd\n", b"").1.unwrap_err().kind, IniErrorKind::InvalidData);
     }
 }

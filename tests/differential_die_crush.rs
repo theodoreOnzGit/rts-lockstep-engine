@@ -53,9 +53,8 @@
 mod support;
 mod up_common;
 
-use rts_lockstep_engine::common::base_type::Coord3D;
-use rts_lockstep_engine::common::geometry::{GeometryInfo, GeometryType};
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
+use rts_lockstep_engine::common::geometry::{GeometryInfo, GeometryType};
 use rts_lockstep_engine::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_BODY};
 use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_COUNT};
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
@@ -66,13 +65,14 @@ use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::damage::DamageInfo;
 use rts_lockstep_engine::logic::module::die_module::DieMuxData;
+use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::logic::modules::crush_die::CrushDieModuleData;
+use rts_lockstep_engine::logic::world::object_events::{ModelConditionOp, ObjectClientEvent};
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::ModuleCall;
 use rts_lockstep_engine::logic::world::module_probe::{ProbeAnswers, ProbeModule};
 use rts_lockstep_engine::logic::world::object::veterancy_from_i32;
 use rts_lockstep_engine::logic::world::object_create::{NewModule, NewObject};
-use rts_lockstep_engine::logic::world::object_events::{ModelConditionOp, ObjectClientEvent};
 use rts_lockstep_engine::logic::world::statics::GameStatics;
 use rts_lockstep_engine::logic::world::team::Team;
 use rts_lockstep_engine::logic::world::update_body::UpdateBody;
@@ -119,17 +119,12 @@ fn status_from(w: &[u32]) -> ObjectStatusMaskType {
 }
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::CrushDie(Arc::new(
-        CrushDieModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::CrushDie(Arc::new(CrushDieModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -137,9 +132,7 @@ fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>
 
 /// The data dump of `ref_l9r14b_run`: the die mux, the three sounds and the three percentages.
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind) {
-    let ModuleDataKind::CrushDie(d) = data else {
-        unreachable!("not a CrushDie")
-    };
+    let ModuleDataKind::CrushDie(d) = data else { unreachable!("not a CrushDie") };
     put_die_mux(v, &d.die.die_mux_data);
     for k in 0..3 {
         put_str(v, &d.crush_sounds[k].event_name);
@@ -171,9 +164,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
     let mux: Vec<u32> = (0..18).map(|_| u32_(&mut p)).collect();
     let sounds: Vec<String> = (0..3).map(|_| str_(&mut p)).collect();
     let percents: Vec<i32> = (0..3).map(|_| u32_(&mut p) as i32).collect();
-    out.push(format!(
-        "data mux {mux:x?} sounds {sounds:?} percents {percents:?}"
-    ));
+    out.push(format!("data mux {mux:x?} sounds {sounds:?} percents {percents:?}"));
     for i in 0..n_ops {
         if p >= b.len() {
             break;
@@ -194,26 +185,8 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 // -- generators --
 
 const DEATH_NAMES: [&str; 20] = [
-    "NONE",
-    "CRUSHED",
-    "BURNED",
-    "EXPLODED",
-    "POISONED",
-    "TOPPLED",
-    "FLOODED",
-    "SUICIDED",
-    "LASERED",
-    "DETONATED",
-    "SPLATTED",
-    "POISONED_BETA",
-    "EXTRA_2",
-    "EXTRA_3",
-    "EXTRA_4",
-    "EXTRA_5",
-    "EXTRA_6",
-    "EXTRA_7",
-    "EXTRA_8",
-    "POISONED_GAMMA",
+    "NONE", "CRUSHED", "BURNED", "EXPLODED", "POISONED", "TOPPLED", "FLOODED", "SUICIDED", "LASERED", "DETONATED", "SPLATTED", "POISONED_BETA",
+    "EXTRA_2", "EXTRA_3", "EXTRA_4", "EXTRA_5", "EXTRA_6", "EXTRA_7", "EXTRA_8", "POISONED_GAMMA",
 ];
 
 fn death_tokens(g: &mut Gen) -> String {
@@ -279,16 +252,10 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
     }
     for k in ["Total", "BackEnd", "FrontEnd"] {
         if g.below(100) < 60 {
-            lines.push(format!(
-                "{k}CrushSound = {}",
-                pick(g, &["CrushA", "CrushB", "NoSound", "nosound"])
-            ));
+            lines.push(format!("{k}CrushSound = {}", pick(g, &["CrushA", "CrushB", "NoSound", "nosound"])));
         }
         if g.below(100) < 40 {
-            lines.push(format!(
-                "{k}CrushSoundPercent = {}",
-                pick(g, &["0", "50", "100", "33", "-5", "150"])
-            ));
+            lines.push(format!("{k}CrushSoundPercent = {}", pick(g, &["0", "50", "100", "33", "-5", "150"])));
         }
     }
     if !clean {
@@ -316,13 +283,7 @@ struct Tally {
     xfers: u64,
 }
 
-fn run_xfer(
-    w: &mut World,
-    me: ObjectId,
-    idx: usize,
-    how: u32,
-    saved: &[u8],
-) -> (i32, Vec<u8>, u32) {
+fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -365,110 +326,36 @@ fn run_xfer(
 /// The flags (bit 0 the vehicle has a body, 1 a drawable), applied to the scene.
 fn apply_flags(w: &mut World, flags: u32, body: u16) {
     w.objects.find_mut(1).unwrap().body = (flags & 1 != 0).then_some(body);
-    w.friend_bind_to_drawable(
-        1,
-        if flags & 2 != 0 {
-            7
-        } else {
-            rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID
-        },
-    );
+    w.friend_bind_to_drawable(1, if flags & 2 != 0 { 7 } else { rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID });
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(
-    ctx: &Ctx,
-    data: ModuleDataKind,
-    cfg: &[u32; 12],
-    ops: &[[u32; 6]],
-    tally: &mut Tally,
-) -> (Vec<u8>, World) {
+fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 12], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     put_data(&mut v, &data);
     let mut w = World::new();
     w.names = ctx.names.clone();
-    w.statics = Arc::new(GameStatics {
-        upgrade_center: ctx.center.clone(),
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), ..Default::default() });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.random.init_game_logic_random(cfg[7]);
     w.teams.insert_team(Team::new(1, 0)).unwrap();
-    let plain = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
+    let plain = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
     let flags0 = cfg[0];
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        CLASS.as_bytes(),
-        b"ModuleTag_Die",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), CLASS.as_bytes(), b"ModuleTag_Die", &data).unwrap().unwrap();
     let mut b = NewModule::plain(b"CtBody", b"ModuleTag_Body");
     b.interfaces = MODULEINTERFACE_BODY;
-    let answers = ProbeAnswers {
-        front_crushed: Some(flags0 & 4 != 0),
-        back_crushed: Some(flags0 & 8 != 0),
-        ..Default::default()
-    };
-    b.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-        answers,
-        0.0,
-        Default::default(),
-    )));
-    let me = w
-        .new_object(NewObject {
-            template: plain.clone(),
-            status: ObjectStatusMaskType::default(),
-            team: Some(1),
-            modules: vec![m, b],
-        })
-        .unwrap();
+    let answers = ProbeAnswers { front_crushed: Some(flags0 & 4 != 0), back_crushed: Some(flags0 & 8 != 0), ..Default::default() };
+    b.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(answers, 0.0, Default::default())));
+    let me = w.new_object(NewObject { template: plain.clone(), status: ObjectStatusMaskType::default(), team: Some(1), modules: vec![m, b] }).unwrap();
     assert_eq!(me, 1);
-    let crusher = w
-        .new_object(NewObject {
-            template: plain.clone(),
-            status: ObjectStatusMaskType::default(),
-            team: Some(1),
-            modules: Vec::new(),
-        })
-        .unwrap();
+    let crusher = w.new_object(NewObject { template: plain.clone(), status: ObjectStatusMaskType::default(), team: Some(1), modules: Vec::new() }).unwrap();
     assert_eq!(crusher, 2);
-    let body = w
-        .objects
-        .find(me)
-        .unwrap()
-        .modules
-        .iter()
-        .position(|m| m.name == b"CtBody")
-        .unwrap() as u16;
-    w.set_position(
-        me,
-        &Coord3D {
-            x: f32::from_bits(cfg[1]),
-            y: f32::from_bits(cfg[2]),
-            z: 0.0,
-        },
-    );
+    let body = w.objects.find(me).unwrap().modules.iter().position(|m| m.name == b"CtBody").unwrap() as u16;
+    w.set_position(me, &Coord3D { x: f32::from_bits(cfg[1]), y: f32::from_bits(cfg[2]), z: 0.0 });
     w.contain_scene_set_orientation(me, f32::from_bits(cfg[3]));
-    w.objects.find_mut(me).unwrap().geometry_info = GeometryInfo::new(
-        GeometryType::Box,
-        false,
-        10.0,
-        f32::from_bits(cfg[4]),
-        f32::from_bits(cfg[4]),
-    );
-    w.set_position(
-        crusher,
-        &Coord3D {
-            x: f32::from_bits(cfg[5]),
-            y: f32::from_bits(cfg[6]),
-            z: 0.0,
-        },
-    );
+    w.objects.find_mut(me).unwrap().geometry_info = GeometryInfo::new(GeometryType::Box, false, 10.0, f32::from_bits(cfg[4]), f32::from_bits(cfg[4]));
+    w.set_position(crusher, &Coord3D { x: f32::from_bits(cfg[5]), y: f32::from_bits(cfg[6]), z: 0.0 });
     let mut flags = flags0;
     let idx = w.find_module(me, CLASS.as_bytes()).unwrap();
     let mut saved: Vec<u8> = Vec::new();
@@ -477,14 +364,7 @@ fn rust_run(
             flags = o[1];
         }
         if o[0] == 3 {
-            w.set_position(
-                crusher,
-                &Coord3D {
-                    x: f32::from_bits(o[1]),
-                    y: f32::from_bits(o[2]),
-                    z: 0.0,
-                },
-            );
+            w.set_position(crusher, &Coord3D { x: f32::from_bits(o[1]), y: f32::from_bits(o[2]), z: 0.0 });
         }
         apply_flags(&mut w, flags, body);
         let errors_before = w.cuts.module_errors.len();
@@ -497,11 +377,7 @@ fn rust_run(
                 let mut info = DamageInfo::default();
                 info.input.death_type = o[1] as _;
                 info.input.source_id = (o[5] & 255) as _;
-                info.input.damage_type = if o[5] & 256 != 0 {
-                    (o[5] >> 9) as _
-                } else {
-                    rts_lockstep_engine::logic::damage::DAMAGE_CRUSH
-                };
+                info.input.damage_type = if o[5] & 256 != 0 { (o[5] >> 9) as _ } else { rts_lockstep_engine::logic::damage::DAMAGE_CRUSH };
                 {
                     let ob = w.objects.find_mut(me).unwrap();
                     ob.experience.level = veterancy_from_i32((o[2] % 4) as i32);
@@ -523,26 +399,15 @@ fn rust_run(
             }
             _ => unreachable!(),
         }
-        let threw = w.cuts.module_errors[errors_before..]
-            .iter()
-            .any(|(_, e)| !e.is_undefined());
+        let threw = w.cuts.module_errors[errors_before..].iter().any(|(_, e)| !e.is_undefined());
         put_i32(&mut v, if threw { 2 } else { 0 });
         let mut log: Vec<String> = Vec::new();
         for e in &w.events.events()[events_before..] {
             if let rts_lockstep_engine::logic::client_event::ClientEvent::Object(e) = e {
                 match e {
-                    ObjectClientEvent::AudioAddEvent {
-                        name, object_id, ..
-                    } => log.push(format!(
-                        "audio {} - -1 {object_id}",
-                        String::from_utf8_lossy(name)
-                    )),
-                    ObjectClientEvent::DrawableModelCondition {
-                        op: ModelConditionOp::ClearAndSet { clear, set },
-                        ..
-                    } => {
-                        let list =
-                            |l: &[i32]| l.iter().map(|i| format!(" {i}")).collect::<String>();
+                    ObjectClientEvent::AudioAddEvent { name, object_id, .. } => log.push(format!("audio {} - -1 {object_id}", String::from_utf8_lossy(name))),
+                    ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::ClearAndSet { clear, set }, .. } => {
+                        let list = |l: &[i32]| l.iter().map(|i| format!(" {i}")).collect::<String>();
                         log.push(format!("clearsetflags{} |{}", list(clear), list(set)));
                     }
                     _ => {}
@@ -560,14 +425,8 @@ fn rust_run(
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let (front, back) = match w.objects.find(me).unwrap().modules[body as usize]
-            .body
-            .as_ref()
-        {
-            Some(UpdateBody::ModuleProbe(p)) => (
-                p.answers.front_crushed.unwrap_or(false),
-                p.answers.back_crushed.unwrap_or(false),
-            ),
+        let (front, back) = match w.objects.find(me).unwrap().modules[body as usize].body.as_ref() {
+            Some(UpdateBody::ModuleProbe(p)) => (p.answers.front_crushed.unwrap_or(false), p.answers.back_crushed.unwrap_or(false)),
             _ => panic!("the vehicle's body"),
         };
         put_u32(&mut v, u32::from(front));
@@ -577,10 +436,7 @@ fn rust_run(
 }
 
 fn cases() -> usize {
-    std::env::var("L9R14B_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9R14B_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 #[test]
@@ -611,10 +467,7 @@ fn crush_die_matches_upstream() {
         };
         // mostly a body and a drawable (a crush without either is undefined upstream, and the case is not compared), the crusher near a crush point
         let mut cfg = [0u32; 12];
-        cfg[0] = u32::from(g.below(40) != 0)
-            | u32::from(g.below(40) != 0) << 1
-            | u32::from(g.below(3) == 0) << 2
-            | u32::from(g.below(3) == 0) << 3;
+        cfg[0] = u32::from(g.below(40) != 0) | u32::from(g.below(40) != 0) << 1 | u32::from(g.below(3) == 0) << 2 | u32::from(g.below(3) == 0) << 3;
         let coords = [&0.0f32, &10.0, &-12.5, &25.0, &3.0];
         cfg[1] = pick(&mut g, &coords).to_bits();
         cfg[2] = pick(&mut g, &coords).to_bits();
@@ -630,29 +483,14 @@ fn crush_die_matches_upstream() {
                     // not DEATH_NORMAL nor LEVEL_REGULAR (see the module docs)
                     let death = 1 + g.below(11);
                     let level = 1 + g.below(3);
-                    let st = if g.below(4) == 0 {
-                        g.u32() & g.u32()
-                    } else {
-                        0
-                    };
+                    let st = if g.below(4) == 0 { g.u32() & g.u32() } else { 0 };
                     // mostly the crusher as the source, now and then nobody or another damage type
                     let src = *pick(&mut g, &[&2u32, &2, &2, &0, &9]);
-                    let ty = if g.below(8) == 0 {
-                        256 | (g.below(12) << 9)
-                    } else {
-                        0
-                    };
+                    let ty = if g.below(8) == 0 { 256 | (g.below(12) << 9) } else { 0 };
                     [0, death, level, st, 0, src | ty]
                 }
                 10..=11 => [1, if g.below(10) == 0 { g.below(4) } else { 3 }, 0, 0, 0, 0],
-                12..=13 => [
-                    3,
-                    pick(&mut g, &coords).to_bits(),
-                    pick(&mut g, &coords).to_bits(),
-                    0,
-                    0,
-                    0,
-                ],
+                12..=13 => [3, pick(&mut g, &coords).to_bits(), pick(&mut g, &coords).to_bits(), 0, 0, 0],
                 14..=15 => [7, 0, 0, 0, 0, 0],
                 16..=17 => [8, 0, 0, 0, 0, 0],
                 _ => [9, 0, 0, 0, 0, 0],
@@ -700,21 +538,8 @@ fn crush_die_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!(
-                "case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                show(&text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
@@ -722,23 +547,13 @@ fn crush_die_matches_upstream() {
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         for l in &dr {
             for key in ["audio", "clearsetflags"] {
-                *counts.entry(key.trim().to_string()).or_default() +=
-                    l.matches(&format!("\"{key}")).count() as u64;
+                *counts.entry(key.trim().to_string()).or_default() += l.matches(&format!("\"{key}")).count() as u64;
             }
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
-            eprintln!(
-                "--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}",
-                show(&text),
-                dr.get(i),
-                dc.get(i)
-            );
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            eprintln!("--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -757,8 +572,5 @@ fn crush_die_matches_upstream() {
     }
     read.finish();
     run.finish();
-    assert!(
-        counts.get("clearsetflags").copied().unwrap_or(0) * 10 > cases as u64,
-        "the generator must reach the crush"
-    );
+    assert!(counts.get("clearsetflags").copied().unwrap_or(0) * 10 > cases as u64, "the generator must reach the crush");
 }

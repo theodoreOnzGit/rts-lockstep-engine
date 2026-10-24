@@ -41,14 +41,14 @@
 mod support;
 
 use rts_lockstep_engine::common::kind_of::{
-    KindOfMaskType, KINDOFMASK_NONE, KINDOF_AIRCRAFT, KINDOF_DOZER, KINDOF_INFANTRY, KINDOF_SCORE,
-    KINDOF_SCORE_CREATE, KINDOF_SCORE_DESTROY, KINDOF_STRUCTURE, KINDOF_VEHICLE,
+    KindOfMaskType, KINDOF_AIRCRAFT, KINDOF_DOZER, KINDOF_INFANTRY, KINDOF_SCORE, KINDOF_SCORE_CREATE, KINDOF_SCORE_DESTROY,
+    KINDOF_STRUCTURE, KINDOF_VEHICLE, KINDOFMASK_NONE,
 };
 use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
-use rts_lockstep_engine::logic::world::score_keeper::{ScoreKeeper, ScoredObject};
+use rts_lockstep_engine::logic::world::score_keeper::{ScoredObject, ScoreKeeper};
 use std::ffi::CString;
 use support::{Check, Gen};
 
@@ -65,17 +65,7 @@ struct Tpl {
 }
 
 /// The kinds the table draws from: the ones the score rules test, plus some others.
-const KIND_POOL: [i32; 9] = [
-    KINDOF_STRUCTURE,
-    KINDOF_INFANTRY,
-    KINDOF_VEHICLE,
-    KINDOF_DOZER,
-    KINDOF_AIRCRAFT,
-    KINDOF_SCORE,
-    KINDOF_SCORE_CREATE,
-    KINDOF_SCORE_DESTROY,
-    0,
-];
+const KIND_POOL: [i32; 9] = [KINDOF_STRUCTURE, KINDOF_INFANTRY, KINDOF_VEHICLE, KINDOF_DOZER, KINDOF_AIRCRAFT, KINDOF_SCORE, KINDOF_SCORE_CREATE, KINDOF_SCORE_DESTROY, 0];
 
 fn gen_table(g: &mut Gen) -> Vec<Tpl> {
     (0..NT)
@@ -123,36 +113,11 @@ enum Call {
     Reset(i32),
     Spent(i32),
     Earned(i32),
-    Built {
-        t: usize,
-        c: i32,
-        uc: bool,
-        scoring: bool,
-    },
-    Unbuilt {
-        t: usize,
-        c: i32,
-        uc: bool,
-        scoring: bool,
-    },
-    Captured {
-        t: usize,
-        c: i32,
-        uc: bool,
-        scoring: bool,
-    },
-    Destroyed {
-        t: usize,
-        c: i32,
-        uc: bool,
-        scoring: bool,
-    },
-    Lost {
-        t: usize,
-        c: i32,
-        uc: bool,
-        scoring: bool,
-    },
+    Built { t: usize, c: i32, uc: bool, scoring: bool },
+    Unbuilt { t: usize, c: i32, uc: bool, scoring: bool },
+    Captured { t: usize, c: i32, uc: bool, scoring: bool },
+    Destroyed { t: usize, c: i32, uc: bool, scoring: bool },
+    Lost { t: usize, c: i32, uc: bool, scoring: bool },
     Score,
 }
 
@@ -204,18 +169,9 @@ fn gen_call(g: &mut Gen) -> Call {
 /// The three mask pairs of the readout (`getTotalUnitsBuilt`).
 fn mask_pairs() -> [(KindOfMaskType, KindOfMaskType); 3] {
     [
-        (
-            KindOfMaskType::from_indices(&[KINDOF_VEHICLE]),
-            KindOfMaskType::from_indices(&[KINDOF_SCORE]),
-        ),
-        (
-            KindOfMaskType::from_indices(&[KINDOF_STRUCTURE]),
-            KindOfMaskType::from_indices(&[KINDOF_SCORE_DESTROY]),
-        ),
-        (
-            KindOfMaskType::from_indices(&[KINDOF_INFANTRY]),
-            KINDOFMASK_NONE,
-        ),
+        (KindOfMaskType::from_indices(&[KINDOF_VEHICLE]), KindOfMaskType::from_indices(&[KINDOF_SCORE])),
+        (KindOfMaskType::from_indices(&[KINDOF_STRUCTURE]), KindOfMaskType::from_indices(&[KINDOF_SCORE_DESTROY])),
+        (KindOfMaskType::from_indices(&[KINDOF_INFANTRY]), KINDOFMASK_NONE),
     ]
 }
 
@@ -240,12 +196,7 @@ fn rust_readout(s: &ScoreKeeper, table: &[Tpl], current_score_bias: i32) -> Vec<
     }
     for k in 0..NT {
         let group = table[k].group;
-        let n = s.get_total_objects_built(|name| {
-            table
-                .iter()
-                .find(|t| t.name == name)
-                .is_some_and(|t| t.group == group)
-        });
+        let n = s.get_total_objects_built(|name| table.iter().find(|t| t.name == name).is_some_and(|t| t.group == group));
         out.push(n as u32);
     }
     out
@@ -255,17 +206,7 @@ fn rust_readout(s: &ScoreKeeper, table: &[Tpl], current_score_bias: i32) -> Vec<
 fn cpp_call(call: Call) -> Vec<u32> {
     let (op, t, c, uc, scoring, amount) = call.encode();
     let mut out = [0u32; OUT_LEN];
-    unsafe {
-        cpp::ref_score_op(
-            op,
-            t as i32,
-            c,
-            i32::from(uc),
-            i32::from(scoring),
-            amount,
-            out.as_mut_ptr(),
-        )
-    };
+    unsafe { cpp::ref_score_op(op, t as i32, c, i32::from(uc), i32::from(scoring), amount, out.as_mut_ptr()) };
     out.to_vec()
 }
 
@@ -306,14 +247,7 @@ static CPP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn setup_cpp(table: &[Tpl]) {
     let (names, groups, known, kinds) = encode_table(table);
     // NUL-terminated names, one after another (the buffer ends with its own NUL)
-    unsafe {
-        cpp::ref_score_setup(
-            names.as_ptr() as *const _,
-            groups.as_ptr(),
-            known.as_ptr(),
-            kinds.as_ptr(),
-        )
-    };
+    unsafe { cpp::ref_score_setup(names.as_ptr() as *const _, groups.as_ptr(), known.as_ptr(), kinds.as_ptr()) };
 }
 
 /// Canonical form of an upstream-format ScoreKeeper file: each per-template
@@ -397,11 +331,7 @@ fn score_keeper_calls_match_upstream() {
             trace.push(format!("{call:?}"));
             let input = || format!("case {case} step {step}: {}", trace.join(", "));
             let cpp_out = cpp_call(call);
-            ok.eq(
-                rust_call(&mut s, &table, call, false),
-                cpp_out.clone(),
-                input,
-            );
+            ok.eq(rust_call(&mut s, &table, call, false), cpp_out.clone(), input);
             bug.eq(rust_call(&mut p, &table, call, true), cpp_out, input);
         }
     }
@@ -466,9 +396,7 @@ fn score_keeper_xfer_matches_upstream() {
             ok.eq(r, c, input);
         }
     }
-    println!(
-        "xfer loads refused by upstream (an unknown template name): {unknown_loads} of {CASES}"
-    );
+    println!("xfer loads refused by upstream (an unknown template name): {unknown_loads} of {CASES}");
     ok.finish();
     bug.finish_planted();
 }

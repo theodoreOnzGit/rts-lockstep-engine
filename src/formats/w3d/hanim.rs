@@ -116,11 +116,7 @@ fn anim_names(header: &[u8; 44]) -> W3dResult<([u8; 2 * W3D_NAME_LEN], [u8; W3D_
     Ok((full, h))
 }
 
-fn node_count(
-    lookup: &mut impl HTreeLookup,
-    name: &[u8; W3D_NAME_LEN],
-    elem: u64,
-) -> W3dResult<Option<i32>> {
+fn node_count(lookup: &mut impl HTreeLookup, name: &[u8; W3D_NAME_LEN], elem: u64) -> W3dResult<Option<i32>> {
     let n = match lookup.num_pivots(name) {
         Some(n) => n,
         None => return Ok(None),
@@ -165,10 +161,7 @@ pub struct HRawAnim {
 impl HRawAnim {
     /// `HRawAnimClass::Load_W3D(cload)`, inside the animation chunk.
     /// `Ok(None)` is upstream's `LOAD_ERROR`.
-    pub fn load_w3d(
-        cload: &mut ChunkLoad<'_>,
-        htrees: &mut impl HTreeLookup,
-    ) -> W3dResult<Option<Self>> {
+    pub fn load_w3d(cload: &mut ChunkLoad<'_>, htrees: &mut impl HTreeLookup) -> W3dResult<Option<Self>> {
         if !cload.open_chunk()? {
             return Ok(None);
         }
@@ -290,10 +283,7 @@ pub struct HCompressedAnim {
 impl HCompressedAnim {
     /// `HCompressedAnimClass::Load_W3D(cload)`, inside the animation chunk.
     /// `Ok(None)` is upstream's `LOAD_ERROR`.
-    pub fn load_w3d(
-        cload: &mut ChunkLoad<'_>,
-        htrees: &mut impl HTreeLookup,
-    ) -> W3dResult<Option<Self>> {
+    pub fn load_w3d(cload: &mut ChunkLoad<'_>, htrees: &mut impl HTreeLookup) -> W3dResult<Option<Self>> {
         if !cload.open_chunk()? {
             return Ok(None);
         }
@@ -308,11 +298,10 @@ impl HCompressedAnim {
         cload.close_chunk()?;
         let aheader = W3dCompressedAnimHeaderStruct::from_bytes(&hb);
         let (name, hierarchy_name) = anim_names(&hb)?;
-        let num_nodes =
-            match node_count(htrees, &hierarchy_name, WIN32_SIZEOF_NODE_COMPRESSED_MOTION)? {
-                Some(n) => n,
-                None => return Ok(None),
-            };
+        let num_nodes = match node_count(htrees, &hierarchy_name, WIN32_SIZEOF_NODE_COMPRESSED_MOTION)? {
+            Some(n) => n,
+            None => return Ok(None),
+        };
         let mut anim = HCompressedAnim {
             name,
             hierarchy_name,
@@ -365,10 +354,7 @@ impl HCompressedAnim {
     }
 
     fn add_channel(&mut self, pivot: u32, type_: u32, chan: CompressedChannel) {
-        if !matches!(
-            type_,
-            ANIM_CHANNEL_X | ANIM_CHANNEL_Y | ANIM_CHANNEL_Z | ANIM_CHANNEL_Q
-        ) {
+        if !matches!(type_, ANIM_CHANNEL_X | ANIM_CHANNEL_Y | ANIM_CHANNEL_Z | ANIM_CHANNEL_Q) {
             return; // no slot: the channel is dropped (leaked upstream)
         }
         let m = self.node_motion.entry(pivot).or_default();

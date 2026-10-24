@@ -73,22 +73,16 @@ use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
-use rts_lockstep_engine::logic::armor_set::{
-    ARMORSET_CRATE_UPGRADE_ONE, ARMORSET_CRATE_UPGRADE_TWO,
-};
+use rts_lockstep_engine::logic::armor_set::{ARMORSET_CRATE_UPGRADE_ONE, ARMORSET_CRATE_UPGRADE_TWO};
 use rts_lockstep_engine::logic::modules::salvage_crate_collide::SalvageCrateCollideModuleData;
-use rts_lockstep_engine::logic::weapon_types::{
-    WEAPONSET_CRATEUPGRADE_ONE, WEAPONSET_CRATEUPGRADE_TWO,
-};
+use rts_lockstep_engine::logic::weapon_types::{WEAPONSET_CRATEUPGRADE_ONE, WEAPONSET_CRATEUPGRADE_TWO};
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::ModuleCall;
 use rts_lockstep_engine::logic::world::module_probe::{ProbeAnswers, ProbeModule};
 use rts_lockstep_engine::logic::world::object::{veterancy_from_i32, PRIVATE_EFFECTIVELY_DEAD};
 use rts_lockstep_engine::logic::world::object_create::{NewModule, NewObject};
 use rts_lockstep_engine::logic::world::object_cuts::CutCall;
-use rts_lockstep_engine::logic::world::object_events::{
-    ModelConditionOp, ObjectClientEvent, ObjectSound,
-};
+use rts_lockstep_engine::logic::world::object_events::{ModelConditionOp, ObjectClientEvent, ObjectSound};
 use rts_lockstep_engine::logic::world::statics::GameStatics;
 use rts_lockstep_engine::logic::world::team::Team;
 use rts_lockstep_engine::logic::world::update_body::UpdateBody;
@@ -142,17 +136,12 @@ impl FxIds {
 }
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::SalvageCrateCollide(Arc::new(
-        SalvageCrateCollideModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::SalvageCrateCollide(Arc::new(SalvageCrateCollideModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -160,9 +149,7 @@ fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>
 
 /// The data dump of `ref_l9r13c_run`: the crate base, then the class's five fields.
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, fx: &mut FxIds) {
-    let ModuleDataKind::SalvageCrateCollide(d) = data else {
-        unreachable!("not a salvage crate")
-    };
+    let ModuleDataKind::SalvageCrateCollide(d) = data else { unreachable!("not a salvage crate") };
     let c = &d.crate_data;
     for i in 0..KINDOF_COUNT {
         put_u32(v, u32::from(c.kind_of.test(i)));
@@ -173,10 +160,7 @@ fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, fx: &mut FxIds) {
     put_u32(v, u32::from(c.is_forbid_owner_player));
     put_u32(v, u32::from(c.is_building_pickup));
     put_u32(v, u32::from(c.is_human_only_pickup));
-    let sci = SCIENCES
-        .iter()
-        .position(|s| s.as_bytes().eq_ignore_ascii_case(&c.pickup_science))
-        .map_or(-1, |i| i as i32);
+    let sci = SCIENCES.iter().position(|s| s.as_bytes().eq_ignore_ascii_case(&c.pickup_science)).map_or(-1, |i| i as i32);
     put_i32(v, sci);
     put_i32(v, fx.id(&c.execute_fx));
     put_str(v, &c.execution_animation_template);
@@ -210,12 +194,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         return out;
     }
     let kinds: Vec<u32> = (0..2 * KINDOF_COUNT).map(|_| u32_(&mut p)).collect();
-    let set: Vec<usize> = kinds
-        .iter()
-        .enumerate()
-        .filter(|(_, v)| **v != 0)
-        .map(|(i, _)| i)
-        .collect();
+    let set: Vec<usize> = kinds.iter().enumerate().filter(|(_, v)| **v != 0).map(|(i, _)| i).collect();
     let flags = [u32_(&mut p), u32_(&mut p), u32_(&mut p)];
     let sci = u32_(&mut p) as i32;
     let fx = u32_(&mut p) as i32;
@@ -270,16 +249,10 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
         lines.push(format!("MoneyChance = {}", pick(g, &chances)));
     }
     if g.below(100) < 50 {
-        lines.push(format!(
-            "MinMoney = {}",
-            pick(g, &["0", "25", "75", "-5", "100"])
-        ));
+        lines.push(format!("MinMoney = {}", pick(g, &["0", "25", "75", "-5", "100"])));
     }
     if g.below(100) < 50 {
-        lines.push(format!(
-            "MaxMoney = {}",
-            pick(g, &["0", "25", "75", "100", "500"])
-        ));
+        lines.push(format!("MaxMoney = {}", pick(g, &["0", "25", "75", "100", "500"])));
     }
     if g.below(100) < 8 {
         lines.push(format!("RequiredKindOf = {}", kind_tokens(g)));
@@ -297,10 +270,7 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
         lines.push(format!("HumanOnly = {}", gen_bool(g, clean)));
     }
     if g.below(100) < 30 {
-        lines.push(format!(
-            "ExecuteFX = {}",
-            pick(g, &["FX_A", "FX_B", "None"])
-        ));
+        lines.push(format!("ExecuteFX = {}", pick(g, &["FX_A", "FX_B", "None"])));
     }
     if !clean {
         lines.push(match g.below(4) {
@@ -343,13 +313,7 @@ fn science_block(ini: &mut Ini<'_>, c: &mut SciCtx) -> IniResult<()> {
     c.store.parse_science_definition(ini, &mut c.names, &Text)
 }
 
-fn run_xfer(
-    w: &mut World,
-    me: ObjectId,
-    idx: usize,
-    how: u32,
-    saved: &[u8],
-) -> (i32, Vec<u8>, u32) {
+fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -402,56 +366,31 @@ fn set_player_of_team(w: &mut World, team: u32, player: Option<u32>) {
 
 /// The collector's template: the test's kinds and whether it trains.
 fn set_kinds(w: &mut World, id: ObjectId, bits: u32, trainable: bool) {
-    let mut values = ObjectTemplateValues {
-        is_trainable: trainable,
-        ..Default::default()
-    };
+    let mut values = ObjectTemplateValues { is_trainable: trainable, ..Default::default() };
     for (i, (k, _)) in KINDS.iter().enumerate() {
         if bits >> i & 1 != 0 {
             values.kind_of.push(*k);
         }
     }
-    w.objects
-        .find_mut(id)
-        .unwrap()
-        .thing
-        .friend_set_template(Arc::new(ThingTemplate::from_object_values(&values)));
+    w.objects.find_mut(id).unwrap().thing.friend_set_template(Arc::new(ThingTemplate::from_object_values(&values)));
 }
 
 /// The collector's crate armor flags (on its body) and crate weapon set flags (bit 0 the first upgrade, bit 1 the second).
 fn set_upgrades(w: &mut World, other: ObjectId, body: u16, armor: u32, weapon: u32) {
-    if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(other).unwrap().modules
-        [body as usize]
-        .body
-        .as_mut()
-    {
-        p.armor_flags = (armor & 1) << ARMORSET_CRATE_UPGRADE_ONE
-            | (armor >> 1 & 1) << ARMORSET_CRATE_UPGRADE_TWO;
+    if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(other).unwrap().modules[body as usize].body.as_mut() {
+        p.armor_flags = (armor & 1) << ARMORSET_CRATE_UPGRADE_ONE | (armor >> 1 & 1) << ARMORSET_CRATE_UPGRADE_TWO;
     }
     let o = w.objects.find_mut(other).unwrap();
-    o.cur_weapon_set_flags
-        .set(WEAPONSET_CRATEUPGRADE_ONE, (weapon & 1) as i32);
-    o.cur_weapon_set_flags
-        .set(WEAPONSET_CRATEUPGRADE_TWO, (weapon >> 1 & 1) as i32);
+    o.cur_weapon_set_flags.set(WEAPONSET_CRATEUPGRADE_ONE, (weapon & 1) as i32);
+    o.cur_weapon_set_flags.set(WEAPONSET_CRATEUPGRADE_TWO, (weapon >> 1 & 1) as i32);
 }
 
 /// The flags of `cfg[3]` that ops change (bits 0-4 and 8), applied to the scene.
 fn apply_flags(w: &mut World, flags: u32, kinds: u32) {
     let other = 2;
-    w.friend_bind_to_drawable(
-        other,
-        if flags & 1 != 0 {
-            7
-        } else {
-            INVALID_DRAWABLE_ID
-        },
-    );
+    w.friend_bind_to_drawable(other, if flags & 1 != 0 { 7 } else { INVALID_DRAWABLE_ID });
     // the collector's AI is a module index nothing calls (only its presence is read)
-    w.objects.find_mut(other).unwrap().ai = if flags & 256 != 0 {
-        Some(u16::MAX)
-    } else {
-        None
-    };
+    w.objects.find_mut(other).unwrap().ai = if flags & 256 != 0 { Some(u16::MAX) } else { None };
     let o = w.objects.find_mut(other).unwrap();
     if flags & 2 != 0 {
         o.private_status |= PRIVATE_EFFECTIVELY_DEAD;
@@ -463,47 +402,19 @@ fn apply_flags(w: &mut World, flags: u32, kinds: u32) {
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(
-    names: NameKeyGenerator,
-    center: UpgradeCenter,
-    data: ModuleDataKind,
-    cfg: &[u32; 12],
-    ops: &[[u32; 6]],
-    tally: &mut Tally,
-) -> (Vec<u8>, World) {
+fn rust_run(names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind, cfg: &[u32; 12], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     let mut fx = FxIds::default();
     put_data(&mut v, &data, &mut fx);
 
-    let mut sc = SciCtx {
-        store: ScienceStore::new(),
-        names,
-    };
-    let defs: String = SCIENCES
-        .iter()
-        .map(|s| format!("Science {s}\nEnd\n"))
-        .collect();
-    static BLOCKS: [BlockParse<SciCtx>; 1] = [BlockParse {
-        token: "Science",
-        parse: science_block,
-    }];
-    Ini::load(
-        b"Data\\INI\\Science.ini",
-        defs.as_bytes(),
-        IniLoadType::Overwrite,
-        None,
-        &BLOCKS,
-        &mut sc,
-    )
-    .expect("sciences load");
+    let mut sc = SciCtx { store: ScienceStore::new(), names };
+    let defs: String = SCIENCES.iter().map(|s| format!("Science {s}\nEnd\n")).collect();
+    static BLOCKS: [BlockParse<SciCtx>; 1] = [BlockParse { token: "Science", parse: science_block }];
+    Ini::load(b"Data\\INI\\Science.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut sc).expect("sciences load");
 
     let mut w = World::new();
     w.names = sc.names;
-    w.statics = Arc::new(GameStatics {
-        science_store: sc.store,
-        upgrade_center: center,
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { science_store: sc.store, upgrade_center: center, ..Default::default() });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.crate_stub_object_calls = true;
@@ -516,63 +427,23 @@ fn rust_run(
     let flags0 = cfg[3];
     for p in 0..3u32 {
         let pl = w.players.get_nth_mut(p as i32).unwrap();
-        pl.player_type = if flags0 >> (5 + p) & 1 != 0 {
-            PlayerType::Computer
-        } else {
-            PlayerType::Human
-        };
-        w.cuts
-            .player_colors
-            .insert(p as i32, cfg[7].wrapping_add(p) as i32);
+        pl.player_type = if flags0 >> (5 + p) & 1 != 0 { PlayerType::Computer } else { PlayerType::Human };
+        w.cuts.player_colors.insert(p as i32, cfg[7].wrapping_add(p) as i32);
     }
     set_player_of_team(&mut w, 1, (cfg[0] != NO_PLAYER).then_some(cfg[0]));
     set_player_of_team(&mut w, 2, (cfg[1] != NO_PLAYER).then_some(cfg[1]));
 
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        CLASS.as_bytes(),
-        b"ModuleTag_Crate",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
-    let plain_template = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
-    let me = w
-        .new_object(NewObject {
-            template: plain_template.clone(),
-            status: ObjectStatusMaskType::default(),
-            team: Some(1),
-            modules: vec![m],
-        })
-        .unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), CLASS.as_bytes(), b"ModuleTag_Crate", &data).unwrap().unwrap();
+    let plain_template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
+    let me = w.new_object(NewObject { template: plain_template.clone(), status: ObjectStatusMaskType::default(), team: Some(1), modules: vec![m] }).unwrap();
     assert_eq!(me, 1);
     let mut body = NewModule::plain(b"CtBody", b"ModuleTag_Body");
     body.interfaces = MODULEINTERFACE_BODY;
-    body.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-        ProbeAnswers::default(),
-        0.0,
-        Default::default(),
-    )));
-    let other = w
-        .new_object(NewObject {
-            template: plain_template.clone(),
-            status: ObjectStatusMaskType::default(),
-            team: Some(2),
-            modules: vec![body],
-        })
-        .unwrap();
+    body.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
+    let other = w.new_object(NewObject { template: plain_template.clone(), status: ObjectStatusMaskType::default(), team: Some(2), modules: vec![body] }).unwrap();
     assert_eq!(other, 2);
     let body_idx = w.objects.find(other).unwrap().body.unwrap();
-    w.set_position(
-        me,
-        &Coord3D {
-            x: 0.0,
-            y: 0.0,
-            z: f32::from_bits(cfg[8]),
-        },
-    );
+    w.set_position(me, &Coord3D { x: 0.0, y: 0.0, z: f32::from_bits(cfg[8]) });
     set_upgrades(&mut w, other, body_idx, cfg[4], cfg[5]);
     let mut flags = flags0;
     let mut kinds = cfg[2];
@@ -588,27 +459,10 @@ fn rust_run(
         let target = if o[1] != 0 { other } else { INVALID_ID };
         match o[0] {
             0 => {
-                w.module_call(
-                    me,
-                    idx,
-                    ModuleCall::OnCollide {
-                        other: target,
-                        loc: None,
-                        normal: None,
-                    },
-                );
+                w.module_call(me, idx, ModuleCall::OnCollide { other: target, loc: None, normal: None });
                 tally.collides += 1;
             }
-            1 => {
-                res = i32::from(
-                    w.module_call(
-                        me,
-                        idx,
-                        ModuleCall::WouldLikeToCollideWith { other: target },
-                    )
-                    .as_bool(),
-                )
-            }
+            1 => res = i32::from(w.module_call(me, idx, ModuleCall::WouldLikeToCollideWith { other: target }).as_bool()),
             2 => set_player_of_team(&mut w, 2, (o[1] != 0).then(|| o[1] - 1)),
             3 => {
                 flags = (flags & !0x11F) | (o[1] & 0x11F);
@@ -619,14 +473,7 @@ fn rust_run(
                 set_kinds(&mut w, other, kinds, flags & 4 != 0);
             }
             5 => set_upgrades(&mut w, other, body_idx, o[1], o[2]),
-            6 => w.set_position(
-                me,
-                &Coord3D {
-                    x: 0.0,
-                    y: 0.0,
-                    z: f32::from_bits(o[1]),
-                },
-            ),
+            6 => w.set_position(me, &Coord3D { x: 0.0, y: 0.0, z: f32::from_bits(o[1]) }),
             7..=9 => {
                 let r = run_xfer(&mut w, me, idx as usize, o[0] - 7, &saved);
                 xst = r.0;
@@ -645,9 +492,7 @@ fn rust_run(
             w.cuts.log = Some(Vec::new());
             events_before = w.events.events().len();
         }
-        let threw = w.cuts.module_errors[errors_before..]
-            .iter()
-            .any(|(_, e)| !e.is_undefined());
+        let threw = w.cuts.module_errors[errors_before..].iter().any(|(_, e)| !e.is_undefined());
         put_i32(&mut v, if threw { 2 } else { 0 });
         put_i32(&mut v, res);
         // every client event has its `evt` line, so the lines and the events are paired before choosing
@@ -666,75 +511,38 @@ fn rust_run(
             if t.starts_with("cut ") {
                 match cut_iter.next().expect("a cut line has a cut call") {
                     CutCall::WeaponSetUpdate { .. } => log.push("wset".to_string()),
-                    CutCall::ExperienceGainForLevel {
-                        object,
-                        levels,
-                        can_scale_for_bonus,
-                    } => log.push(format!(
-                        "gainexp {object} {levels} {}",
-                        i32::from(*can_scale_for_bonus)
-                    )),
-                    CutCall::PlayerMoneyDeposit { player, amount } => {
-                        log.push(format!("deposit {player} {amount} 1"))
+                    CutCall::ExperienceGainForLevel { object, levels, can_scale_for_bonus } => {
+                        log.push(format!("gainexp {object} {levels} {}", i32::from(*can_scale_for_bonus)))
                     }
-                    CutCall::PlayerScoreAddMoneyEarned { player, amount } => {
-                        log.push(format!("earned {player} {amount}"))
+                    CutCall::PlayerMoneyDeposit { player, amount } => log.push(format!("deposit {player} {amount} 1")),
+                    CutCall::PlayerScoreAddMoneyEarned { player, amount } => log.push(format!("earned {player} {amount}")),
+                    CutCall::InGameUiAddFloatingTextNamed { text, amount, position: p, color } => {
+                        log.push(format!("float {} {amount} {},{},{} {:08x}", String::from_utf8_lossy(text), p.x.to_bits(), p.y.to_bits(), p.z.to_bits(), *color as u32))
                     }
-                    CutCall::InGameUiAddFloatingTextNamed {
-                        text,
-                        amount,
-                        position: p,
-                        color,
-                    } => log.push(format!(
-                        "float {} {amount} {},{},{} {:08x}",
-                        String::from_utf8_lossy(text),
-                        p.x.to_bits(),
-                        p.y.to_bits(),
-                        p.z.to_bits(),
-                        *color as u32
-                    )),
-                    CutCall::PlayerAcademyRecordSalvageCollected { player } => {
-                        log.push(format!("salvage {player}"))
-                    }
+                    CutCall::PlayerAcademyRecordSalvageCollected { player } => log.push(format!("salvage {player}")),
                     _ => {}
                 }
             } else if t.starts_with("evt ") {
                 match event_iter.next().flatten() {
-                    Some(ObjectClientEvent::Sound {
-                        sound,
-                        object_id,
-                        position,
-                    }) => {
+                    Some(ObjectClientEvent::Sound { sound, object_id, position }) => {
                         let name = match sound {
                             ObjectSound::CrateSalvage => "crateSalvage",
                             ObjectSound::CrateMoney => "crateMoney",
                             other => panic!("unexpected sound {other:?}"),
                         };
                         let pos = match position {
-                            Some(p) => {
-                                format!("{},{},{}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits())
-                            }
+                            Some(p) => format!("{},{},{}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits()),
                             None => "-".to_string(),
                         };
                         log.push(format!("audio {name} {pos} -1 {object_id}"));
                     }
-                    Some(ObjectClientEvent::DrawableModelCondition { op, .. }) => {
-                        log.push(match op {
-                            ModelConditionOp::Set(a) if a.len() == 1 => format!("mc {}", a[0]),
-                            ModelConditionOp::Clear(a) if a.len() == 1 => {
-                                format!("mcclear {}", a[0])
-                            }
-                            ModelConditionOp::ClearAndSet { clear, set }
-                                if clear.len() == 1 && set.len() == 1 =>
-                            {
-                                format!("clearset {} {}", clear[0], set[0])
-                            }
-                            other => format!("model condition {other:?}"),
-                        })
-                    }
-                    Some(ObjectClientEvent::FxListDoFxObj { fx: name, .. }) => {
-                        log.push(format!("fx{}", fx.id(&Some(name))))
-                    }
+                    Some(ObjectClientEvent::DrawableModelCondition { op, .. }) => log.push(match op {
+                        ModelConditionOp::Set(a) if a.len() == 1 => format!("mc {}", a[0]),
+                        ModelConditionOp::Clear(a) if a.len() == 1 => format!("mcclear {}", a[0]),
+                        ModelConditionOp::ClearAndSet { clear, set } if clear.len() == 1 && set.len() == 1 => format!("clearset {} {}", clear[0], set[0]),
+                        other => format!("model condition {other:?}"),
+                    }),
+                    Some(ObjectClientEvent::FxListDoFxObj { fx: name, .. }) => log.push(format!("fx{}", fx.id(&Some(name)))),
                     _ => {}
                 }
             } else if let Some(r) = t.strip_prefix("destroy ") {
@@ -753,33 +561,19 @@ fn rust_run(
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let armor = match w.objects.find(other).unwrap().modules[body_idx as usize]
-            .body
-            .as_ref()
-        {
+        let armor = match w.objects.find(other).unwrap().modules[body_idx as usize].body.as_ref() {
             Some(UpdateBody::ModuleProbe(p)) => p.armor_flags,
             _ => panic!("the collector's body"),
         };
-        put_u32(
-            &mut v,
-            (armor >> ARMORSET_CRATE_UPGRADE_ONE & 1)
-                | (armor >> ARMORSET_CRATE_UPGRADE_TWO & 1) << 1,
-        );
+        put_u32(&mut v, (armor >> ARMORSET_CRATE_UPGRADE_ONE & 1) | (armor >> ARMORSET_CRATE_UPGRADE_TWO & 1) << 1);
         let ob = w.objects.find(other).unwrap();
-        put_u32(
-            &mut v,
-            u32::from(ob.test_weapon_set_flag(WEAPONSET_CRATEUPGRADE_ONE))
-                | u32::from(ob.test_weapon_set_flag(WEAPONSET_CRATEUPGRADE_TWO)) << 1,
-        );
+        put_u32(&mut v, u32::from(ob.test_weapon_set_flag(WEAPONSET_CRATEUPGRADE_ONE)) | u32::from(ob.test_weapon_set_flag(WEAPONSET_CRATEUPGRADE_TWO)) << 1);
     }
     (v, w)
 }
 
 fn cases() -> usize {
-    std::env::var("L9R13C_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9R13C_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 #[test]
@@ -818,12 +612,7 @@ fn salvage_crate_matches_upstream() {
         cfg[0] = player(&mut g);
         cfg[1] = player(&mut g);
         cfg[2] = u32::from(g.below(6) != 0) | (g.u32() & 0xfe & (g.u32() | 6));
-        cfg[3] = u32::from(g.below(3) != 0)
-            | u32::from(g.below(10) == 0) << 1
-            | u32::from(g.below(4) != 0) << 2
-            | g.below(4) << 3
-            | (g.u32() & g.u32() & 7) << 5
-            | u32::from(g.below(5) != 0) << 8;
+        cfg[3] = u32::from(g.below(3) != 0) | u32::from(g.below(10) == 0) << 1 | u32::from(g.below(4) != 0) << 2 | g.below(4) << 3 | (g.u32() & g.u32() & 7) << 5 | u32::from(g.below(5) != 0) << 8;
         cfg[4] = g.below(4);
         cfg[5] = g.below(4);
         cfg[6] = g.u32();
@@ -835,24 +624,10 @@ fn salvage_crate_matches_upstream() {
                 0..=17 => [0, u32::from(g.below(12) != 0), 0, 0, 0, 0],
                 18..=20 => [1, g.below(2), 0, 0, 0, 0],
                 21..=22 => [2, g.below(4), 0, 0, 0, 0],
-                23..=25 => [
-                    3,
-                    (g.u32() & 0x1F) | u32::from(g.below(5) != 0) << 8,
-                    0,
-                    0,
-                    0,
-                    0,
-                ],
+                23..=25 => [3, (g.u32() & 0x1F) | u32::from(g.below(5) != 0) << 8, 0, 0, 0, 0],
                 26..=27 => [4, g.u32() & 0xff, 0, 0, 0, 0],
                 28..=30 => [5, g.below(4), g.below(4), 0, 0, 0],
-                31..=32 => [
-                    6,
-                    (*pick(&mut g, &[&0.0f32, &12.5, &-3.0])).to_bits(),
-                    0,
-                    0,
-                    0,
-                    0,
-                ],
+                31..=32 => [6, (*pick(&mut g, &[&0.0f32, &12.5, &-3.0])).to_bits(), 0, 0, 0, 0],
                 33..=35 => [7, 0, 0, 0, 0, 0],
                 36..=37 => [8, 0, 0, 0, 0, 0],
                 _ => [9, 0, 0, 0, 0, 0],
@@ -861,14 +636,7 @@ fn salvage_crate_matches_upstream() {
 
         // Rust first: a case that reaches upstream undefined behaviour is counted and never sent to the C++
         let rust = if outcome.status == 0 {
-            let (rd, w) = rust_run(
-                ctx.names.clone(),
-                ctx.center.clone(),
-                data.expect("read ok"),
-                &cfg,
-                &ops,
-                &mut tally,
-            );
+            let (rd, w) = rust_run(ctx.names.clone(), ctx.center.clone(), data.expect("read ok"), &cfg, &ops, &mut tally);
             if w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined()) {
                 excluded += 1;
                 continue;
@@ -907,58 +675,22 @@ fn salvage_crate_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!(
-                "case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                show(&text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
         };
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         for l in &dr {
-            for key in [
-                "wset",
-                "mc ",
-                "mcclear",
-                "clearset",
-                "audio crateSalvage",
-                "audio crateMoney",
-                "gainexp",
-                "deposit",
-                "earned",
-                "float",
-                "salvage",
-                "destroy",
-            ] {
-                *counts.entry(key.trim().to_string()).or_default() +=
-                    l.matches(&format!("\"{key}")).count() as u64;
+            for key in ["wset", "mc ", "mcclear", "clearset", "audio crateSalvage", "audio crateMoney", "gainexp", "deposit", "earned", "float", "salvage", "destroy"] {
+                *counts.entry(key.trim().to_string()).or_default() += l.matches(&format!("\"{key}")).count() as u64;
             }
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
-            eprintln!(
-                "--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}",
-                show(&text),
-                dr.get(i),
-                dc.get(i)
-            );
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            eprintln!("--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -977,8 +709,5 @@ fn salvage_crate_matches_upstream() {
     }
     read.finish();
     run.finish();
-    assert!(
-        tally.destroyed * 10 > cases as u64,
-        "the generator must reach the crate's actions"
-    );
+    assert!(tally.destroyed * 10 > cases as u64, "the generator must reach the crate's actions");
 }

@@ -26,22 +26,16 @@
 use std::sync::Arc;
 
 use crate::common::game_common::VeterancyLevel;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::kind_of::{KINDOF_ARMOR_SALVAGER, KINDOF_SALVAGER, KINDOF_WEAPON_SALVAGER};
-use crate::common::model_state::{
-    MODELCONDITION_ARMORSET_CRATEUPGRADE_ONE, MODELCONDITION_ARMORSET_CRATEUPGRADE_TWO,
-};
+use crate::common::model_state::{MODELCONDITION_ARMORSET_CRATEUPGRADE_ONE, MODELCONDITION_ARMORSET_CRATEUPGRADE_TWO};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::crate_collide_data_field_parse;
 use crate::logic::armor_set::{ARMORSET_CRATE_UPGRADE_ONE, ARMORSET_CRATE_UPGRADE_TWO};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::collide_module::CollideModule;
-use crate::logic::modules::crate_collide::{
-    crate_is_valid_to_execute, crate_module_call, CrateBehavior, CrateCollideModuleData,
-};
+use crate::logic::modules::crate_collide::{crate_is_valid_to_execute, crate_module_call, CrateBehavior, CrateCollideModuleData};
 use crate::logic::weapon_types::{WEAPONSET_CRATEUPGRADE_ONE, WEAPONSET_CRATEUPGRADE_TWO};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -80,9 +74,7 @@ impl SalvageCrateCollideModuleData {
     }
 
     /// `buildFieldParse(p)`: the module data base, the crate fields, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, SalvageCrateCollideModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, SalvageCrateCollideModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -90,66 +82,25 @@ impl SalvageCrateCollideModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<SalvageCrateCollideModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<SalvageCrateCollideModuleData> {
         let mut data = SalvageCrateCollideModuleData::new();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                SalvageCrateCollideModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, SalvageCrateCollideModuleData::build_field_parse)?;
         }
         Ok(data)
     }
 }
 
 /// `CrateCollideModuleData::buildFieldParse`'s table, for this data class.
-static BASE_FIELD_PARSE: [FieldParse<SalvageCrateCollideModuleData>; 12] =
-    crate_collide_data_field_parse!(SalvageCrateCollideModuleData, crate_data);
+static BASE_FIELD_PARSE: [FieldParse<SalvageCrateCollideModuleData>; 12] = crate_collide_data_field_parse!(SalvageCrateCollideModuleData, crate_data);
 
 /// `SalvageCrateCollideModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<SalvageCrateCollideModuleData>; 6] = [
-    FieldParse::new(
-        "WeaponChance",
-        |ini, d, _| {
-            d.weapon_chance = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "LevelChance",
-        |ini, d, _| {
-            d.level_chance = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MoneyChance",
-        |ini, d, _| {
-            d.money_chance = ini.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MinMoney",
-        |ini, d, _| {
-            d.minimum_money = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxMoney",
-        |ini, d, _| {
-            d.maximum_money = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("WeaponChance", |ini, d, _| { d.weapon_chance = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("LevelChance", |ini, d, _| { d.level_chance = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MoneyChance", |ini, d, _| { d.money_chance = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MinMoney", |ini, d, _| { d.minimum_money = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxMoney", |ini, d, _| { d.maximum_money = ini.parse_int()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
@@ -168,17 +119,13 @@ pub struct SalvageCrateCollide {
 impl PartialEq for SalvageCrateCollide {
     /// The same object and the same data object (upstream compares pointers).
     fn eq(&self, other: &Self) -> bool {
-        self.collide.behavior().object() == other.collide.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
+        self.collide.behavior().object() == other.collide.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
 impl SalvageCrateCollide {
     /// `SalvageCrateCollide(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<SalvageCrateCollideModuleData>>,
-    ) -> IniResult<SalvageCrateCollide> {
+    pub fn new(object: ObjectId, data: Option<Arc<SalvageCrateCollideModuleData>>) -> IniResult<SalvageCrateCollide> {
         let data = data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let collide = CollideModule::new(object, Some(Arc::new(data.crate_data.collide.clone())))?;
         Ok(SalvageCrateCollide { collide, data })
@@ -196,21 +143,13 @@ impl SalvageCrateCollide {
 
     /// `eligibleForWeaponSet(other)`: "A kindof marks eligibility, and you must not be fully upgraded".
     fn eligible_for_weapon_set(world: &World, other: ObjectId) -> bool {
-        let Some(o) = world.objects.find(other) else {
-            return false;
-        };
-        o.is_kind_of(KINDOF_WEAPON_SALVAGER)
-            && (!o.test_weapon_set_flag(WEAPONSET_CRATEUPGRADE_TWO)
-                || crate::logic::modules::plant(1682))
+        let Some(o) = world.objects.find(other) else { return false };
+        o.is_kind_of(KINDOF_WEAPON_SALVAGER) && (!o.test_weapon_set_flag(WEAPONSET_CRATEUPGRADE_TWO) || crate::logic::modules::plant(1682))
     }
 
     /// `eligibleForArmorSet(other)`.
     fn eligible_for_armor_set(world: &mut World, other: ObjectId) -> bool {
-        if !world
-            .objects
-            .find(other)
-            .is_some_and(|o| o.is_kind_of(KINDOF_ARMOR_SALVAGER))
-        {
+        if !world.objects.find(other).is_some_and(|o| o.is_kind_of(KINDOF_ARMOR_SALVAGER)) {
             return false;
         }
         !world.test_armor_set_flag(other, ARMORSET_CRATE_UPGRADE_TWO)
@@ -218,9 +157,7 @@ impl SalvageCrateCollide {
 
     /// `eligibleForLevel(other)`: "Sorry, you are max level", "Sorry, you can't gain levels".
     fn eligible_for_level(world: &World, other: ObjectId) -> bool {
-        let Some(o) = world.objects.find(other) else {
-            return false;
-        };
+        let Some(o) = world.objects.find(other) else { return false };
         if o.experience.level == VeterancyLevel::Heroic && !crate::logic::modules::plant(1683) {
             return false;
         }
@@ -238,12 +175,7 @@ impl SalvageCrateCollide {
 
     /// `doWeaponSet(other)`: the first upgrade, or the second in its place.
     fn do_weapon_set(world: &mut World, other: ObjectId) {
-        if world
-            .objects
-            .find(other)
-            .is_some_and(|o| o.test_weapon_set_flag(WEAPONSET_CRATEUPGRADE_ONE))
-            && !crate::logic::modules::plant(1684)
-        {
+        if world.objects.find(other).is_some_and(|o| o.test_weapon_set_flag(WEAPONSET_CRATEUPGRADE_ONE)) && !crate::logic::modules::plant(1684) {
             world.clear_weapon_set_flag(other, WEAPONSET_CRATEUPGRADE_ONE);
             world.set_weapon_set_flag(other, WEAPONSET_CRATEUPGRADE_TWO);
         } else {
@@ -257,11 +189,7 @@ impl SalvageCrateCollide {
             world.clear_armor_set_flag(other, ARMORSET_CRATE_UPGRADE_ONE);
             world.set_armor_set_flag(other, ARMORSET_CRATE_UPGRADE_TWO);
             if !crate::logic::modules::plant(1685) {
-                world.clear_and_set_model_condition_state(
-                    other,
-                    MODELCONDITION_ARMORSET_CRATEUPGRADE_ONE,
-                    MODELCONDITION_ARMORSET_CRATEUPGRADE_TWO,
-                );
+                world.clear_and_set_model_condition_state(other, MODELCONDITION_ARMORSET_CRATEUPGRADE_ONE, MODELCONDITION_ARMORSET_CRATEUPGRADE_TWO);
             }
         } else {
             world.set_armor_set_flag(other, ARMORSET_CRATE_UPGRADE_ONE);
@@ -274,55 +202,27 @@ impl SalvageCrateCollide {
         let md = &self.data;
         // "Random value doesn't like to get a constant range"
         let money = if md.minimum_money != md.maximum_money && !crate::logic::modules::plant(1686) {
-            world
-                .random
-                .game_logic_random_value(md.minimum_money, md.maximum_money)
+            world.random.game_logic_random_value(md.minimum_money, md.maximum_money)
         } else {
             md.minimum_money
         };
         if money > 0 {
-            let player = world
-                .get_controlling_player(other)
-                .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
-            world.cut(CutCall::PlayerMoneyDeposit {
-                player,
-                amount: money as u32,
-            });
+            let player = world.get_controlling_player(other).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+            world.cut(CutCall::PlayerMoneyDeposit { player, amount: money as u32 });
             if !crate::logic::modules::plant(1687) {
-                world.cut(CutCall::PlayerScoreAddMoneyEarned {
-                    player,
-                    amount: money,
-                });
+                world.cut(CutCall::PlayerScoreAddMoneyEarned { player, amount: money });
             }
             // "Display cash income floating over the crate. Position is me, everything else is them."
-            let mut pos = world
-                .objects
-                .find(me)
-                .map(|o| *o.thing.position())
-                .unwrap_or_default();
-            pos.z += if crate::logic::modules::plant(1688) {
-                0.0
-            } else {
-                10.0
-            };
+            let mut pos = world.objects.find(me).map(|o| *o.thing.position()).unwrap_or_default();
+            pos.z += if crate::logic::modules::plant(1688) { 0.0 } else { 10.0 };
             let color = world.cuts.player_color(player) | FLOATING_ALPHA;
-            world.cut(CutCall::InGameUiAddFloatingTextNamed {
-                text: b"GUI:AddCash".to_vec(),
-                amount: money,
-                position: pos,
-                color,
-            });
+            world.cut(CutCall::InGameUiAddFloatingTextNamed { text: b"GUI:AddCash".to_vec(), amount: money, position: pos, color });
         }
         Ok(())
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         crate_module_call(self, world, me, call)
     }
 }
@@ -336,68 +236,33 @@ impl CrateBehavior for SalvageCrateCollide {
     }
 
     /// `isValidToExecute(other)`: "Only salvage units can pick up a Salvage crate".
-    fn is_valid_to_execute(
-        &self,
-        world: &mut World,
-        me: ModuleHandle,
-        other: ObjectId,
-    ) -> Result<bool, IniError> {
+    fn is_valid_to_execute(&self, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<bool, IniError> {
         if !crate_is_valid_to_execute(&self.data.crate_data, world, me, other)? {
             return Ok(false);
         }
-        Ok(world
-            .objects
-            .find(other)
-            .is_some_and(|o| o.template().is_kind_of(KINDOF_SALVAGER))
-            || crate::logic::modules::plant(1681))
+        Ok(world.objects.find(other).is_some_and(|o| o.template().is_kind_of(KINDOF_SALVAGER)) || crate::logic::modules::plant(1681))
     }
 
     /// `executeCrateBehavior(other)`.
-    fn execute_crate_behavior(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        other: ObjectId,
-    ) -> Result<bool, IniError> {
-        let salvage_sound = ObjectClientEvent::Sound {
-            sound: ObjectSound::CrateSalvage,
-            object_id: other,
-            position: None,
-        };
+    fn execute_crate_behavior(&mut self, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<bool, IniError> {
+        let salvage_sound = ObjectClientEvent::Sound { sound: ObjectSound::CrateSalvage, object_id: other, position: None };
         if Self::eligible_for_armor_set(world, other) {
             // "No percent chance on this one, if you can get it, you get it."
             Self::do_armor_set(world, other);
             world.emit(salvage_sound);
-        } else if Self::eligible_for_weapon_set(world, other)
-            && Self::test_chance(world, self.data.weapon_chance)
-        {
+        } else if Self::eligible_for_weapon_set(world, other) && Self::test_chance(world, self.data.weapon_chance) {
             Self::do_weapon_set(world, other);
             world.emit(salvage_sound);
-        } else if Self::eligible_for_level(world, other)
-            && Self::test_chance(
-                world,
-                if crate::logic::modules::plant(1689) {
-                    self.data.weapon_chance
-                } else {
-                    self.data.level_chance
-                },
-            )
-        {
+        } else if Self::eligible_for_level(world, other) && Self::test_chance(world, if crate::logic::modules::plant(1689) { self.data.weapon_chance } else { self.data.level_chance }) {
             world.cut_experience_gain_for_level(other, 1, true);
         } else {
             // just assume the testMoneyChance
             self.do_money(world, me.object, other)?;
             if !crate::logic::modules::plant(1690) {
-                world.emit(ObjectClientEvent::Sound {
-                    sound: ObjectSound::CrateMoney,
-                    object_id: other,
-                    position: None,
-                });
+                world.emit(ObjectClientEvent::Sound { sound: ObjectSound::CrateMoney, object_id: other, position: None });
             }
         }
-        let player = world
-            .get_controlling_player(other)
-            .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+        let player = world.get_controlling_player(other).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
         if !crate::logic::modules::plant(1691) {
             world.cut(CutCall::PlayerAcademyRecordSalvageCollected { player });
         }
@@ -437,7 +302,5 @@ impl Snapshot for SalvageCrateCollide {
 
 /// The factory's `NewModuleDataProc` for `SalvageCrateCollide`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::SalvageCrateCollide(Arc::new(
-        SalvageCrateCollideModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::SalvageCrateCollide(Arc::new(SalvageCrateCollideModuleData::friend_new_module_data(ini)?)))
 }

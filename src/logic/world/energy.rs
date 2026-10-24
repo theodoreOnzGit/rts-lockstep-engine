@@ -90,12 +90,7 @@ impl Default for Energy {
 impl Energy {
     /// `Energy::Energy()`.
     pub fn new() -> Energy {
-        Energy {
-            energy_production: 0,
-            energy_consumption: 0,
-            power_sabotaged_till_frame: 0,
-            owner: None,
-        }
+        Energy { energy_production: 0, energy_consumption: 0, power_sabotaged_till_frame: 0, owner: None }
     }
 
     /// `init(owner)`: resets the sums and sets the owner (the sabotage window
@@ -224,9 +219,7 @@ impl Energy {
 
     /// The owner's notification after a change: none without an owner.
     fn notify(&self, frame: u32) -> OwnerNotice {
-        self.owner.map(|_| BrownOutChange {
-            brown_out: !self.has_sufficient_power(frame),
-        })
+        self.owner.map(|_| BrownOutChange { brown_out: !self.has_sufficient_power(frame) })
     }
 
     /// `Energy::xfer`, version 3. Version 1 and 2 saved the two sums (not
@@ -246,11 +239,7 @@ impl Energy {
         }
         let mut owning_player_index: i32 = self.owner.unwrap_or(-1);
         xfer.xfer_int(&mut owning_player_index)?;
-        self.owner = if (0..MAX_PLAYER_COUNT).contains(&owning_player_index) {
-            Some(owning_player_index)
-        } else {
-            None
-        };
+        self.owner = if (0..MAX_PLAYER_COUNT).contains(&owning_player_index) { Some(owning_player_index) } else { None };
         if version >= 3 {
             xfer.xfer_unsigned_int(&mut self.power_sabotaged_till_frame)?;
         }
@@ -265,10 +254,7 @@ mod tests {
     #[test]
     fn production_and_consumption_add_and_leave_symmetrically() {
         let mut e = Energy::new();
-        assert!(
-            e.object_entering_influence(0, 50).is_none(),
-            "no owner, no notice"
-        );
+        assert!(e.object_entering_influence(0, 50).is_none(), "no owner, no notice");
         e.object_entering_influence(0, -20);
         assert_eq!((e.production(0), e.consumption()), (50, 20));
         assert!(e.has_sufficient_power(0));
@@ -283,17 +269,9 @@ mod tests {
         e.adjust_power(0, 30, true);
         assert_eq!(e.production(0), 30);
         e.adjust_power(0, -10, true);
-        assert_eq!(
-            e.consumption(),
-            10,
-            "a negative delta being added is consumption"
-        );
+        assert_eq!(e.consumption(), 10, "a negative delta being added is consumption");
         e.adjust_power(0, -10, false);
-        assert_eq!(
-            e.consumption(),
-            0,
-            "a negative delta being removed takes it back"
-        );
+        assert_eq!(e.consumption(), 0, "a negative delta being removed takes it back");
         e.adjust_power(0, 30, false);
         assert_eq!(e.production(0), 0);
         assert!(e.adjust_power(0, 0, true).is_none());
@@ -303,19 +281,9 @@ mod tests {
     fn the_owner_hears_each_change_with_the_brown_out_state_after_it() {
         let mut e = Energy::new();
         e.init(Some(3));
-        assert_eq!(
-            e.adjust_power(0, -5, true),
-            Some(BrownOutChange { brown_out: true })
-        );
-        assert_eq!(
-            e.adjust_power(0, 5, true),
-            Some(BrownOutChange { brown_out: false })
-        );
-        assert_eq!(
-            e.add_power_bonus(0, 0),
-            Some(BrownOutChange { brown_out: false }),
-            "a bonus of 0 still notifies"
-        );
+        assert_eq!(e.adjust_power(0, -5, true), Some(BrownOutChange { brown_out: true }));
+        assert_eq!(e.adjust_power(0, 5, true), Some(BrownOutChange { brown_out: false }));
+        assert_eq!(e.add_power_bonus(0, 0), Some(BrownOutChange { brown_out: false }), "a bonus of 0 still notifies");
     }
 
     #[test]
@@ -346,11 +314,7 @@ mod tests {
         e.add_power_bonus(0, 1);
         assert_eq!(e.production(0), i32::MIN);
         e.adjust_power(0, i32::MIN, true);
-        assert_eq!(
-            e.consumption(),
-            i32::MIN,
-            "-i32::MIN wraps back to i32::MIN"
-        );
+        assert_eq!(e.consumption(), i32::MIN, "-i32::MIN wraps back to i32::MIN");
     }
 
     #[test]
@@ -369,11 +333,7 @@ mod tests {
         let mut back = Energy::new();
         back.xfer(&mut load).expect("load");
         assert_eq!(back.owner(), Some(2));
-        assert_eq!(
-            back.production(0),
-            0,
-            "the sums are not saved (version 2 on): they are rebuilt from the buildings"
-        );
+        assert_eq!(back.production(0), 0, "the sums are not saved (version 2 on): they are rebuilt from the buildings");
         assert_eq!(back.power_sabotaged_till_frame(), 0);
     }
 }

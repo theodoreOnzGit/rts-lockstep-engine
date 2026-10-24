@@ -67,22 +67,15 @@ use crate::common::damage_fx::FxListName;
 use crate::common::disabled_types::DISABLED_HELD;
 use crate::common::game_common::{LOGICFRAMES_PER_SECOND, SECONDS_PER_LOGICFRAME_REAL};
 use crate::common::game_type::ObjectId;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::kind_of::{KINDOF_HULK, KINDOF_INFANTRY, KINDOF_SHRUBBERY};
-use crate::common::model_state::{
-    MODELCONDITION_EXPLODED_BOUNCING, MODELCONDITION_EXPLODED_FLAILING, MODELCONDITION_PARACHUTING,
-};
+use crate::common::model_state::{MODELCONDITION_EXPLODED_BOUNCING, MODELCONDITION_EXPLODED_FLAILING, MODELCONDITION_PARACHUTING};
 use crate::common::module::{ModuleDataKind, MODULEINTERFACE_DIE};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::DamageInfo;
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::die_module::{DieModuleData, DIE_MODULE_DATA_FIELD_PARSE};
-use crate::logic::module::update_module::{
-    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime,
-    UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
 use crate::logic::modules::lend_clone;
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
@@ -186,12 +179,7 @@ fn parse_phase(ini: &mut Ini<'_>) -> IniResult<usize> {
 }
 
 /// Lifts entry `k` of the layer-5 die field table onto `SlowDeathBehaviorModuleData::die`.
-fn lift_die_field(
-    k: usize,
-    i: &mut Ini<'_>,
-    d: &mut SlowDeathBehaviorModuleData,
-    u: &UserData,
-) -> IniResult<()> {
+fn lift_die_field(k: usize, i: &mut Ini<'_>, d: &mut SlowDeathBehaviorModuleData, u: &UserData) -> IniResult<()> {
     match DIE_MODULE_DATA_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.die, u),
         None => Ok(()),
@@ -200,190 +188,67 @@ fn lift_die_field(
 
 /// `dataFieldParse`, then `DieMuxData::getFieldParse()`.
 static FIELD_PARSE: [FieldParse<SlowDeathBehaviorModuleData>; 20] = [
-    FieldParse::new(
-        "SinkRate",
-        |i, d, _| {
-            d.sink_rate = i.parse_velocity_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ProbabilityModifier",
-        |i, d, _| {
-            d.probability_modifier = i.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ModifierBonusPerOverkillPercent",
-        |i, d, _| {
-            d.modifier_bonus_per_overkill_percent = i.parse_percent_to_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SinkDelay",
-        |i, d, _| {
-            d.sink_delay = i.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SinkDelayVariance",
-        |i, d, _| {
-            d.sink_delay_variance = i.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DestructionDelay",
-        |i, d, _| {
-            d.destruction_delay = i.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DestructionDelayVariance",
-        |i, d, _| {
-            d.destruction_delay_variance = i.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DestructionAltitude",
-        |i, d, _| {
-            d.destruction_altitude = i.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FX",
-        |i, d, _| {
-            let phase = parse_phase(i)?;
-            // `for (token = ini->getNextToken(); token != NULL; token = ini->getNextTokenOrNull())`: the first token is required
-            let mut token = Some(i.get_next_token(None)?);
-            while let Some(t) = token {
-                // `findFXList(token)`: "could be null! this is OK!"
-                d.fx[phase].push(if t.eq_ignore_ascii_case(b"None") {
-                    None
-                } else {
-                    Some(t)
-                });
-                token = i.get_next_token_or_null(None);
-            }
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "OCL",
-        |i, d, _| {
-            let phase = parse_phase(i)?;
-            let mut token = Some(i.get_next_token(None)?);
-            while let Some(t) = token {
-                d.ocls[phase].push(t);
-                token = i.get_next_token_or_null(None);
-            }
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "Weapon",
-        |i, d, _| {
-            let phase = parse_phase(i)?;
-            let mut token = Some(i.get_next_token(None)?);
-            while let Some(t) = token {
-                d.weapons[phase].push(t);
-                token = i.get_next_token_or_null(None);
-            }
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FlingForce",
-        |i, d, _| {
-            d.fling_force = i.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FlingForceVariance",
-        |i, d, _| {
-            d.fling_force_variance = i.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FlingPitch",
-        |i, d, _| {
-            d.fling_pitch = i.parse_angle_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "FlingPitchVariance",
-        |i, d, _| {
-            d.fling_pitch_variance = i.parse_angle_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "DeathTypes",
-        |i, d, u| lift_die_field(0, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VeterancyLevels",
-        |i, d, u| lift_die_field(1, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExemptStatus",
-        |i, d, u| lift_die_field(2, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "RequiredStatus",
-        |i, d, u| lift_die_field(3, i, d, u),
-        UserData::None,
-    ),
+    FieldParse::new("SinkRate", |i, d, _| { d.sink_rate = i.parse_velocity_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("ProbabilityModifier", |i, d, _| { d.probability_modifier = i.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("ModifierBonusPerOverkillPercent", |i, d, _| { d.modifier_bonus_per_overkill_percent = i.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("SinkDelay", |i, d, _| { d.sink_delay = i.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("SinkDelayVariance", |i, d, _| { d.sink_delay_variance = i.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("DestructionDelay", |i, d, _| { d.destruction_delay = i.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("DestructionDelayVariance", |i, d, _| { d.destruction_delay_variance = i.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("DestructionAltitude", |i, d, _| { d.destruction_altitude = i.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("FX", |i, d, _| {
+        let phase = parse_phase(i)?;
+        // `for (token = ini->getNextToken(); token != NULL; token = ini->getNextTokenOrNull())`: the first token is required
+        let mut token = Some(i.get_next_token(None)?);
+        while let Some(t) = token {
+            // `findFXList(token)`: "could be null! this is OK!"
+            d.fx[phase].push(if t.eq_ignore_ascii_case(b"None") { None } else { Some(t) });
+            token = i.get_next_token_or_null(None);
+        }
+        Ok(())
+    }, UserData::None),
+    FieldParse::new("OCL", |i, d, _| {
+        let phase = parse_phase(i)?;
+        let mut token = Some(i.get_next_token(None)?);
+        while let Some(t) = token {
+            d.ocls[phase].push(t);
+            token = i.get_next_token_or_null(None);
+        }
+        Ok(())
+    }, UserData::None),
+    FieldParse::new("Weapon", |i, d, _| {
+        let phase = parse_phase(i)?;
+        let mut token = Some(i.get_next_token(None)?);
+        while let Some(t) = token {
+            d.weapons[phase].push(t);
+            token = i.get_next_token_or_null(None);
+        }
+        Ok(())
+    }, UserData::None),
+    FieldParse::new("FlingForce", |i, d, _| { d.fling_force = i.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("FlingForceVariance", |i, d, _| { d.fling_force_variance = i.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("FlingPitch", |i, d, _| { d.fling_pitch = i.parse_angle_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("FlingPitchVariance", |i, d, _| { d.fling_pitch_variance = i.parse_angle_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("DeathTypes", |i, d, u| lift_die_field(0, i, d, u), UserData::None),
+    FieldParse::new("VeterancyLevels", |i, d, u| lift_die_field(1, i, d, u), UserData::None),
+    FieldParse::new("ExemptStatus", |i, d, u| lift_die_field(2, i, d, u), UserData::None),
+    FieldParse::new("RequiredStatus", |i, d, u| lift_die_field(3, i, d, u), UserData::None),
     FieldParse::end(),
 ];
 
 impl SlowDeathBehaviorModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's fields and the die mux's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, SlowDeathBehaviorModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, SlowDeathBehaviorModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<SlowDeathBehaviorModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<SlowDeathBehaviorModuleData> {
         let mut data = SlowDeathBehaviorModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                SlowDeathBehaviorModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, SlowDeathBehaviorModuleData::build_field_parse)?;
         }
         Ok(data)
     }
@@ -456,10 +321,7 @@ impl SlowDeathBehavior {
     }
 
     /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data, and for a `ProbabilityModifier` under 1).
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<SlowDeathBehaviorModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<SlowDeathBehaviorModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
@@ -501,36 +363,15 @@ impl SlowDeathBehavior {
         let statics = world.statics.clone();
         let d = self.data.clone();
         self.has_fx = d.fx.iter().any(|v| v.iter().any(|f| f.is_some()));
-        self.has_ocl = d.ocls.iter().any(|v| {
-            v.iter().any(|n| {
-                statics
-                    .object_creation_list_store
-                    .find_object_creation_list(&mut world.names, n)
-                    .is_some()
-            })
-        });
+        self.has_ocl = d.ocls.iter().any(|v| v.iter().any(|n| statics.object_creation_list_store.find_object_creation_list(&mut world.names, n).is_some()));
         // (`TheWeaponStore->findWeaponTemplate(name)`: a template of that name, whatever the case)
-        self.has_weapon = d.weapons.iter().any(|v| {
-            v.iter().any(|n| {
-                statics
-                    .weapon_store
-                    .templates()
-                    .iter()
-                    .any(|t| t.name.eq_ignore_ascii_case(n))
-            })
-        });
+        self.has_weapon = d.weapons.iter().any(|v| v.iter().any(|n| statics.weapon_store.templates().iter().any(|t| t.name.eq_ignore_ascii_case(n))));
         update_behavior::world_construct(self, world, me);
     }
 
     /// The state `xfer` writes, as words: the three frames, the time scale and the flags (the test compares them).
     pub fn state_words(&self) -> Vec<u32> {
-        vec![
-            self.sink_frame,
-            self.midpoint_frame,
-            self.destruction_frame,
-            self.accelerated_time_scale.to_bits(),
-            self.flags,
-        ]
+        vec![self.sink_frame, self.midpoint_frame, self.destruction_frame, self.accelerated_time_scale.to_bits(), self.flags]
     }
 
     /// `hasNonLodEffects()`.
@@ -549,12 +390,7 @@ impl SlowDeathBehavior {
     }
 
     /// The module's answer to one of `Object`'s calls: `onDie` and the `SlowDeathBehaviorInterface`.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -575,14 +411,8 @@ impl SlowDeathBehavior {
 
     /// `isDieApplicable(damageInfo)`: the die mux's, of this object's death.
     fn is_die_applicable(&self, world: &World, me: ModuleHandle, info: &DamageInfo) -> bool {
-        let Some(o) = world.objects.find(me.object) else {
-            return false;
-        };
-        self.data.die.die_mux_data.is_die_applicable(
-            info.input.death_type,
-            o.get_veterancy_level() as i32,
-            &o.status,
-        )
+        let Some(o) = world.objects.find(me.object) else { return false };
+        self.data.die.die_mux_data.is_die_applicable(info.input.death_type, o.get_veterancy_level() as i32, &o.status)
     }
 
     /// Records that upstream is undefined here.
@@ -592,18 +422,9 @@ impl SlowDeathBehavior {
 
     /// `getProbabilityModifier(damageInfo)`: "calculating how far past dead we were allows us to pick more spectacular deaths when severly killed, and more
     /// sedate ones when only slightly killed". `None` is upstream's undefined behaviour (recorded).
-    fn get_probability_modifier(
-        &self,
-        world: &mut World,
-        me: ModuleHandle,
-        info: &DamageInfo,
-    ) -> i32 {
+    fn get_probability_modifier(&self, world: &mut World, me: ModuleHandle, info: &DamageInfo) -> i32 {
         // eg ( 200 hp max, had 10 left, took 50 damage, 40 overkill, (40/200) * 100 = 20 overkill %)
-        let Some(overkill_damage) = real_to_signed(if crate::logic::modules::plant(1291) {
-            info.out.actual_damage_clipped - info.out.actual_damage_dealt
-        } else {
-            info.out.actual_damage_dealt - info.out.actual_damage_clipped
-        }) else {
+        let Some(overkill_damage) = real_to_signed(if crate::logic::modules::plant(1291) { info.out.actual_damage_clipped - info.out.actual_damage_dealt } else { info.out.actual_damage_dealt - info.out.actual_damage_clipped }) else {
             Self::undefined(world, me, Undefined::FloatToIntOutOfRange);
             return 1;
         };
@@ -611,29 +432,17 @@ impl SlowDeathBehavior {
             Self::undefined(world, me, Undefined::NullBodyModule);
             return 1;
         };
-        let max_health = world
-            .module_call(me.object, body, ModuleCall::GetMaxHealth)
-            .as_real(0.0);
+        let max_health = world.module_call(me.object, body, ModuleCall::GetMaxHealth).as_real(0.0);
         let overkill_percent = overkill_damage as f32 / max_health;
-        let Some(overkill_modifier) =
-            real_to_signed(overkill_percent * self.data.modifier_bonus_per_overkill_percent)
-        else {
+        let Some(overkill_modifier) = real_to_signed(overkill_percent * self.data.modifier_bonus_per_overkill_percent) else {
             Self::undefined(world, me, Undefined::FloatToIntOutOfRange);
             return 1;
         };
-        let Some(sum) = self
-            .data
-            .probability_modifier
-            .checked_add(overkill_modifier)
-        else {
+        let Some(sum) = self.data.probability_modifier.checked_add(overkill_modifier) else {
             Self::undefined(world, me, Undefined::SignedIntOverflow);
             return 1;
         };
-        if crate::logic::modules::plant(1292) {
-            sum
-        } else {
-            crate::common::base_type::max(sum, 1)
-        }
+        if crate::logic::modules::plant(1292) { sum } else { crate::common::base_type::max(sum, 1) }
     }
 
     /// `beginSlowDeath(damageInfo)`.
@@ -643,92 +452,46 @@ impl SlowDeathBehavior {
         }
         let d = self.data.clone();
         let obj = me.object;
-        let is_infantry = world
-            .objects
-            .find(obj)
-            .is_some_and(|o| o.is_kind_of(KINDOF_INFANTRY));
-        if d.sink_rate != 0.0
-            && (is_infantry != crate::logic::modules::plant(1314))
-            && world.has_drawable(obj)
-        {
+        let is_infantry = world.objects.find(obj).is_some_and(|o| o.is_kind_of(KINDOF_INFANTRY));
+        if d.sink_rate != 0.0 && (is_infantry != crate::logic::modules::plant(1314)) && world.has_drawable(obj) {
             // this object sinks slowly after it dies so don't draw a floating shadow decal on the ground above it.
-            world.emit(ObjectClientEvent::DrawableSetShadowsEnabled {
-                object_id: obj,
-                enabled: false,
-            });
-            world.emit(ObjectClientEvent::DrawableTerrainDecalFadeTarget {
-                object_id: obj,
-                target: 0.0,
-                rate: -0.2,
-            });
+            world.emit(ObjectClientEvent::DrawableSetShadowsEnabled { object_id: obj, enabled: false });
+            world.emit(ObjectClientEvent::DrawableTerrainDecalFadeTarget { object_id: obj, target: 0.0, rate: -0.2 });
         }
 
         // Ask game detail manager if we need to speedup all deaths to improve performance
         let time_scale = world.cuts.globals.slow_death_scale;
         self.accelerated_time_scale = 1.0; // assume normal death speed.
-        if time_scale == 0.0 && (!self.has_non_lod_effects() || crate::logic::modules::plant(1293))
-        {
+        if time_scale == 0.0 && (!self.has_non_lod_effects() || crate::logic::modules::plant(1293)) {
             // Deaths happen instantly so just delete the object and return
             world.body_destroy_object(obj);
             return;
         }
 
         // timescale is some non-zero value so we may need to speed up death
-        let is_hulk = world
-            .objects
-            .find(obj)
-            .is_some_and(|o| o.is_kind_of(KINDOF_HULK))
-            && !crate::logic::modules::plant(1315);
+        let is_hulk = world.objects.find(obj).is_some_and(|o| o.is_kind_of(KINDOF_HULK)) && !crate::logic::modules::plant(1315);
         if is_hulk && world.cuts.globals.hulk_max_lifetime_override != -1 {
             // Scripts don't want hulks around, so start sinking immediately!
-            self.sink_frame = if crate::logic::modules::plant(1294) {
-                0
-            } else {
-                1
-            };
+            self.sink_frame = if crate::logic::modules::plant(1294) { 0 } else { 1 };
             self.midpoint_frame = (LOGICFRAMES_PER_SECOND / 2 + 1) as u32;
             self.destruction_frame = (LOGICFRAMES_PER_SECOND + 1) as u32;
             self.accelerated_time_scale = 1.0;
         } else {
-            let r = if crate::logic::modules::plant(1295) {
-                0
-            } else {
-                world
-                    .random
-                    .game_logic_random_value(0, d.sink_delay_variance as i32)
-            };
-            let Some(sink) =
-                real_to_unsigned(time_scale * d.sink_delay.wrapping_add(r as u32) as f32)
-            else {
+            let r = if crate::logic::modules::plant(1295) { 0 } else { world.random.game_logic_random_value(0, d.sink_delay_variance as i32) };
+            let Some(sink) = real_to_unsigned(time_scale * d.sink_delay.wrapping_add(r as u32) as f32) else {
                 Self::undefined(world, me, Undefined::FloatToUnsignedOutOfRange);
                 return;
             };
             self.sink_frame = sink;
-            let r = world.random.game_logic_random_value(
-                0,
-                if crate::logic::modules::plant(1296) {
-                    d.sink_delay_variance
-                } else {
-                    d.destruction_delay_variance
-                } as i32,
-            );
-            let Some(destruction) =
-                real_to_unsigned(time_scale * d.destruction_delay.wrapping_add(r as u32) as f32)
-            else {
+            let r = world.random.game_logic_random_value(0, if crate::logic::modules::plant(1296) { d.sink_delay_variance } else { d.destruction_delay_variance } as i32);
+            let Some(destruction) = real_to_unsigned(time_scale * d.destruction_delay.wrapping_add(r as u32) as f32) else {
                 Self::undefined(world, me, Undefined::FloatToUnsignedOutOfRange);
                 return;
             };
             self.destruction_frame = destruction;
-            let (Some(lo), Some(hi)) = (
-                real_to_signed(
-                    if crate::logic::modules::plant(1297) {
-                        0.5
-                    } else {
-                        BEGIN_MIDPOINT_RATIO
-                    } * self.destruction_frame as f32,
-                ),
-                real_to_signed(END_MIDPOINT_RATIO * self.destruction_frame as f32),
-            ) else {
+            let (Some(lo), Some(hi)) =
+                (real_to_signed(if crate::logic::modules::plant(1297) { 0.5 } else { BEGIN_MIDPOINT_RATIO } * self.destruction_frame as f32), real_to_signed(END_MIDPOINT_RATIO * self.destruction_frame as f32))
+            else {
                 Self::undefined(world, me, Undefined::FloatToIntOutOfRange);
                 return;
             };
@@ -739,76 +502,30 @@ impl SlowDeathBehavior {
         let now = world.frame();
         if d.fling_force > 0.0 {
             // Just in case this is a stingersoldier or other HELD object, lets set them free so they will fly with their own physics during slow death
-            if world
-                .objects
-                .find(obj)
-                .is_some_and(|o| o.is_disabled_by_type(DISABLED_HELD))
-            {
+            if world.objects.find(obj).is_some_and(|o| o.is_disabled_by_type(DISABLED_HELD)) {
                 if let Some(slave) = world.find_module(obj, b"SlavedUpdate") {
                     world.module_call(obj, slave, ModuleCall::SlavedOnSlaverDie);
                 }
             }
             if let Some(physics) = world.objects.find(obj).and_then(|o| o.physics) {
                 // make sure we are at least a bit above the ground
-                let min_altitude: f32 = if crate::logic::modules::plant(1300) {
-                    2.0
-                } else {
-                    1.0
-                };
+                let min_altitude: f32 = if crate::logic::modules::plant(1300) { 2.0 } else { 1.0 };
                 let altitude = world.get_height_above_terrain(obj);
                 if altitude < min_altitude {
-                    let mut pos = world
-                        .objects
-                        .find(obj)
-                        .map_or_else(Coord3D::default, |o| o.get_position());
+                    let mut pos = world.objects.find(obj).map_or_else(Coord3D::default, |o| o.get_position());
                     pos.z += min_altitude;
                     world.set_position(obj, &pos);
                 }
 
-                let force = calc_random_force(
-                    world,
-                    d.fling_force,
-                    d.fling_force + d.fling_force_variance,
-                    d.fling_pitch,
-                    d.fling_pitch + d.fling_pitch_variance,
-                );
-                let force = if crate::logic::modules::plant(1302) {
-                    Coord3D {
-                        z: -force.z,
-                        ..force
-                    }
-                } else {
-                    force
-                };
+                let force = calc_random_force(world, d.fling_force, d.fling_force + d.fling_force_variance, d.fling_pitch, d.fling_pitch + d.fling_pitch_variance);
+                let force = if crate::logic::modules::plant(1302) { Coord3D { z: -force.z, ..force } } else { force };
                 world.module_call(obj, physics, ModuleCall::PhysicsSetAllowToFall(true));
                 world.module_call(obj, physics, ModuleCall::PhysicsApplyForce(force));
                 world.module_call(obj, physics, ModuleCall::PhysicsSetExtraBounciness(-1.0)); // we don't want this guy to bounce at all
-                world.module_call(
-                    obj,
-                    physics,
-                    ModuleCall::PhysicsSetExtraFriction(
-                        (if crate::logic::modules::plant(1301) {
-                            3.0
-                        } else {
-                            -3.0
-                        }) * SECONDS_PER_LOGICFRAME_REAL,
-                    ),
-                ); // reduce his ground friction a bit
+                world.module_call(obj, physics, ModuleCall::PhysicsSetExtraFriction((if crate::logic::modules::plant(1301) { 3.0 } else { -3.0 }) * SECONDS_PER_LOGICFRAME_REAL)); // reduce his ground friction a bit
                 world.module_call(obj, physics, ModuleCall::PhysicsSetAllowBouncing(true));
-                let orientation = if crate::logic::modules::plant(1303) {
-                    atan2_d(force.x, force.y)
-                } else {
-                    atan2_d(force.y, force.x)
-                };
-                world.module_call(
-                    obj,
-                    physics,
-                    ModuleCall::PhysicsSetAngles {
-                        yaw: orientation,
-                        pitch: 0.0,
-                        roll: 0.0,
-                    },
-                );
+                let orientation = if crate::logic::modules::plant(1303) { atan2_d(force.x, force.y) } else { atan2_d(force.y, force.x) };
+                world.module_call(obj, physics, ModuleCall::PhysicsSetAngles { yaw: orientation, pitch: 0.0, roll: 0.0 });
                 if !world.has_drawable(obj) {
                     // `obj->getDrawable()->setModelConditionState(..)` of a null drawable
                     Self::undefined(world, me, Undefined::NullDrawable);
@@ -847,63 +564,29 @@ impl SlowDeathBehavior {
         }
         let list_size = d.fx[sdphase].len();
         if list_size > 0 {
-            let idx = world.random.game_logic_random_value(
-                0,
-                list_size as i32
-                    - 1
-                    - i32::from(crate::logic::modules::plant(1317) && list_size > 1),
-            );
+            let idx = world.random.game_logic_random_value(0, list_size as i32 - 1 - i32::from(crate::logic::modules::plant(1317) && list_size > 1));
             if let Some(Some(fx)) = d.fx[sdphase].get(idx as usize) {
-                world.emit(ObjectClientEvent::FxListDoFxObj {
-                    fx: fx.clone(),
-                    object_id: obj,
-                });
+                world.emit(ObjectClientEvent::FxListDoFxObj { fx: fx.clone(), object_id: obj });
             }
         }
         let list_size = d.ocls[sdphase].len();
         if list_size > 0 {
-            let idx = world
-                .random
-                .game_logic_random_value(0, list_size as i32 - 1);
+            let idx = world.random.game_logic_random_value(0, list_size as i32 - 1);
             if let Some(ocl) = d.ocls[sdphase].get(idx as usize) {
-                let found = world
-                    .statics
-                    .clone()
-                    .object_creation_list_store
-                    .find_object_creation_list(&mut world.names, ocl)
-                    .is_some();
+                let found = world.statics.clone().object_creation_list_store.find_object_creation_list(&mut world.names, ocl).is_some();
                 if found || crate::logic::modules::plant(1318) {
-                    world.cut(CutCall::OclCreate {
-                        object: obj,
-                        ocl: ocl.clone(),
-                    });
+                    world.cut(CutCall::OclCreate { object: obj, ocl: ocl.clone() });
                 }
             }
         }
         let list_size = d.weapons[sdphase].len();
         if list_size > 0 {
-            let idx = world
-                .random
-                .game_logic_random_value(0, list_size as i32 - 1);
+            let idx = world.random.game_logic_random_value(0, list_size as i32 - 1);
             if let Some(wt) = d.weapons[sdphase].get(idx as usize) {
-                let weapon = world
-                    .statics
-                    .clone()
-                    .weapon_store
-                    .templates()
-                    .iter()
-                    .find(|t| t.name.eq_ignore_ascii_case(wt))
-                    .map(|t| t.name.clone());
+                let weapon = world.statics.clone().weapon_store.templates().iter().find(|t| t.name.eq_ignore_ascii_case(wt)).map(|t| t.name.clone());
                 if let Some(weapon) = weapon {
-                    let position = world
-                        .objects
-                        .find(obj)
-                        .map_or_else(Coord3D::default, |o| o.get_position());
-                    world.cut(CutCall::WeaponCreateAndFireTemp {
-                        weapon,
-                        source: obj,
-                        position,
-                    });
+                    let position = world.objects.find(obj).map_or_else(Coord3D::default, |o| o.get_position());
+                    world.cut(CutCall::WeaponCreateAndFireTemp { weapon, source: obj, position });
                 }
             }
         }
@@ -918,11 +601,7 @@ impl SlowDeathBehavior {
 
         if let Some(ai) = world.objects.find(obj).and_then(|o| o.ai) {
             // has another AI already handled us. (hopefully another SlowDeathBehavior)
-            if world
-                .module_call(obj, ai, ModuleCall::AiIsAiInDeadState)
-                .as_bool()
-                && !crate::logic::modules::plant(1311)
-            {
+            if world.module_call(obj, ai, ModuleCall::AiIsAiInDeadState).as_bool() && !crate::logic::modules::plant(1311) {
                 return;
             }
             world.module_call(obj, ai, ModuleCall::AiMarkAsDead);
@@ -930,25 +609,14 @@ impl SlowDeathBehavior {
 
         // deselect this unit for all players.
         if !crate::logic::modules::plant(1312) {
-            world.cut(CutCall::GameLogicDeselectObject {
-                object: obj,
-                player_mask: crate::common::game_common::PLAYERMASK_ALL,
-                affect_client: true,
-            });
+            world.cut(CutCall::GameLogicDeselectObject { object: obj, player_mask: crate::common::game_common::PLAYERMASK_ALL, affect_client: true });
         }
 
         let mut total: i32 = 0;
         for idx in world.all_modules(obj) {
             // `getSlowDeathBehaviorInterface()` is non-null for a slow death module, which answers; any other module has no answer
-            if world
-                .module_call(obj, idx, ModuleCall::IsDieApplicable(info.clone()))
-                .as_bool()
-            {
-                let m = match world.module_call(
-                    obj,
-                    idx,
-                    ModuleCall::GetProbabilityModifier(info.clone()),
-                ) {
+            if world.module_call(obj, idx, ModuleCall::IsDieApplicable(info.clone())).as_bool() {
+                let m = match world.module_call(obj, idx, ModuleCall::GetProbabilityModifier(info.clone())) {
                     ModuleReply::Int(m) => m,
                     _ => 0,
                 };
@@ -966,15 +634,8 @@ impl SlowDeathBehavior {
         // this returns a value from 1...total, inclusive
         let mut roll = world.random.game_logic_random_value(1, total);
         for idx in world.all_modules(obj) {
-            if world
-                .module_call(obj, idx, ModuleCall::IsDieApplicable(info.clone()))
-                .as_bool()
-            {
-                let m = match world.module_call(
-                    obj,
-                    idx,
-                    ModuleCall::GetProbabilityModifier(info.clone()),
-                ) {
+            if world.module_call(obj, idx, ModuleCall::IsDieApplicable(info.clone())).as_bool() {
+                let m = match world.module_call(obj, idx, ModuleCall::GetProbabilityModifier(info.clone())) {
                     ModuleReply::Int(m) => m,
                     _ => 0,
                 };
@@ -995,17 +656,9 @@ fn atan2_d(y: f32, x: f32) -> f32 {
 }
 
 /// `calcRandomForce(minMag, maxMag, minPitch, maxPitch, force)`: a random direction (a yaw, a pitch) and magnitude, as the x axis of a scaled, rotated matrix.
-fn calc_random_force(
-    world: &mut World,
-    min_mag: f32,
-    max_mag: f32,
-    min_pitch: f32,
-    max_pitch: f32,
-) -> Coord3D {
+fn calc_random_force(world: &mut World, min_mag: f32, max_mag: f32, min_pitch: f32, max_pitch: f32) -> Coord3D {
     let angle = world.random.game_logic_random_value_real(-PI, PI);
-    let pitch = world
-        .random
-        .game_logic_random_value_real(min_pitch, max_pitch);
+    let pitch = world.random.game_logic_random_value_real(min_pitch, max_pitch);
     let mag = world.random.game_logic_random_value_real(min_mag, max_mag);
 
     let mut mtx = Matrix3D::identity();
@@ -1013,11 +666,7 @@ fn calc_random_force(
     mtx.rotate_z(angle);
     mtx.rotate_y(-pitch);
     let v = mtx.get_x_vector();
-    Coord3D {
-        x: v.x,
-        y: v.y,
-        z: v.z,
-    }
+    Coord3D { x: v.x, y: v.y, z: v.z }
 }
 
 impl UpdateBehavior for SlowDeathBehavior {
@@ -1034,10 +683,7 @@ impl UpdateBehavior for SlowDeathBehavior {
         let time_scale = world.cuts.globals.slow_death_scale;
 
         // Check if we have normal time scale but LODManager is requeseting acceleration
-        if time_scale != 1.0
-            && (self.accelerated_time_scale == 1.0 || crate::logic::modules::plant(1316))
-            && !self.has_non_lod_effects()
-        {
+        if time_scale != 1.0 && (self.accelerated_time_scale == 1.0 || crate::logic::modules::plant(1316)) && !self.has_non_lod_effects() {
             // speed of deaths has been increased since beginning of death so adjust it to current levels.
             if time_scale == 0.0 {
                 // instant death
@@ -1059,54 +705,30 @@ impl UpdateBehavior for SlowDeathBehavior {
         }
 
         let now = world.frame();
-        if self.flags & (1 << FLUNG_INTO_AIR) != 0
-            && (self.flags & (1 << BOUNCED) == 0 || crate::logic::modules::plant(1304))
-        {
+        if self.flags & (1 << FLUNG_INTO_AIR) != 0 && (self.flags & (1 << BOUNCED) == 0 || crate::logic::modules::plant(1304)) {
             self.sink_frame = self.sink_frame.wrapping_add(1);
             self.midpoint_frame = self.midpoint_frame.wrapping_add(1);
             self.destruction_frame = self.destruction_frame.wrapping_add(1);
 
             if !world.is_above_terrain(obj) {
                 if crate::logic::modules::plant(1305) {
-                    world.clear_and_set_model_condition_state(
-                        obj,
-                        MODELCONDITION_EXPLODED_BOUNCING,
-                        MODELCONDITION_EXPLODED_FLAILING,
-                    );
+                    world.clear_and_set_model_condition_state(obj, MODELCONDITION_EXPLODED_BOUNCING, MODELCONDITION_EXPLODED_FLAILING);
                 } else {
-                    world.clear_and_set_model_condition_state(
-                        obj,
-                        MODELCONDITION_EXPLODED_FLAILING,
-                        MODELCONDITION_EXPLODED_BOUNCING,
-                    );
+                    world.clear_and_set_model_condition_state(obj, MODELCONDITION_EXPLODED_FLAILING, MODELCONDITION_EXPLODED_BOUNCING);
                 }
                 self.flags |= 1 << BOUNCED;
             }
 
             // Here we want to make sure we die if we collide with a tree on the way down
             if let Some(phys) = world.objects.find(obj).and_then(|o| o.physics) {
-                let tree_id = world
-                    .module_call(obj, phys, ModuleCall::PhysicsGetLastCollidee)
-                    .as_id();
-                if world
-                    .objects
-                    .find(tree_id)
-                    .is_some_and(|t| t.is_kind_of(KINDOF_SHRUBBERY))
-                {
+                let tree_id = world.module_call(obj, phys, ModuleCall::PhysicsGetLastCollidee).as_id();
+                if world.objects.find(tree_id).is_some_and(|t| t.is_kind_of(KINDOF_SHRUBBERY)) {
                     world.body_set_disabled(obj, DISABLED_HELD);
                     world.clear_model_condition_state(obj, MODELCONDITION_EXPLODED_FLAILING);
                     world.clear_model_condition_state(obj, MODELCONDITION_EXPLODED_BOUNCING);
                     world.set_model_condition_state(obj, MODELCONDITION_PARACHUTING); // looks like he is snagged in a tree
                     let z = world.objects.find(obj).map_or(0.0, |o| o.get_position().z);
-                    world.set_position_z(
-                        obj,
-                        z - d.sink_rate
-                            * if crate::logic::modules::plant(1306) {
-                                5.0
-                            } else {
-                                50.0
-                            },
-                    ); // make him sink faster
+                    world.set_position_z(obj, z - d.sink_rate * if crate::logic::modules::plant(1306) { 5.0 } else { 50.0 }); // make him sink faster
                     if !world.is_above_terrain(obj) {
                         world.body_destroy_object(obj);
                     }
@@ -1117,15 +739,8 @@ impl UpdateBehavior for SlowDeathBehavior {
         if (now >= self.sink_frame || crate::logic::modules::plant(1307)) && d.sink_rate > 0.0 {
             // disable Physics (if any) so that we can control the sink...
             world.body_set_disabled(obj, DISABLED_HELD);
-            let mut pos = world
-                .objects
-                .find(obj)
-                .map_or_else(Coord3D::default, |o| o.get_position());
-            pos.z -= if crate::logic::modules::plant(1308) {
-                d.sink_rate * self.accelerated_time_scale
-            } else {
-                d.sink_rate / self.accelerated_time_scale
-            };
+            let mut pos = world.objects.find(obj).map_or_else(Coord3D::default, |o| o.get_position());
+            pos.z -= if crate::logic::modules::plant(1308) { d.sink_rate * self.accelerated_time_scale } else { d.sink_rate / self.accelerated_time_scale };
             world.set_position(obj, &pos);
         }
 
@@ -1170,33 +785,15 @@ impl UpdateBehavior for SlowDeathBehavior {
     fn other_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
             ModuleCall::OnDie(info) => {
-                lend_clone(
-                    world,
-                    me,
-                    self,
-                    UpdateBody::SlowDeathBehavior,
-                    Self::from_body,
-                    |w, m| m.on_die(w, me, &info),
-                );
+                lend_clone(world, me, self, UpdateBody::SlowDeathBehavior, Self::from_body, |w, m| m.on_die(w, me, &info));
                 ModuleReply::Done
             }
             ModuleCall::BeginSlowDeath(_) => {
-                lend_clone(
-                    world,
-                    me,
-                    self,
-                    UpdateBody::SlowDeathBehavior,
-                    Self::from_body,
-                    |w, m| m.begin_slow_death(w, me),
-                );
+                lend_clone(world, me, self, UpdateBody::SlowDeathBehavior, Self::from_body, |w, m| m.begin_slow_death(w, me));
                 ModuleReply::Done
             }
-            ModuleCall::GetProbabilityModifier(info) => {
-                ModuleReply::Int(self.get_probability_modifier(world, me, &info))
-            }
-            ModuleCall::IsDieApplicable(info) => {
-                ModuleReply::Bool(self.is_die_applicable(world, me, &info))
-            }
+            ModuleCall::GetProbabilityModifier(info) => ModuleReply::Int(self.get_probability_modifier(world, me, &info)),
+            ModuleCall::IsDieApplicable(info) => ModuleReply::Bool(self.is_die_applicable(world, me, &info)),
             _ => ModuleReply::Unhandled,
         }
     }
@@ -1234,9 +831,7 @@ impl Snapshot for SlowDeathBehavior {
 
 /// The factory's `NewModuleDataProc` for `SlowDeathBehavior`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::SlowDeathBehavior(Arc::new(
-        SlowDeathBehaviorModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::SlowDeathBehavior(Arc::new(SlowDeathBehaviorModuleData::friend_new_module_data(ini)?)))
 }
 
 #[cfg(test)]
@@ -1245,22 +840,13 @@ mod tests {
 
     #[test]
     fn a_probability_modifier_under_one_is_invalid_data_from_the_constructor() {
-        let data = SlowDeathBehaviorModuleData {
-            probability_modifier: 0,
-            ..Default::default()
-        };
+        let data = SlowDeathBehaviorModuleData { probability_modifier: 0, ..Default::default() };
         let e = SlowDeathBehavior::unconstructed(1, Some(Arc::new(data))).unwrap_err();
         assert_eq!(e.kind, IniErrorKind::InvalidData);
-        let ok = SlowDeathBehaviorModuleData {
-            probability_modifier: 1,
-            ..Default::default()
-        };
+        let ok = SlowDeathBehaviorModuleData { probability_modifier: 1, ..Default::default() };
         assert!(SlowDeathBehavior::unconstructed(1, Some(Arc::new(ok))).is_ok());
         // no data at all is the same error
-        assert_eq!(
-            SlowDeathBehavior::unconstructed(1, None).unwrap_err().kind,
-            IniErrorKind::InvalidData
-        );
+        assert_eq!(SlowDeathBehavior::unconstructed(1, None).unwrap_err().kind, IniErrorKind::InvalidData);
     }
 
     #[test]
@@ -1279,10 +865,7 @@ mod tests {
     #[test]
     fn the_defaults_are_the_constructors() {
         let d = SlowDeathBehaviorModuleData::default();
-        assert_eq!(
-            (d.probability_modifier, d.destruction_altitude, d.sink_rate),
-            (10, -10.0, 0.0)
-        );
+        assert_eq!((d.probability_modifier, d.destruction_altitude, d.sink_rate), (10, -10.0, 0.0));
         let m = SlowDeathBehavior::unconstructed(3, Some(Arc::new(d))).unwrap();
         assert_eq!(m.state_words(), vec![0, 0, 0, 1.0f32.to_bits(), 0]);
         assert!(!m.is_slow_death_activated());

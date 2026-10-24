@@ -54,9 +54,7 @@ pub enum DiscreteCircleError {
 impl std::fmt::Display for DiscreteCircleError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            DiscreteCircleError::NegativeRadius => {
-                "DiscreteCircle: negative radius (std::length_error upstream)"
-            }
+            DiscreteCircleError::NegativeRadius => "DiscreteCircle: negative radius (std::length_error upstream)",
             DiscreteCircleError::Overflow => "DiscreteCircle: Int overflow (undefined upstream)",
         })
     }
@@ -82,11 +80,7 @@ impl DiscreteCircle {
         if reserve < 0 {
             return Err(DiscreteCircleError::NegativeRadius);
         }
-        let mut c = DiscreteCircle {
-            edges: Vec::new(),
-            y_pos: y_center,
-            y_pos_doubled,
-        };
+        let mut c = DiscreteCircle { edges: Vec::new(), y_pos: y_center, y_pos_doubled };
         c.generate_edge_pairs(x_center, y_center, radius)?;
         c.remove_duplicates();
         Ok(c)
@@ -104,18 +98,11 @@ impl DiscreteCircle {
 
     /// `drawCircle(func, parm)`: each edge, then its mirror below the centre
     /// unless it is the centre line.
-    pub fn draw_circle(
-        &self,
-        mut draw: impl FnMut(i32, i32, i32),
-    ) -> Result<(), DiscreteCircleError> {
+    pub fn draw_circle(&self, mut draw: impl FnMut(i32, i32, i32)) -> Result<(), DiscreteCircleError> {
         for e in &self.edges {
             draw(e.x_start, e.x_end, e.y_pos);
             if e.y_pos != self.y_pos {
-                draw(
-                    e.x_start,
-                    e.x_end,
-                    fit(i64::from(self.y_pos_doubled) - i64::from(e.y_pos))?,
-                );
+                draw(e.x_start, e.x_end, fit(i64::from(self.y_pos_doubled) - i64::from(e.y_pos))?);
             }
         }
         Ok(())
@@ -123,12 +110,7 @@ impl DiscreteCircle {
 
     /// `generateEdgePairs`: Bresenham from the top of the circle down to the
     /// centre line.
-    fn generate_edge_pairs(
-        &mut self,
-        x_center: i32,
-        y_center: i32,
-        radius: i32,
-    ) -> Result<(), DiscreteCircleError> {
+    fn generate_edge_pairs(&mut self, x_center: i32, y_center: i32, radius: i32) -> Result<(), DiscreteCircleError> {
         let mut x: i32 = 0;
         let mut y: i32 = radius;
         let mut d: i32 = fit((1 - i64::from(radius)) * 2)?;
@@ -171,39 +153,15 @@ mod tests {
     #[test]
     fn small_circles() {
         let c = DiscreteCircle::new(0, 0, 0).unwrap();
-        assert_eq!(
-            c.get_edges(),
-            &[HorzLine {
-                y_pos: 0,
-                x_start: 0,
-                x_end: 0
-            }]
-        );
+        assert_eq!(c.get_edges(), &[HorzLine { y_pos: 0, x_start: 0, x_end: 0 }]);
         // Radius 3, worked by hand: Bresenham gives rows 23 (twice: x 0
         // then 1), 22, 21, 20; the duplicate row keeps its later, wider
         // edge; every row but the centre (20) is mirrored.
         let c = DiscreteCircle::new(10, 20, 3).unwrap();
         let mut rows = Vec::new();
         c.draw_circle(|a, b, y| rows.push((y, a, b))).unwrap();
-        assert_eq!(
-            rows,
-            [
-                (23, 9, 11),
-                (17, 9, 11),
-                (22, 8, 12),
-                (18, 8, 12),
-                (21, 7, 13),
-                (19, 7, 13),
-                (20, 7, 13)
-            ]
-        );
-        assert_eq!(
-            DiscreteCircle::new(0, 0, -1),
-            Err(DiscreteCircleError::NegativeRadius)
-        );
-        assert_eq!(
-            DiscreteCircle::new(0, i32::MAX, 1),
-            Err(DiscreteCircleError::Overflow)
-        );
+        assert_eq!(rows, [(23, 9, 11), (17, 9, 11), (22, 8, 12), (18, 8, 12), (21, 7, 13), (19, 7, 13), (20, 7, 13)]);
+        assert_eq!(DiscreteCircle::new(0, 0, -1), Err(DiscreteCircleError::NegativeRadius));
+        assert_eq!(DiscreteCircle::new(0, i32::MAX, 1), Err(DiscreteCircleError::Overflow));
     }
 }

@@ -24,25 +24,19 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
-use crate::common::model_state::{
-    MODELCONDITION_POWER_PLANT_UPGRADED, MODELCONDITION_POWER_PLANT_UPGRADING,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{update_sleep, UPDATE_SLEEP_FOREVER};
-use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime,
-};
+use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
-use crate::logic::world::object_events::{ModelConditionOp, ObjectClientEvent};
 use crate::logic::world::sleepy::UpdateHandle;
 use crate::logic::world::update_body::UpdateBody;
+use crate::common::model_state::{MODELCONDITION_POWER_PLANT_UPGRADED, MODELCONDITION_POWER_PLANT_UPGRADING};
+use crate::logic::module::update_module::{update_sleep, UPDATE_SLEEP_FOREVER};
+use crate::logic::world::object_events::{ModelConditionOp, ObjectClientEvent};
 
 /// `class PowerPlantUpdateModuleData : public UpdateModuleData`.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -63,18 +57,14 @@ impl PowerPlantUpdateModuleData {
     }
 
     /// `buildFieldParse(p)`: the behaviour base, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, PowerPlantUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, PowerPlantUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<PowerPlantUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<PowerPlantUpdateModuleData> {
         let mut data = PowerPlantUpdateModuleData::new();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, PowerPlantUpdateModuleData::build_field_parse)?;
@@ -85,14 +75,7 @@ impl PowerPlantUpdateModuleData {
 
 /// `PowerPlantUpdateModuleData::dataFieldParse`.
 static FIELD_PARSE: [FieldParse<PowerPlantUpdateModuleData>; 2] = [
-    FieldParse::new(
-        "RodsExtendTime",
-        |ini, d, _| {
-            d.rods_extend_time = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("RodsExtendTime", |ini, d, _| { d.rods_extend_time = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
@@ -110,26 +93,17 @@ pub struct PowerPlantUpdate {
 impl PartialEq for PowerPlantUpdate {
     /// The same object, the same data object (upstream compares pointers) and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
-            && self.extended == other.extended
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.extended == other.extended
     }
 }
 
 impl PowerPlantUpdate {
     /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data).
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<PowerPlantUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<PowerPlantUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(PowerPlantUpdate {
-            update,
-            data,
-            extended: false,
-        })
+        Ok(PowerPlantUpdate { update, data, extended: false })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -158,12 +132,7 @@ impl PowerPlantUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -195,14 +164,8 @@ impl PowerPlantUpdate {
             // they de-extend instantly.
             if world.has_drawable(me.object) {
                 // MAKE_MODELCONDITION_MASK2: a set of bits, ascending
-                let (a, b) = (
-                    MODELCONDITION_POWER_PLANT_UPGRADING.min(MODELCONDITION_POWER_PLANT_UPGRADED),
-                    MODELCONDITION_POWER_PLANT_UPGRADING.max(MODELCONDITION_POWER_PLANT_UPGRADED),
-                );
-                world.emit(ObjectClientEvent::DrawableModelCondition {
-                    object_id: me.object,
-                    op: ModelConditionOp::Clear(vec![a, b]),
-                });
+                let (a, b) = (MODELCONDITION_POWER_PLANT_UPGRADING.min(MODELCONDITION_POWER_PLANT_UPGRADED), MODELCONDITION_POWER_PLANT_UPGRADING.max(MODELCONDITION_POWER_PLANT_UPGRADED));
+                world.emit(ObjectClientEvent::DrawableModelCondition { object_id: me.object, op: ModelConditionOp::Clear(vec![a, b]) });
             }
             self.extended = false;
             if !crate::logic::modules::plant(736) {
@@ -219,11 +182,7 @@ impl UpdateBehavior for PowerPlantUpdate {
     fn update(&mut self, world: &mut World, me: ModuleHandle) -> UpdateSleepTime {
         // remove the extending condition and set the extened condition
         if !crate::logic::modules::plant(731) {
-            world.clear_and_set_model_condition_state(
-                me.object,
-                MODELCONDITION_POWER_PLANT_UPGRADING,
-                MODELCONDITION_POWER_PLANT_UPGRADED,
-            );
+            world.clear_and_set_model_condition_state(me.object, MODELCONDITION_POWER_PLANT_UPGRADING, MODELCONDITION_POWER_PLANT_UPGRADED);
         }
         self.extended = true;
         UPDATE_SLEEP_FOREVER
@@ -277,7 +236,5 @@ impl Snapshot for PowerPlantUpdate {
 
 /// The factory's `NewModuleDataProc` for `PowerPlantUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::PowerPlantUpdate(Arc::new(
-        PowerPlantUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::PowerPlantUpdate(Arc::new(PowerPlantUpdateModuleData::friend_new_module_data(ini)?)))
 }

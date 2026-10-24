@@ -196,39 +196,20 @@ fn mask_from(w: &[u32]) -> UpgradeMaskType {
 fn read_block(ini: &mut Ini<'_>, out: &mut (usize, Option<ModuleDataKind>)) -> IniResult<()> {
     let kind = out.0;
     out.1 = Some(match kind {
-        0 => ModuleDataKind::WeaponSetUpgrade(Arc::new(
-            WeaponSetUpgradeModuleData::friend_new_module_data(Some(ini))?,
-        )),
-        1 => ModuleDataKind::WeaponBonusUpgrade(Arc::new(
-            WeaponBonusUpgradeModuleData::friend_new_module_data(Some(ini))?,
-        )),
-        2 => ModuleDataKind::ArmorUpgrade(Arc::new(
-            ArmorUpgradeModuleData::friend_new_module_data(Some(ini))?,
-        )),
-        3 => ModuleDataKind::ModelConditionUpgrade(Arc::new(
-            ModelConditionUpgradeModuleData::friend_new_module_data(Some(ini))?,
-        )),
-        4 => ModuleDataKind::ExperienceScalarUpgrade(Arc::new(
-            ExperienceScalarUpgradeModuleData::friend_new_module_data(Some(ini))?,
-        )),
-        5 => ModuleDataKind::ActiveShroudUpgrade(Arc::new(
-            ActiveShroudUpgradeModuleData::friend_new_module_data(Some(ini))?,
-        )),
-        6 => ModuleDataKind::MaxHealthUpgrade(Arc::new(
-            MaxHealthUpgradeModuleData::friend_new_module_data(Some(ini))?,
-        )),
-        _ => ModuleDataKind::GrantScienceUpgrade(Arc::new(
-            GrantScienceUpgradeModuleData::friend_new_module_data(Some(ini))?,
-        )),
+        0 => ModuleDataKind::WeaponSetUpgrade(Arc::new(WeaponSetUpgradeModuleData::friend_new_module_data(Some(ini))?)),
+        1 => ModuleDataKind::WeaponBonusUpgrade(Arc::new(WeaponBonusUpgradeModuleData::friend_new_module_data(Some(ini))?)),
+        2 => ModuleDataKind::ArmorUpgrade(Arc::new(ArmorUpgradeModuleData::friend_new_module_data(Some(ini))?)),
+        3 => ModuleDataKind::ModelConditionUpgrade(Arc::new(ModelConditionUpgradeModuleData::friend_new_module_data(Some(ini))?)),
+        4 => ModuleDataKind::ExperienceScalarUpgrade(Arc::new(ExperienceScalarUpgradeModuleData::friend_new_module_data(Some(ini))?)),
+        5 => ModuleDataKind::ActiveShroudUpgrade(Arc::new(ActiveShroudUpgradeModuleData::friend_new_module_data(Some(ini))?)),
+        6 => ModuleDataKind::MaxHealthUpgrade(Arc::new(MaxHealthUpgradeModuleData::friend_new_module_data(Some(ini))?)),
+        _ => ModuleDataKind::GrantScienceUpgrade(Arc::new(GrantScienceUpgradeModuleData::friend_new_module_data(Some(ini))?)),
     });
     Ok(())
 }
 
 fn rust_read(kind: usize, name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = (kind, None);
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out.1)
@@ -264,6 +245,7 @@ fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, fx: &mut FxIds) {
         _ => unreachable!("not an upgrade module"),
     }
 }
+
 
 /// A dump as text, for the comparison: the mux and the module's fields, then per op its line.
 fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
@@ -322,13 +304,7 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
         let n = u32_(&mut p);
         let log: Vec<String> = (0..n).map(|_| str_(&mut p)).collect();
         let (w0, w1) = (u64_(&mut p), u64_(&mut p));
-        let (wbc, armor, xp, shroud, maxh) = (
-            u32_(&mut p),
-            u32_(&mut p),
-            u32_(&mut p),
-            u32_(&mut p),
-            u32_(&mut p),
-        );
+        let (wbc, armor, xp, shroud, maxh) = (u32_(&mut p), u32_(&mut p), u32_(&mut p), u32_(&mut p), u32_(&mut p));
         let sci = u32_(&mut p) as i32;
         out.push(format!(
             "op {i}: status {st} res {res} upgraded {up} log {log:?} wset {w0:x},{w1:x} wbc {wbc:x} armor {armor:x} xp {xp:08x} shroud {shroud:08x} maxh {maxh:08x} sci {sci}"
@@ -345,9 +321,7 @@ fn gen_name(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
     }
     match g.below(100) {
         0..=64 if !upgrades.is_empty() => upgrades[g.below(upgrades.len() as u32) as usize].clone(),
-        65..=74 if !upgrades.is_empty() => {
-            upgrades[g.below(upgrades.len() as u32) as usize].to_lowercase()
-        }
+        65..=74 if !upgrades.is_empty() => upgrades[g.below(upgrades.len() as u32) as usize].to_lowercase(),
         75..=76 => format!("Unknown{}", g.below(3)),
         77 => "Up9".to_string(),
         78..=79 => pick(g, &["None", "none", "NONE"]).to_string(),
@@ -358,63 +332,20 @@ fn gen_name(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
 
 fn gen_list(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
     let n = 1 + g.below(3);
-    (0..n)
-        .map(|_| gen_name(g, upgrades, clean))
-        .collect::<Vec<_>>()
-        .join(" ")
+    (0..n).map(|_| gen_name(g, upgrades, clean)).collect::<Vec<_>>().join(" ")
 }
 
 /// The module's own fields.
 fn own_fields(g: &mut Gen, kind: usize, clean: bool) -> Vec<(u32, &'static str, String)> {
     match kind {
-        3 => vec![(
-            85,
-            "ConditionFlag",
-            pick(
-                g,
-                &[
-                    "DAMAGED",
-                    "NIGHT",
-                    "SNOW",
-                    "GARRISONED",
-                    "ENEMYNEAR",
-                    "DOOR_1_OPENING",
-                    "WEAPONSET_PLAYER_UPGRADE",
-                    "None",
-                    "Bogus",
-                ],
-            )
-            .to_string(),
-        )],
+        3 => vec![(85, "ConditionFlag", pick(g, &["DAMAGED", "NIGHT", "SNOW", "GARRISONED", "ENEMYNEAR", "DOOR_1_OPENING", "WEAPONSET_PLAYER_UPGRADE", "None", "Bogus"]).to_string())],
         4 => vec![(85, "AddXPScalar", gen_real(g, clean))],
         5 => vec![(85, "NewShroudRange", gen_real(g, clean))],
         6 => vec![
             (85, "AddMaxHealth", gen_real(g, clean)),
-            (
-                70,
-                "ChangeType",
-                pick(
-                    g,
-                    &[
-                        "SAME_CURRENTHEALTH",
-                        "PRESERVE_RATIO",
-                        "ADD_CURRENT_HEALTH_TOO",
-                        "FULLY_HEAL",
-                        "Bogus",
-                    ],
-                )
-                .to_string(),
-            ),
+            (70, "ChangeType", pick(g, &["SAME_CURRENTHEALTH", "PRESERVE_RATIO", "ADD_CURRENT_HEALTH_TOO", "FULLY_HEAL", "Bogus"]).to_string()),
         ],
-        7 => vec![(
-            85,
-            "GrantScience",
-            pick(
-                g,
-                &["SCIENCE_Pathfinder", "SCIENCE_Paladin", "Sci_X", "", "None"],
-            )
-            .to_string(),
-        )],
+        7 => vec![(85, "GrantScience", pick(g, &["SCIENCE_Pathfinder", "SCIENCE_Paladin", "Sci_X", "", "None"]).to_string())],
         _ => vec![],
     }
 }
@@ -459,11 +390,7 @@ fn gen_mask(g: &mut Gen, n_up: usize, at_least: u32) -> [u32; 4] {
     let mut w = [0u32; 4];
     if n_up > 0 {
         // a third of the masks name most of the upgrades, so that a TriggeredBy list is met more often than by chance
-        let extra = if g.below(3) == 0 {
-            g.below(n_up as u32 + 1)
-        } else {
-            g.below(3)
-        };
+        let extra = if g.below(3) == 0 { g.below(n_up as u32 + 1) } else { g.below(3) };
         for _ in 0..at_least + extra {
             let b = g.below(n_up as u32) as usize;
             w[b / 32] |= 1 << (b % 32);
@@ -498,60 +425,34 @@ fn rust_run(
     put_data(&mut v, &data, &mut fx);
 
     let mut w = World::new();
-    w.statics = Arc::new(GameStatics {
-        upgrade_center: ctx.center,
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, ..Default::default() });
     w.names = ctx.names;
     w.cuts.neutral_default_team = 1;
-    w.teams
-        .insert_team(rts_lockstep_engine::logic::world::team::Team::new(1, 0))
-        .unwrap();
+    w.teams.insert_team(rts_lockstep_engine::logic::world::team::Team::new(1, 0)).unwrap();
     if has_player {
         w.cuts.team_players.insert(1, 0);
         w.cuts.player_upgrades.insert(0, mask_from(&player_mask));
     }
     w.cuts.trace = Some(Vec::new());
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        0,
-        CLASSES[kind].as_bytes(),
-        b"ModuleTag_Up",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(0, CLASSES[kind].as_bytes(), b"ModuleTag_Up", &data).unwrap().unwrap();
     let mut modules = vec![m];
     if cfg[0] != 0 {
         let mut body = NewModule::plain(b"ActiveBody", b"ModuleTag_Body");
         body.interfaces = rts_lockstep_engine::common::module::MODULEINTERFACE_BODY;
-        body.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-            ProbeAnswers::default(),
-            0.0,
-            UpgradeMaskType::default(),
-        )));
+        body.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, UpgradeMaskType::default())));
         modules.push(body);
     }
-    let mut status =
-        rts_lockstep_engine::common::object_status_types::ObjectStatusMaskType::default();
+    let mut status = rts_lockstep_engine::common::object_status_types::ObjectStatusMaskType::default();
     status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, 1);
     let id = w
-        .new_object(NewObject {
-            template: Arc::new(ThingTemplate::new(0)),
-            status,
-            team: None,
-            modules,
-        })
+        .new_object(NewObject { template: Arc::new(ThingTemplate::new(0)), status, team: None, modules })
         .unwrap();
     {
         let o = w.objects.find_mut(id).unwrap();
         o.status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, 0);
         o.object_upgrades_completed = mask_from(&obj_mask);
         // the object as the case wants it: with a drawable, or (whatever `new_object` made) without
-        o.drawable = if cfg[1] != 0 {
-            1
-        } else {
-            rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID
-        };
+        o.drawable = if cfg[1] != 0 { 1 } else { rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID };
     }
     let idx = w.find_module(id, CLASSES[kind].as_bytes()).unwrap();
     for o in ops {
@@ -562,26 +463,18 @@ fn rust_run(
         // an object that has looked: the handlePartitionCellMaintenance of ActiveShroudUpgrade then undoes it, which is a cut call
         w.objects.find_mut(id).unwrap().partition_last_look.how_far = 1.0;
         let res = match o[0] {
-            0 => w
-                .module_call(id, idx, ModuleCall::WouldUpgrade(mask))
-                .as_bool(),
+            0 => w.module_call(id, idx, ModuleCall::WouldUpgrade(mask)).as_bool(),
             1 => {
-                let r = w
-                    .module_call(id, idx, ModuleCall::AttemptUpgrade(mask))
-                    .as_bool();
+                let r = w.module_call(id, idx, ModuleCall::AttemptUpgrade(mask)).as_bool();
                 tally.fired += u64::from(r);
                 r
             }
-            2 => w
-                .module_call(id, idx, ModuleCall::ResetUpgrade(mask))
-                .as_bool(),
+            2 => w.module_call(id, idx, ModuleCall::ResetUpgrade(mask)).as_bool(),
             3 => {
                 w.module_call(id, idx, ModuleCall::ForceRefreshUpgrade);
                 false
             }
-            4 => w
-                .module_call(id, idx, ModuleCall::IsAlreadyUpgraded)
-                .as_bool(),
+            4 => w.module_call(id, idx, ModuleCall::IsAlreadyUpgraded).as_bool(),
             5 => {
                 w.objects.find_mut(id).unwrap().object_upgrades_completed = mask;
                 false
@@ -599,8 +492,7 @@ fn rust_run(
                 ob.experience.scalar = f32::from_bits(o[1]);
                 ob.shroud_range = f32::from_bits(o[2]);
                 if let Some(bi) = ob.body {
-                    if let Some(UpdateBody::ModuleProbe(p)) = ob.modules[bi as usize].body.as_mut()
-                    {
+                    if let Some(UpdateBody::ModuleProbe(p)) = ob.modules[bi as usize].body.as_mut() {
                         p.armor_flags = 0;
                         p.max_health = f32::from_bits(o[3]);
                     }
@@ -611,10 +503,7 @@ fn rust_run(
         let threw = w.cuts.module_errors.len() > errors_before;
         put_i32(&mut v, if threw { 2 } else { 0 });
         v.push(u8::from(res && !threw));
-        v.push(u8::from(
-            w.module_call(id, idx, ModuleCall::IsAlreadyUpgraded)
-                .as_bool(),
-        ));
+        v.push(u8::from(w.module_call(id, idx, ModuleCall::IsAlreadyUpgraded).as_bool()));
         // the effects, in order: the trace has each removal, cut call, client event and trace line of a module
         let fxs: Vec<Vec<u8>> = w.events.events()[events_before..]
             .iter()
@@ -638,31 +527,19 @@ fn rust_run(
                 log.push("partition".into());
             } else if let Some(rest) = t.strip_prefix("evt DrawableModelCondition") {
                 // `{ object_id: N, op: Set([x]) }`
-                if let Some(x) = rest
-                    .split("Set([")
-                    .nth(1)
-                    .and_then(|s| s.split("])").next())
-                {
+                if let Some(x) = rest.split("Set([").nth(1).and_then(|s| s.split("])").next()) {
                     log.push(format!("mc {x}"));
                 }
             } else if let Some(rest) = t.strip_prefix("evt DrawableSetTerrainDecal") {
                 // `{ object_id: N, decal: 7 }`
-                if let Some(x) = rest
-                    .split("decal: ")
-                    .nth(1)
-                    .and_then(|s| s.split(' ').next())
-                {
+                if let Some(x) = rest.split("decal: ").nth(1).and_then(|s| s.split(' ').next()) {
                     log.push(format!("decal {x}"));
                 }
             } else if let Some(rest) = t.strip_prefix("setMaxHealth ") {
                 log.push(format!("maxhealth {rest}"));
             } else if let Some(rest) = t.strip_prefix("cut PlayerGrantScience") {
                 // `{ player: 0, science: N }`
-                if let Some(x) = rest
-                    .split("science: ")
-                    .nth(1)
-                    .and_then(|s| s.split(' ').next())
-                {
+                if let Some(x) = rest.split("science: ").nth(1).and_then(|s| s.split(' ').next()) {
                     log.push(format!("science {x}"));
                 }
             }
@@ -685,8 +562,7 @@ fn rust_run(
         put_u64(&mut v, lo);
         put_u64(&mut v, hi);
         put_u32(&mut v, ob.weapon_bonus_condition);
-        let (armor, max_health) = match ob.body.and_then(|bi| ob.modules[bi as usize].body.as_ref())
-        {
+        let (armor, max_health) = match ob.body.and_then(|bi| ob.modules[bi as usize].body.as_ref()) {
             Some(UpdateBody::ModuleProbe(p)) => (p.armor_flags, p.max_health.to_bits()),
             _ => (0, 0),
         };
@@ -700,32 +576,16 @@ fn rust_run(
         };
         put_i32(&mut v, science);
     }
-    let keys = PROBE
-        .iter()
-        .map(|n| w.names.name_to_key(n.as_bytes()).0)
-        .collect();
+    let keys = PROBE.iter().map(|n| w.names.name_to_key(n.as_bytes()).0).collect();
     (v, keys, w)
 }
 
-const PROBE: [&str; 9] = [
-    "none",
-    "Up0",
-    "Up3",
-    "Unknown0",
-    "Unknown2",
-    "Up9",
-    "SCIENCE_Pathfinder",
-    "Sci_X",
-    "zz_fresh",
-];
+const PROBE: [&str; 9] = ["none", "Up0", "Up3", "Unknown0", "Unknown2", "Up9", "SCIENCE_Pathfinder", "Sci_X", "zz_fresh"];
 
 #[test]
 fn upgrade_modules_match_upstream() {
     let _lock = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let cases: usize = std::env::var("L9UP_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(12_000);
+    let cases: usize = std::env::var("L9UP_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(12_000);
     let mut g = Gen::new(0x1091_50A5);
     let table = blocks();
     let mut read = Check::new("upgrade module data read (throw, message)");
@@ -739,42 +599,18 @@ fn upgrade_modules_match_upstream() {
         let kind = case % 8;
         let init_names = g.below(3) != 0;
         let init_center = g.below(5) != 0;
-        let n_up = if g.below(10) == 0 {
-            0
-        } else {
-            1 + g.below(8) as usize
-        };
+        let n_up = if g.below(10) == 0 { 0 } else { 1 + g.below(8) as usize };
         let mut upgrades: Vec<String> = (0..n_up).map(|i| format!("Up{i}")).collect();
         if kind == 2 && g.below(4) == 0 && n_up < 100 {
             // ArmorUpgrade tests isTriggeredBy( "Upgrade_AmericaChemicalSuits" ): the upgrade has to exist to be named
             upgrades.push(CHEMSUIT.to_string());
         }
         let n_up = upgrades.len();
-        let defs: String = upgrades
-            .iter()
-            .map(|u| format!("Upgrade {u}\nEnd\n"))
-            .collect();
+        let defs: String = upgrades.iter().map(|u| format!("Upgrade {u}\nEnd\n")).collect();
         let mut ctx = Ctx::new(init_names, init_center);
-        Ini::load(
-            b"Data\\INI\\Up.ini",
-            defs.as_bytes(),
-            IniLoadType::Overwrite,
-            None,
-            &table,
-            &mut ctx,
-        )
-        .expect("upgrades load");
+        Ini::load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ctx).expect("upgrades load");
         cpp_reset(init_names, init_center);
-        assert_eq!(
-            cpp_load(
-                b"Data\\INI\\Up.ini",
-                defs.as_bytes(),
-                IniLoadType::Overwrite,
-                false
-            )
-            .status,
-            0
-        );
+        assert_eq!(cpp_load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, false).status, 0);
 
         let clean = g.below(10) < 7;
         let text = gen_data(&mut g, kind, &upgrades, clean);
@@ -819,17 +655,7 @@ fn upgrade_modules_match_upstream() {
         // Rust first: a case that reaches upstream undefined behaviour (a mux list naming `None`, a chemical suit
         // upgrade on an object with no drawable) is counted and never sent to the C++
         let rust = if outcome.status == 0 {
-            let (rd, rk, w) = rust_run(
-                kind,
-                ctx,
-                data.expect("read ok"),
-                has_player,
-                player_mask,
-                obj_mask,
-                cfg,
-                &ops,
-                &mut tally,
-            );
+            let (rd, rk, w) = rust_run(kind, ctx, data.expect("read ok"), has_player, player_mask, obj_mask, cfg, &ops, &mut tally);
             if w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined()) {
                 excluded += 1;
                 continue;
@@ -872,19 +698,9 @@ fn upgrade_modules_match_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!("case {case} ({}): upgrades {upgrades:?} player {has_player} {player_mask:?} obj {obj_mask:?} cfg {cfg:?}, file {:?}, ops {ops:?}", CLASSES[kind], show(&text))
-        };
+        let what = || format!("case {case} ({}): upgrades {upgrades:?} player {has_player} {player_mask:?} obj {obj_mask:?} cfg {cfg:?}, file {:?}, ops {ops:?}", CLASSES[kind], show(&text));
         let _ = &what;
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some((rd, rk, w)) = rust else {
             read_failed += 1;
             continue;
@@ -892,11 +708,7 @@ fn upgrade_modules_match_upstream() {
         let (dr, dc) = (decode(kind, &rd, ops.len()), decode(kind, &buf, ops.len()));
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
             eprintln!("--- case {case} ({}) player {has_player} cfg {cfg:?} file {:?}\n  rust {:?}\n  c++  {:?}", CLASSES[kind], show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
@@ -923,11 +735,5 @@ fn upgrade_modules_match_upstream() {
     read.finish();
     run.finish();
     keys.finish();
-    assert!(
-        read_failed * 40 > cases as u64
-            && ops_run * 5 > cases as u64 * 4
-            && tally.fired * 6 > cases as u64
-            && tally.effects * 4 > cases as u64,
-        "the generator must reach every path"
-    );
+    assert!(read_failed * 40 > cases as u64 && ops_run * 5 > cases as u64 * 4 && tally.fired * 6 > cases as u64 && tally.effects * 4 > cases as u64, "the generator must reach every path");
 }

@@ -31,19 +31,15 @@
 
 use std::sync::Arc;
 
-use crate::common::base_type::Coord3D;
-use crate::common::ini::game_make_color;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::special_power_module::{SpecialPowerModule, SpecialPowerModuleData};
-use crate::logic::modules::special_power_body::{
-    self, special_power_module_call, SpecialPowerBehavior,
-};
+use crate::logic::modules::special_power_body::{self, special_power_module_call, SpecialPowerBehavior};
 use crate::logic::world::game_logic::World;
+use crate::common::base_type::Coord3D;
+use crate::common::ini::game_make_color;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::update_body::UpdateBody;
@@ -72,17 +68,11 @@ pub struct CashHackSpecialPowerModuleData {
 impl CashHackSpecialPowerModuleData {
     /// `CashHackSpecialPowerModuleData()`.
     pub fn new() -> Self {
-        CashHackSpecialPowerModuleData {
-            special_power: SpecialPowerModuleData::new(),
-            upgrades: Vec::new(),
-            default_amount_to_steal: 0,
-        }
+        CashHackSpecialPowerModuleData { special_power: SpecialPowerModuleData::new(), upgrades: Vec::new(), default_amount_to_steal: 0 }
     }
 
     /// `buildFieldParse(p)`: the behaviour base, the special power fields, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, CashHackSpecialPowerModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, CashHackSpecialPowerModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -90,54 +80,30 @@ impl CashHackSpecialPowerModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<CashHackSpecialPowerModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<CashHackSpecialPowerModuleData> {
         let mut data = CashHackSpecialPowerModuleData::new();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                CashHackSpecialPowerModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, CashHackSpecialPowerModuleData::build_field_parse)?;
         }
         Ok(data)
     }
 }
 
 /// `SpecialPowerModuleData::buildFieldParse`'s table, for this data class.
-static BASE_FIELD_PARSE: [FieldParse<CashHackSpecialPowerModuleData>; 6] =
-    special_power_data_field_parse!(CashHackSpecialPowerModuleData, special_power);
+static BASE_FIELD_PARSE: [FieldParse<CashHackSpecialPowerModuleData>; 6] = special_power_data_field_parse!(CashHackSpecialPowerModuleData, special_power);
 
 /// `parseCashHackUpgradePair`: a science (`INI::parseScience`, kept as its name), then an `Int`, appended.
-fn parse_cash_hack_upgrade_pair(
-    ini: &mut Ini<'_>,
-    d: &mut CashHackSpecialPowerModuleData,
-    _ud: &UserData,
-) -> IniResult<()> {
+fn parse_cash_hack_upgrade_pair(ini: &mut Ini<'_>, d: &mut CashHackSpecialPowerModuleData, _ud: &UserData) -> IniResult<()> {
     let science = ini.get_next_token(None)?;
     let amount_to_steal = ini.parse_int()?;
-    d.upgrades.push(CashHackUpgrade {
-        science,
-        amount_to_steal,
-    });
+    d.upgrades.push(CashHackUpgrade { science, amount_to_steal });
     Ok(())
 }
 
 /// `CashHackSpecialPowerModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<CashHackSpecialPowerModuleData>; 3] = [
-    FieldParse::new(
-        "UpgradeMoneyAmount",
-        parse_cash_hack_upgrade_pair,
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MoneyAmount",
-        |ini, d, _| {
-            d.default_amount_to_steal = ini.parse_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("UpgradeMoneyAmount", parse_cash_hack_upgrade_pair, UserData::None),
+    FieldParse::new("MoneyAmount", |ini, d, _| { d.default_amount_to_steal = ini.parse_int()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
@@ -164,12 +130,8 @@ impl PartialEq for CashHackSpecialPower {
 
 impl CashHackSpecialPower {
     /// `CashHackSpecialPower(thing, moduleData)`, the part that touches no world: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<CashHackSpecialPowerModuleData>>,
-    ) -> IniResult<CashHackSpecialPower> {
-        let data =
-            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(object: ObjectId, data: Option<Arc<CashHackSpecialPowerModuleData>>) -> IniResult<CashHackSpecialPower> {
+        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let power = SpecialPowerModule::new(object, Some(Arc::new(data.special_power.clone())))?;
         Ok(CashHackSpecialPower { power, data })
     }
@@ -192,12 +154,7 @@ impl CashHackSpecialPower {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         special_power_module_call(self, world, me, call)
     }
 
@@ -206,16 +163,8 @@ impl CashHackSpecialPower {
         if let Some(p) = world.get_controlling_player(me) {
             for up in &self.data.upgrades {
                 let statics = world.statics.clone();
-                let science = statics
-                    .science_store
-                    .friend_lookup_science(&mut world.names, &up.science)
-                    .map_err(|_| IniError::undefined(Undefined::UnknownScience))?;
-                if world
-                    .players
-                    .get_nth(p)
-                    .is_some_and(|pl| pl.sciences.contains(&science))
-                    && !crate::logic::modules::plant(1901)
-                {
+                let science = statics.science_store.friend_lookup_science(&mut world.names, &up.science).map_err(|_| IniError::undefined(Undefined::UnknownScience))?;
+                if world.players.get_nth(p).is_some_and(|pl| pl.sciences.contains(&science)) && !crate::logic::modules::plant(1901) {
                     return Ok(up.amount_to_steal);
                 }
             }
@@ -241,98 +190,35 @@ impl SpecialPowerBehavior for CashHackSpecialPower {
         }
     }
     /// `doSpecialPowerAtLocation`: nothing (a disabled object returns first; either way, not the base's).
-    fn do_special_power_at_location(
-        &mut self,
-        _world: &mut World,
-        _me: ModuleHandle,
-        _loc: Coord3D,
-        _angle: f32,
-        _command_options: u32,
-    ) -> Result<(), IniError> {
+    fn do_special_power_at_location(&mut self, _world: &mut World, _me: ModuleHandle, _loc: Coord3D, _angle: f32, _command_options: u32) -> Result<(), IniError> {
         Ok(())
     }
-    fn do_special_power_at_object(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        target: ObjectId,
-        command_options: u32,
-    ) -> Result<(), IniError> {
-        if world
-            .objects
-            .find(me.object)
-            .is_some_and(|o| o.is_disabled())
-        {
+    fn do_special_power_at_object(&mut self, world: &mut World, me: ModuleHandle, target: ObjectId, command_options: u32) -> Result<(), IniError> {
+        if world.objects.find(me.object).is_some_and(|o| o.is_disabled()) {
             return Ok(());
         }
         if world.objects.find(target).is_none() {
             return Ok(());
         }
-        special_power_body::base_do_special_power_at_object(
-            self,
-            world,
-            me,
-            target,
-            command_options,
-        )?;
+        special_power_body::base_do_special_power_at_object(self, world, me, target, command_options)?;
         let us = me.object;
         // `victim->getControllingPlayer()->getMoney()` and the object's, both unchecked
-        let victim = world
-            .get_controlling_player(target)
-            .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
-        let thief = world
-            .get_controlling_player(us)
-            .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
-        let available = world
-            .players
-            .get_nth(victim)
-            .map_or(0, |p| p.money.count_money());
+        let victim = world.get_controlling_player(target).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+        let thief = world.get_controlling_player(us).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+        let available = world.players.get_nth(victim).map_or(0, |p| p.money.count_money());
         let desired = self.find_amount_to_steal(world, us)? as u32;
-        let cash = if crate::logic::modules::plant(1902) {
-            desired
-        } else {
-            desired.min(available)
-        };
+        let cash = if crate::logic::modules::plant(1902) { desired } else { desired.min(available) };
         if cash > 0 {
-            world.cut(CutCall::PlayerMoneyWithdraw {
-                player: victim,
-                amount: cash,
-            });
-            world.cut(CutCall::PlayerMoneyDeposit {
-                player: thief,
-                amount: cash,
-            });
-            world.cut(CutCall::PlayerScoreAddMoneyEarned {
-                player: thief,
-                amount: cash as i32,
-            });
+            world.cut(CutCall::PlayerMoneyWithdraw { player: victim, amount: cash });
+            world.cut(CutCall::PlayerMoneyDeposit { player: thief, amount: cash });
+            world.cut(CutCall::PlayerScoreAddMoneyEarned { player: thief, amount: cash as i32 });
             // "add a little z to make it show up above the unit"
-            let mut pos = world
-                .objects
-                .find(us)
-                .map_or(Coord3D::default(), |o| o.get_position());
+            let mut pos = world.objects.find(us).map_or(Coord3D::default(), |o| o.get_position());
             pos.z += 20.0;
-            world.cut(CutCall::InGameUiAddFloatingTextNamed {
-                text: b"GUI:AddCash".to_vec(),
-                amount: cash as i32,
-                position: pos,
-                color: game_make_color(0, 255, 0, 255),
-            });
-            let mut pos = world
-                .objects
-                .find(target)
-                .map_or(Coord3D::default(), |o| o.get_position());
-            pos.z += if crate::logic::modules::plant(1903) {
-                20.0
-            } else {
-                30.0
-            };
-            world.cut(CutCall::InGameUiAddFloatingTextNamed {
-                text: b"GUI:LoseCash".to_vec(),
-                amount: cash as i32,
-                position: pos,
-                color: game_make_color(255, 0, 0, 255),
-            });
+            world.cut(CutCall::InGameUiAddFloatingTextNamed { text: b"GUI:AddCash".to_vec(), amount: cash as i32, position: pos, color: game_make_color(0, 255, 0, 255) });
+            let mut pos = world.objects.find(target).map_or(Coord3D::default(), |o| o.get_position());
+            pos.z += if crate::logic::modules::plant(1903) { 20.0 } else { 30.0 };
+            world.cut(CutCall::InGameUiAddFloatingTextNamed { text: b"GUI:LoseCash".to_vec(), amount: cash as i32, position: pos, color: game_make_color(255, 0, 0, 255) });
         }
         Ok(())
     }
@@ -358,7 +244,5 @@ impl Snapshot for CashHackSpecialPower {
 
 /// The factory's `NewModuleDataProc` for `CashHackSpecialPower`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::CashHackSpecialPower(Arc::new(
-        CashHackSpecialPowerModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::CashHackSpecialPower(Arc::new(CashHackSpecialPowerModuleData::friend_new_module_data(ini)?)))
 }

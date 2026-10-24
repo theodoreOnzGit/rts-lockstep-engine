@@ -75,15 +75,13 @@
 
 use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::kind_of::{KINDOF_AIRCRAFT, KINDOF_INFANTRY, KINDOF_STRUCTURE, KINDOF_VEHICLE};
-use crate::common::object_status_types::{
-    OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_STEALTHED,
-};
+use crate::common::object_status_types::{OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_STEALTHED};
 use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferStatus, XferVersion};
 use crate::logic::damage::{DamageInfo, DAMAGE_HEALING, DEATH_NONE};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::ModuleCall;
-use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::object_events::ObjectClientEvent;
+use crate::logic::world::object_cuts::CutCall;
 
 /// `LOGICFRAMES_PER_SECOND`.
 const LOGICFRAMES_PER_SECOND: u32 = 30;
@@ -191,12 +189,7 @@ impl TunnelTracker {
 
     /// `iterateContained(func, userData, reverse)`. See the module docs for
     /// how a callback that removes objects is treated.
-    pub fn iterate_contained<F>(
-        &self,
-        world: &mut World,
-        reverse: bool,
-        mut func: F,
-    ) -> Result<(), TunnelError>
+    pub fn iterate_contained<F>(&self, world: &mut World, reverse: bool, mut func: F) -> Result<(), TunnelError>
     where
         F: FnMut(&mut World, ObjectId) -> Result<(), TunnelError>,
     {
@@ -247,21 +240,14 @@ impl TunnelTracker {
         if self.cur_nemesis_id == INVALID_ID {
             return None;
         }
-        if self
-            .nemesis_timestamp
-            .wrapping_add(4u32.wrapping_mul(LOGICFRAMES_PER_SECOND))
-            < world.frame()
-        {
+        if self.nemesis_timestamp.wrapping_add(4u32.wrapping_mul(LOGICFRAMES_PER_SECOND)) < world.frame() {
             self.cur_nemesis_id = INVALID_ID;
             return None;
         }
         let mut target = world.objects.find(self.cur_nemesis_id).map(|o| o.id);
         if let Some(o) = world.objects.find(self.cur_nemesis_id) {
             // "If the enemy unit is stealthed and not detected, then we can't attack it!"
-            if o.test_status(OBJECT_STATUS_STEALTHED)
-                && !o.test_status(OBJECT_STATUS_DETECTED)
-                && !o.test_status(OBJECT_STATUS_DISGUISED)
-            {
+            if o.test_status(OBJECT_STATUS_STEALTHED) && !o.test_status(OBJECT_STATUS_DETECTED) && !o.test_status(OBJECT_STATUS_DISGUISED) {
                 target = None;
             }
         }
@@ -278,12 +264,7 @@ impl TunnelTracker {
 
     /// `isValidContainerFor(obj, checkCapacity)`: "Dustin wants ALL units to
     /// be able to use tunnels! srj sez: um, except aircraft."
-    pub fn is_valid_container_for(
-        &self,
-        world: &World,
-        obj: Option<ObjectId>,
-        check_capacity: bool,
-    ) -> bool {
+    pub fn is_valid_container_for(&self, world: &World, obj: Option<ObjectId>, check_capacity: bool) -> bool {
         if let Some(o) = obj.and_then(|id| world.objects.find(id)) {
             if !o.is_kind_of(KINDOF_AIRCRAFT) {
                 if check_capacity {
@@ -327,11 +308,7 @@ impl TunnelTracker {
     /// `onTunnelDestroyed(deadTunnel)`: with the last tunnel gone, everyone
     /// inside is destroyed ("Cave in!"); otherwise nobody inside may remember
     /// the dead tunnel as the one they entered.
-    pub fn on_tunnel_destroyed(
-        &mut self,
-        world: &mut World,
-        dead_tunnel: ObjectId,
-    ) -> Result<(), TunnelError> {
+    pub fn on_tunnel_destroyed(&mut self, world: &mut World, dead_tunnel: ObjectId) -> Result<(), TunnelError> {
         // `m_tunnelCount--`: unsigned, so a tracker that counts none wraps to 4294967295
         self.tunnel_count = self.tunnel_count.wrapping_sub(1);
         self.tunnel_ids.retain(|t| *t != dead_tunnel);
@@ -391,20 +368,14 @@ impl TunnelTracker {
 
     /// `healObjects(frames)`: heal all objects within the tunnel network.
     pub fn heal_objects(&self, world: &mut World, frames: f32) -> Result<(), TunnelError> {
-        self.iterate_contained(world, false, |w, id| {
-            TunnelTracker::heal_object(w, id, frames)
-        })
+        self.iterate_contained(world, false, |w, id| TunnelTracker::heal_object(w, id, frames))
     }
 
     /// `healObject(obj, frames)`: heal one object within the tunnel network
     /// system. In the first `frames` since it entered, it gets a sliver of its
     /// maximum health each call as if it were at zero and would be full at
     /// `frames`; after that, its maximum.
-    pub fn heal_object(
-        world: &mut World,
-        obj: ObjectId,
-        frames_for_full_heal: f32,
-    ) -> Result<(), TunnelError> {
+    pub fn heal_object(world: &mut World, obj: ObjectId, frames_for_full_heal: f32) -> Result<(), TunnelError> {
         // setup the healing damageInfo structure with all but the amount
         let mut heal_info = DamageInfo::default();
         heal_info.input.damage_type = DAMAGE_HEALING;
@@ -414,12 +385,8 @@ impl TunnelTracker {
             Some(o) => o.contained_by_frame,
             None => return Err(TunnelError::ContainedObjectGone(obj)),
         };
-        let Some(body) = world.get_body_module(obj) else {
-            return Err(TunnelError::NoBodyModule(obj));
-        };
-        let max_health = world
-            .module_call(obj, body, ModuleCall::GetMaxHealth)
-            .as_real(0.0);
+        let Some(body) = world.get_body_module(obj) else { return Err(TunnelError::NoBodyModule(obj)) };
+        let max_health = world.module_call(obj, body, ModuleCall::GetMaxHealth).as_real(0.0);
         // if we've been in here long enough ... set our health to max
         if world.frame().wrapping_sub(contained_by_frame) as f32 >= frames_for_full_heal {
             // set the amount to max just to be sure we're at the top
@@ -464,15 +431,8 @@ impl TunnelTracker {
             // remove rider from partition manager
             world.partition_unregister_object(id);
             // hide the drawable associated with rider
-            if world
-                .objects
-                .find(id)
-                .is_some_and(|o| o.drawable != crate::common::game_type::INVALID_DRAWABLE_ID)
-            {
-                world.emit(ObjectClientEvent::DrawableSetHidden {
-                    object_id: id,
-                    hidden: true,
-                });
+            if world.objects.find(id).is_some_and(|o| o.drawable != crate::common::game_type::INVALID_DRAWABLE_ID) {
+                world.emit(ObjectClientEvent::DrawableSetHidden { object_id: id, hidden: true });
             }
             // remove object from pathfind map
             world.cut(CutCall::PathfinderRemoveObjectFromPathfindMap { object: id });
@@ -534,8 +494,8 @@ impl Snapshot for TunnelTracker {
 mod tests {
     use super::*;
     use crate::common::kind_of::{KINDOF_INFANTRY, KINDOF_SELECTABLE};
-    use crate::common::module::{MODULEINTERFACE_BODY, MODULEINTERFACE_DAMAGE};
     use crate::common::object_status_types::OBJECT_STATUS_STEALTHED as STEALTHED_BIT;
+    use crate::common::module::{MODULEINTERFACE_BODY, MODULEINTERFACE_DAMAGE};
     use crate::common::thing_template::{ObjectTemplateValues, ThingTemplate};
     use crate::common::xfer_load::XferLoad;
     use crate::common::xfer_save::XferSave;
@@ -554,10 +514,7 @@ mod tests {
     }
 
     fn make(w: &mut World, kinds: &[i32], health: Option<f32>) -> ObjectId {
-        let v = ObjectTemplateValues {
-            kind_of: kinds.to_vec(),
-            ..Default::default()
-        };
+        let v = ObjectTemplateValues { kind_of: kinds.to_vec(), ..Default::default() };
         let mut modules = Vec::new();
         if let Some(h) = health {
             let mut m = NewModule::plain(b"ProbeBody", b"ModuleTag_Body");
@@ -568,13 +525,7 @@ mod tests {
             modules.push(m);
         }
         let tt = Arc::new(ThingTemplate::from_object_values(&v));
-        w.new_object(NewObject {
-            template: tt,
-            status: Default::default(),
-            team: None,
-            modules,
-        })
-        .expect("object")
+        w.new_object(NewObject { template: tt, status: Default::default(), team: None, modules }).expect("object")
     }
 
     fn health(w: &mut World, id: ObjectId) -> f32 {
@@ -586,16 +537,10 @@ mod tests {
     fn containing_is_a_list_with_a_count_and_a_capacity() {
         let mut w = world();
         w.cuts.globals.max_tunnel_capacity = 2;
-        let (a, b) = (
-            make(&mut w, &[KINDOF_INFANTRY], None),
-            make(&mut w, &[KINDOF_AIRCRAFT], None),
-        );
+        let (a, b) = (make(&mut w, &[KINDOF_INFANTRY], None), make(&mut w, &[KINDOF_AIRCRAFT], None));
         let mut t = TunnelTracker::new();
         assert!(t.is_valid_container_for(&w, Some(a), true));
-        assert!(
-            !t.is_valid_container_for(&w, Some(b), false),
-            "aircraft never"
-        );
+        assert!(!t.is_valid_container_for(&w, Some(b), false), "aircraft never");
         assert!(!t.is_valid_container_for(&w, None, false));
         t.add_to_contain_list(a);
         t.add_to_contain_list(a);
@@ -609,10 +554,7 @@ mod tests {
     #[test]
     fn the_last_tunnel_destroyed_destroys_everyone_inside() {
         let mut w = world();
-        let (tunnel, a) = (
-            make(&mut w, &[], None),
-            make(&mut w, &[KINDOF_INFANTRY], Some(10.0)),
-        );
+        let (tunnel, a) = (make(&mut w, &[], None), make(&mut w, &[KINDOF_INFANTRY], Some(10.0)));
         let mut t = TunnelTracker::new();
         t.on_tunnel_created(tunnel);
         t.add_to_contain_list(a);
@@ -622,20 +564,13 @@ mod tests {
         assert!(w.objects.find(a).unwrap().is_destroyed());
         assert_eq!((t.get_contain_count(), t.friend_get_tunnel_count()), (0, 0));
         let trace = w.cuts.trace.clone().unwrap();
-        assert!(
-            trace.contains(&format!("tt onRemovedFrom {a} {tunnel}"))
-                && trace.contains(&format!("tt destroy {a}"))
-        );
+        assert!(trace.contains(&format!("tt onRemovedFrom {a} {tunnel}")) && trace.contains(&format!("tt destroy {a}")));
     }
 
     #[test]
     fn another_tunnel_left_takes_over_the_containers_of_the_dead_one() {
         let mut w = world();
-        let (t1, t2, a) = (
-            make(&mut w, &[], None),
-            make(&mut w, &[], None),
-            make(&mut w, &[KINDOF_INFANTRY], None),
-        );
+        let (t1, t2, a) = (make(&mut w, &[], None), make(&mut w, &[], None), make(&mut w, &[KINDOF_INFANTRY], None));
         let mut t = TunnelTracker::new();
         t.on_tunnel_created(t1);
         t.on_tunnel_created(t2);
@@ -649,10 +584,7 @@ mod tests {
         empty.on_tunnel_created(t1);
         empty.on_tunnel_created(t2);
         empty.tunnel_ids.clear();
-        assert_eq!(
-            empty.on_tunnel_destroyed(&mut w, t1),
-            Err(TunnelError::NoTunnelIds)
-        );
+        assert_eq!(empty.on_tunnel_destroyed(&mut w, t1), Err(TunnelError::NoTunnelIds));
     }
 
     #[test]
@@ -665,52 +597,28 @@ mod tests {
         w.on_contained_by(a, a); // entered at frame 5
         w.set_frame(10);
         assert!(t.heal_objects(&mut w, 100.0).is_ok());
-        assert_eq!(
-            health(&mut w, a),
-            11.0,
-            "a hundredth of the maximum (100) after 5 of 100 frames"
-        );
+        assert_eq!(health(&mut w, a), 11.0, "a hundredth of the maximum (100) after 5 of 100 frames");
         w.set_frame(105);
         assert!(t.heal_objects(&mut w, 100.0).is_ok());
         assert_eq!(health(&mut w, a), 100.0);
         let nobody = make(&mut w, &[KINDOF_INFANTRY], None);
-        assert_eq!(
-            TunnelTracker::heal_object(&mut w, nobody, 1.0),
-            Err(TunnelError::NoBodyModule(nobody))
-        );
-        assert_eq!(
-            TunnelTracker::heal_object(&mut w, 999, 1.0),
-            Err(TunnelError::ContainedObjectGone(999))
-        );
-        assert_eq!(
-            TunnelTracker::destroy_object(&mut w, 999),
-            Err(TunnelError::ContainedObjectGone(999))
-        );
+        assert_eq!(TunnelTracker::heal_object(&mut w, nobody, 1.0), Err(TunnelError::NoBodyModule(nobody)));
+        assert_eq!(TunnelTracker::heal_object(&mut w, 999, 1.0), Err(TunnelError::ContainedObjectGone(999)));
+        assert_eq!(TunnelTracker::destroy_object(&mut w, 999), Err(TunnelError::ContainedObjectGone(999)));
     }
 
     #[test]
     fn the_nemesis_is_kept_for_four_seconds_and_forgotten_when_hidden_or_dead() {
         let mut w = world();
-        let (a, b) = (
-            make(&mut w, &[KINDOF_INFANTRY], None),
-            make(&mut w, &[KINDOF_SELECTABLE], None),
-        );
+        let (a, b) = (make(&mut w, &[KINDOF_INFANTRY], None), make(&mut w, &[KINDOF_SELECTABLE], None));
         let mut t = TunnelTracker::new();
         t.update_nemesis(&mut w, Some(b));
-        assert_eq!(
-            t.get_cur_nemesis(&w),
-            None,
-            "not a vehicle, structure, infantry or aircraft"
-        );
+        assert_eq!(t.get_cur_nemesis(&w), None, "not a vehicle, structure, infantry or aircraft");
         t.update_nemesis(&mut w, Some(a));
         assert_eq!(t.get_cur_nemesis(&w), Some(a));
         assert_eq!(t.get_nemesis_state(), (a, 0));
         w.set_frame(120);
-        assert_eq!(
-            t.get_cur_nemesis(&w),
-            Some(a),
-            "120 frames is still inside the window"
-        );
+        assert_eq!(t.get_cur_nemesis(&w), Some(a), "120 frames is still inside the window");
         t.update_nemesis(&mut w, Some(a));
         assert_eq!(t.get_nemesis_state().1, 120, "seeing it again renews it");
         w.set_frame(241);
@@ -719,14 +627,9 @@ mod tests {
         t.update_nemesis(&mut w, Some(a));
         w.objects.find_mut(a).unwrap().status.set(STEALTHED_BIT, 1);
         assert_eq!(t.get_cur_nemesis(&w), None, "stealthed and undetected");
-        w.objects
-            .find_mut(a)
-            .unwrap()
-            .status
-            .set(OBJECT_STATUS_STEALTHED, 0);
+        w.objects.find_mut(a).unwrap().status.set(OBJECT_STATUS_STEALTHED, 0);
         t.update_nemesis(&mut w, Some(a));
-        w.objects.find_mut(a).unwrap().private_status |=
-            crate::logic::world::object::PRIVATE_EFFECTIVELY_DEAD;
+        w.objects.find_mut(a).unwrap().private_status |= crate::logic::world::object::PRIVATE_EFFECTIVELY_DEAD;
         assert_eq!(t.get_cur_nemesis(&w), None, "effectively dead");
     }
 
@@ -749,32 +652,19 @@ mod tests {
         back.xfer(&mut load).unwrap();
         assert_eq!(back.get_xfer_contain_list(), &[a]);
         assert_eq!(back.get_contain_count(), 1);
-        assert!(
-            back.get_contained_items_list().is_empty(),
-            "until the post process"
-        );
+        assert!(back.get_contained_items_list().is_empty(), "until the post process");
         w.cuts.trace.as_mut().unwrap().clear();
         back.load_post_process_world(&mut w).unwrap();
         assert_eq!(back.get_contained_items_list(), &[a]);
         assert!(back.get_xfer_contain_list().is_empty());
         assert_eq!(w.objects.find(a).unwrap().group, 0);
         let trace = w.cuts.trace.clone().unwrap().join("\n");
-        assert!(
-            trace.contains("PartitionUnregisterObject")
-                && trace.contains("PathfinderRemoveObjectFromPathfindMap")
-                && trace.contains("DrawableSetHidden")
-        );
+        assert!(trace.contains("PartitionUnregisterObject") && trace.contains("PathfinderRemoveObjectFromPathfindMap") && trace.contains("DrawableSetHidden"));
         // a second post process finds the list full; an unknown id is invalid data
-        assert_eq!(
-            back.load_post_process_world(&mut w),
-            Err(TunnelError::InvalidData)
-        );
+        assert_eq!(back.load_post_process_world(&mut w), Err(TunnelError::InvalidData));
         back.xfer_contain_list = vec![9999];
         back.contain_list.clear();
-        assert_eq!(
-            back.load_post_process_world(&mut w),
-            Err(TunnelError::InvalidData)
-        );
+        assert_eq!(back.load_post_process_world(&mut w), Err(TunnelError::InvalidData));
         // crc writes nothing; the load hook is the world one
         let mut crc = crate::common::xfer_crc::XferCrc::new();
         back.crc(&mut crc).unwrap();

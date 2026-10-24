@@ -87,12 +87,7 @@ static CPP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9_r25.bin");
 const XFER_FILE: &str = "l9_r25.bin";
 /// The kinds the objects are given, by bit (the driver's `g_r25Kinds`), with their INI names.
-const KINDS: [(KindOfType, &str); 4] = [
-    (KINDOF_INFANTRY, "INFANTRY"),
-    (KINDOF_VEHICLE, "VEHICLE"),
-    (KINDOF_PORTABLE_STRUCTURE, "PORTABLE_STRUCTURE"),
-    (KINDOF_AIRCRAFT, "AIRCRAFT"),
-];
+const KINDS: [(KindOfType, &str); 4] = [(KINDOF_INFANTRY, "INFANTRY"), (KINDOF_VEHICLE, "VEHICLE"), (KINDOF_PORTABLE_STRUCTURE, "PORTABLE_STRUCTURE"), (KINDOF_AIRCRAFT, "AIRCRAFT")];
 
 fn put_u32(v: &mut Vec<u8>, x: u32) {
     v.extend_from_slice(&x.to_le_bytes());
@@ -105,17 +100,12 @@ fn put_str(v: &mut Vec<u8>, s: &[u8]) {
     v.extend_from_slice(s);
 }
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::HordeUpdate(Arc::new(
-        HordeUpdateModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::HordeUpdate(Arc::new(HordeUpdateModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -160,12 +150,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
     }
     let rate = u32_(&mut p);
     let kinds: Vec<u32> = (0..KINDOF_COUNT).map(|_| u32_(&mut p)).collect();
-    let set: Vec<usize> = kinds
-        .iter()
-        .enumerate()
-        .filter(|(_, v)| **v != 0)
-        .map(|(i, _)| i)
-        .collect();
+    let set: Vec<usize> = kinds.iter().enumerate().filter(|(_, v)| **v != 0).map(|(i, _)| i).collect();
     let f: Vec<u32> = (0..6).map(|_| u32_(&mut p)).collect();
     let n = u32_(&mut p);
     let names: Vec<String> = (0..n).map(|_| str_(&mut p)).collect();
@@ -194,10 +179,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
     let mut lines: Vec<String> = Vec::new();
     if g.below(100) < 70 {
-        lines.push(format!(
-            "UpdateRate = {}",
-            pick(g, &["0", "33", "100", "500", "1000"])
-        ));
+        lines.push(format!("UpdateRate = {}", pick(g, &["0", "33", "100", "500", "1000"])));
     }
     if g.below(100) < 50 {
         let mut t = Vec::new();
@@ -207,19 +189,13 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
         lines.push(format!("KindOf = {}", t.join(" ")));
     }
     if g.below(100) < 85 {
-        lines.push(format!(
-            "Count = {}",
-            pick(g, &["0", "1", "2", "3", "4", "4", "5"])
-        ));
+        lines.push(format!("Count = {}", pick(g, &["0", "1", "2", "3", "4", "4", "5"])));
     }
     if g.below(100) < 70 {
         lines.push(format!("Radius = {}", pick(g, &["0", "30", "60.5"])));
     }
     if g.below(100) < 60 {
-        lines.push(format!(
-            "RubOffRadius = {}",
-            pick(g, &["0", "10", "20", "50"])
-        ));
+        lines.push(format!("RubOffRadius = {}", pick(g, &["0", "10", "20", "50"])));
     }
     if g.below(100) < 50 {
         lines.push(format!("AlliesOnly = {}", pick(g, &["Yes", "No"])));
@@ -231,10 +207,7 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
         lines.push("Action = HORDE".to_string());
     }
     if g.below(100) < 40 {
-        lines.push(format!(
-            "FlagSubObjectNames = {}",
-            pick(g, &["Flag01", "Flag01 Flag02", "FLAG"])
-        ));
+        lines.push(format!("FlagSubObjectNames = {}", pick(g, &["Flag01", "Flag01 Flag02", "FLAG"])));
     }
     if g.below(100) < 40 {
         lines.push(format!("AllowedNationalism = {}", pick(g, &["Yes", "No"])));
@@ -265,13 +238,7 @@ struct Tally {
     decals: u64,
 }
 
-fn run_xfer(
-    w: &mut World,
-    me: ObjectId,
-    idx: usize,
-    how: u32,
-    saved: &[u8],
-) -> (i32, Vec<u8>, u32) {
+fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -340,72 +307,36 @@ fn set_private(w: &mut World, id: ObjectId, bit: u8, on: bool) {
 
 /// The scene of the flags (the driver's, op by op).
 #[allow(clippy::too_many_arguments)]
-fn set_scene(
-    w: &mut World,
-    flags: &[u32; 4],
-    drawable: i32,
-    ai: Option<u16>,
-    horde_slots: &[Option<u16>; 4],
-) {
+fn set_scene(w: &mut World, flags: &[u32; 4], drawable: i32, ai: Option<u16>, horde_slots: &[Option<u16>; 4]) {
     let f0 = flags[0];
     let my_template = template_of(f0 & 15);
-    w.objects
-        .find_mut(1)
-        .unwrap()
-        .thing
-        .friend_set_template(my_template.clone());
+    w.objects.find_mut(1).unwrap().thing.friend_set_template(my_template.clone());
     w.objects.find_mut(1).unwrap().ai = if f0 >> 4 & 1 != 0 { ai } else { None };
-    w.objects.find_mut(1).unwrap().drawable = if f0 >> 5 & 1 != 0 {
-        drawable
-    } else {
-        rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID
-    };
+    w.objects.find_mut(1).unwrap().drawable = if f0 >> 5 & 1 != 0 { drawable } else { rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID };
     set_private(w, 1, PRIVATE_OFF_MAP, f0 >> 6 & 1 != 0);
     set_private(w, 1, PRIVATE_EFFECTIVELY_DEAD, f0 >> 7 & 1 != 0);
-    w.objects.find_mut(1).unwrap().weapon_bonus_condition =
-        (f0 >> 8 & 1) << condition::NATIONALISM | (f0 >> 9 & 1) << condition::FANATICISM;
+    w.objects.find_mut(1).unwrap().weapon_bonus_condition = (f0 >> 8 & 1) << condition::NATIONALISM | (f0 >> 9 & 1) << condition::FANATICISM;
     for k in 1..4usize {
         let f = flags[k];
         let id = k as ObjectId + 1;
-        let t = if f >> 7 & 1 != 0 {
-            my_template.clone()
-        } else {
-            template_of(f & 15)
-        };
+        let t = if f >> 7 & 1 != 0 { my_template.clone() } else { template_of(f & 15) };
         w.objects.find_mut(id).unwrap().thing.friend_set_template(t);
-        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(id).unwrap().modules
-            [horde_slots[k].unwrap() as usize]
-            .body
-            .as_mut()
-        {
+        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(id).unwrap().modules[horde_slots[k].unwrap() as usize].body.as_mut() {
             p.answers.horde = (f >> 4 & 1 != 0).then_some(f >> 5 & 1 != 0);
         }
         set_private(w, id, PRIVATE_OFF_MAP, f >> 6 & 1 != 0);
-        w.cuts
-            .team_relationships
-            .insert((1, id as u32), relationship(f >> 8 & 3));
+        w.cuts.team_relationships.insert((1, id as u32), relationship(f >> 8 & 3));
     }
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(
-    ctx: &Ctx,
-    data: ModuleDataKind,
-    cfg: &[u32; 12],
-    ops: &[[u32; 6]],
-    tally: &mut Tally,
-) -> (Vec<u8>, World) {
+fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 12], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
     let mut v = Vec::new();
-    let ModuleDataKind::HordeUpdate(d) = &data else {
-        unreachable!()
-    };
+    let ModuleDataKind::HordeUpdate(d) = &data else { unreachable!() };
     put_data(&mut v, d);
     let mut w = World::new();
     w.names = ctx.names.clone();
-    w.statics = Arc::new(GameStatics {
-        upgrade_center: ctx.center.clone(),
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), ..Default::default() });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.probe_effect_trace = true;
@@ -418,51 +349,21 @@ fn rust_run(
     }
     let probe = |answers: ProbeAnswers| {
         let mut m = NewModule::plain(b"R25Probe", b"ModuleTag_Probe");
-        m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
-            answers,
-            0.0,
-            Default::default(),
-        )));
+        m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(answers, 0.0, Default::default())));
         m
     };
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        b"HordeUpdate",
-        b"ModuleTag_Horde",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"HordeUpdate", b"ModuleTag_Horde", &data).unwrap().unwrap();
     let mut ai = probe(ProbeAnswers::default());
     ai.is_ai = true;
     // object 1's kinds before the constructor (it reads none, but the template is the scene's)
-    let me = w
-        .new_object(NewObject {
-            template: template_of(cfg[2] & 15),
-            status: ObjectStatusMaskType::default(),
-            team: Some(1),
-            modules: vec![m, ai],
-        })
-        .unwrap();
+    let me = w.new_object(NewObject { template: template_of(cfg[2] & 15), status: ObjectStatusMaskType::default(), team: Some(1), modules: vec![m, ai] }).unwrap();
     assert_eq!(me, 1);
     for k in 2..=4 {
-        let id = w
-            .new_object(NewObject {
-                template: template_of(0),
-                status: ObjectStatusMaskType::default(),
-                team: Some(k),
-                modules: vec![probe(ProbeAnswers::default())],
-            })
-            .unwrap();
+        let id = w.new_object(NewObject { template: template_of(0), status: ObjectStatusMaskType::default(), team: Some(k), modules: vec![probe(ProbeAnswers::default())] }).unwrap();
         assert_eq!(id, k as ObjectId);
     }
     let idx = w.find_module(me, b"HordeUpdate").unwrap();
-    let u = w
-        .update_handle_of_module(ModuleHandle {
-            object: me,
-            index: idx,
-        })
-        .expect("an update module");
+    let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
     let ai_slot = w.objects.find(me).unwrap().ai;
     let mut horde_slots = [None; 4];
     for (k, slot) in horde_slots.iter_mut().enumerate().skip(1) {
@@ -489,9 +390,7 @@ fn rust_run(
     let mut flags = [cfg[2], cfg[3], cfg[4], cfg[5]];
     let mut scan = cfg[8];
     for k in 0..3 {
-        w.cuts
-            .distance_squared_center_2d
-            .insert((me, k as ObjectId + 2), f32::from_bits(cfg[9 + k]));
+        w.cuts.distance_squared_center_2d.insert((me, k as ObjectId + 2), f32::from_bits(cfg[9 + k]));
     }
     let mut saved: Vec<u8> = Vec::new();
     w.cuts.trace = Some(Vec::new());
@@ -502,20 +401,13 @@ fn rust_run(
             2 => scan = o[1],
             3 => w.set_frame(o[1]),
             4 => {
-                w.cuts
-                    .distance_squared_center_2d
-                    .insert((me, ((o[1] - 1) % 4) as ObjectId + 1), f32::from_bits(o[2]));
+                w.cuts.distance_squared_center_2d.insert((me, ((o[1] - 1) % 4) as ObjectId + 1), f32::from_bits(o[2]));
             }
             6 => w.cuts.globals.draw_icon_ui = o[1] != 0,
             _ => {}
         }
         set_scene(&mut w, &flags, drawable, ai_slot, &horde_slots);
-        w.cuts.range_scan = (0..4)
-            .map(|k| scan >> (4 * k) & 15)
-            .take_while(|&id| id != 0)
-            .filter(|&id| id <= 4)
-            .map(|id| id as ObjectId)
-            .collect();
+        w.cuts.range_scan = (0..4).map(|k| scan >> (4 * k) & 15).take_while(|&id| id != 0).filter(|&id| id <= 4).map(|id| id as ObjectId).collect();
         let errors_before = w.cuts.module_errors.len();
         let events_before = w.events.events().len();
         w.cuts.trace = Some(Vec::new());
@@ -523,10 +415,7 @@ fn rust_run(
         let (mut xst, mut xbytes, mut crc, mut res) = (-2i32, Vec::new(), 0u32, 0u32);
         match o[0] {
             0 => {
-                res = w
-                    .with_body(u, |b, w| b.update(w, u))
-                    .expect("the module is in its slot")
-                    .0;
+                res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
                 tally.updates += 1;
             }
             5 => {
@@ -549,9 +438,7 @@ fn rust_run(
             1..=4 | 6 => {}
             _ => unreachable!(),
         }
-        let threw = w.cuts.module_errors[errors_before..]
-            .iter()
-            .any(|(_, e)| !e.is_undefined());
+        let threw = w.cuts.module_errors[errors_before..].iter().any(|(_, e)| !e.is_undefined());
         put_i32(&mut v, if threw { 2 } else { 0 });
         put_u32(&mut v, res);
         let events: Vec<ObjectClientEvent> = w.events.events()[events_before..]
@@ -561,15 +448,12 @@ fn rust_run(
                 _ => None,
             })
             .collect();
-        let (mut ev_iter, mut cut_iter) =
-            (events.into_iter(), w.cuts.log.take().unwrap().into_iter());
+        let (mut ev_iter, mut cut_iter) = (events.into_iter(), w.cuts.log.take().unwrap().into_iter());
         let (mut log, mut wakes, mut last) = (Vec::new(), 0u32, 0u32);
         for t in w.cuts.trace.take().unwrap() {
             if t.starts_with("cut ") {
                 match cut_iter.next().expect("a cut line has a cut call") {
-                    CutCall::PartitionIterateObjectsInRangeOf { object, range, dc } => {
-                        log.push(format!("scan {object} {:08x} {dc}", range.to_bits()))
-                    }
+                    CutCall::PartitionIterateObjectsInRangeOf { object, range, dc } => log.push(format!("scan {object} {:08x} {dc}", range.to_bits())),
                     CutCall::PartitionGetDistanceSquaredCenter2D { object, other } => {
                         tally.rub_offs += 1;
                         log.push(format!("distsq {object} {other}"))
@@ -582,28 +466,10 @@ fn rust_run(
                         tally.decals += 1;
                         log.push(format!("decal {decal}"))
                     }
-                    Some(ObjectClientEvent::DrawableSetTerrainDecalSize { x, y, .. }) => {
-                        log.push(format!("decalsize {:08x} {:08x}", x.to_bits(), y.to_bits()))
-                    }
-                    Some(ObjectClientEvent::DrawableTerrainDecalFadeTarget {
-                        target,
-                        rate,
-                        ..
-                    }) => log.push(format!(
-                        "decalfade {:08x} {:08x}",
-                        target.to_bits(),
-                        rate.to_bits()
-                    )),
-                    Some(ObjectClientEvent::DrawableShowSubObject { name, show, .. }) => {
-                        log.push(format!(
-                            "subshow {} {}",
-                            String::from_utf8_lossy(&name),
-                            i32::from(show)
-                        ))
-                    }
-                    Some(ObjectClientEvent::DrawableUpdateSubObjects { .. }) => {
-                        log.push("subupdate".to_string())
-                    }
+                    Some(ObjectClientEvent::DrawableSetTerrainDecalSize { x, y, .. }) => log.push(format!("decalsize {:08x} {:08x}", x.to_bits(), y.to_bits())),
+                    Some(ObjectClientEvent::DrawableTerrainDecalFadeTarget { target, rate, .. }) => log.push(format!("decalfade {:08x} {:08x}", target.to_bits(), rate.to_bits())),
+                    Some(ObjectClientEvent::DrawableShowSubObject { name, show, .. }) => log.push(format!("subshow {} {}", String::from_utf8_lossy(&name), i32::from(show))),
+                    Some(ObjectClientEvent::DrawableUpdateSubObjects { .. }) => log.push("subupdate".to_string()),
                     _ => {}
                 }
             } else if let Some(f) = t.strip_prefix("awaken ") {
@@ -631,16 +497,10 @@ fn rust_run(
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let state =
-            w.objects
-                .find(me)
-                .unwrap()
-                .behaviors
-                .iter()
-                .find_map(|b| match b.body.as_ref() {
-                    Some(UpdateBody::HordeUpdate(m)) => Some(m.state_words()),
-                    _ => None,
-                });
+        let state = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
+            Some(UpdateBody::HordeUpdate(m)) => Some(m.state_words()),
+            _ => None,
+        });
         let state = state.expect("the module is back in its slot");
         if state[1] != 0 {
             tally.in_horde += 1;
@@ -654,10 +514,7 @@ fn rust_run(
 }
 
 fn cases() -> usize {
-    std::env::var("L9R25_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9R25_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 #[test]
@@ -687,21 +544,11 @@ fn horde_update_matches_upstream() {
         };
         // object 1: mostly infantry or a vehicle, with an AI and a drawable; the others mostly horde members, allies
         let gen_me = |g: &mut Gen| {
-            *pick(g, &[&1u32, &1, &2, &2, &3, &5, &0])
-                | u32::from(g.below(6) != 0) << 4
-                | u32::from(g.below(6) != 0) << 5
-                | u32::from(g.below(10) == 0) << 6
+            *pick(g, &[&1u32, &1, &2, &2, &3, &5, &0]) | u32::from(g.below(6) != 0) << 4 | u32::from(g.below(6) != 0) << 5 | u32::from(g.below(10) == 0) << 6
                 | u32::from(g.below(10) == 0) << 7
                 | g.below(4) << 8
         };
-        let gen_other = |g: &mut Gen| {
-            g.below(4)
-                | u32::from(g.below(5) != 0) << 4
-                | u32::from(g.below(4) != 0) << 5
-                | u32::from(g.below(10) == 0) << 6
-                | u32::from(g.below(4) == 0) << 7
-                | (if g.below(3) == 0 { g.below(3) } else { 2 }) << 8
-        };
+        let gen_other = |g: &mut Gen| g.below(4) | u32::from(g.below(5) != 0) << 4 | u32::from(g.below(4) != 0) << 5 | u32::from(g.below(10) == 0) << 6 | u32::from(g.below(4) == 0) << 7 | (if g.below(3) == 0 { g.below(3) } else { 2 }) << 8;
         let gen_scan = |g: &mut Gen| (0..4).fold(0, |acc, k| acc | g.below(5) << (4 * k));
         let gen_dist = |g: &mut Gen| (*pick(g, &[&0.0f32, &100.0, &400.0, &2500.0])).to_bits();
         let cfg = [
@@ -725,18 +572,7 @@ fn horde_update_matches_upstream() {
                 0..=9 => [0, 0, 0, 0, 0, 0],
                 10..=11 => {
                     let k = 1 + g.below(4);
-                    [
-                        1,
-                        k,
-                        if k == 1 {
-                            gen_me(&mut g)
-                        } else {
-                            gen_other(&mut g)
-                        },
-                        0,
-                        0,
-                        0,
-                    ]
+                    [1, k, if k == 1 { gen_me(&mut g) } else { gen_other(&mut g) }, 0, 0, 0]
                 }
                 12..=13 => [2, gen_scan(&mut g), 0, 0, 0, 0],
                 14..=15 => {
@@ -770,19 +606,7 @@ fn horde_update_matches_upstream() {
         let status = unsafe {
             cpp::ref_ini_reset();
             cpp::ref_ini_add_file(cfile.as_ptr(), text.as_ptr() as *const _, text.len() as i32);
-            cpp::ref_l9r25_run(
-                cfile.as_ptr(),
-                cxfer.as_ptr(),
-                cfg.as_ptr(),
-                ops.len() as i32,
-                flat.as_ptr(),
-                buf.as_mut_ptr(),
-                buf.len() as i32,
-                &mut len,
-                msg.as_mut_ptr() as *mut _,
-                msg.len() as i32,
-                &mut code,
-            )
+            cpp::ref_l9r25_run(cfile.as_ptr(), cxfer.as_ptr(), cfg.as_ptr(), ops.len() as i32, flat.as_ptr(), buf.as_mut_ptr(), buf.len() as i32, &mut len, msg.as_mut_ptr() as *mut _, msg.len() as i32, &mut code)
         };
         buf.truncate(len as usize);
         let detail = match status {
@@ -791,21 +615,8 @@ fn horde_update_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!(
-                "case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                show(&text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
@@ -813,17 +624,8 @@ fn horde_update_matches_upstream() {
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
-            eprintln!(
-                "--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}",
-                show(&text),
-                dr.get(i),
-                dc.get(i)
-            );
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            eprintln!("--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -839,10 +641,5 @@ fn horde_update_matches_upstream() {
     );
     read.finish();
     run.finish();
-    assert!(
-        tally.in_horde * 2 > cases as u64
-            && tally.rub_offs * 4 > cases as u64
-            && tally.decals * 4 > cases as u64,
-        "the generator must reach every path"
-    );
+    assert!(tally.in_horde * 2 > cases as u64 && tally.rub_offs * 4 > cases as u64 && tally.decals * 4 > cases as u64, "the generator must reach every path");
 }

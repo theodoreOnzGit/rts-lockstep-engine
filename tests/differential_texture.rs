@@ -104,11 +104,7 @@ fn rand_bytes(g: &mut Gen, n: usize) -> Vec<u8> {
 fn hsv_shift(g: &mut Gen) -> [f32; 3] {
     match g.below(10) {
         0..=4 => [0.0; 3],
-        5..=7 => [
-            g.uniform(-400.0, 400.0),
-            g.uniform(-1.5, 1.5),
-            g.uniform(-1.5, 1.5),
-        ],
+        5..=7 => [g.uniform(-400.0, 400.0), g.uniform(-1.5, 1.5), g.uniform(-1.5, 1.5)],
         8 => [g.uniform(-60.0, 60.0), 0.0, 0.0],
         _ => [g.mixed(), g.mixed(), g.mixed()],
     }
@@ -125,33 +121,18 @@ fn format_tables_match_upstream() {
     let mut g = Gen::new(0xF0F0);
     let mut excluded = 0u64;
     let mut codes: Vec<u32> = (0..300).collect();
-    codes.extend([
-        D3DFMT_DXT1,
-        D3DFMT_DXT2,
-        D3DFMT_DXT3,
-        D3DFMT_DXT4,
-        D3DFMT_DXT5,
-        0x7FFF_FFFF,
-        0x8000_0000,
-        0xFFFF_FFFF,
-    ]);
+    codes.extend([D3DFMT_DXT1, D3DFMT_DXT2, D3DFMT_DXT3, D3DFMT_DXT4, D3DFMT_DXT5, 0x7FFF_FFFF, 0x8000_0000, 0xFFFF_FFFF]);
     for _ in 0..20_000 {
         codes.push(g.u32());
     }
     for code in codes {
         match d3d_format_to_ww3d(code) {
-            Some(f) => check.eq(f as u32, unsafe { cpp::ref_d3d_to_ww3d(code) }, || {
-                format!("code {code:#x}")
-            }),
+            Some(f) => check.eq(f as u32, unsafe { cpp::ref_d3d_to_ww3d(code) }, || format!("code {code:#x}")),
             None => excluded += 1,
         }
     }
     for f in Ww3dFormat::ALL {
-        check.eq(
-            bytes_per_pixel(f),
-            unsafe { cpp::ref_bytes_per_pixel(f as u32) },
-            || format!("{f:?}"),
-        );
+        check.eq(bytes_per_pixel(f), unsafe { cpp::ref_bytes_per_pixel(f as u32) }, || format!("{f:?}"));
     }
     println!("D3DFormat_To_WW3DFormat: {excluded} codes with the top bit set excluded (undefined upstream)");
     check.finish();
@@ -164,11 +145,7 @@ fn write_b8g8r8a8_matches_upstream() {
     let mut g = Gen::new(0xB8B8);
     for i in 0..200_000u32 {
         let f = Ww3dFormat::ALL[(i % 25) as usize];
-        let argb = if i < 1000 {
-            [0, 0xFFFF_FFFF, 0x8000_0000, 0x00FF_FFFF][i as usize % 4]
-        } else {
-            g.u32()
-        };
+        let argb = if i < 1000 { [0, 0xFFFF_FFFF, 0x8000_0000, 0x00FF_FFFF][i as usize % 4] } else { g.u32() };
         let mut rust = [0xA5u8; 8];
         write_b8g8r8a8(&mut rust, 0, f, argb).expect("8 bytes are enough");
         let mut c = [0u8; 8];
@@ -188,21 +165,10 @@ fn recolor_matches_upstream() {
         let rgba = match i % 4 {
             0 => g.u32(),
             1 => g.u32() & 0x00F8_FCF8, // as DXT colours expand
-            2 => [
-                0,
-                0x00FF_FFFF,
-                0x00FF_0000,
-                0x0000_FF00,
-                0x0000_00FF,
-                0x0080_8080,
-            ][g.below(6) as usize],
+            2 => [0, 0x00FF_FFFF, 0x00FF_0000, 0x0000_FF00, 0x0000_00FF, 0x0080_8080][g.below(6) as usize],
             _ => g.u32() | 0xFF00_0000,
         };
-        let hsv = if i % 5 == 0 {
-            [g.special(), g.special(), g.special()]
-        } else {
-            hsv_shift(&mut g)
-        };
+        let hsv = if i % 5 == 0 { [g.special(), g.special(), g.special()] } else { hsv_shift(&mut g) };
         let Ok(rust) = recolor(rgba, hsv) else {
             excluded += 1;
             continue;
@@ -350,11 +316,7 @@ fn gen_ops(g: &mut Gen, d: &DdsFile<'_>) -> Vec<Op> {
             1 => Ww3dFormat::Dxt2,
             _ => Ww3dFormat::ALL[g.below(25) as usize],
         };
-        let (w, h) = if g.below(8) == 0 {
-            (small_dim(g), small_dim(g))
-        } else {
-            (lw, lh)
-        };
+        let (w, h) = if g.below(8) == 0 { (small_dim(g), small_dim(g)) } else { (lw, lh) };
         let bpp = bytes_per_pixel(fmt).max(1);
         let pitch = match g.below(6) {
             0 => g.below(64),
@@ -372,23 +334,13 @@ fn gen_ops(g: &mut Gen, d: &DdsFile<'_>) -> Vec<Op> {
             _ => need.min(1 << 18) as u32,
         };
         let (x, y) = match kind {
-            3 => (
-                4 * g.below(lw.div_ceil(4).max(1) + 1),
-                4 * g.below(lh.div_ceil(4).max(1) + 1),
-            ),
+            3 => (4 * g.below(lw.div_ceil(4).max(1) + 1), 4 * g.below(lh.div_ceil(4).max(1) + 1)),
             2 | 5 => (g.below(7), 0),
             _ => (g.below(lw + 2), g.below(lh + 2)),
         };
         let hsv = hsv_shift(g);
-        let (w, h, pitch, blen) = if kind == 3 {
-            (0, 0, 4 * bpp + g.below(3), (4 * bpp + 2) * 4 + g.below(8))
-        } else {
-            (w, h, pitch, blen)
-        };
-        ops.push(Op {
-            w: [kind, level, x, y, fmt as u32, w, h, pitch, blen],
-            hsv,
-        });
+        let (w, h, pitch, blen) = if kind == 3 { (0, 0, 4 * bpp + g.below(3), (4 * bpp + 2) * 4 + g.below(8)) } else { (w, h, pitch, blen) };
+        ops.push(Op { w: [kind, level, x, y, fmt as u32, w, h, pitch, blen], hsv });
     }
     ops
 }
@@ -404,14 +356,11 @@ fn log_dds_header(log: &mut Log, d: &DdsFile<'_>) {
     p32(log, d.date_time);
     p32(log, d.reduction_factor);
     p32(log, d.format as u32);
-    p32(
-        log,
-        match d.dds_type {
-            DdsType::Texture => 0,
-            DdsType::CubeMap => 1,
-            DdsType::Volume => 2,
-        },
-    );
+    p32(log, match d.dds_type {
+        DdsType::Texture => 0,
+        DdsType::CubeMap => 1,
+        DdsType::Volume => 2,
+    });
     p32(log, d.cube_face_size);
     log.extend_from_slice(&d.surface_desc.to_bytes());
     log.push(d.is_available() as u8);
@@ -466,10 +415,7 @@ fn run_op(d: &DdsFile<'_>, op: &Op, log: &mut Log) -> Result<(), DdsUndefined> {
 #[test]
 fn dds_matches_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    assert_eq!(
-        unsafe { cpp::ref_dds_surface_desc_size() },
-        LEGACY_DDSURFACEDESC2_SIZE as i32
-    );
+    assert_eq!(unsafe { cpp::ref_dds_surface_desc_size() }, LEGACY_DDSURFACEDESC2_SIZE as i32);
     let mut g = Gen::new(0xDD5);
     let mut check = Check::new("DDSFileClass (header, Load, reads, copies)");
     let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
@@ -480,11 +426,7 @@ fn dds_matches_upstream() {
     const CASES: usize = 20_000;
     for case in 0..CASES {
         let (clean, reduction) = gen_dds(&mut g);
-        let data = if case % 2 == 0 {
-            clean
-        } else {
-            mutate(&mut g, clean)
-        };
+        let data = if case % 2 == 0 { clean } else { mutate(&mut g, clean) };
         let mut d = match DdsFile::new(&data, reduction) {
             Ok(d) => d,
             Err(u) => {
@@ -534,9 +476,7 @@ fn dds_matches_upstream() {
             // destination even when it does nothing (DXT2-4 and other
             // formats): keep the ones it would take long over to the Rust
             let [kind, _, _, _, _, w, h, ..] = op.w;
-            if (kind == 1 || kind == 2)
-                && u64::from(w.div_ceil(4)) * u64::from(h.div_ceil(4)) > 1 << 20
-            {
+            if (kind == 1 || kind == 2) && u64::from(w.div_ceil(4)) * u64::from(h.div_ceil(4)) > 1 << 20 {
                 let mut scratch = Log::new();
                 let r = run_op(&d, &op, &mut scratch);
                 let why = match r {
@@ -560,19 +500,7 @@ fn dds_matches_upstream() {
         }
         ops_run += kept.len() as u64;
         for o in &kept {
-            *ops_by_kind
-                .entry(
-                    [
-                        "Get_Pixel",
-                        "Copy_Level",
-                        "Copy_CubeMap",
-                        "Get_4x4_Block",
-                        "Get_Width/Height/Depth",
-                        "level size/offset",
-                        "Copy_Volume",
-                    ][o.w[0] as usize],
-                )
-                .or_default() += 1;
+            *ops_by_kind.entry(["Get_Pixel", "Copy_Level", "Copy_CubeMap", "Get_4x4_Block", "Get_Width/Height/Depth", "level size/offset", "Copy_Volume"][o.w[0] as usize]).or_default() += 1;
         }
         let words: Vec<u32> = kept.iter().flat_map(|o| o.w).collect();
         let hsv: Vec<f32> = kept.iter().flat_map(|o| o.hsv).collect();
@@ -591,11 +519,7 @@ fn dds_matches_upstream() {
                 n,
             )
         });
-        check.eq(&log, &c, || {
-            format!(
-                "case {case} (reduction {reduction}, load {do_load}, ops {kept:?}): {data:02x?}"
-            )
-        });
+        check.eq(&log, &c, || format!("case {case} (reduction {reduction}, load {do_load}, ops {kept:?}): {data:02x?}"));
     }
     println!(
         "DDS: {CASES} files, {available} with a header, {loaded} with a payload; {ops_run} operations compared {ops_by_kind:?} \
@@ -628,11 +552,7 @@ fn gen_tga(g: &mut Gen) -> Vec<u8> {
             _ => 0,
         },
         image_type: [1, 2, 3, 9, 10, 11, 0, 2, 10, 2][g.below(10) as usize],
-        cmap_start: if g.below(6) == 0 {
-            (g.u32() % 300) as i16 - 20
-        } else {
-            0
-        },
+        cmap_start: if g.below(6) == 0 { (g.u32() % 300) as i16 - 20 } else { 0 },
         cmap_length: match g.below(4) {
             0 => 0,
             1 => g.u32() as i16,
@@ -677,20 +597,14 @@ fn gen_tga(g: &mut Gen) -> Vec<u8> {
         f.extend(rand_bytes(g, h.id_length as usize));
     }
     if h.color_map_type == 1 {
-        let n =
-            (i64::from(h.cmap_length) * i64::from(h.cmap_depth >> 3)).clamp(0, 1 << 16) as usize;
+        let n = (i64::from(h.cmap_length) * i64::from(h.cmap_depth >> 3)).clamp(0, 1 << 16) as usize;
         f.extend(rand_bytes(g, n));
     }
     let depth = i64::from(tga_bytes_per_pixel(h.pixel_depth)).clamp(0, 16) as usize;
     let pixels = (i64::from(h.width) * i64::from(h.height)).clamp(0, 1 << 14) as usize;
     if h.image_type == 9 || h.image_type == 10 || h.image_type == 11 {
         // run-length packets for the pixels (sometimes one too many)
-        let mut left = pixels as i64
-            + if g.below(8) == 0 {
-                1 + i64::from(g.below(3))
-            } else {
-                0
-            };
+        let mut left = pixels as i64 + if g.below(8) == 0 { 1 + i64::from(g.below(3)) } else { 0 };
         while left > 0 {
             let count = (1 + g.below(128) as i64).min(if g.below(4) == 0 { 128 } else { left });
             if g.below(2) == 0 {
@@ -722,11 +636,7 @@ fn gen_tga(g: &mut Gen) -> Vec<u8> {
             };
             f.extend_from_slice(&off.to_le_bytes());
             f.extend_from_slice(&0i32.to_le_bytes());
-            f.extend_from_slice(if g.below(5) == 0 {
-                b"TRUEVISION-XFILF"
-            } else {
-                TGA2_SIGNATURE
-            });
+            f.extend_from_slice(if g.below(5) == 0 { b"TRUEVISION-XFILF" } else { TGA2_SIGNATURE });
             f.extend_from_slice(b".\0");
         }
     }
@@ -755,11 +665,7 @@ fn rust_tga(data: &[u8], flow: i32) -> Result<(Log, Option<usize>), TgaUndefined
         log_tga_state(&mut log, &t, err);
         if err == 0 {
             t.header.image_descriptor ^= TGAIDF_YORIGIN;
-            let (src, bpp) = ww3d_format_of_targa(
-                t.header.pixel_depth,
-                t.header.color_map_type,
-                t.header.image_type,
-            );
+            let (src, bpp) = ww3d_format_of_targa(t.header.pixel_depth, t.header.color_map_type, t.header.image_type);
             p32(&mut log, src as u32);
             p32(&mut log, bpp);
             t.set_palette(Some(vec![0; 1024]));
@@ -807,18 +713,11 @@ fn targa_matches_upstream() {
     const CASES: usize = 20_000;
     for case in 0..CASES {
         let clean = gen_tga(&mut g);
-        let data = if case % 2 == 0 {
-            clean
-        } else {
-            mutate(&mut g, clean)
-        };
+        let data = if case % 2 == 0 { clean } else { mutate(&mut g, clean) };
         // the header as Open will read it, to keep huge images out
-        let hd = (data.len() >= TGA_HEADER_SIZE)
-            .then(|| TgaHeader::from_bytes(data[..TGA_HEADER_SIZE].try_into().unwrap()));
+        let hd = (data.len() >= TGA_HEADER_SIZE).then(|| TgaHeader::from_bytes(data[..TGA_HEADER_SIZE].try_into().unwrap()));
         if let Some(h) = hd {
-            let size = i64::from(h.width)
-                * i64::from(h.height)
-                * i64::from(tga_bytes_per_pixel(h.pixel_depth));
+            let size = i64::from(h.width) * i64::from(h.height) * i64::from(tga_bytes_per_pixel(h.pixel_depth));
             if size.abs() > MAX_IMAGE {
                 large += 2;
                 continue;
@@ -836,28 +735,13 @@ fn targa_matches_upstream() {
                     continue;
                 }
             };
-            let c = cpp_log(|lg, cap, n| unsafe {
-                cpp::ref_tga_run(
-                    data.as_ptr() as *const _,
-                    data.len() as i32,
-                    flow,
-                    lg,
-                    cap,
-                    n,
-                )
-            });
+            let c = cpp_log(|lg, cap, n| unsafe { cpp::ref_tga_run(data.as_ptr() as *const _, data.len() as i32, flow, lg, cap, n) });
             if rust != c && std::env::var_os("TGA_TRACE").is_some() {
-                let at = rust
-                    .iter()
-                    .zip(&c)
-                    .position(|(a, b)| a != b)
-                    .unwrap_or(rust.len().min(c.len()));
+                let at = rust.iter().zip(&c).position(|(a, b)| a != b).unwrap_or(rust.len().min(c.len()));
                 eprintln!("case {case} flow {flow}: len {} vs {}, first difference at {at}: rust {:02x?} c++ {:02x?}; header {:02x?}",
                     rust.len(), c.len(), &rust[at.saturating_sub(4)..(at + 16).min(rust.len())], &c[at.saturating_sub(4)..(at + 16).min(c.len())], &data[..18.min(data.len())]);
             }
-            check.eq(&rust, &c, || {
-                format!("case {case} flow {flow}: {data:02x?}")
-            });
+            check.eq(&rust, &c, || format!("case {case} flow {flow}: {data:02x?}"));
         }
     }
     println!(

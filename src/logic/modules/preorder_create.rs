@@ -13,6 +13,7 @@
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
 
+
 //! `PreorderCreate`: when a building is finished, the model condition
 //! `MODELCONDITION_PREORDER` follows whether the controlling player pre-ordered
 //! the game. Upstream's `onCreate` is empty and `onBuildComplete` neither checks
@@ -27,16 +28,14 @@
 //! `PreorderCreate.cpp` against the stand-ins of `differential/shim_creates`).
 
 // --- p1w10-sonnet ---
-use crate::logic::modules::create_host::{
-    create_module_eq, create_module_snapshot, report_create_error,
-};
+use crate::logic::modules::create_host::{create_module_eq, create_module_snapshot, report_create_error};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 // --- end p1w10-sonnet ---
 use std::sync::Arc;
 
-use crate::common::ini::IniResult;
 use crate::common::model_state::MODELCONDITION_PREORDER;
+use crate::common::ini::IniResult;
 use crate::logic::module::create_module::{CreateModule, CreateModuleData};
 use crate::logic::modules::create_host::{CreateError, CreateHost};
 
@@ -49,13 +48,8 @@ pub struct PreorderCreate {
 
 impl PreorderCreate {
     /// `PreorderCreate(thing, moduleData)`.
-    pub fn new(
-        object: crate::common::game_type::ObjectId,
-        module_data: Option<Arc<CreateModuleData>>,
-    ) -> IniResult<Self> {
-        Ok(PreorderCreate {
-            create: CreateModule::new(object, module_data)?,
-        })
+    pub fn new(object: crate::common::game_type::ObjectId, module_data: Option<Arc<CreateModuleData>>) -> IniResult<Self> {
+        Ok(PreorderCreate { create: CreateModule::new(object, module_data)? })
     }
 
     /// The `CreateModule` base.
@@ -71,9 +65,7 @@ impl PreorderCreate {
     /// `shouldDoOnBuildComplete()` test (both absent upstream).
     pub fn on_build_complete<H: CreateHost>(&mut self, host: &mut H) -> Result<(), CreateError> {
         let obj = self.create.behavior().object();
-        let player = host
-            .controlling_player(obj)
-            .ok_or(CreateError::NoControllingPlayer)?;
+        let player = host.controlling_player(obj).ok_or(CreateError::NoControllingPlayer)?;
         if host.player_did_preorder(player) {
             host.set_model_condition_state(obj, MODELCONDITION_PREORDER);
         } else {
@@ -89,12 +81,7 @@ create_module_eq!(PreorderCreate);
 
 impl PreorderCreate {
     /// The module's answer to one of `Object`'s calls (`onCreate` and `onBuildComplete` of the create interface).
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         let _ = me;
         match call {
             ModuleCall::OnCreate => {
@@ -120,21 +107,11 @@ mod tests {
     #[test]
     fn preorder_sets_or_clears_the_condition_from_the_controller() {
         let mut m = PreorderCreate::new(7, Some(Arc::new(CreateModuleData::new()))).unwrap();
-        let mut h = Recorder {
-            controller: Some(1),
-            preorder: true,
-            ..Default::default()
-        };
+        let mut h = Recorder { controller: Some(1), preorder: true, ..Default::default() };
         m.on_build_complete(&mut h).unwrap();
         h.preorder = false;
         m.on_build_complete(&mut h).unwrap();
-        assert_eq!(
-            h.log,
-            vec![
-                format!("set 7 {MODELCONDITION_PREORDER}"),
-                format!("clear 7 {MODELCONDITION_PREORDER}")
-            ]
-        );
+        assert_eq!(h.log, vec![format!("set 7 {MODELCONDITION_PREORDER}"), format!("clear 7 {MODELCONDITION_PREORDER}")]);
         // no base call: the flag is still set
         assert!(m.create().should_do_on_build_complete());
     }
@@ -143,10 +120,7 @@ mod tests {
     fn no_controlling_player_is_an_undefined_input() {
         let mut m = PreorderCreate::new(7, Some(Arc::new(CreateModuleData::new()))).unwrap();
         let mut h = Recorder::default();
-        assert_eq!(
-            m.on_build_complete(&mut h),
-            Err(CreateError::NoControllingPlayer)
-        );
+        assert_eq!(m.on_build_complete(&mut h), Err(CreateError::NoControllingPlayer));
         assert!(h.log.is_empty());
     }
 }

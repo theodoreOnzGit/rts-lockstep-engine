@@ -85,10 +85,10 @@ use rts_lockstep_engine::logic::damage::DamageInfo;
 use rts_lockstep_engine::logic::module::die_module::DieMuxData;
 use rts_lockstep_engine::logic::module::upgrade_module::UpgradeMuxData;
 use rts_lockstep_engine::logic::modules::fire_weapon_when_dead_behavior::FireWeaponWhenDeadBehaviorModuleData;
+use rts_lockstep_engine::logic::world::object_cuts::CutCall;
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::ModuleCall;
 use rts_lockstep_engine::logic::world::object_create::NewObject;
-use rts_lockstep_engine::logic::world::object_cuts::CutCall;
 use rts_lockstep_engine::logic::world::object_events::ObjectClientEvent;
 use rts_lockstep_engine::logic::world::statics::GameStatics;
 use rts_lockstep_engine::logic::world::team::Team;
@@ -180,17 +180,12 @@ fn mask_from(w: &[u32]) -> UpgradeMaskType {
 // -- reading the data --
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::FireWeaponWhenDeadBehavior(Arc::new(
-        FireWeaponWhenDeadBehaviorModuleData::friend_new_module_data(Some(ini))?,
-    )));
+    *out = Some(ModuleDataKind::FireWeaponWhenDeadBehavior(Arc::new(FireWeaponWhenDeadBehaviorModuleData::friend_new_module_data(Some(ini))?)));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -198,23 +193,12 @@ fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>
 
 /// The data dump of `ref_l9fk_run`: the die mux, the upgrade mux, `StartsActive`, the weapon's name (or "").
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, fx: &mut FxIds, weapons: &[&str]) {
-    let ModuleDataKind::FireWeaponWhenDeadBehavior(d) = data else {
-        unreachable!("not a FireWeaponWhenDeadBehavior")
-    };
+    let ModuleDataKind::FireWeaponWhenDeadBehavior(d) = data else { unreachable!("not a FireWeaponWhenDeadBehavior") };
     put_die_mux(v, &d.die.die_mux_data);
     put_mux(v, &d.upgrade.mux_data(), fx);
     put_u32(v, u32::from(d.initially_active));
     // upstream resolved the name while it read the data; here it is resolved when the weapon fires
-    let name = d
-        .death_weapon
-        .as_deref()
-        .and_then(|n| {
-            weapons
-                .iter()
-                .find(|w| w.as_bytes().eq_ignore_ascii_case(n))
-        })
-        .copied()
-        .unwrap_or("");
+    let name = d.death_weapon.as_deref().and_then(|n| weapons.iter().find(|w| w.as_bytes().eq_ignore_ascii_case(n))).copied().unwrap_or("");
     put_str(v, name.as_bytes());
 }
 
@@ -245,9 +229,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
     let (dt, vl) = (u32_(&mut p), u32_(&mut p));
     let ex: Vec<u64> = (0..4).map(|_| u64_(&mut p)).collect();
     let rq: Vec<u64> = (0..4).map(|_| u64_(&mut p)).collect();
-    out.push(format!(
-        "die mux {dt:#x} {vl:#x} exempt {ex:x?} required {rq:x?}"
-    ));
+    out.push(format!("die mux {dt:#x} {vl:#x} exempt {ex:x?} required {rq:x?}"));
     for what in ["trigger", "activation", "conflicting", "removal"] {
         let n = u32_(&mut p);
         let names: Vec<String> = (0..n).map(|_| str_(&mut p)).collect();
@@ -286,26 +268,8 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 // -- generators --
 
 const DEATH_NAMES: [&str; 20] = [
-    "NONE",
-    "CRUSHED",
-    "BURNED",
-    "EXPLODED",
-    "POISONED",
-    "TOPPLED",
-    "FLOODED",
-    "SUICIDED",
-    "LASERED",
-    "DETONATED",
-    "SPLATTED",
-    "POISONED_BETA",
-    "EXTRA_2",
-    "EXTRA_3",
-    "EXTRA_4",
-    "EXTRA_5",
-    "EXTRA_6",
-    "EXTRA_7",
-    "EXTRA_8",
-    "POISONED_GAMMA",
+    "NONE", "CRUSHED", "BURNED", "EXPLODED", "POISONED", "TOPPLED", "FLOODED", "SUICIDED", "LASERED", "DETONATED", "SPLATTED", "POISONED_BETA",
+    "EXTRA_2", "EXTRA_3", "EXTRA_4", "EXTRA_5", "EXTRA_6", "EXTRA_7", "EXTRA_8", "POISONED_GAMMA",
 ];
 
 fn death_tokens(g: &mut Gen) -> String {
@@ -360,9 +324,7 @@ fn gen_name(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
     }
     match g.below(100) {
         0..=64 if !upgrades.is_empty() => upgrades[g.below(upgrades.len() as u32) as usize].clone(),
-        65..=74 if !upgrades.is_empty() => {
-            upgrades[g.below(upgrades.len() as u32) as usize].to_lowercase()
-        }
+        65..=74 if !upgrades.is_empty() => upgrades[g.below(upgrades.len() as u32) as usize].to_lowercase(),
         75..=76 => format!("Unknown{}", g.below(3)),
         77 => "Up9".to_string(),
         78..=79 => pick(g, &["None", "none", "NONE"]).to_string(),
@@ -373,11 +335,9 @@ fn gen_name(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
 
 fn gen_list(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
     let n = 1 + g.below(3);
-    (0..n)
-        .map(|_| gen_name(g, upgrades, clean))
-        .collect::<Vec<_>>()
-        .join(" ")
+    (0..n).map(|_| gen_name(g, upgrades, clean)).collect::<Vec<_>>().join(" ")
 }
+
 
 fn gen_text(g: &mut Gen, upgrades: &[String], clean: bool) -> Vec<u8> {
     let mut lines = Vec::new();
@@ -396,19 +356,9 @@ fn gen_text(g: &mut Gen, upgrades: &[String], clean: bool) -> Vec<u8> {
     let v = status_tokens(g);
     field(g, 12, "RequiredStatus", v);
     // (active from the start in about half of the cases: it starts inactive unless told otherwise)
-    let v = if g.below(100) < 45 {
-        "Yes".to_string()
-    } else {
-        gen_bool(g, clean)
-    };
+    let v = if g.below(100) < 45 { "Yes".to_string() } else { gen_bool(g, clean) };
     field(g, 70, "StartsActive", v);
-    let v = pick(
-        g,
-        &[
-            "WEAP_A", "WEAP_B", "weap_a", "None", "WEAP_X", "WEAP_A", "WEAP_B",
-        ],
-    )
-    .to_string();
+    let v = pick(g, &["WEAP_A", "WEAP_B", "weap_a", "None", "WEAP_X", "WEAP_A", "WEAP_B"]).to_string();
     field(g, 85, "DeathWeapon", v);
     let v = gen_list(g, upgrades, clean);
     field(g, 75, "TriggeredBy", v);
@@ -443,11 +393,7 @@ fn gen_mask(g: &mut Gen, n_up: usize, at_least: u32) -> [u32; 4] {
     let mut w = [0u32; 4];
     if n_up > 0 {
         // a third of the masks name most of the upgrades, so that a TriggeredBy list is met more often than by chance
-        let extra = if g.below(3) == 0 {
-            g.below(n_up as u32 + 1)
-        } else {
-            g.below(3)
-        };
+        let extra = if g.below(3) == 0 { g.below(n_up as u32 + 1) } else { g.below(3) };
         for _ in 0..at_least + extra {
             let b = g.below(n_up as u32) as usize;
             w[b / 32] |= 1 << (b % 32);
@@ -470,13 +416,7 @@ struct Tally {
     died: u64,
 }
 
-fn run_xfer(
-    w: &mut World,
-    me: ObjectId,
-    idx: usize,
-    how: u32,
-    saved: &[u8],
-) -> (i32, Vec<u8>, u32) {
+fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -516,27 +456,13 @@ fn run_xfer(
     }
 }
 
-const PROBE: [&str; 9] = [
-    "none",
-    "Up0",
-    "Up3",
-    "Unknown0",
-    "Unknown2",
-    "Up9",
-    "SCIENCE_Pathfinder",
-    "zz_fresh",
-    "FireWeaponWhenDeadBehavior",
-];
+
+const PROBE: [&str; 9] = ["none", "Up0", "Up3", "Unknown0", "Unknown2", "Up9", "SCIENCE_Pathfinder", "zz_fresh", "FireWeaponWhenDeadBehavior"];
 /// The weapon store's templates (the driver's `g_kWeapons`).
 const WEAPONS: [&str; 2] = ["WEAP_A", "WEAP_B"];
 
 /// The effect lines of one stretch of the trace, in the driver's format.
-fn effects(
-    trace: Vec<String>,
-    cuts: Vec<CutCall>,
-    events: Vec<ObjectClientEvent>,
-    fx: &mut FxIds,
-) -> Vec<String> {
+fn effects(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClientEvent>, fx: &mut FxIds) -> Vec<String> {
     let mut log = Vec::new();
     let mut ev = events.into_iter();
     let mut cut_iter = cuts.into_iter();
@@ -544,26 +470,11 @@ fn effects(
         if t.starts_with("evt ObjectCreated") || t.starts_with("evt ObjectDestroyed") {
             // (the client's own events, not `Object`'s)
         } else if t.starts_with("cut ") {
-            if let Some(CutCall::WeaponCreateAndFireTemp {
-                weapon,
-                source,
-                position,
-            }) = cut_iter.next()
-            {
-                log.push(format!(
-                    "weapon {} {source} {},{},{}",
-                    String::from_utf8_lossy(&weapon),
-                    position.x.to_bits(),
-                    position.y.to_bits(),
-                    position.z.to_bits()
-                ));
+            if let Some(CutCall::WeaponCreateAndFireTemp { weapon, source, position }) = cut_iter.next() {
+                log.push(format!("weapon {} {source} {},{},{}", String::from_utf8_lossy(&weapon), position.x.to_bits(), position.y.to_bits(), position.z.to_bits()));
             }
         } else if t.starts_with("evt ") {
-            if let Some(ObjectClientEvent::FxListDoFxObj {
-                fx: name,
-                object_id,
-            }) = ev.next()
-            {
+            if let Some(ObjectClientEvent::FxListDoFxObj { fx: name, object_id }) = ev.next() {
                 log.push(format!("fx{}", fx.id(&Some(name))));
                 log.push(format!("fxobj {object_id} -1"));
             }
@@ -576,13 +487,7 @@ fn effects(
 
 /// Runs the ops on a fresh world and returns the dump (after the data dump), the name keys afterwards and the world; `None` when the constructor
 /// recorded an error (never sent to the C++).
-fn rust_run(
-    ctx: Ctx,
-    data: ModuleDataKind,
-    cfg: &[u32; 8],
-    ops: &[[u32; 6]],
-    tally: &mut Tally,
-) -> (Vec<u8>, Vec<u32>, World, bool) {
+fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; 8], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, Vec<u32>, World, bool) {
     let mut v = Vec::new();
     let mut fx = FxIds::default();
     put_data(&mut v, &data, &mut fx, &WEAPONS);
@@ -593,16 +498,9 @@ fn rust_run(
     let mut scratch = rts_lockstep_engine::common::name_key_generator::NameKeyGenerator::new();
     scratch.reset();
     for n in WEAPONS {
-        weapon_store
-            .new_weapon_template(&mut scratch, n.as_bytes())
-            .unwrap();
+        weapon_store.new_weapon_template(&mut scratch, n.as_bytes()).unwrap();
     }
-    w.statics = Arc::new(GameStatics {
-        upgrade_center: ctx.center,
-        special_power_store: ctx.store,
-        weapon_store,
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, weapon_store, ..Default::default() });
     w.names = ctx.names;
     w.cuts.probe_effect_trace = true;
     w.cuts.trace = Some(Vec::new());
@@ -611,59 +509,25 @@ fn rust_run(
     if cfg[0] != NO_PLAYER {
         w.cuts.team_players.insert(OBJECT_TEAM, cfg[0] as i32);
     }
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        w.next_object_id(),
-        b"FireWeaponWhenDeadBehavior",
-        b"ModuleTag_Die",
-        &data,
-    )
-    .unwrap()
-    .unwrap();
-    let template = Arc::new(ThingTemplate::from_object_values(
-        &ObjectTemplateValues::default(),
-    ));
+    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"FireWeaponWhenDeadBehavior", b"ModuleTag_Die", &data).unwrap().unwrap();
+    let template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
     // made under construction (as batches C and I do): `initObject` runs the upgrade pass of a finished object, which resolves the mux's names; the C++
     // driver makes the object with no such pass
     let mut status = ObjectStatusMaskType::default();
-    status.set(
-        rts_lockstep_engine::common::object_status_types::OBJECT_STATUS_UNDER_CONSTRUCTION,
-        1,
-    );
+    status.set(rts_lockstep_engine::common::object_status_types::OBJECT_STATUS_UNDER_CONSTRUCTION, 1);
     let events_before = w.events.events().len();
-    let me = w
-        .new_object(NewObject {
-            template,
-            status,
-            team: Some(OBJECT_TEAM),
-            modules: vec![m],
-        })
-        .unwrap();
+    let me = w.new_object(NewObject { template, status, team: Some(OBJECT_TEAM), modules: vec![m] }).unwrap();
     assert_eq!(me, 1, "the first object of a fresh world has the id 1");
     {
         let o = w.objects.find_mut(me).unwrap();
-        o.status.set(
-            rts_lockstep_engine::common::object_status_types::OBJECT_STATUS_UNDER_CONSTRUCTION,
-            0,
-        );
+        o.status.set(rts_lockstep_engine::common::object_status_types::OBJECT_STATUS_UNDER_CONSTRUCTION, 0);
         o.object_upgrades_completed = mask_from(&cfg[4..8]);
     }
     let constructor_events = new_events(&w, events_before);
     let constructor_threw = !w.cuts.module_errors.is_empty();
-    w.set_position(
-        me,
-        &Coord3D {
-            x: 11.0,
-            y: 22.0,
-            z: 5.0,
-        },
-    );
+    w.set_position(me, &Coord3D { x: 11.0, y: 22.0, z: 5.0 });
     let idx = w.find_module(me, b"FireWeaponWhenDeadBehavior").unwrap();
-    let ctor = effects(
-        w.cuts.trace.take().unwrap(),
-        w.cuts.log.take().unwrap(),
-        constructor_events,
-        &mut fx,
-    );
+    let ctor = effects(w.cuts.trace.take().unwrap(), w.cuts.log.take().unwrap(), constructor_events, &mut fx);
     tally.effects += ctor.len() as u64;
     put_u32(&mut v, ctor.len() as u32);
     for l in &ctor {
@@ -696,30 +560,12 @@ fn rust_run(
                 tally.died += 1;
             }
             1 => {
-                res = u32::from(
-                    w.module_call(me, idx, ModuleCall::AttemptUpgrade(mask))
-                        .as_bool(),
-                );
+                res = u32::from(w.module_call(me, idx, ModuleCall::AttemptUpgrade(mask)).as_bool());
                 tally.fired += u64::from(res);
             }
-            2 => {
-                res = u32::from(
-                    w.module_call(me, idx, ModuleCall::WouldUpgrade(mask))
-                        .as_bool(),
-                )
-            }
-            3 => {
-                res = u32::from(
-                    w.module_call(me, idx, ModuleCall::ResetUpgrade(mask))
-                        .as_bool(),
-                )
-            }
-            4 => {
-                res = u32::from(
-                    w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded)
-                        .as_bool(),
-                )
-            }
+            2 => res = u32::from(w.module_call(me, idx, ModuleCall::WouldUpgrade(mask)).as_bool()),
+            3 => res = u32::from(w.module_call(me, idx, ModuleCall::ResetUpgrade(mask)).as_bool()),
+            4 => res = u32::from(w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded).as_bool()),
             5 => {
                 w.module_call(me, idx, ModuleCall::ForceRefreshUpgrade);
             }
@@ -746,32 +592,14 @@ fn rust_run(
                 }
                 tally.xfers += 1;
             }
-            12 => w.set_position(
-                me,
-                &Coord3D {
-                    x: f32::from_bits(o[1]),
-                    y: f32::from_bits(o[2]),
-                    z: f32::from_bits(o[3]),
-                },
-            ),
+            12 => w.set_position(me, &Coord3D { x: f32::from_bits(o[1]), y: f32::from_bits(o[2]), z: f32::from_bits(o[3]) }),
             _ => unreachable!(),
         }
         let threw = w.cuts.module_errors.len() > errors_before;
         put_i32(&mut v, if threw { 2 } else { 0 });
         put_u32(&mut v, if threw { 0 } else { res });
-        put_u32(
-            &mut v,
-            u32::from(
-                w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded)
-                    .as_bool(),
-            ),
-        );
-        let log = effects(
-            w.cuts.trace.take().unwrap(),
-            w.cuts.log.take().unwrap(),
-            new_events(&w, events_before),
-            &mut fx,
-        );
+        put_u32(&mut v, u32::from(w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded).as_bool()));
+        let log = effects(w.cuts.trace.take().unwrap(), w.cuts.log.take().unwrap(), new_events(&w, events_before), &mut fx);
         tally.effects += log.len() as u64;
         put_u32(&mut v, log.len() as u32);
         for l in &log {
@@ -784,10 +612,7 @@ fn rust_run(
         }
         put_u32(&mut v, crc);
     }
-    let keys = PROBE
-        .iter()
-        .map(|n| w.names.name_to_key(n.as_bytes()).0)
-        .collect();
+    let keys = PROBE.iter().map(|n| w.names.name_to_key(n.as_bytes()).0).collect();
     (v, keys, w, constructor_threw)
 }
 
@@ -803,10 +628,7 @@ fn new_events(w: &World, before: usize) -> Vec<ObjectClientEvent> {
 }
 
 fn cases() -> usize {
-    std::env::var("L9FK_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9_000)
+    std::env::var("L9FK_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
 }
 
 #[test]
@@ -825,37 +647,13 @@ fn fire_weapon_when_dead_matches_upstream() {
     for case in 0..cases {
         let init_names = g.below(3) != 0;
         let init_center = g.below(5) != 0;
-        let n_up = if g.below(10) == 0 {
-            0
-        } else {
-            1 + g.below(8) as usize
-        };
+        let n_up = if g.below(10) == 0 { 0 } else { 1 + g.below(8) as usize };
         let upgrades: Vec<String> = (0..n_up).map(|i| format!("Up{i}")).collect();
-        let defs: String = upgrades
-            .iter()
-            .map(|u| format!("Upgrade {u}\nEnd\n"))
-            .collect();
+        let defs: String = upgrades.iter().map(|u| format!("Upgrade {u}\nEnd\n")).collect();
         let mut ctx = Ctx::new(init_names, init_center);
-        Ini::load(
-            b"Data\\INI\\Up.ini",
-            defs.as_bytes(),
-            IniLoadType::Overwrite,
-            None,
-            &table,
-            &mut ctx,
-        )
-        .expect("upgrades load");
+        Ini::load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ctx).expect("upgrades load");
         cpp_reset(init_names, init_center);
-        assert_eq!(
-            cpp_load(
-                b"Data\\INI\\Up.ini",
-                defs.as_bytes(),
-                IniLoadType::Overwrite,
-                false
-            )
-            .status,
-            0
-        );
+        assert_eq!(cpp_load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, false).status, 0);
 
         let clean = g.below(10) < 7;
         let text = gen_text(&mut g, &upgrades, clean);
@@ -871,11 +669,7 @@ fn fire_weapon_when_dead_matches_upstream() {
         };
         // [the object's player, unused, unused, unused, the object's completed upgrades (four words)]
         let mut cfg = [0u32; 8];
-        cfg[0] = if g.below(6) == 0 {
-            NO_PLAYER
-        } else {
-            g.below(3)
-        };
+        cfg[0] = if g.below(6) == 0 { NO_PLAYER } else { g.below(3) };
         let m0 = gen_mask(&mut g, n_up, 0);
         cfg[4..8].copy_from_slice(&m0);
         let n_ops = 1 + g.below(14) as usize;
@@ -883,14 +677,7 @@ fn fire_weapon_when_dead_matches_upstream() {
             .map(|_| match g.below(54) {
                 0..=13 => {
                     // onDie: the death type, a veterancy level, status words
-                    [
-                        0,
-                        1 + g.below(20),
-                        1 + g.below(3),
-                        g.u32() & 0x3fff,
-                        g.u32() & 0xff,
-                        0,
-                    ]
+                    [0, 1 + g.below(20), 1 + g.below(3), g.u32() & 0x3fff, g.u32() & 0xff, 0]
                 }
                 14..=25 => {
                     let m = gen_mask(&mut g, n_up, 1);
@@ -918,21 +705,13 @@ fn fire_weapon_when_dead_matches_upstream() {
                 45..=46 => [9, 0, 0, 0, 0, 0],
                 47..=48 => [10, 0, 0, 0, 0, 0],
                 49 => [11, 0, 0, 0, 0, 0],
-                _ => [
-                    12,
-                    f32_bits(&mut g, 100.0),
-                    f32_bits(&mut g, 100.0),
-                    f32_bits(&mut g, 20.0),
-                    0,
-                    0,
-                ],
+                _ => [12, f32_bits(&mut g, 100.0), f32_bits(&mut g, 100.0), f32_bits(&mut g, 20.0), 0, 0],
             })
             .collect();
 
         // Rust first: a case that reaches upstream undefined behaviour (or a constructor that throws) is counted and never sent to the C++
         let rust = if outcome.status == 0 {
-            let (rd, rk, w, ctor_threw) =
-                rust_run(ctx, data.expect("read ok"), &cfg, &ops, &mut tally);
+            let (rd, rk, w, ctor_threw) = rust_run(ctx, data.expect("read ok"), &cfg, &ops, &mut tally);
             if ctor_threw || w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined()) {
                 excluded += 1;
                 continue;
@@ -972,21 +751,8 @@ fn fire_weapon_when_dead_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status}) -- a constructor that threw upstream but not here"),
         };
-        let what = || {
-            format!(
-                "case {case}: upgrades {upgrades:?} cfg {cfg:x?}, file {:?}, ops {ops:?}",
-                show(&text)
-            )
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case}: upgrades {upgrades:?} cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some((rd, rk, _w)) = rust else {
             read_failed += 1;
             continue;
@@ -994,23 +760,13 @@ fn fire_weapon_when_dead_matches_upstream() {
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         for l in &dr {
             for key in ["fx", "fxobj", "weapon", "remove "] {
-                *counts.entry(key.trim().to_string()).or_default() +=
-                    l.matches(&format!("\"{key}")).count() as u64;
+                *counts.entry(key.trim().to_string()).or_default() += l.matches(&format!("\"{key}")).count() as u64;
             }
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr
-                .iter()
-                .zip(dc.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(dr.len().min(dc.len()));
-            eprintln!(
-                "--- case {case} cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}",
-                show(&text),
-                dr.get(i),
-                dc.get(i)
-            );
+            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            eprintln!("--- case {case} cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -1037,10 +793,5 @@ fn fire_weapon_when_dead_matches_upstream() {
     read.finish();
     run.finish();
     keys.finish();
-    assert!(
-        read_failed * 40 > cases as u64
-            && ops_run * 5 > cases as u64 * 4
-            && tally.fired * 20 > cases as u64,
-        "the generator must reach every path"
-    );
+    assert!(read_failed * 40 > cases as u64 && ops_run * 5 > cases as u64 * 4 && tally.fired * 20 > cases as u64, "the generator must reach every path");
 }

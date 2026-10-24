@@ -31,17 +31,12 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::object_status_types::OBJECT_STATUS_AFLAME;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime,
-    UPDATE_SLEEP_FOREVER,
-};
+use crate::logic::module::update_module::{update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -76,47 +71,22 @@ static FIELD_PARSE: [FieldParse<FireSpreadUpdateModuleData>; 5] = [
         },
         UserData::None,
     ),
-    FieldParse::new(
-        "MinSpreadDelay",
-        |ini, d, _| {
-            d.min_spread_try_delay = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "MaxSpreadDelay",
-        |ini, d, _| {
-            d.max_spread_try_delay = ini.parse_duration_unsigned_int()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "SpreadTryRange",
-        |ini, d, _| {
-            d.spread_try_range = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("MinSpreadDelay", |ini, d, _| { d.min_spread_try_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxSpreadDelay", |ini, d, _| { d.max_spread_try_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("SpreadTryRange", |ini, d, _| { d.spread_try_range = ini.parse_real()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl FireSpreadUpdateModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, FireSpreadUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, FireSpreadUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<FireSpreadUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<FireSpreadUpdateModuleData> {
         let mut data = FireSpreadUpdateModuleData::default();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, FireSpreadUpdateModuleData::build_field_parse)?;
@@ -137,17 +107,13 @@ pub struct FireSpreadUpdate {
 impl PartialEq for FireSpreadUpdate {
     /// The same object and the same data object (upstream compares pointers).
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
 impl FireSpreadUpdate {
     /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data).
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<FireSpreadUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<FireSpreadUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
@@ -175,12 +141,7 @@ impl FireSpreadUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls: `startFireSpreading`.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -202,10 +163,7 @@ impl FireSpreadUpdate {
     /// `calcNextSpreadDelay()`.
     fn calc_next_spread_delay(&self, world: &mut World) -> u32 {
         let d = &self.data;
-        let mut delay = world
-            .random
-            .game_logic_random_value(d.min_spread_try_delay as i32, d.max_spread_try_delay as i32)
-            as u32;
+        let mut delay = world.random.game_logic_random_value(d.min_spread_try_delay as i32, d.max_spread_try_delay as i32) as u32;
         if delay < 1 && !crate::logic::modules::plant(1203) {
             delay = 1;
         }
@@ -216,12 +174,7 @@ impl FireSpreadUpdate {
     fn allow(world: &mut World, obj: ObjectId) -> bool {
         match world.find_module(obj, b"FlammableUpdate") {
             None => false,
-            Some(idx) => {
-                world
-                    .module_call(obj, idx, ModuleCall::WouldIgnite)
-                    .as_bool()
-                    || crate::logic::modules::plant(1204)
-            }
+            Some(idx) => world.module_call(obj, idx, ModuleCall::WouldIgnite).as_bool() || crate::logic::modules::plant(1204),
         }
     }
 }
@@ -235,30 +188,17 @@ impl UpdateBehavior for FireSpreadUpdate {
         let d = self.data.clone();
         let us = me.object;
 
-        if !world
-            .objects
-            .find(us)
-            .is_some_and(|o| o.status.test(OBJECT_STATUS_AFLAME))
-            && !crate::logic::modules::plant(1201)
-        {
+        if !world.objects.find(us).is_some_and(|o| o.status.test(OBJECT_STATUS_AFLAME)) && !crate::logic::modules::plant(1201) {
             return UPDATE_SLEEP_FOREVER; // not on fire -- sleep forever
         }
 
-        if let Some(ocl) = d
-            .ocl_embers
-            .clone()
-            .filter(|_| !crate::logic::modules::plant(1206))
-        {
+        if let Some(ocl) = d.ocl_embers.clone().filter(|_| !crate::logic::modules::plant(1206)) {
             world.cut(CutCall::OclCreate { object: us, ocl });
         }
 
-        if d.spread_try_range != 0.0
-            && !(crate::logic::modules::plant(1207) && d.spread_try_range < 0.0)
-        {
+        if d.spread_try_range != 0.0 && !(crate::logic::modules::plant(1207) && d.spread_try_range < 0.0) {
             let candidates = world.partition_closest_candidates(us, d.spread_try_range);
-            let object_to_light = candidates
-                .into_iter()
-                .find(|&c| FireSpreadUpdate::allow(world, c));
+            let object_to_light = candidates.into_iter().find(|&c| FireSpreadUpdate::allow(world, c));
             if let Some(target) = object_to_light {
                 if let Some(idx) = world.find_module(target, b"FlammableUpdate") {
                     if !crate::logic::modules::plant(1205) {
@@ -276,12 +216,7 @@ impl UpdateBehavior for FireSpreadUpdate {
     fn other_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
             ModuleCall::StartFireSpreading => {
-                if !world
-                    .objects
-                    .find(me.object)
-                    .is_some_and(|o| o.status.test(OBJECT_STATUS_AFLAME))
-                    && !crate::logic::modules::plant(1202)
-                {
+                if !world.objects.find(me.object).is_some_and(|o| o.status.test(OBJECT_STATUS_AFLAME)) && !crate::logic::modules::plant(1202) {
                     return ModuleReply::Done; // sorry, must be on fire
                 }
                 let delay = self.calc_next_spread_delay(world);
@@ -321,7 +256,5 @@ impl Snapshot for FireSpreadUpdate {
 
 /// The factory's `NewModuleDataProc` for `FireSpreadUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::FireSpreadUpdate(Arc::new(
-        FireSpreadUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::FireSpreadUpdate(Arc::new(FireSpreadUpdateModuleData::friend_new_module_data(ini)?)))
 }

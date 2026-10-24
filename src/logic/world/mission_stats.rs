@@ -96,22 +96,14 @@ impl MissionStats {
 
 /// `xferUser(array, sizeof(Int) * MAX_PLAYER_COUNT)`: the raw bytes of the
 /// array, native (little-endian) `Int`s.
-fn xfer_int_array<X: Xfer + ?Sized>(
-    xfer: &mut X,
-    values: &mut [i32; MAX_PLAYER_COUNT as usize],
-) -> XferResult<()> {
+fn xfer_int_array<X: Xfer + ?Sized>(xfer: &mut X, values: &mut [i32; MAX_PLAYER_COUNT as usize]) -> XferResult<()> {
     let mut bytes = [0u8; 4 * MAX_PLAYER_COUNT as usize];
     for (i, v) in values.iter().enumerate() {
         bytes[4 * i..4 * i + 4].copy_from_slice(&v.to_le_bytes());
     }
     xfer.xfer_user(&mut bytes)?;
     for (i, v) in values.iter_mut().enumerate() {
-        *v = i32::from_le_bytes([
-            bytes[4 * i],
-            bytes[4 * i + 1],
-            bytes[4 * i + 2],
-            bytes[4 * i + 3],
-        ]);
+        *v = i32::from_le_bytes([bytes[4 * i], bytes[4 * i + 1], bytes[4 * i + 2], bytes[4 * i + 3]]);
     }
     Ok(())
 }

@@ -27,9 +27,7 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::object_status_types::OBJECT_STATUS_UNDER_CONSTRUCTION;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
@@ -64,44 +62,27 @@ impl Default for RebuildHoleExposeDieModuleData {
 impl RebuildHoleExposeDieModuleData {
     /// `RebuildHoleExposeDieModuleData()`: no hole name, no health, attackers transferred.
     pub fn new() -> Self {
-        RebuildHoleExposeDieModuleData {
-            die: DieModuleData::new(),
-            hole_name: Vec::new(),
-            hole_max_health: 0.0,
-            transfer_attackers: true,
-        }
+        RebuildHoleExposeDieModuleData { die: DieModuleData::new(), hole_name: Vec::new(), hole_max_health: 0.0, transfer_attackers: true }
     }
 
     /// `buildFieldParse(p)`: the behaviour base, the four die mux fields (read from the layer-5 table into `die`), then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, RebuildHoleExposeDieModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, RebuildHoleExposeDieModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<RebuildHoleExposeDieModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<RebuildHoleExposeDieModuleData> {
         let mut data = RebuildHoleExposeDieModuleData::new();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(
-                &mut data,
-                RebuildHoleExposeDieModuleData::build_field_parse,
-            )?;
+            ini.init_from_ini_multi_proc(&mut data, RebuildHoleExposeDieModuleData::build_field_parse)?;
         }
         Ok(data)
     }
 }
 
 /// Lifts entry `k` of the layer-5 die field table onto `RebuildHoleExposeDieModuleData::die`.
-fn lift_die_field(
-    k: usize,
-    i: &mut Ini<'_>,
-    d: &mut RebuildHoleExposeDieModuleData,
-    u: &UserData,
-) -> IniResult<()> {
+fn lift_die_field(k: usize, i: &mut Ini<'_>, d: &mut RebuildHoleExposeDieModuleData, u: &UserData) -> IniResult<()> {
     match DIE_MODULE_DATA_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.die, u),
         None => Ok(()),
@@ -110,50 +91,13 @@ fn lift_die_field(
 
 /// `DieModuleData::buildFieldParse`'s fields, then `RebuildHoleExposeDieModuleData`'s.
 static FIELD_PARSE: [FieldParse<RebuildHoleExposeDieModuleData>; 8] = [
-    FieldParse::new(
-        "DeathTypes",
-        |i, d, u| lift_die_field(0, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "VeterancyLevels",
-        |i, d, u| lift_die_field(1, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ExemptStatus",
-        |i, d, u| lift_die_field(2, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "RequiredStatus",
-        |i, d, u| lift_die_field(3, i, d, u),
-        UserData::None,
-    ),
-    FieldParse::new(
-        "HoleName",
-        |ini, d, _| {
-            d.hole_name = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "HoleMaxHealth",
-        |ini, d, _| {
-            d.hole_max_health = ini.parse_real()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "TransferAttackers",
-        |ini, d, _| {
-            d.transfer_attackers = ini.parse_bool()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("DeathTypes", |i, d, u| lift_die_field(0, i, d, u), UserData::None),
+    FieldParse::new("VeterancyLevels", |i, d, u| lift_die_field(1, i, d, u), UserData::None),
+    FieldParse::new("ExemptStatus", |i, d, u| lift_die_field(2, i, d, u), UserData::None),
+    FieldParse::new("RequiredStatus", |i, d, u| lift_die_field(3, i, d, u), UserData::None),
+    FieldParse::new("HoleName", |ini, d, _| { d.hole_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("HoleMaxHealth", |ini, d, _| { d.hole_max_health = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("TransferAttackers", |ini, d, _| { d.transfer_attackers = ini.parse_bool()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
@@ -168,17 +112,13 @@ pub struct RebuildHoleExposeDie {
 impl PartialEq for RebuildHoleExposeDie {
     /// The same object, the same data object (upstream compares pointers).
     fn eq(&self, other: &Self) -> bool {
-        self.die.behavior().object() == other.die.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
+        self.die.behavior().object() == other.die.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
 impl RebuildHoleExposeDie {
     /// `RebuildHoleExposeDie(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(
-        object: ObjectId,
-        data: Option<Arc<RebuildHoleExposeDieModuleData>>,
-    ) -> IniResult<RebuildHoleExposeDie> {
+    pub fn new(object: ObjectId, data: Option<Arc<RebuildHoleExposeDieModuleData>>) -> IniResult<RebuildHoleExposeDie> {
         let data = data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let die = DieModule::new(object, Some(Arc::new(data.die.clone())))?;
         Ok(RebuildHoleExposeDie { die, data })
@@ -190,12 +130,7 @@ impl RebuildHoleExposeDie {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         die_module_call(self, world, me, call)
     }
 
@@ -208,32 +143,18 @@ impl RebuildHoleExposeDie {
             return Ok(());
         }
         let player = player.ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
-        let active = world
-            .players
-            .get_nth(player)
-            .is_some_and(|p| !p.observer && !p.is_player_dead);
-        let under_construction = world
-            .objects
-            .find(us)
-            .is_some_and(|o| o.test_status(OBJECT_STATUS_UNDER_CONSTRUCTION));
+        let active = world.players.get_nth(player).is_some_and(|p| !p.observer && !p.is_player_dead);
+        let under_construction = world.objects.find(us).is_some_and(|o| o.test_status(OBJECT_STATUS_UNDER_CONSTRUCTION));
         if !active || (under_construction && !crate::logic::modules::plant(1792)) {
             return Ok(());
         }
         // "create the hole"; `ThingFactory::newObject(NULL)` throws
-        let template = world
-            .thing_factory_find_template(&modd.hole_name)
-            .ok_or_else(|| IniError::new(IniErrorKind::BadArg))?;
+        let template = world.thing_factory_find_template(&modd.hole_name).ok_or_else(|| IniError::new(IniErrorKind::BadArg))?;
         let team = world.get_team(us);
         let hole = world.crate_new_object(template, team);
         let (pos, angle, geom, name, us_template) = {
             let o = world.objects.find(us).expect("the dying object");
-            (
-                o.get_position(),
-                o.thing.orientation(),
-                o.geometry_info.clone(),
-                o.name.clone(),
-                o.template().get_template_id(),
-            )
+            (o.get_position(), o.thing.orientation(), o.geometry_info.clone(), o.name.clone(), o.template().get_template_id())
         };
         // "set the position of the hole to that of our position"
         world.set_position(hole, &pos);
@@ -245,32 +166,16 @@ impl RebuildHoleExposeDie {
         // "add the hole to the pathfind map"
         world.cut(CutCall::PathfinderAddObjectToPathfindMap { object: hole });
         // "set the max health of the hole"
-        let body = world
-            .objects
-            .find(hole)
-            .and_then(|o| o.body)
-            .ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
+        let body = world.objects.find(hole).and_then(|o| o.body).ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
         world.module_call(hole, body, ModuleCall::SetMaxHealth(modd.hole_max_health));
         // "set the information in the hole about what to build"
-        if let Some(rhbi) = world
-            .find_module(hole, b"RebuildHoleBehavior")
-            .filter(|_| !crate::logic::modules::plant(1793))
-        {
+        if let Some(rhbi) = world.find_module(hole, b"RebuildHoleBehavior").filter(|_| !crate::logic::modules::plant(1793)) {
             // "start the rebuild process"
-            world.module_call(
-                hole,
-                rhbi,
-                ModuleCall::StartRebuildProcess {
-                    template: us_template,
-                    spawner: us,
-                },
-            );
+            world.module_call(hole, rhbi, ModuleCall::StartRebuildProcess { template: us_template, spawner: us });
         }
         if modd.transfer_attackers && !crate::logic::modules::plant(1794) {
             for obj in world.objects.ids_in_order() {
-                let Some(ai) = world.objects.find(obj).and_then(|o| o.ai) else {
-                    continue;
-                };
+                let Some(ai) = world.objects.find(obj).and_then(|o| o.ai) else { continue };
                 world.module_call(obj, ai, ModuleCall::AiTransferAttack { from: us, to: hole });
             }
         }
@@ -322,7 +227,5 @@ impl Snapshot for RebuildHoleExposeDie {
 
 /// The factory's `NewModuleDataProc` for `RebuildHoleExposeDie`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::RebuildHoleExposeDie(Arc::new(
-        RebuildHoleExposeDieModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::RebuildHoleExposeDie(Arc::new(RebuildHoleExposeDieModuleData::friend_new_module_data(ini)?)))
 }

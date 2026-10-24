@@ -33,19 +33,12 @@ use std::sync::Arc;
 
 use crate::common::base_type::Coord3D;
 use crate::common::game_type::INVALID_ID;
-use crate::common::ini::{
-    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
-};
+use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
-use crate::common::object_status_types::{
-    ObjectStatusMaskType, OBJECT_STATUS_MASKED, OBJECT_STATUS_NO_COLLISIONS,
-    OBJECT_STATUS_UNSELECTABLE,
-};
+use crate::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_MASKED, OBJECT_STATUS_NO_COLLISIONS, OBJECT_STATUS_UNSELECTABLE};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE,
-};
+use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -65,39 +58,21 @@ pub struct HijackerUpdateModuleData {
 
 /// `HijackerUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<HijackerUpdateModuleData>; 3] = [
-    FieldParse::new(
-        "AttachToTargetBone",
-        |ini, d, _| {
-            d.attach_to_bone = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
-    FieldParse::new(
-        "ParachuteName",
-        |ini, d, _| {
-            d.parachute_name = ini.parse_ascii_string()?;
-            Ok(())
-        },
-        UserData::None,
-    ),
+    FieldParse::new("AttachToTargetBone", |ini, d, _| { d.attach_to_bone = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new("ParachuteName", |ini, d, _| { d.parachute_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
 impl HijackerUpdateModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(
-        p: &mut MultiIniFieldParse<'_, HijackerUpdateModuleData>,
-    ) -> IniResult<()> {
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, HijackerUpdateModuleData>) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(
-        ini: Option<&mut Ini<'_>>,
-    ) -> IniResult<HijackerUpdateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<HijackerUpdateModuleData> {
         let mut data = HijackerUpdateModuleData::default();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, HijackerUpdateModuleData::build_field_parse)?;
@@ -128,30 +103,17 @@ pub struct HijackerUpdate {
 impl PartialEq for HijackerUpdate {
     /// The same object, the same data object (upstream compares pointers) and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object()
-            && Arc::ptr_eq(&self.data, &other.data)
-            && self.state_words() == other.state_words()
+        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.state_words() == other.state_words()
     }
 }
 
 impl HijackerUpdate {
     /// `HijackerUpdate(thing, moduleData)`: no target, not updating, not in a vehicle, not airborne, the eject position zero.
-    pub fn unconstructed(
-        object: ObjectId,
-        module_data: Option<Arc<HijackerUpdateModuleData>>,
-    ) -> IniResult<Self> {
+    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<HijackerUpdateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(HijackerUpdate {
-            update,
-            data,
-            target_id: INVALID_ID,
-            eject_pos: Coord3D::default(),
-            update_flag: false,
-            is_in_vehicle: false,
-            was_target_airborne: false,
-        })
+        Ok(HijackerUpdate { update, data, target_id: INVALID_ID, eject_pos: Coord3D::default(), update_flag: false, is_in_vehicle: false, was_target_airborne: false })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -201,12 +163,7 @@ impl HijackerUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(
-        &mut self,
-        world: &mut World,
-        me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -235,25 +192,15 @@ impl HijackerUpdate {
             self.was_target_airborne = false;
             return Ok(());
         }
-        if let Some(target) = self
-            .get_target_object(world)
-            .filter(|_| !crate::logic::modules::plant(1721))
-        {
+        if let Some(target) = self.get_target_object(world).filter(|_| !crate::logic::modules::plant(1721)) {
             // "If hijacker has hijacked a vehicle, he needs to move along with it..."
-            let pos = world
-                .objects
-                .find(target)
-                .map_or_else(Coord3D::default, |o| o.get_position());
+            let pos = world.objects.find(target).map_or_else(Coord3D::default, |o| o.get_position());
             world.set_position(obj, &pos);
             self.was_target_airborne = world.is_significantly_above_terrain(target);
             self.eject_pos = pos;
             // "if while I am driving this American war vehicle, I gain skill points, I get to keep them when I wreck the vehicle"
             let level = |w: &World, id| w.objects.find(id).map_or(0, |o| o.experience.level as i32);
-            let highest = level(world, target).max(if crate::logic::modules::plant(1722) {
-                0
-            } else {
-                level(world, obj)
-            });
+            let highest = level(world, target).max(if crate::logic::modules::plant(1722) { 0 } else { level(world, obj) });
             world.crate_experience_set_veterancy_level(obj, highest, true);
             world.crate_experience_set_veterancy_level(target, highest, true);
             return Ok(());
@@ -265,11 +212,7 @@ impl HijackerUpdate {
             world.contain_drawable_set_hidden(obj, false);
         }
         let mut bits = ObjectStatusMaskType::new();
-        for b in [
-            OBJECT_STATUS_NO_COLLISIONS,
-            OBJECT_STATUS_MASKED,
-            OBJECT_STATUS_UNSELECTABLE,
-        ] {
+        for b in [OBJECT_STATUS_NO_COLLISIONS, OBJECT_STATUS_MASKED, OBJECT_STATUS_UNSELECTABLE] {
             bits.set(b, 1);
         }
         world.set_status(obj, bits, false);
@@ -281,22 +224,8 @@ impl HijackerUpdate {
                 let team = world.get_team(obj);
                 let container = world.crate_new_object(tmpl, team);
                 world.set_position(container, &self.eject_pos);
-                let contain = world
-                    .objects
-                    .find(container)
-                    .and_then(|o| o.contain)
-                    .ok_or_else(|| IniError::undefined(Undefined::NullContainModule))?;
-                if world
-                    .module_call(
-                        container,
-                        contain,
-                        ModuleCall::IsValidContainerFor {
-                            obj,
-                            check_capacity: true,
-                        },
-                    )
-                    .as_bool()
-                {
+                let contain = world.objects.find(container).and_then(|o| o.contain).ok_or_else(|| IniError::undefined(Undefined::NullContainModule))?;
+                if world.module_call(container, contain, ModuleCall::IsValidContainerFor { obj, check_capacity: true }).as_bool() {
                     world.module_call(container, contain, ModuleCall::AddToContain(obj));
                 }
             }
@@ -331,12 +260,7 @@ impl UpdateBehavior for HijackerUpdate {
         xfer.xfer_bool(&mut self.is_in_vehicle)?;
         xfer.xfer_bool(&mut self.was_target_airborne)
     }
-    fn other_call(
-        &mut self,
-        world: &mut World,
-        _me: ModuleHandle,
-        call: ModuleCall,
-    ) -> ModuleReply {
+    fn other_call(&mut self, world: &mut World, _me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
             ModuleCall::HijackerSetTargetObject(id) => {
                 self.set_target_object((id != INVALID_ID).then_some(id));
@@ -352,11 +276,7 @@ impl UpdateBehavior for HijackerUpdate {
             }
             // "set the target object": the object of the loaded id, if there is one
             ModuleCall::LoadPostProcess => {
-                let found = world
-                    .objects
-                    .find(self.target_id)
-                    .map(|_| self.target_id)
-                    .filter(|_| !crate::logic::modules::plant(1726));
+                let found = world.objects.find(self.target_id).map(|_| self.target_id).filter(|_| !crate::logic::modules::plant(1726));
                 self.set_target_object(found);
                 ModuleReply::Done
             }
@@ -393,7 +313,5 @@ impl Snapshot for HijackerUpdate {
 
 /// The factory's `NewModuleDataProc` for `HijackerUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::HijackerUpdate(Arc::new(
-        HijackerUpdateModuleData::friend_new_module_data(ini)?,
-    )))
+    Ok(ModuleDataKind::HijackerUpdate(Arc::new(HijackerUpdateModuleData::friend_new_module_data(ini)?)))
 }

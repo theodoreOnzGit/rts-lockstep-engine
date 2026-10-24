@@ -66,12 +66,7 @@ impl Default for XferSave {
 impl XferSave {
     /// `XferSave()`: mode `XFER_SAVE`, no file, empty block stack.
     pub fn new() -> Self {
-        XferSave {
-            state: XferState::new(XferMode::Save),
-            file: None,
-            last_file: Vec::new(),
-            block_stack: Vec::new(),
-        }
+        XferSave { state: XferState::new(XferMode::Save), file: None, last_file: Vec::new(), block_stack: Vec::new() }
     }
 
     /// The file contents: the open file, or the last one closed.

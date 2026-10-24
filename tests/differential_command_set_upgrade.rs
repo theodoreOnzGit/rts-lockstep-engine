@@ -170,17 +170,12 @@ fn mask_from(w: &[u32]) -> UpgradeMaskType {
 // -- reading the data --
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<CommandSetUpgradeModuleData>) -> IniResult<()> {
-    *out = Some(CommandSetUpgradeModuleData::friend_new_module_data(Some(
-        ini,
-    ))?);
+    *out = Some(CommandSetUpgradeModuleData::friend_new_module_data(Some(ini))?);
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<CommandSetUpgradeModuleData>) {
-    let blocks = [BlockParse {
-        token: "D",
-        parse: read_block,
-    }];
+    let blocks = [BlockParse { token: "D", parse: read_block }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -194,9 +189,7 @@ fn gen_name(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
     }
     match g.below(100) {
         0..=64 if !upgrades.is_empty() => upgrades[g.below(upgrades.len() as u32) as usize].clone(),
-        65..=74 if !upgrades.is_empty() => {
-            upgrades[g.below(upgrades.len() as u32) as usize].to_lowercase()
-        }
+        65..=74 if !upgrades.is_empty() => upgrades[g.below(upgrades.len() as u32) as usize].to_lowercase(),
         75..=76 => format!("Unknown{}", g.below(3)),
         77 => "Up9".to_string(),
         78..=79 => pick(g, &["None", "none", "NONE"]).to_string(),
@@ -207,10 +200,7 @@ fn gen_name(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
 
 fn gen_list(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
     let n = 1 + g.below(3);
-    (0..n)
-        .map(|_| gen_name(g, upgrades, clean))
-        .collect::<Vec<_>>()
-        .join(" ")
+    (0..n).map(|_| gen_name(g, upgrades, clean)).collect::<Vec<_>>().join(" ")
 }
 
 fn gen_data(g: &mut Gen, upgrades: &[String], clean: bool) -> Vec<u8> {
@@ -283,39 +273,21 @@ fn rust_run(
     put_str(&mut v, &data.trigger_alt);
 
     let mut w = World::new();
-    w.statics = Arc::new(GameStatics {
-        upgrade_center: ctx.center,
-        ..Default::default()
-    });
+    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, ..Default::default() });
     w.names = ctx.names;
     w.cuts.neutral_default_team = 1;
-    w.teams
-        .insert_team(rts_lockstep_engine::logic::world::team::Team::new(1, 0))
-        .unwrap();
+    w.teams.insert_team(rts_lockstep_engine::logic::world::team::Team::new(1, 0)).unwrap();
     if has_player {
         w.cuts.team_players.insert(1, 0);
         w.cuts.player_upgrades.insert(0, mask_from(&player_mask));
     }
     w.cuts.trace = Some(Vec::new());
     let kind = ModuleDataKind::CommandSetUpgrade(Arc::new(data));
-    let m = rts_lockstep_engine::logic::modules::new_module(
-        0,
-        b"CommandSetUpgrade",
-        b"ModuleTag_CS",
-        &kind,
-    )
-    .unwrap()
-    .unwrap();
-    let mut status =
-        rts_lockstep_engine::common::object_status_types::ObjectStatusMaskType::default();
+    let m = rts_lockstep_engine::logic::modules::new_module(0, b"CommandSetUpgrade", b"ModuleTag_CS", &kind).unwrap().unwrap();
+    let mut status = rts_lockstep_engine::common::object_status_types::ObjectStatusMaskType::default();
     status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, 1);
     let id = w
-        .new_object(NewObject {
-            template: Arc::new(ThingTemplate::new(0)),
-            status,
-            team: None,
-            modules: vec![m],
-        })
+        .new_object(NewObject { template: Arc::new(ThingTemplate::new(0)), status, team: None, modules: vec![m] })
         .unwrap();
     {
         let o = w.objects.find_mut(id).unwrap();
@@ -329,35 +301,21 @@ fn rust_run(
         let events_before = w.events.events().len();
         w.cuts.trace = Some(Vec::new());
         let res = match o[0] {
-            0 => w
-                .module_call(id, idx, ModuleCall::WouldUpgrade(mask))
-                .as_bool(),
+            0 => w.module_call(id, idx, ModuleCall::WouldUpgrade(mask)).as_bool(),
             1 => {
-                let r = w
-                    .module_call(id, idx, ModuleCall::AttemptUpgrade(mask))
-                    .as_bool();
+                let r = w.module_call(id, idx, ModuleCall::AttemptUpgrade(mask)).as_bool();
                 if r {
                     fired[0] += 1;
-                    fired[1] += u64::from(
-                        w.objects
-                            .find(id)
-                            .unwrap()
-                            .command_set_string_override
-                            .starts_with(b"Alt"),
-                    );
+                    fired[1] += u64::from(w.objects.find(id).unwrap().command_set_string_override.starts_with(b"Alt"));
                 }
                 r
             }
-            2 => w
-                .module_call(id, idx, ModuleCall::ResetUpgrade(mask))
-                .as_bool(),
+            2 => w.module_call(id, idx, ModuleCall::ResetUpgrade(mask)).as_bool(),
             3 => {
                 w.module_call(id, idx, ModuleCall::ForceRefreshUpgrade);
                 false
             }
-            4 => w
-                .module_call(id, idx, ModuleCall::IsAlreadyUpgraded)
-                .as_bool(),
+            4 => w.module_call(id, idx, ModuleCall::IsAlreadyUpgraded).as_bool(),
             5 => {
                 w.objects.find_mut(id).unwrap().object_upgrades_completed = mask;
                 false
@@ -372,17 +330,12 @@ fn rust_run(
         let threw = w.cuts.module_errors.len() > errors_before;
         put_i32(&mut v, if threw { 2 } else { 0 });
         v.push(u8::from(res && !threw));
-        v.push(u8::from(
-            w.module_call(id, idx, ModuleCall::IsAlreadyUpgraded)
-                .as_bool(),
-        ));
+        v.push(u8::from(w.module_call(id, idx, ModuleCall::IsAlreadyUpgraded).as_bool()));
         // the effects, in order: the trace has each removal and each event, the events the FX names
         let fxs: Vec<Vec<u8>> = w.events.events()[events_before..]
             .iter()
             .filter_map(|e| match e {
-                ClientEvent::Object(ObjectClientEvent::FxListDoFxObj { fx, .. }) => {
-                    Some(fx.clone())
-                }
+                ClientEvent::Object(ObjectClientEvent::FxListDoFxObj { fx, .. }) => Some(fx.clone()),
                 _ => None,
             })
             .collect();
@@ -401,70 +354,34 @@ fn rust_run(
         for l in &log {
             put_str(&mut v, l.as_bytes());
         }
-        put_str(
-            &mut v,
-            &w.objects.find(id).unwrap().command_set_string_override,
-        );
+        put_str(&mut v, &w.objects.find(id).unwrap().command_set_string_override);
     }
-    let keys = PROBE
-        .iter()
-        .map(|n| w.names.name_to_key(n.as_bytes()).0)
-        .collect();
+    let keys = PROBE.iter().map(|n| w.names.name_to_key(n.as_bytes()).0).collect();
     (v, keys, w, fired)
 }
 
-const PROBE: [&str; 8] = [
-    "none", "Up0", "Up3", "Unknown0", "Unknown2", "Up9", "SetA", "zz_fresh",
-];
+const PROBE: [&str; 8] = ["none", "Up0", "Up3", "Unknown0", "Unknown2", "Up9", "SetA", "zz_fresh"];
 
 #[test]
 fn command_set_upgrade_matches_upstream() {
     let _lock = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let cases: usize = std::env::var("L9EX_CASES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(12_000);
+    let cases: usize = std::env::var("L9EX_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(12_000);
     let mut g = Gen::new(0x9C5E);
     let table = blocks();
     let mut read = Check::new("CommandSetUpgradeModuleData read (throw, message)");
     let mut run = Check::new("CommandSetUpgrade ops (data, results, effects, command set)");
     let mut keys = Check::new("name keys after the ops");
-    let (mut read_failed, mut ops_run, mut fired, mut alt, mut threw, mut removals, mut excluded) =
-        (0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+    let (mut read_failed, mut ops_run, mut fired, mut alt, mut threw, mut removals, mut excluded) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
     for case in 0..cases {
         let init_names = g.below(3) != 0;
         let init_center = g.below(5) != 0;
-        let n_up = if g.below(10) == 0 {
-            0
-        } else {
-            1 + g.below(8) as usize
-        };
+        let n_up = if g.below(10) == 0 { 0 } else { 1 + g.below(8) as usize };
         let upgrades: Vec<String> = (0..n_up).map(|i| format!("Up{i}")).collect();
-        let defs: String = upgrades
-            .iter()
-            .map(|u| format!("Upgrade {u}\nEnd\n"))
-            .collect();
+        let defs: String = upgrades.iter().map(|u| format!("Upgrade {u}\nEnd\n")).collect();
         let mut ctx = Ctx::new(init_names, init_center);
-        Ini::load(
-            b"Data\\INI\\Up.ini",
-            defs.as_bytes(),
-            IniLoadType::Overwrite,
-            None,
-            &table,
-            &mut ctx,
-        )
-        .expect("upgrades load");
+        Ini::load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ctx).expect("upgrades load");
         cpp_reset(init_names, init_center);
-        assert_eq!(
-            cpp_load(
-                b"Data\\INI\\Up.ini",
-                defs.as_bytes(),
-                IniLoadType::Overwrite,
-                false
-            )
-            .status,
-            0
-        );
+        assert_eq!(cpp_load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, false).status, 0);
 
         let clean = g.below(10) < 7;
         let text = gen_data(&mut g, &upgrades, clean);
@@ -501,14 +418,7 @@ fn command_set_upgrade_matches_upstream() {
         // Rust first: a case that reaches upstream undefined behaviour (a mux list naming `None`, which
         // upstream dereferences as a null template) is counted and never sent to the C++
         let rust = if outcome.status == 0 {
-            let (rd, rk, w, f) = rust_run(
-                ctx,
-                data.expect("read ok"),
-                has_player,
-                player_mask,
-                obj_mask,
-                &ops,
-            );
+            let (rd, rk, w, f) = rust_run(ctx, data.expect("read ok"), has_player, player_mask, obj_mask, &ops);
             if w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined()) {
                 excluded += 1;
                 continue;
@@ -551,18 +461,8 @@ fn command_set_upgrade_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || {
-            format!("case {case}: upgrades {upgrades:?} player {has_player} {player_mask:?} obj {obj_mask:?}, file {:?}, ops {ops:?}", show(&text))
-        };
-        read.eq(
-            &outcome,
-            &Outcome {
-                status,
-                detail,
-                crc: 0,
-            },
-            what,
-        );
+        let what = || format!("case {case}: upgrades {upgrades:?} player {has_player} {player_mask:?} obj {obj_mask:?}, file {:?}, ops {ops:?}", show(&text));
+        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
         let Some((rd, rk, w)) = rust else {
             read_failed += 1;
             continue;
@@ -587,8 +487,5 @@ fn command_set_upgrade_matches_upstream() {
     read.finish();
     run.finish();
     keys.finish();
-    assert!(
-        read_failed > 50 && ops_run > 10_000 && fired > 2000 && alt > 300 && threw > 50,
-        "the generator must reach every path"
-    );
+    assert!(read_failed > 50 && ops_run > 10_000 && fired > 2000 && alt > 300 && threw > 50, "the generator must reach every path");
 }

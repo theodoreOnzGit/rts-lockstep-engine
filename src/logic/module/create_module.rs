@@ -55,9 +55,7 @@ impl CreateModuleData {
     // --- p1w10-sonnet ---
     /// `CreateModule::friend_newModuleData(ini)` (the data proc of the create modules that have no data class of
     /// their own): new data, read with `initFromINIMultiProc` if there is an `ini`.
-    pub fn friend_new_module_data(
-        ini: Option<&mut crate::common::ini::Ini<'_>>,
-    ) -> IniResult<CreateModuleData> {
+    pub fn friend_new_module_data(ini: Option<&mut crate::common::ini::Ini<'_>>) -> IniResult<CreateModuleData> {
         let mut data = CreateModuleData::new();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, CreateModuleData::build_field_parse)?;
@@ -82,10 +80,7 @@ impl CreateModule {
     pub fn new(object: ObjectId, module_data: Option<Arc<CreateModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let behavior = BehaviorModule::new(object, Some(ModuleDataKind::Create(data)))?;
-        Ok(CreateModule {
-            behavior,
-            need_to_run_on_build_complete: true,
-        })
+        Ok(CreateModule { behavior, need_to_run_on_build_complete: true })
     }
 
     /// `CreateModule::getInterfaceMask()`: `MODULEINTERFACE_CREATE`.

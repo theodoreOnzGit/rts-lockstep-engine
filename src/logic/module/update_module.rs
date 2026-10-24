@@ -194,21 +194,10 @@ impl UpdateModule {
     /// the index in the logic list -1. `update_phase` is the concrete class's
     /// `getUpdatePhase()` (the base's is `PHASE_NORMAL`). `INI_INVALID_DATA`
     /// for null data.
-    pub fn new(
-        object: ObjectId,
-        module_data: Option<Arc<UpdateModuleData>>,
-        update_phase: SleepyUpdatePhase,
-    ) -> IniResult<Self> {
+    pub fn new(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>, update_phase: SleepyUpdatePhase) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let behavior = BehaviorModule::new(object, Some(ModuleDataKind::Update(data.clone())))?;
-        Ok(UpdateModule {
-            behavior,
-            data,
-            next_call_frame_and_phase: 0,
-            index_in_logic: -1,
-            update_phase,
-            disabled_types_to_process: DisabledMaskType::NONE,
-        })
+        Ok(UpdateModule { behavior, data, next_call_frame_and_phase: 0, index_in_logic: -1, update_phase, disabled_types_to_process: DisabledMaskType::NONE })
     }
 
     /// `UpdateModule::getInterfaceMask()`: `MODULEINTERFACE_UPDATE`.
@@ -281,13 +270,7 @@ impl UpdateModule {
     /// default to [`FOREVER`]): the sleep time until the earliest of the
     /// frames, given the current frame `now`. A frame in the past gives
     /// `UPDATE_SLEEP_NONE` (upstream asserts in debug builds).
-    pub fn frame_to_sleep_time(
-        now: u32,
-        frame1: u32,
-        frame2: u32,
-        frame3: u32,
-        frame4: u32,
-    ) -> UpdateSleepTime {
+    pub fn frame_to_sleep_time(now: u32, frame1: u32, frame2: u32, frame3: u32, frame4: u32) -> UpdateSleepTime {
         let frame = frame1.min(frame2).min(frame3).min(frame4);
         if frame > now {
             update_sleep(frame - now)
@@ -372,12 +355,7 @@ mod tests {
 
     #[test]
     fn the_next_call_frame_and_phase_share_one_word() {
-        for phase in [
-            SleepyUpdatePhase::Initial,
-            SleepyUpdatePhase::Physics,
-            SleepyUpdatePhase::Normal,
-            SleepyUpdatePhase::Final,
-        ] {
+        for phase in [SleepyUpdatePhase::Initial, SleepyUpdatePhase::Physics, SleepyUpdatePhase::Normal, SleepyUpdatePhase::Final] {
             let mut m = module(phase);
             m.friend_set_next_call_frame(100);
             assert_eq!(m.friend_get_priority(), (100 << 2) | phase as u32);
@@ -385,10 +363,7 @@ mod tests {
             assert_eq!(m.friend_get_next_call_phase(), phase);
         }
         // within a frame the lower phase sorts first, across frames the earlier frame
-        let (mut a, mut b) = (
-            module(SleepyUpdatePhase::Final),
-            module(SleepyUpdatePhase::Initial),
-        );
+        let (mut a, mut b) = (module(SleepyUpdatePhase::Final), module(SleepyUpdatePhase::Initial));
         a.friend_set_next_call_frame(10);
         b.friend_set_next_call_frame(11);
         assert!(a.friend_get_priority() < b.friend_get_priority());
@@ -412,10 +387,7 @@ mod tests {
         assert_eq!(f(10, 12, FOREVER, FOREVER, FOREVER), update_sleep(2));
         assert_eq!(f(10, FOREVER, 15, FOREVER, FOREVER), update_sleep(5));
         assert_eq!(f(10, 40, 30, 20, 25), update_sleep(10));
-        assert_eq!(
-            f(10, FOREVER, FOREVER, FOREVER, FOREVER),
-            update_sleep(FOREVER - 10)
-        );
+        assert_eq!(f(10, FOREVER, FOREVER, FOREVER, FOREVER), update_sleep(FOREVER - 10));
         // now: sleep none; in the past: sleep none (a DEBUG_CRASH upstream)
         assert_eq!(f(10, 10, FOREVER, FOREVER, FOREVER), UPDATE_SLEEP_NONE);
         assert_eq!(f(10, 3, FOREVER, FOREVER, FOREVER), UPDATE_SLEEP_NONE);
@@ -440,10 +412,7 @@ mod tests {
     fn set_wake_frame_is_now_plus_delay_unsigned() {
         assert_eq!(UpdateModule::set_wake_frame(100, update_sleep(7)), 107);
         assert_eq!(UpdateModule::set_wake_frame(100, UPDATE_SLEEP_NONE), 101);
-        assert_eq!(
-            UpdateModule::set_wake_frame(0xffff_fff0, update_sleep(0x20)),
-            0x10
-        );
+        assert_eq!(UpdateModule::set_wake_frame(0xffff_fff0, update_sleep(0x20)), 0x10);
         assert_eq!(UPDATE_SLEEP_INVALID.0, 0);
         assert_eq!(UPDATE_SLEEP_FOREVER.0, FOREVER);
     }
@@ -486,20 +455,9 @@ mod tests {
             out.push(UpdateModuleData::friend_new_module_data(Some(ini)));
             Ok(())
         }
-        static BLOCKS: [BlockParse<Vec<IniResult<UpdateModuleData>>>; 1] = [BlockParse {
-            token: "D",
-            parse: block,
-        }];
+        static BLOCKS: [BlockParse<Vec<IniResult<UpdateModuleData>>>; 1] = [BlockParse { token: "D", parse: block }];
         let mut out = Vec::new();
-        Ini::load(
-            b"u.ini",
-            b"D\nEnd\nD\n Foo = 1\nEnd\n",
-            IniLoadType::Overwrite,
-            None,
-            &BLOCKS,
-            &mut out,
-        )
-        .unwrap_err();
+        Ini::load(b"u.ini", b"D\nEnd\nD\n Foo = 1\nEnd\n", IniLoadType::Overwrite, None, &BLOCKS, &mut out).unwrap_err();
         assert!(out[0].is_ok());
         assert_eq!(out[1].clone().unwrap_err().kind, IniErrorKind::UnknownToken);
     }

@@ -169,14 +169,7 @@ impl<T> Seg<T> {
 
 impl<T: Copy + PartialEq> Arr<T> {
     fn new(len: usize, zero: T) -> Self {
-        Arr {
-            len,
-            segs: if len > 0 {
-                vec![Seg::Run(len, zero)]
-            } else {
-                Vec::new()
-            },
-        }
+        Arr { len, segs: if len > 0 { vec![Seg::Run(len, zero)] } else { Vec::new() } }
     }
     /// The number of elements.
     pub fn len(&self) -> usize {
@@ -421,18 +414,8 @@ pub fn shader_reset() -> u32 {
     shader_set(&mut b, MASK_TEXTURING, SHIFT_TEXTURING, 0);
     shader_set(&mut b, MASK_ALPHATEST, SHIFT_ALPHATEST, 0);
     shader_set(&mut b, MASK_CULLMODE, SHIFT_CULLMODE, 1); // CULL_MODE_ENABLE
-    shader_set(
-        &mut b,
-        MASK_POSTDETAILCOLORFUNC,
-        SHIFT_POSTDETAILCOLORFUNC,
-        0,
-    );
-    shader_set(
-        &mut b,
-        MASK_POSTDETAILALPHAFUNC,
-        SHIFT_POSTDETAILALPHAFUNC,
-        0,
-    );
+    shader_set(&mut b, MASK_POSTDETAILCOLORFUNC, SHIFT_POSTDETAILCOLORFUNC, 0);
+    shader_set(&mut b, MASK_POSTDETAILALPHAFUNC, SHIFT_POSTDETAILALPHAFUNC, 0);
     shader_set(&mut b, MASK_NPATCHENABLE, SHIFT_NPATCHENABLE, 0);
     b
 }
@@ -441,68 +424,18 @@ pub fn shader_reset() -> u32 {
 /// its bits.
 pub fn convert_shader(s: &W3dShaderStruct) -> u32 {
     let mut b = shader_reset();
-    shader_set(
-        &mut b,
-        MASK_DEPTHCOMPARE,
-        SHIFT_DEPTHCOMPARE,
-        u32::from(s.depth_compare),
-    );
-    shader_set(
-        &mut b,
-        MASK_DEPTHMASK,
-        SHIFT_DEPTHMASK,
-        u32::from(s.depth_mask),
-    );
+    shader_set(&mut b, MASK_DEPTHCOMPARE, SHIFT_DEPTHCOMPARE, u32::from(s.depth_compare));
+    shader_set(&mut b, MASK_DEPTHMASK, SHIFT_DEPTHMASK, u32::from(s.depth_mask));
     shader_set(&mut b, MASK_COLORMASK, SHIFT_COLORMASK, 1);
-    shader_set(
-        &mut b,
-        MASK_DSTBLEND,
-        SHIFT_DSTBLEND,
-        u32::from(s.dest_blend),
-    );
+    shader_set(&mut b, MASK_DSTBLEND, SHIFT_DSTBLEND, u32::from(s.dest_blend));
     shader_set(&mut b, MASK_FOG, SHIFT_FOG, 0);
-    shader_set(
-        &mut b,
-        MASK_PRIGRADIENT,
-        SHIFT_PRIGRADIENT,
-        u32::from(s.pri_gradient),
-    );
-    shader_set(
-        &mut b,
-        MASK_SECGRADIENT,
-        SHIFT_SECGRADIENT,
-        u32::from(s.sec_gradient),
-    );
-    shader_set(
-        &mut b,
-        MASK_SRCBLEND,
-        SHIFT_SRCBLEND,
-        u32::from(s.src_blend),
-    );
-    shader_set(
-        &mut b,
-        MASK_TEXTURING,
-        SHIFT_TEXTURING,
-        u32::from(s.texturing),
-    );
-    shader_set(
-        &mut b,
-        MASK_ALPHATEST,
-        SHIFT_ALPHATEST,
-        u32::from(s.alpha_test),
-    );
-    shader_set(
-        &mut b,
-        MASK_POSTDETAILCOLORFUNC,
-        SHIFT_POSTDETAILCOLORFUNC,
-        u32::from(s.detail_color_func),
-    );
-    shader_set(
-        &mut b,
-        MASK_POSTDETAILALPHAFUNC,
-        SHIFT_POSTDETAILALPHAFUNC,
-        u32::from(s.detail_alpha_func),
-    );
+    shader_set(&mut b, MASK_PRIGRADIENT, SHIFT_PRIGRADIENT, u32::from(s.pri_gradient));
+    shader_set(&mut b, MASK_SECGRADIENT, SHIFT_SECGRADIENT, u32::from(s.sec_gradient));
+    shader_set(&mut b, MASK_SRCBLEND, SHIFT_SRCBLEND, u32::from(s.src_blend));
+    shader_set(&mut b, MASK_TEXTURING, SHIFT_TEXTURING, u32::from(s.texturing));
+    shader_set(&mut b, MASK_ALPHATEST, SHIFT_ALPHATEST, u32::from(s.alpha_test));
+    shader_set(&mut b, MASK_POSTDETAILCOLORFUNC, SHIFT_POSTDETAILCOLORFUNC, u32::from(s.detail_color_func));
+    shader_set(&mut b, MASK_POSTDETAILALPHAFUNC, SHIFT_POSTDETAILALPHAFUNC, u32::from(s.detail_alpha_func));
     b
 }
 
@@ -701,13 +634,7 @@ impl MatDesc {
     /// `Install_UV_Array(pass, stage, uvs, count)`: shares an installed
     /// array with the same CRC, else installs a copy in the first free slot
     /// (if any).
-    fn install_uv_array(
-        &mut self,
-        pass: i32,
-        stage: i32,
-        uvs: &Arr<[f32; 2]>,
-        count: i32,
-    ) -> W3dResult<()> {
+    fn install_uv_array(&mut self, pass: i32, stage: i32, uvs: &Arr<[f32; 2]>, count: i32) -> W3dResult<()> {
         let n = count.max(0) as usize;
         let crc = uv_crc(uvs, n);
         if self.uv.len() >= MAX_UV_ARRAYS {
@@ -720,10 +647,7 @@ impl MatDesc {
             return Ok(());
         }
         alloc(count, 8)?;
-        self.uv.push(UvArray {
-            uvs: uvs.head(n),
-            crc,
-        });
+        self.uv.push(UvArray { uvs: uvs.head(n), crc });
         self.passes[p].uv_source[s] = self.uv.len() as i32 - 1;
         Ok(())
     }
@@ -772,9 +696,7 @@ fn crc_feed_repeated(state: u32, block: &[u8], times: usize) -> u32 {
         c: u32,
     }
     fn mat(cols: &[u32; 32], v: u32) -> u32 {
-        (0..32)
-            .filter(|i| v >> i & 1 != 0)
-            .fold(0, |a, i| a ^ cols[i])
+        (0..32).filter(|i| v >> i & 1 != 0).fold(0, |a, i| a ^ cols[i])
     }
     // f after g
     fn compose(f: &Affine, g: &Affine) -> Affine {
@@ -782,10 +704,7 @@ fn crc_feed_repeated(state: u32, block: &[u8], times: usize) -> u32 {
         for (i, col) in cols.iter_mut().enumerate() {
             *col = mat(&f.cols, g.cols[i]);
         }
-        Affine {
-            cols,
-            c: mat(&f.cols, g.c) ^ f.c,
-        }
+        Affine { cols, c: mat(&f.cols, g.c) ^ f.c }
     }
     let c = realcrc::crc_feed(0, block);
     let mut base = Affine { cols: [0; 32], c };
@@ -830,10 +749,7 @@ struct NameBuf {
 
 impl NameBuf {
     fn new() -> Self {
-        NameBuf {
-            b: [0; 256],
-            init: 0,
-        }
+        NameBuf { b: [0; 256], init: 0 }
     }
     /// `cload.Read(&name, cload.Cur_Chunk_Length())` (result not used).
     fn read(&mut self, cload: &mut ChunkLoad<'_>) -> W3dResult<()> {
@@ -892,11 +808,7 @@ fn load_vertex_material(cload: &mut ChunkLoad<'_>) -> W3dResult<Option<VertexMat
     let name = if hasname { Some(name.string()?) } else { None };
     // Parse_W3dVertexMaterialStruct(vmat): uninitialised without an info chunk
     let info = vmat.ok_or(W3dUndefined::UninitialisedRead)?;
-    Ok(Some(VertexMaterial {
-        name,
-        info,
-        mapper_args: args,
-    }))
+    Ok(Some(VertexMaterial { name, info, mapper_args: args }))
 }
 
 /// A texture as `Load_Texture` asks the asset manager for it.
@@ -954,22 +866,11 @@ fn load_texture(cload: &mut ChunkLoad<'_>) -> W3dResult<Option<Texture>> {
                 _ => 4, // 0x00c0: MIP_LEVELS_4
             }
         };
-        (
-            Some(a),
-            mip,
-            no_lod,
-            Some((a & W3DTEXTURE_CLAMP_U != 0, a & W3DTEXTURE_CLAMP_V != 0)),
-        )
+        (Some(a), mip, no_lod, Some((a & W3DTEXTURE_CLAMP_U != 0, a & W3DTEXTURE_CLAMP_V != 0)))
     } else {
         (None, 0, false, None)
     };
-    Ok(Some(Texture {
-        name: name.string()?,
-        attributes,
-        mip_count,
-        no_lod,
-        clamp,
-    }))
+    Ok(Some(Texture { name: name.string()?, attributes, mip_count, no_lod, clamp }))
 }
 
 /// `AABTreeClass::CullNodeStruct`, as read from a [`W3dMeshAABTreeNode`].
@@ -981,12 +882,7 @@ pub struct AabNode {
     pub back_or_poly_count: u32,
 }
 
-const ZERO_NODE: AabNode = AabNode {
-    min: [0.0; 3],
-    max: [0.0; 3],
-    front_or_poly0: 0,
-    back_or_poly_count: 0,
-};
+const ZERO_NODE: AabNode = AabNode { min: [0.0; 3], max: [0.0; 3], front_or_poly0: 0, back_or_poly_count: 0 };
 
 /// `class AABTreeClass` as `Load_W3D` reads it.
 #[derive(Clone, Debug, PartialEq)]
@@ -1232,17 +1128,8 @@ pub fn load_w3d(cload: &mut ChunkLoad<'_>, options: &MeshLoadOptions) -> W3dResu
         vertices = Some(Arr::new(alloc(vertex_count, 12)?, [0.0f32; 3]));
         normals = Some(Arr::new(alloc(vertex_count, 12)?, [0.0f32; 3]));
     }
-    let default_mat = MatDesc {
-        pass_count: 1,
-        vertex_count,
-        poly_count,
-        ..MatDesc::default()
-    };
-    let alternate_mat = MatDesc {
-        vertex_count,
-        poly_count,
-        ..MatDesc::default()
-    };
+    let default_mat = MatDesc { pass_count: 1, vertex_count, poly_count, ..MatDesc::default() };
+    let alternate_mat = MatDesc { vertex_count, poly_count, ..MatDesc::default() };
 
     // the name: strlen of each, inside the header
     let container = c_string(&hb, 24)?;
@@ -1264,11 +1151,7 @@ pub fn load_w3d(cload: &mut ChunkLoad<'_>, options: &MeshLoadOptions) -> W3dResu
         vertex_count,
         bound_box_min: [header.min.x, header.min.y, header.min.z],
         bound_box_max: [header.max.x, header.max.y, header.max.z],
-        bound_sphere_center: [
-            header.sph_center.x,
-            header.sph_center.y,
-            header.sph_center.z,
-        ],
+        bound_sphere_center: [header.sph_center.x, header.sph_center.y, header.sph_center.z],
         bound_sphere_radius: header.sph_radius,
         vertices,
         normals,
@@ -1356,10 +1239,8 @@ pub fn load_w3d(cload: &mut ChunkLoad<'_>, options: &MeshLoadOptions) -> W3dResu
         let links = m.bone_links.get_or_insert_with(|| Arr::new(n, 0));
         links.map_from(0, |l| l.wrapping_add(1));
     }
-    m.needs_generated_cull_tree = (m.w3d_attributes & W3D_MESH_FLAG_COLLISION_TYPE_MASK)
-        >> W3D_MESH_FLAG_COLLISION_TYPE_SHIFT
-        != 0
-        && m.cull_tree.is_none();
+    m.needs_generated_cull_tree =
+        (m.w3d_attributes & W3D_MESH_FLAG_COLLISION_TYPE_MASK) >> W3D_MESH_FLAG_COLLISION_TYPE_SHIFT != 0 && m.cull_tree.is_none();
     Ok(Some(m))
 }
 
@@ -1371,15 +1252,9 @@ fn read_chunks(cload: &mut ChunkLoad<'_>, m: &mut Mesh, ctx: &mut Ctx) -> Rd {
     while cload.open_chunk()? {
         let ok = match cload.cur_chunk_id()? {
             W3D_CHUNK_VERTICES => read_vertices(cload, m)?,
-            W3D_CHUNK_SURRENDER_NORMALS | W3D_CHUNK_VERTEX_NORMALS => {
-                read_vertex_normals(cload, m)?
-            }
+            W3D_CHUNK_SURRENDER_NORMALS | W3D_CHUNK_VERTEX_NORMALS => read_vertex_normals(cload, m)?,
             W3D_CHUNK_TEXCOORDS => read_texcoords(cload, m, ctx)?,
-            W3D_CHUNK_MATERIALS3 => {
-                return Err(W3dError::Unsupported(
-                    "W3D_CHUNK_MATERIALS3 (legacy materials)",
-                ))
-            }
+            W3D_CHUNK_MATERIALS3 => return Err(W3dError::Unsupported("W3D_CHUNK_MATERIALS3 (legacy materials)")),
             W3D_CHUNK_TRIANGLES => read_triangles(cload, m)?,
             W3D_CHUNK_PER_TRI_MATERIALS => read_per_tri_materials(cload, m)?,
             W3D_CHUNK_MESH_USER_TEXT => read_user_text(cload, m)?,
@@ -1480,8 +1355,7 @@ fn read_texcoords(cload: &mut ChunkLoad<'_>, m: &mut Mesh, ctx: &mut Ctx) -> Rd 
         }
         let (pass, stage) = (ctx.cur_pass, ctx.cur_tex_stage);
         let uvs = ctx.temp_uv.clone();
-        m.default_mat
-            .install_uv_array(pass, stage, &uvs, elementcount)?;
+        m.default_mat.install_uv_array(pass, stage, &uvs, elementcount)?;
     }
     Ok(true)
 }
@@ -1502,14 +1376,8 @@ fn read_triangles(cload: &mut ChunkLoad<'_>, m: &mut Mesh) -> Rd {
             return Ok(false);
         }
         let t = W3dTriStruct::from_bytes(&b);
-        m.polys.as_mut().unwrap().set(
-            i,
-            [t.vindex[0] as u16, t.vindex[1] as u16, t.vindex[2] as u16],
-        );
-        m.planes
-            .as_mut()
-            .unwrap()
-            .set(i, [t.normal.x, t.normal.y, t.normal.z, -t.dist]);
+        m.polys.as_mut().unwrap().set(i, [t.vindex[0] as u16, t.vindex[1] as u16, t.vindex[2] as u16]);
+        m.planes.as_mut().unwrap().set(i, [t.normal.x, t.normal.y, t.normal.z, -t.dist]);
         m.surface_types.as_mut().unwrap().set(i, t.attributes as u8);
     }
     Ok(true)
@@ -1569,16 +1437,8 @@ fn read_vertex_colors(cload: &mut ChunkLoad<'_>, m: &mut Mesh, ctx: &mut Ctx) ->
                 return Ok(false);
             }
             let c = W3dRGBStruct::from_bytes(&b);
-            let col = [
-                f32::from(c.r) / 255.0,
-                f32::from(c.g) / 255.0,
-                f32::from(c.b) / 255.0,
-                1.0,
-            ];
-            m.default_mat.color_array[0]
-                .as_mut()
-                .unwrap()
-                .set(i, dx8_convert_color(col));
+            let col = [f32::from(c.r) / 255.0, f32::from(c.g) / 255.0, f32::from(c.b) / 255.0, 1.0];
+            m.default_mat.color_array[0].as_mut().unwrap().set(i, dx8_convert_color(col));
         }
     }
     let p = pass_index(ctx.cur_pass)?;
@@ -1632,10 +1492,7 @@ fn read_shaders(cload: &mut ChunkLoad<'_>, m: &mut Mesh) -> Rd {
             return Ok(false);
         }
         let raw = W3dShaderStruct::from_bytes(&b);
-        m.shaders.push(Shader {
-            raw,
-            bits: convert_shader(&raw),
-        });
+        m.shaders.push(Shader { raw, bits: convert_shader(&raw) });
     }
     Ok(true)
 }
@@ -1695,10 +1552,7 @@ fn read_vertex_material_ids(cload: &mut ChunkLoad<'_>, m: &mut Mesh, ctx: &Ctx) 
             let id = Mesh::check_index(u32le(&vmat.get()?), count)?;
             m.alt(use_alt).set_material(i, id, pass)?;
             if !ok {
-                let a = m.alt(use_alt).passes[pass_index(pass)?]
-                    .material_array
-                    .as_mut()
-                    .unwrap();
+                let a = m.alt(use_alt).passes[pass_index(pass)?].material_array.as_mut().unwrap();
                 a.fill_from(i, Some(id));
                 break;
             }
@@ -1708,10 +1562,7 @@ fn read_vertex_material_ids(cload: &mut ChunkLoad<'_>, m: &mut Mesh, ctx: &Ctx) 
 }
 
 fn sorts(m: &Mesh, pass: i32, bits: u32) -> bool {
-    pass == 0
-        && (bits & MASK_DSTBLEND) >> SHIFT_DSTBLEND != 0
-        && (bits & MASK_ALPHATEST) >> SHIFT_ALPHATEST == 0
-        && i32::from(m.sort_level) == SORT_LEVEL_NONE
+    pass == 0 && (bits & MASK_DSTBLEND) >> SHIFT_DSTBLEND != 0 && (bits & MASK_ALPHATEST) >> SHIFT_ALPHATEST == 0 && i32::from(m.sort_level) == SORT_LEVEL_NONE
 }
 
 fn read_shader_ids(cload: &mut ChunkLoad<'_>, m: &mut Mesh, ctx: &Ctx) -> Rd {
@@ -1751,12 +1602,7 @@ fn read_shader_ids(cload: &mut ChunkLoad<'_>, m: &mut Mesh, ctx: &Ctx) -> Rd {
 
 fn rgba_to_color(c: [u8; 4]) -> [f32; 4] {
     // W3dUtilityClass::Convert_Color(W3dRGBAStruct, Vector4 *)
-    [
-        f32::from(c[0]) / 255.0,
-        f32::from(c[1]) / 255.0,
-        f32::from(c[2]) / 255.0,
-        f32::from(c[3]) / 255.0,
-    ]
+    [f32::from(c[0]) / 255.0, f32::from(c[1]) / 255.0, f32::from(c[2]) / 255.0, f32::from(c[3]) / 255.0]
 }
 
 fn read_dcg(cload: &mut ChunkLoad<'_>, m: &mut Mesh, ctx: &Ctx) -> Rd {
@@ -1814,12 +1660,7 @@ fn read_dig(cload: &mut ChunkLoad<'_>, m: &mut Mesh, ctx: &mut Ctx) -> Rd {
         for i in 0..n {
             let ok = color.read(cload)?;
             let c = color.get()?;
-            let col = [
-                f32::from(c[0]) / 255.0,
-                f32::from(c[1]) / 255.0,
-                f32::from(c[2]) / 255.0,
-                1.0,
-            ];
+            let col = [f32::from(c[0]) / 255.0, f32::from(c[1]) / 255.0, f32::from(c[2]) / 255.0, 1.0];
             let v = dx8_convert_color(col);
             let arr = md.color_array[0].as_mut().unwrap();
             if ok {
@@ -1923,8 +1764,7 @@ fn read_stage_texcoords(cload: &mut ChunkLoad<'_>, m: &mut Mesh, ctx: &mut Ctx) 
     // Install_UV_Array(pass, stage, uvs, elementcount), even for a null uvs
     // (count 0: nothing is read through it)
     let uvs = ctx.temp_uv.clone();
-    m.alt(use_alt)
-        .install_uv_array(pass, stage, &uvs, elementcount as i32)?;
+    m.alt(use_alt).install_uv_array(pass, stage, &uvs, elementcount as i32)?;
     Ok(true)
 }
 
@@ -1969,11 +1809,7 @@ mod tests {
         for times in [0usize, 1, 2, 3, 7, 64, 1000, 4097] {
             for state in [0u32, 0xFFFF_FFFF, 0x1234_5678] {
                 let slow = (0..times).fold(state, |s, _| realcrc::crc_feed(s, &block));
-                assert_eq!(
-                    crc_feed_repeated(state, &block, times),
-                    slow,
-                    "{times} {state:x}"
-                );
+                assert_eq!(crc_feed_repeated(state, &block, times), slow, "{times} {state:x}");
             }
         }
     }

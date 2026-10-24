@@ -28,11 +28,7 @@ pub const CRC32_TABLE: [u32; 256] = {
         let mut c = i as u32;
         let mut k = 0;
         while k < 8 {
-            c = if c & 1 != 0 {
-                0xEDB8_8320 ^ (c >> 1)
-            } else {
-                c >> 1
-            };
+            c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
             k += 1;
         }
         t[i] = c;
@@ -70,14 +66,8 @@ mod tests {
     #[test]
     fn table_matches_upstream_entries() {
         // the first and last entries of upstream's table (realcrc.cpp lines 46 and 109)
-        assert_eq!(
-            &CRC32_TABLE[..4],
-            &[0x0000_0000, 0x7707_3096, 0xEE0E_612C, 0x9909_51BA]
-        );
-        assert_eq!(
-            &CRC32_TABLE[252..],
-            &[0xB40B_BE37, 0xC30C_8EA1, 0x5A05_DF1B, 0x2D02_EF8D]
-        );
+        assert_eq!(&CRC32_TABLE[..4], &[0x0000_0000, 0x7707_3096, 0xEE0E_612C, 0x9909_51BA]);
+        assert_eq!(&CRC32_TABLE[252..], &[0xB40B_BE37, 0xC30C_8EA1, 0x5A05_DF1B, 0x2D02_EF8D]);
         assert_eq!(crc_memory(b"123456789", 0), 0xCBF4_3926);
     }
 }
