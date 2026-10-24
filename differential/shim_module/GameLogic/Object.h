@@ -335,6 +335,8 @@ public:
 	Color getNightIndicatorColor() const;   /* Object.cpp lines 1669-1690 */
 	Color m_indicatorColor = 0;
 	void forceRefreshSubObjectUpgradeStatus();   /* a line */
+	ObjectShroudStatus getShroudedStatus( Int playerIndex ) const { return (ObjectShroudStatus)m_shroudR27; }   /* batch R27: the test's */
+	Int m_shroudR27 = 1;   /* OBJECTSHROUD_CLEAR */
 	/* --- end p1w13-sonnet --- */
 protected:
 	virtual Object *asObjectMeth() { return this; }

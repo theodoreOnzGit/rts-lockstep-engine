@@ -769,7 +769,7 @@ fn rust_run(ctx: &Ctx, data: [ModuleDataKind; 2], cfg_in: &[u32; 20], ops: &[[u3
                 match ev_iter.next() {
                     Some(ObjectClientEvent::Stealth { object_id, op }) => match op {
                         StealthClientOp::EffectiveOpacity { opacity, explicit } => log.push(format!("opacity {:08x} {:08x}", opacity.to_bits(), explicit.to_bits())),
-                        StealthClientOp::SecondMaterialPassOpacity(x) => log.push(format!("secondpass {:08x}", x.to_bits())),
+                        StealthClientOp::SecondMaterialPassOpacity(x) => log.push(format!("secondpass {object_id} {:08x}", x.to_bits())),
                         StealthClientOp::StealthLook(l) => {
                             tally.looks += 1;
                             log.push(format!("look {l}"))

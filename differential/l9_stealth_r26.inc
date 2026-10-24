@@ -83,7 +83,7 @@ void Eva::parseEvaMessageFromIni( INI *ini, void *instance, void *store, const v
 
 /* the calls of the stand-ins this file adds, lines of the effect log */
 void Drawable::setEffectiveOpacity( Real pulseFactor, Real explicitOpacity ) { ulog("opacity %08x %08x", realBits(pulseFactor), realBits(explicitOpacity)); }
-void Drawable::setSecondMaterialPassOpacity( Real op ) { ulog("secondpass %08x", realBits(op)); }
+void Drawable::setSecondMaterialPassOpacity( Real op ) { ulog("secondpass %d %08x", m_ownerObject ? (int)m_ownerObject->m_oid : 0, realBits(op)); }
 void Drawable::setStealthLook( StealthLookType look ) { ulog("look %d", (int)look); }
 void Drawable::setModelConditionFlags( const ModelConditionFlags & ) {}
 void Drawable::updateDrawable() {}

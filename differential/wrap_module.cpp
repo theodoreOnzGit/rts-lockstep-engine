@@ -833,5 +833,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_overcharge_r24.inc"   /* p1w13-sonnet, batch R24: OverchargeBehavior */
 #include "l9_horde_r25.inc"   /* p1w13-sonnet, batch R25: HordeUpdate */
 #include "l9_stealth_r26.inc"   /* p1w13-sonnet, batch R26: StealthUpdate */
+#include "l9_stealth_detector_r27.inc"   /* p1w13-sonnet, batch R27: StealthDetectorUpdate */
 #include "l9_ocl_power_r22.inc"   /* p1w13-sonnet, batch R22: OCLSpecialPower (run by l9_powers_h.inc, kind 7) */
 /* --- end p1w13-sonnet --- */

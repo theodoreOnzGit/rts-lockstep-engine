@@ -1207,6 +1207,8 @@ impl UpdateBehavior for StealthUpdate {
                 self.disguise_as_object(world, me, target);
                 ModuleReply::Done
             }
+            ModuleCall::StealthGetEnemyDetectionEvaEvent => ModuleReply::Int(self.get_enemy_detection_eva_event()),
+            ModuleCall::StealthGetOwnDetectionEvaEvent => ModuleReply::Int(self.get_own_detection_eva_event()),
             _ => ModuleReply::Unhandled,
         }
     }

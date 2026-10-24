@@ -3301,6 +3301,20 @@ mod differential {
                 assert_eq!(text.matches(loop2).count(), 1, "GarrisonContain.cpp: the second loop must occur once");
                 std::fs::write(mod_gen.join("GarrisonContain_edit.cpp"), text.replace(loop2, loop2_fixed)).expect("write GarrisonContain_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R27 (differential/l9_stealth_detector_r27.inc): StealthDetectorUpdate.cpp's field table names `INI::parseParticleSystemTemplate`
+                // four times, as AutoHealBehavior.h does; the same replacement (asserted four times), its declaration after the last include (asserted
+                // once), into mod_gen/StealthDetectorUpdate_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Update/StealthDetectorUpdate.cpp");
+                let text = std::fs::read_to_string(&path).expect("read StealthDetectorUpdate.cpp");
+                let (parse, include) = ("INI::parseParticleSystemTemplate", "#include \"Common/Player.h\"\n");
+                assert_eq!(text.matches(parse).count(), 4, "StealthDetectorUpdate.cpp: the particle system parser must occur four times");
+                assert_eq!(text.matches(include).count(), 1, "StealthDetectorUpdate.cpp: the Player.h include must occur once");
+                let cut = text.replace(parse, "l9ahParsePsTemplate").replace(
+                    include,
+                    &format!("{include}class INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n"),
+                );
+                std::fs::write(mod_gen.join("StealthDetectorUpdate_edit.cpp"), cut).expect("write StealthDetectorUpdate_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
                 println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---

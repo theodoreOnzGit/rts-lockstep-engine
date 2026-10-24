@@ -523,7 +523,8 @@ PathfindCell *Pathfinder::getCell(PathfindLayerEnum layer, Int x, Int y)
 	return &cell;
 }
 /* --- end p1w13-sonnet --- */
-void StealthUpdate::markAsDetected(UnsignedInt) { ulog("markdetected %d", (int)m_owner->m_oid); }
+/* (p1w13-sonnet, batch R27: a count of frames is part of the line; the containers pass none) */
+void StealthUpdate::markAsDetected(UnsignedInt numFrames) { if (numFrames) ulog("markdetected %d %u", (int)m_owner->m_oid, numFrames); else ulog("markdetected %d", (int)m_owner->m_oid); }
 /* --- p1w13-sonnet --- (batch R4: HelixContain) */
 void StealthUpdate::receiveGrant(Bool active, UnsignedInt frames) { ulog("stealthgrant %d %d %u", (int)m_owner->m_oid, active ? 1 : 0, frames); }
 void ctSetTeam(Object *obj, Team *team) { ulog("setteam %d %d", (int)obj->m_oid, team ? (int)team->m_dummy : -1); }

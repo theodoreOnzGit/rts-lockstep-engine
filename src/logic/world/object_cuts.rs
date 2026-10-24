@@ -191,6 +191,15 @@ impl World {
         self.cuts.ai_ally_near.contains(&id)
     }
 
+    /// batch R27: `createParticleSystem(tmpl)`, attached to the object's drawable (or the object) at the drawable's bone (see
+    /// [`ObjectClientEvent::ParticleSystemAtBone`]); the id the client gives it, from the same count as [`World::create_particle_system`]'s.
+    pub fn create_particle_system_at_bone(&mut self, template: Vec<u8>, object_id: ObjectId, attach_to_drawable: bool, bone: Vec<u8>) -> u32 {
+        self.cuts.last_particle_system_id = self.cuts.last_particle_system_id.wrapping_add(1);
+        let id = self.cuts.last_particle_system_id;
+        self.emit(crate::logic::world::object_events::ObjectClientEvent::ParticleSystemAtBone { template, id, object_id, attach_to_drawable, bone });
+        id
+    }
+
     /// `TheParticleSystemManager->createParticleSystem(tmpl)`, `system->setPosition(&position)` and `system->getSystemID()`: the id the client gave it.
     pub fn create_particle_system(&mut self, template: Vec<u8>, position: crate::common::base_type::Coord3D) -> u32 {
         self.cuts.last_particle_system_id = self.cuts.last_particle_system_id.wrapping_add(1);

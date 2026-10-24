@@ -22,6 +22,7 @@ class InGameUI
 {
 public:
 	void message(const char *label) { if (g_uiMessageHook) g_uiMessageHook(label); }   /* p1w13-sonnet, batch R24: a line for OverchargeBehavior's driver */
+	void message(const class UnicodeString &text);   /* p1w13-sonnet, batch R27: the label of a fetched text (differential/l9_stealth_detector_r27.inc) */
 	/* --- p1w12-sonnet --- */
 	void addSuperweapon(Int playerIndex, const AsciiString &powerName, ObjectID id, const class SpecialPowerTemplate *powerTemplate);
 	Bool removeSuperweapon(Int playerIndex, const AsciiString &powerName, ObjectID id, const class SpecialPowerTemplate *powerTemplate);

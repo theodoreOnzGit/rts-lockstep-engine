@@ -16,5 +16,7 @@ public:
 	AudioEventRTS m_sabotageResetTimerBuilding;
 	AudioEventRTS m_defectorTimerTickSound;
 	AudioEventRTS m_defectorTimerDingSound;
+	AudioEventRTS m_stealthDiscoveredSound;   /* p1w13-sonnet, batch R27: StealthDetectorUpdate */
+	AudioEventRTS m_stealthNeutralizedSound;
 };
 #endif

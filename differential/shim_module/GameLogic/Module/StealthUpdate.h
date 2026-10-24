@@ -3,9 +3,14 @@
 #ifndef SHIM_MODULE_STEALTHUPDATE_H
 #define SHIM_MODULE_STEALTHUPDATE_H
 #include "Lib/BaseType.h"
+#include "GameClient/Eva.h"   /* p1w13-sonnet, batch R27 */
 class StealthUpdate
 {
 public:
+	/* p1w13-sonnet, batch R27: StealthDetectorUpdate asks a detected object's Eva events (the test's) */
+	EvaMessage getEnemyDetectionEvaEvent() const { return (EvaMessage)m_enemyEva; }
+	EvaMessage getOwnDetectionEvaEvent() const { return (EvaMessage)m_ownEva; }
+	int m_enemyEva = -1, m_ownEva = -1;
 	void markAsDetected( UnsignedInt numFrames = 0 );
 	void receiveGrant( Bool active = TRUE, UnsignedInt frames = 0 );   /* p1w13-sonnet, batch R4: HelixContain grants stealth to its portable structure */
 	Object *m_owner = 0;

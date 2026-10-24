@@ -132,6 +132,10 @@ pub struct ProbeAnswers {
     pub last_damage: Option<(u32, i32)>,
     /// batch R26: `forceRefreshUpgrade()` is a line of the trace.
     pub trace_refresh: bool,
+    /// batch R27: the stealth update's enemy and own detection Eva events (`None`: unhandled, `EVA_Invalid` to the caller).
+    pub eva_events: Option<(i32, i32)>,
+    /// batch R27: `getStealthUnitsContained()` of a contain module with `stealth_contain`.
+    pub stealth_units: u32,
     pub back_crushed: Option<bool>,
     /// `getVelocity()` of the physics.
     pub velocity: Coord3D,
@@ -783,6 +787,9 @@ impl ProbeModule {
                 ModuleReply::Done
             }
             ModuleCall::StealthDisguiseAsObject(_) => ModuleReply::Unhandled,
+            ModuleCall::StealthGetEnemyDetectionEvaEvent => self.answers.eva_events.map_or(ModuleReply::Unhandled, |e| ModuleReply::Int(e.0)),
+            ModuleCall::StealthGetOwnDetectionEvaEvent => self.answers.eva_events.map_or(ModuleReply::Unhandled, |e| ModuleReply::Int(e.1)),
+            ModuleCall::StealthDetectorSetEnabled(_) | ModuleCall::StealthDetectorIsEnabled => ModuleReply::Unhandled,
             ModuleCall::SpawnAreAllSlavesStealthed => ModuleReply::Bool(self.answers.slaves_stealthed),
             ModuleCall::SpawnRevealSlaves => {
                 world.body_trace(format!("revealslaves {}", me.object));
@@ -798,6 +805,7 @@ impl ProbeModule {
                 ModuleReply::Done
             }
             ModuleCall::IsAnyRiderAttacking if self.answers.stealth_contain => ModuleReply::Bool(self.answers.yes),
+            ModuleCall::GetStealthUnitsContained if self.answers.stealth_contain => ModuleReply::Int(self.answers.stealth_units as i32),
             ModuleCall::RecalcApparentControllingPlayer if self.answers.stealth_contain => {
                 world.body_trace(format!("recalcapparent {}", me.object));
                 ModuleReply::Done

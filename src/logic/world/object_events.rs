@@ -158,6 +158,15 @@ pub enum StealthClientOp {
     MarkUiDirtyIfSelected,
 }
 
+/// batch R27: which feedback a `StealthDetectorUpdate` gives (see [`ObjectClientEvent::StealthDetectorFeedback`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StealthFeedback {
+    /// The local player's detector discovered an enemy's stealthed unit (`RADAR_EVENT_STEALTH_DISCOVERED`).
+    Discovered,
+    /// The local player's stealthed unit was revealed (`RADAR_EVENT_STEALTH_NEUTRALIZED`).
+    Neutralized,
+}
+
 /// What a module does to one `RadiusDecal` (see [`ObjectClientEvent::GridDecal`]).
 #[derive(Clone, Debug, PartialEq)]
 pub enum GridDecalOp {
@@ -264,6 +273,16 @@ pub enum ObjectClientEvent {
     UiSetDisplayedMaxWarning { on: bool },
     /// batch R26: what a `StealthUpdate` does to the object's drawable (see [`StealthClientOp`]).
     Stealth { object_id: ObjectId, op: StealthClientOp },
+    /// batch R27: a `StealthDetectorUpdate`'s feedback to the local player for a detection. With `try_radar_event`, `TheRadar->tryEvent(type,
+    /// &position)` decides whether the rest plays; without, `TheRadar->createEvent(&position, type)` and the rest always plays: the misc audio's
+    /// `m_stealthDiscoveredSound` or `m_stealthNeutralizedSound` with `setPlayerIndex(player_index)` (`None`: upstream reads a `NULL` player
+    /// there), `TheInGameUI->message(TheGameText->fetch("MESSAGE:StealthDiscovered"))` or `"MESSAGE:StealthNeutralized"`, and, unless `eva` is
+    /// `EVA_Invalid` (-1), `TheEva->setShouldPlay(eva)`.
+    StealthDetectorFeedback { feedback: StealthFeedback, try_radar_event: bool, position: Coord3D, player_index: Option<i32>, eva: i32 },
+    /// batch R27: `TheParticleSystemManager->createParticleSystem(template)` (the system the client numbers `id`), attached to the object's
+    /// drawable (or the object), at the position of the drawable's pristine bone `bone` (the IR ping's default, `{-1.66, 5.5, 15}`, if it has
+    /// none).
+    ParticleSystemAtBone { template: Vec<u8>, id: u32, object_id: ObjectId, attach_to_drawable: bool, bone: Vec<u8> },
     // --- end p1w13-sonnet ---
     // --- p1w11-sonnet ---
     /// `draw->flashAsSelected(&color)` (`ObjectDefectionHelper`'s white flash when the period ends).

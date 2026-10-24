@@ -424,6 +424,8 @@ pub enum ModuleDataKind {
     PilotFindVehicleUpdate(Arc<crate::logic::modules::pilot_find_vehicle_update::PilotFindVehicleUpdateModuleData>),
     /// `HordeUpdate` (batch R25).
     HordeUpdate(Arc<crate::logic::modules::horde_update::HordeUpdateModuleData>),
+    /// `StealthDetectorUpdate` (batch R27).
+    StealthDetectorUpdate(Arc<crate::logic::modules::stealth_detector_update::StealthDetectorUpdateModuleData>),
     /// `StealthUpdate` (batch R26).
     StealthUpdate(Arc<crate::logic::modules::stealth_update::StealthUpdateModuleData>),
     /// `OverchargeBehavior` (batch R24).
@@ -602,6 +604,7 @@ impl ModuleDataKind {
             ModuleDataKind::WeaponBonusUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::PilotFindVehicleUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::HordeUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::StealthDetectorUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::StealthUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::OverchargeBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::GrantStealthBehavior(d) => &d.update.behavior.module_data,
@@ -1028,6 +1031,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::HordeUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::StealthDetectorUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

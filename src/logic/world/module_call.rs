@@ -593,6 +593,14 @@ pub enum ModuleCall {
     PhysicsGetVelocityMagnitude,
     /// `PhysicsBehavior::resetDynamicPhysics()`.
     PhysicsResetDynamicPhysics,
+    /// batch R27: `StealthUpdate::getEnemyDetectionEvaEvent()`; replies [`ModuleReply::Int`] (an `EvaMessage`, -1 for `EVA_Invalid`).
+    StealthGetEnemyDetectionEvaEvent,
+    /// batch R27: `StealthUpdate::getOwnDetectionEvaEvent()`; replies [`ModuleReply::Int`].
+    StealthGetOwnDetectionEvaEvent,
+    /// batch R27: `StealthDetectorUpdate::setSDEnabled(enabled)` (`BattlePlanUpdate`).
+    StealthDetectorSetEnabled(bool),
+    /// batch R27: `StealthDetectorUpdate::isSDEnabled()`; replies [`ModuleReply::Bool`].
+    StealthDetectorIsEnabled,
     // --- end p1w13-sonnet ---
     /// `SpawnBehaviorInterface::getClosestSlave(pos)` (`HiveStructureBody`); replies [`ModuleReply::Id`] (`INVALID_ID`: no slave).
     GetClosestSlave(Coord3D),

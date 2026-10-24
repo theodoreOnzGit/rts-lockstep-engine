@@ -108,6 +108,7 @@
 #define PartitionFilterRelationship ModTestPartitionFilterRelationship
 #define PartitionFilterAlive ModTestPartitionFilterAlive
 #define PartitionFilterSameMapStatus ModTestPartitionFilterSameMapStatus
+#define PartitionFilterAcceptByKindOf ModTestPartitionFilterAcceptByKindOf   /* p1w13-sonnet, batch R27: its filters run (the partition build has the real class) */
 #define MemoryPoolObjectHolder ModTestMemoryPoolObjectHolder
 #define IterOrderType ModTestIterOrderType
 #define PlayerTemplate ModTestPlayerTemplate
