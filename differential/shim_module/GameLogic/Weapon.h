@@ -70,6 +70,7 @@ class WeaponStore
 public:
 	void createAndFireTempWeapon(const WeaponTemplate *wt, const Object *source, const Coord3D *pos);
 	const WeaponTemplate *findWeaponTemplate(const char *name) const;   /* p1w13-sonnet: SlowDeathBehavior (differential/l9_slow_death_q.inc) */
+	const WeaponTemplate *findWeaponTemplate(const AsciiString &name) const { return findWeaponTemplate(name.str()); }   /* batch R36: StructureToppleUpdate (upstream's takes an AsciiString) */
 };
 extern WeaponStore *TheWeaponStore;
 /* --- end p1w12-sonnet --- */

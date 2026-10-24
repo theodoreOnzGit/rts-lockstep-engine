@@ -3405,6 +3405,16 @@ mod differential {
                 let cut = text.replace(key, "NameKeyType theTFUKey");
                 std::fs::write(mod_gen.join("TensileFormationUpdate_edit.cpp"), cut).expect("write TensileFormationUpdate_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R36 (differential/l9_structure_topple_r36.inc): StructureToppleUpdate.cpp's applyCrushingDamage reads its loop variable `j`
+                // after the loop (MSVC's old `for` scope); the declaration hoisted before the loop (asserted once), which changes nothing else,
+                // into mod_gen/StructureToppleUpdate_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Update/StructureToppleUpdate.cpp");
+                let text = std::fs::read_to_string(&path).expect("read StructureToppleUpdate.cpp");
+                let loop_head = "for (Real j = m_lastCrushedLocation;";
+                assert_eq!(text.matches(loop_head).count(), 1, "StructureToppleUpdate.cpp: the crushing loop must occur once");
+                let cut = text.replace(loop_head, "Real j; for (j = m_lastCrushedLocation;");
+                std::fs::write(mod_gen.join("StructureToppleUpdate_edit.cpp"), cut).expect("write StructureToppleUpdate_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();

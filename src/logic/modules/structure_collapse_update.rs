@@ -83,7 +83,7 @@ pub const SC_PHASE_COUNT: usize = 4;
 /// `TheStructureCollapsePhaseNames`.
 const PHASE_NAMES: [&str; 4] = ["INITIAL", "DELAY", "BURST", "FINAL"];
 /// `MAX_IDX`: the size of `doPhaseStuff`'s index list.
-const MAX_IDX: usize = 32;
+pub(crate) const MAX_IDX: usize = 32;
 
 /// `enum StructureCollapseStateType`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -247,8 +247,9 @@ impl PartialEq for StructureCollapseUpdate {
     }
 }
 
-/// `buildNonDupRandomIndexList(range, count, idxList)`: `count` different indices below `range`, each drawn until it is new.
-fn build_non_dup_random_index_list(world: &mut World, range: i32, count: usize, idx_list: &mut [i32; MAX_IDX]) {
+/// `buildNonDupRandomIndexList(range, count, idxList)`: `count` different indices below `range`, each drawn until it is new (also
+/// `StructureToppleUpdate.cpp`'s copy, batch R36).
+pub(crate) fn build_non_dup_random_index_list(world: &mut World, range: i32, count: usize, idx_list: &mut [i32; MAX_IDX]) {
     for i in 0..count {
         let idx = loop {
             let idx = world.random.game_logic_random_value(0, range - 1);

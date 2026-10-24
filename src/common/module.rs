@@ -428,6 +428,8 @@ pub enum ModuleDataKind {
     TransitionDamageFx(Arc<crate::logic::modules::transition_damage_fx::TransitionDamageFxModuleData>),
     /// `ToppleUpdate` (batch R28).
     ToppleUpdate(Arc<crate::logic::modules::topple_update::ToppleUpdateModuleData>),
+    /// `StructureToppleUpdate` (batch R36).
+    StructureToppleUpdate(Arc<crate::logic::modules::structure_topple_update::StructureToppleUpdateModuleData>),
     /// `NeutronBlastBehavior` (batch R35).
     NeutronBlastBehavior(Arc<crate::logic::modules::neutron_blast_behavior::NeutronBlastBehaviorModuleData>),
     /// `TensileFormationUpdate` (batch R34).
@@ -623,6 +625,7 @@ impl ModuleDataKind {
             ModuleDataKind::PilotFindVehicleUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::HordeUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::ToppleUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::StructureToppleUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::NeutronBlastBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::TensileFormationUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::LeafletDropBehavior(d) => &d.update.behavior.module_data,
@@ -1065,6 +1068,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::ToppleUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::StructureToppleUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

@@ -279,3 +279,15 @@ int ref_l9r30_run(const char *filename, const char *xfer_path, const unsigned *c
 }
 
 }  /* extern "C" */
+
+/* batch R36: the R30 names end here, so that the drivers after this one see the collapse driver's stand-in BoneFXUpdate (StructureToppleUpdate.cpp
+** calls its stopAllBoneFX through findUpdateModule) */
+#undef BoneFXUpdate
+#undef BoneFXUpdateModuleData
+#undef getBoneFXUpdateModuleData
+#undef BoneLocInfo
+#undef BaseBoneListInfo
+#undef BoneFXListInfo
+#undef BoneOCLInfo
+#undef BoneParticleSystemInfo
+#undef BONE_FX_MAX_BONES
