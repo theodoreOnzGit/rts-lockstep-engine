@@ -116,6 +116,7 @@ public:
 	void revealMapForPlayer( Int playerIndex );
 	/* --- p1w12-sonnet --- */
 	SimpleObjectIterator *iterateObjectsInRange( const Coord3D *pos, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = 0, IterOrderType order = ITER_FASTEST );
+	SimpleObjectIterator *iteratePotentialCollisions( const Coord3D *pos, const GeometryInfo &geom, Real angle, Bool use2D = false );   /* batch R41 (differential/l9_gen_minefield_r41.inc) */
 	/* --- end p1w12-sonnet --- */
 	/* --- p1w13-sonnet --- */
 	Object *getClosestObject( const Object *obj, Real maxDist, DistanceCalculationType dc = FROM_CENTER_2D, PartitionFilter **filters = 0 );   /* update batch O: FireSpreadUpdate */

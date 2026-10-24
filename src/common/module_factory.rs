@@ -795,6 +795,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::propaganda_tower_behavior::new_module_data),
             which_interfaces: Some(crate::logic::modules::propaganda_tower_behavior::PropagandaTowerBehavior::get_interface_mask()),
         }),
+        "GenerateMinefieldBehavior" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::generate_minefield_behavior::new_module_data),
+            which_interfaces: Some(crate::logic::modules::generate_minefield_behavior::GenerateMinefieldBehavior::get_interface_mask()),
+        }),
         "MinefieldBehavior" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::minefield_behavior::new_module_data),
@@ -1141,6 +1146,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::HordeUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::ToppleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::PropagandaTowerBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::GenerateMinefieldBehavior(d)) => Some(std::sync::Arc::new(crate::logic::module::update_module::UpdateModuleData { behavior: d.behavior.clone() })),
         Some(ModuleDataKind::MinefieldBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::StickyBombUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::StructureToppleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
@@ -1641,6 +1647,7 @@ mod tests {
         let at = |n: &str| REGISTRATIONS.iter().position(|r| r.name == n).unwrap();
         assert_eq!((at("SpawnBehavior"), at("DestroyDie"), at("AssistedTargetingUpdate")), (45, 46, 57));
         assert!(at("OpenContain") < at("POWTruckBehavior") && at("POWTruckBehavior") < at("PropagandaTowerBehavior"));
+        assert!(at("OpenContain") < at("POWTruckBehavior") && at("POWTruckBehavior") < at("GenerateMinefieldBehavior"));
         assert!(at("OpenContain") < at("POWTruckBehavior") && at("POWTruckBehavior") < at("MinefieldBehavior"));
         assert!(at("OpenContain") < at("POWTruckBehavior") && at("POWTruckBehavior") < at("StickyBombUpdate"));
         // only WeaponBonusUpgrade is there twice

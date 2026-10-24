@@ -254,6 +254,11 @@ impl ThingFactory {
         self.root_index(name).map(|i| &self.templates[i])
     }
 
+    /// batch R41: the template with this name (its root) to change (a test seam: the differential tests' templates are not read from INI).
+    pub fn friend_find_template_mut(&mut self, name: &[u8]) -> Option<&mut Overridable<ThingTemplate>> {
+        self.root_index(name).map(|i| &mut self.templates[i])
+    }
+
     /// `findByTemplateID(id)`: the first template in list order with this id
     /// ("not particularly fast (does a linear search)").
     pub fn find_by_template_id(&self, id: u16) -> Option<&Overridable<ThingTemplate>> {

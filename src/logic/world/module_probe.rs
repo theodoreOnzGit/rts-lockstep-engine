@@ -201,6 +201,9 @@ pub struct ProbeAnswers {
     pub trace_internal_change: bool,
     /// batch R40: the body never dies (the module build's `MBody` does not).
     pub no_death: bool,
+    /// batch R41: the module is a `LandMineInterface` whose `setScootParms(start, end)` is a line of the trace (`bt scoot <object> <the six
+    /// coordinates' bits>`).
+    pub trace_land_mine: bool,
     // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     // --- p1w7-sonnet ---
@@ -552,6 +555,12 @@ impl ProbeModule {
             ModuleCall::SetDamageState(s) if self.answers.trace_damage_state => {
                 world.body_trace(format!("setdamagestate {} {s}", me.object));
                 self.answers.damage_state = Some(s);
+                ModuleReply::Done
+            }
+            // batch R41: a land mine's scoot, when the test asks for it
+            ModuleCall::LandMineSetScootParms { start: s, end: e } if self.answers.trace_land_mine => {
+                let b = |x: f32| x.to_bits();
+                world.body_trace(format!("scoot {} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x}", me.object, b(s.x), b(s.y), b(s.z), b(e.x), b(e.y), b(e.z)));
                 ModuleReply::Done
             }
             // batch R40: the change, when the test asks for it
@@ -1061,7 +1070,8 @@ impl ProbeModule {
             | ModuleCall::StickyBombIsTimedBomb
             | ModuleCall::StickyBombGetDetonationFrame
             | ModuleCall::LandMineSetScootParms { .. }
-            | ModuleCall::LandMineDisarm => ModuleReply::Unhandled,
+            | ModuleCall::LandMineDisarm
+            | ModuleCall::GenerateMinefieldSetTarget(_) => ModuleReply::Unhandled,
             // batch R39: a probe named LifetimeUpdate stands in for one (`lifetime_die_frame`)
             ModuleCall::LifetimeGetDieFrame => match self.answers.lifetime_die_frame {
                 Some(f) => ModuleReply::Int(f as i32),

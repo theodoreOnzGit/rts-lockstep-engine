@@ -682,6 +682,10 @@ pub enum ModuleCall {
     /// `LandMineInterface::disarm()`.
     LandMineDisarm,
     // --- end p1w13-sonnet ---
+    // --- p1w13-sonnet --- (batch R41)
+    /// `GenerateMinefieldBehavior::setMinefieldTarget(pos)` (`None` for `NULL`).
+    GenerateMinefieldSetTarget(Option<Coord3D>),
+    // --- end p1w13-sonnet ---
     // --- p1w13-sonnet --- (batch R38: `BridgeTowerBehaviorInterface`, which `TerrainLogic`'s `Bridge::createTower` drives)
     /// `setBridge(bridge)` (the bridge's id; one that is no object is `setBridge(NULL)`).
     BridgeTowerSetBridge(ObjectId),

@@ -430,6 +430,8 @@ pub enum ModuleDataKind {
     ToppleUpdate(Arc<crate::logic::modules::topple_update::ToppleUpdateModuleData>),
     /// `PropagandaTowerBehavior` (batch R37).
     PropagandaTowerBehavior(Arc<crate::logic::modules::propaganda_tower_behavior::PropagandaTowerBehaviorModuleData>),
+    /// `GenerateMinefieldBehavior` (batch R41).
+    GenerateMinefieldBehavior(Arc<crate::logic::modules::generate_minefield_behavior::GenerateMinefieldBehaviorModuleData>),
     /// `MinefieldBehavior` (batch R40).
     MinefieldBehavior(Arc<crate::logic::modules::minefield_behavior::MinefieldBehaviorModuleData>),
     /// `StickyBombUpdate` (batch R39).
@@ -632,6 +634,7 @@ impl ModuleDataKind {
             ModuleDataKind::HordeUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::ToppleUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::PropagandaTowerBehavior(d) => &d.update.behavior.module_data,
+            ModuleDataKind::GenerateMinefieldBehavior(d) => &d.behavior.module_data,
             ModuleDataKind::MinefieldBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::StickyBombUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::StructureToppleUpdate(d) => &d.update.behavior.module_data,
@@ -1086,6 +1089,13 @@ impl ModuleDataKind {
             ModuleDataKind::PropagandaTowerBehavior(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::GenerateMinefieldBehavior(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.behavior.module_data.set_module_tag_name_key(key);
                     true
                 }
                 None => false,

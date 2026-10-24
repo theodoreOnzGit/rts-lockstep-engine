@@ -365,6 +365,20 @@ impl World {
         self.cuts.terrain_has_water[cell].then(|| self.cuts.terrain_water[cell])
     }
 
+    /// batch R41: `TheTerrainLogic->isCliffCell(x, y)`.
+    pub fn terrain_is_cliff_cell(&mut self, x: f32, y: f32) -> bool {
+        self.cut(CutCall::TerrainIsCliffCell { x, y });
+        self.cuts.terrain_cliff[terrain_cell(x, y)]
+    }
+
+    /// batch R41: `ThePartitionManager->iteratePotentialCollisions(&position, geom, angle)`: the candidates, in iteration order
+    /// (`ObjectCuts::range_scan` answers).
+    pub fn partition_iterate_potential_collisions_at(&mut self, position: Coord3D, geom: &crate::common::geometry::GeometryInfo, angle: f32) -> Vec<ObjectId> {
+        let (geom_type, major_radius, minor_radius) = (geom.get_geom_type() as i32, geom.get_major_radius(), geom.get_minor_radius());
+        self.cut(CutCall::PartitionIteratePotentialCollisions { position, geom_type, major_radius, minor_radius, angle });
+        self.cuts.range_scan.clone()
+    }
+
     /// `ThePartitionManager->iterateObjectsInRange(object, range, FROM_BOUNDINGSPHERE_3D, { PartitionFilterAcceptByKindOf(STRUCTURE) })`: the objects, in
     /// iteration order.
     pub fn partition_iterate_structures_in_range(&mut self, object: ObjectId, range: f32) -> Vec<ObjectId> {
@@ -809,6 +823,11 @@ pub enum CutCall {
     PartitionGetClosestObject { object: ObjectId, range: f32 },
     /// `TheTerrainLogic->isUnderwater(x, y, &waterZ)` (`FloatUpdate`); `ObjectCuts::terrain_has_water` and `terrain_water` answer.
     TerrainIsUnderwater { x: f32, y: f32 },
+    /// batch R41: `TheTerrainLogic->isCliffCell(x, y)` (`GenerateMinefieldBehavior`); `ObjectCuts::terrain_cliff` answers.
+    TerrainIsCliffCell { x: f32, y: f32 },
+    /// batch R41: `ThePartitionManager->iteratePotentialCollisions(&position, geom, angle)` (`GenerateMinefieldBehavior`), with the geometry's type
+    /// and radii; `ObjectCuts::range_scan` answers.
+    PartitionIteratePotentialCollisions { position: Coord3D, geom_type: i32, major_radius: f32, minor_radius: f32, angle: f32 },
     // --- end p1w13-sonnet ---
     // ---- Team ----
     /// `team->notifyTeamOfObjectDeath()`.
@@ -1143,6 +1162,8 @@ pub struct ObjectCuts {
     pub terrain_layer_height: [f32; 8],
     /// Whether `isUnderwater(x, y, &waterZ)` finds water (and so assigns `waterZ`), by [`terrain_cell`] of (x, y).
     pub terrain_has_water: [bool; 8],
+    /// batch R41: `isCliffCell(x, y)`, by [`terrain_cell`] of (x, y).
+    pub terrain_cliff: [bool; 8],
     /// The water height `isUnderwater` assigns, by [`terrain_cell`] of (x, y).
     pub terrain_water: [f32; 8],
     /// batch R34: the ground normal `getGroundHeight(x, y, &normal)` assigns, by [`terrain_cell`] of (x, y).
@@ -1256,6 +1277,7 @@ impl Default for ObjectCuts {
             terrain_layer: [crate::common::game_type::LAYER_GROUND; 8],
             terrain_layer_height: [0.0; 8],
             terrain_has_water: [false; 8],
+            terrain_cliff: [false; 8],
             terrain_water: [0.0; 8],
             terrain_normal: [Coord3D { x: 0.0, y: 0.0, z: 1.0 }; 8],
             closest_object_at: 0,
