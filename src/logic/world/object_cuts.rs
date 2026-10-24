@@ -214,6 +214,13 @@ impl World {
         out
     }
 
+    /// batch R32: `ThePartitionManager->iterateObjectsInRange(&position, range, dc, NULL)`: the candidates, in iteration order
+    /// (`ObjectCuts::range_scan` answers).
+    pub fn partition_iterate_objects_in_range_at(&mut self, position: Coord3D, range: f32, dc: i32) -> Vec<ObjectId> {
+        self.cut(CutCall::PartitionIterateObjectsInRangeAt { position, range, dc });
+        self.cuts.range_scan.clone()
+    }
+
     /// batch R31: `TheParticleSystemManager->destroyParticleSystemByID(id)`.
     pub fn destroy_particle_system_by_id(&mut self, id: u32) {
         self.cut(CutCall::ParticleSystemDestroyById { id });
@@ -681,6 +688,8 @@ pub enum CutCall {
     OclCreateAtPrimary { primary: ObjectId, ocl: Vec<u8>, primary_pos: Coord3D, angle: f32 },
     /// batch R31: `TheParticleSystemManager->destroyParticleSystemByID(id)` (`TransitionDamageFX`).
     ParticleSystemDestroyById { id: u32 },
+    /// batch R32: `ThePartitionManager->iterateObjectsInRange(&position, range, dc, NULL)`; `ObjectCuts::range_scan` answers.
+    PartitionIterateObjectsInRangeAt { position: Coord3D, range: f32, dc: i32 },
     // --- end p1w12-sonnet ---
     // --- p1w13-sonnet ---
     /// `TheTerrainLogic->getGroundHeight(x, y)` (`HeightDieUpdate`); `ObjectCuts::terrain_ground` answers.

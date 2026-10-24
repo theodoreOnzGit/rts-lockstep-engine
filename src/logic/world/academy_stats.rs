@@ -607,6 +607,11 @@ impl AcademyStats {
         self.vehicles_disguised
     }
 
+    /// The count `recordFirestormCreated()` keeps (batch R32: the firestorm test reads it).
+    pub fn firestorms_created(&self) -> u32 {
+        self.firestorms_created
+    }
+
     /// `recordFirestormCreated()`.
     pub fn record_firestorm_created(&mut self) {
         self.firestorms_created = self.firestorms_created.wrapping_add(1);

@@ -315,6 +315,12 @@ impl World {
         self.body_cut(BodyCall::ParticleAttachToObject { id, object });
     }
 
+    /// batch R32: `TheParticleSystemManager->findParticleSystem(id) != NULL` (the client's: see `BodyCutTables::dead_particle_modulus`).
+    pub fn body_particle_exists(&self, id: u32) -> bool {
+        let (modulus, remainder) = self.cuts.body.dead_particle_modulus;
+        !(modulus != 0 && id % modulus == remainder)
+    }
+
     /// `findParticleSystem(id)` and, if the manager still has it, `destroy()`.
     pub fn body_particle_destroy(&mut self, id: u32) {
         let (modulus, remainder) = self.cuts.body.dead_particle_modulus;

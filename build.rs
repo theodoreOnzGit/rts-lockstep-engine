@@ -3367,6 +3367,20 @@ mod differential {
                 );
                 std::fs::write(mod_gen.join("TransitionDamageFX_edit.cpp"), cut).expect("write TransitionDamageFX_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R32 (differential/l9_firestorm_r32.inc): FirestormDynamicGeometryInfoUpdate.cpp's field table names
+                // `INI::parseParticleSystemTemplate` sixteen times; the same replacement (asserted sixteen times), its declaration after the module header's
+                // include (asserted once), into mod_gen/FirestormDynamicGeometryInfoUpdate_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Update/FirestormDynamicGeometryInfoUpdate.cpp");
+                let text = std::fs::read_to_string(&path).expect("read FirestormDynamicGeometryInfoUpdate.cpp");
+                let (parse, include) = ("INI::parseParticleSystemTemplate", "#include \"GameLogic/Module/FirestormDynamicGeometryInfoUpdate.h\"\n");
+                assert_eq!(text.matches(parse).count(), 16, "FirestormDynamicGeometryInfoUpdate.cpp: the particle system parser must occur sixteen times");
+                assert_eq!(text.matches(include).count(), 1, "FirestormDynamicGeometryInfoUpdate.cpp: the module header include must occur once");
+                let cut = text.replace(parse, "l9ahParsePsTemplate").replace(
+                    include,
+                    &format!("{include}class INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n"),
+                );
+                std::fs::write(mod_gen.join("FirestormDynamicGeometryInfoUpdate_edit.cpp"), cut).expect("write FirestormDynamicGeometryInfoUpdate_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();

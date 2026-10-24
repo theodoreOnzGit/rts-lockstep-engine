@@ -9,6 +9,7 @@ class GameClient
 public:
 	void destroyDrawable(Drawable *draw);
 	Drawable *findDrawableByID(const DrawableID id);
+	void addScorch(const Coord3D *pos, Real radius, Scorches type);   /* batch R32: differential/l9_firestorm_r32.inc */
 };
 extern GameClient *TheGameClient;
 #endif

@@ -285,6 +285,11 @@ pub enum ObjectClientEvent {
     /// batch R30: `BoneFXUpdate` stops the particle system it just made (`id`) if the object's drawable is effectively hidden
     /// (`drawable->isDrawableEffectivelyHidden()`, the client's): `psys->stop()`.
     ParticleSystemStopIfDrawableHidden { id: u32, object_id: ObjectId },
+    /// batch R32: the particle system `id`'s emission volume takes `radius`, if it is a sphere or a cylinder (`getEmisionVolumeType()`,
+    /// `setEmissionVolumeSphereRadius`, `setEmissionVolumeCylinderRadius`: the client's).
+    ParticleSystemSetEmissionRadius { id: u32, radius: f32 },
+    /// batch R32: `TheGameClient->addScorch(&position, radius, type)`.
+    GameClientAddScorch { position: Coord3D, radius: f32, scorch_type: i32 },
     /// batch R28: `ToppleUpdate` tells the drawable to stop swaying (its `SwayClientUpdate` client modules' `stopSway()`).
     DrawableStopSway { object_id: ObjectId },
     /// batch R28: `ToppleUpdate`'s stump burns if the toppled object's drawable is burned: `if (draw->getModelConditionFlags().test(

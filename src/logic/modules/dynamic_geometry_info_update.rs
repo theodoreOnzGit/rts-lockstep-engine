@@ -80,8 +80,8 @@ impl Default for DynamicGeometryInfoUpdateModuleData {
     }
 }
 
-/// `DynamicGeometryInfoUpdateModuleData::buildFieldParse`'s own table.
-static FIELD_PARSE: [FieldParse<DynamicGeometryInfoUpdateModuleData>; 10] = [
+/// `DynamicGeometryInfoUpdateModuleData::buildFieldParse`'s own table (batch R32: the firestorm's data lifts it).
+pub(crate) static FIELD_PARSE: [FieldParse<DynamicGeometryInfoUpdateModuleData>; 10] = [
     FieldParse::new("InitialDelay", |ini, d, _| { d.initial_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
     FieldParse::new("InitialHeight", |ini, d, _| { d.initial_height = ini.parse_real()?; Ok(()) }, UserData::None),
     FieldParse::new("InitialMajorRadius", |ini, d, _| { d.initial_major_radius = ini.parse_real()?; Ok(()) }, UserData::None),
@@ -214,6 +214,21 @@ impl DynamicGeometryInfoUpdate {
         update_behavior::load_post_process_with(self, update);
     }
 
+
+    /// batch R32: the `UpdateModule` base, for `FirestormDynamicGeometryInfoUpdate`'s load.
+    pub(crate) fn update_module_mut(&mut self) -> &mut UpdateModule {
+        &mut self.update
+    }
+
+    /// batch R32: `m_startingDelayCountdown`, which `FirestormDynamicGeometryInfoUpdate` reads.
+    pub fn starting_delay_countdown(&self) -> u32 {
+        self.starting_delay_countdown
+    }
+
+    /// batch R32: `m_switchedDirections`, which `FirestormDynamicGeometryInfoUpdate` reads.
+    pub fn switched_directions(&self) -> bool {
+        self.switched_directions
+    }
 
     /// The state the test compares: the countdown, the time active, the four flags, the direction and the six sizes (bits).
     pub fn state_words(&self) -> [u32; 13] {

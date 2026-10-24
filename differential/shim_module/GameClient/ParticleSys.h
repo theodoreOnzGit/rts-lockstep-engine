@@ -11,6 +11,8 @@
 typedef UnsignedInt ParticleSystemID;
 enum { INVALID_PARTICLE_SYSTEM_ID = 0 };
 class ParticleSystemTemplate { public: int m_idx; };
+/* batch R32: the emission volume types (ParticleSys.h, verbatim order) */
+class ParticleSystemInfo { public: enum EmissionVolumeType { INVALID_VOLUME=0, POINT, LINE, BOX, SPHERE, CYLINDER }; };
 class ParticleSystem
 {
 public:
@@ -19,6 +21,10 @@ public:
 	void attachToDrawable( const class Drawable *draw );   /* p1w13-sonnet, batch R27: a line (differential/l9_stealth_detector_r27.inc) */
 	void destroy( void );
 	void stop( void );   /* batch R30: a line (differential/l9_bonefx_r30.inc) */
+	/* batch R32: the firestorm's radius (differential/l9_firestorm_r32.inc) */
+	ParticleSystemInfo::EmissionVolumeType getEmisionVolumeType() const;
+	void setEmissionVolumeSphereRadius( Real radius );
+	void setEmissionVolumeCylinderRadius( Real radius );
 	ParticleSystemID getSystemID() const { return m_id; }
 	ParticleSystemID m_id;
 	int m_tmpl;

@@ -835,6 +835,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::dynamic_geometry_info_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::dynamic_geometry_info_update::DynamicGeometryInfoUpdate::get_interface_mask()),
         }),
+        "FirestormDynamicGeometryInfoUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::firestorm_dynamic_geometry_info_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::firestorm_dynamic_geometry_info_update::FirestormDynamicGeometryInfoUpdate::get_interface_mask()),
+        }),
         "AnimationSteeringUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::animation_steering_update::new_module_data),
@@ -1092,6 +1097,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::OverchargeBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::GrantStealthBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::DynamicGeometryInfoUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::FirestormDynamicGeometryInfoUpdate(d)) => Some(std::sync::Arc::new(d.geom.update.clone())),
         Some(ModuleDataKind::AnimationSteeringUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::RadiusDecalUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::AutoFindHealingUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),

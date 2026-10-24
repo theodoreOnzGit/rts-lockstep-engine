@@ -442,6 +442,8 @@ pub enum ModuleDataKind {
     GrantStealthBehavior(Arc<crate::logic::modules::grant_stealth_behavior::GrantStealthBehaviorModuleData>),
     /// `DynamicGeometryInfoUpdate` (batch R23).
     DynamicGeometryInfoUpdate(Arc<crate::logic::modules::dynamic_geometry_info_update::DynamicGeometryInfoUpdateModuleData>),
+    /// `FirestormDynamicGeometryInfoUpdate` (batch R32).
+    FirestormDynamicGeometryInfoUpdate(Arc<crate::logic::modules::firestorm_dynamic_geometry_info_update::FirestormDynamicGeometryInfoUpdateModuleData>),
     /// `AnimationSteeringUpdate` (batch R20).
     AnimationSteeringUpdate(Arc<crate::logic::modules::animation_steering_update::AnimationSteeringUpdateModuleData>),
     /// `RadiusDecalUpdate` (batch R20).
@@ -621,6 +623,7 @@ impl ModuleDataKind {
             ModuleDataKind::OverchargeBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::GrantStealthBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::DynamicGeometryInfoUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::FirestormDynamicGeometryInfoUpdate(d) => &d.geom.update.behavior.module_data,
             ModuleDataKind::AnimationSteeringUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::RadiusDecalUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::AutoFindHealingUpdate(d) => &d.update.behavior.module_data,
@@ -1108,6 +1111,13 @@ impl ModuleDataKind {
             ModuleDataKind::DynamicGeometryInfoUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::FirestormDynamicGeometryInfoUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.geom.update.behavior.module_data.set_module_tag_name_key(key);
                     true
                 }
                 None => false,

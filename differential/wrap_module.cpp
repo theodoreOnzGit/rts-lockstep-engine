@@ -838,5 +838,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_collapse_r29.inc"   /* p1w13-sonnet, batch R29: StructureCollapseUpdate */
 #include "l9_bonefx_r30.inc"   /* p1w13-sonnet, batch R30: BoneFXUpdate, BoneFXDamage */
 #include "l9_transition_r31.inc"   /* p1w13-sonnet, batch R31: TransitionDamageFX */
+#include "l9_firestorm_r32.inc"   /* p1w13-sonnet, batch R32: FirestormDynamicGeometryInfoUpdate */
 #include "l9_ocl_power_r22.inc"   /* p1w13-sonnet, batch R22: OCLSpecialPower (run by l9_powers_h.inc, kind 7) */
 /* --- end p1w13-sonnet --- */

@@ -100,8 +100,12 @@ pub struct GeometryInfo {
     bounding_sphere_radius: f32,
 }
 
-/// `sqrt` of a `float` sum, through C's `double` `sqrt` (exact either way).
+/// `sqrt` of a `float` sum, through C's `double` `sqrt` (exact either way). A NaN comes back as it went in, sign and payload, as the x86
+/// `sqrtsd` returns it (batch R32: `Real::sqrt` answers a canonical NaN, where the reference build's `sqrt` keeps a negative one).
 fn c_sqrt(v: f32) -> f32 {
+    if v.is_nan() {
+        return v;
+    }
     Real::sqrt(f64::from(v)) as f32
 }
 
@@ -201,7 +205,9 @@ impl GeometryInfo {
                 // at a `float` height near 2^64). The sum is `float + double`,
                 // so it is taken in `double`, and `sqrt` is the `double` one.
                 let half = f64::from(self.height) * 0.5;
-                self.bounding_sphere_radius = Real::sqrt(f64::from(planar) + half * half) as f32;
+                let sum = f64::from(planar) + half * half;
+                // (a NaN as `sqrtsd` returns it: see `c_sqrt`)
+                self.bounding_sphere_radius = if sum.is_nan() { sum as f32 } else { Real::sqrt(sum) as f32 };
             }
         }
     }

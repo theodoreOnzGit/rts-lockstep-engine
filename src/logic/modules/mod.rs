@@ -132,6 +132,7 @@ pub mod stealth_update;
 pub mod overcharge_behavior;
 pub mod grant_stealth_behavior;
 pub mod dynamic_geometry_info_update;
+pub mod firestorm_dynamic_geometry_info_update;
 pub mod animation_steering_update;
 pub mod radius_decal_update;
 pub mod auto_find_healing_update;
@@ -553,6 +554,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::DynamicGeometryInfoUpdate(d) => Some(made_update(
             dynamic_geometry_info_update::DynamicGeometryInfoUpdate::get_interface_mask(),
             dynamic_geometry_info_update::DynamicGeometryInfoUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::DynamicGeometryInfoUpdate(m))),
+        )),
+        ModuleDataKind::FirestormDynamicGeometryInfoUpdate(d) => Some(made_update(
+            firestorm_dynamic_geometry_info_update::FirestormDynamicGeometryInfoUpdate::get_interface_mask(),
+            firestorm_dynamic_geometry_info_update::FirestormDynamicGeometryInfoUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::FirestormDynamicGeometryInfoUpdate(m))),
         )),
         ModuleDataKind::AnimationSteeringUpdate(d) => Some(made_update(
             animation_steering_update::AnimationSteeringUpdate::get_interface_mask(),
