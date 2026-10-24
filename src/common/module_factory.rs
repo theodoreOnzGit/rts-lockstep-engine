@@ -790,6 +790,16 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::topple_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::topple_update::ToppleUpdate::get_interface_mask()),
         }),
+        "BridgeScaffoldBehavior" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::new_plain_update_module_data),
+            which_interfaces: Some(crate::logic::modules::bridge_scaffold_behavior::BridgeScaffoldBehavior::get_interface_mask()),
+        }),
+        "NeutronBlastBehavior" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::neutron_blast_behavior::new_module_data),
+            which_interfaces: Some(crate::logic::modules::neutron_blast_behavior::NeutronBlastBehavior::get_interface_mask()),
+        }),
         "TensileFormationUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::tensile_formation_update::new_module_data),
@@ -1105,6 +1115,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::PilotFindVehicleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::HordeUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::ToppleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::NeutronBlastBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::TensileFormationUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::LeafletDropBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::EmpUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),

@@ -125,6 +125,8 @@ pub mod emp_update;
 pub mod pilot_find_vehicle_update;
 pub mod horde_update;
 pub mod topple_update;
+pub mod neutron_blast_behavior;
+pub mod bridge_scaffold_behavior;
 pub mod tensile_formation_update;
 pub mod bone_fx_update;
 pub mod transition_damage_fx;
@@ -320,6 +322,15 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         // batch R30: the damage module whose data is `DamageModuleData` itself
         ModuleDataKind::Damage(d) => match name {
             b"BoneFXDamage" => Some(made(bone_fx_update::BoneFxDamage::get_interface_mask(), bone_fx_update::BoneFxDamage::new(object, Some(d.clone())).map(UpdateBody::BoneFxDamage))),
+            _ => None,
+        },
+        // batch R35: the update module whose data is `UpdateModuleData` itself (`MAKE_STANDARD_MODULE_MACRO`, the plain `ModuleData`)
+        ModuleDataKind::Update(d) => match name {
+            b"BridgeScaffoldBehavior" => Some(made_update(
+                bridge_scaffold_behavior::BridgeScaffoldBehavior::get_interface_mask(),
+                bridge_scaffold_behavior::BridgeScaffoldBehavior::unconstructed(object, Some(d.clone()))
+                    .map(|m| (m.update_module().clone(), UpdateBody::BridgeScaffoldBehavior(m))),
+            )),
             _ => None,
         },
         ModuleDataKind::Die(d) => match name {
@@ -521,6 +532,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::ToppleUpdate(d) => Some(made_update(
             topple_update::ToppleUpdate::get_interface_mask(),
             topple_update::ToppleUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::ToppleUpdate(m))),
+        )),
+        ModuleDataKind::NeutronBlastBehavior(d) => Some(made_update(
+            neutron_blast_behavior::NeutronBlastBehavior::get_interface_mask(),
+            neutron_blast_behavior::NeutronBlastBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::NeutronBlastBehavior(m))),
         )),
         ModuleDataKind::TensileFormationUpdate(d) => Some(made_update(
             tensile_formation_update::TensileFormationUpdate::get_interface_mask(),
@@ -787,6 +802,12 @@ pub const fn plant(_k: u32) -> bool {
 /// batch R30: the factory's `NewModuleDataProc` for a damage module whose data is `DamageModuleData` (`BoneFXDamage`).
 pub fn new_plain_damage_module_data(ini: Option<&mut crate::common::ini::Ini<'_>>) -> crate::common::ini::IniResult<ModuleDataKind> {
     Ok(ModuleDataKind::Damage(std::sync::Arc::new(crate::logic::module::damage_module::DamageModuleData::friend_new_module_data(ini)?)))
+}
+
+/// batch R35: the `NewModuleDataProc` of an update module with no data class (`MAKE_STANDARD_MODULE_MACRO`: `Module::friend_newModuleData`, the
+/// plain `ModuleData`, which `UpdateModuleData` adds nothing to).
+pub fn new_plain_update_module_data(ini: Option<&mut crate::common::ini::Ini<'_>>) -> crate::common::ini::IniResult<ModuleDataKind> {
+    Ok(ModuleDataKind::Update(std::sync::Arc::new(crate::logic::module::update_module::UpdateModuleData::friend_new_module_data(ini)?)))
 }
 
 pub fn new_plain_die_module_data(ini: Option<&mut crate::common::ini::Ini<'_>>) -> crate::common::ini::IniResult<ModuleDataKind> {

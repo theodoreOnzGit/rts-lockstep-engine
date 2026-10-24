@@ -190,6 +190,8 @@ pub struct ProbeAnswers {
     pub damage_state: Option<i32>,
     /// batch R34: `setDamageState(s)` is a line of the trace (`bt setdamagestate <object> <s>`) and sets the state `getDamageState()` answers.
     pub trace_damage_state: bool,
+    /// batch R35: `killAllContained()` is a line of the trace (`bt killall <object>`).
+    pub trace_kill_contained: bool,
     // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     // --- p1w7-sonnet ---
@@ -831,6 +833,11 @@ impl ProbeModule {
                 world.body_trace(format!("recalcapparent {}", me.object));
                 ModuleReply::Done
             }
+            // batch R35: the passengers killed, when the test asks
+            ModuleCall::KillAllContained if self.answers.trace_kill_contained => {
+                world.body_trace(format!("killall {}", me.object));
+                ModuleReply::Done
+            }
             // the contain module's own interface: a probe is a damage and die module, and answers the contain questions as it did before (the scripted answers)
             ModuleCall::AddToContain(_)
             | ModuleCall::AddToContainList(_)
@@ -1024,6 +1031,13 @@ impl ProbeModule {
             | ModuleCall::SpecialAbilityIsActive // p1w13-sonnet
             | ModuleCall::CountermeasuresIsActive => ModuleReply::Bool(self.answers.yes),
             ModuleCall::CalculateCountermeasureToDivertTo { .. } => ModuleReply::Id(self.answers.countermeasure),
+            // batch R35: a probe has no bridge scaffold interface
+            ModuleCall::ScaffoldSetPositions { .. }
+            | ModuleCall::ScaffoldSetMotion(_)
+            | ModuleCall::ScaffoldGetCurrentMotion
+            | ModuleCall::ScaffoldReverseMotion
+            | ModuleCall::ScaffoldSetLateralSpeed(_)
+            | ModuleCall::ScaffoldSetVerticalSpeed(_) => ModuleReply::Unhandled,
             ModuleCall::DoesSpecialPowerHaveOverridableDestinationActive | ModuleCall::DoesSpecialPowerHaveOverridableDestination => {
                 if self.answers.has & (1 << 8) != 0 {
                     ModuleReply::Bool(self.answers.yes)

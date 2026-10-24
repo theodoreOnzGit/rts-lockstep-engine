@@ -319,6 +319,13 @@ impl World {
         self.objects.find(id).map(|_| id)
     }
 
+    /// batch R35: `ThePartitionManager->iterateObjectsInRange(&position, range, dc, { PartitionFilterAlive, PartitionFilterSameMapStatus(obj) })`:
+    /// the objects that pass the filters, in iteration order (the partition manager is layer 12's).
+    pub fn partition_iterate_alive_same_map_in_range_at(&mut self, object: ObjectId, position: Coord3D, range: f32, dc: i32) -> Vec<ObjectId> {
+        self.cut(CutCall::PartitionIterateAliveSameMapInRangeAt { object, position, range, dc });
+        self.cuts.range_scan.clone()
+    }
+
     /// batch R34: `TheAudio->isCurrentlyPlaying(handle)` (the client's).
     pub fn audio_is_currently_playing(&mut self, handle: u32) -> bool {
         self.cut(CutCall::AudioIsCurrentlyPlaying { handle });
@@ -762,6 +769,9 @@ pub enum CutCall {
     PathfinderRemoveWallFromFootprint { object: ObjectId },
     /// batch R34: `ThePartitionManager->getClosestObject(&position, range, dc)`; `ObjectCuts::closest_object_at` answers.
     PartitionGetClosestObjectAt { position: Coord3D, range: f32, dc: i32 },
+    /// batch R35: `ThePartitionManager->iterateObjectsInRange(&position, range, dc, { PartitionFilterAlive, PartitionFilterSameMapStatus(obj) })`
+    /// (`NeutronBlastBehavior`); `ObjectCuts::range_scan` answers (the objects that pass the filters).
+    PartitionIterateAliveSameMapInRangeAt { object: ObjectId, position: Coord3D, range: f32, dc: i32 },
     /// batch R34: `TheAudio->isCurrentlyPlaying(handle)` (`AudioEventRTS::isCurrentlyPlaying`); `ObjectCuts::audio_playing` answers.
     AudioIsCurrentlyPlaying { handle: u32 },
     /// `TheTerrainLogic->getHighestLayerForDestination(pos)` (`HeightDieUpdate`); `ObjectCuts::terrain_layer` answers.

@@ -650,6 +650,20 @@ pub enum ModuleCall {
     IsAbleToBeToppled,
     /// `ToppleUpdate::applyTopplingForce(direction, speed, options)`.
     ApplyTopplingForce { direction: Option<Coord3D>, speed: f32, options: u32 },
+    // --- p1w13-sonnet --- (batch R35: `BridgeScaffoldBehaviorInterface`, which `BridgeBehavior` drives)
+    /// `setPositions(createPos, riseToPos, buildPos)`.
+    ScaffoldSetPositions { create_pos: Coord3D, rise_to_pos: Coord3D, build_pos: Coord3D },
+    /// `setMotion(targetMotion)` (`ScaffoldTargetMotion` as its value).
+    ScaffoldSetMotion(i32),
+    /// `getCurrentMotion()`; replies [`ModuleReply::Int`].
+    ScaffoldGetCurrentMotion,
+    /// `reverseMotion()`.
+    ScaffoldReverseMotion,
+    /// `setLateralSpeed(lateralSpeed)`.
+    ScaffoldSetLateralSpeed(f32),
+    /// `setVerticalSpeed(verticalSpeed)`.
+    ScaffoldSetVerticalSpeed(f32),
+    // --- end p1w13-sonnet ---
     /// `StickyBombUpdate::detonate()`.
     Detonate,
     /// `ObjectDefectionHelper::startDefectionTimer(time, withDefectorFx)`.
