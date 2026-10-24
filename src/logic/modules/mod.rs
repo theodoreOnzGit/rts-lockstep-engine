@@ -124,6 +124,7 @@ pub mod weapon_bonus_update;
 pub mod pilot_find_vehicle_update;
 pub mod horde_update;
 pub mod topple_update;
+pub mod structure_collapse_update;
 pub mod stealth_detector_update;
 pub mod stealth_update;
 pub mod overcharge_behavior;
@@ -505,6 +506,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::ToppleUpdate(d) => Some(made_update(
             topple_update::ToppleUpdate::get_interface_mask(),
             topple_update::ToppleUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::ToppleUpdate(m))),
+        )),
+        ModuleDataKind::StructureCollapseUpdate(d) => Some(made_update(
+            structure_collapse_update::StructureCollapseUpdate::get_interface_mask(),
+            structure_collapse_update::StructureCollapseUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::StructureCollapseUpdate(m))),
         )),
         ModuleDataKind::StealthDetectorUpdate(d) => Some(made_update(
             stealth_detector_update::StealthDetectorUpdate::get_interface_mask(),

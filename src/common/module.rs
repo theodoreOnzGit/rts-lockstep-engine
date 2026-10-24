@@ -426,6 +426,8 @@ pub enum ModuleDataKind {
     HordeUpdate(Arc<crate::logic::modules::horde_update::HordeUpdateModuleData>),
     /// `ToppleUpdate` (batch R28).
     ToppleUpdate(Arc<crate::logic::modules::topple_update::ToppleUpdateModuleData>),
+    /// `StructureCollapseUpdate` (batch R29).
+    StructureCollapseUpdate(Arc<crate::logic::modules::structure_collapse_update::StructureCollapseUpdateModuleData>),
     /// `StealthDetectorUpdate` (batch R27).
     StealthDetectorUpdate(Arc<crate::logic::modules::stealth_detector_update::StealthDetectorUpdateModuleData>),
     /// `StealthUpdate` (batch R26).
@@ -607,6 +609,7 @@ impl ModuleDataKind {
             ModuleDataKind::PilotFindVehicleUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::HordeUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::ToppleUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::StructureCollapseUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::StealthDetectorUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::StealthUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::OverchargeBehavior(d) => &d.update.behavior.module_data,
@@ -1041,6 +1044,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::ToppleUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::StructureCollapseUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

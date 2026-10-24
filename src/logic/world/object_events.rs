@@ -279,6 +279,9 @@ pub enum ObjectClientEvent {
     /// there), `TheInGameUI->message(TheGameText->fetch("MESSAGE:StealthDiscovered"))` or `"MESSAGE:StealthNeutralized"`, and, unless `eva` is
     /// `EVA_Invalid` (-1), `TheEva->setShouldPlay(eva)`.
     StealthDetectorFeedback { feedback: StealthFeedback, try_radar_event: bool, position: Coord3D, player_index: Option<i32>, eva: i32 },
+    /// batch R29: `getDrawable()->setInstanceMatrix(&m)` with `m` the drawable's instance matrix (`getInstanceMatrix()`, the client's) with its
+    /// translation set to `translation` (`StructureCollapseUpdate`'s shudder and sinking).
+    DrawableSetInstanceTranslation { object_id: ObjectId, translation: Coord3D },
     /// batch R28: `ToppleUpdate` tells the drawable to stop swaying (its `SwayClientUpdate` client modules' `stopSway()`).
     DrawableStopSway { object_id: ObjectId },
     /// batch R28: `ToppleUpdate`'s stump burns if the toppled object's drawable is burned: `if (draw->getModelConditionFlags().test(

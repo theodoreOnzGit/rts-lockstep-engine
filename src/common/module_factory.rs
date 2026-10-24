@@ -790,6 +790,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::topple_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::topple_update::ToppleUpdate::get_interface_mask()),
         }),
+        "StructureCollapseUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::structure_collapse_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::structure_collapse_update::StructureCollapseUpdate::get_interface_mask()),
+        }),
         "StealthDetectorUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::stealth_detector_update::new_module_data),
@@ -1065,6 +1070,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::PilotFindVehicleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::HordeUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::ToppleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::StructureCollapseUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::StealthDetectorUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::StealthUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::OverchargeBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),

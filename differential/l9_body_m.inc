@@ -64,7 +64,7 @@ public:
 	void setIndestructible( Bool ) {}
 	Bool isIndestructible( void ) const { return false; }
 	void evaluateVisualCondition() {}
-	void updateBodyParticleSystems() {}
+	void updateBodyParticleSystems() { ulog("bodyps %d", m_owner ? (int)m_owner->m_oid : 0); }   /* batch R29: StructureCollapseUpdate */
 };
 
 }  // namespace

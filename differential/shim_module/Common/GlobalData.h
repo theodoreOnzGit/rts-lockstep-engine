@@ -31,6 +31,7 @@ public:
 	AsciiString m_autoAflameParticlePrefix, m_autoAflameParticleSystem; Int m_autoAflameParticleMax;
 	Int m_maxTunnelCapacity = 0;   /* batch R10: TunnelTracker */
 	Int m_timeOfDay = 0;   /* batch R11: CaveContain (a TimeOfDay) */
+	Real m_gravity = -1.0f;   /* batch R29: StructureCollapseUpdate */
 	/* --- end p1w13-sonnet --- */
 };
 extern GlobalData *TheGlobalData;

@@ -50,6 +50,10 @@ Coord3D TerrainLogic::findClosestEdgePoint( const Coord3D *closestTo ) const
 }
 Object *ObjectCreationList::createInternal(const Object *primaryObj, const Coord3D *primary, const Coord3D *secondary, Real angle, UnsignedInt lifetimeFrames) const
 {
+	if (!secondary) {   /* batch R29: StructureCollapseUpdate gives no secondary */
+		ulog("oclat %d %08x,%08x,%08x null %08x", this == &g_upOcls[0] ? 0 : 1, realBits(primary->x), realBits(primary->y), realBits(primary->z), realBits(angle));
+		return 0;
+	}
 	ulog("oclat %d %08x,%08x,%08x %08x,%08x,%08x %08x", this == &g_upOcls[0] ? 0 : 1, realBits(primary->x), realBits(primary->y), realBits(primary->z),
 		realBits(secondary->x), realBits(secondary->y), realBits(secondary->z), realBits(angle));
 	return 0;

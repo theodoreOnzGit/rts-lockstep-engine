@@ -441,6 +441,15 @@ impl ProbeModule {
                 ModuleReply::Damage(info)
             }
             // --- p1w13-sonnet --- (ActiveBody's test: the calls its body makes on the other modules of its object are lines of the trace, when `cuts.body.probe_trace` asks)
+            // batch R29: the body's particle systems and a bone FX update's stop are lines of the trace (StructureCollapseUpdate's test)
+            ModuleCall::UpdateBodyParticleSystems if world.cuts.body.probe_trace => {
+                world.body_trace(format!("bodyps {}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::BoneFxStopAll => {
+                world.body_trace(format!("stopbonefx {}", me.object));
+                ModuleReply::Done
+            }
             ModuleCall::OnDamage(info) if world.cuts.body.probe_trace => {
                 world.body_trace(format!("ondamage {} {} {}", me.object, me.index, crate::logic::world::body_cuts::info_line(&info)));
                 ModuleReply::Done

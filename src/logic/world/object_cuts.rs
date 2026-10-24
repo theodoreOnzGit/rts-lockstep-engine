@@ -648,6 +648,9 @@ pub enum CutCall {
     /// batch R22: `ObjectCreationList::create(ocl, primary, &primaryPos, &secondaryPos, createOwner)` for the list named `ocl` (`OCLSpecialPower::
     /// doSpecialPower`); like [`CutCall::OclCreate`], a name that is no list makes nothing.
     OclCreateOwner { primary: ObjectId, ocl: Vec<u8>, primary_pos: Coord3D, secondary_pos: Coord3D, create_owner: bool },
+    /// batch R29: `ObjectCreationList::create(ocl, primary, &primaryPos, NULL, angle)` for the list named `ocl` (`StructureCollapseUpdate::
+    /// doPhaseStuff`); like [`CutCall::OclCreate`], a name that is no list makes nothing.
+    OclCreateAtPrimary { primary: ObjectId, ocl: Vec<u8>, primary_pos: Coord3D, angle: f32 },
     // --- end p1w12-sonnet ---
     // --- p1w13-sonnet ---
     /// `TheTerrainLogic->getGroundHeight(x, y)` (`HeightDieUpdate`); `ObjectCuts::terrain_ground` answers.

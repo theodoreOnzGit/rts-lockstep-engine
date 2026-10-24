@@ -28,6 +28,7 @@ public:
 typedef std::vector<WeaponTemplateSet> WeaponTemplateSetVector;
 typedef SparseMatchFinder<WeaponTemplateSet, WeaponSetFlags> WeaponTemplateSetFinder;
 /* --- end p1w13-sonnet --- */
+class GeometryInfo;   /* batch R29 */
 class ThingTemplate
 {
 public:
@@ -75,6 +76,7 @@ public:
 	UnsignedInt getOcclusionDelay() const { return m_occlusionDelay; }   /* batch R10: TunnelContain */
 	UnsignedInt m_occlusionDelay = 0;
 	Bool isEquivalentTo(const ThingTemplate *tt) const;   /* p1w13-sonnet, batch R5: differential/l9_open_contain_r.inc */
+	const GeometryInfo &getTemplateGeometryInfo() const;   /* batch R29: differential/l9_collapse_r29.inc */
 	/* --- end p1w13-sonnet --- */
 	/* --- end p1w13-sonnet --- */
 };

@@ -236,6 +236,9 @@ pub enum Undefined {
     SignedIntOverflow,
     /// A local `Real` that nothing assigned is read (`FloatUpdate`: `isUnderwater` leaves `waterZ` alone when there is no water).
     UninitialisedLocal,
+    /// batch R29: a module data field its constructor leaves alone is read, the INI not having given it (`StructureCollapseUpdateModuleData::
+    /// m_maxBurstDelay`).
+    UninitialisedModuleData,
     /// `getAI()` is `NULL` and the module calls through it (`ActiveBody`'s `DAMAGE_KILLPILOT` of a rider-change vehicle).
     NullAi,
     /// `getContain()` is `NULL` and the module calls through it (`HijackerUpdate`: a parachute template whose object has no contain module).
