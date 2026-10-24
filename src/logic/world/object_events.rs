@@ -279,6 +279,11 @@ pub enum ObjectClientEvent {
     /// there), `TheInGameUI->message(TheGameText->fetch("MESSAGE:StealthDiscovered"))` or `"MESSAGE:StealthNeutralized"`, and, unless `eva` is
     /// `EVA_Invalid` (-1), `TheEva->setShouldPlay(eva)`.
     StealthDetectorFeedback { feedback: StealthFeedback, try_radar_event: bool, position: Coord3D, player_index: Option<i32>, eva: i32 },
+    /// batch R28: `ToppleUpdate` tells the drawable to stop swaying (its `SwayClientUpdate` client modules' `stopSway()`).
+    DrawableStopSway { object_id: ObjectId },
+    /// batch R28: `ToppleUpdate`'s stump burns if the toppled object's drawable is burned: `if (draw->getModelConditionFlags().test(
+    /// MODELCONDITION_BURNED)) stump->getDrawable()->setModelConditionState(MODELCONDITION_BURNED)` (the flags are the client's).
+    DrawableBurnStumpIfBurned { object_id: ObjectId, stump: ObjectId },
     /// batch R27: `TheParticleSystemManager->createParticleSystem(template)` (the system the client numbers `id`), attached to the object's
     /// drawable (or the object), at the position of the drawable's pristine bone `bone` (the IR ping's default, `{-1.66, 5.5, 15}`, if it has
     /// none).

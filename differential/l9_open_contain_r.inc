@@ -555,7 +555,14 @@ void InGameUI::setDisplayedMaxWarning(Bool b) { ulog("maxwarning %d", b ? 1 : 0)
 /* --- end p1w13-sonnet --- */
 void Drawable::setDrawableHidden(Bool hidden) { ulog("hidden %d %d", m_ownerObject ? (int)m_ownerObject->m_oid : 0, (int)hidden); }
 void Object::setLayer(PathfindLayerEnum layer) { ulog("setlayer %d %d", (int)m_oid, (int)layer); }
-void Object::setOrientation(Real angle) { ulog("setorient %d %08x", (int)m_oid, realBits(angle)); }
+/* p1w13-sonnet, batch R28 (differential/l9_topple_r28.inc): with the pose set, Thing::setOrientation (Thing.cpp lines 198-245): the transform posed from
+** the angle at the position (the shim's setPosition keeps m_pos, which is the translation Thing::setPosition would keep), the angle normalised */
+bool g_r28ThingPose = false;
+void Object::setOrientation(Real angle)
+{
+	ulog("setorient %d %08x", (int)m_oid, realBits(angle));
+	if (g_r28ThingPose) { m_orientation = angle; poseMatrix(); m_orientation = normalizeAngle(angle); }
+}
 void Object::leaveGroup() { ulog("leavegroup %d", (int)m_oid); }
 Bool Object::checkAndDetonateBoobyTrap(const Object *victim)
 {

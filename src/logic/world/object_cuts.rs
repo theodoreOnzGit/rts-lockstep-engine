@@ -191,6 +191,19 @@ impl World {
         self.cuts.ai_ally_near.contains(&id)
     }
 
+    /// batch R28: `TheScriptEngine->adjustToppleDirection(object, direction)`: "if the object is named and has a specified topple direction,
+    /// topple adjust direction to reflect it" (the first entry for its name, normalised).
+    pub fn script_adjust_topple_direction(&mut self, id: ObjectId, direction: &mut Coord3D) {
+        let Some(name) = self.objects.find(id).map(|o| o.name.clone()) else { return };
+        if name.is_empty() {
+            return;
+        }
+        if let Some((_, d)) = self.cuts.script_topple_directions.iter().find(|(n, _)| *n == name) {
+            *direction = *d;
+            direction.normalize();
+        }
+    }
+
     /// batch R27: `createParticleSystem(tmpl)`, attached to the object's drawable (or the object) at the drawable's bone (see
     /// [`ObjectClientEvent::ParticleSystemAtBone`]); the id the client gives it, from the same count as [`World::create_particle_system`]'s.
     pub fn create_particle_system_at_bone(&mut self, template: Vec<u8>, object_id: ObjectId, attach_to_drawable: bool, bone: Vec<u8>) -> u32 {
@@ -1010,6 +1023,8 @@ pub struct ObjectCuts {
     pub ai_turret_rotation: BTreeMap<(ObjectId, i32), f32>,
     /// `m_partitionData->getShroudedStatus(playerIndex)`: (object, player) -> status.
     pub shrouded_status: BTreeMap<(ObjectId, i32), ObjectShroudStatus>,
+    /// batch R28: `ScriptEngine::m_toppleDirections`, the topple direction a script gave each named object (the script engine is layer 10's).
+    pub script_topple_directions: Vec<(Vec<u8>, Coord3D)>,
     /// `pathfinder->getWallHeight()`, for `getLayerHeight` on the wall layer.
     pub wall_height: f32,
     /// The client's drawable id counter (`GameClient::allocateNewDrawableID`).
@@ -1101,6 +1116,7 @@ impl Default for ObjectCuts {
             ai_airborne: BTreeSet::new(),
             ai_turret_rotation: BTreeMap::new(),
             shrouded_status: BTreeMap::new(),
+            script_topple_directions: Vec::new(),
             potential_collisions: Vec::new(),
             booby_traps_in_range: Vec::new(),
             wall_height: 0.0,

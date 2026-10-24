@@ -119,6 +119,7 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	void setModelConditionFlags( const ModelConditionFlags &set );
 	void updateDrawable();
 	Bool m_hiddenR26 = false;
+	class ClientUpdateModule **getClientUpdateModules();   /* batch R28: ToppleUpdate stops the sway (a line, and none: differential/l9_topple_r28.inc) */
 	/* --- end p1w13-sonnet --- */
 	/* --- end p1w13-sonnet --- */ };
 /* --- end p1w10-sonnet --- */

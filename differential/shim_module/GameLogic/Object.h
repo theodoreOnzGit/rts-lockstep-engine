@@ -337,6 +337,7 @@ public:
 	void forceRefreshSubObjectUpgradeStatus();   /* a line */
 	ObjectShroudStatus getShroudedStatus( Int playerIndex ) const { return (ObjectShroudStatus)m_shroudR27; }   /* batch R27: the test's */
 	Int m_shroudR27 = 1;   /* OBJECTSHROUD_CLEAR */
+	void topple( const Coord3D *toppleDirection, Real toppleSpeed, UnsignedInt options );   /* batch R28: Object.cpp lines 1195-1208 (l9_topple_r28.inc) */
 	/* --- end p1w13-sonnet --- */
 protected:
 	virtual Object *asObjectMeth() { return this; }
