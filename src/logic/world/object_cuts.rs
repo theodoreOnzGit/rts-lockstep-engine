@@ -326,6 +326,13 @@ impl World {
         self.cuts.range_scan.clone()
     }
 
+    /// batch R37: the propaganda tower's scan: `iterateObjectsInRange(&position, range, FROM_CENTER_2D, { the allies, alive, of the same map
+    /// status, not structures })`: the objects that pass the filters, in iteration order (the partition manager is layer 12's).
+    pub fn partition_iterate_allies_alive_same_map_not_structures_at(&mut self, object: ObjectId, position: Coord3D, range: f32) -> Vec<ObjectId> {
+        self.cut(CutCall::PartitionIterateAlliesAliveSameMapNotStructuresAt { object, position, range });
+        self.cuts.range_scan.clone()
+    }
+
     /// batch R34: `TheAudio->isCurrentlyPlaying(handle)` (the client's).
     pub fn audio_is_currently_playing(&mut self, handle: u32) -> bool {
         self.cut(CutCall::AudioIsCurrentlyPlaying { handle });
@@ -772,6 +779,10 @@ pub enum CutCall {
     /// batch R35: `ThePartitionManager->iterateObjectsInRange(&position, range, dc, { PartitionFilterAlive, PartitionFilterSameMapStatus(obj) })`
     /// (`NeutronBlastBehavior`); `ObjectCuts::range_scan` answers (the objects that pass the filters).
     PartitionIterateAliveSameMapInRangeAt { object: ObjectId, position: Coord3D, range: f32, dc: i32 },
+    /// batch R37: `ThePartitionManager->iterateObjectsInRange(&position, range, FROM_CENTER_2D, { PartitionFilterRelationship(obj, ALLOW_ALLIES),
+    /// PartitionFilterAlive, PartitionFilterSameMapStatus(obj), PartitionFilterAcceptByKindOf(none, STRUCTURE) })` (`PropagandaTowerBehavior`);
+    /// `ObjectCuts::range_scan` answers (the objects that pass the filters).
+    PartitionIterateAlliesAliveSameMapNotStructuresAt { object: ObjectId, position: Coord3D, range: f32 },
     /// batch R34: `TheAudio->isCurrentlyPlaying(handle)` (`AudioEventRTS::isCurrentlyPlaying`); `ObjectCuts::audio_playing` answers.
     AudioIsCurrentlyPlaying { handle: u32 },
     /// `TheTerrainLogic->getHighestLayerForDestination(pos)` (`HeightDieUpdate`); `ObjectCuts::terrain_layer` answers.

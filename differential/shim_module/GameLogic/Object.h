@@ -296,6 +296,11 @@ public:
 	Real getHeightAboveTerrain() const { return m_pos.z; }   /* the test's terrain is flat at zero */
 	void setPositionZ( Real z ) { m_pos.z = z; }
 	Bool isDisabledByType( DisabledType type ) const { return ( m_disabledBits >> type ) & 1; }
+	/* --- p1w13-sonnet, batch R37 (PropagandaTowerBehavior): the disabled bits as the mask, and whether the weapon set has a damage weapon (the test's) */
+	DisabledMaskType getDisabledFlags() const { DisabledMaskType m; for (int i = 0; i < DISABLED_COUNT && i < 32; ++i) if (m_disabledBits >> i & 1) m.set((DisabledType)i); return m; }
+	Bool hasAnyDamageWeapon() const { return m_hasDamageWeapon; }
+	bool m_hasDamageWeapon = false;
+	/* --- end p1w13-sonnet --- */
 	void clearAndSetModelConditionFlags( const ModelConditionFlags &clr, const ModelConditionFlags &set );
 	void clearModelConditionFlags( const ModelConditionFlags &clr );
 	void setModelConditionFlags( const ModelConditionFlags &set );

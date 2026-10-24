@@ -200,6 +200,11 @@ impl WeaponSet {
     pub fn has_any_damage_weapon(&self) -> bool {
         self.has_damage_weapon
     }
+    /// batch R37: sets what [`WeaponSet::has_any_damage_weapon`] answers, for the tests whose objects carry no weapons (the weapon layer is
+    /// layer 12's).
+    pub fn friend_set_has_damage_weapon(&mut self, has: bool) {
+        self.has_damage_weapon = has;
+    }
     /// `hasWeaponToDealDamageType(typeToDeal)`.
     pub fn has_weapon_to_deal_damage_type(&self, type_to_deal: i32) -> bool {
         self.total_damage_type_mask.test(type_to_deal)

@@ -125,6 +125,7 @@ pub mod emp_update;
 pub mod pilot_find_vehicle_update;
 pub mod horde_update;
 pub mod topple_update;
+pub mod propaganda_tower_behavior;
 pub mod structure_topple_update;
 pub mod neutron_blast_behavior;
 pub mod bridge_scaffold_behavior;
@@ -533,6 +534,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::ToppleUpdate(d) => Some(made_update(
             topple_update::ToppleUpdate::get_interface_mask(),
             topple_update::ToppleUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::ToppleUpdate(m))),
+        )),
+        ModuleDataKind::PropagandaTowerBehavior(d) => Some(made_update(
+            propaganda_tower_behavior::PropagandaTowerBehavior::get_interface_mask(),
+            propaganda_tower_behavior::PropagandaTowerBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::PropagandaTowerBehavior(m))),
         )),
         ModuleDataKind::StructureToppleUpdate(d) => Some(made_update(
             structure_topple_update::StructureToppleUpdate::get_interface_mask(),
