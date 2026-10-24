@@ -478,6 +478,10 @@ pub enum ModuleDataKind {
     QueueProductionExitUpdate(Arc<crate::logic::modules::queue_production_exit_update::QueueProductionExitUpdateModuleData>),
     /// `DefaultProductionExitUpdate` (batch R18).
     DefaultProductionExitUpdate(Arc<crate::logic::modules::default_production_exit_update::DefaultProductionExitUpdateModuleData>),
+    /// `SpawnPointProductionExitUpdate` (batch R45).
+    SpawnPointProductionExitUpdate(Arc<crate::logic::modules::spawn_point_production_exit_update::SpawnPointProductionExitUpdateModuleData>),
+    /// `SupplyCenterProductionExitUpdate` (batch R45).
+    SupplyCenterProductionExitUpdate(Arc<crate::logic::modules::supply_center_production_exit_update::SupplyCenterProductionExitUpdateModuleData>),
     /// `SupplyWarehouseCripplingBehavior` (batch R17).
     SupplyWarehouseCripplingBehavior(Arc<crate::logic::modules::supply_warehouse_crippling_behavior::SupplyWarehouseCripplingBehaviorModuleData>),
     /// `OclUpdateModuleData`.
@@ -665,6 +669,8 @@ impl ModuleDataKind {
             ModuleDataKind::AutoFindHealingUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::QueueProductionExitUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::DefaultProductionExitUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::SpawnPointProductionExitUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::SupplyCenterProductionExitUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::SupplyWarehouseCripplingBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::OclUpdate(d) => &d.update.behavior.module_data,
             // --- end p1w12-sonnet ---
@@ -1271,6 +1277,20 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::DefaultProductionExitUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::SpawnPointProductionExitUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::SupplyCenterProductionExitUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

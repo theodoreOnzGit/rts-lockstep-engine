@@ -153,6 +153,8 @@ pub mod radius_decal_update;
 pub mod auto_find_healing_update;
 pub mod queue_production_exit_update;
 pub mod default_production_exit_update;
+pub mod spawn_point_production_exit_update;
+pub mod supply_center_production_exit_update;
 pub mod supply_warehouse_crippling_behavior;
 pub mod ocl_update;
 // --- end p1w12-sonnet ---
@@ -664,6 +666,14 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::DefaultProductionExitUpdate(d) => Some(made_update(
             default_production_exit_update::DefaultProductionExitUpdate::get_interface_mask(),
             default_production_exit_update::DefaultProductionExitUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::DefaultProductionExitUpdate(m))),
+        )),
+        ModuleDataKind::SpawnPointProductionExitUpdate(d) => Some(made_update(
+            spawn_point_production_exit_update::SpawnPointProductionExitUpdate::get_interface_mask(),
+            spawn_point_production_exit_update::SpawnPointProductionExitUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::SpawnPointProductionExitUpdate(m))),
+        )),
+        ModuleDataKind::SupplyCenterProductionExitUpdate(d) => Some(made_update(
+            supply_center_production_exit_update::SupplyCenterProductionExitUpdate::get_interface_mask(),
+            supply_center_production_exit_update::SupplyCenterProductionExitUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::SupplyCenterProductionExitUpdate(m))),
         )),
         ModuleDataKind::SupplyWarehouseCripplingBehavior(d) => Some(made_update(
             supply_warehouse_crippling_behavior::SupplyWarehouseCripplingBehavior::get_interface_mask(),

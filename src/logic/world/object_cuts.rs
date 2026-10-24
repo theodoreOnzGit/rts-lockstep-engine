@@ -195,6 +195,20 @@ impl World {
     /// `cuts.contain.pristine_bones`: for `start_index` 0 the bone named `prefix`, else `<prefix>01`, `<prefix>02`, ... (from `start_index`, to 99)
     /// while the art has them, at most `max_bones` (W3DModelDraw's loop). None for an object with no drawable.
     pub fn drawable_pristine_bones(&self, id: ObjectId, prefix: &[u8], start_index: i32, max_bones: i32) -> Vec<Coord3D> {
+        self.drawable_pristine_bone_names(id, prefix, start_index, max_bones).iter().map(|n| self.cuts.contain.pristine_bones[&(id, n.clone())]).collect()
+    }
+
+    /// batch R45: `drawable->getPristineBonePositions(prefix, startIndex, NULL, transforms, maxBones)`: the same bones' transforms (from
+    /// `cuts.contain.pristine_bone_transforms`, the identity for a bone that has none).
+    pub fn drawable_pristine_bone_transforms(&self, id: ObjectId, prefix: &[u8], start_index: i32, max_bones: i32) -> Vec<crate::ww::matrix3d::Matrix3D> {
+        self.drawable_pristine_bone_names(id, prefix, start_index, max_bones)
+            .into_iter()
+            .map(|n| self.cuts.contain.pristine_bone_transforms.get(&(id, n)).copied().unwrap_or_else(crate::ww::matrix3d::Matrix3D::identity))
+            .collect()
+    }
+
+    /// The names of the bones `getPristineBonePositions` reads (see [`World::drawable_pristine_bones`]).
+    fn drawable_pristine_bone_names(&self, id: ObjectId, prefix: &[u8], start_index: i32, max_bones: i32) -> Vec<Vec<u8>> {
         let mut out = Vec::new();
         if !self.has_drawable(id) || max_bones <= 0 {
             return out;
@@ -205,8 +219,10 @@ impl World {
             if i != 0 {
                 name.extend_from_slice(format!("{i:02}").as_bytes());
             }
-            let Some(p) = self.cuts.contain.pristine_bones.get(&(id, name)) else { break };
-            out.push(*p);
+            if !self.cuts.contain.pristine_bones.contains_key(&(id, name.clone())) {
+                break;
+            }
+            out.push(name);
             if out.len() as i32 >= max_bones {
                 break;
             }

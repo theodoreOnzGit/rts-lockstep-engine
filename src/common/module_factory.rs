@@ -940,6 +940,16 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::default_production_exit_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::default_production_exit_update::DefaultProductionExitUpdate::get_interface_mask()),
         }),
+        "SpawnPointProductionExitUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::spawn_point_production_exit_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::spawn_point_production_exit_update::SpawnPointProductionExitUpdate::get_interface_mask()),
+        }),
+        "SupplyCenterProductionExitUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::supply_center_production_exit_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::supply_center_production_exit_update::SupplyCenterProductionExitUpdate::get_interface_mask()),
+        }),
         "SupplyWarehouseCripplingBehavior" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::supply_warehouse_crippling_behavior::new_module_data),
@@ -1190,6 +1200,8 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::AutoFindHealingUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::QueueProductionExitUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::DefaultProductionExitUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::SpawnPointProductionExitUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::SupplyCenterProductionExitUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::SupplyWarehouseCripplingBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::OclUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         // --- end p1w12-sonnet ---

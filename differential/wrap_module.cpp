@@ -851,5 +851,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_projectile_stream_r42.inc"   /* p1w13-sonnet, batch R42: ProjectileStreamUpdate */
 #include "l9_repair_dock_r43.inc"   /* p1w13-sonnet, batch R43: DockUpdate, RepairDockUpdate */
 #include "l9_supply_docks_r44.inc"   /* p1w13-sonnet, batch R44: SupplyWarehouseDockUpdate, SupplyCenterDockUpdate */
+#include "l9_exits_r45.inc"   /* p1w13-sonnet, batch R45: SupplyCenterProductionExitUpdate, SpawnPointProductionExitUpdate */
 #include "l9_ocl_power_r22.inc"   /* p1w13-sonnet, batch R22: OCLSpecialPower (run by l9_powers_h.inc, kind 7) */
 /* --- end p1w13-sonnet --- */

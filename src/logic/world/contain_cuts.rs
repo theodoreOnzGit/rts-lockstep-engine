@@ -46,6 +46,9 @@ pub struct ContainCutTables {
     /// `getSingleLogicalBonePosition(name, &pos, NULL)`: the bone's position by object and bone name (no entry: the bone does not exist and the call gives
     /// the object's position back).
     pub single_bones: BTreeMap<(ObjectId, Vec<u8>), Coord3D>,
+    /// batch R45: the art's bones' transforms (`getPristineBonePositions(prefix, start, NULL, transforms, max)`), by object and bone name, for
+    /// the bones `pristine_bones` names (no entry: the identity).
+    pub pristine_bone_transforms: BTreeMap<(ObjectId, Vec<u8>), Matrix3D>,
     /// `getMultiLogicalBonePosition("FIREPOINT", max, NULL, transforms, TRUE)`: the transforms by object (at most `max` are used).
     pub fire_points: BTreeMap<ObjectId, Vec<Matrix3D>>,
     /// `getSingleLogicalBonePositionOnTurret(TURRET_MAIN, name, NULL, &matrix)`: the transform by object and bone name (no entry: not found).

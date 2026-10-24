@@ -297,6 +297,10 @@ pub enum UpdateBody {
     QueueProductionExitUpdate(crate::logic::modules::queue_production_exit_update::QueueProductionExitUpdate),
     /// `DefaultProductionExitUpdate` (batch R18).
     DefaultProductionExitUpdate(crate::logic::modules::default_production_exit_update::DefaultProductionExitUpdate),
+    /// `SpawnPointProductionExitUpdate` (batch R45).
+    SpawnPointProductionExitUpdate(crate::logic::modules::spawn_point_production_exit_update::SpawnPointProductionExitUpdate),
+    /// `SupplyCenterProductionExitUpdate` (batch R45).
+    SupplyCenterProductionExitUpdate(crate::logic::modules::supply_center_production_exit_update::SupplyCenterProductionExitUpdate),
     /// `SupplyWarehouseCripplingBehavior` (batch R17).
     SupplyWarehouseCripplingBehavior(crate::logic::modules::supply_warehouse_crippling_behavior::SupplyWarehouseCripplingBehavior),
     /// `OclUpdate`.
@@ -501,6 +505,8 @@ impl UpdateBody {
             UpdateBody::AutoFindHealingUpdate(m) => m.world_update(world, me),
             UpdateBody::QueueProductionExitUpdate(m) => m.world_update(world, me),
             UpdateBody::DefaultProductionExitUpdate(m) => m.world_update(world, me),
+            UpdateBody::SpawnPointProductionExitUpdate(m) => m.world_update(world, me),
+            UpdateBody::SupplyCenterProductionExitUpdate(m) => m.world_update(world, me),
             UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.world_update(world, me),
             UpdateBody::OclUpdate(m) => m.world_update(world, me),
 // --- end p1w12-sonnet ---
@@ -672,6 +678,8 @@ impl UpdateBody {
             UpdateBody::AutoFindHealingUpdate(m) => m.module_call(world, me, call),
             UpdateBody::QueueProductionExitUpdate(m) => m.module_call(world, me, call),
             UpdateBody::DefaultProductionExitUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::SpawnPointProductionExitUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::SupplyCenterProductionExitUpdate(m) => m.module_call(world, me, call),
             UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.module_call(world, me, call),
             UpdateBody::OclUpdate(m) => m.module_call(world, me, call),
 // --- end p1w12-sonnet ---
@@ -824,6 +832,8 @@ impl UpdateBody {
             UpdateBody::AutoFindHealingUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::QueueProductionExitUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::DefaultProductionExitUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::SpawnPointProductionExitUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::SupplyCenterProductionExitUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::SupplyWarehouseCripplingBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::OclUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
 // --- end p1w12-sonnet ---
@@ -950,6 +960,8 @@ impl UpdateBody {
             UpdateBody::AutoFindHealingUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::QueueProductionExitUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::DefaultProductionExitUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::SpawnPointProductionExitUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::SupplyCenterProductionExitUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::SupplyWarehouseCripplingBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::OclUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
 // --- end p1w12-sonnet ---
@@ -1076,6 +1088,8 @@ impl UpdateBody {
             UpdateBody::AutoFindHealingUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::QueueProductionExitUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::DefaultProductionExitUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::SpawnPointProductionExitUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::SupplyCenterProductionExitUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::SupplyWarehouseCripplingBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::OclUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
 // --- end p1w12-sonnet ---
@@ -1239,6 +1253,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::AutoFindHealingUpdate(m) => m.crc(xfer),
             UpdateBody::QueueProductionExitUpdate(m) => m.crc(xfer),
             UpdateBody::DefaultProductionExitUpdate(m) => m.crc(xfer),
+            UpdateBody::SpawnPointProductionExitUpdate(m) => m.crc(xfer),
+            UpdateBody::SupplyCenterProductionExitUpdate(m) => m.crc(xfer),
             UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.crc(xfer),
             UpdateBody::OclUpdate(m) => m.crc(xfer),
 // --- end p1w12-sonnet ---
@@ -1406,6 +1422,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::AutoFindHealingUpdate(m) => m.xfer(xfer),
             UpdateBody::QueueProductionExitUpdate(m) => m.xfer(xfer),
             UpdateBody::DefaultProductionExitUpdate(m) => m.xfer(xfer),
+            UpdateBody::SpawnPointProductionExitUpdate(m) => m.xfer(xfer),
+            UpdateBody::SupplyCenterProductionExitUpdate(m) => m.xfer(xfer),
             UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.xfer(xfer),
             UpdateBody::OclUpdate(m) => m.xfer(xfer),
 // --- end p1w12-sonnet ---
@@ -1573,6 +1591,8 @@ impl Snapshot for UpdateBody {
             UpdateBody::AutoFindHealingUpdate(m) => m.load_post_process(),
             UpdateBody::QueueProductionExitUpdate(m) => m.load_post_process(),
             UpdateBody::DefaultProductionExitUpdate(m) => m.load_post_process(),
+            UpdateBody::SpawnPointProductionExitUpdate(m) => m.load_post_process(),
+            UpdateBody::SupplyCenterProductionExitUpdate(m) => m.load_post_process(),
             UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.load_post_process(),
             UpdateBody::OclUpdate(m) => m.load_post_process(),
 // --- end p1w12-sonnet ---
@@ -1811,6 +1831,8 @@ impl UpdateBody {
             UpdateBody::AutoFindHealingUpdate(m) => m.world_construct(world, me),
             UpdateBody::QueueProductionExitUpdate(m) => m.world_construct(world, me),
             UpdateBody::DefaultProductionExitUpdate(m) => m.world_construct(world, me),
+            UpdateBody::SpawnPointProductionExitUpdate(m) => m.world_construct(world, me),
+            UpdateBody::SupplyCenterProductionExitUpdate(m) => m.world_construct(world, me),
             UpdateBody::SupplyWarehouseCripplingBehavior(m) => m.world_construct(world, me),
             UpdateBody::OclUpdate(m) => m.world_construct(world, me),
 // --- end p1w12-sonnet ---

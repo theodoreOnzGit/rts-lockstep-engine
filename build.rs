@@ -3453,6 +3453,18 @@ mod differential {
                 let cut = text.replace(a, "\t\tInt positionIndex = m_approachPositionOwners.size() - 1;").replace(b, "\tfor( Int vectorIndex = 0; vectorIndex < vectorSize; ++vectorIndex )");
                 std::fs::write(mod_gen.join("DockUpdate_edit.cpp"), cut).expect("write DockUpdate_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R45 (differential/l9_exits_r45.inc): SpawnPointProductionExitUpdate.cpp has the same MSVC 6 scoping: exitObjectViaDoor
+                // reads its loop's index after the loop and initializeBonePositions reuses its first loop's. Both are declared before their loops
+                // (asserted once each), into mod_gen/SpawnPointProductionExitUpdate_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Update/ProductionExitUpdate/SpawnPointProductionExitUpdate.cpp");
+                let text = std::fs::read_to_string(&path).expect("read SpawnPointProductionExitUpdate.cpp");
+                let (a, b) = ("\t\tfor( Int positionIndex = 0; positionIndex < m_spawnPointCount; positionIndex++ )", "\tfor( Int matrixIndex = 0; matrixIndex < MAX_SPAWN_POINTS; matrixIndex++ )");
+                assert_eq!((text.matches(a).count(), text.matches(b).count()), (1, 1), "SpawnPointProductionExitUpdate.cpp: the MSVC for-scope loops must occur once each");
+                let cut = text
+                    .replace(a, "\t\tInt positionIndex;\n\t\tfor( positionIndex = 0; positionIndex < m_spawnPointCount; positionIndex++ )")
+                    .replace(b, "\tInt matrixIndex;\n\tfor( matrixIndex = 0; matrixIndex < MAX_SPAWN_POINTS; matrixIndex++ )");
+                std::fs::write(mod_gen.join("SpawnPointProductionExitUpdate_edit.cpp"), cut).expect("write SpawnPointProductionExitUpdate_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();

@@ -94,6 +94,9 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 				const Coord3D *p = g_r30BoneHook(name);
 				if (!p) break;
 				if (positions) positions[count] = *p;
+				/* batch R45: and the bones' transforms, when the test gives them (differential/l9_exits_r45.inc) */
+				extern const Matrix3D *(*g_boneXformHook)(const char *);
+				if (transforms && g_boneXformHook) { const Matrix3D *t = g_boneXformHook(name); if (t) transforms[count] = *t; }
 				++count;
 			}
 			return count;
