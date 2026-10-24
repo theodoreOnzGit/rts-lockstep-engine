@@ -1073,7 +1073,22 @@ impl ProbeModule {
             | ModuleCall::LandMineDisarm
             | ModuleCall::GenerateMinefieldSetTarget(_)
             | ModuleCall::ProjectileStreamAddProjectile { .. }
-            | ModuleCall::ProjectileStreamSetPosition(_) => ModuleReply::Unhandled,
+            | ModuleCall::ProjectileStreamSetPosition(_)
+            | ModuleCall::DockReserveApproachPosition { .. }
+            | ModuleCall::DockAdvanceApproachPosition { .. }
+            | ModuleCall::DockIsClearToEnter { .. }
+            | ModuleCall::DockIsClearToAdvance { .. }
+            | ModuleCall::DockGetEnterPosition { .. }
+            | ModuleCall::DockGetDockPosition { .. }
+            | ModuleCall::DockGetExitPosition { .. }
+            | ModuleCall::DockOnApproachReached { .. }
+            | ModuleCall::DockOnEnterReached { .. }
+            | ModuleCall::DockOnDockReached { .. }
+            | ModuleCall::DockOnExitReached { .. }
+            | ModuleCall::DockCancelDock { .. }
+            | ModuleCall::DockIsAllowPassthroughType
+            | ModuleCall::DockIsRallyPointAfterDockType
+            | ModuleCall::DockAction { .. } => ModuleReply::Unhandled,
             // batch R39: a probe named LifetimeUpdate stands in for one (`lifetime_die_frame`)
             ModuleCall::LifetimeGetDieFrame => match self.answers.lifetime_die_frame {
                 Some(f) => ModuleReply::Int(f as i32),

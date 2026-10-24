@@ -16,6 +16,11 @@ namespace rts
 typedef std::list<AsciiString> AsciiStringList;
 typedef std::list<AsciiString>::iterator AsciiStringListIterator;
 typedef std::list<AsciiString>::const_iterator AsciiStringListConstIterator;
+/* STLTypedefs.h lines 91, 95 and 109, verbatim (batch R43: DockUpdate.h) */
+#include <vector>
+typedef std::vector<ObjectID>															ObjectIDVector;
+typedef std::vector<Coord3D> VecCoord3D;
+typedef std::vector<Bool>																	BoolVector;
 namespace std
 {
 	template<typename K, typename V, typename H, typename E> using hash_map = map<K, V>;

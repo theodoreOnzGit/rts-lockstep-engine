@@ -716,6 +716,19 @@ impl World {
         }
     }
 
+    /// `clearAndSetModelConditionFlags(clr, set)` (batch R43): the drawable's, nothing without one; the flags of each mask in index order.
+    pub fn clear_and_set_model_condition_flags(&mut self, id: ObjectId, clr: &[i32], set: &[i32]) {
+        if self.has_drawable(id) {
+            let sorted = |a: &[i32]| {
+                let mut v = a.to_vec();
+                v.sort_unstable();
+                v.dedup();
+                v
+            };
+            self.emit(ObjectClientEvent::DrawableModelCondition { object_id: id, op: ModelConditionOp::ClearAndSet { clear: sorted(clr), set: sorted(set) } });
+        }
+    }
+
     /// `setSpecialModelConditionState(set, frames)`: "special model states
     /// are states that are turned on for a period of time, and turned off
     /// automatically -- used for cheer, and scripted special moment

@@ -692,6 +692,39 @@ pub enum ModuleCall {
     /// `setPosition(newPosition)`.
     ProjectileStreamSetPosition(Coord3D),
     // --- end p1w13-sonnet ---
+    // --- p1w13-sonnet --- (batch R43: the rest of `DockUpdateInterface`, which the AI's dock state machine drives; a docker or drone of
+    // `INVALID_ID` is `NULL`, a `position` of `None`/`false` is a `NULL` pointer)
+    /// `reserveApproachPosition(docker, position, &index)`; replies [`ModuleReply::Approach`].
+    DockReserveApproachPosition { docker: ObjectId, position: Option<Coord3D>, index: i32 },
+    /// `advanceApproachPosition(docker, position, &index)`; replies [`ModuleReply::Approach`].
+    DockAdvanceApproachPosition { docker: ObjectId, position: Option<Coord3D>, index: i32 },
+    /// `isClearToEnter(docker)`; replies [`ModuleReply::Bool`].
+    DockIsClearToEnter { docker: ObjectId },
+    /// `isClearToAdvance(docker, dockerIndex)`; replies [`ModuleReply::Bool`].
+    DockIsClearToAdvance { docker: ObjectId, index: i32 },
+    /// `getEnterPosition(docker, position)`; replies [`ModuleReply::Coord`] (`Done` for a `NULL` position).
+    DockGetEnterPosition { docker: ObjectId, position: bool },
+    /// `getDockPosition(docker, position)`; as `DockGetEnterPosition`.
+    DockGetDockPosition { docker: ObjectId, position: bool },
+    /// `getExitPosition(docker, position)`; as `DockGetEnterPosition`.
+    DockGetExitPosition { docker: ObjectId, position: bool },
+    /// `onApproachReached(docker)`.
+    DockOnApproachReached { docker: ObjectId },
+    /// `onEnterReached(docker)`.
+    DockOnEnterReached { docker: ObjectId },
+    /// `onDockReached(docker)`.
+    DockOnDockReached { docker: ObjectId },
+    /// `onExitReached(docker)`.
+    DockOnExitReached { docker: ObjectId },
+    /// `cancelDock(docker)`.
+    DockCancelDock { docker: ObjectId },
+    /// `isAllowPassthroughType()`; replies [`ModuleReply::Bool`].
+    DockIsAllowPassthroughType,
+    /// `isRallyPointAfterDockType()`; replies [`ModuleReply::Bool`].
+    DockIsRallyPointAfterDockType,
+    /// `action(docker, drone)`; replies [`ModuleReply::Bool`].
+    DockAction { docker: ObjectId, drone: ObjectId },
+    // --- end p1w13-sonnet ---
     // --- p1w13-sonnet --- (batch R38: `BridgeTowerBehaviorInterface`, which `TerrainLogic`'s `Bridge::createTower` drives)
     /// `setBridge(bridge)` (the bridge's id; one that is no object is `setBridge(NULL)`).
     BridgeTowerSetBridge(ObjectId),
@@ -841,6 +874,10 @@ pub enum ModuleReply {
     // --- p1w13-sonnet ---
     /// A `Coord3D` (a velocity).
     Coord(Coord3D),
+    // --- end p1w13-sonnet ---
+    // --- p1w13-sonnet --- (batch R43)
+    /// `reserveApproachPosition` / `advanceApproachPosition`: the answer, and the position and index (the caller's when not written).
+    Approach { ok: bool, position: Option<Coord3D>, index: i32 },
     // --- end p1w13-sonnet ---
 }
 

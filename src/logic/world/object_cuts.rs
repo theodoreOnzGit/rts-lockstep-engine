@@ -47,7 +47,7 @@
 //! | `TheAudio`, `TheRadar`, `TheInGameUI`, `TheControlBar`, `TheEva`, `TheGameClient` | see `object_events.rs` | `ObjectClientEvent` |
 //! | module factory, `ModuleInfo` | `newModule` | the caller (`NewObject::modules`) |
 //! | `CommandButton`, `TheControlBar->findCommandSet` | `doCommandButton*`, `canProduceUpgrade` | **not translated** (client/GUI types) |
-//! | bone positions (`Drawable::getPristineBonePositions` and friends) | `getSingleLogicalBonePosition*`, `getMultiLogicalBonePosition` | **not translated** (the model's bone data is a client read) |
+//! | bone positions (`Drawable::getPristineBonePositions` and friends) | `getSingleLogicalBonePosition*`, `getMultiLogicalBonePosition` | ~~**not translated**~~ (corrected 2026-10-24, batch R43: the art's bones are tables, `cuts.contain.single_bones` and `cuts.contain.pristine_bones`, read by `World::drawable_pristine_bones` and the contain cuts) |
 
 use std::collections::{BTreeMap, BTreeSet};
 use crate::common::base_type::Coord3D;

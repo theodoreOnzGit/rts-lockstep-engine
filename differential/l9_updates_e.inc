@@ -49,8 +49,15 @@ Drawable g_ueDrawable;
 
 }  // namespace
 
-void Drawable::clearModelConditionFlags(const ModelConditionFlags &clr) { ulog("clearflags %s", flagBitsE(clr).c_str()); }
-void Drawable::clearAndSetModelConditionState(ModelConditionFlagType clr, ModelConditionFlagType set) { ulog("clearset %d %d", (int)clr, (int)set); }
+/* p1w13-sonnet, batch R43 (DockUpdate, differential/l9_repair_dock_r43.inc): with the hook, the drawable's and the object's mask changes are
+** each one call naming every flag (the object's only with a drawable); null for the other drivers */
+void (*g_mcHook)(const Object *obj, const ModelConditionFlags *clr, const ModelConditionFlags *set) = 0;
+void Drawable::clearModelConditionFlags(const ModelConditionFlags &clr) { if (g_mcHook) { g_mcHook(m_ownerObject, &clr, 0); return; } ulog("clearflags %s", flagBitsE(clr).c_str()); }
+void Drawable::clearAndSetModelConditionState(ModelConditionFlagType clr, ModelConditionFlagType set)
+{
+	if (g_mcHook) { ModelConditionFlags c, s; c.set(clr); s.set(set); g_mcHook(m_ownerObject, &c, &s); return; }
+	ulog("clearset %d %d", (int)clr, (int)set);
+}
 
 extern "C" {
 

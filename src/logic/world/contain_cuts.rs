@@ -195,6 +195,9 @@ pub enum ContainCall {
     // batch R8 (ParachuteContain)
     /// `ThePartitionManager->findPositionAround(&pos, options, &pos)` (`minRadius`, `maxRadius`, `flags`; no relationship object).
     PartitionFindPositionAround { position: Coord3D, min_radius: f32, max_radius: f32, flags: i32 },
+    /// batch R43 (`DockUpdate::computeApproachPosition`): `findPositionAround` with the options' `sourceToPathToDest` and `ignoreObject`
+    /// (`INVALID_ID` for `NULL`).
+    PartitionFindPositionAroundFor { position: Coord3D, min_radius: f32, max_radius: f32, flags: i32, source_to_path_to_dest: ObjectId, ignore_object: ObjectId },
     /// `TheAI->pathfinder()->getCell(layer, x, y)`.
     PathfindGetCell { layer: PathfindLayer, x: i32, y: i32 },
     /// `obj->getDrawable()->setInstanceMatrix(matrix)` (`None` for `NULL`).
@@ -555,6 +558,13 @@ impl World {
             }
             None => false,
         }
+    }
+
+    /// batch R43: `ThePartitionManager->findPositionAround(&pos, options, &result)` with no flags, the radii, and the options' object that must
+    /// path to the position and object to ignore: the found position (see [`ContainCutTables::find_position`]), `None` when none is.
+    pub fn dock_partition_find_position_around(&mut self, pos: &Coord3D, min_radius: f32, max_radius: f32, source_to_path_to_dest: ObjectId, ignore_object: ObjectId) -> Option<Coord3D> {
+        self.contain_cut(ContainCall::PartitionFindPositionAroundFor { position: *pos, min_radius, max_radius, flags: 0, source_to_path_to_dest, ignore_object });
+        self.cuts.contain.find_position
     }
 
     /// `TheAI->pathfinder()->getCell(layer, x, y)`, then `getType()`: `None` for a `NULL` cell (see [`ContainCutTables::cell_types`]).

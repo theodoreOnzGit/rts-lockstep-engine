@@ -507,6 +507,8 @@ void Locomotor::setCloseEnoughDist3D(Bool setting) { ulog("lococlose3d %d %d", (
 void AIUpdateInterface::aiHunt(CommandSourceType cmdSource) { ulog("aihunt %d %d", (int)m_owner->m_oid, (int)cmdSource); }
 Bool PartitionManager::findPositionAround(const Coord3D *center, const FindPositionOptions *options, Coord3D *result)
 {
+	extern Bool (*g_findPosHook)(const Coord3D *, const FindPositionOptions *, Coord3D *);   /* batch R43: the dock's options (l9_repair_dock_r43.inc) */
+	if (g_findPosHook) return g_findPosHook(center, options, result);
 	ulog("findpos %08x %08x %08x %08x %08x %d", realBits(center->x), realBits(center->y), realBits(center->z), realBits(options->minRadius), realBits(options->maxRadius),
 		(int)options->flags);
 	if (!g_ctFindPosHas) return FALSE;

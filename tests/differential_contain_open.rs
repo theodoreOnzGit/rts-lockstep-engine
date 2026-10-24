@@ -1875,6 +1875,7 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                         ContainCall::PartitionFindPositionAround { position, min_radius, max_radius, flags } => {
                             log.push(format!("findpos {} {:08x} {:08x} {flags}", hex3(&position), min_radius.to_bits(), max_radius.to_bits()))
                         }
+                        ContainCall::PartitionFindPositionAroundFor { .. } => unreachable!("batch R43's call: no contain makes it"),
                         ContainCall::PathfindGetCell { layer, x, y } => log.push(format!("getcell {layer} {x} {y}")),
                         ContainCall::DrawableSetInstanceMatrix { object, matrix } => match matrix {
                             None => log.push(format!("instance {object} null")),

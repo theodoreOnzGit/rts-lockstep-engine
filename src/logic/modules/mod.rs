@@ -127,6 +127,8 @@ pub mod pilot_find_vehicle_update;
 pub mod horde_update;
 pub mod topple_update;
 pub mod propaganda_tower_behavior;
+pub mod dock_update;
+pub mod repair_dock_update;
 pub mod projectile_stream_update;
 pub mod generate_minefield_behavior;
 pub mod minefield_behavior;
@@ -557,6 +559,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::PropagandaTowerBehavior(d) => Some(made_update(
             propaganda_tower_behavior::PropagandaTowerBehavior::get_interface_mask(),
             propaganda_tower_behavior::PropagandaTowerBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::PropagandaTowerBehavior(m))),
+        )),
+        ModuleDataKind::RepairDockUpdate(d) => Some(made_update(
+            repair_dock_update::RepairDockUpdate::get_interface_mask(),
+            repair_dock_update::RepairDockUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::RepairDockUpdate(m))),
         )),
         ModuleDataKind::GenerateMinefieldBehavior(d) => Some(made_update(
             generate_minefield_behavior::GenerateMinefieldBehavior::get_interface_mask(),

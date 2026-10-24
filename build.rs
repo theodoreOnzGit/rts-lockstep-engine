@@ -3443,6 +3443,16 @@ mod differential {
                 let cut = text.replace(key, "const NameKeyType key_AutoHealBehavior");
                 std::fs::write(mod_gen.join("MinefieldBehavior_edit.cpp"), cut).expect("write MinefieldBehavior_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R43 (differential/l9_repair_dock_r43.inc): DockUpdate.cpp is written for MSVC 6's for-loop scoping, under which a
+                // variable declared in a `for` lives on after it; clang's standard scoping rejects the three later uses. Each use gets its own
+                // declaration (asserted once each, the two xfer loops together), into mod_gen/DockUpdate_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Update/DockUpdate/DockUpdate.cpp");
+                let text = std::fs::read_to_string(&path).expect("read DockUpdate.cpp");
+                let (a, b) = ("\t\tpositionIndex = m_approachPositionOwners.size() - 1;", "\tfor( vectorIndex = 0; vectorIndex < vectorSize; ++vectorIndex )");
+                assert_eq!((text.matches(a).count(), text.matches(b).count()), (1, 2), "DockUpdate.cpp: the MSVC for-scope uses must occur once and twice");
+                let cut = text.replace(a, "\t\tInt positionIndex = m_approachPositionOwners.size() - 1;").replace(b, "\tfor( Int vectorIndex = 0; vectorIndex < vectorSize; ++vectorIndex )");
+                std::fs::write(mod_gen.join("DockUpdate_edit.cpp"), cut).expect("write DockUpdate_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();

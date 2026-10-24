@@ -795,6 +795,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::propaganda_tower_behavior::new_module_data),
             which_interfaces: Some(crate::logic::modules::propaganda_tower_behavior::PropagandaTowerBehavior::get_interface_mask()),
         }),
+        "RepairDockUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::repair_dock_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::repair_dock_update::RepairDockUpdate::get_interface_mask()),
+        }),
         "ProjectileStreamUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::new_plain_update_module_data),
@@ -1151,6 +1156,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::HordeUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::ToppleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::PropagandaTowerBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::RepairDockUpdate(d)) => Some(std::sync::Arc::new(d.dock.update.clone())),
         Some(ModuleDataKind::GenerateMinefieldBehavior(d)) => Some(std::sync::Arc::new(crate::logic::module::update_module::UpdateModuleData { behavior: d.behavior.clone() })),
         Some(ModuleDataKind::MinefieldBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::StickyBombUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
