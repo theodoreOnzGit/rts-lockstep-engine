@@ -14,5 +14,7 @@ public:
 	void setUltraAccurate(Bool u);
 	void setCloseEnoughDist(Real dist);
 	void setCloseEnoughDist3D(Bool setting);
+	void setMaxLift(Real lift);   /* p1w13-sonnet, batch R46: JetSlowDeathBehavior (differential/l9_jet_death_r46.inc) */
+	void setMaxTurnRate(Real turn);
 };
 #endif

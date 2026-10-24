@@ -703,6 +703,20 @@ impl ProbeModule {
                 world.body_trace(format!("ppitch {} {:08x}", me.object, p.to_bits()));
                 ModuleReply::Done
             }
+            // --- p1w13-sonnet --- (batch R46)
+            ModuleCall::PhysicsSetRollRate(r) => {
+                world.body_trace(format!("proll {} {:08x}", me.object, r.to_bits()));
+                ModuleReply::Done
+            }
+            ModuleCall::AiLocomotorSetMaxLift(l) => {
+                world.body_trace(format!("maxlift {} {:08x}", me.object, l.to_bits()));
+                ModuleReply::Done
+            }
+            ModuleCall::AiLocomotorSetMaxTurnRate(r) => {
+                world.body_trace(format!("maxturn {} {:08x}", me.object, r.to_bits()));
+                ModuleReply::Done
+            }
+            // --- end p1w13-sonnet ---
             ModuleCall::AiSetAttitude(a) => {
                 world.body_trace(format!("aiattitude {} {a}", me.object));
                 ModuleReply::Done

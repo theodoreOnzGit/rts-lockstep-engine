@@ -109,12 +109,24 @@ impl<'a> Reader<'a> {
     }
     /// One op's xfer part: the status, the bytes (the scheduling half's frame-and-phase word masked: the C++ stand-in has no scheduler) and the CRC.
     pub fn xfer(&mut self) -> String {
+        self.xfer_after_versions(5)
+    }
+
+    /// The byte count of the xfer record at the reader (its status word is first), without reading it.
+    pub fn peek_xfer_len(&self) -> usize {
+        let mut c = Reader { b: self.b, p: self.p };
+        let _ = c.u32();
+        c.u32() as usize
+    }
+
+    /// [`Self::xfer`] for a module whose scheduling word follows `versions` version bytes (a derived class adds one, batch R46).
+    pub fn xfer_after_versions(&mut self, versions: usize) -> String {
         let xst = self.u32() as i32;
         let blen = self.u32();
         let mut bytes: Vec<u32> = (0..blen).map(|_| self.u32()).collect();
-        if bytes.len() >= 9 {
-            // the scheduling half's frame-and-phase word (after the five versions) is the sleepy list's
-            bytes[5..9].iter_mut().for_each(|b| *b = 0);
+        if bytes.len() >= versions + 4 {
+            // the scheduling half's frame-and-phase word (after the versions) is the sleepy list's
+            bytes[versions..versions + 4].iter_mut().for_each(|b| *b = 0);
         }
         let crc = self.u32();
         format!("xfer {xst} bytes {bytes:?} crc {crc:#x}")

@@ -743,6 +743,14 @@ pub enum ModuleCall {
     /// `SupplyWarehouseDockUpdate::getBoxesStored()`; replies [`ModuleReply::Int`].
     SupplyWarehouseGetBoxesStored,
     // --- end p1w13-sonnet ---
+    // --- p1w13-sonnet --- (batch R46: JetSlowDeathBehavior)
+    /// `getCurLocomotor()->setMaxLift(lift)`.
+    AiLocomotorSetMaxLift(f32),
+    /// `getCurLocomotor()->setMaxTurnRate(rate)`.
+    AiLocomotorSetMaxTurnRate(f32),
+    /// `PhysicsBehavior::setRollRate(rate)`.
+    PhysicsSetRollRate(f32),
+    // --- end p1w13-sonnet ---
     // --- p1w13-sonnet --- (batch R38: `BridgeTowerBehaviorInterface`, which `TerrainLogic`'s `Bridge::createTower` drives)
     /// `setBridge(bridge)` (the bridge's id; one that is no object is `setBridge(NULL)`).
     BridgeTowerSetBridge(ObjectId),

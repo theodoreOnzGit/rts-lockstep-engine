@@ -186,55 +186,103 @@ fn lift_die_field(k: usize, i: &mut Ini<'_>, d: &mut SlowDeathBehaviorModuleData
     }
 }
 
-/// `dataFieldParse`, then `DieMuxData::getFieldParse()`.
-static FIELD_PARSE: [FieldParse<SlowDeathBehaviorModuleData>; 20] = [
-    FieldParse::new("SinkRate", |i, d, _| { d.sink_rate = i.parse_velocity_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("ProbabilityModifier", |i, d, _| { d.probability_modifier = i.parse_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("ModifierBonusPerOverkillPercent", |i, d, _| { d.modifier_bonus_per_overkill_percent = i.parse_percent_to_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("SinkDelay", |i, d, _| { d.sink_delay = i.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("SinkDelayVariance", |i, d, _| { d.sink_delay_variance = i.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("DestructionDelay", |i, d, _| { d.destruction_delay = i.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("DestructionDelayVariance", |i, d, _| { d.destruction_delay_variance = i.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("DestructionAltitude", |i, d, _| { d.destruction_altitude = i.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("FX", |i, d, _| {
-        let phase = parse_phase(i)?;
-        // `for (token = ini->getNextToken(); token != NULL; token = ini->getNextTokenOrNull())`: the first token is required
-        let mut token = Some(i.get_next_token(None)?);
-        while let Some(t) = token {
-            // `findFXList(token)`: "could be null! this is OK!"
-            d.fx[phase].push(if t.eq_ignore_ascii_case(b"None") { None } else { Some(t) });
-            token = i.get_next_token_or_null(None);
-        }
-        Ok(())
-    }, UserData::None),
-    FieldParse::new("OCL", |i, d, _| {
-        let phase = parse_phase(i)?;
-        let mut token = Some(i.get_next_token(None)?);
-        while let Some(t) = token {
-            d.ocls[phase].push(t);
-            token = i.get_next_token_or_null(None);
-        }
-        Ok(())
-    }, UserData::None),
-    FieldParse::new("Weapon", |i, d, _| {
-        let phase = parse_phase(i)?;
-        let mut token = Some(i.get_next_token(None)?);
-        while let Some(t) = token {
-            d.weapons[phase].push(t);
-            token = i.get_next_token_or_null(None);
-        }
-        Ok(())
-    }, UserData::None),
-    FieldParse::new("FlingForce", |i, d, _| { d.fling_force = i.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("FlingForceVariance", |i, d, _| { d.fling_force_variance = i.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("FlingPitch", |i, d, _| { d.fling_pitch = i.parse_angle_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("FlingPitchVariance", |i, d, _| { d.fling_pitch_variance = i.parse_angle_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("DeathTypes", |i, d, u| lift_die_field(0, i, d, u), UserData::None),
-    FieldParse::new("VeterancyLevels", |i, d, u| lift_die_field(1, i, d, u), UserData::None),
-    FieldParse::new("ExemptStatus", |i, d, u| lift_die_field(2, i, d, u), UserData::None),
-    FieldParse::new("RequiredStatus", |i, d, u| lift_die_field(3, i, d, u), UserData::None),
-    FieldParse::end(),
+/// The tokens of `dataFieldParse`, then `DieMuxData::getFieldParse()`'s, in order (entry `k` of [`slow_death_field`]).
+pub const SLOW_DEATH_FIELD_TOKENS: [&str; 19] = [
+    "SinkRate",
+    "ProbabilityModifier",
+    "ModifierBonusPerOverkillPercent",
+    "SinkDelay",
+    "SinkDelayVariance",
+    "DestructionDelay",
+    "DestructionDelayVariance",
+    "DestructionAltitude",
+    "FX",
+    "OCL",
+    "Weapon",
+    "FlingForce",
+    "FlingForceVariance",
+    "FlingPitch",
+    "FlingPitchVariance",
+    "DeathTypes",
+    "VeterancyLevels",
+    "ExemptStatus",
+    "RequiredStatus",
 ];
+
+/// Entry `k` of `dataFieldParse` (then `DieMuxData::getFieldParse()`), on the `SlowDeathBehaviorModuleData` `d` (a derived data's base, batch
+/// R46: see [`slow_death_field_parse!`](crate::slow_death_field_parse)).
+pub fn slow_death_field(k: usize, i: &mut Ini<'_>, d: &mut SlowDeathBehaviorModuleData, u: &UserData) -> IniResult<()> {
+    match k {
+        0 => d.sink_rate = i.parse_velocity_real()?,
+        1 => d.probability_modifier = i.parse_int()?,
+        2 => d.modifier_bonus_per_overkill_percent = i.parse_percent_to_real()?,
+        3 => d.sink_delay = i.parse_duration_unsigned_int()?,
+        4 => d.sink_delay_variance = i.parse_duration_unsigned_int()?,
+        5 => d.destruction_delay = i.parse_duration_unsigned_int()?,
+        6 => d.destruction_delay_variance = i.parse_duration_unsigned_int()?,
+        7 => d.destruction_altitude = i.parse_real()?,
+        8 => {
+            let phase = parse_phase(i)?;
+            // `for (token = ini->getNextToken(); token != NULL; token = ini->getNextTokenOrNull())`: the first token is required
+            let mut token = Some(i.get_next_token(None)?);
+            while let Some(t) = token {
+                // `findFXList(token)`: "could be null! this is OK!"
+                d.fx[phase].push(if t.eq_ignore_ascii_case(b"None") { None } else { Some(t) });
+                token = i.get_next_token_or_null(None);
+            }
+        }
+        9 | 10 => {
+            let phase = parse_phase(i)?;
+            let mut token = Some(i.get_next_token(None)?);
+            while let Some(t) = token {
+                if k == 9 { d.ocls[phase].push(t) } else { d.weapons[phase].push(t) }
+                token = i.get_next_token_or_null(None);
+            }
+        }
+        11 => d.fling_force = i.parse_real()?,
+        12 => d.fling_force_variance = i.parse_real()?,
+        13 => d.fling_pitch = i.parse_angle_real()?,
+        14 => d.fling_pitch_variance = i.parse_angle_real()?,
+        _ => return lift_die_field(k - 15, i, d, u),
+    }
+    Ok(())
+}
+
+/// `SlowDeathBehaviorModuleData::buildFieldParse`'s table (`dataFieldParse`, then `DieMuxData::getFieldParse()`) for a data type `$ty`
+/// whose `SlowDeathBehaviorModuleData` the function `$acc` gives (`std::convert::identity` for the class itself; a derived class's base
+/// for a derived data, batch R46).
+#[macro_export]
+macro_rules! slow_death_field_parse {
+    ($ty:ty, $acc:path) => {{
+        use $crate::common::ini::{FieldParse, UserData};
+        use $crate::logic::modules::slow_death_behavior::{slow_death_field, SLOW_DEATH_FIELD_TOKENS as T};
+        [
+            FieldParse::<$ty>::new(T[0], |i, d, u| slow_death_field(0, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[1], |i, d, u| slow_death_field(1, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[2], |i, d, u| slow_death_field(2, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[3], |i, d, u| slow_death_field(3, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[4], |i, d, u| slow_death_field(4, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[5], |i, d, u| slow_death_field(5, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[6], |i, d, u| slow_death_field(6, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[7], |i, d, u| slow_death_field(7, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[8], |i, d, u| slow_death_field(8, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[9], |i, d, u| slow_death_field(9, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[10], |i, d, u| slow_death_field(10, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[11], |i, d, u| slow_death_field(11, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[12], |i, d, u| slow_death_field(12, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[13], |i, d, u| slow_death_field(13, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[14], |i, d, u| slow_death_field(14, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[15], |i, d, u| slow_death_field(15, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[16], |i, d, u| slow_death_field(16, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[17], |i, d, u| slow_death_field(17, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::new(T[18], |i, d, u| slow_death_field(18, i, $acc(d), u), UserData::None),
+            FieldParse::<$ty>::end(),
+        ]
+    }};
+}
+
+/// `dataFieldParse`, then `DieMuxData::getFieldParse()`.
+static FIELD_PARSE: [FieldParse<SlowDeathBehaviorModuleData>; 20] = crate::slow_death_field_parse!(SlowDeathBehaviorModuleData, std::convert::identity);
 
 impl SlowDeathBehaviorModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's fields and the die mux's.
@@ -348,6 +396,11 @@ impl SlowDeathBehavior {
         &self.update
     }
 
+    /// The `UpdateModule` base, to put back the scheduling half a derived class's xfer used (batch R46).
+    pub(crate) fn update_module_mut(&mut self) -> &mut UpdateModule {
+        &mut self.update
+    }
+
     /// The module data (`getSlowDeathBehaviorModuleData()`).
     pub fn module_data(&self) -> &Arc<SlowDeathBehaviorModuleData> {
         &self.data
@@ -360,13 +413,19 @@ impl SlowDeathBehavior {
 
     /// The constructor's second half, run by the world once the module is part of its object: the wake call, and the lists found (see the module docs).
     pub fn world_construct(&mut self, world: &mut World, me: ModuleHandle) {
+        self.find_effects(world);
+        update_behavior::world_construct(self, world, me);
+    }
+
+    /// The lists of the data, found in the stores (see the module docs): the first half of [`SlowDeathBehavior::world_construct`], for a derived
+    /// class's (batch R46).
+    pub(crate) fn find_effects(&mut self, world: &mut World) {
         let statics = world.statics.clone();
         let d = self.data.clone();
         self.has_fx = d.fx.iter().any(|v| v.iter().any(|f| f.is_some()));
         self.has_ocl = d.ocls.iter().any(|v| v.iter().any(|n| statics.object_creation_list_store.find_object_creation_list(&mut world.names, n).is_some()));
         // (`TheWeaponStore->findWeaponTemplate(name)`: a template of that name, whatever the case)
         self.has_weapon = d.weapons.iter().any(|v| v.iter().any(|n| statics.weapon_store.templates().iter().any(|t| t.name.eq_ignore_ascii_case(n))));
-        update_behavior::world_construct(self, world, me);
     }
 
     /// The state `xfer` writes, as words: the three frames, the time scale and the flags (the test compares them).
@@ -385,7 +444,7 @@ impl SlowDeathBehavior {
     }
 
     /// `isSlowDeathActivated()`.
-    fn is_slow_death_activated(&self) -> bool {
+    pub(crate) fn is_slow_death_activated(&self) -> bool {
         self.flags & (1 << SLOW_DEATH_ACTIVATED) != 0
     }
 
@@ -446,7 +505,7 @@ impl SlowDeathBehavior {
     }
 
     /// `beginSlowDeath(damageInfo)`.
-    fn begin_slow_death(&mut self, world: &mut World, me: ModuleHandle) {
+    pub(crate) fn begin_slow_death(&mut self, world: &mut World, me: ModuleHandle) {
         if self.is_slow_death_activated() {
             return;
         }
@@ -593,7 +652,7 @@ impl SlowDeathBehavior {
     }
 
     /// `onDie(damageInfo)`.
-    fn on_die(&mut self, world: &mut World, me: ModuleHandle, info: &DamageInfo) {
+    pub(crate) fn on_die(&mut self, world: &mut World, me: ModuleHandle, info: &DamageInfo) {
         let obj = me.object;
         if !self.is_die_applicable(world, me, info) {
             return;
