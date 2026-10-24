@@ -45,14 +45,18 @@ use std::sync::Arc;
 use crate::common::disabled_types::DISABLED_HELD;
 use crate::common::game_common::Relationship;
 use crate::common::game_type::{ObjectId, INVALID_ID};
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::kind_of::KINDOF_INFANTRY;
 use crate::common::module::ModuleDataKind;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::DamageInfo;
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::update_module::{UpdateModule, UpdateSleepTime, UPDATE_SLEEP_NONE};
-use crate::logic::modules::open_contain::{self, out, OpenContain, OpenContainModuleData, OpenContainVirtuals};
+use crate::logic::modules::open_contain::{
+    self, out, OpenContain, OpenContainModuleData, OpenContainVirtuals,
+};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::ids::PlayerIndex;
@@ -80,12 +84,20 @@ impl Default for TunnelContainModuleData {
         let mut infantry = crate::common::kind_of::KindOfMaskType::new();
         infantry.set(KINDOF_INFANTRY, 1);
         open.allow_inside_kind_of = infantry;
-        TunnelContainModuleData { open, frames_for_full_heal: 1.0 }
+        TunnelContainModuleData {
+            open,
+            frames_for_full_heal: 1.0,
+        }
     }
 }
 
 /// Lifts entry `k` of `OpenContainModuleData`'s table onto the `open` base.
-fn lift_open(k: usize, i: &mut Ini<'_>, d: &mut TunnelContainModuleData, u: &UserData) -> IniResult<()> {
+fn lift_open(
+    k: usize,
+    i: &mut Ini<'_>,
+    d: &mut TunnelContainModuleData,
+    u: &UserData,
+) -> IniResult<()> {
     match open_contain::FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.open, u),
         None => Ok(()),
@@ -93,7 +105,12 @@ fn lift_open(k: usize, i: &mut Ini<'_>, d: &mut TunnelContainModuleData, u: &Use
 }
 
 /// Lifts entry `k` of the die mux table onto the `open` base.
-fn lift_die(k: usize, i: &mut Ini<'_>, d: &mut TunnelContainModuleData, u: &UserData) -> IniResult<()> {
+fn lift_die(
+    k: usize,
+    i: &mut Ini<'_>,
+    d: &mut TunnelContainModuleData,
+    u: &UserData,
+) -> IniResult<()> {
     match open_contain::DIE_MUX_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.open, u),
         None => Ok(()),
@@ -101,41 +118,118 @@ fn lift_die(k: usize, i: &mut Ini<'_>, d: &mut TunnelContainModuleData, u: &User
 }
 
 static LIFTED_OPEN: [FieldParse<TunnelContainModuleData>; 16] = [
-    FieldParse::new("ContainMax", |i, d, u| lift_open(0, i, d, u), UserData::None),
-    FieldParse::new("EnterSound", |i, d, u| lift_open(1, i, d, u), UserData::None),
+    FieldParse::new(
+        "ContainMax",
+        |i, d, u| lift_open(0, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "EnterSound",
+        |i, d, u| lift_open(1, i, d, u),
+        UserData::None,
+    ),
     FieldParse::new("ExitSound", |i, d, u| lift_open(2, i, d, u), UserData::None),
-    FieldParse::new("DamagePercentToUnits", |i, d, u| lift_open(3, i, d, u), UserData::None),
-    FieldParse::new("BurnedDeathToUnits", |i, d, u| lift_open(4, i, d, u), UserData::None),
-    FieldParse::new("AllowInsideKindOf", |i, d, u| lift_open(5, i, d, u), UserData::None),
-    FieldParse::new("ForbidInsideKindOf", |i, d, u| lift_open(6, i, d, u), UserData::None),
-    FieldParse::new("PassengersAllowedToFire", |i, d, u| lift_open(7, i, d, u), UserData::None),
-    FieldParse::new("PassengersInTurret", |i, d, u| lift_open(8, i, d, u), UserData::None),
-    FieldParse::new("NumberOfExitPaths", |i, d, u| lift_open(9, i, d, u), UserData::None),
-    FieldParse::new("DoorOpenTime", |i, d, u| lift_open(10, i, d, u), UserData::None),
-    FieldParse::new("WeaponBonusPassedToPassengers", |i, d, u| lift_open(11, i, d, u), UserData::None),
-    FieldParse::new("AllowAlliesInside", |i, d, u| lift_open(12, i, d, u), UserData::None),
-    FieldParse::new("AllowEnemiesInside", |i, d, u| lift_open(13, i, d, u), UserData::None),
-    FieldParse::new("AllowNeutralInside", |i, d, u| lift_open(14, i, d, u), UserData::None),
+    FieldParse::new(
+        "DamagePercentToUnits",
+        |i, d, u| lift_open(3, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "BurnedDeathToUnits",
+        |i, d, u| lift_open(4, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AllowInsideKindOf",
+        |i, d, u| lift_open(5, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ForbidInsideKindOf",
+        |i, d, u| lift_open(6, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "PassengersAllowedToFire",
+        |i, d, u| lift_open(7, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "PassengersInTurret",
+        |i, d, u| lift_open(8, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "NumberOfExitPaths",
+        |i, d, u| lift_open(9, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DoorOpenTime",
+        |i, d, u| lift_open(10, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "WeaponBonusPassedToPassengers",
+        |i, d, u| lift_open(11, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AllowAlliesInside",
+        |i, d, u| lift_open(12, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AllowEnemiesInside",
+        |i, d, u| lift_open(13, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AllowNeutralInside",
+        |i, d, u| lift_open(14, i, d, u),
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 static LIFTED_DIE: [FieldParse<TunnelContainModuleData>; 5] = [
     FieldParse::new("DeathTypes", |i, d, u| lift_die(0, i, d, u), UserData::None),
-    FieldParse::new("VeterancyLevels", |i, d, u| lift_die(1, i, d, u), UserData::None),
-    FieldParse::new("ExemptStatus", |i, d, u| lift_die(2, i, d, u), UserData::None),
-    FieldParse::new("RequiredStatus", |i, d, u| lift_die(3, i, d, u), UserData::None),
+    FieldParse::new(
+        "VeterancyLevels",
+        |i, d, u| lift_die(1, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ExemptStatus",
+        |i, d, u| lift_die(2, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RequiredStatus",
+        |i, d, u| lift_die(3, i, d, u),
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 /// `TunnelContainModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<TunnelContainModuleData>; 2] = [
-    FieldParse::new("TimeForFullHeal", |i, d, _| { d.frames_for_full_heal = i.parse_duration_real()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "TimeForFullHeal",
+        |i, d, _| {
+            d.frames_for_full_heal = i.parse_duration_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl TunnelContainModuleData {
     /// `TunnelContainModuleData::buildFieldParse(p)`: `OpenContainModuleData::buildFieldParse(p)`, then this class's table.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, TunnelContainModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, TunnelContainModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&LIFTED_OPEN)?;
         p.add(&LIFTED_DIE)?;
@@ -155,7 +249,9 @@ impl TunnelContainModuleData {
 
 /// The factory's `NewModuleDataProc` for `TunnelContain`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::TunnelContain(Arc::new(TunnelContainModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::TunnelContain(Arc::new(
+        TunnelContainModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
 /// `class TunnelContain : public OpenContain, public CreateModuleInterface`.
@@ -179,11 +275,18 @@ fn undefined(world: &mut World, me: ModuleHandle, u: Undefined) {
 
 /// The tracker of player `p`, in place (`None`: no player there, or no tracker).
 fn tracker_of(world: &World, p: PlayerIndex) -> Option<&TunnelTracker> {
-    world.players.get_nth(p).and_then(|pl| pl.tunnel_system.as_ref())
+    world
+        .players
+        .get_nth(p)
+        .and_then(|pl| pl.tunnel_system.as_ref())
 }
 
 /// Runs `f` with player `p`'s tracker checked out of its slot (`None`: no player there, or no tracker).
-fn with_tracker<R>(world: &mut World, p: PlayerIndex, f: impl FnOnce(&mut TunnelTracker, &mut World) -> R) -> Option<R> {
+fn with_tracker<R>(
+    world: &mut World,
+    p: PlayerIndex,
+    f: impl FnOnce(&mut TunnelTracker, &mut World) -> R,
+) -> Option<R> {
     let mut t = world.players.get_nth_mut(p)?.tunnel_system.take()?;
     let r = f(&mut t, world);
     if let Some(pl) = world.players.get_nth_mut(p) {
@@ -209,10 +312,19 @@ impl TunnelContain {
     }
 
     /// The constructor's first half: the base's (on a copy of its part of the data), then the two flags.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<TunnelContainModuleData>>) -> IniResult<TunnelContain> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<TunnelContainModuleData>>,
+    ) -> IniResult<TunnelContain> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let oc = OpenContain::unconstructed(object, Some(Arc::new(data.open.clone())))?;
-        Ok(TunnelContain { oc, data, need_to_run_on_build_complete: true, is_currently_registered: false, object })
+        Ok(TunnelContain {
+            oc,
+            data,
+            need_to_run_on_build_complete: true,
+            is_currently_registered: false,
+            object,
+        })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -244,7 +356,12 @@ impl TunnelContain {
     }
 
     /// The module's answer to one of `Object`'s calls (a query that met an object with no controlling player is recorded: see the module docs).
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         let r = open_contain::contain_module_call(self, world, me, call);
         Self::check_null_player(world, me);
         r
@@ -296,7 +413,9 @@ impl TunnelContain {
 
     /// The owner's tracker read in place, for the `&World` queries (`None`, and the flag set, for an object with no player or no tracker).
     fn tracker_read<'a>(&self, world: &'a World) -> Option<&'a TunnelTracker> {
-        let t = world.get_controlling_player(self.object).and_then(|p| tracker_of(world, p));
+        let t = world
+            .get_controlling_player(self.object)
+            .and_then(|p| tracker_of(world, p));
         if t.is_none() {
             world.cuts.contain.null_player_read.set(true);
         }
@@ -306,7 +425,9 @@ impl TunnelContain {
     /// `onTunnelDestroyed(getObject())` on `p`'s tracker.
     fn tunnel_destroyed(&mut self, world: &mut World, me: ModuleHandle, p: PlayerIndex) {
         let us = me.object;
-        if let Some(r) = out(self, world, me, |w| with_tracker(w, p, |t, w| t.on_tunnel_destroyed(w, us))) {
+        if let Some(r) = out(self, world, me, |w| {
+            with_tracker(w, p, |t, w| t.on_tunnel_destroyed(w, us))
+        }) {
             tracker_result(world, me, r);
         }
     }
@@ -362,14 +483,22 @@ impl OpenContainVirtuals for TunnelContain {
 
     /// `addToContainList(obj)`: the rider joins the network's list.
     fn add_to_contain_list(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId) {
-        let Some(p) = Self::owner_checked(world, me) else { return };
+        let Some(p) = Self::owner_checked(world, me) else {
+            return;
+        };
         if with_tracker(world, p, |t, _| t.add_to_contain_list(rider)).is_none() {
             undefined(world, me, Undefined::NullObject); // no tracker: `getTunnelSystem()` is NULL
         }
     }
 
     /// `removeFromContain(obj, exposeStealthUnits)`: `onRemoving` and `onRemovedFrom` first, then out of the network's list if it is there.
-    fn remove_from_contain(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId, expose_stealth_units: bool) {
+    fn remove_from_contain(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        rider: ObjectId,
+        expose_stealth_units: bool,
+    ) {
         if rider == INVALID_ID {
             return;
         }
@@ -381,7 +510,9 @@ impl OpenContainVirtuals for TunnelContain {
         out(self, world, me, |w| w.contain_on_removed_from(rider, us));
 
         // "game tear down. We do the onRemove* stuff first because this is allowed to fail but that still needs to be done"
-        let Some(p) = world.get_controlling_player(us) else { return };
+        let Some(p) = world.get_controlling_player(us) else {
+            return;
+        };
         let Some(t) = tracker_of(world, p) else {
             undefined(world, me, Undefined::NullObject);
             return;
@@ -394,18 +525,29 @@ impl OpenContainVirtuals for TunnelContain {
     }
 
     /// `harmAndForceExitAllContained(info)`: the front of the network's list out and harmed, until the list is empty.
-    fn harm_and_force_exit_all_contained(&mut self, world: &mut World, me: ModuleHandle, info: &mut DamageInfo) {
-        let Some(p) = Self::owner_checked(world, me) else { return };
+    fn harm_and_force_exit_all_contained(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        info: &mut DamageInfo,
+    ) {
+        let Some(p) = Self::owner_checked(world, me) else {
+            return;
+        };
         loop {
             let Some(t) = tracker_of(world, p) else {
                 undefined(world, me, Undefined::NullObject);
                 return;
             };
-            let Some(&obj) = t.get_contained_items_list().first() else { break };
+            let Some(&obj) = t.get_contained_items_list().first() else {
+                break;
+            };
             self.remove_from_contain(world, me, obj, true);
             let mut i = info.clone();
             out(self, world, me, |w| w.contain_attempt_damage(obj, &mut i));
-            if tracker_of(world, p).is_some_and(|t| t.get_contained_items_list().first() == Some(&obj)) {
+            if tracker_of(world, p)
+                .is_some_and(|t| t.get_contained_items_list().first() == Some(&obj))
+            {
                 // the front stayed: upstream loops for ever
                 undefined(world, me, Undefined::EndlessLoop);
                 return;
@@ -415,14 +557,17 @@ impl OpenContainVirtuals for TunnelContain {
 
     /// `killAllContained()`: everyone in the network out (the list as it was, the iterator advanced first) and killed.
     fn kill_all_contained(&mut self, world: &mut World, me: ModuleHandle) {
-        let Some(p) = Self::owner_checked(world, me) else { return };
+        let Some(p) = Self::owner_checked(world, me) else {
+            return;
+        };
         let Some(list) = tracker_of(world, p).map(|t| t.get_contained_items_list().to_vec()) else {
             undefined(world, me, Undefined::NullObject);
             return;
         };
         for obj in list {
             self.remove_from_contain(world, me, obj, true);
-            if !crate::logic::modules::plant(1564) && !out(self, world, me, |w| w.contain_kill(obj)) {
+            if !crate::logic::modules::plant(1564) && !out(self, world, me, |w| w.contain_kill(obj))
+            {
                 undefined(world, me, Undefined::NullBodyModule); // `Object::kill` calls through `getBodyModule()`
                 return;
             }
@@ -430,8 +575,15 @@ impl OpenContainVirtuals for TunnelContain {
     }
 
     /// `removeAllContained(exposeStealthUnits)`: everyone in the network out (the list as it was, the iterator advanced first).
-    fn remove_all_contained(&mut self, world: &mut World, me: ModuleHandle, expose_stealth_units: bool) {
-        let Some(p) = Self::owner_checked(world, me) else { return };
+    fn remove_all_contained(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        expose_stealth_units: bool,
+    ) {
+        let Some(p) = Self::owner_checked(world, me) else {
+            return;
+        };
         let Some(list) = tracker_of(world, p).map(|t| t.get_contained_items_list().to_vec()) else {
             undefined(world, me, Undefined::NullObject);
             return;
@@ -455,7 +607,10 @@ impl OpenContainVirtuals for TunnelContain {
 
     /// `getContainCount()`: the network's count (0 with no player or no tracker: upstream checks both here).
     fn get_contain_count(&self, world: &World) -> u32 {
-        world.get_controlling_player(self.object).and_then(|p| tracker_of(world, p)).map_or(0, |t| t.get_contain_count())
+        world
+            .get_controlling_player(self.object)
+            .and_then(|p| tracker_of(world, p))
+            .map_or(0, |t| t.get_contain_count())
     }
 
     /// `getContainMax()`: the network's (`TheGlobalData->m_maxTunnelCapacity`).
@@ -475,34 +630,61 @@ impl OpenContainVirtuals for TunnelContain {
     }
 
     /// `TunnelContain::onContaining(obj, wasSelected)`: held, counted by the academy, and its partition cells looked after.
-    fn on_containing(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId, was_selected: bool) {
+    fn on_containing(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        rider: ObjectId,
+        was_selected: bool,
+    ) {
         open_contain::base_on_containing(self, world, me, rider, was_selected);
-        out(self, world, me, |w| w.contain_set_disabled(rider, DISABLED_HELD));
+        out(self, world, me, |w| {
+            w.contain_set_disabled(rider, DISABLED_HELD)
+        });
         // `obj->getControllingPlayer()->getAcademyStats()->recordUnitEnteredTunnelNetwork()`: the rider's player, unchecked
         let Some(rp) = world.get_controlling_player(rider) else {
             undefined(world, me, Undefined::NullControllingPlayer);
             return;
         };
         if !crate::logic::modules::plant(1565) {
-            out(self, world, me, |w| w.contain_record_unit_entered_tunnel_network(rp));
+            out(self, world, me, |w| {
+                w.contain_record_unit_entered_tunnel_network(rp)
+            });
         }
-        out(self, world, me, |w| w.contain_handle_partition_cell_maintenance(rider));
+        out(self, world, me, |w| {
+            w.contain_handle_partition_cell_maintenance(rider)
+        });
     }
 
     /// `TunnelContain::onRemoving(obj)`: let go at the tunnel, registered and shown again, with the unload sound.
     fn on_removing(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId) {
         open_contain::base_on_removing(self, world, me, rider);
         let us = me.object;
-        out(self, world, me, |w| w.contain_clear_disabled(rider, DISABLED_HELD));
-        out(self, world, me, |w| w.contain_partition_register_object(rider));
-        let pos = world.objects.find(us).map(|o| o.get_position()).unwrap_or_default();
+        out(self, world, me, |w| {
+            w.contain_clear_disabled(rider, DISABLED_HELD)
+        });
+        out(self, world, me, |w| {
+            w.contain_partition_register_object(rider)
+        });
+        let pos = world
+            .objects
+            .find(us)
+            .map(|o| o.get_position())
+            .unwrap_or_default();
         out(self, world, me, |w| w.contain_set_position(rider, &pos));
         if world.has_drawable(rider) {
-            let delay = world.objects.find(rider).map_or(0, |o| o.template().get_occlusion_delay());
+            let delay = world
+                .objects
+                .find(rider)
+                .map_or(0, |o| o.template().get_occlusion_delay());
             let frame = world.frame().wrapping_add(delay);
-            out(self, world, me, |w| w.contain_set_safe_occlusion_frame(rider, frame));
+            out(self, world, me, |w| {
+                w.contain_set_safe_occlusion_frame(rider, frame)
+            });
             if !crate::logic::modules::plant(1566) {
-                out(self, world, me, |w| w.contain_drawable_set_hidden(rider, false));
+                out(self, world, me, |w| {
+                    w.contain_drawable_set_hidden(rider, false)
+                });
             }
         }
         open_contain::do_unload_sound(self, world, me);
@@ -510,8 +692,12 @@ impl OpenContainVirtuals for TunnelContain {
 
     /// `TunnelContain::onSelling()`: "Tunnel responds by kicking people out if this is the last tunnel", and leaves the network.
     fn on_selling(&mut self, world: &mut World, me: ModuleHandle) {
-        let Some(p) = world.get_controlling_player(me.object) else { return };
-        let Some(count) = tracker_of(world, p).map(|t| t.friend_get_tunnel_count()) else { return };
+        let Some(p) = world.get_controlling_player(me.object) else {
+            return;
+        };
+        let Some(count) = tracker_of(world, p).map(|t| t.friend_get_tunnel_count()) else {
+            return;
+        };
         if count == 1 && !crate::logic::modules::plant(1567) {
             // "Can't be order to exit, as I have no time to organize their exits."
             self.remove_all_contained(world, me, false);
@@ -523,26 +709,46 @@ impl OpenContainVirtuals for TunnelContain {
     }
 
     /// `TunnelContain::isValidContainerFor(obj, checkCapacity)`: the network's.
-    fn is_valid_container_for(&mut self, world: &mut World, me: ModuleHandle, obj: ObjectId, check_capacity: bool) -> bool {
-        let Some(p) = Self::owner_checked(world, me) else { return false };
+    fn is_valid_container_for(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        obj: ObjectId,
+        check_capacity: bool,
+    ) -> bool {
+        let Some(p) = Self::owner_checked(world, me) else {
+            return false;
+        };
         let Some(t) = tracker_of(world, p) else {
             undefined(world, me, Undefined::NullObject);
             return false;
         };
         let obj = (obj != INVALID_ID).then_some(obj);
-        t.is_valid_container_for(world, obj, check_capacity != crate::logic::modules::plant(1568))
+        t.is_valid_container_for(
+            world,
+            obj,
+            check_capacity != crate::logic::modules::plant(1568),
+        )
     }
 
     /// `TunnelContain::onDie(info)`: out of the network if it is in (the base's `onDie` is not run: nobody is let out).
     fn on_die(&mut self, world: &mut World, me: ModuleHandle, info: &DamageInfo) {
         let applicable = {
-            let Some(o) = world.objects.find(me.object) else { return };
-            self.data.open.die_mux_data.is_die_applicable(info.input.death_type, o.get_veterancy_level() as i32, &o.status)
+            let Some(o) = world.objects.find(me.object) else {
+                return;
+            };
+            self.data.open.die_mux_data.is_die_applicable(
+                info.input.death_type,
+                o.get_veterancy_level() as i32,
+                &o.status,
+            )
         };
         if !applicable || !self.is_currently_registered {
             return;
         }
-        let Some(p) = world.get_controlling_player(me.object) else { return };
+        let Some(p) = world.get_controlling_player(me.object) else {
+            return;
+        };
         if tracker_of(world, p).is_none() {
             return;
         }
@@ -555,7 +761,9 @@ impl OpenContainVirtuals for TunnelContain {
         if !self.is_currently_registered {
             return;
         }
-        let Some(p) = world.get_controlling_player(me.object) else { return };
+        let Some(p) = world.get_controlling_player(me.object) else {
+            return;
+        };
         if tracker_of(world, p).is_none() {
             return;
         }
@@ -569,7 +777,9 @@ impl OpenContainVirtuals for TunnelContain {
             return;
         }
         self.need_to_run_on_build_complete = false;
-        let Some(p) = world.get_controlling_player(me.object) else { return };
+        let Some(p) = world.get_controlling_player(me.object) else {
+            return;
+        };
         if tracker_of(world, p).is_none() {
             return;
         }
@@ -608,25 +818,38 @@ impl TunnelContain {
         open_contain::base_update(self, world, me);
         let us = me.object;
         let frames = self.data.frames_for_full_heal;
-        let Some(p) = world.get_controlling_player(us) else { return UPDATE_SLEEP_NONE };
+        let Some(p) = world.get_controlling_player(us) else {
+            return UPDATE_SLEEP_NONE;
+        };
         let has_tracker = tracker_of(world, p).is_some();
         if has_tracker && !crate::logic::modules::plant(1572) {
-            if let Some(r) = out(self, world, me, |w| with_tracker(w, p, |t, w| t.heal_objects(w, frames))) {
+            if let Some(r) = out(self, world, me, |w| {
+                with_tracker(w, p, |t, w| t.heal_objects(w, frames))
+            }) {
                 tracker_result(world, me, r);
             }
         }
         if let Some(body) = world.get_body_module(us) {
-            if let ModuleReply::Damage(info) = out(self, world, me, |w| w.module_call(us, body, ModuleCall::GetLastDamageInfo)) {
-                let stamp = out(self, world, me, |w| w.module_call(us, body, ModuleCall::GetLastDamageTimestamp)).as_int(0) as u32;
+            if let ModuleReply::Damage(info) = out(self, world, me, |w| {
+                w.module_call(us, body, ModuleCall::GetLastDamageInfo)
+            }) {
+                let stamp = out(self, world, me, |w| {
+                    w.module_call(us, body, ModuleCall::GetLastDamageTimestamp)
+                })
+                .as_int(0) as u32;
                 if stamp.wrapping_add(LOGICFRAMES_PER_SECOND) > world.frame() {
                     let attacker = info.input.source_id;
-                    if world.objects.find(attacker).is_some() && world.get_relationship(us, attacker) == Relationship::Enemies {
+                    if world.objects.find(attacker).is_some()
+                        && world.get_relationship(us, attacker) == Relationship::Enemies
+                    {
                         // `tunnelSystem->updateNemesis(attacker)`: unchecked
                         if !has_tracker {
                             undefined(world, me, Undefined::NullObject);
                             return UPDATE_SLEEP_NONE;
                         }
-                        out(self, world, me, |w| with_tracker(w, p, |t, w| t.update_nemesis(w, Some(attacker))));
+                        out(self, world, me, |w| {
+                            with_tracker(w, p, |t, w| t.update_nemesis(w, Some(attacker)))
+                        });
                     }
                 }
             }
@@ -652,7 +875,12 @@ impl UpdateBehavior for TunnelContain {
             _ => None,
         }
     }
-    fn other_call(&mut self, _world: &mut World, _me: ModuleHandle, _call: ModuleCall) -> ModuleReply {
+    fn other_call(
+        &mut self,
+        _world: &mut World,
+        _me: ModuleHandle,
+        _call: ModuleCall,
+    ) -> ModuleReply {
         ModuleReply::Unhandled
     }
 }

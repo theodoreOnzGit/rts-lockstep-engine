@@ -107,14 +107,18 @@ mod up_common;
 use harness::*;
 use mux_common::*;
 use rts_lockstep_engine::common::base_type::Coord3D;
-use rts_lockstep_engine::common::damage_fx::{Dfx, DamageFx, DamageFxStore};
+use rts_lockstep_engine::common::damage_fx::{DamageFx, DamageFxStore, Dfx};
 use rts_lockstep_engine::common::game_common::{PlayerType, Relationship, VeterancyLevel};
 use rts_lockstep_engine::common::game_type::{ObjectId, INVALID_DRAWABLE_ID, INVALID_ID};
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
 use rts_lockstep_engine::common::kind_of::*;
-use rts_lockstep_engine::common::module::{ModuleDataKind, MODULEINTERFACE_CONTAIN, MODULEINTERFACE_DAMAGE, MODULEINTERFACE_DIE};
+use rts_lockstep_engine::common::module::{
+    ModuleDataKind, MODULEINTERFACE_CONTAIN, MODULEINTERFACE_DAMAGE, MODULEINTERFACE_DIE,
+};
 use rts_lockstep_engine::common::object_status_types::*;
-use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate, ThingTemplateAudioType};
+use rts_lockstep_engine::common::thing_template::{
+    ObjectTemplateValues, ThingTemplate, ThingTemplateAudioType,
+};
 use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::common::xfer_load::XferLoad;
@@ -125,7 +129,9 @@ use rts_lockstep_engine::logic::armor_set::ArmorSetFlags;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
 use rts_lockstep_engine::logic::damage::*;
 use rts_lockstep_engine::logic::modules::active_body::ActiveBodyModuleData;
-use rts_lockstep_engine::logic::modules::derived_bodies::{HiveStructureBodyModuleData, UndeadBodyModuleData};
+use rts_lockstep_engine::logic::modules::derived_bodies::{
+    HiveStructureBodyModuleData, UndeadBodyModuleData,
+};
 use rts_lockstep_engine::logic::world::body_cuts::{info_line, AutoParticle, BodyCall};
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleReply};
@@ -326,7 +332,11 @@ fn parse_scene(cfg: &[u32]) -> Scene {
         for _ in 0..r.u() {
             sets.push((r.u(), r.u(), r.u()));
         }
-        tmpls.push(Tmpl { rubble, audio, sets });
+        tmpls.push(Tmpl {
+            rubble,
+            audio,
+            sets,
+        });
     }
     let mut players = [(0, false); 4];
     for p in players.iter_mut() {
@@ -337,12 +347,35 @@ fn parse_scene(cfg: &[u32]) -> Scene {
     for _ in 0..n {
         let (tmpl, kinds, status, player, vet) = (r.u() as usize, r.u(), r.u(), r.s(), r.s());
         let pos = [r.f(), r.f(), r.f()];
-        let (contained_by, drawable, has_ai, moving, idle, has_contain, garrisonable, immune, rider_change) =
-            (r.u() as i32, r.u() != 0, r.u() != 0, r.u() != 0, r.u() != 0, r.u() != 0, r.u() != 0, r.u() != 0, r.u() != 0);
+        let (
+            contained_by,
+            drawable,
+            has_ai,
+            moving,
+            idle,
+            has_contain,
+            garrisonable,
+            immune,
+            rider_change,
+        ) = (
+            r.u() as i32,
+            r.u() != 0,
+            r.u() != 0,
+            r.u() != 0,
+            r.u() != 0,
+            r.u() != 0,
+            r.u() != 0,
+            r.u() != 0,
+            r.u() != 0,
+        );
         let n_probes = r.u() as usize;
         let n_items = r.u() as usize;
         let items_all = [r.u(), r.u(), r.u()];
-        let items = items_all[..n_items].iter().map(|&i| i as i32).filter(|&i| i != 0).collect();
+        let items = items_all[..n_items]
+            .iter()
+            .map(|&i| i as i32)
+            .filter(|&i| i != 0)
+            .collect();
         let (b0, p0, b1, p1) = (r.u() != 0, r.u() != 0, r.u() != 0, r.u() != 0);
         let towers = [r.u() as i32, r.u() as i32, r.u() as i32, r.u() as i32];
         let body = [r.u(), r.u(), r.u(), r.u(), r.u()];
@@ -399,7 +432,17 @@ fn parse_scene(cfg: &[u32]) -> Scene {
     }
     let mut infos = Vec::new();
     for _ in 0..r.u() {
-        infos.push((r.u(), r.s(), r.s(), r.s(), r.f(), r.u() != 0, r.s(), r.f(), r.f()));
+        infos.push((
+            r.u(),
+            r.s(),
+            r.s(),
+            r.s(),
+            r.f(),
+            r.u() != 0,
+            r.s(),
+            r.f(),
+            r.f(),
+        ));
     }
     let mut able = vec![vec![0; n]; n];
     for row in able.iter_mut() {
@@ -453,8 +496,12 @@ fn parse_scene(cfg: &[u32]) -> Scene {
 
 fn health_str(g: &mut Gen, clean: bool) -> String {
     match g.below(14) {
-        0..=7 => format!("{}", *pick(g, &[&100u32, &200, &300, &500, &1000, &50, &120, &1]))
-            + if g.below(5) == 0 { ".5" } else { "" },
+        0..=7 => {
+            format!(
+                "{}",
+                *pick(g, &[&100u32, &200, &300, &500, &1000, &50, &120, &1])
+            ) + if g.below(5) == 0 { ".5" } else { "" }
+        }
         8 => "0".to_string(),
         9 => "-10".to_string(),
         _ if clean => "400".to_string(),
@@ -464,7 +511,11 @@ fn health_str(g: &mut Gen, clean: bool) -> String {
 
 /// The value of a `DamageTypeFlags` field: `NONE` or `ALL`, then `+TYPE` / `-TYPE`s (an unknown type, and the empty value, sometimes).
 fn gen_flags(g: &mut Gen, clean: bool) -> String {
-    let mut t = vec![if g.below(3) == 0 { "ALL".to_string() } else { "NONE".to_string() }];
+    let mut t = vec![if g.below(3) == 0 {
+        "ALL".to_string()
+    } else {
+        "NONE".to_string()
+    }];
     for _ in 0..g.below(6) {
         let name = DAMAGE_TYPE_NAMES[g.below(DAMAGE_NUM_TYPES as u32) as usize];
         t.push(format!("{}{name}", if g.below(4) == 0 { '-' } else { '+' }));
@@ -481,7 +532,11 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
         lines.push(format!("MaxHealth{}{}", gen_sep(g), health_str(g, clean)));
     }
     if g.below(100) < 85 {
-        lines.push(format!("InitialHealth{}{}", gen_sep(g), health_str(g, clean)));
+        lines.push(format!(
+            "InitialHealth{}{}",
+            gen_sep(g),
+            health_str(g, clean)
+        ));
     }
     if g.below(100) < 50 {
         let v = match g.below(8) {
@@ -491,10 +546,18 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
         lines.push(format!("SubdualDamageCap{}{v}", gen_sep(g)));
     }
     if g.below(100) < 40 {
-        lines.push(format!("SubdualDamageHealRate{}{}", gen_sep(g), gen_int(g, clean)));
+        lines.push(format!(
+            "SubdualDamageHealRate{}{}",
+            gen_sep(g),
+            gen_int(g, clean)
+        ));
     }
     if g.below(100) < 40 {
-        lines.push(format!("SubdualDamageHealAmount{}{}", gen_sep(g), gen_real(g, clean)));
+        lines.push(format!(
+            "SubdualDamageHealAmount{}{}",
+            gen_sep(g),
+            gen_real(g, clean)
+        ));
     }
     if !clean && g.below(12) == 0 {
         lines.push(format!("Bogus{}1", gen_sep(g)));
@@ -502,10 +565,17 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     // the class of the data: the block's name (D `ActiveBody`, U `UndeadBody`, H `HiveStructureBody`)
     let kind: &str = ["D", "D", "D", "U", "U", "H", "H"][g.below(7) as usize];
     if kind == "U" && g.below(100) < 80 {
-        lines.push(format!("SecondLifeMaxHealth{}{}", gen_sep(g), health_str(g, clean)));
+        lines.push(format!(
+            "SecondLifeMaxHealth{}{}",
+            gen_sep(g),
+            health_str(g, clean)
+        ));
     }
     if kind == "H" {
-        for key in ["PropagateDamageTypesToSlavesWhenExisting", "SwallowDamageTypesIfSlavesNotExisting"] {
+        for key in [
+            "PropagateDamageTypesToSlavesWhenExisting",
+            "SwallowDamageTypesIfSlavesNotExisting",
+        ] {
             if g.below(100) < 85 {
                 lines.push(format!("{key}{}{}", gen_sep(g), gen_flags(g, clean)));
             }
@@ -538,7 +608,13 @@ impl W {
 
 fn gen_amount(g: &mut Gen) -> f32 {
     match g.below(20) {
-        0..=11 => *pick(g, &[&0.0f32, &1.0, &5.0, &10.0, &25.0, &50.0, &100.0, &150.0, &400.0, &33.3, &0.5, &75.0]),
+        0..=11 => *pick(
+            g,
+            &[
+                &0.0f32, &1.0, &5.0, &10.0, &25.0, &50.0, &100.0, &150.0, &400.0, &33.3, &0.5,
+                &75.0,
+            ],
+        ),
         12 => -5.0,
         13 => 999_999.0,
         14 => 1e9,
@@ -556,9 +632,25 @@ fn gen_damage_type(g: &mut Gen) -> i32 {
         61..=68 => DAMAGE_KILL_GARRISONED,
         69..=76 => DAMAGE_STATUS,
         77..=82 => DAMAGE_SNIPER,
-        83..=89 => *pick(g, &[&DAMAGE_SUBDUAL_MISSILE, &DAMAGE_SUBDUAL_VEHICLE, &DAMAGE_SUBDUAL_BUILDING, &DAMAGE_SUBDUAL_UNRESISTABLE]),
+        83..=89 => *pick(
+            g,
+            &[
+                &DAMAGE_SUBDUAL_MISSILE,
+                &DAMAGE_SUBDUAL_VEHICLE,
+                &DAMAGE_SUBDUAL_BUILDING,
+                &DAMAGE_SUBDUAL_UNRESISTABLE,
+            ],
+        ),
         90..=94 => DAMAGE_EXPLOSION,
-        _ => *pick(g, &[&DAMAGE_FLAME, &DAMAGE_POISON, &DAMAGE_RADIATION, &DAMAGE_SMALL_ARMS]),
+        _ => *pick(
+            g,
+            &[
+                &DAMAGE_FLAME,
+                &DAMAGE_POISON,
+                &DAMAGE_RADIATION,
+                &DAMAGE_SMALL_ARMS,
+            ],
+        ),
     }
 }
 
@@ -569,7 +661,11 @@ fn gen_type_mask(g: &mut Gen) -> u64 {
         0 => 0,
         1 => all,
         2 => all & !(1 << DAMAGE_UNRESISTABLE),
-        _ => (g.u32() as u64 | (g.u32() as u64) << 32) & (g.u32() as u64 | (g.u32() as u64) << 32) & all,
+        _ => {
+            (g.u32() as u64 | (g.u32() as u64) << 32)
+                & (g.u32() as u64 | (g.u32() as u64) << 32)
+                & all
+        }
     }
 }
 
@@ -614,7 +710,11 @@ fn gen_scene(g: &mut Gen, data: &Option<ModuleDataKind>, focus: u32) -> Vec<u32>
     for _ in 0..n_armors {
         let base = *pick(g, &[&1.0f32, &1.0, &0.5, &0.0, &2.0, &-1.0]);
         for t in 0..DAMAGE_NUM_TYPES {
-            w.f(if g.below(5) == 0 { *pick(g, &[&0.0f32, &0.25, &0.5, &1.5, &3.0, &-2.0, &1.0]) } else { base + (t as f32) * 0.0 });
+            w.f(if g.below(5) == 0 {
+                *pick(g, &[&0.0f32, &0.25, &0.5, &1.5, &3.0, &-2.0, &1.0])
+            } else {
+                base + (t as f32) * 0.0
+            });
         }
     }
     let n_fx = g.below(FXS as u32 + 1);
@@ -646,14 +746,28 @@ fn gen_scene(g: &mut Gen, data: &Option<ModuleDataKind>, focus: u32) -> Vec<u32>
         w.u(n_sets);
         for s in 0..n_sets {
             // the first set is mostly the default one; the others have a veteran, elite or hero flag or two
-            let mask = if s == 0 && g.below(4) != 0 { 0 } else { g.below(256) & if g.below(2) == 0 { 0x07 } else { 0xff } };
+            let mask = if s == 0 && g.below(4) != 0 {
+                0
+            } else {
+                g.below(256) & if g.below(2) == 0 { 0x07 } else { 0xff }
+            };
             w.u(mask);
-            w.u(if g.below(5) == 0 { 0 } else { 1 + g.below(n_armors) });
-            w.u(if n_fx == 0 || g.below(3) == 0 { 0 } else { 1 + g.below(n_fx) });
+            w.u(if g.below(5) == 0 {
+                0
+            } else {
+                1 + g.below(n_armors)
+            });
+            w.u(if n_fx == 0 || g.below(3) == 0 {
+                0
+            } else {
+                1 + g.below(n_fx)
+            });
         }
     }
     for p in 0..4u32 {
-        w.u(u32::from(p != 0 && g.below(if focus == 3 { 20 } else { 5 }) == 0)); // computer?
+        w.u(u32::from(
+            p != 0 && g.below(if focus == 3 { 20 } else { 5 }) == 0,
+        )); // computer?
         w.u(u32::from(g.below(if focus == 3 { 12 } else { 3 }) != 0));
     }
     w.u(n as u32);
@@ -674,13 +788,25 @@ fn gen_scene(g: &mut Gen, data: &Option<ModuleDataKind>, focus: u32) -> Vec<u32>
         w.u(g.below(n_tmpl)); // the template
         let kinds = kinds_all[k];
         w.u(kinds);
-        w.u(if focus == 3 { g.below(256) & g.below(256) & g.below(256) } else { g.below(256) & g.below(256) });
-        w.s(if g.below(40) == 0 { -1 } else { g.below(4) as i32 });
+        w.u(if focus == 3 {
+            g.below(256) & g.below(256) & g.below(256)
+        } else {
+            g.below(256) & g.below(256)
+        });
+        w.s(if g.below(40) == 0 {
+            -1
+        } else {
+            g.below(4) as i32
+        });
         w.s(g.below(4) as i32);
         for _ in 0..3 {
             w.f(*pick(g, &[&0.0f32, &10.0, &50.5, &-20.0]));
         }
-        w.u(if g.below(6) == 0 { 1 + g.below(n as u32) } else { 0 }); // contained by
+        w.u(if g.below(6) == 0 {
+            1 + g.below(n as u32)
+        } else {
+            0
+        }); // contained by
         w.u(u32::from(g.below(4) != 0)); // drawable
         let has_ai = g.below(10) < 7;
         w.u(u32::from(has_ai));
@@ -690,14 +816,24 @@ fn gen_scene(g: &mut Gen, data: &Option<ModuleDataKind>, focus: u32) -> Vec<u32>
         w.u(u32::from(has_contain));
         w.u(u32::from(g.below(2) == 0));
         w.u(u32::from(g.below(4) == 0));
-        w.u(u32::from((has_ai && has_contain && g.below(3) == 0) || g.below(40) == 0));
-        let n_probes = if has_ai || has_contain { 1 + g.below(2) } else { g.below(3) };
+        w.u(u32::from(
+            (has_ai && has_contain && g.below(3) == 0) || g.below(40) == 0,
+        ));
+        let n_probes = if has_ai || has_contain {
+            1 + g.below(2)
+        } else {
+            g.below(3)
+        };
         w.u(n_probes);
         let n_items = g.below(4);
         w.u(n_items);
         for i in 0..3 {
             // the first contained object is mostly a real one (the rider of a bike, the first to be killed in a garrison)
-            w.u(if g.below(if i == 0 { 20 } else { 5 }) == 0 { 0 } else { 1 + g.below(n as u32) });
+            w.u(if g.below(if i == 0 { 20 } else { 5 }) == 0 {
+                0
+            } else {
+                1 + g.below(n as u32)
+            });
         }
         for _ in 0..2 {
             w.u(u32::from(g.below(3) == 0));
@@ -705,14 +841,24 @@ fn gen_scene(g: &mut Gen, data: &Option<ModuleDataKind>, focus: u32) -> Vec<u32>
         }
         for _ in 0..4 {
             let t = 1 + g.below(n as u32);
-            w.u(if g.below(4) == 0 || kinds_all[t as usize - 1] & (1 << 3) != 0 { 0 } else { t });
+            w.u(
+                if g.below(4) == 0 || kinds_all[t as usize - 1] & (1 << 3) != 0 {
+                    0
+                } else {
+                    t
+                },
+            );
         }
         // the body of an object other than the first (the first's is the data read from the INI)
         let _ = k;
         let max = *pick(g, &[&100.0f32, &200.0, &500.0, &50.0, &1000.0]);
         w.f(max);
         w.f(if g.below(4) == 0 { max * 0.3 } else { max });
-        w.f(if focus == 4 { *pick(g, &[&100.0f32, &50.0, &80.0, &300.0, &0.0]) } else { *pick(g, &[&0.0f32, &0.0, &100.0, &50.0]) });
+        w.f(if focus == 4 {
+            *pick(g, &[&100.0f32, &50.0, &80.0, &300.0, &0.0])
+        } else {
+            *pick(g, &[&0.0f32, &0.0, &100.0, &50.0])
+        });
         w.u(*pick(g, &[&0u32, &30, &90]));
         w.f(*pick(g, &[&0.0f32, &5.0, &20.0]));
         // the class of the body; the first object's follows the class of the data read from the INI
@@ -720,11 +866,17 @@ fn gen_scene(g: &mut Gen, data: &Option<ModuleDataKind>, focus: u32) -> Vec<u32>
             (0, Some(ModuleDataKind::UndeadBody(_))) => 5,
             (0, Some(ModuleDataKind::HiveStructureBody(_))) => 6,
             (0, _) => *pick(g, &[&0u32, &0, &1, &2, &3, &3, &4, &4]),
-            _ => *pick(g, &[&0u32, &0, &1, &2, &3, &3, &4, &4, &5, &5, &5, &6, &6, &6]),
+            _ => *pick(
+                g,
+                &[&0u32, &0, &1, &2, &3, &3, &4, &4, &5, &5, &5, &6, &6, &6],
+            ),
         });
         // the second life, the damage types a hive passes on, its spawn behaviour, its closest slave and rider (always a later object: a hive that passed damage on
         // to itself, or in a ring, would recurse for ever upstream), and the slow death behaviours among the probes
-        w.f(*pick(g, &[&1.0f32, &50.0, &200.0, &0.0, &-5.0, &1000.0, &30.0]));
+        w.f(*pick(
+            g,
+            &[&1.0f32, &50.0, &200.0, &0.0, &-5.0, &1000.0, &30.0],
+        ));
         for _ in 0..2 {
             let m = gen_type_mask(g);
             w.u(m as u32);
@@ -732,7 +884,11 @@ fn gen_scene(g: &mut Gen, data: &Option<ModuleDataKind>, focus: u32) -> Vec<u32>
         }
         w.u(if g.below(3) == 0 { 0 } else { 1 + g.below(2) });
         for _ in 0..2 {
-            w.u(if k + 1 < n && g.below(4) != 0 { (k as u32 + 2) + g.below((n - k - 1) as u32) } else { 0 });
+            w.u(if k + 1 < n && g.below(4) != 0 {
+                (k as u32 + 2) + g.below((n - k - 1) as u32)
+            } else {
+                0
+            });
         }
         for _ in 0..2 {
             w.u(u32::from(g.below(5) < 3));
@@ -768,13 +924,24 @@ fn gen_scene(g: &mut Gen, data: &Option<ModuleDataKind>, focus: u32) -> Vec<u32>
             4 => DAMAGE_KILL_GARRISONED,
             5 => DAMAGE_STATUS,
             6 => DAMAGE_SNIPER,
-            7 => *pick(g, &[&DAMAGE_SUBDUAL_MISSILE, &DAMAGE_SUBDUAL_VEHICLE, &DAMAGE_SUBDUAL_BUILDING]),
+            7 => *pick(
+                g,
+                &[
+                    &DAMAGE_SUBDUAL_MISSILE,
+                    &DAMAGE_SUBDUAL_VEHICLE,
+                    &DAMAGE_SUBDUAL_BUILDING,
+                ],
+            ),
             8 | 9 => DAMAGE_SUBDUAL_UNRESISTABLE,
             _ => g.below(DAMAGE_NUM_TYPES as u32) as i32,
         };
         w.s(t);
         w.s(*pick(g, &[&0i32, &0, &1, &2, &3, &4, &11, &7]));
-        w.s(if g.below(4) == 0 { gen_damage_type(g).clamp(0, DAMAGE_NUM_TYPES as i32 - 1) } else { DAMAGE_UNRESISTABLE });
+        w.s(if g.below(4) == 0 {
+            gen_damage_type(g).clamp(0, DAMAGE_NUM_TYPES as i32 - 1)
+        } else {
+            DAMAGE_UNRESISTABLE
+        });
         w.f(match (i, g.below(3)) {
             (8, 0) => -30.0,
             (8, 1) => -5.0,
@@ -792,7 +959,11 @@ fn gen_scene(g: &mut Gen, data: &Option<ModuleDataKind>, focus: u32) -> Vec<u32>
         w.s(g.below(4) as i32);
     }
     for _ in 0..n * n {
-        w.f(if focus == 3 { *pick(g, &[&0.0f32, &100.0, &44_100.0, &1000.0, &90_000.0]) } else { *pick(g, &[&0.0f32, &100.0, &90_000.0, &1.0e6, &44_100.0]) });
+        w.f(if focus == 3 {
+            *pick(g, &[&0.0f32, &100.0, &44_100.0, &1000.0, &90_000.0])
+        } else {
+            *pick(g, &[&0.0f32, &100.0, &90_000.0, &1.0e6, &44_100.0])
+        });
     }
     // the bones: for some objects and classes
     let mut bones = Vec::new();
@@ -828,7 +999,9 @@ fn gen_scene(g: &mut Gen, data: &Option<ModuleDataKind>, focus: u32) -> Vec<u32>
 
 /// The index of a damage info whose type is one of `types` (any at random if the scene has none).
 fn info_of(g: &mut Gen, sc: &Scene, types: &[i32]) -> u32 {
-    let ok: Vec<u32> = (0..sc.infos.len() as u32).filter(|&i| types.contains(&sc.infos[i as usize].1)).collect();
+    let ok: Vec<u32> = (0..sc.infos.len() as u32)
+        .filter(|&i| types.contains(&sc.infos[i as usize].1))
+        .collect();
     if ok.is_empty() {
         g.below(sc.infos.len() as u32)
     } else {
@@ -836,7 +1009,12 @@ fn info_of(g: &mut Gen, sc: &Scene, types: &[i32]) -> u32 {
     }
 }
 
-fn gen_case(g: &mut Gen, data: &Option<ModuleDataKind>, _n_up: usize, _upgrades: &[String]) -> (Vec<u32>, Vec<[u32; 5]>) {
+fn gen_case(
+    g: &mut Gen,
+    data: &Option<ModuleDataKind>,
+    _n_up: usize,
+    _upgrades: &[String],
+) -> (Vec<u32>, Vec<[u32; 5]>) {
     // the case's focus: 0 to 2 general; 3 retaliation; 4 subdual; 5 the pilot and garrison kills; 6 states and particle systems; 7 health, veterancy and armor
     let focus = g.below(8);
     let cfg = gen_scene(g, data, focus);
@@ -870,16 +1048,69 @@ fn gen_case(g: &mut Gen, data: &Option<ModuleDataKind>, _n_up: usize, _upgrades:
         let op: [u32; 5] = if focused {
             match focus {
                 3 => match g.below(10) {
-                    0..=5 => [0, 0, info_of(g, &s, &[DAMAGE_EXPLOSION, DAMAGE_SMALL_ARMS, DAMAGE_ARMOR_PIERCING, DAMAGE_FLAME, DAMAGE_LASER]), 0, 0],
-                    6 => [24, 1 + g.below(3), 1 + g.below(n), 1 + g.below(n), 1 + g.below(n)],
+                    0..=5 => [
+                        0,
+                        0,
+                        info_of(
+                            g,
+                            &s,
+                            &[
+                                DAMAGE_EXPLOSION,
+                                DAMAGE_SMALL_ARMS,
+                                DAMAGE_ARMOR_PIERCING,
+                                DAMAGE_FLAME,
+                                DAMAGE_LASER,
+                            ],
+                        ),
+                        0,
+                        0,
+                    ],
+                    6 => [
+                        24,
+                        1 + g.below(3),
+                        1 + g.below(n),
+                        1 + g.below(n),
+                        1 + g.below(n),
+                    ],
                     7 => [26, g.below(n), 1, g.below(2), 0],
                     8 => [18, g.below(n), 0b0000_1110, g.below(2), 0],
                     _ => [22, g.below(n), 0, 2 + g.below(2), 0],
                 },
                 4 => match g.below(10) {
-                    0..=6 => [0, obj, info_of(g, &s, &[DAMAGE_SUBDUAL_MISSILE, DAMAGE_SUBDUAL_VEHICLE, DAMAGE_SUBDUAL_BUILDING, DAMAGE_SUBDUAL_UNRESISTABLE]), 0, 0],
-                    7 => [2, obj, info_of(g, &s, &[DAMAGE_SUBDUAL_VEHICLE, DAMAGE_SUBDUAL_UNRESISTABLE]), 0, 0],
-                    8 => [5, obj, bits(*pick(g, &[&10.0f32, &500.0, &50.0])), g.below(5), 0],
+                    0..=6 => [
+                        0,
+                        obj,
+                        info_of(
+                            g,
+                            &s,
+                            &[
+                                DAMAGE_SUBDUAL_MISSILE,
+                                DAMAGE_SUBDUAL_VEHICLE,
+                                DAMAGE_SUBDUAL_BUILDING,
+                                DAMAGE_SUBDUAL_UNRESISTABLE,
+                            ],
+                        ),
+                        0,
+                        0,
+                    ],
+                    7 => [
+                        2,
+                        obj,
+                        info_of(
+                            g,
+                            &s,
+                            &[DAMAGE_SUBDUAL_VEHICLE, DAMAGE_SUBDUAL_UNRESISTABLE],
+                        ),
+                        0,
+                        0,
+                    ],
+                    8 => [
+                        5,
+                        obj,
+                        bits(*pick(g, &[&10.0f32, &500.0, &50.0])),
+                        g.below(5),
+                        0,
+                    ],
                     _ => [28, obj, 0, 0, 0],
                 },
                 5 => match g.below(10) {
@@ -890,7 +1121,13 @@ fn gen_case(g: &mut Gen, data: &Option<ModuleDataKind>, _n_up: usize, _upgrades:
                 },
                 6 => match g.below(10) {
                     0..=2 => [3, obj, g.below(4), 0, 0],
-                    3..=4 => [6, obj, bits(*pick(g, &[&-10.0f32, &-100.0, &20.0, &500.0, &-1000.0])), 0, 0],
+                    3..=4 => [
+                        6,
+                        obj,
+                        bits(*pick(g, &[&-10.0f32, &-100.0, &20.0, &500.0, &-1000.0])),
+                        0,
+                        0,
+                    ],
                     5..=6 => [8, obj, g.below(2), 0, 0],
                     7 => [14, obj, 0, 0, 0],
                     8 => [13, obj, 0, 0, 0],
@@ -898,7 +1135,13 @@ fn gen_case(g: &mut Gen, data: &Option<ModuleDataKind>, _n_up: usize, _upgrades:
                 },
                 _ => match g.below(10) {
                     0..=2 => [9, obj, g.below(4), g.below(4), g.below(2)],
-                    3..=4 => [5, obj, bits(*pick(g, &[&100.0f32, &200.0, &50.0, &1000.0, &0.0, &10.0])), g.below(5), 0],
+                    3..=4 => [
+                        5,
+                        obj,
+                        bits(*pick(g, &[&100.0f32, &200.0, &50.0, &1000.0, &0.0, &10.0])),
+                        g.below(5),
+                        0,
+                    ],
                     5 => [4, obj, *pick(g, &[&0u32, &50, &100, &25, &150]), 0, 0],
                     6..=7 => [10, obj, g.below(3), g.below(8), 0],
                     8 => [1, obj, info_of(g, &s, &[DAMAGE_HEALING]), 0, 0],
@@ -918,9 +1161,30 @@ fn gen_case(g: &mut Gen, data: &Option<ModuleDataKind>, _n_up: usize, _upgrades:
             300..=369 => [1, obj, g.below(n_infos), 0, 0],
             370..=409 => [2, obj, g.below(n_infos), 0, 0],
             410..=429 => [3, obj, g.below(4), 0, 0],
-            430..=449 => [4, obj, *pick(g, &[&0u32, &50, &100, &25, &150, &u32::MAX]), 0, 0],
-            450..=479 => [5, obj, bits(*pick(g, &[&100.0f32, &200.0, &50.0, &1000.0, &0.0, &10.0])), g.below(5), 0],
-            480..=509 => [6, obj, bits(*pick(g, &[&-10.0f32, &-100.0, &20.0, &500.0, &-1000.0, &0.0, &-0.5])), 0, 0],
+            430..=449 => [
+                4,
+                obj,
+                *pick(g, &[&0u32, &50, &100, &25, &150, &u32::MAX]),
+                0,
+                0,
+            ],
+            450..=479 => [
+                5,
+                obj,
+                bits(*pick(g, &[&100.0f32, &200.0, &50.0, &1000.0, &0.0, &10.0])),
+                g.below(5),
+                0,
+            ],
+            480..=509 => [
+                6,
+                obj,
+                bits(*pick(
+                    g,
+                    &[&-10.0f32, &-100.0, &20.0, &500.0, &-1000.0, &0.0, &-0.5],
+                )),
+                0,
+                0,
+            ],
             510..=524 => [7, obj, g.below(2), 0, 0],
             525..=544 => [8, obj, g.below(2), 0, 0],
             545..=574 => [9, obj, g.below(4), g.below(4), g.below(2)],
@@ -935,19 +1199,40 @@ fn gen_case(g: &mut Gen, data: &Option<ModuleDataKind>, _n_up: usize, _upgrades:
             720..=769 => [18, obj, g.below(256), g.below(2), 0],
             770..=779 => [21, g.below(4), g.below(2), g.below(2), 0],
             780..=799 => [22, g.below(n), g.below(n), g.below(4), 0],
-            800..=819 => [23, g.below(n), g.below(n), bits(*pick(g, &[&0.0f32, &100.0, &90_000.0, &1.0e6])), 0],
-            820..=849 => [24, g.below(4), 1 + g.below(n), 1 + g.below(n), 1 + g.below(n)],
+            800..=819 => [
+                23,
+                g.below(n),
+                g.below(n),
+                bits(*pick(g, &[&0.0f32, &100.0, &90_000.0, &1.0e6])),
+                0,
+            ],
+            820..=849 => [
+                24,
+                g.below(4),
+                1 + g.below(n),
+                1 + g.below(n),
+                1 + g.below(n),
+            ],
             850..=889 => [26, obj, g.below(6), g.below(2), g.u32()],
             890..=899 => [26, obj, 5, g.below(4), g.u32()],
             900..=909 => [27, g.below(4), g.u32(), 0, 0],
-            910..=919 => [28, obj, if g.below(2) == 0 { 0 } else { 1 + g.below(n) }, 0, 0],
+            910..=919 => [
+                28,
+                obj,
+                if g.below(2) == 0 { 0 } else { 1 + g.below(n) },
+                0,
+                0,
+            ],
             920..=939 => {
                 saved_cls = Some(s.objs[obj as usize].cls);
                 [29, obj, 0, 0, 0]
             }
             // a load of the bytes another class saved is a load of shifted fields (a flag read from a byte that is not 0 or 1 is not a `bool` in C++, and is `true` here):
             // upstream-undefined, so only a body of the class that saved loads
-            940..=959 => match (0..n).filter(|&k| Some(s.objs[k as usize].cls) == saved_cls).nth(g.below(2) as usize) {
+            940..=959 => match (0..n)
+                .filter(|&k| Some(s.objs[k as usize].cls) == saved_cls)
+                .nth(g.below(2) as usize)
+            {
                 Some(k) => [30, k, 0, 0, 0],
                 None => [31, obj, 0, 0, 0],
             },
@@ -955,7 +1240,13 @@ fn gen_case(g: &mut Gen, data: &Option<ModuleDataKind>, _n_up: usize, _upgrades:
             970..=979 => [32, obj, g.below(2), 0, 0],
             980..=989 => [33, obj, g.below(2), 0, 0],
             990..=994 => [34, obj, g.below(4), 0, 0],
-            _ => [36, obj, if g.below(3) == 0 { 0 } else { 1 + g.below(n) }, 0, 0],
+            _ => [
+                36,
+                obj,
+                if g.below(3) == 0 { 0 } else { 1 + g.below(n) },
+                0,
+                0,
+            ],
         };
         ops.push(op);
     }
@@ -1011,7 +1302,12 @@ fn put_info(v: &mut Vec<u8>, i: &DamageInfo) {
 fn get_info(r: &mut Reader) -> String {
     let src = r.u32();
     let mask = r.u32();
-    let (dt, st, fxo, death) = (r.u32() as i32, r.u32() as i32, r.u32() as i32, r.u32() as i32);
+    let (dt, st, fxo, death) = (
+        r.u32() as i32,
+        r.u32() as i32,
+        r.u32() as i32,
+        r.u32() as i32,
+    );
     let amount = r.u32();
     let kill = r.u32();
     let shock: Vec<u32> = (0..6).map(|_| r.u32()).collect();
@@ -1060,13 +1356,29 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 }
 
 fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId) {
-    let body_idx = w.objects.find(id).expect("the object").body.expect("the body");
-    let inactive = matches!(w.objects.find(id).unwrap().modules[body_idx as usize].body.as_ref(), Some(UpdateBody::InactiveBody(_)));
+    let body_idx = w
+        .objects
+        .find(id)
+        .expect("the object")
+        .body
+        .expect("the body");
+    let inactive = matches!(
+        w.objects.find(id).unwrap().modules[body_idx as usize]
+            .body
+            .as_ref(),
+        Some(UpdateBody::InactiveBody(_))
+    );
     let (words, info, constructor) = if inactive {
         // an InactiveBody has no fields of the ActiveBody layout: what Object asks of it, in the same 18 words as the driver's (the module's answers to the calls)
         let mut ask = |c: ModuleCall| w.module_call(id, body_idx, c);
         let real = |r: ModuleReply| r.as_real(f32::NAN).to_bits();
-        let int = |r: ModuleReply| if let ModuleReply::Int(i) = r { i as u32 } else { 0xdead_0001 };
+        let int = |r: ModuleReply| {
+            if let ModuleReply::Int(i) = r {
+                i as u32
+            } else {
+                0xdead_0001
+            }
+        };
         let flag = |r: ModuleReply| u32::from(r.as_bool());
         let mut words = vec![
             real(ask(ModuleCall::GetHealth)),
@@ -1076,7 +1388,8 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId) {
             real(ask(ModuleCall::GetCurrentSubdualDamageAmount)),
             int(ask(ModuleCall::GetDamageState)),
             int(ask(ModuleCall::GetSubdualDamageHealRate)),
-            flag(ask(ModuleCall::HasAnySubdualDamage)) ^ real(ask(ModuleCall::GetSubdualDamageHealAmount)),
+            flag(ask(ModuleCall::HasAnySubdualDamage))
+                ^ real(ask(ModuleCall::GetSubdualDamageHealAmount)),
             int(ask(ModuleCall::GetLastDamageTimestamp)),
             int(ask(ModuleCall::GetLastHealingTimestamp)),
             flag(ask(ModuleCall::GetFrontCrushed)),
@@ -1092,7 +1405,10 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId) {
         }
         words.push(flags);
         words.push(real(ask(ModuleCall::GetDamageScalar)));
-        words.push(u32::from(!matches!(ask(ModuleCall::GetLastDamageInfo), ModuleReply::Unhandled)));
+        words.push(u32::from(!matches!(
+            ask(ModuleCall::GetLastDamageInfo),
+            ModuleReply::Unhandled
+        )));
         words.push(0);
         (words, DamageInfo::default(), None)
     } else {
@@ -1101,12 +1417,23 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId) {
             Some(UpdateBody::ActiveBody(m)) => (m, None),
             Some(UpdateBody::HighlanderBody(m)) => (m.active_body(), None),
             Some(UpdateBody::ImmortalBody(m)) => (m.active_body(), None),
-            Some(UpdateBody::StructureBody(m)) => (m.active_body(), Some(m.get_constructor_object_id())),
-            Some(UpdateBody::UndeadBody(m)) => (m.active_body(), Some(i32::from(m.is_second_life()))),
-            Some(UpdateBody::HiveStructureBody(m)) => (m.active_body(), Some(m.structure_body().get_constructor_object_id())),
+            Some(UpdateBody::StructureBody(m)) => {
+                (m.active_body(), Some(m.get_constructor_object_id()))
+            }
+            Some(UpdateBody::UndeadBody(m)) => {
+                (m.active_body(), Some(i32::from(m.is_second_life())))
+            }
+            Some(UpdateBody::HiveStructureBody(m)) => (
+                m.active_body(),
+                Some(m.structure_body().get_constructor_object_id()),
+            ),
             _ => panic!("the body is in its slot"),
         };
-        (m.state_words(), m.get_last_damage_info().clone(), constructor)
+        (
+            m.state_words(),
+            m.get_last_damage_info().clone(),
+            constructor,
+        )
     };
     let o = w.objects.find(id).unwrap();
     for x in words {
@@ -1133,7 +1460,9 @@ fn put_object(v: &mut Vec<u8>, w: &mut World, id: ObjectId) {
 
 /// A `DamageTypeFlags` as a bit set (bit `t` for damage type `t`).
 fn flags_bits(f: &DamageTypeFlags) -> u64 {
-    (0..DAMAGE_NUM_TYPES as i32).filter(|&t| f.test(t)).fold(0, |m, t| m | 1 << t)
+    (0..DAMAGE_NUM_TYPES as i32)
+        .filter(|&t| f.test(t))
+        .fold(0, |m, t| m | 1 << t)
 }
 
 /// The inverse of [`flags_bits`].
@@ -1161,7 +1490,13 @@ fn fx_name(idx: u32) -> Option<Vec<u8>> {
 }
 
 /// An xfer of the body in module slot `idx`: `how` 0 saves, 1 loads `saved` (cut to 2048 bytes), 2 computes the CRC.
-fn run_xfer_body(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
+fn run_xfer_body(
+    w: &mut World,
+    me: ObjectId,
+    idx: usize,
+    how: u32,
+    saved: &[u8],
+) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -1202,16 +1537,42 @@ fn run_xfer_body(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]
 }
 
 /// The lines of the effect log the trace and the records of one op make, in order.
-fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClientEvent>, fx: &mut FxIds, body_idx: &[u16], tally: &RefCell<Tally>) -> Vec<String> {
+fn effect_lines(
+    trace: Vec<String>,
+    cuts: Vec<CutCall>,
+    events: Vec<ObjectClientEvent>,
+    fx: &mut FxIds,
+    body_idx: &[u16],
+    tally: &RefCell<Tally>,
+) -> Vec<String> {
     let mut log = Vec::new();
     let (mut cut_iter, mut ev_iter) = (cuts.into_iter(), events.into_iter());
     for t in trace {
         if t.starts_with("cut ") {
             match cut_iter.next() {
                 Some(CutCall::Body(b)) => match b {
-                    BodyCall::SetDisabled { object, disabled_type } => log.push(format!("setdisabled {object} {disabled_type}")),
-                    BodyCall::ClearDisabled { object, disabled_type } => log.push(format!("cleardisabled {object} {disabled_type}")),
-                    BodyCall::DoStatusDamage { object, status, frames } => log.push(format!("statusdamage {object} {status} {}", frames as f32 as i32)),
+                    BodyCall::SetDisabled {
+                        object,
+                        disabled_type,
+                    } => log.push(format!("setdisabled {object} {disabled_type}")),
+                    BodyCall::ClearDisabled {
+                        object,
+                        disabled_type,
+                    } => log.push(format!("cleardisabled {object} {disabled_type}")),
+                    // batch R33: ActiveBody never disables until a frame
+                    BodyCall::SetDisabledUntil {
+                        object,
+                        disabled_type,
+                        frame,
+                    } => log.push(format!("disableduntil {object} {disabled_type} {frame}")),
+                    BodyCall::DoStatusDamage {
+                        object,
+                        status,
+                        frames,
+                    } => log.push(format!(
+                        "statusdamage {object} {status} {}",
+                        frames as f32 as i32
+                    )),
                     BodyCall::NotifySubdualDamage { object, amount } => {
                         tally.borrow_mut().subdual += 1;
                         log.push(format!("subdual {object} {:08x}", amount.to_bits()))
@@ -1236,14 +1597,28 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                                 }
                             }
                         }
-                        log.push(format!("setstatus {object} {w1:08x}{w0:08x} {}", i32::from(set)))
+                        log.push(format!(
+                            "setstatus {object} {w1:08x}{w0:08x} {}",
+                            i32::from(set)
+                        ))
                     }
                     BodyCall::DestroyObject { object } => log.push(format!("destroy {object}")),
                     BodyCall::AcademyVehicleSniped => log.push("sniped".to_string()),
-                    BodyCall::AcademyClearedGarrisonedBuilding { player } => log.push(format!("garrisoncleared {player}")),
-                    BodyCall::GetMultiLogicalBonePosition { object, prefix, max } => log.push(format!("bones {object} {} {max}", String::from_utf8_lossy(&prefix))),
+                    BodyCall::AcademyClearedGarrisonedBuilding { player } => {
+                        log.push(format!("garrisoncleared {player}"))
+                    }
+                    BodyCall::GetMultiLogicalBonePosition {
+                        object,
+                        prefix,
+                        max,
+                    } => log.push(format!(
+                        "bones {object} {} {max}",
+                        String::from_utf8_lossy(&prefix)
+                    )),
                     BodyCall::ParticleFindTemplate { .. } => {}
-                    BodyCall::ParticleAttachToObject { id, object } => log.push(format!("psattach {id} {object}")),
+                    BodyCall::ParticleAttachToObject { id, object } => {
+                        log.push(format!("psattach {id} {object}"))
+                    }
                     BodyCall::ParticleDestroy { id, found } => {
                         if found {
                             log.push(format!("psdestroy {id}"))
@@ -1253,8 +1628,14 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                         tally.borrow_mut().retaliations += 1;
                         log.push(format!("canattack {object} {victim}"))
                     }
-                    BodyCall::GetDistanceSquared { object, other } => log.push(format!("distsq {object} {other}")),
-                    BodyCall::IterateRetaliationFriends { position, range, player } => log.push(format!(
+                    BodyCall::GetDistanceSquared { object, other } => {
+                        log.push(format!("distsq {object} {other}"))
+                    }
+                    BodyCall::IterateRetaliationFriends {
+                        position,
+                        range,
+                        player,
+                    } => log.push(format!(
                         "friends {:08x} {:08x} {:08x} {:08x} {player}",
                         position.x.to_bits(),
                         position.y.to_bits(),
@@ -1262,10 +1643,25 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                         range.to_bits()
                     )),
                 },
-                Some(CutCall::PathfinderRemoveObjectFromPathfindMap { object }) => log.push(format!("pathremove {object}")),
-                Some(CutCall::PathfinderAddObjectToPathfindMap { object }) => log.push(format!("pathadd {object}")),
-                Some(CutCall::GameLogicDeselectObject { object, player_mask, affect_client }) => log.push(format!("deselect {object} {player_mask} {}", i32::from(affect_client))),
-                Some(CutCall::ParticleSystemCreate { template, position, id }) => {
+                Some(CutCall::PathfinderRemoveObjectFromPathfindMap { object }) => {
+                    log.push(format!("pathremove {object}"))
+                }
+                Some(CutCall::PathfinderAddObjectToPathfindMap { object }) => {
+                    log.push(format!("pathadd {object}"))
+                }
+                Some(CutCall::GameLogicDeselectObject {
+                    object,
+                    player_mask,
+                    affect_client,
+                }) => log.push(format!(
+                    "deselect {object} {player_mask} {}",
+                    i32::from(affect_client)
+                )),
+                Some(CutCall::ParticleSystemCreate {
+                    template,
+                    position,
+                    id,
+                }) => {
                     tally.borrow_mut().particle_systems += 1;
                     log.push(format!(
                         "psys {} {id} {:08x},{:08x},{:08x}",
@@ -1279,20 +1675,38 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
             }
         } else if t.starts_with("evt ") {
             match ev_iter.next() {
-                Some(ObjectClientEvent::AudioAddEvent { name, object_id, position, player_index }) => {
+                Some(ObjectClientEvent::AudioAddEvent {
+                    name,
+                    object_id,
+                    position,
+                    player_index,
+                }) => {
                     let pos = match position {
                         Some(p) => format!("{},{},{}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits()),
                         None => "-".to_string(),
                     };
-                    log.push(format!("audio {} {pos} {} {object_id}", String::from_utf8_lossy(&name), player_index.unwrap_or(-1)));
+                    log.push(format!(
+                        "audio {} {pos} {} {object_id}",
+                        String::from_utf8_lossy(&name),
+                        player_index.unwrap_or(-1)
+                    ));
                 }
-                Some(ObjectClientEvent::FxListDoFxObjSecondary { fx: name, object_id, secondary }) => {
+                Some(ObjectClientEvent::FxListDoFxObjSecondary {
+                    fx: name,
+                    object_id,
+                    secondary,
+                }) => {
                     tally.borrow_mut().fxs += 1;
                     log.push(format!("fx {}", fx.id(&name)));
                     log.push(format!("fxobj {object_id} {secondary}"));
                 }
-                Some(ObjectClientEvent::DrawableReactToBodyDamageStateChange { object_id, state }) => log.push(format!("react {object_id} {state}")),
-                Some(ObjectClientEvent::DrawableReactToGeometryChange { .. }) => log.push("react".to_string()),
+                Some(ObjectClientEvent::DrawableReactToBodyDamageStateChange {
+                    object_id,
+                    state,
+                }) => log.push(format!("react {object_id} {state}")),
+                Some(ObjectClientEvent::DrawableReactToGeometryChange { .. }) => {
+                    log.push("react".to_string())
+                }
                 Some(ObjectClientEvent::ControlBarMarkUiDirty) => log.push("uidirty".to_string()),
                 _ => {}
             }
@@ -1300,7 +1714,8 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
             // a probe's line: the module index is relative to the body's (the C++ side numbers the body 0)
             let mut tok: Vec<String> = line.split(' ').map(str::to_string).collect();
             if matches!(tok[0].as_str(), "ondamage" | "onhealing" | "bodystate") {
-                let (object, idx): (usize, u16) = (tok[1].parse().unwrap(), tok[2].parse().unwrap());
+                let (object, idx): (usize, u16) =
+                    (tok[1].parse().unwrap(), tok[2].parse().unwrap());
                 tok[2] = (idx - body_idx[object - 1]).to_string();
             }
             log.push(tok.join(" "));
@@ -1309,16 +1724,30 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
     log
 }
 
-fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally: &RefCell<Tally>) -> RunOut {
+fn rust_run(
+    ctx: Ctx,
+    data: ModuleDataKind,
+    cfg: &[u32],
+    ops: &[[u32; 5]],
+    tally: &RefCell<Tally>,
+) -> RunOut {
     let mut v = Vec::new();
     {
         // the class of the data (0 `ActiveBody`, 1 `UndeadBody`, 2 `HiveStructureBody`) and what it adds, then the five fields of `ActiveBodyModuleData`
         let (d, extra): (&ActiveBodyModuleData, Vec<u32>) = match &data {
             ModuleDataKind::ActiveBody(d) => (d, vec![0]),
-            ModuleDataKind::UndeadBody(d) => (&d.active, vec![1, d.second_life_max_health.to_bits()]),
+            ModuleDataKind::UndeadBody(d) => {
+                (&d.active, vec![1, d.second_life_max_health.to_bits()])
+            }
             ModuleDataKind::HiveStructureBody(d) => {
-                let (p, sw) = (flags_bits(&d.damage_types_to_propagate_to_slaves), flags_bits(&d.damage_types_to_swallow));
-                (&d.active, vec![2, p as u32, (p >> 32) as u32, sw as u32, (sw >> 32) as u32])
+                let (p, sw) = (
+                    flags_bits(&d.damage_types_to_propagate_to_slaves),
+                    flags_bits(&d.damage_types_to_swallow),
+                );
+                (
+                    &d.active,
+                    vec![2, p as u32, (p >> 32) as u32, sw as u32, (sw >> 32) as u32],
+                )
             }
             _ => unreachable!("not a body's data"),
         };
@@ -1347,14 +1776,24 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     for (i, c) in sc.fxs.iter().enumerate() {
         let key = w.names.name_to_key(format!("DamageFX{i}").as_bytes());
         let mut dfx = DamageFx::new();
-        let d = Dfx { amount_for_major_fx: c.default.0, major_damage_fx_list: fx_name(c.default.1), minor_damage_fx_list: fx_name(c.default.2), damage_fx_throttle_time: c.default.3 };
+        let d = Dfx {
+            amount_for_major_fx: c.default.0,
+            major_damage_fx_list: fx_name(c.default.1),
+            minor_damage_fx_list: fx_name(c.default.2),
+            damage_fx_throttle_time: c.default.3,
+        };
         for t in 0..DAMAGE_NUM_TYPES as i32 {
             for l in 0..4 {
                 dfx.set_dfx(t, veterancy(l), d.clone()).unwrap();
             }
         }
         for o in &c.overrides {
-            let x = Dfx { amount_for_major_fx: o.2, major_damage_fx_list: fx_name(o.3), minor_damage_fx_list: fx_name(o.4), damage_fx_throttle_time: o.5 };
+            let x = Dfx {
+                amount_for_major_fx: o.2,
+                major_damage_fx_list: fx_name(o.3),
+                minor_damage_fx_list: fx_name(o.4),
+                damage_fx_throttle_time: o.5,
+            };
             dfx.set_dfx(o.0, veterancy(o.1), x).unwrap();
         }
         fx_store.insert(key, dfx);
@@ -1370,9 +1809,19 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     flags.set(b, 1);
                 }
             }
-            let armor_key = (armor > 0).then(|| w.names.name_to_key(format!("Armor{}", armor - 1).as_bytes()));
-            let fx_key = (fx > 0).then(|| w.names.name_to_key(format!("DamageFX{}", fx - 1).as_bytes()));
-            flags_sets.push(rts_lockstep_engine::common::thing_template::ArmorTemplateSet::from_parts(flags, armor_key, fx_key));
+            let armor_key = (armor > 0).then(|| {
+                w.names
+                    .name_to_key(format!("Armor{}", armor - 1).as_bytes())
+            });
+            let fx_key = (fx > 0).then(|| {
+                w.names
+                    .name_to_key(format!("DamageFX{}", fx - 1).as_bytes())
+            });
+            flags_sets.push(
+                rts_lockstep_engine::common::thing_template::ArmorTemplateSet::from_parts(
+                    flags, armor_key, fx_key,
+                ),
+            );
         }
         let slots = [
             ThingTemplateAudioType::SoundOnDamaged,
@@ -1382,16 +1831,24 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             ThingTemplateAudioType::SoundPromotedElite,
             ThingTemplateAudioType::SoundPromotedHero,
         ];
-        let audio = (0..6).filter(|&i| t.audio[i] > 0).map(|i| (slots[i], format!("snd{}", t.audio[i]).into_bytes())).collect();
-        let kind_of: Vec<i32> = (0..13).filter(|&i| o.kinds >> i & 1 != 0).map(|i| KINDS[i]).collect();
-        templates.push(Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues {
-            name: format!("T{}", k + 1).into_bytes(),
-            kind_of,
-            armor_sets: flags_sets,
-            audio,
-            structure_rubble_height: t.rubble,
-            ..Default::default()
-        })));
+        let audio = (0..6)
+            .filter(|&i| t.audio[i] > 0)
+            .map(|i| (slots[i], format!("snd{}", t.audio[i]).into_bytes()))
+            .collect();
+        let kind_of: Vec<i32> = (0..13)
+            .filter(|&i| o.kinds >> i & 1 != 0)
+            .map(|i| KINDS[i])
+            .collect();
+        templates.push(Arc::new(ThingTemplate::from_object_values(
+            &ObjectTemplateValues {
+                name: format!("T{}", k + 1).into_bytes(),
+                kind_of,
+                armor_sets: flags_sets,
+                audio,
+                structure_rubble_height: t.rubble,
+                ..Default::default()
+            },
+        )));
     }
     w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics {
         upgrade_center: ctx.center,
@@ -1410,11 +1867,19 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     {
         let mut classes: Vec<AutoParticle> = Vec::new();
         for k in 0..PS_CLASSES {
-            let system = if sc.ps[k].1 == 0 { b"None".to_vec() } else { format!("PS{}", sc.ps[k].1).into_bytes() };
+            let system = if sc.ps[k].1 == 0 {
+                b"None".to_vec()
+            } else {
+                format!("PS{}", sc.ps[k].1).into_bytes()
+            };
             if sc.ps[k].1 != 0 {
                 w.cuts.body.particle_templates.insert(system.clone());
             }
-            classes.push(AutoParticle { prefix: format!("BONE{k}").into_bytes(), system, max: sc.ps[k].0 });
+            classes.push(AutoParticle {
+                prefix: format!("BONE{k}").into_bytes(),
+                system,
+                max: sc.ps[k].0,
+            });
         }
         let g = &mut w.cuts.body.globals;
         g.unit_damaged_thresh = sc.unit_damaged;
@@ -1429,18 +1894,35 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     }
     w.cuts.body.dead_particle_modulus = (sc.dead_mod, sc.dead_rem);
     for (ob, cls, list) in &sc.bones {
-        w.cuts.body.bones.insert((*ob, format!("BONE{cls}").into_bytes()), list.iter().map(|p| Coord3D { x: p[0], y: p[1], z: p[2] }).collect());
+        w.cuts.body.bones.insert(
+            (*ob, format!("BONE{cls}").into_bytes()),
+            list.iter()
+                .map(|p| Coord3D {
+                    x: p[0],
+                    y: p[1],
+                    z: p[2],
+                })
+                .collect(),
+        );
     }
     for i in 0..n {
         for j in 0..n {
-            w.cuts.body.able_to_attack.insert((i as i32 + 1, j as i32 + 1), sc.able[i][j]);
-            w.cuts.body.distance_squared.insert((i as i32 + 1, j as i32 + 1), sc.dist[i][j]);
+            w.cuts
+                .body
+                .able_to_attack
+                .insert((i as i32 + 1, j as i32 + 1), sc.able[i][j]);
+            w.cuts
+                .body
+                .distance_squared
+                .insert((i as i32 + 1, j as i32 + 1), sc.dist[i][j]);
             let rel = match sc.rel[i][j] {
                 0 => Relationship::Enemies,
                 1 => Relationship::Neutral,
                 _ => Relationship::Allies,
             };
-            w.cuts.team_relationships.insert((i as u32 + 1, j as u32 + 1), rel);
+            w.cuts
+                .team_relationships
+                .insert((i as u32 + 1, j as u32 + 1), rel);
         }
     }
     for (k, o) in sc.objs.iter().enumerate() {
@@ -1453,7 +1935,11 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     w.random.init_game_logic_random(sc.logic_seed);
     for (p, &(ty, retaliation)) in sc.players.iter().enumerate() {
         let pl = w.players.get_nth_mut(p as i32).unwrap();
-        pl.player_type = if ty != 0 { PlayerType::Computer } else { PlayerType::Human };
+        pl.player_type = if ty != 0 {
+            PlayerType::Computer
+        } else {
+            PlayerType::Human
+        };
         pl.logical_retaliation_mode_enabled = retaliation;
     }
     // the objects
@@ -1470,7 +1956,10 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 subdual_damage_heal_amount: f(o.body[4]),
             };
             match o.cls {
-                5 => ModuleDataKind::UndeadBody(Arc::new(UndeadBodyModuleData { active, second_life_max_health: f(o.second_life) })),
+                5 => ModuleDataKind::UndeadBody(Arc::new(UndeadBodyModuleData {
+                    active,
+                    second_life_max_health: f(o.second_life),
+                })),
                 6 => ModuleDataKind::HiveStructureBody(Arc::new(HiveStructureBodyModuleData {
                     active,
                     damage_types_to_propagate_to_slaves: bits_flags(o.propagate),
@@ -1479,11 +1968,31 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 _ => ModuleDataKind::ActiveBody(Arc::new(active)),
             }
         };
-        let class_name: &[u8] =
-            [b"ActiveBody".as_slice(), b"HighlanderBody", b"ImmortalBody", b"StructureBody", b"InactiveBody", b"UndeadBody", b"HiveStructureBody"][o.cls as usize];
+        let class_name: &[u8] = [
+            b"ActiveBody".as_slice(),
+            b"HighlanderBody",
+            b"ImmortalBody",
+            b"StructureBody",
+            b"InactiveBody",
+            b"UndeadBody",
+            b"HiveStructureBody",
+        ][o.cls as usize];
         // an InactiveBody has no module data of its own: `Module::friend_newModuleData`'s plain `ModuleData`
-        let body_data = if o.cls == 4 { ModuleDataKind::Module(Arc::new(rts_lockstep_engine::common::module::ModuleData::new())) } else { body_data };
-        let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class_name, b"ModuleTag_Body", &body_data).unwrap().unwrap();
+        let body_data = if o.cls == 4 {
+            ModuleDataKind::Module(Arc::new(
+                rts_lockstep_engine::common::module::ModuleData::new(),
+            ))
+        } else {
+            body_data
+        };
+        let m = rts_lockstep_engine::logic::modules::new_module(
+            w.next_object_id(),
+            class_name,
+            b"ModuleTag_Body",
+            &body_data,
+        )
+        .unwrap()
+        .unwrap();
         let mut modules = vec![m];
         for i in 0..o.n_probes {
             let mut a = ProbeAnswers::default();
@@ -1515,25 +2024,58 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 a.closest_rider = o.closest_rider;
             }
             let mut pm = NewModule::plain(b"AbProbe", b"ModuleTag_Probe");
-            pm.interfaces = MODULEINTERFACE_DAMAGE | MODULEINTERFACE_DIE | if i == 0 && o.has_contain { MODULEINTERFACE_CONTAIN } else { 0 };
+            pm.interfaces = MODULEINTERFACE_DAMAGE
+                | MODULEINTERFACE_DIE
+                | if i == 0 && o.has_contain {
+                    MODULEINTERFACE_CONTAIN
+                } else {
+                    0
+                };
             pm.is_ai = i == 0 && o.has_ai;
-            pm.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(a, 0.0, Default::default())));
+            pm.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+                a,
+                0.0,
+                Default::default(),
+            )));
             modules.push(pm);
         }
         let status = {
             let mut s = Default::default();
             for (b, st) in STATUSES.iter().enumerate() {
                 if o.status >> b & 1 != 0 {
-                    rts_lockstep_engine::common::object_status_types::ObjectStatusMaskType::set(&mut s, *st, 1);
+                    rts_lockstep_engine::common::object_status_types::ObjectStatusMaskType::set(
+                        &mut s, *st, 1,
+                    );
                 }
             }
             s
         };
-        let id = w.new_object(NewObject { template: templates[k].clone(), status, team: Some(k as u32 + 1), modules }).unwrap();
+        let id = w
+            .new_object(NewObject {
+                template: templates[k].clone(),
+                status,
+                team: Some(k as u32 + 1),
+                modules,
+            })
+            .unwrap();
         assert_eq!(id, k as i32 + 1);
-        w.set_position(id, &Coord3D { x: o.pos[0], y: o.pos[1], z: o.pos[2] });
+        w.set_position(
+            id,
+            &Coord3D {
+                x: o.pos[0],
+                y: o.pos[1],
+                z: o.pos[2],
+            },
+        );
         // the world made the object a drawable; the scene says whether it has one
-        w.friend_bind_to_drawable(id, if o.drawable { 7 + k as i32 } else { INVALID_DRAWABLE_ID });
+        w.friend_bind_to_drawable(
+            id,
+            if o.drawable {
+                7 + k as i32
+            } else {
+                INVALID_DRAWABLE_ID
+            },
+        );
         let ob = w.objects.find_mut(id).unwrap();
         ob.experience.level = veterancy(o.vet);
         ob.contained_by = o.contained_by;
@@ -1568,9 +2110,22 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     tally.borrow_mut().damages += 1;
                 }
                 1 => {
-                    w.module_call(id, m, ModuleCall::AttemptHealing(make_info(&sc, o[2] as usize)));
+                    w.module_call(
+                        id,
+                        m,
+                        ModuleCall::AttemptHealing(make_info(&sc, o[2] as usize)),
+                    );
                 }
-                2 => result = w.module_call(id, m, ModuleCall::EstimateDamage(make_info(&sc, o[2] as usize).input)).as_real(0.0).to_bits(),
+                2 => {
+                    result = w
+                        .module_call(
+                            id,
+                            m,
+                            ModuleCall::EstimateDamage(make_info(&sc, o[2] as usize).input),
+                        )
+                        .as_real(0.0)
+                        .to_bits()
+                }
                 3 => {
                     w.module_call(id, m, ModuleCall::SetDamageState(o[2] as i32));
                 }
@@ -1581,7 +2136,14 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     if o[3] == 4 {
                         w.module_call(id, m, ModuleCall::SetMaxHealth(f(o[2])));
                     } else {
-                        w.module_call(id, m, ModuleCall::SetMaxHealthWithChange { max_health: f(o[2]), change_type: o[3] as i32 });
+                        w.module_call(
+                            id,
+                            m,
+                            ModuleCall::SetMaxHealthWithChange {
+                                max_health: f(o[2]),
+                                change_type: o[3] as i32,
+                            },
+                        );
                     }
                 }
                 6 => {
@@ -1591,11 +2153,23 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     w.module_call(id, m, ModuleCall::SetIndestructible(o[2] != 0));
                 }
                 8 => {
-                    w.objects.find_mut(id).unwrap().status.set(OBJECT_STATUS_AFLAME, i32::from(o[2] != 0));
+                    w.objects
+                        .find_mut(id)
+                        .unwrap()
+                        .status
+                        .set(OBJECT_STATUS_AFLAME, i32::from(o[2] != 0));
                     w.module_call(id, m, ModuleCall::SetAflame(o[2] != 0));
                 }
                 9 => {
-                    w.module_call(id, m, ModuleCall::OnVeterancyLevelChanged { old_level: o[2] as i32, new_level: o[3] as i32, provide_feedback: o[4] != 0 });
+                    w.module_call(
+                        id,
+                        m,
+                        ModuleCall::OnVeterancyLevelChanged {
+                            old_level: o[2] as i32,
+                            new_level: o[3] as i32,
+                            provide_feedback: o[4] != 0,
+                        },
+                    );
                 }
                 10 => match o[2] {
                     0 => {
@@ -1604,10 +2178,23 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     1 => {
                         w.module_call(id, m, ModuleCall::ClearArmorSetFlag(o[3] as i32));
                     }
-                    _ => result = u32::from(w.module_call(id, m, ModuleCall::TestArmorSetFlag(o[3] as i32)).as_bool()),
+                    _ => {
+                        result = u32::from(
+                            w.module_call(id, m, ModuleCall::TestArmorSetFlag(o[3] as i32))
+                                .as_bool(),
+                        )
+                    }
                 },
                 11 => {
-                    w.module_call(id, m, if o[2] == 0 { ModuleCall::SetFrontCrushed(o[3] != 0) } else { ModuleCall::SetBackCrushed(o[3] != 0) });
+                    w.module_call(
+                        id,
+                        m,
+                        if o[2] == 0 {
+                            ModuleCall::SetFrontCrushed(o[3] != 0)
+                        } else {
+                            ModuleCall::SetBackCrushed(o[3] != 0)
+                        },
+                    );
                 }
                 12 => {
                     w.module_call(id, m, ModuleCall::ClearLastAttacker);
@@ -1636,32 +2223,68 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 21 => {
                     let pl = w.players.get_nth_mut((o[1] & 3) as i32).unwrap();
                     pl.logical_retaliation_mode_enabled = o[2] != 0;
-                    pl.player_type = if o[3] != 0 { PlayerType::Computer } else { PlayerType::Human };
+                    pl.player_type = if o[3] != 0 {
+                        PlayerType::Computer
+                    } else {
+                        PlayerType::Human
+                    };
                 }
                 22 => {
-                    w.cuts.body.able_to_attack.insert((o[1] as i32 + 1, o[2] as i32 + 1), o[3] as i32);
+                    w.cuts
+                        .body
+                        .able_to_attack
+                        .insert((o[1] as i32 + 1, o[2] as i32 + 1), o[3] as i32);
                 }
                 23 => {
-                    w.cuts.body.distance_squared.insert((o[1] as i32 + 1, o[2] as i32 + 1), f(o[3]));
+                    w.cuts
+                        .body
+                        .distance_squared
+                        .insert((o[1] as i32 + 1, o[2] as i32 + 1), f(o[3]));
                 }
                 24 => {
-                    w.cuts.body.retaliation_friends = (0..o[1].min(3)).map(|i| o[2 + i as usize] as i32).filter(|&x| x >= 1 && x as usize <= n).collect();
+                    w.cuts.body.retaliation_friends = (0..o[1].min(3))
+                        .map(|i| o[2 + i as usize] as i32)
+                        .filter(|&x| x >= 1 && x as usize <= n)
+                        .collect();
                 }
                 26 => {
-                    let ob = w.objects.find_mut((o[1] & 3).min(n as u32 - 1) as i32 + 1).unwrap();
-                    if let Some(UpdateBody::ModuleProbe(p)) = ob.modules.iter_mut().filter_map(|s| s.body.as_mut()).find(|b| matches!(b, UpdateBody::ModuleProbe(_))) {
+                    let ob = w
+                        .objects
+                        .find_mut((o[1] & 3).min(n as u32 - 1) as i32 + 1)
+                        .unwrap();
+                    if let Some(UpdateBody::ModuleProbe(p)) = ob
+                        .modules
+                        .iter_mut()
+                        .filter_map(|s| s.body.as_mut())
+                        .find(|b| matches!(b, UpdateBody::ModuleProbe(_)))
+                    {
                         match o[2] {
                             0 => p.answers.moving = o[3] != 0,
                             1 => p.answers.idle = o[3] != 0,
                             2 => p.answers.immune = o[3] != 0,
                             3 => p.answers.rider_change = o[3] != 0,
                             4 => p.answers.garrisonable = o[3] != 0,
-                            _ => p.answers.contained = (0..o[3].min(3)).map(|i| ((o[4] >> (4 * i)) & 15) as i32).filter(|&x| x >= 1 && x as usize <= n).collect(),
+                            _ => {
+                                p.answers.contained = (0..o[3].min(3))
+                                    .map(|i| ((o[4] >> (4 * i)) & 15) as i32)
+                                    .filter(|&x| x >= 1 && x as usize <= n)
+                                    .collect()
+                            }
                         }
                     }
                 }
-                27 => w.reads.local_selection = (0..o[1].min(3)).map(|i| ((o[2] >> (4 * i)) & 3) as i32 + 1).filter(|&x| x as usize <= n).collect(),
-                28 => w.objects.find_mut((o[1] & 3).min(n as u32 - 1) as i32 + 1).unwrap().contained_by = o[2] as i32,
+                27 => {
+                    w.reads.local_selection = (0..o[1].min(3))
+                        .map(|i| ((o[2] >> (4 * i)) & 3) as i32 + 1)
+                        .filter(|&x| x as usize <= n)
+                        .collect()
+                }
+                28 => {
+                    w.objects
+                        .find_mut((o[1] & 3).min(n as u32 - 1) as i32 + 1)
+                        .unwrap()
+                        .contained_by = o[2] as i32
+                }
                 29..=31 => {
                     let r = run_xfer_body(&mut w, id, m as usize, o[0] - 29, &saved);
                     xst = r.0;
@@ -1674,7 +2297,14 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 }
                 32 => w.set_effectively_dead(id, o[2] != 0),
                 33 => {
-                    w.friend_bind_to_drawable(id, if o[2] != 0 { 7 + id } else { INVALID_DRAWABLE_ID });
+                    w.friend_bind_to_drawable(
+                        id,
+                        if o[2] != 0 {
+                            7 + id
+                        } else {
+                            INVALID_DRAWABLE_ID
+                        },
+                    );
                     events_before = w.events.events().len();
                 }
                 34 => w.objects.find_mut(id).unwrap().experience.level = veterancy(o[2] as i32),
@@ -1687,7 +2317,13 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             events_before = w.events.events().len();
         }
         if w.cuts.module_errors.len() > errors_before {
-            assert!(w.cuts.module_errors[errors_before..].iter().all(|(_, e)| e.is_undefined()), "{:?}", w.cuts.module_errors);
+            assert!(
+                w.cuts.module_errors[errors_before..]
+                    .iter()
+                    .all(|(_, e)| e.is_undefined()),
+                "{:?}",
+                w.cuts.module_errors
+            );
             excluded = true;
         }
         let events: Vec<ObjectClientEvent> = w.events.events()[events_before..]
@@ -1699,11 +2335,22 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             .collect();
         let trace = w.cuts.trace.take().unwrap_or_default();
         let cuts = w.cuts.log.take().unwrap_or_default();
-        let body_idx: Vec<u16> = ids.iter().map(|&id| w.objects.find(id).and_then(|ob| ob.body).unwrap_or(0)).collect();
-        let log = if phase == 0 { Vec::new() } else { effect_lines(trace, cuts, events, &mut fx, &body_idx, tally) };
+        let body_idx: Vec<u16> = ids
+            .iter()
+            .map(|&id| w.objects.find(id).and_then(|ob| ob.body).unwrap_or(0))
+            .collect();
+        let log = if phase == 0 {
+            Vec::new()
+        } else {
+            effect_lines(trace, cuts, events, &mut fx, &body_idx, tally)
+        };
         tally.borrow_mut().effects += log.len() as u64;
         for l in &log {
-            *tally.borrow_mut().words.entry(l.split(' ').next().unwrap().to_string()).or_default() += 1;
+            *tally
+                .borrow_mut()
+                .words
+                .entry(l.split(' ').next().unwrap().to_string())
+                .or_default() += 1;
         }
         put_i32(&mut v, 0);
         put_u32(&mut v, result);
@@ -1732,7 +2379,11 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             put_u32(&mut v, pl.attacked_frame);
         }
     }
-    RunOut { dump: v, keys: Vec::new(), excluded }
+    RunOut {
+        dump: v,
+        keys: Vec::new(),
+        excluded,
+    }
 }
 
 fn make_info(sc: &Scene, i: usize) -> DamageInfo {
@@ -1779,22 +2430,41 @@ fn active_body_matches_upstream() {
 }
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::ActiveBody(Arc::new(ActiveBodyModuleData::friend_new_module_data(Some(ini))?)));
+    *out = Some(ModuleDataKind::ActiveBody(Arc::new(
+        ActiveBodyModuleData::friend_new_module_data(Some(ini))?,
+    )));
     Ok(())
 }
 
 fn read_undead_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::UndeadBody(Arc::new(UndeadBodyModuleData::friend_new_module_data(Some(ini))?)));
+    *out = Some(ModuleDataKind::UndeadBody(Arc::new(
+        UndeadBodyModuleData::friend_new_module_data(Some(ini))?,
+    )));
     Ok(())
 }
 
 fn read_hive_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::HiveStructureBody(Arc::new(HiveStructureBodyModuleData::friend_new_module_data(Some(ini))?)));
+    *out = Some(ModuleDataKind::HiveStructureBody(Arc::new(
+        HiveStructureBodyModuleData::friend_new_module_data(Some(ini))?,
+    )));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }, BlockParse { token: "U", parse: read_undead_block }, BlockParse { token: "H", parse: read_hive_block }];
+    let blocks = [
+        BlockParse {
+            token: "D",
+            parse: read_block,
+        },
+        BlockParse {
+            token: "U",
+            parse: read_undead_block,
+        },
+        BlockParse {
+            token: "H",
+            parse: read_hive_block,
+        },
+    ];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)

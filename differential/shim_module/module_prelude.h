@@ -176,4 +176,17 @@ enum CommandOption
 {
 	COMMAND_OPTION_NONE = 0x00000000
 };
+/* --- p1w13-sonnet, batch R33 --- EMPUpdate.cpp's BaseType.h conversions, on the x87 helpers' transcriptions
+** (differential/wrap_base_type.cpp), as the OCL fixture does (BaseType.h lines 232 and 243, commit 0a05454d) */
+extern "C" {
+int ref_fast_float2long_round(float f);
+float ref_fast_float_trunc(float f);
+float ref_fast_float_ceil(float f);
+}
+#ifndef REAL_TO_UNSIGNEDINT
+#define REAL_TO_UNSIGNEDINT(x) ((UnsignedInt)(ref_fast_float2long_round(ref_fast_float_trunc(x))))
+#endif
+#ifndef REAL_TO_INT_CEIL
+#define REAL_TO_INT_CEIL(x) (ref_fast_float2long_round(ref_fast_float_ceil(x)))
+#endif
 #endif

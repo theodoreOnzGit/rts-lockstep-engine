@@ -45,7 +45,9 @@
 
 use crate::common::science::{xfer_science_vec, ScienceXferError};
 use crate::common::unicode_string::UnicodeString;
-use crate::common::upgrade::{xfer_upgrade_mask, Upgrade, UpgradeCenter, XferUpgradeMaskError, UPGRADE_STATUS_INVALID};
+use crate::common::upgrade::{
+    xfer_upgrade_mask, Upgrade, UpgradeCenter, XferUpgradeMaskError, UPGRADE_STATUS_INVALID,
+};
 use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferStatus};
 use crate::logic::sides_list::BuildListInfo;
 
@@ -164,33 +166,66 @@ fn xfer_user_u32(xfer: &mut dyn Xfer, v: &mut u32) -> PResult<()> {
 
 /// The fields `crc` and `xfer` both write for the battle plan bonuses (`m_armorScalar` ... `m_invalidKindOf`).
 fn xfer_battle_plan_bonus_fields(xfer: &mut dyn Xfer, b: &mut BattlePlanBonuses) -> PResult<()> {
-    if !plant(301) { xfer.xfer_real(&mut b.armor_scalar)?; }
-    if !plant(302) { xfer.xfer_real(&mut b.sight_range_scalar)?; }
-    if !plant(303) { xfer.xfer_int(&mut b.bombardment)?; }
-    if !plant(304) { xfer.xfer_int(&mut b.hold_the_line)?; }
-    if !plant(305) { xfer.xfer_int(&mut b.search_and_destroy)?; }
+    if !plant(301) {
+        xfer.xfer_real(&mut b.armor_scalar)?;
+    }
+    if !plant(302) {
+        xfer.xfer_real(&mut b.sight_range_scalar)?;
+    }
+    if !plant(303) {
+        xfer.xfer_int(&mut b.bombardment)?;
+    }
+    if !plant(304) {
+        xfer.xfer_int(&mut b.hold_the_line)?;
+    }
+    if !plant(305) {
+        xfer.xfer_int(&mut b.search_and_destroy)?;
+    }
     b.valid_kind_of.xfer(xfer)?;
     b.invalid_kind_of.xfer(xfer)?;
     Ok(())
 }
 
 /// `Player::crc(xfer)`.
-pub fn player_crc<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerIndex) -> PResult<()> {
+pub fn player_crc<H: PlayerXferHost>(
+    h: &mut H,
+    xfer: &mut dyn Xfer,
+    p: PlayerIndex,
+) -> PResult<()> {
     // Player battle plan bonuses
     let mut battle_plan_bonus = pl(h, p)?.battle_plan_bonuses.is_some();
-    if !plant(306) { xfer.xfer_bool(&mut battle_plan_bonus)?; }
+    if !plant(306) {
+        xfer.xfer_bool(&mut battle_plan_bonus)?;
+    }
     if let Some(b) = plm(h, p)?.battle_plan_bonuses.as_mut() {
         xfer_battle_plan_bonus_fields(xfer, b)?;
     }
     let me = plm(h, p)?;
-    if !plant(307) { if plant(388) { xfer.xfer_int(&mut me.science_purchase_points)?; } else { xfer.xfer_int(&mut me.skill_points)?; } }
-    if !plant(308) { if plant(388) { xfer.xfer_int(&mut me.skill_points)?; } else { xfer.xfer_int(&mut me.science_purchase_points)?; } }
+    if !plant(307) {
+        if plant(388) {
+            xfer.xfer_int(&mut me.science_purchase_points)?;
+        } else {
+            xfer.xfer_int(&mut me.skill_points)?;
+        }
+    }
+    if !plant(308) {
+        if plant(388) {
+            xfer.xfer_int(&mut me.skill_points)?;
+        } else {
+            xfer.xfer_int(&mut me.science_purchase_points)?;
+        }
+    }
     Ok(())
 }
 
 /// `xferScienceVec` on one of the player's science lists (selected by `which`: 0 `m_sciences`, 1 `m_sciencesDisabled`,
 /// 2 `m_sciencesHidden`). The list keeps what was read before a failure, as upstream's does.
-fn xfer_player_science_vec<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerIndex, which: u8) -> PResult<()> {
+fn xfer_player_science_vec<H: PlayerXferHost>(
+    h: &mut H,
+    xfer: &mut dyn Xfer,
+    p: PlayerIndex,
+    which: u8,
+) -> PResult<()> {
     let mut v = {
         let me = plm(h, p)?;
         match which {
@@ -210,10 +245,19 @@ fn xfer_player_science_vec<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p:
 }
 
 /// `xferUpgradeMask` on `m_upgradesInProgress` (`which` 0) or `m_upgradesCompleted` (1).
-fn xfer_player_upgrade_mask<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerIndex, which: u8) -> PResult<()> {
+fn xfer_player_upgrade_mask<H: PlayerXferHost>(
+    h: &mut H,
+    xfer: &mut dyn Xfer,
+    p: PlayerIndex,
+    which: u8,
+) -> PResult<()> {
     let mut mask = {
         let me = plm(h, p)?;
-        if which == 0 { me.upgrades_in_progress } else { me.upgrades_completed }
+        if which == 0 {
+            me.upgrades_in_progress
+        } else {
+            me.upgrades_completed
+        }
     };
     let r = {
         let (center, names) = h.upgrade_center_and_names();
@@ -230,7 +274,11 @@ fn xfer_player_upgrade_mask<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p
 
 /// `Player::xfer(xfer)`, version 8 (2: the skill point modifier; 3: the score screen flag; 4: the shared special power
 /// timers; 5: the sciences as names; 6: `m_unitsShouldHunt`; 7: the preorder flag; 8: the disabled and hidden sciences).
-pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerIndex) -> PResult<()> {
+pub fn player_xfer<H: PlayerXferHost>(
+    h: &mut H,
+    xfer: &mut dyn Xfer,
+    p: PlayerIndex,
+) -> PResult<()> {
     // version
     let current_version = 8;
     let mut version = current_version;
@@ -238,17 +286,23 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
 
     // money
     if !plant(381) {
-        xfer_nested(h, xfer, |h, x| plm(h, p)?.money.xfer(x).map_err(PlayerError::Xfer))?;
+        xfer_nested(h, xfer, |h, x| {
+            plm(h, p)?.money.xfer(x).map_err(PlayerError::Xfer)
+        })?;
     }
 
     // upgrade list count
     let mut upgrade_count = pl(h, p)?.upgrades.len() as u16 + plant(387) as u16;
-    if !plant(309) { xfer.xfer_unsigned_short(&mut upgrade_count)?; }
+    if !plant(309) {
+        xfer.xfer_unsigned_short(&mut upgrade_count)?;
+    }
 
     if (version >= 7) != plant(351) {
         // preorder info
         let mut v = pl(h, p)?.is_preorder;
-        if !plant(310) { xfer.xfer_bool(&mut v)?; }
+        if !plant(310) {
+            xfer.xfer_bool(&mut v)?;
+        }
         plm(h, p)?.is_preorder = v;
     }
 
@@ -264,9 +318,15 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
             let up = pl(h, p)?.upgrades[i];
             let mut upgrade_name = {
                 let (center, _) = h.upgrade_center_and_names();
-                center.find_upgrade_by_key(up.template).ok_or(PlayerError::Null)?.upgrade_name().to_vec()
+                center
+                    .find_upgrade_by_key(up.template)
+                    .ok_or(PlayerError::Null)?
+                    .upgrade_name()
+                    .to_vec()
             };
-            if !plant(311) { xfer.xfer_ascii_string(&mut upgrade_name)?; }
+            if !plant(311) {
+                xfer.xfer_ascii_string(&mut upgrade_name)?;
+            }
 
             // xfer upgrade data
             let mut u = Upgrade::new(up.template);
@@ -282,15 +342,31 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
             // find template for this upgrade
             let key = {
                 let (center, names) = h.upgrade_center_and_names();
-                center.find_upgrade(names, &upgrade_name).map_err(|_| PlayerError::NameKeysExhausted)?.map(|t| t.upgrade_name_key())
+                center
+                    .find_upgrade(names, &upgrade_name)
+                    .map_err(|_| PlayerError::NameKeysExhausted)?
+                    .map(|t| t.upgrade_name_key())
             };
             // sanity
             let Some(key) = key else {
-                return Err(if plant(354) { PlayerError::Null } else { PlayerError::InvalidData });
+                return Err(if plant(354) {
+                    PlayerError::Null
+                } else {
+                    PlayerError::InvalidData
+                });
             };
 
             // add upgrade to player, the status is invalid, but that's OK cause we're about to xfer it
-            let idx = player_add_upgrade(h, p, key, if plant(374) { crate::common::upgrade::UPGRADE_STATUS_COMPLETE } else { UPGRADE_STATUS_INVALID })?;
+            let idx = player_add_upgrade(
+                h,
+                p,
+                key,
+                if plant(374) {
+                    crate::common::upgrade::UPGRADE_STATUS_COMPLETE
+                } else {
+                    UPGRADE_STATUS_INVALID
+                },
+            )?;
 
             // xfer upgrade data
             let mut u = Upgrade::new(key);
@@ -304,10 +380,18 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
     // radar info
     {
         let me = plm(h, p)?;
-        if !plant(312) { xfer.xfer_int(&mut me.radar_count)?; }
-        if !plant(313) { xfer.xfer_bool(&mut me.is_player_dead)?; }
-        if !plant(314) { xfer.xfer_int(&mut me.disable_proof_radar_count)?; }
-        if !plant(315) { xfer.xfer_bool(&mut me.radar_disabled)?; }
+        if !plant(312) {
+            xfer.xfer_int(&mut me.radar_count)?;
+        }
+        if !plant(313) {
+            xfer.xfer_bool(&mut me.is_player_dead)?;
+        }
+        if !plant(314) {
+            xfer.xfer_int(&mut me.disable_proof_radar_count)?;
+        }
+        if !plant(315) {
+            xfer.xfer_bool(&mut me.radar_disabled)?;
+        }
     }
 
     // upgrades in progress, upgrades complete
@@ -316,7 +400,9 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
 
     // energy info
     if !plant(382) {
-        xfer_nested(h, xfer, |h, x| plm(h, p)?.energy.xfer(x).map_err(PlayerError::Xfer))?;
+        xfer_nested(h, xfer, |h, x| {
+            plm(h, p)?.energy.xfer(x).map_err(PlayerError::Xfer)
+        })?;
     }
 
     //
@@ -324,7 +410,9 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
     // it is not the team prototype data itself
     //
     let mut prototype_count = pl(h, p)?.team_prototypes.len() as u16;
-    if !plant(316) { xfer.xfer_unsigned_short(&mut prototype_count)?; }
+    if !plant(316) {
+        xfer.xfer_unsigned_short(&mut prototype_count)?;
+    }
     if (xfer.get_xfer_mode() == XferMode::Save) != plant(355) {
         for i in 0..pl(h, p)?.team_prototypes.len() {
             let mut prototype_id = pl(h, p)?.team_prototypes[i];
@@ -344,7 +432,11 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
 
             // find prototype
             let Some(prototype) = factory_find_team_prototype_by_id(h, prototype_id) else {
-                return Err(if plant(356) { PlayerError::Null } else { PlayerError::InvalidData });
+                return Err(if plant(356) {
+                    PlayerError::Null
+                } else {
+                    PlayerError::InvalidData
+                });
             };
 
             // put in list
@@ -354,7 +446,9 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
 
     // build list info
     let mut build_list_info_count = pl(h, p)?.build_list.len() as u16;
-    if !plant(317) { xfer.xfer_unsigned_short(&mut build_list_info_count)?; }
+    if !plant(317) {
+        xfer.xfer_unsigned_short(&mut build_list_info_count)?;
+    }
     if (xfer.get_xfer_mode() == XferMode::Save) != plant(357) {
         // xfer each build list info
         for i in 0..pl(h, p)?.build_list.len() {
@@ -383,23 +477,29 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
 
     // ai player data
     let mut ai_player_present = pl(h, p)?.ai.is_some();
-    if !plant(318) { xfer.xfer_bool(&mut ai_player_present)?; }
+    if !plant(318) {
+        xfer.xfer_bool(&mut ai_player_present)?;
+    }
     if ai_player_present != pl(h, p)?.ai.is_some() && !plant(358) {
         return Err(PlayerError::InvalidData);
     }
-    if ai_player_present
-        && !plant(384) {
-            xfer_nested(h, xfer, |h, x| h.xfer_ai(p, x))?;
-        }
+    if ai_player_present && !plant(384) {
+        xfer_nested(h, xfer, |h, x| h.xfer_ai(p, x))?;
+    }
 
     // resource gathering manager
     let mut present = pl(h, p)?.resource_gathering_manager.is_some();
-    if !plant(319) { xfer.xfer_bool(&mut present)?; }
+    if !plant(319) {
+        xfer.xfer_bool(&mut present)?;
+    }
     if present != pl(h, p)?.resource_gathering_manager.is_some() && !plant(359) {
         return Err(PlayerError::InvalidData);
     }
     if present {
-        let mut m = plm(h, p)?.resource_gathering_manager.take().ok_or(PlayerError::Null)?;
+        let mut m = plm(h, p)?
+            .resource_gathering_manager
+            .take()
+            .ok_or(PlayerError::Null)?;
         let r = xfer.xfer_snapshot(&mut m);
         plm(h, p)?.resource_gathering_manager = Some(m);
         r?;
@@ -407,7 +507,9 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
 
     // tunnel tracking system
     let mut present = pl(h, p)?.tunnel_system.is_some();
-    if !plant(320) { xfer.xfer_bool(&mut present)?; }
+    if !plant(320) {
+        xfer.xfer_bool(&mut present)?;
+    }
     if present != pl(h, p)?.tunnel_system.is_some() && !plant(360) {
         return Err(PlayerError::InvalidData);
     }
@@ -422,7 +524,11 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
     let mut team_id = pl(h, p)?.default_team.unwrap_or(TEAM_ID_INVALID);
     xfer_user_u32(xfer, &mut team_id)?;
     if xfer.get_xfer_mode() == XferMode::Load && !plant(361) {
-        plm(h, p)?.default_team = if plant(377) { None } else { factory_find_team_by_id(h, team_id) };
+        plm(h, p)?.default_team = if plant(377) {
+            None
+        } else {
+            factory_find_team_by_id(h, team_id)
+        };
     }
 
     // sciences
@@ -447,7 +553,9 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
             for _ in 0..science_count {
                 let mut b = [0u8; 4];
                 xfer.xfer_user(&mut b)?;
-                plm(h, p)?.sciences.push(crate::common::science::ScienceType(i32::from_le_bytes(b)));
+                plm(h, p)?
+                    .sciences
+                    .push(crate::common::science::ScienceType(i32::from_le_bytes(b)));
             }
         }
     }
@@ -455,17 +563,30 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
     {
         let me = plm(h, p)?;
         // rank level, skill points, science purchase points, level up, level down
-        if !plant(321) { xfer.xfer_int(&mut me.rank_level)?; }
-        if !plant(322) { xfer.xfer_int(&mut me.skill_points)?; }
-        if !plant(323) { xfer.xfer_int(&mut me.science_purchase_points)?; }
-        if !plant(324) { xfer.xfer_int(&mut me.level_up)?; }
-        if !plant(325) { xfer.xfer_int(&mut me.level_down)?; }
+        if !plant(321) {
+            xfer.xfer_int(&mut me.rank_level)?;
+        }
+        if !plant(322) {
+            xfer.xfer_int(&mut me.skill_points)?;
+        }
+        if !plant(323) {
+            xfer.xfer_int(&mut me.science_purchase_points)?;
+        }
+        if !plant(324) {
+            xfer.xfer_int(&mut me.level_up)?;
+        }
+        if !plant(325) {
+            xfer.xfer_int(&mut me.level_down)?;
+        }
 
         // general name
         let mut name: Vec<u16> = me.general_name.str().to_vec();
-        if !plant(326) { xfer.xfer_unicode_string(&mut name)?; }
+        if !plant(326) {
+            xfer.xfer_unicode_string(&mut name)?;
+        }
         let mut s = UnicodeString::default();
-        s.set(&name).map_err(|_| PlayerError::Xfer(XferStatus::InvalidParameters))?;
+        s.set(&name)
+            .map_err(|_| PlayerError::Xfer(XferStatus::InvalidParameters))?;
         me.general_name = s;
     }
 
@@ -484,19 +605,29 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
     {
         let me = plm(h, p)?;
         // can build units, can build base, observer
-        if !plant(327) { xfer.xfer_bool(&mut me.can_build_units)?; }
-        if !plant(328) { xfer.xfer_bool(&mut me.can_build_base)?; }
-        if !plant(329) { xfer.xfer_bool(&mut me.observer)?; }
+        if !plant(327) {
+            xfer.xfer_bool(&mut me.can_build_units)?;
+        }
+        if !plant(328) {
+            xfer.xfer_bool(&mut me.can_build_base)?;
+        }
+        if !plant(329) {
+            xfer.xfer_bool(&mut me.observer)?;
+        }
 
         if (version >= 2) != plant(364) {
             // current skill point modifier value
-            if !plant(330) { xfer.xfer_real(&mut me.skill_points_modifier)?; }
+            if !plant(330) {
+                xfer.xfer_real(&mut me.skill_points_modifier)?;
+            }
         } else {
             me.skill_points_modifier = 1.0;
         }
 
         if (version >= 3) != plant(365) {
-            if !plant(331) { xfer.xfer_bool(&mut me.list_in_score_screen)?; }
+            if !plant(331) {
+                xfer.xfer_bool(&mut me.list_in_score_screen)?;
+            }
         } else {
             me.list_in_score_screen = true;
         }
@@ -506,13 +637,17 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
         for (i, b) in me.attacked_by.iter().enumerate() {
             bytes[i] = *b as u8;
         }
-        if !plant(332) { xfer.xfer_user(&mut bytes)?; }
+        if !plant(332) {
+            xfer.xfer_user(&mut bytes)?;
+        }
         for (i, b) in me.attacked_by.iter_mut().enumerate() {
             *b = bytes[i] != 0 && !plant(380);
         }
 
         // cash bounty percent
-        if !plant(333) { xfer.xfer_real(&mut me.cash_bounty_percent)?; }
+        if !plant(333) {
+            xfer.xfer_real(&mut me.cash_bounty_percent)?;
+        }
     }
 
     // score keeper
@@ -522,15 +657,21 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
 
     // size of and data for kindof percent production change list
     let mut percent_production_change_count = pl(h, p)?.kind_of_production_changes.len() as u16;
-    if !plant(334) { xfer.xfer_unsigned_short(&mut percent_production_change_count)?; }
+    if !plant(334) {
+        xfer.xfer_unsigned_short(&mut percent_production_change_count)?;
+    }
     if xfer.get_xfer_mode() == XferMode::Save {
         // save each item
         for i in 0..pl(h, p)?.kind_of_production_changes.len() {
             let me = plm(h, p)?;
             let entry = &mut me.kind_of_production_changes[i];
             entry.kind_of.xfer(xfer)?;
-            if !plant(335) { xfer.xfer_real(&mut entry.percent)?; }
-            if !plant(336) { xfer.xfer_unsigned_int(&mut entry.ref_count)?; }
+            if !plant(335) {
+                xfer.xfer_real(&mut entry.percent)?;
+            }
+            if !plant(336) {
+                xfer.xfer_unsigned_int(&mut entry.ref_count)?;
+            }
         }
     } else {
         // sanity, list must be empty right now
@@ -540,11 +681,19 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
 
         // read each entry
         for _ in 0..percent_production_change_count {
-            let mut entry = KindOfPercentProductionChange { kind_of: Default::default(), percent: 0.0, ref_count: 0 };
+            let mut entry = KindOfPercentProductionChange {
+                kind_of: Default::default(),
+                percent: 0.0,
+                ref_count: 0,
+            };
             // read data
             entry.kind_of.xfer(xfer)?;
-            if !plant(337) { xfer.xfer_real(&mut entry.percent)?; }
-            if !plant(338) { xfer.xfer_unsigned_int(&mut entry.ref_count)?; }
+            if !plant(337) {
+                xfer.xfer_real(&mut entry.percent)?;
+            }
+            if !plant(338) {
+                xfer.xfer_unsigned_int(&mut entry.ref_count)?;
+            }
             // put at end of list
             plm(h, p)?.kind_of_production_changes.push(entry);
         }
@@ -554,12 +703,18 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
         plm(h, p)?.special_power_timers.clear();
     } else {
         let mut timer_list_size = pl(h, p)?.special_power_timers.len() as u16;
-        if !plant(339) { xfer.xfer_unsigned_short(&mut timer_list_size)?; }
+        if !plant(339) {
+            xfer.xfer_unsigned_short(&mut timer_list_size)?;
+        }
         if xfer.get_xfer_mode() == XferMode::Save {
             for i in 0..pl(h, p)?.special_power_timers.len() {
                 let timer = &mut plm(h, p)?.special_power_timers[i];
-                if !plant(340) { xfer.xfer_unsigned_int(&mut timer.template_id)?; }
-                if !plant(341) { xfer.xfer_unsigned_int(&mut timer.ready_frame)?; }
+                if !plant(340) {
+                    xfer.xfer_unsigned_int(&mut timer.template_id)?;
+                }
+                if !plant(341) {
+                    xfer.xfer_unsigned_int(&mut timer.ready_frame)?;
+                }
             }
         } else {
             // sanity, list must be empty right now
@@ -568,9 +723,16 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
             }
             // read each entry
             for _ in 0..timer_list_size {
-                let mut timer = SpecialPowerReadyTimer { template_id: 0, ready_frame: 0 };
-                if !plant(342) { xfer.xfer_unsigned_int(&mut timer.template_id)?; }
-                if !plant(343) { xfer.xfer_unsigned_int(&mut timer.ready_frame)?; }
+                let mut timer = SpecialPowerReadyTimer {
+                    template_id: 0,
+                    ready_frame: 0,
+                };
+                if !plant(342) {
+                    xfer.xfer_unsigned_int(&mut timer.template_id)?;
+                }
+                if !plant(343) {
+                    xfer.xfer_unsigned_int(&mut timer.ready_frame)?;
+                }
                 plm(h, p)?.special_power_timers.push(timer);
             }
         }
@@ -578,7 +740,9 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
 
     // squads
     let mut squad_count = NUM_HOTKEY_SQUADS as u16;
-    if !plant(344) { xfer.xfer_unsigned_short(&mut squad_count)?; }
+    if !plant(344) {
+        xfer.xfer_unsigned_short(&mut squad_count)?;
+    }
     if squad_count as usize != NUM_HOTKEY_SQUADS && !plant(369) {
         return Err(PlayerError::InvalidData);
     }
@@ -594,10 +758,14 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
 
     // current squad selection
     let mut current_selection_present = pl(h, p)?.current_selection.is_some();
-    if !plant(345) { xfer.xfer_bool(&mut current_selection_present)?; }
+    if !plant(345) {
+        xfer.xfer_bool(&mut current_selection_present)?;
+    }
     if current_selection_present {
         // allocate squad if needed
-        if (pl(h, p)?.current_selection.is_none() || plant(371)) && xfer.get_xfer_mode() == XferMode::Load {
+        if (pl(h, p)?.current_selection.is_none() || plant(371))
+            && xfer.get_xfer_mode() == XferMode::Load
+        {
             plm(h, p)?.current_selection = Some(Squad::default());
         }
         if plant(379) {
@@ -605,7 +773,10 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
             return Ok(());
         }
         // xfer
-        let mut sq = plm(h, p)?.current_selection.take().ok_or(PlayerError::Null)?;
+        let mut sq = plm(h, p)?
+            .current_selection
+            .take()
+            .ok_or(PlayerError::Null)?;
         let r = xfer_nested(&mut sq, xfer, |s, x| squad_xfer(s, x));
         plm(h, p)?.current_selection = Some(sq);
         r?;
@@ -613,7 +784,9 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
 
     // Player battle plan bonuses
     let mut battle_plan_bonus = pl(h, p)?.battle_plan_bonuses.is_some();
-    if !plant(346) { xfer.xfer_bool(&mut battle_plan_bonus)?; } // If we're loading, it just replaces the bool
+    if !plant(346) {
+        xfer.xfer_bool(&mut battle_plan_bonus)?;
+    } // If we're loading, it just replaces the bool
     if xfer.get_xfer_mode() == XferMode::Load && !plant(372) {
         let me = plm(h, p)?;
         if !plant(378) {
@@ -636,12 +809,20 @@ pub fn player_xfer<H: PlayerXferHost>(h: &mut H, xfer: &mut dyn Xfer, p: PlayerI
     }
     {
         let me = plm(h, p)?;
-        if !plant(347) { xfer.xfer_int(&mut me.bombard_battle_plans)?; }
-        if !plant(348) { xfer.xfer_int(&mut me.hold_the_line_battle_plans)?; }
-        if !plant(349) { xfer.xfer_int(&mut me.search_and_destroy_battle_plans)?; }
+        if !plant(347) {
+            xfer.xfer_int(&mut me.bombard_battle_plans)?;
+        }
+        if !plant(348) {
+            xfer.xfer_int(&mut me.hold_the_line_battle_plans)?;
+        }
+        if !plant(349) {
+            xfer.xfer_int(&mut me.search_and_destroy_battle_plans)?;
+        }
 
         if (version >= 6) != plant(373) {
-            if !plant(350) { xfer.xfer_bool(&mut me.units_should_hunt)?; }
+            if !plant(350) {
+                xfer.xfer_bool(&mut me.units_should_hunt)?;
+            }
         } else {
             me.units_should_hunt = false;
         }

@@ -81,7 +81,11 @@ pub enum ModuleCall {
     OnDie(DamageInfo),
     // ---- CollideModuleInterface ----
     /// `onCollide(other, loc, normal)`.
-    OnCollide { other: ObjectId, loc: Option<Coord3D>, normal: Option<Coord3D> },
+    OnCollide {
+        other: ObjectId,
+        loc: Option<Coord3D>,
+        normal: Option<Coord3D>,
+    },
     /// `isSalvageCrateCollide()`; replies [`ModuleReply::Bool`].
     IsSalvageCrateCollide,
     // --- p1w11-sonnet ---
@@ -123,9 +127,16 @@ pub enum ModuleCall {
     /// `doSpecialPower(commandOptions)`.
     DoSpecialPower { command_options: u32 },
     /// `doSpecialPowerAtObject(obj, commandOptions)`.
-    DoSpecialPowerAtObject { target: ObjectId, command_options: u32 },
+    DoSpecialPowerAtObject {
+        target: ObjectId,
+        command_options: u32,
+    },
     /// `doSpecialPowerAtLocation(loc, angle, commandOptions)`.
-    DoSpecialPowerAtLocation { loc: Coord3D, angle: f32, command_options: u32 },
+    DoSpecialPowerAtLocation {
+        loc: Coord3D,
+        angle: f32,
+        command_options: u32,
+    },
     /// `doSpecialPowerUsingWaypoints(way, commandOptions)`, the waypoint by id.
     DoSpecialPowerUsingWaypoints { waypoint: u32, command_options: u32 },
     // ---- BodyModuleInterface ----
@@ -150,7 +161,11 @@ pub enum ModuleCall {
     /// `testArmorSetFlag(ast)`; replies [`ModuleReply::Bool`].
     TestArmorSetFlag(i32),
     /// `onVeterancyLevelChanged(oldLevel, newLevel, provideFeedback)`.
-    OnVeterancyLevelChanged { old_level: i32, new_level: i32, provide_feedback: bool },
+    OnVeterancyLevelChanged {
+        old_level: i32,
+        new_level: i32,
+        provide_feedback: bool,
+    },
     /// `setMaxHealth(maxHealth)` (the default change type).
     SetMaxHealth(f32),
     // --- p1l9-upgrades ---
@@ -359,7 +374,11 @@ pub enum ModuleCall {
     /// `onHealing(damageInfo)` (the loop of `ActiveBody::attemptHealing`).
     OnHealing(DamageInfo),
     /// `onBodyDamageStateChange(damageInfo, oldState, newState)`.
-    OnBodyDamageStateChange { info: DamageInfo, old_state: i32, new_state: i32 },
+    OnBodyDamageStateChange {
+        info: DamageInfo,
+        old_state: i32,
+        new_state: i32,
+    },
     // ---- ContainModuleInterface, the rest ----
     /// `isImmuneToClearBuildingAttacks()`; replies [`ModuleReply::Bool`].
     IsImmuneToClearBuildingAttacks,
@@ -390,7 +409,10 @@ pub enum ModuleCall {
     /// `addToContainList(obj)`.
     AddToContainList(ObjectId),
     /// `removeFromContain(obj, exposeStealthUnits)`.
-    RemoveFromContainExposing { obj: ObjectId, expose_stealth_units: bool },
+    RemoveFromContainExposing {
+        obj: ObjectId,
+        expose_stealth_units: bool,
+    },
     /// `killAllContained()`.
     KillAllContained,
     /// `harmAndForceExitAllContained(info)`; replies [`ModuleReply::Damage`].
@@ -406,7 +428,10 @@ pub enum ModuleCall {
     /// `getContainMax()`; replies [`ModuleReply::Int`].
     GetContainMax,
     /// `orderAllPassengersToExit(commandSource, instantly)`.
-    OrderAllPassengersToExit { command_source: i32, instantly: bool },
+    OrderAllPassengersToExit {
+        command_source: i32,
+        instantly: bool,
+    },
     /// `orderAllPassengersToIdle(commandSource)`.
     OrderAllPassengersToIdleFrom { command_source: i32 },
     /// `orderAllPassengersToHackInternet(commandSource)`.
@@ -481,9 +506,15 @@ pub enum ModuleCall {
     /// `aiIdle(commandSource)`.
     AiIdleFrom { command_source: i32 },
     /// `aiExit(container, commandSource)`.
-    AiExit { container: ObjectId, command_source: i32 },
+    AiExit {
+        container: ObjectId,
+        command_source: i32,
+    },
     /// `aiExitInstantly(container, commandSource)`.
-    AiExitInstantly { container: ObjectId, command_source: i32 },
+    AiExitInstantly {
+        container: ObjectId,
+        command_source: i32,
+    },
     /// `aiHackInternet(commandSource)`.
     AiHackInternet { command_source: i32 },
     /// `aiMoveToPosition(pos, commandSource)`.
@@ -506,11 +537,21 @@ pub enum ModuleCall {
     /// `getAIUpdateInterface()->isDoingGroundMovement()` (the production exits, batch R18); replies [`ModuleReply::Bool`].
     AiIsDoingGroundMovement,
     /// `getAIUpdateInterface()->aiGetHealed(healDepot, cmdSource)` (`AutoFindHealingUpdate`, batch R19).
-    AiGetHealed { target: ObjectId, command_source: i32 },
+    AiGetHealed {
+        target: ObjectId,
+        command_source: i32,
+    },
     /// `getAIUpdateInterface()->aiEnter(obj, cmdSource)` (`PilotFindVehicleUpdate`, batch R19).
-    AiEnter { target: ObjectId, command_source: i32 },
+    AiEnter {
+        target: ObjectId,
+        command_source: i32,
+    },
     /// `RadiusDecalUpdate::createRadiusDecal(tmpl, radius, pos)` (batch R20; `ObjectCreationList`'s attack nugget calls it).
-    RadiusDecalCreate { template: crate::logic::radius_decal::RadiusDecalTemplate, radius: f32, pos: Coord3D },
+    RadiusDecalCreate {
+        template: crate::logic::radius_decal::RadiusDecalTemplate,
+        radius: f32,
+        pos: Coord3D,
+    },
     /// `RadiusDecalUpdate::killRadiusDecal()` (batch R20).
     RadiusDecalKill,
     /// `RadiusDecalUpdate::killWhenNoLongerAttacking(v)` (batch R20).
@@ -519,7 +560,11 @@ pub enum ModuleCall {
     /// `TURN_POSITIVE` 1.
     PhysicsGetTurning,
     /// `getAIUpdateInterface()->aiFollowExitProductionPath(&path, ignoreObject, cmdSource)` (the production exits, batch R18).
-    AiFollowExitProductionPath { path: Vec<Coord3D>, ignore_object: ObjectId, command_source: i32 },
+    AiFollowExitProductionPath {
+        path: Vec<Coord3D>,
+        ignore_object: ObjectId,
+        command_source: i32,
+    },
     /// `ExitInterface::unreserveDoorForExit(door)` (batch R18).
     UnreserveDoorForExit(i32),
     /// `ExitInterface::exitObjectByBudding(newObj, budHost)` (batch R18; `INVALID_ID` for a `NULL` host).
@@ -531,9 +576,18 @@ pub enum ModuleCall {
     GetNaturalRallyPointWithOffset(bool),
     /// `getAIUpdateInterface()->construct(template, pos, angle, owner, isRebuild)` (`RebuildHoleBehavior`, batch R15): the template by id
     /// (`None`: `NULL`), the owner a player index; replies [`ModuleReply::Id`] (`INVALID_ID`: `NULL`).
-    AiConstruct { template: Option<u16>, pos: Coord3D, angle: f32, owner: Option<crate::logic::world::ids::PlayerIndex>, is_rebuild: bool },
+    AiConstruct {
+        template: Option<u16>,
+        pos: Coord3D,
+        angle: f32,
+        owner: Option<crate::logic::world::ids::PlayerIndex>,
+        is_rebuild: bool,
+    },
     /// `getAIUpdateInterface()->aiResumeConstruction(obj, cmdSource)` (batch R15).
-    AiResumeConstruction { object: ObjectId, command_source: i32 },
+    AiResumeConstruction {
+        object: ObjectId,
+        command_source: i32,
+    },
     /// `StickyBombUpdate::getTargetObject()` (batch R15: `RebuildHoleBehavior::transferBombs`); replies [`ModuleReply::Id`] (`INVALID_ID`: `NULL`).
     StickyBombGetTargetObject,
     /// `StickyBombUpdate::setTargetObject(obj)` (batch R15).
@@ -546,7 +600,11 @@ pub enum ModuleCall {
     /// `setIgnoreCollisionTime(frames)`.
     AiSetIgnoreCollisionTime { frames: i32 },
     /// `aiFollowPath(path, ignoreObject, commandSource)`.
-    AiFollowPath { path: Vec<Coord3D>, ignore_object: ObjectId, command_source: i32 },
+    AiFollowPath {
+        path: Vec<Coord3D>,
+        ignore_object: ObjectId,
+        command_source: i32,
+    },
     /// `doQuickExit(path)`.
     AiDoQuickExit { path: Vec<Coord3D> },
     /// `PhysicsBehavior::getMass()`; replies [`ModuleReply::Real`].
@@ -649,7 +707,11 @@ pub enum ModuleCall {
     /// `ToppleUpdate::isAbleToBeToppled()`; replies [`ModuleReply::Bool`].
     IsAbleToBeToppled,
     /// `ToppleUpdate::applyTopplingForce(direction, speed, options)`.
-    ApplyTopplingForce { direction: Option<Coord3D>, speed: f32, options: u32 },
+    ApplyTopplingForce {
+        direction: Option<Coord3D>,
+        speed: f32,
+        options: u32,
+    },
     /// `StickyBombUpdate::detonate()`.
     Detonate,
     /// `ObjectDefectionHelper::startDefectionTimer(time, withDefectorFx)`.
@@ -764,7 +826,13 @@ pub enum ModuleCall {
     DoesSpecialPowerUpdatePassScienceTest,
     /// `SpecialPowerUpdateInterface::initiateIntentToDoSpecialPower(template, targetObj, targetPos, way, commandOptions)`, the template by id
     /// and the waypoint by id; replies [`ModuleReply::Bool`] (unhandled: no such interface).
-    InitiateIntentToDoSpecialPower { template: u32, target_object: ObjectId, target_position: Option<Coord3D>, waypoint: u32, command_options: u32 },
+    InitiateIntentToDoSpecialPower {
+        template: u32,
+        target_object: ObjectId,
+        target_position: Option<Coord3D>,
+        waypoint: u32,
+        command_options: u32,
+    },
     // --- end p1w11-sonnet ---
 }
 
@@ -828,7 +896,11 @@ impl ModuleReply {
     pub fn as_coord(&self) -> Coord3D {
         match self {
             ModuleReply::Coord(c) => *c,
-            _ => Coord3D { x: 0.0, y: 0.0, z: 0.0 },
+            _ => Coord3D {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
         }
     }
 

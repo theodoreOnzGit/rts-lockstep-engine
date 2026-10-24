@@ -99,16 +99,23 @@ fn put_str(v: &mut Vec<u8>, s: &[u8]) {
 }
 type Read = Option<ModuleDataKind>;
 fn read_default(ini: &mut Ini<'_>, out: &mut Read) -> IniResult<()> {
-    *out = Some(ModuleDataKind::DefaultProductionExitUpdate(Arc::new(DefaultProductionExitUpdateModuleData::friend_new_module_data(Some(ini))?)));
+    *out = Some(ModuleDataKind::DefaultProductionExitUpdate(Arc::new(
+        DefaultProductionExitUpdateModuleData::friend_new_module_data(Some(ini))?,
+    )));
     Ok(())
 }
 fn read_queue(ini: &mut Ini<'_>, out: &mut Read) -> IniResult<()> {
-    *out = Some(ModuleDataKind::QueueProductionExitUpdate(Arc::new(QueueProductionExitUpdateModuleData::friend_new_module_data(Some(ini))?)));
+    *out = Some(ModuleDataKind::QueueProductionExitUpdate(Arc::new(
+        QueueProductionExitUpdateModuleData::friend_new_module_data(Some(ini))?,
+    )));
     Ok(())
 }
 
 fn rust_read(kind: u32, name: &[u8], text: &[u8]) -> (IniResult<()>, Read) {
-    let blocks = [BlockParse { token: "D", parse: if kind == 0 { read_default } else { read_queue } }];
+    let blocks = [BlockParse {
+        token: "D",
+        parse: if kind == 0 { read_default } else { read_queue },
+    }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -186,7 +193,12 @@ fn decode(kind: u32, b: &[u8], n_ops: usize) -> Vec<String> {
 
 fn coord(g: &mut Gen) -> String {
     let c = [&"0", &"10", &"-12.5", &"25", &"3", &"0.5"];
-    format!("X:{} Y:{} Z:{}", pick(g, &c), pick(g, &c), pick(g, &[&"0", &"0", &"5", &"-2"]))
+    format!(
+        "X:{} Y:{} Z:{}",
+        pick(g, &c),
+        pick(g, &c),
+        pick(g, &[&"0", &"0", &"5", &"-2"])
+    )
 }
 
 /// The block `D` of `kind`, each field present with some probability; now and then a bogus token or an unknown field.
@@ -204,7 +216,10 @@ fn gen_text(g: &mut Gen, kind: u32, clean: bool) -> Vec<u8> {
         }
     } else {
         if g.below(100) < 70 {
-            lines.push(format!("ExitDelay = {}", pick(g, &["0", "33", "100", "500"])));
+            lines.push(format!(
+                "ExitDelay = {}",
+                pick(g, &["0", "33", "100", "500"])
+            ));
         }
         if g.below(100) < 40 {
             lines.push(format!("AllowAirborneCreation = {}", gen_bool(g, clean)));
@@ -239,7 +254,13 @@ struct Tally {
     xfers: u64,
 }
 
-fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
+fn run_xfer(
+    w: &mut World,
+    me: ObjectId,
+    idx: usize,
+    how: u32,
+    saved: &[u8],
+) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -280,58 +301,148 @@ fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> 
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 16], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
+fn rust_run(
+    ctx: &Ctx,
+    kind: u32,
+    data: ModuleDataKind,
+    cfg: &[u32; 16],
+    ops: &[[u32; 6]],
+    tally: &mut Tally,
+) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     put_data(&mut v, &data);
     let mut w = World::new();
     w.names = ctx.names.clone();
-    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), ..Default::default() });
+    w.statics = Arc::new(GameStatics {
+        upgrade_center: ctx.center.clone(),
+        ..Default::default()
+    });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.contain.stub_object_calls = true;
     w.cuts.body.probe_trace = true;
     w.cuts.terrain_ground = [f32::from_bits(cfg[14]); 8];
     w.cuts.terrain_layer_height = [f32::from_bits(cfg[15]); 8];
-    let plain = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
+    let plain = Arc::new(ThingTemplate::from_object_values(
+        &ObjectTemplateValues::default(),
+    ));
     let physics = |velocity: Coord3D| {
         let mut p = NewModule::plain(b"CtPhysics", b"ModuleTag_Physics");
-        let answers = ProbeAnswers { velocity, mass: f32::from_bits(cfg[6]), center_of_mass_offset: f32::from_bits(cfg[7]), ..Default::default() };
-        p.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(answers, 0.0, Default::default())));
+        let answers = ProbeAnswers {
+            velocity,
+            mass: f32::from_bits(cfg[6]),
+            center_of_mass_offset: f32::from_bits(cfg[7]),
+            ..Default::default()
+        };
+        p.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+            answers,
+            0.0,
+            Default::default(),
+        )));
         p
     };
     let ai = |ground: bool| {
         let mut a = NewModule::plain(b"CtProbe", b"ModuleTag_AI");
         a.is_ai = true;
-        a.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers { ground_movement: ground, ..Default::default() }, 0.0, Default::default())));
+        a.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+            ProbeAnswers {
+                ground_movement: ground,
+                ..Default::default()
+            },
+            0.0,
+            Default::default(),
+        )));
         a
     };
-    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), CLASSES[kind as usize].as_bytes(), b"ModuleTag_Exit", &data).unwrap().unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(
+        w.next_object_id(),
+        CLASSES[kind as usize].as_bytes(),
+        b"ModuleTag_Exit",
+        &data,
+    )
+    .unwrap()
+    .unwrap();
     let me = w
-        .new_object(NewObject { template: plain.clone(), status: ObjectStatusMaskType::default(), team: None, modules: vec![m, physics(Coord3D { x: 2.0, y: -1.0, z: f32::from_bits(cfg[5]) })] })
+        .new_object(NewObject {
+            template: plain.clone(),
+            status: ObjectStatusMaskType::default(),
+            team: None,
+            modules: vec![
+                m,
+                physics(Coord3D {
+                    x: 2.0,
+                    y: -1.0,
+                    z: f32::from_bits(cfg[5]),
+                }),
+            ],
+        })
         .unwrap();
     assert_eq!(me, 1);
     for k in 2..=5 {
-        let mods = if k < 5 { vec![ai(false), physics(Coord3D::default())] } else { Vec::new() };
-        let id = w.new_object(NewObject { template: plain.clone(), status: ObjectStatusMaskType::default(), team: None, modules: mods }).unwrap();
+        let mods = if k < 5 {
+            vec![ai(false), physics(Coord3D::default())]
+        } else {
+            Vec::new()
+        };
+        let id = w
+            .new_object(NewObject {
+                template: plain.clone(),
+                status: ObjectStatusMaskType::default(),
+                team: None,
+                modules: mods,
+            })
+            .unwrap();
         assert_eq!(id, k);
     }
     let ais: Vec<Option<u16>> = (1..=5).map(|k| w.objects.find(k).unwrap().ai).collect();
     // the physics behaviours are the probes named so; the scene points the objects at them
     let phys: Vec<Option<u16>> = (1..=5).map(|k| w.find_module(k, b"CtPhysics")).collect();
-    w.set_position(me, &Coord3D { x: f32::from_bits(cfg[0]), y: f32::from_bits(cfg[1]), z: 0.0 });
+    w.set_position(
+        me,
+        &Coord3D {
+            x: f32::from_bits(cfg[0]),
+            y: f32::from_bits(cfg[1]),
+            z: 0.0,
+        },
+    );
     w.contain_scene_set_orientation(me, f32::from_bits(cfg[2]));
     w.objects.find_mut(me).unwrap().layer = cfg[3] as i32;
-    w.set_position(5, &Coord3D { x: -7.5, y: 12.0, z: 3.0 });
+    w.set_position(
+        5,
+        &Coord3D {
+            x: -7.5,
+            y: 12.0,
+            z: 3.0,
+        },
+    );
     w.contain_scene_set_orientation(5, 0.5);
     w.objects.find_mut(5).unwrap().layer = 2;
     if cfg[8] & 1 != 0 {
         for k in 2..=4 {
-            w.cuts.contain.adjust_destination.insert(k, Coord3D { x: f32::from_bits(cfg[9]), y: f32::from_bits(cfg[10]), z: 0.0 });
+            w.cuts.contain.adjust_destination.insert(
+                k,
+                Coord3D {
+                    x: f32::from_bits(cfg[9]),
+                    y: f32::from_bits(cfg[10]),
+                    z: 0.0,
+                },
+            );
         }
     }
-    w.cuts.contain.snap_position = (cfg[11] & 1 != 0).then(|| Coord3D { x: f32::from_bits(cfg[12]), y: f32::from_bits(cfg[13]), z: 0.0 });
-    let idx = w.find_module(me, CLASSES[kind as usize].as_bytes()).unwrap();
-    let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
+    w.cuts.contain.snap_position = (cfg[11] & 1 != 0).then(|| Coord3D {
+        x: f32::from_bits(cfg[12]),
+        y: f32::from_bits(cfg[13]),
+        z: 0.0,
+    });
+    let idx = w
+        .find_module(me, CLASSES[kind as usize].as_bytes())
+        .unwrap();
+    let u = w
+        .update_handle_of_module(ModuleHandle {
+            object: me,
+            index: idx,
+        })
+        .expect("an update module");
     let mut flags = cfg[4];
     let mut saved: Vec<u8> = Vec::new();
     for o in ops {
@@ -341,9 +452,21 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 16], ops: &[
         for k in 1..4usize {
             let id = k as ObjectId + 1;
             let ob = w.objects.find_mut(id).unwrap();
-            ob.ai = if flags >> (k - 1) & 1 != 0 { ais[k] } else { None };
-            ob.physics = if flags >> (k + 5) & 1 != 0 { phys[k] } else { None };
-            if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(id).unwrap().modules[ais[k].unwrap() as usize].body.as_mut() {
+            ob.ai = if flags >> (k - 1) & 1 != 0 {
+                ais[k]
+            } else {
+                None
+            };
+            ob.physics = if flags >> (k + 5) & 1 != 0 {
+                phys[k]
+            } else {
+                None
+            };
+            if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(id).unwrap().modules
+                [ais[k].unwrap() as usize]
+                .body
+                .as_mut()
+            {
                 p.answers.ground_movement = flags >> (k + 2) & 1 != 0;
             }
         }
@@ -361,30 +484,70 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 16], ops: &[
         };
         match o[0] {
             0 => {
-                w.module_call(me, idx, ModuleCall::ExitObjectViaDoor { obj: o[1] as ObjectId, door: 0 });
+                w.module_call(
+                    me,
+                    idx,
+                    ModuleCall::ExitObjectViaDoor {
+                        obj: o[1] as ObjectId,
+                        door: 0,
+                    },
+                );
                 tally.exits += 1;
             }
-            1 => res.push(w.module_call(me, idx, ModuleCall::ReserveDoorForExit { specific: 0 }).as_int(99) as u32),
+            1 => res.push(
+                w.module_call(me, idx, ModuleCall::ReserveDoorForExit { specific: 0 })
+                    .as_int(99) as u32,
+            ),
             2 => {
                 w.module_call(me, idx, ModuleCall::UnreserveDoorForExit(0));
             }
             3 => {
-                w.module_call(me, idx, ModuleCall::ExitObjectByBudding { obj: o[1] as ObjectId, bud_host: o[2] as ObjectId });
+                w.module_call(
+                    me,
+                    idx,
+                    ModuleCall::ExitObjectByBudding {
+                        obj: o[1] as ObjectId,
+                        bud_host: o[2] as ObjectId,
+                    },
+                );
                 tally.exits += 1;
             }
             4 => {
-                w.module_call(me, idx, ModuleCall::SetRallyPoint(Coord3D { x: f32::from_bits(o[1]), y: f32::from_bits(o[2]), z: f32::from_bits(o[3]) }));
+                w.module_call(
+                    me,
+                    idx,
+                    ModuleCall::SetRallyPoint(Coord3D {
+                        x: f32::from_bits(o[1]),
+                        y: f32::from_bits(o[2]),
+                        z: f32::from_bits(o[3]),
+                    }),
+                );
             }
             5 => {
                 if let ModuleReply::Coord(c) = w.module_call(me, idx, ModuleCall::GetRallyPoint) {
                     res.extend([c.x.to_bits(), c.y.to_bits(), c.z.to_bits()]);
                 }
             }
-            6 => res.push(u32::from(w.module_call(me, idx, ModuleCall::UseSpawnRallyPoint).as_bool())),
-            7 => res = coord_words(w.module_call(me, idx, ModuleCall::GetNaturalRallyPointWithOffset(o[1] != 0))),
+            6 => res.push(u32::from(
+                w.module_call(me, idx, ModuleCall::UseSpawnRallyPoint)
+                    .as_bool(),
+            )),
+            7 => {
+                res = coord_words(w.module_call(
+                    me,
+                    idx,
+                    ModuleCall::GetNaturalRallyPointWithOffset(o[1] != 0),
+                ))
+            }
             8 => res = coord_words(w.module_call(me, idx, ModuleCall::GetExitPosition)),
-            9 => res.push(w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0),
-            10 => res.push(u32::from(w.module_call(me, idx, ModuleCall::IsExitBusy).as_bool())),
+            9 => res.push(
+                w.with_body(u, |b, w| b.update(w, u))
+                    .expect("the module is in its slot")
+                    .0,
+            ),
+            10 => res.push(u32::from(
+                w.module_call(me, idx, ModuleCall::IsExitBusy).as_bool(),
+            )),
             11 => {}
             12..=14 => {
                 let r = run_xfer(&mut w, me, idx as usize, o[0] - 12, &saved);
@@ -398,7 +561,9 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 16], ops: &[
             }
             _ => unreachable!(),
         }
-        let threw = w.cuts.module_errors[errors_before..].iter().any(|(_, e)| !e.is_undefined());
+        let threw = w.cuts.module_errors[errors_before..]
+            .iter()
+            .any(|(_, e)| !e.is_undefined());
         put_i32(&mut v, if threw { 2 } else { 0 });
         put_u32(&mut v, res.len() as u32);
         for r in &res {
@@ -407,17 +572,40 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 16], ops: &[
         let cuts = w.cuts.log.take().unwrap();
         let mut cut_iter = cuts.iter();
         let mut log: Vec<String> = Vec::new();
-        let bits = |c: &Coord3D| format!("{:08x} {:08x} {:08x}", c.x.to_bits(), c.y.to_bits(), c.z.to_bits());
+        let bits = |c: &Coord3D| {
+            format!(
+                "{:08x} {:08x} {:08x}",
+                c.x.to_bits(),
+                c.y.to_bits(),
+                c.z.to_bits()
+            )
+        };
         for t in w.cuts.trace.take().unwrap() {
             if t.starts_with("cut ") {
                 match cut_iter.next().expect("a cut line has a cut call") {
-                    CutCall::TerrainGetGroundHeight { x, y } => log.push(format!("ground {:08x} {:08x}", x.to_bits(), y.to_bits())),
-                    CutCall::TerrainGetLayerHeight { x, y, layer } => log.push(format!("layerheight {:08x} {:08x} {layer}", x.to_bits(), y.to_bits())),
-                    CutCall::Contain(ContainCall::SetOrientation { object, angle }) => log.push(format!("setorient {object} {:08x}", angle.to_bits())),
-                    CutCall::Contain(ContainCall::SetLayer { object, layer }) => log.push(format!("setlayer {object} {layer}")),
-                    CutCall::Contain(ContainCall::PathfindAddObject { object }) => log.push(format!("pathadd {object}")),
-                    CutCall::Contain(ContainCall::PathfindAdjustDestination { object, before }) => log.push(format!("adjust {object} {}", bits(before))),
-                    CutCall::Contain(ContainCall::PathfindSnapPosition { object, before }) => log.push(format!("snap {object} {}", bits(before))),
+                    CutCall::TerrainGetGroundHeight { x, y } => {
+                        log.push(format!("ground {:08x} {:08x}", x.to_bits(), y.to_bits()))
+                    }
+                    CutCall::TerrainGetLayerHeight { x, y, layer } => log.push(format!(
+                        "layerheight {:08x} {:08x} {layer}",
+                        x.to_bits(),
+                        y.to_bits()
+                    )),
+                    CutCall::Contain(ContainCall::SetOrientation { object, angle }) => {
+                        log.push(format!("setorient {object} {:08x}", angle.to_bits()))
+                    }
+                    CutCall::Contain(ContainCall::SetLayer { object, layer }) => {
+                        log.push(format!("setlayer {object} {layer}"))
+                    }
+                    CutCall::Contain(ContainCall::PathfindAddObject { object }) => {
+                        log.push(format!("pathadd {object}"))
+                    }
+                    CutCall::Contain(ContainCall::PathfindAdjustDestination { object, before }) => {
+                        log.push(format!("adjust {object} {}", bits(before)))
+                    }
+                    CutCall::Contain(ContainCall::PathfindSnapPosition { object, before }) => {
+                        log.push(format!("snap {object} {}", bits(before)))
+                    }
                     _ => {}
                 }
             } else if let Some(r) = t.strip_prefix("bt ") {
@@ -457,7 +645,10 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 16], ops: &[
 }
 
 fn cases() -> usize {
-    std::env::var("L9R18_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
+    std::env::var("L9R18_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9_000)
 }
 
 #[test]
@@ -466,7 +657,8 @@ fn production_exits_match_upstream() {
     let cases = cases();
     let mut g = Gen::new(0x0018_E417);
     let mut read = Check::new("production exits R18 data read (throw, message)");
-    let mut run = Check::new("production exits R18 ops (data, results, effects, xfers, state, positions)");
+    let mut run =
+        Check::new("production exits R18 ops (data, results, effects, xfers, state, positions)");
     let (mut read_failed, mut ops_run, mut excluded) = (0u64, 0u64, 0u64);
     let mut compared = [0u64; 2];
     let mut tally = Tally::default();
@@ -514,7 +706,14 @@ fn production_exits_match_upstream() {
                 7..=8 => [1, 0, 0, 0, 0, 0],
                 9 => [2, 0, 0, 0, 0, 0],
                 10..=11 => [3, 2 + g.below(3), *pick(&mut g, &[&5u32, &5, &0]), 0, 0, 0],
-                12..=13 => [4, pick(&mut g, &fl).to_bits(), pick(&mut g, &fl).to_bits(), 0, 0, 0],
+                12..=13 => [
+                    4,
+                    pick(&mut g, &fl).to_bits(),
+                    pick(&mut g, &fl).to_bits(),
+                    0,
+                    0,
+                    0,
+                ],
                 14 => [5, 0, 0, 0, 0, 0],
                 15 => [if kind == 0 { 6 } else { 9 }, 0, 0, 0, 0, 0],
                 16 => [7, g.below(2), 0, 0, 0, 0],
@@ -568,21 +767,51 @@ fn production_exits_match_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || format!("case {case} kind {kind}: cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
-        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
+        let what = || {
+            format!(
+                "case {case} kind {kind}: cfg {cfg:x?}, file {:?}, ops {ops:?}",
+                show(&text)
+            )
+        };
+        read.eq(
+            &outcome,
+            &Outcome {
+                status,
+                detail,
+                crc: 0,
+            },
+            what,
+        );
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
         };
         let (dr, dc) = (decode(kind, &rd, ops.len()), decode(kind, &buf, ops.len()));
         for l in &dr {
-            for key in ["layerheight", "ground", "setorient", "setlayer", "pathadd", "snap", "adjust", "aiexitpath", "aimove", "pmotive", "ppitch"] {
-                *counts.entry(key.to_string()).or_default() += l.matches(&format!("\"{key} ")).count() as u64;
+            for key in [
+                "layerheight",
+                "ground",
+                "setorient",
+                "setlayer",
+                "pathadd",
+                "snap",
+                "adjust",
+                "aiexitpath",
+                "aimove",
+                "pmotive",
+                "ppitch",
+            ] {
+                *counts.entry(key.to_string()).or_default() +=
+                    l.matches(&format!("\"{key} ")).count() as u64;
             }
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            let i = dr
+                .iter()
+                .zip(dc.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(dr.len().min(dc.len()));
             eprintln!("--- case {case} kind {kind} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
@@ -602,5 +831,8 @@ fn production_exits_match_upstream() {
     }
     read.finish();
     run.finish();
-    assert!(tally.paths * 4 > cases as u64, "the generator must reach the exit paths");
+    assert!(
+        tally.paths * 4 > cases as u64,
+        "the generator must reach the exit paths"
+    );
 }

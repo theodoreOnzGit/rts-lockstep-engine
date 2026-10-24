@@ -222,8 +222,13 @@ impl FiringHost for Host {
         self.calls.push(Call::Clear(condition));
         self.changed(old);
     }
-    fn clear_and_set_model_condition_flags(&mut self, clr: &ModelConditionFlags, set: &ModelConditionFlags) {
-        self.calls.push(Call::Model(Host::bits3(clr), Host::bits3(set)));
+    fn clear_and_set_model_condition_flags(
+        &mut self,
+        clr: &ModelConditionFlags,
+        set: &ModelConditionFlags,
+    ) {
+        self.calls
+            .push(Call::Model(Host::bits3(clr), Host::bits3(set)));
     }
     fn reload_all_ammo(&mut self, now: bool) {
         self.calls.push(Call::Reload(now));
@@ -250,12 +255,14 @@ impl FiringHost for Host {
         self.weapons[weapon as usize].spec.loop_time
     }
     fn play_fire_sound(&mut self, weapon: WeaponRef) {
-        self.calls.push(Call::Add(SOUNDS[self.weapons[weapon as usize].spec.sound]));
+        self.calls
+            .push(Call::Add(SOUNDS[self.weapons[weapon as usize].spec.sound]));
     }
     fn start_looping_fire_sound(&mut self, weapon: WeaponRef, only_if_not_playing: bool) {
         // the client's side of the cut point: add unless it is already playing
         if !only_if_not_playing || !self.playing || self.plant == Plant::AlwaysRestart {
-            self.calls.push(Call::Add(SOUNDS[self.weapons[weapon as usize].spec.sound]));
+            self.calls
+                .push(Call::Add(SOUNDS[self.weapons[weapon as usize].spec.sound]));
         }
     }
     fn stop_looping_fire_sound(&mut self) {
@@ -289,7 +296,15 @@ fn rust_run(p: &Program, plant: Plant, model_calls: &mut usize) -> Vec<u32> {
         frame: 0,
         word: p.word,
         faerie: [false; 4],
-        weapons: p.weapons.iter().map(|s| HostWeapon { spec: s.clone(), next_shot: 0, reloading: false }).collect(),
+        weapons: p
+            .weapons
+            .iter()
+            .map(|s| HostWeapon {
+                spec: s.clone(),
+                next_shot: 0,
+                reloading: false,
+            })
+            .collect(),
         playing: false,
         calls: Vec::new(),
         plant,
@@ -317,7 +332,9 @@ fn rust_run(p: &Program, plant: Plant, model_calls: &mut usize) -> Vec<u32> {
                 t.destroy(&mut host);
                 t = FiringTracker::new(&mut host);
             }
-            4 => out.push(t.get_num_consecutive_shots_at_victim((1..=4).contains(&b).then_some(b)) as u32),
+            4 => out.push(
+                t.get_num_consecutive_shots_at_victim((1..=4).contains(&b).then_some(b)) as u32,
+            ),
             5 => out.push(t.get_last_shot_victim() as u32),
             6 => host.playing = a != 0,
             7 => push_bytes(&mut out, &save_bytes(&mut t)),
@@ -338,7 +355,11 @@ fn rust_run(p: &Program, plant: Plant, model_calls: &mut usize) -> Vec<u32> {
             }
             _ => host.faerie[(b - 1) as usize] = c != 0,
         }
-        *model_calls += host.calls.iter().filter(|c| matches!(c, Call::Model(_, _))).count();
+        *model_calls += host
+            .calls
+            .iter()
+            .filter(|c| matches!(c, Call::Model(_, _)))
+            .count();
         host.drain(&mut out);
     }
     t.destroy(&mut host);
@@ -353,7 +374,14 @@ static CPP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn cpp_run(p: &Program, path: &std::path::Path) -> Vec<u32> {
     let mut spec: Vec<i32> = vec![p.weapons.len() as i32];
     for w in &p.weapons {
-        spec.extend([w.auto_reload as i32, w.coast as i32, w.one, w.two, w.loop_time as i32, w.sound as i32]);
+        spec.extend([
+            w.auto_reload as i32,
+            w.coast as i32,
+            w.one,
+            w.two,
+            w.loop_time as i32,
+            w.sound as i32,
+        ]);
     }
     spec.push(p.word as i32);
     let flat: Vec<i32> = p.ops.iter().flat_map(|o| o.iter().copied()).collect();
@@ -412,7 +440,9 @@ fn random_save(g: &mut Gen) -> Vec<u8> {
 /// bit flipped, or that save cut at a field boundary.
 fn random_blob(g: &mut Gen) -> Vec<u8> {
     match g.below(4) {
-        0 => (0..BOUNDARIES[g.below(5) as usize]).map(|_| g.u32() as u8).collect(),
+        0 => (0..BOUNDARIES[g.below(5) as usize])
+            .map(|_| g.u32() as u8)
+            .collect(),
         1 => random_save(g),
         2 => {
             let mut b = random_save(g);
@@ -430,7 +460,11 @@ fn random_blob(g: &mut Gen) -> Vec<u8> {
 fn random_program(g: &mut Gen) -> Program {
     let n_weapons = 1 + g.below(4) as usize;
     let weapons: Vec<WeaponSpec> = (0..n_weapons).map(|_| random_weapon(g)).collect();
-    let word = if g.below(3) == 0 { g.u32() & 0x07ff_ffff } else { 0 };
+    let word = if g.below(3) == 0 {
+        g.u32() & 0x07ff_ffff
+    } else {
+        0
+    };
     let blob = random_blob(g);
     let n_ops = 1 + g.below(60);
     let mut ops = Vec::new();
@@ -456,7 +490,12 @@ fn random_program(g: &mut Gen) -> Program {
         };
         ops.push(op);
     }
-    Program { weapons, word, ops, blob }
+    Program {
+        weapons,
+        word,
+        ops,
+        blob,
+    }
 }
 
 fn temp_path(tag: &str) -> std::path::PathBuf {
@@ -464,7 +503,10 @@ fn temp_path(tag: &str) -> std::path::PathBuf {
 }
 
 fn describe(p: &Program) -> String {
-    format!("ops {:?} weapons {:?} word {} blob {:?}", p.ops, p.weapons, p.word, p.blob)
+    format!(
+        "ops {:?} weapons {:?} word {} blob {:?}",
+        p.ops, p.weapons, p.word, p.blob
+    )
 }
 
 fn run(plant: Plant, tag: &str, name: &str) -> Check {
@@ -490,25 +532,42 @@ fn run(plant: Plant, tag: &str, name: &str) -> Check {
              {PROGRAMS} programs, {words} log words",
             model_calls
         );
-        assert!(model_calls > 2000, "the rate changes were barely exercised ({model_calls})");
+        assert!(
+            model_calls > 2000,
+            "the rate changes were barely exercised ({model_calls})"
+        );
     }
     check
 }
 
 #[test]
 fn firing_tracker_matches_upstream_call_for_call() {
-    run(Plant::None, "main", "FiringTracker (programs, calls, saves, loads)").finish();
+    run(
+        Plant::None,
+        "main",
+        "FiringTracker (programs, calls, saves, loads)",
+    )
+    .finish();
 }
 
 #[test]
 fn planted_stale_next_shot_read_is_caught() {
-    run(Plant::StaleNextShot, "stale", "FiringTracker (planted: next-shot read before faerie fire)")
-        .finish_planted();
+    run(
+        Plant::StaleNextShot,
+        "stale",
+        "FiringTracker (planted: next-shot read before faerie fire)",
+    )
+    .finish_planted();
 }
 
 #[test]
 fn planted_unconditional_loop_restart_is_caught() {
-    run(Plant::AlwaysRestart, "restart", "FiringTracker (planted: loop restarts while playing)").finish_planted();
+    run(
+        Plant::AlwaysRestart,
+        "restart",
+        "FiringTracker (planted: loop restarts while playing)",
+    )
+    .finish_planted();
 }
 
 #[test]
@@ -526,6 +585,9 @@ fn a_wrong_version_is_refused_before_any_field() {
     let mut t = FiringTracker::new(&mut host);
     let mut load = XferLoad::new(vec![2, 5, 0, 0, 0]);
     load.open(b"x").unwrap();
-    assert!(matches!(t.xfer(&mut load, |_| Ok(())), Err(XferStatus::InvalidVersion)));
+    assert!(matches!(
+        t.xfer(&mut load, |_| Ok(())),
+        Err(XferStatus::InvalidVersion)
+    ));
     assert_eq!(t.get_last_shot_victim(), INVALID_ID);
 }

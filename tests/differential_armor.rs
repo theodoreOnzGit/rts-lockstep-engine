@@ -49,7 +49,9 @@ mod support;
 
 use rts_lockstep_engine::common::damage_fx::DamageFxStore;
 use rts_lockstep_engine::common::game_common::{VeterancyLevel, VETERANCY_NAMES};
-use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Thrown, TYPE_TABLE};
+use rts_lockstep_engine::common::ini::{
+    BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Thrown, TYPE_TABLE,
+};
 use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
 use rts_lockstep_engine::common::xfer::{Snapshot, Xfer, XferStatus};
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
@@ -58,8 +60,9 @@ use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::armor::{ArmorStore, DamageTypeOutOfRange};
 use rts_lockstep_engine::logic::damage::{
-    is_health_damaging_damage, is_subdual_damage, DamageInfo, DamageInfoInput, DamageInfoOutput, DamageTypeFlags,
-    DAMAGE_NUM_TYPES, DAMAGE_SUBDUAL_UNRESISTABLE, DAMAGE_TYPE_NAMES, DAMAGE_UNRESISTABLE,
+    is_health_damaging_damage, is_subdual_damage, DamageInfo, DamageInfoInput, DamageInfoOutput,
+    DamageTypeFlags, DAMAGE_NUM_TYPES, DAMAGE_SUBDUAL_UNRESISTABLE, DAMAGE_TYPE_NAMES,
+    DAMAGE_UNRESISTABLE,
 };
 use std::collections::BTreeMap;
 use std::ffi::CString;
@@ -83,7 +86,11 @@ impl Ctx {
     fn new() -> Self {
         let mut names = NameKeyGenerator::new();
         names.reset();
-        Ctx { armor: ArmorStore::new(), fx: DamageFxStore::new(), names }
+        Ctx {
+            armor: ArmorStore::new(),
+            fx: DamageFxStore::new(),
+            names,
+        }
     }
 }
 
@@ -160,7 +167,12 @@ fn rust_dfx_dump(s: &DamageFxStore) -> Vec<u8> {
     v
 }
 
-const LEVELS: [VeterancyLevel; 4] = [VeterancyLevel::Regular, VeterancyLevel::Veteran, VeterancyLevel::Elite, VeterancyLevel::Heroic];
+const LEVELS: [VeterancyLevel; 4] = [
+    VeterancyLevel::Regular,
+    VeterancyLevel::Veteran,
+    VeterancyLevel::Elite,
+    VeterancyLevel::Heroic,
+];
 
 fn cpp_dump(f: unsafe extern "C" fn(*mut u8, i32) -> i32) -> Vec<u8> {
     let mut buf = vec![0u8; 1 << 21];
@@ -186,8 +198,25 @@ fn case_mix(g: &mut Gen, s: &str) -> String {
     }
 }
 
-const BLOCK_NAMES: [&str; 8] = ["Tank", "tank", "Infantry", "A", "B", "NoDamage", "Heavy_Armor", "X1"];
-const FX_NAMES: [&str; 7] = ["FX_Small", "FX_Big", "fx_small", "FX_Explosion", "FX_Fire", "FX_Spark", "FX_Dust"];
+const BLOCK_NAMES: [&str; 8] = [
+    "Tank",
+    "tank",
+    "Infantry",
+    "A",
+    "B",
+    "NoDamage",
+    "Heavy_Armor",
+    "X1",
+];
+const FX_NAMES: [&str; 7] = [
+    "FX_Small",
+    "FX_Big",
+    "fx_small",
+    "FX_Explosion",
+    "FX_Fire",
+    "FX_Spark",
+    "FX_Dust",
+];
 
 fn gen_damage(g: &mut Gen, clean: bool) -> String {
     match g.below(20) {
@@ -197,7 +226,20 @@ fn gen_damage(g: &mut Gen, clean: bool) -> String {
         }
         14..=17 => pick(g, &["Default", "DEFAULT", "default"]).to_string(),
         _ if clean => "Default".to_string(),
-        18 => pick(g, &["BOGUS", "KILLPILOT", "EXPLOSION2", "Defaults", "", "NONE", "0", "-1"]).to_string(),
+        18 => pick(
+            g,
+            &[
+                "BOGUS",
+                "KILLPILOT",
+                "EXPLOSION2",
+                "Defaults",
+                "",
+                "NONE",
+                "0",
+                "-1",
+            ],
+        )
+        .to_string(),
         _ => {
             let i = g.below(DAMAGE_NUM_TYPES as u32) as usize;
             case_mix(g, DAMAGE_TYPE_NAMES[i])
@@ -217,7 +259,13 @@ fn gen_percent(g: &mut Gen, clean: bool) -> String {
     match g.below(24) {
         0..=7 => format!("{}%", g.below(301)),
         8..=11 => format!("{}%", g.uniform(-50.0, 400.0)),
-        12 => pick(g, &["0", "100", "50", "0%", "100%", "25.5%", "1e2", "-100%", "1e10%", "3.4e38"]).to_string(),
+        12 => pick(
+            g,
+            &[
+                "0", "100", "50", "0%", "100%", "25.5%", "1e2", "-100%", "1e10%", "3.4e38",
+            ],
+        )
+        .to_string(),
         13 => format!("{}", g.uniform(0.0, 300.0)),
         _ if clean => "100%".to_string(),
         14 => pick(g, &["abc", "", "%", "5x", "100%x", ".", "1e", "-", "--5%"]).to_string(),
@@ -241,7 +289,11 @@ fn gen_ms(g: &mut Gen, clean: bool) -> String {
     match g.below(20) {
         0..=9 => format!("{}", g.below(5000)),
         10..=12 => format!("{}", g.uniform(0.0, 3000.0)),
-        13 => pick(g, &["0", "1", "33", "34", "16.7", "1000", "100000", "0.4", "0.5"]).to_string(),
+        13 => pick(
+            g,
+            &["0", "1", "33", "34", "16.7", "1000", "100000", "0.4", "0.5"],
+        )
+        .to_string(),
         _ if clean => "1000".to_string(),
         14 => pick(g, &["x", "", "-5", "1e", "12abc", "-0.2"]).to_string(),
         _ => format!("{}", g.mixed()),
@@ -262,10 +314,31 @@ fn gen_sep(g: &mut Gen) -> &'static str {
 fn gen_armor_line(g: &mut Gen, clean: bool) -> String {
     let indent = pick(g, &["", "  ", "\t", " \t "]);
     let body = match g.below(30) {
-        0 if !clean => pick(g, &["Foo = 1", "Armor", "Armor =", "Armor = FLAME", "Armor = FLAME 50% 60%", "armor = FLAME 50%", "Dead = 1"]).to_string(),
-        _ => format!("Armor{}{} {}", gen_sep(g), gen_damage(g, clean), gen_percent(g, clean)),
+        0 if !clean => pick(
+            g,
+            &[
+                "Foo = 1",
+                "Armor",
+                "Armor =",
+                "Armor = FLAME",
+                "Armor = FLAME 50% 60%",
+                "armor = FLAME 50%",
+                "Dead = 1",
+            ],
+        )
+        .to_string(),
+        _ => format!(
+            "Armor{}{} {}",
+            gen_sep(g),
+            gen_damage(g, clean),
+            gen_percent(g, clean)
+        ),
     };
-    let comment = if g.below(8) == 0 { pick(g, &[" ; comment", ";", " ;x=1 2"]) } else { "" };
+    let comment = if g.below(8) == 0 {
+        pick(g, &[" ; comment", ";", " ;x=1 2"])
+    } else {
+        ""
+    };
     format!("{indent}{body}{comment}")
 }
 
@@ -279,18 +352,52 @@ fn gen_fx_line(g: &mut Gen, clean: bool) -> String {
         _ => ("ThrottleTime", gen_ms(g, clean)),
     };
     let body = if !clean && g.below(40) == 0 {
-        pick(g, &["Foo = 1", "MajorFX", "MajorFX = EXPLOSION", "ThrottleTime =", "VeterancyMajorFX = ELITE", "majorfx = FLAME FX_Big", "Dead = 1"]).to_string()
+        pick(
+            g,
+            &[
+                "Foo = 1",
+                "MajorFX",
+                "MajorFX = EXPLOSION",
+                "ThrottleTime =",
+                "VeterancyMajorFX = ELITE",
+                "majorfx = FLAME FX_Big",
+                "Dead = 1",
+            ],
+        )
+        .to_string()
     } else if veteran {
-        format!("Veterancy{field}{}{} {} {value}", gen_sep(g), gen_vet(g, clean), gen_damage(g, clean))
+        format!(
+            "Veterancy{field}{}{} {} {value}",
+            gen_sep(g),
+            gen_vet(g, clean),
+            gen_damage(g, clean)
+        )
     } else {
         format!("{field}{}{} {value}", gen_sep(g), gen_damage(g, clean))
     };
-    let comment = if g.below(8) == 0 { pick(g, &[" ; comment", ";", " ;x=1 2"]) } else { "" };
+    let comment = if g.below(8) == 0 {
+        pick(g, &[" ; comment", ";", " ;x=1 2"])
+    } else {
+        ""
+    };
     format!("{indent}{body}{comment}")
 }
 
 fn gen_end(g: &mut Gen) -> String {
-    pick(g, &["End", "END", "end", "  End  ", "End ; done", "End=", "Ends", "=End"]).to_string()
+    pick(
+        g,
+        &[
+            "End",
+            "END",
+            "end",
+            "  End  ",
+            "End ; done",
+            "End=",
+            "Ends",
+            "=End",
+        ],
+    )
+    .to_string()
 }
 
 fn gen_block_name(g: &mut Gen) -> String {
@@ -306,7 +413,9 @@ fn gen_block(g: &mut Gen, lines: &mut Vec<String>, clean: bool, kind: u32) {
     let (word, armor) = match kind {
         0 => ("Armor", true),
         1 => ("DamageFX", false),
-        _ if !clean && g.below(8) == 0 => (pick(g, &["Foo", "Armour", "damagefx2", "Objects"]), true),
+        _ if !clean && g.below(8) == 0 => {
+            (pick(g, &["Foo", "Armour", "damagefx2", "Objects"]), true)
+        }
         _ => {
             if g.below(2) == 0 {
                 ("Armor", true)
@@ -315,11 +424,23 @@ fn gen_block(g: &mut Gen, lines: &mut Vec<String>, clean: bool, kind: u32) {
             }
         }
     };
-    let word = if !clean && g.below(10) == 0 { case_mix(g, word) } else { word.to_string() };
-    let name = if clean { format!("T{}", g.below(40)) } else { gen_block_name(g) };
+    let word = if !clean && g.below(10) == 0 {
+        case_mix(g, word)
+    } else {
+        word.to_string()
+    };
+    let name = if clean {
+        format!("T{}", g.below(40))
+    } else {
+        gen_block_name(g)
+    };
     lines.push(format!("{word} {name}").trim_end().to_string());
     for _ in 0..g.below(if clean { 14 } else { 9 }) {
-        lines.push(if armor { gen_armor_line(g, clean) } else { gen_fx_line(g, clean) });
+        lines.push(if armor {
+            gen_armor_line(g, clean)
+        } else {
+            gen_fx_line(g, clean)
+        });
     }
     if clean || g.below(15) != 0 {
         lines.push(if clean { "End".to_string() } else { gen_end(g) });
@@ -348,7 +469,14 @@ fn gen_file(g: &mut Gen) -> Vec<u8> {
     match if clean { 99 } else { g.below(14) } {
         0 if !out.is_empty() => {
             let p = g.below(out.len() as u32) as usize;
-            out.insert(p, if g.below(2) == 0 { 0 } else { 0x80 + g.below(0x80) as u8 });
+            out.insert(
+                p,
+                if g.below(2) == 0 {
+                    0
+                } else {
+                    0x80 + g.below(0x80) as u8
+                },
+            );
         }
         1 if !out.is_empty() => {
             let p = g.below(out.len() as u32) as usize;
@@ -410,7 +538,11 @@ fn rust_outcome(r: IniResult<()>, crc: u32) -> Result<Outcome, IniError> {
             Some(Thrown::OutOfRange) => (4, Vec::new()),
         },
     };
-    Ok(Outcome { status, detail, crc })
+    Ok(Outcome {
+        status,
+        detail,
+        crc,
+    })
 }
 
 fn cpp_load(name: &[u8], data: &[u8], with_xfer: bool) -> Outcome {
@@ -440,7 +572,11 @@ fn cpp_load(name: &[u8], data: &[u8], with_xfer: bool) -> Outcome {
         2 | 3 => code.to_le_bytes().to_vec(),
         _ => panic!("C++ threw something unexpected (status {status})"),
     };
-    Outcome { status, detail, crc: if with_xfer { crc } else { 0 } }
+    Outcome {
+        status,
+        detail,
+        crc: if with_xfer { crc } else { 0 },
+    }
 }
 
 fn show(b: &[u8]) -> String {
@@ -492,7 +628,11 @@ fn ini_blocks_match_upstream() {
             &name,
             &data,
             IniLoadType::Overwrite,
-            if with_xfer { Some(&mut crc as &mut dyn Xfer) } else { None },
+            if with_xfer {
+                Some(&mut crc as &mut dyn Xfer)
+            } else {
+                None
+            },
             &table,
             &mut ctx,
         );
@@ -504,15 +644,28 @@ fn ini_blocks_match_upstream() {
                 continue;
             }
         };
-        if rust.status == 0 { ok += 1 } else { failed += 1 }
+        if rust.status == 0 {
+            ok += 1
+        } else {
+            failed += 1
+        }
         templates += ctx.armor.len() as u64;
         damage_fxs += ctx.fx.len() as u64;
         unsafe { cpp::ref_armor_reset() };
         let c = cpp_load(&name, &data, with_xfer);
         outcome.eq(&rust, &c, || format!("case {case}: file {:?}", show(&data)));
-        armors.eq(rust_armor_dump(&ctx.armor), cpp_dump(cpp::ref_armor_dump), || format!("case {case}: file {:?}", show(&data)));
-        fxs.eq(rust_dfx_dump(&ctx.fx), cpp_dump(cpp::ref_dfx_dump), || format!("case {case}: file {:?}", show(&data)));
-        let rk: Vec<u32> = probe.iter().map(|n| ctx.names.name_to_key(n.as_bytes()).0).collect();
+        armors.eq(
+            rust_armor_dump(&ctx.armor),
+            cpp_dump(cpp::ref_armor_dump),
+            || format!("case {case}: file {:?}", show(&data)),
+        );
+        fxs.eq(rust_dfx_dump(&ctx.fx), cpp_dump(cpp::ref_dfx_dump), || {
+            format!("case {case}: file {:?}", show(&data))
+        });
+        let rk: Vec<u32> = probe
+            .iter()
+            .map(|n| ctx.names.name_to_key(n.as_bytes()).0)
+            .collect();
         let ck: Vec<u32> = probe
             .iter()
             .map(|n| {
@@ -527,8 +680,14 @@ fn ini_blocks_match_upstream() {
         excluded.total(),
         excluded.0
     );
-    assert!(ok > 1500 && failed > 1500, "the generator must reach both outcomes: {ok} loaded, {failed} threw");
-    assert!(templates > 2500 && damage_fxs > 2500, "too few stores compared: {templates} / {damage_fxs}");
+    assert!(
+        ok > 1500 && failed > 1500,
+        "the generator must reach both outcomes: {ok} loaded, {failed} threw"
+    );
+    assert!(
+        templates > 2500 && damage_fxs > 2500,
+        "too few stores compared: {templates} / {damage_fxs}"
+    );
     outcome.finish();
     armors.finish();
     fxs.finish();
@@ -559,7 +718,15 @@ fn armor_adjust_damage_matches_upstream() {
     let mut g = Gen::new(0xA2C5);
     let mut ctx = Ctx::new();
     let data = gen_clean_file(&mut g, 120, 0);
-    Ini::load(b"armor.ini", &data, IniLoadType::Overwrite, None, &table, &mut ctx).expect("clean armor file loads");
+    Ini::load(
+        b"armor.ini",
+        &data,
+        IniLoadType::Overwrite,
+        None,
+        &table,
+        &mut ctx,
+    )
+    .expect("clean armor file loads");
     unsafe { cpp::ref_armor_reset() };
     let c = cpp_load(b"armor.ini", &data, false);
     assert_eq!(c.status, 0);
@@ -572,14 +739,28 @@ fn armor_adjust_damage_matches_upstream() {
     let (mut compared, mut out_of_range, mut missing) = (0u64, 0u64, 0u64);
     for case in 0..40_000 {
         let n = &names[g.below(names.len() as u32) as usize];
-        let dt = if g.below(20) == 0 { g.below(50) as i32 - 6 } else { g.below(DAMAGE_NUM_TYPES as u32) as i32 };
-        let damage = if g.below(4) == 0 { g.finite() } else { g.mixed() };
-        let key = ctx.armor.find_armor_template_key(&mut ctx.names, n.as_bytes()).unwrap();
+        let dt = if g.below(20) == 0 {
+            g.below(50) as i32 - 6
+        } else {
+            g.below(DAMAGE_NUM_TYPES as u32) as i32
+        };
+        let damage = if g.below(4) == 0 {
+            g.finite()
+        } else {
+            g.mixed()
+        };
+        let key = ctx
+            .armor
+            .find_armor_template_key(&mut ctx.names, n.as_bytes())
+            .unwrap();
         let Some(key) = key else {
             // no such template: the C++ finds none either
             let cn = CString::new(n.as_str()).unwrap();
             let mut out = [0u32; 2];
-            assert_eq!(unsafe { cpp::ref_armor_adjust(cn.as_ptr(), dt, damage, out.as_mut_ptr()) }, 1);
+            assert_eq!(
+                unsafe { cpp::ref_armor_adjust(cn.as_ptr(), dt, damage, out.as_mut_ptr()) },
+                1
+            );
             missing += 1;
             continue;
         };
@@ -595,13 +776,28 @@ fn armor_adjust_damage_matches_upstream() {
         };
         let cn = CString::new(n.as_str()).unwrap();
         let mut out = [0u32; 2];
-        assert_eq!(unsafe { cpp::ref_armor_adjust(cn.as_ptr(), dt, damage, out.as_mut_ptr()) }, 0);
+        assert_eq!(
+            unsafe { cpp::ref_armor_adjust(cn.as_ptr(), dt, damage, out.as_mut_ptr()) },
+            0
+        );
         compared += 1;
-        both.f32(r, f32::from_bits(out[0]), || format!("case {case}: {n} type {dt} damage {damage:e} (Armor)"));
-        both.f32(r, f32::from_bits(out[1]), || format!("case {case}: {n} type {dt} damage {damage:e} (template)"));
+        both.f32(r, f32::from_bits(out[0]), || {
+            format!("case {case}: {n} type {dt} damage {damage:e} (Armor)")
+        });
+        both.f32(r, f32::from_bits(out[1]), || {
+            format!("case {case}: {n} type {dt} damage {damage:e} (template)")
+        });
         let coef = tmpl.coefficients();
-        no_floor.f32(planted_adjust(coef, dt, damage, 1), f32::from_bits(out[0]), || format!("case {case}"));
-        one_unresistable.f32(planted_adjust(coef, dt, damage, 2), f32::from_bits(out[0]), || format!("case {case}"));
+        no_floor.f32(
+            planted_adjust(coef, dt, damage, 1),
+            f32::from_bits(out[0]),
+            || format!("case {case}"),
+        );
+        one_unresistable.f32(
+            planted_adjust(coef, dt, damage, 2),
+            f32::from_bits(out[0]),
+            || format!("case {case}"),
+        );
     }
     // Armor() and a cleared Armor pass the damage through
     for _ in 0..200 {
@@ -609,10 +805,20 @@ fn armor_adjust_damage_matches_upstream() {
         let mut out = [0u32; 2];
         unsafe { cpp::ref_armor_none(d, out.as_mut_ptr()) };
         let mut a = ctx.armor.make_armor(None);
-        both.f32(a.adjust_damage(&ctx.armor, 5, d).unwrap(), f32::from_bits(out[0]), || format!("Armor() damage {d:e}"));
-        a = ctx.armor.make_armor(ctx.armor.templates().next().map(|(k, _)| k));
+        both.f32(
+            a.adjust_damage(&ctx.armor, 5, d).unwrap(),
+            f32::from_bits(out[0]),
+            || format!("Armor() damage {d:e}"),
+        );
+        a = ctx
+            .armor
+            .make_armor(ctx.armor.templates().next().map(|(k, _)| k));
         a.clear();
-        both.f32(a.adjust_damage(&ctx.armor, 5, d).unwrap(), f32::from_bits(out[1]), || format!("cleared Armor damage {d:e}"));
+        both.f32(
+            a.adjust_damage(&ctx.armor, 5, d).unwrap(),
+            f32::from_bits(out[1]),
+            || format!("cleared Armor damage {d:e}"),
+        );
     }
     println!("Armor::adjustDamage: {compared} queries; excluded: {out_of_range} damage types out of range (undefined upstream); {missing} unknown templates (C++ finds none too)");
     assert!(compared > 20_000);
@@ -632,7 +838,15 @@ fn damage_fx_getters_match_upstream() {
     let mut g = Gen::new(0xA2C6);
     let mut ctx = Ctx::new();
     let data = gen_clean_file(&mut g, 120, 1);
-    Ini::load(b"fx.ini", &data, IniLoadType::Overwrite, None, &table, &mut ctx).expect("clean DamageFX file loads");
+    Ini::load(
+        b"fx.ini",
+        &data,
+        IniLoadType::Overwrite,
+        None,
+        &table,
+        &mut ctx,
+    )
+    .expect("clean DamageFX file loads");
     unsafe { cpp::ref_armor_reset() };
     let c = cpp_load(b"fx.ini", &data, false);
     assert_eq!(c.status, 0);
@@ -642,18 +856,35 @@ fn damage_fx_getters_match_upstream() {
     let mut ok = Check::new("DamageFX getters (throttle, FXList, doDamageFX)");
     let mut major_when_equal = Check::new("DamageFX getDamageFXList");
     let mut zero_damage = Check::new("DamageFX getDamageFXList");
-    let (mut compared, mut out_of_range, mut major, mut minor, mut none) = (0u64, 0u64, 0u64, 0u64, 0u64);
+    let (mut compared, mut out_of_range, mut major, mut minor, mut none) =
+        (0u64, 0u64, 0u64, 0u64, 0u64);
     for case in 0..40_000 {
         let n = &names[g.below(names.len() as u32) as usize];
-        let dt = if g.below(20) == 0 { g.below(50) as i32 - 6 } else { g.below(DAMAGE_NUM_TYPES as u32) as i32 };
+        let dt = if g.below(20) == 0 {
+            g.below(50) as i32 - 6
+        } else {
+            g.below(DAMAGE_NUM_TYPES as u32) as i32
+        };
         let level = g.below(5) as i32 - 1; // -1: no source object
-        let vet = if level < 0 { VeterancyLevel::Regular } else { LEVELS[level as usize] };
+        let vet = if level < 0 {
+            VeterancyLevel::Regular
+        } else {
+            LEVELS[level as usize]
+        };
         // amounts around the thresholds the INI set, and the specials
         let amount = match g.below(6) {
             0 => 0.0,
             1 => -0.0,
             2 => {
-                let thr = ctx.fx.find_damage_fx(&mut ctx.names, n.as_bytes()).unwrap().and_then(|d| d.dfx(dt.clamp(0, 37), vet).ok().map(|e| e.amount_for_major_fx));
+                let thr = ctx
+                    .fx
+                    .find_damage_fx(&mut ctx.names, n.as_bytes())
+                    .unwrap()
+                    .and_then(|d| {
+                        d.dfx(dt.clamp(0, 37), vet)
+                            .ok()
+                            .map(|e| e.amount_for_major_fx)
+                    });
                 thr.unwrap_or(10.0)
             }
             3 => g.mixed(),
@@ -672,11 +903,25 @@ fn damage_fx_getters_match_upstream() {
         let (mut throttle, mut fx_len, mut via_do) = (0u32, 0i32, 0i32);
         let mut fx_buf = vec![0u8; 256];
         let st = unsafe {
-            cpp::ref_dfx_query(cn.as_ptr(), dt, amount, level, &mut throttle, fx_buf.as_mut_ptr() as *mut _, 256, &mut fx_len, &mut via_do)
+            cpp::ref_dfx_query(
+                cn.as_ptr(),
+                dt,
+                amount,
+                level,
+                &mut throttle,
+                fx_buf.as_mut_ptr() as *mut _,
+                256,
+                &mut fx_len,
+                &mut via_do,
+            )
         };
         assert_eq!(st, 0);
         compared += 1;
-        let cl: Option<Vec<u8>> = if fx_len < 0 { None } else { Some(fx_buf[..fx_len as usize].to_vec()) };
+        let cl: Option<Vec<u8>> = if fx_len < 0 {
+            None
+        } else {
+            Some(fx_buf[..fx_len as usize].to_vec())
+        };
         ok.eq((rt, rl.map(|s| s.to_vec()), true), (throttle, cl.clone(), via_do == 1), || {
             format!("case {case}: {n} type {dt} amount {amount:e} level {level} (via doDamageFX: {via_do})")
         });
@@ -687,9 +932,19 @@ fn damage_fx_getters_match_upstream() {
         }
         // planted: the threshold is exclusive; zero damage is not special
         let e = fx.dfx(dt, vet).unwrap();
-        let wrong1 = if amount == 0.0 { None } else if amount > e.amount_for_major_fx { e.major_damage_fx_list.clone() } else { e.minor_damage_fx_list.clone() };
+        let wrong1 = if amount == 0.0 {
+            None
+        } else if amount > e.amount_for_major_fx {
+            e.major_damage_fx_list.clone()
+        } else {
+            e.minor_damage_fx_list.clone()
+        };
         major_when_equal.eq(wrong1, cl.clone(), || format!("case {case}"));
-        let wrong2 = if amount >= e.amount_for_major_fx { e.major_damage_fx_list.clone() } else { e.minor_damage_fx_list.clone() };
+        let wrong2 = if amount >= e.amount_for_major_fx {
+            e.major_damage_fx_list.clone()
+        } else {
+            e.minor_damage_fx_list.clone()
+        };
         zero_damage.eq(wrong2, cl, || format!("case {case}"));
     }
     println!("DamageFX getters: {compared} queries ({major} major, {minor} minor, {none} no effect); excluded: {out_of_range} damage types out of range (undefined upstream)");
@@ -703,7 +958,13 @@ fn damage_fx_getters_match_upstream() {
 // DamageInfo xfer
 // ---------------------------------------------------------------------------
 
-const TEMPLATE_NAMES: [&str; 5] = ["AmericaTankCrusader", "ChinaInfantryRedguard", "GLAVehicleScud", "x", "Lazer\u{e9}"];
+const TEMPLATE_NAMES: [&str; 5] = [
+    "AmericaTankCrusader",
+    "ChinaInfantryRedguard",
+    "GLAVehicleScud",
+    "x",
+    "Lazer\u{e9}",
+];
 
 fn random_info(g: &mut Gen) -> DamageInfo {
     let mut d = DamageInfo::default();
@@ -772,7 +1033,10 @@ fn status_of(r: Result<(), XferStatus>) -> i32 {
 }
 
 fn tmp_path(tag: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("rts-lockstep-damage-{}-{tag}.bin", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "rts-lockstep-damage-{}-{tag}.bin",
+        std::process::id()
+    ))
 }
 
 fn template_cstring(d: &DamageInfo) -> CString {
@@ -802,15 +1066,31 @@ fn damage_info_xfer_matches_upstream() {
         let tmpl = template_cstring(&info);
         let mut cbytes = vec![0u8; 4096];
         let mut clen = 0i32;
-        let cst = unsafe { cpp::ref_damage_save(kind, w.as_ptr(), tmpl.as_ptr(), cpath.as_ptr(), cbytes.as_mut_ptr(), 4096, &mut clen) };
+        let cst = unsafe {
+            cpp::ref_damage_save(
+                kind,
+                w.as_ptr(),
+                tmpl.as_ptr(),
+                cpath.as_ptr(),
+                cbytes.as_mut_ptr(),
+                4096,
+                &mut clen,
+            )
+        };
         cbytes.truncate(clen as usize);
         let mut xs = XferSave::new();
         xs.open(b"rust").unwrap();
         let rst = status_of(xs.xfer_snapshot(snapshot_of(&mut info, kind)));
         let _ = xs.close();
         let rbytes = xs.bytes().to_vec();
-        if rst == 0 { saved_ok += 1 } else { save_failed += 1 }
-        save.eq((rst, &rbytes), (cst, &cbytes), || format!("case {case} kind {kind}: {info:?}"));
+        if rst == 0 {
+            saved_ok += 1
+        } else {
+            save_failed += 1
+        }
+        save.eq((rst, &rbytes), (cst, &cbytes), || {
+            format!("case {case} kind {kind}: {info:?}")
+        });
         let mut planted = rbytes.clone();
         if planted.len() > 3 {
             planted[2] ^= 1; // planted: a byte of the value changes
@@ -842,21 +1122,42 @@ fn damage_info_xfer_matches_upstream() {
         let stmpl = template_cstring(&start);
         let mut ctmpl = vec![0u8; 512];
         ctmpl[..stmpl.as_bytes().len()].copy_from_slice(stmpl.as_bytes());
-        let cst = unsafe { cpp::ref_damage_load(kind, cw.as_mut_ptr(), ctmpl.as_mut_ptr() as *mut _, 512, file.as_ptr(), file.len() as i32, cpath.as_ptr()) };
-        let cname = unsafe { std::ffi::CStr::from_ptr(ctmpl.as_ptr() as *const _) }.to_bytes().to_vec();
+        let cst = unsafe {
+            cpp::ref_damage_load(
+                kind,
+                cw.as_mut_ptr(),
+                ctmpl.as_mut_ptr() as *mut _,
+                512,
+                file.as_ptr(),
+                file.len() as i32,
+                cpath.as_ptr(),
+            )
+        };
+        let cname = unsafe { std::ffi::CStr::from_ptr(ctmpl.as_ptr() as *const _) }
+            .to_bytes()
+            .to_vec();
         let mut r = start.clone();
         let mut xl = XferLoad::new(file.clone());
         xl.open(b"rust").unwrap();
         let rst = status_of(xl.xfer_snapshot(snapshot_of(&mut r, kind)));
-        if rst == 0 { load_ok += 1 } else { load_failed += 1 }
+        if rst == 0 {
+            load_ok += 1
+        } else {
+            load_failed += 1
+        }
         let rw = to_words(&r);
         // After a failed load the field being read may hold a partial read
         // in C++ (fread copies the bytes it got into the field), which the
         // Rust XferLoad does not do: so a failed load compares the status
         // and that at most one value (the 17 words and the name) differs.
-        let differing = rw.iter().zip(cw.iter()).filter(|(a, b)| a != b).count() + usize::from(r.input.source_template != cname);
+        let differing = rw.iter().zip(cw.iter()).filter(|(a, b)| a != b).count()
+            + usize::from(r.input.source_template != cname);
         if rst == 0 {
-            load.eq((rst, rw, r.input.source_template.clone()), (cst, cw, cname.clone()), || format!("case {case} kind {kind}: file {file:?} start {start:?}"));
+            load.eq(
+                (rst, rw, r.input.source_template.clone()),
+                (cst, cw, cname.clone()),
+                || format!("case {case} kind {kind}: file {file:?} start {start:?}"),
+            );
         } else {
             load.eq((rst, differing <= 1), (cst, true), || format!("case {case} kind {kind}: file {file:?} start {start:?}: {differing} values differ"));
         }
@@ -870,7 +1171,9 @@ fn damage_info_xfer_matches_upstream() {
             }
             load_bug.eq((rst, ww), (cst, cw), || format!("case {case}"));
         } else {
-            load_bug.eq((rst, differing <= 1, 1u8), (cst, true, 0u8), || format!("case {case}"));
+            load_bug.eq((rst, differing <= 1, 1u8), (cst, true, 0u8), || {
+                format!("case {case}")
+            });
         }
 
         // CRC
@@ -880,8 +1183,12 @@ fn damage_info_xfer_matches_upstream() {
         let mut xc = XferCrc::new_without_nan_guard();
         xc.open(b"crc").unwrap();
         let rst = status_of(xc.xfer_snapshot(snapshot_of(&mut info, kind)));
-        crc.eq((rst, xc.get_crc()), (cst, cc), || format!("case {case} kind {kind}"));
-        crc_bug.eq((rst, xc.get_crc() ^ 1), (cst, cc), || format!("case {case}"));
+        crc.eq((rst, xc.get_crc()), (cst, cc), || {
+            format!("case {case} kind {kind}")
+        });
+        crc_bug.eq((rst, xc.get_crc() ^ 1), (cst, cc), || {
+            format!("case {case}")
+        });
     }
     let _ = std::fs::remove_file(&path);
     println!("DamageInfo xfer: {CASES} infos; saves {saved_ok} ok, {save_failed} failed; loads {load_ok} ok, {load_failed} failed");
@@ -906,9 +1213,17 @@ fn damage_helpers_and_defaults_match_upstream() {
     for dt in 0..64 {
         let c0 = unsafe { cpp::ref_damage_inline(0, dt) } != 0;
         let c1 = unsafe { cpp::ref_damage_inline(1, dt) } != 0;
-        sub.eq(is_subdual_damage(dt), c0, || format!("IsSubdualDamage({dt})"));
-        sub.eq(is_health_damaging_damage(dt), c1, || format!("IsHealthDamagingDamage({dt})"));
-        sub_bug.eq(is_subdual_damage(dt) && dt != DAMAGE_SUBDUAL_UNRESISTABLE, c0, || format!("{dt}"));
+        sub.eq(is_subdual_damage(dt), c0, || {
+            format!("IsSubdualDamage({dt})")
+        });
+        sub.eq(is_health_damaging_damage(dt), c1, || {
+            format!("IsHealthDamagingDamage({dt})")
+        });
+        sub_bug.eq(
+            is_subdual_damage(dt) && dt != DAMAGE_SUBDUAL_UNRESISTABLE,
+            c0,
+            || format!("{dt}"),
+        );
     }
     sub.finish();
     sub_bug.finish_planted();
@@ -917,9 +1232,17 @@ fn damage_helpers_and_defaults_match_upstream() {
     unsafe { cpp::ref_damage_flags(&mut all, &mut none) };
     let mut flags = Check::new("DAMAGE_TYPE_FLAGS_ALL / NONE");
     let mut flags_bug = Check::new("DAMAGE_TYPE_FLAGS_ALL");
-    flags.eq(DamageTypeFlags::ALL.words(), [all, 0, 0, 0], || "ALL".into());
-    flags.eq(DamageTypeFlags::NONE.words(), [none, 0, 0, 0], || "NONE".into());
-    flags_bug.eq([DamageTypeFlags::ALL.words()[0] >> 1, 0, 0, 0], [all, 0, 0, 0], || "ALL".into());
+    flags.eq(DamageTypeFlags::ALL.words(), [all, 0, 0, 0], || {
+        "ALL".into()
+    });
+    flags.eq(DamageTypeFlags::NONE.words(), [none, 0, 0, 0], || {
+        "NONE".into()
+    });
+    flags_bug.eq(
+        [DamageTypeFlags::ALL.words()[0] >> 1, 0, 0, 0],
+        [all, 0, 0, 0],
+        || "ALL".into(),
+    );
     flags.finish();
     flags_bug.finish_planted();
 
@@ -927,7 +1250,9 @@ fn damage_helpers_and_defaults_match_upstream() {
     unsafe { cpp::ref_damage_default(w.as_mut_ptr()) };
     let mut defaults = Check::new("DamageInfo() defaults");
     let mut defaults_bug = Check::new("DamageInfo() defaults");
-    defaults.eq(to_words(&DamageInfo::default()), w, || "DamageInfo()".into());
+    defaults.eq(to_words(&DamageInfo::default()), w, || {
+        "DamageInfo()".into()
+    });
     assert_eq!(DamageInfoInput::default(), DamageInfo::default().input);
     assert_eq!(DamageInfoOutput::default(), DamageInfo::default().out);
     let mut wrong = DamageInfo::default();

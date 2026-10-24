@@ -70,9 +70,11 @@ mod support;
 mod up_common;
 
 use rts_lockstep_engine::common::game_type::INVALID_ID;
-use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Undefined};
+use rts_lockstep_engine::common::ini::{
+    BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Undefined,
+};
 use rts_lockstep_engine::common::module::*;
-use rts_lockstep_engine::common::module_factory::{REGISTRATIONS, NUM_REGISTRATIONS};
+use rts_lockstep_engine::common::module_factory::{NUM_REGISTRATIONS, REGISTRATIONS};
 use rts_lockstep_engine::common::name_key_generator::NameKeyType;
 use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_NAMES};
 use rts_lockstep_engine::common::upgrade::UpgradeMaskType;
@@ -89,7 +91,9 @@ use rts_lockstep_engine::logic::module::damage_module::{DamageModule, DamageModu
 use rts_lockstep_engine::logic::module::destroy_module::DestroyModule;
 use rts_lockstep_engine::logic::module::die_module::{DieModule, DieModuleData, DieMuxData};
 use rts_lockstep_engine::logic::module::update_module::*;
-use rts_lockstep_engine::logic::module::upgrade_module::{UpgradeEffects, UpgradeModule, UpgradeModuleData, UpgradeMuxData};
+use rts_lockstep_engine::logic::module::upgrade_module::{
+    UpgradeEffects, UpgradeModule, UpgradeModuleData, UpgradeMuxData,
+};
 use std::collections::BTreeMap;
 use std::ffi::CString;
 use std::sync::Arc;
@@ -101,7 +105,10 @@ use up_common::*;
 static CPP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn tmp_path(tag: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("rts-lockstep-module-{}-{tag}.bin", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "rts-lockstep-module-{}-{tag}.bin",
+        std::process::id()
+    ))
 }
 
 fn status_of(r: Result<(), XferStatus>) -> i32 {
@@ -117,7 +124,8 @@ fn status_of(r: Result<(), XferStatus>) -> i32 {
 
 fn cpp_registrations(which: i32) -> Vec<Vec<u8>> {
     let mut buf = vec![0u8; 1 << 16];
-    let n = unsafe { cpp::ref_mod_registrations(which, buf.as_mut_ptr(), buf.len() as i32) } as usize;
+    let n =
+        unsafe { cpp::ref_mod_registrations(which, buf.as_mut_ptr(), buf.len() as i32) } as usize;
     assert!(n > 0 && n <= buf.len());
     let rd = |at: &mut usize| -> u32 {
         let v = u32::from_le_bytes(buf[*at..*at + 4].try_into().unwrap());
@@ -143,11 +151,21 @@ fn registrations_match_the_unchanged_init_body() {
     let mut shipped = Check::new("ModuleFactory::init names (shipped, 199)");
     let mut swap_bug = Check::new("ModuleFactory::init names (order)");
     let mut drop_bug = Check::new("ModuleFactory::init names (shipped)");
-    let rust_all: Vec<Vec<u8>> = REGISTRATIONS.iter().map(|r| r.name.as_bytes().to_vec()).collect();
-    let rust_shipped: Vec<Vec<u8>> = REGISTRATIONS.iter().filter(|r| r.in_shipped_build).map(|r| r.name.as_bytes().to_vec()).collect();
+    let rust_all: Vec<Vec<u8>> = REGISTRATIONS
+        .iter()
+        .map(|r| r.name.as_bytes().to_vec())
+        .collect();
+    let rust_shipped: Vec<Vec<u8>> = REGISTRATIONS
+        .iter()
+        .filter(|r| r.in_shipped_build)
+        .map(|r| r.name.as_bytes().to_vec())
+        .collect();
     let c_all = cpp_registrations(0);
     let c_shipped = cpp_registrations(1);
-    assert_eq!((c_all.len(), c_shipped.len(), NUM_REGISTRATIONS), (205, 199, 205));
+    assert_eq!(
+        (c_all.len(), c_shipped.len(), NUM_REGISTRATIONS),
+        (205, 199, 205)
+    );
     all.eq(rust_all.clone(), c_all.clone(), || "all".into());
     shipped.eq(rust_shipped.clone(), c_shipped.clone(), || "shipped".into());
     // name by name too, so that a miss names the registration
@@ -162,7 +180,13 @@ fn registrations_match_the_unchanged_init_body() {
     drop_bug.eq(dropped, c_shipped.clone(), || "dropped".into());
     // the not-shipped ones are exactly the ifdef'd ones: in the 205 and not in the 199
     let not_shipped: Vec<&Vec<u8>> = c_all.iter().filter(|n| !c_shipped.contains(n)).collect();
-    println!("registrations: 205 / 199; compiled only with ALLOW_*: {:?}", not_shipped.iter().map(|n| String::from_utf8_lossy(n).into_owned()).collect::<Vec<_>>());
+    println!(
+        "registrations: 205 / 199; compiled only with ALLOW_*: {:?}",
+        not_shipped
+            .iter()
+            .map(|n| String::from_utf8_lossy(n).into_owned())
+            .collect::<Vec<_>>()
+    );
     assert_eq!(not_shipped.len(), 6);
     all.finish();
     shipped.finish();
@@ -223,13 +247,28 @@ fn constants_match_upstream() {
         c.eq(*r, v, || format!("constant {i}"));
         bug.eq(*r ^ 1, v, || format!("constant {i}"));
     }
-    assert_eq!(unsafe { cpp::ref_mod_const(rust.len() as i32) }, -12345, "the list is complete");
+    assert_eq!(
+        unsafe { cpp::ref_mod_const(rust.len() as i32) },
+        -12345,
+        "the list is complete"
+    );
 
     // BodyDamageType, MaxHealthChangeType and IS_CONDITION_*
     let mut out = [0i32; 64];
     let n = unsafe { cpp::ref_mod_body_enums(out.as_mut_ptr()) } as usize;
-    let mut want = vec![BODY_PRISTINE, BODY_DAMAGED, BODY_REALLYDAMAGED, BODY_RUBBLE, BODYDAMAGETYPE_COUNT];
-    want.extend([SAME_CURRENTHEALTH, PRESERVE_RATIO, ADD_CURRENT_HEALTH_TOO, FULLY_HEAL]);
+    let mut want = vec![
+        BODY_PRISTINE,
+        BODY_DAMAGED,
+        BODY_REALLYDAMAGED,
+        BODY_RUBBLE,
+        BODYDAMAGETYPE_COUNT,
+    ];
+    want.extend([
+        SAME_CURRENTHEALTH,
+        PRESERVE_RATIO,
+        ADD_CURRENT_HEALTH_TOO,
+        FULLY_HEAL,
+    ]);
     for a in 0..4 {
         for b in 0..4 {
             want.push(is_condition_worse(a, b) as i32);
@@ -312,8 +351,22 @@ fn put_mux(v: &mut Vec<u8>, m: &UpgradeMuxData, fx: &mut FxIds, bug: u32) {
 }
 
 fn put_die_mux(v: &mut Vec<u8>, m: &DieMuxData, bug: u32) {
-    put_u32(v, if bug == 1 { m.veterancy_levels } else { m.death_types });
-    put_u32(v, if bug == 1 { m.death_types } else { m.veterancy_levels });
+    put_u32(
+        v,
+        if bug == 1 {
+            m.veterancy_levels
+        } else {
+            m.death_types
+        },
+    );
+    put_u32(
+        v,
+        if bug == 1 {
+            m.death_types
+        } else {
+            m.veterancy_levels
+        },
+    );
     put_words(v, m.exempt_status.words());
     put_words(v, m.required_status.words());
 }
@@ -342,21 +395,36 @@ fn read_block(ini: &mut Ini<'_>, s: &mut Slot) -> IniResult<()> {
             CollideModuleData::friend_new_module_data(Some(ini))?;
         }
         6 => {
-            ini.init_from_ini_multi_proc(&mut BehaviorModuleData::new(), BehaviorModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut BehaviorModuleData::new(),
+                BehaviorModuleData::build_field_parse,
+            )?;
         }
         7 => {
-            ini.init_from_ini_multi_proc(&mut BodyModuleData::new(), BodyModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut BodyModuleData::new(),
+                BodyModuleData::build_field_parse,
+            )?;
         }
         _ => {
-            ini.init_from_ini_multi_proc(&mut CreateModuleData::new(), CreateModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut CreateModuleData::new(),
+                CreateModuleData::build_field_parse,
+            )?;
         }
     }
     Ok(())
 }
 
 fn rust_read(kind: i32, name: &[u8], text: &[u8]) -> (IniResult<()>, Slot) {
-    let blocks = [BlockParse { token: "D", parse: read_block }];
-    let mut slot = Slot { kind, ..Default::default() };
+    let blocks = [BlockParse {
+        token: "D",
+        parse: read_block,
+    }];
+    let mut slot = Slot {
+        kind,
+        ..Default::default()
+    };
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut slot);
     (r, slot)
 }
@@ -389,15 +457,33 @@ fn cpp_data(kind: i32, name: &[u8], text: &[u8]) -> (Outcome, Vec<u8>) {
     let status = unsafe {
         cpp::ref_ini_reset();
         cpp::ref_ini_add_file(cname.as_ptr(), text.as_ptr() as *const _, text.len() as i32);
-        cpp::ref_mod_data(kind, cname.as_ptr(), buf.as_mut_ptr(), buf.len() as i32, &mut len, msg.as_mut_ptr() as *mut _, msg.len() as i32, &mut code)
+        cpp::ref_mod_data(
+            kind,
+            cname.as_ptr(),
+            buf.as_mut_ptr(),
+            buf.len() as i32,
+            &mut len,
+            msg.as_mut_ptr() as *mut _,
+            msg.len() as i32,
+            &mut code,
+        )
     };
     buf.truncate(len as usize);
-    (Outcome { status, detail: detail_of(status, &msg, code), crc: 0 }, buf)
+    (
+        Outcome {
+            status,
+            detail: detail_of(status, &msg, code),
+            crc: 0,
+        },
+        buf,
+    )
 }
 
 // -- generators --
 
-const KIND_NAMES: [&str; 9] = ["Module", "Update", "Upgrade", "Die", "Damage", "Collide", "Behavior", "Body", "Create"];
+const KIND_NAMES: [&str; 9] = [
+    "Module", "Update", "Upgrade", "Die", "Damage", "Collide", "Behavior", "Body", "Create",
+];
 
 fn case_pick(g: &mut Gen, s: &str) -> String {
     case_mix(g, s)
@@ -416,9 +502,9 @@ fn assemble_block(g: &mut Gen, lines: &[String], clean: bool) -> Vec<u8> {
         s.push_str("End\n");
     } else {
         match g.below(40) {
-            0 => {}                                  // no End at all
-            1 => s.push_str("Ends\n"),               // a field named Ends
-            2 => s.push_str("; just a comment\n"),   // still no End
+            0 => {}                                // no End at all
+            1 => s.push_str("Ends\n"),             // a field named Ends
+            2 => s.push_str("; just a comment\n"), // still no End
             _ => {
                 s.push_str(&gen_end(g));
                 s.push('\n');
@@ -448,7 +534,9 @@ fn gen_upgrade_list(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
             upgrades[g.below(upgrades.len() as u32) as usize].clone()
         } else {
             match g.below(100) {
-                0..=59 if !upgrades.is_empty() => upgrades[g.below(upgrades.len() as u32) as usize].clone(),
+                0..=59 if !upgrades.is_empty() => {
+                    upgrades[g.below(upgrades.len() as u32) as usize].clone()
+                }
                 60..=74 if !upgrades.is_empty() => {
                     let i = g.below(upgrades.len() as u32) as usize;
                     case_pick(g, &upgrades[i])
@@ -473,7 +561,11 @@ fn gen_upgrade_data(g: &mut Gen, upgrades: &[String], clean: bool) -> Vec<u8> {
         if g.below(100) < p {
             let sep = gen_sep(g);
             // (field tokens are case-sensitive: a changed case is an unknown field)
-            let token = if clean || g.below(30) != 0 { name.to_string() } else { case_mix(g, name) };
+            let token = if clean || g.below(30) != 0 {
+                name.to_string()
+            } else {
+                case_mix(g, name)
+            };
             lines.push(format!("{token}{sep}{value}"));
         }
     };
@@ -498,8 +590,26 @@ fn gen_upgrade_data(g: &mut Gen, upgrades: &[String], clean: bool) -> Vec<u8> {
 
 fn gen_death_tokens(g: &mut Gen) -> String {
     const NAMES: [&str; 20] = [
-        "NONE", "CRUSHED", "BURNED", "EXPLODED", "POISONED", "TOPPLED", "FLOODED", "SUICIDED", "LASERED", "DETONATED", "SPLATTED",
-        "POISONED_BETA", "EXTRA_2", "EXTRA_3", "EXTRA_4", "EXTRA_5", "EXTRA_6", "EXTRA_7", "EXTRA_8", "POISONED_GAMMA",
+        "NONE",
+        "CRUSHED",
+        "BURNED",
+        "EXPLODED",
+        "POISONED",
+        "TOPPLED",
+        "FLOODED",
+        "SUICIDED",
+        "LASERED",
+        "DETONATED",
+        "SPLATTED",
+        "POISONED_BETA",
+        "EXTRA_2",
+        "EXTRA_3",
+        "EXTRA_4",
+        "EXTRA_5",
+        "EXTRA_6",
+        "EXTRA_7",
+        "EXTRA_8",
+        "POISONED_GAMMA",
     ];
     let mut t = Vec::new();
     for _ in 0..1 + g.below(4) {
@@ -546,7 +656,11 @@ fn gen_die_data(g: &mut Gen, clean: bool) -> Vec<u8> {
         if g.below(100) < p {
             let sep = gen_sep(g);
             // (field tokens are case-sensitive: a changed case is an unknown field)
-            let token = if clean || g.below(30) != 0 { name.to_string() } else { case_mix(g, name) };
+            let token = if clean || g.below(30) != 0 {
+                name.to_string()
+            } else {
+                case_mix(g, name)
+            };
             lines.push(format!("{token}{sep}{value}"));
         }
     };
@@ -618,9 +732,23 @@ fn module_data_matches_upstream() {
         }
         per_kind[kind as usize] += 1;
         let (c, cdump) = cpp_data(kind, &name, &text);
-        let what = || format!("case {case}: {} data, file {:?}", KIND_NAMES[kind as usize], show(&text));
+        let what = || {
+            format!(
+                "case {case}: {} data, file {:?}",
+                KIND_NAMES[kind as usize],
+                show(&text)
+            )
+        };
         outcome.eq(&rust, &c, what);
-        outcome_bug.eq(&Outcome { status: rust.status ^ 1, detail: rust.detail.clone(), crc: 0 }, &c, what);
+        outcome_bug.eq(
+            &Outcome {
+                status: rust.status ^ 1,
+                detail: rust.detail.clone(),
+                crc: 0,
+            },
+            &c,
+            what,
+        );
         if rust.status == 0 {
             dumps.eq(rust_data_dump(&slot, 0), cdump.clone(), what);
             if kind == 2 {
@@ -636,7 +764,10 @@ fn module_data_matches_upstream() {
         excluded.total(),
         excluded.0
     );
-    assert!(ok > 1200 && failed > 1200, "the generator must reach both outcomes: {ok} read, {failed} threw");
+    assert!(
+        ok > 1200 && failed > 1200,
+        "the generator must reach both outcomes: {ok} read, {failed} threw"
+    );
     outcome.finish();
     dumps.finish();
     outcome_bug.finish_planted();
@@ -674,12 +805,21 @@ impl UpgradeEffects for Rec {
 const NAME_POOL_EXTRA: [&str; 4] = ["Nope", "UP0", "up1", "None"];
 
 fn key_of(words: [u32; 4]) -> UpgradeMaskType {
-    UpgradeMaskType::from_words([u64::from(words[0]) | u64::from(words[1]) << 32, u64::from(words[2]) | u64::from(words[3]) << 32, 0, 0])
+    UpgradeMaskType::from_words([
+        u64::from(words[0]) | u64::from(words[1]) << 32,
+        u64::from(words[2]) | u64::from(words[3]) << 32,
+        0,
+        0,
+    ])
 }
 
 /// One op: [op, m0, m1, m2, m3]. The keys mostly grow, as an object that is given upgrades one after another.
 fn gen_upgrade_ops(g: &mut Gen, ctx: &Ctx, n_names: usize) -> Vec<[u32; 5]> {
-    let masks: Vec<[u64; 4]> = ctx.center.templates().map(|t| t.upgrade_mask().words()).collect();
+    let masks: Vec<[u64; 4]> = ctx
+        .center
+        .templates()
+        .map(|t| t.upgrade_mask().words())
+        .collect();
     let mut acc = [0u64; 4];
     (0..2 + g.below(12))
         .map(|_| {
@@ -718,14 +858,26 @@ fn gen_upgrade_ops(g: &mut Gen, ctx: &Ctx, n_names: usize) -> Vec<[u32; 5]> {
                 3 => w[g.below(2) as usize] |= 1 << g.below(64),
                 _ => {}
             }
-            [op, w[0] as u32, (w[0] >> 32) as u32, w[1] as u32, (w[1] >> 32) as u32]
+            [
+                op,
+                w[0] as u32,
+                (w[0] >> 32) as u32,
+                w[1] as u32,
+                (w[1] >> 32) as u32,
+            ]
         })
         .collect()
 }
 
 /// The Rust twin of `ref_mod_upgrade_run`'s ops. `Err` for an op that is undefined upstream. `bug`: 0 none, 1 the
 /// effect order reversed, 2 `isAlreadyUpgraded` read before the op, 3 results inverted for `wouldUpgrade`.
-fn rust_upgrade_ops(ctx: &mut Ctx, module: &mut UpgradeModule, ops: &[[u32; 5]], pool: &[String], bug: u32) -> Result<Vec<u8>, IniError> {
+fn rust_upgrade_ops(
+    ctx: &mut Ctx,
+    module: &mut UpgradeModule,
+    ops: &[[u32; 5]],
+    pool: &[String],
+    bug: u32,
+) -> Result<Vec<u8>, IniError> {
     let mut out = Vec::new();
     let mut fx = FxIds::default();
     for o in ops {
@@ -733,7 +885,9 @@ fn rust_upgrade_ops(ctx: &mut Ctx, module: &mut UpgradeModule, ops: &[[u32; 5]],
         let mut rec = Rec::default();
         let was = module.is_already_upgraded();
         let r: IniResult<bool> = match o[0] {
-            0 => module.would_upgrade(&ctx.center, &mut ctx.names, key).map(|b| b ^ (bug == 3)),
+            0 => module
+                .would_upgrade(&ctx.center, &mut ctx.names, key)
+                .map(|b| b ^ (bug == 3)),
             1 => module.attempt_upgrade(&ctx.center, &mut ctx.names, &mut rec, key),
             2 => module.test_upgrade_conditions(&ctx.center, &mut ctx.names, key),
             3 => module.reset_upgrade(&ctx.center, &mut ctx.names, key),
@@ -753,7 +907,11 @@ fn rust_upgrade_ops(ctx: &mut Ctx, module: &mut UpgradeModule, ops: &[[u32; 5]],
         };
         put_i32(&mut out, st);
         out.push(u8::from(res));
-        out.push(u8::from(if bug == 2 { was } else { module.is_already_upgraded() }));
+        out.push(u8::from(if bug == 2 {
+            was
+        } else {
+            module.is_already_upgraded()
+        }));
         if bug == 1 {
             rec.events.reverse();
         }
@@ -761,11 +919,19 @@ fn rust_upgrade_ops(ctx: &mut Ctx, module: &mut UpgradeModule, ops: &[[u32; 5]],
         for e in &rec.events {
             match e {
                 Event::Impl => put_str(&mut out, b"impl"),
-                Event::Fx(n) => put_str(&mut out, format!("fx{}", fx.id(&Some(n.clone()))).as_bytes()),
+                Event::Fx(n) => put_str(
+                    &mut out,
+                    format!("fx{}", fx.id(&Some(n.clone()))).as_bytes(),
+                ),
                 Event::Remove(n) => put_str(&mut out, &[b"remove ".as_slice(), n].concat()),
             }
         }
-        put_mux(&mut out, &module.upgrade_module_data().mux_data_snapshot(), &mut fx, 0);
+        put_mux(
+            &mut out,
+            &module.upgrade_module_data().mux_data_snapshot(),
+            &mut fx,
+            0,
+        );
     }
     Ok(out)
 }
@@ -792,15 +958,31 @@ fn upgrade_mux_matches_upstream() {
         // the upgrades of this case, defined on both sides by Upgrade blocks (the order of the blocks is the mask bits)
         let n_up = g.below(9);
         let upgrades: Vec<String> = (0..n_up).map(|i| format!("Up{i}")).collect();
-        let defs: String = upgrades.iter().map(|u| format!("Upgrade {u}\nEnd\n")).collect();
+        let defs: String = upgrades
+            .iter()
+            .map(|u| format!("Upgrade {u}\nEnd\n"))
+            .collect();
         let new_ctx = || {
             let mut ctx = Ctx::new(init_names, init_center);
-            Ini::load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ctx).expect("the upgrade definitions load");
+            Ini::load(
+                b"Data\\INI\\Up.ini",
+                defs.as_bytes(),
+                IniLoadType::Overwrite,
+                None,
+                &table,
+                &mut ctx,
+            )
+            .expect("the upgrade definitions load");
             ctx
         };
         let mut ctx = new_ctx();
         cpp_reset(init_names, init_center);
-        let c = cpp_load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, false);
+        let c = cpp_load(
+            b"Data\\INI\\Up.ini",
+            defs.as_bytes(),
+            IniLoadType::Overwrite,
+            false,
+        );
         assert_eq!(c.status, 0);
 
         let clean = g.below(10) < 7;
@@ -840,7 +1022,10 @@ fn upgrade_mux_matches_upstream() {
 
         // the C++ side
         let cfile = CString::new(name.clone()).unwrap();
-        let cnames: Vec<CString> = pool.iter().map(|s| CString::new(s.as_str()).unwrap()).collect();
+        let cnames: Vec<CString> = pool
+            .iter()
+            .map(|s| CString::new(s.as_str()).unwrap())
+            .collect();
         let nptrs: Vec<*const std::os::raw::c_char> = cnames.iter().map(|c| c.as_ptr()).collect();
         let flat: Vec<u32> = ops.iter().flatten().copied().collect();
         let mut buf = vec![0u8; 1 << 22];
@@ -863,13 +1048,23 @@ fn upgrade_mux_matches_upstream() {
             )
         };
         buf.truncate(len as usize);
-        let c_read = Outcome { status, detail: detail_of(status, &msg, code), crc: 0 };
-        let what = || format!("case {case}: names init {init_names} center {init_center} upgrades {upgrades:?}, file {:?}, ops {ops:?}", show(&text));
+        let c_read = Outcome {
+            status,
+            detail: detail_of(status, &msg, code),
+            crc: 0,
+        };
+        let what = || {
+            format!("case {case}: names init {init_names} center {init_center} upgrades {upgrades:?}, file {:?}, ops {ops:?}", show(&text))
+        };
         data_out.eq(&read_outcome, &c_read, what);
         let Some(rd) = rust_dump else { continue };
         ops_out.eq(&rd, &buf, what);
         // planted wrong variants of the Rust side, each on a fresh context (the ops change the name keys)
-        for (bug, check) in [(1u32, &mut order_bug), (2, &mut flag_bug), (3, &mut result_bug)] {
+        for (bug, check) in [
+            (1u32, &mut order_bug),
+            (2, &mut flag_bug),
+            (3, &mut result_bug),
+        ] {
             let mut ctx2 = new_ctx();
             let (r2, slot2) = rust_read(2, &name, &text);
             r2.unwrap();
@@ -878,7 +1073,10 @@ fn upgrade_mux_matches_upstream() {
             check.eq(&planted, &buf, what);
         }
         // the keys nameToKey now gives to the names
-        let rk: Vec<u32> = probe.iter().map(|n| ctx.names.name_to_key(n.as_bytes()).0).collect();
+        let rk: Vec<u32> = probe
+            .iter()
+            .map(|n| ctx.names.name_to_key(n.as_bytes()).0)
+            .collect();
         let ck: Vec<u32> = probe.iter().map(|n| cpp_name_key(n)).collect();
         keys.eq(rk.clone(), ck.clone(), what);
         keys_bug.eq(vec![rk[0] ^ 1], vec![ck[0]], what);
@@ -888,7 +1086,10 @@ fn upgrade_mux_matches_upstream() {
         excluded.total(),
         excluded.0
     );
-    assert!(read_failed > 300 && ops_run > 15_000 && fired > 600, "the generator must reach every path");
+    assert!(
+        read_failed > 300 && ops_run > 15_000 && fired > 600,
+        "the generator must reach every path"
+    );
     data_out.finish();
     ops_out.finish();
     keys.finish();
@@ -947,11 +1148,25 @@ fn gen_update_ops(g: &mut Gen) -> Vec<[u32; 6]> {
             };
             let a = gen_frame(g);
             match op {
-                3 => [3, a, gen_sleep_frame(g, a), gen_sleep_frame(g, a), gen_sleep_frame(g, a), gen_sleep_frame(g, a)],
+                3 => [
+                    3,
+                    a,
+                    gen_sleep_frame(g, a),
+                    gen_sleep_frame(g, a),
+                    gen_sleep_frame(g, a),
+                    gen_sleep_frame(g, a),
+                ],
                 4 => [4, a, g.below(FOREVER + 1), 0, 0, 0],
                 5 => [5, g.i32() as u32, 0, 0, 0, 0],
                 7 => [7, g.u32(), 0, 0, 0, 0],
-                9 => [9, g.u32(), [0, 1, 1, 2, 3, 255][g.below(6) as usize], 0, 0, 0],
+                9 => [
+                    9,
+                    g.u32(),
+                    [0, 1, 1, 2, 3, 255][g.below(6) as usize],
+                    0,
+                    0,
+                    0,
+                ],
                 _ => [op, a, 0, 0, 0, 0],
             }
         })
@@ -972,7 +1187,12 @@ fn rust_update_ops(phase: SleepyUpdatePhase, ops: &[[u32; 6]], bug: u32) -> Vec<
                 let p = m.friend_get_priority();
                 out.push(if bug == 1 { p & !3 } else { p });
             }
-            1 => out.extend([m.friend_get_priority(), m.friend_get_next_call_frame(), m.friend_get_next_call_phase() as u32, m.friend_get_index_in_logic() as u32]),
+            1 => out.extend([
+                m.friend_get_priority(),
+                m.friend_get_next_call_frame(),
+                m.friend_get_next_call_phase() as u32,
+                m.friend_get_index_in_logic() as u32,
+            ]),
             2 => out.push(m.get_wake_frame(o[1]).0 + u32::from(bug == 2)),
             3 => out.push(UpdateModule::frame_to_sleep_time(o[1], o[2], o[3], o[4], o[5]).0),
             4 => {
@@ -999,7 +1219,10 @@ fn rust_update_ops(phase: SleepyUpdatePhase, ops: &[[u32; 6]], bug: u32) -> Vec<
                 if o[0] == 9 {
                     out.push(st as u32);
                 }
-                out.extend([m.friend_get_priority(), m.friend_get_index_in_logic() as u32]);
+                out.extend([
+                    m.friend_get_priority(),
+                    m.friend_get_index_in_logic() as u32,
+                ]);
             }
             _ => {
                 let mut x = XferCrc::new_without_nan_guard();
@@ -1031,17 +1254,36 @@ fn update_module_matches_upstream() {
         let rust = rust_update_ops(SleepyUpdatePhase::from_low_bits(phase as u32), &ops, 0);
         let flat: Vec<u32> = ops.iter().flatten().copied().collect();
         let mut out = vec![0u32; 1 << 12];
-        let n = unsafe { cpp::ref_mod_update_run(phase, ops.len() as i32, flat.as_ptr(), out.as_mut_ptr(), out.len() as i32, cpath.as_ptr()) } as usize;
+        let n = unsafe {
+            cpp::ref_mod_update_run(
+                phase,
+                ops.len() as i32,
+                flat.as_ptr(),
+                out.as_mut_ptr(),
+                out.len() as i32,
+                cpath.as_ptr(),
+            )
+        } as usize;
         assert!(n <= out.len());
         out.truncate(n);
         let what = || format!("case {case}: phase {phase}, ops {ops:?}");
         ops_out.eq(&rust, &out, what);
-        phase_bug.eq(&rust_update_ops(SleepyUpdatePhase::from_low_bits(phase as u32), &ops, 1), &out, what);
-        wake_bug.eq(&rust_update_ops(SleepyUpdatePhase::from_low_bits(phase as u32), &ops, 2), &out, what);
+        phase_bug.eq(
+            &rust_update_ops(SleepyUpdatePhase::from_low_bits(phase as u32), &ops, 1),
+            &out,
+            what,
+        );
+        wake_bug.eq(
+            &rust_update_ops(SleepyUpdatePhase::from_low_bits(phase as u32), &ops, 2),
+            &out,
+            what,
+        );
         loads_failed += ops.iter().filter(|o| o[0] == 9 && o[2] > 1).count() as u64;
     }
     let _ = std::fs::remove_file(&path);
-    println!("UpdateModule: {CASES} sequences, {n_ops} ops, {loads_failed} loads of a too-new version");
+    println!(
+        "UpdateModule: {CASES} sequences, {n_ops} ops, {loads_failed} loads of a too-new version"
+    );
     assert!(n_ops > 40_000 && loads_failed > 500);
     ops_out.finish();
     // (the plants must be caught only when the sequence touches what they change)
@@ -1071,7 +1313,12 @@ fn die_mux_data_matches_upstream() {
         let queries: Vec<[u32; 4]> = (0..16)
             .map(|_| {
                 let status = g.u64() & g.u64() & ((1u64 << 45) - 1);
-                [1 + g.below(20), 1 + g.below(3), status as u32, (status >> 32) as u32]
+                [
+                    1 + g.below(20),
+                    1 + g.below(3),
+                    status as u32,
+                    (status >> 32) as u32,
+                ]
             })
             .collect();
         let flat: Vec<u32> = queries.iter().flatten().copied().collect();
@@ -1082,9 +1329,21 @@ fn die_mux_data_matches_upstream() {
         let status = unsafe {
             cpp::ref_ini_reset();
             cpp::ref_ini_add_file(cfile.as_ptr(), text.as_ptr() as *const _, text.len() as i32);
-            cpp::ref_mod_die_run(cfile.as_ptr(), queries.len() as i32, flat.as_ptr(), out.as_mut_ptr(), msg.as_mut_ptr() as *mut _, msg.len() as i32, &mut code)
+            cpp::ref_mod_die_run(
+                cfile.as_ptr(),
+                queries.len() as i32,
+                flat.as_ptr(),
+                out.as_mut_ptr(),
+                msg.as_mut_ptr() as *mut _,
+                msg.len() as i32,
+                &mut code,
+            )
         };
-        let co = Outcome { status, detail: detail_of(status, &msg, code), crc: 0 };
+        let co = Outcome {
+            status,
+            detail: detail_of(status, &msg, code),
+            crc: 0,
+        };
         let what = || format!("case {case}: file {:?}", show(&text));
         data_out.eq(&ro, &co, what);
         if ro.status != 0 {
@@ -1094,7 +1353,12 @@ fn die_mux_data_matches_upstream() {
         let data = Arc::new(slot.die.expect("read ok"));
         let module = DieModule::new(3, Some(data.clone())).unwrap();
         for (q, c) in queries.iter().zip(&out) {
-            let st = ObjectStatusMaskType::from_words([u64::from(q[2]) | u64::from(q[3]) << 32, 0, 0, 0]);
+            let st = ObjectStatusMaskType::from_words([
+                u64::from(q[2]) | u64::from(q[3]) << 32,
+                0,
+                0,
+                0,
+            ]);
             let a = data.is_die_applicable(q[0] as i32, q[1] as i32, &st);
             let b = module.is_die_applicable(q[0] as i32, q[1] as i32, &st);
             let rust = u8::from(a) | u8::from(b) << 1;
@@ -1107,7 +1371,9 @@ fn die_mux_data_matches_upstream() {
             }
         }
     }
-    println!("DieMuxData: {CASES} modules, {read_failed} data blocks threw; {yes} applicable, {no} not");
+    println!(
+        "DieMuxData: {CASES} modules, {read_failed} data blocks threw; {yes} applicable, {no} not"
+    );
     assert!(yes > 5_000 && no > 5_000);
     data_out.finish();
     applicable.finish();
@@ -1118,25 +1384,99 @@ fn die_mux_data_matches_upstream() {
 // the base classes: constructors, xfer chains, defaults
 // ---------------------------------------------------------------------------
 
-const CLASS_NAMES: [&str; 11] =
-    ["ObjectModule", "DrawableModule", "BehaviorModule", "UpdateModule", "UpgradeModule", "DieModule", "CreateModule", "BodyModule", "DamageModule", "CollideModule", "DestroyModule"];
+const CLASS_NAMES: [&str; 11] = [
+    "ObjectModule",
+    "DrawableModule",
+    "BehaviorModule",
+    "UpdateModule",
+    "UpgradeModule",
+    "DieModule",
+    "CreateModule",
+    "BodyModule",
+    "DamageModule",
+    "CollideModule",
+    "DestroyModule",
+];
 
 /// A Rust module of the base class `cls` (as `ref_mod_construct` numbers them) made on data of its kind.
 fn rust_base(cls: i32, null_data: bool) -> IniResult<Module> {
     let behavior_data = || Some(ModuleDataKind::Module(Arc::new(ModuleData::new())));
     let d = |k: ModuleDataKind| if null_data { None } else { Some(k) };
     Ok(match cls {
-        0 => Module::Object(ObjectModule::new(1, if null_data { None } else { behavior_data() })?),
-        1 => Module::Drawable(DrawableModule::new(if null_data { None } else { behavior_data() })?),
-        2 => Module::Behavior(BehaviorModule::new(1, if null_data { None } else { behavior_data() })?),
-        3 => Module::Update(UpdateModule::new(1, if null_data { None } else { Some(Arc::new(UpdateModuleData::new())) }, SleepyUpdatePhase::Normal)?),
-        4 => Module::Upgrade(UpgradeModule::new(1, if null_data { None } else { Some(Arc::new(UpgradeModuleData::new())) })?),
-        5 => Module::Die(DieModule::new(1, if null_data { None } else { Some(Arc::new(DieModuleData::new())) })?),
-        6 => Module::Create(CreateModule::new(1, if null_data { None } else { Some(Arc::new(CreateModuleData::new())) })?),
-        7 => Module::Body(BodyModule::new(1, if null_data { None } else { Some(Arc::new(BodyModuleData::new())) })?),
-        8 => Module::Damage(DamageModule::new(1, if null_data { None } else { Some(Arc::new(DamageModuleData::new())) })?),
-        9 => Module::Collide(CollideModule::new(1, if null_data { None } else { Some(Arc::new(CollideModuleData::new())) })?),
-        _ => Module::Destroy(DestroyModule::new(1, d(ModuleDataKind::Module(Arc::new(ModuleData::new()))))?),
+        0 => Module::Object(ObjectModule::new(
+            1,
+            if null_data { None } else { behavior_data() },
+        )?),
+        1 => Module::Drawable(DrawableModule::new(if null_data {
+            None
+        } else {
+            behavior_data()
+        })?),
+        2 => Module::Behavior(BehaviorModule::new(
+            1,
+            if null_data { None } else { behavior_data() },
+        )?),
+        3 => Module::Update(UpdateModule::new(
+            1,
+            if null_data {
+                None
+            } else {
+                Some(Arc::new(UpdateModuleData::new()))
+            },
+            SleepyUpdatePhase::Normal,
+        )?),
+        4 => Module::Upgrade(UpgradeModule::new(
+            1,
+            if null_data {
+                None
+            } else {
+                Some(Arc::new(UpgradeModuleData::new()))
+            },
+        )?),
+        5 => Module::Die(DieModule::new(
+            1,
+            if null_data {
+                None
+            } else {
+                Some(Arc::new(DieModuleData::new()))
+            },
+        )?),
+        6 => Module::Create(CreateModule::new(
+            1,
+            if null_data {
+                None
+            } else {
+                Some(Arc::new(CreateModuleData::new()))
+            },
+        )?),
+        7 => Module::Body(BodyModule::new(
+            1,
+            if null_data {
+                None
+            } else {
+                Some(Arc::new(BodyModuleData::new()))
+            },
+        )?),
+        8 => Module::Damage(DamageModule::new(
+            1,
+            if null_data {
+                None
+            } else {
+                Some(Arc::new(DamageModuleData::new()))
+            },
+        )?),
+        9 => Module::Collide(CollideModule::new(
+            1,
+            if null_data {
+                None
+            } else {
+                Some(Arc::new(CollideModuleData::new()))
+            },
+        )?),
+        _ => Module::Destroy(DestroyModule::new(
+            1,
+            d(ModuleDataKind::Module(Arc::new(ModuleData::new()))),
+        )?),
     })
 }
 
@@ -1156,8 +1496,12 @@ fn base_class_constructors_check_their_data() {
                 }
             };
             let cpp_status = unsafe { cpp::ref_mod_construct(cls, i32::from(null)) };
-            c.eq(rust, cpp_status, || format!("{} null data {null}", CLASS_NAMES[cls as usize]));
-            bug.eq(rust ^ 2, cpp_status, || format!("{} null data {null}", CLASS_NAMES[cls as usize]));
+            c.eq(rust, cpp_status, || {
+                format!("{} null data {null}", CLASS_NAMES[cls as usize])
+            });
+            bug.eq(rust ^ 2, cpp_status, || {
+                format!("{} null data {null}", CLASS_NAMES[cls as usize])
+            });
         }
     }
     c.finish();
@@ -1207,7 +1551,15 @@ fn base_class_xfer_matches_upstream() {
     for case in 0..CASES {
         let cls = (case % 11) as i32;
         let prep = i32::from(g.below(2) == 0);
-        let scale = [1.0f32, 0.5, 2.0, 0.0, -1.0, 1.0e10, f32::from_bits(g.u32() & 0x7f7f_ffff)][g.below(7) as usize];
+        let scale = [
+            1.0f32,
+            0.5,
+            2.0,
+            0.0,
+            -1.0,
+            1.0e10,
+            f32::from_bits(g.u32() & 0x7f7f_ffff),
+        ][g.below(7) as usize];
         let mut m = rust_base(cls, false).unwrap();
         if let Module::Create(c) = &mut m {
             if prep != 0 {
@@ -1220,14 +1572,32 @@ fn base_class_xfer_matches_upstream() {
         // save
         let mut cbytes = vec![0u8; 64];
         let (mut clen, mut cstate, mut ccrc) = (0i32, 0u32, 0u32);
-        let cst = unsafe { cpp::ref_mod_base_xfer(cls, prep, scale, 0, cpath.as_ptr(), cbytes.as_mut_ptr(), 64, &mut clen, &mut ccrc, &mut cstate) };
+        let cst = unsafe {
+            cpp::ref_mod_base_xfer(
+                cls,
+                prep,
+                scale,
+                0,
+                cpath.as_ptr(),
+                cbytes.as_mut_ptr(),
+                64,
+                &mut clen,
+                &mut ccrc,
+                &mut cstate,
+            )
+        };
         cbytes.truncate(clen as usize);
         let mut xs = XferSave::new();
         xs.open(b"rust").unwrap();
         let rst = status_of(xs.xfer_snapshot(&mut m));
         let _ = xs.close();
         let rbytes = xs.bytes().to_vec();
-        save.eq((rst, &rbytes), (cst, &cbytes), || format!("case {case}: {} prep {prep} scale {scale}", CLASS_NAMES[cls as usize]));
+        save.eq((rst, &rbytes), (cst, &cbytes), || {
+            format!(
+                "case {case}: {} prep {prep} scale {scale}",
+                CLASS_NAMES[cls as usize]
+            )
+        });
         let mut planted = rbytes.clone();
         planted[0] ^= 1;
         save_bug.eq((rst, &planted), (cst, &cbytes), || format!("case {case}"));
@@ -1239,7 +1609,18 @@ fn base_class_xfer_matches_upstream() {
         }
         let mut cstate = 0u32;
         let cst = unsafe {
-            cpp::ref_mod_base_xfer(cls, 0, 1.0, 1, cpath.as_ptr(), file.as_mut_ptr(), file.len() as i32, &mut 0, &mut ccrc, &mut cstate)
+            cpp::ref_mod_base_xfer(
+                cls,
+                0,
+                1.0,
+                1,
+                cpath.as_ptr(),
+                file.as_mut_ptr(),
+                file.len() as i32,
+                &mut 0,
+                &mut ccrc,
+                &mut cstate,
+            )
         };
         let mut r = rust_base(cls, false).unwrap();
         let mut xl = XferLoad::new(file.clone());
@@ -1250,26 +1631,51 @@ fn base_class_xfer_matches_upstream() {
         let raw_bool = cls == 6 && file.last().is_some_and(|b| *b > 1);
         if rst == 0 && !raw_bool {
             load_ok += 1;
-            load.eq((rst, state_of(&r)), (cst, cstate), || format!("case {case}: {} file {file:?}", CLASS_NAMES[cls as usize]));
-            load_bug.eq((rst, state_of(&r) ^ 1), (cst, cstate), || format!("case {case}"));
+            load.eq((rst, state_of(&r)), (cst, cstate), || {
+                format!("case {case}: {} file {file:?}", CLASS_NAMES[cls as usize])
+            });
+            load_bug.eq((rst, state_of(&r) ^ 1), (cst, cstate), || {
+                format!("case {case}")
+            });
         } else if rst == 0 {
             load_ok += 1;
-            load.eq(rst, cst, || format!("case {case}: {} file {file:?}", CLASS_NAMES[cls as usize]));
+            load.eq(rst, cst, || {
+                format!("case {case}: {} file {file:?}", CLASS_NAMES[cls as usize])
+            });
             load_bug.eq(rst + 1, cst, || format!("case {case}"));
         } else {
             load_failed += 1;
-            load.eq((rst, 0), (cst, 0), || format!("case {case}: {} file {file:?}", CLASS_NAMES[cls as usize]));
+            load.eq((rst, 0), (cst, 0), || {
+                format!("case {case}: {} file {file:?}", CLASS_NAMES[cls as usize])
+            });
             load_bug.eq((rst + 1, 0), (cst, 0), || format!("case {case}"));
         }
 
         // CRC
         let mut ccrc = 7u32;
-        let cst = unsafe { cpp::ref_mod_base_xfer(cls, prep, scale, 2, cpath.as_ptr(), std::ptr::null_mut(), 0, &mut 0, &mut ccrc, &mut 0) };
+        let cst = unsafe {
+            cpp::ref_mod_base_xfer(
+                cls,
+                prep,
+                scale,
+                2,
+                cpath.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+                &mut 0,
+                &mut ccrc,
+                &mut 0,
+            )
+        };
         let mut xc = XferCrc::new_without_nan_guard();
         xc.open(b"crc").unwrap();
         let rst = status_of(xc.xfer_snapshot(&mut m));
-        crc.eq((rst, xc.get_crc()), (cst, ccrc), || format!("case {case}: {}", CLASS_NAMES[cls as usize]));
-        crc_bug.eq((rst, xc.get_crc() ^ 1), (cst, ccrc), || format!("case {case}"));
+        crc.eq((rst, xc.get_crc()), (cst, ccrc), || {
+            format!("case {case}: {}", CLASS_NAMES[cls as usize])
+        });
+        crc_bug.eq((rst, xc.get_crc() ^ 1), (cst, ccrc), || {
+            format!("case {case}")
+        });
     }
     let _ = std::fs::remove_file(&path);
     println!("base class xfer: {CASES} modules over 11 classes; loads {load_ok} ok, {load_failed} failed");
@@ -1344,4 +1750,3 @@ fn body_and_collide_defaults_match_upstream() {
     let _ = NameKeyType::INVALID;
     let _ = Undefined::UninitialisedModuleTag;
 }
-

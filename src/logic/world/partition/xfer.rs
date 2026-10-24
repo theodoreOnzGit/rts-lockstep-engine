@@ -37,7 +37,7 @@
 
 use super::cell::{PartitionCell, ShroudLevel, SightingInfo};
 use super::manager::PartitionManager;
-use crate::common::game_common::{MAX_PLAYER_COUNT, PlayerMaskType};
+use crate::common::game_common::{PlayerMaskType, MAX_PLAYER_COUNT};
 use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferStatus, XferVersion};
 
 /// The 64 bytes of `m_shroudLevel` as `xferUser` sees them.

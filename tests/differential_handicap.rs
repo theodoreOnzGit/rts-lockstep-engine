@@ -129,12 +129,23 @@ fn handicap_read_from_dict_matches() {
     for case in 0..CASES {
         // a random dictionary: 0 to 8 entries, names may repeat
         let n = g.below(9) as usize;
-        let entries: Vec<(&str, f32)> = (0..n).map(|_| (NAMES[g.below(NAMES.len() as u32) as usize], gen_value(&mut g))).collect();
+        let entries: Vec<(&str, f32)> = (0..n)
+            .map(|_| {
+                (
+                    NAMES[g.below(NAMES.len() as u32) as usize],
+                    gen_value(&mut g),
+                )
+            })
+            .collect();
         let input = || format!("case {case}: entries {entries:?}");
         let (cpp_bits, asked) = cpp_read(&entries);
         ok.eq(rust_read(&entries, false), cpp_bits.clone(), input);
         bug.eq(rust_read(&entries, true), cpp_bits, input);
-        ok.eq(asked.iter().map(String::as_str).collect::<Vec<_>>(), ASKED.to_vec(), input);
+        ok.eq(
+            asked.iter().map(String::as_str).collect::<Vec<_>>(),
+            ASKED.to_vec(),
+            input,
+        );
         names_checked += 1;
     }
     println!("handicap: {CASES} dictionaries; the names asked for checked in {names_checked}");
@@ -154,11 +165,21 @@ fn handicap_defaults_and_init_match() {
     }
     let mut keys = NameKeyGenerator::new();
     let mut dict = Dict::new();
-    dict.set_real(keys.name_to_key(b"HANDICAP_BUILDCOST_BUILDINGS"), 0.5).expect("set");
+    dict.set_real(keys.name_to_key(b"HANDICAP_BUILDCOST_BUILDINGS"), 0.5)
+        .expect("set");
     let mut g = Handicap::new();
     g.read_from_dict(&mut keys, &dict);
-    assert_eq!(g.get_handicap(HandicapType::BuildCost, true).to_bits(), 0.5f32.to_bits());
-    assert_eq!(g.get_handicap(HandicapType::BuildCost, false).to_bits(), 1.0f32.to_bits());
+    assert_eq!(
+        g.get_handicap(HandicapType::BuildCost, true).to_bits(),
+        0.5f32.to_bits()
+    );
+    assert_eq!(
+        g.get_handicap(HandicapType::BuildCost, false).to_bits(),
+        1.0f32.to_bits()
+    );
     g.init();
-    assert_eq!(g.get_handicap(HandicapType::BuildCost, true).to_bits(), 1.0f32.to_bits());
+    assert_eq!(
+        g.get_handicap(HandicapType::BuildCost, true).to_bits(),
+        1.0f32.to_bits()
+    );
 }

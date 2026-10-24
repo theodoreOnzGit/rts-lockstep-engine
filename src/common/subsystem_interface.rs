@@ -102,7 +102,9 @@ impl<S: SubsystemInterface> Default for SubsystemInterfaceList<S> {
 impl<S: SubsystemInterface> SubsystemInterfaceList<S> {
     /// `SubsystemInterfaceList()`: no subsystems.
     pub fn new() -> Self {
-        SubsystemInterfaceList { subsystems: Vec::new() }
+        SubsystemInterfaceList {
+            subsystems: Vec::new(),
+        }
     }
 
     /// `initSubsystem(sys, path1, path2, dirpath, pXfer, name)`.
@@ -181,7 +183,9 @@ mod tests {
         }
         fn init(&mut self) {
             let n = String::from_utf8_lossy(self.name.str()).into_owned();
-            self.log.borrow_mut().push(format!("init {} {}", self.id, n));
+            self.log
+                .borrow_mut()
+                .push(format!("init {} {}", self.id, n));
         }
         fn post_process_load(&mut self) {
             self.log.borrow_mut().push(format!("post {}", self.id));
@@ -201,7 +205,11 @@ mod tests {
     }
 
     fn probe(id: u8, log: &Rc<RefCell<Vec<String>>>) -> Probe {
-        Probe { name: AsciiString::new(), id, log: Rc::clone(log) }
+        Probe {
+            name: AsciiString::new(),
+            id,
+            log: Rc::clone(log),
+        }
     }
 
     #[test]
@@ -209,9 +217,13 @@ mod tests {
         let log = Rc::new(RefCell::new(Vec::new()));
         let mut list = SubsystemInterfaceList::new();
         let l2 = Rc::clone(&log);
-        list.init_subsystem(probe(1, &log), AsciiString::try_from_bytes(b"Audio").unwrap(), move || {
-            l2.borrow_mut().push("load 1".to_string());
-        });
+        list.init_subsystem(
+            probe(1, &log),
+            AsciiString::try_from_bytes(b"Audio").unwrap(),
+            move || {
+                l2.borrow_mut().push("load 1".to_string());
+            },
+        );
         assert_eq!(*log.borrow(), vec!["init 1 Audio", "load 1"]);
         assert_eq!(list.subsystems().len(), 1);
         assert_eq!(list.subsystems()[0].name().str(), b"Audio");
@@ -242,7 +254,9 @@ mod tests {
             list.init_subsystem(probe(1, &log), AsciiString::new(), || {});
             list.init_subsystem(probe(2, &log), AsciiString::new(), || {});
         }
-        assert!(log.borrow().ends_with(&["drop 2".to_string(), "drop 1".to_string()]));
+        assert!(log
+            .borrow()
+            .ends_with(&["drop 2".to_string(), "drop 1".to_string()]));
     }
 
     #[test]
@@ -257,7 +271,10 @@ mod tests {
             sys.update();
             sys.draw();
         }
-        assert_eq!(*log.borrow(), vec!["post 1", "post 2", "update 1", "update 2"]);
+        assert_eq!(
+            *log.borrow(),
+            vec!["post 1", "post 2", "update 1", "update 2"]
+        );
     }
 
     #[test]

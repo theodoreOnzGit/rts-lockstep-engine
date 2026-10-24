@@ -89,7 +89,9 @@ use rts_lockstep_engine::common::disabled_types::DISABLED_HACKED;
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
 use rts_lockstep_engine::common::kind_of::{KindOfMaskType, KINDOF_COUNT};
 use rts_lockstep_engine::common::module::{ModuleDataKind, MODULEINTERFACE_SPECIAL_POWER};
-use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_UNDER_CONSTRUCTION};
+use rts_lockstep_engine::common::object_status_types::{
+    ObjectStatusMaskType, OBJECT_STATUS_UNDER_CONSTRUCTION,
+};
 use rts_lockstep_engine::common::special_power::SpecialPowerStore;
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
 use rts_lockstep_engine::common::upgrade::UpgradeMaskType;
@@ -102,8 +104,8 @@ use rts_lockstep_engine::logic::modules::unpause_special_power_upgrade::UnpauseS
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::ModuleCall;
 use rts_lockstep_engine::logic::world::module_probe::{ProbeAnswers, ProbeModule};
-use rts_lockstep_engine::logic::world::object_cuts::CutCall;
 use rts_lockstep_engine::logic::world::object_create::{NewModule, NewObject};
+use rts_lockstep_engine::logic::world::object_cuts::CutCall;
 use rts_lockstep_engine::logic::world::statics::GameStatics;
 use rts_lockstep_engine::logic::world::update_body::UpdateBody;
 use std::collections::BTreeMap;
@@ -115,7 +117,12 @@ use up_common::*;
 static CPP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// The class names of the kinds, in the order of the driver's `kind`.
-const CLASSES: [&str; 4] = ["CostModifierUpgrade", "PowerPlantUpgrade", "RadarUpgrade", "UnpauseSpecialPowerUpgrade"];
+const CLASSES: [&str; 4] = [
+    "CostModifierUpgrade",
+    "PowerPlantUpgrade",
+    "RadarUpgrade",
+    "UnpauseSpecialPowerUpgrade",
+];
 
 // -- the dump, in ref_l9upc_run's format --
 
@@ -166,7 +173,10 @@ fn put_mux(v: &mut Vec<u8>, m: &UpgradeMuxData, fx: &mut FxIds) {
 }
 /// A kind-of mask as the driver prints it: the indices of its set bits, each followed by a comma.
 fn kind_str(m: &KindOfMaskType) -> String {
-    (0..KINDOF_COUNT).filter(|&i| m.test(i)).map(|i| format!("{i},")).collect()
+    (0..KINDOF_COUNT)
+        .filter(|&i| m.test(i))
+        .map(|i| format!("{i},"))
+        .collect()
 }
 
 fn mask_from(w: &[u32]) -> UpgradeMaskType {
@@ -184,16 +194,27 @@ fn mask_from(w: &[u32]) -> UpgradeMaskType {
 fn read_block(ini: &mut Ini<'_>, out: &mut (usize, Option<ModuleDataKind>)) -> IniResult<()> {
     let kind = out.0;
     out.1 = Some(match kind {
-        0 => ModuleDataKind::CostModifierUpgrade(Arc::new(CostModifierUpgradeModuleData::friend_new_module_data(Some(ini))?)),
-        1 => ModuleDataKind::PowerPlantUpgrade(Arc::new(PowerPlantUpgradeModuleData::friend_new_module_data(Some(ini))?)),
-        2 => ModuleDataKind::RadarUpgrade(Arc::new(RadarUpgradeModuleData::friend_new_module_data(Some(ini))?)),
-        _ => ModuleDataKind::UnpauseSpecialPowerUpgrade(Arc::new(UnpauseSpecialPowerUpgradeModuleData::friend_new_module_data(Some(ini))?)),
+        0 => ModuleDataKind::CostModifierUpgrade(Arc::new(
+            CostModifierUpgradeModuleData::friend_new_module_data(Some(ini))?,
+        )),
+        1 => ModuleDataKind::PowerPlantUpgrade(Arc::new(
+            PowerPlantUpgradeModuleData::friend_new_module_data(Some(ini))?,
+        )),
+        2 => ModuleDataKind::RadarUpgrade(Arc::new(
+            RadarUpgradeModuleData::friend_new_module_data(Some(ini))?,
+        )),
+        _ => ModuleDataKind::UnpauseSpecialPowerUpgrade(Arc::new(
+            UnpauseSpecialPowerUpgradeModuleData::friend_new_module_data(Some(ini))?,
+        )),
     });
     Ok(())
 }
 
 fn rust_read(kind: usize, name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }];
+    let blocks = [BlockParse {
+        token: "D",
+        parse: read_block,
+    }];
     let mut out = (kind, None);
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out.1)
@@ -215,7 +236,13 @@ fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, fx: &mut FxIds, store: &Spec
         ModuleDataKind::UnpauseSpecialPowerUpgrade(d) => {
             put_mux(v, &d.upgrade.mux_data(), fx);
             // upstream resolved the name while it read the data; here it is resolved when the upgrade runs
-            put_u32(v, d.special_power.as_deref().and_then(|n| store.find_special_power_template(n)).map_or(0, |t| t.id()));
+            put_u32(
+                v,
+                d.special_power
+                    .as_deref()
+                    .and_then(|n| store.find_special_power_template(n))
+                    .map_or(0, |t| t.id()),
+            );
         }
         _ => unreachable!("not an upgrade module"),
     }
@@ -279,7 +306,9 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
         p += 2;
         let n = u32_(&mut p);
         let log: Vec<String> = (0..n).map(|_| str_(&mut p)).collect();
-        out.push(format!("op {i}: status {st} res {res} upgraded {up} log {log:?}"));
+        out.push(format!(
+            "op {i}: status {st} res {res} upgraded {up} log {log:?}"
+        ));
     }
     out
 }
@@ -292,7 +321,9 @@ fn gen_name(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
     }
     match g.below(100) {
         0..=64 if !upgrades.is_empty() => upgrades[g.below(upgrades.len() as u32) as usize].clone(),
-        65..=74 if !upgrades.is_empty() => upgrades[g.below(upgrades.len() as u32) as usize].to_lowercase(),
+        65..=74 if !upgrades.is_empty() => {
+            upgrades[g.below(upgrades.len() as u32) as usize].to_lowercase()
+        }
         75..=76 => format!("Unknown{}", g.below(3)),
         77 => "Up9".to_string(),
         78..=79 => pick(g, &["None", "none", "NONE"]).to_string(),
@@ -303,18 +334,44 @@ fn gen_name(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
 
 fn gen_list(g: &mut Gen, upgrades: &[String], clean: bool) -> String {
     let n = 1 + g.below(3);
-    (0..n).map(|_| gen_name(g, upgrades, clean)).collect::<Vec<_>>().join(" ")
+    (0..n)
+        .map(|_| gen_name(g, upgrades, clean))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
-const KIND_NAMES: [&str; 8] = ["STRUCTURE", "INFANTRY", "VEHICLE", "AIRCRAFT", "SELECTABLE", "CAN_ATTACK", "SCORE", "HUGE_VEHICLE"];
+const KIND_NAMES: [&str; 8] = [
+    "STRUCTURE",
+    "INFANTRY",
+    "VEHICLE",
+    "AIRCRAFT",
+    "SELECTABLE",
+    "CAN_ATTACK",
+    "SCORE",
+    "HUGE_VEHICLE",
+];
 
 fn gen_kind_list(g: &mut Gen, clean: bool) -> String {
     match g.below(8) {
         0 => "NONE".to_string(),
-        1 if !clean => pick(g, &["Bogus", "+STRUCTURE", "STRUCTURE +VEHICLE", "", "-INFANTRY", "KINDOF_VEHICLE"]).to_string(),
+        1 if !clean => pick(
+            g,
+            &[
+                "Bogus",
+                "+STRUCTURE",
+                "STRUCTURE +VEHICLE",
+                "",
+                "-INFANTRY",
+                "KINDOF_VEHICLE",
+            ],
+        )
+        .to_string(),
         2 => format!("+{}", pick(g, &KIND_NAMES)),
         3 => format!("-{}", pick(g, &KIND_NAMES)),
-        _ => (0..1 + g.below(3)).map(|_| pick(g, &KIND_NAMES).to_string()).collect::<Vec<_>>().join(" "),
+        _ => (0..1 + g.below(3))
+            .map(|_| pick(g, &KIND_NAMES).to_string())
+            .collect::<Vec<_>>()
+            .join(" "),
     }
 }
 
@@ -333,9 +390,22 @@ fn gen_percent(g: &mut Gen, clean: bool) -> String {
 /// The module's own fields.
 fn own_fields(g: &mut Gen, kind: usize, clean: bool) -> Vec<(u32, &'static str, String)> {
     match kind {
-        0 => vec![(85, "EffectKindOf", gen_kind_list(g, clean)), (85, "Percentage", gen_percent(g, clean))],
+        0 => vec![
+            (85, "EffectKindOf", gen_kind_list(g, clean)),
+            (85, "Percentage", gen_percent(g, clean)),
+        ],
         2 => vec![(70, "DisableProof", gen_bool(g, clean))],
-        3 => vec![(88, "SpecialPowerTemplate", pick(g, &["SP_0", "SP_1", "SP_2", "None", "none", "sp_0", "SP_9", "SP_1"]).to_string())],
+        3 => vec![(
+            88,
+            "SpecialPowerTemplate",
+            pick(
+                g,
+                &[
+                    "SP_0", "SP_1", "SP_2", "None", "none", "sp_0", "SP_9", "SP_1",
+                ],
+            )
+            .to_string(),
+        )],
         _ => vec![],
     }
 }
@@ -380,7 +450,11 @@ fn gen_mask(g: &mut Gen, n_up: usize, at_least: u32) -> [u32; 4] {
     let mut w = [0u32; 4];
     if n_up > 0 {
         // a third of the masks name most of the upgrades, so that a TriggeredBy list is met more often than by chance
-        let extra = if g.below(3) == 0 { g.below(n_up as u32 + 1) } else { g.below(3) };
+        let extra = if g.below(3) == 0 {
+            g.below(n_up as u32 + 1)
+        } else {
+            g.below(3)
+        };
         for _ in 0..at_least + extra {
             let b = g.below(n_up as u32) as usize;
             w[b / 32] |= 1 << (b % 32);
@@ -398,18 +472,48 @@ struct Tally {
 }
 
 fn probe(has: u32, power_template: u32) -> UpdateBody {
-    UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers { has, power_template, ..Default::default() }, 0.0, UpgradeMaskType::default()))
+    UpdateBody::ModuleProbe(ProbeModule::new(
+        ProbeAnswers {
+            has,
+            power_template,
+            ..Default::default()
+        },
+        0.0,
+        UpgradeMaskType::default(),
+    ))
 }
 
 /// The line the driver logs for a cut call.
 fn cut_line(c: &CutCall) -> Option<String> {
     Some(match c {
-        CutCall::PlayerAddKindOfProductionCostChange { player, kind_of, percent } => format!("addcost {player} [{}] {}", kind_str(kind_of), percent.to_bits()),
-        CutCall::PlayerRemoveKindOfProductionCostChange { player, kind_of, percent } => format!("removecost {player} [{}] {}", kind_str(kind_of), percent.to_bits()),
+        CutCall::PlayerAddKindOfProductionCostChange {
+            player,
+            kind_of,
+            percent,
+        } => format!(
+            "addcost {player} [{}] {}",
+            kind_str(kind_of),
+            percent.to_bits()
+        ),
+        CutCall::PlayerRemoveKindOfProductionCostChange {
+            player,
+            kind_of,
+            percent,
+        } => format!(
+            "removecost {player} [{}] {}",
+            kind_str(kind_of),
+            percent.to_bits()
+        ),
         CutCall::PlayerAddPowerBonus { player, .. } => format!("addpower {player}"),
         CutCall::PlayerRemovePowerBonus { player, .. } => format!("removepower {player}"),
-        CutCall::PlayerAddRadar { player, disable_proof } => format!("addradar {player} {}", i32::from(*disable_proof)),
-        CutCall::PlayerRemoveRadar { player, disable_proof } => format!("removeradar {player} {}", i32::from(*disable_proof)),
+        CutCall::PlayerAddRadar {
+            player,
+            disable_proof,
+        } => format!("addradar {player} {}", i32::from(*disable_proof)),
+        CutCall::PlayerRemoveRadar {
+            player,
+            disable_proof,
+        } => format!("removeradar {player} {}", i32::from(*disable_proof)),
         _ => return None,
     })
 }
@@ -432,14 +536,32 @@ fn rust_run(
     put_data(&mut v, &data, &mut fx, &ctx.store);
 
     // the template the driver finds for SP_<i>: the id in the store, 0 (NULL) for a name the store does not have (or 99)
-    let template_of = |i: u32| -> u32 { ctx.store.find_special_power_template(format!("SP_{i}").as_bytes()).map_or(0, |t| t.id()) };
-    let templates: Vec<u32> = (0..4).map(|i| if cfg[7 + i] == 99 { 0 } else { template_of(cfg[7 + i]) }).collect();
+    let template_of = |i: u32| -> u32 {
+        ctx.store
+            .find_special_power_template(format!("SP_{i}").as_bytes())
+            .map_or(0, |t| t.id())
+    };
+    let templates: Vec<u32> = (0..4)
+        .map(|i| {
+            if cfg[7 + i] == 99 {
+                0
+            } else {
+                template_of(cfg[7 + i])
+            }
+        })
+        .collect();
 
     let mut w = World::new();
-    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
+    w.statics = Arc::new(GameStatics {
+        upgrade_center: ctx.center,
+        special_power_store: ctx.store,
+        ..Default::default()
+    });
     w.names = ctx.names;
     w.cuts.neutral_default_team = 1;
-    w.teams.insert_team(rts_lockstep_engine::logic::world::team::Team::new(1, 0)).unwrap();
+    w.teams
+        .insert_team(rts_lockstep_engine::logic::world::team::Team::new(1, 0))
+        .unwrap();
     if ctrl >= 0 {
         w.cuts.team_players.insert(1, ctrl);
     }
@@ -449,7 +571,14 @@ fn rust_run(
     w.cuts.probe_effect_trace = true;
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
-    let m = rts_lockstep_engine::logic::modules::new_module(0, CLASSES[kind].as_bytes(), b"ModuleTag_Up", &data).unwrap().unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(
+        0,
+        CLASSES[kind].as_bytes(),
+        b"ModuleTag_Up",
+        &data,
+    )
+    .unwrap()
+    .unwrap();
     let mut modules = vec![m];
     for i in 0..cfg[1].min(4) as usize {
         let mut b = NewModule::plain(b"Behavior", format!("ModuleTag_B{i}").as_bytes());
@@ -472,7 +601,16 @@ fn rust_run(
     }
     let mut status = ObjectStatusMaskType::default();
     status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, 1);
-    let id = w.new_object(NewObject { template: Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default())), status, team: None, modules }).unwrap();
+    let id = w
+        .new_object(NewObject {
+            template: Arc::new(ThingTemplate::from_object_values(
+                &ObjectTemplateValues::default(),
+            )),
+            status,
+            team: None,
+            modules,
+        })
+        .unwrap();
     {
         let o = w.objects.find_mut(id).unwrap();
         o.status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, 0);
@@ -489,18 +627,26 @@ fn rust_run(
         w.cuts.trace = Some(Vec::new());
         w.cuts.log = Some(Vec::new());
         let res = match o[0] {
-            0 => w.module_call(id, idx, ModuleCall::WouldUpgrade(mask)).as_bool(),
+            0 => w
+                .module_call(id, idx, ModuleCall::WouldUpgrade(mask))
+                .as_bool(),
             1 => {
-                let r = w.module_call(id, idx, ModuleCall::AttemptUpgrade(mask)).as_bool();
+                let r = w
+                    .module_call(id, idx, ModuleCall::AttemptUpgrade(mask))
+                    .as_bool();
                 tally.fired += u64::from(r);
                 r
             }
-            2 => w.module_call(id, idx, ModuleCall::ResetUpgrade(mask)).as_bool(),
+            2 => w
+                .module_call(id, idx, ModuleCall::ResetUpgrade(mask))
+                .as_bool(),
             3 => {
                 w.module_call(id, idx, ModuleCall::ForceRefreshUpgrade);
                 false
             }
-            4 => w.module_call(id, idx, ModuleCall::IsAlreadyUpgraded).as_bool(),
+            4 => w
+                .module_call(id, idx, ModuleCall::IsAlreadyUpgraded)
+                .as_bool(),
             5 => {
                 w.objects.find_mut(id).unwrap().object_upgrades_completed = mask;
                 false
@@ -512,7 +658,11 @@ fn rust_run(
                 false
             }
             7 => {
-                w.objects.find_mut(id).unwrap().disabled.set(DISABLED_HACKED, (o[1] & 1) as i32);
+                w.objects
+                    .find_mut(id)
+                    .unwrap()
+                    .disabled
+                    .set(DISABLED_HACKED, (o[1] & 1) as i32);
                 false
             }
             8 => {
@@ -520,7 +670,14 @@ fn rust_run(
                 false
             }
             9 => {
-                w.module_call(id, idx, ModuleCall::OnCapture { old_owner: o[1] as i32 - 1, new_owner: o[2] as i32 - 1 });
+                w.module_call(
+                    id,
+                    idx,
+                    ModuleCall::OnCapture {
+                        old_owner: o[1] as i32 - 1,
+                        new_owner: o[2] as i32 - 1,
+                    },
+                );
                 false
             }
             10 => {
@@ -539,7 +696,10 @@ fn rust_run(
         let threw = w.cuts.module_errors.len() > errors_before;
         put_i32(&mut v, if threw { 2 } else { 0 });
         v.push(u8::from(res && !threw));
-        v.push(u8::from(w.module_call(id, idx, ModuleCall::IsAlreadyUpgraded).as_bool()));
+        v.push(u8::from(
+            w.module_call(id, idx, ModuleCall::IsAlreadyUpgraded)
+                .as_bool(),
+        ));
         // the effects, in order: the trace has each removal, cut call, client event and probe line of a module
         let fxs: Vec<Vec<u8>> = w.events.events()[events_before..]
             .iter()
@@ -567,7 +727,10 @@ fn rust_run(
             } else if let Some(r) = t.strip_prefix("extendrods ") {
                 // `<module position> <extend>`: the driver counts from the first behaviour module, the world from the object's first helper
                 let (i, e) = r.split_once(' ').unwrap();
-                log.push(format!("extendrods {} {e}", i.parse::<i32>().unwrap() - base));
+                log.push(format!(
+                    "extendrods {} {e}",
+                    i.parse::<i32>().unwrap() - base
+                ));
             } else if let Some(r) = t.strip_prefix("pause ") {
                 let (i, e) = r.split_once(' ').unwrap();
                 log.push(format!("pause {} {e}", i.parse::<i32>().unwrap() - base));
@@ -581,14 +744,32 @@ fn rust_run(
             put_str(&mut v, l.as_bytes());
         }
     }
-    let keys = PROBE.iter().map(|n| w.names.name_to_key(n.as_bytes()).0).collect();
+    let keys = PROBE
+        .iter()
+        .map(|n| w.names.name_to_key(n.as_bytes()).0)
+        .collect();
     (v, keys, w)
 }
 
-const PROBE: [&str; 11] = ["none", "Up0", "Up3", "Unknown0", "Unknown2", "Up9", "SCIENCE_Pathfinder", "Sci_X", "zz_fresh", "RadarUpdate", "radarupdate"];
+const PROBE: [&str; 11] = [
+    "none",
+    "Up0",
+    "Up3",
+    "Unknown0",
+    "Unknown2",
+    "Up9",
+    "SCIENCE_Pathfinder",
+    "Sci_X",
+    "zz_fresh",
+    "RadarUpdate",
+    "radarupdate",
+];
 
 fn cases() -> usize {
-    std::env::var("L9UPC_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
+    std::env::var("L9UPC_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9_000)
 }
 
 #[test]
@@ -609,15 +790,43 @@ fn upgrade_modules_c_match_upstream() {
         let kind = case % 4;
         let init_names = g.below(3) != 0;
         let init_center = g.below(5) != 0;
-        let n_up = if g.below(10) == 0 { 0 } else { 1 + g.below(8) as usize };
+        let n_up = if g.below(10) == 0 {
+            0
+        } else {
+            1 + g.below(8) as usize
+        };
         let n_sp = g.below(4) as usize;
         let upgrades: Vec<String> = (0..n_up).map(|i| format!("Up{i}")).collect();
-        let mut defs: String = upgrades.iter().map(|u| format!("Upgrade {u}\nEnd\n")).collect();
-        defs.push_str(&(0..n_sp).map(|i| format!("SpecialPower SP_{i}\nEnd\n")).collect::<String>());
+        let mut defs: String = upgrades
+            .iter()
+            .map(|u| format!("Upgrade {u}\nEnd\n"))
+            .collect();
+        defs.push_str(
+            &(0..n_sp)
+                .map(|i| format!("SpecialPower SP_{i}\nEnd\n"))
+                .collect::<String>(),
+        );
         let mut ctx = Ctx::new(init_names, init_center);
-        Ini::load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ctx).expect("upgrades load");
+        Ini::load(
+            b"Data\\INI\\Up.ini",
+            defs.as_bytes(),
+            IniLoadType::Overwrite,
+            None,
+            &table,
+            &mut ctx,
+        )
+        .expect("upgrades load");
         cpp_reset(init_names, init_center);
-        assert_eq!(cpp_load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, false).status, 0);
+        assert_eq!(
+            cpp_load(
+                b"Data\\INI\\Up.ini",
+                defs.as_bytes(),
+                IniLoadType::Overwrite,
+                false
+            )
+            .status,
+            0
+        );
 
         let clean = g.below(10) < 7;
         let text = gen_data(&mut g, kind, &upgrades, clean);
@@ -632,7 +841,11 @@ fn upgrade_modules_c_match_upstream() {
                 continue;
             }
         };
-        let ctrl: i32 = if g.below(5) == 0 { -1 } else { g.below(3) as i32 };
+        let ctrl: i32 = if g.below(5) == 0 {
+            -1
+        } else {
+            g.below(3) as i32
+        };
         let player_mask = gen_mask(&mut g, n_up, 0);
         let obj_mask = gen_mask(&mut g, n_up, 0);
         // [disabled, number of behaviour modules, their kinds (0 none, 1 power plant, 2 special power), has a radar update, their templates]
@@ -675,7 +888,17 @@ fn upgrade_modules_c_match_upstream() {
 
         // Rust first: a case that reaches upstream undefined behaviour is counted and never sent to the C++
         let rust = if outcome.status == 0 {
-            let (rd, rk, w) = rust_run(kind, ctx, data.expect("read ok"), ctrl, player_mask, obj_mask, cfg, &ops, &mut tally);
+            let (rd, rk, w) = rust_run(
+                kind,
+                ctx,
+                data.expect("read ok"),
+                ctrl,
+                player_mask,
+                obj_mask,
+                cfg,
+                &ops,
+                &mut tally,
+            );
             if w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined()) {
                 excluded += 1;
                 continue;
@@ -698,7 +921,13 @@ fn upgrade_modules_c_match_upstream() {
                 kind as i32,
                 cfile.as_ptr(),
                 ctrl,
-                [player_mask[0], player_mask[1], player_mask[2], player_mask[3]].as_ptr(),
+                [
+                    player_mask[0],
+                    player_mask[1],
+                    player_mask[2],
+                    player_mask[3],
+                ]
+                .as_ptr(),
                 obj_mask.as_ptr(),
                 cfg.as_ptr(),
                 ops.len() as i32,
@@ -718,22 +947,55 @@ fn upgrade_modules_c_match_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || format!("case {case} ({}): upgrades {upgrades:?} sp {n_sp} ctrl {ctrl} {player_mask:?} obj {obj_mask:?} cfg {cfg:?}, file {:?}, ops {ops:?}", CLASSES[kind], show(&text));
-        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
+        let what = || {
+            format!("case {case} ({}): upgrades {upgrades:?} sp {n_sp} ctrl {ctrl} {player_mask:?} obj {obj_mask:?} cfg {cfg:?}, file {:?}, ops {ops:?}", CLASSES[kind], show(&text))
+        };
+        read.eq(
+            &outcome,
+            &Outcome {
+                status,
+                detail,
+                crc: 0,
+            },
+            what,
+        );
         let Some((rd, rk, w)) = rust else {
             read_failed += 1;
             continue;
         };
         let (dr, dc) = (decode(kind, &rd, ops.len()), decode(kind, &buf, ops.len()));
         for l in &dr {
-            for key in ["addcost", "removecost", "addpower", "removepower", "addradar", "removeradar", "extendrods", "extendradar", "pause", "remove ", "fx"] {
-                *counts.entry(key.trim().to_string()).or_default() += l.matches(&format!("\"{key}")).count() as u64;
+            for key in [
+                "addcost",
+                "removecost",
+                "addpower",
+                "removepower",
+                "addradar",
+                "removeradar",
+                "extendrods",
+                "extendradar",
+                "pause",
+                "remove ",
+                "fx",
+            ] {
+                *counts.entry(key.trim().to_string()).or_default() +=
+                    l.matches(&format!("\"{key}")).count() as u64;
             }
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
-            eprintln!("--- case {case} ({}) ctrl {ctrl} cfg {cfg:?} file {:?}\n  rust {:?}\n  c++  {:?}", CLASSES[kind], show(&text), dr.get(i), dc.get(i));
+            let i = dr
+                .iter()
+                .zip(dc.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(dr.len().min(dc.len()));
+            eprintln!(
+                "--- case {case} ({}) ctrl {ctrl} cfg {cfg:?} file {:?}\n  rust {:?}\n  c++  {:?}",
+                CLASSES[kind],
+                show(&text),
+                dr.get(i),
+                dc.get(i)
+            );
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -762,5 +1024,11 @@ fn upgrade_modules_c_match_upstream() {
     read.finish();
     run.finish();
     keys.finish();
-    assert!(read_failed * 40 > cases as u64 && ops_run * 5 > cases as u64 * 4 && tally.fired * 6 > cases as u64 && tally.effects * 4 > cases as u64, "the generator must reach every path");
+    assert!(
+        read_failed * 40 > cases as u64
+            && ops_run * 5 > cases as u64 * 4
+            && tally.fired * 6 > cases as u64
+            && tally.effects * 4 > cases as u64,
+        "the generator must reach every path"
+    );
 }

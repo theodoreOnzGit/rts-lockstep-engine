@@ -65,13 +65,16 @@ mod tests;
 
 pub use cell::{PartitionCell, ShroudLevel, SightingInfo};
 pub use collide::{
-    collide_test, dist_calc, geom_collides_with_geom, CollideInfo, CollideLocAndNormal, DistResult, DistanceCalculationType, HUGE_DIST, HUGE_DIST_SQR,
+    collide_test, dist_calc, geom_collides_with_geom, CollideInfo, CollideLocAndNormal, DistResult,
+    DistanceCalculationType, HUGE_DIST, HUGE_DIST_SQR,
 };
 pub use filters::{filters_allow, PartitionFilter};
 pub use host::{
-    CanAttackResult, ContainFacts, GhostGeometry, ObjectGeometry, PartitionFilterHost, PartitionHost, PathfindCellType, PathfindLayer, StealthFacts,
-    LAYER_GROUND,
+    CanAttackResult, ContainFacts, GhostGeometry, ObjectGeometry, PartitionFilterHost,
+    PartitionHost, PathfindCellType, PathfindLayer, StealthFacts, LAYER_GROUND,
 };
 pub use manager::{PartitionClientEvent, PartitionManager};
 pub use query::{fpf, ClosestObject, FindPositionOptions, TerrainExtremes, RANDOM_START_ANGLE};
-pub use shroud::{ShroudStatusStoreRestore, ValueOrThreat, STORE_DONTTOUCH, STORE_FOG, STORE_PERMANENTLY_REVEALED};
+pub use shroud::{
+    ShroudStatusStoreRestore, ValueOrThreat, STORE_DONTTOUCH, STORE_FOG, STORE_PERMANENTLY_REVEALED,
+};

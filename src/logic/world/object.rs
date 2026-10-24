@@ -120,13 +120,15 @@ use crate::common::base_type::{Coord2D, Coord3D, ICoord3D};
 use crate::common::disabled_types::{DisabledMaskType, DISABLED_COUNT};
 use crate::common::game_common::{PlayerMaskType, VeterancyLevel, MAX_PLAYER_COUNT, NEVER};
 use crate::common::game_type::{
-    DrawableId, FormationId, ObjectId, PathfindLayer, INVALID_DRAWABLE_ID, INVALID_ID, LAYER_GROUND, LAYER_INVALID, NO_FORMATION_ID,
-    WEAPONSLOT_COUNT,
+    DrawableId, FormationId, ObjectId, PathfindLayer, INVALID_DRAWABLE_ID, INVALID_ID,
+    LAYER_GROUND, LAYER_INVALID, NO_FORMATION_ID, WEAPONSLOT_COUNT,
 };
 use crate::common::geometry::GeometryInfo;
 use crate::common::kind_of::{KindOfMaskType, KindOfType};
 use crate::common::module::{Module, ModuleInterfaceType};
-use crate::common::object_status_types::{ObjectStatusMaskType, ObjectStatusTypes, OBJECT_STATUS_DESTROYED};
+use crate::common::object_status_types::{
+    ObjectStatusMaskType, ObjectStatusTypes, OBJECT_STATUS_DESTROYED,
+};
 use crate::common::special_power_mask_type::SpecialPowerMaskType;
 use crate::common::thing_template::ThingTemplate;
 use crate::common::upgrade::UpgradeMaskType;
@@ -169,7 +171,11 @@ impl ThingTemplateView for ThingTemplate {
     fn is_kind_of(&self, t: KindOfType) -> bool {
         ThingTemplate::is_kind_of(self, t)
     }
-    fn is_kind_of_multi(&self, must_be_set: &KindOfMaskType, must_be_clear: &KindOfMaskType) -> bool {
+    fn is_kind_of_multi(
+        &self,
+        must_be_set: &KindOfMaskType,
+        must_be_clear: &KindOfMaskType,
+    ) -> bool {
         ThingTemplate::is_kind_of_multi(self, must_be_set, must_be_clear)
     }
     fn is_any_kind_of(&self, any_kind_of: &KindOfMaskType) -> bool {
@@ -345,7 +351,12 @@ pub struct ExperienceRecord {
 impl Default for ExperienceRecord {
     /// `ExperienceTracker::ExperienceTracker`.
     fn default() -> Self {
-        ExperienceRecord { level: VeterancyLevel::Regular, points: 0, sink: INVALID_ID, scalar: 1.0 }
+        ExperienceRecord {
+            level: VeterancyLevel::Regular,
+            points: 0,
+            sink: INVALID_ID,
+            scalar: 1.0,
+        }
     }
 }
 
@@ -731,7 +742,10 @@ impl Object {
     }
 
     /// `hasSpecialPower(type)`.
-    pub fn has_special_power(&self, t: crate::common::special_power_type::SpecialPowerType) -> bool {
+    pub fn has_special_power(
+        &self,
+        t: crate::common::special_power_type::SpecialPowerType,
+    ) -> bool {
         self.special_power_bits.test(t)
     }
 
@@ -749,12 +763,18 @@ impl Object {
     /// that name (`getModuleNameKey() == key`), or `None`. Upstream's debug
     /// build also complains about duplicates; the shipped game returns the first.
     pub fn find_module(&self, class_name: &[u8]) -> Option<ModuleIndex> {
-        self.modules.iter().position(|m| m.name == class_name).map(|i| i as ModuleIndex)
+        self.modules
+            .iter()
+            .position(|m| m.name == class_name)
+            .map(|i| i as ModuleIndex)
     }
 
     /// The first module in module order that has the interface (`MODULEINTERFACE_*`).
     pub fn first_module_with(&self, mask: ModuleInterfaceType) -> Option<ModuleIndex> {
-        self.modules.iter().position(|m| m.has_interface(mask)).map(|i| i as ModuleIndex)
+        self.modules
+            .iter()
+            .position(|m| m.has_interface(mask))
+            .map(|i| i as ModuleIndex)
     }
 }
 
@@ -803,7 +823,13 @@ impl ObjectArena {
     /// `GameLogic::reset()`'s `m_objVector.resize(OBJ_HASH_SIZE, NULL)` and an
     /// empty list.
     pub fn new() -> ObjectArena {
-        ObjectArena { lookup: vec![0; OBJ_HASH_SIZE], slab: Vec::new(), free: Vec::new(), head: INVALID_ID, count: 0 }
+        ObjectArena {
+            lookup: vec![0; OBJ_HASH_SIZE],
+            slab: Vec::new(),
+            free: Vec::new(),
+            head: INVALID_ID,
+            count: 0,
+        }
     }
 
     /// The number of objects in the list.
@@ -855,24 +881,37 @@ impl ObjectArena {
     /// The scheduling half of the module `h` names: `None` if the object is
     /// not registered or has no such behaviour.
     pub fn update_module(&self, h: UpdateHandle) -> Option<&UpdateModule> {
-        self.find(h.object)?.behaviors.get(h.index as usize).map(|b| &b.update)
+        self.find(h.object)?
+            .behaviors
+            .get(h.index as usize)
+            .map(|b| &b.update)
     }
 
     /// [`ObjectArena::update_module`] for a caller that changes it.
     pub fn update_module_mut(&mut self, h: UpdateHandle) -> Option<&mut UpdateModule> {
-        self.find_mut(h.object)?.behaviors.get_mut(h.index as usize).map(|b| &mut b.update)
+        self.find_mut(h.object)?
+            .behaviors
+            .get_mut(h.index as usize)
+            .map(|b| &mut b.update)
     }
 
     /// Checks the behaviour half of module `h` out of its slot. `None` if
     /// there is no such module or it is already checked out (it is running:
     /// see `docs/world-design.md`, "Re-entrancy").
     pub fn take_body(&mut self, h: UpdateHandle) -> Option<UpdateBody> {
-        self.find_mut(h.object)?.behaviors.get_mut(h.index as usize)?.body.take()
+        self.find_mut(h.object)?
+            .behaviors
+            .get_mut(h.index as usize)?
+            .body
+            .take()
     }
 
     /// Puts a checked-out behaviour back. Dropped if the module is gone.
     pub fn put_body(&mut self, h: UpdateHandle, body: UpdateBody) {
-        if let Some(slot) = self.find_mut(h.object).and_then(|o| o.behaviors.get_mut(h.index as usize)) {
+        if let Some(slot) = self
+            .find_mut(h.object)
+            .and_then(|o| o.behaviors.get_mut(h.index as usize))
+        {
             slot.body = Some(body);
         }
     }
@@ -933,7 +972,12 @@ impl ObjectArena {
         if self.entry(id).is_some() {
             return Err(ArenaError::DuplicateId(id));
         }
-        let entry = Entry { object, prev: INVALID_ID, next: INVALID_ID, listed: false };
+        let entry = Entry {
+            object,
+            prev: INVALID_ID,
+            next: INVALID_ID,
+            listed: false,
+        };
         let pos = match self.free.pop() {
             Some(p) => {
                 self.slab[p as usize] = Some(entry);
@@ -1143,7 +1187,10 @@ mod tests {
         let mut a = ObjectArena::new();
         assert_eq!(a.insert_at_head(obj(0)), Err(ArenaError::BadId(0)));
         assert_eq!(a.insert_at_head(obj(-3)), Err(ArenaError::BadId(-3)));
-        assert_eq!(a.insert_at_head(obj(MAX_LOOKUP_ID)), Err(ArenaError::BadId(MAX_LOOKUP_ID)));
+        assert_eq!(
+            a.insert_at_head(obj(MAX_LOOKUP_ID)),
+            Err(ArenaError::BadId(MAX_LOOKUP_ID))
+        );
         a.insert_at_head(obj(7)).unwrap();
         assert_eq!(a.insert_at_head(obj(7)), Err(ArenaError::DuplicateId(7)));
         assert_eq!(a.len(), 1);
@@ -1155,7 +1202,9 @@ mod tests {
     fn destroyed_objects_are_still_found() {
         let mut a = ObjectArena::new();
         a.insert_at_head(obj(1)).unwrap();
-        a.find_mut(1).unwrap().set_status_bit(OBJECT_STATUS_DESTROYED);
+        a.find_mut(1)
+            .unwrap()
+            .set_status_bit(OBJECT_STATUS_DESTROYED);
         assert!(a.find(1).unwrap().is_destroyed());
         assert!(!a.find(1).unwrap().is_disabled());
     }

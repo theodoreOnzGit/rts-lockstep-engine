@@ -94,12 +94,17 @@ fn ocl_code(name: &Option<Vec<u8>>) -> u32 {
 }
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::FireSpreadUpdate(Arc::new(FireSpreadUpdateModuleData::friend_new_module_data(Some(ini))?)));
+    *out = Some(ModuleDataKind::FireSpreadUpdate(Arc::new(
+        FireSpreadUpdateModuleData::friend_new_module_data(Some(ini))?,
+    )));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }];
+    let blocks = [BlockParse {
+        token: "D",
+        parse: read_block,
+    }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -129,7 +134,9 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         if i > 0 {
             x = r.xfer();
         }
-        out.push(format!("op {i}: status {st} sleep {sleep} log {log:?} wakes {wakes} last {last} {x}"));
+        out.push(format!(
+            "op {i}: status {st} sleep {sleep} log {log:?} wakes {wakes} last {last} {x}"
+        ));
     }
     out
 }
@@ -181,7 +188,12 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     s.into_bytes()
 }
 
-fn gen_case(g: &mut Gen, _data: &Option<ModuleDataKind>, _n_up: usize, _upgrades: &[String]) -> (Vec<u32>, Vec<[u32; 5]>) {
+fn gen_case(
+    g: &mut Gen,
+    _data: &Option<ModuleDataKind>,
+    _n_up: usize,
+    _upgrades: &[String],
+) -> (Vec<u32>, Vec<[u32; 5]>) {
     // [the frame, the random seed]
     let cfg = vec![g.below(300), g.u32()];
     let n_ops = 1 + g.below(40) as usize;
@@ -221,10 +233,18 @@ struct Tally {
     scans: u64,
 }
 
-fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally: &RefCell<Tally>) -> RunOut {
+fn rust_run(
+    ctx: Ctx,
+    data: ModuleDataKind,
+    cfg: &[u32],
+    ops: &[[u32; 5]],
+    tally: &RefCell<Tally>,
+) -> RunOut {
     let mut v = Vec::new();
     {
-        let ModuleDataKind::FireSpreadUpdate(d) = &data else { unreachable!("not a FireSpreadUpdate") };
+        let ModuleDataKind::FireSpreadUpdate(d) = &data else {
+            unreachable!("not a FireSpreadUpdate")
+        };
         put_u32(&mut v, ocl_code(&d.ocl_embers));
         put_u32(&mut v, d.min_spread_try_delay);
         put_u32(&mut v, d.max_spread_try_delay);
@@ -232,27 +252,63 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     }
 
     let mut w = World::new();
-    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
+    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics {
+        upgrade_center: ctx.center,
+        special_power_store: ctx.store,
+        ..Default::default()
+    });
     w.names = ctx.names;
     w.cuts.probe_effect_trace = true;
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.set_frame(cfg[0]);
     w.random.init_game_logic_random(cfg[1]);
-    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"FireSpreadUpdate", b"ModuleTag_Spread", &data).unwrap().unwrap();
-    let template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
-    let me = w.new_object(NewObject { template: template.clone(), status: Default::default(), team: None, modules: vec![m] }).unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(
+        w.next_object_id(),
+        b"FireSpreadUpdate",
+        b"ModuleTag_Spread",
+        &data,
+    )
+    .unwrap()
+    .unwrap();
+    let template = Arc::new(ThingTemplate::from_object_values(
+        &ObjectTemplateValues::default(),
+    ));
+    let me = w
+        .new_object(NewObject {
+            template: template.clone(),
+            status: Default::default(),
+            team: None,
+            modules: vec![m],
+        })
+        .unwrap();
     assert_eq!(me, 1);
     let idx = w.find_module(me, b"FireSpreadUpdate").unwrap();
     let constructor_trace = w.cuts.trace.take().unwrap_or_default();
     for k in 0..3 {
         // the candidates' flammable module is renamed to be absent
         let mut f = NewModule::plain(b"XFlammableUpdate", b"ModuleTag_Flammable");
-        f.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
-        let id = w.new_object(NewObject { template: template.clone(), status: Default::default(), team: None, modules: vec![f] }).unwrap();
+        f.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+            ProbeAnswers::default(),
+            0.0,
+            Default::default(),
+        )));
+        let id = w
+            .new_object(NewObject {
+                template: template.clone(),
+                status: Default::default(),
+                team: None,
+                modules: vec![f],
+            })
+            .unwrap();
         assert_eq!(id, 2 + k);
     }
-    let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
+    let u = w
+        .update_handle_of_module(ModuleHandle {
+            object: me,
+            index: idx,
+        })
+        .expect("an update module");
     let mut saved: Vec<u8> = Vec::new();
     let mut first_trace = Some(constructor_trace);
     for phase in 0..=ops.len() {
@@ -263,15 +319,26 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             let o = &ops[phase - 1];
             match o[0] {
                 0 => {
-                    sleep = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
+                    sleep = w
+                        .with_body(u, |b, w| b.update(w, u))
+                        .expect("the module is in its slot")
+                        .0;
                     tally.borrow_mut().updates += 1;
                 }
                 1 => {
                     w.module_call(me, idx, ModuleCall::StartFireSpreading);
                 }
-                2 => w.objects.find_mut(me).unwrap().status.set(OBJECT_STATUS_AFLAME, i32::from(o[1] != 0)),
+                2 => w
+                    .objects
+                    .find_mut(me)
+                    .unwrap()
+                    .status
+                    .set(OBJECT_STATUS_AFLAME, i32::from(o[1] != 0)),
                 3 => {
-                    let mut ids: Vec<i32> = (0..3).filter(|k| o[1] >> k & 1 != 0).map(|k| k + 2).collect();
+                    let mut ids: Vec<i32> = (0..3)
+                        .filter(|k| o[1] >> k & 1 != 0)
+                        .map(|k| k + 2)
+                        .collect();
                     if o[2] != 0 {
                         ids.reverse();
                     }
@@ -282,7 +349,11 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     let ob = w.objects.find_mut(id).unwrap();
                     for m in ob.modules.iter_mut() {
                         if m.name == b"XFlammableUpdate" || m.name == b"FlammableUpdate" {
-                            m.name = if o[2] & 1 != 0 { b"FlammableUpdate".to_vec() } else { b"XFlammableUpdate".to_vec() };
+                            m.name = if o[2] & 1 != 0 {
+                                b"FlammableUpdate".to_vec()
+                            } else {
+                                b"XFlammableUpdate".to_vec()
+                            };
                             if let Some(UpdateBody::ModuleProbe(p)) = m.body.as_mut() {
                                 p.answers.yes = o[2] & 2 != 0;
                             }
@@ -303,7 +374,11 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 _ => unreachable!(),
             }
         }
-        let trace = if phase == 0 { first_trace.take().unwrap_or_default() } else { w.cuts.trace.take().unwrap() };
+        let trace = if phase == 0 {
+            first_trace.take().unwrap_or_default()
+        } else {
+            w.cuts.trace.take().unwrap()
+        };
         let cuts = w.cuts.log.take().unwrap_or_default();
         let (mut log, mut wakes, mut last) = (Vec::new(), 0u32, 0u32);
         let mut cut_iter = cuts.into_iter();
@@ -358,7 +433,11 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             put_u32(&mut v, crc);
         }
     }
-    RunOut { dump: v, keys: Vec::new(), excluded: false }
+    RunOut {
+        dump: v,
+        keys: Vec::new(),
+        excluded: false,
+    }
 }
 
 #[test]
@@ -385,5 +464,11 @@ fn fire_spread_update_matches_upstream() {
         "update module O8: {} cases, {} data blocks threw, {} excluded, {} ops, {} updates, {} xfers, {} effect lines, {} embers, {} scans, {} ignitions",
         c.cases, c.read_failed, c.excluded, c.ops_run, t.updates, t.xfers, t.effects, t.embers, t.scans, t.ignites
     );
-    assert!(c.read_failed * 40 > c.cases as u64 && c.ops_run * 5 > c.cases as u64 * 4 && t.embers * 5 > c.cases as u64 && t.ignites * 10 > c.cases as u64, "the generator must reach every path");
+    assert!(
+        c.read_failed * 40 > c.cases as u64
+            && c.ops_run * 5 > c.cases as u64 * 4
+            && t.embers * 5 > c.cases as u64
+            && t.ignites * 10 > c.cases as u64,
+        "the generator must reach every path"
+    );
 }

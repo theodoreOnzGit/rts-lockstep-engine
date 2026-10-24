@@ -30,9 +30,9 @@ use crate::logic::module::upgrade_module::{UpgradeModule, UpgradeModuleData};
 use crate::logic::modules::upgrade_body::{upgrade_module_call, UpgradeBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::update_body::UpdateBody;
 use crate::upgrade_module_data_field_parse;
-use crate::logic::world::object_cuts::CutCall;
 
 /// `class ObjectCreationUpgradeModuleData : public UpgradeModuleData`.
 #[derive(Debug)]
@@ -54,7 +54,8 @@ impl Default for ObjectCreationUpgradeModuleData {
 }
 
 /// `UpgradeModuleData::buildFieldParse`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<ObjectCreationUpgradeModuleData>; 6] = upgrade_module_data_field_parse!(ObjectCreationUpgradeModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<ObjectCreationUpgradeModuleData>; 6] =
+    upgrade_module_data_field_parse!(ObjectCreationUpgradeModuleData, upgrade);
 
 /// `ObjectCreationUpgradeModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<ObjectCreationUpgradeModuleData>; 2] = [
@@ -63,7 +64,13 @@ static OWN_FIELD_PARSE: [FieldParse<ObjectCreationUpgradeModuleData>; 2] = [
         |ini, d, _| {
             // INI::parseObjectCreationList: `None` is no list; any other name is looked up (here, when it is used)
             let token = ini.get_next_token(None)?;
-            d.ocl = (!token.eq_ignore_ascii_case(b"None")).then(|| if crate::logic::modules::plant(631) { token.to_ascii_uppercase() } else { token });
+            d.ocl = (!token.eq_ignore_ascii_case(b"None")).then(|| {
+                if crate::logic::modules::plant(631) {
+                    token.to_ascii_uppercase()
+                } else {
+                    token
+                }
+            });
             Ok(())
         },
         UserData::None,
@@ -73,7 +80,9 @@ static OWN_FIELD_PARSE: [FieldParse<ObjectCreationUpgradeModuleData>; 2] = [
 
 impl ObjectCreationUpgradeModuleData {
     /// `buildFieldParse(p)`: `BehaviorModuleData`'s, then `UpgradeModuleData`'s, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, ObjectCreationUpgradeModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, ObjectCreationUpgradeModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -81,10 +90,15 @@ impl ObjectCreationUpgradeModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ObjectCreationUpgradeModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<ObjectCreationUpgradeModuleData> {
         let mut data = ObjectCreationUpgradeModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, ObjectCreationUpgradeModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                ObjectCreationUpgradeModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -102,14 +116,19 @@ pub struct ObjectCreationUpgrade {
 impl PartialEq for ObjectCreationUpgrade {
     /// The same data object and the same `m_upgradeExecuted` (upstream compares the data pointer).
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.data, &other.data) && self.base.is_already_upgraded() == other.base.is_already_upgraded()
+        Arc::ptr_eq(&self.data, &other.data)
+            && self.base.is_already_upgraded() == other.base.is_already_upgraded()
     }
 }
 
 impl ObjectCreationUpgrade {
     /// `ObjectCreationUpgrade(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(object: ObjectId, data: Option<Arc<ObjectCreationUpgradeModuleData>>) -> IniResult<ObjectCreationUpgrade> {
-        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<ObjectCreationUpgradeModuleData>>,
+    ) -> IniResult<ObjectCreationUpgrade> {
+        let data =
+            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let base = UpgradeModule::new(object, Some(data.upgrade.clone()))?;
         Ok(ObjectCreationUpgrade { base, data })
     }
@@ -125,7 +144,12 @@ impl ObjectCreationUpgrade {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         upgrade_module_call(self, world, me, call)
     }
 }
@@ -137,12 +161,24 @@ impl UpgradeBehavior for ObjectCreationUpgrade {
     fn base_mut(&mut self) -> &mut UpgradeModule {
         &mut self.base
     }
-    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
+    fn upgrade_implementation(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+    ) -> Result<(), IniError> {
         if crate::logic::modules::plant(630) {
             return Ok(());
         }
-        if let Some(ocl) = self.data.ocl.clone().or_else(|| crate::logic::modules::plant(629).then(Vec::new)) {
-            world.cut(CutCall::OclCreate { object: me.object, ocl });
+        if let Some(ocl) = self
+            .data
+            .ocl
+            .clone()
+            .or_else(|| crate::logic::modules::plant(629).then(Vec::new))
+        {
+            world.cut(CutCall::OclCreate {
+                object: me.object,
+                ocl,
+            });
         }
         Ok(())
     }
@@ -182,5 +218,7 @@ impl Snapshot for ObjectCreationUpgrade {
 
 /// The factory's `NewModuleDataProc` for `ObjectCreationUpgrade`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::ObjectCreationUpgrade(Arc::new(ObjectCreationUpgradeModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::ObjectCreationUpgrade(Arc::new(
+        ObjectCreationUpgradeModuleData::friend_new_module_data(ini)?,
+    )))
 }

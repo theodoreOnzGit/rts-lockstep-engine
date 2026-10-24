@@ -89,14 +89,23 @@ impl ObjectHelper {
     }
 
     /// The first half of the constructor, which touches no world: the `UpdateModule`.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>, phase: SleepyUpdatePhase) -> IniResult<Self> {
-        Ok(ObjectHelper { update: UpdateModule::new(object, module_data, phase)? })
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<UpdateModuleData>>,
+        phase: SleepyUpdatePhase,
+    ) -> IniResult<Self> {
+        Ok(ObjectHelper {
+            update: UpdateModule::new(object, module_data, phase)?,
+        })
     }
 
     /// The second half: `setWakeFrame(getObject(), UPDATE_SLEEP_FOREVER)`. The world runs it once the module is part of its object.
     pub fn construct(&mut self, host: &mut impl HelperHost) {
         if !plant(32) {
-            host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), UPDATE_SLEEP_FOREVER));
+            host.awaken_update_module(UpdateModule::set_wake_frame(
+                host.frame(),
+                UPDATE_SLEEP_FOREVER,
+            ));
         }
     }
 
@@ -222,7 +231,10 @@ mod tests {
 
     #[test]
     fn sleep_until_sleeps_forever_on_never_and_forever_and_not_at_all_when_destroyed() {
-        let mut host = Host { frame: 100, ..Default::default() };
+        let mut host = Host {
+            frame: 100,
+            ..Default::default()
+        };
         let h = ObjectHelper::new(1, data(), SleepyUpdatePhase::Normal, &mut host).unwrap();
         assert_eq!(host.wakes, vec![100 + FOREVER]);
         host.wakes.clear();
@@ -245,22 +257,42 @@ mod tests {
         assert_eq!(rep.update(&mut host), UPDATE_SLEEP_FOREVER);
         let before = host.wakes.len();
         let mut ws = ObjectWeaponStatusHelper::new(1, data(), &mut host).unwrap();
-        assert_eq!(host.wakes.len(), before + 2, "the base's wake, then its own (active)");
+        assert_eq!(
+            host.wakes.len(),
+            before + 2,
+            "the base's wake, then its own (active)"
+        );
         assert_eq!(ws.update(&mut host), UPDATE_SLEEP_NONE);
         assert_eq!(host.log, vec!["smc", "clear 9", "adjust"]);
-        assert_eq!(ws.helper().update_module().get_update_phase(), SleepyUpdatePhase::Final);
+        assert_eq!(
+            ws.helper().update_module().get_update_phase(),
+            SleepyUpdatePhase::Final
+        );
     }
 
     #[test]
     fn status_damage_times_a_status_and_a_save_round_trips() {
-        let mut host = Host { frame: 10, ..Default::default() };
+        let mut host = Host {
+            frame: 10,
+            ..Default::default()
+        };
         let mut h = StatusDamageHelper::new(1, data(), &mut host).unwrap();
         h.do_status_damage(&mut host, OBJECT_STATUS_AFLAME, 12.9);
         h.do_status_damage(&mut host, OBJECT_STATUS_WET, 5.0);
-        assert_eq!(host.log, vec![format!("set {OBJECT_STATUS_AFLAME}"), format!("clear {OBJECT_STATUS_AFLAME}"), format!("set {OBJECT_STATUS_WET}")]);
+        assert_eq!(
+            host.log,
+            vec![
+                format!("set {OBJECT_STATUS_AFLAME}"),
+                format!("clear {OBJECT_STATUS_AFLAME}"),
+                format!("set {OBJECT_STATUS_WET}")
+            ]
+        );
         assert_eq!((h.status_to_heal, h.frame_to_heal), (OBJECT_STATUS_WET, 15));
         assert_eq!(host.wakes.last(), Some(&(10 + update_sleep(5).0)));
-        assert_eq!(h.get_disabled_types_to_process().count(), crate::common::disabled_types::disabledmask_all().count());
+        assert_eq!(
+            h.get_disabled_types_to_process().count(),
+            crate::common::disabled_types::disabledmask_all().count()
+        );
         let mut save = XferSave::new();
         save.open(b"t").unwrap();
         save.xfer_snapshot(&mut h).unwrap();
@@ -270,18 +302,35 @@ mod tests {
         load.open(b"t").unwrap();
         load.xfer_snapshot(&mut other).unwrap();
         load.close().unwrap();
-        assert_eq!((other.status_to_heal, other.frame_to_heal), (OBJECT_STATUS_WET, 15));
+        assert_eq!(
+            (other.status_to_heal, other.frame_to_heal),
+            (OBJECT_STATUS_WET, 15)
+        );
         assert_eq!(other.update(&mut host), UPDATE_SLEEP_FOREVER);
         assert_eq!(host.log.last(), Some(&format!("clear {OBJECT_STATUS_WET}")));
     }
 
     #[test]
     fn temp_weapon_bonus_tints_with_a_drawable_and_clears_when_woken() {
-        let mut host = Host { frame: 50, drawable: true, ..Default::default() };
+        let mut host = Host {
+            frame: 50,
+            drawable: true,
+            ..Default::default()
+        };
         let mut h = TempWeaponBonusHelper::new(1, data(), &mut host).unwrap();
         h.do_temp_weapon_bonus(&mut host, 1, 30);
         h.do_temp_weapon_bonus(&mut host, 2, 10);
-        assert_eq!(host.log, vec!["bonus 1", "tint 16", "unbonus 1", "untint 16", "bonus 2", "tint 16"]);
+        assert_eq!(
+            host.log,
+            vec![
+                "bonus 1",
+                "tint 16",
+                "unbonus 1",
+                "untint 16",
+                "bonus 2",
+                "tint 16"
+            ]
+        );
         assert_eq!(h.frame_to_remove, 60);
         host.log.clear();
         assert_eq!(h.update(&mut host), UPDATE_SLEEP_FOREVER);

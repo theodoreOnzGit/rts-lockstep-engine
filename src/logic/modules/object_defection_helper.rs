@@ -29,7 +29,8 @@ use crate::common::module::ObjectId;
 use crate::common::object_status_types::OBJECT_STATUS_IS_FIRING_WEAPON;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE,
+    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER,
+    UPDATE_SLEEP_NONE,
 };
 use crate::logic::modules::object_helper::ObjectHelper;
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
@@ -60,10 +61,12 @@ pub struct ObjectDefectionHelper {
 impl PartialEq for ObjectDefectionHelper {
     /// The same object and the same state (reals by bits).
     fn eq(&self, other: &Self) -> bool {
-        self.helper.update_module().behavior().object() == other.helper.update_module().behavior().object()
+        self.helper.update_module().behavior().object()
+            == other.helper.update_module().behavior().object()
             && self.defection_detection_start == other.defection_detection_start
             && self.defection_detection_end == other.defection_detection_end
-            && self.defection_detection_flash_phase.to_bits() == other.defection_detection_flash_phase.to_bits()
+            && self.defection_detection_flash_phase.to_bits()
+                == other.defection_detection_flash_phase.to_bits()
             && self.do_defector_fx == other.do_defector_fx
     }
 }
@@ -71,11 +74,23 @@ impl PartialEq for ObjectDefectionHelper {
 impl ObjectDefectionHelper {
     /// The first half of the constructor, which touches no world: the `ObjectHelper`, then the four fields zero (`m_defectionDetectionFlashPhase =
     /// FALSE`).
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>) -> IniResult<Self> {
-        let mut helper = ObjectHelper::unconstructed(object, module_data, SleepyUpdatePhase::Normal)?;
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<UpdateModuleData>>,
+    ) -> IniResult<Self> {
+        let mut helper =
+            ObjectHelper::unconstructed(object, module_data, SleepyUpdatePhase::Normal)?;
         // `getDisabledTypesToProcess()` is `DISABLEDMASK_ALL`; the scheduler reads the arena's base
-        helper.update_module_mut().set_disabled_types_to_process(disabledmask_all());
-        Ok(ObjectDefectionHelper { helper, defection_detection_start: 0, defection_detection_end: 0, defection_detection_flash_phase: 0.0, do_defector_fx: false })
+        helper
+            .update_module_mut()
+            .set_disabled_types_to_process(disabledmask_all());
+        Ok(ObjectDefectionHelper {
+            helper,
+            defection_detection_start: 0,
+            defection_detection_end: 0,
+            defection_detection_flash_phase: 0.0,
+            do_defector_fx: false,
+        })
     }
 
     /// The `ObjectHelper` base.
@@ -85,7 +100,12 @@ impl ObjectDefectionHelper {
 
     /// The module's own state as words, for the tests that compare it with upstream's.
     pub fn state_words(&self) -> Vec<u32> {
-        vec![self.defection_detection_start, self.defection_detection_end, self.defection_detection_flash_phase.to_bits(), u32::from(self.do_defector_fx)]
+        vec![
+            self.defection_detection_start,
+            self.defection_detection_end,
+            self.defection_detection_flash_phase.to_bits(),
+            u32::from(self.do_defector_fx),
+        ]
     }
 
     /// `update()` as the scheduler runs it (see [`update_behavior::world_update`]).
@@ -99,7 +119,12 @@ impl ObjectDefectionHelper {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -131,15 +156,28 @@ impl ObjectDefectionHelper {
     }
 
     /// `startDefectionTimer(numFrames, withDefectorFX)`.
-    pub fn start_defection_timer(&mut self, world: &mut World, me: ModuleHandle, num_frames: u32, with_defector_fx: bool) {
-        let undetected = world.objects.find(me.object).is_some_and(|o| o.is_undetected_defector());
+    pub fn start_defection_timer(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        num_frames: u32,
+        with_defector_fx: bool,
+    ) {
+        let undetected = world
+            .objects
+            .find(me.object)
+            .is_some_and(|o| o.is_undetected_defector());
         if !undetected {
             update_behavior::set_wake_frame(world, UPDATE_SLEEP_FOREVER);
             return;
         }
         let now = world.frame();
         self.defection_detection_start = now;
-        self.defection_detection_end = if crate::logic::modules::plant(791) { now } else { now.wrapping_add(num_frames) };
+        self.defection_detection_end = if crate::logic::modules::plant(791) {
+            now
+        } else {
+            now.wrapping_add(num_frames)
+        };
         self.defection_detection_flash_phase = 0.0;
         self.do_defector_fx = with_defector_fx;
         update_behavior::set_wake_frame(world, UPDATE_SLEEP_NONE);
@@ -153,21 +191,39 @@ impl UpdateBehavior for ObjectDefectionHelper {
     fn update(&mut self, world: &mut World, me: ModuleHandle) -> UpdateSleepTime {
         let id = me.object;
         let draw = world.has_drawable(id);
-        if !world.objects.find(id).is_some_and(|o| o.is_undetected_defector()) {
+        if !world
+            .objects
+            .find(id)
+            .is_some_and(|o| o.is_undetected_defector())
+        {
             return UPDATE_SLEEP_FOREVER;
         }
         let now = world.frame();
         if now >= self.defection_detection_end + u32::from(crate::logic::modules::plant(792)) {
             world.friend_set_undetected_defector(id, false);
             if draw && self.do_defector_fx {
-                world.emit(ObjectClientEvent::DrawableFlashAsSelectedColor { object_id: id, r: 1.0, g: 1.0, b: 1.0 });
+                world.emit(ObjectClientEvent::DrawableFlashAsSelectedColor {
+                    object_id: id,
+                    r: 1.0,
+                    g: 1.0,
+                    b: 1.0,
+                });
                 if !crate::logic::modules::plant(794) {
-                    world.emit(ObjectClientEvent::Sound { sound: ObjectSound::DefectorTimerDing, object_id: id, position: None });
+                    world.emit(ObjectClientEvent::Sound {
+                        sound: ObjectSound::DefectorTimerDing,
+                        object_id: id,
+                        position: None,
+                    });
                 }
             }
             return UPDATE_SLEEP_FOREVER; // hey, we're done.
         }
-        let (dead, firing) = world.objects.find(id).map_or((false, false), |o| (o.is_effectively_dead(), o.test_status(OBJECT_STATUS_IS_FIRING_WEAPON)));
+        let (dead, firing) = world.objects.find(id).map_or((false, false), |o| {
+            (
+                o.is_effectively_dead(),
+                o.test_status(OBJECT_STATUS_IS_FIRING_WEAPON),
+            )
+        });
         if dead || (firing && !crate::logic::modules::plant(795)) {
             world.friend_set_undetected_defector(id, false);
             return UPDATE_SLEEP_FOREVER; // hey, we're done.
@@ -176,11 +232,20 @@ impl UpdateBehavior for ObjectDefectionHelper {
             // skip fx if merely 'invulnerable'
             let last_phase = (self.defection_detection_flash_phase as i32) & 1 != 0;
             let time_left = self.defection_detection_end.wrapping_sub(now);
-            self.defection_detection_flash_phase += (if crate::logic::modules::plant(793) { 0.25f32 } else { 0.5f32 }) * (1.0f32 - (time_left as f32 / DEFECTION_DETECTION_TIME_MAX as f32));
+            self.defection_detection_flash_phase += (if crate::logic::modules::plant(793) {
+                0.25f32
+            } else {
+                0.5f32
+            }) * (1.0f32
+                - (time_left as f32 / DEFECTION_DETECTION_TIME_MAX as f32));
             let this_phase = (self.defection_detection_flash_phase as i32) & 1 != 0;
             if last_phase && !this_phase {
                 world.emit(ObjectClientEvent::DrawableFlashAsSelected { object_id: id });
-                world.emit(ObjectClientEvent::Sound { sound: ObjectSound::DefectorTimerTick, object_id: id, position: None });
+                world.emit(ObjectClientEvent::Sound {
+                    sound: ObjectSound::DefectorTimerTick,
+                    object_id: id,
+                    position: None,
+                });
             }
         }
         UPDATE_SLEEP_NONE
@@ -199,7 +264,10 @@ impl UpdateBehavior for ObjectDefectionHelper {
     }
     fn other_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
-            ModuleCall::StartDefectionTimer { time, with_defector_fx } => {
+            ModuleCall::StartDefectionTimer {
+                time,
+                with_defector_fx,
+            } => {
                 self.start_defection_timer(world, me, time, with_defector_fx);
                 ModuleReply::Done
             }

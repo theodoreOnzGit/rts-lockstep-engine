@@ -60,14 +60,21 @@ use std::sync::Arc;
 
 use crate::common::base_type::{real_to_int, Coord3D};
 use crate::common::game_type::INVALID_ANGLE;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData, SEPS_COLON};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+    SEPS_COLON,
+};
 use crate::common::module::{ModuleDataKind, ObjectId};
-use crate::common::random_value::{DistributionType, GameClientRandomVariable, GameLogicRandomVariable};
+use crate::common::random_value::{
+    DistributionType, GameClientRandomVariable, GameLogicRandomVariable,
+};
 use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferStatus, XferVersion};
 use crate::logic::damage::{DamageTypeFlags, DAMAGE_TYPE_FLAGS_ALL};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::damage_module::{DamageModule, DamageModuleData};
-use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
+use crate::logic::module::update_module::{
+    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE,
+};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -129,14 +136,24 @@ pub struct BoneFxUpdateModuleData {
 impl Default for BoneFxUpdateModuleData {
     /// `BoneFXUpdateModuleData()`: every damage type plays every effect.
     fn default() -> Self {
-        BoneFxUpdateModuleData { update: UpdateModuleData::new(), damage_types: [DAMAGE_TYPE_FLAGS_ALL; 3], lists: Default::default() }
+        BoneFxUpdateModuleData {
+            update: UpdateModuleData::new(),
+            damage_types: [DAMAGE_TYPE_FLAGS_ALL; 3],
+            lists: Default::default(),
+        }
     }
 }
 
 /// `parseFXList`, `parseObjectCreationList` and `parseParticleSystem`, for entry `kind * 32 + state * 8 + index` (the field's user data):
 /// `Bone:<name> OnlyOnce:<Yes|No> <min delay> <max delay> FXList:<name>` (`OCL:`, `PSys:`).
-fn parse_bone_entry(ini: &mut Ini<'_>, d: &mut BoneFxUpdateModuleData, u: &UserData) -> IniResult<()> {
-    let UserData::Mask(m) = u else { return Err(IniError::new(IniErrorKind::InvalidData)) };
+fn parse_bone_entry(
+    ini: &mut Ini<'_>,
+    d: &mut BoneFxUpdateModuleData,
+    u: &UserData,
+) -> IniResult<()> {
+    let UserData::Mask(m) = u else {
+        return Err(IniError::new(IniErrorKind::InvalidData));
+    };
     let (kind, state, index) = ((*m / 32) as usize, (*m / 8 % 4) as usize, (*m % 8) as usize);
     let info = &mut d.lists[kind][state][index];
     // parseFXLocInfo: "parse the location bone or location"
@@ -154,9 +171,11 @@ fn parse_bone_entry(ini: &mut Ini<'_>, d: &mut BoneFxUpdateModuleData, u: &UserD
     let min = ini.parse_duration_real()?;
     let max = ini.parse_duration_real()?;
     if kind == KIND_PARTICLE {
-        info.game_client_delay.set_range(min, max, DistributionType::Uniform);
+        info.game_client_delay
+            .set_range(min, max, DistributionType::Uniform);
     } else {
-        info.game_logic_delay.set_range(min, max, DistributionType::Uniform);
+        info.game_logic_delay
+            .set_range(min, max, DistributionType::Uniform);
     }
     // make sure we have an "FXList:" ("OCL:", "PSys:") token
     let token = ini.get_next_token(Some(SEPS_COLON))?;
@@ -170,15 +189,40 @@ fn parse_bone_entry(ini: &mut Ini<'_>, d: &mut BoneFxUpdateModuleData, u: &UserD
     }
     // INI::parseFXList, parseObjectCreationList, parseParticleSystemTemplate: the next token, looked up ("could be null!")
     let name = ini.get_next_token(None)?;
-    info.effect = if kind != KIND_OCL && name.eq_ignore_ascii_case(b"None") { None } else { Some(name) };
+    info.effect = if kind != KIND_OCL && name.eq_ignore_ascii_case(b"None") {
+        None
+    } else {
+        Some(name)
+    };
     Ok(())
 }
 
 /// `dataFieldParse`.
 static FIELD_PARSE: [FieldParse<BoneFxUpdateModuleData>; 100] = [
-    FieldParse::new("DamageFXTypes", |i, d, _| { d.damage_types[KIND_FX] = i.parse_damage_type_flags()?; Ok(()) }, UserData::None),
-    FieldParse::new("DamageOCLTypes", |i, d, _| { d.damage_types[KIND_OCL] = i.parse_damage_type_flags()?; Ok(()) }, UserData::None),
-    FieldParse::new("DamageParticleTypes", |i, d, _| { d.damage_types[KIND_PARTICLE] = i.parse_damage_type_flags()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "DamageFXTypes",
+        |i, d, _| {
+            d.damage_types[KIND_FX] = i.parse_damage_type_flags()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DamageOCLTypes",
+        |i, d, _| {
+            d.damage_types[KIND_OCL] = i.parse_damage_type_flags()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DamageParticleTypes",
+        |i, d, _| {
+            d.damage_types[KIND_PARTICLE] = i.parse_damage_type_flags()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::new("PristineFXList1", parse_bone_entry, UserData::Mask(0)),
     FieldParse::new("PristineFXList2", parse_bone_entry, UserData::Mask(1)),
     FieldParse::new("PristineFXList3", parse_bone_entry, UserData::Mask(2)),
@@ -243,44 +287,174 @@ static FIELD_PARSE: [FieldParse<BoneFxUpdateModuleData>; 100] = [
     FieldParse::new("RubbleOCL6", parse_bone_entry, UserData::Mask(61)),
     FieldParse::new("RubbleOCL7", parse_bone_entry, UserData::Mask(62)),
     FieldParse::new("RubbleOCL8", parse_bone_entry, UserData::Mask(63)),
-    FieldParse::new("PristineParticleSystem1", parse_bone_entry, UserData::Mask(64)),
-    FieldParse::new("PristineParticleSystem2", parse_bone_entry, UserData::Mask(65)),
-    FieldParse::new("PristineParticleSystem3", parse_bone_entry, UserData::Mask(66)),
-    FieldParse::new("PristineParticleSystem4", parse_bone_entry, UserData::Mask(67)),
-    FieldParse::new("PristineParticleSystem5", parse_bone_entry, UserData::Mask(68)),
-    FieldParse::new("PristineParticleSystem6", parse_bone_entry, UserData::Mask(69)),
-    FieldParse::new("PristineParticleSystem7", parse_bone_entry, UserData::Mask(70)),
-    FieldParse::new("PristineParticleSystem8", parse_bone_entry, UserData::Mask(71)),
-    FieldParse::new("DamagedParticleSystem1", parse_bone_entry, UserData::Mask(72)),
-    FieldParse::new("DamagedParticleSystem2", parse_bone_entry, UserData::Mask(73)),
-    FieldParse::new("DamagedParticleSystem3", parse_bone_entry, UserData::Mask(74)),
-    FieldParse::new("DamagedParticleSystem4", parse_bone_entry, UserData::Mask(75)),
-    FieldParse::new("DamagedParticleSystem5", parse_bone_entry, UserData::Mask(76)),
-    FieldParse::new("DamagedParticleSystem6", parse_bone_entry, UserData::Mask(77)),
-    FieldParse::new("DamagedParticleSystem7", parse_bone_entry, UserData::Mask(78)),
-    FieldParse::new("DamagedParticleSystem8", parse_bone_entry, UserData::Mask(79)),
-    FieldParse::new("ReallyDamagedParticleSystem1", parse_bone_entry, UserData::Mask(80)),
-    FieldParse::new("ReallyDamagedParticleSystem2", parse_bone_entry, UserData::Mask(81)),
-    FieldParse::new("ReallyDamagedParticleSystem3", parse_bone_entry, UserData::Mask(82)),
-    FieldParse::new("ReallyDamagedParticleSystem4", parse_bone_entry, UserData::Mask(83)),
-    FieldParse::new("ReallyDamagedParticleSystem5", parse_bone_entry, UserData::Mask(84)),
-    FieldParse::new("ReallyDamagedParticleSystem6", parse_bone_entry, UserData::Mask(85)),
-    FieldParse::new("ReallyDamagedParticleSystem7", parse_bone_entry, UserData::Mask(86)),
-    FieldParse::new("ReallyDamagedParticleSystem8", parse_bone_entry, UserData::Mask(87)),
-    FieldParse::new("RubbleParticleSystem1", parse_bone_entry, UserData::Mask(88)),
-    FieldParse::new("RubbleParticleSystem2", parse_bone_entry, UserData::Mask(89)),
-    FieldParse::new("RubbleParticleSystem3", parse_bone_entry, UserData::Mask(90)),
-    FieldParse::new("RubbleParticleSystem4", parse_bone_entry, UserData::Mask(91)),
-    FieldParse::new("RubbleParticleSystem5", parse_bone_entry, UserData::Mask(92)),
-    FieldParse::new("RubbleParticleSystem6", parse_bone_entry, UserData::Mask(93)),
-    FieldParse::new("RubbleParticleSystem7", parse_bone_entry, UserData::Mask(94)),
-    FieldParse::new("RubbleParticleSystem8", parse_bone_entry, UserData::Mask(95)),
+    FieldParse::new(
+        "PristineParticleSystem1",
+        parse_bone_entry,
+        UserData::Mask(64),
+    ),
+    FieldParse::new(
+        "PristineParticleSystem2",
+        parse_bone_entry,
+        UserData::Mask(65),
+    ),
+    FieldParse::new(
+        "PristineParticleSystem3",
+        parse_bone_entry,
+        UserData::Mask(66),
+    ),
+    FieldParse::new(
+        "PristineParticleSystem4",
+        parse_bone_entry,
+        UserData::Mask(67),
+    ),
+    FieldParse::new(
+        "PristineParticleSystem5",
+        parse_bone_entry,
+        UserData::Mask(68),
+    ),
+    FieldParse::new(
+        "PristineParticleSystem6",
+        parse_bone_entry,
+        UserData::Mask(69),
+    ),
+    FieldParse::new(
+        "PristineParticleSystem7",
+        parse_bone_entry,
+        UserData::Mask(70),
+    ),
+    FieldParse::new(
+        "PristineParticleSystem8",
+        parse_bone_entry,
+        UserData::Mask(71),
+    ),
+    FieldParse::new(
+        "DamagedParticleSystem1",
+        parse_bone_entry,
+        UserData::Mask(72),
+    ),
+    FieldParse::new(
+        "DamagedParticleSystem2",
+        parse_bone_entry,
+        UserData::Mask(73),
+    ),
+    FieldParse::new(
+        "DamagedParticleSystem3",
+        parse_bone_entry,
+        UserData::Mask(74),
+    ),
+    FieldParse::new(
+        "DamagedParticleSystem4",
+        parse_bone_entry,
+        UserData::Mask(75),
+    ),
+    FieldParse::new(
+        "DamagedParticleSystem5",
+        parse_bone_entry,
+        UserData::Mask(76),
+    ),
+    FieldParse::new(
+        "DamagedParticleSystem6",
+        parse_bone_entry,
+        UserData::Mask(77),
+    ),
+    FieldParse::new(
+        "DamagedParticleSystem7",
+        parse_bone_entry,
+        UserData::Mask(78),
+    ),
+    FieldParse::new(
+        "DamagedParticleSystem8",
+        parse_bone_entry,
+        UserData::Mask(79),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem1",
+        parse_bone_entry,
+        UserData::Mask(80),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem2",
+        parse_bone_entry,
+        UserData::Mask(81),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem3",
+        parse_bone_entry,
+        UserData::Mask(82),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem4",
+        parse_bone_entry,
+        UserData::Mask(83),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem5",
+        parse_bone_entry,
+        UserData::Mask(84),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem6",
+        parse_bone_entry,
+        UserData::Mask(85),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem7",
+        parse_bone_entry,
+        UserData::Mask(86),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem8",
+        parse_bone_entry,
+        UserData::Mask(87),
+    ),
+    FieldParse::new(
+        "RubbleParticleSystem1",
+        parse_bone_entry,
+        UserData::Mask(88),
+    ),
+    FieldParse::new(
+        "RubbleParticleSystem2",
+        parse_bone_entry,
+        UserData::Mask(89),
+    ),
+    FieldParse::new(
+        "RubbleParticleSystem3",
+        parse_bone_entry,
+        UserData::Mask(90),
+    ),
+    FieldParse::new(
+        "RubbleParticleSystem4",
+        parse_bone_entry,
+        UserData::Mask(91),
+    ),
+    FieldParse::new(
+        "RubbleParticleSystem5",
+        parse_bone_entry,
+        UserData::Mask(92),
+    ),
+    FieldParse::new(
+        "RubbleParticleSystem6",
+        parse_bone_entry,
+        UserData::Mask(93),
+    ),
+    FieldParse::new(
+        "RubbleParticleSystem7",
+        parse_bone_entry,
+        UserData::Mask(94),
+    ),
+    FieldParse::new(
+        "RubbleParticleSystem8",
+        parse_bone_entry,
+        UserData::Mask(95),
+    ),
     FieldParse::end(),
 ];
 
 impl BoneFxUpdateModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's fields.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, BoneFxUpdateModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, BoneFxUpdateModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
@@ -330,12 +504,24 @@ impl PartialEq for BoneFxUpdate {
 
 /// The bytes of `xferUser` of an array of `Int`s.
 fn int_bytes(v: &[[[i32; BONE_FX_MAX_BONES]; BODYDAMAGETYPE_COUNT]; 3], kind: usize) -> Vec<u8> {
-    v[kind].iter().flatten().flat_map(|x| x.to_le_bytes()).collect()
+    v[kind]
+        .iter()
+        .flatten()
+        .flat_map(|x| x.to_le_bytes())
+        .collect()
 }
 
 /// The bytes of `xferUser` of an array of `Coord3D`s.
-fn coord_bytes(v: &[[[Coord3D; BONE_FX_MAX_BONES]; BODYDAMAGETYPE_COUNT]; 3], kind: usize) -> Vec<u8> {
-    v[kind].iter().flatten().flat_map(|c| [c.x, c.y, c.z]).flat_map(|x| x.to_le_bytes()).collect()
+fn coord_bytes(
+    v: &[[[Coord3D; BONE_FX_MAX_BONES]; BODYDAMAGETYPE_COUNT]; 3],
+    kind: usize,
+) -> Vec<u8> {
+    v[kind]
+        .iter()
+        .flatten()
+        .flat_map(|c| [c.x, c.y, c.z])
+        .flat_map(|x| x.to_le_bytes())
+        .collect()
 }
 
 impl BoneFxUpdate {
@@ -345,7 +531,10 @@ impl BoneFxUpdate {
     }
 
     /// The constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and the state.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<BoneFxUpdateModuleData>>) -> IniResult<Self> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<BoneFxUpdateModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
@@ -374,8 +563,20 @@ impl BoneFxUpdate {
     /// The state the test compares, as words: the next frames, the bone positions, the state, the resolved flags, `m_active`, then the
     /// particle system count and ids.
     pub fn state_words(&self) -> Vec<u32> {
-        let mut w: Vec<u32> = self.next_frame.iter().flatten().flatten().map(|&x| x as u32).collect();
-        w.extend(self.bone_positions.iter().flatten().flatten().flat_map(|c| [c.x.to_bits(), c.y.to_bits(), c.z.to_bits()]));
+        let mut w: Vec<u32> = self
+            .next_frame
+            .iter()
+            .flatten()
+            .flatten()
+            .map(|&x| x as u32)
+            .collect();
+        w.extend(
+            self.bone_positions
+                .iter()
+                .flatten()
+                .flatten()
+                .flat_map(|c| [c.x.to_bits(), c.y.to_bits(), c.z.to_bits()]),
+        );
         w.push(self.cur_body_state as u32);
         w.extend(self.bones_resolved.iter().map(|&b| u32::from(b)));
         w.push(u32::from(self.active));
@@ -395,7 +596,12 @@ impl BoneFxUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -421,14 +627,20 @@ impl BoneFxUpdate {
 
     /// `m_curBodyState` as an index of the arrays.
     fn state_index(&self) -> Result<usize, Undefined> {
-        usize::try_from(self.cur_body_state).ok().filter(|&s| s < BODYDAMAGETYPE_COUNT).ok_or(Undefined::ArrayIndexOutOfRange)
+        usize::try_from(self.cur_body_state)
+            .ok()
+            .filter(|&s| s < BODYDAMAGETYPE_COUNT)
+            .ok_or(Undefined::ArrayIndexOutOfRange)
     }
 
     /// `onObjectCreated()`: "BoneFXUpdate requires BoneFXDamage" (`INI_INVALID_DATA` without one).
     fn on_object_created(world: &mut World, me: ModuleHandle) {
         if world.find_module(me.object, b"BoneFXDamage").is_none() {
             // DEBUG_CRASH(("BoneFXUpdate requires BoneFXDamage"));
-            world.cuts.module_errors.push((me, IniError::new(IniErrorKind::InvalidData)));
+            world
+                .cuts
+                .module_errors
+                .push((me, IniError::new(IniErrorKind::InvalidData)));
         }
     }
 
@@ -443,9 +655,13 @@ impl BoneFxUpdate {
                 self.next_frame[kind][s][i] = if info.bone_name.is_empty() {
                     -1
                 } else if kind == KIND_PARTICLE {
-                    now.wrapping_add(real_to_int(info.game_client_delay.get_value(&mut world.random)))
+                    now.wrapping_add(real_to_int(
+                        info.game_client_delay.get_value(&mut world.random),
+                    ))
                 } else {
-                    now.wrapping_add(real_to_int(info.game_logic_delay.get_value(&mut world.random)))
+                    now.wrapping_add(real_to_int(
+                        info.game_logic_delay.get_value(&mut world.random),
+                    ))
                 };
             }
         }
@@ -458,12 +674,20 @@ impl BoneFxUpdate {
             *next = -1;
             return;
         }
-        let delay = if (kind == KIND_PARTICLE) != crate::logic::modules::plant(2003) { info.game_client_delay.get_value(&mut world.random) } else { info.game_logic_delay.get_value(&mut world.random) };
+        let delay = if (kind == KIND_PARTICLE) != crate::logic::modules::plant(2003) {
+            info.game_client_delay.get_value(&mut world.random)
+        } else {
+            info.game_logic_delay.get_value(&mut world.random)
+        };
         *next = (world.frame() as i32).wrapping_add(real_to_int(delay));
     }
 
     /// `changeBodyDamageState(oldState, newState)`.
-    fn change_body_damage_state(&mut self, world: &mut World, new_state: i32) -> Result<(), Undefined> {
+    fn change_body_damage_state(
+        &mut self,
+        world: &mut World,
+        new_state: i32,
+    ) -> Result<(), Undefined> {
         self.cur_body_state = new_state;
         if !crate::logic::modules::plant(2005) {
             self.kill_running_particle_systems(world);
@@ -512,14 +736,23 @@ impl BoneFxUpdate {
 
     /// The head of `doFXListAtBone`, `doOCLAtBone` and `doParticleSystemAtBone`: the bones, then whether the last damage's type lets the effect
     /// play ("if we are restricted by the damage type executing effect, bail out of here").
-    fn may_play(&mut self, world: &mut World, id: ObjectId, kind: usize) -> Result<bool, Undefined> {
+    fn may_play(
+        &mut self,
+        world: &mut World,
+        id: ObjectId,
+        kind: usize,
+    ) -> Result<bool, Undefined> {
         let s = self.state_index()?;
         if !self.bones_resolved[s] {
             self.resolve_bone_locations(world, id)?;
         }
         let body = world.get_body_module(id).ok_or(Undefined::NullBodyModule)?;
-        if let ModuleReply::Damage(last) = world.module_call(id, body, ModuleCall::GetLastDamageInfo) {
-            if !self.data.damage_types[kind].test(last.input.damage_type) && !crate::logic::modules::plant(2001) {
+        if let ModuleReply::Damage(last) =
+            world.module_call(id, body, ModuleCall::GetLastDamageInfo)
+        {
+            if !self.data.damage_types[kind].test(last.input.damage_type)
+                && !crate::logic::modules::plant(2001)
+            {
                 return Ok(false);
             }
         }
@@ -527,7 +760,13 @@ impl BoneFxUpdate {
     }
 
     /// `doFXListAtBone`, `doOCLAtBone` or `doParticleSystemAtBone` of entry `i` of the current state.
-    fn do_effect_at_bone(&mut self, world: &mut World, id: ObjectId, kind: usize, i: usize) -> Result<(), Undefined> {
+    fn do_effect_at_bone(
+        &mut self,
+        world: &mut World,
+        id: ObjectId,
+        kind: usize,
+        i: usize,
+    ) -> Result<(), Undefined> {
         if !self.may_play(world, id, kind)? {
             return Ok(());
         }
@@ -537,7 +776,11 @@ impl BoneFxUpdate {
         match kind {
             KIND_FX => {
                 // "Convert the bone's position relative to the origin of the building to the current bone position in the world."
-                let position = if crate::logic::modules::plant(2004) { bone } else { world.contain_convert_bone_pos_to_world_pos(id, &bone) };
+                let position = if crate::logic::modules::plant(2004) {
+                    bone
+                } else {
+                    world.contain_convert_bone_pos_to_world_pos(id, &bone)
+                };
                 if let Some(fx) = effect {
                     world.emit(ObjectClientEvent::FxListDoFxPos { fx, position });
                 }
@@ -545,9 +788,19 @@ impl BoneFxUpdate {
             KIND_OCL => {
                 let position = world.contain_convert_bone_pos_to_world_pos(id, &bone);
                 if let Some(ocl) = effect {
-                    let found = world.statics.clone().object_creation_list_store.find_object_creation_list(&mut world.names, &ocl).is_some();
+                    let found = world
+                        .statics
+                        .clone()
+                        .object_creation_list_store
+                        .find_object_creation_list(&mut world.names, &ocl)
+                        .is_some();
                     if found {
-                        world.cut(CutCall::OclCreateAtPrimary { primary: id, ocl, primary_pos: position, angle: INVALID_ANGLE });
+                        world.cut(CutCall::OclCreateAtPrimary {
+                            primary: id,
+                            ocl,
+                            primary_pos: position,
+                            angle: INVALID_ANGLE,
+                        });
                     }
                 }
             }
@@ -558,7 +811,10 @@ impl BoneFxUpdate {
                     self.particle_system_ids.push(sys);
                     world.body_particle_attach_to_object(sys, id);
                     if world.has_drawable(id) && !crate::logic::modules::plant(2009) {
-                        world.emit(ObjectClientEvent::ParticleSystemStopIfDrawableHidden { id: sys, object_id: id });
+                        world.emit(ObjectClientEvent::ParticleSystemStopIfDrawableHidden {
+                            id: sys,
+                            object_id: id,
+                        });
                     }
                 }
             }
@@ -578,7 +834,9 @@ impl BoneFxUpdate {
             for kind in [KIND_FX, KIND_OCL, KIND_PARTICLE] {
                 let s = self.state_index()?;
                 let next = self.next_frame[kind][s][i];
-                if next != -1 && (next <= now || (crate::logic::modules::plant(2007) && next == now + 1)) {
+                if next != -1
+                    && (next <= now || (crate::logic::modules::plant(2007) && next == now + 1))
+                {
                     self.do_effect_at_bone(world, me.object, kind, i)?;
                     let mut n = self.next_frame[kind][s][i];
                     Self::compute_next_time(world, kind, &d.lists[kind][s][i], &mut n);
@@ -632,15 +890,22 @@ impl UpdateBehavior for BoneFxUpdate {
             let mut b = int_bytes(&self.next_frame, kind);
             xfer.xfer_user(&mut b)?;
             for (k, c) in b.chunks(4).enumerate() {
-                self.next_frame[kind][k / BONE_FX_MAX_BONES][k % BONE_FX_MAX_BONES] = i32::from_le_bytes(c.try_into().expect("four bytes"));
+                self.next_frame[kind][k / BONE_FX_MAX_BONES][k % BONE_FX_MAX_BONES] =
+                    i32::from_le_bytes(c.try_into().expect("four bytes"));
             }
         }
         for kind in [KIND_FX, KIND_OCL, KIND_PARTICLE] {
             let mut b = coord_bytes(&self.bone_positions, kind);
             xfer.xfer_user(&mut b)?;
             for (k, c) in b.chunks(12).enumerate() {
-                let f = |j: usize| f32::from_le_bytes(c[4 * j..4 * j + 4].try_into().expect("four bytes"));
-                self.bone_positions[kind][k / BONE_FX_MAX_BONES][k % BONE_FX_MAX_BONES] = Coord3D { x: f(0), y: f(1), z: f(2) };
+                let f = |j: usize| {
+                    f32::from_le_bytes(c[4 * j..4 * j + 4].try_into().expect("four bytes"))
+                };
+                self.bone_positions[kind][k / BONE_FX_MAX_BONES][k % BONE_FX_MAX_BONES] = Coord3D {
+                    x: f(0),
+                    y: f(1),
+                    z: f(2),
+                };
             }
         }
         let mut b = self.cur_body_state.to_le_bytes();
@@ -701,7 +966,9 @@ impl Snapshot for BoneFxUpdate {
 
 /// The factory's `NewModuleDataProc` for `BoneFXUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::BoneFxUpdate(Arc::new(BoneFxUpdateModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::BoneFxUpdate(Arc::new(
+        BoneFxUpdateModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
 /// `class BoneFXDamage : public DamageModule`: tells the object's `BoneFXUpdate` when the body damage state changes.
@@ -721,7 +988,9 @@ impl PartialEq for BoneFxDamage {
 impl BoneFxDamage {
     /// `BoneFXDamage(thing, moduleData)`; `INI_INVALID_DATA` for null data.
     pub fn new(object: ObjectId, module_data: Option<Arc<DamageModuleData>>) -> IniResult<Self> {
-        Ok(BoneFxDamage { damage: DamageModule::new(object, module_data)? })
+        Ok(BoneFxDamage {
+            damage: DamageModule::new(object, module_data)?,
+        })
     }
 
     /// `getInterfaceMask()`: the damage module's.
@@ -736,18 +1005,37 @@ impl BoneFxDamage {
 
     /// The module's answer to one of `Object`'s calls: `onObjectCreated` ("BoneFXDamage requires BoneFXUpdate": `INI_INVALID_DATA`), `onDamage`
     /// and `onHealing` (nothing), `onBodyDamageStateChange` ("Switching damage states": the object's `BoneFXUpdate` changes state).
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         match call {
             ModuleCall::OnObjectCreated => {
                 if world.find_module(me.object, b"BoneFXUpdate").is_none() {
-                    world.cuts.module_errors.push((me, IniError::new(IniErrorKind::InvalidData)));
+                    world
+                        .cuts
+                        .module_errors
+                        .push((me, IniError::new(IniErrorKind::InvalidData)));
                 }
                 ModuleReply::Done
             }
             ModuleCall::OnDamage(_) | ModuleCall::OnHealing(_) => ModuleReply::Done,
-            ModuleCall::OnBodyDamageStateChange { old_state, new_state, .. } => {
+            ModuleCall::OnBodyDamageStateChange {
+                old_state,
+                new_state,
+                ..
+            } => {
                 if let Some(bfxu) = world.find_module(me.object, b"BoneFXUpdate") {
-                    world.module_call(me.object, bfxu, ModuleCall::BoneFxChangeBodyDamageState { old_state, new_state });
+                    world.module_call(
+                        me.object,
+                        bfxu,
+                        ModuleCall::BoneFxChangeBodyDamageState {
+                            old_state,
+                            new_state,
+                        },
+                    );
                 }
                 ModuleReply::Done
             }
@@ -780,10 +1068,18 @@ mod tests {
     #[test]
     fn the_defaults_are_the_constructors() {
         let d = BoneFxUpdateModuleData::default();
-        assert!(d.lists.iter().flatten().flatten().all(|i| i.only_once && i.bone_name.is_empty() && i.effect.is_none()));
+        assert!(d
+            .lists
+            .iter()
+            .flatten()
+            .flatten()
+            .all(|i| i.only_once && i.bone_name.is_empty() && i.effect.is_none()));
         let m = BoneFxUpdate::unconstructed(3, Some(Arc::new(d))).unwrap();
         assert!(m.next_frame.iter().flatten().flatten().all(|&f| f == -1));
         assert!(!m.active && m.cur_body_state == 0 && m.particle_system_ids.is_empty());
-        assert_eq!(BoneFxUpdate::unconstructed(3, None).unwrap_err().kind, IniErrorKind::InvalidData);
+        assert_eq!(
+            BoneFxUpdate::unconstructed(3, None).unwrap_err().kind,
+            IniErrorKind::InvalidData
+        );
     }
 }

@@ -34,8 +34,8 @@
 use super::vector3::Vector3;
 use super::vector4::Vector4;
 use super::wwmath::{self, WWMATH_EPSILON};
-use std::ops::{Index, IndexMut};
 use petir::Real;
+use std::ops::{Index, IndexMut};
 
 /// `class Matrix3D` (`Vector4 Row[3]`).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -55,9 +55,18 @@ impl Matrix3D {
     #[allow(clippy::too_many_arguments)]
     #[inline]
     pub const fn new(
-        m11: f32, m12: f32, m13: f32, m14: f32,
-        m21: f32, m22: f32, m23: f32, m24: f32,
-        m31: f32, m32: f32, m33: f32, m34: f32,
+        m11: f32,
+        m12: f32,
+        m13: f32,
+        m14: f32,
+        m21: f32,
+        m22: f32,
+        m23: f32,
+        m24: f32,
+        m31: f32,
+        m32: f32,
+        m33: f32,
+        m34: f32,
     ) -> Self {
         Matrix3D {
             row: [
@@ -71,7 +80,9 @@ impl Matrix3D {
     /// `Matrix3D(float m[12])` / `Set(float m[12])`.
     #[inline]
     pub const fn from_array(m: [f32; 12]) -> Self {
-        Matrix3D::new(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11])
+        Matrix3D::new(
+            m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11],
+        )
     }
 
     /// The 12 entries, row-major.
@@ -79,7 +90,8 @@ impl Matrix3D {
     pub fn to_array(&self) -> [f32; 12] {
         let r = &self.row;
         [
-            r[0].x, r[0].y, r[0].z, r[0].w, r[1].x, r[1].y, r[1].z, r[1].w, r[2].x, r[2].y, r[2].z, r[2].w,
+            r[0].x, r[0].y, r[0].z, r[0].w, r[1].x, r[1].y, r[1].z, r[1].w, r[2].x, r[2].y, r[2].z,
+            r[2].w,
         ]
     }
 
@@ -482,8 +494,16 @@ impl Matrix3D {
         let len1 = wwmath::sqrt(dx * dx + dy * dy + dz * dz);
         let len2 = wwmath::sqrt(dx * dx + dy * dy);
 
-        let (sinp, cosp) = if len1 != 0.0f32 { (dz / len1, len2 / len1) } else { (0.0f32, 1.0f32) };
-        let (siny, cosy) = if len2 != 0.0f32 { (dy / len2, dx / len2) } else { (0.0f32, 1.0f32) };
+        let (sinp, cosp) = if len1 != 0.0f32 {
+            (dz / len1, len2 / len1)
+        } else {
+            (0.0f32, 1.0f32)
+        };
+        let (siny, cosy) = if len2 != 0.0f32 {
+            (dy / len2, dx / len2)
+        } else {
+            (0.0f32, 1.0f32)
+        };
 
         // init the matrix with position p and -z pointing down +x and +y up
         self.row[0].x = 0.0;
@@ -510,7 +530,11 @@ impl Matrix3D {
         let len2 = wwmath::sqrt((dir.x * dir.x) + (dir.y * dir.y));
         let sinp = dir.z;
         let cosp = len2;
-        let (siny, cosy) = if len2 != 0.0f32 { (dir.y / len2, dir.x / len2) } else { (0.0f32, 1.0f32) };
+        let (siny, cosy) = if len2 != 0.0f32 {
+            (dir.y / len2, dir.x / len2)
+        } else {
+            (0.0f32, 1.0f32)
+        };
 
         self.make_identity();
         self.translate_v(pos);
@@ -527,8 +551,16 @@ impl Matrix3D {
         let len1 = wwmath::sqrt(dx * dx + dy * dy + dz * dz);
         let len2 = wwmath::sqrt(dx * dx + dy * dy);
 
-        let (sinp, cosp) = if len1 != 0.0f32 { (dz / len1, len2 / len1) } else { (0.0f32, 1.0f32) };
-        let (siny, cosy) = if len2 != 0.0f32 { (dy / len2, dx / len2) } else { (0.0f32, 1.0f32) };
+        let (sinp, cosp) = if len1 != 0.0f32 {
+            (dz / len1, len2 / len1)
+        } else {
+            (0.0f32, 1.0f32)
+        };
+        let (siny, cosy) = if len2 != 0.0f32 {
+            (dy / len2, dx / len2)
+        } else {
+            (0.0f32, 1.0f32)
+        };
 
         self.make_identity();
         self.translate_v(p);
@@ -768,7 +800,11 @@ impl Matrix3D {
 
     /// `Transform_Center_Extent_AABox(center, extent, &set_center, &set_extent)`.
     /// Returns `(set_center, set_extent)`.
-    pub fn transform_center_extent_aabox(&self, center: &Vector3, extent: &Vector3) -> (Vector3, Vector3) {
+    pub fn transform_center_extent_aabox(
+        &self,
+        center: &Vector3,
+        extent: &Vector3,
+    ) -> (Vector3, Vector3) {
         let mut set_center = Vector3::default();
         let mut set_extent = Vector3::default();
         for i in 0..3 {
@@ -893,16 +929,26 @@ impl Matrix3D {
     }
 
     // The static matrices of matrix3d.cpp.
-    pub const IDENTITY: Matrix3D = Matrix3D::new(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
-    pub const ROTATE_X90: Matrix3D = Matrix3D::new(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
-    pub const ROTATE_X180: Matrix3D = Matrix3D::new(1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0);
-    pub const ROTATE_X270: Matrix3D = Matrix3D::new(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0);
-    pub const ROTATE_Y90: Matrix3D = Matrix3D::new(0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0);
-    pub const ROTATE_Y180: Matrix3D = Matrix3D::new(-1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0);
-    pub const ROTATE_Y270: Matrix3D = Matrix3D::new(0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0);
-    pub const ROTATE_Z90: Matrix3D = Matrix3D::new(0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
-    pub const ROTATE_Z180: Matrix3D = Matrix3D::new(-1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
-    pub const ROTATE_Z270: Matrix3D = Matrix3D::new(0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+    pub const IDENTITY: Matrix3D =
+        Matrix3D::new(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+    pub const ROTATE_X90: Matrix3D =
+        Matrix3D::new(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
+    pub const ROTATE_X180: Matrix3D =
+        Matrix3D::new(1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0);
+    pub const ROTATE_X270: Matrix3D =
+        Matrix3D::new(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0);
+    pub const ROTATE_Y90: Matrix3D =
+        Matrix3D::new(0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0);
+    pub const ROTATE_Y180: Matrix3D =
+        Matrix3D::new(-1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0);
+    pub const ROTATE_Y270: Matrix3D =
+        Matrix3D::new(0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0);
+    pub const ROTATE_Z90: Matrix3D =
+        Matrix3D::new(0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+    pub const ROTATE_Z180: Matrix3D =
+        Matrix3D::new(-1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+    pub const ROTATE_Z270: Matrix3D =
+        Matrix3D::new(0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
 }
 
 impl Index<usize> for Matrix3D {

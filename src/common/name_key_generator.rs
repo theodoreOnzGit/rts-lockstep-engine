@@ -86,8 +86,12 @@ pub enum NameKeyError {
 impl std::fmt::Display for NameKeyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            NameKeyError::NonAsciiLowercase => "nameToLowercaseKey: tolower of a byte >= 0x80 (undefined upstream)",
-            NameKeyError::KeysExhausted => "NameKeyGenerator: key past 0x7fffffff (undefined upstream)",
+            NameKeyError::NonAsciiLowercase => {
+                "nameToLowercaseKey: tolower of a byte >= 0x80 (undefined upstream)"
+            }
+            NameKeyError::KeysExhausted => {
+                "NameKeyGenerator: key past 0x7fffffff (undefined upstream)"
+            }
         })
     }
 }
@@ -110,7 +114,9 @@ fn c_str(name: &[u8]) -> &[u8] {
 /// `calcHashForString`: `result = (result << 5) + result + *pp++`, with
 /// `*pp` a signed `Byte`, in `UnsignedInt` (wrapping).
 pub fn calc_hash_for_string(name: &[u8]) -> u32 {
-    c_str(name).iter().fold(0u32, |r, &b| (r << 5).wrapping_add(r).wrapping_add(b as i8 as i32 as u32))
+    c_str(name).iter().fold(0u32, |r, &b| {
+        (r << 5).wrapping_add(r).wrapping_add(b as i8 as i32 as u32)
+    })
 }
 
 /// `calcHashForLowercaseString`: the same over `tolower(*pp)`; an error for
@@ -122,7 +128,9 @@ pub fn try_calc_hash_for_lowercase_string(name: &[u8]) -> Result<u32, NameKeyErr
         if b >= 0x80 {
             return Err(NameKeyError::NonAsciiLowercase);
         }
-        r = (r << 5).wrapping_add(r).wrapping_add(u32::from(b.to_ascii_lowercase()));
+        r = (r << 5)
+            .wrapping_add(r)
+            .wrapping_add(u32::from(b.to_ascii_lowercase()));
     }
     Ok(r)
 }
@@ -147,7 +155,10 @@ impl NameKeyGenerator {
     /// The constructor: empty, and `m_nextID = NAMEKEY_INVALID` ("uninitialized
     /// system").
     pub fn new() -> Self {
-        NameKeyGenerator { sockets: vec![Vec::new(); SOCKET_COUNT], next_id: NameKeyType::INVALID.0 }
+        NameKeyGenerator {
+            sockets: vec![Vec::new(); SOCKET_COUNT],
+            next_id: NameKeyType::INVALID.0,
+        }
     }
 
     /// `init()`: free every bucket, keys start at 1 again. (Upstream asserts,
@@ -178,7 +189,10 @@ impl NameKeyGenerator {
         }
         let key = NameKeyType(self.next_id);
         self.next_id += 1;
-        self.sockets[socket].push(Bucket { key, name: name.to_vec() });
+        self.sockets[socket].push(Bucket {
+            key,
+            name: name.to_vec(),
+        });
         Ok(key)
     }
 
@@ -203,7 +217,11 @@ impl NameKeyGenerator {
     pub fn try_name_to_lowercase_key(&mut self, name: &[u8]) -> Result<NameKeyType, NameKeyError> {
         let name = c_str(name);
         let socket = (try_calc_hash_for_lowercase_string(name)? % SOCKET_COUNT as u32) as usize;
-        if let Some(b) = self.sockets[socket].iter().rev().find(|b| b.name.eq_ignore_ascii_case(name)) {
+        if let Some(b) = self.sockets[socket]
+            .iter()
+            .rev()
+            .find(|b| b.name.eq_ignore_ascii_case(name))
+        {
             return Ok(b.key);
         }
         self.allocate(socket, name)
@@ -211,7 +229,8 @@ impl NameKeyGenerator {
 
     /// `nameToLowercaseKey(name)`; panics where upstream is undefined.
     pub fn name_to_lowercase_key(&mut self, name: &[u8]) -> NameKeyType {
-        self.try_name_to_lowercase_key(name).unwrap_or_else(|e| panic!("{e}"))
+        self.try_name_to_lowercase_key(name)
+            .unwrap_or_else(|e| panic!("{e}"))
     }
 
     /// `keyToName(key)`: a linear search, sockets in order, each chain newest
@@ -227,7 +246,10 @@ impl NameKeyGenerator {
 
     /// `parseStringAsNameKeyType`: the INI field parser that stores
     /// `nameToKey(ini->getNextToken())`.
-    pub fn parse_string_as_name_key_type(&mut self, token: &[u8]) -> Result<NameKeyType, NameKeyError> {
+    pub fn parse_string_as_name_key_type(
+        &mut self,
+        token: &[u8],
+    ) -> Result<NameKeyType, NameKeyError> {
         self.try_name_to_key(token)
     }
 }
@@ -243,7 +265,10 @@ pub struct StaticNameKey {
 impl StaticNameKey {
     /// `StaticNameKey(p)`.
     pub const fn new(name: &'static [u8]) -> Self {
-        StaticNameKey { key: std::cell::Cell::new(NameKeyType::INVALID), name }
+        StaticNameKey {
+            key: std::cell::Cell::new(NameKeyType::INVALID),
+            name,
+        }
     }
 
     /// `key()`: `nameToKey(m_name)` the first time (while the cached key is
@@ -273,7 +298,11 @@ mod tests {
     #[test]
     fn keys_in_first_seen_order() {
         let mut g = NameKeyGenerator::new();
-        assert_eq!(g.name_to_key(b"Early"), NameKeyType(0), "uninitialised: key 0");
+        assert_eq!(
+            g.name_to_key(b"Early"),
+            NameKeyType(0),
+            "uninitialised: key 0"
+        );
         g.init();
         assert_eq!(g.name_to_key(b"Alpha"), NameKeyType(1));
         assert_eq!(g.name_to_key(b"Beta"), NameKeyType(2));
@@ -281,21 +310,34 @@ mod tests {
         assert_eq!(g.name_to_key(b"Alpha\0junk"), NameKeyType(1), "C string");
         assert_eq!(g.key_to_name(NameKeyType(2)), b"Beta");
         assert_eq!(g.key_to_name(NameKeyType(99)), b"");
-        assert_eq!(g.try_name_to_lowercase_key(b"caf\xe9"), Err(NameKeyError::NonAsciiLowercase));
-        assert!(g.try_name_to_key(b"caf\xe9").is_ok(), "nameToKey is defined for high bytes");
+        assert_eq!(
+            g.try_name_to_lowercase_key(b"caf\xe9"),
+            Err(NameKeyError::NonAsciiLowercase)
+        );
+        assert!(
+            g.try_name_to_key(b"caf\xe9").is_ok(),
+            "nameToKey is defined for high bytes"
+        );
         g.reset();
         assert_eq!(g.name_to_key(b"Beta"), NameKeyType(1));
         let k = StaticNameKey::new(b"Beta");
         assert_eq!(k.key(&mut g), NameKeyType(1));
         g.reset();
         g.name_to_key(b"Other");
-        assert_eq!(k.key(&mut g), NameKeyType(1), "the cached key survives a reset (upstream quirk)");
+        assert_eq!(
+            k.key(&mut g),
+            NameKeyType(1),
+            "the cached key survives a reset (upstream quirk)"
+        );
     }
 
     #[test]
     fn signed_byte_hash() {
         // 0xff as a signed char is -1.
         assert_eq!(calc_hash_for_string(b"\xff"), u32::MAX);
-        assert_eq!(calc_hash_for_string(b"ab"), (u32::from(b'a') * 33).wrapping_add(u32::from(b'b')));
+        assert_eq!(
+            calc_hash_for_string(b"ab"),
+            (u32::from(b'a') * 33).wrapping_add(u32::from(b'b'))
+        );
     }
 }

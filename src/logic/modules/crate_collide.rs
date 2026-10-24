@@ -99,7 +99,11 @@ impl CrateCollideModuleData {
     /// `INI::parseFXList`, as far as the token goes: the next token names the list, `None` is `NULL`.
     pub fn parse_fx_list(ini: &mut Ini<'_>) -> IniResult<FxListName> {
         let token = ini.get_next_token(None)?;
-        Ok(if token.eq_ignore_ascii_case(b"None") { None } else { Some(token) })
+        Ok(if token.eq_ignore_ascii_case(b"None") {
+            None
+        } else {
+            Some(token)
+        })
     }
 }
 
@@ -132,9 +136,19 @@ pub trait CrateBehavior: Clone + PartialEq + Sized {
     /// `getCrateCollideModuleData()`: the `CrateCollideModuleData` base of the module's data.
     fn crate_data(&self) -> &CrateCollideModuleData;
     /// `executeCrateBehavior(other)` (pure virtual): "did the crate act?". An error is upstream's undefined behaviour.
-    fn execute_crate_behavior(&mut self, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<bool, IniError>;
+    fn execute_crate_behavior(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        other: ObjectId,
+    ) -> Result<bool, IniError>;
     /// `isValidToExecute(other)` (virtual; `other` is `INVALID_ID` for `NULL`): the base's unless the module overrides it.
-    fn is_valid_to_execute(&self, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<bool, IniError> {
+    fn is_valid_to_execute(
+        &self,
+        world: &mut World,
+        me: ModuleHandle,
+        other: ObjectId,
+    ) -> Result<bool, IniError> {
         crate_is_valid_to_execute(self.crate_data(), world, me, other)
     }
     /// The module as the variant of [`UpdateBody`] it is.
@@ -143,7 +157,12 @@ pub trait CrateBehavior: Clone + PartialEq + Sized {
     fn from_body(body: UpdateBody) -> Option<Self>;
     /// A call the base does not answer (a module's own interface, such as `isSalvageCrateCollide`): [`ModuleReply::Unhandled`] unless it
     /// overrides this.
-    fn other_call(&mut self, _world: &mut World, _me: ModuleHandle, _call: ModuleCall) -> ModuleReply {
+    fn other_call(
+        &mut self,
+        _world: &mut World,
+        _me: ModuleHandle,
+        _call: ModuleCall,
+    ) -> ModuleReply {
         ModuleReply::Unhandled
     }
 }
@@ -158,14 +177,26 @@ pub fn crate_destroy_object(world: &mut World, id: ObjectId) {
 }
 
 /// `CrateCollide::isValidToExecute(other)`. An error is upstream's undefined behaviour (a pickup science the store does not know).
-pub fn crate_is_valid_to_execute(md: &CrateCollideModuleData, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<bool, IniError> {
+pub fn crate_is_valid_to_execute(
+    md: &CrateCollideModuleData,
+    world: &mut World,
+    me: ModuleHandle,
+    other: ObjectId,
+) -> Result<bool, IniError> {
     // `other == NULL`
     let none_mask = KindOfMaskType::new();
     let (is_structure, has_ai, kind_ok, dead, parachute) = match world.objects.find(other) {
         Some(o) => (
             o.is_kind_of(KINDOF_STRUCTURE),
             o.ai.is_some(),
-            o.template().is_kind_of_multi(&md.kind_of, if crate::logic::modules::plant(758) { &none_mask } else { &md.kind_of_not }),
+            o.template().is_kind_of_multi(
+                &md.kind_of,
+                if crate::logic::modules::plant(758) {
+                    &none_mask
+                } else {
+                    &md.kind_of_not
+                },
+            ),
             o.is_effectively_dead(),
             o.is_kind_of(KINDOF_PARACHUTE),
         ),
@@ -174,7 +205,8 @@ pub fn crate_is_valid_to_execute(md: &CrateCollideModuleData, world: &mut World,
     if world.is_neutral_controlled(other) && !crate::logic::modules::plant(754) {
         return Ok(false);
     }
-    let valid_building_attempt = md.is_building_pickup && is_structure && !crate::logic::modules::plant(760);
+    let valid_building_attempt =
+        md.is_building_pickup && is_structure && !crate::logic::modules::plant(760);
     // "building exception flag for Drop Zone"
     if !has_ai && !valid_building_attempt {
         return Ok(false);
@@ -188,15 +220,21 @@ pub fn crate_is_valid_to_execute(md: &CrateCollideModuleData, world: &mut World,
     if world.is_above_terrain(me.object) && !valid_building_attempt {
         return Ok(false);
     }
-    let (my_player, other_player) = (world.get_controlling_player(me.object), world.get_controlling_player(other));
-    if md.is_forbid_owner_player && (my_player == other_player) != crate::logic::modules::plant(755) {
+    let (my_player, other_player) = (
+        world.get_controlling_player(me.object),
+        world.get_controlling_player(other),
+    );
+    if md.is_forbid_owner_player && (my_player == other_player) != crate::logic::modules::plant(755)
+    {
         // "design has decreed this to not be picked up by the dead guy's team"
         return Ok(false);
     }
     if md.is_human_only_pickup {
         if let Some(p) = other_player {
             // "human only mission crate"
-            if world.players.get_nth(p).is_some_and(|pl| (pl.player_type != PlayerType::Human) != crate::logic::modules::plant(763)) {
+            if world.players.get_nth(p).is_some_and(|pl| {
+                (pl.player_type != PlayerType::Human) != crate::logic::modules::plant(763)
+            }) {
                 return Ok(false);
             }
         }
@@ -204,8 +242,17 @@ pub fn crate_is_valid_to_execute(md: &CrateCollideModuleData, world: &mut World,
     if !md.pickup_science.is_empty() {
         if let Some(p) = other_player {
             // "science required to pick this up"
-            let science = world.statics.science_store.friend_lookup_science(&mut world.names, &md.pickup_science).map_err(|_| IniError::undefined(Undefined::UnknownPickupScience))?;
-            if world.players.get_nth(p).is_some_and(|pl| pl.sciences.contains(&science)) == crate::logic::modules::plant(762) {
+            let science = world
+                .statics
+                .science_store
+                .friend_lookup_science(&mut world.names, &md.pickup_science)
+                .map_err(|_| IniError::undefined(Undefined::UnknownPickupScience))?;
+            if world
+                .players
+                .get_nth(p)
+                .is_some_and(|pl| pl.sciences.contains(&science))
+                == crate::logic::modules::plant(762)
+            {
                 return Ok(false);
             }
         }
@@ -217,7 +264,12 @@ pub fn crate_is_valid_to_execute(md: &CrateCollideModuleData, world: &mut World,
 }
 
 /// `CrateCollide::onCollide(other, loc, normal)`: "note that when other is NULL it means 'collide with ground'".
-pub fn crate_on_collide<M: CrateBehavior>(m: &mut M, world: &mut World, me: ModuleHandle, other: ObjectId) {
+pub fn crate_on_collide<M: CrateBehavior>(
+    m: &mut M,
+    world: &mut World,
+    me: ModuleHandle,
+    other: ObjectId,
+) {
     let md = m.crate_data().clone();
     match m.is_valid_to_execute(world, me, other) {
         Err(e) => world.cuts.module_errors.push((me, e)),
@@ -229,8 +281,15 @@ pub fn crate_on_collide<M: CrateBehavior>(m: &mut M, world: &mut World, me: Modu
                     return;
                 }
                 Ok(true) => {
-                    if let Some(fx) = md.execute_fx.as_ref().filter(|_| !crate::logic::modules::plant(756)) {
-                        world.emit(ObjectClientEvent::FxListDoFxObj { fx: fx.clone(), object_id: other });
+                    if let Some(fx) = md
+                        .execute_fx
+                        .as_ref()
+                        .filter(|_| !crate::logic::modules::plant(756))
+                    {
+                        world.emit(ObjectClientEvent::FxListDoFxObj {
+                            fx: fx.clone(),
+                            object_id: other,
+                        });
                     }
                     if !crate::logic::modules::plant(757) {
                         crate_destroy_object(world, me.object);
@@ -238,8 +297,14 @@ pub fn crate_on_collide<M: CrateBehavior>(m: &mut M, world: &mut World, me: Modu
                 }
                 Ok(false) => {}
             }
-            if world.cuts.globals.anim2d_collection_present && !md.execution_animation_template.is_empty() && (world.cuts.globals.draw_icon_ui || crate::logic::modules::plant(759)) {
-                let position = world.objects.find(me.object).map_or_else(Coord3D::default, |o| o.get_position());
+            if world.cuts.globals.anim2d_collection_present
+                && !md.execution_animation_template.is_empty()
+                && (world.cuts.globals.draw_icon_ui || crate::logic::modules::plant(759))
+            {
+                let position = world
+                    .objects
+                    .find(me.object)
+                    .map_or_else(Coord3D::default, |o| o.get_position());
                 world.cut(CutCall::InGameUiAddWorldAnimation {
                     template: md.execution_animation_template.clone(),
                     position,
@@ -252,26 +317,36 @@ pub fn crate_on_collide<M: CrateBehavior>(m: &mut M, world: &mut World, me: Modu
 }
 
 /// The answer of a crate module to one of `Object`'s calls.
-pub fn crate_module_call<M: CrateBehavior>(m: &mut M, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+pub fn crate_module_call<M: CrateBehavior>(
+    m: &mut M,
+    world: &mut World,
+    me: ModuleHandle,
+    call: ModuleCall,
+) -> ModuleReply {
     match call {
         ModuleCall::OnCollide { other, .. } => {
-            lend_clone(world, me, m, M::into_body, M::from_body, |w, m| crate_on_collide(m, w, me, other));
+            lend_clone(world, me, m, M::into_body, M::from_body, |w, m| {
+                crate_on_collide(m, w, me, other)
+            });
             ModuleReply::Done
         }
         // `wouldLikeToCollideWith(other)`: `isValidToExecute(other)`
-        ModuleCall::WouldLikeToCollideWith { other } => match m.is_valid_to_execute(world, me, other) {
-            Ok(b) => ModuleReply::Bool(b),
-            Err(e) => {
-                world.cuts.module_errors.push((me, e));
-                ModuleReply::Bool(false)
-            }
-        },
-        ModuleCall::IsRailroad | ModuleCall::IsCarBombCrateCollide | ModuleCall::IsHijackedVehicleCrateCollide | ModuleCall::IsSabotageBuildingCrateCollide => {
-            match m.other_call(world, me, call) {
-                ModuleReply::Unhandled => ModuleReply::Bool(false),
-                r => r,
+        ModuleCall::WouldLikeToCollideWith { other } => {
+            match m.is_valid_to_execute(world, me, other) {
+                Ok(b) => ModuleReply::Bool(b),
+                Err(e) => {
+                    world.cuts.module_errors.push((me, e));
+                    ModuleReply::Bool(false)
+                }
             }
         }
+        ModuleCall::IsRailroad
+        | ModuleCall::IsCarBombCrateCollide
+        | ModuleCall::IsHijackedVehicleCrateCollide
+        | ModuleCall::IsSabotageBuildingCrateCollide => match m.other_call(world, me, call) {
+            ModuleReply::Unhandled => ModuleReply::Bool(false),
+            r => r,
+        },
         other => m.other_call(world, me, other),
     }
 }
@@ -283,6 +358,11 @@ mod tests {
     #[test]
     fn the_defaults_are_upstreams() {
         let d = CrateCollideModuleData::new();
-        assert!(d.execute_animation_fades && !d.is_forbid_owner_player && d.pickup_science.is_empty() && d.execute_fx.is_none());
+        assert!(
+            d.execute_animation_fades
+                && !d.is_forbid_owner_player
+                && d.pickup_science.is_empty()
+                && d.execute_fx.is_none()
+        );
     }
 }

@@ -145,31 +145,38 @@
 use std::collections::BTreeMap;
 
 use crate::common::audio_event_name::AudioEventName;
+use crate::common::damage_fx::DamageFxStore;
 use crate::common::game_common::{VeterancyLevel, LEVEL_COUNT};
 use crate::common::geometry::{
-    parse_geometry_height, parse_geometry_is_small, parse_geometry_major_radius, parse_geometry_minor_radius, parse_geometry_type,
-    GeometryInfo, GeometryType,
+    parse_geometry_height, parse_geometry_is_small, parse_geometry_major_radius,
+    parse_geometry_minor_radius, parse_geometry_type, GeometryInfo, GeometryType,
 };
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Undefined, UserData,
+};
 use crate::common::kind_of::{
-    KindOfMaskType, KindOfType, KINDOF_AIRCRAFT, KINDOF_BALLISTIC_MISSILE, KINDOF_BOAT, KINDOF_BRIDGE, KINDOF_BRIDGE_TOWER, KINDOF_CLEARED_BY_BUILD,
-    KINDOF_DEFENSIVE_WALL, KINDOF_DRAWABLE_ONLY, KINDOF_IGNORED_IN_GUI, KINDOF_INERT, KINDOF_INFANTRY, KINDOF_LANDMARK_BRIDGE, KINDOF_MOB_NEXUS,
-    KINDOF_OPTIMIZED_TREE, KINDOF_PORTABLE_STRUCTURE, KINDOF_SCORE, KINDOF_SHRUBBERY, KINDOF_STRUCTURE, KINDOF_SUPPLY_SOURCE, KINDOF_VEHICLE,
+    KindOfMaskType, KindOfType, KINDOF_AIRCRAFT, KINDOF_BALLISTIC_MISSILE, KINDOF_BOAT,
+    KINDOF_BRIDGE, KINDOF_BRIDGE_TOWER, KINDOF_CLEARED_BY_BUILD, KINDOF_DEFENSIVE_WALL,
+    KINDOF_DRAWABLE_ONLY, KINDOF_IGNORED_IN_GUI, KINDOF_INERT, KINDOF_INFANTRY,
+    KINDOF_LANDMARK_BRIDGE, KINDOF_MOB_NEXUS, KINDOF_OPTIMIZED_TREE, KINDOF_PORTABLE_STRUCTURE,
+    KINDOF_SCORE, KINDOF_SHRUBBERY, KINDOF_STRUCTURE, KINDOF_SUPPLY_SOURCE, KINDOF_VEHICLE,
 };
 use crate::common::module::{
-    ModuleDataKind, ModuleType, MODULEINTERFACE_BODY, MODULEINTERFACE_CLIENT_UPDATE, MODULEINTERFACE_DRAW,
+    ModuleDataKind, ModuleType, MODULEINTERFACE_BODY, MODULEINTERFACE_CLIENT_UPDATE,
+    MODULEINTERFACE_DRAW,
 };
 use crate::common::module_factory::{ModuleFactory, ModuleFactoryError};
 use crate::common::name_key_generator::{NameKeyGenerator, NameKeyType};
 use crate::common::production_prerequisite::ProductionPrerequisite;
-use crate::common::science::{parse_and_translate_label, scan_science, GameTextFetch, ScienceStore};
+use crate::common::science::{
+    parse_and_translate_label, scan_science, GameTextFetch, ScienceStore,
+};
 use crate::common::sparse_match_finder::{SparseMatchFinder, SparseMatchable};
 use crate::common::thing_sort::EDITOR_SORTING_NAMES;
 use crate::common::unicode_string::UnicodeString;
 use crate::logic::armor::ArmorStore;
 use crate::logic::armor_set::{ArmorSetFlags, ArmorSetNames};
 use crate::logic::weapon_set::{WeaponTemplateSet, WeaponTemplateTable};
-use crate::common::damage_fx::DamageFxStore;
 
 // ---------------------------------------------------------------------------
 // Constants and small enums
@@ -239,7 +246,8 @@ pub const BC_APPEARS_AT_RALLY_POINT: u8 = 1;
 /// `BC_PLACED_BY_PLAYER`: "unit must be manually placed by player".
 pub const BC_PLACED_BY_PLAYER: u8 = 2;
 /// `BuildCompletionNames[]`, without the `NULL`.
-pub const BUILD_COMPLETION_NAMES: [&str; 3] = ["INVALID", "APPEARS_AT_RALLY_POINT", "PLACED_BY_PLAYER"];
+pub const BUILD_COMPLETION_NAMES: [&str; 3] =
+    ["INVALID", "APPEARS_AT_RALLY_POINT", "PLACED_BY_PLAYER"];
 
 /// `BSTATUS_YES`.
 pub const BSTATUS_YES: u8 = 0;
@@ -255,7 +263,13 @@ pub const BUILDABLE_STATUS_NAMES: [&str; 4] = ["Yes", "Ignore_Prerequisites", "N
 /// `RADAR_PRIORITY_INVALID`: "a priority that has not been set".
 pub const RADAR_PRIORITY_INVALID: u8 = 0;
 /// `RadarPriorityNames[]` (Radar.h), without the `NULL`.
-pub const RADAR_PRIORITY_NAMES: [&str; 5] = ["INVALID", "NOT_ON_RADAR", "STRUCTURE", "UNIT", "LOCAL_UNIT_ONLY"];
+pub const RADAR_PRIORITY_NAMES: [&str; 5] = [
+    "INVALID",
+    "NOT_ON_RADAR",
+    "STRUCTURE",
+    "UNIT",
+    "LOCAL_UNIT_ONLY",
+];
 
 /// `SHADOW_NONE`.
 pub const SHADOW_NONE: u8 = 0;
@@ -435,7 +449,11 @@ impl ModuleInfo {
     /// `clearModuleDataWithTag(tagToClear, clearedModuleNameOut)`: remove
     /// every entry with this tag; `cleared_module_name_out` is set to the
     /// name of the last one removed, and left alone if none is.
-    pub fn clear_module_data_with_tag(&mut self, tag_to_clear: &[u8], cleared_module_name_out: &mut Vec<u8>) -> bool {
+    pub fn clear_module_data_with_tag(
+        &mut self,
+        tag_to_clear: &[u8],
+        cleared_module_name_out: &mut Vec<u8>,
+    ) -> bool {
         let mut cleared = false;
         let mut i = 0;
         while i < self.info.len() {
@@ -483,7 +501,12 @@ impl ModuleInfo {
             KINDOF_LANDMARK_BRIDGE,
             KINDOF_BRIDGE_TOWER,
         ];
-        let candidate_for_gps_scrambler: [KindOfType; 4] = [KINDOF_SCORE, KINDOF_VEHICLE, KINDOF_INFANTRY, KINDOF_PORTABLE_STRUCTURE];
+        let candidate_for_gps_scrambler: [KindOfType; 4] = [
+            KINDOF_SCORE,
+            KINDOF_VEHICLE,
+            KINDOF_INFANTRY,
+            KINDOF_PORTABLE_STRUCTURE,
+        ];
         let disallowed = immune_to_gps_scrambler.iter().any(|&k| kindof.test(k));
         let candidate = candidate_for_gps_scrambler.iter().any(|&k| kindof.test(k));
 
@@ -554,7 +577,11 @@ impl Default for ArmorTemplateSet {
 impl ArmorTemplateSet {
     /// `ArmorTemplateSet()`: `clear()`.
     pub fn new() -> Self {
-        ArmorTemplateSet { types: ArmorSetFlags::new(), template: None, fx: None }
+        ArmorTemplateSet {
+            types: ArmorSetFlags::new(),
+            template: None,
+            fx: None,
+        }
     }
 
     /// `clear()`.
@@ -582,8 +609,16 @@ impl ArmorTemplateSet {
     // --- p1w13-sonnet ---
     /// An armor template set with these parts (what `parseArmorTemplateSet` leaves for the same values), for a program that builds a template without INI
     /// text, as the differential test of `ActiveBody` does.
-    pub fn from_parts(types: ArmorSetFlags, template: Option<NameKeyType>, fx: Option<NameKeyType>) -> Self {
-        ArmorTemplateSet { types, template, fx }
+    pub fn from_parts(
+        types: ArmorSetFlags,
+        template: Option<NameKeyType>,
+        fx: Option<NameKeyType>,
+    ) -> Self {
+        ArmorTemplateSet {
+            types,
+            template,
+            fx,
+        }
     }
     // --- end p1w13-sonnet ---
 
@@ -596,7 +631,12 @@ impl ArmorTemplateSet {
         armors: &ArmorStore,
         damage_fx: &DamageFxStore,
     ) -> IniResult<()> {
-        let mut fill = ArmorFill { set: self, names, armors, damage_fx };
+        let mut fill = ArmorFill {
+            set: self,
+            names,
+            armors,
+            damage_fx,
+        };
         ini.init_from_ini(&mut fill, &armor_set_fields())
     }
 }
@@ -635,7 +675,9 @@ fn f_armor_template(ini: &mut Ini<'_>, w: &mut ArmorFill<'_>, _: &UserData) -> I
     w.set.template = if token.eq_ignore_ascii_case(b"None") {
         None
     } else {
-        w.armors.find_armor_template_key(w.names, &token).map_err(name_keys_exhausted)?
+        w.armors
+            .find_armor_template_key(w.names, &token)
+            .map_err(name_keys_exhausted)?
     };
     Ok(())
 }
@@ -647,7 +689,10 @@ fn f_armor_damage_fx(ini: &mut Ini<'_>, w: &mut ArmorFill<'_>, _: &UserData) -> 
     w.set.fx = if token.eq_ignore_ascii_case(b"None") {
         None
     } else {
-        let key = w.names.try_name_to_key(&token).map_err(name_keys_exhausted)?;
+        let key = w
+            .names
+            .try_name_to_key(&token)
+            .map_err(name_keys_exhausted)?;
         w.damage_fx.get(key).map(|_| key)
     };
     Ok(())
@@ -670,7 +715,9 @@ fn armor_set_fields<'a>() -> [FieldParse<ArmorFill<'a>>; 4] {
 pub type AudioArray = [Option<AudioEventName>; TTAUDIO_COUNT];
 
 /// `s_audioEventNoSound`: what a sound that is not set reads as.
-static NO_SOUND: AudioEventName = AudioEventName { event_name: Vec::new() };
+static NO_SOUND: AudioEventName = AudioEventName {
+    event_name: Vec::new(),
+};
 
 /// `class ThingTemplate`.
 #[derive(Clone, Debug)]
@@ -878,7 +925,7 @@ impl ThingTemplate {
             structure_rubble_height: 0,
             shadow_type: SHADOW_NONE,
             module_parsing_mode: ModuleParseMode::Normal,
-            crusher_level: 0,   // unspecified, this object is unable to crush anything
+            crusher_level: 0, // unspecified, this object is unable to crush anything
             crushable_level: 255, // unspecified, this object is unable to be crushed by anything
         }
     }
@@ -917,7 +964,9 @@ impl ThingTemplate {
         if self.shadow_texture_name.is_empty() {
             // no texture given, pick a default
             match self.geometry_info.get_geom_type() {
-                GeometryType::Sphere | GeometryType::Cylinder => self.shadow_texture_name = b"shadow".to_vec(),
+                GeometryType::Sphere | GeometryType::Cylinder => {
+                    self.shadow_texture_name = b"shadow".to_vec()
+                }
                 GeometryType::Box => self.shadow_texture_name = b"shadows".to_vec(),
             }
         }
@@ -984,7 +1033,11 @@ impl ThingTemplate {
     }
 
     /// `isKindOfMulti(mustBeSet, mustBeClear)`.
-    pub fn is_kind_of_multi(&self, must_be_set: &KindOfMaskType, must_be_clear: &KindOfMaskType) -> bool {
+    pub fn is_kind_of_multi(
+        &self,
+        must_be_set: &KindOfMaskType,
+        must_be_clear: &KindOfMaskType,
+    ) -> bool {
         self.kindof.test_set_and_clear(must_be_set, must_be_clear)
     }
 
@@ -1371,20 +1424,29 @@ impl ThingTemplate {
     /// `findArmorTemplateSet(t)`: the set that best matches the flags (the
     /// finder caches, so this takes `&mut self`).
     pub fn find_armor_template_set(&mut self, t: &ArmorSetFlags) -> Option<&ArmorTemplateSet> {
-        let i = self.armor_template_set_finder.find_best_info(&self.armor_template_sets, t)?;
+        let i = self
+            .armor_template_set_finder
+            .find_best_info(&self.armor_template_sets, t)?;
         self.armor_template_sets.get(i)
     }
 
     /// `findWeaponTemplateSet(t)`: the set that best matches the flags.
-    pub fn find_weapon_template_set(&mut self, t: &crate::logic::weapon_set_flags::WeaponSetFlags) -> Option<&WeaponTemplateSet> {
-        let i = self.weapon_template_set_finder.find_best_info(&self.weapon_template_sets, t)?;
+    pub fn find_weapon_template_set(
+        &mut self,
+        t: &crate::logic::weapon_set_flags::WeaponSetFlags,
+    ) -> Option<&WeaponTemplateSet> {
+        let i = self
+            .weapon_template_set_finder
+            .find_best_info(&self.weapon_template_sets, t)?;
         self.weapon_template_sets.get(i)
     }
 
     /// `canPossiblyHaveAnyWeapon()`: "true iff we have at least one weaponset
     /// that contains a weapon".
     pub fn can_possibly_have_any_weapon(&self) -> bool {
-        self.weapon_template_sets.iter().any(|s| s.has_any_weapons())
+        self.weapon_template_sets
+            .iter()
+            .any(|s| s.has_any_weapons())
     }
 
     /// `m_moduleParsingMode`.
@@ -1416,21 +1478,37 @@ impl ThingTemplate {
     /// data is AI module data (the data itself is `AIUpdateModuleData`,
     /// layer 9).
     pub fn has_ai_module(&self) -> bool {
-        self.behavior_module_info.nuggets().iter().any(|n| n.second.is_ai_module_data())
+        self.behavior_module_info
+            .nuggets()
+            .iter()
+            .any(|n| n.second.is_ai_module_data())
     }
 
     /// `removeModuleInfo(moduleToRemove, clearedModuleNameOut)`: remove the
     /// module with this tag from whichever list has it (the behavior list,
     /// the draw list and the client update list, each tried).
-    fn remove_module_info(&mut self, module_to_remove: &[u8], cleared_module_name_out: &mut Vec<u8>) -> bool {
+    fn remove_module_info(
+        &mut self,
+        module_to_remove: &[u8],
+        cleared_module_name_out: &mut Vec<u8>,
+    ) -> bool {
         let mut removed = false;
-        if self.behavior_module_info.clear_module_data_with_tag(module_to_remove, cleared_module_name_out) {
+        if self
+            .behavior_module_info
+            .clear_module_data_with_tag(module_to_remove, cleared_module_name_out)
+        {
             removed = true;
         }
-        if self.draw_module_info.clear_module_data_with_tag(module_to_remove, cleared_module_name_out) {
+        if self
+            .draw_module_info
+            .clear_module_data_with_tag(module_to_remove, cleared_module_name_out)
+        {
             removed = true;
         }
-        if self.client_update_module_info.clear_module_data_with_tag(module_to_remove, cleared_module_name_out) {
+        if self
+            .client_update_module_info
+            .clear_module_data_with_tag(module_to_remove, cleared_module_name_out)
+        {
             removed = true;
         }
         removed
@@ -1562,17 +1640,32 @@ impl ThingTemplate {
         t.radar_priority = v.radar_priority;
         t.command_set_string = v.command_set_string.clone();
         for (name, tag) in &v.behavior_modules {
-            t.behavior_module_info.add_module_info(name, tag, ModuleInfoData::Client(ClientModuleData::default()), 0, false, false);
+            t.behavior_module_info.add_module_info(
+                name,
+                tag,
+                ModuleInfoData::Client(ClientModuleData::default()),
+                0,
+                false,
+                false,
+            );
         }
         t.weapon_template_sets = v
             .weapon_sets
             .iter()
-            .map(|(flags, has)| WeaponTemplateSet::from_values(Some(v.template_id), crate::logic::weapon_set_flags::WeaponSetFlags::from_indices(flags), *has))
+            .map(|(flags, has)| {
+                WeaponTemplateSet::from_values(
+                    Some(v.template_id),
+                    crate::logic::weapon_set_flags::WeaponSetFlags::from_indices(flags),
+                    *has,
+                )
+            })
             .collect();
         // --- p1w13-sonnet ---
         t.armor_template_sets = v.armor_sets.clone();
         for (slot, name) in &v.audio {
-            t.audio_array[*slot as usize].get_or_insert_with(AudioEventName::default).event_name = name.clone();
+            t.audio_array[*slot as usize]
+                .get_or_insert_with(AudioEventName::default)
+                .event_name = name.clone();
         }
         t.structure_rubble_height = v.structure_rubble_height;
         // --- end p1w13-sonnet ---
@@ -1589,7 +1682,10 @@ impl ThingTemplate {
 /// override chains: the same object, the same template (the same final
 /// override), one reskinned from the other (or both from the same), or one a
 /// build variation of the other (by name, without regard to case).
-pub fn is_equivalent_to(this: &crate::common::overridable::Overridable<ThingTemplate>, tt: &crate::common::overridable::Overridable<ThingTemplate>) -> bool {
+pub fn is_equivalent_to(
+    this: &crate::common::overridable::Overridable<ThingTemplate>,
+    tt: &crate::common::overridable::Overridable<ThingTemplate>,
+) -> bool {
     let (a, b) = (&this.data, &tt.data);
     // sanity
     if a.node_id == b.node_id {
@@ -1611,10 +1707,16 @@ pub fn is_equivalent_to(this: &crate::common::overridable::Overridable<ThingTemp
         return true;
     }
     // Is this thing a build variation of that thing or vice versa
-    if a.build_variations.iter().any(|v| v.eq_ignore_ascii_case(&b.name_string)) {
+    if a.build_variations
+        .iter()
+        .any(|v| v.eq_ignore_ascii_case(&b.name_string))
+    {
         return true;
     }
-    if b.build_variations.iter().any(|v| v.eq_ignore_ascii_case(&a.name_string)) {
+    if b.build_variations
+        .iter()
+        .any(|v| v.eq_ignore_ascii_case(&a.name_string))
+    {
         return true;
     }
     false
@@ -1792,7 +1894,11 @@ fn f_display_name(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, _: &UserData) -> In
 }
 
 /// `PlacementViewAngle`: `INI::parseAngleReal`.
-fn f_placement_view_angle(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, _: &UserData) -> IniResult<()> {
+fn f_placement_view_angle(
+    ini: &mut Ini<'_>,
+    w: &mut ObjectFill<'_>,
+    _: &UserData,
+) -> IniResult<()> {
     w.tt.placement_view_angle = ini.parse_angle_real()?;
     Ok(())
 }
@@ -1874,9 +1980,17 @@ fn f_max_simultaneous(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, _: &UserData) -
 }
 
 /// `NameKeyGenerator::parseStringAsNameKeyType`.
-fn f_max_simultaneous_link_key(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, _: &UserData) -> IniResult<()> {
+fn f_max_simultaneous_link_key(
+    ini: &mut Ini<'_>,
+    w: &mut ObjectFill<'_>,
+    _: &UserData,
+) -> IniResult<()> {
     let token = ini.get_next_token(None)?;
-    w.tt.max_simultaneous_link_key = w.env.names.parse_string_as_name_key_type(&token).map_err(name_keys_exhausted)?;
+    w.tt.max_simultaneous_link_key = w
+        .env
+        .names
+        .parse_string_as_name_key_type(&token)
+        .map_err(name_keys_exhausted)?;
     Ok(())
 }
 
@@ -1885,10 +1999,18 @@ fn f_max_simultaneous_link_key(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, _: &Us
 fn f_geometry_type(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, ud: &UserData) -> IniResult<()> {
     parse_geometry_type(ini, &mut w.tt.geometry_info, ud)
 }
-fn f_geometry_major_radius(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, ud: &UserData) -> IniResult<()> {
+fn f_geometry_major_radius(
+    ini: &mut Ini<'_>,
+    w: &mut ObjectFill<'_>,
+    ud: &UserData,
+) -> IniResult<()> {
     parse_geometry_major_radius(ini, &mut w.tt.geometry_info, ud)
 }
-fn f_geometry_minor_radius(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, ud: &UserData) -> IniResult<()> {
+fn f_geometry_minor_radius(
+    ini: &mut Ini<'_>,
+    w: &mut ObjectFill<'_>,
+    ud: &UserData,
+) -> IniResult<()> {
     parse_geometry_minor_radius(ini, &mut w.tt.geometry_info, ud)
 }
 fn f_geometry_height(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, ud: &UserData) -> IniResult<()> {
@@ -1909,7 +2031,9 @@ fn f_audio(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, ud: &UserData) -> IniResul
     if token.eq_ignore_ascii_case(b"NoSound") {
         w.tt.audio_array[slot] = None;
     } else {
-        w.tt.audio_array[slot].get_or_insert_with(AudioEventName::default).event_name = token;
+        w.tt.audio_array[slot]
+            .get_or_insert_with(AudioEventName::default)
+            .event_name = token;
     }
     Ok(())
 }
@@ -1925,12 +2049,17 @@ fn f_unit_sound_entry(ini: &mut Ini<'_>, w: &mut SoundMapFill<'_>, ud: &UserData
         _ => Vec::new(),
     };
     let token = ini.get_next_token(None)?;
-    w.0.entry(name).or_insert(AudioEventName { event_name: token });
+    w.0.entry(name)
+        .or_insert(AudioEventName { event_name: token });
     Ok(())
 }
 
 /// `ThingTemplate::parsePerUnitSounds`: clear, then every field line is an entry.
-fn f_unit_specific_sounds(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, _: &UserData) -> IniResult<()> {
+fn f_unit_specific_sounds(
+    ini: &mut Ini<'_>,
+    w: &mut ObjectFill<'_>,
+    _: &UserData,
+) -> IniResult<()> {
     w.tt.per_unit_sounds.clear();
     let table = [FieldParse::catch_all(f_unit_sound_entry), FieldParse::end()];
     let mut fill = SoundMapFill(&mut w.tt.per_unit_sounds);
@@ -1957,7 +2086,9 @@ fn f_unit_fx_entry(ini: &mut Ini<'_>, w: &mut FxMapFill<'_>, ud: &UserData) -> I
     let fx = if token.eq_ignore_ascii_case(b"None") {
         None
     } else {
-        w.names.try_name_to_key(&token).map_err(name_keys_exhausted)?;
+        w.names
+            .try_name_to_key(&token)
+            .map_err(name_keys_exhausted)?;
         Some(token)
     };
     w.map.entry(name).or_insert(fx);
@@ -1968,7 +2099,10 @@ fn f_unit_fx_entry(ini: &mut Ini<'_>, w: &mut FxMapFill<'_>, ud: &UserData) -> I
 fn f_unit_specific_fx(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, _: &UserData) -> IniResult<()> {
     w.tt.per_unit_fx.clear();
     let table = [FieldParse::catch_all(f_unit_fx_entry), FieldParse::end()];
-    let mut fill = FxMapFill { map: &mut w.tt.per_unit_fx, names: &mut *w.env.names };
+    let mut fill = FxMapFill {
+        map: &mut w.tt.per_unit_fx,
+        names: &mut *w.env.names,
+    };
     ini.init_from_ini(&mut fill, &table)
 }
 
@@ -2032,7 +2166,11 @@ fn f_prereq_science(ini: &mut Ini<'_>, w: &mut PrereqFill<'_>, _: &UserData) -> 
     let mut prereq = ProductionPrerequisite::new();
     let token = ini.get_next_token(None)?;
     let sciences = w.sciences;
-    prereq.add_science_prereq(scan_science(w.names, |st| sciences.is_valid_science(st), &token)?);
+    prereq.add_science_prereq(scan_science(
+        w.names,
+        |st| sciences.is_valid_science(st),
+        &token,
+    )?);
     w.list.push(prereq);
     Ok(())
 }
@@ -2048,14 +2186,23 @@ fn f_prerequisites(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, _: &UserData) -> I
         FieldParse::new("Science", f_prereq_science, UserData::None),
         FieldParse::end(),
     ];
-    let mut fill = PrereqFill { list: &mut w.tt.prereq_info, names: &mut *w.env.names, sciences: w.env.sciences };
+    let mut fill = PrereqFill {
+        list: &mut w.tt.prereq_info,
+        names: &mut *w.env.names,
+        sciences: w.env.sciences,
+    };
     ini.init_from_ini(&mut fill, &table)
 }
 
 // ---- modules
 
 /// The four fields of a client module's block that open a nested block.
-const CLIENT_NESTED_BLOCKS: [&str; 4] = ["DefaultConditionState", "ConditionState", "AliasConditionState", "TransitionState"];
+const CLIENT_NESTED_BLOCKS: [&str; 4] = [
+    "DefaultConditionState",
+    "ConditionState",
+    "AliasConditionState",
+    "TransitionState",
+];
 
 struct ClientFill {
     lines: Vec<ClientLine>,
@@ -2077,7 +2224,11 @@ fn f_client_line(ini: &mut Ini<'_>, w: &mut ClientFill, ud: &UserData) -> IniRes
         _ => Vec::new(),
     };
     let args = client_args(ini);
-    w.lines.push(ClientLine { depth: w.depth, field, args });
+    w.lines.push(ClientLine {
+        depth: w.depth,
+        field,
+        args,
+    });
     Ok(())
 }
 
@@ -2085,7 +2236,11 @@ fn f_client_line(ini: &mut Ini<'_>, w: &mut ClientFill, ud: &UserData) -> IniRes
 fn f_client_nested(ini: &mut Ini<'_>, w: &mut ClientFill, ud: &UserData) -> IniResult<()> {
     let field = CLIENT_NESTED_BLOCKS[ud.mask() as usize].as_bytes().to_vec();
     let args = client_args(ini);
-    w.lines.push(ClientLine { depth: w.depth, field, args });
+    w.lines.push(ClientLine {
+        depth: w.depth,
+        field,
+        args,
+    });
     w.depth += 1;
     ini.init_from_ini(w, &client_fields())?;
     w.depth -= 1;
@@ -2105,9 +2260,15 @@ fn client_fields() -> [FieldParse<ClientFill>; 6] {
 
 /// The block of a client module, up to its `End`.
 fn read_client_module_block(ini: &mut Ini<'_>) -> IniResult<ClientModuleData> {
-    let mut fill = ClientFill { lines: Vec::new(), depth: 0 };
+    let mut fill = ClientFill {
+        lines: Vec::new(),
+        depth: 0,
+    };
     ini.init_from_ini(&mut fill, &client_fields())?;
-    Ok(ClientModuleData { module_tag_name_key: NameKeyType::INVALID, lines: fill.lines })
+    Ok(ClientModuleData {
+        module_tag_name_key: NameKeyType::INVALID,
+        lines: fill.lines,
+    })
 }
 
 /// How `parseModuleName` reports what `ModuleFactory` could not do.
@@ -2115,11 +2276,18 @@ fn module_error(e: ModuleFactoryError) -> IniError {
     match e {
         ModuleFactoryError::Ini(e) => e,
         ModuleFactoryError::NameKey(_) => IniError::undefined(Undefined::NameKeysExhausted),
-        ModuleFactoryError::NotTranslated { name, .. } => IniError::new(IniErrorKind::ModuleNotTranslated(name)),
-        ModuleFactoryError::UnknownModule { name, .. } => IniError::new(IniErrorKind::ModuleUnknown(name)),
-        ModuleFactoryError::NotInShippedBuild { name } => IniError::new(IniErrorKind::ModuleNotInShippedBuild(name)),
+        ModuleFactoryError::NotTranslated { name, .. } => {
+            IniError::new(IniErrorKind::ModuleNotTranslated(name))
+        }
+        ModuleFactoryError::UnknownModule { name, .. } => {
+            IniError::new(IniErrorKind::ModuleUnknown(name))
+        }
+        ModuleFactoryError::NotInShippedBuild { name } => {
+            IniError::new(IniErrorKind::ModuleNotInShippedBuild(name))
+        }
         ModuleFactoryError::EmptyName => IniError::new(IniErrorKind::InvalidData),
-        ModuleFactoryError::InterfaceMaskMismatch { .. } | ModuleFactoryError::ModuleDataShared { .. } => IniError::new(IniErrorKind::Bug),
+        ModuleFactoryError::InterfaceMaskMismatch { .. }
+        | ModuleFactoryError::ModuleDataShared { .. } => IniError::new(IniErrorKind::Bug),
     }
 }
 
@@ -2143,10 +2311,15 @@ fn f_module(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, ud: &UserData) -> IniResu
 
     // what interface(s) does this module support?
     let interface_mask = match module_type {
-        ModuleType::Behavior => w.env.modules.find_module_interface_mask(w.env.names, &token, module_type).map_err(module_error)?,
+        ModuleType::Behavior => w
+            .env
+            .modules
+            .find_module_interface_mask(w.env.names, &token, module_type)
+            .map_err(module_error)?,
         ModuleType::Draw | ModuleType::ClientUpdate => {
             // the client's modules: the key of the decorated name is assigned, as upstream's lookup does
-            ModuleFactory::make_decorated_name_key(w.env.names, &token, module_type).map_err(name_keys_exhausted)?;
+            ModuleFactory::make_decorated_name_key(w.env.names, &token, module_type)
+                .map_err(name_keys_exhausted)?;
             if module_type == ModuleType::Draw {
                 MODULEINTERFACE_DRAW
             } else {
@@ -2173,9 +2346,20 @@ fn f_module(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, ud: &UserData) -> IniResu
     } else {
         let kindof = w.tt.kindof;
         let trainable = w.tt.is_trainable;
-        w.tt.behavior_module_info.clear_copied_from_default_entries(interface_mask, &token, &kindof, trainable);
-        w.tt.draw_module_info.clear_copied_from_default_entries(interface_mask, &token, &kindof, trainable);
-        w.tt.client_update_module_info.clear_copied_from_default_entries(interface_mask, &token, &kindof, trainable);
+        w.tt.behavior_module_info.clear_copied_from_default_entries(
+            interface_mask,
+            &token,
+            &kindof,
+            trainable,
+        );
+        w.tt.draw_module_info.clear_copied_from_default_entries(
+            interface_mask,
+            &token,
+            &kindof,
+            trainable,
+        );
+        w.tt.client_update_module_info
+            .clear_copied_from_default_entries(interface_mask, &token, &kindof, trainable);
     }
 
     if w.tt.module_parsing_mode == ModuleParseMode::AddRemoveReplace
@@ -2207,7 +2391,11 @@ fn f_module(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, ud: &UserData) -> IniResu
         }
         ModuleType::Draw | ModuleType::ClientUpdate => {
             let mut block = read_client_module_block(ini)?;
-            block.module_tag_name_key = w.env.names.try_name_to_key(&module_tag).map_err(name_keys_exhausted)?;
+            block.module_tag_name_key = w
+                .env
+                .names
+                .try_name_to_key(&module_tag)
+                .map_err(name_keys_exhausted)?;
             ModuleInfoData::Client(block)
         }
     };
@@ -2222,20 +2410,32 @@ fn f_module(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, ud: &UserData) -> IniResu
     }
 
     let inheritable = w.tt.module_parsing_mode == ModuleParseMode::Inheritable;
-    let overrideable_by_like_kind = w.tt.module_parsing_mode == ModuleParseMode::OverrideableByLikeKind;
+    let overrideable_by_like_kind =
+        w.tt.module_parsing_mode == ModuleParseMode::OverrideableByLikeKind;
     let mi = match module_type {
         ModuleType::Behavior => &mut w.tt.behavior_module_info,
         ModuleType::Draw => &mut w.tt.draw_module_info,
         ModuleType::ClientUpdate => &mut w.tt.client_update_module_info,
     };
-    mi.add_module_info(&token, &module_tag, data, interface_mask, inheritable, overrideable_by_like_kind);
+    mi.add_module_info(
+        &token,
+        &module_tag,
+        data,
+        interface_mask,
+        inheritable,
+        overrideable_by_like_kind,
+    );
     Ok(())
 }
 
 /// The shared shape of `AddModule`, `InheritableModule` and
 /// `OverrideableByLikeKind`: refuse inside another, set the mode, read the
 /// object's fields up to `End`, restore the mode (not if the read throws).
-fn nested_module_block(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, mode: ModuleParseMode) -> IniResult<()> {
+fn nested_module_block(
+    ini: &mut Ini<'_>,
+    w: &mut ObjectFill<'_>,
+    mode: ModuleParseMode,
+) -> IniResult<()> {
     let old_mode = w.tt.module_parsing_mode;
     if old_mode != ModuleParseMode::Normal {
         return Err(IniError::new(IniErrorKind::InvalidData));
@@ -2254,7 +2454,11 @@ fn f_inheritable_module(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, _: &UserData)
     nested_module_block(ini, w, ModuleParseMode::Inheritable)
 }
 
-fn f_overrideable_by_like_kind(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, _: &UserData) -> IniResult<()> {
+fn f_overrideable_by_like_kind(
+    ini: &mut Ini<'_>,
+    w: &mut ObjectFill<'_>,
+    _: &UserData,
+) -> IniResult<()> {
     nested_module_block(ini, w, ModuleParseMode::OverrideableByLikeKind)
 }
 
@@ -2268,7 +2472,10 @@ fn f_remove_module(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, _: &UserData) -> I
     w.tt.module_parsing_mode = ModuleParseMode::AddRemoveReplace;
     let mod_to_remove = ini.get_next_token(None)?;
     let mut removed_module_name = Vec::new();
-    if !w.tt.remove_module_info(&mod_to_remove, &mut removed_module_name) {
+    if !w
+        .tt
+        .remove_module_info(&mod_to_remove, &mut removed_module_name)
+    {
         // RemoveModule %s was not found for %s. The game will crash now!
         return Err(IniError::new(IniErrorKind::InvalidData));
     }
@@ -2286,7 +2493,10 @@ fn f_replace_module(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, _: &UserData) -> 
     w.tt.module_parsing_mode = ModuleParseMode::AddRemoveReplace;
     let mod_to_remove = ini.get_next_token(None)?;
     let mut removed_module_name = Vec::new();
-    if !w.tt.remove_module_info(&mod_to_remove, &mut removed_module_name) {
+    if !w
+        .tt
+        .remove_module_info(&mod_to_remove, &mut removed_module_name)
+    {
         // ReplaceModule %s was not found for %s; cannot continue.
         return Err(IniError::new(IniErrorKind::InvalidData));
     }
@@ -2450,7 +2660,11 @@ pub(crate) fn object_fields<'a>() -> [FieldParse<ObjectFill<'a>>; 111] {
     let audio = |t: A| UserData::Mask(t as u32);
     [
         FieldParse::new("DisplayName", f_display_name, n.clone()),
-        FieldParse::new("RadarPriority", f_radar_priority, UserData::Names(&RADAR_PRIORITY_NAMES)),
+        FieldParse::new(
+            "RadarPriority",
+            f_radar_priority,
+            UserData::Names(&RADAR_PRIORITY_NAMES),
+        ),
         FieldParse::new("TransportSlotCount", f_transport_slot_count, n.clone()),
         FieldParse::new("FenceWidth", f_fence_width, n.clone()),
         FieldParse::new("FenceXOffset", f_fence_x_offset, n.clone()),
@@ -2459,7 +2673,11 @@ pub(crate) fn object_fields<'a>() -> [FieldParse<ObjectFill<'a>>; 111] {
         FieldParse::new("WeaponSet", f_weapon_set, n.clone()),
         FieldParse::new("VisionRange", f_vision_range, n.clone()),
         FieldParse::new("ShroudClearingRange", f_shroud_clearing_range, n.clone()),
-        FieldParse::new("ShroudRevealToAllRange", f_shroud_reveal_to_all_range, n.clone()),
+        FieldParse::new(
+            "ShroudRevealToAllRange",
+            f_shroud_reveal_to_all_range,
+            n.clone(),
+        ),
         FieldParse::new("PlacementViewAngle", f_placement_view_angle, n.clone()),
         FieldParse::new("FactoryExitWidth", f_factory_exit_width, n.clone()),
         FieldParse::new("FactoryExtraBibWidth", f_factory_extra_bib_width, n.clone()),
@@ -2471,24 +2689,44 @@ pub(crate) fn object_fields<'a>() -> [FieldParse<ObjectFill<'a>>; 111] {
         FieldParse::new("HijackGuard", f_hijack_guard, n.clone()),
         FieldParse::new("Side", f_side, n.clone()),
         FieldParse::new("Prerequisites", f_prerequisites, n.clone()),
-        FieldParse::new("Buildable", f_buildable, UserData::Names(&BUILDABLE_STATUS_NAMES)),
+        FieldParse::new(
+            "Buildable",
+            f_buildable,
+            UserData::Names(&BUILDABLE_STATUS_NAMES),
+        ),
         FieldParse::new("BuildCost", f_build_cost, n.clone()),
         FieldParse::new("BuildTime", f_build_time, n.clone()),
         FieldParse::new("RefundValue", f_refund_value, n.clone()),
-        FieldParse::new("BuildCompletion", f_build_completion, UserData::Names(&BUILD_COMPLETION_NAMES)),
+        FieldParse::new(
+            "BuildCompletion",
+            f_build_completion,
+            UserData::Names(&BUILD_COMPLETION_NAMES),
+        ),
         FieldParse::new("EnergyProduction", f_energy_production, n.clone()),
         FieldParse::new("EnergyBonus", f_energy_bonus, n.clone()),
         FieldParse::new("IsForbidden", f_is_forbidden, n.clone()),
         FieldParse::new("IsPrerequisite", f_is_prerequisite, n.clone()),
         FieldParse::new("DisplayColor", f_display_color, n.clone()),
-        FieldParse::new("EditorSorting", f_editor_sorting, UserData::Names(&EDITOR_SORTING_NAMES)),
+        FieldParse::new(
+            "EditorSorting",
+            f_editor_sorting,
+            UserData::Names(&EDITOR_SORTING_NAMES),
+        ),
         FieldParse::new("KindOf", f_kindof, n.clone()),
         FieldParse::new("CommandSet", f_command_set, n.clone()),
         FieldParse::new("BuildVariations", f_build_variations, n.clone()),
-        FieldParse::new("Behavior", f_module, UserData::Mask(ModuleType::Behavior as u32)),
+        FieldParse::new(
+            "Behavior",
+            f_module,
+            UserData::Mask(ModuleType::Behavior as u32),
+        ),
         FieldParse::new("Body", f_module, UserData::Mask(BODY)),
         FieldParse::new("Draw", f_module, UserData::Mask(ModuleType::Draw as u32)),
-        FieldParse::new("ClientUpdate", f_module, UserData::Mask(ModuleType::ClientUpdate as u32)),
+        FieldParse::new(
+            "ClientUpdate",
+            f_module,
+            UserData::Mask(ModuleType::ClientUpdate as u32),
+        ),
         FieldParse::new("SelectPortrait", f_select_portrait, n.clone()),
         FieldParse::new("ButtonImage", f_button_image, n.clone()),
         FieldParse::new("UpgradeCameo1", f_upgrade_cameo, UserData::Mask(0)),
@@ -2513,21 +2751,45 @@ pub(crate) fn object_fields<'a>() -> [FieldParse<ObjectFill<'a>>; 111] {
         FieldParse::new("VoiceAttackAir", f_audio, audio(A::VoiceAttackAir)),
         FieldParse::new("VoiceGuard", f_audio, audio(A::VoiceGuard)),
         FieldParse::new("SoundMoveStart", f_audio, audio(A::SoundMoveStart)),
-        FieldParse::new("SoundMoveStartDamaged", f_audio, audio(A::SoundMoveStartDamaged)),
+        FieldParse::new(
+            "SoundMoveStartDamaged",
+            f_audio,
+            audio(A::SoundMoveStartDamaged),
+        ),
         FieldParse::new("SoundMoveLoop", f_audio, audio(A::SoundMoveLoop)),
-        FieldParse::new("SoundMoveLoopDamaged", f_audio, audio(A::SoundMoveLoopDamaged)),
+        FieldParse::new(
+            "SoundMoveLoopDamaged",
+            f_audio,
+            audio(A::SoundMoveLoopDamaged),
+        ),
         FieldParse::new("SoundAmbient", f_audio, audio(A::SoundAmbient)),
-        FieldParse::new("SoundAmbientDamaged", f_audio, audio(A::SoundAmbientDamaged)),
-        FieldParse::new("SoundAmbientReallyDamaged", f_audio, audio(A::SoundAmbientReallyDamaged)),
+        FieldParse::new(
+            "SoundAmbientDamaged",
+            f_audio,
+            audio(A::SoundAmbientDamaged),
+        ),
+        FieldParse::new(
+            "SoundAmbientReallyDamaged",
+            f_audio,
+            audio(A::SoundAmbientReallyDamaged),
+        ),
         FieldParse::new("SoundAmbientRubble", f_audio, audio(A::SoundAmbientRubble)),
         FieldParse::new("SoundStealthOn", f_audio, audio(A::SoundStealthOn)),
         FieldParse::new("SoundStealthOff", f_audio, audio(A::SoundStealthOff)),
         FieldParse::new("SoundCreated", f_audio, audio(A::SoundCreated)),
         FieldParse::new("SoundOnDamaged", f_audio, audio(A::SoundOnDamaged)),
-        FieldParse::new("SoundOnReallyDamaged", f_audio, audio(A::SoundOnReallyDamaged)),
+        FieldParse::new(
+            "SoundOnReallyDamaged",
+            f_audio,
+            audio(A::SoundOnReallyDamaged),
+        ),
         FieldParse::new("SoundEnter", f_audio, audio(A::SoundEnter)),
         FieldParse::new("SoundExit", f_audio, audio(A::SoundExit)),
-        FieldParse::new("SoundPromotedVeteran", f_audio, audio(A::SoundPromotedVeteran)),
+        FieldParse::new(
+            "SoundPromotedVeteran",
+            f_audio,
+            audio(A::SoundPromotedVeteran),
+        ),
         FieldParse::new("SoundPromotedElite", f_audio, audio(A::SoundPromotedElite)),
         FieldParse::new("SoundPromotedHero", f_audio, audio(A::SoundPromotedHero)),
         FieldParse::new("SoundFallingFromPlane", f_audio, audio(A::SoundFalling)),
@@ -2550,13 +2812,29 @@ pub(crate) fn object_fields<'a>() -> [FieldParse<ObjectFill<'a>>; 111] {
         FieldParse::new("RemoveModule", f_remove_module, n.clone()),
         FieldParse::new("ReplaceModule", f_replace_module, n.clone()),
         FieldParse::new("InheritableModule", f_inheritable_module, n.clone()),
-        FieldParse::new("OverrideableByLikeKind", f_overrideable_by_like_kind, n.clone()),
+        FieldParse::new(
+            "OverrideableByLikeKind",
+            f_overrideable_by_like_kind,
+            n.clone(),
+        ),
         FieldParse::new("Locomotor", f_locomotor, n.clone()),
-        FieldParse::new("InstanceScaleFuzziness", f_instance_scale_fuzziness, n.clone()),
-        FieldParse::new("StructureRubbleHeight", f_structure_rubble_height, n.clone()),
+        FieldParse::new(
+            "InstanceScaleFuzziness",
+            f_instance_scale_fuzziness,
+            n.clone(),
+        ),
+        FieldParse::new(
+            "StructureRubbleHeight",
+            f_structure_rubble_height,
+            n.clone(),
+        ),
         FieldParse::new("ThreatValue", f_threat_value, n.clone()),
         FieldParse::new("MaxSimultaneousOfType", f_max_simultaneous, n.clone()),
-        FieldParse::new("MaxSimultaneousLinkKey", f_max_simultaneous_link_key, n.clone()),
+        FieldParse::new(
+            "MaxSimultaneousLinkKey",
+            f_max_simultaneous_link_key,
+            n.clone(),
+        ),
         FieldParse::new("CrusherLevel", f_crusher_level, n.clone()),
         FieldParse::new("CrushableLevel", f_crushable_level, n),
         FieldParse::end(),

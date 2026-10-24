@@ -55,11 +55,14 @@ mod up_common;
 
 use rts_lockstep_engine::common::ini::{Ini, IniErrorKind, IniLoadType, Undefined};
 use rts_lockstep_engine::common::special_power::{
-    clear_special_power_mask, flip_special_power_mask, make_special_power_mask, set_all_special_power_mask_bits, set_special_power_mask,
-    special_power_mask_any_set, test_special_power_mask, test_special_power_mask_any, test_special_power_mask_multi,
+    clear_special_power_mask, flip_special_power_mask, make_special_power_mask,
+    set_all_special_power_mask_bits, set_special_power_mask, special_power_mask_any_set,
+    test_special_power_mask, test_special_power_mask_any, test_special_power_mask_multi,
     SpecialPowerTemplateRef, DEFAULT_DEFECTION_DETECTION_PROTECTION_TIME_LIMIT,
 };
-use rts_lockstep_engine::common::special_power_mask_type::{SpecialPowerMaskType, SPECIAL_POWER_NAMES};
+use rts_lockstep_engine::common::special_power_mask_type::{
+    SpecialPowerMaskType, SPECIAL_POWER_NAMES,
+};
 use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::differential as cpp;
@@ -94,8 +97,19 @@ fn rust_getters(t: Option<SpecialPowerTemplateRef<'_>>, bug: u32) -> Getters {
     if t.is_shortcut_power() {
         flags |= 4;
     }
-    let academy = if bug == 1 { t.chain().get_final_override().data.academy_classification_type } else { t.academy_classification_type() };
-    let reload = if bug == 2 { t.chain().data.reload_time } else { t.reload_time() };
+    let academy = if bug == 1 {
+        t.chain()
+            .get_final_override()
+            .data
+            .academy_classification_type
+    } else {
+        t.academy_classification_type()
+    };
+    let reload = if bug == 2 {
+        t.chain().data.reload_time
+    } else {
+        t.reload_time()
+    };
     let out = [
         t.id(),
         t.special_power_type() as u32,
@@ -166,7 +180,8 @@ fn ini_sequences_match_upstream() {
     let mut chain_bug = Check::new("getReloadTime (follows the override chain)");
     let mut keys_bug = Check::new("name keys after the sequence");
     let mut excluded = Excluded::default();
-    let (mut files, mut ok, mut failed, mut resets, mut templates, mut chains) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+    let (mut files, mut ok, mut failed, mut resets, mut templates, mut chains) =
+        (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
     let (mut override_loads, mut aliased, mut with_default) = (0u64, 0u64, 0u64);
     const CASES: usize = 6_000;
     for case in 0..CASES {
@@ -184,12 +199,25 @@ fn ini_sequences_match_upstream() {
             let name = format!("Data\\INI\\Case{}.ini", f % 7).into_bytes();
             let with_xfer = g.below(4) != 0;
             let mut crc = XferCrc::new_without_nan_guard();
-            let r = Ini::load(&name, &data, load_type, if with_xfer { Some(&mut crc as &mut dyn Xfer) } else { None }, &table, &mut ctx);
+            let r = Ini::load(
+                &name,
+                &data,
+                load_type,
+                if with_xfer {
+                    Some(&mut crc as &mut dyn Xfer)
+                } else {
+                    None
+                },
+                &table,
+                &mut ctx,
+            );
             let crc_v = if with_xfer { crc.get_crc() } else { 0 };
             let rust = match rust_outcome(r, crc_v) {
                 Ok(o) => o,
                 Err(e) => {
-                    aliased += u64::from(e.kind == IniErrorKind::Undefined(Undefined::AliasedOverrideChain));
+                    aliased += u64::from(
+                        e.kind == IniErrorKind::Undefined(Undefined::AliasedOverrideChain),
+                    );
                     excluded.add(&e);
                     stopped = true;
                     break;
@@ -210,13 +238,25 @@ fn ini_sequences_match_upstream() {
             dumps.eq(rust_special_power_dump(&ctx.store, 0), cpp_sp.clone(), what);
             dump_bug1.eq(rust_special_power_dump(&ctx.store, 1), cpp_sp.clone(), what);
             dump_bug2.eq(rust_special_power_dump(&ctx.store, 2), cpp_sp, what);
-            up_dumps.eq(rust_upgrade_dump(&ctx.center, 0), cpp_dump(cpp::ref_up_dump), what);
+            up_dumps.eq(
+                rust_upgrade_dump(&ctx.center, 0),
+                cpp_dump(cpp::ref_up_dump),
+                what,
+            );
             if f + 1 < nfiles && g.below(4) == 0 {
                 ctx.store.reset();
                 unsafe { cpp::ref_sp_reset_store() };
                 resets += 1;
-                let what = || format!("case {case}: init names {init_names} center {init_center}{log}\n  reset()");
-                dumps.eq(rust_special_power_dump(&ctx.store, 0), cpp_dump(cpp::ref_sp_dump), what);
+                let what = || {
+                    format!(
+                        "case {case}: init names {init_names} center {init_center}{log}\n  reset()"
+                    )
+                };
+                dumps.eq(
+                    rust_special_power_dump(&ctx.store, 0),
+                    cpp_dump(cpp::ref_sp_dump),
+                    what,
+                );
                 log.push_str("\n  reset()");
             }
         }
@@ -225,31 +265,59 @@ fn ini_sequences_match_upstream() {
         }
         let what = || format!("case {case}: init names {init_names} center {init_center}{log}");
         templates += ctx.store.len() as u64;
-        chains += ctx.store.templates().filter(|t| t.chain().get_next_override().is_some()).count() as u64;
-        with_default += u64::from(ctx.store.find_special_power_template(b"DefaultSpecialPower").is_some());
+        chains += ctx
+            .store
+            .templates()
+            .filter(|t| t.chain().get_next_override().is_some())
+            .count() as u64;
+        with_default += u64::from(
+            ctx.store
+                .find_special_power_template(b"DefaultSpecialPower")
+                .is_some(),
+        );
 
         // the getters
-        getters.eq(ctx.store.len() as i32, unsafe { cpp::ref_sp_count() }, || format!("{} getNumSpecialPowers", what()));
+        getters.eq(
+            ctx.store.len() as i32,
+            unsafe { cpp::ref_sp_count() },
+            || format!("{} getNumSpecialPowers", what()),
+        );
         for _ in 0..24 {
-            let n = if g.below(3) == 0 { format!("Name{}", g.below(30)) } else { SP_BLOCK_NAMES[g.below(10) as usize].to_string() };
+            let n = if g.below(3) == 0 {
+                format!("Name{}", g.below(30))
+            } else {
+                SP_BLOCK_NAMES[g.below(10) as usize].to_string()
+            };
             let rt = ctx.store.find_special_power_template(n.as_bytes());
-            let (rg, bug1, bug2) = (rust_getters(rt, 0), rust_getters(rt, 1), rust_getters(rt, 2));
+            let (rg, bug1, bug2) = (
+                rust_getters(rt, 0),
+                rust_getters(rt, 1),
+                rust_getters(rt, 2),
+            );
             let cg = cpp_by_name(&n);
             getters.eq(rg.clone(), cg.clone(), || format!("{} find {n:?}", what()));
             academy_bug.eq(bug1, cg.clone(), what);
             chain_bug.eq(bug2, cg, what);
         }
         for id in 0..ctx.store.next_special_power_id() + 2 {
-            getters
-                .eq(rust_getters(ctx.store.find_special_power_template_by_id(id), 0), cpp_by_id(id), || format!("{} find id {id}", what()));
+            getters.eq(
+                rust_getters(ctx.store.find_special_power_template_by_id(id), 0),
+                cpp_by_id(id),
+                || format!("{} find id {id}", what()),
+            );
         }
         for i in 0..ctx.store.len() as u32 + 2 {
-            getters.eq(rust_getters(ctx.store.get_special_power_template_by_index(i), 0), cpp_by_index(i), || {
-                format!("{} find index {i}", what())
-            });
+            getters.eq(
+                rust_getters(ctx.store.get_special_power_template_by_index(i), 0),
+                cpp_by_index(i),
+                || format!("{} find index {i}", what()),
+            );
         }
 
-        let rk: Vec<u32> = probe.iter().map(|n| ctx.names.name_to_key(n.as_bytes()).0).collect();
+        let rk: Vec<u32> = probe
+            .iter()
+            .map(|n| ctx.names.name_to_key(n.as_bytes()).0)
+            .collect();
         let ck: Vec<u32> = probe.iter().map(|n| cpp_name_key(n)).collect();
         keys.eq(rk.clone(), ck.clone(), what);
         keys_bug.eq(vec![rk[1] ^ 1], vec![ck[1]], what);
@@ -261,12 +329,18 @@ fn ini_sequences_match_upstream() {
         excluded.total(),
         excluded.0
     );
-    assert!(ok > 3000 && failed > 3000, "the generator must reach both outcomes: {ok} loaded, {failed} threw");
+    assert!(
+        ok > 3000 && failed > 3000,
+        "the generator must reach both outcomes: {ok} loaded, {failed} threw"
+    );
     assert!(
         override_loads > 2000 && chains > 500 && resets > 500,
         "too few override loads / chains / resets: {override_loads} / {chains} / {resets}"
     );
-    assert!(templates > 8000 && with_default > 500, "too few templates compared: {templates} ({with_default} with DefaultSpecialPower)");
+    assert!(
+        templates > 8000 && with_default > 500,
+        "too few templates compared: {templates} ({with_default} with DefaultSpecialPower)"
+    );
     outcome.finish();
     dumps.finish();
     up_dumps.finish();
@@ -287,17 +361,33 @@ fn name_list_and_constants_match_upstream() {
     let mut cpp_names: Vec<Option<String>> = Vec::new();
     for i in 0..=SPECIAL_POWER_NAMES.len() as i32 {
         let p = unsafe { cpp::ref_sp_real_name(i) };
-        cpp_names.push((!p.is_null()).then(|| unsafe { std::ffi::CStr::from_ptr(p) }.to_str().unwrap().to_string()));
+        cpp_names.push((!p.is_null()).then(|| {
+            unsafe { std::ffi::CStr::from_ptr(p) }
+                .to_str()
+                .unwrap()
+                .to_string()
+        }));
     }
-    let mut rust_names: Vec<Option<String>> = SPECIAL_POWER_NAMES.iter().map(|s| Some(s.to_string())).collect();
+    let mut rust_names: Vec<Option<String>> = SPECIAL_POWER_NAMES
+        .iter()
+        .map(|s| Some(s.to_string()))
+        .collect();
     rust_names.push(None);
-    ck.eq(rust_names.clone(), cpp_names.clone(), || "names".to_string());
-    ck.eq(DEFAULT_DEFECTION_DETECTION_PROTECTION_TIME_LIMIT, unsafe { cpp::ref_sp_default_detection() }, || "detection time".to_string());
+    ck.eq(rust_names.clone(), cpp_names.clone(), || {
+        "names".to_string()
+    });
+    ck.eq(
+        DEFAULT_DEFECTION_DETECTION_PROTECTION_TIME_LIMIT,
+        unsafe { cpp::ref_sp_default_detection() },
+        || "detection time".to_string(),
+    );
     rust_names.swap(3, 4);
     bug.eq(rust_names, cpp_names, || "two names swapped".to_string());
-    bug.eq(DEFAULT_DEFECTION_DETECTION_PROTECTION_TIME_LIMIT + 1, unsafe { cpp::ref_sp_default_detection() }, || {
-        "detection time".to_string()
-    });
+    bug.eq(
+        DEFAULT_DEFECTION_DETECTION_PROTECTION_TIME_LIMIT + 1,
+        unsafe { cpp::ref_sp_default_detection() },
+        || "detection time".to_string(),
+    );
     ck.finish();
     bug.finish_planted();
 }
@@ -311,7 +401,13 @@ fn random_mask(g: &mut Gen) -> SpecialPowerMaskType {
     SpecialPowerMaskType::from_words(w)
 }
 
-fn cpp_mask_op(op: i32, a: &SpecialPowerMaskType, b: &SpecialPowerMaskType, c: &SpecialPowerMaskType, idx: &[i32]) -> (i32, [u64; 4]) {
+fn cpp_mask_op(
+    op: i32,
+    a: &SpecialPowerMaskType,
+    b: &SpecialPowerMaskType,
+    c: &SpecialPowerMaskType,
+    idx: &[i32],
+) -> (i32, [u64; 4]) {
     let mut out = [0u64; 4];
     let mut padded = [0i32; 5];
     padded[..idx.len()].copy_from_slice(idx);
@@ -339,7 +435,11 @@ fn special_power_mask_helpers_match_upstream() {
     let mut set_bug = Check::new("SET_SPECIALPOWERMASK (val 0 clears)");
     let mut out_of_range = 0u64;
     for case in 0..30_000 {
-        let (a, mut b, mut c) = (random_mask(&mut g), random_mask(&mut g), random_mask(&mut g));
+        let (a, mut b, mut c) = (
+            random_mask(&mut g),
+            random_mask(&mut g),
+            random_mask(&mut g),
+        );
         if g.below(3) == 0 {
             // masks for which TEST_SPECIALPOWERMASK_MULTI is true: b inside a, c outside it
             let (wa, wb, wc) = (a.words(), b.words(), c.words());
@@ -360,12 +460,32 @@ fn special_power_mask_helpers_match_upstream() {
         let what = || format!("case {case}: a {a:?} b {b:?} c {c:?} idx {idx:?}");
         let r = test_special_power_mask(&a, idx[0]);
         out_of_range += u64::from(r.is_err());
-        ck.eq(r.map_or(-1, i32::from), cpp_mask_op(0, &a, &b, &c, &idx).0, what);
-        ck.eq(i32::from(test_special_power_mask_any(&a, &b)), cpp_mask_op(1, &a, &b, &c, &idx).0, what);
+        ck.eq(
+            r.map_or(-1, i32::from),
+            cpp_mask_op(0, &a, &b, &c, &idx).0,
+            what,
+        );
+        ck.eq(
+            i32::from(test_special_power_mask_any(&a, &b)),
+            cpp_mask_op(1, &a, &b, &c, &idx).0,
+            what,
+        );
         let cm = cpp_mask_op(2, &a, &b, &c, &idx).0;
-        ck.eq(i32::from(test_special_power_mask_multi(&a, &b, &c)), cm, what);
-        multi_bug.eq(i32::from(test_special_power_mask_multi(&a, &c, &b)), cm, what);
-        ck.eq(i32::from(special_power_mask_any_set(&a)), cpp_mask_op(3, &a, &b, &c, &idx).0, what);
+        ck.eq(
+            i32::from(test_special_power_mask_multi(&a, &b, &c)),
+            cm,
+            what,
+        );
+        multi_bug.eq(
+            i32::from(test_special_power_mask_multi(&a, &c, &b)),
+            cm,
+            what,
+        );
+        ck.eq(
+            i32::from(special_power_mask_any_set(&a)),
+            cpp_mask_op(3, &a, &b, &c, &idx).0,
+            what,
+        );
         let mut m = a;
         clear_special_power_mask(&mut m);
         ck.eq((0, m.words()), cpp_mask_op(4, &a, &b, &c, &idx), what);
@@ -373,10 +493,18 @@ fn special_power_mask_helpers_match_upstream() {
         let mut m = a;
         let rs = set_special_power_mask(&mut m, idx[0], idx[1]);
         let cs = cpp_mask_op(5, &a, &b, &c, &idx);
-        ck.eq(rs.map_or((-1, [0; 4]), |()| (0, m.words())), if cs.0 < 0 { (-1, [0; 4]) } else { cs }, what);
+        ck.eq(
+            rs.map_or((-1, [0; 4]), |()| (0, m.words())),
+            if cs.0 < 0 { (-1, [0; 4]) } else { cs },
+            what,
+        );
         let mut m2 = a;
         let _ = set_special_power_mask(&mut m2, idx[0], 1);
-        set_bug.eq(rs.map_or((-1, [0; 4]), |()| (0, m2.words())), if cs.0 < 0 { (-1, [0; 4]) } else { cs }, what);
+        set_bug.eq(
+            rs.map_or((-1, [0; 4]), |()| (0, m2.words())),
+            if cs.0 < 0 { (-1, [0; 4]) } else { cs },
+            what,
+        );
         let mut m = a;
         set_all_special_power_mask_bits(&mut m);
         ck.eq((0, m.words()), cpp_mask_op(6, &a, &b, &c, &idx), what);

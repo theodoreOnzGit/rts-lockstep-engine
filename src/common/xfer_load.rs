@@ -28,7 +28,10 @@
 //! hand-offs upstream would have made ([`XferLoad::post_process_requests`]);
 //! the caller owns the snapshots and runs their `load_post_process`.
 
-use super::xfer::{Snapshot, Xfer, XferBlockSize, XferMode, XferResult, XferState, XferStatus, XO_NO_POST_PROCESSING};
+use super::xfer::{
+    Snapshot, Xfer, XferBlockSize, XferMode, XferResult, XferState, XferStatus,
+    XO_NO_POST_PROCESSING,
+};
 
 /// `class XferLoad`.
 #[derive(Clone, Debug)]
@@ -43,7 +46,12 @@ pub struct XferLoad {
 impl XferLoad {
     /// `XferLoad()`, with the contents of the file that `open` will read.
     pub fn new(data: Vec<u8>) -> Self {
-        XferLoad { state: XferState::new(XferMode::Load), data, pos: None, post_process_requests: 0 }
+        XferLoad {
+            state: XferState::new(XferMode::Load),
+            data,
+            pos: None,
+            post_process_requests: 0,
+        }
     }
 
     /// The current read position (`ftell`), if open.
@@ -176,7 +184,10 @@ impl Xfer for XferLoad {
         if len > 0 {
             self.xfer_user(&mut bytes)?;
         }
-        let mut chars: Vec<u16> = bytes.chunks_exact(2).map(|p| u16::from_le_bytes([p[0], p[1]])).collect();
+        let mut chars: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|p| u16::from_le_bytes([p[0], p[1]]))
+            .collect();
         if let Some(nul) = chars.iter().position(|&c| c == 0) {
             chars.truncate(nul);
         }

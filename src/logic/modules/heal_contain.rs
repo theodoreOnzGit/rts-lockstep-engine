@@ -36,13 +36,19 @@
 use std::sync::Arc;
 
 use crate::common::game_type::{ObjectId, INVALID_ID};
-use crate::common::ini::{FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::module::ModuleDataKind;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::{DamageInfo, DAMAGE_HEALING, DEATH_NONE};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{UpdateModule, UpdateSleepTime, DOOR_NONE_AVAILABLE, UPDATE_SLEEP_NONE};
-use crate::logic::modules::open_contain::{self, out, OpenContain, OpenContainModuleData, OpenContainVirtuals};
+use crate::logic::module::update_module::{
+    UpdateModule, UpdateSleepTime, DOOR_NONE_AVAILABLE, UPDATE_SLEEP_NONE,
+};
+use crate::logic::modules::open_contain::{
+    self, out, OpenContain, OpenContainModuleData, OpenContainVirtuals,
+};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -61,12 +67,20 @@ pub struct HealContainModuleData {
 impl Default for HealContainModuleData {
     /// `HealContainModuleData()`: no time.
     fn default() -> Self {
-        HealContainModuleData { open: OpenContainModuleData::default(), frames_for_full_heal: 0 }
+        HealContainModuleData {
+            open: OpenContainModuleData::default(),
+            frames_for_full_heal: 0,
+        }
     }
 }
 
 /// Lifts entry `k` of `OpenContainModuleData`'s table onto the `open` base.
-fn lift_open(k: usize, i: &mut Ini<'_>, d: &mut HealContainModuleData, u: &UserData) -> IniResult<()> {
+fn lift_open(
+    k: usize,
+    i: &mut Ini<'_>,
+    d: &mut HealContainModuleData,
+    u: &UserData,
+) -> IniResult<()> {
     match open_contain::FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.open, u),
         None => Ok(()),
@@ -74,7 +88,12 @@ fn lift_open(k: usize, i: &mut Ini<'_>, d: &mut HealContainModuleData, u: &UserD
 }
 
 /// Lifts entry `k` of the die mux table onto the `open` base.
-fn lift_die(k: usize, i: &mut Ini<'_>, d: &mut HealContainModuleData, u: &UserData) -> IniResult<()> {
+fn lift_die(
+    k: usize,
+    i: &mut Ini<'_>,
+    d: &mut HealContainModuleData,
+    u: &UserData,
+) -> IniResult<()> {
     match open_contain::DIE_MUX_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.open, u),
         None => Ok(()),
@@ -82,41 +101,118 @@ fn lift_die(k: usize, i: &mut Ini<'_>, d: &mut HealContainModuleData, u: &UserDa
 }
 
 static LIFTED_OPEN: [FieldParse<HealContainModuleData>; 16] = [
-    FieldParse::new("ContainMax", |i, d, u| lift_open(0, i, d, u), UserData::None),
-    FieldParse::new("EnterSound", |i, d, u| lift_open(1, i, d, u), UserData::None),
+    FieldParse::new(
+        "ContainMax",
+        |i, d, u| lift_open(0, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "EnterSound",
+        |i, d, u| lift_open(1, i, d, u),
+        UserData::None,
+    ),
     FieldParse::new("ExitSound", |i, d, u| lift_open(2, i, d, u), UserData::None),
-    FieldParse::new("DamagePercentToUnits", |i, d, u| lift_open(3, i, d, u), UserData::None),
-    FieldParse::new("BurnedDeathToUnits", |i, d, u| lift_open(4, i, d, u), UserData::None),
-    FieldParse::new("AllowInsideKindOf", |i, d, u| lift_open(5, i, d, u), UserData::None),
-    FieldParse::new("ForbidInsideKindOf", |i, d, u| lift_open(6, i, d, u), UserData::None),
-    FieldParse::new("PassengersAllowedToFire", |i, d, u| lift_open(7, i, d, u), UserData::None),
-    FieldParse::new("PassengersInTurret", |i, d, u| lift_open(8, i, d, u), UserData::None),
-    FieldParse::new("NumberOfExitPaths", |i, d, u| lift_open(9, i, d, u), UserData::None),
-    FieldParse::new("DoorOpenTime", |i, d, u| lift_open(10, i, d, u), UserData::None),
-    FieldParse::new("WeaponBonusPassedToPassengers", |i, d, u| lift_open(11, i, d, u), UserData::None),
-    FieldParse::new("AllowAlliesInside", |i, d, u| lift_open(12, i, d, u), UserData::None),
-    FieldParse::new("AllowEnemiesInside", |i, d, u| lift_open(13, i, d, u), UserData::None),
-    FieldParse::new("AllowNeutralInside", |i, d, u| lift_open(14, i, d, u), UserData::None),
+    FieldParse::new(
+        "DamagePercentToUnits",
+        |i, d, u| lift_open(3, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "BurnedDeathToUnits",
+        |i, d, u| lift_open(4, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AllowInsideKindOf",
+        |i, d, u| lift_open(5, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ForbidInsideKindOf",
+        |i, d, u| lift_open(6, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "PassengersAllowedToFire",
+        |i, d, u| lift_open(7, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "PassengersInTurret",
+        |i, d, u| lift_open(8, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "NumberOfExitPaths",
+        |i, d, u| lift_open(9, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DoorOpenTime",
+        |i, d, u| lift_open(10, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "WeaponBonusPassedToPassengers",
+        |i, d, u| lift_open(11, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AllowAlliesInside",
+        |i, d, u| lift_open(12, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AllowEnemiesInside",
+        |i, d, u| lift_open(13, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AllowNeutralInside",
+        |i, d, u| lift_open(14, i, d, u),
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 static LIFTED_DIE: [FieldParse<HealContainModuleData>; 5] = [
     FieldParse::new("DeathTypes", |i, d, u| lift_die(0, i, d, u), UserData::None),
-    FieldParse::new("VeterancyLevels", |i, d, u| lift_die(1, i, d, u), UserData::None),
-    FieldParse::new("ExemptStatus", |i, d, u| lift_die(2, i, d, u), UserData::None),
-    FieldParse::new("RequiredStatus", |i, d, u| lift_die(3, i, d, u), UserData::None),
+    FieldParse::new(
+        "VeterancyLevels",
+        |i, d, u| lift_die(1, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ExemptStatus",
+        |i, d, u| lift_die(2, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RequiredStatus",
+        |i, d, u| lift_die(3, i, d, u),
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 /// `HealContainModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<HealContainModuleData>; 2] = [
-    FieldParse::new("TimeForFullHeal", |i, d, _| { d.frames_for_full_heal = i.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "TimeForFullHeal",
+        |i, d, _| {
+            d.frames_for_full_heal = i.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl HealContainModuleData {
     /// `HealContainModuleData::buildFieldParse(p)`: `OpenContainModuleData::buildFieldParse(p)`, then this class's table.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, HealContainModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, HealContainModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&LIFTED_OPEN)?;
         p.add(&LIFTED_DIE)?;
@@ -136,7 +232,9 @@ impl HealContainModuleData {
 
 /// The factory's `NewModuleDataProc` for `HealContain`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::HealContain(Arc::new(HealContainModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::HealContain(Arc::new(
+        HealContainModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
 /// `class HealContain : public OpenContain`.
@@ -159,8 +257,12 @@ impl HealContain {
     }
 
     /// The constructor's first half: the base's (on a copy of its part of the data).
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<HealContainModuleData>>) -> IniResult<HealContain> {
-        let data = module_data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<HealContainModuleData>>,
+    ) -> IniResult<HealContain> {
+        let data = module_data
+            .ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let oc = OpenContain::unconstructed(object, Some(Arc::new(data.open.clone())))?;
         Ok(HealContain { oc, data })
     }
@@ -191,7 +293,12 @@ impl HealContain {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         open_contain::contain_module_call(self, world, me, call)
     }
 
@@ -214,7 +321,13 @@ impl HealContain {
     }
 
     /// `doHeal(obj, framesForFullHeal)`: one frame's healing of one rider; `Some(true)` when it is done, `None` for a rider with no body (undefined).
-    fn do_heal(&mut self, world: &mut World, me: ModuleHandle, obj: ObjectId, frames_for_full_heal: u32) -> Option<bool> {
+    fn do_heal(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        obj: ObjectId,
+        frames_for_full_heal: u32,
+    ) -> Option<bool> {
         // setup the healing damageInfo structure with all but the amount
         let mut info = DamageInfo::default();
         info.input.damage_type = DAMAGE_HEALING;
@@ -224,17 +337,30 @@ impl HealContain {
             undefined(world, me, Undefined::NullBodyModule);
             return None;
         };
-        let max = out(self, world, me, |w| w.module_call(obj, body, ModuleCall::GetMaxHealth)).as_real(0.0);
-        let since = world.frame().wrapping_sub(world.objects.find(obj).map_or(0, |o| o.contained_by_frame));
+        let max = out(self, world, me, |w| {
+            w.module_call(obj, body, ModuleCall::GetMaxHealth)
+        })
+        .as_real(0.0);
+        let since = world
+            .frame()
+            .wrapping_sub(world.objects.find(obj).map_or(0, |o| o.contained_by_frame));
         // "if we've been in here long enough ... set our health to max"
         if (since >= frames_for_full_heal) != crate::logic::modules::plant(1501) {
             info.input.amount = max;
-            out(self, world, me, |w| w.module_call(obj, body, ModuleCall::AttemptHealing(info)));
+            out(self, world, me, |w| {
+                w.module_call(obj, body, ModuleCall::AttemptHealing(info))
+            });
             Some(true)
         } else {
             // "give it a sliver of health as if it were at 0 health and would be fully healed at 'framesForFullHeal'"
-            info.input.amount = if crate::logic::modules::plant(1502) { max } else { max / frames_for_full_heal as f32 };
-            out(self, world, me, |w| w.module_call(obj, body, ModuleCall::AttemptHealing(info)));
+            info.input.amount = if crate::logic::modules::plant(1502) {
+                max
+            } else {
+                max / frames_for_full_heal as f32
+            };
+            out(self, world, me, |w| {
+                w.module_call(obj, body, ModuleCall::AttemptHealing(info))
+            });
             Some(false)
         }
     }
@@ -307,7 +433,12 @@ impl UpdateBehavior for HealContain {
             _ => None,
         }
     }
-    fn other_call(&mut self, _world: &mut World, _me: ModuleHandle, _call: ModuleCall) -> ModuleReply {
+    fn other_call(
+        &mut self,
+        _world: &mut World,
+        _me: ModuleHandle,
+        _call: ModuleCall,
+    ) -> ModuleReply {
         ModuleReply::Unhandled
     }
 }

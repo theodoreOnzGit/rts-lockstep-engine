@@ -44,7 +44,9 @@ use std::sync::Arc;
 
 use crate::common::disabled_types::DISABLED_HELD;
 use crate::common::game_type::{ObjectId, INVALID_ID};
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::model_state::MODELCONDITION_GARRISONED;
 use crate::common::module::ModuleDataKind;
 use crate::common::object_status_types::OBJECT_STATUS_UNDER_CONSTRUCTION;
@@ -52,7 +54,9 @@ use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferStatus, Xfer
 use crate::logic::damage::DamageInfo;
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::update_module::{UpdateModule, UpdateSleepTime};
-use crate::logic::modules::open_contain::{self, out, OpenContain, OpenContainModuleData, OpenContainVirtuals};
+use crate::logic::modules::open_contain::{
+    self, out, OpenContain, OpenContainModuleData, OpenContainVirtuals,
+};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::ids::TeamId;
@@ -74,7 +78,12 @@ pub struct CaveContainModuleData {
 }
 
 /// Lifts entry `k` of `OpenContainModuleData`'s table onto the `open` base.
-fn lift_open(k: usize, i: &mut Ini<'_>, d: &mut CaveContainModuleData, u: &UserData) -> IniResult<()> {
+fn lift_open(
+    k: usize,
+    i: &mut Ini<'_>,
+    d: &mut CaveContainModuleData,
+    u: &UserData,
+) -> IniResult<()> {
     match open_contain::FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.open, u),
         None => Ok(()),
@@ -82,7 +91,12 @@ fn lift_open(k: usize, i: &mut Ini<'_>, d: &mut CaveContainModuleData, u: &UserD
 }
 
 /// Lifts entry `k` of the die mux table onto the `open` base.
-fn lift_die(k: usize, i: &mut Ini<'_>, d: &mut CaveContainModuleData, u: &UserData) -> IniResult<()> {
+fn lift_die(
+    k: usize,
+    i: &mut Ini<'_>,
+    d: &mut CaveContainModuleData,
+    u: &UserData,
+) -> IniResult<()> {
     match open_contain::DIE_MUX_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.open, u),
         None => Ok(()),
@@ -90,41 +104,118 @@ fn lift_die(k: usize, i: &mut Ini<'_>, d: &mut CaveContainModuleData, u: &UserDa
 }
 
 static LIFTED_OPEN: [FieldParse<CaveContainModuleData>; 16] = [
-    FieldParse::new("ContainMax", |i, d, u| lift_open(0, i, d, u), UserData::None),
-    FieldParse::new("EnterSound", |i, d, u| lift_open(1, i, d, u), UserData::None),
+    FieldParse::new(
+        "ContainMax",
+        |i, d, u| lift_open(0, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "EnterSound",
+        |i, d, u| lift_open(1, i, d, u),
+        UserData::None,
+    ),
     FieldParse::new("ExitSound", |i, d, u| lift_open(2, i, d, u), UserData::None),
-    FieldParse::new("DamagePercentToUnits", |i, d, u| lift_open(3, i, d, u), UserData::None),
-    FieldParse::new("BurnedDeathToUnits", |i, d, u| lift_open(4, i, d, u), UserData::None),
-    FieldParse::new("AllowInsideKindOf", |i, d, u| lift_open(5, i, d, u), UserData::None),
-    FieldParse::new("ForbidInsideKindOf", |i, d, u| lift_open(6, i, d, u), UserData::None),
-    FieldParse::new("PassengersAllowedToFire", |i, d, u| lift_open(7, i, d, u), UserData::None),
-    FieldParse::new("PassengersInTurret", |i, d, u| lift_open(8, i, d, u), UserData::None),
-    FieldParse::new("NumberOfExitPaths", |i, d, u| lift_open(9, i, d, u), UserData::None),
-    FieldParse::new("DoorOpenTime", |i, d, u| lift_open(10, i, d, u), UserData::None),
-    FieldParse::new("WeaponBonusPassedToPassengers", |i, d, u| lift_open(11, i, d, u), UserData::None),
-    FieldParse::new("AllowAlliesInside", |i, d, u| lift_open(12, i, d, u), UserData::None),
-    FieldParse::new("AllowEnemiesInside", |i, d, u| lift_open(13, i, d, u), UserData::None),
-    FieldParse::new("AllowNeutralInside", |i, d, u| lift_open(14, i, d, u), UserData::None),
+    FieldParse::new(
+        "DamagePercentToUnits",
+        |i, d, u| lift_open(3, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "BurnedDeathToUnits",
+        |i, d, u| lift_open(4, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AllowInsideKindOf",
+        |i, d, u| lift_open(5, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ForbidInsideKindOf",
+        |i, d, u| lift_open(6, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "PassengersAllowedToFire",
+        |i, d, u| lift_open(7, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "PassengersInTurret",
+        |i, d, u| lift_open(8, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "NumberOfExitPaths",
+        |i, d, u| lift_open(9, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DoorOpenTime",
+        |i, d, u| lift_open(10, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "WeaponBonusPassedToPassengers",
+        |i, d, u| lift_open(11, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AllowAlliesInside",
+        |i, d, u| lift_open(12, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AllowEnemiesInside",
+        |i, d, u| lift_open(13, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AllowNeutralInside",
+        |i, d, u| lift_open(14, i, d, u),
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 static LIFTED_DIE: [FieldParse<CaveContainModuleData>; 5] = [
     FieldParse::new("DeathTypes", |i, d, u| lift_die(0, i, d, u), UserData::None),
-    FieldParse::new("VeterancyLevels", |i, d, u| lift_die(1, i, d, u), UserData::None),
-    FieldParse::new("ExemptStatus", |i, d, u| lift_die(2, i, d, u), UserData::None),
-    FieldParse::new("RequiredStatus", |i, d, u| lift_die(3, i, d, u), UserData::None),
+    FieldParse::new(
+        "VeterancyLevels",
+        |i, d, u| lift_die(1, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ExemptStatus",
+        |i, d, u| lift_die(2, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RequiredStatus",
+        |i, d, u| lift_die(3, i, d, u),
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 /// `CaveContainModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<CaveContainModuleData>; 2] = [
-    FieldParse::new("CaveIndex", |i, d, _| { d.cave_index_data = i.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "CaveIndex",
+        |i, d, _| {
+            d.cave_index_data = i.parse_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl CaveContainModuleData {
     /// `CaveContainModuleData::buildFieldParse(p)`: `OpenContainModuleData::buildFieldParse(p)`, then this class's table.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, CaveContainModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, CaveContainModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&LIFTED_OPEN)?;
         p.add(&LIFTED_DIE)?;
@@ -144,7 +235,9 @@ impl CaveContainModuleData {
 
 /// The factory's `NewModuleDataProc` for `CaveContain`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::CaveContain(Arc::new(CaveContainModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::CaveContain(Arc::new(
+        CaveContainModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
 /// `class CaveContain : public OpenContain, public CreateModuleInterface, public CaveInterface`.
@@ -185,10 +278,20 @@ impl CaveContain {
     }
 
     /// The constructor's first half: the base's (on a copy of its part of the data); index 0, no original team.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<CaveContainModuleData>>) -> IniResult<CaveContain> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<CaveContainModuleData>>,
+    ) -> IniResult<CaveContain> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let oc = OpenContain::unconstructed(object, Some(Arc::new(data.open.clone())))?;
-        Ok(CaveContain { oc, data, need_to_run_on_build_complete: true, cave_index: 0, original_team: None, team_check_pending: false })
+        Ok(CaveContain {
+            oc,
+            data,
+            need_to_run_on_build_complete: true,
+            cave_index: 0,
+            original_team: None,
+            team_check_pending: false,
+        })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -221,7 +324,12 @@ impl CaveContain {
     }
 
     /// The module's answer to one of `Object`'s calls (a query that met no tracker is recorded: see the module docs).
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         let r = open_contain::contain_module_call(self, world, me, call);
         if world.cuts.contain.null_player_read.replace(false) {
             undefined(world, me, Undefined::NullObject);
@@ -285,7 +393,9 @@ impl CaveContain {
 
     /// The tracker of this cave's index, read in place (`None`, and the flag set, when the index has none).
     fn tracker_read<'a>(&self, world: &'a World) -> Option<&'a TunnelTracker> {
-        let t = world.cave_system.get_tunnel_tracker_for_cave_index(self.cave_index);
+        let t = world
+            .cave_system
+            .get_tunnel_tracker_for_cave_index(self.cave_index);
         if t.is_none() {
             world.cuts.contain.null_player_read.set(true);
         }
@@ -293,27 +403,46 @@ impl CaveContain {
     }
 
     /// The tracker of this cave's index, for an entry point that reads it unchecked (`None`, and undefined recorded, when there is none).
-    fn tracker_checked<'a>(&self, world: &'a mut World, me: ModuleHandle) -> Option<&'a TunnelTracker> {
-        if world.cave_system.get_tunnel_tracker_for_cave_index(self.cave_index).is_none() {
+    fn tracker_checked<'a>(
+        &self,
+        world: &'a mut World,
+        me: ModuleHandle,
+    ) -> Option<&'a TunnelTracker> {
+        if world
+            .cave_system
+            .get_tunnel_tracker_for_cave_index(self.cave_index)
+            .is_none()
+        {
             undefined(world, me, Undefined::NullObject);
             return None;
         }
-        world.cave_system.get_tunnel_tracker_for_cave_index(self.cave_index)
+        world
+            .cave_system
+            .get_tunnel_tracker_for_cave_index(self.cave_index)
     }
 
     /// `tryToSetCaveIndex(newIndex)`: "Called by script as an alternative to instancing separate objects. 'Try', because can fail."
     pub fn try_to_set_cave_index(&mut self, world: &mut World, me: ModuleHandle, new_index: i32) {
-        if !world.cave_system.can_switch_index_to_index(self.cave_index, new_index) {
+        if !world
+            .cave_system
+            .can_switch_index_to_index(self.cave_index, new_index)
+        {
             return;
         }
         let us = me.object;
         let old = self.cave_index;
-        if world.cave_system.get_tunnel_tracker_for_cave_index(old).is_none() {
+        if world
+            .cave_system
+            .get_tunnel_tracker_for_cave_index(old)
+            .is_none()
+        {
             undefined(world, me, Undefined::NullObject);
             return;
         }
         world.cave_system.unregister_cave(old);
-        if let Some(r) = out(self, world, me, |w| w.with_cave_tracker(old, |t, w| t.on_tunnel_destroyed(w, us))) {
+        if let Some(r) = out(self, world, me, |w| {
+            w.with_cave_tracker(old, |t, w| t.on_tunnel_destroyed(w, us))
+        }) {
             tracker_result(world, me, r);
         }
         self.cave_index = new_index;
@@ -327,20 +456,41 @@ impl CaveContain {
     }
 
     /// `changeTeamOnAllConnectedCaves(newTeam, setOriginalTeams)`: "when one gets captured, all connected ones get captured".
-    fn change_team_on_all_connected_caves(&mut self, world: &mut World, me: ModuleHandle, new_team: Option<TeamId>, set_original_teams: bool) {
-        let Some(all_caves) = self.tracker_checked(world, me).map(|t| t.get_container_list().to_vec()) else { return };
+    fn change_team_on_all_connected_caves(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        new_team: Option<TeamId>,
+        set_original_teams: bool,
+    ) {
+        let Some(all_caves) = self
+            .tracker_checked(world, me)
+            .map(|t| t.get_container_list().to_vec())
+        else {
+            return;
+        };
         for cave in all_caves {
             if world.objects.find(cave).is_none() {
                 continue;
             }
             // `findCave(currentCave)`: the first behaviour module with a cave interface
-            let Some(module) = out(self, world, me, |w| w.first_module_answering(cave, ModuleCall::HasCaveInterface)) else { continue };
-            let team = if set_original_teams { world.get_team(cave) } else { None };
+            let Some(module) = out(self, world, me, |w| {
+                w.first_module_answering(cave, ModuleCall::HasCaveInterface)
+            }) else {
+                continue;
+            };
+            let team = if set_original_teams {
+                world.get_team(cave)
+            } else {
+                None
+            };
             if cave == me.object && module == me.index {
                 // this module itself
                 self.original_team = team;
             } else {
-                out(self, world, me, |w| w.module_call(cave, module, ModuleCall::SetOriginalTeam(team)));
+                out(self, world, me, |w| {
+                    w.module_call(cave, module, ModuleCall::SetOriginalTeam(team))
+                });
             }
             if !crate::logic::modules::plant(1583) {
                 out(self, world, me, |w| w.contain_defect(cave, new_team, 0));
@@ -388,11 +538,19 @@ impl OpenContainVirtuals for CaveContain {
     }
 
     /// `removeFromContain(obj, exposeStealthUnits)`: out of the network's list if it is there, then `onRemoving` and `onRemovedFrom`.
-    fn remove_from_contain(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId, _expose_stealth_units: bool) {
+    fn remove_from_contain(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        rider: ObjectId,
+        _expose_stealth_units: bool,
+    ) {
         if rider == INVALID_ID {
             return;
         }
-        let Some(t) = self.tracker_checked(world, me) else { return };
+        let Some(t) = self.tracker_checked(world, me) else {
+            return;
+        };
         if !t.is_in_container(rider) {
             return;
         }
@@ -406,8 +564,18 @@ impl OpenContainVirtuals for CaveContain {
     }
 
     /// `removeAllContained(exposeStealthUnits)`: everyone in the network out (the list as it was, the iterator advanced first).
-    fn remove_all_contained(&mut self, world: &mut World, me: ModuleHandle, expose_stealth_units: bool) {
-        let Some(list) = self.tracker_checked(world, me).map(|t| t.get_contained_items_list().to_vec()) else { return };
+    fn remove_all_contained(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        expose_stealth_units: bool,
+    ) {
+        let Some(list) = self
+            .tracker_checked(world, me)
+            .map(|t| t.get_contained_items_list().to_vec())
+        else {
+            return;
+        };
         for obj in list {
             self.remove_from_contain(world, me, obj, expose_stealth_units);
         }
@@ -426,31 +594,51 @@ impl OpenContainVirtuals for CaveContain {
     }
     /// `getContainCount()`: the network's.
     fn get_contain_count(&self, world: &World) -> u32 {
-        self.tracker_read(world).map_or(0, |t| t.get_contain_count())
+        self.tracker_read(world)
+            .map_or(0, |t| t.get_contain_count())
     }
     /// `getContainMax()`: the network's.
     fn get_contain_max(&self, world: &World) -> i32 {
-        self.tracker_read(world).map_or(0, |t| t.get_contain_max(world))
+        self.tracker_read(world)
+            .map_or(0, |t| t.get_contain_max(world))
     }
     /// `getContainedItemsList()`: the network's.
     fn get_contained_items_list(&self, world: &World) -> Vec<ObjectId> {
-        self.tracker_read(world).map_or_else(Vec::new, |t| t.get_contained_items_list().to_vec())
+        self.tracker_read(world)
+            .map_or_else(Vec::new, |t| t.get_contained_items_list().to_vec())
     }
 
     /// `CaveContain::isValidContainerFor(obj, checkCapacity)`: the network's.
-    fn is_valid_container_for(&mut self, world: &mut World, me: ModuleHandle, obj: ObjectId, check_capacity: bool) -> bool {
+    fn is_valid_container_for(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        obj: ObjectId,
+        check_capacity: bool,
+    ) -> bool {
         if self.tracker_checked(world, me).is_none() {
             return false;
         }
         let obj = (obj != INVALID_ID).then_some(obj);
         let world: &World = world;
-        world.cave_system.get_tunnel_tracker_for_cave_index(self.cave_index).is_some_and(|t| t.is_valid_container_for(world, obj, check_capacity))
+        world
+            .cave_system
+            .get_tunnel_tracker_for_cave_index(self.cave_index)
+            .is_some_and(|t| t.is_valid_container_for(world, obj, check_capacity))
     }
 
     /// `CaveContain::onContaining(obj, wasSelected)`: held, and the caves' owner worked out again.
-    fn on_containing(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId, was_selected: bool) {
+    fn on_containing(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        rider: ObjectId,
+        was_selected: bool,
+    ) {
         open_contain::base_on_containing(self, world, me, rider, was_selected);
-        out(self, world, me, |w| w.contain_set_disabled(rider, DISABLED_HELD));
+        out(self, world, me, |w| {
+            w.contain_set_disabled(rider, DISABLED_HELD)
+        });
         if !crate::logic::modules::plant(1586) {
             self.recalc_apparent_controlling_player(world, me);
         }
@@ -460,12 +648,22 @@ impl OpenContainVirtuals for CaveContain {
     fn on_removing(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId) {
         open_contain::base_on_removing(self, world, me, rider);
         let us = me.object;
-        out(self, world, me, |w| w.contain_clear_disabled(rider, DISABLED_HELD));
-        out(self, world, me, |w| w.contain_partition_register_object(rider));
-        let pos = world.objects.find(us).map(|o| o.get_position()).unwrap_or_default();
+        out(self, world, me, |w| {
+            w.contain_clear_disabled(rider, DISABLED_HELD)
+        });
+        out(self, world, me, |w| {
+            w.contain_partition_register_object(rider)
+        });
+        let pos = world
+            .objects
+            .find(us)
+            .map(|o| o.get_position())
+            .unwrap_or_default();
         out(self, world, me, |w| w.contain_set_position(rider, &pos));
         if world.has_drawable(rider) {
-            out(self, world, me, |w| w.contain_drawable_set_hidden(rider, false));
+            out(self, world, me, |w| {
+                w.contain_drawable_set_hidden(rider, false)
+            });
         }
         open_contain::do_unload_sound(self, world, me);
 
@@ -475,7 +673,9 @@ impl OpenContainVirtuals for CaveContain {
                 self.change_team_on_all_connected_caves(world, me, original, false);
                 self.original_team = None;
             }
-            out(self, world, me, |w| w.contain_drawable_model_condition(us, MODELCONDITION_GARRISONED, false));
+            out(self, world, me, |w| {
+                w.contain_drawable_model_condition(us, MODELCONDITION_GARRISONED, false)
+            });
         }
     }
 
@@ -483,8 +683,17 @@ impl OpenContainVirtuals for CaveContain {
     fn on_die(&mut self, world: &mut World, me: ModuleHandle, info: &DamageInfo) {
         let us = me.object;
         let (applicable, building) = {
-            let Some(o) = world.objects.find(us) else { return };
-            (self.data.open.die_mux_data.is_die_applicable(info.input.death_type, o.get_veterancy_level() as i32, &o.status), o.test_status(OBJECT_STATUS_UNDER_CONSTRUCTION))
+            let Some(o) = world.objects.find(us) else {
+                return;
+            };
+            (
+                self.data.open.die_mux_data.is_die_applicable(
+                    info.input.death_type,
+                    o.get_veterancy_level() as i32,
+                    &o.status,
+                ),
+                o.test_status(OBJECT_STATUS_UNDER_CONSTRUCTION),
+            )
         };
         if !applicable || building {
             return;
@@ -495,7 +704,9 @@ impl OpenContainVirtuals for CaveContain {
         world.cave_system.unregister_cave(self.cave_index);
         if !crate::logic::modules::plant(1588) {
             let index = self.cave_index;
-            if let Some(r) = out(self, world, me, |w| w.with_cave_tracker(index, |t, w| t.on_tunnel_destroyed(w, us))) {
+            if let Some(r) = out(self, world, me, |w| {
+                w.with_cave_tracker(index, |t, w| t.on_tunnel_destroyed(w, us))
+            }) {
                 tracker_result(world, me, r);
             }
         }
@@ -505,7 +716,11 @@ impl OpenContainVirtuals for CaveContain {
     fn other_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
             ModuleCall::OnCreate => {
-                self.cave_index = if crate::logic::modules::plant(1589) { 0 } else { self.data.cave_index_data };
+                self.cave_index = if crate::logic::modules::plant(1589) {
+                    0
+                } else {
+                    self.data.cave_index_data
+                };
                 ModuleReply::Done
             }
             ModuleCall::OnBuildComplete => {
@@ -513,7 +728,11 @@ impl OpenContainVirtuals for CaveContain {
                     return ModuleReply::Done;
                 }
                 self.need_to_run_on_build_complete = false;
-                if world.cave_system.register_new_cave(self.cave_index).is_err() {
+                if world
+                    .cave_system
+                    .register_new_cave(self.cave_index)
+                    .is_err()
+                {
                     undefined(world, me, Undefined::EndlessLoop); // "the while loop would push NULL forever"
                     return ModuleReply::Done;
                 }
@@ -585,7 +804,12 @@ impl UpdateBehavior for CaveContain {
             _ => None,
         }
     }
-    fn other_call(&mut self, _world: &mut World, _me: ModuleHandle, _call: ModuleCall) -> ModuleReply {
+    fn other_call(
+        &mut self,
+        _world: &mut World,
+        _me: ModuleHandle,
+        _call: ModuleCall,
+    ) -> ModuleReply {
         ModuleReply::Unhandled
     }
 }

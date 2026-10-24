@@ -46,7 +46,9 @@ use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
-use rts_lockstep_engine::common::{disabled_types, kind_of, model_state, object_status_types, special_power_mask_type};
+use rts_lockstep_engine::common::{
+    disabled_types, kind_of, model_state, object_status_types, special_power_mask_type,
+};
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::{armor_set, weapon_set_flags};
 use std::ffi::{CStr, CString};
@@ -86,8 +88,18 @@ fn related_mask<T: BitFlagNames>(g: &mut Gen, a: &BitFlags<T>) -> BitFlags<T> {
     let w = a.words();
     match g.below(5) {
         0 => *a,
-        1 => BitFlags::from_words([w[0] & g.u64(), w[1] & g.u64(), w[2] & g.u64(), w[3] & g.u64()]),
-        2 => BitFlags::from_words([w[0] | g.u64(), w[1] | g.u64(), w[2] | g.u64(), w[3] | g.u64()]),
+        1 => BitFlags::from_words([
+            w[0] & g.u64(),
+            w[1] & g.u64(),
+            w[2] & g.u64(),
+            w[3] & g.u64(),
+        ]),
+        2 => BitFlags::from_words([
+            w[0] | g.u64(),
+            w[1] | g.u64(),
+            w[2] | g.u64(),
+            w[3] | g.u64(),
+        ]),
         _ => random_mask(g),
     }
 }
@@ -116,17 +128,37 @@ fn ops_and_names<T: BitFlagNames>(which: i32, tag: &str, g: &mut Gen) {
     let mut swapped: Vec<&str> = T::NAMES.to_vec();
     swapped.swap(0, 1);
     for (i, c) in cpp_names.iter().enumerate() {
-        ok.eq(T::NAMES.get(i).copied(), Some(c.as_str()), || format!("name {i}"));
-        bug.eq(swapped.get(i).copied(), Some(c.as_str()), || format!("name {i}"));
+        ok.eq(T::NAMES.get(i).copied(), Some(c.as_str()), || {
+            format!("name {i}")
+        });
+        bug.eq(swapped.get(i).copied(), Some(c.as_str()), || {
+            format!("name {i}")
+        });
     }
     ok.finish();
     bug.finish_planted();
 
     // operations
     let names = [
-        "operator==", "operator!=", "testForAny", "testForAll", "testForNone", "count", "any", "flip", "clear",
-        "countIntersection", "countInverseIntersection", "anyIntersectionWith", "clear(mask)", "set(mask)",
-        "clearAndSet", "testSetAndClear", "size", "test(i)", "set(i, val)",
+        "operator==",
+        "operator!=",
+        "testForAny",
+        "testForAll",
+        "testForNone",
+        "count",
+        "any",
+        "flip",
+        "clear",
+        "countIntersection",
+        "countInverseIntersection",
+        "anyIntersectionWith",
+        "clear(mask)",
+        "set(mask)",
+        "clearAndSet",
+        "testSetAndClear",
+        "size",
+        "test(i)",
+        "set(i, val)",
     ];
     let n = T::NUM_BITS as i32;
     for (code, name) in names.iter().enumerate() {
@@ -138,20 +170,53 @@ fn ops_and_names<T: BitFlagNames>(which: i32, tag: &str, g: &mut Gen) {
             let c = related_mask(g, &a);
             let i = if code >= 17 { k % n } else { 0 };
             let val = [0i32, 1, 2, -1][k as usize % 4];
-            let cw: Words = if code == 18 { [val as u64, 0, 0, 0] } else { c.words() };
+            let cw: Words = if code == 18 {
+                [val as u64, 0, 0, 0]
+            } else {
+                c.words()
+            };
             let mut out: Words = [0; 4];
             let r = unsafe {
-                cpp::ref_flags_op(which, code as i32, a.words().as_ptr(), b.words().as_ptr(), cw.as_ptr(), i, out.as_mut_ptr())
+                cpp::ref_flags_op(
+                    which,
+                    code as i32,
+                    a.words().as_ptr(),
+                    b.words().as_ptr(),
+                    cw.as_ptr(),
+                    i,
+                    out.as_mut_ptr(),
+                )
             };
             let mut m = a;
             let (good, wrong): ((i32, Words), (i32, Words)) = match code {
-                0 => ((i32::from(a == b), [0; 4]), (i32::from(a.count() == b.count()), [0; 4])),
-                1 => ((i32::from(a != b), [0; 4]), (i32::from(a.count() != b.count()), [0; 4])),
-                2 => ((i32::from(a.test_for_any(&b)), [0; 4]), (i32::from(a.any() && b.any()), [0; 4])),
-                3 => ((i32::from(a.test_for_all(&b)), [0; 4]), (i32::from(b.test_for_all(&a)), [0; 4])),
-                4 => ((i32::from(a.test_for_none(&b)), [0; 4]), (i32::from(!b.test_for_all(&a)), [0; 4])),
-                5 => ((a.count(), [0; 4]), (a.count() - i32::from(a.test(0)), [0; 4])),
-                6 => ((i32::from(a.any()), [0; 4]), (i32::from(a.count() > 1), [0; 4])),
+                0 => (
+                    (i32::from(a == b), [0; 4]),
+                    (i32::from(a.count() == b.count()), [0; 4]),
+                ),
+                1 => (
+                    (i32::from(a != b), [0; 4]),
+                    (i32::from(a.count() != b.count()), [0; 4]),
+                ),
+                2 => (
+                    (i32::from(a.test_for_any(&b)), [0; 4]),
+                    (i32::from(a.any() && b.any()), [0; 4]),
+                ),
+                3 => (
+                    (i32::from(a.test_for_all(&b)), [0; 4]),
+                    (i32::from(b.test_for_all(&a)), [0; 4]),
+                ),
+                4 => (
+                    (i32::from(a.test_for_none(&b)), [0; 4]),
+                    (i32::from(!b.test_for_all(&a)), [0; 4]),
+                ),
+                5 => (
+                    (a.count(), [0; 4]),
+                    (a.count() - i32::from(a.test(0)), [0; 4]),
+                ),
+                6 => (
+                    (i32::from(a.any()), [0; 4]),
+                    (i32::from(a.count() > 1), [0; 4]),
+                ),
                 7 => {
                     m.flip();
                     let w = a.words();
@@ -161,9 +226,18 @@ fn ops_and_names<T: BitFlagNames>(which: i32, tag: &str, g: &mut Gen) {
                     m.clear();
                     ((0, m.words()), (0, a.words()))
                 }
-                9 => ((a.count_intersection(&b), [0; 4]), (a.count_inverse_intersection(&b), [0; 4])),
-                10 => ((a.count_inverse_intersection(&b), [0; 4]), (b.count_inverse_intersection(&a), [0; 4])),
-                11 => ((i32::from(a.any_intersection_with(&b)), [0; 4]), (i32::from(a.test_for_all(&b) && b.any()), [0; 4])),
+                9 => (
+                    (a.count_intersection(&b), [0; 4]),
+                    (a.count_inverse_intersection(&b), [0; 4]),
+                ),
+                10 => (
+                    (a.count_inverse_intersection(&b), [0; 4]),
+                    (b.count_inverse_intersection(&a), [0; 4]),
+                ),
+                11 => (
+                    (i32::from(a.any_intersection_with(&b)), [0; 4]),
+                    (i32::from(a.test_for_all(&b) && b.any()), [0; 4]),
+                ),
                 12 => {
                     m.clear_mask(&b);
                     let mut w = b;
@@ -186,7 +260,10 @@ fn ops_and_names<T: BitFlagNames>(which: i32, tag: &str, g: &mut Gen) {
                     (i32::from(a.test_set_and_clear(&c, &b)), [0; 4]),
                 ),
                 16 => ((a.size(), [0; 4]), (a.size() - 1, [0; 4])),
-                17 => ((i32::from(a.test(i)), [0; 4]), (i32::from(a.test((i + 1) % n)), [0; 4])),
+                17 => (
+                    (i32::from(a.test(i)), [0; 4]),
+                    (i32::from(a.test((i + 1) % n)), [0; 4]),
+                ),
                 _ => {
                     m.set(i, val);
                     let mut w = a;
@@ -194,12 +271,37 @@ fn ops_and_names<T: BitFlagNames>(which: i32, tag: &str, g: &mut Gen) {
                     ((0, m.words()), (0, w.words()))
                 }
             };
-            ok.eq(good, (if code == 7 || code == 8 || (12..=14).contains(&code) || code == 18 { 0 } else { r }, out), || {
-                format!("a {:x?} b {:x?} c {:x?} i {i}", a.words(), b.words(), c.words())
-            });
-            bug.eq(wrong, (if code == 7 || code == 8 || (12..=14).contains(&code) || code == 18 { 0 } else { r }, out), || {
-                format!("case {k}")
-            });
+            ok.eq(
+                good,
+                (
+                    if code == 7 || code == 8 || (12..=14).contains(&code) || code == 18 {
+                        0
+                    } else {
+                        r
+                    },
+                    out,
+                ),
+                || {
+                    format!(
+                        "a {:x?} b {:x?} c {:x?} i {i}",
+                        a.words(),
+                        b.words(),
+                        c.words()
+                    )
+                },
+            );
+            bug.eq(
+                wrong,
+                (
+                    if code == 7 || code == 8 || (12..=14).contains(&code) || code == 18 {
+                        0
+                    } else {
+                        r
+                    },
+                    out,
+                ),
+                || format!("case {k}"),
+            );
         }
         ok.finish();
         bug.finish_planted();
@@ -221,7 +323,16 @@ fn ops_and_names<T: BitFlagNames>(which: i32, tag: &str, g: &mut Gen) {
         let base = T::NAMES[g.below(T::NAMES.len() as u32) as usize];
         let token: Vec<u8> = match g.below(6) {
             0 => base.as_bytes().to_vec(),
-            1 => base.bytes().map(|c| if g.below(2) == 0 { c.to_ascii_lowercase() } else { c }).collect(),
+            1 => base
+                .bytes()
+                .map(|c| {
+                    if g.below(2) == 0 {
+                        c.to_ascii_lowercase()
+                    } else {
+                        c
+                    }
+                })
+                .collect(),
             2 => format!("{base}X").into_bytes(),
             3 => base.as_bytes()[..base.len() - 1].to_vec(),
             4 => Vec::new(),
@@ -236,27 +347,60 @@ fn ops_and_names<T: BitFlagNames>(which: i32, tag: &str, g: &mut Gen) {
                 continue; // getBitNameIfSet tests the bit: std::out_of_range upstream
             }
             let r = unsafe {
-                cpp::ref_flags_names(which, code, a.words().as_ptr(), ctoken.as_ptr(), i, out.as_mut_ptr(), name.as_mut_ptr(), 2048)
+                cpp::ref_flags_names(
+                    which,
+                    code,
+                    a.words().as_ptr(),
+                    ctoken.as_ptr(),
+                    i,
+                    out.as_mut_ptr(),
+                    name.as_mut_ptr(),
+                    2048,
+                )
             };
             assert!(r != -2, "name buffer");
             let cname = if r == 1 { cstr(name.as_ptr()) } else { None };
-            let input = || format!("op {code} token {:?} i {i}", String::from_utf8_lossy(&token));
+            let input = || {
+                format!(
+                    "op {code} token {:?} i {i}",
+                    String::from_utf8_lossy(&token)
+                )
+            };
             match code {
                 0 => {
                     ok.eq(BitFlags::<T>::get_single_bit_from_name(&token), r, input);
                     // planted: case-sensitive comparison
-                    let w = T::NAMES.iter().position(|n| n.as_bytes() == token.as_slice()).map_or(-1, |p| p as i32);
+                    let w = T::NAMES
+                        .iter()
+                        .position(|n| n.as_bytes() == token.as_slice())
+                        .map_or(-1, |p| p as i32);
                     bug.eq(w, r, input);
                 }
                 1 => {
-                    ok.eq(BitFlags::<T>::get_name_from_single_bit(i).map(str::to_string), cname.clone(), input);
-                    let w = if (0..=n).contains(&i) { T::NAMES.get(i as usize).map(|s| s.to_string()) } else { None };
-                    bug.eq(w.or_else(|| (i == n).then(|| T::NAMES[0].to_string())), cname, input); // planted: i == NUMBITS accepted
+                    ok.eq(
+                        BitFlags::<T>::get_name_from_single_bit(i).map(str::to_string),
+                        cname.clone(),
+                        input,
+                    );
+                    let w = if (0..=n).contains(&i) {
+                        T::NAMES.get(i as usize).map(|s| s.to_string())
+                    } else {
+                        None
+                    };
+                    bug.eq(
+                        w.or_else(|| (i == n).then(|| T::NAMES[0].to_string())),
+                        cname,
+                        input,
+                    ); // planted: i == NUMBITS accepted
                 }
                 2 => {
-                    let good = a.try_get_bit_name_if_set(i).expect("in range").map(str::to_string);
+                    let good = a
+                        .try_get_bit_name_if_set(i)
+                        .expect("in range")
+                        .map(str::to_string);
                     ok.eq(good, cname.clone(), input);
-                    bug.eq(Some(T::NAMES[i as usize].to_string()), cname, input); // planted: ignores the bit
+                    bug.eq(Some(T::NAMES[i as usize].to_string()), cname, input);
+                    // planted: ignores the bit
                 }
                 3 => {
                     let mut m = a;
@@ -273,7 +417,11 @@ fn ops_and_names<T: BitFlagNames>(which: i32, tag: &str, g: &mut Gen) {
                 _ => {
                     let mut d = Vec::new();
                     a.build_description(&mut d);
-                    ok.eq(Some(String::from_utf8(d.clone()).expect("ASCII")), cname.clone(), input);
+                    ok.eq(
+                        Some(String::from_utf8(d.clone()).expect("ASCII")),
+                        cname.clone(),
+                        input,
+                    );
                     let w = String::from_utf8(d).expect("ASCII").replace(",\n", "\n"); // planted: no commas
                     bug.eq(Some(w), cname, input);
                 }
@@ -294,7 +442,16 @@ fn random_line<T: BitFlagNames>(g: &mut Gen) -> Vec<u8> {
     for t in 0..g.below(6) {
         line.push(if g.below(4) == 0 { b'\t' } else { b' ' });
         let name = T::NAMES[g.below(T::NAMES.len() as u32) as usize];
-        let name: String = name.chars().map(|c| if g.below(3) == 0 { c.to_ascii_lowercase() } else { c }).collect();
+        let name: String = name
+            .chars()
+            .map(|c| {
+                if g.below(3) == 0 {
+                    c.to_ascii_lowercase()
+                } else {
+                    c
+                }
+            })
+            .collect();
         let tok = match (style, g.below(12)) {
             (_, 0) => "NONE".to_string(),
             (_, 1) => "none".to_string(),
@@ -326,7 +483,9 @@ fn parse_and_xfer<T: BitFlagNames>(which: i32, tag: &str, g: &mut Gen) {
     for k in 0..3_000 {
         let start = random_mask::<T>(g);
         let line = random_line::<T>(g);
-        let mut cline = CString::new(line.clone()).expect("no NUL").into_bytes_with_nul();
+        let mut cline = CString::new(line.clone())
+            .expect("no NUL")
+            .into_bytes_with_nul();
         let mut out: Words = [0; 4];
         let mut desc = [0 as std::os::raw::c_char; 4096];
         let mut index = 0i32;
@@ -347,34 +506,75 @@ fn parse_and_xfer<T: BitFlagNames>(which: i32, tag: &str, g: &mut Gen) {
         let cdesc = cstr(desc.as_ptr()).unwrap_or_default();
         let mut ini = Ini::new();
         ini.begin_line(&line);
-        let input = || format!("line {:?} from {:x?}", String::from_utf8_lossy(&line), start.words());
+        let input = || {
+            format!(
+                "line {:?} from {:x?}",
+                String::from_utf8_lossy(&line),
+                start.words()
+            )
+        };
         if single == 1 {
             let res = BitFlags::<T>::parse_single_bit_from_ini(&mut ini);
-            ok.eq((i32::from(res.is_err()), res.as_ref().copied().unwrap_or(index)), (r, index), input);
-            bug.eq((i32::from(res.is_err()), res.map(|v| v + 1).unwrap_or(index)), (r, index), input);
+            ok.eq(
+                (
+                    i32::from(res.is_err()),
+                    res.as_ref().copied().unwrap_or(index),
+                ),
+                (r, index),
+                input,
+            );
+            bug.eq(
+                (i32::from(res.is_err()), res.map(|v| v + 1).unwrap_or(index)),
+                (r, index),
+                input,
+            );
             continue;
         }
         let mut m = start;
         let mut d = Vec::new();
         let res = m.parse(&mut ini, Some(&mut d));
-        ok.eq((i32::from(res.is_err()), m.words(), String::from_utf8_lossy(&d).into_owned()), (r, out, cdesc.clone()), input);
+        ok.eq(
+            (
+                i32::from(res.is_err()),
+                m.words(),
+                String::from_utf8_lossy(&d).into_owned(),
+            ),
+            (r, out, cdesc.clone()),
+            input,
+        );
         // planted: plain names added to the old value instead of replacing it
         let mut w = start;
         let mut ini = Ini::new();
         ini.begin_line(&line);
         let snapshot = w;
         let wres = w.parse(&mut ini, None);
-        if wres.is_ok() && line.split(|&b| b == b' ' || b == b'\t').skip(1).any(|t| !t.is_empty() && t[0] != b'+' && t[0] != b'-' && t != b"=") {
+        if wres.is_ok()
+            && line
+                .split(|&b| b == b' ' || b == b'\t')
+                .skip(1)
+                .any(|t| !t.is_empty() && t[0] != b'+' && t[0] != b'-' && t != b"=")
+        {
             w.set_mask(&snapshot);
         }
-        bug.eq((i32::from(wres.is_err()), w.words(), String::from_utf8_lossy(&d).into_owned()), (r, out, cdesc), input);
+        bug.eq(
+            (
+                i32::from(wres.is_err()),
+                w.words(),
+                String::from_utf8_lossy(&d).into_owned(),
+            ),
+            (r, out, cdesc),
+            input,
+        );
     }
     println!("     {tag}: upstream threw on {threw} of 3000 lines");
     ok.finish();
     bug.finish_planted();
 
     // xfer: save, load, CRC
-    let path = std::env::temp_dir().join(format!("rts-lockstep-flags-{}-{which}.bin", std::process::id()));
+    let path = std::env::temp_dir().join(format!(
+        "rts-lockstep-flags-{}-{which}.bin",
+        std::process::id()
+    ));
     let cpath = CString::new(path.to_str().expect("UTF-8 temp path")).expect("no NUL");
     let mut save = Check::new(&format!("{tag} xfer save"));
     let mut save_bug = Check::new(&format!("{tag} xfer save"));
@@ -385,7 +585,15 @@ fn parse_and_xfer<T: BitFlagNames>(which: i32, tag: &str, g: &mut Gen) {
     for k in 0..500 {
         let mut m = random_mask::<T>(g);
         let mut out: Words = [0; 4];
-        let st = unsafe { cpp::ref_flags_xfer(which, 0, cpath.as_ptr(), m.words().as_ptr(), out.as_mut_ptr()) };
+        let st = unsafe {
+            cpp::ref_flags_xfer(
+                which,
+                0,
+                cpath.as_ptr(),
+                m.words().as_ptr(),
+                out.as_mut_ptr(),
+            )
+        };
         assert_eq!(st, 0);
         let cbytes = std::fs::read(&path).expect("read C++ save");
         let mut xs = XferSave::new();
@@ -414,14 +622,23 @@ fn parse_and_xfer<T: BitFlagNames>(which: i32, tag: &str, g: &mut Gen) {
                 file[last] = b'#'; // an unknown name
             }
             3 => {
-                file.truncate(file.len().saturating_sub(1 + g.below(4) as usize)); // a short file
+                file.truncate(file.len().saturating_sub(1 + g.below(4) as usize));
+                // a short file
             }
             _ => {}
         }
         std::fs::write(&path, &file).expect("write load file");
         let mut cout: Words = [0; 4];
         let start = random_mask::<T>(g);
-        let cst = unsafe { cpp::ref_flags_xfer(which, 1, cpath.as_ptr(), start.words().as_ptr(), cout.as_mut_ptr()) };
+        let cst = unsafe {
+            cpp::ref_flags_xfer(
+                which,
+                1,
+                cpath.as_ptr(),
+                start.words().as_ptr(),
+                cout.as_mut_ptr(),
+            )
+        };
         let mut xl = XferLoad::new(file.clone());
         let mut r = start;
         xl.open(b"rust").expect("open");
@@ -444,18 +661,30 @@ fn parse_and_xfer<T: BitFlagNames>(which: i32, tag: &str, g: &mut Gen) {
 
         // CRC
         let mut cc: Words = [0; 4];
-        let st = unsafe { cpp::ref_flags_xfer(which, 2, cpath.as_ptr(), m.words().as_ptr(), cc.as_mut_ptr()) };
+        let st = unsafe {
+            cpp::ref_flags_xfer(
+                which,
+                2,
+                cpath.as_ptr(),
+                m.words().as_ptr(),
+                cc.as_mut_ptr(),
+            )
+        };
         assert_eq!(st, 0);
         let mut expect64 = XferCrc::new_without_nan_guard();
         expect64.add_bytes(&[1]);
         expect64.add_bytes(&m.words()[0].to_le_bytes());
-        crc.eq(expect64.get_crc(), cc[0] as u32, || format!("64-bit reference: version + bits 0-63 of {:x?}", m.words()));
+        crc.eq(expect64.get_crc(), cc[0] as u32, || {
+            format!("64-bit reference: version + bits 0-63 of {:x?}", m.words())
+        });
         let mut rc = XferCrc::new_without_nan_guard();
         m.xfer(&mut rc).expect("crc");
         let mut expect32 = XferCrc::new_without_nan_guard();
         expect32.add_bytes(&[1]);
         expect32.add_bytes(&(m.words()[0] as u32).to_le_bytes());
-        crc.eq(rc.get_crc(), expect32.get_crc(), || format!("shipped Win32: version + bits 0-31 of {:x?}", m.words()));
+        crc.eq(rc.get_crc(), expect32.get_crc(), || {
+            format!("shipped Win32: version + bits 0-31 of {:x?}", m.words())
+        });
         let mut wrong = XferCrc::new_without_nan_guard();
         wrong.add_bytes(&[1]);
         wrong.add_bytes(&((m.words()[0] >> 32) as u32).to_le_bytes()); // planted: the high half
@@ -481,11 +710,41 @@ fn enum_values(which: i32) -> Vec<i64> {
 fn enumerators_match() {
     let _turn = CPP_GLOBALS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let tables: [(&str, Vec<i64>); 5] = [
-        ("KindOfType", kind_of::KIND_OF_ENUMERATORS.iter().map(|e| e.1 as i64).collect()),
-        ("ObjectStatusTypes", object_status_types::OBJECT_STATUS_ENUMERATORS.iter().map(|e| e.1 as i64).collect()),
-        ("DisabledType", disabled_types::DISABLED_ENUMERATORS.iter().map(|e| e.1 as i64).collect()),
-        ("ModelConditionFlagType", model_state::MODEL_CONDITION_ENUMERATORS.iter().map(|e| e.1 as i64).collect()),
-        ("ArmorSetType", armor_set::ARMOR_SET_ENUMERATORS.iter().map(|e| e.1 as i64).collect()),
+        (
+            "KindOfType",
+            kind_of::KIND_OF_ENUMERATORS
+                .iter()
+                .map(|e| e.1 as i64)
+                .collect(),
+        ),
+        (
+            "ObjectStatusTypes",
+            object_status_types::OBJECT_STATUS_ENUMERATORS
+                .iter()
+                .map(|e| e.1 as i64)
+                .collect(),
+        ),
+        (
+            "DisabledType",
+            disabled_types::DISABLED_ENUMERATORS
+                .iter()
+                .map(|e| e.1 as i64)
+                .collect(),
+        ),
+        (
+            "ModelConditionFlagType",
+            model_state::MODEL_CONDITION_ENUMERATORS
+                .iter()
+                .map(|e| e.1 as i64)
+                .collect(),
+        ),
+        (
+            "ArmorSetType",
+            armor_set::ARMOR_SET_ENUMERATORS
+                .iter()
+                .map(|e| e.1 as i64)
+                .collect(),
+        ),
     ];
     for (which, (name, rust)) in tables.into_iter().enumerate() {
         let c = enum_values(which as i32);
@@ -493,7 +752,9 @@ fn enumerators_match() {
         let mut bug = Check::new(name);
         ok.eq(rust.len(), c.len(), || "count".into());
         let mut w = rust.clone();
-        let i = (1..w.len()).find(|&i| w[i] != w[i - 1]).expect("two distinct values");
+        let i = (1..w.len())
+            .find(|&i| w[i] != w[i - 1])
+            .expect("two distinct values");
         w.swap(i, i - 1);
         for (k, (&r, &v)) in rust.iter().zip(c.iter()).enumerate() {
             ok.eq(r, v, || format!("entry {k}"));
@@ -510,8 +771,12 @@ fn enumerators_match() {
         cpp::ref_flags_globals(1, all.as_mut_ptr());
     }
     let mut ok = Check::new("KINDOFMASK_FS, DISABLEDMASK_ALL");
-    ok.eq(kind_of::kindofmask_fs().words(), fs, || "KINDOFMASK_FS".into());
-    ok.eq(disabled_types::disabledmask_all().words(), all, || "DISABLEDMASK_ALL".into());
+    ok.eq(kind_of::kindofmask_fs().words(), fs, || {
+        "KINDOFMASK_FS".into()
+    });
+    ok.eq(disabled_types::disabledmask_all().words(), all, || {
+        "DISABLEDMASK_ALL".into()
+    });
     ok.finish();
     let mut bug = Check::new("KINDOFMASK_FS, DISABLEDMASK_ALL");
     let mut w = kind_of::kindofmask_fs();
@@ -532,14 +797,55 @@ macro_rules! per_type {
     };
 }
 
-per_type!(kind_of_mask_type, kind_of::KindOfNames, 0, "KindOfMaskType", 301);
-per_type!(object_status_mask_type, object_status_types::ObjectStatusNames, 1, "ObjectStatusMaskType", 302);
-per_type!(disabled_mask_type, disabled_types::DisabledNames, 2, "DisabledMaskType", 303);
-per_type!(model_condition_flags, model_state::ModelConditionNames, 3, "ModelConditionFlags", 304);
-per_type!(armor_set_flags, armor_set::ArmorSetNames, 4, "ArmorSetFlags", 305);
-per_type!(weapon_set_flags, weapon_set_flags::WeaponSetNames, 5, "WeaponSetFlags", 306);
-per_type!(special_power_mask_type, special_power_mask_type::SpecialPowerNames, 6, "SpecialPowerMaskType", 307);
-
+per_type!(
+    kind_of_mask_type,
+    kind_of::KindOfNames,
+    0,
+    "KindOfMaskType",
+    301
+);
+per_type!(
+    object_status_mask_type,
+    object_status_types::ObjectStatusNames,
+    1,
+    "ObjectStatusMaskType",
+    302
+);
+per_type!(
+    disabled_mask_type,
+    disabled_types::DisabledNames,
+    2,
+    "DisabledMaskType",
+    303
+);
+per_type!(
+    model_condition_flags,
+    model_state::ModelConditionNames,
+    3,
+    "ModelConditionFlags",
+    304
+);
+per_type!(
+    armor_set_flags,
+    armor_set::ArmorSetNames,
+    4,
+    "ArmorSetFlags",
+    305
+);
+per_type!(
+    weapon_set_flags,
+    weapon_set_flags::WeaponSetNames,
+    5,
+    "WeaponSetFlags",
+    306
+);
+per_type!(
+    special_power_mask_type,
+    special_power_mask_type::SpecialPowerNames,
+    6,
+    "SpecialPowerMaskType",
+    307
+);
 
 /// `Xfer::xferKindOf` (Xfer.cpp, with the real `KindOfMaskType` lookups, see
 /// `differential/wrap_xfer.cpp`) against `Xfer::xfer_kind_of`: CRC values,
@@ -563,7 +869,9 @@ fn xfer_kind_of_matches() {
         x.open(b"x").expect("open");
         let mut r = v;
         x.xfer_kind_of(&mut r).expect("crc");
-        ok.eq((0, r, x.get_crc()), (st, out[0], out[1] as u32), || format!("CRC of {v}"));
+        ok.eq((0, r, x.get_crc()), (st, out[0], out[1] as u32), || {
+            format!("CRC of {v}")
+        });
         // save
         let st = unsafe { cpp::ref_xfer_kind_of(1, cpath.as_ptr(), v, out.as_mut_ptr()) };
         let saved = std::fs::read(&path).expect("read C++ save");
@@ -572,7 +880,9 @@ fn xfer_kind_of_matches() {
         let mut r = v;
         xs.xfer_kind_of(&mut r).expect("save");
         xs.close().expect("close");
-        ok.eq((0, xs.bytes().to_vec()), (st, saved.clone()), || format!("save of {v}"));
+        ok.eq((0, xs.bytes().to_vec()), (st, saved.clone()), || {
+            format!("save of {v}")
+        });
         // load: the saved file, or one with an unknown name
         let mut file = saved;
         if k % 3 == 1 && file.len() > 2 {
@@ -589,8 +899,13 @@ fn xfer_kind_of_matches() {
             Ok(()) => 0,
             Err(e) => e as i32,
         };
-        ok.eq((rst, r), (st, out[0]), || format!("load of {file:?} from {start}"));
-        let wrong = if rst == 0 && r == start && kind_of::KindOfMaskType::get_single_bit_from_name(&file[2..]) == -1 {
+        ok.eq((rst, r), (st, out[0]), || {
+            format!("load of {file:?} from {start}")
+        });
+        let wrong = if rst == 0
+            && r == start
+            && kind_of::KindOfMaskType::get_single_bit_from_name(&file[2..]) == -1
+        {
             -1
         } else {
             r
@@ -633,27 +948,67 @@ fn sparse_match_finder_matches() {
             f
         };
         for _ in 0..3000 {
-            let entries: Vec<Entry<T>> =
-                (0..g.below(13)).map(|_| Entry((0..g.below(4)).map(|_| if g.below(3) == 0 { random_mask(g) } else { small(g) }).collect())).collect();
-            let queries: Vec<BitFlags<T>> = (0..20).map(|_| if g.below(2) == 0 { small(g) } else { random_mask(g) }).collect();
-            let masks: Vec<u64> = entries.iter().flat_map(|e| e.0.iter().flat_map(|m| m.words())).collect();
+            let entries: Vec<Entry<T>> = (0..g.below(13))
+                .map(|_| {
+                    Entry(
+                        (0..g.below(4))
+                            .map(|_| {
+                                if g.below(3) == 0 {
+                                    random_mask(g)
+                                } else {
+                                    small(g)
+                                }
+                            })
+                            .collect(),
+                    )
+                })
+                .collect();
+            let queries: Vec<BitFlags<T>> = (0..20)
+                .map(|_| {
+                    if g.below(2) == 0 {
+                        small(g)
+                    } else {
+                        random_mask(g)
+                    }
+                })
+                .collect();
+            let masks: Vec<u64> = entries
+                .iter()
+                .flat_map(|e| e.0.iter().flat_map(|m| m.words()))
+                .collect();
             let counts: Vec<i32> = entries.iter().map(|e| e.0.len() as i32).collect();
             let qw: Vec<u64> = queries.iter().flat_map(|q| q.words()).collect();
             let mut out = vec![0i32; 2 * queries.len()];
             unsafe {
-                cpp::ref_sparse_match(which, masks.as_ptr(), counts.as_ptr(), counts.len() as i32, qw.as_ptr(), queries.len() as i32, out.as_mut_ptr());
+                cpp::ref_sparse_match(
+                    which,
+                    masks.as_ptr(),
+                    counts.as_ptr(),
+                    counts.len() as i32,
+                    qw.as_ptr(),
+                    queries.len() as i32,
+                    out.as_mut_ptr(),
+                );
             }
             let mut finder = SparseMatchFinder::new();
             for (q, bits) in queries.iter().enumerate() {
-                let cached = finder.find_best_info(&entries, bits).map_or(-1, |i| i as i32);
-                let slow = SparseMatchFinder::find_best_info_slow(&entries, bits).map_or(-1, |i| i as i32);
-                ok.eq((cached, slow), (out[2 * q], out[2 * q + 1]), || format!("query {q}"));
+                let cached = finder
+                    .find_best_info(&entries, bits)
+                    .map_or(-1, |i| i as i32);
+                let slow =
+                    SparseMatchFinder::find_best_info_slow(&entries, bits).map_or(-1, |i| i as i32);
+                ok.eq((cached, slow), (out[2 * q], out[2 * q + 1]), || {
+                    format!("query {q}")
+                });
                 // planted: `<=` on the extraneous bits (ties go to the last candidate)
                 let mut res = -1;
                 let (mut bm, mut be) = (0, 999);
                 for (idx, e) in entries.iter().enumerate() {
                     for m in e.0.iter().rev() {
-                        let (ym, ye) = (bits.count_intersection(m), bits.count_inverse_intersection(m));
+                        let (ym, ye) = (
+                            bits.count_intersection(m),
+                            bits.count_inverse_intersection(m),
+                        );
                         if ym > bm || (ym >= bm && ye <= be) {
                             res = idx as i32;
                             bm = ym;

@@ -7,7 +7,9 @@
 //! the generators of INI text.
 #![allow(dead_code)]
 
-use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Thrown, TYPE_TABLE};
+use rts_lockstep_engine::common::ini::{
+    BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Thrown, TYPE_TABLE,
+};
 use rts_lockstep_engine::common::name_key_generator::{NameKeyGenerator, NameKeyType};
 use rts_lockstep_engine::common::special_power::SpecialPowerStore;
 use rts_lockstep_engine::common::upgrade::UpgradeCenter;
@@ -19,7 +21,13 @@ use crate::support::Gen;
 
 /// The sciences the tests define (`SCIENCE_*`): INI names that
 /// `RequiredScience` accepts.
-pub const SCIENCES: [&str; 5] = ["SCIENCE_Paradrop", "SCIENCE_Rank3", "SCIENCE_NapalmStrike", "science_lower", "SCIENCE_X"];
+pub const SCIENCES: [&str; 5] = [
+    "SCIENCE_Paradrop",
+    "SCIENCE_Rank3",
+    "SCIENCE_NapalmStrike",
+    "science_lower",
+    "SCIENCE_X",
+];
 
 // ---------------------------------------------------------------------------
 // The Rust side of the INI blocks
@@ -42,12 +50,20 @@ impl Ctx {
         if init_names {
             names.init();
         }
-        let sciences = SCIENCES.iter().map(|s| names.name_to_key(s.as_bytes())).collect();
+        let sciences = SCIENCES
+            .iter()
+            .map(|s| names.name_to_key(s.as_bytes()))
+            .collect();
         let mut center = UpgradeCenter::new();
         if init_center {
             center.init(&mut names).expect("init");
         }
-        Ctx { center, store: SpecialPowerStore::new(), names, sciences }
+        Ctx {
+            center,
+            store: SpecialPowerStore::new(),
+            names,
+            sciences,
+        }
     }
 }
 
@@ -56,7 +72,8 @@ fn h_upgrade(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
 }
 fn h_special_power(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
     let sciences = c.sciences.clone();
-    c.store.parse_special_power_definition(ini, &mut c.names, &move |k| sciences.contains(&k))
+    c.store
+        .parse_special_power_definition(ini, &mut c.names, &move |k| sciences.contains(&k))
 }
 fn h_stub(_: &mut Ini<'_>, _: &mut Ctx) -> IniResult<()> {
     Err(IniError::new(IniErrorKind::Bug))
@@ -91,7 +108,10 @@ fn put_str(v: &mut Vec<u8>, s: &[u8]) {
 }
 
 /// One template of `ref_up_dump`.
-fn put_upgrade_template(v: &mut Vec<u8>, t: &rts_lockstep_engine::common::upgrade::UpgradeTemplate) {
+fn put_upgrade_template(
+    v: &mut Vec<u8>,
+    t: &rts_lockstep_engine::common::upgrade::UpgradeTemplate,
+) {
     put_u32(v, t.upgrade_type() as i32 as u32);
     put_str(v, t.upgrade_name());
     put_u32(v, t.upgrade_name_key().0);
@@ -124,14 +144,16 @@ pub fn rust_upgrade_dump(center: &UpgradeCenter, bug: u32) -> Vec<u8> {
                 let mut one = Vec::new();
                 put_upgrade_template(&mut one, t);
                 let at = 4 + 4 + t.upgrade_name().len() + 4 + 4 + t.display_name_label().len();
-                let truncated = f32::from_bits(u32::from_le_bytes(one[at..at + 4].try_into().unwrap())).trunc();
+                let truncated =
+                    f32::from_bits(u32::from_le_bytes(one[at..at + 4].try_into().unwrap())).trunc();
                 one[at..at + 4].copy_from_slice(&truncated.to_bits().to_le_bytes());
                 v.extend_from_slice(&one);
             }
             3 => {
                 let mut one = Vec::new();
                 put_upgrade_template(&mut one, t);
-                let at = 4 + 4 + t.upgrade_name().len() + 4 + 4 + t.display_name_label().len() + 4 + 4;
+                let at =
+                    4 + 4 + t.upgrade_name().len() + 4 + 4 + t.display_name_label().len() + 4 + 4;
                 let (a, b) = (one[at..at + 8].to_vec(), one[at + 8..at + 16].to_vec());
                 one[at..at + 8].copy_from_slice(&b);
                 one[at + 8..at + 16].copy_from_slice(&a);
@@ -160,7 +182,11 @@ pub fn rust_special_power_dump(store: &SpecialPowerStore, bug: u32) -> Vec<u8> {
         put_u32(&mut v, n);
         let mut node = Some(t.chain());
         while let Some(o) = node {
-            v.push(if bug == 2 { 0 } else { u8::from(o.is_override()) });
+            v.push(if bug == 2 {
+                0
+            } else {
+                u8::from(o.is_override())
+            });
             let d = &o.data;
             put_str(&mut v, &d.name);
             put_u32(&mut v, d.id);
@@ -200,7 +226,14 @@ pub fn cpp_dump(f: unsafe extern "C" fn(*mut u8, i32) -> i32) -> Vec<u8> {
 pub fn cpp_reset(init_names: bool, init_center: bool) {
     let sc: Vec<CString> = SCIENCES.iter().map(|s| CString::new(*s).unwrap()).collect();
     let ptrs: Vec<*const std::os::raw::c_char> = sc.iter().map(|c| c.as_ptr()).collect();
-    let st = unsafe { cpp::ref_up_reset(i32::from(init_names), i32::from(init_center), ptrs.len() as i32, ptrs.as_ptr()) };
+    let st = unsafe {
+        cpp::ref_up_reset(
+            i32::from(init_names),
+            i32::from(init_center),
+            ptrs.len() as i32,
+            ptrs.as_ptr(),
+        )
+    };
     assert_eq!(st, 0);
 }
 
@@ -226,7 +259,11 @@ pub fn rust_outcome(r: IniResult<()>, crc: u32) -> Result<Outcome, IniError> {
             Some(Thrown::OutOfRange) => (4, Vec::new()),
         },
     };
-    Ok(Outcome { status, detail, crc })
+    Ok(Outcome {
+        status,
+        detail,
+        crc,
+    })
 }
 
 pub fn cpp_load(name: &[u8], data: &[u8], load_type: IniLoadType, with_xfer: bool) -> Outcome {
@@ -252,7 +289,11 @@ pub fn cpp_load(name: &[u8], data: &[u8], load_type: IniLoadType, with_xfer: boo
         2 | 3 => code.to_le_bytes().to_vec(),
         _ => panic!("C++ threw something unexpected (status {status})"),
     };
-    Outcome { status, detail, crc: if with_xfer { crc } else { 0 } }
+    Outcome {
+        status,
+        detail,
+        crc: if with_xfer { crc } else { 0 },
+    }
 }
 
 pub fn show(b: &[u8]) -> String {
@@ -291,7 +332,20 @@ pub fn gen_sep(g: &mut Gen) -> &'static str {
 }
 
 pub fn gen_end(g: &mut Gen) -> String {
-    pick(g, &["End", "END", "end", "  End  ", "End ; done", "End=", "Ends", "=End"]).to_string()
+    pick(
+        g,
+        &[
+            "End",
+            "END",
+            "end",
+            "  End  ",
+            "End ; done",
+            "End=",
+            "Ends",
+            "=End",
+        ],
+    )
+    .to_string()
 }
 
 pub fn gen_comment(g: &mut Gen) -> &'static str {
@@ -311,7 +365,21 @@ pub fn gen_real(g: &mut Gen, clean: bool) -> String {
     match g.below(20) {
         0..=8 => format!("{}", g.uniform(-100.0, 1000.0)),
         9..=12 => format!("{}", g.below(2000)),
-        13 => pick(g, &["0", "-0", "1e3", ".5", "5.", "1e-5", "100000000", "0.033", "33.3333"]).to_string(),
+        13 => pick(
+            g,
+            &[
+                "0",
+                "-0",
+                "1e3",
+                ".5",
+                "5.",
+                "1e-5",
+                "100000000",
+                "0.033",
+                "33.3333",
+            ],
+        )
+        .to_string(),
         _ if clean => "10".to_string(),
         14 => pick(g, &["x", "", "1e", ".", "-", "12abc", "1.5.3"]).to_string(),
         15 => format!("{}", g.mixed()),
@@ -325,7 +393,21 @@ pub fn gen_int(g: &mut Gen, clean: bool) -> String {
     match g.below(20) {
         0..=9 => format!("{}", g.below(5000)),
         10..=12 => format!("{}", g.below(300_000)),
-        13 => pick(g, &["0", "1", "33", "34", "-5", "1000", "4294967295", "2147483647", "-2147483648"]).to_string(),
+        13 => pick(
+            g,
+            &[
+                "0",
+                "1",
+                "33",
+                "34",
+                "-5",
+                "1000",
+                "4294967295",
+                "2147483647",
+                "-2147483648",
+            ],
+        )
+        .to_string(),
         _ if clean => "100".to_string(),
         14 => pick(g, &["x", "", "-", "12abc", "1e3", "5.5", "0x10"]).to_string(),
         15 => pick(g, &["4294967296", "-4294967297", "99999999999"]).to_string(),
@@ -356,7 +438,14 @@ pub fn assemble(g: &mut Gen, lines: &[String], clean: bool) -> Vec<u8> {
     match if clean { 99 } else { g.below(14) } {
         0 if !out.is_empty() => {
             let p = g.below(out.len() as u32) as usize;
-            out.insert(p, if g.below(2) == 0 { 0 } else { 0x80 + g.below(0x80) as u8 });
+            out.insert(
+                p,
+                if g.below(2) == 0 {
+                    0
+                } else {
+                    0x80 + g.below(0x80) as u8
+                },
+            );
         }
         1 if !out.is_empty() => {
             let p = g.below(out.len() as u32) as usize;
@@ -421,9 +510,25 @@ pub const SP_BLOCK_NAMES: [&str; 10] = [
     "SuperweaponNapalm",
 ];
 
-const SOUND_NAMES: [&str; 8] = ["Sound_Chime", "sfx_a", "NoSound", "nosound", "NOSOUND", "Boom", "UpgradeComplete", "x"];
+const SOUND_NAMES: [&str; 8] = [
+    "Sound_Chime",
+    "sfx_a",
+    "NoSound",
+    "nosound",
+    "NOSOUND",
+    "Boom",
+    "UpgradeComplete",
+    "x",
+];
 const IMAGE_NAMES: [&str; 5] = ["SSRadar", "ssradar", "None", "SAUpgrade_Flash", "Button 1"];
-const LABEL_NAMES: [&str; 6] = ["UPGRADE:Radar", "OBJECT:Foo", "Name", "A_B", "\"Quoted Name\"", "two words"];
+const LABEL_NAMES: [&str; 6] = [
+    "UPGRADE:Radar",
+    "OBJECT:Foo",
+    "Name",
+    "A_B",
+    "\"Quoted Name\"",
+    "two words",
+];
 
 fn gen_name_from(g: &mut Gen, pool: &[&str], max_extra: u32) -> String {
     if g.below(5) == 0 {
@@ -483,7 +588,18 @@ pub fn gen_upgrade_line(g: &mut Gen, clean: bool) -> String {
         _ => ("AcademyClassify", gen_academy(g, clean)),
     };
     let body = if !clean && g.below(40) == 0 {
-        pick(g, &["Foo = 1", "BuildCost", "Cost = 5", "buildcost = 5", "Dead = 1", "Enum = SPECIAL_EMP_PULSE"]).to_string()
+        pick(
+            g,
+            &[
+                "Foo = 1",
+                "BuildCost",
+                "Cost = 5",
+                "buildcost = 5",
+                "Dead = 1",
+                "Enum = SPECIAL_EMP_PULSE",
+            ],
+        )
+        .to_string()
     } else {
         format!("{field}{}{value}", gen_sep(g))
     };
@@ -498,7 +614,16 @@ pub fn gen_sp_line(g: &mut Gen, clean: bool) -> String {
         3 => (
             "RequiredScience",
             if !clean && g.below(6) == 0 {
-                pick(g, &["SCIENCE_Unknown", "", "science_paradrop", "SCIENCE_PARADROP"]).to_string()
+                pick(
+                    g,
+                    &[
+                        "SCIENCE_Unknown",
+                        "",
+                        "science_paradrop",
+                        "SCIENCE_PARADROP",
+                    ],
+                )
+                .to_string()
             } else {
                 pick(g, &SCIENCES).to_string()
             },
@@ -522,7 +647,18 @@ pub fn gen_sp_line(g: &mut Gen, clean: bool) -> String {
         _ => ("AcademyClassify", gen_academy(g, clean)),
     };
     let body = if !clean && g.below(40) == 0 {
-        pick(g, &["Foo = 1", "ReloadTime", "Reload = 5", "reloadtime = 5", "Dead = 1", "BuildCost = 5"]).to_string()
+        pick(
+            g,
+            &[
+                "Foo = 1",
+                "ReloadTime",
+                "Reload = 5",
+                "reloadtime = 5",
+                "Dead = 1",
+                "BuildCost = 5",
+            ],
+        )
+        .to_string()
     } else {
         format!("{field}{}{value}", gen_sep(g))
     };
@@ -545,11 +681,23 @@ pub fn gen_block(g: &mut Gen, lines: &mut Vec<String>, clean: bool, kind: u32) {
     } else {
         "SpecialPower".to_string()
     };
-    let word = if !clean && g.below(10) == 0 { case_mix(g, &word) } else { word };
-    let name = if upgrade { gen_upgrade_name(g, clean) } else { gen_sp_name(g, clean) };
+    let word = if !clean && g.below(10) == 0 {
+        case_mix(g, &word)
+    } else {
+        word
+    };
+    let name = if upgrade {
+        gen_upgrade_name(g, clean)
+    } else {
+        gen_sp_name(g, clean)
+    };
     lines.push(format!("{word} {name}").trim_end().to_string());
     for _ in 0..g.below(if clean { 12 } else { 9 }) {
-        lines.push(if upgrade { gen_upgrade_line(g, clean) } else { gen_sp_line(g, clean) });
+        lines.push(if upgrade {
+            gen_upgrade_line(g, clean)
+        } else {
+            gen_sp_line(g, clean)
+        });
     }
     if clean || g.below(15) != 0 {
         lines.push(if clean { "End".to_string() } else { gen_end(g) });

@@ -15,24 +15,24 @@ use std::sync::Arc;
 
 use crate::common::game_type::ObjectId;
 use crate::common::object_status_types::{ObjectStatusMaskType, ObjectStatusTypes};
+use crate::common::upgrade::UpgradeMaskType;
 use crate::logic::module::update_module::{UpdateModule, UpdateModuleData};
+use crate::logic::modules::object_defection_helper::ObjectDefectionHelper;
+use crate::logic::modules::object_helper::HelperHost;
 use crate::logic::modules::object_repulsor_helper::ObjectRepulsorHelper;
 use crate::logic::modules::object_smc_helper::ObjectSMCHelper;
-use crate::logic::modules::object_defection_helper::ObjectDefectionHelper;
-use crate::logic::modules::subdual_damage_helper::SubdualDamageHelper;
 use crate::logic::modules::object_weapon_status_helper::ObjectWeaponStatusHelper;
 use crate::logic::modules::status_damage_helper::StatusDamageHelper;
+use crate::logic::modules::subdual_damage_helper::SubdualDamageHelper;
 use crate::logic::modules::temp_weapon_bonus_helper::TempWeaponBonusHelper;
-use crate::logic::world::object::HelperKind;
-use crate::logic::world::object_create::NewModule;
-use crate::logic::world::update_body::UpdateBody;
-use crate::common::upgrade::UpgradeMaskType;
-use crate::logic::modules::object_helper::HelperHost;
 use crate::logic::modules::{DieHost, UpdateHost};
 use crate::logic::world::game_logic::World;
+use crate::logic::world::object::HelperKind;
+use crate::logic::world::object_create::NewModule;
 use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::object_events::ObjectClientEvent;
 use crate::logic::world::object_state::mask_of;
+use crate::logic::world::update_body::UpdateBody;
 
 impl HelperHost for World {
     fn frame(&self) -> u32 {
@@ -44,7 +44,9 @@ impl HelperHost for World {
     }
 
     fn is_destroyed(&self) -> bool {
-        self.objects.find(self.running_object()).is_some_and(|o| o.is_destroyed())
+        self.objects
+            .find(self.running_object())
+            .is_some_and(|o| o.is_destroyed())
     }
 
     fn set_status(&mut self, status: ObjectStatusTypes) {
@@ -83,12 +85,20 @@ impl HelperHost for World {
 
     fn set_tint_status(&mut self, tint: i32) {
         let object_id = self.running_object();
-        self.emit(ObjectClientEvent::DrawableTint { object_id, status: tint, on: true });
+        self.emit(ObjectClientEvent::DrawableTint {
+            object_id,
+            status: tint,
+            on: true,
+        });
     }
 
     fn clear_tint_status(&mut self, tint: i32) {
         let object_id = self.running_object();
-        self.emit(ObjectClientEvent::DrawableTint { object_id, status: tint, on: false });
+        self.emit(ObjectClientEvent::DrawableTint {
+            object_id,
+            status: tint,
+            on: false,
+        });
     }
 }
 
@@ -103,26 +113,61 @@ impl World {
             return self.cuts.make_helper(kind);
         }
         let made: Option<(UpdateModule, UpdateBody)> = match kind {
-            HelperKind::Smc => ObjectSMCHelper::unconstructed(id, data).ok().map(|h| (h.helper().update_module().clone(), UpdateBody::ObjectSMCHelper(h))),
-            HelperKind::Repulsor => {
-                ObjectRepulsorHelper::unconstructed(id, data).ok().map(|h| (h.helper().update_module().clone(), UpdateBody::ObjectRepulsorHelper(h)))
-            }
+            HelperKind::Smc => ObjectSMCHelper::unconstructed(id, data).ok().map(|h| {
+                (
+                    h.helper().update_module().clone(),
+                    UpdateBody::ObjectSMCHelper(h),
+                )
+            }),
+            HelperKind::Repulsor => ObjectRepulsorHelper::unconstructed(id, data).ok().map(|h| {
+                (
+                    h.helper().update_module().clone(),
+                    UpdateBody::ObjectRepulsorHelper(h),
+                )
+            }),
             HelperKind::WeaponStatus => {
-                ObjectWeaponStatusHelper::unconstructed(id, data).ok().map(|h| (h.helper().update_module().clone(), UpdateBody::ObjectWeaponStatusHelper(h)))
+                ObjectWeaponStatusHelper::unconstructed(id, data)
+                    .ok()
+                    .map(|h| {
+                        (
+                            h.helper().update_module().clone(),
+                            UpdateBody::ObjectWeaponStatusHelper(h),
+                        )
+                    })
             }
-            HelperKind::StatusDamage => {
-                StatusDamageHelper::unconstructed(id, data).ok().map(|h| (h.helper().update_module().clone(), UpdateBody::StatusDamageHelper(h)))
-            }
+            HelperKind::StatusDamage => StatusDamageHelper::unconstructed(id, data).ok().map(|h| {
+                (
+                    h.helper().update_module().clone(),
+                    UpdateBody::StatusDamageHelper(h),
+                )
+            }),
             HelperKind::TempWeaponBonus => {
-                TempWeaponBonusHelper::unconstructed(id, data).ok().map(|h| (h.helper().update_module().clone(), UpdateBody::TempWeaponBonusHelper(h)))
+                TempWeaponBonusHelper::unconstructed(id, data)
+                    .ok()
+                    .map(|h| {
+                        (
+                            h.helper().update_module().clone(),
+                            UpdateBody::TempWeaponBonusHelper(h),
+                        )
+                    })
             }
             // --- p1w11-sonnet ---
             HelperKind::SubdualDamage => {
-                SubdualDamageHelper::unconstructed(id, data).ok().map(|h| (h.helper().update_module().clone(), UpdateBody::SubdualDamageHelper(h)))
+                SubdualDamageHelper::unconstructed(id, data).ok().map(|h| {
+                    (
+                        h.helper().update_module().clone(),
+                        UpdateBody::SubdualDamageHelper(h),
+                    )
+                })
             }
-            HelperKind::Defection => {
-                ObjectDefectionHelper::unconstructed(id, data).ok().map(|h| (h.helper().update_module().clone(), UpdateBody::ObjectDefectionHelper(h)))
-            }
+            HelperKind::Defection => ObjectDefectionHelper::unconstructed(id, data)
+                .ok()
+                .map(|h| {
+                    (
+                        h.helper().update_module().clone(),
+                        UpdateBody::ObjectDefectionHelper(h),
+                    )
+                }),
             // --- end p1w11-sonnet ---
             _ => None,
         };
@@ -146,11 +191,16 @@ impl World {
 
 impl DieHost for World {
     fn veterancy_level(&self) -> i32 {
-        self.objects.find(self.running_object()).map_or(0, |o| o.get_veterancy_level() as i32)
+        self.objects
+            .find(self.running_object())
+            .map_or(0, |o| o.get_veterancy_level() as i32)
     }
 
     fn status_bits(&self) -> ObjectStatusMaskType {
-        self.objects.find(self.running_object()).map(|o| o.status).unwrap_or_default()
+        self.objects
+            .find(self.running_object())
+            .map(|o| o.status)
+            .unwrap_or_default()
     }
 
     fn destroy_object(&mut self) {
@@ -159,7 +209,9 @@ impl DieHost for World {
     }
 
     fn producer_exists(&self) -> bool {
-        self.objects.find(self.running_object()).is_some_and(|o| self.objects.find(o.producer_id).is_some())
+        self.objects
+            .find(self.running_object())
+            .is_some_and(|o| self.objects.find(o.producer_id).is_some())
     }
 
     fn find_upgrade(&mut self, name: &[u8]) -> bool {
@@ -168,14 +220,32 @@ impl DieHost for World {
 
     fn producer_has_upgrade(&mut self, name: &[u8]) -> bool {
         // `hasUpgrade`: the producer's completed upgrades contain every bit of the template's mask
-        let Some(mask) = self.named_upgrade_mask(name) else { return false };
-        let Some(producer) = self.objects.find(self.running_object()).map(|o| o.producer_id) else { return false };
-        self.objects.find(producer).is_some_and(|p| p.object_upgrades_completed.test_for_all(&mask))
+        let Some(mask) = self.named_upgrade_mask(name) else {
+            return false;
+        };
+        let Some(producer) = self
+            .objects
+            .find(self.running_object())
+            .map(|o| o.producer_id)
+        else {
+            return false;
+        };
+        self.objects
+            .find(producer)
+            .is_some_and(|p| p.object_upgrades_completed.test_for_all(&mask))
     }
 
     fn producer_remove_upgrade(&mut self, name: &[u8]) {
-        let Some(mask) = self.named_upgrade_mask(name) else { return };
-        let Some(producer) = self.objects.find(self.running_object()).map(|o| o.producer_id) else { return };
+        let Some(mask) = self.named_upgrade_mask(name) else {
+            return;
+        };
+        let Some(producer) = self
+            .objects
+            .find(self.running_object())
+            .map(|o| o.producer_id)
+        else {
+            return;
+        };
         self.remove_upgrade(producer, &mask);
     }
 }
@@ -184,14 +254,16 @@ impl DieHost for World {
 mod tests {
     use super::*;
     use crate::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
+    use crate::common::module::MODULEINTERFACE_BODY;
     use crate::common::module::{ModuleDataKind, MODULEINTERFACE_DIE};
     use crate::common::name_key_generator::NameKeyGenerator;
     use crate::common::object_status_types::{OBJECT_STATUS_AFLAME, OBJECT_STATUS_WET};
+    use crate::common::thing_factory::ThingFactory;
     use crate::common::thing_template::{ObjectTemplateValues, ThingTemplate};
     use crate::common::upgrade::UpgradeCenter;
+    use crate::common::xfer::Xfer;
     use crate::common::xfer_load::XferLoad;
     use crate::common::xfer_save::XferSave;
-    use crate::common::xfer::Xfer;
     use crate::logic::client_event::ClientEvent;
     use crate::logic::damage::{DamageInfo, DAMAGE_UNRESISTABLE};
     use crate::logic::module::update_module::UPDATE_SLEEP_FOREVER;
@@ -201,13 +273,13 @@ mod tests {
     use crate::logic::world::module_probe::{ProbeAnswers, ProbeModule};
     use crate::logic::world::object_create::NewObject;
     use crate::logic::world::object_xfer::ObjectXferStores;
-    use crate::common::module::MODULEINTERFACE_BODY;
-    use crate::common::thing_factory::ThingFactory;
 
     fn base_world() -> World {
         let mut w = World::new();
         w.cuts.neutral_default_team = 1;
-        w.teams.insert_team(crate::logic::world::team::Team::new(1, 0)).unwrap();
+        w.teams
+            .insert_team(crate::logic::world::team::Team::new(1, 0))
+            .unwrap();
         w.cuts.team_players.insert(1, 0);
         w.cuts.log = Some(Vec::new());
         w
@@ -216,25 +288,56 @@ mod tests {
     fn probe_body(max: f32) -> NewModule {
         let mut m = NewModule::plain(b"ProbeBody", b"ModuleTag_Body");
         m.interfaces = MODULEINTERFACE_BODY | MODULEINTERFACE_DIE;
-        m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), max, Default::default())));
+        m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+            ProbeAnswers::default(),
+            max,
+            Default::default(),
+        )));
         m
     }
 
     fn make(w: &mut World, modules: Vec<NewModule>) -> ObjectId {
-        let v = ObjectTemplateValues { template_id: 5, ..Default::default() };
-        w.new_object(NewObject { template: Arc::new(ThingTemplate::from_object_values(&v)), status: Default::default(), team: None, modules }).unwrap()
+        let v = ObjectTemplateValues {
+            template_id: 5,
+            ..Default::default()
+        };
+        w.new_object(NewObject {
+            template: Arc::new(ThingTemplate::from_object_values(&v)),
+            status: Default::default(),
+            team: None,
+            modules,
+        })
+        .unwrap()
     }
 
     /// An object whose template can have a weapon, so that it has the weapon helpers as well.
     fn make_armed(w: &mut World) -> ObjectId {
-        let v = ObjectTemplateValues { template_id: 6, weapon_sets: vec![(vec![], true)], ..Default::default() };
-        w.new_object(NewObject { template: Arc::new(ThingTemplate::from_object_values(&v)), status: Default::default(), team: None, modules: vec![] }).unwrap()
+        let v = ObjectTemplateValues {
+            template_id: 6,
+            weapon_sets: vec![(vec![], true)],
+            ..Default::default()
+        };
+        w.new_object(NewObject {
+            template: Arc::new(ThingTemplate::from_object_values(&v)),
+            status: Default::default(),
+            team: None,
+            modules: vec![],
+        })
+        .unwrap()
     }
 
     fn next_call(w: &World, id: ObjectId, class: &[u8]) -> u32 {
         let idx = w.find_module(id, class).unwrap();
-        let u = w.update_handle_of_module(ModuleHandle { object: id, index: idx }).unwrap();
-        w.objects.update_module(u).unwrap().friend_get_next_call_frame()
+        let u = w
+            .update_handle_of_module(ModuleHandle {
+                object: id,
+                index: idx,
+            })
+            .unwrap();
+        w.objects
+            .update_module(u)
+            .unwrap()
+            .friend_get_next_call_frame()
     }
 
     #[test]
@@ -244,21 +347,42 @@ mod tests {
         let o = w.objects.find(id).unwrap();
         // no weapon in the template: the SMC, status damage, subdual damage and defection helpers
         // (p1w11-sonnet: `SubdualDamageHelper` and `ObjectDefectionHelper` are real modules now)
-        for class in [&b"ObjectSMCHelper"[..], b"StatusDamageHelper", b"SubdualDamageHelper", b"ObjectDefectionHelper"] {
+        for class in [
+            &b"ObjectSMCHelper"[..],
+            b"StatusDamageHelper",
+            b"SubdualDamageHelper",
+            b"ObjectDefectionHelper",
+        ] {
             let idx = w.find_module(id, class).unwrap();
-            assert!(o.modules[idx as usize].update_index.is_some(), "{}", String::from_utf8_lossy(class));
-            assert_eq!(next_call(&w, id, class), UPDATE_SLEEP_FOREVER.0, "asleep: {}", String::from_utf8_lossy(class));
+            assert!(
+                o.modules[idx as usize].update_index.is_some(),
+                "{}",
+                String::from_utf8_lossy(class)
+            );
+            assert_eq!(
+                next_call(&w, id, class),
+                UPDATE_SLEEP_FOREVER.0,
+                "asleep: {}",
+                String::from_utf8_lossy(class)
+            );
         }
         // `FiringTracker` is the one helper no layer has translated yet: a stand-in
         let armed = make_armed(&mut w);
         let idx = w.find_module(armed, b"FiringTracker").unwrap();
-        assert!(w.objects.find(armed).unwrap().modules[idx as usize].update_index.is_none(), "not translated yet: a stand-in");
+        assert!(
+            w.objects.find(armed).unwrap().modules[idx as usize]
+                .update_index
+                .is_none(),
+            "not translated yet: a stand-in"
+        );
         // the ablation is explicit
         let mut w = base_world();
         w.cuts.stub_helpers = true;
         let id = make(&mut w, vec![]);
         let idx = w.find_module(id, b"ObjectSMCHelper").unwrap();
-        assert!(w.objects.find(id).unwrap().modules[idx as usize].update_index.is_none());
+        assert!(w.objects.find(id).unwrap().modules[idx as usize]
+            .update_index
+            .is_none());
     }
 
     #[test]
@@ -266,15 +390,34 @@ mod tests {
         let mut w = base_world();
         let id = make(&mut w, vec![]);
         w.do_status_damage(id, OBJECT_STATUS_AFLAME, 4.9);
-        assert!(w.objects.find(id).unwrap().test_status(OBJECT_STATUS_AFLAME));
-        assert_eq!(next_call(&w, id, b"StatusDamageHelper"), 4, "4.9 frames is 4");
+        assert!(w
+            .objects
+            .find(id)
+            .unwrap()
+            .test_status(OBJECT_STATUS_AFLAME));
+        assert_eq!(
+            next_call(&w, id, b"StatusDamageHelper"),
+            4,
+            "4.9 frames is 4"
+        );
         for _ in 0..4 {
             w.run_logic_frame();
-            assert!(w.objects.find(id).unwrap().test_status(OBJECT_STATUS_AFLAME));
+            assert!(w
+                .objects
+                .find(id)
+                .unwrap()
+                .test_status(OBJECT_STATUS_AFLAME));
         }
         w.run_logic_frame(); // frame 4
-        assert!(!w.objects.find(id).unwrap().test_status(OBJECT_STATUS_AFLAME));
-        assert_eq!(next_call(&w, id, b"StatusDamageHelper"), UPDATE_SLEEP_FOREVER.0);
+        assert!(!w
+            .objects
+            .find(id)
+            .unwrap()
+            .test_status(OBJECT_STATUS_AFLAME));
+        assert_eq!(
+            next_call(&w, id, b"StatusDamageHelper"),
+            UPDATE_SLEEP_FOREVER.0
+        );
         // a different status first clears the old one
         w.do_status_damage(id, OBJECT_STATUS_AFLAME, 50.0);
         w.do_status_damage(id, OBJECT_STATUS_WET, 50.0);
@@ -295,7 +438,11 @@ mod tests {
                 .events()
                 .iter()
                 .filter_map(|e| match e {
-                    ClientEvent::Object(ObjectClientEvent::DrawableTint { status: 0x10, on, .. }) => Some(*on),
+                    ClientEvent::Object(ObjectClientEvent::DrawableTint {
+                        status: 0x10,
+                        on,
+                        ..
+                    }) => Some(*on),
                     _ => None,
                 })
                 .collect()
@@ -313,42 +460,89 @@ mod tests {
         let mut w = base_world();
         let id = make(&mut w, vec![]);
         w.objects.find_mut(id).unwrap().drawable = 1;
-        w.set_special_model_condition_state(id, crate::common::model_state::MODELCONDITION_SPECIAL_CHEERING, 5);
+        w.set_special_model_condition_state(
+            id,
+            crate::common::model_state::MODELCONDITION_SPECIAL_CHEERING,
+            5,
+        );
         assert_eq!(w.objects.find(id).unwrap().smc_until, 5);
         assert_eq!(next_call(&w, id, b"ObjectSMCHelper"), 5);
         for _ in 0..6 {
             w.run_logic_frame();
         }
-        assert_eq!(w.objects.find(id).unwrap().smc_until, crate::common::game_common::NEVER, "cleared by the helper's update");
-        assert_eq!(next_call(&w, id, b"ObjectSMCHelper"), UPDATE_SLEEP_FOREVER.0);
+        assert_eq!(
+            w.objects.find(id).unwrap().smc_until,
+            crate::common::game_common::NEVER,
+            "cleared by the helper's update"
+        );
+        assert_eq!(
+            next_call(&w, id, b"ObjectSMCHelper"),
+            UPDATE_SLEEP_FOREVER.0
+        );
     }
 
     #[test]
     fn the_weapon_status_helper_runs_every_frame_in_the_final_phase() {
         let mut w = base_world();
         let id = make_armed(&mut w);
-        assert_eq!(next_call(&w, id, b"ObjectWeaponStatusHelper"), 1, "asleep it is not: due next frame");
+        assert_eq!(
+            next_call(&w, id, b"ObjectWeaponStatusHelper"),
+            1,
+            "asleep it is not: due next frame"
+        );
         for _ in 0..4 {
             w.run_logic_frame(); // frames 0 to 3: the helper runs on 1, 2 and 3
         }
-        let n = w.cuts.log.as_ref().unwrap().iter().filter(|c| matches!(c, CutCall::AdjustModelConditionForWeaponStatus { .. })).count();
+        let n = w
+            .cuts
+            .log
+            .as_ref()
+            .unwrap()
+            .iter()
+            .filter(|c| matches!(c, CutCall::AdjustModelConditionForWeaponStatus { .. }))
+            .count();
         assert_eq!(n, 3, "one adjustment per frame");
         let idx = w.find_module(id, b"ObjectWeaponStatusHelper").unwrap();
-        let u = w.update_handle_of_module(ModuleHandle { object: id, index: idx }).unwrap();
-        assert_eq!(w.objects.update_module(u).unwrap().friend_get_next_call_phase(), crate::logic::module::update_module::SleepyUpdatePhase::Final);
+        let u = w
+            .update_handle_of_module(ModuleHandle {
+                object: id,
+                index: idx,
+            })
+            .unwrap();
+        assert_eq!(
+            w.objects
+                .update_module(u)
+                .unwrap()
+                .friend_get_next_call_phase(),
+            crate::logic::module::update_module::SleepyUpdatePhase::Final
+        );
     }
 
     fn die_data(class: &str, text: &str) -> ModuleDataKind {
-        struct Slot(Option<ModuleDataKind>, fn(Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind>);
+        struct Slot(
+            Option<ModuleDataKind>,
+            fn(Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind>,
+        );
         fn blk(ini: &mut Ini<'_>, s: &mut Slot) -> IniResult<()> {
             s.0 = Some((s.1)(Some(ini))?);
             Ok(())
         }
         let t = crate::common::module_factory::translated_module(class).expect("translated");
         let src = format!("D\n{text}\nEnd\n");
-        let table = [BlockParse { token: "D", parse: blk }];
+        let table = [BlockParse {
+            token: "D",
+            parse: blk,
+        }];
         let mut slot = Slot(None, t.create_data_proc.unwrap());
-        Ini::load(b"d.ini", src.as_bytes(), IniLoadType::Overwrite, None, &table, &mut slot).unwrap();
+        Ini::load(
+            b"d.ini",
+            src.as_bytes(),
+            IniLoadType::Overwrite,
+            None,
+            &table,
+            &mut slot,
+        )
+        .unwrap();
         slot.0.unwrap()
     }
 
@@ -360,24 +554,52 @@ mod tests {
     fn destroy_die_destroys_the_object_when_it_dies_and_keep_object_die_does_not() {
         let mut w = base_world();
         let next = w.next_object_id();
-        let destroy = new_module(next, b"DestroyDie", b"ModuleTag_D", &die_data("DestroyDie", "")).unwrap().unwrap();
+        let destroy = new_module(
+            next,
+            b"DestroyDie",
+            b"ModuleTag_D",
+            &die_data("DestroyDie", ""),
+        )
+        .unwrap()
+        .unwrap();
         let a = make(&mut w, vec![probe_body(10.0), destroy]);
         kill(&mut w, a);
         assert!(w.objects.find(a).unwrap().is_destroyed());
-        assert!(w.cuts.reentrant_skips.is_empty(), "{:?}", w.cuts.reentrant_skips);
+        assert!(
+            w.cuts.reentrant_skips.is_empty(),
+            "{:?}",
+            w.cuts.reentrant_skips
+        );
 
         let next = w.next_object_id();
-        let keep = new_module(next, b"KeepObjectDie", b"ModuleTag_K", &die_data("KeepObjectDie", "")).unwrap().unwrap();
+        let keep = new_module(
+            next,
+            b"KeepObjectDie",
+            b"ModuleTag_K",
+            &die_data("KeepObjectDie", ""),
+        )
+        .unwrap()
+        .unwrap();
         let b = make(&mut w, vec![probe_body(10.0), keep]);
         kill(&mut w, b);
         assert!(!w.objects.find(b).unwrap().is_destroyed());
 
         // the die mux decides: a death type the module is not for
         let next = w.next_object_id();
-        let picky = new_module(next, b"DestroyDie", b"ModuleTag_D", &die_data("DestroyDie", "DeathTypes = NONE +CRUSHED")).unwrap().unwrap();
+        let picky = new_module(
+            next,
+            b"DestroyDie",
+            b"ModuleTag_D",
+            &die_data("DestroyDie", "DeathTypes = NONE +CRUSHED"),
+        )
+        .unwrap()
+        .unwrap();
         let c = make(&mut w, vec![probe_body(10.0), picky]);
         kill(&mut w, c);
-        assert!(!w.objects.find(c).unwrap().is_destroyed(), "DEATH_NORMAL is not CRUSHED");
+        assert!(
+            !w.objects.find(c).unwrap().is_destroyed(),
+            "DEATH_NORMAL is not CRUSHED"
+        );
     }
 
     #[test]
@@ -388,26 +610,63 @@ mod tests {
         fn blk(ini: &mut Ini<'_>, c: &mut (UpgradeCenter, NameKeyGenerator)) -> IniResult<()> {
             c.0.parse_upgrade_definition(ini, &mut c.1)
         }
-        Ini::load(b"u.ini", b"Upgrade UpA\nEnd\nUpgrade UpB\nEnd\n", IniLoadType::Overwrite, None, &[BlockParse { token: "Upgrade", parse: blk }], &mut ctx).unwrap();
+        Ini::load(
+            b"u.ini",
+            b"Upgrade UpA\nEnd\nUpgrade UpB\nEnd\n",
+            IniLoadType::Overwrite,
+            None,
+            &[BlockParse {
+                token: "Upgrade",
+                parse: blk,
+            }],
+            &mut ctx,
+        )
+        .unwrap();
         let mut w = base_world();
-        w.statics = Arc::new(crate::logic::world::statics::GameStatics { upgrade_center: ctx.0, ..Default::default() });
+        w.statics = Arc::new(crate::logic::world::statics::GameStatics {
+            upgrade_center: ctx.0,
+            ..Default::default()
+        });
         w.names = ctx.1;
         let producer = make(&mut w, vec![]);
         let statics = w.statics.clone();
-        let up_a = statics.upgrade_center.find_upgrade(&mut w.names, b"UpA").unwrap().unwrap().upgrade_mask();
-        let up_b = statics.upgrade_center.find_upgrade(&mut w.names, b"UpB").unwrap().unwrap().upgrade_mask();
-        w.objects.find_mut(producer).unwrap().object_upgrades_completed = {
+        let up_a = statics
+            .upgrade_center
+            .find_upgrade(&mut w.names, b"UpA")
+            .unwrap()
+            .unwrap()
+            .upgrade_mask();
+        let up_b = statics
+            .upgrade_center
+            .find_upgrade(&mut w.names, b"UpB")
+            .unwrap()
+            .unwrap()
+            .upgrade_mask();
+        w.objects
+            .find_mut(producer)
+            .unwrap()
+            .object_upgrades_completed = {
             let mut m = up_a;
             m.set_mask(&up_b);
             m
         };
         let next = w.next_object_id();
-        let die = new_module(next, b"UpgradeDie", b"ModuleTag_U", &die_data("UpgradeDie", "UpgradeToRemove = UpA")).unwrap().unwrap();
+        let die = new_module(
+            next,
+            b"UpgradeDie",
+            b"ModuleTag_U",
+            &die_data("UpgradeDie", "UpgradeToRemove = UpA"),
+        )
+        .unwrap()
+        .unwrap();
         let child = make(&mut w, vec![probe_body(10.0), die]);
         w.objects.find_mut(child).unwrap().producer_id = producer;
         kill(&mut w, child);
         let left = w.objects.find(producer).unwrap().object_upgrades_completed;
-        assert!(!left.test_for_all(&up_a) && left.test_for_all(&up_b), "UpA is gone, UpB stays");
+        assert!(
+            !left.test_for_all(&up_a) && left.test_for_all(&up_b),
+            "UpA is gone, UpB stays"
+        );
         assert!(w.cuts.module_errors.is_empty() && w.cuts.reentrant_skips.is_empty());
         let _ = DamageInfo::default();
     }
@@ -424,7 +683,11 @@ mod tests {
                 Module::Die(d) => d,
                 _ => panic!("{name}: a DieModule base"),
             };
-            let mut body = new_module(5, name.as_bytes(), b"ModuleTag_X", &data).unwrap().unwrap().body.unwrap();
+            let mut body = new_module(5, name.as_bytes(), b"ModuleTag_X", &data)
+                .unwrap()
+                .unwrap()
+                .body
+                .unwrap();
             let mut mine = crate::logic::module::test_support::save_bytes(&mut body).unwrap();
             let theirs = crate::logic::module::test_support::save_bytes(&mut base).unwrap();
             assert_eq!(mine.remove(0), 1);
@@ -441,7 +704,12 @@ mod tests {
         let save = |w: &mut World, names: &mut NameKeyGenerator| {
             let mut x = XferSave::new();
             x.open(b"object").unwrap();
-            let mut stores = ObjectXferStores { upgrade_center: &uc, names, factory: &ThingFactory::new(), weapon_store: &WeaponStore::new() };
+            let mut stores = ObjectXferStores {
+                upgrade_center: &uc,
+                names,
+                factory: &ThingFactory::new(),
+                weapon_store: &WeaponStore::new(),
+            };
             w.object_xfer(id, &mut x, &mut stores).expect("save");
             x.close().unwrap();
             x.take_bytes()
@@ -452,13 +720,24 @@ mod tests {
         assert_eq!(id, id2);
         let mut x = XferLoad::new(bytes.clone());
         x.open(b"object").unwrap();
-        let mut stores = ObjectXferStores { upgrade_center: &uc, names: &mut names, factory: &ThingFactory::new(), weapon_store: &WeaponStore::new() };
+        let mut stores = ObjectXferStores {
+            upgrade_center: &uc,
+            names: &mut names,
+            factory: &ThingFactory::new(),
+            weapon_store: &WeaponStore::new(),
+        };
         w2.object_xfer(id2, &mut x, &mut stores).expect("load");
         x.close().unwrap();
         w2.object_load_post_process(id2);
         let sd = w2.find_module(id2, b"StatusDamageHelper").unwrap();
-        match w2.take_module_body(ModuleHandle { object: id2, index: sd }) {
-            Some(UpdateBody::StatusDamageHelper(h)) => assert_eq!((h.status_to_heal, h.frame_to_heal), (OBJECT_STATUS_AFLAME, 40)),
+        match w2.take_module_body(ModuleHandle {
+            object: id2,
+            index: sd,
+        }) {
+            Some(UpdateBody::StatusDamageHelper(h)) => assert_eq!(
+                (h.status_to_heal, h.frame_to_heal),
+                (OBJECT_STATUS_AFLAME, 40)
+            ),
             other => panic!("{other:?}"),
         }
     }

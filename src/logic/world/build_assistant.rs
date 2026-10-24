@@ -55,21 +55,30 @@
 //! and a player without a default team given to `buildObjectNow` (the new object gets a null team): [`BuildError::Undefined`],
 //! and the differential never gives them to the C++.
 
-use crate::common::base_type::{real_to_int, real_to_int_floor, real_to_unsigned_int, Coord2D, Coord3D, Region3D};
+use crate::common::base_type::{
+    real_to_int, real_to_int_floor, real_to_unsigned_int, Coord2D, Coord3D, Region3D,
+};
 use crate::common::game_common::{CellShroudStatus, PlayerType, Relationship};
 use crate::common::game_type::{ObjectId, PathfindLayer, INVALID_ID, LAYER_GROUND};
 use crate::common::geometry::{GeometryInfo, GeometryType};
 use crate::common::kind_of::{
-    KindOfType, KINDOF_ALWAYS_SELECTABLE, KINDOF_CANNOT_BUILD_NEAR_SUPPLIES, KINDOF_CLEARED_BY_BUILD, KINDOF_DOZER,
-    KINDOF_IMMOBILE, KINDOF_INERT, KINDOF_LINEBUILD, KINDOF_MINE, KINDOF_SHRUBBERY, KINDOF_STRUCTURE,
+    KindOfType, KINDOF_ALWAYS_SELECTABLE, KINDOF_CANNOT_BUILD_NEAR_SUPPLIES,
+    KINDOF_CLEARED_BY_BUILD, KINDOF_DOZER, KINDOF_IMMOBILE, KINDOF_INERT, KINDOF_LINEBUILD,
+    KINDOF_MINE, KINDOF_SHRUBBERY, KINDOF_STRUCTURE,
 };
-use crate::common::model_state::{ModelConditionFlagType, MODELCONDITION_ACTIVELY_BEING_CONSTRUCTED, MODELCONDITION_PARTIALLY_CONSTRUCTED, MODELCONDITION_SOLD};
+use crate::common::model_state::{
+    ModelConditionFlagType, MODELCONDITION_ACTIVELY_BEING_CONSTRUCTED,
+    MODELCONDITION_PARTIALLY_CONSTRUCTED, MODELCONDITION_SOLD,
+};
 use crate::common::object_status_types::{
-    ObjectStatusTypes, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_IS_USING_ABILITY, OBJECT_STATUS_SOLD,
-    OBJECT_STATUS_STEALTHED, OBJECT_STATUS_UNDER_CONSTRUCTION, OBJECT_STATUS_UNSELECTABLE,
+    ObjectStatusTypes, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED,
+    OBJECT_STATUS_IS_USING_ABILITY, OBJECT_STATUS_SOLD, OBJECT_STATUS_STEALTHED,
+    OBJECT_STATUS_UNDER_CONSTRUCTION, OBJECT_STATUS_UNSELECTABLE,
 };
 use crate::common::xfer::{Xfer, XferMode, XferStatus};
-use crate::logic::object_script_status_bits::{OBJECT_STATUS_SCRIPT_DISABLED, OBJECT_STATUS_SCRIPT_UNPOWERED};
+use crate::logic::object_script_status_bits::{
+    OBJECT_STATUS_SCRIPT_DISABLED, OBJECT_STATUS_SCRIPT_UNPOWERED,
+};
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector3::Vector3;
 
@@ -250,7 +259,11 @@ pub struct BuildAssistant {
 impl BuildAssistant {
     /// `BuildAssistant::BuildAssistant()`.
     pub fn new() -> BuildAssistant {
-        BuildAssistant { build_positions: Vec::new(), build_position_size: 0, sell_list: Vec::new() }
+        BuildAssistant {
+            build_positions: Vec::new(),
+            build_position_size: 0,
+            sell_list: Vec::new(),
+        }
     }
 }
 
@@ -301,7 +314,14 @@ pub trait BuildAssistantHost {
     /// `ai->aiIdle(CMD_FROM_AI)`.
     fn ai_idle(&mut self, o: ObjectId);
     /// `ai->construct(what, pos, angle, owningPlayer, FALSE)`.
-    fn ai_construct(&mut self, o: ObjectId, what: TemplateRef, pos: Coord3D, angle: f32, player: PlayerIndex) -> Option<ObjectId>;
+    fn ai_construct(
+        &mut self,
+        o: ObjectId,
+        what: TemplateRef,
+        pos: Coord3D,
+        angle: f32,
+        player: PlayerIndex,
+    ) -> Option<ObjectId>;
     /// `ai->isQuickPathAvailable(&pos)`.
     fn ai_is_quick_path_available(&mut self, o: ObjectId, pos: Coord3D) -> bool;
     /// `ai->aiMoveToPositionEvenIfSleeping(&pos, CMD_FROM_AI)`.
@@ -313,7 +333,12 @@ pub trait BuildAssistantHost {
     /// `obj->setConstructionPercent(p)`.
     fn obj_set_construction_percent(&mut self, o: ObjectId, p: f32);
     /// `obj->clearAndSetModelConditionFlags(clear, set)`.
-    fn obj_clear_and_set_model_condition(&mut self, o: ObjectId, clear: &[ModelConditionFlagType], set: &[ModelConditionFlagType]);
+    fn obj_clear_and_set_model_condition(
+        &mut self,
+        o: ObjectId,
+        clear: &[ModelConditionFlagType],
+        set: &[ModelConditionFlagType],
+    );
     /// `obj->setModelConditionFlags(set)`.
     fn obj_set_model_condition(&mut self, o: ObjectId, set: &[ModelConditionFlagType]);
     /// `obj->setStatus(mask)` of the given bits.
@@ -351,7 +376,12 @@ pub trait BuildAssistantHost {
     /// `obj->setOrientation(angle)`.
     fn obj_set_orientation(&mut self, o: ObjectId, angle: f32);
     /// `TheThingFactory->newObject(what, owner's default team, status)`; the bits are the starting status.
-    fn thing_factory_new_object(&mut self, what: TemplateRef, owner: PlayerIndex, status: &[ObjectStatusTypes]) -> ObjectId;
+    fn thing_factory_new_object(
+        &mut self,
+        what: TemplateRef,
+        owner: PlayerIndex,
+        status: &[ObjectStatusTypes],
+    ) -> ObjectId;
     /// `TheAI->pathfinder()->addObjectToPathfindMap(obj)`.
     fn pathfinder_add_object(&mut self, o: ObjectId);
     /// `obj->getCommandSetString()`'s command set, `TheControlBar->findCommandSet(...)`: `Some(set)` when it exists.
@@ -399,11 +429,26 @@ pub trait BuildAssistantHost {
     /// `player->getMoney()->deposit(amount)`.
     fn player_deposit(&mut self, p: PlayerIndex, amount: u32);
     /// `player->onStructureCreated(constructor, obj)`.
-    fn player_on_structure_created(&mut self, p: PlayerIndex, constructor: Option<ObjectId>, o: ObjectId);
+    fn player_on_structure_created(
+        &mut self,
+        p: PlayerIndex,
+        constructor: Option<ObjectId>,
+        o: ObjectId,
+    );
     /// `player->onStructureConstructionComplete(constructor, obj, FALSE)`.
-    fn player_on_structure_construction_complete(&mut self, p: PlayerIndex, constructor: Option<ObjectId>, o: ObjectId);
+    fn player_on_structure_construction_complete(
+        &mut self,
+        p: PlayerIndex,
+        constructor: Option<ObjectId>,
+        o: ObjectId,
+    );
     /// `player->onUnitCreated(constructor, obj)`.
-    fn player_on_unit_created(&mut self, p: PlayerIndex, constructor: Option<ObjectId>, o: ObjectId);
+    fn player_on_unit_created(
+        &mut self,
+        p: PlayerIndex,
+        constructor: Option<ObjectId>,
+        o: ObjectId,
+    );
     // ---- terrain and the terrain visual ---------------------------------------------------------------------------
     /// `TheTerrainLogic->getGroundHeight(x, y)`.
     fn terrain_ground_height(&self, x: f32, y: f32) -> f32;
@@ -418,23 +463,51 @@ pub trait BuildAssistantHost {
     /// `TheTerrainVisual->addFactionBib(obj, highlight, extra)`.
     fn terrain_visual_add_faction_bib(&mut self, o: ObjectId, highlight: bool, extra: f32);
     /// `TheTerrainVisual->removeTreesAndPropsForConstruction(pos, geom, angle)`.
-    fn terrain_visual_remove_trees_and_props(&mut self, pos: Coord3D, geom: &GeometryInfo, angle: f32);
+    fn terrain_visual_remove_trees_and_props(
+        &mut self,
+        pos: Coord3D,
+        geom: &GeometryInfo,
+        angle: f32,
+    );
     // ---- the partition manager and the pathfinder -----------------------------------------------------------------
     /// `ThePartitionManager->iteratePotentialCollisions(&pos, geom, angle)`, in iteration order.
-    fn partition_iterate_potential_collisions(&mut self, pos: Coord3D, geom: &GeometryInfo, angle: f32) -> Vec<ObjectId>;
+    fn partition_iterate_potential_collisions(
+        &mut self,
+        pos: Coord3D,
+        geom: &GeometryInfo,
+        angle: f32,
+    ) -> Vec<ObjectId>;
     /// `ThePartitionManager->iterateObjectsInRange(&pos, range, FROM_BOUNDINGSPHERE_2D, {AcceptByKindOf(STRUCTURE)})`, in
     /// iteration order.
     fn partition_structures_in_range(&mut self, pos: Coord3D, range: f32) -> Vec<ObjectId>;
     /// `ThePartitionManager->getClosestObject(&pos, range, FROM_BOUNDINGSPHERE_2D, {AcceptByKindOf(SUPPLY_SOURCE)})`.
     fn partition_closest_supply_source(&mut self, pos: Coord3D, range: f32) -> Option<ObjectId>;
     /// `ThePartitionManager->geomCollidesWithGeom(...)`.
-    fn partition_geom_collides_with_geom(&self, pos1: Coord3D, geom1: &GeometryInfo, angle1: f32, pos2: Coord3D, geom2: &GeometryInfo, angle2: f32) -> bool;
+    fn partition_geom_collides_with_geom(
+        &self,
+        pos1: Coord3D,
+        geom1: &GeometryInfo,
+        angle1: f32,
+        pos2: Coord3D,
+        geom2: &GeometryInfo,
+        angle2: f32,
+    ) -> bool;
     /// `ThePartitionManager->worldToCell(x, y, &cx, &cy)`.
     fn partition_world_to_cell(&self, x: f32, y: f32) -> (i32, i32);
     /// `ThePartitionManager->getShroudStatusForPlayer(playerIndex, x, y)`.
-    fn partition_shroud_status_for_player(&self, player_index: i32, x: i32, y: i32) -> CellShroudStatus;
+    fn partition_shroud_status_for_player(
+        &self,
+        player_index: i32,
+        x: i32,
+        y: i32,
+    ) -> CellShroudStatus;
     /// `TheAI->pathfinder()->getCell(layer, x, y)->getType()` (`None` for `NULL`).
-    fn pathfinder_cell_type(&self, layer: PathfindLayer, x: i32, y: i32) -> Option<PathfindCellType>;
+    fn pathfinder_cell_type(
+        &self,
+        layer: PathfindLayer,
+        x: i32,
+        y: i32,
+    ) -> Option<PathfindCellType>;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -492,20 +565,43 @@ pub fn build_assistant_update<H: BuildAssistantHost>(h: &mut H, ba: &mut BuildAs
             continue;
         };
         // decrement the construction percent
-        if h.frame().wrapping_sub(sell_info.sell_frame) as f32 >= FRAMES_TO_ALLOW_SCAFFOLD + plant(2) as u32 as f32 {
+        if h.frame().wrapping_sub(sell_info.sell_frame) as f32
+            >= FRAMES_TO_ALLOW_SCAFFOLD + plant(2) as u32 as f32
+        {
             let previous_construction_percent = h.obj_construction_percent(obj);
             // do the construction
-            h.obj_set_construction_percent(obj, previous_construction_percent - (100.0 / if plant(3) { 45.0 } else { TOTAL_FRAMES_TO_SELL_OBJECT }));
+            h.obj_set_construction_percent(
+                obj,
+                previous_construction_percent
+                    - (100.0
+                        / if plant(3) {
+                            45.0
+                        } else {
+                            TOTAL_FRAMES_TO_SELL_OBJECT
+                        }),
+            );
             // did we cross the threshold from positive to negative ... if so, we will clear visual construction indicators
-            if previous_construction_percent >= if plant(4) { 0.0 } else { f32::MIN_POSITIVE } && h.obj_construction_percent(obj) <= 0.0 {
+            if previous_construction_percent >= if plant(4) { 0.0 } else { f32::MIN_POSITIVE }
+                && h.obj_construction_percent(obj) <= 0.0
+            {
                 h.obj_clear_and_set_model_condition(
                     obj,
-                    &[MODELCONDITION_PARTIALLY_CONSTRUCTED, MODELCONDITION_ACTIVELY_BEING_CONSTRUCTED],
-                    if plant(5) { &[] } else { &[MODELCONDITION_SOLD] },
+                    &[
+                        MODELCONDITION_PARTIALLY_CONSTRUCTED,
+                        MODELCONDITION_ACTIVELY_BEING_CONSTRUCTED,
+                    ],
+                    if plant(5) {
+                        &[]
+                    } else {
+                        &[MODELCONDITION_SOLD]
+                    },
                 );
                 // set the animation durations so that the regular build up loop animations can be done a bit faster for selling
                 if h.obj_has_drawable(obj) && !plant(6) {
-                    h.drawable_set_animation_loop_duration(obj, (TOTAL_FRAMES_TO_SELL_OBJECT / if plant(7) { 3.0 } else { 2.0 }) as u32);
+                    h.drawable_set_animation_loop_duration(
+                        obj,
+                        (TOTAL_FRAMES_TO_SELL_OBJECT / if plant(7) { 3.0 } else { 2.0 }) as u32,
+                    );
                 }
             }
         }
@@ -519,9 +615,18 @@ pub fn build_assistant_update<H: BuildAssistantHost>(h: &mut H, ba: &mut BuildAs
                 let sell_value: u32 = if h.tmpl_refund_value(t) > if plant(9) { 100 } else { 0 } {
                     h.tmpl_refund_value(t) as u32
                 } else {
-                    real_to_unsigned_int(h.tmpl_calc_cost_to_build(t, player) as f32 * if plant(10) { 1.0 } else { h.build_globals().sell_percentage })
+                    real_to_unsigned_int(
+                        h.tmpl_calc_cost_to_build(t, player) as f32
+                            * if plant(10) {
+                                1.0
+                            } else {
+                                h.build_globals().sell_percentage
+                            },
+                    )
                 };
-                if !plant(11) { h.player_deposit(player, sell_value); }
+                if !plant(11) {
+                    h.player_deposit(player, sell_value);
+                }
             }
             // cancel any of the production items and refund to the controlling player
             if h.obj_has_production(obj) && !plant(12) {
@@ -540,7 +645,10 @@ pub fn build_assistant_update<H: BuildAssistantHost>(h: &mut H, ba: &mut BuildAs
 }
 
 /// `BuildAssistant::xferTheSellList(xfer)`.
-pub fn build_assistant_xfer_the_sell_list(ba: &mut BuildAssistant, xfer: &mut dyn Xfer) -> BResult<()> {
+pub fn build_assistant_xfer_the_sell_list(
+    ba: &mut BuildAssistant,
+    xfer: &mut dyn Xfer,
+) -> BResult<()> {
     let mut count = ba.sell_list.len() as i32;
     xfer.xfer_int(&mut count)?;
     if xfer.get_xfer_mode() == XferMode::Load {
@@ -549,7 +657,10 @@ pub fn build_assistant_xfer_the_sell_list(ba: &mut BuildAssistant, xfer: &mut dy
         }
         for _ in 0..count {
             // add this object to the list of objects being sold
-            let mut info = ObjectSellInfo { id: INVALID_ID, sell_frame: 0 };
+            let mut info = ObjectSellInfo {
+                id: INVALID_ID,
+                sell_frame: 0,
+            };
             xfer.xfer_object_id(&mut info.id)?;
             if !plant(16) {
                 xfer.xfer_unsigned_int(&mut info.sell_frame)?;
@@ -571,12 +682,18 @@ pub fn build_assistant_xfer_the_sell_list(ba: &mut BuildAssistant, xfer: &mut dy
 }
 
 /// `BuildAssistant::isLineBuildTemplate(tTemplate)`.
-pub fn build_assistant_is_line_build_template<H: BuildAssistantHost>(h: &H, t: TemplateRef) -> bool {
+pub fn build_assistant_is_line_build_template<H: BuildAssistantHost>(
+    h: &H,
+    t: TemplateRef,
+) -> bool {
     h.tmpl_is_kind_of(t, KINDOF_LINEBUILD) != plant(18)
 }
 
 /// `BuildAssistant::isRemovableForConstruction(obj)`: some objects are removed automatically when something is built on them.
-pub fn build_assistant_is_removable_for_construction<H: BuildAssistantHost>(h: &H, obj: ObjectId) -> bool {
+pub fn build_assistant_is_removable_for_construction<H: BuildAssistantHost>(
+    h: &H,
+    obj: ObjectId,
+) -> bool {
     if h.obj_is_kind_of(obj, KINDOF_INERT) && !plant(19) {
         // DEBUG_CRASH(("should not have gotten here.")); not compiled in a release build
         return false;
@@ -594,12 +711,19 @@ pub fn build_assistant_is_removable_for_construction<H: BuildAssistantHost>(h: &
 }
 
 /// `BuildAssistant::clearRemovableForConstruction(whatToBuild, pos, angle)`.
-fn clear_removable_for_construction<H: BuildAssistantHost>(h: &mut H, what: TemplateRef, pos: Coord3D, angle: f32) {
+fn clear_removable_for_construction<H: BuildAssistantHost>(
+    h: &mut H,
+    what: TemplateRef,
+    pos: Coord3D,
+    angle: f32,
+) {
     let geom = h.tmpl_geometry(what);
     for them in h.partition_iterate_potential_collisions(pos, &geom, angle) {
         // UI feedback objects (always selectable) never get destroyed by construction, but also should never trip any of
         // the other side effects of placing them in isRemovableForConstruction()
-        if build_assistant_is_removable_for_construction(h, them) && (!h.obj_is_kind_of(them, KINDOF_ALWAYS_SELECTABLE) || plant(23)) {
+        if build_assistant_is_removable_for_construction(h, them)
+            && (!h.obj_is_kind_of(them, KINDOF_ALWAYS_SELECTABLE) || plant(23))
+        {
             h.destroy_object(them);
         }
     }
@@ -610,18 +734,35 @@ fn clear_removable_for_construction<H: BuildAssistantHost>(h: &mut H, what: Temp
 
 /// `BuildAssistant::moveObjectsForConstruction(whatToBuild, pos, angle, playerToBuild)`: will move objects that can move out
 /// of the way; false if there are objects that cannot be moved out of the way.
-fn move_objects_for_construction<H: BuildAssistantHost>(h: &mut H, what: TemplateRef, pos: Coord3D, angle: f32, player_to_build: PlayerIndex) -> bool {
+fn move_objects_for_construction<H: BuildAssistantHost>(
+    h: &mut H,
+    what: TemplateRef,
+    pos: Coord3D,
+    angle: f32,
+    player_to_build: PlayerIndex,
+) -> bool {
     let template_geom = h.tmpl_geometry(what);
-    let mut gi = GeometryInfo::new(GeometryType::Box, false, 10.0, template_geom.get_major_radius(), template_geom.get_major_radius());
+    let mut gi = GeometryInfo::new(
+        GeometryType::Box,
+        false,
+        10.0,
+        template_geom.get_major_radius(),
+        template_geom.get_major_radius(),
+    );
     if template_geom.get_geom_type() == GeometryType::Box && !plant(25) {
         gi = template_geom;
     }
     let mut any_unmovables = false;
     // sqrt( pow(a, 2) + pow(b, 2) ): pow( float, int ) and sqrt are done in double, then narrowed
     let major = f64::from(gi.get_major_radius());
-    let minor = f64::from(if plant(27) { gi.get_major_radius() } else { gi.get_minor_radius() });
-    let mut radius: f32 =
-        <f64 as petir::Real>::sqrt(<f64 as petir::Real>::powf(major, 2.0) + <f64 as petir::Real>::powf(minor, 2.0)) as f32;
+    let minor = f64::from(if plant(27) {
+        gi.get_major_radius()
+    } else {
+        gi.get_minor_radius()
+    });
+    let mut radius: f32 = <f64 as petir::Real>::sqrt(
+        <f64 as petir::Real>::powf(major, 2.0) + <f64 as petir::Real>::powf(minor, 2.0),
+    ) as f32;
     radius *= if plant(26) { 1.5 } else { 1.4 }; // Fudge the distance,
 
     for them in h.partition_iterate_potential_collisions(pos, &gi, angle) {
@@ -636,7 +777,9 @@ fn move_objects_for_construction<H: BuildAssistantHost>(h: &mut H, what: Templat
         }
         // Skip KINDOF_ALWAYS_SELECTABLE and isRemovableForConstruction, because if it is RemovableForConstruction, it just
         // got destroyed, and won't actually be gone until the end of the frame. jba.
-        if (!h.obj_is_kind_of(them, KINDOF_ALWAYS_SELECTABLE) || plant(30)) && !build_assistant_is_removable_for_construction(h, them) {
+        if (!h.obj_is_kind_of(them, KINDOF_ALWAYS_SELECTABLE) || plant(30))
+            && !build_assistant_is_removable_for_construction(h, them)
+        {
             let rel = h.player_relationship_to_object(player_to_build, them);
             if rel == Relationship::Allies || (rel == Relationship::Neutral && !plant(31)) {
                 // Pick a point outside of the construction and tell those fools to move there. Pick an arbitrary direction
@@ -644,11 +787,23 @@ fn move_objects_for_construction<H: BuildAssistantHost>(h: &mut H, what: Templat
                 if h.obj_has_ai(them) {
                     // Vary the distance to move between one half the diameter of the building (roughly) and 1.5 times the
                     // diameter of the building
-                    let varied_radius = h.random_value_real(if plant(32) { 0.6 } else { 0.5 }, 1.5) * radius;
-                    let dir = h.random_value_real(-crate::common::base_type::PI, if plant(33) { 0.0 } else { crate::common::base_type::PI });
+                    let varied_radius =
+                        h.random_value_real(if plant(32) { 0.6 } else { 0.5 }, 1.5) * radius;
+                    let dir = h.random_value_real(
+                        -crate::common::base_type::PI,
+                        if plant(33) {
+                            0.0
+                        } else {
+                            crate::common::base_type::PI
+                        },
+                    );
                     let mut vec = Vector3::new(varied_radius, 0.0, 0.0);
                     vec.rotate_z(dir);
-                    let dest_pos = Coord3D { x: pos.x + vec.x, y: pos.y + vec.y, z: if plant(34) { 0.0 } else { pos.z + vec.z } };
+                    let dest_pos = Coord3D {
+                        x: pos.x + vec.x,
+                        y: pos.y + vec.y,
+                        z: if plant(34) { 0.0 } else { pos.z + vec.z },
+                    };
                     // note that this is an extra-special case... even if the unit's mood is "sleep" it still needs to move
                     // here. (units with an ai mood of "sleep" won't respond to any AI commands. this is a special case that
                     // ignores the "sleep" ai mood.) (srj)
@@ -670,7 +825,11 @@ fn move_objects_for_construction<H: BuildAssistantHost>(h: &mut H, what: Templat
 
 /// `BuildAssistant::isPossibleToMakeUnit(builder, whatToBuild)`: are all the requirements for making this unit (except
 /// available cash) satisfied. `builder` and `whatToBuild` are never null here.
-pub fn build_assistant_is_possible_to_make_unit<H: BuildAssistantHost>(h: &mut H, builder: ObjectId, what: TemplateRef) -> BResult<bool> {
+pub fn build_assistant_is_possible_to_make_unit<H: BuildAssistantHost>(
+    h: &mut H,
+    builder: ObjectId,
+    what: TemplateRef,
+) -> BResult<bool> {
     // get the command set for the producer object; if no command set we cannot build anything
     let Some(command_set) = h.find_command_set(builder) else {
         return Ok(false);
@@ -680,8 +839,14 @@ pub fn build_assistant_is_possible_to_make_unit<H: BuildAssistantHost>(h: &mut H
     for i in 0..MAX_COMMANDS_PER_SET - plant(41) as i32 {
         if let Some(button) = h.command_set_button(command_set, i) {
             let ct = h.button_command_type(button);
-            if (ct == GUI_COMMAND_UNIT_BUILD || (ct == GUI_COMMAND_DOZER_CONSTRUCT && !plant(38))) && (h.tmpl_is_equivalent_to(h.button_template(button), what) || plant(39)) {
-                found_command = if plant(37) && found_command.is_some() { found_command } else { Some(button) };
+            if (ct == GUI_COMMAND_UNIT_BUILD || (ct == GUI_COMMAND_DOZER_CONSTRUCT && !plant(38)))
+                && (h.tmpl_is_equivalent_to(h.button_template(button), what) || plant(39))
+            {
+                found_command = if plant(37) && found_command.is_some() {
+                    found_command
+                } else {
+                    Some(button)
+                };
             }
         }
     }
@@ -689,7 +854,11 @@ pub fn build_assistant_is_possible_to_make_unit<H: BuildAssistantHost>(h: &mut H
         return Ok(false);
     };
     // make sure that the player can actually make this unit by checking prereqs and such
-    let player = h.obj_controlling_player(builder).ok_or(BuildError::Undefined("isPossibleToMakeUnit: the builder has no controlling player"))?;
+    let player = h
+        .obj_controlling_player(builder)
+        .ok_or(BuildError::Undefined(
+            "isPossibleToMakeUnit: the builder has no controlling player",
+        ))?;
     let t = h.button_template(found);
     if !h.player_can_build(player, t) && !plant(40) {
         return Ok(false);
@@ -698,15 +867,26 @@ pub fn build_assistant_is_possible_to_make_unit<H: BuildAssistantHost>(h: &mut H
 }
 
 /// `BuildAssistant::canMakeUnit(builder, whatToBuild)`: are all the requirements for making this unit, and the cash.
-pub fn build_assistant_can_make_unit<H: BuildAssistantHost>(h: &mut H, builder: ObjectId, what: TemplateRef) -> BResult<CanMakeType> {
-    if (h.obj_test_script_status_bit(builder, OBJECT_STATUS_SCRIPT_DISABLED) && !plant(43)) || (h.obj_test_script_status_bit(builder, OBJECT_STATUS_SCRIPT_UNPOWERED) && !plant(42)) {
+pub fn build_assistant_can_make_unit<H: BuildAssistantHost>(
+    h: &mut H,
+    builder: ObjectId,
+    what: TemplateRef,
+) -> BResult<CanMakeType> {
+    if (h.obj_test_script_status_bit(builder, OBJECT_STATUS_SCRIPT_DISABLED) && !plant(43))
+        || (h.obj_test_script_status_bit(builder, OBJECT_STATUS_SCRIPT_UNPOWERED) && !plant(42))
+    {
         return Ok(CanMakeType::FactoryIsDisabled);
     }
     let has_pu = h.obj_has_production(builder);
     // If our builder is actually constructing an object via a special power, then allow it if the templates match. It's
     // possible they won't match because a GLA command center could be in "place sneak attack" mode, and queue up a worker
     // in the meantime.
-    if has_pu && (h.production_special_power_construction_template(builder) == Some(what) || (plant(44) && h.production_special_power_construction_template(builder).is_some())) {
+    if has_pu
+        && (h.production_special_power_construction_template(builder) == Some(what)
+            || (plant(44)
+                && h.production_special_power_construction_template(builder)
+                    .is_some()))
+    {
         return Ok(CanMakeType::Ok);
     }
     let player = h.obj_controlling_player(builder);
@@ -727,7 +907,9 @@ pub fn build_assistant_can_make_unit<H: BuildAssistantHost>(h: &mut H, builder: 
         }
     }
     // make sure we have enough money to build this
-    let player = player.ok_or(BuildError::Undefined("canMakeUnit: the builder has no controlling player"))?;
+    let player = player.ok_or(BuildError::Undefined(
+        "canMakeUnit: the builder has no controlling player",
+    ))?;
     // calcCostToBuild() is an Int, countMoney() an UnsignedInt: the comparison is unsigned
     if (h.tmpl_calc_cost_to_build(what, player) as u32) >= h.player_count_money(player) {
         return Ok(CanMakeType::NoMoney);
@@ -765,11 +947,19 @@ pub fn build_assistant_iterate_footprint<H: BuildAssistantHost, F: FnMut(&mut H,
     let (half_footprint_height, half_footprint_width);
     match geom.get_geom_type() {
         GeometryType::Box => {
-            half_footprint_height = if plant(48) { geom.get_major_radius() } else { geom.get_minor_radius() };
+            half_footprint_height = if plant(48) {
+                geom.get_major_radius()
+            } else {
+                geom.get_minor_radius()
+            };
             half_footprint_width = geom.get_major_radius();
         }
         GeometryType::Sphere | GeometryType::Cylinder => {
-            half_footprint_height = if plant(49) { geom.get_major_radius() } else { geom.get_bounding_circle_radius() };
+            half_footprint_height = if plant(49) {
+                geom.get_major_radius()
+            } else {
+                geom.get_bounding_circle_radius()
+            };
             half_footprint_width = geom.get_bounding_circle_radius();
         }
     }
@@ -791,11 +981,25 @@ pub fn build_assistant_iterate_footprint<H: BuildAssistantHost, F: FnMut(&mut H,
                 x = half_footprint_width;
             }
             // transform to world
-            let v = Vector3::new(x, y, if plant(55) { 0.0 } else { h.terrain_ground_height(x, y) });
+            let v = Vector3::new(
+                x,
+                y,
+                if plant(55) {
+                    0.0
+                } else {
+                    h.terrain_ground_height(x, y)
+                },
+            );
             let v = Matrix3D::transform_vector(&transform, &v);
             // for circular geometries we must actually be within the circle
-            if matches!(geom.get_geom_type(), GeometryType::Sphere | GeometryType::Cylinder) {
-                let vector = Coord2D { x: v.x - world_pos.x, y: v.y - world_pos.y };
+            if matches!(
+                geom.get_geom_type(),
+                GeometryType::Sphere | GeometryType::Cylinder
+            ) {
+                let vector = Coord2D {
+                    x: v.x - world_pos.x,
+                    y: v.y - world_pos.y,
+                };
                 if vector.length() > half_footprint_width + if plant(56) { 1.0 } else { 0.0 } {
                     // could be height too, radius is all the same for circles
                     x += sample_resolution;
@@ -803,8 +1007,16 @@ pub fn build_assistant_iterate_footprint<H: BuildAssistantHost, F: FnMut(&mut H,
                 }
             }
             // call the user callback
-            let mut pos = Coord3D { x: v.x, y: v.y, z: 0.0 };
-            pos.z = if plant(57) { v.z } else { h.terrain_ground_height(pos.x, pos.y) };
+            let mut pos = Coord3D {
+                x: v.x,
+                y: v.y,
+                z: 0.0,
+            };
+            pos.z = if plant(57) {
+                v.z
+            } else {
+                h.terrain_ground_height(pos.x, pos.y)
+            };
             func(h, &pos);
             x += sample_resolution;
         }
@@ -821,9 +1033,15 @@ struct SampleBuildData {
 }
 
 /// `checkSampleBuildLocation(samplePoint, userData)`: check the build conditions at the specified sample location point.
-fn check_sample_build_location<H: BuildAssistantHost>(h: &H, sample_point: &Coord3D, sample_data: &mut SampleBuildData) {
+fn check_sample_build_location<H: BuildAssistantHost>(
+    h: &H,
+    sample_point: &Coord3D,
+    sample_data: &mut SampleBuildData,
+) {
     // get the terrain tile here; check for the restricts building flag
-    if h.terrain_tile_restricts_construction(sample_point.x, sample_point.y) == Some(true) && !plant(58) {
+    if h.terrain_tile_restricts_construction(sample_point.x, sample_point.y) == Some(true)
+        && !plant(58)
+    {
         sample_data.terrain_restricted = true;
     }
     let cell_x = real_to_int_floor(sample_point.x / PATHFIND_CELL_SIZE as f32);
@@ -831,7 +1049,10 @@ fn check_sample_build_location<H: BuildAssistantHost>(h: &H, sample_point: &Coor
     match h.pathfinder_cell_type(LAYER_GROUND, cell_x, cell_y) {
         None => sample_data.terrain_restricted = !plant(59),
         Some(ty) => {
-            if (ty == PathfindCellType::Water && !plant(60)) || ty == PathfindCellType::Cliff || (ty == PathfindCellType::Impassable && !plant(61)) {
+            if (ty == PathfindCellType::Water && !plant(60))
+                || ty == PathfindCellType::Cliff
+                || (ty == PathfindCellType::Impassable && !plant(61))
+            {
                 sample_data.terrain_restricted = true;
             }
         }
@@ -849,8 +1070,10 @@ fn check_sample_build_location<H: BuildAssistantHost>(h: &H, sample_point: &Coor
     if edge > 0.0
         && (sample_point.x < sample_data.map_region.lo.x + if plant(64) { 0.0 } else { edge }
             || sample_point.x > sample_data.map_region.hi.x - if plant(65) { 0.0 } else { edge }
-            || sample_point.y <= sample_data.map_region.lo.y + edge - if plant(66) { 1.0 } else { 0.0 }
-            || sample_point.y > sample_data.map_region.hi.y - edge - if plant(67) { 1.0 } else { 0.0 })
+            || sample_point.y
+                <= sample_data.map_region.lo.y + edge - if plant(66) { 1.0 } else { 0.0 }
+            || sample_point.y
+                > sample_data.map_region.hi.y - edge - if plant(67) { 1.0 } else { 0.0 })
     {
         sample_data.terrain_restricted = true;
     }
@@ -872,7 +1095,11 @@ pub fn build_assistant_is_location_clear_of_objects<H: BuildAssistantHost>(
     the_player: Option<PlayerIndex>,
 ) -> LegalBuildCode {
     let build_geom = h.tmpl_geometry(build);
-    let only_check_enemies = if plant(68) { bit_test(options, NO_ENEMY_OBJECT_OVERLAP) } else { options == NO_ENEMY_OBJECT_OVERLAP };
+    let only_check_enemies = if plant(68) {
+        bit_test(options, NO_ENEMY_OBJECT_OVERLAP)
+    } else {
+        options == NO_ENEMY_OBJECT_OVERLAP
+    };
     for them in h.partition_iterate_potential_collisions(world_pos, &build_geom, angle) {
         let mut feedback_with_failure = true;
         let rel = match builder_object {
@@ -894,7 +1121,10 @@ pub fn build_assistant_is_location_clear_of_objects<H: BuildAssistantHost>(
         }
         // Kris: Patch 1.01 - November 5, 2003: prevent busy units (black lotus hacking from being moved by trying to place a
         // building -- exploit).
-        if rel == Relationship::Allies && (h.obj_test_status(them, OBJECT_STATUS_IS_USING_ABILITY) && !plant(73) || (h.obj_has_ai(them) && h.ai_is_busy(them) && !plant(72))) {
+        if rel == Relationship::Allies
+            && (h.obj_test_status(them, OBJECT_STATUS_IS_USING_ABILITY) && !plant(73)
+                || (h.obj_has_ai(them) && h.ai_is_busy(them) && !plant(72)))
+        {
             return LegalBuildCode::ObjectsInTheWay;
         }
         // ignore any kind of class of objects that we will "remove" for building
@@ -912,7 +1142,10 @@ pub fn build_assistant_is_location_clear_of_objects<H: BuildAssistantHost>(
         }
         // an immobile object may obstruct our building depending on flags.
         if h.obj_is_kind_of(them, KINDOF_IMMOBILE) {
-            if only_check_enemies && builder_object.is_some() && (rel != Relationship::Enemies || plant(78)) {
+            if only_check_enemies
+                && builder_object.is_some()
+                && (rel != Relationship::Enemies || plant(78))
+            {
                 continue;
             }
             if feedback_with_failure || plant(81) {
@@ -930,7 +1163,9 @@ pub fn build_assistant_is_location_clear_of_objects<H: BuildAssistantHost>(
             return LegalBuildCode::GenericFailure;
         }
         // if this is an enemy object of the builder object (and therefore the thing that will be constructed) we can't build here
-        if builder_object.is_some() && (rel == Relationship::Enemies || (plant(80) && rel == Relationship::Neutral)) {
+        if builder_object.is_some()
+            && (rel == Relationship::Enemies || (plant(80) && rel == Relationship::Neutral))
+        {
             if feedback_with_failure {
                 h.terrain_visual_add_faction_bib(them, true, 0.0);
                 return LegalBuildCode::ObjectsInTheWay;
@@ -943,7 +1178,13 @@ pub fn build_assistant_is_location_clear_of_objects<H: BuildAssistantHost>(
         return LegalBuildCode::Ok;
     }
     // Check for overlapping exit areas.
-    let range = 2.0 * (build_geom.get_major_radius() + if plant(83) { build_geom.get_major_radius() } else { build_geom.get_minor_radius() });
+    let range = 2.0
+        * (build_geom.get_major_radius()
+            + if plant(83) {
+                build_geom.get_major_radius()
+            } else {
+                build_geom.get_minor_radius()
+            });
     let structures = h.partition_structures_in_range(world_pos, range);
 
     let mut my_factory_exit_width = h.tmpl_factory_exit_width(build);
@@ -963,12 +1204,16 @@ pub fn build_assistant_is_location_clear_of_objects<H: BuildAssistantHost>(
     let mut check_my_exit = false;
     let mut my_exit_pos = Coord3D::default();
     let mut my_bounds = build_geom.clone();
-    my_bounds.set_major_radius(my_bounds.get_major_radius() + if plant(87) { 0.0 } else { my_extra_width });
+    my_bounds.set_major_radius(
+        my_bounds.get_major_radius() + if plant(87) { 0.0 } else { my_extra_width },
+    );
     if my_bounds.get_geom_type() != GeometryType::Box {
         let m = my_bounds.get_major_radius();
         my_bounds.set(GeometryType::Box, false, 40.0, m, m);
     } else {
-        my_bounds.set_minor_radius(my_bounds.get_minor_radius() + if plant(88) { 0.0 } else { my_extra_width });
+        my_bounds.set_minor_radius(
+            my_bounds.get_minor_radius() + if plant(88) { 0.0 } else { my_extra_width },
+        );
     }
     let mut my_geom = build_geom.clone();
     if my_geom.get_geom_type() != GeometryType::Box {
@@ -981,7 +1226,11 @@ pub fn build_assistant_is_location_clear_of_objects<H: BuildAssistantHost>(
         check_my_exit = true;
         let c = cos_d(angle);
         let s = sin_d(angle);
-        let offset = if plant(90) { build_geom.get_minor_radius() } else { build_geom.get_major_radius() } + my_factory_exit_width / 2.0;
+        let offset = if plant(90) {
+            build_geom.get_minor_radius()
+        } else {
+            build_geom.get_major_radius()
+        } + my_factory_exit_width / 2.0;
         my_exit_pos.x += c * offset;
         my_exit_pos.y += if plant(91) { c } else { s } * offset;
     }
@@ -1012,18 +1261,36 @@ pub fn build_assistant_is_location_clear_of_objects<H: BuildAssistantHost>(
         let mut his_exit_pos = Coord3D::default();
         let them_geom = h.obj_geometry(them);
         let mut his_bounds = them_geom.clone();
-        his_bounds.set_major_radius(his_bounds.get_major_radius() + if plant(95) { my_extra_width } else { his_extra_width });
+        his_bounds.set_major_radius(
+            his_bounds.get_major_radius()
+                + if plant(95) {
+                    my_extra_width
+                } else {
+                    his_extra_width
+                },
+        );
         if his_bounds.get_geom_type() != GeometryType::Box {
             let m = his_bounds.get_major_radius();
             his_bounds.set(GeometryType::Box, false, 40.0, m, m);
         } else {
             // (upstream adds MY extra width to HIS minor radius)
-            his_bounds.set_minor_radius(his_bounds.get_minor_radius() + if plant(94) { his_extra_width } else { my_extra_width });
+            his_bounds.set_minor_radius(
+                his_bounds.get_minor_radius()
+                    + if plant(94) {
+                        his_extra_width
+                    } else {
+                        my_extra_width
+                    },
+            );
         }
         let mut his_geom = them_geom.clone();
         his_geom.set_major_radius(them_factory_exit_width / if plant(97) { 3.0 } else { 2.0 });
         if his_geom.get_geom_type() != GeometryType::Box {
-            his_geom.set_minor_radius(if plant(96) { them_geom.get_minor_radius() } else { them_geom.get_major_radius() });
+            his_geom.set_minor_radius(if plant(96) {
+                them_geom.get_minor_radius()
+            } else {
+                them_geom.get_major_radius()
+            });
         }
         let them_pos = h.obj_position(them);
         let them_orientation = h.obj_orientation(them);
@@ -1032,32 +1299,72 @@ pub fn build_assistant_is_location_clear_of_objects<H: BuildAssistantHost>(
             check_his_exit = true;
             let c = cos_d(if plant(98) { angle } else { them_orientation });
             let s = sin_d(them_orientation);
-            let offset = them_geom.get_major_radius() + them_factory_exit_width / if plant(99) { 3.0 } else { 2.0 };
+            let offset = them_geom.get_major_radius()
+                + them_factory_exit_width / if plant(99) { 3.0 } else { 2.0 };
             his_exit_pos.x += c * offset;
             his_exit_pos.y += s * offset;
         }
-        if h.partition_geom_collides_with_geom(them_pos, &his_bounds, them_orientation, world_pos, if plant(100) { &my_geom } else { &my_bounds }, angle) {
+        if h.partition_geom_collides_with_geom(
+            them_pos,
+            &his_bounds,
+            them_orientation,
+            world_pos,
+            if plant(100) { &my_geom } else { &my_bounds },
+            angle,
+        ) {
             h.terrain_visual_add_faction_bib(them, true, 0.0);
             return LegalBuildCode::ObjectsInTheWay;
         }
-        if !check_my_exit && !check_his_exit && his_extra_width == 0.0 && (my_extra_width == 0.0 || plant(101)) {
+        if !check_my_exit
+            && !check_his_exit
+            && his_extra_width == 0.0
+            && (my_extra_width == 0.0 || plant(101))
+        {
             continue; // neither has extra exit space.
         }
 
         // an immobile object will obstruct our building no matter what team it's on
         if h.obj_is_kind_of(them, KINDOF_IMMOBILE) || plant(102) {
             // Check for overlap of my exit rectangle to his geom info.
-            if check_my_exit && h.partition_geom_collides_with_geom(them_pos, &his_bounds, them_orientation, my_exit_pos, if plant(103) { &my_bounds } else { &my_geom }, angle) {
+            if check_my_exit
+                && h.partition_geom_collides_with_geom(
+                    them_pos,
+                    &his_bounds,
+                    them_orientation,
+                    my_exit_pos,
+                    if plant(103) { &my_bounds } else { &my_geom },
+                    angle,
+                )
+            {
                 h.terrain_visual_add_faction_bib(them, true, 0.0);
                 return LegalBuildCode::ObjectsInTheWay;
             }
             // Check for overlap of his exit rectangle with my geom info
-            if check_his_exit && h.partition_geom_collides_with_geom(his_exit_pos, if plant(104) { &his_bounds } else { &his_geom }, them_orientation, world_pos, &my_bounds, angle) {
+            if check_his_exit
+                && h.partition_geom_collides_with_geom(
+                    his_exit_pos,
+                    if plant(104) { &his_bounds } else { &his_geom },
+                    them_orientation,
+                    world_pos,
+                    &my_bounds,
+                    angle,
+                )
+            {
                 h.terrain_visual_add_faction_bib(them, true, 0.0);
                 return LegalBuildCode::ObjectsInTheWay;
             }
             // Check both exit rectangles together.
-            if (check_my_exit || (plant(105) && check_his_exit)) && check_his_exit && h.partition_geom_collides_with_geom(his_exit_pos, &his_geom, them_orientation, my_exit_pos, &my_geom, angle) {
+            if (check_my_exit || (plant(105) && check_his_exit))
+                && check_his_exit
+                && h.partition_geom_collides_with_geom(
+                    his_exit_pos,
+                    &his_geom,
+                    them_orientation,
+                    my_exit_pos,
+                    &my_geom,
+                    angle,
+                )
+            {
                 h.terrain_visual_add_faction_bib(them, true, 0.0);
                 return LegalBuildCode::ObjectsInTheWay;
             }
@@ -1078,7 +1385,11 @@ pub fn build_assistant_is_location_legal_to_build<H: BuildAssistantHost>(
     player: Option<PlayerIndex>,
 ) -> LegalBuildCode {
     // You just can't never build off the map, regardless of options. jba.
-    let map_extent = if plant(107) { h.terrain_extent() } else { h.terrain_maximum_pathfind_extent() };
+    let map_extent = if plant(107) {
+        h.terrain_extent()
+    } else {
+        h.terrain_maximum_pathfind_extent()
+    };
     if !map_extent.is_in_region_no_z(&world_pos) && !plant(106) {
         return LegalBuildCode::RestrictedTerrain;
     }
@@ -1091,7 +1402,11 @@ pub fn build_assistant_is_location_legal_to_build<H: BuildAssistantHost>(
         if let Some(p) = builder_object.and_then(|b| h.obj_controlling_player(b)) {
             player_index = if plant(109) { 0 } else { p };
         }
-        if h.partition_shroud_status_for_player(player_index, x, y) != CellShroudStatus::Clear && !(plant(110) && h.partition_shroud_status_for_player(player_index, x, y) == CellShroudStatus::Fogged) {
+        if h.partition_shroud_status_for_player(player_index, x, y) != CellShroudStatus::Clear
+            && !(plant(110)
+                && h.partition_shroud_status_for_player(player_index, x, y)
+                    == CellShroudStatus::Fogged)
+        {
             return LegalBuildCode::Shroud;
         }
     }
@@ -1099,7 +1414,15 @@ pub fn build_assistant_is_location_legal_to_build<H: BuildAssistantHost>(
     // if NO_OBJECT_OVERLAP is set, we are not allowed to construct 'build' if it would overlap any immobile objects, or an
     // enemy object. Friendly objects should politely "move out of the way" when you build something where they're standing
     if bit_test(options, NO_OBJECT_OVERLAP) && !plant(111) {
-        let code = build_assistant_is_location_clear_of_objects(h, world_pos, build, angle, builder_object, options, player);
+        let code = build_assistant_is_location_clear_of_objects(
+            h,
+            world_pos,
+            build,
+            angle,
+            builder_object,
+            options,
+            player,
+        );
         if code != LegalBuildCode::Ok {
             return code;
         }
@@ -1107,7 +1430,15 @@ pub fn build_assistant_is_location_legal_to_build<H: BuildAssistantHost>(
     // if NO_ENEMY_OBJECT_OVERLAP is set, we are not allowed to construct 'build' if it would overlap any enemy objects.
     // Friendly objects are ignored.
     if bit_test(options, NO_ENEMY_OBJECT_OVERLAP) && !plant(112) {
-        let code = build_assistant_is_location_clear_of_objects(h, world_pos, build, angle, builder_object, options, player);
+        let code = build_assistant_is_location_clear_of_objects(
+            h,
+            world_pos,
+            build,
+            angle,
+            builder_object,
+            options,
+            player,
+        );
         if code != LegalBuildCode::Ok {
             return code;
         }
@@ -1115,17 +1446,39 @@ pub fn build_assistant_is_location_legal_to_build<H: BuildAssistantHost>(
 
     let globals = h.build_globals();
     let build_geom = h.tmpl_geometry(build);
-    if (h.tmpl_is_kind_of(build, KINDOF_CANNOT_BUILD_NEAR_SUPPLIES) || plant(113)) && globals.supply_build_border > 0.0 {
+    if (h.tmpl_is_kind_of(build, KINDOF_CANNOT_BUILD_NEAR_SUPPLIES) || plant(113))
+        && globals.supply_build_border > 0.0
+    {
         // special case for supply centers: can't build too close to supply sources; see if there are any reasonably close by
-        let range = build_geom.get_bounding_circle_radius() + globals.supply_build_border * if plant(114) { 1.0 } else { 2.0 };
+        let range = build_geom.get_bounding_circle_radius()
+            + globals.supply_build_border * if plant(114) { 1.0 } else { 2.0 };
         if let Some(too_close) = h.partition_closest_supply_source(world_pos, range) {
             // yep, see if we would collide with an expanded version
             let mut too_close_geom = h.obj_geometry(too_close);
-            too_close_geom.expand_footprint(if plant(115) { 0.0 } else { globals.supply_build_border });
+            too_close_geom.expand_footprint(if plant(115) {
+                0.0
+            } else {
+                globals.supply_build_border
+            });
             let too_close_pos = h.obj_position(too_close);
             let too_close_orientation = h.obj_orientation(too_close);
-            if h.partition_geom_collides_with_geom(world_pos, &build_geom, angle, too_close_pos, &too_close_geom, too_close_orientation) {
-                h.terrain_visual_add_faction_bib(too_close, true, if plant(116) { 0.0 } else { globals.supply_build_border });
+            if h.partition_geom_collides_with_geom(
+                world_pos,
+                &build_geom,
+                angle,
+                too_close_pos,
+                &too_close_geom,
+                too_close_orientation,
+            ) {
+                h.terrain_visual_add_faction_bib(
+                    too_close,
+                    true,
+                    if plant(116) {
+                        0.0
+                    } else {
+                        globals.supply_build_border
+                    },
+                );
                 return LegalBuildCode::TooCloseToSupplies;
             }
         }
@@ -1160,24 +1513,48 @@ pub fn build_assistant_is_location_legal_to_build<H: BuildAssistantHost>(
         let mut sample_data = SampleBuildData {
             map_region: h.terrain_extent(),
             terrain_restricted: false,
-            hi_z: if plant(122) { terrain_extent.hi.z } else { terrain_extent.lo.z }, // note we set hi point to lowest point
-            lo_z: if plant(123) { terrain_extent.lo.z } else { terrain_extent.hi.z }, // note we set lo point to highest point
+            hi_z: if plant(122) {
+                terrain_extent.hi.z
+            } else {
+                terrain_extent.lo.z
+            }, // note we set hi point to lowest point
+            lo_z: if plant(123) {
+                terrain_extent.lo.z
+            } else {
+                terrain_extent.hi.z
+            }, // note we set lo point to highest point
         };
         // quick check at triple res.
-        build_assistant_iterate_footprint(h, build, angle, world_pos, if plant(124) { 2.0 } else { 3.0 } * sample_resolution, |hh, p| {
-            check_sample_build_location(hh, p, &mut sample_data)
-        });
+        build_assistant_iterate_footprint(
+            h,
+            build,
+            angle,
+            world_pos,
+            if plant(124) { 2.0 } else { 3.0 } * sample_resolution,
+            |hh, p| check_sample_build_location(hh, p, &mut sample_data),
+        );
         if sample_data.terrain_restricted {
             return LegalBuildCode::RestrictedTerrain;
         }
         // check if the height across the whole footprint area is too varied (not flat enough)
-        if sample_data.hi_z - sample_data.lo_z > globals.allowed_height_variation_for_building && !plant(125) {
+        if sample_data.hi_z - sample_data.lo_z > globals.allowed_height_variation_for_building
+            && !plant(125)
+        {
             return LegalBuildCode::NotFlatEnough;
         }
         // careful check at full res.
-        build_assistant_iterate_footprint(h, build, angle, world_pos, if plant(126) { 3.0 * sample_resolution } else { sample_resolution }, |hh, p| {
-            check_sample_build_location(hh, p, &mut sample_data)
-        });
+        build_assistant_iterate_footprint(
+            h,
+            build,
+            angle,
+            world_pos,
+            if plant(126) {
+                3.0 * sample_resolution
+            } else {
+                sample_resolution
+            },
+            |hh, p| check_sample_build_location(hh, p, &mut sample_data),
+        );
         if sample_data.terrain_restricted {
             return LegalBuildCode::RestrictedTerrain;
         }
@@ -1191,7 +1568,11 @@ pub fn build_assistant_is_location_legal_to_build<H: BuildAssistantHost>(
 }
 
 /// `BuildAssistant::addBibs(worldPos, build)`: adds bibs to structures near to worldPos.
-pub fn build_assistant_add_bibs<H: BuildAssistantHost>(h: &mut H, world_pos: Coord3D, build: TemplateRef) {
+pub fn build_assistant_add_bibs<H: BuildAssistantHost>(
+    h: &mut H,
+    world_pos: Coord3D,
+    build: TemplateRef,
+) {
     let mut range = h.tmpl_vision_range(build);
     range += (if plant(127) { 2.0 } else { 3.0 }) * h.tmpl_geometry(build).get_major_radius();
     for them in h.partition_structures_in_range(world_pos, range) {
@@ -1228,13 +1609,18 @@ pub fn build_assistant_build_tiled_locations<H: BuildAssistantHost>(
         ba.build_position_size = max_tiles;
     }
     // compute a vector from the start of the line in the world to the end
-    let placement_vector = Coord3D { x: end.x - start.x, y: end.y - start.y, z: if plant(131) { end.z - start.z } else { 0.0 } };
+    let placement_vector = Coord3D {
+        x: end.x - start.x,
+        y: end.y - start.y,
+        z: if plant(131) { end.z - start.z } else { 0.0 },
+    };
     // get the length of the placement vector in the world, we'll use this to see how many objects we'll need to fill the
     // entire line
     let placement_length = placement_vector.length();
     // first see how many objects we're going to need to go from the placement line start to the placement line end, we are
     // guaranteed to have one thing (+1)
-    let mut tiles_needed = real_to_int(placement_length / tiling_size) + if plant(132) { 0 } else { 1 };
+    let mut tiles_needed =
+        real_to_int(placement_length / tiling_size) + if plant(132) { 0 } else { 1 };
     // we have a max that we are allowed to build to
     if tiles_needed > max_tiles + plant(133) as i32 {
         tiles_needed = max_tiles;
@@ -1242,7 +1628,9 @@ pub fn build_assistant_build_tiled_locations<H: BuildAssistantHost>(
     // we're guaranteed to have at least one object so lets take care of that position now (upstream writes `positions[ 0 ]`
     // of an array that `init` never allocated, or of one with no element: undefined)
     if ba.build_positions.is_empty() {
-        return Err(BuildError::Undefined("buildTiledLocations: the position array has no element"));
+        return Err(BuildError::Undefined(
+            "buildTiledLocations: the position array has no element",
+        ));
     }
     ba.build_positions[0] = start;
     // march down each object and set the position based on its position in the line. note that we're skipping the first one
@@ -1255,14 +1643,26 @@ pub fn build_assistant_build_tiled_locations<H: BuildAssistantHost>(
         // compute position of object
         let x = v.x * (tiling_size * i as f32) + if plant(134) { end.x } else { start.x };
         let y = v.y * (tiling_size * i as f32) + start.y;
-        let pos = Coord3D { x, y, z: if plant(135) { start.z } else { h.terrain_ground_height(x, y) } };
+        let pos = Coord3D {
+            x,
+            y,
+            z: if plant(135) {
+                start.z
+            } else {
+                h.terrain_ground_height(x, y)
+            },
+        };
         // check for a legal position to be at and stop the tiling process if that becomes broken
         if build_assistant_is_location_legal_to_build(
             h,
             pos,
             thing_being_tiled,
             angle,
-            USE_QUICK_PATHFIND | TERRAIN_RESTRICTIONS | if plant(137) { 0 } else { CLEAR_PATH } | NO_OBJECT_OVERLAP | if plant(136) { 0 } else { SHROUD_REVEALED },
+            USE_QUICK_PATHFIND
+                | TERRAIN_RESTRICTIONS
+                | if plant(137) { 0 } else { CLEAR_PATH }
+                | NO_OBJECT_OVERLAP
+                | if plant(136) { 0 } else { SHROUD_REVEALED },
             builder_object,
             if plant(138) { Some(0) } else { None },
         ) != LegalBuildCode::Ok
@@ -1280,7 +1680,10 @@ pub fn build_assistant_build_tiled_locations<H: BuildAssistantHost>(
         i += 1;
     }
     // return a struct filled out with the actual tiles used and the array of locations
-    Ok(TileBuildInfo { tiles_used, positions: ba.build_positions.clone() })
+    Ok(TileBuildInfo {
+        tiles_used,
+        positions: ba.build_positions.clone(),
+    })
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1311,13 +1714,21 @@ pub fn build_assistant_build_object_now<H: BuildAssistantHost>(
 
     if !move_objects_for_construction(h, what, pos, angle, owning_player) {
         // totally bogus. We tried to move our units out of the way, but they wouldn't. Chode-boys.
-        if h.player_type(owning_player) == if plant(146) { PlayerType::Computer } else { PlayerType::Human } {
+        if h.player_type(owning_player)
+            == if plant(146) {
+                PlayerType::Computer
+            } else {
+                PlayerType::Human
+            }
+        {
             return Ok(None); // ai gets to cheat. jba.
         }
     }
 
     // do the build
-    if is_dozer(h, constructor_object) && (!build_assistant_is_line_build_template(h, what) || plant(147)) {
+    if is_dozer(h, constructor_object)
+        && (!build_assistant_is_line_build_template(h, what) || plant(147))
+    {
         let c = constructor_object.expect("a dozer is an object");
         if h.obj_has_ai(c) {
             if !plant(148) {
@@ -1331,7 +1742,9 @@ pub fn build_assistant_build_object_now<H: BuildAssistantHost>(
     // don't want to send double construction type events like power creation. onStructureConstructionComplete is called
     // below, so we need to simulate the proper object creation flow from the start. Be like Dozer.
     if !h.player_has_default_team(owning_player) {
-        return Err(BuildError::Undefined("buildObjectNow: the owning player has no default team"));
+        return Err(BuildError::Undefined(
+            "buildObjectNow: the owning player has no default team",
+        ));
     }
     let mut starting_status: Vec<ObjectStatusTypes> = Vec::new();
     if h.tmpl_is_kind_of(what, KINDOF_STRUCTURE) && !plant(149) {
@@ -1341,7 +1754,15 @@ pub fn build_assistant_build_object_now<H: BuildAssistantHost>(
     h.obj_set_producer(obj, if plant(150) { None } else { constructor_object });
 
     // place on terrain surface
-    let ground_pos = Coord3D { x: pos.x, y: pos.y, z: if plant(151) { pos.z } else { h.terrain_ground_height(pos.x, pos.y) } };
+    let ground_pos = Coord3D {
+        x: pos.x,
+        y: pos.y,
+        z: if plant(151) {
+            pos.z
+        } else {
+            h.terrain_ground_height(pos.x, pos.y)
+        },
+    };
     h.obj_set_position(obj, ground_pos);
     h.obj_set_orientation(obj, angle);
     if !plant(152) {
@@ -1358,7 +1779,11 @@ pub fn build_assistant_build_object_now<H: BuildAssistantHost>(
             h.player_on_structure_construction_complete(owning_player, constructor_object, obj);
         }
     } else {
-        h.player_on_unit_created(owning_player, if plant(155) { None } else { constructor_object }, obj);
+        h.player_on_unit_created(
+            owning_player,
+            if plant(155) { None } else { constructor_object },
+            obj,
+        );
         // Call the voice created for the 1st object -- because it's possible to create multiple objects like redguards!
         let t = h.obj_template(obj);
         if !plant(156) {
@@ -1396,16 +1821,37 @@ pub fn build_assistant_build_object_line_now<H: BuildAssistantHost>(
     // what is our max tiling length we can make
     let max_objects = h.build_globals().max_line_build_objects - plant(142) as i32;
     // build an array of locations that we want to build from start to end
-    let tile_build_info = build_assistant_build_tiled_locations(h, ba, what, angle, start, end, object_size, max_objects, constructor_object)?;
+    let tile_build_info = build_assistant_build_tiled_locations(
+        h,
+        ba,
+        what,
+        angle,
+        start,
+        end,
+        object_size,
+        max_objects,
+        constructor_object,
+    )?;
     // create an object at each position
     for i in 0..tile_build_info.tiles_used - plant(143) as i32 {
-        build_assistant_build_object_now(h, constructor_object, what, tile_build_info.positions[i as usize], angle, owning_player)?;
+        build_assistant_build_object_now(
+            h,
+            constructor_object,
+            what,
+            tile_build_info.positions[i as usize],
+            angle,
+            owning_player,
+        )?;
     }
     Ok(())
 }
 
 /// `BuildAssistant::sellObject(obj)`: start the process for selling the object in question.
-pub fn build_assistant_sell_object<H: BuildAssistantHost>(h: &mut H, ba: &mut BuildAssistant, obj: ObjectId) {
+pub fn build_assistant_sell_object<H: BuildAssistantHost>(
+    h: &mut H,
+    ba: &mut BuildAssistant,
+    obj: ObjectId,
+) {
     // we can only sell structures ... sanity check this
     if !h.obj_is_kind_of(obj, KINDOF_STRUCTURE) && !plant(159) {
         return;
@@ -1419,18 +1865,47 @@ pub fn build_assistant_sell_object<H: BuildAssistantHost>(h: &mut H, ba: &mut Bu
 
     // add this object to the list of objects being sold
     if plant(162) {
-        ba.sell_list.push(ObjectSellInfo { id: obj, sell_frame: h.frame() });
+        ba.sell_list.push(ObjectSellInfo {
+            id: obj,
+            sell_frame: h.frame(),
+        });
     } else {
-        ba.sell_list.insert(0, ObjectSellInfo { id: obj, sell_frame: h.frame() });
+        ba.sell_list.insert(
+            0,
+            ObjectSellInfo {
+                id: obj,
+                sell_frame: h.frame(),
+            },
+        );
     }
 
     // set the model condition in the drawable for this object that will show the buildup scaffold and adjust the model height
     // by construction percent
-    h.obj_set_model_condition(obj, &[MODELCONDITION_PARTIALLY_CONSTRUCTED, if plant(163) { MODELCONDITION_SOLD } else { MODELCONDITION_ACTIVELY_BEING_CONSTRUCTED }]);
+    h.obj_set_model_condition(
+        obj,
+        &[
+            MODELCONDITION_PARTIALLY_CONSTRUCTED,
+            if plant(163) {
+                MODELCONDITION_SOLD
+            } else {
+                MODELCONDITION_ACTIVELY_BEING_CONSTRUCTED
+            },
+        ],
+    );
 
     // set this object as under de-construction (sold). It is still a legal target, since you get the money at the completion
     // of sale.
-    h.obj_set_status(obj, &[OBJECT_STATUS_SOLD, if plant(164) { OBJECT_STATUS_UNDER_CONSTRUCTION } else { OBJECT_STATUS_UNSELECTABLE }]);
+    h.obj_set_status(
+        obj,
+        &[
+            OBJECT_STATUS_SOLD,
+            if plant(164) {
+                OBJECT_STATUS_UNDER_CONSTRUCTION
+            } else {
+                OBJECT_STATUS_UNSELECTABLE
+            },
+        ],
+    );
 
     // for everybody, unselect them at this time. You can't just deselect a drawable. Selection is a logic property.
     if !plant(165) {
@@ -1468,7 +1943,10 @@ pub fn build_assistant_sell_object<H: BuildAssistantHost>(h: &mut H, ba: &mut Bu
     // own, so we must do this the hard way :-( [fortunately, this doens't happen very often, so this is probably an
     // acceptable, if icky, solution.] (srj)
     for mine in h.all_objects() {
-        if (h.obj_is_kind_of(mine, KINDOF_MINE) || plant(172) && h.obj_is_kind_of(mine, KINDOF_INERT)) && (h.obj_producer_id(mine) == obj || plant(171)) {
+        if (h.obj_is_kind_of(mine, KINDOF_MINE)
+            || plant(172) && h.obj_is_kind_of(mine, KINDOF_INERT))
+            && (h.obj_producer_id(mine) == obj || plant(171))
+        {
             h.destroy_object(mine);
         }
     }
@@ -1481,7 +1959,12 @@ pub fn build_assistant_sell_object<H: BuildAssistantHost>(h: &mut H, ba: &mut Bu
 pub fn plant(k: u32) -> bool {
     use std::sync::OnceLock;
     static P: OnceLock<u32> = OnceLock::new();
-    *P.get_or_init(|| std::env::var("BA_PLANT").ok().and_then(|s| s.parse().ok()).unwrap_or(0)) == k
+    *P.get_or_init(|| {
+        std::env::var("BA_PLANT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0)
+    }) == k
 }
 
 /// Without the `differential` feature no bug is ever planted.
@@ -1499,7 +1982,10 @@ mod tests {
     use crate::common::xfer_save::XferSave;
 
     fn sale(id: ObjectId, frame: u32) -> ObjectSellInfo {
-        ObjectSellInfo { id, sell_frame: frame }
+        ObjectSellInfo {
+            id,
+            sell_frame: frame,
+        }
     }
 
     /// The sell list saves as a count and then each sale's id and frame, in list order, and loads back the same; a file that stops

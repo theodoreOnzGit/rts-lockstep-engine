@@ -34,7 +34,11 @@ use crate::logic::world::update_body::UpdateBody;
 use crate::upgrade_module_data_field_parse;
 /// `ActiveShroudUpgrade::upgradeImplementation`'s range: `NewShroudRange`.
 pub fn upgrade_implementation(data: &ActiveShroudUpgradeModuleData) -> f32 {
-    if crate::logic::modules::plant(15) { data.new_shroud_range * 2.0 } else { data.new_shroud_range }
+    if crate::logic::modules::plant(15) {
+        data.new_shroud_range * 2.0
+    } else {
+        data.new_shroud_range
+    }
 }
 /// `class ActiveShroudUpgradeModuleData : public UpgradeModuleData`.
 #[derive(Debug)]
@@ -50,23 +54,37 @@ impl Default for ActiveShroudUpgradeModuleData {
     fn default() -> Self {
         ActiveShroudUpgradeModuleData {
             upgrade: Arc::new(UpgradeModuleData::new()),
-            new_shroud_range: if crate::logic::modules::plant(25) { 1.0 } else { 0.0 },
+            new_shroud_range: if crate::logic::modules::plant(25) {
+                1.0
+            } else {
+                0.0
+            },
         }
     }
 }
 
 /// `UpgradeModuleData::buildFieldParse`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<ActiveShroudUpgradeModuleData>; 6] = upgrade_module_data_field_parse!(ActiveShroudUpgradeModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<ActiveShroudUpgradeModuleData>; 6] =
+    upgrade_module_data_field_parse!(ActiveShroudUpgradeModuleData, upgrade);
 
 /// `ActiveShroudUpgradeModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<ActiveShroudUpgradeModuleData>; 2] = [
-    FieldParse::new("NewShroudRange", |i, d, _| { d.new_shroud_range = i.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "NewShroudRange",
+        |i, d, _| {
+            d.new_shroud_range = i.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl ActiveShroudUpgradeModuleData {
     /// `buildFieldParse(p)`: `BehaviorModuleData`'s, then `UpgradeModuleData`'s, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, ActiveShroudUpgradeModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, ActiveShroudUpgradeModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -74,10 +92,15 @@ impl ActiveShroudUpgradeModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ActiveShroudUpgradeModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<ActiveShroudUpgradeModuleData> {
         let mut data = ActiveShroudUpgradeModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, ActiveShroudUpgradeModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                ActiveShroudUpgradeModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -95,19 +118,21 @@ pub struct ActiveShroudUpgrade {
 impl PartialEq for ActiveShroudUpgrade {
     /// The same data object and the same `m_upgradeExecuted` (upstream compares the data pointer).
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.data, &other.data) && self.base.is_already_upgraded() == other.base.is_already_upgraded()
+        Arc::ptr_eq(&self.data, &other.data)
+            && self.base.is_already_upgraded() == other.base.is_already_upgraded()
     }
 }
 
 impl ActiveShroudUpgrade {
     /// `ActiveShroudUpgrade(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(object: ObjectId, data: Option<Arc<ActiveShroudUpgradeModuleData>>) -> IniResult<ActiveShroudUpgrade> {
-        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<ActiveShroudUpgradeModuleData>>,
+    ) -> IniResult<ActiveShroudUpgrade> {
+        let data =
+            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let base = UpgradeModule::new(object, Some(data.upgrade.clone()))?;
-        Ok(ActiveShroudUpgrade {
-            base,
-            data,
-        })
+        Ok(ActiveShroudUpgrade { base, data })
     }
 
     /// `getInterfaceMask()`: the `UpgradeModule` one.
@@ -121,7 +146,12 @@ impl ActiveShroudUpgrade {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         upgrade_module_call(self, world, me, call)
     }
 }
@@ -133,7 +163,11 @@ impl UpgradeBehavior for ActiveShroudUpgrade {
     fn base_mut(&mut self) -> &mut UpgradeModule {
         &mut self.base
     }
-    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
+    fn upgrade_implementation(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+    ) -> Result<(), IniError> {
         let range = upgrade_implementation(&self.data);
         if !crate::logic::modules::plant(14) {
             world.set_shroud_range(me.object, range);
@@ -179,7 +213,9 @@ impl Snapshot for ActiveShroudUpgrade {
 
 /// The factory's `NewModuleDataProc` for `ActiveShroudUpgrade`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::ActiveShroudUpgrade(Arc::new(ActiveShroudUpgradeModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::ActiveShroudUpgrade(Arc::new(
+        ActiveShroudUpgradeModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
 #[cfg(test)]
@@ -187,8 +223,14 @@ mod tests {
     use super::*;
     #[test]
     fn the_upgrade_sets_the_configured_range() {
-        let d = ActiveShroudUpgradeModuleData { new_shroud_range: 150.5, ..Default::default() };
+        let d = ActiveShroudUpgradeModuleData {
+            new_shroud_range: 150.5,
+            ..Default::default()
+        };
         assert_eq!(upgrade_implementation(&d), 150.5);
-        assert_eq!(upgrade_implementation(&ActiveShroudUpgradeModuleData::default()), 0.0);
+        assert_eq!(
+            upgrade_implementation(&ActiveShroudUpgradeModuleData::default()),
+            0.0
+        );
     }
 }

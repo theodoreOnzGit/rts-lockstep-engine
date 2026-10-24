@@ -142,8 +142,13 @@ impl From<ChunkIoUndefined> for ChunkIoError {
 impl std::fmt::Display for ChunkIoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ChunkIoError::Undefined(u) => write!(f, "chunk file outside what the original reader defines: {u:?}"),
-            ChunkIoError::NonTerminating => write!(f, "chunk file on which the original reader loops forever"),
+            ChunkIoError::Undefined(u) => write!(
+                f,
+                "chunk file outside what the original reader defines: {u:?}"
+            ),
+            ChunkIoError::NonTerminating => {
+                write!(f, "chunk file on which the original reader loops forever")
+            }
         }
     }
 }
@@ -175,7 +180,11 @@ impl<'a> GameFile<'a> {
     /// The file over `data`. `None` if it is larger than an `Int` can size.
     pub fn new(data: &'a [u8]) -> Option<Self> {
         i32::try_from(data.len()).ok()?;
-        Some(GameFile { data, pos: 0, rewound: false })
+        Some(GameFile {
+            data,
+            pos: 0,
+            rewound: false,
+        })
     }
 
     fn size(&self) -> i32 {
@@ -321,7 +330,9 @@ impl<'a> ChunkLoad<'a> {
     }
 
     fn top(&self) -> ChunkIoResult<usize> {
-        self.stack_index.checked_sub(1).ok_or(ChunkIoUndefined::NoChunkOpen.into())
+        self.stack_index
+            .checked_sub(1)
+            .ok_or(ChunkIoUndefined::NoChunkOpen.into())
     }
 
     /// `Open_Chunk()`.
@@ -401,7 +412,10 @@ impl<'a> ChunkLoad<'a> {
         let mut b = [self.mc_header.chunk_type, self.mc_header.chunk_size];
         let n = self.read(&mut b, MICRO_CHUNK_HEADER_SIZE);
         // a short file read copies its bytes into MCHeader even on failure
-        self.mc_header = MicroChunkHeader { chunk_type: b[0], chunk_size: b[1] };
+        self.mc_header = MicroChunkHeader {
+            chunk_type: b[0],
+            chunk_size: b[1],
+        };
         if n? != MICRO_CHUNK_HEADER_SIZE {
             return Ok(false);
         }
@@ -453,7 +467,8 @@ impl<'a> ChunkLoad<'a> {
             return false;
         }
         if self.in_micro_chunk
-            && (self.micro_chunk_position as u32).wrapping_add(nbytes) > u32::from(self.mc_header.chunk_size)
+            && (self.micro_chunk_position as u32).wrapping_add(nbytes)
+                > u32::from(self.mc_header.chunk_size)
         {
             return false;
         }
@@ -497,7 +512,12 @@ impl<'a> ChunkLoad<'a> {
             return Ok(0);
         }
         let curpos = self.file.tell();
-        if self.file.seek(nbytes as i32, SeekFrom::Cur).wrapping_sub(curpos) != nbytes as i32 {
+        if self
+            .file
+            .seek(nbytes as i32, SeekFrom::Cur)
+            .wrapping_sub(curpos)
+            != nbytes as i32
+        {
             return Ok(0);
         }
         self.advance(t, nbytes);
@@ -558,7 +578,10 @@ mod tests {
         assert_eq!(c.cur_chunk_id().unwrap(), 0x30);
         c.close_chunk().unwrap();
         assert!(!c.open_chunk().unwrap(), "end of file");
-        assert_eq!(c.close_chunk(), Err(ChunkIoError::Undefined(ChunkIoUndefined::NoChunkOpen)));
+        assert_eq!(
+            c.close_chunk(),
+            Err(ChunkIoError::Undefined(ChunkIoUndefined::NoChunkOpen))
+        );
     }
 
     #[test]
@@ -598,6 +621,9 @@ mod tests {
         for _ in 0..256 {
             assert!(c.open_chunk().unwrap());
         }
-        assert_eq!(c.open_chunk(), Err(ChunkIoError::Undefined(ChunkIoUndefined::StackOverflow)));
+        assert_eq!(
+            c.open_chunk(),
+            Err(ChunkIoError::Undefined(ChunkIoUndefined::StackOverflow))
+        );
     }
 }

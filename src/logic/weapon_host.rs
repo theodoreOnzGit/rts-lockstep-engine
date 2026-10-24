@@ -49,15 +49,15 @@ use crate::common::game_common::Relationship;
 use crate::common::game_type::{ObjectId, PathfindLayer};
 use crate::common::geometry::GeometryInfo;
 use crate::common::kind_of::{KindOfMaskType, KindOfType};
+use crate::common::name_key_generator::NameKeyType;
 use crate::common::object_status_types::ObjectStatusTypes;
 use crate::common::random_value::RandomValues;
 use crate::logic::damage::DamageInfo;
 use crate::logic::damage::DamageInfoInput;
-use crate::common::name_key_generator::NameKeyType;
 use crate::logic::weapon::{FxName, WeaponError, WeaponStore};
+use crate::logic::weapon_bonus::{WeaponBonus, WeaponBonusSet};
 use crate::logic::weapon_set::WeaponTemplateSet;
 use crate::logic::weapon_set_flags::WeaponSetFlags;
-use crate::logic::weapon_bonus::{WeaponBonus, WeaponBonusSet};
 use crate::logic::weapon_types::WeaponStatus;
 use crate::ww::matrix3d::Matrix3D;
 
@@ -66,8 +66,9 @@ use crate::ww::matrix3d::Matrix3D;
 pub use crate::logic::world::partition::DistanceCalculationType;
 
 pub use crate::common::game_common::{
-    is_forced_attack, AbleToAttackType, CommandSourceType, ATTACK_CONTINUED_TARGET, ATTACK_CONTINUED_TARGET_FORCED, ATTACK_NEW_TARGET,
-    ATTACK_NEW_TARGET_FORCED, ATTACK_TUNNEL_NETWORK_GUARD,
+    is_forced_attack, AbleToAttackType, CommandSourceType, ATTACK_CONTINUED_TARGET,
+    ATTACK_CONTINUED_TARGET_FORCED, ATTACK_NEW_TARGET, ATTACK_NEW_TARGET_FORCED,
+    ATTACK_TUNNEL_NETWORK_GUARD,
 };
 
 /// `enum CanAttackResult`, worst to best ("these must be done this way now").
@@ -166,7 +167,11 @@ pub trait WeaponXferLookups {
     /// `tt->getName()`.
     fn thing_template_name(&self, id: u16) -> Vec<u8>;
     /// `tt->findWeaponTemplateSet(flags)`: it fills the template's match cache, hence `&mut`.
-    fn find_weapon_template_set_by_flags(&mut self, thing_template: u16, flags: &WeaponSetFlags) -> Option<WeaponTemplateSetRef>;
+    fn find_weapon_template_set_by_flags(
+        &mut self,
+        thing_template: u16,
+        flags: &WeaponSetFlags,
+    ) -> Option<WeaponTemplateSetRef>;
     /// The weapon template set `r` points at.
     fn weapon_template_set(&self, r: WeaponTemplateSetRef) -> &WeaponTemplateSet;
     /// The name and store position of every weapon template, in store order (what `findWeaponTemplate(name)`
@@ -217,7 +222,12 @@ pub trait WeaponHost: WeaponXferLookups {
     /// `isKindOf(kind)`.
     fn is_kind_of(&self, o: ObjectId, kind: KindOfType) -> bool;
     /// `isKindOfMulti(mustBeSet, mustBeClear)`: every bit of `must_be_set` is set and no bit of `must_be_clear`.
-    fn is_kind_of_multi(&self, o: ObjectId, must_be_set: &KindOfMaskType, must_be_clear: &KindOfMaskType) -> bool;
+    fn is_kind_of_multi(
+        &self,
+        o: ObjectId,
+        must_be_set: &KindOfMaskType,
+        must_be_clear: &KindOfMaskType,
+    ) -> bool;
     /// `testStatus(status)`.
     fn test_status(&self, o: ObjectId, status: ObjectStatusTypes) -> bool;
     /// `testScriptStatusBit(bit)`.
@@ -283,7 +293,10 @@ pub trait WeaponHost: WeaponXferLookups {
     /// `getControllingPlayer()`, as the player's index (identity only); `None` = `NULL`.
     fn controlling_player(&self, o: ObjectId) -> Option<i32>;
     /// `getControllingPlayer()->getPlayerMask()`; `None` when there is no controlling player.
-    fn controlling_player_mask(&self, o: ObjectId) -> Option<crate::common::game_common::PlayerMaskType>;
+    fn controlling_player_mask(
+        &self,
+        o: ObjectId,
+    ) -> Option<crate::common::game_common::PlayerMaskType>;
     /// `getControllingPlayer()->getNumBattlePlansActive()`.
     fn controlling_player_battle_plans(&self, o: ObjectId) -> i32;
     /// `getControllingPlayer()->applyBattlePlanBonusesForObject(projectile)`.
@@ -303,13 +316,21 @@ pub trait WeaponHost: WeaponXferLookups {
     /// `getContain()->isGarrisonable()`.
     fn contain_is_garrisonable(&self, container: ObjectId) -> bool;
     /// `getContain()->calcBestGarrisonPosition(&goalPos, &targetPos)`: the goal position, or `None`.
-    fn contain_calc_best_garrison_position(&self, container: ObjectId, target_pos: &Coord3D) -> Option<Coord3D>;
+    fn contain_calc_best_garrison_position(
+        &self,
+        container: ObjectId,
+        target_pos: &Coord3D,
+    ) -> Option<Coord3D>;
     /// `getContain()->isPassengerAllowedToFire()`; `false` when there is no contain module.
     fn contain_is_passenger_allowed_to_fire(&self, o: ObjectId) -> bool;
     /// `getContain()->getContainedItemsList()` (`None` = the pointer is `NULL`).
     fn contain_items(&self, o: ObjectId) -> Option<ContainedItems>;
     /// `getContain()->getApparentControllingPlayer(observer)`: that player's index, `None` for `NULL`.
-    fn contain_apparent_controlling_player(&self, o: ObjectId, observer: Option<i32>) -> Option<i32>;
+    fn contain_apparent_controlling_player(
+        &self,
+        o: ObjectId,
+        observer: Option<i32>,
+    ) -> Option<i32>;
     /// `getContain() != NULL`.
     fn has_contain(&self, o: ObjectId) -> bool;
     /// `getStealth()`'s `isDisguised()` and `getDisguisedPlayerIndex()`: `None` when there is no stealth update or
@@ -317,7 +338,11 @@ pub trait WeaponHost: WeaponXferLookups {
     fn stealth_disguised_player_index(&self, o: ObjectId) -> Option<i32>;
     /// `ThePlayerList->getNthPlayer(index)` exists and the observer's `getRelationship(its default team)`:
     /// `None` if either player is missing.
-    fn player_relationship_to_player(&self, observer: Option<i32>, other_index: i32) -> Option<Relationship>;
+    fn player_relationship_to_player(
+        &self,
+        observer: Option<i32>,
+        other_index: i32,
+    ) -> Option<Relationship>;
     /// `getSpawnBehaviorInterface()->getCanAnySlavesUseWeaponAgainstTarget(...)`; `None` = no spawn behaviour.
     fn spawn_slaves_can_use_weapon_against_target(
         &self,
@@ -351,7 +376,12 @@ pub trait WeaponHost: WeaponXferLookups {
     /// `getAIUpdateInterface()->getWhichTurretForWeaponSlot(wslot, &angle, &pitch)`: `None` without AI.
     fn ai_which_turret_for_weapon_slot(&self, o: ObjectId, wslot: i32) -> Option<(i32, f32, f32)>;
     /// `getAI()->isWeaponSlotOnTurretAndAimingAtTarget(slot, victim)`; `false` without AI.
-    fn ai_is_weapon_slot_on_turret_and_aiming_at_target(&self, o: ObjectId, wslot: i32, victim: ObjectId) -> bool;
+    fn ai_is_weapon_slot_on_turret_and_aiming_at_target(
+        &self,
+        o: ObjectId,
+        wslot: i32,
+        victim: ObjectId,
+    ) -> bool;
     /// `TheAI->pathfinder()->adjustTargetDestination(source, target, pos, weapon, &approachTargetPos)`.
     fn adjust_target_destination(
         &mut self,
@@ -365,20 +395,47 @@ pub trait WeaponHost: WeaponXferLookups {
     // ---- the partition manager and the terrain --------------------------------------------------------------------
 
     /// `ThePartitionManager->getDistanceSquared(a, b, calc)`.
-    fn distance_squared_to_object(&self, a: ObjectId, b: ObjectId, calc: DistanceCalculationType) -> f32;
+    fn distance_squared_to_object(
+        &self,
+        a: ObjectId,
+        b: ObjectId,
+        calc: DistanceCalculationType,
+    ) -> f32;
     /// `ThePartitionManager->getDistanceSquared(a, &pos, calc)`.
-    fn distance_squared_to_pos(&self, a: ObjectId, pos: &Coord3D, calc: DistanceCalculationType) -> f32;
+    fn distance_squared_to_pos(
+        &self,
+        a: ObjectId,
+        pos: &Coord3D,
+        calc: DistanceCalculationType,
+    ) -> f32;
     /// `ThePartitionManager->getGoalDistanceSquared(a, &goal, b, calc)`.
-    fn goal_distance_squared_to_object(&self, a: ObjectId, goal: &Coord3D, b: ObjectId, calc: DistanceCalculationType) -> f32;
+    fn goal_distance_squared_to_object(
+        &self,
+        a: ObjectId,
+        goal: &Coord3D,
+        b: ObjectId,
+        calc: DistanceCalculationType,
+    ) -> f32;
     /// `ThePartitionManager->getGoalDistanceSquared(a, &goal, &pos, calc)`.
-    fn goal_distance_squared_to_pos(&self, a: ObjectId, goal: &Coord3D, pos: &Coord3D, calc: DistanceCalculationType) -> f32;
+    fn goal_distance_squared_to_pos(
+        &self,
+        a: ObjectId,
+        goal: &Coord3D,
+        pos: &Coord3D,
+        calc: DistanceCalculationType,
+    ) -> f32;
     /// `ThePartitionManager->getVectorTo(a, b, calc, dir)`.
     fn vector_to_object(&self, a: ObjectId, b: ObjectId, calc: DistanceCalculationType) -> Coord3D;
     /// `ThePartitionManager->getVectorTo(a, &pos, calc, dir)`.
     fn vector_to_pos(&self, a: ObjectId, pos: &Coord3D, calc: DistanceCalculationType) -> Coord3D;
     /// `ThePartitionManager->iterateObjectsInRange(pos, radius, calc)` walked with `firstWithNumeric` /
     /// `nextWithNumeric`: each object with its distance squared, in the iterator's order.
-    fn objects_in_range(&self, pos: &Coord3D, radius: f32, calc: DistanceCalculationType) -> Vec<(ObjectId, f32)>;
+    fn objects_in_range(
+        &self,
+        pos: &Coord3D,
+        radius: f32,
+        calc: DistanceCalculationType,
+    ) -> Vec<(ObjectId, f32)>;
     /// `ThePartitionManager->iteratePotentialCollisions(source->getPosition(), source->getGeometryInfo(), 0)`.
     fn potential_collisions(&self, source: ObjectId) -> Vec<ObjectId>;
     /// `ThePartitionManager->isClearLineOfSightTerrain(NULL, from, NULL, to)`.
@@ -446,10 +503,22 @@ pub trait WeaponHost: WeaponXferLookups {
     /// `findUpdateModule(AssistedTargetingUpdate)` of `o`: `Some(isFreeToAssist())`, `None` without the module.
     fn assisted_targeting_is_free(&self, o: ObjectId) -> Option<bool>;
     /// `assistedTargetingUpdate->assistAttack(requesting, victim)`.
-    fn assisted_targeting_assist_attack(&mut self, o: ObjectId, requesting: ObjectId, victim: ObjectId);
+    fn assisted_targeting_assist_attack(
+        &mut self,
+        o: ObjectId,
+        requesting: ObjectId,
+        victim: ObjectId,
+    );
     /// `laser->getDrawable()->findClientUpdateModule(LaserUpdate)->initLaser(source, victim, &sourcePos, &pos,
     /// boneName)` on the laser object `laser` (a no-op when it has no drawable or no module).
-    fn laser_init(&mut self, laser: ObjectId, source: ObjectId, victim: Option<ObjectId>, pos: &Coord3D, bone_name: &[u8]);
+    fn laser_init(
+        &mut self,
+        laser: ObjectId,
+        source: ObjectId,
+        victim: Option<ObjectId>,
+        pos: &Coord3D,
+        bone_name: &[u8],
+    );
     /// `ObjectCreationList::create(ocl, primary, NULL)`.
     fn create_ocl(&mut self, ocl: u32, primary: ObjectId);
 
@@ -459,7 +528,13 @@ pub trait WeaponHost: WeaponXferLookups {
     fn barrel_count(&self, o: ObjectId, wslot: i32) -> Option<i32>;
     /// `getDrawable()->getProjectileLaunchOffset(wslot, barrel, &attach, turret, &rotPos, &pitchPos)`; `None`
     /// when there is no drawable or no such bone.
-    fn projectile_launch_offset(&self, o: ObjectId, wslot: i32, barrel: i32, turret: i32) -> Option<LaunchOffset>;
+    fn projectile_launch_offset(
+        &self,
+        o: ObjectId,
+        wslot: i32,
+        barrel: i32,
+        turret: i32,
+    ) -> Option<LaunchOffset>;
     /// `convertBonePosToWorldPos(NULL, &boneTransform, NULL, &worldTransform)`.
     fn convert_bone_transform_to_world(&self, o: ObjectId, bone_transform: &Matrix3D) -> Matrix3D;
     /// A client effect.

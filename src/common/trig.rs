@@ -221,7 +221,11 @@ mod tests {
         assert_eq!(sin_lookup(1024), INT_ONE - 1);
         assert_eq!(int_sin(-INT_TWOPI), int_sin(0));
         assert_eq!(int_cos(0), int_sin(INT_HALFPI));
-        assert_eq!(int_arc_cos(i32::MAX), arc_cos_lookup(0), "wraps, then clamps to 0");
+        assert_eq!(
+            int_arc_cos(i32::MAX),
+            arc_cos_lookup(0),
+            "wraps, then clamps to 0"
+        );
         assert_eq!(int_arc_cos(i32::MIN), arc_cos_lookup(0));
         assert_eq!(int_arc_cos(1 << 20), arc_cos_lookup(8191));
         assert!((table::sin(1.0) - 0.841_470_96).abs() < 2e-3);

@@ -11,12 +11,12 @@
 
 mod support;
 
+use petir::Real;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::ww::vector2::{self, Vector2};
 use rts_lockstep_engine::ww::vector3::{self, Vector3};
 use rts_lockstep_engine::ww::vector4::Vector4;
 use support::{Check, Gen, N};
-use petir::Real;
 
 fn v2(a: [f32; 2]) -> Vector2 {
     Vector2::new(a[0], a[1])
@@ -38,8 +38,25 @@ fn a4(v: Vector4) -> [f32; 4] {
 }
 
 const V2_OPS: [&str; 19] = [
-    "+", "-", "v*k", "k*v", "v/k", "+=", "-=", "*=", "/=", "neg", "Scale(x,y)", "Scale(v)",
-    "Update_Min", "Update_Max", "Normalize", "Rotate(theta)", "Rotate(s,c)", "Lerp", "::Normalize",
+    "+",
+    "-",
+    "v*k",
+    "k*v",
+    "v/k",
+    "+=",
+    "-=",
+    "*=",
+    "/=",
+    "neg",
+    "Scale(x,y)",
+    "Scale(v)",
+    "Update_Min",
+    "Update_Max",
+    "Normalize",
+    "Rotate(theta)",
+    "Rotate(s,c)",
+    "Lerp",
+    "::Normalize",
 ];
 
 fn rust_v2_op(op: usize, a: Vector2, b: Vector2, k: f32) -> Vector2 {
@@ -115,7 +132,17 @@ fn vector2_matches() {
         }
         c.finish();
     }
-    let names = ["Dot_Product", "operator*", "Perp_Dot_Product", "Length", "Length2", "Distance", "Quick_Distance", "::Distance", "::Quick_Distance"];
+    let names = [
+        "Dot_Product",
+        "operator*",
+        "Perp_Dot_Product",
+        "Length",
+        "Length2",
+        "Distance",
+        "Quick_Distance",
+        "::Distance",
+        "::Quick_Distance",
+    ];
     for (op, name) in names.iter().enumerate() {
         let mut c = Check::new(&format!("Vector2 {name}"));
         for i in 0..N {
@@ -132,19 +159,36 @@ fn vector2_matches() {
                 7 => vector2::distance_xy(a[0], a[1], b[0], b[1]),
                 _ => vector2::quick_distance_xy(a[0], a[1], b[0], b[1]),
             };
-            c.f32(r, unsafe { cpp::ref_v2_scalar(op as i32, a.as_ptr(), b.as_ptr()) }, || format!("case {i}: a={a:?} b={b:?}"));
+            c.f32(
+                r,
+                unsafe { cpp::ref_v2_scalar(op as i32, a.as_ptr(), b.as_ptr()) },
+                || format!("case {i}: a={a:?} b={b:?}"),
+            );
         }
         c.finish();
     }
     let mut c = Check::new("Vector2 ==, !=, Equal_Within_Epsilon, Is_Valid");
     for i in 0..N {
         let a = g.vec::<2>(Gen::geom);
-        let b = if g.below(3) == 0 { a } else { g.vec::<2>(Gen::geom) };
+        let b = if g.below(3) == 0 {
+            a
+        } else {
+            g.vec::<2>(Gen::geom)
+        };
         let k = g.uniform(0.0, 50.0);
         let (va, vb) = (v2(a), v2(b));
-        let r = [va == vb, va != vb, vector2::equal_within_epsilon(&va, &vb, k), va.is_valid()];
-        let o: Vec<bool> = (0..4).map(|op| unsafe { cpp::ref_v2_pred(op, a.as_ptr(), b.as_ptr(), k) } != 0).collect();
-        c.eq(r.to_vec(), o, || format!("case {i}: a={a:?} b={b:?} k={k:e}"));
+        let r = [
+            va == vb,
+            va != vb,
+            vector2::equal_within_epsilon(&va, &vb, k),
+            va.is_valid(),
+        ];
+        let o: Vec<bool> = (0..4)
+            .map(|op| unsafe { cpp::ref_v2_pred(op, a.as_ptr(), b.as_ptr(), k) } != 0)
+            .collect();
+        c.eq(r.to_vec(), o, || {
+            format!("case {i}: a={a:?} b={b:?} k={k:e}")
+        });
     }
     c.finish();
     let mut c = Check::new("Vector2 Rotate_Towards_Vector (s,c) and (theta)");
@@ -157,22 +201,48 @@ fn vector2_matches() {
         let mut o = a;
         let f = unsafe { cpp::ref_v2_rotate_towards(o.as_mut_ptr(), t.as_ptr(), s, cc) };
         c.f32s(&a2(va), &o, || format!("case {i} (s,c)"));
-        c.eq((r1, p1), (f & 1 != 0, f & 2 != 0), || format!("case {i} flags"));
+        c.eq((r1, p1), (f & 1 != 0, f & 2 != 0), || {
+            format!("case {i} flags")
+        });
         let mut va = v2(a);
         let (r2, p2) = va.rotate_towards_vector(&v2(t), theta);
         let mut o = a;
         let f = unsafe { cpp::ref_v2_rotate_towards_theta(o.as_mut_ptr(), t.as_ptr(), theta) };
         c.f32s(&a2(va), &o, || format!("case {i} theta"));
-        c.eq((r2, p2), (f & 1 != 0, f & 2 != 0), || format!("case {i} theta flags"));
+        c.eq((r2, p2), (f & 1 != 0, f & 2 != 0), || {
+            format!("case {i} theta flags")
+        });
     }
     c.finish();
 }
 
 const V3_OPS: [&str; 26] = [
-    "+", "-", "v*k", "k*v", "v/k", "+=", "-=", "*=", "/=", "neg", "Normalize", "Scale",
-    "Rotate_X(angle)", "Rotate_Y(angle)", "Rotate_Z(angle)", "Rotate_X(s,c)", "Rotate_Y(s,c)",
-    "Rotate_Z(s,c)", "Cross_Product", "Normalized_Cross_Product", "Add", "Subtract",
-    "Update_Min", "Update_Max", "Cap_Absolute_To", "Lerp",
+    "+",
+    "-",
+    "v*k",
+    "k*v",
+    "v/k",
+    "+=",
+    "-=",
+    "*=",
+    "/=",
+    "neg",
+    "Normalize",
+    "Scale",
+    "Rotate_X(angle)",
+    "Rotate_Y(angle)",
+    "Rotate_Z(angle)",
+    "Rotate_X(s,c)",
+    "Rotate_Y(s,c)",
+    "Rotate_Z(s,c)",
+    "Cross_Product",
+    "Normalized_Cross_Product",
+    "Add",
+    "Subtract",
+    "Update_Min",
+    "Update_Max",
+    "Cap_Absolute_To",
+    "Lerp",
 ];
 
 fn rust_v3_op(op: usize, a: Vector3, b: Vector3, k: f32) -> Vector3 {
@@ -267,7 +337,17 @@ fn vector3_matches() {
         }
         c.finish();
     }
-    let names = ["Dot_Product", "Length", "Length2", "Quick_Length", "Distance", "Quick_Distance", "Cross_Product_X", "Cross_Product_Y", "Cross_Product_Z"];
+    let names = [
+        "Dot_Product",
+        "Length",
+        "Length2",
+        "Quick_Length",
+        "Distance",
+        "Quick_Distance",
+        "Cross_Product_X",
+        "Cross_Product_Y",
+        "Cross_Product_Z",
+    ];
     for (op, name) in names.iter().enumerate() {
         let mut c = Check::new(&format!("Vector3 {name}"));
         for i in 0..N {
@@ -284,11 +364,22 @@ fn vector3_matches() {
                 7 => Vector3::cross_product_y(&va, &vb),
                 _ => Vector3::cross_product_z(&va, &vb),
             };
-            c.f32(r, unsafe { cpp::ref_v3_scalar(op as i32, a.as_ptr(), b.as_ptr()) }, || format!("case {i}: a={a:?} b={b:?}"));
+            c.f32(
+                r,
+                unsafe { cpp::ref_v3_scalar(op as i32, a.as_ptr(), b.as_ptr()) },
+                || format!("case {i}: a={a:?} b={b:?}"),
+            );
         }
         c.finish();
     }
-    let names = ["Find_X_At_Y", "Find_X_At_Z", "Find_Y_At_X", "Find_Y_At_Z", "Find_Z_At_X", "Find_Z_At_Y"];
+    let names = [
+        "Find_X_At_Y",
+        "Find_X_At_Z",
+        "Find_Y_At_X",
+        "Find_Y_At_Z",
+        "Find_Z_At_X",
+        "Find_Z_At_Y",
+    ];
     for (op, name) in names.iter().enumerate() {
         let mut c = Check::new(&format!("Vector3 {name}"));
         for i in 0..N {
@@ -302,18 +393,33 @@ fn vector3_matches() {
                 4 => Vector3::find_z_at_x(v, &a, &b),
                 _ => Vector3::find_z_at_y(v, &a, &b),
             };
-            c.f32(r, unsafe { cpp::ref_v3_find(op as i32, v, p1.as_ptr(), p2.as_ptr()) }, || format!("case {i}"));
+            c.f32(
+                r,
+                unsafe { cpp::ref_v3_find(op as i32, v, p1.as_ptr(), p2.as_ptr()) },
+                || format!("case {i}"),
+            );
         }
         c.finish();
     }
     let mut c = Check::new("Vector3 ==, !=, Equal_Within_Epsilon, Is_Valid");
     for i in 0..N {
         let a = g.vec::<3>(Gen::geom);
-        let b = if g.below(3) == 0 { a } else { g.vec::<3>(Gen::geom) };
+        let b = if g.below(3) == 0 {
+            a
+        } else {
+            g.vec::<3>(Gen::geom)
+        };
         let k = g.uniform(0.0, 50.0);
         let (va, vb) = (v3(a), v3(b));
-        let r = [va == vb, va != vb, vector3::equal_within_epsilon(&va, &vb, k), va.is_valid()];
-        let o: Vec<bool> = (0..4).map(|op| unsafe { cpp::ref_v3_pred(op, a.as_ptr(), b.as_ptr(), k) } != 0).collect();
+        let r = [
+            va == vb,
+            va != vb,
+            vector3::equal_within_epsilon(&va, &vb, k),
+            va.is_valid(),
+        ];
+        let o: Vec<bool> = (0..4)
+            .map(|op| unsafe { cpp::ref_v3_pred(op, a.as_ptr(), b.as_ptr(), k) } != 0)
+            .collect();
         c.eq(r.to_vec(), o, || format!("case {i}: a={a:?} b={b:?}"));
     }
     c.finish();
@@ -322,7 +428,18 @@ fn vector3_matches() {
 #[test]
 fn vector4_matches() {
     let mut g = Gen::new(72);
-    let names = ["+", "-", "v*k", "k*v", "v/k", "+=", "-= (upstream W += v.W)", "*=", "/=", "neg"];
+    let names = [
+        "+",
+        "-",
+        "v*k",
+        "k*v",
+        "v/k",
+        "+=",
+        "-= (upstream W += v.W)",
+        "*=",
+        "/=",
+        "neg",
+    ];
     for (op, name) in names.iter().enumerate() {
         let mut c = Check::new(&format!("Vector4 {name}"));
         for i in 0..N {
@@ -362,11 +479,21 @@ fn vector4_matches() {
     let mut c = Check::new("Vector4 dot, ==, !=");
     for i in 0..N {
         let a = g.vec::<4>(Gen::geom);
-        let b = if g.below(3) == 0 { a } else { g.vec::<4>(Gen::geom) };
+        let b = if g.below(3) == 0 {
+            a
+        } else {
+            g.vec::<4>(Gen::geom)
+        };
         let (va, vb) = (v4(a), v4(b));
-        c.f32(va * vb, unsafe { cpp::ref_v4_dot(a.as_ptr(), b.as_ptr()) }, || format!("case {i}"));
+        c.f32(
+            va * vb,
+            unsafe { cpp::ref_v4_dot(a.as_ptr(), b.as_ptr()) },
+            || format!("case {i}"),
+        );
         let e = unsafe { cpp::ref_v4_eq(a.as_ptr(), b.as_ptr()) };
-        c.eq((va == vb, va != vb), (e & 1 != 0, e & 2 != 0), || format!("case {i}: a={a:?} b={b:?}"));
+        c.eq((va == vb, va != vb), (e & 1 != 0, e & 2 != 0), || {
+            format!("case {i}: a={a:?} b={b:?}")
+        });
     }
     c.finish();
 }

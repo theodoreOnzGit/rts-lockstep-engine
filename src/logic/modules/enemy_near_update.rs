@@ -30,12 +30,16 @@
 use std::sync::Arc;
 
 use crate::common::game_common::LOGICFRAMES_PER_SECOND;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
+};
 use crate::common::model_state::MODELCONDITION_ENEMYNEAR;
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
+use crate::logic::module::update_module::{
+    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE,
+};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -57,26 +61,40 @@ pub struct EnemyNearUpdateModuleData {
 impl Default for EnemyNearUpdateModuleData {
     /// `EnemyNearUpdateModuleData()`.
     fn default() -> Self {
-        EnemyNearUpdateModuleData { update: UpdateModuleData::new(), enemy_scan_delay_time: LOGICFRAMES_PER_SECOND as u32 }
+        EnemyNearUpdateModuleData {
+            update: UpdateModuleData::new(),
+            enemy_scan_delay_time: LOGICFRAMES_PER_SECOND as u32,
+        }
     }
 }
 
 /// `EnemyNearUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<EnemyNearUpdateModuleData>; 2] = [
-    FieldParse::new("ScanDelayTime", |ini, d, _| { d.enemy_scan_delay_time = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "ScanDelayTime",
+        |ini, d, _| {
+            d.enemy_scan_delay_time = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl EnemyNearUpdateModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, EnemyNearUpdateModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, EnemyNearUpdateModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<EnemyNearUpdateModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<EnemyNearUpdateModuleData> {
         let mut data = EnemyNearUpdateModuleData::default();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, EnemyNearUpdateModuleData::build_field_parse)?;
@@ -110,11 +128,19 @@ impl PartialEq for EnemyNearUpdate {
 
 impl EnemyNearUpdate {
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and the zeroed state.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<EnemyNearUpdateModuleData>>) -> IniResult<Self> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<EnemyNearUpdateModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(EnemyNearUpdate { update, data, enemy_scan_delay: 0, enemy_near: false })
+        Ok(EnemyNearUpdate {
+            update,
+            data,
+            enemy_scan_delay: 0,
+            enemy_near: false,
+        })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -143,7 +169,12 @@ impl EnemyNearUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls (none).
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -165,9 +196,21 @@ impl EnemyNearUpdate {
     /// `checkForEnemies()`: "look around us for enemies".
     fn check_for_enemies(&mut self, world: &mut World, me: ObjectId) {
         if self.enemy_scan_delay == 0 {
-            self.enemy_scan_delay = if crate::logic::modules::plant(1171) { self.data.enemy_scan_delay_time.wrapping_sub(1) } else { self.data.enemy_scan_delay_time };
+            self.enemy_scan_delay = if crate::logic::modules::plant(1171) {
+                self.data.enemy_scan_delay_time.wrapping_sub(1)
+            } else {
+                self.data.enemy_scan_delay_time
+            };
             let vision_range = world.get_vision_range(me);
-            self.enemy_near = world.ai_find_closest_enemy(me, vision_range, if crate::logic::modules::plant(1172) { 0 } else { AI_CAN_SEE });
+            self.enemy_near = world.ai_find_closest_enemy(
+                me,
+                vision_range,
+                if crate::logic::modules::plant(1172) {
+                    0
+                } else {
+                    AI_CAN_SEE
+                },
+            );
         } else {
             self.enemy_scan_delay -= 1;
         }
@@ -188,7 +231,11 @@ impl UpdateBehavior for EnemyNearUpdate {
             if world.has_drawable(me.object) {
                 world.set_model_condition_state(me.object, MODELCONDITION_ENEMYNEAR);
             }
-        } else if !self.enemy_near && enemy_was_near && world.has_drawable(me.object) && !crate::logic::modules::plant(1173) {
+        } else if !self.enemy_near
+            && enemy_was_near
+            && world.has_drawable(me.object)
+            && !crate::logic::modules::plant(1173)
+        {
             world.clear_model_condition_state(me.object, MODELCONDITION_ENEMYNEAR);
         }
         UPDATE_SLEEP_NONE
@@ -235,5 +282,7 @@ impl Snapshot for EnemyNearUpdate {
 
 /// The factory's `NewModuleDataProc` for `EnemyNearUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::EnemyNearUpdate(Arc::new(EnemyNearUpdateModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::EnemyNearUpdate(Arc::new(
+        EnemyNearUpdateModuleData::friend_new_module_data(ini)?,
+    )))
 }

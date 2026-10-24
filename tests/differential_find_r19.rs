@@ -62,7 +62,9 @@ use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::common::game_common::PlayerType;
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
 use rts_lockstep_engine::common::kind_of::*;
-use rts_lockstep_engine::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_BODY, MODULEINTERFACE_COLLIDE};
+use rts_lockstep_engine::common::module::{
+    ModuleDataKind, ObjectId, MODULEINTERFACE_BODY, MODULEINTERFACE_COLLIDE,
+};
 use rts_lockstep_engine::common::object_status_types::ObjectStatusMaskType;
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
 use rts_lockstep_engine::common::xfer::Xfer;
@@ -103,16 +105,23 @@ fn put_str(v: &mut Vec<u8>, s: &[u8]) {
     v.extend_from_slice(s);
 }
 fn read_heal(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::AutoFindHealingUpdate(Arc::new(AutoFindHealingUpdateModuleData::friend_new_module_data(Some(ini))?)));
+    *out = Some(ModuleDataKind::AutoFindHealingUpdate(Arc::new(
+        AutoFindHealingUpdateModuleData::friend_new_module_data(Some(ini))?,
+    )));
     Ok(())
 }
 fn read_pilot(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::PilotFindVehicleUpdate(Arc::new(PilotFindVehicleUpdateModuleData::friend_new_module_data(Some(ini))?)));
+    *out = Some(ModuleDataKind::PilotFindVehicleUpdate(Arc::new(
+        PilotFindVehicleUpdateModuleData::friend_new_module_data(Some(ini))?,
+    )));
     Ok(())
 }
 
 fn rust_read(kind: u32, name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: if kind == 0 { read_heal } else { read_pilot } }];
+    let blocks = [BlockParse {
+        token: "D",
+        parse: if kind == 0 { read_heal } else { read_pilot },
+    }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -155,7 +164,9 @@ fn decode(kind: u32, b: &[u8], n_ops: usize) -> Vec<String> {
     if b.is_empty() {
         return out;
     }
-    let f: Vec<u32> = (0..if kind == 0 { 4 } else { 3 }).map(|_| u32_(&mut p)).collect();
+    let f: Vec<u32> = (0..if kind == 0 { 4 } else { 3 })
+        .map(|_| u32_(&mut p))
+        .collect();
     out.push(format!("data {f:x?}"));
     for i in 0..n_ops {
         if p >= b.len() {
@@ -181,10 +192,16 @@ fn decode(kind: u32, b: &[u8], n_ops: usize) -> Vec<String> {
 fn gen_text(g: &mut Gen, kind: u32, clean: bool) -> Vec<u8> {
     let mut lines: Vec<String> = Vec::new();
     if g.below(100) < 80 {
-        lines.push(format!("ScanRate = {}", pick(g, &["0", "33", "34", "100", "1000"])));
+        lines.push(format!(
+            "ScanRate = {}",
+            pick(g, &["0", "33", "34", "100", "1000"])
+        ));
     }
     if g.below(100) < 80 {
-        lines.push(format!("ScanRange = {}", pick(g, &["0", "50", "150.5", "-1"])));
+        lines.push(format!(
+            "ScanRange = {}",
+            pick(g, &["0", "50", "150.5", "-1"])
+        ));
     }
     let ratio = |g: &mut Gen| pick(g, &["0", "0.25", "0.5", "0.95", "1", "1.5"]).to_string();
     if kind == 0 {
@@ -218,7 +235,11 @@ fn gen_text(g: &mut Gen, kind: u32, clean: bool) -> Vec<u8> {
 
 /// A health, mostly on the thresholds the data names (a maximum of 100).
 fn gen_health(g: &mut Gen) -> u32 {
-    (*pick(g, &[&0.0f32, &25.0, &50.0, &94.0, &95.0, &96.0, &100.0, &49.5])).to_bits()
+    (*pick(
+        g,
+        &[&0.0f32, &25.0, &50.0, &94.0, &95.0, &96.0, &100.0, &49.5],
+    ))
+    .to_bits()
 }
 
 // -- the Rust side --
@@ -233,7 +254,13 @@ struct Tally {
     moves: u64,
 }
 
-fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
+fn run_xfer(
+    w: &mut World,
+    me: ObjectId,
+    idx: usize,
+    how: u32,
+    saved: &[u8],
+) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -281,7 +308,11 @@ fn set_kinds(w: &mut World, id: ObjectId, bits: u32) {
             values.kind_of.push(*k);
         }
     }
-    w.objects.find_mut(id).unwrap().thing.friend_set_template(Arc::new(ThingTemplate::from_object_values(&values)));
+    w.objects
+        .find_mut(id)
+        .unwrap()
+        .thing
+        .friend_set_template(Arc::new(ThingTemplate::from_object_values(&values)));
 }
 
 /// The scan: up to four nibbles of ids, 0 ends.
@@ -301,32 +332,58 @@ fn scan_list(scan: u32) -> Vec<ObjectId> {
 
 fn probe(name: &[u8], answers: ProbeAnswers, max: f32) -> NewModule {
     let mut m = NewModule::plain(name, name);
-    m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(answers, max, Default::default())));
+    m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+        answers,
+        max,
+        Default::default(),
+    )));
     m
 }
 
 fn probe_mut(w: &mut World, id: ObjectId, slot: u16) -> &mut ProbeModule {
-    match w.objects.find_mut(id).unwrap().modules[slot as usize].body.as_mut() {
+    match w.objects.find_mut(id).unwrap().modules[slot as usize]
+        .body
+        .as_mut()
+    {
         Some(UpdateBody::ModuleProbe(p)) => p,
         _ => unreachable!("a probe"),
     }
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 15], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
+fn rust_run(
+    ctx: &Ctx,
+    kind: u32,
+    data: ModuleDataKind,
+    cfg: &[u32; 15],
+    ops: &[[u32; 6]],
+    tally: &mut Tally,
+) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     put_data(&mut v, &data);
     let mut w = World::new();
     w.names = ctx.names.clone();
-    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), ..Default::default() });
+    w.statics = Arc::new(GameStatics {
+        upgrade_center: ctx.center.clone(),
+        ..Default::default()
+    });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.body.probe_trace = true;
     w.teams.insert_team(Team::new(1, 0)).unwrap();
     w.cuts.team_players.insert(1, 0);
-    let plain = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
+    let plain = Arc::new(ThingTemplate::from_object_values(
+        &ObjectTemplateValues::default(),
+    ));
     let class = CLASSES[kind as usize];
-    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class.as_bytes(), b"ModuleTag_Find", &data).unwrap().unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(
+        w.next_object_id(),
+        class.as_bytes(),
+        b"ModuleTag_Find",
+        &data,
+    )
+    .unwrap()
+    .unwrap();
     let mut ai = probe(b"R19Ai", ProbeAnswers::default(), 0.0);
     ai.is_ai = true;
     let mut body = probe(b"R19Body", ProbeAnswers::default(), f32::from_bits(cfg[2]));
@@ -335,32 +392,75 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 15], ops: &[
     let n_collide = (cfg[11] & 3) % 3;
     for k in 0..n_collide {
         let mask = cfg[11] >> (4 + 4 * k) & 15;
-        let list: Vec<ObjectId> = (0..4).filter(|j| mask >> j & 1 != 0).map(|j| j + 1).collect();
-        let mut c = probe(b"R19Collide", ProbeAnswers { collide_with: Some(list), ..Default::default() }, 0.0);
+        let list: Vec<ObjectId> = (0..4)
+            .filter(|j| mask >> j & 1 != 0)
+            .map(|j| j + 1)
+            .collect();
+        let mut c = probe(
+            b"R19Collide",
+            ProbeAnswers {
+                collide_with: Some(list),
+                ..Default::default()
+            },
+            0.0,
+        );
         c.interfaces = MODULEINTERFACE_COLLIDE;
         modules.push(c);
     }
-    let me = w.new_object(NewObject { template: plain.clone(), status: ObjectStatusMaskType::default(), team: Some(1), modules }).unwrap();
+    let me = w
+        .new_object(NewObject {
+            template: plain.clone(),
+            status: ObjectStatusMaskType::default(),
+            team: Some(1),
+            modules,
+        })
+        .unwrap();
     assert_eq!(me, 1);
     for k in 2..=4 {
         let mut b = probe(b"R19Body", ProbeAnswers::default(), 100.0);
         b.interfaces = MODULEINTERFACE_BODY;
-        let id = w.new_object(NewObject { template: plain.clone(), status: ObjectStatusMaskType::default(), team: None, modules: vec![b] }).unwrap();
+        let id = w
+            .new_object(NewObject {
+                template: plain.clone(),
+                status: ObjectStatusMaskType::default(),
+                team: None,
+                modules: vec![b],
+            })
+            .unwrap();
         assert_eq!(id, k);
     }
     let ai_slot = w.objects.find(me).unwrap().ai;
     let body_slots: Vec<Option<u16>> = (1..=4).map(|k| w.objects.find(k).unwrap().body).collect();
     probe_mut(&mut w, me, body_slots[0].unwrap()).health = f32::from_bits(cfg[1]);
     for k in 2..=4usize {
-        probe_mut(&mut w, k as ObjectId, body_slots[k - 1].unwrap()).health = f32::from_bits(cfg[1 + k]);
+        probe_mut(&mut w, k as ObjectId, body_slots[k - 1].unwrap()).health =
+            f32::from_bits(cfg[1 + k]);
     }
     for k in 0..4 {
-        w.cuts.distance_squared_center_2d.insert((me, k as ObjectId + 1), f32::from_bits(cfg[6 + k]));
+        w.cuts
+            .distance_squared_center_2d
+            .insert((me, k as ObjectId + 1), f32::from_bits(cfg[6 + k]));
     }
-    let base = Coord3D { x: f32::from_bits(cfg[12]), y: f32::from_bits(cfg[13]), z: f32::from_bits(cfg[14]) };
-    w.set_position(me, &Coord3D { x: 10.0, y: -2.5, z: 1.0 });
+    let base = Coord3D {
+        x: f32::from_bits(cfg[12]),
+        y: f32::from_bits(cfg[13]),
+        z: f32::from_bits(cfg[14]),
+    };
+    w.set_position(
+        me,
+        &Coord3D {
+            x: 10.0,
+            y: -2.5,
+            z: 1.0,
+        },
+    );
     let idx = w.find_module(me, class.as_bytes()).unwrap();
-    let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
+    let u = w
+        .update_handle_of_module(ModuleHandle {
+            object: me,
+            index: idx,
+        })
+        .expect("an update module");
     let (mut flags, mut scan) = (cfg[0], cfg[10]);
     let mut saved: Vec<u8> = Vec::new();
     for o in ops {
@@ -369,14 +469,21 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 15], ops: &[
             2 => scan = o[1],
             3 => {
                 let k = ((o[1] - 1) % 4) as usize;
-                probe_mut(&mut w, k as ObjectId + 1, body_slots[k].unwrap()).health = f32::from_bits(o[2]);
+                probe_mut(&mut w, k as ObjectId + 1, body_slots[k].unwrap()).health =
+                    f32::from_bits(o[2]);
             }
             4 => {
-                w.cuts.distance_squared_center_2d.insert((me, ((o[1] - 1) % 4) as ObjectId + 1), f32::from_bits(o[2]));
+                w.cuts
+                    .distance_squared_center_2d
+                    .insert((me, ((o[1] - 1) % 4) as ObjectId + 1), f32::from_bits(o[2]));
             }
             _ => {}
         }
-        w.players.get_nth_mut(0).unwrap().player_type = if flags & 1 != 0 { PlayerType::Computer } else { PlayerType::Human };
+        w.players.get_nth_mut(0).unwrap().player_type = if flags & 1 != 0 {
+            PlayerType::Computer
+        } else {
+            PlayerType::Human
+        };
         w.objects.find_mut(me).unwrap().ai = if flags & 2 != 0 { ai_slot } else { None };
         probe_mut(&mut w, me, ai_slot.unwrap()).answers.idle = flags & 4 != 0;
         w.objects.find_mut(me).unwrap().body = if flags & 8 != 0 { body_slots[0] } else { None };
@@ -386,7 +493,11 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 15], ops: &[
             w.cuts.ai_base_center.remove(&0);
         }
         for k in 2..=4usize {
-            w.objects.find_mut(k as ObjectId).unwrap().body = if flags >> (6 + k) & 1 != 0 { body_slots[k - 1] } else { None };
+            w.objects.find_mut(k as ObjectId).unwrap().body = if flags >> (6 + k) & 1 != 0 {
+                body_slots[k - 1]
+            } else {
+                None
+            };
             set_kinds(&mut w, k as ObjectId, flags >> (12 + 2 * (k - 2)) & 3);
         }
         w.cuts.range_scan = scan_list(scan);
@@ -396,7 +507,10 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 15], ops: &[
         let (mut xst, mut xbytes, mut crc, mut res) = (-2i32, Vec::new(), 0u32, 0u32);
         match o[0] {
             0 => {
-                res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
+                res = w
+                    .with_body(u, |b, w| b.update(w, u))
+                    .expect("the module is in its slot")
+                    .0;
                 tally.updates += 1;
             }
             1..=4 => {}
@@ -412,7 +526,9 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 15], ops: &[
             }
             _ => unreachable!(),
         }
-        let threw = w.cuts.module_errors[errors_before..].iter().any(|(_, e)| !e.is_undefined());
+        let threw = w.cuts.module_errors[errors_before..]
+            .iter()
+            .any(|(_, e)| !e.is_undefined());
         put_i32(&mut v, if threw { 2 } else { 0 });
         put_u32(&mut v, res);
         let cuts = w.cuts.log.take().unwrap();
@@ -422,14 +538,28 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 15], ops: &[
             if t.starts_with("cut ") {
                 let scan_line = |w: &World, object: ObjectId, range: f32, n: u32| {
                     let p = w.objects.find(object).unwrap().get_position();
-                    format!("scan {:08x} {:08x} {:08x} {:08x} {n}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits(), range.to_bits())
+                    format!(
+                        "scan {:08x} {:08x} {:08x} {:08x} {n}",
+                        p.x.to_bits(),
+                        p.y.to_bits(),
+                        p.z.to_bits(),
+                        range.to_bits()
+                    )
                 };
                 match cut_iter.next().expect("a cut line has a cut call") {
-                    CutCall::PartitionIterateObjectsInRange { object, range } => log.push(scan_line(&w, *object, *range, 0)),
+                    CutCall::PartitionIterateObjectsInRange { object, range } => {
+                        log.push(scan_line(&w, *object, *range, 0))
+                    }
                     // the four filters: the kind, alive, the player, the same map status
-                    CutCall::PartitionIterateVehiclesNearToFar { object, range } => log.push(scan_line(&w, *object, *range, 4)),
-                    CutCall::PartitionGetDistanceSquaredCenter2D { object, other } => log.push(format!("distsq {object} {other}")),
-                    CutCall::PlayerGetAiBaseCenter { player } => log.push(format!("basecenter {player}")),
+                    CutCall::PartitionIterateVehiclesNearToFar { object, range } => {
+                        log.push(scan_line(&w, *object, *range, 4))
+                    }
+                    CutCall::PartitionGetDistanceSquaredCenter2D { object, other } => {
+                        log.push(format!("distsq {object} {other}"))
+                    }
+                    CutCall::PlayerGetAiBaseCenter { player } => {
+                        log.push(format!("basecenter {player}"))
+                    }
                     _ => {}
                 }
             } else if let Some(l) = t.strip_prefix("bt ") {
@@ -456,18 +586,27 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 15], ops: &[
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let field = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
-            Some(UpdateBody::AutoFindHealingUpdate(m)) => Some(m.state_words()[0]),
-            Some(UpdateBody::PilotFindVehicleUpdate(m)) => Some(m.state_words()[0]),
-            _ => None,
-        });
+        let field =
+            w.objects
+                .find(me)
+                .unwrap()
+                .behaviors
+                .iter()
+                .find_map(|b| match b.body.as_ref() {
+                    Some(UpdateBody::AutoFindHealingUpdate(m)) => Some(m.state_words()[0]),
+                    Some(UpdateBody::PilotFindVehicleUpdate(m)) => Some(m.state_words()[0]),
+                    _ => None,
+                });
         put_u32(&mut v, field.expect("the module is back in its slot"));
     }
     (v, w)
 }
 
 fn cases() -> usize {
-    std::env::var("L9R19_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
+    std::env::var("L9R19_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9_000)
 }
 
 #[test]
@@ -499,7 +638,10 @@ fn find_healing_and_vehicle_updates_match_upstream() {
         };
         // mostly a computer player's unit with an AI and a body
         let mut cfg = [0u32; 15];
-        cfg[0] = (u32::from(g.below(5) != 0)) | u32::from(g.below(8) != 0) << 1 | u32::from(g.below(3) != 0) << 2 | u32::from(g.below(8) != 0) << 3
+        cfg[0] = (u32::from(g.below(5) != 0))
+            | u32::from(g.below(8) != 0) << 1
+            | u32::from(g.below(3) != 0) << 2
+            | u32::from(g.below(8) != 0) << 3
             | u32::from(g.below(2) != 0) << 4
             | (g.u32() | g.u32()) & 0x700
             | g.below(64) << 12;
@@ -521,9 +663,23 @@ fn find_healing_and_vehicle_updates_match_upstream() {
             .map(|_| match g.below(20) {
                 0..=8 => [0, 0, 0, 0, 0, 0],
                 9..=10 => [1, (cfg[0] & !0x1f) | g.below(32), 0, 0, 0, 0],
-                11 => [2, (0..4).fold(0, |acc, k| acc | g.below(5) << (4 * k)), 0, 0, 0, 0],
+                11 => [
+                    2,
+                    (0..4).fold(0, |acc, k| acc | g.below(5) << (4 * k)),
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
                 12..=13 => [3, 1 + g.below(4), gen_health(&mut g), 0, 0, 0],
-                14 => [4, 1 + g.below(4), (*pick(&mut g, &[&0.0f32, &25.0, &100.0])).to_bits(), 0, 0, 0],
+                14 => [
+                    4,
+                    1 + g.below(4),
+                    (*pick(&mut g, &[&0.0f32, &25.0, &100.0])).to_bits(),
+                    0,
+                    0,
+                    0,
+                ],
                 15..=16 => [7, 0, 0, 0, 0, 0],
                 17..=18 => [8, 0, 0, 0, 0, 0],
                 _ => [9, 0, 0, 0, 0, 0],
@@ -570,8 +726,21 @@ fn find_healing_and_vehicle_updates_match_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || format!("case {case}: kind {kind} cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
-        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
+        let what = || {
+            format!(
+                "case {case}: kind {kind} cfg {cfg:x?}, file {:?}, ops {ops:?}",
+                show(&text)
+            )
+        };
+        read.eq(
+            &outcome,
+            &Outcome {
+                status,
+                detail,
+                crc: 0,
+            },
+            what,
+        );
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
@@ -579,7 +748,11 @@ fn find_healing_and_vehicle_updates_match_upstream() {
         let (dr, dc) = (decode(kind, &rd, ops.len()), decode(kind, &buf, ops.len()));
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            let i = dr
+                .iter()
+                .zip(dc.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(dr.len().min(dc.len()));
             eprintln!("--- case {case} kind {kind} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
@@ -596,5 +769,10 @@ fn find_healing_and_vehicle_updates_match_upstream() {
     );
     read.finish();
     run.finish();
-    assert!(tally.heals * 10 > cases as u64 && tally.enters * 10 > cases as u64 && tally.moves * 20 > cases as u64, "the generator must reach every order");
+    assert!(
+        tally.heals * 10 > cases as u64
+            && tally.enters * 10 > cases as u64
+            && tally.moves * 20 > cases as u64,
+        "the generator must reach every order"
+    );
 }

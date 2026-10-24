@@ -25,6 +25,9 @@ public:
 	ParticleSystemInfo::EmissionVolumeType getEmisionVolumeType() const;
 	void setEmissionVolumeSphereRadius( Real radius );
 	void setEmissionVolumeCylinderRadius( Real radius );
+	/* batch R33: EMPUpdate's sparks (differential/l9_emp_r33.inc) */
+	void setSystemLifetime( UnsignedInt frames );
+	void setInitialDelay( UnsignedInt delay );
 	ParticleSystemID getSystemID() const { return m_id; }
 	ParticleSystemID m_id;
 	int m_tmpl;

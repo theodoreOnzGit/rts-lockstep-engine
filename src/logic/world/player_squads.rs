@@ -22,8 +22,10 @@
 
 use crate::common::game_type::ObjectId;
 use crate::common::name_key_generator::NameKeyType;
+use crate::common::upgrade::{
+    UpgradeMaskType, UPGRADE_STATUS_COMPLETE, UPGRADE_STATUS_IN_PRODUCTION,
+};
 use crate::common::xfer::{Xfer, XferMode};
-use crate::common::upgrade::{UpgradeMaskType, UPGRADE_STATUS_COMPLETE, UPGRADE_STATUS_IN_PRODUCTION};
 use crate::logic::client_event::ClientEvent;
 
 use super::ids::{PlayerIndex, TeamId};
@@ -64,34 +66,76 @@ fn plm<H: PlayerSquadHost>(h: &mut H, p: PlayerIndex) -> PResult<&mut Player> {
 // ---- upgrades ----------------------------------------------------------------------------------------------------
 
 /// `Player::findUpgrade(upgradeTemplate)`: the index in the list.
-pub fn player_find_upgrade<H: PlayerSquadHost>(h: &H, p: PlayerIndex, upgrade_template: NameKeyType) -> PResult<Option<usize>> {
-    Ok(pl(h, p)?.upgrades.iter().position(|u| u.template == upgrade_template))
+pub fn player_find_upgrade<H: PlayerSquadHost>(
+    h: &H,
+    p: PlayerIndex,
+    upgrade_template: NameKeyType,
+) -> PResult<Option<usize>> {
+    Ok(pl(h, p)?
+        .upgrades
+        .iter()
+        .position(|u| u.template == upgrade_template))
 }
 
 /// `Player::hasUpgradeComplete(upgradeTemplate)`.
-pub fn player_has_upgrade_complete<H: PlayerSquadHost>(h: &H, p: PlayerIndex, upgrade_template: NameKeyType) -> PResult<bool> {
+pub fn player_has_upgrade_complete<H: PlayerSquadHost>(
+    h: &H,
+    p: PlayerIndex,
+    upgrade_template: NameKeyType,
+) -> PResult<bool> {
     let mask = h.upgrade_mask(upgrade_template);
     player_has_upgrade_complete_mask(h, p, &mask)
 }
 
 /// `Player::hasUpgradeComplete(testMask)`: every bit of the mask is complete.
-pub fn player_has_upgrade_complete_mask<H: PlayerSquadHost>(h: &H, p: PlayerIndex, test_mask: &UpgradeMaskType) -> PResult<bool> {
-    Ok(if plant(210) { pl(h, p)?.upgrades_completed.test_for_any(test_mask) } else { pl(h, p)?.upgrades_completed.test_for_all(test_mask) })
+pub fn player_has_upgrade_complete_mask<H: PlayerSquadHost>(
+    h: &H,
+    p: PlayerIndex,
+    test_mask: &UpgradeMaskType,
+) -> PResult<bool> {
+    Ok(if plant(210) {
+        pl(h, p)?.upgrades_completed.test_for_any(test_mask)
+    } else {
+        pl(h, p)?.upgrades_completed.test_for_all(test_mask)
+    })
 }
 
 /// `Player::hasUpgradeInProduction(upgradeTemplate)`.
-pub fn player_has_upgrade_in_production<H: PlayerSquadHost>(h: &H, p: PlayerIndex, upgrade_template: NameKeyType) -> PResult<bool> {
+pub fn player_has_upgrade_in_production<H: PlayerSquadHost>(
+    h: &H,
+    p: PlayerIndex,
+    upgrade_template: NameKeyType,
+) -> PResult<bool> {
     let mask = h.upgrade_mask(upgrade_template);
-    Ok(if plant(211) { pl(h, p)?.upgrades_completed.test_for_all(&mask) } else { pl(h, p)?.upgrades_in_progress.test_for_all(&mask) })
+    Ok(if plant(211) {
+        pl(h, p)?.upgrades_completed.test_for_all(&mask)
+    } else {
+        pl(h, p)?.upgrades_in_progress.test_for_all(&mask)
+    })
 }
 
 /// `Player::addUpgrade(upgradeTemplate, status)`: the index of the upgrade (a new one goes to the head).
-pub fn player_add_upgrade<H: PlayerSquadHost>(h: &mut H, p: PlayerIndex, upgrade_template: NameKeyType, status: i32) -> PResult<usize> {
+pub fn player_add_upgrade<H: PlayerSquadHost>(
+    h: &mut H,
+    p: PlayerIndex,
+    upgrade_template: NameKeyType,
+    status: i32,
+) -> PResult<usize> {
     let idx = match player_find_upgrade(h, p, upgrade_template)? {
         Some(i) => i,
         None => {
-            let pos = if plant(201) { pl(h, p)?.upgrades.len() } else { 0 };
-            plm(h, p)?.upgrades.insert(pos, PlayerUpgrade { template: upgrade_template, status: 0 });
+            let pos = if plant(201) {
+                pl(h, p)?.upgrades.len()
+            } else {
+                0
+            };
+            plm(h, p)?.upgrades.insert(
+                pos,
+                PlayerUpgrade {
+                    template: upgrade_template,
+                    status: 0,
+                },
+            );
             pos
         }
     };
@@ -122,12 +166,20 @@ pub fn player_add_upgrade<H: PlayerSquadHost>(h: &mut H, p: PlayerIndex, upgrade
 }
 
 /// `Player::onUpgradeCompleted(upgradeTemplate)`: every object rechecks its upgrade modules.
-pub fn player_on_upgrade_completed<H: PlayerSquadHost>(h: &mut H, p: PlayerIndex, _upgrade_template: NameKeyType) -> PResult<()> {
+pub fn player_on_upgrade_completed<H: PlayerSquadHost>(
+    h: &mut H,
+    p: PlayerIndex,
+    _upgrade_template: NameKeyType,
+) -> PResult<()> {
     for_each_member(h, p, |h, obj| h.obj_update_upgrade_modules(obj))
 }
 
 /// `Player::removeUpgrade(upgradeTemplate)`.
-pub fn player_remove_upgrade<H: PlayerSquadHost>(h: &mut H, p: PlayerIndex, upgrade_template: NameKeyType) -> PResult<()> {
+pub fn player_remove_upgrade<H: PlayerSquadHost>(
+    h: &mut H,
+    p: PlayerIndex,
+    upgrade_template: NameKeyType,
+) -> PResult<()> {
     if let Some(i) = player_find_upgrade(h, p, upgrade_template)? {
         let old_mask = h.upgrade_mask(upgrade_template);
         let me = plm(h, p)?;
@@ -163,7 +215,11 @@ pub fn squad_add_object_id(s: &mut Squad, id: ObjectId) {
 /// `Squad::removeObject(objectToRemove)`: the first match.
 pub fn squad_remove_object(s: &mut Squad, o: Option<ObjectId>) {
     if let Some(o) = o {
-        if let Some(i) = if plant(212) { s.object_ids.iter().rposition(|x| *x == o) } else { s.object_ids.iter().position(|x| *x == o) } {
+        if let Some(i) = if plant(212) {
+            s.object_ids.iter().rposition(|x| *x == o)
+        } else {
+            s.object_ids.iter().position(|x| *x == o)
+        } {
             s.object_ids.remove(i);
         }
     }
@@ -199,7 +255,8 @@ pub fn squad_get_all_objects<H: PlayerSquadHost>(h: &H, s: &mut Squad) -> Vec<Ob
 pub fn squad_get_live_objects<H: PlayerSquadHost>(h: &H, s: &mut Squad) -> Vec<ObjectId> {
     squad_get_all_objects(h, s);
     if !plant(217) {
-        s.objects_cached.retain(|o| h.obj_is_selectable(*o) != plant(216));
+        s.objects_cached
+            .retain(|o| h.obj_is_selectable(*o) != plant(216));
     }
     s.objects_cached.clone()
 }
@@ -256,7 +313,12 @@ pub fn squad_is_on_squad(s: &Squad, o: ObjectId) -> bool {
 }
 
 /// `Squad::squadFromTeam(fromTeam, clearSquadFirst)`.
-pub fn squad_from_team<H: PlayerSquadHost>(h: &H, s: &mut Squad, from_team: Option<TeamId>, clear_squad_first: bool) {
+pub fn squad_from_team<H: PlayerSquadHost>(
+    h: &H,
+    s: &mut Squad,
+    from_team: Option<TeamId>,
+    clear_squad_first: bool,
+) {
     let Some(t) = from_team else { return };
     if clear_squad_first && !plant(231) {
         s.object_ids.clear();
@@ -266,7 +328,12 @@ pub fn squad_from_team<H: PlayerSquadHost>(h: &H, s: &mut Squad, from_team: Opti
 
 /// `Squad::squadFromAIGroup(fromAIGroup, clearSquadFirst)`: the squad takes the group's ids (a replacement, whatever
 /// `clearSquadFirst` says).
-pub fn squad_from_ai_group<H: PlayerSquadHost>(h: &H, s: &mut Squad, from_group: Option<GroupRef>, clear_squad_first: bool) {
+pub fn squad_from_ai_group<H: PlayerSquadHost>(
+    h: &H,
+    s: &mut Squad,
+    from_group: Option<GroupRef>,
+    clear_squad_first: bool,
+) {
     let Some(g) = from_group else { return };
     if clear_squad_first {
         s.object_ids.clear();
@@ -279,9 +346,17 @@ pub fn squad_from_ai_group<H: PlayerSquadHost>(h: &H, s: &mut Squad, from_group:
 }
 
 /// `Squad::aiGroupFromSquad(aiGroupToFill)`.
-pub fn squad_ai_group_from_squad<H: PlayerSquadHost>(h: &mut H, s: &mut Squad, group: Option<GroupRef>) {
+pub fn squad_ai_group_from_squad<H: PlayerSquadHost>(
+    h: &mut H,
+    s: &mut Squad,
+    group: Option<GroupRef>,
+) {
     let Some(g) = group else { return };
-    let live = if plant(233) { squad_get_all_objects(h, s) } else { squad_get_live_objects(h, s) };
+    let live = if plant(233) {
+        squad_get_all_objects(h, s)
+    } else {
+        squad_get_live_objects(h, s)
+    };
     for o in live {
         h.ai_group_add(g, o);
     }
@@ -292,26 +367,50 @@ fn hotkey_in_range(hotkey_num: i32) -> bool {
 }
 
 /// `Player::processCreateTeamGameMessage(hotkeyNum, msg)`.
-pub fn player_process_create_team_game_message<H: PlayerSquadHost>(h: &mut H, p: PlayerIndex, hotkey_num: i32, msg: MessageRef) -> PResult<()> {
+pub fn player_process_create_team_game_message<H: PlayerSquadHost>(
+    h: &mut H,
+    p: PlayerIndex,
+    hotkey_num: i32,
+    msg: MessageRef,
+) -> PResult<()> {
     if !hotkey_in_range(hotkey_num) {
         return Ok(()); // processCreateTeamGameMessage got an invalid hotkey number
     }
-    squad_clear(plm(h, p)?.squads.get_mut(hotkey_num as usize).ok_or(PlayerError::NoPlayer)?); // m_squads[n] is NULL before init
+    squad_clear(
+        plm(h, p)?
+            .squads
+            .get_mut(hotkey_num as usize)
+            .ok_or(PlayerError::NoPlayer)?,
+    ); // m_squads[n] is NULL before init
     let num_args = h.message_argument_count(msg);
     for i in 0..num_args {
         let obj_id = h.message_argument_object_id(msg, i);
-        if let Some(obj) = h.find_object_by_id(obj_id).or(if plant(219) { Some(obj_id) } else { None }) {
+        if let Some(obj) =
+            h.find_object_by_id(obj_id)
+                .or(if plant(219) { Some(obj_id) } else { None })
+        {
             if !plant(218) {
                 player_remove_object_from_hotkey_squad(h, p, Some(obj))?;
             }
-            squad_add_object(plm(h, p)?.squads.get_mut(hotkey_num as usize).ok_or(PlayerError::NoPlayer)?, Some(obj));
+            squad_add_object(
+                plm(h, p)?
+                    .squads
+                    .get_mut(hotkey_num as usize)
+                    .ok_or(PlayerError::NoPlayer)?,
+                Some(obj),
+            );
         }
     }
     Ok(())
 }
 
 /// `Player::processSelectTeamGameMessage(hotkeyNum, msg)`.
-pub fn player_process_select_team_game_message<H: PlayerSquadHost>(h: &mut H, p: PlayerIndex, hotkey_num: i32, _msg: MessageRef) -> PResult<()> {
+pub fn player_process_select_team_game_message<H: PlayerSquadHost>(
+    h: &mut H,
+    p: PlayerIndex,
+    hotkey_num: i32,
+    _msg: MessageRef,
+) -> PResult<()> {
     if !hotkey_in_range(hotkey_num) {
         return Ok(());
     }
@@ -319,9 +418,16 @@ pub fn player_process_select_team_game_message<H: PlayerSquadHost>(h: &mut H, p:
         return Ok(()); // `if (m_squads[hotkeyNum] == NULL) return;`: before init all are NULL
     }
     let mut squad = std::mem::take(&mut plm(h, p)?.squads[hotkey_num as usize]);
-    let object_list = if plant(238) { squad_get_all_objects(h, &mut squad) } else { squad_get_live_objects(h, &mut squad) };
+    let object_list = if plant(238) {
+        squad_get_all_objects(h, &mut squad)
+    } else {
+        squad_get_live_objects(h, &mut squad)
+    };
     plm(h, p)?.squads[hotkey_num as usize] = squad;
-    let sel = plm(h, p)?.current_selection.as_mut().ok_or(PlayerError::NoPlayer)?; // clearSquad() on NULL
+    let sel = plm(h, p)?
+        .current_selection
+        .as_mut()
+        .ok_or(PlayerError::NoPlayer)?; // clearSquad() on NULL
     if !plant(222) {
         squad_clear(sel);
     }
@@ -335,7 +441,12 @@ pub fn player_process_select_team_game_message<H: PlayerSquadHost>(h: &mut H, p:
 }
 
 /// `Player::processAddTeamGameMessage(hotkeyNum, msg)`.
-pub fn player_process_add_team_game_message<H: PlayerSquadHost>(h: &mut H, p: PlayerIndex, hotkey_num: i32, _msg: MessageRef) -> PResult<()> {
+pub fn player_process_add_team_game_message<H: PlayerSquadHost>(
+    h: &mut H,
+    p: PlayerIndex,
+    hotkey_num: i32,
+    _msg: MessageRef,
+) -> PResult<()> {
     if !hotkey_in_range(hotkey_num) {
         return Ok(());
     }
@@ -346,9 +457,16 @@ pub fn player_process_add_team_game_message<H: PlayerSquadHost>(h: &mut H, p: Pl
         plm(h, p)?.current_selection = Some(Squad::default());
     }
     let mut squad = std::mem::take(&mut plm(h, p)?.squads[hotkey_num as usize]);
-    let object_list = if plant(223) { squad_get_all_objects(h, &mut squad) } else { squad_get_live_objects(h, &mut squad) };
+    let object_list = if plant(223) {
+        squad_get_all_objects(h, &mut squad)
+    } else {
+        squad_get_live_objects(h, &mut squad)
+    };
     plm(h, p)?.squads[hotkey_num as usize] = squad;
-    let sel = plm(h, p)?.current_selection.as_mut().ok_or(PlayerError::NoPlayer)?;
+    let sel = plm(h, p)?
+        .current_selection
+        .as_mut()
+        .ok_or(PlayerError::NoPlayer)?;
     for o in object_list {
         squad_add_object(sel, Some(o));
     }
@@ -356,8 +474,16 @@ pub fn player_process_add_team_game_message<H: PlayerSquadHost>(h: &mut H, p: Pl
 }
 
 /// `Player::getCurrentSelectionAsAIGroup(group)`.
-pub fn player_get_current_selection_as_ai_group<H: PlayerSquadHost>(h: &mut H, p: PlayerIndex, group: Option<GroupRef>) -> PResult<()> {
-    if let Some(mut sel) = if plant(224) { None } else { plm(h, p)?.current_selection.take() } {
+pub fn player_get_current_selection_as_ai_group<H: PlayerSquadHost>(
+    h: &mut H,
+    p: PlayerIndex,
+    group: Option<GroupRef>,
+) -> PResult<()> {
+    if let Some(mut sel) = if plant(224) {
+        None
+    } else {
+        plm(h, p)?.current_selection.take()
+    } {
         squad_ai_group_from_squad(h, &mut sel, group);
         plm(h, p)?.current_selection = Some(sel);
     }
@@ -365,7 +491,11 @@ pub fn player_get_current_selection_as_ai_group<H: PlayerSquadHost>(h: &mut H, p
 }
 
 /// `Player::setCurrentlySelectedAIGroup(group)`.
-pub fn player_set_currently_selected_ai_group<H: PlayerSquadHost>(h: &mut H, p: PlayerIndex, group: Option<GroupRef>) -> PResult<()> {
+pub fn player_set_currently_selected_ai_group<H: PlayerSquadHost>(
+    h: &mut H,
+    p: PlayerIndex,
+    group: Option<GroupRef>,
+) -> PResult<()> {
     if plm(h, p)?.current_selection.is_none() {
         plm(h, p)?.current_selection = Some(Squad::default());
     }
@@ -381,7 +511,11 @@ pub fn player_set_currently_selected_ai_group<H: PlayerSquadHost>(h: &mut H, p: 
 }
 
 /// `Player::getHotkeySquad(squadNumber)`: the squad (a copy), or `None` outside the table.
-pub fn player_get_hotkey_squad<H: PlayerSquadHost>(h: &H, p: PlayerIndex, squad_number: i32) -> PResult<Option<Squad>> {
+pub fn player_get_hotkey_squad<H: PlayerSquadHost>(
+    h: &H,
+    p: PlayerIndex,
+    squad_number: i32,
+) -> PResult<Option<Squad>> {
     if (0..NUM_HOTKEY_SQUADS as i32).contains(&squad_number) {
         return Ok(pl(h, p)?.squads.get(squad_number as usize).cloned());
     }
@@ -389,7 +523,11 @@ pub fn player_get_hotkey_squad<H: PlayerSquadHost>(h: &H, p: PlayerIndex, squad_
 }
 
 /// `Player::getSquadNumberForObject(objToFind)`: `NO_HOTKEY_SQUAD` (-1) if it is on none.
-pub fn player_get_squad_number_for_object<H: PlayerSquadHost>(h: &H, p: PlayerIndex, obj_to_find: ObjectId) -> PResult<i32> {
+pub fn player_get_squad_number_for_object<H: PlayerSquadHost>(
+    h: &H,
+    p: PlayerIndex,
+    obj_to_find: ObjectId,
+) -> PResult<i32> {
     let me = pl(h, p)?;
     let mut last = -1;
     for i in 0..NUM_HOTKEY_SQUADS {
@@ -406,15 +544,27 @@ pub fn player_get_squad_number_for_object<H: PlayerSquadHost>(h: &H, p: PlayerIn
 }
 
 /// `Player::removeObjectFromHotkeySquad(objToRemove)`.
-pub fn player_remove_object_from_hotkey_squad<H: PlayerSquadHost>(h: &mut H, p: PlayerIndex, obj_to_remove: Option<ObjectId>) -> PResult<()> {
-    for sq in plm(h, p)?.squads.iter_mut().take(if plant(229) { 5 } else { 99 }) {
+pub fn player_remove_object_from_hotkey_squad<H: PlayerSquadHost>(
+    h: &mut H,
+    p: PlayerIndex,
+    obj_to_remove: Option<ObjectId>,
+) -> PResult<()> {
+    for sq in plm(h, p)?
+        .squads
+        .iter_mut()
+        .take(if plant(229) { 5 } else { 99 })
+    {
         squad_remove_object(sq, obj_to_remove);
     }
     Ok(())
 }
 
 /// `Player::addAIGroupToCurrentSelection(group)`.
-pub fn player_add_ai_group_to_current_selection<H: PlayerSquadHost>(h: &mut H, p: PlayerIndex, group: Option<GroupRef>) -> PResult<()> {
+pub fn player_add_ai_group_to_current_selection<H: PlayerSquadHost>(
+    h: &mut H,
+    p: PlayerIndex,
+    group: Option<GroupRef>,
+) -> PResult<()> {
     let Some(g) = group else { return Ok(()) };
     if plm(h, p)?.current_selection.is_none() {
         plm(h, p)?.current_selection = Some(Squad::default());
@@ -423,7 +573,10 @@ pub fn player_add_ai_group_to_current_selection<H: PlayerSquadHost>(h: &mut H, p
     if plant(230) {
         ids.reverse();
     }
-    let sel = plm(h, p)?.current_selection.as_mut().ok_or(PlayerError::NoPlayer)?;
+    let sel = plm(h, p)?
+        .current_selection
+        .as_mut()
+        .ok_or(PlayerError::NoPlayer)?;
     for id in ids {
         squad_add_object_id(sel, id);
     }

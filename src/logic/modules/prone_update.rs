@@ -28,14 +28,18 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::model_state::MODELCONDITION_PRONE;
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_NO_ATTACK};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::DamageInfo;
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
+use crate::logic::module::update_module::{
+    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE,
+};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -54,19 +58,31 @@ pub struct ProneUpdateModuleData {
 impl Default for ProneUpdateModuleData {
     /// `ProneUpdateModuleData()`.
     fn default() -> Self {
-        ProneUpdateModuleData { update: UpdateModuleData::new(), damage_to_frames_ratio: 1.0 }
+        ProneUpdateModuleData {
+            update: UpdateModuleData::new(),
+            damage_to_frames_ratio: 1.0,
+        }
     }
 }
 
 /// `ProneUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<ProneUpdateModuleData>; 2] = [
-    FieldParse::new("DamageToFramesRatio", |ini, d, _| { d.damage_to_frames_ratio = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "DamageToFramesRatio",
+        |ini, d, _| {
+            d.damage_to_frames_ratio = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl ProneUpdateModuleData {
     /// `buildFieldParse(p)`: `ModuleData`'s (nothing), then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, ProneUpdateModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, ProneUpdateModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
@@ -105,17 +121,26 @@ pub struct ProneUpdate {
 impl PartialEq for ProneUpdate {
     /// The same object, the same data object (upstream compares pointers) and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.prone_frames == other.prone_frames
+        self.update.behavior().object() == other.update.behavior().object()
+            && Arc::ptr_eq(&self.data, &other.data)
+            && self.prone_frames == other.prone_frames
     }
 }
 
 impl ProneUpdate {
     /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data).
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<ProneUpdateModuleData>>) -> IniResult<Self> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<ProneUpdateModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(ProneUpdate { update, data, prone_frames: 0 })
+        Ok(ProneUpdate {
+            update,
+            data,
+            prone_frames: 0,
+        })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -144,7 +169,12 @@ impl ProneUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls: `goProne`.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -164,10 +194,19 @@ impl ProneUpdate {
     }
 
     /// `goProne(damageInfo)`. An error is upstream's undefined behaviour.
-    pub fn go_prone(&mut self, world: &mut World, me: ObjectId, damage_info: &DamageInfo) -> Result<(), IniError> {
+    pub fn go_prone(
+        &mut self,
+        world: &mut World,
+        me: ObjectId,
+        damage_info: &DamageInfo,
+    ) -> Result<(), IniError> {
         let was_prone = self.prone_frames > 0;
         let damage_taken = real_to_int(damage_info.out.actual_damage_dealt)?;
-        let ratio = if crate::logic::modules::plant(1161) { 1.0 } else { self.data.damage_to_frames_ratio };
+        let ratio = if crate::logic::modules::plant(1161) {
+            1.0
+        } else {
+            self.data.damage_to_frames_ratio
+        };
         self.prone_frames = real_to_int(self.prone_frames as f32 + damage_taken as f32 * ratio)?;
         if (!was_prone || crate::logic::modules::plant(1164)) && self.prone_frames > 0 {
             self.start_prone_effects(world, me)?;
@@ -262,5 +301,7 @@ impl Snapshot for ProneUpdate {
 
 /// The factory's `NewModuleDataProc` for `ProneUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::ProneUpdate(Arc::new(ProneUpdateModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::ProneUpdate(Arc::new(
+        ProneUpdateModuleData::friend_new_module_data(ini)?,
+    )))
 }

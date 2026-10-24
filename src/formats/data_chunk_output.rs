@@ -73,7 +73,11 @@ impl Default for DataChunkOutput {
 impl DataChunkOutput {
     /// `DataChunkOutput(pOut)`: nothing written yet.
     pub fn new() -> Self {
-        DataChunkOutput { body: Vec::new(), contents: DataChunkTableOfContents::new(), chunk_stack: Vec::new() }
+        DataChunkOutput {
+            body: Vec::new(),
+            contents: DataChunkTableOfContents::new(),
+            chunk_stack: Vec::new(),
+        }
     }
 
     /// `openDataChunk(name, ver)`: the chunk's id (allocated in the table
@@ -82,7 +86,9 @@ impl DataChunkOutput {
         let id = self.contents.allocate_id(name);
         self.body.extend_from_slice(&id.to_le_bytes());
         self.body.extend_from_slice(&ver.to_le_bytes());
-        self.chunk_stack.push(OutputChunk { filepos: self.body.len() as i32 });
+        self.chunk_stack.push(OutputChunk {
+            filepos: self.body.len() as i32,
+        });
         self.body.extend_from_slice(&0xffffi32.to_le_bytes());
     }
 
@@ -161,11 +167,16 @@ impl DataChunkOutput {
             let v = self.key_and_type(d.get_nth_key(i), t as i32, names);
             self.write_int(v);
             match t {
-                DataType::Bool => self.write_byte(i8::from(d.try_get_nth_bool(i).expect("pair in range"))),
+                DataType::Bool => {
+                    self.write_byte(i8::from(d.try_get_nth_bool(i).expect("pair in range")))
+                }
                 DataType::Int => self.write_int(d.try_get_nth_int(i).expect("pair in range")),
                 DataType::Real => self.write_real(d.try_get_nth_real(i).expect("pair in range")),
-                DataType::AsciiString => self.write_ascii_string(&d.try_get_nth_ascii_string(i).expect("pair in range")),
-                DataType::UnicodeString => self.write_unicode_string(&d.try_get_nth_unicode_string(i).expect("pair in range")),
+                DataType::AsciiString => {
+                    self.write_ascii_string(&d.try_get_nth_ascii_string(i).expect("pair in range"))
+                }
+                DataType::UnicodeString => self
+                    .write_unicode_string(&d.try_get_nth_unicode_string(i).expect("pair in range")),
                 DataType::None => {} // upstream: DEBUG_CRASH("impossible"), nothing written
             }
         }
@@ -197,7 +208,9 @@ impl DataChunkOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::formats::data_chunk::{CachedFileInputStream, ChunkResult, DataChunkInfo, DataChunkInput};
+    use crate::formats::data_chunk::{
+        CachedFileInputStream, ChunkResult, DataChunkInfo, DataChunkInput,
+    };
 
     #[derive(Default)]
     struct Seen {
@@ -205,7 +218,11 @@ mod tests {
         out: Vec<String>,
     }
 
-    fn parse_a(file: &mut DataChunkInput<Seen>, info: &DataChunkInfo, s: &mut Seen) -> ChunkResult<bool> {
+    fn parse_a(
+        file: &mut DataChunkInput<Seen>,
+        info: &DataChunkInfo,
+        s: &mut Seen,
+    ) -> ChunkResult<bool> {
         let i = file.read_int()?;
         let str = file.read_ascii_string()?;
         let k = file.read_name_key(&mut s.names)?;
@@ -252,7 +269,10 @@ mod tests {
         let mut input = DataChunkInput::new(CachedFileInputStream::new(bytes).unwrap()).unwrap();
         input.register_parser(b"A", b"", parse_a);
         assert!(input.parse(&mut seen).unwrap());
-        assert_eq!(seen.out, vec!["A v3 size30 int-4 hey key=beta dict=2".to_string()]);
+        assert_eq!(
+            seen.out,
+            vec!["A v3 size30 int-4 hey key=beta dict=2".to_string()]
+        );
     }
 
     /// The table lists the newest name first and the sizes count what a

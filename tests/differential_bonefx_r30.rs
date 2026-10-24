@@ -81,7 +81,9 @@ use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
 use rts_lockstep_engine::logic::damage::DamageInfo;
 use rts_lockstep_engine::logic::module::damage_module::DamageModuleData;
-use rts_lockstep_engine::logic::modules::bone_fx_update::{BoneFxUpdateModuleData, BODYDAMAGETYPE_COUNT, BONE_FX_MAX_BONES, KIND_FX, KIND_OCL};
+use rts_lockstep_engine::logic::modules::bone_fx_update::{
+    BoneFxUpdateModuleData, BODYDAMAGETYPE_COUNT, BONE_FX_MAX_BONES, KIND_FX, KIND_OCL,
+};
 use rts_lockstep_engine::logic::world::body_cuts::BodyCall;
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleHandle};
@@ -111,12 +113,17 @@ fn put_str(v: &mut Vec<u8>, s: &[u8]) {
     v.extend_from_slice(s);
 }
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::BoneFxUpdate(Arc::new(BoneFxUpdateModuleData::friend_new_module_data(Some(ini))?)));
+    *out = Some(ModuleDataKind::BoneFxUpdate(Arc::new(
+        BoneFxUpdateModuleData::friend_new_module_data(Some(ini))?,
+    )));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }];
+    let blocks = [BlockParse {
+        token: "D",
+        parse: read_block,
+    }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -168,9 +175,17 @@ fn put_data(v: &mut Vec<u8>, d: &BoneFxUpdateModuleData, fx: &mut FxIds) {
                 put_u32(v, u32::from(b.only_once));
                 if !b.bone_name.is_empty() {
                     let (lo, hi, t) = if k == 2 {
-                        (b.game_client_delay.low, b.game_client_delay.high, b.game_client_delay.distribution as u32)
+                        (
+                            b.game_client_delay.low,
+                            b.game_client_delay.high,
+                            b.game_client_delay.distribution as u32,
+                        )
                     } else {
-                        (b.game_logic_delay.low, b.game_logic_delay.high, b.game_logic_delay.distribution as u32)
+                        (
+                            b.game_logic_delay.low,
+                            b.game_logic_delay.high,
+                            b.game_logic_delay.distribution as u32,
+                        )
                     };
                     put_u32(v, lo.to_bits());
                     put_u32(v, hi.to_bits());
@@ -212,9 +227,19 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
             for i in 0..BONE_FX_MAX_BONES {
                 let bone = str_(&mut p);
                 let once = u32_(&mut p);
-                let delay: Vec<u32> = if bone.is_empty() { Vec::new() } else { (0..3).map(|_| u32_(&mut p)).collect() };
-                let effect = if k == 2 { str_(&mut p) } else { format!("{}", u32_(&mut p)) };
-                out.push(format!("entry {k} {s} {i}: {bone:?} once {once} delay {delay:x?} effect {effect}"));
+                let delay: Vec<u32> = if bone.is_empty() {
+                    Vec::new()
+                } else {
+                    (0..3).map(|_| u32_(&mut p)).collect()
+                };
+                let effect = if k == 2 {
+                    str_(&mut p)
+                } else {
+                    format!("{}", u32_(&mut p))
+                };
+                out.push(format!(
+                    "entry {k} {s} {i}: {bone:?} once {once} delay {delay:x?} effect {effect}"
+                ));
             }
         }
     }
@@ -237,7 +262,10 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let positions: Vec<u32> = (0..288).map(|_| u32_(&mut p)).collect();
         let tail: Vec<u32> = (0..7).map(|_| u32_(&mut p)).collect();
         if tail[6] > 4096 || p + 4 * tail[6] as usize > b.len() {
-            out.push(format!("op {i}: a particle system count of {} (the dump is out of step)", tail[6]));
+            out.push(format!(
+                "op {i}: a particle system count of {} (the dump is out of step)",
+                tail[6]
+            ));
             break;
         }
         let ids: Vec<u32> = (0..tail[6]).map(|_| u32_(&mut p)).collect();
@@ -250,7 +278,14 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 }
 
 const STATES: [&str; 4] = ["Pristine", "Damaged", "ReallyDamaged", "Rubble"];
-const DAMAGE_NAMES: [&str; 6] = ["EXPLOSION", "CRUSH", "ARMOR_PIERCING", "SMALL_ARMS", "FLAME", "POISON"];
+const DAMAGE_NAMES: [&str; 6] = [
+    "EXPLOSION",
+    "CRUSH",
+    "ARMOR_PIERCING",
+    "SMALL_ARMS",
+    "FLAME",
+    "POISON",
+];
 
 fn damage_tokens(g: &mut Gen) -> String {
     let mut t = Vec::new();
@@ -275,24 +310,49 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
     // most entries in the pristine state, where the update starts
     for _ in 0..3 + g.below(18) {
         let kind = g.below(3) as usize;
-        let state = if g.below(3) == 0 { 1 + g.below(3) as usize } else { 0 };
+        let state = if g.below(3) == 0 {
+            1 + g.below(3) as usize
+        } else {
+            0
+        };
         let range = if g.below(3) == 0 { 8 } else { 3 };
         let index = 1 + g.below(range);
         let (field, label, names): (&str, &str, &[&str]) = match kind {
             0 => ("FXList", "FXList", &["FX_A", "FX_B", "None", "FX_A"]),
-            1 => ("OCL", "OCL", &["OCL_A", "OCL_B", "None", "OCL_C", "OCL_A", "OCL_B"]),
+            1 => (
+                "OCL",
+                "OCL",
+                &["OCL_A", "OCL_B", "None", "OCL_C", "OCL_A", "OCL_B"],
+            ),
             _ => ("ParticleSystem", "PSys", &["PS_A", "PS_B", "None", "PS_A"]),
         };
         let bone = pick(g, &["B1", "B2", "B3", "B4", "Gone"]);
         let once = pick(g, &["Yes", "No", "No"]);
-        let (lo, hi) = (pick(g, &["0", "100", "500"]), pick(g, &["300", "1000", "2000"]));
+        let (lo, hi) = (
+            pick(g, &["0", "100", "500"]),
+            pick(g, &["300", "1000", "2000"]),
+        );
         let effect = pick(g, names);
-        lines.push(format!("{}{field}{index} = Bone:{bone} OnlyOnce:{once} {lo} {hi} {label}:{effect}", STATES[state]));
+        lines.push(format!(
+            "{}{field}{index} = Bone:{bone} OnlyOnce:{once} {lo} {hi} {label}:{effect}",
+            STATES[state]
+        ));
     }
     if !clean {
-        lines.push(pick(g, &["PristineFXList1 = Joint:B1 OnlyOnce:Yes 0 0 FXList:FX_A", "PristineOCL2 = Bone:B1 Once:Yes 0 0 OCL:OCL_A",
-            "PristineParticleSystem1 = Bone:B2 OnlyOnce:Yes 0 0 FXList:PS_A", "PristineFXList9 = Bone:B1 OnlyOnce:No 0 0 FXList:FX_A",
-            "DamageFXTypes = +BOGUS", "PristineFXList1 = Bone:B1 OnlyOnce:Maybe 0 0 FXList:FX_A"]).to_string());
+        lines.push(
+            pick(
+                g,
+                &[
+                    "PristineFXList1 = Joint:B1 OnlyOnce:Yes 0 0 FXList:FX_A",
+                    "PristineOCL2 = Bone:B1 Once:Yes 0 0 OCL:OCL_A",
+                    "PristineParticleSystem1 = Bone:B2 OnlyOnce:Yes 0 0 FXList:PS_A",
+                    "PristineFXList9 = Bone:B1 OnlyOnce:No 0 0 FXList:FX_A",
+                    "DamageFXTypes = +BOGUS",
+                    "PristineFXList1 = Bone:B1 OnlyOnce:Maybe 0 0 FXList:FX_A",
+                ],
+            )
+            .to_string(),
+        );
     }
     let mut s = String::from("D\n");
     for l in &lines {
@@ -317,7 +377,13 @@ struct Tally {
     destroys: u64,
 }
 
-fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
+fn run_xfer(
+    w: &mut World,
+    me: ObjectId,
+    idx: usize,
+    how: u32,
+    saved: &[u8],
+) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -360,26 +426,55 @@ fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> 
 /// The scene of the configuration (the driver's `scene`): the drawable, the body's last damage, the position, the bones.
 fn set_scene(w: &mut World, cfg: &[u32; 16], body: Option<u16>) {
     let o = w.objects.find_mut(1).unwrap();
-    o.drawable = if cfg[3] & 1 != 0 { 7 } else { INVALID_DRAWABLE_ID };
+    o.drawable = if cfg[3] & 1 != 0 {
+        7
+    } else {
+        INVALID_DRAWABLE_ID
+    };
     if let Some(b) = body {
-        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(1).unwrap().modules[b as usize].body.as_mut() {
+        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(1).unwrap().modules[b as usize]
+            .body
+            .as_mut()
+        {
             p.answers.last_damage = (cfg[3] >> 3 & 1 != 0).then_some((0, cfg[4] as i32));
         }
     }
-    w.set_position(1, &Coord3D { x: f32::from_bits(cfg[5]), y: f32::from_bits(cfg[6]), z: 0.0 });
+    w.set_position(
+        1,
+        &Coord3D {
+            x: f32::from_bits(cfg[5]),
+            y: f32::from_bits(cfg[6]),
+            z: 0.0,
+        },
+    );
     w.set_orientation(1, f32::from_bits(cfg[7]));
     for k in 0..4 {
-        let bone = Coord3D { x: f32::from_bits(cfg[8 + 2 * k]), y: f32::from_bits(cfg[9 + 2 * k]), z: (k + 1) as f32 };
-        w.cuts.contain.pristine_bones.insert((1, format!("B{}", k + 1).into_bytes()), bone);
+        let bone = Coord3D {
+            x: f32::from_bits(cfg[8 + 2 * k]),
+            y: f32::from_bits(cfg[9 + 2 * k]),
+            z: (k + 1) as f32,
+        };
+        w.cuts
+            .contain
+            .pristine_bones
+            .insert((1, format!("B{}", k + 1).into_bytes()), bone);
     }
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]], tally: &mut Tally) -> (Vec<u8>, World) {
+fn rust_run(
+    ctx: &Ctx,
+    data: ModuleDataKind,
+    cfg_in: &[u32; 16],
+    ops: &[[u32; 4]],
+    tally: &mut Tally,
+) -> (Vec<u8>, World) {
     let mut cfg = *cfg_in;
     let mut v = Vec::new();
     let mut fx = FxIds::default();
-    let ModuleDataKind::BoneFxUpdate(d) = &data else { unreachable!() };
+    let ModuleDataKind::BoneFxUpdate(d) = &data else {
+        unreachable!()
+    };
     put_data(&mut v, d, &mut fx);
     let mut w = World::new();
     w.names = ctx.names.clone();
@@ -387,7 +482,11 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]
     for n in [&b"OCL_A"[..], b"OCL_B"] {
         ocls.ocls.insert(w.names.name_to_key(n), Default::default());
     }
-    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), object_creation_list_store: ocls, ..Default::default() });
+    w.statics = Arc::new(GameStatics {
+        upgrade_center: ctx.center.clone(),
+        object_creation_list_store: ocls,
+        ..Default::default()
+    });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.probe_effect_trace = true;
@@ -395,26 +494,60 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]
     w.set_frame(cfg[0]);
     w.random.init_random(cfg[2]);
     w.random.init_game_logic_random(cfg[1]);
-    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"BoneFXUpdate", b"ModuleTag_BoneFX", &data).unwrap().unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(
+        w.next_object_id(),
+        b"BoneFXUpdate",
+        b"ModuleTag_BoneFX",
+        &data,
+    )
+    .unwrap()
+    .unwrap();
     let mut modules = vec![m];
     if cfg[3] >> 4 & 1 != 0 {
         let dd = ModuleDataKind::Damage(Arc::new(DamageModuleData::new()));
-        modules.push(rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"BoneFXDamage", b"ModuleTag_BoneFXDamage", &dd).unwrap().unwrap());
+        modules.push(
+            rts_lockstep_engine::logic::modules::new_module(
+                w.next_object_id(),
+                b"BoneFXDamage",
+                b"ModuleTag_BoneFXDamage",
+                &dd,
+            )
+            .unwrap()
+            .unwrap(),
+        );
     }
     if cfg[3] >> 2 & 1 != 0 {
         let mut b = NewModule::plain(b"R30Body", b"ModuleTag_Body");
         b.interfaces = MODULEINTERFACE_BODY;
-        b.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 100.0, Default::default())));
+        b.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+            ProbeAnswers::default(),
+            100.0,
+            Default::default(),
+        )));
         modules.push(b);
     }
     let values = ObjectTemplateValues::default();
-    assert_eq!(w.new_object(NewObject { template: Arc::new(ThingTemplate::from_object_values(&values)), status: Default::default(), team: None, modules }).unwrap(), 1);
+    assert_eq!(
+        w.new_object(NewObject {
+            template: Arc::new(ThingTemplate::from_object_values(&values)),
+            status: Default::default(),
+            team: None,
+            modules
+        })
+        .unwrap(),
+        1
+    );
     let idx = w.find_module(1, b"BoneFXUpdate").unwrap();
     let damage = w.find_module(1, b"BoneFXDamage");
     let body = w.objects.find(1).unwrap().body;
     // (making the object ran `onObjectCreated` on both modules: what it recorded is not an op's)
     w.cuts.module_errors.clear();
-    let u = w.update_handle_of_module(ModuleHandle { object: 1, index: idx }).expect("an update module");
+    let u = w
+        .update_handle_of_module(ModuleHandle {
+            object: 1,
+            index: idx,
+        })
+        .expect("an update module");
     let mine = |l: &str| -> Option<u32> {
         let (i, f) = l.split_once(' ').unwrap();
         (i.parse::<i32>().unwrap() == i32::from(idx)).then(|| f.parse().unwrap())
@@ -445,14 +578,32 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]
         let (mut xst, mut xbytes, mut crc, mut res) = (-2i32, Vec::new(), 0u32, 0u32);
         match o[0] {
             0 => {
-                res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
+                res = w
+                    .with_body(u, |b, w| b.update(w, u))
+                    .expect("the module is in its slot")
+                    .0;
                 tally.updates += 1;
             }
             1 => {
                 let (old_state, new_state) = (o[1] as i32, o[2] as i32);
                 match damage {
-                    Some(dm) => w.module_call(1, dm, ModuleCall::OnBodyDamageStateChange { info: DamageInfo::default(), old_state, new_state }),
-                    None => w.module_call(1, idx, ModuleCall::BoneFxChangeBodyDamageState { old_state, new_state }),
+                    Some(dm) => w.module_call(
+                        1,
+                        dm,
+                        ModuleCall::OnBodyDamageStateChange {
+                            info: DamageInfo::default(),
+                            old_state,
+                            new_state,
+                        },
+                    ),
+                    None => w.module_call(
+                        1,
+                        idx,
+                        ModuleCall::BoneFxChangeBodyDamageState {
+                            old_state,
+                            new_state,
+                        },
+                    ),
                 };
                 tally.changes += 1;
             }
@@ -483,7 +634,10 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]
             _ => unreachable!(),
         }
         let new_errors = &w.cuts.module_errors[errors_before..];
-        let status = if new_errors.iter().any(|(_, e)| e.kind == IniErrorKind::BadArg) {
+        let status = if new_errors
+            .iter()
+            .any(|(_, e)| e.kind == IniErrorKind::BadArg)
+        {
             3
         } else if new_errors.iter().any(|(_, e)| !e.is_undefined()) {
             2
@@ -499,22 +653,47 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]
                 _ => None,
             })
             .collect();
-        let (mut ev_iter, mut cut_iter) = (events.into_iter(), w.cuts.log.take().unwrap().into_iter());
+        let (mut ev_iter, mut cut_iter) =
+            (events.into_iter(), w.cuts.log.take().unwrap().into_iter());
         let (mut log, mut wakes, mut last) = (Vec::new(), 0u32, 0u32);
         let b = |x: f32| x.to_bits();
         let hidden = cfg[3] >> 1 & 1 != 0;
         for t in w.cuts.trace.take().unwrap() {
             if t.starts_with("cut ") {
                 match cut_iter.next() {
-                    Some(CutCall::OclCreateAtPrimary { ocl, primary_pos: p, angle, .. }) => {
+                    Some(CutCall::OclCreateAtPrimary {
+                        ocl,
+                        primary_pos: p,
+                        angle,
+                        ..
+                    }) => {
                         tally.ocls += 1;
-                        log.push(format!("oclat {} {:08x},{:08x},{:08x} null {:08x}", ocl_code(&ocl) - 1, b(p.x), b(p.y), b(p.z), b(angle)))
+                        log.push(format!(
+                            "oclat {} {:08x},{:08x},{:08x} null {:08x}",
+                            ocl_code(&ocl) - 1,
+                            b(p.x),
+                            b(p.y),
+                            b(p.z),
+                            b(angle)
+                        ))
                     }
-                    Some(CutCall::ParticleSystemCreate { template, position: p, id }) => {
+                    Some(CutCall::ParticleSystemCreate {
+                        template,
+                        position: p,
+                        id,
+                    }) => {
                         tally.systems += 1;
-                        log.push(format!("psys {} {id} {:08x},{:08x},{:08x}", String::from_utf8_lossy(&template), b(p.x), b(p.y), b(p.z)))
+                        log.push(format!(
+                            "psys {} {id} {:08x},{:08x},{:08x}",
+                            String::from_utf8_lossy(&template),
+                            b(p.x),
+                            b(p.y),
+                            b(p.z)
+                        ))
                     }
-                    Some(CutCall::Body(BodyCall::ParticleAttachToObject { id, object })) => log.push(format!("psattach {id} {object}")),
+                    Some(CutCall::Body(BodyCall::ParticleAttachToObject { id, object })) => {
+                        log.push(format!("psattach {id} {object}"))
+                    }
                     Some(CutCall::Body(BodyCall::ParticleDestroy { id, found })) if found => {
                         tally.destroys += 1;
                         log.push(format!("psdestroy {id}"));
@@ -523,11 +702,22 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]
                 }
             } else if t.starts_with("evt ") {
                 match ev_iter.next() {
-                    Some(ObjectClientEvent::FxListDoFxPos { fx: name, position: p }) => {
+                    Some(ObjectClientEvent::FxListDoFxPos {
+                        fx: name,
+                        position: p,
+                    }) => {
                         tally.fx += 1;
-                        log.push(format!("fxpos {} {},{},{}", fx.id(&Some(name)), b(p.x), b(p.y), b(p.z)))
+                        log.push(format!(
+                            "fxpos {} {},{},{}",
+                            fx.id(&Some(name)),
+                            b(p.x),
+                            b(p.y),
+                            b(p.z)
+                        ))
                     }
-                    Some(ObjectClientEvent::ParticleSystemStopIfDrawableHidden { id, .. }) if hidden => {
+                    Some(ObjectClientEvent::ParticleSystemStopIfDrawableHidden { id, .. })
+                        if hidden =>
+                    {
                         tally.stops += 1;
                         log.push(format!("psstop {id}"));
                     }
@@ -555,7 +745,9 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]
         put_u32(&mut v, crc);
         let ob = w.objects.find(1).unwrap();
         let slot = &ob.behaviors[u.index as usize];
-        let Some(UpdateBody::BoneFxUpdate(m)) = slot.body.as_ref() else { panic!("the module is back in its slot") };
+        let Some(UpdateBody::BoneFxUpdate(m)) = slot.body.as_ref() else {
+            panic!("the module is back in its slot")
+        };
         for s in m.state_words() {
             put_u32(&mut v, s);
         }
@@ -564,7 +756,10 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]
 }
 
 fn cases() -> usize {
-    std::env::var("L9R30_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
+    std::env::var("L9R30_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9_000)
 }
 
 #[test]
@@ -594,7 +789,11 @@ fn bone_fx_update_matches_upstream() {
                 continue;
             }
         };
-        let flags = u32::from(g.below(8) != 0) | g.below(2) << 1 | u32::from(g.below(8) != 0) << 2 | g.below(2) << 3 | u32::from(g.below(3) != 0) << 4;
+        let flags = u32::from(g.below(8) != 0)
+            | g.below(2) << 1
+            | u32::from(g.below(8) != 0) << 2
+            | g.below(2) << 3
+            | u32::from(g.below(3) != 0) << 4;
         let mut cfg = [0u32; 16];
         cfg[0] = g.below(200);
         cfg[1] = g.u32();
@@ -623,7 +822,12 @@ fn bone_fx_update_matches_upstream() {
                 19 => {
                     let a = 3 + g.below(5);
                     let b = match a {
-                        3 => (flags & 0x14) | u32::from(g.below(8) != 0) | g.below(2) << 1 | g.below(2) << 3,
+                        3 => {
+                            (flags & 0x14)
+                                | u32::from(g.below(8) != 0)
+                                | g.below(2) << 1
+                                | g.below(2) << 3
+                        }
                         4 => g.below(6),
                         5 => real(&mut g, &[0.0, 10.0, -35.5]),
                         6 => real(&mut g, &[0.0, 7.0]),
@@ -658,7 +862,19 @@ fn bone_fx_update_matches_upstream() {
         let status = unsafe {
             cpp::ref_ini_reset();
             cpp::ref_ini_add_file(cfile.as_ptr(), text.as_ptr() as *const _, text.len() as i32);
-            cpp::ref_l9r30_run(cfile.as_ptr(), cxfer.as_ptr(), cfg.as_ptr(), ops.len() as i32, flat.as_ptr(), buf.as_mut_ptr(), buf.len() as i32, &mut len, msg.as_mut_ptr() as *mut _, msg.len() as i32, &mut code)
+            cpp::ref_l9r30_run(
+                cfile.as_ptr(),
+                cxfer.as_ptr(),
+                cfg.as_ptr(),
+                ops.len() as i32,
+                flat.as_ptr(),
+                buf.as_mut_ptr(),
+                buf.len() as i32,
+                &mut len,
+                msg.as_mut_ptr() as *mut _,
+                msg.len() as i32,
+                &mut code,
+            )
         };
         buf.truncate(len as usize);
         let detail = match status {
@@ -667,8 +883,21 @@ fn bone_fx_update_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || format!("case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
-        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
+        let what = || {
+            format!(
+                "case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}",
+                show(&text)
+            )
+        };
+        read.eq(
+            &outcome,
+            &Outcome {
+                status,
+                detail,
+                crc: 0,
+            },
+            what,
+        );
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
@@ -676,8 +905,17 @@ fn bone_fx_update_matches_upstream() {
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
-            eprintln!("--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
+            let i = dr
+                .iter()
+                .zip(dc.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(dr.len().min(dc.len()));
+            eprintln!(
+                "--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}",
+                show(&text),
+                dr.get(i),
+                dc.get(i)
+            );
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -694,5 +932,11 @@ fn bone_fx_update_matches_upstream() {
     println!("R30 excluded: {reasons:?}");
     read.finish();
     run.finish();
-    assert!(tally.fx * 2 > cases as u64 && tally.ocls * 2 > cases as u64 && tally.systems * 2 > cases as u64 && tally.destroys * 10 > cases as u64, "the generator must reach every effect");
+    assert!(
+        tally.fx * 2 > cases as u64
+            && tally.ocls * 2 > cases as u64
+            && tally.systems * 2 > cases as u64
+            && tally.destroys * 10 > cases as u64,
+        "the generator must reach every effect"
+    );
 }

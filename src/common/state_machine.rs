@@ -301,7 +301,10 @@ impl StateMachineError {
     /// Whether this is one of the inputs the C++ does not define (and the
     /// differential test therefore does not compare).
     pub fn is_undefined_upstream(&self) -> bool {
-        matches!(self, StateMachineError::DuplicateStateId(_) | StateMachineError::RecursionLimit)
+        matches!(
+            self,
+            StateMachineError::DuplicateStateId(_) | StateMachineError::RecursionLimit
+        )
     }
 }
 
@@ -351,20 +354,38 @@ pub trait StateBehavior: Sized {
 
     /// `onEnter`: executed once when entering the state. Default:
     /// `STATE_CONTINUE`.
-    fn on_enter(_sm: &mut StateMachine<Self>, _cx: &mut Self::Ctx, _id: StateId) -> SmResult<StateReturn> {
+    fn on_enter(
+        _sm: &mut StateMachine<Self>,
+        _cx: &mut Self::Ctx,
+        _id: StateId,
+    ) -> SmResult<StateReturn> {
         Ok(StateReturn::CONTINUE)
     }
 
     /// `onExit`: executed once when leaving the state. Default: nothing.
-    fn on_exit(_sm: &mut StateMachine<Self>, _cx: &mut Self::Ctx, _id: StateId, _status: StateExitType) -> SmResult<()> {
+    fn on_exit(
+        _sm: &mut StateMachine<Self>,
+        _cx: &mut Self::Ctx,
+        _id: StateId,
+        _status: StateExitType,
+    ) -> SmResult<()> {
         Ok(())
     }
 
     /// `update`: the state's behavior; decides when to change state.
-    fn update(sm: &mut StateMachine<Self>, cx: &mut Self::Ctx, id: StateId) -> SmResult<StateReturn>;
+    fn update(
+        sm: &mut StateMachine<Self>,
+        cx: &mut Self::Ctx,
+        id: StateId,
+    ) -> SmResult<StateReturn>;
 
     /// A transition condition (`it->test(this, it->userData)`) of state `id`.
-    fn test(sm: &mut StateMachine<Self>, cx: &mut Self::Ctx, id: StateId, condition: Self::Condition) -> SmResult<bool>;
+    fn test(
+        sm: &mut StateMachine<Self>,
+        cx: &mut Self::Ctx,
+        id: StateId,
+        condition: Self::Condition,
+    ) -> SmResult<bool>;
 
     /// `isIdle` (default `false`).
     fn is_idle(&self) -> bool {
@@ -617,7 +638,12 @@ impl<S: StateBehavior> StateMachine<S> {
         }
         self.state_map.insert(
             id,
-            StateEntry { success_state_id: success_id, failure_state_id: failure_id, transitions: conditions.to_vec(), kind: Some(kind) },
+            StateEntry {
+                success_state_id: success_id,
+                failure_state_id: failure_id,
+                transitions: conditions.to_vec(),
+                kind: Some(kind),
+            },
         );
         if self.default_state_id == INVALID_STATE_ID {
             self.default_state_id = id;
@@ -794,7 +820,11 @@ impl<S: StateBehavior> StateMachine<S> {
     /// `internalClear`: clear the goal.
     fn internal_clear(&mut self) {
         self.goal_object_id = INVALID_ID;
-        self.goal_position = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
+        self.goal_position = Coord3D {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        };
     }
 
     /// `clear`: exit the current state (`EXIT_RESET`) and clear the goal; a
@@ -872,7 +902,11 @@ impl<S: StateBehavior> StateMachine<S> {
             let Some(cur) = self.current_state else {
                 return Ok(StateReturn::FAILURE);
             };
-            return self.check_for_sleep_transitions(cx, cur, StateReturn::sleep(self.sleep_till.wrapping_sub(now)));
+            return self.check_for_sleep_transitions(
+                cx,
+                cur,
+                StateReturn::sleep(self.sleep_till.wrapping_sub(now)),
+            );
         }
 
         // not sleeping anymore
@@ -899,7 +933,11 @@ impl<S: StateBehavior> StateMachine<S> {
 
         if status.is_sleep() {
             self.sleep_till = now.wrapping_add(status.sleep_frames());
-            self.check_for_sleep_transitions(cx, current, StateReturn::sleep(self.sleep_till.wrapping_sub(now)))
+            self.check_for_sleep_transitions(
+                cx,
+                current,
+                StateReturn::sleep(self.sleep_till.wrapping_sub(now)),
+            )
         } else {
             // check for state transitions, possibly exiting this machine
             self.check_for_transitions(cx, current, status)
@@ -908,14 +946,22 @@ impl<S: StateBehavior> StateMachine<S> {
 
     /// `internalSetState`: change the current state (for internal use; not
     /// stopped by the lock).
-    pub fn internal_set_state(&mut self, cx: &mut S::Ctx, new_state_id: StateId) -> SmResult<StateReturn> {
+    pub fn internal_set_state(
+        &mut self,
+        cx: &mut S::Ctx,
+        new_state_id: StateId,
+    ) -> SmResult<StateReturn> {
         self.enter_nesting()?;
         let r = self.internal_set_state_inner(cx, new_state_id);
         self.nesting -= 1;
         r
     }
 
-    fn internal_set_state_inner(&mut self, cx: &mut S::Ctx, mut new_state_id: StateId) -> SmResult<StateReturn> {
+    fn internal_set_state_inner(
+        &mut self,
+        cx: &mut S::Ctx,
+        mut new_state_id: StateId,
+    ) -> SmResult<StateReturn> {
         let mut new_state: Option<StateId> = None;
 
         // anytime the state changes, stop sleeping
@@ -964,7 +1010,11 @@ impl<S: StateBehavior> StateMachine<S> {
         if status.is_sleep() {
             let now = cx.frame();
             self.sleep_till = now.wrapping_add(status.sleep_frames());
-            self.check_for_sleep_transitions(cx, current, StateReturn::sleep(self.sleep_till.wrapping_sub(now)))
+            self.check_for_sleep_transitions(
+                cx,
+                current,
+                StateReturn::sleep(self.sleep_till.wrapping_sub(now)),
+            )
         } else {
             // check for state transitions, possibly exiting this machine
             self.check_for_transitions(cx, current, status)
@@ -973,7 +1023,12 @@ impl<S: StateBehavior> StateMachine<S> {
 
     /// `State::friend_checkForTransitions( status )` for state `id`: given a
     /// return code (not a sleep), handle state transitions.
-    fn check_for_transitions(&mut self, cx: &mut S::Ctx, id: StateId, status: StateReturn) -> SmResult<StateReturn> {
+    fn check_for_transitions(
+        &mut self,
+        cx: &mut S::Ctx,
+        id: StateId,
+        status: StateReturn,
+    ) -> SmResult<StateReturn> {
         let (_inc, depth) = StIncrementer::new(false);
         if depth >= MAX_TRANSITION_DEPTH {
             // "checkfortransitionsnum is > 20"
@@ -1012,7 +1067,12 @@ impl<S: StateBehavior> StateMachine<S> {
             StateReturn::CONTINUE => {
                 // check transition condition list
                 let mut i = 0;
-                while let Some(info) = self.state_map.get(&id).and_then(|e| e.transitions.get(i)).copied() {
+                while let Some(info) = self
+                    .state_map
+                    .get(&id)
+                    .and_then(|e| e.transitions.get(i))
+                    .copied()
+                {
                     i += 1;
                     if S::test(self, cx, id, info.test)? {
                         // test returned true, change to associated state;
@@ -1037,7 +1097,12 @@ impl<S: StateBehavior> StateMachine<S> {
 
     /// `State::friend_checkForSleepTransitions( status )` for state `id`:
     /// given a sleep, handle state transitions.
-    fn check_for_sleep_transitions(&mut self, cx: &mut S::Ctx, id: StateId, status: StateReturn) -> SmResult<StateReturn> {
+    fn check_for_sleep_transitions(
+        &mut self,
+        cx: &mut S::Ctx,
+        id: StateId,
+        status: StateReturn,
+    ) -> SmResult<StateReturn> {
         let (_inc, depth) = StIncrementer::new(true);
         if depth >= MAX_TRANSITION_DEPTH {
             // "checkforsleeptransitionsnum is > 20"
@@ -1046,7 +1111,12 @@ impl<S: StateBehavior> StateMachine<S> {
 
         // check transition condition list
         let mut i = 0;
-        while let Some(info) = self.state_map.get(&id).and_then(|e| e.transitions.get(i)).copied() {
+        while let Some(info) = self
+            .state_map
+            .get(&id)
+            .and_then(|e| e.transitions.get(i))
+            .copied()
+        {
             i += 1;
             if !S::test(self, cx, id, info.test)? {
                 continue;
@@ -1195,7 +1265,11 @@ mod tests {
     }
 
     fn world() -> World {
-        World { frame: 100, objects: Vec::new(), log: Vec::new() }
+        World {
+            frame: 100,
+            objects: Vec::new(),
+            log: Vec::new(),
+        }
     }
 
     /// States: a utility one, a counting one that returns what it is told,
@@ -1203,8 +1277,18 @@ mod tests {
     #[derive(Clone, Debug)]
     enum T {
         Util(UtilityState),
-        Ret { enter: StateReturn, update: StateReturn, idle: bool, attack: bool, guard: bool, busy: bool, count: u32 },
-        Jump { to: StateId },
+        Ret {
+            enter: StateReturn,
+            update: StateReturn,
+            idle: bool,
+            attack: bool,
+            guard: bool,
+            busy: bool,
+            count: u32,
+        },
+        Jump {
+            to: StateId,
+        },
         Again,
     }
 
@@ -1215,13 +1299,25 @@ mod tests {
     }
 
     fn ret(enter: StateReturn, update: StateReturn) -> T {
-        T::Ret { enter, update, idle: false, attack: false, guard: false, busy: false, count: 0 }
+        T::Ret {
+            enter,
+            update,
+            idle: false,
+            attack: false,
+            guard: false,
+            busy: false,
+            count: 0,
+        }
     }
 
     impl StateBehavior for T {
         type Ctx = World;
         type Condition = C;
-        fn on_enter(sm: &mut StateMachine<Self>, cx: &mut World, id: StateId) -> SmResult<StateReturn> {
+        fn on_enter(
+            sm: &mut StateMachine<Self>,
+            cx: &mut World,
+            id: StateId,
+        ) -> SmResult<StateReturn> {
             cx.log.push(format!("enter {id}"));
             match sm.state_mut(id) {
                 Some(T::Util(u)) => Ok(u.on_enter()),
@@ -1233,11 +1329,20 @@ mod tests {
                 _ => Ok(StateReturn::CONTINUE),
             }
         }
-        fn on_exit(_sm: &mut StateMachine<Self>, cx: &mut World, id: StateId, status: StateExitType) -> SmResult<()> {
+        fn on_exit(
+            _sm: &mut StateMachine<Self>,
+            cx: &mut World,
+            id: StateId,
+            status: StateExitType,
+        ) -> SmResult<()> {
             cx.log.push(format!("exit {id} {status:?}"));
             Ok(())
         }
-        fn update(sm: &mut StateMachine<Self>, cx: &mut World, id: StateId) -> SmResult<StateReturn> {
+        fn update(
+            sm: &mut StateMachine<Self>,
+            cx: &mut World,
+            id: StateId,
+        ) -> SmResult<StateReturn> {
             cx.log.push(format!("update {id}"));
             match sm.state_mut(id).map(|s| s.clone()) {
                 Some(T::Util(u)) => Ok(u.update()),
@@ -1249,7 +1354,12 @@ mod tests {
                 _ => Ok(StateReturn::FAILURE),
             }
         }
-        fn test(_sm: &mut StateMachine<Self>, _cx: &mut World, _id: StateId, c: C) -> SmResult<bool> {
+        fn test(
+            _sm: &mut StateMachine<Self>,
+            _cx: &mut World,
+            _id: StateId,
+            c: C,
+        ) -> SmResult<bool> {
             Ok(matches!(c, C::Always))
         }
         fn is_idle(&self) -> bool {
@@ -1287,8 +1397,22 @@ mod tests {
 
     fn two_state_machine() -> StateMachine<T> {
         let mut sm = StateMachine::<T>::new();
-        sm.define_state(1, ret(StateReturn::CONTINUE, StateReturn::SUCCESS), 2, INVALID_STATE_ID, &[]).unwrap();
-        sm.define_state(2, ret(StateReturn::CONTINUE, StateReturn::CONTINUE), INVALID_STATE_ID, INVALID_STATE_ID, &[]).unwrap();
+        sm.define_state(
+            1,
+            ret(StateReturn::CONTINUE, StateReturn::SUCCESS),
+            2,
+            INVALID_STATE_ID,
+            &[],
+        )
+        .unwrap();
+        sm.define_state(
+            2,
+            ret(StateReturn::CONTINUE, StateReturn::CONTINUE),
+            INVALID_STATE_ID,
+            INVALID_STATE_ID,
+            &[],
+        )
+        .unwrap();
         sm
     }
 
@@ -1298,11 +1422,26 @@ mod tests {
         assert!(!StateReturn::CONTINUE.is_sleep());
         assert!(!StateReturn::SUCCESS.is_sleep());
         assert_eq!(StateReturn::sleep(5).sleep_frames(), 5);
-        assert_eq!(StateReturn::sleep(5).convert_sleep_to_continue(), StateReturn::CONTINUE);
-        assert_eq!(StateReturn::FAILURE.convert_sleep_to_continue(), StateReturn::FAILURE);
-        assert_eq!(StateReturn::min_sleep(3, StateReturn::sleep(9)), StateReturn::sleep(3));
-        assert_eq!(StateReturn::min_sleep(30, StateReturn::sleep(9)), StateReturn::sleep(9));
-        assert_eq!(StateReturn::min_sleep(3, StateReturn::SUCCESS), StateReturn::SUCCESS);
+        assert_eq!(
+            StateReturn::sleep(5).convert_sleep_to_continue(),
+            StateReturn::CONTINUE
+        );
+        assert_eq!(
+            StateReturn::FAILURE.convert_sleep_to_continue(),
+            StateReturn::FAILURE
+        );
+        assert_eq!(
+            StateReturn::min_sleep(3, StateReturn::sleep(9)),
+            StateReturn::sleep(3)
+        );
+        assert_eq!(
+            StateReturn::min_sleep(30, StateReturn::sleep(9)),
+            StateReturn::sleep(9)
+        );
+        assert_eq!(
+            StateReturn::min_sleep(3, StateReturn::SUCCESS),
+            StateReturn::SUCCESS
+        );
         // a sleep of more than i32::MAX frames is a negative value, not a sleep
         assert!(!StateReturn::sleep(0x8000_0000).is_sleep());
         assert_eq!(StateReturn::SLEEP_FOREVER.sleep_frames(), 0x3fff_ffff);
@@ -1323,7 +1462,10 @@ mod tests {
         // a version above the current one is refused
         let mut load = XferLoad::new(vec![2]);
         load.open(b"x").unwrap();
-        assert_eq!(UtilityState::Success.xfer(&mut load), Err(XferStatus::InvalidVersion));
+        assert_eq!(
+            UtilityState::Success.xfer(&mut load),
+            Err(XferStatus::InvalidVersion)
+        );
     }
 
     #[test]
@@ -1343,7 +1485,10 @@ mod tests {
         assert_eq!(cx.log, ["enter 1", "update 1", "exit 1 Normal", "enter 2"]);
         // reset exits with EXIT_RESET and re-enters the default state
         cx.log.clear();
-        assert_eq!(sm.reset_to_default_state(&mut cx), Ok(StateReturn::CONTINUE));
+        assert_eq!(
+            sm.reset_to_default_state(&mut cx),
+            Ok(StateReturn::CONTINUE)
+        );
         assert_eq!(cx.log, ["exit 2 Reset", "enter 1"]);
         assert_eq!(sm.default_state_id(), 1);
         assert!(sm.is_default_state_inited());
@@ -1363,8 +1508,22 @@ mod tests {
     fn sleeping_states_wake_on_their_frame() {
         let mut cx = world();
         let mut sm = StateMachine::<T>::new();
-        sm.define_state(1, ret(StateReturn::sleep(10), StateReturn::sleep(5)), 2, 2, &[]).unwrap();
-        sm.define_state(2, T::Util(UtilityState::Sleep), INVALID_STATE_ID, INVALID_STATE_ID, &[]).unwrap();
+        sm.define_state(
+            1,
+            ret(StateReturn::sleep(10), StateReturn::sleep(5)),
+            2,
+            2,
+            &[],
+        )
+        .unwrap();
+        sm.define_state(
+            2,
+            T::Util(UtilityState::Sleep),
+            INVALID_STATE_ID,
+            INVALID_STATE_ID,
+            &[],
+        )
+        .unwrap();
         // entering sleeps 10 frames from frame 100
         assert_eq!(sm.init_default_state(&mut cx), Ok(StateReturn::sleep(10)));
         assert_eq!(sm.peek_sleep_till(), 110);
@@ -1387,8 +1546,22 @@ mod tests {
     fn a_state_that_changes_state_in_update_ignores_its_sleep() {
         let mut cx = world();
         let mut sm = StateMachine::<T>::new();
-        sm.define_state(1, T::Jump { to: 2 }, INVALID_STATE_ID, INVALID_STATE_ID, &[]).unwrap();
-        sm.define_state(2, ret(StateReturn::CONTINUE, StateReturn::CONTINUE), INVALID_STATE_ID, INVALID_STATE_ID, &[]).unwrap();
+        sm.define_state(
+            1,
+            T::Jump { to: 2 },
+            INVALID_STATE_ID,
+            INVALID_STATE_ID,
+            &[],
+        )
+        .unwrap();
+        sm.define_state(
+            2,
+            ret(StateReturn::CONTINUE, StateReturn::CONTINUE),
+            INVALID_STATE_ID,
+            INVALID_STATE_ID,
+            &[],
+        )
+        .unwrap();
         sm.init_default_state(&mut cx).unwrap();
         assert_eq!(sm.update_state_machine(&mut cx), Ok(StateReturn::CONTINUE));
         assert_eq!(sm.get_current_state_id(), 2);
@@ -1400,17 +1573,45 @@ mod tests {
         let mut cx = world();
         // success -> EXIT_MACHINE_WITH_SUCCESS; failure -> EXIT_MACHINE_WITH_FAILURE
         let mut sm = StateMachine::<T>::new();
-        sm.define_state(1, T::Util(UtilityState::Success), EXIT_MACHINE_WITH_SUCCESS, EXIT_MACHINE_WITH_FAILURE, &[]).unwrap();
+        sm.define_state(
+            1,
+            T::Util(UtilityState::Success),
+            EXIT_MACHINE_WITH_SUCCESS,
+            EXIT_MACHINE_WITH_FAILURE,
+            &[],
+        )
+        .unwrap();
         assert_eq!(sm.init_default_state(&mut cx), Ok(StateReturn::SUCCESS));
         assert_eq!(sm.get_current_state_id(), INVALID_STATE_ID); // the "done" state has no state
         let mut sm = StateMachine::<T>::new();
-        sm.define_state(1, T::Util(UtilityState::Failure), EXIT_MACHINE_WITH_SUCCESS, EXIT_MACHINE_WITH_SUCCESS, &[]).unwrap();
+        sm.define_state(
+            1,
+            T::Util(UtilityState::Failure),
+            EXIT_MACHINE_WITH_SUCCESS,
+            EXIT_MACHINE_WITH_SUCCESS,
+            &[],
+        )
+        .unwrap();
         assert_eq!(sm.init_default_state(&mut cx), Ok(StateReturn::SUCCESS));
         let mut sm = StateMachine::<T>::new();
-        sm.define_state(1, T::Util(UtilityState::Success), EXIT_MACHINE_WITH_FAILURE, EXIT_MACHINE_WITH_FAILURE, &[]).unwrap();
+        sm.define_state(
+            1,
+            T::Util(UtilityState::Success),
+            EXIT_MACHINE_WITH_FAILURE,
+            EXIT_MACHINE_WITH_FAILURE,
+            &[],
+        )
+        .unwrap();
         assert_eq!(sm.init_default_state(&mut cx), Ok(StateReturn::FAILURE));
         let mut sm = StateMachine::<T>::new();
-        sm.define_state(1, T::Util(UtilityState::Failure), 1, EXIT_MACHINE_WITH_FAILURE, &[]).unwrap();
+        sm.define_state(
+            1,
+            T::Util(UtilityState::Failure),
+            1,
+            EXIT_MACHINE_WITH_FAILURE,
+            &[],
+        )
+        .unwrap();
         assert_eq!(sm.init_default_state(&mut cx), Ok(StateReturn::FAILURE));
 
         // conditions: the first true one wins; exit targets return directly
@@ -1421,31 +1622,74 @@ mod tests {
         ] {
             let mut sm = StateMachine::<T>::new();
             let conds = [
-                StateConditionInfo { test: C::Never, to_state_id: 2 },
-                StateConditionInfo { test: C::Always, to_state_id: to },
-                StateConditionInfo { test: C::Always, to_state_id: 2 },
+                StateConditionInfo {
+                    test: C::Never,
+                    to_state_id: 2,
+                },
+                StateConditionInfo {
+                    test: C::Always,
+                    to_state_id: to,
+                },
+                StateConditionInfo {
+                    test: C::Always,
+                    to_state_id: 2,
+                },
             ];
-            sm.define_state(1, ret(StateReturn::CONTINUE, StateReturn::CONTINUE), INVALID_STATE_ID, INVALID_STATE_ID, &conds).unwrap();
-            sm.define_state(2, ret(StateReturn::CONTINUE, StateReturn::CONTINUE), INVALID_STATE_ID, INVALID_STATE_ID, &[]).unwrap();
-            sm.define_state(3, ret(StateReturn::CONTINUE, StateReturn::CONTINUE), INVALID_STATE_ID, INVALID_STATE_ID, &[]).unwrap();
+            sm.define_state(
+                1,
+                ret(StateReturn::CONTINUE, StateReturn::CONTINUE),
+                INVALID_STATE_ID,
+                INVALID_STATE_ID,
+                &conds,
+            )
+            .unwrap();
+            sm.define_state(
+                2,
+                ret(StateReturn::CONTINUE, StateReturn::CONTINUE),
+                INVALID_STATE_ID,
+                INVALID_STATE_ID,
+                &[],
+            )
+            .unwrap();
+            sm.define_state(
+                3,
+                ret(StateReturn::CONTINUE, StateReturn::CONTINUE),
+                INVALID_STATE_ID,
+                INVALID_STATE_ID,
+                &[],
+            )
+            .unwrap();
             assert_eq!(sm.init_default_state(&mut cx), Ok(want));
             assert_eq!(sm.get_current_state_id(), cur);
         }
         // a sleeping state is checked against its conditions too
         let mut sm = StateMachine::<T>::new();
-        sm.define_state(1, T::Util(UtilityState::Sleep), INVALID_STATE_ID, INVALID_STATE_ID, &[StateConditionInfo { test: C::Always, to_state_id: EXIT_MACHINE_WITH_FAILURE }]).unwrap();
+        sm.define_state(
+            1,
+            T::Util(UtilityState::Sleep),
+            INVALID_STATE_ID,
+            INVALID_STATE_ID,
+            &[StateConditionInfo {
+                test: C::Always,
+                to_state_id: EXIT_MACHINE_WITH_FAILURE,
+            }],
+        )
+        .unwrap();
         assert_eq!(sm.init_default_state(&mut cx), Ok(StateReturn::FAILURE));
 
         // a ring of states that all succeed at once stops at the depth limit
         let mut sm = StateMachine::<T>::new();
-        sm.define_state(1, T::Util(UtilityState::Success), 2, 2, &[]).unwrap();
-        sm.define_state(2, T::Util(UtilityState::Success), 1, 1, &[]).unwrap();
+        sm.define_state(1, T::Util(UtilityState::Success), 2, 2, &[])
+            .unwrap();
+        sm.define_state(2, T::Util(UtilityState::Success), 1, 1, &[])
+            .unwrap();
         assert_eq!(sm.init_default_state(&mut cx), Ok(StateReturn::FAILURE));
         CHECK_FOR_TRANSITIONS_NUM.with(|c| assert_eq!(c.get(), 0));
         CHECK_FOR_SLEEP_TRANSITIONS_NUM.with(|c| assert_eq!(c.get(), 0));
         // an update that returns an odd negative value keeps running
         let mut sm = StateMachine::<T>::new();
-        sm.define_state(1, ret(StateReturn::CONTINUE, StateReturn(-7)), 2, 2, &[]).unwrap();
+        sm.define_state(1, ret(StateReturn::CONTINUE, StateReturn(-7)), 2, 2, &[])
+            .unwrap();
         sm.init_default_state(&mut cx).unwrap();
         assert_eq!(sm.update_state_machine(&mut cx), Ok(StateReturn::CONTINUE));
         assert_eq!(sm.get_current_state_id(), 1);
@@ -1468,7 +1712,10 @@ mod tests {
         // no states at all: an unknown id has no default to recover to
         let mut empty = StateMachine::<T>::new();
         assert_eq!(empty.set_state(&mut cx, 5), Err(StateMachineError::BadArg));
-        assert_eq!(empty.internal_set_state(&mut cx, INVALID_STATE_ID), Ok(StateReturn::FAILURE));
+        assert_eq!(
+            empty.internal_set_state(&mut cx, INVALID_STATE_ID),
+            Ok(StateReturn::FAILURE)
+        );
         assert_eq!(empty.undefined_inputs(), 0);
     }
 
@@ -1484,7 +1731,11 @@ mod tests {
         assert_eq!(sm.reset_to_default_state(&mut cx), Ok(StateReturn::FAILURE));
         sm.clear(&mut cx).unwrap();
         assert_eq!(sm.get_current_state_id(), 1);
-        sm.set_goal_position(Some(&Coord3D { x: 1.0, y: 2.0, z: 3.0 }));
+        sm.set_goal_position(Some(&Coord3D {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        }));
         assert_eq!(sm.goal_position().x, 0.0);
         // internal_set_state ignores the lock
         sm.internal_set_state(&mut cx, 2).unwrap();
@@ -1507,14 +1758,27 @@ mod tests {
         // no state: idle, attack and force-attack are true, guard idle and busy false
         assert!(sm.is_in_idle_state() && sm.is_in_attack_state() && sm.is_in_force_attack_state());
         assert!(!sm.is_in_guard_idle_state() && !sm.is_in_busy_state());
-        let flags = |idle, attack, guard, busy| T::Ret { enter: StateReturn::CONTINUE, update: StateReturn::CONTINUE, idle, attack, guard, busy, count: 0 };
-        sm.define_state(1, flags(false, false, false, false), 1, 1, &[]).unwrap();
-        sm.define_state(2, flags(true, false, true, false), 1, 1, &[]).unwrap();
-        sm.define_state(3, flags(false, true, false, true), 1, 1, &[]).unwrap();
+        let flags = |idle, attack, guard, busy| T::Ret {
+            enter: StateReturn::CONTINUE,
+            update: StateReturn::CONTINUE,
+            idle,
+            attack,
+            guard,
+            busy,
+            count: 0,
+        };
+        sm.define_state(1, flags(false, false, false, false), 1, 1, &[])
+            .unwrap();
+        sm.define_state(2, flags(true, false, true, false), 1, 1, &[])
+            .unwrap();
+        sm.define_state(3, flags(false, true, false, true), 1, 1, &[])
+            .unwrap();
         sm.init_default_state(&mut cx).unwrap();
         assert!(!sm.is_in_idle_state() && !sm.is_in_attack_state() && !sm.is_in_busy_state());
         sm.set_state(&mut cx, 2).unwrap();
-        assert!(sm.is_in_idle_state() && sm.is_in_force_attack_state() && sm.is_in_guard_idle_state());
+        assert!(
+            sm.is_in_idle_state() && sm.is_in_force_attack_state() && sm.is_in_guard_idle_state()
+        );
         sm.set_state(&mut cx, 3).unwrap();
         assert!(sm.is_in_attack_state() && sm.is_in_busy_state());
         assert!(!sm.is_in_force_attack_state()); // isIdle(), not an attack test
@@ -1523,16 +1787,34 @@ mod tests {
     #[test]
     fn goals() {
         let mut cx = world();
-        cx.objects.push(ObjectRef { id: 7, position: Coord3D { x: 1.0, y: 2.0, z: 3.0 } });
+        cx.objects.push(ObjectRef {
+            id: 7,
+            position: Coord3D {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+            },
+        });
         let mut sm = two_state_machine();
         assert!(!sm.is_goal_object_destroyed(&cx)); // never had one
         sm.set_goal_object(Some(&cx.objects[0].clone()));
         assert_eq!(sm.goal_object_id(), 7);
-        assert_eq!(*sm.goal_position(), Coord3D { x: 1.0, y: 2.0, z: 3.0 });
+        assert_eq!(
+            *sm.goal_position(),
+            Coord3D {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0
+            }
+        );
         assert_eq!(sm.goal_object(&cx).map(|o| o.id), Some(7));
         assert!(!sm.is_goal_object_destroyed(&cx));
         // setting a position leaves the object; a null position changes nothing
-        sm.set_goal_position(Some(&Coord3D { x: 9.0, y: 9.0, z: 9.0 }));
+        sm.set_goal_position(Some(&Coord3D {
+            x: 9.0,
+            y: 9.0,
+            z: 9.0,
+        }));
         sm.set_goal_position(None);
         assert_eq!(sm.goal_object_id(), 7);
         assert_eq!(sm.goal_position().x, 9.0);
@@ -1552,7 +1834,11 @@ mod tests {
         let mut cx = world();
         let mut sm = two_state_machine();
         sm.init_default_state(&mut cx).unwrap();
-        sm.set_goal_position(Some(&Coord3D { x: 1.5, y: -2.0, z: 0.25 }));
+        sm.set_goal_position(Some(&Coord3D {
+            x: 1.5,
+            y: -2.0,
+            z: 0.25,
+        }));
         sm.set_state(&mut cx, 2).unwrap();
         let mut save = XferSave::new();
         save.open(b"sm").unwrap();
@@ -1593,9 +1879,18 @@ mod tests {
         // a truncated stream and a bad version are xfer errors
         let mut load = XferLoad::new(bytes[..7].to_vec());
         load.open(b"sm").unwrap();
-        assert_eq!(other.xfer_machine(&mut load), Err(StateMachineError::Xfer(XferStatus::ReadError)));
-        assert_eq!(Snapshot::xfer(&mut other, &mut XferLoad::new(Vec::new())), Err(XferStatus::ReadError));
-        assert_eq!(other.take_snapshot_error(), Some(StateMachineError::Xfer(XferStatus::ReadError)));
+        assert_eq!(
+            other.xfer_machine(&mut load),
+            Err(StateMachineError::Xfer(XferStatus::ReadError))
+        );
+        assert_eq!(
+            Snapshot::xfer(&mut other, &mut XferLoad::new(Vec::new())),
+            Err(XferStatus::ReadError)
+        );
+        assert_eq!(
+            other.take_snapshot_error(),
+            Some(StateMachineError::Xfer(XferStatus::ReadError))
+        );
     }
 
     #[test]
@@ -1625,24 +1920,46 @@ mod tests {
         let mut load = XferLoad::new(tail(good));
         load.open(b"x").unwrap();
         sm.xfer_machine(&mut load).unwrap();
-        assert_eq!(sm.state(1).map(|s| matches!(s, T::Ret { count: 10, .. })), Some(true));
-        assert_eq!(sm.state(2).map(|s| matches!(s, T::Ret { count: 20, .. })), Some(true));
+        assert_eq!(
+            sm.state(1).map(|s| matches!(s, T::Ret { count: 10, .. })),
+            Some(true)
+        );
+        assert_eq!(
+            sm.state(2).map(|s| matches!(s, T::Ret { count: 20, .. })),
+            Some(true)
+        );
         assert_eq!(load.post_process_requests(), 2);
         // wrong count
         let mut bad = s.clone();
         bad.extend(3i32.to_le_bytes());
         let mut load = XferLoad::new(bad);
         load.open(b"x").unwrap();
-        assert_eq!(sm.xfer_machine(&mut load), Err(StateMachineError::InvalidData));
-        assert_eq!(Snapshot::xfer(&mut sm, &mut { let mut l = XferLoad::new(tail(s.clone())); l.open(b"x").unwrap(); l }), Err(XferStatus::ErrorUnknown));
-        assert_eq!(sm.take_snapshot_error(), Some(StateMachineError::InvalidData));
+        assert_eq!(
+            sm.xfer_machine(&mut load),
+            Err(StateMachineError::InvalidData)
+        );
+        assert_eq!(
+            Snapshot::xfer(&mut sm, &mut {
+                let mut l = XferLoad::new(tail(s.clone()));
+                l.open(b"x").unwrap();
+                l
+            }),
+            Err(XferStatus::ErrorUnknown)
+        );
+        assert_eq!(
+            sm.take_snapshot_error(),
+            Some(StateMachineError::InvalidData)
+        );
         // wrong id
         let mut bad = s.clone();
         bad.extend(2i32.to_le_bytes());
         bad.extend(5u32.to_le_bytes());
         let mut load = XferLoad::new(bad);
         load.open(b"x").unwrap();
-        assert_eq!(sm.xfer_machine(&mut load), Err(StateMachineError::InvalidData));
+        assert_eq!(
+            sm.xfer_machine(&mut load),
+            Err(StateMachineError::InvalidData)
+        );
         // an unknown current state id recovers to the default one; with no states it is BAD_ARG
         let mut unknown = vec![1u8];
         unknown.extend(0u32.to_le_bytes());
@@ -1655,32 +1972,51 @@ mod tests {
         let mut empty = StateMachine::<T>::new();
         let mut load = XferLoad::new(unknown);
         load.open(b"x").unwrap();
-        assert_eq!(empty.xfer_machine(&mut load), Err(StateMachineError::BadArg));
+        assert_eq!(
+            empty.xfer_machine(&mut load),
+            Err(StateMachineError::BadArg)
+        );
         // xfer_state on an id that does not exist
         let mut save = XferSave::new();
-        assert_eq!(sm.xfer_state(&mut save, 9), Err(XferStatus::InvalidParameters));
+        assert_eq!(
+            sm.xfer_state(&mut save, 9),
+            Err(XferStatus::InvalidParameters)
+        );
     }
 
     #[test]
     fn undefined_upstream_inputs_are_errors_and_counted() {
         let mut cx = world();
         let mut sm = two_state_machine();
-        assert_eq!(sm.define_state(1, T::Util(UtilityState::Success), 1, 1, &[]), Err(StateMachineError::DuplicateStateId(1)));
+        assert_eq!(
+            sm.define_state(1, T::Util(UtilityState::Success), 1, 1, &[]),
+            Err(StateMachineError::DuplicateStateId(1))
+        );
         assert!(StateMachineError::DuplicateStateId(1).is_undefined_upstream());
         assert!(!StateMachineError::BadArg.is_undefined_upstream());
         assert_eq!(sm.undefined_inputs(), 1);
         assert!(matches!(sm.state(1), Some(T::Ret { .. }))); // the first state is kept
-        // a state that sets itself from onEnter would recurse forever
+                                                             // a state that sets itself from onEnter would recurse forever
         let mut sm = StateMachine::<T>::new();
-        sm.define_state(1, T::Again, INVALID_STATE_ID, INVALID_STATE_ID, &[]).unwrap();
-        assert_eq!(sm.init_default_state(&mut cx), Err(StateMachineError::RecursionLimit));
+        sm.define_state(1, T::Again, INVALID_STATE_ID, INVALID_STATE_ID, &[])
+            .unwrap();
+        assert_eq!(
+            sm.init_default_state(&mut cx),
+            Err(StateMachineError::RecursionLimit)
+        );
         assert!(sm.undefined_inputs() >= 1);
-        assert_eq!(format!("{}", StateMachineError::RecursionLimit), "RecursionLimit");
+        assert_eq!(
+            format!("{}", StateMachineError::RecursionLimit),
+            "RecursionLimit"
+        );
         let e: StateMachineError = XferStatus::Eof.into();
         assert_eq!(e, StateMachineError::Xfer(XferStatus::Eof));
         // the machine can be used again after the error
         sm.nesting = 0;
-        assert_eq!(StateMachine::<T>::default().get_current_state_id(), INVALID_STATE_ID);
+        assert_eq!(
+            StateMachine::<T>::default().get_current_state_id(),
+            INVALID_STATE_ID
+        );
     }
 
     #[test]

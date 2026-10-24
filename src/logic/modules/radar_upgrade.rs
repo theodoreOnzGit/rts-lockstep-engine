@@ -28,6 +28,7 @@
 
 use std::sync::Arc;
 
+use crate::common::ini::Undefined;
 use crate::common::ini::{FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
@@ -36,10 +37,9 @@ use crate::logic::module::upgrade_module::{UpgradeModule, UpgradeModuleData};
 use crate::logic::modules::upgrade_body::{upgrade_module_call, UpgradeBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::update_body::UpdateBody;
 use crate::upgrade_module_data_field_parse;
-use crate::common::ini::Undefined;
-use crate::logic::world::object_cuts::CutCall;
 
 /// `class RadarUpgradeModuleData : public UpgradeModuleData`.
 #[derive(Debug)]
@@ -61,17 +61,27 @@ impl Default for RadarUpgradeModuleData {
 }
 
 /// `UpgradeModuleData::buildFieldParse`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<RadarUpgradeModuleData>; 6] = upgrade_module_data_field_parse!(RadarUpgradeModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<RadarUpgradeModuleData>; 6] =
+    upgrade_module_data_field_parse!(RadarUpgradeModuleData, upgrade);
 
 /// `RadarUpgradeModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<RadarUpgradeModuleData>; 2] = [
-    FieldParse::new("DisableProof", |ini, d, _| { d.is_disable_proof = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "DisableProof",
+        |ini, d, _| {
+            d.is_disable_proof = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl RadarUpgradeModuleData {
     /// `buildFieldParse(p)`: `BehaviorModuleData`'s, then `UpgradeModuleData`'s, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, RadarUpgradeModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, RadarUpgradeModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -100,14 +110,19 @@ pub struct RadarUpgrade {
 impl PartialEq for RadarUpgrade {
     /// The same data object and the same `m_upgradeExecuted` (upstream compares the data pointer).
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.data, &other.data) && self.base.is_already_upgraded() == other.base.is_already_upgraded()
+        Arc::ptr_eq(&self.data, &other.data)
+            && self.base.is_already_upgraded() == other.base.is_already_upgraded()
     }
 }
 
 impl RadarUpgrade {
     /// `RadarUpgrade(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(object: ObjectId, data: Option<Arc<RadarUpgradeModuleData>>) -> IniResult<RadarUpgrade> {
-        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<RadarUpgradeModuleData>>,
+    ) -> IniResult<RadarUpgrade> {
+        let data =
+            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let base = UpgradeModule::new(object, Some(data.upgrade.clone()))?;
         Ok(RadarUpgrade { base, data })
     }
@@ -123,7 +138,12 @@ impl RadarUpgrade {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         upgrade_module_call(self, world, me, call)
     }
 }
@@ -135,13 +155,25 @@ impl UpgradeBehavior for RadarUpgrade {
     fn base_mut(&mut self) -> &mut UpgradeModule {
         &mut self.base
     }
-    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
-        let player = world.get_controlling_player(me.object).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+    fn upgrade_implementation(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+    ) -> Result<(), IniError> {
+        let player = world
+            .get_controlling_player(me.object)
+            .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
         // update the player with another radar facility
-        world.cut(CutCall::PlayerAddRadar { player, disable_proof: self.data.is_disable_proof != crate::logic::modules::plant(662) });
+        world.cut(CutCall::PlayerAddRadar {
+            player,
+            disable_proof: self.data.is_disable_proof != crate::logic::modules::plant(662),
+        });
         // find the radar update module of this object
         if !crate::logic::modules::plant(664) {
-            world.names.try_name_to_key(b"RadarUpdate").map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
+            world
+                .names
+                .try_name_to_key(b"RadarUpdate")
+                .map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
         }
         if let Some(idx) = world.find_module(me.object, b"RadarUpdate") {
             if !crate::logic::modules::plant(663) {
@@ -161,12 +193,20 @@ impl UpgradeBehavior for RadarUpgrade {
             return;
         }
         // If we're currently disabled, we shouldn't do anything, because we've already done it.
-        if world.objects.find(me.object).is_some_and(|o| o.is_disabled()) && !crate::logic::modules::plant(660) {
+        if world
+            .objects
+            .find(me.object)
+            .is_some_and(|o| o.is_disabled())
+            && !crate::logic::modules::plant(660)
+        {
             return;
         }
         // remove the radar from the player
         if let Some(player) = world.get_controlling_player(me.object) {
-            world.cut(CutCall::PlayerRemoveRadar { player, disable_proof: self.data.is_disable_proof });
+            world.cut(CutCall::PlayerRemoveRadar {
+                player,
+                disable_proof: self.data.is_disable_proof,
+            });
         }
         // this upgrade module is now "not upgraded"
         if !crate::logic::modules::plant(665) {
@@ -180,17 +220,32 @@ impl UpgradeBehavior for RadarUpgrade {
             return;
         }
         // If we're currently disabled, we shouldn't do anything, because we've already done it.
-        if world.objects.find(me.object).is_some_and(|o| o.is_disabled()) && !crate::logic::modules::plant(661) {
+        if world
+            .objects
+            .find(me.object)
+            .is_some_and(|o| o.is_disabled())
+            && !crate::logic::modules::plant(661)
+        {
             return;
         }
-        let (old_owner, new_owner) = if crate::logic::modules::plant(666) { (new_owner, old_owner) } else { (old_owner, new_owner) };
+        let (old_owner, new_owner) = if crate::logic::modules::plant(666) {
+            (new_owner, old_owner)
+        } else {
+            (old_owner, new_owner)
+        };
         // remove radar from old player and add to new player
         if old_owner >= 0 {
-            world.cut(CutCall::PlayerRemoveRadar { player: old_owner, disable_proof: self.data.is_disable_proof });
+            world.cut(CutCall::PlayerRemoveRadar {
+                player: old_owner,
+                disable_proof: self.data.is_disable_proof,
+            });
             self.base.mux_mut().set_upgrade_executed(false);
         }
         if new_owner >= 0 {
-            world.cut(CutCall::PlayerAddRadar { player: new_owner, disable_proof: self.data.is_disable_proof });
+            world.cut(CutCall::PlayerAddRadar {
+                player: new_owner,
+                disable_proof: self.data.is_disable_proof,
+            });
             self.base.mux_mut().set_upgrade_executed(true);
         }
     }
@@ -226,5 +281,7 @@ impl Snapshot for RadarUpgrade {
 
 /// The factory's `NewModuleDataProc` for `RadarUpgrade`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::RadarUpgrade(Arc::new(RadarUpgradeModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::RadarUpgrade(Arc::new(
+        RadarUpgradeModuleData::friend_new_module_data(ini)?,
+    )))
 }

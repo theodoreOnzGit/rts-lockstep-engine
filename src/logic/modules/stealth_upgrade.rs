@@ -23,19 +23,19 @@
 use std::sync::Arc;
 
 use crate::common::ini::{FieldParse, Ini, IniError, IniResult, MultiIniFieldParse};
+use crate::common::kind_of::KINDOF_SPAWNS_ARE_THE_WEAPONS;
 use crate::common::module::{ModuleDataKind, ObjectId};
+use crate::common::object_status_types::OBJECT_STATUS_CAN_STEALTH;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::upgrade_module::{UpgradeModule, UpgradeModuleData};
 use crate::logic::modules::upgrade_body::{upgrade_module_call, UpgradeBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
-use crate::logic::world::update_body::UpdateBody;
-use crate::upgrade_module_data_field_parse;
-use crate::common::kind_of::KINDOF_SPAWNS_ARE_THE_WEAPONS;
-use crate::common::object_status_types::OBJECT_STATUS_CAN_STEALTH;
 use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::object_state::mask_of;
+use crate::logic::world::update_body::UpdateBody;
+use crate::upgrade_module_data_field_parse;
 
 /// `class StealthUpgradeModuleData : public UpgradeModuleData`.
 #[derive(Debug)]
@@ -54,18 +54,23 @@ impl Default for StealthUpgradeModuleData {
 }
 
 /// `UpgradeModuleData::buildFieldParse`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<StealthUpgradeModuleData>; 6] = upgrade_module_data_field_parse!(StealthUpgradeModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<StealthUpgradeModuleData>; 6] =
+    upgrade_module_data_field_parse!(StealthUpgradeModuleData, upgrade);
 
 impl StealthUpgradeModuleData {
     /// `buildFieldParse(p)`: `BehaviorModuleData`'s, then `UpgradeModuleData`'s, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, StealthUpgradeModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, StealthUpgradeModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<StealthUpgradeModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<StealthUpgradeModuleData> {
         let mut data = StealthUpgradeModuleData::default();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, StealthUpgradeModuleData::build_field_parse)?;
@@ -86,14 +91,19 @@ pub struct StealthUpgrade {
 impl PartialEq for StealthUpgrade {
     /// The same data object and the same `m_upgradeExecuted` (upstream compares the data pointer).
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.data, &other.data) && self.base.is_already_upgraded() == other.base.is_already_upgraded()
+        Arc::ptr_eq(&self.data, &other.data)
+            && self.base.is_already_upgraded() == other.base.is_already_upgraded()
     }
 }
 
 impl StealthUpgrade {
     /// `StealthUpgrade(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(object: ObjectId, data: Option<Arc<StealthUpgradeModuleData>>) -> IniResult<StealthUpgrade> {
-        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<StealthUpgradeModuleData>>,
+    ) -> IniResult<StealthUpgrade> {
+        let data =
+            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let base = UpgradeModule::new(object, Some(data.upgrade.clone()))?;
         Ok(StealthUpgrade { base, data })
     }
@@ -109,7 +119,12 @@ impl StealthUpgrade {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         upgrade_module_call(self, world, me, call)
     }
 }
@@ -121,14 +136,36 @@ impl UpgradeBehavior for StealthUpgrade {
     fn base_mut(&mut self) -> &mut UpgradeModule {
         &mut self.base
     }
-    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
+    fn upgrade_implementation(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+    ) -> Result<(), IniError> {
         let object = me.object;
         if !crate::logic::modules::plant(611) {
-            world.set_status(object, mask_of(if crate::logic::modules::plant(612) { crate::common::object_status_types::OBJECT_STATUS_STEALTHED } else { OBJECT_STATUS_CAN_STEALTH }), true);
+            world.set_status(
+                object,
+                mask_of(if crate::logic::modules::plant(612) {
+                    crate::common::object_status_types::OBJECT_STATUS_STEALTHED
+                } else {
+                    OBJECT_STATUS_CAN_STEALTH
+                }),
+                true,
+            );
         }
-        let kind = world.objects.find(object).is_some_and(|o| o.is_kind_of(KINDOF_SPAWNS_ARE_THE_WEAPONS)) || crate::logic::modules::plant(613);
-        let spawn = world.get_spawn_behavior_interface(object).is_some() || crate::logic::modules::plant(614);
-        if (if crate::logic::modules::plant(616) { kind || spawn } else { kind && spawn }) && !crate::logic::modules::plant(615) {
+        let kind = world
+            .objects
+            .find(object)
+            .is_some_and(|o| o.is_kind_of(KINDOF_SPAWNS_ARE_THE_WEAPONS))
+            || crate::logic::modules::plant(613);
+        let spawn = world.get_spawn_behavior_interface(object).is_some()
+            || crate::logic::modules::plant(614);
+        if (if crate::logic::modules::plant(616) {
+            kind || spawn
+        } else {
+            kind && spawn
+        }) && !crate::logic::modules::plant(615)
+        {
             world.cut(CutCall::SpawnGiveSlavesStealthUpgrade { object });
         }
         Ok(())
@@ -169,5 +206,7 @@ impl Snapshot for StealthUpgrade {
 
 /// The factory's `NewModuleDataProc` for `StealthUpgrade`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::StealthUpgrade(Arc::new(StealthUpgradeModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::StealthUpgrade(Arc::new(
+        StealthUpgradeModuleData::friend_new_module_data(ini)?,
+    )))
 }

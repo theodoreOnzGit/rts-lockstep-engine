@@ -79,7 +79,11 @@ fn mission_stats_events_and_xfer_match_upstream() {
         unsafe { cpp::ref_mission_op(0, 0, 0, out.as_mut_ptr()) };
         let mut trace: Vec<String> = Vec::new();
         for step in 0..1 + g.below(40) {
-            let op = if g.below(12) == 0 { 0 } else { 1 + g.below(4) as i32 };
+            let op = if g.below(12) == 0 {
+                0
+            } else {
+                1 + g.below(4) as i32
+            };
             let idx = g.below(MAX_PLAYER_COUNT as u32) as i32;
             let value = gen_value(&mut g);
             trace.push(format!("op {op} [{idx}] = {value}"));
@@ -116,7 +120,11 @@ fn mission_stats_events_and_xfer_match_upstream() {
         let rust_bytes = save.take_bytes();
         let path = temp_path("save", case);
         let cpath = CString::new(path.to_string_lossy().as_bytes()).expect("path");
-        assert_eq!(unsafe { cpp::ref_mission_save(cpath.as_ptr()) }, 0, "upstream XferSave threw");
+        assert_eq!(
+            unsafe { cpp::ref_mission_save(cpath.as_ptr()) },
+            0,
+            "upstream XferSave threw"
+        );
         let cpp_bytes = std::fs::read(&path).expect("upstream wrote the file");
         let _ = std::fs::remove_file(&path);
         ok.eq(rust_bytes.clone(), cpp_bytes.clone(), input);
@@ -134,7 +142,21 @@ fn mission_stats_events_and_xfer_match_upstream() {
         load.open(b"mission").expect("open");
         back.xfer(&mut load).expect("load");
         ok.eq(readout(&back), loaded[1..].to_vec(), input);
-        bug.eq(readout(&back).iter().enumerate().map(|(i, &v)| if i == MAX_PLAYER_COUNT as usize { v + 1 } else { v }).collect::<Vec<u32>>(), loaded[1..].to_vec(), input);
+        bug.eq(
+            readout(&back)
+                .iter()
+                .enumerate()
+                .map(|(i, &v)| {
+                    if i == MAX_PLAYER_COUNT as usize {
+                        v + 1
+                    } else {
+                        v
+                    }
+                })
+                .collect::<Vec<u32>>(),
+            loaded[1..].to_vec(),
+            input,
+        );
 
         // the Rust XferLoad of upstream's bytes
         let mut back2 = MissionStats::new();

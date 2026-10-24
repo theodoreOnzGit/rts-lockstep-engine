@@ -138,10 +138,13 @@ use rts_lockstep_engine::formats::data_chunk::CachedFileInputStream;
 use rts_lockstep_engine::logic::damage::DamageInfo;
 use rts_lockstep_engine::logic::module::body_module::BodyDamageType;
 use rts_lockstep_engine::logic::terrain_logic::{
-    Bridge, BridgeInfo, BridgeTowerType, GroundSource, LandmarkBridgeObject, ObjectView, TerrainLogic, TerrainLogicError, TerrainWorld,
-    TriggerArea, WaterHandle, WaypointHandle, WaypointKeys, WaypointMapObject,
+    Bridge, BridgeInfo, BridgeTowerType, GroundSource, LandmarkBridgeObject, ObjectView,
+    TerrainLogic, TerrainLogicError, TerrainWorld, TriggerArea, WaterHandle, WaypointHandle,
+    WaypointKeys, WaypointMapObject,
 };
-use rts_lockstep_engine::logic::terrain_visual::{LogicHeightMap, TerrainUndefined, TerrainVisualEvent, WaterGrid, WaterGridSample};
+use rts_lockstep_engine::logic::terrain_visual::{
+    LogicHeightMap, TerrainUndefined, TerrainVisualEvent, WaterGrid, WaterGridSample,
+};
 use rts_lockstep_engine::ww::vector3::Vector3;
 use std::cell::RefCell;
 use support::{Check, Gen};
@@ -173,14 +176,47 @@ fn hash_of(s: &[u8]) -> u32 {
 
 /// The strings of the scenario: every name a case uses is an index into this.
 const VOCAB: [&str; 34] = [
-    "", "WP0", "WP1", "WP2", "WP3", "WP4", "WP5", "WaveGuide1", "PathA", "pathA", "PathB", "pathb", "Lake", "River", "Pond", "Water Grid",
-    "Nope", "BridgeA", "BridgeB", "Truck", "GenericBridge", "BridgeTower0", "BridgeTower1", "BridgeTower2", "BridgeTower3",
-    "Maps\\Dam\\Dam.map", "Save\\Dam.map", "maps\\dam\\DAM.MAP", "Maps\\Other\\Other.map", "Maps\\Alpine\\Alpine.map", "Maps/Slash/Slash.map",
-    "Slash.map", "level.map", "Maps\\x.map",
+    "",
+    "WP0",
+    "WP1",
+    "WP2",
+    "WP3",
+    "WP4",
+    "WP5",
+    "WaveGuide1",
+    "PathA",
+    "pathA",
+    "PathB",
+    "pathb",
+    "Lake",
+    "River",
+    "Pond",
+    "Water Grid",
+    "Nope",
+    "BridgeA",
+    "BridgeB",
+    "Truck",
+    "GenericBridge",
+    "BridgeTower0",
+    "BridgeTower1",
+    "BridgeTower2",
+    "BridgeTower3",
+    "Maps\\Dam\\Dam.map",
+    "Save\\Dam.map",
+    "maps\\dam\\DAM.MAP",
+    "Maps\\Other\\Other.map",
+    "Maps\\Alpine\\Alpine.map",
+    "Maps/Slash/Slash.map",
+    "Slash.map",
+    "level.map",
+    "Maps\\x.map",
 ];
 
 fn vocab(name: &str) -> usize {
-    VOCAB.iter().position(|&v| v == name).unwrap_or_else(|| panic!("{name} is not in the vocabulary"))
+    VOCAB
+        .iter()
+        .position(|&v| v == name)
+        .unwrap_or_else(|| panic!("{name} is not in the vocabulary"))
 }
 
 fn ascii(i: usize) -> AsciiString {
@@ -224,10 +260,20 @@ impl Obj {
     fn view(&self) -> ObjectView {
         ObjectView {
             id: self.id,
-            position: Coord3D { x: self.pos[0], y: self.pos[1], z: self.pos[2] },
+            position: Coord3D {
+                x: self.pos[0],
+                y: self.pos[1],
+                z: self.pos[2],
+            },
             orientation: self.orient,
             layer: self.layer,
-            geometry: GeometryInfo::new(GeometryType::from_index(self.geom.0).unwrap(), self.geom.1, self.geom.2, self.geom.3, self.geom.4),
+            geometry: GeometryInfo::new(
+                GeometryType::from_index(self.geom.0).unwrap(),
+                self.geom.1,
+                self.geom.2,
+                self.geom.3,
+                self.geom.4,
+            ),
         }
     }
 }
@@ -426,7 +472,10 @@ struct Op {
 }
 
 fn op(code: u32, args: &[u32]) -> Op {
-    Op { code, args: args.to_vec() }
+    Op {
+        code,
+        args: args.to_vec(),
+    }
 }
 
 fn encode_program(ops: &[Op]) -> Vec<u32> {
@@ -544,20 +593,33 @@ impl TestWorld {
     }
 
     fn existing(&self) -> Vec<usize> {
-        self.objs.borrow().iter().enumerate().filter(|(_, o)| o.exists).map(|(i, _)| i).collect()
+        self.objs
+            .borrow()
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| o.exists)
+            .map(|(i, _)| i)
+            .collect()
     }
 
     fn find(&self, id: i32) -> Option<usize> {
         if id == 0 {
             return None;
         }
-        self.objs.borrow().iter().position(|o| o.exists && o.id == id)
+        self.objs
+            .borrow()
+            .iter()
+            .position(|o| o.exists && o.id == id)
     }
 
     /// The slot of an object the C++ holds a pointer to, whether or not
     /// `findObjectByID` would find it.
     fn slot(&self, id: i32) -> usize {
-        self.objs.borrow().iter().position(|o| o.id == id).expect("object")
+        self.objs
+            .borrow()
+            .iter()
+            .position(|o| o.id == id)
+            .expect("object")
     }
 
     fn view(&self, k: usize) -> ObjectView {
@@ -598,7 +660,10 @@ impl TerrainWorld for TestWorld {
     }
 
     fn objects_in_range_2d(&self, center: &Coord3D, range: f32) -> Vec<ObjectView> {
-        self.rec(16, &[fb(center.x), fb(center.y), fb(center.z), fb(range), 0]);
+        self.rec(
+            16,
+            &[fb(center.x), fb(center.y), fb(center.z), fb(range), 0],
+        );
         let mut v = Vec::new();
         for k in self.existing() {
             let o = self.view(k);
@@ -641,7 +706,16 @@ impl TerrainWorld for TestWorld {
     }
 
     fn attempt_damage(&mut self, id: ObjectId, info: &DamageInfo) {
-        self.rec(14, &[id as u32, info.input.damage_type as u32, info.input.death_type as u32, info.input.source_id as u32, fb(info.input.amount)]);
+        self.rec(
+            14,
+            &[
+                id as u32,
+                info.input.damage_type as u32,
+                info.input.death_type as u32,
+                info.input.source_id as u32,
+                fb(info.input.amount),
+            ],
+        );
     }
 
     fn destroy_object(&mut self, id: ObjectId) {
@@ -654,7 +728,17 @@ impl TerrainWorld for TestWorld {
         let layer = self.next_layer;
         self.next_layer += 1;
         let b = bridge.bounds();
-        self.rec(5, &[fb(b.lo.x), fb(b.lo.y), fb(b.hi.x), fb(b.hi.y), bridge.info().bridge_object_id as u32, layer as u32]);
+        self.rec(
+            5,
+            &[
+                fb(b.lo.x),
+                fb(b.lo.y),
+                fb(b.hi.x),
+                fb(b.hi.y),
+                bridge.info().bridge_object_id as u32,
+                layer as u32,
+            ],
+        );
         layer
     }
 
@@ -672,12 +756,21 @@ impl TerrainWorld for TestWorld {
     }
 
     fn pathfinder_is_point_on_wall(&self, pos: &Coord3D) -> bool {
-        let on = self.wall_on && pos.x >= self.wall[0] && pos.x <= self.wall[2] && pos.y >= self.wall[1] && pos.y <= self.wall[3];
+        let on = self.wall_on
+            && pos.x >= self.wall[0]
+            && pos.x <= self.wall[2]
+            && pos.y >= self.wall[1]
+            && pos.y <= self.wall[3];
         self.rec(9, &[fb(pos.x), fb(pos.y), fb(pos.z), u32::from(on)]);
         on
     }
 
-    fn create_generic_bridge_object(&mut self, center: &Coord3D, orientation: f32, _props: &Dict) -> Option<ObjectId> {
+    fn create_generic_bridge_object(
+        &mut self,
+        center: &Coord3D,
+        orientation: f32,
+        _props: &Dict,
+    ) -> Option<ObjectId> {
         self.rec(40, &[hash_of(b"GenericBridge"), u32::from(self.generic)]);
         if !self.generic {
             return None;
@@ -694,14 +787,30 @@ impl TerrainWorld for TestWorld {
         self.road
     }
 
-    fn find_bridge_tower_template(&self, _bridge_template: &AsciiString, tower: BridgeTowerType) -> Option<f32> {
+    fn find_bridge_tower_template(
+        &self,
+        _bridge_template: &AsciiString,
+        tower: BridgeTowerType,
+    ) -> Option<f32> {
         let t = tower as usize;
         let found = (self.tower_mask >> t) & 1 == 1;
-        self.rec(40, &[hash_of(VOCAB[vocab(&format!("BridgeTower{t}"))].as_bytes()), u32::from(found)]);
+        self.rec(
+            40,
+            &[
+                hash_of(VOCAB[vocab(&format!("BridgeTower{t}"))].as_bytes()),
+                u32::from(found),
+            ],
+        );
         found.then_some(self.tower_major[t])
     }
 
-    fn create_bridge_tower(&mut self, bridge: ObjectId, tower: BridgeTowerType, pos: &Coord3D, angle: f32) -> ObjectId {
+    fn create_bridge_tower(
+        &mut self,
+        bridge: ObjectId,
+        tower: BridgeTowerType,
+        pos: &Coord3D,
+        angle: f32,
+    ) -> ObjectId {
         let id = self.new_object(vocab(&format!("BridgeTower{}", tower as usize)));
         self.set_pos(id, [pos.x, pos.y, pos.z]);
         self.set_orient(id, angle);
@@ -764,7 +873,11 @@ struct MemXfer {
 
 impl MemXfer {
     fn new(mode: XferMode) -> Self {
-        MemXfer { state: XferState::new(mode), bytes: Vec::new(), pos: 0 }
+        MemXfer {
+            state: XferState::new(mode),
+            bytes: Vec::new(),
+            pos: 0,
+        }
     }
 }
 
@@ -790,7 +903,10 @@ impl Xfer for MemXfer {
     fn skip(&mut self, _data_size: i32) -> XferResult<()> {
         Ok(())
     }
-    fn xfer_snapshot(&mut self, _snapshot: &mut dyn rts_lockstep_engine::common::xfer::Snapshot) -> XferResult<()> {
+    fn xfer_snapshot(
+        &mut self,
+        _snapshot: &mut dyn rts_lockstep_engine::common::xfer::Snapshot,
+    ) -> XferResult<()> {
         Ok(())
     }
     fn xfer_implementation(&mut self, data: &mut [u8]) -> XferResult<()> {
@@ -848,12 +964,26 @@ fn event_words(e: &TerrainVisualEvent) -> (u32, Vec<u32>) {
     match e {
         TerrainVisualEvent::Load { filename } => (60, vec![hash_of(filename.str())]),
         TerrainVisualEvent::EnableWaterGrid { enable } => (61, vec![u32::from(*enable)]),
-        TerrainVisualEvent::SetWaterGridHeightClamps { min_z, max_z } => (62, vec![fb(*min_z), fb(*max_z)]),
-        TerrainVisualEvent::SetWaterTransform { angle, x, y, z } => (63, vec![fb(*angle), fb(*x), fb(*y), fb(*z)]),
-        TerrainVisualEvent::SetWaterTransformMatrix { transform } => (64, transform.to_array().iter().map(|&f| fb(f)).collect()),
-        TerrainVisualEvent::SetWaterGridResolution { cells_x, cells_y, cell_size } => (65, vec![fb(*cells_x), fb(*cells_y), fb(*cell_size)]),
-        TerrainVisualEvent::SetWaterAttenuationFactors { a, b, c, range } => (66, vec![fb(*a), fb(*b), fb(*c), fb(*range)]),
-        TerrainVisualEvent::SetRawMapHeight { x, y, height } => (67, vec![*x as u32, *y as u32, *height as u32]),
+        TerrainVisualEvent::SetWaterGridHeightClamps { min_z, max_z } => {
+            (62, vec![fb(*min_z), fb(*max_z)])
+        }
+        TerrainVisualEvent::SetWaterTransform { angle, x, y, z } => {
+            (63, vec![fb(*angle), fb(*x), fb(*y), fb(*z)])
+        }
+        TerrainVisualEvent::SetWaterTransformMatrix { transform } => {
+            (64, transform.to_array().iter().map(|&f| fb(f)).collect())
+        }
+        TerrainVisualEvent::SetWaterGridResolution {
+            cells_x,
+            cells_y,
+            cell_size,
+        } => (65, vec![fb(*cells_x), fb(*cells_y), fb(*cell_size)]),
+        TerrainVisualEvent::SetWaterAttenuationFactors { a, b, c, range } => {
+            (66, vec![fb(*a), fb(*b), fb(*c), fb(*range)])
+        }
+        TerrainVisualEvent::SetRawMapHeight { x, y, height } => {
+            (67, vec![*x as u32, *y as u32, *height as u32])
+        }
     }
 }
 
@@ -887,20 +1017,53 @@ impl Ctx {
     fn new(sc: &Scenario) -> Ctx {
         let keys = make_keys();
         let visual = rts_lockstep_engine::logic::terrain_visual::TerrainVisualState {
-            water_grid: if sc.render { WaterGrid::default() } else { WaterGrid::without_render_object() },
-            height_map: sc
-                .hm
-                .as_ref()
-                .map(|h| LogicHeightMap::new(h.w, h.h, h.border, h.bounds.iter().map(|&(x, y)| ICoord2D { x, y }).collect(), h.data.clone()).unwrap()),
+            water_grid: if sc.render {
+                WaterGrid::default()
+            } else {
+                WaterGrid::without_render_object()
+            },
+            height_map: sc.hm.as_ref().map(|h| {
+                LogicHeightMap::new(
+                    h.w,
+                    h.h,
+                    h.border,
+                    h.bounds.iter().map(|&(x, y)| ICoord2D { x, y }).collect(),
+                    h.data.clone(),
+                )
+                .unwrap()
+            }),
         };
-        let mut ts = TerrainLogic::with_visual(if sc.w3d { GroundSource::LogicHeightMap } else { GroundSource::Base }, visual);
-        ts.set_boundaries(sc.bounds.iter().map(|&(x, y)| ICoord2D { x, y }).collect(), sc.active);
+        let mut ts = TerrainLogic::with_visual(
+            if sc.w3d {
+                GroundSource::LogicHeightMap
+            } else {
+                GroundSource::Base
+            },
+            visual,
+        );
+        ts.set_boundaries(
+            sc.bounds.iter().map(|&(x, y)| ICoord2D { x, y }).collect(),
+            sc.active,
+        );
         ts.set_map_fields(sc.map_dx, sc.map_dy, sc.min_z, sc.max_z);
         ts.set_triggers(
             sc.trigs
                 .iter()
                 .map(|t| {
-                    TriggerArea::new(ascii(t.name), t.id, t.water, t.pts.iter().map(|p| ICoord3D { x: p[0], y: p[1], z: p[2] }).collect()).unwrap()
+                    TriggerArea::new(
+                        ascii(t.name),
+                        t.id,
+                        t.water,
+                        t.pts
+                            .iter()
+                            .map(|p| ICoord3D {
+                                x: p[0],
+                                y: p[1],
+                                z: p[2],
+                            })
+                            .collect(),
+                    )
+                    .unwrap()
                 })
                 .collect(),
         );
@@ -928,16 +1091,29 @@ impl Ctx {
             .map(|m| {
                 let mut d = Dict::new();
                 d.set_int(keys.id, m.id).unwrap();
-                d.set_ascii_string(keys.name, VOCAB[m.name].as_bytes()).unwrap();
-                for (k, key) in [keys.label1, keys.label2, keys.label3].into_iter().enumerate() {
+                d.set_ascii_string(keys.name, VOCAB[m.name].as_bytes())
+                    .unwrap();
+                for (k, key) in [keys.label1, keys.label2, keys.label3]
+                    .into_iter()
+                    .enumerate()
+                {
                     if m.labels[k] >= 0 {
-                        d.set_ascii_string(key, VOCAB[m.labels[k] as usize].as_bytes()).unwrap();
+                        d.set_ascii_string(key, VOCAB[m.labels[k] as usize].as_bytes())
+                            .unwrap();
                     }
                 }
                 if m.bidir != 0 {
                     d.set_bool(keys.bi_directional, m.bidir == 2).unwrap();
                 }
-                WaypointMapObject { is_waypoint: m.is_wp, location: Coord3D { x: m.loc[0], y: m.loc[1], z: m.loc[2] }, properties: d }
+                WaypointMapObject {
+                    is_waypoint: m.is_wp,
+                    location: Coord3D {
+                        x: m.loc[0],
+                        y: m.loc[1],
+                        z: m.loc[2],
+                    },
+                    properties: d,
+                }
             })
             .collect();
         Ctx {
@@ -959,7 +1135,9 @@ impl Ctx {
             -2 => Some(WaterHandle::Grid),
             k => {
                 let k = k as usize;
-                self.ts.triggers()[k].is_water_area().then_some(WaterHandle::Polygon(k))
+                self.ts.triggers()[k]
+                    .is_water_area()
+                    .then_some(WaterHandle::Polygon(k))
             }
         }
     }
@@ -967,7 +1145,12 @@ impl Ctx {
     fn list_pos(&self, h: Option<WaypointHandle>) -> i32 {
         match h {
             None => -1,
-            Some(h) => self.ts.waypoint_handles().iter().position(|&x| x == h).map_or(-1, |p| p as i32),
+            Some(h) => self
+                .ts
+                .waypoint_handles()
+                .iter()
+                .position(|&x| x == h)
+                .map_or(-1, |p| p as i32),
         }
     }
 
@@ -984,7 +1167,11 @@ impl Ctx {
 }
 
 fn coord(a: &[u32], i: usize) -> Coord3D {
-    Coord3D { x: f32::from_bits(a[i]), y: f32::from_bits(a[i + 1]), z: f32::from_bits(a[i + 2]) }
+    Coord3D {
+        x: f32::from_bits(a[i]),
+        y: f32::from_bits(a[i + 1]),
+        z: f32::from_bits(a[i + 2]),
+    }
 }
 
 fn putc(o: &mut Vec<u32>, c: &Coord3D) {
@@ -1011,12 +1198,21 @@ fn exec(c: &mut Ctx, op: &Op) -> Result<Vec<u32>, Skip> {
             ob.orient = flt(a, 7);
             ob.layer = a[8] as i32;
         }
-        2 => c.ts.visual_mut().water_grid.set_mesh_height(a[0] as i32, a[1] as i32, flt(a, 2)),
+        2 => {
+            c.ts.visual_mut()
+                .water_grid
+                .set_mesh_height(a[0] as i32, a[1] as i32, flt(a, 2))
+        }
         3 => c.gd.map_name = VOCAB[a[0] as usize].as_bytes().to_vec(),
         10 => {
             let fname = ascii(a[0] as usize);
-            let stream = if c.file_opens { CachedFileInputStream::new(c.file.clone()) } else { None };
-            let r = c.ts.load_map(&fname, a[1] != 0, &c.map_objs, &c.keys, stream)?;
+            let stream = if c.file_opens {
+                CachedFileInputStream::new(c.file.clone())
+            } else {
+                None
+            };
+            let r =
+                c.ts.load_map(&fname, a[1] != 0, &c.map_objs, &c.keys, stream)?;
             o.push(u32::from(r));
         }
         11 => c.ts.new_map(&c.gd)?,
@@ -1030,7 +1226,8 @@ fn exec(c: &mut Ctx, op: &Op) -> Result<Vec<u32>, Skip> {
         }
         13 => {
             let want = a[3] != 0;
-            let (h, n) = c.ts.layer_height(&c.world, flt(a, 0), flt(a, 1), a[2] as i32, want, a[4] != 0)?;
+            let (h, n) =
+                c.ts.layer_height(&c.world, flt(a, 0), flt(a, 1), a[2] as i32, want, a[4] != 0)?;
             o.push(fb(h));
             if want {
                 putc(&mut o, &n.unwrap());
@@ -1039,7 +1236,11 @@ fn exec(c: &mut Ctx, op: &Op) -> Result<Vec<u32>, Skip> {
         14 => {
             match a[0] {
                 0 | 1 => {
-                    let e: Region3D = if a[0] == 0 { c.ts.extent()? } else { c.ts.maximum_pathfind_extent()? };
+                    let e: Region3D = if a[0] == 0 {
+                        c.ts.extent()?
+                    } else {
+                        c.ts.maximum_pathfind_extent()?
+                    };
                     putc(&mut o, &e.lo);
                     putc(&mut o, &e.hi);
                 }
@@ -1053,7 +1254,8 @@ fn exec(c: &mut Ctx, op: &Op) -> Result<Vec<u32>, Skip> {
         15 => putc(&mut o, &c.ts.find_closest_edge_point(&coord(a, 0))?),
         16 => putc(&mut o, &c.ts.find_farthest_edge_point(&coord(a, 0))?),
         17 => {
-            let (layer, m) = c.ts.align_on_terrain(&c.world, flt(a, 0), &coord(a, 1), a[4] != 0)?;
+            let (layer, m) =
+                c.ts.align_on_terrain(&c.world, flt(a, 0), &coord(a, 1), a[4] != 0)?;
             o.push(layer as u32);
             o.extend(m.to_array().iter().map(|&f| fb(f)));
         }
@@ -1078,13 +1280,22 @@ fn exec(c: &mut Ctx, op: &Op) -> Result<Vec<u32>, Skip> {
         }
         21 => o.push(c.list_pos(c.ts.waypoint_by_name(&ascii(a[0] as usize))) as u32),
         22 => o.push(c.list_pos(c.ts.waypoint_by_id(a[0])) as u32),
-        23 => o.push(c.list_pos(c.ts.closest_waypoint_on_path(&coord(a, 0), &ascii(a[3] as usize))) as u32),
+        23 => o.push(
+            c.list_pos(c.ts.closest_waypoint_on_path(&coord(a, 0), &ascii(a[3] as usize))) as u32,
+        ),
         24 => {
             let wi = a[0] as i32;
-            let h = if wi >= 0 { c.ts.waypoint_handles().get(wi as usize).copied() } else { None };
+            let h = if wi >= 0 {
+                c.ts.waypoint_handles().get(wi as usize).copied()
+            } else {
+                None
+            };
             o.push(u32::from(c.ts.is_purpose_of_path(h, &ascii(a[1] as usize))));
         }
-        25 => o.push(c.ts.trigger_area_by_name(&ascii(a[0] as usize)).map_or(-1i32, |i| i as i32) as u32),
+        25 => o.push(
+            c.ts.trigger_area_by_name(&ascii(a[0] as usize))
+                .map_or(-1i32, |i| i as i32) as u32,
+        ),
         30 => {
             let info = BridgeInfo {
                 from: coord(a, 0),
@@ -1104,7 +1315,13 @@ fn exec(c: &mut Ctx, op: &Op) -> Result<Vec<u32>, Skip> {
             let k = a[0] as usize;
             let ob = c.world.objs.borrow()[k].clone();
             let v = ob.view();
-            let lo = LandmarkBridgeObject { id: ob.id, template_name: ascii(ob.name), position: v.position, orientation: v.orientation, geometry: v.geometry };
+            let lo = LandmarkBridgeObject {
+                id: ob.id,
+                template_name: ascii(ob.name),
+                position: v.position,
+                orientation: v.orientation,
+                geometry: v.geometry,
+            };
             c.ts.add_landmark_bridge_to_logic(&mut c.world, &lo);
         }
         32 => {
@@ -1131,17 +1348,30 @@ fn exec(c: &mut Ctx, op: &Op) -> Result<Vec<u32>, Skip> {
                 o.extend_from_slice(&[fb(r.lo.x), fb(r.lo.y), fb(r.hi.x), fb(r.hi.y)]);
             }
         }
-        33 => o.push(c.ts.find_bridge_at(&coord(a, 0)).map_or(-1i32, |i| i as i32) as u32),
-        34 => o.push(c.ts.find_bridge_layer_at(&coord(a, 0), a[3] as i32, a[4] != 0).map_or(-1i32, |i| i as i32) as u32),
+        33 => o.push(
+            c.ts.find_bridge_at(&coord(a, 0))
+                .map_or(-1i32, |i| i as i32) as u32,
+        ),
+        34 => o.push(
+            c.ts.find_bridge_layer_at(&coord(a, 0), a[3] as i32, a[4] != 0)
+                .map_or(-1i32, |i| i as i32) as u32,
+        ),
         35 => o.push(c.ts.layer_for_destination(&c.world, &coord(a, 0))? as u32),
         36 => o.push(c.ts.highest_layer_for_destination(&c.world, &coord(a, 0), a[3] != 0)? as u32),
         37 => {
             let v = c.world.view(a[0] as usize);
-            o.push(u32::from(c.ts.object_interacts_with_bridge_layer(&c.world, &v, a[1] as i32, a[2] != 0)?));
+            o.push(u32::from(c.ts.object_interacts_with_bridge_layer(
+                &c.world,
+                &v,
+                a[1] as i32,
+                a[2] != 0,
+            )?));
         }
         38 => {
             let v = c.world.view(a[0] as usize);
-            o.push(u32::from(c.ts.object_interacts_with_bridge_end(&v, a[1] as i32)?));
+            o.push(u32::from(
+                c.ts.object_interacts_with_bridge_end(&v, a[1] as i32)?,
+            ));
         }
         39 => {
             c.ts.update_bridge_damage_states(&mut c.world)?;
@@ -1149,7 +1379,11 @@ fn exec(c: &mut Ctx, op: &Op) -> Result<Vec<u32>, Skip> {
         }
         41 => {
             let k = a[0] as i32;
-            let id = if k >= 0 { Some(c.world.objs.borrow()[k as usize].id) } else { None };
+            let id = if k >= 0 {
+                Some(c.world.objs.borrow()[k as usize].id)
+            } else {
+                None
+            };
             o.push(u32::from(c.ts.is_bridge_repaired(id)));
             o.push(u32::from(c.ts.is_bridge_broken(id)));
         }
@@ -1225,7 +1459,12 @@ fn exec(c: &mut Ctx, op: &Op) -> Result<Vec<u32>, Skip> {
             o.push(ch.len() as u32);
             for e in ch {
                 o.push(water_code(e.water_table) as u32);
-                o.extend_from_slice(&[fb(e.change_per_frame), fb(e.target_height), fb(e.damage_amount), fb(e.current_height)]);
+                o.extend_from_slice(&[
+                    fb(e.change_per_frame),
+                    fb(e.target_height),
+                    fb(e.damage_amount),
+                    fb(e.current_height),
+                ]);
             }
         }
         58 => {
@@ -1275,9 +1514,15 @@ fn exec(c: &mut Ctx, op: &Op) -> Result<Vec<u32>, Skip> {
             o.push(c.ts.active_boundary() as u32);
             o.push(hash_of(c.ts.source_filename().str()));
         }
-        70 => o.push(c.ts.visual().raw_map_height(&ICoord2D { x: a[0] as i32, y: a[1] as i32 }) as u32),
+        70 => o.push(c.ts.visual().raw_map_height(&ICoord2D {
+            x: a[0] as i32,
+            y: a[1] as i32,
+        }) as u32),
         72 => {
-            let s = c.ts.visual().water_grid.water_grid_height(flt(a, 0), flt(a, 1))?;
+            let s =
+                c.ts.visual()
+                    .water_grid
+                    .water_grid_height(flt(a, 0), flt(a, 1))?;
             match s {
                 WaterGridSample::NotOnGrid => o.extend_from_slice(&[0, fb(777.0)]),
                 WaterGridSample::OnGrid(z) => o.extend_from_slice(&[1, fb(z)]),
@@ -1339,7 +1584,16 @@ fn run_cpp(sc: &Scenario, prog: &[Op]) -> Vec<u32> {
     let s = sc.encode();
     let p = encode_program(prog);
     let mut out = vec![0u32; 1 << 20];
-    let n = unsafe { cpp::ref_terrain_logic_run(s.as_ptr(), s.len() as i32, p.as_ptr(), p.len() as i32, out.as_mut_ptr(), out.len() as i32) };
+    let n = unsafe {
+        cpp::ref_terrain_logic_run(
+            s.as_ptr(),
+            s.len() as i32,
+            p.as_ptr(),
+            p.len() as i32,
+            out.as_mut_ptr(),
+            out.len() as i32,
+        )
+    };
     assert!(n >= 0, "the C++ output did not fit");
     out.truncate(n as usize);
     out
@@ -1482,7 +1736,9 @@ impl Checks {
             }
             24 if flag(results, 0) => self.bump("result isPurposeOfPath true".into(), 1),
             33 | 34 if results[0] as i32 >= 0 => self.bump("result bridge found".into(), 1),
-            37 | 38 if flag(results, 0) => self.bump("result objectInteractsWithBridge true".into(), 1),
+            37 | 38 if flag(results, 0) => {
+                self.bump("result objectInteractsWithBridge true".into(), 1)
+            }
             41 => {
                 if flag(results, 0) {
                     self.bump("result isBridgeRepaired true".into(), 1);
@@ -1494,15 +1750,22 @@ impl Checks {
             44 if results[0] != 0 => self.bump("result pickBridge hit a drawable".into(), 1),
             47 if flag(results, 0) => self.bump("result isPointOnBridge true".into(), 1),
             48 => {
-                for (k, name) in ["isCellOnEnd", "isCellOnSide", "isCellEntryPoint"].iter().enumerate() {
+                for (k, name) in ["isCellOnEnd", "isCellOnSide", "isCellEntryPoint"]
+                    .iter()
+                    .enumerate()
+                {
                     if flag(results, k) {
                         self.bump(format!("result {name} true"), 1);
                     }
                 }
             }
-            50 if results[0] as i32 != -1 => self.bump("result getWaterHandle found water".into(), 1),
+            50 if results[0] as i32 != -1 => {
+                self.bump("result getWaterHandle found water".into(), 1)
+            }
             51 if flag(results, 0) => self.bump("result isUnderwater true".into(), 1),
-            57 if results[0] > 0 => self.bump("result water changes pending".into(), results[0] as u64),
+            57 if results[0] > 0 => {
+                self.bump("result water changes pending".into(), results[0] as u64)
+            }
             63 if results[0] > 0 => {
                 self.bump("result xfer saved bytes".into(), results[0] as u64);
                 // version (1) + active boundary (4) + count (4) is a save with no water change in it
@@ -1529,8 +1792,16 @@ impl Checks {
             println!("COVER {k:<60} {n:>9}");
         }
         for (k, min) in must {
-            let n = self.cover.iter().filter(|(key, _)| key.contains(k)).map(|(_, n)| *n).sum::<u64>();
-            assert!(n >= *min, "the cases did not exercise {k:?} enough: {n} < {min}");
+            let n = self
+                .cover
+                .iter()
+                .filter(|(key, _)| key.contains(k))
+                .map(|(_, n)| *n)
+                .sum::<u64>();
+            assert!(
+                n >= *min,
+                "the cases did not exercise {k:?} enough: {n} < {min}"
+            );
         }
     }
 }
@@ -1566,21 +1837,34 @@ fn compare_case(checks: &mut Checks, prog: &[Op], r: &[u32], c: &[u32], case: us
         ri += 1;
         ci += 1;
         let (Some(rr), Some(cr)) = (take(r, &mut ri), take(c, &mut ci)) else {
-            checks.framing.eq(false, true, || format!("{} truncated", what()));
+            checks
+                .framing
+                .eq(false, true, || format!("{} truncated", what()));
             return;
         };
         let (Some(rl), Some(cl)) = (take(r, &mut ri), take(c, &mut ci)) else {
-            checks.framing.eq(false, true, || format!("{} truncated", what()));
+            checks
+                .framing
+                .eq(false, true, || format!("{} truncated", what()));
             return;
         };
         let (Some(rv), Some(cv)) = (take(r, &mut ri), take(c, &mut ci)) else {
-            checks.framing.eq(false, true, || format!("{} truncated", what()));
+            checks
+                .framing
+                .eq(false, true, || format!("{} truncated", what()));
             return;
         };
-        let chk = checks.by_code.entry(o.code).or_insert_with(|| Check::new(&format!("op {:>2} {}", o.code, op_name(o.code))));
+        let chk = checks
+            .by_code
+            .entry(o.code)
+            .or_insert_with(|| Check::new(&format!("op {:>2} {}", o.code, op_name(o.code))));
         compare_words(chk, &rr, &cr, what);
-        compare_words(&mut checks.world_log, &rl, &cl, || format!("{} world log", what()));
-        compare_words(&mut checks.visual_log, &rv, &cv, || format!("{} visual log", what()));
+        compare_words(&mut checks.world_log, &rl, &cl, || {
+            format!("{} world log", what())
+        });
+        compare_words(&mut checks.visual_log, &rv, &cv, || {
+            format!("{} visual log", what())
+        });
         checks.tally(o.code, &cr, &cl, &cv);
     }
 }
@@ -1625,7 +1909,10 @@ fn gen_waypoint_file(g: &mut Gen, ids: &[i32]) -> (bool, Vec<u8>) {
     }
     if chance(g, 6) {
         // not a chunk file at all ("legacy": no table of contents)
-        return (true, (0..gi(g, 12, 64)).map(|_| g.below(256) as u8).collect());
+        return (
+            true,
+            (0..gi(g, 12, 64)).map(|_| g.below(256) as u8).collect(),
+        );
     }
     let mut data = Vec::new();
     let n = gi(g, 0, 12);
@@ -1655,7 +1942,11 @@ fn gen_waypoint_file(g: &mut Gen, ids: &[i32]) -> (bool, Vec<u8>) {
         chunks.push((2, 3, vec![9, 9, 9]));
     }
     let wrong_label = chance(g, 10);
-    let mut f = if wrong_label { chunk_file(&["Other", "Waypoints", "ObjectsList"], &chunks) } else { chunk_file(&names, &chunks) };
+    let mut f = if wrong_label {
+        chunk_file(&["Other", "Waypoints", "ObjectsList"], &chunks)
+    } else {
+        chunk_file(&names, &chunks)
+    };
     if chance(g, 4) {
         // cut off in the middle: the reader's own undefined input
         let cut = gi(g, 5, f.len() as i32 - 1) as usize;
@@ -1683,17 +1974,36 @@ fn gen_scenario(g: &mut Gen, w3d: bool) -> Scenario {
             data.push(v as u8);
         }
         let nb = gi(g, 1, 3);
-        let bounds = (0..nb).map(|_| (gi(g, 2, (w - 2 * border).max(3)), gi(g, 2, (h - 2 * border).max(3)))).collect();
-        Some(Hm { w, h, border, bounds, data })
+        let bounds = (0..nb)
+            .map(|_| {
+                (
+                    gi(g, 2, (w - 2 * border).max(3)),
+                    gi(g, 2, (h - 2 * border).max(3)),
+                )
+            })
+            .collect();
+        Some(Hm {
+            w,
+            h,
+            border,
+            bounds,
+            data,
+        })
     } else {
         None
     };
-    let hm_bounds: Vec<(i32, i32)> = hm.as_ref().map_or_else(|| vec![(gi(g, 4, 30), gi(g, 4, 30))], |h| h.bounds.clone());
+    let hm_bounds: Vec<(i32, i32)> = hm
+        .as_ref()
+        .map_or_else(|| vec![(gi(g, 4, 30), gi(g, 4, 30))], |h| h.bounds.clone());
     let mut bounds = hm_bounds;
     if chance(g, 8) {
         bounds.clear();
     }
-    let active = if bounds.is_empty() { 0 } else { gi(g, 0, bounds.len() as i32 - 1) };
+    let active = if bounds.is_empty() {
+        0
+    } else {
+        gi(g, 0, bounds.len() as i32 - 1)
+    };
     let (min_z, span) = (gf(g, 0.0, 20.0), gf(g, 0.0, 100.0));
 
     // water settings
@@ -1702,10 +2012,22 @@ fn gen_scenario(g: &mut Gen, w3d: bool) -> Scenario {
         .iter()
         .map(|&m| Setting {
             map: m,
-            f: [gf(g, -10.0, 0.0), gf(g, 0.0, 50.0), gf(g, -3.2, 3.2), gf(g, 0.0, 100.0), gf(g, 0.0, 100.0), gf(g, -5.0, 30.0)],
+            f: [
+                gf(g, -10.0, 0.0),
+                gf(g, 0.0, 50.0),
+                gf(g, -3.2, 3.2),
+                gf(g, 0.0, 100.0),
+                gf(g, 0.0, 100.0),
+                gf(g, -5.0, 30.0),
+            ],
             cells: (gi(g, 4, 16), gi(g, 4, 16)),
             size: gf(g, 6.0, 16.0),
-            att: [gf(g, 0.0, 2.0), gf(g, 0.0, 2.0), gf(g, 0.0, 2.0), gf(g, 0.0, 80.0)],
+            att: [
+                gf(g, 0.0, 2.0),
+                gf(g, 0.0, 2.0),
+                gf(g, 0.0, 2.0),
+                gf(g, 0.0, 80.0),
+            ],
         })
         .collect();
     let mut settings = settings;
@@ -1736,8 +2058,19 @@ fn gen_scenario(g: &mut Gen, w3d: bool) -> Scenario {
             // a whole number of cells, so a crater's `distance < radius` meets
             // `distance == radius` exactly
             let on_node = chance(g, 25);
-            let (px, py) = if on_node { ((gi(g, 1, (extent_x / 10.0) as i32 - 1) * 10) as f32, (gi(g, 1, (extent_y / 10.0) as i32 - 1) * 10) as f32) } else { (gf(g, 0.0, extent_x), gf(g, 0.0, extent_y)) };
-            let major = if on_node { (gi(g, 1, 4) * 10) as f32 } else { gf(g, 2.0, 40.0) };
+            let (px, py) = if on_node {
+                (
+                    (gi(g, 1, (extent_x / 10.0) as i32 - 1) * 10) as f32,
+                    (gi(g, 1, (extent_y / 10.0) as i32 - 1) * 10) as f32,
+                )
+            } else {
+                (gf(g, 0.0, extent_x), gf(g, 0.0, extent_y))
+            };
+            let major = if on_node {
+                (gi(g, 1, 4) * 10) as f32
+            } else {
+                gf(g, 2.0, 40.0)
+            };
             Obj {
                 id: 10 + k,
                 pos: [px, py, gf(g, 0.0, 40.0)],
@@ -1761,9 +2094,19 @@ fn gen_scenario(g: &mut Gen, w3d: bool) -> Scenario {
             let pts = if chance(g, 30) {
                 vec![[x0, y0, z], [x0 + dx, y0, z], [x0, y0 + dy, z]]
             } else {
-                vec![[x0, y0, z], [x0 + dx, y0, z], [x0 + dx, y0 + dy, z], [x0, y0 + dy, z]]
+                vec![
+                    [x0, y0, z],
+                    [x0 + dx, y0, z],
+                    [x0 + dx, y0 + dy, z],
+                    [x0, y0 + dy, z],
+                ]
             };
-            Trig { name: [12usize, 13, 14][g.below(3) as usize], id: 5 + k, water: chance(g, 85), pts }
+            Trig {
+                name: [12usize, 13, 14][g.below(3) as usize],
+                id: 5 + k,
+                water: chance(g, 85),
+                pts,
+            }
         })
         .collect();
     let n_map = gi(g, 0, 8);
@@ -1771,7 +2114,11 @@ fn gen_scenario(g: &mut Gen, w3d: bool) -> Scenario {
     let maps: Vec<MapObj> = (0..n_map)
         .map(|_| {
             let is_wp = chance(g, 80);
-            let id = if chance(g, 15) && !wp_ids.is_empty() { wp_ids[0] } else { gi(g, 1, 9) };
+            let id = if chance(g, 15) && !wp_ids.is_empty() {
+                wp_ids[0]
+            } else {
+                gi(g, 1, 9)
+            };
             if is_wp {
                 wp_ids.push(id);
             }
@@ -1779,8 +2126,18 @@ fn gen_scenario(g: &mut Gen, w3d: bool) -> Scenario {
                 is_wp,
                 loc: [gf(g, 0.0, extent_x), gf(g, 0.0, extent_y), 0.0],
                 id,
-                name: if chance(g, 15) { 7 } else { gi(g, 1, 6) as usize },
-                labels: [0, 1, 2].map(|_| if chance(g, 55) { *[8i32, 9, 10, 11, 0][g.below(5) as usize..].first().unwrap() } else { -1 }),
+                name: if chance(g, 15) {
+                    7
+                } else {
+                    gi(g, 1, 6) as usize
+                },
+                labels: [0, 1, 2].map(|_| {
+                    if chance(g, 55) {
+                        *[8i32, 9, 10, 11, 0][g.below(5) as usize..].first().unwrap()
+                    } else {
+                        -1
+                    }
+                }),
                 bidir: gi(g, 0, 2),
             }
         })
@@ -1801,10 +2158,20 @@ fn gen_scenario(g: &mut Gen, w3d: bool) -> Scenario {
         generic: chance(g, 85),
         road: chance(g, 85),
         tower_mask: g.below(16),
-        tower_major: [gf(g, 2.0, 20.0), gf(g, 2.0, 20.0), gf(g, 2.0, 20.0), gf(g, 2.0, 20.0)],
+        tower_major: [
+            gf(g, 2.0, 20.0),
+            gf(g, 2.0, 20.0),
+            gf(g, 2.0, 20.0),
+            gf(g, 2.0, 20.0),
+        ],
         wall_height: gf(g, 5.0, 30.0),
         wall_on: chance(g, 40),
-        wall: [gf(g, 0.0, 100.0), gf(g, 0.0, 100.0), gf(g, 100.0, 300.0), gf(g, 100.0, 300.0)],
+        wall: [
+            gf(g, 0.0, 100.0),
+            gf(g, 0.0, 100.0),
+            gf(g, 100.0, 300.0),
+            gf(g, 100.0, 300.0),
+        ],
         frame: g.below(120),
         objs,
         trigs,
@@ -1819,7 +2186,11 @@ fn gpos(g: &mut Gen, sc: &Scenario) -> [u32; 3] {
     let ex = sc.hm.as_ref().map_or(300.0, |h| h.w as f32 * 10.0);
     let ey = sc.hm.as_ref().map_or(300.0, |h| h.h as f32 * 10.0);
     let wide = chance(g, 10);
-    let (x, y) = if wide { (gf(g, -100.0, ex + 100.0), gf(g, -100.0, ey + 100.0)) } else { (gf(g, 0.0, ex), gf(g, 0.0, ey)) };
+    let (x, y) = if wide {
+        (gf(g, -100.0, ex + 100.0), gf(g, -100.0, ey + 100.0))
+    } else {
+        (gf(g, 0.0, ex), gf(g, 0.0, ey))
+    };
     [fb(x), fb(y), fb(gf(g, -5.0, 45.0))]
 }
 
@@ -1833,7 +2204,20 @@ fn gen_op(g: &mut Gen, sc: &Scenario, kinds: &[u32]) -> Op {
         0 => op(0, &[g.below(200)]),
         1 => {
             let p = gpos(g, sc);
-            op(1, &[obj(g), gi(g, 0, 3) as u32, gi(g, 0, 2) as u32, u32::from(chance(g, 90)), p[0], p[1], p[2], fb(gf(g, -3.2, 3.2)), *[1u32, 2, 3, 4, 15][g.below(5) as usize..].first().unwrap()])
+            op(
+                1,
+                &[
+                    obj(g),
+                    gi(g, 0, 3) as u32,
+                    gi(g, 0, 2) as u32,
+                    u32::from(chance(g, 90)),
+                    p[0],
+                    p[1],
+                    p[2],
+                    fb(gf(g, -3.2, 3.2)),
+                    *[1u32, 2, 3, 4, 15][g.below(5) as usize..].first().unwrap(),
+                ],
+            )
         }
         2 => op(2, &[g.below(4), g.below(4), fb(gf(g, -3.0, 6.0))]),
         10 => op(10, &[if chance(g, 6) { 0 } else { 32 }, g.below(2)]),
@@ -1844,9 +2228,27 @@ fn gen_op(g: &mut Gen, sc: &Scenario, kinds: &[u32]) -> Op {
         }
         13 => {
             let p = gpos(g, sc);
-            op(13, &[p[0], p[1], *[1u32, 1, 2, 3, 4, 15][g.below(6) as usize..].first().unwrap(), g.below(2), g.below(2)])
+            op(
+                13,
+                &[
+                    p[0],
+                    p[1],
+                    *[1u32, 1, 2, 3, 4, 15][g.below(6) as usize..]
+                        .first()
+                        .unwrap(),
+                    g.below(2),
+                    g.below(2),
+                ],
+            )
         }
-        14 => op(14, &[if sc.hm.is_some() { g.below(3) } else { g.below(2) }]),
+        14 => op(
+            14,
+            &[if sc.hm.is_some() {
+                g.below(3)
+            } else {
+                g.below(2)
+            }],
+        ),
         15 | 16 => {
             let p = gpos(g, sc);
             op(k, &p)
@@ -1856,14 +2258,38 @@ fn gen_op(g: &mut Gen, sc: &Scenario, kinds: &[u32]) -> Op {
             op(17, &[fb(gf(g, -3.2, 3.2)), p[0], p[1], p[2], g.below(2)])
         }
         20 => op(20, &[]),
-        21 => op(21, &[*[1u32, 2, 3, 4, 5, 6, 7, 16][g.below(8) as usize..].first().unwrap()]),
+        21 => op(
+            21,
+            &[*[1u32, 2, 3, 4, 5, 6, 7, 16][g.below(8) as usize..]
+                .first()
+                .unwrap()],
+        ),
         22 => op(22, &[gi(g, 0, 10) as u32]),
         23 => {
             let p = gpos(g, sc);
-            op(23, &[p[0], p[1], p[2], *[8u32, 9, 10, 11, 0, 16][g.below(6) as usize..].first().unwrap()])
+            op(
+                23,
+                &[
+                    p[0],
+                    p[1],
+                    p[2],
+                    *[8u32, 9, 10, 11, 0, 16][g.below(6) as usize..]
+                        .first()
+                        .unwrap(),
+                ],
+            )
         }
-        24 => op(24, &[gi(g, -1, 5) as u32, *[8u32, 9, 10, 11, 0][g.below(5) as usize..].first().unwrap()]),
-        25 => op(25, &[*[12u32, 13, 14, 16][g.below(4) as usize..].first().unwrap()]),
+        24 => op(
+            24,
+            &[
+                gi(g, -1, 5) as u32,
+                *[8u32, 9, 10, 11, 0][g.below(5) as usize..].first().unwrap(),
+            ],
+        ),
+        25 => op(
+            25,
+            &[*[12u32, 13, 14, 16][g.below(4) as usize..].first().unwrap()],
+        ),
         30 => {
             let c = gpos(g, sc);
             let (cx, cy, cz) = (f32::from_bits(c[0]), f32::from_bits(c[1]), gf(g, 0.0, 30.0));
@@ -1871,13 +2297,23 @@ fn gen_op(g: &mut Gen, sc: &Scenario, kinds: &[u32]) -> Op {
             let (len, wid) = (gf(g, 20.0, 80.0), gf(g, 6.0, 20.0));
             let (ca, sa) = (ang.cos(), ang.sin());
             let corner = |g: &mut Gen, sx: f32, sy: f32| -> [f32; 3] {
-                [cx + sx * len * ca - sy * wid * sa, cy + sx * len * sa + sy * wid * ca, cz + if chance(g, 20) { gf(g, -2.0, 2.0) } else { 0.0 }]
+                [
+                    cx + sx * len * ca - sy * wid * sa,
+                    cy + sx * len * sa + sy * wid * ca,
+                    cz + if chance(g, 20) { gf(g, -2.0, 2.0) } else { 0.0 },
+                ]
             };
             let fl = corner(g, -1.0, 1.0);
             let fr = corner(g, -1.0, -1.0);
             let tl = corner(g, 1.0, 1.0);
             let tr = corner(g, 1.0, -1.0);
-            let mid = |a: [f32; 3], b: [f32; 3]| [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0];
+            let mid = |a: [f32; 3], b: [f32; 3]| {
+                [
+                    (a[0] + b[0]) / 2.0,
+                    (a[1] + b[1]) / 2.0,
+                    (a[2] + b[2]) / 2.0,
+                ]
+            };
             let (from, to) = (mid(fl, fr), mid(tl, tr));
             let mut args: Vec<u32> = Vec::new();
             for p in [from, to] {
@@ -1900,7 +2336,16 @@ fn gen_op(g: &mut Gen, sc: &Scenario, kinds: &[u32]) -> Op {
         }
         34 => {
             let p = gpos(g, sc);
-            op(34, &[p[0], p[1], p[2], *[1u32, 2, 3, 4, 15][g.below(5) as usize..].first().unwrap(), g.below(2)])
+            op(
+                34,
+                &[
+                    p[0],
+                    p[1],
+                    p[2],
+                    *[1u32, 2, 3, 4, 15][g.below(5) as usize..].first().unwrap(),
+                    g.below(2),
+                ],
+            )
         }
         35 => {
             let p = gpos(g, sc);
@@ -1910,8 +2355,21 @@ fn gen_op(g: &mut Gen, sc: &Scenario, kinds: &[u32]) -> Op {
             let p = gpos(g, sc);
             op(36, &[p[0], p[1], p[2], g.below(2)])
         }
-        37 => op(37, &[obj(g), *[1u32, 2, 3, 4, 15][g.below(5) as usize..].first().unwrap(), g.below(2)]),
-        38 => op(38, &[obj(g), *[1u32, 2, 3, 4, 15][g.below(5) as usize..].first().unwrap()]),
+        37 => op(
+            37,
+            &[
+                obj(g),
+                *[1u32, 2, 3, 4, 15][g.below(5) as usize..].first().unwrap(),
+                g.below(2),
+            ],
+        ),
+        38 => op(
+            38,
+            &[
+                obj(g),
+                *[1u32, 2, 3, 4, 15][g.below(5) as usize..].first().unwrap(),
+            ],
+        ),
         39 => op(39, &[]),
         41 => op(41, &[if chance(g, 8) { u32::MAX } else { obj(g) }]),
         43 => op(43, &[obj(g)]),
@@ -1935,7 +2393,10 @@ fn gen_op(g: &mut Gen, sc: &Scenario, kinds: &[u32]) -> Op {
             let p = gpos(g, sc);
             let (x, y) = (f32::from_bits(p[0]), f32::from_bits(p[1]));
             let s = gf(g, 2.0, 25.0);
-            op(48, &[g.below(4), fb(x - s), fb(y - s), fb(x + s), fb(y + s)])
+            op(
+                48,
+                &[g.below(4), fb(x - s), fb(y - s), fb(x + s), fb(y + s)],
+            )
         }
         50 => {
             let p = gpos(g, sc);
@@ -1945,10 +2406,31 @@ fn gen_op(g: &mut Gen, sc: &Scenario, kinds: &[u32]) -> Op {
             let p = gpos(g, sc);
             op(51, &[p[0], p[1]])
         }
-        52 => op(52, &[*[12u32, 13, 14, 15, 16][g.below(5) as usize..].first().unwrap()]),
+        52 => op(
+            52,
+            &[*[12u32, 13, 14, 15, 16][g.below(5) as usize..]
+                .first()
+                .unwrap()],
+        ),
         53 => op(53, &[code(g)]),
-        54 => op(54, &[code(g), fb(gf(g, -5.0, 45.0)), fb(if chance(g, 50) { gf(g, 1.0, 50.0) } else { 0.0 }), g.below(2)]),
-        55 => op(55, &[code(g), fb(gf(g, -5.0, 45.0)), fb(gf(g, 0.05, 0.6)), fb(if chance(g, 50) { gf(g, 1.0, 50.0) } else { 0.0 })]),
+        54 => op(
+            54,
+            &[
+                code(g),
+                fb(gf(g, -5.0, 45.0)),
+                fb(if chance(g, 50) { gf(g, 1.0, 50.0) } else { 0.0 }),
+                g.below(2),
+            ],
+        ),
+        55 => op(
+            55,
+            &[
+                code(g),
+                fb(gf(g, -5.0, 45.0)),
+                fb(gf(g, 0.05, 0.6)),
+                fb(if chance(g, 50) { gf(g, 1.0, 50.0) } else { 0.0 }),
+            ],
+        ),
         56 => op(56, &[]),
         57 => op(57, &[]),
         58 => op(58, &[code(g)]),
@@ -1976,18 +2458,68 @@ fn gen_op(g: &mut Gen, sc: &Scenario, kinds: &[u32]) -> Op {
 fn bridge_story(g: &mut Gen, sc: &Scenario) -> Vec<Op> {
     let o0 = &sc.objs[0];
     let o1 = &sc.objs[1];
-    let set = |k: u32, body: u32, scaffold: u32, exists: bool, pos: [f32; 3], orient: f32, layer: u32| {
-        op(1, &[k, body, scaffold, u32::from(exists), fb(pos[0]), fb(pos[1]), fb(pos[2]), fb(orient), layer])
-    };
+    let set =
+        |k: u32, body: u32, scaffold: u32, exists: bool, pos: [f32; 3], orient: f32, layer: u32| {
+            op(
+                1,
+                &[
+                    k,
+                    body,
+                    scaffold,
+                    u32::from(exists),
+                    fb(pos[0]),
+                    fb(pos[1]),
+                    fb(pos[2]),
+                    fb(orient),
+                    layer,
+                ],
+            )
+        };
     let mut v = vec![
-        set(0, 0, o0.scaffold as u32, true, o0.pos, o0.orient, o0.layer as u32),
+        set(
+            0,
+            0,
+            o0.scaffold as u32,
+            true,
+            o0.pos,
+            o0.orient,
+            o0.layer as u32,
+        ),
         op(31, &[0]),
-        set(1, 0, 0, true, [o0.pos[0] + gf(g, -2.0, 2.0), o0.pos[1] + gf(g, -2.0, 2.0), o0.pos[2] + gf(g, -3.0, 3.0)], o1.orient, 2),
-        set(0, 3, o0.scaffold as u32, true, o0.pos, o0.orient, o0.layer as u32),
+        set(
+            1,
+            0,
+            0,
+            true,
+            [
+                o0.pos[0] + gf(g, -2.0, 2.0),
+                o0.pos[1] + gf(g, -2.0, 2.0),
+                o0.pos[2] + gf(g, -3.0, 3.0),
+            ],
+            o1.orient,
+            2,
+        ),
+        set(
+            0,
+            3,
+            o0.scaffold as u32,
+            true,
+            o0.pos,
+            o0.orient,
+            o0.layer as u32,
+        ),
         op(39, &[]),
         op(41, &[0]),
         op(32, &[]),
-        set(0, gi(g, 0, 2) as u32, g.below(3), true, o0.pos, o0.orient, o0.layer as u32),
+        set(
+            0,
+            gi(g, 0, 2) as u32,
+            g.below(3),
+            true,
+            o0.pos,
+            o0.orient,
+            o0.layer as u32,
+        ),
         op(39, &[]),
         op(41, &[0]),
         op(32, &[]),
@@ -2007,9 +2539,20 @@ fn bridge_story(g: &mut Gen, sc: &Scenario) -> Vec<Op> {
 /// only.
 fn water_story(g: &mut Gen, sc: &Scenario) -> Vec<Op> {
     let mut v = vec![op(59, &[1])];
-    let handles: Vec<u32> = (0..sc.trigs.len() as i32).map(|k| k as u32).chain(std::iter::once((-2i32) as u32)).collect();
+    let handles: Vec<u32> = (0..sc.trigs.len() as i32)
+        .map(|k| k as u32)
+        .chain(std::iter::once((-2i32) as u32))
+        .collect();
     for &h in handles.iter().take(4) {
-        v.push(op(55, &[h, fb(gf(g, 1.0, 60.0)), fb(gf(g, 0.04, 0.5)), fb(if chance(g, 50) { gf(g, 1.0, 40.0) } else { 0.0 })]));
+        v.push(op(
+            55,
+            &[
+                h,
+                fb(gf(g, 1.0, 60.0)),
+                fb(gf(g, 0.04, 0.5)),
+                fb(if chance(g, 50) { gf(g, 1.0, 40.0) } else { 0.0 }),
+            ],
+        ));
     }
     // one change that lands exactly on its target: 1.0 per frame for 30
     // frames from the polygon's own height, so `>=` and `>` part ways
@@ -2031,10 +2574,16 @@ fn water_story(g: &mut Gen, sc: &Scenario) -> Vec<Op> {
     // the grid for the second map, then the first again
     v.push(op(3, &[sc.settings[1].map as u32]));
     v.push(op(59, &[1]));
-    v.push(op(72, &[fb(sc.settings[1].f[3] + 5.0), fb(sc.settings[1].f[4] + 5.0)]));
+    v.push(op(
+        72,
+        &[fb(sc.settings[1].f[3] + 5.0), fb(sc.settings[1].f[4] + 5.0)],
+    ));
     v.push(op(3, &[sc.settings[0].map as u32]));
     v.push(op(59, &[1]));
-    v.push(op(72, &[fb(sc.settings[0].f[3] + 5.0), fb(sc.settings[0].f[4] + 5.0)]));
+    v.push(op(
+        72,
+        &[fb(sc.settings[0].f[3] + 5.0), fb(sc.settings[0].f[4] + 5.0)],
+    ));
     v
 }
 
@@ -2042,11 +2591,25 @@ fn water_story(g: &mut Gen, sc: &Scenario) -> Vec<Op> {
 /// the active boundary changing in between (the load calls `setActiveBoundary`
 /// itself).
 fn snapshot_story(g: &mut Gen, sc: &Scenario) -> Vec<Op> {
-    let water: Vec<u32> = sc.trigs.iter().enumerate().filter(|(_, t)| t.water).map(|(i, _)| i as u32).collect();
+    let water: Vec<u32> = sc
+        .trigs
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| t.water)
+        .map(|(i, _)| i as u32)
+        .collect();
     let mut v = Vec::new();
     for _ in 0..gi(g, 1, 3) {
         let h = water[g.below(water.len() as u32) as usize];
-        v.push(op(55, &[h, fb(gf(g, 1.0, 60.0)), fb(gf(g, 0.1, 0.9)), fb(gf(g, 0.0, 30.0))]));
+        v.push(op(
+            55,
+            &[
+                h,
+                fb(gf(g, 1.0, 60.0)),
+                fb(gf(g, 0.1, 0.9)),
+                fb(gf(g, 0.0, 30.0)),
+            ],
+        ));
     }
     v.push(op(63, &[]));
     for _ in 0..gi(g, 0, 4) {
@@ -2065,13 +2628,31 @@ fn snapshot_story(g: &mut Gen, sc: &Scenario) -> Vec<Op> {
 /// The program of a case: 3 to 24 operations drawn from `kinds`.
 fn gen_program(g: &mut Gen, sc: &Scenario, kinds: &[u32], prologue: &[u32]) -> Vec<Op> {
     let mut ops: Vec<Op> = prologue.iter().map(|&k| gen_op(g, sc, &[k])).collect();
-    if kinds.contains(&31) && kinds.contains(&39) && sc.objs.len() > 1 && ops.is_empty() && chance(g, 25) {
+    if kinds.contains(&31)
+        && kinds.contains(&39)
+        && sc.objs.len() > 1
+        && ops.is_empty()
+        && chance(g, 25)
+    {
         ops.extend(bridge_story(g, sc));
     }
-    if kinds.contains(&63) && kinds.contains(&64) && kinds.contains(&55) && prologue.is_empty() && sc.trigs.iter().any(|t| t.water) && chance(g, 40) {
+    if kinds.contains(&63)
+        && kinds.contains(&64)
+        && kinds.contains(&55)
+        && prologue.is_empty()
+        && sc.trigs.iter().any(|t| t.water)
+        && chance(g, 40)
+    {
         ops.extend(snapshot_story(g, sc));
     }
-    if kinds.contains(&55) && kinds.contains(&56) && kinds.contains(&59) && sc.trigs.len() >= 3 && sc.trigs.iter().all(|t| t.water) && prologue.contains(&59) && chance(g, 40) {
+    if kinds.contains(&55)
+        && kinds.contains(&56)
+        && kinds.contains(&59)
+        && sc.trigs.len() >= 3
+        && sc.trigs.iter().all(|t| t.water)
+        && prologue.contains(&59)
+        && chance(g, 40)
+    {
         ops.extend(water_story(g, sc));
     }
     let n = gi(g, 3, 24);
@@ -2083,16 +2664,24 @@ fn gen_program(g: &mut Gen, sc: &Scenario, kinds: &[u32], prologue: &[u32]) -> V
 
 // kinds that need the device subclass' extent (undefined in the base class)
 const BASE_KINDS: &[u32] = &[
-    0, 1, 10, 11, 12, 13, 17, 20, 21, 22, 23, 24, 25, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 41, 43, 44, 45, 46, 47, 48, 50, 51, 52, 53, 55, 57, 59, 66, 70, 72, 73,
+    0, 1, 10, 11, 12, 13, 17, 20, 21, 22, 23, 24, 25, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 41,
+    43, 44, 45, 46, 47, 48, 50, 51, 52, 53, 55, 57, 59, 66, 70, 72, 73,
 ];
 const WAYPOINT_KINDS: &[u32] = &[10, 11, 20, 21, 22, 23, 24, 25, 66, 20, 20];
-const BRIDGE_KINDS: &[u32] = &[0, 1, 30, 31, 31, 32, 33, 34, 35, 36, 37, 38, 39, 39, 41, 43, 44, 45, 46, 47, 48, 12, 13, 17];
-const WATER_KINDS: &[u32] = &[0, 1, 2, 11, 50, 51, 52, 53, 54, 55, 56, 56, 57, 58, 59, 72, 73, 66, 14, 12];
-const SHAPE_KINDS: &[u32] = &[12, 13, 14, 15, 16, 17, 61, 62, 70, 70, 61, 62, 12, 13, 30, 31];
+const BRIDGE_KINDS: &[u32] = &[
+    0, 1, 30, 31, 31, 32, 33, 34, 35, 36, 37, 38, 39, 39, 41, 43, 44, 45, 46, 47, 48, 12, 13, 17,
+];
+const WATER_KINDS: &[u32] = &[
+    0, 1, 2, 11, 50, 51, 52, 53, 54, 55, 56, 56, 57, 58, 59, 72, 73, 66, 14, 12,
+];
+const SHAPE_KINDS: &[u32] = &[
+    12, 13, 14, 15, 16, 17, 61, 62, 70, 70, 61, 62, 12, 13, 30, 31,
+];
 const SNAPSHOT_KINDS: &[u32] = &[0, 1, 55, 56, 60, 63, 64, 45, 46, 30, 31, 66, 57, 53, 14, 60];
 const ALL_KINDS: &[u32] = &[
-    0, 1, 2, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24, 25, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 41, 43, 44, 45, 46, 47, 48, 50, 51, 52, 53, 54, 55, 56, 57,
-    58, 59, 60, 61, 62, 63, 64, 66, 70, 72, 73,
+    0, 1, 2, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24, 25, 30, 31, 32, 33, 34, 35, 36,
+    37, 38, 39, 41, 43, 44, 45, 46, 47, 48, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+    64, 66, 70, 72, 73,
 ];
 
 #[derive(Default)]
@@ -2105,8 +2694,19 @@ struct Tally {
 }
 
 #[allow(clippy::too_many_arguments)] // test driver: one call per group, the arguments are the group's whole definition
-fn run_group(name: &str, seed: u64, cases: usize, w3d_share: u32, kinds_w3d: &[u32], kinds_base: &[u32], prologue: &[u32], must: &[(&str, u64)]) -> Tally {
-    let _guard = cpp::GLOBAL_RNG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+fn run_group(
+    name: &str,
+    seed: u64,
+    cases: usize,
+    w3d_share: u32,
+    kinds_w3d: &[u32],
+    kinds_base: &[u32],
+    prologue: &[u32],
+    must: &[(&str, u64)],
+) -> Tally {
+    let _guard = cpp::GLOBAL_RNG_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let mut g = Gen::new(seed);
     let mut checks = Checks::new(name);
     let mut tally = Tally::default();
@@ -2124,7 +2724,11 @@ fn run_group(name: &str, seed: u64, cases: usize, w3d_share: u32, kinds_w3d: &[u
             }
             Ok(r) => {
                 let c = run_cpp(&sc, &prog);
-                if std::env::var("TL_SHOW").ok().and_then(|v| v.parse::<usize>().ok()) == Some(case) {
+                if std::env::var("TL_SHOW")
+                    .ok()
+                    .and_then(|v| v.parse::<usize>().ok())
+                    == Some(case)
+                {
                     println!("SCENARIO {sc:#?}");
                     for (n, o) in prog.iter().enumerate() {
                         println!("op {n} {} {:?}", op_name(o.code), o.args);
@@ -2142,7 +2746,12 @@ fn run_group(name: &str, seed: u64, cases: usize, w3d_share: u32, kinds_w3d: &[u
         "CASES {name}: {} generated, {} compared ({} operations), {} dropped as undefined upstream: {:?}",
         tally.cases, tally.compared, tally.ops, tally.skipped.values().sum::<u64>(), tally.skipped
     );
-    assert!(tally.compared * 2 > tally.cases, "{name}: too few cases are defined upstream ({} of {})", tally.compared, tally.cases);
+    assert!(
+        tally.compared * 2 > tally.cases,
+        "{name}: too few cases are defined upstream ({} of {})",
+        tally.compared,
+        tally.cases
+    );
     checks.finish(must);
     tally
 }
@@ -2153,12 +2762,31 @@ fn run_group(name: &str, seed: u64, cases: usize, w3d_share: u32, kinds_w3d: &[u
 
 #[test]
 fn waypoints_and_the_waypoint_chunk() {
-    run_group("waypoints", 0x7701, CASES / 2, 50, WAYPOINT_KINDS, WAYPOINT_KINDS, &[10], &[("result waypoint links", 2000), ("result isPurposeOfPath true", 100), ("result loadMap true", 1000), ("visual 60 load", 500)]);
+    run_group(
+        "waypoints",
+        0x7701,
+        CASES / 2,
+        50,
+        WAYPOINT_KINDS,
+        WAYPOINT_KINDS,
+        &[10],
+        &[
+            ("result waypoint links", 2000),
+            ("result isPurposeOfPath true", 100),
+            ("result loadMap true", 1000),
+            ("visual 60 load", 500),
+        ],
+    );
 }
 
 #[test]
 fn bridges_and_their_objects() {
-    run_group("bridges", 0x7702, CASES, 70, BRIDGE_KINDS,
+    run_group(
+        "bridges",
+        0x7702,
+        CASES,
+        70,
+        BRIDGE_KINDS,
         BRIDGE_KINDS,
         &[],
         &[
@@ -2182,7 +2810,12 @@ fn bridges_and_their_objects() {
 
 #[test]
 fn water_areas_the_grid_and_changes_over_time() {
-    run_group("water", 0x7703, CASES, 100, WATER_KINDS,
+    run_group(
+        "water",
+        0x7703,
+        CASES,
+        100,
+        WATER_KINDS,
         BASE_KINDS,
         &[59],
         &[
@@ -2200,20 +2833,55 @@ fn water_areas_the_grid_and_changes_over_time() {
 
 #[test]
 fn ground_height_extents_flatten_and_crater() {
-    run_group("ground", 0x7704, CASES, 100, SHAPE_KINDS, BASE_KINDS, &[], &[("setRawMapHeight", 100_000)]);
+    run_group(
+        "ground",
+        0x7704,
+        CASES,
+        100,
+        SHAPE_KINDS,
+        BASE_KINDS,
+        &[],
+        &[("setRawMapHeight", 100_000)],
+    );
 }
 
 #[test]
 fn snapshots_boundaries_and_post_processing() {
-    run_group("snapshot", 0x7705, CASES / 2, 100, SNAPSHOT_KINDS, BASE_KINDS, &[], &[("processPendingUndoShroudRevealQueue", 300), ("xfer load ok", 250), ("water changes pending", 150), ("setWaterTransform(matrix)", 50), ("xfer saved a water change", 100)]);
+    run_group(
+        "snapshot",
+        0x7705,
+        CASES / 2,
+        100,
+        SNAPSHOT_KINDS,
+        BASE_KINDS,
+        &[],
+        &[
+            ("processPendingUndoShroudRevealQueue", 300),
+            ("xfer load ok", 250),
+            ("water changes pending", 150),
+            ("setWaterTransform(matrix)", 50),
+            ("xfer saved a water change", 100),
+        ],
+    );
 }
 
 #[test]
 fn everything_together() {
-    run_group("mixed", 0x7706, CASES * 2, 80, ALL_KINDS,
+    run_group(
+        "mixed",
+        0x7706,
+        CASES * 2,
+        80,
+        ALL_KINDS,
         BASE_KINDS,
         &[10, 11],
-        &[("attemptDamage", 30), ("processPendingUndoShroudRevealQueue", 150), ("xfer load ok", 100), ("getWaterGridHeight on the grid", 15), ("result waypoint links", 1000)],
+        &[
+            ("attemptDamage", 30),
+            ("processPendingUndoShroudRevealQueue", 150),
+            ("xfer load ok", 100),
+            ("getWaterGridHeight on the grid", 15),
+            ("result waypoint links", 1000),
+        ],
     );
 }
 
@@ -2224,7 +2892,13 @@ fn everything_together() {
 fn empty_scenario() -> Scenario {
     Scenario {
         w3d: true,
-        hm: Some(Hm { w: 12, h: 12, border: 0, bounds: vec![(12, 12)], data: vec![40; 144] }),
+        hm: Some(Hm {
+            w: 12,
+            h: 12,
+            border: 0,
+            bounds: vec![(12, 12)],
+            data: vec![40; 144],
+        }),
         render: true,
         bounds: vec![(12, 12), (6, 6)],
         active: 0,
@@ -2234,7 +2908,13 @@ fn empty_scenario() -> Scenario {
         max_z: 25.0,
         map_name: 25,
         settings: (0..4)
-            .map(|k| Setting { map: 25 + k, f: [0.0, 10.0, 0.5, 5.0, 5.0, 3.0], cells: (8, 8), size: 10.0, att: [0.0; 4] })
+            .map(|k| Setting {
+                map: 25 + k,
+                f: [0.0, 10.0, 0.5, 5.0, 5.0, 3.0],
+                cells: (8, 8),
+                size: 10.0,
+                att: [0.0; 4],
+            })
             .collect(),
         generic: true,
         road: true,
@@ -2245,7 +2925,12 @@ fn empty_scenario() -> Scenario {
         wall: [0.0; 4],
         frame: 0,
         objs: Vec::new(),
-        trigs: vec![Trig { name: 12, id: 3, water: true, pts: vec![[0, 0, 5], [100, 0, 5], [100, 100, 5], [0, 100, 5]] }],
+        trigs: vec![Trig {
+            name: 12,
+            id: 3,
+            water: true,
+            pts: vec![[0, 0, 5], [100, 0, 5], [100, 100, 5], [0, 100, 5]],
+        }],
         maps: Vec::new(),
         file_opens: false,
         file: Vec::new(),
@@ -2283,12 +2968,21 @@ fn undefined_inputs_are_errors() {
     assert_eq!(c.ts.undefined_inputs(), 1);
     let r = exec(&mut c, &op(14, &[1]));
     assert_eq!(r, Err(Skip::Undefined(U::ExtentNotImplemented)));
-    assert_eq!(c.ts.undefined_inputs(), 1, "extent() itself is a query, not a counted call");
+    assert_eq!(
+        c.ts.undefined_inputs(),
+        1,
+        "extent() itself is a query, not a counted call"
+    );
 
     // a bridge segment parallel to the plane of the deck (a vertical deck)
     let mut c = Ctx::new(&empty_scenario());
     let mut args = vec![0u32; 22];
-    let corners = [[0.0f32, 0.0, 0.0], [10.0, 0.0, 5.0], [20.0, 0.0, 0.0], [30.0, 0.0, 5.0]]; // all in the plane y = 0: a vertical deck
+    let corners = [
+        [0.0f32, 0.0, 0.0],
+        [10.0, 0.0, 5.0],
+        [20.0, 0.0, 0.0],
+        [30.0, 0.0, 5.0],
+    ]; // all in the plane y = 0: a vertical deck
     for (k, p) in corners.iter().enumerate() {
         for (i, v) in p.iter().enumerate() {
             args[7 + 3 * k + i] = fb(*v);
@@ -2311,10 +3005,19 @@ fn undefined_inputs_are_errors() {
     // a grid mesh that could not be allocated, with the grid on: the height is read unset;
     // and a NaN grid coordinate
     let mut c = Ctx::new(&empty_scenario());
-    c.ts.visual_mut().water_grid.set_resolution(100_000.0, 100_000.0, 10.0).unwrap();
-    assert_eq!(c.ts.visual_mut().water_grid.enable_water_grid(true), Err(U::WaterGridSize));
+    c.ts.visual_mut()
+        .water_grid
+        .set_resolution(100_000.0, 100_000.0, 10.0)
+        .unwrap();
+    assert_eq!(
+        c.ts.visual_mut().water_grid.enable_water_grid(true),
+        Err(U::WaterGridSize)
+    );
     seen.kinds.insert(U::WaterGridSize);
-    assert_eq!(c.ts.visual().water_grid.water_grid_height(5.0, 5.0), Ok(WaterGridSample::OnGridUnset));
+    assert_eq!(
+        c.ts.visual().water_grid.water_grid_height(5.0, 5.0),
+        Ok(WaterGridSample::OnGridUnset)
+    );
     let r = exec(&mut c, &op(50, &[fb(5.0), fb(5.0)]));
     expect(&mut seen, &c, U::WaterGridHeightUnset, r);
     let mut c = Ctx::new(&empty_scenario());
@@ -2326,13 +3029,18 @@ fn undefined_inputs_are_errors() {
     let mut c = Ctx::new(&empty_scenario());
     let mut m = rts_lockstep_engine::ww::matrix3d::Matrix3D::IDENTITY;
     m.row[0].z = 1.0;
-    c.ts.visual_mut().apply(&TerrainVisualEvent::SetWaterTransformMatrix { transform: m }).unwrap();
+    c.ts.visual_mut()
+        .apply(&TerrainVisualEvent::SetWaterTransformMatrix { transform: m })
+        .unwrap();
     let r = exec(&mut c, &op(58, &[(-2i32) as u32]));
     expect(&mut seen, &c, U::WaterGridCornerZ, r);
 
     // a handle to a trigger that is not there
     let mut c = Ctx::new(&empty_scenario());
-    assert_eq!(c.ts.water_height(Some(WaterHandle::Polygon(7))), Err(TerrainLogicError::Undefined(U::StaleWaterHandle)));
+    assert_eq!(
+        c.ts.water_height(Some(WaterHandle::Polygon(7))),
+        Err(TerrainLogicError::Undefined(U::StaleWaterHandle))
+    );
     assert_eq!(c.ts.undefined_inputs(), 1);
     seen.kinds.insert(U::StaleWaterHandle);
     seen.refusals += 1;
@@ -2352,25 +3060,57 @@ fn undefined_inputs_are_errors() {
 
     // an active boundary out of range
     let mut c = Ctx::new(&empty_scenario());
-    c.ts.set_boundaries(vec![(12, 12)].into_iter().map(|(x, y)| ICoord2D { x, y }).collect(), 5);
+    c.ts.set_boundaries(
+        vec![(12, 12)]
+            .into_iter()
+            .map(|(x, y)| ICoord2D { x, y })
+            .collect(),
+        5,
+    );
     let r = exec(&mut c, &op(14, &[0]));
     assert_eq!(r, Err(Skip::Undefined(U::ActiveBoundary)));
     seen.kinds.insert(U::ActiveBoundary);
 
     // a waypoint link index past the array, and a trigger with no points, a height map with no samples
     let mut sc = empty_scenario();
-    sc.maps = vec![MapObj { is_wp: true, loc: [1.0, 2.0, 0.0], id: 4, name: 1, labels: [-1; 3], bidir: 0 }];
+    sc.maps = vec![MapObj {
+        is_wp: true,
+        loc: [1.0, 2.0, 0.0],
+        id: 4,
+        name: 1,
+        labels: [-1; 3],
+        bidir: 0,
+    }];
     let mut c = Ctx::new(&sc);
     exec(&mut c, &op(10, &[32, 0])).unwrap();
     let w0 = c.ts.first_waypoint().unwrap();
-    assert_eq!(c.ts.waypoint_link(w0, 8), Err(TerrainLogicError::Undefined(U::WaypointLinkIndex)));
+    assert_eq!(
+        c.ts.waypoint_link(w0, 8),
+        Err(TerrainLogicError::Undefined(U::WaypointLinkIndex))
+    );
     assert_eq!(c.ts.undefined_inputs(), 1);
     assert_eq!(c.ts.waypoint_link(w0, -1), Ok(None));
-    assert_eq!(TriggerArea::new(ascii(12), 1, true, Vec::new()), Err(U::TriggerWithoutPoints));
-    assert_eq!(LogicHeightMap::new(0, 5, 0, Vec::new(), Vec::new()), Err(U::HeightMapShape));
-    assert_eq!(LogicHeightMap::new(2, 2, 0, Vec::new(), vec![0; 3]), Err(U::HeightMapShape));
-    assert!(LogicHeightMap::new(2, 2, 0, Vec::new(), vec![0; 5]).is_ok(), "longer data is fine (a version 1 map keeps its full data)");
-    seen.kinds.extend([U::WaypointLinkIndex, U::TriggerWithoutPoints, U::HeightMapShape]);
+    assert_eq!(
+        TriggerArea::new(ascii(12), 1, true, Vec::new()),
+        Err(U::TriggerWithoutPoints)
+    );
+    assert_eq!(
+        LogicHeightMap::new(0, 5, 0, Vec::new(), Vec::new()),
+        Err(U::HeightMapShape)
+    );
+    assert_eq!(
+        LogicHeightMap::new(2, 2, 0, Vec::new(), vec![0; 3]),
+        Err(U::HeightMapShape)
+    );
+    assert!(
+        LogicHeightMap::new(2, 2, 0, Vec::new(), vec![0; 5]).is_ok(),
+        "longer data is fine (a version 1 map keeps its full data)"
+    );
+    seen.kinds.extend([
+        U::WaypointLinkIndex,
+        U::TriggerWithoutPoints,
+        U::HeightMapShape,
+    ]);
 
     // the chunk reader's own undefined input, through loadMap: a count past the end of the file
     let mut sc = empty_scenario();
@@ -2384,8 +3124,17 @@ fn undefined_inputs_are_errors() {
     assert_eq!(r, Err(Skip::ChunkUndefined));
     assert_eq!(c.ts.undefined_inputs(), 1);
 
-    println!("UNDEFINED inputs checked as errors, each counted: {} kinds ({:?}), {} refusals", seen.kinds.len(), seen.kinds, seen.refusals);
-    assert_eq!(seen.kinds.len(), 14, "every kind of TerrainUndefined is exercised");
+    println!(
+        "UNDEFINED inputs checked as errors, each counted: {} kinds ({:?}), {} refusals",
+        seen.kinds.len(),
+        seen.kinds,
+        seen.refusals
+    );
+    assert_eq!(
+        seen.kinds.len(),
+        14,
+        "every kind of TerrainUndefined is exercised"
+    );
 }
 
 /// `HeightMapData` chunks through the Rust readers (`ParseHeightMapData`,
@@ -2396,7 +3145,15 @@ fn undefined_inputs_are_errors() {
 /// extent and height range.
 #[test]
 fn height_map_chunks_and_load_map_w3d() {
-    fn chunk(version: u16, width: i32, height: i32, border: Option<i32>, bounds: Option<&[(i32, i32)]>, size: i32, data: &[u8]) -> Vec<u8> {
+    fn chunk(
+        version: u16,
+        width: i32,
+        height: i32,
+        border: Option<i32>,
+        bounds: Option<&[(i32, i32)]>,
+        size: i32,
+        data: &[u8],
+    ) -> Vec<u8> {
         let mut d = Vec::new();
         d.extend_from_slice(&width.to_le_bytes());
         d.extend_from_slice(&height.to_le_bytes());
@@ -2415,44 +3172,94 @@ fn height_map_chunks_and_load_map_w3d() {
         chunk_file(&["HeightMapData"], &[(0, version, d)])
     }
     let data: Vec<u8> = (0..24u8).collect();
-    let load = |bytes: Vec<u8>, size_only: bool| LogicHeightMap::from_map_file(CachedFileInputStream::new(bytes).unwrap(), size_only);
+    let load = |bytes: Vec<u8>, size_only: bool| {
+        LogicHeightMap::from_map_file(CachedFileInputStream::new(bytes).unwrap(), size_only)
+    };
 
     // version 4: border, boundaries
-    let m = load(chunk(4, 6, 4, Some(1), Some(&[(4, 2), (3, 1)]), 24, &data), false).unwrap().unwrap();
+    let m = load(
+        chunk(4, 6, 4, Some(1), Some(&[(4, 2), (3, 1)]), 24, &data),
+        false,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!((m.x_extent(), m.y_extent(), m.border_size()), (6, 4, 1));
-    assert_eq!(m.all_boundaries(), &[ICoord2D { x: 4, y: 2 }, ICoord2D { x: 3, y: 1 }]);
+    assert_eq!(
+        m.all_boundaries(),
+        &[ICoord2D { x: 4, y: 2 }, ICoord2D { x: 3, y: 1 }]
+    );
     assert_eq!(m.data(), &data[..]);
     assert_eq!(m.height_at(2, 3), 20);
     // version 3: a border, and the boundary is the interior
-    let m = load(chunk(3, 6, 4, Some(1), None, 24, &data), true).unwrap().unwrap();
+    let m = load(chunk(3, 6, 4, Some(1), None, 24, &data), true)
+        .unwrap()
+        .unwrap();
     assert_eq!(m.all_boundaries(), &[ICoord2D { x: 4, y: 2 }]);
     // version 2: no border; the boundary is the whole map
-    let m = load(chunk(2, 6, 4, None, None, 24, &data), false).unwrap().unwrap();
-    assert_eq!((m.border_size(), m.all_boundaries()), (0, &[ICoord2D { x: 6, y: 4 }][..]));
+    let m = load(chunk(2, 6, 4, None, None, 24, &data), false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (m.border_size(), m.all_boundaries()),
+        (0, &[ICoord2D { x: 6, y: 4 }][..])
+    );
     // version 1: ParseSizeOnly halves the extents and compacts the data; ParseHeightMapData compacts the data and keeps the extents
-    let so = load(chunk(1, 6, 4, None, None, 24, &data), true).unwrap().unwrap();
+    let so = load(chunk(1, 6, 4, None, None, 24, &data), true)
+        .unwrap()
+        .unwrap();
     assert_eq!((so.x_extent(), so.y_extent()), (3, 2));
-    let full = load(chunk(1, 6, 4, None, None, 24, &data), false).unwrap().unwrap();
+    let full = load(chunk(1, 6, 4, None, None, 24, &data), false)
+        .unwrap()
+        .unwrap();
     assert_eq!((full.x_extent(), full.y_extent()), (6, 4));
     assert_eq!(&full.data()[..6], &[0, 2, 4, 12, 14, 16]);
     // a data size that is not width * height, or not positive: ERROR_CORRUPT_FILE_FORMAT, thrown
     for size in [23, 0, -4] {
-        assert!(matches!(load(chunk(4, 6, 4, Some(0), Some(&[(6, 4)]), size, &data), false), Err(rts_lockstep_engine::formats::data_chunk::ChunkError::Thrown(_))));
+        assert!(matches!(
+            load(chunk(4, 6, 4, Some(0), Some(&[(6, 4)]), size, &data), false),
+            Err(rts_lockstep_engine::formats::data_chunk::ChunkError::Thrown(_))
+        ));
     }
     // no HeightMapData chunk: no map
-    assert_eq!(load(chunk_file(&["Other"], &[(0, 1, vec![1])]), false).unwrap().map(|_| ()), None);
+    assert_eq!(
+        load(chunk_file(&["Other"], &[(0, 1, vec![1])]), false)
+            .unwrap()
+            .map(|_| ()),
+        None
+    );
 
     // W3DTerrainLogic::loadMap: extent fields, boundaries, height range
     let mut t = TerrainLogic::new(GroundSource::LogicHeightMap);
     let keys = make_keys();
     let name = AsciiString::try_from_bytes(b"level.map").unwrap();
     let bytes = chunk(4, 6, 4, Some(1), Some(&[(4, 2), (3, 1)]), 24, &data);
-    assert_eq!(t.load_map_w3d(&name, true, Some(&bytes), &[], &keys), Ok(true));
-    assert_eq!(t.boundaries(), &[ICoord2D { x: 4, y: 2 }, ICoord2D { x: 3, y: 1 }]);
+    assert_eq!(
+        t.load_map_w3d(&name, true, Some(&bytes), &[], &keys),
+        Ok(true)
+    );
+    assert_eq!(
+        t.boundaries(),
+        &[ICoord2D { x: 4, y: 2 }, ICoord2D { x: 3, y: 1 }]
+    );
     assert_eq!(t.active_boundary(), 0);
     let e = t.extent().unwrap();
-    assert_eq!((e.hi.x, e.hi.y, e.lo.z, e.hi.z), (40.0, 20.0, 0.0, 23.0 * 0.625));
-    assert_eq!(t.take_events(), Vec::<TerrainVisualEvent>::new(), "a query load tells the client nothing");
-    assert_eq!(t.load_map_w3d(&name, false, None, &[], &keys), Ok(false), "a file that does not open");
-    assert_eq!(t.load_map_w3d(&AsciiString::new(), false, Some(&bytes), &[], &keys), Ok(false), "an empty file name does not open");
+    assert_eq!(
+        (e.hi.x, e.hi.y, e.lo.z, e.hi.z),
+        (40.0, 20.0, 0.0, 23.0 * 0.625)
+    );
+    assert_eq!(
+        t.take_events(),
+        Vec::<TerrainVisualEvent>::new(),
+        "a query load tells the client nothing"
+    );
+    assert_eq!(
+        t.load_map_w3d(&name, false, None, &[], &keys),
+        Ok(false),
+        "a file that does not open"
+    );
+    assert_eq!(
+        t.load_map_w3d(&AsciiString::new(), false, Some(&bytes), &[], &keys),
+        Ok(false),
+        "an empty file name does not open"
+    );
 }

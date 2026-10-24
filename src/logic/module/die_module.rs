@@ -41,8 +41,12 @@
 
 use std::sync::Arc;
 
-use crate::common::game_common::{get_veterancy_level_flag, VeterancyLevelFlags, VETERANCY_LEVEL_FLAGS_ALL};
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
+use crate::common::game_common::{
+    get_veterancy_level_flag, VeterancyLevelFlags, VETERANCY_LEVEL_FLAGS_ALL,
+};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
+};
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_DIE};
 use crate::common::object_status_types::ObjectStatusMaskType;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
@@ -85,7 +89,12 @@ impl DieMuxData {
     /// `isDieApplicable(obj, damageInfo)`, with what it reads off them:
     /// `damageInfo->in.m_deathType`, `obj->getVeterancyLevel()` and
     /// `obj->getStatusBits()`.
-    pub fn is_die_applicable(&self, death_type: i32, veterancy_level: i32, status_bits: &ObjectStatusMaskType) -> bool {
+    pub fn is_die_applicable(
+        &self,
+        death_type: i32,
+        veterancy_level: i32,
+        status_bits: &ObjectStatusMaskType,
+    ) -> bool {
         // wrong death type? punt
         if !get_death_type_flag(self.death_types, death_type) {
             return false;
@@ -110,7 +119,11 @@ impl DieMuxData {
         d.death_types = ini.parse_death_type_flags()?;
         Ok(())
     }
-    fn parse_veterancy_levels(ini: &mut Ini<'_>, d: &mut DieMuxData, _: &UserData) -> IniResult<()> {
+    fn parse_veterancy_levels(
+        ini: &mut Ini<'_>,
+        d: &mut DieMuxData,
+        _: &UserData,
+    ) -> IniResult<()> {
         d.veterancy_levels = ini.parse_veterancy_level_flags()?;
         Ok(())
     }
@@ -126,9 +139,21 @@ impl DieMuxData {
 /// `ExemptStatus`, `RequiredStatus`.
 pub static DIE_MUX_DATA_FIELD_PARSE: [FieldParse<DieMuxData>; 5] = [
     FieldParse::new("DeathTypes", DieMuxData::parse_death_types, UserData::None),
-    FieldParse::new("VeterancyLevels", DieMuxData::parse_veterancy_levels, UserData::None),
-    FieldParse::new("ExemptStatus", DieMuxData::parse_exempt_status, UserData::None),
-    FieldParse::new("RequiredStatus", DieMuxData::parse_required_status, UserData::None),
+    FieldParse::new(
+        "VeterancyLevels",
+        DieMuxData::parse_veterancy_levels,
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ExemptStatus",
+        DieMuxData::parse_exempt_status,
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RequiredStatus",
+        DieMuxData::parse_required_status,
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
@@ -148,8 +173,14 @@ impl DieModuleData {
     }
 
     /// `isDieApplicable(obj, damageInfo)`: [`DieMuxData::is_die_applicable`].
-    pub fn is_die_applicable(&self, death_type: i32, veterancy_level: i32, status_bits: &ObjectStatusMaskType) -> bool {
-        self.die_mux_data.is_die_applicable(death_type, veterancy_level, status_bits)
+    pub fn is_die_applicable(
+        &self,
+        death_type: i32,
+        veterancy_level: i32,
+        status_bits: &ObjectStatusMaskType,
+    ) -> bool {
+        self.die_mux_data
+            .is_die_applicable(death_type, veterancy_level, status_bits)
     }
 
     /// `DieModuleData::buildFieldParse(p)`: the base's, then the four mux
@@ -171,10 +202,26 @@ impl DieModuleData {
 
 /// `DieMuxData::getFieldParse()` at `offsetof(DieModuleData, m_dieMuxData)`.
 pub static DIE_MODULE_DATA_FIELD_PARSE: [FieldParse<DieModuleData>; 5] = [
-    FieldParse::new("DeathTypes", |i, d, u| DieMuxData::parse_death_types(i, &mut d.die_mux_data, u), UserData::None),
-    FieldParse::new("VeterancyLevels", |i, d, u| DieMuxData::parse_veterancy_levels(i, &mut d.die_mux_data, u), UserData::None),
-    FieldParse::new("ExemptStatus", |i, d, u| DieMuxData::parse_exempt_status(i, &mut d.die_mux_data, u), UserData::None),
-    FieldParse::new("RequiredStatus", |i, d, u| DieMuxData::parse_required_status(i, &mut d.die_mux_data, u), UserData::None),
+    FieldParse::new(
+        "DeathTypes",
+        |i, d, u| DieMuxData::parse_death_types(i, &mut d.die_mux_data, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "VeterancyLevels",
+        |i, d, u| DieMuxData::parse_veterancy_levels(i, &mut d.die_mux_data, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ExemptStatus",
+        |i, d, u| DieMuxData::parse_exempt_status(i, &mut d.die_mux_data, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RequiredStatus",
+        |i, d, u| DieMuxData::parse_required_status(i, &mut d.die_mux_data, u),
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
@@ -212,8 +259,14 @@ impl DieModule {
 
     /// `isDieApplicable(damageInfo)` (protected): the data's check, with the
     /// object's veterancy and status (cut point: see the module docs).
-    pub fn is_die_applicable(&self, death_type: i32, veterancy_level: i32, status_bits: &ObjectStatusMaskType) -> bool {
-        self.data.is_die_applicable(death_type, veterancy_level, status_bits)
+    pub fn is_die_applicable(
+        &self,
+        death_type: i32,
+        veterancy_level: i32,
+        status_bits: &ObjectStatusMaskType,
+    ) -> bool {
+        self.data
+            .is_die_applicable(death_type, veterancy_level, status_bits)
     }
 }
 
@@ -240,8 +293,10 @@ mod tests {
     use super::*;
     use crate::common::game_common::VETERANCY_LEVEL_FLAGS_NONE;
     use crate::common::ini::{BlockParse, IniLoadType};
-    use crate::common::object_status_types::{OBJECT_STATUS_AFLAME, OBJECT_STATUS_CAN_ATTACK, OBJECT_STATUS_STEALTHED};
-    use crate::logic::damage::{DEATH_TYPE_FLAGS_NONE};
+    use crate::common::object_status_types::{
+        OBJECT_STATUS_AFLAME, OBJECT_STATUS_CAN_ATTACK, OBJECT_STATUS_STEALTHED,
+    };
+    use crate::logic::damage::DEATH_TYPE_FLAGS_NONE;
     use crate::logic::module::test_support::{load_bytes, save_bytes};
 
     const CRUSHED: i32 = 2;
@@ -258,18 +313,31 @@ mod tests {
         out.push(DieModuleData::friend_new_module_data(Some(ini)));
         Ok(())
     }
-    static BLOCKS: [BlockParse<Vec<IniResult<DieModuleData>>>; 1] = [BlockParse { token: "D", parse: block }];
+    static BLOCKS: [BlockParse<Vec<IniResult<DieModuleData>>>; 1] = [BlockParse {
+        token: "D",
+        parse: block,
+    }];
 
     fn data_of(text: &str) -> IniResult<DieModuleData> {
         let mut out = Vec::new();
-        let _ = Ini::load(b"d.ini", format!("D\n{text}\nEnd\n").as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut out);
+        let _ = Ini::load(
+            b"d.ini",
+            format!("D\n{text}\nEnd\n").as_bytes(),
+            IniLoadType::Overwrite,
+            None,
+            &BLOCKS,
+            &mut out,
+        );
         out.remove(0)
     }
 
     #[test]
     fn the_defaults_apply_to_every_death_and_level() {
         let d = DieMuxData::default();
-        assert_eq!((d.death_types, d.veterancy_levels), (DEATH_TYPE_FLAGS_ALL, VETERANCY_LEVEL_FLAGS_ALL));
+        assert_eq!(
+            (d.death_types, d.veterancy_levels),
+            (DEATH_TYPE_FLAGS_ALL, VETERANCY_LEVEL_FLAGS_ALL)
+        );
         assert!(!d.exempt_status.any() && !d.required_status.any());
         for dt in [CRUSHED, BURNED, EXPLODED, 20] {
             for lv in [VETERAN, ELITE, 3] {
@@ -282,25 +350,45 @@ mod tests {
     fn the_four_fields_are_read() {
         let d = data_of("DeathTypes = ALL -CRUSHED -BURNED\n VeterancyLevels = NONE +ELITE\n ExemptStatus = AFLAME STEALTHED\n RequiredStatus = CAN_ATTACK").unwrap();
         let m = d.die_mux_data;
-        assert!(!get_death_type_flag(m.death_types, CRUSHED) && !get_death_type_flag(m.death_types, BURNED));
+        assert!(
+            !get_death_type_flag(m.death_types, CRUSHED)
+                && !get_death_type_flag(m.death_types, BURNED)
+        );
         assert!(get_death_type_flag(m.death_types, EXPLODED));
-        assert!(get_veterancy_level_flag(m.veterancy_levels, ELITE) && !get_veterancy_level_flag(m.veterancy_levels, VETERAN));
-        assert_eq!(m.exempt_status, status(&[OBJECT_STATUS_AFLAME, OBJECT_STATUS_STEALTHED]));
+        assert!(
+            get_veterancy_level_flag(m.veterancy_levels, ELITE)
+                && !get_veterancy_level_flag(m.veterancy_levels, VETERAN)
+        );
+        assert_eq!(
+            m.exempt_status,
+            status(&[OBJECT_STATUS_AFLAME, OBJECT_STATUS_STEALTHED])
+        );
         assert_eq!(m.required_status, status(&[OBJECT_STATUS_CAN_ATTACK]));
         // a line with no value, a bad name, an unknown field
         assert!(data_of("DeathTypes =").is_err());
         assert!(data_of("DeathTypes = +BOGUS").is_err());
         assert!(data_of("ExemptStatus = BOGUS").is_err());
-        assert_eq!(data_of("Nope = 1").unwrap_err().kind, crate::common::ini::IniErrorKind::UnknownToken);
-        let none = data_of("DeathTypes = NONE\n VeterancyLevels = NONE").unwrap().die_mux_data;
-        assert_eq!((none.death_types, none.veterancy_levels), (DEATH_TYPE_FLAGS_NONE, VETERANCY_LEVEL_FLAGS_NONE));
+        assert_eq!(
+            data_of("Nope = 1").unwrap_err().kind,
+            crate::common::ini::IniErrorKind::UnknownToken
+        );
+        let none = data_of("DeathTypes = NONE\n VeterancyLevels = NONE")
+            .unwrap()
+            .die_mux_data;
+        assert_eq!(
+            (none.death_types, none.veterancy_levels),
+            (DEATH_TYPE_FLAGS_NONE, VETERANCY_LEVEL_FLAGS_NONE)
+        );
     }
 
     #[test]
     fn is_die_applicable_checks_death_level_exempt_and_required_in_that_order() {
         let d = DieMuxData {
             death_types: get_set(&[BURNED, EXPLODED]),
-            veterancy_levels: crate::common::game_common::set_veterancy_level_flag(VETERANCY_LEVEL_FLAGS_NONE, ELITE),
+            veterancy_levels: crate::common::game_common::set_veterancy_level_flag(
+                VETERANCY_LEVEL_FLAGS_NONE,
+                ELITE,
+            ),
             exempt_status: status(&[OBJECT_STATUS_AFLAME]),
             required_status: status(&[OBJECT_STATUS_CAN_ATTACK, OBJECT_STATUS_STEALTHED]),
         };
@@ -308,23 +396,49 @@ mod tests {
         assert!(d.is_die_applicable(BURNED, ELITE, &ok));
         assert!(!d.is_die_applicable(CRUSHED, ELITE, &ok), "death type");
         assert!(!d.is_die_applicable(BURNED, VETERAN, &ok), "veterancy");
-        assert!(!d.is_die_applicable(BURNED, ELITE, &status(&[OBJECT_STATUS_CAN_ATTACK, OBJECT_STATUS_STEALTHED, OBJECT_STATUS_AFLAME])), "exempt");
-        assert!(!d.is_die_applicable(BURNED, ELITE, &status(&[OBJECT_STATUS_CAN_ATTACK])), "one required bit missing");
-        assert!(!d.is_die_applicable(BURNED, ELITE, &status(&[])), "all required bits missing");
+        assert!(
+            !d.is_die_applicable(
+                BURNED,
+                ELITE,
+                &status(&[
+                    OBJECT_STATUS_CAN_ATTACK,
+                    OBJECT_STATUS_STEALTHED,
+                    OBJECT_STATUS_AFLAME
+                ])
+            ),
+            "exempt"
+        );
+        assert!(
+            !d.is_die_applicable(BURNED, ELITE, &status(&[OBJECT_STATUS_CAN_ATTACK])),
+            "one required bit missing"
+        );
+        assert!(
+            !d.is_die_applicable(BURNED, ELITE, &status(&[])),
+            "all required bits missing"
+        );
         // an empty exempt/required mask is not consulted
-        let free = DieMuxData { exempt_status: status(&[]), required_status: status(&[]), ..d };
+        let free = DieMuxData {
+            exempt_status: status(&[]),
+            required_status: status(&[]),
+            ..d
+        };
         assert!(free.is_die_applicable(BURNED, ELITE, &status(&[OBJECT_STATUS_AFLAME])));
     }
 
     fn get_set(types: &[i32]) -> DeathTypeFlags {
-        types.iter().fold(DEATH_TYPE_FLAGS_NONE, |f, t| crate::logic::damage::set_death_type_flag(f, *t))
+        types.iter().fold(DEATH_TYPE_FLAGS_NONE, |f, t| {
+            crate::logic::damage::set_death_type_flag(f, *t)
+        })
     }
 
     #[test]
     fn the_module_forwards_to_its_data_and_xfers_only_versions() {
         let data = Arc::new(data_of("DeathTypes = NONE +EXPLODED").unwrap());
         let mut m = DieModule::new(4, Some(data)).unwrap();
-        assert!(m.is_die_applicable(EXPLODED, 1, &status(&[])) && !m.is_die_applicable(BURNED, 1, &status(&[])));
+        assert!(
+            m.is_die_applicable(EXPLODED, 1, &status(&[]))
+                && !m.is_die_applicable(BURNED, 1, &status(&[]))
+        );
         assert_eq!(DieModule::get_interface_mask(), 2);
         assert_eq!(save_bytes(&mut m).unwrap(), [1, 1, 1, 1]);
         load_bytes(&mut m, vec![1, 1, 1, 1]).unwrap();

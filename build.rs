@@ -53,10 +53,21 @@ mod differential {
     /// The text of Object.cpp and its neighbours for differential/wrap_object.cpp (see the block in `build`).
     /// Latin-1 sources are read lossily: only comments carry non-ASCII bytes.
     fn generate_object_includes(engine: &Path, out: &Path) {
-        let rd = |rel: &str| -> String { String::from_utf8_lossy(&std::fs::read(engine.join(rel)).unwrap_or_else(|e| panic!("read {rel}: {e}"))).into_owned() };
-        let wr = |name: &str, text: String| std::fs::write(out.join(name), text).unwrap_or_else(|e| panic!("write {name}: {e}"));
+        let rd = |rel: &str| -> String {
+            String::from_utf8_lossy(
+                &std::fs::read(engine.join(rel)).unwrap_or_else(|e| panic!("read {rel}: {e}")),
+            )
+            .into_owned()
+        };
+        let wr = |name: &str, text: String| {
+            std::fs::write(out.join(name), text).unwrap_or_else(|e| panic!("write {name}: {e}"))
+        };
         fn once(text: &str, marker: &str) -> usize {
-            assert_eq!(text.matches(marker).count(), 1, "{marker:?} must occur exactly once");
+            assert_eq!(
+                text.matches(marker).count(),
+                1,
+                "{marker:?} must occur exactly once"
+            );
             text.find(marker).expect("marker")
         }
         fn cut(text: &str, start: &str, end: &str) -> String {
@@ -67,12 +78,18 @@ mod differential {
         }
         fn class_text(text: &str, start: &str, end: &str) -> String {
             let a = once(text, start);
-            let b = text[a..].find(end).unwrap_or_else(|| panic!("end of {start:?}")) + a;
+            let b = text[a..]
+                .find(end)
+                .unwrap_or_else(|| panic!("end of {start:?}"))
+                + a;
             format!("{}\n", &text[a..b + end.len()])
         }
         fn function_text(text: &str, sig: &str) -> String {
             let a = once(text, sig);
-            let b = text[a..].find("\n}").unwrap_or_else(|| panic!("end of {sig:?}")) + a;
+            let b = text[a..]
+                .find("\n}")
+                .unwrap_or_else(|| panic!("end of {sig:?}"))
+                + a;
             format!("{}\n", &text[a..b + 2])
         }
         let dashes = "//-------------------------------------------------------------------------------------------------\n";
@@ -83,25 +100,56 @@ mod differential {
         let endmark = "#include \"Common/DynamicAudioEventInfo.h\"\n";
         let b = once(&src, endmark) + endmark.len();
         src = format!("{}{}", &src[..a], &src[b..]);
-        src = cut(&src, "static const ModelConditionFlags s_allWeaponFireFlags[WEAPONSLOT_COUNT] =", &format!("{dashes}extern void addIcon"));
+        src = cut(
+            &src,
+            "static const ModelConditionFlags s_allWeaponFireFlags[WEAPONSLOT_COUNT] =",
+            &format!("{dashes}extern void addIcon"),
+        );
         src = cut(
             &src,
             "extern void addIcon(const Coord3D *pos, Real width, Int numFramesDuration, RGBColor color);",
             &format!("{dashes}{dashes}#ifdef DEBUG_LOGGING"),
         );
-        src = cut(&src, "void Object::reloadAllAmmo(Bool now)", "void Object::setModelConditionState( ModelConditionFlagType a )");
-        src = cut(&src, "\nWeapon* Object::getCurrentWeapon(WeaponSlotType* wslot)\n{", "Relationship Object::getRelationship(const Object *that) const");
-        src = cut(&src, "void Object::adjustModelConditionForWeaponStatus()", "void Object::onPartitionCellChange()");
-        src = cut(&src, "void Object::updateObjValuesFromMapProperties(Dict* properties)", "void Object::friend_adjustPowerForPlayer( Bool incoming )");
+        src = cut(
+            &src,
+            "void Object::reloadAllAmmo(Bool now)",
+            "void Object::setModelConditionState( ModelConditionFlagType a )",
+        );
+        src = cut(
+            &src,
+            "\nWeapon* Object::getCurrentWeapon(WeaponSlotType* wslot)\n{",
+            "Relationship Object::getRelationship(const Object *that) const",
+        );
+        src = cut(
+            &src,
+            "void Object::adjustModelConditionForWeaponStatus()",
+            "void Object::onPartitionCellChange()",
+        );
+        src = cut(
+            &src,
+            "void Object::updateObjValuesFromMapProperties(Dict* properties)",
+            "void Object::friend_adjustPowerForPlayer( Bool incoming )",
+        );
         src = cut(
             &src,
             "void Object::doCommandButton( const CommandButton *commandButton, CommandSourceType cmdSource )",
             "ProductionUpdateInterface* Object::getProductionUpdateInterface( void )",
         );
-        src = cut(&src, "Int Object::getNumConsecutiveShotsFiredAtTarget( const Object *victim ) const", "const AsciiString& Object::getCommandSetString() const");
-        src = cut(&src, "Bool Object::canProduceUpgrade( const UpgradeTemplate *upgrade )", "void Object::defect( Team* newTeam, UnsignedInt detectionTime )");
+        src = cut(
+            &src,
+            "Int Object::getNumConsecutiveShotsFiredAtTarget( const Object *victim ) const",
+            "const AsciiString& Object::getCommandSetString() const",
+        );
+        src = cut(
+            &src,
+            "Bool Object::canProduceUpgrade( const UpgradeTemplate *upgrade )",
+            "void Object::defect( Team* newTeam, UnsignedInt detectionTime )",
+        );
         once(&src, "TheInGameUI->addWorldAnimation( animTemplate,");
-        src = src.replace("TheInGameUI->addWorldAnimation( animTemplate,", "TheInGameUI->addWorldAnimation( this, animTemplate,");
+        src = src.replace(
+            "TheInGameUI->addWorldAnimation( animTemplate,",
+            "TheInGameUI->addWorldAnimation( this, animTemplate,",
+        );
         wr("object_cpp.inc", format!("/* generated: Object.cpp, includes and untranslated regions removed (build.rs) */\n{src}"));
 
         // the class body of Object.h
@@ -109,7 +157,13 @@ mod differential {
         let a = once(&hdr, "class Object : public Thing, public Snapshot");
         let endm = "};  // end class Object";
         let b = once(&hdr, endm) + endm.len();
-        wr("object_class.inc", format!("/* generated: class Object from Object.h */\n{}\n", &hdr[a..b]));
+        wr(
+            "object_class.inc",
+            format!(
+                "/* generated: class Object from Object.h */\n{}\n",
+                &hdr[a..b]
+            ),
+        );
 
         // Geometry
         let geo_h = rd("Include/Common/Geometry.h");
@@ -133,31 +187,72 @@ mod differential {
         ];
         wr(
             "geometry_cpp.inc",
-            format!("/* generated: the GeometryInfo functions Object reaches, from Geometry.cpp */\n{}", geo_sigs.iter().map(|s| function_text(&geo_c, s)).collect::<String>()),
+            format!(
+                "/* generated: the GeometryInfo functions Object reaches, from Geometry.cpp */\n{}",
+                geo_sigs
+                    .iter()
+                    .map(|s| function_text(&geo_c, s))
+                    .collect::<String>()
+            ),
         );
 
         // Thing
         let th_h = rd("Include/Common/Thing.h");
         let th_c = rd("Source/Common/Thing/Thing.cpp");
-        wr("thing_class.inc", format!("/* generated: class Thing from Thing.h */\n{}", class_text(&th_h, "class Thing : public MemoryPoolObject", "\n}; \n")));
+        wr(
+            "thing_class.inc",
+            format!(
+                "/* generated: class Thing from Thing.h */\n{}",
+                class_text(&th_h, "class Thing : public MemoryPoolObject", "\n}; \n")
+            ),
+        );
         let a = once(&th_c, "//=============================================================================\n/** Constructor */");
-        wr("thing_cpp.inc", format!("/* generated: Thing.cpp without its includes */\n{}", &th_c[a..]));
+        wr(
+            "thing_cpp.inc",
+            format!(
+                "/* generated: Thing.cpp without its includes */\n{}",
+                &th_c[a..]
+            ),
+        );
 
         // ExperienceTracker
         let ex_h = rd("Include/GameLogic/ExperienceTracker.h");
         let ex_c = rd("Source/GameLogic/Object/ExperienceTracker.cpp");
         wr(
             "experience_class.inc",
-            format!("/* generated: class ExperienceTracker from ExperienceTracker.h */\n{}", class_text(&ex_h, "class ExperienceTracker : public MemoryPoolObject, public Snapshot", "\n};")),
+            format!(
+                "/* generated: class ExperienceTracker from ExperienceTracker.h */\n{}",
+                class_text(
+                    &ex_h,
+                    "class ExperienceTracker : public MemoryPoolObject, public Snapshot",
+                    "\n};"
+                )
+            ),
         );
-        let a = once(&ex_c, &format!("{dashes}ExperienceTracker::ExperienceTracker(Object *parent)"));
-        wr("experience_cpp.inc", format!("/* generated: ExperienceTracker.cpp without its includes */\n{}", &ex_c[a..]));
+        let a = once(
+            &ex_c,
+            &format!("{dashes}ExperienceTracker::ExperienceTracker(Object *parent)"),
+        );
+        wr(
+            "experience_cpp.inc",
+            format!(
+                "/* generated: ExperienceTracker.cpp without its includes */\n{}",
+                &ex_c[a..]
+            ),
+        );
 
         // Coord3D, ICoord3D, Region3D
-        let bt = String::from_utf8_lossy(&std::fs::read(engine.join("../Libraries/Include/Lib/BaseType.h")).expect("read BaseType.h")).into_owned();
+        let bt = String::from_utf8_lossy(
+            &std::fs::read(engine.join("../Libraries/Include/Lib/BaseType.h"))
+                .expect("read BaseType.h"),
+        )
+        .into_owned();
         let struct_text = |first: &str| -> String {
             let a = once(&bt, first);
-            let b = bt[a..].find("\n};\n").unwrap_or_else(|| panic!("end of {first:?}")) + a;
+            let b = bt[a..]
+                .find("\n};\n")
+                .unwrap_or_else(|| panic!("end of {first:?}"))
+                + a;
             bt[a..b + 4].to_string()
         };
         wr(
@@ -190,7 +285,10 @@ mod differential {
             ("Common/GameType.h", "WeaponSlotType"),
             ("Common/GameType.h", "PathfindLayerEnum"),
             ("GameClient/Drawable.h", "TintStatus"),
-            ("GameLogic/ObjectScriptStatusBits.h", "ObjectScriptStatusBit"),
+            (
+                "GameLogic/ObjectScriptStatusBits.h",
+                "ObjectScriptStatusBit",
+            ),
             ("GameLogic/Object.h", "CrushSquishTestType"),
             ("GameClient/Eva.h", "EvaMessage"),
             ("Common/Radar.h", "RadarEventType"),
@@ -216,8 +314,14 @@ mod differential {
                 }
             }
             assert_eq!(hits.len(), 1, "enum {name} in {path} must be defined once");
-            let end = t[hits[0]..].find("};").unwrap_or_else(|| panic!("end of enum {name}")) + hits[0];
-            all.push_str(&format!("/* {path}: {name} */\n{}}};\n\n", &t[hits[0]..end]));
+            let end = t[hits[0]..]
+                .find("};")
+                .unwrap_or_else(|| panic!("end of enum {name}"))
+                + hits[0];
+            all.push_str(&format!(
+                "/* {path}: {name} */\n{}}};\n\n",
+                &t[hits[0]..end]
+            ));
         }
         wr("enums.inc", all);
 
@@ -225,9 +329,18 @@ mod differential {
         let ws_h = rd("Include/GameLogic/WeaponSet.h");
         let a = once(&ws_h, "static const ModelConditionFlagType TheWeaponSetTypeToModelConditionTypeMap[WEAPONSET_COUNT] =");
         let b = ws_h[a..].find("\n};").expect("end of the map") + a;
-        wr("weaponset_map.inc", format!("/* generated: from WeaponSet.h */\n{}\n", &ws_h[a..b + 3]));
+        wr(
+            "weaponset_map.inc",
+            format!("/* generated: from WeaponSet.h */\n{}\n", &ws_h[a..b + 3]),
+        );
         let ko_c = rd("Source/Common/System/KindOf.cpp");
-        wr("kindof_masks.inc", format!("/* generated: from KindOf.cpp */\n{}", function_text(&ko_c, "void initKindOfMasks()")));
+        wr(
+            "kindof_masks.inc",
+            format!(
+                "/* generated: from KindOf.cpp */\n{}",
+                function_text(&ko_c, "void initKindOfMasks()")
+            ),
+        );
     }
     // --- end p1w6-object ---
 
@@ -242,7 +355,9 @@ mod differential {
         }
         let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
         if target_arch != "x86_64" {
-            panic!("feature `differential` is supported on x86_64 hosts only (found {target_arch})");
+            panic!(
+                "feature `differential` is supported on x86_64 hosts only (found {target_arch})"
+            );
         }
         let shim = root.join("differential/shim");
         let dif = root.join("differential");
@@ -279,8 +394,14 @@ mod differential {
             let mut text = std::fs::read(src).expect("read upstream source");
             for (from, to, count) in edits {
                 let f = from.as_bytes();
-                let hits: Vec<usize> = (0..text.len().saturating_sub(f.len() - 1)).filter(|&i| &text[i..i + f.len()] == f).collect();
-                assert_eq!(hits.len(), *count, "{name} patch site {from:?} must occur {count} time(s)");
+                let hits: Vec<usize> = (0..text.len().saturating_sub(f.len() - 1))
+                    .filter(|&i| &text[i..i + f.len()] == f)
+                    .collect();
+                assert_eq!(
+                    hits.len(),
+                    *count,
+                    "{name} patch site {from:?} must occur {count} time(s)"
+                );
                 for &h in hits.iter().rev() {
                     text.splice(h..h + f.len(), to.bytes());
                 }
@@ -309,11 +430,21 @@ mod differential {
         std::fs::create_dir_all(&gen).expect("create w3d_gen");
         for d in ["WWLib", "WWMath", "WW3D2"] {
             for e in std::fs::read_dir(ww.join(d)).expect("read upstream dir") {
-                let name = e.expect("dir entry").file_name().into_string().expect("UTF-8 name");
+                let name = e
+                    .expect("dir entry")
+                    .file_name()
+                    .into_string()
+                    .expect("UTF-8 name");
                 let lower = name.to_lowercase();
-                if lower != name && !shim_w3d.join(&lower).exists() && !ww.join(d).join(&lower).exists() {
-                    std::fs::write(gen.join(&lower), format!("/* generated by build.rs: {d}/{name} */\n#include \"{name}\"\n"))
-                        .expect("write forwarder");
+                if lower != name
+                    && !shim_w3d.join(&lower).exists()
+                    && !ww.join(d).join(&lower).exists()
+                {
+                    std::fs::write(
+                        gen.join(&lower),
+                        format!("/* generated by build.rs: {d}/{name} */\n#include \"{name}\"\n"),
+                    )
+                    .expect("write forwarder");
                 }
             }
         }
@@ -321,18 +452,40 @@ mod differential {
             &ww.join("WWLib/Vector.H"),
             "Vector.H",
             &[
-                ("if (Length() < ActiveCount) ActiveCount = Length();", "if (this->Length() < ActiveCount) ActiveCount = this->Length();", 1),
-                ("if (ActiveCount >= Length()) {", "if (ActiveCount >= this->Length()) {", 4),
-                ("if ((IsAllocated || !VectorMax) && GrowthStep > 0) {", "if ((this->IsAllocated || !this->VectorMax) && GrowthStep > 0) {", 4),
-                ("if (!Resize(Length() + GrowthStep)) {", "if (!this->Resize(this->Length() + GrowthStep)) {", 4),
+                (
+                    "if (Length() < ActiveCount) ActiveCount = Length();",
+                    "if (this->Length() < ActiveCount) ActiveCount = this->Length();",
+                    1,
+                ),
+                (
+                    "if (ActiveCount >= Length()) {",
+                    "if (ActiveCount >= this->Length()) {",
+                    4,
+                ),
+                (
+                    "if ((IsAllocated || !VectorMax) && GrowthStep > 0) {",
+                    "if ((this->IsAllocated || !this->VectorMax) && GrowthStep > 0) {",
+                    4,
+                ),
+                (
+                    "if (!Resize(Length() + GrowthStep)) {",
+                    "if (!this->Resize(this->Length() + GrowthStep)) {",
+                    4,
+                ),
                 ("int len = VectorMax;", "int len = this->VectorMax;", 1),
             ],
         );
         std::fs::write(gen.join("vector_this.h"), vector).expect("write vector_this.h");
         let meshmdlio_text = std::fs::read(w3d.join("meshmdlio.cpp")).expect("read meshmdlio.cpp");
         let ctx_start = b"class MeshLoadContextClass : public W3DMPO";
-        let a = (0..meshmdlio_text.len()).find(|&i| meshmdlio_text[i..].starts_with(ctx_start)).expect("MeshLoadContextClass");
-        let b = a + (0..meshmdlio_text.len() - a).find(|&i| meshmdlio_text[a + i..].starts_with(b"\n};")).expect("end of class") + 3;
+        let a = (0..meshmdlio_text.len())
+            .find(|&i| meshmdlio_text[i..].starts_with(ctx_start))
+            .expect("MeshLoadContextClass");
+        let b = a
+            + (0..meshmdlio_text.len() - a)
+                .find(|&i| meshmdlio_text[a + i..].starts_with(b"\n};"))
+                .expect("end of class")
+            + 3;
         let mut ctx_h = b"/* generated by build.rs: MeshLoadContextClass, verbatim from WW3D2/meshmdlio.cpp */\n".to_vec();
         ctx_h.extend_from_slice(&meshmdlio_text[a..b]);
         ctx_h.push(b'\n');
@@ -344,8 +497,16 @@ mod differential {
                 &w3d.join("motchan.cpp"),
                 "motchan.cpp",
                 &[
-                    ("\tfor (int i=0;i<count;i++) {", "\tint i; for (i=0;i<count;i++) {", 1),
-                    ("CompressedData[i]=unsigned short(ivalue);", "CompressedData[i]=(unsigned short)(ivalue);", 1),
+                    (
+                        "\tfor (int i=0;i<count;i++) {",
+                        "\tint i; for (i=0;i<count;i++) {",
+                        1,
+                    ),
+                    (
+                        "CompressedData[i]=unsigned short(ivalue);",
+                        "CompressedData[i]=(unsigned short)(ivalue);",
+                        1,
+                    ),
                 ],
             ),
         );
@@ -384,9 +545,21 @@ mod differential {
                 &w3d.join("meshmdlio.cpp"),
                 "meshmdlio.cpp",
                 &[
-                    ("\tfor (int si=0; si<Shaders.Count(); si++) {", "\tint si; for (si=0; si<Shaders.Count(); si++) {", 1),
-                    ("\t\tfor (int vi=0; vi<VertexMaterialCrcs.Count(); vi++) {", "\t\tint vi; for (vi=0; vi<VertexMaterialCrcs.Count(); vi++) {", 1),
-                    ("\t\tfor (int ti=0; ti<Textures.Count(); ti++) {", "\t\tint ti; for (ti=0; ti<Textures.Count(); ti++) {", 1),
+                    (
+                        "\tfor (int si=0; si<Shaders.Count(); si++) {",
+                        "\tint si; for (si=0; si<Shaders.Count(); si++) {",
+                        1,
+                    ),
+                    (
+                        "\t\tfor (int vi=0; vi<VertexMaterialCrcs.Count(); vi++) {",
+                        "\t\tint vi; for (vi=0; vi<VertexMaterialCrcs.Count(); vi++) {",
+                        1,
+                    ),
+                    (
+                        "\t\tfor (int ti=0; ti<Textures.Count(); ti++) {",
+                        "\t\tint ti; for (ti=0; ti<Textures.Count(); ti++) {",
+                        1,
+                    ),
                 ],
             ),
         );
@@ -423,16 +596,28 @@ mod differential {
                 &w3d.join("ddsfile.cpp"),
                 "ddsfile.cpp",
                 &[
-                    ("\tfor (unsigned level=0;level<ReductionFactor;++level) ", "\tunsigned level; for (level=0;level<ReductionFactor;++level) ", 1),
+                    (
+                        "\tfor (unsigned level=0;level<ReductionFactor;++level) ",
+                        "\tunsigned level; for (level=0;level<ReductionFactor;++level) ",
+                        1,
+                    ),
                     ("unsigned short(cols>>16)", "(unsigned short)(cols>>16)", 9),
-                    ("unsigned short(cols&0xffff)", "(unsigned short)(cols&0xffff)", 9),
+                    (
+                        "unsigned short(cols&0xffff)",
+                        "(unsigned short)(cols&0xffff)",
+                        9,
+                    ),
                 ],
             ),
         );
         let ddsfile_h = patch_copy(
             &w3d.join("ddsfile.h"),
             "ddsfile.h",
-            &[("\tvoid* Surface;", "\tunsigned Surface; /* void* on Win32 (differential tests: see build.rs) */", 1)],
+            &[(
+                "\tvoid* Surface;",
+                "\tunsigned Surface; /* void* on Win32 (differential tests: see build.rs) */",
+                1,
+            )],
         );
         std::fs::write(gen.join("ddsfile.h"), ddsfile_h).expect("write ddsfile.h");
         let formconv = write(
@@ -440,7 +625,11 @@ mod differential {
             &patch_copy(
                 &w3d.join("formconv.cpp"),
                 "formconv.cpp",
-                &[("\tfor (int i=0;i<HIGHEST_SUPPORTED_D3DFORMAT;++i) {", "\tint i; for (i=0;i<HIGHEST_SUPPORTED_D3DFORMAT;++i) {", 1)],
+                &[(
+                    "\tfor (int i=0;i<HIGHEST_SUPPORTED_D3DFORMAT;++i) {",
+                    "\tint i; for (i=0;i<HIGHEST_SUPPORTED_D3DFORMAT;++i) {",
+                    1,
+                )],
             ),
         );
         // TARGA.CPP: `long` is 32 bits on Win32 (its structs and size
@@ -504,7 +693,12 @@ mod differential {
                 .flag("-include")
                 .flag(shim_w3d.join("w3d_prelude.h").to_str().expect("UTF-8 path"));
             if mesh {
-                cfg.flag("-include").flag(shim_w3d.join("mesh_prelude.h").to_str().expect("UTF-8 path"));
+                cfg.flag("-include").flag(
+                    shim_w3d
+                        .join("mesh_prelude.h")
+                        .to_str()
+                        .expect("UTF-8 path"),
+                );
             }
         };
         // The mesh loader (see differential/wrap_w3d_mesh.cpp) and the texture
@@ -543,12 +737,21 @@ mod differential {
         // once. g++ cannot compile the rest of the header (MSVC __int64,
         // __forceinline, __asm). Compiled before upstream_gameengine, whose
         // Trig.cpp supplies the ACos that Coord2D::toAngle calls.
-        let basetype = std::fs::read_to_string(up.join("Libraries/Include/Lib/BaseType.h")).expect("read BaseType.h");
+        let basetype = std::fs::read_to_string(up.join("Libraries/Include/Lib/BaseType.h"))
+            .expect("read BaseType.h");
         let segment = |first: &str, last: &str| -> String {
-            assert_eq!(basetype.matches(first).count(), 1, "BaseType.h segment start {first:?} must occur once");
+            assert_eq!(
+                basetype.matches(first).count(),
+                1,
+                "BaseType.h segment start {first:?} must occur once"
+            );
             let a = basetype.find(first).expect("segment start");
             let rel = basetype[a..].find(last).expect("segment end");
-            assert_eq!(basetype[a..].matches(last).count(), 1, "BaseType.h segment end {last:?} must occur once");
+            assert_eq!(
+                basetype[a..].matches(last).count(),
+                1,
+                "BaseType.h segment end {last:?} must occur once"
+            );
             basetype[a..a + rel + last.len()].to_string()
         };
         let templates = segment(
@@ -606,40 +809,80 @@ mod differential {
             }
             let extract = |file: &str, first: &str, last: &str| -> String {
                 let text = std::fs::read_to_string(engine.join(file)).expect("read upstream file");
-                assert_eq!(text.matches(first).count(), 1, "{file}: {first:?} must occur once");
+                assert_eq!(
+                    text.matches(first).count(),
+                    1,
+                    "{file}: {first:?} must occur once"
+                );
                 let a = text.find(first).expect("segment start");
-                let rel = text[a..].find(last).unwrap_or_else(|| panic!("{file}: {last:?} must follow {first:?}"));
+                let rel = text[a..]
+                    .find(last)
+                    .unwrap_or_else(|| panic!("{file}: {last:?} must follow {first:?}"));
                 text[a..a + rel + last.len()].to_string()
             };
             let header = |name: &str, from: &str, body: &str| {
-                let guard: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_uppercase() } else { '_' }).collect();
+                let guard: String = name
+                    .chars()
+                    .map(|c| {
+                        if c.is_ascii_alphanumeric() {
+                            c.to_ascii_uppercase()
+                        } else {
+                            '_'
+                        }
+                    })
+                    .collect();
                 std::fs::write(
                     gen.join(name),
                     format!("/* generated by build.rs: verbatim from {from} */\n#ifndef GLOBALDATA_GEN_{guard}\n#define GLOBALDATA_GEN_{guard}\n{body}\n#endif\n"),
                 )
                 .expect("write generated header");
             };
-            header("GameLogic/AI.h", "Include/GameLogic/AI.h", &extract("Include/GameLogic/AI.h", "enum AIDebugOptions", "AI_DEBUG_END\n};"));
+            header(
+                "GameLogic/AI.h",
+                "Include/GameLogic/AI.h",
+                &extract(
+                    "Include/GameLogic/AI.h",
+                    "enum AIDebugOptions",
+                    "AI_DEBUG_END\n};",
+                ),
+            );
             header(
                 "GameLogic/Module/BodyModule.h",
                 "Include/GameLogic/Module/BodyModule.h",
-                &extract("Include/GameLogic/Module/BodyModule.h", "enum BodyDamageType", "\tNULL\n};\n#endif"),
+                &extract(
+                    "Include/GameLogic/Module/BodyModule.h",
+                    "enum BodyDamageType",
+                    "\tNULL\n};\n#endif",
+                ),
             );
             header(
                 "GameClient/TerrainVisual.h",
                 "Include/GameClient/TerrainVisual.h",
-                &extract("Include/GameClient/TerrainVisual.h", "typedef enum _TerrainLOD", "#endif  // end DEFINE_TERRAIN_LOD_NAMES"),
+                &extract(
+                    "Include/GameClient/TerrainVisual.h",
+                    "typedef enum _TerrainLOD",
+                    "#endif  // end DEFINE_TERRAIN_LOD_NAMES",
+                ),
             );
             header(
                 "GameLogic/Weapon.h",
                 "Include/GameLogic/Weapon.h",
                 &format!(
                     "#include \"Common/INI.h\"\n#include \"Common/GameMemory.h\"\n{}\n",
-                    extract("Include/GameLogic/Weapon.h", "enum WeaponBonusConditionType", "EMPTY_DTOR(WeaponBonusSet)")
+                    extract(
+                        "Include/GameLogic/Weapon.h",
+                        "enum WeaponBonusConditionType",
+                        "EMPTY_DTOR(WeaponBonusSet)"
+                    )
                 ),
             );
-            let fw = std::fs::read_to_string(engine.join("Include/GameNetwork/FirewallHelper.h")).expect("read FirewallHelper.h");
-            assert_eq!(fw.matches("FIREWALL_TYPE_UNKNOWN = 0,").count(), 1, "FirewallHelper.h: FIREWALL_TYPE_UNKNOWN = 0 must occur once");
+            let fw = std::fs::read_to_string(engine.join("Include/GameNetwork/FirewallHelper.h"))
+                .expect("read FirewallHelper.h");
+            assert_eq!(
+                fw.matches("FIREWALL_TYPE_UNKNOWN = 0,").count(),
+                1,
+                "FirewallHelper.h: FIREWALL_TYPE_UNKNOWN = 0 must occur once"
+            );
             header(
                 "GameNetwork/FirewallHelper.h",
                 "Include/GameNetwork/FirewallHelper.h (FIREWALL_TYPE_UNKNOWN only)",
@@ -659,15 +902,24 @@ mod differential {
                 )
                 .as_bytes(),
             );
-            let gd_src = std::fs::read_to_string(engine.join("Source/Common/GlobalData.cpp")).expect("read GlobalData.cpp");
+            let gd_src = std::fs::read_to_string(engine.join("Source/Common/GlobalData.cpp"))
+                .expect("read GlobalData.cpp");
             let marker = "\t// override INI values with user preferences\n";
-            assert_eq!(gd_src.matches(marker).count(), 1, "GlobalData.cpp: the user preferences comment must occur once");
+            assert_eq!(
+                gd_src.matches(marker).count(),
+                1,
+                "GlobalData.cpp: the user preferences comment must occur once"
+            );
             let cut = gd_src.find(marker).expect("marker");
             assert!(
-                gd_src[cut..].trim_end().ends_with('}') && gd_src[cut..].matches("\n}").count() == 1,
+                gd_src[cut..].trim_end().ends_with('}')
+                    && gd_src[cut..].matches("\n}").count() == 1,
                 "GlobalData.cpp: the preferences must be the end of its last function"
             );
-            let global_data_cpp = write("GlobalData_no_preferences.cpp", format!("{}}}\n", &gd_src[..cut]).as_bytes());
+            let global_data_cpp = write(
+                "GlobalData_no_preferences.cpp",
+                format!("{}}}\n", &gd_src[..cut]).as_bytes(),
+            );
 
             let globaldata_build = |cfg: &mut cc::Build| {
                 base(cfg);
@@ -684,13 +936,19 @@ mod differential {
                     .include(ww.join("WWLib"))
                     .include(&dif)
                     .flag("-include")
-                    .flag(gd_shim.join("globaldata_prelude.h").to_str().expect("UTF-8 path"));
+                    .flag(
+                        gd_shim
+                            .join("globaldata_prelude.h")
+                            .to_str()
+                            .expect("UTF-8 path"),
+                    );
             };
             // the wrapper reads private members (GLOBALDATA_WRAPPER, see the
             // prelude); it is its own library, ahead of the one it calls
             let mut gdw = cc::Build::new();
             globaldata_build(&mut gdw);
-            gdw.define("GLOBALDATA_WRAPPER", None).file(dif.join("wrap_globaldata.cpp"));
+            gdw.define("GLOBALDATA_WRAPPER", None)
+                .file(dif.join("wrap_globaldata.cpp"));
             gdw.compile("upstream_globaldata_wrap");
             let mut gd = cc::Build::new();
             globaldata_build(&mut gd);
@@ -746,26 +1004,43 @@ mod differential {
             std::fs::create_dir_all(tt_gen.join("Common")).expect("create tt_gen");
             let read = |p: &str| std::fs::read_to_string(up.join(p)).expect("read upstream source");
             let once = |text: &str, what: &str, marker: &str| -> usize {
-                assert_eq!(text.matches(marker).count(), 1, "{what}: {marker:?} must occur once");
+                assert_eq!(
+                    text.matches(marker).count(),
+                    1,
+                    "{what}: {marker:?} must occur once"
+                );
                 text.find(marker).expect("marker")
             };
             // the span from `first` to the end of `last` (the first occurrence of `last` after `first`)
             let span = |text: &str, what: &str, first: &str, last: &str| -> String {
                 let a = once(text, what, first);
-                let b = a + text[a..].find(last).unwrap_or_else(|| panic!("{what}: {last:?} after {first:?}")) + last.len();
+                let b = a
+                    + text[a..]
+                        .find(last)
+                        .unwrap_or_else(|| panic!("{what}: {last:?} after {first:?}"))
+                    + last.len();
                 text[a..b].to_string()
             };
             // the function that starts at `first`: up to the first line that starts with `}` (the end of a
             // function, at column 0, as these files indent everything inside), that line included
             let function = |text: &str, what: &str, first: &str| -> String {
                 let a = once(text, what, first);
-                let close = a + text[a..].find("\n}").unwrap_or_else(|| panic!("{what}: the end of {first:?}")) + 1;
+                let close = a
+                    + text[a..]
+                        .find("\n}")
+                        .unwrap_or_else(|| panic!("{what}: the end of {first:?}"))
+                    + 1;
                 let end = close + text[close..].find('\n').expect("end of line");
                 text[a..end].to_string()
             };
             // Radar.h
             let radar = read("GameEngine/Include/Common/Radar.h");
-            let region = span(&radar, "Radar.h", "enum RadarPriorityType\n{", "#endif  // DEFINE_RADAR_PRIOTITY_NAMES");
+            let region = span(
+                &radar,
+                "Radar.h",
+                "enum RadarPriorityType\n{",
+                "#endif  // DEFINE_RADAR_PRIOTITY_NAMES",
+            );
             std::fs::write(
                 tt_gen.join("Common/Radar.h"),
                 format!(
@@ -782,15 +1057,28 @@ mod differential {
                     &up.join("GameEngine/Include/Common/SparseMatchFinder.h"),
                     "SparseMatchFinder.h",
                     &[
-                        ("for (std::vector<MATCHABLE>::const_iterator it", "for (typename std::vector<MATCHABLE>::const_iterator it", 1),
-                        ("\t\tMatchMap::const_iterator it = m_bestMatches.find(bits);", "\t\ttypename MatchMap::const_iterator it = m_bestMatches.find(bits);", 1),
+                        (
+                            "for (std::vector<MATCHABLE>::const_iterator it",
+                            "for (typename std::vector<MATCHABLE>::const_iterator it",
+                            1,
+                        ),
+                        (
+                            "\t\tMatchMap::const_iterator it = m_bestMatches.find(bits);",
+                            "\t\ttypename MatchMap::const_iterator it = m_bestMatches.find(bits);",
+                            1,
+                        ),
                     ],
                 ),
             )
             .expect("write SparseMatchFinder.h copy");
             // GameClient/Shadow.h (its inline code needs the x87 helpers of BaseType.h)
             let shadow = read("GameEngine/Include/GameClient/Shadow.h");
-            let region = span(&shadow, "Shadow.h", "enum ShadowType\n{", "#endif  // end DEFINE_SHADOW_NAMES");
+            let region = span(
+                &shadow,
+                "Shadow.h",
+                "enum ShadowType\n{",
+                "#endif  // end DEFINE_SHADOW_NAMES",
+            );
             std::fs::create_dir_all(tt_gen.join("GameClient")).expect("create tt_gen/GameClient");
             std::fs::write(
                 tt_gen.join("GameClient/Shadow.h"),
@@ -813,7 +1101,12 @@ mod differential {
                 "void INI::parseWeaponTemplate( INI* ini, void * /*instance*/, void *store, const void* /*userData*/ )\n{",
             );
             let ai_h = read("GameEngine/Include/GameLogic/AI.h");
-            let sources = span(&ai_h, "AI.h", "static const char *TheCommandSourceMaskNames[] = \n{", "\n};\n");
+            let sources = span(
+                &ai_h,
+                "AI.h",
+                "static const char *TheCommandSourceMaskNames[] = \n{",
+                "\n};\n",
+            );
             std::fs::write(
                 tt_gen.join("ini_field_parsers.inc"),
                 format!(
@@ -823,7 +1116,11 @@ mod differential {
             .expect("write ini_field_parsers.inc");
             // WeaponSet.cpp
             let weapon_set = read("GameEngine/Source/GameLogic/Object/WeaponSet.cpp");
-            let a = once(&weapon_set, "WeaponSet.cpp", "void WeaponTemplateSet::clear()\n{");
+            let a = once(
+                &weapon_set,
+                "WeaponSet.cpp",
+                "void WeaponTemplateSet::clear()\n{",
+            );
             let end = "//-------------------------------------------------------------------------------------------------\nWeaponSet::WeaponSet()\n{";
             let b = once(&weapon_set, "WeaponSet.cpp", end);
             assert!(a < b, "WeaponSet.cpp: WeaponTemplateSet before WeaponSet");
@@ -834,7 +1131,11 @@ mod differential {
             .expect("write weapon_template_set.inc");
             // ModuleFactory.cpp: everything but init()
             let factory = read("GameEngine/Source/Common/Thing/ModuleFactory.cpp");
-            let a = once(&factory, "ModuleFactory.cpp", "ModuleFactory::ModuleFactory( void )\n{");
+            let a = once(
+                &factory,
+                "ModuleFactory.cpp",
+                "ModuleFactory::ModuleFactory( void )\n{",
+            );
             let init_first = "void ModuleFactory::init( void )\n{\n";
             let i = once(&factory, "ModuleFactory.cpp", init_first);
             let init_last = "}  // end init";
@@ -855,8 +1156,14 @@ mod differential {
             let prereq = read("GameEngine/Source/Common/RTS/ProductionPrerequisite.cpp");
             let between = |first: &str, last: &str| -> &str {
                 let a = once(&prereq, "ProductionPrerequisite.cpp", first);
-                let b = a + prereq[a..].find(last).unwrap_or_else(|| panic!("ProductionPrerequisite.cpp: {last:?} after {first:?}"));
-                assert_eq!(prereq.matches(last).count(), 1, "ProductionPrerequisite.cpp: {last:?} must occur once");
+                let b = a + prereq[a..].find(last).unwrap_or_else(|| {
+                    panic!("ProductionPrerequisite.cpp: {last:?} after {first:?}")
+                });
+                assert_eq!(
+                    prereq.matches(last).count(),
+                    1,
+                    "ProductionPrerequisite.cpp: {last:?} must occur once"
+                );
                 &prereq[a..b]
             };
             std::fs::write(
@@ -892,7 +1199,12 @@ mod differential {
                 .include(ww.join("WWLib"))
                 .include(&dif)
                 .flag("-include")
-                .flag(shim_tt.join("thingtemplate_prelude.h").to_str().expect("UTF-8 path"))
+                .flag(
+                    shim_tt
+                        .join("thingtemplate_prelude.h")
+                        .to_str()
+                        .expect("UTF-8 path"),
+                )
                 .file(dif.join("wrap_thingtemplate.cpp"))
                 .file(up.join("GameEngine/Source/Common/Thing/ThingTemplate.cpp"))
                 .file(up.join("GameEngine/Source/Common/Thing/ThingFactory.cpp"))
@@ -943,7 +1255,9 @@ mod differential {
             let engine = up.join("GameEngine");
             let gen = out_dir.join("partition_gen");
             std::fs::create_dir_all(gen.join("GameLogic")).expect("create partition_gen");
-            let read = |p: std::path::PathBuf| std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+            let read = |p: std::path::PathBuf| {
+                std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))
+            };
             let friends: Vec<(String, String, usize)> = [
                 ("hLineAddLooker", "playerIndex"),
                 ("hLineRemoveLooker", "playerIndex"),
@@ -955,7 +1269,13 @@ mod differential {
                 ("hLineRemoveValue", "threatValueParms"),
             ]
             .iter()
-            .map(|(f, p)| (format!("\tfriend void {f}(Int x1, Int x2, Int y, void *{p});\n"), String::new(), 1))
+            .map(|(f, p)| {
+                (
+                    format!("\tfriend void {f}(Int x1, Int x2, Int y, void *{p});\n"),
+                    String::new(),
+                    1,
+                )
+            })
             .collect();
             let mut header_edits: Vec<(&str, &str, usize)> = vec![(
                 "\t\tfor (Int i=0; i<MAX_PLAYER_COUNT; i++)\n\t\t\tif (m_everSeenByPlayer[i] && m_shroudedness[i] == OBJECTSHROUD_FOGGED)\n\t\t\t\treturn i;\n\t\treturn i;",
@@ -967,11 +1287,27 @@ mod differential {
             }
             std::fs::write(
                 gen.join("GameLogic/PartitionManager.h"),
-                patch_copy(&engine.join("Include/GameLogic/PartitionManager.h"), "PartitionManager.h", &header_edits),
+                patch_copy(
+                    &engine.join("Include/GameLogic/PartitionManager.h"),
+                    "PartitionManager.h",
+                    &header_edits,
+                ),
             )
             .expect("write PartitionManager.h copy");
-            let hline_names = ["hLineAddLooker", "hLineRemoveLooker", "hLineAddShrouder", "hLineRemoveShrouder", "hLineAddThreat", "hLineRemoveThreat", "hLineAddValue", "hLineRemoveValue"];
-            let decls: String = hline_names.iter().map(|n| format!("static void {n}(Int x1, Int x2, Int y, void *parms);\n")).collect();
+            let hline_names = [
+                "hLineAddLooker",
+                "hLineRemoveLooker",
+                "hLineAddShrouder",
+                "hLineRemoveShrouder",
+                "hLineAddThreat",
+                "hLineRemoveThreat",
+                "hLineAddValue",
+                "hLineRemoveValue",
+            ];
+            let decls: String = hline_names
+                .iter()
+                .map(|n| format!("static void {n}(Int x1, Int x2, Int y, void *parms);\n"))
+                .collect();
             let anchor_line = "static int cellValueProc(PartitionCell* cell, void* userData);\n";
             let with_decls = format!("{anchor_line}{decls}");
             std::fs::write(
@@ -984,7 +1320,11 @@ mod differential {
             )
             .expect("write PartitionManager.cpp copy");
             let game_state = read(engine.join("Include/Common/GameState.h"));
-            assert_eq!(game_state.matches("enum SaveCode").count(), 1, "GameState.h: enum SaveCode must occur once");
+            assert_eq!(
+                game_state.matches("enum SaveCode").count(),
+                1,
+                "GameState.h: enum SaveCode must occur once"
+            );
             let a = game_state.find("enum SaveCode").expect("SaveCode start");
             let rel = game_state[a..].find("\n};").expect("SaveCode end");
             std::fs::write(
@@ -996,9 +1336,23 @@ mod differential {
             )
             .expect("write save_code.h");
             let map_object = read(engine.join("Include/Common/MapObject.h"));
-            let factor: Vec<&str> = map_object.lines().filter(|l| l.starts_with("#define MAP_XY_FACTOR")).collect();
-            assert_eq!(factor.len(), 1, "MapObject.h: exactly one MAP_XY_FACTOR line");
-            std::fs::write(gen.join("map_xy_factor.h"), format!("/* generated by build.rs: verbatim from Common/MapObject.h */\n{}\n", factor[0])).expect("write map_xy_factor.h");
+            let factor: Vec<&str> = map_object
+                .lines()
+                .filter(|l| l.starts_with("#define MAP_XY_FACTOR"))
+                .collect();
+            assert_eq!(
+                factor.len(),
+                1,
+                "MapObject.h: exactly one MAP_XY_FACTOR line"
+            );
+            std::fs::write(
+                gen.join("map_xy_factor.h"),
+                format!(
+                    "/* generated by build.rs: verbatim from Common/MapObject.h */\n{}\n",
+                    factor[0]
+                ),
+            )
+            .expect("write map_xy_factor.h");
 
             let mut pt = cc::Build::new();
             base(&mut pt);
@@ -1228,7 +1582,11 @@ mod differential {
         std::fs::create_dir_all(&thing_gen).expect("create thing_gen");
         let coord3d = {
             let first = "struct Coord3D \n{";
-            assert_eq!(basetype.matches(first).count(), 1, "Coord3D must occur once in BaseType.h");
+            assert_eq!(
+                basetype.matches(first).count(),
+                1,
+                "Coord3D must occur once in BaseType.h"
+            );
             let a = basetype.find(first).expect("Coord3D start");
             let rel = basetype[a..].find("\n};\n").expect("Coord3D end");
             basetype[a..a + rel + "\n};\n".len()].to_string()
@@ -1310,7 +1668,12 @@ mod differential {
                 .include(&obj_gen)
                 .include(&dif)
                 .flag("-include")
-                .flag(shim_obj.join("object_prelude.h").to_str().expect("UTF-8 path"))
+                .flag(
+                    shim_obj
+                        .join("object_prelude.h")
+                        .to_str()
+                        .expect("UTF-8 path"),
+                )
                 .file(dif.join("wrap_object.cpp"));
             ob.compile("upstream_object");
             for p in [
@@ -1365,18 +1728,30 @@ mod differential {
             let device = up.join("GameEngineDevice");
             let gen = out_dir.join("terrain_logic_gen");
             std::fs::create_dir_all(&gen).expect("create terrain_logic_gen");
-            let read = |p: std::path::PathBuf| std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+            let read = |p: std::path::PathBuf| {
+                std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))
+            };
             // from `first` (which must occur once) to the end of `last` after it
             let seg = |text: &str, what: &str, first: &str, last: &str| -> String {
-                assert_eq!(text.matches(first).count(), 1, "{what}: {first:?} must occur once");
+                assert_eq!(
+                    text.matches(first).count(),
+                    1,
+                    "{what}: {first:?} must occur once"
+                );
                 let a = text.find(first).expect("segment start");
-                let rel = text[a..].find(last).unwrap_or_else(|| panic!("{what}: {last:?} must follow {first:?}"));
+                let rel = text[a..]
+                    .find(last)
+                    .unwrap_or_else(|| panic!("{what}: {last:?} must follow {first:?}"));
                 text[a..a + rel + last.len()].to_string()
             };
             let enum_of = |text: &str, what: &str, first: &str| seg(text, what, first, "\n};");
             let line_of = |text: &str, what: &str, prefix: &str| -> String {
                 let lines: Vec<&str> = text.lines().filter(|l| l.starts_with(prefix)).collect();
-                assert_eq!(lines.len(), 1, "{what}: exactly one line must start with {prefix:?}");
+                assert_eq!(
+                    lines.len(),
+                    1,
+                    "{what}: exactly one line must start with {prefix:?}"
+                );
                 lines[0].to_string()
             };
             let geometry = read(engine.join("Include/Common/Geometry.h"));
@@ -1392,7 +1767,11 @@ mod differential {
             let defs = [
                 enum_of(&geometry, "Geometry.h", "enum GeometryType"),
                 enum_of(&game_state, "GameState.h", "enum SaveCode"),
-                enum_of(&partition, "PartitionManager.h", "enum DistanceCalculationType"),
+                enum_of(
+                    &partition,
+                    "PartitionManager.h",
+                    "enum DistanceCalculationType",
+                ),
                 enum_of(&body, "BodyModule.h", "enum BodyDamageType"),
                 enum_of(&damage, "Damage.h", "enum DamageType"),
                 enum_of(&damage, "Damage.h", "enum DeathType"),
@@ -1404,7 +1783,12 @@ mod differential {
                 line_of(&pathfind, "AIPathfind.h", "#define PATHFIND_CELL_SIZE\t"),
                 line_of(&pathfind, "AIPathfind.h", "#define PATHFIND_CELL_SIZE_F"),
                 line_of(&scripts, "Scripts.h", "#define WATER_GRID "),
-                seg(&game_common, "GameCommon.h", "enum\n{\n\tLOGICFRAMES_PER_SECOND = 30,", "MSEC_PER_SECOND = 1000\n};"),
+                seg(
+                    &game_common,
+                    "GameCommon.h",
+                    "enum\n{\n\tLOGICFRAMES_PER_SECOND = 30,",
+                    "MSEC_PER_SECOND = 1000\n};",
+                ),
             ];
             std::fs::write(
                 gen.join("terrain_logic_gen_defs.h"),
@@ -1447,7 +1831,12 @@ mod differential {
                 gen.join("clip_height.inc"),
                 format!(
                     "/* generated by build.rs: verbatim from BaseHeightMap.h */\n{}",
-                    seg(&height_map_h, "BaseHeightMap.h", "\tinline UnsignedByte getClipHeight(Int x, Int y) const\n\t{", "\n\t}\n")
+                    seg(
+                        &height_map_h,
+                        "BaseHeightMap.h",
+                        "\tinline UnsignedByte getClipHeight(Int x, Int y) const\n\t{",
+                        "\n\t}\n"
+                    )
                 ),
             )
             .expect("write clip_height.inc");
@@ -1456,8 +1845,18 @@ mod differential {
                 gen.join("polygon_trigger_methods.inc"),
                 format!(
                     "/* generated by build.rs: verbatim from PolygonTrigger.cpp */\n{}\n{}",
-                    seg(&polygon, "PolygonTrigger.cpp", "void PolygonTrigger::updateBounds(void)\tconst\n{", "\n}\n"),
-                    seg(&polygon, "PolygonTrigger.cpp", "Bool PolygonTrigger::pointInTrigger(ICoord3D &point) const\n{", "\treturn inside;\n}\n"),
+                    seg(
+                        &polygon,
+                        "PolygonTrigger.cpp",
+                        "void PolygonTrigger::updateBounds(void)\tconst\n{",
+                        "\n}\n"
+                    ),
+                    seg(
+                        &polygon,
+                        "PolygonTrigger.cpp",
+                        "Bool PolygonTrigger::pointInTrigger(ICoord3D &point) const\n{",
+                        "\treturn inside;\n}\n"
+                    ),
                 ),
             )
             .expect("write polygon_trigger_methods.inc");
@@ -1478,7 +1877,11 @@ mod differential {
             .expect("write geometry_set.inc");
             let terrain_logic = read(engine.join("Source/GameLogic/Map/TerrainLogic.cpp"));
             let static_line = "static const ThingTemplate* genericBridgeTemplate = TheThingFactory->findTemplate(\"GenericBridge\");";
-            assert_eq!(terrain_logic.matches(static_line).count(), 1, "TerrainLogic.cpp: the genericBridgeTemplate static must occur once");
+            assert_eq!(
+                terrain_logic.matches(static_line).count(),
+                1,
+                "TerrainLogic.cpp: the genericBridgeTemplate static must occur once"
+            );
             std::fs::write(
                 gen.join("TerrainLogic_nostatic.cpp"),
                 terrain_logic.replace(static_line, "const ThingTemplate* genericBridgeTemplate = TheThingFactory->findTemplate(\"GenericBridge\");"),
@@ -1550,25 +1953,43 @@ mod differential {
             let engine = up.join("GameEngine");
             let gen = out_dir.join("loco_gen");
             std::fs::create_dir_all(&gen).expect("create loco_gen");
-            let read = |p: std::path::PathBuf| std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+            let read = |p: std::path::PathBuf| {
+                std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))
+            };
             // from `first` (which must occur once) to the end of `last` after it
             let seg = |text: &str, what: &str, first: &str, last: &str| -> String {
-                assert_eq!(text.matches(first).count(), 1, "{what}: {first:?} must occur once");
+                assert_eq!(
+                    text.matches(first).count(),
+                    1,
+                    "{what}: {first:?} must occur once"
+                );
                 let a = text.find(first).expect("segment start");
-                let rel = text[a..].find(last).unwrap_or_else(|| panic!("{what}: {last:?} must follow {first:?}"));
+                let rel = text[a..]
+                    .find(last)
+                    .unwrap_or_else(|| panic!("{what}: {last:?} must follow {first:?}"));
                 text[a..a + rel + last.len()].to_string()
             };
             // from `first` (which must occur once) to just before `last`
             let seg_before = |text: &str, what: &str, first: &str, last: &str| -> String {
-                assert_eq!(text.matches(first).count(), 1, "{what}: {first:?} must occur once");
+                assert_eq!(
+                    text.matches(first).count(),
+                    1,
+                    "{what}: {first:?} must occur once"
+                );
                 let a = text.find(first).expect("segment start");
-                let rel = text[a..].find(last).unwrap_or_else(|| panic!("{what}: {last:?} must follow {first:?}"));
+                let rel = text[a..]
+                    .find(last)
+                    .unwrap_or_else(|| panic!("{what}: {last:?} must follow {first:?}"));
                 text[a..a + rel].to_string()
             };
             let enum_of = |text: &str, what: &str, first: &str| seg(text, what, first, "\n};");
             let line_of = |text: &str, what: &str, prefix: &str| -> String {
                 let lines: Vec<&str> = text.lines().filter(|l| l.starts_with(prefix)).collect();
-                assert_eq!(lines.len(), 1, "{what}: exactly one line must start with {prefix:?}");
+                assert_eq!(
+                    lines.len(),
+                    1,
+                    "{what}: exactly one line must start with {prefix:?}"
+                );
                 lines[0].to_string()
             };
             let model_state = read(engine.join("Include/Common/ModelState.h"));
@@ -1597,7 +2018,10 @@ mod differential {
             .expect("write locomotor_gen_defs.h");
             let thing = read(engine.join("Source/Common/Thing/Thing.cpp"));
             let as_object = |what: &str, text: String| -> String {
-                assert!(text.contains("Thing::"), "{what}: the cut must name Thing::");
+                assert!(
+                    text.contains("Thing::"),
+                    "{what}: the cut must name Thing::"
+                );
                 let edited = text.replace("Thing::", "Object::");
                 assert!(!edited.contains("Thing::"), "{what}: no Thing:: may remain");
                 edited
@@ -1701,13 +2125,24 @@ mod differential {
         // XferLoad, XferCRC).
         let flags_gen = out_dir.join("flags_gen");
         std::fs::create_dir_all(&flags_gen).expect("create flags_gen");
-        let mut lists = String::from("/* generated by build.rs: verbatim s_bitNameList definitions */\n");
+        let mut lists =
+            String::from("/* generated by build.rs: verbatim s_bitNameList definitions */\n");
         for (file, first) in [
-            ("GameEngine/Source/GameLogic/Object/WeaponSet.cpp", "const char* WeaponSetFlags::s_bitNameList[] = \n"),
-            ("GameEngine/Source/Common/RTS/SpecialPower.cpp", "const char* SpecialPowerMaskType::s_bitNameList[] = \n"),
+            (
+                "GameEngine/Source/GameLogic/Object/WeaponSet.cpp",
+                "const char* WeaponSetFlags::s_bitNameList[] = \n",
+            ),
+            (
+                "GameEngine/Source/Common/RTS/SpecialPower.cpp",
+                "const char* SpecialPowerMaskType::s_bitNameList[] = \n",
+            ),
         ] {
             let text = std::fs::read_to_string(up.join(file)).expect("read name-list source");
-            assert_eq!(text.matches(first).count(), 1, "{file}: {first:?} must occur once");
+            assert_eq!(
+                text.matches(first).count(),
+                1,
+                "{file}: {first:?} must occur once"
+            );
             let a = text.find(first).expect("list start");
             let b = a + text[a..].find("\n};\n").expect("list end") + 4;
             lists.push_str(&format!("/* {file} */\ntemplate<> {}\n", &text[a..b]));
@@ -1724,8 +2159,16 @@ mod differential {
                 &up.join("GameEngine/Include/Common/SparseMatchFinder.h"),
                 "SparseMatchFinder.h",
                 &[
-                    ("for (std::vector<MATCHABLE>::const_iterator it", "for (typename std::vector<MATCHABLE>::const_iterator it", 1),
-                    ("\t\tMatchMap::const_iterator it = m_bestMatches.find(bits);", "\t\ttypename MatchMap::const_iterator it = m_bestMatches.find(bits);", 1),
+                    (
+                        "for (std::vector<MATCHABLE>::const_iterator it",
+                        "for (typename std::vector<MATCHABLE>::const_iterator it",
+                        1,
+                    ),
+                    (
+                        "\t\tMatchMap::const_iterator it = m_bestMatches.find(bits);",
+                        "\t\ttypename MatchMap::const_iterator it = m_bestMatches.find(bits);",
+                        1,
+                    ),
                 ],
             ),
         )
@@ -1745,20 +2188,51 @@ mod differential {
             .include(ww.join("WWLib"))
             .include(&dif)
             .flag("-include")
-            .flag(dif.join("shim_flags/flags_prelude.h").to_str().expect("UTF-8 path"))
+            .flag(
+                dif.join("shim_flags/flags_prelude.h")
+                    .to_str()
+                    .expect("UTF-8 path"),
+            )
             .file(dif.join("wrap_flags.cpp"));
         for (src, name, lists) in [
-            (up.join("GameEngine/Source/Common/BitFlags.cpp"), "BitFlags.cpp", &["ModelConditionFlags", "ArmorSetFlags"][..]),
-            (sys.join("KindOf.cpp"), "KindOf.cpp", &["KindOfMaskType"][..]),
-            (sys.join("ObjectStatusTypes.cpp"), "ObjectStatusTypes.cpp", &["ObjectStatusMaskType"][..]),
-            (sys.join("DisabledTypes.cpp"), "DisabledTypes.cpp", &["DisabledMaskType"][..]),
+            (
+                up.join("GameEngine/Source/Common/BitFlags.cpp"),
+                "BitFlags.cpp",
+                &["ModelConditionFlags", "ArmorSetFlags"][..],
+            ),
+            (
+                sys.join("KindOf.cpp"),
+                "KindOf.cpp",
+                &["KindOfMaskType"][..],
+            ),
+            (
+                sys.join("ObjectStatusTypes.cpp"),
+                "ObjectStatusTypes.cpp",
+                &["ObjectStatusMaskType"][..],
+            ),
+            (
+                sys.join("DisabledTypes.cpp"),
+                "DisabledTypes.cpp",
+                &["DisabledMaskType"][..],
+            ),
         ] {
             let edits: Vec<(String, String)> = lists
                 .iter()
-                .map(|t| (format!("const char* {t}::s_bitNameList[] = "), format!("template<> const char* {t}::s_bitNameList[] = ")))
+                .map(|t| {
+                    (
+                        format!("const char* {t}::s_bitNameList[] = "),
+                        format!("template<> const char* {t}::s_bitNameList[] = "),
+                    )
+                })
                 .collect();
-            let edits: Vec<(&str, &str, usize)> = edits.iter().map(|(a, b)| (a.as_str(), b.as_str(), 1)).collect();
-            let copy = write(&format!("template_spec_{name}"), &patch_copy(&src, name, &edits));
+            let edits: Vec<(&str, &str, usize)> = edits
+                .iter()
+                .map(|(a, b)| (a.as_str(), b.as_str(), 1))
+                .collect();
+            let copy = write(
+                &format!("template_spec_{name}"),
+                &patch_copy(&src, name, &edits),
+            );
             fl.file(copy);
         }
         fl.compile("upstream_flags");
@@ -1781,7 +2255,11 @@ mod differential {
             &patch_copy(
                 &up.join("GameEngine/Source/GameLogic/System/Damage.cpp"),
                 "Damage.cpp",
-                &[("const char* DamageTypeFlags::s_bitNameList[] = ", "template<> const char* DamageTypeFlags::s_bitNameList[] = ", 1)],
+                &[(
+                    "const char* DamageTypeFlags::s_bitNameList[] = ",
+                    "template<> const char* DamageTypeFlags::s_bitNameList[] = ",
+                    1,
+                )],
             ),
         );
         let mut arm = cc::Build::new();
@@ -1799,7 +2277,12 @@ mod differential {
             .include(ww.join("WWLib"))
             .include(&dif)
             .flag("-include")
-            .flag(shim_armor.join("armor_prelude.h").to_str().expect("UTF-8 path"))
+            .flag(
+                shim_armor
+                    .join("armor_prelude.h")
+                    .to_str()
+                    .expect("UTF-8 path"),
+            )
             .file(dif.join("wrap_armor.cpp"))
             .file(up.join("GameEngine/Source/GameLogic/Object/Armor.cpp"))
             .file(up.join("GameEngine/Source/Common/DamageFX.cpp"))
@@ -1829,7 +2312,11 @@ mod differential {
         // differential/shim_weapon ahead of shim_armor, and linked ahead of upstream_ini and upstream_xfer.
         {
             fn once_at(text: &str, marker: &str) -> usize {
-                assert_eq!(text.matches(marker).count(), 1, "{marker:?} must occur once");
+                assert_eq!(
+                    text.matches(marker).count(),
+                    1,
+                    "{marker:?} must occur once"
+                );
                 text.find(marker).expect("marker")
             }
             fn cut_between(text: &str, start: &str, end: &str) -> String {
@@ -1845,10 +2332,15 @@ mod differential {
                 format!("/* generated by build.rs: verbatim from Libraries/Include/Lib/BaseType.h */\n{coord3d}"),
             )
             .expect("write basetype_coord3d.h");
-            let mut src = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Weapon.cpp")).expect("read Weapon.cpp");
+            let mut src =
+                std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Weapon.cpp"))
+                    .expect("read Weapon.cpp");
             // the includes become the ones the stand-ins need (fire_standins.h is included by the wrapper before this text);
             // PATHFIND_CELL_SIZE_F is AIPathfind.h's. Everything else of Weapon.cpp is kept, unchanged.
-            let (a, b) = (once_at(&src, "#include \"Common/CRC.h\""), once_at(&src, "#define RATIONALIZE_ATTACK_RANGE"));
+            let (a, b) = (
+                once_at(&src, "#include \"Common/CRC.h\""),
+                once_at(&src, "#define RATIONALIZE_ATTACK_RANGE"),
+            );
             assert!(a < b);
             src = format!(
                 "{}#include \"Common/INI.h\"\n#include \"Common/NameKeyGenerator.h\"\n#include \"Common/ThingFactory.h\"\n#include \"GameLogic/ObjectCreationList.h\"\n#include \"GameLogic/Weapon.h\"\n#define PATHFIND_CELL_SIZE_F 10.0f\n\n{}",
@@ -1863,19 +2355,44 @@ mod differential {
             std::fs::write(weapon_gen.join("Weapon_cut.cpp"), &src).expect("write Weapon_cut.cpp");
             // WeaponSet.cpp: the includes, the bit-name list of WeaponSetFlags (another fixture defines it) and the four INI
             // parsers of WeaponTemplateSet (the sets are built without INI here) are cut; the rest is unchanged.
-            let mut ws = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/WeaponSet.cpp")).expect("read WeaponSet.cpp");
-            let (a, b) = (once_at(&ws, "#include \"PreRTS.h\""), once_at(&ws, "#include \"GameLogic/Weapon.h\""));
+            let mut ws = std::fs::read_to_string(
+                up.join("GameEngine/Source/GameLogic/Object/WeaponSet.cpp"),
+            )
+            .expect("read WeaponSet.cpp");
+            let (a, b) = (
+                once_at(&ws, "#include \"PreRTS.h\""),
+                once_at(&ws, "#include \"GameLogic/Weapon.h\""),
+            );
             assert!(a < b);
-            ws = format!("{}#include \"GameLogic/WeaponSet.h\"\n{}", &ws[..a], &ws[b..]);
-            ws = cut_between(&ws, "const char* WeaponSetFlags::s_bitNameList[] = ", "void WeaponTemplateSet::clear()");
-            ws = cut_between(&ws, "void WeaponTemplateSet::parseWeapon(INI* ini", "Bool WeaponTemplateSet::testWeaponSetFlag(");
-            std::fs::write(weapon_gen.join("WeaponSet_cut.cpp"), ws).expect("write WeaponSet_cut.cpp");
+            ws = format!(
+                "{}#include \"GameLogic/WeaponSet.h\"\n{}",
+                &ws[..a],
+                &ws[b..]
+            );
+            ws = cut_between(
+                &ws,
+                "const char* WeaponSetFlags::s_bitNameList[] = ",
+                "void WeaponTemplateSet::clear()",
+            );
+            ws = cut_between(
+                &ws,
+                "void WeaponTemplateSet::parseWeapon(INI* ini",
+                "Bool WeaponTemplateSet::testWeaponSetFlag(",
+            );
+            std::fs::write(weapon_gen.join("WeaponSet_cut.cpp"), ws)
+                .expect("write WeaponSet_cut.cpp");
             // Object.cpp: the weapon forwarders and the two model-condition functions (Object_weapons.cpp), each function
             // taken whole, unchanged, from its signature line to its closing brace (every signature asserted to occur once),
             // with the static array they share. The rest of Object.cpp is the Object differential test's (wrap_object.cpp).
-            let oc = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Object.cpp")).expect("read Object.cpp");
+            let oc =
+                std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Object.cpp"))
+                    .expect("read Object.cpp");
             fn extract(text: &str, header: &str) -> String {
-                assert_eq!(text.matches(header).count(), 1, "{header:?} must occur once");
+                assert_eq!(
+                    text.matches(header).count(),
+                    1,
+                    "{header:?} must occur once"
+                );
                 let a = text.find(header).expect("header");
                 let open = a + text[a..].find('{').expect("open brace");
                 let mut depth = 0usize;
@@ -1893,8 +2410,12 @@ mod differential {
                 }
                 panic!("{header:?} is not closed");
             }
-            let mut ow = String::from("/* generated by build.rs: functions of Object.cpp, unchanged */\n");
-            let a = once_at(&oc, "static const ModelConditionFlags s_allWeaponFireFlags[WEAPONSLOT_COUNT] =");
+            let mut ow =
+                String::from("/* generated by build.rs: functions of Object.cpp, unchanged */\n");
+            let a = once_at(
+                &oc,
+                "static const ModelConditionFlags s_allWeaponFireFlags[WEAPONSLOT_COUNT] =",
+            );
             let b = a + oc[a..].find("\n};").expect("end of the array") + 4;
             ow.push_str(&oc[a..b]);
             ow.push_str("\n\n");
@@ -1929,14 +2450,25 @@ mod differential {
             ] {
                 ow.push_str(&extract(&oc, h));
             }
-            std::fs::write(weapon_gen.join("Object_weapons.cpp"), ow).expect("write Object_weapons.cpp");
+            std::fs::write(weapon_gen.join("Object_weapons.cpp"), ow)
+                .expect("write Object_weapons.cpp");
             // ActionManager.cpp: only its include block is replaced (the stand-ins and the real enums are in
             // wrap_weapon.cpp and fire_standins.h); everything else is unchanged.
-            let mut am = std::fs::read_to_string(up.join("GameEngine/Source/Common/RTS/ActionManager.cpp")).expect("read ActionManager.cpp");
-            let (a, b) = (once_at(&am, "#include \"PreRTS.h\""), once_at(&am, "#ifdef _INTERNAL"));
+            let mut am =
+                std::fs::read_to_string(up.join("GameEngine/Source/Common/RTS/ActionManager.cpp"))
+                    .expect("read ActionManager.cpp");
+            let (a, b) = (
+                once_at(&am, "#include \"PreRTS.h\""),
+                once_at(&am, "#ifdef _INTERNAL"),
+            );
             assert!(a < b);
-            am = format!("{}#include \"Common/ActionManager.h\"\n\n{}", &am[..a], &am[b..]);
-            std::fs::write(weapon_gen.join("ActionManager_cut.cpp"), am).expect("write ActionManager_cut.cpp");
+            am = format!(
+                "{}#include \"Common/ActionManager.h\"\n\n{}",
+                &am[..a],
+                &am[b..]
+            );
+            std::fs::write(weapon_gen.join("ActionManager_cut.cpp"), am)
+                .expect("write ActionManager_cut.cpp");
             let shim_weapon = dif.join("shim_weapon");
             let shim_armor = dif.join("shim_armor");
             let mut wp = cc::Build::new();
@@ -1956,7 +2488,12 @@ mod differential {
                 .include(ww.join("WWLib"))
                 .include(&dif)
                 .flag("-include")
-                .flag(shim_weapon.join("weapon_prelude.h").to_str().expect("UTF-8 path"))
+                .flag(
+                    shim_weapon
+                        .join("weapon_prelude.h")
+                        .to_str()
+                        .expect("UTF-8 path"),
+                )
                 .file(dif.join("wrap_weapon.cpp"));
             wp.compile("upstream_weapon");
             for p in [
@@ -1982,7 +2519,11 @@ mod differential {
         // in differential/shim_team, every class renamed by wrap_team.cpp. Built as the weapon build is.
         {
             fn once_at(text: &str, marker: &str) -> usize {
-                assert_eq!(text.matches(marker).count(), 1, "{marker:?} must occur once");
+                assert_eq!(
+                    text.matches(marker).count(),
+                    1,
+                    "{marker:?} must occur once"
+                );
                 text.find(marker).expect("marker")
             }
             fn extract_fn(text: &str, header: &str) -> String {
@@ -2010,7 +2551,8 @@ mod differential {
                 format!("/* generated by build.rs: verbatim from Libraries/Include/Lib/BaseType.h */\n{coord3d}"),
             )
             .expect("write basetype_coord3d.h");
-            let mut src = std::fs::read_to_string(up.join("GameEngine/Source/Common/RTS/Team.cpp")).expect("read Team.cpp");
+            let mut src = std::fs::read_to_string(up.join("GameEngine/Source/Common/RTS/Team.cpp"))
+                .expect("read Team.cpp");
             let a = once_at(&src, "#include \"PreRTS.h\"");
             let end = "#include \"GameLogic/ScriptEngine.h\"";
             let b = once_at(&src, end) + end.len();
@@ -2021,14 +2563,17 @@ mod differential {
             // iterator names the pointer to the next-link member as `OBJCLASS::dlink_next_<list>`, which only MSVC reads
             // as `&OBJCLASS::dlink_next_<list>`. Found before the real header (team_gen is first on the include path).
             {
-                let gc = std::fs::read_to_string(up.join("GameEngine/Include/Common/GameCommon.h")).expect("read GameCommon.h");
+                let gc = std::fs::read_to_string(up.join("GameEngine/Include/Common/GameCommon.h"))
+                    .expect("read GameCommon.h");
                 let marker = "return DLINK_ITERATOR<OBJCLASS>(m_dlinkhead_##LISTNAME.m_head, OBJCLASS::dlink_next_##LISTNAME);";
                 once_at(&gc, marker);
                 let gc = gc.replace(marker, "return DLINK_ITERATOR<OBJCLASS>(m_dlinkhead_##LISTNAME.m_head, &OBJCLASS::dlink_next_##LISTNAME);");
                 std::fs::create_dir_all(team_gen.join("Common")).expect("create team_gen/Common");
-                std::fs::write(team_gen.join("Common/GameCommon.h"), gc).expect("write GameCommon.h");
+                std::fs::write(team_gen.join("Common/GameCommon.h"), gc)
+                    .expect("write GameCommon.h");
             }
-            let ph = std::fs::read_to_string(up.join("GameEngine/Include/Common/Player.h")).expect("read Player.h");
+            let ph = std::fs::read_to_string(up.join("GameEngine/Include/Common/Player.h"))
+                .expect("read Player.h");
             let a = once_at(&ph, "typedef std::hash_map< PlayerIndex, Relationship, std::hash<PlayerIndex>, std::equal_to<PlayerIndex> > PlayerRelationMapType;");
             let c = once_at(&ph, "class PlayerRelationMap : public MemoryPoolObject,");
             let e = c + ph[c..].find("\n};").expect("end of PlayerRelationMap") + 3;
@@ -2038,7 +2583,8 @@ mod differential {
                 format!("/* generated by build.rs: PlayerRelationMapType and class PlayerRelationMap, verbatim from Player.h */\n{}\n", &ph[a..e]),
             )
             .expect("write player_relation_map_class.inc");
-            let pc = std::fs::read_to_string(up.join("GameEngine/Source/Common/RTS/Player.cpp")).expect("read Player.cpp");
+            let pc = std::fs::read_to_string(up.join("GameEngine/Source/Common/RTS/Player.cpp"))
+                .expect("read Player.cpp");
             let mut fns = String::from("/* generated by build.rs: the functions of PlayerRelationMap, verbatim from Player.cpp */\n");
             for h in [
                 "PlayerRelationMap::PlayerRelationMap( void )",
@@ -2049,7 +2595,8 @@ mod differential {
             ] {
                 fns.push_str(&extract_fn(&pc, h));
             }
-            std::fs::write(team_gen.join("player_relation_map_cpp.inc"), fns).expect("write player_relation_map_cpp.inc");
+            std::fs::write(team_gen.join("player_relation_map_cpp.inc"), fns)
+                .expect("write player_relation_map_cpp.inc");
             let shim_team = dif.join("shim_team");
             let shim_weapon = dif.join("shim_weapon");
             let shim_armor = dif.join("shim_armor");
@@ -2071,7 +2618,12 @@ mod differential {
                 .include(ww.join("WWLib"))
                 .include(&dif)
                 .flag("-include")
-                .flag(shim_weapon.join("weapon_prelude.h").to_str().expect("UTF-8 path"))
+                .flag(
+                    shim_weapon
+                        .join("weapon_prelude.h")
+                        .to_str()
+                        .expect("UTF-8 path"),
+                )
                 .file(dif.join("wrap_team.cpp"));
             tmb.compile("upstream_team");
             for p in [
@@ -2097,7 +2649,11 @@ mod differential {
         // stand-ins in differential/shim_player, every class renamed by wrap_player.cpp.
         {
             fn once_at(text: &str, marker: &str) -> usize {
-                assert_eq!(text.matches(marker).count(), 1, "{marker:?} must occur once");
+                assert_eq!(
+                    text.matches(marker).count(),
+                    1,
+                    "{marker:?} must occur once"
+                );
                 text.find(marker).expect("marker")
             }
             // the text of the function, class or struct that starts at `header`: through the closing brace, and
@@ -2127,7 +2683,9 @@ mod differential {
             let player_gen = out_dir.join("player_gen");
             std::fs::create_dir_all(&player_gen).expect("create player_gen");
             let rts = up.join("GameEngine/Source/Common/RTS");
-            let read = |n: &str| std::fs::read_to_string(rts.join(n)).unwrap_or_else(|_| panic!("read {n}"));
+            let read = |n: &str| {
+                std::fs::read_to_string(rts.join(n)).unwrap_or_else(|_| panic!("read {n}"))
+            };
             let pc = read("Player.cpp");
             let mut fns = String::from("/* generated by build.rs (p1w10-sonnet): the functions of Player.cpp, Energy.cpp, Money.cpp, Handicap.cpp and MissionStats.cpp that\n** slice 1 translates, each verbatim */\n");
             let neutral = "#define NEUTRAL_PLAYER_COLOR 0xffffffff";
@@ -2324,7 +2882,9 @@ mod differential {
                 fns.push_str(&extract_block(&pc, h));
             }
             let gsrc = up.join("GameEngine/Source");
-            let rds = |n: &str| std::fs::read_to_string(gsrc.join(n)).unwrap_or_else(|_| panic!("read {n}"));
+            let rds = |n: &str| {
+                std::fs::read_to_string(gsrc.join(n)).unwrap_or_else(|_| panic!("read {n}"))
+            };
             let sq = rds("GameLogic/AI/Squad.cpp");
             for h in [
                 "void Squad::addObject(Object *objectToAdd)",
@@ -2388,7 +2948,10 @@ mod differential {
                 fns.push_str(&extract_block(&rg, h));
             }
             let tn = read("TunnelTracker.cpp");
-            for h in ["void TunnelTracker::crc( Xfer *xfer )", "void TunnelTracker::xfer( Xfer *xfer )"] {
+            for h in [
+                "void TunnelTracker::crc( Xfer *xfer )",
+                "void TunnelTracker::xfer( Xfer *xfer )",
+            ] {
                 fns.push_str(&extract_block(&tn, h));
             }
             // MSVC 6 scoped a `for` loop's declaration to the enclosing block, and `Player::killPlayer` relies on it:
@@ -2399,8 +2962,14 @@ mod differential {
                 assert_eq!(fns.matches(old).count(), 1, "killPlayer's second loop");
                 fns = fns.replace(old, "\tfor (PlayerTeamList::iterator it = m_playerTeamPrototypes.begin(); it != m_playerTeamPrototypes.end(); ++it) {");
             }
-            let tt = std::fs::read_to_string(up.join("GameEngine/Source/Common/Thing/ThingTemplate.cpp")).expect("read ThingTemplate.cpp");
-            fns.push_str(&extract_block(&tt, "Int ThingTemplate::calcCostToBuild( const Player* player) const"));
+            let tt = std::fs::read_to_string(
+                up.join("GameEngine/Source/Common/Thing/ThingTemplate.cpp"),
+            )
+            .expect("read ThingTemplate.cpp");
+            fns.push_str(&extract_block(
+                &tt,
+                "Int ThingTemplate::calcCostToBuild( const Player* player) const",
+            ));
             let en = read("Energy.cpp");
             for h in [
                 "Energy::Energy()",
@@ -2466,7 +3035,8 @@ mod differential {
             // 64-bit reference (see common/bit_flags.rs). Player::crc writes two such masks, so the reference is made to hash the 4 bytes
             // the shipped build hashes: the one edit of this copy of BitFlagsIO.h (found before the upstream header), asserted once.
             std::fs::create_dir_all(player_gen.join("Common")).expect("create player_gen/Common");
-            let bf = std::fs::read_to_string(up.join("GameEngine/Include/Common/BitFlagsIO.h")).expect("read BitFlagsIO.h");
+            let bf = std::fs::read_to_string(up.join("GameEngine/Include/Common/BitFlagsIO.h"))
+                .expect("read BitFlagsIO.h");
             let bf_old = "xfer->xferUser( this, sizeof( this ) );";
             assert_eq!(bf.matches(bf_old).count(), 1, "BitFlags::xfer's CRC branch");
             // (it also does what differential/shim_flags/Common/BitFlagsIO.h does, which it replaces: the real KindOf.h first, see that file)
@@ -2474,20 +3044,31 @@ mod differential {
                 "#ifndef SHIM_FLAGS_BITFLAGSIO_H\n#define SHIM_FLAGS_BITFLAGSIO_H\n#include \"Common/KindOf.h\"\n{}\n#endif\n",
                 bf.replace(bf_old, "xfer->xferUser( this, 4 ); /* build.rs: sizeof( this ) of the shipped Win32 build */")
             );
-            std::fs::write(player_gen.join("Common/BitFlagsIO.h"), bf_text).expect("write BitFlagsIO.h");
+            std::fs::write(player_gen.join("Common/BitFlagsIO.h"), bf_text)
+                .expect("write BitFlagsIO.h");
             // Player.h forward-declares `enum BattlePlanStatus;` and `class BattlePlanBonuses;`, which only MSVC accepts
             // for an enum; the definitions come from BattlePlanUpdate.h, whole and unchanged
-            let bp = std::fs::read_to_string(up.join("GameEngine/Include/GameLogic/Module/BattlePlanUpdate.h")).expect("read BattlePlanUpdate.h");
-            let mut enums = String::from("/* generated by build.rs (p1w10-sonnet): from BattlePlanUpdate.h, verbatim */\n");
+            let bp = std::fs::read_to_string(
+                up.join("GameEngine/Include/GameLogic/Module/BattlePlanUpdate.h"),
+            )
+            .expect("read BattlePlanUpdate.h");
+            let mut enums = String::from(
+                "/* generated by build.rs (p1w10-sonnet): from BattlePlanUpdate.h, verbatim */\n",
+            );
             enums.push_str(&extract_block(&bp, "enum BattlePlanStatus"));
-            enums.push_str(&extract_block(&bp, "class BattlePlanBonuses : public MemoryPoolObject"));
+            enums.push_str(&extract_block(
+                &bp,
+                "class BattlePlanBonuses : public MemoryPoolObject",
+            ));
             let all_plans = "#define ALL_PLANS\t1000000";
             once_at(&bp, all_plans);
             // slice 2: two enums the real headers declare only as opaque `enum X;` (Object.h) or inside classes the
             // stand-ins replace
-            let wpn = std::fs::read_to_string(up.join("GameEngine/Include/GameLogic/Weapon.h")).expect("read Weapon.h");
+            let wpn = std::fs::read_to_string(up.join("GameEngine/Include/GameLogic/Weapon.h"))
+                .expect("read Weapon.h");
             enums.push_str(&extract_block(&wpn, "enum WeaponBonusConditionType"));
-            let tth = std::fs::read_to_string(up.join("GameEngine/Include/Common/ThingTemplate.h")).expect("read ThingTemplate.h");
+            let tth = std::fs::read_to_string(up.join("GameEngine/Include/Common/ThingTemplate.h"))
+                .expect("read ThingTemplate.h");
             enums.push_str(&extract_block(&tth, "enum BuildableStatus"));
             enums.push_str("EMPTY_DTOR(BattlePlanBonuses)\n");
             enums.push_str(all_plans);
@@ -2516,7 +3097,12 @@ mod differential {
                 .include(ww.join("WWLib"))
                 .include(&dif)
                 .flag("-include")
-                .flag(shim_player.join("player_prelude.h").to_str().expect("UTF-8 path"))
+                .flag(
+                    shim_player
+                        .join("player_prelude.h")
+                        .to_str()
+                        .expect("UTF-8 path"),
+                )
                 .file(dif.join("wrap_player.cpp"));
             plb.compile("upstream_player");
             for p in [
@@ -2545,18 +3131,26 @@ mod differential {
         // BuildAssistant.h is unchanged. The world it reaches is stand-ins in differential/shim_buildassist, every class renamed by the wrapper.
         {
             fn once_at(text: &str, marker: &str) -> usize {
-                assert_eq!(text.matches(marker).count(), 1, "{marker:?} must occur once");
+                assert_eq!(
+                    text.matches(marker).count(),
+                    1,
+                    "{marker:?} must occur once"
+                );
                 text.find(marker).expect("marker")
             }
             let ba_gen = out_dir.join("build_assistant_gen");
             std::fs::create_dir_all(&ba_gen).expect("create build_assistant_gen");
-            let mut src = std::fs::read_to_string(up.join("GameEngine/Source/Common/System/BuildAssistant.cpp")).expect("read BuildAssistant.cpp");
+            let mut src = std::fs::read_to_string(
+                up.join("GameEngine/Source/Common/System/BuildAssistant.cpp"),
+            )
+            .expect("read BuildAssistant.cpp");
             let a = once_at(&src, "#include \"PreRTS.h\"");
             let end = "#include \"GameLogic/Module/ParkingPlaceBehavior.h\"";
             let b = once_at(&src, end) + end.len();
             assert!(a < b);
             src = format!("{}/* the include block of BuildAssistant.cpp is replaced by the includes of differential/wrap_build_assistant.cpp (build.rs) */{}", &src[..a], &src[b..]);
-            std::fs::write(ba_gen.join("BuildAssistant_cut.cpp"), src).expect("write BuildAssistant_cut.cpp");
+            std::fs::write(ba_gen.join("BuildAssistant_cut.cpp"), src)
+                .expect("write BuildAssistant_cut.cpp");
             let shim_ba = dif.join("shim_buildassist");
             let shim_weapon = dif.join("shim_weapon");
             let shim_armor = dif.join("shim_armor");
@@ -2579,7 +3173,12 @@ mod differential {
                 .include(ww.join("WWLib"))
                 .include(&dif)
                 .flag("-include")
-                .flag(shim_weapon.join("weapon_prelude.h").to_str().expect("UTF-8 path"))
+                .flag(
+                    shim_weapon
+                        .join("weapon_prelude.h")
+                        .to_str()
+                        .expect("UTF-8 path"),
+                )
                 .file(dif.join("wrap_build_assistant.cpp"));
             bab.compile("upstream_build_assistant");
             for p in [
@@ -2600,19 +3199,28 @@ mod differential {
         // (GameLOD.cpp). The world the file reaches is stand-ins in differential/shim_ocl, every class renamed by the wrapper.
         {
             fn once_at(text: &str, marker: &str) -> usize {
-                assert_eq!(text.matches(marker).count(), 1, "{marker:?} must occur once");
+                assert_eq!(
+                    text.matches(marker).count(),
+                    1,
+                    "{marker:?} must occur once"
+                );
                 text.find(marker).expect("marker")
             }
             // the text from `start` to the end of the first `end` after it, both asserted to occur once (`end` after `start`)
             fn extract(text: &str, start: &str, end: &str) -> String {
                 let a = once_at(text, start);
                 let rest = &text[a..];
-                let b = rest.find(end).unwrap_or_else(|| panic!("{end:?} must follow {start:?}"));
+                let b = rest
+                    .find(end)
+                    .unwrap_or_else(|| panic!("{end:?} must follow {start:?}"));
                 format!("{}\n", &rest[..b + end.len()])
             }
             let ocl_gen = out_dir.join("ocl_gen");
             std::fs::create_dir_all(&ocl_gen).expect("create ocl_gen");
-            let mut src = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/ObjectCreationList.cpp")).expect("read ObjectCreationList.cpp");
+            let mut src = std::fs::read_to_string(
+                up.join("GameEngine/Source/GameLogic/Object/ObjectCreationList.cpp"),
+            )
+            .expect("read ObjectCreationList.cpp");
             let pre = "#include \"PreRTS.h\"";
             let a = once_at(&src, pre);
             let eol = a + src[a..].find('\n').expect("end of the PreRTS line");
@@ -2623,23 +3231,56 @@ mod differential {
             let b = once_at(&src, last) + last.len();
             assert!(a < b);
             src = format!("{}/* the include block of ObjectCreationList.cpp is replaced by the includes of differential/wrap_ocl.cpp (build.rs) */{}", &src[..a], &src[b..]);
-            std::fs::write(ocl_gen.join("ObjectCreationList_cut.cpp"), src).expect("write ObjectCreationList_cut.cpp");
+            std::fs::write(ocl_gen.join("ObjectCreationList_cut.cpp"), src)
+                .expect("write ObjectCreationList_cut.cpp");
 
-            let rd = std::fs::read_to_string(up.join("GameEngine/Source/GameClient/RadiusDecal.cpp")).expect("read RadiusDecal.cpp");
-            let mut inc = extract(&rd, "RadiusDecalTemplate::RadiusDecalTemplate() : ", "\n}\n");
-            inc += &extract(&rd, "/*static*/ void RadiusDecalTemplate::parseRadiusDecalTemplate(", "\tini->initFromINI(store, dataFieldParse);\n}");
-            std::fs::write(ocl_gen.join("ocl_radius_decal_template.inc"), inc).expect("write ocl_radius_decal_template.inc");
+            let rd =
+                std::fs::read_to_string(up.join("GameEngine/Source/GameClient/RadiusDecal.cpp"))
+                    .expect("read RadiusDecal.cpp");
+            let mut inc = extract(
+                &rd,
+                "RadiusDecalTemplate::RadiusDecalTemplate() : ",
+                "\n}\n",
+            );
+            inc += &extract(
+                &rd,
+                "/*static*/ void RadiusDecalTemplate::parseRadiusDecalTemplate(",
+                "\tini->initFromINI(store, dataFieldParse);\n}",
+            );
+            std::fs::write(ocl_gen.join("ocl_radius_decal_template.inc"), inc)
+                .expect("write ocl_radius_decal_template.inc");
 
-            let dh = std::fs::read_to_string(up.join("GameEngine/Include/GameLogic/Module/DeliverPayloadAIUpdate.h")).expect("read DeliverPayloadAIUpdate.h");
-            let dc = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Update/AIUpdate/DeliverPayloadAIUpdate.cpp")).expect("read DeliverPayloadAIUpdate.cpp");
-            let mut inc = extract(&dh, "class DeliverPayloadData\n{", "\tstatic const FieldParse* getFieldParse();\n};");
-            inc += &extract(&dc, "const FieldParse* DeliverPayloadData::getFieldParse()", "\treturn dataFieldParse;\n}");
-            std::fs::write(ocl_gen.join("ocl_deliver_payload_data.inc"), inc).expect("write ocl_deliver_payload_data.inc");
+            let dh = std::fs::read_to_string(
+                up.join("GameEngine/Include/GameLogic/Module/DeliverPayloadAIUpdate.h"),
+            )
+            .expect("read DeliverPayloadAIUpdate.h");
+            let dc = std::fs::read_to_string(up.join(
+                "GameEngine/Source/GameLogic/Object/Update/AIUpdate/DeliverPayloadAIUpdate.cpp",
+            ))
+            .expect("read DeliverPayloadAIUpdate.cpp");
+            let mut inc = extract(
+                &dh,
+                "class DeliverPayloadData\n{",
+                "\tstatic const FieldParse* getFieldParse();\n};",
+            );
+            inc += &extract(
+                &dc,
+                "const FieldParse* DeliverPayloadData::getFieldParse()",
+                "\treturn dataFieldParse;\n}",
+            );
+            std::fs::write(ocl_gen.join("ocl_deliver_payload_data.inc"), inc)
+                .expect("write ocl_deliver_payload_data.inc");
 
-            let lod = std::fs::read_to_string(up.join("GameEngine/Source/Common/GameLOD.cpp")).expect("read GameLOD.cpp");
+            let lod = std::fs::read_to_string(up.join("GameEngine/Source/Common/GameLOD.cpp"))
+                .expect("read GameLOD.cpp");
             let mut inc = extract(&lod, "static const char *StaticGameLODNames[]=", "\n};");
-            inc += &extract(&lod, "void INI::parseStaticGameLODLevel( INI* ini, void * , void *store, const void*)", "\tthrow INI_INVALID_DATA;\n}");
-            std::fs::write(ocl_gen.join("ocl_static_lod_level.inc"), inc).expect("write ocl_static_lod_level.inc");
+            inc += &extract(
+                &lod,
+                "void INI::parseStaticGameLODLevel( INI* ini, void * , void *store, const void*)",
+                "\tthrow INI_INVALID_DATA;\n}",
+            );
+            std::fs::write(ocl_gen.join("ocl_static_lod_level.inc"), inc)
+                .expect("write ocl_static_lod_level.inc");
 
             // differential/shim_weapon has a stand-in GameLogic/ObjectCreationList.h that comes first on the include path; the real header
             // is reached by its absolute path through this generated file
@@ -2675,7 +3316,12 @@ mod differential {
                 .include(ww.join("WWLib"))
                 .include(&dif)
                 .flag("-include")
-                .flag(shim_weapon.join("weapon_prelude.h").to_str().expect("UTF-8 path"))
+                .flag(
+                    shim_weapon
+                        .join("weapon_prelude.h")
+                        .to_str()
+                        .expect("UTF-8 path"),
+                )
                 .file(dif.join("wrap_ocl.cpp"));
             oclb.compile("upstream_ocl");
             for p in [
@@ -2719,7 +3365,12 @@ mod differential {
             .include(ww.join("WWLib"))
             .include(&dif)
             .flag("-include")
-            .flag(shim_terrain.join("terrain_prelude.h").to_str().expect("UTF-8 path"))
+            .flag(
+                shim_terrain
+                    .join("terrain_prelude.h")
+                    .to_str()
+                    .expect("UTF-8 path"),
+            )
             .file(dif.join("wrap_terrain.cpp"))
             .file(up.join("GameEngine/Source/Common/TerrainTypes.cpp"))
             .file(up.join("GameEngine/Source/Common/MultiplayerSettings.cpp"))
@@ -2778,7 +3429,12 @@ mod differential {
                 .include(&dif)
                 .define("friend_lookupScience", "real_friend_lookupScience")
                 .flag("-include")
-                .flag(shim_pt.join("playertemplate_prelude.h").to_str().expect("UTF-8 path"))
+                .flag(
+                    shim_pt
+                        .join("playertemplate_prelude.h")
+                        .to_str()
+                        .expect("UTF-8 path"),
+                )
                 .file(dif.join("wrap_playertemplate.cpp"))
                 .file(up.join("GameEngine/Source/Common/RTS/PlayerTemplate.cpp"));
             ptb.compile("upstream_playertemplate");
@@ -2821,7 +3477,12 @@ mod differential {
             // can call it through ref_science_lookup_hook.
             .define("friend_lookupScience", "real_friend_lookupScience")
             .flag("-include")
-            .flag(shim_science.join("science_prelude.h").to_str().expect("UTF-8 path"))
+            .flag(
+                shim_science
+                    .join("science_prelude.h")
+                    .to_str()
+                    .expect("UTF-8 path"),
+            )
             .file(dif.join("wrap_science.cpp"))
             .file(up.join("GameEngine/Source/Common/RTS/Science.cpp"))
             .file(up.join("GameEngine/Source/GameLogic/System/RankInfo.cpp"));
@@ -2859,17 +3520,31 @@ mod differential {
             let sp_copy = patch_copy(
                 &up.join("GameEngine/Source/Common/RTS/SpecialPower.cpp"),
                 "SpecialPower.cpp",
-                &[("const char* SpecialPowerMaskType::s_bitNameList[] = ", "const char* UpSpecialPowerRealNames[] = ", 1)],
+                &[(
+                    "const char* SpecialPowerMaskType::s_bitNameList[] = ",
+                    "const char* UpSpecialPowerRealNames[] = ",
+                    1,
+                )],
             );
-            std::fs::write(up_gen.join("SpecialPower_names_renamed.cpp"), sp_copy).expect("write SpecialPower copy");
-            let academy = std::fs::read_to_string(up.join("GameEngine/Source/Common/RTS/AcademyStats.cpp")).expect("read AcademyStats.cpp");
+            std::fs::write(up_gen.join("SpecialPower_names_renamed.cpp"), sp_copy)
+                .expect("write SpecialPower copy");
+            let academy =
+                std::fs::read_to_string(up.join("GameEngine/Source/Common/RTS/AcademyStats.cpp"))
+                    .expect("read AcademyStats.cpp");
             let first = "const char *TheAcademyClassificationTypeNames[] = \n{";
-            assert_eq!(academy.matches(first).count(), 1, "AcademyStats.cpp names definition must occur once");
+            assert_eq!(
+                academy.matches(first).count(),
+                1,
+                "AcademyStats.cpp names definition must occur once"
+            );
             let a = academy.find(first).expect("names definition");
             let rel = academy[a..].find("};").expect("end of names definition");
             std::fs::write(
                 up_gen.join("academy_names.inc"),
-                format!("/* generated by build.rs: verbatim from AcademyStats.cpp */\n{}\n", &academy[a..a + rel + 2]),
+                format!(
+                    "/* generated by build.rs: verbatim from AcademyStats.cpp */\n{}\n",
+                    &academy[a..a + rel + 2]
+                ),
             )
             .expect("write academy_names.inc");
             let mut upg = cc::Build::new();
@@ -2888,7 +3563,12 @@ mod differential {
                 .include(ww.join("WWLib"))
                 .include(&dif)
                 .flag("-include")
-                .flag(shim_up.join("upgrade_prelude.h").to_str().expect("UTF-8 path"))
+                .flag(
+                    shim_up
+                        .join("upgrade_prelude.h")
+                        .to_str()
+                        .expect("UTF-8 path"),
+                )
                 .file(dif.join("wrap_upgrade.cpp"));
             upg.compile("upstream_upgrade");
             for p in [
@@ -2919,14 +3599,25 @@ mod differential {
             let shim_sm = dif.join("shim_statemachine");
             let sm_gen = out_dir.join("sm_gen");
             std::fs::create_dir_all(&sm_gen).expect("create sm_gen");
-            let game_state = std::fs::read_to_string(up.join("GameEngine/Include/Common/GameState.h")).expect("read GameState.h");
+            let game_state =
+                std::fs::read_to_string(up.join("GameEngine/Include/Common/GameState.h"))
+                    .expect("read GameState.h");
             let first = "enum SaveCode\n{";
-            assert_eq!(game_state.matches(first).count(), 1, "GameState.h SaveCode definition must occur once");
+            assert_eq!(
+                game_state.matches(first).count(),
+                1,
+                "GameState.h SaveCode definition must occur once"
+            );
             let a = game_state.find(first).expect("SaveCode definition");
-            let rel = game_state[a..].find("};").expect("end of SaveCode definition");
+            let rel = game_state[a..]
+                .find("};")
+                .expect("end of SaveCode definition");
             std::fs::write(
                 sm_gen.join("save_code.inc"),
-                format!("/* generated by build.rs: verbatim from GameState.h */\n{}\n", &game_state[a..a + rel + 2]),
+                format!(
+                    "/* generated by build.rs: verbatim from GameState.h */\n{}\n",
+                    &game_state[a..a + rel + 2]
+                ),
             )
             .expect("write save_code.inc");
             let mut smb = cc::Build::new();
@@ -2939,7 +3630,12 @@ mod differential {
                 .include(ww.join("WWMath"))
                 .include(ww.join("WWLib"))
                 .flag("-include")
-                .flag(shim_sm.join("statemachine_prelude.h").to_str().expect("UTF-8 path"))
+                .flag(
+                    shim_sm
+                        .join("statemachine_prelude.h")
+                        .to_str()
+                        .expect("UTF-8 path"),
+                )
                 .file(dif.join("wrap_statemachine.cpp"))
                 .file(up.join("GameEngine/Source/Common/StateMachine.cpp"));
             smb.compile("upstream_statemachine");
@@ -2982,9 +3678,19 @@ mod differential {
                 // BaseType first, forced: PreRTS.h (shim/) includes its own Lib/BaseType.h by a relative path, which
                 // would win otherwise. The two files share the include guard, so the shim's copy is then skipped.
                 .flag("-include")
-                .flag(shim_upd.join("Lib/BaseType.h").to_str().expect("UTF-8 path"))
+                .flag(
+                    shim_upd
+                        .join("Lib/BaseType.h")
+                        .to_str()
+                        .expect("UTF-8 path"),
+                )
                 .flag("-include")
-                .flag(shim_mod.join("module_prelude.h").to_str().expect("UTF-8 path"))
+                .flag(
+                    shim_mod
+                        .join("module_prelude.h")
+                        .to_str()
+                        .expect("UTF-8 path"),
+                )
                 .file(dif.join("wrap_l9updates.cpp"));
             lu.compile("upstream_l9updates");
             for p in [
@@ -3011,10 +3717,21 @@ mod differential {
             let shim_mod = dif.join("shim_module");
             let mod_gen = out_dir.join("mod_gen");
             std::fs::create_dir_all(&mod_gen).expect("create mod_gen");
-            let factory = std::fs::read_to_string(up.join("GameEngine/Source/Common/Thing/ModuleFactory.cpp")).expect("read ModuleFactory.cpp");
+            let factory = std::fs::read_to_string(
+                up.join("GameEngine/Source/Common/Thing/ModuleFactory.cpp"),
+            )
+            .expect("read ModuleFactory.cpp");
             let (first, last) = ("void ModuleFactory::init( void )\n{\n", "}  // end init");
-            assert_eq!(factory.matches(first).count(), 1, "ModuleFactory.cpp: init() must occur once");
-            assert_eq!(factory.matches(last).count(), 1, "ModuleFactory.cpp: its end marker must occur once");
+            assert_eq!(
+                factory.matches(first).count(),
+                1,
+                "ModuleFactory.cpp: init() must occur once"
+            );
+            assert_eq!(
+                factory.matches(last).count(),
+                1,
+                "ModuleFactory.cpp: its end marker must occur once"
+            );
             let a = factory.find(first).expect("init start") + first.len();
             let b = factory.find(last).expect("init end");
             assert!(a < b, "ModuleFactory.cpp: init() body");
@@ -3030,25 +3747,40 @@ mod differential {
             //     getUpgradedSupplyBoost (initialised once per process) becomes a global and its flag, which the driver resets for each case, so
             //     that the Rust side's per-world cache can be compared run by run. The initialiser is upstream's, the init-once control flow is the
             //     `static`'s own.
-            let money_path = up.join("GameEngine/Source/GameLogic/Object/Collide/CrateCollide/MoneyCrateCollide.cpp");
+            let money_path = up.join(
+                "GameEngine/Source/GameLogic/Object/Collide/CrateCollide/MoneyCrateCollide.cpp",
+            );
             let money = std::fs::read_to_string(&money_path).expect("read MoneyCrateCollide.cpp");
             let static_line = "static const UpgradeTemplate *upgradeTemplate = TheUpgradeCenter->findUpgrade( info.type.c_str() );";
-            assert_eq!(money.matches(static_line).count(), 1, "MoneyCrateCollide.cpp: the static declaration must occur once");
+            assert_eq!(
+                money.matches(static_line).count(),
+                1,
+                "MoneyCrateCollide.cpp: the static declaration must occur once"
+            );
             let money_cut = money.replace(
                 static_line,
                 "if (!g_moneyStaticInit) { g_moneyStatic = TheUpgradeCenter->findUpgrade( info.type.c_str() ); g_moneyStaticInit = true; } const UpgradeTemplate *upgradeTemplate = g_moneyStatic;",
             );
-            std::fs::write(mod_gen.join("MoneyCrateCollide_static.cpp"), money_cut).expect("write MoneyCrateCollide_static.cpp");
+            std::fs::write(mod_gen.join("MoneyCrateCollide_static.cpp"), money_cut)
+                .expect("write MoneyCrateCollide_static.cpp");
             // (2) AutoDepositUpdate.cpp -> mod_gen/AutoDepositUpdate_static.cpp: the same `static` inside the loop of its
             //     getUpgradedSupplyBoost (a defect of its own), made a global and a flag the driver resets. The file also defines parseUpgradePair,
             //     which MoneyCrateCollide's data reads (crate batch F had it cut out alone before the update module was translated).
-            let deposit = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Update/AutoDepositUpdate.cpp")).expect("read AutoDepositUpdate.cpp");
-            assert_eq!(deposit.matches(static_line).count(), 1, "AutoDepositUpdate.cpp: the static declaration must occur once");
+            let deposit = std::fs::read_to_string(
+                up.join("GameEngine/Source/GameLogic/Object/Update/AutoDepositUpdate.cpp"),
+            )
+            .expect("read AutoDepositUpdate.cpp");
+            assert_eq!(
+                deposit.matches(static_line).count(),
+                1,
+                "AutoDepositUpdate.cpp: the static declaration must occur once"
+            );
             let deposit_cut = deposit.replace(
                 static_line,
                 "if (!g_adStaticInit) { g_adStatic = TheUpgradeCenter->findUpgrade( info.type.c_str() ); g_adStaticInit = true; } const UpgradeTemplate *upgradeTemplate = g_adStatic;",
             );
-            std::fs::write(mod_gen.join("AutoDepositUpdate_static.cpp"), deposit_cut).expect("write AutoDepositUpdate_static.cpp");
+            std::fs::write(mod_gen.join("AutoDepositUpdate_static.cpp"), deposit_cut)
+                .expect("write AutoDepositUpdate_static.cpp");
             println!("cargo:rerun-if-changed=upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Collide/CrateCollide/MoneyCrateCollide.cpp");
             println!("cargo:rerun-if-changed=upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/AutoDepositUpdate.cpp");
             // Special power batch H (differential/l9_powers_h.inc): three function-local `static NameKeyType key_X = NAMEKEY("X")` (in
@@ -3073,11 +3805,22 @@ mod differential {
             // are cut out of Object.cpp verbatim, from the first line of the first to the last line of the last (both markers asserted once), and
             // compiled on the module build's stand-in Object (its two sole-benefactor members, its body and its game logic).
             {
-                let object_cpp = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Object.cpp")).expect("read Object.cpp");
+                let object_cpp = std::fs::read_to_string(
+                    up.join("GameEngine/Source/GameLogic/Object/Object.cpp"),
+                )
+                .expect("read Object.cpp");
                 let first = "void Object::attemptHealing(Real amount, const Object* source)\n{";
                 let last = "\t\treturn TRUE;\n\t}\n\n\treturn FALSE;\n\n}\n";
-                assert_eq!(object_cpp.matches(first).count(), 1, "Object.cpp: attemptHealing must occur once");
-                assert_eq!(object_cpp.matches(last).count(), 1, "Object.cpp: the end of attemptHealingFromSoleBenefactor must occur once");
+                assert_eq!(
+                    object_cpp.matches(first).count(),
+                    1,
+                    "Object.cpp: attemptHealing must occur once"
+                );
+                assert_eq!(
+                    object_cpp.matches(last).count(),
+                    1,
+                    "Object.cpp: the end of attemptHealingFromSoleBenefactor must occur once"
+                );
                 let a = object_cpp.find(first).expect("attemptHealing start");
                 let b = object_cpp.find(last).expect("sole benefactor end") + last.len();
                 assert!(a < b, "Object.cpp: the healing functions");
@@ -3095,16 +3838,28 @@ mod differential {
             {
                 let path = up.join("GameEngine/Include/GameLogic/Module/AutoHealBehavior.h");
                 let text = std::fs::read_to_string(&path).expect("read AutoHealBehavior.h");
-                let (parse, include) = ("INI::parseParticleSystemTemplate", "#include \"Common/BitFlagsIO.h\"\n");
-                assert_eq!(text.matches(parse).count(), 2, "AutoHealBehavior.h: the particle system parser must occur twice");
-                assert_eq!(text.matches(include).count(), 1, "AutoHealBehavior.h: the BitFlagsIO include must occur once");
+                let (parse, include) = (
+                    "INI::parseParticleSystemTemplate",
+                    "#include \"Common/BitFlagsIO.h\"\n",
+                );
+                assert_eq!(
+                    text.matches(parse).count(),
+                    2,
+                    "AutoHealBehavior.h: the particle system parser must occur twice"
+                );
+                assert_eq!(
+                    text.matches(include).count(),
+                    1,
+                    "AutoHealBehavior.h: the BitFlagsIO include must occur once"
+                );
                 let cut = text.replace(parse, "l9ahParsePsTemplate").replace(
                     include,
                     &format!("{include}class INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n"),
                 );
                 let dir = mod_gen.join("GameLogic/Module");
                 std::fs::create_dir_all(&dir).expect("create mod_gen/GameLogic/Module");
-                std::fs::write(dir.join("AutoHealBehavior.h"), cut).expect("write AutoHealBehavior.h copy");
+                std::fs::write(dir.join("AutoHealBehavior.h"), cut)
+                    .expect("write AutoHealBehavior.h copy");
                 println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- p1w13-sonnet --- (batch R23, differential/l9_geom_stealth_r23.inc): GrantStealthBehavior.h's field table names
@@ -3113,16 +3868,28 @@ mod differential {
             {
                 let path = up.join("GameEngine/Include/GameLogic/Module/GrantStealthBehavior.h");
                 let text = std::fs::read_to_string(&path).expect("read GrantStealthBehavior.h");
-                let (parse, guard) = ("INI::parseParticleSystemTemplate", "#define __GrantStealthBehavior_H_\n");
-                assert_eq!(text.matches(parse).count(), 1, "GrantStealthBehavior.h: the particle system parser must occur once");
-                assert_eq!(text.matches(guard).count(), 1, "GrantStealthBehavior.h: the include guard must occur once");
+                let (parse, guard) = (
+                    "INI::parseParticleSystemTemplate",
+                    "#define __GrantStealthBehavior_H_\n",
+                );
+                assert_eq!(
+                    text.matches(parse).count(),
+                    1,
+                    "GrantStealthBehavior.h: the particle system parser must occur once"
+                );
+                assert_eq!(
+                    text.matches(guard).count(),
+                    1,
+                    "GrantStealthBehavior.h: the include guard must occur once"
+                );
                 let cut = text.replace(parse, "l9ahParsePsTemplate").replace(
                     guard,
                     &format!("{guard}class INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n"),
                 );
                 let dir = mod_gen.join("GameLogic/Module");
                 std::fs::create_dir_all(&dir).expect("create mod_gen/GameLogic/Module");
-                std::fs::write(dir.join("GrantStealthBehavior.h"), cut).expect("write GrantStealthBehavior.h copy");
+                std::fs::write(dir.join("GrantStealthBehavior.h"), cut)
+                    .expect("write GrantStealthBehavior.h copy");
                 println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
@@ -3131,11 +3898,20 @@ mod differential {
             // the edited copy is in mod_gen/ (…_nokey.cpp) and the driver includes that.
             {
                 let (dir, file, decl) = ("Update", "FlammableUpdate.cpp", "static const NameKeyType key_FireSpreadUpdate = NAMEKEY(\"FireSpreadUpdate\");");
-                let path = up.join("GameEngine/Source/GameLogic/Object").join(dir).join(file);
-                let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {file}: {e}"));
-                assert_eq!(text.matches(decl).count(), 1, "{file}: the static name key must occur once");
+                let path = up
+                    .join("GameEngine/Source/GameLogic/Object")
+                    .join(dir)
+                    .join(file);
+                let text =
+                    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {file}: {e}"));
+                assert_eq!(
+                    text.matches(decl).count(),
+                    1,
+                    "{file}: the static name key must occur once"
+                );
                 let cut = text.replace(decl, &decl.replacen("static const ", "const ", 1));
-                std::fs::write(mod_gen.join(file.replace(".cpp", "_nokey.cpp")), cut).expect("write nokey copy");
+                std::fs::write(mod_gen.join(file.replace(".cpp", "_nokey.cpp")), cut)
+                    .expect("write nokey copy");
                 println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w12-sonnet ---
@@ -3148,40 +3924,90 @@ mod differential {
                     assert_eq!(text.matches(start).count(), 1, "{start:?} must occur once");
                     let a = text.find(start).expect("start");
                     let rest = &text[a..];
-                    let b = rest.find(end).unwrap_or_else(|| panic!("{end:?} must follow {start:?}"));
+                    let b = rest
+                        .find(end)
+                        .unwrap_or_else(|| panic!("{end:?} must follow {start:?}"));
                     format!("{}\n", &rest[..b + end.len()])
                 }
-                let object_cpp = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Object.cpp")).expect("read Object.cpp");
-                let kill = cut(&object_cpp, "void Object::kill( DamageType damageType, DeathType deathType )\n{", "}  // end kill\n");
+                let object_cpp = std::fs::read_to_string(
+                    up.join("GameEngine/Source/GameLogic/Object/Object.cpp"),
+                )
+                .expect("read Object.cpp");
+                let kill = cut(
+                    &object_cpp,
+                    "void Object::kill( DamageType damageType, DeathType deathType )\n{",
+                    "}  // end kill\n",
+                );
                 std::fs::write(mod_gen.join("ObjectKill.inc"), format!("/* generated by build.rs: Object::kill, verbatim from Object.cpp */\n{kill}")).expect("write ObjectKill.inc");
-                let relationship = cut(&object_cpp, "Relationship Object::getRelationship(const Object *that) const", "\treturn NEUTRAL;\n\n}\n");
+                let relationship = cut(
+                    &object_cpp,
+                    "Relationship Object::getRelationship(const Object *that) const",
+                    "\treturn NEUTRAL;\n\n}\n",
+                );
                 std::fs::write(mod_gen.join("ObjectRelationship.inc"), format!("/* generated by build.rs: Object::getRelationship, verbatim from Object.cpp */\n{relationship}")).expect("write ObjectRelationship.inc");
-                let rd = std::fs::read_to_string(up.join("GameEngine/Source/GameClient/RadiusDecal.cpp")).expect("read RadiusDecal.cpp");
-                let mut inc = cut(&rd, "RadiusDecalTemplate::RadiusDecalTemplate() : ", "\n}\n");
-                inc += &cut(&rd, "/*static*/ void RadiusDecalTemplate::parseRadiusDecalTemplate(", "\tini->initFromINI(store, dataFieldParse);\n}");
-                std::fs::write(mod_gen.join("radius_decal_template.inc"), inc).expect("write radius_decal_template.inc");
+                let rd = std::fs::read_to_string(
+                    up.join("GameEngine/Source/GameClient/RadiusDecal.cpp"),
+                )
+                .expect("read RadiusDecal.cpp");
+                let mut inc = cut(
+                    &rd,
+                    "RadiusDecalTemplate::RadiusDecalTemplate() : ",
+                    "\n}\n",
+                );
+                inc += &cut(
+                    &rd,
+                    "/*static*/ void RadiusDecalTemplate::parseRadiusDecalTemplate(",
+                    "\tini->initFromINI(store, dataFieldParse);\n}",
+                );
+                std::fs::write(mod_gen.join("radius_decal_template.inc"), inc)
+                    .expect("write radius_decal_template.inc");
                 println!("cargo:rerun-if-changed=upstream/GeneralsMD/Code/GameEngine/Source/GameClient/RadiusDecal.cpp");
                 // SquishCollide.cpp (differential/l9_squish_collide_o.inc): the function-local `static` of its name key loses its `static` (the test resets
                 // the name key generator for every case), as FlammableUpdate.cpp's does; asserted once, the edited copy is mod_gen/SquishCollide_nokey.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Collide/SquishCollide.cpp");
                 let text = std::fs::read_to_string(&path).expect("read SquishCollide.cpp");
                 let decl = "static NameKeyType key_HijackerUpdate = NAMEKEY( \"HijackerUpdate\" );";
-                assert_eq!(text.matches(decl).count(), 1, "SquishCollide.cpp: the static name key must occur once");
-                std::fs::write(mod_gen.join("SquishCollide_nokey.cpp"), text.replace(decl, &decl.replacen("static ", "", 1))).expect("write SquishCollide_nokey.cpp");
+                assert_eq!(
+                    text.matches(decl).count(),
+                    1,
+                    "SquishCollide.cpp: the static name key must occur once"
+                );
+                std::fs::write(
+                    mod_gen.join("SquishCollide_nokey.cpp"),
+                    text.replace(decl, &decl.replacen("static ", "", 1)),
+                )
+                .expect("write SquishCollide_nokey.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 // FireSpreadUpdate.cpp (differential/l9_fire_spread_o.inc): the two function-local `static` name keys lose their `static` (asserted twice), and its two
                 // calls on another object's FlammableUpdate, `fu->wouldIgnite()` and `fu->tryToIgnite()` (asserted once each), name the driver's functions of the
                 // same arguments, which answer for the test's objects (the real FlammableUpdate needs a body, a drawable and a sound manager of its own, and has its
                 // own test); the edited copy is mod_gen/FireSpreadUpdate_edit.cpp.
-                let path = up.join("GameEngine/Source/GameLogic/Object/Update/FireSpreadUpdate.cpp");
+                let path =
+                    up.join("GameEngine/Source/GameLogic/Object/Update/FireSpreadUpdate.cpp");
                 let text = std::fs::read_to_string(&path).expect("read FireSpreadUpdate.cpp");
                 let decl = "static NameKeyType key_FlammableUpdate = NAMEKEY(\"FlammableUpdate\");";
-                assert_eq!(text.matches(decl).count(), 2, "FireSpreadUpdate.cpp: the static name key must occur twice");
+                assert_eq!(
+                    text.matches(decl).count(),
+                    2,
+                    "FireSpreadUpdate.cpp: the static name key must occur twice"
+                );
                 let (would, tryto) = ("fu->wouldIgnite()", "fu->tryToIgnite()");
-                assert_eq!(text.matches(would).count(), 1, "FireSpreadUpdate.cpp: wouldIgnite must occur once");
-                assert_eq!(text.matches(tryto).count(), 1, "FireSpreadUpdate.cpp: tryToIgnite must occur once");
-                let edited = text.replace(decl, &decl.replacen("static ", "", 1)).replace(would, "l9fsWouldIgnite( fu )").replace(tryto, "l9fsTryToIgnite( fu )");
-                std::fs::write(mod_gen.join("FireSpreadUpdate_edit.cpp"), edited).expect("write FireSpreadUpdate_edit.cpp");
+                assert_eq!(
+                    text.matches(would).count(),
+                    1,
+                    "FireSpreadUpdate.cpp: wouldIgnite must occur once"
+                );
+                assert_eq!(
+                    text.matches(tryto).count(),
+                    1,
+                    "FireSpreadUpdate.cpp: tryToIgnite must occur once"
+                );
+                let edited = text
+                    .replace(decl, &decl.replacen("static ", "", 1))
+                    .replace(would, "l9fsWouldIgnite( fu )")
+                    .replace(tryto, "l9fsTryToIgnite( fu )");
+                std::fs::write(mod_gen.join("FireSpreadUpdate_edit.cpp"), edited)
+                    .expect("write FireSpreadUpdate_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 // Batch P (differential/l9_active_body_p.inc). ActiveBody.cpp: the seven function-local `static` particle system templates of
                 // updateBodyParticleSystems lose their `static` (the test resets the particle system manager for every case, and a template found by an earlier case
@@ -3192,15 +4018,24 @@ mod differential {
                 let path = up.join("GameEngine/Source/GameLogic/Object/Body/ActiveBody.cpp");
                 let text = std::fs::read_to_string(&path).expect("read ActiveBody.cpp");
                 let decl = "static const ParticleSystemTemplate *";
-                assert_eq!(text.matches(decl).count(), 7, "ActiveBody.cpp: the static particle system templates must occur seven times");
-                std::fs::write(mod_gen.join("ActiveBody_edit.cpp"), text.replace(decl, "const ParticleSystemTemplate *")).expect("write ActiveBody_edit.cpp");
+                assert_eq!(
+                    text.matches(decl).count(),
+                    7,
+                    "ActiveBody.cpp: the static particle system templates must occur seven times"
+                );
+                std::fs::write(
+                    mod_gen.join("ActiveBody_edit.cpp"),
+                    text.replace(decl, "const ParticleSystemTemplate *"),
+                )
+                .expect("write ActiveBody_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 let path = up.join("GameEngine/Source/Common/DamageFX.cpp");
                 let text = std::fs::read_to_string(&path).expect("read DamageFX.cpp");
                 let fx = cut(&text, "DamageFX::DamageFX()\n{", "\treturn fx;\n}\n");
                 std::fs::write(mod_gen.join("DamageFX_cut.inc"), format!("/* generated by build.rs: the Object functions of DamageFX, verbatim from DamageFX.cpp */\n{fx}")).expect("write DamageFX_cut.inc");
                 println!("cargo:rerun-if-changed={}", path.display());
-                let path = up.join("GameEngine/Source/GameLogic/Object/Behavior/BridgeBehavior.cpp");
+                let path =
+                    up.join("GameEngine/Source/GameLogic/Object/Behavior/BridgeBehavior.cpp");
                 let text = std::fs::read_to_string(&path).expect("read BridgeBehavior.cpp");
                 let bridge = cut(&text, "/*static */BridgeBehaviorInterface *BridgeBehavior::getBridgeBehaviorInterfaceFromObject( Object *obj )\n{", "}  // end getBridgeBehaviorInterfaceFromObject\n");
                 std::fs::write(mod_gen.join("BridgeBehaviorFromObject.inc"), format!("/* generated by build.rs: BridgeBehavior::getBridgeBehaviorInterfaceFromObject, verbatim from BridgeBehavior.cpp */\n{bridge}")).expect("write BridgeBehaviorFromObject.inc");
@@ -3208,26 +4043,59 @@ mod differential {
                 // SlowDeathBehavior.cpp (differential/l9_slow_death_q.inc): the function-local `static` name key of SlavedUpdate loses its `static` (the test resets the
                 // name key generator for every case), the SlavedUpdate it finds is an UpdateModule whose onSlaverDie is the driver's l9sdSlaverDie (the real
                 // SlavedUpdate needs the whole slaved layer), and its second loop declares its own `update`; each asserted once, into mod_gen/SlowDeathBehavior_edit.cpp.
-                let path = up.join("GameEngine/Source/GameLogic/Object/Behavior/SlowDeathBehavior.cpp");
+                let path =
+                    up.join("GameEngine/Source/GameLogic/Object/Behavior/SlowDeathBehavior.cpp");
                 let text = std::fs::read_to_string(&path).expect("read SlowDeathBehavior.cpp");
                 let decl = "static NameKeyType key_SlavedUpdate = NAMEKEY( \"SlavedUpdate\" );";
-                assert_eq!(text.matches(decl).count(), 1, "SlowDeathBehavior.cpp: the static name key must occur once");
+                assert_eq!(
+                    text.matches(decl).count(),
+                    1,
+                    "SlowDeathBehavior.cpp: the static name key must occur once"
+                );
                 let (find, die) = ("SlavedUpdate* slave = (SlavedUpdate*)obj->findUpdateModule( key_SlavedUpdate );", "slave->onSlaverDie( NULL );");
-                assert_eq!(text.matches(find).count(), 1, "SlowDeathBehavior.cpp: the SlavedUpdate lookup must occur once");
-                assert_eq!(text.matches(die).count(), 1, "SlowDeathBehavior.cpp: onSlaverDie must occur once");
+                assert_eq!(
+                    text.matches(find).count(),
+                    1,
+                    "SlowDeathBehavior.cpp: the SlavedUpdate lookup must occur once"
+                );
+                assert_eq!(
+                    text.matches(die).count(),
+                    1,
+                    "SlowDeathBehavior.cpp: onSlaverDie must occur once"
+                );
                 // The second loop of onDie names the first loop's `update` (Visual C++ 6 let a `for` variable outlive its loop; clang does not): it declares its own.
                 let (loop2, loop2_fixed) = ("for (/* UpdateModuleInterface** */ update = obj->getBehaviorModules(); *update; ++update)", "for (BehaviorModule** update = obj->getBehaviorModules(); *update; ++update)");
-                assert_eq!(text.matches(loop2).count(), 1, "SlowDeathBehavior.cpp: the second loop must occur once");
-                let edited = text.replace(decl, &decl.replacen("static ", "", 1)).replace(find, "UpdateModule* slave = obj->findUpdateModule( key_SlavedUpdate );").replace(die, "l9sdSlaverDie( slave );").replace(loop2, loop2_fixed);
-                std::fs::write(mod_gen.join("SlowDeathBehavior_edit.cpp"), edited).expect("write SlowDeathBehavior_edit.cpp");
+                assert_eq!(
+                    text.matches(loop2).count(),
+                    1,
+                    "SlowDeathBehavior.cpp: the second loop must occur once"
+                );
+                let edited = text
+                    .replace(decl, &decl.replacen("static ", "", 1))
+                    .replace(
+                        find,
+                        "UpdateModule* slave = obj->findUpdateModule( key_SlavedUpdate );",
+                    )
+                    .replace(die, "l9sdSlaverDie( slave );")
+                    .replace(loop2, loop2_fixed);
+                std::fs::write(mod_gen.join("SlowDeathBehavior_edit.cpp"), edited)
+                    .expect("write SlowDeathBehavior_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 // UndeadBody.cpp (differential/l9_active_body_p.inc): the second loop of startSecondLife names the first loop's `update` (Visual C++ 6 let a `for`
                 // variable outlive its loop; clang does not): it declares its own, asserted once, into mod_gen/UndeadBody_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Body/UndeadBody.cpp");
                 let text = std::fs::read_to_string(&path).expect("read UndeadBody.cpp");
                 let (loop2, loop2_fixed) = ("for( update = getObject()->getBehaviorModules(); *update; ++update)", "for( BehaviorModule** update = getObject()->getBehaviorModules(); *update; ++update)");
-                assert_eq!(text.matches(loop2).count(), 1, "UndeadBody.cpp: the second loop must occur once");
-                std::fs::write(mod_gen.join("UndeadBody_edit.cpp"), text.replace(loop2, loop2_fixed)).expect("write UndeadBody_edit.cpp");
+                assert_eq!(
+                    text.matches(loop2).count(),
+                    1,
+                    "UndeadBody.cpp: the second loop must occur once"
+                );
+                std::fs::write(
+                    mod_gen.join("UndeadBody_edit.cpp"),
+                    text.replace(loop2, loop2_fixed),
+                )
+                .expect("write UndeadBody_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 // OpenContain.cpp (differential/l9_open_contain_r.inc): processDamageToContained loops `while( *it )` and so dereferences list::end() once the last rider is
                 // done (undefined: the sentinel holds no value). The edit reads that as the loop ending, which is what the shipped game does, asserted once, into
@@ -3235,18 +4103,35 @@ mod differential {
                 let path = up.join("GameEngine/Source/GameLogic/Object/Contain/OpenContain.cpp");
                 let text = std::fs::read_to_string(&path).expect("read OpenContain.cpp");
                 let (wh, wh_fixed) = ("while( *it )", "while( it != items->end() )");
-                assert_eq!(text.matches(wh).count(), 1, "OpenContain.cpp: the processDamageToContained loop must occur once");
-                std::fs::write(mod_gen.join("OpenContain_edit.cpp"), text.replace(wh, wh_fixed)).expect("write OpenContain_edit.cpp");
+                assert_eq!(
+                    text.matches(wh).count(),
+                    1,
+                    "OpenContain.cpp: the processDamageToContained loop must occur once"
+                );
+                std::fs::write(
+                    mod_gen.join("OpenContain_edit.cpp"),
+                    text.replace(wh, wh_fixed),
+                )
+                .expect("write OpenContain_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 // batch R2: TransportContain.cpp loops `while( *it )` twice (letRidersUpgradeWeaponSet over riderList, update over items), with the same read of
                 // list::end() after the last rider; both end there, asserted once each and in that order, into mod_gen/TransportContain_edit.cpp.
-                let path = up.join("GameEngine/Source/GameLogic/Object/Contain/TransportContain.cpp");
+                let path =
+                    up.join("GameEngine/Source/GameLogic/Object/Contain/TransportContain.cpp");
                 let text = std::fs::read_to_string(&path).expect("read TransportContain.cpp");
-                assert_eq!(text.matches(wh).count(), 2, "TransportContain.cpp: the two `while( *it )` loops must occur twice");
+                assert_eq!(
+                    text.matches(wh).count(),
+                    2,
+                    "TransportContain.cpp: the two `while( *it )` loops must occur twice"
+                );
                 let first = text.find(wh).expect("first loop");
-                let second = first + wh.len() + text[first + wh.len()..].find(wh).expect("second loop");
-                assert!(text[..first].contains("riderList = getContainedItemsList()") && text[first..second].contains("items = contain->getContainedItemsList()"),
-                    "TransportContain.cpp: the loops are letRidersUpgradeWeaponSet's then update's");
+                let second =
+                    first + wh.len() + text[first + wh.len()..].find(wh).expect("second loop");
+                assert!(
+                    text[..first].contains("riderList = getContainedItemsList()")
+                        && text[first..second].contains("items = contain->getContainedItemsList()"),
+                    "TransportContain.cpp: the loops are letRidersUpgradeWeaponSet's then update's"
+                );
                 let mut edited = String::new();
                 edited.push_str(&text[..first]);
                 edited.push_str("while( it != riderList->end() )");
@@ -3256,9 +4141,14 @@ mod differential {
                 // and `hisLocomotor == FALSE` (isSpecificRiderFreeToExit) compares a pointer with MSVC's FALSE (0); clang's FALSE is a bool, so the test is spelled
                 // with the value it has under MSVC
                 let (cmp, cmp_fixed) = ("if( hisLocomotor == FALSE )", "if( hisLocomotor == 0 )");
-                assert_eq!(edited.matches(cmp).count(), 1, "TransportContain.cpp: the locomotor test must occur once");
+                assert_eq!(
+                    edited.matches(cmp).count(),
+                    1,
+                    "TransportContain.cpp: the locomotor test must occur once"
+                );
                 let edited = edited.replace(cmp, cmp_fixed);
-                std::fs::write(mod_gen.join("TransportContain_edit.cpp"), edited).expect("write TransportContain_edit.cpp");
+                std::fs::write(mod_gen.join("TransportContain_edit.cpp"), edited)
+                    .expect("write TransportContain_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 // batch R5: RiderChangeContain.h forward-declares three enums (an MSVC extension clang refuses). WeaponSetType and LocomotorSetType are
                 // defined before it here (WeaponSetType.h, the AIUpdate.h stand-in); ObjectStatusType is defined nowhere upstream (the real enum is
@@ -3268,61 +4158,126 @@ mod differential {
                 let text = std::fs::read_to_string(&path).expect("read RiderChangeContain.h");
                 let fwd = "enum WeaponSetType;\r\nenum ObjectStatusType;\r\nenum LocomotorSetType;";
                 let fwd_lf = "enum WeaponSetType;\nenum ObjectStatusType;\nenum LocomotorSetType;";
-                let fixed = "enum ObjectStatusType : int {};   /* build.rs: see the batch R5 note */";
-                let edited = if text.matches(fwd).count() == 1 { text.replace(fwd, fixed) } else {
-                    assert_eq!(text.matches(fwd_lf).count(), 1, "RiderChangeContain.h: the three forward enum declarations must occur once");
+                let fixed =
+                    "enum ObjectStatusType : int {};   /* build.rs: see the batch R5 note */";
+                let edited = if text.matches(fwd).count() == 1 {
+                    text.replace(fwd, fixed)
+                } else {
+                    assert_eq!(
+                        text.matches(fwd_lf).count(),
+                        1,
+                        "RiderChangeContain.h: the three forward enum declarations must occur once"
+                    );
                     text.replace(fwd_lf, fixed)
                 };
-                std::fs::write(mod_gen.join("RiderChangeContain_edit.h"), edited).expect("write RiderChangeContain_edit.h");
+                std::fs::write(mod_gen.join("RiderChangeContain_edit.h"), edited)
+                    .expect("write RiderChangeContain_edit.h");
                 println!("cargo:rerun-if-changed={}", path.display());
                 // batch R6: OverlordContain.cpp's clientVisibleContainedFlashAsSelected loops `while( *it )` over the list (the read of end() after the
                 // last one); it ends there, asserted once, into mod_gen/OverlordContain_edit.cpp.
-                let path = up.join("GameEngine/Source/GameLogic/Object/Contain/OverlordContain.cpp");
+                let path =
+                    up.join("GameEngine/Source/GameLogic/Object/Contain/OverlordContain.cpp");
                 let text = std::fs::read_to_string(&path).expect("read OverlordContain.cpp");
-                assert_eq!(text.matches(wh).count(), 1, "OverlordContain.cpp: the `while( *it )` loop must occur once");
+                assert_eq!(
+                    text.matches(wh).count(),
+                    1,
+                    "OverlordContain.cpp: the `while( *it )` loop must occur once"
+                );
                 assert!(text.contains("const ContainedItemsList* items = TransportContain::getContainedItemsList();"), "OverlordContain.cpp: the loop is over items");
-                std::fs::write(mod_gen.join("OverlordContain_edit.cpp"), text.replace(wh, "while( it != items->end() )")).expect("write OverlordContain_edit.cpp");
+                std::fs::write(
+                    mod_gen.join("OverlordContain_edit.cpp"),
+                    text.replace(wh, "while( it != items->end() )"),
+                )
+                .expect("write OverlordContain_edit.cpp");
                 // batch R9: MobNexusContain.cpp reads `end()` twice: `if( *it )` of `begin()` of an empty special zero-slot rider's list
                 // (isValidContainerFor) and update's `while( *it )` after the last rider; both stop at `end()` (the Rust side records
                 // `Undefined::EndIteratorDereferenced`), asserted once each, into mod_gen/MobNexusContain_edit.cpp.
-                let path = up.join("GameEngine/Source/GameLogic/Object/Contain/MobNexusContain.cpp");
+                let path =
+                    up.join("GameEngine/Source/GameLogic/Object/Contain/MobNexusContain.cpp");
                 let text = std::fs::read_to_string(&path).expect("read MobNexusContain.cpp");
                 let iff = "if( *it )";
-                assert_eq!(text.matches(iff).count(), 1, "MobNexusContain.cpp: `if( *it )` must occur once");
-                assert_eq!(text.matches(wh).count(), 1, "MobNexusContain.cpp: `while( *it )` must occur once");
-                let edited = text.replace(iff, "if( it != items->end() && *it )").replace(wh, "while( it != items->end() )");
-                std::fs::write(mod_gen.join("MobNexusContain_edit.cpp"), edited).expect("write MobNexusContain_edit.cpp");
+                assert_eq!(
+                    text.matches(iff).count(),
+                    1,
+                    "MobNexusContain.cpp: `if( *it )` must occur once"
+                );
+                assert_eq!(
+                    text.matches(wh).count(),
+                    1,
+                    "MobNexusContain.cpp: `while( *it )` must occur once"
+                );
+                let edited = text
+                    .replace(iff, "if( it != items->end() && *it )")
+                    .replace(wh, "while( it != items->end() )");
+                std::fs::write(mod_gen.join("MobNexusContain_edit.cpp"), edited)
+                    .expect("write MobNexusContain_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 // batch R12: GarrisonContain.cpp's loadStationGarrisonPoints names the first loop's `t` in its second loop (Visual C++ 6 let a `for`
                 // variable outlive its loop; clang does not): it declares its own, asserted once, into mod_gen/GarrisonContain_edit.cpp.
-                let path = up.join("GameEngine/Source/GameLogic/Object/Contain/GarrisonContain.cpp");
+                let path =
+                    up.join("GameEngine/Source/GameLogic/Object/Contain/GarrisonContain.cpp");
                 let text = std::fs::read_to_string(&path).expect("read GarrisonContain.cpp");
-                let (loop2, loop2_fixed) = ("for( t = 0; t < count; ++t )", "for( int t = 0; t < count; ++t )");
-                assert_eq!(text.matches(loop2).count(), 1, "GarrisonContain.cpp: the second loop must occur once");
-                std::fs::write(mod_gen.join("GarrisonContain_edit.cpp"), text.replace(loop2, loop2_fixed)).expect("write GarrisonContain_edit.cpp");
+                let (loop2, loop2_fixed) = (
+                    "for( t = 0; t < count; ++t )",
+                    "for( int t = 0; t < count; ++t )",
+                );
+                assert_eq!(
+                    text.matches(loop2).count(),
+                    1,
+                    "GarrisonContain.cpp: the second loop must occur once"
+                );
+                std::fs::write(
+                    mod_gen.join("GarrisonContain_edit.cpp"),
+                    text.replace(loop2, loop2_fixed),
+                )
+                .expect("write GarrisonContain_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 // batch R27 (differential/l9_stealth_detector_r27.inc): StealthDetectorUpdate.cpp's field table names `INI::parseParticleSystemTemplate`
                 // four times, as AutoHealBehavior.h does; the same replacement (asserted four times), its declaration after the last include (asserted
                 // once), into mod_gen/StealthDetectorUpdate_edit.cpp.
-                let path = up.join("GameEngine/Source/GameLogic/Object/Update/StealthDetectorUpdate.cpp");
+                let path =
+                    up.join("GameEngine/Source/GameLogic/Object/Update/StealthDetectorUpdate.cpp");
                 let text = std::fs::read_to_string(&path).expect("read StealthDetectorUpdate.cpp");
-                let (parse, include) = ("INI::parseParticleSystemTemplate", "#include \"Common/Player.h\"\n");
-                assert_eq!(text.matches(parse).count(), 4, "StealthDetectorUpdate.cpp: the particle system parser must occur four times");
-                assert_eq!(text.matches(include).count(), 1, "StealthDetectorUpdate.cpp: the Player.h include must occur once");
+                let (parse, include) = (
+                    "INI::parseParticleSystemTemplate",
+                    "#include \"Common/Player.h\"\n",
+                );
+                assert_eq!(
+                    text.matches(parse).count(),
+                    4,
+                    "StealthDetectorUpdate.cpp: the particle system parser must occur four times"
+                );
+                assert_eq!(
+                    text.matches(include).count(),
+                    1,
+                    "StealthDetectorUpdate.cpp: the Player.h include must occur once"
+                );
                 let cut = text.replace(parse, "l9ahParsePsTemplate").replace(
                     include,
                     &format!("{include}class INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n"),
                 );
-                std::fs::write(mod_gen.join("StealthDetectorUpdate_edit.cpp"), cut).expect("write StealthDetectorUpdate_edit.cpp");
+                std::fs::write(mod_gen.join("StealthDetectorUpdate_edit.cpp"), cut)
+                    .expect("write StealthDetectorUpdate_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 println!("cargo:rerun-if-changed={}", path.display());
                 // batch R30 (differential/l9_bonefx_r30.inc): BoneFXUpdate.cpp parses its particle systems with `ini->parseParticleSystemTemplate`; the same
                 // replacement (asserted once), its declaration after the BoneFXDamage.h include (asserted once), into mod_gen/BoneFXUpdate_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/BoneFXUpdate.cpp");
                 let text = std::fs::read_to_string(&path).expect("read BoneFXUpdate.cpp");
-                let (parse, include) = ("ini->parseParticleSystemTemplate", "#include \"GameLogic/Module/BoneFXDamage.h\"\n");
-                assert_eq!(text.matches(parse).count(), 1, "BoneFXUpdate.cpp: the particle system parser must occur once");
-                assert_eq!(text.matches(include).count(), 1, "BoneFXUpdate.cpp: the BoneFXDamage.h include must occur once");
+                let (parse, include) = (
+                    "ini->parseParticleSystemTemplate",
+                    "#include \"GameLogic/Module/BoneFXDamage.h\"\n",
+                );
+                assert_eq!(
+                    text.matches(parse).count(),
+                    1,
+                    "BoneFXUpdate.cpp: the particle system parser must occur once"
+                );
+                assert_eq!(
+                    text.matches(include).count(),
+                    1,
+                    "BoneFXUpdate.cpp: the BoneFXDamage.h include must occur once"
+                );
                 let cut = text.replace(parse, "l9ahParsePsTemplate").replace(
                     include,
                     &format!("{include}class INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n"),
@@ -3330,56 +4285,135 @@ mod differential {
                 // StructureCollapseUpdate's driver has a stand-in BoneFXUpdate, so the driver compiles these classes under R30 names: the header once more,
                 // as mod_gen/BoneFXUpdate_r30.h (its `#pragma once` and include guard removed, each asserted once), which the edited .cpp includes.
                 let header = "#include \"GameLogic/Module/BoneFXUpdate.h\"\n";
-                assert_eq!(cut.matches(header).count(), 1, "BoneFXUpdate.cpp: the BoneFXUpdate.h include must occur once");
+                assert_eq!(
+                    cut.matches(header).count(),
+                    1,
+                    "BoneFXUpdate.cpp: the BoneFXUpdate.h include must occur once"
+                );
                 let cut = cut.replace(header, "#include \"BoneFXUpdate_r30.h\"\n");
                 // and the function-local `static` name key loses its `static` (asserted once), as in FlammableUpdate.cpp: the test resets the name key
                 // generator for every case. BoneFXDamage.cpp's two the same (asserted twice), into mod_gen/BoneFXDamage_edit.cpp.
                 let key = "static NameKeyType key_BoneFXDamage = NAMEKEY(\"BoneFXDamage\");";
-                assert_eq!(cut.matches(key).count(), 1, "BoneFXUpdate.cpp: the BoneFXDamage name key must occur once");
+                assert_eq!(
+                    cut.matches(key).count(),
+                    1,
+                    "BoneFXUpdate.cpp: the BoneFXDamage name key must occur once"
+                );
                 let cut = cut.replace(key, &key["static ".len()..]);
                 let dpath = up.join("GameEngine/Source/GameLogic/Object/Damage/BoneFXDamage.cpp");
                 let dtext = std::fs::read_to_string(&dpath).expect("read BoneFXDamage.cpp");
                 let dkey = "static NameKeyType key_BoneFXUpdate = NAMEKEY(\"BoneFXUpdate\");";
-                assert_eq!(dtext.matches(dkey).count(), 2, "BoneFXDamage.cpp: the BoneFXUpdate name key must occur twice");
-                std::fs::write(mod_gen.join("BoneFXDamage_edit.cpp"), dtext.replace(dkey, &dkey["static ".len()..])).expect("write BoneFXDamage_edit.cpp");
+                assert_eq!(
+                    dtext.matches(dkey).count(),
+                    2,
+                    "BoneFXDamage.cpp: the BoneFXUpdate name key must occur twice"
+                );
+                std::fs::write(
+                    mod_gen.join("BoneFXDamage_edit.cpp"),
+                    dtext.replace(dkey, &dkey["static ".len()..]),
+                )
+                .expect("write BoneFXDamage_edit.cpp");
                 println!("cargo:rerun-if-changed={}", dpath.display());
-                std::fs::write(mod_gen.join("BoneFXUpdate_edit.cpp"), cut).expect("write BoneFXUpdate_edit.cpp");
+                std::fs::write(mod_gen.join("BoneFXUpdate_edit.cpp"), cut)
+                    .expect("write BoneFXUpdate_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 let hpath = up.join("GameEngine/Include/GameLogic/Module/BoneFXUpdate.h");
                 let htext = std::fs::read_to_string(&hpath).expect("read BoneFXUpdate.h");
-                let (once, guard) = ("#pragma once\n", "#ifndef __BONEFXUPDATE_H_\n#define __BONEFXUPDATE_H_\n");
-                assert_eq!(htext.matches(once).count(), 1, "BoneFXUpdate.h: #pragma once must occur once");
-                assert_eq!(htext.matches(guard).count(), 1, "BoneFXUpdate.h: the include guard must occur once");
-                let hcut = htext.replace(once, "").replace(guard, "#ifndef __BONEFXUPDATE_R30_H_\n#define __BONEFXUPDATE_R30_H_\n");
-                std::fs::write(mod_gen.join("BoneFXUpdate_r30.h"), hcut).expect("write BoneFXUpdate_r30.h");
+                let (once, guard) = (
+                    "#pragma once\n",
+                    "#ifndef __BONEFXUPDATE_H_\n#define __BONEFXUPDATE_H_\n",
+                );
+                assert_eq!(
+                    htext.matches(once).count(),
+                    1,
+                    "BoneFXUpdate.h: #pragma once must occur once"
+                );
+                assert_eq!(
+                    htext.matches(guard).count(),
+                    1,
+                    "BoneFXUpdate.h: the include guard must occur once"
+                );
+                let hcut = htext.replace(once, "").replace(
+                    guard,
+                    "#ifndef __BONEFXUPDATE_R30_H_\n#define __BONEFXUPDATE_R30_H_\n",
+                );
+                std::fs::write(mod_gen.join("BoneFXUpdate_r30.h"), hcut)
+                    .expect("write BoneFXUpdate_r30.h");
                 println!("cargo:rerun-if-changed={}", hpath.display());
                 // batch R31 (differential/l9_transition_r31.inc): TransitionDamageFX.cpp parses its particle systems with
                 // `ini->parseParticleSystemTemplate`; the same replacement (asserted once), its declaration after the module header's include (asserted
                 // once), into mod_gen/TransitionDamageFX_edit.cpp.
-                let path = up.join("GameEngine/Source/GameLogic/Object/Damage/TransitionDamageFX.cpp");
+                let path =
+                    up.join("GameEngine/Source/GameLogic/Object/Damage/TransitionDamageFX.cpp");
                 let text = std::fs::read_to_string(&path).expect("read TransitionDamageFX.cpp");
-                let (parse, include) = ("ini->parseParticleSystemTemplate", "#include \"GameLogic/Module/TransitionDamageFX.h\"\n");
-                assert_eq!(text.matches(parse).count(), 1, "TransitionDamageFX.cpp: the particle system parser must occur once");
-                assert_eq!(text.matches(include).count(), 1, "TransitionDamageFX.cpp: the module header include must occur once");
+                let (parse, include) = (
+                    "ini->parseParticleSystemTemplate",
+                    "#include \"GameLogic/Module/TransitionDamageFX.h\"\n",
+                );
+                assert_eq!(
+                    text.matches(parse).count(),
+                    1,
+                    "TransitionDamageFX.cpp: the particle system parser must occur once"
+                );
+                assert_eq!(
+                    text.matches(include).count(),
+                    1,
+                    "TransitionDamageFX.cpp: the module header include must occur once"
+                );
                 let cut = text.replace(parse, "l9ahParsePsTemplate").replace(
                     include,
                     &format!("{include}class INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n"),
                 );
-                std::fs::write(mod_gen.join("TransitionDamageFX_edit.cpp"), cut).expect("write TransitionDamageFX_edit.cpp");
+                std::fs::write(mod_gen.join("TransitionDamageFX_edit.cpp"), cut)
+                    .expect("write TransitionDamageFX_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 // batch R32 (differential/l9_firestorm_r32.inc): FirestormDynamicGeometryInfoUpdate.cpp's field table names
                 // `INI::parseParticleSystemTemplate` sixteen times; the same replacement (asserted sixteen times), its declaration after the module header's
                 // include (asserted once), into mod_gen/FirestormDynamicGeometryInfoUpdate_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/FirestormDynamicGeometryInfoUpdate.cpp");
-                let text = std::fs::read_to_string(&path).expect("read FirestormDynamicGeometryInfoUpdate.cpp");
-                let (parse, include) = ("INI::parseParticleSystemTemplate", "#include \"GameLogic/Module/FirestormDynamicGeometryInfoUpdate.h\"\n");
+                let text = std::fs::read_to_string(&path)
+                    .expect("read FirestormDynamicGeometryInfoUpdate.cpp");
+                let (parse, include) = (
+                    "INI::parseParticleSystemTemplate",
+                    "#include \"GameLogic/Module/FirestormDynamicGeometryInfoUpdate.h\"\n",
+                );
                 assert_eq!(text.matches(parse).count(), 16, "FirestormDynamicGeometryInfoUpdate.cpp: the particle system parser must occur sixteen times");
                 assert_eq!(text.matches(include).count(), 1, "FirestormDynamicGeometryInfoUpdate.cpp: the module header include must occur once");
                 let cut = text.replace(parse, "l9ahParsePsTemplate").replace(
                     include,
                     &format!("{include}class INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n"),
                 );
-                std::fs::write(mod_gen.join("FirestormDynamicGeometryInfoUpdate_edit.cpp"), cut).expect("write FirestormDynamicGeometryInfoUpdate_edit.cpp");
+                std::fs::write(
+                    mod_gen.join("FirestormDynamicGeometryInfoUpdate_edit.cpp"),
+                    cut,
+                )
+                .expect("write FirestormDynamicGeometryInfoUpdate_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
+                // batch R33 (differential/l9_emp_r33.inc): EMPUpdate.h's field tables name `INI::parseParticleSystemTemplate` twice; the same
+                // replacement (asserted twice), its declaration after the include guard line (asserted once), into mod_gen/GameLogic/Module/EMPUpdate.h.
+                let path = up.join("GameEngine/Include/GameLogic/Module/EMPUpdate.h");
+                let text = std::fs::read_to_string(&path).expect("read EMPUpdate.h");
+                let (parse, guard) = (
+                    "INI::parseParticleSystemTemplate",
+                    "#define __EMPUPDATE_H_\n",
+                );
+                assert_eq!(
+                    text.matches(parse).count(),
+                    2,
+                    "EMPUpdate.h: the particle system parser must occur twice"
+                );
+                assert_eq!(
+                    text.matches(guard).count(),
+                    1,
+                    "EMPUpdate.h: the include guard must occur once"
+                );
+                let cut = text.replace(parse, "l9ahParsePsTemplate").replace(
+                    guard,
+                    &format!("{guard}class INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n"),
+                );
+                let dir = mod_gen.join("GameLogic/Module");
+                std::fs::create_dir_all(&dir).expect("create mod_gen/GameLogic/Module");
+                std::fs::write(dir.join("EMPUpdate.h"), cut).expect("write EMPUpdate.h copy");
                 println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
@@ -3400,7 +4434,12 @@ mod differential {
                 .include(ww.join("WWLib"))
                 .include(&dif)
                 .flag("-include")
-                .flag(shim_mod.join("module_prelude.h").to_str().expect("UTF-8 path"))
+                .flag(
+                    shim_mod
+                        .join("module_prelude.h")
+                        .to_str()
+                        .expect("UTF-8 path"),
+                )
                 .file(dif.join("wrap_module.cpp"));
             md.compile("upstream_module");
             for p in [
@@ -3437,7 +4476,12 @@ mod differential {
                 .include(ww.join("WWLib"))
                 .include(&dif)
                 .flag("-include")
-                .flag(shim_cr.join("create_prelude.h").to_str().expect("UTF-8 path"))
+                .flag(
+                    shim_cr
+                        .join("create_prelude.h")
+                        .to_str()
+                        .expect("UTF-8 path"),
+                )
                 .file(dif.join("wrap_create_modules.cpp"));
             cr.compile("upstream_create_modules");
             for p in [
@@ -3464,16 +4508,28 @@ mod differential {
         {
             let map_gen = out_dir.join("map_gen");
             std::fs::create_dir_all(&map_gen).expect("create map_gen");
-            let mu = std::fs::read_to_string(up.join("GameEngine/Source/GameClient/MapUtil.cpp")).expect("read MapUtil.cpp");
+            let mu = std::fs::read_to_string(up.join("GameEngine/Source/GameClient/MapUtil.cpp"))
+                .expect("read MapUtil.cpp");
             let (first, last) = (
                 "static Bool ParseObjectDataChunk(DataChunkInput &file, DataChunkInfo *info, void *userData)\n",
                 "static Bool ParseObjectsDataChunk(",
             );
-            assert_eq!(mu.matches(first).count(), 1, "MapUtil.cpp: ParseObjectDataChunk must occur once");
-            assert_eq!(mu.matches(last).count(), 1, "MapUtil.cpp: ParseObjectsDataChunk must occur once");
+            assert_eq!(
+                mu.matches(first).count(),
+                1,
+                "MapUtil.cpp: ParseObjectDataChunk must occur once"
+            );
+            assert_eq!(
+                mu.matches(last).count(),
+                1,
+                "MapUtil.cpp: ParseObjectsDataChunk must occur once"
+            );
             let a = mu.find(first).expect("parser start");
             let b = mu.find(last).expect("parser end");
-            assert!(a < b, "MapUtil.cpp: ParseObjectDataChunk before ParseObjectsDataChunk");
+            assert!(
+                a < b,
+                "MapUtil.cpp: ParseObjectDataChunk before ParseObjectsDataChunk"
+            );
             std::fs::write(
                 map_gen.join("map_object_parse.inc"),
                 format!("/* generated by build.rs: ParseObjectDataChunk, verbatim from MapUtil.cpp */\n{}", &mu[a..b]),
@@ -3485,14 +4541,24 @@ mod differential {
             // g++ rejects; the use is in DEBUG_ASSERTCRASH and `if (pTrig)`). A copy
             // with that declaration moved before the loop, as INI.cpp's copy below
             // (the upstream file is never edited). The text must occur once.
-            let pt_src = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Map/PolygonTrigger.cpp"))
-                .expect("read PolygonTrigger.cpp");
+            let pt_src = std::fs::read_to_string(
+                up.join("GameEngine/Source/GameLogic/Map/PolygonTrigger.cpp"),
+            )
+            .expect("read PolygonTrigger.cpp");
             let pt_old = "\tfor (PolygonTrigger *pTrig=getFirstPolygonTrigger(); pTrig; pTrig = pTrig->getNext()) {\n\t\tif (pTrig==pTrigger) break;\n";
             let pt_new = "\tPolygonTrigger *pTrig;\n\tfor (pTrig=getFirstPolygonTrigger(); pTrig; pTrig = pTrig->getNext()) {\n\t\tif (pTrig==pTrigger) break;\n";
-            assert_eq!(pt_src.matches(pt_old).count(), 1, "PolygonTrigger.cpp: removePolygonTrigger's loop must occur once");
+            assert_eq!(
+                pt_src.matches(pt_old).count(),
+                1,
+                "PolygonTrigger.cpp: removePolygonTrigger's loop must occur once"
+            );
             let poly_gen = out_dir.join("poly_gen");
             std::fs::create_dir_all(&poly_gen).expect("create poly_gen");
-            std::fs::write(poly_gen.join("PolygonTrigger.cpp"), pt_src.replacen(pt_old, pt_new, 1)).expect("write PolygonTrigger.cpp");
+            std::fs::write(
+                poly_gen.join("PolygonTrigger.cpp"),
+                pt_src.replacen(pt_old, pt_new, 1),
+            )
+            .expect("write PolygonTrigger.cpp");
 
             let shim_poly = dif.join("shim_polygon");
             let shim_chunk = dif.join("shim_chunk");
@@ -3523,7 +4589,12 @@ mod differential {
                 .include(up.join("Libraries/Source/Compression"))
                 .include(&map_gen)
                 .flag("-include")
-                .flag(shim_chunk.join("chunk_prelude.h").to_str().expect("UTF-8 path"))
+                .flag(
+                    shim_chunk
+                        .join("chunk_prelude.h")
+                        .to_str()
+                        .expect("UTF-8 path"),
+                )
                 .file(dif.join("wrap_map_object.cpp"));
             mo.compile("upstream_map_object");
 
@@ -3676,9 +4747,16 @@ mod differential {
                 "\tfor (const FieldParse* parse = parseTable; parse->token; ++parse)",
                 "\tconst FieldParse* parse; for (parse = parseTable; parse->token; ++parse)",
             ),
-            ("\t\t\t\t\tvoid* userData = 0;", "\t\t\t\t\tconst void* userData = 0;"),
+            (
+                "\t\t\t\t\tvoid* userData = 0;",
+                "\t\t\t\t\tconst void* userData = 0;",
+            ),
         ] {
-            assert_eq!(ini_text.matches(from).count(), 1, "INI.cpp patch site {from:?} must occur once");
+            assert_eq!(
+                ini_text.matches(from).count(),
+                1,
+                "INI.cpp patch site {from:?} must occur once"
+            );
             ini_text = ini_text.replace(from, to);
         }
         let ini_copy = out_dir.join("INI_msvc_scope.cpp");
@@ -3709,7 +4787,6 @@ mod differential {
             .file(sys.join("GameType.cpp"))
             .include(&dif);
         iniw.compile("upstream_ini_wrap");
-
 
         // Dict.cpp unchanged (differential/wrap_dict.cpp), with the
         // pointer-sized string shims and the zero-filling allocator of
@@ -3744,13 +4821,20 @@ mod differential {
         ascii
             .define("AsciiString", Some("UpstreamAsciiString"))
             .define("UnicodeString", Some("DictShimUnicodeString"))
-            .define("TheDynamicMemoryAllocator", Some("AsciiBuildDynamicMemoryAllocator"))
+            .define(
+                "TheDynamicMemoryAllocator",
+                Some("AsciiBuildDynamicMemoryAllocator"),
+            )
             .include(dif.join("shim_ascii"))
             .include(&shim)
             .include(up.join("GameEngine/Include"))
             .include(up.join("Libraries/Include"))
             .flag("-include")
-            .flag(dif.join("shim_ascii/ascii_prelude.h").to_str().expect("UTF-8 path"))
+            .flag(
+                dif.join("shim_ascii/ascii_prelude.h")
+                    .to_str()
+                    .expect("UTF-8 path"),
+            )
             .file(dif.join("wrap_ascii_string.cpp"))
             .file(sys.join("AsciiString.cpp"));
         ascii.compile("upstream_ascii_string");
@@ -3772,13 +4856,20 @@ mod differential {
             .flag("-fshort-wchar")
             .define("UnicodeString", Some("UpstreamUnicodeString"))
             .define("AsciiString", Some("UnicodeBuildAsciiString"))
-            .define("TheDynamicMemoryAllocator", Some("UnicodeBuildDynamicMemoryAllocator"))
+            .define(
+                "TheDynamicMemoryAllocator",
+                Some("UnicodeBuildDynamicMemoryAllocator"),
+            )
             .include(dif.join("shim_unicode"))
             .include(&shim)
             .include(up.join("GameEngine/Include"))
             .include(up.join("Libraries/Include"))
             .flag("-include")
-            .flag(dif.join("shim_unicode/unicode_prelude.h").to_str().expect("UTF-8 path"))
+            .flag(
+                dif.join("shim_unicode/unicode_prelude.h")
+                    .to_str()
+                    .expect("UTF-8 path"),
+            )
             .file(dif.join("wrap_unicode_string.cpp"))
             .file(sys.join("UnicodeString.cpp"));
         unicode.compile("upstream_unicode_string");
@@ -3821,7 +4912,11 @@ mod differential {
         let sides_cpp = patch_copy(
             &up.join("GameEngine/Source/GameLogic/Map/SidesList.cpp"),
             "SidesList.cpp",
-            &[("if (theInputStream.open(path)) {", "if (sides_open_skirmish_stream(theInputStream, path)) {", 1)],
+            &[(
+                "if (theInputStream.open(path)) {",
+                "if (sides_open_skirmish_stream(theInputStream, path)) {",
+                1,
+            )],
         );
         let sides_copy = write("SidesList.cpp", &sides_cpp);
         let mut sides = cc::Build::new();
@@ -3836,7 +4931,12 @@ mod differential {
             .include(up.join("Libraries/Include"))
             .include(up.join("Libraries/Source/Compression"))
             .flag("-include")
-            .flag(shim_sides.join("sides_prelude.h").to_str().expect("UTF-8 path"))
+            .flag(
+                shim_sides
+                    .join("sides_prelude.h")
+                    .to_str()
+                    .expect("UTF-8 path"),
+            )
             .file(dif.join("wrap_sides.cpp"))
             .file(&sides_copy)
             .file(up.join("GameEngine/Source/GameLogic/ScriptEngine/Scripts.cpp"));
@@ -3859,7 +4959,12 @@ mod differential {
             .include(up.join("Libraries/Include"))
             .include(up.join("Libraries/Source/Compression"))
             .flag("-include")
-            .flag(shim_chunk.join("chunk_prelude.h").to_str().expect("UTF-8 path"))
+            .flag(
+                shim_chunk
+                    .join("chunk_prelude.h")
+                    .to_str()
+                    .expect("UTF-8 path"),
+            )
             .file(dif.join("wrap_chunk.cpp"))
             .file(dif.join("wrap_namekey.cpp"))
             .file(sys.join("DataChunk.cpp"))
@@ -3942,7 +5047,11 @@ mod differential {
             .include(up.join("GameEngine/Include"))
             .include(up.join("Libraries/Include"))
             .flag("-include")
-            .flag(dif.join("shim_stl_unicode/stl_unicode_prelude.h").to_str().expect("UTF-8 path"))
+            .flag(
+                dif.join("shim_stl_unicode/stl_unicode_prelude.h")
+                    .to_str()
+                    .expect("UTF-8 path"),
+            )
             .file(dif.join("wrap_stl_typedefs_unicode.cpp"))
             .file(sys.join("UnicodeString.cpp"));
         stlu.compile("upstream_stl_unicode");
@@ -3976,9 +5085,15 @@ mod differential {
         {
             let world_gen = out_dir.join("world_gen");
             std::fs::create_dir_all(&world_gen).expect("create world_gen");
-            let gl = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/System/GameLogic.cpp")).expect("read GameLogic.cpp");
-            let glh = std::fs::read_to_string(up.join("GameEngine/Include/GameLogic/GameLogic.h")).expect("read GameLogic.h");
-            let oc = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Object.cpp")).expect("read Object.cpp");
+            let gl = std::fs::read_to_string(
+                up.join("GameEngine/Source/GameLogic/System/GameLogic.cpp"),
+            )
+            .expect("read GameLogic.cpp");
+            let glh = std::fs::read_to_string(up.join("GameEngine/Include/GameLogic/GameLogic.h"))
+                .expect("read GameLogic.h");
+            let oc =
+                std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Object.cpp"))
+                    .expect("read Object.cpp");
             // (file name, source, first marker (kept), last marker (cut before it))
             let cuts: [(&str, &String, &str, &str); 9] = [
                 ("sleepy_heap.inc", &gl, "inline void GameLogic::validateSleepyUpdate() const", "#ifdef DO_UNIT_TIMINGS\n\nvoid drawGraph"),
@@ -3997,9 +5112,16 @@ mod differential {
                 ("object_list_b.inc", &oc, "void Object::removeFromList(Object **pListHead)", "void Object::friend_prepareForMapBoundaryAdjust"),
             ];
             for (name, text, first, last) in cuts {
-                assert_eq!(text.matches(first).count(), 1, "world cut {name}: start marker {first:?} must occur once");
+                assert_eq!(
+                    text.matches(first).count(),
+                    1,
+                    "world cut {name}: start marker {first:?} must occur once"
+                );
                 let a = text.find(first).expect("cut start");
-                assert!(text[a..].contains(last), "world cut {name}: end marker {last:?} must follow");
+                assert!(
+                    text[a..].contains(last),
+                    "world cut {name}: end marker {last:?} must follow"
+                );
                 let rel = text[a..].find(last).expect("cut end");
                 let mut body = text[a..a + rel].to_string();
                 if name == "load_post_process.inc" {

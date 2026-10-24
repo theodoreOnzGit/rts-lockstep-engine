@@ -71,7 +71,16 @@ const KEYS: &[&[u8]] = &[
     b"Player_1_Start",
     b"objectSelectable",
 ];
-const NAMES: &[&[u8]] = &[b"Tree", b"Waypoint", b"Bridge", b"", b" ", b"x\x00y", b"Barracks", b"Tank"];
+const NAMES: &[&[u8]] = &[
+    b"Tree",
+    b"Waypoint",
+    b"Bridge",
+    b"",
+    b" ",
+    b"x\x00y",
+    b"Barracks",
+    b"Tank",
+];
 const WAYPOINT_NAMES: &[&[u8]] = &[b"Start", b"Way 2", b"Start"];
 
 fn put_str(v: &mut Vec<u8>, s: &[u8]) {
@@ -81,7 +90,11 @@ fn put_str(v: &mut Vec<u8>, s: &[u8]) {
 
 /// The table of contents: `Object` is id 1, the keys follow.
 fn toc(g: &mut Gen, clean: bool) -> Vec<u8> {
-    let mut v = if !clean && g.below(12) == 0 { b"CkMq".to_vec() } else { b"CkMp".to_vec() };
+    let mut v = if !clean && g.below(12) == 0 {
+        b"CkMq".to_vec()
+    } else {
+        b"CkMp".to_vec()
+    };
     let mut entries: Vec<(&[u8], u32)> = vec![(b"Object", 1)];
     for (i, k) in KEYS.iter().enumerate() {
         entries.push((k, 2 + i as u32));
@@ -96,7 +109,11 @@ fn toc(g: &mut Gen, clean: bool) -> Vec<u8> {
 }
 
 fn key_id(g: &mut Gen) -> u32 {
-    if g.below(12) == 0 { g.u32() >> 8 } else { 2 + g.below(KEYS.len() as u32) }
+    if g.below(12) == 0 {
+        g.u32() >> 8
+    } else {
+        2 + g.below(KEYS.len() as u32)
+    }
 }
 
 fn property_sheet(g: &mut Gen, body: &mut Vec<u8>, waypoint: bool) {
@@ -110,7 +127,11 @@ fn property_sheet(g: &mut Gen, body: &mut Vec<u8>, waypoint: bool) {
     }
     for _ in 0..g.below(4) {
         let id = key_id(g);
-        let ty = if g.below(40) == 0 { 5 + g.below(4) } else { g.below(5) };
+        let ty = if g.below(40) == 0 {
+            5 + g.below(4)
+        } else {
+            g.below(5)
+        };
         let mut val = Vec::new();
         match ty {
             0 => val.push(g.u32() as u8),
@@ -118,14 +139,26 @@ fn property_sheet(g: &mut Gen, body: &mut Vec<u8>, waypoint: bool) {
             2 => val.extend_from_slice(&g.mixed().to_le_bytes()),
             3 => {
                 let n = g.below(6) as usize;
-                let s: Vec<u8> = (0..n).map(|_| if g.below(8) == 0 { 0 } else { b'a' + g.below(26) as u8 }).collect();
+                let s: Vec<u8> = (0..n)
+                    .map(|_| {
+                        if g.below(8) == 0 {
+                            0
+                        } else {
+                            b'a' + g.below(26) as u8
+                        }
+                    })
+                    .collect();
                 put_str(&mut val, &s);
             }
             4 => {
                 let n = g.below(4) as usize;
                 val.extend_from_slice(&(n as u16).to_le_bytes());
                 for _ in 0..n {
-                    let u = if g.below(6) == 0 { 0 } else { 0x41 + g.below(26) as u16 };
+                    let u = if g.below(6) == 0 {
+                        0
+                    } else {
+                        0x41 + g.below(26) as u16
+                    };
                     val.extend_from_slice(&u.to_le_bytes());
                 }
             }
@@ -133,7 +166,11 @@ fn property_sheet(g: &mut Gen, body: &mut Vec<u8>, waypoint: bool) {
         }
         pairs.push((id, ty, val));
     }
-    let count: u16 = if g.below(60) == 0 { 32768 } else { pairs.len() as u16 };
+    let count: u16 = if g.below(60) == 0 {
+        32768
+    } else {
+        pairs.len() as u16
+    };
     body.extend_from_slice(&count.to_le_bytes());
     for (id, ty, val) in pairs {
         body.extend_from_slice(&((id << 8) | ty).to_le_bytes());
@@ -146,7 +183,11 @@ fn object(g: &mut Gen, version: u16, damaged: bool) -> Vec<u8> {
     for _ in 0..3 {
         b.extend_from_slice(&g.mixed().to_bits().to_le_bytes());
     }
-    let angle = if damaged && g.below(40) == 0 { f32::INFINITY } else { g.uniform(-30.0, 30.0) };
+    let angle = if damaged && g.below(40) == 0 {
+        f32::INFINITY
+    } else {
+        g.uniform(-30.0, 30.0)
+    };
     b.extend_from_slice(&angle.to_bits().to_le_bytes());
     b.extend_from_slice(&g.i32().to_le_bytes());
     put_str(&mut b, NAMES[g.below(NAMES.len() as u32) as usize]);
@@ -206,21 +247,29 @@ fn rust_log(ctx: &ObjectParse) -> Vec<u8> {
         log.extend_from_slice(&obj.angle().to_bits().to_le_bytes());
         log.extend_from_slice(&obj.flags().to_le_bytes());
         let d = obj.properties();
-        let mut v: Vec<(Vec<u8>, i32)> =
-            (0..d.get_pair_count()).map(|n| (ctx.names.key_to_name(d.get_nth_key(n)).to_vec(), n)).collect();
+        let mut v: Vec<(Vec<u8>, i32)> = (0..d.get_pair_count())
+            .map(|n| (ctx.names.key_to_name(d.get_nth_key(n)).to_vec(), n))
+            .collect();
         v.sort_by(|a, b| a.0.cmp(&b.0));
         log.extend_from_slice(&(v.len() as u32).to_le_bytes());
         for (name, n) in v {
             put_cstr(&mut log, &name);
             match d.get_nth_type(n) {
-                DataType::Bool => log.extend_from_slice(&[0, u8::from(d.try_get_nth_bool(n).expect("in range"))]),
+                DataType::Bool => {
+                    log.extend_from_slice(&[0, u8::from(d.try_get_nth_bool(n).expect("in range"))])
+                }
                 DataType::Int => {
                     log.push(1);
                     log.extend_from_slice(&d.try_get_nth_int(n).expect("in range").to_le_bytes());
                 }
                 DataType::Real => {
                     log.push(2);
-                    log.extend_from_slice(&d.try_get_nth_real(n).expect("in range").to_bits().to_le_bytes());
+                    log.extend_from_slice(
+                        &d.try_get_nth_real(n)
+                            .expect("in range")
+                            .to_bits()
+                            .to_le_bytes(),
+                    );
                 }
                 DataType::AsciiString => {
                     log.push(3);
@@ -254,7 +303,14 @@ fn cpp_run(data: &[u8]) -> (i32, u32, Vec<u8>) {
     let mut log_len: i32 = 0;
     let mut code: u32 = 0;
     let status = unsafe {
-        cpp::ref_map_object_run(data.as_ptr() as *const _, data.len() as i32, log.as_mut_ptr(), log.len() as i32, &mut log_len, &mut code)
+        cpp::ref_map_object_run(
+            data.as_ptr() as *const _,
+            data.len() as i32,
+            log.as_mut_ptr(),
+            log.len() as i32,
+            &mut log_len,
+            &mut code,
+        )
     };
     assert!(status >= 0, "C++ log overflow");
     log.truncate(log_len as usize);
@@ -290,7 +346,9 @@ fn map_object_chunk_matches_upstream() {
                 Err(e) => unreachable!("{e:?}"),
             };
             if input.contents().eof_mappings() > 100_000 {
-                return Err("table of contents past the end of the file (over 10^5 entries)".to_string());
+                return Err(
+                    "table of contents past the end of the file (over 10^5 entries)".to_string(),
+                );
             }
             input.register_parser(b"Object", b"", parse_object_data_chunk);
             match input.parse(&mut ctx) {
@@ -306,7 +364,10 @@ fn map_object_chunk_matches_upstream() {
             Ok(x) => x,
             Err(kind) => {
                 // a clean file is well formed and has a finite angle: it is never excluded
-                assert!(!clean, "case {case}: clean file undefined for the Rust reader: {kind}");
+                assert!(
+                    !clean,
+                    "case {case}: clean file undefined for the Rust reader: {kind}"
+                );
                 *counts.excluded.entry(kind).or_default() += 1;
                 continue;
             }
@@ -314,10 +375,14 @@ fn map_object_chunk_matches_upstream() {
         // (status, code) as the C++ reports them: 1, 0, or 3 with the thrown ErrorCode
         let (cs, cc, log) = cpp_run(&data);
         let cpp_pair = (cs, if cs == 3 { cc } else { 0 });
-        check.eq((rust_status, rust_code), cpp_pair, || format!("case {case} (clean {clean}): status/code of {:02x?}", data));
+        check.eq((rust_status, rust_code), cpp_pair, || {
+            format!("case {case} (clean {clean}): status/code of {:02x?}", data)
+        });
         let rust = rust_log(&ctx);
         counts.log_bytes += rust.len() as u64;
-        check.eq(rust, log, || format!("case {case} (clean {clean}): {:02x?}", data));
+        check.eq(rust, log, || {
+            format!("case {case} (clean {clean}): {:02x?}", data)
+        });
         if rust_status == 3 {
             *counts.thrown.entry(rust_code).or_default() += 1;
         }

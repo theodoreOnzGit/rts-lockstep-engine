@@ -38,9 +38,9 @@
 
 mod support;
 
-use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::common::dict::DataType;
 use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
+use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::formats::data_chunk::{
     CachedFileInputStream, ChunkError, ChunkResult, DataChunkInfo, DataChunkInput,
 };
@@ -70,15 +70,22 @@ fn put_wide(log: &mut Log, s: &[u16]) {
 }
 
 /// `interp` of wrap_chunk.cpp.
-fn interp(file: &mut DataChunkInput<Ctx>, info: &DataChunkInfo, ctx: &mut Ctx) -> ChunkResult<bool> {
+fn interp(
+    file: &mut DataChunkInput<Ctx>,
+    info: &DataChunkInfo,
+    ctx: &mut Ctx,
+) -> ChunkResult<bool> {
     ctx.log.push(b'I');
     put_str(&mut ctx.log, &info.label);
     put_str(&mut ctx.log, &info.parent_label);
     ctx.log.extend_from_slice(&info.version.to_le_bytes());
     ctx.log.extend_from_slice(&info.data_size.to_le_bytes());
-    ctx.log.extend_from_slice(&file.get_chunk_data_size().to_le_bytes());
-    ctx.log.extend_from_slice(&file.get_chunk_data_size_left().to_le_bytes());
-    ctx.log.extend_from_slice(&file.get_chunk_version().to_le_bytes());
+    ctx.log
+        .extend_from_slice(&file.get_chunk_data_size().to_le_bytes());
+    ctx.log
+        .extend_from_slice(&file.get_chunk_data_size_left().to_le_bytes());
+    ctx.log
+        .extend_from_slice(&file.get_chunk_version().to_le_bytes());
     put_str(&mut ctx.log, &file.get_chunk_label());
     for _ in 0..64 {
         if file.at_end_of_chunk() {
@@ -112,29 +119,43 @@ fn interp(file: &mut DataChunkInput<Ctx>, info: &DataChunkInfo, ctx: &mut Ctx) -
             }
             7 => {
                 let d = file.read_dict(&mut ctx.names)?;
-                let mut v: Vec<(Vec<u8>, i32)> =
-                    (0..d.get_pair_count()).map(|n| (ctx.names.key_to_name(d.get_nth_key(n)).to_vec(), n)).collect();
+                let mut v: Vec<(Vec<u8>, i32)> = (0..d.get_pair_count())
+                    .map(|n| (ctx.names.key_to_name(d.get_nth_key(n)).to_vec(), n))
+                    .collect();
                 v.sort_by(|a, b| a.0.cmp(&b.0));
                 ctx.log.extend_from_slice(&(v.len() as u32).to_le_bytes());
                 for (name, n) in v {
                     put_str(&mut ctx.log, &name);
                     match d.get_nth_type(n) {
-                        DataType::Bool => ctx.log.extend_from_slice(&[0, u8::from(d.try_get_nth_bool(n).expect("in range"))]),
+                        DataType::Bool => ctx.log.extend_from_slice(&[
+                            0,
+                            u8::from(d.try_get_nth_bool(n).expect("in range")),
+                        ]),
                         DataType::Int => {
                             ctx.log.push(1);
-                            ctx.log.extend_from_slice(&d.try_get_nth_int(n).expect("in range").to_le_bytes());
+                            ctx.log.extend_from_slice(
+                                &d.try_get_nth_int(n).expect("in range").to_le_bytes(),
+                            );
                         }
                         DataType::Real => {
                             ctx.log.push(2);
-                            ctx.log.extend_from_slice(&d.try_get_nth_real(n).expect("in range").to_le_bytes());
+                            ctx.log.extend_from_slice(
+                                &d.try_get_nth_real(n).expect("in range").to_le_bytes(),
+                            );
                         }
                         DataType::AsciiString => {
                             ctx.log.push(3);
-                            put_str(&mut ctx.log, &d.try_get_nth_ascii_string(n).expect("in range"));
+                            put_str(
+                                &mut ctx.log,
+                                &d.try_get_nth_ascii_string(n).expect("in range"),
+                            );
                         }
                         DataType::UnicodeString => {
                             ctx.log.push(4);
-                            put_wide(&mut ctx.log, &d.try_get_nth_unicode_string(n).expect("in range"));
+                            put_wide(
+                                &mut ctx.log,
+                                &d.try_get_nth_unicode_string(n).expect("in range"),
+                            );
                         }
                         DataType::None => unreachable!("a pair always has a type"),
                     }
@@ -146,7 +167,8 @@ fn interp(file: &mut DataChunkInput<Ctx>, info: &DataChunkInfo, ctx: &mut Ctx) -
             }
             9 => {
                 ctx.log.push(b'z');
-                ctx.log.extend_from_slice(&file.get_chunk_data_size_left().to_le_bytes());
+                ctx.log
+                    .extend_from_slice(&file.get_chunk_data_size_left().to_le_bytes());
                 ctx.log.push(u8::from(file.at_end_of_file()));
             }
             10 => {
@@ -167,7 +189,11 @@ fn fail_parser(_: &mut DataChunkInput<Ctx>, _: &DataChunkInfo, ctx: &mut Ctx) ->
     Ok(false)
 }
 
-fn quiet_parser(_: &mut DataChunkInput<Ctx>, info: &DataChunkInfo, ctx: &mut Ctx) -> ChunkResult<bool> {
+fn quiet_parser(
+    _: &mut DataChunkInput<Ctx>,
+    info: &DataChunkInfo,
+    ctx: &mut Ctx,
+) -> ChunkResult<bool> {
     ctx.log.push(b'Q');
     ctx.log.extend_from_slice(&info.data_size.to_le_bytes());
     Ok(true)
@@ -180,11 +206,13 @@ fn rust_run(data: &[u8]) -> Result<(i32, u32, Log, u64), ChunkError> {
     ctx.names.init(); // as the wrapper's `new NameKeyGenerator` + init()
     let mut eof_mappings = 0;
     let r = (|| -> ChunkResult<()> {
-        let mut input = DataChunkInput::new(CachedFileInputStream::new(data.to_vec()).expect("non-empty"))?;
+        let mut input =
+            DataChunkInput::new(CachedFileInputStream::new(data.to_vec()).expect("non-empty"))?;
         eof_mappings = input.contents().eof_mappings();
         ctx.log.push(u8::from(input.is_valid_file_type()));
         for name in [&b""[..], b"A", b"B", b"C", b"D", b"Fail", b"Unknown", b"a"] {
-            ctx.log.extend_from_slice(&input.contents().get_id(name).to_le_bytes());
+            ctx.log
+                .extend_from_slice(&input.contents().get_id(name).to_le_bytes());
         }
         for id in (0..12).chain([0xFFFF_FFFF]) {
             put_str(&mut ctx.log, &input.contents().get_name(id));
@@ -216,8 +244,16 @@ fn rust_run(data: &[u8]) -> Result<(i32, u32, Log, u64), ChunkError> {
 fn cpp_run(data: &[u8]) -> (i32, u32, Log) {
     let mut log = vec![0u8; 1 << 22];
     let (mut n, mut code) = (0i32, 0u32);
-    let status =
-        unsafe { cpp::ref_chunk_run(data.as_ptr() as *const _, data.len() as i32, log.as_mut_ptr(), log.len() as i32, &mut n, &mut code) };
+    let status = unsafe {
+        cpp::ref_chunk_run(
+            data.as_ptr() as *const _,
+            data.len() as i32,
+            log.as_mut_ptr(),
+            log.len() as i32,
+            &mut n,
+            &mut code,
+        )
+    };
     assert!(n as usize <= log.len(), "C++ log overflow");
     log.truncate(n as usize);
     (status, code, log)
@@ -251,7 +287,11 @@ fn w16(v: &mut Vec<u8>, x: u16) {
 const NAMES: &[&[u8]] = &[b"A", b"B", b"C", b"D", b"Fail"];
 
 fn gen_toc(g: &mut Gn) -> (Vec<u8>, Vec<u32>) {
-    let mut entries: Vec<(Vec<u8>, u32)> = NAMES.iter().enumerate().map(|(i, n)| (n.to_vec(), i as u32 + 1)).collect();
+    let mut entries: Vec<(Vec<u8>, u32)> = NAMES
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.to_vec(), i as u32 + 1))
+        .collect();
     for _ in 0..g.below(4) {
         let name = match g.below(6) {
             0 => Vec::new(),
@@ -273,7 +313,11 @@ fn gen_toc(g: &mut Gn) -> (Vec<u8>, Vec<u32>) {
         entries.swap(i, j);
     }
     let ids: Vec<u32> = entries.iter().map(|e| e.1).collect();
-    let mut v = if g.chance(25) { b"CkMq".to_vec() } else { b"CkMp".to_vec() };
+    let mut v = if g.chance(25) {
+        b"CkMq".to_vec()
+    } else {
+        b"CkMp".to_vec()
+    };
     let count = if g.chance(10) {
         match g.below(4) {
             0 => 0,
@@ -305,20 +349,36 @@ fn gen_ops(g: &mut Gn, ids: &[u32], depth: u32) -> Vec<u8> {
         v.push((kind + 12 * g.below(21)) as u8);
         match kind {
             0 => w32(&mut v, g.g.u32()),
-            1 => w32(&mut v, [1.5f32, -0.0, 3.0e38, f32::MIN_POSITIVE, 0.1].map(f32::to_bits)[g.below(5) as usize] ^ ((g.below(2) * g.g.u32()) & 0xff)),
+            1 => w32(
+                &mut v,
+                [1.5f32, -0.0, 3.0e38, f32::MIN_POSITIVE, 0.1].map(f32::to_bits)
+                    [g.below(5) as usize]
+                    ^ ((g.below(2) * g.g.u32()) & 0xff),
+            ),
             2 => v.push(g.g.u32() as u8),
             3 => {
                 let len = g.below(10) as usize;
                 w16(&mut v, if g.chance(15) { 300 } else { len as u16 });
                 for _ in 0..len {
-                    v.push(if g.below(10) == 0 { 0 } else { b'a' + g.below(26) as u8 });
+                    v.push(if g.below(10) == 0 {
+                        0
+                    } else {
+                        b'a' + g.below(26) as u8
+                    });
                 }
             }
             4 => {
                 let len = g.below(6) as usize;
                 w16(&mut v, len as u16);
                 for _ in 0..len {
-                    w16(&mut v, if g.below(10) == 0 { 0 } else { g.g.u32() as u16 | 1 });
+                    w16(
+                        &mut v,
+                        if g.below(10) == 0 {
+                            0
+                        } else {
+                            g.g.u32() as u16 | 1
+                        },
+                    );
                 }
             }
             5 => {
@@ -338,11 +398,19 @@ fn gen_ops(g: &mut Gn, ids: &[u32], depth: u32) -> Vec<u8> {
                 return v;
             }
             7 => {
-                let len = if g.chance(30) { 40000 } else { g.below(5) as u16 };
+                let len = if g.chance(30) {
+                    40000
+                } else {
+                    g.below(5) as u16
+                };
                 w16(&mut v, len);
                 for _ in 0..len.min(5) {
                     let t = if g.chance(20) { 7 } else { g.below(5) };
-                    let id = if g.below(6) == 0 { g.g.u32() >> 8 } else { ids[g.below(ids.len() as u32) as usize] };
+                    let id = if g.below(6) == 0 {
+                        g.g.u32() >> 8
+                    } else {
+                        ids[g.below(ids.len() as u32) as usize]
+                    };
                     w32(&mut v, (id << 8) | t);
                     match t {
                         0 => v.push(g.below(3) as u8),
@@ -374,7 +442,11 @@ fn gen_ops(g: &mut Gn, ids: &[u32], depth: u32) -> Vec<u8> {
 }
 
 fn gen_chunk(g: &mut Gn, ids: &[u32], depth: u32) -> Vec<u8> {
-    let id = if g.below(8) == 0 { g.below(20) } else { ids[g.below(ids.len() as u32) as usize] };
+    let id = if g.below(8) == 0 {
+        g.below(20)
+    } else {
+        ids[g.below(ids.len() as u32) as usize]
+    };
     let body = gen_ops(g, ids, depth);
     let size = if g.chance(8) {
         match g.below(5) {
@@ -417,7 +489,10 @@ fn gen_file(g: &mut Gn) -> Vec<u8> {
 
 #[test]
 fn data_chunk_matches_upstream() {
-    let mut g = Gn { g: Gen::new(0xDC), clean: false };
+    let mut g = Gn {
+        g: Gen::new(0xDC),
+        clean: false,
+    };
     let mut check = Check::new("DataChunkInput (TOC, parsers' log, parse, throw)");
     let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
     let (mut parsed, mut thrown, mut log_bytes, mut eof_toc) = (0u64, 0u64, 0u64, 0u64);

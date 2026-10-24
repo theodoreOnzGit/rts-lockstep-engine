@@ -90,7 +90,9 @@
 use std::sync::Arc;
 
 use crate::common::audio_event_name::AudioEventName;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_SPECIAL_POWER};
 use crate::common::special_power::SpecialPowerStore;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
@@ -140,7 +142,11 @@ impl SpecialPowerModuleDataCtx<'_> {
     /// the store (`None` stores a null pointer; an unknown name does too, a
     /// `DEBUG_CRASH` upstream that is compiled out). `ERROR_BUG` while
     /// `TheSpecialPowerStore` is null.
-    fn parse_special_power_template(ini: &mut Ini<'_>, c: &mut SpecialPowerModuleDataCtx<'_>, _: &UserData) -> IniResult<()> {
+    fn parse_special_power_template(
+        ini: &mut Ini<'_>,
+        c: &mut SpecialPowerModuleDataCtx<'_>,
+        _: &UserData,
+    ) -> IniResult<()> {
         let token = ini.get_next_token(None)?;
         // --- p1w11-sonnet --- (the name is kept either way)
         c.data.special_power_template_name = Some(token.clone());
@@ -154,18 +160,34 @@ impl SpecialPowerModuleDataCtx<'_> {
         c.data.special_power_template = store.find_special_power_template(&token).map(|t| t.id());
         Ok(())
     }
-    fn parse_update_module_starts_attack(ini: &mut Ini<'_>, c: &mut SpecialPowerModuleDataCtx<'_>, _: &UserData) -> IniResult<()> {
+    fn parse_update_module_starts_attack(
+        ini: &mut Ini<'_>,
+        c: &mut SpecialPowerModuleDataCtx<'_>,
+        _: &UserData,
+    ) -> IniResult<()> {
         c.data.update_module_starts_attack = ini.parse_bool()?;
         Ok(())
     }
-    fn parse_starts_paused(ini: &mut Ini<'_>, c: &mut SpecialPowerModuleDataCtx<'_>, _: &UserData) -> IniResult<()> {
+    fn parse_starts_paused(
+        ini: &mut Ini<'_>,
+        c: &mut SpecialPowerModuleDataCtx<'_>,
+        _: &UserData,
+    ) -> IniResult<()> {
         c.data.starts_paused = ini.parse_bool()?;
         Ok(())
     }
-    fn parse_initiate_sound(ini: &mut Ini<'_>, c: &mut SpecialPowerModuleDataCtx<'_>, _: &UserData) -> IniResult<()> {
+    fn parse_initiate_sound(
+        ini: &mut Ini<'_>,
+        c: &mut SpecialPowerModuleDataCtx<'_>,
+        _: &UserData,
+    ) -> IniResult<()> {
         c.data.initiate_sound.parse(ini)
     }
-    fn parse_scripted_special_power_only(ini: &mut Ini<'_>, c: &mut SpecialPowerModuleDataCtx<'_>, _: &UserData) -> IniResult<()> {
+    fn parse_scripted_special_power_only(
+        ini: &mut Ini<'_>,
+        c: &mut SpecialPowerModuleDataCtx<'_>,
+        _: &UserData,
+    ) -> IniResult<()> {
         c.data.scripted_special_power_only = ini.parse_bool()?;
         Ok(())
     }
@@ -194,26 +216,59 @@ impl SpecialPowerModuleData {
     /// `SpecialPowerModule::friend_newModuleData(ini)`: new data, read with
     /// `initFromINIMultiProc(data, buildFieldParse)` if there is an `ini`.
     /// `store` is `TheSpecialPowerStore` (`None` while null).
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>, store: Option<&SpecialPowerStore>) -> IniResult<SpecialPowerModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+        store: Option<&SpecialPowerStore>,
+    ) -> IniResult<SpecialPowerModuleData> {
         Self::friend_new_module_data_with(ini, store, false)
     }
 
     // --- p1w11-sonnet ---
     /// [`friend_new_module_data`](Self::friend_new_module_data) as the module factory's data proc must make it: no store, so the template field keeps
     /// its name ([`SpecialPowerModuleData::special_power_template_name`]) and looks nothing up.
-    pub fn friend_new_module_data_deferred(ini: Option<&mut Ini<'_>>) -> IniResult<SpecialPowerModuleData> {
+    pub fn friend_new_module_data_deferred(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<SpecialPowerModuleData> {
         Self::friend_new_module_data_with(ini, None, true)
     }
 
-    fn friend_new_module_data_with(ini: Option<&mut Ini<'_>>, store: Option<&SpecialPowerStore>, defer: bool) -> IniResult<SpecialPowerModuleData> {
-        let mut ctx = SpecialPowerModuleDataCtx { data: SpecialPowerModuleData::new(), store, defer };
+    fn friend_new_module_data_with(
+        ini: Option<&mut Ini<'_>>,
+        store: Option<&SpecialPowerStore>,
+        defer: bool,
+    ) -> IniResult<SpecialPowerModuleData> {
+        let mut ctx = SpecialPowerModuleDataCtx {
+            data: SpecialPowerModuleData::new(),
+            store,
+            defer,
+        };
         if let Some(ini) = ini {
             let fields = [
-                FieldParse::new("SpecialPowerTemplate", SpecialPowerModuleDataCtx::parse_special_power_template, UserData::None),
-                FieldParse::new("UpdateModuleStartsAttack", SpecialPowerModuleDataCtx::parse_update_module_starts_attack, UserData::None),
-                FieldParse::new("StartsPaused", SpecialPowerModuleDataCtx::parse_starts_paused, UserData::None),
-                FieldParse::new("InitiateSound", SpecialPowerModuleDataCtx::parse_initiate_sound, UserData::None),
-                FieldParse::new("ScriptedSpecialPowerOnly", SpecialPowerModuleDataCtx::parse_scripted_special_power_only, UserData::None),
+                FieldParse::new(
+                    "SpecialPowerTemplate",
+                    SpecialPowerModuleDataCtx::parse_special_power_template,
+                    UserData::None,
+                ),
+                FieldParse::new(
+                    "UpdateModuleStartsAttack",
+                    SpecialPowerModuleDataCtx::parse_update_module_starts_attack,
+                    UserData::None,
+                ),
+                FieldParse::new(
+                    "StartsPaused",
+                    SpecialPowerModuleDataCtx::parse_starts_paused,
+                    UserData::None,
+                ),
+                FieldParse::new(
+                    "InitiateSound",
+                    SpecialPowerModuleDataCtx::parse_initiate_sound,
+                    UserData::None,
+                ),
+                FieldParse::new(
+                    "ScriptedSpecialPowerOnly",
+                    SpecialPowerModuleDataCtx::parse_scripted_special_power_only,
+                    UserData::None,
+                ),
                 FieldParse::end(),
             ];
             let mut p = MultiIniFieldParse::new();
@@ -253,11 +308,21 @@ pub struct SpecialPowerContext {
 impl SpecialPowerContext {
     /// A context. [`Undefined::NullSpecialPowerTemplate`] for a null template
     /// with a controlling player (upstream calls `isSharedNSync()` on it).
-    pub fn new(now: u32, template: Option<SpecialPowerTiming>, has_controlling_player: bool, is_disabled: bool) -> IniResult<Self> {
+    pub fn new(
+        now: u32,
+        template: Option<SpecialPowerTiming>,
+        has_controlling_player: bool,
+        is_disabled: bool,
+    ) -> IniResult<Self> {
         if template.is_none() && has_controlling_player {
             return Err(IniError::undefined(Undefined::NullSpecialPowerTemplate));
         }
-        Ok(SpecialPowerContext { now, template, has_controlling_player, is_disabled })
+        Ok(SpecialPowerContext {
+            now,
+            template,
+            has_controlling_player,
+            is_disabled,
+        })
     }
 
     /// `TheGameLogic->getFrame()`.
@@ -307,10 +372,21 @@ impl SpecialPowerModule {
     /// `SpecialPowerModule(thing, moduleData)`, as far as it is the module's
     /// own state (see the module docs): ready on frame 0, not paused.
     /// `INI_INVALID_DATA` for null data.
-    pub fn new(object: ObjectId, module_data: Option<Arc<SpecialPowerModuleData>>) -> IniResult<Self> {
+    pub fn new(
+        object: ObjectId,
+        module_data: Option<Arc<SpecialPowerModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
-        let behavior = BehaviorModule::new(object, Some(ModuleDataKind::SpecialPower(data.clone())))?;
-        Ok(SpecialPowerModule { behavior, data, available_on_frame: 0, paused_count: 0, paused_on_frame: 0, paused_percent: 0.0 })
+        let behavior =
+            BehaviorModule::new(object, Some(ModuleDataKind::SpecialPower(data.clone())))?;
+        Ok(SpecialPowerModule {
+            behavior,
+            data,
+            available_on_frame: 0,
+            paused_count: 0,
+            paused_on_frame: 0,
+            paused_percent: 0.0,
+        })
     }
 
     /// `SpecialPowerModule::getInterfaceMask()`: `MODULEINTERFACE_SPECIAL_POWER`.
@@ -359,7 +435,11 @@ impl SpecialPowerModule {
     /// `isReady()`: with a shared template and a player, the player's ready
     /// frame has come (`shared_ready_frame` is that player call); else not
     /// paused and the module's frame has come.
-    pub fn is_ready(&self, ctx: &SpecialPowerContext, mut shared_ready_frame: impl FnMut() -> u32) -> bool {
+    pub fn is_ready(
+        &self,
+        ctx: &SpecialPowerContext,
+        mut shared_ready_frame: impl FnMut() -> u32,
+    ) -> bool {
         if ctx.uses_player_ready_frame() {
             return ctx.now >= shared_ready_frame();
         }
@@ -369,7 +449,11 @@ impl SpecialPowerModule {
     /// `getPercentReady()`: "1.0 = ready now, 0.5 = half charged up etc."
     /// (0.99999 while paused with a full charge, the percent at the pause
     /// while paused, 0 with no template).
-    pub fn get_percent_ready(&self, ctx: &SpecialPowerContext, mut shared_ready_frame: impl FnMut() -> u32) -> f32 {
+    pub fn get_percent_ready(
+        &self,
+        ctx: &SpecialPowerContext,
+        mut shared_ready_frame: impl FnMut() -> u32,
+    ) -> f32 {
         if self.paused_count > 0 && self.paused_percent == 1.0 {
             // "Don't consider it ready if paused."
             return 0.99999;
@@ -404,7 +488,11 @@ impl SpecialPowerModule {
     /// template; else, while paused or disabled, the module's frame plus the
     /// time since the pause began (or since `setReadyFrame`); else the
     /// module's frame.
-    pub fn get_ready_frame(&self, ctx: &SpecialPowerContext, mut shared_ready_frame: impl FnMut() -> u32) -> u32 {
+    pub fn get_ready_frame(
+        &self,
+        ctx: &SpecialPowerContext,
+        mut shared_ready_frame: impl FnMut() -> u32,
+    ) -> u32 {
         if ctx.uses_player_ready_frame() {
             return shared_ready_frame();
         }
@@ -442,7 +530,12 @@ impl SpecialPowerModule {
     /// percent charged; each pause counts; an unpause of a paused module
     /// counts down, and the last one adds the time spent paused to the ready
     /// frame ("so multiple unpauses don't break").
-    pub fn pause_countdown(&mut self, pause: bool, ctx: &SpecialPowerContext, shared_ready_frame: impl FnMut() -> u32) {
+    pub fn pause_countdown(
+        &mut self,
+        pause: bool,
+        ctx: &SpecialPowerContext,
+        shared_ready_frame: impl FnMut() -> u32,
+    ) {
         if pause {
             if self.paused_count == 0 {
                 // "Only record this with the first pausing, otherwise upon final unpausing you
@@ -457,7 +550,9 @@ impl SpecialPowerModule {
 
             // "And only update the ready time if we are fully unpaused now."
             if self.paused_count == 0 {
-                self.available_on_frame = self.available_on_frame.wrapping_add(ctx.now.wrapping_sub(self.paused_on_frame));
+                self.available_on_frame = self
+                    .available_on_frame
+                    .wrapping_add(ctx.now.wrapping_sub(self.paused_on_frame));
             }
         }
     }
@@ -535,21 +630,53 @@ mod tests {
             out: &'a mut Option<IniResult<SpecialPowerModuleData>>,
         }
         fn block(ini: &mut Ini<'_>, c: &mut C<'_>) -> IniResult<()> {
-            *c.out = Some(SpecialPowerModuleData::friend_new_module_data(Some(ini), c.store));
+            *c.out = Some(SpecialPowerModuleData::friend_new_module_data(
+                Some(ini),
+                c.store,
+            ));
             Ok(())
         }
         // the block table is built per call: its handler's context borrows the store
-        fn run<'a>(text: &str, store: Option<&'a SpecialPowerStore>, out: &'a mut Option<IniResult<SpecialPowerModuleData>>) {
-            let blocks: [BlockParse<C<'a>>; 1] = [BlockParse { token: "D", parse: block }];
+        fn run<'a>(
+            text: &str,
+            store: Option<&'a SpecialPowerStore>,
+            out: &'a mut Option<IniResult<SpecialPowerModuleData>>,
+        ) {
+            let blocks: [BlockParse<C<'a>>; 1] = [BlockParse {
+                token: "D",
+                parse: block,
+            }];
             let mut c = C { store, out };
-            let _ = Ini::load(b"s.ini", text.as_bytes(), IniLoadType::Overwrite, None, &blocks, &mut c);
+            let _ = Ini::load(
+                b"s.ini",
+                text.as_bytes(),
+                IniLoadType::Overwrite,
+                None,
+                &blocks,
+                &mut c,
+            );
         }
         run(&text, store, &mut ini_out);
         ini_out.expect("block handler ran")
     }
 
-    fn clock(now: u32, reload: u32, shared: bool, player: bool, disabled: bool) -> SpecialPowerContext {
-        SpecialPowerContext::new(now, Some(SpecialPowerTiming { reload_time: reload, is_shared_n_sync: shared }), player, disabled).unwrap()
+    fn clock(
+        now: u32,
+        reload: u32,
+        shared: bool,
+        player: bool,
+        disabled: bool,
+    ) -> SpecialPowerContext {
+        SpecialPowerContext::new(
+            now,
+            Some(SpecialPowerTiming {
+                reload_time: reload,
+                is_shared_n_sync: shared,
+            }),
+            player,
+            disabled,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -571,8 +698,15 @@ mod tests {
         let e = data_of("SpecialPowerTemplate = None", None).unwrap_err();
         assert_eq!(e.kind, IniErrorKind::Bug);
         let store = SpecialPowerStore::new();
-        let d = data_of("SpecialPowerTemplate = None\n SpecialPowerTemplate = Missing", Some(&store)).unwrap();
-        assert_eq!(d.special_power_template, None, "an unknown name is a null pointer");
+        let d = data_of(
+            "SpecialPowerTemplate = None\n SpecialPowerTemplate = Missing",
+            Some(&store),
+        )
+        .unwrap();
+        assert_eq!(
+            d.special_power_template, None,
+            "an unknown name is a null pointer"
+        );
         // a template in the store is found by its id
         let mut store = SpecialPowerStore::new();
         let mut names = NameKeyGenerator::new();
@@ -581,16 +715,31 @@ mod tests {
         fn def(ini: &mut Ini<'_>, c: &mut (SpecialPowerStore, NameKeyGenerator)) -> IniResult<()> {
             c.0.parse_special_power_definition(ini, &mut c.1, &|_| true)
         }
-        let blocks = [BlockParse { token: "SpecialPower", parse: def }];
+        let blocks = [BlockParse {
+            token: "SpecialPower",
+            parse: def,
+        }];
         let mut c = (std::mem::take(&mut store), names);
-        Ini::load(b"p.ini", b"SpecialPower SuperA\nEnd\nSpecialPower SuperB\nEnd\n", IniLoadType::Overwrite, None, &blocks, &mut c).unwrap();
+        Ini::load(
+            b"p.ini",
+            b"SpecialPower SuperA\nEnd\nSpecialPower SuperB\nEnd\n",
+            IniLoadType::Overwrite,
+            None,
+            &blocks,
+            &mut c,
+        )
+        .unwrap();
         ini_ok |= c.0.len() == 2;
         assert!(ini_ok);
         let id_b = c.0.find_special_power_template(b"SuperB").unwrap().id();
         let d = data_of("SpecialPowerTemplate = SuperB", Some(&c.0)).unwrap();
         assert_eq!(d.special_power_template, Some(id_b));
         let m = SpecialPowerModule::new(1, Some(Arc::new(d))).unwrap();
-        assert!(m.is_module_for_power(Some(id_b)) && !m.is_module_for_power(Some(id_b + 1)) && !m.is_module_for_power(None));
+        assert!(
+            m.is_module_for_power(Some(id_b))
+                && !m.is_module_for_power(Some(id_b + 1))
+                && !m.is_module_for_power(None)
+        );
     }
 
     #[test]
@@ -602,12 +751,24 @@ mod tests {
         assert_eq!(m.get_available_on_frame(), 400);
         assert!(!m.is_ready(&c, || unreachable!()));
         assert!(m.is_ready(&clock(400, 300, false, true, false), || unreachable!()));
-        assert_eq!(m.get_percent_ready(&c, || unreachable!()), 1.0 - 300.0 / 300.0);
-        assert_eq!(m.get_percent_ready(&clock(250, 300, false, true, false), || unreachable!()), 1.0 - 150.0 / 300.0);
-        assert_eq!(m.get_percent_ready(&clock(400, 300, false, true, false), || unreachable!()), 1.0);
+        assert_eq!(
+            m.get_percent_ready(&c, || unreachable!()),
+            1.0 - 300.0 / 300.0
+        );
+        assert_eq!(
+            m.get_percent_ready(&clock(250, 300, false, true, false), || unreachable!()),
+            1.0 - 150.0 / 300.0
+        );
+        assert_eq!(
+            m.get_percent_ready(&clock(400, 300, false, true, false), || unreachable!()),
+            1.0
+        );
         assert_eq!(m.get_ready_frame(&c, || unreachable!()), 400);
         // disabled: the time since the pause began (0 here) is added
-        assert_eq!(m.get_ready_frame(&clock(130, 300, false, true, true), || unreachable!()), 400 + 130);
+        assert_eq!(
+            m.get_ready_frame(&clock(130, 300, false, true, true), || unreachable!()),
+            400 + 130
+        );
     }
 
     #[test]
@@ -615,12 +776,22 @@ mod tests {
         let mut m = module("");
         let none = SpecialPowerContext::new(10, None, false, false).unwrap();
         assert_eq!(m.start_power_recharge(&none), RechargeAction::Nothing);
-        assert_eq!(m.start_power_recharge(&clock(10, 5, false, false, false)), RechargeAction::Nothing);
+        assert_eq!(
+            m.start_power_recharge(&clock(10, 5, false, false, false)),
+            RechargeAction::Nothing
+        );
         assert_eq!(m.get_available_on_frame(), 0);
-        assert_eq!(m.get_percent_ready(&none, || unreachable!()), 1.0, "ready at frame 0, and 1.0 is the first answer");
+        assert_eq!(
+            m.get_percent_ready(&none, || unreachable!()),
+            1.0,
+            "ready at frame 0, and 1.0 is the first answer"
+        );
         // a null template with a player is the undefined case
         let e = SpecialPowerContext::new(10, None, true, false).unwrap_err();
-        assert_eq!(e.kind, IniErrorKind::Undefined(Undefined::NullSpecialPowerTemplate));
+        assert_eq!(
+            e.kind,
+            IniErrorKind::Undefined(Undefined::NullSpecialPowerTemplate)
+        );
     }
 
     #[test]
@@ -628,8 +799,15 @@ mod tests {
         let mut m = module("");
         let c = clock(100, 300, true, true, false);
         assert!(c.uses_player_ready_frame());
-        assert_eq!(m.start_power_recharge(&c), RechargeAction::ResetPlayerReadyFrame);
-        assert_eq!(m.get_available_on_frame(), 0, "the module's own frame is not touched");
+        assert_eq!(
+            m.start_power_recharge(&c),
+            RechargeAction::ResetPlayerReadyFrame
+        );
+        assert_eq!(
+            m.get_available_on_frame(),
+            0,
+            "the module's own frame is not touched"
+        );
         let mut asked = 0;
         assert!(!m.is_ready(&c, || {
             asked += 1;
@@ -666,11 +844,21 @@ mod tests {
         assert_eq!((m.paused_count(), m.paused_on_frame()), (1, 100));
         assert_eq!(m.paused_percent(), 1.0 - 200.0 / 300.0);
         // a second pause does not move the record
-        m.pause_countdown(true, &clock(150, 300, false, true, false), || unreachable!());
+        m.pause_countdown(
+            true,
+            &clock(150, 300, false, true, false),
+            || unreachable!(),
+        );
         assert_eq!((m.paused_count(), m.paused_on_frame()), (2, 100));
         let paused = clock(500, 300, false, true, false);
-        assert!(!m.is_ready(&paused, || unreachable!()), "never ready while paused");
-        assert_eq!(m.get_percent_ready(&paused, || unreachable!()), m.paused_percent());
+        assert!(
+            !m.is_ready(&paused, || unreachable!()),
+            "never ready while paused"
+        );
+        assert_eq!(
+            m.get_percent_ready(&paused, || unreachable!()),
+            m.paused_percent()
+        );
         assert_eq!(m.get_ready_frame(&paused, || unreachable!()), 300 + 400);
         // unpause once: still paused; twice: the 400 frames are added
         m.pause_countdown(false, &paused, || unreachable!());
@@ -688,16 +876,25 @@ mod tests {
         // ready on frame 0, so the charge at frame 50 is 1.0 ("isReady")
         m.pause_countdown(true, &clock(50, 300, false, true, false), || unreachable!());
         assert_eq!(m.paused_percent(), 1.0);
-        assert_eq!(m.get_percent_ready(&clock(60, 300, false, true, false), || unreachable!()), 0.99999);
+        assert_eq!(
+            m.get_percent_ready(&clock(60, 300, false, true, false), || unreachable!()),
+            0.99999
+        );
     }
 
     #[test]
     fn set_ready_frame_records_the_frame_it_was_set() {
         let mut m = module("");
         m.set_ready_frame(900, 123);
-        assert_eq!((m.get_available_on_frame(), m.paused_on_frame()), (900, 123));
+        assert_eq!(
+            (m.get_available_on_frame(), m.paused_on_frame()),
+            (900, 123)
+        );
         // the const getReadyFrame adds frames since then while disabled
-        assert_eq!(m.get_ready_frame(&clock(200, 300, false, true, true), || unreachable!()), 900 + 77);
+        assert_eq!(
+            m.get_ready_frame(&clock(200, 300, false, true, true), || unreachable!()),
+            900 + 77
+        );
     }
 
     #[test]
@@ -708,14 +905,21 @@ mod tests {
         m.pause_countdown(true, &clock(1, 1, false, true, false), || unreachable!());
         assert!(m.do_special_power_is_blocked(&clock(1, 1, false, true, false)));
         assert!(!m.special_power_module_data().triggers_immediately());
-        assert!(!module("ScriptedSpecialPowerOnly = No").is_script_only() && module("ScriptedSpecialPowerOnly = Yes").is_script_only());
+        assert!(
+            !module("ScriptedSpecialPowerOnly = No").is_script_only()
+                && module("ScriptedSpecialPowerOnly = Yes").is_script_only()
+        );
     }
 
     #[test]
     fn xfer_saves_the_four_numbers() {
         let mut m = module("");
         m.set_ready_frame(0x0102_0304, 0x0a0b_0c0d);
-        m.pause_countdown(true, &clock(0x0a0b_0c0d, 300, false, true, false), || unreachable!());
+        m.pause_countdown(
+            true,
+            &clock(0x0a0b_0c0d, 300, false, true, false),
+            || unreachable!(),
+        );
         let bytes = save_bytes(&mut m).unwrap();
         let mut want = vec![1, 1, 1, 1];
         want.extend_from_slice(&0x0102_0304u32.to_le_bytes());
@@ -725,7 +929,14 @@ mod tests {
         assert_eq!(bytes, want);
         let mut other = module("");
         load_bytes(&mut other, bytes).unwrap();
-        assert_eq!((other.get_available_on_frame(), other.paused_count(), other.paused_on_frame()), (0x0102_0304, 1, 0x0a0b_0c0d));
+        assert_eq!(
+            (
+                other.get_available_on_frame(),
+                other.paused_count(),
+                other.paused_on_frame()
+            ),
+            (0x0102_0304, 1, 0x0a0b_0c0d)
+        );
         assert_eq!(SpecialPowerModule::get_interface_mask(), 0x100);
         assert!(SpecialPowerModule::new(1, None).is_err());
     }

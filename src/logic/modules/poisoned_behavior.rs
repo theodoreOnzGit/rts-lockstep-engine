@@ -32,12 +32,17 @@ use std::sync::Arc;
 
 use crate::common::disabled_types::disabledmask_all;
 use crate::common::game_type::INVALID_ID;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
+};
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_DAMAGE};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::{DamageInfo, DeathType, DAMAGE_POISON, DAMAGE_UNRESISTABLE};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, FOREVER, UPDATE_SLEEP_FOREVER};
+use crate::logic::module::update_module::{
+    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, FOREVER,
+    UPDATE_SLEEP_FOREVER,
+};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -63,21 +68,39 @@ pub struct PoisonedBehaviorModuleData {
 
 /// `PoisonedBehaviorModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<PoisonedBehaviorModuleData>; 3] = [
-    FieldParse::new("PoisonDamageInterval", |ini, d, _| { d.poison_damage_interval_data = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("PoisonDuration", |ini, d, _| { d.poison_duration_data = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "PoisonDamageInterval",
+        |ini, d, _| {
+            d.poison_damage_interval_data = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "PoisonDuration",
+        |ini, d, _| {
+            d.poison_duration_data = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl PoisonedBehaviorModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, PoisonedBehaviorModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, PoisonedBehaviorModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<PoisonedBehaviorModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<PoisonedBehaviorModuleData> {
         let mut data = PoisonedBehaviorModuleData::default();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, PoisonedBehaviorModuleData::build_field_parse)?;
@@ -106,7 +129,9 @@ pub struct PoisonedBehavior {
 impl PartialEq for PoisonedBehavior {
     /// The same object, the same data object (upstream compares pointers) and the same state (the `Real` by its bits).
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.state_words() == other.state_words()
+        self.update.behavior().object() == other.update.behavior().object()
+            && Arc::ptr_eq(&self.data, &other.data)
+            && self.state_words() == other.state_words()
     }
 }
 
@@ -118,13 +143,23 @@ impl PoisonedBehavior {
 
     /// The first half of the constructor, which touches no world: the base (processing every disabled type), the data (`INI_INVALID_DATA` for
     /// null data), no poison, `DEATH_POISONED`.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<PoisonedBehaviorModuleData>>) -> IniResult<Self> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<PoisonedBehaviorModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let mut update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
         // getDisabledTypesToProcess(): DISABLEDMASK_ALL
         update.set_disabled_types_to_process(disabledmask_all());
-        Ok(PoisonedBehavior { update, data, poison_damage_frame: 0, poison_overall_stop_frame: 0, poison_damage_amount: 0.0, death_type: DEATH_POISONED })
+        Ok(PoisonedBehavior {
+            update,
+            data,
+            poison_damage_frame: 0,
+            poison_overall_stop_frame: 0,
+            poison_damage_amount: 0.0,
+            death_type: DEATH_POISONED,
+        })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -139,7 +174,12 @@ impl PoisonedBehavior {
 
     /// The module's own state as words, for the tests that compare it with upstream's: the two frames, the amount, the death type.
     pub fn state_words(&self) -> Vec<u32> {
-        vec![self.poison_damage_frame, self.poison_overall_stop_frame, self.poison_damage_amount.to_bits(), self.death_type as u32]
+        vec![
+            self.poison_damage_frame,
+            self.poison_overall_stop_frame,
+            self.poison_damage_amount.to_bits(),
+            self.death_type as u32,
+        ]
     }
 
     /// `update()` as the scheduler runs it (see [`update_behavior::world_update`]).
@@ -153,7 +193,12 @@ impl PoisonedBehavior {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -178,7 +223,13 @@ impl PoisonedBehavior {
         if self.poison_overall_stop_frame == 0 || self.poison_overall_stop_frame == now {
             return UPDATE_SLEEP_FOREVER;
         }
-        UpdateModule::frame_to_sleep_time(now, self.poison_damage_frame, self.poison_overall_stop_frame, FOREVER, FOREVER)
+        UpdateModule::frame_to_sleep_time(
+            now,
+            self.poison_damage_frame,
+            self.poison_overall_stop_frame,
+            FOREVER,
+            FOREVER,
+        )
     }
 
     /// `startPoisonedEffects(damageInfo)`.
@@ -189,14 +240,20 @@ impl PoisonedBehavior {
         self.poison_damage_amount = info.out.actual_damage_dealt;
         self.poison_overall_stop_frame = now.wrapping_add(d.poison_duration_data);
         // If we are getting re-poisoned, don't reset the damage counter if running, but do set it if unset
-        self.poison_damage_frame = if self.poison_damage_frame != 0 && !crate::logic::modules::plant(1811) {
-            self.poison_damage_frame.min(now.wrapping_add(d.poison_damage_interval_data))
-        } else {
-            now.wrapping_add(d.poison_damage_interval_data)
-        };
+        self.poison_damage_frame =
+            if self.poison_damage_frame != 0 && !crate::logic::modules::plant(1811) {
+                self.poison_damage_frame
+                    .min(now.wrapping_add(d.poison_damage_interval_data))
+            } else {
+                now.wrapping_add(d.poison_damage_interval_data)
+            };
         self.death_type = info.input.death_type;
         if world.has_drawable(me) {
-            world.emit(ObjectClientEvent::DrawableTint { object_id: me, status: TINT_STATUS_POISONED, on: true });
+            world.emit(ObjectClientEvent::DrawableTint {
+                object_id: me,
+                status: TINT_STATUS_POISONED,
+                on: true,
+            });
         }
         let t = self.calc_sleep_time(world);
         update_behavior::set_wake_frame(world, t);
@@ -208,7 +265,11 @@ impl PoisonedBehavior {
         self.poison_overall_stop_frame = 0;
         self.poison_damage_amount = 0.0;
         if world.has_drawable(me) && !crate::logic::modules::plant(1812) {
-            world.emit(ObjectClientEvent::DrawableTint { object_id: me, status: TINT_STATUS_POISONED, on: false });
+            world.emit(ObjectClientEvent::DrawableTint {
+                object_id: me,
+                status: TINT_STATUS_POISONED,
+                on: false,
+            });
         }
     }
 }
@@ -230,12 +291,22 @@ impl UpdateBehavior for PoisonedBehavior {
             damage.input.amount = self.poison_damage_amount;
             damage.input.source_id = INVALID_ID;
             damage.input.damage_type = DAMAGE_UNRESISTABLE; // Not poison, as that will infect us again
-            damage.input.damage_fx_override = if crate::logic::modules::plant(1813) { DAMAGE_UNRESISTABLE } else { DAMAGE_POISON }; // but this will ensure that the right effect is played
+            damage.input.damage_fx_override = if crate::logic::modules::plant(1813) {
+                DAMAGE_UNRESISTABLE
+            } else {
+                DAMAGE_POISON
+            }; // but this will ensure that the right effect is played
             damage.input.death_type = self.death_type;
             world.attempt_damage(me.object, &mut damage);
             self.poison_damage_frame = now.wrapping_add(self.data.poison_damage_interval_data);
         }
-        if self.poison_overall_stop_frame != 0 && now >= self.poison_overall_stop_frame && !world.objects.find(me.object).is_some_and(|o| o.is_effectively_dead()) {
+        if self.poison_overall_stop_frame != 0
+            && now >= self.poison_overall_stop_frame
+            && !world
+                .objects
+                .find(me.object)
+                .is_some_and(|o| o.is_effectively_dead())
+        {
             self.stop_poisoned_effects(world, me.object);
         }
         self.calc_sleep_time(world)
@@ -304,5 +375,7 @@ impl Snapshot for PoisonedBehavior {
 
 /// The factory's `NewModuleDataProc` for `PoisonedBehavior`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::PoisonedBehavior(Arc::new(PoisonedBehaviorModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::PoisonedBehavior(Arc::new(
+        PoisonedBehaviorModuleData::friend_new_module_data(ini)?,
+    )))
 }

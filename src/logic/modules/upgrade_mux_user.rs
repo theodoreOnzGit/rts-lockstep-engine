@@ -46,7 +46,11 @@ pub trait UpgradeMuxUser: Clone + Sized {
     /// The mux data (`m_upgradeMuxData`), inside the data object's `UpgradeModuleData`.
     fn mux_data(&self) -> &Arc<UpgradeModuleData>;
     /// `upgradeImplementation()`.
-    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError>;
+    fn upgrade_implementation(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+    ) -> Result<(), IniError>;
     /// `isSubObjectsUpgrade()`.
     fn is_sub_objects_upgrade(&self) -> bool {
         false
@@ -58,7 +62,12 @@ pub trait UpgradeMuxUser: Clone + Sized {
 }
 
 /// The answer of a mux user to one of `Object`'s upgrade calls; `None` for any other call (the module's own to answer).
-pub fn upgrade_mux_call<M: UpgradeMuxUser>(m: &mut M, world: &mut World, me: ModuleHandle, call: ModuleCall) -> Option<ModuleReply> {
+pub fn upgrade_mux_call<M: UpgradeMuxUser>(
+    m: &mut M,
+    world: &mut World,
+    me: ModuleHandle,
+    call: ModuleCall,
+) -> Option<ModuleReply> {
     Some(match call {
         ModuleCall::IsAlreadyUpgraded => ModuleReply::Bool(m.mux().is_already_upgraded()),
         ModuleCall::AttemptUpgrade(key_mask) => match attempt_upgrade(m, world, me, key_mask) {
@@ -68,7 +77,12 @@ pub fn upgrade_mux_call<M: UpgradeMuxUser>(m: &mut M, world: &mut World, me: Mod
         ModuleCall::WouldUpgrade(key_mask) => {
             let statics = world.statics.clone();
             let mut data = m.mux_data().mux_data_mut();
-            match m.mux().would_upgrade(&mut data, &statics.upgrade_center, &mut world.names, key_mask) {
+            match m.mux().would_upgrade(
+                &mut data,
+                &statics.upgrade_center,
+                &mut world.names,
+                key_mask,
+            ) {
                 Ok(would) => ModuleReply::Bool(would),
                 Err(e) => {
                     drop(data);
@@ -80,7 +94,12 @@ pub fn upgrade_mux_call<M: UpgradeMuxUser>(m: &mut M, world: &mut World, me: Mod
             let statics = world.statics.clone();
             let data_holder = m.mux_data().clone();
             let mut data = data_holder.mux_data_mut();
-            match m.mux_mut().reset_upgrade(&mut data, &statics.upgrade_center, &mut world.names, key_mask) {
+            match m.mux_mut().reset_upgrade(
+                &mut data,
+                &statics.upgrade_center,
+                &mut world.names,
+                key_mask,
+            ) {
                 Ok(reset) => ModuleReply::Bool(reset),
                 Err(e) => {
                     drop(data);
@@ -103,13 +122,23 @@ pub fn upgrade_mux_call<M: UpgradeMuxUser>(m: &mut M, world: &mut World, me: Mod
 }
 
 /// `UpgradeMux::attemptUpgrade(keyMask)` with `giveSelfUpgrade()` inline, step by step.
-fn attempt_upgrade<M: UpgradeMuxUser>(m: &mut M, world: &mut World, me: ModuleHandle, key_mask: UpgradeMaskType) -> Result<bool, IniError> {
+fn attempt_upgrade<M: UpgradeMuxUser>(
+    m: &mut M,
+    world: &mut World,
+    me: ModuleHandle,
+    key_mask: UpgradeMaskType,
+) -> Result<bool, IniError> {
     let statics = world.statics.clone();
     let holder = m.mux_data().clone();
     // "If I have an activation condition, and I haven't activated, and this key matches my condition."
     {
         let mut data = holder.mux_data_mut();
-        if !m.mux().would_upgrade(&mut data, &statics.upgrade_center, &mut world.names, key_mask)? {
+        if !m.mux().would_upgrade(
+            &mut data,
+            &statics.upgrade_center,
+            &mut world.names,
+            key_mask,
+        )? {
             return Ok(false);
         }
     }
@@ -119,13 +148,20 @@ fn attempt_upgrade<M: UpgradeMuxUser>(m: &mut M, world: &mut World, me: ModuleHa
 
 /// `UpgradeMux::giveSelfUpgrade()` (also what `FXListDie`'s constructor calls when it starts active): `performUpgradeFX`, `processUpgradeRemoval`, the
 /// module's `upgradeImplementation`, `setUpgradeExecuted(true)`.
-pub fn give_self_upgrade<M: UpgradeMuxUser>(m: &mut M, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
+pub fn give_self_upgrade<M: UpgradeMuxUser>(
+    m: &mut M,
+    world: &mut World,
+    me: ModuleHandle,
+) -> Result<(), IniError> {
     let statics = world.statics.clone();
     let holder = m.mux_data().clone();
     // performUpgradeFX()
     let fx = holder.mux_data().fx_list_upgrade.clone();
     if let Some(fx) = fx {
-        world.emit(ObjectClientEvent::FxListDoFxObj { fx, object_id: me.object });
+        world.emit(ObjectClientEvent::FxListDoFxObj {
+            fx,
+            object_id: me.object,
+        });
     }
     // processUpgradeRemoval(): "need to execute removals first, to prevent both being on for a moment"
     let count = holder.mux_data().removal_upgrade_names.len();
@@ -134,18 +170,27 @@ pub fn give_self_upgrade<M: UpgradeMuxUser>(m: &mut M, world: &mut World, me: Mo
         let t = find_named_upgrade(&statics.upgrade_center, &mut world.names, &name)?;
         let mask = t.upgrade_mask();
         if let Some(trace) = &mut world.cuts.trace {
-            trace.push(format!("remove {}", String::from_utf8_lossy(t.upgrade_name())));
+            trace.push(format!(
+                "remove {}",
+                String::from_utf8_lossy(t.upgrade_name())
+            ));
         }
         lend(m, world, me, |w| w.remove_upgrade(me.object, &mask));
     }
     m.upgrade_implementation(world, me)?;
-    m.mux_mut().set_upgrade_executed(!crate::logic::modules::plant(871));
+    m.mux_mut()
+        .set_upgrade_executed(!crate::logic::modules::plant(871));
     Ok(())
 }
 
 /// Runs `f` with the module lent to its slot ([`World::lend_body`]), so a call that reaches it from inside `f` runs at once on its live state, and
 /// takes the state back afterwards.
-pub fn lend<M: UpgradeMuxUser, R>(m: &mut M, world: &mut World, me: ModuleHandle, f: impl FnOnce(&mut World) -> R) -> R {
+pub fn lend<M: UpgradeMuxUser, R>(
+    m: &mut M,
+    world: &mut World,
+    me: ModuleHandle,
+    f: impl FnOnce(&mut World) -> R,
+) -> R {
     let mine = std::mem::replace(m, m.clone());
     let (r, back) = world.lend_body(me, mine.mux_into_body(), f);
     if let Some(b) = back.and_then(M::mux_from_body) {

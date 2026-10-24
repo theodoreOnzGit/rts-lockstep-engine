@@ -48,14 +48,17 @@ use crate::common::module::ModuleDataKind;
 use crate::logic::module::update_module::ExitDoorType;
 use crate::logic::modules::open_contain::{out, OpenContainVirtuals};
 use crate::logic::modules::transport_contain::{
-    derived_transport_contain_glue, tc_on_removing, transport_open_contain_virtuals, TransportContain, TransportContainModuleData, TransportContainVirtuals,
+    derived_transport_contain_glue, tc_on_removing, transport_open_contain_virtuals,
+    TransportContain, TransportContainModuleData, TransportContainVirtuals,
 };
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle};
 
 /// The factory's `NewModuleDataProc` for `RailedTransportContain`: `TransportContain`'s data.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::RailedTransportContain(Arc::new(TransportContainModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::RailedTransportContain(Arc::new(
+        TransportContainModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
 /// `class RailedTransportContain : public TransportContain`.
@@ -84,14 +87,23 @@ impl TransportContainVirtuals for RailedTransportContain {
             let us = me.object;
             out(self, world, me, |w| {
                 if let Some(dock) = w.get_dock_update_interface(us) {
-                    w.module_call(us, dock, ModuleCall::DockSetOpen(!crate::logic::modules::plant(1444)));
+                    w.module_call(
+                        us,
+                        dock,
+                        ModuleCall::DockSetOpen(!crate::logic::modules::plant(1444)),
+                    );
                 }
             });
         }
     }
 
     /// `RailedTransportContain::isSpecificRiderFreeToExit(obj)`: "if we are in transit we cannot exit, when we're in transit, the dock is closed".
-    fn is_specific_rider_free_to_exit(&mut self, world: &mut World, me: ModuleHandle, _obj: ObjectId) -> bool {
+    fn is_specific_rider_free_to_exit(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        _obj: ObjectId,
+    ) -> bool {
         let us = me.object;
         let closed = out(self, world, me, |w| match w.get_dock_update_interface(us) {
             Some(dock) => !w.module_call(us, dock, ModuleCall::DockIsOpen).as_bool(),
@@ -106,10 +118,18 @@ impl TransportContainVirtuals for RailedTransportContain {
 
     /// `RailedTransportContain::exitObjectViaDoor(newObj, exitDoor)`: returns at once (see the module docs: the railed dock interface it asks for is
     /// the contain module's own, which is `NULL`).
-    fn t_exit_object_via_door(&mut self, world: &mut World, me: ModuleHandle, exit_obj: ObjectId, exit_door: ExitDoorType) {
+    fn t_exit_object_via_door(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        exit_obj: ObjectId,
+        exit_door: ExitDoorType,
+    ) {
         if crate::logic::modules::plant(1446) {
             // the static helper the comment intends: the base's exit, as if there were a dock to hand the rider to
-            crate::logic::modules::open_contain::base_exit_object_via_door(self, world, me, exit_obj, exit_door);
+            crate::logic::modules::open_contain::base_exit_object_via_door(
+                self, world, me, exit_obj, exit_door,
+            );
         }
     }
 }

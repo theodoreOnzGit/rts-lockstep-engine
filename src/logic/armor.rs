@@ -56,8 +56,10 @@ use std::collections::BTreeMap;
 
 use crate::common::ini::{FieldParse, Ini, IniError, IniResult, Undefined, UserData};
 use crate::common::name_key_generator::{NameKeyError, NameKeyGenerator, NameKeyType};
-use crate::logic::damage::{DamageType, DAMAGE_NUM_TYPES, DAMAGE_SUBDUAL_UNRESISTABLE, DAMAGE_UNRESISTABLE};
 use crate::logic::damage::DamageTypeFlags;
+use crate::logic::damage::{
+    DamageType, DAMAGE_NUM_TYPES, DAMAGE_SUBDUAL_UNRESISTABLE, DAMAGE_UNRESISTABLE,
+};
 
 /// A `DamageType` outside `[0, DAMAGE_NUM_TYPES)` was used as an index:
 /// undefined upstream.
@@ -84,7 +86,9 @@ pub struct ArmorTemplate {
 impl Default for ArmorTemplate {
     /// `ArmorTemplate()`: `clear()`.
     fn default() -> Self {
-        ArmorTemplate { damage_coefficient: [1.0; DAMAGE_NUM_TYPES] }
+        ArmorTemplate {
+            damage_coefficient: [1.0; DAMAGE_NUM_TYPES],
+        }
     }
 }
 
@@ -133,7 +137,11 @@ impl ArmorTemplate {
     /// `parseArmorCoefficients`: `Armor = <DamageType | Default> <percent>`.
     /// Both tokens are read before either is checked. `Default` sets every
     /// coefficient.
-    fn parse_armor_coefficients(ini: &mut Ini<'_>, this: &mut ArmorTemplate, _user_data: &UserData) -> IniResult<()> {
+    fn parse_armor_coefficients(
+        ini: &mut Ini<'_>,
+        this: &mut ArmorTemplate,
+        _user_data: &UserData,
+    ) -> IniResult<()> {
         let damage_name = ini.get_next_token(None)?;
         let pct = Ini::scan_percent_to_real(&ini.get_next_token(None)?)?;
         if damage_name.eq_ignore_ascii_case(b"Default") {
@@ -152,7 +160,11 @@ impl ArmorTemplate {
 
 /// `ArmorStore::parseArmorDefinition`'s `myFieldParse`.
 static ARMOR_FIELDS: [FieldParse<ArmorTemplate>; 2] = [
-    FieldParse::new("Armor", ArmorTemplate::parse_armor_coefficients, UserData::None),
+    FieldParse::new(
+        "Armor",
+        ArmorTemplate::parse_armor_coefficients,
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
@@ -182,7 +194,12 @@ impl Armor {
 
     /// `adjustDamage(t, damage)`: through the template if there is one in
     /// `store`, else `damage` unchanged.
-    pub fn adjust_damage(&self, store: &ArmorStore, t: DamageType, damage: f32) -> Result<f32, DamageTypeOutOfRange> {
+    pub fn adjust_damage(
+        &self,
+        store: &ArmorStore,
+        t: DamageType,
+        damage: f32,
+    ) -> Result<f32, DamageTypeOutOfRange> {
         match self.template.and_then(|k| store.get(k)) {
             Some(tmpl) => tmpl.adjust_damage(t, damage),
             None => Ok(damage),
@@ -226,13 +243,21 @@ impl ArmorStore {
 
     /// `findArmorTemplate(name)`'s key: `nameToKey(name)` (which assigns a
     /// key to a new name), and whether the store has a template under it.
-    pub fn find_armor_template_key(&self, names: &mut NameKeyGenerator, name: &[u8]) -> Result<Option<NameKeyType>, NameKeyError> {
+    pub fn find_armor_template_key(
+        &self,
+        names: &mut NameKeyGenerator,
+        name: &[u8],
+    ) -> Result<Option<NameKeyType>, NameKeyError> {
         let key = names.try_name_to_key(name)?;
         Ok(self.armor_templates.contains_key(&key).then_some(key))
     }
 
     /// `findArmorTemplate(name)`: "If no such Armor exists, return null."
-    pub fn find_armor_template(&self, names: &mut NameKeyGenerator, name: &[u8]) -> Result<Option<&ArmorTemplate>, NameKeyError> {
+    pub fn find_armor_template(
+        &self,
+        names: &mut NameKeyGenerator,
+        name: &[u8],
+    ) -> Result<Option<&ArmorTemplate>, NameKeyError> {
         let key = names.try_name_to_key(name)?;
         Ok(self.armor_templates.get(&key))
     }
@@ -254,7 +279,11 @@ impl ArmorStore {
     /// `Armor =` lines until `End`. A new name gets a template, and a known
     /// one is cleared and refilled; the template stays in the store, as
     /// far as it was filled, if a line fails.
-    pub fn parse_armor_definition(&mut self, ini: &mut Ini<'_>, names: &mut NameKeyGenerator) -> IniResult<()> {
+    pub fn parse_armor_definition(
+        &mut self,
+        ini: &mut Ini<'_>,
+        names: &mut NameKeyGenerator,
+    ) -> IniResult<()> {
         let name = ini.get_next_token(None)?;
         let key = names
             .try_name_to_key(&name)
@@ -280,12 +309,25 @@ mod tests {
         c.store.parse_armor_definition(ini, &mut c.names)
     }
 
-    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse { token: "Armor", parse: block }];
+    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse {
+        token: "Armor",
+        parse: block,
+    }];
 
     fn load(text: &[u8]) -> (Ctx, IniResult<()>) {
-        let mut c = Ctx { store: ArmorStore::new(), names: NameKeyGenerator::new() };
+        let mut c = Ctx {
+            store: ArmorStore::new(),
+            names: NameKeyGenerator::new(),
+        };
         c.names.init();
-        let r = Ini::load(b"a.ini", text, IniLoadType::Overwrite, None, &BLOCKS, &mut c);
+        let r = Ini::load(
+            b"a.ini",
+            text,
+            IniLoadType::Overwrite,
+            None,
+            &BLOCKS,
+            &mut c,
+        );
         (c, r)
     }
 
@@ -293,30 +335,48 @@ mod tests {
     fn default_then_override_and_adjust() {
         let (mut c, r) = load(b"Armor Tank\n Armor = Default 100%\n Armor = FLAME 50%\n Armor = SMALL_ARMS 0%\n Armor = UNRESISTABLE 0%\nEnd\n");
         r.unwrap();
-        let tmpl = c.store.find_armor_template(&mut c.names, b"Tank").unwrap().unwrap().clone();
+        let tmpl = c
+            .store
+            .find_armor_template(&mut c.names, b"Tank")
+            .unwrap()
+            .unwrap()
+            .clone();
         assert_eq!(tmpl.adjust_damage(DAMAGE_EXPLOSION, 10.0), Ok(10.0));
         assert_eq!(tmpl.adjust_damage(DAMAGE_FLAME, 10.0), Ok(5.0));
         assert_eq!(tmpl.adjust_damage(DAMAGE_SMALL_ARMS, 10.0), Ok(0.0));
         // the unresistable types skip the table
         assert_eq!(tmpl.adjust_damage(DAMAGE_UNRESISTABLE, 10.0), Ok(10.0));
-        assert_eq!(tmpl.adjust_damage(DAMAGE_SUBDUAL_UNRESISTABLE, -3.0), Ok(-3.0));
+        assert_eq!(
+            tmpl.adjust_damage(DAMAGE_SUBDUAL_UNRESISTABLE, -3.0),
+            Ok(-3.0)
+        );
         // a negative result is floored at 0
         assert_eq!(tmpl.adjust_damage(DAMAGE_EXPLOSION, -3.0), Ok(0.0));
         assert_eq!(tmpl.adjust_damage(-1, 1.0), Err(DamageTypeOutOfRange));
-        assert_eq!(tmpl.adjust_damage(DAMAGE_NUM_TYPES as i32, 1.0), Err(DamageTypeOutOfRange));
+        assert_eq!(
+            tmpl.adjust_damage(DAMAGE_NUM_TYPES as i32, 1.0),
+            Err(DamageTypeOutOfRange)
+        );
         assert!(tmpl.adjust_damage(DAMAGE_FLAME, f32::NAN).unwrap().is_nan());
     }
 
     #[test]
     fn redefinition_clears_and_armor_handle_follows_the_store() {
-        let (mut c, r) = load(b"Armor A\n Armor = FLAME 50%\nEnd\nArmor A\n Armor = CRUSH 25%\nEnd\n");
+        let (mut c, r) =
+            load(b"Armor A\n Armor = FLAME 50%\nEnd\nArmor A\n Armor = CRUSH 25%\nEnd\n");
         r.unwrap();
         assert_eq!(c.store.len(), 1);
         let key = c.store.find_armor_template_key(&mut c.names, b"A").unwrap();
         let armor = c.store.make_armor(key);
         assert_eq!(armor.adjust_damage(&c.store, DAMAGE_FLAME, 8.0), Ok(8.0));
-        assert_eq!(armor.adjust_damage(&c.store, crate::logic::damage::DAMAGE_CRUSH, 8.0), Ok(2.0));
-        assert_eq!(c.store.find_armor_template_key(&mut c.names, b"B").unwrap(), None);
+        assert_eq!(
+            armor.adjust_damage(&c.store, crate::logic::damage::DAMAGE_CRUSH, 8.0),
+            Ok(2.0)
+        );
+        assert_eq!(
+            c.store.find_armor_template_key(&mut c.names, b"B").unwrap(),
+            None
+        );
         let mut none = armor;
         none.clear();
         assert_eq!(none.adjust_damage(&c.store, DAMAGE_FLAME, 8.0), Ok(8.0));

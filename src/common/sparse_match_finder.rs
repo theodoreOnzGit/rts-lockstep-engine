@@ -67,7 +67,10 @@ impl SparseMatchFinder {
     }
 
     /// `findBestInfoSlow(v, bits)`: the index of the best entry, or `None`.
-    pub fn find_best_info_slow<T: BitFlagNames, M: SparseMatchable<T>>(v: &[M], bits: &BitFlags<T>) -> Option<usize> {
+    pub fn find_best_info_slow<T: BitFlagNames, M: SparseMatchable<T>>(
+        v: &[M],
+        bits: &BitFlags<T>,
+    ) -> Option<usize> {
         let mut result = None;
         let mut best_yes_match: i32 = 0;
         let mut best_yes_extraneous_bits: i32 = 999;
@@ -78,7 +81,8 @@ impl SparseMatchFinder {
                 let yes_match = bits.count_intersection(yes_flags);
                 let yes_extraneous_bits = bits.count_inverse_intersection(yes_flags);
                 if (yes_match > best_yes_match)
-                    || (yes_match >= best_yes_match && yes_extraneous_bits < best_yes_extraneous_bits)
+                    || (yes_match >= best_yes_match
+                        && yes_extraneous_bits < best_yes_extraneous_bits)
                 {
                     result = Some(idx);
                     best_yes_match = yes_match;
@@ -92,7 +96,11 @@ impl SparseMatchFinder {
 
     /// `findBestInfo(v, bits)`: the cached result for `bits`, or
     /// [`SparseMatchFinder::find_best_info_slow`] (cached when found).
-    pub fn find_best_info<T: BitFlagNames, M: SparseMatchable<T>>(&mut self, v: &[M], bits: &BitFlags<T>) -> Option<usize> {
+    pub fn find_best_info<T: BitFlagNames, M: SparseMatchable<T>>(
+        &mut self,
+        v: &[M],
+        bits: &BitFlags<T>,
+    ) -> Option<usize> {
         if let Some(&i) = self.best_matches.get(&bits.words()) {
             return Some(i);
         }

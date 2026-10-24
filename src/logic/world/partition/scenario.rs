@@ -21,12 +21,14 @@
 
 use super::filters::allow_player;
 use super::host::{
-    CanAttackResult, ContainFacts, GhostGeometry, ObjectGeometry, PartitionFilterHost, PartitionHost, PathfindCellType, PathfindLayer, StealthFacts,
-    LAYER_GROUND,
+    CanAttackResult, ContainFacts, GhostGeometry, ObjectGeometry, PartitionFilterHost,
+    PartitionHost, PathfindCellType, PathfindLayer, StealthFacts, LAYER_GROUND,
 };
 use super::manager::PartitionManager;
 use crate::common::base_type::{Coord3D, Region3D};
-use crate::common::game_common::{AbleToAttackType, CommandSourceType, PlayerMaskType, Relationship};
+use crate::common::game_common::{
+    AbleToAttackType, CommandSourceType, PlayerMaskType, Relationship,
+};
 use crate::common::geometry::GeometryInfo;
 use crate::common::kind_of::{KindOfMaskType, KindOfType};
 use crate::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_DESTROYED};
@@ -131,14 +133,20 @@ pub enum ScenarioLog {
     /// `onPartitionCellChange()` of the object.
     CellChange(ObjectId),
     /// `onCollide(other, loc, normal)` of `id`.
-    Collide { id: ObjectId, other: ObjectId, loc: Coord3D, normal: Coord3D },
+    Collide {
+        id: ObjectId,
+        other: ObjectId,
+        loc: Coord3D,
+        normal: Coord3D,
+    },
     /// A ghost was made for the object.
     Ghost(ObjectId),
 }
 
 /// The small integer hash behind the questions with no natural state.
 pub fn mix(a: u32, b: u32, c: u32) -> u32 {
-    let mut h = a.wrapping_mul(0x9E37_79B1) ^ b.wrapping_mul(0x85EB_CA6B) ^ c.wrapping_mul(0xC2B2_AE35);
+    let mut h =
+        a.wrapping_mul(0x9E37_79B1) ^ b.wrapping_mul(0x85EB_CA6B) ^ c.wrapping_mul(0xC2B2_AE35);
     h ^= h >> 15;
     h = h.wrapping_mul(0x2C1B_3C6D);
     h ^= h >> 12;
@@ -178,7 +186,18 @@ impl Default for ScenarioHost {
             frame: 0,
             cell_size: 40.0,
             unlook_persist: 30,
-            extent: Some(Region3D { lo: Coord3D { x: 0.0, y: 0.0, z: 0.0 }, hi: Coord3D { x: 400.0, y: 400.0, z: 100.0 } }),
+            extent: Some(Region3D {
+                lo: Coord3D {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                hi: Coord3D {
+                    x: 400.0,
+                    y: 400.0,
+                    z: 100.0,
+                },
+            }),
             player_count: 4,
             local_player: Some(1),
             rel: [[Relationship::Neutral; 16]; 16],
@@ -208,7 +227,9 @@ impl ScenarioHost {
 
     fn rel_players(&self, a: Option<i32>, b: Option<i32>) -> Relationship {
         match (a, b) {
-            (Some(a), Some(b)) if (0..16).contains(&a) && (0..16).contains(&b) => self.rel[a as usize][b as usize],
+            (Some(a), Some(b)) if (0..16).contains(&a) && (0..16).contains(&b) => {
+                self.rel[a as usize][b as usize]
+            }
             _ => Relationship::Neutral,
         }
     }
@@ -265,7 +286,11 @@ impl PartitionHost for ScenarioHost {
     fn local_player_index(&self) -> Option<i32> {
         self.local_player
     }
-    fn players_with_relationship(&self, player_index: i32, which_player_types: u32) -> PlayerMaskType {
+    fn players_with_relationship(
+        &self,
+        player_index: i32,
+        which_player_types: u32,
+    ) -> PlayerMaskType {
         let mut mask: PlayerMaskType = 0;
         if which_player_types == 0 || !(0..16).contains(&player_index) {
             return mask;
@@ -289,25 +314,39 @@ impl PartitionHost for ScenarioHost {
         }
         mask
     }
-    fn player_relationship_to_object_team(&self, player_index: i32, object: ObjectId) -> Relationship {
+    fn player_relationship_to_object_team(
+        &self,
+        player_index: i32,
+        object: ObjectId,
+    ) -> Relationship {
         self.rel_players(Some(player_index), self.player_of(object))
     }
 
     fn object_geometry(&self, id: ObjectId) -> Option<ObjectGeometry> {
-        self.obj(id).map(|o| ObjectGeometry { position: o.position, orientation: o.orientation, geometry: o.geometry.clone() })
+        self.obj(id).map(|o| ObjectGeometry {
+            position: o.position,
+            orientation: o.orientation,
+            geometry: o.geometry.clone(),
+        })
     }
     fn is_kind_of(&self, id: ObjectId, t: KindOfType) -> bool {
         self.obj(id).is_some_and(|o| o.kind_of.test(t))
     }
     fn status_bits(&self, id: ObjectId) -> ObjectStatusMaskType {
-        self.obj(id).map_or_else(ObjectStatusMaskType::new, |o| o.status)
+        self.obj(id)
+            .map_or_else(ObjectStatusMaskType::new, |o| o.status)
     }
     fn is_destroyed(&self, id: ObjectId) -> bool {
-        self.obj(id).is_none_or(|o| o.status.test(OBJECT_STATUS_DESTROYED))
+        self.obj(id)
+            .is_none_or(|o| o.status.test(OBJECT_STATUS_DESTROYED))
     }
     fn unit_direction_vector_2d(&self, id: ObjectId) -> Coord3D {
         let d = self.obj(id).map_or((1.0, 0.0), |o| o.dir);
-        Coord3D { x: d.0, y: d.1, z: 0.0 }
+        Coord3D {
+            x: d.0,
+            y: d.1,
+            z: 0.0,
+        }
     }
 
     fn add_ghost_object(&mut self, id: ObjectId) -> Option<GhostGeometry> {
@@ -318,7 +357,12 @@ impl PartitionHost for ScenarioHost {
         let (position, angle, geometry) = (o.position, o.orientation, o.geometry.clone());
         self.next_ghost += 1;
         self.log.push(ScenarioLog::Ghost(id));
-        Some(GhostGeometry { handle: self.next_ghost, position, angle, geometry })
+        Some(GhostGeometry {
+            handle: self.next_ghost,
+            position,
+            angle,
+            geometry,
+        })
     }
 
     fn on_partition_cell_change(&mut self, pm: &mut PartitionManager, id: ObjectId) {
@@ -342,8 +386,20 @@ impl PartitionHost for ScenarioHost {
         }
     }
 
-    fn on_collide(&mut self, pm: &mut PartitionManager, id: ObjectId, other: ObjectId, loc: &Coord3D, normal: &Coord3D) {
-        self.log.push(ScenarioLog::Collide { id, other, loc: *loc, normal: *normal });
+    fn on_collide(
+        &mut self,
+        pm: &mut PartitionManager,
+        id: ObjectId,
+        other: ObjectId,
+        loc: &Coord3D,
+        normal: &Coord3D,
+    ) {
+        self.log.push(ScenarioLog::Collide {
+            id,
+            other,
+            loc: *loc,
+            normal: *normal,
+        });
         if self.obj(id).is_some_and(|o| o.flag(sflag::KILL_ON_COLLIDE)) {
             if let Some(o) = self.objects.get_mut(&id) {
                 o.status.set(OBJECT_STATUS_DESTROYED, 1);
@@ -359,7 +415,18 @@ impl PartitionHost for ScenarioHost {
 
     fn maximum_pathfind_extent(&self) -> Region3D {
         match self.extent {
-            Some(e) => Region3D { lo: Coord3D { x: e.lo.x + 10.0, y: e.lo.y + 10.0, z: e.lo.z }, hi: Coord3D { x: e.hi.x - 10.0, y: e.hi.y - 10.0, z: e.hi.z } },
+            Some(e) => Region3D {
+                lo: Coord3D {
+                    x: e.lo.x + 10.0,
+                    y: e.lo.y + 10.0,
+                    z: e.lo.z,
+                },
+                hi: Coord3D {
+                    x: e.hi.x - 10.0,
+                    y: e.hi.y - 10.0,
+                    z: e.hi.z,
+                },
+            },
             None => Region3D::default(),
         }
     }
@@ -375,7 +442,12 @@ impl PartitionHost for ScenarioHost {
     fn is_underwater(&self, x: f32, y: f32) -> bool {
         ScenarioHost::terrain_height(x, y) < -2.0
     }
-    fn pathfind_cell_type(&self, layer: PathfindLayer, cell_x: i32, cell_y: i32) -> Option<PathfindCellType> {
+    fn pathfind_cell_type(
+        &self,
+        layer: PathfindLayer,
+        cell_x: i32,
+        cell_y: i32,
+    ) -> Option<PathfindCellType> {
         if cell_x < 0 || cell_y < 0 {
             return None;
         }
@@ -418,8 +490,19 @@ impl PartitionFilterHost for ScenarioHost {
     fn is_view_blocked_by_obstacle(&self, obj: ObjectId, other: ObjectId) -> bool {
         mix(obj as u32, other as u32, 21).is_multiple_of(5)
     }
-    fn able_to_attack_specific_object(&self, obj: ObjectId, attack_type: AbleToAttackType, other: ObjectId, source: CommandSourceType) -> CanAttackResult {
-        match mix(obj as u32, other as u32, 22 + attack_type as u32 * 7 + source as u32) % 4 {
+    fn able_to_attack_specific_object(
+        &self,
+        obj: ObjectId,
+        attack_type: AbleToAttackType,
+        other: ObjectId,
+        source: CommandSourceType,
+    ) -> CanAttackResult {
+        match mix(
+            obj as u32,
+            other as u32,
+            22 + attack_type as u32 * 7 + source as u32,
+        ) % 4
+        {
             0 => CanAttackResult::Possible,
             1 => CanAttackResult::PossibleAfterMoving,
             2 => CanAttackResult::NotPossible,
@@ -429,7 +512,12 @@ impl PartitionFilterHost for ScenarioHost {
     fn can_enter_object(&self, obj: ObjectId, other: ObjectId, source: CommandSourceType) -> bool {
         mix(obj as u32, other as u32, 23 + source as u32).is_multiple_of(3)
     }
-    fn can_hijack_vehicle(&self, obj: ObjectId, other: ObjectId, source: CommandSourceType) -> bool {
+    fn can_hijack_vehicle(
+        &self,
+        obj: ObjectId,
+        other: ObjectId,
+        source: CommandSourceType,
+    ) -> bool {
         mix(obj as u32, other as u32, 24 + source as u32).is_multiple_of(3)
     }
     fn last_damage_source(&self, id: ObjectId) -> Option<ObjectId> {
@@ -445,7 +533,11 @@ impl PartitionFilterHost for ScenarioHost {
     fn transform_x_vector(&self, id: ObjectId) -> Coord3D {
         // the matrix' X vector: (cos a, sin a, 0.25) for the object's direction
         let d = self.obj(id).map_or((1.0, 0.0), |o| o.dir);
-        Coord3D { x: d.0, y: d.1, z: 0.25 }
+        Coord3D {
+            x: d.0,
+            y: d.1,
+            z: 0.25,
+        }
     }
     fn is_structure(&self, id: ObjectId) -> bool {
         self.obj(id).is_some_and(|o| o.flag(sflag::STRUCTURE))
@@ -459,7 +551,11 @@ impl PartitionFilterHost for ScenarioHost {
     fn contain_facts(&self, id: ObjectId) -> Option<ContainFacts> {
         self.obj(id).and_then(|o| o.contain)
     }
-    fn apparent_controlling_player(&self, id: ObjectId, observer_player: Option<i32>) -> Option<i32> {
+    fn apparent_controlling_player(
+        &self,
+        id: ObjectId,
+        observer_player: Option<i32>,
+    ) -> Option<i32> {
         let o = self.obj(id)?;
         o.contain?;
         // depends on the observer a little, as the real one does for disguised containers
@@ -485,14 +581,35 @@ impl PartitionFilterHost for ScenarioHost {
     fn template_is_equivalent_to(&self, template_key: i32, other: ObjectId) -> bool {
         self.obj(other).is_some_and(|o| o.template == template_key)
     }
-    fn can_player_garrison(&self, player: Option<i32>, other: ObjectId, source: CommandSourceType) -> bool {
-        mix(player.unwrap_or(-1) as u32, other as u32, 26 + source as u32).is_multiple_of(2)
+    fn can_player_garrison(
+        &self,
+        player: Option<i32>,
+        other: ObjectId,
+        source: CommandSourceType,
+    ) -> bool {
+        mix(
+            player.unwrap_or(-1) as u32,
+            other as u32,
+            26 + source as u32,
+        )
+        .is_multiple_of(2)
     }
     fn is_disabled_unmanned(&self, id: ObjectId) -> bool {
         self.obj(id).is_some_and(|o| o.flag(sflag::UNMANNED))
     }
-    fn command_button_valid_target(&self, button: i32, source: ObjectId, other: ObjectId, command_source: CommandSourceType) -> bool {
-        mix(button as u32, source as u32 ^ (other as u32).rotate_left(9), 27 + command_source as u32).is_multiple_of(2)
+    fn command_button_valid_target(
+        &self,
+        button: i32,
+        source: ObjectId,
+        other: ObjectId,
+        command_source: CommandSourceType,
+    ) -> bool {
+        mix(
+            button as u32,
+            source as u32 ^ (other as u32).rotate_left(9),
+            27 + command_source as u32,
+        )
+        .is_multiple_of(2)
     }
     fn point_in_trigger(&self, trigger: i32, x: i32, y: i32) -> bool {
         // the trigger is the disc of radius 40 + 10*trigger around (150, 150)

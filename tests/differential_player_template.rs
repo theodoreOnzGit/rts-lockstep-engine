@@ -91,7 +91,9 @@
 mod support;
 
 use rts_lockstep_engine::common::handicap::HandicapType;
-use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Thrown, TYPE_TABLE};
+use rts_lockstep_engine::common::ini::{
+    BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Thrown, TYPE_TABLE,
+};
 use rts_lockstep_engine::common::name_key_generator::{NameKeyGenerator, NameKeyType};
 use rts_lockstep_engine::common::player_template::{
     PlayerTemplate, PlayerTemplateStore, LEGACY_FACTION_KEY_NAMES, MAX_MP_STARTING_UNITS,
@@ -140,15 +142,21 @@ impl Ctx {
     fn new() -> Self {
         let mut names = NameKeyGenerator::new();
         names.reset();
-        Ctx { store: PlayerTemplateStore::new(), sciences: ScienceStore::new(), names }
+        Ctx {
+            store: PlayerTemplateStore::new(),
+            sciences: ScienceStore::new(),
+            names,
+        }
     }
 }
 
 fn h_player_template(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-    c.store.parse_player_template_definition(ini, &mut c.names, &c.sciences, &StandInText)
+    c.store
+        .parse_player_template_definition(ini, &mut c.names, &c.sciences, &StandInText)
 }
 fn h_science(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-    c.sciences.parse_science_definition(ini, &mut c.names, &StandInText)
+    c.sciences
+        .parse_science_definition(ini, &mut c.names, &StandInText)
 }
 fn h_stub(_: &mut Ini<'_>, _: &mut Ctx) -> IniResult<()> {
     Err(IniError::new(IniErrorKind::Bug))
@@ -271,7 +279,12 @@ fn rust_dump(c: &Ctx, bug: u32) -> Vec<u8> {
     let mut v = Vec::new();
     put_i32(&mut v, c.store.player_template_count());
     for i in 0..c.store.player_template_count() {
-        rust_dump_template(&mut v, c.store.nth_player_template(i).unwrap(), &c.names, bug);
+        rust_dump_template(
+            &mut v,
+            c.store.nth_player_template(i).unwrap(),
+            &c.names,
+            bug,
+        );
     }
     v
 }
@@ -286,29 +299,52 @@ fn cpp_buf(f: impl FnOnce(*mut u8, i32) -> i32) -> Vec<u8> {
 
 /// The index of `found` in the store, -1 for `None`.
 fn index_of(store: &PlayerTemplateStore, found: Option<*const PlayerTemplate>) -> i32 {
-    found.map_or(-1, |p| store.templates().iter().position(|t| std::ptr::eq(t, p)).expect("a template of the store") as i32)
+    found.map_or(-1, |p| {
+        store
+            .templates()
+            .iter()
+            .position(|t| std::ptr::eq(t, p))
+            .expect("a template of the store") as i32
+    })
 }
 
 /// `findPlayerTemplate(key)` on the Rust side, as an index. `bug` 1 leaves the
 /// old-map names out: a plain search by key.
 fn rust_find(c: &mut Ctx, key: NameKeyType, bug: u32) -> i32 {
     if bug == 1 {
-        return c.store.templates().iter().position(|t| t.name_key() == key).map_or(-1, |i| i as i32);
+        return c
+            .store
+            .templates()
+            .iter()
+            .position(|t| t.name_key() == key)
+            .map_or(-1, |i| i as i32);
     }
-    let found = c.store.find_player_template(&mut c.names, key).unwrap().map(|p| p as *const PlayerTemplate);
+    let found = c
+        .store
+        .find_player_template(&mut c.names, key)
+        .unwrap()
+        .map(|p| p as *const PlayerTemplate);
     index_of(&c.store, found)
 }
 
 /// `getNthPlayerTemplate(i)` as an index. `bug` 1 counts from 1.
 fn rust_nth(c: &Ctx, i: i32, bug: u32) -> i32 {
-    let found = c.store.nth_player_template(i - i32::from(bug == 1)).map(|p| p as *const PlayerTemplate);
+    let found = c
+        .store
+        .nth_player_template(i - i32::from(bug == 1))
+        .map(|p| p as *const PlayerTemplate);
     index_of(&c.store, found)
 }
 
 /// `getTemplateNumByName(name)`. `bug` 1 compares with case.
 fn rust_num_by_name(c: &Ctx, name: &[u8], bug: u32) -> i32 {
     if bug == 1 {
-        return c.store.templates().iter().position(|t| t.name(&c.names) == name).map_or(-1, |i| i as i32);
+        return c
+            .store
+            .templates()
+            .iter()
+            .position(|t| t.name(&c.names) == name)
+            .map_or(-1, |i| i as i32);
     }
     c.store.template_num_by_name(&c.names, name)
 }
@@ -341,23 +377,80 @@ fn pick<'a, T: ?Sized>(g: &mut Gen, xs: &[&'a T]) -> &'a T {
 /// The names a block may carry that nothing treats specially. Names differing
 /// only in case are different templates (`nameToKey` is `strcmp`).
 const TPL_POOL: [&str; 9] = [
-    "FactionAmerica", "FactionChina", "FactionGLA", "FactionCivilian", "FactionObserver", "Custom_A", "custom_a", "FACTIONAMERICA", "Skirmish_X",
+    "FactionAmerica",
+    "FactionChina",
+    "FactionGLA",
+    "FactionCivilian",
+    "FactionObserver",
+    "Custom_A",
+    "custom_a",
+    "FACTIONAMERICA",
+    "Skirmish_X",
 ];
 /// The names of the old maps' sub-factions (`findPlayerTemplate`'s `a1`..`g4`).
 const OLD_NAMES: [&str; 12] = [
-    "FactionAmericaChooseAGeneral", "FactionAmericaTankCommand", "FactionAmericaSpecialForces", "FactionAmericaAirForce",
-    "FactionChinaChooseAGeneral", "FactionChinaRedArmy", "FactionChinaSpecialWeapons", "FactionChinaSecretPolice",
-    "FactionGLAChooseAGeneral", "FactionGLATerrorCell", "FactionGLABiowarCommand", "FactionGLAWarlordCommand",
+    "FactionAmericaChooseAGeneral",
+    "FactionAmericaTankCommand",
+    "FactionAmericaSpecialForces",
+    "FactionAmericaAirForce",
+    "FactionChinaChooseAGeneral",
+    "FactionChinaRedArmy",
+    "FactionChinaSpecialWeapons",
+    "FactionChinaSecretPolice",
+    "FactionGLAChooseAGeneral",
+    "FactionGLATerrorCell",
+    "FactionGLABiowarCommand",
+    "FactionGLAWarlordCommand",
 ];
-const SCI_POOL: [&str; 8] = ["SCIENCE_A", "SCIENCE_B", "SCIENCE_C", "SCIENCE_D", "SCIENCE_E", "SCIENCE_F", "science_a", "SCIENCE_G"];
+const SCI_POOL: [&str; 8] = [
+    "SCIENCE_A",
+    "SCIENCE_B",
+    "SCIENCE_C",
+    "SCIENCE_D",
+    "SCIENCE_E",
+    "SCIENCE_F",
+    "science_a",
+    "SCIENCE_G",
+];
 const GHOSTS: [&str; 3] = ["SCIENCE_Ghost", "Nope", "science_aa"];
-const THINGS: [&str; 8] = ["AmericaTank", "ChinaTank", "Barracks", "AmericaBarracks", "americatank", "GLAWorker", "Upgrade_X", "Airfield"];
+const THINGS: [&str; 8] = [
+    "AmericaTank",
+    "ChinaTank",
+    "Barracks",
+    "AmericaBarracks",
+    "americatank",
+    "GLAWorker",
+    "Upgrade_X",
+    "Airfield",
+];
 const SIDES: [&str; 6] = ["America", "China", "GLA", "Civilian", "america", ""];
 const STRINGS: [&str; 12] = [
-    "Alpha", "America_Dozer", "GUI:Tip", "Beta_2", "x=y", "\"quoted words\"", "\"one\"", "\"unterminated", "Foo Bar", "AmericaCommandCenter", "Menu.wnd", "a/b.tga",
+    "Alpha",
+    "America_Dozer",
+    "GUI:Tip",
+    "Beta_2",
+    "x=y",
+    "\"quoted words\"",
+    "\"one\"",
+    "\"unterminated",
+    "Foo Bar",
+    "AmericaCommandCenter",
+    "Menu.wnd",
+    "a/b.tga",
 ];
-const LABELS: [&str; 8] = ["NAME:America", "NAME:China", "Label_A", "X", "Rank:Colonel", "NOTEXT_Missing", "notext", "NoTextLabel"];
-const LEVELS: [&str; 8] = ["REGULAR", "VETERAN", "ELITE", "HEROIC", "veteran", "Elite", "GOD", ""];
+const LABELS: [&str; 8] = [
+    "NAME:America",
+    "NAME:China",
+    "Label_A",
+    "X",
+    "Rank:Colonel",
+    "NOTEXT_Missing",
+    "notext",
+    "NoTextLabel",
+];
+const LEVELS: [&str; 8] = [
+    "REGULAR", "VETERAN", "ELITE", "HEROIC", "veteran", "Elite", "GOD", "",
+];
 
 fn gen_sep(g: &mut Gen) -> &'static str {
     pick(g, &[" = ", "=", " ", " =", "= ", "\t= ", " = ", " = "])
@@ -386,7 +479,20 @@ impl Known {
 fn gen_int(g: &mut Gen, clean: bool) -> String {
     match g.below(16) {
         0..=7 => format!("{}", g.below(20000)),
-        8 => pick(g, &["0", "1", "007", "-3", "2147483647", "-2147483648", "10000", "4294967295"]).to_string(),
+        8 => pick(
+            g,
+            &[
+                "0",
+                "1",
+                "007",
+                "-3",
+                "2147483647",
+                "-2147483648",
+                "10000",
+                "4294967295",
+            ],
+        )
+        .to_string(),
         _ if clean => format!("{}", g.below(5000)),
         9 => pick(g, &["1e3", "12abc", "+5", "-1"]).to_string(),
         10 => pick(g, &["abc", "", "x1", "-"]).to_string(),
@@ -431,7 +537,13 @@ fn gen_color(g: &mut Gen, clean: bool) -> String {
 
 fn gen_percent(g: &mut Gen, clean: bool) -> String {
     if clean || g.below(4) != 0 {
-        return pick(g, &["10%", "-10%", "0%", "100%", "250%", "12.5%", "-50", "33", "0.1", "75%"]).to_string();
+        return pick(
+            g,
+            &[
+                "10%", "-10%", "0%", "100%", "250%", "12.5%", "-50", "33", "0.1", "75%",
+            ],
+        )
+        .to_string();
     }
     pick(g, &["abc", "", "5x", "1e1", ".5", "- 5", "%", "-0%"]).to_string()
 }
@@ -442,7 +554,11 @@ fn gen_production(g: &mut Gen, clean: bool, veterancy: bool) -> String {
         return thing.to_string();
     }
     if veterancy {
-        let level = if clean { pick(g, &LEVELS[..4]) } else { pick(g, &LEVELS) };
+        let level = if clean {
+            pick(g, &LEVELS[..4])
+        } else {
+            pick(g, &LEVELS)
+        };
         format!("{thing} {level}")
     } else {
         format!("{thing} {}", gen_percent(g, clean))
@@ -491,12 +607,22 @@ fn gen_indent(g: &mut Gen) -> &'static str {
 
 fn gen_end(g: &mut Gen, clean: bool, lines: &mut Vec<String>) {
     if clean || g.below(15) != 0 {
-        lines.push(pick(g, &["End", "End", "End", "END", "end", "  End  ", "End ; done"]).to_string());
+        lines.push(
+            pick(
+                g,
+                &["End", "End", "End", "END", "end", "  End  ", "End ; done"],
+            )
+            .to_string(),
+        );
     }
 }
 
 fn gen_science_block(g: &mut Gen, lines: &mut Vec<String>, k: &mut Known) {
-    let free: Vec<&str> = SCI_POOL.iter().copied().filter(|n| !k.sciences.iter().any(|s| s == n)).collect();
+    let free: Vec<&str> = SCI_POOL
+        .iter()
+        .copied()
+        .filter(|n| !k.sciences.iter().any(|s| s == n))
+        .collect();
     if free.is_empty() {
         return;
     }
@@ -516,7 +642,9 @@ fn gen_science_block(g: &mut Gen, lines: &mut Vec<String>, k: &mut Known) {
 
 fn gen_template_name(g: &mut Gen, k: &Known) -> String {
     match g.below(20) {
-        0..=7 if !k.templates.is_empty() => k.templates[g.below(k.templates.len() as u32) as usize].clone(),
+        0..=7 if !k.templates.is_empty() => {
+            k.templates[g.below(k.templates.len() as u32) as usize].clone()
+        }
         8..=13 => pick(g, &OLD_NAMES).to_string(),
         14..=15 => format!("Gen_{}", g.below(6)),
         _ => pick(g, &TPL_POOL).to_string(),
@@ -530,7 +658,20 @@ fn gen_template_block(g: &mut Gen, lines: &mut Vec<String>, k: &mut Known) {
         let sep = gen_sep(g);
         let c = k.clean;
         let body = match g.below(54) {
-            0 if !c => pick(g, &["Foo = 1", "Side", "StartMoney =", "PreferredColor", "StartingUnit10 = X", "sidex = 1", "Dead = 1", "DisplayName"]).to_string(),
+            0 if !c => pick(
+                g,
+                &[
+                    "Foo = 1",
+                    "Side",
+                    "StartMoney =",
+                    "PreferredColor",
+                    "StartingUnit10 = X",
+                    "sidex = 1",
+                    "Dead = 1",
+                    "DisplayName",
+                ],
+            )
+            .to_string(),
             0..=1 => format!("Side{sep}{}", pick(g, &SIDES)),
             2 => format!("BaseSide{sep}{}", pick(g, &SIDES)),
             3 => format!("PlayableSide{sep}{}", gen_bool(g, c)),
@@ -541,7 +682,10 @@ fn gen_template_block(g: &mut Gen, lines: &mut Vec<String>, k: &mut Known) {
             12..=19 => format!("StartingUnit{}{sep}{}", g.below(10), gen_string(g, c)),
             20..=22 => format!("ProductionCostChange{sep}{}", gen_production(g, c, false)),
             23..=25 => format!("ProductionTimeChange{sep}{}", gen_production(g, c, false)),
-            26..=28 => format!("ProductionVeterancyLevel{sep}{}", gen_production(g, c, true)),
+            26..=28 => format!(
+                "ProductionVeterancyLevel{sep}{}",
+                gen_production(g, c, true)
+            ),
             29..=31 => format!("IntrinsicSciences{sep}{}", gen_sci_list(g, k)),
             32 => format!("PurchaseScienceCommandSetRank1{sep}{}", gen_string(g, c)),
             33 => format!("PurchaseScienceCommandSetRank3{sep}{}", gen_string(g, c)),
@@ -556,13 +700,32 @@ fn gen_template_block(g: &mut Gen, lines: &mut Vec<String>, k: &mut Known) {
             42 => format!("LoadScreenImage{sep}{}", gen_string(g, c)),
             43 => format!("LoadScreenMusic{sep}{}", gen_string(g, c)),
             44 => format!("ScoreScreenMusic{sep}{}", gen_string(g, c)),
-            45 => format!("{}{sep}{}", pick(g, &["HeadWaterMark", "FlagWaterMark"]), gen_string(g, c)),
-            46 => format!("{}{sep}{}", pick(g, &["EnabledImage", "SideIconImage", "GeneralImage"]), gen_string(g, c)),
+            45 => format!(
+                "{}{sep}{}",
+                pick(g, &["HeadWaterMark", "FlagWaterMark"]),
+                gen_string(g, c)
+            ),
+            46 => format!(
+                "{}{sep}{}",
+                pick(g, &["EnabledImage", "SideIconImage", "GeneralImage"]),
+                gen_string(g, c)
+            ),
             47 => format!("BeaconName{sep}{}", gen_string(g, c)),
             48 => format!("ArmyTooltip{sep}{}", gen_string(g, c)),
             49 => format!("Features{sep}{}", gen_string(g, c)),
-            50 => format!("{}{sep}{}", pick(g, &["MedallionRegular", "MedallionHilite", "MedallionSelect"]), gen_string(g, c)),
-            _ => format!("{}{sep}{}", pick(g, &["Side", "StartMoney", "IsObserver"]), if c { "Yes" } else { "x" }),
+            50 => format!(
+                "{}{sep}{}",
+                pick(
+                    g,
+                    &["MedallionRegular", "MedallionHilite", "MedallionSelect"]
+                ),
+                gen_string(g, c)
+            ),
+            _ => format!(
+                "{}{sep}{}",
+                pick(g, &["Side", "StartMoney", "IsObserver"]),
+                if c { "Yes" } else { "x" }
+            ),
         };
         lines.push(format!("{}{body}{}", gen_indent(g), gen_comment(g)));
     }
@@ -576,14 +739,20 @@ fn gen_template_block(g: &mut Gen, lines: &mut Vec<String>, k: &mut Known) {
 /// the files (`clean`) holds only well-formed blocks.
 fn gen_file(g: &mut Gen, templates: &[String], sciences: &[String]) -> Vec<u8> {
     let clean = g.below(10) < 4;
-    let mut k = Known { templates: templates.to_vec(), sciences: sciences.to_vec(), clean };
+    let mut k = Known {
+        templates: templates.to_vec(),
+        sciences: sciences.to_vec(),
+        clean,
+    };
     let mut lines = Vec::new();
     for _ in 0..1 + g.below(5) {
         match g.below(20) {
             0..=3 => gen_science_block(g, &mut lines, &mut k),
             4..=15 => gen_template_block(g, &mut lines, &mut k),
             16 => lines.push(pick(g, &["; a comment", "", "   ", ";", "\t"]).to_string()),
-            _ if !clean => lines.push(pick(g, &["Unknown block", "=", "  =  ", "End", "AIData"]).to_string()),
+            _ if !clean => {
+                lines.push(pick(g, &["Unknown block", "=", "  =  ", "End", "AIData"]).to_string())
+            }
             _ => lines.push("; noise".to_string()),
         }
     }
@@ -648,7 +817,11 @@ fn rust_outcome(r: IniResult<()>, crc: u32) -> Result<Outcome, IniError> {
             Some(Thrown::OutOfRange) => (4, Vec::new()),
         },
     };
-    Ok(Outcome { status, detail, crc })
+    Ok(Outcome {
+        status,
+        detail,
+        crc,
+    })
 }
 
 fn cpp_load(name: &[u8], data: &[u8], load_type: IniLoadType, with_xfer: bool) -> Outcome {
@@ -658,7 +831,15 @@ fn cpp_load(name: &[u8], data: &[u8], load_type: IniLoadType, with_xfer: bool) -
     let status = unsafe {
         cpp::ref_ini_reset();
         cpp::ref_ini_add_file(cname.as_ptr(), data.as_ptr() as *const _, data.len() as i32);
-        cpp::ref_pt_load(cname.as_ptr(), load_type as i32, i32::from(with_xfer), &mut crc, msg.as_mut_ptr() as *mut _, msg.len() as i32, &mut code)
+        cpp::ref_pt_load(
+            cname.as_ptr(),
+            load_type as i32,
+            i32::from(with_xfer),
+            &mut crc,
+            msg.as_mut_ptr() as *mut _,
+            msg.len() as i32,
+            &mut code,
+        )
     };
     let detail = match status {
         0 | 4 => Vec::new(),
@@ -666,7 +847,11 @@ fn cpp_load(name: &[u8], data: &[u8], load_type: IniLoadType, with_xfer: bool) -
         2 | 3 => code.to_le_bytes().to_vec(),
         _ => panic!("C++ threw something unexpected (status {status})"),
     };
-    Outcome { status, detail, crc: if with_xfer { crc } else { 0 } }
+    Outcome {
+        status,
+        detail,
+        crc: if with_xfer { crc } else { 0 },
+    }
 }
 
 fn show(b: &[u8]) -> String {
@@ -759,14 +944,20 @@ fn probe(ctx: &mut Ctx, ck: &mut Checks, t: &mut Tally, tag: &str, step_salt: u3
         let r = rust_nth(ctx, i, 0);
         let cx = unsafe { cpp::ref_pt_nth(i) };
         ck.nth.eq(r, cx, || format!("{tag}: nth {i}"));
-        ck.nth_bug.eq(rust_nth(ctx, i, 1), cx, || format!("{tag}: nth {i}"));
+        ck.nth_bug
+            .eq(rust_nth(ctx, i, 1), cx, || format!("{tag}: nth {i}"));
         t.probes += 1;
     }
     // names: the fifteen of the statics, the pool, the templates, some more
-    let mut probes: Vec<String> = LEGACY_FACTION_KEY_NAMES.iter().map(|s| s.to_string()).collect();
+    let mut probes: Vec<String> = LEGACY_FACTION_KEY_NAMES
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     probes.extend(TPL_POOL.iter().map(|s| s.to_string()));
     for i in 0..count {
-        probes.push(show(ctx.store.nth_player_template(i).unwrap().name(&ctx.names)));
+        probes.push(show(
+            ctx.store.nth_player_template(i).unwrap().name(&ctx.names),
+        ));
     }
     probes.push("Never_Seen_Before".to_string());
     for (i, n) in probes.iter().enumerate() {
@@ -780,7 +971,8 @@ fn probe(ctx: &mut Ctx, ck: &mut Checks, t: &mut Tally, tag: &str, step_salt: u3
         let r = rust_find(ctx, rk, 0);
         let cf = unsafe { cpp::ref_pt_find(rk.0) };
         ck.find.eq(r, cf, || format!("{tag}: find {n:?}"));
-        ck.find_bug.eq(rust_find(ctx, rk, 1), cf, || format!("{tag}: find {n:?}"));
+        ck.find_bug
+            .eq(rust_find(ctx, rk, 1), cf, || format!("{tag}: find {n:?}"));
         t.finds += 1;
         t.probes += 1;
         if cf >= 0 {
@@ -794,13 +986,25 @@ fn probe(ctx: &mut Ctx, ck: &mut Checks, t: &mut Tally, tag: &str, step_salt: u3
         let r = rust_find(ctx, NameKeyType(raw), 0);
         let cf = unsafe { cpp::ref_pt_find(raw) };
         ck.find.eq(r, cf, || format!("{tag}: find raw {raw}"));
-        ck.find_bug.eq(rust_find(ctx, NameKeyType(raw), 1), cf, || format!("{tag}: find raw {raw}"));
+        ck.find_bug.eq(rust_find(ctx, NameKeyType(raw), 1), cf, || {
+            format!("{tag}: find raw {raw}")
+        });
         t.probes += 1;
     }
     // getTemplateNumByName: the names of the store as written, in other cases, and others
-    let mut by_name: Vec<Vec<u8>> = vec![b"".to_vec(), b"Nobody".to_vec(), b"factionamerica".to_vec(), b"FACTIONCHINA".to_vec()];
+    let mut by_name: Vec<Vec<u8>> = vec![
+        b"".to_vec(),
+        b"Nobody".to_vec(),
+        b"factionamerica".to_vec(),
+        b"FACTIONCHINA".to_vec(),
+    ];
     for i in 0..count {
-        let n = ctx.store.nth_player_template(i).unwrap().name(&ctx.names).to_vec();
+        let n = ctx
+            .store
+            .nth_player_template(i)
+            .unwrap()
+            .name(&ctx.names)
+            .to_vec();
         by_name.push(n.to_ascii_lowercase());
         by_name.push(n.to_ascii_uppercase());
         by_name.push(n);
@@ -808,8 +1012,12 @@ fn probe(ctx: &mut Ctx, ck: &mut Checks, t: &mut Tally, tag: &str, step_salt: u3
     for n in &by_name {
         let cn = CString::new(n.clone()).unwrap();
         let cx = unsafe { cpp::ref_pt_num_by_name(cn.as_ptr()) };
-        ck.num.eq(rust_num_by_name(ctx, n, 0), cx, || format!("{tag}: num {:?}", show(n)));
-        ck.num_bug.eq(rust_num_by_name(ctx, n, 1), cx, || format!("{tag}: num {:?}", show(n)));
+        ck.num.eq(rust_num_by_name(ctx, n, 0), cx, || {
+            format!("{tag}: num {:?}", show(n))
+        });
+        ck.num_bug.eq(rust_num_by_name(ctx, n, 1), cx, || {
+            format!("{tag}: num {:?}", show(n))
+        });
         t.probes += 1;
     }
     // getAllSideStrings onto lists that already hold some
@@ -820,9 +1028,15 @@ fn probe(ctx: &mut Ctx, ck: &mut Checks, t: &mut Tally, tag: &str, step_salt: u3
             blob.push(0);
         }
         blob.push(0);
-        let cs = cpp_buf(|b, cap| unsafe { cpp::ref_pt_sides(blob.as_ptr() as *const _, initial.len() as i32, b, cap) });
-        ck.sides.eq(rust_sides(ctx, initial, 0), cs.clone(), || format!("{tag}: sides onto {initial:?}"));
-        ck.sides_bug.eq(rust_sides(ctx, initial, 1), cs, || format!("{tag}: sides onto {initial:?}"));
+        let cs = cpp_buf(|b, cap| unsafe {
+            cpp::ref_pt_sides(blob.as_ptr() as *const _, initial.len() as i32, b, cap)
+        });
+        ck.sides.eq(rust_sides(ctx, initial, 0), cs.clone(), || {
+            format!("{tag}: sides onto {initial:?}")
+        });
+        ck.sides_bug.eq(rust_sides(ctx, initial, 1), cs, || {
+            format!("{tag}: sides onto {initial:?}")
+        });
         t.probes += 1;
     }
 }
@@ -886,13 +1100,35 @@ fn player_template_blocks_match_upstream() {
                             t.updates += 1;
                         }
                     }
-                    unsafe { cpp::ref_pt_op(if kind == 2 { 0 } else if kind == 3 { 1 } else { 2 }) };
+                    unsafe {
+                        cpp::ref_pt_op(if kind == 2 {
+                            0
+                        } else if kind == 3 {
+                            1
+                        } else {
+                            2
+                        })
+                    };
                 }
                 _ => {
-                    let known: Vec<String> = ctx.store.templates().iter().map(|p| show(p.name(&ctx.names))).collect();
-                    let known_sciences: Vec<String> = ctx.sciences.friend_get_science_names(&ctx.names).iter().map(|n| show(n)).collect();
+                    let known: Vec<String> = ctx
+                        .store
+                        .templates()
+                        .iter()
+                        .map(|p| show(p.name(&ctx.names)))
+                        .collect();
+                    let known_sciences: Vec<String> = ctx
+                        .sciences
+                        .friend_get_science_names(&ctx.names)
+                        .iter()
+                        .map(|n| show(n))
+                        .collect();
                     let overrides = kind == 1;
-                    let data = if session == 0 && step == 0 { FIRST_FILE.to_vec() } else { gen_file(&mut g, &known, &known_sciences) };
+                    let data = if session == 0 && step == 0 {
+                        FIRST_FILE.to_vec()
+                    } else {
+                        gen_file(&mut g, &known, &known_sciences)
+                    };
                     let load_type = if overrides {
                         IniLoadType::CreateOverrides
                     } else if g.below(12) == 0 {
@@ -903,12 +1139,26 @@ fn player_template_blocks_match_upstream() {
                     let name = format!("Data\\INI\\Case{}.ini", session % 7).into_bytes();
                     let with_xfer = g.below(4) != 0;
                     let mut crc = XferCrc::new_without_nan_guard();
-                    let r = Ini::load(&name, &data, load_type, if with_xfer { Some(&mut crc as &mut dyn Xfer) } else { None }, &table, &mut ctx);
+                    let r = Ini::load(
+                        &name,
+                        &data,
+                        load_type,
+                        if with_xfer {
+                            Some(&mut crc as &mut dyn Xfer)
+                        } else {
+                            None
+                        },
+                        &table,
+                        &mut ctx,
+                    );
                     let crc_v = if with_xfer { crc.get_crc() } else { 0 };
                     let rust = match rust_outcome(r, crc_v) {
                         Ok(o) => o,
                         Err(e) => {
-                            assert!(session > 0, "session 0's fixed first file must not be undefined: {e:?}");
+                            assert!(
+                                session > 0,
+                                "session 0's fixed first file must not be undefined: {e:?}"
+                            );
                             excluded.add(&e);
                             t.stopped_undefined += 1;
                             break;
@@ -918,20 +1168,37 @@ fn player_template_blocks_match_upstream() {
                     if overrides {
                         t.overrides_loads += 1;
                     }
-                    if rust.status == 0 { t.loads_ok += 1 } else { t.loads_failed += 1 }
+                    if rust.status == 0 {
+                        t.loads_ok += 1
+                    } else {
+                        t.loads_failed += 1
+                    }
                     let c = cpp_load(&name, &data, load_type, with_xfer);
-                    ck.outcome.eq(&rust, &c, || format!("{tag}: {load_type:?} file {:?}", show(&data)));
-                    let wrong = Outcome { status: rust.status ^ 4, detail: rust.detail.clone(), crc: rust.crc };
+                    ck.outcome.eq(&rust, &c, || {
+                        format!("{tag}: {load_type:?} file {:?}", show(&data))
+                    });
+                    let wrong = Outcome {
+                        status: rust.status ^ 4,
+                        detail: rust.detail.clone(),
+                        crc: rust.crc,
+                    };
                     ck.outcome_bug.eq(&wrong, &c, || tag.clone());
                     if session == 0 && step == 0 {
                         assert_eq!(rust.status, 0, "session 0's first file loads");
                         // the statics of findPlayerTemplate: initialised by that load, the
                         // same fifteen numbers on both sides (compared through the finds
                         // below as well)
-                        let keys = ctx.store.legacy_faction_keys().expect("the first load ran findPlayerTemplate");
+                        let keys = ctx
+                            .store
+                            .legacy_faction_keys()
+                            .expect("the first load ran findPlayerTemplate");
                         for (i, n) in LEGACY_FACTION_KEY_NAMES.iter().enumerate() {
                             let cn = CString::new(*n).unwrap();
-                            ck.first_keys.eq(keys[i].0, unsafe { cpp::ref_pt_name_key(cn.as_ptr()) }, || format!("static {i} {n}"));
+                            ck.first_keys.eq(
+                                keys[i].0,
+                                unsafe { cpp::ref_pt_name_key(cn.as_ptr()) },
+                                || format!("static {i} {n}"),
+                            );
                         }
                     }
                 }
@@ -941,7 +1208,8 @@ fn player_template_blocks_match_upstream() {
             let cd = cpp_buf(|b, n| unsafe { cpp::ref_pt_dump(b, n) });
             let file = || tag.clone();
             ck.dump.eq(rust_dump(&ctx, 0), cd.clone(), file);
-            ck.dump_bug_observer.eq(rust_dump(&ctx, 1), cd.clone(), file);
+            ck.dump_bug_observer
+                .eq(rust_dump(&ctx, 1), cd.clone(), file);
             ck.dump_bug_maps.eq(rust_dump(&ctx, 2), cd.clone(), file);
             ck.dump_bug_key.eq(rust_dump(&ctx, 3), cd, file);
 
@@ -951,7 +1219,10 @@ fn player_template_blocks_match_upstream() {
                 if p.money().count_money() != 0 {
                     t.templates_with_money += 1;
                 }
-                if !p.production_cost_changes().is_empty() || !p.production_time_changes().is_empty() || !p.production_veterancy_levels().is_empty() {
+                if !p.production_cost_changes().is_empty()
+                    || !p.production_time_changes().is_empty()
+                    || !p.production_veterancy_levels().is_empty()
+                {
                     t.templates_with_maps += 1;
                 }
                 if !p.intrinsic_sciences().is_empty() {
@@ -976,10 +1247,27 @@ fn player_template_blocks_match_upstream() {
         t.templates_with_money, t.templates_with_maps, t.templates_with_sciences, t.observers, t.named_like_old_map, t.probes, t.finds,
         t.finds_found, t.finds_via_old_name, excluded.total(), excluded.0
     );
-    assert!(t.loads_ok > 1500 && t.loads_failed > 1500, "the generator must reach both outcomes: {} ok, {} threw", t.loads_ok, t.loads_failed);
-    assert!(t.templates > 5000 && t.templates_with_money > 1500 && t.templates_with_maps > 1000 && t.templates_with_sciences > 500, "too few templates compared");
-    assert!(t.observers > 100 && t.named_like_old_map > 100, "too few observers or renamed templates compared");
-    assert!(t.finds_via_old_name > 200, "too few finds by an old map's name that found a template");
+    assert!(
+        t.loads_ok > 1500 && t.loads_failed > 1500,
+        "the generator must reach both outcomes: {} ok, {} threw",
+        t.loads_ok,
+        t.loads_failed
+    );
+    assert!(
+        t.templates > 5000
+            && t.templates_with_money > 1500
+            && t.templates_with_maps > 1000
+            && t.templates_with_sciences > 500,
+        "too few templates compared"
+    );
+    assert!(
+        t.observers > 100 && t.named_like_old_map > 100,
+        "too few observers or renamed templates compared"
+    );
+    assert!(
+        t.finds_via_old_name > 200,
+        "too few finds by an old map's name that found a template"
+    );
     ck.outcome.finish();
     ck.outcome_bug.finish_planted();
     ck.dump.finish();

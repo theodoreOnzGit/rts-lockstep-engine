@@ -94,12 +94,17 @@ fn put_str(v: &mut Vec<u8>, s: &[u8]) {
     v.extend_from_slice(s);
 }
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::OverchargeBehavior(Arc::new(OverchargeBehaviorModuleData::friend_new_module_data(Some(ini))?)));
+    *out = Some(ModuleDataKind::OverchargeBehavior(Arc::new(
+        OverchargeBehaviorModuleData::friend_new_module_data(Some(ini))?,
+    )));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }];
+    let blocks = [BlockParse {
+        token: "D",
+        parse: read_block,
+    }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -149,10 +154,16 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
     let mut lines: Vec<String> = Vec::new();
     if g.below(100) < 85 {
-        lines.push(format!("HealthPercentToDrainPerSecond = {}", pick(g, &["0%", "5%", "10%", "25%", "100%"])));
+        lines.push(format!(
+            "HealthPercentToDrainPerSecond = {}",
+            pick(g, &["0%", "5%", "10%", "25%", "100%"])
+        ));
     }
     if g.below(100) < 85 {
-        lines.push(format!("NotAllowedWhenHealthBelowPercent = {}", pick(g, &["0%", "10%", "50%", "75%", "90%"])));
+        lines.push(format!(
+            "NotAllowedWhenHealthBelowPercent = {}",
+            pick(g, &["0%", "10%", "50%", "75%", "90%"])
+        ));
     }
     if !clean {
         lines.push(match g.below(2) {
@@ -179,7 +190,13 @@ struct Tally {
     bonuses: u64,
 }
 
-fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
+fn run_xfer(
+    w: &mut World,
+    me: ObjectId,
+    idx: usize,
+    how: u32,
+    saved: &[u8],
+) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -221,12 +238,19 @@ fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> 
 
 fn probe(name: &[u8], answers: ProbeAnswers, max: f32) -> NewModule {
     let mut m = NewModule::plain(name, name);
-    m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(answers, max, Default::default())));
+    m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+        answers,
+        max,
+        Default::default(),
+    )));
     m
 }
 
 fn body_mut(w: &mut World, id: ObjectId, slot: u16) -> &mut ProbeModule {
-    match w.objects.find_mut(id).unwrap().modules[slot as usize].body.as_mut() {
+    match w.objects.find_mut(id).unwrap().modules[slot as usize]
+        .body
+        .as_mut()
+    {
         Some(UpdateBody::ModuleProbe(p)) => p,
         _ => unreachable!("a probe"),
     }
@@ -241,37 +265,77 @@ fn set_player(w: &mut World, p: u32) {
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 5], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
+fn rust_run(
+    ctx: &Ctx,
+    data: ModuleDataKind,
+    cfg: &[u32; 5],
+    ops: &[[u32; 6]],
+    tally: &mut Tally,
+) -> (Vec<u8>, World) {
     let mut v = Vec::new();
-    let ModuleDataKind::OverchargeBehavior(d) = &data else { unreachable!() };
+    let ModuleDataKind::OverchargeBehavior(d) = &data else {
+        unreachable!()
+    };
     put_u32(&mut v, d.health_percent_to_drain_per_second.to_bits());
     put_u32(&mut v, d.not_allowed_when_health_below_percent.to_bits());
     let mut w = World::new();
     w.names = ctx.names.clone();
-    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), ..Default::default() });
+    w.statics = Arc::new(GameStatics {
+        upgrade_center: ctx.center.clone(),
+        ..Default::default()
+    });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.probe_effect_trace = true;
     w.teams.insert_team(Team::new(1, 0)).unwrap();
     w.players.set_player_count(3);
     set_player(&mut w, cfg[0]);
-    w.players.friend_set_local_index((cfg[1] != 0).then(|| ((cfg[1] - 1) % 3) as i32));
-    let plain = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
-    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"OverchargeBehavior", b"ModuleTag_Overcharge", &data).unwrap().unwrap();
+    w.players
+        .friend_set_local_index((cfg[1] != 0).then(|| ((cfg[1] - 1) % 3) as i32));
+    let plain = Arc::new(ThingTemplate::from_object_values(
+        &ObjectTemplateValues::default(),
+    ));
+    let m = rts_lockstep_engine::logic::modules::new_module(
+        w.next_object_id(),
+        b"OverchargeBehavior",
+        b"ModuleTag_Overcharge",
+        &data,
+    )
+    .unwrap()
+    .unwrap();
     let mut body = probe(b"R24Body", ProbeAnswers::default(), f32::from_bits(cfg[4]));
     body.interfaces = MODULEINTERFACE_BODY;
     let mut modules = vec![m, body];
     for _ in 0..cfg[2] % 3 {
-        modules.push(probe(b"R24Plant", ProbeAnswers { has: 1 << 20, ..Default::default() }, 0.0));
+        modules.push(probe(
+            b"R24Plant",
+            ProbeAnswers {
+                has: 1 << 20,
+                ..Default::default()
+            },
+            0.0,
+        ));
     }
-    let me = w.new_object(NewObject { template: plain, status: ObjectStatusMaskType::default(), team: Some(1), modules }).unwrap();
+    let me = w
+        .new_object(NewObject {
+            template: plain,
+            status: ObjectStatusMaskType::default(),
+            team: Some(1),
+            modules,
+        })
+        .unwrap();
     assert_eq!(me, 1);
     let idx = w.find_module(me, b"OverchargeBehavior").unwrap();
     // the world puts its standard helpers first: the power plants follow the module and the body, as slots 2 and 3 of the driver's numbering
     let plant_base = i32::from(idx) + 2;
     let body_slot = w.objects.find(me).unwrap().body.unwrap();
     body_mut(&mut w, me, body_slot).health = f32::from_bits(cfg[3]);
-    let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
+    let u = w
+        .update_handle_of_module(ModuleHandle {
+            object: me,
+            index: idx,
+        })
+        .expect("an update module");
     // the constructor's wake calls
     let (mut cw, mut cl) = (0u32, 0u32);
     for t in w.cuts.trace.take().unwrap() {
@@ -285,16 +349,28 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 5], ops: &[[u32; 6]], t
     }
     put_u32(&mut v, cw);
     put_u32(&mut v, cl);
-    w.set_position(me, &Coord3D { x: 10.0, y: -2.5, z: 1.0 });
+    w.set_position(
+        me,
+        &Coord3D {
+            x: 10.0,
+            y: -2.5,
+            z: 1.0,
+        },
+    );
     let mut saved: Vec<u8> = Vec::new();
     for o in ops {
         match o[0] {
             11 => body_mut(&mut w, me, body_slot).health = f32::from_bits(o[1]),
-            12 => w.players.friend_set_local_index((o[1] != 0).then(|| ((o[1] - 1) % 3) as i32)),
+            12 => w
+                .players
+                .friend_set_local_index((o[1] != 0).then(|| ((o[1] - 1) % 3) as i32)),
             13 => set_player(&mut w, o[1]),
             14 => w.set_frame(o[1]),
             15 => {
-                w.objects.find_mut(me).unwrap().disabled.set(rts_lockstep_engine::common::disabled_types::DISABLED_HACKED, i32::from(o[1] & 1 != 0));
+                w.objects.find_mut(me).unwrap().disabled.set(
+                    rts_lockstep_engine::common::disabled_types::DISABLED_HACKED,
+                    i32::from(o[1] & 1 != 0),
+                );
             }
             _ => {}
         }
@@ -306,7 +382,10 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 5], ops: &[[u32; 6]], t
         let player = |p: u32| if p == 0 { -1 } else { ((p - 1) % 3) as i32 };
         match o[0] {
             0 => {
-                res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
+                res = w
+                    .with_body(u, |b, w| b.update(w, u))
+                    .expect("the module is in its slot")
+                    .0;
                 tally.updates += 1;
             }
             1 => {
@@ -315,12 +394,24 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 5], ops: &[[u32; 6]], t
             2 => {
                 w.module_call(me, idx, ModuleCall::OverchargeEnable(o[1] & 1 != 0));
             }
-            3 => res = u32::from(w.module_call(me, idx, ModuleCall::IsOverchargeActive).as_bool()),
+            3 => {
+                res = u32::from(
+                    w.module_call(me, idx, ModuleCall::IsOverchargeActive)
+                        .as_bool(),
+                )
+            }
             4 => {
                 w.module_call(me, idx, ModuleCall::OnDelete);
             }
             5 => {
-                w.module_call(me, idx, ModuleCall::OnCapture { old_owner: player(o[1]), new_owner: player(o[2]) });
+                w.module_call(
+                    me,
+                    idx,
+                    ModuleCall::OnCapture {
+                        old_owner: player(o[1]),
+                        new_owner: player(o[2]),
+                    },
+                );
             }
             6 => {
                 w.module_call(me, idx, ModuleCall::OnDamage(DamageInfo::default()));
@@ -346,7 +437,9 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 5], ops: &[[u32; 6]], t
             11..=15 => {}
             _ => unreachable!(),
         }
-        let threw = w.cuts.module_errors[errors_before..].iter().any(|(_, e)| !e.is_undefined());
+        let threw = w.cuts.module_errors[errors_before..]
+            .iter()
+            .any(|(_, e)| !e.is_undefined());
         put_i32(&mut v, if threw { 2 } else { 0 });
         put_u32(&mut v, res);
         let events: Vec<ObjectClientEvent> = w.events.events()[events_before..]
@@ -356,7 +449,8 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 5], ops: &[[u32; 6]], t
                 _ => None,
             })
             .collect();
-        let (mut ev_iter, mut cut_iter) = (events.into_iter(), w.cuts.log.take().unwrap().into_iter());
+        let (mut ev_iter, mut cut_iter) =
+            (events.into_iter(), w.cuts.log.take().unwrap().into_iter());
         let (mut log, mut wakes, mut last) = (Vec::new(), 0u32, 0u32);
         for t in w.cuts.trace.take().unwrap() {
             if t.starts_with("cut ") {
@@ -365,7 +459,9 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 5], ops: &[[u32; 6]], t
                         tally.bonuses += 1;
                         log.push(format!("addpower {player}"));
                     }
-                    CutCall::PlayerRemovePowerBonus { player, .. } => log.push(format!("removepower {player}")),
+                    CutCall::PlayerRemovePowerBonus { player, .. } => {
+                        log.push(format!("removepower {player}"))
+                    }
                     _ => {}
                 }
             } else if t.starts_with("evt ") {
@@ -374,9 +470,16 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 5], ops: &[[u32; 6]], t
                         tally.exhausted += 1;
                         log.push(format!("message {}", String::from_utf8_lossy(&label)));
                     }
-                    Some(ObjectClientEvent::RadarCreateEvent { position: p, event_type }) => {
-                        log.push(format!("radarevent {:08x} {:08x} {:08x} {event_type} {:08x}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits(), 4.0f32.to_bits()))
-                    }
+                    Some(ObjectClientEvent::RadarCreateEvent {
+                        position: p,
+                        event_type,
+                    }) => log.push(format!(
+                        "radarevent {:08x} {:08x} {:08x} {event_type} {:08x}",
+                        p.x.to_bits(),
+                        p.y.to_bits(),
+                        p.z.to_bits(),
+                        4.0f32.to_bits()
+                    )),
                     _ => {}
                 }
             } else if let Some(f) = t.strip_prefix("awaken ") {
@@ -387,7 +490,10 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 5], ops: &[[u32; 6]], t
                 }
             } else if let Some(r) = t.strip_prefix("extendrods ") {
                 let (slot, extend) = r.split_once(' ').unwrap();
-                log.push(format!("extendrods {} {extend}", slot.parse::<i32>().unwrap() - plant_base + 2));
+                log.push(format!(
+                    "extendrods {} {extend}",
+                    slot.parse::<i32>().unwrap() - plant_base + 2
+                ));
             } else if t.starts_with("damage ") {
                 tally.drains += 1;
                 log.push(t);
@@ -406,10 +512,16 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 5], ops: &[[u32; 6]], t
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let active = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
-            Some(UpdateBody::OverchargeBehavior(m)) => Some(m.state_words()[0]),
-            _ => None,
-        });
+        let active =
+            w.objects
+                .find(me)
+                .unwrap()
+                .behaviors
+                .iter()
+                .find_map(|b| match b.body.as_ref() {
+                    Some(UpdateBody::OverchargeBehavior(m)) => Some(m.state_words()[0]),
+                    _ => None,
+                });
         put_u32(&mut v, active.expect("the module is back in its slot"));
         let health = body_mut(&mut w, me, body_slot).health;
         put_u32(&mut v, health.to_bits());
@@ -418,7 +530,10 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 5], ops: &[[u32; 6]], t
 }
 
 fn cases() -> usize {
-    std::env::var("L9R24_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
+    std::env::var("L9R24_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9_000)
 }
 
 #[test]
@@ -449,7 +564,13 @@ fn overcharge_behavior_matches_upstream() {
         let owner = if g.below(8) == 0 { 0 } else { 1 + g.below(3) };
         // half the cases are the local player's own plant (the exhaustion message is the local player's)
         let local = if g.below(2) == 0 { owner } else { g.below(4) };
-        let cfg = [owner, local, g.below(3), (*pick(&mut g, &[&100.0f32, &80.0, &60.0, &30.0])).to_bits(), 100.0f32.to_bits()];
+        let cfg = [
+            owner,
+            local,
+            g.below(3),
+            (*pick(&mut g, &[&100.0f32, &80.0, &60.0, &30.0])).to_bits(),
+            100.0f32.to_bits(),
+        ];
         let n_ops = 1 + g.below(30) as usize;
         let mut frame = 0u32;
         let ops: Vec<[u32; 6]> = (0..n_ops)
@@ -465,7 +586,14 @@ fn overcharge_behavior_matches_upstream() {
                 17 => [8, 0, 0, 0, 0, 0],
                 18 => [9, 0, 0, 0, 0, 0],
                 19 => [10, 0, 0, 0, 0, 0],
-                20 => [11, (*pick(&mut g, &[&100.0f32, &55.0, &20.0, &5.0])).to_bits(), 0, 0, 0, 0],
+                20 => [
+                    11,
+                    (*pick(&mut g, &[&100.0f32, &55.0, &20.0, &5.0])).to_bits(),
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
                 21 => [12, g.below(4), 0, 0, 0, 0],
                 22 => [13, g.below(4), 0, 0, 0, 0],
                 _ => {
@@ -497,7 +625,19 @@ fn overcharge_behavior_matches_upstream() {
         let status = unsafe {
             cpp::ref_ini_reset();
             cpp::ref_ini_add_file(cfile.as_ptr(), text.as_ptr() as *const _, text.len() as i32);
-            cpp::ref_l9r24_run(cfile.as_ptr(), cxfer.as_ptr(), cfg.as_ptr(), ops.len() as i32, flat.as_ptr(), buf.as_mut_ptr(), buf.len() as i32, &mut len, msg.as_mut_ptr() as *mut _, msg.len() as i32, &mut code)
+            cpp::ref_l9r24_run(
+                cfile.as_ptr(),
+                cxfer.as_ptr(),
+                cfg.as_ptr(),
+                ops.len() as i32,
+                flat.as_ptr(),
+                buf.as_mut_ptr(),
+                buf.len() as i32,
+                &mut len,
+                msg.as_mut_ptr() as *mut _,
+                msg.len() as i32,
+                &mut code,
+            )
         };
         buf.truncate(len as usize);
         let detail = match status {
@@ -506,8 +646,21 @@ fn overcharge_behavior_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || format!("case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
-        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
+        let what = || {
+            format!(
+                "case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}",
+                show(&text)
+            )
+        };
+        read.eq(
+            &outcome,
+            &Outcome {
+                status,
+                detail,
+                crc: 0,
+            },
+            what,
+        );
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
@@ -515,8 +668,17 @@ fn overcharge_behavior_matches_upstream() {
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
-            eprintln!("--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
+            let i = dr
+                .iter()
+                .zip(dc.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(dr.len().min(dc.len()));
+            eprintln!(
+                "--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}",
+                show(&text),
+                dr.get(i),
+                dc.get(i)
+            );
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -532,5 +694,10 @@ fn overcharge_behavior_matches_upstream() {
     );
     read.finish();
     run.finish();
-    assert!(tally.drains * 2 > cases as u64 && tally.exhausted * 20 > cases as u64 && tally.bonuses * 2 > cases as u64, "the generator must reach every path");
+    assert!(
+        tally.drains * 2 > cases as u64
+            && tally.exhausted * 20 > cases as u64
+            && tally.bonuses * 2 > cases as u64,
+        "the generator must reach every path"
+    );
 }

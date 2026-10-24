@@ -44,19 +44,30 @@ pub trait UpdateBehavior: Clone + PartialEq + Sized {
     /// The module back out of its variant; `None` for another variant.
     fn from_body(body: UpdateBody) -> Option<Self>;
     /// A call to the module's own interface (`extendRods`, `extendRadar`, ...): [`ModuleReply::Unhandled`] unless it overrides this.
-    fn other_call(&mut self, _world: &mut World, _me: ModuleHandle, _call: ModuleCall) -> ModuleReply {
+    fn other_call(
+        &mut self,
+        _world: &mut World,
+        _me: ModuleHandle,
+        _call: ModuleCall,
+    ) -> ModuleReply {
         ModuleReply::Unhandled
     }
 }
 
 /// `update()` as the scheduler runs it: this module is the running one for the host calls, and it is lent to its slot for the duration.
-pub fn world_update<M: UpdateBehavior>(m: &mut M, world: &mut World, me: UpdateHandle) -> UpdateSleepTime {
+pub fn world_update<M: UpdateBehavior>(
+    m: &mut M,
+    world: &mut World,
+    me: UpdateHandle,
+) -> UpdateSleepTime {
     let Some(h) = world.module_handle_of_update(me) else {
         // a scheduler entry with no module: nothing to run
         return crate::logic::module::update_module::UPDATE_SLEEP_NONE;
     };
     let before = m.clone();
-    let (r, back) = world.lend_body(h, m.clone().into_body(), |w| w.in_update_module(me, |w| m.update(w, h)));
+    let (r, back) = world.lend_body(h, m.clone().into_body(), |w| {
+        w.in_update_module(me, |w| m.update(w, h))
+    });
     if *m == before {
         if let Some(b) = back.and_then(M::from_body) {
             *m = b;
@@ -71,12 +82,21 @@ pub fn world_construct<M: UpdateBehavior>(m: &mut M, world: &mut World, me: Modu
 }
 
 /// The module's answer to one of `Object`'s calls.
-pub fn update_module_call<M: UpdateBehavior>(m: &mut M, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+pub fn update_module_call<M: UpdateBehavior>(
+    m: &mut M,
+    world: &mut World,
+    me: ModuleHandle,
+    call: ModuleCall,
+) -> ModuleReply {
     m.other_call(world, me, call)
 }
 
 /// `xfer` with the scheduling half the slot holds (the live `UpdateModule`): the version, that half, then the fields.
-pub fn xfer_with<M: UpdateBehavior>(m: &mut M, update: &mut UpdateModule, xfer: &mut dyn Xfer) -> XferResult<()> {
+pub fn xfer_with<M: UpdateBehavior>(
+    m: &mut M,
+    update: &mut UpdateModule,
+    xfer: &mut dyn Xfer,
+) -> XferResult<()> {
     let current = M::XFER_VERSION;
     let mut version = current;
     xfer.xfer_version(&mut version, current)?;
@@ -85,7 +105,11 @@ pub fn xfer_with<M: UpdateBehavior>(m: &mut M, update: &mut UpdateModule, xfer: 
 }
 
 /// `xfer` with the module's own `UpdateModule` base.
-pub fn xfer_own<M: UpdateBehavior>(m: &mut M, own: &mut UpdateModule, xfer: &mut dyn Xfer) -> XferResult<()> {
+pub fn xfer_own<M: UpdateBehavior>(
+    m: &mut M,
+    own: &mut UpdateModule,
+    xfer: &mut dyn Xfer,
+) -> XferResult<()> {
     xfer_with(m, own, xfer)
 }
 

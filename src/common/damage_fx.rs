@@ -91,7 +91,12 @@ pub struct Dfx {
 impl Default for Dfx {
     /// `DFX()`: `clear()`.
     fn default() -> Self {
-        Dfx { amount_for_major_fx: 0.0, major_damage_fx_list: None, minor_damage_fx_list: None, damage_fx_throttle_time: 0 }
+        Dfx {
+            amount_for_major_fx: 0.0,
+            major_damage_fx_list: None,
+            minor_damage_fx_list: None,
+            damage_fx_throttle_time: 0,
+        }
     }
 }
 
@@ -106,7 +111,9 @@ impl Default for DamageFx {
     /// `DamageFX()` leaves the array uninitialised ("not necessary", the
     /// store always `clear()`s); this is the cleared state.
     fn default() -> Self {
-        DamageFx { dfx: std::array::from_fn(|_| std::array::from_fn(|_| Dfx::default())) }
+        DamageFx {
+            dfx: std::array::from_fn(|_| std::array::from_fn(|_| Dfx::default())),
+        }
     }
 }
 
@@ -141,7 +148,12 @@ impl DamageFx {
     // --- p1w13-sonnet ---
     /// Replaces `m_dfx[t][level]` (what the parsers leave for the same values), for a program that builds a `DamageFX` without INI text. An error for a
     /// damage type outside the table.
-    pub fn set_dfx(&mut self, t: i32, level: VeterancyLevel, dfx: Dfx) -> Result<(), DamageTypeOutOfRange> {
+    pub fn set_dfx(
+        &mut self,
+        t: i32,
+        level: VeterancyLevel,
+        dfx: Dfx,
+    ) -> Result<(), DamageTypeOutOfRange> {
         if t < 0 || t as usize >= DAMAGE_NUM_TYPES {
             return Err(DamageTypeOutOfRange);
         }
@@ -152,7 +164,11 @@ impl DamageFx {
 
     /// `getDamageFXThrottleTime(t, source)`, for the source's veterancy
     /// level (`LEVEL_REGULAR` when there is no source).
-    pub fn get_damage_fx_throttle_time(&self, t: i32, level: VeterancyLevel) -> Result<u32, DamageTypeOutOfRange> {
+    pub fn get_damage_fx_throttle_time(
+        &self,
+        t: i32,
+        level: VeterancyLevel,
+    ) -> Result<u32, DamageTypeOutOfRange> {
         Ok(self.dfx(t, level)?.damage_fx_throttle_time)
     }
 
@@ -160,12 +176,21 @@ impl DamageFx {
     /// veterancy level. "If damage is zero, never do damage fx" (the
     /// battleship's faux weapon); otherwise the major effect from the
     /// threshold up, the minor one below it (a NaN amount is below).
-    pub fn get_damage_fx_list(&self, t: i32, damage_amount: f32, level: VeterancyLevel) -> Result<Option<&[u8]>, DamageTypeOutOfRange> {
+    pub fn get_damage_fx_list(
+        &self,
+        t: i32,
+        damage_amount: f32,
+        level: VeterancyLevel,
+    ) -> Result<Option<&[u8]>, DamageTypeOutOfRange> {
         if damage_amount == 0.0 {
             return Ok(None);
         }
         let dfx = self.dfx(t, level)?;
-        let fx = if damage_amount >= dfx.amount_for_major_fx { &dfx.major_damage_fx_list } else { &dfx.minor_damage_fx_list };
+        let fx = if damage_amount >= dfx.amount_for_major_fx {
+            &dfx.major_damage_fx_list
+        } else {
+            &dfx.minor_damage_fx_list
+        };
         Ok(fx.as_deref())
     }
 
@@ -185,7 +210,12 @@ impl DamageFx {
             let d = DamageTypeFlags::get_single_bit_from_name(&damage_name);
             (d, d)
         };
-        Ok(Span { vet_first, vet_last, damage_first, damage_last })
+        Ok(Span {
+            vet_first,
+            vet_last,
+            damage_first,
+            damage_last,
+        })
     }
 
     /// The loops over the span of a parser: `m_dfx[dt][v]` for each.
@@ -211,18 +241,30 @@ impl DamageFx {
     /// `INI::parseFXList`, as far as the token goes (see the module docs).
     fn parse_fx_list(ini: &mut Ini<'_>) -> IniResult<FxListName> {
         let token = ini.get_next_token(None)?;
-        Ok(if token.eq_ignore_ascii_case(b"None") { None } else { Some(token) })
+        Ok(if token.eq_ignore_ascii_case(b"None") {
+            None
+        } else {
+            Some(token)
+        })
     }
 
     /// `parseMajorFXList`: `MajorFX` / `VeterancyMajorFX`.
-    fn parse_major_fx_list(ini: &mut Ini<'_>, this: &mut DamageFx, user_data: &UserData) -> IniResult<()> {
+    fn parse_major_fx_list(
+        ini: &mut Ini<'_>,
+        this: &mut DamageFx,
+        user_data: &UserData,
+    ) -> IniResult<()> {
         let span = Self::parse_common_stuff(ini, user_data.names())?;
         let fx = Self::parse_fx_list(ini)?;
         this.for_span(&span, |d| d.major_damage_fx_list = fx.clone())
     }
 
     /// `parseMinorFXList`: `MinorFX` / `VeterancyMinorFX`.
-    fn parse_minor_fx_list(ini: &mut Ini<'_>, this: &mut DamageFx, user_data: &UserData) -> IniResult<()> {
+    fn parse_minor_fx_list(
+        ini: &mut Ini<'_>,
+        this: &mut DamageFx,
+        user_data: &UserData,
+    ) -> IniResult<()> {
         let span = Self::parse_common_stuff(ini, user_data.names())?;
         let fx = Self::parse_fx_list(ini)?;
         this.for_span(&span, |d| d.minor_damage_fx_list = fx.clone())
@@ -243,10 +285,26 @@ static DAMAGE_FX_FIELDS: [FieldParse<DamageFx>; 9] = [
     FieldParse::new("MajorFX", DamageFx::parse_major_fx_list, UserData::None),
     FieldParse::new("MinorFX", DamageFx::parse_minor_fx_list, UserData::None),
     FieldParse::new("ThrottleTime", DamageFx::parse_time, UserData::None),
-    FieldParse::new("VeterancyAmountForMajorFX", DamageFx::parse_amount, UserData::Names(&VETERANCY_NAMES)),
-    FieldParse::new("VeterancyMajorFX", DamageFx::parse_major_fx_list, UserData::Names(&VETERANCY_NAMES)),
-    FieldParse::new("VeterancyMinorFX", DamageFx::parse_minor_fx_list, UserData::Names(&VETERANCY_NAMES)),
-    FieldParse::new("VeterancyThrottleTime", DamageFx::parse_time, UserData::Names(&VETERANCY_NAMES)),
+    FieldParse::new(
+        "VeterancyAmountForMajorFX",
+        DamageFx::parse_amount,
+        UserData::Names(&VETERANCY_NAMES),
+    ),
+    FieldParse::new(
+        "VeterancyMajorFX",
+        DamageFx::parse_major_fx_list,
+        UserData::Names(&VETERANCY_NAMES),
+    ),
+    FieldParse::new(
+        "VeterancyMinorFX",
+        DamageFx::parse_minor_fx_list,
+        UserData::Names(&VETERANCY_NAMES),
+    ),
+    FieldParse::new(
+        "VeterancyThrottleTime",
+        DamageFx::parse_time,
+        UserData::Names(&VETERANCY_NAMES),
+    ),
     FieldParse::end(),
 ];
 
@@ -309,7 +367,11 @@ impl DamageFxStore {
     /// reached through `INI::parseDamageFXDefinition`): the name, then the
     /// fields until `End`. A known name is cleared and refilled; the entry
     /// stays in the store, as far as it was filled, if a line fails.
-    pub fn parse_damage_fx_definition(&mut self, ini: &mut Ini<'_>, names: &mut NameKeyGenerator) -> IniResult<()> {
+    pub fn parse_damage_fx_definition(
+        &mut self,
+        ini: &mut Ini<'_>,
+        names: &mut NameKeyGenerator,
+    ) -> IniResult<()> {
         let name = ini.get_next_token(None)?;
         let key = names
             .try_name_to_key(&name)
@@ -335,12 +397,25 @@ mod tests {
         c.store.parse_damage_fx_definition(ini, &mut c.names)
     }
 
-    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse { token: "DamageFX", parse: block }];
+    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse {
+        token: "DamageFX",
+        parse: block,
+    }];
 
     fn load(text: &[u8]) -> (Ctx, IniResult<()>) {
-        let mut c = Ctx { store: DamageFxStore::new(), names: NameKeyGenerator::new() };
+        let mut c = Ctx {
+            store: DamageFxStore::new(),
+            names: NameKeyGenerator::new(),
+        };
         c.names.init();
-        let r = Ini::load(b"d.ini", text, IniLoadType::Overwrite, None, &BLOCKS, &mut c);
+        let r = Ini::load(
+            b"d.ini",
+            text,
+            IniLoadType::Overwrite,
+            None,
+            &BLOCKS,
+            &mut c,
+        );
         (c, r)
     }
 
@@ -350,18 +425,46 @@ mod tests {
             VeterancyMajorFX = ELITE FLAME EliteFX\n ThrottleTime = EXPLOSION 1000\nEnd\n";
         let (mut c, r) = load(text);
         r.unwrap();
-        let fx = c.store.find_damage_fx(&mut c.names, b"Fx").unwrap().unwrap();
+        let fx = c
+            .store
+            .find_damage_fx(&mut c.names, b"Fx")
+            .unwrap()
+            .unwrap();
         // major from the threshold, minor (None) below it
-        assert_eq!(fx.get_damage_fx_list(DAMAGE_EXPLOSION, 10.0, VeterancyLevel::Regular), Ok(Some(&b"BigFX"[..])));
-        assert_eq!(fx.get_damage_fx_list(DAMAGE_EXPLOSION, 9.5, VeterancyLevel::Regular), Ok(None));
+        assert_eq!(
+            fx.get_damage_fx_list(DAMAGE_EXPLOSION, 10.0, VeterancyLevel::Regular),
+            Ok(Some(&b"BigFX"[..]))
+        );
+        assert_eq!(
+            fx.get_damage_fx_list(DAMAGE_EXPLOSION, 9.5, VeterancyLevel::Regular),
+            Ok(None)
+        );
         // zero damage never has an effect
-        assert_eq!(fx.get_damage_fx_list(DAMAGE_EXPLOSION, 0.0, VeterancyLevel::Regular), Ok(None));
+        assert_eq!(
+            fx.get_damage_fx_list(DAMAGE_EXPLOSION, 0.0, VeterancyLevel::Regular),
+            Ok(None)
+        );
         // the veterancy override
-        assert_eq!(fx.get_damage_fx_list(DAMAGE_FLAME, 11.0, VeterancyLevel::Elite), Ok(Some(&b"EliteFX"[..])));
-        assert_eq!(fx.get_damage_fx_list(DAMAGE_FLAME, 11.0, VeterancyLevel::Veteran), Ok(Some(&b"BigFX"[..])));
-        assert_eq!(fx.get_damage_fx_throttle_time(DAMAGE_EXPLOSION, VeterancyLevel::Heroic), Ok(30));
-        assert_eq!(fx.get_damage_fx_throttle_time(DAMAGE_FLAME, VeterancyLevel::Regular), Ok(0));
-        assert_eq!(fx.get_damage_fx_list(99, 1.0, VeterancyLevel::Regular), Err(DamageTypeOutOfRange));
+        assert_eq!(
+            fx.get_damage_fx_list(DAMAGE_FLAME, 11.0, VeterancyLevel::Elite),
+            Ok(Some(&b"EliteFX"[..]))
+        );
+        assert_eq!(
+            fx.get_damage_fx_list(DAMAGE_FLAME, 11.0, VeterancyLevel::Veteran),
+            Ok(Some(&b"BigFX"[..]))
+        );
+        assert_eq!(
+            fx.get_damage_fx_throttle_time(DAMAGE_EXPLOSION, VeterancyLevel::Heroic),
+            Ok(30)
+        );
+        assert_eq!(
+            fx.get_damage_fx_throttle_time(DAMAGE_FLAME, VeterancyLevel::Regular),
+            Ok(0)
+        );
+        assert_eq!(
+            fx.get_damage_fx_list(99, 1.0, VeterancyLevel::Regular),
+            Err(DamageTypeOutOfRange)
+        );
     }
 
     #[test]

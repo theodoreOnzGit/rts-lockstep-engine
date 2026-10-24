@@ -52,7 +52,8 @@ use rts_lockstep_engine::common::base_type::ICoord3D;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::formats::data_chunk::{CachedFileInputStream, ChunkError, DataChunkInput};
 use rts_lockstep_engine::logic::polygon_trigger::{
-    parse_polygon_triggers_data_chunk, write_polygon_triggers_chunk, PolygonTriggerList, PolygonUndefined, TriggerParse,
+    parse_polygon_triggers_data_chunk, write_polygon_triggers_chunk, PolygonTriggerList,
+    PolygonUndefined, TriggerParse,
 };
 use std::collections::BTreeMap;
 use support::{Check, Gen};
@@ -73,20 +74,35 @@ fn put_str(v: &mut Vec<u8>, s: &[u8]) {
     v.extend_from_slice(s);
 }
 
-const NAMES: &[&[u8]] = &[b"", b"Lake", b"Road", b"Zone 1", b"x\x00y", b"AutoAddedWaterAreaTrigger"];
+const NAMES: &[&[u8]] = &[
+    b"",
+    b"Lake",
+    b"Road",
+    b"Zone 1",
+    b"x\x00y",
+    b"AutoAddedWaterAreaTrigger",
+];
 const LAYERS: &[&[u8]] = &[b"", b"Water", b"Default", b"Layer2"];
 
 fn gen_body(g: &mut Gen, version: u16, clean: bool) -> Vec<u8> {
     let mut v = Vec::new();
     let ntrig = g.below(6);
-    let count = if !clean && g.below(10) == 0 { g.below(8) as i32 } else { ntrig as i32 };
+    let count = if !clean && g.below(10) == 0 {
+        g.below(8) as i32
+    } else {
+        ntrig as i32
+    };
     v.extend_from_slice(&count.to_le_bytes());
     for _ in 0..ntrig {
         put_str(&mut v, NAMES[g.below(NAMES.len() as u32) as usize]);
         if version >= 4 {
             put_str(&mut v, LAYERS[g.below(LAYERS.len() as u32) as usize]);
         }
-        let id = if g.below(8) == 0 { g.i32() } else { 1 + g.below(12) as i32 };
+        let id = if g.below(8) == 0 {
+            g.i32()
+        } else {
+            1 + g.below(12) as i32
+        };
         v.extend_from_slice(&id.to_le_bytes());
         if version >= 2 {
             v.push(g.u32() as u8);
@@ -105,7 +121,11 @@ fn gen_body(g: &mut Gen, version: u16, clean: bool) -> Vec<u8> {
         v.extend_from_slice(&num_points.to_le_bytes());
         for _ in 0..num_points.clamp(0, 12) {
             for _ in 0..3 {
-                let c = if g.below(20) == 0 { g.i32() } else { g.below(401) as i32 - 200 };
+                let c = if g.below(20) == 0 {
+                    g.i32()
+                } else {
+                    g.below(401) as i32 - 200
+                };
                 v.extend_from_slice(&c.to_le_bytes());
             }
         }
@@ -117,7 +137,11 @@ fn gen_body(g: &mut Gen, version: u16, clean: bool) -> Vec<u8> {
 /// table is not read), then the `PolygonTriggers` chunk and sometimes a
 /// chunk nobody registered.
 fn gen_file(g: &mut Gen, clean: bool) -> (Vec<u8>, f32, f32) {
-    let mut v = if !clean && g.below(12) == 0 { b"CkMq".to_vec() } else { b"CkMp".to_vec() };
+    let mut v = if !clean && g.below(12) == 0 {
+        b"CkMq".to_vec()
+    } else {
+        b"CkMp".to_vec()
+    };
     v.extend_from_slice(&2i32.to_le_bytes());
     for (name, id) in [(&b"PolygonTriggers"[..], 1u32), (b"Other", 2)] {
         v.push(name.len() as u8);
@@ -149,13 +173,24 @@ fn gen_file(g: &mut Gen, clean: bool) -> (Vec<u8>, f32, f32) {
         }
     }
     // the water extents of TheGlobalData: modest, or the special values
-    let wx = if g.below(4) == 0 { g.special() } else { g.uniform(-1.0e4, 1.0e4) };
-    let wy = if g.below(4) == 0 { g.special() } else { g.uniform(-1.0e4, 1.0e4) };
+    let wx = if g.below(4) == 0 {
+        g.special()
+    } else {
+        g.uniform(-1.0e4, 1.0e4)
+    };
+    let wy = if g.below(4) == 0 {
+        g.special()
+    } else {
+        g.uniform(-1.0e4, 1.0e4)
+    };
     (v, wx, wy)
 }
 
 fn queries(g: &mut Gen, list: &PolygonTriggerList) -> Vec<(i32, i32)> {
-    let verts: Vec<ICoord3D> = list.iter().flat_map(|t| (0..t.num_points()).filter_map(|i| t.get_point(i))).collect();
+    let verts: Vec<ICoord3D> = list
+        .iter()
+        .flat_map(|t| (0..t.num_points()).filter_map(|i| t.get_point(i)))
+        .collect();
     let nq = 12 + g.below(12) as usize;
     (0..nq)
         .map(|_| match g.below(6) {
@@ -255,7 +290,14 @@ fn cpp_run(data: &[u8], wx: f32, wy: f32, q: &[(i32, i32)]) -> Option<CppRun> {
         return None;
     }
     log.truncate(log_len as usize);
-    Some(CppRun { log, nq: q.len(), inside, centers, radii, nt: nt as usize })
+    Some(CppRun {
+        log,
+        nq: q.len(),
+        inside,
+        centers,
+        radii,
+        nt: nt as usize,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -292,7 +334,9 @@ fn polygon_trigger_matches_upstream() {
             };
             // a table of contents whose count runs past the end: upstream allocates each entry
             if input.contents().eof_mappings() > 100_000 {
-                return Err("table of contents past the end of the file (over 10^5 entries)".to_string());
+                return Err(
+                    "table of contents past the end of the file (over 10^5 entries)".to_string(),
+                );
             }
             input.register_parser(b"PolygonTriggers", b"", parse_polygon_triggers_data_chunk);
             // an extent whose version-1 conversion is out of range: refused up front
@@ -311,7 +355,10 @@ fn polygon_trigger_matches_upstream() {
             Err(kind) => {
                 // A clean file is well formed: the only undefined input it can have is a
                 // water extent (its own input). Anything else means the reader went wrong.
-                assert!(!clean || kind.starts_with("water extent"), "case {case}: clean file undefined for the Rust reader: {kind}");
+                assert!(
+                    !clean || kind.starts_with("water extent"),
+                    "case {case}: clean file undefined for the Rust reader: {kind}"
+                );
                 *counts.parse_undefined.entry(kind).or_default() += 1;
                 continue;
             }
@@ -328,14 +375,21 @@ fn polygon_trigger_matches_upstream() {
         };
         let rust = rust_log(&ctx.list, ok);
         counts.log_bytes += rust.len() as u64;
-        check.eq(rust, c.log.clone(), || format!("case {case} (clean {clean}, wx {wx}, wy {wy}): {:02x?}", data));
+        check.eq(rust, c.log.clone(), || {
+            format!(
+                "case {case} (clean {clean}, wx {wx}, wy {wy}): {:02x?}",
+                data
+            )
+        });
 
         for (k, t) in ctx.list.iter().enumerate().take(c.nt) {
             for (j, &(x, y)) in q.iter().enumerate() {
                 match t.point_in_trigger(ICoord3D { x, y, z: 0 }) {
                     Ok(b) => {
                         counts.queries_compared += 1;
-                        check.eq(u8::from(b), c.inside[k * c.nq + j], || format!("case {case}: trigger {k} point ({x}, {y})"));
+                        check.eq(u8::from(b), c.inside[k * c.nq + j], || {
+                            format!("case {case}: trigger {k} point ({x}, {y})")
+                        });
                     }
                     Err(PolygonUndefined::IntOverflow) => counts.queries_undefined += 1,
                     Err(e) => unreachable!("{e:?}"),
@@ -344,9 +398,15 @@ fn polygon_trigger_matches_upstream() {
             // an Int overflow in the box, the centre or the radius is undefined upstream: counted
             match (t.center_point(), t.radius()) {
                 (Ok((cx, cy)), Ok(r)) => {
-                    check.f32(cx, f32::from_bits(c.centers[2 * k]), || format!("case {case}: trigger {k} centre x"));
-                    check.f32(cy, f32::from_bits(c.centers[2 * k + 1]), || format!("case {case}: trigger {k} centre y"));
-                    check.f32(r, f32::from_bits(c.radii[k]), || format!("case {case}: trigger {k} radius"));
+                    check.f32(cx, f32::from_bits(c.centers[2 * k]), || {
+                        format!("case {case}: trigger {k} centre x")
+                    });
+                    check.f32(cy, f32::from_bits(c.centers[2 * k + 1]), || {
+                        format!("case {case}: trigger {k} centre y")
+                    });
+                    check.f32(r, f32::from_bits(c.radii[k]), || {
+                        format!("case {case}: trigger {k} radius")
+                    });
                 }
                 _ => counts.queries_undefined += 1,
             }

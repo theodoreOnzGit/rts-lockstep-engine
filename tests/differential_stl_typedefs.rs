@@ -79,8 +79,13 @@ struct Sample {
 
 fn random_sample(g: &mut Gen) -> Sample {
     let len = g.below(7) as usize;
-    let text = (0..len).map(|_| ALPHABET[g.below(ALPHABET.len() as u32) as usize]).collect();
-    Sample { text, kind: g.below(3) as i32 }
+    let text = (0..len)
+        .map(|_| ALPHABET[g.below(ALPHABET.len() as u32) as usize])
+        .collect();
+    Sample {
+        text,
+        kind: g.below(3) as i32,
+    }
 }
 
 fn make(s: &Sample) -> AsciiString {
@@ -134,13 +139,27 @@ fn stl_comparators_match() {
             let text = a
                 .text
                 .iter()
-                .map(|&c| if g.below(2) == 0 { c.to_ascii_lowercase() } else { c.to_ascii_uppercase() })
+                .map(|&c| {
+                    if g.below(2) == 0 {
+                        c.to_ascii_lowercase()
+                    } else {
+                        c.to_ascii_uppercase()
+                    }
+                })
                 .collect();
             Sample { text, kind: 1 }
         } else {
             random_sample(&mut g)
         };
-        let input = || format!("a = {:?} (kind {}), b = {:?} (kind {})", String::from_utf8_lossy(&a.text), a.kind, String::from_utf8_lossy(&b.text), b.kind);
+        let input = || {
+            format!(
+                "a = {:?} (kind {}), b = {:?} (kind {})",
+                String::from_utf8_lossy(&a.text),
+                a.kind,
+                String::from_utf8_lossy(&b.text),
+                b.kind
+            )
+        };
         let r = cpp_compare(&a, &b);
         let (sa, sb) = (make(&a), make(&b));
 
@@ -174,13 +193,15 @@ fn stl_comparators_match() {
 /// The units of `ALPHABET` as `u16`, and units from 0x80 up: `_wcsicmp`
 /// folds `A`..`Z` only (C locale), and `wcscmp` orders units as unsigned.
 const UNICODE_ALPHABET: &[u16] = &[
-    0x61, 0x41, 0x62, 0x42, 0x63, 0x43, 0x78, 0x79, 0x7a, 0x58, 0x59, 0x5a, 0x30, 0x39, 0x20, 0x5f, 0x2d, 0x7e, 0x5b, 0x7b,
-    0x80, 0xc0, 0xe9, 0x130, 0x2000, 0xff21, 0xffff,
+    0x61, 0x41, 0x62, 0x42, 0x63, 0x43, 0x78, 0x79, 0x7a, 0x58, 0x59, 0x5a, 0x30, 0x39, 0x20, 0x5f,
+    0x2d, 0x7e, 0x5b, 0x7b, 0x80, 0xc0, 0xe9, 0x130, 0x2000, 0xff21, 0xffff,
 ];
 
 fn random_unicode_sample(g: &mut Gen) -> (Vec<u16>, i32) {
     let len = g.below(7) as usize;
-    let units = (0..len).map(|_| UNICODE_ALPHABET[g.below(UNICODE_ALPHABET.len() as u32) as usize]).collect();
+    let units = (0..len)
+        .map(|_| UNICODE_ALPHABET[g.below(UNICODE_ALPHABET.len() as u32) as usize])
+        .collect();
     (units, g.below(3) as i32)
 }
 
@@ -222,7 +243,10 @@ fn case_sensitive_less_unicode(a: &UnicodeString, b: &UnicodeString) -> bool {
 
 /// The planted equality: ignores case, which the reference would reject.
 fn case_blind_equal_unicode(a: &UnicodeString, b: &UnicodeString) -> bool {
-    a.str().iter().map(|&c| fold_unit(c)).eq(b.str().iter().map(|&c| fold_unit(c)))
+    a.str()
+        .iter()
+        .map(|&c| fold_unit(c))
+        .eq(b.str().iter().map(|&c| fold_unit(c)))
 }
 
 #[test]
@@ -237,7 +261,16 @@ fn stl_unicode_comparators_match() {
         // A third of the pairs with text are the same text in other case, so
         // that case-only differences are tested, as for AsciiString.
         let (ub, kb) = if ka == 1 && g.below(3) == 0 {
-            let units = ua.iter().map(|&c| if g.below(2) == 0 { swap_ascii_case(c) } else { c }).collect();
+            let units = ua
+                .iter()
+                .map(|&c| {
+                    if g.below(2) == 0 {
+                        swap_ascii_case(c)
+                    } else {
+                        c
+                    }
+                })
+                .collect();
             (units, 1)
         } else {
             random_unicode_sample(&mut g)
@@ -246,7 +279,15 @@ fn stl_unicode_comparators_match() {
         let mut out = [0i32; 3];
         let (na, nb) = (ua.len() as i32, ub.len() as i32);
         unsafe {
-            cpp::ref_stl_compare_unicode(ua.as_ptr(), na, ka, ub.as_ptr(), nb, kb, out.as_mut_ptr());
+            cpp::ref_stl_compare_unicode(
+                ua.as_ptr(),
+                na,
+                ka,
+                ub.as_ptr(),
+                nb,
+                kb,
+                out.as_mut_ptr(),
+            );
         }
         let (sa, sb) = (make_unicode(&ua, ka), make_unicode(&ub, kb));
 

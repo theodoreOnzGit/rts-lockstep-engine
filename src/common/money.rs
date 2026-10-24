@@ -50,7 +50,10 @@ pub struct Money {
 impl Default for Money {
     /// `Money()`: no money, player 0.
     fn default() -> Self {
-        Money { money: 0, player_index: 0 }
+        Money {
+            money: 0,
+            player_index: 0,
+        }
     }
 }
 
@@ -90,13 +93,21 @@ impl Money {
     /// taken, which is less than asked when the balance is lower ("sorry,
     /// can't go into debt"). A non-zero withdrawal with `play_sound` pushes
     /// the withdrawal sound onto `events`.
-    pub fn withdraw(&mut self, amount_to_withdraw: u32, play_sound: bool, events: &mut Vec<ClientEvent>) -> u32 {
+    pub fn withdraw(
+        &mut self,
+        amount_to_withdraw: u32,
+        play_sound: bool,
+        events: &mut Vec<ClientEvent>,
+    ) -> u32 {
         let amount = amount_to_withdraw.min(self.money);
         if amount == 0 {
             return amount;
         }
         if play_sound {
-            events.push(ClientEvent::MoneySound { sound: MoneySound::Withdraw, player_index: self.player_index });
+            events.push(ClientEvent::MoneySound {
+                sound: MoneySound::Withdraw,
+                player_index: self.player_index,
+            });
         }
         self.money -= amount;
         amount
@@ -106,12 +117,20 @@ impl Money {
     /// player must call `recordIncome()` on its academy statistics (upstream
     /// does so for every non-zero deposit, see the module docs). A non-zero
     /// deposit with `play_sound` pushes the deposit sound onto `events`.
-    pub fn deposit(&mut self, amount_to_deposit: u32, play_sound: bool, events: &mut Vec<ClientEvent>) -> bool {
+    pub fn deposit(
+        &mut self,
+        amount_to_deposit: u32,
+        play_sound: bool,
+        events: &mut Vec<ClientEvent>,
+    ) -> bool {
         if amount_to_deposit == 0 {
             return false;
         }
         if play_sound {
-            events.push(ClientEvent::MoneySound { sound: MoneySound::Deposit, player_index: self.player_index });
+            events.push(ClientEvent::MoneySound {
+                sound: MoneySound::Deposit,
+                player_index: self.player_index,
+            });
         }
         self.money = self.money.wrapping_add(amount_to_deposit);
         true
@@ -156,7 +175,13 @@ mod tests {
         assert!(ev.is_empty(), "no sound when playSound is off");
         assert_eq!(m.withdraw(9, true, &mut ev), 5);
         assert_eq!(m.count_money(), 0);
-        assert_eq!(ev, vec![ClientEvent::MoneySound { sound: MoneySound::Withdraw, player_index: 2 }]);
+        assert_eq!(
+            ev,
+            vec![ClientEvent::MoneySound {
+                sound: MoneySound::Withdraw,
+                player_index: 2
+            }]
+        );
         // nothing to take: no sound, nothing returned
         assert_eq!(m.withdraw(1, true, &mut ev), 0);
         assert_eq!(ev.len(), 1);
@@ -170,7 +195,13 @@ mod tests {
         assert_eq!(m.count_money(), 0);
         assert!(ev.is_empty());
         assert!(m.deposit(3, true, &mut ev));
-        assert_eq!(ev, vec![ClientEvent::MoneySound { sound: MoneySound::Deposit, player_index: 0 }]);
+        assert_eq!(
+            ev,
+            vec![ClientEvent::MoneySound {
+                sound: MoneySound::Deposit,
+                player_index: 0
+            }]
+        );
     }
 
     #[test]

@@ -28,6 +28,7 @@
 use std::sync::Arc;
 
 use crate::common::ini::{FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, UserData};
+use crate::common::module::MODULEINTERFACE_SPECIAL_POWER;
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
@@ -37,7 +38,6 @@ use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::update_body::UpdateBody;
 use crate::upgrade_module_data_field_parse;
-use crate::common::module::MODULEINTERFACE_SPECIAL_POWER;
 
 /// `class UnpauseSpecialPowerUpgradeModuleData : public UpgradeModuleData`.
 #[derive(Debug)]
@@ -59,17 +59,27 @@ impl Default for UnpauseSpecialPowerUpgradeModuleData {
 }
 
 /// `UpgradeModuleData::buildFieldParse`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<UnpauseSpecialPowerUpgradeModuleData>; 6] = upgrade_module_data_field_parse!(UnpauseSpecialPowerUpgradeModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<UnpauseSpecialPowerUpgradeModuleData>; 6] =
+    upgrade_module_data_field_parse!(UnpauseSpecialPowerUpgradeModuleData, upgrade);
 
 /// `UnpauseSpecialPowerUpgradeModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<UnpauseSpecialPowerUpgradeModuleData>; 2] = [
-    FieldParse::new("SpecialPowerTemplate", |ini, d, _| { d.special_power = Some(ini.get_next_token(None)?); Ok(()) }, UserData::None),
+    FieldParse::new(
+        "SpecialPowerTemplate",
+        |ini, d, _| {
+            d.special_power = Some(ini.get_next_token(None)?);
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl UnpauseSpecialPowerUpgradeModuleData {
     /// `buildFieldParse(p)`: `BehaviorModuleData`'s, then `UpgradeModuleData`'s, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, UnpauseSpecialPowerUpgradeModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, UnpauseSpecialPowerUpgradeModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -77,10 +87,15 @@ impl UnpauseSpecialPowerUpgradeModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<UnpauseSpecialPowerUpgradeModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<UnpauseSpecialPowerUpgradeModuleData> {
         let mut data = UnpauseSpecialPowerUpgradeModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, UnpauseSpecialPowerUpgradeModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                UnpauseSpecialPowerUpgradeModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -98,14 +113,19 @@ pub struct UnpauseSpecialPowerUpgrade {
 impl PartialEq for UnpauseSpecialPowerUpgrade {
     /// The same data object and the same `m_upgradeExecuted` (upstream compares the data pointer).
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.data, &other.data) && self.base.is_already_upgraded() == other.base.is_already_upgraded()
+        Arc::ptr_eq(&self.data, &other.data)
+            && self.base.is_already_upgraded() == other.base.is_already_upgraded()
     }
 }
 
 impl UnpauseSpecialPowerUpgrade {
     /// `UnpauseSpecialPowerUpgrade(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(object: ObjectId, data: Option<Arc<UnpauseSpecialPowerUpgradeModuleData>>) -> IniResult<UnpauseSpecialPowerUpgrade> {
-        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<UnpauseSpecialPowerUpgradeModuleData>>,
+    ) -> IniResult<UnpauseSpecialPowerUpgrade> {
+        let data =
+            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let base = UpgradeModule::new(object, Some(data.upgrade.clone()))?;
         Ok(UnpauseSpecialPowerUpgrade { base, data })
     }
@@ -121,7 +141,12 @@ impl UnpauseSpecialPowerUpgrade {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         upgrade_module_call(self, world, me, call)
     }
 }
@@ -133,7 +158,11 @@ impl UpgradeBehavior for UnpauseSpecialPowerUpgrade {
     fn base_mut(&mut self) -> &mut UpgradeModule {
         &mut self.base
     }
-    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
+    fn upgrade_implementation(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+    ) -> Result<(), IniError> {
         // `m_specialPower`: the store's template of that name, `NULL` if it has none
         let statics = world.statics.clone();
         let wanted: Option<u32> = self
@@ -143,10 +172,11 @@ impl UpgradeBehavior for UnpauseSpecialPowerUpgrade {
             .and_then(|n| statics.special_power_store.find_special_power_template(n))
             .map(|t| t.id());
         for idx in world.modules_with(me.object, MODULEINTERFACE_SPECIAL_POWER) {
-            let theirs = match world.module_call(me.object, idx, ModuleCall::GetSpecialPowerTemplateId) {
-                ModuleReply::Int(id) => Some(id as u32),
-                _ => None,
-            };
+            let theirs =
+                match world.module_call(me.object, idx, ModuleCall::GetSpecialPowerTemplateId) {
+                    ModuleReply::Int(id) => Some(id as u32),
+                    _ => None,
+                };
             let matches = if crate::logic::modules::plant(670) {
                 true
             } else if crate::logic::modules::plant(671) {
@@ -155,7 +185,13 @@ impl UpgradeBehavior for UnpauseSpecialPowerUpgrade {
                 theirs == wanted
             };
             if matches {
-                world.module_call(me.object, idx, ModuleCall::PauseCountdown { disabling: crate::logic::modules::plant(672) });
+                world.module_call(
+                    me.object,
+                    idx,
+                    ModuleCall::PauseCountdown {
+                        disabling: crate::logic::modules::plant(672),
+                    },
+                );
                 if crate::logic::modules::plant(673) {
                     break;
                 }
@@ -199,5 +235,7 @@ impl Snapshot for UnpauseSpecialPowerUpgrade {
 
 /// The factory's `NewModuleDataProc` for `UnpauseSpecialPowerUpgrade`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::UnpauseSpecialPowerUpgrade(Arc::new(UnpauseSpecialPowerUpgradeModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::UnpauseSpecialPowerUpgrade(Arc::new(
+        UnpauseSpecialPowerUpgradeModuleData::friend_new_module_data(ini)?,
+    )))
 }

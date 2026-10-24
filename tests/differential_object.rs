@@ -94,35 +94,38 @@ use rts_lockstep_engine::common::game_common::{ObjectShroudStatus, Relationship,
 use rts_lockstep_engine::common::game_type::ObjectId;
 use rts_lockstep_engine::common::geometry::{GeometryInfo, GeometryType};
 use rts_lockstep_engine::common::module::{
-    MODULEINTERFACE_BODY, MODULEINTERFACE_COLLIDE, MODULEINTERFACE_CONTAIN, MODULEINTERFACE_CREATE, MODULEINTERFACE_DAMAGE, MODULEINTERFACE_DESTROY,
-    MODULEINTERFACE_DIE, MODULEINTERFACE_SPECIAL_POWER, MODULEINTERFACE_UPGRADE,
+    MODULEINTERFACE_BODY, MODULEINTERFACE_COLLIDE, MODULEINTERFACE_CONTAIN, MODULEINTERFACE_CREATE,
+    MODULEINTERFACE_DAMAGE, MODULEINTERFACE_DESTROY, MODULEINTERFACE_DIE,
+    MODULEINTERFACE_SPECIAL_POWER, MODULEINTERFACE_UPGRADE,
 };
 use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
 use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_NAMES};
+use rts_lockstep_engine::common::object_status_types::{
+    OBJECT_STATUS_AIRBORNE_TARGET, OBJECT_STATUS_BOOBY_TRAPPED,
+};
+use rts_lockstep_engine::common::thing_factory::ThingFactory;
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
 use rts_lockstep_engine::common::upgrade::{UpgradeCenter, UpgradeMaskType};
 use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
-use rts_lockstep_engine::common::object_status_types::{OBJECT_STATUS_AIRBORNE_TARGET, OBJECT_STATUS_BOOBY_TRAPPED};
-use rts_lockstep_engine::logic::world::object_damage::CrushSquishTestType;
-use rts_lockstep_engine::logic::world::object_modules::SpecialPowerTarget;
-use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::damage::DamageInfo;
 use rts_lockstep_engine::logic::terrain_logic::TriggerArea;
+use rts_lockstep_engine::logic::weapon::WeaponStore;
 use rts_lockstep_engine::logic::weapon_set_flags::WEAPON_SET_NAMES;
 use rts_lockstep_engine::logic::world::ids::TeamId;
 use rts_lockstep_engine::logic::world::module_probe::{ProbeAnswers, ProbeModule};
 use rts_lockstep_engine::logic::world::object_create::{NewModule, NewObject};
 use rts_lockstep_engine::logic::world::object_cuts::ObjectGlobals;
-use rts_lockstep_engine::common::thing_factory::ThingFactory;
-use rts_lockstep_engine::logic::weapon::WeaponStore;
+use rts_lockstep_engine::logic::world::object_damage::CrushSquishTestType;
+use rts_lockstep_engine::logic::world::object_modules::SpecialPowerTarget;
 use rts_lockstep_engine::logic::world::object_xfer::ObjectXferStores;
 use rts_lockstep_engine::logic::world::team::Team;
 use rts_lockstep_engine::logic::world::update_body::UpdateBody;
 use rts_lockstep_engine::logic::world::World;
+use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 use support::Gen;
 
 // ---- the program ---------------------------------------------------------------------------------------------
@@ -191,12 +194,20 @@ fn norm(s: &str) -> String {
             return true;
         }
         let first = body.chars().next().unwrap_or(' ');
-        first.is_ascii_digit() && (body.contains('.') || body.contains('e')) && body.parse::<f32>().is_ok()
+        first.is_ascii_digit()
+            && (body.contains('.') || body.contains('e'))
+            && body.parse::<f32>().is_ok()
     };
     let mut out: Vec<String> = Vec::new();
-    for t in s.split([' ', '{', '}', '(', ')', ',', ':', '[', ']']).filter(|t| !t.is_empty()) {
+    for t in s
+        .split([' ', '{', '}', '(', ')', ',', ':', '[', ']'])
+        .filter(|t| !t.is_empty())
+    {
         if is_float(t) {
-            out.push(format!("f:{:08x}", t.parse::<f32>().expect("float token").to_bits()));
+            out.push(format!(
+                "f:{:08x}",
+                t.parse::<f32>().expect("float token").to_bits()
+            ));
         } else {
             out.push(t.to_string());
         }
@@ -323,7 +334,9 @@ impl Run {
             let hi = r.u64();
             let plans = r.i();
             let prod = r.i();
-            w.cuts.player_default_teams.insert(p, default_team as TeamId);
+            w.cuts
+                .player_default_teams
+                .insert(p, default_team as TeamId);
             w.cuts.player_colors.insert(p, color as i32);
             w.cuts.player_night_colors.insert(p, night as i32);
             if !active {
@@ -348,7 +361,9 @@ impl Run {
             let attack_info = r.b();
             w.teams.insert_team(Team::new(id, 0)).unwrap();
             w.cuts.team_players.insert(id, player);
-            w.cuts.team_names.insert(id, format!("team{id}").into_bytes());
+            w.cuts
+                .team_names
+                .insert(id, format!("team{id}").into_bytes());
             if template_info {
                 w.cuts.teams_with_template_info.insert(id);
             }
@@ -364,7 +379,9 @@ impl Run {
         let n = r.i();
         for _ in 0..n {
             let (p, t, rel) = (r.i(), r.i() as TeamId, r.i());
-            w.cuts.player_relationships.insert((p, t), relationship(rel));
+            w.cuts
+                .player_relationships
+                .insert((p, t), relationship(rel));
         }
         w.cuts.neutral_default_team = r.i() as TeamId;
         w.players.set_local_player(Some(r.i()));
@@ -445,7 +462,8 @@ impl Run {
         let mut names = NameKeyGenerator::new();
         let mut upgrade_masks = Vec::new();
         for i in 0..k {
-            uc.new_upgrade(&mut names, format!("Upgrade_{i}").as_bytes()).expect("new upgrade");
+            uc.new_upgrade(&mut names, format!("Upgrade_{i}").as_bytes())
+                .expect("new upgrade");
             upgrade_masks.push(UpgradeMaskType::from_indices(&[i]));
         }
         let n = r.i();
@@ -457,11 +475,26 @@ impl Run {
                 let (x, y) = (r.i(), r.i());
                 points.push(ICoord3D { x, y, z: 0 });
             }
-            let name = rts_lockstep_engine::common::ascii_string::AsciiString::try_from_bytes(format!("trigger{i}").as_bytes()).expect("name");
+            let name = rts_lockstep_engine::common::ascii_string::AsciiString::try_from_bytes(
+                format!("trigger{i}").as_bytes(),
+            )
+            .expect("name");
             triggers.push(TriggerArea::new(name, i + 1, false, points).expect("trigger"));
         }
         w.terrain.set_triggers(triggers);
-        Run { w, ids: Vec::new(), lines: Vec::new(), uc, names, upgrade_masks, production_levels, template_count: 0, verbose: false, saved: BTreeMap::new(), n_triggers: n as usize }
+        Run {
+            w,
+            ids: Vec::new(),
+            lines: Vec::new(),
+            uc,
+            names,
+            upgrade_masks,
+            production_levels,
+            template_count: 0,
+            verbose: false,
+            saved: BTreeMap::new(),
+            n_triggers: n as usize,
+        }
     }
 
     /// Moves what the world traced into the lines.
@@ -571,36 +604,68 @@ impl Run {
             a.apparent_player = r.i();
             a.countermeasure = r.i();
             a.collide_sets_no_collisions = r.b();
-            let trigger = if trig > 0 { UpgradeMaskType::from_indices(&[trig - 1]) } else { UpgradeMaskType::default() };
-            v.behavior_modules.push((MODULE_NAMES[name_idx].as_bytes().to_vec(), tag.clone().into_bytes()));
+            let trigger = if trig > 0 {
+                UpgradeMaskType::from_indices(&[trig - 1])
+            } else {
+                UpgradeMaskType::default()
+            };
+            v.behavior_modules.push((
+                MODULE_NAMES[name_idx].as_bytes().to_vec(),
+                tag.clone().into_bytes(),
+            ));
             let mut nmod = NewModule::plain(MODULE_NAMES[name_idx].as_bytes(), tag.as_bytes());
             nmod.interfaces = interfaces;
             nmod.is_stealth = stealth;
             nmod.is_ai = ai;
-            nmod.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(a, max_health, trigger)));
+            nmod.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+                a, max_health, trigger,
+            )));
             modules.push(nmod);
         }
         // the production veterancy levels, by template name
         for (p, l) in self.production_levels.iter().enumerate() {
-            self.w.cuts.player_production_levels.insert((p as i32, v.name.clone()), *l);
+            self.w
+                .cuts
+                .player_production_levels
+                .insert((p as i32, v.name.clone()), *l);
         }
         let template = Arc::new(ThingTemplate::from_object_values(&v));
         let id = self
             .w
-            .new_object(NewObject { template, status: mask64(st), team: if team != 0 { Some(team as TeamId) } else { None }, modules })
+            .new_object(NewObject {
+                template,
+                status: mask64(st),
+                team: if team != 0 {
+                    Some(team as TeamId)
+                } else {
+                    None
+                },
+                modules,
+            })
             .expect("new object");
         self.ids.push(id);
-        self.ret(Line::new("ret", "Created").i("idx", self.ids.len() as i64 - 1).i("id", i64::from(id)));
+        self.ret(
+            Line::new("ret", "Created")
+                .i("idx", self.ids.len() as i64 - 1)
+                .i("id", i64::from(id)),
+        );
         self.snapshot_all();
     }
 
     fn snapshot_all(&mut self) {
         for k in 0..self.ids.len() {
-            let Some(id) = self.live(k as i32) else { continue };
+            let Some(id) = self.live(k as i32) else {
+                continue;
+            };
             let mut x = XferSave::new();
             x.open(b"object").expect("open");
             {
-                let mut stores = ObjectXferStores { upgrade_center: &self.uc, names: &mut self.names, factory: &ThingFactory::new(), weapon_store: &WeaponStore::new() };
+                let mut stores = ObjectXferStores {
+                    upgrade_center: &self.uc,
+                    names: &mut self.names,
+                    factory: &ThingFactory::new(),
+                    weapon_store: &WeaponStore::new(),
+                };
                 self.w.object_xfer(id, &mut x, &mut stores).expect("save");
             }
             x.close().expect("close");
@@ -610,13 +675,27 @@ impl Run {
                 h = (h ^ u32::from(*b)).wrapping_mul(16_777_619);
             }
             let o = self.w.objects.find(id).expect("live");
-            let (radar, partition, contained_by, drawable, team, destroyed) = (o.on_radar, o.in_partition, o.contained_by, o.drawable, o.team, o.is_destroyed());
+            let (radar, partition, contained_by, drawable, team, destroyed) = (
+                o.on_radar,
+                o.in_partition,
+                o.contained_by,
+                o.drawable,
+                o.team,
+                o.is_destroyed(),
+            );
             self.flush();
             if self.verbose {
                 let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
                 self.lines.push(format!("bytes Object idx {k} {hex}"));
             }
-            self.lines.push(Line::new("snap", "Object").i("idx", k as i64).i("id", i64::from(id)).i("len", bytes.len() as i64).i("hash", i64::from(h as i32)).0);
+            self.lines.push(
+                Line::new("snap", "Object")
+                    .i("idx", k as i64)
+                    .i("id", i64::from(id))
+                    .i("len", bytes.len() as i64)
+                    .i("hash", i64::from(h as i32))
+                    .0,
+            );
             self.lines.push(
                 Line::new("extra", "Object")
                     .i("idx", k as i64)
@@ -643,7 +722,12 @@ impl Run {
             let o = self.live(k);
             self.op(op, k, o, r);
             self.flush();
-            self.lines.push(Line::new("end", "Op").i("op", i64::from(op)).i("object", i64::from(k)).0);
+            self.lines.push(
+                Line::new("end", "Op")
+                    .i("op", i64::from(op))
+                    .i("object", i64::from(k))
+                    .0,
+            );
             self.snapshot_all();
         }
     }
@@ -728,7 +812,11 @@ impl Run {
             12 => {
                 let (team, mode) = (r.i(), r.i());
                 if let Some(id) = o {
-                    let t = if team != 0 { Some(team as TeamId) } else { None };
+                    let t = if team != 0 {
+                        Some(team as TeamId)
+                    } else {
+                        None
+                    };
                     match mode {
                         0 => self.w.set_team(id, t),
                         1 => self.w.set_temporary_team(id, t),
@@ -753,7 +841,8 @@ impl Run {
                 let dtype = r.i();
                 let kill = r.b();
                 let src = r.i();
-                let (sw_amount, sw_radius, taper, vx, vy, vz) = (r.f(), r.f(), r.f(), r.f(), r.f(), r.f());
+                let (sw_amount, sw_radius, taper, vx, vy, vz) =
+                    (r.f(), r.f(), r.f(), r.f(), r.f(), r.f());
                 let smask = r.u();
                 if let Some(id) = o {
                     let mut info = DamageInfo::default();
@@ -764,10 +853,19 @@ impl Run {
                     info.input.shock_wave_amount = sw_amount;
                     info.input.shock_wave_radius = sw_radius;
                     info.input.shock_wave_taper_off = taper;
-                    info.input.shock_wave_vector = Coord3D { x: vx, y: vy, z: vz };
+                    info.input.shock_wave_vector = Coord3D {
+                        x: vx,
+                        y: vy,
+                        z: vz,
+                    };
                     info.input.source_player_mask = smask as u16;
                     self.w.attempt_damage(id, &mut info);
-                    self.ret(Line::new("ret", "Damage").f("dealt", info.out.actual_damage_dealt).f("clipped", info.out.actual_damage_clipped).b("no_effect", info.out.no_effect));
+                    self.ret(
+                        Line::new("ret", "Damage")
+                            .f("dealt", info.out.actual_damage_dealt)
+                            .f("clipped", info.out.actual_damage_clipped)
+                            .b("no_effect", info.out.no_effect),
+                    );
                 }
             }
             16 => {
@@ -791,13 +889,21 @@ impl Run {
             19 => {
                 let (amount, dt) = (r.f(), r.i());
                 if let Some(id) = o {
-                    let input = rts_lockstep_engine::logic::damage::DamageInfoInput { amount, damage_type: dt, ..Default::default() };
+                    let input = rts_lockstep_engine::logic::damage::DamageInfoInput {
+                        amount,
+                        damage_type: dt,
+                        ..Default::default()
+                    };
                     let res = self.w.estimate_damage(id, &input);
                     self.ret(Line::new("ret", "EstimateDamage").f("result", res));
                 }
             }
             20 => {
-                let p = Coord3D { x: r.f(), y: r.f(), z: r.f() };
+                let p = Coord3D {
+                    x: r.f(),
+                    y: r.f(),
+                    z: r.f(),
+                };
                 if let Some(id) = o {
                     self.w.set_position(id, &p);
                 }
@@ -819,7 +925,9 @@ impl Run {
                 if let Some(id) = o {
                     match kind {
                         0 => self.w.cut_experience_add_points(id, v, true),
-                        1 => self.w.cut_experience_set_veterancy_level(id, level(v), true),
+                        1 => self
+                            .w
+                            .cut_experience_set_veterancy_level(id, level(v), true),
                         _ => self.w.cut_experience_set_experience_and_level(id, v, true),
                     }
                 }
@@ -861,7 +969,9 @@ impl Run {
             29 => {
                 let by = r.i();
                 if let (Some(id), Some(c)) = (o, self.live(by)) {
-                    if self.w.get_contain(c).is_some() && !self.w.objects.find(c).is_some_and(|x| x.is_destroyed()) {
+                    if self.w.get_contain(c).is_some()
+                        && !self.w.objects.find(c).is_some_and(|x| x.is_destroyed())
+                    {
                         self.w.on_contained_by(id, c);
                     }
                 }
@@ -914,7 +1024,12 @@ impl Run {
                     // what a contain module does in onDelete: let go of the objects it holds
                     for j in 0..self.ids.len() {
                         if let Some(other) = self.live(j as i32) {
-                            if self.w.objects.find(other).is_some_and(|x| x.contained_by == id) {
+                            if self
+                                .w
+                                .objects
+                                .find(other)
+                                .is_some_and(|x| x.contained_by == id)
+                            {
                                 self.w.on_removed_from(other);
                             }
                         }
@@ -926,7 +1041,11 @@ impl Run {
             39 => {
                 let other = r.i();
                 if let (Some(id), Some(t)) = (o, self.live(other)) {
-                    let loc = Coord3D { x: 1.0, y: 2.0, z: 3.0 };
+                    let loc = Coord3D {
+                        x: 1.0,
+                        y: 2.0,
+                        z: 3.0,
+                    };
                     self.w.on_collide(id, t, Some(loc), Some(loc));
                 }
             }
@@ -951,7 +1070,9 @@ impl Run {
             44 => {
                 if let Some(id) = o {
                     let mut x = XferCrc::new();
-                    self.w.object_crc(id, &mut x, &WeaponStore::new()).expect("crc");
+                    self.w
+                        .object_crc(id, &mut x, &WeaponStore::new())
+                        .expect("crc");
                     self.ret(Line::new("ret", "Crc").i("crc", i64::from(x.get_crc())));
                 }
             }
@@ -975,7 +1096,11 @@ impl Run {
             }
             48 => {
                 let (kind, tmpl, forced, opts, target) = (r.i(), r.i(), r.b(), r.u(), r.i());
-                let loc = Coord3D { x: r.f(), y: r.f(), z: r.f() };
+                let loc = Coord3D {
+                    x: r.f(),
+                    y: r.f(),
+                    z: r.f(),
+                };
                 let angle = r.f();
                 if let Some(id) = o {
                     let t = if tmpl != 0 { Some(tmpl as u32) } else { None };
@@ -996,7 +1121,9 @@ impl Run {
                         1 => self.w.find_any_shortcut_special_power_module_interface(id),
                         2 => self.w.find_special_ability_update(id, ty),
                         3 => self.w.find_special_power_completion_die(id),
-                        4 => self.w.find_special_power_with_overridable_destination_active(id),
+                        4 => self
+                            .w
+                            .find_special_power_with_overridable_destination_active(id),
                         5 => self.w.find_special_power_with_overridable_destination(id),
                         6 => self.w.get_production_update_interface(id),
                         7 => self.w.get_dock_update_interface(id),
@@ -1010,13 +1137,24 @@ impl Run {
                                 None
                             }
                         }
-                        _ => self.w.get_special_power_module(id, if tmpl != 0 { Some(tmpl as u32) } else { None }),
+                        _ => self.w.get_special_power_module(
+                            id,
+                            if tmpl != 0 { Some(tmpl as u32) } else { None },
+                        ),
                     };
-                    self.ret(Line::new("ret", "Find").i("kind", i64::from(kind)).i("index", m.map_or(-1, i64::from)));
+                    self.ret(
+                        Line::new("ret", "Find")
+                            .i("kind", i64::from(kind))
+                            .i("index", m.map_or(-1, i64::from)),
+                    );
                 }
             }
             50 => {
-                let d = Coord3D { x: r.f(), y: r.f(), z: r.f() };
+                let d = Coord3D {
+                    x: r.f(),
+                    y: r.f(),
+                    z: r.f(),
+                };
                 let (speed, opts) = (r.f(), r.u());
                 if let Some(id) = o {
                     self.w.topple(id, Some(d), speed, opts);
@@ -1040,7 +1178,16 @@ impl Run {
                     let pos = self.w.get_health_box_position(id).expect("live");
                     let dims = self.w.get_health_box_dimensions(id);
                     let (h, wd) = dims.unwrap_or((0.0, 0.0));
-                    self.ret(Line::new("ret", "HealthBox").i("priority", i64::from(pr)).f("x", pos.x).f("y", pos.y).f("z", pos.z).b("dims", dims.is_some()).f("height", h).f("width", wd));
+                    self.ret(
+                        Line::new("ret", "HealthBox")
+                            .i("priority", i64::from(pr))
+                            .f("x", pos.x)
+                            .f("y", pos.y)
+                            .f("z", pos.z)
+                            .b("dims", dims.is_some())
+                            .f("height", h)
+                            .f("width", wd),
+                    );
                 }
             }
             54 => {
@@ -1053,7 +1200,8 @@ impl Run {
                             1 => GeometryType::Cylinder,
                             _ => GeometryType::Box,
                         };
-                        self.w.set_geometry_info(id, &GeometryInfo::new(gt, small, h, maj, mnr));
+                        self.w
+                            .set_geometry_info(id, &GeometryInfo::new(gt, small, h, maj, mnr));
                     } else {
                         self.w.set_geometry_info_z(id, z);
                     }
@@ -1066,9 +1214,21 @@ impl Run {
                         0 => self.w.set_custom_indicator_color(id, color as i32),
                         1 => self.w.remove_custom_indicator_color(id),
                         _ => {
-                            let (c, n) = (self.w.get_indicator_color(id), self.w.get_night_indicator_color(id));
-                            let custom = self.w.objects.find(id).is_some_and(|o| o.indicator_color != 0);
-                            self.ret(Line::new("ret", "Indicator").i("color", i64::from(c as u32)).i("night", i64::from(n as u32)).b("custom", custom));
+                            let (c, n) = (
+                                self.w.get_indicator_color(id),
+                                self.w.get_night_indicator_color(id),
+                            );
+                            let custom = self
+                                .w
+                                .objects
+                                .find(id)
+                                .is_some_and(|o| o.indicator_color != 0);
+                            self.ret(
+                                Line::new("ret", "Indicator")
+                                    .i("color", i64::from(c as u32))
+                                    .i("night", i64::from(n as u32))
+                                    .b("custom", custom),
+                            );
                         }
                     }
                 }
@@ -1086,7 +1246,11 @@ impl Run {
             57 => {
                 let (which, obj) = (r.i(), r.i());
                 if let Some(id) = o {
-                    let t = if obj != 0 { self.live(obj - 1).unwrap_or(0) } else { 0 };
+                    let t = if obj != 0 {
+                        self.live(obj - 1).unwrap_or(0)
+                    } else {
+                        0
+                    };
                     if which == 0 {
                         self.w.set_producer(id, t);
                     } else {
@@ -1135,10 +1299,20 @@ impl Run {
             63 => {
                 let (amount, src, duration) = (r.f(), r.i(), r.u());
                 if let Some(id) = o {
-                    let s = if src != 0 { self.live(src - 1).unwrap_or(0) } else { 0 };
-                    let res = self.w.attempt_healing_from_sole_benefactor(id, amount, s, duration);
+                    let s = if src != 0 {
+                        self.live(src - 1).unwrap_or(0)
+                    } else {
+                        0
+                    };
+                    let res = self
+                        .w
+                        .attempt_healing_from_sole_benefactor(id, amount, s, duration);
                     let ben = self.w.get_sole_healing_benefactor(id);
-                    self.ret(Line::new("ret", "SoleHeal").b("result", res).i("benefactor", i64::from(ben)));
+                    self.ret(
+                        Line::new("ret", "SoleHeal")
+                            .b("result", res)
+                            .i("benefactor", i64::from(ben)),
+                    );
                 }
             }
             64 => {
@@ -1170,33 +1344,52 @@ impl Run {
                     *v = r.f();
                 }
                 if let Some(id) = o {
-                    let m = Matrix3D::new(f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[11]);
+                    let m = Matrix3D::new(
+                        f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[11],
+                    );
                     self.w.set_transform_matrix(id, &m);
                 }
             }
             66 => {
                 let (kind, trig) = (r.i(), r.i());
                 if let Some(id) = o {
-                    let t = if (trig as usize) < self.n_triggers { Some(trig + 1) } else { None };
+                    let t = if (trig as usize) < self.n_triggers {
+                        Some(trig + 1)
+                    } else {
+                        None
+                    };
                     let res = match kind {
                         0 => self.w.did_enter(id, t),
                         1 => self.w.did_exit(id, t),
                         _ => self.w.is_inside(id, t),
                     };
-                    self.ret(Line::new("ret", "Trigger").i("kind", i64::from(kind)).b("result", res));
+                    self.ret(
+                        Line::new("ret", "Trigger")
+                            .i("kind", i64::from(kind))
+                            .b("result", res),
+                    );
                 }
             }
             67 => {
                 if let Some(id) = o {
                     let pt = self.w.calc_natural_rally_point(id).expect("live");
                     let deck = self.w.get_carrier_deck_height(id);
-                    self.ret(Line::new("ret", "Rally").f("x", pt.x).f("y", pt.y).f("deck", deck));
+                    self.ret(
+                        Line::new("ret", "Rally")
+                            .f("x", pt.x)
+                            .f("y", pt.y)
+                            .f("deck", deck),
+                    );
                 }
             }
             68 => {
                 let victim = r.i();
                 if let Some(id) = o {
-                    let v = if victim != 0 { self.live(victim - 1) } else { None };
+                    let v = if victim != 0 {
+                        self.live(victim - 1)
+                    } else {
+                        None
+                    };
                     let res = self.w.check_and_detonate_booby_trap(id, v);
                     self.ret(Line::new("ret", "Booby").b("result", res));
                 }
@@ -1238,10 +1431,18 @@ impl Run {
                         .f("vision", self.w.get_vision_range(id))
                         .f("clearing", self.w.get_shroud_clearing_range(id))
                         .f("shroud", self.w.get_shroud_range(id))
-                        .i("disabled_until", i64::from(self.w.get_disabled_until(id, dtype)))
-                        .i("disabled_any", i64::from(self.w.get_disabled_until(id, 65535)));
+                        .i(
+                            "disabled_until",
+                            i64::from(self.w.get_disabled_until(id, dtype)),
+                        )
+                        .i(
+                            "disabled_any",
+                            i64::from(self.w.get_disabled_until(id, 65535)),
+                        );
                     let salvage = self.w.is_salvage_crate(id);
-                    let l = l.b("salvage", salvage).b("contained", self.w.is_contained(id));
+                    let l = l
+                        .b("salvage", salvage)
+                        .b("contained", self.w.is_contained(id));
                     let h = self.w.get_height_above_terrain(id);
                     let o = self.w.objects.find(id).expect("live");
                     let l = l
@@ -1255,7 +1456,10 @@ impl Run {
                         .b("hero", false)
                         .i("crusher", i64::from(self.w.get_crusher_level(id)))
                         .i("crushable", i64::from(self.w.get_crushable_level(id)))
-                        .b("airborne_target", o.test_status(OBJECT_STATUS_AIRBORNE_TARGET))
+                        .b(
+                            "airborne_target",
+                            o.test_status(OBJECT_STATUS_AIRBORNE_TARGET),
+                        )
                         .b("destroyed", o.is_destroyed())
                         .b("modules_ready", o.modules_ready)
                         .i("script_status", i64::from(o.test_script_status_bit(1)))
@@ -1270,7 +1474,12 @@ impl Run {
                     let mut x = XferSave::new();
                     x.open(b"object").expect("open");
                     {
-                        let mut stores = ObjectXferStores { upgrade_center: &self.uc, names: &mut self.names, factory: &ThingFactory::new(), weapon_store: &WeaponStore::new() };
+                        let mut stores = ObjectXferStores {
+                            upgrade_center: &self.uc,
+                            names: &mut self.names,
+                            factory: &ThingFactory::new(),
+                            weapon_store: &WeaponStore::new(),
+                        };
                         self.w.object_xfer(id, &mut x, &mut stores).expect("save");
                     }
                     x.close().expect("close");
@@ -1283,7 +1492,12 @@ impl Run {
                         let mut x = XferLoad::new(bytes);
                         x.open(b"object").expect("open");
                         {
-                            let mut stores = ObjectXferStores { upgrade_center: &self.uc, names: &mut self.names, factory: &ThingFactory::new(), weapon_store: &WeaponStore::new() };
+                            let mut stores = ObjectXferStores {
+                                upgrade_center: &self.uc,
+                                names: &mut self.names,
+                                factory: &ThingFactory::new(),
+                                weapon_store: &WeaponStore::new(),
+                            };
                             self.w.object_xfer(id, &mut x, &mut stores).expect("load");
                         }
                         x.close().expect("close");
@@ -1307,7 +1521,11 @@ fn run_rust_counted(prog: &[u32], verbose: bool) -> (Vec<String>, u32, usize) {
     let mut run = Run::new(&mut r);
     run.verbose = verbose;
     run.ops(&mut r);
-    (run.lines, run.w.cuts.reentrant_delivered, run.w.cuts.reentrant_skips.len())
+    (
+        run.lines,
+        run.w.cuts.reentrant_delivered,
+        run.w.cuts.reentrant_skips.len(),
+    )
 }
 
 // ---- the C++ side ------------------------------------------------------------------------------------------------
@@ -1336,7 +1554,17 @@ fn run_cpp(prog: &[u32], verbose: bool) -> Vec<String> {
     loop {
         let mut buf = vec![0u8; cap];
         // SAFETY: the buffers are valid for the lengths passed; the wrapper writes at most `cap` bytes.
-        let n = unsafe { cpp::ref_object_run(prog.as_ptr(), prog.len() as i32, names.as_ptr() as *const _, names.len() as i32, buf.as_mut_ptr() as *mut _, cap as i32, i32::from(verbose)) };
+        let n = unsafe {
+            cpp::ref_object_run(
+                prog.as_ptr(),
+                prog.len() as i32,
+                names.as_ptr() as *const _,
+                names.len() as i32,
+                buf.as_mut_ptr() as *mut _,
+                cap as i32,
+                i32::from(verbose),
+            )
+        };
         if n < 0 {
             cap = (-n) as usize + 16;
             continue;
@@ -1391,7 +1619,11 @@ impl Pg<'_> {
             let lo = u64::from(self.g.below(1 << K_UPGRADES));
             self.p.u64(lo);
             self.p.u64(0);
-            let plans = if self.chance(25) { 1 + self.g.below(2) as i32 } else { 0 };
+            let plans = if self.chance(25) {
+                1 + self.g.below(2) as i32
+            } else {
+                0
+            };
             self.p.i(plans);
             let prod = self.g.below(4) as i32;
             self.p.i(prod);
@@ -1435,7 +1667,11 @@ impl Pg<'_> {
         self.p.i(10); // the neutral player's default team
         let local = self.g.below(np as u32) as i32;
         self.p.i(local);
-        let gravity = if self.chance(70) { -1.0 } else { -self.g.uniform(0.1, 3.0) };
+        let gravity = if self.chance(70) {
+            -1.0
+        } else {
+            -self.g.uniform(0.1, 3.0)
+        };
         self.p.f(gravity);
         for _ in 0..8 {
             let b = self.chance(50);
@@ -1447,7 +1683,11 @@ impl Pg<'_> {
         let wall = self.g.uniform(0.0, 20.0);
         self.p.f(wall);
         for _ in 0..4 {
-            let b = if self.chance(60) { 1 + self.g.below(K_UPGRADES as u32) as i32 } else { 0 };
+            let b = if self.chance(60) {
+                1 + self.g.below(K_UPGRADES as u32) as i32
+            } else {
+                0
+            };
             self.p.i(b);
         }
         // sets keyed by object ids 1..7
@@ -1520,10 +1760,18 @@ impl Pg<'_> {
         for list in 0..2 {
             // the second list is the booby traps in range: kept short and over the first ids, so that a trap, its
             // producer and the BOOBY_TRAPPED status meet often enough to reach the detonation (planted bug 9)
-            let n = if list == 1 { 2 + self.g.below(2) as i32 } else { self.g.below(3) as i32 };
+            let n = if list == 1 {
+                2 + self.g.below(2) as i32
+            } else {
+                self.g.below(3) as i32
+            };
             self.p.i(n);
             for _ in 0..n {
-                let o = if list == 1 { 1 + self.g.below(3) as i32 } else { self.small_obj() };
+                let o = if list == 1 {
+                    1 + self.g.below(3) as i32
+                } else {
+                    self.small_obj()
+                };
                 self.p.i(o);
             }
         }
@@ -1591,9 +1839,17 @@ impl Pg<'_> {
         }
         let v = self.g.uniform(0.0, 200.0);
         self.p.f(v);
-        let sc = if self.chance(50) { -1.0 } else { self.g.uniform(0.0, 150.0) };
+        let sc = if self.chance(50) {
+            -1.0
+        } else {
+            self.g.uniform(0.0, 150.0)
+        };
         self.p.f(sc);
-        let ra = if self.chance(30) { self.g.uniform(1.0, 80.0) } else { 0.0 };
+        let ra = if self.chance(30) {
+            self.g.uniform(1.0, 80.0)
+        } else {
+            0.0
+        };
         self.p.f(ra);
         let gt = self.g.below(3) as i32;
         self.p.i(gt);
@@ -1603,7 +1859,11 @@ impl Pg<'_> {
             let f = self.g.uniform(1.0, 30.0);
             self.p.f(f);
         }
-        let ep = if self.chance(40) { self.g.below(8) as i32 } else { 0 };
+        let ep = if self.chance(40) {
+            self.g.below(8) as i32
+        } else {
+            0
+        };
         self.p.i(ep);
         let eb = self.g.below(5) as i32;
         self.p.i(eb);
@@ -1659,13 +1919,30 @@ impl Pg<'_> {
         let nm = 1 + self.g.below(4) as i32;
         self.p.i(nm);
         for m in 0..nm {
-            let name = if m == 0 { if self.chance(15) { 2 } else { 0 } } else { self.g.below(13) as i32 };
+            let name = if m == 0 {
+                if self.chance(15) {
+                    2
+                } else {
+                    0
+                }
+            } else {
+                self.g.below(13) as i32
+            };
             self.p.i(name);
             let mut ifc = 0i32;
             if m == 0 {
                 ifc |= MODULEINTERFACE_BODY | MODULEINTERFACE_DAMAGE | MODULEINTERFACE_DIE;
             }
-            for bit in [MODULEINTERFACE_DIE, MODULEINTERFACE_DAMAGE, MODULEINTERFACE_CREATE, MODULEINTERFACE_COLLIDE, MODULEINTERFACE_CONTAIN, MODULEINTERFACE_UPGRADE, MODULEINTERFACE_SPECIAL_POWER, MODULEINTERFACE_DESTROY] {
+            for bit in [
+                MODULEINTERFACE_DIE,
+                MODULEINTERFACE_DAMAGE,
+                MODULEINTERFACE_CREATE,
+                MODULEINTERFACE_COLLIDE,
+                MODULEINTERFACE_CONTAIN,
+                MODULEINTERFACE_UPGRADE,
+                MODULEINTERFACE_SPECIAL_POWER,
+                MODULEINTERFACE_DESTROY,
+            ] {
                 if m > 0 && self.chance(30) {
                     ifc |= bit;
                 }
@@ -1677,7 +1954,11 @@ impl Pg<'_> {
             self.p.b(ai);
             let health = self.g.uniform(10.0, 500.0);
             self.p.f(health);
-            let trig = if self.chance(40) { 1 + self.g.below(K_UPGRADES as u32) as i32 } else { 0 };
+            let trig = if self.chance(40) {
+                1 + self.g.below(K_UPGRADES as u32) as i32
+            } else {
+                0
+            };
             self.p.i(trig);
             for _ in 0..1 {
                 let b = self.chance(30);
@@ -1689,7 +1970,11 @@ impl Pg<'_> {
                 let b = self.chance(30);
                 self.p.b(b);
             }
-            let spt = if self.chance(30) { 1 + self.g.below(10) as i32 } else { 0 };
+            let spt = if self.chance(30) {
+                1 + self.g.below(10) as i32
+            } else {
+                0
+            };
             self.p.i(spt);
             let shortcut = self.chance(30);
             self.p.b(shortcut);
@@ -1699,7 +1984,11 @@ impl Pg<'_> {
             // `getTransportSlotCount` through the contained items, `clearDisabled` through the rider)
             let own = self.created + 1;
             let later = |g: &mut Gen| -> i32 { own + 1 + g.below((8 - own).max(1) as u32) as i32 };
-            let rider = if self.chance(15) && own < 7 { later(self.g) } else { 0 };
+            let rider = if self.chance(15) && own < 7 {
+                later(self.g)
+            } else {
+                0
+            };
             self.p.i(rider);
             let nc = if own < 7 { self.g.below(3) as i32 } else { 0 };
             self.p.i(nc);
@@ -1711,7 +2000,11 @@ impl Pg<'_> {
             self.p.i(slaver);
             let deck = self.g.uniform(0.0, 20.0);
             self.p.f(deck);
-            let ap = if self.chance(30) { self.g.below(self.players as u32) as i32 } else { -1 };
+            let ap = if self.chance(30) {
+                self.g.below(self.players as u32) as i32
+            } else {
+                -1
+            };
             self.p.i(ap);
             let cm = if self.chance(20) { self.small_obj() } else { 0 };
             self.p.i(cm);
@@ -1750,7 +2043,10 @@ impl Pg<'_> {
             return;
         }
         let k = self.obj();
-        const NEW_OPS: [i32; 34] = [45, 46, 47, 48, 48, 49, 49, 50, 51, 52, 54, 55, 56, 57, 57, 57, 68, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 71, 72, 73];
+        const NEW_OPS: [i32; 34] = [
+            45, 46, 47, 48, 48, 49, 49, 50, 51, 52, 54, 55, 56, 57, 57, 57, 68, 58, 59, 60, 61, 62,
+            63, 64, 65, 66, 67, 68, 69, 70, 71, 71, 72, 73,
+        ];
         let op = if self.chance(40) {
             NEW_OPS[self.g.below(NEW_OPS.len() as u32) as usize]
         } else {
@@ -1823,7 +2119,11 @@ impl Pg<'_> {
                 // planted bug 9 survived: booby trap, repulsor, stealth, disguise, construction, car bomb ...)
                 const RARE: [u32; 14] = [3, 5, 7, 9, 16, 17, 19, 21, 22, 27, 28, 41, 43, 6];
                 for _ in 0..1 + self.g.below(2) {
-                    let bit = if self.chance(35) { RARE[self.g.below(RARE.len() as u32) as usize] } else { self.g.below(45) };
+                    let bit = if self.chance(35) {
+                        RARE[self.g.below(RARE.len() as u32) as usize]
+                    } else {
+                        self.g.below(45)
+                    };
                     m |= 1 << bit;
                 }
                 m &= !1; // OBJECT_STATUS_NONE has no bit of its own
@@ -1890,7 +2190,11 @@ impl Pg<'_> {
                 self.p.u(time);
             }
             15 => {
-                let amount = if self.chance(15) { self.g.uniform(100.0, 600.0) } else { self.g.uniform(0.0, 120.0) };
+                let amount = if self.chance(15) {
+                    self.g.uniform(100.0, 600.0)
+                } else {
+                    self.g.uniform(0.0, 120.0)
+                };
                 self.p.f(amount);
                 let dt = match self.g.below(5) {
                     0 => 10,
@@ -1902,7 +2206,11 @@ impl Pg<'_> {
                 self.p.b(kill);
                 let src = if self.chance(60) { self.small_obj() } else { 0 };
                 self.p.i(src);
-                let (a, r) = if self.chance(50) { (self.g.uniform(0.0, 5.0), self.g.uniform(1.0, 50.0)) } else { (0.0, 0.0) };
+                let (a, r) = if self.chance(50) {
+                    (self.g.uniform(0.0, 5.0), self.g.uniform(1.0, 50.0))
+                } else {
+                    (0.0, 0.0)
+                };
                 self.p.f(a);
                 self.p.f(r);
                 let taper = self.g.uniform(0.0, 1.0);
@@ -1921,7 +2229,11 @@ impl Pg<'_> {
                 self.p.i(src);
             }
             17 => {
-                let dt = if self.chance(70) { 11 } else { self.g.below(38) as i32 };
+                let dt = if self.chance(70) {
+                    11
+                } else {
+                    self.g.below(38) as i32
+                };
                 self.p.i(dt);
                 self.p.i(0);
             }
@@ -2053,7 +2365,11 @@ impl Pg<'_> {
             }
             55 => {
                 let kind = self.g.below(3) as i32;
-                let color = if self.chance(70) { self.g.u32() | 0xff00_0000 } else { 0 };
+                let color = if self.chance(70) {
+                    self.g.u32() | 0xff00_0000
+                } else {
+                    0
+                };
                 self.p.i(kind);
                 self.p.u(color);
             }
@@ -2065,7 +2381,15 @@ impl Pg<'_> {
             }
             57 => {
                 let which = self.g.below(2) as i32;
-                let obj = if self.chance(80) { 1 + if self.chance(50) { self.g.below(3) as i32 } else { self.obj() } } else { 0 };
+                let obj = if self.chance(80) {
+                    1 + if self.chance(50) {
+                        self.g.below(3) as i32
+                    } else {
+                        self.obj()
+                    }
+                } else {
+                    0
+                };
                 self.p.i(which);
                 self.p.i(obj);
             }
@@ -2107,7 +2431,11 @@ impl Pg<'_> {
                 // a rotation about Z and a translation (a transform nothing has to normalise)
                 let a = self.g.uniform(-3.0, 3.0);
                 let (c, s) = (a.cos(), a.sin());
-                let (x, y, z) = (self.g.uniform(-60.0, 260.0), self.g.uniform(-60.0, 260.0), self.g.uniform(-5.0, 30.0));
+                let (x, y, z) = (
+                    self.g.uniform(-60.0, 260.0),
+                    self.g.uniform(-60.0, 260.0),
+                    self.g.uniform(-5.0, 30.0),
+                );
                 for v in [c, -s, 0.0, x, s, c, 0.0, y, 0.0, 0.0, 1.0, z] {
                     self.p.f(v);
                 }
@@ -2153,7 +2481,13 @@ impl Pg<'_> {
 
 fn gen_program(seed: u64, ops: u32) -> Vec<u32> {
     let mut g = Gen::new(seed);
-    let mut pg = Pg { g: &mut g, p: Prog::default(), players: 0, teams: Vec::new(), created: 0 };
+    let mut pg = Pg {
+        g: &mut g,
+        p: Prog::default(),
+        players: 0,
+        teams: Vec::new(),
+        created: 0,
+    };
     pg.header();
     let initial = 2 + pg.g.below(3);
     for _ in 0..initial {
@@ -2173,19 +2507,36 @@ fn first_difference(a: &[String], b: &[String]) -> Option<String> {
     for i in 0..n {
         if a[i] != b[i] {
             let from = i.saturating_sub(6);
-            let mut s = format!("line {i}:\n  rust: {}\n  cpp : {}\ncontext (cpp):\n", a[i], b[i]);
+            let mut s = format!(
+                "line {i}:\n  rust: {}\n  cpp : {}\ncontext (cpp):\n",
+                a[i], b[i]
+            );
             for l in &b[from..i] {
                 s.push_str(&format!("    {l}\n"));
             }
             s.push_str("the operations before it (cpp):\n");
-            for l in b[..i].iter().filter(|l| l.starts_with("end Op")).rev().take(8).collect::<Vec<_>>().into_iter().rev() {
+            for l in b[..i]
+                .iter()
+                .filter(|l| l.starts_with("end Op"))
+                .rev()
+                .take(8)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+            {
                 s.push_str(&format!("    {l}\n"));
             }
             return Some(s);
         }
     }
     if a.len() != b.len() {
-        return Some(format!("length: rust {} lines, cpp {} lines; next {:?} / {:?}", a.len(), b.len(), a.get(n), b.get(n)));
+        return Some(format!(
+            "length: rust {} lines, cpp {} lines; next {:?} / {:?}",
+            a.len(),
+            b.len(),
+            a.get(n),
+            b.get(n)
+        ));
     }
     None
 }
@@ -2195,15 +2546,29 @@ fn explain_snapshot(prog: &[u32]) -> String {
     let (c, r) = (run_cpp(prog, true), run_rust(prog, true));
     let unhex = |l: &str| -> Vec<u8> {
         let hex = l.rsplit(' ').next().unwrap_or("");
-        (0..hex.len() / 2).map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).unwrap_or(0)).collect()
+        (0..hex.len() / 2)
+            .map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).unwrap_or(0))
+            .collect()
     };
-    let (cb, rb): (Vec<&String>, Vec<&String>) = (c.iter().filter(|l| l.starts_with("bytes")).collect(), r.iter().filter(|l| l.starts_with("bytes")).collect());
+    let (cb, rb): (Vec<&String>, Vec<&String>) = (
+        c.iter().filter(|l| l.starts_with("bytes")).collect(),
+        r.iter().filter(|l| l.starts_with("bytes")).collect(),
+    );
     for (i, (a, b)) in cb.iter().zip(rb.iter()).enumerate() {
         if a != b {
             let (a, b) = (unhex(a), unhex(b));
-            let at = a.iter().zip(b.iter()).position(|(x, y)| x != y).unwrap_or(a.len().min(b.len()));
+            let at = a
+                .iter()
+                .zip(b.iter())
+                .position(|(x, y)| x != y)
+                .unwrap_or(a.len().min(b.len()));
             let from = at.saturating_sub(24);
-            return format!("  snapshot #{i} differs at byte {at} of {}:\n    cpp : {:02x?}\n    rust: {:02x?}", a.len(), &a[from..(at + 24).min(a.len())], &b[from..(at + 24).min(b.len())]);
+            return format!(
+                "  snapshot #{i} differs at byte {at} of {}:\n    cpp : {:02x?}\n    rust: {:02x?}",
+                a.len(),
+                &a[from..(at + 24).min(a.len())],
+                &b[from..(at + 24).min(b.len())]
+            );
         }
     }
     String::from("  (the bytes do not differ)")
@@ -2211,7 +2576,10 @@ fn explain_snapshot(prog: &[u32]) -> String {
 
 #[test]
 fn object_matches_upstream() {
-    let cases: u64 = std::env::var("OBJECT_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(1200);
+    let cases: u64 = std::env::var("OBJECT_CASES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1200);
     let (mut lines, mut kinds): (usize, BTreeMap<String, usize>) = (0, BTreeMap::new());
     let mut bad = 0;
     let mut reentrant = 0u64;
@@ -2222,7 +2590,9 @@ fn object_matches_upstream() {
             std::fs::write(format!("{dir}/prog_{case}.bin"), bytes).expect("dump program");
             std::fs::write(format!("{dir}/names.bin"), flag_names()).expect("dump names");
         }
-        if std::env::var("OBJECT_TRACE").is_ok() { eprintln!("CASE {case}"); }
+        if std::env::var("OBJECT_TRACE").is_ok() {
+            eprintln!("CASE {case}");
+        }
         let c = run_cpp(&prog, false);
         let (r, reentered, skipped) = run_rust_counted(&prog, false);
         reentrant += u64::from(reentered);

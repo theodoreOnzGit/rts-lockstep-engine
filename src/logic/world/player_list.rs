@@ -63,7 +63,10 @@ fn pl<H: PlayerInitHost>(h: &H, p: PlayerIndex) -> PResult<&Player> {
 
 /// `PlayerList::setLocalPlayer(player)`: a null player selects the neutral player; a change tells the old local player it
 /// is no longer local, then the new one that it is.
-pub fn player_list_set_local_player<H: PlayerInitHost>(h: &mut H, player: Option<PlayerIndex>) -> PResult<()> {
+pub fn player_list_set_local_player<H: PlayerInitHost>(
+    h: &mut H,
+    player: Option<PlayerIndex>,
+) -> PResult<()> {
     if let Some(change) = h.players_mut().set_local_player(player) {
         if let Some(lost) = change.lost {
             if !plant(545) {
@@ -77,7 +80,8 @@ pub fn player_list_set_local_player<H: PlayerInitHost>(h: &mut H, player: Option
 
 /// `PlayerList::init()`: one player, all sixteen `init( NULL )`, the neutral player local.
 pub fn player_list_init<H: PlayerInitHost>(h: &mut H) -> PResult<()> {
-    h.players_mut().set_player_count(if plant(542) { 2 } else { 1 });
+    h.players_mut()
+        .set_player_count(if plant(542) { 2 } else { 1 });
     for i in if plant(543) { 1 } else { 0 }..MAX_PLAYER_COUNT {
         player_init(h, i, None)?;
     }
@@ -113,7 +117,10 @@ pub fn player_list_new_map<H: PlayerInitHost>(h: &mut H) -> PResult<()> {
 }
 
 /// `PlayerList::teamAboutToBeDeleted(team)`.
-pub fn player_list_team_about_to_be_deleted<H: PlayerInitHost>(h: &mut H, team: TeamId) -> PResult<()> {
+pub fn player_list_team_about_to_be_deleted<H: PlayerInitHost>(
+    h: &mut H,
+    team: TeamId,
+) -> PResult<()> {
     for i in 0..MAX_PLAYER_COUNT - plant(550) as i32 {
         player_remove_team_relationship(h, i, Some(team))?;
     }
@@ -129,23 +136,40 @@ pub fn player_list_update_team_states<H: PlayerInitHost>(h: &mut H) -> PResult<(
 }
 
 /// `PlayerList::validateTeam(owner)`.
-pub fn player_list_validate_team<H: PlayerInitHost>(h: &mut H, owner: &[u8]) -> PResult<Option<TeamId>> {
+pub fn player_list_validate_team<H: PlayerInitHost>(
+    h: &mut H,
+    owner: &[u8],
+) -> PResult<Option<TeamId>> {
     // owner could be a player or team. first, check team names.
     if let Some(t) = factory_find_team(h, owner)? {
         return Ok(Some(t));
     }
     // no team or player named that could be found
-    Ok(if plant(551) { None } else { pl(h, 0)?.default_team })
+    Ok(if plant(551) {
+        None
+    } else {
+        pl(h, 0)?.default_team
+    })
 }
 
 /// `PlayerList::getPlayerFromMask(mask)`.
-pub fn player_list_get_player_from_mask<H: PlayerInitHost>(h: &H, mask: PlayerMaskType) -> Option<PlayerIndex> {
-    (0..MAX_PLAYER_COUNT).find(|i| h.players().get_nth(*i).is_some_and(|p| (1u16 << p.player_index) & mask != 0 && plant(552) || (1u16 << p.player_index) == mask))
+pub fn player_list_get_player_from_mask<H: PlayerInitHost>(
+    h: &H,
+    mask: PlayerMaskType,
+) -> Option<PlayerIndex> {
+    (0..MAX_PLAYER_COUNT).find(|i| {
+        h.players().get_nth(*i).is_some_and(|p| {
+            (1u16 << p.player_index) & mask != 0 && plant(552) || (1u16 << p.player_index) == mask
+        })
+    })
 }
 
 /// `PlayerList::getEachPlayerFromMask(maskToAdjust)`: the next player (in index order) whose bit is in the mask; its bit is
 /// taken out of the mask; none empties the mask.
-pub fn player_list_get_each_player_from_mask<H: PlayerInitHost>(h: &H, mask_to_adjust: &mut PlayerMaskType) -> Option<PlayerIndex> {
+pub fn player_list_get_each_player_from_mask<H: PlayerInitHost>(
+    h: &H,
+    mask_to_adjust: &mut PlayerMaskType,
+) -> Option<PlayerIndex> {
     for i in 0..MAX_PLAYER_COUNT {
         if let Some(p) = h.players().get_nth(i) {
             let m = 1u16 << p.player_index;
@@ -164,35 +188,64 @@ pub fn player_list_get_each_player_from_mask<H: PlayerInitHost>(h: &H, mask_to_a
 }
 
 /// `PlayerList::getPlayersWithRelationship(srcPlayerIndex, allowedRelationships)`.
-pub fn player_list_get_players_with_relationship<H: PlayerInitHost>(h: &H, src_player_index: PlayerIndex, allowed: u32) -> PResult<PlayerMaskType> {
+pub fn player_list_get_players_with_relationship<H: PlayerInitHost>(
+    h: &H,
+    src_player_index: PlayerIndex,
+    allowed: u32,
+) -> PResult<PlayerMaskType> {
     let mut ret_val: PlayerMaskType = 0;
     if allowed == 0 && !plant(555) {
         return Ok(ret_val);
     }
-    let Some(src) = h.players().get_nth(src_player_index) else { return Ok(ret_val) };
+    let Some(src) = h.players().get_nth(src_player_index) else {
+        return Ok(ret_val);
+    };
     let src_mask = 1u16 << src.player_index;
     if allowed & ALLOW_SAME_PLAYER != 0 && !plant(556) {
         ret_val |= src_mask;
     }
     for i in 0..h.players().player_count() + plant(561) as i32 {
-        let Some(player) = h.players().get_nth(i) else { continue };
+        let Some(player) = h.players().get_nth(i) else {
+            continue;
+        };
         if player.player_index == src_player_index && !plant(557) {
             continue;
         }
         let m = 1u16 << player.player_index;
         match player_get_relationship(h, src_player_index, player.default_team)? {
             Relationship::Enemies => {
-                if allowed & if plant(558) { ALLOW_ALLIES } else { ALLOW_ENEMIES } != 0 {
+                if allowed
+                    & if plant(558) {
+                        ALLOW_ALLIES
+                    } else {
+                        ALLOW_ENEMIES
+                    }
+                    != 0
+                {
                     ret_val |= m;
                 }
             }
             Relationship::Allies => {
-                if allowed & if plant(559) { ALLOW_NEUTRAL } else { ALLOW_ALLIES } != 0 {
+                if allowed
+                    & if plant(559) {
+                        ALLOW_NEUTRAL
+                    } else {
+                        ALLOW_ALLIES
+                    }
+                    != 0
+                {
                     ret_val |= m;
                 }
             }
             Relationship::Neutral => {
-                if allowed & if plant(560) { ALLOW_ENEMIES } else { ALLOW_NEUTRAL } != 0 {
+                if allowed
+                    & if plant(560) {
+                        ALLOW_ENEMIES
+                    } else {
+                        ALLOW_NEUTRAL
+                    }
+                    != 0
+                {
                     ret_val |= m;
                 }
             }
@@ -219,7 +272,8 @@ pub fn player_list_new_game<H: PlayerInitHost>(h: &mut H) -> PResult<()> {
 
         let count = h.players().player_count();
         let p = count;
-        h.players_mut().set_player_count(count + 1 + plant(563) as i32);
+        h.players_mut()
+            .set_player_count(count + 1 + plant(563) as i32);
         h.players().get_nth(p).ok_or(PlayerError::NoPlayer)?;
         player_init_from_dict(h, p, &d)?;
 
@@ -246,7 +300,16 @@ pub fn player_list_new_game<H: PlayerInitHost>(h: &mut H) -> PResult<()> {
     if !set_local {
         for i in 0..h.sides_num_sides() {
             if h.players().get_nth(i).is_some() && i != 0 {
-                player_set_player_type(h, i, if plant(567) { PlayerType::Computer } else { PlayerType::Human }, false)?;
+                player_set_player_type(
+                    h,
+                    i,
+                    if plant(567) {
+                        PlayerType::Computer
+                    } else {
+                        PlayerType::Human
+                    },
+                    false,
+                )?;
                 player_list_set_local_player(h, Some(i))?;
                 set_local = true;
                 break;
@@ -269,9 +332,20 @@ pub fn player_list_new_game<H: PlayerInitHost>(h: &mut H) -> PResult<()> {
         let key = h.name_to_key(&pname);
         let p = find_player_with_name_key(h, key).ok_or(PlayerError::Null)?;
 
-        for (which, rel) in [(wk::PLAYER_ENEMIES, if plant(569) { Relationship::Allies } else { Relationship::Enemies }), (wk::PLAYER_ALLIES, Relationship::Allies)] {
+        for (which, rel) in [
+            (
+                wk::PLAYER_ENEMIES,
+                if plant(569) {
+                    Relationship::Allies
+                } else {
+                    Relationship::Enemies
+                },
+            ),
+            (wk::PLAYER_ALLIES, Relationship::Allies),
+        ] {
             let (list, _) = dict_ascii(h, &d, which);
-            let mut rest = crate::common::ascii_string::AsciiString::try_from_bytes(&list).map_err(|_| PlayerError::Null)?;
+            let mut rest = crate::common::ascii_string::AsciiString::try_from_bytes(&list)
+                .map_err(|_| PlayerError::Null)?;
             let mut tok = crate::common::ascii_string::AsciiString::default();
             while rest.next_token(&mut tok, None).unwrap_or(false) {
                 let key = h.name_to_key(tok.str());
@@ -297,7 +371,10 @@ pub fn player_list_new_game<H: PlayerInitHost>(h: &mut H) -> PResult<()> {
 }
 
 /// `PlayerList::findPlayerWithNameKey(key)`: the first of the `getPlayerCount()` players with that name key.
-pub fn find_player_with_name_key<H: PlayerInitHost>(h: &H, key: crate::common::name_key_generator::NameKeyType) -> Option<PlayerIndex> {
+pub fn find_player_with_name_key<H: PlayerInitHost>(
+    h: &H,
+    key: crate::common::name_key_generator::NameKeyType,
+) -> Option<PlayerIndex> {
     let a = h.players();
     (0..a.player_count()).find(|i| a.get_nth(*i).is_some_and(|p| p.name_key == key.0 as i32))
 }

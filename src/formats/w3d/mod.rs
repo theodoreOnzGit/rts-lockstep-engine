@@ -79,9 +79,16 @@ impl From<ChunkIoError> for W3dError {
 impl std::fmt::Display for W3dError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            W3dError::Undefined(u) => write!(f, "W3D data outside what the original loader defines: {u:?}"),
-            W3dError::Unsupported(what) => write!(f, "W3D data this reader does not support yet: {what}"),
-            W3dError::NonTerminating => write!(f, "W3D data on which the original loader loops forever"),
+            W3dError::Undefined(u) => write!(
+                f,
+                "W3D data outside what the original loader defines: {u:?}"
+            ),
+            W3dError::Unsupported(what) => {
+                write!(f, "W3D data this reader does not support yet: {what}")
+            }
+            W3dError::NonTerminating => {
+                write!(f, "W3D data on which the original loader loops forever")
+            }
         }
     }
 }
@@ -97,7 +104,11 @@ pub type W3dResult<T> = Result<T, W3dError>;
 /// `capacity` bytes is undefined; so is a "successful" negative-length read
 /// (nothing copied, the array left uninitialised). Memory is bounded by the
 /// bytes left in the file, not by `nbytes`.
-pub(crate) fn read_array(cload: &mut ChunkLoad<'_>, nbytes: u32, capacity: usize) -> W3dResult<Option<Vec<u8>>> {
+pub(crate) fn read_array(
+    cload: &mut ChunkLoad<'_>,
+    nbytes: u32,
+    capacity: usize,
+) -> W3dResult<Option<Vec<u8>>> {
     let f = cload.file();
     let left = f.file_size().wrapping_sub(f.position()).max(0) as usize;
     let mut buf = vec![0u8; capacity.min(left)];

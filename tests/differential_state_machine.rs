@@ -363,7 +363,11 @@ fn do_action(sm: &mut StateMachine<TState>, cx: &mut World, id: StateId, e: Act)
             Ok(())
         }
         9 => {
-            let p = Coord3D { x: e.arg as f32, y: e.arg as f32 * 2.0, z: -(e.arg as f32) };
+            let p = Coord3D {
+                x: e.arg as f32,
+                y: e.arg as f32 * 2.0,
+                z: -(e.arg as f32),
+            };
             sm.set_goal_position(Some(&p));
             Ok(())
         }
@@ -374,7 +378,13 @@ fn do_action(sm: &mut StateMachine<TState>, cx: &mut World, id: StateId, e: Act)
 }
 
 /// `ScriptState::onEnter` / `update` / `onExit`.
-fn scripted_call(sm: &mut StateMachine<TState>, cx: &mut World, id: StateId, which: Which, exit_status: u32) -> SmResult<StateReturn> {
+fn scripted_call(
+    sm: &mut StateMachine<TState>,
+    cx: &mut World,
+    id: StateId,
+    which: Which,
+    exit_status: u32,
+) -> SmResult<StateReturn> {
     let (begin, end) = match which {
         Which::Enter => (T_ENTER_BEGIN, T_ENTER_END),
         Which::Update => (T_UPDATE_BEGIN, T_UPDATE_END),
@@ -392,7 +402,11 @@ fn scripted_call(sm: &mut StateMachine<TState>, cx: &mut World, id: StateId, whi
         Which::Update => (&s.update, &mut s.n_update),
         Which::Exit => (&s.exit, &mut s.n_exit),
     };
-    let mut e = Act { ret: 0, act: 0, arg: 0 };
+    let mut e = Act {
+        ret: 0,
+        act: 0,
+        arg: 0,
+    };
     if !list.is_empty() {
         e = list[(*n % list.len() as u32) as usize];
         *n = n.wrapping_add(1);
@@ -418,7 +432,12 @@ impl StateBehavior for TState {
         }
     }
 
-    fn on_exit(sm: &mut StateMachine<Self>, cx: &mut World, id: StateId, status: StateExitType) -> SmResult<()> {
+    fn on_exit(
+        sm: &mut StateMachine<Self>,
+        cx: &mut World,
+        id: StateId,
+        status: StateExitType,
+    ) -> SmResult<()> {
         // UtilityState has no onExit
         if matches!(sm.state(id), Some(TState::Scripted(_))) {
             let s = match status {
@@ -437,7 +456,12 @@ impl StateBehavior for TState {
         }
     }
 
-    fn test(_sm: &mut StateMachine<Self>, cx: &mut World, id: StateId, cond: Cond) -> SmResult<bool> {
+    fn test(
+        _sm: &mut StateMachine<Self>,
+        cx: &mut World,
+        id: StateId,
+        cond: Cond,
+    ) -> SmResult<bool> {
         let Cond::Sequence(idx) = cond;
         let seq = &cx.conds[idx as usize];
         let r = if seq.is_empty() {
@@ -563,7 +587,13 @@ fn mutate(s: &mut Vec<u8>, kind: u32, a: u32, b: u32) {
     }
 }
 
-fn view(res: &mut Vec<u32>, sm: &StateMachine<TState>, cx: &World, post_process: u32, scripted_ids: &BTreeSet<u32>) {
+fn view(
+    res: &mut Vec<u32>,
+    sm: &StateMachine<TState>,
+    cx: &World,
+    post_process: u32,
+    scripted_ids: &BTreeSet<u32>,
+) {
     res.push(sm.get_current_state_id());
     res.push(sm.peek_sleep_till());
     res.push(sm.default_state_id());
@@ -615,7 +645,14 @@ fn run_rust(case: &Case) -> RustRun {
         objects: case
             .objects
             .iter()
-            .map(|(id, p)| ObjectRef { id: *id, position: Coord3D { x: f32::from_bits(p[0]), y: f32::from_bits(p[1]), z: f32::from_bits(p[2]) } })
+            .map(|(id, p)| ObjectRef {
+                id: *id,
+                position: Coord3D {
+                    x: f32::from_bits(p[0]),
+                    y: f32::from_bits(p[1]),
+                    z: f32::from_bits(p[2]),
+                },
+            })
             .collect(),
         live: case.objects.iter().map(|(id, _)| *id).collect(),
         conds: case.conds.clone(),
@@ -647,8 +684,14 @@ fn run_rust(case: &Case) -> RustRun {
                 })
             }
         };
-        let conds: Vec<StateConditionInfo<Cond>> =
-            s.trans.iter().map(|(c, to)| StateConditionInfo { test: Cond::Sequence(*c), to_state_id: *to }).collect();
+        let conds: Vec<StateConditionInfo<Cond>> = s
+            .trans
+            .iter()
+            .map(|(c, to)| StateConditionInfo {
+                test: Cond::Sequence(*c),
+                to_state_id: *to,
+            })
+            .collect();
         if let Err(e) = sm.define_state(s.id, kind, s.succ, s.fail, &conds) {
             assert!(e.is_undefined_upstream());
             undefined += 1;
@@ -733,7 +776,11 @@ fn run_rust(case: &Case) -> RustRun {
                 push_status(&mut res, &Ok(()));
             }
             Op::GoalPosition(has, b) => {
-                let p = Coord3D { x: f32::from_bits(b[0]), y: f32::from_bits(b[1]), z: f32::from_bits(b[2]) };
+                let p = Coord3D {
+                    x: f32::from_bits(b[0]),
+                    y: f32::from_bits(b[1]),
+                    z: f32::from_bits(b[2]),
+                };
                 sm.set_goal_position(if *has { Some(&p) } else { None });
                 push_status(&mut res, &Ok(()));
             }
@@ -771,13 +818,17 @@ fn run_rust(case: &Case) -> RustRun {
                     crc.push(xc.get_crc());
                 }
                 let mut xc2 = XferCrc::new_without_nan_guard();
-                let r = xc2.open(b"crc2").and_then(|_| Snapshot::xfer(&mut sm, &mut xc2));
+                let r = xc2
+                    .open(b"crc2")
+                    .and_then(|_| Snapshot::xfer(&mut sm, &mut xc2));
                 let r = xfer_status(&mut sm, r);
                 if push_status(&mut res, &r) {
                     crc.push(xc2.get_crc());
                 }
                 let mut xd = XferDeepCrc::new_without_nan_guard();
-                let r = xd.open(b"deep").and_then(|_| Snapshot::xfer(&mut sm, &mut xd));
+                let r = xd
+                    .open(b"deep")
+                    .and_then(|_| Snapshot::xfer(&mut sm, &mut xd));
                 let r = xfer_status(&mut sm, r);
                 let ok = push_status(&mut res, &r);
                 let _ = xd.close();
@@ -819,7 +870,18 @@ fn run_rust(case: &Case) -> RustRun {
     let _ = sm.destroy(&mut cx);
     res.push(201);
     let statuses = STATUSES.with(|s| s.borrow().clone());
-    RustRun { logs: Logs { ev: cx.ev, res, byt, crc }, statuses, max_enters_per_op, sleeping_ops, undefined }
+    RustRun {
+        logs: Logs {
+            ev: cx.ev,
+            res,
+            byt,
+            crc,
+        },
+        statuses,
+        max_enters_per_op,
+        sleeping_ops,
+        undefined,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -842,9 +904,20 @@ fn run_cpp(case: &Case) -> Logs {
     let mut path = std::env::temp_dir();
     path.push(format!("rts-lockstep-sm-{}", std::process::id()));
     let cpath = std::ffi::CString::new(path.to_str().unwrap()).unwrap();
-    let n = unsafe { cpp::ref_sm_run(cpath.as_ptr(), script.as_ptr(), script.len() as i32, buf.as_mut_ptr(), LOG_CAP as i32) };
+    let n = unsafe {
+        cpp::ref_sm_run(
+            cpath.as_ptr(),
+            script.as_ptr(),
+            script.len() as i32,
+            buf.as_mut_ptr(),
+            LOG_CAP as i32,
+        )
+    };
     assert!(n >= 0, "malformed script");
-    assert!((n as usize) <= LOG_CAP, "log overflow: {n} words for {case:#?}");
+    assert!(
+        (n as usize) <= LOG_CAP,
+        "log overflow: {n} words for {case:#?}"
+    );
     let mut at = 0usize;
     let mut take = || {
         let len = buf[at] as usize;
@@ -852,8 +925,16 @@ fn run_cpp(case: &Case) -> Logs {
         at += 1 + len;
         v
     };
-    let logs = Logs { ev: take(), res: take(), byt: take(), crc: take() };
-    assert!(!logs.res.contains(&0xDEAD_0001), "the generator made a load that is undefined upstream: {case:#?}");
+    let logs = Logs {
+        ev: take(),
+        res: take(),
+        byt: take(),
+        crc: take(),
+    };
+    assert!(
+        !logs.res.contains(&0xDEAD_0001),
+        "the generator made a load that is undefined upstream: {case:#?}"
+    );
     for ext in ["sav", "deep", "load"] {
         let _ = std::fs::remove_file(format!("{}.{ext}", path.to_str().unwrap()));
     }
@@ -917,11 +998,17 @@ fn gen_act(g: &mut Gen, ids: &[u32], n_objects: u32) -> Act {
 }
 
 fn gen_acts(g: &mut Gen, ids: &[u32], n_objects: u32, max: u32) -> Vec<Act> {
-    (0..g.below(max + 1)).map(|_| gen_act(g, ids, n_objects)).collect()
+    (0..g.below(max + 1))
+        .map(|_| gen_act(g, ids, n_objects))
+        .collect()
 }
 
 fn gen_pos_bits(g: &mut Gen) -> [u32; 3] {
-    [g.uniform(-500.0, 500.0).to_bits(), g.uniform(-500.0, 500.0).to_bits(), g.uniform(-50.0, 50.0).to_bits()]
+    [
+        g.uniform(-500.0, 500.0).to_bits(),
+        g.uniform(-500.0, 500.0).to_bits(),
+        g.uniform(-50.0, 50.0).to_bits(),
+    ]
 }
 
 /// The size of a state's snapshot: a version byte, and a counter for the
@@ -942,7 +1029,13 @@ fn snapshot_size(kind: u32) -> usize {
 /// wrong id as often as not -- and a valid tail (`bool`s 0 or 1); sometimes cut
 /// at a field boundary.
 fn craft_stream(g: &mut Gen, states: &BTreeMap<u32, u32>, ids: &[u32]) -> Vec<u8> {
-    let valid = |g: &mut Gen| if ids.is_empty() { 77 } else { ids[g.below(ids.len() as u32) as usize] };
+    let valid = |g: &mut Gen| {
+        if ids.is_empty() {
+            77
+        } else {
+            ids[g.below(ids.len() as u32) as usize]
+        }
+    };
     let all = g.below(2) == 0;
     let d = match g.below(8) {
         0 => 77,
@@ -1005,9 +1098,13 @@ fn craft_stream(g: &mut Gen, states: &BTreeMap<u32, u32>, ids: &[u32]) -> Vec<u8
 
 fn gen_case(g: &mut Gen) -> Case {
     let n_conds = 1 + g.below(4);
-    let conds: Vec<Vec<u32>> = (0..n_conds).map(|_| (0..1 + g.below(5)).map(|_| g.below(2)).collect()).collect();
+    let conds: Vec<Vec<u32>> = (0..n_conds)
+        .map(|_| (0..1 + g.below(5)).map(|_| g.below(2)).collect())
+        .collect();
     let n_obj = g.below(4);
-    let objects: Vec<(i32, [u32; 3])> = (0..n_obj).map(|i| (5 + i as i32, gen_pos_bits(g))).collect();
+    let objects: Vec<(i32, [u32; 3])> = (0..n_obj)
+        .map(|i| (5 + i as i32, gen_pos_bits(g)))
+        .collect();
 
     let n_states = match g.below(100) {
         0..=3 => 0,
@@ -1033,8 +1130,13 @@ fn gen_case(g: &mut Gen) -> Case {
             27..=33 => 3,
             _ => 4,
         };
-        let trans: Vec<(u32, u32)> =
-            if g.below(100) < 35 { (0..1 + g.below(3)).map(|_| (g.below(n_conds), pick_target(g, &ids))).collect() } else { Vec::new() };
+        let trans: Vec<(u32, u32)> = if g.below(100) < 35 {
+            (0..1 + g.below(3))
+                .map(|_| (g.below(n_conds), pick_target(g, &ids)))
+                .collect()
+        } else {
+            Vec::new()
+        };
         let mut s = StateSpec {
             kind,
             id,
@@ -1100,7 +1202,12 @@ fn gen_case(g: &mut Gen) -> Case {
         };
         ops.push(op);
     }
-    Case { conds, objects, states: specs, ops }
+    Case {
+        conds,
+        objects,
+        states: specs,
+        ops,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1110,7 +1217,9 @@ fn gen_case(g: &mut Gen) -> Case {
 /// The first position where two logs differ: `(index, rust, cpp)` with `None`
 /// for a missing word.
 fn first_diff(r: &[u32], c: &[u32]) -> Option<(usize, Option<u32>, Option<u32>)> {
-    (0..r.len().max(c.len())).find(|&i| r.get(i) != c.get(i)).map(|i| (i, r.get(i).copied(), c.get(i).copied()))
+    (0..r.len().max(c.len()))
+        .find(|&i| r.get(i) != c.get(i))
+        .map(|i| (i, r.get(i).copied(), c.get(i).copied()))
 }
 
 /// Tallies of what the cases exercised.
@@ -1193,7 +1302,10 @@ fn state_machine_matches_upstream() {
         let r = run_rust(&case);
         if case.has_duplicate_ids() {
             // undefined upstream: the Rust refuses it (counted), the C++ is not run
-            assert!(r.undefined >= 1, "case {i}: a duplicate state id must be refused");
+            assert!(
+                r.undefined >= 1,
+                "case {i}: a duplicate state id must be refused"
+            );
             cov.undefined_cases += 1;
             cov.undefined_inputs += u64::from(r.undefined);
             continue;
@@ -1220,10 +1332,18 @@ fn state_machine_matches_upstream() {
             }
             p
         };
-        ev_bug.eq(first_diff(&planted(&r.logs.ev, 1), &c.ev), None, || format!("case {i}"));
-        res_bug.eq(first_diff(&planted(&r.logs.res, 2), &c.res), None, || format!("case {i}"));
-        byt_bug.eq(first_diff(&planted(&r.logs.byt, 3), &c.byt), None, || format!("case {i}"));
-        crc_bug.eq(first_diff(&planted(&r.logs.crc, 4), &c.crc), None, || format!("case {i}"));
+        ev_bug.eq(first_diff(&planted(&r.logs.ev, 1), &c.ev), None, || {
+            format!("case {i}")
+        });
+        res_bug.eq(first_diff(&planted(&r.logs.res, 2), &c.res), None, || {
+            format!("case {i}")
+        });
+        byt_bug.eq(first_diff(&planted(&r.logs.byt, 3), &c.byt), None, || {
+            format!("case {i}")
+        });
+        crc_bug.eq(first_diff(&planted(&r.logs.crc, 4), &c.crc), None, || {
+            format!("case {i}")
+        });
     }
 
     println!("COVERAGE {cov:#?}");
@@ -1231,11 +1351,22 @@ fn state_machine_matches_upstream() {
     assert!(cov.compared_cases > 5000);
     assert!(cov.callbacks > 50_000, "callbacks: {}", cov.callbacks);
     assert!(cov.conditions > 5_000 && cov.actions > 5_000);
-    assert!(cov.long_chains > 20, "no case reached the transition depth limit");
+    assert!(
+        cov.long_chains > 20,
+        "no case reached the transition depth limit"
+    );
     assert!(cov.thrown_error_code > 0, "ERROR_BAD_ARG never thrown");
     assert!(cov.thrown_save_code > 0, "SC_INVALID_DATA never thrown");
-    assert!(cov.thrown_xfer.contains_key(&(XferStatus::InvalidVersion as u32)), "no invalid version");
-    assert!(cov.thrown_xfer.contains_key(&(XferStatus::ReadError as u32)), "no truncated load");
+    assert!(
+        cov.thrown_xfer
+            .contains_key(&(XferStatus::InvalidVersion as u32)),
+        "no invalid version"
+    );
+    assert!(
+        cov.thrown_xfer
+            .contains_key(&(XferStatus::ReadError as u32)),
+        "no truncated load"
+    );
     assert!(cov.sleeping_ops > 5000);
     assert!(cov.saves > 2000 && cov.crc_ops > 1000 && cov.loads > 3000);
     assert!(cov.undefined_cases > 50 && cov.undefined_cases == cov.undefined_inputs);
@@ -1254,12 +1385,39 @@ fn state_machine_matches_upstream() {
 // Fixed scenarios (each also run on the C++)
 // ---------------------------------------------------------------------------
 
-fn scripted(id: u32, succ: u32, fail: u32, enter: Vec<Act>, update: Vec<Act>, exit: Vec<Act>) -> StateSpec {
-    StateSpec { kind: 4, id, succ, fail, trans: Vec::new(), flags: 0, enter, update, exit }
+fn scripted(
+    id: u32,
+    succ: u32,
+    fail: u32,
+    enter: Vec<Act>,
+    update: Vec<Act>,
+    exit: Vec<Act>,
+) -> StateSpec {
+    StateSpec {
+        kind: 4,
+        id,
+        succ,
+        fail,
+        trans: Vec::new(),
+        flags: 0,
+        enter,
+        update,
+        exit,
+    }
 }
 
 fn util(kind: u32, id: u32, succ: u32, fail: u32) -> StateSpec {
-    StateSpec { kind, id, succ, fail, trans: Vec::new(), flags: 0, enter: Vec::new(), update: Vec::new(), exit: Vec::new() }
+    StateSpec {
+        kind,
+        id,
+        succ,
+        fail,
+        trans: Vec::new(),
+        flags: 0,
+        enter: Vec::new(),
+        update: Vec::new(),
+        exit: Vec::new(),
+    }
 }
 
 fn same(case: &Case, name: &str) -> Logs {
@@ -1284,13 +1442,23 @@ fn fixed_scenarios_match_upstream() {
     };
     let l = same(&ring, "ring");
     // 20 deep: the guard returns FAILURE (-2) from the innermost check
-    assert!(l.res.windows(3).any(|w| w[0] == 0 && w[1] == 0 && w[2] == (-2i32) as u32));
+    assert!(l
+        .res
+        .windows(3)
+        .any(|w| w[0] == 0 && w[1] == 0 && w[2] == (-2i32) as u32));
 
     // sleeping: enter sleeps 10 frames from frame 5, wake exactly at 15, and the sleep wraps at 2^32
     let sleeper = Case {
         conds: vec![vec![0]],
         objects: vec![],
-        states: vec![scripted(1, 1, 1, vec![act(10, 0, 0)], vec![act(3, 0, 0), act(-1, 0, 0)], vec![])],
+        states: vec![scripted(
+            1,
+            1,
+            1,
+            vec![act(10, 0, 0)],
+            vec![act(3, 0, 0), act(-1, 0, 0)],
+            vec![],
+        )],
         ops: vec![
             Op::Frame(5),
             Op::Init,
@@ -1314,7 +1482,14 @@ fn fixed_scenarios_match_upstream() {
         objects: vec![],
         states: vec![
             scripted(1, 2, 2, vec![], vec![act(50, 1, 2)], vec![]),
-            scripted(2, 1, 1, vec![act(0, 0, 0)], vec![act(0, 0, 0)], vec![act(0, 0, 0)]),
+            scripted(
+                2,
+                1,
+                1,
+                vec![act(0, 0, 0)],
+                vec![act(0, 0, 0)],
+                vec![act(0, 0, 0)],
+            ),
         ],
         ops: vec![Op::Init, Op::Update, Op::Update, Op::Save, Op::Crc],
     };
@@ -1326,8 +1501,18 @@ fn fixed_scenarios_match_upstream() {
         let c = Case {
             conds: vec![vec![0]],
             objects: vec![],
-            states: vec![scripted(1, 1, 1, vec![], vec![act(-1, action, 0)], vec![]), util(2, 2, 2, 2)],
-            ops: vec![Op::Init, Op::Update, Op::Update, Op::Save, Op::Reset, Op::Update],
+            states: vec![
+                scripted(1, 1, 1, vec![], vec![act(-1, action, 0)], vec![]),
+                util(2, 2, 2, 2),
+            ],
+            ops: vec![
+                Op::Init,
+                Op::Update,
+                Op::Update,
+                Op::Save,
+                Op::Reset,
+                Op::Update,
+            ],
         };
         same(&c, "destroyed from update");
     }
@@ -1337,17 +1522,40 @@ fn fixed_scenarios_match_upstream() {
         conds: vec![vec![0]],
         objects: vec![],
         states: vec![util(2, 1, 1, 1), util(2, 2, 2, 2)],
-        ops: vec![Op::Init, Op::SetState(2), Op::SetState(77), Op::Internal(2), Op::Internal(INVALID_STATE_ID), Op::Internal(MACHINE_DONE_STATE_ID), Op::Update],
+        ops: vec![
+            Op::Init,
+            Op::SetState(2),
+            Op::SetState(77),
+            Op::Internal(2),
+            Op::Internal(INVALID_STATE_ID),
+            Op::Internal(MACHINE_DONE_STATE_ID),
+            Op::Update,
+        ],
     };
     same(&unknown, "unknown ids");
-    let none = Case { conds: vec![], objects: vec![], states: vec![], ops: vec![Op::Init, Op::SetState(3), Op::Update, Op::Save, Op::Crc, Op::Reset] };
+    let none = Case {
+        conds: vec![],
+        objects: vec![],
+        states: vec![],
+        ops: vec![
+            Op::Init,
+            Op::SetState(3),
+            Op::Update,
+            Op::Save,
+            Op::Crc,
+            Op::Reset,
+        ],
+    };
     let l = same(&none, "no states");
     assert!(l.res.windows(2).any(|w| w == [1, ERROR_BAD_ARG]));
 
     // goals: object, destroyed object, position, null; lock blocks them
     let goals = Case {
         conds: vec![vec![0]],
-        objects: vec![(5, [1.5f32.to_bits(), 2.5f32.to_bits(), 3.5f32.to_bits()]), (6, [0; 3])],
+        objects: vec![
+            (5, [1.5f32.to_bits(), 2.5f32.to_bits(), 3.5f32.to_bits()]),
+            (6, [0; 3]),
+        ],
         states: vec![util(2, 1, 1, 1)],
         ops: vec![
             Op::Init,
@@ -1369,7 +1577,10 @@ fn fixed_scenarios_match_upstream() {
     same(&goals, "goals");
 
     // the all-states load with a right stream: both states loaded, two post-process hand-offs
-    let two = vec![scripted(1, 2, 2, vec![act(0, 0, 0)], vec![], vec![]), util(2, 2, 2, 2)];
+    let two = vec![
+        scripted(1, 2, 2, vec![act(0, 0, 0)], vec![], vec![]),
+        util(2, 2, 2, 2),
+    ];
     let mut b = vec![1u8];
     b.extend(0u32.to_le_bytes());
     b.extend(1u32.to_le_bytes());
@@ -1384,7 +1595,12 @@ fn fixed_scenarios_match_upstream() {
     b.extend(0i32.to_le_bytes());
     b.extend([0u8; 12]);
     b.extend([1, 1]);
-    let all = Case { conds: vec![vec![0]], objects: vec![], states: two, ops: vec![Op::LoadBytes(b), Op::Save] };
+    let all = Case {
+        conds: vec![vec![0]],
+        objects: vec![],
+        states: two,
+        ops: vec![Op::LoadBytes(b), Op::Save],
+    };
     let l = same(&all, "all-states load");
     // the counter of state 1 became 77 and two snapshots were handed to post-processing
     assert!(l.res.windows(2).any(|w| w == [2, 77]) || l.res.contains(&77));

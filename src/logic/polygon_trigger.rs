@@ -103,9 +103,15 @@ pub enum PolygonUndefined {
 impl std::fmt::Display for PolygonUndefined {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PolygonUndefined::IntOverflow => f.write_str("Int overflow in a polygon trigger (undefined upstream)"),
-            PolygonUndefined::RealToIntOutOfRange => f.write_str("Real out of range of Int (undefined upstream)"),
-            PolygonUndefined::IdOverflow => f.write_str("trigger id overflows Int (undefined upstream)"),
+            PolygonUndefined::IntOverflow => {
+                f.write_str("Int overflow in a polygon trigger (undefined upstream)")
+            }
+            PolygonUndefined::RealToIntOutOfRange => {
+                f.write_str("Real out of range of Int (undefined upstream)")
+            }
+            PolygonUndefined::IdOverflow => {
+                f.write_str("trigger id overflows Int (undefined upstream)")
+            }
         }
     }
 }
@@ -262,7 +268,11 @@ impl PolygonTrigger {
     /// `getWaterHandle()`: the handle of a water area (the trigger itself,
     /// which is all upstream's `WaterHandle` holds), `None` otherwise.
     pub fn water_handle(&self) -> Option<&PolygonTrigger> {
-        if self.is_water_area { Some(self) } else { None }
+        if self.is_water_area {
+            Some(self)
+        } else {
+            None
+        }
     }
 
     /// `updateBounds()` and the `m_bounds`/`m_radius` it leaves: the box of
@@ -275,8 +285,14 @@ impl PolygonTrigger {
             // zero-filled memory: the box and the radius were never set
             return Ok((IRegion2D::default(), 0.0));
         }
-        let mut lo = ICoord2D { x: BIG_INT, y: BIG_INT };
-        let mut hi = ICoord2D { x: -BIG_INT, y: -BIG_INT };
+        let mut lo = ICoord2D {
+            x: BIG_INT,
+            y: BIG_INT,
+        };
+        let mut hi = ICoord2D {
+            x: -BIG_INT,
+            y: -BIG_INT,
+        };
         for p in &self.points {
             if p.x < lo.x {
                 lo.x = p.x;
@@ -332,7 +348,11 @@ impl PolygonTrigger {
         let mut inside = false;
         for i in 0..n {
             let pt1 = self.points[i];
-            let pt2 = if i == n - 1 { self.points[0] } else { self.points[i + 1] };
+            let pt2 = if i == n - 1 {
+                self.points[0]
+            } else {
+                self.points[i + 1]
+            };
             if pt1.y == pt2.y {
                 continue; // ignore horizontal lines
             }
@@ -378,7 +398,10 @@ impl Default for PolygonTriggerList {
 impl PolygonTriggerList {
     /// An empty chain, `s_currentID = 1`.
     pub fn new() -> Self {
-        PolygonTriggerList { triggers: Vec::new(), current_id: 1 }
+        PolygonTriggerList {
+            triggers: Vec::new(),
+            current_id: 1,
+        }
     }
 
     /// `getFirstPolygonTrigger()`.
@@ -418,7 +441,10 @@ impl PolygonTriggerList {
         let id = self.current_id;
         // s_currentID++: the counter reaches Int maximum only after 2^31
         // triggers, which a chunk file cannot hold (each needs bytes).
-        self.current_id = self.current_id.checked_add(1).expect("s_currentID overflows Int (undefined upstream)");
+        self.current_id = self
+            .current_id
+            .checked_add(1)
+            .expect("s_currentID overflows Int (undefined upstream)");
         PolygonTrigger::new(id)
     }
 
@@ -462,7 +488,12 @@ impl TriggerParse {
     pub fn new(water_extent_x: f32, water_extent_y: f32) -> Result<Self, PolygonUndefined> {
         real_to_int(30.0 * MAP_XY_FACTOR + water_extent_x)?;
         real_to_int(30.0 * MAP_XY_FACTOR + water_extent_y)?;
-        Ok(TriggerParse { list: PolygonTriggerList::new(), water_extent_x, water_extent_y, undefined: None })
+        Ok(TriggerParse {
+            list: PolygonTriggerList::new(),
+            water_extent_x,
+            water_extent_y,
+            undefined: None,
+        })
     }
 }
 
@@ -487,9 +518,17 @@ pub fn parse_polygon_triggers_data_chunk(
     while count > 0 {
         count -= 1;
         let trigger_name = file.read_ascii_string()?;
-        let layer_name = if version >= K_TRIGGERS_VERSION_4 { file.read_ascii_string()? } else { Vec::new() };
+        let layer_name = if version >= K_TRIGGERS_VERSION_4 {
+            file.read_ascii_string()?
+        } else {
+            Vec::new()
+        };
         let trigger_id = file.read_int()?;
-        let is_water = if version >= K_TRIGGERS_VERSION_2 { file.read_byte()? != 0 } else { false };
+        let is_water = if version >= K_TRIGGERS_VERSION_2 {
+            file.read_byte()? != 0
+        } else {
+            false
+        };
         let (is_river, river_start) = if version >= K_TRIGGERS_VERSION_3 {
             let r = file.read_byte()? != 0;
             (r, file.read_int()?)
@@ -542,8 +581,10 @@ pub fn parse_polygon_triggers_data_chunk(
         // extents are the ones validated in TriggerParse::new.
         let x0 = (-30.0 * MAP_XY_FACTOR) as i32;
         let y0 = (-30.0 * MAP_XY_FACTOR) as i32;
-        let x1 = real_to_int(30.0 * MAP_XY_FACTOR + ctx.water_extent_x).expect("checked in TriggerParse::new");
-        let y1 = real_to_int(30.0 * MAP_XY_FACTOR + ctx.water_extent_y).expect("checked in TriggerParse::new");
+        let x1 = real_to_int(30.0 * MAP_XY_FACTOR + ctx.water_extent_x)
+            .expect("checked in TriggerParse::new");
+        let y1 = real_to_int(30.0 * MAP_XY_FACTOR + ctx.water_extent_y)
+            .expect("checked in TriggerParse::new");
         let z = 7;
         trig.add_point(ICoord3D { x: x0, y: y0, z });
         trig.add_point(ICoord3D { x: x1, y: y0, z });
@@ -641,7 +682,13 @@ mod tests {
     #[test]
     fn bounds_radius_and_centre() {
         let t = square();
-        assert_eq!(t.bounds(), Ok(IRegion2D { lo: ICoord2D { x: 0, y: 0 }, hi: ICoord2D { x: 10, y: 10 } }));
+        assert_eq!(
+            t.bounds(),
+            Ok(IRegion2D {
+                lo: ICoord2D { x: 0, y: 0 },
+                hi: ICoord2D { x: 10, y: 10 }
+            })
+        );
         // halfWidth = halfHeight = 5, radius = sqrt(50)
         assert_eq!(t.radius().unwrap().to_bits(), (50.0f32.sqrt()).to_bits());
         assert_eq!(t.center_point(), Ok((5.0, 5.0)));
@@ -673,15 +720,24 @@ mod tests {
         t.add_point(pt(0, 10));
         // hi.x - lo.x overflows
         assert_eq!(t.bounds(), Err(PolygonUndefined::IntOverflow));
-        assert_eq!(t.point_in_trigger(pt(0, 5)), Err(PolygonUndefined::IntOverflow));
+        assert_eq!(
+            t.point_in_trigger(pt(0, 5)),
+            Err(PolygonUndefined::IntOverflow)
+        );
     }
 
     #[test]
     fn real_to_int_range() {
         assert_eq!(real_to_int(-2_147_483_648.0), Ok(i32::MIN));
         assert_eq!(real_to_int(2_147_483_520.0), Ok(2_147_483_520));
-        assert_eq!(real_to_int(2_147_483_648.0), Err(PolygonUndefined::RealToIntOutOfRange));
-        assert_eq!(real_to_int(f32::NAN), Err(PolygonUndefined::RealToIntOutOfRange));
+        assert_eq!(
+            real_to_int(2_147_483_648.0),
+            Err(PolygonUndefined::RealToIntOutOfRange)
+        );
+        assert_eq!(
+            real_to_int(f32::NAN),
+            Err(PolygonUndefined::RealToIntOutOfRange)
+        );
         assert_eq!(real_to_int(-7.9), Ok(-7));
     }
 
@@ -718,7 +774,15 @@ mod tests {
         let mut body = Vec::new();
         body.extend_from_slice(&2i32.to_le_bytes());
         for (name, layer, id, water, river, start, pts) in [
-            (&b"Lake"[..], &b"Water"[..], 5i32, 1u8, 0u8, 0i32, vec![(0i32, 0i32), (4, 0), (4, 4)]),
+            (
+                &b"Lake"[..],
+                &b"Water"[..],
+                5i32,
+                1u8,
+                0u8,
+                0i32,
+                vec![(0i32, 0i32), (4, 0), (4, 4)],
+            ),
             (b"Road", b"", 9, 0, 1, 2, vec![(-1i32, -1i32), (3, 3)]),
         ] {
             put_str(&mut body, name);
@@ -737,7 +801,11 @@ mod tests {
         let (r, ctx) = parse(file(4, &body), 0.0, 0.0);
         assert_eq!(r, Ok(true));
         assert_eq!(ctx.undefined, None);
-        let names: Vec<(&[u8], i32)> = ctx.list.iter().map(|t| (t.trigger_name(), t.id())).collect();
+        let names: Vec<(&[u8], i32)> = ctx
+            .list
+            .iter()
+            .map(|t| (t.trigger_name(), t.id()))
+            .collect();
         assert_eq!(names, vec![(&b"Lake"[..], 5), (&b"Road"[..], 9)]);
         assert_eq!(ctx.list.next_id(), 10);
         let lake = ctx.list.first().unwrap();
@@ -751,8 +819,15 @@ mod tests {
         write_polygon_triggers_chunk(&ctx.list, 1, &mut out);
         assert_eq!(&out[..6], &[1, 0, 0, 0, 4, 0]);
         let body_back = &out[10..];
-        assert_eq!(i32::from_le_bytes(out[6..10].try_into().unwrap()) as usize, body_back.len());
-        assert_eq!(body_back, &body[..], "the writer produces the reader's bytes");
+        assert_eq!(
+            i32::from_le_bytes(out[6..10].try_into().unwrap()) as usize,
+            body_back.len()
+        );
+        assert_eq!(
+            body_back,
+            &body[..],
+            "the writer produces the reader's bytes"
+        );
     }
 
     #[test]
@@ -775,7 +850,15 @@ mod tests {
         let auto = ctx.list.iter().last().unwrap();
         assert!(auto.is_water_area());
         let pts: Vec<(i32, i32, i32)> = auto.points.iter().map(|p| (p.x, p.y, p.z)).collect();
-        assert_eq!(pts, vec![(-300, -300, 7), (302, -300, 7), (302, 296, 7), (-300, 296, 7)]);
+        assert_eq!(
+            pts,
+            vec![
+                (-300, -300, 7),
+                (302, -300, 7),
+                (302, 296, 7),
+                (-300, 296, 7)
+            ]
+        );
         assert_eq!(ctx.list.next_id(), 5);
     }
 
@@ -808,7 +891,10 @@ mod tests {
         body.extend_from_slice(&1i32.to_le_bytes());
         put_str(&mut body, b"T");
         let (r, _) = parse(file(4, &body), 0.0, 0.0);
-        assert_eq!(r, Err(ChunkError::Undefined(ChunkUndefined::UninitialisedRead)));
+        assert_eq!(
+            r,
+            Err(ChunkError::Undefined(ChunkUndefined::UninitialisedRead))
+        );
     }
 
     #[test]

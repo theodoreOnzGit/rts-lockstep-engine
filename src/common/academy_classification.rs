@@ -39,7 +39,8 @@ pub enum AcademyClassificationType {
 }
 
 /// `TheAcademyClassificationTypeNames[]`, without the `NULL` terminator.
-pub const ACADEMY_CLASSIFICATION_TYPE_NAMES: [&str; 3] = ["ACT_NONE", "ACT_UPGRADE_RADAR", "ACT_SUPERPOWER"];
+pub const ACADEMY_CLASSIFICATION_TYPE_NAMES: [&str; 3] =
+    ["ACT_NONE", "ACT_UPGRADE_RADAR", "ACT_SUPERPOWER"];
 
 impl AcademyClassificationType {
     /// The enumerator at an index of [`ACADEMY_CLASSIFICATION_TYPE_NAMES`]
@@ -61,10 +62,16 @@ mod tests {
     #[test]
     fn names_and_values_line_up() {
         for (i, _) in ACADEMY_CLASSIFICATION_TYPE_NAMES.iter().enumerate() {
-            assert_eq!(AcademyClassificationType::from_index(i as i32).map(|a| a as i32), Some(i as i32));
+            assert_eq!(
+                AcademyClassificationType::from_index(i as i32).map(|a| a as i32),
+                Some(i as i32)
+            );
         }
         assert_eq!(AcademyClassificationType::from_index(3), None);
         assert_eq!(AcademyClassificationType::from_index(-1), None);
-        assert_eq!(AcademyClassificationType::default(), AcademyClassificationType::None);
+        assert_eq!(
+            AcademyClassificationType::default(),
+            AcademyClassificationType::None
+        );
     }
 }

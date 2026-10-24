@@ -172,7 +172,11 @@ impl Gen {
             60..=74 => {
                 let e = self.uniform(-40.0, 40.0);
                 let m = Real::exp2(e);
-                if self.below(2) == 0 { m } else { -m }
+                if self.below(2) == 0 {
+                    m
+                } else {
+                    -m
+                }
             }
             75..=89 => f32::from_bits(self.u32()),
             _ => self.special(),
@@ -190,7 +194,11 @@ impl Gen {
     /// Mostly well-scaled values for geometry (|v| <= 100), with a share of
     /// `mixed` to reach the edges.
     pub fn geom(&mut self) -> f32 {
-        if self.below(10) < 8 { self.uniform(-100.0, 100.0) } else { self.mixed() }
+        if self.below(10) < 8 {
+            self.uniform(-100.0, 100.0)
+        } else {
+            self.mixed()
+        }
     }
     pub fn vec<const N: usize>(&mut self, f: fn(&mut Gen) -> f32) -> [f32; N] {
         let mut v = [0.0f32; N];
@@ -204,19 +212,69 @@ impl Gen {
 // Upstream literals (WWMATH_PI and friends) are deliberately among the inputs.
 #[allow(clippy::approx_constant, clippy::excessive_precision)]
 pub const SPECIALS: &[f32] = &[
-    0.0, -0.0, 1.0, -1.0, 0.5, -0.5, 1.5, -1.5, 2.5, -2.5, 3.5, -3.5,
-    0.975, -0.975, 0.97500002, 0.99999994, -0.99999994, 1.0000001, -1.0000001,
-    f32::MIN_POSITIVE, -f32::MIN_POSITIVE, 1.0e-45, -1.0e-45,
-    f32::MAX, f32::MIN, f32::INFINITY, f32::NEG_INFINITY, f32::NAN, -f32::NAN,
-    f32::EPSILON, 255.0, 255.5, 256.0, -1.0e-7,
-    8388608.0, 8388607.5, 16777216.0, 16777215.0, -16777216.0,
-    2147483520.0, 2147483648.0, -2147483648.0, -2147483904.0, 4294967296.0, 4294967040.0,
-    3.141592654, -3.141592654, 6.283185307, 1.5707964, 100.0, -100.0, 1.0e10, -1.0e10, 1.0e30,
+    0.0,
+    -0.0,
+    1.0,
+    -1.0,
+    0.5,
+    -0.5,
+    1.5,
+    -1.5,
+    2.5,
+    -2.5,
+    3.5,
+    -3.5,
+    0.975,
+    -0.975,
+    0.97500002,
+    0.99999994,
+    -0.99999994,
+    1.0000001,
+    -1.0000001,
+    f32::MIN_POSITIVE,
+    -f32::MIN_POSITIVE,
+    1.0e-45,
+    -1.0e-45,
+    f32::MAX,
+    f32::MIN,
+    f32::INFINITY,
+    f32::NEG_INFINITY,
+    f32::NAN,
+    -f32::NAN,
+    f32::EPSILON,
+    255.0,
+    255.5,
+    256.0,
+    -1.0e-7,
+    8388608.0,
+    8388607.5,
+    16777216.0,
+    16777215.0,
+    -16777216.0,
+    2147483520.0,
+    2147483648.0,
+    -2147483648.0,
+    -2147483904.0,
+    4294967296.0,
+    4294967040.0,
+    3.141592654,
+    -3.141592654,
+    6.283185307,
+    1.5707964,
+    100.0,
+    -100.0,
+    1.0e10,
+    -1.0e10,
+    1.0e30,
 ];
 
 /// Map f32 bits to a monotonic integer line for ULP distances.
 fn ordered(bits: u32) -> i64 {
-    if bits & 0x8000_0000 != 0 { -i64::from(bits & 0x7fff_ffff) } else { i64::from(bits) }
+    if bits & 0x8000_0000 != 0 {
+        -i64::from(bits & 0x7fff_ffff)
+    } else {
+        i64::from(bits)
+    }
 }
 
 pub fn ulp_distance(a: f32, b: f32) -> u64 {
@@ -235,7 +293,14 @@ pub struct Check {
 
 impl Check {
     pub fn new(name: &str) -> Self {
-        Check { name: name.to_string(), compared: 0, mismatches: 0, nan_only: 0, max_ulp: 0, examples: Vec::new() }
+        Check {
+            name: name.to_string(),
+            compared: 0,
+            mismatches: 0,
+            nan_only: 0,
+            max_ulp: 0,
+            examples: Vec::new(),
+        }
     }
 
     fn miss(&mut self, what: String) {
@@ -258,7 +323,11 @@ impl Check {
             }
             self.miss(format!(
                 "{}: rust {:e} ({:#010x}) != c++ {:e} ({:#010x})",
-                input(), rust, rust.to_bits(), cpp, cpp.to_bits()
+                input(),
+                rust,
+                rust.to_bits(),
+                cpp,
+                cpp.to_bits()
             ));
         }
     }
@@ -280,7 +349,12 @@ impl Check {
         }
     }
 
-    pub fn eq<T: PartialEq + std::fmt::Debug>(&mut self, rust: T, cpp: T, input: impl FnOnce() -> String) {
+    pub fn eq<T: PartialEq + std::fmt::Debug>(
+        &mut self,
+        rust: T,
+        cpp: T,
+        input: impl FnOnce() -> String,
+    ) {
         self.compared += 1;
         if rust != cpp {
             self.miss(format!("{}: rust {:?} != c++ {:?}", input(), rust, cpp));
@@ -311,7 +385,12 @@ impl Check {
             self.name, self.compared, self.mismatches
         );
         assert!(self.compared > 0, "{}: nothing compared", self.name);
-        assert!(self.mismatches > 0, "{}: the planted bug was NOT caught by {} inputs", self.name, self.compared);
+        assert!(
+            self.mismatches > 0,
+            "{}: the planted bug was NOT caught by {} inputs",
+            self.name,
+            self.compared
+        );
     }
 
     /// Print the summary line without failing; returns the mismatch count.

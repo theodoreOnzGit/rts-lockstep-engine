@@ -136,7 +136,10 @@ fn step(slot: &mut [AsciiString; 4], op: &Op, bug: Bug, lg: &mut Vec<u8>) -> Opt
             }
             Op::Translate(a, w) => {
                 if bug == Bug::TranslateKeepsZeroLowByte {
-                    let bytes: Vec<u8> = w.iter().map(|&c| if c as u8 == 0 { b'?' } else { c as u8 }).collect();
+                    let bytes: Vec<u8> = w
+                        .iter()
+                        .map(|&c| if c as u8 == 0 { b'?' } else { c as u8 })
+                        .collect();
                     slot[*a as usize].clear();
                     slot[*a as usize].concat(&bytes)?;
                 } else {
@@ -183,7 +186,11 @@ fn step(slot: &mut [AsciiString; 4], op: &Op, bug: Bug, lg: &mut Vec<u8>) -> Opt
                     u8::from(s.ends_with_no_case(p)),
                     ord(s.compare(p)),
                 ]);
-                let nc = if bug == Bug::CaseSensitiveNoCase { s.compare(p) } else { s.compare_no_case(p) };
+                let nc = if bug == Bug::CaseSensitiveNoCase {
+                    s.compare(p)
+                } else {
+                    s.compare_no_case(p)
+                };
                 lg.push(ord(nc));
             }
             Op::Find(a, c) => {
@@ -231,7 +238,14 @@ fn run_rust(ops: &[Op], bug: Bug) -> Vec<u8> {
 fn run_cpp(ops: &[Op]) -> Vec<u8> {
     let script = encode(ops);
     let mut log = vec![0u8; 32 * 1024 * 1024];
-    let n = unsafe { cpp::ref_ascii_run(script.as_ptr(), script.len() as i32, log.as_mut_ptr(), log.len() as i32) };
+    let n = unsafe {
+        cpp::ref_ascii_run(
+            script.as_ptr(),
+            script.len() as i32,
+            log.as_mut_ptr(),
+            log.len() as i32,
+        )
+    };
     assert!(n >= 0, "C++ log overflow");
     log.truncate(n as usize);
     log
@@ -275,9 +289,18 @@ fn ascii_string_matches_cpp() {
     let mut g = Gen::new(501);
     let mut ok = Check::new("AsciiString script logs");
     let mut planted = [
-        (Bug::RemoveLastReleases, Check::new("AsciiString (removeLastChar releases)")),
-        (Bug::CaseSensitiveNoCase, Check::new("AsciiString (case-sensitive compareNoCase)")),
-        (Bug::TranslateKeepsZeroLowByte, Check::new("AsciiString (translate keeps 0 low bytes)")),
+        (
+            Bug::RemoveLastReleases,
+            Check::new("AsciiString (removeLastChar releases)"),
+        ),
+        (
+            Bug::CaseSensitiveNoCase,
+            Check::new("AsciiString (case-sensitive compareNoCase)"),
+        ),
+        (
+            Bug::TranslateKeepsZeroLowByte,
+            Check::new("AsciiString (translate keeps 0 low bytes)"),
+        ),
     ];
     let mut undefined = 0u32;
     let mut ops_total = 0usize;
@@ -293,8 +316,23 @@ fn ascii_string_matches_cpp() {
                 30..=36 => Op::Trim(a),
                 37..=41 => Op::ToLower(a),
                 42..=48 => Op::RemoveLast(a),
-                49..=52 => Op::Translate(a, (0..g.below(10)).map(|_| [0x41, 0x100, 0x1ff, 0x20, 0x61, g.u32() as u16][g.below(6) as usize]).collect()),
-                53..=62 => Op::NextToken(a, t, if g.below(3) == 0 { Some(b", ".to_vec()) } else { None }),
+                49..=52 => Op::Translate(
+                    a,
+                    (0..g.below(10))
+                        .map(|_| {
+                            [0x41, 0x100, 0x1ff, 0x20, 0x61, g.u32() as u16][g.below(6) as usize]
+                        })
+                        .collect(),
+                ),
+                53..=62 => Op::NextToken(
+                    a,
+                    t,
+                    if g.below(3) == 0 {
+                        Some(b", ".to_vec())
+                    } else {
+                        None
+                    },
+                ),
                 63..=64 => Op::Clear(a),
                 65..=67 => Op::Assign(a, t),
                 68..=79 => Op::Dump(a),
@@ -333,14 +371,22 @@ fn ascii_string_matches_cpp() {
                     }
                     let n = r.len().min(cc.len());
                     let first = (0..n).find(|&i| r[i] != cc[i]).unwrap_or(n);
-                    println!("first diff at byte {first}: rust {:?} c++ {:?}", &r[first..(first + 40).min(r.len())], &cc[first..(first + 40).min(cc.len())]);
+                    println!(
+                        "first diff at byte {first}: rust {:?} c++ {:?}",
+                        &r[first..(first + 40).min(r.len())],
+                        &cc[first..(first + 40).min(cc.len())]
+                    );
                     break;
                 }
             }
         }
-        ok.eq(&rust, &c, || format!("script {script} ({} ops)", defined.len()));
+        ok.eq(&rust, &c, || {
+            format!("script {script} ({} ops)", defined.len())
+        });
         for (bug, check) in planted.iter_mut() {
-            check.eq(run_rust(&defined, *bug), c.clone(), || format!("script {script}"));
+            check.eq(run_rust(&defined, *bug), c.clone(), || {
+                format!("script {script}")
+            });
         }
     }
     println!(

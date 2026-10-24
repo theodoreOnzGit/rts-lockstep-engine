@@ -339,16 +339,28 @@ impl UnicodeString {
     /// rest. False (and nothing changed) on an empty string; false, with
     /// both cleared, when only delimiters are left. (Upstream also returns
     /// false when `tok` is this string, which Rust's borrow rules exclude.)
-    pub fn next_token(&mut self, tok: &mut UnicodeString, delimiters: &UnicodeString) -> Result<bool, UnicodeStringError> {
+    pub fn next_token(
+        &mut self,
+        tok: &mut UnicodeString,
+        delimiters: &UnicodeString,
+    ) -> Result<bool, UnicodeStringError> {
         if self.is_empty() {
             return Ok(false);
         }
         let default: [u16; 4] = [0x20, 0x09, 0x0a, 0x0d];
-        let seps: &[u16] = if delimiters.is_empty() { &default } else { delimiters.str() };
+        let seps: &[u16] = if delimiters.is_empty() {
+            &default
+        } else {
+            delimiters.str()
+        };
         let s = self.str();
         // wcsspn, then wcscspn
         let start = s.iter().position(|c| !seps.contains(c)).unwrap_or(s.len());
-        let end = start + s[start..].iter().position(|c| seps.contains(c)).unwrap_or(s.len() - start);
+        let end = start
+            + s[start..]
+                .iter()
+                .position(|c| seps.contains(c))
+                .unwrap_or(s.len() - start);
         if end > start {
             let len = end - start;
             // tok->getBufferForRead(len + 1): a buffer of len + 2 units.
@@ -405,9 +417,15 @@ mod tests {
     fn buffer_state_tokens_and_limits() {
         let mut a = UnicodeString::try_from_chars(&w("x")).unwrap();
         a.remove_last_char().unwrap();
-        assert!(a.has_buffer() && a.is_empty(), "removeLastChar keeps the buffer");
+        assert!(
+            a.has_buffer() && a.is_empty(),
+            "removeLastChar keeps the buffer"
+        );
         assert_eq!(a.try_get_char_at(0), Ok(0));
-        assert_eq!(a.try_get_char_at(1), Err(UnicodeStringError::IndexOutOfRange));
+        assert_eq!(
+            a.try_get_char_at(1),
+            Err(UnicodeStringError::IndexOutOfRange)
+        );
         assert_eq!(a, UnicodeString::new(), "equality is wcscmp of str()");
         a.trim().unwrap();
         assert!(a.has_buffer(), "trim of an empty buffer leaves it");
@@ -418,13 +436,21 @@ mod tests {
         assert_eq!((t.str(), s.str()), (&w("alpha")[..], &w(" beta")[..]));
 
         let mut b = UnicodeString::new();
-        b.translate(&AsciiString::try_from_bytes(b"A\xe9").unwrap()).unwrap();
-        assert_eq!(b.str(), &[0x41, 0xffe9], "char is signed: 0xe9 widens to 0xffe9");
+        b.translate(&AsciiString::try_from_bytes(b"A\xe9").unwrap())
+            .unwrap();
+        assert_eq!(
+            b.str(),
+            &[0x41, 0xffe9],
+            "char is signed: 0xe9 widens to 0xffe9"
+        );
 
         // 16,380 units is the most a buffer holds: 4 + 2 * 16,381 <= 32,767.
         let long = vec![b'a' as u16; 16380];
         assert!(UnicodeString::try_from_chars(&long).is_ok());
-        assert_eq!(UnicodeString::try_from_chars(&vec![b'a' as u16; 16381]), Err(UnicodeStringError::TooLong));
+        assert_eq!(
+            UnicodeString::try_from_chars(&vec![b'a' as u16; 16381]),
+            Err(UnicodeStringError::TooLong)
+        );
         // trim on a unit from 0x80 is not established
         let mut n = UnicodeString::try_from_chars(&[0xa0, 0x41]).unwrap();
         assert_eq!(n.trim(), Err(UnicodeStringError::NonAsciiCharClass));
@@ -433,9 +459,17 @@ mod tests {
     #[test]
     fn comparisons_and_overlapping_sets() {
         let a = UnicodeString::try_from_chars(&w("A")).unwrap();
-        assert_eq!(a.compare_no_case(&w("_")), Ordering::Greater, "folded to lower case: 'a' > '_'");
+        assert_eq!(
+            a.compare_no_case(&w("_")),
+            Ordering::Greater,
+            "folded to lower case: 'a' > '_'"
+        );
         assert_eq!(a.compare(&w("_")), Ordering::Less);
-        assert_eq!(a.compare(&[0xffff]), Ordering::Less, "units order as unsigned");
+        assert_eq!(
+            a.compare(&[0xffff]),
+            Ordering::Less,
+            "units order as unsigned"
+        );
         let mut t = UnicodeString::try_from_chars(&w(" \t x y \r\n")).unwrap();
         t.trim().unwrap();
         assert_eq!(t.str(), &w("x y")[..]);

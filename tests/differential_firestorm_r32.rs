@@ -75,7 +75,9 @@ use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
-use rts_lockstep_engine::logic::modules::firestorm_dynamic_geometry_info_update::{FirestormDynamicGeometryInfoUpdateModuleData, MAX_FIRESTORM_SYSTEMS};
+use rts_lockstep_engine::logic::modules::firestorm_dynamic_geometry_info_update::{
+    FirestormDynamicGeometryInfoUpdateModuleData, MAX_FIRESTORM_SYSTEMS,
+};
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::ModuleHandle;
 use rts_lockstep_engine::logic::world::module_probe::{ProbeAnswers, ProbeModule};
@@ -104,12 +106,17 @@ fn put_str(v: &mut Vec<u8>, s: &[u8]) {
     v.extend_from_slice(s);
 }
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::FirestormDynamicGeometryInfoUpdate(Arc::new(FirestormDynamicGeometryInfoUpdateModuleData::friend_new_module_data(Some(ini))?)));
+    *out = Some(ModuleDataKind::FirestormDynamicGeometryInfoUpdate(
+        Arc::new(FirestormDynamicGeometryInfoUpdateModuleData::friend_new_module_data(Some(ini))?),
+    ));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }];
+    let blocks = [BlockParse {
+        token: "D",
+        parse: read_block,
+    }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -134,7 +141,14 @@ impl FxIds {
 fn put_data(v: &mut Vec<u8>, d: &FirestormDynamicGeometryInfoUpdateModuleData, fx: &mut FxIds) {
     let g = &d.geom;
     put_u32(v, g.initial_delay);
-    for r in [g.initial_height, g.initial_major_radius, g.initial_minor_radius, g.final_height, g.final_major_radius, g.final_minor_radius] {
+    for r in [
+        g.initial_height,
+        g.initial_major_radius,
+        g.initial_minor_radius,
+        g.final_height,
+        g.final_major_radius,
+        g.final_minor_radius,
+    ] {
         put_u32(v, r.to_bits());
     }
     put_u32(v, g.transition_time);
@@ -143,7 +157,13 @@ fn put_data(v: &mut Vec<u8>, d: &FirestormDynamicGeometryInfoUpdateModuleData, f
         put_str(v, p.as_deref().unwrap_or(b""));
     }
     put_i32(v, fx.id(&d.fx_list));
-    for r in [d.particle_offset_z, d.scorch_size, d.delay_between_damage_frames, d.damage_amount, d.max_height_for_damage] {
+    for r in [
+        d.particle_offset_z,
+        d.scorch_size,
+        d.delay_between_damage_frames,
+        d.damage_amount,
+        d.max_height_for_damage,
+    ] {
         put_u32(v, r.to_bits());
     }
 }
@@ -171,7 +191,9 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
     let systems: Vec<String> = (0..MAX_FIRESTORM_SYSTEMS).map(|_| str_(&mut p)).collect();
     let tail: Vec<u32> = (0..6).map(|_| u32_(&mut p)).collect();
     let (w, l) = (u32_(&mut p), u32_(&mut p));
-    out.push(format!("data {head:x?} {systems:?} {tail:x?} constructor wakes {w} last {l}"));
+    out.push(format!(
+        "data {head:x?} {systems:?} {tail:x?} constructor wakes {w} last {l}"
+    ));
     for i in 0..n_ops {
         if p >= b.len() {
             break;
@@ -196,45 +218,85 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
     let mut lines: Vec<String> = Vec::new();
     let real = |g: &mut Gen| pick(g, &["0", "5", "12.5", "30", "-4"]).to_string();
     if g.below(100) < 70 {
-        lines.push(format!("InitialDelay = {}", pick(g, &["0", "33", "34", "100", "300"])));
+        lines.push(format!(
+            "InitialDelay = {}",
+            pick(g, &["0", "33", "34", "100", "300"])
+        ));
     }
-    for f in ["InitialHeight", "InitialMajorRadius", "InitialMinorRadius", "FinalHeight", "FinalMajorRadius", "FinalMinorRadius"] {
+    for f in [
+        "InitialHeight",
+        "InitialMajorRadius",
+        "InitialMinorRadius",
+        "FinalHeight",
+        "FinalMajorRadius",
+        "FinalMinorRadius",
+    ] {
         if g.below(100) < 75 {
             let r = real(g);
             lines.push(format!("{f} = {r}"));
         }
     }
     if g.below(100) < 80 {
-        lines.push(format!("TransitionTime = {}", pick(g, &["0", "33", "100", "200", "500"])));
+        lines.push(format!(
+            "TransitionTime = {}",
+            pick(g, &["0", "33", "100", "200", "500"])
+        ));
     }
     if g.below(100) < 60 {
-        lines.push(format!("ReverseAtTransitionTime = {}", pick(g, &["Yes", "No"])));
+        lines.push(format!(
+            "ReverseAtTransitionTime = {}",
+            pick(g, &["Yes", "No"])
+        ));
     }
     if g.below(100) < 70 {
-        lines.push(format!("DelayBetweenDamageFrames = {}", pick(g, &["0", "100", "250", "500"])));
+        lines.push(format!(
+            "DelayBetweenDamageFrames = {}",
+            pick(g, &["0", "100", "250", "500"])
+        ));
     }
     if g.below(100) < 70 {
         lines.push(format!("DamageAmount = {}", pick(g, &["0", "10", "35.5"])));
     }
     if g.below(100) < 40 {
-        lines.push(format!("MaxHeightForDamage = {}", pick(g, &["0", "5", "20", "-1"])));
+        lines.push(format!(
+            "MaxHeightForDamage = {}",
+            pick(g, &["0", "5", "20", "-1"])
+        ));
     }
     for k in 1..=MAX_FIRESTORM_SYSTEMS {
         if g.below(100) < 18 {
-            lines.push(format!("ParticleSystem{k} = {}", pick(g, &["PS_A", "PS_B", "None"])));
+            lines.push(format!(
+                "ParticleSystem{k} = {}",
+                pick(g, &["PS_A", "PS_B", "None"])
+            ));
         }
     }
     if g.below(100) < 50 {
         lines.push(format!("FXList = {}", pick(g, &["FX_A", "FX_B", "None"])));
     }
     if g.below(100) < 50 {
-        lines.push(format!("ParticleOffsetZ = {}", pick(g, &["0", "2", "-1.5"])));
+        lines.push(format!(
+            "ParticleOffsetZ = {}",
+            pick(g, &["0", "2", "-1.5"])
+        ));
     }
     if g.below(100) < 50 {
         lines.push(format!("ScorchSize = {}", pick(g, &["0", "20", "45.5"])));
     }
     if !clean {
-        lines.push(pick(g, &["NoSuchField = 1", "DamageAmount = x", "ParticleSystem17 = PS_A", "TransitionTime = x", "ScorchSize"]).to_string());
+        lines.push(
+            pick(
+                g,
+                &[
+                    "NoSuchField = 1",
+                    "DamageAmount = x",
+                    "ParticleSystem17 = PS_A",
+                    "TransitionTime = x",
+                    "ScorchSize",
+                ],
+            )
+            .to_string(),
+        );
     }
     let mut s = String::from("D\n");
     for l in &lines {
@@ -259,7 +321,13 @@ struct Tally {
     reacts: u64,
 }
 
-fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
+fn run_xfer(
+    w: &mut World,
+    me: ObjectId,
+    idx: usize,
+    how: u32,
+    saved: &[u8],
+) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -322,7 +390,11 @@ fn set_scene(w: &mut World, cfg: &[u32; 16]) {
     o.team = if f >> 1 & 1 != 0 { 1 } else { 0 };
     w.cuts.range_scan = scan_list(cfg[6]);
     for k in 0..4u32 {
-        let p = Coord3D { x: 10.0 * k as f32, y: -2.5, z: f32::from_bits(cfg[7 + k as usize]) };
+        let p = Coord3D {
+            x: 10.0 * k as f32,
+            y: -2.5,
+            z: f32::from_bits(cfg[7 + k as usize]),
+        };
         w.set_position(k as ObjectId + 1, &p);
     }
     w.cuts.terrain_ground = [f32::from_bits(cfg[11]); 8];
@@ -330,11 +402,19 @@ fn set_scene(w: &mut World, cfg: &[u32; 16]) {
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]], tally: &mut Tally) -> (Vec<u8>, World) {
+fn rust_run(
+    ctx: &Ctx,
+    data: ModuleDataKind,
+    cfg_in: &[u32; 16],
+    ops: &[[u32; 4]],
+    tally: &mut Tally,
+) -> (Vec<u8>, World) {
     let mut cfg = *cfg_in;
     let mut v = Vec::new();
     let mut fx = FxIds::default();
-    let ModuleDataKind::FirestormDynamicGeometryInfoUpdate(d) = &data else { unreachable!() };
+    let ModuleDataKind::FirestormDynamicGeometryInfoUpdate(d) = &data else {
+        unreachable!()
+    };
     put_data(&mut v, d, &mut fx);
     let mut w = World::new();
     w.names = ctx.names.clone();
@@ -346,20 +426,58 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]
     w.players.set_player_count(1);
     w.teams.insert_team(Team::new(1, 0)).unwrap();
     w.cuts.team_players.insert(1, 0);
-    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"FirestormDynamicGeometryInfoUpdate", b"ModuleTag_Firestorm", &data).unwrap().unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(
+        w.next_object_id(),
+        b"FirestormDynamicGeometryInfoUpdate",
+        b"ModuleTag_Firestorm",
+        &data,
+    )
+    .unwrap()
+    .unwrap();
     let body = || {
         let mut b = NewModule::plain(b"R32Body", b"ModuleTag_Body");
         b.interfaces = MODULEINTERFACE_BODY;
-        b.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 1000.0, Default::default())));
+        b.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+            ProbeAnswers::default(),
+            1000.0,
+            Default::default(),
+        )));
         b
     };
-    let tt = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
-    assert_eq!(w.new_object(NewObject { template: tt.clone(), status: Default::default(), team: None, modules: vec![m, body()] }).unwrap(), 1);
+    let tt = Arc::new(ThingTemplate::from_object_values(
+        &ObjectTemplateValues::default(),
+    ));
+    assert_eq!(
+        w.new_object(NewObject {
+            template: tt.clone(),
+            status: Default::default(),
+            team: None,
+            modules: vec![m, body()]
+        })
+        .unwrap(),
+        1
+    );
     for k in 2..=4 {
-        assert_eq!(w.new_object(NewObject { template: tt.clone(), status: Default::default(), team: None, modules: vec![body()] }).unwrap(), k);
+        assert_eq!(
+            w.new_object(NewObject {
+                template: tt.clone(),
+                status: Default::default(),
+                team: None,
+                modules: vec![body()]
+            })
+            .unwrap(),
+            k
+        );
     }
-    let idx = w.find_module(1, b"FirestormDynamicGeometryInfoUpdate").unwrap();
-    let u = w.update_handle_of_module(ModuleHandle { object: 1, index: idx }).expect("an update module");
+    let idx = w
+        .find_module(1, b"FirestormDynamicGeometryInfoUpdate")
+        .unwrap();
+    let u = w
+        .update_handle_of_module(ModuleHandle {
+            object: 1,
+            index: idx,
+        })
+        .expect("an update module");
     let mine = |l: &str| -> Option<u32> {
         let (i, f) = l.split_once(' ').unwrap();
         (i.parse::<i32>().unwrap() == i32::from(idx)).then(|| f.parse().unwrap())
@@ -378,7 +496,13 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]
         2 => GeometryType::Box,
         _ => GeometryType::Sphere,
     };
-    w.objects.find_mut(1).unwrap().geometry_info = GeometryInfo::new(geom_type, cfg[2] >> 4 & 1 != 0, f32::from_bits(cfg[3]), f32::from_bits(cfg[4]), f32::from_bits(cfg[5]));
+    w.objects.find_mut(1).unwrap().geometry_info = GeometryInfo::new(
+        geom_type,
+        cfg[2] >> 4 & 1 != 0,
+        f32::from_bits(cfg[3]),
+        f32::from_bits(cfg[4]),
+        f32::from_bits(cfg[5]),
+    );
     set_scene(&mut w, &cfg);
     let mut saved: Vec<u8> = Vec::new();
     for o in ops {
@@ -396,7 +520,10 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]
         let (mut xst, mut xbytes, mut crc, mut res) = (-2i32, Vec::new(), 0u32, 0u32);
         match o[0] {
             0 => {
-                res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
+                res = w
+                    .with_body(u, |b, w| b.update(w, u))
+                    .expect("the module is in its slot")
+                    .0;
                 tally.updates += 1;
             }
             3..=5 => {
@@ -417,7 +544,10 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]
             _ => unreachable!(),
         }
         let new_errors = &w.cuts.module_errors[errors_before..];
-        let status = if new_errors.iter().any(|(_, e)| e.kind == IniErrorKind::BadArg) {
+        let status = if new_errors
+            .iter()
+            .any(|(_, e)| e.kind == IniErrorKind::BadArg)
+        {
             3
         } else if new_errors.iter().any(|(_, e)| !e.is_undefined()) {
             2
@@ -433,22 +563,43 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]
                 _ => None,
             })
             .collect();
-        let (mut ev_iter, mut cut_iter) = (events.into_iter(), w.cuts.log.take().unwrap().into_iter());
+        let (mut ev_iter, mut cut_iter) =
+            (events.into_iter(), w.cuts.log.take().unwrap().into_iter());
         let (mut log, mut wakes, mut last) = (Vec::new(), 0u32, 0u32);
         let b = |x: f32| x.to_bits();
         let radius_logged = cfg[1] >> 2 & 3 < 2;
         for t in w.cuts.trace.take().unwrap() {
             if t.starts_with("cut ") {
                 match cut_iter.next() {
-                    Some(CutCall::ParticleSystemCreate { template, position: p, id }) => {
+                    Some(CutCall::ParticleSystemCreate {
+                        template,
+                        position: p,
+                        id,
+                    }) => {
                         tally.systems += 1;
-                        log.push(format!("psys {} {id} {:08x},{:08x},{:08x}", String::from_utf8_lossy(&template), b(p.x), b(p.y), b(p.z)))
+                        log.push(format!(
+                            "psys {} {id} {:08x},{:08x},{:08x}",
+                            String::from_utf8_lossy(&template),
+                            b(p.x),
+                            b(p.y),
+                            b(p.z)
+                        ))
                     }
-                    Some(CutCall::PartitionIterateObjectsInRangeAt { position: p, range, .. }) => {
+                    Some(CutCall::PartitionIterateObjectsInRangeAt {
+                        position: p, range, ..
+                    }) => {
                         tally.scans += 1;
-                        log.push(format!("scan {:08x} {:08x} {:08x} {:08x} 0", b(p.x), b(p.y), b(p.z), b(range)))
+                        log.push(format!(
+                            "scan {:08x} {:08x} {:08x} {:08x} 0",
+                            b(p.x),
+                            b(p.y),
+                            b(p.z),
+                            b(range)
+                        ))
                     }
-                    Some(CutCall::TerrainGetGroundHeight { x, y }) => log.push(format!("ground {:08x} {:08x}", b(x), b(y))),
+                    Some(CutCall::TerrainGetGroundHeight { x, y }) => {
+                        log.push(format!("ground {:08x} {:08x}", b(x), b(y)))
+                    }
                     _ => {}
                 }
             } else if t.starts_with("evt ") {
@@ -457,14 +608,28 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]
                         tally.reacts += 1;
                         log.push("react".to_string())
                     }
-                    Some(ObjectClientEvent::ParticleSystemSetEmissionRadius { id, radius }) if radius_logged => {
+                    Some(ObjectClientEvent::ParticleSystemSetEmissionRadius { id, radius })
+                        if radius_logged =>
+                    {
                         tally.radii += 1;
                         log.push(format!("psradius {id} {:08x}", b(radius)))
                     }
-                    Some(ObjectClientEvent::FxListDoFxObj { fx: name, .. }) => log.push(format!("fx {}", fx.id(&Some(name)))),
-                    Some(ObjectClientEvent::GameClientAddScorch { position: p, radius, scorch_type }) => {
+                    Some(ObjectClientEvent::FxListDoFxObj { fx: name, .. }) => {
+                        log.push(format!("fx {}", fx.id(&Some(name))))
+                    }
+                    Some(ObjectClientEvent::GameClientAddScorch {
+                        position: p,
+                        radius,
+                        scorch_type,
+                    }) => {
                         tally.scorches += 1;
-                        log.push(format!("scorch {:08x} {:08x} {:08x} {:08x} {scorch_type}", b(p.x), b(p.y), b(p.z), b(radius)))
+                        log.push(format!(
+                            "scorch {:08x} {:08x} {:08x} {:08x} {scorch_type}",
+                            b(p.x),
+                            b(p.y),
+                            b(p.z),
+                            b(radius)
+                        ))
                     }
                     _ => {}
                 }
@@ -491,7 +656,9 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]
         put_u32(&mut v, crc);
         let ob = w.objects.find(1).unwrap();
         let slot = &ob.behaviors[u.index as usize];
-        let Some(UpdateBody::FirestormDynamicGeometryInfoUpdate(m)) = slot.body.as_ref() else { panic!("the module is back in its slot") };
+        let Some(UpdateBody::FirestormDynamicGeometryInfoUpdate(m)) = slot.body.as_ref() else {
+            panic!("the module is back in its slot")
+        };
         for s in m.geometry_update().state_words() {
             put_u32(&mut v, s);
         }
@@ -504,13 +671,21 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 16], ops: &[[u32; 4]
         put_u32(&mut v, gi.get_max_height_above_position().to_bits());
         put_u32(&mut v, gi.get_major_radius().to_bits());
         put_u32(&mut v, gi.get_minor_radius().to_bits());
-        put_u32(&mut v, w.players.get_nth(0).map_or(0, |p| p.academy_stats.firestorms_created()));
+        put_u32(
+            &mut v,
+            w.players
+                .get_nth(0)
+                .map_or(0, |p| p.academy_stats.firestorms_created()),
+        );
     }
     (v, w)
 }
 
 fn cases() -> usize {
-    std::env::var("L9R32_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
+    std::env::var("L9R32_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9_000)
 }
 
 #[test]
@@ -553,7 +728,11 @@ fn firestorm_dynamic_geometry_info_update_matches_upstream() {
             *c = real(&mut g, &[0.0, 2.0, 25.0, -3.0]);
         }
         cfg[11] = real(&mut g, &[0.0, 1.5, -2.0]);
-        cfg[12] = if g.below(3) == 0 { (2 + g.below(3)) | g.below(2) << 8 } else { 0 };
+        cfg[12] = if g.below(3) == 0 {
+            (2 + g.below(3)) | g.below(2) << 8
+        } else {
+            0
+        };
         let n_ops = 1 + g.below(80) as usize;
         let mut frame = cfg[0];
         let ops: Vec<[u32; 4]> = (0..n_ops)
@@ -566,7 +745,11 @@ fn firestorm_dynamic_geometry_info_update_matches_upstream() {
                 17..=18 => {
                     let a = *pick(&mut g, &[&1u32, &6, &7, &8, &11, &12]);
                     let b = match a {
-                        1 => u32::from(g.below(6) != 0) | u32::from(g.below(10) != 0) << 1 | g.below(3) << 2,
+                        1 => {
+                            u32::from(g.below(6) != 0)
+                                | u32::from(g.below(10) != 0) << 1
+                                | g.below(3) << 2
+                        }
                         6 => gen_scan(&mut g),
                         11 => real(&mut g, &[0.0, 1.5, -2.0]),
                         12 => (2 + g.below(3)) | g.below(2) << 8,
@@ -601,7 +784,19 @@ fn firestorm_dynamic_geometry_info_update_matches_upstream() {
         let status = unsafe {
             cpp::ref_ini_reset();
             cpp::ref_ini_add_file(cfile.as_ptr(), text.as_ptr() as *const _, text.len() as i32);
-            cpp::ref_l9r32_run(cfile.as_ptr(), cxfer.as_ptr(), cfg.as_ptr(), ops.len() as i32, flat.as_ptr(), buf.as_mut_ptr(), buf.len() as i32, &mut len, msg.as_mut_ptr() as *mut _, msg.len() as i32, &mut code)
+            cpp::ref_l9r32_run(
+                cfile.as_ptr(),
+                cxfer.as_ptr(),
+                cfg.as_ptr(),
+                ops.len() as i32,
+                flat.as_ptr(),
+                buf.as_mut_ptr(),
+                buf.len() as i32,
+                &mut len,
+                msg.as_mut_ptr() as *mut _,
+                msg.len() as i32,
+                &mut code,
+            )
         };
         buf.truncate(len as usize);
         let detail = match status {
@@ -610,8 +805,21 @@ fn firestorm_dynamic_geometry_info_update_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || format!("case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
-        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
+        let what = || {
+            format!(
+                "case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}",
+                show(&text)
+            )
+        };
+        read.eq(
+            &outcome,
+            &Outcome {
+                status,
+                detail,
+                crc: 0,
+            },
+            what,
+        );
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
@@ -619,8 +827,17 @@ fn firestorm_dynamic_geometry_info_update_matches_upstream() {
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
-            eprintln!("--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
+            let i = dr
+                .iter()
+                .zip(dc.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(dr.len().min(dc.len()));
+            eprintln!(
+                "--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}",
+                show(&text),
+                dr.get(i),
+                dc.get(i)
+            );
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -637,5 +854,11 @@ fn firestorm_dynamic_geometry_info_update_matches_upstream() {
     println!("R32 excluded: {reasons:?}");
     read.finish();
     run.finish();
-    assert!(tally.systems * 2 > cases as u64 && tally.radii > cases as u64 && tally.scorches * 10 > cases as u64 && tally.damages > cases as u64, "the generator must reach every effect");
+    assert!(
+        tally.systems * 2 > cases as u64
+            && tally.radii > cases as u64
+            && tally.scorches * 10 > cases as u64
+            && tally.damages > cases as u64,
+        "the generator must reach every effect"
+    );
 }

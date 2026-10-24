@@ -117,12 +117,17 @@ fn status_from(w: &[u32]) -> ObjectStatusMaskType {
 }
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::CreateObjectDie(Arc::new(CreateObjectDieModuleData::friend_new_module_data(Some(ini))?)));
+    *out = Some(ModuleDataKind::CreateObjectDie(Arc::new(
+        CreateObjectDieModuleData::friend_new_module_data(Some(ini))?,
+    )));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }];
+    let blocks = [BlockParse {
+        token: "D",
+        parse: read_block,
+    }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -130,7 +135,9 @@ fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>
 
 /// The data dump of `ref_l9r14_run`: the die mux, the list (`OCL_A` 0, `OCL_B` 1, -1 for none or no list), the flag.
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind) {
-    let ModuleDataKind::CreateObjectDie(d) = data else { unreachable!("not a CreateObjectDie") };
+    let ModuleDataKind::CreateObjectDie(d) = data else {
+        unreachable!("not a CreateObjectDie")
+    };
     put_die_mux(v, &d.die.die_mux_data);
     put_i32(
         v,
@@ -177,7 +184,9 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let blen = u32_(&mut p);
         let bytes: Vec<u32> = (0..blen).map(|_| u32_(&mut p)).collect();
         let crc = u32_(&mut p);
-        out.push(format!("op {i}: status {st} log {log:?} xfer {xst} bytes {bytes:?} crc {crc:#x}"));
+        out.push(format!(
+            "op {i}: status {st} log {log:?} xfer {xst} bytes {bytes:?} crc {crc:#x}"
+        ));
     }
     out
 }
@@ -185,8 +194,26 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 // -- generators --
 
 const DEATH_NAMES: [&str; 20] = [
-    "NONE", "CRUSHED", "BURNED", "EXPLODED", "POISONED", "TOPPLED", "FLOODED", "SUICIDED", "LASERED", "DETONATED", "SPLATTED", "POISONED_BETA",
-    "EXTRA_2", "EXTRA_3", "EXTRA_4", "EXTRA_5", "EXTRA_6", "EXTRA_7", "EXTRA_8", "POISONED_GAMMA",
+    "NONE",
+    "CRUSHED",
+    "BURNED",
+    "EXPLODED",
+    "POISONED",
+    "TOPPLED",
+    "FLOODED",
+    "SUICIDED",
+    "LASERED",
+    "DETONATED",
+    "SPLATTED",
+    "POISONED_BETA",
+    "EXTRA_2",
+    "EXTRA_3",
+    "EXTRA_4",
+    "EXTRA_5",
+    "EXTRA_6",
+    "EXTRA_7",
+    "EXTRA_8",
+    "POISONED_GAMMA",
 ];
 
 fn death_tokens(g: &mut Gen) -> String {
@@ -251,7 +278,10 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
         lines.push(format!("RequiredStatus = {}", status_tokens(g)));
     }
     if g.below(100) < 85 {
-        lines.push(format!("CreationList = {}", pick(g, &["OCL_A", "OCL_B", "OCL_A", "ocl_a", "None", "OCL_C"])));
+        lines.push(format!(
+            "CreationList = {}",
+            pick(g, &["OCL_A", "OCL_B", "OCL_A", "ocl_a", "None", "OCL_C"])
+        ));
     }
     if g.below(100) < 70 {
         lines.push(format!("TransferPreviousHealth = {}", gen_bool(g, clean)));
@@ -281,7 +311,13 @@ struct Tally {
     xfers: u64,
 }
 
-fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
+fn run_xfer(
+    w: &mut World,
+    me: ObjectId,
+    idx: usize,
+    how: u32,
+    saved: &[u8],
+) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -331,7 +367,11 @@ struct Slots {
 /// The flags (bits 0-3 the objects' AIs, 4 object 1's body, 5 object 3's), applied to the scene.
 fn apply_flags(w: &mut World, flags: u32, s: &Slots) {
     for k in 0..4 {
-        w.objects.find_mut(k as i32 + 1).unwrap().ai = if flags >> k & 1 != 0 { Some(s.ai[k]) } else { None };
+        w.objects.find_mut(k as i32 + 1).unwrap().ai = if flags >> k & 1 != 0 {
+            Some(s.ai[k])
+        } else {
+            None
+        };
     }
     w.objects.find_mut(1).unwrap().body = (flags & 16 != 0).then_some(s.body1);
     w.objects.find_mut(3).unwrap().body = (flags & 32 != 0).then_some(s.body3);
@@ -341,13 +381,21 @@ fn set_ocl_results(w: &mut World, a: u32, b: u32) {
     w.cuts.ocl_create_result.clear();
     for (name, id) in [(&b"OCL_A"[..], a), (b"OCL_B", b)] {
         if id != 0 {
-            w.cuts.ocl_create_result.insert(name.to_vec(), id as ObjectId);
+            w.cuts
+                .ocl_create_result
+                .insert(name.to_vec(), id as ObjectId);
         }
     }
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 12], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
+fn rust_run(
+    ctx: &Ctx,
+    data: ModuleDataKind,
+    cfg: &[u32; 12],
+    ops: &[[u32; 6]],
+    tally: &mut Tally,
+) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     put_data(&mut v, &data);
     let mut w = World::new();
@@ -357,33 +405,61 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 12], ops: &[[u32; 6]], 
         // the fixture's two lists (the case matters)
         ocls.ocls.insert(w.names.name_to_key(n), Default::default());
     }
-    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), object_creation_list_store: ocls, ..Default::default() });
+    w.statics = Arc::new(GameStatics {
+        upgrade_center: ctx.center.clone(),
+        object_creation_list_store: ocls,
+        ..Default::default()
+    });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.probe_effect_trace = true;
     w.cuts.body.probe_trace = true;
     w.teams.insert_team(Team::new(1, 0)).unwrap();
-    let plain = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
+    let plain = Arc::new(ThingTemplate::from_object_values(
+        &ObjectTemplateValues::default(),
+    ));
     let ai = || {
         let mut a = NewModule::plain(b"CtProbe", b"ModuleTag_AI");
         a.is_ai = true;
-        a.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
+        a.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+            ProbeAnswers::default(),
+            0.0,
+            Default::default(),
+        )));
         a
     };
     let body = |answers: ProbeAnswers, max: f32| {
         let mut b = NewModule::plain(b"CtBody", b"ModuleTag_Body");
         b.interfaces = MODULEINTERFACE_BODY;
-        b.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(answers, max, Default::default())));
+        b.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+            answers,
+            max,
+            Default::default(),
+        )));
         b
     };
-    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), CLASS.as_bytes(), b"ModuleTag_Die", &data).unwrap().unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(
+        w.next_object_id(),
+        CLASS.as_bytes(),
+        b"ModuleTag_Die",
+        &data,
+    )
+    .unwrap()
+    .unwrap();
     let answers1 = ProbeAnswers {
         previous_health: Some(f32::from_bits(cfg[2])),
         subdual_damage: Some(f32::from_bits(cfg[3])),
         last_damage_source: Some(cfg[4] as ObjectId),
         ..Default::default()
     };
-    let me = w.new_object(NewObject { template: plain.clone(), status: ObjectStatusMaskType::default(), team: Some(1), modules: vec![m, ai(), body(answers1, f32::from_bits(cfg[1]))] }).unwrap();
+    let me = w
+        .new_object(NewObject {
+            template: plain.clone(),
+            status: ObjectStatusMaskType::default(),
+            team: Some(1),
+            modules: vec![m, ai(), body(answers1, f32::from_bits(cfg[1]))],
+        })
+        .unwrap();
     assert_eq!(me, 1);
     for k in 2..=4 {
         // object 3's body never dies of what it is given (the driver's only logs)
@@ -391,12 +467,32 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 12], ops: &[[u32; 6]], 
         if k == 3 {
             mods.push(body(ProbeAnswers::default(), 1.0e9));
         }
-        let id = w.new_object(NewObject { template: plain.clone(), status: ObjectStatusMaskType::default(), team: Some(1), modules: mods }).unwrap();
+        let id = w
+            .new_object(NewObject {
+                template: plain.clone(),
+                status: ObjectStatusMaskType::default(),
+                team: Some(1),
+                modules: mods,
+            })
+            .unwrap();
         assert_eq!(id, k);
     }
-    let slot = |w: &World, id: ObjectId, name: &[u8]| w.objects.find(id).unwrap().modules.iter().position(|m| m.name == name).unwrap() as u16;
+    let slot = |w: &World, id: ObjectId, name: &[u8]| {
+        w.objects
+            .find(id)
+            .unwrap()
+            .modules
+            .iter()
+            .position(|m| m.name == name)
+            .unwrap() as u16
+    };
     let slots = Slots {
-        ai: [slot(&w, 1, b"CtProbe"), slot(&w, 2, b"CtProbe"), slot(&w, 3, b"CtProbe"), slot(&w, 4, b"CtProbe")],
+        ai: [
+            slot(&w, 1, b"CtProbe"),
+            slot(&w, 2, b"CtProbe"),
+            slot(&w, 3, b"CtProbe"),
+            slot(&w, 4, b"CtProbe"),
+        ],
         body1: slot(&w, 1, b"CtBody"),
         body3: slot(&w, 3, b"CtBody"),
     };
@@ -442,15 +538,22 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 12], ops: &[[u32; 6]], 
             }
             _ => unreachable!(),
         }
-        let threw = w.cuts.module_errors[errors_before..].iter().any(|(_, e)| !e.is_undefined());
+        let threw = w.cuts.module_errors[errors_before..]
+            .iter()
+            .any(|(_, e)| !e.is_undefined());
         put_i32(&mut v, if threw { 2 } else { 0 });
         let cuts = w.cuts.log.take().unwrap();
         let mut cut_iter = cuts.iter();
         let mut log: Vec<String> = Vec::new();
         for t in w.cuts.trace.take().unwrap() {
             if t.starts_with("cut ") {
-                if let Some(CutCall::OclCreateWithSecondary { secondary, ocl, .. }) = cut_iter.next() {
-                    log.push(format!("ocl {}", if ocl.as_slice() == b"OCL_A" { 0 } else { 1 }));
+                if let Some(CutCall::OclCreateWithSecondary { secondary, ocl, .. }) =
+                    cut_iter.next()
+                {
+                    log.push(format!(
+                        "ocl {}",
+                        if ocl.as_slice() == b"OCL_A" { 0 } else { 1 }
+                    ));
                     if *secondary != INVALID_ID {
                         log.push(format!("oclsec {secondary}"));
                     }
@@ -477,7 +580,10 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 12], ops: &[[u32; 6]], 
 }
 
 fn cases() -> usize {
-    std::env::var("L9R14_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
+    std::env::var("L9R14_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9_000)
 }
 
 #[test]
@@ -525,11 +631,31 @@ fn create_object_die_matches_upstream() {
                     let death = 1 + g.below(11);
                     // not LEVEL_REGULAR (0): `getVeterancyLevelFlag` shifts by -1 there, as `getDeathTypeFlag` does (`common::game_common::veterancy_bit`)
                     let level = 1 + g.below(3);
-                    let st = if g.below(3) == 0 { g.u32() & g.u32() } else { 0 };
+                    let st = if g.below(3) == 0 {
+                        g.u32() & g.u32()
+                    } else {
+                        0
+                    };
                     [0, death, level, st, 0, *pick(&mut g, &[&2u32, &0, &9])]
                 }
-                10..=11 => [1, (g.u32() & 15) | u32::from(g.below(6) != 0) << 4 | u32::from(g.below(6) != 0) << 5, 0, 0, 0, 0],
-                12 => [2, *pick(&mut g, &[&3u32, &0, &4]), *pick(&mut g, &[&3u32, &0]), 0, 0, 0],
+                10..=11 => [
+                    1,
+                    (g.u32() & 15)
+                        | u32::from(g.below(6) != 0) << 4
+                        | u32::from(g.below(6) != 0) << 5,
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
+                12 => [
+                    2,
+                    *pick(&mut g, &[&3u32, &0, &4]),
+                    *pick(&mut g, &[&3u32, &0]),
+                    0,
+                    0,
+                    0,
+                ],
                 13..=15 => [7, 0, 0, 0, 0, 0],
                 16..=17 => [8, 0, 0, 0, 0, 0],
                 _ => [9, 0, 0, 0, 0, 0],
@@ -578,22 +704,51 @@ fn create_object_die_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || format!("case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
-        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
+        let what = || {
+            format!(
+                "case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}",
+                show(&text)
+            )
+        };
+        read.eq(
+            &outcome,
+            &Outcome {
+                status,
+                detail,
+                crc: 0,
+            },
+            what,
+        );
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
         };
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         for l in &dr {
-            for key in ["ocl ", "oclsec", "attemptdamage", "damage", "transferattack"] {
-                *counts.entry(key.trim().to_string()).or_default() += l.matches(&format!("\"{key}")).count() as u64;
+            for key in [
+                "ocl ",
+                "oclsec",
+                "attemptdamage",
+                "damage",
+                "transferattack",
+            ] {
+                *counts.entry(key.trim().to_string()).or_default() +=
+                    l.matches(&format!("\"{key}")).count() as u64;
             }
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
-            eprintln!("--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
+            let i = dr
+                .iter()
+                .zip(dc.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(dr.len().min(dc.len()));
+            eprintln!(
+                "--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}",
+                show(&text),
+                dr.get(i),
+                dc.get(i)
+            );
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -612,5 +767,8 @@ fn create_object_die_matches_upstream() {
     }
     read.finish();
     run.finish();
-    assert!(counts.get("transferattack").copied().unwrap_or(0) * 10 > cases as u64, "the generator must reach the transfer");
+    assert!(
+        counts.get("transferattack").copied().unwrap_or(0) * 10 > cases as u64,
+        "the generator must reach the transfer"
+    );
 }

@@ -114,7 +114,9 @@ use crate::common::kind_of::KINDOF_COMMANDCENTER;
 use crate::common::object_status_types::ObjectStatusMaskType;
 use crate::common::overridable::Overridable;
 use crate::common::random_value::RandomValues;
-use crate::common::thing_template::{object_fields, reskin_fields, ObjectFill, ThingParseEnv, ThingTemplate};
+use crate::common::thing_template::{
+    object_fields, reskin_fields, ObjectFill, ThingParseEnv, ThingTemplate,
+};
 use crate::logic::client_event::ClientEvent;
 
 /// What can go wrong in the factory outside the INI.
@@ -174,7 +176,12 @@ impl Default for ThingFactory {
 impl ThingFactory {
     /// `ThingFactory()`: no templates, the next id is 1 ("not zero!").
     pub fn new() -> Self {
-        ThingFactory { templates: Vec::new(), template_map: BTreeMap::new(), next_template_id: 1, next_node_id: 1 }
+        ThingFactory {
+            templates: Vec::new(),
+            template_map: BTreeMap::new(),
+            next_template_id: 1,
+            next_node_id: 1,
+        }
     }
 
     /// `init()`: nothing.
@@ -206,7 +213,9 @@ impl ThingFactory {
     /// head, as [`ThingFactory::templates`] counts) of the root it finds.
     pub fn template_map_entries(&self) -> impl Iterator<Item = (&[u8], usize)> {
         let n = self.templates.len();
-        self.template_map.iter().map(move |(name, &index)| (name.as_slice(), n - 1 - index))
+        self.template_map
+            .iter()
+            .map(move |(name, &index)| (name.as_slice(), n - 1 - index))
     }
 
     /// The number of templates (roots) in the list.
@@ -262,14 +271,17 @@ impl ThingFactory {
 
     /// The template (root) with this node id, if it is in the list.
     fn root_by_template_id(&self, id: u16) -> Option<usize> {
-        (0..self.templates.len()).rev().find(|&i| self.templates[i].data.get_template_id() == id)
+        (0..self.templates.len())
+            .rev()
+            .find(|&i| self.templates[i].data.get_template_id() == id)
     }
 
     /// `addTemplate(tmplate)`: link at the head and map the name (replacing
     /// a template of the same name in the map, as `operator[]` does).
     fn add_template(&mut self, tmplate: Overridable<ThingTemplate>) -> usize {
         let index = self.templates.len();
-        self.template_map.insert(tmplate.data.get_name().to_vec(), index);
+        self.template_map
+            .insert(tmplate.data.get_name().to_vec(), index);
         self.templates.push(tmplate);
         index
     }
@@ -306,7 +318,9 @@ impl ThingFactory {
         };
         new_template.data.friend_set_node_id(self.fresh_node_id());
         // give template a unique identifier
-        new_template.data.friend_set_template_id(self.next_template_id);
+        new_template
+            .data
+            .friend_set_template_id(self.next_template_id);
         self.next_template_id = self.next_template_id.wrapping_add(1);
         // assign name
         new_template.data.friend_set_template_name(name);
@@ -325,7 +339,9 @@ impl ThingFactory {
         new_template.data.set_copied_from_default();
         new_template.data.friend_set_node_id(node_id);
         new_template.mark_as_override();
-        let displaced = self.templates[root].friend_get_final_override().set_next_override(Some(Box::new(new_template)));
+        let displaced = self.templates[root]
+            .friend_get_final_override()
+            .set_next_override(Some(Box::new(new_template)));
         debug_assert!(displaced.is_none());
         let mut depth = 0;
         let mut cur = &self.templates[root];
@@ -346,7 +362,8 @@ impl ThingFactory {
         let n = self.templates.len();
         // list order: newest first
         let old = std::mem::take(&mut self.templates);
-        let mut list: Vec<Option<Overridable<ThingTemplate>>> = old.into_iter().rev().map(Some).collect();
+        let mut list: Vec<Option<Overridable<ThingTemplate>>> =
+            old.into_iter().rev().map(Some).collect();
         let mut kept: Vec<Option<Overridable<ThingTemplate>>> = Vec::with_capacity(n);
         let mut head = 0usize;
         let mut dangling = false;
@@ -375,7 +392,8 @@ impl ThingFactory {
             }
         }
         // `kept` is in list order (newest first); storage is oldest first
-        let mut storage: Vec<Overridable<ThingTemplate>> = kept.into_iter().map(|t| t.expect("kept")).collect();
+        let mut storage: Vec<Overridable<ThingTemplate>> =
+            kept.into_iter().map(|t| t.expect("kept")).collect();
         storage.reverse();
         let kept_count = storage.len();
         // the new position of a kept template: reversed
@@ -418,7 +436,11 @@ impl ThingFactory {
         const MAX_BF: usize = 32;
         let mut facilities: Vec<u16> = Vec::new();
         for p in &prereqs {
-            for id in p.all_possible_build_facility_templates(MAX_BF).into_iter().flatten() {
+            for id in p
+                .all_possible_build_facility_templates(MAX_BF)
+                .into_iter()
+                .flatten()
+            {
                 facilities.push(id);
             }
         }
@@ -466,7 +488,10 @@ impl ThingFactory {
             }
         }
         // (DEBUG_ASSERTCRASH: you may not create Objects with a DRAWABLE_ONLY template, compiled out)
-        Ok(NewObjectPlan { template_id, status_bits })
+        Ok(NewObjectPlan {
+            template_id,
+            status_bits,
+        })
     }
 
     /// `newDrawable(tmplate, statusBits)`: the client makes the drawable
@@ -485,7 +510,11 @@ impl ThingFactory {
         let Some(tmplate) = tmplate else {
             return Err(ThingFactoryError::BadArg);
         };
-        events.push(ClientEvent::ObjectCreated { template_id: tmplate.get_template_id(), drawable_status_bits: status_bits, object_id });
+        events.push(ClientEvent::ObjectCreated {
+            template_id: tmplate.get_template_id(),
+            drawable_status_bits: status_bits,
+            object_id,
+        });
         Ok(())
     }
 
@@ -552,11 +581,17 @@ impl ThingFactory {
             let this = self.node_mut(node);
             this.data.set_copied_from_default();
             this.data.set_reskinned_from(reskin_node_id);
-            let mut fill = ObjectFill { tt: &mut this.data, env: env.reborrow() };
+            let mut fill = ObjectFill {
+                tt: &mut this.data,
+                env: env.reborrow(),
+            };
             ini.init_from_ini(&mut fill, &reskin_fields())?;
         } else {
             let this = self.node_mut(node);
-            let mut fill = ObjectFill { tt: &mut this.data, env: env.reborrow() };
+            let mut fill = ObjectFill {
+                tt: &mut this.data,
+                env: env.reborrow(),
+            };
             ini.init_from_ini(&mut fill, &object_fields())?;
         }
 
@@ -570,7 +605,12 @@ impl ThingFactory {
 
     /// `INI::parseObjectDefinition(ini)` (INIObject.cpp): the `Object` block,
     /// its name and then the fields.
-    pub fn parse_object_block(&mut self, ini: &mut Ini<'_>, env: &mut ThingParseEnv<'_>, default_occlusion_delay: u32) -> IniResult<()> {
+    pub fn parse_object_block(
+        &mut self,
+        ini: &mut Ini<'_>,
+        env: &mut ThingParseEnv<'_>,
+        default_occlusion_delay: u32,
+    ) -> IniResult<()> {
         let name = ini.get_next_token(None)?;
         self.parse_object_definition(ini, env, default_occlusion_delay, &name, b"")
     }
@@ -578,7 +618,12 @@ impl ThingFactory {
     /// `INI::parseObjectReskinDefinition(ini)` (INIObject.cpp): the
     /// `ObjectReskin` block, its name, the name it is reskinned from and
     /// then the fields.
-    pub fn parse_object_reskin_block(&mut self, ini: &mut Ini<'_>, env: &mut ThingParseEnv<'_>, default_occlusion_delay: u32) -> IniResult<()> {
+    pub fn parse_object_reskin_block(
+        &mut self,
+        ini: &mut Ini<'_>,
+        env: &mut ThingParseEnv<'_>,
+        default_occlusion_delay: u32,
+    ) -> IniResult<()> {
         let name = ini.get_next_token(None)?;
         let reskin_from = ini.get_next_token(None)?;
         self.parse_object_definition(ini, env, default_occlusion_delay, &name, &reskin_from)
@@ -592,16 +637,17 @@ mod tests {
     use crate::common::game_common::VeterancyLevel;
     use crate::common::geometry::GeometryType;
     use crate::common::ini::{BlockParse, IniLoadType};
-    use crate::common::name_key_generator::NameKeyType;
     use crate::common::module::{
-        Module, ModuleData, ModuleDataKind, ModuleType, MODULEINTERFACE_BODY, MODULEINTERFACE_DIE, MODULEINTERFACE_UPDATE,
+        Module, ModuleData, ModuleDataKind, ModuleType, MODULEINTERFACE_BODY, MODULEINTERFACE_DIE,
+        MODULEINTERFACE_UPDATE,
     };
     use crate::common::module_factory::{ModuleFactory, ModuleTemplate};
     use crate::common::name_key_generator::NameKeyGenerator;
+    use crate::common::name_key_generator::NameKeyType;
     use crate::common::science::{GameTextFetch, ScienceStore};
     use crate::common::thing_template::{
-        is_equivalent_to, ModuleInfoData, ModuleParseMode, ThingTemplateAudioType, BC_PLACED_BY_PLAYER, BSTATUS_NO, OBJECT_FIELD_NAMES,
-        RESKIN_FIELD_NAMES,
+        is_equivalent_to, ModuleInfoData, ModuleParseMode, ThingTemplateAudioType,
+        BC_PLACED_BY_PLAYER, BSTATUS_NO, OBJECT_FIELD_NAMES, RESKIN_FIELD_NAMES,
     };
     use crate::common::unicode_string::UnicodeString;
     use crate::logic::armor::ArmorStore;
@@ -620,11 +666,16 @@ mod tests {
         }
     }
 
-    fn never(_: crate::common::module::ObjectId, _: Option<ModuleDataKind>) -> Result<Module, IniError> {
+    fn never(
+        _: crate::common::module::ObjectId,
+        _: Option<ModuleDataKind>,
+    ) -> Result<Module, IniError> {
         Err(IniError::new(IniErrorKind::Bug))
     }
     fn base_data(ini: Option<&mut Ini<'_>>) -> Result<ModuleDataKind, IniError> {
-        Ok(ModuleDataKind::Module(Arc::new(ModuleData::friend_new_module_data(ini)?)))
+        Ok(ModuleDataKind::Module(Arc::new(
+            ModuleData::friend_new_module_data(ini)?,
+        )))
     }
 
     struct Ctx {
@@ -643,7 +694,11 @@ mod tests {
             let mut names = NameKeyGenerator::new();
             names.reset();
             let mut modules = ModuleFactory::new();
-            let t = |mask| ModuleTemplate { create_proc: Some(never), create_data_proc: Some(base_data), which_interfaces: Some(mask) };
+            let t = |mask| ModuleTemplate {
+                create_proc: Some(never),
+                create_data_proc: Some(base_data),
+                which_interfaces: Some(mask),
+            };
             for (name, mask) in [
                 ("TestUpdate", MODULEINTERFACE_UPDATE),
                 ("TestUpdate2", MODULEINTERFACE_UPDATE),
@@ -651,7 +706,9 @@ mod tests {
                 ("TestDie2", MODULEINTERFACE_DIE),
                 ("TestBody", MODULEINTERFACE_BODY),
             ] {
-                modules.add_module_internal(&mut names, t(mask), ModuleType::Behavior, name).unwrap();
+                modules
+                    .add_module_internal(&mut names, t(mask), ModuleType::Behavior, name)
+                    .unwrap();
             }
             let mut weapons = WeaponTemplateTable::new();
             let k = names.name_to_key(b"Rifle");
@@ -691,7 +748,8 @@ mod tests {
             sciences: &c.sciences,
             text: &Text,
         };
-        c.factory.parse_object_reskin_block(ini, &mut env, c.occlusion)
+        c.factory
+            .parse_object_reskin_block(ini, &mut env, c.occlusion)
     }
     fn armor_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
         c.armors.parse_armor_definition(ini, &mut c.names)
@@ -700,10 +758,22 @@ mod tests {
         c.dfx.parse_damage_fx_definition(ini, &mut c.names)
     }
     static BLOCKS: [BlockParse<Ctx>; 4] = [
-        BlockParse { token: "Object", parse: object_block },
-        BlockParse { token: "ObjectReskin", parse: reskin_block },
-        BlockParse { token: "Armor", parse: armor_block },
-        BlockParse { token: "DamageFX", parse: dfx_block },
+        BlockParse {
+            token: "Object",
+            parse: object_block,
+        },
+        BlockParse {
+            token: "ObjectReskin",
+            parse: reskin_block,
+        },
+        BlockParse {
+            token: "Armor",
+            parse: armor_block,
+        },
+        BlockParse {
+            token: "DamageFX",
+            parse: dfx_block,
+        },
     ];
 
     fn load_as(c: &mut Ctx, text: &str, lt: IniLoadType) -> IniResult<()> {
@@ -716,10 +786,16 @@ mod tests {
         &c.factory.find_template(name.as_bytes()).unwrap().data
     }
     fn final_of<'a>(c: &'a Ctx, name: &str) -> &'a ThingTemplate {
-        &c.factory.find_template(name.as_bytes()).unwrap().get_final_override().data
+        &c.factory
+            .find_template(name.as_bytes())
+            .unwrap()
+            .get_final_override()
+            .data
     }
     fn tags(mi: &crate::common::thing_template::ModuleInfo) -> Vec<String> {
-        (0..mi.get_count()).map(|i| String::from_utf8_lossy(mi.get_nth_tag(i)).into_owned()).collect()
+        (0..mi.get_count())
+            .map(|i| String::from_utf8_lossy(mi.get_nth_tag(i)).into_owned())
+            .collect()
     }
 
     #[test]
@@ -753,12 +829,26 @@ mod tests {
         assert_eq!(t.get_skill_point_value(VeterancyLevel::Elite), 0);
         assert_eq!(t.raw_skill_point_value(VeterancyLevel::Elite), -999);
         let g = t.get_template_geometry_info();
-        assert_eq!((g.get_geom_type(), g.get_major_radius(), g.get_height()), (GeometryType::Sphere, 1.0, 1.0));
+        assert_eq!(
+            (g.get_geom_type(), g.get_major_radius(), g.get_height()),
+            (GeometryType::Sphere, 1.0, 1.0)
+        );
         // validate() picks the shadow texture from the geometry
         assert_eq!(t.get_shadow_texture_name(), b"shadow");
-        assert!(!t.get_audio(ThingTemplateAudioType::VoiceSelect).event_name.len() > 0 || t.get_audio(ThingTemplateAudioType::VoiceSelect).event_name.is_empty());
+        assert!(
+            !t.get_audio(ThingTemplateAudioType::VoiceSelect)
+                .event_name
+                .len()
+                > 0
+                || t.get_audio(ThingTemplateAudioType::VoiceSelect)
+                    .event_name
+                    .is_empty()
+        );
         assert_eq!(c.factory.template_count(), 1);
-        assert!(c.factory.find_template(b"plain").is_none(), "names are case sensitive");
+        assert!(
+            c.factory.find_template(b"plain").is_none(),
+            "names are case sensitive"
+        );
     }
 
     #[test]
@@ -790,7 +880,10 @@ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY Rifle\n End\nEnd\n",
         assert_eq!(t.get_fence_width(), 2.5);
         assert!(t.is_bridge());
         assert_eq!(t.friend_calc_vision_range(), 150.0);
-        assert_eq!(t.get_placement_view_angle(), 180.0 * (std::f32::consts::PI / 180.0));
+        assert_eq!(
+            t.get_placement_view_angle(),
+            180.0 * (std::f32::consts::PI / 180.0)
+        );
         assert_eq!(t.get_skill_point_value(VeterancyLevel::Heroic), 4);
         assert_eq!(t.get_experience_value(VeterancyLevel::Veteran), 6);
         assert_eq!(t.get_experience_required(VeterancyLevel::Elite), 20);
@@ -805,18 +898,33 @@ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY Rifle\n End\nEnd\n",
         assert_eq!(t.get_energy_production(), -4);
         assert!(t.is_forbidden());
         assert_eq!(t.get_editor_sorting(), 3);
-        assert!(t.is_kind_of(crate::common::kind_of::KINDOF_VEHICLE) && t.is_kind_of(crate::common::kind_of::KINDOF_SELECTABLE));
+        assert!(
+            t.is_kind_of(crate::common::kind_of::KINDOF_VEHICLE)
+                && t.is_kind_of(crate::common::kind_of::KINDOF_SELECTABLE)
+        );
         assert!(!t.is_kind_of(crate::common::kind_of::KINDOF_STRUCTURE));
         assert_eq!(t.friend_get_command_set_string(), b"TankSet");
-        assert_eq!(t.get_build_variations(), [b"A".to_vec(), b"B".to_vec(), b"C".to_vec()]);
+        assert_eq!(
+            t.get_build_variations(),
+            [b"A".to_vec(), b"B".to_vec(), b"C".to_vec()]
+        );
         assert_eq!(t.selected_portrait_image_name(), b"Portrait");
         assert_eq!(t.button_image_name(), b"Button");
         assert_eq!(t.get_upgrade_cameo_name(1), b"Up2");
         assert_eq!(t.get_upgrade_cameo_name(0), b"");
-        assert_eq!(t.get_audio(ThingTemplateAudioType::VoiceSelect).event_name, b"SelectSound");
+        assert_eq!(
+            t.get_audio(ThingTemplateAudioType::VoiceSelect).event_name,
+            b"SelectSound"
+        );
         assert!(t.has_audio(ThingTemplateAudioType::SoundAmbient));
-        assert_eq!(t.get_audio(ThingTemplateAudioType::SoundFalling).event_name, b"Whoosh");
-        assert!(!t.has_audio(ThingTemplateAudioType::VoiceMove), "NoSound deletes");
+        assert_eq!(
+            t.get_audio(ThingTemplateAudioType::SoundFalling).event_name,
+            b"Whoosh"
+        );
+        assert!(
+            !t.has_audio(ThingTemplateAudioType::VoiceMove),
+            "NoSound deletes"
+        );
         // the first value of a key stays (std::map::insert), keys are case sensitive
         assert_eq!(t.get_per_unit_sound(b"TurretMove").event_name, b"Move");
         assert_eq!(t.get_per_unit_sound(b"turretmove").event_name, b"Other");
@@ -827,7 +935,16 @@ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY Rifle\n End\nEnd\n",
         assert_eq!(t.per_unit_fx().len(), 2);
         assert_eq!(t.get_asset_scale(), 1.25);
         let g = t.get_template_geometry_info();
-        assert_eq!((g.get_geom_type(), g.get_major_radius(), g.get_minor_radius(), g.get_height(), g.get_is_small()), (GeometryType::Box, 12.0, 6.0, 9.0, true));
+        assert_eq!(
+            (
+                g.get_geom_type(),
+                g.get_major_radius(),
+                g.get_minor_radius(),
+                g.get_height(),
+                g.get_is_small()
+            ),
+            (GeometryType::Box, 12.0, 6.0, 9.0, true)
+        );
         assert_eq!(t.get_shadow_type(), 3);
         assert_eq!(t.get_shadow_size_x(), 3.0);
         assert_eq!(t.get_shadow_texture_name(), b"MyShadow");
@@ -839,7 +956,10 @@ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY Rifle\n End\nEnd\n",
         assert_ne!(t.get_max_simultaneous_link_key(), NameKeyType::INVALID);
         assert_eq!((t.get_crusher_level(), t.get_crushable_level()), (2, 1));
         assert_eq!(t.armor_template_sets().len(), 1);
-        assert!(t.armor_template_sets()[0].get_armor_template().is_some() && t.armor_template_sets()[0].get_damage_fx().is_some());
+        assert!(
+            t.armor_template_sets()[0].get_armor_template().is_some()
+                && t.armor_template_sets()[0].get_damage_fx().is_some()
+        );
         assert_eq!(t.get_weapon_template_sets().len(), 1);
         assert!(t.can_possibly_have_any_weapon());
         assert_eq!(t.get_weapon_template_sets()[0].thing_template(), Some(1));
@@ -848,7 +968,11 @@ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY Rifle\n End\nEnd\n",
     #[test]
     fn max_simultaneous_takes_the_superweapon_keyword() {
         let mut c = Ctx::new();
-        load(&mut c, "Object S\n MaxSimultaneousOfType = DeterminedBySuperweaponRESTRICTION\nEnd\n").unwrap();
+        load(
+            &mut c,
+            "Object S\n MaxSimultaneousOfType = DeterminedBySuperweaponRESTRICTION\nEnd\n",
+        )
+        .unwrap();
         assert!(root(&c, "S").max_simultaneous_determined_by_superweapon_restriction());
         assert_eq!(root(&c, "S").get_max_simultaneous_of_type(Some(7)), 7);
         assert_eq!(root(&c, "S").get_max_simultaneous_of_type(None), 0);
@@ -862,7 +986,11 @@ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY Rifle\n End\nEnd\n",
     #[test]
     fn errors_leave_the_template_filled_as_far_as_it_got() {
         let mut c = Ctx::new();
-        let e = load(&mut c, "Object Bad\n VisionRange = 9\n SkillPointValue = 1 2 x 4\n VisionRange = 10\nEnd\n").unwrap_err();
+        let e = load(
+            &mut c,
+            "Object Bad\n VisionRange = 9\n SkillPointValue = 1 2 x 4\n VisionRange = 10\nEnd\n",
+        )
+        .unwrap_err();
         assert_eq!(e.kind, IniErrorKind::InvalidData);
         let t = root(&c, "Bad");
         assert_eq!(t.friend_calc_vision_range(), 9.0);
@@ -870,19 +998,40 @@ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY Rifle\n End\nEnd\n",
         assert_eq!(t.raw_skill_point_value(VeterancyLevel::Elite), -999);
         // not validated: the shadow texture was not picked
         assert_eq!(t.get_shadow_texture_name(), b"");
-        assert_eq!(load(&mut c, "Object B2\n Nonsense = 1\nEnd\n").unwrap_err().kind, IniErrorKind::UnknownToken);
-        assert!(load(&mut c, "Object B3\n Shadow = +SHADOW_DECAL\nEnd\n").unwrap_err().is_undefined());
+        assert_eq!(
+            load(&mut c, "Object B2\n Nonsense = 1\nEnd\n")
+                .unwrap_err()
+                .kind,
+            IniErrorKind::UnknownToken
+        );
+        assert!(load(&mut c, "Object B3\n Shadow = +SHADOW_DECAL\nEnd\n")
+            .unwrap_err()
+            .is_undefined());
         // a label that translates to nothing
-        assert_eq!(load(&mut c, "Object B4\n DisplayName = NOTEXT\nEnd\n").unwrap_err().kind, IniErrorKind::InvalidData);
+        assert_eq!(
+            load(&mut c, "Object B4\n DisplayName = NOTEXT\nEnd\n")
+                .unwrap_err()
+                .kind,
+            IniErrorKind::InvalidData
+        );
         assert_eq!(c.factory.template_count(), 4);
         // Locomotor without an AIUpdate
-        assert_eq!(load(&mut c, "Object B5\n Locomotor = SET_NORMAL Foo\nEnd\n").unwrap_err().kind, IniErrorKind::InvalidData);
+        assert_eq!(
+            load(&mut c, "Object B5\n Locomotor = SET_NORMAL Foo\nEnd\n")
+                .unwrap_err()
+                .kind,
+            IniErrorKind::InvalidData
+        );
     }
 
     #[test]
     fn byte_members_wrap_as_the_signed_byte_does() {
         let mut c = Ctx::new();
-        load(&mut c, "Object W\n StructureRubbleHeight = 133\n TransportSlotCount = 200\nEnd\n").unwrap();
+        load(
+            &mut c,
+            "Object W\n StructureRubbleHeight = 133\n TransportSlotCount = 200\nEnd\n",
+        )
+        .unwrap();
         assert_eq!(root(&c, "W").get_structure_rubble_height(), -123.0);
         assert_eq!(root(&c, "W").get_raw_transport_slot_count(), -56);
     }
@@ -892,14 +1041,35 @@ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY Rifle\n End\nEnd\n",
         let mut c = Ctx::new();
         c.modules.init(&mut c.names).unwrap();
         let e = load(&mut c, "Object M\n Behavior = SpectreGunshipUpdate ModuleTag_X\n  HealingAmount = 3\n End\nEnd\n").unwrap_err();
-        assert_eq!(e.kind, IniErrorKind::ModuleNotTranslated(b"SpectreGunshipUpdate".to_vec()));
+        assert_eq!(
+            e.kind,
+            IniErrorKind::ModuleNotTranslated(b"SpectreGunshipUpdate".to_vec())
+        );
         assert_eq!(root(&c, "M").get_behavior_module_info().get_count(), 0);
-        let e = load(&mut c, "Object M2\n Body = BattleBusSlowDeathBehavior ModuleTag_B\n End\nEnd\n").unwrap_err();
-        assert_eq!(e.kind, IniErrorKind::ModuleNotTranslated(b"BattleBusSlowDeathBehavior".to_vec()));
-        let e = load(&mut c, "Object M3\n Behavior = NoSuchThing ModuleTag_B\n End\nEnd\n").unwrap_err();
+        let e = load(
+            &mut c,
+            "Object M2\n Body = BattleBusSlowDeathBehavior ModuleTag_B\n End\nEnd\n",
+        )
+        .unwrap_err();
+        assert_eq!(
+            e.kind,
+            IniErrorKind::ModuleNotTranslated(b"BattleBusSlowDeathBehavior".to_vec())
+        );
+        let e = load(
+            &mut c,
+            "Object M3\n Behavior = NoSuchThing ModuleTag_B\n End\nEnd\n",
+        )
+        .unwrap_err();
         assert_eq!(e.kind, IniErrorKind::ModuleUnknown(b"NoSuchThing".to_vec()));
-        let e = load(&mut c, "Object M4\n Behavior = PrisonBehavior ModuleTag_B\n End\nEnd\n").unwrap_err();
-        assert_eq!(e.kind, IniErrorKind::ModuleNotInShippedBuild(b"PrisonBehavior".to_vec()));
+        let e = load(
+            &mut c,
+            "Object M4\n Behavior = PrisonBehavior ModuleTag_B\n End\nEnd\n",
+        )
+        .unwrap_err();
+        assert_eq!(
+            e.kind,
+            IniErrorKind::ModuleNotInShippedBuild(b"PrisonBehavior".to_vec())
+        );
         assert!(e.thrown().is_none(), "not something upstream throws");
     }
 
@@ -919,12 +1089,38 @@ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY Rifle\n End\nEnd\n",
         assert_eq!(mi.get_nth_name(9), b"");
         assert!(mi.get_nth_data(-1).is_none());
         // a Body line with a non-body module, and a Behavior line with a body
-        assert_eq!(load(&mut c, "Object N1\n Body = TestUpdate ModuleTag_U\n End\nEnd\n").unwrap_err().kind, IniErrorKind::InvalidData);
-        assert_eq!(load(&mut c, "Object N2\n Behavior = TestBody ModuleTag_U\n End\nEnd\n").unwrap_err().kind, IniErrorKind::InvalidData);
+        assert_eq!(
+            load(
+                &mut c,
+                "Object N1\n Body = TestUpdate ModuleTag_U\n End\nEnd\n"
+            )
+            .unwrap_err()
+            .kind,
+            IniErrorKind::InvalidData
+        );
+        assert_eq!(
+            load(
+                &mut c,
+                "Object N2\n Behavior = TestBody ModuleTag_U\n End\nEnd\n"
+            )
+            .unwrap_err()
+            .kind,
+            IniErrorKind::InvalidData
+        );
         // the tag is required
-        assert_eq!(load(&mut c, "Object N3\n Behavior = TestUpdate\nEnd\n").unwrap_err().kind, IniErrorKind::InvalidData);
+        assert_eq!(
+            load(&mut c, "Object N3\n Behavior = TestUpdate\nEnd\n")
+                .unwrap_err()
+                .kind,
+            IniErrorKind::InvalidData
+        );
         // a module block needs its End and takes no fields of its own (null parse table)
-        assert!(load(&mut c, "Object N4\n Behavior = TestUpdate ModuleTag_U\n  Foo = 1\n End\nEnd\n").unwrap_err().is_undefined());
+        assert!(load(
+            &mut c,
+            "Object N4\n Behavior = TestUpdate ModuleTag_U\n  Foo = 1\n End\nEnd\n"
+        )
+        .unwrap_err()
+        .is_undefined());
     }
 
     #[test]
@@ -938,22 +1134,38 @@ Object Child\n Behavior = TestUpdate2 ModuleTag_Own\n End\nEnd\n",
         )
         .unwrap();
         let d = root(&c, "DefaultThingTemplate");
-        assert_eq!(tags(d.get_behavior_module_info()), ["ModuleTag_DefaultUpdate", "ModuleTag_DefaultDie"]);
+        assert_eq!(
+            tags(d.get_behavior_module_info()),
+            ["ModuleTag_DefaultUpdate", "ModuleTag_DefaultDie"]
+        );
         assert!(!d.get_behavior_module_info().nuggets()[0].copied_from_default);
         let child = root(&c, "Child");
         // the update module of the default is gone (same interface); the die module stays
-        assert_eq!(tags(child.get_behavior_module_info()), ["ModuleTag_DefaultDie", "ModuleTag_Own"]);
+        assert_eq!(
+            tags(child.get_behavior_module_info()),
+            ["ModuleTag_DefaultDie", "ModuleTag_Own"]
+        );
         assert!(child.get_behavior_module_info().nuggets()[0].copied_from_default);
         assert_eq!(child.get_default_owning_side(), b"Nobody");
         assert_eq!(child.get_asset_scale(), 2.0);
         assert_eq!(child.get_template_id(), 2);
-        assert_eq!(child.armor_template_sets().len(), 1, "the default's armor set is kept until the child says its own");
+        assert_eq!(
+            child.armor_template_sets().len(),
+            1,
+            "the default's armor set is kept until the child says its own"
+        );
         assert!(child.armor_copied_from_default());
         // a template that says its own armor set replaces the default's
-        load(&mut c, "Object Other\n ArmorSet\n  Conditions = ELITE\n End\nEnd\n").unwrap();
+        load(
+            &mut c,
+            "Object Other\n ArmorSet\n  Conditions = ELITE\n End\nEnd\n",
+        )
+        .unwrap();
         assert_eq!(root(&c, "Other").armor_template_sets().len(), 1);
         assert!(!root(&c, "Other").armor_copied_from_default());
-        assert!(root(&c, "Other").armor_template_sets()[0].conditions().test(crate::logic::armor_set::ARMORSET_ELITE));
+        assert!(root(&c, "Other").armor_template_sets()[0]
+            .conditions()
+            .test(crate::logic::armor_set::ARMORSET_ELITE));
         // an armor set block that fails still dropped the default's
         let _ = load(&mut c, "Object Other2\n ArmorSet\n  Bogus = 1\n End\nEnd\n").unwrap_err();
         assert!(root(&c, "Other2").armor_template_sets().is_empty());
@@ -976,16 +1188,41 @@ Object NotACandidate\n KindOf = SELECTABLE\n Behavior = TestDie2 ModuleTag_Own\n
         .unwrap();
         let d = root(&c, "DefaultThingTemplate").get_behavior_module_info();
         assert_eq!(tags(d), ["ModuleTag_Inherit", "ModuleTag_Like"]);
-        assert!(d.nuggets()[0].inheritable && d.nuggets()[1].overrideable_by_like_kind && !d.nuggets()[0].overrideable_by_like_kind);
-        assert_eq!(root(&c, "DefaultThingTemplate").module_parsing_mode(), ModuleParseMode::Normal);
+        assert!(
+            d.nuggets()[0].inheritable
+                && d.nuggets()[1].overrideable_by_like_kind
+                && !d.nuggets()[0].overrideable_by_like_kind
+        );
+        assert_eq!(
+            root(&c, "DefaultThingTemplate").module_parsing_mode(),
+            ModuleParseMode::Normal
+        );
         // the inheritable one is always kept; the like-kind die module goes when the new die module is the same
         // class, the template is immune to the GPS scrambler, or it is not one of the candidates
-        assert_eq!(tags(root(&c, "Plain").get_behavior_module_info()), ["ModuleTag_Inherit", "ModuleTag_Own", "ModuleTag_OwnDie"]);
-        assert_eq!(tags(root(&c, "Vehicle").get_behavior_module_info()), ["ModuleTag_Inherit", "ModuleTag_Like", "ModuleTag_Own"]);
-        assert_eq!(tags(root(&c, "VehicleDie2").get_behavior_module_info()), ["ModuleTag_Inherit", "ModuleTag_Like", "ModuleTag_Own"]);
-        assert_eq!(tags(root(&c, "VehicleDie").get_behavior_module_info()), ["ModuleTag_Inherit", "ModuleTag_Own"]);
-        assert_eq!(tags(root(&c, "StructureDie2").get_behavior_module_info()), ["ModuleTag_Inherit", "ModuleTag_Own"]);
-        assert_eq!(tags(root(&c, "NotACandidate").get_behavior_module_info()), ["ModuleTag_Inherit", "ModuleTag_Own"]);
+        assert_eq!(
+            tags(root(&c, "Plain").get_behavior_module_info()),
+            ["ModuleTag_Inherit", "ModuleTag_Own", "ModuleTag_OwnDie"]
+        );
+        assert_eq!(
+            tags(root(&c, "Vehicle").get_behavior_module_info()),
+            ["ModuleTag_Inherit", "ModuleTag_Like", "ModuleTag_Own"]
+        );
+        assert_eq!(
+            tags(root(&c, "VehicleDie2").get_behavior_module_info()),
+            ["ModuleTag_Inherit", "ModuleTag_Like", "ModuleTag_Own"]
+        );
+        assert_eq!(
+            tags(root(&c, "VehicleDie").get_behavior_module_info()),
+            ["ModuleTag_Inherit", "ModuleTag_Own"]
+        );
+        assert_eq!(
+            tags(root(&c, "StructureDie2").get_behavior_module_info()),
+            ["ModuleTag_Inherit", "ModuleTag_Own"]
+        );
+        assert_eq!(
+            tags(root(&c, "NotACandidate").get_behavior_module_info()),
+            ["ModuleTag_Inherit", "ModuleTag_Own"]
+        );
     }
 
     #[test]
@@ -999,8 +1236,18 @@ Object Untrained\n Behavior = TestUpdate2 ModuleTag_A\n End\nEnd\n\
 Object Trained\n IsTrainable = Yes\n Behavior = TestUpdate2 ModuleTag_A\n End\nEnd\n",
         )
         .unwrap();
-        assert_eq!(tags(root(&c, "Untrained").get_behavior_module_info()), ["ModuleTag_KeepMe", "ModuleTag_A"]);
-        assert_eq!(tags(root(&c, "Trained").get_behavior_module_info()), ["ModuleTag_DefaultAutoHealBehavior", "ModuleTag_KeepMe", "ModuleTag_A"]);
+        assert_eq!(
+            tags(root(&c, "Untrained").get_behavior_module_info()),
+            ["ModuleTag_KeepMe", "ModuleTag_A"]
+        );
+        assert_eq!(
+            tags(root(&c, "Trained").get_behavior_module_info()),
+            [
+                "ModuleTag_DefaultAutoHealBehavior",
+                "ModuleTag_KeepMe",
+                "ModuleTag_A"
+            ]
+        );
     }
 
     #[test]
@@ -1009,7 +1256,13 @@ Object Trained\n IsTrainable = Yes\n Behavior = TestUpdate2 ModuleTag_A\n End\nE
         load(&mut c, "Object Unit\n Behavior = TestUpdate ModuleTag_U\n End\n Behavior = TestDie ModuleTag_D\n End\nEnd\n").unwrap();
         // in an override load a module line outside AddModule is an error
         assert_eq!(
-            load_as(&mut c, "Object Unit\n Behavior = TestUpdate2 ModuleTag_V\n End\nEnd\n", IniLoadType::CreateOverrides).unwrap_err().kind,
+            load_as(
+                &mut c,
+                "Object Unit\n Behavior = TestUpdate2 ModuleTag_V\n End\nEnd\n",
+                IniLoadType::CreateOverrides
+            )
+            .unwrap_err()
+            .kind,
             IniErrorKind::InvalidData
         );
         // the override copy is the final override, the root is untouched
@@ -1021,18 +1274,39 @@ ReplaceModule ModuleTag_U\n  Behavior = TestUpdate ModuleTag_U2\n  End\n End\n V
         )
         .unwrap();
         // (the first, failed, override left its copy: two copies)
-        assert_eq!(tags(root(&c, "Unit").get_behavior_module_info()), ["ModuleTag_U", "ModuleTag_D"]);
-        assert_eq!(tags(final_of(&c, "Unit").get_behavior_module_info()), ["ModuleTag_D2", "ModuleTag_U2"]);
+        assert_eq!(
+            tags(root(&c, "Unit").get_behavior_module_info()),
+            ["ModuleTag_U", "ModuleTag_D"]
+        );
+        assert_eq!(
+            tags(final_of(&c, "Unit").get_behavior_module_info()),
+            ["ModuleTag_D2", "ModuleTag_U2"]
+        );
         assert_eq!(final_of(&c, "Unit").friend_calc_vision_range(), 77.0);
         assert_eq!(root(&c, "Unit").friend_calc_vision_range(), 0.0);
-        assert_eq!(final_of(&c, "Unit").module_parsing_mode(), ModuleParseMode::Normal);
+        assert_eq!(
+            final_of(&c, "Unit").module_parsing_mode(),
+            ModuleParseMode::Normal
+        );
         // removing a tag that is not there throws, and the mode stays (the next retry is refused)
-        let e = load_as(&mut c, "Object Unit\n RemoveModule = ModuleTag_Nope\nEnd\n", IniLoadType::CreateOverrides).unwrap_err();
+        let e = load_as(
+            &mut c,
+            "Object Unit\n RemoveModule = ModuleTag_Nope\nEnd\n",
+            IniLoadType::CreateOverrides,
+        )
+        .unwrap_err();
         assert_eq!(e.kind, IniErrorKind::InvalidData);
-        assert_eq!(final_of(&c, "Unit").module_parsing_mode(), ModuleParseMode::AddRemoveReplace);
+        assert_eq!(
+            final_of(&c, "Unit").module_parsing_mode(),
+            ModuleParseMode::AddRemoveReplace
+        );
         // replacing with a different class, or with the same tag, throws
         let mut c2 = Ctx::new();
-        load(&mut c2, "Object Unit\n Behavior = TestUpdate ModuleTag_U\n End\nEnd\n").unwrap();
+        load(
+            &mut c2,
+            "Object Unit\n Behavior = TestUpdate ModuleTag_U\n End\nEnd\n",
+        )
+        .unwrap();
         let e = load_as(
             &mut c2,
             "Object Unit\n ReplaceModule ModuleTag_U\n  Behavior = TestUpdate2 ModuleTag_V\n  End\n End\nEnd\n",
@@ -1040,10 +1314,20 @@ ReplaceModule ModuleTag_U\n  Behavior = TestUpdate ModuleTag_U2\n  End\n End\n V
         )
         .unwrap_err();
         assert_eq!(e.kind, IniErrorKind::InvalidData);
-        assert_eq!(final_of(&c2, "Unit").module_being_replaced_name(), b"TestUpdate");
-        assert_eq!(final_of(&c2, "Unit").module_being_replaced_tag(), b"ModuleTag_U");
+        assert_eq!(
+            final_of(&c2, "Unit").module_being_replaced_name(),
+            b"TestUpdate"
+        );
+        assert_eq!(
+            final_of(&c2, "Unit").module_being_replaced_tag(),
+            b"ModuleTag_U"
+        );
         let mut c3 = Ctx::new();
-        load(&mut c3, "Object Unit\n Behavior = TestUpdate ModuleTag_U\n End\nEnd\n").unwrap();
+        load(
+            &mut c3,
+            "Object Unit\n Behavior = TestUpdate ModuleTag_U\n End\nEnd\n",
+        )
+        .unwrap();
         let e = load_as(
             &mut c3,
             "Object Unit\n ReplaceModule ModuleTag_U\n  Behavior = TestUpdate ModuleTag_U\n  End\n End\nEnd\n",
@@ -1074,9 +1358,18 @@ ConditionState = DAMAGED\n   Model = Bar\n  End\n  TransitionState = A B\n  End\
         let mi = t.get_draw_module_info();
         assert_eq!(tags(mi), ["ModuleTag_Draw"]);
         assert_eq!(mi.get_nth_name(0), b"W3DModelDraw");
-        assert_eq!(mi.nuggets()[0].interface_mask, crate::common::module::MODULEINTERFACE_DRAW);
-        let Some(ModuleInfoData::Client(block)) = mi.get_nth_data(0) else { panic!("client data") };
-        let lines: Vec<(u32, String)> = block.lines.iter().map(|l| (l.depth, String::from_utf8_lossy(&l.field).into_owned())).collect();
+        assert_eq!(
+            mi.nuggets()[0].interface_mask,
+            crate::common::module::MODULEINTERFACE_DRAW
+        );
+        let Some(ModuleInfoData::Client(block)) = mi.get_nth_data(0) else {
+            panic!("client data")
+        };
+        let lines: Vec<(u32, String)> = block
+            .lines
+            .iter()
+            .map(|l| (l.depth, String::from_utf8_lossy(&l.field).into_owned()))
+            .collect();
         assert_eq!(
             lines,
             [
@@ -1094,7 +1387,12 @@ ConditionState = DAMAGED\n   Model = Bar\n  End\n  TransitionState = A B\n  End\
         assert_eq!(tags(t.get_client_update_module_info()), ["ModuleTag_Sway"]);
         assert_eq!(t.get_behavior_module_info().get_count(), 0);
         // a draw module needs its tag, and its End
-        assert_eq!(load(&mut c, "Object D2\n Draw = W3DModelDraw\nEnd\n").unwrap_err().kind, IniErrorKind::InvalidData);
+        assert_eq!(
+            load(&mut c, "Object D2\n Draw = W3DModelDraw\nEnd\n")
+                .unwrap_err()
+                .kind,
+            IniErrorKind::InvalidData
+        );
     }
 
     #[test]
@@ -1107,11 +1405,20 @@ Behavior = TestUpdate ModuleTag_U\n End\nEnd\n\
 ObjectReskin Skin Base\n Geometry = CYLINDER\n Draw = W3DModelDraw ModuleTag_New\n End\n FenceWidth = 3\nEnd\n",
         )
         .unwrap();
-        let (base, skin) = (c.factory.find_template(b"Base").unwrap(), c.factory.find_template(b"Skin").unwrap());
+        let (base, skin) = (
+            c.factory.find_template(b"Base").unwrap(),
+            c.factory.find_template(b"Skin").unwrap(),
+        );
         assert_eq!(skin.data.get_default_owning_side(), b"America");
         assert_eq!(skin.data.friend_calc_vision_range(), 100.0);
-        assert_eq!(skin.data.get_template_geometry_info().get_geom_type(), GeometryType::Cylinder);
-        assert_eq!(base.data.get_template_geometry_info().get_geom_type(), GeometryType::Box);
+        assert_eq!(
+            skin.data.get_template_geometry_info().get_geom_type(),
+            GeometryType::Cylinder
+        );
+        assert_eq!(
+            base.data.get_template_geometry_info().get_geom_type(),
+            GeometryType::Box
+        );
         assert_eq!(skin.data.get_fence_width(), 3.0);
         assert_eq!(skin.data.get_name(), b"Skin");
         assert_eq!(skin.data.get_template_id(), 2);
@@ -1121,13 +1428,29 @@ ObjectReskin Skin Base\n Geometry = CYLINDER\n Draw = W3DModelDraw ModuleTag_New
         assert_eq!(tags(skin.data.get_behavior_module_info()), ["ModuleTag_U"]);
         assert!(is_equivalent_to(base, skin) && is_equivalent_to(skin, base));
         // a field that is not a reskin field is an unknown token; a reskin of nothing is an error
-        assert_eq!(load(&mut c, "ObjectReskin S2 Base\n VisionRange = 1\nEnd\n").unwrap_err().kind, IniErrorKind::UnknownToken);
-        assert_eq!(load(&mut c, "ObjectReskin S3 Missing\nEnd\n").unwrap_err().kind, IniErrorKind::InvalidData);
+        assert_eq!(
+            load(&mut c, "ObjectReskin S2 Base\n VisionRange = 1\nEnd\n")
+                .unwrap_err()
+                .kind,
+            IniErrorKind::UnknownToken
+        );
+        assert_eq!(
+            load(&mut c, "ObjectReskin S3 Missing\nEnd\n")
+                .unwrap_err()
+                .kind,
+            IniErrorKind::InvalidData
+        );
         // two reskins of one template are equivalent to each other
         load(&mut c, "ObjectReskin Skin2 Base\nEnd\n").unwrap();
-        assert!(is_equivalent_to(c.factory.find_template(b"Skin").unwrap(), c.factory.find_template(b"Skin2").unwrap()));
+        assert!(is_equivalent_to(
+            c.factory.find_template(b"Skin").unwrap(),
+            c.factory.find_template(b"Skin2").unwrap()
+        ));
         load(&mut c, "Object Unrelated\nEnd\n").unwrap();
-        assert!(!is_equivalent_to(c.factory.find_template(b"Skin").unwrap(), c.factory.find_template(b"Unrelated").unwrap()));
+        assert!(!is_equivalent_to(
+            c.factory.find_template(b"Skin").unwrap(),
+            c.factory.find_template(b"Unrelated").unwrap()
+        ));
     }
 
     #[test]
@@ -1136,30 +1459,83 @@ ObjectReskin Skin Base\n Geometry = CYLINDER\n Draw = W3DModelDraw ModuleTag_New
         load(&mut c, "Object Boss\n BuildVariations = VarA varb\nEnd\nObject VarA\nEnd\nObject VarB\nEnd\nObject Lonely\n BuildVariations = Nobody\nEnd\n")
             .unwrap();
         let f = &c.factory;
-        assert!(is_equivalent_to(f.find_template(b"Boss").unwrap(), f.find_template(b"VarA").unwrap()));
-        assert!(is_equivalent_to(f.find_template(b"VarB").unwrap(), f.find_template(b"Boss").unwrap()), "without regard to case");
-        assert!(!is_equivalent_to(f.find_template(b"VarA").unwrap(), f.find_template(b"VarB").unwrap()));
+        assert!(is_equivalent_to(
+            f.find_template(b"Boss").unwrap(),
+            f.find_template(b"VarA").unwrap()
+        ));
+        assert!(
+            is_equivalent_to(
+                f.find_template(b"VarB").unwrap(),
+                f.find_template(b"Boss").unwrap()
+            ),
+            "without regard to case"
+        );
+        assert!(!is_equivalent_to(
+            f.find_template(b"VarA").unwrap(),
+            f.find_template(b"VarB").unwrap()
+        ));
         let mut rng = RandomValues::new(1);
         rng.init_game_logic_random(5);
         let mut probe = RandomValues::new(1);
         probe.init_game_logic_random(5);
         let mask = ObjectStatusMaskType::new();
-        let plan = f.new_object(Some(&f.find_template(b"Boss").unwrap().data), &mut rng, mask).unwrap();
+        let plan = f
+            .new_object(
+                Some(&f.find_template(b"Boss").unwrap().data),
+                &mut rng,
+                mask,
+            )
+            .unwrap();
         let which = probe.game_logic_random_value(0, 1);
         // "varb" is not a template (case sensitive): the original is kept
-        let expect = if which == 0 { f.find_template(b"VarA").unwrap().data.get_template_id() } else { f.find_template(b"Boss").unwrap().data.get_template_id() };
+        let expect = if which == 0 {
+            f.find_template(b"VarA").unwrap().data.get_template_id()
+        } else {
+            f.find_template(b"Boss").unwrap().data.get_template_id()
+        };
         assert_eq!(plan.template_id, expect);
-        assert_eq!(rng.get_game_logic_random_seed_crc(), probe.get_game_logic_random_seed_crc());
+        assert_eq!(
+            rng.get_game_logic_random_seed_crc(),
+            probe.get_game_logic_random_seed_crc()
+        );
         // a template without variations makes no random call
         let before = rng.get_game_logic_random_seed_crc();
-        let plan = f.new_object(Some(&f.find_template(b"VarA").unwrap().data), &mut rng, mask).unwrap();
-        assert_eq!(plan.template_id, f.find_template(b"VarA").unwrap().data.get_template_id());
+        let plan = f
+            .new_object(
+                Some(&f.find_template(b"VarA").unwrap().data),
+                &mut rng,
+                mask,
+            )
+            .unwrap();
+        assert_eq!(
+            plan.template_id,
+            f.find_template(b"VarA").unwrap().data.get_template_id()
+        );
         assert_eq!(rng.get_game_logic_random_seed_crc(), before);
-        assert_eq!(f.new_object(None, &mut rng, mask).unwrap_err(), ThingFactoryError::BadArg);
+        assert_eq!(
+            f.new_object(None, &mut rng, mask).unwrap_err(),
+            ThingFactoryError::BadArg
+        );
         let mut events = Vec::new();
-        f.new_drawable(Some(&f.find_template(b"VarB").unwrap().data), 5, 42, &mut events).unwrap();
-        assert_eq!(events, [ClientEvent::ObjectCreated { template_id: 3, drawable_status_bits: 5, object_id: 42 }]);
-        assert_eq!(f.new_drawable(None, 0, 0, &mut events).unwrap_err(), ThingFactoryError::BadArg);
+        f.new_drawable(
+            Some(&f.find_template(b"VarB").unwrap().data),
+            5,
+            42,
+            &mut events,
+        )
+        .unwrap();
+        assert_eq!(
+            events,
+            [ClientEvent::ObjectCreated {
+                template_id: 3,
+                drawable_status_bits: 5,
+                object_id: 42
+            }]
+        );
+        assert_eq!(
+            f.new_drawable(None, 0, 0, &mut events).unwrap_err(),
+            ThingFactoryError::BadArg
+        );
     }
 
     #[test]
@@ -1172,11 +1548,18 @@ Object Tank\n Prerequisites\n  Object = Factory Barracks\n  Object = Missing\n E
         )
         .unwrap();
         // not resolved until the database is post-processed
-        assert!(!root(&c, "Barracks").is_build_facility() && !root(&c, "Factory").is_build_facility());
+        assert!(
+            !root(&c, "Barracks").is_build_facility() && !root(&c, "Factory").is_build_facility()
+        );
         assert_eq!(root(&c, "Tank").get_prereq_count(), 2);
-        assert_eq!(root(&c, "Tank").get_nth_prereq(0).unwrap().prereq_units()[0].name, b"Factory");
+        assert_eq!(
+            root(&c, "Tank").get_nth_prereq(0).unwrap().prereq_units()[0].name,
+            b"Factory"
+        );
         c.factory.post_process_load();
-        assert!(root(&c, "Barracks").is_build_facility() && root(&c, "Factory").is_build_facility());
+        assert!(
+            root(&c, "Barracks").is_build_facility() && root(&c, "Factory").is_build_facility()
+        );
         assert!(!root(&c, "Tank").is_build_facility());
         let p = root(&c, "Tank").get_nth_prereq(0).unwrap();
         assert_eq!(p.prereq_units()[0].unit, Some(2));
@@ -1185,12 +1568,29 @@ Object Tank\n Prerequisites\n  Object = Factory Barracks\n  Object = Missing\n E
         let p1 = root(&c, "Tank").get_nth_prereq(1).unwrap();
         assert_eq!(p1.prereq_units()[0].unit, None);
         // a second prerequisite block adds an entry (an override load starts afresh)
-        load(&mut c, "Object Tank\n Prerequisites\n  Object = Barracks\n End\nEnd\n").unwrap();
+        load(
+            &mut c,
+            "Object Tank\n Prerequisites\n  Object = Barracks\n End\nEnd\n",
+        )
+        .unwrap();
         assert_eq!(root(&c, "Tank").get_prereq_count(), 3);
         // an unknown science is an error (the store has none)
-        assert_eq!(load(&mut c, "Object T2\n Prerequisites\n  Science = SCIENCE_Nope\n End\nEnd\n").unwrap_err().kind, IniErrorKind::InvalidData);
+        assert_eq!(
+            load(
+                &mut c,
+                "Object T2\n Prerequisites\n  Science = SCIENCE_Nope\n End\nEnd\n"
+            )
+            .unwrap_err()
+            .kind,
+            IniErrorKind::InvalidData
+        );
         // no token on an Object line
-        assert_eq!(load(&mut c, "Object T3\n Prerequisites\n  Object =\n End\nEnd\n").unwrap_err().kind, IniErrorKind::InvalidData);
+        assert_eq!(
+            load(&mut c, "Object T3\n Prerequisites\n  Object =\n End\nEnd\n")
+                .unwrap_err()
+                .kind,
+            IniErrorKind::InvalidData
+        );
     }
 
     #[test]
@@ -1201,33 +1601,77 @@ Object Tank\n Prerequisites\n  Object = Factory Barracks\n  Object = Missing\n E
         load(&mut c, "Object A\n VisionRange = 2\nEnd\n").unwrap();
         assert_eq!(c.factory.template_count(), 1);
         assert_eq!(root(&c, "A").friend_calc_vision_range(), 2.0);
-        assert!(c.factory.find_template(b"A").unwrap().get_next_override().is_none());
+        assert!(c
+            .factory
+            .find_template(b"A")
+            .unwrap()
+            .get_next_override()
+            .is_none());
         // an override load copies the final override, twice
-        load_as(&mut c, "Object A\n VisionRange = 3\nEnd\n", IniLoadType::CreateOverrides).unwrap();
-        load_as(&mut c, "Object A\n Side = Y\nEnd\n", IniLoadType::CreateOverrides).unwrap();
+        load_as(
+            &mut c,
+            "Object A\n VisionRange = 3\nEnd\n",
+            IniLoadType::CreateOverrides,
+        )
+        .unwrap();
+        load_as(
+            &mut c,
+            "Object A\n Side = Y\nEnd\n",
+            IniLoadType::CreateOverrides,
+        )
+        .unwrap();
         let chain = c.factory.find_template(b"A").unwrap();
         assert_eq!(chain.data.friend_calc_vision_range(), 2.0);
         let f = chain.get_final_override();
-        assert_eq!((f.data.friend_calc_vision_range(), f.data.get_default_owning_side()), (3.0, &b"Y"[..]));
+        assert_eq!(
+            (
+                f.data.friend_calc_vision_range(),
+                f.data.get_default_owning_side()
+            ),
+            (3.0, &b"Y"[..])
+        );
         assert_eq!(f.data.get_template_id(), chain.data.get_template_id());
         assert_ne!(f.data.node_id(), chain.data.node_id());
         assert!(f.is_override() && !chain.is_override());
         assert!(is_equivalent_to(chain, f));
         // a name nobody had, in an override load, is made for this map only
-        load_as(&mut c, "Object MapOnly\nEnd\n", IniLoadType::CreateOverrides).unwrap();
+        load_as(
+            &mut c,
+            "Object MapOnly\nEnd\n",
+            IniLoadType::CreateOverrides,
+        )
+        .unwrap();
         assert!(c.factory.find_template(b"MapOnly").unwrap().is_override());
         load(&mut c, "Object Later\nEnd\n").unwrap();
         assert_eq!(c.factory.template_count(), 3);
         // the list is newest first, ids count up
-        let names: Vec<Vec<u8>> = c.factory.templates().map(|t| t.data.get_name().to_vec()).collect();
-        assert_eq!(names, [b"Later".to_vec(), b"MapOnly".to_vec(), b"A".to_vec()]);
-        assert_eq!(c.factory.find_by_template_id(2).unwrap().data.get_name(), b"MapOnly");
+        let names: Vec<Vec<u8>> = c
+            .factory
+            .templates()
+            .map(|t| t.data.get_name().to_vec())
+            .collect();
+        assert_eq!(
+            names,
+            [b"Later".to_vec(), b"MapOnly".to_vec(), b"A".to_vec()]
+        );
+        assert_eq!(
+            c.factory.find_by_template_id(2).unwrap().data.get_name(),
+            b"MapOnly"
+        );
         assert!(c.factory.find_by_template_id(9).is_none());
         // MapOnly is in the middle of the list: reset cannot unlink it upstream
-        assert_eq!(c.factory.reset().unwrap_err().kind, IniErrorKind::Undefined(Undefined::DanglingTemplateLink));
+        assert_eq!(
+            c.factory.reset().unwrap_err().kind,
+            IniErrorKind::Undefined(Undefined::DanglingTemplateLink)
+        );
         assert_eq!(c.factory.template_count(), 2);
         assert!(c.factory.find_template(b"MapOnly").is_none());
-        assert!(c.factory.find_template(b"A").unwrap().get_next_override().is_none());
+        assert!(c
+            .factory
+            .find_template(b"A")
+            .unwrap()
+            .get_next_override()
+            .is_none());
         assert_eq!(root(&c, "A").friend_calc_vision_range(), 2.0);
     }
 
@@ -1235,13 +1679,24 @@ Object Tank\n Prerequisites\n  Object = Factory Barracks\n  Object = Missing\n E
     fn reset_removes_map_only_templates_at_the_head() {
         let mut c = Ctx::new();
         load(&mut c, "Object Keep1\nEnd\nObject Keep2\nEnd\n").unwrap();
-        load_as(&mut c, "Object Gone1\nEnd\nObject Keep1\n Side = Z\nEnd\nObject Gone2\nEnd\n", IniLoadType::CreateOverrides).unwrap();
+        load_as(
+            &mut c,
+            "Object Gone1\nEnd\nObject Keep1\n Side = Z\nEnd\nObject Gone2\nEnd\n",
+            IniLoadType::CreateOverrides,
+        )
+        .unwrap();
         assert_eq!(c.factory.template_count(), 4);
         c.factory.reset().unwrap();
         assert_eq!(c.factory.template_count(), 2);
-        assert!(c.factory.find_template(b"Gone1").is_none() && c.factory.find_template(b"Gone2").is_none());
+        assert!(
+            c.factory.find_template(b"Gone1").is_none()
+                && c.factory.find_template(b"Gone2").is_none()
+        );
         assert_eq!(root(&c, "Keep1").get_default_owning_side(), b"");
-        assert_eq!(c.factory.first_template().unwrap().data.get_name(), b"Keep2");
+        assert_eq!(
+            c.factory.first_template().unwrap().data.get_name(),
+            b"Keep2"
+        );
         // ids are not reused
         load(&mut c, "Object New\nEnd\n").unwrap();
         assert_eq!(root(&c, "New").get_template_id(), 5);
@@ -1251,15 +1706,35 @@ Object Tank\n Prerequisites\n  Object = Factory Barracks\n  Object = Missing\n E
     fn a_default_that_has_an_override_chain_cannot_be_copied() {
         let mut c = Ctx::new();
         load(&mut c, "Object DefaultThingTemplate\nEnd\n").unwrap();
-        load_as(&mut c, "Object DefaultThingTemplate\n Side = X\nEnd\n", IniLoadType::CreateOverrides).unwrap();
+        load_as(
+            &mut c,
+            "Object DefaultThingTemplate\n Side = X\nEnd\n",
+            IniLoadType::CreateOverrides,
+        )
+        .unwrap();
         let e = load(&mut c, "Object Child\nEnd\n").unwrap_err();
-        assert_eq!(e.kind, IniErrorKind::Undefined(Undefined::AliasedOverrideChain));
+        assert_eq!(
+            e.kind,
+            IniErrorKind::Undefined(Undefined::AliasedOverrideChain)
+        );
         // and a template made in an override load from a map-only default is marked
         let mut c = Ctx::new();
-        load_as(&mut c, "Object DefaultThingTemplate\n Side = D\nEnd\n", IniLoadType::CreateOverrides).unwrap();
-        assert!(c.factory.find_template(b"DefaultThingTemplate").unwrap().is_override());
+        load_as(
+            &mut c,
+            "Object DefaultThingTemplate\n Side = D\nEnd\n",
+            IniLoadType::CreateOverrides,
+        )
+        .unwrap();
+        assert!(c
+            .factory
+            .find_template(b"DefaultThingTemplate")
+            .unwrap()
+            .is_override());
         load(&mut c, "Object Child\nEnd\n").unwrap();
-        assert!(c.factory.find_template(b"Child").unwrap().is_override(), "m_isOverride is copied with the default");
+        assert!(
+            c.factory.find_template(b"Child").unwrap().is_override(),
+            "m_isOverride is copied with the default"
+        );
         assert_eq!(root(&c, "Child").get_default_owning_side(), b"D");
     }
 
@@ -1276,7 +1751,11 @@ WeaponSet\n  Conditions = None\n End\n WeaponSet\n  Conditions = ELITE\n  Weapon
         let mut f = crate::logic::armor_set::ArmorSetFlags::new();
         assert!(!t.find_armor_template_set(&f).unwrap().conditions().any());
         f.set(crate::logic::armor_set::ARMORSET_VETERAN, 1);
-        assert!(t.find_armor_template_set(&f).unwrap().conditions().test(crate::logic::armor_set::ARMORSET_VETERAN));
+        assert!(t
+            .find_armor_template_set(&f)
+            .unwrap()
+            .conditions()
+            .test(crate::logic::armor_set::ARMORSET_VETERAN));
         let mut wf = crate::logic::weapon_set_flags::WeaponSetFlags::new();
         assert!(!t.find_weapon_template_set(&wf).unwrap().has_any_weapons());
         wf.set(crate::logic::weapon_types::WEAPONSET_ELITE, 1);
@@ -1294,7 +1773,15 @@ WeaponSet\n  Conditions = None\n End\n WeaponSet\n  Conditions = ELITE\n  Weapon
         b.friend_set_template_id(8);
         b.friend_set_node_id(200);
         a.copy_from(Some(&b));
-        assert_eq!((a.get_name(), a.get_template_id(), a.node_id(), a.get_occlusion_delay()), (&b"A"[..], 7, 100, 9));
+        assert_eq!(
+            (
+                a.get_name(),
+                a.get_template_id(),
+                a.node_id(),
+                a.get_occlusion_delay()
+            ),
+            (&b"A"[..], 7, 100, 9)
+        );
         let before = a.get_occlusion_delay();
         a.copy_from(None);
         assert_eq!(a.get_occlusion_delay(), before);

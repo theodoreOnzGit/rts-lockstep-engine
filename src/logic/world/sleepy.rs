@@ -97,11 +97,13 @@ pub struct SleepyScheduler {
 }
 
 fn module(objs: &ObjectArena, h: UpdateHandle) -> &UpdateModule {
-    objs.update_module(h).expect("sleepy heap entry names an update module in the arena")
+    objs.update_module(h)
+        .expect("sleepy heap entry names an update module in the arena")
 }
 
 fn module_mut(objs: &mut ObjectArena, h: UpdateHandle) -> &mut UpdateModule {
-    objs.update_module_mut(h).expect("sleepy heap entry names an update module in the arena")
+    objs.update_module_mut(h)
+        .expect("sleepy heap entry names an update module in the arena")
 }
 
 impl SleepyScheduler {
@@ -206,7 +208,9 @@ impl SleepyScheduler {
             return i;
         }
         let mut parent = ((i + 1) >> 1) - 1;
-        while parent >= 0 && Self::is_lower_priority(objs, self.heap[parent as usize], self.heap[i as usize]) {
+        while parent >= 0
+            && Self::is_lower_priority(objs, self.heap[parent as usize], self.heap[i as usize])
+        {
             let a = self.heap[parent as usize];
             let b = self.heap[i as usize];
             self.heap[i as usize] = a;
@@ -227,7 +231,13 @@ impl SleepyScheduler {
         let mut child = ((i + 1) << 1) - 1;
         while child >= 0 && child < sz {
             // choose the higher-priority of the two children
-            if child < sz - 1 && Self::is_lower_priority(objs, self.heap[child as usize], self.heap[child as usize + 1]) {
+            if child < sz - 1
+                && Self::is_lower_priority(
+                    objs,
+                    self.heap[child as usize],
+                    self.heap[child as usize + 1],
+                )
+            {
                 child += 1;
             }
             // if we're higher-pri than our children, we're done

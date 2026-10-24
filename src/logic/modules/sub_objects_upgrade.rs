@@ -24,19 +24,21 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::game_type::INVALID_DRAWABLE_ID;
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::module::{ModuleDataKind, ObjectId};
+use crate::common::upgrade::UpgradeMaskType;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::upgrade_module::{UpgradeModule, UpgradeModuleData};
 use crate::logic::modules::upgrade_body::{upgrade_module_call, UpgradeBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+use crate::logic::world::object_events::ObjectClientEvent;
 use crate::logic::world::update_body::UpdateBody;
 use crate::upgrade_module_data_field_parse;
-use crate::common::game_type::INVALID_DRAWABLE_ID;
-use crate::common::upgrade::UpgradeMaskType;
-use crate::logic::world::object_events::ObjectClientEvent;
 
 /// `class SubObjectsUpgradeModuleData : public UpgradeModuleData`.
 #[derive(Debug)]
@@ -61,7 +63,8 @@ impl Default for SubObjectsUpgradeModuleData {
 }
 
 /// `UpgradeModuleData::buildFieldParse`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<SubObjectsUpgradeModuleData>; 6] = upgrade_module_data_field_parse!(SubObjectsUpgradeModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<SubObjectsUpgradeModuleData>; 6] =
+    upgrade_module_data_field_parse!(SubObjectsUpgradeModuleData, upgrade);
 
 /// `SubObjectsUpgradeModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<SubObjectsUpgradeModuleData>; 3] = [
@@ -77,7 +80,13 @@ static OWN_FIELD_PARSE: [FieldParse<SubObjectsUpgradeModuleData>; 3] = [
     ),
     FieldParse::new(
         "HideSubObjects",
-        |ini, d, _| if crate::logic::modules::plant(627) { ini.parse_ascii_string_vector_append(&mut d.show_sub_object_names) } else { ini.parse_ascii_string_vector_append(&mut d.hide_sub_object_names) },
+        |ini, d, _| {
+            if crate::logic::modules::plant(627) {
+                ini.parse_ascii_string_vector_append(&mut d.show_sub_object_names)
+            } else {
+                ini.parse_ascii_string_vector_append(&mut d.hide_sub_object_names)
+            }
+        },
         UserData::None,
     ),
     FieldParse::end(),
@@ -85,7 +94,9 @@ static OWN_FIELD_PARSE: [FieldParse<SubObjectsUpgradeModuleData>; 3] = [
 
 impl SubObjectsUpgradeModuleData {
     /// `buildFieldParse(p)`: `BehaviorModuleData`'s, then `UpgradeModuleData`'s, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, SubObjectsUpgradeModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, SubObjectsUpgradeModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -93,10 +104,15 @@ impl SubObjectsUpgradeModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<SubObjectsUpgradeModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<SubObjectsUpgradeModuleData> {
         let mut data = SubObjectsUpgradeModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, SubObjectsUpgradeModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                SubObjectsUpgradeModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -114,14 +130,19 @@ pub struct SubObjectsUpgrade {
 impl PartialEq for SubObjectsUpgrade {
     /// The same data object and the same `m_upgradeExecuted` (upstream compares the data pointer).
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.data, &other.data) && self.base.is_already_upgraded() == other.base.is_already_upgraded()
+        Arc::ptr_eq(&self.data, &other.data)
+            && self.base.is_already_upgraded() == other.base.is_already_upgraded()
     }
 }
 
 impl SubObjectsUpgrade {
     /// `SubObjectsUpgrade(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(object: ObjectId, data: Option<Arc<SubObjectsUpgradeModuleData>>) -> IniResult<SubObjectsUpgrade> {
-        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<SubObjectsUpgradeModuleData>>,
+    ) -> IniResult<SubObjectsUpgrade> {
+        let data =
+            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let base = UpgradeModule::new(object, Some(data.upgrade.clone()))?;
         Ok(SubObjectsUpgrade { base, data })
     }
@@ -137,7 +158,12 @@ impl SubObjectsUpgrade {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         upgrade_module_call(self, world, me, call)
     }
 }
@@ -149,37 +175,90 @@ impl UpgradeBehavior for SubObjectsUpgrade {
     fn base_mut(&mut self) -> &mut UpgradeModule {
         &mut self.base
     }
-    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
+    fn upgrade_implementation(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+    ) -> Result<(), IniError> {
         let object = me.object;
         let statics = world.statics.clone();
-        let (activation, conflicting) = self.data.upgrade.mux_data_mut().get_upgrade_activation_masks(&statics.upgrade_center, &mut world.names)?;
-        let conflicting = if crate::logic::modules::plant(619) { activation } else { conflicting };
+        let (activation, conflicting) = self
+            .data
+            .upgrade
+            .mux_data_mut()
+            .get_upgrade_activation_masks(&statics.upgrade_center, &mut world.names)?;
+        let conflicting = if crate::logic::modules::plant(619) {
+            activation
+        } else {
+            conflicting
+        };
 
-        if !crate::logic::modules::plant(617) && world.objects.find(object).map_or(UpgradeMaskType::new(), |o| o.object_upgrades_completed).test_for_any(&conflicting) {
+        if !crate::logic::modules::plant(617)
+            && world
+                .objects
+                .find(object)
+                .map_or(UpgradeMaskType::new(), |o| o.object_upgrades_completed)
+                .test_for_any(&conflicting)
+        {
             return Ok(());
         }
-        let player = world.get_controlling_player(object).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
-        if !crate::logic::modules::plant(618) && world.cuts.player_completed_upgrade_mask(player).test_for_any(&conflicting) {
+        let player = world
+            .get_controlling_player(object)
+            .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+        if !crate::logic::modules::plant(618)
+            && world
+                .cuts
+                .player_completed_upgrade_mask(player)
+                .test_for_any(&conflicting)
+        {
             return Ok(());
         }
 
-        if world.objects.find(object).is_some_and(|o| o.drawable != INVALID_DRAWABLE_ID) || crate::logic::modules::plant(620) {
+        if world
+            .objects
+            .find(object)
+            .is_some_and(|o| o.drawable != INVALID_DRAWABLE_ID)
+            || crate::logic::modules::plant(620)
+        {
             let mut update_sub_objects = false;
             let (first, second) = if crate::logic::modules::plant(622) {
-                (&self.data.hide_sub_object_names, &self.data.show_sub_object_names)
+                (
+                    &self.data.hide_sub_object_names,
+                    &self.data.show_sub_object_names,
+                )
             } else {
-                (&self.data.show_sub_object_names, &self.data.hide_sub_object_names)
+                (
+                    &self.data.show_sub_object_names,
+                    &self.data.hide_sub_object_names,
+                )
             };
-            let (first_shows, second_shows) = if crate::logic::modules::plant(621) { (false, true) } else { (!crate::logic::modules::plant(622), crate::logic::modules::plant(622)) };
+            let (first_shows, second_shows) = if crate::logic::modules::plant(621) {
+                (false, true)
+            } else {
+                (
+                    !crate::logic::modules::plant(622),
+                    crate::logic::modules::plant(622),
+                )
+            };
             for name in first {
-                world.emit(ObjectClientEvent::DrawableShowSubObject { object_id: object, name: name.clone(), show: first_shows });
+                world.emit(ObjectClientEvent::DrawableShowSubObject {
+                    object_id: object,
+                    name: name.clone(),
+                    show: first_shows,
+                });
                 update_sub_objects = true;
             }
             for name in second {
-                world.emit(ObjectClientEvent::DrawableShowSubObject { object_id: object, name: name.clone(), show: second_shows });
+                world.emit(ObjectClientEvent::DrawableShowSubObject {
+                    object_id: object,
+                    name: name.clone(),
+                    show: second_shows,
+                });
                 update_sub_objects = true;
             }
-            if (update_sub_objects || crate::logic::modules::plant(623)) && !crate::logic::modules::plant(624) {
+            if (update_sub_objects || crate::logic::modules::plant(623))
+                && !crate::logic::modules::plant(624)
+            {
                 world.emit(ObjectClientEvent::DrawableUpdateSubObjects { object_id: object });
             }
         }
@@ -221,5 +300,7 @@ impl Snapshot for SubObjectsUpgrade {
 
 /// The factory's `NewModuleDataProc` for `SubObjectsUpgrade`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::SubObjectsUpgrade(Arc::new(SubObjectsUpgradeModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::SubObjectsUpgrade(Arc::new(
+        SubObjectsUpgradeModuleData::friend_new_module_data(ini)?,
+    )))
 }

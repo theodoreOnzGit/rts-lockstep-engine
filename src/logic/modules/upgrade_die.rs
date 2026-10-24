@@ -33,7 +33,9 @@ use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::update_body::UpdateBody;
 // --- end p1w10-sonnet ---
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
+};
 use crate::common::module::ObjectId;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
@@ -57,7 +59,9 @@ impl UpgradeDieModuleData {
     /// `UpgradeDieModuleData::buildFieldParse(p)`: the behaviour base, the
     /// four die mux fields (read from the layer-5 table into `die`), then
     /// `UpgradeToRemove`.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, UpgradeDieModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, UpgradeDieModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&UPGRADE_DIE_MODULE_DATA_FIELD_PARSE)
     }
@@ -73,7 +77,12 @@ impl UpgradeDieModuleData {
 }
 
 /// Lifts entry `k` of the layer-5 die field table onto `UpgradeDieModuleData::die`.
-fn lift_die_field(k: usize, i: &mut Ini<'_>, d: &mut UpgradeDieModuleData, u: &UserData) -> IniResult<()> {
+fn lift_die_field(
+    k: usize,
+    i: &mut Ini<'_>,
+    d: &mut UpgradeDieModuleData,
+    u: &UserData,
+) -> IniResult<()> {
     match DIE_MODULE_DATA_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.die, u),
         None => Ok(()),
@@ -82,14 +91,34 @@ fn lift_die_field(k: usize, i: &mut Ini<'_>, d: &mut UpgradeDieModuleData, u: &U
 
 /// `UpgradeDieModuleData::m_dataFieldParse`: the die mux fields, then `UpgradeToRemove`.
 pub static UPGRADE_DIE_MODULE_DATA_FIELD_PARSE: [FieldParse<UpgradeDieModuleData>; 6] = [
-    FieldParse::new("DeathTypes", |i, d, u| lift_die_field(0, i, d, u), UserData::None),
-    FieldParse::new("VeterancyLevels", |i, d, u| lift_die_field(1, i, d, u), UserData::None),
-    FieldParse::new("ExemptStatus", |i, d, u| lift_die_field(2, i, d, u), UserData::None),
-    FieldParse::new("RequiredStatus", |i, d, u| lift_die_field(3, i, d, u), UserData::None),
-    FieldParse::new("UpgradeToRemove", |i, d, _| {
-        d.upgrade_name = i.parse_ascii_string()?;
-        Ok(())
-    }, UserData::None),
+    FieldParse::new(
+        "DeathTypes",
+        |i, d, u| lift_die_field(0, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "VeterancyLevels",
+        |i, d, u| lift_die_field(1, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ExemptStatus",
+        |i, d, u| lift_die_field(2, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RequiredStatus",
+        |i, d, u| lift_die_field(3, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "UpgradeToRemove",
+        |i, d, _| {
+            d.upgrade_name = i.parse_ascii_string()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
@@ -102,7 +131,10 @@ pub struct UpgradeDie {
 
 impl UpgradeDie {
     /// `UpgradeDie(thing, moduleData)`; `INI_INVALID_DATA` for null data.
-    pub fn new(object: ObjectId, module_data: Option<Arc<UpgradeDieModuleData>>) -> IniResult<Self> {
+    pub fn new(
+        object: ObjectId,
+        module_data: Option<Arc<UpgradeDieModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let die = DieModule::new(object, Some(Arc::new(data.die.clone())))?;
         Ok(UpgradeDie { die, data })
@@ -113,7 +145,11 @@ impl UpgradeDie {
     /// that lacks the upgrade is upstream's `DEBUG_ASSERTCRASH(0, ...)`, which
     /// is compiled out of a release build: nothing happens.
     pub fn on_die(&mut self, host: &mut impl DieHost, death_type: i32) {
-        if !self.die.is_die_applicable(death_type, host.veterancy_level(), &host.status_bits()) && !plant(51) {
+        if !self
+            .die
+            .is_die_applicable(death_type, host.veterancy_level(), &host.status_bits())
+            && !plant(51)
+        {
             return;
         }
         // Look for the object that created me.
@@ -153,25 +189,37 @@ impl Snapshot for UpgradeDie {
 
 // --- p1w10-sonnet ---
 /// The factory's `NewModuleDataProc` for `UpgradeDie`.
-pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<crate::common::module::ModuleDataKind> {
-    Ok(crate::common::module::ModuleDataKind::UpgradeDie(Arc::new(UpgradeDieModuleData::friend_new_module_data(ini)?)))
+pub fn new_module_data(
+    ini: Option<&mut Ini<'_>>,
+) -> IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::UpgradeDie(Arc::new(
+        UpgradeDieModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
 impl PartialEq for UpgradeDie {
     /// The same object and the same data object (upstream compares pointers). (`UpdateBody` is compared in tests.)
     fn eq(&self, other: &Self) -> bool {
-        self.die.behavior().object() == other.die.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
+        self.die.behavior().object() == other.die.behavior().object()
+            && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
 impl UpgradeDie {
     /// The module's answer to one of `Object`'s calls: `onDie`. The module is lent to its slot around it, because
     /// `destroyObject` and the upgrade removal send calls to every module of the object, this one included.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         match call {
             ModuleCall::OnDie(info) => {
                 let death_type = info.input.death_type;
-                lend_clone(world, me, self, UpdateBody::UpgradeDie, un, |w, m| m.on_die(w, death_type));
+                lend_clone(world, me, self, UpdateBody::UpgradeDie, un, |w, m| {
+                    m.on_die(w, death_type)
+                });
                 ModuleReply::Done
             }
             _ => ModuleReply::Unhandled,
@@ -197,21 +245,41 @@ mod tests {
         out.push(UpgradeDieModuleData::friend_new_module_data(Some(ini)));
         Ok(())
     }
-    static BLOCKS: [BlockParse<Vec<IniResult<UpgradeDieModuleData>>>; 1] = [BlockParse { token: "D", parse: block }];
+    static BLOCKS: [BlockParse<Vec<IniResult<UpgradeDieModuleData>>>; 1] = [BlockParse {
+        token: "D",
+        parse: block,
+    }];
 
     fn data_of(text: &str) -> IniResult<UpgradeDieModuleData> {
         let mut out = Vec::new();
-        let _ = Ini::load(b"u.ini", format!("D\n{text}\nEnd\n").as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut out);
+        let _ = Ini::load(
+            b"u.ini",
+            format!("D\n{text}\nEnd\n").as_bytes(),
+            IniLoadType::Overwrite,
+            None,
+            &BLOCKS,
+            &mut out,
+        );
         out.remove(0)
     }
 
     #[test]
     fn upgrade_to_remove_and_the_die_mux_are_read() {
-        let d = data_of("UpgradeToRemove = Upgrade_ChinaScoutDrone\n DeathTypes = NONE +CRUSHED").unwrap();
+        let d = data_of("UpgradeToRemove = Upgrade_ChinaScoutDrone\n DeathTypes = NONE +CRUSHED")
+            .unwrap();
         assert_eq!(d.upgrade_name, b"Upgrade_ChinaScoutDrone".to_vec());
-        assert_eq!(d.die.die_mux_data, data_of("DeathTypes = NONE +CRUSHED").unwrap().die.die_mux_data);
+        assert_eq!(
+            d.die.die_mux_data,
+            data_of("DeathTypes = NONE +CRUSHED")
+                .unwrap()
+                .die
+                .die_mux_data
+        );
         // upstream INI::parseAsciiString takes getNextAsciiString(): an empty value is an empty name
-        assert!(data_of("UpgradeToRemove =").unwrap().upgrade_name.is_empty());
+        assert!(data_of("UpgradeToRemove =")
+            .unwrap()
+            .upgrade_name
+            .is_empty());
         assert!(UpgradeDieModuleData::default().upgrade_name.is_empty());
     }
 }

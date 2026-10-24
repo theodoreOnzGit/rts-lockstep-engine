@@ -59,8 +59,14 @@ impl SpecialPowerUpdateModule {
     /// class of its own; its data is an `UpdateModuleData` (or a class
     /// derived from it, which layer 9 adds). `update_phase` is the concrete
     /// class's `getUpdatePhase()`. `INI_INVALID_DATA` for null data.
-    pub fn new(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>, update_phase: SleepyUpdatePhase) -> IniResult<Self> {
-        Ok(SpecialPowerUpdateModule { update: UpdateModule::new(object, module_data, update_phase)? })
+    pub fn new(
+        object: ObjectId,
+        module_data: Option<Arc<UpdateModuleData>>,
+        update_phase: SleepyUpdatePhase,
+    ) -> IniResult<Self> {
+        Ok(SpecialPowerUpdateModule {
+            update: UpdateModule::new(object, module_data, update_phase)?,
+        })
     }
 
     /// `SpecialPowerUpdateModule::getInterfaceMask()`: inherited from
@@ -126,14 +132,18 @@ impl Snapshot for SpecialPowerUpdateModule {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::logic::module::test_support::{load_bytes, save_bytes};
 
     fn module() -> SpecialPowerUpdateModule {
-        SpecialPowerUpdateModule::new(1, Some(Arc::new(UpdateModuleData::new())), SleepyUpdatePhase::Normal).unwrap()
+        SpecialPowerUpdateModule::new(
+            1,
+            Some(Arc::new(UpdateModuleData::new())),
+            SleepyUpdatePhase::Normal,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -141,7 +151,9 @@ mod tests {
         let m = module();
         assert_eq!(m.get_extra_required_science(), SCIENCE_INVALID);
         // no extra science: true, and the player is not asked
-        assert!(m.does_special_power_update_pass_science_test(SCIENCE_INVALID, |_| panic!("not asked")));
+        assert!(
+            m.does_special_power_update_pass_science_test(SCIENCE_INVALID, |_| panic!("not asked"))
+        );
         let s = ScienceType(1234);
         assert!(m.does_special_power_update_pass_science_test(s, |x| x == s));
         assert!(!m.does_special_power_update_pass_science_test(s, |_| false));

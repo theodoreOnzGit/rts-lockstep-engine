@@ -18,13 +18,17 @@ const DRAWS: usize = 1_000_000;
 const SEEDS: [u32; 6] = [0, 1, 0x1234_5678, 0xdead_beef, 0x7fff_ffff, u32::MAX];
 
 fn lock() -> std::sync::MutexGuard<'static, ()> {
-    cpp::GLOBAL_RNG_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    cpp::GLOBAL_RNG_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
 }
 
 #[test]
 fn mult_factor_matches() {
     let mut c = Check::new("theMultFactor");
-    c.f32(MULT_FACTOR, unsafe { cpp::ref_mult_factor() }, || "constant".into());
+    c.f32(MULT_FACTOR, unsafe { cpp::ref_mult_factor() }, || {
+        "constant".into()
+    });
     c.finish();
 }
 
@@ -117,8 +121,16 @@ fn api_sequences_match() {
     for &s in &SEEDS {
         let mut rv = RandomValues::new(s);
         unsafe { cpp::ref_init_random(s) };
-        cs.eq(rv.get_game_logic_random_seed(), unsafe { cpp::ref_get_game_logic_random_seed() }, || format!("seed {s}"));
-        cs.eq(rv.get_game_logic_random_seed_crc(), unsafe { cpp::ref_get_game_logic_random_seed_crc() }, || format!("crc {s}"));
+        cs.eq(
+            rv.get_game_logic_random_seed(),
+            unsafe { cpp::ref_get_game_logic_random_seed() },
+            || format!("seed {s}"),
+        );
+        cs.eq(
+            rv.get_game_logic_random_seed_crc(),
+            unsafe { cpp::ref_get_game_logic_random_seed_crc() },
+            || format!("crc {s}"),
+        );
         for i in 0..DRAWS / 2 {
             let which = g.below(3);
             if g.below(2) == 0 {
@@ -138,12 +150,23 @@ fn api_sequences_match() {
                 };
                 let (a, b) = unsafe {
                     match which {
-                        0 => (rv.game_logic_random_value(lo, hi), cpp::ref_logic_value(lo, hi)),
-                        1 => (rv.game_client_random_value(lo, hi), cpp::ref_client_value(lo, hi)),
-                        _ => (rv.game_audio_random_value(lo, hi), cpp::ref_audio_value(lo, hi)),
+                        0 => (
+                            rv.game_logic_random_value(lo, hi),
+                            cpp::ref_logic_value(lo, hi),
+                        ),
+                        1 => (
+                            rv.game_client_random_value(lo, hi),
+                            cpp::ref_client_value(lo, hi),
+                        ),
+                        _ => (
+                            rv.game_audio_random_value(lo, hi),
+                            cpp::ref_audio_value(lo, hi),
+                        ),
                     }
                 };
-                ci.eq(a, b, || format!("seed {s} call {i} stream {which} ({lo}, {hi})"));
+                ci.eq(a, b, || {
+                    format!("seed {s} call {i} stream {which} ({lo}, {hi})")
+                });
             } else {
                 let (lo, hi) = match g.below(6) {
                     0 => (g.mixed(), g.mixed()),
@@ -159,21 +182,48 @@ fn api_sequences_match() {
                 };
                 let (a, b) = unsafe {
                     match which {
-                        0 => (rv.game_logic_random_value_real(lo, hi), cpp::ref_logic_value_real(lo, hi)),
-                        1 => (rv.game_client_random_value_real(lo, hi), cpp::ref_client_value_real(lo, hi)),
-                        _ => (rv.game_audio_random_value_real(lo, hi), cpp::ref_audio_value_real(lo, hi)),
+                        0 => (
+                            rv.game_logic_random_value_real(lo, hi),
+                            cpp::ref_logic_value_real(lo, hi),
+                        ),
+                        1 => (
+                            rv.game_client_random_value_real(lo, hi),
+                            cpp::ref_client_value_real(lo, hi),
+                        ),
+                        _ => (
+                            rv.game_audio_random_value_real(lo, hi),
+                            cpp::ref_audio_value_real(lo, hi),
+                        ),
                     }
                 };
-                cr.f32(a, b, || format!("seed {s} call {i} stream {which} ({lo:e}, {hi:e})"));
+                cr.f32(a, b, || {
+                    format!("seed {s} call {i} stream {which} ({lo:e}, {hi:e})")
+                });
             }
         }
-        cs.eq((rv.logic, rv.client, rv.audio), (cpp_state(0), cpp_state(1), cpp_state(2)), || format!("seed {s} final states"));
-        cs.eq(rv.get_game_logic_random_seed_crc(), unsafe { cpp::ref_get_game_logic_random_seed_crc() }, || format!("crc after {s}"));
+        cs.eq(
+            (rv.logic, rv.client, rv.audio),
+            (cpp_state(0), cpp_state(1), cpp_state(2)),
+            || format!("seed {s} final states"),
+        );
+        cs.eq(
+            rv.get_game_logic_random_seed_crc(),
+            unsafe { cpp::ref_get_game_logic_random_seed_crc() },
+            || format!("crc after {s}"),
+        );
         let s2 = s.wrapping_mul(2_654_435_761);
         rv.init_game_logic_random(s2);
         unsafe { cpp::ref_init_game_logic_random(s2) };
-        cs.eq((rv.logic, rv.client, rv.audio), (cpp_state(0), cpp_state(1), cpp_state(2)), || format!("InitGameLogicRandom {s2}"));
-        cs.eq(rv.get_game_logic_random_seed(), unsafe { cpp::ref_get_game_logic_random_seed() }, || format!("seed2 {s2}"));
+        cs.eq(
+            (rv.logic, rv.client, rv.audio),
+            (cpp_state(0), cpp_state(1), cpp_state(2)),
+            || format!("InitGameLogicRandom {s2}"),
+        );
+        cs.eq(
+            rv.get_game_logic_random_seed(),
+            unsafe { cpp::ref_get_game_logic_random_seed() },
+            || format!("seed2 {s2}"),
+        );
     }
     ci.finish();
     cr.finish();
@@ -218,6 +268,8 @@ fn random_variables_match() {
             c.f32(a, b, || format!("client var {i} {kind:?} ({lo:e},{hi:e})"));
         }
     }
-    c.eq((rv.logic, rv.client), (cpp_state(0), cpp_state(1)), || "final states".into());
+    c.eq((rv.logic, rv.client), (cpp_state(0), cpp_state(1)), || {
+        "final states".into()
+    });
     c.finish();
 }

@@ -36,12 +36,16 @@ use std::sync::Arc;
 
 use crate::common::base_type::Coord3D;
 use crate::common::game_type::{INVALID_ID, LAYER_GROUND};
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::{DAMAGE_UNRESISTABLE, DEATH_NORMAL};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
+use crate::logic::module::update_module::{
+    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE,
+};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -84,25 +88,71 @@ impl Default for HeightDieUpdateModuleData {
 
 /// `HeightDieUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<HeightDieUpdateModuleData>; 7] = [
-    FieldParse::new("TargetHeight", |ini, d, _| { d.target_height_above_terrain = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("TargetHeightIncludesStructures", |ini, d, _| { d.target_height_includes_structures = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("OnlyWhenMovingDown", |ini, d, _| { d.only_when_moving_down = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("DestroyAttachedParticlesAtHeight", |ini, d, _| { d.destroy_attached_particles_at_height = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("SnapToGroundOnDeath", |ini, d, _| { d.snap_to_ground_on_death = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("InitialDelay", |ini, d, _| { d.initial_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "TargetHeight",
+        |ini, d, _| {
+            d.target_height_above_terrain = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "TargetHeightIncludesStructures",
+        |ini, d, _| {
+            d.target_height_includes_structures = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "OnlyWhenMovingDown",
+        |ini, d, _| {
+            d.only_when_moving_down = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DestroyAttachedParticlesAtHeight",
+        |ini, d, _| {
+            d.destroy_attached_particles_at_height = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "SnapToGroundOnDeath",
+        |ini, d, _| {
+            d.snap_to_ground_on_death = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "InitialDelay",
+        |ini, d, _| {
+            d.initial_delay = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl HeightDieUpdateModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, HeightDieUpdateModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, HeightDieUpdateModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<HeightDieUpdateModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<HeightDieUpdateModuleData> {
         let mut data = HeightDieUpdateModuleData::default();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, HeightDieUpdateModuleData::build_field_parse)?;
@@ -144,7 +194,10 @@ impl PartialEq for HeightDieUpdate {
 
 impl HeightDieUpdate {
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and the initial state.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<HeightDieUpdateModuleData>>) -> IniResult<Self> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<HeightDieUpdateModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
@@ -153,7 +206,11 @@ impl HeightDieUpdate {
             data,
             has_died: false,
             particles_destroyed: false,
-            last_position: Coord3D { x: -1.0, y: -1.0, z: -1.0 },
+            last_position: Coord3D {
+                x: -1.0,
+                y: -1.0,
+                z: -1.0,
+            },
             earliest_death_frame: u32::MAX,
         })
     }
@@ -192,7 +249,12 @@ impl HeightDieUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls (none).
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -216,16 +278,24 @@ impl HeightDieUpdate {
         let now = world.frame();
         let md = self.data.clone();
         if self.earliest_death_frame == u32::MAX {
-            self.earliest_death_frame = if crate::logic::modules::plant(1101) { now } else { now.wrapping_add(md.initial_delay) };
+            self.earliest_death_frame = if crate::logic::modules::plant(1101) {
+                now
+            } else {
+                now.wrapping_add(md.initial_delay)
+            };
         }
 
         // If at least a one frame delay has been set, then stop for a while
-        if self.earliest_death_frame > now || (crate::logic::modules::plant(1102) && self.earliest_death_frame == now) {
+        if self.earliest_death_frame > now
+            || (crate::logic::modules::plant(1102) && self.earliest_death_frame == now)
+        {
             return Ok(UPDATE_SLEEP_NONE);
         }
 
         // do nothing if we're contained within other objects ... like a transport
-        let Some(o) = world.objects.find(me) else { return Ok(UPDATE_SLEEP_NONE) };
+        let Some(o) = world.objects.find(me) else {
+            return Ok(UPDATE_SLEEP_NONE);
+        };
         if o.contained_by != INVALID_ID && !crate::logic::modules::plant(1103) {
             // keep track of our last position even though we're not doing anything yet
             self.last_position = o.get_position();
@@ -238,7 +308,10 @@ impl HeightDieUpdate {
 
         let mut direction_ok = true;
         if !self.has_died {
-            if md.only_when_moving_down && (pos.z >= self.last_position.z && !(crate::logic::modules::plant(1104) && pos.z == self.last_position.z)) {
+            if md.only_when_moving_down
+                && (pos.z >= self.last_position.z
+                    && !(crate::logic::modules::plant(1104) && pos.z == self.last_position.z))
+            {
                 direction_ok = false;
             }
 
@@ -263,7 +336,10 @@ impl HeightDieUpdate {
             // if we consider objects under us ... we will die when we are the specified distance above those objects
             if md.target_height_includes_structures {
                 // scan all objects in the radius of our extent and find the tallest height among them
-                let range = world.objects.find(me).map_or(0.0, |o| o.geometry_info.get_bounding_circle_radius());
+                let range = world
+                    .objects
+                    .find(me)
+                    .map_or(0.0, |o| o.geometry_info.get_bounding_circle_radius());
                 let found = world.partition_iterate_structures_in_range(me, range);
 
                 let mut tallest_height = 0.0f32;
@@ -274,7 +350,10 @@ impl HeightDieUpdate {
                     }
 
                     // store the height of the tallest object under us
-                    let this_height = world.objects.find(obj).map_or(0.0, |o| o.geometry_info.get_max_height_above_position());
+                    let this_height = world
+                        .objects
+                        .find(obj)
+                        .map_or(0.0, |o| o.geometry_info.get_max_height_above_position());
                     if this_height > tallest_height {
                         tallest_height = this_height;
                     }
@@ -283,15 +362,25 @@ impl HeightDieUpdate {
                 // our target height is either the height above the terrain as specified by the INI entry for the object that has this update ... or it is
                 // the building height of the tallest thing under us
                 if tallest_height > md.target_height_above_terrain {
-                    target_height = if crate::logic::modules::plant(1108) { tallest_height } else { tallest_height + terrain_height_at_pos };
+                    target_height = if crate::logic::modules::plant(1108) {
+                        tallest_height
+                    } else {
+                        tallest_height + terrain_height_at_pos
+                    };
                 }
             }
 
             // if we are below the target height ... DIE!
             if pos.z < target_height && direction_ok {
                 // if we're supposed to snap us to the ground on death do so AND: even if we're not snapping to ground, be sure we don't go BELOW ground
-                if md.snap_to_ground_on_death || (pos.z < terrain_height_at_pos && !crate::logic::modules::plant(1109)) {
-                    let ground = Coord3D { x: pos.x, y: pos.y, z: terrain_height_at_pos };
+                if md.snap_to_ground_on_death
+                    || (pos.z < terrain_height_at_pos && !crate::logic::modules::plant(1109))
+                {
+                    let ground = Coord3D {
+                        x: pos.x,
+                        y: pos.y,
+                        z: terrain_height_at_pos,
+                    };
                     world.set_position(me, &ground);
                 }
 
@@ -307,12 +396,25 @@ impl HeightDieUpdate {
         }
 
         // `pos` points into the object: after a snap it is the snapped position
-        let Some(pos_now) = world.objects.find(me).map(|o| o.get_position()) else { return Ok(UPDATE_SLEEP_NONE) };
-        let pos = if crate::logic::modules::plant(1112) { pos } else { pos_now };
+        let Some(pos_now) = world.objects.find(me).map(|o| o.get_position()) else {
+            return Ok(UPDATE_SLEEP_NONE);
+        };
+        let pos = if crate::logic::modules::plant(1112) {
+            pos
+        } else {
+            pos_now
+        };
 
         // if our height is below the destroy attached particles height above the terrain, clean them up from the particle system
-        let below = if crate::logic::modules::plant(1114) { pos.z <= md.destroy_attached_particles_at_height } else { pos.z < md.destroy_attached_particles_at_height };
-        if !self.particles_destroyed && below && (self.has_died || direction_ok || crate::logic::modules::plant(1111)) {
+        let below = if crate::logic::modules::plant(1114) {
+            pos.z <= md.destroy_attached_particles_at_height
+        } else {
+            pos.z < md.destroy_attached_particles_at_height
+        };
+        if !self.particles_destroyed
+            && below
+            && (self.has_died || direction_ok || crate::logic::modules::plant(1111))
+        {
             // destroy them
             world.particle_destroy_attached_systems(me);
 
@@ -387,5 +489,7 @@ impl Snapshot for HeightDieUpdate {
 
 /// The factory's `NewModuleDataProc` for `HeightDieUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::HeightDieUpdate(Arc::new(HeightDieUpdateModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::HeightDieUpdate(Arc::new(
+        HeightDieUpdateModuleData::friend_new_module_data(ini)?,
+    )))
 }

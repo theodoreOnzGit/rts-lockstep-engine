@@ -84,10 +84,15 @@ use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::common::geometry::{GeometryInfo, GeometryType};
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
 use rts_lockstep_engine::common::kind_of::{
-    KindOfMaskType, KINDOF_AIRCRAFT, KINDOF_CAN_ATTACK, KINDOF_COUNT, KINDOF_HUGE_VEHICLE, KINDOF_INFANTRY, KINDOF_SCORE, KINDOF_SELECTABLE, KINDOF_STRUCTURE, KINDOF_VEHICLE,
+    KindOfMaskType, KINDOF_AIRCRAFT, KINDOF_CAN_ATTACK, KINDOF_COUNT, KINDOF_HUGE_VEHICLE,
+    KINDOF_INFANTRY, KINDOF_SCORE, KINDOF_SELECTABLE, KINDOF_STRUCTURE, KINDOF_VEHICLE,
 };
-use rts_lockstep_engine::common::module::{ModuleDataKind, MODULEINTERFACE_BODY, MODULEINTERFACE_DAMAGE};
-use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_UNDER_CONSTRUCTION};
+use rts_lockstep_engine::common::module::{
+    ModuleDataKind, MODULEINTERFACE_BODY, MODULEINTERFACE_DAMAGE,
+};
+use rts_lockstep_engine::common::object_status_types::{
+    ObjectStatusMaskType, OBJECT_STATUS_UNDER_CONSTRUCTION,
+};
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::damage::DamageInfo;
@@ -113,19 +118,42 @@ const XFER_FILE: &str = "l9ah_m.bin";
 /// The team of object `k` is `100 + k`.
 const TEAM0: u32 = 100;
 /// The eight kinds of the driver, in bit order.
-const KINDS: [i32; 8] = [KINDOF_STRUCTURE, KINDOF_INFANTRY, KINDOF_VEHICLE, KINDOF_AIRCRAFT, KINDOF_SELECTABLE, KINDOF_CAN_ATTACK, KINDOF_SCORE, KINDOF_HUGE_VEHICLE];
-const KIND_NAMES: [&str; 8] = ["STRUCTURE", "INFANTRY", "VEHICLE", "AIRCRAFT", "SELECTABLE", "CAN_ATTACK", "SCORE", "HUGE_VEHICLE"];
+const KINDS: [i32; 8] = [
+    KINDOF_STRUCTURE,
+    KINDOF_INFANTRY,
+    KINDOF_VEHICLE,
+    KINDOF_AIRCRAFT,
+    KINDOF_SELECTABLE,
+    KINDOF_CAN_ATTACK,
+    KINDOF_SCORE,
+    KINDOF_HUGE_VEHICLE,
+];
+const KIND_NAMES: [&str; 8] = [
+    "STRUCTURE",
+    "INFANTRY",
+    "VEHICLE",
+    "AIRCRAFT",
+    "SELECTABLE",
+    "CAN_ATTACK",
+    "SCORE",
+    "HUGE_VEHICLE",
+];
 const CFG_WORDS: usize = 28;
 
 // -- reading the data --
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::AutoHealBehavior(Arc::new(AutoHealBehaviorModuleData::friend_new_module_data(Some(ini))?)));
+    *out = Some(ModuleDataKind::AutoHealBehavior(Arc::new(
+        AutoHealBehaviorModuleData::friend_new_module_data(Some(ini))?,
+    )));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }];
+    let blocks = [BlockParse {
+        token: "D",
+        parse: read_block,
+    }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -133,7 +161,10 @@ fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>
 
 /// A kind-of mask as the driver prints it in the data dump: the indices of its set bits, each followed by a comma.
 fn kind_str(m: &KindOfMaskType) -> String {
-    (0..KINDOF_COUNT).filter(|&i| m.test(i)).map(|i| format!("{i},")).collect()
+    (0..KINDOF_COUNT)
+        .filter(|&i| m.test(i))
+        .map(|i| format!("{i},"))
+        .collect()
 }
 
 fn name_of(n: &Option<Vec<u8>>) -> Vec<u8> {
@@ -142,7 +173,9 @@ fn name_of(n: &Option<Vec<u8>>) -> Vec<u8> {
 
 /// The data dump of `ref_l9ah_run`: the mux, then the module's own fields.
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, fx: &mut FxIds) {
-    let ModuleDataKind::AutoHealBehavior(d) = data else { unreachable!("not an AutoHealBehavior") };
+    let ModuleDataKind::AutoHealBehavior(d) = data else {
+        unreachable!("not an AutoHealBehavior")
+    };
     put_mux(v, &d.upgrade.mux_data(), fx);
     put_u32(v, u32::from(d.initially_active));
     put_u32(v, u32::from(d.single_burst));
@@ -175,7 +208,9 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         f.push(r.u32().to_string());
     }
     let (kinds, forbidden, ps1, ps2) = (r.str(), r.str(), r.str(), r.str());
-    out.push(format!("data {f:?} kinds [{kinds}] forbidden [{forbidden}] radiusps {ps1:?} pulseps {ps2:?}"));
+    out.push(format!(
+        "data {f:?} kinds [{kinds}] forbidden [{forbidden}] radiusps {ps1:?} pulseps {ps2:?}"
+    ));
     for i in 0..=n_ops {
         if r.at_end() {
             break;
@@ -206,10 +241,24 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 fn gen_kind_list(g: &mut Gen, clean: bool) -> String {
     match g.below(8) {
         0 => "NONE".to_string(),
-        1 if !clean => pick(g, &["Bogus", "+STRUCTURE", "STRUCTURE +VEHICLE", "", "-INFANTRY", "KINDOF_VEHICLE"]).to_string(),
+        1 if !clean => pick(
+            g,
+            &[
+                "Bogus",
+                "+STRUCTURE",
+                "STRUCTURE +VEHICLE",
+                "",
+                "-INFANTRY",
+                "KINDOF_VEHICLE",
+            ],
+        )
+        .to_string(),
         2 => format!("+{}", pick(g, &KIND_NAMES)),
         3 => format!("-{}", pick(g, &KIND_NAMES)),
-        _ => (0..1 + g.below(3)).map(|_| pick(g, &KIND_NAMES).to_string()).collect::<Vec<_>>().join(" "),
+        _ => (0..1 + g.below(3))
+            .map(|_| pick(g, &KIND_NAMES).to_string())
+            .collect::<Vec<_>>()
+            .join(" "),
     }
 }
 
@@ -240,7 +289,11 @@ fn gen_data(g: &mut Gen, upgrades: &[String], clean: bool) -> Vec<u8> {
     field(g, 55, "StartsActive", v);
     let v = gen_bool(g, clean);
     field(g, 30, "SingleBurst", v);
-    let v = if clean { format!("{}", g.below(40)) } else { gen_int(g, false) };
+    let v = if clean {
+        format!("{}", g.below(40))
+    } else {
+        gen_int(g, false)
+    };
     field(g, 75, "HealingAmount", v);
     let v = gen_dur(g, clean);
     field(g, 75, "HealingDelay", v);
@@ -295,7 +348,13 @@ struct Tally {
 }
 
 /// The effect lines of a trace, in the driver's format, and the wake calls of module `idx` among them.
-fn effects(trace: Vec<String>, cuts: Vec<CutCall>, fxs: Vec<Vec<u8>>, idx: u16, fx: &mut FxIds) -> (Vec<String>, u32, u32) {
+fn effects(
+    trace: Vec<String>,
+    cuts: Vec<CutCall>,
+    fxs: Vec<Vec<u8>>,
+    idx: u16,
+    fx: &mut FxIds,
+) -> (Vec<String>, u32, u32) {
     let (mut log, mut wakes, mut last) = (Vec::new(), 0u32, 0u32);
     let mut cut_iter = cuts.into_iter();
     let mut fx_iter = fxs.into_iter();
@@ -308,10 +367,25 @@ fn effects(trace: Vec<String>, cuts: Vec<CutCall>, fxs: Vec<Vec<u8>>, idx: u16, 
             }
         } else if t.starts_with("cut ") {
             match cut_iter.next() {
-                Some(CutCall::ParticleSystemCreate { template, position, id }) => {
-                    log.push(format!("psys {} {id} {:08x},{:08x},{:08x}", String::from_utf8_lossy(&template), position.x.to_bits(), position.y.to_bits(), position.z.to_bits()));
+                Some(CutCall::ParticleSystemCreate {
+                    template,
+                    position,
+                    id,
+                }) => {
+                    log.push(format!(
+                        "psys {} {id} {:08x},{:08x},{:08x}",
+                        String::from_utf8_lossy(&template),
+                        position.x.to_bits(),
+                        position.y.to_bits(),
+                        position.z.to_bits()
+                    ));
                 }
-                Some(CutCall::InGameUiAddWorldAnimation { template, position, display_time_in_seconds, z_rise_per_second }) => {
+                Some(CutCall::InGameUiAddWorldAnimation {
+                    template,
+                    position,
+                    display_time_in_seconds,
+                    z_rise_per_second,
+                }) => {
                     log.push(format!("findanim {}", String::from_utf8_lossy(&template)));
                     log.push(format!(
                         "anim {},{},{} 1 {} {}",
@@ -355,10 +429,14 @@ fn set_player(w: &mut World, k: usize, player_plus_one: u32) {
 }
 
 fn probe_of(w: &mut World, id: i32) -> Option<&mut ProbeModule> {
-    w.objects.find_mut(id)?.modules.iter_mut().find_map(|b| match b.body.as_mut() {
-        Some(UpdateBody::ModuleProbe(p)) => Some(p),
-        _ => None,
-    })
+    w.objects
+        .find_mut(id)?
+        .modules
+        .iter_mut()
+        .find_map(|b| match b.body.as_mut() {
+            Some(UpdateBody::ModuleProbe(p)) => Some(p),
+            _ => None,
+        })
 }
 
 /// The height the driver's geometry answers for `getMaxHeightAbovePosition`: a box of that height.
@@ -380,16 +458,36 @@ fn ids(packed: u32) -> Vec<i32> {
     v
 }
 
-const PROBE: [&str; 9] = ["none", "Up0", "Up3", "Unknown0", "Unknown2", "Up9", "SCIENCE_Pathfinder", "zz_fresh", "AutoHealBehavior"];
+const PROBE: [&str; 9] = [
+    "none",
+    "Up0",
+    "Up3",
+    "Unknown0",
+    "Unknown2",
+    "Up9",
+    "SCIENCE_Pathfinder",
+    "zz_fresh",
+    "AutoHealBehavior",
+];
 
 /// Runs the ops on a fresh world and returns the dump (after the data dump), the name keys afterwards, the world and whether the constructor threw.
-fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; CFG_WORDS], ops: &[[u32; 5]], tally: &mut Tally) -> (Vec<u8>, Vec<u32>, World, bool) {
+fn rust_run(
+    ctx: Ctx,
+    data: ModuleDataKind,
+    cfg: &[u32; CFG_WORDS],
+    ops: &[[u32; 5]],
+    tally: &mut Tally,
+) -> (Vec<u8>, Vec<u32>, World, bool) {
     let mut v = Vec::new();
     let mut fx = FxIds::default();
     put_data(&mut v, &data, &mut fx);
 
     let mut w = World::new();
-    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
+    w.statics = Arc::new(GameStatics {
+        upgrade_center: ctx.center,
+        special_power_store: ctx.store,
+        ..Default::default()
+    });
     w.names = ctx.names;
     w.cuts.probe_effect_trace = true;
     w.cuts.trace = Some(Vec::new());
@@ -415,7 +513,11 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; CFG_WORDS], ops: &[[u32;
         if cfg[16 + k] & 1 != 0 {
             let mut m = NewModule::plain(b"ProbeBody", b"ModuleTag_Body");
             m.interfaces = MODULEINTERFACE_BODY | MODULEINTERFACE_DAMAGE;
-            m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), f32::from_bits(cfg[12 + k]), Default::default())));
+            m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+                ProbeAnswers::default(),
+                f32::from_bits(cfg[12 + k]),
+                Default::default(),
+            )));
             modules.push(m);
         }
         let mut status = ObjectStatusMaskType::default();
@@ -423,7 +525,16 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; CFG_WORDS], ops: &[[u32;
             // made under construction (as batches C and I do): `initObject` runs the upgrade pass of a finished object, which resolves the mux's names;
             // the C++ driver makes the object with no such pass
             status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, 1);
-            modules.push(rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"AutoHealBehavior", b"ModuleTag_Heal", &data).unwrap().unwrap());
+            modules.push(
+                rts_lockstep_engine::logic::modules::new_module(
+                    w.next_object_id(),
+                    b"AutoHealBehavior",
+                    b"ModuleTag_Heal",
+                    &data,
+                )
+                .unwrap()
+                .unwrap(),
+            );
         }
         let mut values = ObjectTemplateValues::default();
         for (i, kind) in KINDS.iter().enumerate() {
@@ -433,15 +544,36 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; CFG_WORDS], ops: &[[u32;
         }
         let template = Arc::new(ThingTemplate::from_object_values(&values));
         let events_before = w.events.events().len();
-        let id = w.new_object(NewObject { template, status, team: Some(team), modules }).unwrap();
-        assert_eq!(id as usize, k + 1, "the objects of a fresh world have the ids 1, 2, 3, 4");
+        let id = w
+            .new_object(NewObject {
+                template,
+                status,
+                team: Some(team),
+                modules,
+            })
+            .unwrap();
+        assert_eq!(
+            id as usize,
+            k + 1,
+            "the objects of a fresh world have the ids 1, 2, 3, 4"
+        );
         if k == 0 {
             me = id;
-            w.objects.find_mut(me).unwrap().status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, 0);
+            w.objects
+                .find_mut(me)
+                .unwrap()
+                .status
+                .set(OBJECT_STATUS_UNDER_CONSTRUCTION, 0);
             healer_idx = w.find_module(me, b"AutoHealBehavior").unwrap();
             ctor_threw = !w.cuts.module_errors.is_empty();
             let evs = new_events(&w, events_before);
-            constructor = effects(w.cuts.trace.take().unwrap(), w.cuts.log.take().unwrap(), evs, healer_idx, &mut fx);
+            constructor = effects(
+                w.cuts.trace.take().unwrap(),
+                w.cuts.log.take().unwrap(),
+                evs,
+                healer_idx,
+                &mut fx,
+            );
         }
         if let Some(p) = probe_of(&mut w, id) {
             p.health = f32::from_bits(cfg[8 + k]);
@@ -451,7 +583,14 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; CFG_WORDS], ops: &[[u32;
         let _ = o;
     }
     for k in 0..4usize {
-        w.set_position(k as i32 + 1, &Coord3D { x: 10.0 * k as f32, y: -3.0 * k as f32, z: 0.5 * k as f32 });
+        w.set_position(
+            k as i32 + 1,
+            &Coord3D {
+                x: 10.0 * k as f32,
+                y: -3.0 * k as f32,
+                z: 0.5 * k as f32,
+            },
+        );
     }
     // the flags are the test's, set after the positions (a position change sets the off-map flag from the map extent)
     for k in 0..4usize {
@@ -464,7 +603,10 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; CFG_WORDS], ops: &[[u32;
             o.private_status |= PRIVATE_OFF_MAP;
         }
     }
-    let handle = ModuleHandle { object: me, index: healer_idx };
+    let handle = ModuleHandle {
+        object: me,
+        index: healer_idx,
+    };
     let u = w.update_handle_of_module(handle).expect("an update module");
     tally.effects += constructor.0.len() as u64;
     put_u32(&mut v, constructor.0.len() as u32);
@@ -484,7 +626,10 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; CFG_WORDS], ops: &[[u32;
         let (mut xst, mut xbytes, mut crc, mut res) = (-2i32, Vec::new(), 0u32, 0u32);
         match o[0] {
             0 => {
-                res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
+                res = w
+                    .with_body(u, |b, w| b.update(w, u))
+                    .expect("the module is in its slot")
+                    .0;
                 tally.updates += 1;
             }
             1 => {
@@ -503,7 +648,11 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; CFG_WORDS], ops: &[[u32;
                 match o[2] {
                     0 => set_player(&mut w, k, value),
                     1 | 2 => {
-                        let bit = if o[2] == 1 { PRIVATE_EFFECTIVELY_DEAD } else { PRIVATE_OFF_MAP };
+                        let bit = if o[2] == 1 {
+                            PRIVATE_EFFECTIVELY_DEAD
+                        } else {
+                            PRIVATE_OFF_MAP
+                        };
                         let ob = w.objects.find_mut(id).unwrap();
                         if value != 0 {
                             ob.private_status |= bit;
@@ -524,31 +673,65 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; CFG_WORDS], ops: &[[u32;
                     5 => {
                         let p = w.objects.find(id).unwrap().get_position();
                         let flags = w.objects.find(id).unwrap().private_status;
-                        w.set_position(id, &Coord3D { x: p.x, y: p.y, z: f32::from_bits(value) });
+                        w.set_position(
+                            id,
+                            &Coord3D {
+                                x: p.x,
+                                y: p.y,
+                                z: f32::from_bits(value),
+                            },
+                        );
                         w.objects.find_mut(id).unwrap().private_status = flags;
                     }
-                    6 => set_height(&mut w.objects.find_mut(id).unwrap().geometry_info, f32::from_bits(value)),
+                    6 => set_height(
+                        &mut w.objects.find_mut(id).unwrap().geometry_info,
+                        f32::from_bits(value),
+                    ),
                     _ => unreachable!(),
                 }
             }
             5 => w.cuts.range_scan = ids(o[1]),
             6 => {
-                w.cuts.player_object_list.insert((o[1] % 3) as i32, ids(o[2]));
+                w.cuts
+                    .player_object_list
+                    .insert((o[1] % 3) as i32, ids(o[2]));
             }
             7 => {
                 w.cuts.globals.anim2d_collection_present = o[1] & 1 != 0;
                 w.cuts.globals.draw_icon_ui = o[1] & 2 != 0;
-                w.cuts.get_healed_animation_name = if o[1] & 4 != 0 { b"ANIM_HEAL".to_vec() } else { Vec::new() };
+                w.cuts.get_healed_animation_name = if o[1] & 4 != 0 {
+                    b"ANIM_HEAL".to_vec()
+                } else {
+                    Vec::new()
+                };
                 w.cuts.globals.get_healed_animation_display_time_in_seconds = f32::from_bits(o[2]);
                 w.cuts.globals.get_healed_animation_z_rise_per_second = f32::from_bits(o[3]);
             }
             8 => {
-                res = u32::from(w.module_call(me, idx, ModuleCall::AttemptUpgrade(mask)).as_bool());
+                res = u32::from(
+                    w.module_call(me, idx, ModuleCall::AttemptUpgrade(mask))
+                        .as_bool(),
+                );
                 tally.fired += u64::from(res);
             }
-            9 => res = u32::from(w.module_call(me, idx, ModuleCall::WouldUpgrade(mask)).as_bool()),
-            10 => res = u32::from(w.module_call(me, idx, ModuleCall::ResetUpgrade(mask)).as_bool()),
-            11 => res = u32::from(w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded).as_bool()),
+            9 => {
+                res = u32::from(
+                    w.module_call(me, idx, ModuleCall::WouldUpgrade(mask))
+                        .as_bool(),
+                )
+            }
+            10 => {
+                res = u32::from(
+                    w.module_call(me, idx, ModuleCall::ResetUpgrade(mask))
+                        .as_bool(),
+                )
+            }
+            11 => {
+                res = u32::from(
+                    w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded)
+                        .as_bool(),
+                )
+            }
             12 => {
                 w.module_call(me, idx, ModuleCall::ForceRefreshUpgrade);
             }
@@ -568,9 +751,21 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; CFG_WORDS], ops: &[[u32;
         let threw = w.cuts.module_errors.len() > errors_before;
         put_i32(&mut v, if threw { 2 } else { 0 });
         put_u32(&mut v, if threw { 0 } else { res });
-        put_u32(&mut v, u32::from(w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded).as_bool()));
+        put_u32(
+            &mut v,
+            u32::from(
+                w.module_call(me, idx, ModuleCall::IsAlreadyUpgraded)
+                    .as_bool(),
+            ),
+        );
         let fxs = new_events(&w, events_before);
-        let (log, wakes, last) = effects(w.cuts.trace.take().unwrap(), w.cuts.log.take().unwrap(), fxs, idx, &mut fx);
+        let (log, wakes, last) = effects(
+            w.cuts.trace.take().unwrap(),
+            w.cuts.log.take().unwrap(),
+            fxs,
+            idx,
+            &mut fx,
+        );
         tally.effects += log.len() as u64;
         tally.heals += log.iter().filter(|l| l.starts_with("heal ")).count() as u64;
         tally.anims += log.iter().filter(|l| l.starts_with("anim ")).count() as u64;
@@ -586,10 +781,16 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; CFG_WORDS], ops: &[[u32;
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let state = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
-            Some(UpdateBody::AutoHealBehavior(m)) => Some(m.state_words()),
-            _ => None,
-        });
+        let state =
+            w.objects
+                .find(me)
+                .unwrap()
+                .behaviors
+                .iter()
+                .find_map(|b| match b.body.as_ref() {
+                    Some(UpdateBody::AutoHealBehavior(m)) => Some(m.state_words()),
+                    _ => None,
+                });
         let state = state.expect("the module is back in its slot");
         for s in &state[..3] {
             put_u32(&mut v, *s);
@@ -602,12 +803,18 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; CFG_WORDS], ops: &[[u32;
             put_u32(&mut v, ob.sole_healing_benefactor_expiration_frame);
         }
     }
-    let keys = PROBE.iter().map(|n| w.names.name_to_key(n.as_bytes()).0).collect();
+    let keys = PROBE
+        .iter()
+        .map(|n| w.names.name_to_key(n.as_bytes()).0)
+        .collect();
     (v, keys, w, ctor_threw)
 }
 
 fn cases() -> usize {
-    std::env::var("L9AH_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
+    std::env::var("L9AH_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9_000)
 }
 
 fn gen_health_bits(g: &mut Gen, max: f32) -> u32 {
@@ -637,13 +844,37 @@ fn auto_heal_behavior_matches_upstream() {
     for case in 0..cases {
         let init_names = g.below(3) != 0;
         let init_center = g.below(5) != 0;
-        let n_up = if g.below(10) == 0 { 0 } else { 1 + g.below(8) as usize };
+        let n_up = if g.below(10) == 0 {
+            0
+        } else {
+            1 + g.below(8) as usize
+        };
         let upgrades: Vec<String> = (0..n_up).map(|i| format!("Up{i}")).collect();
-        let defs: String = upgrades.iter().map(|u| format!("Upgrade {u}\nEnd\n")).collect();
+        let defs: String = upgrades
+            .iter()
+            .map(|u| format!("Upgrade {u}\nEnd\n"))
+            .collect();
         let mut ctx = Ctx::new(init_names, init_center);
-        Ini::load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ctx).expect("upgrades load");
+        Ini::load(
+            b"Data\\INI\\Up.ini",
+            defs.as_bytes(),
+            IniLoadType::Overwrite,
+            None,
+            &table,
+            &mut ctx,
+        )
+        .expect("upgrades load");
         cpp_reset(init_names, init_center);
-        assert_eq!(cpp_load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, false).status, 0);
+        assert_eq!(
+            cpp_load(
+                b"Data\\INI\\Up.ini",
+                defs.as_bytes(),
+                IniLoadType::Overwrite,
+                false
+            )
+            .status,
+            0
+        );
 
         let clean = g.below(10) < 7;
         let text = gen_data(&mut g, &upgrades, clean);
@@ -660,12 +891,18 @@ fn auto_heal_behavior_matches_upstream() {
         let mut cfg = [0u32; CFG_WORDS];
         for k in 0..4 {
             // the players: mostly the first two, so that the objects are often on one side
-            cfg[k] = if g.below(10) == 0 { 0 } else { 1 + g.below(2) + if g.below(6) == 0 { 1 } else { 0 } };
+            cfg[k] = if g.below(10) == 0 {
+                0
+            } else {
+                1 + g.below(2) + if g.below(6) == 0 { 1 } else { 0 }
+            };
             cfg[4 + k] = if g.below(3) == 0 { 0xFF } else { g.below(256) };
             let max = pick(&mut g, &[&100.0f32, &200.0, &50.0, &1000.0]).to_owned();
             cfg[12 + k] = max.to_bits();
             cfg[8 + k] = gen_health_bits(&mut g, max);
-            cfg[16 + k] = (if g.below(10) < 9 { 1 } else { 0 }) | (if g.below(12) == 0 { 2 } else { 0 }) | (if g.below(12) == 0 { 4 } else { 0 });
+            cfg[16 + k] = (if g.below(10) < 9 { 1 } else { 0 })
+                | (if g.below(12) == 0 { 2 } else { 0 })
+                | (if g.below(12) == 0 { 4 } else { 0 });
             cfg[20 + k] = g.uniform(0.0, 20.0).to_bits();
         }
         cfg[24] = g.below(300);
@@ -674,7 +911,13 @@ fn auto_heal_behavior_matches_upstream() {
         // Four cases in ten start with a hurt crowd, the icon on and a range list, so that the scans and the icon are reached often.
         let mut ops: Vec<[u32; 5]> = Vec::new();
         if g.below(100) < 40 {
-            ops.push([7, 7, pick(&mut g, &[&1.5f32, &3.0]).to_owned().to_bits(), pick(&mut g, &[&0.0f32, &10.0]).to_owned().to_bits(), 0]);
+            ops.push([
+                7,
+                7,
+                pick(&mut g, &[&1.5f32, &3.0]).to_owned().to_bits(),
+                pick(&mut g, &[&0.0f32, &10.0]).to_owned().to_bits(),
+                0,
+            ]);
             for k in 0..4 {
                 if g.below(4) != 0 {
                     ops.push([4, k, 3, 10.0f32.to_bits(), 0]);
@@ -696,65 +939,79 @@ fn auto_heal_behavior_matches_upstream() {
             ops.push([8, m[0], m[1], m[2], m[3]]);
             ops.push([0, 0, 0, 0, 0]);
         }
-        ops.extend((0..n_ops)
-            .map(|_| match g.below(100) {
-                0..=19 => [0, 0, 0, 0, 0],
-                20..=26 => [1, 0, 0, 0, 0],
-                27 => [2, 0, 0, 0, 0],
-                28..=29 => [3, 0, 0, 0, 0],
-                30..=41 => {
-                    let k = g.below(4);
-                    match g.below(8) {
-                        0 => [4, k, 0, g.below(4), 0],
-                        1 => [4, k, 1, g.below(2), 0],
-                        2 => [4, k, 2, g.below(2), 0],
-                        3 | 4 => [4, k, 3, gen_health_bits(&mut g, 100.0), 0],
-                        5 => [4, k, 4, pick(&mut g, &[&100.0f32, &200.0, &50.0]).to_owned().to_bits(), 0],
-                        6 => [4, k, 6, g.uniform(0.0, 20.0).to_bits(), 0],
-                        _ => [4, k, 5, g.uniform(-2.0, 6.0).to_bits(), 0],
-                    }
+        ops.extend((0..n_ops).map(|_| match g.below(100) {
+            0..=19 => [0, 0, 0, 0, 0],
+            20..=26 => [1, 0, 0, 0, 0],
+            27 => [2, 0, 0, 0, 0],
+            28..=29 => [3, 0, 0, 0, 0],
+            30..=41 => {
+                let k = g.below(4);
+                match g.below(8) {
+                    0 => [4, k, 0, g.below(4), 0],
+                    1 => [4, k, 1, g.below(2), 0],
+                    2 => [4, k, 2, g.below(2), 0],
+                    3 | 4 => [4, k, 3, gen_health_bits(&mut g, 100.0), 0],
+                    5 => [
+                        4,
+                        k,
+                        4,
+                        pick(&mut g, &[&100.0f32, &200.0, &50.0])
+                            .to_owned()
+                            .to_bits(),
+                        0,
+                    ],
+                    6 => [4, k, 6, g.uniform(0.0, 20.0).to_bits(), 0],
+                    _ => [4, k, 5, g.uniform(-2.0, 6.0).to_bits(), 0],
                 }
-                42..=47 => {
-                    let n = g.below(5);
-                    let mut packed = 0u32;
-                    for j in 0..n {
-                        packed |= (1 + g.below(4)) << (4 * j);
-                    }
-                    [5, packed, 0, 0, 0]
+            }
+            42..=47 => {
+                let n = g.below(5);
+                let mut packed = 0u32;
+                for j in 0..n {
+                    packed |= (1 + g.below(4)) << (4 * j);
                 }
-                48..=52 => {
-                    let n = g.below(5);
-                    let mut packed = 0u32;
-                    for j in 0..n {
-                        packed |= (1 + g.below(4)) << (4 * j);
-                    }
-                    [6, g.below(3), packed, 0, 0]
+                [5, packed, 0, 0, 0]
+            }
+            48..=52 => {
+                let n = g.below(5);
+                let mut packed = 0u32;
+                for j in 0..n {
+                    packed |= (1 + g.below(4)) << (4 * j);
                 }
-                53..=56 => [7, g.below(8), pick(&mut g, &[&0.0f32, &1.5, &3.0]).to_owned().to_bits(), pick(&mut g, &[&0.0f32, &10.0, &2.5]).to_owned().to_bits(), 0],
-                57..=62 => {
-                    let m = gen_mask(&mut g, n_up, 1);
-                    [8, m[0], m[1], m[2], m[3]]
-                }
-                63..=65 => {
-                    let m = gen_mask(&mut g, n_up, 1);
-                    [9, m[0], m[1], m[2], m[3]]
-                }
-                66..=67 => {
-                    let m = gen_mask(&mut g, n_up, 1);
-                    [10, m[0], m[1], m[2], m[3]]
-                }
-                68 => [11, 0, 0, 0, 0],
-                69 => [12, 0, 0, 0, 0],
-                70..=79 => [13, gen_frame(&mut g), 0, 0, 0],
-                80..=84 => [14, 0, 0, 0, 0],
-                85..=89 => [15, 0, 0, 0, 0],
-                90..=92 => [16, 0, 0, 0, 0],
-                _ => [0, 0, 0, 0, 0],
-            }));
+                [6, g.below(3), packed, 0, 0]
+            }
+            53..=56 => [
+                7,
+                g.below(8),
+                pick(&mut g, &[&0.0f32, &1.5, &3.0]).to_owned().to_bits(),
+                pick(&mut g, &[&0.0f32, &10.0, &2.5]).to_owned().to_bits(),
+                0,
+            ],
+            57..=62 => {
+                let m = gen_mask(&mut g, n_up, 1);
+                [8, m[0], m[1], m[2], m[3]]
+            }
+            63..=65 => {
+                let m = gen_mask(&mut g, n_up, 1);
+                [9, m[0], m[1], m[2], m[3]]
+            }
+            66..=67 => {
+                let m = gen_mask(&mut g, n_up, 1);
+                [10, m[0], m[1], m[2], m[3]]
+            }
+            68 => [11, 0, 0, 0, 0],
+            69 => [12, 0, 0, 0, 0],
+            70..=79 => [13, gen_frame(&mut g), 0, 0, 0],
+            80..=84 => [14, 0, 0, 0, 0],
+            85..=89 => [15, 0, 0, 0, 0],
+            90..=92 => [16, 0, 0, 0, 0],
+            _ => [0, 0, 0, 0, 0],
+        }));
 
         // Rust first: a case that reaches upstream undefined behaviour (or a constructor that throws) is counted and never sent to the C++
         let rust = if outcome.status == 0 {
-            let (rd, rk, w, ctor_threw) = rust_run(ctx, data.expect("read ok"), &cfg, &ops, &mut tally);
+            let (rd, rk, w, ctor_threw) =
+                rust_run(ctx, data.expect("read ok"), &cfg, &ops, &mut tally);
             if ctor_threw || w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined()) {
                 excluded += 1;
                 continue;
@@ -789,7 +1046,12 @@ fn auto_heal_behavior_matches_upstream() {
         };
         if status == 99 {
             // the C++ crashed on a case the planted Rust steered past upstream undefined behaviour: a mismatch, not a process kill
-            run.eq(&"C++ crashed", &"no crash", || format!("case {case}: upgrades {upgrades:?} cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text)));
+            run.eq(&"C++ crashed", &"no crash", || {
+                format!(
+                    "case {case}: upgrades {upgrades:?} cfg {cfg:x?}, file {:?}, ops {ops:?}",
+                    show(&text)
+                )
+            });
             continue;
         }
         buf.truncate(len as usize);
@@ -799,8 +1061,21 @@ fn auto_heal_behavior_matches_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status}) -- a constructor that threw upstream but not here"),
         };
-        let what = || format!("case {case}: upgrades {upgrades:?} cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
-        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
+        let what = || {
+            format!(
+                "case {case}: upgrades {upgrades:?} cfg {cfg:x?}, file {:?}, ops {ops:?}",
+                show(&text)
+            )
+        };
+        read.eq(
+            &outcome,
+            &Outcome {
+                status,
+                detail,
+                crc: 0,
+            },
+            what,
+        );
         let Some((rd, rk)) = rust else {
             read_failed += 1;
             continue;
@@ -808,8 +1083,17 @@ fn auto_heal_behavior_matches_upstream() {
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
-            eprintln!("--- case {case} cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
+            let i = dr
+                .iter()
+                .zip(dc.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(dr.len().min(dc.len()));
+            eprintln!(
+                "--- case {case} cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}",
+                show(&text),
+                dr.get(i),
+                dc.get(i)
+            );
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -836,7 +1120,11 @@ fn auto_heal_behavior_matches_upstream() {
     keys.finish();
     let _ = BTreeMap::<u8, u8>::new();
     assert!(
-        read_failed * 40 > cases as u64 && ops_run * 5 > cases as u64 * 4 && tally.fired * 50 > cases as u64 && tally.heals * 5 > cases as u64 && tally.anims * 200 > cases as u64,
+        read_failed * 40 > cases as u64
+            && ops_run * 5 > cases as u64 * 4
+            && tally.fired * 50 > cases as u64
+            && tally.heals * 5 > cases as u64
+            && tally.anims * 200 > cases as u64,
         "the generator must reach every path"
     );
 }

@@ -70,19 +70,26 @@ const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9_r17.bin")
 const XFER_FILE: &str = "l9_r17.bin";
 
 fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::SupplyWarehouseCripplingBehavior(Arc::new(SupplyWarehouseCripplingBehaviorModuleData::friend_new_module_data(Some(ini))?)));
+    *out = Some(ModuleDataKind::SupplyWarehouseCripplingBehavior(Arc::new(
+        SupplyWarehouseCripplingBehaviorModuleData::friend_new_module_data(Some(ini))?,
+    )));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }];
+    let blocks = [BlockParse {
+        token: "D",
+        parse: read_block,
+    }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
 }
 
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind) {
-    let ModuleDataKind::SupplyWarehouseCripplingBehavior(d) = data else { unreachable!("not a SupplyWarehouseCripplingBehavior") };
+    let ModuleDataKind::SupplyWarehouseCripplingBehavior(d) = data else {
+        unreachable!("not a SupplyWarehouseCripplingBehavior")
+    };
     put_u32(v, d.self_heal_supression);
     put_u32(v, d.self_heal_delay);
     put_u32(v, d.self_heal_amount.to_bits());
@@ -121,7 +128,11 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
 fn gen_dur(g: &mut Gen, clean: bool) -> String {
     match g.below(12) {
         0..=1 => "0".to_string(),
-        2..=7 => pick(g, &["100", "300", "500", "1000", "3000", "33", "34", "67", "200"]).to_string(),
+        2..=7 => pick(
+            g,
+            &["100", "300", "500", "1000", "3000", "33", "34", "67", "200"],
+        )
+        .to_string(),
         8 => format!("{}", g.below(20_000)),
         9 if !clean => pick(g, &["x", "", "-", "12abc"]).to_string(),
         _ => "1000".to_string(),
@@ -162,9 +173,20 @@ fn gen_data(g: &mut Gen, _upgrades: &[String], clean: bool) -> Vec<u8> {
     s.into_bytes()
 }
 
-fn gen_case(g: &mut Gen, _data: &Option<ModuleDataKind>, _n_up: usize, _upgrades: &[String]) -> (Vec<u32>, Vec<[u32; 5]>) {
+fn gen_case(
+    g: &mut Gen,
+    _data: &Option<ModuleDataKind>,
+    _n_up: usize,
+    _upgrades: &[String],
+) -> (Vec<u32>, Vec<[u32; 5]>) {
     // [the frame, the health, the maximum, the body is present, the dock is present]
-    let cfg = vec![gen_frame(g), 40.0f32.to_bits(), 100.0f32.to_bits(), u32::from(g.below(12) != 0), u32::from(g.below(10) != 0)];
+    let cfg = vec![
+        gen_frame(g),
+        40.0f32.to_bits(),
+        100.0f32.to_bits(),
+        u32::from(g.below(12) != 0),
+        u32::from(g.below(10) != 0),
+    ];
     let n_ops = 1 + g.below(30) as usize;
     let mut frame = cfg[0];
     let mut ops: Vec<[u32; 5]> = Vec::new();
@@ -182,10 +204,20 @@ fn gen_case(g: &mut Gen, _data: &Option<ModuleDataKind>, _n_up: usize, _upgrades
         30..=39 => [1, g.below(30), 0, 0, 0],
         40..=49 => [2, g.below(4), g.below(4), 0, 0],
         50..=69 => {
-            frame = if g.below(8) == 0 { gen_frame(g) } else { frame.wrapping_add(1 + g.below(60)) };
+            frame = if g.below(8) == 0 {
+                gen_frame(g)
+            } else {
+                frame.wrapping_add(1 + g.below(60))
+            };
             [4, frame, 0, 0, 0]
         }
-        70..=75 => [5, (*pick(g, &[&40.0f32, &100.0, &99.5, &0.0])).to_bits(), 0, 0, 0],
+        70..=75 => [
+            5,
+            (*pick(g, &[&40.0f32, &100.0, &99.5, &0.0])).to_bits(),
+            0,
+            0,
+            0,
+        ],
         76..=83 => [6, 0, 0, 0, 0],
         84..=91 => [7, 0, 0, 0, 0],
         92..=96 => [8, 0, 0, 0, 0],
@@ -203,12 +235,22 @@ struct Tally {
     cripples: u64,
 }
 
-fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally: &RefCell<Tally>) -> RunOut {
+fn rust_run(
+    ctx: Ctx,
+    data: ModuleDataKind,
+    cfg: &[u32],
+    ops: &[[u32; 5]],
+    tally: &RefCell<Tally>,
+) -> RunOut {
     let mut v = Vec::new();
     put_data(&mut v, &data);
 
     let mut w = World::new();
-    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
+    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics {
+        upgrade_center: ctx.center,
+        special_power_store: ctx.store,
+        ..Default::default()
+    });
     w.names = ctx.names;
     w.cuts.probe_effect_trace = true;
     w.cuts.body.probe_trace = true;
@@ -220,22 +262,58 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     if cfg[3] != 0 {
         let mut m = NewModule::plain(b"ProbeBody", b"ModuleTag_Body");
         m.interfaces = MODULEINTERFACE_BODY;
-        let mut p = ProbeModule::new(ProbeAnswers::default(), f32::from_bits(cfg[2]), Default::default());
+        let mut p = ProbeModule::new(
+            ProbeAnswers::default(),
+            f32::from_bits(cfg[2]),
+            Default::default(),
+        );
         p.health = f32::from_bits(cfg[1]);
         m.body = Some(UpdateBody::ModuleProbe(p));
         modules.push(m);
     }
     if cfg[4] != 0 {
         let mut m = NewModule::plain(b"ProbeDock", b"ModuleTag_Dock");
-        m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers { has: 1 << 2, ..Default::default() }, 0.0, Default::default())));
+        m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+            ProbeAnswers {
+                has: 1 << 2,
+                ..Default::default()
+            },
+            0.0,
+            Default::default(),
+        )));
         modules.push(m);
     }
-    modules.push(rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"SupplyWarehouseCripplingBehavior", b"ModuleTag_Cripple", &data).unwrap().unwrap());
-    let template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
-    let me = w.new_object(NewObject { template, status: Default::default(), team: None, modules }).unwrap();
+    modules.push(
+        rts_lockstep_engine::logic::modules::new_module(
+            w.next_object_id(),
+            b"SupplyWarehouseCripplingBehavior",
+            b"ModuleTag_Cripple",
+            &data,
+        )
+        .unwrap()
+        .unwrap(),
+    );
+    let template = Arc::new(ThingTemplate::from_object_values(
+        &ObjectTemplateValues::default(),
+    ));
+    let me = w
+        .new_object(NewObject {
+            template,
+            status: Default::default(),
+            team: None,
+            modules,
+        })
+        .unwrap();
     assert_eq!(me, 1, "the first object of a fresh world has the id 1");
-    let idx = w.find_module(me, b"SupplyWarehouseCripplingBehavior").unwrap();
-    let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
+    let idx = w
+        .find_module(me, b"SupplyWarehouseCripplingBehavior")
+        .unwrap();
+    let u = w
+        .update_handle_of_module(ModuleHandle {
+            object: me,
+            index: idx,
+        })
+        .expect("an update module");
     let constructor_trace = w.cuts.trace.take().unwrap_or_default();
     // a new object has the drawable the client made for it: the test binds one, as batch E does
     w.friend_bind_to_drawable(me, 7);
@@ -250,7 +328,10 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             let o = &ops[phase - 1];
             match o[0] {
                 0 => {
-                    res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
+                    res = w
+                        .with_body(u, |b, w| b.update(w, u))
+                        .expect("the module is in its slot")
+                        .0;
                     tally.borrow_mut().updates += 1;
                 }
                 1 => {
@@ -259,14 +340,31 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     w.module_call(me, idx, ModuleCall::OnDamage(info));
                 }
                 2 => {
-                    w.module_call(me, idx, ModuleCall::OnBodyDamageStateChange { info: DamageInfo::default(), old_state: o[1] as i32, new_state: o[2] as i32 });
+                    w.module_call(
+                        me,
+                        idx,
+                        ModuleCall::OnBodyDamageStateChange {
+                            info: DamageInfo::default(),
+                            old_state: o[1] as i32,
+                            new_state: o[2] as i32,
+                        },
+                    );
                 }
                 4 => w.set_frame(o[1]),
                 5 => {
-                    if let Some(p) = w.objects.find_mut(me).unwrap().modules.iter_mut().find_map(|b| match b.body.as_mut() {
-                        Some(UpdateBody::ModuleProbe(p)) if b.name == b"ProbeBody" => Some(p),
-                        _ => None,
-                    }) {
+                    if let Some(p) =
+                        w.objects
+                            .find_mut(me)
+                            .unwrap()
+                            .modules
+                            .iter_mut()
+                            .find_map(|b| match b.body.as_mut() {
+                                Some(UpdateBody::ModuleProbe(p)) if b.name == b"ProbeBody" => {
+                                    Some(p)
+                                }
+                                _ => None,
+                            })
+                    {
                         p.health = f32::from_bits(o[1]);
                     }
                 }
@@ -284,7 +382,11 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             }
         }
         let threw = w.cuts.module_errors.len() > errors_before;
-        let trace = if phase == 0 { first_trace.take().unwrap_or_default() } else { w.cuts.trace.take().unwrap() };
+        let trace = if phase == 0 {
+            first_trace.take().unwrap_or_default()
+        } else {
+            w.cuts.trace.take().unwrap()
+        };
         let (mut log, mut wakes, mut last) = (Vec::new(), 0u32, 0u32);
         for t in trace {
             if let Some(f) = t.strip_prefix("awaken ") {
@@ -321,21 +423,37 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
             }
             put_u32(&mut v, crc);
         }
-        let state = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
-            Some(UpdateBody::SupplyWarehouseCripplingBehavior(m)) => Some(m.state_words()),
-            _ => None,
-        });
+        let state =
+            w.objects
+                .find(me)
+                .unwrap()
+                .behaviors
+                .iter()
+                .find_map(|b| match b.body.as_ref() {
+                    Some(UpdateBody::SupplyWarehouseCripplingBehavior(m)) => Some(m.state_words()),
+                    _ => None,
+                });
         for s in state.expect("the module is back in its slot") {
             put_u32(&mut v, s);
         }
-        let health = w.objects.find_mut(me).unwrap().modules.iter_mut().find_map(|b| match b.body.as_mut() {
-            Some(UpdateBody::ModuleProbe(p)) if b.name == b"ProbeBody" => Some(p.health),
-            _ => None,
-        });
+        let health = w
+            .objects
+            .find_mut(me)
+            .unwrap()
+            .modules
+            .iter_mut()
+            .find_map(|b| match b.body.as_mut() {
+                Some(UpdateBody::ModuleProbe(p)) if b.name == b"ProbeBody" => Some(p.health),
+                _ => None,
+            });
         put_u32(&mut v, health.map_or(0, f32::to_bits));
     }
     let excluded = w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined());
-    RunOut { dump: v, keys: Vec::new(), excluded }
+    RunOut {
+        dump: v,
+        keys: Vec::new(),
+        excluded,
+    }
 }
 
 #[test]
@@ -362,5 +480,8 @@ fn supply_warehouse_crippling_behavior_matches_upstream() {
         "SupplyWarehouseCripplingBehavior R17: {} cases, {} data blocks threw, {} excluded (undefined upstream), {} ops, {} updates, {} xfers, {} heals, {} cripples",
         c.cases, c.read_failed, c.excluded, c.ops_run, t.updates, t.xfers, t.heals, t.cripples
     );
-    assert!(t.heals * 4 > c.cases as u64 && t.cripples * 4 > c.cases as u64, "the generator must reach every path");
+    assert!(
+        t.heals * 4 > c.cases as u64 && t.cripples * 4 > c.cases as u64,
+        "the generator must reach every path"
+    );
 }

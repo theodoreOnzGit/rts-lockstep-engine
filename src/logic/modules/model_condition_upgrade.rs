@@ -23,6 +23,9 @@
 use std::sync::Arc;
 
 use crate::common::ini::{FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, UserData};
+use crate::common::model_state::{
+    ModelConditionFlagType, ModelConditionFlags, MODELCONDITION_INVALID,
+};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
@@ -32,10 +35,11 @@ use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::update_body::UpdateBody;
 use crate::upgrade_module_data_field_parse;
-use crate::common::model_state::{ModelConditionFlagType, ModelConditionFlags, MODELCONDITION_INVALID};
 /// `ModelConditionUpgrade::upgradeImplementation`'s flag: `None` for
 /// `MODELCONDITION_INVALID` (upstream does nothing then).
-pub fn upgrade_implementation(data: &ModelConditionUpgradeModuleData) -> Option<ModelConditionFlagType> {
+pub fn upgrade_implementation(
+    data: &ModelConditionUpgradeModuleData,
+) -> Option<ModelConditionFlagType> {
     if data.condition_flag != MODELCONDITION_INVALID || crate::logic::modules::plant(9) {
         Some(data.condition_flag + crate::logic::modules::plant(10) as i32)
     } else {
@@ -62,17 +66,27 @@ impl Default for ModelConditionUpgradeModuleData {
 }
 
 /// `UpgradeModuleData::buildFieldParse`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<ModelConditionUpgradeModuleData>; 6] = upgrade_module_data_field_parse!(ModelConditionUpgradeModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<ModelConditionUpgradeModuleData>; 6] =
+    upgrade_module_data_field_parse!(ModelConditionUpgradeModuleData, upgrade);
 
 /// `ModelConditionUpgradeModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<ModelConditionUpgradeModuleData>; 2] = [
-    FieldParse::new("ConditionFlag", |i, d, _| { d.condition_flag = ModelConditionFlags::parse_single_bit_from_ini(i)?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "ConditionFlag",
+        |i, d, _| {
+            d.condition_flag = ModelConditionFlags::parse_single_bit_from_ini(i)?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl ModelConditionUpgradeModuleData {
     /// `buildFieldParse(p)`: `BehaviorModuleData`'s, then `UpgradeModuleData`'s, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, ModelConditionUpgradeModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, ModelConditionUpgradeModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -80,10 +94,15 @@ impl ModelConditionUpgradeModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModelConditionUpgradeModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<ModelConditionUpgradeModuleData> {
         let mut data = ModelConditionUpgradeModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, ModelConditionUpgradeModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                ModelConditionUpgradeModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -101,19 +120,21 @@ pub struct ModelConditionUpgrade {
 impl PartialEq for ModelConditionUpgrade {
     /// The same data object and the same `m_upgradeExecuted` (upstream compares the data pointer).
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.data, &other.data) && self.base.is_already_upgraded() == other.base.is_already_upgraded()
+        Arc::ptr_eq(&self.data, &other.data)
+            && self.base.is_already_upgraded() == other.base.is_already_upgraded()
     }
 }
 
 impl ModelConditionUpgrade {
     /// `ModelConditionUpgrade(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(object: ObjectId, data: Option<Arc<ModelConditionUpgradeModuleData>>) -> IniResult<ModelConditionUpgrade> {
-        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<ModelConditionUpgradeModuleData>>,
+    ) -> IniResult<ModelConditionUpgrade> {
+        let data =
+            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let base = UpgradeModule::new(object, Some(data.upgrade.clone()))?;
-        Ok(ModelConditionUpgrade {
-            base,
-            data,
-        })
+        Ok(ModelConditionUpgrade { base, data })
     }
 
     /// `getInterfaceMask()`: the `UpgradeModule` one.
@@ -127,7 +148,12 @@ impl ModelConditionUpgrade {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         upgrade_module_call(self, world, me, call)
     }
 }
@@ -139,7 +165,11 @@ impl UpgradeBehavior for ModelConditionUpgrade {
     fn base_mut(&mut self) -> &mut UpgradeModule {
         &mut self.base
     }
-    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
+    fn upgrade_implementation(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+    ) -> Result<(), IniError> {
         if let Some(flag) = upgrade_implementation(&self.data) {
             world.set_model_condition_state(me.object, flag);
         }
@@ -181,7 +211,9 @@ impl Snapshot for ModelConditionUpgrade {
 
 /// The factory's `NewModuleDataProc` for `ModelConditionUpgrade`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::ModelConditionUpgrade(Arc::new(ModelConditionUpgradeModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::ModelConditionUpgrade(Arc::new(
+        ModelConditionUpgradeModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
 #[cfg(test)]

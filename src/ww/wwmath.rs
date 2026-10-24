@@ -163,7 +163,8 @@ pub fn float_to_int_floor(f: f32) -> i32 {
     let mantissa = a & ((1 << 23) - 1);
     let mut r = (((mantissa | (1 << 23)) as u32) << 8).wrapping_shr((31 - exponent) as u32) as i32;
     let not_frac: i32 = if (mantissa << 8) & imask == 0 { 1 } else { 0 };
-    r = ((r & expsign) ^ sign).wrapping_add((not_frac & (expsign ^ (a.wrapping_sub(1) >> 31))) & sign);
+    r = ((r & expsign) ^ sign)
+        .wrapping_add((not_frac & (expsign ^ (a.wrapping_sub(1) >> 31))) & sign);
     r
 }
 

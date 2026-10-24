@@ -13,11 +13,11 @@
 
 mod support;
 
+use petir::Real;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 use rts_lockstep_engine::ww::vector3::Vector3;
 use support::{Check, Gen, N};
-use petir::Real;
 
 fn mat(g: &mut Gen) -> [f32; 12] {
     if g.below(4) == 0 {
@@ -41,15 +41,48 @@ fn a3(v: Vector3) -> [f32; 3] {
 }
 
 const OPS: [&str; 42] = [
-    "Make_Identity", "Translate(x,y,z)", "Translate(v)", "Translate_X", "Translate_Y", "Translate_Z",
-    "Rotate_X(theta)", "Rotate_Y(theta)", "Rotate_Z(theta)", "Rotate_X(s,c)", "Rotate_Y(s,c)", "Rotate_Z(s,c)",
-    "Scale(k)", "Scale(x,y,z)", "Scale(v)", "Pre_Rotate_X(theta)", "Pre_Rotate_Y(theta)", "Pre_Rotate_Z(theta)",
-    "Pre_Rotate_X(s,c)", "Pre_Rotate_Y(s,c)", "Pre_Rotate_Z(s,c)", "In_Place_Pre_Rotate_X(theta)",
-    "In_Place_Pre_Rotate_Y(theta)", "In_Place_Pre_Rotate_Z(theta)", "In_Place_Pre_Rotate_X(s,c)",
-    "In_Place_Pre_Rotate_Y(s,c)", "In_Place_Pre_Rotate_Z(s,c)", "Re_Orthogonalize", "Set(axis,angle)",
-    "Set(axis,s,c)", "Set(position)", "Set(x,y,z,pos)", "Look_At", "Obj_Look_At", "buildTransformMatrix",
-    "Set_Translation", "Adjust_Translation", "Adjust_X/Y/Z_Translation", "Copy_3x3_Matrix",
-    "Get_Orthogonal_Inverse", "postMul", "preMul",
+    "Make_Identity",
+    "Translate(x,y,z)",
+    "Translate(v)",
+    "Translate_X",
+    "Translate_Y",
+    "Translate_Z",
+    "Rotate_X(theta)",
+    "Rotate_Y(theta)",
+    "Rotate_Z(theta)",
+    "Rotate_X(s,c)",
+    "Rotate_Y(s,c)",
+    "Rotate_Z(s,c)",
+    "Scale(k)",
+    "Scale(x,y,z)",
+    "Scale(v)",
+    "Pre_Rotate_X(theta)",
+    "Pre_Rotate_Y(theta)",
+    "Pre_Rotate_Z(theta)",
+    "Pre_Rotate_X(s,c)",
+    "Pre_Rotate_Y(s,c)",
+    "Pre_Rotate_Z(s,c)",
+    "In_Place_Pre_Rotate_X(theta)",
+    "In_Place_Pre_Rotate_Y(theta)",
+    "In_Place_Pre_Rotate_Z(theta)",
+    "In_Place_Pre_Rotate_X(s,c)",
+    "In_Place_Pre_Rotate_Y(s,c)",
+    "In_Place_Pre_Rotate_Z(s,c)",
+    "Re_Orthogonalize",
+    "Set(axis,angle)",
+    "Set(axis,s,c)",
+    "Set(position)",
+    "Set(x,y,z,pos)",
+    "Look_At",
+    "Obj_Look_At",
+    "buildTransformMatrix",
+    "Set_Translation",
+    "Adjust_Translation",
+    "Adjust_X/Y/Z_Translation",
+    "Copy_3x3_Matrix",
+    "Get_Orthogonal_Inverse",
+    "postMul",
+    "preMul",
 ];
 
 fn rust_op(op: usize, m: &mut Matrix3D, p: &[f32; 12]) {
@@ -115,7 +148,13 @@ fn rust_op(op: usize, m: &mut Matrix3D, p: &[f32; 12]) {
 fn params(op: usize, g: &mut Gen) -> [f32; 12] {
     let mut p = g.vec::<12>(Gen::geom);
     match op {
-        6..=8 | 15..=17 | 21..=23 => p[0] = if g.below(5) == 0 { g.mixed() } else { g.uniform(-4.0, 4.0) },
+        6..=8 | 15..=17 | 21..=23 => {
+            p[0] = if g.below(5) == 0 {
+                g.mixed()
+            } else {
+                g.uniform(-4.0, 4.0)
+            }
+        }
         9..=11 | 18..=20 | 24..=26 => {
             if g.below(2) == 0 {
                 let t = g.uniform(-4.0, 4.0);
@@ -191,10 +230,21 @@ fn matrix3d_multiply_matches() {
 fn matrix3d_vector_ops_match() {
     let mut g = Gen::new(82);
     let names = [
-        "Transform_Vector", "static Rotate_Vector", "Inverse_Transform_Vector", "static Inverse_Rotate_Vector",
-        "Rotate_Vector", "Inverse_Rotate_Vector", "mulVector3(in,out)", "mulVector3(inout)",
-        "mulVector3Array(in,out)", "mulVector3Array(inout)", "Transform_Vector (aliased)",
-        "Get_X_Vector", "Get_Y_Vector", "Get_Z_Vector", "Get_Translation",
+        "Transform_Vector",
+        "static Rotate_Vector",
+        "Inverse_Transform_Vector",
+        "static Inverse_Rotate_Vector",
+        "Rotate_Vector",
+        "Inverse_Rotate_Vector",
+        "mulVector3(in,out)",
+        "mulVector3(inout)",
+        "mulVector3Array(in,out)",
+        "mulVector3Array(inout)",
+        "Transform_Vector (aliased)",
+        "Get_X_Vector",
+        "Get_Y_Vector",
+        "Get_Z_Vector",
+        "Get_Translation",
     ];
     for (op, name) in names.iter().enumerate() {
         let mut c = Check::new(&format!("Matrix3D {name}"));
@@ -247,10 +297,26 @@ fn matrix3d_scalar_box_solve_and_statics_match() {
         let m = mat(&mut g);
         let mm = Matrix3D::from_array(m);
         unsafe {
-            cr.f32(mm.get_x_rotation(), cpp::ref_m3_scalar(0, m.as_ptr()), || format!("case {i} X"));
-            cr.f32(mm.get_y_rotation(), cpp::ref_m3_scalar(1, m.as_ptr()), || format!("case {i} Y"));
-            cr.f32(mm.get_z_rotation(), cpp::ref_m3_scalar(2, m.as_ptr()), || format!("case {i} Z"));
-            co.eq(mm.is_orthogonal(), cpp::ref_m3_scalar(3, m.as_ptr()) != 0.0, || format!("case {i}"));
+            cr.f32(
+                mm.get_x_rotation(),
+                cpp::ref_m3_scalar(0, m.as_ptr()),
+                || format!("case {i} X"),
+            );
+            cr.f32(
+                mm.get_y_rotation(),
+                cpp::ref_m3_scalar(1, m.as_ptr()),
+                || format!("case {i} Y"),
+            );
+            cr.f32(
+                mm.get_z_rotation(),
+                cpp::ref_m3_scalar(2, m.as_ptr()),
+                || format!("case {i} Z"),
+            );
+            co.eq(
+                mm.is_orthogonal(),
+                cpp::ref_m3_scalar(3, m.as_ptr()) != 0.0,
+                || format!("case {i}"),
+            );
             let (a, b) = (g.vec::<3>(Gen::geom), g.vec::<3>(Gen::geom));
             let (r0, r1) = mm.transform_min_max_aabox(&v3(&a), &v3(&b));
             let mut o = [0.0f32; 6];
@@ -273,7 +339,9 @@ fn matrix3d_scalar_box_solve_and_statics_match() {
             let m2 = if g.below(3) == 0 { m } else { mat(&mut g) };
             let e = cpp::ref_m3_eq(m.as_ptr(), m2.as_ptr());
             let m2m = Matrix3D::from_array(m2);
-            cq.eq((mm == m2m, mm != m2m), (e & 1 != 0, e & 2 != 0), || format!("case {i}"));
+            cq.eq((mm == m2m, mm != m2m), (e & 1 != 0, e & 2 != 0), || {
+                format!("case {i}")
+            });
         }
     }
     cr.finish();
@@ -285,9 +353,16 @@ fn matrix3d_scalar_box_solve_and_statics_match() {
 
     let mut c = Check::new("Matrix3D static matrices (Identity, RotateX90 ...)");
     let rust = [
-        Matrix3D::IDENTITY, Matrix3D::ROTATE_X90, Matrix3D::ROTATE_X180, Matrix3D::ROTATE_X270,
-        Matrix3D::ROTATE_Y90, Matrix3D::ROTATE_Y180, Matrix3D::ROTATE_Y270, Matrix3D::ROTATE_Z90,
-        Matrix3D::ROTATE_Z180, Matrix3D::ROTATE_Z270,
+        Matrix3D::IDENTITY,
+        Matrix3D::ROTATE_X90,
+        Matrix3D::ROTATE_X180,
+        Matrix3D::ROTATE_X270,
+        Matrix3D::ROTATE_Y90,
+        Matrix3D::ROTATE_Y180,
+        Matrix3D::ROTATE_Y270,
+        Matrix3D::ROTATE_Z90,
+        Matrix3D::ROTATE_Z180,
+        Matrix3D::ROTATE_Z270,
     ];
     for (i, m) in rust.iter().enumerate() {
         let mut o = [0.0f32; 12];

@@ -85,8 +85,8 @@ use rts_lockstep_engine::common::well_known_keys::{self as wk, WELL_KNOWN_KEY_NA
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::formats::data_chunk_output::DataChunkOutput;
 use rts_lockstep_engine::logic::scripts::{
-    action_type, condition_type, parameter_type, version as sv, Condition, MapDataError, Parameter, Script, ScriptAction, ScriptList,
-    ScriptTemplate, ScriptTemplates, MAX_PARMS, MAX_PLAYER_COUNT,
+    action_type, condition_type, parameter_type, version as sv, Condition, MapDataError, Parameter,
+    Script, ScriptAction, ScriptList, ScriptTemplate, ScriptTemplates, MAX_PARMS, MAX_PLAYER_COUNT,
 };
 use rts_lockstep_engine::logic::sides_list::{BuildListInfo, SidesCtx, SidesInfo, SidesList};
 use std::collections::BTreeMap;
@@ -130,7 +130,11 @@ fn template_defs() -> Vec<(String, Vec<u8>)> {
             | ct::TEAM_ENTERED_AREA_PARTIALLY
             | ct::TEAM_ENTERED_AREA_ENTIRELY
             | ct::TEAM_EXITED_AREA_ENTIRELY
-            | ct::TEAM_EXITED_AREA_PARTIALLY => vec![pt::TEAM as u8, pt::TRIGGER_AREA as u8, pt::SURFACES_ALLOWED as u8],
+            | ct::TEAM_EXITED_AREA_PARTIALLY => vec![
+                pt::TEAM as u8,
+                pt::TRIGGER_AREA as u8,
+                pt::SURFACES_ALLOWED as u8,
+            ],
             ct::SKIRMISH_SPECIAL_POWER_READY => vec![pt::SIDE as u8, pt::SPECIAL_POWER as u8],
             ct::CONDITION_FALSE => vec![],
             _ => random_types(&mut g),
@@ -139,20 +143,52 @@ fn template_defs() -> Vec<(String, Vec<u8>)> {
     }
     for i in 0..at::NUM_ITEMS {
         let types: Vec<u8> = match i {
-            at::TEAM_FOLLOW_WAYPOINTS => vec![pt::TEAM as u8, pt::WAYPOINT_PATH as u8, pt::BOOLEAN as u8],
-            at::NAMED_SET_ATTITUDE | at::TEAM_SET_ATTITUDE => vec![pt::UNIT as u8, pt::AI_MOOD as u8],
-            at::MAP_REVEAL_AT_WAYPOINT | at::MAP_SHROUD_AT_WAYPOINT => vec![pt::WAYPOINT as u8, pt::REAL as u8, pt::SIDE as u8],
-            at::MAP_REVEAL_ALL | at::MAP_REVEAL_ALL_PERM | at::MAP_REVEAL_ALL_UNDO_PERM | at::MAP_SHROUD_ALL => vec![pt::SIDE as u8],
+            at::TEAM_FOLLOW_WAYPOINTS => {
+                vec![pt::TEAM as u8, pt::WAYPOINT_PATH as u8, pt::BOOLEAN as u8]
+            }
+            at::NAMED_SET_ATTITUDE | at::TEAM_SET_ATTITUDE => {
+                vec![pt::UNIT as u8, pt::AI_MOOD as u8]
+            }
+            at::MAP_REVEAL_AT_WAYPOINT | at::MAP_SHROUD_AT_WAYPOINT => {
+                vec![pt::WAYPOINT as u8, pt::REAL as u8, pt::SIDE as u8]
+            }
+            at::MAP_REVEAL_ALL
+            | at::MAP_REVEAL_ALL_PERM
+            | at::MAP_REVEAL_ALL_UNDO_PERM
+            | at::MAP_SHROUD_ALL => vec![pt::SIDE as u8],
             at::SPEECH_PLAY => vec![pt::DIALOG as u8, pt::BOOLEAN as u8],
-            at::CAMERA_MOD_SET_FINAL_ZOOM | at::CAMERA_MOD_SET_FINAL_PITCH => vec![pt::REAL as u8, pt::PERCENT as u8, pt::PERCENT as u8],
-            at::MOVE_CAMERA_TO | at::MOVE_CAMERA_ALONG_WAYPOINT_PATH | at::CAMERA_LOOK_TOWARD_OBJECT => {
-                vec![pt::WAYPOINT as u8, pt::REAL as u8, pt::REAL as u8, pt::REAL as u8, pt::REAL as u8]
+            at::CAMERA_MOD_SET_FINAL_ZOOM | at::CAMERA_MOD_SET_FINAL_PITCH => {
+                vec![pt::REAL as u8, pt::PERCENT as u8, pt::PERCENT as u8]
+            }
+            at::MOVE_CAMERA_TO
+            | at::MOVE_CAMERA_ALONG_WAYPOINT_PATH
+            | at::CAMERA_LOOK_TOWARD_OBJECT => {
+                vec![
+                    pt::WAYPOINT as u8,
+                    pt::REAL as u8,
+                    pt::REAL as u8,
+                    pt::REAL as u8,
+                    pt::REAL as u8,
+                ]
             }
             at::RESET_CAMERA | at::ZOOM_CAMERA | at::PITCH_CAMERA | at::ROTATE_CAMERA => {
-                vec![pt::REAL as u8, pt::REAL as u8, pt::REAL as u8, pt::REAL as u8]
+                vec![
+                    pt::REAL as u8,
+                    pt::REAL as u8,
+                    pt::REAL as u8,
+                    pt::REAL as u8,
+                ]
             }
-            at::CAMERA_LOOK_TOWARD_WAYPOINT => vec![pt::WAYPOINT as u8, pt::REAL as u8, pt::REAL as u8, pt::REAL as u8, pt::BOOLEAN as u8],
-            at::SKIRMISH_FIRE_SPECIAL_POWER_AT_MOST_COST => vec![pt::SIDE as u8, pt::SPECIAL_POWER as u8],
+            at::CAMERA_LOOK_TOWARD_WAYPOINT => vec![
+                pt::WAYPOINT as u8,
+                pt::REAL as u8,
+                pt::REAL as u8,
+                pt::REAL as u8,
+                pt::BOOLEAN as u8,
+            ],
+            at::SKIRMISH_FIRE_SPECIAL_POWER_AT_MOST_COST => {
+                vec![pt::SIDE as u8, pt::SPECIAL_POWER as u8]
+            }
             at::SKIRMISH_BUILD_BASE_DEFENSE_FRONT | at::SKIRMISH_BUILD_BASE_DEFENSE_FLANK => vec![],
             _ => random_types(&mut g),
         };
@@ -195,7 +231,10 @@ fn new_world(defs: &[(String, Vec<u8>)]) -> SidesCtx {
     let mut conds = Vec::new();
     let mut acts = Vec::new();
     for (i, (n, types)) in defs.iter().enumerate() {
-        let t = ScriptTemplate { internal_name_key: g.name_to_key(n.as_bytes()), parameters: types.iter().map(|&t| i32::from(t)).collect() };
+        let t = ScriptTemplate {
+            internal_name_key: g.name_to_key(n.as_bytes()),
+            parameters: types.iter().map(|&t| i32::from(t)).collect(),
+        };
         if i < condition_type::NUM_ITEMS as usize {
             conds.push(t);
         } else {
@@ -263,7 +302,10 @@ fn dump_param(l: &mut Log, p: &Parameter) {
     l.f(p.coord.x);
     l.f(p.coord.y);
     l.f(p.coord.z);
-    let set: Vec<u32> = (0..ObjectStatusMaskType::get_bit_names().len() as i32).filter(|&i| p.object_status.test(i)).map(|i| i as u32).collect();
+    let set: Vec<u32> = (0..ObjectStatusMaskType::get_bit_names().len() as i32)
+        .filter(|&i| p.object_status.test(i))
+        .map(|i| i as u32)
+        .collect();
     l.u32(set.len() as u32);
     for i in set {
         l.u32(i);
@@ -307,7 +349,14 @@ fn dump_script(l: &mut Log, s: &Script) {
     l.s(&s.condition_comment);
     l.s(&s.action_comment);
     l.u32(s.delay_evaluation_seconds as u32);
-    for b in [s.is_active, s.is_one_shot, s.is_subroutine, s.easy, s.normal, s.hard] {
+    for b in [
+        s.is_active,
+        s.is_one_shot,
+        s.is_subroutine,
+        s.easy,
+        s.normal,
+        s.hard,
+    ] {
         l.u8(u8::from(b));
     }
     l.u32(s.conditions.len() as u32);
@@ -359,7 +408,13 @@ fn dump_build(l: &mut Log, b: &BuildListInfo) {
     l.u32(b.num_rebuilds);
     l.s(&b.script);
     l.u32(b.health as u32);
-    for f in [b.whiner, b.unsellable, b.repairable, b.automatically_build, b.selected] {
+    for f in [
+        b.whiner,
+        b.unsellable,
+        b.repairable,
+        b.automatically_build,
+        b.selected,
+    ] {
         l.u8(u8::from(f));
     }
     l.u32(b.object_id as u32);
@@ -406,7 +461,11 @@ fn dump_state(l: &mut Log, c: &SidesCtx) {
     }
     l.u32(c.sides.get_num_skirmish_teams() as u32);
     for i in 0..c.sides.get_num_skirmish_teams() {
-        dump_dict(l, &c.sides.get_skirmish_team_info(i).expect("in range").dict, n);
+        dump_dict(
+            l,
+            &c.sides.get_skirmish_team_info(i).expect("in range").dict,
+            n,
+        );
     }
 }
 
@@ -470,13 +529,16 @@ fn count_script_list(st: &mut Stats, sl: &ScriptList) {
             st.or_clauses += 1;
             for c in &o.conditions {
                 st.conditions += 1;
-                st.conditions_made_false += u64::from(c.condition_type == condition_type::CONDITION_FALSE && c.num_parms == 0);
+                st.conditions_made_false += u64::from(
+                    c.condition_type == condition_type::CONDITION_FALSE && c.num_parms == 0,
+                );
                 st.parameters += c.num_parms.max(0) as u64;
             }
         }
         for a in s.actions.iter().chain(&s.actions_false) {
             st.actions += 1;
-            st.actions_made_noop += u64::from(a.action_type == action_type::NO_OP && a.num_parms == 0);
+            st.actions_made_noop +=
+                u64::from(a.action_type == action_type::NO_OP && a.num_parms == 0);
             st.parameters += a.num_parms.max(0) as u64;
         }
     }
@@ -484,7 +546,11 @@ fn count_script_list(st: &mut Stats, sl: &ScriptList) {
 
 fn script_list(c: &mut SidesCtx, side: usize) -> Option<&mut ScriptList> {
     if (side as i32) < c.sides.get_num_sides() {
-        c.sides.get_side_info_mut(side as i32).expect("in range").scripts.as_mut()
+        c.sides
+            .get_side_info_mut(side as i32)
+            .expect("in range")
+            .scripts
+            .as_mut()
     } else {
         None
     }
@@ -502,7 +568,13 @@ fn thrown(l: &mut Log, r: Result<(), MapDataError>) -> Result<(), MapDataError> 
 }
 
 /// `runOp` of wrap_sides.cpp.
-fn run_op(c: &mut SidesCtx, rd: &mut Rd, l: &mut Log, st: &mut Stats, skirmish_given: bool) -> Result<(), MapDataError> {
+fn run_op(
+    c: &mut SidesCtx,
+    rd: &mut Rd,
+    l: &mut Log,
+    st: &mut Stats,
+    skirmish_given: bool,
+) -> Result<(), MapDataError> {
     let op = rd.u8();
     l.u8(b'o');
     l.u8(op as u8);
@@ -528,11 +600,19 @@ fn run_op(c: &mut SidesCtx, rd: &mut Rd, l: &mut Log, st: &mut Stats, skirmish_g
         }
         4 => {
             let n = rd.str();
-            l.u32(c.sides.find_side_info(&mut c.names, &n).map_or(-1i32, |i| i as i32) as u32);
+            l.u32(
+                c.sides
+                    .find_side_info(&mut c.names, &n)
+                    .map_or(-1i32, |i| i as i32) as u32,
+            );
         }
         5 => {
             let n = rd.str();
-            l.u32(c.sides.find_team_info(&mut c.names, &n).map_or(-1i32, |i| i as i32) as u32);
+            l.u32(
+                c.sides
+                    .find_team_info(&mut c.names, &n)
+                    .map_or(-1i32, |i| i as i32) as u32,
+            );
         }
         6 => {
             let i = rd.u8();
@@ -548,13 +628,22 @@ fn run_op(c: &mut SidesCtx, rd: &mut Rd, l: &mut Log, st: &mut Stats, skirmish_g
             let got_scripts = (0..c.sides.get_num_sides()).any(|i| {
                 let side = c.sides.get_side_info(i).expect("in range");
                 let faction = c.names.string(&side.dict, wk::PLAYER_FACTION);
-                faction != b"FactionCivilian" && side.scripts.as_ref().is_some_and(|sl| !sl.scripts.is_empty() || !sl.groups.is_empty())
+                faction != b"FactionCivilian"
+                    && side
+                        .scripts
+                        .as_ref()
+                        .is_some_and(|sl| !sl.scripts.is_empty() || !sl.groups.is_empty())
             });
             thrown(l, c.prepare_for_mp_or_skirmish())?;
             if skirmish_given && !got_scripts {
                 st.skirmish_files_read += 1;
                 if (0..c.sides.get_num_skirmish_sides()).any(|i| {
-                    c.sides.get_skirmish_side_info(i).expect("in range").scripts.as_ref().is_some_and(|sl| !sl.scripts.is_empty() || !sl.groups.is_empty())
+                    c.sides
+                        .get_skirmish_side_info(i)
+                        .expect("in range")
+                        .scripts
+                        .as_ref()
+                        .is_some_and(|sl| !sl.scripts.is_empty() || !sl.groups.is_empty())
                 }) {
                     st.skirmish_scripts_applied += 1;
                 }
@@ -568,7 +657,13 @@ fn run_op(c: &mut SidesCtx, rd: &mut Rd, l: &mut Log, st: &mut Stats, skirmish_g
                 skip(l);
             } else {
                 let nl = match &c.sides.get_side_info(s as i32)?.scripts {
-                    Some(src) => Some(src.duplicate_and_qualify(&mut c.scripts.cur_id, &templates, &q, &tpl, &nn)?),
+                    Some(src) => Some(src.duplicate_and_qualify(
+                        &mut c.scripts.cur_id,
+                        &templates,
+                        &q,
+                        &tpl,
+                        &nn,
+                    )?),
                     None => None,
                 };
                 c.sides.get_side_info_mut(d as i32)?.scripts = nl;
@@ -576,9 +671,12 @@ fn run_op(c: &mut SidesCtx, rd: &mut Rd, l: &mut Log, st: &mut Stats, skirmish_g
         }
         9 => {
             let (s, b, pos) = (rd.u8(), rd.u8(), rd.i8());
-            let ok = (s as i32) < c.sides.get_num_sides() && b < c.sides.get_side_info(s as i32)?.build_list.len();
+            let ok = (s as i32) < c.sides.get_num_sides()
+                && b < c.sides.get_side_info(s as i32)?.build_list.len();
             if ok {
-                c.sides.get_side_info_mut(s as i32)?.reorder_in_build_list(b, pos)?;
+                c.sides
+                    .get_side_info_mut(s as i32)?
+                    .reorder_in_build_list(b, pos)?;
             } else {
                 skip(l);
             }
@@ -604,7 +702,10 @@ fn run_op(c: &mut SidesCtx, rd: &mut Rd, l: &mut Log, st: &mut Stats, skirmish_g
         }
         12 => {
             let (s, g, i) = (rd.u8(), rd.u8(), rd.u8());
-            match script_list(c, s).and_then(|sl| sl.groups.get_mut(g)).filter(|gr| i < gr.scripts.len()) {
+            match script_list(c, s)
+                .and_then(|sl| sl.groups.get_mut(g))
+                .filter(|gr| i < gr.scripts.len())
+            {
                 Some(gr) => gr.delete_script(i)?,
                 None => skip(l),
             }
@@ -633,7 +734,11 @@ fn run_op(c: &mut SidesCtx, rd: &mut Rd, l: &mut Log, st: &mut Stats, skirmish_g
         }
         15 => {
             let (s, i, o, cd) = (rd.u8(), rd.u8(), rd.u8(), rd.u8());
-            match script_list(c, s).and_then(|sl| sl.scripts.get_mut(i)).and_then(|sc| sc.conditions.get_mut(o)).filter(|or| cd < or.conditions.len()) {
+            match script_list(c, s)
+                .and_then(|sl| sl.scripts.get_mut(i))
+                .and_then(|sc| sc.conditions.get_mut(o))
+                .filter(|or| cd < or.conditions.len())
+            {
                 Some(or) => or.delete_condition(cd)?,
                 None => skip(l),
             }
@@ -658,21 +763,33 @@ fn run_op(c: &mut SidesCtx, rd: &mut Rd, l: &mut Log, st: &mut Stats, skirmish_g
             } else if i != j {
                 // operator= ignores self-assignment
                 let src = c.sides.get_side_info(i as i32)?.clone();
-                c.sides.get_side_info_mut(j as i32)?.assign(&src, &mut c.scripts.cur_id, &templates)?;
+                c.sides.get_side_info_mut(j as i32)?.assign(
+                    &src,
+                    &mut c.scripts.cur_id,
+                    &templates,
+                )?;
             }
         }
         21 => {
             let (s, i, s2, i2) = (rd.u8(), rd.u8(), rd.u8(), rd.u8());
-            let src = script_list(c, s2).and_then(|sl| sl.scripts.get(i2)).map(|x| x.duplicate(&templates)).transpose()?;
+            let src = script_list(c, s2)
+                .and_then(|sl| sl.scripts.get(i2))
+                .map(|x| x.duplicate(&templates))
+                .transpose()?;
             let dst_ok = script_list(c, s).is_some_and(|sl| i < sl.scripts.len());
             match (dst_ok, src) {
-                (true, Some(mut tmp)) => script_list(c, s).expect("checked").scripts[i].update_from(&mut tmp),
+                (true, Some(mut tmp)) => {
+                    script_list(c, s).expect("checked").scripts[i].update_from(&mut tmp)
+                }
                 _ => skip(l),
             }
         }
         22 => {
             let (s, g, s2, i2, pos) = (rd.u8(), rd.u8(), rd.u8(), rd.u8(), rd.i8());
-            let src = script_list(c, s2).and_then(|sl| sl.scripts.get(i2)).map(|x| x.duplicate(&templates)).transpose()?;
+            let src = script_list(c, s2)
+                .and_then(|sl| sl.scripts.get(i2))
+                .map(|x| x.duplicate(&templates))
+                .transpose()?;
             let gr = script_list(c, s).and_then(|sl| sl.groups.get_mut(g));
             match (gr, src) {
                 (Some(gr), Some(dup)) => gr.add_script(dup, pos),
@@ -681,15 +798,28 @@ fn run_op(c: &mut SidesCtx, rd: &mut Rd, l: &mut Log, st: &mut Stats, skirmish_g
         }
         23 => {
             let (s, i, o) = (rd.u8(), rd.u8(), rd.u8());
-            match script_list(c, s).and_then(|sl| sl.scripts.get(i)).filter(|sc| o < sc.conditions.len()) {
-                Some(sc) => l.u32(sc.find_previous_or_condition(o)?.map_or(u32::MAX, |p| p as u32)),
+            match script_list(c, s)
+                .and_then(|sl| sl.scripts.get(i))
+                .filter(|sc| o < sc.conditions.len())
+            {
+                Some(sc) => l.u32(
+                    sc.find_previous_or_condition(o)?
+                        .map_or(u32::MAX, |p| p as u32),
+                ),
                 None => skip(l),
             }
         }
         24 => {
             let (s, i, o, cd) = (rd.u8(), rd.u8(), rd.u8(), rd.u8());
-            match script_list(c, s).and_then(|sl| sl.scripts.get(i)).and_then(|sc| sc.conditions.get(o)).filter(|or| cd < or.conditions.len()) {
-                Some(or) => l.u32(or.find_previous_condition(cd)?.map_or(u32::MAX, |p| p as u32)),
+            match script_list(c, s)
+                .and_then(|sl| sl.scripts.get(i))
+                .and_then(|sc| sc.conditions.get(o))
+                .filter(|or| cd < or.conditions.len())
+            {
+                Some(or) => l.u32(
+                    or.find_previous_condition(cd)?
+                        .map_or(u32::MAX, |p| p as u32),
+                ),
                 None => skip(l),
             }
         }
@@ -708,7 +838,8 @@ fn run_op(c: &mut SidesCtx, rd: &mut Rd, l: &mut Log, st: &mut Stats, skirmish_g
         }
         _ => l.u8(b'?'),
     }
-    if l.0.len() > before && l.0[before..].contains(&b'x') && matches!(l.0.get(before), Some(b'x')) {
+    if l.0.len() > before && l.0[before..].contains(&b'x') && matches!(l.0.get(before), Some(b'x'))
+    {
         *st.ops_skipped.entry(op).or_default() += 1;
     } else {
         *st.ops_run.entry(op).or_default() += 1;
@@ -730,8 +861,16 @@ fn rust_run(
     let mut all_ops = Vec::new();
     let mut l = Log::default();
     c.sides = SidesList::new();
-    c.skirmish_scripts_file = if skirmish.is_empty() { None } else { Some(skirmish.to_vec()) };
-    let parsed = if mode == 0 { c.read_sides_chunk_file(data.to_vec()) } else { c.read_scripts_chunk_file(data.to_vec()) };
+    c.skirmish_scripts_file = if skirmish.is_empty() {
+        None
+    } else {
+        Some(skirmish.to_vec())
+    };
+    let parsed = if mode == 0 {
+        c.read_sides_chunk_file(data.to_vec())
+    } else {
+        c.read_scripts_chunk_file(data.to_vec())
+    };
     match parsed {
         Ok(r) => {
             l.u8(b'R');
@@ -789,8 +928,17 @@ fn rust_run(
         dump_lists(&mut l, &lists);
         let mut out = DataChunkOutput::new();
         {
-            let mut refs: Vec<Option<&mut ScriptList>> = lists.iter_mut().map(Option::as_mut).collect();
-            thrown(&mut l, ScriptList::write_scripts_data_chunk(&mut out, &mut refs, &c.templates, &c.names.generator))?;
+            let mut refs: Vec<Option<&mut ScriptList>> =
+                lists.iter_mut().map(Option::as_mut).collect();
+            thrown(
+                &mut l,
+                ScriptList::write_scripts_data_chunk(
+                    &mut out,
+                    &mut refs,
+                    &c.templates,
+                    &c.names.generator,
+                ),
+            )?;
         }
         let bytes = out.finish();
         st.written_bytes += bytes.len() as u64;
@@ -885,10 +1033,36 @@ fn wstr(v: &mut Vec<u8>, s: &[u8]) {
 }
 
 const PLAYERS: &[&str] = &["", "PlyrA", "PlyrB", "PlyrC", "Civ", "teamPlyrA", "x y"];
-const FACTIONS: &[&str] = &["", "FactionAmerica", "FactionChina", "FactionCivilian", "FactionGLA", "Other"];
-const SOME_STRINGS: &[&str] =
-    &["", "a", "Alpha", "script 1", "<This Team>", "<This Player>", "PlyrA", "teamPlyrA", "Beta_2", "x", "long name with spaces", "\u{e9}t\u{e9}"];
-const EXTRA_KEYS: &[&str] = &["customA", "customB", "customC", "objectName", "weather", "initialCameraPosition"];
+const FACTIONS: &[&str] = &[
+    "",
+    "FactionAmerica",
+    "FactionChina",
+    "FactionCivilian",
+    "FactionGLA",
+    "Other",
+];
+const SOME_STRINGS: &[&str] = &[
+    "",
+    "a",
+    "Alpha",
+    "script 1",
+    "<This Team>",
+    "<This Player>",
+    "PlyrA",
+    "teamPlyrA",
+    "Beta_2",
+    "x",
+    "long name with spaces",
+    "\u{e9}t\u{e9}",
+];
+const EXTRA_KEYS: &[&str] = &[
+    "customA",
+    "customB",
+    "customC",
+    "objectName",
+    "weather",
+    "initialCameraPosition",
+];
 
 impl Gn {
     fn below(&mut self, n: u32) -> u32 {
@@ -904,7 +1078,11 @@ impl Gn {
     fn string(&mut self) -> Vec<u8> {
         if self.below(6) == 0 {
             let n = self.below(20) as usize;
-            return (0..n).map(|_| [b' ', b'a', b'Z', b'_', b'0', b'<', 0xe9, b'\t'][self.g.below(8) as usize]).collect();
+            return (0..n)
+                .map(|_| {
+                    [b' ', b'a', b'Z', b'_', b'0', b'<', 0xe9, b'\t'][self.g.below(8) as usize]
+                })
+                .collect();
         }
         let s = *self.pick(SOME_STRINGS);
         s.as_bytes().to_vec()
@@ -948,7 +1126,9 @@ impl Gn {
             pairs.push(("playerIsHuman", vec![self.below(2) as u8], 0));
         }
         if self.below(4) == 0 {
-            let units: Vec<u16> = (0..self.below(5)).map(|_| 0x41 + self.below(30) as u16).collect();
+            let units: Vec<u16> = (0..self.below(5))
+                .map(|_| 0x41 + self.below(30) as u16)
+                .collect();
             let mut u = Vec::new();
             w16(&mut u, units.len() as u16);
             for x in units {
@@ -1007,10 +1187,21 @@ impl Gn {
     }
 
     fn team_dict(&mut self, v: &mut Vec<u8>) {
-        let name = *self.pick(&["teamPlyrA", "teamPlyrB", "team", "PlyrA", "TeamX", "t1", "t2", "Civ"]);
+        let name = *self.pick(&[
+            "teamPlyrA",
+            "teamPlyrB",
+            "team",
+            "PlyrA",
+            "TeamX",
+            "t1",
+            "t2",
+            "Civ",
+        ]);
         let owner = *self.pick(PLAYERS);
-        let mut pairs: Vec<(&str, Vec<u8>, u8)> =
-            vec![("teamName", Self::ascii_val(name.as_bytes()), 3), ("teamOwner", Self::ascii_val(owner.as_bytes()), 3)];
+        let mut pairs: Vec<(&str, Vec<u8>, u8)> = vec![
+            ("teamName", Self::ascii_val(name.as_bytes()), 3),
+            ("teamOwner", Self::ascii_val(owner.as_bytes()), 3),
+        ];
         if self.below(2) == 0 {
             pairs.push(("teamIsSingleton", vec![self.below(2) as u8], 0));
         }
@@ -1031,7 +1222,10 @@ impl Gn {
         let f = self.mixed_f32();
         v.extend_from_slice(&f.to_le_bytes());
         v.push(self.below(3) as u8);
-        w32(v, [0, 1, 3, 0xFFFF_FFFF, self.g.u32()][self.below(5) as usize]);
+        w32(
+            v,
+            [0, 1, 3, 0xFFFF_FFFF, self.g.u32()][self.below(5) as usize],
+        );
         if version >= 3 {
             let s = self.string();
             wstr(v, &s);
@@ -1064,13 +1258,21 @@ impl Gn {
         let s: Vec<u8> = match t {
             pt::OBJECT_TYPE if self.below(4) == 0 => {
                 self.cov.fundamentalist += 1;
-                let tail = if self.chance(60) { "x".repeat(260) } else { ["Infantry", "", "RocketBuggy"][self.below(3) as usize].to_string() };
+                let tail = if self.chance(60) {
+                    "x".repeat(260)
+                } else {
+                    ["Infantry", "", "RocketBuggy"][self.below(3) as usize].to_string()
+                };
                 format!("Fundamentalist{tail}").into_bytes()
             }
             pt::UPGRADE if self.below(3) == 0 => {
                 self.cov.obsolete_upgrades += 1;
-                ["Upgrade_AmericaRangerCaptureBuilding", "Upgrade_ChinaRedguardCaptureBuilding", "Upgrade_GLARebelCaptureBuilding", "Upgrade_Other"]
-                    [self.below(4) as usize]
+                [
+                    "Upgrade_AmericaRangerCaptureBuilding",
+                    "Upgrade_ChinaRedguardCaptureBuilding",
+                    "Upgrade_GLARebelCaptureBuilding",
+                    "Upgrade_Other",
+                ][self.below(4) as usize]
                     .as_bytes()
                     .to_vec()
             }
@@ -1093,7 +1295,10 @@ impl Gn {
                 match self.below(10) {
                     0 | 1 => {
                         self.cov.kind_of_retired += 1;
-                        ["CRUSHER", "Crushable", "OVERLAPPABLE", "MISSILE", "missile"][self.below(5) as usize].as_bytes().to_vec()
+                        ["CRUSHER", "Crushable", "OVERLAPPABLE", "MISSILE", "missile"]
+                            [self.below(5) as usize]
+                            .as_bytes()
+                            .to_vec()
                     }
                     2 => {
                         self.cov.kind_of_by_index += 1;
@@ -1174,7 +1379,11 @@ impl Gn {
             _ => self.below(109) as i32,
         };
         w32(v, ty as u32);
-        let tmpl_idx = if (0..109).contains(&ty) { ty as usize } else { 0 };
+        let tmpl_idx = if (0..109).contains(&ty) {
+            ty as usize
+        } else {
+            0
+        };
         if ver >= 4 {
             let name = match self.below(10) {
                 0 => {
@@ -1196,7 +1405,11 @@ impl Gn {
             *self.cov.heals.entry("condition v1 surfaces").or_default() += 1;
             types.len() as i32 - 1
         } else if ver < 4 && ty == 84 && self.below(4) != 0 {
-            *self.cov.heals.entry("skirmish special power ready").or_default() += 1;
+            *self
+                .cov
+                .heals
+                .entry("skirmish special power ready")
+                .or_default() += 1;
             1
         } else {
             self.count_for(types.len())
@@ -1209,7 +1422,10 @@ impl Gn {
     fn action(&mut self, v: &mut Vec<u8>) -> u16 {
         self.cov.actions += 1;
         let ver: u16 = if self.below(5) == 0 { 1 } else { 2 };
-        let healed = [36, 45, 46, 90, 145, 102, 229, 230, 146, 83, 26, 27, 14, 17, 181, 19, 117, 118, 18, 206, 251, 250];
+        let healed = [
+            36, 45, 46, 90, 145, 102, 229, 230, 146, 83, 26, 27, 14, 17, 181, 19, 117, 118, 18,
+            206, 251, 250,
+        ];
         let ty = match self.below(20) {
             0..=5 => *self.pick(&healed),
             6 => 344 + self.below(168) as i32,
@@ -1217,7 +1433,11 @@ impl Gn {
             _ => self.below(344) as i32,
         };
         w32(v, ty as u32);
-        let tmpl_idx = if (0..344).contains(&ty) { ty as usize } else { 0 };
+        let tmpl_idx = if (0..344).contains(&ty) {
+            ty as usize
+        } else {
+            0
+        };
         if ver >= 2 {
             let name = match self.below(10) {
                 0 => {
@@ -1270,7 +1490,11 @@ impl Gn {
     }
 
     fn chunk(&mut self, name: &str, ver: u16, body: &[u8]) -> Vec<u8> {
-        let id = if self.chance(60) { self.below(300) } else { self.toc.id(name) };
+        let id = if self.chance(60) {
+            self.below(300)
+        } else {
+            self.toc.id(name)
+        };
         let mut v = Vec::new();
         w32(&mut v, id);
         w16(&mut v, ver);
@@ -1313,7 +1537,10 @@ impl Gn {
             let c = self.chunk("OrCondition", 1, &o);
             b.extend(c);
         }
-        for (name, count) in [("ScriptAction", self.below(4)), ("ScriptActionFalse", self.below(3))] {
+        for (name, count) in [
+            ("ScriptAction", self.below(4)),
+            ("ScriptActionFalse", self.below(3)),
+        ] {
             for _ in 0..count {
                 let mut ab = Vec::new();
                 let v = self.action(&mut ab);
@@ -1342,7 +1569,11 @@ impl Gn {
 
     fn script_list(&mut self) -> Vec<u8> {
         let mut b = Vec::new();
-        let n_scripts = if self.below(5) == 0 { 0 } else { 1 + self.below(3) };
+        let n_scripts = if self.below(5) == 0 {
+            0
+        } else {
+            1 + self.below(3)
+        };
         for _ in 0..n_scripts {
             let s = self.script();
             b.extend(s);
@@ -1372,10 +1603,18 @@ impl Gn {
     fn sides_file(&mut self) -> Vec<u8> {
         let ver: u16 = [3, 3, 3, 2, 1][self.below(5) as usize];
         let mut b = Vec::new();
-        let nsides = if self.below(40) == 0 { 17 + self.below(3) } else { self.below(6) };
+        let nsides = if self.below(40) == 0 {
+            17 + self.below(3)
+        } else {
+            self.below(6)
+        };
         w32(&mut b, nsides);
         for k in 0..nsides.min(16) {
-            let name = if self.below(3) == 0 { *self.pick(PLAYERS) } else { PLAYERS[(k as usize) % PLAYERS.len()] };
+            let name = if self.below(3) == 0 {
+                *self.pick(PLAYERS)
+            } else {
+                PLAYERS[(k as usize) % PLAYERS.len()]
+            };
             self.player_dict(&mut b, name);
             let nb = self.below(4);
             w32(&mut b, nb);
@@ -1451,8 +1690,16 @@ impl Gn {
 
     /// Prepend the table of contents and apply the mutations.
     fn finish_file(&mut self, chunks: Vec<u8>) -> Vec<u8> {
-        let mut v = if self.chance(30) { b"CkMq".to_vec() } else { b"CkMp".to_vec() };
-        let count = if self.chance(25) { self.toc.names.len() as i32 + 1 + self.below(3) as i32 } else { self.toc.names.len() as i32 };
+        let mut v = if self.chance(30) {
+            b"CkMq".to_vec()
+        } else {
+            b"CkMp".to_vec()
+        };
+        let count = if self.chance(25) {
+            self.toc.names.len() as i32 + 1 + self.below(3) as i32
+        } else {
+            self.toc.names.len() as i32
+        };
         w32(&mut v, count as u32);
         for (i, n) in self.toc.names.iter().enumerate() {
             v.push(n.len() as u8);
@@ -1482,8 +1729,32 @@ impl Gn {
         let nsides = c.sides.get_num_sides() as u32;
         // (op, weight)
         const W: &[(u8, u32)] = &[
-            (0, 2), (1, 3), (2, 3), (3, 4), (4, 3), (5, 3), (6, 3), (7, 3), (8, 6), (9, 5), (10, 6), (11, 6), (12, 6), (13, 6), (14, 6), (15, 6),
-            (16, 5), (17, 6), (18, 1), (19, 1), (20, 4), (21, 6), (22, 6), (23, 4), (24, 4), (25, 5),
+            (0, 2),
+            (1, 3),
+            (2, 3),
+            (3, 4),
+            (4, 3),
+            (5, 3),
+            (6, 3),
+            (7, 3),
+            (8, 6),
+            (9, 5),
+            (10, 6),
+            (11, 6),
+            (12, 6),
+            (13, 6),
+            (14, 6),
+            (15, 6),
+            (16, 5),
+            (17, 6),
+            (18, 1),
+            (19, 1),
+            (20, 4),
+            (21, 6),
+            (22, 6),
+            (23, 4),
+            (24, 4),
+            (25, 5),
         ];
         let total: u32 = W.iter().map(|w| w.1).sum();
         let mut pick = self.below(total);
@@ -1497,9 +1768,16 @@ impl Gn {
         }
         let mut v = vec![op];
         // a side index; `want` says what the operation needs of the side (mostly given)
-        let sl_of = |s: u8| c.sides.get_side_info(i32::from(s)).ok().and_then(|x| x.scripts.as_ref());
+        let sl_of = |s: u8| {
+            c.sides
+                .get_side_info(i32::from(s))
+                .ok()
+                .and_then(|x| x.scripts.as_ref())
+        };
         let side_where = |g: &mut Gn, want: &dyn Fn(&ScriptList) -> bool| -> u8 {
-            let ok: Vec<u8> = (0..nsides as u8).filter(|&s| sl_of(s).is_some_and(want)).collect();
+            let ok: Vec<u8> = (0..nsides as u8)
+                .filter(|&s| sl_of(s).is_some_and(want))
+                .collect();
             if !ok.is_empty() && g.below(10) != 0 {
                 ok[g.below(ok.len() as u32) as usize]
             } else if nsides > 0 && g.below(2) == 0 {
@@ -1520,7 +1798,18 @@ impl Gn {
         match op {
             0 | 1 => v.push((self.below(6) as i8 - 1) as u8),
             2 | 4 | 5 => {
-                let s = *self.pick(&["", "FactionAmerica", "FactionCivilian", "Other", "PlyrA", "teamPlyrA", "Plyr", "FactionX\u{e9}", "PlyrB", "Civ"]);
+                let s = *self.pick(&[
+                    "",
+                    "FactionAmerica",
+                    "FactionCivilian",
+                    "Other",
+                    "PlyrA",
+                    "teamPlyrA",
+                    "Plyr",
+                    "FactionX\u{e9}",
+                    "PlyrB",
+                    "Civ",
+                ]);
                 v.push(s.len() as u8);
                 v.extend_from_slice(s.as_bytes());
             }
@@ -1534,7 +1823,11 @@ impl Gn {
                 v.push(s);
                 v.push(d);
                 if op == 8 {
-                    for x in [*self.pick(&["_q", "2", ""]), *self.pick(&["PlyrA", "Plyr", "", "PlyrB"]), *self.pick(&["PlyrB", "Z", "PlyrC"])] {
+                    for x in [
+                        *self.pick(&["_q", "2", ""]),
+                        *self.pick(&["PlyrA", "Plyr", "", "PlyrB"]),
+                        *self.pick(&["PlyrB", "Z", "PlyrC"]),
+                    ] {
                         v.push(x.len() as u8);
                         v.extend_from_slice(x.as_bytes());
                     }
@@ -1543,24 +1836,43 @@ impl Gn {
             9 => {
                 let s = side(self);
                 v.push(s);
-                let n = c.sides.get_side_info(i32::from(s)).map_or(0, |x| x.build_list.len());
+                let n = c
+                    .sides
+                    .get_side_info(i32::from(s))
+                    .map_or(0, |x| x.build_list.len());
                 v.push(idx(self, n));
                 v.push(pos(self));
             }
             10 | 11 => {
-                let s = if op == 10 { side_where(self, &|l| !l.scripts.is_empty()) } else { side_where(self, &|l| !l.groups.is_empty()) };
+                let s = if op == 10 {
+                    side_where(self, &|l| !l.scripts.is_empty())
+                } else {
+                    side_where(self, &|l| !l.groups.is_empty())
+                };
                 v.push(s);
-                let n = sl_of(s).map_or(0, |l| if op == 10 { l.scripts.len() } else { l.groups.len() });
+                let n = sl_of(s).map_or(0, |l| {
+                    if op == 10 {
+                        l.scripts.len()
+                    } else {
+                        l.groups.len()
+                    }
+                });
                 v.push(idx(self, n));
             }
             12 | 22 => {
-                let s = if op == 12 { side_where(self, &|l| l.groups.iter().any(|g| !g.scripts.is_empty())) } else { side_where(self, &|l| !l.groups.is_empty()) };
+                let s = if op == 12 {
+                    side_where(self, &|l| l.groups.iter().any(|g| !g.scripts.is_empty()))
+                } else {
+                    side_where(self, &|l| !l.groups.is_empty())
+                };
                 v.push(s);
                 let ng = sl_of(s).map_or(0, |l| l.groups.len());
                 let g = idx(self, ng);
                 v.push(g);
                 if op == 12 {
-                    let n = sl_of(s).and_then(|l| l.groups.get(usize::from(g))).map_or(0, |gr| gr.scripts.len());
+                    let n = sl_of(s)
+                        .and_then(|l| l.groups.get(usize::from(g)))
+                        .map_or(0, |gr| gr.scripts.len());
                     v.push(idx(self, n));
                 } else {
                     let s2 = side_where(self, &|l| !l.scripts.is_empty());
@@ -1573,9 +1885,17 @@ impl Gn {
             13..=16 | 23 | 24 => {
                 let s = match op {
                     13 => side_where(self, &|l| l.scripts.iter().any(|x| !x.actions.is_empty())),
-                    16 => side_where(self, &|l| l.scripts.iter().any(|x| !x.actions_false.is_empty())),
-                    14 | 23 => side_where(self, &|l| l.scripts.iter().any(|x| !x.conditions.is_empty())),
-                    _ => side_where(self, &|l| l.scripts.iter().any(|x| x.conditions.iter().any(|o| !o.conditions.is_empty()))),
+                    16 => side_where(self, &|l| {
+                        l.scripts.iter().any(|x| !x.actions_false.is_empty())
+                    }),
+                    14 | 23 => side_where(self, &|l| {
+                        l.scripts.iter().any(|x| !x.conditions.is_empty())
+                    }),
+                    _ => side_where(self, &|l| {
+                        l.scripts
+                            .iter()
+                            .any(|x| x.conditions.iter().any(|o| !o.conditions.is_empty()))
+                    }),
                 };
                 v.push(s);
                 let ns = sl_of(s).map_or(0, |l| l.scripts.len());
@@ -1590,7 +1910,9 @@ impl Gn {
                         let no = sc.map_or(0, |x| x.conditions.len());
                         let o = idx(self, no);
                         v.push(o);
-                        let nc = sc.and_then(|x| x.conditions.get(usize::from(o))).map_or(0, |x| x.conditions.len());
+                        let nc = sc
+                            .and_then(|x| x.conditions.get(usize::from(o)))
+                            .map_or(0, |x| x.conditions.len());
                         v.push(idx(self, nc));
                     }
                 }
@@ -1757,7 +2079,11 @@ fn constants_match_upstream() {
     let n = unsafe { cpp::ref_sides_constants(out.as_mut_ptr()) } as usize;
     let want = rust_constants();
     let mut check = Check::new("Scripts.h constants");
-    assert_eq!(n, want.len(), "the C++ list and the Rust list differ in length");
+    assert_eq!(
+        n,
+        want.len(),
+        "the C++ list and the Rust list differ in length"
+    );
     for (i, (r, c)) in want.iter().zip(&out[..n]).enumerate() {
         check.eq(*r, *c, || format!("constant #{i}"));
     }
@@ -1809,25 +2135,51 @@ fn count_log_facts(rust: &[u8], tally: &mut Tally) {
     match rust.first() {
         Some(b'R') if rust.get(1) == Some(&1) => tally.parse_true += 1,
         Some(b'R') => tally.parse_false += 1,
-        Some(b'T') => *tally.thrown.entry(u32::from_le_bytes(rust[1..5].try_into().expect("4 bytes"))).or_default() += 1,
+        Some(b'T') => {
+            *tally
+                .thrown
+                .entry(u32::from_le_bytes(rust[1..5].try_into().expect("4 bytes")))
+                .or_default() += 1
+        }
         _ => {}
     }
 }
 
 /// A table of contents that declares more than 10^5 names (upstream allocates every one, up to 2^31).
 fn toc_too_large(data: &[u8]) -> bool {
-    data.len() >= 8 && &data[..4] == b"CkMp" && i32::from_le_bytes(data[4..8].try_into().expect("4 bytes")) > 100_000
+    data.len() >= 8
+        && &data[..4] == b"CkMp"
+        && i32::from_le_bytes(data[4..8].try_into().expect("4 bytes")) > 100_000
 }
 
-fn run_cases(world: &mut SidesCtx, mode: i32, cases: usize, seed: u64, check: &mut Check, tally: &mut Tally, stats: &mut Stats, cov_out: &mut Cov) {
+fn run_cases(
+    world: &mut SidesCtx,
+    mode: i32,
+    cases: usize,
+    seed: u64,
+    check: &mut Check,
+    tally: &mut Tally,
+    stats: &mut Stats,
+    cov_out: &mut Cov,
+) {
     let defs = template_defs();
-    let mut gn = Gn { g: Gen::new(seed), clean: false, toc: Toc { names: Vec::new() }, defs: defs.clone(), cov: Cov::default() };
+    let mut gn = Gn {
+        g: Gen::new(seed),
+        clean: false,
+        toc: Toc { names: Vec::new() },
+        defs: defs.clone(),
+        cov: Cov::default(),
+    };
     let mut buf = Vec::new();
     let no_ops = std::env::var("SIDES_NOOPS").is_ok();
     for case in 0..cases {
         gn.clean = case % 2 == 0;
         gn.toc = Toc { names: Vec::new() };
-        let data = if mode == 0 { gn.sides_file() } else { gn.scripts_file() };
+        let data = if mode == 0 {
+            gn.sides_file()
+        } else {
+            gn.scripts_file()
+        };
         let n_ops = if mode == 0 && !no_ops { gn.below(9) } else { 0 };
         let skirmish = if mode == 0 && n_ops > 0 && gn.below(2) == 0 {
             gn.toc = Toc { names: Vec::new() };
@@ -1861,7 +2213,10 @@ fn run_cases(world: &mut SidesCtx, mode: i32, cases: usize, seed: u64, check: &m
         };
         if trial.embedded_nul_strings != world.embedded_nul_strings {
             // a string with a 0 inside: the std::string stand-in keeps what follows it
-            *tally.undefined.entry("StandInStringWithNul".to_string()).or_default() += 1;
+            *tally
+                .undefined
+                .entry("StandInStringWithNul".to_string())
+                .or_default() += 1;
             continue;
         }
         *world = trial;
@@ -1871,7 +2226,11 @@ fn run_cases(world: &mut SidesCtx, mode: i32, cases: usize, seed: u64, check: &m
         tally.log_bytes += rust.len() as u64;
         count_log_facts(&rust, tally);
         let ctx = || {
-            let at = rust.iter().zip(&c).position(|(a, b)| a != b).unwrap_or(rust.len().min(c.len()));
+            let at = rust
+                .iter()
+                .zip(&c)
+                .position(|(a, b)| a != b)
+                .unwrap_or(rust.len().min(c.len()));
             let lo = at.saturating_sub(24);
             format!(
                 "mode {mode} case {case} (file {} bytes, ops {:02x?})\nfirst difference at byte {at} (rust log {} bytes, c++ log {})\nrust {:02x?}\nc++  {:02x?}",
@@ -1905,12 +2264,22 @@ fn sides_and_scripts_match_upstream() {
     let mut tally = Tally::default();
     let mut cov0 = Cov::default();
     let mut stats = Stats::default();
-    let n0: usize = std::env::var("SIDES_CASES0").ok().and_then(|s| s.parse().ok()).unwrap_or(6_000);
-    let n1: usize = std::env::var("SIDES_CASES1").ok().and_then(|s| s.parse().ok()).unwrap_or(2_000);
+    let n0: usize = std::env::var("SIDES_CASES0")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(6_000);
+    let n1: usize = std::env::var("SIDES_CASES1")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(2_000);
     let mut world = new_world(&defs);
-    run_cases(&mut world, 0, n0, 0x51DE5, &mut check, &mut tally, &mut stats, &mut cov0);
+    run_cases(
+        &mut world, 0, n0, 0x51DE5, &mut check, &mut tally, &mut stats, &mut cov0,
+    );
     let mut cov1 = Cov::default();
-    run_cases(&mut world, 1, n1, 0x5C41B, &mut check, &mut tally, &mut stats, &mut cov1);
+    run_cases(
+        &mut world, 1, n1, 0x5C41B, &mut check, &mut tally, &mut stats, &mut cov1,
+    );
     println!(
         "Sides/Scripts: {} files generated, {} compared (log bytes {}), parses true {} false {}, thrown {:?}; \
          excluded as undefined upstream: {} {:?}; excluded (TOC > 10^5 names): {}",

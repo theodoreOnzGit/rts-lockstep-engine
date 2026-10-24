@@ -21,7 +21,9 @@
 //! components (`W += v.W`). `Matrix3D::Solve_Linear_System` row-reduces with
 //! `-=`, so its fourth column inherits this. The differential test pins it.
 
-use std::ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::ops::{
+    Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign,
+};
 
 /// `class Vector4`.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

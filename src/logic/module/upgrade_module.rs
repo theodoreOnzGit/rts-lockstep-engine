@@ -90,7 +90,9 @@
 use std::sync::{Arc, RwLock};
 
 use crate::common::damage_fx::FxListName;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_UPGRADE};
 use crate::common::name_key_generator::NameKeyGenerator;
 use crate::common::upgrade::{UpgradeCenter, UpgradeMaskType, UpgradeTemplate};
@@ -112,11 +114,19 @@ pub trait UpgradeEffects {
 /// `findUpgrade(name)` for one of the mux's names: the template, `INI_INVALID_DATA`
 /// for a name that is neither empty, `None`, nor an upgrade, and
 /// [`Undefined::NullUpgradeTemplate`] for an empty or `None` one that is not.
-pub(crate) fn find_named_upgrade<'c>(center: &'c UpgradeCenter, names: &mut NameKeyGenerator, name: &[u8]) -> IniResult<&'c UpgradeTemplate> {
-    let found = center.find_upgrade(names, name).map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
+pub(crate) fn find_named_upgrade<'c>(
+    center: &'c UpgradeCenter,
+    names: &mut NameKeyGenerator,
+    name: &[u8],
+) -> IniResult<&'c UpgradeTemplate> {
+    let found = center
+        .find_upgrade(names, name)
+        .map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
     match found {
         Some(t) => Ok(t),
-        None if !name.is_empty() && !name.eq_ignore_ascii_case(b"None") => Err(IniError::new(IniErrorKind::InvalidData)),
+        None if !name.is_empty() && !name.eq_ignore_ascii_case(b"None") => {
+            Err(IniError::new(IniErrorKind::InvalidData))
+        }
         None => Err(IniError::undefined(Undefined::NullUpgradeTemplate)),
     }
 }
@@ -160,22 +170,46 @@ impl UpgradeMuxData {
 
     /// `getFieldParse()` as a table over a type that holds the mux data: the
     /// five fields. `T` reaches its mux data through `mux`.
-    pub fn parse_triggered_by(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
+    pub fn parse_triggered_by(
+        ini: &mut Ini<'_>,
+        d: &mut UpgradeMuxData,
+        _: &UserData,
+    ) -> IniResult<()> {
         ini.parse_ascii_string_vector(&mut d.activation_upgrade_names)
     }
-    pub fn parse_conflicts_with(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
+    pub fn parse_conflicts_with(
+        ini: &mut Ini<'_>,
+        d: &mut UpgradeMuxData,
+        _: &UserData,
+    ) -> IniResult<()> {
         ini.parse_ascii_string_vector(&mut d.conflicting_upgrade_names)
     }
-    pub fn parse_removes_upgrades(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
+    pub fn parse_removes_upgrades(
+        ini: &mut Ini<'_>,
+        d: &mut UpgradeMuxData,
+        _: &UserData,
+    ) -> IniResult<()> {
         ini.parse_ascii_string_vector(&mut d.removal_upgrade_names)
     }
-    pub fn parse_fx_list_upgrade(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
+    pub fn parse_fx_list_upgrade(
+        ini: &mut Ini<'_>,
+        d: &mut UpgradeMuxData,
+        _: &UserData,
+    ) -> IniResult<()> {
         // INI::parseFXList, as far as the token goes (see common::damage_fx)
         let token = ini.get_next_token(None)?;
-        d.fx_list_upgrade = if token.eq_ignore_ascii_case(b"None") { None } else { Some(token) };
+        d.fx_list_upgrade = if token.eq_ignore_ascii_case(b"None") {
+            None
+        } else {
+            Some(token)
+        };
         Ok(())
     }
-    pub fn parse_requires_all_triggers(ini: &mut Ini<'_>, d: &mut UpgradeMuxData, _: &UserData) -> IniResult<()> {
+    pub fn parse_requires_all_triggers(
+        ini: &mut Ini<'_>,
+        d: &mut UpgradeMuxData,
+        _: &UserData,
+    ) -> IniResult<()> {
         d.requires_all_triggers = ini.parse_bool()?;
         Ok(())
     }
@@ -239,18 +273,40 @@ impl UpgradeMuxData {
     /// names (compared without regard to case). The trigger names are filled
     /// by the first [`UpgradeMuxData::get_upgrade_activation_masks`].
     pub fn is_triggered_by(&self, upgrade: &[u8]) -> bool {
-        self.trigger_upgrade_names.iter().any(|t| t.eq_ignore_ascii_case(upgrade))
+        self.trigger_upgrade_names
+            .iter()
+            .any(|t| t.eq_ignore_ascii_case(upgrade))
     }
 }
 
 /// `UpgradeMuxData::getFieldParse()`: `TriggeredBy`, `ConflictsWith`,
 /// `RemovesUpgrades`, `FXListUpgrade`, `RequiresAllTriggers`.
 pub static UPGRADE_MUX_DATA_FIELD_PARSE: [FieldParse<UpgradeMuxData>; 6] = [
-    FieldParse::new("TriggeredBy", UpgradeMuxData::parse_triggered_by, UserData::None),
-    FieldParse::new("ConflictsWith", UpgradeMuxData::parse_conflicts_with, UserData::None),
-    FieldParse::new("RemovesUpgrades", UpgradeMuxData::parse_removes_upgrades, UserData::None),
-    FieldParse::new("FXListUpgrade", UpgradeMuxData::parse_fx_list_upgrade, UserData::None),
-    FieldParse::new("RequiresAllTriggers", UpgradeMuxData::parse_requires_all_triggers, UserData::None),
+    FieldParse::new(
+        "TriggeredBy",
+        UpgradeMuxData::parse_triggered_by,
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ConflictsWith",
+        UpgradeMuxData::parse_conflicts_with,
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RemovesUpgrades",
+        UpgradeMuxData::parse_removes_upgrades,
+        UserData::None,
+    ),
+    FieldParse::new(
+        "FXListUpgrade",
+        UpgradeMuxData::parse_fx_list_upgrade,
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RequiresAllTriggers",
+        UpgradeMuxData::parse_requires_all_triggers,
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
@@ -447,12 +503,16 @@ impl UpgradeModuleData {
 
     /// The mux data, to read.
     pub fn mux_data(&self) -> std::sync::RwLockReadGuard<'_, UpgradeMuxData> {
-        self.upgrade_mux_data.read().unwrap_or_else(|e| e.into_inner())
+        self.upgrade_mux_data
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     /// The mux data, to change (the `mutable` members).
     pub fn mux_data_mut(&self) -> std::sync::RwLockWriteGuard<'_, UpgradeMuxData> {
-        self.upgrade_mux_data.write().unwrap_or_else(|e| e.into_inner())
+        self.upgrade_mux_data
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     /// A copy of the mux data (for comparing).
@@ -479,10 +539,26 @@ impl UpgradeModuleData {
 
 /// `UpgradeMuxData::getFieldParse()` at `offsetof(UpgradeModuleData, m_upgradeMuxData)`.
 pub static UPGRADE_MODULE_DATA_FIELD_PARSE: [FieldParse<UpgradeModuleData>; 6] = [
-    FieldParse::new("TriggeredBy", |i, d, u| UpgradeMuxData::parse_triggered_by(i, &mut d.mux_data_mut(), u), UserData::None),
-    FieldParse::new("ConflictsWith", |i, d, u| UpgradeMuxData::parse_conflicts_with(i, &mut d.mux_data_mut(), u), UserData::None),
-    FieldParse::new("RemovesUpgrades", |i, d, u| UpgradeMuxData::parse_removes_upgrades(i, &mut d.mux_data_mut(), u), UserData::None),
-    FieldParse::new("FXListUpgrade", |i, d, u| UpgradeMuxData::parse_fx_list_upgrade(i, &mut d.mux_data_mut(), u), UserData::None),
+    FieldParse::new(
+        "TriggeredBy",
+        |i, d, u| UpgradeMuxData::parse_triggered_by(i, &mut d.mux_data_mut(), u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ConflictsWith",
+        |i, d, u| UpgradeMuxData::parse_conflicts_with(i, &mut d.mux_data_mut(), u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RemovesUpgrades",
+        |i, d, u| UpgradeMuxData::parse_removes_upgrades(i, &mut d.mux_data_mut(), u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "FXListUpgrade",
+        |i, d, u| UpgradeMuxData::parse_fx_list_upgrade(i, &mut d.mux_data_mut(), u),
+        UserData::None,
+    ),
     FieldParse::new(
         "RequiresAllTriggers",
         |i, d, u| UpgradeMuxData::parse_requires_all_triggers(i, &mut d.mux_data_mut(), u),
@@ -552,7 +628,11 @@ impl UpgradeModule {
     pub fn new(object: ObjectId, module_data: Option<Arc<UpgradeModuleData>>) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let behavior = BehaviorModule::new(object, Some(ModuleDataKind::Upgrade(data.clone())))?;
-        Ok(UpgradeModule { behavior, data, mux: UpgradeMux::new() })
+        Ok(UpgradeModule {
+            behavior,
+            data,
+            mux: UpgradeMux::new(),
+        })
     }
 
     /// `UpgradeModule::getInterfaceMask()`: `MODULEINTERFACE_UPGRADE`.
@@ -607,17 +687,28 @@ impl UpgradeModule {
         key_mask: UpgradeMaskType,
     ) -> IniResult<bool> {
         let mut d = self.data.mux_data_mut();
-        self.mux.attempt_upgrade(&mut d, center, names, effects, key_mask)
+        self.mux
+            .attempt_upgrade(&mut d, center, names, effects, key_mask)
     }
 
     /// `wouldUpgrade(keyMask)`.
-    pub fn would_upgrade(&self, center: &UpgradeCenter, names: &mut NameKeyGenerator, key_mask: UpgradeMaskType) -> IniResult<bool> {
+    pub fn would_upgrade(
+        &self,
+        center: &UpgradeCenter,
+        names: &mut NameKeyGenerator,
+        key_mask: UpgradeMaskType,
+    ) -> IniResult<bool> {
         let mut d = self.data.mux_data_mut();
         self.mux.would_upgrade(&mut d, center, names, key_mask)
     }
 
     /// `resetUpgrade(keyMask)`.
-    pub fn reset_upgrade(&mut self, center: &UpgradeCenter, names: &mut NameKeyGenerator, key_mask: UpgradeMaskType) -> IniResult<bool> {
+    pub fn reset_upgrade(
+        &mut self,
+        center: &UpgradeCenter,
+        names: &mut NameKeyGenerator,
+        key_mask: UpgradeMaskType,
+    ) -> IniResult<bool> {
         let mut d = self.data.mux_data_mut();
         self.mux.reset_upgrade(&mut d, center, names, key_mask)
     }
@@ -630,7 +721,8 @@ impl UpgradeModule {
         key_mask: UpgradeMaskType,
     ) -> IniResult<bool> {
         let mut d = self.data.mux_data_mut();
-        self.mux.test_upgrade_conditions(&mut d, center, names, key_mask)
+        self.mux
+            .test_upgrade_conditions(&mut d, center, names, key_mask)
     }
 }
 
@@ -686,11 +778,21 @@ mod tests {
         out.push(UpgradeModuleData::friend_new_module_data(Some(ini)));
         Ok(())
     }
-    static BLOCKS: [BlockParse<Vec<IniResult<UpgradeModuleData>>>; 1] = [BlockParse { token: "D", parse: block }];
+    static BLOCKS: [BlockParse<Vec<IniResult<UpgradeModuleData>>>; 1] = [BlockParse {
+        token: "D",
+        parse: block,
+    }];
 
     fn data_of(text: &str) -> IniResult<UpgradeModuleData> {
         let mut out = Vec::new();
-        let _ = Ini::load(b"u.ini", format!("D\n{text}\nEnd\n").as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut out);
+        let _ = Ini::load(
+            b"u.ini",
+            format!("D\n{text}\nEnd\n").as_bytes(),
+            IniLoadType::Overwrite,
+            None,
+            &BLOCKS,
+            &mut out,
+        );
         out.remove(0)
     }
 
@@ -710,7 +812,10 @@ mod tests {
             self.log.push(format!("fx {}", String::from_utf8_lossy(fx)));
         }
         fn remove_upgrade(&mut self, t: &UpgradeTemplate) {
-            self.log.push(format!("remove {}", String::from_utf8_lossy(t.upgrade_name())));
+            self.log.push(format!(
+                "remove {}",
+                String::from_utf8_lossy(t.upgrade_name())
+            ));
         }
     }
 
@@ -724,7 +829,10 @@ mod tests {
         assert_eq!(m.removal_upgrade_names, v(&["D", "A"]));
         assert_eq!(m.fx_list_upgrade, Some(b"FX_Up".to_vec()));
         assert!(m.requires_all_triggers);
-        assert!(m.trigger_upgrade_names.is_empty(), "the trigger names are filled when the masks are first computed");
+        assert!(
+            m.trigger_upgrade_names.is_empty(),
+            "the trigger names are filled when the masks are first computed"
+        );
         assert!(!m.activation_mask().any() && !m.conflicting_mask().any());
         // the defaults, None, a repeated field replacing the list
         let d = data_of("FXListUpgrade = none\nTriggeredBy = A\nTriggeredBy = B C").unwrap();
@@ -733,7 +841,10 @@ mod tests {
         assert!(!d.mux_data().requires_all_triggers);
         // a bad value and an unknown field
         assert!(data_of("RequiresAllTriggers = maybe").is_err());
-        assert_eq!(data_of("Nope = 1").unwrap_err().kind, IniErrorKind::UnknownToken);
+        assert_eq!(
+            data_of("Nope = 1").unwrap_err().kind,
+            IniErrorKind::UnknownToken
+        );
     }
 
     #[test]
@@ -741,7 +852,11 @@ mod tests {
         let (center, mut names) = world();
         let m = module("TriggeredBy = B D\n ConflictsWith = C A");
         let before = names.name_to_key(b"Fresh").0;
-        let (act, con) = m.upgrade_module_data().mux_data_mut().get_upgrade_activation_masks(&center, &mut names).unwrap();
+        let (act, con) = m
+            .upgrade_module_data()
+            .mux_data_mut()
+            .get_upgrade_activation_masks(&center, &mut names)
+            .unwrap();
         assert_eq!((act, con), (mask(&[1, 3]), mask(&[0, 2])));
         let d = m.upgrade_module_data().mux_data_snapshot();
         assert!(d.activation_upgrade_names.is_empty() && d.conflicting_upgrade_names.is_empty());
@@ -749,10 +864,19 @@ mod tests {
         assert_eq!((d.activation_mask(), d.conflicting_mask()), (act, con));
         // the lookup assigned no new key (the names already had them) and a second ask changes nothing
         assert_eq!(names.name_to_key(b"Fresh2").0, before + 1);
-        let again = m.upgrade_module_data().mux_data_mut().get_upgrade_activation_masks(&center, &mut names).unwrap();
+        let again = m
+            .upgrade_module_data()
+            .mux_data_mut()
+            .get_upgrade_activation_masks(&center, &mut names)
+            .unwrap();
         assert_eq!(again, (act, con));
         // is_triggered_by: any case, trigger names only (not the conflicting ones)
-        assert!(m.is_triggered_by(b"b") && m.is_triggered_by(b"D") && !m.is_triggered_by(b"A") && !m.is_triggered_by(b"C"));
+        assert!(
+            m.is_triggered_by(b"b")
+                && m.is_triggered_by(b"D")
+                && !m.is_triggered_by(b"A")
+                && !m.is_triggered_by(b"C")
+        );
         // before the first ask there are no trigger names
         assert!(!module("TriggeredBy = B").is_triggered_by(b"B"));
     }
@@ -762,11 +886,23 @@ mod tests {
         let (center, mut names) = world();
         let m = module("TriggeredBy = A Zed\n ConflictsWith = Yak");
         let next = names.name_to_key(b"Probe").0;
-        let e = m.upgrade_module_data().mux_data_mut().get_upgrade_activation_masks(&center, &mut names).unwrap_err();
+        let e = m
+            .upgrade_module_data()
+            .mux_data_mut()
+            .get_upgrade_activation_masks(&center, &mut names)
+            .unwrap_err();
         // Zed is not an upgrade: INI_INVALID_DATA, after "A" (known) and "Zed" were looked up
         assert_eq!(e.kind, IniErrorKind::InvalidData);
-        assert_eq!(names.name_to_key(b"Zed").0, next + 1, "Zed got the key after Probe");
-        assert_eq!(names.name_to_key(b"Yak").0, next + 2, "Yak was not looked up (the ask stopped at Zed): this is its first key");
+        assert_eq!(
+            names.name_to_key(b"Zed").0,
+            next + 1,
+            "Zed got the key after Probe"
+        );
+        assert_eq!(
+            names.name_to_key(b"Yak").0,
+            next + 2,
+            "Yak was not looked up (the ask stopped at Zed): this is its first key"
+        );
         // the names stay, the mask is the part built so far
         let d = m.upgrade_module_data().mux_data_snapshot();
         assert_eq!(d.activation_upgrade_names.len(), 2);
@@ -777,21 +913,41 @@ mod tests {
     #[test]
     fn an_empty_or_none_name_that_finds_no_upgrade_is_undefined() {
         let (center, mut names) = world();
-        for text in ["TriggeredBy = None", "ConflictsWith = NONE", "TriggeredBy = A none"] {
+        for text in [
+            "TriggeredBy = None",
+            "ConflictsWith = NONE",
+            "TriggeredBy = A none",
+        ] {
             let m = module(text);
-            let e = m.upgrade_module_data().mux_data_mut().get_upgrade_activation_masks(&center, &mut names).unwrap_err();
-            assert_eq!(e.kind, IniErrorKind::Undefined(Undefined::NullUpgradeTemplate), "{text}");
+            let e = m
+                .upgrade_module_data()
+                .mux_data_mut()
+                .get_upgrade_activation_masks(&center, &mut names)
+                .unwrap_err();
+            assert_eq!(
+                e.kind,
+                IniErrorKind::Undefined(Undefined::NullUpgradeTemplate),
+                "{text}"
+            );
         }
         // ... unless an upgrade really has that name
         let mut c2 = center.clone();
         c2.new_upgrade(&mut names, b"None").unwrap();
         let m = module("TriggeredBy = None");
-        let (act, _) = m.upgrade_module_data().mux_data_mut().get_upgrade_activation_masks(&c2, &mut names).unwrap();
+        let (act, _) = m
+            .upgrade_module_data()
+            .mux_data_mut()
+            .get_upgrade_activation_masks(&c2, &mut names)
+            .unwrap();
         assert_eq!(act, mask(&[4]));
         // an INI line with no names leaves the list empty: no conditions at all
         let (center, mut names) = world();
         let m = module("RequiresAllTriggers = No");
-        let r = m.upgrade_module_data().mux_data_mut().get_upgrade_activation_masks(&center, &mut names).unwrap();
+        let r = m
+            .upgrade_module_data()
+            .mux_data_mut()
+            .get_upgrade_activation_masks(&center, &mut names)
+            .unwrap();
         assert!(!r.0.any() && !r.1.any());
     }
 
@@ -799,14 +955,20 @@ mod tests {
     fn would_upgrade_needs_a_condition_a_key_no_conflict_and_a_fresh_module() {
         let (center, mut names) = world();
         let m = module("TriggeredBy = A B\n ConflictsWith = D");
-        let w = |m: &UpgradeModule, names: &mut NameKeyGenerator, bits: &[i32]| m.would_upgrade(&center, names, mask(bits)).unwrap();
+        let w = |m: &UpgradeModule, names: &mut NameKeyGenerator, bits: &[i32]| {
+            m.would_upgrade(&center, names, mask(bits)).unwrap()
+        };
         assert!(w(&m, &mut names, &[0]), "any trigger");
         assert!(w(&m, &mut names, &[1, 2]));
         assert!(!w(&m, &mut names, &[2]), "no trigger in the key");
         assert!(!w(&m, &mut names, &[]), "an empty key");
         assert!(!w(&m, &mut names, &[0, 3]), "a conflict");
         let all = module("TriggeredBy = A B\n RequiresAllTriggers = Yes");
-        assert!(!w(&all, &mut names, &[0]) && w(&all, &mut names, &[0, 1]) && w(&all, &mut names, &[0, 1, 2]));
+        assert!(
+            !w(&all, &mut names, &[0])
+                && w(&all, &mut names, &[0, 1])
+                && w(&all, &mut names, &[0, 1, 2])
+        );
         // no activation condition: never
         let none = module("ConflictsWith = D");
         assert!(!w(&none, &mut names, &[0]));
@@ -815,14 +977,19 @@ mod tests {
     #[test]
     fn test_upgrade_conditions_ignores_whether_it_ran_and_accepts_no_condition() {
         let (center, mut names) = world();
-        let t = |m: &UpgradeModule, names: &mut NameKeyGenerator, bits: &[i32]| m.test_upgrade_conditions(&center, names, mask(bits)).unwrap();
+        let t = |m: &UpgradeModule, names: &mut NameKeyGenerator, bits: &[i32]| {
+            m.test_upgrade_conditions(&center, names, mask(bits))
+                .unwrap()
+        };
         let m = module("TriggeredBy = A B\n ConflictsWith = D");
         assert!(t(&m, &mut names, &[0]) && !t(&m, &mut names, &[2]) && !t(&m, &mut names, &[0, 3]));
         // an empty key has no conflicts, but then no trigger either
         assert!(!t(&m, &mut names, &[]));
         // only conflicts: true unless one is present
         let only = module("ConflictsWith = D");
-        assert!(t(&only, &mut names, &[]) && t(&only, &mut names, &[1]) && !t(&only, &mut names, &[3]));
+        assert!(
+            t(&only, &mut names, &[]) && t(&only, &mut names, &[1]) && !t(&only, &mut names, &[3])
+        );
         // nothing at all: always true
         let nothing = module("RequiresAllTriggers = Yes");
         assert!(t(&nothing, &mut names, &[]) && t(&nothing, &mut names, &[0, 1, 2, 3]));
@@ -830,7 +997,8 @@ mod tests {
         assert!(!t(&all, &mut names, &[0]) && t(&all, &mut names, &[0, 1]));
         // it does not look at the executed flag
         let mut ran = module("TriggeredBy = A");
-        ran.attempt_upgrade(&center, &mut names, &mut Rec::default(), mask(&[0])).unwrap();
+        ran.attempt_upgrade(&center, &mut names, &mut Rec::default(), mask(&[0]))
+            .unwrap();
         assert!(ran.is_already_upgraded() && t(&ran, &mut names, &[0]));
     }
 
@@ -839,13 +1007,19 @@ mod tests {
         let (center, mut names) = world();
         let mut m = module("TriggeredBy = A\n RemovesUpgrades = C B\n FXListUpgrade = FX_Go");
         let mut rec = Rec::default();
-        assert!(!m.attempt_upgrade(&center, &mut names, &mut rec, mask(&[1])).unwrap());
+        assert!(!m
+            .attempt_upgrade(&center, &mut names, &mut rec, mask(&[1]))
+            .unwrap());
         assert!(rec.log.is_empty() && !m.is_already_upgraded());
-        assert!(m.attempt_upgrade(&center, &mut names, &mut rec, mask(&[0, 1])).unwrap());
+        assert!(m
+            .attempt_upgrade(&center, &mut names, &mut rec, mask(&[0, 1]))
+            .unwrap());
         assert_eq!(rec.log, ["fx FX_Go", "remove C", "remove B", "impl"]);
         assert!(m.is_already_upgraded());
         // once
-        assert!(!m.attempt_upgrade(&center, &mut names, &mut rec, mask(&[0])).unwrap());
+        assert!(!m
+            .attempt_upgrade(&center, &mut names, &mut rec, mask(&[0]))
+            .unwrap());
         assert_eq!(rec.log.len(), 4);
         // forceRefresh runs the implementation again, only because it ran
         m.force_refresh_upgrade(&mut rec);
@@ -861,7 +1035,9 @@ mod tests {
         assert!(!m.is_already_upgraded());
         assert!(!m.reset_upgrade(&center, &mut names, mask(&[0])).unwrap());
         // ... and it can run again
-        assert!(m.attempt_upgrade(&center, &mut names, &mut rec, mask(&[0])).unwrap());
+        assert!(m
+            .attempt_upgrade(&center, &mut names, &mut rec, mask(&[0]))
+            .unwrap());
     }
 
     #[test]
@@ -869,15 +1045,26 @@ mod tests {
         let (center, mut names) = world();
         let mut m = module("TriggeredBy = A\n RemovesUpgrades = B Nope C\n FXListUpgrade = FX_Go");
         let mut rec = Rec::default();
-        let e = m.attempt_upgrade(&center, &mut names, &mut rec, mask(&[0])).unwrap_err();
+        let e = m
+            .attempt_upgrade(&center, &mut names, &mut rec, mask(&[0]))
+            .unwrap_err();
         assert_eq!(e.kind, IniErrorKind::InvalidData);
-        assert_eq!(rec.log, ["fx FX_Go", "remove B"], "the fx and B's removal happened, the implementation did not");
+        assert_eq!(
+            rec.log,
+            ["fx FX_Go", "remove B"],
+            "the fx and B's removal happened, the implementation did not"
+        );
         assert!(!m.is_already_upgraded());
         // a removal name of None finds no upgrade: undefined, before anything is removed for it
         let mut n = module("TriggeredBy = A\n RemovesUpgrades = B None");
         let mut rec = Rec::default();
-        let e = n.attempt_upgrade(&center, &mut names, &mut rec, mask(&[0])).unwrap_err();
-        assert_eq!(e.kind, IniErrorKind::Undefined(Undefined::NullUpgradeTemplate));
+        let e = n
+            .attempt_upgrade(&center, &mut names, &mut rec, mask(&[0]))
+            .unwrap_err();
+        assert_eq!(
+            e.kind,
+            IniErrorKind::Undefined(Undefined::NullUpgradeTemplate)
+        );
         assert_eq!(rec.log, ["remove B"]);
     }
 
@@ -886,7 +1073,8 @@ mod tests {
         let (center, mut names) = world();
         let mut m = module("TriggeredBy = A");
         assert_eq!(save_bytes(&mut m).unwrap(), [1, 1, 1, 1, 1, 0]);
-        m.attempt_upgrade(&center, &mut names, &mut Rec::default(), mask(&[0])).unwrap();
+        m.attempt_upgrade(&center, &mut names, &mut Rec::default(), mask(&[0]))
+            .unwrap();
         let bytes = save_bytes(&mut m).unwrap();
         assert_eq!(bytes, [1, 1, 1, 1, 1, 1]);
         let mut other = module("TriggeredBy = A");
@@ -895,7 +1083,9 @@ mod tests {
         // the CRC is the same bytes as the xfer from UpgradeMux (version, flag), after BehaviorModule's nothing
         let mut crc_a = module("TriggeredBy = A");
         let mut crc_b = module("TriggeredBy = A");
-        crc_b.attempt_upgrade(&center, &mut names, &mut Rec::default(), mask(&[0])).unwrap();
+        crc_b
+            .attempt_upgrade(&center, &mut names, &mut Rec::default(), mask(&[0]))
+            .unwrap();
         assert_ne!(crc_of(&mut crc_a).unwrap(), crc_of(&mut crc_b).unwrap());
         assert_eq!(UpgradeModule::get_interface_mask(), 0x80);
         assert!(UpgradeModule::new(1, None).is_err());

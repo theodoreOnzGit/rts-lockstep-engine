@@ -31,11 +31,15 @@
 use std::sync::Arc;
 
 use crate::common::base_type::Coord3D;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
+use crate::logic::module::update_module::{
+    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE,
+};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -54,13 +58,22 @@ pub struct FloatUpdateModuleData {
 
 /// `FloatUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<FloatUpdateModuleData>; 2] = [
-    FieldParse::new("Enabled", |ini, d, _| { d.enabled = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "Enabled",
+        |ini, d, _| {
+            d.enabled = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl FloatUpdateModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, FloatUpdateModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, FloatUpdateModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
@@ -90,18 +103,27 @@ pub struct FloatUpdate {
 impl PartialEq for FloatUpdate {
     /// The same object, the same data object (upstream compares pointers) and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.enabled == other.enabled
+        self.update.behavior().object() == other.update.behavior().object()
+            && Arc::ptr_eq(&self.data, &other.data)
+            && self.enabled == other.enabled
     }
 }
 
 impl FloatUpdate {
     /// The constructor: the base, the data (`INI_INVALID_DATA` for null data) and `m_enabled` from it.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<FloatUpdateModuleData>>) -> IniResult<Self> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<FloatUpdateModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
         let enabled = data.enabled;
-        Ok(FloatUpdate { update, data, enabled })
+        Ok(FloatUpdate {
+            update,
+            data,
+            enabled,
+        })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -130,7 +152,12 @@ impl FloatUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls: `setEnabled`.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -152,18 +179,34 @@ impl FloatUpdate {
     /// The body of `update()`. An error is upstream's undefined behaviour.
     fn run(&mut self, world: &mut World, me: ObjectId) -> Result<(), IniError> {
         if self.enabled {
-            let pos = world.objects.find(me).map_or_else(Coord3D::default, |o| o.get_position());
+            let pos = world
+                .objects
+                .find(me)
+                .map_or_else(Coord3D::default, |o| o.get_position());
 
             // `isUnderwater` assigns `waterZ` only where there is water
-            let water_z = world.terrain_is_underwater_water_z(pos.x, pos.y).ok_or_else(|| IniError::undefined(Undefined::UninitialisedLocal))?;
-            let new_pos = Coord3D { x: pos.x, y: pos.y, z: if crate::logic::modules::plant(1182) { pos.z } else { water_z } };
+            let water_z = world
+                .terrain_is_underwater_water_z(pos.x, pos.y)
+                .ok_or_else(|| IniError::undefined(Undefined::UninitialisedLocal))?;
+            let new_pos = Coord3D {
+                x: pos.x,
+                y: pos.y,
+                z: if crate::logic::modules::plant(1182) {
+                    pos.z
+                } else {
+                    water_z
+                },
+            };
             world.set_position(me, &new_pos);
         }
 
         if world.has_drawable(me) && !crate::logic::modules::plant(1183) {
             // the bob: yaw and pitch from the frame, on the drawable's instance matrix (the client's)
             let frame = world.frame();
-            world.emit(ObjectClientEvent::DrawableFloatTilt { object_id: me, frame });
+            world.emit(ObjectClientEvent::DrawableFloatTilt {
+                object_id: me,
+                frame,
+            });
         }
         Ok(())
     }
@@ -186,7 +229,12 @@ impl UpdateBehavior for FloatUpdate {
         }
         xfer.xfer_bool(&mut self.enabled)
     }
-    fn other_call(&mut self, _world: &mut World, _me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    fn other_call(
+        &mut self,
+        _world: &mut World,
+        _me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         match call {
             ModuleCall::FloatSetEnabled(enabled) => {
                 self.enabled = enabled && !crate::logic::modules::plant(1181);
@@ -225,5 +273,7 @@ impl Snapshot for FloatUpdate {
 
 /// The factory's `NewModuleDataProc` for `FloatUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::FloatUpdate(Arc::new(FloatUpdateModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::FloatUpdate(Arc::new(
+        FloatUpdateModuleData::friend_new_module_data(ini)?,
+    )))
 }

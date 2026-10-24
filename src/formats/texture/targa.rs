@@ -231,7 +231,9 @@ pub struct Tga2Extension {
 
 impl Default for Tga2Extension {
     fn default() -> Self {
-        Tga2Extension { bytes: [0; TGA2_EXTENSION_SIZE] }
+        Tga2Extension {
+            bytes: [0; TGA2_EXTENSION_SIZE],
+        }
     }
 }
 
@@ -240,7 +242,12 @@ impl Tga2Extension {
         i16::from_le_bytes([self.bytes[o], self.bytes[o + 1]])
     }
     fn i32_at(&self, o: usize) -> i32 {
-        i32::from_le_bytes([self.bytes[o], self.bytes[o + 1], self.bytes[o + 2], self.bytes[o + 3]])
+        i32::from_le_bytes([
+            self.bytes[o],
+            self.bytes[o + 1],
+            self.bytes[o + 2],
+            self.bytes[o + 3],
+        ])
     }
     /// `ExtSize`.
     pub fn ext_size(&self) -> i16 {
@@ -324,7 +331,10 @@ struct Buf {
 
 impl Buf {
     fn full(data: Vec<u8>) -> Self {
-        Buf { size: data.len(), data }
+        Buf {
+            size: data.len(),
+            data,
+        }
     }
 
     /// Makes `[0, end)` addressable; false if `end` is past the buffer.
@@ -430,7 +440,10 @@ impl<'a> Targa<'a> {
 
         self.f().seek(-(TGA2_FOOTER_SIZE as i32), SeekFrom::End);
         let mut fb = [0u8; TGA2_FOOTER_SIZE];
-        let n = self.f().read(&mut fb, TGA2_FOOTER_SIZE as i32).map_err(file_err)?;
+        let n = self
+            .f()
+            .read(&mut fb, TGA2_FOOTER_SIZE as i32)
+            .map_err(file_err)?;
         if n != TGA2_FOOTER_SIZE as i32 {
             error = TGAERR_READ;
         } else {
@@ -441,7 +454,10 @@ impl<'a> Targa<'a> {
             if self.flags & TGAF_TGA2 != 0 {
                 self.f().seek(footer.extension, SeekFrom::Set);
                 let mut ext = self.extension.bytes;
-                let n = self.f().read(&mut ext, TGA2_EXTENSION_SIZE as i32).map_err(file_err)?;
+                let n = self
+                    .f()
+                    .read(&mut ext, TGA2_EXTENSION_SIZE as i32)
+                    .map_err(file_err)?;
                 self.extension.bytes = ext;
                 if n != TGA2_EXTENSION_SIZE as i32 {
                     error = TGAERR_READ;
@@ -452,7 +468,10 @@ impl<'a> Targa<'a> {
             self.f().seek(0, SeekFrom::Set);
         }
         let mut hb = self.header.to_bytes();
-        let n = self.f().read(&mut hb, TGA_HEADER_SIZE as i32).map_err(file_err)?;
+        let n = self
+            .f()
+            .read(&mut hb, TGA_HEADER_SIZE as i32)
+            .map_err(file_err)?;
         self.header = TgaHeader::from_bytes(&hb);
         if n != TGA_HEADER_SIZE as i32 {
             error = TGAERR_READ;
@@ -471,7 +490,8 @@ impl<'a> Targa<'a> {
     /// in 32-bit `long`.
     fn image_size(&self) -> TgaResult<i32> {
         let wh = i32::from(self.header.width) * i32::from(self.header.height);
-        wh.checked_mul(tga_bytes_per_pixel(self.header.pixel_depth)).ok_or(TgaUndefined::Overflow)
+        wh.checked_mul(tga_bytes_per_pixel(self.header.pixel_depth))
+            .ok_or(TgaUndefined::Overflow)
     }
 
     /// `Load(name, flags, invert_image)` on the file `data`: allocates the
@@ -487,7 +507,8 @@ impl<'a> Targa<'a> {
                     self.flags &= !TGAF_PAL;
                 }
                 if self.palette.is_none() && self.flags & TGAF_PAL == 0 {
-                    let size = i32::from(self.header.cmap_length) * (i32::from(self.header.cmap_depth) >> 3);
+                    let size = i32::from(self.header.cmap_length)
+                        * (i32::from(self.header.cmap_depth) >> 3);
                     if size != 0 {
                         match malloc(size) {
                             Some(b) => {
@@ -544,7 +565,13 @@ impl<'a> Targa<'a> {
                 if self.palette.is_some() && self.header.cmap_length > 0 {
                     let start = i64::from(self.header.cmap_start) * i64::from(depth);
                     let mut pal = self.palette.take().unwrap_or_default();
-                    let r = read_at(self.f(), &mut pal, start, size, TgaUndefined::PaletteOutOfRange);
+                    let r = read_at(
+                        self.f(),
+                        &mut pal,
+                        start,
+                        size,
+                        TgaUndefined::PaletteOutOfRange,
+                    );
                     self.palette = Some(pal);
                     if r? != size {
                         error = TGAERR_READ;
@@ -624,7 +651,13 @@ impl<'a> Targa<'a> {
                 if count & 0x80 != 0 {
                     count &= 0x7F;
                     count += 1;
-                    let got = read_at(self.f(), img, pos as i64, i32::from(depth), TgaUndefined::ImageOutOfRange)?;
+                    let got = read_at(
+                        self.f(),
+                        img,
+                        pos as i64,
+                        i32::from(depth),
+                        TgaUndefined::ImageOutOfRange,
+                    )?;
                     if got == i32::from(depth) {
                         let color = pos;
                         pos += usize::from(depth);
@@ -643,7 +676,13 @@ impl<'a> Targa<'a> {
                 } else {
                     count += 1;
                     let size = u32::from(count) * u32::from(depth);
-                    let got = read_at(self.f(), img, pos as i64, size as i32, TgaUndefined::ImageOutOfRange)?;
+                    let got = read_at(
+                        self.f(),
+                        img,
+                        pos as i64,
+                        size as i32,
+                        TgaUndefined::ImageOutOfRange,
+                    )?;
                     if got as u32 == size {
                         pos += size as usize;
                     } else {
@@ -667,7 +706,9 @@ impl<'a> Targa<'a> {
             let d = depth as usize;
             let mut at = 0usize;
             while pixel_count > 0 {
-                let px = img.get_mut(at..at + d).ok_or(TgaUndefined::ImageOutOfRange)?;
+                let px = img
+                    .get_mut(at..at + d)
+                    .ok_or(TgaUndefined::ImageOutOfRange)?;
                 for i in 0..d / 2 {
                     px.swap(i, d - 1 - i);
                 }
@@ -707,7 +748,9 @@ impl<'a> Targa<'a> {
     /// tail does not swap (see the module docs). The pointer arithmetic is
     /// Win32's: 32-bit, wrapping.
     fn y_flip(&mut self) -> TgaResult<()> {
-        let stride = (i32::from(self.header.width).wrapping_mul(tga_bytes_per_pixel(self.header.pixel_depth))) as u32;
+        let stride = (i32::from(self.header.width)
+            .wrapping_mul(tga_bytes_per_pixel(self.header.pixel_depth)))
+            as u32;
         let img = full_image(&mut self.image)?;
         let mut top = 0u32;
         let mut bottom = stride.wrapping_mul((i32::from(self.header.height) - 1) as u32);
@@ -730,8 +773,17 @@ fn swap_bytes(buf: &mut [u8], p1: u32, p2: u32, count: u32) -> TgaResult<()> {
     let len = buf.len() as u64;
     let blocks = count >> 4;
     let (mut esi, mut edi) = (u64::from(p1), u64::from(p2));
-    let get = |b: &[u8], at: u64| u32::from_le_bytes([b[at as usize], b[at as usize + 1], b[at as usize + 2], b[at as usize + 3]]);
-    let set = |b: &mut [u8], at: u64, v: u32| b[at as usize..at as usize + 4].copy_from_slice(&v.to_le_bytes());
+    let get = |b: &[u8], at: u64| {
+        u32::from_le_bytes([
+            b[at as usize],
+            b[at as usize + 1],
+            b[at as usize + 2],
+            b[at as usize + 3],
+        ])
+    };
+    let set = |b: &mut [u8], at: u64, v: u32| {
+        b[at as usize..at as usize + 4].copy_from_slice(&v.to_le_bytes())
+    };
     for _ in 0..blocks {
         if esi + 16 > len || edi + 16 > len {
             return Err(TgaUndefined::ImageOutOfRange);
@@ -759,7 +811,10 @@ fn swap_bytes(buf: &mut [u8], p1: u32, p2: u32, count: u32) -> TgaResult<()> {
 /// `malloc(size)` of a `long`: a negative size is a huge `size_t`, which
 /// fails (NULL); otherwise a buffer (assumed to succeed).
 fn malloc(size: i32) -> Option<Buf> {
-    Some(Buf { size: usize::try_from(size).ok()?, data: Vec::new() })
+    Some(Buf {
+        size: usize::try_from(size).ok()?,
+        data: Vec::new(),
+    })
 }
 
 /// The whole image buffer, for the functions that run after it has been
@@ -773,7 +828,13 @@ fn full_image(image: &mut Option<Buf>) -> TgaResult<&mut [u8]> {
 
 /// `File_Read(buffer + offset, size)`: what the read copies must land inside
 /// `buf` (else `oob`); returns the count (negative for a backwards read).
-fn read_at(file: &mut GameFile<'_>, buf: &mut Buf, offset: i64, size: i32, oob: TgaUndefined) -> TgaResult<i32> {
+fn read_at(
+    file: &mut GameFile<'_>,
+    buf: &mut Buf,
+    offset: i64,
+    size: i32,
+    oob: TgaUndefined,
+) -> TgaResult<i32> {
     // RAMFile::read copies min(size, what is left)
     let left = file.file_size().wrapping_sub(file.position());
     let n = size.min(left);
@@ -787,7 +848,8 @@ fn read_at(file: &mut GameFile<'_>, buf: &mut Buf, offset: i64, size: i32, oob: 
     if offset < 0 || end > buf.size as i64 || !buf.ensure(end as usize) {
         return Err(oob);
     }
-    file.read(&mut buf.data[offset as usize..end as usize], size).map_err(file_err)
+    file.read(&mut buf.data[offset as usize..end as usize], size)
+        .map_err(file_err)
 }
 
 #[cfg(test)]
@@ -795,7 +857,14 @@ mod tests {
     use super::*;
 
     fn tga(w: i16, h: i16, depth: i8, image_type: i8, desc: i8, pixels: &[u8]) -> Vec<u8> {
-        let hd = TgaHeader { image_type, width: w, height: h, pixel_depth: depth, image_descriptor: desc, ..Default::default() };
+        let hd = TgaHeader {
+            image_type,
+            width: w,
+            height: h,
+            pixel_depth: depth,
+            image_descriptor: desc,
+            ..Default::default()
+        };
         let mut f = hd.to_bytes().to_vec();
         f.extend_from_slice(pixels);
         f.extend_from_slice(&[0; 26]);
@@ -810,13 +879,23 @@ mod tests {
         assert_eq!(t.load(&f, TGAF_IMAGE, true), Ok(0));
         assert_eq!(&t.image().unwrap()[..4], &[3, 2, 1, 0]);
         // RLE: a run of 3 pixels then 1 raw pixel, 24-bit
-        let f = tga(2, 2, 24, TGA_TRUECOLOR_ENCODED, 0, &[0x82, 1, 2, 3, 0x00, 4, 5, 6]);
+        let f = tga(
+            2,
+            2,
+            24,
+            TGA_TRUECOLOR_ENCODED,
+            0,
+            &[0x82, 1, 2, 3, 0x00, 4, 5, 6],
+        );
         let mut t = Targa::new();
         assert_eq!(t.load(&f, TGAF_IMAGE, false), Ok(0));
         assert_eq!(t.image().unwrap(), &[1, 2, 3, 1, 2, 3, 1, 2, 3, 4, 5, 6]);
         // a run past the end of the image is undefined
         let f = tga(1, 1, 24, TGA_TRUECOLOR_ENCODED, 0, &[0x81, 1, 2, 3]);
-        assert_eq!(Targa::new().load(&f, TGAF_IMAGE, false), Err(TgaUndefined::ImageOutOfRange));
+        assert_eq!(
+            Targa::new().load(&f, TGAF_IMAGE, false),
+            Err(TgaUndefined::ImageOutOfRange)
+        );
     }
 
     #[test]

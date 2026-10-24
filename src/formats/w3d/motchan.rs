@@ -76,7 +76,8 @@ fn check_alloc(count: u32, elem: u64) -> W3dResult<()> {
 }
 
 fn words(b: &[u8]) -> impl Iterator<Item = u32> + '_ {
-    b.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+    b.chunks_exact(4)
+        .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
 }
 
 /// `class MotionChannelClass` as loaded.
@@ -235,7 +236,10 @@ impl TimeCodedMotionChannel {
             vector_len,
             packet_size,
             num_time_codes: chan.num_time_codes,
-            last_time_code_idx: chan.num_time_codes.wrapping_sub(1).wrapping_mul(packet_size),
+            last_time_code_idx: chan
+                .num_time_codes
+                .wrapping_sub(1)
+                .wrapping_mul(packet_size),
             data,
         }))
     }

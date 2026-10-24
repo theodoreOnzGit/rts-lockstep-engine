@@ -143,11 +143,15 @@ use rts_lockstep_engine::common::kind_of::KINDOF_STRUCTURE;
 use rts_lockstep_engine::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_CONTAIN};
 use rts_lockstep_engine::common::module_factory::ModuleFactory;
 use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
-use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_UNDER_CONSTRUCTION};
+use rts_lockstep_engine::common::object_status_types::{
+    ObjectStatusMaskType, OBJECT_STATUS_UNDER_CONSTRUCTION,
+};
 use rts_lockstep_engine::common::science::{GameTextFetch, ScienceStore, ScienceType};
 use rts_lockstep_engine::common::special_power::SpecialPowerStore;
 use rts_lockstep_engine::common::thing_factory::ThingFactory;
-use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingParseEnv, ThingTemplate};
+use rts_lockstep_engine::common::thing_template::{
+    ObjectTemplateValues, ThingParseEnv, ThingTemplate,
+};
 use rts_lockstep_engine::common::unicode_string::UnicodeString;
 use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
@@ -155,7 +159,9 @@ use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::armor::ArmorStore;
-use rts_lockstep_engine::logic::module::special_power_module::{SpecialPowerModule, SpecialPowerModuleData};
+use rts_lockstep_engine::logic::module::special_power_module::{
+    SpecialPowerModule, SpecialPowerModuleData,
+};
 use rts_lockstep_engine::logic::modules::baikonur_launch_power::BaikonurLaunchPowerModuleData;
 use rts_lockstep_engine::logic::modules::cash_bounty_power::CashBountyPowerModuleData;
 use rts_lockstep_engine::logic::modules::cash_hack_special_power::CashHackSpecialPowerModuleData;
@@ -167,13 +173,15 @@ use rts_lockstep_engine::logic::modules::special_power_module_impl::SpecialPower
 use rts_lockstep_engine::logic::modules::spy_vision_special_power::SpyVisionSpecialPowerModuleData;
 use rts_lockstep_engine::logic::modules::spy_vision_update::SpyVisionUpdateModuleData;
 use rts_lockstep_engine::logic::weapon_set::WeaponTemplateTable;
+use rts_lockstep_engine::logic::world::contain_cuts::ContainCall;
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleReply};
 use rts_lockstep_engine::logic::world::module_probe::{ProbeAnswers, ProbeModule};
 use rts_lockstep_engine::logic::world::object_create::{NewModule, NewObject};
-use rts_lockstep_engine::logic::world::contain_cuts::ContainCall;
 use rts_lockstep_engine::logic::world::object_cuts::CutCall;
-use rts_lockstep_engine::logic::world::object_events::{EvaSuperweapon, EvaWhose, ModelConditionOp, ObjectClientEvent};
+use rts_lockstep_engine::logic::world::object_events::{
+    EvaSuperweapon, EvaWhose, ModelConditionOp, ObjectClientEvent,
+};
 use rts_lockstep_engine::logic::world::statics::GameStatics;
 use rts_lockstep_engine::logic::world::team::Team;
 use rts_lockstep_engine::logic::world::update_body::UpdateBody;
@@ -271,8 +279,19 @@ fn build_factory(ro_a: bool) -> ThingFactory {
         sciences: ScienceStore::new(),
     };
     let text = if ro_a { "Object RO_A\nEnd\n" } else { "" };
-    static BLOCKS: [BlockParse<FactoryCtx>; 1] = [BlockParse { token: "Object", parse: object_block }];
-    Ini::load(b"Objects.ini", text.as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut c).expect("objects load");
+    static BLOCKS: [BlockParse<FactoryCtx>; 1] = [BlockParse {
+        token: "Object",
+        parse: object_block,
+    }];
+    Ini::load(
+        b"Objects.ini",
+        text.as_bytes(),
+        IniLoadType::Overwrite,
+        None,
+        &BLOCKS,
+        &mut c,
+    )
+    .expect("objects load");
     c.factory
 }
 
@@ -280,20 +299,39 @@ fn build_factory(ro_a: bool) -> ThingFactory {
 
 fn read_block(ini: &mut Ini<'_>, out: &mut (usize, Option<ModuleDataKind>)) -> IniResult<()> {
     out.1 = Some(match out.0 {
-        0 => ModuleDataKind::SpecialPower(Arc::new(SpecialPowerModuleData::friend_new_module_data_deferred(Some(ini))?)),
-        1 => ModuleDataKind::CleanupAreaPower(Arc::new(CleanupAreaPowerModuleData::friend_new_module_data(Some(ini))?)),
-        2 => ModuleDataKind::BaikonurLaunchPower(Arc::new(BaikonurLaunchPowerModuleData::friend_new_module_data(Some(ini))?)),
-        3 => ModuleDataKind::SpyVisionSpecialPower(Arc::new(SpyVisionSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
-        5 => ModuleDataKind::CashBountyPower(Arc::new(CashBountyPowerModuleData::friend_new_module_data(Some(ini))?)),
-        6 => ModuleDataKind::CashHackSpecialPower(Arc::new(CashHackSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
-        7 => ModuleDataKind::OCLSpecialPower(Arc::new(OCLSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
-        _ => ModuleDataKind::DefectorSpecialPower(Arc::new(DefectorSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
+        0 => ModuleDataKind::SpecialPower(Arc::new(
+            SpecialPowerModuleData::friend_new_module_data_deferred(Some(ini))?,
+        )),
+        1 => ModuleDataKind::CleanupAreaPower(Arc::new(
+            CleanupAreaPowerModuleData::friend_new_module_data(Some(ini))?,
+        )),
+        2 => ModuleDataKind::BaikonurLaunchPower(Arc::new(
+            BaikonurLaunchPowerModuleData::friend_new_module_data(Some(ini))?,
+        )),
+        3 => ModuleDataKind::SpyVisionSpecialPower(Arc::new(
+            SpyVisionSpecialPowerModuleData::friend_new_module_data(Some(ini))?,
+        )),
+        5 => ModuleDataKind::CashBountyPower(Arc::new(
+            CashBountyPowerModuleData::friend_new_module_data(Some(ini))?,
+        )),
+        6 => ModuleDataKind::CashHackSpecialPower(Arc::new(
+            CashHackSpecialPowerModuleData::friend_new_module_data(Some(ini))?,
+        )),
+        7 => ModuleDataKind::OCLSpecialPower(Arc::new(
+            OCLSpecialPowerModuleData::friend_new_module_data(Some(ini))?,
+        )),
+        _ => ModuleDataKind::DefectorSpecialPower(Arc::new(
+            DefectorSpecialPowerModuleData::friend_new_module_data(Some(ini))?,
+        )),
     });
     Ok(())
 }
 
 fn rust_read(kind: usize, name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }];
+    let blocks = [BlockParse {
+        token: "D",
+        parse: read_block,
+    }];
     let mut out = (kind, None);
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out.1)
@@ -317,7 +355,11 @@ fn base_of(data: &ModuleDataKind) -> &SpecialPowerModuleData {
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, store: &SpecialPowerStore) {
     let b = base_of(data);
     // upstream resolved the name while it read the data; here it is resolved when the power runs
-    let id = b.special_power_template_name.as_deref().and_then(|n| store.find_special_power_template(n)).map_or(0, |t| t.id());
+    let id = b
+        .special_power_template_name
+        .as_deref()
+        .and_then(|n| store.find_special_power_template(n))
+        .map_or(0, |t| t.id());
     put_u32(v, id);
     put_u32(v, u32::from(b.update_module_starts_attack));
     put_u32(v, u32::from(b.starts_paused));
@@ -384,7 +426,8 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
     if b.is_empty() {
         return out;
     }
-    let (tid, starts_attack, paused, scripted) = (u32_(&mut p), u32_(&mut p), u32_(&mut p), u32_(&mut p));
+    let (tid, starts_attack, paused, scripted) =
+        (u32_(&mut p), u32_(&mut p), u32_(&mut p), u32_(&mut p));
     let sound = str_(&mut p);
     out.push(format!("data template {tid} startsattack {starts_attack} paused {paused} scripted {scripted} sound {sound:?}"));
     match kind {
@@ -398,13 +441,17 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
         5 => out.push(format!("bounty {:#x}", u32_(&mut p))),
         6 => {
             let n = u32_(&mut p);
-            let ups: Vec<String> = (0..n).map(|_| format!("{}={}", str_(&mut p), u32_(&mut p) as i32)).collect();
+            let ups: Vec<String> = (0..n)
+                .map(|_| format!("{}={}", str_(&mut p), u32_(&mut p) as i32))
+                .collect();
             let def = u32_(&mut p) as i32;
             out.push(format!("cash hack {ups:?} default {def}"));
         }
         7 => {
             let n = u32_(&mut p);
-            let ups: Vec<String> = (0..n).map(|_| format!("{}={}", str_(&mut p), u32_(&mut p))).collect();
+            let ups: Vec<String> = (0..n)
+                .map(|_| format!("{}={}", str_(&mut p), u32_(&mut p)))
+                .collect();
             let (def, loc, adjust) = (u32_(&mut p), u32_(&mut p) as i32, u32_(&mut p));
             let reference = str_(&mut p);
             out.push(format!("ocl power {ups:?} default {def} location {loc} adjust {adjust} reference {reference:?}"));
@@ -419,7 +466,8 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
             break;
         }
         let st = u32_(&mut p) as i32;
-        let (ready, percent, frame, script_only) = (u32_(&mut p), u32_(&mut p), u32_(&mut p), u32_(&mut p));
+        let (ready, percent, frame, script_only) =
+            (u32_(&mut p), u32_(&mut p), u32_(&mut p), u32_(&mut p));
         let n = u32_(&mut p);
         let log: Vec<String> = (0..n).map(|_| str_(&mut p)).collect();
         let xst = u32_(&mut p) as i32;
@@ -472,22 +520,34 @@ fn gen_powers(g: &mut Gen) -> String {
             s.push_str(&format!(" PublicTimer = {}\n", pick(g, &["Yes", "No"])));
         }
         if g.below(100) < 50 {
-            s.push_str(&format!(" SharedSyncedTimer = {}\n", pick(g, &["Yes", "No", "Yes"])));
+            s.push_str(&format!(
+                " SharedSyncedTimer = {}\n",
+                pick(g, &["Yes", "No", "Yes"])
+            ));
         }
         if g.below(100) < 50 {
             s.push_str(&format!(" ViewObjectDuration = {}\n", gen_ms(g, true)));
         }
         if g.below(100) < 50 {
-            s.push_str(&format!(" ViewObjectRange = {}\n", pick(g, &["0", "50", "150.5", "300"])));
+            s.push_str(&format!(
+                " ViewObjectRange = {}\n",
+                pick(g, &["0", "50", "150.5", "300"])
+            ));
         }
         if g.below(100) < 50 {
             s.push_str(&format!(" DetectionTime = {}\n", gen_ms(g, true)));
         }
         if g.below(100) < 50 {
-            s.push_str(&format!(" InitiateSound = {}\n", pick(g, &["SND_A", "SND_B", "None"])));
+            s.push_str(&format!(
+                " InitiateSound = {}\n",
+                pick(g, &["SND_A", "SND_B", "None"])
+            ));
         }
         if g.below(100) < 50 {
-            s.push_str(&format!(" InitiateAtLocationSound = {}\n", pick(g, &["SND_C", "SND_D", "None"])));
+            s.push_str(&format!(
+                " InitiateAtLocationSound = {}\n",
+                pick(g, &["SND_C", "SND_D", "None"])
+            ));
         }
         s.push_str("End\n");
     }
@@ -511,7 +571,10 @@ fn gen_text(g: &mut Gen, kind: usize, clean: bool) -> Vec<u8> {
         lines.push(format!("StartsPaused = {}", gen_bool(g, clean)));
     }
     if g.below(100) < 40 {
-        lines.push(format!("InitiateSound = {}", pick(g, &["SND_M", "SND_N", "None"])));
+        lines.push(format!(
+            "InitiateSound = {}",
+            pick(g, &["SND_M", "SND_N", "None"])
+        ));
     }
     if g.below(100) < 15 {
         lines.push(format!("ScriptedSpecialPowerOnly = {}", gen_bool(g, clean)));
@@ -519,12 +582,18 @@ fn gen_text(g: &mut Gen, kind: usize, clean: bool) -> Vec<u8> {
     match kind {
         1 => {
             if g.below(100) < 80 {
-                lines.push(format!("MaxMoveDistanceFromLocation = {}", gen_real(g, clean)));
+                lines.push(format!(
+                    "MaxMoveDistanceFromLocation = {}",
+                    gen_real(g, clean)
+                ));
             }
         }
         2 => {
             if g.below(100) < 85 {
-                lines.push(format!("DetonationObject = {}", pick(g, &["RO_A", "RO_A", "RO_B", "ro_a", ""])));
+                lines.push(format!(
+                    "DetonationObject = {}",
+                    pick(g, &["RO_A", "RO_A", "RO_B", "ro_a", ""])
+                ));
             }
         }
         3 => {
@@ -535,19 +604,30 @@ fn gen_text(g: &mut Gen, kind: usize, clean: bool) -> Vec<u8> {
             }
         }
         4 if g.below(100) < 80 => lines.push(format!("FatCursorRadius = {}", gen_real(g, clean))),
-        5 if g.below(100) < 85 => lines.push(format!("Bounty = {}", pick(g, &["0%", "10%", "25%", "50%", "12.5%"]))),
+        5 if g.below(100) < 85 => lines.push(format!(
+            "Bounty = {}",
+            pick(g, &["0%", "10%", "25%", "50%", "12.5%"])
+        )),
         6 => {
             // (only declared sciences: an unknown one throws upstream when read, and is looked up only when used here; see the module docs)
             for _ in 0..g.below(3) {
-                let (sci, amount) = (pick(g, &SCIENCES).to_string(), pick(g, &["0", "200", "750", "5000"]).to_string());
+                let (sci, amount) = (
+                    pick(g, &SCIENCES).to_string(),
+                    pick(g, &["0", "200", "750", "5000"]).to_string(),
+                );
                 lines.push(format!("UpgradeMoneyAmount = {sci} {amount}"));
             }
             if g.below(100) < 85 {
-                lines.push(format!("MoneyAmount = {}", pick(g, &["0", "100", "500", "1000", "-5"])));
+                lines.push(format!(
+                    "MoneyAmount = {}",
+                    pick(g, &["0", "100", "500", "1000", "-5"])
+                ));
             }
         }
         7 => {
-            let ocl = |g: &mut Gen| pick(g, &["OCL_A", "OCL_B", "OCL_A", "None", "OCL_C", "ocl_a"]).to_string();
+            let ocl = |g: &mut Gen| {
+                pick(g, &["OCL_A", "OCL_B", "OCL_A", "None", "OCL_C", "ocl_a"]).to_string()
+            };
             for _ in 0..g.below(3) {
                 let (sci, list) = (pick(g, &SCIENCES).to_string(), ocl(g));
                 lines.push(format!("UpgradeOCL = {sci} {list}"));
@@ -560,7 +640,10 @@ fn gen_text(g: &mut Gen, kind: usize, clean: bool) -> Vec<u8> {
                 lines.push(format!("CreateLocation = {}", pick(g, &rts_lockstep_engine::logic::modules::ocl_special_power::OCL_CREATE_LOC_TYPE_NAMES)));
             }
             if g.below(100) < 50 {
-                lines.push(format!("OCLAdjustPositionToPassable = {}", gen_bool(g, true)));
+                lines.push(format!(
+                    "OCLAdjustPositionToPassable = {}",
+                    gen_bool(g, true)
+                ));
             }
             if g.below(100) < 30 {
                 lines.push(format!("ReferenceObject = {}", pick(g, &["RO_A", "Thing"])));
@@ -594,7 +677,13 @@ struct Tally {
     made: u64,
 }
 
-fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
+fn run_xfer(
+    w: &mut World,
+    me: ObjectId,
+    idx: usize,
+    how: u32,
+    saved: &[u8],
+) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -644,7 +733,9 @@ fn relationship(v: u32) -> Relationship {
 
 fn set_relationships(w: &mut World, word: u32) {
     for p in 0..3 {
-        w.cuts.player_relationships.insert((p, OBJECT_TEAM), relationship(word >> (2 * p)));
+        w.cuts
+            .player_relationships
+            .insert((p, OBJECT_TEAM), relationship(word >> (2 * p)));
     }
 }
 
@@ -652,7 +743,9 @@ fn set_relationships(w: &mut World, word: u32) {
 fn set_matrix(w: &mut World, word: u32) {
     for a in 0..3 {
         for b in 0..3 {
-            w.cuts.player_relationships.insert((a, 101 + b as u32), relationship(word >> (2 * (3 * a + b))));
+            w.cuts
+                .player_relationships
+                .insert((a, 101 + b as u32), relationship(word >> (2 * (3 * a + b))));
         }
     }
 }
@@ -675,7 +768,10 @@ fn set_local(w: &mut World, local: Option<i32>) {
 fn set_disabled_and_player(w: &mut World, ids: [ObjectId; 2], disabled: bool, player: Option<u32>) {
     for id in ids {
         let o = w.objects.find_mut(id).unwrap();
-        o.disabled.set(rts_lockstep_engine::common::disabled_types::DISABLED_HACKED, i32::from(disabled));
+        o.disabled.set(
+            rts_lockstep_engine::common::disabled_types::DISABLED_HACKED,
+            i32::from(disabled),
+        );
     }
     match player {
         Some(p) => {
@@ -712,15 +808,45 @@ fn effects(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClientEvent
     for t in trace {
         if t.starts_with("cut ") {
             match cut_iter.next().expect("a cut line has a cut call") {
-                CutCall::ScriptNotifyOfTriggeredSpecialPower { player, name, source } => log.push(format!("script {player} {} {source}", String::from_utf8_lossy(&name))),
-                CutCall::PlayerAcademyRecordSpecialPowerUsed { player, template } => log.push(format!("academy {player} {template}")),
-                CutCall::PlayerSetUnitsVisionSpied { player, setting, which_units, by_whom } => log.push(format!("spied {player} {} {by_whom} {}", i32::from(setting), kind_words(&which_units))),
+                CutCall::ScriptNotifyOfTriggeredSpecialPower {
+                    player,
+                    name,
+                    source,
+                } => log.push(format!(
+                    "script {player} {} {source}",
+                    String::from_utf8_lossy(&name)
+                )),
+                CutCall::PlayerAcademyRecordSpecialPowerUsed { player, template } => {
+                    log.push(format!("academy {player} {template}"))
+                }
+                CutCall::PlayerSetUnitsVisionSpied {
+                    player,
+                    setting,
+                    which_units,
+                    by_whom,
+                } => log.push(format!(
+                    "spied {player} {} {by_whom} {}",
+                    i32::from(setting),
+                    kind_words(&which_units)
+                )),
                 // batch R21: the cash hack (the stand-ins' lines, l9_crates_f.inc, l9_sabotage_r13.inc, l9_updates_l.inc)
-                CutCall::PlayerMoneyWithdraw { player, amount } => log.push(format!("withdraw {player} {amount} 1")),
-                CutCall::PlayerMoneyDeposit { player, amount } => log.push(format!("deposit {player} {amount} 1")),
-                CutCall::PlayerScoreAddMoneyEarned { player, amount } => log.push(format!("earned {player} {amount}")),
+                CutCall::PlayerMoneyWithdraw { player, amount } => {
+                    log.push(format!("withdraw {player} {amount} 1"))
+                }
+                CutCall::PlayerMoneyDeposit { player, amount } => {
+                    log.push(format!("deposit {player} {amount} 1"))
+                }
+                CutCall::PlayerScoreAddMoneyEarned { player, amount } => {
+                    log.push(format!("earned {player} {amount}"))
+                }
                 // batch R22: the OCL power's lists (a name that is no list makes nothing) and the clear cell it asks for
-                CutCall::OclCreateAt { ocl, primary_pos: a, secondary_pos: b, angle, .. } if ocl_code(Some(&ocl)) != 0 => log.push(format!(
+                CutCall::OclCreateAt {
+                    ocl,
+                    primary_pos: a,
+                    secondary_pos: b,
+                    angle,
+                    ..
+                } if ocl_code(Some(&ocl)) != 0 => log.push(format!(
                     "oclat {} {:08x},{:08x},{:08x} {:08x},{:08x},{:08x} {:08x}",
                     ocl_code(Some(&ocl)) - 1,
                     a.x.to_bits(),
@@ -731,7 +857,13 @@ fn effects(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClientEvent
                     b.z.to_bits(),
                     angle.to_bits()
                 )),
-                CutCall::OclCreateOwner { ocl, primary_pos: a, secondary_pos: b, create_owner, .. } if ocl_code(Some(&ocl)) != 0 => log.push(format!(
+                CutCall::OclCreateOwner {
+                    ocl,
+                    primary_pos: a,
+                    secondary_pos: b,
+                    create_owner,
+                    ..
+                } if ocl_code(Some(&ocl)) != 0 => log.push(format!(
                     "oclown {} {:08x},{:08x},{:08x} {:08x},{:08x},{:08x} {} 0",
                     ocl_code(Some(&ocl)) - 1,
                     a.x.to_bits(),
@@ -742,7 +874,12 @@ fn effects(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClientEvent
                     b.z.to_bits(),
                     i32::from(create_owner)
                 )),
-                CutCall::Contain(ContainCall::PartitionFindPositionAround { position: p, min_radius, max_radius, flags }) => log.push(format!(
+                CutCall::Contain(ContainCall::PartitionFindPositionAround {
+                    position: p,
+                    min_radius,
+                    max_radius,
+                    flags,
+                }) => log.push(format!(
                     "findpos {:08x} {:08x} {:08x} {:08x} {:08x} {flags}",
                     p.x.to_bits(),
                     p.y.to_bits(),
@@ -750,30 +887,61 @@ fn effects(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClientEvent
                     min_radius.to_bits(),
                     max_radius.to_bits()
                 )),
-                CutCall::InGameUiAddFloatingTextNamed { text, amount, position: p, color } => {
-                    log.push(format!("float {} {amount} {},{},{} {:08x}", String::from_utf8_lossy(&text), p.x.to_bits(), p.y.to_bits(), p.z.to_bits(), color as u32))
-                }
+                CutCall::InGameUiAddFloatingTextNamed {
+                    text,
+                    amount,
+                    position: p,
+                    color,
+                } => log.push(format!(
+                    "float {} {amount} {},{},{} {:08x}",
+                    String::from_utf8_lossy(&text),
+                    p.x.to_bits(),
+                    p.y.to_bits(),
+                    p.z.to_bits(),
+                    color as u32
+                )),
                 _ => {}
             }
         } else if t.starts_with("evt ObjectCreated") || t.starts_with("evt ObjectDestroyed") {
             // (the client's own events, not `Object`'s)
         } else if t.starts_with("evt ") {
             match event_iter.next().expect("an evt line has an event") {
-                ObjectClientEvent::EvaSuperweaponLaunched { weapon, whose } => log.push(format!("eva {}", eva_number(weapon, whose))),
-                ObjectClientEvent::UiAddSuperweapon { player_index, power_name, object_id, template } => {
-                    log.push(format!("addsuper {player_index} {} {object_id} {template}", String::from_utf8_lossy(&power_name)))
+                ObjectClientEvent::EvaSuperweaponLaunched { weapon, whose } => {
+                    log.push(format!("eva {}", eva_number(weapon, whose)))
                 }
-                ObjectClientEvent::AudioAddEvent { name, object_id, position, player_index } => {
+                ObjectClientEvent::UiAddSuperweapon {
+                    player_index,
+                    power_name,
+                    object_id,
+                    template,
+                } => log.push(format!(
+                    "addsuper {player_index} {} {object_id} {template}",
+                    String::from_utf8_lossy(&power_name)
+                )),
+                ObjectClientEvent::AudioAddEvent {
+                    name,
+                    object_id,
+                    position,
+                    player_index,
+                } => {
                     let pos = match position {
                         Some(p) => format!("{},{},{}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits()),
                         None => "-".to_string(),
                     };
-                    log.push(format!("audio {} {pos} {} {object_id}", String::from_utf8_lossy(&name), player_index.unwrap_or(-1)));
+                    log.push(format!(
+                        "audio {} {pos} {} {object_id}",
+                        String::from_utf8_lossy(&name),
+                        player_index.unwrap_or(-1)
+                    ));
                 }
-                ObjectClientEvent::DrawableModelCondition { op: ModelConditionOp::Set(v), .. } => log.push(format!("mc {}", v.first().copied().unwrap_or(-1))),
+                ObjectClientEvent::DrawableModelCondition {
+                    op: ModelConditionOp::Set(v),
+                    ..
+                } => log.push(format!("mc {}", v.first().copied().unwrap_or(-1))),
                 _ => {}
             }
-        } else if t.starts_with("defect ") || t.starts_with("cleanup ") || t.starts_with("intent ") {
+        } else if t.starts_with("defect ") || t.starts_with("cleanup ") || t.starts_with("intent ")
+        {
             log.push(t);
         }
     }
@@ -783,7 +951,11 @@ fn effects(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClientEvent
 /// The module on object `me` at slot `idx`, as its state words.
 fn state_words(w: &World, me: ObjectId, idx: u16) -> Vec<u32> {
     let o = w.objects.find(me).unwrap();
-    let power: &SpecialPowerModule = match o.modules[idx as usize].body.as_ref().expect("the module is back in its slot") {
+    let power: &SpecialPowerModule = match o.modules[idx as usize]
+        .body
+        .as_ref()
+        .expect("the module is back in its slot")
+    {
         UpdateBody::SpecialPowerModule(m) => m.power(),
         UpdateBody::CleanupAreaPower(m) => m.power(),
         UpdateBody::BaikonurLaunchPower(m) => m.power(),
@@ -794,7 +966,12 @@ fn state_words(w: &World, me: ObjectId, idx: u16) -> Vec<u32> {
         UpdateBody::OCLSpecialPower(m) => m.power(),
         _ => unreachable!("not a special power module"),
     };
-    vec![power.get_available_on_frame(), power.paused_count() as u32, power.paused_on_frame(), power.paused_percent().to_bits()]
+    vec![
+        power.get_available_on_frame(),
+        power.paused_count() as u32,
+        power.paused_on_frame(),
+        power.paused_percent().to_bits(),
+    ]
 }
 
 fn probe(answers: ProbeAnswers) -> UpdateBody {
@@ -803,19 +980,38 @@ fn probe(answers: ProbeAnswers) -> UpdateBody {
 
 fn power_module(kind: usize, id: ObjectId, data: &ModuleDataKind) -> NewModule {
     if kind == 0 {
-        let ModuleDataKind::SpecialPower(d) = data else { unreachable!() };
+        let ModuleDataKind::SpecialPower(d) = data else {
+            unreachable!()
+        };
         let mut nm = NewModule::plain(CLASSES[0].as_bytes(), b"ModuleTag_Power");
         nm.interfaces = SpecialPowerModule::get_interface_mask();
-        nm.body = Some(UpdateBody::SpecialPowerModule(SpecialPowerModuleImpl::new(id, Some(d.clone())).unwrap()));
+        nm.body = Some(UpdateBody::SpecialPowerModule(
+            SpecialPowerModuleImpl::new(id, Some(d.clone())).unwrap(),
+        ));
         nm
     } else {
-        rts_lockstep_engine::logic::modules::new_module(id, CLASSES[kind].as_bytes(), b"ModuleTag_Power", data).unwrap().unwrap()
+        rts_lockstep_engine::logic::modules::new_module(
+            id,
+            CLASSES[kind].as_bytes(),
+            b"ModuleTag_Power",
+            data,
+        )
+        .unwrap()
+        .unwrap()
     }
 }
 
 /// Runs the ops on a fresh world and returns the dump (after the data dump) and the world.
 #[allow(clippy::too_many_arguments)]
-fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data: ModuleDataKind, cfg: &[u32; 11], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
+fn rust_run(
+    kind: usize,
+    names: NameKeyGenerator,
+    store: SpecialPowerStore,
+    data: ModuleDataKind,
+    cfg: &[u32; 11],
+    ops: &[[u32; 6]],
+    tally: &mut Tally,
+) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     put_data(&mut v, &data, &store);
 
@@ -831,10 +1027,27 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
         fn science_block(ini: &mut Ini<'_>, c: &mut SciCtx<'_>) -> IniResult<()> {
             c.store.parse_science_definition(ini, c.names, &Text)
         }
-        let defs: String = SCIENCES.iter().map(|s| format!("Science {s}\nEnd\n")).collect();
-        let blocks = [BlockParse { token: "Science", parse: science_block }];
-        let mut c = SciCtx { store: &mut sciences, names: &mut names };
-        Ini::load(b"Data\\INI\\Science.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &blocks, &mut c).expect("sciences load");
+        let defs: String = SCIENCES
+            .iter()
+            .map(|s| format!("Science {s}\nEnd\n"))
+            .collect();
+        let blocks = [BlockParse {
+            token: "Science",
+            parse: science_block,
+        }];
+        let mut c = SciCtx {
+            store: &mut sciences,
+            names: &mut names,
+        };
+        Ini::load(
+            b"Data\\INI\\Science.ini",
+            defs.as_bytes(),
+            IniLoadType::Overwrite,
+            None,
+            &blocks,
+            &mut c,
+        )
+        .expect("sciences load");
     }
     w.names = names;
     w.statics = Arc::new(GameStatics {
@@ -874,13 +1087,27 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
     let mut modules = vec![power_module(kind, first_id, &data)];
     if cfg[2] >> 6 & 1 != 0 {
         let mut b = NewModule::plain(b"Behavior", b"ModuleTag_Spu");
-        b.body = Some(probe(ProbeAnswers { spu_present: true, spu_pass: true, spu_take: cfg[2] >> 7 & 1 != 0, ..Default::default() }));
+        b.body = Some(probe(ProbeAnswers {
+            spu_present: true,
+            spu_pass: true,
+            spu_take: cfg[2] >> 7 & 1 != 0,
+            ..Default::default()
+        }));
         modules.push(b);
     }
     if cfg[2] >> 4 & 1 != 0 {
         // the real SpyVisionUpdate, with the default data (batch I tests its fields)
         let spy = ModuleDataKind::SpyVisionUpdate(Arc::new(SpyVisionUpdateModuleData::default()));
-        modules.push(rts_lockstep_engine::logic::modules::new_module(first_id, b"SpyVisionUpdate", b"ModuleTag_Spy", &spy).unwrap().unwrap());
+        modules.push(
+            rts_lockstep_engine::logic::modules::new_module(
+                first_id,
+                b"SpyVisionUpdate",
+                b"ModuleTag_Spy",
+                &spy,
+            )
+            .unwrap()
+            .unwrap(),
+        );
     }
     if cfg[2] >> 5 & 1 != 0 {
         let mut b = NewModule::plain(b"CleanupHazardUpdate", b"ModuleTag_Cleanup");
@@ -890,7 +1117,10 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
     if cfg[2] >> 3 & 1 != 0 {
         let mut b = NewModule::plain(b"OpenContain", b"ModuleTag_Contain");
         b.interfaces = MODULEINTERFACE_CONTAIN;
-        b.body = Some(probe(ProbeAnswers { contained: (0..cfg[3] as i32).map(|i| 1000 + i).collect(), ..Default::default() }));
+        b.body = Some(probe(ProbeAnswers {
+            contained: (0..cfg[3] as i32).map(|i| 1000 + i).collect(),
+            ..Default::default()
+        }));
         modules.push(b);
     }
     let mut values = ObjectTemplateValues::default();
@@ -903,13 +1133,41 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
         status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, 1);
     }
     let events_before = w.events.events().len();
-    let me = w.new_object(NewObject { template: template.clone(), status, team: Some(OBJECT_TEAM), modules }).unwrap();
+    let me = w
+        .new_object(NewObject {
+            template: template.clone(),
+            status,
+            team: Some(OBJECT_TEAM),
+            modules,
+        })
+        .unwrap();
     assert_eq!(me, first_id);
     assert_eq!(me, 1, "the first object of a fresh world has the id 1");
-    let other = w.new_object(NewObject { template, status, team: Some(OBJECT_TEAM), modules: Vec::new() }).unwrap();
+    let other = w
+        .new_object(NewObject {
+            template,
+            status,
+            team: Some(OBJECT_TEAM),
+            modules: Vec::new(),
+        })
+        .unwrap();
     assert_eq!(other, 2);
-    w.set_position(me, &Coord3D { x: 11.0, y: 22.0, z: 5.0 });
-    w.set_position(other, &Coord3D { x: -3.0, y: 8.0, z: 1.5 });
+    w.set_position(
+        me,
+        &Coord3D {
+            x: 11.0,
+            y: 22.0,
+            z: 5.0,
+        },
+    );
+    w.set_position(
+        other,
+        &Coord3D {
+            x: -3.0,
+            y: 8.0,
+            z: 1.5,
+        },
+    );
     let idx = w.find_module(me, CLASSES[kind].as_bytes()).unwrap();
 
     // the constructor's effects (the events and cut calls so far; the second object has none)
@@ -922,16 +1180,32 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
             })
             .collect()
     };
-    let ctor = effects(w.cuts.trace.take().unwrap(), w.cuts.log.take().unwrap(), new_events(&w, events_before));
+    let ctor = effects(
+        w.cuts.trace.take().unwrap(),
+        w.cuts.log.take().unwrap(),
+        new_events(&w, events_before),
+    );
     tally.effects += ctor.len() as u64;
     put_u32(&mut v, ctor.len() as u32);
     for l in &ctor {
         put_str(&mut v, l.as_bytes());
     }
     // after the constructor: disabled, and the drawable (binding it makes the client set the whole condition state; not the module's)
-    set_disabled_and_player(&mut w, [me, other], cfg[2] & 1 != 0, (cfg[0] != NO_PLAYER).then_some(cfg[0]));
+    set_disabled_and_player(
+        &mut w,
+        [me, other],
+        cfg[2] & 1 != 0,
+        (cfg[0] != NO_PLAYER).then_some(cfg[0]),
+    );
     // (every object the world makes has a drawable; the case may take it away)
-    w.friend_bind_to_drawable(me, if cfg[2] >> 10 & 1 != 0 { 7 } else { rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID });
+    w.friend_bind_to_drawable(
+        me,
+        if cfg[2] >> 10 & 1 != 0 {
+            7
+        } else {
+            rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID
+        },
+    );
 
     let mut saved: Vec<u8> = Vec::new();
     for o in ops {
@@ -940,26 +1214,64 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
         w.cuts.trace = Some(Vec::new());
         w.cuts.log = Some(Vec::new());
         let (mut xst, mut xbytes, mut crc) = (-2i32, Vec::new(), 0u32);
-        let loc = |a: u32, b: u32, c: u32| Coord3D { x: f32::from_bits(a), y: f32::from_bits(b), z: f32::from_bits(c) };
+        let loc = |a: u32, b: u32, c: u32| Coord3D {
+            x: f32::from_bits(a),
+            y: f32::from_bits(b),
+            z: f32::from_bits(c),
+        };
         match o[0] {
             0 => {
-                w.module_call(me, idx, ModuleCall::DoSpecialPower { command_options: o[1] });
+                w.module_call(
+                    me,
+                    idx,
+                    ModuleCall::DoSpecialPower {
+                        command_options: o[1],
+                    },
+                );
                 tally.powers += 1;
             }
             1 => {
-                w.module_call(me, idx, ModuleCall::DoSpecialPowerAtObject { target: other, command_options: o[1] });
+                w.module_call(
+                    me,
+                    idx,
+                    ModuleCall::DoSpecialPowerAtObject {
+                        target: other,
+                        command_options: o[1],
+                    },
+                );
                 tally.powers += 1;
             }
             2 => {
-                w.module_call(me, idx, ModuleCall::DoSpecialPowerAtLocation { loc: loc(o[1], o[2], o[3]), angle: 0.0, command_options: o[4] });
+                w.module_call(
+                    me,
+                    idx,
+                    ModuleCall::DoSpecialPowerAtLocation {
+                        loc: loc(o[1], o[2], o[3]),
+                        angle: 0.0,
+                        command_options: o[4],
+                    },
+                );
                 tally.powers += 1;
             }
             3 => {
-                w.module_call(me, idx, ModuleCall::DoSpecialPowerUsingWaypoints { waypoint: o[1], command_options: o[2] });
+                w.module_call(
+                    me,
+                    idx,
+                    ModuleCall::DoSpecialPowerUsingWaypoints {
+                        waypoint: o[1],
+                        command_options: o[2],
+                    },
+                );
                 tally.powers += 1;
             }
             4 => {
-                w.module_call(me, idx, ModuleCall::PauseCountdown { disabling: o[1] & 1 != 0 });
+                w.module_call(
+                    me,
+                    idx,
+                    ModuleCall::PauseCountdown {
+                        disabling: o[1] & 1 != 0,
+                    },
+                );
             }
             5 => {
                 w.module_call(me, idx, ModuleCall::OnSpecialPowerCreation);
@@ -976,7 +1288,12 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
             }
             9 => {}
             10 => w.set_frame(o[1]),
-            11 => set_disabled_and_player(&mut w, [me, other], o[1] & 1 != 0, (o[2] != 0).then(|| o[2] - 1)),
+            11 => set_disabled_and_player(
+                &mut w,
+                [me, other],
+                o[1] & 1 != 0,
+                (o[2] != 0).then(|| o[2] - 1),
+            ),
             12..=14 => {
                 let r = run_xfer(&mut w, me, idx as usize, o[0] - 12, &saved);
                 xst = r.0;
@@ -1005,7 +1322,12 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
             20 => {
                 w.module_call(me, idx, ModuleCall::OnObjectCreated);
             }
-            22 => w.players.get_nth_mut((o[1] % 3) as i32).unwrap().cash_bounty_percent = f32::from_bits(o[2]),
+            22 => {
+                w.players
+                    .get_nth_mut((o[1] % 3) as i32)
+                    .unwrap()
+                    .cash_bounty_percent = f32::from_bits(o[2])
+            }
             // batch R22: the map edges and the clear cell
             23 => w.cuts.edge_point_offset = loc(o[1], o[2], o[3]),
             24 => w.cuts.farthest_edge_point_offset = loc(o[1], o[2], o[3]),
@@ -1021,11 +1343,18 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
         let threw = w.cuts.module_errors.len() > errors_before;
         put_i32(&mut v, if threw { 2 } else { 0 });
         // the effects of the op itself (the queries below log nothing)
-        let log = effects(w.cuts.trace.take().unwrap(), w.cuts.log.take().unwrap(), new_events(&w, events_before));
+        let log = effects(
+            w.cuts.trace.take().unwrap(),
+            w.cuts.log.take().unwrap(),
+            new_events(&w, events_before),
+        );
         if o[0] == 16 || o[0] == 17 {
             assert!(log.is_empty());
         }
-        let ready = matches!(w.module_call(me, idx, ModuleCall::IsReady), ModuleReply::Bool(true));
+        let ready = matches!(
+            w.module_call(me, idx, ModuleCall::IsReady),
+            ModuleReply::Bool(true)
+        );
         let percent = match w.module_call(me, idx, ModuleCall::GetPercentReady) {
             ModuleReply::Real(r) => r.to_bits(),
             r => panic!("unexpected reply {r:?}"),
@@ -1034,7 +1363,10 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
             ModuleReply::Int(f) => f as u32,
             r => panic!("unexpected reply {r:?}"),
         };
-        let script_only = matches!(w.module_call(me, idx, ModuleCall::IsScriptOnly), ModuleReply::Bool(true));
+        let script_only = matches!(
+            w.module_call(me, idx, ModuleCall::IsScriptOnly),
+            ModuleReply::Bool(true)
+        );
         put_u32(&mut v, u32::from(ready));
         put_u32(&mut v, percent);
         put_u32(&mut v, frame);
@@ -1054,18 +1386,29 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
             put_u32(&mut v, s);
         }
         // the object's real SpyVisionUpdate, if it has one: its deactivate frame and whether it is on
-        let spy = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
-            Some(UpdateBody::SpyVisionUpdate(m)) => Some(m.state_words()),
-            _ => None,
-        });
+        let spy =
+            w.objects
+                .find(me)
+                .unwrap()
+                .behaviors
+                .iter()
+                .find_map(|b| match b.body.as_ref() {
+                    Some(UpdateBody::SpyVisionUpdate(m)) => Some(m.state_words()),
+                    _ => None,
+                });
         put_u32(&mut v, u32::from(spy.is_some()));
         put_u32(&mut v, spy.as_ref().map_or(0, |s| s[0]));
         put_u32(&mut v, spy.as_ref().map_or(0, |s| s[1]));
         for p in 0..3 {
-            put_u32(&mut v, w.players.get_nth(p).unwrap().cash_bounty_percent.to_bits());
+            put_u32(
+                &mut v,
+                w.players.get_nth(p).unwrap().cash_bounty_percent.to_bits(),
+            );
         }
         // the objects the module made (the ids after the two it was given, in creation order)
-        let made: Vec<ObjectId> = (3..).take_while(|id| w.objects.find(*id).is_some()).collect();
+        let made: Vec<ObjectId> = (3..)
+            .take_while(|id| w.objects.find(*id).is_some())
+            .collect();
         tally.made = tally.made.max(made.len() as u64);
         put_u32(&mut v, made.len() as u32);
         for id in made {
@@ -1083,7 +1426,10 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
 }
 
 fn cases() -> usize {
-    std::env::var("L9PH_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
+    std::env::var("L9PH_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9_000)
 }
 
 fn f32_bits(g: &mut Gen, range: f32) -> u32 {
@@ -1109,21 +1455,32 @@ fn gen_frame(g: &mut Gen) -> u32 {
 
 #[test]
 fn power_modules_h_match_upstream() {
-    run_suite(&[0, 1, 2, 3, 4], 0x1091_4A55, cases(), "special power modules H");
+    run_suite(
+        &[0, 1, 2, 3, 4],
+        0x1091_4A55,
+        cases(),
+        "special power modules H",
+    );
 }
 
 /// Batch R21: `CashBountyPower` and `CashHackSpecialPower`, on the same driver (their own seed and case count, so the five kinds above keep their
 /// random stream).
 #[test]
 fn cash_powers_r21_match_upstream() {
-    let cases = std::env::var("L9R21_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000);
+    let cases = std::env::var("L9R21_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9_000);
     run_suite(&[5, 6], 0x0021_CA54, cases, "cash powers R21");
 }
 
 /// Batch R22: `OCLSpecialPower` on the same driver (its own seed and case count).
 #[test]
 fn ocl_power_r22_matches_upstream() {
-    let cases = std::env::var("L9R22_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000);
+    let cases = std::env::var("L9R22_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9_000);
     run_suite(&[7], 0x0022_0C15, cases, "OCL power R22");
 }
 
@@ -1147,7 +1504,10 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
             let mut out = String::new();
             for part in defs.split_inclusive("End\n") {
                 if g.below(2) == 0 {
-                    out.push_str(&part.replace("End\n", &format!(" RequiredScience = {}\nEnd\n", pick(&mut g, &SCIENCES))));
+                    out.push_str(&part.replace(
+                        "End\n",
+                        &format!(" RequiredScience = {}\nEnd\n", pick(&mut g, &SCIENCES)),
+                    ));
                 } else {
                     out.push_str(part);
                 }
@@ -1155,9 +1515,26 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
             defs = out;
         }
         let mut ctx = Ctx::new(true, true);
-        Ini::load(b"Data\\INI\\Sp.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ctx).expect("special powers load");
+        Ini::load(
+            b"Data\\INI\\Sp.ini",
+            defs.as_bytes(),
+            IniLoadType::Overwrite,
+            None,
+            &table,
+            &mut ctx,
+        )
+        .expect("special powers load");
         cpp_reset(true, true);
-        assert_eq!(cpp_load(b"Data\\INI\\Sp.ini", defs.as_bytes(), IniLoadType::Overwrite, false).status, 0);
+        assert_eq!(
+            cpp_load(
+                b"Data\\INI\\Sp.ini",
+                defs.as_bytes(),
+                IniLoadType::Overwrite,
+                false
+            )
+            .status,
+            0
+        );
         let clean = g.below(10) < 7;
         let text = gen_text(&mut g, kind, clean);
         let name = format!("Data\\INI\\Sh{}.ini", case % 5).into_bytes();
@@ -1172,7 +1549,11 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
         };
         // [the object's player, the local player, flags, the contain count, the relationships, the first new id, the frame]
         let mut cfg = [0u32; 11];
-        cfg[0] = if g.below(12) == 0 { NO_PLAYER } else { g.below(3) };
+        cfg[0] = if g.below(12) == 0 {
+            NO_PLAYER
+        } else {
+            g.below(3)
+        };
         cfg[1] = g.below(3); // (a local player always exists once the list is set up: `setLocalPlayer(NULL)` selects the neutral player)
         let dis = u32::from(g.below(5) == 0);
         let constructing = u32::from(g.below(7) == 0) << 1;
@@ -1185,8 +1566,22 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
         let ro_a = u32::from(g.below(10) < 7) << 8;
         let view_name = u32::from(g.below(10) < 7) << 9;
         let drawable = u32::from(g.below(10) < 6) << 10;
-        cfg[2] = dis | constructing | structure | contain | spy | cleanup | spu | take | ro_a | view_name | drawable;
-        cfg[3] = if g.below(10) == 0 { g.below(40) } else { g.below(6) };
+        cfg[2] = dis
+            | constructing
+            | structure
+            | contain
+            | spy
+            | cleanup
+            | spu
+            | take
+            | ro_a
+            | view_name
+            | drawable;
+        cfg[3] = if g.below(10) == 0 {
+            g.below(40)
+        } else {
+            g.below(6)
+        };
         cfg[4] = (g.below(3)) | (g.below(3) << 2) | (g.below(3) << 4);
         cfg[5] = 3;
         cfg[6] = gen_frame(&mut g);
@@ -1196,12 +1591,26 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
             .map(|_| match g.below(60) {
                 0..=7 => [0, gen_options(&mut g), 0, 0, 0, 0],
                 8..=12 => [1, gen_options(&mut g), 0, 0, 0, 0],
-                13..=19 => [2, f32_bits(&mut g, 200.0), f32_bits(&mut g, 200.0), f32_bits(&mut g, 20.0), gen_options(&mut g), 0],
+                13..=19 => [
+                    2,
+                    f32_bits(&mut g, 200.0),
+                    f32_bits(&mut g, 200.0),
+                    f32_bits(&mut g, 20.0),
+                    gen_options(&mut g),
+                    0,
+                ],
                 20..=22 => [3, g.below(3), gen_options(&mut g), 0, 0, 0],
                 23..=26 => [4, g.below(2), 0, 0, 0, 0],
                 27..=28 => [5, 0, 0, 0, 0, 0],
                 29..=31 => [6, gen_frame(&mut g), 0, 0, 0, 0],
-                32..=34 => [7, g.below(2), f32_bits(&mut g, 200.0), f32_bits(&mut g, 200.0), f32_bits(&mut g, 20.0), 0],
+                32..=34 => [
+                    7,
+                    g.below(2),
+                    f32_bits(&mut g, 200.0),
+                    f32_bits(&mut g, 200.0),
+                    f32_bits(&mut g, 20.0),
+                    0,
+                ],
                 35..=37 => [8, 0, 0, 0, 0, 0],
                 38..=39 => [9, 0, 0, 0, 0, 0],
                 40..=43 => [10, gen_frame(&mut g), 0, 0, 0, 0],
@@ -1211,21 +1620,80 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
                 51 => [14, 0, 0, 0, 0, 0],
                 52..=53 => [15, 0, 0, 0, 0, 0],
                 54..=55 => [16, 1 + g.below(3), 0, 0, 0, 0],
-                56..=57 => [18, (0..9).fold(0u32, |acc, i| acc | (g.below(3) << (2 * i))), 0, 0, 0, 0],
-                _ => [17, g.below(3) | (g.below(3) << 2) | (g.below(3) << 4), 0, 0, 0, 0],
+                56..=57 => [
+                    18,
+                    (0..9).fold(0u32, |acc, i| acc | (g.below(3) << (2 * i))),
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
+                _ => [
+                    17,
+                    g.below(3) | (g.below(3) << 2) | (g.below(3) << 4),
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
             })
             .collect();
         if kind == 7 {
             // batch R22: the edges, the clear cell and the players' sciences; the power mostly runs
             for o in &mut ops {
                 match g.below(10) {
-                    0 => *o = [23, f32_bits(&mut g, 100.0), f32_bits(&mut g, 100.0), f32_bits(&mut g, 10.0), 0, 0],
-                    1 => *o = [24, f32_bits(&mut g, 100.0), f32_bits(&mut g, 100.0), f32_bits(&mut g, 10.0), 0, 0],
-                    2 => *o = [25, g.below(2), f32_bits(&mut g, 200.0), f32_bits(&mut g, 200.0), f32_bits(&mut g, 20.0), 0],
-                    3 => *o = [19, g.below(3), 1, ctx.sciences[g.below(SCIENCES.len() as u32) as usize].0, 0, 0],
+                    0 => {
+                        *o = [
+                            23,
+                            f32_bits(&mut g, 100.0),
+                            f32_bits(&mut g, 100.0),
+                            f32_bits(&mut g, 10.0),
+                            0,
+                            0,
+                        ]
+                    }
+                    1 => {
+                        *o = [
+                            24,
+                            f32_bits(&mut g, 100.0),
+                            f32_bits(&mut g, 100.0),
+                            f32_bits(&mut g, 10.0),
+                            0,
+                            0,
+                        ]
+                    }
+                    2 => {
+                        *o = [
+                            25,
+                            g.below(2),
+                            f32_bits(&mut g, 200.0),
+                            f32_bits(&mut g, 200.0),
+                            f32_bits(&mut g, 20.0),
+                            0,
+                        ]
+                    }
+                    3 => {
+                        *o = [
+                            19,
+                            g.below(3),
+                            1,
+                            ctx.sciences[g.below(SCIENCES.len() as u32) as usize].0,
+                            0,
+                            0,
+                        ]
+                    }
                     4 => *o = [0, gen_options(&mut g), 0, 0, 0, 0],
                     5 => *o = [1, gen_options(&mut g), 0, 0, 0, 0],
-                    6 => *o = [2, f32_bits(&mut g, 200.0), f32_bits(&mut g, 200.0), f32_bits(&mut g, 20.0), gen_options(&mut g), 0],
+                    6 => {
+                        *o = [
+                            2,
+                            f32_bits(&mut g, 200.0),
+                            f32_bits(&mut g, 200.0),
+                            f32_bits(&mut g, 20.0),
+                            gen_options(&mut g),
+                            0,
+                        ]
+                    }
                     _ => {}
                 }
             }
@@ -1237,12 +1705,39 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
             }
             for o in &mut ops {
                 match g.below(9) {
-                    0..=1 => *o = [19, g.below(3), 1, ctx.sciences[g.below(SCIENCES.len() as u32) as usize].0, 0, 0],
+                    0..=1 => {
+                        *o = [
+                            19,
+                            g.below(3),
+                            1,
+                            ctx.sciences[g.below(SCIENCES.len() as u32) as usize].0,
+                            0,
+                            0,
+                        ]
+                    }
                     2 => *o = [19, g.below(3), 0, 0, 0, 0],
                     3 => *o = [20, 0, 0, 0, 0, 0],
-                    4 => *o = [21, g.below(3), *pick(&mut g, &[&0u32, &30, &800, &100_000]), 0, 0, 0],
+                    4 => {
+                        *o = [
+                            21,
+                            g.below(3),
+                            *pick(&mut g, &[&0u32, &30, &800, &100_000]),
+                            0,
+                            0,
+                            0,
+                        ]
+                    }
                     5 if kind == 6 => *o = [1, gen_options(&mut g), 0, 0, 0, 0],
-                    6 if kind == 5 => *o = [22, g.below(3), (*pick(&mut g, &[&0.0f32, &0.1, &0.3])).to_bits(), 0, 0, 0],
+                    6 if kind == 5 => {
+                        *o = [
+                            22,
+                            g.below(3),
+                            (*pick(&mut g, &[&0.0f32, &0.1, &0.3])).to_bits(),
+                            0,
+                            0,
+                            0,
+                        ]
+                    }
                     _ => {}
                 }
             }
@@ -1250,7 +1745,15 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
 
         // Rust first: a case that reaches upstream undefined behaviour is counted and never sent to the C++
         let rust = if outcome.status == 0 {
-            let (rd, w) = rust_run(kind, ctx.names.clone(), ctx.store.clone(), data.expect("read ok"), &cfg, &ops, &mut tally);
+            let (rd, w) = rust_run(
+                kind,
+                ctx.names.clone(),
+                ctx.store.clone(),
+                data.expect("read ok"),
+                &cfg,
+                &ops,
+                &mut tally,
+            );
             if w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined()) {
                 excluded += 1;
                 continue;
@@ -1260,7 +1763,11 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
             None
         };
         if std::env::var_os("L9PH_TRACE").is_some() {
-            eprintln!("case {case} ({}): cfg {cfg:x?}, file {:?}, defs {defs:?}, ops {ops:?}", CLASSES[kind], show(&text));
+            eprintln!(
+                "case {case} ({}): cfg {cfg:x?}, file {:?}, defs {defs:?}, ops {ops:?}",
+                CLASSES[kind],
+                show(&text)
+            );
         }
         // C++
         let cfile = CString::new(name.clone()).unwrap();
@@ -1294,16 +1801,48 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || format!("case {case} ({}): cfg {cfg:x?}, file {:?}, defs {defs:?}, ops {ops:?}", CLASSES[kind], show(&text));
-        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
+        let what = || {
+            format!(
+                "case {case} ({}): cfg {cfg:x?}, file {:?}, defs {defs:?}, ops {ops:?}",
+                CLASSES[kind],
+                show(&text)
+            )
+        };
+        read.eq(
+            &outcome,
+            &Outcome {
+                status,
+                detail,
+                crc: 0,
+            },
+            what,
+        );
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
         };
         let (dr, dc) = (decode(kind, &rd, ops.len()), decode(kind, &buf, ops.len()));
         for l in &dr {
-            for key in ["\"eva ", "\"script ", "\"academy ", "\"audio ", "\"addsuper ", "\"defect ", "\"cleanup ", "\"spied ", "\"intent ", "\"mc ", "\"withdraw ", "\"float ", "\"oclat ", "\"oclown ", "\"findpos "] {
-                *counts.entry(key.trim_matches('"').trim().to_string()).or_default() += l.matches(key).count() as u64;
+            for key in [
+                "\"eva ",
+                "\"script ",
+                "\"academy ",
+                "\"audio ",
+                "\"addsuper ",
+                "\"defect ",
+                "\"cleanup ",
+                "\"spied ",
+                "\"intent ",
+                "\"mc ",
+                "\"withdraw ",
+                "\"float ",
+                "\"oclat ",
+                "\"oclown ",
+                "\"findpos ",
+            ] {
+                *counts
+                    .entry(key.trim_matches('"').trim().to_string())
+                    .or_default() += l.matches(key).count() as u64;
             }
             if l.contains(" bounties [") && !l.contains(" bounties [0, 0, 0]") {
                 *counts.entry("bounty set".to_string()).or_default() += 1;
@@ -1311,7 +1850,11 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            let i = dr
+                .iter()
+                .zip(dc.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(dr.len().min(dc.len()));
             eprintln!("--- case {case} ({}) cfg {cfg:x?} file {:?} defs {defs:?}\n  rust {:?}\n  c++  {:?}", CLASSES[kind], show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
@@ -1331,13 +1874,24 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
     }
     read.finish();
     run.finish();
-    assert!(read_failed * 40 > cases as u64 && ops_run * 5 > cases as u64 * 4, "the generator must reach every path");
+    assert!(
+        read_failed * 40 > cases as u64 && ops_run * 5 > cases as u64 * 4,
+        "the generator must reach every path"
+    );
     if kinds.contains(&7) {
         let n = |k: &str| counts.get(k).copied().unwrap_or(0);
-        assert!(n("oclat") * 4 > cases as u64 && n("oclown") * 20 > cases as u64 && n("findpos") * 20 > cases as u64, "the generator must reach every list");
+        assert!(
+            n("oclat") * 4 > cases as u64
+                && n("oclown") * 20 > cases as u64
+                && n("findpos") * 20 > cases as u64,
+            "the generator must reach every list"
+        );
     }
     if kinds.contains(&5) {
         let n = |k: &str| counts.get(k).copied().unwrap_or(0);
-        assert!(n("withdraw") * 20 > cases as u64 && n("bounty set") * 20 > cases as u64, "the generator must reach the theft and the bounty");
+        assert!(
+            n("withdraw") * 20 > cases as u64 && n("bounty set") * 20 > cases as u64,
+            "the generator must reach the theft and the bounty"
+        );
     }
 }

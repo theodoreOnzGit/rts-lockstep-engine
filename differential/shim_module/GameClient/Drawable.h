@@ -46,6 +46,8 @@ enum StealthLookType
 /* --- end p1w13-sonnet --- */
 class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModelConditionState(ModelConditionFlagType a);
 	void setTintStatus(TintStatus statusBits); void clearTintStatus(TintStatus statusBits);
+	/* batch R33: EMPUpdate (differential/l9_emp_r33.inc) */
+	void setInstanceScale(Real scale); void colorTint(const RGBColor *color); void colorFlash(const RGBColor *color, UnsignedInt decayFrames, UnsignedInt attackFrames, UnsignedInt sustainAtPeak);
 	/* SubObjectsUpgrade (batch B) */
 	void showSubObject(const AsciiString &name, Bool show); void updateSubObjects();
 	/* --- p1w12-sonnet --- (PowerPlantUpdate, RadarUpdate: l9_updates_e.inc) */

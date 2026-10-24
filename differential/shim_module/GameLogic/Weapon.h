@@ -3,6 +3,28 @@
 ** ALLOW_DEMORALIZE undefined, as the shipped game. The real header is the weapon fixtures' (shim_weapon) and needs the whole weapon layer. */
 #ifndef SHIM_MODULE_WEAPON_H
 #define SHIM_MODULE_WEAPON_H
+/* p1w13-sonnet, batch R33 (EMPUpdate): Weapon.h lines 110-132, verbatim */
+enum WeaponAffectsMaskType
+{
+	WEAPON_AFFECTS_SELF						= 0x01,
+	WEAPON_AFFECTS_ALLIES					= 0x02,
+	WEAPON_AFFECTS_ENEMIES				= 0x04,	// that is, enemies that aren't the primary target
+	WEAPON_AFFECTS_NEUTRALS				= 0x08,	// ditto
+	WEAPON_KILLS_SELF							= 0x10,	// ensures that it's not possible to survive self damage
+	WEAPON_DOESNT_AFFECT_SIMILAR	= 0x20, // Doesn't affect others that are the same as us (like other terrorists for a terrorist bomb to prevent chain reaction)
+	WEAPON_DOESNT_AFFECT_AIRBORNE	= 0x40, // Radius damage doesn't affect airborne units, unless they are the primary target. (used for poison fields.)
+};
+static const char *TheWeaponAffectsMaskNames[] = 
+{
+	"SELF",
+	"ALLIES",
+	"ENEMIES",
+	"NEUTRALS",
+	"SUICIDE",
+	"NOT_SIMILAR",
+	"NOT_AIRBORNE",
+	NULL
+};
 enum WeaponBonusConditionType
 {
 	// The access and use of this enum has the bit shifting built in, so this is a 0,1,2,3,4,5 enum

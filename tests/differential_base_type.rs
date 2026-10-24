@@ -36,10 +36,26 @@ fn fast_float_helpers_match_asm() {
     let mut c_ceil = Check::new("fast_float_ceil");
     for &x in &xs {
         let d = || format!("x = {x:e} ({:#010x})", x.to_bits());
-        c_round.eq(fast_float2long_round(x), unsafe { cpp::ref_fast_float2long_round(x) }, d);
-        c_trunc.f32(fast_float_trunc(x), unsafe { cpp::ref_fast_float_trunc(x) }, d);
-        c_floor.f32(fast_float_floor(x), unsafe { cpp::ref_fast_float_floor(x) }, d);
-        c_ceil.f32(fast_float_ceil(x), unsafe { cpp::ref_fast_float_ceil(x) }, d);
+        c_round.eq(
+            fast_float2long_round(x),
+            unsafe { cpp::ref_fast_float2long_round(x) },
+            d,
+        );
+        c_trunc.f32(
+            fast_float_trunc(x),
+            unsafe { cpp::ref_fast_float_trunc(x) },
+            d,
+        );
+        c_floor.f32(
+            fast_float_floor(x),
+            unsafe { cpp::ref_fast_float_floor(x) },
+            d,
+        );
+        c_ceil.f32(
+            fast_float_ceil(x),
+            unsafe { cpp::ref_fast_float_ceil(x) },
+            d,
+        );
     }
     c_round.finish();
     c_trunc.finish();
@@ -68,15 +84,29 @@ fn real_to_macros_match_asm() {
             c[0].eq(real_to_int(x), cpp::ref_real_to_int(x), d);
             c[1].eq(real_to_unsigned_int(x), cpp::ref_real_to_unsigned_int(x), d);
             c[2].eq(real_to_short(x), cpp::ref_real_to_short(x), d);
-            c[3].eq(real_to_unsigned_short(x), cpp::ref_real_to_unsigned_short(x), d);
+            c[3].eq(
+                real_to_unsigned_short(x),
+                cpp::ref_real_to_unsigned_short(x),
+                d,
+            );
             c[4].eq(real_to_byte(x), cpp::ref_real_to_byte(x), d);
-            c[5].eq(real_to_unsigned_byte(x), cpp::ref_real_to_unsigned_byte(x), d);
+            c[5].eq(
+                real_to_unsigned_byte(x),
+                cpp::ref_real_to_unsigned_byte(x),
+                d,
+            );
             c[6].eq(real_to_int_ceil(x), cpp::ref_real_to_int_ceil(x), d);
             c[7].eq(real_to_int_floor(x), cpp::ref_real_to_int_floor(x), d);
             // A double input: the f32 value itself, and a random double near it.
             let xd = f64::from(x) * (1.0 + (g.u32() as f64 - 2147483648.0) * 1e-12);
-            c[8].eq(double_to_int(f64::from(x)), cpp::ref_double_to_int(f64::from(x)), d);
-            c[8].eq(double_to_int(xd), cpp::ref_double_to_int(xd), || format!("xd = {xd:e}"));
+            c[8].eq(
+                double_to_int(f64::from(x)),
+                cpp::ref_double_to_int(f64::from(x)),
+                d,
+            );
+            c[8].eq(double_to_int(xd), cpp::ref_double_to_int(xd), || {
+                format!("xd = {xd:e}")
+            });
         }
     }
     for k in c {

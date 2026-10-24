@@ -42,12 +42,17 @@ pub struct KeepObjectDie {
 impl KeepObjectDie {
     /// `KeepObjectDie(thing, moduleData)`; `INI_INVALID_DATA` for null data.
     pub fn new(object: ObjectId, module_data: Option<Arc<DieModuleData>>) -> IniResult<Self> {
-        Ok(KeepObjectDie { die: DieModule::new(object, module_data)? })
+        Ok(KeepObjectDie {
+            die: DieModule::new(object, module_data)?,
+        })
     }
 
     /// `KeepObjectDie::onDie(damageInfo)`; `death_type` is `damageInfo->in.m_deathType`.
     pub fn on_die(&mut self, host: &mut impl DieHost, death_type: i32) {
-        if !self.die.is_die_applicable(death_type, host.veterancy_level(), &host.status_bits()) {
+        if !self
+            .die
+            .is_die_applicable(death_type, host.veterancy_level(), &host.status_bits())
+        {
             return;
         }
         if plant(48) {
@@ -88,11 +93,18 @@ impl PartialEq for KeepObjectDie {
 impl KeepObjectDie {
     /// The module's answer to one of `Object`'s calls: `onDie`. The module is lent to its slot around it, because
     /// `destroyObject` and the upgrade removal send calls to every module of the object, this one included.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         match call {
             ModuleCall::OnDie(info) => {
                 let death_type = info.input.death_type;
-                lend_clone(world, me, self, UpdateBody::KeepObjectDie, un, |w, m| m.on_die(w, death_type));
+                lend_clone(world, me, self, UpdateBody::KeepObjectDie, un, |w, m| {
+                    m.on_die(w, death_type)
+                });
                 ModuleReply::Done
             }
             _ => ModuleReply::Unhandled,

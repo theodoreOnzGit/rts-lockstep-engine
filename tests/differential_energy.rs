@@ -84,8 +84,15 @@ fn gen_int(g: &mut Gen) -> i32 {
 
 fn gen_op(g: &mut Gen, frame: u32, sabotage_at: u32) -> Op {
     match g.below(12) {
-        0 => Op::Init(if g.below(4) == 0 { None } else { Some(g.below(16) as i32) }),
-        1..=3 => Op::Adjust { delta: gen_int(g), adding: g.below(2) == 0 },
+        0 => Op::Init(if g.below(4) == 0 {
+            None
+        } else {
+            Some(g.below(16) as i32)
+        }),
+        1..=3 => Op::Adjust {
+            delta: gen_int(g),
+            adding: g.below(2) == 0,
+        },
         4 => Op::Entering(gen_int(g)),
         5 => Op::Leaving(gen_int(g)),
         6 => Op::AddBonus(gen_int(g)),
@@ -117,7 +124,10 @@ fn rust_op(e: &mut Energy, op: Op, frame: u32, planted: bool) -> Vec<u32> {
         }
     };
     let (count, brown) = match notice {
-        Some(n) => (1, u32::from(if planted { !n.brown_out } else { n.brown_out })),
+        Some(n) => (
+            1,
+            u32::from(if planted { !n.brown_out } else { n.brown_out }),
+        ),
         None => (0, 0),
     };
     vec![
@@ -232,7 +242,11 @@ fn energy_xfer_matches_upstream() {
         let rust_bytes = save.take_bytes();
         let path = temp_path("save", case);
         let cpath = CString::new(path.to_string_lossy().as_bytes()).expect("path");
-        assert_eq!(unsafe { cpp::ref_energy_save(cpath.as_ptr()) }, 0, "upstream XferSave threw");
+        assert_eq!(
+            unsafe { cpp::ref_energy_save(cpath.as_ptr()) },
+            0,
+            "upstream XferSave threw"
+        );
         let cpp_bytes = std::fs::read(&path).expect("upstream wrote the file");
         let _ = std::fs::remove_file(&path);
         ok.eq(rust_bytes.clone(), cpp_bytes.clone(), input);
@@ -279,7 +293,11 @@ fn energy_xfer_matches_upstream() {
         let old = old_version_file(version, production, consumption, owner);
         let (rust_old, cpp_old) = load_both(&old, "old", case);
         let rust_owner_ok = rust_old.clone();
-        ok.eq(rust_owner_ok, cpp_old, || format!("case {case}: version {version}, sums {production}/{consumption}, owner {owner}"));
+        ok.eq(rust_owner_ok, cpp_old, || {
+            format!(
+                "case {case}: version {version}, sums {production}/{consumption}, owner {owner}"
+            )
+        });
     }
     ok.finish();
     bug.finish_planted();

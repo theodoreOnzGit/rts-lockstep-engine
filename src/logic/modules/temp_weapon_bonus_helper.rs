@@ -20,8 +20,8 @@
 
 use std::sync::Arc;
 
-use super::plant;
 use super::object_helper::{HelperHost, ObjectHelper, TINT_STATUS_FRENZY};
+use super::plant;
 use crate::common::disabled_types::{disabledmask_all, DisabledMaskType};
 use crate::common::ini::IniResult;
 use crate::common::module::ObjectId;
@@ -34,7 +34,8 @@ use crate::logic::world::sleepy::UpdateHandle;
 use crate::logic::world::update_body::UpdateBody;
 // --- end p1w10-sonnet ---
 use crate::logic::module::update_module::{
-    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER,
+    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime,
+    UPDATE_SLEEP_FOREVER,
 };
 use crate::logic::weapon_bonus::condition::INVALID as WEAPONBONUSCONDITION_INVALID;
 
@@ -51,17 +52,31 @@ pub struct TempWeaponBonusHelper {
 impl TempWeaponBonusHelper {
     /// `TempWeaponBonusHelper(thing, modData)`: the `ObjectHelper`, no bonus,
     /// frame 0, then a second `setWakeFrame(UPDATE_SLEEP_FOREVER)`.
-    pub fn new(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>, host: &mut impl HelperHost) -> IniResult<Self> {
+    pub fn new(
+        object: ObjectId,
+        module_data: Option<Arc<UpdateModuleData>>,
+        host: &mut impl HelperHost,
+    ) -> IniResult<Self> {
         let mut me = TempWeaponBonusHelper::unconstructed(object, module_data)?;
         me.construct(host);
         Ok(me)
     }
 
     /// The first half of the constructor, which touches no world: no bonus, frame 0.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>) -> IniResult<Self> {
-        let mut helper = ObjectHelper::unconstructed(object, module_data, SleepyUpdatePhase::Normal)?;
-        helper.update_module_mut().set_disabled_types_to_process(disabledmask_all()); // p1w11-sonnet: the scheduler reads the arena's base
-        Ok(TempWeaponBonusHelper { helper, current_bonus: WEAPONBONUSCONDITION_INVALID, frame_to_remove: 0 })
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<UpdateModuleData>>,
+    ) -> IniResult<Self> {
+        let mut helper =
+            ObjectHelper::unconstructed(object, module_data, SleepyUpdatePhase::Normal)?;
+        helper
+            .update_module_mut()
+            .set_disabled_types_to_process(disabledmask_all()); // p1w11-sonnet: the scheduler reads the arena's base
+        Ok(TempWeaponBonusHelper {
+            helper,
+            current_bonus: WEAPONBONUSCONDITION_INVALID,
+            frame_to_remove: 0,
+        })
     }
 
     /// The second half: the base's wake, then a second `setWakeFrame(UPDATE_SLEEP_FOREVER)`. The world runs it once the module
@@ -69,7 +84,10 @@ impl TempWeaponBonusHelper {
     pub fn construct(&mut self, host: &mut impl HelperHost) {
         self.helper.construct(host);
         if !plant(55) {
-            host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), UPDATE_SLEEP_FOREVER));
+            host.awaken_update_module(UpdateModule::set_wake_frame(
+                host.frame(),
+                UPDATE_SLEEP_FOREVER,
+            ));
         }
     }
 
@@ -105,11 +123,18 @@ impl TempWeaponBonusHelper {
         }
         host.set_weapon_bonus_condition(status);
         self.current_bonus = status;
-        self.frame_to_remove = if plant(45) { duration } else { host.frame().wrapping_add(duration) };
+        self.frame_to_remove = if plant(45) {
+            duration
+        } else {
+            host.frame().wrapping_add(duration)
+        };
         if host.has_drawable() && !plant(43) {
             host.set_tint_status(TINT_STATUS_FRENZY);
         }
-        host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), update_sleep(duration)));
+        host.awaken_update_module(UpdateModule::set_wake_frame(
+            host.frame(),
+            update_sleep(duration),
+        ));
     }
 
     /// The `ObjectHelper` base.
@@ -150,7 +175,10 @@ impl Snapshot for TempWeaponBonusHelper {
 impl PartialEq for TempWeaponBonusHelper {
     /// The same state: the same object and the same fields. (`UpdateBody` is compared in tests.)
     fn eq(&self, other: &Self) -> bool {
-        self.helper.update_module().behavior().object() == other.helper.update_module().behavior().object() && self.current_bonus == other.current_bonus && self.frame_to_remove == other.frame_to_remove
+        self.helper.update_module().behavior().object()
+            == other.helper.update_module().behavior().object()
+            && self.current_bonus == other.current_bonus
+            && self.frame_to_remove == other.frame_to_remove
     }
 }
 
@@ -160,7 +188,14 @@ impl TempWeaponBonusHelper {
         let Some(h) = world.module_handle_of_update(me) else {
             return self.update(world);
         };
-        lend_clone(world, h, self, UpdateBody::TempWeaponBonusHelper, un, |w, m| w.in_update_module(me, |w| m.update(w)))
+        lend_clone(
+            world,
+            h,
+            self,
+            UpdateBody::TempWeaponBonusHelper,
+            un,
+            |w, m| w.in_update_module(me, |w| m.update(w)),
+        )
     }
 
     /// The world half of the constructor, run by the world once the module is part of its object.
@@ -169,10 +204,22 @@ impl TempWeaponBonusHelper {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         match call {
             ModuleCall::DoTempWeaponBonus { status, duration } => {
-                lend_clone(world, me, self, UpdateBody::TempWeaponBonusHelper, un, |w, m| m.do_temp_weapon_bonus(w, status, duration));
+                lend_clone(
+                    world,
+                    me,
+                    self,
+                    UpdateBody::TempWeaponBonusHelper,
+                    un,
+                    |w, m| m.do_temp_weapon_bonus(w, status, duration),
+                );
                 ModuleReply::Done
             }
             _ => ModuleReply::Unhandled,

@@ -26,7 +26,9 @@
 use std::sync::Arc;
 
 use crate::common::base_type::{max, min, Coord3D};
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
+};
 use crate::common::module::ObjectId;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
@@ -62,7 +64,10 @@ pub struct SmartBombTargetHomingUpdateModuleData {
 impl Default for SmartBombTargetHomingUpdateModuleData {
     /// `SmartBombTargetHomingUpdateModuleData()`: 0.99.
     fn default() -> Self {
-        SmartBombTargetHomingUpdateModuleData { update: UpdateModuleData::default(), course_correction_scalar: 0.99 }
+        SmartBombTargetHomingUpdateModuleData {
+            update: UpdateModuleData::default(),
+            course_correction_scalar: 0.99,
+        }
     }
 }
 
@@ -73,23 +78,32 @@ impl SmartBombTargetHomingUpdateModuleData {
     }
 
     /// `buildFieldParse(p)`: the base's, then `CourseCorrectionScalar`.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, SmartBombTargetHomingUpdateModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, SmartBombTargetHomingUpdateModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&SMART_BOMB_TARGET_HOMING_UPDATE_MODULE_DATA_FIELD_PARSE)
     }
 
     /// `SmartBombTargetHomingUpdate::friend_newModuleData(ini)`.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<SmartBombTargetHomingUpdateModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<SmartBombTargetHomingUpdateModuleData> {
         let mut data = SmartBombTargetHomingUpdateModuleData::new();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, SmartBombTargetHomingUpdateModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                SmartBombTargetHomingUpdateModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
 }
 
 /// `dataFieldParse` of the class: `CourseCorrectionScalar`, `INI::parseReal`.
-pub static SMART_BOMB_TARGET_HOMING_UPDATE_MODULE_DATA_FIELD_PARSE: [FieldParse<SmartBombTargetHomingUpdateModuleData>; 2] = [
+pub static SMART_BOMB_TARGET_HOMING_UPDATE_MODULE_DATA_FIELD_PARSE: [FieldParse<
+    SmartBombTargetHomingUpdateModuleData,
+>; 2] = [
     FieldParse::new(
         "CourseCorrectionScalar",
         |ini, d, _: &UserData| {
@@ -117,7 +131,11 @@ pub struct SmartBombTargetHomingUpdate {
 impl SmartBombTargetHomingUpdate {
     /// `SmartBombTargetHomingUpdate(thing, moduleData)`: no target yet, due
     /// next frame. `INI_INVALID_DATA` for null data.
-    pub fn new(object: ObjectId, module_data: Option<Arc<SmartBombTargetHomingUpdateModuleData>>, host: &mut impl UpdateHost) -> IniResult<Self> {
+    pub fn new(
+        object: ObjectId,
+        module_data: Option<Arc<SmartBombTargetHomingUpdateModuleData>>,
+        host: &mut impl UpdateHost,
+    ) -> IniResult<Self> {
         let mut me = SmartBombTargetHomingUpdate::unconstructed(object, module_data)?;
         me.construct(host);
         Ok(me)
@@ -125,17 +143,28 @@ impl SmartBombTargetHomingUpdate {
 
     // --- p1w10-sonnet ---
     /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data).
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<SmartBombTargetHomingUpdateModuleData>>) -> IniResult<Self> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<SmartBombTargetHomingUpdateModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(SmartBombTargetHomingUpdate { update, data, target_received: false, target: Coord3D::default() })
+        Ok(SmartBombTargetHomingUpdate {
+            update,
+            data,
+            target_received: false,
+            target: Coord3D::default(),
+        })
     }
 
     /// The second half of the constructor: `setWakeFrame(UPDATE_SLEEP_NONE)`. The world runs it once the module is part of its
     /// object.
     pub fn construct(&mut self, host: &mut impl UpdateHost) {
-        host.awaken_update_module(UpdateModule::set_wake_frame(host.frame(), UPDATE_SLEEP_NONE));
+        host.awaken_update_module(UpdateModule::set_wake_frame(
+            host.frame(),
+            UPDATE_SLEEP_NONE,
+        ));
     }
     // --- end p1w10-sonnet ---
 
@@ -214,13 +243,22 @@ impl Snapshot for SmartBombTargetHomingUpdate {
 impl PartialEq for SmartBombTargetHomingUpdate {
     /// The same state: the same data object (upstream compares pointers), the target received and the target. (`UpdateBody` is compared in tests.)
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.target_received == other.target_received && self.target == other.target
+        self.update.behavior().object() == other.update.behavior().object()
+            && Arc::ptr_eq(&self.data, &other.data)
+            && self.target_received == other.target_received
+            && self.target == other.target
     }
 }
 
 /// The factory's `NewModuleDataProc` for `SmartBombTargetHomingUpdate`.
-pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<crate::common::module::ModuleDataKind> {
-    Ok(crate::common::module::ModuleDataKind::SmartBombTargetHomingUpdate(Arc::new(SmartBombTargetHomingUpdateModuleData::friend_new_module_data(ini)?)))
+pub fn new_module_data(
+    ini: Option<&mut Ini<'_>>,
+) -> IniResult<crate::common::module::ModuleDataKind> {
+    Ok(
+        crate::common::module::ModuleDataKind::SmartBombTargetHomingUpdate(Arc::new(
+            SmartBombTargetHomingUpdateModuleData::friend_new_module_data(ini)?,
+        )),
+    )
 }
 
 impl SmartBombTargetHomingUpdate {
@@ -231,9 +269,12 @@ impl SmartBombTargetHomingUpdate {
         let Some(h) = world.module_handle_of_update(me) else {
             return self.update(world);
         };
-        let lent = crate::logic::world::update_body::UpdateBody::SmartBombTargetHomingUpdate(self.clone());
+        let lent =
+            crate::logic::world::update_body::UpdateBody::SmartBombTargetHomingUpdate(self.clone());
         let (r, back) = world.lend_body(h, lent, |w| w.in_update_module(me, |w| self.update(w)));
-        if let Some(crate::logic::world::update_body::UpdateBody::SmartBombTargetHomingUpdate(b)) = back {
+        if let Some(crate::logic::world::update_body::UpdateBody::SmartBombTargetHomingUpdate(b)) =
+            back
+        {
             *self = b;
         }
         r
@@ -245,7 +286,12 @@ impl SmartBombTargetHomingUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls: `SetTargetPosition`.
-    pub fn module_call(&mut self, _world: &mut World, _me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        _world: &mut World,
+        _me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         match call {
             ModuleCall::SetSmartBombTargetPosition(pos) => {
                 self.set_target_position(pos);

@@ -51,7 +51,10 @@ use std::sync::Arc;
 
 use crate::common::base_type::Coord3D;
 use crate::common::game_type::INVALID_ANGLE;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData, SEPS_COLON};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+    SEPS_COLON,
+};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::{DamageInfo, DamageTypeFlags, DAMAGE_TYPE_FLAGS_ALL};
@@ -99,7 +102,13 @@ pub struct FxEntry {
 impl Default for FxEntry {
     /// `TransitionDamageFXModuleData()`'s: no effect, at the origin.
     fn default() -> Self {
-        FxEntry { effect: None, loc_type: FX_DAMAGE_LOC_TYPE_COORD, bone_name: Vec::new(), random_bone: false, loc: Coord3D::default() }
+        FxEntry {
+            effect: None,
+            loc_type: FX_DAMAGE_LOC_TYPE_COORD,
+            bone_name: Vec::new(),
+            random_bone: false,
+            loc: Coord3D::default(),
+        }
     }
 }
 
@@ -117,7 +126,11 @@ pub struct TransitionDamageFxModuleData {
 impl Default for TransitionDamageFxModuleData {
     /// `TransitionDamageFXModuleData()`: every damage type plays every effect.
     fn default() -> Self {
-        TransitionDamageFxModuleData { damage: DamageModuleData::new(), damage_types: [DAMAGE_TYPE_FLAGS_ALL; 3], lists: Default::default() }
+        TransitionDamageFxModuleData {
+            damage: DamageModuleData::new(),
+            damage_types: [DAMAGE_TYPE_FLAGS_ALL; 3],
+            lists: Default::default(),
+        }
     }
 }
 
@@ -152,9 +165,19 @@ fn parse_fx_loc_info(ini: &mut Ini<'_>, info: &mut FxEntry) -> IniResult<()> {
 
 /// `parseFXList`, `parseObjectCreationList` and `parseParticleSystem` for entry `kind * 64 + state * 16 + index` (the field's user data):
 /// `<Bone:<name> RandomBone:<Yes|No> | Loc: X:x Y:y Z:z> FXList:<name>` (`OCL:`, `PSys:`).
-fn parse_entry(ini: &mut Ini<'_>, d: &mut TransitionDamageFxModuleData, u: &UserData) -> IniResult<()> {
-    let UserData::Mask(m) = u else { return Err(IniError::new(IniErrorKind::InvalidData)) };
-    let (kind, state, index) = ((*m / 64) as usize, (*m / 16 % 4) as usize, (*m % 16) as usize);
+fn parse_entry(
+    ini: &mut Ini<'_>,
+    d: &mut TransitionDamageFxModuleData,
+    u: &UserData,
+) -> IniResult<()> {
+    let UserData::Mask(m) = u else {
+        return Err(IniError::new(IniErrorKind::InvalidData));
+    };
+    let (kind, state, index) = (
+        (*m / 64) as usize,
+        (*m / 16 % 4) as usize,
+        (*m % 16) as usize,
+    );
     let info = &mut d.lists[kind][state][index];
     parse_fx_loc_info(ini, info)?;
     // make sure we have an "FXList:" ("OCL:", "PSys:") token
@@ -169,15 +192,40 @@ fn parse_entry(ini: &mut Ini<'_>, d: &mut TransitionDamageFxModuleData, u: &User
     }
     // INI::parseFXList, parseObjectCreationList, parseParticleSystemTemplate: the next token, looked up ("could be null!")
     let name = ini.get_next_token(None)?;
-    info.effect = if kind != KIND_OCL && name.eq_ignore_ascii_case(b"None") { None } else { Some(name) };
+    info.effect = if kind != KIND_OCL && name.eq_ignore_ascii_case(b"None") {
+        None
+    } else {
+        Some(name)
+    };
     Ok(())
 }
 
 /// `dataFieldParse`.
 static FIELD_PARSE: [FieldParse<TransitionDamageFxModuleData>; 112] = [
-    FieldParse::new("DamageFXTypes", |i, d, _| { d.damage_types[KIND_FX] = i.parse_damage_type_flags()?; Ok(()) }, UserData::None),
-    FieldParse::new("DamageOCLTypes", |i, d, _| { d.damage_types[KIND_OCL] = i.parse_damage_type_flags()?; Ok(()) }, UserData::None),
-    FieldParse::new("DamageParticleTypes", |i, d, _| { d.damage_types[KIND_PARTICLE] = i.parse_damage_type_flags()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "DamageFXTypes",
+        |i, d, _| {
+            d.damage_types[KIND_FX] = i.parse_damage_type_flags()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DamageOCLTypes",
+        |i, d, _| {
+            d.damage_types[KIND_OCL] = i.parse_damage_type_flags()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DamageParticleTypes",
+        |i, d, _| {
+            d.damage_types[KIND_PARTICLE] = i.parse_damage_type_flags()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::new("DamagedFXList1", parse_entry, UserData::Mask(16)),
     FieldParse::new("DamagedFXList2", parse_entry, UserData::Mask(17)),
     FieldParse::new("DamagedFXList3", parse_entry, UserData::Mask(18)),
@@ -262,18 +310,66 @@ static FIELD_PARSE: [FieldParse<TransitionDamageFxModuleData>; 112] = [
     FieldParse::new("DamagedParticleSystem10", parse_entry, UserData::Mask(153)),
     FieldParse::new("DamagedParticleSystem11", parse_entry, UserData::Mask(154)),
     FieldParse::new("DamagedParticleSystem12", parse_entry, UserData::Mask(155)),
-    FieldParse::new("ReallyDamagedParticleSystem1", parse_entry, UserData::Mask(160)),
-    FieldParse::new("ReallyDamagedParticleSystem2", parse_entry, UserData::Mask(161)),
-    FieldParse::new("ReallyDamagedParticleSystem3", parse_entry, UserData::Mask(162)),
-    FieldParse::new("ReallyDamagedParticleSystem4", parse_entry, UserData::Mask(163)),
-    FieldParse::new("ReallyDamagedParticleSystem5", parse_entry, UserData::Mask(164)),
-    FieldParse::new("ReallyDamagedParticleSystem6", parse_entry, UserData::Mask(165)),
-    FieldParse::new("ReallyDamagedParticleSystem7", parse_entry, UserData::Mask(166)),
-    FieldParse::new("ReallyDamagedParticleSystem8", parse_entry, UserData::Mask(167)),
-    FieldParse::new("ReallyDamagedParticleSystem9", parse_entry, UserData::Mask(168)),
-    FieldParse::new("ReallyDamagedParticleSystem10", parse_entry, UserData::Mask(169)),
-    FieldParse::new("ReallyDamagedParticleSystem11", parse_entry, UserData::Mask(170)),
-    FieldParse::new("ReallyDamagedParticleSystem12", parse_entry, UserData::Mask(171)),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem1",
+        parse_entry,
+        UserData::Mask(160),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem2",
+        parse_entry,
+        UserData::Mask(161),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem3",
+        parse_entry,
+        UserData::Mask(162),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem4",
+        parse_entry,
+        UserData::Mask(163),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem5",
+        parse_entry,
+        UserData::Mask(164),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem6",
+        parse_entry,
+        UserData::Mask(165),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem7",
+        parse_entry,
+        UserData::Mask(166),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem8",
+        parse_entry,
+        UserData::Mask(167),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem9",
+        parse_entry,
+        UserData::Mask(168),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem10",
+        parse_entry,
+        UserData::Mask(169),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem11",
+        parse_entry,
+        UserData::Mask(170),
+    ),
+    FieldParse::new(
+        "ReallyDamagedParticleSystem12",
+        parse_entry,
+        UserData::Mask(171),
+    ),
     FieldParse::new("RubbleParticleSystem1", parse_entry, UserData::Mask(176)),
     FieldParse::new("RubbleParticleSystem2", parse_entry, UserData::Mask(177)),
     FieldParse::new("RubbleParticleSystem3", parse_entry, UserData::Mask(178)),
@@ -291,17 +387,24 @@ static FIELD_PARSE: [FieldParse<TransitionDamageFxModuleData>; 112] = [
 
 impl TransitionDamageFxModuleData {
     /// `buildFieldParse(p)`: the damage module base, then this class's fields.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, TransitionDamageFxModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, TransitionDamageFxModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<TransitionDamageFxModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<TransitionDamageFxModuleData> {
         let mut data = TransitionDamageFxModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, TransitionDamageFxModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                TransitionDamageFxModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -321,21 +424,34 @@ pub struct TransitionDamageFx {
 impl PartialEq for TransitionDamageFx {
     /// The same object, the same data object and the same ids.
     fn eq(&self, other: &Self) -> bool {
-        self.damage.behavior().object() == other.damage.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.particle_system_id == other.particle_system_id
+        self.damage.behavior().object() == other.damage.behavior().object()
+            && Arc::ptr_eq(&self.data, &other.data)
+            && self.particle_system_id == other.particle_system_id
     }
 }
 
 /// A state as an index of the arrays.
 fn state_index(s: i32) -> Result<usize, Undefined> {
-    usize::try_from(s).ok().filter(|&s| s < BODYDAMAGETYPE_COUNT).ok_or(Undefined::ArrayIndexOutOfRange)
+    usize::try_from(s)
+        .ok()
+        .filter(|&s| s < BODYDAMAGETYPE_COUNT)
+        .ok_or(Undefined::ArrayIndexOutOfRange)
 }
 
 impl TransitionDamageFx {
     /// `TransitionDamageFX(thing, moduleData)`; `INI_INVALID_DATA` for null data.
-    pub fn new(object: ObjectId, module_data: Option<Arc<TransitionDamageFxModuleData>>) -> IniResult<Self> {
+    pub fn new(
+        object: ObjectId,
+        module_data: Option<Arc<TransitionDamageFxModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let damage = DamageModule::new(object, Some(Arc::new(data.damage.clone())))?;
-        Ok(TransitionDamageFx { damage, data, particle_system_id: [[INVALID_PARTICLE_SYSTEM_ID; DAMAGE_MODULE_MAX_FX]; BODYDAMAGETYPE_COUNT] })
+        Ok(TransitionDamageFx {
+            damage,
+            data,
+            particle_system_id: [[INVALID_PARTICLE_SYSTEM_ID; DAMAGE_MODULE_MAX_FX];
+                BODYDAMAGETYPE_COUNT],
+        })
     }
 
     /// `getInterfaceMask()`: the damage module's.
@@ -364,35 +480,62 @@ impl TransitionDamageFx {
         if info.loc_type == FX_DAMAGE_LOC_TYPE_BONE && world.has_drawable(id) {
             if !info.random_bone {
                 // get the bone position; "sanity, if bone not found revert back to location defined in struct (which is 0,0,0)"
-                return world.drawable_pristine_bones(id, &info.bone_name, 0, 1).first().copied().unwrap_or(if crate::logic::modules::plant(2014) { Coord3D::default() } else { info.loc });
+                return world
+                    .drawable_pristine_bones(id, &info.bone_name, 0, 1)
+                    .first()
+                    .copied()
+                    .unwrap_or(if crate::logic::modules::plant(2014) {
+                        Coord3D::default()
+                    } else {
+                        info.loc
+                    });
             }
             let positions = world.drawable_pristine_bones(id, &info.bone_name, 1, MAX_BONES);
             if positions.is_empty() {
                 return info.loc;
             }
             // pick one of the bone positions
-            let pick = if crate::logic::modules::plant(2013) { 0 } else { world.random.game_logic_random_value(0, positions.len() as i32 - 1) };
+            let pick = if crate::logic::modules::plant(2013) {
+                0
+            } else {
+                world
+                    .random
+                    .game_logic_random_value(0, positions.len() as i32 - 1)
+            };
             return positions[pick as usize];
         }
         info.loc
     }
 
     /// `onBodyDamageStateChange(damageInfo, oldState, newState)`: "Switching damage states".
-    fn on_body_damage_state_change(&mut self, world: &mut World, me: ModuleHandle, info: &DamageInfo, old_state: i32, new_state: i32) -> Result<(), Undefined> {
+    fn on_body_damage_state_change(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        info: &DamageInfo,
+        old_state: i32,
+        new_state: i32,
+    ) -> Result<(), Undefined> {
         let id = me.object;
         let d = self.data.clone();
         // get the source of the damage if present
-        let damage_source = world.objects.find(info.input.source_id).map(|o| o.get_position());
+        let damage_source = world
+            .objects
+            .find(info.input.source_id)
+            .map(|o| o.get_position());
         // remove any particle systems that might be emitting from our old state
         let old = state_index(old_state)?;
         for i in 0..DAMAGE_MODULE_MAX_FX {
-            if self.particle_system_id[old][i] != INVALID_PARTICLE_SYSTEM_ID && !crate::logic::modules::plant(2012) {
+            if self.particle_system_id[old][i] != INVALID_PARTICLE_SYSTEM_ID
+                && !crate::logic::modules::plant(2012)
+            {
                 world.destroy_particle_system_by_id(self.particle_system_id[old][i]);
                 self.particle_system_id[old][i] = INVALID_PARTICLE_SYSTEM_ID;
             }
         }
         // "when we are transitioning to a "worse" state we will play a set of effects for that new state to make the transition"
-        if new_state <= old_state && !(crate::logic::modules::plant(2011) && new_state == old_state) {
+        if new_state <= old_state && !(crate::logic::modules::plant(2011) && new_state == old_state)
+        {
             return Ok(());
         }
         let new = state_index(new_state)?;
@@ -402,27 +545,52 @@ impl TransitionDamageFx {
             ModuleReply::Damage(last) => Some(last.input.damage_type),
             _ => None,
         };
-        let plays = |kind: usize| crate::logic::modules::plant(2015) || last_type.is_none_or(|t| d.damage_types[kind].test(t));
+        let plays = |kind: usize| {
+            crate::logic::modules::plant(2015)
+                || last_type.is_none_or(|t| d.damage_types[kind].test(t))
+        };
         for i in 0..DAMAGE_MODULE_MAX_FX {
             // play fx list for our new state
             let e = &d.lists[KIND_FX][new][i];
             if let Some(fx) = &e.effect {
                 if plays(KIND_FX) {
                     let pos = Self::get_local_effect_pos(world, id, e);
-                    let position = if crate::logic::modules::plant(2017) { pos } else { world.contain_convert_bone_pos_to_world_pos(id, &pos) };
-                    world.emit(ObjectClientEvent::FxListDoFxPos { fx: fx.clone(), position });
+                    let position = if crate::logic::modules::plant(2017) {
+                        pos
+                    } else {
+                        world.contain_convert_bone_pos_to_world_pos(id, &pos)
+                    };
+                    world.emit(ObjectClientEvent::FxListDoFxPos {
+                        fx: fx.clone(),
+                        position,
+                    });
                 }
             }
             // do any object creation list for our new state
             let e = &d.lists[KIND_OCL][new][i];
             if let Some(ocl) = &e.effect {
-                let found = world.statics.clone().object_creation_list_store.find_object_creation_list(&mut world.names, ocl).is_some();
+                let found = world
+                    .statics
+                    .clone()
+                    .object_creation_list_store
+                    .find_object_creation_list(&mut world.names, ocl)
+                    .is_some();
                 if found && plays(KIND_OCL) {
                     let pos = Self::get_local_effect_pos(world, id, e);
                     let primary_pos = world.contain_convert_bone_pos_to_world_pos(id, &pos);
                     let secondary_pos = damage_source.ok_or(Undefined::NullObject)?;
-                    let secondary_pos = if crate::logic::modules::plant(2016) { primary_pos } else { secondary_pos };
-                    world.cut(CutCall::OclCreateAt { primary: id, ocl: ocl.clone(), primary_pos, secondary_pos, angle: INVALID_ANGLE });
+                    let secondary_pos = if crate::logic::modules::plant(2016) {
+                        primary_pos
+                    } else {
+                        secondary_pos
+                    };
+                    world.cut(CutCall::OclCreateAt {
+                        primary: id,
+                        ocl: ocl.clone(),
+                        primary_pos,
+                        secondary_pos,
+                        angle: INVALID_ANGLE,
+                    });
                 }
             }
             // get the template of the system to create
@@ -444,11 +612,22 @@ impl TransitionDamageFx {
     }
 
     /// The module's answer to one of `Object`'s calls: `onDamage` and `onHealing` (nothing), `onBodyDamageStateChange`.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         match call {
             ModuleCall::OnDamage(_) | ModuleCall::OnHealing(_) => ModuleReply::Done,
-            ModuleCall::OnBodyDamageStateChange { info, old_state, new_state } => {
-                if let Err(u) = self.on_body_damage_state_change(world, me, &info, old_state, new_state) {
+            ModuleCall::OnBodyDamageStateChange {
+                info,
+                old_state,
+                new_state,
+            } => {
+                if let Err(u) =
+                    self.on_body_damage_state_change(world, me, &info, old_state, new_state)
+                {
                     world.cuts.module_errors.push((me, IniError::undefined(u)));
                 }
                 ModuleReply::Done
@@ -469,10 +648,20 @@ impl Snapshot for TransitionDamageFx {
         let mut version = current;
         xfer.xfer_version(&mut version, current)?;
         self.damage.xfer(xfer)?;
-        let mut b: Vec<u8> = self.particle_system_id.iter().flatten().flat_map(|x| x.to_le_bytes()).collect();
-        let r = if crate::logic::modules::plant(2018) { Ok(()) } else { xfer.xfer_user(&mut b) };
+        let mut b: Vec<u8> = self
+            .particle_system_id
+            .iter()
+            .flatten()
+            .flat_map(|x| x.to_le_bytes())
+            .collect();
+        let r = if crate::logic::modules::plant(2018) {
+            Ok(())
+        } else {
+            xfer.xfer_user(&mut b)
+        };
         for (k, c) in b.chunks(4).enumerate() {
-            self.particle_system_id[k / DAMAGE_MODULE_MAX_FX][k % DAMAGE_MODULE_MAX_FX] = u32::from_le_bytes(c.try_into().expect("four bytes"));
+            self.particle_system_id[k / DAMAGE_MODULE_MAX_FX][k % DAMAGE_MODULE_MAX_FX] =
+                u32::from_le_bytes(c.try_into().expect("four bytes"));
         }
         r
     }
@@ -483,7 +672,9 @@ impl Snapshot for TransitionDamageFx {
 
 /// The factory's `NewModuleDataProc` for `TransitionDamageFX`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::TransitionDamageFx(Arc::new(TransitionDamageFxModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::TransitionDamageFx(Arc::new(
+        TransitionDamageFxModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
 #[cfg(test)]
@@ -493,9 +684,22 @@ mod tests {
     #[test]
     fn the_defaults_are_the_constructors() {
         let d = TransitionDamageFxModuleData::default();
-        assert!(d.lists.iter().flatten().flatten().all(|e| e.loc_type == FX_DAMAGE_LOC_TYPE_COORD && e.effect.is_none() && !e.random_bone));
+        assert!(d
+            .lists
+            .iter()
+            .flatten()
+            .flatten()
+            .all(|e| e.loc_type == FX_DAMAGE_LOC_TYPE_COORD
+                && e.effect.is_none()
+                && !e.random_bone));
         let m = TransitionDamageFx::new(3, Some(Arc::new(d))).unwrap();
-        assert!(m.state_words().iter().all(|&w| w == INVALID_PARTICLE_SYSTEM_ID));
-        assert_eq!(TransitionDamageFx::new(3, None).unwrap_err().kind, IniErrorKind::InvalidData);
+        assert!(m
+            .state_words()
+            .iter()
+            .all(|&w| w == INVALID_PARTICLE_SYSTEM_ID));
+        assert_eq!(
+            TransitionDamageFx::new(3, None).unwrap_err().kind,
+            IniErrorKind::InvalidData
+        );
     }
 }

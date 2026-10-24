@@ -46,10 +46,10 @@
 mod support;
 
 use rts_lockstep_engine::common::base_type::Coord3D;
-use rts_lockstep_engine::common::geometry::{
-    GeometryInfo, GeometryType, GEOMETRY_FIELDS,
+use rts_lockstep_engine::common::geometry::{GeometryInfo, GeometryType, GEOMETRY_FIELDS};
+use rts_lockstep_engine::common::ini::{
+    BlockParse, FieldParse, Ini, IniLoadType, IniResult, UserData,
 };
-use rts_lockstep_engine::common::ini::{BlockParse, FieldParse, Ini, IniLoadType, IniResult, UserData};
 use rts_lockstep_engine::common::random_value::RandomValues;
 use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_crc::XferDeepCrc;
@@ -105,7 +105,13 @@ fn bits(v: &[f32]) -> Bits {
 }
 
 fn shape_of(t: i32, small: i32, h: f32, maj: f32, min: f32) -> GeometryInfo {
-    GeometryInfo::new(GeometryType::from_index(t).expect("type 0..=2"), small != 0, h, maj, min)
+    GeometryInfo::new(
+        GeometryType::from_index(t).expect("type 0..=2"),
+        small != 0,
+        h,
+        maj,
+        min,
+    )
 }
 
 fn gen_real(g: &mut Gen) -> f32 {
@@ -117,7 +123,13 @@ fn gen_real(g: &mut Gen) -> f32 {
 }
 
 fn gen_shape(g: &mut Gen) -> (i32, i32, f32, f32, f32) {
-    (g.below(3) as i32, g.below(2) as i32, gen_real(g), gen_real(g), gen_real(g))
+    (
+        g.below(3) as i32,
+        g.below(2) as i32,
+        gen_real(g),
+        gen_real(g),
+        gen_real(g),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -129,7 +141,10 @@ fn parse_geo_block(ini: &mut Ini<'_>, g: &mut GeometryInfo) -> IniResult<()> {
     ini.init_from_ini(g, &GEOMETRY_FIELDS)
 }
 
-const BLOCKS: [BlockParse<GeometryInfo>; 1] = [BlockParse { token: "GEO", parse: parse_geo_block }];
+const BLOCKS: [BlockParse<GeometryInfo>; 1] = [BlockParse {
+    token: "GEO",
+    parse: parse_geo_block,
+}];
 
 /// Planted slip: `GeometryMinorRadius` stores into the major radius.
 fn planted_minor(ini: &mut Ini<'_>, g: &mut GeometryInfo, _: &UserData) -> IniResult<()> {
@@ -139,11 +154,27 @@ fn planted_minor(ini: &mut Ini<'_>, g: &mut GeometryInfo, _: &UserData) -> IniRe
 }
 
 static PLANTED_FIELDS: [FieldParse<GeometryInfo>; 6] = [
-    FieldParse::new("Geometry", rts_lockstep_engine::common::geometry::parse_geometry_type, UserData::None),
-    FieldParse::new("GeometryMajorRadius", rts_lockstep_engine::common::geometry::parse_geometry_major_radius, UserData::None),
+    FieldParse::new(
+        "Geometry",
+        rts_lockstep_engine::common::geometry::parse_geometry_type,
+        UserData::None,
+    ),
+    FieldParse::new(
+        "GeometryMajorRadius",
+        rts_lockstep_engine::common::geometry::parse_geometry_major_radius,
+        UserData::None,
+    ),
     FieldParse::new("GeometryMinorRadius", planted_minor, UserData::None),
-    FieldParse::new("GeometryHeight", rts_lockstep_engine::common::geometry::parse_geometry_height, UserData::None),
-    FieldParse::new("GeometryIsSmall", rts_lockstep_engine::common::geometry::parse_geometry_is_small, UserData::None),
+    FieldParse::new(
+        "GeometryHeight",
+        rts_lockstep_engine::common::geometry::parse_geometry_height,
+        UserData::None,
+    ),
+    FieldParse::new(
+        "GeometryIsSmall",
+        rts_lockstep_engine::common::geometry::parse_geometry_is_small,
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
@@ -151,15 +182,33 @@ fn planted_geo_block(ini: &mut Ini<'_>, g: &mut GeometryInfo) -> IniResult<()> {
     ini.init_from_ini(g, &PLANTED_FIELDS)
 }
 
-const PLANTED_BLOCKS: [BlockParse<GeometryInfo>; 1] = [BlockParse { token: "GEO", parse: planted_geo_block }];
+const PLANTED_BLOCKS: [BlockParse<GeometryInfo>; 1] = [BlockParse {
+    token: "GEO",
+    parse: planted_geo_block,
+}];
 
-const TYPE_TOKENS: &[&str] = &["SPHERE", "CYLINDER", "BOX", "sphere", "Box", "cylinder", "BOXES", "NONE", "1"];
+const TYPE_TOKENS: &[&str] = &[
+    "SPHERE", "CYLINDER", "BOX", "sphere", "Box", "cylinder", "BOXES", "NONE", "1",
+];
 const BOOL_TOKENS: &[&str] = &["Yes", "No", "TRUE", "FALSE", "1", "0", "maybe", "y", "yes"];
 const ODD_REAL_TOKENS: &[&str] = &[
-    "12abc", "1e", "1.5.3", "-0", "+3", ".5", "5.", "1e39", "inf", "nan", "0x1p3", "  7", "-1e-45", "3.4e38",
+    "12abc", "1e", "1.5.3", "-0", "+3", ".5", "5.", "1e39", "inf", "nan", "0x1p3", "  7", "-1e-45",
+    "3.4e38",
 ];
-const FIELD_NAMES: &[&str] = &["Geometry", "GeometryMajorRadius", "GeometryMinorRadius", "GeometryHeight", "GeometryIsSmall"];
-const WRONG_NAMES: &[&str] = &["geometry", "GeometryRadius", "GeometryIsSmal", "GeometryHeightX", "Foo"];
+const FIELD_NAMES: &[&str] = &[
+    "Geometry",
+    "GeometryMajorRadius",
+    "GeometryMinorRadius",
+    "GeometryHeight",
+    "GeometryIsSmall",
+];
+const WRONG_NAMES: &[&str] = &[
+    "geometry",
+    "GeometryRadius",
+    "GeometryIsSmal",
+    "GeometryHeightX",
+    "Foo",
+];
 
 fn pick<'a>(g: &mut Gen, xs: &[&'a str]) -> &'a str {
     xs[g.below(xs.len() as u32) as usize]
@@ -181,7 +230,11 @@ fn gen_geo_text(g: &mut Gen) -> String {
     let mut s = String::from("GEO\n");
     let lines = g.below(8);
     for _ in 0..lines {
-        let name = if g.below(10) < 8 { pick(g, FIELD_NAMES) } else { pick(g, WRONG_NAMES) };
+        let name = if g.below(10) < 8 {
+            pick(g, FIELD_NAMES)
+        } else {
+            pick(g, WRONG_NAMES)
+        };
         let value = match name {
             "Geometry" => {
                 if g.below(10) < 8 {
@@ -208,7 +261,9 @@ fn gen_geo_text(g: &mut Gen) -> String {
 
 #[test]
 fn geometry_ini_matches() {
-    let _lock = cpp::GLOBAL_RNG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _lock = cpp::GLOBAL_RNG_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     const CASES: u32 = 20_000;
     let mut g = Gen::new(0x9E0_0001);
     let mut ok = Check::new("GeometryInfo INI parse (fields)");
@@ -219,10 +274,18 @@ fn geometry_ini_matches() {
         let text = gen_geo_text(&mut g);
         let (t0, s0, h0, m0, n0) = gen_shape(&mut g);
         let data = text.as_bytes();
-        let input = || format!("case {case}: shape ({t0}, {s0}, {h0:e}, {m0:e}, {n0:e}), block {text:?}");
+        let input =
+            || format!("case {case}: shape ({t0}, {s0}, {h0:e}, {m0:e}, {n0:e}), block {text:?}");
 
         let mut geo = shape_of(t0, s0, h0, m0, n0);
-        let rust = rts_lockstep_engine::common::ini::Ini::load(b"geo.ini", data, IniLoadType::Overwrite, None, &BLOCKS, &mut geo);
+        let rust = rts_lockstep_engine::common::ini::Ini::load(
+            b"geo.ini",
+            data,
+            IniLoadType::Overwrite,
+            None,
+            &BLOCKS,
+            &mut geo,
+        );
         if let Err(e) = &rust {
             if e.is_undefined() {
                 *excluded.entry(format!("{:?}", e.kind)).or_default() += 1;
@@ -240,8 +303,19 @@ fn geometry_ini_matches() {
 
         // The planted variant must disagree on some input.
         let mut geo_bug = shape_of(t0, s0, h0, m0, n0);
-        let planted = rts_lockstep_engine::common::ini::Ini::load(b"geo.ini", data, IniLoadType::Overwrite, None, &PLANTED_BLOCKS, &mut geo_bug);
-        bug.eq((planted.is_err(), state(&geo_bug)), (cpp.0 != 0, cpp_state(&cpp.1)), input);
+        let planted = rts_lockstep_engine::common::ini::Ini::load(
+            b"geo.ini",
+            data,
+            IniLoadType::Overwrite,
+            None,
+            &PLANTED_BLOCKS,
+            &mut geo_bug,
+        );
+        bug.eq(
+            (planted.is_err(), state(&geo_bug)),
+            (cpp.0 != 0, cpp_state(&cpp.1)),
+            input,
+        );
     }
     println!(
         "INI: {CASES} blocks, {parsed} parsed, {failed} failed as upstream does; excluded (Undefined upstream, not sent to C++): {} {:?}",
@@ -253,7 +327,15 @@ fn geometry_ini_matches() {
 }
 
 /// Parses `data` with the upstream field table: (status, state words).
-fn cpp_geometry_parse(file: &[u8], data: &[u8], t0: i32, s0: i32, h0: f32, m0: f32, n0: f32) -> (i32, Vec<u32>) {
+fn cpp_geometry_parse(
+    file: &[u8],
+    data: &[u8],
+    t0: i32,
+    s0: i32,
+    h0: f32,
+    m0: f32,
+    n0: f32,
+) -> (i32, Vec<u32>) {
     let cname = CString::new(file.to_vec()).expect("no NUL in name");
     let mut out = [0u32; 8];
     let mut msg = vec![0u8; 4096];
@@ -274,7 +356,10 @@ fn cpp_geometry_parse(file: &[u8], data: &[u8], t0: i32, s0: i32, h0: f32, m0: f
             &mut msg_len,
         )
     };
-    assert!(rc != -1, "the C++ layout check failed: the wrapper reads the wrong field");
+    assert!(
+        rc != -1,
+        "the C++ layout check failed: the wrapper reads the wrong field"
+    );
     (out[0] as i32, out[1..].to_vec())
 }
 
@@ -283,7 +368,11 @@ fn cpp_geometry_parse(file: &[u8], data: &[u8], t0: i32, s0: i32, h0: f32, m0: f
 // ---------------------------------------------------------------------------
 
 fn pt(a: &[f32]) -> Coord3D {
-    Coord3D { x: a[0], y: a[1], z: a[2] }
+    Coord3D {
+        x: a[0],
+        y: a[1],
+        z: a[2],
+    }
 }
 
 /// The Rust side of `ref_geometry_op`, with the same argument layout.
@@ -315,8 +404,14 @@ fn rust_op(op: i32, g: &mut GeometryInfo, a: &[f32]) -> Vec<f32> {
             g.clip_point_to_footprint(&pt(&a[0..3]), &mut p);
             vec![p.x, p.y, p.z]
         }
-        9 => vec![f32::from(u8::from(g.is_point_in_footprint(&pt(&a[0..3]), &pt(&a[3..6]))))],
-        10 => vec![f32::from(u8::from(g.is_intersected_by_line_segment(&pt(&a[0..3]), &pt(&a[3..6]), &pt(&a[6..9]))))],
+        9 => vec![f32::from(u8::from(
+            g.is_point_in_footprint(&pt(&a[0..3]), &pt(&a[3..6])),
+        ))],
+        10 => vec![f32::from(u8::from(g.is_intersected_by_line_segment(
+            &pt(&a[0..3]),
+            &pt(&a[3..6]),
+            &pt(&a[6..9]),
+        )))],
         11 => {
             g.set_max_height_above_position(a[0]);
             state(g).iter().map(|&b| f32::from_bits(b)).collect()
@@ -330,7 +425,13 @@ fn rust_op(op: i32, g: &mut GeometryInfo, a: &[f32]) -> Vec<f32> {
             state(g).iter().map(|&b| f32::from_bits(b)).collect()
         }
         _ => {
-            g.set(GeometryType::from_index(a[0] as i32).expect("type"), a[1] != 0.0, a[2], a[3], a[4]);
+            g.set(
+                GeometryType::from_index(a[0] as i32).expect("type"),
+                a[1] != 0.0,
+                a[2],
+                a[3],
+                a[4],
+            );
             state(g).iter().map(|&b| f32::from_bits(b)).collect()
         }
     }
@@ -340,7 +441,19 @@ fn rust_op(op: i32, g: &mut GeometryInfo, a: &[f32]) -> Vec<f32> {
 fn cpp_op(op: i32, t0: i32, s0: i32, h0: f32, m0: f32, n0: f32, a: &[f32; 16]) -> Vec<u32> {
     let mut out = [0f32; 8];
     let mut count = 0i32;
-    let rc = unsafe { cpp::ref_geometry_op(op, t0, s0, h0, m0, n0, a.as_ptr(), out.as_mut_ptr(), &mut count) };
+    let rc = unsafe {
+        cpp::ref_geometry_op(
+            op,
+            t0,
+            s0,
+            h0,
+            m0,
+            n0,
+            a.as_ptr(),
+            out.as_mut_ptr(),
+            &mut count,
+        )
+    };
     assert_eq!(rc, 0, "ref_geometry_op {op}");
     out[..count as usize].iter().map(|&x| canon(x)).collect()
 }
@@ -371,7 +484,9 @@ fn geometry_methods_match() {
             a[0] = g.below(3) as f32;
             a[1] = g.below(2) as f32;
         }
-        let input = || format!("case {case} op {op}: shape ({t0}, {s0}, {h0:e}, {m0:e}, {n0:e}), args {a:?}");
+        let input = || {
+            format!("case {case} op {op}: shape ({t0}, {s0}, {h0:e}, {m0:e}, {n0:e}), args {a:?}")
+        };
         let mut geo = shape_of(t0, s0, h0, m0, n0);
         let rust = bits(&rust_op(op, &mut geo, &a));
         let cpp_bits = cpp_op(op, t0, s0, h0, m0, n0, &a);
@@ -408,18 +523,30 @@ fn geometry_methods_match() {
 fn cpp_random(op: i32, seed: u32, shape: (i32, i32, f32, f32, f32), count: usize) -> Vec<f32> {
     let (t0, s0, h0, m0, n0) = shape;
     let mut out = vec![0f32; 3 * count];
-    let rc = unsafe { cpp::ref_geometry_random(op, seed, t0, s0, h0, m0, n0, count as i32, out.as_mut_ptr()) };
+    let rc = unsafe {
+        cpp::ref_geometry_random(op, seed, t0, s0, h0, m0, n0, count as i32, out.as_mut_ptr())
+    };
     assert_eq!(rc, 0);
     out
 }
 
-fn rust_random(op: i32, seed: u32, shape: (i32, i32, f32, f32, f32), count: usize, planted: bool) -> Vec<f32> {
+fn rust_random(
+    op: i32,
+    seed: u32,
+    shape: (i32, i32, f32, f32, f32),
+    count: usize,
+    planted: bool,
+) -> Vec<f32> {
     let geo = shape_of(shape.0, shape.1, shape.2, shape.3, shape.4);
     let mut rng = RandomValues::default();
     rng.init_game_logic_random(seed);
     let mut out = Vec::with_capacity(3 * count);
     for _ in 0..count {
-        let mut p = Coord3D { x: 0.0, y: 0.0, z: if op == 1 { 7.0 } else { 0.0 } };
+        let mut p = Coord3D {
+            x: 0.0,
+            y: 0.0,
+            z: if op == 1 { 7.0 } else { 0.0 },
+        };
         if op == 0 {
             geo.make_random_offset_within_footprint(&mut rng, &mut p);
             if planted {
@@ -437,7 +564,9 @@ fn rust_random(op: i32, seed: u32, shape: (i32, i32, f32, f32, f32), count: usiz
 
 #[test]
 fn geometry_random_matches() {
-    let _lock = cpp::GLOBAL_RNG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _lock = cpp::GLOBAL_RNG_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     const SEEDS: u32 = 2_000;
     const COUNT: usize = 8;
     let mut g = Gen::new(0x9E0_0003);
@@ -460,7 +589,11 @@ fn geometry_random_matches() {
         let cpp_out = bits(&cpp_random(op, seed, shape, COUNT));
         ok.eq(rust, cpp_out.clone(), input);
         sent += 1;
-        bug.eq(bits(&rust_random(op, seed, shape, COUNT, true)), cpp_out, input);
+        bug.eq(
+            bits(&rust_random(op, seed, shape, COUNT, true)),
+            cpp_out,
+            input,
+        );
     }
     println!("random: {sent} seeds sent; excluded (negative disc radius, upstream never returns): {excluded}");
     ok.finish();
@@ -489,18 +622,29 @@ fn canon_saved(bytes: &[u8]) -> Vec<u8> {
 
 fn has_nan(t0: i32, s0: i32, h0: f32, m0: f32, n0: f32) -> bool {
     let g = shape_of(t0, s0, h0, m0, n0);
-    [g.get_height(), g.get_major_radius(), g.get_minor_radius(), g.get_bounding_circle_radius(), g.get_bounding_sphere_radius()]
-        .iter()
-        .any(|f| f.is_nan())
+    [
+        g.get_height(),
+        g.get_major_radius(),
+        g.get_minor_radius(),
+        g.get_bounding_circle_radius(),
+        g.get_bounding_sphere_radius(),
+    ]
+    .iter()
+    .any(|f| f.is_nan())
 }
 
 fn temp_path(tag: &str, n: u32) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("p1w1-geometry-{}-{tag}-{n}.bin", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "p1w1-geometry-{}-{tag}-{n}.bin",
+        std::process::id()
+    ))
 }
 
 #[test]
 fn geometry_xfer_matches() {
-    let _lock = cpp::GLOBAL_RNG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _lock = cpp::GLOBAL_RNG_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     const CASES: u32 = 2_000;
     let mut g = Gen::new(0x9E0_0004);
     let mut ok = Check::new("GeometryInfo xfer (save, load, deep CRC)");
@@ -532,7 +676,9 @@ fn geometry_xfer_matches() {
         std::fs::write(&path2, &rust_bytes).expect("write");
         let cpath2 = CString::new(path2.to_string_lossy().as_bytes()).expect("path");
         let mut cout = [0u32; 8];
-        let st = unsafe { cpp::ref_geometry_load(cpath2.as_ptr(), t0, s0, h0, m0, n0, cout.as_mut_ptr()) };
+        let st = unsafe {
+            cpp::ref_geometry_load(cpath2.as_ptr(), t0, s0, h0, m0, n0, cout.as_mut_ptr())
+        };
         let _ = std::fs::remove_file(&path2);
         assert_eq!(st, 0, "upstream XferLoad threw");
         let mut back = shape_of(t0, s0, h0, m0, n0);
@@ -546,7 +692,8 @@ fn geometry_xfer_matches() {
         // Deep CRC: the CRC of the xfer bytes.
         let mut crc = XferDeepCrc::new();
         crc.open(b"deep").expect("open");
-        crc.xfer_snapshot(&mut shape_of(t0, s0, h0, m0, n0)).expect("crc");
+        crc.xfer_snapshot(&mut shape_of(t0, s0, h0, m0, n0))
+            .expect("crc");
         crc.close().expect("close");
         // The CRC covers the raw bytes, so a NaN's sign (see `canon`) changes
         // it: such shapes are counted, not compared.
@@ -579,7 +726,10 @@ fn geometry_xfer_matches() {
         let mut back = shape_of(t0, s0, h0, m0, n0);
         let mut load = XferLoad::new(bytes);
         load.open(b"geo").expect("open");
-        assert!(load.xfer_snapshot(&mut back).is_err(), "an out-of-range type must be an error in Rust");
+        assert!(
+            load.xfer_snapshot(&mut back).is_err(),
+            "an out-of-range type must be an error in Rust"
+        );
         corrupt += 1;
     }
     println!(

@@ -82,7 +82,11 @@ pub enum EvacDisposition {
 /// the shipped build's does. (The commented-out alternative in the source,
 /// `getContainMax() - getExtraSlotsInUse()` and `getContainCount()`, is not
 /// compiled.)
-pub fn get_container_pips_to_show(contain_max: i32, contain_count: u32, extra_slots_in_use: i32) -> (i32, i32) {
+pub fn get_container_pips_to_show(
+    contain_max: i32,
+    contain_count: u32,
+    extra_slots_in_use: i32,
+) -> (i32, i32) {
     let num_total = contain_max;
     let num_full = contain_count.wrapping_add(extra_slots_in_use as u32) as i32;
     (num_total, num_full)

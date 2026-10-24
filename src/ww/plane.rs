@@ -37,7 +37,10 @@ pub struct PlaneClass {
 impl Default for PlaneClass {
     /// `PlaneClass()`: `N(0, 0, 1)`, `D(0)`.
     fn default() -> Self {
-        PlaneClass { n: Vector3::new(0.0, 0.0, 1.0), d: 0.0 }
+        PlaneClass {
+            n: Vector3::new(0.0, 0.0, 1.0),
+            d: 0.0,
+        }
     }
 }
 
@@ -50,10 +53,16 @@ impl PlaneClass {
             // Points are not colinear. Normalize N and calculate D.
             let mut n = n;
             n.normalize();
-            PlaneClass { n, d: Vector3::dot_product(&n, point1) }
+            PlaneClass {
+                n,
+                d: Vector3::dot_product(&n, point1),
+            }
         } else {
             // They are colinear - return default plane (constructors can't fail).
-            PlaneClass { n: Vector3::new(0.0, 0.0, 1.0), d: 0.0 }
+            PlaneClass {
+                n: Vector3::new(0.0, 0.0, 1.0),
+                d: 0.0,
+            }
         }
     }
 
@@ -92,23 +101,42 @@ mod tests {
     #[test]
     fn plane_through_three_points_and_intersection() {
         // the z = 2 plane
-        let p = PlaneClass::from_points(&Vector3::new(0.0, 0.0, 2.0), &Vector3::new(1.0, 0.0, 2.0), &Vector3::new(0.0, 1.0, 2.0));
+        let p = PlaneClass::from_points(
+            &Vector3::new(0.0, 0.0, 2.0),
+            &Vector3::new(1.0, 0.0, 2.0),
+            &Vector3::new(0.0, 1.0, 2.0),
+        );
         assert_eq!(p.n, Vector3::new(0.0, 0.0, 1.0));
         assert_eq!(p.d, 2.0);
-        let (hit, t) = p.compute_intersection(&Vector3::new(5.0, 5.0, 0.0), &Vector3::new(5.0, 5.0, 1000.0));
+        let (hit, t) = p.compute_intersection(
+            &Vector3::new(5.0, 5.0, 0.0),
+            &Vector3::new(5.0, 5.0, 1000.0),
+        );
         assert!(hit);
         assert_eq!(t, Some(0.002));
         // a segment that stops short: not a hit, but t is still written
-        let (hit, t) = p.compute_intersection(&Vector3::new(5.0, 5.0, 0.0), &Vector3::new(5.0, 5.0, 1.0));
+        let (hit, t) =
+            p.compute_intersection(&Vector3::new(5.0, 5.0, 0.0), &Vector3::new(5.0, 5.0, 1.0));
         assert!(!hit);
         assert_eq!(t, Some(2.0));
     }
 
     #[test]
     fn parallel_segment_writes_nothing_and_colinear_points_give_the_default_plane() {
-        let p = PlaneClass::from_points(&Vector3::new(0.0, 0.0, 2.0), &Vector3::new(1.0, 0.0, 2.0), &Vector3::new(0.0, 1.0, 2.0));
-        assert_eq!(p.compute_intersection(&Vector3::new(0.0, 0.0, 0.0), &Vector3::new(1.0, 1.0, 0.0)), (false, None));
-        let c = PlaneClass::from_points(&Vector3::new(0.0, 0.0, 0.0), &Vector3::new(1.0, 1.0, 1.0), &Vector3::new(2.0, 2.0, 2.0));
+        let p = PlaneClass::from_points(
+            &Vector3::new(0.0, 0.0, 2.0),
+            &Vector3::new(1.0, 0.0, 2.0),
+            &Vector3::new(0.0, 1.0, 2.0),
+        );
+        assert_eq!(
+            p.compute_intersection(&Vector3::new(0.0, 0.0, 0.0), &Vector3::new(1.0, 1.0, 0.0)),
+            (false, None)
+        );
+        let c = PlaneClass::from_points(
+            &Vector3::new(0.0, 0.0, 0.0),
+            &Vector3::new(1.0, 1.0, 1.0),
+            &Vector3::new(2.0, 2.0, 2.0),
+        );
         assert_eq!(c, PlaneClass::default());
     }
 }

@@ -58,9 +58,13 @@ mod support;
 mod up_common;
 
 use rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID;
-use rts_lockstep_engine::common::module::{ObjectId, MODULEINTERFACE_BODY, MODULEINTERFACE_DAMAGE, MODULEINTERFACE_DIE};
+use rts_lockstep_engine::common::module::{
+    ObjectId, MODULEINTERFACE_BODY, MODULEINTERFACE_DAMAGE, MODULEINTERFACE_DIE,
+};
 use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
-use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_IS_FIRING_WEAPON};
+use rts_lockstep_engine::common::object_status_types::{
+    ObjectStatusMaskType, OBJECT_STATUS_IS_FIRING_WEAPON,
+};
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
 use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
@@ -142,7 +146,13 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
     }
     out
 }
-fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
+fn run_xfer(
+    w: &mut World,
+    me: ObjectId,
+    idx: usize,
+    how: u32,
+    saved: &[u8],
+) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -183,7 +193,11 @@ fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> 
 }
 
 /// The effect lines of a trace, in the driver's format, and the wake calls of module `idx` among them (the object's other helpers wake too).
-fn effects(trace: Vec<String>, events: Vec<ObjectClientEvent>, idx: u16) -> (Vec<String>, u32, u32) {
+fn effects(
+    trace: Vec<String>,
+    events: Vec<ObjectClientEvent>,
+    idx: u16,
+) -> (Vec<String>, u32, u32) {
     let (mut log, mut wakes, mut last) = (Vec::new(), 0u32, 0u32);
     let mut events = events.into_iter();
     for t in trace {
@@ -197,9 +211,15 @@ fn effects(trace: Vec<String>, events: Vec<ObjectClientEvent>, idx: u16) -> (Vec
             log.push(format!("attemptdamage {r}"));
         } else if t.starts_with("evt ") {
             match events.next() {
-                Some(ObjectClientEvent::DrawableFlashAsSelected { .. }) => log.push("flash".to_string()),
-                Some(ObjectClientEvent::DrawableFlashAsSelectedColor { r, g, b, .. }) => log.push(format!("flashcolor {},{},{}", r.to_bits(), g.to_bits(), b.to_bits())),
-                Some(ObjectClientEvent::Sound { sound, object_id, .. }) => {
+                Some(ObjectClientEvent::DrawableFlashAsSelected { .. }) => {
+                    log.push("flash".to_string())
+                }
+                Some(ObjectClientEvent::DrawableFlashAsSelectedColor { r, g, b, .. }) => log.push(
+                    format!("flashcolor {},{},{}", r.to_bits(), g.to_bits(), b.to_bits()),
+                ),
+                Some(ObjectClientEvent::Sound {
+                    sound, object_id, ..
+                }) => {
                     let name = match sound {
                         ObjectSound::DefectorTimerTick => "defectorTick",
                         ObjectSound::DefectorTimerDing => "defectorDing",
@@ -225,7 +245,9 @@ fn set_dead(w: &mut World, id: ObjectId, dead: bool) {
 
 fn set_body_answers(w: &mut World, id: ObjectId, rate: u32, amount: f32, has: bool) {
     let b = w.get_body_module(id).expect("a body") as usize;
-    if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(id).unwrap().modules[b].body.as_mut() {
+    if let Some(UpdateBody::ModuleProbe(p)) =
+        w.objects.find_mut(id).unwrap().modules[b].body.as_mut()
+    {
         p.answers.subdual_rate = rate;
         p.answers.subdual_amount = amount;
         p.answers.subdual_has = has;
@@ -250,25 +272,51 @@ fn rust_run(kind: usize, cfg: &[u32; 7], ops: &[[u32; 6]], tally: &mut Tally) ->
     names.reset();
     w.names = names;
     w.cuts.neutral_default_team = 1;
-    w.teams.insert_team(rts_lockstep_engine::logic::world::team::Team::new(1, 0)).unwrap();
+    w.teams
+        .insert_team(rts_lockstep_engine::logic::world::team::Team::new(1, 0))
+        .unwrap();
     w.cuts.probe_effect_trace = true;
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     let mut body = NewModule::plain(b"ProbeBody", b"ModuleTag_Body");
     body.interfaces = MODULEINTERFACE_BODY | MODULEINTERFACE_DAMAGE | MODULEINTERFACE_DIE;
-    let answers = ProbeAnswers { subdual_rate: cfg[4], subdual_amount: f32::from_bits(cfg[5]), subdual_has: cfg[6] != 0, ..Default::default() };
-    body.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(answers, 100.0, Default::default())));
-    let template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
-    let me = w.new_object(NewObject { template, status: ObjectStatusMaskType::default(), team: None, modules: vec![body] }).unwrap();
+    let answers = ProbeAnswers {
+        subdual_rate: cfg[4],
+        subdual_amount: f32::from_bits(cfg[5]),
+        subdual_has: cfg[6] != 0,
+        ..Default::default()
+    };
+    body.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+        answers,
+        100.0,
+        Default::default(),
+    )));
+    let template = Arc::new(ThingTemplate::from_object_values(
+        &ObjectTemplateValues::default(),
+    ));
+    let me = w
+        .new_object(NewObject {
+            template,
+            status: ObjectStatusMaskType::default(),
+            team: None,
+            modules: vec![body],
+        })
+        .unwrap();
     assert_eq!(me, 1, "the first object of a fresh world has the id 1");
     w.friend_bind_to_drawable(me, if cfg[0] != 0 { 7 } else { INVALID_DRAWABLE_ID });
     w.friend_set_undetected_defector(me, cfg[1] != 0);
     set_dead(&mut w, me, cfg[2] != 0);
     if cfg[3] != 0 {
-        w.objects.find_mut(me).unwrap().set_status_bit(OBJECT_STATUS_IS_FIRING_WEAPON);
+        w.objects
+            .find_mut(me)
+            .unwrap()
+            .set_status_bit(OBJECT_STATUS_IS_FIRING_WEAPON);
     }
     let idx = w.find_module(me, CLASSES[kind].as_bytes()).unwrap();
-    let handle = ModuleHandle { object: me, index: idx };
+    let handle = ModuleHandle {
+        object: me,
+        index: idx,
+    };
     let u = w.update_handle_of_module(handle).expect("an update module");
     // the constructor's wake calls (the trace of the creation, which also holds the other helpers' and the binding's)
     let (_, wakes, last) = effects(w.cuts.trace.take().unwrap_or_default(), Vec::new(), idx);
@@ -285,12 +333,24 @@ fn rust_run(kind: usize, cfg: &[u32; 7], ops: &[[u32; 6]], tally: &mut Tally) ->
         match o[0] {
             0 => {
                 for _ in 0..o[1].max(1) {
-                    sleep = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0 as i32;
+                    sleep = w
+                        .with_body(u, |b, w| b.update(w, u))
+                        .expect("the module is in its slot")
+                        .0 as i32;
                     tally.updates += 1;
                 }
             }
             1 => {
-                let call = if kind == 0 { ModuleCall::NotifySubdualDamage { amount: f32::from_bits(o[1]) } } else { ModuleCall::StartDefectionTimer { time: o[1], with_defector_fx: o[2] != 0 } };
+                let call = if kind == 0 {
+                    ModuleCall::NotifySubdualDamage {
+                        amount: f32::from_bits(o[1]),
+                    }
+                } else {
+                    ModuleCall::StartDefectionTimer {
+                        time: o[1],
+                        with_defector_fx: o[2] != 0,
+                    }
+                };
                 w.module_call(me, idx, call);
                 tally.starts += 1;
             }
@@ -302,8 +362,16 @@ fn rust_run(kind: usize, cfg: &[u32; 7], ops: &[[u32; 6]], tally: &mut Tally) ->
                     w.friend_set_undetected_defector(me, o[1] & 1 != 0);
                     set_dead(&mut w, me, o[1] & 2 != 0);
                     let ob = w.objects.find_mut(me).unwrap();
-                    ob.status.set(OBJECT_STATUS_IS_FIRING_WEAPON, i32::from(o[1] & 4 != 0));
-                    w.friend_bind_to_drawable(me, if o[1] & 8 != 0 { 7 } else { INVALID_DRAWABLE_ID });
+                    ob.status
+                        .set(OBJECT_STATUS_IS_FIRING_WEAPON, i32::from(o[1] & 4 != 0));
+                    w.friend_bind_to_drawable(
+                        me,
+                        if o[1] & 8 != 0 {
+                            7
+                        } else {
+                            INVALID_DRAWABLE_ID
+                        },
+                    );
                     state_change = true;
                 }
             }
@@ -347,27 +415,45 @@ fn rust_run(kind: usize, cfg: &[u32; 7], ops: &[[u32; 6]], tally: &mut Tally) ->
             put_u32(&mut v, u32::from(*b));
         }
         put_u32(&mut v, crc);
-        let state = w.objects.find(me).unwrap().behaviors.iter().find_map(|b| match b.body.as_ref() {
-            Some(UpdateBody::SubdualDamageHelper(m)) if kind == 0 => Some(m.state_words()),
-            Some(UpdateBody::ObjectDefectionHelper(m)) if kind == 1 => Some(m.state_words()),
-            _ => None,
-        });
+        let state =
+            w.objects
+                .find(me)
+                .unwrap()
+                .behaviors
+                .iter()
+                .find_map(|b| match b.body.as_ref() {
+                    Some(UpdateBody::SubdualDamageHelper(m)) if kind == 0 => Some(m.state_words()),
+                    Some(UpdateBody::ObjectDefectionHelper(m)) if kind == 1 => {
+                        Some(m.state_words())
+                    }
+                    _ => None,
+                });
         let state = state.expect("the module is back in its slot");
         put_u32(&mut v, state.len() as u32);
         for s in state {
             put_u32(&mut v, s);
         }
-        put_u32(&mut v, u32::from(w.objects.find(me).unwrap().is_undetected_defector()));
+        put_u32(
+            &mut v,
+            u32::from(w.objects.find(me).unwrap().is_undetected_defector()),
+        );
     }
     v
 }
 
 fn cases() -> usize {
-    std::env::var("L9HG_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
+    std::env::var("L9HG_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9_000)
 }
 
 fn gen_amount(g: &mut Gen) -> u32 {
-    (*pick(g, &[&0.0f32, &0.5, &1.5, &10.0, &25.0, &-3.0, &100.0, &0.25])).to_bits()
+    (*pick(
+        g,
+        &[&0.0f32, &0.5, &1.5, &10.0, &25.0, &-3.0, &100.0, &0.25],
+    ))
+    .to_bits()
 }
 
 #[test]
@@ -408,8 +494,25 @@ fn helpers_g_match_upstream() {
                 } else {
                     match g.below(30) {
                         0..=11 => [0, g.below(12), 0, 0, 0, 0],
-                        12..=14 => [1, *pick(&mut g, &[&0u32, &1, &5, &20, &150, &300, &450]), g.below(2), 0, 0, 0],
-                        15..=20 => [2, *pick(&mut g, &[&0u32, &1, &2, &10, &100, &200, &299, &300, &301, &450]), 0, 0, 0, 0],
+                        12..=14 => [
+                            1,
+                            *pick(&mut g, &[&0u32, &1, &5, &20, &150, &300, &450]),
+                            g.below(2),
+                            0,
+                            0,
+                            0,
+                        ],
+                        15..=20 => [
+                            2,
+                            *pick(
+                                &mut g,
+                                &[&0u32, &1, &2, &10, &100, &200, &299, &300, &301, &450],
+                            ),
+                            0,
+                            0,
+                            0,
+                            0,
+                        ],
                         21..=23 => [3, g.below(16), 0, 0, 0, 0],
                         24..=25 => [4, 0, 0, 0, 0, 0],
                         26..=27 => [5, 0, 0, 0, 0, 0],
@@ -423,15 +526,35 @@ fn helpers_g_match_upstream() {
         let flat: Vec<u32> = ops.iter().flatten().copied().collect();
         let mut buf = vec![0u8; 1 << 21];
         let mut len = 0i32;
-        let status = unsafe { cpp::ref_l9hg_run(kind as i32, cxfer.as_ptr(), cfg.as_ptr(), ops.len() as i32, flat.as_ptr(), buf.as_mut_ptr(), buf.len() as i32, &mut len) };
+        let status = unsafe {
+            cpp::ref_l9hg_run(
+                kind as i32,
+                cxfer.as_ptr(),
+                cfg.as_ptr(),
+                ops.len() as i32,
+                flat.as_ptr(),
+                buf.as_mut_ptr(),
+                buf.len() as i32,
+                &mut len,
+            )
+        };
         assert_eq!(status, 0);
         buf.truncate(len as usize);
         let what = || format!("case {case} ({}): cfg {cfg:x?}, ops {ops:?}", CLASSES[kind]);
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
-            eprintln!("--- case {case} ({}) cfg {cfg:x?}\n  rust {:?}\n  c++  {:?}", CLASSES[kind], dr.get(i), dc.get(i));
+            let i = dr
+                .iter()
+                .zip(dc.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(dr.len().min(dc.len()));
+            eprintln!(
+                "--- case {case} ({}) cfg {cfg:x?}\n  rust {:?}\n  c++  {:?}",
+                CLASSES[kind],
+                dr.get(i),
+                dc.get(i)
+            );
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -445,5 +568,8 @@ fn helpers_g_match_upstream() {
         tally.updates, tally.starts, tally.xfers, tally.effects
     );
     run.finish();
-    assert!(ops_run * 5 > cases as u64 * 4 && tally.effects * 4 > cases as u64, "the generator must reach every path");
+    assert!(
+        ops_run * 5 > cases as u64 * 4 && tally.effects * 4 > cases as u64,
+        "the generator must reach every path"
+    );
 }

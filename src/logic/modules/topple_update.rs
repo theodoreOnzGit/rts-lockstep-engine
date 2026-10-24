@@ -41,14 +41,21 @@ use std::sync::Arc;
 use crate::common::base_type::{real_to_int_floor, Coord3D, PI};
 use crate::common::game_common::{normalize_angle, std_angle_diff};
 use crate::common::game_type::INVALID_ID;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::model_state::MODELCONDITION_TOPPLED;
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_COLLIDE};
 use crate::common::object_status_types::ObjectStatusMaskType;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
-use crate::logic::damage::{DamageInfo, DeathType, DAMAGE_UNRESISTABLE, DEATH_NORMAL, HUGE_DAMAGE_AMOUNT};
+use crate::logic::damage::{
+    DamageInfo, DeathType, DAMAGE_UNRESISTABLE, DEATH_NORMAL, HUGE_DAMAGE_AMOUNT,
+};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
+use crate::logic::module::update_module::{
+    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER,
+    UPDATE_SLEEP_NONE,
+};
 use crate::logic::modules::crate_collide::CrateCollideModuleData;
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
@@ -132,23 +139,102 @@ impl Default for ToppleUpdateModuleData {
 
 /// `ToppleUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<ToppleUpdateModuleData>; 12] = [
-    FieldParse::new("ToppleFX", |ini, d, _| { d.topple_fx = CrateCollideModuleData::parse_fx_list(ini)?; Ok(()) }, UserData::None),
-    FieldParse::new("BounceFX", |ini, d, _| { d.bounce_fx = CrateCollideModuleData::parse_fx_list(ini)?; Ok(()) }, UserData::None),
-    FieldParse::new("StumpName", |ini, d, _| { d.stump_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
-    FieldParse::new("KillWhenStartToppling", |ini, d, _| { d.kill_when_start_toppled = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("KillWhenFinishedToppling", |ini, d, _| { d.kill_when_toppled = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("KillStumpWhenToppled", |ini, d, _| { d.kill_stump_when_toppled = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("ToppleLeftOrRightOnly", |ini, d, _| { d.topple_left_or_right_only = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("ReorientToppledRubble", |ini, d, _| { d.reorient_toppled_rubble = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("InitialVelocityPercent", |ini, d, _| { d.initial_velocity_percent = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("InitialAccelPercent", |ini, d, _| { d.initial_accel_percent = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("BounceVelocityPercent", |ini, d, _| { d.bounce_velocity_percent = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "ToppleFX",
+        |ini, d, _| {
+            d.topple_fx = CrateCollideModuleData::parse_fx_list(ini)?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "BounceFX",
+        |ini, d, _| {
+            d.bounce_fx = CrateCollideModuleData::parse_fx_list(ini)?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "StumpName",
+        |ini, d, _| {
+            d.stump_name = ini.parse_ascii_string()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "KillWhenStartToppling",
+        |ini, d, _| {
+            d.kill_when_start_toppled = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "KillWhenFinishedToppling",
+        |ini, d, _| {
+            d.kill_when_toppled = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "KillStumpWhenToppled",
+        |ini, d, _| {
+            d.kill_stump_when_toppled = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ToppleLeftOrRightOnly",
+        |ini, d, _| {
+            d.topple_left_or_right_only = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ReorientToppledRubble",
+        |ini, d, _| {
+            d.reorient_toppled_rubble = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "InitialVelocityPercent",
+        |ini, d, _| {
+            d.initial_velocity_percent = ini.parse_percent_to_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "InitialAccelPercent",
+        |ini, d, _| {
+            d.initial_accel_percent = ini.parse_percent_to_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "BounceVelocityPercent",
+        |ini, d, _| {
+            d.bounce_velocity_percent = ini.parse_percent_to_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl ToppleUpdateModuleData {
     /// `buildFieldParse(p)`: `ModuleData`'s (no fields of its own besides the behaviour base's), then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, ToppleUpdateModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, ToppleUpdateModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
@@ -196,7 +282,9 @@ pub struct ToppleUpdate {
 impl PartialEq for ToppleUpdate {
     /// The same object, the same data object (upstream compares pointers) and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.state_words() == other.state_words()
+        self.update.behavior().object() == other.update.behavior().object()
+            && Arc::ptr_eq(&self.data, &other.data)
+            && self.state_words() == other.state_words()
     }
 }
 
@@ -228,7 +316,10 @@ impl ToppleUpdate {
     }
 
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and the state.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<ToppleUpdateModuleData>>) -> IniResult<Self> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<ToppleUpdateModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
@@ -237,7 +328,11 @@ impl ToppleUpdate {
             data,
             angular_velocity: 0.0,
             angular_acceleration: 0.0,
-            topple_direction: Coord3D { x: 0.0, y: 0.0, z: 0.0 },
+            topple_direction: Coord3D {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
             topple_state: ToppleState::Upright,
             angular_accumulation: 0.0,
             angle_delta_x: 0.0,
@@ -287,7 +382,12 @@ impl ToppleUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -316,15 +416,33 @@ impl ToppleUpdate {
     }
 
     /// `applyTopplingForce(toppleDirection, toppleSpeed, options)`: "Start the toppling process by giving a force vector".
-    pub fn apply_toppling_force(&mut self, world: &mut World, me: ModuleHandle, direction: Option<Coord3D>, speed: f32, options: u32) {
+    pub fn apply_toppling_force(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        direction: Option<Coord3D>,
+        speed: f32,
+        options: u32,
+    ) {
         if let Err(u) = self.apply_toppling_force_inner(world, me, direction, speed, options) {
             Self::undefined(world, me, u);
         }
     }
 
-    fn apply_toppling_force_inner(&mut self, world: &mut World, me: ModuleHandle, direction: Option<Coord3D>, speed: f32, options: u32) -> Result<(), Undefined> {
+    fn apply_toppling_force_inner(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        direction: Option<Coord3D>,
+        speed: f32,
+        options: u32,
+    ) -> Result<(), Undefined> {
         let id = me.object;
-        if world.objects.find(id).is_none_or(|o| o.is_effectively_dead()) {
+        if world
+            .objects
+            .find(id)
+            .is_none_or(|o| o.is_effectively_dead())
+        {
             return Ok(());
         }
         update_behavior::set_wake_frame(world, UPDATE_SLEEP_NONE);
@@ -340,7 +458,12 @@ impl ToppleUpdate {
         }
         world.script_adjust_topple_direction(id, &mut self.topple_direction);
         self.angular_velocity = speed * d.initial_velocity_percent;
-        self.angular_acceleration = speed * if crate::logic::modules::plant(1983) { d.initial_velocity_percent } else { d.initial_accel_percent };
+        self.angular_acceleration = speed
+            * if crate::logic::modules::plant(1983) {
+                d.initial_velocity_percent
+            } else {
+                d.initial_accel_percent
+            };
         self.topple_state = ToppleState::Falling;
         self.options = options;
         // tell the drawable to stop swaying (`draw->getClientUpdateModules()`, unchecked)
@@ -349,11 +472,19 @@ impl ToppleUpdate {
         }
         world.emit(ObjectClientEvent::DrawableStopSway { object_id: id });
         // rotate around the z-axis so that our x-axis is perpendicular to the topple direction.
-        let cur_angle_x = normalize_angle(world.objects.find(id).map_or(0.0, |o| o.thing.orientation()));
-        let mut topple_angle = normalize_angle(f64::from(self.topple_direction.y).atan2(f64::from(self.topple_direction.x)) as f32);
+        let cur_angle_x = normalize_angle(
+            world
+                .objects
+                .find(id)
+                .map_or(0.0, |o| o.thing.orientation()),
+        );
+        let mut topple_angle = normalize_angle(
+            f64::from(self.topple_direction.y).atan2(f64::from(self.topple_direction.x)) as f32,
+        );
         if d.topple_left_or_right_only {
             // it's a fence or such, and can only topple left or right, so pick the closest
-            topple_angle = angle_closest_to(cur_angle_x + PI / 2.0, cur_angle_x - PI / 2.0, topple_angle);
+            topple_angle =
+                angle_closest_to(cur_angle_x + PI / 2.0, cur_angle_x - PI / 2.0, topple_angle);
             self.topple_direction.x = crate::common::trig::cos(topple_angle);
             self.topple_direction.y = crate::common::trig::sin(topple_angle);
             // go ahead and remove it from the pathfinder now, rather than waiting for the topple to finish
@@ -362,7 +493,11 @@ impl ToppleUpdate {
             }
         }
         // desired angle is toppleAngle +/- pi/2, whichever is closer to curangle
-        let desired_angle_x = angle_closest_to(topple_angle + PI / 2.0, topple_angle - PI / 2.0, cur_angle_x);
+        let desired_angle_x = angle_closest_to(
+            topple_angle + PI / 2.0,
+            topple_angle - PI / 2.0,
+            cur_angle_x,
+        );
         self.num_angle_delta_x = real_to_int_floor(ANGULAR_LIMIT / (self.angular_velocity * 2.0));
         if self.num_angle_delta_x < 1 && !crate::logic::modules::plant(1985) {
             self.num_angle_delta_x = 1;
@@ -377,17 +512,29 @@ impl ToppleUpdate {
             let template = world.thing_factory_find_template(&d.stump_name);
             let Some(template) = template else {
                 // `TheThingFactory->newObject(NULL, NULL)` throws `ERROR_BAD_ARG`
-                world.cuts.module_errors.push((me, IniError::new(IniErrorKind::BadArg)));
+                world
+                    .cuts
+                    .module_errors
+                    .push((me, IniError::new(IniErrorKind::BadArg)));
                 return Ok(());
             };
-            if let Ok(stump) = world.thing_factory_new_object(template, None, ObjectStatusMaskType::default()) {
-                let (pos, angle) = world.objects.find(id).map(|o| (o.get_position(), o.thing.orientation())).unwrap_or_default();
+            if let Ok(stump) =
+                world.thing_factory_new_object(template, None, ObjectStatusMaskType::default())
+            {
+                let (pos, angle) = world
+                    .objects
+                    .find(id)
+                    .map(|o| (o.get_position(), o.thing.orientation()))
+                    .unwrap_or_default();
                 world.set_position(stump, &pos);
                 world.set_orientation(stump, angle);
                 self.stump_id = stump;
                 // if we are "burned", then we will burn our stump (the drawable's flags are the client's)
                 if world.has_drawable(id) {
-                    world.emit(ObjectClientEvent::DrawableBurnStumpIfBurned { object_id: id, stump });
+                    world.emit(ObjectClientEvent::DrawableBurnStumpIfBurned {
+                        object_id: id,
+                        stump,
+                    });
                 }
             }
         }
@@ -398,19 +545,33 @@ impl ToppleUpdate {
     /// this module).
     pub fn on_collide(&mut self, world: &mut World, me: ModuleHandle, other: ObjectId) {
         // Note that other == null means "collide with ground"
-        let Some(o) = world.objects.find(other) else { return };
+        let Some(o) = world.objects.find(other) else {
+            return;
+        };
         let other_pos = o.get_position();
-        if world.get_crusher_level(other) > if crate::logic::modules::plant(1989) { 0 } else { 1 } {
+        if world.get_crusher_level(other)
+            > if crate::logic::modules::plant(1989) {
+                0
+            } else {
+                1
+            }
+        {
             // Give a vector with direction to thing and my speed.
-            let mut topple_vector = world.objects.find(me.object).map(|o| o.get_position()).unwrap_or_default();
+            let mut topple_vector = world
+                .objects
+                .find(me.object)
+                .map(|o| o.get_position())
+                .unwrap_or_default();
             topple_vector.x -= other_pos.x;
             topple_vector.y -= other_pos.y;
             topple_vector.z = 0.0;
             let vel = match world.objects.find(other).and_then(|o| o.physics) {
-                Some(phys) => match world.module_call(other, phys, ModuleCall::PhysicsGetVelocity) {
-                    ModuleReply::Coord(v) => v,
-                    _ => Coord3D::default(),
-                },
+                Some(phys) => {
+                    match world.module_call(other, phys, ModuleCall::PhysicsGetVelocity) {
+                        ModuleReply::Coord(v) => v,
+                        _ => Coord3D::default(),
+                    }
+                }
                 None => Coord3D::default(),
             };
             // getObject()->topple( &toppleVector, vel.length(), TOPPLE_OPTIONS_NONE )
@@ -441,16 +602,28 @@ impl UpdateBehavior for ToppleUpdate {
             return UPDATE_SLEEP_FOREVER;
         }
         if self.num_angle_delta_x != 0 {
-            let mut xfrm = *world.objects.find(id).expect("checked above").thing.transform_matrix();
+            let mut xfrm = *world
+                .objects
+                .find(id)
+                .expect("checked above")
+                .thing
+                .transform_matrix();
             xfrm.in_place_pre_rotate_z(self.angle_delta_x);
             world.set_transform_matrix(id, &xfrm);
             self.num_angle_delta_x -= 1;
         }
         let mut cur_vel_to_use = self.angular_velocity;
-        if self.angular_accumulation + cur_vel_to_use > ANGULAR_LIMIT && !crate::logic::modules::plant(1988) {
+        if self.angular_accumulation + cur_vel_to_use > ANGULAR_LIMIT
+            && !crate::logic::modules::plant(1988)
+        {
             cur_vel_to_use = ANGULAR_LIMIT - self.angular_accumulation;
         }
-        let mut xfrm = *world.objects.find(id).expect("checked above").thing.transform_matrix();
+        let mut xfrm = *world
+            .objects
+            .find(id)
+            .expect("checked above")
+            .thing
+            .transform_matrix();
         xfrm.in_place_pre_rotate_x(-cur_vel_to_use * self.topple_direction.y);
         xfrm.in_place_pre_rotate_y(cur_vel_to_use * self.topple_direction.x);
         world.set_transform_matrix(id, &xfrm);
@@ -458,7 +631,9 @@ impl UpdateBehavior for ToppleUpdate {
         if self.angular_accumulation >= ANGULAR_LIMIT && self.angular_velocity > 0.0 {
             // Hit so either bounce or stop if too little remaining velocity.
             self.angular_velocity *= -d.bounce_velocity_percent;
-            if (self.options & TOPPLE_OPTIONS_NO_BOUNCE != 0 && !crate::logic::modules::plant(1986)) || self.angular_velocity.abs() < VELOCITY_BOUNCE_LIMIT {
+            if (self.options & TOPPLE_OPTIONS_NO_BOUNCE != 0 && !crate::logic::modules::plant(1986))
+                || self.angular_velocity.abs() < VELOCITY_BOUNCE_LIMIT
+            {
                 // too slow, just stop
                 self.angular_velocity = 0.0;
                 self.topple_state = ToppleState::Down;
@@ -467,16 +642,36 @@ impl UpdateBehavior for ToppleUpdate {
                     if d.reorient_toppled_rubble {
                         // we have a separate rubble state that needs to be upright, and centered on the new "center" pos...
                         if let Some(o) = world.objects.find(id) {
-                            let pos = Vector3 { x: 0.0, y: 0.0, z: o.geometry_info.get_max_height_above_position() };
-                            let pos = crate::ww::matrix3d::Matrix3D::transform_vector(o.thing.transform_matrix(), &pos);
-                            world.set_position(id, &Coord3D { x: pos.x, y: pos.y, z: pos.z });
+                            let pos = Vector3 {
+                                x: 0.0,
+                                y: 0.0,
+                                z: o.geometry_info.get_max_height_above_position(),
+                            };
+                            let pos = crate::ww::matrix3d::Matrix3D::transform_vector(
+                                o.thing.transform_matrix(),
+                                &pos,
+                            );
+                            world.set_position(
+                                id,
+                                &Coord3D {
+                                    x: pos.x,
+                                    y: pos.y,
+                                    z: pos.z,
+                                },
+                            );
                             // this relies on the fact that setOrientation always forces us straight up in the Z axis!
-                            let angle = world.objects.find(id).map_or(0.0, |o| o.thing.orientation());
+                            let angle = world
+                                .objects
+                                .find(id)
+                                .map_or(0.0, |o| o.thing.orientation());
                             world.set_orientation(id, angle);
                         }
                     }
                 }
-                if d.kill_stump_when_toppled && !crate::logic::modules::plant(1987) && world.objects.find(self.stump_id).is_some() {
+                if d.kill_stump_when_toppled
+                    && !crate::logic::modules::plant(1987)
+                    && world.objects.find(self.stump_id).is_some()
+                {
                     death_by_toppling(world, self.stump_id);
                 }
             } else if self.angular_velocity.abs() >= VELOCITY_BOUNCE_SOUND_LIMIT {
@@ -491,7 +686,10 @@ impl UpdateBehavior for ToppleUpdate {
             self.angular_velocity += self.angular_acceleration;
         }
         if world.has_drawable(id) {
-            world.emit(ObjectClientEvent::DrawableSetShadowsEnabled { object_id: id, enabled: false });
+            world.emit(ObjectClientEvent::DrawableSetShadowsEnabled {
+                object_id: id,
+                enabled: false,
+            });
         }
         UPDATE_SLEEP_NONE
     }
@@ -521,7 +719,11 @@ impl UpdateBehavior for ToppleUpdate {
     fn other_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
             ModuleCall::IsAbleToBeToppled => ModuleReply::Bool(self.is_able_to_be_toppled()),
-            ModuleCall::ApplyTopplingForce { direction, speed, options } => {
+            ModuleCall::ApplyTopplingForce {
+                direction,
+                speed,
+                options,
+            } => {
                 self.apply_toppling_force(world, me, direction, speed, options);
                 ModuleReply::Done
             }
@@ -568,5 +770,7 @@ impl Snapshot for ToppleUpdate {
 
 /// The factory's `NewModuleDataProc` for `ToppleUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::ToppleUpdate(Arc::new(ToppleUpdateModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::ToppleUpdate(Arc::new(
+        ToppleUpdateModuleData::friend_new_module_data(ini)?,
+    )))
 }

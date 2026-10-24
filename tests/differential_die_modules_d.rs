@@ -81,15 +81,21 @@ mod up_common;
 use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::common::damage_fx::DamageFxStore;
 use rts_lockstep_engine::common::game_type::INVALID_ID;
-use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult};
+use rts_lockstep_engine::common::ini::{
+    BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult,
+};
 use rts_lockstep_engine::common::kind_of::KINDOF_WAVEGUIDE;
-use rts_lockstep_engine::common::module::{Module, ModuleData, ModuleDataKind, ModuleType, ObjectId, MODULEINTERFACE_DIE};
+use rts_lockstep_engine::common::module::{
+    Module, ModuleData, ModuleDataKind, ModuleType, ObjectId, MODULEINTERFACE_DIE,
+};
 use rts_lockstep_engine::common::module_factory::{ModuleFactory, ModuleTemplate};
 use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
 use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_COUNT};
 use rts_lockstep_engine::common::science::{GameTextFetch, ScienceStore};
 use rts_lockstep_engine::common::thing_factory::ThingFactory;
-use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingParseEnv, ThingTemplate};
+use rts_lockstep_engine::common::thing_template::{
+    ObjectTemplateValues, ThingParseEnv, ThingTemplate,
+};
 use rts_lockstep_engine::common::unicode_string::UnicodeString;
 use rts_lockstep_engine::common::xfer::{Snapshot, Xfer};
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
@@ -168,7 +174,9 @@ fn never(_: ObjectId, _: Option<ModuleDataKind>) -> Result<Module, IniError> {
     Err(IniError::new(IniErrorKind::Bug))
 }
 fn base_data(ini: Option<&mut Ini<'_>>) -> Result<ModuleDataKind, IniError> {
-    Ok(ModuleDataKind::Module(Arc::new(ModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::Module(Arc::new(
+        ModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
 struct FactoryCtx {
@@ -199,8 +207,14 @@ fn build_factory(voice: u32, sound: u32, wave: bool) -> ThingFactory {
     let mut names = NameKeyGenerator::new();
     names.reset();
     let mut modules = ModuleFactory::new();
-    let t = ModuleTemplate { create_proc: Some(never), create_data_proc: Some(base_data), which_interfaces: Some(MODULEINTERFACE_DIE) };
-    modules.add_module_internal(&mut names, t, ModuleType::Behavior, "TestDie").unwrap();
+    let t = ModuleTemplate {
+        create_proc: Some(never),
+        create_data_proc: Some(base_data),
+        which_interfaces: Some(MODULEINTERFACE_DIE),
+    };
+    modules
+        .add_module_internal(&mut names, t, ModuleType::Behavior, "TestDie")
+        .unwrap();
     let mut c = FactoryCtx {
         factory: ThingFactory::new(),
         names,
@@ -225,8 +239,19 @@ fn build_factory(voice: u32, sound: u32, wave: bool) -> ThingFactory {
         text.push_str(" End\n");
     }
     text.push_str("End\n");
-    static BLOCKS: [BlockParse<FactoryCtx>; 1] = [BlockParse { token: "Object", parse: object_block }];
-    Ini::load(b"Objects.ini", text.as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut c).expect("objects load");
+    static BLOCKS: [BlockParse<FactoryCtx>; 1] = [BlockParse {
+        token: "Object",
+        parse: object_block,
+    }];
+    Ini::load(
+        b"Objects.ini",
+        text.as_bytes(),
+        IniLoadType::Overwrite,
+        None,
+        &BLOCKS,
+        &mut c,
+    )
+    .expect("objects load");
     c.factory
 }
 
@@ -235,28 +260,47 @@ fn build_factory(voice: u32, sound: u32, wave: bool) -> ThingFactory {
 fn read_block(ini: &mut Ini<'_>, out: &mut (usize, Option<ModuleDataKind>)) -> IniResult<()> {
     let kind = out.0;
     out.1 = Some(match kind {
-        0 => ModuleDataKind::DamDie(Arc::new(DamDieModuleData::friend_new_module_data(Some(ini))?)),
-        1 => ModuleDataKind::SpecialPowerCompletionDie(Arc::new(SpecialPowerCompletionDieModuleData::friend_new_module_data(Some(ini))?)),
-        _ => ModuleDataKind::EjectPilotDie(Arc::new(EjectPilotDieModuleData::friend_new_module_data(Some(ini))?)),
+        0 => ModuleDataKind::DamDie(Arc::new(DamDieModuleData::friend_new_module_data(Some(
+            ini,
+        ))?)),
+        1 => ModuleDataKind::SpecialPowerCompletionDie(Arc::new(
+            SpecialPowerCompletionDieModuleData::friend_new_module_data(Some(ini))?,
+        )),
+        _ => ModuleDataKind::EjectPilotDie(Arc::new(
+            EjectPilotDieModuleData::friend_new_module_data(Some(ini))?,
+        )),
     });
     Ok(())
 }
 
 fn rust_read(kind: usize, name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }];
+    let blocks = [BlockParse {
+        token: "D",
+        parse: read_block,
+    }];
     let mut out = (kind, None);
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out.1)
 }
 
 /// The data dump of `ref_l9dd_run`: the die mux, then the module's own fields.
-fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, store: &rts_lockstep_engine::common::special_power::SpecialPowerStore) {
+fn put_data(
+    v: &mut Vec<u8>,
+    data: &ModuleDataKind,
+    store: &rts_lockstep_engine::common::special_power::SpecialPowerStore,
+) {
     match data {
         ModuleDataKind::DamDie(d) => put_die_mux(v, &d.die.die_mux_data),
         ModuleDataKind::SpecialPowerCompletionDie(d) => {
             put_die_mux(v, &d.die.die_mux_data);
             // upstream resolved the name while it read the data; here it is resolved when the die runs
-            put_u32(v, d.special_power_template.as_deref().and_then(|n| store.find_special_power_template(n)).map_or(0, |t| t.id()));
+            put_u32(
+                v,
+                d.special_power_template
+                    .as_deref()
+                    .and_then(|n| store.find_special_power_template(n))
+                    .map_or(0, |t| t.id()),
+            );
         }
         ModuleDataKind::EjectPilotDie(d) => {
             put_die_mux(v, &d.die.die_mux_data);
@@ -301,7 +345,9 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
     let (dt, vl) = (u32_(&mut p), u32_(&mut p));
     let ex: Vec<u64> = (0..4).map(|_| u64_(&mut p)).collect();
     let rq: Vec<u64> = (0..4).map(|_| u64_(&mut p)).collect();
-    out.push(format!("die mux {dt:#x} {vl:#x} exempt {ex:x?} required {rq:x?}"));
+    out.push(format!(
+        "die mux {dt:#x} {vl:#x} exempt {ex:x?} required {rq:x?}"
+    ));
     match kind {
         1 => out.push(format!("special power template {}", u32_(&mut p))),
         2 => {
@@ -321,7 +367,9 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
         let blen = u32_(&mut p);
         let bytes: Vec<u32> = (0..blen).map(|_| u32_(&mut p)).collect();
         let crc = u32_(&mut p);
-        out.push(format!("op {i}: status {st} log {log:?} xfer {xst} bytes {bytes:?} crc {crc:#x}"));
+        out.push(format!(
+            "op {i}: status {st} log {log:?} xfer {xst} bytes {bytes:?} crc {crc:#x}"
+        ));
     }
     out
 }
@@ -329,8 +377,26 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
 // -- generators --
 
 const DEATH_NAMES: [&str; 20] = [
-    "NONE", "CRUSHED", "BURNED", "EXPLODED", "POISONED", "TOPPLED", "FLOODED", "SUICIDED", "LASERED", "DETONATED", "SPLATTED", "POISONED_BETA",
-    "EXTRA_2", "EXTRA_3", "EXTRA_4", "EXTRA_5", "EXTRA_6", "EXTRA_7", "EXTRA_8", "POISONED_GAMMA",
+    "NONE",
+    "CRUSHED",
+    "BURNED",
+    "EXPLODED",
+    "POISONED",
+    "TOPPLED",
+    "FLOODED",
+    "SUICIDED",
+    "LASERED",
+    "DETONATED",
+    "SPLATTED",
+    "POISONED_BETA",
+    "EXTRA_2",
+    "EXTRA_3",
+    "EXTRA_4",
+    "EXTRA_5",
+    "EXTRA_6",
+    "EXTRA_7",
+    "EXTRA_8",
+    "POISONED_GAMMA",
 ];
 
 fn death_tokens(g: &mut Gen) -> String {
@@ -398,15 +464,27 @@ fn gen_die_text(g: &mut Gen, kind: usize, clean: bool) -> Vec<u8> {
     match kind {
         1 => {
             if g.below(100) < 92 {
-                lines.push(format!("SpecialPowerTemplate = {}", pick(g, &["SP_0", "SP_1", "SP_2", "None", "none", "sp_0", "SP_9", "SP_1"])));
+                lines.push(format!(
+                    "SpecialPowerTemplate = {}",
+                    pick(
+                        g,
+                        &["SP_0", "SP_1", "SP_2", "None", "none", "sp_0", "SP_9", "SP_1"]
+                    )
+                ));
             }
         }
         2 => {
             if g.below(100) < 85 {
-                lines.push(format!("AirCreationList = {}", pick(g, &["OCL_A", "OCL_B", "ocl_a", "None", "OCL_C"])));
+                lines.push(format!(
+                    "AirCreationList = {}",
+                    pick(g, &["OCL_A", "OCL_B", "ocl_a", "None", "OCL_C"])
+                ));
             }
             if g.below(100) < 85 {
-                lines.push(format!("GroundCreationList = {}", pick(g, &["OCL_A", "OCL_B", "ocl_b", "None", "OCL_C"])));
+                lines.push(format!(
+                    "GroundCreationList = {}",
+                    pick(g, &["OCL_A", "OCL_B", "ocl_b", "None", "OCL_C"])
+                ));
             }
             if g.below(100) < 50 {
                 lines.push(format!("InvulnerableTime = {}", g.below(5000)));
@@ -486,7 +564,14 @@ fn run_xfer(body: &mut dyn Snapshot, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u
 /// The line the driver logs for a cut call or client event the dies cause.
 fn cut_line(c: &CutCall) -> Vec<String> {
     match c {
-        CutCall::ScriptNotifyOfCompletedSpecialPower { player, name, creator } => vec![format!("script {player} {} {creator}", String::from_utf8_lossy(name))],
+        CutCall::ScriptNotifyOfCompletedSpecialPower {
+            player,
+            name,
+            creator,
+        } => vec![format!(
+            "script {player} {} {creator}",
+            String::from_utf8_lossy(name)
+        )],
         CutCall::OclCreateWithSecondary { secondary, ocl, .. } => {
             let mut v = Vec::new();
             match ocl.as_slice() {
@@ -506,29 +591,59 @@ fn cut_line(c: &CutCall) -> Vec<String> {
 
 /// Runs the ops on a fresh world and returns the dump (after the data dump) and the world.
 #[allow(clippy::too_many_arguments)]
-fn rust_run(kind: usize, mut ctx: Ctx, data: ModuleDataKind, cfg: &mut [u32; 9], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
+fn rust_run(
+    kind: usize,
+    mut ctx: Ctx,
+    data: ModuleDataKind,
+    cfg: &mut [u32; 9],
+    ops: &[[u32; 6]],
+    tally: &mut Tally,
+) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     put_data(&mut v, &data, &ctx.store);
 
     let mut w = World::new();
     let factory = build_factory(cfg[7], cfg[8], cfg[3] & 1 != 0);
-    let dying_template = Arc::new(factory.find_template(b"DYING").unwrap().get_final_override().data.clone());
+    let dying_template = Arc::new(
+        factory
+            .find_template(b"DYING")
+            .unwrap()
+            .get_final_override()
+            .data
+            .clone(),
+    );
     let mut ocls = rts_lockstep_engine::logic::object_creation_list::ObjectCreationListStore::new();
     for n in [&b"OCL_A"[..], b"OCL_B"] {
         // the fixture's two lists (the case matters)
-        ocls.ocls.insert(ctx.names.name_to_key(n), Default::default());
+        ocls.ocls
+            .insert(ctx.names.name_to_key(n), Default::default());
     }
-    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, thing_factory: factory, object_creation_list_store: ocls, ..Default::default() });
+    w.statics = Arc::new(GameStatics {
+        upgrade_center: ctx.center,
+        special_power_store: ctx.store,
+        thing_factory: factory,
+        object_creation_list_store: ocls,
+        ..Default::default()
+    });
     w.names = ctx.names;
     w.cuts.neutral_default_team = 1;
     w.cuts.globals.gravity = f32::from_bits(cfg[6]);
-    w.teams.insert_team(rts_lockstep_engine::logic::world::team::Team::new(1, 0)).unwrap();
+    w.teams
+        .insert_team(rts_lockstep_engine::logic::world::team::Team::new(1, 0))
+        .unwrap();
     if (cfg[1] as i32) >= 0 {
         w.cuts.team_players.insert(1, cfg[1] as i32);
     }
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
-    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), CLASSES[kind].as_bytes(), b"ModuleTag_Die", &data).unwrap().unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(
+        w.next_object_id(),
+        CLASSES[kind].as_bytes(),
+        b"ModuleTag_Die",
+        &data,
+    )
+    .unwrap()
+    .unwrap();
     let n_others = cfg[2].min(4);
     let total = 1 + n_others + u32::from(cfg[5] != 0);
     let mut ids = Vec::new();
@@ -540,9 +655,19 @@ fn rust_run(kind: usize, mut ctx: Ctx, data: ModuleDataKind, cfg: &mut [u32; 9],
             if cfg[3] >> i & 1 != 0 {
                 values.kind_of.push(KINDOF_WAVEGUIDE);
             }
-            (Arc::new(ThingTemplate::from_object_values(&values)), Vec::new())
+            (
+                Arc::new(ThingTemplate::from_object_values(&values)),
+                Vec::new(),
+            )
         };
-        let id = w.new_object(NewObject { template, status: ObjectStatusMaskType::default(), team: Some(1), modules }).unwrap();
+        let id = w
+            .new_object(NewObject {
+                template,
+                status: ObjectStatusMaskType::default(),
+                team: Some(1),
+                modules,
+            })
+            .unwrap();
         if (1..=4).contains(&i) {
             let bits = cfg[4] >> (4 * (i - 1)) & 15;
             let o = w.objects.find_mut(id).unwrap();
@@ -586,7 +711,10 @@ fn rust_run(kind: usize, mut ctx: Ctx, data: ModuleDataKind, cfg: &mut [u32; 9],
             }
             2..=4 => {
                 let how = o[0] - 2;
-                let body = w.objects.find_mut(me).unwrap().modules[idx as usize].body.as_mut().expect("the module's body");
+                let body = w.objects.find_mut(me).unwrap().modules[idx as usize]
+                    .body
+                    .as_mut()
+                    .expect("the module's body");
                 let r = run_xfer(body, how, &saved);
                 xst = r.0;
                 xbytes = r.1;
@@ -597,7 +725,11 @@ fn rust_run(kind: usize, mut ctx: Ctx, data: ModuleDataKind, cfg: &mut [u32; 9],
                 tally.xfers += 1;
             }
             5 => {
-                let pos = Coord3D { x: f32::from_bits(o[1]), y: f32::from_bits(o[2]), z: f32::from_bits(o[3]) };
+                let pos = Coord3D {
+                    x: f32::from_bits(o[1]),
+                    y: f32::from_bits(o[2]),
+                    z: f32::from_bits(o[3]),
+                };
                 w.set_position(me, &pos);
             }
             6 => {
@@ -623,7 +755,9 @@ fn rust_run(kind: usize, mut ctx: Ctx, data: ModuleDataKind, cfg: &mut [u32; 9],
         let audio: Vec<ObjectClientEvent> = w.events.events()[events_before..]
             .iter()
             .filter_map(|e| match e {
-                rts_lockstep_engine::logic::client_event::ClientEvent::Object(e @ ObjectClientEvent::AudioAddEvent { .. }) => Some(e.clone()),
+                rts_lockstep_engine::logic::client_event::ClientEvent::Object(
+                    e @ ObjectClientEvent::AudioAddEvent { .. },
+                ) => Some(e.clone()),
                 _ => None,
             })
             .collect();
@@ -636,12 +770,23 @@ fn rust_run(kind: usize, mut ctx: Ctx, data: ModuleDataKind, cfg: &mut [u32; 9],
                 let c = cut_iter.next().expect("a cut line has a cut call");
                 log.extend(cut_line(c));
             } else if t.starts_with("evt AudioAddEvent") {
-                if let Some(ObjectClientEvent::AudioAddEvent { name, object_id, position, player_index }) = audio_iter.next() {
+                if let Some(ObjectClientEvent::AudioAddEvent {
+                    name,
+                    object_id,
+                    position,
+                    player_index,
+                }) = audio_iter.next()
+                {
                     let pos = match position {
                         Some(p) => format!("{},{},{}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits()),
                         None => "-".to_string(),
                     };
-                    log.push(format!("audio {} {pos} {} {}", String::from_utf8_lossy(&name), player_index.unwrap_or(-1), { object_id }));
+                    log.push(format!(
+                        "audio {} {pos} {} {}",
+                        String::from_utf8_lossy(&name),
+                        player_index.unwrap_or(-1),
+                        { object_id }
+                    ));
                 }
             } else if let Some(r) = t.strip_prefix("dam cleardisabled ") {
                 log.push(format!("cleardisabled {r}"));
@@ -663,7 +808,10 @@ fn rust_run(kind: usize, mut ctx: Ctx, data: ModuleDataKind, cfg: &mut [u32; 9],
 }
 
 fn cases() -> usize {
-    std::env::var("L9DD_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
+    std::env::var("L9DD_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9_000)
 }
 
 #[test]
@@ -682,12 +830,31 @@ fn die_modules_d_match_upstream() {
     for case in 0..cases {
         let kind = case % 3;
         let n_sp = g.below(4) as usize;
-        let defs: String = (0..n_sp).map(|i| format!("SpecialPower SP_{i}\nEnd\n")).collect();
+        let defs: String = (0..n_sp)
+            .map(|i| format!("SpecialPower SP_{i}\nEnd\n"))
+            .collect();
         let init_names = g.below(3) != 0;
         let mut ctx = Ctx::new(init_names, true);
-        Ini::load(b"Data\\INI\\Sp.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ctx).expect("special powers load");
+        Ini::load(
+            b"Data\\INI\\Sp.ini",
+            defs.as_bytes(),
+            IniLoadType::Overwrite,
+            None,
+            &table,
+            &mut ctx,
+        )
+        .expect("special powers load");
         cpp_reset(init_names, true);
-        assert_eq!(cpp_load(b"Data\\INI\\Sp.ini", defs.as_bytes(), IniLoadType::Overwrite, false).status, 0);
+        assert_eq!(
+            cpp_load(
+                b"Data\\INI\\Sp.ini",
+                defs.as_bytes(),
+                IniLoadType::Overwrite,
+                false
+            )
+            .status,
+            0
+        );
 
         let clean = g.below(10) < 7;
         let text = gen_die_text(&mut g, kind, clean);
@@ -704,7 +871,11 @@ fn die_modules_d_match_upstream() {
         // [the object's id (the Rust side's), its player or -1, the number of other objects, which have KINDOF_WAVEGUIDE, their disabled bits,
         //  has a damage dealer, gravity, VoiceEject number, SoundEject number]
         let mut cfg = [0u32; 9];
-        cfg[1] = if g.below(6) == 0 { u32::MAX } else { g.below(3) };
+        cfg[1] = if g.below(6) == 0 {
+            u32::MAX
+        } else {
+            g.below(3)
+        };
         cfg[2] = g.below(5);
         cfg[3] = g.below(64);
         cfg[4] = g.u32() & 0xffff;
@@ -726,13 +897,27 @@ fn die_modules_d_match_upstream() {
                         _ if cfg[5] != 0 => dealer_id,
                         _ => 9000,
                     };
-                    [0, 1 + g.below(20), 1 + g.below(3), g.u32() & 0x3fff, g.u32() & 0xff, source]
+                    [
+                        0,
+                        1 + g.below(20),
+                        1 + g.below(3),
+                        g.u32() & 0x3fff,
+                        g.u32() & 0xff,
+                        source,
+                    ]
                 }
                 12..=14 => [1, g.below(4), 0, 0, 0, 0],
                 15..=16 => [2, 0, 0, 0, 0, 0],
                 17..=18 => [3, 0, 0, 0, 0, 0],
                 19 => [4, 0, 0, 0, 0, 0],
-                20..=22 => [5, f32_bits(&mut g, 100.0), f32_bits(&mut g, 100.0), pick_z(&mut g), 0, 0],
+                20..=22 => [
+                    5,
+                    f32_bits(&mut g, 100.0),
+                    f32_bits(&mut g, 100.0),
+                    pick_z(&mut g),
+                    0,
+                    0,
+                ],
                 23..=24 => [6, g.below(4), 0, 0, 0, 0],
                 _ => [7, g.below(total_objs.max(1)), g.below(16), 0, 0, 0],
             })
@@ -740,7 +925,14 @@ fn die_modules_d_match_upstream() {
 
         // Rust first: a case that reaches upstream undefined behaviour is counted and never sent to the C++
         let rust = if outcome.status == 0 {
-            let (rd, w) = rust_run(kind, ctx, data.expect("read ok"), &mut cfg, &ops, &mut tally);
+            let (rd, w) = rust_run(
+                kind,
+                ctx,
+                data.expect("read ok"),
+                &mut cfg,
+                &ops,
+                &mut tally,
+            );
             if w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined()) {
                 excluded += 1;
                 continue;
@@ -782,22 +974,54 @@ fn die_modules_d_match_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || format!("case {case} ({}): cfg {cfg:x?}, file {:?}, ops {ops:?}", CLASSES[kind], show(&text));
-        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
+        let what = || {
+            format!(
+                "case {case} ({}): cfg {cfg:x?}, file {:?}, ops {ops:?}",
+                CLASSES[kind],
+                show(&text)
+            )
+        };
+        read.eq(
+            &outcome,
+            &Outcome {
+                status,
+                detail,
+                crc: 0,
+            },
+            what,
+        );
         let Some((rd, w)) = rust else {
             read_failed += 1;
             continue;
         };
         let (dr, dc) = (decode(kind, &rd, ops.len()), decode(kind, &buf, ops.len()));
         for l in &dr {
-            for key in ["script", "ocl 0", "ocl 1", "oclsec", "audio", "cleardisabled"] {
-                *counts.entry(key.to_string()).or_default() += l.matches(&format!("\"{key}")).count() as u64;
+            for key in [
+                "script",
+                "ocl 0",
+                "ocl 1",
+                "oclsec",
+                "audio",
+                "cleardisabled",
+            ] {
+                *counts.entry(key.to_string()).or_default() +=
+                    l.matches(&format!("\"{key}")).count() as u64;
             }
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
-            eprintln!("--- case {case} ({}) cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}", CLASSES[kind], show(&text), dr.get(i), dc.get(i));
+            let i = dr
+                .iter()
+                .zip(dc.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(dr.len().min(dc.len()));
+            eprintln!(
+                "--- case {case} ({}) cfg {cfg:x?} file {:?}\n  rust {:?}\n  c++  {:?}",
+                CLASSES[kind],
+                show(&text),
+                dr.get(i),
+                dc.get(i)
+            );
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -817,7 +1041,12 @@ fn die_modules_d_match_upstream() {
     }
     read.finish();
     run.finish();
-    assert!(read_failed * 40 > cases as u64 && ops_run * 5 > cases as u64 * 4 && tally.effects * 4 > cases as u64, "the generator must reach every path");
+    assert!(
+        read_failed * 40 > cases as u64
+            && ops_run * 5 > cases as u64 * 4
+            && tally.effects * 4 > cases as u64,
+        "the generator must reach every path"
+    );
 }
 
 fn pick_gravity(g: &mut Gen) -> f32 {

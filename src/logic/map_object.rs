@@ -268,7 +268,11 @@ pub fn parse_object_data_chunk(
     let angle = file.read_real()?;
     let flags = file.read_int()?;
     let name = file.read_ascii_string()?;
-    let d = if read_dict { file.read_dict(&mut ctx.names)? } else { Dict::new() };
+    let d = if read_dict {
+        file.read_dict(&mut ctx.names)?
+    } else {
+        Dict::new()
+    };
 
     // `newInstance(MapObject)(loc, name, angle, flags, &d, findTemplate(name, FALSE))`
     let mut obj = match MapObject::new(loc, &name, angle, flags, &d, Some(&name)) {
@@ -299,20 +303,32 @@ mod tests {
     use crate::common::name_key_generator::NameKeyType;
 
     fn loc() -> Coord3D {
-        Coord3D { x: 1.0, y: 2.0, z: 3.0 }
+        Coord3D {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        }
     }
 
     #[test]
     fn angle_is_normalised_and_colour_is_bright_green() {
         let d = Dict::new();
         let m = MapObject::new(loc(), b"Tree", 370.0, 0x10, &d, Some(b"Tree")).unwrap();
-        assert_eq!(m.angle().to_bits(), try_normalize_angle(370.0).unwrap().to_bits());
+        assert_eq!(
+            m.angle().to_bits(),
+            try_normalize_angle(370.0).unwrap().to_bits()
+        );
         assert_eq!(m.color(), 0xff << 8);
         assert_eq!(m.flags(), 0x10);
         assert_eq!(m.name(), b"Tree");
         assert_eq!(m.thing_template(), Some(&b"Tree"[..]));
         assert!(!m.is_waypoint());
-        assert_eq!(MapObject::new(loc(), b"x", f32::NAN, 0, &d, None).unwrap().angle(), 0.0);
+        assert_eq!(
+            MapObject::new(loc(), b"x", f32::NAN, 0, &d, None)
+                .unwrap()
+                .angle(),
+            0.0
+        );
         assert!(MapObject::new(loc(), b"x", f32::INFINITY, 0, &d, None).is_err());
     }
 

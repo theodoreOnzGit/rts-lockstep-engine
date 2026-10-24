@@ -64,11 +64,15 @@ use std::sync::Arc;
 use crate::common::game_common::PlayerMaskType;
 use crate::common::game_type::{DrawableId, ObjectId, INVALID_DRAWABLE_ID, INVALID_ID};
 use crate::common::kind_of::{
-    KINDOF_BOOBY_TRAP, KINDOF_CAN_BE_REPULSED, KINDOF_DEMOTRAP, KINDOF_INERT, KINDOF_MINE, KINDOF_PROJECTILE, KINDOF_SHRUBBERY,
+    KINDOF_BOOBY_TRAP, KINDOF_CAN_BE_REPULSED, KINDOF_DEMOTRAP, KINDOF_INERT, KINDOF_MINE,
+    KINDOF_PROJECTILE, KINDOF_SHRUBBERY,
 };
-use crate::common::model_state::{MODELCONDITION_INVALID, MODELCONDITION_NIGHT, MODELCONDITION_SNOW};
+use crate::common::model_state::{
+    MODELCONDITION_INVALID, MODELCONDITION_NIGHT, MODELCONDITION_SNOW,
+};
 use crate::common::module::{
-    Module, ModuleInterfaceType, MODULEINTERFACE_BODY, MODULEINTERFACE_CONTAIN, MODULEINTERFACE_SPECIAL_POWER, MODULEINTERFACE_UPDATE,
+    Module, ModuleInterfaceType, MODULEINTERFACE_BODY, MODULEINTERFACE_CONTAIN,
+    MODULEINTERFACE_SPECIAL_POWER, MODULEINTERFACE_UPDATE,
 };
 use crate::common::object_status_types::ObjectStatusMaskType;
 use crate::common::thing_template::ThingTemplate;
@@ -76,7 +80,9 @@ use crate::logic::module::update_module::UpdateModule;
 use crate::logic::world::game_logic::{World, WorldError};
 use crate::logic::world::ids::TeamId;
 use crate::logic::world::module_call::{ModuleCall, ModuleReply};
-use crate::logic::world::object::{BehaviorSlot, HelperKind, ModuleIndex, ModuleSlot, Object, CONSTRUCTION_COMPLETE};
+use crate::logic::world::object::{
+    BehaviorSlot, HelperKind, ModuleIndex, ModuleSlot, Object, CONSTRUCTION_COMPLETE,
+};
 use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::object_events::{ModelConditionOp, ObjectClientEvent};
 use crate::logic::world::object_state::WEAPON_SET_TYPE_TO_MODEL_CONDITION;
@@ -128,9 +134,13 @@ impl NewModule {
             HelperKind::SubdualDamage => (b"SubdualDamageHelper", b"ModuleTag_SubdualDamageHelper"),
             HelperKind::Repulsor => (b"ObjectRepulsorHelper", b"ModuleTag_RepulsorHelper"),
             HelperKind::Defection => (b"ObjectDefectionHelper", b"ModuleTag_DefectionHelper"),
-            HelperKind::WeaponStatus => (b"ObjectWeaponStatusHelper", b"ModuleTag_WeaponStatusHelper"),
+            HelperKind::WeaponStatus => {
+                (b"ObjectWeaponStatusHelper", b"ModuleTag_WeaponStatusHelper")
+            }
             HelperKind::FiringTracker => (b"FiringTracker", b"ModuleTag_FiringTrackerHelper"),
-            HelperKind::TempWeaponBonus => (b"TempWeaponBonusHelper", b"ModuleTag_TempWeaponBonusHelper"),
+            HelperKind::TempWeaponBonus => {
+                (b"TempWeaponBonusHelper", b"ModuleTag_TempWeaponBonusHelper")
+            }
         };
         NewModule::plain(name, tag)
     }
@@ -239,7 +249,9 @@ impl World {
         // allocate experience tracker (the record exists from `with_template`).
         // If a valid team has been assigned me, then I have a Player I can ask about my starting level
         if let Some(controller) = self.get_controlling_player(id) {
-            let level = self.cuts.player_production_veterancy_level(controller, tt.get_name());
+            let level = self
+                .cuts
+                .player_production_veterancy_level(controller, tt.get_name());
             self.cut_experience_set_veterancy_level(id, level, true);
         }
 
@@ -273,20 +285,39 @@ impl World {
     /// Appends a module to the object's `m_behaviors` and caches what it is
     /// (`m_body`, `m_contain`, `m_stealth`, `m_ai`, `m_physics`, the helpers).
     /// Returns its position.
-    fn add_module(&mut self, id: ObjectId, m: NewModule, helper: Option<HelperKind>) -> ModuleIndex {
-        let Some(o) = self.objects.find_mut(id) else { return 0 };
+    fn add_module(
+        &mut self,
+        id: ObjectId,
+        m: NewModule,
+        helper: Option<HelperKind>,
+    ) -> ModuleIndex {
+        let Some(o) = self.objects.find_mut(id) else {
+            return 0;
+        };
         let idx = o.modules.len() as ModuleIndex;
         let has_body = m.body.is_some();
         let mut interfaces = m.interfaces;
         let (update_index, body) = match m.update {
             Some(update) => {
                 interfaces |= MODULEINTERFACE_UPDATE;
-                o.behaviors.push(BehaviorSlot { update, body: m.body });
+                o.behaviors.push(BehaviorSlot {
+                    update,
+                    body: m.body,
+                });
                 (Some((o.behaviors.len() - 1) as u16), None)
             }
             None => (None, m.body),
         };
-        o.modules.push(ModuleSlot { name: m.name.clone(), tag: m.tag, interfaces, update_index, body, module: m.module, has_body, helper });
+        o.modules.push(ModuleSlot {
+            name: m.name.clone(),
+            tag: m.tag,
+            interfaces,
+            update_index,
+            body,
+            module: m.module,
+            has_body,
+            helper,
+        });
         if interfaces & MODULEINTERFACE_BODY != 0 {
             o.body = Some(idx); // "Duplicate bodies" is a debug assert
         }
@@ -329,7 +360,9 @@ impl World {
     /// awakens immediately, since NEVER==0"). A helper that is not
     /// translated yet has no update module, and the call is only recorded.
     pub fn helper_sleep_until(&mut self, id: ObjectId, kind: HelperKind, when: u32) {
-        let Some(o) = self.objects.find(id) else { return };
+        let Some(o) = self.objects.find(id) else {
+            return;
+        };
         if o.is_destroyed() {
             return;
         }
@@ -343,16 +376,27 @@ impl World {
             HelperKind::FiringTracker => o.helpers.firing_tracker,
             HelperKind::TempWeaponBonus => o.helpers.temp_weapon_bonus,
         };
-        let update_index = idx.and_then(|i| o.modules.get(i as usize)).and_then(|m| m.update_index);
-        self.cut(CutCall::HelperSleepUntil { object: id, kind, when });
+        let update_index = idx
+            .and_then(|i| o.modules.get(i as usize))
+            .and_then(|m| m.update_index);
+        self.cut(CutCall::HelperSleepUntil {
+            object: id,
+            kind,
+            when,
+        });
         let Some(u) = update_index else { return };
         let now = self.frame();
-        let delay = if when == crate::common::game_common::NEVER || when == crate::common::game_common::FOREVER {
+        let delay = if when == crate::common::game_common::NEVER
+            || when == crate::common::game_common::FOREVER
+        {
             crate::logic::module::update_module::UPDATE_SLEEP_FOREVER.0
         } else {
             when.wrapping_sub(now)
         };
-        let handle = crate::logic::world::sleepy::UpdateHandle { object: id, index: u };
+        let handle = crate::logic::world::sleepy::UpdateHandle {
+            object: id,
+            index: u,
+        };
         let _ = self.awaken_update_module(id, handle, now.wrapping_add(delay));
     }
 
@@ -363,7 +407,9 @@ impl World {
     /// unit; the weapon set is brought up to date; a mine is counted for the
     /// neutral player's academy statistics.
     pub fn init_object(&mut self, id: ObjectId) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         // Weapons & Damage ---------------------------------------------------------------------------------
         for i in 0..o.last_weapon_condition.len() {
             o.last_weapon_condition[i] = -1; // WSF_INVALID
@@ -378,19 +424,26 @@ impl World {
         // If the player has battle plans (America Strategy Center), then apply those bonuses to this object if
         // applicable. Internally it validates certain kinds of objects.
         if let Some(controller) = self.get_controlling_player(id) {
-            let receiving = self.objects.find(id).is_some_and(|o| o.is_receiving_difficulty_bonus);
+            let receiving = self
+                .objects
+                .find(id)
+                .is_some_and(|o| o.is_receiving_difficulty_bonus);
             if !receiving && self.cuts.globals.objects_should_receive_difficulty_bonus {
                 self.set_receiving_difficulty_bonus(id, true);
             }
             if self.cuts.player_num_battle_plans_active(controller) > 0 {
-                self.cut(CutCall::PlayerApplyBattlePlanBonusesForObject { player: controller, object: id });
+                self.cut(CutCall::PlayerApplyBattlePlanBonusesForObject {
+                    player: controller,
+                    object: id,
+                });
             }
         }
 
         // For each special power module that we have, add it's type to the specialpower bits. This is
         // for optimal access later.
         for idx in self.modules_with(id, MODULEINTERFACE_SPECIAL_POWER) {
-            if let ModuleReply::Int(t) = self.module_call(id, idx, ModuleCall::GetSpecialPowerType) {
+            if let ModuleReply::Int(t) = self.module_call(id, idx, ModuleCall::GetSpecialPowerType)
+            {
                 if let Some(o) = self.objects.find_mut(id) {
                     o.special_power_bits.set(t, 1);
                 }
@@ -409,7 +462,10 @@ impl World {
         self.cut(CutCall::WeaponSetUpdate { object: id });
 
         let o = self.objects.find(id).expect("checked above");
-        if o.is_kind_of(KINDOF_MINE) || o.is_kind_of(KINDOF_BOOBY_TRAP) || o.is_kind_of(KINDOF_DEMOTRAP) {
+        if o.is_kind_of(KINDOF_MINE)
+            || o.is_kind_of(KINDOF_BOOBY_TRAP)
+            || o.is_kind_of(KINDOF_DEMOTRAP)
+        {
             self.cut(CutCall::AcademyStatsRecordMine);
         }
     }
@@ -420,9 +476,15 @@ impl World {
     /// (`cuts.next_drawable_id`, the headless stand-in of
     /// `GameClient::allocateNewDrawableID`).
     pub fn send_object_created(&mut self, id: ObjectId) {
-        let Some(o) = self.objects.find(id) else { return };
+        let Some(o) = self.objects.find(id) else {
+            return;
+        };
         let template_id = o.template().get_template_id();
-        let created = crate::logic::client_event::ClientEvent::ObjectCreated { template_id, drawable_status_bits: 0, object_id: id };
+        let created = crate::logic::client_event::ClientEvent::ObjectCreated {
+            template_id,
+            drawable_status_bits: 0,
+            object_id: id,
+        };
         if let Some(t) = &mut self.cuts.trace {
             t.push(format!("evt {created:?}"));
         }
@@ -448,7 +510,9 @@ impl World {
     /// data forces it, the time of day and the weather); then every module is
     /// told `onDrawableBoundToObject`.
     pub fn friend_bind_to_drawable(&mut self, id: ObjectId, draw: DrawableId) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         o.drawable = draw;
         // (a new drawable has no terrain decal: `TERRAIN_DECAL_NONE`)
         o.terrain_decal_type = 8;
@@ -471,10 +535,15 @@ impl World {
             if g.force_models_to_follow_weather {
                 set[MODELCONDITION_SNOW as usize] = g.weather_is_snowy;
             }
-            let list = |a: &[bool; 128]| -> Vec<i32> { (0..128).filter(|&i| a[i]).map(|i| i as i32).collect() };
+            let list = |a: &[bool; 128]| -> Vec<i32> {
+                (0..128).filter(|&i| a[i]).map(|i| i as i32).collect()
+            };
             self.emit(ObjectClientEvent::DrawableModelCondition {
                 object_id: id,
-                op: ModelConditionOp::ClearAndSet { clear: list(&clr), set: list(&set) },
+                op: ModelConditionOp::ClearAndSet {
+                    clear: list(&clr),
+                    set: list(&set),
+                },
             });
         }
         self.call_all_modules(id, ModuleCall::OnDrawableBoundToObject);
@@ -485,7 +554,9 @@ impl World {
     /// cleanUpContain safeguard. Say goodbye so they don't try to look us
     /// up"), every module gets `onDelete`, and the object stops looking.
     pub fn on_destroy(&mut self, id: ObjectId) {
-        let Some(o) = self.objects.find(id) else { return };
+        let Some(o) = self.objects.find(id) else {
+            return;
+        };
         let contained_by = o.contained_by;
         if contained_by != INVALID_ID {
             if let Some(c) = self.get_contain(contained_by) {
@@ -577,11 +648,14 @@ impl World {
 
     /// The player mask of the object's controlling player (0 without one).
     pub fn controlling_player_mask(&self, id: ObjectId) -> PlayerMaskType {
-        self.get_controlling_player(id).map_or(0, |p| self.cuts.player_mask(p))
+        self.get_controlling_player(id)
+            .map_or(0, |p| self.cuts.player_mask(p))
     }
 
     /// `m_constructionPercent` is complete (`CONSTRUCTION_COMPLETE`).
     pub fn is_construction_complete(&self, id: ObjectId) -> bool {
-        self.objects.find(id).is_some_and(|o| o.construction_percent == CONSTRUCTION_COMPLETE)
+        self.objects
+            .find(id)
+            .is_some_and(|o| o.construction_percent == CONSTRUCTION_COMPLETE)
     }
 }

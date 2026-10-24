@@ -94,7 +94,12 @@ impl Default for Pivot {
     fn default() -> Self {
         let mut m = Matrix3D::default();
         m.make_identity();
-        Pivot { name: [0; W3D_NAME_LEN], parent: None, base_transform: m, index: 0 }
+        Pivot {
+            name: [0; W3D_NAME_LEN],
+            parent: None,
+            base_transform: m,
+            index: 0,
+        }
     }
 }
 
@@ -155,7 +160,12 @@ pub fn load_w3d(cload: &mut ChunkLoad<'_>) -> W3dResult<Option<HTree>> {
     if num_pivots > 0 && num_pivots as u64 * WIN32_SIZEOF_PIVOT > WIN32_MAX_ALLOCATION {
         return Err(W3dUndefined::Allocation.into());
     }
-    let mut tree = HTree { name: header.name, num_pivots, pivots: Vec::new(), scale_factor: 1.0 };
+    let mut tree = HTree {
+        name: header.name,
+        num_pivots,
+        pivots: Vec::new(),
+        scale_factor: 1.0,
+    };
 
     while cload.open_chunk()? {
         if cload.cur_chunk_id()? == W3D_CHUNK_PIVOTS && !read_pivots(cload, &mut tree, pre30)? {
@@ -194,7 +204,11 @@ fn read_pivots(cload: &mut ChunkLoad<'_>, tree: &mut HTree, pre30: bool) -> W3dR
 
         let mut base = Matrix3D::default();
         base.make_identity();
-        base.translate_v(&Vector3::new(piv.translation.x, piv.translation.y, piv.translation.z));
+        base.translate_v(&Vector3::new(
+            piv.translation.x,
+            piv.translation.y,
+            piv.translation.z,
+        ));
         let q = piv.rotation.q;
         base.post_mul(&build_matrix3d(&Quaternion::new(q[0], q[1], q[2], q[3])));
 
@@ -209,7 +223,12 @@ fn read_pivots(cload: &mut ChunkLoad<'_>, tree: &mut HTree, pre30: bool) -> W3dR
             }
             Some(piv.parent_idx)
         };
-        pivots.push(Pivot { name: piv.name, parent, base_transform: base, index: pidx as i32 });
+        pivots.push(Pivot {
+            name: piv.name,
+            parent,
+            base_transform: base,
+            index: pidx as i32,
+        });
     }
     // Pivot[0].Transform = identity, IsVisible = true: not represented.
     tree.pivots = pivots;

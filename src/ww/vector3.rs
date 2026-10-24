@@ -24,8 +24,10 @@
 //! `ALLOW_TEMPORARIES` variants (that macro is never defined upstream).
 
 use super::wwmath;
-use std::ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign};
 use petir::Real;
+use std::ops::{
+    Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign,
+};
 
 /// `class Vector3`.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -303,7 +305,9 @@ impl Vector3 {
     /// `Is_Valid()`: no component is inf or NaN.
     #[inline]
     pub fn is_valid(&self) -> bool {
-        wwmath::is_valid_float(self.x) && wwmath::is_valid_float(self.y) && wwmath::is_valid_float(self.z)
+        wwmath::is_valid_float(self.x)
+            && wwmath::is_valid_float(self.y)
+            && wwmath::is_valid_float(self.z)
     }
 
     /// `Quick_Distance(p1, p2)`.
@@ -334,7 +338,9 @@ impl Vector3 {
 /// `Equal_Within_Epsilon(a, b, epsilon)`.
 #[inline]
 pub fn equal_within_epsilon(a: &Vector3, b: &Vector3, epsilon: f32) -> bool {
-    wwmath::fabs(a.x - b.x) < epsilon && wwmath::fabs(a.y - b.y) < epsilon && wwmath::fabs(a.z - b.z) < epsilon
+    wwmath::fabs(a.x - b.x) < epsilon
+        && wwmath::fabs(a.y - b.y) < epsilon
+        && wwmath::fabs(a.z - b.z) < epsilon
 }
 
 impl Index<usize> for Vector3 {
@@ -461,7 +467,10 @@ mod tests {
         let c = Vector3::cross_product(&Vector3::new(1.0, 0.0, 0.0), &Vector3::new(0.0, 1.0, 0.0));
         assert_eq!(c, Vector3::new(0.0, 0.0, 1.0));
         // max=3, mid=1, min=2: the broken third swap gives mid=min=2.
-        assert_eq!(Vector3::new(3.0, 1.0, 2.0).quick_length(), 3.0 + (11.0 / 32.0) * 2.0 + 0.25 * 2.0);
+        assert_eq!(
+            Vector3::new(3.0, 1.0, 2.0).quick_length(),
+            3.0 + (11.0 / 32.0) * 2.0 + 0.25 * 2.0
+        );
         assert_eq!(Vector3::new(4.0, 5.0, 6.0)[2], 6.0);
     }
 }

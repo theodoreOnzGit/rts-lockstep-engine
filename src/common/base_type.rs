@@ -210,9 +210,15 @@ pub enum BaseTypeError {
 impl std::fmt::Display for BaseTypeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let what = match self {
-            BaseTypeError::SignedOverflow => "signed integer overflow (undefined behaviour upstream)",
-            BaseTypeError::FloatToIntOutOfRange => "float-to-int conversion out of range (undefined behaviour upstream)",
-            BaseTypeError::ShiftUndefined => "left shift of a negative value or past 32 bits (undefined behaviour upstream)",
+            BaseTypeError::SignedOverflow => {
+                "signed integer overflow (undefined behaviour upstream)"
+            }
+            BaseTypeError::FloatToIntOutOfRange => {
+                "float-to-int conversion out of range (undefined behaviour upstream)"
+            }
+            BaseTypeError::ShiftUndefined => {
+                "left shift of a negative value or past 32 bits (undefined behaviour upstream)"
+            }
         };
         f.write_str(what)
     }
@@ -229,14 +235,22 @@ fn ok_or_panic<T>(r: Result<T, BaseTypeError>) -> T {
 /// returns `y`.
 #[inline]
 pub fn min<T: PartialOrd>(x: T, y: T) -> T {
-    if x < y { x } else { y }
+    if x < y {
+        x
+    } else {
+        y
+    }
 }
 
 /// `#define max(x,y) (((x)>(y)) ? (x) : (y))`: with a NaN operand it
 /// returns `y`.
 #[inline]
 pub fn max<T: PartialOrd>(x: T, y: T) -> T {
-    if x > y { x } else { y }
+    if x > y {
+        x
+    } else {
+        y
+    }
 }
 
 /// `sqr(x)` for `Real`: `x*x`.
@@ -402,7 +416,6 @@ pub struct RGBAColorInt {
     pub alpha: u32,
 }
 
-
 impl RealRange {
     /// `combine(other)`: `lo = min(lo, other.lo); hi = max(hi, other.hi);`
     pub fn combine(&mut self, other: &RealRange) {
@@ -450,7 +463,11 @@ fn int_sum_of_squares(v: &[i32]) -> Result<i32, BaseTypeError> {
     let mut acc: i32 = 0;
     for (i, &c) in v.iter().enumerate() {
         let sq = try_sqr_int(c)?;
-        acc = if i == 0 { sq } else { acc.checked_add(sq).ok_or(BaseTypeError::SignedOverflow)? };
+        acc = if i == 0 {
+            sq
+        } else {
+            acc.checked_add(sq).ok_or(BaseTypeError::SignedOverflow)?
+        };
     }
     Ok(acc)
 }
@@ -539,7 +556,11 @@ impl Coord3D {
 
     /// `zero()`.
     pub fn zero(&mut self) {
-        *self = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
+        *self = Coord3D {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        };
     }
 
     /// `add(a)`.
@@ -558,7 +579,11 @@ impl Coord3D {
 
     /// `set(ax, ay, az)` (and `set(const Coord3D*)` is assignment).
     pub fn set(&mut self, ax: f32, ay: f32, az: f32) {
-        *self = Coord3D { x: ax, y: ay, z: az };
+        *self = Coord3D {
+            x: ax,
+            y: ay,
+            z: az,
+        };
     }
 
     /// `scale(s)`.
@@ -579,7 +604,9 @@ impl ICoord3D {
     /// `length()`: `(Int)sqrt((double)(x*x + y*y + z*z))`, checked for the
     /// `Int` overflow of the sum (undefined upstream).
     pub fn try_length(&self) -> Result<i32, BaseTypeError> {
-        Ok(int_sqrt_via_double(int_sum_of_squares(&[self.x, self.y, self.z])?))
+        Ok(int_sqrt_via_double(int_sum_of_squares(&[
+            self.x, self.y, self.z,
+        ])?))
     }
 
     /// `length()`; panics where upstream is undefined.
@@ -617,7 +644,10 @@ impl Region3D {
 
     /// `isInRegionNoZ(query)`: strictly inside in x and y.
     pub fn is_in_region_no_z(&self, query: &Coord3D) -> bool {
-        (self.lo.x < query.x) && (query.x < self.hi.x) && (self.lo.y < query.y) && (query.y < self.hi.y)
+        (self.lo.x < query.x)
+            && (query.x < self.hi.x)
+            && (self.lo.y < query.y)
+            && (query.y < self.hi.y)
     }
 
     /// `isInRegionWithZ(query)`: strictly inside in x, y and z.
@@ -670,7 +700,9 @@ impl RGBColor {
     /// `getAsInt()`: `((Int)(red*255.0) << 16) | ((Int)(green*255.0) << 8) |
     /// (Int)(blue*255.0)`, checked where upstream is undefined.
     pub fn try_get_as_int(&self) -> Result<i32, BaseTypeError> {
-        Ok(color_component(self.red, 16)? | color_component(self.green, 8)? | color_component(self.blue, 0)?)
+        Ok(color_component(self.red, 16)?
+            | color_component(self.green, 8)?
+            | color_component(self.blue, 0)?)
     }
 
     /// `getAsInt()`; panics where upstream is undefined.
@@ -695,7 +727,11 @@ mod tests {
     fn documented_quirks() {
         assert_eq!(fast_float_trunc(-0.5).to_bits(), 0.0f32.to_bits());
         assert_eq!(fast_float_trunc(-2.75), -2.0);
-        assert_eq!(fast_float_floor(-1.0), -2.0, "upstream floor quirk on negative integers");
+        assert_eq!(
+            fast_float_floor(-1.0),
+            -2.0,
+            "upstream floor quirk on negative integers"
+        );
         assert_eq!(fast_float_floor(-1.5), -2.0);
         assert_eq!(fast_float_ceil(1.5), 2.0);
         assert_eq!(fast_float2long_round(2.5), 2);
@@ -718,19 +754,39 @@ mod tests {
 
     #[test]
     fn value_type_undefined_cases_are_errors() {
-        assert_eq!(ICoord2D { x: 46341, y: 0 }.try_length(), Err(BaseTypeError::SignedOverflow));
+        assert_eq!(
+            ICoord2D { x: 46341, y: 0 }.try_length(),
+            Err(BaseTypeError::SignedOverflow)
+        );
         assert_eq!(ICoord2D { x: 46340, y: 0 }.try_length(), Ok(46340));
         assert_eq!(ICoord2D { x: 30000, y: 30000 }.try_length(), Ok(42426));
-        assert_eq!(ICoord2D { x: 33000, y: 33000 }.try_length(), Err(BaseTypeError::SignedOverflow));
+        assert_eq!(
+            ICoord2D { x: 33000, y: 33000 }.try_length(),
+            Err(BaseTypeError::SignedOverflow)
+        );
         assert_eq!(ICoord3D { x: 3, y: 4, z: 12 }.try_length(), Ok(13));
-        let r = IRegion2D { lo: ICoord2D { x: i32::MIN, y: 0 }, hi: ICoord2D { x: 1, y: 0 } };
+        let r = IRegion2D {
+            lo: ICoord2D { x: i32::MIN, y: 0 },
+            hi: ICoord2D { x: 1, y: 0 },
+        };
         assert_eq!(r.try_width(), Err(BaseTypeError::SignedOverflow));
-        let red = |r: f32| RGBColor { red: r, green: 0.0, blue: 0.0 }.try_get_as_int();
+        let red = |r: f32| {
+            RGBColor {
+                red: r,
+                green: 0.0,
+                blue: 0.0,
+            }
+            .try_get_as_int()
+        };
         assert_eq!(red(1.0), Ok(0xff_0000));
         assert_eq!(red(-0.5), Err(BaseTypeError::ShiftUndefined));
         assert_eq!(red(-0.001), Ok(0), "(Int)(-0.255) truncates to 0");
         assert_eq!(red(f32::NAN), Err(BaseTypeError::FloatToIntOutOfRange));
-        assert_eq!(red(65535.0 / 255.0), Ok(0xffff_0000u32 as i32), "fits the unsigned type");
+        assert_eq!(
+            red(65535.0 / 255.0),
+            Ok(0xffff_0000u32 as i32),
+            "fits the unsigned type"
+        );
         assert_eq!(red(65536.0 / 255.0), Err(BaseTypeError::ShiftUndefined));
         let mut c = RGBColor::default();
         c.set_from_int(-1);

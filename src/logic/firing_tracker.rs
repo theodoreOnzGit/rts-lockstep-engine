@@ -147,7 +147,9 @@ use crate::common::xfer::{Xfer, XferResult, XferVersion};
 use crate::logic::module::update_module::{
     update_sleep, SleepyUpdatePhase, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE,
 };
-use crate::logic::weapon_bonus::condition::{CONTINUOUS_FIRE_FAST, CONTINUOUS_FIRE_MEAN, TARGET_FAERIE_FIRE};
+use crate::logic::weapon_bonus::condition::{
+    CONTINUOUS_FIRE_FAST, CONTINUOUS_FIRE_MEAN, TARGET_FAERIE_FIRE,
+};
 
 /// A handle to the `Weapon` just fired (`const Weapon* weaponFired`): opaque
 /// to the tracker, resolved by the host (a weapon slot in the full game).
@@ -178,7 +180,11 @@ pub trait FiringHost {
     /// `Object::clearWeaponBonusCondition(condition)`: likewise.
     fn clear_weapon_bonus_condition(&mut self, condition: i32);
     /// `Object::clearAndSetModelConditionFlags(clr, set)`.
-    fn clear_and_set_model_condition_flags(&mut self, clr: &ModelConditionFlags, set: &ModelConditionFlags);
+    fn clear_and_set_model_condition_flags(
+        &mut self,
+        clr: &ModelConditionFlags,
+        set: &ModelConditionFlags,
+    );
     /// `Object::reloadAllAmmo(now)`.
     fn reload_all_ammo(&mut self, now: bool);
     /// `weaponFired->getAutoReloadWhenIdleFrames()`.
@@ -276,7 +282,12 @@ impl FiringTracker {
     /// `shotFired(weaponFired, victimID)`: the owner just fired `weapon` at
     /// `victim_id` (`INVALID_ID` for a ground shot). Ends with
     /// `setWakeFrame(me, calcTimeToSleep())`, made on the host.
-    pub fn shot_fired<H: FiringHost>(&mut self, host: &mut H, weapon: WeaponRef, victim_id: ObjectId) {
+    pub fn shot_fired<H: FiringHost>(
+        &mut self,
+        host: &mut H,
+        weapon: WeaponRef,
+        victim_id: ObjectId,
+    ) {
         let now = host.frame();
 
         if host.victim_has_faerie_fire(victim_id) {
@@ -312,7 +323,9 @@ impl FiringTracker {
 
         let coast = host.weapon_continuous_fire_coast_frames(weapon);
         if coast != 0 {
-            self.frame_to_start_cooldown = host.weapon_possible_next_shot_frame(weapon).wrapping_add(coast);
+            self.frame_to_start_cooldown = host
+                .weapon_possible_next_shot_frame(weapon)
+                .wrapping_add(coast);
         } else {
             self.frame_to_start_cooldown = 0;
         }
@@ -392,7 +405,11 @@ impl FiringTracker {
         // Otherwise, we need to wake up to service the shortest timer
         let now = host.frame();
         let mut sleep_time = UPDATE_SLEEP_FOREVER.0;
-        for frame in [self.frame_to_stop_looping_sound, self.frame_to_start_cooldown, self.frame_to_force_reload] {
+        for frame in [
+            self.frame_to_stop_looping_sound,
+            self.frame_to_start_cooldown,
+            self.frame_to_force_reload,
+        ] {
             if frame != 0 {
                 if frame <= now {
                     sleep_time = UPDATE_SLEEP_NONE.0;
@@ -555,7 +572,9 @@ mod tests {
 
     impl Host {
         fn bits(f: &ModelConditionFlags) -> Vec<i32> {
-            (0..crate::common::model_state::MODELCONDITION_COUNT).filter(|&i| f.test(i)).collect()
+            (0..crate::common::model_state::MODELCONDITION_COUNT)
+                .filter(|&i| f.test(i))
+                .collect()
         }
         fn changed(&mut self, old: u32) {
             if old != self.word {
@@ -588,8 +607,15 @@ mod tests {
             self.calls.push(Call::Clear(c));
             self.changed(old);
         }
-        fn clear_and_set_model_condition_flags(&mut self, clr: &ModelConditionFlags, set: &ModelConditionFlags) {
-            self.calls.push(Call::Model { clr: Host::bits(clr), set: Host::bits(set) });
+        fn clear_and_set_model_condition_flags(
+            &mut self,
+            clr: &ModelConditionFlags,
+            set: &ModelConditionFlags,
+        ) {
+            self.calls.push(Call::Model {
+                clr: Host::bits(clr),
+                set: Host::bits(set),
+            });
         }
         fn reload_all_ammo(&mut self, now: bool) {
             self.calls.push(Call::Reload(now));
@@ -630,7 +656,13 @@ mod tests {
     }
 
     fn host() -> Host {
-        Host { one: 2, two: 4, coast: 10, next_shot: 100, ..Host::default() }
+        Host {
+            one: 2,
+            two: 4,
+            coast: 10,
+            next_shot: 100,
+            ..Host::default()
+        }
     }
 
     #[test]
@@ -640,8 +672,15 @@ mod tests {
         assert_eq!(h.calls, vec![Call::Wake(0x3fff_ffff)]);
         assert_eq!(t.get_last_shot_victim(), INVALID_ID);
         assert_eq!(t.get_num_consecutive_shots_at_victim(None), 0);
-        assert_eq!(t.get_num_consecutive_shots_at_victim(Some(0)), 0, "INVALID_ID is the victim of a new tracker, with no shots");
-        assert_eq!(FiringTracker::get_disabled_types_to_process(), disabledmask_all());
+        assert_eq!(
+            t.get_num_consecutive_shots_at_victim(Some(0)),
+            0,
+            "INVALID_ID is the victim of a new tracker, with no shots"
+        );
+        assert_eq!(
+            FiringTracker::get_disabled_types_to_process(),
+            disabledmask_all()
+        );
         assert_eq!(FIRING_TRACKER_UPDATE_PHASE, SleepyUpdatePhase::Final);
     }
 
@@ -657,8 +696,19 @@ mod tests {
         assert_eq!(t.get_num_consecutive_shots_at_victim(Some(7)), 6);
         assert_eq!(t.get_num_consecutive_shots_at_victim(Some(8)), 0);
         // shot 3 (> one) speeds up to mean; shot 5 (> two) speeds up to fast with the voice
-        let sets: Vec<&Call> = h.calls.iter().filter(|c| matches!(c, Call::Set(_) | Call::Voice)).collect();
-        assert_eq!(sets, vec![&Call::Set(CONTINUOUS_FIRE_MEAN), &Call::Voice, &Call::Set(CONTINUOUS_FIRE_FAST)]);
+        let sets: Vec<&Call> = h
+            .calls
+            .iter()
+            .filter(|c| matches!(c, Call::Set(_) | Call::Voice))
+            .collect();
+        assert_eq!(
+            sets,
+            vec![
+                &Call::Set(CONTINUOUS_FIRE_MEAN),
+                &Call::Voice,
+                &Call::Set(CONTINUOUS_FIRE_FAST)
+            ]
+        );
         assert!(h.test_weapon_bonus_condition(CONTINUOUS_FIRE_FAST));
         assert!(!h.test_weapon_bonus_condition(CONTINUOUS_FIRE_MEAN));
     }
@@ -667,7 +717,11 @@ mod tests {
     fn the_next_shot_frame_is_read_after_the_faerie_fire_step() {
         // a faerie-fire victim sets the bonus, which recomputes the weapon's next-shot frame to 150;
         // the cooldown frame must be 150 + coast, not the 100 the weapon had before the call
-        let mut h = Host { faerie: true, recompute_to: Some(150), ..host() };
+        let mut h = Host {
+            faerie: true,
+            recompute_to: Some(150),
+            ..host()
+        };
         h.frame = 90;
         let mut t = FiringTracker::new(&mut h);
         t.shot_fired(&mut h, 0, 3);
@@ -696,14 +750,21 @@ mod tests {
 
     #[test]
     fn the_looping_sound_restarts_only_when_a_loop_is_running_and_stops_when_due() {
-        let mut h = Host { loop_time: 30, ..host() };
+        let mut h = Host {
+            loop_time: 30,
+            ..host()
+        };
         h.frame = 10;
         let mut t = FiringTracker::new(&mut h);
         h.calls.clear();
         t.shot_fired(&mut h, 0, 1);
         h.frame = 20;
         t.shot_fired(&mut h, 0, 1);
-        let loops: Vec<&Call> = h.calls.iter().filter(|c| matches!(c, Call::Loop(_) | Call::Fire)).collect();
+        let loops: Vec<&Call> = h
+            .calls
+            .iter()
+            .filter(|c| matches!(c, Call::Loop(_) | Call::Fire))
+            .collect();
         assert_eq!(loops, vec![&Call::Loop(false), &Call::Loop(true)]);
         assert_eq!(t.frame_to_stop_looping_sound, 50);
         h.frame = 50;
@@ -722,7 +783,10 @@ mod tests {
 
     #[test]
     fn update_reloads_cools_down_and_computes_the_sleep() {
-        let mut h = Host { auto_reload: 20, ..host() };
+        let mut h = Host {
+            auto_reload: 20,
+            ..host()
+        };
         h.frame = 5;
         let mut t = FiringTracker::new(&mut h);
         for _ in 0..3 {
@@ -762,7 +826,10 @@ mod tests {
         assert!(h.test_weapon_bonus_condition(VETERAN));
         h.frame = 1000;
         t.update(&mut h);
-        assert!(h.test_weapon_bonus_condition(VETERAN), "cooling down clears fast and mean only");
+        assert!(
+            h.test_weapon_bonus_condition(VETERAN),
+            "cooling down clears fast and mean only"
+        );
     }
 
     #[test]
@@ -772,7 +839,8 @@ mod tests {
         t.shot_fired(&mut h, 0, 9);
         let mut save = XferSave::new();
         save.open(b"firing").unwrap();
-        t.xfer(&mut save, |x| x.xfer_unsigned_int(&mut 0xaabb_ccdd)).unwrap();
+        t.xfer(&mut save, |x| x.xfer_unsigned_int(&mut 0xaabb_ccdd))
+            .unwrap();
         save.close().unwrap();
         let bytes = save.take_bytes();
         assert_eq!(bytes.len(), 1 + 4 + 4 + 4 + 4);
@@ -785,7 +853,9 @@ mod tests {
         let mut load = XferLoad::new(bytes);
         load.open(b"firing").unwrap();
         let mut base = 0u32;
-        loaded.xfer(&mut load, |x| x.xfer_unsigned_int(&mut base)).unwrap();
+        loaded
+            .xfer(&mut load, |x| x.xfer_unsigned_int(&mut base))
+            .unwrap();
         load.close().unwrap();
         assert_eq!(base, 0xaabb_ccdd);
         assert_eq!(loaded.consecutive_shots, 1);

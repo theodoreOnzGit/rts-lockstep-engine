@@ -13,7 +13,6 @@
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
 
-
 //! `SupplyCenterCreate`: when a supply center is finished building, every
 //! player's resource gathering manager records it. `onCreate` is empty.
 //!
@@ -44,7 +43,9 @@ pub struct SupplyCenterCreate {
 impl SupplyCenterCreate {
     /// `SupplyCenterCreate(thing, moduleData)`.
     pub fn new(object: ObjectId, module_data: Option<Arc<CreateModuleData>>) -> IniResult<Self> {
-        Ok(SupplyCenterCreate { create: CreateModule::new(object, module_data)? })
+        Ok(SupplyCenterCreate {
+            create: CreateModule::new(object, module_data)?,
+        })
     }
 
     /// The `CreateModule` base.
@@ -77,7 +78,12 @@ create_module_eq!(SupplyCenterCreate);
 
 impl SupplyCenterCreate {
     /// The module's answer to one of `Object`'s calls (`onCreate` and `onBuildComplete` of the create interface).
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         let _ = me;
         match call {
             ModuleCall::OnCreate => {
@@ -102,7 +108,10 @@ mod tests {
     #[test]
     fn centers_are_recorded_last_player_first_after_the_base() {
         let mut m = SupplyCenterCreate::new(9, Some(Arc::new(CreateModuleData::new()))).unwrap();
-        let mut h = Recorder { players: Some(3), ..Default::default() };
+        let mut h = Recorder {
+            players: Some(3),
+            ..Default::default()
+        };
         m.on_build_complete(&mut h);
         assert_eq!(h.log, vec!["center 2 9", "center 1 9", "center 0 9"]);
         assert!(!m.create().should_do_on_build_complete());

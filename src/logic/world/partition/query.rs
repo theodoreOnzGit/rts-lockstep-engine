@@ -47,14 +47,14 @@
 //!   case (upstream indexes outside the bit field).
 //! - A query before the grid exists finds nothing (upstream indexes an empty vector).
 
+use super::cell::PartitionCell;
 use super::collide::{self, DistanceCalculationType, HUGE_DIST, HUGE_DIST_SQR};
 use super::filters::{filters_allow, is_unit, PartitionFilter};
-use super::host::{PartitionFilterHost, PartitionHost, LAYER_GROUND, PathfindCellType};
+use super::host::{PartitionFilterHost, PartitionHost, PathfindCellType, LAYER_GROUND};
 use super::manager::PartitionManager;
-use super::cell::PartitionCell;
 use crate::common::base_type::{real_to_int_ceil, real_to_int_floor, Coord2D, Coord3D, TWO_PI};
 use crate::common::geometry::{GeometryInfo, GeometryType};
-use crate::common::kind_of::{KINDOF_STRUCTURE};
+use crate::common::kind_of::KINDOF_STRUCTURE;
 use crate::common::trig;
 use crate::logic::object_iter::{IterOrderType, SimpleObjectIterator};
 use crate::logic::world::ids::ObjectId;
@@ -165,9 +165,19 @@ impl PartitionManager {
         let obj_pos: Coord3D = match (pos, &obj_geometry) {
             (Some(p), _) => *p,
             (None, Some(g)) => g.position,
-            (None, None) => return ClosestObject { object: None, dist: Real::sqrt(max_dist * max_dist), vec: Coord3D::default() },
+            (None, None) => {
+                return ClosestObject {
+                    object: None,
+                    dist: Real::sqrt(max_dist * max_dist),
+                    vec: Coord3D::default(),
+                }
+            }
         };
-        let obj_to_use_geom: Option<&GeometryInfo> = if pos.is_some() { None } else { obj_geometry.as_ref().map(|g| &g.geometry) };
+        let obj_to_use_geom: Option<&GeometryInfo> = if pos.is_some() {
+            None
+        } else {
+            obj_geometry.as_ref().map(|g| &g.geometry)
+        };
         let (cell_center_x, cell_center_y) = self.world_to_cell(obj_pos.x, obj_pos.y);
 
         let mut closest_obj: Option<ObjectId> = None;
@@ -190,7 +200,10 @@ impl PartitionManager {
         // <= (curRadius * cellSize) distance away from cell (0,0).
         let mut cur_radius: i32 = 0;
         while cur_radius <= max_radius_limit {
-            let n_offsets = match usize::try_from(cur_radius).ok().and_then(|r| self.radius_vec.get(r)) {
+            let n_offsets = match usize::try_from(cur_radius)
+                .ok()
+                .and_then(|r| self.radius_vec.get(r))
+            {
                 Some(v) => v.len(),
                 None => {
                     cur_radius += 1;
@@ -199,7 +212,10 @@ impl PartitionManager {
             };
             for k in 0..n_offsets {
                 let off = self.radius_vec[cur_radius as usize][k];
-                let Some(this_cell) = self.cell_index(cell_center_x.wrapping_add(off.x), cell_center_y.wrapping_add(off.y)) else {
+                let Some(this_cell) = self.cell_index(
+                    cell_center_x.wrapping_add(off.x),
+                    cell_center_y.wrapping_add(off.y),
+                ) else {
                     continue;
                 };
 
@@ -230,7 +246,14 @@ impl PartitionManager {
                     let Some(this_g) = host.object_geometry(this_obj) else {
                         continue;
                     };
-                    let d = collide::dist_calc(dc, &obj_pos, obj_to_use_geom, &this_g.position, Some(&this_g.geometry), closest_dist_sqr);
+                    let d = collide::dist_calc(
+                        dc,
+                        &obj_pos,
+                        obj_to_use_geom,
+                        &this_g.position,
+                        Some(&this_g.geometry),
+                        closest_dist_sqr,
+                    );
                     if !d.within {
                         continue;
                     }
@@ -262,16 +285,34 @@ impl PartitionManager {
             cur_radius += 1;
         }
 
-        ClosestObject { object: closest_obj, dist: Real::sqrt(closest_dist_sqr), vec: closest_vec }
+        ClosestObject {
+            object: closest_obj,
+            dist: Real::sqrt(closest_dist_sqr),
+            vec: closest_vec,
+        }
     }
 
     /// `getClosestObject(obj, maxDist, dc, filters, &closestDist, &closestDistVec)`.
-    pub fn get_closest_object<H: PartitionFilterHost>(&mut self, host: &H, obj: ObjectId, max_dist: f32, dc: DistanceCalculationType, filters: &[PartitionFilter]) -> ClosestObject {
+    pub fn get_closest_object<H: PartitionFilterHost>(
+        &mut self,
+        host: &H,
+        obj: ObjectId,
+        max_dist: f32,
+        dc: DistanceCalculationType,
+        filters: &[PartitionFilter],
+    ) -> ClosestObject {
         self.get_closest_objects(host, Some(obj), None, max_dist, dc, filters, None)
     }
 
     /// `getClosestObject(pos, maxDist, dc, filters, &closestDist, &closestDistVec)`.
-    pub fn get_closest_object_at<H: PartitionFilterHost>(&mut self, host: &H, pos: &Coord3D, max_dist: f32, dc: DistanceCalculationType, filters: &[PartitionFilter]) -> ClosestObject {
+    pub fn get_closest_object_at<H: PartitionFilterHost>(
+        &mut self,
+        host: &H,
+        pos: &Coord3D,
+        max_dist: f32,
+        dc: DistanceCalculationType,
+        filters: &[PartitionFilter],
+    ) -> ClosestObject {
         self.get_closest_objects(host, None, Some(pos), max_dist, dc, filters, None)
     }
 
@@ -286,7 +327,15 @@ impl PartitionManager {
         order: IterOrderType,
     ) -> SimpleObjectIterator<ObjectId> {
         let mut iter = SimpleObjectIterator::new();
-        self.get_closest_objects(host, Some(obj), None, max_dist, dc, filters, Some(&mut iter));
+        self.get_closest_objects(
+            host,
+            Some(obj),
+            None,
+            max_dist,
+            dc,
+            filters,
+            Some(&mut iter),
+        );
         iter.sort(order, |o| host.build_cost(*o));
         iter
     }
@@ -302,30 +351,66 @@ impl PartitionManager {
         order: IterOrderType,
     ) -> SimpleObjectIterator<ObjectId> {
         let mut iter = SimpleObjectIterator::new();
-        self.get_closest_objects(host, None, Some(pos), max_dist, dc, filters, Some(&mut iter));
+        self.get_closest_objects(
+            host,
+            None,
+            Some(pos),
+            max_dist,
+            dc,
+            filters,
+            Some(&mut iter),
+        );
         iter.sort(order, |o| host.build_cost(*o));
         iter
     }
 
     /// `iteratePotentialCollisions(pos, geom, angle, use2D)`: the objects that
     /// would collide with the given geometry (a little slop is added to the range).
-    pub fn iterate_potential_collisions<H: PartitionFilterHost>(&mut self, host: &H, pos: &Coord3D, geom: &GeometryInfo, angle: f32, use_2d: bool) -> SimpleObjectIterator<ObjectId> {
+    pub fn iterate_potential_collisions<H: PartitionFilterHost>(
+        &mut self,
+        host: &H,
+        pos: &Coord3D,
+        geom: &GeometryInfo,
+        angle: f32,
+        use_2d: bool,
+    ) -> SimpleObjectIterator<ObjectId> {
         let mut max_dist = geom.get_bounding_sphere_radius();
         max_dist *= 1.1; // just a little slop
 
         let mut iter = SimpleObjectIterator::new();
 
-        let filters = [PartitionFilter::WouldCollide { position: *pos, geom: geom.clone(), angle, desired: true }];
+        let filters = [PartitionFilter::WouldCollide {
+            position: *pos,
+            geom: geom.clone(),
+            angle,
+            desired: true,
+        }];
 
-        let dc = if use_2d { DistanceCalculationType::FromBoundingSphere2D } else { DistanceCalculationType::FromBoundingSphere3D };
-        self.get_closest_objects(host, None, Some(pos), max_dist, dc, &filters, Some(&mut iter));
+        let dc = if use_2d {
+            DistanceCalculationType::FromBoundingSphere2D
+        } else {
+            DistanceCalculationType::FromBoundingSphere3D
+        };
+        self.get_closest_objects(
+            host,
+            None,
+            Some(pos),
+            max_dist,
+            dc,
+            &filters,
+            Some(&mut iter),
+        );
 
         iter
     }
 
     /// `iterateAllObjects(filters)`: every registered object that passes, in
     /// module-list order (newest registration first), with numeric key 0.
-    pub fn iterate_all_objects<H: PartitionFilterHost>(&mut self, host: &H, filters: &[PartitionFilter]) -> SimpleObjectIterator<ObjectId> {
+    pub fn iterate_all_objects<H: PartitionFilterHost>(
+        &mut self,
+        host: &H,
+        filters: &[PartitionFilter],
+    ) -> SimpleObjectIterator<ObjectId> {
         let mut iter = SimpleObjectIterator::new();
 
         // no distance constraints; we're gonna have to process 'em all anyway,
@@ -352,58 +437,141 @@ impl PartitionManager {
     }
 
     /// `getVectorTo(obj, otherObj, dc, vec)`: the vector from `obj` to `other_obj` (`None` if either is gone).
-    pub fn get_vector_to<H: PartitionHost>(&self, host: &H, obj: ObjectId, other_obj: ObjectId, dc: DistanceCalculationType) -> Option<Coord3D> {
+    pub fn get_vector_to<H: PartitionHost>(
+        &self,
+        host: &H,
+        obj: ObjectId,
+        other_obj: ObjectId,
+        dc: DistanceCalculationType,
+    ) -> Option<Coord3D> {
         let (a, b) = (Self::geom_of(host, obj)?, Self::geom_of(host, other_obj)?);
-        Some(collide::dist_calc(dc, &a.position, Some(&a.geometry), &b.position, Some(&b.geometry), HUGE_DIST_SQR).vec)
+        Some(
+            collide::dist_calc(
+                dc,
+                &a.position,
+                Some(&a.geometry),
+                &b.position,
+                Some(&b.geometry),
+                HUGE_DIST_SQR,
+            )
+            .vec,
+        )
     }
 
     /// `getVectorTo(obj, pos, dc, vec)`.
-    pub fn get_vector_to_pos<H: PartitionHost>(&self, host: &H, obj: ObjectId, pos: &Coord3D, dc: DistanceCalculationType) -> Option<Coord3D> {
+    pub fn get_vector_to_pos<H: PartitionHost>(
+        &self,
+        host: &H,
+        obj: ObjectId,
+        pos: &Coord3D,
+        dc: DistanceCalculationType,
+    ) -> Option<Coord3D> {
         let a = Self::geom_of(host, obj)?;
         Some(collide::dist_calc(dc, &a.position, Some(&a.geometry), pos, None, HUGE_DIST_SQR).vec)
     }
 
     /// `getDistanceSquared(obj, otherObj, dc, &vec)`: the squared distance and the vector.
-    pub fn get_distance_squared<H: PartitionHost>(&self, host: &H, obj: ObjectId, other_obj: ObjectId, dc: DistanceCalculationType) -> Option<(f32, Coord3D)> {
+    pub fn get_distance_squared<H: PartitionHost>(
+        &self,
+        host: &H,
+        obj: ObjectId,
+        other_obj: ObjectId,
+        dc: DistanceCalculationType,
+    ) -> Option<(f32, Coord3D)> {
         let (a, b) = (Self::geom_of(host, obj)?, Self::geom_of(host, other_obj)?);
-        let r = collide::dist_calc(dc, &a.position, Some(&a.geometry), &b.position, Some(&b.geometry), HUGE_DIST_SQR);
+        let r = collide::dist_calc(
+            dc,
+            &a.position,
+            Some(&a.geometry),
+            &b.position,
+            Some(&b.geometry),
+            HUGE_DIST_SQR,
+        );
         Some((r.dist_sqr, r.vec))
     }
 
     /// `getDistanceSquared(obj, pos, dc, &vec)`.
-    pub fn get_distance_squared_pos<H: PartitionHost>(&self, host: &H, obj: ObjectId, pos: &Coord3D, dc: DistanceCalculationType) -> Option<(f32, Coord3D)> {
+    pub fn get_distance_squared_pos<H: PartitionHost>(
+        &self,
+        host: &H,
+        obj: ObjectId,
+        pos: &Coord3D,
+        dc: DistanceCalculationType,
+    ) -> Option<(f32, Coord3D)> {
         let a = Self::geom_of(host, obj)?;
         let r = collide::dist_calc(dc, &a.position, Some(&a.geometry), pos, None, HUGE_DIST_SQR);
         Some((r.dist_sqr, r.vec))
     }
 
     /// `getGoalDistanceSquared(obj, goalPos, otherObj, dc, &vec)`: the distance if `obj` were at `goal_pos`.
-    pub fn get_goal_distance_squared<H: PartitionHost>(&self, host: &H, obj: ObjectId, goal_pos: &Coord3D, other_obj: ObjectId, dc: DistanceCalculationType) -> Option<(f32, Coord3D)> {
+    pub fn get_goal_distance_squared<H: PartitionHost>(
+        &self,
+        host: &H,
+        obj: ObjectId,
+        goal_pos: &Coord3D,
+        other_obj: ObjectId,
+        dc: DistanceCalculationType,
+    ) -> Option<(f32, Coord3D)> {
         let (a, b) = (Self::geom_of(host, obj)?, Self::geom_of(host, other_obj)?);
-        let r = collide::dist_calc(dc, goal_pos, Some(&a.geometry), &b.position, Some(&b.geometry), HUGE_DIST_SQR);
+        let r = collide::dist_calc(
+            dc,
+            goal_pos,
+            Some(&a.geometry),
+            &b.position,
+            Some(&b.geometry),
+            HUGE_DIST_SQR,
+        );
         Some((r.dist_sqr, r.vec))
     }
 
     /// `getGoalDistanceSquared(obj, goalPos, otherPos, dc, &vec)`.
-    pub fn get_goal_distance_squared_pos<H: PartitionHost>(&self, host: &H, obj: ObjectId, goal_pos: &Coord3D, other_pos: &Coord3D, dc: DistanceCalculationType) -> Option<(f32, Coord3D)> {
+    pub fn get_goal_distance_squared_pos<H: PartitionHost>(
+        &self,
+        host: &H,
+        obj: ObjectId,
+        goal_pos: &Coord3D,
+        other_pos: &Coord3D,
+        dc: DistanceCalculationType,
+    ) -> Option<(f32, Coord3D)> {
         let a = Self::geom_of(host, obj)?;
-        let r = collide::dist_calc(dc, goal_pos, Some(&a.geometry), other_pos, None, HUGE_DIST_SQR);
+        let r = collide::dist_calc(
+            dc,
+            goal_pos,
+            Some(&a.geometry),
+            other_pos,
+            None,
+            HUGE_DIST_SQR,
+        );
         Some((r.dist_sqr, r.vec))
     }
 
     /// `getRelativeAngle2D(obj, otherObj)`.
-    pub fn get_relative_angle_2d<H: PartitionHost>(&self, host: &H, obj: ObjectId, other_obj: ObjectId) -> Option<f32> {
+    pub fn get_relative_angle_2d<H: PartitionHost>(
+        &self,
+        host: &H,
+        obj: ObjectId,
+        other_obj: ObjectId,
+    ) -> Option<f32> {
         let p = Self::geom_of(host, other_obj)?.position;
         self.get_relative_angle_2d_pos(host, obj, &p)
     }
 
     /// `getRelativeAngle2D(obj, pos)`: the signed angle from the object's facing
     /// to the direction of `pos`, in (-PI, PI].
-    pub fn get_relative_angle_2d_pos<H: PartitionHost>(&self, host: &H, obj: ObjectId, pos: &Coord3D) -> Option<f32> {
+    pub fn get_relative_angle_2d_pos<H: PartitionHost>(
+        &self,
+        host: &H,
+        obj: ObjectId,
+        pos: &Coord3D,
+    ) -> Option<f32> {
         let obj_pos = Self::geom_of(host, obj)?.position;
 
         // compute vector to given position
-        let mut v = Coord3D { x: pos.x - obj_pos.x, y: pos.y - obj_pos.y, z: 0.0 };
+        let mut v = Coord3D {
+            x: pos.x - obj_pos.x,
+            y: pos.y - obj_pos.y,
+            z: 0.0,
+        };
 
         let dist = Real::sqrt(v.x * v.x + v.y * v.y);
 
@@ -437,7 +605,15 @@ impl PartitionManager {
     }
 
     /// `geomCollidesWithGeom(pos1, geom1, angle1, pos2, geom2, angle2)`.
-    pub fn geom_collides_with_geom(&self, pos1: &Coord3D, geom1: &GeometryInfo, angle1: f32, pos2: &Coord3D, geom2: &GeometryInfo, angle2: f32) -> bool {
+    pub fn geom_collides_with_geom(
+        &self,
+        pos1: &Coord3D,
+        geom1: &GeometryInfo,
+        angle1: f32,
+        pos2: &Coord3D,
+        geom2: &GeometryInfo,
+        angle2: f32,
+    ) -> bool {
         collide::geom_collides_with_geom(pos1, geom1, angle1, pos2, geom2, angle2)
     }
 
@@ -446,7 +622,12 @@ impl PartitionManager {
     /// `iterateCellsAlongLine(pos, posOther, proc, userData)`: Bresenham from the
     /// cell of `pos` to the cell of `pos_other`; `proc` returns non-zero to stop,
     /// and that value is returned. Cells off the grid are stepped over.
-    pub fn iterate_cells_along_line(&self, pos: &Coord3D, pos_other: &Coord3D, mut proc: impl FnMut(&PartitionCell) -> i32) -> i32 {
+    pub fn iterate_cells_along_line(
+        &self,
+        pos: &Coord3D,
+        pos_other: &Coord3D,
+        mut proc: impl FnMut(&PartitionCell) -> i32,
+    ) -> i32 {
         let (start_x, start_y) = self.world_to_cell(pos.x, pos.y);
         let (end_x, end_y) = self.world_to_cell(pos_other.x, pos_other.y);
 
@@ -508,8 +689,18 @@ impl PartitionManager {
     /// `estimateTerrainExtremesAlongLine(start, end, &minZ, &maxZ, &minZPos, &maxZPos)`:
     /// rough-and-quick extremes from the cells' cached height ranges (`PM_CACHE_TERRAIN_HEIGHT`).
     /// Returns whether any cell was visited, and the extremes with the cell centres they come from.
-    pub fn estimate_terrain_extremes_along_line(&self, start_world: &Coord3D, end_world: &Coord3D) -> TerrainExtremes {
-        let mut out = TerrainExtremes { is_valid: false, min_z: HUGE_DIST, max_z: -HUGE_DIST, min_z_pos: None, max_z_pos: None };
+    pub fn estimate_terrain_extremes_along_line(
+        &self,
+        start_world: &Coord3D,
+        end_world: &Coord3D,
+    ) -> TerrainExtremes {
+        let mut out = TerrainExtremes {
+            is_valid: false,
+            min_z: HUGE_DIST,
+            max_z: -HUGE_DIST,
+            min_z_pos: None,
+            max_z_pos: None,
+        };
         let mut min_z = HUGE_DIST;
         let mut max_z = -HUGE_DIST;
         let mut min_pos: Option<Coord2D> = None;
@@ -552,7 +743,11 @@ impl PartitionManager {
     /// Upstream expands the neighbours of the cell processed *before* the one it
     /// pops (it adds the neighbours of `cur`, then pops the front and sets `cur`
     /// to it); that lag is kept.
-    pub fn iterate_cells_breadth_first(&self, pos: &Coord3D, mut proc: impl FnMut(&PartitionCell) -> bool) -> (i32, bool) {
+    pub fn iterate_cells_breadth_first(
+        &self,
+        pos: &Coord3D,
+        mut proc: impl FnMut(&PartitionCell) -> bool,
+    ) -> (i32, bool) {
         let (cell_x, cell_y) = self.world_to_cell(pos.x, pos.y);
         let Some(start) = self.cell_index(cell_x, cell_y) else {
             return (-1, true);
@@ -619,7 +814,10 @@ impl PartitionManager {
             cur_y = self.cells[cur_cell].get_cell_y();
 
             if proc(&self.cells[cur_cell]) {
-                return (self.cells[cur_cell].get_cell_y() * w + self.cells[cur_cell].get_cell_x(), undefined);
+                return (
+                    self.cells[cur_cell].get_cell_y() * w + self.cells[cur_cell].get_cell_x(),
+                    undefined,
+                );
             }
         }
 
@@ -632,7 +830,14 @@ impl PartitionManager {
     /// clear line of sight between the two positions, taking only terrain into
     /// account. An object contributes its position raised by the top of its
     /// collision shape (the "eyes"); otherwise the given position is used.
-    pub fn is_clear_line_of_sight_terrain<H: PartitionHost>(&self, host: &H, obj: Option<ObjectId>, obj_pos: &Coord3D, other: Option<ObjectId>, other_pos: &Coord3D) -> bool {
+    pub fn is_clear_line_of_sight_terrain<H: PartitionHost>(
+        &self,
+        host: &H,
+        obj: Option<ObjectId>,
+        obj_pos: &Coord3D,
+        other: Option<ObjectId>,
+        other_pos: &Coord3D,
+    ) -> bool {
         let pos = match obj.and_then(|o| host.object_geometry(o)) {
             Some(g) => {
                 let mut p = g.position;
@@ -659,17 +864,36 @@ impl PartitionManager {
 
     /// `getGroundOrStructureHeight(posx, posy)`: the terrain height there, plus
     /// the height of the tallest structure within a cell-ish radius.
-    pub fn get_ground_or_structure_height<H: PartitionFilterHost>(&mut self, host: &H, posx: f32, posy: f32) -> f32 {
+    pub fn get_ground_or_structure_height<H: PartitionFilterHost>(
+        &mut self,
+        host: &H,
+        posx: f32,
+        posy: f32,
+    ) -> f32 {
         // get the terrain height
         let terrain_height_here = host.ground_height(posx, posy);
 
         // scan all objects in the radius of our extent and find the tallest height among them
         let mut mask = crate::common::kind_of::KindOfMaskType::new();
         mask.set(KINDOF_STRUCTURE, 1);
-        let filters = [PartitionFilter::AcceptByKindOf { must_be_set: mask, must_be_clear: crate::common::kind_of::KindOfMaskType::new() }];
-        let pos = Coord3D { x: posx, y: posy, z: terrain_height_here };
+        let filters = [PartitionFilter::AcceptByKindOf {
+            must_be_set: mask,
+            must_be_clear: crate::common::kind_of::KindOfMaskType::new(),
+        }];
+        let pos = Coord3D {
+            x: posx,
+            y: posy,
+            z: terrain_height_here,
+        };
         const RANGE: f32 = 1.0;
-        let mut iter = self.iterate_objects_in_range_at(host, &pos, RANGE, DistanceCalculationType::FromBoundingSphere2D, &filters, IterOrderType::Fastest);
+        let mut iter = self.iterate_objects_in_range_at(
+            host,
+            &pos,
+            RANGE,
+            DistanceCalculationType::FromBoundingSphere2D,
+            &filters,
+            IterOrderType::Fastest,
+        );
 
         let mut tallest_height = 0.0f32;
         let mut o = iter.first();
@@ -692,9 +916,20 @@ impl PartitionManager {
     /// `tryPosition(center, dist, angle, options, &result)`: whether the spot
     /// `dist` from `center` at `angle` is legal under `options` (terrain, cliffs,
     /// impassable cells, water, objects, and a path from the source object).
-    pub fn try_position<H: PartitionFilterHost>(&mut self, host: &H, center: &Coord3D, dist: f32, angle: f32, options: &FindPositionOptions) -> Option<Coord3D> {
+    pub fn try_position<H: PartitionFilterHost>(
+        &mut self,
+        host: &H,
+        center: &Coord3D,
+        dist: f32,
+        angle: f32,
+        options: &FindPositionOptions,
+    ) -> Option<Coord3D> {
         // compute the spot on the terrain we've picked
-        let mut pos = Coord3D { x: dist * trig::cos(angle) + center.x, y: dist * trig::sin(angle) + center.y, z: 0.0 };
+        let mut pos = Coord3D {
+            x: dist * trig::cos(angle) + center.x,
+            y: dist * trig::sin(angle) + center.y,
+            z: 0.0,
+        };
 
         let mut layer = LAYER_GROUND;
         if options.flags & fpf::USE_HIGHEST_LAYER != 0 {
@@ -741,7 +976,9 @@ impl PartitionManager {
             // the default behavior where underwater spots are invalid
             // (upstream: `if (WATER_ONLY && (!underwater || !ground)) return FALSE; else if
             // (underwater && ground) return FALSE;`: the two refusals are one condition)
-            if (options.flags & fpf::WATER_ONLY != 0 && (!is_underwater || layer != LAYER_GROUND)) || (is_underwater && layer == LAYER_GROUND) {
+            if (options.flags & fpf::WATER_ONLY != 0 && (!is_underwater || layer != LAYER_GROUND))
+                || (is_underwater && layer == LAYER_GROUND)
+            {
                 return None;
             }
         }
@@ -766,22 +1003,34 @@ impl PartitionManager {
                 if let Some(rel_obj) = options.relationship_object {
                     use crate::common::game_common::Relationship::Enemies;
                     // if this is an ally/neutral unit and we ignore those, do so
-                    if options.flags & fpf::IGNORE_ALLY_OR_NEUTRAL_UNITS != 0 && host.relationship(rel_obj, them) != Enemies && is_unit(host, them) {
+                    if options.flags & fpf::IGNORE_ALLY_OR_NEUTRAL_UNITS != 0
+                        && host.relationship(rel_obj, them) != Enemies
+                        && is_unit(host, them)
+                    {
                         continue;
                     }
 
                     // if this is an ally/neutral structure and we ignore those, do so
-                    if options.flags & fpf::IGNORE_ALLY_OR_NEUTRAL_STRUCTURES != 0 && host.relationship(rel_obj, them) != Enemies && host.is_kind_of(them, KINDOF_STRUCTURE) {
+                    if options.flags & fpf::IGNORE_ALLY_OR_NEUTRAL_STRUCTURES != 0
+                        && host.relationship(rel_obj, them) != Enemies
+                        && host.is_kind_of(them, KINDOF_STRUCTURE)
+                    {
                         continue;
                     }
 
                     // if this is an enemy unit and we ignore those, do so
-                    if options.flags & fpf::IGNORE_ENEMY_UNITS != 0 && host.relationship(rel_obj, them) == Enemies && is_unit(host, them) {
+                    if options.flags & fpf::IGNORE_ENEMY_UNITS != 0
+                        && host.relationship(rel_obj, them) == Enemies
+                        && is_unit(host, them)
+                    {
                         continue;
                     }
 
                     // if this is an enemy structure and we ignore those, do so
-                    if options.flags & fpf::IGNORE_ENEMY_STRUCTURES != 0 && host.relationship(rel_obj, them) == Enemies && host.is_kind_of(them, KINDOF_STRUCTURE) {
+                    if options.flags & fpf::IGNORE_ENEMY_STRUCTURES != 0
+                        && host.relationship(rel_obj, them) == Enemies
+                        && host.is_kind_of(them, KINDOF_STRUCTURE)
+                    {
                         continue;
                     }
                 }
@@ -813,7 +1062,12 @@ impl PartitionManager {
     /// rings outward, ping-ponging around the start angle on each ring. A centre
     /// off the map is returned as it is (a scripted setup). `None` when no
     /// legal position exists.
-    pub fn find_position_around<H: PartitionFilterHost>(&mut self, host: &mut H, center: &Coord3D, options: &FindPositionOptions) -> Option<Coord3D> {
+    pub fn find_position_around<H: PartitionFilterHost>(
+        &mut self,
+        host: &mut H,
+        center: &Coord3D,
+        options: &FindPositionOptions,
+    ) -> Option<Coord3D> {
         let extent = host.maximum_pathfind_extent();
         // If the goal is off the map, it is a scripted setup, so just use the center.
         if !extent.is_in_region_no_z(center) {
@@ -821,14 +1075,22 @@ impl PartitionManager {
         }
 
         // pick a random angle from the center location to start at
-        let start_angle = if options.start_angle == RANDOM_START_ANGLE { host.game_logic_random_value_real(0.0, TWO_PI) } else { options.start_angle };
+        let start_angle = if options.start_angle == RANDOM_START_ANGLE {
+            host.game_logic_random_value_real(0.0, TWO_PI)
+        } else {
+            options.start_angle
+        };
 
         // start the search at the most inner ring (minRadius) and expand to outer most ring (maxRadius)
         let mut dist = options.min_radius;
         while dist <= options.max_radius {
             // given the spacing that we've been using for the angles on the 'idea' inner circle, we
             // will need more points on larger circles to cover more ground
-            let angle_spacing = if dist == options.min_radius { TWO_PI } else { (RING_SPACING / (dist + 1.0)) * (TWO_PI / 6.0) };
+            let angle_spacing = if dist == options.min_radius {
+                TWO_PI
+            } else {
+                (RING_SPACING / (dist + 1.0)) * (TWO_PI / 6.0)
+            };
 
             // on this "ring", try all the angles available to us in a circle ... we'll start at the
             // 'startAngle', then try 'angleSpacing' to the left, then to the right, then '2
@@ -837,14 +1099,26 @@ impl PartitionManager {
             let mut i = 0;
             while i < samples {
                 // try one "side"
-                if let Some(r) = self.try_position(&*host, center, dist, start_angle + angle_spacing * i as f32, options) {
+                if let Some(r) = self.try_position(
+                    &*host,
+                    center,
+                    dist,
+                    start_angle + angle_spacing * i as f32,
+                    options,
+                ) {
                     return Some(r);
                 }
 
                 // try the other "side" ... note for the first point at minRadius this position is
                 // the same so we won't test it again in that case
                 if i != 0 {
-                    if let Some(r) = self.try_position(&*host, center, dist, start_angle - angle_spacing * i as f32, options) {
+                    if let Some(r) = self.try_position(
+                        &*host,
+                        center,
+                        dist,
+                        start_angle - angle_spacing * i as f32,
+                        options,
+                    ) {
                         return Some(r);
                     }
                 }

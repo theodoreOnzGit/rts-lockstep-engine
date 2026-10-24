@@ -81,7 +81,10 @@ use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
 use rts_lockstep_engine::common::kind_of::*;
 use rts_lockstep_engine::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_CONTAIN};
 use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
-use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_HIJACKED, OBJECT_STATUS_MASKED, OBJECT_STATUS_NO_COLLISIONS, OBJECT_STATUS_UNSELECTABLE};
+use rts_lockstep_engine::common::object_status_types::{
+    ObjectStatusMaskType, OBJECT_STATUS_HIJACKED, OBJECT_STATUS_MASKED,
+    OBJECT_STATUS_NO_COLLISIONS, OBJECT_STATUS_UNSELECTABLE,
+};
 use rts_lockstep_engine::common::science::{GameTextFetch, ScienceStore};
 use rts_lockstep_engine::common::thing_factory::ThingFactory;
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
@@ -158,16 +161,31 @@ impl FxIds {
 
 type Read = (Option<ModuleDataKind>, Option<ModuleDataKind>);
 fn read_crate(ini: &mut Ini<'_>, out: &mut Read) -> IniResult<()> {
-    out.0 = Some(ModuleDataKind::ConvertToHijackedVehicleCrateCollide(Arc::new(ConvertToHijackedVehicleCrateCollideModuleData::friend_new_module_data(Some(ini))?)));
+    out.0 = Some(ModuleDataKind::ConvertToHijackedVehicleCrateCollide(
+        Arc::new(
+            ConvertToHijackedVehicleCrateCollideModuleData::friend_new_module_data(Some(ini))?,
+        ),
+    ));
     Ok(())
 }
 fn read_hijacker(ini: &mut Ini<'_>, out: &mut Read) -> IniResult<()> {
-    out.1 = Some(ModuleDataKind::HijackerUpdate(Arc::new(HijackerUpdateModuleData::friend_new_module_data(Some(ini))?)));
+    out.1 = Some(ModuleDataKind::HijackerUpdate(Arc::new(
+        HijackerUpdateModuleData::friend_new_module_data(Some(ini))?,
+    )));
     Ok(())
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Read) {
-    let blocks = [BlockParse { token: "D", parse: read_crate }, BlockParse { token: "H", parse: read_hijacker }];
+    let blocks = [
+        BlockParse {
+            token: "D",
+            parse: read_crate,
+        },
+        BlockParse {
+            token: "H",
+            parse: read_hijacker,
+        },
+    ];
     let mut out = (None, None);
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -175,8 +193,12 @@ fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Read) {
 
 /// The data dump of `ref_l9r13e_run`: the crate base, then the `HijackerUpdate`'s two names.
 fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, hijack: &ModuleDataKind, fx: &mut FxIds) {
-    let ModuleDataKind::ConvertToHijackedVehicleCrateCollide(d) = data else { unreachable!("not a hijack crate") };
-    let ModuleDataKind::HijackerUpdate(h) = hijack else { unreachable!("not a HijackerUpdate") };
+    let ModuleDataKind::ConvertToHijackedVehicleCrateCollide(d) = data else {
+        unreachable!("not a hijack crate")
+    };
+    let ModuleDataKind::HijackerUpdate(h) = hijack else {
+        unreachable!("not a HijackerUpdate")
+    };
     let c = &d.crate_data;
     for i in 0..KINDOF_COUNT {
         put_u32(v, u32::from(c.kind_of.test(i)));
@@ -187,7 +209,10 @@ fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, hijack: &ModuleDataKind, fx:
     put_u32(v, u32::from(c.is_forbid_owner_player));
     put_u32(v, u32::from(c.is_building_pickup));
     put_u32(v, u32::from(c.is_human_only_pickup));
-    let sci = SCIENCES.iter().position(|s| s.as_bytes().eq_ignore_ascii_case(&c.pickup_science)).map_or(-1, |i| i as i32);
+    let sci = SCIENCES
+        .iter()
+        .position(|s| s.as_bytes().eq_ignore_ascii_case(&c.pickup_science))
+        .map_or(-1, |i| i as i32);
     put_i32(v, sci);
     put_i32(v, fx.id(&c.execute_fx));
     put_str(v, &c.execution_animation_template);
@@ -218,7 +243,12 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         return out;
     }
     let kinds: Vec<u32> = (0..2 * KINDOF_COUNT).map(|_| u32_(&mut p)).collect();
-    let set: Vec<usize> = kinds.iter().enumerate().filter(|(_, v)| **v != 0).map(|(i, _)| i).collect();
+    let set: Vec<usize> = kinds
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| **v != 0)
+        .map(|(i, _)| i)
+        .collect();
     let flags = [u32_(&mut p), u32_(&mut p), u32_(&mut p)];
     let sci = u32_(&mut p) as i32;
     let fx = u32_(&mut p) as i32;
@@ -279,14 +309,23 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
         d.push(format!("HumanOnly = {}", gen_bool(g, clean)));
     }
     if g.below(100) < 30 {
-        d.push(format!("ExecuteFX = {}", pick(g, &["FX_A", "FX_B", "None"])));
+        d.push(format!(
+            "ExecuteFX = {}",
+            pick(g, &["FX_A", "FX_B", "None"])
+        ));
     }
     let mut h: Vec<String> = Vec::new();
     if g.below(100) < 30 {
-        h.push(format!("AttachToTargetBone = {}", pick(g, &["Bone01", "DRIVER"])));
+        h.push(format!(
+            "AttachToTargetBone = {}",
+            pick(g, &["Bone01", "DRIVER"])
+        ));
     }
     if g.below(100) < 60 {
-        h.push(format!("ParachuteName = {}", pick(g, &["Missing", "U1", "U1"])));
+        h.push(format!(
+            "ParachuteName = {}",
+            pick(g, &["Missing", "U1", "U1"])
+        ));
     }
     if !clean {
         let bad = match g.below(3) {
@@ -340,7 +379,13 @@ fn science_block(ini: &mut Ini<'_>, c: &mut SciCtx) -> IniResult<()> {
     c.store.parse_science_definition(ini, &mut c.names, &Text)
 }
 
-fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
+fn run_xfer(
+    w: &mut World,
+    me: ObjectId,
+    idx: usize,
+    how: u32,
+    saved: &[u8],
+) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -399,7 +444,11 @@ fn set_kinds(w: &mut World, id: ObjectId, bits: u32) {
             values.kind_of.push(*k);
         }
     }
-    w.objects.find_mut(id).unwrap().thing.friend_set_template(Arc::new(ThingTemplate::from_object_values(&values)));
+    w.objects
+        .find_mut(id)
+        .unwrap()
+        .thing
+        .friend_set_template(Arc::new(ThingTemplate::from_object_values(&values)));
 }
 
 /// The scene's module indices: the hijacker's AI, the vehicle's AI and contain.
@@ -414,11 +463,22 @@ fn apply_flags(w: &mut World, flags: u32, s: &Slots) {
     let (me, other) = (1, 2);
     w.objects.find_mut(me).unwrap().ai = if flags & 1 != 0 { s.crate_ai } else { None };
     if let Some(ai) = s.crate_ai {
-        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(me).unwrap().modules[ai as usize].body.as_mut() {
+        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(me).unwrap().modules
+            [ai as usize]
+            .body
+            .as_mut()
+        {
             p.answers.goal_object = if flags & 2 != 0 { other } else { INVALID_ID };
         }
     }
-    w.friend_bind_to_drawable(me, if flags & 256 != 0 { 7 } else { INVALID_DRAWABLE_ID });
+    w.friend_bind_to_drawable(
+        me,
+        if flags & 256 != 0 {
+            7
+        } else {
+            INVALID_DRAWABLE_ID
+        },
+    );
     w.objects.find_mut(me).unwrap().experience.level = veterancy_from_i32((flags >> 10 & 3) as i32);
     let rel = match flags >> 14 & 3 {
         0 => Relationship::Enemies,
@@ -427,12 +487,21 @@ fn apply_flags(w: &mut World, flags: u32, s: &Slots) {
     };
     w.cuts.team_relationships.insert((1, 2), rel);
     let local = flags >> 16 & 3;
-    w.players.friend_set_local_index(if local == 3 { None } else { Some(local as i32) });
+    w.players
+        .friend_set_local_index(if local == 3 { None } else { Some(local as i32) });
     if w.objects.find(other).is_none() {
         return;
     }
-    w.objects.find_mut(other).unwrap().ai = if flags & 4 != 0 { Some(s.other_ai) } else { None };
-    if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(other).unwrap().modules[s.other_ai as usize].body.as_mut() {
+    w.objects.find_mut(other).unwrap().ai = if flags & 4 != 0 {
+        Some(s.other_ai)
+    } else {
+        None
+    };
+    if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(other).unwrap().modules
+        [s.other_ai as usize]
+        .body
+        .as_mut()
+    {
         p.answers.dozer = flags & 8 != 0;
     }
     let o = w.objects.find_mut(other).unwrap();
@@ -441,34 +510,75 @@ fn apply_flags(w: &mut World, flags: u32, s: &Slots) {
     } else {
         o.private_status &= !PRIVATE_EFFECTIVELY_DEAD;
     }
-    o.status.set(OBJECT_STATUS_HIJACKED, i32::from(flags & 32 != 0));
-    o.contain = if flags & 64 != 0 { Some(s.contain) } else { None };
+    o.status
+        .set(OBJECT_STATUS_HIJACKED, i32::from(flags & 32 != 0));
+    o.contain = if flags & 64 != 0 {
+        Some(s.contain)
+    } else {
+        None
+    };
     o.experience.level = veterancy_from_i32((flags >> 12 & 3) as i32);
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind, hijack: ModuleDataKind, cfg: &[u32; 12], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
+fn rust_run(
+    names: NameKeyGenerator,
+    center: UpgradeCenter,
+    data: ModuleDataKind,
+    hijack: ModuleDataKind,
+    cfg: &[u32; 12],
+    ops: &[[u32; 6]],
+    tally: &mut Tally,
+) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     let mut fx = FxIds::default();
     put_data(&mut v, &data, &hijack, &mut fx);
 
-    let mut sc = SciCtx { store: ScienceStore::new(), names };
-    let defs: String = SCIENCES.iter().map(|s| format!("Science {s}\nEnd\n")).collect();
-    static BLOCKS: [BlockParse<SciCtx>; 1] = [BlockParse { token: "Science", parse: science_block }];
-    Ini::load(b"Data\\INI\\Science.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut sc).expect("sciences load");
+    let mut sc = SciCtx {
+        store: ScienceStore::new(),
+        names,
+    };
+    let defs: String = SCIENCES
+        .iter()
+        .map(|s| format!("Science {s}\nEnd\n"))
+        .collect();
+    static BLOCKS: [BlockParse<SciCtx>; 1] = [BlockParse {
+        token: "Science",
+        parse: science_block,
+    }];
+    Ini::load(
+        b"Data\\INI\\Science.ini",
+        defs.as_bytes(),
+        IniLoadType::Overwrite,
+        None,
+        &BLOCKS,
+        &mut sc,
+    )
+    .expect("sciences load");
 
     // the thing factory knows U1 and U2 (the parachute)
     let mut factory = ThingFactory::new();
     let mut template_names: BTreeMap<u16, String> = BTreeMap::new();
     for name in ["U1", "U2"] {
-        factory.new_template(name.as_bytes(), 0).expect("a template");
-        let id = factory.find_template(name.as_bytes()).expect("the new template").data.get_template_id();
+        factory
+            .new_template(name.as_bytes(), 0)
+            .expect("a template");
+        let id = factory
+            .find_template(name.as_bytes())
+            .expect("the new template")
+            .data
+            .get_template_id();
         template_names.insert(id, name.to_string());
     }
 
     let mut w = World::new();
     w.names = sc.names;
-    w.statics = Arc::new(GameStatics { science_store: sc.store, upgrade_center: center, thing_factory: factory, ..Default::default() });
+    w.statics = Arc::new(GameStatics {
+        science_store: sc.store,
+        upgrade_center: center,
+        thing_factory: factory,
+        ..Default::default()
+    });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.crate_stub_object_calls = true;
@@ -487,7 +597,11 @@ fn rust_run(names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind
     let flags0 = cfg[3];
     for p in 0..3u32 {
         let pl = w.players.get_nth_mut(p as i32).unwrap();
-        pl.player_type = if flags0 >> (18 + p) & 1 != 0 { PlayerType::Computer } else { PlayerType::Human };
+        pl.player_type = if flags0 >> (18 + p) & 1 != 0 {
+            PlayerType::Computer
+        } else {
+            PlayerType::Human
+        };
         pl.default_team = Some(11 + p);
         set_player_of_team(&mut w, 11 + p, Some(p));
     }
@@ -496,17 +610,46 @@ fn rust_run(names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind
 
     // the hijacker: the crate module, his AI, maybe his HijackerUpdate
     let next = w.next_object_id();
-    let m = rts_lockstep_engine::logic::modules::new_module(next, CLASS.as_bytes(), b"ModuleTag_Crate", &data).unwrap().unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(
+        next,
+        CLASS.as_bytes(),
+        b"ModuleTag_Crate",
+        &data,
+    )
+    .unwrap()
+    .unwrap();
     let mut ai = NewModule::plain(b"CtProbe", b"ModuleTag_AI");
     ai.is_ai = true;
-    ai.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
+    ai.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+        ProbeAnswers::default(),
+        0.0,
+        Default::default(),
+    )));
     let mut mods = vec![m, ai];
     let has_hijacker = flags0 & 512 != 0;
     if has_hijacker {
-        mods.push(rts_lockstep_engine::logic::modules::new_module(next, b"HijackerUpdate", b"ModuleTag_Hijack", &hijack).unwrap().unwrap());
+        mods.push(
+            rts_lockstep_engine::logic::modules::new_module(
+                next,
+                b"HijackerUpdate",
+                b"ModuleTag_Hijack",
+                &hijack,
+            )
+            .unwrap()
+            .unwrap(),
+        );
     }
-    let plain_template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
-    let me = w.new_object(NewObject { template: plain_template.clone(), status: ObjectStatusMaskType::default(), team: Some(1), modules: mods }).unwrap();
+    let plain_template = Arc::new(ThingTemplate::from_object_values(
+        &ObjectTemplateValues::default(),
+    ));
+    let me = w
+        .new_object(NewObject {
+            template: plain_template.clone(),
+            status: ObjectStatusMaskType::default(),
+            team: Some(1),
+            modules: mods,
+        })
+        .unwrap();
     assert_eq!(me, 1);
     let crate_ai = w.objects.find(me).unwrap().ai;
     {
@@ -518,20 +661,49 @@ fn rust_run(names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind
     // the vehicle: an AI, a contain, maybe an EjectPilotDie
     let mut vai = NewModule::plain(b"CtProbe", b"ModuleTag_AI");
     vai.is_ai = true;
-    vai.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
+    vai.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+        ProbeAnswers::default(),
+        0.0,
+        Default::default(),
+    )));
     let mut vc = NewModule::plain(b"CtContain", b"ModuleTag_Contain");
     vc.interfaces = MODULEINTERFACE_CONTAIN;
-    vc.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers { contained: (3..3 + cfg[4] as i32).collect(), ..Default::default() }, 0.0, Default::default())));
+    vc.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+        ProbeAnswers {
+            contained: (3..3 + cfg[4] as i32).collect(),
+            ..Default::default()
+        },
+        0.0,
+        Default::default(),
+    )));
     let mut vmods = vec![vai, vc];
     if flags0 & 128 != 0 {
         vmods.push(NewModule::plain(b"EjectPilotDie", b"ModuleTag_Eject"));
     }
-    let other = w.new_object(NewObject { template: plain_template.clone(), status: ObjectStatusMaskType::default(), team: Some(2), modules: vmods }).unwrap();
+    let other = w
+        .new_object(NewObject {
+            template: plain_template.clone(),
+            status: ObjectStatusMaskType::default(),
+            team: Some(2),
+            modules: vmods,
+        })
+        .unwrap();
     assert_eq!(other, 2);
     let o = w.objects.find(other).unwrap();
-    let slots = Slots { crate_ai, other_ai: o.ai.unwrap(), contain: o.contain.unwrap() };
+    let slots = Slots {
+        crate_ai,
+        other_ai: o.ai.unwrap(),
+        contain: o.contain.unwrap(),
+    };
     set_kinds(&mut w, other, cfg[2]);
-    w.set_position(other, &Coord3D { x: f32::from_bits(cfg[5]), y: f32::from_bits(cfg[6]), z: f32::from_bits(cfg[7]) });
+    w.set_position(
+        other,
+        &Coord3D {
+            x: f32::from_bits(cfg[5]),
+            y: f32::from_bits(cfg[6]),
+            z: f32::from_bits(cfg[7]),
+        },
+    );
     let mut flags = flags0;
     apply_flags(&mut w, flags, &slots);
     let idx = w.find_module(me, CLASS.as_bytes()).unwrap();
@@ -544,13 +716,34 @@ fn rust_run(names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind
         w.cuts.log = Some(Vec::new());
         let (mut xst, mut xbytes, mut crc, mut res) = (-2i32, Vec::new(), 0u32, 0i32);
         let target = if o[1] != 0 { other } else { INVALID_ID };
-        let xidx = if o[2] != 0 { hidx.expect("a HijackerUpdate xfer only with one") } else { idx };
+        let xidx = if o[2] != 0 {
+            hidx.expect("a HijackerUpdate xfer only with one")
+        } else {
+            idx
+        };
         match o[0] {
             0 => {
-                w.module_call(me, idx, ModuleCall::OnCollide { other: target, loc: None, normal: None });
+                w.module_call(
+                    me,
+                    idx,
+                    ModuleCall::OnCollide {
+                        other: target,
+                        loc: None,
+                        normal: None,
+                    },
+                );
                 tally.collides += 1;
             }
-            1 => res = i32::from(w.module_call(me, idx, ModuleCall::WouldLikeToCollideWith { other: target }).as_bool()),
+            1 => {
+                res = i32::from(
+                    w.module_call(
+                        me,
+                        idx,
+                        ModuleCall::WouldLikeToCollideWith { other: target },
+                    )
+                    .as_bool(),
+                )
+            }
             2 => set_player_of_team(&mut w, 2, (o[1] != 0).then(|| o[1] - 1)),
             3 => {
                 flags = (flags & !OP_FLAGS) | (o[1] & OP_FLAGS);
@@ -559,12 +752,26 @@ fn rust_run(names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind
             4 => set_kinds(&mut w, other, o[1]),
             5 => {
                 let p = w.objects.find(other).unwrap().get_position();
-                w.set_position(other, &Coord3D { z: f32::from_bits(o[1]), ..p });
+                w.set_position(
+                    other,
+                    &Coord3D {
+                        z: f32::from_bits(o[1]),
+                        ..p
+                    },
+                );
             }
             6 => {
                 if let Some(h) = hidx {
-                    let u = w.update_handle_of_module(ModuleHandle { object: me, index: h }).expect("an update module");
-                    res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0 as i32;
+                    let u = w
+                        .update_handle_of_module(ModuleHandle {
+                            object: me,
+                            index: h,
+                        })
+                        .expect("an update module");
+                    res = w
+                        .with_body(u, |b, w| b.update(w, u))
+                        .expect("the module is in its slot")
+                        .0 as i32;
                     tally.updates += 1;
                 }
             }
@@ -598,7 +805,9 @@ fn rust_run(names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind
             w.cuts.log = Some(Vec::new());
             events_before = w.events.events().len();
         }
-        let threw = w.cuts.module_errors[errors_before..].iter().any(|(_, e)| !e.is_undefined());
+        let threw = w.cuts.module_errors[errors_before..]
+            .iter()
+            .any(|(_, e)| !e.is_undefined());
         put_i32(&mut v, if threw { 2 } else { 0 });
         put_i32(&mut v, res);
         // every client event has its `evt` line, so the lines and the events are paired before choosing
@@ -616,21 +825,45 @@ fn rust_run(names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind
         for t in w.cuts.trace.take().unwrap() {
             if t.starts_with("cut ") {
                 match cut_iter.next().expect("a cut line has a cut call") {
-                    CutCall::ObjectSetTeam { object, team } => log.push(format!("setteam {object} {}", team.map_or(-1, |t| t as i32))),
-                    CutCall::ScriptEngineTransferObjectName { name, object } => log.push(format!("transfername {} {object}", String::from_utf8_lossy(name))),
-                    CutCall::ExperienceSetVeterancyLevel { object, level, .. } => log.push(format!("xplevel {object} {level}")),
-                    CutCall::ThingFactoryNewObject { template, team } => log.push(format!("newobject {} {}", template_names[template], team.map_or(-1, |t| t as i32))),
-                    CutCall::Contain(ContainCall::LeaveGroup { object }) => log.push(format!("leavegroup {object}")),
-                    CutCall::Contain(ContainCall::PartitionUnregisterObject { object }) => log.push(format!("punregister {object}")),
-                    CutCall::Contain(ContainCall::PartitionRegisterObject { object }) => log.push(format!("pregister {object}")),
-                    CutCall::Contain(ContainCall::DrawableSetHidden { object, hidden }) => log.push(format!("hidden {object} {}", i32::from(*hidden))),
+                    CutCall::ObjectSetTeam { object, team } => log.push(format!(
+                        "setteam {object} {}",
+                        team.map_or(-1, |t| t as i32)
+                    )),
+                    CutCall::ScriptEngineTransferObjectName { name, object } => log.push(format!(
+                        "transfername {} {object}",
+                        String::from_utf8_lossy(name)
+                    )),
+                    CutCall::ExperienceSetVeterancyLevel { object, level, .. } => {
+                        log.push(format!("xplevel {object} {level}"))
+                    }
+                    CutCall::ThingFactoryNewObject { template, team } => log.push(format!(
+                        "newobject {} {}",
+                        template_names[template],
+                        team.map_or(-1, |t| t as i32)
+                    )),
+                    CutCall::Contain(ContainCall::LeaveGroup { object }) => {
+                        log.push(format!("leavegroup {object}"))
+                    }
+                    CutCall::Contain(ContainCall::PartitionUnregisterObject { object }) => {
+                        log.push(format!("punregister {object}"))
+                    }
+                    CutCall::Contain(ContainCall::PartitionRegisterObject { object }) => {
+                        log.push(format!("pregister {object}"))
+                    }
+                    CutCall::Contain(ContainCall::DrawableSetHidden { object, hidden }) => {
+                        log.push(format!("hidden {object} {}", i32::from(*hidden)))
+                    }
                     _ => {}
                 }
             } else if let Some(r) = t.strip_prefix("bt ") {
                 log.push(r.to_string());
             } else if t.starts_with("evt ") {
                 match event_iter.next().flatten() {
-                    Some(ObjectClientEvent::Radar { call: RadarCall::TryInfiltrationEvent, object_id, .. }) => log.push(format!("infiltrate {object_id}")),
+                    Some(ObjectClientEvent::Radar {
+                        call: RadarCall::TryInfiltrationEvent,
+                        object_id,
+                        ..
+                    }) => log.push(format!("infiltrate {object_id}")),
                     Some(ObjectClientEvent::Eva { message }) => log.push(format!(
                         "eva {}",
                         match message {
@@ -638,8 +871,15 @@ fn rust_run(names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind
                             other => panic!("unexpected eva {other:?}"),
                         }
                     )),
-                    Some(ObjectClientEvent::AudioAddEvent { name, object_id, .. }) => log.push(format!("audio {} - -1 {object_id}", String::from_utf8_lossy(&name))),
-                    Some(ObjectClientEvent::FxListDoFxObj { fx: name, .. }) => log.push(format!("fx{}", fx.id(&Some(name)))),
+                    Some(ObjectClientEvent::AudioAddEvent {
+                        name, object_id, ..
+                    }) => log.push(format!(
+                        "audio {} - -1 {object_id}",
+                        String::from_utf8_lossy(&name)
+                    )),
+                    Some(ObjectClientEvent::FxListDoFxObj { fx: name, .. }) => {
+                        log.push(format!("fx{}", fx.id(&Some(name))))
+                    }
                     _ => {}
                 }
             } else if let Some(r) = t.strip_prefix("destroy ") {
@@ -663,7 +903,12 @@ fn rust_run(names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind
         put_u32(&mut v, p.x.to_bits());
         put_u32(&mut v, p.y.to_bits());
         put_u32(&mut v, p.z.to_bits());
-        put_u32(&mut v, u32::from(h.test_status(OBJECT_STATUS_NO_COLLISIONS)) | u32::from(h.test_status(OBJECT_STATUS_MASKED)) << 1 | u32::from(h.test_status(OBJECT_STATUS_UNSELECTABLE)) << 2);
+        put_u32(
+            &mut v,
+            u32::from(h.test_status(OBJECT_STATUS_NO_COLLISIONS))
+                | u32::from(h.test_status(OBJECT_STATUS_MASKED)) << 1
+                | u32::from(h.test_status(OBJECT_STATUS_UNSELECTABLE)) << 2,
+        );
         let crate_level = h.experience.level as u32;
         match w.objects.find(other) {
             Some(ob) => {
@@ -684,7 +929,10 @@ fn rust_run(names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind
         let words = match hidx {
             Some(hi) => {
                 let ob = w.objects.find(me).unwrap();
-                match ob.behaviors[ob.modules[hi as usize].update_index.unwrap() as usize].body.as_ref() {
+                match ob.behaviors[ob.modules[hi as usize].update_index.unwrap() as usize]
+                    .body
+                    .as_ref()
+                {
                     Some(UpdateBody::HijackerUpdate(m)) => m.state_words(),
                     _ => panic!("the HijackerUpdate"),
                 }
@@ -699,7 +947,10 @@ fn rust_run(names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind
 }
 
 fn cases() -> usize {
-    std::env::var("L9R13E_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
+    std::env::var("L9R13E_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9_000)
 }
 
 #[test]
@@ -738,7 +989,11 @@ fn hijack_crate_and_hijacker_update_match_upstream() {
         let mut cfg = [0u32; 12];
         cfg[0] = player(&mut g);
         cfg[1] = player(&mut g);
-        cfg[2] = if g.below(4) != 0 { 1 | if g.below(4) == 0 { 128 } else { 0 } } else { g.u32() & 0xff };
+        cfg[2] = if g.below(4) != 0 {
+            1 | if g.below(4) == 0 { 128 } else { 0 }
+        } else {
+            g.u32() & 0xff
+        };
         cfg[3] = u32::from(g.below(4) != 0)
             | u32::from(g.below(5) != 0) << 1
             | u32::from(g.below(8) != 0) << 2
@@ -757,7 +1012,11 @@ fn hijack_crate_and_hijacker_update_match_upstream() {
         cfg[4] = *pick(&mut g, &[&0u32, &0, &1, &2]);
         cfg[5] = pick(&mut g, &floats).to_bits();
         cfg[6] = pick(&mut g, &floats).to_bits();
-        cfg[7] = if g.below(3) == 0 { 20.0f32.to_bits() } else { 0 };
+        cfg[7] = if g.below(3) == 0 {
+            20.0f32.to_bits()
+        } else {
+            0
+        };
         cfg[8] = (*pick(&mut g, &[&0.0f32, &150.0, &300.5])).to_bits();
         cfg[9] = (*pick(&mut g, &[&0.0f32, &200.0, &450.25])).to_bits();
         cfg[10] = *pick(&mut g, &[&0u32, &1, &2, &2]);
@@ -781,9 +1040,34 @@ fn hijack_crate_and_hijacker_update_match_upstream() {
                     0..=13 => [0, u32::from(g.below(12) != 0), 0, 0, 0, 0],
                     14..=16 => [1, g.below(2), 0, 0, 0, 0],
                     17..=18 => [2, g.below(4), 0, 0, 0, 0],
-                    19..=21 => [3, (g.u32() & OP_FLAGS) | 3 | 4 | u32::from(g.below(4) == 0) << 16, 0, 0, 0, 0],
-                    22..=23 => [4, if g.below(2) == 0 { 1 } else { g.u32() & 0xff }, 0, 0, 0, 0],
-                    24..=25 => [5, if g.below(2) == 0 { 20.0f32.to_bits() } else { 0 }, 0, 0, 0, 0],
+                    19..=21 => [
+                        3,
+                        (g.u32() & OP_FLAGS) | 3 | 4 | u32::from(g.below(4) == 0) << 16,
+                        0,
+                        0,
+                        0,
+                        0,
+                    ],
+                    22..=23 => [
+                        4,
+                        if g.below(2) == 0 { 1 } else { g.u32() & 0xff },
+                        0,
+                        0,
+                        0,
+                        0,
+                    ],
+                    24..=25 => [
+                        5,
+                        if g.below(2) == 0 {
+                            20.0f32.to_bits()
+                        } else {
+                            0
+                        },
+                        0,
+                        0,
+                        0,
+                        0,
+                    ],
                     26..=31 => [6, 0, 0, 0, 0, 0],
                     32..=33 => [7, 0, xm, 0, 0, 0],
                     34..=35 => [8, 0, xm, 0, 0, 0],
@@ -800,7 +1084,15 @@ fn hijack_crate_and_hijacker_update_match_upstream() {
 
         // Rust first: a case that reaches upstream undefined behaviour is counted and never sent to the C++
         let rust = if outcome.status == 0 {
-            let (rd, w) = rust_run(ctx.names.clone(), ctx.center.clone(), data.0.expect("read ok"), data.1.expect("read ok"), &cfg, &ops, &mut tally);
+            let (rd, w) = rust_run(
+                ctx.names.clone(),
+                ctx.center.clone(),
+                data.0.expect("read ok"),
+                data.1.expect("read ok"),
+                &cfg,
+                &ops,
+                &mut tally,
+            );
             if w.cuts.module_errors.iter().any(|(_, e)| e.is_undefined()) {
                 excluded += 1;
                 continue;
@@ -839,22 +1131,63 @@ fn hijack_crate_and_hijacker_update_match_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || format!("case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
-        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
+        let what = || {
+            format!(
+                "case {case}: cfg {cfg:x?}, file {:?}, ops {ops:?}",
+                show(&text)
+            )
+        };
+        read.eq(
+            &outcome,
+            &Outcome {
+                status,
+                detail,
+                crc: 0,
+            },
+            what,
+        );
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
         };
         let (dr, dc) = (decode(&rd, ops.len()), decode(&buf, ops.len()));
         for l in &dr {
-            for key in ["infiltrate", "eva", "setteam", "aimove", "aiidle", "canceltask", "audio", "transfername", "xplevel", "leavegroup", "punregister", "pregister", "hidden", "newobject", "validfor", "addtocontain", "destroy"] {
-                *counts.entry(key.to_string()).or_default() += l.matches(&format!("\"{key}")).count() as u64;
+            for key in [
+                "infiltrate",
+                "eva",
+                "setteam",
+                "aimove",
+                "aiidle",
+                "canceltask",
+                "audio",
+                "transfername",
+                "xplevel",
+                "leavegroup",
+                "punregister",
+                "pregister",
+                "hidden",
+                "newobject",
+                "validfor",
+                "addtocontain",
+                "destroy",
+            ] {
+                *counts.entry(key.to_string()).or_default() +=
+                    l.matches(&format!("\"{key}")).count() as u64;
             }
         }
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
-            eprintln!("--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
+            let i = dr
+                .iter()
+                .zip(dc.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(dr.len().min(dc.len()));
+            eprintln!(
+                "--- case {case} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}",
+                show(&text),
+                dr.get(i),
+                dc.get(i)
+            );
         }
         run.eq(&dr.len(), &dc.len(), what);
         for (a, b) in dr.iter().zip(dc.iter()) {
@@ -873,5 +1206,8 @@ fn hijack_crate_and_hijacker_update_match_upstream() {
     }
     read.finish();
     run.finish();
-    assert!(tally.destroyed * 20 > cases as u64, "the generator must reach the crate's actions");
+    assert!(
+        tally.destroyed * 20 > cases as u64,
+        "the generator must reach the crate's actions"
+    );
 }

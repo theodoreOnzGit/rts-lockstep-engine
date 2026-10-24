@@ -63,8 +63,9 @@ use rts_lockstep_engine::common::game_common::VeterancyLevel;
 use rts_lockstep_engine::common::ini::{Ini, IniLoadType};
 use rts_lockstep_engine::common::name_key_generator::NameKeyType;
 use rts_lockstep_engine::common::upgrade::{
-    clear_upgrade_mask, flip_upgrade_mask, make_upgrade_mask, set_all_upgrade_mask_bits, test_upgrade_mask, test_upgrade_mask_any,
-    test_upgrade_mask_multi, upgrade_mask_any_set, Upgrade, UpgradeCenter, UpgradeCenterError, UpgradeMaskType, UpgradeTemplate,
+    clear_upgrade_mask, flip_upgrade_mask, make_upgrade_mask, set_all_upgrade_mask_bits,
+    test_upgrade_mask, test_upgrade_mask_any, test_upgrade_mask_multi, upgrade_mask_any_set,
+    Upgrade, UpgradeCenter, UpgradeCenterError, UpgradeMaskType, UpgradeTemplate,
     UPGRADE_TYPE_NAMES,
 };
 use rts_lockstep_engine::common::xfer::{Xfer, XferStatus};
@@ -93,7 +94,10 @@ fn load_type_of(g: &mut Gen) -> IniLoadType {
 fn position(center: &UpgradeCenter, found: Option<&UpgradeTemplate>) -> i32 {
     match found {
         None => -1,
-        Some(f) => center.templates().position(|t| std::ptr::eq(t, f)).map_or(-2, |p| p as i32),
+        Some(f) => center
+            .templates()
+            .position(|t| std::ptr::eq(t, f))
+            .map_or(-2, |p| p as i32),
     }
 }
 
@@ -125,7 +129,8 @@ fn ini_blocks_match_upstream() {
     let mut keys_bug = Check::new("name keys after the load");
     let mut excluded = Excluded::default();
     let mut calc_excluded = 0u64;
-    let (mut ok, mut failed, mut out_of_range, mut templates, mut with_default) = (0u64, 0u64, 0u64, 0u64, 0u64);
+    let (mut ok, mut failed, mut out_of_range, mut templates, mut with_default) =
+        (0u64, 0u64, 0u64, 0u64, 0u64);
     const CASES: usize = 8_000;
     for case in 0..CASES {
         let init_names = g.below(3) != 0;
@@ -134,12 +139,27 @@ fn ini_blocks_match_upstream() {
         let many = g.below(25) == 0;
         let n_many = 126 + g.below(8);
         let kind = if g.below(8) == 0 { 2 } else { 0 };
-        let data = if many { gen_many_upgrades(&mut g, n_many, "P") } else { gen_file(&mut g, kind) };
+        let data = if many {
+            gen_many_upgrades(&mut g, n_many, "P")
+        } else {
+            gen_file(&mut g, kind)
+        };
         let name = format!("Data\\INI\\Case{}.ini", case % 7).into_bytes();
         let with_xfer = g.below(4) != 0;
         let mut ctx = Ctx::new(init_names, init_center);
         let mut crc = XferCrc::new_without_nan_guard();
-        let r = Ini::load(&name, &data, load_type, if with_xfer { Some(&mut crc as &mut dyn Xfer) } else { None }, &table, &mut ctx);
+        let r = Ini::load(
+            &name,
+            &data,
+            load_type,
+            if with_xfer {
+                Some(&mut crc as &mut dyn Xfer)
+            } else {
+                None
+            },
+            &table,
+            &mut ctx,
+        );
         let crc_v = if with_xfer { crc.get_crc() } else { 0 };
         let rust = match rust_outcome(r, crc_v) {
             Ok(o) => o,
@@ -153,54 +173,120 @@ fn ini_blocks_match_upstream() {
             ok += 1;
         } else {
             failed += 1;
-            out_of_range += u64::from(ctx.center.len() == 128 && ctx.center.next_template_mask_bit() == 128);
+            out_of_range +=
+                u64::from(ctx.center.len() == 128 && ctx.center.next_template_mask_bit() == 128);
         }
         templates += ctx.center.len() as u64;
-        let what = || format!("case {case}: init names {init_names} center {init_center} load type {load_type:?} file {:?}", show(&data));
+        let what = || {
+            format!("case {case}: init names {init_names} center {init_center} load type {load_type:?} file {:?}", show(&data))
+        };
         cpp_reset(init_names, init_center);
         let c = cpp_load(&name, &data, load_type, with_xfer);
         outcome.eq(&rust, &c, what);
 
         // the store, field by field, list order
         let cpp_dump_bytes = cpp_dump(cpp::ref_up_dump);
-        dumps.eq(rust_upgrade_dump(&ctx.center, 0), cpp_dump_bytes.clone(), what);
-        sp_dumps.eq(rust_special_power_dump(&ctx.store, 0), cpp_dump(cpp::ref_sp_dump), what);
-        order_bug.eq(rust_upgrade_dump(&ctx.center, 1), cpp_dump_bytes.clone(), what);
-        time_bug.eq(rust_upgrade_dump(&ctx.center, 2), cpp_dump_bytes.clone(), what);
+        dumps.eq(
+            rust_upgrade_dump(&ctx.center, 0),
+            cpp_dump_bytes.clone(),
+            what,
+        );
+        sp_dumps.eq(
+            rust_special_power_dump(&ctx.store, 0),
+            cpp_dump(cpp::ref_sp_dump),
+            what,
+        );
+        order_bug.eq(
+            rust_upgrade_dump(&ctx.center, 1),
+            cpp_dump_bytes.clone(),
+            what,
+        );
+        time_bug.eq(
+            rust_upgrade_dump(&ctx.center, 2),
+            cpp_dump_bytes.clone(),
+            what,
+        );
         mask_bug.eq(rust_upgrade_dump(&ctx.center, 3), cpp_dump_bytes, what);
-        if ctx.center.find_upgrade(&mut ctx.names, b"DefaultUpgrade").unwrap().is_some() {
+        if ctx
+            .center
+            .find_upgrade(&mut ctx.names, b"DefaultUpgrade")
+            .unwrap()
+            .is_some()
+        {
             with_default += 1;
         }
         // (the lookup above assigned the key on the Rust side; do the same call on the C++ side
         // before comparing the other lookups, so the key streams stay equal)
         let cdn = CString::new("DefaultUpgrade").unwrap();
         let cd = unsafe { cpp::ref_up_find(cdn.as_ptr()) };
-        finds.eq(position(&ctx.center, ctx.center.find_upgrade(&mut ctx.names, b"DefaultUpgrade").unwrap()), cd, what);
+        finds.eq(
+            position(
+                &ctx.center,
+                ctx.center
+                    .find_upgrade(&mut ctx.names, b"DefaultUpgrade")
+                    .unwrap(),
+            ),
+            cd,
+            what,
+        );
 
         // the lookups
         for _ in 0..10 {
-            let n = if g.below(3) == 0 { format!("Name{}", g.below(150)) } else { UPGRADE_BLOCK_NAMES[g.below(14) as usize].to_string() };
+            let n = if g.below(3) == 0 {
+                format!("Name{}", g.below(150))
+            } else {
+                UPGRADE_BLOCK_NAMES[g.below(14) as usize].to_string()
+            };
             let cn = CString::new(n.as_str()).unwrap();
-            let rf = position(&ctx.center, ctx.center.find_upgrade(&mut ctx.names, n.as_bytes()).unwrap());
-            finds.eq(rf, unsafe { cpp::ref_up_find(cn.as_ptr()) }, || format!("{} find {n:?}", what()));
+            let rf = position(
+                &ctx.center,
+                ctx.center
+                    .find_upgrade(&mut ctx.names, n.as_bytes())
+                    .unwrap(),
+            );
+            finds.eq(rf, unsafe { cpp::ref_up_find(cn.as_ptr()) }, || {
+                format!("{} find {n:?}", what())
+            });
         }
         for _ in 0..6 {
             let key = if g.below(4) == 0 {
                 g.below(300)
             } else {
-                ctx.center.templates().nth(g.below(ctx.center.len() as u32 + 1) as usize).map_or(0, |t| t.upgrade_name_key().0)
+                ctx.center
+                    .templates()
+                    .nth(g.below(ctx.center.len() as u32 + 1) as usize)
+                    .map_or(0, |t| t.upgrade_name_key().0)
             };
-            let rf = position(&ctx.center, ctx.center.find_upgrade_by_key(NameKeyType(key)));
-            finds.eq(rf, unsafe { cpp::ref_up_find_by_key(key) }, || format!("{} find key {key}", what()));
+            let rf = position(
+                &ctx.center,
+                ctx.center.find_upgrade_by_key(NameKeyType(key)),
+            );
+            finds.eq(rf, unsafe { cpp::ref_up_find_by_key(key) }, || {
+                format!("{} find key {key}", what())
+            });
         }
-        for level in [VeterancyLevel::Regular, VeterancyLevel::Veteran, VeterancyLevel::Elite, VeterancyLevel::Heroic] {
-            let rf = position(&ctx.center, ctx.center.find_veterancy_upgrade(&mut ctx.names, level).unwrap());
-            finds.eq(rf, unsafe { cpp::ref_up_find_vet(level as i32) }, || format!("{} find vet {level:?}", what()));
+        for level in [
+            VeterancyLevel::Regular,
+            VeterancyLevel::Veteran,
+            VeterancyLevel::Elite,
+            VeterancyLevel::Heroic,
+        ] {
+            let rf = position(
+                &ctx.center,
+                ctx.center
+                    .find_veterancy_upgrade(&mut ctx.names, level)
+                    .unwrap(),
+            );
+            finds.eq(rf, unsafe { cpp::ref_up_find_vet(level as i32) }, || {
+                format!("{} find vet {level:?}", what())
+            });
         }
         let mut nb = vec![0u8; 1 << 20];
         let n = unsafe { cpp::ref_up_names(nb.as_mut_ptr(), nb.len() as i32) };
         nb.truncate(n as usize);
-        finds.eq(names_dump(&ctx.center.get_upgrade_names()), nb, || format!("{} getUpgradeNames", what()));
+        finds.eq(names_dump(&ctx.center.get_upgrade_names()), nb, || {
+            format!("{} getUpgradeNames", what())
+        });
 
         // the Player-free results of calcTimeToBuild / calcCostToBuild
         for (i, t) in ctx.center.templates().enumerate() {
@@ -210,13 +296,22 @@ fn ini_blocks_match_upstream() {
             };
             let (mut ct, mut cc) = (0i32, 0i32);
             assert_eq!(unsafe { cpp::ref_up_calc(i as i32, &mut ct, &mut cc) }, 0);
-            calcs.eq((time, t.cost_to_build()), (ct, cc), || format!("{} template {i} {:?}", what(), show(t.upgrade_name())));
+            calcs.eq((time, t.cost_to_build()), (ct, cc), || {
+                format!("{} template {i} {:?}", what(), show(t.upgrade_name()))
+            });
         }
 
         // the keys nameToKey now gives to the names
-        let rk: Vec<u32> = probe.iter().map(|n| ctx.names.name_to_key(n.as_bytes()).0).collect();
+        let rk: Vec<u32> = probe
+            .iter()
+            .map(|n| ctx.names.name_to_key(n.as_bytes()).0)
+            .collect();
         let ck: Vec<u32> = probe.iter().map(|n| cpp_name_key(n)).collect();
-        let mut planted = probe.iter().rev().map(|n| ctx.names.name_to_key(n.as_bytes()).0).collect::<Vec<_>>();
+        let mut planted = probe
+            .iter()
+            .rev()
+            .map(|n| ctx.names.name_to_key(n.as_bytes()).0)
+            .collect::<Vec<_>>();
         planted.reverse();
         keys.eq(rk.clone(), ck.clone(), what);
         keys_bug.eq(vec![planted[0] ^ 1], vec![ck[0]], what);
@@ -227,9 +322,18 @@ fn ini_blocks_match_upstream() {
         excluded.total(),
         excluded.0
     );
-    assert!(ok > 1500 && failed > 1500, "the generator must reach both outcomes: {ok} loaded, {failed} threw");
-    assert!(out_of_range > 100, "the generator must reach the 129th template: {out_of_range}");
-    assert!(templates > 20_000 && with_default > 500, "too few templates compared: {templates}, {with_default} with DefaultUpgrade");
+    assert!(
+        ok > 1500 && failed > 1500,
+        "the generator must reach both outcomes: {ok} loaded, {failed} threw"
+    );
+    assert!(
+        out_of_range > 100,
+        "the generator must reach the 129th template: {out_of_range}"
+    );
+    assert!(
+        templates > 20_000 && with_default > 500,
+        "too few templates compared: {templates}, {with_default} with DefaultUpgrade"
+    );
     outcome.finish();
     dumps.finish();
     sp_dumps.finish();
@@ -255,7 +359,11 @@ fn new_upgrade_called_directly_matches_upstream() {
         let init_center = g.below(2) == 0;
         let mut ctx = Ctx::new(init_names, init_center);
         cpp_reset(init_names, init_center);
-        let n = if g.below(3) == 0 { 1 + g.below(135) } else { 125 + g.below(11) };
+        let n = if g.below(3) == 0 {
+            1 + g.below(135)
+        } else {
+            125 + g.below(11)
+        };
         let default_at = g.below(n.max(2));
         let mut rs = Vec::new();
         let mut cs = Vec::new();
@@ -280,7 +388,9 @@ fn new_upgrade_called_directly_matches_upstream() {
             calls += 1;
             threw += u64::from(cs_i == 4);
         }
-        statuses.eq(rs.clone(), cs.clone(), || format!("run {run}: {n} calls, init names {init_names} center {init_center}"));
+        statuses.eq(rs.clone(), cs.clone(), || {
+            format!("run {run}: {n} calls, init names {init_names} center {init_center}")
+        });
         // planted: the limit is one too low (the last call that fits is refused)
         let mut planted = rs.clone();
         if rs.contains(&4) {
@@ -289,9 +399,11 @@ fn new_upgrade_called_directly_matches_upstream() {
             }
         }
         limit_bug.eq(planted, cs, || format!("run {run}"));
-        dumps.eq(rust_upgrade_dump(&ctx.center, 0), cpp_dump(cpp::ref_up_dump), || {
-            format!("run {run}: {n} calls, init names {init_names} center {init_center}")
-        });
+        dumps.eq(
+            rust_upgrade_dump(&ctx.center, 0),
+            cpp_dump(cpp::ref_up_dump),
+            || format!("run {run}: {n} calls, init names {init_names} center {init_center}"),
+        );
     }
     println!("newUpgrade: {calls} calls in 300 centers, {threw} threw std::out_of_range");
     assert!(threw > 100);
@@ -301,7 +413,10 @@ fn new_upgrade_called_directly_matches_upstream() {
 }
 
 fn tmp_path(tag: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("rts-lockstep-upgrade-{}-{tag}.bin", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "rts-lockstep-upgrade-{}-{tag}.bin",
+        std::process::id()
+    ))
 }
 
 fn status_of(r: Result<(), XferStatus>) -> i32 {
@@ -327,7 +442,11 @@ fn upgrade_instance_xfer_matches_upstream() {
     const CASES: usize = 6_000;
     for case in 0..CASES {
         // statuses 0..=2 are the enumerators; saving any int is defined, loading one keeps it raw
-        let status = if g.below(4) == 0 { g.i32() } else { g.below(3) as i32 };
+        let status = if g.below(4) == 0 {
+            g.i32()
+        } else {
+            g.below(3) as i32
+        };
         let mut u = Upgrade::new(NameKeyType(g.below(300)));
         u.set_status(status);
 
@@ -335,14 +454,26 @@ fn upgrade_instance_xfer_matches_upstream() {
         let mut cbytes = vec![0u8; 64];
         let mut clen = 0i32;
         let mut cst_status = status;
-        let cst = unsafe { cpp::ref_up_inst_xfer(0, &mut cst_status, cpath.as_ptr(), cbytes.as_mut_ptr(), 64, &mut clen, &mut 0) };
+        let cst = unsafe {
+            cpp::ref_up_inst_xfer(
+                0,
+                &mut cst_status,
+                cpath.as_ptr(),
+                cbytes.as_mut_ptr(),
+                64,
+                &mut clen,
+                &mut 0,
+            )
+        };
         cbytes.truncate(clen as usize);
         let mut xs = XferSave::new();
         xs.open(b"rust").unwrap();
         let rst = status_of(xs.xfer_snapshot(&mut u));
         let _ = xs.close();
         let rbytes = xs.bytes().to_vec();
-        save.eq((rst, &rbytes), (cst, &cbytes), || format!("case {case}: status {status}"));
+        save.eq((rst, &rbytes), (cst, &cbytes), || {
+            format!("case {case}: status {status}")
+        });
         let mut planted = rbytes.clone();
         planted[1] ^= 1; // a byte of the status changes
         save_bug.eq((rst, &planted), (cst, &cbytes), || format!("case {case}"));
@@ -361,7 +492,17 @@ fn upgrade_instance_xfer_matches_upstream() {
         }
         let start = g.i32();
         let mut cs = start;
-        let cst = unsafe { cpp::ref_up_inst_xfer(1, &mut cs, cpath.as_ptr(), file.as_mut_ptr(), file.len() as i32, &mut 0, &mut 0) };
+        let cst = unsafe {
+            cpp::ref_up_inst_xfer(
+                1,
+                &mut cs,
+                cpath.as_ptr(),
+                file.as_mut_ptr(),
+                file.len() as i32,
+                &mut 0,
+                &mut 0,
+            )
+        };
         let mut r = Upgrade::new(NameKeyType(1));
         r.set_status(start);
         let mut xl = XferLoad::new(file.clone());
@@ -375,22 +516,42 @@ fn upgrade_instance_xfer_matches_upstream() {
         // After a failed load C++ may hold a partial read of the field (fread copies the bytes it got);
         // the Rust XferLoad does not do that, so a failed load compares the status only.
         if rst == 0 {
-            load.eq((rst, r.status()), (cst, cs), || format!("case {case}: file {file:?} start {start}"));
-            load_bug.eq((rst, r.status() ^ 0x100), (cst, cs), || format!("case {case}"));
+            load.eq((rst, r.status()), (cst, cs), || {
+                format!("case {case}: file {file:?} start {start}")
+            });
+            load_bug.eq((rst, r.status() ^ 0x100), (cst, cs), || {
+                format!("case {case}")
+            });
         } else {
-            load.eq((rst, 0), (cst, 0), || format!("case {case}: file {file:?} start {start}"));
+            load.eq((rst, 0), (cst, 0), || {
+                format!("case {case}: file {file:?} start {start}")
+            });
             load_bug.eq((rst + 1, 0), (cst, 0), || format!("case {case}"));
         }
 
         // CRC
         let mut cc = 7u32;
         let mut s2 = status;
-        let cst = unsafe { cpp::ref_up_inst_xfer(2, &mut s2, cpath.as_ptr(), std::ptr::null_mut(), 0, &mut 0, &mut cc) };
+        let cst = unsafe {
+            cpp::ref_up_inst_xfer(
+                2,
+                &mut s2,
+                cpath.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+                &mut 0,
+                &mut cc,
+            )
+        };
         let mut xc = XferCrc::new_without_nan_guard();
         xc.open(b"crc").unwrap();
         let rst = status_of(xc.xfer_snapshot(&mut u));
-        crc.eq((rst, xc.get_crc()), (cst, cc), || format!("case {case}: status {status}"));
-        crc_bug.eq((rst, xc.get_crc() ^ 1), (cst, cc), || format!("case {case}"));
+        crc.eq((rst, xc.get_crc()), (cst, cc), || {
+            format!("case {case}: status {status}")
+        });
+        crc_bug.eq((rst, xc.get_crc() ^ 1), (cst, cc), || {
+            format!("case {case}")
+        });
     }
     let _ = std::fs::remove_file(&path);
     println!("Upgrade xfer: {CASES} instances; loads {load_ok} ok, {load_failed} failed");
@@ -417,7 +578,13 @@ fn random_mask(g: &mut Gen) -> UpgradeMaskType {
     UpgradeMaskType::from_words(w)
 }
 
-fn cpp_mask_op(op: i32, a: &UpgradeMaskType, b: &UpgradeMaskType, c: &UpgradeMaskType, idx: &[i32]) -> (i32, [u64; 4]) {
+fn cpp_mask_op(
+    op: i32,
+    a: &UpgradeMaskType,
+    b: &UpgradeMaskType,
+    c: &UpgradeMaskType,
+    idx: &[i32],
+) -> (i32, [u64; 4]) {
     let mut out = [0u64; 4];
     let mut padded = [0i32; 5];
     padded[..idx.len()].copy_from_slice(idx);
@@ -446,27 +613,51 @@ fn upgrade_mask_helpers_match_upstream() {
     let mut compared = 0u64;
     let mut out_of_range = 0u64;
     for case in 0..30_000 {
-        let (a, mut b, mut c) = (random_mask(&mut g), random_mask(&mut g), random_mask(&mut g));
+        let (a, mut b, mut c) = (
+            random_mask(&mut g),
+            random_mask(&mut g),
+            random_mask(&mut g),
+        );
         if g.below(3) == 0 {
             // masks for which TEST_UPGRADE_MASK_MULTI is true: b inside a, c outside it
             let (wa, wb, wc) = (words_of(&a), words_of(&b), words_of(&c));
             b = UpgradeMaskType::from_words([wa[0] & wb[0], wa[1] & wb[1], 0, 0]);
             c = UpgradeMaskType::from_words([!wa[0] & wc[0], !wa[1] & wc[1], 0, 0]);
         }
-        let idx: Vec<i32> = (0..5).map(|_| if g.below(6) == 0 { g.below(140) as i32 - 6 } else { g.below(128) as i32 }).collect();
+        let idx: Vec<i32> = (0..5)
+            .map(|_| {
+                if g.below(6) == 0 {
+                    g.below(140) as i32 - 6
+                } else {
+                    g.below(128) as i32
+                }
+            })
+            .collect();
         let what = || format!("case {case}: a {a:?} b {b:?} c {c:?} idx {idx:?}");
         let r = test_upgrade_mask(&a, idx[0]);
         let (cr, _) = cpp_mask_op(0, &a, &b, &c, &idx);
         out_of_range += u64::from(r.is_err());
         ck.eq(r.map_or(-1, i32::from), cr, what);
-        let planted = if idx[0] >= 128 { 0 } else { r.map_or(-1, i32::from) };
+        let planted = if idx[0] >= 128 {
+            0
+        } else {
+            r.map_or(-1, i32::from)
+        };
         range_bug.eq(planted, cr, what);
-        ck.eq(i32::from(test_upgrade_mask_any(&a, &b)), cpp_mask_op(1, &a, &b, &c, &idx).0, what);
+        ck.eq(
+            i32::from(test_upgrade_mask_any(&a, &b)),
+            cpp_mask_op(1, &a, &b, &c, &idx).0,
+            what,
+        );
         let rm = test_upgrade_mask_multi(&a, &b, &c);
         let cm = cpp_mask_op(2, &a, &b, &c, &idx).0;
         ck.eq(i32::from(rm), cm, what);
         multi_bug.eq(i32::from(test_upgrade_mask_multi(&a, &c, &b)), cm, what);
-        ck.eq(i32::from(upgrade_mask_any_set(&a)), cpp_mask_op(3, &a, &b, &c, &idx).0, what);
+        ck.eq(
+            i32::from(upgrade_mask_any_set(&a)),
+            cpp_mask_op(3, &a, &b, &c, &idx).0,
+            what,
+        );
         let mut m = a;
         clear_upgrade_mask(&mut m);
         ck.eq((0, words_of(&m)), cpp_mask_op(4, &a, &b, &c, &idx), what);
@@ -478,7 +669,11 @@ fn upgrade_mask_helpers_match_upstream() {
         let n = 1 + g.below(5) as usize;
         let rmk = make_upgrade_mask(&idx[..n]);
         let (cr, cw) = cpp_mask_op(8, &a, &b, &c, &idx[..n]);
-        ck.eq(rmk.map_or((-1, [0; 4]), |m| (0, words_of(&m))), (cr, cw), what);
+        ck.eq(
+            rmk.map_or((-1, [0; 4]), |m| (0, words_of(&m))),
+            (cr, cw),
+            what,
+        );
         compared += 1;
     }
     println!("Upgrade mask helpers: {compared} cases ({out_of_range} test indices out of range, std::out_of_range upstream)");
@@ -491,21 +686,40 @@ fn upgrade_mask_helpers_match_upstream() {
 #[test]
 fn name_tables_match_upstream() {
     let _lock = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let read = |f: unsafe extern "C" fn(i32) -> *const std::os::raw::c_char, i: i32| -> Option<String> {
-        let p = unsafe { f(i) };
-        (!p.is_null()).then(|| unsafe { std::ffi::CStr::from_ptr(p) }.to_str().unwrap().to_string())
-    };
+    let read =
+        |f: unsafe extern "C" fn(i32) -> *const std::os::raw::c_char, i: i32| -> Option<String> {
+            let p = unsafe { f(i) };
+            (!p.is_null()).then(|| {
+                unsafe { std::ffi::CStr::from_ptr(p) }
+                    .to_str()
+                    .unwrap()
+                    .to_string()
+            })
+        };
     let mut ck = Check::new("TheUpgradeTypeNames / TheAcademyClassificationTypeNames");
     let mut bug = Check::new("name tables");
-    let types: Vec<Option<String>> = (0..=UPGRADE_TYPE_NAMES.len() as i32).map(|i| read(cpp::ref_up_type_name, i)).collect();
-    let academy: Vec<Option<String>> =
-        (0..=ACADEMY_CLASSIFICATION_TYPE_NAMES.len() as i32).map(|i| read(cpp::ref_academy_name, i)).collect();
-    let mut rust_types: Vec<Option<String>> = UPGRADE_TYPE_NAMES.iter().map(|s| Some(s.to_string())).collect();
+    let types: Vec<Option<String>> = (0..=UPGRADE_TYPE_NAMES.len() as i32)
+        .map(|i| read(cpp::ref_up_type_name, i))
+        .collect();
+    let academy: Vec<Option<String>> = (0..=ACADEMY_CLASSIFICATION_TYPE_NAMES.len() as i32)
+        .map(|i| read(cpp::ref_academy_name, i))
+        .collect();
+    let mut rust_types: Vec<Option<String>> = UPGRADE_TYPE_NAMES
+        .iter()
+        .map(|s| Some(s.to_string()))
+        .collect();
     rust_types.push(None);
-    let mut rust_academy: Vec<Option<String>> = ACADEMY_CLASSIFICATION_TYPE_NAMES.iter().map(|s| Some(s.to_string())).collect();
+    let mut rust_academy: Vec<Option<String>> = ACADEMY_CLASSIFICATION_TYPE_NAMES
+        .iter()
+        .map(|s| Some(s.to_string()))
+        .collect();
     rust_academy.push(None);
-    ck.eq(rust_types.clone(), types.clone(), || "TheUpgradeTypeNames".to_string());
-    ck.eq(rust_academy.clone(), academy.clone(), || "TheAcademyClassificationTypeNames".to_string());
+    ck.eq(rust_types.clone(), types.clone(), || {
+        "TheUpgradeTypeNames".to_string()
+    });
+    ck.eq(rust_academy.clone(), academy.clone(), || {
+        "TheAcademyClassificationTypeNames".to_string()
+    });
     rust_academy.swap(0, 1);
     bug.eq(rust_academy, academy, || "swapped".to_string());
     ck.finish();

@@ -53,13 +53,20 @@ impl Default for XferCrc {
 impl XferCrc {
     /// `XferCRC()`: mode `XFER_CRC`, CRC zero.
     pub fn new() -> Self {
-        XferCrc { state: XferState::new(XferMode::Crc), crc: 0, nan_guard: true }
+        XferCrc {
+            state: XferState::new(XferMode::Crc),
+            crc: 0,
+            nan_guard: true,
+        }
     }
 
     /// An `XferCRC` without the NaN guard, hashing every `Real`'s
     /// raw bits exactly as upstream does (used by the differential tests).
     pub fn new_without_nan_guard() -> Self {
-        XferCrc { nan_guard: false, ..Self::new() }
+        XferCrc {
+            nan_guard: false,
+            ..Self::new()
+        }
     }
 
     /// `XferCRC::addCRC(val)`, with `val` already the value upstream adds
@@ -147,7 +154,11 @@ impl Xfer for XferCrc {
     /// `Xfer::xferReal`, with the PROPOSED [`nan_guard`] unless built with
     /// [`XferCrc::new_without_nan_guard`]. The caller's value is not changed.
     fn xfer_real(&mut self, v: &mut f32) -> XferResult<()> {
-        let bits = if self.nan_guard { nan_guard(*v).to_bits() } else { v.to_bits() };
+        let bits = if self.nan_guard {
+            nan_guard(*v).to_bits()
+        } else {
+            v.to_bits()
+        };
         self.xfer_implementation(&mut bits.to_le_bytes())
     }
 }
@@ -175,7 +186,11 @@ impl XferDeepCrc {
     pub fn new() -> Self {
         let mut inner = XferCrc::new();
         inner.state.mode = XferMode::Save;
-        XferDeepCrc { inner, file: None, last_file: Vec::new() }
+        XferDeepCrc {
+            inner,
+            file: None,
+            last_file: Vec::new(),
+        }
     }
 
     /// An `XferDeepCRC` without the NaN guard (upstream's raw bits).
@@ -262,7 +277,11 @@ impl Xfer for XferDeepCrc {
     /// [`XferDeepCrc::new_without_nan_guard`]. What is hashed is also what
     /// is written. The caller's value is not changed.
     fn xfer_real(&mut self, v: &mut f32) -> XferResult<()> {
-        let bits = if self.inner.nan_guard { nan_guard(*v).to_bits() } else { v.to_bits() };
+        let bits = if self.inner.nan_guard {
+            nan_guard(*v).to_bits()
+        } else {
+            v.to_bits()
+        };
         self.xfer_implementation(&mut bits.to_le_bytes())
     }
 
@@ -368,14 +387,25 @@ mod tests {
         y.add_bytes(&[1, 2]);
         assert_eq!(y.raw_crc(), 0x0201, "leftover bytes enter little-endian");
         assert_eq!(y.get_crc(), 0x0102_0000);
-        let mut z = XferCrc { crc: 0x8000_0000, ..XferCrc::new() };
+        let mut z = XferCrc {
+            crc: 0x8000_0000,
+            ..XferCrc::new()
+        };
         z.add_bytes(&[0, 0, 0, 0]);
         assert_eq!(z.raw_crc(), 1);
     }
 
     #[test]
     fn nan_guard_passes_non_nan_through() {
-        for v in [0.0f32, -0.0, 1.5, f32::INFINITY, f32::NEG_INFINITY, f32::MIN_POSITIVE / 2.0, f32::MAX] {
+        for v in [
+            0.0f32,
+            -0.0,
+            1.5,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::MIN_POSITIVE / 2.0,
+            f32::MAX,
+        ] {
             assert_eq!(nan_guard(v).to_bits(), v.to_bits());
         }
         assert_eq!(canonical_nan().to_bits(), CANONICAL_NAN_BITS);
@@ -402,6 +432,10 @@ mod tests {
         let mut b = XferCrc::new_without_nan_guard();
         a.xfer_real(&mut f32::from_bits(0x7FC0_0000)).unwrap();
         b.xfer_real(&mut f32::from_bits(0xFFC0_0001)).unwrap();
-        assert_ne!(a.get_crc(), b.get_crc(), "upstream: different NaN bits, different CRC");
+        assert_ne!(
+            a.get_crc(),
+            b.get_crc(),
+            "upstream: different NaN bits, different CRC"
+        );
     }
 }

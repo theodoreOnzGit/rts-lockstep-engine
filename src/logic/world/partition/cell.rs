@@ -69,7 +69,10 @@ impl Default for PartitionCell {
     fn default() -> Self {
         PartitionCell {
             first_coi: None,
-            shroud_level: [ShroudLevel { current_shroud: 1, active_shroud_level: 0 }; MAX_PLAYER_COUNT as usize],
+            shroud_level: [ShroudLevel {
+                current_shroud: 1,
+                active_shroud_level: 0,
+            }; MAX_PLAYER_COUNT as usize],
             lo_terrain_z: HUGE_DIST,
             hi_terrain_z: -HUGE_DIST,
             threat_value: [0; MAX_PLAYER_COUNT as usize],
@@ -143,14 +146,16 @@ impl PartitionCell {
             let a = self.shroud_level[p].active_shroud_level;
             self.shroud_level[p].current_shroud = if a < 1 { a } else { 1 };
         } else {
-            self.shroud_level[p].current_shroud = self.shroud_level[p].current_shroud.wrapping_add(1);
+            self.shroud_level[p].current_shroud =
+                self.shroud_level[p].current_shroud.wrapping_add(1);
         }
     }
 
     /// The counter step of `addShrouder`: the active level goes up and a 0
     /// current level becomes 1.
     pub(super) fn step_add_shrouder(&mut self, p: usize) {
-        self.shroud_level[p].active_shroud_level = self.shroud_level[p].active_shroud_level.wrapping_add(1);
+        self.shroud_level[p].active_shroud_level =
+            self.shroud_level[p].active_shroud_level.wrapping_add(1);
         if self.shroud_level[p].current_shroud == 0 {
             self.shroud_level[p].current_shroud = 1;
         }
@@ -158,7 +163,8 @@ impl PartitionCell {
 
     /// `removeShrouder`: just decrement the active level (never a client change).
     pub(super) fn step_remove_shrouder(&mut self, p: usize) {
-        self.shroud_level[p].active_shroud_level = self.shroud_level[p].active_shroud_level.wrapping_sub(1);
+        self.shroud_level[p].active_shroud_level =
+            self.shroud_level[p].active_shroud_level.wrapping_sub(1);
     }
 
     /// `getThreatValue(playerIndex)`: 0 for a player index out of range.
@@ -229,7 +235,16 @@ pub struct SightingInfo {
 impl Default for SightingInfo {
     /// `SightingInfo::SightingInfo()` calls `reset()`.
     fn default() -> Self {
-        SightingInfo { where_: Coord3D { x: 0.0, y: 0.0, z: 0.0 }, how_far: 0.0, for_whom: 0, data: 0 }
+        SightingInfo {
+            where_: Coord3D {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            how_far: 0.0,
+            for_whom: 0,
+            data: 0,
+        }
     }
 }
 
@@ -253,7 +268,10 @@ mod tests {
     fn a_new_cell_is_passively_shrouded_for_everyone() {
         let c = PartitionCell::default();
         for p in 0..16 {
-            assert_eq!(c.get_shroud_status_for_player(p), CellShroudStatus::Shrouded);
+            assert_eq!(
+                c.get_shroud_status_for_player(p),
+                CellShroudStatus::Shrouded
+            );
         }
         assert_eq!(c.get_lo_terrain(), 1_000_000.0);
         assert_eq!(c.get_hi_terrain(), -1_000_000.0);
@@ -272,7 +290,13 @@ mod tests {
         assert_eq!(c.shroud_level(2).current_shroud, 0);
         assert_eq!(c.get_shroud_status_for_player(2), CellShroudStatus::Fogged);
         c.step_add_shrouder(2); // active 1, a 0 current becomes 1
-        assert_eq!(c.shroud_level(2), ShroudLevel { current_shroud: 1, active_shroud_level: 1 });
+        assert_eq!(
+            c.shroud_level(2),
+            ShroudLevel {
+                current_shroud: 1,
+                active_shroud_level: 1
+            }
+        );
         c.step_add_looker(2);
         c.step_remove_looker(2); // back to min(active=1, 1) = 1
         assert_eq!(c.shroud_level(2).current_shroud, 1);
@@ -295,7 +319,16 @@ mod tests {
 
     #[test]
     fn sighting_info_reset_and_invalid() {
-        let mut s = SightingInfo { where_: Coord3D { x: 1.0, y: 2.0, z: 3.0 }, how_far: 5.0, for_whom: 3, data: 9 };
+        let mut s = SightingInfo {
+            where_: Coord3D {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+            },
+            how_far: 5.0,
+            for_whom: 3,
+            data: 9,
+        };
         assert!(!s.is_invalid());
         s.reset();
         assert!(s.is_invalid());

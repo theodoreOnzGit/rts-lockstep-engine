@@ -26,7 +26,9 @@ use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::special_power_module::{SpecialPowerModule, SpecialPowerModuleData};
-use crate::logic::modules::special_power_body::{self, special_power_module_call, SpecialPowerBehavior};
+use crate::logic::modules::special_power_body::{
+    self, special_power_module_call, SpecialPowerBehavior,
+};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::update_body::UpdateBody;
@@ -57,7 +59,9 @@ impl SpyVisionSpecialPowerModuleData {
     }
 
     /// `buildFieldParse(p)`: the behaviour base, the special power fields, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, SpyVisionSpecialPowerModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, SpyVisionSpecialPowerModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -65,23 +69,50 @@ impl SpyVisionSpecialPowerModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<SpyVisionSpecialPowerModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<SpyVisionSpecialPowerModuleData> {
         let mut data = SpyVisionSpecialPowerModuleData::new();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, SpyVisionSpecialPowerModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                SpyVisionSpecialPowerModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
 }
 
 /// `SpecialPowerModuleData::buildFieldParse`'s table, for this data class.
-static BASE_FIELD_PARSE: [FieldParse<SpyVisionSpecialPowerModuleData>; 6] = special_power_data_field_parse!(SpyVisionSpecialPowerModuleData, special_power);
+static BASE_FIELD_PARSE: [FieldParse<SpyVisionSpecialPowerModuleData>; 6] =
+    special_power_data_field_parse!(SpyVisionSpecialPowerModuleData, special_power);
 
 /// `SpyVisionSpecialPowerModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<SpyVisionSpecialPowerModuleData>; 4] = [
-    FieldParse::new("BaseDuration", |ini, d, _| { d.base_duration_in_frames = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("BonusDurationPerCaptured", |ini, d, _| { d.bonus_duration_per_captured_in_frames = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("MaxDuration", |ini, d, _| { d.max_duration_in_frames = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "BaseDuration",
+        |ini, d, _| {
+            d.base_duration_in_frames = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "BonusDurationPerCaptured",
+        |ini, d, _| {
+            d.bonus_duration_per_captured_in_frames = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MaxDuration",
+        |ini, d, _| {
+            d.max_duration_in_frames = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
@@ -108,8 +139,12 @@ impl PartialEq for SpyVisionSpecialPower {
 
 impl SpyVisionSpecialPower {
     /// `SpyVisionSpecialPower(thing, moduleData)`, the part that touches no world: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(object: ObjectId, data: Option<Arc<SpyVisionSpecialPowerModuleData>>) -> IniResult<SpyVisionSpecialPower> {
-        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<SpyVisionSpecialPowerModuleData>>,
+    ) -> IniResult<SpyVisionSpecialPower> {
+        let data =
+            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let power = SpecialPowerModule::new(object, Some(Arc::new(data.special_power.clone())))?;
         Ok(SpyVisionSpecialPower { power, data })
     }
@@ -132,7 +167,12 @@ impl SpyVisionSpecialPower {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         special_power_module_call(self, world, me, call)
     }
 }
@@ -153,8 +193,17 @@ impl SpecialPowerBehavior for SpyVisionSpecialPower {
             _ => None,
         }
     }
-    fn do_special_power(&mut self, world: &mut World, me: ModuleHandle, command_options: u32) -> Result<(), IniError> {
-        if world.objects.find(me.object).is_some_and(|o| o.is_disabled()) {
+    fn do_special_power(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        command_options: u32,
+    ) -> Result<(), IniError> {
+        if world
+            .objects
+            .find(me.object)
+            .is_some_and(|o| o.is_disabled())
+        {
             return Ok(());
         }
         special_power_body::base_do_special_power(self, world, me, command_options)?;
@@ -164,8 +213,14 @@ impl SpecialPowerBehavior for SpyVisionSpecialPower {
                 ModuleReply::Int(n) => n,
                 _ => 0,
             };
-            let count = if crate::logic::modules::plant(855) { 0 } else { count };
-            duration = duration.wrapping_add((count as u32).wrapping_mul(self.data.bonus_duration_per_captured_in_frames));
+            let count = if crate::logic::modules::plant(855) {
+                0
+            } else {
+                count
+            };
+            duration = duration.wrapping_add(
+                (count as u32).wrapping_mul(self.data.bonus_duration_per_captured_in_frames),
+            );
             if duration > self.data.max_duration_in_frames && !crate::logic::modules::plant(821) {
                 duration = self.data.max_duration_in_frames;
             }
@@ -197,6 +252,7 @@ impl Snapshot for SpyVisionSpecialPower {
 
 /// The factory's `NewModuleDataProc` for `SpyVisionSpecialPower`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::SpyVisionSpecialPower(Arc::new(SpyVisionSpecialPowerModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::SpyVisionSpecialPower(Arc::new(
+        SpyVisionSpecialPowerModuleData::friend_new_module_data(ini)?,
+    )))
 }
-

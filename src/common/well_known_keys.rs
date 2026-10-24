@@ -432,7 +432,12 @@ impl Default for WellKnownKeys {
 impl WellKnownKeys {
     /// All 127, none looked up yet.
     pub fn new() -> Self {
-        WellKnownKeys { keys: WELL_KNOWN_KEY_NAMES.iter().map(|n| StaticNameKey::new(n.as_bytes())).collect() }
+        WellKnownKeys {
+            keys: WELL_KNOWN_KEY_NAMES
+                .iter()
+                .map(|n| StaticNameKey::new(n.as_bytes()))
+                .collect(),
+        }
     }
 
     /// `TheKey_<name>.key()`: `which` is one of the constants of this module.

@@ -93,7 +93,11 @@ const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9_r23.bin")
 const XFER_FILE: &str = "l9_r23.bin";
 const CLASSES: [&str; 2] = ["DynamicGeometryInfoUpdate", "GrantStealthBehavior"];
 /// The kinds the objects are given, by bit (the driver's `g_r23Kinds`), with their INI names.
-const KINDS: [(KindOfType, &str); 3] = [(KINDOF_INFANTRY, "INFANTRY"), (KINDOF_VEHICLE, "VEHICLE"), (KINDOF_STRUCTURE, "STRUCTURE")];
+const KINDS: [(KindOfType, &str); 3] = [
+    (KINDOF_INFANTRY, "INFANTRY"),
+    (KINDOF_VEHICLE, "VEHICLE"),
+    (KINDOF_STRUCTURE, "STRUCTURE"),
+];
 
 fn put_u32(v: &mut Vec<u8>, x: u32) {
     v.extend_from_slice(&x.to_le_bytes());
@@ -106,16 +110,23 @@ fn put_str(v: &mut Vec<u8>, s: &[u8]) {
     v.extend_from_slice(s);
 }
 fn read_geom(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::DynamicGeometryInfoUpdate(Arc::new(DynamicGeometryInfoUpdateModuleData::friend_new_module_data(Some(ini))?)));
+    *out = Some(ModuleDataKind::DynamicGeometryInfoUpdate(Arc::new(
+        DynamicGeometryInfoUpdateModuleData::friend_new_module_data(Some(ini))?,
+    )));
     Ok(())
 }
 fn read_stealth(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<()> {
-    *out = Some(ModuleDataKind::GrantStealthBehavior(Arc::new(GrantStealthBehaviorModuleData::friend_new_module_data(Some(ini))?)));
+    *out = Some(ModuleDataKind::GrantStealthBehavior(Arc::new(
+        GrantStealthBehaviorModuleData::friend_new_module_data(Some(ini))?,
+    )));
     Ok(())
 }
 
 fn rust_read(kind: u32, name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: if kind == 0 { read_geom } else { read_stealth } }];
+    let blocks = [BlockParse {
+        token: "D",
+        parse: if kind == 0 { read_geom } else { read_stealth },
+    }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -135,7 +146,14 @@ fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind) {
         }
         ModuleDataKind::DynamicGeometryInfoUpdate(d) => {
             put_u32(v, d.initial_delay);
-            for f in [d.initial_height, d.initial_major_radius, d.initial_minor_radius, d.final_height, d.final_major_radius, d.final_minor_radius] {
+            for f in [
+                d.initial_height,
+                d.initial_major_radius,
+                d.initial_minor_radius,
+                d.final_height,
+                d.final_major_radius,
+                d.final_minor_radius,
+            ] {
                 put_u32(v, f.to_bits());
             }
             put_u32(v, d.transition_time);
@@ -167,7 +185,12 @@ fn decode(kind: u32, b: &[u8], n_ops: usize) -> Vec<String> {
     if kind == 1 {
         let f: Vec<u32> = (0..3).map(|_| u32_(&mut p)).collect();
         let kinds: Vec<u32> = (0..KINDOF_COUNT).map(|_| u32_(&mut p)).collect();
-        let set: Vec<usize> = kinds.iter().enumerate().filter(|(_, v)| **v != 0).map(|(i, _)| i).collect();
+        let set: Vec<usize> = kinds
+            .iter()
+            .enumerate()
+            .filter(|(_, v)| **v != 0)
+            .map(|(i, _)| i)
+            .collect();
         let ps = str_(&mut p);
         out.push(format!("data {f:x?} kinds {set:?} psys {ps:?}"));
     } else {
@@ -208,29 +231,51 @@ fn gen_text(g: &mut Gen, kind: u32, clean: bool) -> Vec<u8> {
     let real = |g: &mut Gen| pick(g, &["0", "5", "12.5", "30", "100", "-4"]).to_string();
     if kind == 0 {
         if g.below(100) < 70 {
-            lines.push(format!("InitialDelay = {}", pick(g, &["0", "33", "34", "100", "500"])));
+            lines.push(format!(
+                "InitialDelay = {}",
+                pick(g, &["0", "33", "34", "100", "500"])
+            ));
         }
-        for f in ["InitialHeight", "InitialMajorRadius", "InitialMinorRadius", "FinalHeight", "FinalMajorRadius", "FinalMinorRadius"] {
+        for f in [
+            "InitialHeight",
+            "InitialMajorRadius",
+            "InitialMinorRadius",
+            "FinalHeight",
+            "FinalMajorRadius",
+            "FinalMinorRadius",
+        ] {
             if g.below(100) < 75 {
                 let r = real(g);
                 lines.push(format!("{f} = {r}"));
             }
         }
         if g.below(100) < 80 {
-            lines.push(format!("TransitionTime = {}", pick(g, &["0", "33", "100", "200", "1000"])));
+            lines.push(format!(
+                "TransitionTime = {}",
+                pick(g, &["0", "33", "100", "200", "1000"])
+            ));
         }
         if g.below(100) < 50 {
-            lines.push(format!("ReverseAtTransitionTime = {}", pick(g, &["Yes", "No"])));
+            lines.push(format!(
+                "ReverseAtTransitionTime = {}",
+                pick(g, &["Yes", "No"])
+            ));
         }
     } else {
         if g.below(100) < 70 {
             lines.push(format!("StartRadius = {}", pick(g, &["0", "10", "50"])));
         }
         if g.below(100) < 70 {
-            lines.push(format!("FinalRadius = {}", pick(g, &["0", "40", "100", "200"])));
+            lines.push(format!(
+                "FinalRadius = {}",
+                pick(g, &["0", "40", "100", "200"])
+            ));
         }
         if g.below(100) < 70 {
-            lines.push(format!("RadiusGrowRate = {}", pick(g, &["0", "10", "25", "-5", "7.5"])));
+            lines.push(format!(
+                "RadiusGrowRate = {}",
+                pick(g, &["0", "10", "25", "-5", "7.5"])
+            ));
         }
         if g.below(100) < 50 {
             let mut t = Vec::new();
@@ -240,7 +285,10 @@ fn gen_text(g: &mut Gen, kind: u32, clean: bool) -> Vec<u8> {
             lines.push(format!("KindOf = {}", t.join(" ")));
         }
         if g.below(100) < 50 {
-            lines.push(format!("RadiusParticleSystemName = {}", pick(g, &["PS_Ring", "PS_Glow", "None"])));
+            lines.push(format!(
+                "RadiusParticleSystemName = {}",
+                pick(g, &["PS_Ring", "PS_Glow", "None"])
+            ));
         }
     }
     if !clean {
@@ -271,7 +319,13 @@ struct Tally {
     reacts: u64,
 }
 
-fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8]) -> (i32, Vec<u8>, u32) {
+fn run_xfer(
+    w: &mut World,
+    me: ObjectId,
+    idx: usize,
+    how: u32,
+    saved: &[u8],
+) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -319,7 +373,11 @@ fn set_kinds(w: &mut World, id: ObjectId, bits: u32) {
             values.kind_of.push(*k);
         }
     }
-    w.objects.find_mut(id).unwrap().thing.friend_set_template(Arc::new(ThingTemplate::from_object_values(&values)));
+    w.objects
+        .find_mut(id)
+        .unwrap()
+        .thing
+        .friend_set_template(Arc::new(ThingTemplate::from_object_values(&values)));
 }
 
 /// The scan: up to four nibbles of ids, 0 ends.
@@ -338,7 +396,12 @@ fn scan_list(scan: u32) -> Vec<ObjectId> {
 }
 
 /// The effect lines of a stretch of the trace, in the driver's format, and the wake calls of the module at slot `idx`.
-fn effects(w: &mut World, idx: u16, events_before: usize, tally: &mut Tally) -> (Vec<String>, u32, u32) {
+fn effects(
+    w: &mut World,
+    idx: u16,
+    events_before: usize,
+    tally: &mut Tally,
+) -> (Vec<String>, u32, u32) {
     let events: Vec<ObjectClientEvent> = w.events.events()[events_before..]
         .iter()
         .filter_map(|e| match e {
@@ -352,17 +415,38 @@ fn effects(w: &mut World, idx: u16, events_before: usize, tally: &mut Tally) -> 
     for t in w.cuts.trace.take().unwrap() {
         if t.starts_with("cut ") {
             match cut_iter.next().expect("a cut line has a cut call") {
-                CutCall::ParticleSystemCreate { template, position: p, id } => {
-                    log.push(format!("psys {} {id} {:08x},{:08x},{:08x}", String::from_utf8_lossy(&template), p.x.to_bits(), p.y.to_bits(), p.z.to_bits()))
-                }
+                CutCall::ParticleSystemCreate {
+                    template,
+                    position: p,
+                    id,
+                } => log.push(format!(
+                    "psys {} {id} {:08x},{:08x},{:08x}",
+                    String::from_utf8_lossy(&template),
+                    p.x.to_bits(),
+                    p.y.to_bits(),
+                    p.z.to_bits()
+                )),
                 CutCall::PartitionIterateAlliesInRange { object, range } => {
                     let p = w.objects.find(object).unwrap().get_position();
                     // the three filters: the relationship, alive, the same map status
-                    log.push(format!("scan {:08x} {:08x} {:08x} {:08x} 3", p.x.to_bits(), p.y.to_bits(), p.z.to_bits(), range.to_bits()));
+                    log.push(format!(
+                        "scan {:08x} {:08x} {:08x} {:08x} 3",
+                        p.x.to_bits(),
+                        p.y.to_bits(),
+                        p.z.to_bits(),
+                        range.to_bits()
+                    ));
                 }
-                CutCall::Contain(ContainCall::StealthReceiveGrant { object, active, frames }) => {
+                CutCall::Contain(ContainCall::StealthReceiveGrant {
+                    object,
+                    active,
+                    frames,
+                }) => {
                     tally.grants += 1;
-                    log.push(format!("stealthgrant {object} {} {frames}", i32::from(active)));
+                    log.push(format!(
+                        "stealthgrant {object} {} {frames}",
+                        i32::from(active)
+                    ));
                 }
                 CutCall::Contain(ContainCall::DestroyObject { object }) => {
                     tally.destroys += 1;
@@ -376,7 +460,9 @@ fn effects(w: &mut World, idx: u16, events_before: usize, tally: &mut Tally) -> 
                     tally.reacts += 1;
                     log.push("react".to_string());
                 }
-                Some(ObjectClientEvent::DrawableFlashAsSelected { .. }) => log.push("flash".to_string()),
+                Some(ObjectClientEvent::DrawableFlashAsSelected { .. }) => {
+                    log.push("flash".to_string())
+                }
                 _ => {}
             }
         } else if let Some(f) = t.strip_prefix("awaken ") {
@@ -404,44 +490,103 @@ fn put_log(v: &mut Vec<u8>, log: &[String], wakes: u32, last: u32) {
 fn set_scene(w: &mut World, flags: u32, drawables: &[i32], stealth: &[Option<u16>]) {
     for k in 0..4usize {
         let id = k as ObjectId + 1;
-        w.objects.find_mut(id).unwrap().drawable = if flags >> k & 1 != 0 { drawables[k] } else { rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID };
-        w.objects.find_mut(id).unwrap().stealth = if flags >> (if k > 0 { 3 + k } else { 7 }) & 1 != 0 { stealth[k] } else { None };
-        set_kinds(w, id, if k > 0 { flags >> (12 + 3 * (k - 1)) & 7 } else { flags >> 21 & 7 });
+        w.objects.find_mut(id).unwrap().drawable = if flags >> k & 1 != 0 {
+            drawables[k]
+        } else {
+            rts_lockstep_engine::common::game_type::INVALID_DRAWABLE_ID
+        };
+        w.objects.find_mut(id).unwrap().stealth =
+            if flags >> (if k > 0 { 3 + k } else { 7 }) & 1 != 0 {
+                stealth[k]
+            } else {
+                None
+            };
+        set_kinds(
+            w,
+            id,
+            if k > 0 {
+                flags >> (12 + 3 * (k - 1)) & 7
+            } else {
+                flags >> 21 & 7
+            },
+        );
     }
     w.set_effectively_dead(1, flags >> 8 & 1 != 0);
 }
 
 /// Runs the ops on a fresh world and returns the dump and the world.
-fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 6], ops: &[[u32; 6]], tally: &mut Tally) -> (Vec<u8>, World) {
+fn rust_run(
+    ctx: &Ctx,
+    kind: u32,
+    data: ModuleDataKind,
+    cfg: &[u32; 6],
+    ops: &[[u32; 6]],
+    tally: &mut Tally,
+) -> (Vec<u8>, World) {
     let mut v = Vec::new();
     put_data(&mut v, &data);
     let mut w = World::new();
     w.names = ctx.names.clone();
-    w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), ..Default::default() });
+    w.statics = Arc::new(GameStatics {
+        upgrade_center: ctx.center.clone(),
+        ..Default::default()
+    });
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     w.cuts.probe_effect_trace = true;
     w.cuts.contain.stub_object_calls = true;
-    let plain = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
+    let plain = Arc::new(ThingTemplate::from_object_values(
+        &ObjectTemplateValues::default(),
+    ));
     let class = CLASSES[kind as usize];
     // the other objects first in the scene's terms (ids 2 to 4 follow the module's object)
     let stealth_module = || {
         let mut m = NewModule::plain(b"R23Stealth", b"ModuleTag_Stealth");
         m.is_stealth = true;
-        m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
+        m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+            ProbeAnswers::default(),
+            0.0,
+            Default::default(),
+        )));
         m
     };
-    let m = rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), class.as_bytes(), b"ModuleTag_R23", &data).unwrap().unwrap();
+    let m = rts_lockstep_engine::logic::modules::new_module(
+        w.next_object_id(),
+        class.as_bytes(),
+        b"ModuleTag_R23",
+        &data,
+    )
+    .unwrap()
+    .unwrap();
     // the module's object: its geometry and flags as the driver has them before the constructor
     let events_before = w.events.events().len();
-    let me = w.new_object(NewObject { template: plain.clone(), status: ObjectStatusMaskType::default(), team: None, modules: vec![m, stealth_module()] }).unwrap();
+    let me = w
+        .new_object(NewObject {
+            template: plain.clone(),
+            status: ObjectStatusMaskType::default(),
+            team: None,
+            modules: vec![m, stealth_module()],
+        })
+        .unwrap();
     assert_eq!(me, 1);
     for k in 2..=4 {
-        let id = w.new_object(NewObject { template: plain.clone(), status: ObjectStatusMaskType::default(), team: None, modules: vec![stealth_module()] }).unwrap();
+        let id = w
+            .new_object(NewObject {
+                template: plain.clone(),
+                status: ObjectStatusMaskType::default(),
+                team: None,
+                modules: vec![stealth_module()],
+            })
+            .unwrap();
         assert_eq!(id, k);
     }
     let idx = w.find_module(me, class.as_bytes()).unwrap();
-    let u = w.update_handle_of_module(ModuleHandle { object: me, index: idx }).expect("an update module");
+    let u = w
+        .update_handle_of_module(ModuleHandle {
+            object: me,
+            index: idx,
+        })
+        .expect("an update module");
     // the constructor's effects (made at the origin, with no drawable effects: the module's constructor makes none)
     let (ctor, cw, cl) = effects(&mut w, idx, events_before, tally);
     put_log(&mut v, &ctor, cw, cl);
@@ -451,14 +596,29 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 6], ops: &[[
             w.objects.find(k).unwrap().drawable
         })
         .collect();
-    let stealth: Vec<Option<u16>> = (1..=4).map(|k| w.objects.find(k).unwrap().stealth).collect();
+    let stealth: Vec<Option<u16>> = (1..=4)
+        .map(|k| w.objects.find(k).unwrap().stealth)
+        .collect();
     let geom_type = match cfg[1] & 3 {
         1 => GeometryType::Cylinder,
         2 => GeometryType::Box,
         _ => GeometryType::Sphere,
     };
-    w.objects.find_mut(me).unwrap().geometry_info = GeometryInfo::new(geom_type, cfg[1] >> 4 & 1 != 0, f32::from_bits(cfg[2]), f32::from_bits(cfg[3]), f32::from_bits(cfg[4]));
-    w.set_position(me, &Coord3D { x: 10.0, y: -2.5, z: 1.0 });
+    w.objects.find_mut(me).unwrap().geometry_info = GeometryInfo::new(
+        geom_type,
+        cfg[1] >> 4 & 1 != 0,
+        f32::from_bits(cfg[2]),
+        f32::from_bits(cfg[3]),
+        f32::from_bits(cfg[4]),
+    );
+    w.set_position(
+        me,
+        &Coord3D {
+            x: 10.0,
+            y: -2.5,
+            z: 1.0,
+        },
+    );
     let (mut flags, mut scan) = (cfg[0], cfg[5]);
     let mut saved: Vec<u8> = Vec::new();
     w.cuts.trace = Some(Vec::new());
@@ -479,7 +639,10 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 6], ops: &[[
         let (mut xst, mut xbytes, mut crc, mut res) = (-2i32, Vec::new(), 0u32, 0u32);
         match o[0] {
             0 => {
-                res = w.with_body(u, |b, w| b.update(w, u)).expect("the module is in its slot").0;
+                res = w
+                    .with_body(u, |b, w| b.update(w, u))
+                    .expect("the module is in its slot")
+                    .0;
                 tally.updates += 1;
             }
             1..=3 => {}
@@ -499,7 +662,9 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 6], ops: &[[
             }
             _ => unreachable!(),
         }
-        let threw = w.cuts.module_errors[errors_before..].iter().any(|(_, e)| !e.is_undefined());
+        let threw = w.cuts.module_errors[errors_before..]
+            .iter()
+            .any(|(_, e)| !e.is_undefined());
         put_i32(&mut v, if threw { 2 } else { 0 });
         put_u32(&mut v, res);
         let (log, wakes, last) = effects(&mut w, idx, events_before, tally);
@@ -536,7 +701,10 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 6], ops: &[[
 }
 
 fn cases() -> usize {
-    std::env::var("L9R23_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000)
+    std::env::var("L9R23_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9_000)
 }
 
 #[test]
@@ -566,7 +734,12 @@ fn dynamic_geometry_and_grant_stealth_match_upstream() {
                 continue;
             }
         };
-        let gen_flags = |g: &mut Gen| (g.u32() & 0xF) | (g.u32() & 0xF0) | u32::from(g.below(10) == 0) << 8 | g.below(1 << 12) << 12;
+        let gen_flags = |g: &mut Gen| {
+            (g.u32() & 0xF)
+                | (g.u32() & 0xF0)
+                | u32::from(g.below(10) == 0) << 8
+                | g.below(1 << 12) << 12
+        };
         let gen_scan = |g: &mut Gen| (0..4).fold(0, |acc, k| acc | g.below(5) << (4 * k));
         let cfg = [
             gen_flags(&mut g),
@@ -633,8 +806,21 @@ fn dynamic_geometry_and_grant_stealth_match_upstream() {
             2 | 3 => code.to_le_bytes().to_vec(),
             _ => panic!("C++ threw something unexpected (status {status})"),
         };
-        let what = || format!("case {case}: kind {kind} cfg {cfg:x?}, file {:?}, ops {ops:?}", show(&text));
-        read.eq(&outcome, &Outcome { status, detail, crc: 0 }, what);
+        let what = || {
+            format!(
+                "case {case}: kind {kind} cfg {cfg:x?}, file {:?}, ops {ops:?}",
+                show(&text)
+            )
+        };
+        read.eq(
+            &outcome,
+            &Outcome {
+                status,
+                detail,
+                crc: 0,
+            },
+            what,
+        );
         let Some(rd) = rust else {
             read_failed += 1;
             continue;
@@ -642,7 +828,11 @@ fn dynamic_geometry_and_grant_stealth_match_upstream() {
         let (dr, dc) = (decode(kind, &rd, ops.len()), decode(kind, &buf, ops.len()));
         if dr != dc && shown < 6 {
             shown += 1;
-            let i = dr.iter().zip(dc.iter()).position(|(a, b)| a != b).unwrap_or(dr.len().min(dc.len()));
+            let i = dr
+                .iter()
+                .zip(dc.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(dr.len().min(dc.len()));
             eprintln!("--- case {case} kind {kind} cfg {cfg:x?} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}", show(&text), dr.get(i), dc.get(i));
         }
         run.eq(&dr.len(), &dc.len(), what);
@@ -659,5 +849,10 @@ fn dynamic_geometry_and_grant_stealth_match_upstream() {
     );
     read.finish();
     run.finish();
-    assert!(tally.reacts * 2 > cases as u64 && tally.grants * 2 > cases as u64 && tally.destroys * 10 > cases as u64, "the generator must reach every path");
+    assert!(
+        tally.reacts * 2 > cases as u64
+            && tally.grants * 2 > cases as u64
+            && tally.destroys * 10 > cases as u64,
+        "the generator must reach every path"
+    );
 }

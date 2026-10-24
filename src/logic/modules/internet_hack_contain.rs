@@ -39,8 +39,8 @@ use crate::logic::modules::open_contain::{out, CMD_FROM_AI};
 /// `CMD_FROM_PLAYER` (`CommandSourceType`), for plant 1442.
 const CMD_FROM_PLAYER: i32 = 0;
 use crate::logic::modules::transport_contain::{
-    derived_transport_contain_glue, tc_on_containing, transport_open_contain_virtuals, TransportContain, TransportContainModuleData,
-    TransportContainVirtuals,
+    derived_transport_contain_glue, tc_on_containing, transport_open_contain_virtuals,
+    TransportContain, TransportContainModuleData, TransportContainVirtuals,
 };
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle};
@@ -50,7 +50,9 @@ pub type InternetHackContainModuleData = TransportContainModuleData;
 
 /// The factory's `NewModuleDataProc` for `InternetHackContain`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::InternetHackContain(Arc::new(TransportContainModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::InternetHackContain(Arc::new(
+        TransportContainModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
 /// `class InternetHackContain : public TransportContain`.
@@ -70,15 +72,27 @@ impl TransportContainVirtuals for InternetHackContain {
         &mut self.tc
     }
     /// `InternetHackContain::onContaining(rider, wasSelected)`: the base's, then the rider's AI is told to hack.
-    fn t_on_containing(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId, was_selected: bool) {
+    fn t_on_containing(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        rider: ObjectId,
+        was_selected: bool,
+    ) {
         tc_on_containing(self, world, me, rider, was_selected);
 
         if crate::logic::modules::plant(1441) {
             return;
         }
         if let Some(ai) = world.objects.find(rider).and_then(|o| o.ai) {
-            let command_source = if crate::logic::modules::plant(1442) { CMD_FROM_PLAYER } else { CMD_FROM_AI };
-            out(self, world, me, |w| w.module_call(rider, ai, ModuleCall::AiHackInternet { command_source }));
+            let command_source = if crate::logic::modules::plant(1442) {
+                CMD_FROM_PLAYER
+            } else {
+                CMD_FROM_AI
+            };
+            out(self, world, me, |w| {
+                w.module_call(rider, ai, ModuleCall::AiHackInternet { command_source })
+            });
         }
     }
 }

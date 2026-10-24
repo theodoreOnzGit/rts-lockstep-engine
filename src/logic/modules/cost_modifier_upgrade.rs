@@ -24,7 +24,9 @@
 
 use std::sync::Arc;
 
+use crate::common::ini::Undefined;
 use crate::common::ini::{FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, UserData};
+use crate::common::kind_of::KindOfMaskType;
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
@@ -32,11 +34,9 @@ use crate::logic::module::upgrade_module::{UpgradeModule, UpgradeModuleData};
 use crate::logic::modules::upgrade_body::{upgrade_module_call, UpgradeBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::update_body::UpdateBody;
 use crate::upgrade_module_data_field_parse;
-use crate::common::kind_of::KindOfMaskType;
-use crate::common::ini::Undefined;
-use crate::logic::world::object_cuts::CutCall;
 
 /// `class CostModifierUpgradeModuleData : public UpgradeModuleData`.
 #[derive(Debug)]
@@ -61,18 +61,42 @@ impl Default for CostModifierUpgradeModuleData {
 }
 
 /// `UpgradeModuleData::buildFieldParse`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<CostModifierUpgradeModuleData>; 6] = upgrade_module_data_field_parse!(CostModifierUpgradeModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<CostModifierUpgradeModuleData>; 6] =
+    upgrade_module_data_field_parse!(CostModifierUpgradeModuleData, upgrade);
 
 /// `CostModifierUpgradeModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<CostModifierUpgradeModuleData>; 3] = [
-    FieldParse::new("EffectKindOf", |ini, d, _| if crate::logic::modules::plant(646) { Ok(()) } else { d.kind_of.parse_from_ini(ini) }, UserData::None),
-    FieldParse::new("Percentage", |ini, d, _| { d.percentage = if crate::logic::modules::plant(645) { ini.parse_real()? } else { ini.parse_percent_to_real()? }; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "EffectKindOf",
+        |ini, d, _| {
+            if crate::logic::modules::plant(646) {
+                Ok(())
+            } else {
+                d.kind_of.parse_from_ini(ini)
+            }
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Percentage",
+        |ini, d, _| {
+            d.percentage = if crate::logic::modules::plant(645) {
+                ini.parse_real()?
+            } else {
+                ini.parse_percent_to_real()?
+            };
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl CostModifierUpgradeModuleData {
     /// `buildFieldParse(p)`: `BehaviorModuleData`'s, then `UpgradeModuleData`'s, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, CostModifierUpgradeModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, CostModifierUpgradeModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -80,10 +104,15 @@ impl CostModifierUpgradeModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<CostModifierUpgradeModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<CostModifierUpgradeModuleData> {
         let mut data = CostModifierUpgradeModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, CostModifierUpgradeModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                CostModifierUpgradeModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -101,14 +130,19 @@ pub struct CostModifierUpgrade {
 impl PartialEq for CostModifierUpgrade {
     /// The same data object and the same `m_upgradeExecuted` (upstream compares the data pointer).
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.data, &other.data) && self.base.is_already_upgraded() == other.base.is_already_upgraded()
+        Arc::ptr_eq(&self.data, &other.data)
+            && self.base.is_already_upgraded() == other.base.is_already_upgraded()
     }
 }
 
 impl CostModifierUpgrade {
     /// `CostModifierUpgrade(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(object: ObjectId, data: Option<Arc<CostModifierUpgradeModuleData>>) -> IniResult<CostModifierUpgrade> {
-        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<CostModifierUpgradeModuleData>>,
+    ) -> IniResult<CostModifierUpgrade> {
+        let data =
+            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let base = UpgradeModule::new(object, Some(data.upgrade.clone()))?;
         Ok(CostModifierUpgrade { base, data })
     }
@@ -124,7 +158,12 @@ impl CostModifierUpgrade {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         upgrade_module_call(self, world, me, call)
     }
 }
@@ -136,11 +175,21 @@ impl UpgradeBehavior for CostModifierUpgrade {
     fn base_mut(&mut self) -> &mut UpgradeModule {
         &mut self.base
     }
-    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
-        let player = world.get_controlling_player(me.object).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+    fn upgrade_implementation(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+    ) -> Result<(), IniError> {
+        let player = world
+            .get_controlling_player(me.object)
+            .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
         // update the player with another TypeOfProductionCostChange
         if !crate::logic::modules::plant(647) {
-            world.cut(CutCall::PlayerAddKindOfProductionCostChange { player, kind_of: self.data.kind_of, percent: self.data.percentage });
+            world.cut(CutCall::PlayerAddKindOfProductionCostChange {
+                player,
+                kind_of: self.data.kind_of,
+                percent: self.data.percentage,
+            });
         }
         Ok(())
     }
@@ -156,7 +205,11 @@ impl UpgradeBehavior for CostModifierUpgrade {
         }
         // remove the cost change from the player
         if let Some(player) = world.get_controlling_player(me.object) {
-            world.cut(CutCall::PlayerRemoveKindOfProductionCostChange { player, kind_of: self.data.kind_of, percent: self.data.percentage });
+            world.cut(CutCall::PlayerRemoveKindOfProductionCostChange {
+                player,
+                kind_of: self.data.kind_of,
+                percent: self.data.percentage,
+            });
         }
         // this upgrade module is now "not upgraded"
         if !crate::logic::modules::plant(641) {
@@ -172,7 +225,11 @@ impl UpgradeBehavior for CostModifierUpgrade {
         // remove the cost change from the old player and add it to the new player
         if old_owner >= 0 {
             if !crate::logic::modules::plant(642) {
-                world.cut(CutCall::PlayerRemoveKindOfProductionCostChange { player: old_owner, kind_of: self.data.kind_of, percent: self.data.percentage });
+                world.cut(CutCall::PlayerRemoveKindOfProductionCostChange {
+                    player: old_owner,
+                    kind_of: self.data.kind_of,
+                    percent: self.data.percentage,
+                });
             }
             if !crate::logic::modules::plant(644) {
                 self.base.mux_mut().set_upgrade_executed(false);
@@ -180,7 +237,11 @@ impl UpgradeBehavior for CostModifierUpgrade {
         }
         if new_owner >= 0 {
             if !crate::logic::modules::plant(643) {
-                world.cut(CutCall::PlayerAddKindOfProductionCostChange { player: new_owner, kind_of: self.data.kind_of, percent: self.data.percentage });
+                world.cut(CutCall::PlayerAddKindOfProductionCostChange {
+                    player: new_owner,
+                    kind_of: self.data.kind_of,
+                    percent: self.data.percentage,
+                });
             }
             self.base.mux_mut().set_upgrade_executed(true);
         }
@@ -217,5 +278,7 @@ impl Snapshot for CostModifierUpgrade {
 
 /// The factory's `NewModuleDataProc` for `CostModifierUpgrade`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::CostModifierUpgrade(Arc::new(CostModifierUpgradeModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::CostModifierUpgrade(Arc::new(
+        CostModifierUpgradeModuleData::friend_new_module_data(ini)?,
+    )))
 }

@@ -36,7 +36,9 @@ pub struct DestroyModule {
 impl DestroyModule {
     /// `DestroyModule(thing, moduleData)`; `INI_INVALID_DATA` for null data.
     pub fn new(object: ObjectId, module_data: Option<ModuleDataKind>) -> IniResult<Self> {
-        Ok(DestroyModule { behavior: BehaviorModule::new(object, module_data)? })
+        Ok(DestroyModule {
+            behavior: BehaviorModule::new(object, module_data)?,
+        })
     }
 
     /// `DestroyModule::getInterfaceMask()`: `MODULEINTERFACE_DESTROY`.
@@ -76,7 +78,11 @@ mod tests {
 
     #[test]
     fn a_destroy_module_takes_any_data() {
-        let data = || Some(ModuleDataKind::Module(std::sync::Arc::new(ModuleData::new())));
+        let data = || {
+            Some(ModuleDataKind::Module(std::sync::Arc::new(
+                ModuleData::new(),
+            )))
+        };
         let mut m = DestroyModule::new(2, data()).unwrap();
         assert_eq!(DestroyModule::get_interface_mask(), 0x200);
         assert_eq!(m.behavior().object(), 2);

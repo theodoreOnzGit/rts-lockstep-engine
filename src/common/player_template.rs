@@ -288,7 +288,11 @@ impl PlayerTemplate {
             base_side: Vec::new(),
             handicap: Handicap::new(),
             money: Money::new(),
-            preferred_color: RGBColor { red: 0.0, green: 0.0, blue: 0.0 },
+            preferred_color: RGBColor {
+                red: 0.0,
+                green: 0.0,
+                blue: 0.0,
+            },
             starting_building: Vec::new(),
             starting_units: Default::default(),
             production_cost_changes: ProductionChangeMap::new(),
@@ -548,7 +552,11 @@ struct PlayerTemplateFill<'a> {
 /// A field that is `INI::parseAsciiString` into a string member.
 macro_rules! ascii_field {
     ($fn_name:ident, $member:ident) => {
-        fn $fn_name(ini: &mut Ini<'_>, w: &mut PlayerTemplateFill<'_>, _: &UserData) -> IniResult<()> {
+        fn $fn_name(
+            ini: &mut Ini<'_>,
+            w: &mut PlayerTemplateFill<'_>,
+            _: &UserData,
+        ) -> IniResult<()> {
             w.pt.$member = ini.parse_ascii_string()?;
             Ok(())
         }
@@ -558,7 +566,11 @@ macro_rules! ascii_field {
 /// A field that is `INI::parseBool` into a `Bool` member.
 macro_rules! bool_field {
     ($fn_name:ident, $member:ident) => {
-        fn $fn_name(ini: &mut Ini<'_>, w: &mut PlayerTemplateFill<'_>, _: &UserData) -> IniResult<()> {
+        fn $fn_name(
+            ini: &mut Ini<'_>,
+            w: &mut PlayerTemplateFill<'_>,
+            _: &UserData,
+        ) -> IniResult<()> {
             w.pt.$member = ini.parse_bool()?;
             Ok(())
         }
@@ -568,7 +580,11 @@ macro_rules! bool_field {
 /// A field that is `INI::parseInt` into an `Int` member.
 macro_rules! int_field {
     ($fn_name:ident, $member:ident) => {
-        fn $fn_name(ini: &mut Ini<'_>, w: &mut PlayerTemplateFill<'_>, _: &UserData) -> IniResult<()> {
+        fn $fn_name(
+            ini: &mut Ini<'_>,
+            w: &mut PlayerTemplateFill<'_>,
+            _: &UserData,
+        ) -> IniResult<()> {
             w.pt.$member = ini.parse_int()?;
             Ok(())
         }
@@ -578,11 +594,26 @@ macro_rules! int_field {
 ascii_field!(f_side, side);
 ascii_field!(f_base_side, base_side);
 ascii_field!(f_starting_building, starting_building);
-ascii_field!(f_purchase_science_command_set_rank1, purchase_science_command_set_rank1);
-ascii_field!(f_purchase_science_command_set_rank3, purchase_science_command_set_rank3);
-ascii_field!(f_purchase_science_command_set_rank8, purchase_science_command_set_rank8);
-ascii_field!(f_special_power_shortcut_command_set, special_power_shortcut_command_set);
-ascii_field!(f_special_power_shortcut_win_name, special_power_shortcut_win_name);
+ascii_field!(
+    f_purchase_science_command_set_rank1,
+    purchase_science_command_set_rank1
+);
+ascii_field!(
+    f_purchase_science_command_set_rank3,
+    purchase_science_command_set_rank3
+);
+ascii_field!(
+    f_purchase_science_command_set_rank8,
+    purchase_science_command_set_rank8
+);
+ascii_field!(
+    f_special_power_shortcut_command_set,
+    special_power_shortcut_command_set
+);
+ascii_field!(
+    f_special_power_shortcut_win_name,
+    special_power_shortcut_win_name
+);
 ascii_field!(f_score_screen_image, score_screen_image);
 ascii_field!(f_load_screen_image, load_screen_image);
 ascii_field!(f_load_screen_music, load_screen_music);
@@ -601,16 +632,27 @@ ascii_field!(f_medallion_select, str_medallion_selected);
 bool_field!(f_playable_side, playable_side);
 bool_field!(f_is_observer, observer);
 bool_field!(f_old_faction, old_faction);
-int_field!(f_special_power_shortcut_button_count, special_power_shortcut_button_count);
+int_field!(
+    f_special_power_shortcut_button_count,
+    special_power_shortcut_button_count
+);
 int_field!(f_intrinsic_science_purchase_points, intrinsic_spp);
 
 /// `StartingUnit0` to `StartingUnit9`: the slot is the entry's `Mask`.
-fn f_starting_unit(ini: &mut Ini<'_>, w: &mut PlayerTemplateFill<'_>, ud: &UserData) -> IniResult<()> {
+fn f_starting_unit(
+    ini: &mut Ini<'_>,
+    w: &mut PlayerTemplateFill<'_>,
+    ud: &UserData,
+) -> IniResult<()> {
     w.pt.starting_units[ud.mask() as usize] = ini.parse_ascii_string()?;
     Ok(())
 }
 
-fn f_display_name(ini: &mut Ini<'_>, w: &mut PlayerTemplateFill<'_>, _: &UserData) -> IniResult<()> {
+fn f_display_name(
+    ini: &mut Ini<'_>,
+    w: &mut PlayerTemplateFill<'_>,
+    _: &UserData,
+) -> IniResult<()> {
     w.pt.display_name = parse_and_translate_label(ini, w.text)?;
     Ok(())
 }
@@ -626,7 +668,11 @@ fn f_start_money(ini: &mut Ini<'_>, w: &mut PlayerTemplateFill<'_>, _: &UserData
     Ok(())
 }
 
-fn f_preferred_color(ini: &mut Ini<'_>, w: &mut PlayerTemplateFill<'_>, _: &UserData) -> IniResult<()> {
+fn f_preferred_color(
+    ini: &mut Ini<'_>,
+    w: &mut PlayerTemplateFill<'_>,
+    _: &UserData,
+) -> IniResult<()> {
     w.pt.preferred_color = ini.parse_rgb_color()?;
     Ok(())
 }
@@ -634,37 +680,62 @@ fn f_preferred_color(ini: &mut Ini<'_>, w: &mut PlayerTemplateFill<'_>, _: &User
 /// `NAMEKEY(ini->getNextToken())`.
 fn next_token_key(ini: &mut Ini<'_>, names: &mut NameKeyGenerator) -> IniResult<NameKeyType> {
     let token = ini.get_next_token(None)?;
-    names.try_name_to_key(&token).map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))
+    names
+        .try_name_to_key(&token)
+        .map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))
 }
 
 /// `PlayerTemplate::parseProductionCostChange`: a thing template's name, then
 /// a percentage.
-fn f_production_cost_change(ini: &mut Ini<'_>, w: &mut PlayerTemplateFill<'_>, _: &UserData) -> IniResult<()> {
+fn f_production_cost_change(
+    ini: &mut Ini<'_>,
+    w: &mut PlayerTemplateFill<'_>,
+    _: &UserData,
+) -> IniResult<()> {
     let build_template_key = next_token_key(ini, w.names)?;
     let percent_change = Ini::scan_percent_to_real(&ini.get_next_token(None)?)?;
-    w.pt.production_cost_changes.insert(build_template_key, percent_change);
+    w.pt.production_cost_changes
+        .insert(build_template_key, percent_change);
     Ok(())
 }
 
 /// `PlayerTemplate::parseProductionTimeChange`.
-fn f_production_time_change(ini: &mut Ini<'_>, w: &mut PlayerTemplateFill<'_>, _: &UserData) -> IniResult<()> {
+fn f_production_time_change(
+    ini: &mut Ini<'_>,
+    w: &mut PlayerTemplateFill<'_>,
+    _: &UserData,
+) -> IniResult<()> {
     let build_template_key = next_token_key(ini, w.names)?;
     let percent_change = Ini::scan_percent_to_real(&ini.get_next_token(None)?)?;
-    w.pt.production_time_changes.insert(build_template_key, percent_change);
+    w.pt.production_time_changes
+        .insert(build_template_key, percent_change);
     Ok(())
 }
 
 /// `PlayerTemplate::parseProductionVeterancyLevel`: a thing template's name,
 /// then a `TheVeterancyNames` entry.
-fn f_production_veterancy_level(ini: &mut Ini<'_>, w: &mut PlayerTemplateFill<'_>, _: &UserData) -> IniResult<()> {
+fn f_production_veterancy_level(
+    ini: &mut Ini<'_>,
+    w: &mut PlayerTemplateFill<'_>,
+    _: &UserData,
+) -> IniResult<()> {
     let build_template_key = next_token_key(ini, w.names)?;
-    let start_level = veterancy_from_index(Ini::scan_index_list(&ini.get_next_token(None)?, &VETERANCY_NAMES)?);
-    w.pt.production_veterancy_levels.insert(build_template_key, start_level);
+    let start_level = veterancy_from_index(Ini::scan_index_list(
+        &ini.get_next_token(None)?,
+        &VETERANCY_NAMES,
+    )?);
+    w.pt.production_veterancy_levels
+        .insert(build_template_key, start_level);
     Ok(())
 }
 
-fn f_intrinsic_sciences(ini: &mut Ini<'_>, w: &mut PlayerTemplateFill<'_>, _: &UserData) -> IniResult<()> {
-    w.sciences.parse_science_vector(ini, w.names, &mut w.pt.intrinsic_sciences)
+fn f_intrinsic_sciences(
+    ini: &mut Ini<'_>,
+    w: &mut PlayerTemplateFill<'_>,
+    _: &UserData,
+) -> IniResult<()> {
+    w.sciences
+        .parse_science_vector(ini, w.names, &mut w.pt.intrinsic_sciences)
 }
 
 /// The number of entries of `PlayerTemplate::getFieldParse()`, with the
@@ -694,17 +765,49 @@ fn player_template_fields<'a>() -> [FieldParse<PlayerTemplateFill<'a>>; FIELD_CO
         FieldParse::new("StartingUnit9", f_starting_unit, UserData::Mask(9)),
         FieldParse::new("ProductionCostChange", f_production_cost_change, n.clone()),
         FieldParse::new("ProductionTimeChange", f_production_time_change, n.clone()),
-        FieldParse::new("ProductionVeterancyLevel", f_production_veterancy_level, n.clone()),
+        FieldParse::new(
+            "ProductionVeterancyLevel",
+            f_production_veterancy_level,
+            n.clone(),
+        ),
         FieldParse::new("IntrinsicSciences", f_intrinsic_sciences, n.clone()),
-        FieldParse::new("PurchaseScienceCommandSetRank1", f_purchase_science_command_set_rank1, n.clone()),
-        FieldParse::new("PurchaseScienceCommandSetRank3", f_purchase_science_command_set_rank3, n.clone()),
-        FieldParse::new("PurchaseScienceCommandSetRank8", f_purchase_science_command_set_rank8, n.clone()),
-        FieldParse::new("SpecialPowerShortcutCommandSet", f_special_power_shortcut_command_set, n.clone()),
-        FieldParse::new("SpecialPowerShortcutWinName", f_special_power_shortcut_win_name, n.clone()),
-        FieldParse::new("SpecialPowerShortcutButtonCount", f_special_power_shortcut_button_count, n.clone()),
+        FieldParse::new(
+            "PurchaseScienceCommandSetRank1",
+            f_purchase_science_command_set_rank1,
+            n.clone(),
+        ),
+        FieldParse::new(
+            "PurchaseScienceCommandSetRank3",
+            f_purchase_science_command_set_rank3,
+            n.clone(),
+        ),
+        FieldParse::new(
+            "PurchaseScienceCommandSetRank8",
+            f_purchase_science_command_set_rank8,
+            n.clone(),
+        ),
+        FieldParse::new(
+            "SpecialPowerShortcutCommandSet",
+            f_special_power_shortcut_command_set,
+            n.clone(),
+        ),
+        FieldParse::new(
+            "SpecialPowerShortcutWinName",
+            f_special_power_shortcut_win_name,
+            n.clone(),
+        ),
+        FieldParse::new(
+            "SpecialPowerShortcutButtonCount",
+            f_special_power_shortcut_button_count,
+            n.clone(),
+        ),
         FieldParse::new("IsObserver", f_is_observer, n.clone()),
         FieldParse::new("OldFaction", f_old_faction, n.clone()),
-        FieldParse::new("IntrinsicSciencePurchasePoints", f_intrinsic_science_purchase_points, n.clone()),
+        FieldParse::new(
+            "IntrinsicSciencePurchasePoints",
+            f_intrinsic_science_purchase_points,
+            n.clone(),
+        ),
         FieldParse::new("ScoreScreenImage", f_score_screen_image, n.clone()),
         FieldParse::new("LoadScreenImage", f_load_screen_image, n.clone()),
         FieldParse::new("LoadScreenMusic", f_load_screen_music, n.clone()),
@@ -788,7 +891,10 @@ impl PlayerTemplateStore {
 
     /// The fifteen keys of `findPlayerTemplate`'s statics, looked up in
     /// upstream's order the first time and kept after that.
-    fn legacy_keys(&mut self, names: &mut NameKeyGenerator) -> Result<[NameKeyType; 15], NameKeyError> {
+    fn legacy_keys(
+        &mut self,
+        names: &mut NameKeyGenerator,
+    ) -> Result<[NameKeyType; 15], NameKeyError> {
         if let Some(keys) = self.legacy_keys {
             return Ok(keys);
         }
@@ -810,7 +916,11 @@ impl PlayerTemplateStore {
     /// to their base faction: the position of the first template with that
     /// key. (The first call looks the fifteen statics up, which can run out
     /// of name keys.)
-    fn find_index(&mut self, names: &mut NameKeyGenerator, namekey: NameKeyType) -> Result<Option<usize>, NameKeyError> {
+    fn find_index(
+        &mut self,
+        names: &mut NameKeyGenerator,
+        namekey: NameKeyType,
+    ) -> Result<Option<usize>, NameKeyError> {
         let keys = self.legacy_keys(names)?;
         let mut namekey = namekey;
         // a1..a4 -> a0, else c1..c4 -> c0, else g1..g4 -> g0
@@ -821,7 +931,10 @@ impl PlayerTemplateStore {
                 break;
             }
         }
-        Ok(self.player_templates.iter().position(|t| t.name_key == namekey))
+        Ok(self
+            .player_templates
+            .iter()
+            .position(|t| t.name_key == namekey))
     }
 
     /// `findPlayerTemplate(namekey)`: `None` if there is no such template. An
@@ -875,17 +988,29 @@ impl PlayerTemplateStore {
         text: &dyn GameTextFetch,
     ) -> IniResult<()> {
         let namekey = next_token_key(ini, names)?;
-        let found = self.find_index(names, namekey).map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
+        let found = self
+            .find_index(names, namekey)
+            .map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
         match found {
             Some(i) => {
                 let pt = &mut self.player_templates[i];
-                let mut fill = PlayerTemplateFill { pt, names, sciences, text };
+                let mut fill = PlayerTemplateFill {
+                    pt,
+                    names,
+                    sciences,
+                    text,
+                };
                 ini.init_from_ini(&mut fill, &player_template_fields())?;
                 fill.pt.set_name_key(namekey);
             }
             None => {
                 let mut npt = PlayerTemplate::new();
-                let mut fill = PlayerTemplateFill { pt: &mut npt, names, sciences, text };
+                let mut fill = PlayerTemplateFill {
+                    pt: &mut npt,
+                    names,
+                    sciences,
+                    text,
+                };
                 ini.init_from_ini(&mut fill, &player_template_fields())?;
                 npt.set_name_key(namekey);
                 self.player_templates.push(npt);
@@ -919,18 +1044,32 @@ mod tests {
     }
 
     fn block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-        c.store.parse_player_template_definition(ini, &mut c.names, &c.sciences, &Text)
+        c.store
+            .parse_player_template_definition(ini, &mut c.names, &c.sciences, &Text)
     }
     fn science_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-        c.sciences.parse_science_definition(ini, &mut c.names, &Text)
+        c.sciences
+            .parse_science_definition(ini, &mut c.names, &Text)
     }
-    static BLOCKS: [BlockParse<Ctx>; 2] =
-        [BlockParse { token: "PlayerTemplate", parse: block }, BlockParse { token: "Science", parse: science_block }];
+    static BLOCKS: [BlockParse<Ctx>; 2] = [
+        BlockParse {
+            token: "PlayerTemplate",
+            parse: block,
+        },
+        BlockParse {
+            token: "Science",
+            parse: science_block,
+        },
+    ];
 
     fn ctx() -> Ctx {
         let mut names = NameKeyGenerator::new();
         names.reset();
-        Ctx { store: PlayerTemplateStore::new(), sciences: ScienceStore::new(), names }
+        Ctx {
+            store: PlayerTemplateStore::new(),
+            sciences: ScienceStore::new(),
+            names,
+        }
     }
 
     fn load(c: &mut Ctx, text: &[u8]) -> IniResult<()> {
@@ -959,30 +1098,91 @@ PlayerTemplate FactionAmerica\n Side = America\n BaseSide = USA\n PlayableSide =
         assert_eq!(t.display_name().str().len(), "NAME:America".len());
         assert_eq!((t.side(), t.base_side()), (&b"America"[..], &b"USA"[..]));
         assert_eq!(t.money().count_money(), 10000);
-        assert_eq!(t.handicap().get_handicap(crate::common::handicap::HandicapType::BuildCost, true), 1.0);
-        assert_eq!(*t.preferred_color(), RGBColor { red: 1.0, green: 0.0, blue: 51.0 / 255.0 });
+        assert_eq!(
+            t.handicap()
+                .get_handicap(crate::common::handicap::HandicapType::BuildCost, true),
+            1.0
+        );
+        assert_eq!(
+            *t.preferred_color(),
+            RGBColor {
+                red: 1.0,
+                green: 0.0,
+                blue: 51.0 / 255.0
+            }
+        );
         assert_eq!(t.starting_building(), b"AmericaCommandCenter");
-        assert_eq!((t.starting_unit(0), t.starting_unit(9), t.starting_unit(5)), (&b"AmericaDozer"[..], &b"AmericaRanger"[..], &b""[..]));
-        assert_eq!((t.starting_unit(-1), t.starting_unit(10)), (&b""[..], &b""[..]));
+        assert_eq!(
+            (t.starting_unit(0), t.starting_unit(9), t.starting_unit(5)),
+            (&b"AmericaDozer"[..], &b"AmericaRanger"[..], &b""[..])
+        );
+        assert_eq!(
+            (t.starting_unit(-1), t.starting_unit(10)),
+            (&b""[..], &b""[..])
+        );
         let tank = c.names.name_to_key(b"Tank");
-        assert_eq!(t.production_cost_changes().get(&tank), Some(&(-10.0f32 / 100.0)));
-        assert_eq!(t.production_time_changes().get(&tank), Some(&(25.0f32 / 100.0)));
-        assert_eq!(t.production_veterancy_levels().get(&tank), Some(&VeterancyLevel::Elite));
+        assert_eq!(
+            t.production_cost_changes().get(&tank),
+            Some(&(-10.0f32 / 100.0))
+        );
+        assert_eq!(
+            t.production_time_changes().get(&tank),
+            Some(&(25.0f32 / 100.0))
+        );
+        assert_eq!(
+            t.production_veterancy_levels().get(&tank),
+            Some(&VeterancyLevel::Elite)
+        );
         let sci = ScienceType::from_name_key(c.names.name_to_key(b"SCIENCE_A"));
         assert_eq!(t.intrinsic_sciences(), &vec![sci]);
         assert_eq!(t.purchase_science_command_set_rank1(), b"Rank1");
         assert_eq!(t.purchase_science_command_set_rank3(), b"Rank3");
         assert_eq!(t.purchase_science_command_set_rank8(), b"Rank8");
-        assert_eq!((t.special_power_shortcut_command_set(), t.special_power_shortcut_win_name()), (&b"Sc"[..], &b"Win"[..]));
+        assert_eq!(
+            (
+                t.special_power_shortcut_command_set(),
+                t.special_power_shortcut_win_name()
+            ),
+            (&b"Sc"[..], &b"Win"[..])
+        );
         assert_eq!(t.special_power_shortcut_button_count(), 7);
         assert!(t.is_playable_side() && t.is_old_faction() && !t.is_observer());
         assert_eq!(t.intrinsic_science_purchase_points(), 3);
-        assert_eq!((t.score_screen(), t.load_screen()), (&b"Score"[..], &b"Load"[..]));
-        assert_eq!((t.load_screen_music(), t.score_screen_music()), (&b"LM"[..], &b"SM"[..]));
-        assert_eq!((t.head_water_mark_image_name(), t.flag_water_mark_image_name()), (&b"Head"[..], &b"Flag"[..]));
-        assert_eq!((t.enabled_image_name(), t.side_icon_image_name(), t.general_image_name()), (&b"Enabled"[..], &b"Icon"[..], &b"General"[..]));
-        assert_eq!((t.beacon_template(), t.tooltip(), t.general_features()), (&b"Beacon"[..], &b"Tip"[..], &b"Feat"[..]));
-        assert_eq!((t.medallion_normal(), t.medallion_hilite(), t.medallion_selected()), (&b"M1"[..], &b"M2"[..], &b"M3"[..]));
+        assert_eq!(
+            (t.score_screen(), t.load_screen()),
+            (&b"Score"[..], &b"Load"[..])
+        );
+        assert_eq!(
+            (t.load_screen_music(), t.score_screen_music()),
+            (&b"LM"[..], &b"SM"[..])
+        );
+        assert_eq!(
+            (
+                t.head_water_mark_image_name(),
+                t.flag_water_mark_image_name()
+            ),
+            (&b"Head"[..], &b"Flag"[..])
+        );
+        assert_eq!(
+            (
+                t.enabled_image_name(),
+                t.side_icon_image_name(),
+                t.general_image_name()
+            ),
+            (&b"Enabled"[..], &b"Icon"[..], &b"General"[..])
+        );
+        assert_eq!(
+            (t.beacon_template(), t.tooltip(), t.general_features()),
+            (&b"Beacon"[..], &b"Tip"[..], &b"Feat"[..])
+        );
+        assert_eq!(
+            (
+                t.medallion_normal(),
+                t.medallion_hilite(),
+                t.medallion_selected()
+            ),
+            (&b"M1"[..], &b"M2"[..], &b"M3"[..])
+        );
         assert_eq!(PlayerTemplate::default().name_key(), NameKeyType::INVALID);
         assert_eq!(c.store.templates().len(), 1);
     }
@@ -998,27 +1198,49 @@ PlayerTemplate FactionAmerica\n Side = America\n BaseSide = USA\n PlayableSide =
         let e = load(&mut c, b"PlayerTemplate A\n StartMoney = x\nEnd\n").unwrap_err();
         assert_eq!(e.kind, IniErrorKind::InvalidData);
         assert_eq!(c.store.templates()[0].money().count_money(), 5);
-        let e = load(&mut c, b"PlayerTemplate A\n StartMoney = 99999999999\nEnd\n").unwrap_err();
+        let e = load(
+            &mut c,
+            b"PlayerTemplate A\n StartMoney = 99999999999\nEnd\n",
+        )
+        .unwrap_err();
         assert_eq!(e.kind, IniErrorKind::Undefined(Undefined::IntOutOfRange));
     }
 
     #[test]
     fn production_parsers_assign_the_key_before_the_value() {
         let mut c = ctx();
-        let e = load(&mut c, b"PlayerTemplate A\n ProductionCostChange = Barracks nope\nEnd\n").unwrap_err();
+        let e = load(
+            &mut c,
+            b"PlayerTemplate A\n ProductionCostChange = Barracks nope\nEnd\n",
+        )
+        .unwrap_err();
         assert_eq!(e.kind, IniErrorKind::InvalidData);
         // "Barracks" has a key although the block failed, and A is not stored
         assert_eq!(c.store.player_template_count(), 0);
         let next = c.names.name_to_key(b"Fresh");
-        assert_eq!(next.0, 18, "A is 1, the fifteen old-map names 2..=16, Barracks 17, then the next name");
-        let e = load(&mut c, b"PlayerTemplate A\n ProductionVeterancyLevel = Tank GOD\nEnd\n").unwrap_err();
+        assert_eq!(
+            next.0, 18,
+            "A is 1, the fifteen old-map names 2..=16, Barracks 17, then the next name"
+        );
+        let e = load(
+            &mut c,
+            b"PlayerTemplate A\n ProductionVeterancyLevel = Tank GOD\nEnd\n",
+        )
+        .unwrap_err();
         assert_eq!(e.kind, IniErrorKind::InvalidData);
-        let e = load(&mut c, b"PlayerTemplate A\n ProductionTimeChange = Tank\nEnd\n").unwrap_err();
+        let e = load(
+            &mut c,
+            b"PlayerTemplate A\n ProductionTimeChange = Tank\nEnd\n",
+        )
+        .unwrap_err();
         assert_eq!(e.kind, IniErrorKind::InvalidData);
         load(&mut c, b"PlayerTemplate A\n ProductionTimeChange = Tank 50\n ProductionTimeChange = Tank 75%\nEnd\n").unwrap();
         let t = &c.store.templates()[0];
         assert_eq!(t.production_time_changes().len(), 1);
-        assert_eq!(*t.production_time_changes().values().next().unwrap(), 0.75f32);
+        assert_eq!(
+            *t.production_time_changes().values().next().unwrap(),
+            0.75f32
+        );
     }
 
     #[test]
@@ -1026,10 +1248,18 @@ PlayerTemplate FactionAmerica\n Side = America\n BaseSide = USA\n PlayableSide =
         let mut c = ctx();
         load(&mut c, b"Science S1\nEnd\nScience S2\nEnd\nPlayerTemplate A\n IntrinsicSciences = S1 S2\nEnd\n").unwrap();
         assert_eq!(c.store.templates()[0].intrinsic_sciences().len(), 2);
-        let e = load(&mut c, b"PlayerTemplate A\n IntrinsicSciences = S2 Nope S1\nEnd\n").unwrap_err();
+        let e = load(
+            &mut c,
+            b"PlayerTemplate A\n IntrinsicSciences = S2 Nope S1\nEnd\n",
+        )
+        .unwrap_err();
         assert_eq!(e.kind, IniErrorKind::InvalidData);
         assert_eq!(c.store.templates()[0].intrinsic_sciences().len(), 1);
-        load(&mut c, b"PlayerTemplate A\n IntrinsicSciences = None\nEnd\n").unwrap();
+        load(
+            &mut c,
+            b"PlayerTemplate A\n IntrinsicSciences = None\nEnd\n",
+        )
+        .unwrap();
         assert!(c.store.templates()[0].intrinsic_sciences().is_empty());
     }
 
@@ -1037,10 +1267,17 @@ PlayerTemplate FactionAmerica\n Side = America\n BaseSide = USA\n PlayableSide =
     fn a_failing_display_name_leaves_the_field_and_a_failing_new_block_leaves_nothing() {
         let mut c = ctx();
         load(&mut c, b"PlayerTemplate A\n DisplayName = Nice\nEnd\n").unwrap();
-        let e = load(&mut c, b"PlayerTemplate A\n Side = Changed\n DisplayName = EMPTY\nEnd\n").unwrap_err();
+        let e = load(
+            &mut c,
+            b"PlayerTemplate A\n Side = Changed\n DisplayName = EMPTY\nEnd\n",
+        )
+        .unwrap_err();
         assert_eq!(e.kind, IniErrorKind::InvalidData);
         let t = &c.store.templates()[0];
-        assert_eq!((t.side(), t.display_name().str().len()), (&b"Changed"[..], 4));
+        assert_eq!(
+            (t.side(), t.display_name().str().len()),
+            (&b"Changed"[..], 4)
+        );
         let e = load(&mut c, b"PlayerTemplate B\n Side = X\n Bogus = 1\nEnd\n").unwrap_err();
         assert_eq!(e.kind, IniErrorKind::UnknownToken);
         assert_eq!(c.store.player_template_count(), 1);
@@ -1055,19 +1292,45 @@ PlayerTemplate FactionAmerica\n Side = America\n BaseSide = USA\n PlayableSide =
         let tank = c.names.name_to_key(b"FactionAmericaTankCommand");
         assert_eq!(keys[2], tank);
         // a lookup by an old name finds the base template
-        let found = c.store.find_player_template(&mut c.names, tank).unwrap().unwrap();
+        let found = c
+            .store
+            .find_player_template(&mut c.names, tank)
+            .unwrap()
+            .unwrap();
         assert_eq!(found.side(), b"America");
         // the block updates it in place and renames it to the name as written
-        load(&mut c, b"PlayerTemplate FactionAmericaTankCommand\n BaseSide = Tank\nEnd\n").unwrap();
+        load(
+            &mut c,
+            b"PlayerTemplate FactionAmericaTankCommand\n BaseSide = Tank\nEnd\n",
+        )
+        .unwrap();
         assert_eq!(c.store.player_template_count(), 2);
-        assert_eq!(c.store.templates()[0].name(&c.names), b"FactionAmericaTankCommand");
+        assert_eq!(
+            c.store.templates()[0].name(&c.names),
+            b"FactionAmericaTankCommand"
+        );
         assert_eq!(c.store.templates()[0].base_side(), b"Tank");
         let america = c.names.name_to_key(b"FactionAmerica");
-        assert!(c.store.find_player_template(&mut c.names, america).unwrap().is_none());
+        assert!(c
+            .store
+            .find_player_template(&mut c.names, america)
+            .unwrap()
+            .is_none());
         // the old name now maps to FactionAmerica, which nothing has
-        assert!(c.store.find_player_template(&mut c.names, tank).unwrap().is_none());
+        assert!(c
+            .store
+            .find_player_template(&mut c.names, tank)
+            .unwrap()
+            .is_none());
         let china = c.names.name_to_key(b"FactionChinaRedArmy");
-        assert_eq!(c.store.find_player_template(&mut c.names, china).unwrap().unwrap().side(), b"China");
+        assert_eq!(
+            c.store
+                .find_player_template(&mut c.names, china)
+                .unwrap()
+                .unwrap()
+                .side(),
+            b"China"
+        );
     }
 
     #[test]
@@ -1076,24 +1339,47 @@ PlayerTemplate FactionAmerica\n Side = America\n BaseSide = USA\n PlayableSide =
         assert!(c.store.legacy_faction_keys().is_none());
         let first = c.names.name_to_key(b"Zeta");
         assert_eq!(first.0, 1);
-        assert!(c.store.find_player_template(&mut c.names, first).unwrap().is_none());
+        assert!(c
+            .store
+            .find_player_template(&mut c.names, first)
+            .unwrap()
+            .is_none());
         let keys = c.store.legacy_faction_keys().unwrap();
         let numbers: Vec<u32> = keys.iter().map(|k| k.0).collect();
-        assert_eq!(numbers, (2..=16).collect::<Vec<u32>>(), "a0..g4 take the next fifteen keys, in order");
+        assert_eq!(
+            numbers,
+            (2..=16).collect::<Vec<u32>>(),
+            "a0..g4 take the next fifteen keys, in order"
+        );
         // a new numbering: the statics keep the old keys, so key 3 (a1's) now
         // reads as "the old name of the faction whose key is 2"
         c.names.reset();
         c.store.init();
         assert_eq!(c.names.name_to_key(b"First").0, 1);
         load(&mut c, b"PlayerTemplate Alpha\n Side = Found\nEnd\n").unwrap();
-        assert_eq!(c.store.legacy_faction_keys(), Some(keys), "not looked up again");
+        assert_eq!(
+            c.store.legacy_faction_keys(),
+            Some(keys),
+            "not looked up again"
+        );
         assert_eq!(c.store.templates()[0].name_key().0, 2);
-        let found = c.store.find_player_template(&mut c.names, NameKeyType(3)).unwrap().unwrap();
+        let found = c
+            .store
+            .find_player_template(&mut c.names, NameKeyType(3))
+            .unwrap()
+            .unwrap();
         assert_eq!(found.side(), b"Found");
         // and FactionAmerica itself, now numbered 3, reads as a1 and finds it too
         let america = c.names.name_to_key(b"FactionAmerica");
         assert_eq!(america.0, 3);
-        assert_eq!(c.store.find_player_template(&mut c.names, america).unwrap().unwrap().side(), b"Found");
+        assert_eq!(
+            c.store
+                .find_player_template(&mut c.names, america)
+                .unwrap()
+                .unwrap()
+                .side(),
+            b"Found"
+        );
     }
 
     #[test]
@@ -1108,11 +1394,22 @@ PlayerTemplate FactionAmerica\n Side = America\n BaseSide = USA\n PlayableSide =
         assert_eq!(c.store.template_num_by_name(&c.names, b"three"), 2);
         assert_eq!(c.store.template_num_by_name(&c.names, b"THREE"), 2);
         assert_eq!(c.store.template_num_by_name(&c.names, b"Five"), -1);
-        assert!(c.store.nth_player_template(-1).is_none() && c.store.nth_player_template(4).is_none());
+        assert!(
+            c.store.nth_player_template(-1).is_none() && c.store.nth_player_template(4).is_none()
+        );
         let mut sides = vec![b"Existing".to_vec(), b"America".to_vec()];
         c.store.all_side_strings(&mut sides);
         // each side once, first appearance; a side already in the list is added again
-        assert_eq!(sides, vec![b"Existing".to_vec(), b"America".to_vec(), b"America".to_vec(), b"China".to_vec(), b"".to_vec()]);
+        assert_eq!(
+            sides,
+            vec![
+                b"Existing".to_vec(),
+                b"America".to_vec(),
+                b"America".to_vec(),
+                b"China".to_vec(),
+                b"".to_vec()
+            ]
+        );
     }
 
     #[test]

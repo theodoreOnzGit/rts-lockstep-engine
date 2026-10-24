@@ -35,7 +35,9 @@
 
 mod support;
 
-use rts_lockstep_engine::common::ini::{BlockParse, FieldParse, Ini, IniLoadType, IniResult, UserData};
+use rts_lockstep_engine::common::ini::{
+    BlockParse, FieldParse, Ini, IniLoadType, IniResult, UserData,
+};
 use rts_lockstep_engine::common::money::{parse_money_amount, Money};
 use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_crc::XferDeepCrc;
@@ -50,12 +52,23 @@ use support::{Check, Gen};
 /// The client event as the C++ stand-in logs it: (MiscAudio sound id, player).
 fn event_pair(e: &ClientEvent) -> (u32, u32) {
     match e {
-        ClientEvent::MoneySound { sound: MoneySound::Deposit, player_index } => (1, *player_index as u32),
-        ClientEvent::MoneySound { sound: MoneySound::Withdraw, player_index } => (2, *player_index as u32),
+        ClientEvent::MoneySound {
+            sound: MoneySound::Deposit,
+            player_index,
+        } => (1, *player_index as u32),
+        ClientEvent::MoneySound {
+            sound: MoneySound::Withdraw,
+            player_index,
+        } => (2, *player_index as u32),
         // p1w4-thingtemplate: the event of `ThingFactory::newObject`'s drawable; the money code makes none
-        ClientEvent::ObjectCreated { .. } => unreachable!("the money code makes no ObjectCreated event"),
+        ClientEvent::ObjectCreated { .. } => {
+            unreachable!("the money code makes no ObjectCreated event")
+        }
         // p1w5-world: the other events of the unified client interface; the money code makes none
-        ClientEvent::ObjectDestroyed { .. } | ClientEvent::Audio { .. } | ClientEvent::Terrain(_) | ClientEvent::Object(_) => {
+        ClientEvent::ObjectDestroyed { .. }
+        | ClientEvent::Audio { .. }
+        | ClientEvent::Terrain(_)
+        | ClientEvent::Object(_) => {
             unreachable!("the money code makes only MoneySound events")
         }
         // --- p1w6-partition ---
@@ -88,7 +101,14 @@ fn gen_amount(g: &mut Gen) -> u32 {
 /// The Rust side of `ref_money_op`: [returned, balance, income records, n,
 /// then (sound id, player) for each event]. Planted: the withdrawal is not
 /// clamped to the balance, and the deposit saturates instead of wrapping.
-fn rust_op(op: u32, money0: u32, player0: i32, amount: u32, play_sound: bool, planted: bool) -> Vec<u32> {
+fn rust_op(
+    op: u32,
+    money0: u32,
+    player0: i32,
+    amount: u32,
+    play_sound: bool,
+    planted: bool,
+) -> Vec<u32> {
     let mut m = Money::new();
     m.set_player_index(player0);
     if money0 != 0 {
@@ -121,7 +141,16 @@ fn rust_op(op: u32, money0: u32, player0: i32, amount: u32, play_sound: bool, pl
 /// The C++ side of `ref_money_op`, cut to the events it logged.
 fn cpp_op(op: i32, money0: u32, player0: i32, amount: u32, play_sound: bool) -> Vec<u32> {
     let mut out = [0u32; 8];
-    unsafe { cpp::ref_money_op(op, money0, player0, amount, i32::from(play_sound), out.as_mut_ptr()) };
+    unsafe {
+        cpp::ref_money_op(
+            op,
+            money0,
+            player0,
+            amount,
+            i32::from(play_sound),
+            out.as_mut_ptr(),
+        )
+    };
     let n = out[3] as usize;
     let mut v = out[..4].to_vec();
     v.extend_from_slice(&out[4..4 + 2 * n]);
@@ -145,11 +174,17 @@ fn money_withdraw_and_deposit_match() {
         let player0 = g.below(8) as i32;
         let amount = gen_amount(&mut g);
         let play_sound = g.below(4) != 0;
-        let input = || format!("case {case}: op {op}, balance {money0}, player {player0}, amount {amount}, sound {play_sound}");
+        let input = || {
+            format!("case {case}: op {op}, balance {money0}, player {player0}, amount {amount}, sound {play_sound}")
+        };
         let rust = rust_op(op, money0, player0, amount, play_sound, false);
         let cpp_out = cpp_op(op as i32, money0, player0, amount, play_sound);
         ok.eq(rust, cpp_out.clone(), input);
-        bug.eq(rust_op(op, money0, player0, amount, play_sound, true), cpp_out, input);
+        bug.eq(
+            rust_op(op, money0, player0, amount, play_sound, true),
+            cpp_out,
+            input,
+        );
     }
     ok.finish();
     bug.finish_planted();
@@ -172,21 +207,47 @@ fn planted_parse_money(ini: &mut Ini<'_>, m: &mut Money, _: &UserData) -> IniRes
     Ok(())
 }
 
-static PLANTED_FIELDS: [FieldParse<Money>; 2] = [FieldParse::new("DefaultStartingMoney", planted_parse_money, UserData::None), FieldParse::end()];
+static PLANTED_FIELDS: [FieldParse<Money>; 2] = [
+    FieldParse::new("DefaultStartingMoney", planted_parse_money, UserData::None),
+    FieldParse::end(),
+];
 
 fn planted_money_block(ini: &mut Ini<'_>, m: &mut Money) -> IniResult<()> {
     ini.init_from_ini(m, &PLANTED_FIELDS)
 }
 
-const BLOCKS: [BlockParse<Money>; 1] = [BlockParse { token: "MONEY", parse: parse_money_block }];
-const PLANTED_BLOCKS: [BlockParse<Money>; 1] = [BlockParse { token: "MONEY", parse: planted_money_block }];
+const BLOCKS: [BlockParse<Money>; 1] = [BlockParse {
+    token: "MONEY",
+    parse: parse_money_block,
+}];
+const PLANTED_BLOCKS: [BlockParse<Money>; 1] = [BlockParse {
+    token: "MONEY",
+    parse: planted_money_block,
+}];
 
-const VALUE_TOKENS: &[&str] = &["12abc", "1e", "1.5", "-1", "+5", "007", "0", "4294967295", "4294967296", "x", "", "99999999999"];
+const VALUE_TOKENS: &[&str] = &[
+    "12abc",
+    "1e",
+    "1.5",
+    "-1",
+    "+5",
+    "007",
+    "0",
+    "4294967295",
+    "4294967296",
+    "x",
+    "",
+    "99999999999",
+];
 
 fn gen_money_text(g: &mut Gen) -> String {
     let mut s = String::from("MONEY\n");
     for _ in 0..g.below(4) {
-        let name = if g.below(10) < 9 { "DefaultStartingMoney" } else { "DefaultStartingMony" };
+        let name = if g.below(10) < 9 {
+            "DefaultStartingMoney"
+        } else {
+            "DefaultStartingMony"
+        };
         let value = match g.below(3) {
             0 => format!("{}", g.u32()),
             1 => format!("{}", g.below(100_000)),
@@ -213,7 +274,14 @@ fn money_parse_amount_matches() {
         let data = text.as_bytes();
         let input = || format!("case {case}: block {text:?}");
         let mut m = Money::new();
-        let rust = Ini::load(b"money.ini", data, IniLoadType::Overwrite, None, &BLOCKS, &mut m);
+        let rust = Ini::load(
+            b"money.ini",
+            data,
+            IniLoadType::Overwrite,
+            None,
+            &BLOCKS,
+            &mut m,
+        );
         if let Err(e) = &rust {
             if e.is_undefined() {
                 *excluded.entry(format!("{:?}", e.kind)).or_default() += 1;
@@ -239,7 +307,14 @@ fn money_parse_amount_matches() {
         ok.eq((rust.is_err(), m.count_money()), cpp_outcome, input);
 
         let mut mb = Money::new();
-        let planted = Ini::load(b"money.ini", data, IniLoadType::Overwrite, None, &PLANTED_BLOCKS, &mut mb);
+        let planted = Ini::load(
+            b"money.ini",
+            data,
+            IniLoadType::Overwrite,
+            None,
+            &PLANTED_BLOCKS,
+            &mut mb,
+        );
         bug.eq((planted.is_err(), mb.count_money()), cpp_outcome, input);
     }
     println!(
@@ -279,7 +354,11 @@ fn money_xfer_matches() {
 
         let path = temp_path("save", case);
         let cpath = CString::new(path.to_string_lossy().as_bytes()).expect("path");
-        assert_eq!(unsafe { cpp::ref_money_save(cpath.as_ptr(), money0, player0) }, 0, "upstream XferSave threw");
+        assert_eq!(
+            unsafe { cpp::ref_money_save(cpath.as_ptr(), money0, player0) },
+            0,
+            "upstream XferSave threw"
+        );
         let cpp_bytes = std::fs::read(&path).expect("upstream wrote the file");
         let _ = std::fs::remove_file(&path);
         ok.eq(rust_bytes.clone(), cpp_bytes, input);

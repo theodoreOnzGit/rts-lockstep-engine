@@ -323,7 +323,10 @@ impl World {
             now = 1;
         }
         for index in 0..modules {
-            let u = UpdateHandle { object: id, index: index as u16 };
+            let u = UpdateHandle {
+                object: id,
+                index: index as u16,
+            };
             if let Some(m) = self.objects.update_module_mut(u) {
                 // "note that 'when' can be zero here for any update module that didn't bother
                 // to call setWakeFrame() in its ctor. this is legal."
@@ -367,7 +370,11 @@ impl World {
         self.hook_destroy_modules_on_destroy(id);
         // --- p1w6-object ---
         // `setStatus( MAKE_OBJECT_STATUS_MASK( OBJECT_STATUS_DESTROYED ) )`, with its reactions
-        self.set_status(id, crate::logic::world::object_state::mask_of(OBJECT_STATUS_DESTROYED), true);
+        self.set_status(
+            id,
+            crate::logic::world::object_state::mask_of(OBJECT_STATUS_DESTROYED),
+            true,
+        );
         // --- end p1w6-object ---
         self.hook_stop_ai(id);
         // "add to end of destruction list, in case something is being destroyed and trying to
@@ -416,7 +423,12 @@ impl World {
     /// nothing to change: the constructor of such a module sets its own frame
     /// before `registerObject` (which upstream's `else` branch does through
     /// the pointer).
-    pub fn awaken_update_module(&mut self, obj: ObjectId, u: UpdateHandle, when: u32) -> Result<(), WorldError> {
+    pub fn awaken_update_module(
+        &mut self,
+        obj: ObjectId,
+        u: UpdateHandle,
+        when: u32,
+    ) -> Result<(), WorldError> {
         let now = self.frame;
         if self.sched.current() == Some(u) {
             // "You should not call setWakeFrame() from inside your update(), because it will
@@ -424,7 +436,10 @@ impl World {
             return Ok(());
         }
         let (next_call, idx) = match self.objects.update_module(u) {
-            Some(m) => (m.friend_get_next_call_frame(), m.friend_get_index_in_logic()),
+            Some(m) => (
+                m.friend_get_next_call_frame(),
+                m.friend_get_index_in_logic(),
+            ),
             None => return Ok(()),
         };
         if when == next_call {
@@ -460,7 +475,11 @@ impl World {
     /// (see `docs/world-design.md`, "Re-entrancy"). `None` if the module is
     /// missing or already checked out, in which case `f` does not run. The
     /// behaviour is put back afterwards.
-    pub fn with_body<R>(&mut self, u: UpdateHandle, f: impl FnOnce(&mut UpdateBody, &mut World) -> R) -> Option<R> {
+    pub fn with_body<R>(
+        &mut self,
+        u: UpdateHandle,
+        f: impl FnOnce(&mut UpdateBody, &mut World) -> R,
+    ) -> Option<R> {
         let mut body = self.objects.take_body(u)?;
         let r = f(&mut body, self);
         self.objects.put_body(u, body);
@@ -492,18 +511,32 @@ impl World {
         let now = self.frame;
         while let Some(u) = self.sched.peek() {
             let (priority, next_call, types) = {
-                let m = self.objects.update_module(u).expect("sleepy heap entry names an update module in the arena");
-                (m.friend_get_priority(), m.friend_get_next_call_frame(), m.get_disabled_types_to_process())
+                let m = self
+                    .objects
+                    .update_module(u)
+                    .expect("sleepy heap entry names an update module in the arena");
+                (
+                    m.friend_get_priority(),
+                    m.friend_get_next_call_frame(),
+                    m.get_disabled_types_to_process(),
+                )
             };
             // "we're done, everyone else is sleeping. break from the loop BEFORE we pop this item off."
             if next_call > now {
                 break;
             }
             let mut sleep_len = UPDATE_SLEEP_NONE;
-            let dis: DisabledMaskType = self.objects.find(u.object).map_or(DisabledMaskType::new(), |o| o.disabled);
+            let dis: DisabledMaskType = self
+                .objects
+                .find(u.object)
+                .map_or(DisabledMaskType::new(), |o| o.disabled);
             if !dis.any() || dis.any_intersection_with(&types) {
                 if let Some(trace) = &mut self.sched.trace {
-                    trace.push(UpdateTraceEntry { frame: now, handle: u, priority });
+                    trace.push(UpdateTraceEntry {
+                        frame: now,
+                        handle: u,
+                        priority,
+                    });
                 }
                 self.sched.set_current(Some(u));
                 let prev_owner = self.owner.replace(u.object);
@@ -604,7 +637,10 @@ impl World {
         for id in self.objects.ids_in_order() {
             let n = self.objects.find(id).map_or(0, |o| o.behaviors.len());
             for index in 0..n {
-                handles.push(UpdateHandle { object: id, index: index as u16 });
+                handles.push(UpdateHandle {
+                    object: id,
+                    index: index as u16,
+                });
             }
         }
         for u in handles {
@@ -632,7 +668,8 @@ impl World {
     /// object calls) onto the client queue, in order.
     pub fn flush_partition_events(&mut self) {
         let ev = self.partition.take_client_events();
-        self.events.extend(ev.into_iter().map(ClientEvent::Partition));
+        self.events
+            .extend(ev.into_iter().map(ClientEvent::Partition));
     }
     // --- end p1w6-partition ---
 
@@ -682,8 +719,14 @@ impl World {
     pub fn hook_remove_wall_piece(&mut self, id: ObjectId) {
         self.note(Hook::RemoveWallPiece(id));
         // --- p1w6-object ---
-        if self.objects.find(id).is_some_and(|o| o.is_kind_of(crate::common::kind_of::KINDOF_WALK_ON_TOP_OF_WALL)) {
-            self.cut(crate::logic::world::object_cuts::CutCall::PathfinderRemoveWallPiece { object: id });
+        if self
+            .objects
+            .find(id)
+            .is_some_and(|o| o.is_kind_of(crate::common::kind_of::KINDOF_WALK_ON_TOP_OF_WALL))
+        {
+            self.cut(
+                crate::logic::world::object_cuts::CutCall::PathfinderRemoveWallPiece { object: id },
+            );
         }
         // --- end p1w6-object ---
     }
@@ -695,7 +738,12 @@ impl World {
         self.note(Hook::SpecialPowerUi(id));
         // --- p1w6-object ---
         // "Clean up special power shortcut bars"
-        if self.objects.find(id).is_some_and(|o| o.has_any_special_power()) && self.players.local_index() == self.get_controlling_player(id) {
+        if self
+            .objects
+            .find(id)
+            .is_some_and(|o| o.has_any_special_power())
+            && self.players.local_index() == self.get_controlling_player(id)
+        {
             self.emit(crate::logic::world::object_events::ObjectClientEvent::ControlBarMarkUiDirty);
         }
         // --- end p1w6-object ---
@@ -731,7 +779,10 @@ impl StateContext for World {
 
     /// `TheGameLogic->findObjectByID(id)`, as the state machine sees it.
     fn find_object(&self, id: ObjectId) -> Option<ObjectRef> {
-        self.objects.find(id).map(|o| ObjectRef { id: o.id, position: o.position })
+        self.objects.find(id).map(|o| ObjectRef {
+            id: o.id,
+            position: o.position,
+        })
     }
 }
 
@@ -748,7 +799,11 @@ mod tests {
     }
 
     fn spec(phase: SleepyUpdatePhase, initial: u32, script: Vec<ProbeStep>) -> ProbeModuleSpec {
-        ProbeModuleSpec { phase, initial_call_frame: initial, script }
+        ProbeModuleSpec {
+            phase,
+            initial_call_frame: initial,
+            script,
+        }
     }
 
     fn add(w: &mut World, specs: &[ProbeModuleSpec]) -> ObjectId {
@@ -764,7 +819,13 @@ mod tests {
     }
 
     fn order(w: &World) -> Vec<(u32, ObjectId, u16)> {
-        w.sched.trace.as_ref().unwrap().iter().map(|e| (e.frame, e.handle.object, e.handle.index)).collect()
+        w.sched
+            .trace
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|e| (e.frame, e.handle.object, e.handle.index))
+            .collect()
     }
 
     fn heap_is_valid(w: &World) -> bool {
@@ -772,7 +833,12 @@ mod tests {
         h.iter().enumerate().all(|(i, u)| {
             let m = w.objects.update_module(*u).unwrap();
             let ok_index = m.friend_get_index_in_logic() == i as i32;
-            let ok_order = i == 0 || w.objects.update_module(h[i.div_ceil(2) - 1]).unwrap().friend_get_priority() <= m.friend_get_priority();
+            let ok_order = i == 0
+                || w.objects
+                    .update_module(h[i.div_ceil(2) - 1])
+                    .unwrap()
+                    .friend_get_priority()
+                    <= m.friend_get_priority();
             ok_index && ok_order
         })
     }
@@ -796,13 +862,33 @@ mod tests {
         assert_eq!(w.next_object(a), INVALID_ID);
         assert_eq!(w.sched.len(), 3);
         // frame 0 counts as frame 1; a module that set a frame keeps it
-        let frame_of = |w: &World, o: ObjectId, i: u16| w.objects.update_module(UpdateHandle { object: o, index: i }).unwrap().friend_get_next_call_frame();
-        assert_eq!((frame_of(&w, a, 0), frame_of(&w, a, 1), frame_of(&w, b, 0)), (1, 1, 7));
+        let frame_of = |w: &World, o: ObjectId, i: u16| {
+            w.objects
+                .update_module(UpdateHandle {
+                    object: o,
+                    index: i,
+                })
+                .unwrap()
+                .friend_get_next_call_frame()
+        };
+        assert_eq!(
+            (frame_of(&w, a, 0), frame_of(&w, a, 1), frame_of(&w, b, 0)),
+            (1, 1, 7)
+        );
         // the Initial-phase module of a has the smallest key: (1 << 2) | 0
-        assert_eq!(w.sched.peek(), Some(UpdateHandle { object: a, index: 1 }));
+        assert_eq!(
+            w.sched.peek(),
+            Some(UpdateHandle {
+                object: a,
+                index: 1
+            })
+        );
         assert!(heap_is_valid(&w));
         let again = probe_object(a, &[]);
-        assert_eq!(w.register_object(again), Err(WorldError::Arena(ArenaError::DuplicateId(a))));
+        assert_eq!(
+            w.register_object(again),
+            Err(WorldError::Arena(ArenaError::DuplicateId(a)))
+        );
     }
 
     #[test]
@@ -816,7 +902,17 @@ mod tests {
         }
         // Registration at frame 0 makes everything due at frame 1, so frame 0 runs nothing.
         // Frame 1: by phase (Initial b, Normal c, Final a). Frame 2: b. Frame 3: b (phase 0) before a (phase 3).
-        assert_eq!(order(&w), [(1, b, 0), (1, c, 0), (1, a, 0), (2, b, 0), (3, b, 0), (3, a, 0)]);
+        assert_eq!(
+            order(&w),
+            [
+                (1, b, 0),
+                (1, c, 0),
+                (1, a, 0),
+                (2, b, 0),
+                (3, b, 0),
+                (3, a, 0)
+            ]
+        );
         assert_eq!(w.frame(), 4);
         assert!(heap_is_valid(&w));
     }
@@ -824,13 +920,30 @@ mod tests {
     #[test]
     fn a_return_below_one_is_sleep_none_and_forever_is_clipped() {
         let mut w = traced();
-        let a = add(&mut w, &[spec(Normal, 0, vec![step(0, vec![]), step(u32::MAX, vec![]), step(0x7fff_ffff, vec![])])]);
+        let a = add(
+            &mut w,
+            &[spec(
+                Normal,
+                0,
+                vec![
+                    step(0, vec![]),
+                    step(u32::MAX, vec![]),
+                    step(0x7fff_ffff, vec![]),
+                ],
+            )],
+        );
         for _ in 0..5 {
             w.run_logic_frame();
         }
         // call 1 returns 0 -> next frame; call 2 returns -1 (as a signed enum) -> next frame; call 3 sleeps ~forever
         assert_eq!(order(&w), [(1, a, 0), (2, a, 0), (3, a, 0)]);
-        let m = w.objects.update_module(UpdateHandle { object: a, index: 0 }).unwrap();
+        let m = w
+            .objects
+            .update_module(UpdateHandle {
+                object: a,
+                index: 0,
+            })
+            .unwrap();
         assert_eq!(m.friend_get_next_call_frame(), 0x3fff_ffff);
     }
 
@@ -858,31 +971,60 @@ mod tests {
         w.destroy_object(a);
         assert_eq!(
             w.hook_log.take().unwrap(),
-            [Hook::DestroyModulesOnDestroy(a), Hook::StopAi(a), Hook::ObjectOnDestroy(a), Hook::RemoveWallPiece(a), Hook::SpecialPowerUi(a)]
+            [
+                Hook::DestroyModulesOnDestroy(a),
+                Hook::StopAi(a),
+                Hook::ObjectOnDestroy(a),
+                Hook::RemoveWallPiece(a),
+                Hook::SpecialPowerUi(a)
+            ]
         );
-        assert!(w.find_object(a).unwrap().is_destroyed(), "marked, still found");
+        assert!(
+            w.find_object(a).unwrap().is_destroyed(),
+            "marked, still found"
+        );
         assert_eq!(w.objects_to_destroy(), [a]);
         assert_eq!(w.sched.len(), 1);
         w.hook_log = Some(Vec::new());
         w.destroy_object(a);
         w.destroy_object(INVALID_ID);
         w.destroy_object(999);
-        assert!(w.hook_log.take().unwrap().is_empty(), "already destroyed / missing: ignored");
+        assert!(
+            w.hook_log.take().unwrap().is_empty(),
+            "already destroyed / missing: ignored"
+        );
         w.process_destroy_list();
         assert!(w.find_object(a).is_none());
         assert!(w.sched.is_empty() && w.objects.is_empty() && w.objects_to_destroy().is_empty());
-        assert_eq!(w.take_client_events(), [ClientEvent::ObjectDestroyed { object_id: a }]);
+        assert_eq!(
+            w.take_client_events(),
+            [ClientEvent::ObjectDestroyed { object_id: a }]
+        );
     }
 
     #[test]
     fn an_object_destroyed_during_the_frame_dies_at_its_end_not_before() {
         let mut w = traced();
         let victim = add(&mut w, &[spec(Final, 0, vec![step(1, vec![])])]);
-        let killer = add(&mut w, &[spec(Initial, 0, vec![step(9, vec![ProbeAction::Destroy(victim)])])]);
+        let killer = add(
+            &mut w,
+            &[spec(
+                Initial,
+                0,
+                vec![step(9, vec![ProbeAction::Destroy(victim)])],
+            )],
+        );
         w.run_logic_frame(); // frame 0: nothing is due before frame 1
         w.run_logic_frame(); // frame 1: the killer destroys the victim, which is due this frame too
-        assert_eq!(order(&w), [(1, killer, 0), (1, victim, 0)], "the victim still ran in the frame it was destroyed in");
-        assert!(w.find_object(victim).is_none(), "gone after the end-of-frame purge");
+        assert_eq!(
+            order(&w),
+            [(1, killer, 0), (1, victim, 0)],
+            "the victim still ran in the frame it was destroyed in"
+        );
+        assert!(
+            w.find_object(victim).is_none(),
+            "gone after the end-of-frame purge"
+        );
         assert!(w.find_object(killer).is_some());
         assert_eq!(w.sched.len(), 1);
         assert!(heap_is_valid(&w));
@@ -922,8 +1064,16 @@ mod tests {
     fn awaken_follows_the_four_rules() {
         let mut w = World::new();
         let a = add(&mut w, &[spec(Normal, 50, vec![])]);
-        let u = UpdateHandle { object: a, index: 0 };
-        let frame = |w: &World| w.objects.update_module(u).unwrap().friend_get_next_call_frame();
+        let u = UpdateHandle {
+            object: a,
+            index: 0,
+        };
+        let frame = |w: &World| {
+            w.objects
+                .update_module(u)
+                .unwrap()
+                .friend_get_next_call_frame()
+        };
         // a change moves the module and keeps the heap valid
         w.awaken_update_module(a, u, 20).unwrap();
         assert_eq!(frame(&w), 20);
@@ -942,22 +1092,53 @@ mod tests {
         assert_eq!(frame(&w), 21);
         w.sched.set_current(None);
         // an object that is not registered: nothing to change
-        let ghost = UpdateHandle { object: 77, index: 0 };
+        let ghost = UpdateHandle {
+            object: 77,
+            index: 0,
+        };
         assert_eq!(w.awaken_update_module(77, ghost, 5), Ok(()));
         // a corrupted index is the RELEASE_CRASH
-        w.objects.update_module_mut(u).unwrap().friend_set_index_in_logic(9);
-        assert_eq!(w.awaken_update_module(a, u, 30), Err(WorldError::SleepyIndexIllegal(u)));
-        w.objects.update_module_mut(u).unwrap().friend_set_index_in_logic(-1);
-        assert_eq!(w.awaken_update_module(a, u, 30), Err(WorldError::SleepyIndexIllegal(u)));
+        w.objects
+            .update_module_mut(u)
+            .unwrap()
+            .friend_set_index_in_logic(9);
+        assert_eq!(
+            w.awaken_update_module(a, u, 30),
+            Err(WorldError::SleepyIndexIllegal(u))
+        );
+        w.objects
+            .update_module_mut(u)
+            .unwrap()
+            .friend_set_index_in_logic(-1);
+        assert_eq!(
+            w.awaken_update_module(a, u, 30),
+            Err(WorldError::SleepyIndexIllegal(u))
+        );
     }
 
     #[test]
     fn a_module_can_wake_another_and_a_spawn_joins_the_queue() {
         let mut w = traced();
         let sleeper = add(&mut w, &[spec(Normal, 100, vec![step(1, vec![])])]);
-        let target = UpdateHandle { object: sleeper, index: 0 };
+        let target = UpdateHandle {
+            object: sleeper,
+            index: 0,
+        };
         let spawn = vec![spec(Initial, 0, vec![step(50, vec![])])];
-        let waker = add(&mut w, &[spec(Normal, 0, vec![step(40, vec![ProbeAction::Awaken { target, delay: 1 }, ProbeAction::Spawn(spawn)])])]);
+        let waker = add(
+            &mut w,
+            &[spec(
+                Normal,
+                0,
+                vec![step(
+                    40,
+                    vec![
+                        ProbeAction::Awaken { target, delay: 1 },
+                        ProbeAction::Spawn(spawn),
+                    ],
+                )],
+            )],
+        );
         for _ in 0..3 {
             w.run_logic_frame();
         }
@@ -978,7 +1159,10 @@ mod tests {
         w.find_object_mut(c).unwrap().disabled.set(DISABLED_HELD, 1);
         w.hook_log = Some(Vec::new());
         w.end_of_frame();
-        assert_eq!(w.hook_log.take().unwrap(), [Hook::CheckDisabledStatus(c), Hook::CheckDisabledStatus(a)]);
+        assert_eq!(
+            w.hook_log.take().unwrap(),
+            [Hook::CheckDisabledStatus(c), Hook::CheckDisabledStatus(a)]
+        );
         assert_eq!(w.frame(), 1);
         w.set_start_new_game(true);
         w.end_of_frame();
@@ -1003,13 +1187,22 @@ mod tests {
     fn load_post_process_recovers_the_id_counter_and_rebuilds_the_queue() {
         let mut w = World::new();
         for i in 0..6u32 {
-            add(&mut w, &[spec(Normal, 10 + i % 3, vec![]), spec(Final, 0, vec![])]);
+            add(
+                &mut w,
+                &[spec(Normal, 10 + i % 3, vec![]), spec(Final, 0, vec![])],
+            );
         }
         w.destroy_object(2);
         w.process_destroy_list();
         // a legacy save: the Final modules have no frame
         for id in w.objects.ids_in_order() {
-            w.objects.update_module_mut(UpdateHandle { object: id, index: 1 }).unwrap().friend_set_next_call_frame(0);
+            w.objects
+                .update_module_mut(UpdateHandle {
+                    object: id,
+                    index: 1,
+                })
+                .unwrap()
+                .friend_set_next_call_frame(0);
         }
         w.frame = 4;
         w.next_object_id = 99;
@@ -1022,7 +1215,11 @@ mod tests {
         assert_eq!(top.friend_get_next_call_frame(), 4);
         let mut empty = World::new();
         empty.load_post_process();
-        assert_eq!(empty.next_object_id(), 0, "an empty list leaves INVALID_ID (0)");
+        assert_eq!(
+            empty.next_object_id(),
+            0,
+            "an empty list leaves INVALID_ID (0)"
+        );
     }
 
     #[test]
@@ -1031,7 +1228,15 @@ mod tests {
         add(&mut w, &[spec(Normal, 0, vec![])]);
         w.frame = 12;
         w.set_defaults(true);
-        assert_eq!((w.frame(), w.next_object_id(), w.objects.len(), w.sched.len()), (0, 2, 0, 0));
+        assert_eq!(
+            (
+                w.frame(),
+                w.next_object_id(),
+                w.objects.len(),
+                w.sched.len()
+            ),
+            (0, 2, 0, 0)
+        );
         w.set_defaults(false);
         assert_eq!(w.next_object_id(), 1);
     }
@@ -1040,7 +1245,11 @@ mod tests {
     fn the_state_machine_context_is_the_world() {
         let mut w = World::new();
         let a = add(&mut w, &[]);
-        w.find_object_mut(a).unwrap().position = crate::common::base_type::Coord3D { x: 1.0, y: 2.0, z: 3.0 };
+        w.find_object_mut(a).unwrap().position = crate::common::base_type::Coord3D {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        };
         w.frame = 9;
         assert_eq!(StateContext::frame(&w), 9);
         let r = StateContext::find_object(&w, a).unwrap();
@@ -1066,22 +1275,66 @@ mod tests {
     fn damage_through_the_cut_point_is_recorded_on_the_target() {
         let mut w = World::new();
         let victim = add(&mut w, &[]);
-        let shooter = add(&mut w, &[spec(Normal, 0, vec![step(5, vec![ProbeAction::Damage { target: victim, amount: 7.5 }, ProbeAction::Sound(b"Boom".to_vec())])])]);
+        let shooter = add(
+            &mut w,
+            &[spec(
+                Normal,
+                0,
+                vec![step(
+                    5,
+                    vec![
+                        ProbeAction::Damage {
+                            target: victim,
+                            amount: 7.5,
+                        },
+                        ProbeAction::Sound(b"Boom".to_vec()),
+                    ],
+                )],
+            )],
+        );
         w.run_logic_frame();
         w.run_logic_frame();
         let got = &w.find_object(victim).unwrap().damage_received;
-        assert_eq!((got.len(), got[0].input.amount, got[0].input.source_id), (1, 7.5, shooter));
-        assert_eq!(w.take_client_events(), [ClientEvent::Audio { event_name: b"Boom".to_vec(), object_id: shooter, player_index: -1 }]);
+        assert_eq!(
+            (got.len(), got[0].input.amount, got[0].input.source_id),
+            (1, 7.5, shooter)
+        );
+        assert_eq!(
+            w.take_client_events(),
+            [ClientEvent::Audio {
+                event_name: b"Boom".to_vec(),
+                object_id: shooter,
+                player_index: -1
+            }]
+        );
     }
 
     #[test]
     fn a_body_that_is_running_is_not_available_a_second_time() {
         let mut w = World::new();
         let a = add(&mut w, &[spec(Normal, 0, vec![])]);
-        let u = UpdateHandle { object: a, index: 0 };
+        let u = UpdateHandle {
+            object: a,
+            index: 0,
+        };
         let inner = w.with_body(u, |_, w| w.with_body(u, |_, _| 1));
-        assert_eq!(inner, Some(None), "the second checkout finds the slot empty");
-        assert!(w.with_body(u, |_, _| 2) == Some(2), "and it is back afterwards");
-        assert!(w.with_body(UpdateHandle { object: a, index: 5 }, |_, _| 3).is_none());
+        assert_eq!(
+            inner,
+            Some(None),
+            "the second checkout finds the slot empty"
+        );
+        assert!(
+            w.with_body(u, |_, _| 2) == Some(2),
+            "and it is back afterwards"
+        );
+        assert!(w
+            .with_body(
+                UpdateHandle {
+                    object: a,
+                    index: 5
+                },
+                |_, _| 3
+            )
+            .is_none());
     }
 }

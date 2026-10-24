@@ -78,7 +78,11 @@ pub trait UpgradeBehavior: Clone + Sized {
     /// The `UpgradeModule` base, to change.
     fn base_mut(&mut self) -> &mut UpgradeModule;
     /// `upgradeImplementation()`: "here's the actual work of upgrading".
-    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError>;
+    fn upgrade_implementation(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+    ) -> Result<(), IniError>;
     /// `isSubObjectsUpgrade()` (pure virtual upstream).
     fn is_sub_objects_upgrade(&self) -> bool;
     // --- p1w11-sonnet ---
@@ -86,7 +90,14 @@ pub trait UpgradeBehavior: Clone + Sized {
     fn on_delete(&mut self, _world: &mut World, _me: ModuleHandle) {}
     /// `onCapture(oldOwner, newOwner)` (`Object::onCapture`'s loop), the owners as player indices (a negative index is upstream's
     /// `NULL`): empty for a module that does not override it.
-    fn on_capture(&mut self, _world: &mut World, _me: ModuleHandle, _old_owner: i32, _new_owner: i32) {}
+    fn on_capture(
+        &mut self,
+        _world: &mut World,
+        _me: ModuleHandle,
+        _old_owner: i32,
+        _new_owner: i32,
+    ) {
+    }
     /// The part of `loadPostProcess()` that needs the world (see [`ModuleCall::LoadPostProcess`]): empty for a module that has none. The
     /// base's `UpgradeModule::loadPostProcess()` is the world-free `Snapshot::load_post_process`, which runs first.
     fn load_post_process_world(&mut self, _world: &mut World, _me: ModuleHandle) {}
@@ -100,7 +111,12 @@ pub trait UpgradeBehavior: Clone + Sized {
 /// The answer of an upgrade module to one of `Object`'s calls. The calls an
 /// upgrade module has no behaviour for (the `BehaviorModule` virtuals, which
 /// are empty for it) answer [`ModuleReply::Unhandled`].
-pub fn upgrade_module_call<M: UpgradeBehavior>(m: &mut M, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+pub fn upgrade_module_call<M: UpgradeBehavior>(
+    m: &mut M,
+    world: &mut World,
+    me: ModuleHandle,
+    call: ModuleCall,
+) -> ModuleReply {
     match call {
         ModuleCall::IsAlreadyUpgraded => ModuleReply::Bool(m.base().is_already_upgraded()),
         ModuleCall::AttemptUpgrade(key_mask) => match attempt_upgrade(m, world, me, key_mask) {
@@ -109,14 +125,20 @@ pub fn upgrade_module_call<M: UpgradeBehavior>(m: &mut M, world: &mut World, me:
         },
         ModuleCall::WouldUpgrade(key_mask) => {
             let statics = world.statics.clone();
-            match m.base().would_upgrade(&statics.upgrade_center, &mut world.names, key_mask) {
+            match m
+                .base()
+                .would_upgrade(&statics.upgrade_center, &mut world.names, key_mask)
+            {
                 Ok(would) => ModuleReply::Bool(would),
                 Err(e) => failed(world, me, e),
             }
         }
         ModuleCall::ResetUpgrade(key_mask) => {
             let statics = world.statics.clone();
-            match m.base_mut().reset_upgrade(&statics.upgrade_center, &mut world.names, key_mask) {
+            match m
+                .base_mut()
+                .reset_upgrade(&statics.upgrade_center, &mut world.names, key_mask)
+            {
                 Ok(reset) => ModuleReply::Bool(reset),
                 Err(e) => failed(world, me, e),
             }
@@ -136,7 +158,10 @@ pub fn upgrade_module_call<M: UpgradeBehavior>(m: &mut M, world: &mut World, me:
             m.on_delete(world, me);
             ModuleReply::Done
         }
-        ModuleCall::OnCapture { old_owner, new_owner } => {
+        ModuleCall::OnCapture {
+            old_owner,
+            new_owner,
+        } => {
             m.on_capture(world, me, old_owner, new_owner);
             ModuleReply::Done
         }
@@ -151,25 +176,54 @@ pub fn upgrade_module_call<M: UpgradeBehavior>(m: &mut M, world: &mut World, me:
 
 /// `UpgradeMux::attemptUpgrade(keyMask)` with `giveSelfUpgrade()` inline,
 /// step by step (see the module docs).
-fn attempt_upgrade<M: UpgradeBehavior>(m: &mut M, world: &mut World, me: ModuleHandle, key_mask: UpgradeMaskType) -> Result<bool, IniError> {
+fn attempt_upgrade<M: UpgradeBehavior>(
+    m: &mut M,
+    world: &mut World,
+    me: ModuleHandle,
+    key_mask: UpgradeMaskType,
+) -> Result<bool, IniError> {
     let statics = world.statics.clone();
     // "If I have an activation condition, and I haven't activated, and this key matches my condition."
-    if !m.base().would_upgrade(&statics.upgrade_center, &mut world.names, key_mask)? {
+    if !m
+        .base()
+        .would_upgrade(&statics.upgrade_center, &mut world.names, key_mask)?
+    {
         return Ok(false);
     }
     // performUpgradeFX()
-    let fx = m.base().upgrade_module_data().mux_data().fx_list_upgrade.clone();
+    let fx = m
+        .base()
+        .upgrade_module_data()
+        .mux_data()
+        .fx_list_upgrade
+        .clone();
     if let Some(fx) = fx {
-        world.emit(ObjectClientEvent::FxListDoFxObj { fx, object_id: me.object });
+        world.emit(ObjectClientEvent::FxListDoFxObj {
+            fx,
+            object_id: me.object,
+        });
     }
     // processUpgradeRemoval(): "need to execute removals first, to prevent both being on for a moment"
-    let count = m.base().upgrade_module_data().mux_data().removal_upgrade_names.len();
+    let count = m
+        .base()
+        .upgrade_module_data()
+        .mux_data()
+        .removal_upgrade_names
+        .len();
     for i in 0..count {
-        let name = m.base().upgrade_module_data().mux_data().removal_upgrade_names[i].clone();
+        let name = m
+            .base()
+            .upgrade_module_data()
+            .mux_data()
+            .removal_upgrade_names[i]
+            .clone();
         let t = find_named_upgrade(&statics.upgrade_center, &mut world.names, &name)?;
         let mask = t.upgrade_mask();
         if let Some(trace) = &mut world.cuts.trace {
-            trace.push(format!("remove {}", String::from_utf8_lossy(t.upgrade_name())));
+            trace.push(format!(
+                "remove {}",
+                String::from_utf8_lossy(t.upgrade_name())
+            ));
         }
         lend(m, world, me, |w| w.remove_upgrade(me.object, &mask));
     }
@@ -181,7 +235,12 @@ fn attempt_upgrade<M: UpgradeBehavior>(m: &mut M, world: &mut World, me: ModuleH
 /// Runs `f` with the module lent to its slot ([`World::lend_body`]), so a
 /// call that reaches it from inside `f` runs at once on its live state, and
 /// takes the state back afterwards.
-pub fn lend<M: UpgradeBehavior, R>(m: &mut M, world: &mut World, me: ModuleHandle, f: impl FnOnce(&mut World) -> R) -> R {
+pub fn lend<M: UpgradeBehavior, R>(
+    m: &mut M,
+    world: &mut World,
+    me: ModuleHandle,
+    f: impl FnOnce(&mut World) -> R,
+) -> R {
     let mine = std::mem::replace(m, m.clone());
     let (r, back) = world.lend_body(me, mine.into_body(), f);
     if let Some(b) = back.and_then(M::from_body) {

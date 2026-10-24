@@ -60,7 +60,11 @@ pub struct Overridable<T> {
 impl<T> Overridable<T> {
     /// `Overridable()`: no next override, not an override.
     pub fn new(data: T) -> Self {
-        Overridable { next_override: None, is_override: false, data }
+        Overridable {
+            next_override: None,
+            is_override: false,
+            data,
+        }
     }
 
     /// `getNextOverride()`: the newer definition, or `None` if there is none.
@@ -80,7 +84,10 @@ impl<T> Overridable<T> {
 
     /// `setNextOverride(next)`. Returns the chain it replaced, which upstream
     /// leaks; see the module docs.
-    pub fn set_next_override(&mut self, next: Option<Box<Overridable<T>>>) -> Option<Box<Overridable<T>>> {
+    pub fn set_next_override(
+        &mut self,
+        next: Option<Box<Overridable<T>>>,
+    ) -> Option<Box<Overridable<T>>> {
         std::mem::replace(&mut self.next_override, next)
     }
 
@@ -167,7 +174,7 @@ impl<'a, T> Override<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Override, Overridable};
+    use super::{Overridable, Override};
 
     fn chain(values: &[i32]) -> Box<Overridable<i32>> {
         let mut head: Option<Box<Overridable<i32>>> = None;
@@ -211,7 +218,9 @@ mod tests {
     fn delete_overrides_removes_marked_nodes() {
         // 1 -> 2(override) -> 3: the override and everything after it go.
         let mut c = chain(&[1, 2, 3]);
-        c.friend_get_next_override().expect("node 2").mark_as_override();
+        c.friend_get_next_override()
+            .expect("node 2")
+            .mark_as_override();
         let kept = c.delete_overrides().expect("root kept");
         assert_eq!(kept.get_final_override().data, 1);
         assert!(kept.get_next_override().is_none());

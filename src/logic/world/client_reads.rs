@@ -54,7 +54,8 @@ pub struct ClientReads {
     // --- p1w13-sonnet ---
     /// `Drawable::getModelConditionFlags()` of each object's drawable (`OpenContain::monitorConditionChanges` redeploys its occupants when it changes). Headless:
     /// empty, and [`ClientReads::drawable_model_condition_flags`] answers the empty set.
-    pub drawable_model_condition: BTreeMap<ObjectId, crate::common::model_state::ModelConditionFlags>,
+    pub drawable_model_condition:
+        BTreeMap<ObjectId, crate::common::model_state::ModelConditionFlags>,
     // --- end p1w13-sonnet ---
 }
 
@@ -63,7 +64,11 @@ impl Default for ClientReads {
         ClientReads {
             camera_time_frozen: false,
             camera_movement_finished: true,
-            camera_position: Coord3D { x: 0.0, y: 0.0, z: 0.0 },
+            camera_position: Coord3D {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
             camera_filter_is_black_and_white: false,
             local_selection: Vec::new(),
             frame_selection_changed: 0,
@@ -79,8 +84,14 @@ impl Default for ClientReads {
 impl ClientReads {
     // --- p1w13-sonnet ---
     /// `drawable->getModelConditionFlags()`: the flags of the object's drawable, the empty set for an object the client has not told about.
-    pub fn drawable_model_condition_flags(&self, id: ObjectId) -> crate::common::model_state::ModelConditionFlags {
-        self.drawable_model_condition.get(&id).cloned().unwrap_or_default()
+    pub fn drawable_model_condition_flags(
+        &self,
+        id: ObjectId,
+    ) -> crate::common::model_state::ModelConditionFlags {
+        self.drawable_model_condition
+            .get(&id)
+            .cloned()
+            .unwrap_or_default()
     }
     // --- end p1w13-sonnet ---
 
@@ -97,7 +108,9 @@ impl ClientReads {
 
     /// `hasMusicTrackCompleted(track, count)`: completed at least `count` times.
     pub fn has_music_track_completed(&self, track: &[u8], count: i32) -> bool {
-        self.music_track_completions.get(track).is_some_and(|&n| n >= count)
+        self.music_track_completions
+            .get(track)
+            .is_some_and(|&n| n >= count)
     }
 
     /// `getFirstSelectedDrawable()`'s object.
@@ -122,8 +135,14 @@ mod tests {
 
     #[test]
     fn the_freeze_needs_both_terms() {
-        let mut r = ClientReads { camera_time_frozen: true, ..ClientReads::default() };
-        assert!(!r.camera_freezes_time(), "frozen but the camera is finished");
+        let mut r = ClientReads {
+            camera_time_frozen: true,
+            ..ClientReads::default()
+        };
+        assert!(
+            !r.camera_freezes_time(),
+            "frozen but the camera is finished"
+        );
         r.camera_movement_finished = false;
         assert!(r.camera_freezes_time());
         r.camera_time_frozen = false;

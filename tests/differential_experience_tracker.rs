@@ -56,8 +56,8 @@ use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::experience_tracker::{
-    add_experience_points, can_gain_exp_for_level, gain_exp_for_level, set_experience_and_level, ExperienceArena,
-    ExperienceRules, ExperienceTracker, LevelChange,
+    add_experience_points, can_gain_exp_for_level, gain_exp_for_level, set_experience_and_level,
+    ExperienceArena, ExperienceRules, ExperienceTracker, LevelChange,
 };
 use std::collections::BTreeMap;
 use std::ffi::CString;
@@ -138,7 +138,10 @@ fn push_bytes(out: &mut Vec<u32>, bytes: &[u8]) {
 
 /// The Rust side of one program: the same log words as `ref_experience_run`.
 fn rust_run(p: &Program, planted: bool, forwarded: &mut usize) -> Vec<u32> {
-    let mut arena = Arena { objects: BTreeMap::new(), forwarded: 0 };
+    let mut arena = Arena {
+        objects: BTreeMap::new(),
+        forwarded: 0,
+    };
     for (i, r) in p.rules.iter().enumerate() {
         let id = i as ObjectId + 1;
         arena.objects.insert(id, (ExperienceTracker::new(id), *r));
@@ -167,16 +170,37 @@ fn rust_run(p: &Program, planted: bool, forwarded: &mut usize) -> Vec<u32> {
             1 => set_experience_and_level(&mut arena, id, x, y != 0, &mut changes),
             2 => {
                 let r = arena.objects[&id].1;
-                arena.objects.get_mut(&id).unwrap().0.set_veterancy_level(level_from(x), &r, y != 0, &mut changes);
+                arena.objects.get_mut(&id).unwrap().0.set_veterancy_level(
+                    level_from(x),
+                    &r,
+                    y != 0,
+                    &mut changes,
+                );
             }
             3 => {
                 let r = arena.objects[&id].1;
-                arena.objects.get_mut(&id).unwrap().0.set_min_veterancy_level(level_from(x), &r, &mut changes);
+                arena
+                    .objects
+                    .get_mut(&id)
+                    .unwrap()
+                    .0
+                    .set_min_veterancy_level(level_from(x), &r, &mut changes);
             }
-            4 => out.push(u32::from(gain_exp_for_level(&mut arena, id, x, y != 0, &mut changes))),
+            4 => out.push(u32::from(gain_exp_for_level(
+                &mut arena,
+                id,
+                x,
+                y != 0,
+                &mut changes,
+            ))),
             5 => out.push(u32::from(can_gain_exp_for_level(&arena.objects[&id].0, x))),
             6 => arena.objects.get_mut(&id).unwrap().0.set_experience_sink(x),
-            7 => arena.objects.get_mut(&id).unwrap().0.set_experience_scalar(x as f32 / 4.0),
+            7 => arena
+                .objects
+                .get_mut(&id)
+                .unwrap()
+                .0
+                .set_experience_scalar(x as f32 / 4.0),
             8 => {
                 let (t, r) = &arena.objects[&id];
                 let ally = p.rel[(x - 1) as usize][(id - 1) as usize] == ALLIES;
@@ -277,7 +301,11 @@ fn random_rules(g: &mut Gen) -> ExperienceRules {
     for v in &mut values {
         *v = g.below(50) as i32 - 5;
     }
-    ExperienceRules { experience_values: values, experience_required: required, trainable: g.below(6) != 0 }
+    ExperienceRules {
+        experience_values: values,
+        experience_required: required,
+        trainable: g.below(6) != 0,
+    }
 }
 
 /// The save of a random tracker, as this crate writes it.
@@ -321,7 +349,9 @@ const BOUNDARIES: [usize; 6] = [0, 1, 5, 9, 13, 17];
 /// (a property of the Xfer layer, outside this unit; the status is the same).
 fn random_blob(g: &mut Gen) -> Vec<u8> {
     let b = match g.below(4) {
-        0 => (0..BOUNDARIES[g.below(6) as usize]).map(|_| g.u32() as u8).collect(),
+        0 => (0..BOUNDARIES[g.below(6) as usize])
+            .map(|_| g.u32() as u8)
+            .collect(),
         1 => random_save(g),
         2 => {
             let mut b = random_save(g);
@@ -340,7 +370,9 @@ fn random_blob(g: &mut Gen) -> Vec<u8> {
 fn random_program(g: &mut Gen) -> Program {
     let n = 1 + g.below(4) as usize;
     let rules: Vec<ExperienceRules> = (0..n).map(|_| random_rules(g)).collect();
-    let rel: Vec<Vec<i32>> = (0..n).map(|_| (0..n).map(|_| g.below(3) as i32).collect()).collect();
+    let rel: Vec<Vec<i32>> = (0..n)
+        .map(|_| (0..n).map(|_| g.below(3) as i32).collect())
+        .collect();
     let blob = random_blob(g);
     let n_ops = 1 + g.below(60);
     let mut ops = Vec::new();
@@ -383,7 +415,12 @@ fn random_program(g: &mut Gen) -> Program {
         };
         ops.push(op);
     }
-    Program { rules, rel, ops, blob }
+    Program {
+        rules,
+        rel,
+        ops,
+        blob,
+    }
 }
 
 fn temp_path(tag: &str) -> std::path::PathBuf {
@@ -395,7 +432,8 @@ fn experience_tracker_matches_upstream_word_for_word() {
     let path = temp_path("main");
     let mut g = Gen::new(0x0602);
     let mut check = Check::new("ExperienceTracker (programs, saves, loads)");
-    let (mut ops_total, mut loads, mut forwarded, mut changes_total) = (0usize, 0usize, 0usize, 0usize);
+    let (mut ops_total, mut loads, mut forwarded, mut changes_total) =
+        (0usize, 0usize, 0usize, 0usize);
     for _ in 0..PROGRAMS {
         let p = random_program(&mut g);
         ops_total += p.ops.len();
@@ -403,14 +441,22 @@ fn experience_tracker_matches_upstream_word_for_word() {
         let rust = rust_run(&p, false, &mut forwarded);
         let cpp = cpp_run(&p, &path);
         changes_total += cpp.len();
-        check.eq(rust, cpp, || format!("program ops {:?} rules {:?} rel {:?} blob {:?}", p.ops, p.rules, p.rel, p.blob));
+        check.eq(rust, cpp, || {
+            format!(
+                "program ops {:?} rules {:?} rel {:?} blob {:?}",
+                p.ops, p.rules, p.rel, p.blob
+            )
+        });
     }
     let _ = std::fs::remove_file(&path);
     println!(
         "COVERAGE ExperienceTracker: {ops_total} operations, {loads} loads, {forwarded} adds that reached a sink, \
          {PROGRAMS} programs, {changes_total} log words"
     );
-    assert!(forwarded > 500, "the sink path was barely exercised ({forwarded})");
+    assert!(
+        forwarded > 500,
+        "the sink path was barely exercised ({forwarded})"
+    );
     check.finish();
 }
 
@@ -424,7 +470,12 @@ fn planted_unscaled_sink_forward_is_caught() {
         let p = random_program(&mut g);
         let rust = rust_run(&p, true, &mut forwarded);
         let cpp = cpp_run(&p, &path);
-        check.eq(rust, cpp, || format!("program ops {:?} rules {:?} rel {:?} blob {:?}", p.ops, p.rules, p.rel, p.blob));
+        check.eq(rust, cpp, || {
+            format!(
+                "program ops {:?} rules {:?} rel {:?} blob {:?}",
+                p.ops, p.rules, p.rel, p.blob
+            )
+        });
     }
     let _ = std::fs::remove_file(&path);
     check.finish_planted();

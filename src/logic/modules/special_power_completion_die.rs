@@ -28,7 +28,11 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
+use crate::common::game_type::INVALID_ID;
+use crate::common::ini::Undefined;
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
+};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::DamageInfo;
@@ -37,10 +41,8 @@ use crate::logic::module::die_module::{DieModule, DieModuleData, DIE_MODULE_DATA
 use crate::logic::modules::die_body::{die_module_call, DieBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
-use crate::logic::world::update_body::UpdateBody;
-use crate::common::game_type::INVALID_ID;
-use crate::common::ini::Undefined;
 use crate::logic::world::object_cuts::CutCall;
+use crate::logic::world::update_body::UpdateBody;
 
 /// `class SpecialPowerCompletionDieModuleData : public DieModuleData`.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -61,23 +63,35 @@ impl SpecialPowerCompletionDieModuleData {
     }
 
     /// `buildFieldParse(p)`: the behaviour base, the four die mux fields (read from the layer-5 table into `die`), then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, SpecialPowerCompletionDieModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, SpecialPowerCompletionDieModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<SpecialPowerCompletionDieModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<SpecialPowerCompletionDieModuleData> {
         let mut data = SpecialPowerCompletionDieModuleData::new();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, SpecialPowerCompletionDieModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                SpecialPowerCompletionDieModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
 }
 
 /// Lifts entry `k` of the layer-5 die field table onto `SpecialPowerCompletionDieModuleData::die`.
-fn lift_die_field(k: usize, i: &mut Ini<'_>, d: &mut SpecialPowerCompletionDieModuleData, u: &UserData) -> IniResult<()> {
+fn lift_die_field(
+    k: usize,
+    i: &mut Ini<'_>,
+    d: &mut SpecialPowerCompletionDieModuleData,
+    u: &UserData,
+) -> IniResult<()> {
     match DIE_MODULE_DATA_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.die, u),
         None => Ok(()),
@@ -86,11 +100,34 @@ fn lift_die_field(k: usize, i: &mut Ini<'_>, d: &mut SpecialPowerCompletionDieMo
 
 /// `SpecialPowerCompletionDieModuleData::m_dataFieldParse`: the die mux fields, then this class's.
 static FIELD_PARSE: [FieldParse<SpecialPowerCompletionDieModuleData>; 6] = [
-    FieldParse::new("DeathTypes", |i, d, u| lift_die_field(0, i, d, u), UserData::None),
-    FieldParse::new("VeterancyLevels", |i, d, u| lift_die_field(1, i, d, u), UserData::None),
-    FieldParse::new("ExemptStatus", |i, d, u| lift_die_field(2, i, d, u), UserData::None),
-    FieldParse::new("RequiredStatus", |i, d, u| lift_die_field(3, i, d, u), UserData::None),
-    FieldParse::new("SpecialPowerTemplate", |ini, d, _| { d.special_power_template = Some(ini.get_next_token(None)?); Ok(()) }, UserData::None),
+    FieldParse::new(
+        "DeathTypes",
+        |i, d, u| lift_die_field(0, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "VeterancyLevels",
+        |i, d, u| lift_die_field(1, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ExemptStatus",
+        |i, d, u| lift_die_field(2, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RequiredStatus",
+        |i, d, u| lift_die_field(3, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "SpecialPowerTemplate",
+        |ini, d, _| {
+            d.special_power_template = Some(ini.get_next_token(None)?);
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
@@ -109,16 +146,27 @@ pub struct SpecialPowerCompletionDie {
 impl PartialEq for SpecialPowerCompletionDie {
     /// The same object, the same data object (upstream compares pointers) and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.die.behavior().object() == other.die.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.creator_id == other.creator_id && self.creator_set == other.creator_set
+        self.die.behavior().object() == other.die.behavior().object()
+            && Arc::ptr_eq(&self.data, &other.data)
+            && self.creator_id == other.creator_id
+            && self.creator_set == other.creator_set
     }
 }
 
 impl SpecialPowerCompletionDie {
     /// `SpecialPowerCompletionDie(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(object: ObjectId, data: Option<Arc<SpecialPowerCompletionDieModuleData>>) -> IniResult<SpecialPowerCompletionDie> {
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<SpecialPowerCompletionDieModuleData>>,
+    ) -> IniResult<SpecialPowerCompletionDie> {
         let data = data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let die = DieModule::new(object, Some(Arc::new(data.die.clone())))?;
-        Ok(SpecialPowerCompletionDie { die, data, creator_id: INVALID_ID, creator_set: false })
+        Ok(SpecialPowerCompletionDie {
+            die,
+            data,
+            creator_id: INVALID_ID,
+            creator_set: false,
+        })
     }
 
     /// The data, as `getSpecialPowerCompletionDieModuleData()`.
@@ -127,7 +175,12 @@ impl SpecialPowerCompletionDie {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         die_module_call(self, world, me, call)
     }
 
@@ -142,14 +195,24 @@ impl SpecialPowerCompletionDie {
                 .and_then(|n| statics.special_power_store.find_special_power_template(n))
                 .map(|t| t.name().to_vec());
             let Some(player) = world.get_controlling_player(me.object) else {
-                world.cuts.module_errors.push((me, IniError::undefined(Undefined::NullControllingPlayer)));
+                world
+                    .cuts
+                    .module_errors
+                    .push((me, IniError::undefined(Undefined::NullControllingPlayer)));
                 return;
             };
             let Some(name) = name else {
-                world.cuts.module_errors.push((me, IniError::undefined(Undefined::NullSpecialPowerTemplate)));
+                world
+                    .cuts
+                    .module_errors
+                    .push((me, IniError::undefined(Undefined::NullSpecialPowerTemplate)));
                 return;
             };
-            world.cut(CutCall::ScriptNotifyOfCompletedSpecialPower { player: player + i32::from(crate::logic::modules::plant(713)), name, creator: self.creator_id });
+            world.cut(CutCall::ScriptNotifyOfCompletedSpecialPower {
+                player: player + i32::from(crate::logic::modules::plant(713)),
+                name,
+                creator: self.creator_id,
+            });
         }
     }
 
@@ -181,7 +244,12 @@ impl DieBehavior for SpecialPowerCompletionDie {
             _ => None,
         }
     }
-    fn other_call(&mut self, _world: &mut World, _me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    fn other_call(
+        &mut self,
+        _world: &mut World,
+        _me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         match call {
             ModuleCall::SetCreator { creator } => {
                 self.set_creator(creator);
@@ -215,5 +283,7 @@ impl Snapshot for SpecialPowerCompletionDie {
 
 /// The factory's `NewModuleDataProc` for `SpecialPowerCompletionDie`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::SpecialPowerCompletionDie(Arc::new(SpecialPowerCompletionDieModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::SpecialPowerCompletionDie(Arc::new(
+        SpecialPowerCompletionDieModuleData::friend_new_module_data(ini)?,
+    )))
 }

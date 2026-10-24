@@ -26,13 +26,17 @@ use std::sync::Arc;
 
 use crate::common::base_type::Coord3D;
 use crate::common::game_type::INVALID_ID;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::crate_collide_data_field_parse;
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::collide_module::CollideModule;
-use crate::logic::modules::crate_collide::{crate_module_call, CrateBehavior, CrateCollideModuleData};
+use crate::logic::modules::crate_collide::{
+    crate_module_call, CrateBehavior, CrateCollideModuleData,
+};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::object_events::{ObjectClientEvent, ObjectSound};
@@ -52,11 +56,17 @@ pub struct UnitCrateCollideModuleData {
 impl UnitCrateCollideModuleData {
     /// `UnitCrateCollideModuleData()`.
     pub fn new() -> Self {
-        UnitCrateCollideModuleData { crate_data: CrateCollideModuleData::new(), unit_count: 0, unit_type: Vec::new() }
+        UnitCrateCollideModuleData {
+            crate_data: CrateCollideModuleData::new(),
+            unit_count: 0,
+            unit_type: Vec::new(),
+        }
     }
 
     /// `buildFieldParse(p)`: the module data base, the crate fields, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, UnitCrateCollideModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, UnitCrateCollideModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -64,7 +74,9 @@ impl UnitCrateCollideModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<UnitCrateCollideModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<UnitCrateCollideModuleData> {
         let mut data = UnitCrateCollideModuleData::new();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, UnitCrateCollideModuleData::build_field_parse)?;
@@ -74,12 +86,27 @@ impl UnitCrateCollideModuleData {
 }
 
 /// `CrateCollideModuleData::buildFieldParse`'s table, for this data class.
-static BASE_FIELD_PARSE: [FieldParse<UnitCrateCollideModuleData>; 12] = crate_collide_data_field_parse!(UnitCrateCollideModuleData, crate_data);
+static BASE_FIELD_PARSE: [FieldParse<UnitCrateCollideModuleData>; 12] =
+    crate_collide_data_field_parse!(UnitCrateCollideModuleData, crate_data);
 
 /// `UnitCrateCollideModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<UnitCrateCollideModuleData>; 3] = [
-    FieldParse::new("UnitCount", |ini, d, _| { d.unit_count = ini.parse_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("UnitName", |ini, d, _| { d.unit_type = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "UnitCount",
+        |ini, d, _| {
+            d.unit_count = ini.parse_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "UnitName",
+        |ini, d, _| {
+            d.unit_type = ini.parse_ascii_string()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
@@ -95,13 +122,17 @@ pub struct UnitCrateCollide {
 impl PartialEq for UnitCrateCollide {
     /// The same object and the same data object (upstream compares pointers).
     fn eq(&self, other: &Self) -> bool {
-        self.collide.behavior().object() == other.collide.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
+        self.collide.behavior().object() == other.collide.behavior().object()
+            && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
 impl UnitCrateCollide {
     /// `UnitCrateCollide(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(object: ObjectId, data: Option<Arc<UnitCrateCollideModuleData>>) -> IniResult<UnitCrateCollide> {
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<UnitCrateCollideModuleData>>,
+    ) -> IniResult<UnitCrateCollide> {
         let data = data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let collide = CollideModule::new(object, Some(Arc::new(data.crate_data.collide.clone())))?;
         Ok(UnitCrateCollide { collide, data })
@@ -118,7 +149,12 @@ impl UnitCrateCollide {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         crate_module_call(self, world, me, call)
     }
 }
@@ -130,19 +166,51 @@ impl CrateBehavior for UnitCrateCollide {
     fn crate_data(&self) -> &CrateCollideModuleData {
         &self.data.crate_data
     }
-    fn execute_crate_behavior(&mut self, world: &mut World, _me: ModuleHandle, other: ObjectId) -> Result<bool, IniError> {
-        let unit_count = if crate::logic::modules::plant(1661) { self.data.unit_count.min(1) } else { self.data.unit_count };
-        let Some(unit_type) = world.thing_factory_find_template(&self.data.unit_type) else { return Ok(false) };
+    fn execute_crate_behavior(
+        &mut self,
+        world: &mut World,
+        _me: ModuleHandle,
+        other: ObjectId,
+    ) -> Result<bool, IniError> {
+        let unit_count = if crate::logic::modules::plant(1661) {
+            self.data.unit_count.min(1)
+        } else {
+            self.data.unit_count
+        };
+        let Some(unit_type) = world.thing_factory_find_template(&self.data.unit_type) else {
+            return Ok(false);
+        };
         for _ in 0..unit_count {
-            let player = world.get_controlling_player(other).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
-            let creation_team = if crate::logic::modules::plant(1662) { None } else { world.players.get_nth(player).and_then(|p| p.default_team) };
+            let player = world
+                .get_controlling_player(other)
+                .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+            let creation_team = if crate::logic::modules::plant(1662) {
+                None
+            } else {
+                world.players.get_nth(player).and_then(|p| p.default_team)
+            };
             let new_obj = world.crate_new_object(unit_type, creation_team);
             if new_obj != INVALID_ID {
-                let mut creation_point: Coord3D = world.objects.find(other).map_or_else(Coord3D::default, |o| *o.thing.position());
+                let mut creation_point: Coord3D = world
+                    .objects
+                    .find(other)
+                    .map_or_else(Coord3D::default, |o| *o.thing.position());
                 // "I just want a non colliding point" (the answer is not checked)
-                let max_radius = if crate::logic::modules::plant(1663) { 0.0 } else { 20.0 };
-                world.contain_partition_find_position_around(&mut creation_point, 0.0, max_radius, 0);
-                let angle = world.objects.find(other).map_or(0.0, |o| o.thing.orientation());
+                let max_radius = if crate::logic::modules::plant(1663) {
+                    0.0
+                } else {
+                    20.0
+                };
+                world.contain_partition_find_position_around(
+                    &mut creation_point,
+                    0.0,
+                    max_radius,
+                    0,
+                );
+                let angle = world
+                    .objects
+                    .find(other)
+                    .map_or(0.0, |o| o.thing.orientation());
                 if !crate::logic::modules::plant(1664) {
                     world.crate_set_orientation(new_obj, angle);
                 }
@@ -151,7 +219,11 @@ impl CrateBehavior for UnitCrateCollide {
         }
         // Play a crate pickup sound.
         if !crate::logic::modules::plant(1665) {
-            world.emit(ObjectClientEvent::Sound { sound: ObjectSound::CrateFreeUnit, object_id: other, position: None });
+            world.emit(ObjectClientEvent::Sound {
+                sound: ObjectSound::CrateFreeUnit,
+                object_id: other,
+                position: None,
+            });
         }
         Ok(true)
     }
@@ -188,5 +260,7 @@ impl Snapshot for UnitCrateCollide {
 
 /// The factory's `NewModuleDataProc` for `UnitCrateCollide`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::UnitCrateCollide(Arc::new(UnitCrateCollideModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::UnitCrateCollide(Arc::new(
+        UnitCrateCollideModuleData::friend_new_module_data(ini)?,
+    )))
 }

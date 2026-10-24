@@ -25,7 +25,10 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::damage_fx::FxListName;
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::kind_of::{KINDOF_AIRCRAFT, KINDOF_BOAT};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_IS_CARBOMB};
@@ -34,8 +37,9 @@ use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::crate_collide_data_field_parse;
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::collide_module::CollideModule;
-use crate::common::damage_fx::FxListName;
-use crate::logic::modules::crate_collide::{crate_is_valid_to_execute, crate_module_call, CrateBehavior, CrateCollideModuleData};
+use crate::logic::modules::crate_collide::{
+    crate_is_valid_to_execute, crate_module_call, CrateBehavior, CrateCollideModuleData,
+};
 use crate::logic::weapon_set::WeaponTemplateSet;
 use crate::logic::weapon_set_flags::WeaponSetFlags;
 use crate::logic::weapon_types::WEAPONSET_CARBOMB;
@@ -59,11 +63,17 @@ pub struct ConvertToCarBombCrateCollideModuleData {
 impl ConvertToCarBombCrateCollideModuleData {
     /// `ConvertToCarBombCrateCollideModuleData()`.
     pub fn new() -> Self {
-        ConvertToCarBombCrateCollideModuleData { crate_data: CrateCollideModuleData::new(), range_of_effect: 0, fx_list: None }
+        ConvertToCarBombCrateCollideModuleData {
+            crate_data: CrateCollideModuleData::new(),
+            range_of_effect: 0,
+            fx_list: None,
+        }
     }
 
     /// `buildFieldParse(p)`: the module data base, the crate fields, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, ConvertToCarBombCrateCollideModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, ConvertToCarBombCrateCollideModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -71,21 +81,34 @@ impl ConvertToCarBombCrateCollideModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ConvertToCarBombCrateCollideModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<ConvertToCarBombCrateCollideModuleData> {
         let mut data = ConvertToCarBombCrateCollideModuleData::new();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, ConvertToCarBombCrateCollideModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                ConvertToCarBombCrateCollideModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
 }
 
 /// `CrateCollideModuleData::buildFieldParse`'s table, for this data class.
-static BASE_FIELD_PARSE: [FieldParse<ConvertToCarBombCrateCollideModuleData>; 12] = crate_collide_data_field_parse!(ConvertToCarBombCrateCollideModuleData, crate_data);
+static BASE_FIELD_PARSE: [FieldParse<ConvertToCarBombCrateCollideModuleData>; 12] =
+    crate_collide_data_field_parse!(ConvertToCarBombCrateCollideModuleData, crate_data);
 
 /// `ConvertToCarBombCrateCollideModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<ConvertToCarBombCrateCollideModuleData>; 2] = [
-    FieldParse::new("FXList", |ini, d, _| { d.fx_list = CrateCollideModuleData::parse_fx_list(ini)?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "FXList",
+        |ini, d, _| {
+            d.fx_list = CrateCollideModuleData::parse_fx_list(ini)?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
@@ -101,13 +124,17 @@ pub struct ConvertToCarBombCrateCollide {
 impl PartialEq for ConvertToCarBombCrateCollide {
     /// The same object and the same data object (upstream compares pointers).
     fn eq(&self, other: &Self) -> bool {
-        self.collide.behavior().object() == other.collide.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
+        self.collide.behavior().object() == other.collide.behavior().object()
+            && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
 impl ConvertToCarBombCrateCollide {
     /// `ConvertToCarBombCrateCollide(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(object: ObjectId, data: Option<Arc<ConvertToCarBombCrateCollideModuleData>>) -> IniResult<ConvertToCarBombCrateCollide> {
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<ConvertToCarBombCrateCollideModuleData>>,
+    ) -> IniResult<ConvertToCarBombCrateCollide> {
         let data = data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let collide = CollideModule::new(object, Some(Arc::new(data.crate_data.collide.clone())))?;
         Ok(ConvertToCarBombCrateCollide { collide, data })
@@ -124,7 +151,12 @@ impl ConvertToCarBombCrateCollide {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         crate_module_call(self, world, me, call)
     }
 }
@@ -138,16 +170,25 @@ impl CrateBehavior for ConvertToCarBombCrateCollide {
     }
 
     /// `isValidToExecute(other)`.
-    fn is_valid_to_execute(&self, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<bool, IniError> {
+    fn is_valid_to_execute(
+        &self,
+        world: &mut World,
+        me: ModuleHandle,
+        other: ObjectId,
+    ) -> Result<bool, IniError> {
         if !crate_is_valid_to_execute(&self.data.crate_data, world, me, other)? {
             return Ok(false);
         }
-        let Some(o) = world.objects.find(other) else { return Ok(false) };
+        let Some(o) = world.objects.find(other) else {
+            return Ok(false);
+        };
         if o.is_effectively_dead() {
             return Ok(false);
         }
         // "Can't make carbombs out of planes and boats!"
-        if (o.is_kind_of(KINDOF_AIRCRAFT) || o.is_kind_of(KINDOF_BOAT)) && !crate::logic::modules::plant(1701) {
+        if (o.is_kind_of(KINDOF_AIRCRAFT) || o.is_kind_of(KINDOF_BOAT))
+            && !crate::logic::modules::plant(1701)
+        {
             return Ok(false);
         }
         if o.test_status(OBJECT_STATUS_IS_CARBOMB) && !crate::logic::modules::plant(1702) {
@@ -157,7 +198,8 @@ impl CrateBehavior for ConvertToCarBombCrateCollide {
         let mut flags = WeaponSetFlags::new();
         flags.set(WEAPONSET_CARBOMB, 1);
         let sets = o.template().get_weapon_template_sets();
-        let Some(i) = SparseMatchFinder::find_best_info_slow::<_, WeaponTemplateSet>(sets, &flags) else {
+        let Some(i) = SparseMatchFinder::find_best_info_slow::<_, WeaponTemplateSet>(sets, &flags)
+        else {
             return Ok(false); // "This unit has no weapon set!"
         };
         // "the best match code above chose a different weaponset"
@@ -172,11 +214,21 @@ impl CrateBehavior for ConvertToCarBombCrateCollide {
     }
 
     /// `executeCrateBehavior(other)`.
-    fn execute_crate_behavior(&mut self, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<bool, IniError> {
+    fn execute_crate_behavior(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        other: ObjectId,
+    ) -> Result<bool, IniError> {
         let obj = me.object;
         // "in order to prevent an unintentional conversion simply by having the terrorist walk too close to it"
         if let Some(ai) = world.objects.find(obj).and_then(|o| o.ai) {
-            if world.module_call(obj, ai, ModuleCall::AiGetGoalObject).as_id() != other && !crate::logic::modules::plant(1705) {
+            if world
+                .module_call(obj, ai, ModuleCall::AiGetGoalObject)
+                .as_id()
+                != other
+                && !crate::logic::modules::plant(1705)
+            {
                 return Ok(false);
             }
         }
@@ -188,19 +240,39 @@ impl CrateBehavior for ConvertToCarBombCrateCollide {
             }
         }
         world.set_weapon_set_flag(other, WEAPONSET_CARBOMB);
-        if let Some(fx) = self.data.fx_list.as_ref().filter(|_| !crate::logic::modules::plant(1707)) {
-            world.emit(ObjectClientEvent::FxListDoFxObj { fx: fx.clone(), object_id: other });
+        if let Some(fx) = self
+            .data
+            .fx_list
+            .as_ref()
+            .filter(|_| !crate::logic::modules::plant(1707))
+        {
+            world.emit(ObjectClientEvent::FxListDoFxObj {
+                fx: fx.clone(),
+                object_id: other,
+            });
         }
-        let player = world.get_controlling_player(obj).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+        let player = world
+            .get_controlling_player(obj)
+            .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
         let team = world.players.get_nth(player).and_then(|p| p.default_team);
         world.crate_defect(other, team, 0);
         // "transfer the terrorist name to the car"
         if !crate::logic::modules::plant(1708) {
-            let name = world.objects.find(obj).map(|o| o.name.clone()).unwrap_or_default();
-            world.cut(CutCall::ScriptEngineTransferObjectName { name, object: other });
+            let name = world
+                .objects
+                .find(obj)
+                .map(|o| o.name.clone())
+                .unwrap_or_default();
+            world.cut(CutCall::ScriptEngineTransferObjectName {
+                name,
+                object: other,
+            });
         }
         // "we will endow our new ride with our vision and shroud range, since we are driving"
-        let (vision, shroud) = (world.get_vision_range(obj), world.get_shroud_clearing_range(obj));
+        let (vision, shroud) = (
+            world.get_vision_range(obj),
+            world.get_shroud_clearing_range(obj),
+        );
         if !crate::logic::modules::plant(1709) {
             world.set_vision_range(other, vision);
         }
@@ -210,8 +282,19 @@ impl CrateBehavior for ConvertToCarBombCrateCollide {
         if !crate::logic::modules::plant(1710) {
             world.set_status(other, status, true);
         }
-        let level = world.objects.find(obj).map_or(0, |o| o.experience.level as i32);
-        world.crate_experience_set_veterancy_level(other, if crate::logic::modules::plant(1711) { 0 } else { level }, true);
+        let level = world
+            .objects
+            .find(obj)
+            .map_or(0, |o| o.experience.level as i32);
+        world.crate_experience_set_veterancy_level(
+            other,
+            if crate::logic::modules::plant(1711) {
+                0
+            } else {
+                level
+            },
+            true,
+        );
         if !crate::logic::modules::plant(1712) {
             world.crate_radar_remove_object(other);
         }
@@ -252,5 +335,7 @@ impl Snapshot for ConvertToCarBombCrateCollide {
 
 /// The factory's `NewModuleDataProc` for `ConvertToCarBombCrateCollide`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::ConvertToCarBombCrateCollide(Arc::new(ConvertToCarBombCrateCollideModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::ConvertToCarBombCrateCollide(Arc::new(
+        ConvertToCarBombCrateCollideModuleData::friend_new_module_data(ini)?,
+    )))
 }

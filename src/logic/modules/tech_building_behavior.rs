@@ -31,12 +31,17 @@
 use std::sync::Arc;
 
 use crate::common::damage_fx::FxListName;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
+};
 use crate::common::model_state::MODELCONDITION_CAPTURED;
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_DIE};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
+use crate::logic::module::update_module::{
+    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime,
+    UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE,
+};
 use crate::logic::modules::crate_collide::CrateCollideModuleData;
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
@@ -58,24 +63,45 @@ pub struct TechBuildingBehaviorModuleData {
 
 /// `TechBuildingBehaviorModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<TechBuildingBehaviorModuleData>; 3] = [
-    FieldParse::new("PulseFX", |ini, d, _| { d.pulse_fx = CrateCollideModuleData::parse_fx_list(ini)?; Ok(()) }, UserData::None),
-    FieldParse::new("PulseFXRate", |ini, d, _| { d.pulse_fx_rate = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "PulseFX",
+        |ini, d, _| {
+            d.pulse_fx = CrateCollideModuleData::parse_fx_list(ini)?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "PulseFXRate",
+        |ini, d, _| {
+            d.pulse_fx_rate = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl TechBuildingBehaviorModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, TechBuildingBehaviorModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, TechBuildingBehaviorModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<TechBuildingBehaviorModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<TechBuildingBehaviorModuleData> {
         let mut data = TechBuildingBehaviorModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, TechBuildingBehaviorModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                TechBuildingBehaviorModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -93,7 +119,8 @@ pub struct TechBuildingBehavior {
 impl PartialEq for TechBuildingBehavior {
     /// The same object and the same data object (upstream compares pointers).
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
+        self.update.behavior().object() == other.update.behavior().object()
+            && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
@@ -104,7 +131,10 @@ impl TechBuildingBehavior {
     }
 
     /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data).
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<TechBuildingBehaviorModuleData>>) -> IniResult<Self> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<TechBuildingBehaviorModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
@@ -132,7 +162,12 @@ impl TechBuildingBehavior {
     }
 
     /// The module's answer to one of `Object`'s calls: `onDie`, `onCapture`.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -173,8 +208,15 @@ impl UpdateBehavior for TechBuildingBehavior {
             false
         };
 
-        if let (Some(fx), true, true) = (d.pulse_fx.as_ref(), d.pulse_fx_rate > 0 || crate::logic::modules::plant(1194), captured) {
-            world.emit(ObjectClientEvent::FxListDoFxObj { fx: fx.clone(), object_id: us });
+        if let (Some(fx), true, true) = (
+            d.pulse_fx.as_ref(),
+            d.pulse_fx_rate > 0 || crate::logic::modules::plant(1194),
+            captured,
+        ) {
+            world.emit(ObjectClientEvent::FxListDoFxObj {
+                fx: fx.clone(),
+                object_id: us,
+            });
             update_sleep(d.pulse_fx_rate)
         } else {
             UPDATE_SLEEP_FOREVER
@@ -199,7 +241,13 @@ impl UpdateBehavior for TechBuildingBehavior {
                     |w, _m| {
                         let us = me.object;
                         w.clear_model_condition_state(us, MODELCONDITION_CAPTURED);
-                        let neutral = w.cuts.player_default_team(if crate::logic::modules::plant(1195) { 1 } else { 0 });
+                        let neutral =
+                            w.cuts
+                                .player_default_team(if crate::logic::modules::plant(1195) {
+                                    1
+                                } else {
+                                    0
+                                });
                         if !crate::logic::modules::plant(1192) {
                             w.set_team(us, Some(neutral));
                         }
@@ -246,5 +294,7 @@ impl Snapshot for TechBuildingBehavior {
 
 /// The factory's `NewModuleDataProc` for `TechBuildingBehavior`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::TechBuildingBehavior(Arc::new(TechBuildingBehaviorModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::TechBuildingBehavior(Arc::new(
+        TechBuildingBehaviorModuleData::friend_new_module_data(ini)?,
+    )))
 }

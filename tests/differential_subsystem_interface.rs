@@ -32,7 +32,9 @@
 mod support;
 
 use rts_lockstep_engine::common::ascii_string::AsciiString;
-use rts_lockstep_engine::common::subsystem_interface::{SubsystemInterface, SubsystemInterfaceList};
+use rts_lockstep_engine::common::subsystem_interface::{
+    SubsystemInterface, SubsystemInterfaceList,
+};
 use rts_lockstep_engine::differential as cpp;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -58,16 +60,24 @@ impl SubsystemInterface for LogSys {
     }
 
     fn init(&mut self) {
-        let line = format!("init {} {}\n", self.id, String::from_utf8_lossy(self.name.str()));
+        let line = format!(
+            "init {} {}\n",
+            self.id,
+            String::from_utf8_lossy(self.name.str())
+        );
         self.log.borrow_mut().push_str(&line);
     }
 
     fn post_process_load(&mut self) {
-        self.log.borrow_mut().push_str(&format!("post {}\n", self.id));
+        self.log
+            .borrow_mut()
+            .push_str(&format!("post {}\n", self.id));
     }
 
     fn reset(&mut self) {
-        self.log.borrow_mut().push_str(&format!("reset {}\n", self.id));
+        self.log
+            .borrow_mut()
+            .push_str(&format!("reset {}\n", self.id));
     }
 
     fn update(&mut self) {}
@@ -75,7 +85,9 @@ impl SubsystemInterface for LogSys {
 
 impl Drop for LogSys {
     fn drop(&mut self) {
-        self.log.borrow_mut().push_str(&format!("drop {}\n", self.id));
+        self.log
+            .borrow_mut()
+            .push_str(&format!("drop {}\n", self.id));
     }
 }
 
@@ -88,9 +100,21 @@ fn rust_run(ops: &[(i32, i32)], planted: bool) -> String {
         for &(op, v) in ops {
             match op {
                 0 => {
-                    let name = if v == 0 { String::new() } else { format!("N{v}") };
-                    let sys = LogSys { name: AsciiString::new(), id: v, log: Rc::clone(&log) };
-                    list.init_subsystem(sys, AsciiString::try_from_bytes(name.as_bytes()).expect("short name"), || {});
+                    let name = if v == 0 {
+                        String::new()
+                    } else {
+                        format!("N{v}")
+                    };
+                    let sys = LogSys {
+                        name: AsciiString::new(),
+                        id: v,
+                        log: Rc::clone(&log),
+                    };
+                    list.init_subsystem(
+                        sys,
+                        AsciiString::try_from_bytes(name.as_bytes()).expect("short name"),
+                        || {},
+                    );
                 }
                 1 => list.post_process_load_all(),
                 2 => {
@@ -114,7 +138,14 @@ fn rust_run(ops: &[(i32, i32)], planted: bool) -> String {
 fn cpp_run(ops: &[(i32, i32)]) -> String {
     let flat: Vec<i32> = ops.iter().flat_map(|&(op, v)| [op, v]).collect();
     let mut out = vec![0u8; LOG_CAP];
-    let n = unsafe { cpp::ref_subsys_run(flat.as_ptr(), ops.len() as i32, out.as_mut_ptr().cast(), LOG_CAP as i32) };
+    let n = unsafe {
+        cpp::ref_subsys_run(
+            flat.as_ptr(),
+            ops.len() as i32,
+            out.as_mut_ptr().cast(),
+            LOG_CAP as i32,
+        )
+    };
     assert!(n >= 0, "subsystem log exceeds the buffer");
     String::from_utf8(out[..n as usize].to_vec()).expect("ASCII log")
 }

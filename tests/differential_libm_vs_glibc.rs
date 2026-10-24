@@ -58,7 +58,9 @@ fn measure_petir_f32_vs_glibc() {
     for (k, (name, f, which, unit)) in funcs.iter().enumerate() {
         let mut c = Check::new(name);
         for x in inputs(60 + k as u64, *unit) {
-            c.f32(f(x), unsafe { cpp::ref_glibc_f1(*which, x) }, || format!("x = {x:e} ({:#010x})", x.to_bits()));
+            c.f32(f(x), unsafe { cpp::ref_glibc_f1(*which, x) }, || {
+                format!("x = {x:e} ({:#010x})", x.to_bits())
+            });
         }
         compared += c.compared;
         c.report();
@@ -66,8 +68,16 @@ fn measure_petir_f32_vs_glibc() {
     let mut c = Check::new("atan2f: petir f32 vs glibc");
     let mut g = Gen::new(66);
     for _ in 0..N {
-        let (y, x) = if g.below(2) == 0 { (g.uniform(-10.0, 10.0), g.uniform(-10.0, 10.0)) } else { (g.mixed(), g.mixed()) };
-        c.f32(Real::atan2(y, x), unsafe { cpp::ref_glibc_atan2f(y, x) }, || format!("y = {y:e}, x = {x:e}"));
+        let (y, x) = if g.below(2) == 0 {
+            (g.uniform(-10.0, 10.0), g.uniform(-10.0, 10.0))
+        } else {
+            (g.mixed(), g.mixed())
+        };
+        c.f32(
+            Real::atan2(y, x),
+            unsafe { cpp::ref_glibc_atan2f(y, x) },
+            || format!("y = {y:e}, x = {x:e}"),
+        );
     }
     compared += c.compared;
     c.report();
@@ -79,18 +89,47 @@ fn measure_petir_f32_vs_glibc() {
 fn measure_petir_f64_vs_glibc_rounded_to_f32() {
     type Case = (&'static str, fn(f64) -> f64, i32, bool);
     let funcs: [Case; 5] = [
-        ("(float)sin(double): petir f64 vs glibc", <f64 as Real>::sin, 0, false),
-        ("(float)cos(double): petir f64 vs glibc", <f64 as Real>::cos, 1, false),
-        ("(float)acos(double): petir f64 vs glibc", <f64 as Real>::acos, 2, true),
-        ("(float)asin(double): petir f64 vs glibc", <f64 as Real>::asin, 3, true),
-        ("(float)atan(double): petir f64 vs glibc", <f64 as Real>::atan, 4, false),
+        (
+            "(float)sin(double): petir f64 vs glibc",
+            <f64 as Real>::sin,
+            0,
+            false,
+        ),
+        (
+            "(float)cos(double): petir f64 vs glibc",
+            <f64 as Real>::cos,
+            1,
+            false,
+        ),
+        (
+            "(float)acos(double): petir f64 vs glibc",
+            <f64 as Real>::acos,
+            2,
+            true,
+        ),
+        (
+            "(float)asin(double): petir f64 vs glibc",
+            <f64 as Real>::asin,
+            3,
+            true,
+        ),
+        (
+            "(float)atan(double): petir f64 vs glibc",
+            <f64 as Real>::atan,
+            4,
+            false,
+        ),
     ];
     let mut compared = 0;
     for (k, (name, f, which, unit)) in funcs.iter().enumerate() {
         let mut c = Check::new(name);
         for x in inputs(70 + k as u64, *unit) {
             let xd = f64::from(x);
-            c.f32(f(xd) as f32, unsafe { cpp::ref_glibc_d1(*which, xd) } as f32, || format!("x = {x:e} ({:#010x})", x.to_bits()));
+            c.f32(
+                f(xd) as f32,
+                unsafe { cpp::ref_glibc_d1(*which, xd) } as f32,
+                || format!("x = {x:e} ({:#010x})", x.to_bits()),
+            );
         }
         compared += c.compared;
         c.report();
@@ -98,9 +137,17 @@ fn measure_petir_f64_vs_glibc_rounded_to_f32() {
     let mut c = Check::new("(float)atan2(double): petir f64 vs glibc");
     let mut g = Gen::new(76);
     for _ in 0..N {
-        let (y, x) = if g.below(2) == 0 { (g.uniform(-10.0, 10.0), g.uniform(-10.0, 10.0)) } else { (g.mixed(), g.mixed()) };
+        let (y, x) = if g.below(2) == 0 {
+            (g.uniform(-10.0, 10.0), g.uniform(-10.0, 10.0))
+        } else {
+            (g.mixed(), g.mixed())
+        };
         let (yd, xd) = (f64::from(y), f64::from(x));
-        c.f32(Real::atan2(yd, xd) as f32, unsafe { cpp::ref_glibc_atan2(yd, xd) } as f32, || format!("y = {y:e}, x = {x:e}"));
+        c.f32(
+            Real::atan2(yd, xd) as f32,
+            unsafe { cpp::ref_glibc_atan2(yd, xd) } as f32,
+            || format!("y = {y:e}, x = {x:e}"),
+        );
     }
     compared += c.compared;
     c.report();
@@ -118,8 +165,16 @@ fn measure_fast_tables_petir_vs_glibc() {
     for a in 0..1024usize {
         let cv = ((a as i32 - half) as f32) * (1.0f32 / (half as f32));
         unsafe {
-            c.f32(t.acos[a], cpp::ref_glibc_d1(2, f64::from(cv)) as f32, || format!("acos[{a}]"));
-            c.f32(t.asin[a], cpp::ref_glibc_d1(3, f64::from(cv)) as f32, || format!("asin[{a}]"));
+            c.f32(
+                t.acos[a],
+                cpp::ref_glibc_d1(2, f64::from(cv)) as f32,
+                || format!("acos[{a}]"),
+            );
+            c.f32(
+                t.asin[a],
+                cpp::ref_glibc_d1(3, f64::from(cv)) as f32,
+                || format!("asin[{a}]"),
+            );
         }
         let cv = (a as f32) * 2.0f32 * rts_lockstep_engine::ww::wwmath::WWMATH_PI / 1024.0f32;
         let s = unsafe { cpp::ref_glibc_d1(0, f64::from(cv)) } as f32;

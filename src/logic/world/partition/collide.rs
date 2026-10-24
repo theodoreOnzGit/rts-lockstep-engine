@@ -99,7 +99,11 @@ pub struct CollideInfo {
 impl CollideInfo {
     /// `CollideInfo(p, g, a)`.
     pub fn new(p: &Coord3D, g: &GeometryInfo, a: f32) -> CollideInfo {
-        CollideInfo { position: *p, geom: g.clone(), angle: a }
+        CollideInfo {
+            position: *p,
+            geom: g.clone(),
+            angle: a,
+        }
     }
 }
 
@@ -112,7 +116,12 @@ enum XyProc {
     RectRect,
 }
 
-fn xy_dispatch(p: XyProc, a: &CollideInfo, b: &CollideInfo, cinfo: Option<&mut CollideLocAndNormal>) -> bool {
+fn xy_dispatch(
+    p: XyProc,
+    a: &CollideInfo,
+    b: &CollideInfo,
+    cinfo: Option<&mut CollideLocAndNormal>,
+) -> bool {
     match p {
         XyProc::CircleCircle => xy_collide_test_circle_circle(a, b, cinfo),
         XyProc::CircleRect => xy_collide_test_circle_rect(a, b, cinfo),
@@ -122,11 +131,19 @@ fn xy_dispatch(p: XyProc, a: &CollideInfo, b: &CollideInfo, cinfo: Option<&mut C
 }
 
 fn vec_diff_2d(a: &Coord3D, b: &Coord3D) -> Coord3D {
-    Coord3D { x: a.x - b.x, y: a.y - b.y, z: 0.0 }
+    Coord3D {
+        x: a.x - b.x,
+        y: a.y - b.y,
+        z: 0.0,
+    }
 }
 
 fn vec_diff_3d(a: &Coord3D, b: &Coord3D) -> Coord3D {
-    Coord3D { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }
+    Coord3D {
+        x: a.x - b.x,
+        y: a.y - b.y,
+        z: a.z - b.z,
+    }
 }
 
 fn calc_sqr_dist_2d(d: &Coord3D) -> f32 {
@@ -152,9 +169,18 @@ fn flip_coord3d(coord: &mut Coord3D) {
 }
 
 /// `testRotatedPointsAgainstRect`.
-fn test_rotated_points_against_rect(pts: &[Coord2D; 4], a: &CollideInfo, avg: &mut Coord2D, avg_tot: &mut i32) {
+fn test_rotated_points_against_rect(
+    pts: &[Coord2D; 4],
+    a: &CollideInfo,
+    avg: &mut Coord2D,
+    avg_tot: &mut i32,
+) {
     let major = a.geom.get_major_radius();
-    let minor = if a.geom.get_geom_type() == GeometryType::Sphere { a.geom.get_major_radius() } else { a.geom.get_minor_radius() };
+    let minor = if a.geom.get_geom_type() == GeometryType::Sphere {
+        a.geom.get_major_radius()
+    } else {
+        a.geom.get_minor_radius()
+    };
 
     let c = trig::cos(-a.angle);
     let s = trig::sin(-a.angle);
@@ -188,18 +214,34 @@ fn rect_to_four_points(a: &CollideInfo) -> [Coord2D; 4] {
 
     [
         // tl
-        Coord2D { x: a.position.x - exc - eys, y: a.position.y + eyc - exs },
+        Coord2D {
+            x: a.position.x - exc - eys,
+            y: a.position.y + eyc - exs,
+        },
         // tr
-        Coord2D { x: a.position.x + exc - eys, y: a.position.y + eyc + exs },
+        Coord2D {
+            x: a.position.x + exc - eys,
+            y: a.position.y + eyc + exs,
+        },
         // bl
-        Coord2D { x: a.position.x - exc + eys, y: a.position.y - eyc - exs },
+        Coord2D {
+            x: a.position.x - exc + eys,
+            y: a.position.y - eyc - exs,
+        },
         // br
-        Coord2D { x: a.position.x + exc + eys, y: a.position.y - eyc + exs },
+        Coord2D {
+            x: a.position.x + exc + eys,
+            y: a.position.y - eyc + exs,
+        },
     ]
 }
 
 /// `xy_collideTest_Circle_Rect`: 2d routine for rect/cyl and rect/sphere.
-fn xy_collide_test_circle_rect(a: &CollideInfo, b: &CollideInfo, mut cinfo: Option<&mut CollideLocAndNormal>) -> bool {
+fn xy_collide_test_circle_rect(
+    a: &CollideInfo,
+    b: &CollideInfo,
+    mut cinfo: Option<&mut CollideLocAndNormal>,
+) -> bool {
     let result = xy_collide_test_rect_circle(b, a, cinfo.as_deref_mut());
     if let Some(ci) = cinfo {
         flip_coord3d(&mut ci.normal);
@@ -209,7 +251,11 @@ fn xy_collide_test_circle_rect(a: &CollideInfo, b: &CollideInfo, mut cinfo: Opti
 
 /// `xy_collideTest_Rect_Circle`: the circle is tested as its bounding square
 /// (upstream's active `#if 1` branch; the other is dead text).
-fn xy_collide_test_rect_circle(a: &CollideInfo, b: &CollideInfo, cinfo: Option<&mut CollideLocAndNormal>) -> bool {
+fn xy_collide_test_rect_circle(
+    a: &CollideInfo,
+    b: &CollideInfo,
+    cinfo: Option<&mut CollideLocAndNormal>,
+) -> bool {
     let mut btmp = b.clone();
     let major = btmp.geom.get_major_radius();
     btmp.geom.set_minor_radius(major);
@@ -217,7 +263,11 @@ fn xy_collide_test_rect_circle(a: &CollideInfo, b: &CollideInfo, cinfo: Option<&
 }
 
 /// `xy_collideTest_Circle_Circle`.
-fn xy_collide_test_circle_circle(a: &CollideInfo, b: &CollideInfo, cinfo: Option<&mut CollideLocAndNormal>) -> bool {
+fn xy_collide_test_circle_circle(
+    a: &CollideInfo,
+    b: &CollideInfo,
+    cinfo: Option<&mut CollideLocAndNormal>,
+) -> bool {
     let diff = vec_diff_2d(&b.position, &a.position);
     let dist_sqr = calc_sqr_dist_2d(&diff);
     let r = a.geom.get_major_radius() + b.geom.get_major_radius();
@@ -237,7 +287,11 @@ fn xy_collide_test_circle_circle(a: &CollideInfo, b: &CollideInfo, cinfo: Option
 }
 
 /// `xy_collideTest_Rect_Rect`.
-fn xy_collide_test_rect_rect(a: &CollideInfo, b: &CollideInfo, cinfo: Option<&mut CollideLocAndNormal>) -> bool {
+fn xy_collide_test_rect_rect(
+    a: &CollideInfo,
+    b: &CollideInfo,
+    cinfo: Option<&mut CollideLocAndNormal>,
+) -> bool {
     let mut avg = Coord2D { x: 0.0, y: 0.0 };
     let mut avg_tot: i32 = 0;
 
@@ -264,9 +318,16 @@ fn xy_collide_test_rect_rect(a: &CollideInfo, b: &CollideInfo, cinfo: Option<&mu
 }
 
 /// `z_collideTest_Sphere_Nonsphere`.
-fn z_collide_test_sphere_nonsphere(xyproc: XyProc, a: &CollideInfo, b: &CollideInfo, mut cinfo: Option<&mut CollideLocAndNormal>) -> bool {
+fn z_collide_test_sphere_nonsphere(
+    xyproc: XyProc,
+    a: &CollideInfo,
+    b: &CollideInfo,
+    mut cinfo: Option<&mut CollideLocAndNormal>,
+) -> bool {
     // case 1: center of sphere is within the nonsphere z-space.
-    if a.position.z >= b.position.z && a.position.z <= b.position.z + b.geom.get_max_height_above_position() {
+    if a.position.z >= b.position.z
+        && a.position.z <= b.position.z + b.geom.get_max_height_above_position()
+    {
         if xy_dispatch(xyproc, a, b, cinfo.as_deref_mut()) {
             // a side-to-side collision; just need to adjust the z-coord of collideLoc
             if let Some(ci) = cinfo {
@@ -287,7 +348,9 @@ fn z_collide_test_sphere_nonsphere(xyproc: XyProc, a: &CollideInfo, b: &CollideI
         let mut amod = a.clone();
         amod.position.z = b_bot;
         let dz = b_bot - a.position.z;
-        amod.geom.set_major_radius(Real::sqrt(a.geom.get_major_radius() * a.geom.get_major_radius() - dz * dz));
+        amod.geom.set_major_radius(Real::sqrt(
+            a.geom.get_major_radius() * a.geom.get_major_radius() - dz * dz,
+        ));
         return xy_dispatch(xyproc, &amod, b, cinfo);
     }
 
@@ -297,7 +360,9 @@ fn z_collide_test_sphere_nonsphere(xyproc: XyProc, a: &CollideInfo, b: &CollideI
         let mut amod = a.clone();
         amod.position.z = b_top;
         let dz = a.position.z - b_top;
-        amod.geom.set_major_radius(Real::sqrt(a.geom.get_major_radius() * a.geom.get_major_radius() - dz * dz));
+        amod.geom.set_major_radius(Real::sqrt(
+            a.geom.get_major_radius() * a.geom.get_major_radius() - dz * dz,
+        ));
         return xy_dispatch(xyproc, &amod, b, cinfo);
     }
 
@@ -305,7 +370,12 @@ fn z_collide_test_sphere_nonsphere(xyproc: XyProc, a: &CollideInfo, b: &CollideI
 }
 
 /// `z_collideTest_Nonsphere_Nonsphere`.
-fn z_collide_test_nonsphere_nonsphere(xyproc: XyProc, a: &CollideInfo, b: &CollideInfo, mut cinfo: Option<&mut CollideLocAndNormal>) -> bool {
+fn z_collide_test_nonsphere_nonsphere(
+    xyproc: XyProc,
+    a: &CollideInfo,
+    b: &CollideInfo,
+    mut cinfo: Option<&mut CollideLocAndNormal>,
+) -> bool {
     // note: we already know that there is a z-intersection (our caller filters that out)
 
     // Preflight for close objects.
@@ -332,9 +402,11 @@ fn z_collide_test_nonsphere_nonsphere(xyproc: XyProc, a: &CollideInfo, b: &Colli
         // case 1: side-to-side collision (see upstream's comment)
         if let Some(ci) = cinfo {
             if b.position.z > a.position.z {
-                ci.loc.z = (b.position.z + a.position.z + a.geom.get_max_height_above_position()) * 0.5;
+                ci.loc.z =
+                    (b.position.z + a.position.z + a.geom.get_max_height_above_position()) * 0.5;
             } else {
-                ci.loc.z = (a.position.z + b.position.z + b.geom.get_max_height_above_position()) * 0.5;
+                ci.loc.z =
+                    (a.position.z + b.position.z + b.geom.get_max_height_above_position()) * 0.5;
             }
         }
         return true;
@@ -343,7 +415,11 @@ fn z_collide_test_nonsphere_nonsphere(xyproc: XyProc, a: &CollideInfo, b: &Colli
     false
 }
 
-fn collide_test_sphere_sphere(a: &CollideInfo, b: &CollideInfo, cinfo: Option<&mut CollideLocAndNormal>) -> bool {
+fn collide_test_sphere_sphere(
+    a: &CollideInfo,
+    b: &CollideInfo,
+    cinfo: Option<&mut CollideLocAndNormal>,
+) -> bool {
     let diff = vec_diff_3d(&b.position, &a.position);
     let dist_sqr = calc_sqr_dist_3d(&diff);
     let r = a.geom.get_major_radius() + b.geom.get_major_radius();
@@ -363,23 +439,31 @@ fn collide_test_sphere_sphere(a: &CollideInfo, b: &CollideInfo, cinfo: Option<&m
 
 /// The nine tests of `theCollideTestProcs`, selected by the two shapes (the
 /// table index `(a - GEOMETRY_FIRST) * GEOMETRY_NUM_TYPES + (b - GEOMETRY_FIRST)`).
-pub fn collide_test(a: &CollideInfo, b: &CollideInfo, mut cinfo: Option<&mut CollideLocAndNormal>) -> bool {
+pub fn collide_test(
+    a: &CollideInfo,
+    b: &CollideInfo,
+    mut cinfo: Option<&mut CollideLocAndNormal>,
+) -> bool {
     use GeometryType::{Box, Cylinder, Sphere};
     match (a.geom.get_geom_type(), b.geom.get_geom_type()) {
         (Sphere, Sphere) => collide_test_sphere_sphere(a, b, cinfo),
         (Sphere, Cylinder) => z_collide_test_sphere_nonsphere(XyProc::CircleCircle, a, b, cinfo),
         (Sphere, Box) => z_collide_test_sphere_nonsphere(XyProc::CircleRect, a, b, cinfo),
         (Cylinder, Sphere) => {
-            let result = z_collide_test_sphere_nonsphere(XyProc::CircleCircle, b, a, cinfo.as_deref_mut());
+            let result =
+                z_collide_test_sphere_nonsphere(XyProc::CircleCircle, b, a, cinfo.as_deref_mut());
             if let Some(ci) = cinfo {
                 flip_coord3d(&mut ci.normal);
             }
             result
         }
-        (Cylinder, Cylinder) => z_collide_test_nonsphere_nonsphere(XyProc::CircleCircle, a, b, cinfo),
+        (Cylinder, Cylinder) => {
+            z_collide_test_nonsphere_nonsphere(XyProc::CircleCircle, a, b, cinfo)
+        }
         (Cylinder, Box) => z_collide_test_nonsphere_nonsphere(XyProc::CircleRect, a, b, cinfo),
         (Box, Sphere) => {
-            let result = z_collide_test_sphere_nonsphere(XyProc::CircleRect, b, a, cinfo.as_deref_mut());
+            let result =
+                z_collide_test_sphere_nonsphere(XyProc::CircleRect, b, a, cinfo.as_deref_mut());
             if let Some(ci) = cinfo {
                 flip_coord3d(&mut ci.normal);
             }
@@ -394,7 +478,11 @@ pub fn collide_test(a: &CollideInfo, b: &CollideInfo, mut cinfo: Option<&mut Col
 /// test: the z-overlap check (with `getMaxHeightBelowPosition`) and then the
 /// shape test. `this`/`that` are the two objects' position, geometry and
 /// orientation.
-pub fn collides_with(this: &CollideInfo, that: &CollideInfo, cinfo: Option<&mut CollideLocAndNormal>) -> bool {
+pub fn collides_with(
+    this: &CollideInfo,
+    that: &CollideInfo,
+    cinfo: Option<&mut CollideLocAndNormal>,
+) -> bool {
     // invariant for all geometries: first do z collision check.
     let this_top = this.position.z + this.geom.get_max_height_above_position();
     let this_bot = this.position.z - this.geom.get_max_height_below_position();
@@ -411,13 +499,21 @@ pub fn collides_with(this: &CollideInfo, that: &CollideInfo, cinfo: Option<&mut 
 /// `PartitionManager::geomCollidesWithGeom` (and the body of
 /// `PartitionFilterWouldCollide::allow`, which repeats it): note its z test
 /// differs from [`collides_with`] (no "below" extent).
-pub fn geom_collides_with_geom(pos1: &Coord3D, geom1: &GeometryInfo, angle1: f32, pos2: &Coord3D, geom2: &GeometryInfo, angle2: f32) -> bool {
+pub fn geom_collides_with_geom(
+    pos1: &Coord3D,
+    geom1: &GeometryInfo,
+    angle1: f32,
+    pos2: &Coord3D,
+    geom2: &GeometryInfo,
+    angle2: f32,
+) -> bool {
     let this_info = CollideInfo::new(pos1, geom1, angle1);
     let that_info = CollideInfo::new(pos2, geom2, angle2);
 
     // invariant for all geometries: first do z collision check.
     if this_info.position.z + this_info.geom.get_max_height_above_position() >= that_info.position.z
-        && this_info.position.z <= that_info.position.z + that_info.geom.get_max_height_above_position()
+        && this_info.position.z
+            <= that_info.position.z + that_info.geom.get_max_height_above_position()
     {
         let mut cloc = CollideLocAndNormal::default();
         collide_test(&this_info, &that_info, Some(&mut cloc))
@@ -452,22 +548,43 @@ pub fn dist_calc(
 ) -> DistResult {
     match dc {
         DistanceCalculationType::FromCenter2D => {
-            let diff = Coord3D { x: pos_b.x - pos_a.x, y: pos_b.y - pos_a.y, z: 0.0 };
+            let diff = Coord3D {
+                x: pos_b.x - pos_a.x,
+                y: pos_b.y - pos_a.y,
+                z: 0.0,
+            };
             let d = diff.x * diff.x + diff.y * diff.y;
-            DistResult { within: d < max_dist_sqr, dist_sqr: d, vec: diff }
+            DistResult {
+                within: d < max_dist_sqr,
+                dist_sqr: d,
+                vec: diff,
+            }
         }
         DistanceCalculationType::FromCenter3D => {
-            let diff = Coord3D { x: pos_b.x - pos_a.x, y: pos_b.y - pos_a.y, z: pos_b.z - pos_a.z };
+            let diff = Coord3D {
+                x: pos_b.x - pos_a.x,
+                y: pos_b.y - pos_a.y,
+                z: pos_b.z - pos_a.z,
+            };
             let d = diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
-            DistResult { within: d < max_dist_sqr, dist_sqr: d, vec: diff }
+            DistResult {
+                within: d < max_dist_sqr,
+                dist_sqr: d,
+                vec: diff,
+            }
         }
         DistanceCalculationType::FromBoundingSphere2D => {
-            let mut diff = Coord3D { x: pos_b.x - pos_a.x, y: pos_b.y - pos_a.y, z: 0.0 };
+            let mut diff = Coord3D {
+                x: pos_b.x - pos_a.x,
+                y: pos_b.y - pos_a.y,
+                z: 0.0,
+            };
             let actual_dist_sqr = diff.x * diff.x + diff.y * diff.y;
 
             let mut shrink_factor = 1.0f32;
             let mut shrunken_dist_sqr = actual_dist_sqr;
-            let total_rad = geom_a.map_or(0.0, |g| g.get_bounding_circle_radius()) + geom_b.map_or(0.0, |g| g.get_bounding_circle_radius());
+            let total_rad = geom_a.map_or(0.0, |g| g.get_bounding_circle_radius())
+                + geom_b.map_or(0.0, |g| g.get_bounding_circle_radius());
 
             if total_rad > 0.0 {
                 let actual_dist = Real::sqrt(actual_dist_sqr);
@@ -483,20 +600,26 @@ pub fn dist_calc(
 
             diff.x *= shrink_factor;
             diff.y *= shrink_factor;
-            DistResult { within: shrunken_dist_sqr < max_dist_sqr, dist_sqr: shrunken_dist_sqr, vec: diff }
+            DistResult {
+                within: shrunken_dist_sqr < max_dist_sqr,
+                dist_sqr: shrunken_dist_sqr,
+                vec: diff,
+            }
         }
         DistanceCalculationType::FromBoundingSphere3D => {
             let mut diff = Coord3D {
                 x: pos_b.x - pos_a.x,
                 y: pos_b.y - pos_a.y,
-                z: (pos_b.z + geom_b.map_or(0.0, |g| g.get_z_delta_to_center_position())) - (pos_a.z + geom_a.map_or(0.0, |g| g.get_z_delta_to_center_position())),
+                z: (pos_b.z + geom_b.map_or(0.0, |g| g.get_z_delta_to_center_position()))
+                    - (pos_a.z + geom_a.map_or(0.0, |g| g.get_z_delta_to_center_position())),
             };
 
             let actual_dist_sqr = diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
 
             let mut shrink_factor = 1.0f32;
             let mut shrunken_dist_sqr = actual_dist_sqr;
-            let total_rad = geom_a.map_or(0.0, |g| g.get_bounding_sphere_radius()) + geom_b.map_or(0.0, |g| g.get_bounding_sphere_radius());
+            let total_rad = geom_a.map_or(0.0, |g| g.get_bounding_sphere_radius())
+                + geom_b.map_or(0.0, |g| g.get_bounding_sphere_radius());
             if total_rad > 0.0 {
                 let actual_dist = Real::sqrt(actual_dist_sqr);
                 let shrunken_dist = actual_dist - total_rad;
@@ -512,7 +635,11 @@ pub fn dist_calc(
             diff.x *= shrink_factor;
             diff.y *= shrink_factor;
             diff.z *= shrink_factor;
-            DistResult { within: shrunken_dist_sqr < max_dist_sqr, dist_sqr: shrunken_dist_sqr, vec: diff }
+            DistResult {
+                within: shrunken_dist_sqr < max_dist_sqr,
+                dist_sqr: shrunken_dist_sqr,
+                vec: diff,
+            }
         }
     }
 }
@@ -535,8 +662,22 @@ mod tests {
         let b = info(4.0, 0.0, 0.0, sphere(2.0), 0.0);
         let mut ci = CollideLocAndNormal::default();
         assert!(collide_test(&a, &b, Some(&mut ci)));
-        assert_eq!(ci.normal, Coord3D { x: 1.0, y: 0.0, z: 0.0 });
-        assert_eq!(ci.loc, Coord3D { x: 2.0, y: 0.0, z: 0.0 });
+        assert_eq!(
+            ci.normal,
+            Coord3D {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0
+            }
+        );
+        assert_eq!(
+            ci.loc,
+            Coord3D {
+                x: 2.0,
+                y: 0.0,
+                z: 0.0
+            }
+        );
         let b = info(4.01, 0.0, 0.0, sphere(2.0), 0.0);
         assert!(!collide_test(&a, &b, None));
     }
@@ -561,16 +702,32 @@ mod tests {
         let b = info(0.0, 4.0, 0.0, bx.clone(), 0.0);
         assert!(!collide_test(&a, &b, None), "1 + 1 < 4 in y");
         let b = info(0.0, 4.0, 0.0, bx, core::f32::consts::FRAC_PI_2);
-        assert!(collide_test(&a, &b, None), "rotated 90 degrees its long side reaches");
+        assert!(
+            collide_test(&a, &b, None),
+            "rotated 90 degrees its long side reaches"
+        );
     }
 
     #[test]
     fn collides_with_uses_the_below_extent_and_geom_collides_does_not() {
         // a sphere centred at z=0 reaches 2 below and 2 above; a box standing at z = -3, 2 high, tops out at -1
         let s = info(0.0, 0.0, 0.0, sphere(2.0), 0.0);
-        let bx = info(0.0, 0.0, -3.0, GeometryInfo::new(GeometryType::Box, false, 2.0, 1.0, 1.0), 0.0);
+        let bx = info(
+            0.0,
+            0.0,
+            -3.0,
+            GeometryInfo::new(GeometryType::Box, false, 2.0, 1.0, 1.0),
+            0.0,
+        );
         // geomCollidesWithGeom: this.z (0) <= that top (-1) is false
-        assert!(!geom_collides_with_geom(&s.position, &s.geom, 0.0, &bx.position, &bx.geom, 0.0));
+        assert!(!geom_collides_with_geom(
+            &s.position,
+            &s.geom,
+            0.0,
+            &bx.position,
+            &bx.geom,
+            0.0
+        ));
         // collidesWith: this bottom (-2) <= that top (-1), then the sphere/box test (case 2b) finds the slice
         assert!(collides_with(&s, &bx, None));
     }
@@ -578,24 +735,79 @@ mod tests {
     #[test]
     fn boundary_distance_shrinks_by_the_radii_and_never_goes_negative() {
         let g = sphere(2.0);
-        let a = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
-        let b = Coord3D { x: 10.0, y: 0.0, z: 0.0 };
-        let r = dist_calc(DistanceCalculationType::FromBoundingSphere2D, &a, Some(&g), &b, Some(&g), HUGE_DIST_SQR);
+        let a = Coord3D {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        let b = Coord3D {
+            x: 10.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        let r = dist_calc(
+            DistanceCalculationType::FromBoundingSphere2D,
+            &a,
+            Some(&g),
+            &b,
+            Some(&g),
+            HUGE_DIST_SQR,
+        );
         assert_eq!(r.dist_sqr, 36.0);
-        assert_eq!(r.vec, Coord3D { x: 6.0, y: 0.0, z: 0.0 });
-        let near = Coord3D { x: 1.0, y: 0.0, z: 0.0 };
-        let r = dist_calc(DistanceCalculationType::FromBoundingSphere2D, &a, Some(&g), &near, Some(&g), HUGE_DIST_SQR);
+        assert_eq!(
+            r.vec,
+            Coord3D {
+                x: 6.0,
+                y: 0.0,
+                z: 0.0
+            }
+        );
+        let near = Coord3D {
+            x: 1.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        let r = dist_calc(
+            DistanceCalculationType::FromBoundingSphere2D,
+            &a,
+            Some(&g),
+            &near,
+            Some(&g),
+            HUGE_DIST_SQR,
+        );
         assert_eq!(r.dist_sqr, 0.0);
-        let c = dist_calc(DistanceCalculationType::FromCenter3D, &a, None, &b, None, 50.0);
+        let c = dist_calc(
+            DistanceCalculationType::FromCenter3D,
+            &a,
+            None,
+            &b,
+            None,
+            50.0,
+        );
         assert!(!c.within);
         assert_eq!(c.dist_sqr, 100.0);
     }
 
     #[test]
     fn nan_distance_is_never_within() {
-        let a = Coord3D { x: f32::NAN, y: 0.0, z: 0.0 };
-        let b = Coord3D { x: 1.0, y: 0.0, z: 0.0 };
-        let r = dist_calc(DistanceCalculationType::FromCenter2D, &a, None, &b, None, HUGE_DIST_SQR);
+        let a = Coord3D {
+            x: f32::NAN,
+            y: 0.0,
+            z: 0.0,
+        };
+        let b = Coord3D {
+            x: 1.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        let r = dist_calc(
+            DistanceCalculationType::FromCenter2D,
+            &a,
+            None,
+            &b,
+            None,
+            HUGE_DIST_SQR,
+        );
         assert!(!r.within && r.dist_sqr.is_nan());
     }
 }

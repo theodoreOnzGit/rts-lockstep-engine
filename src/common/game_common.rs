@@ -239,7 +239,8 @@ pub const ATTACK_NEW_TARGET_FORCED: AbleToAttackType = ATTACK_FORCED_BIT;
 /// `ATTACK_CONTINUED_TARGET`.
 pub const ATTACK_CONTINUED_TARGET: AbleToAttackType = ATTACK_CONTINUED_BIT;
 /// `ATTACK_CONTINUED_TARGET_FORCED`.
-pub const ATTACK_CONTINUED_TARGET_FORCED: AbleToAttackType = ATTACK_FORCED_BIT | ATTACK_CONTINUED_BIT;
+pub const ATTACK_CONTINUED_TARGET_FORCED: AbleToAttackType =
+    ATTACK_FORCED_BIT | ATTACK_CONTINUED_BIT;
 /// `ATTACK_TUNNEL_NETWORK_GUARD`.
 pub const ATTACK_TUNNEL_NETWORK_GUARD: AbleToAttackType = ATTACK_TUNNELNETWORK_GUARD_BIT;
 
@@ -334,8 +335,14 @@ mod tests {
     #[test]
     fn conversions_are_single_precision() {
         assert_eq!(LOGICFRAMES_PER_MSEC_REAL, 30.0f32 / 1000.0f32);
-        assert_eq!(convert_duration_from_msecs_to_frames(1000.0), 1000.0f32 * (30.0f32 / 1000.0f32));
-        assert_eq!(SECONDS_PER_LOGICFRAME_REAL.to_bits(), (1.0f32 / 30.0f32).to_bits());
+        assert_eq!(
+            convert_duration_from_msecs_to_frames(1000.0),
+            1000.0f32 * (30.0f32 / 1000.0f32)
+        );
+        assert_eq!(
+            SECONDS_PER_LOGICFRAME_REAL.to_bits(),
+            (1.0f32 / 30.0f32).to_bits()
+        );
     }
 
     #[test]
@@ -343,11 +350,20 @@ mod tests {
         // The shipped 32-bit build's `shl` masks a count of -1 to 31.
         let regular = VeterancyLevel::Regular as i32;
         assert_eq!(set_veterancy_level_flag(0, regular), 1 << 31);
-        assert_eq!(clear_veterancy_level_flag(VETERANCY_LEVEL_FLAGS_ALL, regular), 0x7fff_ffff);
+        assert_eq!(
+            clear_veterancy_level_flag(VETERANCY_LEVEL_FLAGS_ALL, regular),
+            0x7fff_ffff
+        );
         assert!(get_veterancy_level_flag(1 << 31, regular));
         assert!(!get_veterancy_level_flag(0x7fff_ffff, regular));
-        assert_eq!(set_veterancy_level_flag(0, VeterancyLevel::Veteran as i32), 1);
-        assert_eq!(clear_veterancy_level_flag(0xffff_ffff, VeterancyLevel::Heroic as i32), 0xffff_fffb);
+        assert_eq!(
+            set_veterancy_level_flag(0, VeterancyLevel::Veteran as i32),
+            1
+        );
+        assert_eq!(
+            clear_veterancy_level_flag(0xffff_ffff, VeterancyLevel::Heroic as i32),
+            0xffff_fffb
+        );
         assert!(get_veterancy_level_flag(4, VeterancyLevel::Heroic as i32));
     }
 

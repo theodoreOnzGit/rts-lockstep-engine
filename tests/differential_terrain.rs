@@ -68,14 +68,18 @@
 mod support;
 
 use rts_lockstep_engine::common::game_common::VETERANCY_NAMES;
-use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Thrown, TYPE_TABLE};
+use rts_lockstep_engine::common::ini::{
+    BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Thrown, TYPE_TABLE,
+};
 use rts_lockstep_engine::common::kind_of::KindOfMaskType;
 use rts_lockstep_engine::common::money::Money;
 use rts_lockstep_engine::common::multiplayer_settings::{
     MultiplayerColorDefinition, MultiplayerSettings, PLAYERTEMPLATE_OBSERVER, PLAYERTEMPLATE_RANDOM,
 };
 use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
-use rts_lockstep_engine::common::terrain_types::{TerrainTypeCollection, TERRAIN_NUM_CLASSES, TERRAIN_TYPE_NAMES};
+use rts_lockstep_engine::common::terrain_types::{
+    TerrainTypeCollection, TERRAIN_NUM_CLASSES, TERRAIN_TYPE_NAMES,
+};
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::crate_system::{CrateSystem, CrateTemplate};
 use std::collections::BTreeMap;
@@ -105,7 +109,12 @@ impl Ctx {
     fn new() -> Self {
         let mut names = NameKeyGenerator::new();
         names.reset();
-        Ctx { terrain: TerrainTypeCollection::new(), mp: MultiplayerSettings::new(), crates: CrateSystem::new(), names }
+        Ctx {
+            terrain: TerrainTypeCollection::new(),
+            mp: MultiplayerSettings::new(),
+            crates: CrateSystem::new(),
+            names,
+        }
     }
 }
 
@@ -182,7 +191,10 @@ fn rust_terrain_dump(t: &TerrainTypeCollection, bug: u32) -> Vec<u8> {
         put_str(&mut v, terr.name());
         put_str(&mut v, terr.texture());
         // planted 2: the blend flag inverted, on the first terrain
-        put_u8(&mut v, u8::from(terr.is_blend_edge() ^ (bug == 2 && i == 0)));
+        put_u8(
+            &mut v,
+            u8::from(terr.is_blend_edge() ^ (bug == 2 && i == 0)),
+        );
         // planted 1: the class's index off by one, on the first terrain
         let class = terr.class() as i32 + i32::from(bug == 1 && i == 0);
         put_i32(&mut v, class % TERRAIN_NUM_CLASSES);
@@ -197,7 +209,11 @@ fn put_color_def(v: &mut Vec<u8>, d: &MultiplayerColorDefinition, bug: u32) {
     put_bits(v, rgb.red);
     put_bits(v, rgb.green);
     put_bits(v, rgb.blue);
-    let color = if bug == 4 { d.color() & 0x00FF_FFFF } else { d.color() };
+    let color = if bug == 4 {
+        d.color() & 0x00FF_FFFF
+    } else {
+        d.color()
+    };
     put_i32(v, color);
     // planted 5: the night value is the day value
     let night = if bug == 5 { rgb } else { d.rgb_night_value() };
@@ -226,12 +242,18 @@ fn rust_mp_dump(s: &mut MultiplayerSettings, bug: u32) -> Vec<u8> {
     put_u32(&mut v, count as u32);
     for k in 0..count {
         put_i32(&mut v, k);
-        let d = s.get_color(k).expect("every key below the count exists").clone();
+        let d = s
+            .get_color(k)
+            .expect("every key below the count exists")
+            .clone();
         put_color_def(&mut v, &d, bug);
     }
     // the observer's and random colours: no INI line sets them, so both are the
     // constructor's values on both sides
-    let observer = s.get_color(PLAYERTEMPLATE_OBSERVER).expect("observer").clone();
+    let observer = s
+        .get_color(PLAYERTEMPLATE_OBSERVER)
+        .expect("observer")
+        .clone();
     put_color_def(&mut v, &observer, bug);
     let random = s.get_color(PLAYERTEMPLATE_RANDOM).expect("random").clone();
     put_color_def(&mut v, &random, bug);
@@ -241,10 +263,20 @@ fn rust_mp_dump(s: &mut MultiplayerSettings, bug: u32) -> Vec<u8> {
         put_money(&mut v, m);
     }
     // planted 6: the default is the first amount listed, not the one flagged Default
-    let default = if bug == 6 { money.first().copied().unwrap_or(*s.get_default_starting_money()) } else { *s.get_default_starting_money() };
+    let default = if bug == 6 {
+        money
+            .first()
+            .copied()
+            .unwrap_or(*s.get_default_starting_money())
+    } else {
+        *s.get_default_starting_money()
+    };
     put_money(&mut v, &default);
     // planted 7: the got-default flag inverted
-    put_u8(&mut v, u8::from(s.got_default_starting_money() ^ (bug == 7)));
+    put_u8(
+        &mut v,
+        u8::from(s.got_default_starting_money() ^ (bug == 7)),
+    );
     v
 }
 
@@ -316,7 +348,11 @@ fn rust_colors(s: &mut MultiplayerSettings, from: i32, to: i32, bug: u32) -> Vec
     let count = s.get_num_colors();
     for which in from..=to {
         // planted 10: the key just past the last colour answers the last colour, not NULL
-        let key = if bug == 10 && which == count && count > 0 { count - 1 } else { which };
+        let key = if bug == 10 && which == count && count > 0 {
+            count - 1
+        } else {
+            which
+        };
         match s.get_color(key) {
             None => put_u8(&mut v, 0),
             Some(d) => {
@@ -346,7 +382,10 @@ fn rust_find_color(s: &MultiplayerSettings, name: &[u8]) -> Vec<u8> {
 fn cpp_dump(f: impl Fn(*mut c_uchar, c_int) -> c_int) -> Vec<u8> {
     let mut buf = vec![0u8; 1 << 20];
     let n = f(buf.as_mut_ptr(), buf.len() as c_int);
-    assert!(n >= 0 && (n as usize) <= buf.len(), "dump of {n} bytes does not fit");
+    assert!(
+        n >= 0 && (n as usize) <= buf.len(),
+        "dump of {n} bytes does not fit"
+    );
     buf.truncate(n as usize);
     buf
 }
@@ -377,7 +416,11 @@ fn rust_outcome(r: IniResult<()>, crc: u32) -> Result<Outcome, IniError> {
             Some(Thrown::OutOfRange) => (4, Vec::new()),
         },
     };
-    Ok(Outcome { status, detail, crc })
+    Ok(Outcome {
+        status,
+        detail,
+        crc,
+    })
 }
 
 /// `INI::load` of `data` as `load_type` on the C++ side (wrap_ini.cpp's hooks).
@@ -388,7 +431,11 @@ fn cpp_load(name: &[u8], data: &[u8], load_type: IniLoadType, with_xfer: bool) -
     let (mut log_len, mut crc, mut code) = (0i32, 0u32, 0u32);
     let status = unsafe {
         cpp::ref_ini_reset();
-        cpp::ref_ini_add_file(cname.as_ptr(), data.as_ptr() as *const c_char, data.len() as c_int);
+        cpp::ref_ini_add_file(
+            cname.as_ptr(),
+            data.as_ptr() as *const c_char,
+            data.len() as c_int,
+        );
         cpp::ref_ini_load_typed(
             cname.as_ptr(),
             load_type as c_int,
@@ -409,7 +456,11 @@ fn cpp_load(name: &[u8], data: &[u8], load_type: IniLoadType, with_xfer: bool) -
         2 | 3 => code.to_le_bytes().to_vec(),
         _ => panic!("C++ threw something unexpected (status {status})"),
     };
-    Outcome { status, detail, crc: if with_xfer { crc } else { 0 } }
+    Outcome {
+        status,
+        detail,
+        crc: if with_xfer { crc } else { 0 },
+    }
 }
 
 fn show(b: &[u8]) -> String {
@@ -419,15 +470,43 @@ fn show(b: &[u8]) -> String {
 /// Names the queries probe: the block names of the generator, the defaults,
 /// the case variants, and some that are never written.
 const PROBES: [&str; 22] = [
-    "DefaultTerrain", "Dirt", "dirt", "Grass", "Water", "Rock", "Snow1", "Probe", "DefaultCrate", "CrateA", "CrateB",
-    "cratea", "Salvage", "Red", "Blue", "Green", "X", "COLOR:Red", "COLOR:Blue", "SCIENCE_A", "SCIENCE_B", "zzz",
+    "DefaultTerrain",
+    "Dirt",
+    "dirt",
+    "Grass",
+    "Water",
+    "Rock",
+    "Snow1",
+    "Probe",
+    "DefaultCrate",
+    "CrateA",
+    "CrateB",
+    "cratea",
+    "Salvage",
+    "Red",
+    "Blue",
+    "Green",
+    "X",
+    "COLOR:Red",
+    "COLOR:Blue",
+    "SCIENCE_A",
+    "SCIENCE_B",
+    "zzz",
 ];
 
 // ---------------------------------------------------------------------------
 // The generator
 // ---------------------------------------------------------------------------
 
-const TERRAIN_NAMES: [&str; 7] = ["DefaultTerrain", "Dirt", "dirt", "Grass", "Water", "Rock", "Snow1"];
+const TERRAIN_NAMES: [&str; 7] = [
+    "DefaultTerrain",
+    "Dirt",
+    "dirt",
+    "Grass",
+    "Water",
+    "Rock",
+    "Snow1",
+];
 const TEXTURES: [&str; 3] = ["dirt.tga", "grass.tga", "w.tga"];
 const CRATE_NAMES: [&str; 5] = ["DefaultCrate", "CrateA", "CrateB", "cratea", "Salvage"];
 const COLOR_BLOCK_NAMES: [&str; 5] = ["Red", "Blue", "Green", "X", "Red"];
@@ -464,7 +543,12 @@ fn gen_int(g: &mut Gen, clean: bool) -> String {
 }
 
 fn gen_bool(g: &mut Gen, clean: bool) -> String {
-    if clean { pick(g, &BOOL_OK) } else { pick(g, &BOOL_BAD) }.to_string()
+    if clean {
+        pick(g, &BOOL_OK)
+    } else {
+        pick(g, &BOOL_BAD)
+    }
+    .to_string()
 }
 
 fn gen_rgb(g: &mut Gen, clean: bool) -> String {
@@ -489,7 +573,11 @@ fn write_fields(g: &mut Gen, out: &mut String, clean: bool, fields: &[(&str, Fie
     for (token, value) in fields {
         if g.below(10) < 7 {
             let indent = [" ", "  ", "\t"][g.below(3) as usize];
-            out.push_str(&format!("{indent}{token}{}{}\n", gen_sep(g), value(g, clean)));
+            out.push_str(&format!(
+                "{indent}{token}{}{}\n",
+                gen_sep(g),
+                value(g, clean)
+            ));
         }
     }
     if !clean && g.below(8) == 0 {
@@ -577,7 +665,11 @@ fn gen_killed_by(g: &mut Gen, clean: bool) -> String {
     let mut words: Vec<String> = Vec::new();
     for _ in 0..1 + g.below(3) {
         let w = names[g.below(names.len() as u32) as usize];
-        words.push(if g.below(5) == 0 { format!("+{w}") } else { w.to_string() });
+        words.push(if g.below(5) == 0 {
+            format!("+{w}")
+        } else {
+            w.to_string()
+        });
     }
     if !clean && g.below(3) == 0 {
         words.push("NOT_A_KIND".to_string());
@@ -586,7 +678,11 @@ fn gen_killed_by(g: &mut Gen, clean: bool) -> String {
 }
 
 fn gen_crate_object(g: &mut Gen, clean: bool) -> String {
-    let chance = if clean || g.below(4) != 0 { pick(g, &REALS_OK) } else { pick(g, &REALS_BAD) };
+    let chance = if clean || g.below(4) != 0 {
+        pick(g, &REALS_OK)
+    } else {
+        pick(g, &REALS_BAD)
+    };
     format!("{} {}", pick(g, &CRATE_NAMES), chance)
 }
 
@@ -612,8 +708,13 @@ const SETTINGS_FIELDS: [(&str, FieldGen); 6] = [
     ("ShowRandomStartPos", gen_bool_field),
     ("ShowRandomColor", gen_bool_field),
 ];
-const COLOR_FIELDS: [(&str, FieldGen); 3] = [("TooltipName", gen_tooltip), ("RGBColor", gen_rgb_day), ("RGBNightColor", gen_rgb_night)];
-const MONEY_FIELDS: [(&str, FieldGen); 2] = [("Value", gen_money_value), ("Default", gen_money_default)];
+const COLOR_FIELDS: [(&str, FieldGen); 3] = [
+    ("TooltipName", gen_tooltip),
+    ("RGBColor", gen_rgb_day),
+    ("RGBNightColor", gen_rgb_night),
+];
+const MONEY_FIELDS: [(&str, FieldGen); 2] =
+    [("Value", gen_money_value), ("Default", gen_money_default)];
 const CRATE_FIELDS: [(&str, FieldGen); 6] = [
     ("CreationChance", gen_creation_chance),
     ("VeterancyLevel", gen_veterancy),
@@ -635,7 +736,11 @@ fn gen_block(g: &mut Gen, out: &mut String, clean: bool, crates_only: bool) {
         1 => "end",
         _ => "End",
     };
-    let kind = if crates_only { 77 + g.below(21) } else { g.below(100) };
+    let kind = if crates_only {
+        77 + g.below(21)
+    } else {
+        g.below(100)
+    };
     match kind {
         0..=24 => {
             let base = pick(g, &TERRAIN_NAMES);
@@ -784,9 +889,15 @@ fn compare_stores(ctx: &mut Ctx, data: &[u8], checks: &mut Checks, what: &str) {
     let cmp = cpp_dump(|b, c| unsafe { cpp::ref_mp_dump(b, c) });
     let ccr = cpp_dump(|b, c| unsafe { cpp::ref_crate_dump(b, c) });
     let input = || format!("{what}: file {:?}", show(data));
-    checks.terrains.eq(rust_terrain_dump(&ctx.terrain, 0), cterr.clone(), input);
-    checks.settings.eq(rust_mp_dump(&mut ctx.mp, 0), cmp.clone(), input);
-    checks.crates.eq(rust_crate_dump(&ctx.crates, 0), ccr.clone(), input);
+    checks
+        .terrains
+        .eq(rust_terrain_dump(&ctx.terrain, 0), cterr.clone(), input);
+    checks
+        .settings
+        .eq(rust_mp_dump(&mut ctx.mp, 0), cmp.clone(), input);
+    checks
+        .crates
+        .eq(rust_crate_dump(&ctx.crates, 0), ccr.clone(), input);
     // planted: the same comparisons with one translation error each
     checks.planted[0].eq(rust_terrain_dump(&ctx.terrain, 1), cterr.clone(), input);
     checks.planted[1].eq(rust_terrain_dump(&ctx.terrain, 2), cterr.clone(), input);
@@ -804,7 +915,10 @@ fn compare_stores(ctx: &mut Ctx, data: &[u8], checks: &mut Checks, what: &str) {
 fn compare_queries(ctx: &mut Ctx, data: &[u8], checks: &mut Checks) {
     let probes = PROBES;
     let input = || format!("file {:?}", show(data));
-    let rk: Vec<u32> = probes.iter().map(|n| ctx.names.name_to_key(n.as_bytes()).0).collect();
+    let rk: Vec<u32> = probes
+        .iter()
+        .map(|n| ctx.names.name_to_key(n.as_bytes()).0)
+        .collect();
     let ck: Vec<u32> = probes
         .iter()
         .map(|n| {
@@ -816,7 +930,11 @@ fn compare_queries(ctx: &mut Ctx, data: &[u8], checks: &mut Checks) {
     checks.planted[10].eq(rk.iter().map(|k| k + 1).collect::<Vec<u32>>(), ck, input);
     let count = ctx.mp.get_num_colors();
     let cc = cpp_dump(|b, c| unsafe { cpp::ref_mp_colors_by_query(b, c, -3, count + 1) });
-    checks.colors.eq(rust_colors(&mut ctx.mp, -3, count + 1, 0), cc.clone(), input);
+    checks.colors.eq(
+        rust_colors(&mut ctx.mp, -3, count + 1, 0),
+        cc.clone(),
+        input,
+    );
     checks.planted[9].eq(rust_colors(&mut ctx.mp, -3, count + 1, 10), cc, input);
     for n in probes.iter().chain(std::iter::once(&"Probe")) {
         let c = cstr(n.as_bytes());
@@ -856,7 +974,8 @@ fn ini_blocks_match_upstream() {
     let mut g = Gen::new(0x007E_44A1);
     let mut checks = Checks::new();
     let mut excluded = Excluded::default();
-    let (mut ok, mut failed, mut terrains, mut colours, mut templates, mut nodes) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+    let (mut ok, mut failed, mut terrains, mut colours, mut templates, mut nodes) =
+        (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
     const CASES: usize = 6_000;
     for case in 0..CASES {
         let data = gen_file(&mut g, false);
@@ -868,7 +987,11 @@ fn ini_blocks_match_upstream() {
             &name,
             &data,
             IniLoadType::Overwrite,
-            if with_xfer { Some(&mut crc as &mut dyn Xfer) } else { None },
+            if with_xfer {
+                Some(&mut crc as &mut dyn Xfer)
+            } else {
+                None
+            },
             &table,
             &mut ctx,
         );
@@ -880,14 +1003,20 @@ fn ini_blocks_match_upstream() {
                 continue;
             }
         };
-        if rust.status == 0 { ok += 1 } else { failed += 1 }
+        if rust.status == 0 {
+            ok += 1
+        } else {
+            failed += 1
+        }
         terrains += ctx.terrain.len() as u64;
         colours += ctx.mp.get_num_colors() as u64;
         templates += ctx.crates.chains().len() as u64;
         nodes += chain_nodes(&ctx.crates);
         unsafe { cpp::ref_terrain_reset() };
         let c = cpp_load(&name, &data, IniLoadType::Overwrite, with_xfer);
-        checks.outcome.eq(rust, c, || format!("case {case}: file {:?}", show(&data)));
+        checks
+            .outcome
+            .eq(rust, c, || format!("case {case}: file {:?}", show(&data)));
         let what = format!("case {case}");
         compare_stores(&mut ctx, &data, &mut checks, &what);
         compare_queries(&mut ctx, &data, &mut checks);
@@ -897,8 +1026,14 @@ fn ini_blocks_match_upstream() {
         excluded.total(),
         excluded.0
     );
-    assert!(ok > 1000 && failed > 1000, "the generator must reach both outcomes: {ok} loaded, {failed} threw");
-    assert!(terrains > 1000 && colours > 1000 && templates > 1000, "too few stores compared");
+    assert!(
+        ok > 1000 && failed > 1000,
+        "the generator must reach both outcomes: {ok} loaded, {failed} threw"
+    );
+    assert!(
+        terrains > 1000 && colours > 1000 && templates > 1000,
+        "too few stores compared"
+    );
     // the override plant (P9) needs override loads: the sequence test below runs it
     checks.finish_with_planted(&[0, 1, 2, 3, 4, 5, 6, 7, 9, 10]);
 }
@@ -918,7 +1053,11 @@ fn override_sequences_match_upstream() {
         let name = b"Data\\INI\\Sequence.ini".to_vec();
         for step in 0..1 + g.below(6) {
             let data = gen_file(&mut g, true);
-            let load_type = if g.below(2) == 0 { IniLoadType::Overwrite } else { IniLoadType::CreateOverrides };
+            let load_type = if g.below(2) == 0 {
+                IniLoadType::Overwrite
+            } else {
+                IniLoadType::CreateOverrides
+            };
             let r = Ini::load(&name, &data, load_type, None, &table, &mut ctx);
             let rust = match rust_outcome(r, 0) {
                 Ok(o) => o,
@@ -929,7 +1068,9 @@ fn override_sequences_match_upstream() {
                 }
             };
             let c = cpp_load(&name, &data, load_type, false);
-            checks.outcome.eq(rust, c, || format!("sequence {seq} step {step}: file {:?}", show(&data)));
+            checks.outcome.eq(rust, c, || {
+                format!("sequence {seq} step {step}: file {:?}", show(&data))
+            });
             steps += 1;
             let before = chain_nodes(&ctx.crates);
             let what = format!("sequence {seq} step {step} ({load_type:?})");
@@ -951,7 +1092,10 @@ fn override_sequences_match_upstream() {
         excluded.total(),
         excluded.0
     );
-    assert!(steps > 3_000 && resets > 300, "too few steps: {steps} loads, {resets} resets");
+    assert!(
+        steps > 3_000 && resets > 300,
+        "too few steps: {steps} loads, {resets} resets"
+    );
     // the crate-only sequences reach the crate plants (P8, P9) and the key plant (P11) only
     checks.finish_with_planted(&[7, 8, 10]);
 }

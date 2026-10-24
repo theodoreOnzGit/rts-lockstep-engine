@@ -18,34 +18,34 @@
 //! each one is made for an object: one arm per translated class.
 
 use crate::common::ini::IniResult;
-use crate::common::module::{ModuleDataKind, ObjectId};
-use crate::logic::world::game_logic::World;
-use crate::logic::world::module_call::ModuleHandle;
-use crate::logic::world::object_create::NewModule;
 use crate::common::module::MODULEINTERFACE_DAMAGE;
+use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::logic::module::create_module::CreateModule;
 use crate::logic::module::die_module::DieModule;
 use crate::logic::module::update_module::UpdateModule;
+use crate::logic::world::game_logic::World;
+use crate::logic::world::module_call::ModuleHandle;
+use crate::logic::world::object_create::NewModule;
 use crate::logic::world::update_body::UpdateBody;
 
 pub mod crate_collide;
-pub mod upgrade_pair;
+pub mod object_defection_helper;
 pub mod special_power_body;
 pub mod special_power_module_impl;
 pub mod subdual_damage_helper;
-pub mod object_defection_helper;
 pub mod update_behavior;
 pub mod upgrade_body;
+pub mod upgrade_pair;
 
 // --- p1l9-helpers ---
+pub mod destroy_die;
+pub mod keep_object_die;
 pub mod object_helper;
-pub mod object_smc_helper;
 pub mod object_repulsor_helper;
+pub mod object_smc_helper;
 pub mod object_weapon_status_helper;
 pub mod status_damage_helper;
 pub mod temp_weapon_bonus_helper;
-pub mod destroy_die;
-pub mod keep_object_die;
 pub mod upgrade_die;
 // --- end p1l9-helpers ---
 
@@ -66,115 +66,121 @@ pub mod veterancy_gain_create;
 
 // --- p1w10-sonnet ---
 pub mod deliver_payload_data;
-pub mod status_bits_upgrade;
 pub mod locomotor_set_upgrade;
+pub mod object_creation_upgrade;
 pub mod passengers_fire_upgrade;
+pub mod status_bits_upgrade;
 pub mod stealth_upgrade;
 pub mod sub_objects_upgrade;
-pub mod object_creation_upgrade;
 // --- end p1w10-sonnet ---
 
 // --- p1w11-sonnet ---
-pub mod cost_modifier_upgrade;
-pub mod power_plant_upgrade;
-pub mod radar_upgrade;
-pub mod unpause_special_power_upgrade;
-pub mod die_body;
-pub mod replace_object_upgrade;
-pub mod dam_die;
-pub mod special_power_completion_die;
-pub mod eject_pilot_die;
-pub mod instant_death_behavior;
-pub mod rebuild_hole_expose_die;
-pub mod create_crate_die;
-pub mod crush_die;
-pub mod create_object_die;
-pub mod power_plant_update;
-pub mod radar_update;
-pub mod heal_crate_collide;
-pub mod shroud_crate_collide;
-pub mod sabotage_crate_collide;
-pub mod unit_crate_collide;
-pub mod veterancy_crate_collide;
-pub mod salvage_crate_collide;
+pub mod auto_deposit_update;
+pub mod baikonur_launch_power;
+pub mod cash_bounty_power;
+pub mod cash_hack_special_power;
+pub mod cleanup_area_power;
 pub mod convert_to_car_bomb_crate_collide;
 pub mod convert_to_hijacked_vehicle_crate_collide;
-pub mod money_crate_collide;
-pub mod cleanup_area_power;
-pub mod baikonur_launch_power;
-pub mod spy_vision_special_power;
+pub mod cost_modifier_upgrade;
+pub mod create_crate_die;
+pub mod create_object_die;
+pub mod crush_die;
+pub mod dam_die;
 pub mod defector_special_power;
-pub mod ocl_special_power;
-pub mod cash_hack_special_power;
-pub mod cash_bounty_power;
-pub mod spy_vision_update;
-pub mod upgrade_mux_user;
-pub mod fx_list_die;
+pub mod die_body;
+pub mod eject_pilot_die;
 pub mod fire_weapon_when_dead_behavior;
-pub mod auto_deposit_update;
+pub mod fx_list_die;
+pub mod heal_crate_collide;
+pub mod instant_death_behavior;
+pub mod money_crate_collide;
+pub mod ocl_special_power;
+pub mod power_plant_update;
+pub mod power_plant_upgrade;
+pub mod radar_update;
+pub mod radar_upgrade;
+pub mod rebuild_hole_expose_die;
+pub mod replace_object_upgrade;
+pub mod sabotage_crate_collide;
+pub mod salvage_crate_collide;
+pub mod shroud_crate_collide;
+pub mod special_power_completion_die;
+pub mod spy_vision_special_power;
+pub mod spy_vision_update;
+pub mod unit_crate_collide;
+pub mod unpause_special_power_upgrade;
+pub mod upgrade_mux_user;
+pub mod veterancy_crate_collide;
 // --- end p1w11-sonnet ---
 // --- p1w12-sonnet ---
-pub mod fire_ocl_after_weapon_cooldown_update;
+pub mod animation_steering_update;
+pub mod auto_find_healing_update;
 pub mod auto_heal_behavior;
+pub mod bone_fx_update;
 pub mod checkpoint_update;
+pub mod default_production_exit_update;
+pub mod dynamic_geometry_info_update;
+pub mod emp_update;
+pub mod fire_ocl_after_weapon_cooldown_update;
+pub mod firestorm_dynamic_geometry_info_update;
 pub mod flammable_update;
+pub mod grant_stealth_behavior;
+pub mod horde_update;
+pub mod ocl_update;
+pub mod overcharge_behavior;
+pub mod pilot_find_vehicle_update;
 pub mod poisoned_behavior;
 pub mod production_exit;
-pub mod weapon_bonus_update;
-pub mod pilot_find_vehicle_update;
-pub mod horde_update;
-pub mod topple_update;
-pub mod bone_fx_update;
-pub mod transition_damage_fx;
-pub mod structure_collapse_update;
+pub mod queue_production_exit_update;
+pub mod radius_decal_update;
 pub mod stealth_detector_update;
 pub mod stealth_update;
-pub mod overcharge_behavior;
-pub mod grant_stealth_behavior;
-pub mod dynamic_geometry_info_update;
-pub mod firestorm_dynamic_geometry_info_update;
-pub mod animation_steering_update;
-pub mod radius_decal_update;
-pub mod auto_find_healing_update;
-pub mod queue_production_exit_update;
-pub mod default_production_exit_update;
+pub mod structure_collapse_update;
 pub mod supply_warehouse_crippling_behavior;
-pub mod ocl_update;
+pub mod topple_update;
+pub mod transition_damage_fx;
+pub mod weapon_bonus_update;
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
-pub mod height_die_update;
-pub mod dynamic_shroud_clearing_range_update;
-pub mod squish_collide;
-pub mod prone_update;
-pub mod enemy_near_update;
-pub mod float_update;
-pub mod hijacker_update;
-pub mod tech_building_behavior;
-pub mod fire_spread_update;
 pub mod active_body;
-pub mod derived_bodies;
-pub mod inactive_body;
-pub mod slow_death_behavior;
-pub mod rebuild_hole_behavior;
-pub mod open_contain;
-pub mod transport_contain;
-pub mod garrison_contain;
 pub mod cave_contain;
-pub mod tunnel_contain;
-pub mod mob_nexus_contain;
-pub mod parachute_contain;
+pub mod derived_bodies;
+pub mod dynamic_shroud_clearing_range_update;
+pub mod enemy_near_update;
+pub mod fire_spread_update;
+pub mod float_update;
+pub mod garrison_contain;
 pub mod heal_contain;
-pub mod overlord_contain;
-pub mod rider_change_contain;
+pub mod height_die_update;
 pub mod helix_contain;
-pub mod railed_transport_contain;
+pub mod hijacker_update;
+pub mod inactive_body;
 pub mod internet_hack_contain;
+pub mod mob_nexus_contain;
+pub mod open_contain;
+pub mod overlord_contain;
+pub mod parachute_contain;
+pub mod prone_update;
+pub mod railed_transport_contain;
+pub mod rebuild_hole_behavior;
+pub mod rider_change_contain;
+pub mod slow_death_behavior;
+pub mod squish_collide;
+pub mod tech_building_behavior;
+pub mod transport_contain;
+pub mod tunnel_contain;
 // --- end p1w13-sonnet ---
 /// The module for one module line of an object's template: the concrete
 /// class `data` belongs to, made for `object` (upstream:
 /// `TheModuleFactory->newModule(thing, name, data, type)`), with its tag.
 /// `None` for data of a class that is not translated.
-pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKind) -> Option<IniResult<NewModule>> {
+pub fn new_module(
+    object: ObjectId,
+    name: &[u8],
+    tag: &[u8],
+    data: &ModuleDataKind,
+) -> Option<IniResult<NewModule>> {
     let made = |interfaces: i32, body: IniResult<UpdateBody>| -> IniResult<NewModule> {
         let mut m = NewModule::plain(name, tag);
         m.interfaces = interfaces;
@@ -182,14 +188,15 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         Ok(m)
     };
     // --- p1w10-sonnet ---
-    let made_update = |interfaces: i32, made: IniResult<(UpdateModule, UpdateBody)>| -> IniResult<NewModule> {
-        let (update, body) = made?;
-        let mut m = NewModule::plain(name, tag);
-        m.interfaces = interfaces;
-        m.update = Some(update);
-        m.body = Some(body);
-        Ok(m)
-    };
+    let made_update =
+        |interfaces: i32, made: IniResult<(UpdateModule, UpdateBody)>| -> IniResult<NewModule> {
+            let (update, body) = made?;
+            let mut m = NewModule::plain(name, tag);
+            m.interfaces = interfaces;
+            m.update = Some(update);
+            m.body = Some(body);
+            Ok(m)
+        };
     // --- end p1w10-sonnet ---
     match data {
         // --- p1l9-example ---
@@ -520,6 +527,14 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
             topple_update::ToppleUpdate::get_interface_mask(),
             topple_update::ToppleUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::ToppleUpdate(m))),
         )),
+        ModuleDataKind::LeafletDropBehavior(d) => Some(made_update(
+            emp_update::LeafletDropBehavior::get_interface_mask(),
+            emp_update::LeafletDropBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::LeafletDropBehavior(m))),
+        )),
+        ModuleDataKind::EmpUpdate(d) => Some(made_update(
+            emp_update::EmpUpdate::get_interface_mask(),
+            emp_update::EmpUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::EmpUpdate(m))),
+        )),
         ModuleDataKind::BoneFxUpdate(d) => Some(made_update(
             bone_fx_update::BoneFxUpdate::get_interface_mask(),
             bone_fx_update::BoneFxUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::BoneFxUpdate(m))),
@@ -740,14 +755,14 @@ pub trait UpdateHost {
 
 // --- end p1l9-updates ---
 // --- p1l9-upgrades ---
-pub mod weapon_set_upgrade;
-pub mod weapon_bonus_upgrade;
-pub mod armor_upgrade;
-pub mod model_condition_upgrade;
-pub mod experience_scalar_upgrade;
 pub mod active_shroud_upgrade;
-pub mod max_health_upgrade;
+pub mod armor_upgrade;
+pub mod experience_scalar_upgrade;
 pub mod grant_science_upgrade;
+pub mod max_health_upgrade;
+pub mod model_condition_upgrade;
+pub mod weapon_bonus_upgrade;
+pub mod weapon_set_upgrade;
 // --- end p1l9-upgrades ---
 
 // --- p1w10-sonnet ---
@@ -758,7 +773,12 @@ pub mod grant_science_upgrade;
 pub fn plant(k: u32) -> bool {
     use std::sync::OnceLock;
     static P: OnceLock<u32> = OnceLock::new();
-    *P.get_or_init(|| std::env::var("L9_PLANT").ok().and_then(|s| s.parse().ok()).unwrap_or(0)) == k
+    *P.get_or_init(|| {
+        std::env::var("L9_PLANT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0)
+    }) == k
 }
 
 /// Without the `differential` feature no bug is ever planted.
@@ -771,12 +791,20 @@ pub const fn plant(_k: u32) -> bool {
 
 /// The factory's `NewModuleDataProc` for the die modules whose data is `DieModuleData` itself (`DestroyDie`, `KeepObjectDie`).
 /// batch R30: the factory's `NewModuleDataProc` for a damage module whose data is `DamageModuleData` (`BoneFXDamage`).
-pub fn new_plain_damage_module_data(ini: Option<&mut crate::common::ini::Ini<'_>>) -> crate::common::ini::IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::Damage(std::sync::Arc::new(crate::logic::module::damage_module::DamageModuleData::friend_new_module_data(ini)?)))
+pub fn new_plain_damage_module_data(
+    ini: Option<&mut crate::common::ini::Ini<'_>>,
+) -> crate::common::ini::IniResult<ModuleDataKind> {
+    Ok(ModuleDataKind::Damage(std::sync::Arc::new(
+        crate::logic::module::damage_module::DamageModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
-pub fn new_plain_die_module_data(ini: Option<&mut crate::common::ini::Ini<'_>>) -> crate::common::ini::IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::Die(std::sync::Arc::new(crate::logic::module::die_module::DieModuleData::friend_new_module_data(ini)?)))
+pub fn new_plain_die_module_data(
+    ini: Option<&mut crate::common::ini::Ini<'_>>,
+) -> crate::common::ini::IniResult<ModuleDataKind> {
+    Ok(ModuleDataKind::Die(std::sync::Arc::new(
+        crate::logic::module::die_module::DieModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
 /// Runs `f` on `m` with a copy of it lent to its slot (`World::lend_body`), so that a call that reaches the module from inside `f`

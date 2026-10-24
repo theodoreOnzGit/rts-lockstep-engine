@@ -230,7 +230,11 @@ pub struct ProbeModule {
 impl ProbeModule {
     /// A probe with these answers, full health `max_health`, and an upgrade
     /// trigger.
-    pub fn new(answers: ProbeAnswers, max_health: f32, upgrade_trigger: UpgradeMaskType) -> ProbeModule {
+    pub fn new(
+        answers: ProbeAnswers,
+        max_health: f32,
+        upgrade_trigger: UpgradeMaskType,
+    ) -> ProbeModule {
         ProbeModule {
             answers,
             health: max_health,
@@ -250,7 +254,12 @@ impl ProbeModule {
     /// state, and takes the state back afterwards. This is how the probe
     /// keeps upstream's plain recursion (`attemptDamage` -> `onDie` -> the
     /// same module's `onDie`).
-    pub fn lend<R>(&mut self, world: &mut World, me: ModuleHandle, f: impl FnOnce(&mut World) -> R) -> R {
+    pub fn lend<R>(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        f: impl FnOnce(&mut World) -> R,
+    ) -> R {
         let vacant = ProbeModule::new(ProbeAnswers::default(), 0.0, UpgradeMaskType::default());
         let mine = std::mem::replace(self, vacant);
         let (r, back) = world.lend_body(me, UpdateBody::ModuleProbe(mine), f);
@@ -265,7 +274,9 @@ impl ProbeModule {
         self.calls = self.calls.wrapping_add(1);
         if let Some(t) = &mut world.cuts.trace {
             let text = format!("{call:?}");
-            let end = text.find(|c: char| !c.is_ascii_alphanumeric()).unwrap_or(text.len());
+            let end = text
+                .find(|c: char| !c.is_ascii_alphanumeric())
+                .unwrap_or(text.len());
             t.push(format!("mod {}", &text[..end]));
         }
         match call {

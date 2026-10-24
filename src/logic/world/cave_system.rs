@@ -68,7 +68,9 @@ pub struct CaveSystem {
 impl CaveSystem {
     /// `CaveSystem::CaveSystem()`.
     pub fn new() -> CaveSystem {
-        CaveSystem { tunnel_trackers: Vec::new() }
+        CaveSystem {
+            tunnel_trackers: Vec::new(),
+        }
     }
 
     /// `init()`: does nothing.
@@ -156,11 +158,16 @@ impl CaveSystem {
     }
 
     /// [`CaveSystem::get_tunnel_tracker_for_cave_index`] for a caller that changes it.
-    pub fn get_tunnel_tracker_for_cave_index_mut(&mut self, index: i32) -> Option<&mut TunnelTracker> {
+    pub fn get_tunnel_tracker_for_cave_index_mut(
+        &mut self,
+        index: i32,
+    ) -> Option<&mut TunnelTracker> {
         if index < 0 {
             return None;
         }
-        self.tunnel_trackers.get_mut(index as usize).and_then(|s| s.as_mut())
+        self.tunnel_trackers
+            .get_mut(index as usize)
+            .and_then(|s| s.as_mut())
     }
 
     /// The post-process phase after a load: each tracker's, in index order.
@@ -180,11 +187,19 @@ impl World {
     /// Runs `f` on the tracker of cave `index`, checked out of its slot so
     /// that `f` has the world (see the module docs). `None` if there is no
     /// tracker there.
-    pub fn with_cave_tracker<R>(&mut self, index: i32, f: impl FnOnce(&mut TunnelTracker, &mut World) -> R) -> Option<R> {
+    pub fn with_cave_tracker<R>(
+        &mut self,
+        index: i32,
+        f: impl FnOnce(&mut TunnelTracker, &mut World) -> R,
+    ) -> Option<R> {
         if index < 0 {
             return None;
         }
-        let mut tracker = self.cave_system.tunnel_trackers.get_mut(index as usize)?.take()?;
+        let mut tracker = self
+            .cave_system
+            .tunnel_trackers
+            .get_mut(index as usize)?
+            .take()?;
         let r = f(&mut tracker, self);
         if let Some(slot) = self.cave_system.tunnel_trackers.get_mut(index as usize) {
             *slot = Some(tracker);
@@ -251,12 +266,26 @@ mod tests {
         assert!(c.is_empty());
         c.register_new_cave(2).unwrap();
         assert_eq!(c.len(), 3);
-        assert!(c.get_tunnel_tracker_for_cave_index(0).is_none() && c.get_tunnel_tracker_for_cave_index(2).is_some());
+        assert!(
+            c.get_tunnel_tracker_for_cave_index(0).is_none()
+                && c.get_tunnel_tracker_for_cave_index(2).is_some()
+        );
         c.register_new_cave(0).unwrap();
-        c.get_tunnel_tracker_for_cave_index_mut(2).unwrap().add_to_contain_list(5);
+        c.get_tunnel_tracker_for_cave_index_mut(2)
+            .unwrap()
+            .add_to_contain_list(5);
         c.register_new_cave(2).unwrap();
-        assert_eq!(c.get_tunnel_tracker_for_cave_index(2).unwrap().get_contain_count(), 1, "an existing slot is left alone");
-        assert!(c.get_tunnel_tracker_for_cave_index(-1).is_none() && c.get_tunnel_tracker_for_cave_index(9).is_none());
+        assert_eq!(
+            c.get_tunnel_tracker_for_cave_index(2)
+                .unwrap()
+                .get_contain_count(),
+            1,
+            "an existing slot is left alone"
+        );
+        assert!(
+            c.get_tunnel_tracker_for_cave_index(-1).is_none()
+                && c.get_tunnel_tracker_for_cave_index(9).is_none()
+        );
         assert!(c.get_tunnel_tracker_for_cave_index_mut(-1).is_none());
         assert_eq!(c.register_new_cave(-3), Err(CaveError::NegativeIndex(-3)));
         c.unregister_cave(0);
@@ -269,7 +298,9 @@ mod tests {
         c.register_new_cave(1).unwrap();
         assert!(c.can_switch_index_to_index(-1, 7));
         assert!(c.can_switch_index_to_index(1, 3));
-        c.get_tunnel_tracker_for_cave_index_mut(1).unwrap().add_to_contain_list(5);
+        c.get_tunnel_tracker_for_cave_index_mut(1)
+            .unwrap()
+            .add_to_contain_list(5);
         assert!(!c.can_switch_index_to_index(1, 3));
         assert!(!c.can_switch_index_to_index(3, 1));
         c.reset();
@@ -280,10 +311,16 @@ mod tests {
     fn xfer_round_trips_and_a_null_slot_cannot_be_saved() {
         let mut c = CaveSystem::new();
         c.register_new_cave(1).unwrap();
-        c.get_tunnel_tracker_for_cave_index_mut(1).unwrap().add_to_contain_list(4);
+        c.get_tunnel_tracker_for_cave_index_mut(1)
+            .unwrap()
+            .add_to_contain_list(4);
         let mut save = XferSave::new();
         save.open(b"c").unwrap();
-        assert_eq!(c.xfer(&mut save), Err(XferStatus::InvalidParameters), "slot 0 is NULL");
+        assert_eq!(
+            c.xfer(&mut save),
+            Err(XferStatus::InvalidParameters),
+            "slot 0 is NULL"
+        );
         c.register_new_cave(0).unwrap();
         let mut save = XferSave::new();
         save.open(b"c").unwrap();
@@ -295,7 +332,12 @@ mod tests {
         let mut back = CaveSystem::new();
         back.xfer(&mut load).unwrap();
         assert_eq!(back.len(), 2);
-        assert_eq!(back.get_tunnel_tracker_for_cave_index(1).unwrap().get_contain_list_size(), 1);
+        assert_eq!(
+            back.get_tunnel_tracker_for_cave_index(1)
+                .unwrap()
+                .get_contain_list_size(),
+            1
+        );
         // loading into a non-empty system is refused
         let mut load = XferLoad::new(bytes);
         load.open(b"c").unwrap();
@@ -309,9 +351,22 @@ mod tests {
     fn a_tracker_is_checked_out_with_the_world() {
         let mut w = World::new();
         w.cave_system.register_new_cave(0).unwrap();
-        assert_eq!(w.with_cave_tracker(0, |t, _| t.on_tunnel_created(3)), Some(()));
-        assert_eq!(w.cave_system.get_tunnel_tracker_for_cave_index(0).unwrap().friend_get_tunnel_count(), 1, "put back afterwards");
-        assert!(w.with_cave_tracker(1, |_, _| ()).is_none() && w.with_cave_tracker(-1, |_, _| ()).is_none());
+        assert_eq!(
+            w.with_cave_tracker(0, |t, _| t.on_tunnel_created(3)),
+            Some(())
+        );
+        assert_eq!(
+            w.cave_system
+                .get_tunnel_tracker_for_cave_index(0)
+                .unwrap()
+                .friend_get_tunnel_count(),
+            1,
+            "put back afterwards"
+        );
+        assert!(
+            w.with_cave_tracker(1, |_, _| ()).is_none()
+                && w.with_cave_tracker(-1, |_, _| ()).is_none()
+        );
         let mut cave = std::mem::take(&mut w.cave_system);
         assert!(cave.load_post_process_world(&mut w).is_ok());
     }

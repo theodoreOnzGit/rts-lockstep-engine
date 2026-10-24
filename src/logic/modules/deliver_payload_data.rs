@@ -38,9 +38,18 @@ pub type WeaponTemplateRef = u32;
 
 /// `TheWeaponSlotTypeNamesLookupList` (`WeaponSet.h`), without the terminator.
 pub static WEAPON_SLOT_TYPE_NAMES_LOOKUP_LIST: [LookupListRec; 3] = [
-    LookupListRec { name: "PRIMARY", value: 0 },
-    LookupListRec { name: "SECONDARY", value: 1 },
-    LookupListRec { name: "TERTIARY", value: 2 },
+    LookupListRec {
+        name: "PRIMARY",
+        value: 0,
+    },
+    LookupListRec {
+        name: "SECONDARY",
+        value: 1,
+    },
+    LookupListRec {
+        name: "TERTIARY",
+        value: 2,
+    },
 ];
 
 /// `class DeliverPayloadData`.
@@ -142,49 +151,211 @@ impl DeliverPayloadData {
     /// `getFieldParse()`: the table of the data's fields, for a struct that embeds the data.
     pub fn field_parse<T: DeliverPayloadDataParse>() -> Vec<FieldParse<T>> {
         vec![
-            FieldParse::new("DeliveryDistance", |ini, t: &mut T, _| { t.deliver_payload_data_mut().dist_to_target = ini.parse_real()?; Ok(()) }, UserData::None),
-            FieldParse::new("PreOpenDistance", |ini, t: &mut T, _| { t.deliver_payload_data_mut().pre_open_distance = ini.parse_real()?; Ok(()) }, UserData::None),
-            FieldParse::new("MaxAttempts", |ini, t: &mut T, _| { t.deliver_payload_data_mut().max_attempts = ini.parse_int()?; Ok(()) }, UserData::None),
+            FieldParse::new(
+                "DeliveryDistance",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().dist_to_target = ini.parse_real()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
+            FieldParse::new(
+                "PreOpenDistance",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().pre_open_distance = ini.parse_real()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
+            FieldParse::new(
+                "MaxAttempts",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().max_attempts = ini.parse_int()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
             // drop information
-            FieldParse::new("DropDelay", |ini, t: &mut T, _| { t.deliver_payload_data_mut().drop_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-            FieldParse::new("DropOffset", |ini, t: &mut T, _| { t.deliver_payload_data_mut().drop_offset = ini.parse_coord3d()?; Ok(()) }, UserData::None),
-            FieldParse::new("DropVariance", |ini, t: &mut T, _| { t.deliver_payload_data_mut().drop_variance = ini.parse_coord3d()?; Ok(()) }, UserData::None),
-            FieldParse::new("InheritTransportVelocity", |ini, t: &mut T, _| { t.deliver_payload_data_mut().inherit_transport_velocity = ini.parse_bool()?; Ok(()) }, UserData::None),
-            FieldParse::new("ExitPitchRate", |ini, t: &mut T, _| { t.deliver_payload_data_mut().exit_pitch_rate = ini.parse_angular_velocity_real()?; Ok(()) }, UserData::None),
-            FieldParse::new("ParachuteDirectly", |ini, t: &mut T, _| { t.deliver_payload_data_mut().is_parachute_directly = ini.parse_bool()?; Ok(()) }, UserData::None),
+            FieldParse::new(
+                "DropDelay",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().drop_delay = ini.parse_duration_unsigned_int()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
+            FieldParse::new(
+                "DropOffset",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().drop_offset = ini.parse_coord3d()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
+            FieldParse::new(
+                "DropVariance",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().drop_variance = ini.parse_coord3d()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
+            FieldParse::new(
+                "InheritTransportVelocity",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().inherit_transport_velocity = ini.parse_bool()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
+            FieldParse::new(
+                "ExitPitchRate",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().exit_pitch_rate =
+                        ini.parse_angular_velocity_real()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
+            FieldParse::new(
+                "ParachuteDirectly",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().is_parachute_directly = ini.parse_bool()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
             // visible payload information (the payload is shown visibly and created only when dropped)
-            FieldParse::new("VisibleItemsDroppedPerInterval", |ini, t: &mut T, _| { t.deliver_payload_data_mut().visible_items_dropped_per_interval = ini.parse_int()?; Ok(()) }, UserData::None),
-            FieldParse::new("VisibleDropBoneBaseName", |ini, t: &mut T, _| { t.deliver_payload_data_mut().visible_drop_bone_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
-            FieldParse::new("VisibleSubObjectBaseName", |ini, t: &mut T, _| { t.deliver_payload_data_mut().visible_sub_object_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
-            FieldParse::new("VisibleNumBones", |ini, t: &mut T, _| { t.deliver_payload_data_mut().visible_num_bones = ini.parse_int()?; Ok(()) }, UserData::None),
-            FieldParse::new("VisiblePayloadTemplateName", |ini, t: &mut T, _| { t.deliver_payload_data_mut().visible_payload_template_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
-            FieldParse::new("VisiblePayloadWeaponTemplate", parse_visible_payload_weapon_template::<T>, UserData::None),
-            FieldParse::new("SelfDestructObject", |ini, t: &mut T, _| { t.deliver_payload_data_mut().self_destruct_object = ini.parse_bool()?; Ok(()) }, UserData::None),
+            FieldParse::new(
+                "VisibleItemsDroppedPerInterval",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut()
+                        .visible_items_dropped_per_interval = ini.parse_int()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
+            FieldParse::new(
+                "VisibleDropBoneBaseName",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().visible_drop_bone_name =
+                        ini.parse_ascii_string()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
+            FieldParse::new(
+                "VisibleSubObjectBaseName",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().visible_sub_object_name =
+                        ini.parse_ascii_string()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
+            FieldParse::new(
+                "VisibleNumBones",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().visible_num_bones = ini.parse_int()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
+            FieldParse::new(
+                "VisiblePayloadTemplateName",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().visible_payload_template_name =
+                        ini.parse_ascii_string()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
+            FieldParse::new(
+                "VisiblePayloadWeaponTemplate",
+                parse_visible_payload_weapon_template::<T>,
+                UserData::None,
+            ),
+            FieldParse::new(
+                "SelfDestructObject",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().self_destruct_object = ini.parse_bool()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
             // weapon based payload
-            FieldParse::new("FireWeapon", |ini, t: &mut T, _| { t.deliver_payload_data_mut().fire_weapon = ini.parse_bool()?; Ok(()) }, UserData::None),
+            FieldParse::new(
+                "FireWeapon",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().fire_weapon = ini.parse_bool()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
             // an additional weapon slot to be fired while strafing
-            FieldParse::new("DiveStartDistance", |ini, t: &mut T, _| { t.deliver_payload_data_mut().dive_start_distance = ini.parse_real()?; Ok(()) }, UserData::None),
-            FieldParse::new("DiveEndDistance", |ini, t: &mut T, _| { t.deliver_payload_data_mut().dive_end_distance = ini.parse_real()?; Ok(()) }, UserData::None),
+            FieldParse::new(
+                "DiveStartDistance",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().dive_start_distance = ini.parse_real()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
+            FieldParse::new(
+                "DiveEndDistance",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().dive_end_distance = ini.parse_real()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
             FieldParse::new(
                 "StrafingWeaponSlot",
-                |ini, t: &mut T, _| { t.deliver_payload_data_mut().strafing_weapon_slot = ini.parse_lookup_list(&WEAPON_SLOT_TYPE_NAMES_LOOKUP_LIST)?; Ok(()) },
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().strafing_weapon_slot =
+                        ini.parse_lookup_list(&WEAPON_SLOT_TYPE_NAMES_LOOKUP_LIST)?;
+                    Ok(())
+                },
                 UserData::Lookup(&WEAPON_SLOT_TYPE_NAMES_LOOKUP_LIST),
             ),
             FieldParse::new("StrafeWeaponFX", parse_strafe_fx::<T>, UserData::None),
-            FieldParse::new("StrafeLength", |ini, t: &mut T, _| { t.deliver_payload_data_mut().strafe_length = ini.parse_real()?; Ok(()) }, UserData::None),
             FieldParse::new(
-                "DeliveryDecal",
-                |ini, t: &mut T, _| RadiusDecalTemplate::parse_radius_decal_template(ini, &mut t.deliver_payload_data_mut().delivery_decal_template),
+                "StrafeLength",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().strafe_length = ini.parse_real()?;
+                    Ok(())
+                },
                 UserData::None,
             ),
-            FieldParse::new("DeliveryDecalRadius", |ini, t: &mut T, _| { t.deliver_payload_data_mut().delivery_decal_radius = ini.parse_real()?; Ok(()) }, UserData::None),
+            FieldParse::new(
+                "DeliveryDecal",
+                |ini, t: &mut T, _| {
+                    RadiusDecalTemplate::parse_radius_decal_template(
+                        ini,
+                        &mut t.deliver_payload_data_mut().delivery_decal_template,
+                    )
+                },
+                UserData::None,
+            ),
+            FieldParse::new(
+                "DeliveryDecalRadius",
+                |ini, t: &mut T, _| {
+                    t.deliver_payload_data_mut().delivery_decal_radius = ini.parse_real()?;
+                    Ok(())
+                },
+                UserData::None,
+            ),
             FieldParse::end(),
         ]
     }
 }
 
 /// `INI::parseWeaponTemplate` on `m_visiblePayloadWeaponTemplate`: the next token names the template; an unknown name is `NULL`.
-fn parse_visible_payload_weapon_template<T: DeliverPayloadDataParse>(ini: &mut Ini<'_>, t: &mut T, _: &UserData) -> IniResult<()> {
+fn parse_visible_payload_weapon_template<T: DeliverPayloadDataParse>(
+    ini: &mut Ini<'_>,
+    t: &mut T,
+    _: &UserData,
+) -> IniResult<()> {
     let token = ini.get_next_token(None)?;
     let found = t.find_weapon_template(&token);
     t.deliver_payload_data_mut().visible_payload_weapon_template = found;
@@ -192,7 +363,11 @@ fn parse_visible_payload_weapon_template<T: DeliverPayloadDataParse>(ini: &mut I
 }
 
 /// `INI::parseFXList` on `m_strafeFX`.
-fn parse_strafe_fx<T: DeliverPayloadDataParse>(ini: &mut Ini<'_>, t: &mut T, _: &UserData) -> IniResult<()> {
+fn parse_strafe_fx<T: DeliverPayloadDataParse>(
+    ini: &mut Ini<'_>,
+    t: &mut T,
+    _: &UserData,
+) -> IniResult<()> {
     let token = ini.get_next_token(None)?;
     let found = t.find_fx_list(&token);
     t.deliver_payload_data_mut().strafe_fx = found;
@@ -225,16 +400,45 @@ mod tests {
     #[test]
     fn defaults_and_every_field_form() {
         let d = DeliverPayloadData::default();
-        assert_eq!((d.max_attempts, d.strafing_weapon_slot, d.delivery_decal_radius), (1, -1, 0.0));
+        assert_eq!(
+            (
+                d.max_attempts,
+                d.strafing_weapon_slot,
+                d.delivery_decal_radius
+            ),
+            (1, -1, 0.0)
+        );
         let text = b"D\n DeliveryDistance = 5.5\n MaxAttempts = 3\n DropOffset = X:1 Y:2 Z:3\n DropDelay = 1000\n StrafingWeaponSlot = SECONDARY\n \
                      VisiblePayloadWeaponTemplate = W1\n StrafeWeaponFX = FX_A\n DeliveryDecal\n Texture = T\n End\n DeliveryDecalRadius = 9\n \
                      VisibleDropBoneBaseName = \"Bone Name\"\n FireWeapon = Yes\nEnd\n";
-        let blocks = [BlockParse { token: "D", parse: block }];
+        let blocks = [BlockParse {
+            token: "D",
+            parse: block,
+        }];
         let mut t = Target(DeliverPayloadData::default());
-        Ini::load(b"t.ini", text, IniLoadType::Overwrite, None, &blocks, &mut t).unwrap();
+        Ini::load(
+            b"t.ini",
+            text,
+            IniLoadType::Overwrite,
+            None,
+            &blocks,
+            &mut t,
+        )
+        .unwrap();
         let d = t.0;
-        assert_eq!((d.dist_to_target, d.max_attempts, d.drop_delay, d.strafing_weapon_slot), (5.5, 3, 30, 1));
-        assert_eq!((d.drop_offset.x, d.drop_offset.y, d.drop_offset.z), (1.0, 2.0, 3.0));
+        assert_eq!(
+            (
+                d.dist_to_target,
+                d.max_attempts,
+                d.drop_delay,
+                d.strafing_weapon_slot
+            ),
+            (5.5, 3, 30, 1)
+        );
+        assert_eq!(
+            (d.drop_offset.x, d.drop_offset.y, d.drop_offset.z),
+            (1.0, 2.0, 3.0)
+        );
         assert_eq!(d.visible_payload_weapon_template, Some(7));
         assert_eq!(d.strafe_fx.as_deref(), Some(&b"FX_A"[..]));
         assert_eq!(d.delivery_decal_template.name, b"T");

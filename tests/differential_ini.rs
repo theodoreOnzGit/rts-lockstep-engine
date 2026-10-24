@@ -128,22 +128,38 @@ impl Rec {
 }
 
 static TEST_NAMES: [&str; 40] = [
-    "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08", "N09", "N10", "N11", "N12", "N13",
-    "N14", "N15", "N16", "N17", "N18", "N19", "N20", "N21", "N22", "N23", "N24", "N25", "N26", "N27",
-    "N28", "N29", "N30", "N31", "N32", "N33", "N34", "N35", "N36", "N37", "N38", "N39",
+    "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08", "N09", "N10", "N11", "N12",
+    "N13", "N14", "N15", "N16", "N17", "N18", "N19", "N20", "N21", "N22", "N23", "N24", "N25",
+    "N26", "N27", "N28", "N29", "N30", "N31", "N32", "N33", "N34", "N35", "N36", "N37", "N38",
+    "N39",
 ];
 static TEST_LOOKUP: [LookupListRec; 4] = [
-    LookupListRec { name: "Low", value: 1 },
-    LookupListRec { name: "Mid", value: 5 },
-    LookupListRec { name: "High", value: -7 },
-    LookupListRec { name: "Max", value: 0x7fff_ffff },
+    LookupListRec {
+        name: "Low",
+        value: 1,
+    },
+    LookupListRec {
+        name: "Mid",
+        value: 5,
+    },
+    LookupListRec {
+        name: "High",
+        value: -7,
+    },
+    LookupListRec {
+        name: "Max",
+        value: 0x7fff_ffff,
+    },
 ];
 
 fn rgb(c: RGBColor) -> [f32; 3] {
     [c.red, c.green, c.blue]
 }
 fn rgba(c: RGBAColorInt) -> Vec<u8> {
-    [c.red, c.green, c.blue, c.alpha].iter().flat_map(|v| v.to_le_bytes()).collect()
+    [c.red, c.green, c.blue, c.alpha]
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .collect()
 }
 fn c3(c: Coord3D) -> [f32; 3] {
     [c.x, c.y, c.z]
@@ -167,57 +183,403 @@ fn rv(v: &GameClientRandomVariable) -> Vec<u8> {
 /// `TheFieldTable` of wrap_ini.cpp: each entry runs the translated parser,
 /// stores like the C++ entry, and logs `id` and the stored bytes.
 static FIELD_TABLE: [FieldParse<Rec>; 40] = [
-    FieldParse::new("Byte", |ini, r, _| { r.u8_ = ini.parse_unsigned_byte()?; tag(1); put(&[r.u8_]); Ok(()) }, UserData::None),
-    FieldParse::new("Short", |ini, r, _| { r.i16_ = ini.parse_short()?; tag(2); put(&r.i16_.to_le_bytes()); Ok(()) }, UserData::None),
-    FieldParse::new("UShort", |ini, r, _| { r.u16_ = ini.parse_unsigned_short()?; tag(3); put(&r.u16_.to_le_bytes()); Ok(()) }, UserData::None),
-    FieldParse::new("Int", |ini, r, _| { r.i32_ = ini.parse_int()?; tag(4); put(&r.i32_.to_le_bytes()); Ok(()) }, UserData::None),
-    FieldParse::new("UInt", |ini, r, _| { r.u32_ = ini.parse_unsigned_int()?; tag(5); put(&r.u32_.to_le_bytes()); Ok(()) }, UserData::None),
-    FieldParse::new("Real", |ini, r, _| { r.r = ini.parse_real()?; tag(6); put_f32s(&[r.r]); Ok(()) }, UserData::None),
-    FieldParse::new("PosReal", |ini, r, _| { r.r = ini.parse_positive_non_zero_real()?; tag(7); put_f32s(&[r.r]); Ok(()) }, UserData::None),
-    FieldParse::new("Bool", |ini, _, _| { let b = ini.parse_bool()?; tag(8); put8(u8::from(b)); Ok(()) }, UserData::None),
-    FieldParse::new("Bit", |ini, r, ud| { ini.parse_bit_in_int32(&mut r.bit, ud.mask())?; tag(9); put(&r.bit.to_le_bytes()); Ok(()) }, UserData::Mask(0x0001_0010)),
-    FieldParse::new("Str", |ini, r, _| { r.s = ini.parse_ascii_string()?; tag(10); put_str(&r.s); Ok(()) }, UserData::None),
-    FieldParse::new("QStr", |ini, r, _| { r.s = ini.parse_quoted_ascii_string()?; tag(11); put_str(&r.s); Ok(()) }, UserData::None),
-    FieldParse::new("StrVec", |ini, r, _| { ini.parse_ascii_string_vector(&mut r.sv)?; tag(12); put_vec(&r.sv); Ok(()) }, UserData::None),
-    FieldParse::new("StrVecAdd", |ini, r, _| { ini.parse_ascii_string_vector_append(&mut r.sv)?; tag(13); put_vec(&r.sv); Ok(()) }, UserData::None),
-    FieldParse::new("Percent", |ini, r, _| { r.r = ini.parse_percent_to_real()?; tag(14); put_f32s(&[r.r]); Ok(()) }, UserData::None),
-    FieldParse::new("Bits8", |ini, _, ud| { let v = ini.parse_bit_string8(ud.names())?; tag(15); put8(v); Ok(()) }, UserData::Names(&TEST_NAMES)),
-    FieldParse::new("Bits32", |ini, r, ud| { ini.parse_bit_string32(&mut r.bits32, ud.names())?; tag(16); put(&r.bits32.to_le_bytes()); Ok(()) }, UserData::Names(&TEST_NAMES)),
-    FieldParse::new("RGB", |ini, _, _| { let v = ini.parse_rgb_color()?; tag(17); put_f32s(&rgb(v)); Ok(()) }, UserData::None),
-    FieldParse::new("RGBA", |ini, _, _| { let v = ini.parse_rgba_color_int()?; tag(18); put(&rgba(v)); Ok(()) }, UserData::None),
-    FieldParse::new("Color", |ini, _, _| { let v = ini.parse_color_int()?; tag(19); put(&v.to_le_bytes()); Ok(()) }, UserData::None),
-    FieldParse::new("Coord3D", |ini, _, _| { let v = ini.parse_coord3d()?; tag(20); put_f32s(&c3(v)); Ok(()) }, UserData::None),
-    FieldParse::new("Coord2D", |ini, _, _| { let v = ini.parse_coord2d()?; tag(21); put_f32s(&c2(v)); Ok(()) }, UserData::None),
-    FieldParse::new("ICoord2D", |ini, _, _| { let v = ini.parse_icoord2d()?; tag(22); put(&ic2(v)); Ok(()) }, UserData::None),
-    FieldParse::new("Index", |ini, _, ud| { let v = ini.parse_index_list(ud.names())?; tag(23); put(&v.to_le_bytes()); Ok(()) }, UserData::Names(&TEST_NAMES)),
-    FieldParse::new("ByteIndex", |ini, _, ud| { let v = ini.parse_byte_sized_index_list(ud.names())?; tag(24); put8(v); Ok(()) }, UserData::Names(&TEST_NAMES)),
-    FieldParse::new("Lookup", |ini, _, ud| { let v = ini.parse_lookup_list(ud.lookup())?; tag(25); put(&v.to_le_bytes()); Ok(()) }, UserData::Lookup(&TEST_LOOKUP)),
-    FieldParse::new("Angle", |ini, r, _| { r.r = ini.parse_angle_real()?; tag(26); put_f32s(&[r.r]); Ok(()) }, UserData::None),
-    FieldParse::new("AngVel", |ini, r, _| { r.r = ini.parse_angular_velocity_real()?; tag(27); put_f32s(&[r.r]); Ok(()) }, UserData::None),
-    FieldParse::new("DurReal", |ini, r, _| { r.r = ini.parse_duration_real()?; tag(28); put_f32s(&[r.r]); Ok(()) }, UserData::None),
-    FieldParse::new("DurUInt", |ini, r, _| { r.u32_ = ini.parse_duration_unsigned_int()?; tag(29); put(&r.u32_.to_le_bytes()); Ok(()) }, UserData::None),
-    FieldParse::new("DurUShort", |ini, _, _| { let v = ini.parse_duration_unsigned_short()?; tag(30); put(&v.to_le_bytes()); Ok(()) }, UserData::None),
-    FieldParse::new("Vel", |ini, r, _| { r.r = ini.parse_velocity_real()?; tag(31); put_f32s(&[r.r]); Ok(()) }, UserData::None),
-    FieldParse::new("Accel", |ini, r, _| { r.r = ini.parse_acceleration_real()?; tag(32); put_f32s(&[r.r]); Ok(()) }, UserData::None),
-    FieldParse::new("Vet", |ini, _, _| { let v = ini.parse_veterancy_level_flags()?; tag(33); put(&v.to_le_bytes()); Ok(()) }, UserData::None),
-    FieldParse::new("Death", |ini, _, _| { let v = ini.parse_death_type_flags()?; tag(34); put(&v.to_le_bytes()); Ok(()) }, UserData::None),
-    FieldParse::new("Damage", |ini, _, _| { let v = ini.parse_damage_type_flags()?; tag(35); put(&dmg(v)); Ok(()) }, UserData::None),
-    FieldParse::new("Sounds", |ini, r, _| { ini.parse_sounds_list(&mut r.sv)?; tag(36); put_vec(&r.sv); Ok(()) }, UserData::None),
-    FieldParse::new("RandVar", |ini, _, _| {
-        let mut v = GameClientRandomVariable::new(0.0, 0.0, DistributionType::Constant);
-        ini.parse_game_client_random_variable(&mut v)?;
-        tag(37);
-        put(&rv(&v));
-        Ok(())
-    }, UserData::None),
-    FieldParse::new("Nested", |ini, r, _| { tag(38); ini.init_from_ini(r, &FIELD_TABLE)?; tag(39); Ok(()) }, UserData::None),
+    FieldParse::new(
+        "Byte",
+        |ini, r, _| {
+            r.u8_ = ini.parse_unsigned_byte()?;
+            tag(1);
+            put(&[r.u8_]);
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Short",
+        |ini, r, _| {
+            r.i16_ = ini.parse_short()?;
+            tag(2);
+            put(&r.i16_.to_le_bytes());
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "UShort",
+        |ini, r, _| {
+            r.u16_ = ini.parse_unsigned_short()?;
+            tag(3);
+            put(&r.u16_.to_le_bytes());
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Int",
+        |ini, r, _| {
+            r.i32_ = ini.parse_int()?;
+            tag(4);
+            put(&r.i32_.to_le_bytes());
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "UInt",
+        |ini, r, _| {
+            r.u32_ = ini.parse_unsigned_int()?;
+            tag(5);
+            put(&r.u32_.to_le_bytes());
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Real",
+        |ini, r, _| {
+            r.r = ini.parse_real()?;
+            tag(6);
+            put_f32s(&[r.r]);
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "PosReal",
+        |ini, r, _| {
+            r.r = ini.parse_positive_non_zero_real()?;
+            tag(7);
+            put_f32s(&[r.r]);
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Bool",
+        |ini, _, _| {
+            let b = ini.parse_bool()?;
+            tag(8);
+            put8(u8::from(b));
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Bit",
+        |ini, r, ud| {
+            ini.parse_bit_in_int32(&mut r.bit, ud.mask())?;
+            tag(9);
+            put(&r.bit.to_le_bytes());
+            Ok(())
+        },
+        UserData::Mask(0x0001_0010),
+    ),
+    FieldParse::new(
+        "Str",
+        |ini, r, _| {
+            r.s = ini.parse_ascii_string()?;
+            tag(10);
+            put_str(&r.s);
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "QStr",
+        |ini, r, _| {
+            r.s = ini.parse_quoted_ascii_string()?;
+            tag(11);
+            put_str(&r.s);
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "StrVec",
+        |ini, r, _| {
+            ini.parse_ascii_string_vector(&mut r.sv)?;
+            tag(12);
+            put_vec(&r.sv);
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "StrVecAdd",
+        |ini, r, _| {
+            ini.parse_ascii_string_vector_append(&mut r.sv)?;
+            tag(13);
+            put_vec(&r.sv);
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Percent",
+        |ini, r, _| {
+            r.r = ini.parse_percent_to_real()?;
+            tag(14);
+            put_f32s(&[r.r]);
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Bits8",
+        |ini, _, ud| {
+            let v = ini.parse_bit_string8(ud.names())?;
+            tag(15);
+            put8(v);
+            Ok(())
+        },
+        UserData::Names(&TEST_NAMES),
+    ),
+    FieldParse::new(
+        "Bits32",
+        |ini, r, ud| {
+            ini.parse_bit_string32(&mut r.bits32, ud.names())?;
+            tag(16);
+            put(&r.bits32.to_le_bytes());
+            Ok(())
+        },
+        UserData::Names(&TEST_NAMES),
+    ),
+    FieldParse::new(
+        "RGB",
+        |ini, _, _| {
+            let v = ini.parse_rgb_color()?;
+            tag(17);
+            put_f32s(&rgb(v));
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RGBA",
+        |ini, _, _| {
+            let v = ini.parse_rgba_color_int()?;
+            tag(18);
+            put(&rgba(v));
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Color",
+        |ini, _, _| {
+            let v = ini.parse_color_int()?;
+            tag(19);
+            put(&v.to_le_bytes());
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Coord3D",
+        |ini, _, _| {
+            let v = ini.parse_coord3d()?;
+            tag(20);
+            put_f32s(&c3(v));
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Coord2D",
+        |ini, _, _| {
+            let v = ini.parse_coord2d()?;
+            tag(21);
+            put_f32s(&c2(v));
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ICoord2D",
+        |ini, _, _| {
+            let v = ini.parse_icoord2d()?;
+            tag(22);
+            put(&ic2(v));
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Index",
+        |ini, _, ud| {
+            let v = ini.parse_index_list(ud.names())?;
+            tag(23);
+            put(&v.to_le_bytes());
+            Ok(())
+        },
+        UserData::Names(&TEST_NAMES),
+    ),
+    FieldParse::new(
+        "ByteIndex",
+        |ini, _, ud| {
+            let v = ini.parse_byte_sized_index_list(ud.names())?;
+            tag(24);
+            put8(v);
+            Ok(())
+        },
+        UserData::Names(&TEST_NAMES),
+    ),
+    FieldParse::new(
+        "Lookup",
+        |ini, _, ud| {
+            let v = ini.parse_lookup_list(ud.lookup())?;
+            tag(25);
+            put(&v.to_le_bytes());
+            Ok(())
+        },
+        UserData::Lookup(&TEST_LOOKUP),
+    ),
+    FieldParse::new(
+        "Angle",
+        |ini, r, _| {
+            r.r = ini.parse_angle_real()?;
+            tag(26);
+            put_f32s(&[r.r]);
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AngVel",
+        |ini, r, _| {
+            r.r = ini.parse_angular_velocity_real()?;
+            tag(27);
+            put_f32s(&[r.r]);
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DurReal",
+        |ini, r, _| {
+            r.r = ini.parse_duration_real()?;
+            tag(28);
+            put_f32s(&[r.r]);
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DurUInt",
+        |ini, r, _| {
+            r.u32_ = ini.parse_duration_unsigned_int()?;
+            tag(29);
+            put(&r.u32_.to_le_bytes());
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DurUShort",
+        |ini, _, _| {
+            let v = ini.parse_duration_unsigned_short()?;
+            tag(30);
+            put(&v.to_le_bytes());
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Vel",
+        |ini, r, _| {
+            r.r = ini.parse_velocity_real()?;
+            tag(31);
+            put_f32s(&[r.r]);
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Accel",
+        |ini, r, _| {
+            r.r = ini.parse_acceleration_real()?;
+            tag(32);
+            put_f32s(&[r.r]);
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Vet",
+        |ini, _, _| {
+            let v = ini.parse_veterancy_level_flags()?;
+            tag(33);
+            put(&v.to_le_bytes());
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Death",
+        |ini, _, _| {
+            let v = ini.parse_death_type_flags()?;
+            tag(34);
+            put(&v.to_le_bytes());
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Damage",
+        |ini, _, _| {
+            let v = ini.parse_damage_type_flags()?;
+            tag(35);
+            put(&dmg(v));
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Sounds",
+        |ini, r, _| {
+            ini.parse_sounds_list(&mut r.sv)?;
+            tag(36);
+            put_vec(&r.sv);
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RandVar",
+        |ini, _, _| {
+            let mut v = GameClientRandomVariable::new(0.0, 0.0, DistributionType::Constant);
+            ini.parse_game_client_random_variable(&mut v)?;
+            tag(37);
+            put(&rv(&v));
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Nested",
+        |ini, r, _| {
+            tag(38);
+            ini.init_from_ini(r, &FIELD_TABLE)?;
+            tag(39);
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::without_parse("Dead"),
     FieldParse::end(),
 ];
 
 /// `TheCatchTable` of wrap_ini.cpp.
 static CATCH_TABLE: [FieldParse<Rec>; 2] = [
-    FieldParse::new("Extra", |ini, r, _| { r.i32_ = ini.parse_int()?; tag(40); put(&r.i32_.to_le_bytes()); Ok(()) }, UserData::None),
+    FieldParse::new(
+        "Extra",
+        |ini, r, _| {
+            r.i32_ = ini.parse_int()?;
+            tag(40);
+            put(&r.i32_.to_le_bytes());
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::catch_all(|ini, _, ud| {
         put8(41);
         if let UserData::Token(t) = ud {
@@ -315,9 +677,32 @@ fn gen_int(g: &mut Gen) -> String {
     match g.below(20) {
         0..=5 => format!("{}", g.i32() % 1000),
         6 => format!("{}", g.i32()),
-        7 => pick(g, &["2147483647", "-2147483648", "2147483648", "-2147483649", "4294967295", "4294967296", "-4294967295", "99999999999999999999", "0", "-0", "+0"]).to_string(),
+        7 => pick(
+            g,
+            &[
+                "2147483647",
+                "-2147483648",
+                "2147483648",
+                "-2147483649",
+                "4294967295",
+                "4294967296",
+                "-4294967295",
+                "99999999999999999999",
+                "0",
+                "-0",
+                "+0",
+            ],
+        )
+        .to_string(),
         8 => format!("{}abc", g.below(300)),
-        9 => pick(g, &["-", "+", "x", "", "0x10", "+-1", "1.5", "--2", "255", "256", "-1", "65535", "65536", "32767", "-32768", "32768"]).to_string(),
+        9 => pick(
+            g,
+            &[
+                "-", "+", "x", "", "0x10", "+-1", "1.5", "--2", "255", "256", "-1", "65535",
+                "65536", "32767", "-32768", "32768",
+            ],
+        )
+        .to_string(),
         10 => format!("{}", g.u32()),
         11 => format!("-{}", g.u32()),
         12..=15 => format!("{}", g.below(256)),
@@ -330,15 +715,45 @@ fn gen_real(g: &mut Gen) -> String {
         0..=6 => format!("{}", g.uniform(-1000.0, 1000.0)),
         7 => format!("{:e}", g.finite()),
         8 => format!("{}", g.finite()),
-        9 => pick(g, &["1e", "1e+", "1.", ".", "-.5", ".e1", "1e5x", "+.25", "1.5.3", "00012", "1,5", "5e-", ".5e", "1d", "1E2", "-0", "0", "-0.0"]).to_string(),
-        10 => pick(g, &["inf", "-INF", "nan", "NaN(1)", "Infantry", "0x10", "0X1p3", "-0x", "infinity"]).to_string(),
-        11 => pick(g, &["1e39", "3.4028236e38", "3.4028235e38", "-3.5e38", "1e-50", "1e-45", "1.4e-45", "7e-46", "1e999999999", "1e-999999999"]).to_string(),
+        9 => pick(
+            g,
+            &[
+                "1e", "1e+", "1.", ".", "-.5", ".e1", "1e5x", "+.25", "1.5.3", "00012", "1,5",
+                "5e-", ".5e", "1d", "1E2", "-0", "0", "-0.0",
+            ],
+        )
+        .to_string(),
+        10 => pick(
+            g,
+            &[
+                "inf", "-INF", "nan", "NaN(1)", "Infantry", "0x10", "0X1p3", "-0x", "infinity",
+            ],
+        )
+        .to_string(),
+        11 => pick(
+            g,
+            &[
+                "1e39",
+                "3.4028236e38",
+                "3.4028235e38",
+                "-3.5e38",
+                "1e-50",
+                "1e-45",
+                "1.4e-45",
+                "7e-46",
+                "1e999999999",
+                "1e-999999999",
+            ],
+        )
+        .to_string(),
         12 => format!("{}%", g.below(200)),
         13 => format!("{}.{}", g.below(100), g.below(1_000_000)),
         14 => {
             // long digit strings (rounding at many digits)
             let n = 1 + g.below(60);
-            let mut s: String = (0..n).map(|_| char::from(b'0' + g.below(10) as u8)).collect();
+            let mut s: String = (0..n)
+                .map(|_| char::from(b'0' + g.below(10) as u8))
+                .collect();
             if g.below(2) == 0 {
                 s.insert(g.below(n) as usize, '.');
             }
@@ -384,7 +799,13 @@ fn gen_flag_list(g: &mut Gen, names: &[&str], plain: bool) -> String {
 }
 
 fn gen_quoted(g: &mut Gen) -> String {
-    let w = |g: &mut Gen| pick(g, &["Hello", "World", "a", "b c", "x=y", "", "q\"r", "Zero Hour"]).to_string();
+    let w = |g: &mut Gen| {
+        pick(
+            g,
+            &["Hello", "World", "a", "b c", "x=y", "", "q\"r", "Zero Hour"],
+        )
+        .to_string()
+    };
     match g.below(12) {
         0 => format!("\"{}\"", w(g)),
         1 => format!("\"{} {}\"", w(g), w(g)),
@@ -428,7 +849,11 @@ fn gen_coord(g: &mut Gen, n: usize, int: bool) -> String {
     let tags = ["X", "Y", "Z"];
     let mut parts = Vec::new();
     for t in tags.iter().take(n) {
-        let tag = if g.below(25) == 0 { "W".to_string() } else { case_mix(g, t) };
+        let tag = if g.below(25) == 0 {
+            "W".to_string()
+        } else {
+            case_mix(g, t)
+        };
         let v = if int { gen_int(g) } else { gen_real(g) };
         parts.push(format!("{tag}:{v}"));
     }
@@ -445,7 +870,10 @@ fn gen_clean(g: &mut Gen, field: &str) -> String {
         let lo = u32::from(skip_first);
         let n = names.len() as u32 - lo;
         let p = pick(g, &["+", "-"]);
-        (0..1 + g.below(3)).map(|_| format!("{p}{}", names[(lo + g.below(n)) as usize])).collect::<Vec<_>>().join(" ")
+        (0..1 + g.below(3))
+            .map(|_| format!("{p}{}", names[(lo + g.below(n)) as usize]))
+            .collect::<Vec<_>>()
+            .join(" ")
     };
     match field {
         "Byte" => format!("{}", g.below(256)),
@@ -460,20 +888,37 @@ fn gen_clean(g: &mut Gen, field: &str) -> String {
         "Percent" => format!("{}%", g.uniform(0.0, 100.0)),
         "Bool" | "Bit" => pick(g, &["Yes", "No"]).to_string(),
         "Str" | "QStr" => pick(g, &["Plain", "\"Two Words\"", "\"One\""]).to_string(),
-        "Bits8" => (0..1 + g.below(3)).map(|_| TEST_NAMES[g.below(8) as usize]).collect::<Vec<_>>().join(" "),
-        "Bits32" => (0..1 + g.below(3)).map(|_| TEST_NAMES[g.below(32) as usize]).collect::<Vec<_>>().join(" "),
+        "Bits8" => (0..1 + g.below(3))
+            .map(|_| TEST_NAMES[g.below(8) as usize])
+            .collect::<Vec<_>>()
+            .join(" "),
+        "Bits32" => (0..1 + g.below(3))
+            .map(|_| TEST_NAMES[g.below(32) as usize])
+            .collect::<Vec<_>>()
+            .join(" "),
         "Index" => TEST_NAMES[g.below(40) as usize].to_string(),
         "ByteIndex" => TEST_NAMES[g.below(40) as usize].to_string(),
         "Lookup" => pick(g, &["Low", "Mid", "High", "Max"]).to_string(),
         "RGB" => format!("R:{} G:{} B:{}", g.below(256), g.below(256), g.below(256)),
-        "RGBA" | "Color" => format!("R:{} G:{} B:{} A:{}", g.below(256), g.below(256), g.below(256), g.below(256)),
+        "RGBA" | "Color" => format!(
+            "R:{} G:{} B:{} A:{}",
+            g.below(256),
+            g.below(256),
+            g.below(256),
+            g.below(256)
+        ),
         "Coord3D" => format!("X:{} Y:{} Z:{}", real(g), real(g), real(g)),
         "Coord2D" => format!("X:{} Y:{}", real(g), real(g)),
         "ICoord2D" => format!("X:{} Y:{}", g.i32() % 5000, g.i32() % 5000),
         "Vet" => flags(g, &["REGULAR", "VETERAN", "ELITE", "HEROIC"], true),
         "Death" => flags(g, &DEATH_NAMES, true),
         "Damage" => flags(g, &DAMAGE_TYPE_NAMES, false),
-        "RandVar" => format!("{} {} {}", real(g), real(g), pick(g, &["UNIFORM", "CONSTANT", "GAUSSIAN"])),
+        "RandVar" => format!(
+            "{} {} {}",
+            real(g),
+            real(g),
+            pick(g, &["UNIFORM", "CONSTANT", "GAUSSIAN"])
+        ),
         _ => gen_value_any(g, field),
     }
 }
@@ -488,17 +933,26 @@ fn gen_value(g: &mut Gen, field: &str) -> String {
 
 fn gen_value_any(g: &mut Gen, field: &str) -> String {
     match field {
-        "Byte" | "Short" | "UShort" | "Int" | "UInt" | "Extra" | "DurUInt" | "DurUShort" => gen_int(g),
+        "Byte" | "Short" | "UShort" | "Int" | "UInt" | "Extra" | "DurUInt" | "DurUShort" => {
+            gen_int(g)
+        }
         "Real" | "PosReal" | "Angle" | "AngVel" | "DurReal" | "Vel" | "Accel" => gen_real(g),
         "Percent" => {
             let r = gen_real(g);
-            if g.below(3) == 0 { r } else { format!("{r}%") }
+            if g.below(3) == 0 {
+                r
+            } else {
+                format!("{r}%")
+            }
         }
         "Bool" | "Bit" => pick(g, &["Yes", "No", "yes", "NO", "yES", "maybe", "1", ""]).to_string(),
         "Str" | "QStr" => gen_quoted(g),
         "StrVec" | "StrVecAdd" | "Sounds" => {
             let n = g.below(5);
-            (0..n).map(|_| pick(g, &["a", "Bee", "c,d", "e=f", "g\th", "\"q\""]).to_string()).collect::<Vec<_>>().join(pick(g, &[" ", ",", " , ", "="]))
+            (0..n)
+                .map(|_| pick(g, &["a", "Bee", "c,d", "e=f", "g\th", "\"q\""]).to_string())
+                .collect::<Vec<_>>()
+                .join(pick(g, &[" ", ",", " , ", "="]))
         }
         "Bits8" | "Bits32" => gen_flag_list(g, &TEST_NAMES, true),
         "Index" | "ByteIndex" => gen_name(g, &TEST_NAMES),
@@ -515,7 +969,17 @@ fn gen_value_any(g: &mut Gen, field: &str) -> String {
             let mut s = format!("{} {}", gen_real(g), gen_real(g));
             if g.below(2) == 0 {
                 s.push(' ');
-                s.push_str(&gen_name(g, &["CONSTANT", "UNIFORM", "GAUSSIAN", "TRIANGULAR", "LOW_BIAS", "HIGH_BIAS"]));
+                s.push_str(&gen_name(
+                    g,
+                    &[
+                        "CONSTANT",
+                        "UNIFORM",
+                        "GAUSSIAN",
+                        "TRIANGULAR",
+                        "LOW_BIAS",
+                        "HIGH_BIAS",
+                    ],
+                ));
             }
             if g.below(10) == 0 {
                 s = gen_real(g);
@@ -527,14 +991,60 @@ fn gen_value_any(g: &mut Gen, field: &str) -> String {
 }
 
 const FIELDS: &[&str] = &[
-    "Byte", "Short", "UShort", "Int", "UInt", "Real", "PosReal", "Bool", "Bit", "Str", "QStr", "StrVec",
-    "StrVecAdd", "Percent", "Bits8", "Bits32", "RGB", "RGBA", "Color", "Coord3D", "Coord2D", "ICoord2D",
-    "Index", "ByteIndex", "Lookup", "Angle", "AngVel", "DurReal", "DurUInt", "DurUShort", "Vel", "Accel",
-    "Vet", "Death", "Damage", "Sounds", "RandVar",
+    "Byte",
+    "Short",
+    "UShort",
+    "Int",
+    "UInt",
+    "Real",
+    "PosReal",
+    "Bool",
+    "Bit",
+    "Str",
+    "QStr",
+    "StrVec",
+    "StrVecAdd",
+    "Percent",
+    "Bits8",
+    "Bits32",
+    "RGB",
+    "RGBA",
+    "Color",
+    "Coord3D",
+    "Coord2D",
+    "ICoord2D",
+    "Index",
+    "ByteIndex",
+    "Lookup",
+    "Angle",
+    "AngVel",
+    "DurReal",
+    "DurUInt",
+    "DurUShort",
+    "Vel",
+    "Accel",
+    "Vet",
+    "Death",
+    "Damage",
+    "Sounds",
+    "RandVar",
 ];
 
 fn gen_end(g: &mut Gen) -> String {
-    pick(g, &["End", "END", "end", "  End  ", "End ; done", "End=", "Ends", "=End"]).to_string()
+    pick(
+        g,
+        &[
+            "End",
+            "END",
+            "end",
+            "  End  ",
+            "End ; done",
+            "End=",
+            "Ends",
+            "=End",
+        ],
+    )
+    .to_string()
 }
 
 fn gen_field_line(g: &mut Gen, depth: u32, lines: &mut Vec<String>) {
@@ -556,7 +1066,11 @@ fn gen_field_line(g: &mut Gen, depth: u32, lines: &mut Vec<String>) {
     };
     let eq = pick(g, &[" = ", "=", " ", " =", "= ", " == "]);
     let value = gen_value(g, &field);
-    let comment = if g.below(8) == 0 { pick(g, &[" ; comment", ";", " ;x=1 2"]) } else { "" };
+    let comment = if g.below(8) == 0 {
+        pick(g, &[" ; comment", ";", " ;x=1 2"])
+    } else {
+        ""
+    };
     lines.push(format!("{indent}{field}{eq}{value}{comment}"));
 }
 
@@ -567,7 +1081,9 @@ fn gen_block(g: &mut Gen, lines: &mut Vec<String>) {
         10..=12 => "Weapon".to_string(),
         13 => "Credits".to_string(),
         14 => "Science".to_string(),
-        15 => TYPE_TABLE[g.below(TYPE_TABLE.len() as u32) as usize].0.to_string(),
+        15 => TYPE_TABLE[g.below(TYPE_TABLE.len() as u32) as usize]
+            .0
+            .to_string(),
         16 => pick(g, &["object", "OBJECT", "Thing", "End", "Objec"]).to_string(),
         _ => "Object".to_string(),
     };
@@ -611,7 +1127,14 @@ fn gen_file(g: &mut Gen) -> Vec<u8> {
     match g.below(14) {
         0 if !out.is_empty() => {
             let p = g.below(out.len() as u32) as usize;
-            out.insert(p, if g.below(2) == 0 { 0 } else { 0x80 + g.below(0x80) as u8 });
+            out.insert(
+                p,
+                if g.below(2) == 0 {
+                    0
+                } else {
+                    0x80 + g.below(0x80) as u8
+                },
+            );
         }
         1 if !out.is_empty() => {
             let p = g.below(out.len() as u32) as usize;
@@ -665,7 +1188,12 @@ fn rust_outcome(r: IniResult<()>, crc: u32) -> Result<Outcome, IniError> {
             Some(Thrown::OutOfRange) => (4, Vec::new()),
         },
     };
-    Ok(Outcome { status, detail, log, crc })
+    Ok(Outcome {
+        status,
+        detail,
+        log,
+        crc,
+    })
 }
 
 type CppLoad = unsafe extern "C" fn(
@@ -706,7 +1234,12 @@ fn cpp_outcome(f: CppLoad, name: &[u8], with_xfer: bool) -> Outcome {
         2 | 3 => code.to_le_bytes().to_vec(),
         _ => panic!("C++ threw something unexpected (status {status})"),
     };
-    Outcome { status, detail, log, crc }
+    Outcome {
+        status,
+        detail,
+        log,
+        crc,
+    }
 }
 
 fn show(b: &[u8]) -> String {
@@ -756,7 +1289,11 @@ fn ini_load_matches_upstream() {
             &name,
             &data,
             IniLoadType::Overwrite,
-            if with_xfer { Some(&mut crc as &mut dyn Xfer) } else { None },
+            if with_xfer {
+                Some(&mut crc as &mut dyn Xfer)
+            } else {
+                None
+            },
             &table,
             &mut (),
         );
@@ -772,7 +1309,11 @@ fn ini_load_matches_upstream() {
             excluded.add_x86_shift();
             continue;
         }
-        if rust.status == 0 { ok += 1 } else { failed += 1 }
+        if rust.status == 0 {
+            ok += 1
+        } else {
+            failed += 1
+        }
         log_bytes += rust.log.len() as u64;
         unsafe {
             cpp::ref_ini_reset();
@@ -791,9 +1332,15 @@ fn ini_load_matches_upstream() {
         excluded.0
     );
     let seen = SEEN.with(|s| *s.borrow());
-    println!("    successful parses per field id 1..=40: {:?}", &seen[1..=40]);
+    println!(
+        "    successful parses per field id 1..=40: {:?}",
+        &seen[1..=40]
+    );
     for (id, &n) in seen.iter().enumerate().take(41).skip(1) {
-        assert!(n >= 100, "field id {id} succeeded only {n} times: the generator does not reach it");
+        assert!(
+            n >= 100,
+            "field id {id} succeeded only {n} times: the generator does not reach it"
+        );
     }
     check.finish();
 }
@@ -807,7 +1354,10 @@ fn ini_load_directory_matches_upstream() {
     let mut excluded = Excluded::default();
     const CASES: usize = 3_000;
     for case in 0..CASES {
-        let dir: &[u8] = pick(&mut g, &[&b"Data\\INI"[..], b"Data\\INI", b"Data\\INI", b"", b"D"]);
+        let dir: &[u8] = pick(
+            &mut g,
+            &[&b"Data\\INI"[..], b"Data\\INI", b"Data\\INI", b"", b"D"],
+        );
         let mut list = FilenameList::new();
         let mut files: BTreeMap<Vec<u8>, Vec<u8>> = BTreeMap::new();
         let mut entries = Vec::new();
@@ -831,7 +1381,11 @@ fn ini_load_directory_matches_upstream() {
             dir,
             true,
             IniLoadType::Overwrite,
-            if with_xfer { Some(&mut crc as &mut dyn Xfer) } else { None },
+            if with_xfer {
+                Some(&mut crc as &mut dyn Xfer)
+            } else {
+                None
+            },
             &list,
             |n| files.get(n).cloned(),
             &table,
@@ -864,9 +1418,19 @@ fn ini_load_directory_matches_upstream() {
         if !with_xfer {
             c.crc = 0;
         }
-        check.eq(&rust, &c, || format!("case {case}: dir {:?}, files {:?}", show(dir), entries.iter().map(|e| show(e)).collect::<Vec<_>>()));
+        check.eq(&rust, &c, || {
+            format!(
+                "case {case}: dir {:?}, files {:?}",
+                show(dir),
+                entries.iter().map(|e| show(e)).collect::<Vec<_>>()
+            )
+        });
     }
-    println!("INI::loadDirectory: {CASES} listings; excluded (undefined upstream): {} {:?}", excluded.total(), excluded.0);
+    println!(
+        "INI::loadDirectory: {CASES} listings; excluded (undefined upstream): {} {:?}",
+        excluded.total(),
+        excluded.0
+    );
     check.finish();
 }
 
@@ -874,10 +1438,20 @@ fn gen_token(g: &mut Gen, op: i32) -> Vec<u8> {
     let s = match (op, g.below(10)) {
         (0 | 1, 0..=6) => gen_int(g),
         (2 | 3, 0..=6) => gen_real(g),
-        (4, 0..=6) => pick(g, &["yes", "no", "YES", "No", "yess", "n", "", " yes", "nO"]).to_string(),
+        (4, 0..=6) => pick(
+            g,
+            &["yes", "no", "YES", "No", "yess", "n", "", " yes", "nO"],
+        )
+        .to_string(),
         (5, 0..=6) => gen_name(g, &TEST_NAMES),
         (6, 0..=6) => gen_name(g, &["Low", "Mid", "High", "Max"]),
-        (7, 0..=6) => pick(g, &["a.ini", "A.INI", "ini", "in", ".iNi", "x.inix", "", "i", "foo.Ini"]).to_string(),
+        (7, 0..=6) => pick(
+            g,
+            &[
+                "a.ini", "A.INI", "ini", "in", ".iNi", "x.inix", "", "i", "foo.Ini",
+            ],
+        )
+        .to_string(),
         (8, 0..=6) => format!(
             "{}{}{}",
             pick(g, &["", " ", "  ", "\t", "\x0b", "\x0c\r"]),
@@ -894,7 +1468,11 @@ fn gen_token(g: &mut Gen, op: i32) -> Vec<u8> {
         ),
         (_, 7) => {
             // leading C white space before numbers, and other bytes
-            format!("{}{}", pick(g, &[" ", "\t", "\n", "\x0b", "\x0c", "\r"]), gen_real(g))
+            format!(
+                "{}{}",
+                pick(g, &[" ", "\t", "\n", "\x0b", "\x0c", "\r"]),
+                gen_real(g)
+            )
         }
         _ => {
             let n = g.below(12);
@@ -909,8 +1487,16 @@ fn ini_scanners_match_upstream() {
     let _lock = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut g = Gen::new(0x5C);
     let names = [
-        "scanInt", "scanUnsignedInt", "scanReal", "scanPercentToReal", "scanBool", "scanIndexList",
-        "scanLookupList", "isValidINIFilename", "isEndOfBlock", "isDeclarationOfType",
+        "scanInt",
+        "scanUnsignedInt",
+        "scanReal",
+        "scanPercentToReal",
+        "scanBool",
+        "scanIndexList",
+        "scanLookupList",
+        "isValidINIFilename",
+        "isEndOfBlock",
+        "isDeclarationOfType",
     ];
     for (op, name) in names.iter().enumerate() {
         let op = op as i32;
@@ -952,9 +1538,15 @@ fn ini_scanners_match_upstream() {
             let ct = CString::new(tok.clone()).unwrap();
             let mut out = 0u32;
             let status = unsafe { cpp::ref_ini_scan(op, ct.as_ptr(), &mut out) };
-            check.eq(rust, (status, out), || format!("token {:?} ({:02x?})", show(&tok), tok));
+            check.eq(rust, (status, out), || {
+                format!("token {:?} ({:02x?})", show(&tok), tok)
+            });
         }
-        println!("    {name}: {thrown} threw; excluded (undefined upstream): {} {:?}", excluded.total(), excluded.0);
+        println!(
+            "    {name}: {thrown} threw; excluded (undefined upstream): {} {:?}",
+            excluded.total(),
+            excluded.0
+        );
         check.finish();
     }
 }

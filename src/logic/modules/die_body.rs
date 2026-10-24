@@ -30,24 +30,40 @@ pub trait DieBehavior: Clone + PartialEq + Sized {
     /// The module back out of its variant; `None` for another variant.
     fn from_body(body: UpdateBody) -> Option<Self>;
     /// A call other than `onDie` (a die module's own interface, such as `setCreator`): [`ModuleReply::Unhandled`] unless it overrides this.
-    fn other_call(&mut self, _world: &mut World, _me: ModuleHandle, _call: ModuleCall) -> ModuleReply {
+    fn other_call(
+        &mut self,
+        _world: &mut World,
+        _me: ModuleHandle,
+        _call: ModuleCall,
+    ) -> ModuleReply {
         ModuleReply::Unhandled
     }
     /// `isDieApplicable(damageInfo)` (protected upstream): the die mux against the damage's death type and the object's veterancy level
     /// and status bits.
     fn is_die_applicable(&self, world: &World, me: ModuleHandle, info: &DamageInfo) -> bool {
         match world.objects.find(me.object) {
-            Some(o) => self.die().is_die_applicable(info.input.death_type, o.get_veterancy_level() as i32, &o.status),
+            Some(o) => self.die().is_die_applicable(
+                info.input.death_type,
+                o.get_veterancy_level() as i32,
+                &o.status,
+            ),
             None => false,
         }
     }
 }
 
 /// The answer of a die module to one of `Object`'s calls.
-pub fn die_module_call<M: DieBehavior>(m: &mut M, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+pub fn die_module_call<M: DieBehavior>(
+    m: &mut M,
+    world: &mut World,
+    me: ModuleHandle,
+    call: ModuleCall,
+) -> ModuleReply {
     match call {
         ModuleCall::OnDie(info) => {
-            lend_clone(world, me, m, M::into_body, M::from_body, |w, m| m.on_die(w, me, &info));
+            lend_clone(world, me, m, M::into_body, M::from_body, |w, m| {
+                m.on_die(w, me, &info)
+            });
             ModuleReply::Done
         }
         other => m.other_call(world, me, other),

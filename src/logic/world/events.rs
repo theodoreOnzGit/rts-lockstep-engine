@@ -84,9 +84,16 @@ mod tests {
     fn events_drain_in_order_and_leave_the_queue_empty() {
         let mut q = ClientEventQueue::new();
         assert!(q.is_empty());
-        q.push(ClientEvent::MoneySound { sound: MoneySound::Deposit, player_index: 1 });
-        q.extend([ClientEvent::ObjectDestroyed { object_id: 4 }, ClientEvent::ObjectDestroyed { object_id: 5 }]);
-        q.as_vec_mut().push(ClientEvent::ObjectDestroyed { object_id: 6 });
+        q.push(ClientEvent::MoneySound {
+            sound: MoneySound::Deposit,
+            player_index: 1,
+        });
+        q.extend([
+            ClientEvent::ObjectDestroyed { object_id: 4 },
+            ClientEvent::ObjectDestroyed { object_id: 5 },
+        ]);
+        q.as_vec_mut()
+            .push(ClientEvent::ObjectDestroyed { object_id: 6 });
         assert_eq!(q.len(), 4);
         let got = q.drain();
         assert_eq!(got.len(), 4);

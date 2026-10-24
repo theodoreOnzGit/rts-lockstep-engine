@@ -101,7 +101,10 @@ impl<T: BitFlagNames> Default for BitFlags<T> {
 }
 impl<T: BitFlagNames> std::fmt::Debug for BitFlags<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let set: Vec<&str> = (0..T::NUM_BITS).filter(|&i| self.bit(i)).map(|i| T::NAMES[i]).collect();
+        let set: Vec<&str> = (0..T::NUM_BITS)
+            .filter(|&i| self.bit(i))
+            .map(|i| T::NAMES[i])
+            .collect();
         write!(f, "BitFlags{set:?}")
     }
 }
@@ -129,14 +132,20 @@ impl<T: BitFlagNames> BitFlags<T> {
             bits[w] = Self::word_mask(w);
             w += 1;
         }
-        BitFlags { bits, _names: PhantomData }
+        BitFlags {
+            bits,
+            _names: PhantomData,
+        }
     };
 
     /// `BitFlags()`: all clear.
     pub const fn new() -> Self {
         #[allow(clippy::let_unit_value)]
         let _ = Self::CHECK;
-        BitFlags { bits: [0; WORDS], _names: PhantomData }
+        BitFlags {
+            bits: [0; WORDS],
+            _names: PhantomData,
+        }
     }
 
     /// `BitFlags(kInit, idx1, ...)`: the listed bits set (upstream has
@@ -164,7 +173,10 @@ impl<T: BitFlagNames> BitFlags<T> {
         for (w, v) in words.iter_mut().enumerate() {
             *v &= Self::word_mask(w);
         }
-        BitFlags { bits: words, _names: PhantomData }
+        BitFlags {
+            bits: words,
+            _names: PhantomData,
+        }
     }
 
     const fn word_mask(w: usize) -> u64 {
@@ -277,12 +289,18 @@ impl<T: BitFlagNames> BitFlags<T> {
 
     /// `countIntersection(that)`.
     pub fn count_intersection(&self, that: &Self) -> i32 {
-        self.map2(that, |a, b| a & b).iter().map(|w| w.count_ones()).sum::<u32>() as i32
+        self.map2(that, |a, b| a & b)
+            .iter()
+            .map(|w| w.count_ones())
+            .sum::<u32>() as i32
     }
 
     /// `countInverseIntersection(that)`: bits of `that` not set here.
     pub fn count_inverse_intersection(&self, that: &Self) -> i32 {
-        self.map2(that, |a, b| !a & b).iter().map(|w| w.count_ones()).sum::<u32>() as i32
+        self.map2(that, |a, b| !a & b)
+            .iter()
+            .map(|w| w.count_ones())
+            .sum::<u32>() as i32
     }
 
     /// `anyIntersectionWith(that)`.
@@ -328,12 +346,22 @@ impl<T: BitFlagNames> BitFlags<T> {
     /// `stricmp` (ASCII case folding), or -1.
     pub fn get_single_bit_from_name(token: &[u8]) -> i32 {
         let token = c_str(token);
-        T::NAMES.iter().position(|n| n.as_bytes().eq_ignore_ascii_case(token)).map_or(-1, |i| i as i32)
+        T::NAMES
+            .iter()
+            .position(|n| n.as_bytes().eq_ignore_ascii_case(token))
+            .map_or(-1, |i| i as i32)
     }
 
     /// `getBitNameIfSet(i)`: `test(i) ? s_bitNameList[i] : NULL`.
-    pub fn try_get_bit_name_if_set(&self, i: i32) -> Result<Option<&'static str>, BitIndexOutOfRange> {
-        Ok(if self.try_test(i)? { Some(T::NAMES[i as usize]) } else { None })
+    pub fn try_get_bit_name_if_set(
+        &self,
+        i: i32,
+    ) -> Result<Option<&'static str>, BitIndexOutOfRange> {
+        Ok(if self.try_test(i)? {
+            Some(T::NAMES[i as usize])
+        } else {
+            None
+        })
     }
 
     /// `setBitByName(token)`: sets the named bit; false if there is no such

@@ -45,13 +45,17 @@
 use std::sync::Arc;
 
 use crate::common::base_type::Coord3D;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::{DamageInfo, DAMAGE_FLAME, DEATH_BURNED};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::update_module::{UpdateModule, UpdateSleepTime, UPDATE_SLEEP_NONE};
-use crate::logic::modules::dynamic_geometry_info_update::{self as dgiu, DynamicGeometryInfoUpdate, DynamicGeometryInfoUpdateModuleData};
+use crate::logic::modules::dynamic_geometry_info_update::{
+    self as dgiu, DynamicGeometryInfoUpdate, DynamicGeometryInfoUpdateModuleData,
+};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -106,7 +110,12 @@ impl Default for FirestormDynamicGeometryInfoUpdateModuleData {
 }
 
 /// Lifts entry `k` of the base's table onto `FirestormDynamicGeometryInfoUpdateModuleData::geom`.
-fn lift(k: usize, i: &mut Ini<'_>, d: &mut FirestormDynamicGeometryInfoUpdateModuleData, u: &UserData) -> IniResult<()> {
+fn lift(
+    k: usize,
+    i: &mut Ini<'_>,
+    d: &mut FirestormDynamicGeometryInfoUpdateModuleData,
+    u: &UserData,
+) -> IniResult<()> {
     match dgiu::FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.geom, u),
         None => Ok(()),
@@ -117,29 +126,80 @@ fn lift(k: usize, i: &mut Ini<'_>, d: &mut FirestormDynamicGeometryInfoUpdateMod
 static BASE_FIELD_PARSE: [FieldParse<FirestormDynamicGeometryInfoUpdateModuleData>; 10] = [
     FieldParse::new("InitialDelay", |i, d, u| lift(0, i, d, u), UserData::None),
     FieldParse::new("InitialHeight", |i, d, u| lift(1, i, d, u), UserData::None),
-    FieldParse::new("InitialMajorRadius", |i, d, u| lift(2, i, d, u), UserData::None),
-    FieldParse::new("InitialMinorRadius", |i, d, u| lift(3, i, d, u), UserData::None),
+    FieldParse::new(
+        "InitialMajorRadius",
+        |i, d, u| lift(2, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "InitialMinorRadius",
+        |i, d, u| lift(3, i, d, u),
+        UserData::None,
+    ),
     FieldParse::new("FinalHeight", |i, d, u| lift(4, i, d, u), UserData::None),
-    FieldParse::new("FinalMajorRadius", |i, d, u| lift(5, i, d, u), UserData::None),
-    FieldParse::new("FinalMinorRadius", |i, d, u| lift(6, i, d, u), UserData::None),
+    FieldParse::new(
+        "FinalMajorRadius",
+        |i, d, u| lift(5, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "FinalMinorRadius",
+        |i, d, u| lift(6, i, d, u),
+        UserData::None,
+    ),
     FieldParse::new("TransitionTime", |i, d, u| lift(7, i, d, u), UserData::None),
-    FieldParse::new("ReverseAtTransitionTime", |i, d, u| lift(8, i, d, u), UserData::None),
+    FieldParse::new(
+        "ReverseAtTransitionTime",
+        |i, d, u| lift(8, i, d, u),
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 /// `INI::parseParticleSystemTemplate` into `m_particleSystem[k]` (the user data): the next token, `None` for `NULL`.
-fn parse_particle_system(i: &mut Ini<'_>, d: &mut FirestormDynamicGeometryInfoUpdateModuleData, u: &UserData) -> IniResult<()> {
-    let UserData::Mask(k) = u else { return Err(IniError::new(IniErrorKind::InvalidData)) };
+fn parse_particle_system(
+    i: &mut Ini<'_>,
+    d: &mut FirestormDynamicGeometryInfoUpdateModuleData,
+    u: &UserData,
+) -> IniResult<()> {
+    let UserData::Mask(k) = u else {
+        return Err(IniError::new(IniErrorKind::InvalidData));
+    };
     let name = i.get_next_token(None)?;
-    d.particle_systems[*k as usize] = if name.eq_ignore_ascii_case(b"None") { None } else { Some(name) };
+    d.particle_systems[*k as usize] = if name.eq_ignore_ascii_case(b"None") {
+        None
+    } else {
+        Some(name)
+    };
     Ok(())
 }
 
 /// `dataFieldParse`.
 static FIELD_PARSE: [FieldParse<FirestormDynamicGeometryInfoUpdateModuleData>; 23] = [
-    FieldParse::new("DelayBetweenDamageFrames", |i, d, _| { d.delay_between_damage_frames = i.parse_duration_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("DamageAmount", |i, d, _| { d.damage_amount = i.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("MaxHeightForDamage", |i, d, _| { d.max_height_for_damage = i.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "DelayBetweenDamageFrames",
+        |i, d, _| {
+            d.delay_between_damage_frames = i.parse_duration_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DamageAmount",
+        |i, d, _| {
+            d.damage_amount = i.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MaxHeightForDamage",
+        |i, d, _| {
+            d.max_height_for_damage = i.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::new("ParticleSystem1", parse_particle_system, UserData::Mask(0)),
     FieldParse::new("ParticleSystem2", parse_particle_system, UserData::Mask(1)),
     FieldParse::new("ParticleSystem3", parse_particle_system, UserData::Mask(2)),
@@ -150,25 +210,73 @@ static FIELD_PARSE: [FieldParse<FirestormDynamicGeometryInfoUpdateModuleData>; 2
     FieldParse::new("ParticleSystem8", parse_particle_system, UserData::Mask(7)),
     FieldParse::new("ParticleSystem9", parse_particle_system, UserData::Mask(8)),
     FieldParse::new("ParticleSystem10", parse_particle_system, UserData::Mask(9)),
-    FieldParse::new("ParticleSystem11", parse_particle_system, UserData::Mask(10)),
-    FieldParse::new("ParticleSystem12", parse_particle_system, UserData::Mask(11)),
-    FieldParse::new("ParticleSystem13", parse_particle_system, UserData::Mask(12)),
-    FieldParse::new("ParticleSystem14", parse_particle_system, UserData::Mask(13)),
-    FieldParse::new("ParticleSystem15", parse_particle_system, UserData::Mask(14)),
-    FieldParse::new("ParticleSystem16", parse_particle_system, UserData::Mask(15)),
-    FieldParse::new("FXList", |i, d, _| {
-        let name = i.get_next_token(None)?;
-        d.fx_list = if name.eq_ignore_ascii_case(b"None") { None } else { Some(name) };
-        Ok(())
-    }, UserData::None),
-    FieldParse::new("ParticleOffsetZ", |i, d, _| { d.particle_offset_z = i.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("ScorchSize", |i, d, _| { d.scorch_size = i.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "ParticleSystem11",
+        parse_particle_system,
+        UserData::Mask(10),
+    ),
+    FieldParse::new(
+        "ParticleSystem12",
+        parse_particle_system,
+        UserData::Mask(11),
+    ),
+    FieldParse::new(
+        "ParticleSystem13",
+        parse_particle_system,
+        UserData::Mask(12),
+    ),
+    FieldParse::new(
+        "ParticleSystem14",
+        parse_particle_system,
+        UserData::Mask(13),
+    ),
+    FieldParse::new(
+        "ParticleSystem15",
+        parse_particle_system,
+        UserData::Mask(14),
+    ),
+    FieldParse::new(
+        "ParticleSystem16",
+        parse_particle_system,
+        UserData::Mask(15),
+    ),
+    FieldParse::new(
+        "FXList",
+        |i, d, _| {
+            let name = i.get_next_token(None)?;
+            d.fx_list = if name.eq_ignore_ascii_case(b"None") {
+                None
+            } else {
+                Some(name)
+            };
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ParticleOffsetZ",
+        |i, d, _| {
+            d.particle_offset_z = i.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ScorchSize",
+        |i, d, _| {
+            d.scorch_size = i.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl FirestormDynamicGeometryInfoUpdateModuleData {
     /// `buildFieldParse(p)`: the base's, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, FirestormDynamicGeometryInfoUpdateModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, FirestormDynamicGeometryInfoUpdateModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_FIELD_PARSE)?;
         p.add(&FIELD_PARSE)?;
@@ -176,10 +284,15 @@ impl FirestormDynamicGeometryInfoUpdateModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<FirestormDynamicGeometryInfoUpdateModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<FirestormDynamicGeometryInfoUpdateModuleData> {
         let mut data = FirestormDynamicGeometryInfoUpdateModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, FirestormDynamicGeometryInfoUpdateModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                FirestormDynamicGeometryInfoUpdateModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -205,7 +318,9 @@ pub struct FirestormDynamicGeometryInfoUpdate {
 impl PartialEq for FirestormDynamicGeometryInfoUpdate {
     /// The same base, the same data object and the same state.
     fn eq(&self, other: &Self) -> bool {
-        self.geom == other.geom && Arc::ptr_eq(&self.data, &other.data) && self.state_words() == other.state_words()
+        self.geom == other.geom
+            && Arc::ptr_eq(&self.data, &other.data)
+            && self.state_words() == other.state_words()
     }
 }
 
@@ -216,9 +331,13 @@ impl FirestormDynamicGeometryInfoUpdate {
     }
 
     /// The constructor, which touches no world: the base's, then no systems, nothing fired, no damage yet.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<FirestormDynamicGeometryInfoUpdateModuleData>>) -> IniResult<Self> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<FirestormDynamicGeometryInfoUpdateModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
-        let geom = DynamicGeometryInfoUpdate::unconstructed(object, Some(Arc::new(data.geom.clone())))?;
+        let geom =
+            DynamicGeometryInfoUpdate::unconstructed(object, Some(Arc::new(data.geom.clone())))?;
         Ok(FirestormDynamicGeometryInfoUpdate {
             geom,
             data,
@@ -247,7 +366,11 @@ impl FirestormDynamicGeometryInfoUpdate {
     /// This class's state, as words (the test compares it with the base's): the ids, the two flags and the last damage frame.
     pub fn state_words(&self) -> Vec<u32> {
         let mut w = self.my_particle_system_id.to_vec();
-        w.extend([u32::from(self.effects_fired), u32::from(self.scorch_placed), self.last_damage_frame]);
+        w.extend([
+            u32::from(self.effects_fired),
+            u32::from(self.scorch_placed),
+            self.last_damage_frame,
+        ]);
         w
     }
 
@@ -262,7 +385,12 @@ impl FirestormDynamicGeometryInfoUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -289,17 +417,34 @@ impl FirestormDynamicGeometryInfoUpdate {
     /// `doDamageScan()`: "scan objects around us and do damage to objects we have "passed over"".
     fn do_damage_scan(&self, world: &mut World, id: ObjectId) {
         let d = self.data.clone();
-        let Some((pos, bounding_circle)) = world.objects.find(id).map(|o| (o.get_position(), o.geometry_info.get_bounding_circle_radius())) else { return };
+        let Some((pos, bounding_circle)) = world.objects.find(id).map(|o| {
+            (
+                o.get_position(),
+                o.geometry_info.get_bounding_circle_radius(),
+            )
+        }) else {
+            return;
+        };
         // setup a damage info structure to do some damage
         let mut info = DamageInfo::default();
         info.input.damage_type = DAMAGE_FLAME;
-        info.input.death_type = if crate::logic::modules::plant(2027) { 0 } else { DEATH_BURNED };
+        info.input.death_type = if crate::logic::modules::plant(2027) {
+            0
+        } else {
+            DEATH_BURNED
+        };
         info.input.source_id = id;
         info.input.amount = d.damage_amount;
         if bounding_circle != 0.0 {
-            for other in world.partition_iterate_objects_in_range_at(pos, bounding_circle, FROM_BOUNDINGSPHERE_2D) {
+            for other in world.partition_iterate_objects_in_range_at(
+                pos,
+                bounding_circle,
+                FROM_BOUNDINGSPHERE_2D,
+            ) {
                 // it's too high above us. skip it.
-                let Some(z) = world.objects.find(other).map(|o| o.get_position().z) else { continue };
+                let Some(z) = world.objects.find(other).map(|o| o.get_position().z) else {
+                    continue;
+                };
                 if z > pos.z + d.max_height_for_damage && !crate::logic::modules::plant(2026) {
                     continue;
                 }
@@ -321,31 +466,62 @@ impl FirestormDynamicGeometryInfoUpdate {
         // start effects for the first time
         if !self.effects_fired {
             // "construct a position to play the particle effects ... that is on the ground"
-            let obj_pos = world.objects.find(id).map(|o| o.get_position()).unwrap_or_default();
+            let obj_pos = world
+                .objects
+                .find(id)
+                .map(|o| o.get_position())
+                .unwrap_or_default();
             let ground = world.terrain_get_ground_height(obj_pos.x, obj_pos.y);
-            let pos = Coord3D { x: obj_pos.x, y: obj_pos.y, z: if crate::logic::modules::plant(2022) { ground } else { d.particle_offset_z + ground } };
+            let pos = Coord3D {
+                x: obj_pos.x,
+                y: obj_pos.y,
+                z: if crate::logic::modules::plant(2022) {
+                    ground
+                } else {
+                    d.particle_offset_z + ground
+                },
+            };
             for i in 0..MAX_FIRESTORM_SYSTEMS {
                 // `createParticleSystem(NULL)` makes none
                 if let Some(template) = &d.particle_systems[i] {
-                    self.my_particle_system_id[i] = world.create_particle_system(template.clone(), pos);
+                    self.my_particle_system_id[i] =
+                        world.create_particle_system(template.clone(), pos);
                 }
             }
-            if let Some(fx) = d.fx_list.as_ref().filter(|_| !crate::logic::modules::plant(2021)) {
-                world.emit(ObjectClientEvent::FxListDoFxObj { fx: fx.clone(), object_id: id });
+            if let Some(fx) = d
+                .fx_list
+                .as_ref()
+                .filter(|_| !crate::logic::modules::plant(2021))
+            {
+                world.emit(ObjectClientEvent::FxListDoFxObj {
+                    fx: fx.clone(),
+                    object_id: id,
+                });
             }
             self.effects_fired = true;
-            let player = world.get_controlling_player(id).ok_or(Undefined::NullControllingPlayer)?;
+            let player = world
+                .get_controlling_player(id)
+                .ok_or(Undefined::NullControllingPlayer)?;
             if let Some(p) = world.players.get_nth_mut(player) {
                 p.academy_stats.record_firestorm_created();
             }
         }
         // "Parent goes first, and we use part of what he did to alter our bound particle system"
-        let radius = world.objects.find(id).map_or(0.0, |o| if crate::logic::modules::plant(2029) { o.geometry_info.get_minor_radius() } else { o.geometry_info.get_major_radius() });
+        let radius = world.objects.find(id).map_or(0.0, |o| {
+            if crate::logic::modules::plant(2029) {
+                o.geometry_info.get_minor_radius()
+            } else {
+                o.geometry_info.get_major_radius()
+            }
+        });
         for i in 0..MAX_FIRESTORM_SYSTEMS {
             let sys = self.my_particle_system_id[i];
             if sys != INVALID_PARTICLE_SYSTEM_ID {
                 if world.body_particle_exists(sys) || crate::logic::modules::plant(2023) {
-                    world.emit(ObjectClientEvent::ParticleSystemSetEmissionRadius { id: sys, radius });
+                    world.emit(ObjectClientEvent::ParticleSystemSetEmissionRadius {
+                        id: sys,
+                        radius,
+                    });
                 } else {
                     // "this system not found (it probably died)... stop trying to find it in the future"
                     self.my_particle_system_id[i] = INVALID_PARTICLE_SYSTEM_ID;
@@ -353,14 +529,27 @@ impl FirestormDynamicGeometryInfoUpdate {
             }
         }
         // when we first start running backward ... make a scorch mark
-        if self.geom.switched_directions() && (!self.scorch_placed || crate::logic::modules::plant(2024)) {
-            let position = world.objects.find(id).map(|o| o.get_position()).unwrap_or_default();
-            world.emit(ObjectClientEvent::GameClientAddScorch { position, radius: d.scorch_size, scorch_type: SCORCH_1 });
+        if self.geom.switched_directions()
+            && (!self.scorch_placed || crate::logic::modules::plant(2024))
+        {
+            let position = world
+                .objects
+                .find(id)
+                .map(|o| o.get_position())
+                .unwrap_or_default();
+            world.emit(ObjectClientEvent::GameClientAddScorch {
+                position,
+                radius: d.scorch_size,
+                scorch_type: SCORCH_1,
+            });
             self.scorch_placed = true;
         }
         // scan and do some damage every once in a while
         let now = world.frame();
-        if now.wrapping_sub(self.last_damage_frame) as f32 > d.delay_between_damage_frames || (!crate::logic::modules::plant(2025) && now.wrapping_sub(self.last_damage_frame) as f32 == d.delay_between_damage_frames) {
+        if now.wrapping_sub(self.last_damage_frame) as f32 > d.delay_between_damage_frames
+            || (!crate::logic::modules::plant(2025)
+                && now.wrapping_sub(self.last_damage_frame) as f32 == d.delay_between_damage_frames)
+        {
             self.do_damage_scan(world, id);
             self.last_damage_frame = world.frame();
         }
@@ -384,7 +573,11 @@ impl UpdateBehavior for FirestormDynamicGeometryInfoUpdate {
     fn construct(&mut self, _world: &mut World, _me: ModuleHandle) {}
     /// This class's fields, after the base's `xfer`: the ids (`xferUser` of the array), the two flags, the last damage frame.
     fn xfer_fields(&mut self, xfer: &mut dyn Xfer, _version: XferVersion) -> XferResult<()> {
-        let mut b: Vec<u8> = self.my_particle_system_id.iter().flat_map(|x| x.to_le_bytes()).collect();
+        let mut b: Vec<u8> = self
+            .my_particle_system_id
+            .iter()
+            .flat_map(|x| x.to_le_bytes())
+            .collect();
         xfer.xfer_user(&mut b)?;
         for (k, c) in b.chunks(4).enumerate() {
             self.my_particle_system_id[k] = u32::from_le_bytes(c.try_into().expect("four bytes"));
@@ -426,7 +619,9 @@ impl Snapshot for FirestormDynamicGeometryInfoUpdate {
 
 /// The factory's `NewModuleDataProc` for `FirestormDynamicGeometryInfoUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::FirestormDynamicGeometryInfoUpdate(Arc::new(FirestormDynamicGeometryInfoUpdateModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::FirestormDynamicGeometryInfoUpdate(
+        Arc::new(FirestormDynamicGeometryInfoUpdateModuleData::friend_new_module_data(ini)?),
+    ))
 }
 
 #[cfg(test)]
@@ -436,9 +631,21 @@ mod tests {
     #[test]
     fn the_defaults_are_the_constructors() {
         let d = FirestormDynamicGeometryInfoUpdateModuleData::default();
-        assert_eq!((d.max_height_for_damage, d.delay_between_damage_frames, d.fx_list.is_none()), (20.0, 0.0, true));
+        assert_eq!(
+            (
+                d.max_height_for_damage,
+                d.delay_between_damage_frames,
+                d.fx_list.is_none()
+            ),
+            (20.0, 0.0, true)
+        );
         let m = FirestormDynamicGeometryInfoUpdate::unconstructed(3, Some(Arc::new(d))).unwrap();
         assert!(m.state_words().iter().all(|&w| w == 0));
-        assert_eq!(FirestormDynamicGeometryInfoUpdate::unconstructed(3, None).unwrap_err().kind, IniErrorKind::InvalidData);
+        assert_eq!(
+            FirestormDynamicGeometryInfoUpdate::unconstructed(3, None)
+                .unwrap_err()
+                .kind,
+            IniErrorKind::InvalidData
+        );
     }
 }

@@ -34,7 +34,8 @@ use crate::common::module::ObjectId;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::{DamageInfo, DAMAGE_SUBDUAL_UNRESISTABLE};
 use crate::logic::module::update_module::{
-    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE,
+    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER,
+    UPDATE_SLEEP_NONE,
 };
 use crate::logic::modules::object_helper::ObjectHelper;
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
@@ -55,17 +56,28 @@ pub struct SubdualDamageHelper {
 impl PartialEq for SubdualDamageHelper {
     /// The same object and the same countdown.
     fn eq(&self, other: &Self) -> bool {
-        self.helper.update_module().behavior().object() == other.helper.update_module().behavior().object() && self.healing_step_countdown == other.healing_step_countdown
+        self.helper.update_module().behavior().object()
+            == other.helper.update_module().behavior().object()
+            && self.healing_step_countdown == other.healing_step_countdown
     }
 }
 
 impl SubdualDamageHelper {
     /// The first half of the constructor, which touches no world: the `ObjectHelper`, a countdown of zero.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<UpdateModuleData>>) -> IniResult<Self> {
-        let mut helper = ObjectHelper::unconstructed(object, module_data, SleepyUpdatePhase::Normal)?;
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<UpdateModuleData>>,
+    ) -> IniResult<Self> {
+        let mut helper =
+            ObjectHelper::unconstructed(object, module_data, SleepyUpdatePhase::Normal)?;
         // `getDisabledTypesToProcess()` is `DISABLEDMASK_ALL`; the scheduler reads the arena's base
-        helper.update_module_mut().set_disabled_types_to_process(disabledmask_all());
-        Ok(SubdualDamageHelper { helper, healing_step_countdown: 0 })
+        helper
+            .update_module_mut()
+            .set_disabled_types_to_process(disabledmask_all());
+        Ok(SubdualDamageHelper {
+            helper,
+            healing_step_countdown: 0,
+        })
     }
 
     /// The `ObjectHelper` base.
@@ -89,7 +101,12 @@ impl SubdualDamageHelper {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -114,7 +131,9 @@ impl SubdualDamageHelper {
 
     /// `getObject()->getBodyModule()`, or the error of dereferencing `NULL`.
     fn body(world: &World, me: ModuleHandle) -> Result<u16, IniError> {
-        world.get_body_module(me.object).ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))
+        world
+            .get_body_module(me.object)
+            .ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))
     }
 
     /// `body->getSubdualDamageHealRate()`.
@@ -126,7 +145,12 @@ impl SubdualDamageHelper {
     }
 
     /// `notifySubdualDamage(amount)`: "if there is damage to heal, start counting down".
-    pub fn notify_subdual_damage(&mut self, world: &mut World, me: ModuleHandle, amount: f32) -> Result<(), IniError> {
+    pub fn notify_subdual_damage(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        amount: f32,
+    ) -> Result<(), IniError> {
         if amount > 0.0 {
             let body = Self::body(world, me)?;
             self.healing_step_countdown = Self::heal_rate(world, me, body);
@@ -138,7 +162,11 @@ impl SubdualDamageHelper {
     }
 
     /// `update()` after the host call plumbing: an error is the `NULL` dereference of a missing body.
-    fn update_checked(&mut self, world: &mut World, me: ModuleHandle) -> Result<UpdateSleepTime, IniError> {
+    fn update_checked(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+    ) -> Result<UpdateSleepTime, IniError> {
         let body = Self::body(world, me)?;
         self.healing_step_countdown = self.healing_step_countdown.wrapping_sub(1);
         if self.healing_step_countdown > 0 && !crate::logic::modules::plant(781) {
@@ -147,14 +175,29 @@ impl SubdualDamageHelper {
         self.healing_step_countdown = Self::heal_rate(world, me, body);
         let mut remove_subdue_damage = DamageInfo::default();
         remove_subdue_damage.input.damage_type = DAMAGE_SUBDUAL_UNRESISTABLE;
-        let amount = match world.module_call(me.object, body, ModuleCall::GetSubdualDamageHealAmount) {
-            ModuleReply::Real(a) => a,
-            _ => 0.0,
+        let amount =
+            match world.module_call(me.object, body, ModuleCall::GetSubdualDamageHealAmount) {
+                ModuleReply::Real(a) => a,
+                _ => 0.0,
+            };
+        remove_subdue_damage.input.amount = if crate::logic::modules::plant(782) {
+            amount
+        } else {
+            -amount
         };
-        remove_subdue_damage.input.amount = if crate::logic::modules::plant(782) { amount } else { -amount };
-        world.module_call(me.object, body, ModuleCall::AttemptDamage(remove_subdue_damage));
-        let any = world.module_call(me.object, body, ModuleCall::HasAnySubdualDamage).as_bool();
-        Ok(if any || crate::logic::modules::plant(784) { UPDATE_SLEEP_NONE } else { UPDATE_SLEEP_FOREVER })
+        world.module_call(
+            me.object,
+            body,
+            ModuleCall::AttemptDamage(remove_subdue_damage),
+        );
+        let any = world
+            .module_call(me.object, body, ModuleCall::HasAnySubdualDamage)
+            .as_bool();
+        Ok(if any || crate::logic::modules::plant(784) {
+            UPDATE_SLEEP_NONE
+        } else {
+            UPDATE_SLEEP_FOREVER
+        })
     }
 
     /// The fields after the base.

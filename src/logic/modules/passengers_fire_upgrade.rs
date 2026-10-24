@@ -29,9 +29,9 @@ use crate::logic::module::upgrade_module::{UpgradeModule, UpgradeModuleData};
 use crate::logic::modules::upgrade_body::{upgrade_module_call, UpgradeBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
+use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::update_body::UpdateBody;
 use crate::upgrade_module_data_field_parse;
-use crate::logic::world::object_cuts::CutCall;
 
 /// `class PassengersFireUpgradeModuleData : public UpgradeModuleData`.
 #[derive(Debug)]
@@ -50,21 +50,29 @@ impl Default for PassengersFireUpgradeModuleData {
 }
 
 /// `UpgradeModuleData::buildFieldParse`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<PassengersFireUpgradeModuleData>; 6] = upgrade_module_data_field_parse!(PassengersFireUpgradeModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<PassengersFireUpgradeModuleData>; 6] =
+    upgrade_module_data_field_parse!(PassengersFireUpgradeModuleData, upgrade);
 
 impl PassengersFireUpgradeModuleData {
     /// `buildFieldParse(p)`: `BehaviorModuleData`'s, then `UpgradeModuleData`'s, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, PassengersFireUpgradeModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, PassengersFireUpgradeModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<PassengersFireUpgradeModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<PassengersFireUpgradeModuleData> {
         let mut data = PassengersFireUpgradeModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, PassengersFireUpgradeModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                PassengersFireUpgradeModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -82,14 +90,19 @@ pub struct PassengersFireUpgrade {
 impl PartialEq for PassengersFireUpgrade {
     /// The same data object and the same `m_upgradeExecuted` (upstream compares the data pointer).
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.data, &other.data) && self.base.is_already_upgraded() == other.base.is_already_upgraded()
+        Arc::ptr_eq(&self.data, &other.data)
+            && self.base.is_already_upgraded() == other.base.is_already_upgraded()
     }
 }
 
 impl PassengersFireUpgrade {
     /// `PassengersFireUpgrade(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(object: ObjectId, data: Option<Arc<PassengersFireUpgradeModuleData>>) -> IniResult<PassengersFireUpgrade> {
-        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<PassengersFireUpgradeModuleData>>,
+    ) -> IniResult<PassengersFireUpgrade> {
+        let data =
+            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let base = UpgradeModule::new(object, Some(data.upgrade.clone()))?;
         Ok(PassengersFireUpgrade { base, data })
     }
@@ -105,7 +118,12 @@ impl PassengersFireUpgrade {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         upgrade_module_call(self, world, me, call)
     }
 }
@@ -117,8 +135,14 @@ impl UpgradeBehavior for PassengersFireUpgrade {
     fn base_mut(&mut self) -> &mut UpgradeModule {
         &mut self.base
     }
-    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
-        if (world.get_contain(me.object).is_some() || crate::logic::modules::plant(609)) && !crate::logic::modules::plant(610) {
+    fn upgrade_implementation(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+    ) -> Result<(), IniError> {
+        if (world.get_contain(me.object).is_some() || crate::logic::modules::plant(609))
+            && !crate::logic::modules::plant(610)
+        {
             world.cut(CutCall::ContainSetPassengerAllowedToFire { object: me.object });
         }
         Ok(())
@@ -159,5 +183,7 @@ impl Snapshot for PassengersFireUpgrade {
 
 /// The factory's `NewModuleDataProc` for `PassengersFireUpgrade`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::PassengersFireUpgrade(Arc::new(PassengersFireUpgradeModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::PassengersFireUpgrade(Arc::new(
+        PassengersFireUpgradeModuleData::friend_new_module_data(ini)?,
+    )))
 }

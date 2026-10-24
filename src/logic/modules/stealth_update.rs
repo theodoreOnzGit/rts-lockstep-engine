@@ -48,28 +48,34 @@ use std::sync::Arc;
 use crate::common::base_type::PI;
 use crate::common::disabled_types::DISABLED_HELD;
 use crate::common::game_common::Relationship;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::game_type::INVALID_ID;
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::kind_of::{KINDOF_FS_BLACK_MARKET, KINDOF_MINE, KINDOF_SPAWNS_ARE_THE_WEAPONS};
 use crate::common::model_state::MODELCONDITION_DISGUISED;
-use crate::common::game_type::INVALID_ID;
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::object_status_types::{
-    ObjectStatusMaskType, ObjectStatusTypes, OBJECT_STATUS_CAN_STEALTH, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_IS_FIRING_WEAPON,
-    OBJECT_STATUS_IS_USING_ABILITY, OBJECT_STATUS_SOLD, OBJECT_STATUS_STEALTHED, OBJECT_STATUS_UNDER_CONSTRUCTION,
+    ObjectStatusMaskType, ObjectStatusTypes, OBJECT_STATUS_CAN_STEALTH, OBJECT_STATUS_DETECTED,
+    OBJECT_STATUS_DISGUISED, OBJECT_STATUS_IS_FIRING_WEAPON, OBJECT_STATUS_IS_USING_ABILITY,
+    OBJECT_STATUS_SOLD, OBJECT_STATUS_STEALTHED, OBJECT_STATUS_UNDER_CONSTRUCTION,
 };
 use crate::common::thing_template::{ThingTemplate, ThingTemplateAudioType};
 use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferStatus, XferVersion};
 use crate::logic::damage::DAMAGE_HEALING;
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
+use crate::logic::module::update_module::{
+    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER,
+    UPDATE_SLEEP_NONE,
+};
 use crate::logic::modules::crate_collide::CrateCollideModuleData;
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::object_script_status_bits::OBJECT_STATUS_SCRIPT_UNSTEALTHED;
 use crate::logic::world::game_logic::World;
-use crate::logic::world::statics::GameStatics;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::object_events::{ObjectClientEvent, StealthClientOp};
 use crate::logic::world::sleepy::UpdateHandle;
+use crate::logic::world::statics::GameStatics;
 use crate::logic::world::update_body::UpdateBody;
 
 /// `STEALTH_NOT_WHILE_ATTACKING`.
@@ -89,13 +95,24 @@ pub const STEALTH_ONLY_WITH_BLACK_MARKET: u32 = 0x0000_0040;
 /// `STEALTH_NOT_WHILE_TAKING_DAMAGE`.
 pub const STEALTH_NOT_WHILE_TAKING_DAMAGE: u32 = 0x0000_0080;
 /// `STEALTH_NOT_WHILE_FIRING_WEAPON`: the three firing flags.
-pub const STEALTH_NOT_WHILE_FIRING_WEAPON: u32 = STEALTH_NOT_WHILE_FIRING_PRIMARY | STEALTH_NOT_WHILE_FIRING_SECONDARY | STEALTH_NOT_WHILE_FIRING_TERTIARY;
+pub const STEALTH_NOT_WHILE_FIRING_WEAPON: u32 = STEALTH_NOT_WHILE_FIRING_PRIMARY
+    | STEALTH_NOT_WHILE_FIRING_SECONDARY
+    | STEALTH_NOT_WHILE_FIRING_TERTIARY;
 /// `STEALTH_NOT_WHILE_RIDERS_ATTACKING`.
 pub const STEALTH_NOT_WHILE_RIDERS_ATTACKING: u32 = 0x0000_0100;
 
 /// `TheStealthLevelNames` (`StealthForbiddenConditions`).
-pub const STEALTH_LEVEL_NAMES: [&str; 9] =
-    ["ATTACKING", "MOVING", "USING_ABILITY", "FIRING_PRIMARY", "FIRING_SECONDARY", "FIRING_TERTIARY", "NO_BLACK_MARKET", "TAKING_DAMAGE", "RIDERS_ATTACKING"];
+pub const STEALTH_LEVEL_NAMES: [&str; 9] = [
+    "ATTACKING",
+    "MOVING",
+    "USING_ABILITY",
+    "FIRING_PRIMARY",
+    "FIRING_SECONDARY",
+    "FIRING_TERTIARY",
+    "NO_BLACK_MARKET",
+    "TAKING_DAMAGE",
+    "RIDERS_ATTACKING",
+];
 
 /// `TheEvaMessageNames` without the trailing `EVA_INVALID` (`Eva::nameToMessage` searches `EVA_FIRST` to `EVA_COUNT - 1`).
 pub const EVA_MESSAGE_NAMES: [&str; 53] = [
@@ -178,7 +195,11 @@ const CMD_FROM_PLAYER: i32 = 0;
 /// `FOREVER` (`GameCommon.h`).
 const FOREVER: u32 = 0x3fff_ffff;
 /// `PRIMARY_WEAPON`, `SECONDARY_WEAPON`, `TERTIARY_WEAPON`.
-const WEAPON_SLOTS: [(u32, i32); 3] = [(STEALTH_NOT_WHILE_FIRING_PRIMARY, 0), (STEALTH_NOT_WHILE_FIRING_SECONDARY, 1), (STEALTH_NOT_WHILE_FIRING_TERTIARY, 2)];
+const WEAPON_SLOTS: [(u32, i32); 3] = [
+    (STEALTH_NOT_WHILE_FIRING_PRIMARY, 0),
+    (STEALTH_NOT_WHILE_FIRING_SECONDARY, 1),
+    (STEALTH_NOT_WHILE_FIRING_TERTIARY, 2),
+];
 
 fn status_mask(bits: &[ObjectStatusTypes]) -> ObjectStatusMaskType {
     let mut m = ObjectStatusMaskType::default();
@@ -191,7 +212,10 @@ fn status_mask(bits: &[ObjectStatusTypes]) -> ObjectStatusMaskType {
 /// `Eva::parseEvaMessageFromIni`: a name of `TheEvaMessageNames` (any case), `ERROR_BAD_INI` for any other.
 pub fn parse_eva_message(ini: &mut Ini<'_>) -> IniResult<i32> {
     let token = ini.get_next_token(None)?;
-    match EVA_MESSAGE_NAMES.iter().position(|n| n.as_bytes().eq_ignore_ascii_case(&token)) {
+    match EVA_MESSAGE_NAMES
+        .iter()
+        .position(|n| n.as_bytes().eq_ignore_ascii_case(&token))
+    {
         Some(i) => Ok(i as i32),
         None => Err(IniError::new(IniErrorKind::InvalidData)),
     }
@@ -281,34 +305,178 @@ impl Default for StealthUpdateModuleData {
 
 /// `StealthUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<StealthUpdateModuleData>; 23] = [
-    FieldParse::new("StealthDelay", |ini, d, _| { d.stealth_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("MoveThresholdSpeed", |ini, d, _| { d.stealth_speed = ini.parse_velocity_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("StealthForbiddenConditions", |ini, d, _| ini.parse_bit_string32(&mut d.stealth_level, &STEALTH_LEVEL_NAMES), UserData::None),
-    FieldParse::new("HintDetectableConditions", |ini, d, _| d.hint_detectable_states.parse_from_ini(ini), UserData::None),
-    FieldParse::new("RequiredStatus", |ini, d, _| d.required_status.parse_from_ini(ini), UserData::None),
-    FieldParse::new("ForbiddenStatus", |ini, d, _| d.forbidden_status.parse_from_ini(ini), UserData::None),
-    FieldParse::new("FriendlyOpacityMin", |ini, d, _| { d.friendly_opacity_min = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("FriendlyOpacityMax", |ini, d, _| { d.friendly_opacity_max = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("PulseFrequency", |ini, d, _| { d.pulse_frames = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("DisguisesAsTeam", |ini, d, _| { d.team_disguised = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("RevealDistanceFromTarget", |ini, d, _| { d.reveal_distance_from_target = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("OrderIdleEnemiesToAttackMeUponReveal", |ini, d, _| { d.order_idle_enemies_to_attack_me_upon_reveal = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("DisguiseFX", |ini, d, _| { d.disguise_fx = CrateCollideModuleData::parse_fx_list(ini)?; Ok(()) }, UserData::None),
-    FieldParse::new("DisguiseRevealFX", |ini, d, _| { d.disguise_reveal_fx = CrateCollideModuleData::parse_fx_list(ini)?; Ok(()) }, UserData::None),
-    FieldParse::new("DisguiseTransitionTime", |ini, d, _| { d.disguise_transition_frames = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("DisguiseRevealTransitionTime", |ini, d, _| { d.disguise_reveal_transition_frames = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("InnateStealth", |ini, d, _| { d.innate_stealth = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("UseRiderStealth", |ini, d, _| { d.use_rider_stealth = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("EnemyDetectionEvaEvent", |ini, d, _| { d.enemy_detection_eva_event = parse_eva_message(ini)?; Ok(()) }, UserData::None),
-    FieldParse::new("OwnDetectionEvaEvent", |ini, d, _| { d.own_detection_eva_event = parse_eva_message(ini)?; Ok(()) }, UserData::None),
-    FieldParse::new("BlackMarketCheckDelay", |ini, d, _| { d.black_market_check_frames = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("GrantedBySpecialPower", |ini, d, _| { d.granted_by_special_power = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "StealthDelay",
+        |ini, d, _| {
+            d.stealth_delay = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MoveThresholdSpeed",
+        |ini, d, _| {
+            d.stealth_speed = ini.parse_velocity_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "StealthForbiddenConditions",
+        |ini, d, _| ini.parse_bit_string32(&mut d.stealth_level, &STEALTH_LEVEL_NAMES),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "HintDetectableConditions",
+        |ini, d, _| d.hint_detectable_states.parse_from_ini(ini),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RequiredStatus",
+        |ini, d, _| d.required_status.parse_from_ini(ini),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ForbiddenStatus",
+        |ini, d, _| d.forbidden_status.parse_from_ini(ini),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "FriendlyOpacityMin",
+        |ini, d, _| {
+            d.friendly_opacity_min = ini.parse_percent_to_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "FriendlyOpacityMax",
+        |ini, d, _| {
+            d.friendly_opacity_max = ini.parse_percent_to_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "PulseFrequency",
+        |ini, d, _| {
+            d.pulse_frames = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DisguisesAsTeam",
+        |ini, d, _| {
+            d.team_disguised = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RevealDistanceFromTarget",
+        |ini, d, _| {
+            d.reveal_distance_from_target = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "OrderIdleEnemiesToAttackMeUponReveal",
+        |ini, d, _| {
+            d.order_idle_enemies_to_attack_me_upon_reveal = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DisguiseFX",
+        |ini, d, _| {
+            d.disguise_fx = CrateCollideModuleData::parse_fx_list(ini)?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DisguiseRevealFX",
+        |ini, d, _| {
+            d.disguise_reveal_fx = CrateCollideModuleData::parse_fx_list(ini)?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DisguiseTransitionTime",
+        |ini, d, _| {
+            d.disguise_transition_frames = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DisguiseRevealTransitionTime",
+        |ini, d, _| {
+            d.disguise_reveal_transition_frames = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "InnateStealth",
+        |ini, d, _| {
+            d.innate_stealth = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "UseRiderStealth",
+        |ini, d, _| {
+            d.use_rider_stealth = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "EnemyDetectionEvaEvent",
+        |ini, d, _| {
+            d.enemy_detection_eva_event = parse_eva_message(ini)?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "OwnDetectionEvaEvent",
+        |ini, d, _| {
+            d.own_detection_eva_event = parse_eva_message(ini)?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "BlackMarketCheckDelay",
+        |ini, d, _| {
+            d.black_market_check_frames = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "GrantedBySpecialPower",
+        |ini, d, _| {
+            d.granted_by_special_power = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl StealthUpdateModuleData {
     /// `buildFieldParse(p)`: `ModuleData`'s (no fields of its own besides the behaviour base's), then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, StealthUpdateModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, StealthUpdateModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
@@ -376,7 +544,10 @@ impl PartialEq for StealthUpdate {
 /// `obj->getStealth()`, read from the object's slot (`None`: no stealth update, or its body is out).
 pub fn stealth_update_of(world: &World, obj: ObjectId) -> Option<&StealthUpdate> {
     let idx = world.objects.find(obj)?.stealth?;
-    match world.peek_module_body(ModuleHandle { object: obj, index: idx })? {
+    match world.peek_module_body(ModuleHandle {
+        object: obj,
+        index: idx,
+    })? {
         UpdateBody::StealthUpdate(s) => Some(s),
         _ => None,
     }
@@ -390,7 +561,10 @@ impl StealthUpdate {
 
     /// The first half of the constructor, which touches no world: the base (processing `DISABLED_HELD` too), the data (`INI_INVALID_DATA` for
     /// null data) and the fields the constructor sets without the world.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<StealthUpdateModuleData>>) -> IniResult<Self> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<StealthUpdateModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let mut update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
@@ -451,7 +625,9 @@ impl StealthUpdate {
 
     /// The disguise template's name (empty for none).
     pub fn disguise_template_name(&self) -> Vec<u8> {
-        self.disguise_as_template.as_ref().map_or(Vec::new(), |t| t.get_name().to_vec())
+        self.disguise_as_template
+            .as_ref()
+            .map_or(Vec::new(), |t| t.get_name().to_vec())
     }
 
     /// `isDisguised()`.
@@ -520,7 +696,12 @@ impl StealthUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -561,12 +742,29 @@ impl StealthUpdate {
 
     /// `TheAudio->addAudioEvent(&sound)` for a copy of one of the template's sounds, with `setObjectID(self)`.
     fn template_sound(world: &mut World, id: ObjectId, sound: ThingTemplateAudioType) {
-        let Some(name) = world.objects.find(id).map(|o| o.template().get_audio(sound).event_name.clone()) else { return };
-        world.emit(ObjectClientEvent::AudioAddEvent { name, object_id: id, position: None, player_index: None });
+        let Some(name) = world
+            .objects
+            .find(id)
+            .map(|o| o.template().get_audio(sound).event_name.clone())
+        else {
+            return;
+        };
+        world.emit(ObjectClientEvent::AudioAddEvent {
+            name,
+            object_id: id,
+            position: None,
+            player_index: None,
+        });
     }
 
     /// `receiveGrant(active, frames)`: stealth on (now) or off, passed on to a rider change container's rider.
-    pub fn receive_grant(&mut self, world: &mut World, me: ModuleHandle, active: bool, frames: u32) {
+    pub fn receive_grant(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        active: bool,
+        frames: u32,
+    ) {
         let id = me.object;
         if world.objects.find(id).is_none() {
             return;
@@ -588,21 +786,40 @@ impl StealthUpdate {
             self.stealth_allowed_frame = FOREVER;
             self.frames_granted = 0;
             if world.has_drawable(id) {
-                Self::emit(world, id, StealthClientOp::EffectiveOpacity { opacity: 1.0, explicit: -1.0 });
+                Self::emit(
+                    world,
+                    id,
+                    StealthClientOp::EffectiveOpacity {
+                        opacity: 1.0,
+                        explicit: -1.0,
+                    },
+                );
             }
         }
         if let Some(contain) = world.get_contain(id) {
-            if world.module_call(id, contain, ModuleCall::IsRiderChangeContain).as_bool() {
+            if world
+                .module_call(id, contain, ModuleCall::IsRiderChangeContain)
+                .as_bool()
+            {
                 let rider = world.module_call(id, contain, ModuleCall::GetRider).as_id();
                 if let Some(stealth) = world.objects.find(rider).and_then(|o| o.stealth) {
-                    world.module_call(rider, stealth, ModuleCall::StealthReceiveGrant { active, frames });
+                    world.module_call(
+                        rider,
+                        stealth,
+                        ModuleCall::StealthReceiveGrant { active, frames },
+                    );
                 }
             }
         }
     }
 
     /// `allowedToStealth(stealthOwner)`.
-    fn allowed_to_stealth(&mut self, world: &mut World, me: ModuleHandle, stealth_owner: ObjectId) -> bool {
+    fn allowed_to_stealth(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        stealth_owner: ObjectId,
+    ) -> bool {
         let id = me.object;
         let now = world.frame();
         let mut flags = self.data.stealth_level;
@@ -612,40 +829,58 @@ impl StealthUpdate {
                 flags = s.get_stealth_level();
             }
         }
-        let Some(o) = world.objects.find(id) else { return false };
+        let Some(o) = world.objects.find(id) else {
+            return false;
+        };
         if o.is_kind_of(KINDOF_SPAWNS_ARE_THE_WEAPONS) {
             if let Some(sb) = world.get_spawn_behavior_interface(id) {
-                if !world.module_call(id, sb, ModuleCall::SpawnAreAllSlavesStealthed).as_bool() {
+                if !world
+                    .module_call(id, sb, ModuleCall::SpawnAreAllSlavesStealthed)
+                    .as_bool()
+                {
                     world.module_call(id, sb, ModuleCall::SpawnRevealSlaves);
                     return false;
                 }
             }
         }
         let status = |w: &World| w.objects.find(id).map(|o| o.status).unwrap_or_default();
-        if flags & STEALTH_NOT_WHILE_ATTACKING != 0 && status(world).test(OBJECT_STATUS_IS_FIRING_WEAPON) {
+        if flags & STEALTH_NOT_WHILE_ATTACKING != 0
+            && status(world).test(OBJECT_STATUS_IS_FIRING_WEAPON)
+        {
             return false;
         }
-        if flags & STEALTH_NOT_WHILE_USING_ABILITY != 0 && status(world).test(OBJECT_STATUS_IS_USING_ABILITY) {
+        if flags & STEALTH_NOT_WHILE_USING_ABILITY != 0
+            && status(world).test(OBJECT_STATUS_IS_USING_ABILITY)
+        {
             return false;
         }
         if flags & STEALTH_ONLY_WITH_BLACK_MARKET != 0 && self.next_black_market_check_frame < now {
             // randomize timer a little incase we have a whole bunch on the same frame.
             let r = world.random.game_logic_random_value(0, 10) as u32;
-            self.next_black_market_check_frame = self.next_black_market_check_frame.wrapping_add(self.data.black_market_check_frames.wrapping_add(r));
+            self.next_black_market_check_frame = self
+                .next_black_market_check_frame
+                .wrapping_add(self.data.black_market_check_frames.wrapping_add(r));
             let Some(player) = world.get_controlling_player(id) else {
                 Self::undefined(world, me, Undefined::NullControllingPlayer);
                 return false;
             };
             let black_market = world.player_iterate_objects(player).into_iter().any(|o| {
                 world.objects.find(o).is_some_and(|o| {
-                    o.is_kind_of(KINDOF_FS_BLACK_MARKET) && !o.is_effectively_dead() && !o.test_status(OBJECT_STATUS_UNDER_CONSTRUCTION) && !o.test_status(OBJECT_STATUS_SOLD)
+                    o.is_kind_of(KINDOF_FS_BLACK_MARKET)
+                        && !o.is_effectively_dead()
+                        && !o.test_status(OBJECT_STATUS_UNDER_CONSTRUCTION)
+                        && !o.test_status(OBJECT_STATUS_SOLD)
                 })
             });
             if !black_market {
                 return false;
             }
         }
-        if !world.objects.find(stealth_owner).is_some_and(|o| o.test_status(OBJECT_STATUS_CAN_STEALTH)) {
+        if !world
+            .objects
+            .find(stealth_owner)
+            .is_some_and(|o| o.test_status(OBJECT_STATUS_CAN_STEALTH))
+        {
             return false;
         }
         if flags & STEALTH_NOT_WHILE_TAKING_DAMAGE != 0 {
@@ -653,10 +888,11 @@ impl StealthUpdate {
                 Self::undefined(world, me, Undefined::NullBodyModule);
                 return false;
             };
-            let stamp = |w: &mut World| match w.module_call(id, body, ModuleCall::GetLastDamageTimestamp) {
-                ModuleReply::Int(t) => t as u32,
-                _ => 0,
-            };
+            let stamp =
+                |w: &mut World| match w.module_call(id, body, ModuleCall::GetLastDamageTimestamp) {
+                    ModuleReply::Int(t) => t as u32,
+                    _ => 0,
+                };
             if stamp(world) >= now.wrapping_sub(1) {
                 // Only if it's not healing damage.
                 let damage_type = match world.module_call(id, body, ModuleCall::GetLastDamageInfo) {
@@ -686,15 +922,25 @@ impl StealthUpdate {
             let last_frame = now.wrapping_sub(1);
             let o = world.objects.find(id).expect("checked above");
             for (flag, slot) in WEAPON_SLOTS {
-                if flags & flag != 0 && o.weapon_set.get_weapon_in_weapon_slot(slot).is_some_and(|w| w.last_shot_frame() >= last_frame) {
+                if flags & flag != 0
+                    && o.weapon_set
+                        .get_weapon_in_weapon_slot(slot)
+                        .is_some_and(|w| w.last_shot_frame() >= last_frame)
+                {
                     return false;
                 }
             }
         }
-        let contained_by = world.objects.find(id).map_or(INVALID_ID, |o| o.contained_by);
+        let contained_by = world
+            .objects
+            .find(id)
+            .map_or(INVALID_ID, |o| o.contained_by);
         if world.objects.find(contained_by).is_some() {
             if let Some(contain) = world.get_contain(contained_by) {
-                if !world.module_call(contained_by, contain, ModuleCall::IsGarrisonable).as_bool() {
+                if !world
+                    .module_call(contained_by, contain, ModuleCall::IsGarrisonable)
+                    .as_bool()
+                {
                     return false;
                 }
             }
@@ -702,8 +948,16 @@ impl StealthUpdate {
         // new past-alpha feature, grr...
         if flags & STEALTH_NOT_WHILE_RIDERS_ATTACKING != 0 {
             if let Some(contain) = world.get_contain(id) {
-                if world.module_call(id, contain, ModuleCall::IsPassengerAllowedToFire(INVALID_ID)).as_bool()
-                    && world.module_call(id, contain, ModuleCall::IsAnyRiderAttacking).as_bool()
+                if world
+                    .module_call(
+                        id,
+                        contain,
+                        ModuleCall::IsPassengerAllowedToFire(INVALID_ID),
+                    )
+                    .as_bool()
+                    && world
+                        .module_call(id, contain, ModuleCall::IsAnyRiderAttacking)
+                        .as_bool()
                 {
                     return false;
                 }
@@ -711,12 +965,20 @@ impl StealthUpdate {
         }
         if flags & STEALTH_NOT_WHILE_MOVING != 0 {
             if let Some(physics) = world.objects.find(id).and_then(|o| o.physics) {
-                if world.module_call(id, physics, ModuleCall::PhysicsGetVelocityMagnitude).as_real(0.0) > self.data.stealth_speed {
+                if world
+                    .module_call(id, physics, ModuleCall::PhysicsGetVelocityMagnitude)
+                    .as_real(0.0)
+                    > self.data.stealth_speed
+                {
                     return false;
                 }
             }
         }
-        if world.objects.find(id).is_some_and(|o| o.test_script_status_bit(OBJECT_STATUS_SCRIPT_UNSTEALTHED)) {
+        if world
+            .objects
+            .find(id)
+            .is_some_and(|o| o.test_script_status_bit(OBJECT_STATUS_SCRIPT_UNSTEALTHED))
+        {
             // We can't stealth because a script disabled this ability for this object!
             return false;
         }
@@ -725,8 +987,13 @@ impl StealthUpdate {
 
     /// `hintDetectableWhileUnstealthed()`: the local player's own object in a hinted state shows its second material pass.
     fn hint_detectable_while_unstealthed(&self, world: &mut World, id: ObjectId) {
-        let Some(st) = world.objects.find(id).map(|o| o.status) else { return };
-        if self.data.hint_detectable_states.test_for_any(&st) && world.get_controlling_player(id) == world.players.local_index() && world.has_drawable(id) {
+        let Some(st) = world.objects.find(id).map(|o| o.status) else {
+            return;
+        };
+        if self.data.hint_detectable_states.test_for_any(&st)
+            && world.get_controlling_player(id) == world.players.local_index()
+            && world.has_drawable(id)
+        {
             Self::emit(world, id, StealthClientOp::SecondMaterialPassOpacity(1.0));
         }
     }
@@ -744,7 +1011,9 @@ impl StealthUpdate {
         let team = o.team;
         let mut r = if team != 0 {
             let default_team = world.cuts.player_default_team(local?);
-            world.cuts.team_relationship(team, Some(default_team).filter(|&t| t != 0))
+            world
+                .cuts
+                .team_relationship(team, Some(default_team).filter(|&t| t != 0))
         } else {
             Relationship::Neutral
         };
@@ -753,21 +1022,34 @@ impl StealthUpdate {
             r = Relationship::Allies;
         }
         if self.can_disguise() {
-            return Some(if r != Relationship::Allies && self.is_disguised() { stealth_look::DISGUISED_ENEMY } else { stealth_look::NONE });
+            return Some(if r != Relationship::Allies && self.is_disguised() {
+                stealth_look::DISGUISED_ENEMY
+            } else {
+                stealth_look::NONE
+            });
         }
-        Some(match (o.test_status(OBJECT_STATUS_DETECTED), r == Relationship::Allies) {
-            (true, true) => stealth_look::VISIBLE_FRIENDLY_DETECTED,
-            (true, false) => stealth_look::VISIBLE_DETECTED,
-            (false, true) if !crate::logic::modules::plant(1967) => stealth_look::VISIBLE_FRIENDLY,
-            (false, _) => stealth_look::INVISIBLE,
-        })
+        Some(
+            match (
+                o.test_status(OBJECT_STATUS_DETECTED),
+                r == Relationship::Allies,
+            ) {
+                (true, true) => stealth_look::VISIBLE_FRIENDLY_DETECTED,
+                (true, false) => stealth_look::VISIBLE_DETECTED,
+                (false, true) if !crate::logic::modules::plant(1967) => {
+                    stealth_look::VISIBLE_FRIENDLY
+                }
+                (false, _) => stealth_look::INVISIBLE,
+            },
+        )
     }
 
     /// `calcStealthOwner()`: the first rider for `UseRiderStealth` with a contain module that holds one, else the object.
     fn calc_stealth_owner(&self, world: &mut World, id: ObjectId) -> ObjectId {
         if self.data.use_rider_stealth {
             if let Some(contain) = world.get_contain(id) {
-                if let ModuleReply::Ids(riders) = world.module_call(id, contain, ModuleCall::GetContainedItems) {
+                if let ModuleReply::Ids(riders) =
+                    world.module_call(id, contain, ModuleCall::GetContainedItems)
+                {
                     if let Some(&first) = riders.first() {
                         return first;
                     }
@@ -783,10 +1065,16 @@ impl StealthUpdate {
         let id = me.object;
         let stealth_owner = self.calc_stealth_owner(world, id);
         let (stealth_delay, order_idles_to_attack) = if id == stealth_owner {
-            (Some(self.data.stealth_delay), Some(self.data.order_idle_enemies_to_attack_me_upon_reveal))
+            (
+                Some(self.data.stealth_delay),
+                Some(self.data.order_idle_enemies_to_attack_me_upon_reveal),
+            )
         } else {
             match stealth_update_of(world, stealth_owner) {
-                Some(s) => (Some(s.get_stealth_delay()), Some(s.get_order_idle_enemies_to_attack_me_upon_reveal())),
+                Some(s) => (
+                    Some(s.get_stealth_delay()),
+                    Some(s.get_order_idle_enemies_to_attack_me_upon_reveal()),
+                ),
                 None => (None, None),
             }
         };
@@ -802,7 +1090,9 @@ impl StealthUpdate {
                 Self::undefined(world, me, Undefined::UninitialisedLocal);
                 return;
             };
-            self.detection_expires_frame = now.wrapping_add(delay).wrapping_add(u32::from(crate::logic::modules::plant(1964)));
+            self.detection_expires_frame = now
+                .wrapping_add(delay)
+                .wrapping_add(u32::from(crate::logic::modules::plant(1964)));
         } else if self.detection_expires_frame < now.wrapping_add(num_frames) {
             self.detection_expires_frame = now.wrapping_add(num_frames);
         }
@@ -815,19 +1105,33 @@ impl StealthUpdate {
                 Self::undefined(world, me, Undefined::NullControllingPlayer);
                 return;
             };
-            let my_pos = world.objects.find(id).map(|o| o.get_position()).unwrap_or_default();
+            let my_pos = world
+                .objects
+                .find(id)
+                .map(|o| o.get_position())
+                .unwrap_or_default();
             for n in 0..world.players.player_count() {
                 if world.players.get_nth(n).is_none() {
                     continue;
                 }
-                if world.cuts.player_relationship_to_player_default_team(n, this_player) != Relationship::Enemies {
+                if world
+                    .cuts
+                    .player_relationship_to_player_default_team(n, this_player)
+                    != Relationship::Enemies
+                {
                     continue;
                 }
                 for obj in world.player_iterate_objects(n) {
                     // setWakeupIfInRange
-                    let Some(ai) = world.objects.find(obj).and_then(|o| o.ai) else { continue };
+                    let Some(ai) = world.objects.find(obj).and_then(|o| o.ai) else {
+                        continue;
+                    };
                     let vision = world.get_vision_range(obj);
-                    let mut src = world.objects.find(obj).map(|o| o.get_position()).unwrap_or_default();
+                    let mut src = world
+                        .objects
+                        .find(obj)
+                        .map(|o| o.get_position())
+                        .unwrap_or_default();
                     src.sub(&my_pos);
                     if src.length() > vision {
                         continue;
@@ -842,13 +1146,22 @@ impl StealthUpdate {
     /// disguise.
     pub fn disguise_as_object(&mut self, world: &mut World, me: ModuleHandle, target: ObjectId) {
         let id = me.object;
-        let target_player = world.objects.find(target).and_then(|_| world.get_controlling_player(target));
+        let target_player = world
+            .objects
+            .find(target)
+            .and_then(|_| world.get_controlling_player(target));
         if let Some(target_player) = target_player {
             // the target's getStealth() and its disguise; on the object itself that is this module, out of its slot while it is called
             let disguise = if target == id {
-                self.disguise_as_template.clone().map(|t| (t, self.disguise_as_player_index))
+                self.disguise_as_template
+                    .clone()
+                    .map(|t| (t, self.disguise_as_player_index))
             } else {
-                stealth_update_of(world, target).and_then(|s| s.get_disguised_template().cloned().map(|t| (t, s.get_disguised_player_index())))
+                stealth_update_of(world, target).and_then(|s| {
+                    s.get_disguised_template()
+                        .cloned()
+                        .map(|t| (t, s.get_disguised_player_index()))
+                })
             };
             match disguise {
                 Some((template, player)) => {
@@ -856,7 +1169,8 @@ impl StealthUpdate {
                     self.disguise_as_player_index = player;
                 }
                 None => {
-                    self.disguise_as_template = world.objects.find(target).map(|o| o.template().clone());
+                    self.disguise_as_template =
+                        world.objects.find(target).map(|o| o.template().clone());
                     self.disguise_as_player_index = target_player;
                 }
             }
@@ -889,7 +1203,11 @@ impl StealthUpdate {
         // TheGameLogic->bindObjectAndDrawable(self, draw)
         let draw = world.cuts.allocate_drawable_id();
         world.friend_bind_to_drawable(id, draw);
-        let physics = world.objects.find(id).and_then(|o| o.physics).ok_or(Undefined::NullPhysics)?;
+        let physics = world
+            .objects
+            .find(id)
+            .and_then(|o| o.physics)
+            .ok_or(Undefined::NullPhysics)?;
         world.module_call(id, physics, ModuleCall::PhysicsResetDynamicPhysics);
         Ok(())
     }
@@ -902,21 +1220,43 @@ impl StealthUpdate {
         }
     }
 
-    fn change_visual_disguise_inner(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), Undefined> {
+    fn change_visual_disguise_inner(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+    ) -> Result<(), Undefined> {
         let id = me.object;
         // `Bool selected = draw->isSelected();` (unchecked)
         if !world.has_drawable(id) {
             return Err(Undefined::NullDrawable);
         }
         let night = world.cuts.globals.time_of_day_is_night;
-        let position = world.objects.find(id).map(|o| o.get_position()).unwrap_or_default();
+        let position = world
+            .objects
+            .find(id)
+            .map(|o| o.get_position())
+            .unwrap_or_default();
         if let Some(template) = self.disguise_as_template.clone() {
             // the colour: the disguise player's to neutrals and enemies of the local player (if active), the object's own otherwise
-            let me_player = world.get_controlling_player(id).ok_or(Undefined::NullControllingPlayer)?;
-            let local = world.players.local_index().ok_or(Undefined::NullLocalPlayer)?;
-            let color = if world.cuts.player_relationship_to_player_default_team(me_player, local) != Relationship::Allies && world.cuts.player_is_active(local) {
+            let me_player = world
+                .get_controlling_player(id)
+                .ok_or(Undefined::NullControllingPlayer)?;
+            let local = world
+                .players
+                .local_index()
+                .ok_or(Undefined::NullLocalPlayer)?;
+            let color = if world
+                .cuts
+                .player_relationship_to_player_default_team(me_player, local)
+                != Relationship::Allies
+                && world.cuts.player_is_active(local)
+            {
                 // Neutrals and enemies will see this disguised unit as the team it's disguised as.
-                if world.players.get_nth(self.disguise_as_player_index).is_none() {
+                if world
+                    .players
+                    .get_nth(self.disguise_as_player_index)
+                    .is_none()
+                {
                     return Err(Undefined::NullControllingPlayer);
                 }
                 if night {
@@ -933,8 +1273,22 @@ impl StealthUpdate {
             Self::emit(world, id, StealthClientOp::SelectIfWasSelected);
             Self::emit(world, id, StealthClientOp::IndicatorColor(color));
             // Play a disguise sound!
-            let sound = world.objects.find(id).map(|o| o.template().get_per_unit_sound(b"DisguiseStarted").event_name.clone()).unwrap_or_default();
-            world.emit(ObjectClientEvent::AudioAddEvent { name: sound, object_id: id, position: None, player_index: None });
+            let sound = world
+                .objects
+                .find(id)
+                .map(|o| {
+                    o.template()
+                        .get_per_unit_sound(b"DisguiseStarted")
+                        .event_name
+                        .clone()
+                })
+                .unwrap_or_default();
+            world.emit(ObjectClientEvent::AudioAddEvent {
+                name: sound,
+                object_id: id,
+                position: None,
+                player_index: None,
+            });
             if let Some(fx) = self.data.disguise_fx.clone() {
                 world.emit(ObjectClientEvent::FxListDoFxPos { fx, position });
             }
@@ -942,14 +1296,24 @@ impl StealthUpdate {
             world.set_status(id, status_mask(&[OBJECT_STATUS_DISGUISED]), true);
             world.set_model_condition_state(id, MODELCONDITION_DISGUISED);
             // 33) Did the player ever build a "disguisable" unit and never used the disguise ability?
-            let player = world.get_controlling_player(id).ok_or(Undefined::NullControllingPlayer)?;
+            let player = world
+                .get_controlling_player(id)
+                .ok_or(Undefined::NullControllingPlayer)?;
             if let Some(p) = world.players.get_nth_mut(player) {
                 p.academy_stats.record_vehicle_disguised();
             }
         } else if self.disguise_as_player_index != -1 {
             self.disguise_as_player_index = -1;
-            let own = world.objects.find(id).map(|o| o.template().get_name().to_vec()).unwrap_or_default();
-            let color = if night { world.get_night_indicator_color(id) } else { world.get_indicator_color(id) };
+            let own = world
+                .objects
+                .find(id)
+                .map(|o| o.template().get_name().to_vec())
+                .unwrap_or_default();
+            let color = if night {
+                world.get_night_indicator_color(id)
+            } else {
+                world.get_indicator_color(id)
+            };
             // (the destroyed drawable's pointer, which the pool gives to the new drawable: see the module docs)
             Self::swap_drawable(world, id, own)?;
             Self::emit(world, id, StealthClientOp::IndicatorColor(color));
@@ -957,14 +1321,29 @@ impl StealthUpdate {
             world.force_refresh_sub_object_upgrade_status(id);
             let successful_reveal = match world.objects.find(id).and_then(|o| o.ai) {
                 Some(ai) => {
-                    let victim = world.module_call(id, ai, ModuleCall::AiGetCurrentVictim).as_id();
+                    let victim = world
+                        .module_call(id, ai, ModuleCall::AiGetCurrentVictim)
+                        .as_id();
                     world.objects.find(victim).is_some()
                 }
                 None => false,
             };
-            let key: &[u8] = if successful_reveal { b"DisguiseRevealedSuccess" } else { b"DisguiseRevealedFailure" };
-            let sound = world.objects.find(id).map(|o| o.template().get_per_unit_sound(key).event_name.clone()).unwrap_or_default();
-            world.emit(ObjectClientEvent::AudioAddEvent { name: sound, object_id: id, position: None, player_index: None });
+            let key: &[u8] = if successful_reveal {
+                b"DisguiseRevealedSuccess"
+            } else {
+                b"DisguiseRevealedFailure"
+            };
+            let sound = world
+                .objects
+                .find(id)
+                .map(|o| o.template().get_per_unit_sound(key).event_name.clone())
+                .unwrap_or_default();
+            world.emit(ObjectClientEvent::AudioAddEvent {
+                name: sound,
+                object_id: id,
+                position: None,
+                player_index: None,
+            });
             if let Some(fx) = self.data.disguise_reveal_fx.clone() {
                 world.emit(ObjectClientEvent::FxListDoFxPos { fx, position });
             }
@@ -990,7 +1369,11 @@ impl StealthUpdate {
         if xfer.get_xfer_mode() == XferMode::Load {
             self.disguise_as_template = None;
             if !name.is_empty() {
-                let found = self.statics.as_ref().and_then(|s| s.thing_factory.find_template(&name)).map(|t| Arc::new(t.get_final_override().data.clone()));
+                let found = self
+                    .statics
+                    .as_ref()
+                    .and_then(|s| s.thing_factory.find_template(&name))
+                    .map(|t| Arc::new(t.get_final_override().data.clone()));
                 match found {
                     Some(t) => self.disguise_as_template = Some(t),
                     // throw SC_INVALID_DATA (a `SaveCode`, not an `XferStatus`: `ErrorUnknown`, as `StateMachine` maps it)
@@ -1018,21 +1401,38 @@ impl UpdateBehavior for StealthUpdate {
             }
         }
         let stealth_owner = self.calc_stealth_owner(world, id);
-        let stealth_delay = if id == stealth_owner { Some(self.data.stealth_delay) } else { stealth_update_of(world, stealth_owner).map(|s| s.get_stealth_delay()) };
+        let stealth_delay = if id == stealth_owner {
+            Some(self.data.stealth_delay)
+        } else {
+            stealth_update_of(world, stealth_owner).map(|s| s.get_stealth_delay())
+        };
         let now = world.frame();
         if !self.enabled {
             return self.calc_sleep_time();
         }
-        let Some(o) = world.objects.find(id) else { return self.calc_sleep_time() };
+        let Some(o) = world.objects.find(id) else {
+            return self.calc_sleep_time();
+        };
         let is_mine = o.is_kind_of(KINDOF_MINE);
         let draw = world.has_drawable(id);
         if draw {
             if is_mine {
                 // special case for mines
-                Self::emit(world, id, StealthClientOp::EffectiveOpacity { opacity: 0.0, explicit: 0.0 });
+                Self::emit(
+                    world,
+                    id,
+                    StealthClientOp::EffectiveOpacity {
+                        opacity: 0.0,
+                        explicit: 0.0,
+                    },
+                );
             } else if self.disguise_transition_frames != 0 {
                 self.disguise_transition_frames -= 1;
-                let total = if self.transitioning_to_disguise { self.data.disguise_transition_frames } else { self.data.disguise_reveal_transition_frames };
+                let total = if self.transitioning_to_disguise {
+                    self.data.disguise_transition_frames
+                } else {
+                    self.data.disguise_reveal_transition_frames
+                };
                 let factor = 1.0f32 - (self.disguise_transition_frames as f32 / total as f32);
                 if factor >= 0.5 && !self.disguise_halfpoint_reached {
                     // Switch models at the halfway point
@@ -1042,7 +1442,14 @@ impl UpdateBehavior for StealthUpdate {
                 // Opacity ranges from full to none at midpoint and full again at the end
                 let opacity = (1.0f32 - factor * 2.0).abs();
                 let override_opacity = if opacity < 1.0 { 0.0 } else { 1.0 };
-                Self::emit(world, id, StealthClientOp::EffectiveOpacity { opacity, explicit: override_opacity });
+                Self::emit(
+                    world,
+                    id,
+                    StealthClientOp::EffectiveOpacity {
+                        opacity,
+                        explicit: override_opacity,
+                    },
+                );
                 if self.disguise_transition_frames == 0 && !self.transitioning_to_disguise {
                     // We're finished removing disguise so turn off stealth update.
                     self.enabled = false;
@@ -1053,14 +1460,28 @@ impl UpdateBehavior for StealthUpdate {
             } else {
                 // between one half and full opacity
                 let opacity = 0.5 + crate::common::trig::sin(self.pulse_phase) * 0.5;
-                Self::emit(world, id, StealthClientOp::EffectiveOpacity { opacity, explicit: -1.0 });
-                self.pulse_phase += self.pulse_phase_rate * if crate::logic::modules::plant(1965) { 2.0 } else { 1.0 };
+                Self::emit(
+                    world,
+                    id,
+                    StealthClientOp::EffectiveOpacity {
+                        opacity,
+                        explicit: -1.0,
+                    },
+                );
+                self.pulse_phase += self.pulse_phase_rate
+                    * if crate::logic::modules::plant(1965) {
+                        2.0
+                    } else {
+                        1.0
+                    };
             }
         }
         let reveal_distance = self.data.reveal_distance_from_target;
         if reveal_distance > 0.0 {
             if let Some(ai) = world.objects.find(id).and_then(|o| o.ai) {
-                let target = world.module_call(id, ai, ModuleCall::AiGetCurrentVictim).as_id();
+                let target = world
+                    .module_call(id, ai, ModuleCall::AiGetCurrentVictim)
+                    .as_id();
                 if world.objects.find(target).is_some() {
                     let dist_sqrd = world.partition_get_distance_squared_center_2d(id, target);
                     if dist_sqrd <= reveal_distance * reveal_distance {
@@ -1076,7 +1497,9 @@ impl UpdateBehavior for StealthUpdate {
             self.frames_granted -= 1;
             // If the last AI command given was by the player... then LOSE the stealth now!
             if let Some(ai) = world.objects.find(id).and_then(|o| o.ai) {
-                if world.module_call(id, ai, ModuleCall::AiGetLastCommandSource) == ModuleReply::Int(CMD_FROM_PLAYER) {
+                if world.module_call(id, ai, ModuleCall::AiGetLastCommandSource)
+                    == ModuleReply::Int(CMD_FROM_PLAYER)
+                {
                     // No exploits :)
                     self.receive_grant(world, me, false, 0);
                 }
@@ -1086,7 +1509,11 @@ impl UpdateBehavior for StealthUpdate {
                 self.receive_grant(world, me, false, 0);
             }
         }
-        let stealthed = |w: &World| w.objects.find(id).is_some_and(|o| o.test_status(OBJECT_STATUS_STEALTHED));
+        let stealthed = |w: &World| {
+            w.objects
+                .find(id)
+                .is_some_and(|o| o.test_status(OBJECT_STATUS_STEALTHED))
+        };
         if self.allowed_to_stealth(world, me, stealth_owner) {
             // If I can stealth, don't attempt to Stealth until the timer is zero.
             if self.stealth_allowed_frame > now {
@@ -1109,9 +1536,15 @@ impl UpdateBehavior for StealthUpdate {
             world.clear_status(id, status_mask(&[OBJECT_STATUS_STEALTHED]));
             self.hint_detectable_while_unstealthed(world, id);
         }
-        let detected = |w: &World| w.objects.find(id).is_some_and(|o| o.test_status(OBJECT_STATUS_DETECTED));
+        let detected = |w: &World| {
+            w.objects
+                .find(id)
+                .is_some_and(|o| o.test_status(OBJECT_STATUS_DETECTED))
+        };
         let mut detected_status_changed_this_frame = false;
-        if self.detection_expires_frame > now || (crate::logic::modules::plant(1963) && self.detection_expires_frame == now) {
+        if self.detection_expires_frame > now
+            || (crate::logic::modules::plant(1963) && self.detection_expires_frame == now)
+        {
             // if this is the first time being detected, play stealth off sound
             if !detected(world) {
                 detected_status_changed_this_frame = true;
@@ -1131,11 +1564,21 @@ impl UpdateBehavior for StealthUpdate {
         }
         if detected_status_changed_this_frame && world.is_contained(id) {
             // tell our container to recalc his apparent controlling player
-            let container = world.objects.find(id).map_or(INVALID_ID, |o| o.contained_by);
+            let container = world
+                .objects
+                .find(id)
+                .map_or(INVALID_ID, |o| o.contained_by);
             if world.objects.find(container).is_some() {
                 if let Some(contain) = world.get_contain(container) {
-                    if world.module_call(container, contain, ModuleCall::IsGarrisonable).as_bool() {
-                        world.module_call(container, contain, ModuleCall::RecalcApparentControllingPlayer);
+                    if world
+                        .module_call(container, contain, ModuleCall::IsGarrisonable)
+                        .as_bool()
+                    {
+                        world.module_call(
+                            container,
+                            contain,
+                            ModuleCall::RecalcApparentControllingPlayer,
+                        );
                     }
                 }
             }
@@ -1160,7 +1603,14 @@ impl UpdateBehavior for StealthUpdate {
             world.set_status(me.object, status_mask(&[OBJECT_STATUS_CAN_STEALTH]), true);
         }
         // start active, since some stealths start enabled from the get-go
-        update_behavior::set_wake_frame(world, if self.data.granted_by_special_power { UPDATE_SLEEP_FOREVER } else { UPDATE_SLEEP_NONE });
+        update_behavior::set_wake_frame(
+            world,
+            if self.data.granted_by_special_power {
+                UPDATE_SLEEP_FOREVER
+            } else {
+                UPDATE_SLEEP_NONE
+            },
+        );
         // we do not need to restore a disguise
         self.xfer_restore_disguise = false;
     }
@@ -1207,8 +1657,12 @@ impl UpdateBehavior for StealthUpdate {
                 self.disguise_as_object(world, me, target);
                 ModuleReply::Done
             }
-            ModuleCall::StealthGetEnemyDetectionEvaEvent => ModuleReply::Int(self.get_enemy_detection_eva_event()),
-            ModuleCall::StealthGetOwnDetectionEvaEvent => ModuleReply::Int(self.get_own_detection_eva_event()),
+            ModuleCall::StealthGetEnemyDetectionEvaEvent => {
+                ModuleReply::Int(self.get_enemy_detection_eva_event())
+            }
+            ModuleCall::StealthGetOwnDetectionEvaEvent => {
+                ModuleReply::Int(self.get_own_detection_eva_event())
+            }
             _ => ModuleReply::Unhandled,
         }
     }
@@ -1243,5 +1697,7 @@ impl Snapshot for StealthUpdate {
 
 /// The factory's `NewModuleDataProc` for `StealthUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::StealthUpdate(Arc::new(StealthUpdateModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::StealthUpdate(Arc::new(
+        StealthUpdateModuleData::friend_new_module_data(ini)?,
+    )))
 }

@@ -109,7 +109,9 @@
 
 use std::sync::Arc;
 
-use super::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined};
+use super::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined,
+};
 use super::name_key_generator::NameKeyType;
 use super::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::{BehaviorModule, BehaviorModuleData};
@@ -149,7 +151,8 @@ pub const FIRST_DRAWABLE_MODULE_TYPE: ModuleType = ModuleType::Draw;
 /// `LAST_DRAWABLE_MODULE_TYPE`.
 pub const LAST_DRAWABLE_MODULE_TYPE: ModuleType = ModuleType::ClientUpdate;
 /// `NUM_DRAWABLE_MODULE_TYPES`.
-pub const NUM_DRAWABLE_MODULE_TYPES: i32 = LAST_DRAWABLE_MODULE_TYPE as i32 - FIRST_DRAWABLE_MODULE_TYPE as i32 + 1;
+pub const NUM_DRAWABLE_MODULE_TYPES: i32 =
+    LAST_DRAWABLE_MODULE_TYPE as i32 - FIRST_DRAWABLE_MODULE_TYPE as i32 + 1;
 
 impl ModuleType {
     /// The `ModuleType` of an integer, if it is one of the three.
@@ -209,7 +212,9 @@ pub struct ModuleData {
 impl ModuleData {
     /// `ModuleData()`: the tag is not set.
     pub fn new() -> Self {
-        ModuleData { module_tag_name_key: None }
+        ModuleData {
+            module_tag_name_key: None,
+        }
     }
 
     /// `setModuleTagNameKey(key)`.
@@ -220,7 +225,8 @@ impl ModuleData {
     /// `getModuleTagNameKey()`: [`Undefined::UninitialisedModuleTag`] if it
     /// was never set.
     pub fn module_tag_name_key(&self) -> IniResult<NameKeyType> {
-        self.module_tag_name_key.ok_or_else(|| IniError::undefined(Undefined::UninitialisedModuleTag))
+        self.module_tag_name_key
+            .ok_or_else(|| IniError::undefined(Undefined::UninitialisedModuleTag))
     }
 
     /// `isAiModuleData()`: false (`AIUpdateModuleData` overrides it).
@@ -245,7 +251,8 @@ impl ModuleData {
         let mut data = ModuleData::new();
         if let Some(ini) = ini {
             let no_fields: &[FieldParse<ModuleData>] = &[];
-            ini.init_from_ini(&mut data, no_fields).map_err(null_table_dereference)?;
+            ini.init_from_ini(&mut data, no_fields)
+                .map_err(null_table_dereference)?;
         }
         Ok(data)
     }
@@ -428,6 +435,10 @@ pub enum ModuleDataKind {
     TransitionDamageFx(Arc<crate::logic::modules::transition_damage_fx::TransitionDamageFxModuleData>),
     /// `ToppleUpdate` (batch R28).
     ToppleUpdate(Arc<crate::logic::modules::topple_update::ToppleUpdateModuleData>),
+    /// `LeafletDropBehavior` (batch R33).
+    LeafletDropBehavior(Arc<crate::logic::modules::emp_update::LeafletDropBehaviorModuleData>),
+    /// `EmpUpdate` (batch R33).
+    EmpUpdate(Arc<crate::logic::modules::emp_update::EmpUpdateModuleData>),
     /// `BoneFxUpdate` (batch R30).
     BoneFxUpdate(Arc<crate::logic::modules::bone_fx_update::BoneFxUpdateModuleData>),
     /// `StructureCollapseUpdate` (batch R29).
@@ -551,7 +562,7 @@ impl ModuleDataKind {
             // --- p1l9-example ---
             ModuleDataKind::CommandSetUpgrade(d) => &d.upgrade.behavior.module_data,
             // --- end p1l9-example ---
-// --- p1l9-upgrades ---
+            // --- p1l9-upgrades ---
             ModuleDataKind::WeaponSetUpgrade(d) => &d.upgrade.behavior.module_data,
             ModuleDataKind::WeaponBonusUpgrade(d) => &d.upgrade.behavior.module_data,
             ModuleDataKind::ArmorUpgrade(d) => &d.upgrade.behavior.module_data,
@@ -591,8 +602,12 @@ impl ModuleDataKind {
             ModuleDataKind::UnitCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::VeterancyCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::SalvageCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
-            ModuleDataKind::ConvertToCarBombCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
-            ModuleDataKind::ConvertToHijackedVehicleCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
+            ModuleDataKind::ConvertToCarBombCrateCollide(d) => {
+                &d.crate_data.collide.behavior.module_data
+            }
+            ModuleDataKind::ConvertToHijackedVehicleCrateCollide(d) => {
+                &d.crate_data.collide.behavior.module_data
+            }
             ModuleDataKind::CleanupAreaPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::BaikonurLaunchPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::SpyVisionSpecialPower(d) => &d.special_power.behavior.module_data,
@@ -615,6 +630,8 @@ impl ModuleDataKind {
             ModuleDataKind::PilotFindVehicleUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::HordeUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::ToppleUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::LeafletDropBehavior(d) => &d.update.behavior.module_data,
+            ModuleDataKind::EmpUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::TransitionDamageFx(d) => &d.damage.behavior.module_data,
             ModuleDataKind::BoneFxUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::StructureCollapseUpdate(d) => &d.update.behavior.module_data,
@@ -623,7 +640,9 @@ impl ModuleDataKind {
             ModuleDataKind::OverchargeBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::GrantStealthBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::DynamicGeometryInfoUpdate(d) => &d.update.behavior.module_data,
-            ModuleDataKind::FirestormDynamicGeometryInfoUpdate(d) => &d.geom.update.behavior.module_data,
+            ModuleDataKind::FirestormDynamicGeometryInfoUpdate(d) => {
+                &d.geom.update.behavior.module_data
+            }
             ModuleDataKind::AnimationSteeringUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::RadiusDecalUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::AutoFindHealingUpdate(d) => &d.update.behavior.module_data,
@@ -660,7 +679,7 @@ impl ModuleDataKind {
             ModuleDataKind::UndeadBody(d) => &d.active.body.behavior.module_data,
             ModuleDataKind::HiveStructureBody(d) => &d.active.body.behavior.module_data,
             // --- end p1w13-sonnet ---
-// --- end p1l9-upgrades ---
+            // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
             ModuleDataKind::GrantUpgradeCreate(d) => &d.create.behavior.module_data,
             ModuleDataKind::LockWeaponCreate(d) => &d.create.behavior.module_data,
@@ -704,7 +723,7 @@ impl ModuleDataKind {
                 None => false,
             },
             // --- end p1l9-example ---
-// --- p1l9-upgrades ---
+            // --- p1l9-upgrades ---
             ModuleDataKind::WeaponSetUpgrade(d) => match Arc::get_mut(d) {
                 Some(d) => set(&mut d.upgrade, key, |d| &mut d.behavior.module_data),
                 None => false,
@@ -856,112 +875,169 @@ impl ModuleDataKind {
             },
             ModuleDataKind::HealCrateCollide(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    d.crate_data
+                        .collide
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::ShroudCrateCollide(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    d.crate_data
+                        .collide
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::SabotageCrateCollide(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    d.crate_data
+                        .collide
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::UnitCrateCollide(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    d.crate_data
+                        .collide
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::VeterancyCrateCollide(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    d.crate_data
+                        .collide
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::SalvageCrateCollide(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    d.crate_data
+                        .collide
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::ConvertToCarBombCrateCollide(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    d.crate_data
+                        .collide
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::ConvertToHijackedVehicleCrateCollide(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    d.crate_data
+                        .collide
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::MoneyCrateCollide(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    d.crate_data
+                        .collide
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::CleanupAreaPower(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.special_power.behavior.module_data.set_module_tag_name_key(key);
+                    d.special_power
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::BaikonurLaunchPower(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.special_power.behavior.module_data.set_module_tag_name_key(key);
+                    d.special_power
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::SpyVisionSpecialPower(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.special_power.behavior.module_data.set_module_tag_name_key(key);
+                    d.special_power
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::DefectorSpecialPower(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.special_power.behavior.module_data.set_module_tag_name_key(key);
+                    d.special_power
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::OCLSpecialPower(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.special_power.behavior.module_data.set_module_tag_name_key(key);
+                    d.special_power
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::CashHackSpecialPower(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.special_power.behavior.module_data.set_module_tag_name_key(key);
+                    d.special_power
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::CashBountyPower(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.special_power.behavior.module_data.set_module_tag_name_key(key);
+                    d.special_power
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
@@ -1059,6 +1135,20 @@ impl ModuleDataKind {
                 }
                 None => false,
             },
+            ModuleDataKind::LeafletDropBehavior(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::EmpUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
             ModuleDataKind::TransitionDamageFx(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.damage.behavior.module_data.set_module_tag_name_key(key);
@@ -1117,7 +1207,11 @@ impl ModuleDataKind {
             },
             ModuleDataKind::FirestormDynamicGeometryInfoUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.geom.update.behavior.module_data.set_module_tag_name_key(key);
+                    d.geom
+                        .update
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
@@ -1250,7 +1344,7 @@ impl ModuleDataKind {
                 }
                 None => false,
             },
-                        ModuleDataKind::OpenContain(d) => match Arc::get_mut(d) {
+            ModuleDataKind::OpenContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true
@@ -1259,104 +1353,163 @@ impl ModuleDataKind {
             },
             ModuleDataKind::InternetHackContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.open.update.behavior.module_data.set_module_tag_name_key(key);
+                    d.open
+                        .update
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::RailedTransportContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.open.update.behavior.module_data.set_module_tag_name_key(key);
+                    d.open
+                        .update
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::HelixContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.transport.open.update.behavior.module_data.set_module_tag_name_key(key);
+                    d.transport
+                        .open
+                        .update
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::RiderChangeContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.transport.open.update.behavior.module_data.set_module_tag_name_key(key);
+                    d.transport
+                        .open
+                        .update
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::OverlordContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.transport.open.update.behavior.module_data.set_module_tag_name_key(key);
+                    d.transport
+                        .open
+                        .update
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::HealContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.open.update.behavior.module_data.set_module_tag_name_key(key);
+                    d.open
+                        .update
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::ParachuteContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.open.update.behavior.module_data.set_module_tag_name_key(key);
+                    d.open
+                        .update
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::MobNexusContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.open.update.behavior.module_data.set_module_tag_name_key(key);
+                    d.open
+                        .update
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::TunnelContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.open.update.behavior.module_data.set_module_tag_name_key(key);
+                    d.open
+                        .update
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::CaveContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.open.update.behavior.module_data.set_module_tag_name_key(key);
+                    d.open
+                        .update
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::GarrisonContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.open.update.behavior.module_data.set_module_tag_name_key(key);
+                    d.open
+                        .update
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::TransportContain(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.open.update.behavior.module_data.set_module_tag_name_key(key);
+                    d.open
+                        .update
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::UndeadBody(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.active.body.behavior.module_data.set_module_tag_name_key(key);
+                    d.active
+                        .body
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             ModuleDataKind::HiveStructureBody(d) => match Arc::get_mut(d) {
                 Some(d) => {
-                    d.active.body.behavior.module_data.set_module_tag_name_key(key);
+                    d.active
+                        .body
+                        .behavior
+                        .module_data
+                        .set_module_tag_name_key(key);
                     true
                 }
                 None => false,
             },
             // --- end p1w13-sonnet ---
-// --- end p1l9-upgrades ---
+            // --- end p1l9-upgrades ---
             // --- p1w10-sonnet ---
             ModuleDataKind::GrantUpgradeCreate(d) => match Arc::get_mut(d) {
                 Some(d) => {
@@ -1504,7 +1657,10 @@ impl ObjectModule {
     pub fn new(object: ObjectId, module_data: Option<ModuleDataKind>) -> IniResult<Self> {
         match module_data {
             None => Err(IniError::new(IniErrorKind::InvalidData)),
-            Some(d) => Ok(ObjectModule { module: ModuleBase::new(d), object }),
+            Some(d) => Ok(ObjectModule {
+                module: ModuleBase::new(d),
+                object,
+            }),
         }
     }
 
@@ -1550,7 +1706,9 @@ impl DrawableModule {
     pub fn new(module_data: Option<ModuleDataKind>) -> IniResult<Self> {
         match module_data {
             None => Err(IniError::new(IniErrorKind::InvalidData)),
-            Some(d) => Ok(DrawableModule { module: ModuleBase::new(d) }),
+            Some(d) => Ok(DrawableModule {
+                module: ModuleBase::new(d),
+            }),
         }
     }
 
@@ -1765,7 +1923,10 @@ impl Module {
             (self.get_damage().is_some(), MODULEINTERFACE_DAMAGE),
             (self.get_destroy().is_some(), MODULEINTERFACE_DESTROY),
             (self.get_die().is_some(), MODULEINTERFACE_DIE),
-            (self.get_special_power().is_some(), MODULEINTERFACE_SPECIAL_POWER),
+            (
+                self.get_special_power().is_some(),
+                MODULEINTERFACE_SPECIAL_POWER,
+            ),
             (self.get_update().is_some(), MODULEINTERFACE_UPDATE),
             (self.get_upgrade().is_some(), MODULEINTERFACE_UPGRADE),
         ];
@@ -1839,13 +2000,13 @@ impl Snapshot for Module {
 mod tests {
     use super::*;
     use crate::common::ini::{BlockParse, IniLoadType};
-    use crate::logic::module::test_support::{load_bytes, save_bytes};
     use crate::logic::module::behavior_module::BehaviorModuleData;
     use crate::logic::module::collide_module::CollideModuleData;
     use crate::logic::module::create_module::CreateModuleData;
     use crate::logic::module::damage_module::DamageModuleData;
     use crate::logic::module::die_module::DieModuleData;
     use crate::logic::module::special_power_module::SpecialPowerModuleData;
+    use crate::logic::module::test_support::{load_bytes, save_bytes};
     use crate::logic::module::update_module::SleepyUpdatePhase;
     use crate::logic::module::upgrade_module::UpgradeModuleData;
 
@@ -1857,11 +2018,21 @@ mod tests {
             _ => Ok(()),
         }
     }
-    static BLOCKS: [BlockParse<Vec<IniResult<ModuleData>>>; 1] = [BlockParse { token: "ModData", parse: data_block }];
+    static BLOCKS: [BlockParse<Vec<IniResult<ModuleData>>>; 1] = [BlockParse {
+        token: "ModData",
+        parse: data_block,
+    }];
 
     fn load(text: &[u8]) -> (Vec<IniResult<ModuleData>>, IniResult<()>) {
         let mut out = Vec::new();
-        let r = Ini::load(b"m.ini", text, IniLoadType::Overwrite, None, &BLOCKS, &mut out);
+        let r = Ini::load(
+            b"m.ini",
+            text,
+            IniLoadType::Overwrite,
+            None,
+            &BLOCKS,
+            &mut out,
+        );
         (out, r)
     }
 
@@ -1871,7 +2042,14 @@ mod tests {
 
     #[test]
     fn constants_are_upstreams() {
-        assert_eq!((ModuleType::Behavior as i32, ModuleType::Draw as i32, ModuleType::ClientUpdate as i32), (0, 1, 2));
+        assert_eq!(
+            (
+                ModuleType::Behavior as i32,
+                ModuleType::Draw as i32,
+                ModuleType::ClientUpdate as i32
+            ),
+            (0, 1, 2)
+        );
         assert_eq!((NUM_MODULE_TYPES, NUM_DRAWABLE_MODULE_TYPES), (3, 2));
         assert_eq!(FIRST_DRAWABLE_MODULE_TYPE, ModuleType::Draw);
         assert_eq!(LAST_DRAWABLE_MODULE_TYPE, ModuleType::ClientUpdate);
@@ -1901,7 +2079,10 @@ mod tests {
     fn module_tag_is_unset_until_set() {
         let mut d = ModuleData::new();
         let e = d.module_tag_name_key().unwrap_err();
-        assert_eq!(e.kind, IniErrorKind::Undefined(Undefined::UninitialisedModuleTag));
+        assert_eq!(
+            e.kind,
+            IniErrorKind::Undefined(Undefined::UninitialisedModuleTag)
+        );
         d.set_module_tag_name_key(NameKeyType(77));
         assert_eq!(d.module_tag_name_key().unwrap(), NameKeyType(77));
         assert!(!d.is_ai_module_data());
@@ -1917,11 +2098,17 @@ mod tests {
         // a field line meets the null parse table
         let (out, r) = load(b"ModData\n  Foo = 1\nEnd\n");
         let e = out[0].clone().unwrap_err();
-        assert_eq!(e.kind, IniErrorKind::Undefined(Undefined::NullFieldParseTable));
+        assert_eq!(
+            e.kind,
+            IniErrorKind::Undefined(Undefined::NullFieldParseTable)
+        );
         assert!(r.unwrap_err().is_undefined());
         // an unterminated block
         let (out, _) = load(b"ModData\n");
-        assert_eq!(out[0].clone().unwrap_err().kind, IniErrorKind::MissingEndToken);
+        assert_eq!(
+            out[0].clone().unwrap_err().kind,
+            IniErrorKind::MissingEndToken
+        );
     }
 
     #[test]
@@ -1950,11 +2137,17 @@ mod tests {
         for (i, mut k) in kinds.into_iter().enumerate() {
             assert!(k.module_tag_name_key().is_err(), "kind {i}");
             assert!(k.set_module_tag_name_key(NameKeyType(100 + i as u32)));
-            assert_eq!(k.module_tag_name_key().unwrap(), NameKeyType(100 + i as u32));
+            assert_eq!(
+                k.module_tag_name_key().unwrap(),
+                NameKeyType(100 + i as u32)
+            );
             // a shared one cannot be tagged
             let shared = k.clone();
             assert!(!k.set_module_tag_name_key(NameKeyType(1)));
-            assert_eq!(shared.module_tag_name_key().unwrap(), NameKeyType(100 + i as u32));
+            assert_eq!(
+                shared.module_tag_name_key().unwrap(),
+                NameKeyType(100 + i as u32)
+            );
             assert!(!k.is_ai_module_data());
             assert_eq!(k.get_minimum_required_game_lod(), STATIC_GAME_LOD_LOW);
         }
@@ -1966,33 +2159,97 @@ mod tests {
     #[test]
     fn xfer_chains_write_one_version_per_base() {
         use crate::logic::module::{
-            body_module::BodyModule, collide_module::CollideModule, create_module::CreateModule, damage_module::DamageModule,
-            destroy_module::DestroyModule, die_module::DieModule, special_power_module::SpecialPowerModule,
-            special_power_update_module::SpecialPowerUpdateModule, update_module::UpdateModule, upgrade_module::UpgradeModule,
+            body_module::BodyModule, collide_module::CollideModule, create_module::CreateModule,
+            damage_module::DamageModule, destroy_module::DestroyModule, die_module::DieModule,
+            special_power_module::SpecialPowerModule,
+            special_power_update_module::SpecialPowerUpdateModule, update_module::UpdateModule,
+            upgrade_module::UpgradeModule,
         };
         let bytes = |m: &mut Module| save_bytes(m).unwrap();
         let mut cases: Vec<(&str, Module, Vec<u8>)> = vec![
-            ("Object", Module::Object(ObjectModule::new(5, Some(data())).unwrap()), vec![1, 1]),
-            ("Drawable", Module::Drawable(DrawableModule::new(Some(data())).unwrap()), vec![1, 1]),
-            ("Behavior", Module::Behavior(BehaviorModule::new(5, Some(data())).unwrap()), vec![1, 1, 1]),
-            ("Body", Module::Body(BodyModule::new(5, Some(Arc::new(Default::default()))).unwrap()), vec![1, 1, 1, 1, 0, 0, 0x80, 0x3f]),
-            ("Collide", Module::Collide(CollideModule::new(5, Some(Arc::new(Default::default()))).unwrap()), vec![1, 1, 1, 1]),
-            ("Create", Module::Create(CreateModule::new(5, Some(Arc::new(Default::default()))).unwrap()), vec![1, 1, 1, 1, 1]),
-            ("Damage", Module::Damage(DamageModule::new(5, Some(Arc::new(Default::default()))).unwrap()), vec![1, 1, 1, 1]),
-            ("Destroy", Module::Destroy(DestroyModule::new(5, Some(data())).unwrap()), vec![1, 1, 1, 1]),
-            ("Die", Module::Die(DieModule::new(5, Some(Arc::new(Default::default()))).unwrap()), vec![1, 1, 1, 1]),
+            (
+                "Object",
+                Module::Object(ObjectModule::new(5, Some(data())).unwrap()),
+                vec![1, 1],
+            ),
+            (
+                "Drawable",
+                Module::Drawable(DrawableModule::new(Some(data())).unwrap()),
+                vec![1, 1],
+            ),
+            (
+                "Behavior",
+                Module::Behavior(BehaviorModule::new(5, Some(data())).unwrap()),
+                vec![1, 1, 1],
+            ),
+            (
+                "Body",
+                Module::Body(BodyModule::new(5, Some(Arc::new(Default::default()))).unwrap()),
+                vec![1, 1, 1, 1, 0, 0, 0x80, 0x3f],
+            ),
+            (
+                "Collide",
+                Module::Collide(CollideModule::new(5, Some(Arc::new(Default::default()))).unwrap()),
+                vec![1, 1, 1, 1],
+            ),
+            (
+                "Create",
+                Module::Create(CreateModule::new(5, Some(Arc::new(Default::default()))).unwrap()),
+                vec![1, 1, 1, 1, 1],
+            ),
+            (
+                "Damage",
+                Module::Damage(DamageModule::new(5, Some(Arc::new(Default::default()))).unwrap()),
+                vec![1, 1, 1, 1],
+            ),
+            (
+                "Destroy",
+                Module::Destroy(DestroyModule::new(5, Some(data())).unwrap()),
+                vec![1, 1, 1, 1],
+            ),
+            (
+                "Die",
+                Module::Die(DieModule::new(5, Some(Arc::new(Default::default()))).unwrap()),
+                vec![1, 1, 1, 1],
+            ),
             (
                 "SpecialPower",
-                Module::SpecialPower(SpecialPowerModule::new(5, Some(Arc::new(Default::default()))).unwrap()),
+                Module::SpecialPower(
+                    SpecialPowerModule::new(5, Some(Arc::new(Default::default()))).unwrap(),
+                ),
                 vec![1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             ),
             (
                 "SpecialPowerUpdate",
-                Module::SpecialPowerUpdate(SpecialPowerUpdateModule::new(5, Some(Arc::new(Default::default())), SleepyUpdatePhase::Normal).unwrap()),
+                Module::SpecialPowerUpdate(
+                    SpecialPowerUpdateModule::new(
+                        5,
+                        Some(Arc::new(Default::default())),
+                        SleepyUpdatePhase::Normal,
+                    )
+                    .unwrap(),
+                ),
                 vec![1, 1, 1, 1, 1, 0, 0, 0, 0],
             ),
-            ("Update", Module::Update(UpdateModule::new(5, Some(Arc::new(Default::default())), SleepyUpdatePhase::Normal).unwrap()), vec![1, 1, 1, 1, 0, 0, 0, 0]),
-            ("Upgrade", Module::Upgrade(UpgradeModule::new(5, Some(Arc::new(UpgradeModuleData::new()))).unwrap()), vec![1, 1, 1, 1, 1, 0]),
+            (
+                "Update",
+                Module::Update(
+                    UpdateModule::new(
+                        5,
+                        Some(Arc::new(Default::default())),
+                        SleepyUpdatePhase::Normal,
+                    )
+                    .unwrap(),
+                ),
+                vec![1, 1, 1, 1, 0, 0, 0, 0],
+            ),
+            (
+                "Upgrade",
+                Module::Upgrade(
+                    UpgradeModule::new(5, Some(Arc::new(UpgradeModuleData::new()))).unwrap(),
+                ),
+                vec![1, 1, 1, 1, 1, 0],
+            ),
         ];
         for (name, m, want) in cases.iter_mut() {
             assert_eq!(&bytes(m), want, "{name}");
@@ -2004,9 +2261,11 @@ mod tests {
     #[test]
     fn interface_masks_agree_with_the_accessors() {
         use crate::logic::module::{
-            body_module::BodyModule, collide_module::CollideModule, create_module::CreateModule, damage_module::DamageModule,
-            destroy_module::DestroyModule, die_module::DieModule, special_power_module::SpecialPowerModule,
-            special_power_update_module::SpecialPowerUpdateModule, update_module::UpdateModule, upgrade_module::UpgradeModule,
+            body_module::BodyModule, collide_module::CollideModule, create_module::CreateModule,
+            damage_module::DamageModule, destroy_module::DestroyModule, die_module::DieModule,
+            special_power_module::SpecialPowerModule,
+            special_power_update_module::SpecialPowerUpdateModule, update_module::UpdateModule,
+            upgrade_module::UpgradeModule,
         };
         let all = vec![
             Module::Object(ObjectModule::new(5, Some(data())).unwrap()),
@@ -2018,12 +2277,32 @@ mod tests {
             Module::Damage(DamageModule::new(5, Some(Arc::new(Default::default()))).unwrap()),
             Module::Destroy(DestroyModule::new(5, Some(data())).unwrap()),
             Module::Die(DieModule::new(5, Some(Arc::new(Default::default()))).unwrap()),
-            Module::SpecialPower(SpecialPowerModule::new(5, Some(Arc::new(Default::default()))).unwrap()),
-            Module::SpecialPowerUpdate(SpecialPowerUpdateModule::new(5, Some(Arc::new(Default::default())), SleepyUpdatePhase::Final).unwrap()),
-            Module::Update(UpdateModule::new(5, Some(Arc::new(Default::default())), SleepyUpdatePhase::Initial).unwrap()),
-            Module::Upgrade(UpgradeModule::new(5, Some(Arc::new(UpgradeModuleData::new()))).unwrap()),
+            Module::SpecialPower(
+                SpecialPowerModule::new(5, Some(Arc::new(Default::default()))).unwrap(),
+            ),
+            Module::SpecialPowerUpdate(
+                SpecialPowerUpdateModule::new(
+                    5,
+                    Some(Arc::new(Default::default())),
+                    SleepyUpdatePhase::Final,
+                )
+                .unwrap(),
+            ),
+            Module::Update(
+                UpdateModule::new(
+                    5,
+                    Some(Arc::new(Default::default())),
+                    SleepyUpdatePhase::Initial,
+                )
+                .unwrap(),
+            ),
+            Module::Upgrade(
+                UpgradeModule::new(5, Some(Arc::new(UpgradeModuleData::new()))).unwrap(),
+            ),
         ];
-        let want = [0, 0, 0, 0x20, 0x10, 0x08, 0x04, 0x200, 0x02, 0x100, 0x01, 0x01, 0x80];
+        let want = [
+            0, 0, 0, 0x20, 0x10, 0x08, 0x04, 0x200, 0x02, 0x100, 0x01, 0x01, 0x80,
+        ];
         for (m, w) in all.iter().zip(want) {
             assert_eq!(m.interface_mask(), w);
             // an abstract base answers its own interface; the object/drawable bases none
@@ -2033,6 +2312,8 @@ mod tests {
         }
         assert_eq!(all[0].module_type(), None);
         assert_eq!(all[1].module_type(), None);
-        assert!(all[2..].iter().all(|m| m.module_type() == Some(ModuleType::Behavior)));
+        assert!(all[2..]
+            .iter()
+            .all(|m| m.module_type() == Some(ModuleType::Behavior)));
     }
 }

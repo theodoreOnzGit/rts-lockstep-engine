@@ -27,13 +27,20 @@
 use std::sync::Arc;
 
 use crate::common::base_type::Coord3D;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
+};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, DOOR_1, UPDATE_SLEEP_FOREVER};
+use crate::logic::module::update_module::{
+    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, DOOR_1,
+    UPDATE_SLEEP_FOREVER,
+};
 use crate::logic::modules::open_contain::CMD_FROM_AI;
-use crate::logic::modules::production_exit::{exit_position, natural_rally_point, transform_point, RallyPoint};
+use crate::logic::modules::production_exit::{
+    exit_position, natural_rally_point, transform_point, RallyPoint,
+};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -55,25 +62,53 @@ pub struct DefaultProductionExitUpdateModuleData {
 
 /// `DefaultProductionExitUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<DefaultProductionExitUpdateModuleData>; 4] = [
-    FieldParse::new("UnitCreatePoint", |ini, d, _| { d.unit_create_point = ini.parse_coord3d()?; Ok(()) }, UserData::None),
-    FieldParse::new("NaturalRallyPoint", |ini, d, _| { d.natural_rally_point = ini.parse_coord3d()?; Ok(()) }, UserData::None),
-    FieldParse::new("UseSpawnRallyPoint", |ini, d, _| { d.use_spawn_rally_point = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "UnitCreatePoint",
+        |ini, d, _| {
+            d.unit_create_point = ini.parse_coord3d()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "NaturalRallyPoint",
+        |ini, d, _| {
+            d.natural_rally_point = ini.parse_coord3d()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "UseSpawnRallyPoint",
+        |ini, d, _| {
+            d.use_spawn_rally_point = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl DefaultProductionExitUpdateModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, DefaultProductionExitUpdateModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, DefaultProductionExitUpdateModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<DefaultProductionExitUpdateModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<DefaultProductionExitUpdateModuleData> {
         let mut data = DefaultProductionExitUpdateModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, DefaultProductionExitUpdateModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                DefaultProductionExitUpdateModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -93,7 +128,9 @@ pub struct DefaultProductionExitUpdate {
 impl PartialEq for DefaultProductionExitUpdate {
     /// The same object, the same data object (upstream compares pointers) and the same rally point.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.rally == other.rally
+        self.update.behavior().object() == other.update.behavior().object()
+            && Arc::ptr_eq(&self.data, &other.data)
+            && self.rally == other.rally
     }
 }
 
@@ -104,11 +141,18 @@ impl DefaultProductionExitUpdate {
     }
 
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data), no rally point.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<DefaultProductionExitUpdateModuleData>>) -> IniResult<Self> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<DefaultProductionExitUpdateModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(DefaultProductionExitUpdate { update, data, rally: RallyPoint::default() })
+        Ok(DefaultProductionExitUpdate {
+            update,
+            data,
+            rally: RallyPoint::default(),
+        })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -132,7 +176,12 @@ impl DefaultProductionExitUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -153,12 +202,23 @@ impl DefaultProductionExitUpdate {
 
     /// The module's state as words, for the tests that compare it with upstream's: the rally point and whether it exists.
     pub fn state_words(&self) -> Vec<u32> {
-        vec![self.rally.point.x.to_bits(), self.rally.point.y.to_bits(), self.rally.point.z.to_bits(), u32::from(self.rally.exists)]
+        vec![
+            self.rally.point.x.to_bits(),
+            self.rally.point.y.to_bits(),
+            self.rally.point.z.to_bits(),
+            u32::from(self.rally.exists),
+        ]
     }
 
     /// `exitObjectViaDoor(newObj, exitDoor)`.
     fn exit_object_via_door(&mut self, world: &mut World, creation: ObjectId, new_obj: ObjectId) {
-        let Some((exit_angle, layer)) = world.objects.find(creation).map(|o| (o.thing.orientation(), o.layer)) else { return };
+        let Some((exit_angle, layer)) = world
+            .objects
+            .find(creation)
+            .map(|o| (o.thing.orientation(), o.layer))
+        else {
+            return;
+        };
         let d = self.data.clone();
         let mut create_point = transform_point(world, creation, &d.unit_create_point);
         create_point.z = world.terrain_get_layer_height(create_point.x, create_point.y, layer);
@@ -173,13 +233,25 @@ impl DefaultProductionExitUpdate {
         if self.rally.exists && !crate::logic::modules::plant(1841) {
             tmp = self.rally.point;
             if let Some(ai) = ai {
-                if world.module_call(new_obj, ai, ModuleCall::AiIsDoingGroundMovement).as_bool() && world.contain_pathfind_adjust_destination(new_obj, &mut tmp) {
+                if world
+                    .module_call(new_obj, ai, ModuleCall::AiIsDoingGroundMovement)
+                    .as_bool()
+                    && world.contain_pathfind_adjust_destination(new_obj, &mut tmp)
+                {
                     exit_path.push(tmp);
                 }
             }
         }
         if let Some(ai) = ai {
-            world.module_call(new_obj, ai, ModuleCall::AiFollowExitProductionPath { path: exit_path, ignore_object: creation, command_source: CMD_FROM_AI });
+            world.module_call(
+                new_obj,
+                ai,
+                ModuleCall::AiFollowExitProductionPath {
+                    path: exit_path,
+                    ignore_object: creation,
+                    command_source: CMD_FROM_AI,
+                },
+            );
         }
     }
 }
@@ -212,17 +284,32 @@ impl UpdateBehavior for DefaultProductionExitUpdate {
                 self.exit_object_via_door(world, me.object, obj);
                 ModuleReply::Done
             }
-            ModuleCall::UnreserveDoorForExit(_) | ModuleCall::ExitObjectByBudding { .. } => ModuleReply::Done,
+            ModuleCall::UnreserveDoorForExit(_) | ModuleCall::ExitObjectByBudding { .. } => {
+                ModuleReply::Done
+            }
             ModuleCall::SetRallyPoint(p) => {
                 self.rally.set(&p);
                 ModuleReply::Done
             }
-            ModuleCall::GetRallyPoint => self.rally.get().map_or(ModuleReply::Unhandled, ModuleReply::Coord),
+            ModuleCall::GetRallyPoint => self
+                .rally
+                .get()
+                .map_or(ModuleReply::Unhandled, ModuleReply::Coord),
             // "Check if the building has requested spawn units (like those that are airdropped) to use the rally points of the building."
             ModuleCall::UseSpawnRallyPoint => ModuleReply::Bool(self.data.use_spawn_rally_point),
-            ModuleCall::GetNaturalRallyPoint => ModuleReply::Coord(natural_rally_point(world, me.object, &self.data.natural_rally_point, true)),
-            ModuleCall::GetNaturalRallyPointWithOffset(offset) => ModuleReply::Coord(natural_rally_point(world, me.object, &self.data.natural_rally_point, offset)),
-            ModuleCall::GetExitPosition => exit_position(world, me.object, &self.data.unit_create_point).map_or(ModuleReply::Unhandled, ModuleReply::Coord),
+            ModuleCall::GetNaturalRallyPoint => ModuleReply::Coord(natural_rally_point(
+                world,
+                me.object,
+                &self.data.natural_rally_point,
+                true,
+            )),
+            ModuleCall::GetNaturalRallyPointWithOffset(offset) => ModuleReply::Coord(
+                natural_rally_point(world, me.object, &self.data.natural_rally_point, offset),
+            ),
+            ModuleCall::GetExitPosition => {
+                exit_position(world, me.object, &self.data.unit_create_point)
+                    .map_or(ModuleReply::Unhandled, ModuleReply::Coord)
+            }
             _ => ModuleReply::Unhandled,
         }
     }
@@ -256,5 +343,7 @@ impl Snapshot for DefaultProductionExitUpdate {
 
 /// The factory's `NewModuleDataProc` for `DefaultProductionExitUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::DefaultProductionExitUpdate(Arc::new(DefaultProductionExitUpdateModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::DefaultProductionExitUpdate(Arc::new(
+        DefaultProductionExitUpdateModuleData::friend_new_module_data(ini)?,
+    )))
 }

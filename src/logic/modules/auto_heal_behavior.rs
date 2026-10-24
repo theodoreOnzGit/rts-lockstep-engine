@@ -43,17 +43,24 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::kind_of::KindOfMaskType;
-use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_DAMAGE, MODULEINTERFACE_UPGRADE};
+use crate::common::module::{
+    ModuleDataKind, ObjectId, MODULEINTERFACE_DAMAGE, MODULEINTERFACE_UPGRADE,
+};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::update_module::{
-    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE,
+    update_sleep, SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime,
+    UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE,
 };
 use crate::logic::module::upgrade_module::{UpgradeModuleData, UpgradeMux};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
-use crate::logic::modules::upgrade_mux_user::{give_self_upgrade, upgrade_mux_call, UpgradeMuxUser};
+use crate::logic::modules::upgrade_mux_user::{
+    give_self_upgrade, upgrade_mux_call, UpgradeMuxUser,
+};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::object_cuts::CutCall;
@@ -129,28 +136,109 @@ fn parse_particle_system(ini: &mut Ini<'_>) -> IniResult<Option<Vec<u8>>> {
 }
 
 /// `UpgradeMuxData::getFieldParse()`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<AutoHealBehaviorModuleData>; 6] = upgrade_module_data_field_parse!(AutoHealBehaviorModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<AutoHealBehaviorModuleData>; 6] =
+    upgrade_module_data_field_parse!(AutoHealBehaviorModuleData, upgrade);
 
 /// `AutoHealBehaviorModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<AutoHealBehaviorModuleData>; 13] = [
-    FieldParse::new("StartsActive", |ini, d, _| { d.initially_active = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("SingleBurst", |ini, d, _| { d.single_burst = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("HealingAmount", |ini, d, _| { d.healing_amount = ini.parse_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("HealingDelay", |ini, d, _| { d.healing_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("Radius", |ini, d, _| { d.radius = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("KindOf", |ini, d, _| d.kind_of.parse_from_ini(ini), UserData::None),
-    FieldParse::new("ForbiddenKindOf", |ini, d, _| d.forbidden_kind_of.parse_from_ini(ini), UserData::None),
-    FieldParse::new("RadiusParticleSystemName", |ini, d, _| { d.radius_particle_system = parse_particle_system(ini)?; Ok(()) }, UserData::None),
-    FieldParse::new("UnitHealPulseParticleSystemName", |ini, d, _| { d.unit_heal_pulse_particle_system = parse_particle_system(ini)?; Ok(()) }, UserData::None),
-    FieldParse::new("StartHealingDelay", |ini, d, _| { d.start_healing_delay = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("AffectsWholePlayer", |ini, d, _| { d.affects_whole_player = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("SkipSelfForHealing", |ini, d, _| { d.skip_self_for_healing = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "StartsActive",
+        |ini, d, _| {
+            d.initially_active = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "SingleBurst",
+        |ini, d, _| {
+            d.single_burst = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "HealingAmount",
+        |ini, d, _| {
+            d.healing_amount = ini.parse_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "HealingDelay",
+        |ini, d, _| {
+            d.healing_delay = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Radius",
+        |ini, d, _| {
+            d.radius = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "KindOf",
+        |ini, d, _| d.kind_of.parse_from_ini(ini),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ForbiddenKindOf",
+        |ini, d, _| d.forbidden_kind_of.parse_from_ini(ini),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RadiusParticleSystemName",
+        |ini, d, _| {
+            d.radius_particle_system = parse_particle_system(ini)?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "UnitHealPulseParticleSystemName",
+        |ini, d, _| {
+            d.unit_heal_pulse_particle_system = parse_particle_system(ini)?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "StartHealingDelay",
+        |ini, d, _| {
+            d.start_healing_delay = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AffectsWholePlayer",
+        |ini, d, _| {
+            d.affects_whole_player = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "SkipSelfForHealing",
+        |ini, d, _| {
+            d.skip_self_for_healing = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl AutoHealBehaviorModuleData {
     /// `buildFieldParse(p)`: the update base, this class's own fields, then the mux's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, AutoHealBehaviorModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, AutoHealBehaviorModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&OWN_FIELD_PARSE)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
@@ -158,7 +246,9 @@ impl AutoHealBehaviorModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<AutoHealBehaviorModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<AutoHealBehaviorModuleData> {
         let mut data = AutoHealBehaviorModuleData::default();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, AutoHealBehaviorModuleData::build_field_parse)?;
@@ -204,7 +294,10 @@ impl AutoHealBehavior {
 
     /// The first half of the constructor, which touches no world: the base (processing `DISABLED_HELD` too), the data (`INI_INVALID_DATA` for null
     /// data) and the zeroed state.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<AutoHealBehaviorModuleData>>) -> IniResult<Self> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<AutoHealBehaviorModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let mut update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
@@ -212,7 +305,14 @@ impl AutoHealBehavior {
         let mut mask = crate::common::disabled_types::DisabledMaskType::default();
         mask.set(crate::common::disabled_types::DISABLED_HELD, 1);
         update.set_disabled_types_to_process(mask);
-        Ok(AutoHealBehavior { update, data, mux: UpgradeMux::new(), radius_particle_system_id: INVALID_PARTICLE_SYSTEM_ID, soonest_heal_frame: 0, stopped: false })
+        Ok(AutoHealBehavior {
+            update,
+            data,
+            mux: UpgradeMux::new(),
+            radius_particle_system_id: INVALID_PARTICLE_SYSTEM_ID,
+            soonest_heal_frame: 0,
+            stopped: false,
+        })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -228,7 +328,12 @@ impl AutoHealBehavior {
     /// The module's own state as words, for the tests that compare it with upstream's: the particle system id, the soonest heal frame, the stopped
     /// flag, and whether the upgrade ran.
     pub fn state_words(&self) -> Vec<u32> {
-        vec![self.radius_particle_system_id, self.soonest_heal_frame, u32::from(self.stopped), u32::from(self.mux.is_already_upgraded())]
+        vec![
+            self.radius_particle_system_id,
+            self.soonest_heal_frame,
+            u32::from(self.stopped),
+            u32::from(self.mux.is_already_upgraded()),
+        ]
     }
 
     /// `update()` as the scheduler runs it (see [`update_behavior::world_update`]).
@@ -242,7 +347,12 @@ impl AutoHealBehavior {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -302,27 +412,50 @@ impl AutoHealBehavior {
             return;
         }
         let data = self.data.clone();
-        let amount = if crate::logic::modules::plant(944) { (data.healing_amount + 1) as f32 } else { data.healing_amount as f32 };
+        let amount = if crate::logic::modules::plant(944) {
+            (data.healing_amount + 1) as f32
+        } else {
+            data.healing_amount as f32
+        };
         if data.radius == 0.0 {
             world.attempt_healing(target, amount, me);
         } else if !crate::logic::modules::plant(942) {
             world.attempt_healing_from_sole_benefactor(target, amount, me, data.healing_delay);
         }
         if let Some(tmpl) = data.unit_heal_pulse_particle_system.clone() {
-            let position = world.objects.find(target).map_or_else(Default::default, |o| o.get_position());
+            let position = world
+                .objects
+                .find(target)
+                .map_or_else(Default::default, |o| o.get_position());
             world.create_particle_system(tmpl, position);
         }
-        self.soonest_heal_frame = world.frame().wrapping_add(if crate::logic::modules::plant(951) { 0 } else { data.healing_delay }); // In case onDamage tries to wake us up early
+        self.soonest_heal_frame =
+            world
+                .frame()
+                .wrapping_add(if crate::logic::modules::plant(951) {
+                    0
+                } else {
+                    data.healing_delay
+                }); // In case onDamage tries to wake us up early
     }
 
     /// `checkForAutoHeal(testObj, helper)`: whether the object joins the list of the whole-player scan.
-    fn check_for_auto_heal(&self, world: &mut World, me: ObjectId, test_obj: ObjectId) -> Result<bool, IniError> {
+    fn check_for_auto_heal(
+        &self,
+        world: &mut World,
+        me: ObjectId,
+        test_obj: ObjectId,
+    ) -> Result<bool, IniError> {
         let d = &self.data;
-        let Some(o) = world.objects.find(test_obj) else { return Ok(false) };
+        let Some(o) = world.objects.find(test_obj) else {
+            return Ok(false);
+        };
         if o.is_effectively_dead() {
             return Ok(false);
         }
-        if world.get_controlling_player(test_obj) != world.get_controlling_player(me) && !crate::logic::modules::plant(945) {
+        if world.get_controlling_player(test_obj) != world.get_controlling_player(me)
+            && !crate::logic::modules::plant(945)
+        {
             return Ok(false);
         }
         if o.is_off_map() && !crate::logic::modules::plant(950) {
@@ -337,7 +470,9 @@ impl AutoHealBehavior {
         if o.is_any_kind_of(&d.forbidden_kind_of) && !crate::logic::modules::plant(949) {
             return Ok(false);
         }
-        let (health, max_health) = world.body_health(test_obj).ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
+        let (health, max_health) = world
+            .body_health(test_obj)
+            .ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
         if health >= max_health {
             return Ok(false);
         }
@@ -352,7 +487,13 @@ impl AutoHealBehavior {
             if let Some(player) = world.get_controlling_player(me.object) {
                 let mut objects_to_heal = Vec::new();
                 // Smack all objects with this function, and we will end up with a list of Objects deserving of pulseHealObject
-                for obj in world.cuts.player_object_list.get(&player).cloned().unwrap_or_default() {
+                for obj in world
+                    .cuts
+                    .player_object_list
+                    .get(&player)
+                    .cloned()
+                    .unwrap_or_default()
+                {
                     if self.check_for_auto_heal(world, me.object, obj)? {
                         objects_to_heal.push(obj);
                     }
@@ -366,38 +507,69 @@ impl AutoHealBehavior {
         if d.radius == 0.0 {
             // ORIGINAL SYSTEM -- JUST HEAL SELF!
             // do not heal if we are at max health already
-            let (health, max_health) = world.body_health(me.object).ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
+            let (health, max_health) = world
+                .body_health(me.object)
+                .ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
             if health < max_health {
                 self.pulse_heal_object(world, me.object, me.object);
                 return Ok(update_sleep(d.healing_delay));
             }
             // go to sleep forever -- we'll wake back up when we are damaged again
-            return Ok(if crate::logic::modules::plant(948) { update_sleep(d.healing_delay) } else { UPDATE_SLEEP_FOREVER });
+            return Ok(if crate::logic::modules::plant(948) {
+                update_sleep(d.healing_delay)
+            } else {
+                UPDATE_SLEEP_FOREVER
+            });
         }
         // EXPANDED SYSTEM -- HEAL FRIENDLIES IN RADIUS
         for obj in world.cuts.range_scan.clone() {
             // do not heal if we are at max health already
-            let (health, max_health) = world.body_health(obj).ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
+            let (health, max_health) = world
+                .body_health(obj)
+                .ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
             if health < max_health {
-                let Some(o) = world.objects.find(obj) else { continue };
-                if o.is_any_kind_of(&d.kind_of) && !o.is_any_kind_of(&d.forbidden_kind_of) && (!d.skip_self_for_healing || obj != me.object || crate::logic::modules::plant(946)) {
+                let Some(o) = world.objects.find(obj) else {
+                    continue;
+                };
+                if o.is_any_kind_of(&d.kind_of)
+                    && !o.is_any_kind_of(&d.forbidden_kind_of)
+                    && (!d.skip_self_for_healing
+                        || obj != me.object
+                        || crate::logic::modules::plant(946))
+                {
                     self.pulse_heal_object(world, me.object, obj);
                     if d.single_burst && world.cuts.globals.draw_icon_ui {
                         let g = world.cuts.globals;
-                        if g.anim2d_collection_present && !world.cuts.get_healed_animation_name.is_empty() {
+                        if g.anim2d_collection_present
+                            && !world.cuts.get_healed_animation_name.is_empty()
+                        {
                             let template = world.cuts.get_healed_animation_name.clone();
-                            let (time, rise) = (g.get_healed_animation_display_time_in_seconds, g.get_healed_animation_z_rise_per_second);
+                            let (time, rise) = (
+                                g.get_healed_animation_display_time_in_seconds,
+                                g.get_healed_animation_z_rise_per_second,
+                            );
                             if let Some(o) = world.objects.find(obj) {
                                 let mut position = o.get_position();
                                 position.z += o.geometry_info.get_max_height_above_position();
-                                world.cut(CutCall::InGameUiAddWorldAnimation { template, position, display_time_in_seconds: time, z_rise_per_second: rise });
+                                world.cut(CutCall::InGameUiAddWorldAnimation {
+                                    template,
+                                    position,
+                                    display_time_in_seconds: time,
+                                    z_rise_per_second: rise,
+                                });
                             }
                         }
                     }
                 }
             }
         }
-        Ok(update_sleep(if d.single_burst && !crate::logic::modules::plant(947) { UPDATE_SLEEP_FOREVER.0 } else { d.healing_delay }))
+        Ok(update_sleep(
+            if d.single_burst && !crate::logic::modules::plant(947) {
+                UPDATE_SLEEP_FOREVER.0
+            } else {
+                d.healing_delay
+            },
+        ))
     }
 }
 
@@ -412,7 +584,11 @@ impl UpgradeMuxUser for AutoHealBehavior {
         &self.data.upgrade
     }
     /// `upgradeImplementation()`: `setWakeFrame(getObject(), UPDATE_SLEEP_NONE)`.
-    fn upgrade_implementation(&mut self, world: &mut World, _me: ModuleHandle) -> Result<(), IniError> {
+    fn upgrade_implementation(
+        &mut self,
+        world: &mut World,
+        _me: ModuleHandle,
+    ) -> Result<(), IniError> {
         update_behavior::set_wake_frame(world, UPDATE_SLEEP_NONE);
         Ok(())
     }
@@ -437,7 +613,10 @@ impl UpdateBehavior for AutoHealBehavior {
             return UPDATE_SLEEP_FOREVER;
         }
         // do not heal if our status bit is not on. do not heal if our status is effectively dead. There ain't no coming back, man!
-        let dead = world.objects.find(me.object).is_some_and(|o| o.is_effectively_dead());
+        let dead = world
+            .objects
+            .find(me.object)
+            .is_some_and(|o| o.is_effectively_dead());
         if !self.mux.is_already_upgraded() || dead {
             return UPDATE_SLEEP_FOREVER;
         }
@@ -452,7 +631,10 @@ impl UpdateBehavior for AutoHealBehavior {
     fn construct(&mut self, world: &mut World, me: ModuleHandle) {
         let d = self.data.clone();
         if let Some(tmpl) = d.radius_particle_system.clone() {
-            let position = world.objects.find(me.object).map_or_else(Default::default, |o| o.get_position());
+            let position = world
+                .objects
+                .find(me.object)
+                .map_or_else(Default::default, |o| o.get_position());
             self.radius_particle_system_id = world.create_particle_system(tmpl, position);
         }
         if d.initially_active {
@@ -462,7 +644,14 @@ impl UpdateBehavior for AutoHealBehavior {
             }
             // start these guys with random phasings so that we don't have all of 'em check on the same frame.
             let delay = d.healing_delay;
-            let phase = world.random.game_logic_random_value(if crate::logic::modules::plant(952) { 0 } else { 1 }, delay as i32);
+            let phase = world.random.game_logic_random_value(
+                if crate::logic::modules::plant(952) {
+                    0
+                } else {
+                    1
+                },
+                delay as i32,
+            );
             update_behavior::set_wake_frame(world, update_sleep(phase as u32));
         } else {
             update_behavior::set_wake_frame(world, UPDATE_SLEEP_FOREVER);
@@ -537,6 +726,7 @@ impl Snapshot for AutoHealBehavior {
 
 /// The factory's `NewModuleDataProc` for `AutoHealBehavior`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::AutoHealBehavior(Arc::new(AutoHealBehaviorModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::AutoHealBehavior(Arc::new(
+        AutoHealBehaviorModuleData::friend_new_module_data(ini)?,
+    )))
 }
-

@@ -38,7 +38,11 @@ use std::ffi::CStr;
 use support::{Check, Gen, N};
 
 fn c3(v: [f32; 3]) -> Coord3D {
-    Coord3D { x: v[0], y: v[1], z: v[2] }
+    Coord3D {
+        x: v[0],
+        y: v[1],
+        z: v[2],
+    }
 }
 
 #[test]
@@ -49,7 +53,11 @@ fn coord2d_matches() {
         let mut ok = Check::new(name);
         let mut bug = Check::new(name);
         for _ in 0..N {
-            let (x, y) = if g.below(4) == 0 { (g.mixed(), g.mixed()) } else { (g.geom(), g.geom()) };
+            let (x, y) = if g.below(4) == 0 {
+                (g.mixed(), g.mixed())
+            } else {
+                (g.geom(), g.geom())
+            };
             let c = Coord2D { x, y };
             let mut out = [0.0f32; 2];
             let r = unsafe { cpp::ref_vt_coord2d(op as i32, x, y, out.as_mut_ptr()) };
@@ -58,7 +66,9 @@ fn coord2d_matches() {
                 0 => {
                     ok.f32(c.length(), r, input);
                     // planted: sqrt of the double sum of squares (the sum not rounded to float first)
-                    let wrong = petir::Real::sqrt(f64::from(x) * f64::from(x) + f64::from(y) * f64::from(y)) as f32;
+                    let wrong = petir::Real::sqrt(
+                        f64::from(x) * f64::from(x) + f64::from(y) * f64::from(y),
+                    ) as f32;
                     bug.f32(wrong, r, input);
                 }
                 1 => {
@@ -67,7 +77,11 @@ fn coord2d_matches() {
                     ok.f32s(&[n.x, n.y], &out, input);
                     // planted: multiply by the reciprocal instead of dividing
                     let len = c.length();
-                    let wrong = if len != 0.0 { [x * (1.0 / len), y * (1.0 / len)] } else { [x, y] };
+                    let wrong = if len != 0.0 {
+                        [x * (1.0 / len), y * (1.0 / len)]
+                    } else {
+                        [x, y]
+                    };
                     bug.f32s(&wrong, &out, input);
                 }
                 _ => {
@@ -111,7 +125,11 @@ fn coord3d_matches() {
         let mut ok = Check::new(name);
         let mut bug = Check::new(name);
         for _ in 0..N {
-            let f = if g.below(4) == 0 { Gen::mixed } else { Gen::geom };
+            let f = if g.below(4) == 0 {
+                Gen::mixed
+            } else {
+                Gen::geom
+            };
             let a: [f32; 3] = g.vec(f);
             let mut b: [f32; 3] = g.vec(f);
             if g.below(8) == 0 {
@@ -122,7 +140,9 @@ fn coord3d_matches() {
             }
             let k = g.mixed();
             let mut out = [0.0f32; 3];
-            let r = unsafe { cpp::ref_vt_coord3d(op as i32, a.as_ptr(), b.as_ptr(), k, out.as_mut_ptr()) };
+            let r = unsafe {
+                cpp::ref_vt_coord3d(op as i32, a.as_ptr(), b.as_ptr(), k, out.as_mut_ptr())
+            };
             let (ca, cb) = (c3(a), c3(b));
             let input = || format!("a {a:?} b {b:?} k {k:e}");
             let v = |c: Coord3D| [c.x, c.y, c.z];
@@ -131,7 +151,12 @@ fn coord3d_matches() {
                 0 => {
                     ok.f32(ca.length(), r, input);
                     // planted: sum in the other order (z*z + y*y + x*x)
-                    bug.f32(petir::Real::sqrt(f64::from(a[2] * a[2] + a[1] * a[1] + a[0] * a[0])) as f32, r, input);
+                    bug.f32(
+                        petir::Real::sqrt(f64::from(a[2] * a[2] + a[1] * a[1] + a[0] * a[0]))
+                            as f32,
+                        r,
+                        input,
+                    );
                 }
                 1 => {
                     ok.f32(ca.length_sqr(), r, input);
@@ -142,7 +167,11 @@ fn coord3d_matches() {
                     n.normalize();
                     ok.f32s(&v(n), &out, input);
                     let len = ca.length();
-                    let wrong = if len != 0.0 { [a[0] * (1.0 / len), a[1] * (1.0 / len), a[2] * (1.0 / len)] } else { a };
+                    let wrong = if len != 0.0 {
+                        [a[0] * (1.0 / len), a[1] * (1.0 / len), a[2] * (1.0 / len)]
+                    } else {
+                        a
+                    };
                     bug.f32s(&wrong, &out, input);
                 }
                 3 => {
@@ -153,7 +182,11 @@ fn coord3d_matches() {
                 }
                 4 | 5 => {
                     let mut s = ca;
-                    if op == 4 { s.add(&cb) } else { s.sub(&cb) }
+                    if op == 4 {
+                        s.add(&cb)
+                    } else {
+                        s.sub(&cb)
+                    }
                     ok.f32s(&v(s), &out, input);
                     // planted: add takes z from a.y (a copy-paste slip); sub is b - a
                     let w = if op == 4 {
@@ -230,9 +263,23 @@ fn regions_match() {
                 }
             }
             let mut out = [0.0f32; 6];
-            let r = unsafe { cpp::ref_vt_region(op as i32, lo.as_ptr(), hi.as_ptr(), q.as_ptr(), out.as_mut_ptr()) };
-            let r2 = Region2D { lo: Coord2D { x: lo[0], y: lo[1] }, hi: Coord2D { x: hi[0], y: hi[1] } };
-            let r3 = Region3D { lo: c3(lo), hi: c3(hi) };
+            let r = unsafe {
+                cpp::ref_vt_region(
+                    op as i32,
+                    lo.as_ptr(),
+                    hi.as_ptr(),
+                    q.as_ptr(),
+                    out.as_mut_ptr(),
+                )
+            };
+            let r2 = Region2D {
+                lo: Coord2D { x: lo[0], y: lo[1] },
+                hi: Coord2D { x: hi[0], y: hi[1] },
+            };
+            let r3 = Region3D {
+                lo: c3(lo),
+                hi: c3(hi),
+            };
             let input = || format!("lo {lo:?} hi {hi:?} q {q:?}");
             let flag = |t: bool| if t { 1.0f32 } else { 0.0 };
             let (good, wrong) = match op {
@@ -247,12 +294,23 @@ fn regions_match() {
                 ),
                 6 => (
                     flag(r3.is_in_region_with_z(&c3(q))),
-                    flag(lo[0] < q[0] && q[0] < hi[0] && lo[1] < q[1] && q[1] < hi[1] && lo[2] < q[2] && q[2] <= hi[2]),
+                    flag(
+                        lo[0] < q[0]
+                            && q[0] < hi[0]
+                            && lo[1] < q[1]
+                            && q[1] < hi[1]
+                            && lo[2] < q[2]
+                            && q[2] <= hi[2],
+                    ),
                 ),
                 _ => {
                     let mut z = r3;
                     z.zero();
-                    ok.f32s(&[z.lo.x, z.lo.y, z.lo.z, z.hi.x, z.hi.y, z.hi.z], &out, input);
+                    ok.f32s(
+                        &[z.lo.x, z.lo.y, z.lo.z, z.hi.x, z.hi.y, z.hi.z],
+                        &out,
+                        input,
+                    );
                     bug.f32s(&[0.0, 0.0, 0.0, hi[0], hi[1], hi[2]], &out, input);
                     continue;
                 }
@@ -298,9 +356,23 @@ fn integer_types_match_where_defined() {
             let lo = [int_input(&mut g), int_input(&mut g), int_input(&mut g)];
             let hi = [int_input(&mut g), int_input(&mut g), int_input(&mut g)];
             let a2 = ICoord2D { x: lo[0], y: lo[1] };
-            let a3 = ICoord3D { x: lo[0], y: lo[1], z: lo[2] };
-            let r2 = IRegion2D { lo: a2, hi: ICoord2D { x: hi[0], y: hi[1] } };
-            let r3 = IRegion3D { lo: a3, hi: ICoord3D { x: hi[0], y: hi[1], z: hi[2] } };
+            let a3 = ICoord3D {
+                x: lo[0],
+                y: lo[1],
+                z: lo[2],
+            };
+            let r2 = IRegion2D {
+                lo: a2,
+                hi: ICoord2D { x: hi[0], y: hi[1] },
+            };
+            let r3 = IRegion3D {
+                lo: a3,
+                hi: ICoord3D {
+                    x: hi[0],
+                    y: hi[1],
+                    z: hi[2],
+                },
+            };
             let rust: Result<i32, BaseTypeError> = match op {
                 0 => a2.try_length(),
                 1 => a3.try_length(),
@@ -332,12 +404,17 @@ fn integer_types_match_where_defined() {
             };
             if !defined {
                 undefined += 1;
-                assert_eq!(rust, Err(BaseTypeError::SignedOverflow), "{name}: lo {lo:?} hi {hi:?}");
+                assert_eq!(
+                    rust,
+                    Err(BaseTypeError::SignedOverflow),
+                    "{name}: lo {lo:?} hi {hi:?}"
+                );
                 continue;
             }
             let c = unsafe { cpp::ref_vt_int(op as i32, lo.as_ptr(), hi.as_ptr()) };
             let input = || format!("lo {lo:?} hi {hi:?}");
-            let v = rust.unwrap_or_else(|e| panic!("{name}: {e} on defined input lo {lo:?} hi {hi:?}"));
+            let v =
+                rust.unwrap_or_else(|e| panic!("{name}: {e} on defined input lo {lo:?} hi {hi:?}"));
             ok.eq(v, c, input);
             // planted: lengths rounded instead of truncated; widths off by one; zero leaves z
             let wrong = match op {
@@ -369,7 +446,11 @@ fn rgb_color_matches() {
             _ => g.uniform(0.0, 1.0),
         };
         let rgb = [comp(&mut g), comp(&mut g), comp(&mut g)];
-        let c = RGBColor { red: rgb[0], green: rgb[1], blue: rgb[2] };
+        let c = RGBColor {
+            red: rgb[0],
+            green: rgb[1],
+            blue: rgb[2],
+        };
         // Independent definedness check: each (Int)(c*255.0) in range and >= 0,
         // and its shifted value within 32 unsigned bits.
         let defined = rgb.iter().zip([16u32, 8, 0]).all(|(&v, sh)| {
@@ -390,7 +471,9 @@ fn rgb_color_matches() {
                 let r = unsafe { cpp::ref_vt_rgb_get_as_int(rgb.as_ptr()) };
                 ok.eq(v, r, || format!("{rgb:?}"));
                 // planted: scale in float (red * 255.0f) instead of double
-                let wrong = ((rgb[0] * 255.0) as i32) << 16 | ((rgb[1] * 255.0) as i32) << 8 | (rgb[2] * 255.0) as i32;
+                let wrong = ((rgb[0] * 255.0) as i32) << 16
+                    | ((rgb[1] * 255.0) as i32) << 8
+                    | (rgb[2] * 255.0) as i32;
                 bug.eq(wrong, r, || format!("{rgb:?}"));
             }
         }
@@ -402,7 +485,11 @@ fn rgb_color_matches() {
     let mut ok = Check::new("RGBColor::setFromInt");
     let mut bug = Check::new("RGBColor::setFromInt");
     for i in 0..N {
-        let v = if i < 256 { (i as i32) * 0x0001_0101 } else { g.i32() };
+        let v = if i < 256 {
+            (i as i32) * 0x0001_0101
+        } else {
+            g.i32()
+        };
         let mut c = RGBColor::default();
         c.set_from_int(v);
         let mut out = [0.0f32; 3];
@@ -418,7 +505,17 @@ fn rgb_color_matches() {
 #[test]
 fn templates_match() {
     let mut g = Gen::new(106);
-    let names = ["sqr<Real>", "clamp<Real>", "sign<Real>", "rad2deg", "deg2rad", "min", "max", "RealRange::combine lo", "RealRange::combine hi"];
+    let names = [
+        "sqr<Real>",
+        "clamp<Real>",
+        "sign<Real>",
+        "rad2deg",
+        "deg2rad",
+        "min",
+        "max",
+        "RealRange::combine lo",
+        "RealRange::combine hi",
+    ];
     for (op, name) in names.iter().enumerate() {
         let mut ok = Check::new(name);
         let mut bug = Check::new(name);
@@ -435,7 +532,16 @@ fn templates_match() {
             rr.combine(&RealRange { lo: c, hi: d });
             let (good, wrong) = match op {
                 0 => (sqr(a), a * a.abs()),
-                1 => (clamp(a, b, c), if b > c { c } else if b < a { a } else { b }),
+                1 => (
+                    clamp(a, b, c),
+                    if b > c {
+                        c
+                    } else if b < a {
+                        a
+                    } else {
+                        b
+                    },
+                ),
                 2 => (sign(a) as f32, if a >= 0.0 { 1.0 } else { -1.0 }),
                 3 => (rad2deg(a), a * 180.0 / PI),
                 4 => (deg2rad(a), a * PI / 180.0),
@@ -621,17 +727,37 @@ fn enums_and_name_tables_match() {
     .collect();
     use thing_sort::*;
     let sort: Vec<i64> = [
-        ES_FIRST, ES_NONE, ES_STRUCTURE, ES_INFANTRY, ES_VEHICLE, ES_SHRUBBERY, ES_MISC_MAN_MADE, ES_MISC_NATURAL,
-        ES_DEBRIS, ES_SYSTEM, ES_AUDIO, ES_TEST, ES_FOR_REVIEW, ES_ROAD, ES_WAYPOINT, ES_NUM_SORTING_TYPES,
+        ES_FIRST,
+        ES_NONE,
+        ES_STRUCTURE,
+        ES_INFANTRY,
+        ES_VEHICLE,
+        ES_SHRUBBERY,
+        ES_MISC_MAN_MADE,
+        ES_MISC_NATURAL,
+        ES_DEBRIS,
+        ES_SYSTEM,
+        ES_AUDIO,
+        ES_TEST,
+        ES_FOR_REVIEW,
+        ES_ROAD,
+        ES_WAYPOINT,
+        ES_NUM_SORTING_TYPES,
     ]
     .iter()
     .map(|&v| v as i64)
     .collect();
     use powers::*;
-    let pw: Vec<i64> = [POWER_NONE, POWER_FASTER, POWER_DOUBLE_SHOT, POWER_SELF_HEALING, POWERS_NUM_POWERS]
-        .iter()
-        .map(|&v| v as i64)
-        .collect();
+    let pw: Vec<i64> = [
+        POWER_NONE,
+        POWER_FASTER,
+        POWER_DOUBLE_SHOT,
+        POWER_SELF_HEALING,
+        POWERS_NUM_POWERS,
+    ]
+    .iter()
+    .map(|&v| v as i64)
+    .collect();
     let mut weapon: Vec<i64> = [
         wt::WEAPONSET_VETERAN,
         wt::WEAPONSET_ELITE,
@@ -673,7 +799,10 @@ fn enums_and_name_tables_match() {
         .iter()
         .map(|&v| v as i64),
     );
-    let spt: Vec<i64> = special_power_type::SPECIAL_POWER_TYPE_ENUMERATORS.iter().map(|&(_, v)| v as i64).collect();
+    let spt: Vec<i64> = special_power_type::SPECIAL_POWER_TYPE_ENUMERATORS
+        .iter()
+        .map(|&(_, v)| v as i64)
+        .collect();
 
     let tables: [(&str, Vec<i64>); 7] = [
         ("GameType.h enumerators", game_type),
@@ -750,7 +879,10 @@ fn normalize_angle_and_attack_types_match() {
             Ok(r) => r,
             Err(_) => {
                 // Independent check: a step of 2*PI no longer changes it.
-                assert!(a.is_infinite() || a - 2.0 * PI == a || a + 2.0 * PI == a, "hang claimed for {a:e}");
+                assert!(
+                    a.is_infinite() || a - 2.0 * PI == a || a + 2.0 * PI == a,
+                    "hang claimed for {a:e}"
+                );
                 hangs += 1;
                 continue;
             }
@@ -779,7 +911,9 @@ fn normalize_angle_and_attack_types_match() {
             if (a - b).abs() <= 1.0e6 || (a - b).is_nan() {
                 let c = unsafe { cpp::ref_game_common_angle(1, a, b) };
                 ok2.f32(d, c, || format!("{a:e} {b:e}"));
-                bug2.f32(try_normalize_angle(a + b).unwrap_or(0.0), c, || format!("{a:e} {b:e}")); // planted: a + b
+                bug2.f32(try_normalize_angle(a + b).unwrap_or(0.0), c, || {
+                    format!("{a:e} {b:e}")
+                }); // planted: a + b
             }
         }
     }
@@ -793,10 +927,18 @@ fn normalize_angle_and_attack_types_match() {
     let mut bug = Check::new("isForcedAttack/isContinuedAttack");
     for t in -16..64 {
         for op in 0..2 {
-            let r = if op == 0 { is_forced_attack(t) } else { is_continued_attack(t) };
+            let r = if op == 0 {
+                is_forced_attack(t)
+            } else {
+                is_continued_attack(t)
+            };
             let c = unsafe { cpp::ref_attack_type(op, t) } != 0;
             ok.eq(r, c, || format!("op {op} t {t}"));
-            let w = if op == 0 { t & 3 != 0 } else { is_continued_attack(t) };
+            let w = if op == 0 {
+                t & 3 != 0
+            } else {
+                is_continued_attack(t)
+            };
             bug.eq(w, c, || format!("op {op} t {t}"));
         }
     }
@@ -818,7 +960,9 @@ fn discrete_circle_matches() {
     let mut ok = Check::new("DiscreteCircle edges and draw calls");
     let mut bug = Check::new("DiscreteCircle edges and draw calls");
     let mut undefined = 0u32;
-    let mut cases: Vec<(i32, i32, i32)> = (0..=600).map(|r| (g.i32() % 1000, g.i32() % 1000, r)).collect();
+    let mut cases: Vec<(i32, i32, i32)> = (0..=600)
+        .map(|r| (g.i32() % 1000, g.i32() % 1000, r))
+        .collect();
     for _ in 0..20_000 {
         let r = match g.below(4) {
             0 => g.below(5001) as i32,
@@ -826,7 +970,10 @@ fn discrete_circle_matches() {
             _ => g.below(64) as i32,
         };
         let (x, y) = match g.below(10) {
-            0 => (i32::MAX - g.below(100) as i32, i32::MIN + g.below(100) as i32),
+            0 => (
+                i32::MAX - g.below(100) as i32,
+                i32::MIN + g.below(100) as i32,
+            ),
             1 => (g.i32(), g.i32()),
             _ => ((g.i32() % (1 << 20)), (g.i32() % (1 << 20))),
         };
@@ -841,25 +988,57 @@ fn discrete_circle_matches() {
         // Independent definedness check, in i64.
         let (x6, y6, r6) = (i64::from(x), i64::from(y), i64::from(r));
         let fits = |v: i64| v >= i64::from(i32::MIN) && v <= i64::from(i32::MAX);
-        let defined = r >= 0 && fits(2 * y6) && fits(2 * r6) && fits(x6 - r6) && fits(x6 + r6) && fits(y6 + r6) && fits(2 * y6 - (y6 + r6)) && fits(2 * y6 - y6);
+        let defined = r >= 0
+            && fits(2 * y6)
+            && fits(2 * r6)
+            && fits(x6 - r6)
+            && fits(x6 + r6)
+            && fits(y6 + r6)
+            && fits(2 * y6 - (y6 + r6))
+            && fits(2 * y6 - y6);
         let (edges, calls) = match rust {
             Ok(v) => v,
             Err(e) => {
-                assert!(!defined, "({x}, {y}, {r}): {e} on an input upstream defines");
+                assert!(
+                    !defined,
+                    "({x}, {y}, {r}): {e} on an input upstream defines"
+                );
                 undefined += 1;
                 continue;
             }
         };
-        assert!(defined, "({x}, {y}, {r}): Ok on an input upstream leaves undefined");
+        assert!(
+            defined,
+            "({x}, {y}, {r}): Ok on an input upstream leaves undefined"
+        );
         let mut ce = vec![0i32; 3 * 20_000];
         let mut cc = vec![0i32; 6 * 20_000];
         let mut ncalls = 0;
         let n = unsafe {
-            cpp::ref_discrete_circle(x, y, r, ce.as_mut_ptr(), ce.len() as i32, cc.as_mut_ptr(), cc.len() as i32, &mut ncalls)
+            cpp::ref_discrete_circle(
+                x,
+                y,
+                r,
+                ce.as_mut_ptr(),
+                ce.len() as i32,
+                cc.as_mut_ptr(),
+                cc.len() as i32,
+                &mut ncalls,
+            )
         };
         assert!(n >= 0, "buffers");
-        let flat: Vec<i32> = edges.iter().flat_map(|e| [e.y_pos, e.x_start, e.x_end]).collect();
-        ok.eq((flat.clone(), calls), (ce[..3 * n as usize].to_vec(), cc[..3 * ncalls as usize].to_vec()), || format!("({x}, {y}, {r})"));
+        let flat: Vec<i32> = edges
+            .iter()
+            .flat_map(|e| [e.y_pos, e.x_start, e.x_end])
+            .collect();
+        ok.eq(
+            (flat.clone(), calls),
+            (
+                ce[..3 * n as usize].to_vec(),
+                cc[..3 * ncalls as usize].to_vec(),
+            ),
+            || format!("({x}, {y}, {r})"),
+        );
         // planted: keep the first edge of each row
         let mut first: Vec<i32> = Vec::new();
         let mut gen_edges = Vec::new();
@@ -884,7 +1063,9 @@ fn discrete_circle_matches() {
                 last_row = Some(e[0]);
             }
         }
-        bug.eq(first, ce[..3 * n as usize].to_vec(), || format!("({x}, {y}, {r})"));
+        bug.eq(first, ce[..3 * n as usize].to_vec(), || {
+            format!("({x}, {y}, {r})")
+        });
     }
     println!("     DiscreteCircle: {undefined} inputs left out (negative radius or Int overflow; Rust returned Err)");
     ok.finish();

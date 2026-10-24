@@ -18,11 +18,11 @@
 //! of the workspace.
 
 use crate::common::game_common::VeterancyLevel;
+use crate::common::game_type::ObjectId;
 use crate::common::model_state::ModelConditionFlagType;
 use crate::common::object_status_types::ObjectStatusMaskType;
 use crate::logic::weapon_set_state::WeaponLockType;
 use crate::logic::world::ids::PlayerIndex;
-use crate::common::game_type::ObjectId;
 
 /// An upgrade template as the create modules need it: upstream's
 /// `const UpgradeTemplate*` reduced to the two facts they read
@@ -106,13 +106,21 @@ pub trait CreateHost {
     fn object_status_bits(&self, obj: ObjectId) -> ObjectStatusMaskType;
 }
 
-
 // --- p1w10-sonnet ---
 /// Reports an undefined input of a create module the way the upgrade modules do: a `module_errors` entry of the world
 /// (`IniError::undefined`), nothing else.
-pub fn report_create_error(world: &mut crate::logic::world::game_logic::World, me: crate::logic::world::module_call::ModuleHandle, r: Result<(), CreateError>) {
+pub fn report_create_error(
+    world: &mut crate::logic::world::game_logic::World,
+    me: crate::logic::world::module_call::ModuleHandle,
+    r: Result<(), CreateError>,
+) {
     if let Err(CreateError::NoControllingPlayer) = r {
-        world.cuts.module_errors.push((me, crate::common::ini::IniError::undefined(crate::common::ini::Undefined::NullControllingPlayer)));
+        world.cuts.module_errors.push((
+            me,
+            crate::common::ini::IniError::undefined(
+                crate::common::ini::Undefined::NullControllingPlayer,
+            ),
+        ));
     }
 }
 
@@ -121,10 +129,16 @@ pub fn report_create_error(world: &mut crate::logic::world::game_logic::World, m
 macro_rules! create_module_snapshot {
     ($t:ty) => {
         impl crate::common::xfer::Snapshot for $t {
-            fn crc(&mut self, xfer: &mut dyn crate::common::xfer::Xfer) -> crate::common::xfer::XferResult<()> {
+            fn crc(
+                &mut self,
+                xfer: &mut dyn crate::common::xfer::Xfer,
+            ) -> crate::common::xfer::XferResult<()> {
                 self.create.crc(xfer)
             }
-            fn xfer(&mut self, xfer: &mut dyn crate::common::xfer::Xfer) -> crate::common::xfer::XferResult<()> {
+            fn xfer(
+                &mut self,
+                xfer: &mut dyn crate::common::xfer::Xfer,
+            ) -> crate::common::xfer::XferResult<()> {
                 let current: crate::common::xfer::XferVersion = 1;
                 let mut version = current;
                 xfer.xfer_version(&mut version, current)?;
@@ -142,8 +156,14 @@ pub(crate) use create_module_snapshot;
 // --- p1w10-sonnet ---
 /// The factory's `NewModuleDataProc` for the four create modules whose data is `CreateModuleData` itself
 /// (`PreorderCreate`, `SpecialPowerCreate`, `SupplyCenterCreate`, `SupplyWarehouseCreate`).
-pub fn new_plain_create_module_data(ini: Option<&mut crate::common::ini::Ini<'_>>) -> crate::common::ini::IniResult<crate::common::module::ModuleDataKind> {
-    Ok(crate::common::module::ModuleDataKind::Create(std::sync::Arc::new(crate::logic::module::create_module::CreateModuleData::friend_new_module_data(ini)?)))
+pub fn new_plain_create_module_data(
+    ini: Option<&mut crate::common::ini::Ini<'_>>,
+) -> crate::common::ini::IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::Create(
+        std::sync::Arc::new(
+            crate::logic::module::create_module::CreateModuleData::friend_new_module_data(ini)?,
+        ),
+    ))
 }
 
 /// `UpdateBody` is compared in tests: two create modules are equal when they are the same class on the same object with the
@@ -153,7 +173,8 @@ macro_rules! create_module_eq {
         impl PartialEq for $t {
             fn eq(&self, other: &Self) -> bool {
                 self.create.behavior().object() == other.create.behavior().object()
-                    && self.create.should_do_on_build_complete() == other.create.should_do_on_build_complete()
+                    && self.create.should_do_on_build_complete()
+                        == other.create.should_do_on_build_complete()
             }
         }
     };
@@ -161,7 +182,8 @@ macro_rules! create_module_eq {
         impl PartialEq for $t {
             fn eq(&self, other: &Self) -> bool {
                 self.create.behavior().object() == other.create.behavior().object()
-                    && self.create.should_do_on_build_complete() == other.create.should_do_on_build_complete()
+                    && self.create.should_do_on_build_complete()
+                        == other.create.should_do_on_build_complete()
                     && std::sync::Arc::ptr_eq(&self.data, &other.data)
             }
         }
@@ -232,16 +254,27 @@ pub(crate) mod test_support {
             self.log.push(format!("minvet {obj} {}", level as i32));
         }
         fn find_upgrade(&mut self, name: &[u8]) -> Option<UpgradeRef> {
-            self.upgrades.iter().find(|(n, _)| n == name).map(|(_, u)| *u)
+            self.upgrades
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, u)| *u)
         }
         fn player_add_upgrade_complete(&mut self, player: PlayerIndex, upgrade: UpgradeRef) {
-            self.log.push(format!("player-upgrade {player} {}", upgrade.id));
+            self.log
+                .push(format!("player-upgrade {player} {}", upgrade.id));
         }
         fn object_give_upgrade(&mut self, obj: ObjectId, upgrade: UpgradeRef) {
-            self.log.push(format!("object-upgrade {obj} {}", upgrade.id));
+            self.log
+                .push(format!("object-upgrade {obj} {}", upgrade.id));
         }
-        fn academy_record_upgrade(&mut self, player: PlayerIndex, upgrade: UpgradeRef, granted: bool) {
-            self.log.push(format!("academy {player} {} {granted}", upgrade.id));
+        fn academy_record_upgrade(
+            &mut self,
+            player: PlayerIndex,
+            upgrade: UpgradeRef,
+            granted: bool,
+        ) {
+            self.log
+                .push(format!("academy {player} {} {granted}", upgrade.id));
         }
         fn object_status_bits(&self, obj: ObjectId) -> ObjectStatusMaskType {
             let _ = obj;

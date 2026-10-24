@@ -89,7 +89,11 @@ pub const FULLY_HEAL: MaxHealthChangeType = 3;
 
 /// `TheMaxHealthChangeTypeNames[]` (under `DEFINE_MAXHEALTHCHANGETYPE_NAMES`):
 /// three names, no `FULLY_HEAL` (see the module docs).
-pub const MAX_HEALTH_CHANGE_TYPE_NAMES: [&str; 3] = ["SAME_CURRENTHEALTH", "PRESERVE_RATIO", "ADD_CURRENT_HEALTH_TOO"];
+pub const MAX_HEALTH_CHANGE_TYPE_NAMES: [&str; 3] = [
+    "SAME_CURRENTHEALTH",
+    "PRESERVE_RATIO",
+    "ADD_CURRENT_HEALTH_TOO",
+];
 
 /// `IS_CONDITION_WORSE(a, b)`: `a > b`.
 pub fn is_condition_worse(a: BodyDamageType, b: BodyDamageType) -> bool {
@@ -134,7 +138,10 @@ impl BodyModule {
     /// for null data.
     pub fn new(object: ObjectId, module_data: Option<Arc<BodyModuleData>>) -> IniResult<Self> {
         let behavior = BehaviorModule::new(object, module_data.map(ModuleDataKind::Body))?;
-        Ok(BodyModule { behavior, damage_scalar: 1.0 })
+        Ok(BodyModule {
+            behavior,
+            damage_scalar: 1.0,
+        })
     }
 
     /// `BodyModule::getInterfaceMask()`: `MODULEINTERFACE_BODY`.
@@ -299,10 +306,30 @@ mod tests {
     #[test]
     fn the_defaults_are_those_of_a_generic_body() {
         let mut m = module();
-        assert_eq!((m.get_max_health(), m.get_previous_health(), m.get_initial_health()), (0.0, 0.0, 0.0));
-        assert_eq!((m.get_subdual_damage_heal_rate(), m.get_subdual_damage_heal_amount(), m.get_current_subdual_damage_amount()), (0, 0.0, 0.0));
+        assert_eq!(
+            (
+                m.get_max_health(),
+                m.get_previous_health(),
+                m.get_initial_health()
+            ),
+            (0.0, 0.0, 0.0)
+        );
+        assert_eq!(
+            (
+                m.get_subdual_damage_heal_rate(),
+                m.get_subdual_damage_heal_amount(),
+                m.get_current_subdual_damage_amount()
+            ),
+            (0, 0.0, 0.0)
+        );
         assert!(!m.has_any_subdual_damage() && !m.get_last_damage_info_is_present());
-        assert_eq!((m.get_last_damage_timestamp(), m.get_last_healing_timestamp()), (0, 0));
+        assert_eq!(
+            (
+                m.get_last_damage_timestamp(),
+                m.get_last_healing_timestamp()
+            ),
+            (0, 0)
+        );
         assert_eq!(m.get_clearable_last_attacker(), 0);
         assert!(!m.get_front_crushed() && !m.get_back_crushed());
         assert!(m.is_indestructible());
@@ -319,13 +346,25 @@ mod tests {
 
     #[test]
     fn damage_states_compare_in_order() {
-        assert!(is_condition_worse(BODY_RUBBLE, BODY_DAMAGED) && !is_condition_worse(BODY_DAMAGED, BODY_DAMAGED));
-        assert!(is_condition_better(BODY_PRISTINE, BODY_REALLYDAMAGED) && !is_condition_better(BODY_RUBBLE, BODY_PRISTINE));
+        assert!(
+            is_condition_worse(BODY_RUBBLE, BODY_DAMAGED)
+                && !is_condition_worse(BODY_DAMAGED, BODY_DAMAGED)
+        );
+        assert!(
+            is_condition_better(BODY_PRISTINE, BODY_REALLYDAMAGED)
+                && !is_condition_better(BODY_RUBBLE, BODY_PRISTINE)
+        );
         assert_eq!(BODY_DAMAGE_TYPE_NAMES.len() as i32, BODYDAMAGETYPE_COUNT);
-        assert_eq!(BODY_DAMAGE_TYPE_NAMES[BODY_REALLYDAMAGED as usize], "REALLYDAMAGED");
+        assert_eq!(
+            BODY_DAMAGE_TYPE_NAMES[BODY_REALLYDAMAGED as usize],
+            "REALLYDAMAGED"
+        );
         // three names for four enumerators: FULLY_HEAL has none
         assert_eq!(MAX_HEALTH_CHANGE_TYPE_NAMES.len() as i32, FULLY_HEAL);
-        assert_eq!((SAME_CURRENTHEALTH, PRESERVE_RATIO, ADD_CURRENT_HEALTH_TOO), (0, 1, 2));
+        assert_eq!(
+            (SAME_CURRENTHEALTH, PRESERVE_RATIO, ADD_CURRENT_HEALTH_TOO),
+            (0, 1, 2)
+        );
     }
 
     #[test]

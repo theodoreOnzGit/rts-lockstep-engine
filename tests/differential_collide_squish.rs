@@ -68,7 +68,9 @@ use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::common::game_common::Relationship;
 use rts_lockstep_engine::common::geometry::{GeometryInfo, GeometryType};
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
-use rts_lockstep_engine::common::module::{ModuleDataKind, MODULEINTERFACE_BODY, MODULEINTERFACE_DAMAGE};
+use rts_lockstep_engine::common::module::{
+    ModuleDataKind, MODULEINTERFACE_BODY, MODULEINTERFACE_DAMAGE,
+};
 use rts_lockstep_engine::common::special_power_type::SPECIAL_TANKHUNTER_TNT_ATTACK;
 use rts_lockstep_engine::common::thing_template::{ObjectTemplateValues, ThingTemplate};
 use rts_lockstep_engine::differential as cpp;
@@ -94,7 +96,10 @@ fn read_block(ini: &mut Ini<'_>, out: &mut Option<ModuleDataKind>) -> IniResult<
 }
 
 fn rust_read(name: &[u8], text: &[u8]) -> (IniResult<()>, Option<ModuleDataKind>) {
-    let blocks = [BlockParse { token: "D", parse: read_block }];
+    let blocks = [BlockParse {
+        token: "D",
+        parse: read_block,
+    }];
     let mut out = None;
     let r = Ini::load(name, text, IniLoadType::Overwrite, None, &blocks, &mut out);
     (r, out)
@@ -115,7 +120,9 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let log: Vec<String> = (0..nlog).map(|_| r.str()).collect();
         let x = r.xfer();
         let state: Vec<u32> = (0..2).map(|_| r.u32()).collect();
-        out.push(format!("op {i}: status {st} log {log:?} {x} state {state:x?}"));
+        out.push(format!(
+            "op {i}: status {st} log {log:?} {x} state {state:x?}"
+        ));
     }
     out
 }
@@ -137,7 +144,10 @@ fn bits(x: f32) -> u32 {
 }
 
 fn gen_coord(g: &mut Gen) -> f32 {
-    *pick(g, &[&-3.0f32, &-1.5, &-1.0, &0.0, &0.5, &1.0, &2.0, &3.0, &6.0])
+    *pick(
+        g,
+        &[&-3.0f32, &-1.5, &-1.0, &0.0, &0.5, &1.0, &2.0, &3.0, &6.0],
+    )
 }
 
 fn gen_z(g: &mut Gen) -> f32 {
@@ -145,14 +155,22 @@ fn gen_z(g: &mut Gen) -> f32 {
 }
 
 fn gen_angle(g: &mut Gen) -> f32 {
-    *pick(g, &[&0.0f32, &0.5, &1.0, &1.5707964, &-1.0, &3.0, &-2.5, &0.25])
+    *pick(
+        g,
+        &[&0.0f32, &0.5, &1.0, &1.5707964, &-1.0, &3.0, &-2.5, &0.25],
+    )
 }
 
 fn gen_dim(g: &mut Gen) -> f32 {
     *pick(g, &[&0.5f32, &1.0, &1.5, &2.0, &3.0, &5.0, &8.0])
 }
 
-fn gen_case(g: &mut Gen, _data: &Option<ModuleDataKind>, _n_up: usize, _upgrades: &[String]) -> (Vec<u32>, Vec<[u32; 5]>) {
+fn gen_case(
+    g: &mut Gen,
+    _data: &Option<ModuleDataKind>,
+    _n_up: usize,
+    _upgrades: &[String],
+) -> (Vec<u32>, Vec<[u32; 5]>) {
     // [self has an AI, self has a body, the health, self has a team, the crusher has a team, the crusher's crusher level]
     let cfg = vec![
         u32::from(g.below(100) < 80),
@@ -169,13 +187,37 @@ fn gen_case(g: &mut Gen, _data: &Option<ModuleDataKind>, _n_up: usize, _upgrades
             35..=40 => [1, bits(gen_coord(g)), bits(gen_coord(g)), bits(gen_z(g)), 0],
             41..=46 => [2, bits(gen_coord(g)), bits(gen_coord(g)), bits(gen_z(g)), 0],
             47..=51 => [3, bits(gen_angle(g)), bits(gen_angle(g)), 0, 0],
-            52..=57 => [4, g.below(3), bits(gen_dim(g)), bits(gen_dim(g)), bits(gen_dim(g))],
-            58..=63 => [5, g.below(3), bits(gen_dim(g)), bits(gen_dim(g)), bits(gen_dim(g))],
-            64..=72 => [6, bits(gen_coord(g)), bits(gen_coord(g)), bits(*pick(g, &[&0.0f32, &1.0])), 0],
+            52..=57 => [
+                4,
+                g.below(3),
+                bits(gen_dim(g)),
+                bits(gen_dim(g)),
+                bits(gen_dim(g)),
+            ],
+            58..=63 => [
+                5,
+                g.below(3),
+                bits(gen_dim(g)),
+                bits(gen_dim(g)),
+                bits(gen_dim(g)),
+            ],
+            64..=72 => [
+                6,
+                bits(gen_coord(g)),
+                bits(gen_coord(g)),
+                bits(*pick(g, &[&0.0f32, &1.0])),
+                0,
+            ],
             73..=78 => [7, g.below(3), 0, 0, 0],
             79..=83 => [8, g.below(2), g.below(3), g.below(2), 0],
             84..=87 => [9, g.below(2), g.below(2), 0, 0],
-            88..=92 => [10, *pick(g, &[&0u32, &0, &1, &2]), u32::from(g.below(100) < 90), 0, 0],
+            88..=92 => [
+                10,
+                *pick(g, &[&0u32, &0, &1, &2]),
+                u32::from(g.below(100) < 90),
+                0,
+                0,
+            ],
             93..=94 => [11, 0, 0, 0, 0],
             95..=96 => [12, 0, 0, 0, 0],
             97..=98 => [13, 0, 0, 0, 0],
@@ -194,15 +236,35 @@ struct Tally {
 }
 
 fn geometry(t: u32, h: u32, major: u32, minor: u32) -> GeometryInfo {
-    let ty = [GeometryType::Sphere, GeometryType::Cylinder, GeometryType::Box][t as usize % 3];
-    GeometryInfo::new(ty, false, f32::from_bits(h), f32::from_bits(major), f32::from_bits(minor))
+    let ty = [
+        GeometryType::Sphere,
+        GeometryType::Cylinder,
+        GeometryType::Box,
+    ][t as usize % 3];
+    GeometryInfo::new(
+        ty,
+        false,
+        f32::from_bits(h),
+        f32::from_bits(major),
+        f32::from_bits(minor),
+    )
 }
 
-fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally: &RefCell<Tally>) -> RunOut {
+fn rust_run(
+    ctx: Ctx,
+    data: ModuleDataKind,
+    cfg: &[u32],
+    ops: &[[u32; 5]],
+    tally: &RefCell<Tally>,
+) -> RunOut {
     let mut v = Vec::new();
 
     let mut w = World::new();
-    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
+    w.statics = Arc::new(rts_lockstep_engine::logic::world::statics::GameStatics {
+        upgrade_center: ctx.center,
+        special_power_store: ctx.store,
+        ..Default::default()
+    });
     w.names = ctx.names;
     w.cuts.probe_effect_trace = true;
     w.cuts.trace = Some(Vec::new());
@@ -214,33 +276,81 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
     if cfg[1] != 0 {
         let mut m = NewModule::plain(b"ProbeBody", b"ModuleTag_Body");
         m.interfaces = MODULEINTERFACE_BODY | MODULEINTERFACE_DAMAGE;
-        m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), f32::from_bits(cfg[2]), Default::default())));
+        m.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+            ProbeAnswers::default(),
+            f32::from_bits(cfg[2]),
+            Default::default(),
+        )));
         modules.push(m);
     }
     if cfg[0] != 0 {
         let mut ai = NewModule::plain(b"ProbeAI", b"ModuleTag_AI");
         ai.is_ai = true;
-        ai.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
+        ai.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+            ProbeAnswers::default(),
+            0.0,
+            Default::default(),
+        )));
         modules.push(ai);
     }
     // a hijacker (absent: renamed) and a special ability update (absent: no type), probes whose answers the ops set
     let mut hij = NewModule::plain(b"XHijackerUpdate", b"ModuleTag_Hijacker");
-    hij.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
+    hij.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+        ProbeAnswers::default(),
+        0.0,
+        Default::default(),
+    )));
     modules.push(hij);
     let mut sa = NewModule::plain(b"SpecialAbilityUpdate", b"ModuleTag_SA");
-    sa.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
+    sa.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+        ProbeAnswers::default(),
+        0.0,
+        Default::default(),
+    )));
     modules.push(sa);
-    modules.push(rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"SquishCollide", b"ModuleTag_Squish", &data).unwrap().unwrap());
-    let template = Arc::new(ThingTemplate::from_object_values(&ObjectTemplateValues::default()));
-    let me = w.new_object(NewObject { template, status: Default::default(), team: if cfg[3] != 0 { Some(TEAM_A) } else { None }, modules }).unwrap();
+    modules.push(
+        rts_lockstep_engine::logic::modules::new_module(
+            w.next_object_id(),
+            b"SquishCollide",
+            b"ModuleTag_Squish",
+            &data,
+        )
+        .unwrap()
+        .unwrap(),
+    );
+    let template = Arc::new(ThingTemplate::from_object_values(
+        &ObjectTemplateValues::default(),
+    ));
+    let me = w
+        .new_object(NewObject {
+            template,
+            status: Default::default(),
+            team: if cfg[3] != 0 { Some(TEAM_A) } else { None },
+            modules,
+        })
+        .unwrap();
     assert_eq!(me, 1);
-    let values = ObjectTemplateValues { crusher_level: cfg[5] as u8, ..Default::default() };
+    let values = ObjectTemplateValues {
+        crusher_level: cfg[5] as u8,
+        ..Default::default()
+    };
     let template = Arc::new(ThingTemplate::from_object_values(&values));
     let mut cmods = Vec::new();
     let mut phys = NewModule::plain(b"PhysicsBehavior", b"ModuleTag_Physics");
-    phys.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(ProbeAnswers::default(), 0.0, Default::default())));
+    phys.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(
+        ProbeAnswers::default(),
+        0.0,
+        Default::default(),
+    )));
     cmods.push(phys);
-    let crusher = w.new_object(NewObject { template, status: Default::default(), team: if cfg[4] != 0 { Some(TEAM_B) } else { None }, modules: cmods }).unwrap();
+    let crusher = w
+        .new_object(NewObject {
+            template,
+            status: Default::default(),
+            team: if cfg[4] != 0 { Some(TEAM_B) } else { None },
+            modules: cmods,
+        })
+        .unwrap();
     assert_eq!(crusher, 2);
     let idx = w.find_module(me, b"SquishCollide").unwrap();
     let mut saved: Vec<u8> = Vec::new();
@@ -259,27 +369,74 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                 0 => {
                     tally.borrow_mut().collides += 1;
                     let other = if o[1] != 0 { 0 } else { crusher };
-                    w.module_call(me, idx, rts_lockstep_engine::logic::world::module_call::ModuleCall::OnCollide { other, loc: None, normal: None });
+                    w.module_call(
+                        me,
+                        idx,
+                        rts_lockstep_engine::logic::world::module_call::ModuleCall::OnCollide {
+                            other,
+                            loc: None,
+                            normal: None,
+                        },
+                    );
                 }
-                1 => w.set_position(me, &Coord3D { x: f32::from_bits(o[1]), y: f32::from_bits(o[2]), z: f32::from_bits(o[3]) }),
-                2 => w.set_position(crusher, &Coord3D { x: f32::from_bits(o[1]), y: f32::from_bits(o[2]), z: f32::from_bits(o[3]) }),
+                1 => w.set_position(
+                    me,
+                    &Coord3D {
+                        x: f32::from_bits(o[1]),
+                        y: f32::from_bits(o[2]),
+                        z: f32::from_bits(o[3]),
+                    },
+                ),
+                2 => w.set_position(
+                    crusher,
+                    &Coord3D {
+                        x: f32::from_bits(o[1]),
+                        y: f32::from_bits(o[2]),
+                        z: f32::from_bits(o[3]),
+                    },
+                ),
                 3 => {
                     w.set_orientation(me, f32::from_bits(o[1]));
                     w.set_orientation(crusher, f32::from_bits(o[2]));
                 }
-                4 => w.objects.find_mut(me).unwrap().geometry_info = geometry(o[1], o[2], o[3], o[4]),
-                5 => w.objects.find_mut(crusher).unwrap().geometry_info = geometry(o[1], o[2], o[3], o[4]),
+                4 => {
+                    w.objects.find_mut(me).unwrap().geometry_info = geometry(o[1], o[2], o[3], o[4])
+                }
+                5 => {
+                    w.objects.find_mut(crusher).unwrap().geometry_info =
+                        geometry(o[1], o[2], o[3], o[4])
+                }
                 6 => {
-                    if let Some(i) = physics_idx.or(w.objects.find(crusher).unwrap().modules.iter().position(|m| m.name == b"PhysicsBehavior").map(|i| i as u16)) {
-                        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(crusher).unwrap().modules[i as usize].body.as_mut() {
-                            p.answers.velocity = Coord3D { x: f32::from_bits(o[1]), y: f32::from_bits(o[2]), z: f32::from_bits(o[3]) };
+                    if let Some(i) = physics_idx.or(w
+                        .objects
+                        .find(crusher)
+                        .unwrap()
+                        .modules
+                        .iter()
+                        .position(|m| m.name == b"PhysicsBehavior")
+                        .map(|i| i as u16))
+                    {
+                        if let Some(UpdateBody::ModuleProbe(p)) =
+                            w.objects.find_mut(crusher).unwrap().modules[i as usize]
+                                .body
+                                .as_mut()
+                        {
+                            p.answers.velocity = Coord3D {
+                                x: f32::from_bits(o[1]),
+                                y: f32::from_bits(o[2]),
+                                z: f32::from_bits(o[3]),
+                            };
                         }
                     }
                 }
                 7 => {
                     let goal = [0, crusher, me][o[1] as usize % 3];
                     if let Some(i) = w.objects.find(me).unwrap().ai {
-                        if let Some(UpdateBody::ModuleProbe(p)) = w.objects.find_mut(me).unwrap().modules[i as usize].body.as_mut() {
+                        if let Some(UpdateBody::ModuleProbe(p)) =
+                            w.objects.find_mut(me).unwrap().modules[i as usize]
+                                .body
+                                .as_mut()
+                        {
                             p.answers.goal_object = goal;
                         }
                     }
@@ -290,9 +447,14 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                     w.friend_set_undetected_defector(crusher, o[2] != 0);
                 }
                 10 => {
-                    let rel = [Relationship::Enemies, Relationship::Neutral, Relationship::Allies][o[1] as usize % 3];
+                    let rel = [
+                        Relationship::Enemies,
+                        Relationship::Neutral,
+                        Relationship::Allies,
+                    ][o[1] as usize % 3];
                     w.cuts.team_relationships.insert((TEAM_B, TEAM_A), rel);
-                    w.objects.find_mut(crusher).unwrap().physics = if o[2] != 0 { physics_idx } else { None };
+                    w.objects.find_mut(crusher).unwrap().physics =
+                        if o[2] != 0 { physics_idx } else { None };
                 }
                 11..=13 => {
                     let r = run_xfer(&mut w, me, idx as usize, o[0] - 11, &saved, XFER_FILE);
@@ -309,11 +471,20 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         }
         let _ = &mut physics_idx;
         if w.cuts.module_errors.len() > errors_before {
-            assert!(w.cuts.module_errors[errors_before..].iter().all(|(_, e)| e.is_undefined()), "{:?}", w.cuts.module_errors);
+            assert!(
+                w.cuts.module_errors[errors_before..]
+                    .iter()
+                    .all(|(_, e)| e.is_undefined()),
+                "{:?}",
+                w.cuts.module_errors
+            );
             excluded = true;
         }
         let trace = w.cuts.trace.take().unwrap_or_default();
-        let log: Vec<String> = trace.into_iter().filter(|t| t.starts_with("damage ")).collect();
+        let log: Vec<String> = trace
+            .into_iter()
+            .filter(|t| t.starts_with("damage "))
+            .collect();
         tally.borrow_mut().squishes += log.len() as u64;
         tally.borrow_mut().effects += log.len() as u64;
         put_i32(&mut v, 0);
@@ -328,14 +499,21 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
         }
         put_u32(&mut v, crc);
         let o = w.objects.find(me).unwrap();
-        let health = o.modules.iter().find_map(|b| match (b.name.as_slice(), b.body.as_ref()) {
-            (b"ProbeBody", Some(UpdateBody::ModuleProbe(p))) => Some(p.health.to_bits()),
-            _ => None,
-        });
+        let health = o
+            .modules
+            .iter()
+            .find_map(|b| match (b.name.as_slice(), b.body.as_ref()) {
+                (b"ProbeBody", Some(UpdateBody::ModuleProbe(p))) => Some(p.health.to_bits()),
+                _ => None,
+            });
         put_u32(&mut v, health.unwrap_or(0));
         put_u32(&mut v, u32::from(o.is_undetected_defector()));
     }
-    RunOut { dump: v, keys: Vec::new(), excluded }
+    RunOut {
+        dump: v,
+        keys: Vec::new(),
+        excluded,
+    }
 }
 
 /// Op 8: the module's object gets (or loses) a `HijackerUpdate` and a `SpecialAbilityUpdate` (power type 0 none, 1 TNT attack, 2 another; active). Both probes
@@ -344,12 +522,20 @@ fn set_extras(w: &mut World, me: i32, hijacker: bool, ability: u32, active: bool
     let o = w.objects.find_mut(me).unwrap();
     for m in o.modules.iter_mut() {
         if m.name == b"HijackerUpdate" || m.name == b"XHijackerUpdate" {
-            m.name = if hijacker { b"HijackerUpdate".to_vec() } else { b"XHijackerUpdate".to_vec() };
+            m.name = if hijacker {
+                b"HijackerUpdate".to_vec()
+            } else {
+                b"XHijackerUpdate".to_vec()
+            };
         }
         if m.name == b"SpecialAbilityUpdate" {
             if let Some(UpdateBody::ModuleProbe(p)) = m.body.as_mut() {
                 p.answers.has = if ability == 0 { 0 } else { 1 << 9 };
-                p.answers.special_power_type = if ability == 1 { SPECIAL_TANKHUNTER_TNT_ATTACK } else { 3 };
+                p.answers.special_power_type = if ability == 1 {
+                    SPECIAL_TANKHUNTER_TNT_ATTACK
+                } else {
+                    3
+                };
                 p.answers.yes = active;
             }
         }
@@ -380,5 +566,10 @@ fn squish_collide_matches_upstream() {
         "collide module O3: {} cases, {} data blocks threw, {} excluded (undefined upstream), {} ops, {} collisions, {} xfers, {} squishes",
         c.cases, c.read_failed, c.excluded, c.ops_run, t.collides, t.xfers, t.squishes
     );
-    assert!(c.read_failed * 40 > c.cases as u64 && c.ops_run * 5 > c.cases as u64 * 4 && t.squishes * 10 > c.cases as u64, "the generator must reach every path");
+    assert!(
+        c.read_failed * 40 > c.cases as u64
+            && c.ops_run * 5 > c.cases as u64 * 4
+            && t.squishes * 10 > c.cases as u64,
+        "the generator must reach every path"
+    );
 }

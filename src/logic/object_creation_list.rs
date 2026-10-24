@@ -81,7 +81,8 @@ use crate::common::thing_template::SHADOW_NAMES;
 use crate::common::trig::{cos, sin};
 use crate::logic::damage::{DamageInfo, DamageType, DeathType, DAMAGE_WATER, HUGE_DAMAGE_AMOUNT};
 use crate::logic::modules::deliver_payload_data::{
-    DeliverPayloadData, DeliverPayloadDataParse, WeaponTemplateRef, WEAPON_SLOT_TYPE_NAMES_LOOKUP_LIST,
+    DeliverPayloadData, DeliverPayloadDataParse, WeaponTemplateRef,
+    WEAPON_SLOT_TYPE_NAMES_LOOKUP_LIST,
 };
 use crate::logic::object_script_status_bits::OBJECT_STATUS_SCRIPT_TARGETABLE;
 use crate::logic::radius_decal::RadiusDecalTemplate;
@@ -98,7 +99,12 @@ use crate::ww::vector3::Vector3;
 pub fn plant(k: u32) -> bool {
     use std::sync::OnceLock;
     static P: OnceLock<u32> = OnceLock::new();
-    *P.get_or_init(|| std::env::var("OCL_PLANT").ok().and_then(|s| s.parse().ok()).unwrap_or(0)) == k
+    *P.get_or_init(|| {
+        std::env::var("OCL_PLANT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0)
+    }) == k
 }
 
 /// Without the `differential` feature no bug is ever planted.
@@ -207,7 +213,13 @@ pub struct FindPositionOptions {
 impl Default for FindPositionOptions {
     /// `FindPositionOptions()`.
     fn default() -> Self {
-        FindPositionOptions { flags: 0, min_radius: 0.0, max_radius: 0.0, start_angle: RANDOM_START_ANGLE, max_z_delta: 1e10 }
+        FindPositionOptions {
+            flags: 0,
+            min_radius: 0.0,
+            max_radius: 0.0,
+            start_angle: RANDOM_START_ANGLE,
+            max_z_delta: 1e10,
+        }
     }
 }
 
@@ -240,7 +252,11 @@ pub trait OclHost {
     /// `TheThingFactory->findTemplate(name)` (`None` for `NULL`).
     fn find_template(&mut self, name: &[u8]) -> Option<TemplateRef>;
     /// `TheThingFactory->newObject(tmplate, team)` (`None` for `NULL`, also for a `NULL` template).
-    fn new_object(&mut self, tmplate: Option<TemplateRef>, team: Option<TeamId>) -> Option<ObjectId>;
+    fn new_object(
+        &mut self,
+        tmplate: Option<TemplateRef>,
+        team: Option<TeamId>,
+    ) -> Option<ObjectId>;
     // ---- an object -------------------------------------------------------------------------------------------------
     /// `*o->getPosition()`.
     fn obj_position(&self, o: ObjectId) -> Coord3D;
@@ -310,13 +326,31 @@ pub trait OclHost {
     fn obj_set_veterancy_level(&mut self, o: ObjectId, level: VeterancyLevel);
     // ---- the modules of an object ---------------------------------------------------------------------------------
     /// `ai->aiAttackPosition(pos, maxShots, cmd)`.
-    fn ai_attack_position(&mut self, o: ObjectId, pos: &Coord3D, max_shots: i32, cmd: CommandSourceType);
+    fn ai_attack_position(
+        &mut self,
+        o: ObjectId,
+        pos: &Coord3D,
+        max_shots: i32,
+        cmd: CommandSourceType,
+    );
     /// `rd->createRadiusDecal(tmpl, radius, pos)`.
-    fn radius_decal_create(&mut self, o: ObjectId, tmpl: &RadiusDecalTemplate, radius: f32, pos: &Coord3D);
+    fn radius_decal_create(
+        &mut self,
+        o: ObjectId,
+        tmpl: &RadiusDecalTemplate,
+        radius: f32,
+        pos: &Coord3D,
+    );
     /// `rd->killWhenNoLongerAttacking(TRUE)`.
     fn radius_decal_kill_when_no_longer_attacking(&mut self, o: ObjectId);
     /// `dpai->deliverPayload(moveToPos, targetPos, data)`.
-    fn deliver_payload(&mut self, o: ObjectId, move_to: &Coord3D, target: &Coord3D, data: &DeliverPayloadData);
+    fn deliver_payload(
+        &mut self,
+        o: ObjectId,
+        move_to: &Coord3D,
+        target: &Coord3D,
+        data: &DeliverPayloadData,
+    );
     /// `dpai->getCurLocomotor()->getMaxSpeedForCondition(damageState)`.
     fn deliver_payload_max_speed_for_condition(&self, o: ObjectId, damage_state: i32) -> f32;
     /// `dpai->getCurLocomotor()->getPreferredHeight()`.
@@ -370,7 +404,12 @@ pub trait OclHost {
     fn physics_set_pitch_rate(&mut self, o: ObjectId, r: f32);
     // ---- containment ------------------------------------------------------------------------------------------------
     /// `container->getContain()->isValidContainerFor(obj, checkCapacity)`.
-    fn contain_is_valid_container_for(&self, container: ObjectId, obj: ObjectId, check_capacity: bool) -> bool;
+    fn contain_is_valid_container_for(
+        &self,
+        container: ObjectId,
+        obj: ObjectId,
+        check_capacity: bool,
+    ) -> bool;
     /// `container->getContain()->addToContain(obj)`.
     fn contain_add(&mut self, container: ObjectId, obj: ObjectId);
     // ---- the drawable -----------------------------------------------------------------------------------------------
@@ -385,9 +424,24 @@ pub trait OclHost {
     /// The number of draw modules of `o`'s drawable that have a `DebrisDrawInterface`, in module order.
     fn drawable_debris_interface_count(&self, o: ObjectId) -> usize;
     /// `di->setModelName(name, color, shadowType)` on the `i`-th debris interface.
-    fn debris_set_model_name(&mut self, o: ObjectId, i: usize, name: &[u8], color: i32, shadow_type: u32);
+    fn debris_set_model_name(
+        &mut self,
+        o: ObjectId,
+        i: usize,
+        name: &[u8],
+        color: i32,
+        shadow_type: u32,
+    );
     /// `di->setAnimNames(initial, flying, final, finalFX)` on the `i`-th debris interface.
-    fn debris_set_anim_names(&mut self, o: ObjectId, i: usize, initial: &[u8], flying: &[u8], fin: &[u8], final_fx: &FxListName);
+    fn debris_set_anim_names(
+        &mut self,
+        o: ObjectId,
+        i: usize,
+        initial: &[u8],
+        flying: &[u8],
+        fin: &[u8],
+        final_fx: &FxListName,
+    );
     // ---- the world --------------------------------------------------------------------------------------------------
     /// `TheTerrainLogic->getGroundHeight(x, y)`.
     fn terrain_ground_height(&self, x: f32, y: f32) -> f32;
@@ -400,13 +454,27 @@ pub trait OclHost {
     /// `TheTerrainLogic->isUnderwater(x, y, &waterZ, &terrainZ)`: the water and terrain heights if the point is underwater.
     fn terrain_is_underwater(&self, x: f32, y: f32) -> Option<(f32, f32)>;
     /// `TheAI->pathfinder()->getCell(layer, x, y)->getType()` (`None` for `NULL`).
-    fn pathfinder_cell_type(&self, layer: PathfindLayer, x: i32, y: i32) -> Option<PathfindCellType>;
+    fn pathfinder_cell_type(
+        &self,
+        layer: PathfindLayer,
+        x: i32,
+        y: i32,
+    ) -> Option<PathfindCellType>;
     /// `TheAI->pathfinder()->addObjectToPathfindMap(o)`.
     fn pathfinder_add_object(&mut self, o: ObjectId);
     /// `ThePartitionManager->findPositionAround(center, &options, &result)`.
-    fn partition_find_position_around(&mut self, center: &Coord3D, options: &FindPositionOptions) -> Coord3D;
+    fn partition_find_position_around(
+        &mut self,
+        center: &Coord3D,
+        options: &FindPositionOptions,
+    ) -> Coord3D;
     /// `TheWeaponStore->createAndFireTempWeapon(weapon, source, &pos)`.
-    fn weapon_create_and_fire_temp(&mut self, weapon: WeaponTemplateRef, source: ObjectId, pos: &Coord3D);
+    fn weapon_create_and_fire_temp(
+        &mut self,
+        weapon: WeaponTemplateRef,
+        source: ObjectId,
+        pos: &Coord3D,
+    );
     /// `TheParticleSystemManager->findTemplate(name)` (`None` for `NULL`).
     fn particle_system_find_template(&self, name: &[u8]) -> Option<u32>;
     /// `TheParticleSystemManager->createParticleSystem(tmpl)`, then `->attachToObject(o)`.
@@ -433,7 +501,13 @@ fn adjust_vector(vec: &mut Coord3D, mtx: Option<&Matrix3D>) {
 }
 
 /// `calcRandomForce(minMag, maxMag, minPitch, maxPitch, &force)`.
-fn calc_random_force<H: OclHost>(host: &mut H, min_mag: f32, max_mag: f32, min_pitch: f32, max_pitch: f32) -> Coord3D {
+fn calc_random_force<H: OclHost>(
+    host: &mut H,
+    min_mag: f32,
+    max_mag: f32,
+    min_pitch: f32,
+    max_pitch: f32,
+) -> Coord3D {
     let (angle, pitch, mag);
     if plant(31) {
         mag = host.random_value_real(min_mag, max_mag);
@@ -449,7 +523,11 @@ fn calc_random_force<H: OclHost>(host: &mut H, min_mag: f32, max_mag: f32, min_p
     mtx.rotate_z(angle);
     mtx.rotate_y(if plant(32) { pitch } else { -pitch });
     let v = mtx.get_x_vector();
-    Coord3D { x: v.x, y: v.y, z: v.z }
+    Coord3D {
+        x: v.x,
+        y: v.y,
+        z: v.z,
+    }
 }
 
 /// `class FireWeaponNugget`.
@@ -678,7 +756,11 @@ impl Default for GenericObjectCreationNugget {
             extra_bounciness: 0.0,
             extra_friction: 0.0,
             offset: Coord3D::default(),
-            disposition: if plant(8) { LIKE_EXISTING } else { ON_GROUND_ALIGNED },
+            disposition: if plant(8) {
+                LIKE_EXISTING
+            } else {
+                ON_GROUND_ALIGNED
+            },
             disposition_intensity: 0.0,
             spin_rate: if plant(9) { 0.0 } else { -1.0 },
             yaw_rate: -1.0,
@@ -748,12 +830,26 @@ fn bit_test(x: u32, i: u32) -> bool {
 
 impl FireWeaponNugget {
     /// `create(primaryObj, primary, secondary, angle, life)`.
-    fn create_at<H: OclHost>(&self, host: &mut H, primary_obj: Option<ObjectId>, primary: Option<&Coord3D>, secondary: Option<&Coord3D>) -> OclResult<Option<ObjectId>> {
+    fn create_at<H: OclHost>(
+        &self,
+        host: &mut H,
+        primary_obj: Option<ObjectId>,
+        primary: Option<&Coord3D>,
+        secondary: Option<&Coord3D>,
+    ) -> OclResult<Option<ObjectId>> {
         let (Some(po), Some(_), Some(s)) = (primary_obj, primary, secondary) else {
             return Ok(None); // "You must have a primary and secondary source for this effect"
         };
         if let Some(w) = self.weapon {
-            host.weapon_create_and_fire_temp(w, po, if plant(33) { primary.expect("checked above") } else { s });
+            host.weapon_create_and_fire_temp(
+                w,
+                po,
+                if plant(33) {
+                    primary.expect("checked above")
+                } else {
+                    s
+                },
+            );
         }
         Ok(None)
     }
@@ -761,7 +857,13 @@ impl FireWeaponNugget {
 
 impl AttackNugget {
     /// `create(primaryObj, primary, secondary, angle, life)`.
-    fn create_at<H: OclHost>(&self, host: &mut H, primary_obj: Option<ObjectId>, primary: Option<&Coord3D>, secondary: Option<&Coord3D>) -> OclResult<Option<ObjectId>> {
+    fn create_at<H: OclHost>(
+        &self,
+        host: &mut H,
+        primary_obj: Option<ObjectId>,
+        primary: Option<&Coord3D>,
+        secondary: Option<&Coord3D>,
+    ) -> OclResult<Option<ObjectId>> {
         let (Some(po), Some(_), Some(s)) = (primary_obj, primary, secondary) else {
             return Ok(None);
         };
@@ -770,10 +872,20 @@ impl AttackNugget {
             if !plant(34) {
                 host.obj_set_weapon_lock(po, self.weapon_slot, LOCKED_TEMPORARILY);
             }
-            host.ai_attack_position(po, s, if plant(35) { 1 } else { self.number_of_shots }, CommandSourceType::FromAi);
+            host.ai_attack_position(
+                po,
+                s,
+                if plant(35) { 1 } else { self.number_of_shots },
+                CommandSourceType::FromAi,
+            );
         }
         if host.obj_has_update_module(po, UpdateModuleKind::RadiusDecal) {
-            host.radius_decal_create(po, &self.delivery_decal_template, self.delivery_decal_radius, s);
+            host.radius_decal_create(
+                po,
+                &self.delivery_decal_template,
+                self.delivery_decal_radius,
+                s,
+            );
             if !plant(36) {
                 host.radius_decal_kill_when_no_longer_attacking(po);
             }
@@ -795,7 +907,9 @@ impl DeliverPayloadNugget {
         let (Some(po), Some(primary), Some(secondary)) = (primary_obj, primary, secondary) else {
             return Ok(None);
         };
-        let owner_player = host.obj_controlling_player(po).ok_or(OclError::Undefined("DeliverPayloadNugget: the primary object has no controlling player"))?;
+        let owner_player = host.obj_controlling_player(po).ok_or(OclError::Undefined(
+            "DeliverPayloadNugget: the primary object has no controlling player",
+        ))?;
         let owner = host.player_default_team(owner_player);
 
         // The relative positions of each member of the formation: the vector from the target to the lead plane, normalised, rotated 90
@@ -810,7 +924,11 @@ impl DeliverPayloadNugget {
             if plant(37) {
                 std::mem::swap(&mut dx, &mut dy);
             }
-            let radians = if plant(38) { 45.0f32 * PI / 180.0f32 } else { 90.0f32 * PI / 180.0f32 };
+            let radians = if plant(38) {
+                45.0f32 * PI / 180.0f32
+            } else {
+                90.0f32 * PI / 180.0f32
+            };
             let mut s = sin(radians);
             let mut c = cos(radians);
             ccw_x = dx * c + dy * -s + dx;
@@ -859,16 +977,28 @@ impl DeliverPayloadNugget {
             }
 
             let mut target_pos = *secondary;
-            let conv = if plant(45) { self.convergence_factor } else { 1.0 - self.convergence_factor };
+            let conv = if plant(45) {
+                self.convergence_factor
+            } else {
+                1.0 - self.convergence_factor
+            };
             target_pos.x += offset.x * conv;
             target_pos.y += if plant(46) { offset.x } else { offset.y } * conv;
 
             // the first guy in each formation is always spot-on
-            if (self.error_radius > 1.0 || plant(47) && self.error_radius > 0.0) && (formation_index > 0 || plant(48)) {
+            if (self.error_radius > 1.0 || plant(47) && self.error_radius > 0.0)
+                && (formation_index > 0 || plant(48))
+            {
                 let random_radius = host.random_value_real(0.0, self.error_radius);
-                let random_angle = host.random_value_real(0.0, if plant(49) { PI } else { PI * 2.0 });
+                let random_angle =
+                    host.random_value_real(0.0, if plant(49) { PI } else { PI * 2.0 });
                 target_pos.x += random_radius * cos(random_angle);
-                target_pos.y += random_radius * if plant(50) { cos(random_angle) } else { sin(random_angle) };
+                target_pos.y += random_radius
+                    * if plant(50) {
+                        cos(random_angle)
+                    } else {
+                        sin(random_angle)
+                    };
             }
 
             let orient = if plant(51) {
@@ -903,7 +1033,11 @@ impl DeliverPayloadNugget {
                 }
                 if self.delay_delivery_frames_max > 0 {
                     let delay = host.random_value(0, self.delay_delivery_frames_max as i32);
-                    let until = if plant(56) { delay as u32 } else { host.frame().wrapping_add(delay as u32) };
+                    let until = if plant(56) {
+                        delay as u32
+                    } else {
+                        host.frame().wrapping_add(delay as u32)
+                    };
                     host.obj_set_disabled_until(t, DISABLED_DEFAULT, until);
                 }
             } else {
@@ -912,18 +1046,33 @@ impl DeliverPayloadNugget {
 
             // notify special power tracking
             if host.obj_has_special_power_completion_die(transport) {
-                host.special_power_completion_die_set_creator(transport, if (formation_index == 0) != plant(57) { po } else { INVALID_ID });
+                host.special_power_completion_die_set_creator(
+                    transport,
+                    if (formation_index == 0) != plant(57) {
+                        po
+                    } else {
+                        INVALID_ID
+                    },
+                );
             }
 
             if host.obj_has_update_module(transport, UpdateModuleKind::DeliverPayloadAi) {
-                if self.start_at_max_speed && (create_owner || plant(58)) && host.obj_has_physics(transport) {
+                if self.start_at_max_speed
+                    && (create_owner || plant(58))
+                    && host.obj_has_physics(transport)
+                {
                     let mut starting_force = host.obj_unit_direction_vector_2d(transport);
                     if !host.obj_has_body(transport) {
                         return Err(OclError::Undefined("DeliverPayloadNugget: StartAtMaxSpeed on a transport with physics and no body module"));
                     }
                     let damage_state = host.body_damage_state(transport);
-                    let max_speed = host.deliver_payload_max_speed_for_condition(transport, damage_state);
-                    let factor = if plant(59) { max_speed } else { max_speed * host.physics_mass(transport) };
+                    let max_speed =
+                        host.deliver_payload_max_speed_for_condition(transport, damage_state);
+                    let factor = if plant(59) {
+                        max_speed
+                    } else {
+                        max_speed * host.physics_mass(transport)
+                    };
                     starting_force.x *= factor;
                     starting_force.y *= factor;
                     starting_force.z *= factor;
@@ -937,11 +1086,20 @@ impl DeliverPayloadNugget {
                 }
                 host.deliver_payload(transport, &move_to_pos, &target_pos, &data);
                 if self.start_at_preferred_height && create_owner {
-                    start_pos.z = host.terrain_ground_height(start_pos.x, start_pos.y) + if plant(61) { 0.0 } else { host.deliver_payload_preferred_height(transport) };
+                    start_pos.z = host.terrain_ground_height(start_pos.x, start_pos.y)
+                        + if plant(61) {
+                            0.0
+                        } else {
+                            host.deliver_payload_preferred_height(transport)
+                        };
                     host.obj_set_position(transport, &start_pos);
                 }
 
-                let put_in_container_tmpl = if self.put_in_container_name.is_empty() { None } else { host.find_template(&self.put_in_container_name) };
+                let put_in_container_tmpl = if self.put_in_container_name.is_empty() {
+                    None
+                } else {
+                    host.find_template(&self.put_in_container_name)
+                };
                 for it in &self.payload {
                     let Some(payload_tmpl) = host.find_template(&it.payload_name) else {
                         if plant(62) {
@@ -956,24 +1114,47 @@ impl DeliverPayloadNugget {
                         host.obj_set_position(payload, &start_pos);
                         host.obj_set_producer(payload, Some(transport));
                         if host.obj_has_special_power_completion_die(payload) {
-                            host.special_power_completion_die_set_creator(payload, if formation_index == 0 && i == 0 { po } else { INVALID_ID });
+                            host.special_power_completion_die_set_creator(
+                                payload,
+                                if formation_index == 0 && i == 0 {
+                                    po
+                                } else {
+                                    INVALID_ID
+                                },
+                            );
                         }
                         if let Some(ct) = put_in_container_tmpl {
                             let container = host
                                 .new_object(Some(ct), owner)
                                 .ok_or(OclError::Undefined("DeliverPayloadNugget: the container could not be made and is written through"))?;
                             host.obj_set_position(container, &start_pos);
-                            host.obj_set_producer(container, if plant(64) { Some(po) } else { Some(transport) });
+                            host.obj_set_producer(
+                                container,
+                                if plant(64) { Some(po) } else { Some(transport) },
+                            );
                             if host.obj_has_special_power_completion_die(container) {
-                                host.special_power_completion_die_set_creator(container, if formation_index == 0 && i == 0 { po } else { INVALID_ID });
+                                host.special_power_completion_die_set_creator(
+                                    container,
+                                    if formation_index == 0 && i == 0 {
+                                        po
+                                    } else {
+                                        INVALID_ID
+                                    },
+                                );
                             }
-                            if host.obj_has_contain(container) && (host.contain_is_valid_container_for(container, payload, true) || plant(65)) {
+                            if host.obj_has_contain(container)
+                                && (host.contain_is_valid_container_for(container, payload, true)
+                                    || plant(65))
+                            {
                                 host.contain_add(container, payload);
                                 payload = container;
                             }
                             // else: "PutInContainer is full, or not valid for the payload"
                         }
-                        if host.obj_has_contain(transport) && (host.contain_is_valid_container_for(transport, payload, true) || plant(66)) {
+                        if host.obj_has_contain(transport)
+                            && (host.contain_is_valid_container_for(transport, payload, true)
+                                || plant(66))
+                        {
                             host.contain_add(transport, payload);
                         }
                         // else: "transport is full, or not valid for the payload"
@@ -989,10 +1170,20 @@ impl DeliverPayloadNugget {
 
 impl ApplyRandomForceNugget {
     /// `create(primary, secondary, life)`: a random kick and spin on the primary object's physics.
-    fn create_object<H: OclHost>(&self, host: &mut H, primary: Option<ObjectId>) -> OclResult<Option<ObjectId>> {
+    fn create_object<H: OclHost>(
+        &self,
+        host: &mut H,
+        primary: Option<ObjectId>,
+    ) -> OclResult<Option<ObjectId>> {
         if let Some(p) = primary {
             if host.obj_has_physics(p) {
-                let force = calc_random_force(host, self.min_mag, self.max_mag, self.min_pitch, self.max_pitch);
+                let force = calc_random_force(
+                    host,
+                    self.min_mag,
+                    self.max_mag,
+                    self.min_pitch,
+                    self.max_pitch,
+                );
                 host.physics_apply_force(p, &force);
                 let yaw = host.random_value_real(-self.spin_rate, self.spin_rate);
                 let (roll, pitch);
@@ -1016,11 +1207,18 @@ impl ApplyRandomForceNugget {
 
 impl GenericObjectCreationNugget {
     /// `create(primary, secondary, life)`.
-    fn create_object<H: OclHost>(&self, host: &mut H, primary: Option<ObjectId>, life: u32) -> OclResult<Option<ObjectId>> {
+    fn create_object<H: OclHost>(
+        &self,
+        host: &mut H,
+        primary: Option<ObjectId>,
+        life: u32,
+    ) -> OclResult<Option<ObjectId>> {
         let Some(p) = primary else {
             return Ok(None);
         };
-        if self.skip_if_significantly_airborne && (host.obj_is_significantly_above_terrain(p) != plant(70)) {
+        if self.skip_if_significantly_airborne
+            && (host.obj_is_significantly_above_terrain(p) != plant(70))
+        {
             return Ok(None);
         }
         let pos = host.obj_position(p);
@@ -1030,13 +1228,36 @@ impl GenericObjectCreationNugget {
     }
 
     /// `create(primaryObj, primary, secondary, angle, life)`.
-    fn create_at<H: OclHost>(&self, host: &mut H, primary_obj: Option<ObjectId>, primary: Option<&Coord3D>, angle: f32, life: u32) -> OclResult<Option<ObjectId>> {
+    fn create_at<H: OclHost>(
+        &self,
+        host: &mut H,
+        primary_obj: Option<ObjectId>,
+        primary: Option<&Coord3D>,
+        angle: f32,
+        life: u32,
+    ) -> OclResult<Option<ObjectId>> {
         let Some(pos) = primary else {
             return Ok(None);
         };
         // the vast majority of OCLs don't care about the angle, so if it comes in invalid, default it to 0
-        let angle = if angle == INVALID_ANGLE && !plant(71) { 0.0 } else { angle };
-        self.really_create(host, pos, if plant(72) { primary_obj.map(|o| host.obj_transform(o)) } else { None }.as_ref(), angle, primary_obj, life)
+        let angle = if angle == INVALID_ANGLE && !plant(71) {
+            0.0
+        } else {
+            angle
+        };
+        self.really_create(
+            host,
+            pos,
+            if plant(72) {
+                primary_obj.map(|o| host.obj_transform(o))
+            } else {
+                None
+            }
+            .as_ref(),
+            angle,
+            primary_obj,
+            life,
+        )
     }
 
     /// `doStuffToObj(obj, modelName, pos, mtx, orientation, sourceObj, lifetimeFrames)`.
@@ -1060,21 +1281,45 @@ impl GenericObjectCreationNugget {
                 host.lifetime_set_range(obj, lifetime_frames, lifetime_frames);
             } else if self.max_frames > 0 || plant(74) && self.min_frames > 0 {
                 // both are zero if no lifetime was specified in the OCL (it could be in the Object): the OCL overrides only if it has one
-                host.lifetime_set_range(obj, if plant(75) { self.max_frames } else { self.min_frames }, self.max_frames);
+                host.lifetime_set_range(
+                    obj,
+                    if plant(75) {
+                        self.max_frames
+                    } else {
+                        self.min_frames
+                    },
+                    self.max_frames,
+                );
             }
         }
 
         if !self.name_are_objects {
             if !host.obj_has_drawable(obj) {
-                return Err(OclError::Undefined("CreateDebris: the object has no drawable"));
+                return Err(OclError::Undefined(
+                    "CreateDebris: the object has no drawable",
+                ));
             }
             for i in 0..host.drawable_debris_interface_count(obj) {
-                let color = if self.ok_to_change_model_color != plant(76) { host.obj_indicator_color(obj) } else { 0 };
+                let color = if self.ok_to_change_model_color != plant(76) {
+                    host.obj_indicator_color(obj)
+                } else {
+                    0
+                };
                 host.debris_set_model_name(obj, i, model_name, color, self.shadow_type);
                 if !self.anim_sets.is_empty() {
-                    let which = host.random_value(0, self.anim_sets.len() as i32 - i32::from(!plant(77))) as usize % self.anim_sets.len();
+                    let which = host
+                        .random_value(0, self.anim_sets.len() as i32 - i32::from(!plant(77)))
+                        as usize
+                        % self.anim_sets.len();
                     let a = &self.anim_sets[which];
-                    host.debris_set_anim_names(obj, i, &a.anim_initial, &a.anim_flying, &a.anim_final, &self.fx_final);
+                    host.debris_set_anim_names(
+                        obj,
+                        i,
+                        &a.anim_initial,
+                        &a.anim_flying,
+                        &a.anim_final,
+                        &self.fx_final,
+                    );
                 }
             }
         }
@@ -1082,7 +1327,11 @@ impl GenericObjectCreationNugget {
         let mut offset = self.offset;
         adjust_vector(&mut offset, mtx);
 
-        let mut chunk_pos = Coord3D { x: pos.x + offset.x, y: pos.y + offset.y, z: if plant(78) { pos.z } else { pos.z + offset.z } };
+        let mut chunk_pos = Coord3D {
+            x: pos.x + offset.x,
+            y: pos.y + offset.y,
+            z: if plant(78) { pos.z } else { pos.z + offset.z },
+        };
 
         if !self.particle_sys_name.is_empty() && !plant(79) {
             if let Some(t) = host.particle_system_find_template(&self.particle_sys_name) {
@@ -1095,9 +1344,20 @@ impl GenericObjectCreationNugget {
         }
 
         // set its beginning health
-        let health_percent = if plant(82) { self.max_health } else { host.random_value_real(self.min_health, self.max_health) };
+        let health_percent = if plant(82) {
+            self.max_health
+        } else {
+            host.random_value_real(self.min_health, self.max_health)
+        };
         if host.obj_has_body(obj) {
-            host.body_set_initial_health(obj, if plant(81) { (health_percent * 100.0 + 0.5) as i32 } else { (health_percent * 100.0) as i32 });
+            host.body_set_initial_health(
+                obj,
+                if plant(81) {
+                    (health_percent * 100.0 + 0.5) as i32
+                } else {
+                    (health_percent * 100.0) as i32
+                },
+            );
         }
 
         // If they have a SlavedUpdate, then I have to tell them who their daddy is from now on.
@@ -1132,7 +1392,18 @@ impl GenericObjectCreationNugget {
             if let Some(s) = source {
                 if host.obj_has_physics(s) && host.obj_has_physics(obj) {
                     let v = host.physics_velocity(s);
-                    host.physics_apply_force(obj, &if plant(87) { Coord3D { x: v.x, y: v.y, z: 0.0 } } else { v });
+                    host.physics_apply_force(
+                        obj,
+                        &if plant(87) {
+                            Coord3D {
+                                x: v.x,
+                                y: v.y,
+                                z: 0.0,
+                            }
+                        } else {
+                            v
+                        },
+                    );
                 }
             }
         }
@@ -1153,7 +1424,11 @@ impl GenericObjectCreationNugget {
                 // flatten the terrain underneath, then adjust to the flattened height; add to the map AFTER flattening
                 host.terrain_flatten(obj);
                 let mut adjusted_pos = host.obj_position(obj);
-                adjusted_pos.z = if plant(90) { host.terrain_ground_height(adjusted_pos.x, adjusted_pos.y) } else { host.terrain_ground_height(pos.x, pos.y) };
+                adjusted_pos.z = if plant(90) {
+                    host.terrain_ground_height(adjusted_pos.x, adjusted_pos.y)
+                } else {
+                    host.terrain_ground_height(pos.x, pos.y)
+                };
                 host.obj_set_position(obj, &adjusted_pos);
                 host.pathfinder_add_object(obj);
             }
@@ -1207,18 +1482,45 @@ impl GenericObjectCreationNugget {
                 if !self.name_are_objects {
                     host.physics_set_mass(obj, self.mass);
                 }
-                host.physics_set_extra_bounciness(obj, if plant(97) { self.extra_friction } else { self.extra_bounciness });
+                host.physics_set_extra_bounciness(
+                    obj,
+                    if plant(97) {
+                        self.extra_friction
+                    } else {
+                        self.extra_bounciness
+                    },
+                );
                 host.physics_set_extra_friction(obj, self.extra_friction);
                 host.physics_set_allow_bouncing(obj, !plant(98));
                 host.physics_set_bounce_sound(obj, &self.bounce_sound);
 
                 // if omitted from INI, calc it based on intensity
-                let spin_rate = if self.spin_rate >= 0.0 && !plant(99) { self.spin_rate } else if plant(100) { (PI / 16.0) * self.disposition_intensity } else { (PI / 32.0) * self.disposition_intensity };
+                let spin_rate = if self.spin_rate >= 0.0 && !plant(99) {
+                    self.spin_rate
+                } else if plant(100) {
+                    (PI / 16.0) * self.disposition_intensity
+                } else {
+                    (PI / 32.0) * self.disposition_intensity
+                };
 
                 // treat these as overrides
-                let yaw_rate = if self.yaw_rate >= 0.0 { self.yaw_rate } else { spin_rate };
-                let roll_rate = if self.roll_rate > 0.0 || !plant(101) && self.roll_rate == 0.0 { self.roll_rate } else { spin_rate };
-                let pitch_rate = if self.pitch_rate >= 0.0 { self.pitch_rate } else if plant(102) { self.yaw_rate.max(0.0) } else { spin_rate };
+                let yaw_rate = if self.yaw_rate >= 0.0 {
+                    self.yaw_rate
+                } else {
+                    spin_rate
+                };
+                let roll_rate = if self.roll_rate > 0.0 || !plant(101) && self.roll_rate == 0.0 {
+                    self.roll_rate
+                } else {
+                    spin_rate
+                };
+                let pitch_rate = if self.pitch_rate >= 0.0 {
+                    self.pitch_rate
+                } else if plant(102) {
+                    self.yaw_rate.max(0.0)
+                } else {
+                    spin_rate
+                };
 
                 let yaw = host.random_value_real(-yaw_rate, yaw_rate);
                 let roll = host.random_value_real(-roll_rate, roll_rate);
@@ -1227,24 +1529,42 @@ impl GenericObjectCreationNugget {
                 let force;
                 if bit_test(self.disposition, SEND_IT_FLYING) {
                     let horiz_force = 4.0 * self.disposition_intensity;
-                    let vert_force = if plant(103) { 4.0 } else { 3.0 } * self.disposition_intensity;
+                    let vert_force =
+                        if plant(103) { 4.0 } else { 3.0 } * self.disposition_intensity;
                     let x = host.random_value_real(-horiz_force, horiz_force);
                     let y = host.random_value_real(-horiz_force, horiz_force);
-                    let z = host.random_value_real(vert_force * if plant(104) { 0.5 } else { 0.33 }, vert_force);
+                    let z = host.random_value_real(
+                        vert_force * if plant(104) { 0.5 } else { 0.33 },
+                        vert_force,
+                    );
                     force = Coord3D { x, y, z };
                 } else if bit_test(self.disposition, SEND_IT_UP) {
-                    let horiz_force = if plant(105) { 4.0 } else { 2.0 } * self.disposition_intensity;
+                    let horiz_force =
+                        if plant(105) { 4.0 } else { 2.0 } * self.disposition_intensity;
                     let vert_force = 4.0 * self.disposition_intensity;
                     let x = host.random_value_real(-horiz_force, horiz_force);
                     let y = host.random_value_real(-horiz_force, horiz_force);
-                    let z = host.random_value_real(vert_force * if plant(106) { 0.5 } else { 0.75 }, vert_force);
+                    let z = host.random_value_real(
+                        vert_force * if plant(106) { 0.5 } else { 0.75 },
+                        vert_force,
+                    );
                     force = Coord3D { x, y, z };
                 } else {
-                    force = calc_random_force(host, self.min_mag, self.max_mag, self.min_pitch, self.max_pitch);
+                    force = calc_random_force(
+                        host,
+                        self.min_mag,
+                        self.max_mag,
+                        self.min_pitch,
+                        self.max_pitch,
+                    );
                 }
                 host.physics_apply_force(obj, &force);
                 if self.orient_in_force_direction {
-                    orientation = if plant(107) { atan2_d(force.x, force.y) } else { atan2_d(force.y, force.x) };
+                    orientation = if plant(107) {
+                        atan2_d(force.x, force.y)
+                    } else {
+                        atan2_d(force.y, force.x)
+                    };
                 }
                 if plant(108) {
                     host.physics_set_angles(obj, 0.0, orientation, 0.0);
@@ -1258,25 +1578,38 @@ impl GenericObjectCreationNugget {
         }
 
         if bit_test(self.disposition, WHIRLING) && host.obj_has_physics(obj) {
-            let yaw = host.random_value_real(-self.disposition_intensity, self.disposition_intensity);
-            let roll = host.random_value_real(-self.disposition_intensity, self.disposition_intensity);
-            let pitch = if plant(109) { yaw } else { host.random_value_real(-self.disposition_intensity, self.disposition_intensity) };
+            let yaw =
+                host.random_value_real(-self.disposition_intensity, self.disposition_intensity);
+            let roll =
+                host.random_value_real(-self.disposition_intensity, self.disposition_intensity);
+            let pitch = if plant(109) {
+                yaw
+            } else {
+                host.random_value_real(-self.disposition_intensity, self.disposition_intensity)
+            };
             host.physics_set_yaw_rate(obj, yaw);
             host.physics_set_roll_rate(obj, roll);
             host.physics_set_pitch_rate(obj, pitch);
         }
 
-        if bit_test(self.disposition, FLOATING) && (host.obj_has_update_module(obj, UpdateModuleKind::Float) || plant(110)) {
+        if bit_test(self.disposition, FLOATING)
+            && (host.obj_has_update_module(obj, UpdateModuleKind::Float) || plant(110))
+        {
             host.float_set_enabled(obj);
         }
 
         if self.contain_inside_source_object {
             // The Obj has been totally made, so stuff it inside ourselves if desired.
-            let s = source.ok_or(OclError::Undefined("ContainInsideSourceObject without a source object"))?;
+            let s = source.ok_or(OclError::Undefined(
+                "ContainInsideSourceObject without a source object",
+            ))?;
             if host.obj_has_contain(s) && host.contain_is_valid_container_for(s, obj, true) {
                 host.contain_add(s, obj);
                 // need to hide if they are hidden
-                if host.obj_has_drawable(s) && host.obj_has_drawable(obj) && (host.drawable_is_effectively_hidden(s) != plant(111)) {
+                if host.obj_has_drawable(s)
+                    && host.obj_has_drawable(obj)
+                    && (host.drawable_is_effectively_hidden(s) != plant(111))
+                {
                     host.drawable_set_hidden(obj, true);
                 }
             } else if !plant(112) {
@@ -1288,8 +1621,12 @@ impl GenericObjectCreationNugget {
         if self.dies_on_bad_land {
             // if we land in the water, we die
             let rider_pos = host.obj_position(obj);
-            if let Some((water_z, _terrain_z)) = host.terrain_is_underwater(rider_pos.x, rider_pos.y) {
-                if rider_pos.z <= water_z + if plant(113) { 5.0 } else { 10.0 } && (host.obj_layer(obj) == LAYER_GROUND || plant(114)) {
+            if let Some((water_z, _terrain_z)) =
+                host.terrain_is_underwater(rider_pos.x, rider_pos.y)
+            {
+                if rider_pos.z <= water_z + if plant(113) { 5.0 } else { 10.0 }
+                    && (host.obj_layer(obj) == LAYER_GROUND || plant(114))
+                {
                     // don't call kill(); do it manually, so we can specify DEATH_FLOODED
                     let mut damage_info = DamageInfo::default();
                     damage_info.input.damage_type = DAMAGE_WATER as DamageType; // instead of UNRESISTABLE, so there is no dusty damage effect
@@ -1303,12 +1640,32 @@ impl GenericObjectCreationNugget {
             // Kill if materialized on impassable ground
             let pos_now = host.obj_position(obj);
             let cell_x = real_to_int(pos_now.x / PATHFIND_CELL_SIZE as f32);
-            let cell_y = real_to_int(pos_now.y / if plant(116) { 8.0 } else { PATHFIND_CELL_SIZE as f32 });
+            let cell_y = real_to_int(
+                pos_now.y
+                    / if plant(116) {
+                        8.0
+                    } else {
+                        PATHFIND_CELL_SIZE as f32
+                    },
+            );
             let layer = host.obj_layer(obj);
-            let cell_type = host.pathfinder_cell_type(layer, cell_x, cell_y).unwrap_or(if plant(119) { PathfindCellType::Clear } else { PathfindCellType::Impassable });
+            let cell_type =
+                host.pathfinder_cell_type(layer, cell_x, cell_y)
+                    .unwrap_or(if plant(119) {
+                        PathfindCellType::Clear
+                    } else {
+                        PathfindCellType::Impassable
+                    });
 
             // If we land outside the map, we die too. Otherwise we exist outside the PartitionManager like a cheater.
-            if host.obj_is_off_map(obj) || matches!(cell_type, PathfindCellType::Cliff | PathfindCellType::Impassable) || !plant(117) && cell_type == PathfindCellType::Water || plant(118) && cell_type == PathfindCellType::Obstacle {
+            if host.obj_is_off_map(obj)
+                || matches!(
+                    cell_type,
+                    PathfindCellType::Cliff | PathfindCellType::Impassable
+                )
+                || !plant(117) && cell_type == PathfindCellType::Water
+                || plant(118) && cell_type == PathfindCellType::Obstacle
+            {
                 host.obj_kill(obj);
             }
         }
@@ -1332,7 +1689,9 @@ impl GenericObjectCreationNugget {
         }
 
         if self.requires_live_player {
-            let live = source.and_then(|s| host.obj_controlling_player(s)).is_some_and(|p| host.player_is_active(p) || plant(120));
+            let live = source
+                .and_then(|s| host.obj_controlling_player(s))
+                .is_some_and(|p| host.player_is_active(p) || plant(120));
             if !live && !plant(121) {
                 return Ok(None); // don't spawn useful objects for dead players
             }
@@ -1340,7 +1699,10 @@ impl GenericObjectCreationNugget {
 
         // Object type debris might need this information to process visual UpgradeModules.
         let mut debris_owner = host.neutral_player_default_team();
-        if let Some(p) = source.and_then(|s| host.obj_controlling_player(s)).filter(|_| !plant(122)) {
+        if let Some(p) = source
+            .and_then(|s| host.obj_controlling_player(s))
+            .filter(|_| !plant(122))
+        {
             debris_owner = host.player_default_team(p);
         }
 
@@ -1360,7 +1722,9 @@ impl GenericObjectCreationNugget {
         }
 
         for _nn in 0..self.debris_to_generate {
-            let pick = host.random_value(0, self.names.len() as i32 - i32::from(!plant(124))) as usize % self.names.len();
+            let pick = host.random_value(0, self.names.len() as i32 - i32::from(!plant(124)))
+                as usize
+                % self.names.len();
 
             let tmpl = if self.name_are_objects {
                 host.find_template(&self.names[pick])
@@ -1400,29 +1764,68 @@ impl GenericObjectCreationNugget {
             // if we want the objects being created to appear in a spread formation
             if self.spread_formation {
                 let mut fp_options = FindPositionOptions {
-                    min_radius: if plant(128) { host.random_value_real(self.min_distance_b_formation, self.min_distance_a_formation) } else { host.random_value_real(self.min_distance_a_formation, self.min_distance_b_formation) },
+                    min_radius: if plant(128) {
+                        host.random_value_real(
+                            self.min_distance_b_formation,
+                            self.min_distance_a_formation,
+                        )
+                    } else {
+                        host.random_value_real(
+                            self.min_distance_a_formation,
+                            self.min_distance_b_formation,
+                        )
+                    },
                     ..FindPositionOptions::default()
                 };
                 fp_options.max_radius = self.max_distance_formation;
                 fp_options.flags = if plant(129) { 0 } else { FPF_USE_HIGHEST_LAYER };
                 let result_pos = host.partition_find_position_around(pos, &fp_options);
-                self.do_stuff_to_obj(host, debris, &self.names[pick], &result_pos, mtx, orientation, source, life)?;
+                self.do_stuff_to_obj(
+                    host,
+                    debris,
+                    &self.names[pick],
+                    &result_pos,
+                    mtx,
+                    orientation,
+                    source,
+                    life,
+                )?;
             } else {
                 // do stuff to contained objects too
-                self.do_stuff_to_obj(host, debris, &self.names[pick], pos, mtx, orientation, source, life)?;
+                self.do_stuff_to_obj(
+                    host,
+                    debris,
+                    &self.names[pick],
+                    pos,
+                    mtx,
+                    orientation,
+                    source,
+                    life,
+                )?;
             }
 
             if self.fade_in != plant(130) {
-                let s = source.ok_or(OclError::Undefined("a faded object without a source object"))?;
+                let s = source.ok_or(OclError::Undefined(
+                    "a faded object without a source object",
+                ))?;
                 host.audio_add_event(&self.fade_sound_name, s);
                 if !host.obj_has_drawable(debris) {
                     return Err(OclError::Undefined("a faded object has no drawable"));
                 }
-                host.drawable_fade_in(debris, if plant(131) { self.fade_frames + 1 } else { self.fade_frames });
+                host.drawable_fade_in(
+                    debris,
+                    if plant(131) {
+                        self.fade_frames + 1
+                    } else {
+                        self.fade_frames
+                    },
+                );
             }
 
             if self.fade_out && !plant(132) {
-                let s = source.ok_or(OclError::Undefined("a faded object without a source object"))?;
+                let s = source.ok_or(OclError::Undefined(
+                    "a faded object without a source object",
+                ))?;
                 host.audio_add_event(&self.fade_sound_name, s);
                 if !host.obj_has_drawable(debris) {
                     return Err(OclError::Undefined("a faded object has no drawable"));
@@ -1442,7 +1845,13 @@ impl GenericObjectCreationNugget {
 impl Nugget {
     /// `create(primary, secondary, lifetimeFrames)`: the object-based version; by default (`FireWeapon`, `Attack`, `DeliverPayload`) the
     /// location-based one with the two objects' positions and `INVALID_ANGLE`.
-    pub fn create_object<H: OclHost>(&self, host: &mut H, primary: Option<ObjectId>, secondary: Option<ObjectId>, life: u32) -> OclResult<Option<ObjectId>> {
+    pub fn create_object<H: OclHost>(
+        &self,
+        host: &mut H,
+        primary: Option<ObjectId>,
+        secondary: Option<ObjectId>,
+        life: u32,
+    ) -> OclResult<Option<ObjectId>> {
         match self {
             Nugget::ApplyRandomForce(n) => n.create_object(host, primary),
             Nugget::Generic(n) => n.create_object(host, primary, life),
@@ -1466,7 +1875,9 @@ impl Nugget {
         life: u32,
     ) -> OclResult<Option<ObjectId>> {
         match self {
-            Nugget::DeliverPayload(n) => n.create(host, primary_obj, primary, secondary, create_owner),
+            Nugget::DeliverPayload(n) => {
+                n.create(host, primary_obj, primary, secondary, create_owner)
+            }
             _ => self.create_at(host, primary_obj, primary, secondary, INVALID_ANGLE, life),
         }
     }
@@ -1522,7 +1933,8 @@ impl ObjectCreationList {
     ) -> OclResult<Option<ObjectId>> {
         let mut first = None;
         for n in &self.nuggets {
-            let cur = n.create_with_owner(host, primary_obj, primary, secondary, create_owner, life)?;
+            let cur =
+                n.create_with_owner(host, primary_obj, primary, secondary, create_owner, life)?;
             if first.is_none() || plant(134) && cur.is_some() {
                 first = cur;
             }
@@ -1551,7 +1963,13 @@ impl ObjectCreationList {
     }
 
     /// `createInternal(primary, secondary, life)`.
-    pub fn create_object<H: OclHost>(&self, host: &mut H, primary: Option<ObjectId>, secondary: Option<ObjectId>, life: u32) -> OclResult<Option<ObjectId>> {
+    pub fn create_object<H: OclHost>(
+        &self,
+        host: &mut H,
+        primary: Option<ObjectId>,
+        secondary: Option<ObjectId>,
+        life: u32,
+    ) -> OclResult<Option<ObjectId>> {
         let mut first = None;
         for n in &self.nuggets {
             let cur = n.create_object(host, primary, secondary, life)?;
@@ -1577,7 +1995,11 @@ impl OclParseEnv {
     /// `TheWeaponStore->findWeaponTemplate(name)`.
     fn find_weapon_template(&self, name: &[u8]) -> Option<WeaponTemplateRef> {
         if plant(26) {
-            return self.weapon_templates.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| *v);
+            return self
+                .weapon_templates
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                .map(|(_, v)| *v);
         }
         self.weapon_templates.get(name).copied()
     }
@@ -1596,7 +2018,11 @@ struct NuggetParse<N> {
 
 impl<N> NuggetParse<N> {
     fn new(nugget: N, env: &Arc<OclParseEnv>) -> Self {
-        NuggetParse { nugget, env: env.clone(), debris_hack: Vec::new() }
+        NuggetParse {
+            nugget,
+            env: env.clone(),
+            debris_hack: Vec::new(),
+        }
     }
 }
 
@@ -1641,14 +2067,40 @@ static FIRE_WEAPON_FIELDS: [FieldParse<FireWeaponParse>; 2] = [
 
 /// `AttackNugget::parse`'s `myFieldParse`.
 static ATTACK_FIELDS: [FieldParse<AttackParse>; 5] = [
-    FieldParse::new("NumberOfShots", |ini, p, _| { p.nugget.number_of_shots = ini.parse_int()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "NumberOfShots",
+        |ini, p, _| {
+            p.nugget.number_of_shots = ini.parse_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::new(
         "WeaponSlot",
-        |ini, p, _| { p.nugget.weapon_slot = ini.parse_lookup_list(&WEAPON_SLOT_TYPE_NAMES_LOOKUP_LIST)?; Ok(()) },
+        |ini, p, _| {
+            p.nugget.weapon_slot = ini.parse_lookup_list(&WEAPON_SLOT_TYPE_NAMES_LOOKUP_LIST)?;
+            Ok(())
+        },
         UserData::Lookup(&WEAPON_SLOT_TYPE_NAMES_LOOKUP_LIST),
     ),
-    FieldParse::new("DeliveryDecal", |ini, p, _| RadiusDecalTemplate::parse_radius_decal_template(ini, &mut p.nugget.delivery_decal_template), UserData::None),
-    FieldParse::new("DeliveryDecalRadius", |ini, p, _| { p.nugget.delivery_decal_radius = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "DeliveryDecal",
+        |ini, p, _| {
+            RadiusDecalTemplate::parse_radius_decal_template(
+                ini,
+                &mut p.nugget.delivery_decal_template,
+            )
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DeliveryDecalRadius",
+        |ini, p, _| {
+            p.nugget.delivery_decal_radius = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
@@ -1660,44 +2112,153 @@ fn parse_payload(ini: &mut Ini<'_>, p: &mut DeliverParse, _: &UserData) -> IniRe
         Some(c) => Ini::scan_int(&c)?,
         None => i32::from(!plant(23)),
     };
-    p.nugget.payload.push(Payload { payload_name: name, payload_count: count });
+    p.nugget.payload.push(Payload {
+        payload_name: name,
+        payload_count: count,
+    });
     Ok(())
 }
 
 /// `DeliverPayloadNugget::parse`'s `myFieldParse` (the data's fields come after it, from [`DeliverPayloadData::field_parse`]).
 static DELIVER_PAYLOAD_FIELDS: [FieldParse<DeliverParse>; 11] = [
-    FieldParse::new("Transport", |ini, p, _| { p.nugget.transport_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
-    FieldParse::new("StartAtPreferredHeight", |ini, p, _| { p.nugget.start_at_preferred_height = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("StartAtMaxSpeed", |ini, p, _| { p.nugget.start_at_max_speed = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("FormationSize", |ini, p, _| { p.nugget.formation_size = ini.parse_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("FormationSpacing", |ini, p, _| { p.nugget.formation_spacing = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("WeaponConvergenceFactor", |ini, p, _| { p.nugget.convergence_factor = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("WeaponErrorRadius", |ini, p, _| { p.nugget.error_radius = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("DelayDeliveryMax", |ini, p, _| { p.nugget.delay_delivery_frames_max = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "Transport",
+        |ini, p, _| {
+            p.nugget.transport_name = ini.parse_ascii_string()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "StartAtPreferredHeight",
+        |ini, p, _| {
+            p.nugget.start_at_preferred_height = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "StartAtMaxSpeed",
+        |ini, p, _| {
+            p.nugget.start_at_max_speed = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "FormationSize",
+        |ini, p, _| {
+            p.nugget.formation_size = ini.parse_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "FormationSpacing",
+        |ini, p, _| {
+            p.nugget.formation_spacing = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "WeaponConvergenceFactor",
+        |ini, p, _| {
+            p.nugget.convergence_factor = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "WeaponErrorRadius",
+        |ini, p, _| {
+            p.nugget.error_radius = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DelayDeliveryMax",
+        |ini, p, _| {
+            p.nugget.delay_delivery_frames_max = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::new("Payload", parse_payload, UserData::None),
-    FieldParse::new("PutInContainer", |ini, p, _| { p.nugget.put_in_container_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "PutInContainer",
+        |ini, p, _| {
+            p.nugget.put_in_container_name = ini.parse_ascii_string()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 /// `ApplyRandomForceNugget::parse`'s `myFieldParse`.
 static APPLY_RANDOM_FORCE_FIELDS: [FieldParse<ForceParse>; 6] = [
-    FieldParse::new("SpinRate", |ini, p, _| { p.nugget.spin_rate = ini.parse_angular_velocity_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("MinForceMagnitude", |ini, p, _| { p.nugget.min_mag = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("MaxForceMagnitude", |ini, p, _| { p.nugget.max_mag = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("MinForcePitch", |ini, p, _| { p.nugget.min_pitch = ini.parse_angle_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("MaxForcePitch", |ini, p, _| { p.nugget.max_pitch = ini.parse_angle_real()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "SpinRate",
+        |ini, p, _| {
+            p.nugget.spin_rate = ini.parse_angular_velocity_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MinForceMagnitude",
+        |ini, p, _| {
+            p.nugget.min_mag = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MaxForceMagnitude",
+        |ini, p, _| {
+            p.nugget.max_mag = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MinForcePitch",
+        |ini, p, _| {
+            p.nugget.min_pitch = ini.parse_angle_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MaxForcePitch",
+        |ini, p, _| {
+            p.nugget.max_pitch = ini.parse_angle_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 /// `parseFrictionPerSec`: a per-second friction as a per-frame one.
 fn parse_friction_per_sec(ini: &mut Ini<'_>, p: &mut GenericParse, _: &UserData) -> IniResult<()> {
     let fric_per_sec = Ini::scan_real(&ini.get_next_token(None)?)?;
-    p.nugget.extra_friction = if plant(22) { fric_per_sec } else { fric_per_sec * SECONDS_PER_LOGICFRAME_REAL };
+    p.nugget.extra_friction = if plant(22) {
+        fric_per_sec
+    } else {
+        fric_per_sec * SECONDS_PER_LOGICFRAME_REAL
+    };
     Ok(())
 }
 
 /// `GenericObjectCreationNugget::parseDebrisObjectNames`: every other token is kept (see the module docs).
-fn parse_debris_object_names(ini: &mut Ini<'_>, p: &mut GenericParse, _: &UserData) -> IniResult<()> {
+fn parse_debris_object_names(
+    ini: &mut Ini<'_>,
+    p: &mut GenericParse,
+    _: &UserData,
+) -> IniResult<()> {
     let mut debris_name = Some(ini.get_next_token(None)?);
     while let Some(name) = debris_name {
         if p.env.preload_assets != plant(16) {
@@ -1726,20 +2287,34 @@ fn parse_anim_set(ini: &mut Ini<'_>, p: &mut GenericParse, _: &UserData) -> IniR
     let anim_initial = ini.get_next_ascii_string();
     let anim_flying = ini.get_next_ascii_string();
     let anim_final = ini.get_next_ascii_string();
-    p.nugget.anim_sets.push(AnimSet { anim_initial, anim_flying, anim_final });
+    p.nugget.anim_sets.push(AnimSet {
+        anim_initial,
+        anim_flying,
+        anim_final,
+    });
     Ok(())
 }
 
 /// `INI::parseStaticGameLODLevel`.
-fn parse_static_game_lod_level(ini: &mut Ini<'_>, p: &mut GenericParse, _: &UserData) -> IniResult<()> {
+fn parse_static_game_lod_level(
+    ini: &mut Ini<'_>,
+    p: &mut GenericParse,
+    _: &UserData,
+) -> IniResult<()> {
     let tok = ini.get_next_token(None)?;
     for (i, name) in STATIC_GAME_LOD_NAMES.iter().enumerate() {
-        if if plant(27) { tok == name.as_bytes() } else { tok.eq_ignore_ascii_case(name.as_bytes()) } {
+        if if plant(27) {
+            tok == name.as_bytes()
+        } else {
+            tok.eq_ignore_ascii_case(name.as_bytes())
+        } {
             p.nugget.min_lod_required = i as i32;
             return Ok(());
         }
     }
-    Err(crate::common::ini::IniError::new(crate::common::ini::IniErrorKind::InvalidData))
+    Err(crate::common::ini::IniError::new(
+        crate::common::ini::IniErrorKind::InvalidData,
+    ))
 }
 
 /// `INI::parseAudioEventRTS` on `m_bounceSound`: `NoSound` leaves the event as it is, any other token names it.
@@ -1756,79 +2331,370 @@ fn parse_bounce_sound(ini: &mut Ini<'_>, p: &mut GenericParse, _: &UserData) -> 
 /// `INI::parseFXList` on `m_fxFinal`.
 fn parse_fx_final(ini: &mut Ini<'_>, p: &mut GenericParse, _: &UserData) -> IniResult<()> {
     let token = ini.get_next_token(None)?;
-    p.nugget.fx_final = if plant(29) { Some(token) } else { p.env.find_fx_list(&token) };
+    p.nugget.fx_final = if plant(29) {
+        Some(token)
+    } else {
+        p.env.find_fx_list(&token)
+    };
     Ok(())
 }
 
 /// `GenericObjectCreationNugget::getCommonFieldParse()`.
 static GENERIC_COMMON_FIELDS: [FieldParse<GenericParse>; 31] = [
-    FieldParse::new("PutInContainer", |ini, p, _| { p.nugget.put_in_container = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
-    FieldParse::new("ParticleSystem", |ini, p, _| { p.nugget.particle_sys_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
-    FieldParse::new("Count", |ini, p, _| { p.nugget.debris_to_generate = ini.parse_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("IgnorePrimaryObstacle", |ini, p, _| { p.nugget.ignore_primary_obstacle = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("OrientInForceDirection", |ini, p, _| { p.nugget.orient_in_force_direction = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("ExtraBounciness", |ini, p, _| { p.nugget.extra_bounciness = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "PutInContainer",
+        |ini, p, _| {
+            p.nugget.put_in_container = ini.parse_ascii_string()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ParticleSystem",
+        |ini, p, _| {
+            p.nugget.particle_sys_name = ini.parse_ascii_string()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Count",
+        |ini, p, _| {
+            p.nugget.debris_to_generate = ini.parse_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "IgnorePrimaryObstacle",
+        |ini, p, _| {
+            p.nugget.ignore_primary_obstacle = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "OrientInForceDirection",
+        |ini, p, _| {
+            p.nugget.orient_in_force_direction = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ExtraBounciness",
+        |ini, p, _| {
+            p.nugget.extra_bounciness = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::new("ExtraFriction", parse_friction_per_sec, UserData::None),
-    FieldParse::new("Offset", |ini, p, _| { p.nugget.offset = ini.parse_coord3d()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "Offset",
+        |ini, p, _| {
+            p.nugget.offset = ini.parse_coord3d()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::new(
         "Disposition",
         |ini, p, _| ini.parse_bit_string32(&mut p.nugget.disposition, &DEBRIS_DISPOSITION_NAMES),
         UserData::Names(&DEBRIS_DISPOSITION_NAMES),
     ),
-    FieldParse::new("DispositionIntensity", |ini, p, _| { p.nugget.disposition_intensity = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("SpinRate", |ini, p, _| { p.nugget.spin_rate = ini.parse_angular_velocity_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("YawRate", |ini, p, _| { p.nugget.yaw_rate = ini.parse_angular_velocity_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("RollRate", |ini, p, _| { p.nugget.roll_rate = ini.parse_angular_velocity_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("PitchRate", |ini, p, _| { p.nugget.pitch_rate = ini.parse_angular_velocity_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("MinForceMagnitude", |ini, p, _| { p.nugget.min_mag = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("MaxForceMagnitude", |ini, p, _| { p.nugget.max_mag = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("MinForcePitch", |ini, p, _| { p.nugget.min_pitch = if plant(25) { ini.parse_real()? } else { ini.parse_angle_real()? }; Ok(()) }, UserData::None),
-    FieldParse::new("MaxForcePitch", |ini, p, _| { p.nugget.max_pitch = ini.parse_angle_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("MinLifetime", |ini, p, _| { p.nugget.min_frames = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("MaxLifetime", |ini, p, _| { p.nugget.max_frames = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("SpreadFormation", |ini, p, _| { p.nugget.spread_formation = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("MinDistanceAFormation", |ini, p, _| { p.nugget.min_distance_a_formation = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("MinDistanceBFormation", |ini, p, _| { p.nugget.min_distance_b_formation = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("MaxDistanceFormation", |ini, p, _| { p.nugget.max_distance_formation = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("FadeIn", |ini, p, _| { p.nugget.fade_in = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("FadeOut", |ini, p, _| { p.nugget.fade_out = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("FadeTime", |ini, p, _| { p.nugget.fade_frames = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("FadeSound", |ini, p, _| { p.nugget.fade_sound_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
-    FieldParse::new("PreserveLayer", |ini, p, _| { p.nugget.preserve_layer = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("DiesOnBadLand", |ini, p, _| { p.nugget.dies_on_bad_land = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "DispositionIntensity",
+        |ini, p, _| {
+            p.nugget.disposition_intensity = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "SpinRate",
+        |ini, p, _| {
+            p.nugget.spin_rate = ini.parse_angular_velocity_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "YawRate",
+        |ini, p, _| {
+            p.nugget.yaw_rate = ini.parse_angular_velocity_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RollRate",
+        |ini, p, _| {
+            p.nugget.roll_rate = ini.parse_angular_velocity_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "PitchRate",
+        |ini, p, _| {
+            p.nugget.pitch_rate = ini.parse_angular_velocity_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MinForceMagnitude",
+        |ini, p, _| {
+            p.nugget.min_mag = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MaxForceMagnitude",
+        |ini, p, _| {
+            p.nugget.max_mag = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MinForcePitch",
+        |ini, p, _| {
+            p.nugget.min_pitch = if plant(25) {
+                ini.parse_real()?
+            } else {
+                ini.parse_angle_real()?
+            };
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MaxForcePitch",
+        |ini, p, _| {
+            p.nugget.max_pitch = ini.parse_angle_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MinLifetime",
+        |ini, p, _| {
+            p.nugget.min_frames = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MaxLifetime",
+        |ini, p, _| {
+            p.nugget.max_frames = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "SpreadFormation",
+        |ini, p, _| {
+            p.nugget.spread_formation = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MinDistanceAFormation",
+        |ini, p, _| {
+            p.nugget.min_distance_a_formation = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MinDistanceBFormation",
+        |ini, p, _| {
+            p.nugget.min_distance_b_formation = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MaxDistanceFormation",
+        |ini, p, _| {
+            p.nugget.max_distance_formation = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "FadeIn",
+        |ini, p, _| {
+            p.nugget.fade_in = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "FadeOut",
+        |ini, p, _| {
+            p.nugget.fade_out = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "FadeTime",
+        |ini, p, _| {
+            p.nugget.fade_frames = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "FadeSound",
+        |ini, p, _| {
+            p.nugget.fade_sound_name = ini.parse_ascii_string()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "PreserveLayer",
+        |ini, p, _| {
+            p.nugget.preserve_layer = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DiesOnBadLand",
+        |ini, p, _| {
+            p.nugget.dies_on_bad_land = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 /// `GenericObjectCreationNugget::parseObject`'s `myFieldParse`.
 static GENERIC_OBJECT_FIELDS: [FieldParse<GenericParse>; 10] = [
-    FieldParse::new("ContainInsideSourceObject", |ini, p, _| { p.nugget.contain_inside_source_object = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "ContainInsideSourceObject",
+        |ini, p, _| {
+            p.nugget.contain_inside_source_object = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::new("ObjectNames", parse_debris_object_names, UserData::None),
-    FieldParse::new("ObjectCount", |ini, p, _| { p.nugget.object_count = ini.parse_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("InheritsVeterancy", |ini, p, _| { p.nugget.inherits_veterancy = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("SkipIfSignificantlyAirborne", |ini, p, _| { p.nugget.skip_if_significantly_airborne = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("InvulnerableTime", |ini, p, _| { p.nugget.invulnerable_time = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("MinHealth", |ini, p, _| { p.nugget.min_health = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("MaxHealth", |ini, p, _| { if plant(24) { p.nugget.min_health = ini.parse_percent_to_real()?; } else { p.nugget.max_health = ini.parse_percent_to_real()?; } Ok(()) }, UserData::None),
-    FieldParse::new("RequiresLivePlayer", |ini, p, _| { p.nugget.requires_live_player = ini.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "ObjectCount",
+        |ini, p, _| {
+            p.nugget.object_count = ini.parse_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "InheritsVeterancy",
+        |ini, p, _| {
+            p.nugget.inherits_veterancy = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "SkipIfSignificantlyAirborne",
+        |ini, p, _| {
+            p.nugget.skip_if_significantly_airborne = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "InvulnerableTime",
+        |ini, p, _| {
+            p.nugget.invulnerable_time = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MinHealth",
+        |ini, p, _| {
+            p.nugget.min_health = ini.parse_percent_to_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MaxHealth",
+        |ini, p, _| {
+            if plant(24) {
+                p.nugget.min_health = ini.parse_percent_to_real()?;
+            } else {
+                p.nugget.max_health = ini.parse_percent_to_real()?;
+            }
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RequiresLivePlayer",
+        |ini, p, _| {
+            p.nugget.requires_live_player = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 /// `GenericObjectCreationNugget::parseDebris`'s `myFieldParse`.
 static GENERIC_DEBRIS_FIELDS: [FieldParse<GenericParse>; 9] = [
     FieldParse::new("ModelNames", parse_debris_object_names, UserData::None),
-    FieldParse::new("Mass", |ini, p, _| { p.nugget.mass = ini.parse_positive_non_zero_real()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "Mass",
+        |ini, p, _| {
+            p.nugget.mass = ini.parse_positive_non_zero_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::new("AnimationSet", parse_anim_set, UserData::None),
     FieldParse::new("FXFinal", parse_fx_final, UserData::None),
-    FieldParse::new("OkToChangeModelColor", |ini, p, _| { p.nugget.ok_to_change_model_color = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("MinLODRequired", parse_static_game_lod_level, UserData::None),
-    FieldParse::new("Shadow", |ini, p, _| ini.parse_bit_string32(&mut p.nugget.shadow_type, &SHADOW_NAMES), UserData::Names(&SHADOW_NAMES)),
+    FieldParse::new(
+        "OkToChangeModelColor",
+        |ini, p, _| {
+            p.nugget.ok_to_change_model_color = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "MinLODRequired",
+        parse_static_game_lod_level,
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Shadow",
+        |ini, p, _| ini.parse_bit_string32(&mut p.nugget.shadow_type, &SHADOW_NAMES),
+        UserData::Names(&SHADOW_NAMES),
+    ),
     FieldParse::new("BounceSound", parse_bounce_sound, UserData::None),
     FieldParse::end(),
 ];
 
 /// Runs one nugget's block: the field lines up to `End` into a fresh nugget of the class, whose debris names (kept even if the block
 /// fails, as the global is upstream's) and which (only if the block succeeds) joins the list.
-fn finish_nugget<N>(this: &mut OclParse, p: NuggetParse<N>, r: IniResult<()>, wrap: fn(N) -> Nugget) -> IniResult<()> {
+fn finish_nugget<N>(
+    this: &mut OclParse,
+    p: NuggetParse<N>,
+    r: IniResult<()>,
+    wrap: fn(N) -> Nugget,
+) -> IniResult<()> {
     if !(plant(17) && r.is_err()) {
         this.debris_hack.extend(p.debris_hack);
     }
@@ -1877,12 +2743,19 @@ fn parse_apply_random_force(ini: &mut Ini<'_>, this: &mut OclParse, _: &UserData
 
 /// `GenericObjectCreationNugget::parseObject` (`name_are_objects`) and `parseDebris` (not): the common fields, then the class's.
 fn parse_generic(ini: &mut Ini<'_>, this: &mut OclParse, name_are_objects: bool) -> IniResult<()> {
-    let generic = GenericObjectCreationNugget { name_are_objects, ..GenericObjectCreationNugget::default() };
+    let generic = GenericObjectCreationNugget {
+        name_are_objects,
+        ..GenericObjectCreationNugget::default()
+    };
     let mut p = NuggetParse::new(generic, &this.env);
     let r = (|| {
         let mut multi = MultiIniFieldParse::new();
         multi.add(&GENERIC_COMMON_FIELDS)?;
-        multi.add(if name_are_objects { &GENERIC_OBJECT_FIELDS } else { &GENERIC_DEBRIS_FIELDS })?;
+        multi.add(if name_are_objects {
+            &GENERIC_OBJECT_FIELDS
+        } else {
+            &GENERIC_DEBRIS_FIELDS
+        })?;
         ini.init_from_ini_multi(&mut p, &multi)
     })();
     // "Zero masses are not allowed for debris" is a debug assertion only.
@@ -1929,8 +2802,16 @@ impl ObjectCreationListStore {
 
     /// `findObjectCreationList(name)`: the list with the given name, `None` if there is none or the name is `None`. The name gets a key
     /// (`NAMEKEY(name)`) whether or not there is such a list.
-    pub fn find_object_creation_list(&self, names: &mut NameKeyGenerator, name: &[u8]) -> Option<&ObjectCreationList> {
-        if if plant(21) { name == b"None" } else { name.eq_ignore_ascii_case(b"None") } {
+    pub fn find_object_creation_list(
+        &self,
+        names: &mut NameKeyGenerator,
+        name: &[u8],
+    ) -> Option<&ObjectCreationList> {
+        if if plant(21) {
+            name == b"None"
+        } else {
+            name.eq_ignore_ascii_case(b"None")
+        } {
             return None;
         }
         self.ocls.get(&names.name_to_key(name))
@@ -1943,14 +2824,23 @@ impl ObjectCreationListStore {
 
     /// `parseObjectCreationListDefinition(ini)` (also `INI::parseObjectCreationListDefinition`): the list's name, then its nugget blocks up to
     /// `End`. The list is cleared first; the nuggets completed before an error stay in the list and the store.
-    pub fn parse_object_creation_list_definition(&mut self, ini: &mut Ini<'_>, names: &mut NameKeyGenerator, env: &Arc<OclParseEnv>) -> IniResult<()> {
+    pub fn parse_object_creation_list_definition(
+        &mut self,
+        ini: &mut Ini<'_>,
+        names: &mut NameKeyGenerator,
+        env: &Arc<OclParseEnv>,
+    ) -> IniResult<()> {
         let c = ini.get_next_token(None)?;
         let key = names.name_to_key(&c);
         let ocl = self.ocls.entry(key).or_default();
         if !plant(19) {
             ocl.clear();
         }
-        let mut target = OclParse { env: env.clone(), nuggets: Vec::new(), debris_hack: Vec::new() };
+        let mut target = OclParse {
+            env: env.clone(),
+            nuggets: Vec::new(),
+            debris_hack: Vec::new(),
+        };
         let r = ini.init_from_ini(&mut target, &OBJECT_CREATION_LIST_FIELDS);
         for n in target.nuggets {
             ocl.nuggets.push(n.clone());
@@ -1958,7 +2848,8 @@ impl ObjectCreationListStore {
                 self.nuggets.push(n);
             }
         }
-        self.debris_model_names_global_hack.extend(target.debris_hack);
+        self.debris_model_names_global_hack
+            .extend(target.debris_hack);
         r
     }
 }
@@ -1979,300 +2870,368 @@ mod tests {
     }
 
     impl OclHost for Rec {
-    fn frame(&self) -> u32 {
-        0
-    }
-    fn is_debris_skipped(&self) -> bool {
-        false
-    }
-    fn random_value(&mut self, _lo: i32, hi: i32) -> i32 {
-        self.log.push("random_value".to_string());
-        hi
-    }
-    fn random_value_real(&mut self, _lo: f32, hi: f32) -> f32 {
-        self.log.push("random_value_real".to_string());
-        hi
-    }
-    fn destroy_object(&mut self, o: ObjectId) {
-        self.log.push(format!("destroy_object {}", o));
-    }
-    fn neutral_player_default_team(&self) -> Option<TeamId> {
-        Some(2)
-    }
-    fn player_default_team(&self, _player: PlayerIndex) -> Option<TeamId> {
-        Some(3)
-    }
-    fn player_is_active(&self, _player: PlayerIndex) -> bool {
-        true
-    }
-    fn transfer_object_name(&mut self, _name: &[u8], _o: ObjectId) {
-        self.log.push("transfer_object_name".to_string());
-    }
-    fn debris_template(&mut self) -> Option<TemplateRef> {
-        self.log.push("debris_template".to_string());
-        Some(7)
-    }
-    fn find_template(&mut self, _name: &[u8]) -> Option<TemplateRef> {
-        self.log.push("find_template".to_string());
-        Some(7)
-    }
-    fn new_object(&mut self, _tmplate: Option<TemplateRef>, _team: Option<TeamId>) -> Option<ObjectId> {
-        self.log.push("new_object".to_string());
-        {
-            self.next += 1;
-            Some(self.next)
+        fn frame(&self) -> u32 {
+            0
         }
-    }
-    fn obj_position(&self, _o: ObjectId) -> Coord3D {
-        Coord3D::default()
-    }
-    fn obj_orientation(&self, _o: ObjectId) -> f32 {
-        0.0
-    }
-    fn obj_transform(&self, _o: ObjectId) -> Matrix3D {
-        Matrix3D::IDENTITY
-    }
-    fn obj_controlling_player(&self, _o: ObjectId) -> Option<PlayerIndex> {
-        (!self.no_player).then_some(1)
-    }
-    fn obj_layer(&self, _o: ObjectId) -> PathfindLayer {
-        LAYER_GROUND
-    }
-    fn obj_is_above_terrain(&self, _o: ObjectId) -> bool {
-        true
-    }
-    fn obj_is_significantly_above_terrain(&self, _o: ObjectId) -> bool {
-        false
-    }
-    fn obj_is_off_map(&self, _o: ObjectId) -> bool {
-        false
-    }
-    fn obj_is_structure(&self, _o: ObjectId) -> bool {
-        true
-    }
-    fn obj_veterancy_level(&self, _o: ObjectId) -> VeterancyLevel {
-        VeterancyLevel::Elite
-    }
-    fn obj_indicator_color(&self, _o: ObjectId) -> i32 {
-        0
-    }
-    fn obj_name(&self, _o: ObjectId) -> Vec<u8> {
-        Vec::new()
-    }
-    fn obj_unit_direction_vector_2d(&self, _o: ObjectId) -> Coord3D {
-        Coord3D { x: 1.0, y: 0.0, z: 0.0 }
-    }
-    fn obj_set_producer(&mut self, o: ObjectId, _producer: Option<ObjectId>) {
-        self.log.push(format!("obj_set_producer {}", o));
-    }
-    fn obj_set_position(&mut self, o: ObjectId, _pos: &Coord3D) {
-        self.log.push(format!("obj_set_position {}", o));
-    }
-    fn obj_set_orientation(&mut self, o: ObjectId, _angle: f32) {
-        self.log.push(format!("obj_set_orientation {}", o));
-    }
-    fn obj_set_transform_matrix(&mut self, o: ObjectId, _mtx: &Matrix3D) {
-        self.log.push(format!("obj_set_transform_matrix {}", o));
-    }
-    fn obj_set_layer(&mut self, o: ObjectId, _layer: PathfindLayer) {
-        self.log.push(format!("obj_set_layer {}", o));
-    }
-    fn obj_set_script_status(&mut self, o: ObjectId, _bit: u8) {
-        self.log.push(format!("obj_set_script_status {}", o));
-    }
-    fn obj_set_disabled_until(&mut self, o: ObjectId, _disabled: DisabledType, _frame: u32) {
-        self.log.push(format!("obj_set_disabled_until {}", o));
-    }
-    fn obj_set_weapon_lock(&mut self, o: ObjectId, _slot: i32, _lock: i32) {
-        self.log.push(format!("obj_set_weapon_lock {}", o));
-    }
-    fn obj_go_invulnerable(&mut self, o: ObjectId, _frames: u32) {
-        self.log.push(format!("obj_go_invulnerable {}", o));
-    }
-    fn obj_kill(&mut self, o: ObjectId) {
-        self.log.push(format!("obj_kill {}", o));
-    }
-    fn obj_attempt_damage(&mut self, o: ObjectId, _info: &DamageInfo) {
-        self.log.push(format!("obj_attempt_damage {}", o));
-    }
-    fn obj_has_update_module(&self, _o: ObjectId, _kind: UpdateModuleKind) -> bool {
-        true
-    }
-    fn obj_has_special_power_completion_die(&self, _o: ObjectId) -> bool {
-        true
-    }
-    fn obj_has_ai(&self, _o: ObjectId) -> bool {
-        true
-    }
-    fn obj_has_physics(&self, _o: ObjectId) -> bool {
-        true
-    }
-    fn obj_has_body(&self, _o: ObjectId) -> bool {
-        true
-    }
-    fn obj_has_contain(&self, _o: ObjectId) -> bool {
-        true
-    }
-    fn obj_has_drawable(&self, _o: ObjectId) -> bool {
-        true
-    }
-    fn obj_is_trainable(&self, _o: ObjectId) -> bool {
-        true
-    }
-    fn obj_set_veterancy_level(&mut self, o: ObjectId, _level: VeterancyLevel) {
-        self.log.push(format!("obj_set_veterancy_level {}", o));
-    }
-    fn ai_attack_position(&mut self, o: ObjectId, _pos: &Coord3D, _max_shots: i32, _cmd: CommandSourceType) {
-        self.log.push(format!("ai_attack_position {}", o));
-    }
-    fn radius_decal_create(&mut self, o: ObjectId, _tmpl: &RadiusDecalTemplate, _radius: f32, _pos: &Coord3D) {
-        self.log.push(format!("radius_decal_create {}", o));
-    }
-    fn radius_decal_kill_when_no_longer_attacking(&mut self, o: ObjectId) {
-        self.log.push(format!("radius_decal_kill_when_no_longer_attacking {}", o));
-    }
-    fn deliver_payload(&mut self, o: ObjectId, _move_to: &Coord3D, _target: &Coord3D, _data: &DeliverPayloadData) {
-        self.log.push(format!("deliver_payload {}", o));
-    }
-    fn deliver_payload_max_speed_for_condition(&self, _o: ObjectId, _damage_state: i32) -> f32 {
-        10.0
-    }
-    fn deliver_payload_preferred_height(&self, _o: ObjectId) -> f32 {
-        30.0
-    }
-    fn body_damage_state(&self, _o: ObjectId) -> i32 {
-        1
-    }
-    fn body_set_initial_health(&mut self, o: ObjectId, _percent: i32) {
-        self.log.push(format!("body_set_initial_health {}", o));
-    }
-    fn lifetime_set_range(&mut self, o: ObjectId, _min_frames: u32, _max_frames: u32) {
-        self.log.push(format!("lifetime_set_range {}", o));
-    }
-    fn float_set_enabled(&mut self, o: ObjectId) {
-        self.log.push(format!("float_set_enabled {}", o));
-    }
-    fn special_power_completion_die_set_creator(&mut self, o: ObjectId, _creator: ObjectId) {
-        self.log.push(format!("special_power_completion_die_set_creator {}", o));
-    }
-    fn behavior_module_count(&self, _o: ObjectId) -> usize {
-        2
-    }
-    fn behavior_module_has_slaved_update(&self, _o: ObjectId, i: usize) -> bool {
-        i == 1
-    }
-    fn behavior_module_on_enslave(&mut self, o: ObjectId, _i: usize, _slaver: Option<ObjectId>) {
-        self.log.push(format!("behavior_module_on_enslave {}", o));
-    }
-    fn physics_velocity(&self, _o: ObjectId) -> Coord3D {
-        Coord3D::default()
-    }
-    fn physics_mass(&self, _o: ObjectId) -> f32 {
-        2.0
-    }
-    fn physics_apply_motive_force(&mut self, o: ObjectId, _force: &Coord3D) {
-        self.log.push(format!("physics_apply_motive_force {}", o));
-    }
-    fn physics_apply_force(&mut self, o: ObjectId, _force: &Coord3D) {
-        self.log.push(format!("physics_apply_force {}", o));
-    }
-    fn physics_set_mass(&mut self, o: ObjectId, _mass: f32) {
-        self.log.push(format!("physics_set_mass {}", o));
-    }
-    fn physics_set_extra_friction(&mut self, o: ObjectId, _f: f32) {
-        self.log.push(format!("physics_set_extra_friction {}", o));
-    }
-    fn physics_set_extra_bounciness(&mut self, o: ObjectId, _b: f32) {
-        self.log.push(format!("physics_set_extra_bounciness {}", o));
-    }
-    fn physics_set_allow_bouncing(&mut self, o: ObjectId, _b: bool) {
-        self.log.push(format!("physics_set_allow_bouncing {}", o));
-    }
-    fn physics_set_allow_to_fall(&mut self, o: ObjectId, _b: bool) {
-        self.log.push(format!("physics_set_allow_to_fall {}", o));
-    }
-    fn physics_set_bounce_sound(&mut self, o: ObjectId, _name: &[u8]) {
-        self.log.push(format!("physics_set_bounce_sound {}", o));
-    }
-    fn physics_set_ignore_collisions_with(&mut self, o: ObjectId, _other: Option<ObjectId>) {
-        self.log.push(format!("physics_set_ignore_collisions_with {}", o));
-    }
-    fn physics_set_angles(&mut self, o: ObjectId, _yaw: f32, _pitch: f32, _roll: f32) {
-        self.log.push(format!("physics_set_angles {}", o));
-    }
-    fn physics_set_yaw_rate(&mut self, o: ObjectId, _r: f32) {
-        self.log.push(format!("physics_set_yaw_rate {}", o));
-    }
-    fn physics_set_roll_rate(&mut self, o: ObjectId, _r: f32) {
-        self.log.push(format!("physics_set_roll_rate {}", o));
-    }
-    fn physics_set_pitch_rate(&mut self, o: ObjectId, _r: f32) {
-        self.log.push(format!("physics_set_pitch_rate {}", o));
-    }
-    fn contain_is_valid_container_for(&self, _container: ObjectId, _obj: ObjectId, _check_capacity: bool) -> bool {
-        true
-    }
-    fn contain_add(&mut self, container: ObjectId, _obj: ObjectId) {
-        self.log.push(format!("contain_add {}", container));
-    }
-    fn drawable_is_effectively_hidden(&self, _o: ObjectId) -> bool {
-        false
-    }
-    fn drawable_set_hidden(&mut self, o: ObjectId, _hidden: bool) {
-        self.log.push(format!("drawable_set_hidden {}", o));
-    }
-    fn drawable_fade_in(&mut self, o: ObjectId, _frames: u32) {
-        self.log.push(format!("drawable_fade_in {}", o));
-    }
-    fn drawable_fade_out(&mut self, o: ObjectId, _frames: u32) {
-        self.log.push(format!("drawable_fade_out {}", o));
-    }
-    fn drawable_debris_interface_count(&self, _o: ObjectId) -> usize {
-        1
-    }
-    fn debris_set_model_name(&mut self, o: ObjectId, _i: usize, _name: &[u8], _color: i32, _shadow_type: u32) {
-        self.log.push(format!("debris_set_model_name {}", o));
-    }
-    fn debris_set_anim_names(&mut self, o: ObjectId, _i: usize, _initial: &[u8], _flying: &[u8], _fin: &[u8], _final_fx: &FxListName) {
-        self.log.push(format!("debris_set_anim_names {}", o));
-    }
-    fn terrain_ground_height(&self, _x: f32, _y: f32) -> f32 {
-        0.0
-    }
-    fn terrain_highest_layer_for_destination(&self, _pos: &Coord3D) -> PathfindLayer {
-        LAYER_GROUND
-    }
-    fn terrain_layer_height(&self, _x: f32, _y: f32, _layer: PathfindLayer) -> f32 {
-        0.0
-    }
-    fn terrain_flatten(&mut self, o: ObjectId) {
-        self.log.push(format!("terrain_flatten {}", o));
-    }
-    fn terrain_is_underwater(&self, _x: f32, _y: f32) -> Option<(f32, f32)> {
-        Some((50.0, 40.0))
-    }
-    fn pathfinder_cell_type(&self, _layer: PathfindLayer, _x: i32, _y: i32) -> Option<PathfindCellType> {
-        Some(PathfindCellType::Clear)
-    }
-    fn pathfinder_add_object(&mut self, o: ObjectId) {
-        self.log.push(format!("pathfinder_add_object {}", o));
-    }
-    fn partition_find_position_around(&mut self, _center: &Coord3D, _options: &FindPositionOptions) -> Coord3D {
-        self.log.push("partition_find_position_around".to_string());
-        Coord3D::default()
-    }
-    fn weapon_create_and_fire_temp(&mut self, _weapon: WeaponTemplateRef, _source: ObjectId, _pos: &Coord3D) {
-        self.log.push("weapon_create_and_fire_temp".to_string());
-    }
-    fn particle_system_find_template(&self, _name: &[u8]) -> Option<u32> {
-        Some(1)
-    }
-    fn particle_system_create_attached(&mut self, _tmpl: u32, _o: ObjectId) {
-        self.log.push("particle_system_create_attached".to_string());
-    }
-    fn audio_add_event(&mut self, _name: &[u8], _object: ObjectId) {
-        self.log.push("audio_add_event".to_string());
-    }
+        fn is_debris_skipped(&self) -> bool {
+            false
+        }
+        fn random_value(&mut self, _lo: i32, hi: i32) -> i32 {
+            self.log.push("random_value".to_string());
+            hi
+        }
+        fn random_value_real(&mut self, _lo: f32, hi: f32) -> f32 {
+            self.log.push("random_value_real".to_string());
+            hi
+        }
+        fn destroy_object(&mut self, o: ObjectId) {
+            self.log.push(format!("destroy_object {}", o));
+        }
+        fn neutral_player_default_team(&self) -> Option<TeamId> {
+            Some(2)
+        }
+        fn player_default_team(&self, _player: PlayerIndex) -> Option<TeamId> {
+            Some(3)
+        }
+        fn player_is_active(&self, _player: PlayerIndex) -> bool {
+            true
+        }
+        fn transfer_object_name(&mut self, _name: &[u8], _o: ObjectId) {
+            self.log.push("transfer_object_name".to_string());
+        }
+        fn debris_template(&mut self) -> Option<TemplateRef> {
+            self.log.push("debris_template".to_string());
+            Some(7)
+        }
+        fn find_template(&mut self, _name: &[u8]) -> Option<TemplateRef> {
+            self.log.push("find_template".to_string());
+            Some(7)
+        }
+        fn new_object(
+            &mut self,
+            _tmplate: Option<TemplateRef>,
+            _team: Option<TeamId>,
+        ) -> Option<ObjectId> {
+            self.log.push("new_object".to_string());
+            {
+                self.next += 1;
+                Some(self.next)
+            }
+        }
+        fn obj_position(&self, _o: ObjectId) -> Coord3D {
+            Coord3D::default()
+        }
+        fn obj_orientation(&self, _o: ObjectId) -> f32 {
+            0.0
+        }
+        fn obj_transform(&self, _o: ObjectId) -> Matrix3D {
+            Matrix3D::IDENTITY
+        }
+        fn obj_controlling_player(&self, _o: ObjectId) -> Option<PlayerIndex> {
+            (!self.no_player).then_some(1)
+        }
+        fn obj_layer(&self, _o: ObjectId) -> PathfindLayer {
+            LAYER_GROUND
+        }
+        fn obj_is_above_terrain(&self, _o: ObjectId) -> bool {
+            true
+        }
+        fn obj_is_significantly_above_terrain(&self, _o: ObjectId) -> bool {
+            false
+        }
+        fn obj_is_off_map(&self, _o: ObjectId) -> bool {
+            false
+        }
+        fn obj_is_structure(&self, _o: ObjectId) -> bool {
+            true
+        }
+        fn obj_veterancy_level(&self, _o: ObjectId) -> VeterancyLevel {
+            VeterancyLevel::Elite
+        }
+        fn obj_indicator_color(&self, _o: ObjectId) -> i32 {
+            0
+        }
+        fn obj_name(&self, _o: ObjectId) -> Vec<u8> {
+            Vec::new()
+        }
+        fn obj_unit_direction_vector_2d(&self, _o: ObjectId) -> Coord3D {
+            Coord3D {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+            }
+        }
+        fn obj_set_producer(&mut self, o: ObjectId, _producer: Option<ObjectId>) {
+            self.log.push(format!("obj_set_producer {}", o));
+        }
+        fn obj_set_position(&mut self, o: ObjectId, _pos: &Coord3D) {
+            self.log.push(format!("obj_set_position {}", o));
+        }
+        fn obj_set_orientation(&mut self, o: ObjectId, _angle: f32) {
+            self.log.push(format!("obj_set_orientation {}", o));
+        }
+        fn obj_set_transform_matrix(&mut self, o: ObjectId, _mtx: &Matrix3D) {
+            self.log.push(format!("obj_set_transform_matrix {}", o));
+        }
+        fn obj_set_layer(&mut self, o: ObjectId, _layer: PathfindLayer) {
+            self.log.push(format!("obj_set_layer {}", o));
+        }
+        fn obj_set_script_status(&mut self, o: ObjectId, _bit: u8) {
+            self.log.push(format!("obj_set_script_status {}", o));
+        }
+        fn obj_set_disabled_until(&mut self, o: ObjectId, _disabled: DisabledType, _frame: u32) {
+            self.log.push(format!("obj_set_disabled_until {}", o));
+        }
+        fn obj_set_weapon_lock(&mut self, o: ObjectId, _slot: i32, _lock: i32) {
+            self.log.push(format!("obj_set_weapon_lock {}", o));
+        }
+        fn obj_go_invulnerable(&mut self, o: ObjectId, _frames: u32) {
+            self.log.push(format!("obj_go_invulnerable {}", o));
+        }
+        fn obj_kill(&mut self, o: ObjectId) {
+            self.log.push(format!("obj_kill {}", o));
+        }
+        fn obj_attempt_damage(&mut self, o: ObjectId, _info: &DamageInfo) {
+            self.log.push(format!("obj_attempt_damage {}", o));
+        }
+        fn obj_has_update_module(&self, _o: ObjectId, _kind: UpdateModuleKind) -> bool {
+            true
+        }
+        fn obj_has_special_power_completion_die(&self, _o: ObjectId) -> bool {
+            true
+        }
+        fn obj_has_ai(&self, _o: ObjectId) -> bool {
+            true
+        }
+        fn obj_has_physics(&self, _o: ObjectId) -> bool {
+            true
+        }
+        fn obj_has_body(&self, _o: ObjectId) -> bool {
+            true
+        }
+        fn obj_has_contain(&self, _o: ObjectId) -> bool {
+            true
+        }
+        fn obj_has_drawable(&self, _o: ObjectId) -> bool {
+            true
+        }
+        fn obj_is_trainable(&self, _o: ObjectId) -> bool {
+            true
+        }
+        fn obj_set_veterancy_level(&mut self, o: ObjectId, _level: VeterancyLevel) {
+            self.log.push(format!("obj_set_veterancy_level {}", o));
+        }
+        fn ai_attack_position(
+            &mut self,
+            o: ObjectId,
+            _pos: &Coord3D,
+            _max_shots: i32,
+            _cmd: CommandSourceType,
+        ) {
+            self.log.push(format!("ai_attack_position {}", o));
+        }
+        fn radius_decal_create(
+            &mut self,
+            o: ObjectId,
+            _tmpl: &RadiusDecalTemplate,
+            _radius: f32,
+            _pos: &Coord3D,
+        ) {
+            self.log.push(format!("radius_decal_create {}", o));
+        }
+        fn radius_decal_kill_when_no_longer_attacking(&mut self, o: ObjectId) {
+            self.log
+                .push(format!("radius_decal_kill_when_no_longer_attacking {}", o));
+        }
+        fn deliver_payload(
+            &mut self,
+            o: ObjectId,
+            _move_to: &Coord3D,
+            _target: &Coord3D,
+            _data: &DeliverPayloadData,
+        ) {
+            self.log.push(format!("deliver_payload {}", o));
+        }
+        fn deliver_payload_max_speed_for_condition(&self, _o: ObjectId, _damage_state: i32) -> f32 {
+            10.0
+        }
+        fn deliver_payload_preferred_height(&self, _o: ObjectId) -> f32 {
+            30.0
+        }
+        fn body_damage_state(&self, _o: ObjectId) -> i32 {
+            1
+        }
+        fn body_set_initial_health(&mut self, o: ObjectId, _percent: i32) {
+            self.log.push(format!("body_set_initial_health {}", o));
+        }
+        fn lifetime_set_range(&mut self, o: ObjectId, _min_frames: u32, _max_frames: u32) {
+            self.log.push(format!("lifetime_set_range {}", o));
+        }
+        fn float_set_enabled(&mut self, o: ObjectId) {
+            self.log.push(format!("float_set_enabled {}", o));
+        }
+        fn special_power_completion_die_set_creator(&mut self, o: ObjectId, _creator: ObjectId) {
+            self.log
+                .push(format!("special_power_completion_die_set_creator {}", o));
+        }
+        fn behavior_module_count(&self, _o: ObjectId) -> usize {
+            2
+        }
+        fn behavior_module_has_slaved_update(&self, _o: ObjectId, i: usize) -> bool {
+            i == 1
+        }
+        fn behavior_module_on_enslave(
+            &mut self,
+            o: ObjectId,
+            _i: usize,
+            _slaver: Option<ObjectId>,
+        ) {
+            self.log.push(format!("behavior_module_on_enslave {}", o));
+        }
+        fn physics_velocity(&self, _o: ObjectId) -> Coord3D {
+            Coord3D::default()
+        }
+        fn physics_mass(&self, _o: ObjectId) -> f32 {
+            2.0
+        }
+        fn physics_apply_motive_force(&mut self, o: ObjectId, _force: &Coord3D) {
+            self.log.push(format!("physics_apply_motive_force {}", o));
+        }
+        fn physics_apply_force(&mut self, o: ObjectId, _force: &Coord3D) {
+            self.log.push(format!("physics_apply_force {}", o));
+        }
+        fn physics_set_mass(&mut self, o: ObjectId, _mass: f32) {
+            self.log.push(format!("physics_set_mass {}", o));
+        }
+        fn physics_set_extra_friction(&mut self, o: ObjectId, _f: f32) {
+            self.log.push(format!("physics_set_extra_friction {}", o));
+        }
+        fn physics_set_extra_bounciness(&mut self, o: ObjectId, _b: f32) {
+            self.log.push(format!("physics_set_extra_bounciness {}", o));
+        }
+        fn physics_set_allow_bouncing(&mut self, o: ObjectId, _b: bool) {
+            self.log.push(format!("physics_set_allow_bouncing {}", o));
+        }
+        fn physics_set_allow_to_fall(&mut self, o: ObjectId, _b: bool) {
+            self.log.push(format!("physics_set_allow_to_fall {}", o));
+        }
+        fn physics_set_bounce_sound(&mut self, o: ObjectId, _name: &[u8]) {
+            self.log.push(format!("physics_set_bounce_sound {}", o));
+        }
+        fn physics_set_ignore_collisions_with(&mut self, o: ObjectId, _other: Option<ObjectId>) {
+            self.log
+                .push(format!("physics_set_ignore_collisions_with {}", o));
+        }
+        fn physics_set_angles(&mut self, o: ObjectId, _yaw: f32, _pitch: f32, _roll: f32) {
+            self.log.push(format!("physics_set_angles {}", o));
+        }
+        fn physics_set_yaw_rate(&mut self, o: ObjectId, _r: f32) {
+            self.log.push(format!("physics_set_yaw_rate {}", o));
+        }
+        fn physics_set_roll_rate(&mut self, o: ObjectId, _r: f32) {
+            self.log.push(format!("physics_set_roll_rate {}", o));
+        }
+        fn physics_set_pitch_rate(&mut self, o: ObjectId, _r: f32) {
+            self.log.push(format!("physics_set_pitch_rate {}", o));
+        }
+        fn contain_is_valid_container_for(
+            &self,
+            _container: ObjectId,
+            _obj: ObjectId,
+            _check_capacity: bool,
+        ) -> bool {
+            true
+        }
+        fn contain_add(&mut self, container: ObjectId, _obj: ObjectId) {
+            self.log.push(format!("contain_add {}", container));
+        }
+        fn drawable_is_effectively_hidden(&self, _o: ObjectId) -> bool {
+            false
+        }
+        fn drawable_set_hidden(&mut self, o: ObjectId, _hidden: bool) {
+            self.log.push(format!("drawable_set_hidden {}", o));
+        }
+        fn drawable_fade_in(&mut self, o: ObjectId, _frames: u32) {
+            self.log.push(format!("drawable_fade_in {}", o));
+        }
+        fn drawable_fade_out(&mut self, o: ObjectId, _frames: u32) {
+            self.log.push(format!("drawable_fade_out {}", o));
+        }
+        fn drawable_debris_interface_count(&self, _o: ObjectId) -> usize {
+            1
+        }
+        fn debris_set_model_name(
+            &mut self,
+            o: ObjectId,
+            _i: usize,
+            _name: &[u8],
+            _color: i32,
+            _shadow_type: u32,
+        ) {
+            self.log.push(format!("debris_set_model_name {}", o));
+        }
+        fn debris_set_anim_names(
+            &mut self,
+            o: ObjectId,
+            _i: usize,
+            _initial: &[u8],
+            _flying: &[u8],
+            _fin: &[u8],
+            _final_fx: &FxListName,
+        ) {
+            self.log.push(format!("debris_set_anim_names {}", o));
+        }
+        fn terrain_ground_height(&self, _x: f32, _y: f32) -> f32 {
+            0.0
+        }
+        fn terrain_highest_layer_for_destination(&self, _pos: &Coord3D) -> PathfindLayer {
+            LAYER_GROUND
+        }
+        fn terrain_layer_height(&self, _x: f32, _y: f32, _layer: PathfindLayer) -> f32 {
+            0.0
+        }
+        fn terrain_flatten(&mut self, o: ObjectId) {
+            self.log.push(format!("terrain_flatten {}", o));
+        }
+        fn terrain_is_underwater(&self, _x: f32, _y: f32) -> Option<(f32, f32)> {
+            Some((50.0, 40.0))
+        }
+        fn pathfinder_cell_type(
+            &self,
+            _layer: PathfindLayer,
+            _x: i32,
+            _y: i32,
+        ) -> Option<PathfindCellType> {
+            Some(PathfindCellType::Clear)
+        }
+        fn pathfinder_add_object(&mut self, o: ObjectId) {
+            self.log.push(format!("pathfinder_add_object {}", o));
+        }
+        fn partition_find_position_around(
+            &mut self,
+            _center: &Coord3D,
+            _options: &FindPositionOptions,
+        ) -> Coord3D {
+            self.log.push("partition_find_position_around".to_string());
+            Coord3D::default()
+        }
+        fn weapon_create_and_fire_temp(
+            &mut self,
+            _weapon: WeaponTemplateRef,
+            _source: ObjectId,
+            _pos: &Coord3D,
+        ) {
+            self.log.push("weapon_create_and_fire_temp".to_string());
+        }
+        fn particle_system_find_template(&self, _name: &[u8]) -> Option<u32> {
+            Some(1)
+        }
+        fn particle_system_create_attached(&mut self, _tmpl: u32, _o: ObjectId) {
+            self.log.push("particle_system_create_attached".to_string());
+        }
+        fn audio_add_event(&mut self, _name: &[u8], _object: ObjectId) {
+            self.log.push("audio_add_event".to_string());
+        }
     }
 
     struct Ctx {
@@ -2282,7 +3241,8 @@ mod tests {
     }
 
     fn block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-        c.store.parse_object_creation_list_definition(ini, &mut c.names, &c.env)
+        c.store
+            .parse_object_creation_list_definition(ini, &mut c.names, &c.env)
     }
 
     fn load(text: &str) -> (Ctx, IniResult<()>) {
@@ -2290,9 +3250,26 @@ mod tests {
         names.reset();
         let mut weapon_templates = BTreeMap::new();
         weapon_templates.insert(b"W1".to_vec(), 5);
-        let mut c = Ctx { store: ObjectCreationListStore::new(), names, env: Arc::new(OclParseEnv { preload_assets: true, weapon_templates }) };
-        let blocks = [BlockParse { token: "ObjectCreationList", parse: block }];
-        let r = Ini::load(b"t.ini", text.as_bytes(), IniLoadType::Overwrite, None, &blocks, &mut c);
+        let mut c = Ctx {
+            store: ObjectCreationListStore::new(),
+            names,
+            env: Arc::new(OclParseEnv {
+                preload_assets: true,
+                weapon_templates,
+            }),
+        };
+        let blocks = [BlockParse {
+            token: "ObjectCreationList",
+            parse: block,
+        }];
+        let r = Ini::load(
+            b"t.ini",
+            text.as_bytes(),
+            IniLoadType::Overwrite,
+            None,
+            &blocks,
+            &mut c,
+        );
         (c, r)
     }
 
@@ -2310,24 +3287,55 @@ mod tests {
         let (mut c, r) = load(SAMPLE);
         r.unwrap();
         assert_eq!(c.store.nuggets.len(), 6);
-        assert_eq!(c.store.debris_model_names_global_hack, vec![b"T0".to_vec(), b"T2".to_vec(), b"M_a".to_vec()]);
-        let ocl = c.store.find_object_creation_list(&mut c.names, b"OCL_Mix").unwrap();
+        assert_eq!(
+            c.store.debris_model_names_global_hack,
+            vec![b"T0".to_vec(), b"T2".to_vec(), b"M_a".to_vec()]
+        );
+        let ocl = c
+            .store
+            .find_object_creation_list(&mut c.names, b"OCL_Mix")
+            .unwrap();
         assert_eq!(ocl.nuggets.len(), 6);
         match &*ocl.nuggets[0] {
             Nugget::Generic(g) => {
                 assert_eq!(g.names, vec![b"T0".to_vec(), b"T2".to_vec()]);
                 assert_eq!(g.disposition, SEND_IT_UP | LIKE_EXISTING);
-                assert_eq!((g.min_health, g.debris_to_generate, g.inherits_veterancy, g.name_are_objects), (0.5, 2, true, true));
+                assert_eq!(
+                    (
+                        g.min_health,
+                        g.debris_to_generate,
+                        g.inherits_veterancy,
+                        g.name_are_objects
+                    ),
+                    (0.5, 2, true, true)
+                );
             }
             n => panic!("{n:?}"),
         }
         match &*ocl.nuggets[3] {
-            Nugget::DeliverPayload(d) => assert_eq!((d.formation_size, d.formation_spacing, d.payload[0].payload_count, d.data.dist_to_target), (3, 25.5, 2, 10.0)),
+            Nugget::DeliverPayload(d) => assert_eq!(
+                (
+                    d.formation_size,
+                    d.formation_spacing,
+                    d.payload[0].payload_count,
+                    d.data.dist_to_target
+                ),
+                (3, 25.5, 2, 10.0)
+            ),
             n => panic!("{n:?}"),
         }
-        assert!(matches!(&*ocl.nuggets[4], Nugget::FireWeapon(FireWeaponNugget { weapon: Some(5) })));
-        assert!(c.store.find_object_creation_list(&mut c.names, b"none").is_none());
-        assert!(c.store.find_object_creation_list(&mut c.names, b"OCL_Nope").is_none());
+        assert!(matches!(
+            &*ocl.nuggets[4],
+            Nugget::FireWeapon(FireWeaponNugget { weapon: Some(5) })
+        ));
+        assert!(c
+            .store
+            .find_object_creation_list(&mut c.names, b"none")
+            .is_none());
+        assert!(c
+            .store
+            .find_object_creation_list(&mut c.names, b"OCL_Nope")
+            .is_none());
     }
 
     #[test]
@@ -2335,22 +3343,47 @@ mod tests {
         let (mut c, r) = load("ObjectCreationList A\n FireWeapon\n End\nEnd\nObjectCreationList A\n Attack\n End\nEnd\n");
         r.unwrap();
         assert_eq!(c.store.nuggets.len(), 2);
-        assert_eq!(c.store.find_object_creation_list(&mut c.names, b"A").unwrap().nuggets.len(), 1);
+        assert_eq!(
+            c.store
+                .find_object_creation_list(&mut c.names, b"A")
+                .unwrap()
+                .nuggets
+                .len(),
+            1
+        );
     }
 
     #[test]
     fn a_failed_block_keeps_the_nuggets_completed_before_the_error() {
-        let (mut c, r) = load("ObjectCreationList A\n FireWeapon\n End\n CreateObject\n Count = x\n End\nEnd\n");
+        let (mut c, r) =
+            load("ObjectCreationList A\n FireWeapon\n End\n CreateObject\n Count = x\n End\nEnd\n");
         assert!(r.is_err());
-        assert_eq!(c.store.find_object_creation_list(&mut c.names, b"A").unwrap().nuggets.len(), 1);
+        assert_eq!(
+            c.store
+                .find_object_creation_list(&mut c.names, b"A")
+                .unwrap()
+                .nuggets
+                .len(),
+            1
+        );
         assert_eq!(c.store.nuggets.len(), 1);
     }
 
-    fn created(text: &str, f: impl Fn(&ObjectCreationList, &mut Rec) -> OclResult<Option<ObjectId>>) -> (Option<ObjectId>, Vec<String>) {
+    fn created(
+        text: &str,
+        f: impl Fn(&ObjectCreationList, &mut Rec) -> OclResult<Option<ObjectId>>,
+    ) -> (Option<ObjectId>, Vec<String>) {
         let (mut c, r) = load(text);
         r.unwrap();
-        let ocl = c.store.find_object_creation_list(&mut c.names, b"A").unwrap().clone();
-        let mut host = Rec { next: 100, ..Rec::default() };
+        let ocl = c
+            .store
+            .find_object_creation_list(&mut c.names, b"A")
+            .unwrap()
+            .clone();
+        let mut host = Rec {
+            next: 100,
+            ..Rec::default()
+        };
         let first = f(&ocl, &mut host).unwrap();
         (first, host.log)
     }
@@ -2360,7 +3393,14 @@ mod tests {
         let text = "ObjectCreationList A\n CreateObject\n ObjectNames = T0\n Disposition = LIKE_EXISTING\n Count = 2\n End\nEnd\n";
         let (first, log) = created(text, |o, h| o.create_object(h, Some(9), Some(8), 0));
         assert_eq!(first, Some(101));
-        for want in ["new_object", "obj_set_producer 101", "obj_set_transform_matrix 101", "obj_set_position 102", "terrain_flatten 101", "pathfinder_add_object 102"] {
+        for want in [
+            "new_object",
+            "obj_set_producer 101",
+            "obj_set_transform_matrix 101",
+            "obj_set_position 102",
+            "terrain_flatten 101",
+            "pathfinder_add_object 102",
+        ] {
             assert!(log.iter().any(|l| l.starts_with(want)), "{want} in {log:?}");
         }
     }
@@ -2368,47 +3408,105 @@ mod tests {
     #[test]
     fn create_at_fire_weapon_attack_and_force() {
         let text = "ObjectCreationList A\n FireWeapon\n Weapon = W1\n End\n Attack\n End\n ApplyRandomForce\n End\n CreateDebris\n ModelNames = M\n End\nEnd\n";
-        let pos = Coord3D { x: 1.0, y: 2.0, z: 3.0 };
-        let (first, log) = created(text, |o, h| o.create_at(h, Some(9), Some(&pos), Some(&pos), INVALID_ANGLE, 5));
+        let pos = Coord3D {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        };
+        let (first, log) = created(text, |o, h| {
+            o.create_at(h, Some(9), Some(&pos), Some(&pos), INVALID_ANGLE, 5)
+        });
         assert_eq!(first, Some(101));
-        for want in ["weapon_create_and_fire_temp", "obj_set_weapon_lock 9", "radius_decal_create 9", "debris_set_model_name 101"] {
+        for want in [
+            "weapon_create_and_fire_temp",
+            "obj_set_weapon_lock 9",
+            "radius_decal_create 9",
+            "debris_set_model_name 101",
+        ] {
             assert!(log.iter().any(|l| l.starts_with(want)), "{want} in {log:?}");
         }
         // through the object overload the force applies, and nothing else changes the first object
         let (_, log) = created(text, |o, h| o.create_object(h, Some(9), Some(8), 0));
-        assert!(log.iter().any(|l| l.starts_with("physics_apply_force 9")), "{log:?}");
+        assert!(
+            log.iter().any(|l| l.starts_with("physics_apply_force 9")),
+            "{log:?}"
+        );
     }
 
     #[test]
     fn deliver_payload_makes_a_formation() {
         let text = "ObjectCreationList A\n DeliverPayload\n Transport = T1\n FormationSize = 2\n FormationSpacing = 10\n Payload = T2 2\n PutInContainer = T3\n \
                     StartAtMaxSpeed = Yes\n WeaponErrorRadius = 5\n DelayDeliveryMax = 300\n End\nEnd\n";
-        let from = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
-        let to = Coord3D { x: 100.0, y: 50.0, z: 0.0 };
-        let (first, log) = created(text, |o, h| o.create_with_owner(h, Some(9), Some(&from), Some(&to), true, 0));
+        let from = Coord3D {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        let to = Coord3D {
+            x: 100.0,
+            y: 50.0,
+            z: 0.0,
+        };
+        let (first, log) = created(text, |o, h| {
+            o.create_with_owner(h, Some(9), Some(&from), Some(&to), true, 0)
+        });
         assert_eq!(first, Some(101));
-        assert_eq!(log.iter().filter(|l| l.starts_with("deliver_payload")).count(), 2);
-        assert!(log.iter().any(|l| l.starts_with("physics_apply_motive_force 101")), "{log:?}");
+        assert_eq!(
+            log.iter()
+                .filter(|l| l.starts_with("deliver_payload"))
+                .count(),
+            2
+        );
+        assert!(
+            log.iter()
+                .any(|l| l.starts_with("physics_apply_motive_force 101")),
+            "{log:?}"
+        );
         assert!(log.iter().any(|l| l.starts_with("contain_add")), "{log:?}");
     }
 
     #[test]
     fn undefined_inputs_are_errors() {
-        let text = "ObjectCreationList A\n CreateObject\n ObjectNames = T0\n FadeIn = Yes\n End\nEnd\n";
+        let text =
+            "ObjectCreationList A\n CreateObject\n ObjectNames = T0\n FadeIn = Yes\n End\nEnd\n";
         let (mut c, r) = load(text);
         r.unwrap();
-        let ocl = c.store.find_object_creation_list(&mut c.names, b"A").unwrap().clone();
+        let ocl = c
+            .store
+            .find_object_creation_list(&mut c.names, b"A")
+            .unwrap()
+            .clone();
         let pos = Coord3D::default();
-        let mut host = Rec { next: 100, ..Rec::default() };
+        let mut host = Rec {
+            next: 100,
+            ..Rec::default()
+        };
         // a fade without a source object writes through a null pointer
-        assert!(ocl.create_at(&mut host, None, Some(&pos), Some(&pos), 0.0, 0).unwrap_err().is_undefined());
+        assert!(ocl
+            .create_at(&mut host, None, Some(&pos), Some(&pos), 0.0, 0)
+            .unwrap_err()
+            .is_undefined());
         // so does a payload delivery by an object that has no controlling player
-        let (mut c, r) = load("ObjectCreationList A\n DeliverPayload\n Transport = T1\n End\nEnd\n");
+        let (mut c, r) =
+            load("ObjectCreationList A\n DeliverPayload\n Transport = T1\n End\nEnd\n");
         r.unwrap();
-        let ocl = c.store.find_object_creation_list(&mut c.names, b"A").unwrap().clone();
-        let mut host = Rec { next: 100, no_player: true, ..Rec::default() };
-        assert!(ocl.create_at(&mut host, Some(9), Some(&pos), Some(&pos), 0.0, 0).unwrap_err().is_undefined());
+        let ocl = c
+            .store
+            .find_object_creation_list(&mut c.names, b"A")
+            .unwrap()
+            .clone();
+        let mut host = Rec {
+            next: 100,
+            no_player: true,
+            ..Rec::default()
+        };
+        assert!(ocl
+            .create_at(&mut host, Some(9), Some(&pos), Some(&pos), 0.0, 0)
+            .unwrap_err()
+            .is_undefined());
         host.no_player = false;
-        assert!(ocl.create_at(&mut host, Some(9), Some(&pos), Some(&pos), 0.0, 0).is_ok());
+        assert!(ocl
+            .create_at(&mut host, Some(9), Some(&pos), Some(&pos), 0.0, 0)
+            .is_ok());
     }
 }

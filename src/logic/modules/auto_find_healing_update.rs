@@ -27,12 +27,16 @@
 use std::sync::Arc;
 
 use crate::common::game_common::PlayerType;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::kind_of::KINDOF_HEAL_PAD;
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
+use crate::logic::module::update_module::{
+    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE,
+};
 use crate::logic::modules::open_contain::CMD_FROM_AI;
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
@@ -58,32 +62,73 @@ pub struct AutoFindHealingUpdateModuleData {
 impl Default for AutoFindHealingUpdateModuleData {
     /// `AutoFindHealingUpdateModuleData()`: no scan rate or range, `NeverHeal` 0.95, `AlwaysHeal` 0.25.
     fn default() -> Self {
-        AutoFindHealingUpdateModuleData { update: UpdateModuleData::default(), scan_frames: 0, scan_range: 0.0, never_heal: 0.95, always_heal: 0.25 }
+        AutoFindHealingUpdateModuleData {
+            update: UpdateModuleData::default(),
+            scan_frames: 0,
+            scan_range: 0.0,
+            never_heal: 0.95,
+            always_heal: 0.25,
+        }
     }
 }
 
 /// `AutoFindHealingUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<AutoFindHealingUpdateModuleData>; 5] = [
-    FieldParse::new("ScanRate", |ini, d, _| { d.scan_frames = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("ScanRange", |ini, d, _| { d.scan_range = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("NeverHeal", |ini, d, _| { d.never_heal = ini.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("AlwaysHeal", |ini, d, _| { d.always_heal = ini.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "ScanRate",
+        |ini, d, _| {
+            d.scan_frames = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ScanRange",
+        |ini, d, _| {
+            d.scan_range = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "NeverHeal",
+        |ini, d, _| {
+            d.never_heal = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AlwaysHeal",
+        |ini, d, _| {
+            d.always_heal = ini.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl AutoFindHealingUpdateModuleData {
     /// `buildFieldParse(p)`: `ModuleData`'s (no fields of its own besides the behaviour base's), then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, AutoFindHealingUpdateModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, AutoFindHealingUpdateModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<AutoFindHealingUpdateModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<AutoFindHealingUpdateModuleData> {
         let mut data = AutoFindHealingUpdateModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, AutoFindHealingUpdateModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                AutoFindHealingUpdateModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -103,7 +148,9 @@ pub struct AutoFindHealingUpdate {
 impl PartialEq for AutoFindHealingUpdate {
     /// The same object, the same data object (upstream compares pointers) and the same frames to the next scan.
     fn eq(&self, other: &Self) -> bool {
-        self.update.behavior().object() == other.update.behavior().object() && Arc::ptr_eq(&self.data, &other.data) && self.next_scan_frames == other.next_scan_frames
+        self.update.behavior().object() == other.update.behavior().object()
+            && Arc::ptr_eq(&self.data, &other.data)
+            && self.next_scan_frames == other.next_scan_frames
     }
 }
 
@@ -111,9 +158,15 @@ impl PartialEq for AutoFindHealingUpdate {
 /// undefined ([`Undefined::NullControllingPlayer`]) and taken as not human. Shared with `PilotFindVehicleUpdate`.
 pub(crate) fn controlled_by_human(world: &mut World, me: ModuleHandle) -> bool {
     match world.get_controlling_player(me.object) {
-        Some(p) => world.players.get_nth(p).is_some_and(|pl| pl.player_type == PlayerType::Human),
+        Some(p) => world
+            .players
+            .get_nth(p)
+            .is_some_and(|pl| pl.player_type == PlayerType::Human),
         None => {
-            world.cuts.module_errors.push((me, IniError::undefined(Undefined::NullControllingPlayer)));
+            world
+                .cuts
+                .module_errors
+                .push((me, IniError::undefined(Undefined::NullControllingPlayer)));
             false
         }
     }
@@ -127,11 +180,18 @@ impl AutoFindHealingUpdate {
 
     /// The first half of the constructor, which touches no world: the base, the data (`INI_INVALID_DATA` for null data) and
     /// `m_nextScanFrames` 0.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<AutoFindHealingUpdateModuleData>>) -> IniResult<Self> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<AutoFindHealingUpdateModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(AutoFindHealingUpdate { update, data, next_scan_frames: 0 })
+        Ok(AutoFindHealingUpdate {
+            update,
+            data,
+            next_scan_frames: 0,
+        })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -160,7 +220,12 @@ impl AutoFindHealingUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -183,14 +248,22 @@ impl AutoFindHealingUpdate {
     fn scan_closest_target(&self, world: &mut World, me: ObjectId) -> Option<ObjectId> {
         let mut best: Option<(ObjectId, f32)> = None;
         for other in world.partition_iterate_objects_in_range(me, self.data.scan_range) {
-            let heal_pad = world.objects.find(other).is_some_and(|o| o.template().is_kind_of(KINDOF_HEAL_PAD));
+            let heal_pad = world
+                .objects
+                .find(other)
+                .is_some_and(|o| o.template().is_kind_of(KINDOF_HEAL_PAD));
             if !heal_pad && !crate::logic::modules::plant(1854) {
                 continue;
             }
             let dist = world.partition_get_distance_squared_center_2d(me, other);
             match best {
                 None => best = Some((other, dist)),
-                Some((_, closest)) if dist < closest || (crate::logic::modules::plant(1852) && dist == closest) => best = Some((other, dist)),
+                Some((_, closest))
+                    if dist < closest
+                        || (crate::logic::modules::plant(1852) && dist == closest) =>
+                {
+                    best = Some((other, dist))
+                }
                 Some(_) => {}
             }
         }
@@ -215,17 +288,33 @@ impl UpdateBehavior for AutoFindHealingUpdate {
         if !crate::logic::modules::plant(1853) {
             self.next_scan_frames = d.scan_frames as i32;
         }
-        let Some(ai) = world.objects.find(me.object).and_then(|o| o.ai) else { return UPDATE_SLEEP_NONE };
-        let Some((health, max_health)) = world.body_health(me.object) else { return UPDATE_SLEEP_NONE };
-        if health > max_health * d.never_heal || (crate::logic::modules::plant(1851) && health == max_health * d.never_heal) {
+        let Some(ai) = world.objects.find(me.object).and_then(|o| o.ai) else {
+            return UPDATE_SLEEP_NONE;
+        };
+        let Some((health, max_health)) = world.body_health(me.object) else {
+            return UPDATE_SLEEP_NONE;
+        };
+        if health > max_health * d.never_heal
+            || (crate::logic::modules::plant(1851) && health == max_health * d.never_heal)
+        {
             return UPDATE_SLEEP_NONE;
         }
-        if !world.module_call(me.object, ai, ModuleCall::AiIsIdle).as_bool() {
+        if !world
+            .module_call(me.object, ai, ModuleCall::AiIsIdle)
+            .as_bool()
+        {
             // upstream tests `AlwaysHeal` after this return, so never
             return UPDATE_SLEEP_NONE;
         }
         if let Some(heal_unit) = self.scan_closest_target(world, me.object) {
-            world.module_call(me.object, ai, ModuleCall::AiGetHealed { target: heal_unit, command_source: CMD_FROM_AI });
+            world.module_call(
+                me.object,
+                ai,
+                ModuleCall::AiGetHealed {
+                    target: heal_unit,
+                    command_source: CMD_FROM_AI,
+                },
+            );
         }
         UPDATE_SLEEP_NONE
     }
@@ -263,5 +352,7 @@ impl Snapshot for AutoFindHealingUpdate {
 
 /// The factory's `NewModuleDataProc` for `AutoFindHealingUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::AutoFindHealingUpdate(Arc::new(AutoFindHealingUpdateModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::AutoFindHealingUpdate(Arc::new(
+        AutoFindHealingUpdateModuleData::friend_new_module_data(ini)?,
+    )))
 }

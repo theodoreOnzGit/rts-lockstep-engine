@@ -450,15 +450,24 @@ impl ArchiveFile {
         }
         // seek(size, CURRENT) must return m_startingPos + size.
         let target = i64::from(offset) + i64::from(size);
-        let returned: i32 = if (0..=i64::from(i32::MAX)).contains(&target) { target as i32 } else { -1 };
+        let returned: i32 = if (0..=i64::from(i32::MAX)).contains(&target) {
+            target as i32
+        } else {
+            -1
+        };
         if returned != offset.wrapping_add(size) {
             return None;
         }
         // File::size(): StreamingArchiveFile::seek(0, END) clamps to [0, m_size].
         let reported = size.max(0);
         let start = (offset as usize).min(self.data.len());
-        let stop = (offset as usize).saturating_add(reported as usize).min(self.data.len());
-        Some(StreamingMember { size: reported, data: &self.data[start..stop] })
+        let stop = (offset as usize)
+            .saturating_add(reported as usize)
+            .min(self.data.len());
+        Some(StreamingMember {
+            size: reported,
+            data: &self.data[start..stop],
+        })
     }
 
     /// `Win32BIGFile::getFileInfo`: the member's size (`sizeLow`; `sizeHigh`

@@ -83,8 +83,8 @@
 //!   the map file (they come from the AI INI).
 
 use super::scripts::{
-    parse_scripts_data_chunk, to_chunk_err, MapDataError, MapResult, MapUndefined, ScriptList, ScriptTemplates, ScriptsContext, ScriptsState,
-    MAX_PLAYER_COUNT,
+    parse_scripts_data_chunk, to_chunk_err, MapDataError, MapResult, MapUndefined, ScriptList,
+    ScriptTemplates, ScriptsContext, ScriptsState, MAX_PLAYER_COUNT,
 };
 use crate::common::ascii_string::{AsciiString, AsciiStringError};
 use crate::common::base_type::{Coord2D, Coord3D};
@@ -93,7 +93,8 @@ use crate::common::name_key_generator::{NameKeyGenerator, NameKeyType};
 use crate::common::well_known_keys as wk;
 use crate::common::well_known_keys::WellKnownKeys;
 use crate::formats::data_chunk::{
-    CachedFileInputStream, ChunkError, ChunkResult, DataChunkInfo, DataChunkInput, ERROR_CORRUPT_FILE_FORMAT, ERROR_OUT_OF_MEMORY,
+    CachedFileInputStream, ChunkError, ChunkResult, DataChunkInfo, DataChunkInput,
+    ERROR_CORRUPT_FILE_FORMAT, ERROR_OUT_OF_MEMORY,
 };
 use crate::formats::data_chunk_output::DataChunkOutput;
 
@@ -133,7 +134,10 @@ pub struct MapNames {
 impl MapNames {
     /// A generator and the well-known keys, none looked up yet.
     pub fn new(generator: NameKeyGenerator) -> Self {
-        MapNames { generator, keys: WellKnownKeys::new() }
+        MapNames {
+            generator,
+            keys: WellKnownKeys::new(),
+        }
     }
 
     /// `TheKey_<name>` (one of the constants of [`wk`]).
@@ -299,13 +303,19 @@ impl BuildListInfo {
 // --- p1w10-sonnet ---
 impl crate::common::xfer::Snapshot for BuildListInfo {
     /// `BuildListInfo::crc`: nothing.
-    fn crc(&mut self, _xfer: &mut dyn crate::common::xfer::Xfer) -> crate::common::xfer::XferResult<()> {
+    fn crc(
+        &mut self,
+        _xfer: &mut dyn crate::common::xfer::Xfer,
+    ) -> crate::common::xfer::XferResult<()> {
         Ok(())
     }
 
     /// `BuildListInfo::xfer`, version 2 (2 adds `m_currentGatherers`). `m_renderObj`, `m_shadowObj` and `m_selected` are
     /// the editor's and are not saved; `m_resourceGatherers` is raw bytes (`xferUser`).
-    fn xfer(&mut self, xfer: &mut dyn crate::common::xfer::Xfer) -> crate::common::xfer::XferResult<()> {
+    fn xfer(
+        &mut self,
+        xfer: &mut dyn crate::common::xfer::Xfer,
+    ) -> crate::common::xfer::XferResult<()> {
         let current_version: u8 = 2;
         let mut version = current_version;
         xfer.xfer_version(&mut version, current_version)?;
@@ -366,7 +376,16 @@ impl crate::common::xfer::Snapshot for BuildListInfo {
             xfer.xfer_user(&mut bytes)?;
         }
         for (i, g) in self.resource_gatherers.iter_mut().enumerate() {
-            *g = i32::from_le_bytes([bytes[i * 4], bytes[i * 4 + 1], bytes[i * 4 + 2], if crate::logic::world::player_ops::plant(411) { 0 } else { bytes[i * 4 + 3] }]);
+            *g = i32::from_le_bytes([
+                bytes[i * 4],
+                bytes[i * 4 + 1],
+                bytes[i * 4 + 2],
+                if crate::logic::world::player_ops::plant(411) {
+                    0
+                } else {
+                    bytes[i * 4 + 3]
+                },
+            ]);
         }
         if !crate::logic::world::player_ops::plant(407) {
             xfer.xfer_bool(&mut self.is_supply_building)?;
@@ -378,7 +397,8 @@ impl crate::common::xfer::Snapshot for BuildListInfo {
             xfer.xfer_bool(&mut self.priority_build)?;
         }
         if (version >= 2) != crate::logic::world::player_ops::plant(389)
-            && !crate::logic::world::player_ops::plant(410) {
+            && !crate::logic::world::player_ops::plant(410)
+        {
             xfer.xfer_int(&mut self.current_gatherers)?;
         }
         Ok(())
@@ -438,7 +458,12 @@ impl SidesInfo {
 
     /// `operator=`: a deep copy (the scripts through `ScriptList::duplicate`,
     /// which takes numbers of `cur_id`).
-    pub fn assign(&mut self, that: &SidesInfo, cur_id: &mut i32, templates: &ScriptTemplates) -> MapResult<()> {
+    pub fn assign(
+        &mut self,
+        that: &SidesInfo,
+        cur_id: &mut i32,
+        templates: &ScriptTemplates,
+    ) -> MapResult<()> {
         self.clear();
         self.dict = that.dict.clone();
         self.build_list = BuildListInfo::duplicate_chain(&that.build_list);
@@ -542,7 +567,9 @@ impl TeamsInfoRec {
     /// `teamName` is `name`.
     pub fn find_team_info(&self, names: &mut MapNames, name: &[u8]) -> Option<usize> {
         let teams = &self.teams;
-        teams.iter().position(|t| names.string(&t.dict, wk::TEAM_NAME) == name)
+        teams
+            .iter()
+            .position(|t| names.string(&t.dict, wk::TEAM_NAME) == name)
     }
 
     /// `addTeam(d)`.
@@ -706,7 +733,12 @@ impl SidesList {
     /// `removeSide(i)`: the later sides move up (copied with
     /// `SidesInfo::operator=`); nothing if `i` is outside the sides or there
     /// is one side or none.
-    pub fn remove_side(&mut self, i: i32, cur_id: &mut i32, templates: &ScriptTemplates) -> MapResult<()> {
+    pub fn remove_side(
+        &mut self,
+        i: i32,
+        cur_id: &mut i32,
+        templates: &ScriptTemplates,
+    ) -> MapResult<()> {
         if i < 0 || i >= self.num_sides || self.num_sides <= 1 {
             return Ok(());
         }
@@ -747,12 +779,14 @@ impl SidesList {
     /// `findSideInfo(name, &index)`: the index of the first side whose
     /// `playerName` is `name`.
     pub fn find_side_info(&self, names: &mut MapNames, name: &[u8]) -> Option<usize> {
-        (0..self.num_sides as usize).find(|&i| names.string(&self.sides[i].dict, wk::PLAYER_NAME) == name)
+        (0..self.num_sides as usize)
+            .find(|&i| names.string(&self.sides[i].dict, wk::PLAYER_NAME) == name)
     }
 
     /// `findSkirmishSideInfo(name, &index)`.
     pub fn find_skirmish_side_info(&self, names: &mut MapNames, name: &[u8]) -> Option<usize> {
-        (0..self.num_skirmish_sides as usize).find(|&i| names.string(&self.skirmish_sides[i].dict, wk::PLAYER_NAME) == name)
+        (0..self.num_skirmish_sides as usize)
+            .find(|&i| names.string(&self.skirmish_sides[i].dict, wk::PLAYER_NAME) == name)
     }
 
     /// `isPlayerDefaultTeam(t)`: whether the team is named `team` followed
@@ -789,7 +823,11 @@ impl SidesList {
 
     /// `addPlayerByTemplate(playerTemplateName)`: a side for a faction (the
     /// neutral player for an empty name), with its default team.
-    pub fn add_player_by_template(&mut self, names: &mut MapNames, player_template_name: &[u8]) -> MapResult<()> {
+    pub fn add_player_by_template(
+        &mut self,
+        names: &mut MapNames,
+        player_template_name: &[u8],
+    ) -> MapResult<()> {
         let (player_name, display, is_human): (Vec<u8>, Vec<u16>, bool);
         if player_template_name.is_empty() {
             player_name = Vec::new(); // magic code for "neutral"
@@ -834,7 +872,12 @@ impl SidesList {
     /// `validateAllyEnemyList(tname, allies)`: drop the names in a
     /// space-separated list that are `tname` itself or no player. The
     /// result, and whether anything was dropped.
-    fn validate_ally_enemy_list(&self, names: &mut MapNames, tname: &[u8], allies: &[u8]) -> MapResult<(Vec<u8>, bool)> {
+    fn validate_ally_enemy_list(
+        &self,
+        names: &mut MapNames,
+        tname: &[u8],
+        allies: &[u8],
+    ) -> MapResult<(Vec<u8>, bool)> {
         let mut modified = false;
         let mut s = AsciiString::try_from_bytes(allies).map_err(ascii_err)?;
         let mut newstr: Vec<u8> = Vec::new();
@@ -1043,7 +1086,11 @@ impl SidesCtx {
             return Ok(false);
         };
         let mut input = DataChunkInput::<SidesCtx>::new(stream)?;
-        input.register_parser(b"PlayerScriptsList", b"", parse_scripts_data_chunk::<SidesCtx>);
+        input.register_parser(
+            b"PlayerScriptsList",
+            b"",
+            parse_scripts_data_chunk::<SidesCtx>,
+        );
         let r = input.parse(self);
         self.embedded_nul_strings += input.embedded_nul_strings();
         self.scripts.finish(r)
@@ -1074,7 +1121,11 @@ impl SidesCtx {
             let (n, src) = (st.num_skirmish_sides as usize, st.sides[i as usize].clone());
             st.skirmish_sides[n].assign(&src, &mut self.scripts.cur_id, &self.templates)?;
             st.num_skirmish_sides += 1;
-            if self.names.string(&st.sides[i as usize].dict, wk::PLAYER_FACTION) == b"FactionCivilian" {
+            if self
+                .names
+                .string(&st.sides[i as usize].dict, wk::PLAYER_FACTION)
+                == b"FactionCivilian"
+            {
                 // Don't remove FactionCivilian.
                 i += 1;
                 continue;
@@ -1087,7 +1138,11 @@ impl SidesCtx {
         }
         let mut got_scripts = false;
         for i in 0..st.num_skirmish_sides as usize {
-            if self.names.string(&st.skirmish_sides[i].dict, wk::PLAYER_FACTION) == b"FactionCivilian" {
+            if self
+                .names
+                .string(&st.skirmish_sides[i].dict, wk::PLAYER_FACTION)
+                == b"FactionCivilian"
+            {
                 continue; // Don't consider FactionCivilian.
             }
             let Some(sl) = &st.skirmish_sides[i].scripts else {
@@ -1099,11 +1154,19 @@ impl SidesCtx {
         }
         if !got_scripts {
             self.sides.skirmish_teamrec.clear();
-            let Some(stream) = self.skirmish_scripts_file.clone().and_then(CachedFileInputStream::new) else {
+            let Some(stream) = self
+                .skirmish_scripts_file
+                .clone()
+                .and_then(CachedFileInputStream::new)
+            else {
                 return Ok(());
             };
             let mut file = DataChunkInput::<SidesCtx>::new(stream)?;
-            file.register_parser(b"PlayerScriptsList", b"", parse_scripts_data_chunk::<SidesCtx>);
+            file.register_parser(
+                b"PlayerScriptsList",
+                b"",
+                parse_scripts_data_chunk::<SidesCtx>,
+            );
             file.register_parser(b"ScriptsPlayers", b"", parse_players_data_chunk);
             file.register_parser(b"ScriptTeams", b"", parse_teams_data_chunk);
             let r = file.parse(self);
@@ -1115,7 +1178,9 @@ impl SidesCtx {
             for (i, sl) in scripts.into_iter().enumerate() {
                 let mut cur_side = -1;
                 for j in 0..self.sides.num_skirmish_sides {
-                    let name = self.names.string(&self.sides.get_skirmish_side_info(j)?.dict, wk::PLAYER_NAME);
+                    let name = self
+                        .names
+                        .string(&self.sides.get_skirmish_side_info(j)?.dict, wk::PLAYER_NAME);
                     if name == self.read_player_names[i] {
                         cur_side = j;
                         break;
@@ -1136,7 +1201,11 @@ impl SidesCtx {
 
 /// `ParsePlayersDataChunk` (the `ScriptsPlayers` chunk of the skirmish
 /// scripts file): the player names, kept in `static_readPlayerNames`.
-fn parse_players_data_chunk(file: &mut DataChunkInput<SidesCtx>, info: &DataChunkInfo, ctx: &mut SidesCtx) -> ChunkResult<bool> {
+fn parse_players_data_chunk(
+    file: &mut DataChunkInput<SidesCtx>,
+    info: &DataChunkInfo,
+    ctx: &mut SidesCtx,
+) -> ChunkResult<bool> {
     let mut read_dicts = 0;
     if info.version >= 2 {
         read_dicts = file.read_int()?;
@@ -1158,12 +1227,20 @@ fn parse_players_data_chunk(file: &mut DataChunkInput<SidesCtx>, info: &DataChun
 
 /// `ParseTeamsDataChunk` (the `ScriptTeams` chunk): each team whose owner is
 /// a skirmish side is added to the skirmish teams.
-fn parse_teams_data_chunk(file: &mut DataChunkInput<SidesCtx>, _info: &DataChunkInfo, ctx: &mut SidesCtx) -> ChunkResult<bool> {
+fn parse_teams_data_chunk(
+    file: &mut DataChunkInput<SidesCtx>,
+    _info: &DataChunkInfo,
+    ctx: &mut SidesCtx,
+) -> ChunkResult<bool> {
     while !file.at_end_of_chunk() {
         let team_dict = file.read_dict(&mut ctx.names.generator)?;
         let _team_name = ctx.names.string(&team_dict, wk::TEAM_NAME);
         let player = ctx.names.string(&team_dict, wk::TEAM_OWNER);
-        if ctx.sides.find_skirmish_side_info(&mut ctx.names, &player).is_some() {
+        if ctx
+            .sides
+            .find_skirmish_side_info(&mut ctx.names, &player)
+            .is_some()
+        {
             // player exists, so just add it.
             ctx.sides.add_skirmish_team(&team_dict);
         }
@@ -1177,7 +1254,11 @@ impl SidesList {
     /// `PlayerScriptsList` chunk inside (a failure to read it throws
     /// `ERROR_CORRUPT_FILE_FORMAT`), gives each side its script list, and
     /// validates.
-    pub fn parse_sides_data_chunk(file: &mut DataChunkInput<SidesCtx>, info: &DataChunkInfo, ctx: &mut SidesCtx) -> ChunkResult<bool> {
+    pub fn parse_sides_data_chunk(
+        file: &mut DataChunkInput<SidesCtx>,
+        info: &DataChunkInfo,
+        ctx: &mut SidesCtx,
+    ) -> ChunkResult<bool> {
         ctx.sides.clear();
         let count = file.read_int()?;
         ctx.sides.empty_sides();
@@ -1223,7 +1304,11 @@ impl SidesList {
             }
         }
 
-        file.register_parser(b"PlayerScriptsList", &info.label, parse_scripts_data_chunk::<SidesCtx>);
+        file.register_parser(
+            b"PlayerScriptsList",
+            &info.label,
+            parse_scripts_data_chunk::<SidesCtx>,
+        );
         if !file.parse(ctx)? {
             return Err(ChunkError::Thrown(ERROR_CORRUPT_FILE_FORMAT));
         }
@@ -1277,8 +1362,19 @@ impl SidesList {
         }
         // END stuff new to K_SIDES_DATA_VERSION_2
 
-        let mut lists: Vec<Option<&mut ScriptList>> = ctx.sides.sides.iter_mut().take(n as usize).map(|s| s.scripts.as_mut()).collect();
-        ScriptList::write_scripts_data_chunk(out, &mut lists, &ctx.templates, &ctx.names.generator)?;
+        let mut lists: Vec<Option<&mut ScriptList>> = ctx
+            .sides
+            .sides
+            .iter_mut()
+            .take(n as usize)
+            .map(|s| s.scripts.as_mut())
+            .collect();
+        ScriptList::write_scripts_data_chunk(
+            out,
+            &mut lists,
+            &ctx.templates,
+            &ctx.names.generator,
+        )?;
         out.close_data_chunk();
 
         ctx.sides.validate_sides(&mut ctx.names)?;
@@ -1289,14 +1385,20 @@ impl SidesList {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::logic::scripts::{condition_type, action_type, ScriptTemplate, ScriptList as SL};
+    use crate::logic::scripts::{action_type, condition_type, ScriptList as SL, ScriptTemplate};
 
     fn templates(g: &mut NameKeyGenerator) -> ScriptTemplates {
         let conds = (0..condition_type::NUM_ITEMS)
-            .map(|i| ScriptTemplate { internal_name_key: g.name_to_key(format!("C{i}").as_bytes()), parameters: vec![] })
+            .map(|i| ScriptTemplate {
+                internal_name_key: g.name_to_key(format!("C{i}").as_bytes()),
+                parameters: vec![],
+            })
             .collect();
         let acts = (0..action_type::NUM_ITEMS)
-            .map(|i| ScriptTemplate { internal_name_key: g.name_to_key(format!("A{i}").as_bytes()), parameters: vec![] })
+            .map(|i| ScriptTemplate {
+                internal_name_key: g.name_to_key(format!("A{i}").as_bytes()),
+                parameters: vec![],
+            })
             .collect();
         ScriptTemplates::new(conds, acts).unwrap()
     }
@@ -1311,10 +1413,14 @@ mod tests {
     fn player(c: &mut SidesCtx, name: &str, faction: &str, allies: &str, enemies: &str) -> Dict {
         let mut d = Dict::new();
         let n = &mut c.names;
-        n.set_string(&mut d, wk::PLAYER_NAME, name.as_bytes()).unwrap();
-        n.set_string(&mut d, wk::PLAYER_FACTION, faction.as_bytes()).unwrap();
-        n.set_string(&mut d, wk::PLAYER_ALLIES, allies.as_bytes()).unwrap();
-        n.set_string(&mut d, wk::PLAYER_ENEMIES, enemies.as_bytes()).unwrap();
+        n.set_string(&mut d, wk::PLAYER_NAME, name.as_bytes())
+            .unwrap();
+        n.set_string(&mut d, wk::PLAYER_FACTION, faction.as_bytes())
+            .unwrap();
+        n.set_string(&mut d, wk::PLAYER_ALLIES, allies.as_bytes())
+            .unwrap();
+        n.set_string(&mut d, wk::PLAYER_ENEMIES, enemies.as_bytes())
+            .unwrap();
         d
     }
 
@@ -1326,7 +1432,16 @@ mod tests {
     #[test]
     fn build_list_info_counts_and_gatherers() {
         let mut b = BuildListInfo::new();
-        assert_eq!((b.health, b.whiner, b.repairable, b.automatically_build, b.unsellable), (100, true, true, true, false));
+        assert_eq!(
+            (
+                b.health,
+                b.whiner,
+                b.repairable,
+                b.automatically_build,
+                b.unsellable
+            ),
+            (100, true, true, true, false)
+        );
         assert!(!b.is_buildable());
         b.increment_num_rebuilds();
         assert!(b.is_buildable());
@@ -1336,21 +1451,39 @@ mod tests {
         b.num_rebuilds = UNLIMITED_REBUILDS;
         b.decrement_num_rebuilds();
         b.increment_num_rebuilds();
-        assert_eq!((b.num_rebuilds, b.get_num_rebuilds(), b.is_buildable()), (UNLIMITED_REBUILDS, -1, true));
+        assert_eq!(
+            (b.num_rebuilds, b.get_num_rebuilds(), b.is_buildable()),
+            (UNLIMITED_REBUILDS, -1, true)
+        );
         b.set_gatherer_id(3, 77);
         b.set_gatherer_id(10, 5);
         b.set_gatherer_id(-1, 5);
-        assert_eq!((b.get_gatherer_id(3), b.get_gatherer_id(10), b.get_gatherer_id(0)), (77, INVALID_ID, INVALID_ID));
+        assert_eq!(
+            (
+                b.get_gatherer_id(3),
+                b.get_gatherer_id(10),
+                b.get_gatherer_id(0)
+            ),
+            (77, INVALID_ID, INVALID_ID)
+        );
     }
 
     #[test]
     fn build_list_order() {
         let mut s = SidesInfo::new();
-        let named = |n: &str| BuildListInfo { building_name: n.as_bytes().to_vec(), ..BuildListInfo::new() };
+        let named = |n: &str| BuildListInfo {
+            building_name: n.as_bytes().to_vec(),
+            ..BuildListInfo::new()
+        };
         for (n, p) in [("a", 0), ("b", 5), ("c", 1), ("d", -1), ("e", 0)] {
             s.add_to_build_list(named(n), p);
         }
-        let order = |s: &SidesInfo| s.build_list.iter().map(|b| b.building_name[0]).collect::<Vec<_>>();
+        let order = |s: &SidesInfo| {
+            s.build_list
+                .iter()
+                .map(|b| b.building_name[0])
+                .collect::<Vec<_>>()
+        };
         assert_eq!(order(&s), b"eacbd".to_vec());
         assert_eq!(s.remove_from_build_list(2).unwrap(), 2);
         assert_eq!(order(&s), b"eabd".to_vec());
@@ -1363,7 +1496,10 @@ mod tests {
     fn sides_and_teams_bookkeeping() {
         let mut c = ctx();
         assert!(c.sides.get_side_info(0).is_err());
-        assert_eq!(c.sides.get_side_info(0).unwrap_err(), MapDataError::Thrown(ERROR_BAD_ARG));
+        assert_eq!(
+            c.sides.get_side_info(0).unwrap_err(),
+            MapDataError::Thrown(ERROR_BAD_ARG)
+        );
         for i in 0..18 {
             let d = player(&mut c, &format!("P{i}"), "F", "", "");
             c.sides.add_side(&d);
@@ -1396,7 +1532,9 @@ mod tests {
         // teams
         for n in ["a", "b", "c"] {
             let mut d = Dict::new();
-            c.names.set_string(&mut d, wk::TEAM_NAME, n.as_bytes()).unwrap();
+            c.names
+                .set_string(&mut d, wk::TEAM_NAME, n.as_bytes())
+                .unwrap();
             c.sides.add_team(&d);
         }
         assert_eq!(c.sides.find_team_info(&mut c.names, b"b"), Some(1));
@@ -1413,16 +1551,29 @@ mod tests {
         c.sides.add_skirmish_team(&Dict::new());
         assert_eq!(c.sides.get_num_skirmish_teams(), 1);
         c.sides.reset();
-        assert_eq!((c.sides.get_num_sides(), c.sides.get_num_teams(), c.sides.get_num_skirmish_teams()), (0, 0, 0));
+        assert_eq!(
+            (
+                c.sides.get_num_sides(),
+                c.sides.get_num_teams(),
+                c.sides.get_num_skirmish_teams()
+            ),
+            (0, 0, 0)
+        );
     }
 
     #[test]
     fn add_player_by_template_names_and_flags() {
         let mut c = ctx();
         c.sides.add_player_by_template(&mut c.names, b"").unwrap();
-        c.sides.add_player_by_template(&mut c.names, b"FactionAmerica").unwrap();
-        c.sides.add_player_by_template(&mut c.names, b"Other").unwrap();
-        c.sides.add_player_by_template(&mut c.names, b"FactionCivilian").unwrap();
+        c.sides
+            .add_player_by_template(&mut c.names, b"FactionAmerica")
+            .unwrap();
+        c.sides
+            .add_player_by_template(&mut c.names, b"Other")
+            .unwrap();
+        c.sides
+            .add_player_by_template(&mut c.names, b"FactionCivilian")
+            .unwrap();
         assert_eq!(c.sides.get_num_sides(), 4);
         assert_eq!(pname(&mut c, 0), b"");
         assert_eq!(pname(&mut c, 1), b"PlyrAmerica");
@@ -1437,18 +1588,37 @@ mod tests {
         assert_eq!(hum(&mut c, 3), (false, true), "the civilian is not human");
         let d = c.sides.get_side_info(0).unwrap().dict.clone();
         let k = c.names.key(wk::PLAYER_DISPLAY_NAME);
-        assert_eq!(d.get_unicode_string(k).0, "Neutral".encode_utf16().collect::<Vec<_>>());
+        assert_eq!(
+            d.get_unicode_string(k).0,
+            "Neutral".encode_utf16().collect::<Vec<_>>()
+        );
         assert_eq!(c.sides.get_num_teams(), 4);
         let t = c.sides.get_team_info(1).unwrap().clone();
         assert!(c.sides.is_player_default_team(&mut c.names, &t));
         let mut other = Dict::new();
-        c.names.set_string(&mut other, wk::TEAM_NAME, b"teamNobody").unwrap();
-        assert!(!c.sides.is_player_default_team(&mut c.names, &TeamsInfo { dict: other }));
+        c.names
+            .set_string(&mut other, wk::TEAM_NAME, b"teamNobody")
+            .unwrap();
+        assert!(!c
+            .sides
+            .is_player_default_team(&mut c.names, &TeamsInfo { dict: other }));
         let mut high = ctx();
-        high.sides.add_player_by_template(&mut high.names, &[b'a', 0xe9]).unwrap();
+        high.sides
+            .add_player_by_template(&mut high.names, &[b'a', 0xe9])
+            .unwrap();
         let d = high.sides.get_side_info(0).unwrap().dict.clone();
         let k = high.names.key(wk::PLAYER_DISPLAY_NAME);
-        assert_eq!(d.get_unicode_string(k).0, vec![b'P' as u16, b'l' as u16, b'y' as u16, b'r' as u16, b'a' as u16, 0xffe9]);
+        assert_eq!(
+            d.get_unicode_string(k).0,
+            vec![
+                b'P' as u16,
+                b'l' as u16,
+                b'y' as u16,
+                b'r' as u16,
+                b'a' as u16,
+                0xffe9
+            ]
+        );
     }
 
     #[test]
@@ -1462,8 +1632,12 @@ mod tests {
         // a team named like a player, one with an unknown owner, one with the wrong owner
         for (n, o) in [("A", "B"), ("teamA", "B"), ("teamB", "Ghost"), ("Tm", "Tm")] {
             let mut t = Dict::new();
-            c.names.set_string(&mut t, wk::TEAM_NAME, n.as_bytes()).unwrap();
-            c.names.set_string(&mut t, wk::TEAM_OWNER, o.as_bytes()).unwrap();
+            c.names
+                .set_string(&mut t, wk::TEAM_NAME, n.as_bytes())
+                .unwrap();
+            c.names
+                .set_string(&mut t, wk::TEAM_OWNER, o.as_bytes())
+                .unwrap();
             c.sides.add_team(&t);
         }
         assert!(c.sides.validate_sides(&mut c.names).unwrap());
@@ -1475,11 +1649,18 @@ mod tests {
         };
         assert_eq!(get(&mut c, 0, wk::PLAYER_ALLIES), b"B");
         assert_eq!(get(&mut c, 0, wk::PLAYER_ENEMIES), b"");
-        assert_eq!(get(&mut c, 1, wk::PLAYER_ENEMIES), b"  ", "not modified, so not rewritten");
+        assert_eq!(
+            get(&mut c, 1, wk::PLAYER_ENEMIES),
+            b"  ",
+            "not modified, so not rewritten"
+        );
         // teams: "A" removed (a player's name); teamA owned by A and singleton; teamB likewise;
         // Tm reparented to the neutral player; teamteam added for the neutral player is "team"
         let owner = |c: &mut SidesCtx, name: &[u8]| {
-            let i = c.sides.find_team_info(&mut c.names, name).expect("team exists") as i32;
+            let i = c
+                .sides
+                .find_team_info(&mut c.names, name)
+                .expect("team exists") as i32;
             let d = c.sides.get_team_info(i).unwrap().dict.clone();
             let k = c.names.key(wk::TEAM_IS_SINGLETON);
             (c.names.string(&d, wk::TEAM_OWNER), d.get_bool(k).0)
@@ -1489,11 +1670,18 @@ mod tests {
         assert_eq!(owner(&mut c, b"teamB"), (b"B".to_vec(), true));
         assert_eq!(owner(&mut c, b"team"), (b"".to_vec(), true));
         assert_eq!(owner(&mut c, b"Tm").0, b"");
-        assert!(!c.sides.validate_sides(&mut c.names).unwrap(), "a valid list is unchanged");
+        assert!(
+            !c.sides.validate_sides(&mut c.names).unwrap(),
+            "a valid list is unchanged"
+        );
     }
 
     /// A map file: TOC, then one top-level `SidesList` chunk.
-    fn sides_file(c: &mut SidesCtx, version: u16, body: &dyn Fn(&mut Vec<u8>, &mut DataChunkOutputLike)) -> Vec<u8> {
+    fn sides_file(
+        c: &mut SidesCtx,
+        version: u16,
+        body: &dyn Fn(&mut Vec<u8>, &mut DataChunkOutputLike),
+    ) -> Vec<u8> {
         let mut o = DataChunkOutputLike::new();
         let mut b = Vec::new();
         body(&mut b, &mut o);
@@ -1508,7 +1696,13 @@ mod tests {
 
     impl DataChunkOutputLike {
         fn new() -> Self {
-            DataChunkOutputLike { names: vec!["SidesList".into(), "PlayerScriptsList".into(), "ScriptList".into()] }
+            DataChunkOutputLike {
+                names: vec![
+                    "SidesList".into(),
+                    "PlayerScriptsList".into(),
+                    "ScriptList".into(),
+                ],
+            }
         }
         fn id(&mut self, n: &str) -> u32 {
             if let Some(p) = self.names.iter().position(|x| x == n) {
@@ -1568,7 +1762,15 @@ mod tests {
         let mut c = ctx();
         let file = sides_file(&mut c, 3, &|b, o| {
             b.extend_from_slice(&2i32.to_le_bytes());
-            put_dict(b, o, &[("playerName", "A"), ("playerFaction", "FactionX"), ("playerAllies", "Zed")]);
+            put_dict(
+                b,
+                o,
+                &[
+                    ("playerName", "A"),
+                    ("playerFaction", "FactionX"),
+                    ("playerAllies", "Zed"),
+                ],
+            );
             b.extend_from_slice(&2i32.to_le_bytes());
             put_build(b, 3);
             put_build(b, 3);
@@ -1594,11 +1796,43 @@ mod tests {
         let a = c.sides.get_side_info(0).unwrap();
         assert_eq!(a.build_list.len(), 2);
         let bl = &a.build_list[0];
-        assert_eq!((&bl.building_name[..], &bl.template_name[..], bl.location.z, bl.angle, bl.num_rebuilds), (&b"Barracks1"[..], &b"AmericaBarracks"[..], 0.0, 1.5, UNLIMITED_REBUILDS));
-        assert_eq!((&bl.script[..], bl.health, bl.whiner, bl.unsellable, bl.repairable, bl.is_initially_built), (&b"OnBuilt"[..], 55, false, true, false, true));
-        assert!(a.scripts.is_some() && c.sides.get_side_info(1).unwrap().scripts.is_none(), "one script list for the first side only");
+        assert_eq!(
+            (
+                &bl.building_name[..],
+                &bl.template_name[..],
+                bl.location.z,
+                bl.angle,
+                bl.num_rebuilds
+            ),
+            (
+                &b"Barracks1"[..],
+                &b"AmericaBarracks"[..],
+                0.0,
+                1.5,
+                UNLIMITED_REBUILDS
+            )
+        );
+        assert_eq!(
+            (
+                &bl.script[..],
+                bl.health,
+                bl.whiner,
+                bl.unsellable,
+                bl.repairable,
+                bl.is_initially_built
+            ),
+            (&b"OnBuilt"[..], 55, false, true, false, true)
+        );
+        assert!(
+            a.scripts.is_some() && c.sides.get_side_info(1).unwrap().scripts.is_none(),
+            "one script list for the first side only"
+        );
         // validation ran: allies "Zed" dropped, default teams made
-        assert_eq!(c.sides.get_num_teams(), 2, "teamA kept (owner repaired), `team` added for the neutral player");
+        assert_eq!(
+            c.sides.get_num_teams(),
+            2,
+            "teamA kept (owner repaired), `team` added for the neutral player"
+        );
         let d = c.sides.get_side_info(0).unwrap().dict.clone();
         assert_eq!(c.names.string(&d, wk::PLAYER_ALLIES), b"");
         // write it back and read that
@@ -1631,8 +1865,15 @@ mod tests {
         });
         assert!(c.read_sides_chunk_file(file).unwrap());
         let bl = &c.sides.get_side_info(0).unwrap().build_list[0];
-        assert_eq!((bl.health, bl.whiner, bl.repairable, &bl.script[..]), (100, true, true, &b""[..]));
-        assert_eq!(c.sides.get_num_teams(), 1, "only the default team validation made");
+        assert_eq!(
+            (bl.health, bl.whiner, bl.repairable, &bl.script[..]),
+            (100, true, true, &b""[..])
+        );
+        assert_eq!(
+            c.sides.get_num_teams(),
+            1,
+            "only the default team validation made"
+        );
     }
 
     #[test]
@@ -1666,14 +1907,22 @@ mod tests {
             b.extend_from_slice(&(inner.len() as i32).to_le_bytes());
             b.extend(inner);
         });
-        assert_eq!(c.read_sides_chunk_file(file).unwrap_err(), MapDataError::Thrown(ERROR_CORRUPT_FILE_FORMAT));
+        assert_eq!(
+            c.read_sides_chunk_file(file).unwrap_err(),
+            MapDataError::Thrown(ERROR_CORRUPT_FILE_FORMAT)
+        );
         assert!(!c.read_sides_chunk_file(Vec::new()).unwrap());
     }
 
     #[test]
     fn skirmish_preparation_keeps_civilians_and_reads_the_standard_scripts() {
         let mut c = ctx();
-        for (n, f) in [("PlyrA", "FactionA"), ("Civ", "FactionCivilian"), ("PlyrB", "FactionB"), ("", "")] {
+        for (n, f) in [
+            ("PlyrA", "FactionA"),
+            ("Civ", "FactionCivilian"),
+            ("PlyrB", "FactionB"),
+            ("", ""),
+        ] {
             let d = player(&mut c, n, f, "", "");
             c.sides.add_side(&d);
         }
@@ -1682,10 +1931,21 @@ mod tests {
         let teams = c.sides.get_num_teams();
         c.prepare_for_mp_or_skirmish().unwrap();
         assert_eq!(c.sides.get_num_skirmish_sides(), 4);
-        assert_eq!(c.sides.get_skirmish_side_info(2).unwrap().dict.get_pair_count(), 4);
+        assert_eq!(
+            c.sides
+                .get_skirmish_side_info(2)
+                .unwrap()
+                .dict
+                .get_pair_count(),
+            4
+        );
         assert_eq!(c.sides.get_num_sides(), 1, "only the civilian side is kept");
         assert_eq!(pname(&mut c, 0), b"Civ");
-        assert_eq!((c.sides.get_num_teams(), c.sides.get_num_skirmish_teams()), (0, 0), "no file: no skirmish teams");
+        assert_eq!(
+            (c.sides.get_num_teams(), c.sides.get_num_skirmish_teams()),
+            (0, 0),
+            "no file: no skirmish teams"
+        );
         let _ = teams;
 
         // with the standard scripts file: players, teams, and scripts for PlyrA only
@@ -1707,25 +1967,54 @@ mod tests {
         o.open_data_chunk(b"ScriptTeams", 1);
         for (team, owner) in [("tB", "PlyrB"), ("tN", "Nobody")] {
             let mut d = Dict::new();
-            c.names.set_string(&mut d, wk::TEAM_NAME, team.as_bytes()).unwrap();
-            c.names.set_string(&mut d, wk::TEAM_OWNER, owner.as_bytes()).unwrap();
+            c.names
+                .set_string(&mut d, wk::TEAM_NAME, team.as_bytes())
+                .unwrap();
+            c.names
+                .set_string(&mut d, wk::TEAM_OWNER, owner.as_bytes())
+                .unwrap();
             o.write_dict(&d, &c.names.generator);
         }
         o.close_data_chunk();
         // three script lists; the second (for "Nobody") is dropped, the first goes to PlyrB
         let mut names = [SL::new(), SL::new(), SL::new()];
-        names[0].scripts.push(crate::logic::scripts::Script { script_name: b"forB".to_vec(), ..Default::default() });
-        names[2].scripts.push(crate::logic::scripts::Script { script_name: b"forA".to_vec(), ..Default::default() });
+        names[0].scripts.push(crate::logic::scripts::Script {
+            script_name: b"forB".to_vec(),
+            ..Default::default()
+        });
+        names[2].scripts.push(crate::logic::scripts::Script {
+            script_name: b"forA".to_vec(),
+            ..Default::default()
+        });
         let mut refs: Vec<Option<&mut SL>> = names.iter_mut().map(Some).collect();
         SL::write_scripts_data_chunk(&mut o, &mut refs, &c.templates, &c.names.generator).unwrap();
         c.skirmish_scripts_file = Some(o.finish());
         c.prepare_for_mp_or_skirmish().unwrap();
         assert_eq!(c.sides.get_num_sides(), 1, "the last side cannot go");
         assert_eq!(c.sides.get_num_skirmish_sides(), 2);
-        assert_eq!(c.sides.get_num_skirmish_teams(), 1, "only the team whose owner is a skirmish player");
-        let a = c.sides.get_skirmish_side_info(0).unwrap().scripts.as_ref().expect("scripts for PlyrA");
-        let b = c.sides.get_skirmish_side_info(1).unwrap().scripts.as_ref().expect("scripts for PlyrB");
-        assert_eq!((&a.scripts[0].script_name[..], &b.scripts[0].script_name[..]), (&b"forA"[..], &b"forB"[..]));
+        assert_eq!(
+            c.sides.get_num_skirmish_teams(),
+            1,
+            "only the team whose owner is a skirmish player"
+        );
+        let a = c
+            .sides
+            .get_skirmish_side_info(0)
+            .unwrap()
+            .scripts
+            .as_ref()
+            .expect("scripts for PlyrA");
+        let b = c
+            .sides
+            .get_skirmish_side_info(1)
+            .unwrap()
+            .scripts
+            .as_ref()
+            .expect("scripts for PlyrB");
+        assert_eq!(
+            (&a.scripts[0].script_name[..], &b.scripts[0].script_name[..]),
+            (&b"forA"[..], &b"forB"[..])
+        );
         assert!(c.read_player_names.iter().all(|n| n.is_empty()));
         // a file that fails to parse leaves the names
         c.skirmish_scripts_file = Some(vec![1, 2, 3]);

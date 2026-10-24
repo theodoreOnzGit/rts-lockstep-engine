@@ -51,12 +51,12 @@
 //! Reproduced.
 
 use crate::common::base_type::Coord3D;
+pub use crate::common::bit_flags::BitIndexOutOfRange;
 use crate::common::bit_flags::{BitFlagNames, BitFlags};
 use crate::common::game_common::PlayerMaskType;
 use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::object_status_types::{ObjectStatusTypes, OBJECT_STATUS_NONE};
 use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferVersion};
-pub use crate::common::bit_flags::BitIndexOutOfRange;
 
 /// `DAMAGE_NUM_TYPES`.
 pub const DAMAGE_NUM_TYPES: usize = 38;
@@ -205,13 +205,19 @@ pub const DAMAGE_TYPE_FLAGS_ALL: DamageTypeFlags = DamageTypeFlags::ALL;
 /// `setDamageTypeFlag(flags, dt)`: `std::bitset::set(dt)` throws
 /// `std::out_of_range` for `dt` outside `[0, DAMAGE_NUM_TYPES)` (an unknown
 /// name gives -1, which converts to `SIZE_MAX`).
-pub fn set_damage_type_flag(mut flags: DamageTypeFlags, dt: i32) -> Result<DamageTypeFlags, BitIndexOutOfRange> {
+pub fn set_damage_type_flag(
+    mut flags: DamageTypeFlags,
+    dt: i32,
+) -> Result<DamageTypeFlags, BitIndexOutOfRange> {
     flags.try_set(dt, 1)?;
     Ok(flags)
 }
 
 /// `clearDamageTypeFlag(flags, dt)`.
-pub fn clear_damage_type_flag(mut flags: DamageTypeFlags, dt: i32) -> Result<DamageTypeFlags, BitIndexOutOfRange> {
+pub fn clear_damage_type_flag(
+    mut flags: DamageTypeFlags,
+    dt: i32,
+) -> Result<DamageTypeFlags, BitIndexOutOfRange> {
     flags.try_set(dt, 0)?;
     Ok(flags)
 }
@@ -282,7 +288,13 @@ pub fn clear_death_type_flag(flags: DeathTypeFlags, dt: i32) -> DeathTypeFlags {
 
 /// `IsSubdualDamage(type)`.
 pub fn is_subdual_damage(t: DamageType) -> bool {
-    matches!(t, DAMAGE_SUBDUAL_MISSILE | DAMAGE_SUBDUAL_VEHICLE | DAMAGE_SUBDUAL_BUILDING | DAMAGE_SUBDUAL_UNRESISTABLE)
+    matches!(
+        t,
+        DAMAGE_SUBDUAL_MISSILE
+            | DAMAGE_SUBDUAL_VEHICLE
+            | DAMAGE_SUBDUAL_BUILDING
+            | DAMAGE_SUBDUAL_UNRESISTABLE
+    )
 }
 
 /// `IsHealthDamagingDamage(type)`: does this type of damage go to
@@ -367,7 +379,11 @@ impl Default for DamageInfoInput {
             death_type: DEATH_NORMAL,
             amount: 0.0,
             kill: false,
-            shock_wave_vector: Coord3D { x: 0.0, y: 0.0, z: 0.0 },
+            shock_wave_vector: Coord3D {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
             shock_wave_amount: 0.0,
             shock_wave_radius: 0.0,
             shock_wave_taper_off: 0.0,
@@ -497,8 +513,16 @@ mod tests {
         let mut f = DamageTypeFlags::NONE;
         f.flip();
         assert_eq!(f, DamageTypeFlags::ALL);
-        assert_eq!(set_damage_type_flag(DamageTypeFlags::NONE, -1), Err(BitIndexOutOfRange));
-        assert_eq!(clear_damage_type_flag(DamageTypeFlags::ALL, 0).unwrap().words()[0], (1u64 << DAMAGE_NUM_TYPES) - 2);
+        assert_eq!(
+            set_damage_type_flag(DamageTypeFlags::NONE, -1),
+            Err(BitIndexOutOfRange)
+        );
+        assert_eq!(
+            clear_damage_type_flag(DamageTypeFlags::ALL, 0)
+                .unwrap()
+                .words()[0],
+            (1u64 << DAMAGE_NUM_TYPES) - 2
+        );
     }
 
     #[test]

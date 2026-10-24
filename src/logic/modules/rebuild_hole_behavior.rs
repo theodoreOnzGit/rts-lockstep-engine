@@ -43,14 +43,20 @@ use std::sync::Arc;
 
 use crate::common::game_common::LOGICFRAMES_PER_SECOND;
 use crate::common::game_type::INVALID_ID;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::kind_of::KINDOF_MINE;
 use crate::common::module::{ModuleDataKind, ObjectId, MODULEINTERFACE_DIE};
-use crate::common::object_status_types::{OBJECT_STATUS_UNDER_CONSTRUCTION, OBJECT_STATUS_UNSELECTABLE};
+use crate::common::object_status_types::{
+    OBJECT_STATUS_UNDER_CONSTRUCTION, OBJECT_STATUS_UNSELECTABLE,
+};
 use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferStatus, XferVersion};
 use crate::logic::damage::{DamageInfo, DAMAGE_HEALING, DEATH_NONE};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
+use crate::logic::module::update_module::{
+    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE,
+};
 use crate::logic::modules::crate_collide::crate_destroy_object;
 use crate::logic::modules::open_contain::CMD_FROM_AI;
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
@@ -76,31 +82,64 @@ pub struct RebuildHoleBehaviorModuleData {
 impl Default for RebuildHoleBehaviorModuleData {
     /// `RebuildHoleBehaviorModuleData()`: no delay, 10% a second, no worker name.
     fn default() -> Self {
-        RebuildHoleBehaviorModuleData { update: UpdateModuleData::default(), worker_respawn_delay: 0.0, hole_health_regen_percent_per_second: 0.1, worker_template_name: Vec::new() }
+        RebuildHoleBehaviorModuleData {
+            update: UpdateModuleData::default(),
+            worker_respawn_delay: 0.0,
+            hole_health_regen_percent_per_second: 0.1,
+            worker_template_name: Vec::new(),
+        }
     }
 }
 
 /// `RebuildHoleBehaviorModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<RebuildHoleBehaviorModuleData>; 4] = [
-    FieldParse::new("WorkerObjectName", |ini, d, _| { d.worker_template_name = ini.parse_ascii_string()?; Ok(()) }, UserData::None),
-    FieldParse::new("WorkerRespawnDelay", |ini, d, _| { d.worker_respawn_delay = ini.parse_duration_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("HoleHealthRegen%PerSecond", |ini, d, _| { d.hole_health_regen_percent_per_second = ini.parse_percent_to_real()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "WorkerObjectName",
+        |ini, d, _| {
+            d.worker_template_name = ini.parse_ascii_string()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "WorkerRespawnDelay",
+        |ini, d, _| {
+            d.worker_respawn_delay = ini.parse_duration_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "HoleHealthRegen%PerSecond",
+        |ini, d, _| {
+            d.hole_health_regen_percent_per_second = ini.parse_percent_to_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl RebuildHoleBehaviorModuleData {
     /// `buildFieldParse(p)`: the update base, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, RebuildHoleBehaviorModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, RebuildHoleBehaviorModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<RebuildHoleBehaviorModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<RebuildHoleBehaviorModuleData> {
         let mut data = RebuildHoleBehaviorModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, RebuildHoleBehaviorModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                RebuildHoleBehaviorModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -164,7 +203,10 @@ impl RebuildHoleBehavior {
     }
 
     /// `RebuildHoleBehavior(thing, moduleData)`: no worker, no reconstruction, no spawner, no wait, no templates.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<RebuildHoleBehaviorModuleData>>) -> IniResult<Self> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<RebuildHoleBehaviorModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
@@ -193,7 +235,12 @@ impl RebuildHoleBehavior {
 
     /// The module's own state as words, for the tests that compare it with upstream's: the worker, the reconstruction, the spawner, the wait.
     pub fn state_words(&self) -> Vec<u32> {
-        vec![self.worker_id as u32, self.reconstructing_id as u32, self.spawner_object_id as u32, self.worker_wait_counter]
+        vec![
+            self.worker_id as u32,
+            self.reconstructing_id as u32,
+            self.spawner_object_id as u32,
+            self.worker_wait_counter,
+        ]
     }
 
     /// `getSpawnerID()`.
@@ -227,7 +274,12 @@ impl RebuildHoleBehavior {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -250,8 +302,14 @@ impl RebuildHoleBehavior {
     /// `SC_INVALID_DATA` (reported as [`XferStatus::ListNotEmpty`]) there, before anything after it was read; an empty name is `NULL`. `r` is
     /// what the rest of the xfer returned.
     pub fn check_loaded_templates(&mut self, world: &World, r: XferResult<()>) -> XferResult<()> {
-        let Some((worker, rebuild)) = self.loaded_names.take() else { return r };
-        let find = |name: &Vec<u8>| world.thing_factory_find_template(name).map(|id| (id, name.clone()));
+        let Some((worker, rebuild)) = self.loaded_names.take() else {
+            return r;
+        };
+        let find = |name: &Vec<u8>| {
+            world
+                .thing_factory_find_template(name)
+                .map(|id| (id, name.clone()))
+        };
         if let Some(name) = worker {
             if name.is_empty() {
                 self.worker_template = None;
@@ -278,12 +336,18 @@ impl RebuildHoleBehavior {
 
     /// `newWorkerRespawnProcess(existingWorker)`: "start the worker respawn process (again if existingWorker is non NULL)". An error is upstream's
     /// undefined behaviour.
-    fn new_worker_respawn_process(&mut self, world: &mut World, me: ObjectId, existing_worker: Option<ObjectId>) -> Result<(), IniError> {
+    fn new_worker_respawn_process(
+        &mut self,
+        world: &mut World,
+        me: ObjectId,
+        existing_worker: Option<ObjectId>,
+    ) -> Result<(), IniError> {
         if let Some(w) = existing_worker {
             crate_destroy_object(world, w);
         }
         self.worker_id = INVALID_ID;
-        self.worker_wait_counter = real_to_unsigned(self.data.worker_respawn_delay).ok_or_else(|| IniError::undefined(Undefined::RealOutOfRange))?;
+        self.worker_wait_counter = real_to_unsigned(self.data.worker_respawn_delay)
+            .ok_or_else(|| IniError::undefined(Undefined::RealOutOfRange))?;
         if !crate::logic::modules::plant(1781) {
             world.crate_mask_object(me, false);
         }
@@ -291,7 +355,13 @@ impl RebuildHoleBehavior {
     }
 
     /// `startRebuildProcess(rebuild, spawnerID)`: the building and the spawner, then a new wait ("Kill the worker if we have one").
-    fn start_rebuild_process(&mut self, world: &mut World, me: ObjectId, rebuild: Option<TemplateRef>, spawner: ObjectId) -> Result<(), IniError> {
+    fn start_rebuild_process(
+        &mut self,
+        world: &mut World,
+        me: ObjectId,
+        rebuild: Option<TemplateRef>,
+        spawner: ObjectId,
+    ) -> Result<(), IniError> {
         self.rebuild_template = rebuild;
         self.spawner_object_id = spawner;
         let worker = world.objects.find(self.worker_id).map(|_| self.worker_id);
@@ -301,15 +371,31 @@ impl RebuildHoleBehavior {
     /// `transferBombs(reconstruction)`: every mine whose sticky bomb sits on the hole moves to the reconstruction.
     fn transfer_bombs(world: &mut World, me: ObjectId, reconstruction: ObjectId) {
         for obj in world.objects.ids_in_order() {
-            if !world.objects.find(obj).is_some_and(|o| o.is_kind_of(KINDOF_MINE)) {
+            if !world
+                .objects
+                .find(obj)
+                .is_some_and(|o| o.is_kind_of(KINDOF_MINE))
+            {
                 continue;
             }
-            let Some(update) = world.find_module(obj, b"StickyBombUpdate") else { continue };
-            let target = world.module_call(obj, update, ModuleCall::StickyBombGetTargetObject).as_id();
+            let Some(update) = world.find_module(obj, b"StickyBombUpdate") else {
+                continue;
+            };
+            let target = world
+                .module_call(obj, update, ModuleCall::StickyBombGetTargetObject)
+                .as_id();
             // `getTargetObject()`: the target if it is still an object
-            let target = if world.objects.find(target).is_some() { target } else { INVALID_ID };
+            let target = if world.objects.find(target).is_some() {
+                target
+            } else {
+                INVALID_ID
+            };
             if target == me && !crate::logic::modules::plant(1782) {
-                world.module_call(obj, update, ModuleCall::StickyBombSetTargetObject(reconstruction));
+                world.module_call(
+                    obj,
+                    update,
+                    ModuleCall::StickyBombSetTargetObject(reconstruction),
+                );
             }
         }
     }
@@ -327,7 +413,10 @@ impl RebuildHoleBehavior {
         }
         // "make sure the reconstructing object is still alive"
         if self.reconstructing_id != 0 {
-            reconstructing = world.objects.find(self.reconstructing_id).map(|_| self.reconstructing_id);
+            reconstructing = world
+                .objects
+                .find(self.reconstructing_id)
+                .map(|_| self.reconstructing_id);
             if reconstructing.is_none() {
                 self.new_worker_respawn_process(world, hole, worker)?;
                 self.reconstructing_id = INVALID_ID;
@@ -339,28 +428,61 @@ impl RebuildHoleBehavior {
             if self.worker_wait_counter == 0 || crate::logic::modules::plant(1783) {
                 if self.worker_template.is_none() {
                     let name = self.data.worker_template_name.clone();
-                    self.worker_template = world.thing_factory_find_template(&name).map(|id| (id, name));
+                    self.worker_template = world
+                        .thing_factory_find_template(&name)
+                        .map(|id| (id, name));
                 }
                 // `ThingFactory::newObject(NULL)` throws
-                let template = self.worker_template.as_ref().map(|t| t.0).ok_or_else(|| IniError::new(IniErrorKind::BadArg))?;
+                let template = self
+                    .worker_template
+                    .as_ref()
+                    .map(|t| t.0)
+                    .ok_or_else(|| IniError::new(IniErrorKind::BadArg))?;
                 let team = world.get_team(hole);
                 let w = world.crate_new_object(template, team);
                 if w != INVALID_ID {
                     worker = Some(w);
-                    let pos = world.objects.find(hole).map(|o| o.get_position()).unwrap_or_default();
+                    let pos = world
+                        .objects
+                        .find(hole)
+                        .map(|o| o.get_position())
+                        .unwrap_or_default();
                     world.set_position(w, &pos);
                     self.worker_id = w;
                     if let Some(ai) = world.objects.find(w).and_then(|o| o.ai) {
                         // "start the reconstruction or resume it if we're replacing a dead worker"
                         let r = match reconstructing {
                             None => {
-                                let (pos, angle) = world.objects.find(hole).map(|o| (o.get_position(), o.thing.orientation())).unwrap_or_default();
+                                let (pos, angle) = world
+                                    .objects
+                                    .find(hole)
+                                    .map(|o| (o.get_position(), o.thing.orientation()))
+                                    .unwrap_or_default();
                                 let owner = world.get_controlling_player(hole);
                                 let template = self.rebuild_template.as_ref().map(|t| t.0);
-                                world.module_call(w, ai, ModuleCall::AiConstruct { template, pos, angle, owner, is_rebuild: true }).as_id()
+                                world
+                                    .module_call(
+                                        w,
+                                        ai,
+                                        ModuleCall::AiConstruct {
+                                            template,
+                                            pos,
+                                            angle,
+                                            owner,
+                                            is_rebuild: true,
+                                        },
+                                    )
+                                    .as_id()
                             }
                             Some(r) => {
-                                world.module_call(w, ai, ModuleCall::AiResumeConstruction { object: r, command_source: CMD_FROM_AI });
+                                world.module_call(
+                                    w,
+                                    ai,
+                                    ModuleCall::AiResumeConstruction {
+                                        object: r,
+                                        command_source: CMD_FROM_AI,
+                                    },
+                                );
                                 r
                             }
                         };
@@ -371,9 +493,15 @@ impl RebuildHoleBehavior {
                         reconstructing = Some(r);
                         // "transfer any attackers on the hole to the new building"
                         for obj in world.objects.ids_in_order() {
-                            let Some(oai) = world.objects.find(obj).and_then(|o| o.ai) else { continue };
+                            let Some(oai) = world.objects.find(obj).and_then(|o| o.ai) else {
+                                continue;
+                            };
                             if !crate::logic::modules::plant(1784) {
-                                world.module_call(obj, oai, ModuleCall::AiTransferAttack { from: hole, to: r });
+                                world.module_call(
+                                    obj,
+                                    oai,
+                                    ModuleCall::AiTransferAttack { from: hole, to: r },
+                                );
                             }
                         }
                         self.reconstructing_id = r;
@@ -390,12 +518,22 @@ impl RebuildHoleBehavior {
             }
         }
         // "holes heal"
-        let body = world.objects.find(hole).and_then(|o| o.body).ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
-        let health = world.module_call(hole, body, ModuleCall::GetHealth).as_real(0.0);
-        let max_health = world.module_call(hole, body, ModuleCall::GetMaxHealth).as_real(0.0);
+        let body = world
+            .objects
+            .find(hole)
+            .and_then(|o| o.body)
+            .ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
+        let health = world
+            .module_call(hole, body, ModuleCall::GetHealth)
+            .as_real(0.0);
+        let max_health = world
+            .module_call(hole, body, ModuleCall::GetMaxHealth)
+            .as_real(0.0);
         if health < max_health {
             let mut healing = DamageInfo::default();
-            healing.input.amount = (self.data.hole_health_regen_percent_per_second / LOGICFRAMES_PER_SECOND as f32) * max_health;
+            healing.input.amount = (self.data.hole_health_regen_percent_per_second
+                / LOGICFRAMES_PER_SECOND as f32)
+                * max_health;
             healing.input.source_id = hole;
             healing.input.damage_type = DAMAGE_HEALING;
             healing.input.death_type = DEATH_NONE;
@@ -405,9 +543,22 @@ impl RebuildHoleBehavior {
         }
         // "if the reconstruction is complete, we have served our purpose"
         if let Some(r) = reconstructing {
-            if !world.objects.find(r).is_some_and(|o| o.test_status(OBJECT_STATUS_UNDER_CONSTRUCTION)) {
-                let name = world.objects.find(hole).map(|o| o.name.clone()).unwrap_or_default();
-                world.cut(crate::logic::world::object_cuts::CutCall::ScriptEngineTransferObjectName { name, object: r });
+            if !world
+                .objects
+                .find(r)
+                .is_some_and(|o| o.test_status(OBJECT_STATUS_UNDER_CONSTRUCTION))
+            {
+                let name = world
+                    .objects
+                    .find(hole)
+                    .map(|o| o.name.clone())
+                    .unwrap_or_default();
+                world.cut(
+                    crate::logic::world::object_cuts::CutCall::ScriptEngineTransferObjectName {
+                        name,
+                        object: r,
+                    },
+                );
                 if let Some(w) = worker {
                     crate_destroy_object(world, w);
                 }
@@ -419,7 +570,10 @@ impl RebuildHoleBehavior {
 
     /// `onDie(damageInfo)`: the worker goes, then the hole.
     fn on_die(&mut self, world: &mut World, me: ObjectId) {
-        if self.worker_id != INVALID_ID && world.objects.find(self.worker_id).is_some() && !crate::logic::modules::plant(1787) {
+        if self.worker_id != INVALID_ID
+            && world.objects.find(self.worker_id).is_some()
+            && !crate::logic::modules::plant(1787)
+        {
             crate_destroy_object(world, self.worker_id);
             self.worker_id = INVALID_ID;
         }
@@ -452,12 +606,18 @@ impl UpdateBehavior for RebuildHoleBehavior {
             xfer.xfer_object_id(&mut self.spawner_object_id)?;
         }
         xfer.xfer_unsigned_int(&mut self.worker_wait_counter)?;
-        let mut worker_name = self.worker_template.as_ref().map_or_else(Vec::new, |t| t.1.clone());
+        let mut worker_name = self
+            .worker_template
+            .as_ref()
+            .map_or_else(Vec::new, |t| t.1.clone());
         xfer.xfer_ascii_string(&mut worker_name)?;
         if load {
             self.loaded_names = Some((Some(worker_name), None));
         }
-        let mut rebuild_name = self.rebuild_template.as_ref().map_or_else(Vec::new, |t| t.1.clone());
+        let mut rebuild_name = self
+            .rebuild_template
+            .as_ref()
+            .map_or_else(Vec::new, |t| t.1.clone());
         xfer.xfer_ascii_string(&mut rebuild_name)?;
         if load {
             if let Some(n) = &mut self.loaded_names {
@@ -469,7 +629,11 @@ impl UpdateBehavior for RebuildHoleBehavior {
     fn other_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         match call {
             ModuleCall::StartRebuildProcess { template, spawner } => {
-                let rebuild = world.statics.thing_factory.find_by_template_id(template).map(|t| (template, t.get_final_override().data.get_name().to_vec()));
+                let rebuild = world
+                    .statics
+                    .thing_factory
+                    .find_by_template_id(template)
+                    .map(|t| (template, t.get_final_override().data.get_name().to_vec()));
                 if let Err(e) = self.start_rebuild_process(world, me.object, rebuild, spawner) {
                     world.cuts.module_errors.push((me, e));
                 }
@@ -512,5 +676,7 @@ impl Snapshot for RebuildHoleBehavior {
 
 /// The factory's `NewModuleDataProc` for `RebuildHoleBehavior`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::RebuildHoleBehavior(Arc::new(RebuildHoleBehaviorModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::RebuildHoleBehavior(Arc::new(
+        RebuildHoleBehaviorModuleData::friend_new_module_data(ini)?,
+    )))
 }

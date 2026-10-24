@@ -13,7 +13,6 @@
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
 
-
 //! `SpecialPowerCreate`: when a building is finished, every special power
 //! module of the object starts its countdown (`onSpecialPowerCreation()`). The
 //! loop itself is the host's ([`CreateHost::special_power_creation`]): it walks
@@ -44,7 +43,9 @@ pub struct SpecialPowerCreate {
 impl SpecialPowerCreate {
     /// `SpecialPowerCreate(thing, moduleData)`.
     pub fn new(object: ObjectId, module_data: Option<Arc<CreateModuleData>>) -> IniResult<Self> {
-        Ok(SpecialPowerCreate { create: CreateModule::new(object, module_data)? })
+        Ok(SpecialPowerCreate {
+            create: CreateModule::new(object, module_data)?,
+        })
     }
 
     /// The `CreateModule` base.
@@ -71,7 +72,12 @@ create_module_eq!(SpecialPowerCreate);
 
 impl SpecialPowerCreate {
     /// The module's answer to one of `Object`'s calls (`onCreate` and `onBuildComplete` of the create interface).
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         let _ = me;
         match call {
             ModuleCall::OnCreate => {

@@ -152,7 +152,10 @@ impl std::fmt::Display for ChunkError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ChunkError::Thrown(c) => write!(f, "chunk file error {c:#010x}"),
-            ChunkError::Undefined(u) => write!(f, "chunk file outside what the original reader defines: {u:?}"),
+            ChunkError::Undefined(u) => write!(
+                f,
+                "chunk file outside what the original reader defines: {u:?}"
+            ),
         }
     }
 }
@@ -181,7 +184,10 @@ impl CachedFileInputStream {
         if data.is_empty() || i32::try_from(data.len()).is_err() {
             return None;
         }
-        Some(CachedFileInputStream { buffer: data, pos: 0 })
+        Some(CachedFileInputStream {
+            buffer: data,
+            pos: 0,
+        })
     }
 
     fn size(&self) -> i32 {
@@ -192,7 +198,9 @@ impl CachedFileInputStream {
     /// the count read.
     pub fn read(&mut self, dst: &mut [u8], num_bytes: i32) -> ChunkResult<i32> {
         let mut n = num_bytes;
-        let end = n.checked_add(self.pos).ok_or(ChunkUndefined::ReadOverflow)?;
+        let end = n
+            .checked_add(self.pos)
+            .ok_or(ChunkUndefined::ReadOverflow)?;
         if end > self.size() {
             n = self.size() - self.pos;
         }
@@ -272,13 +280,22 @@ impl Default for DataChunkTableOfContents {
 impl DataChunkTableOfContents {
     /// `DataChunkTableOfContents()`.
     pub fn new() -> Self {
-        DataChunkTableOfContents { list: Vec::new(), eof_mappings: 0, list_length: 0, next_id: 1, header_opened: false }
+        DataChunkTableOfContents {
+            list: Vec::new(),
+            eof_mappings: 0,
+            list_length: 0,
+            next_id: 1,
+            header_opened: false,
+        }
     }
 
     /// `findMapping(name)`: newest first.
     fn find_mapping(&self, name: &[u8]) -> Option<Mapping> {
         if self.eof_mappings > 0 && name.is_empty() {
-            return Some(Mapping { name: Vec::new(), id: 0 });
+            return Some(Mapping {
+                name: Vec::new(),
+                id: 0,
+            });
         }
         self.list.iter().rev().find(|m| m.name == name).cloned()
     }
@@ -293,7 +310,11 @@ impl DataChunkTableOfContents {
         if self.eof_mappings > 0 && id == 0 {
             return Vec::new();
         }
-        self.list.iter().rev().find(|m| m.id == id).map_or_else(Vec::new, |m| m.name.clone())
+        self.list
+            .iter()
+            .rev()
+            .find(|m| m.id == id)
+            .map_or_else(Vec::new, |m| m.name.clone())
     }
 
     /// `allocateID(name)`: the existing id, or a new one.
@@ -303,7 +324,10 @@ impl DataChunkTableOfContents {
         }
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
-        self.list.push(Mapping { name: name.to_vec(), id });
+        self.list.push(Mapping {
+            name: name.to_vec(),
+            id,
+        });
         self.list_length = self.list_length.wrapping_add(1);
         id
     }
@@ -391,7 +415,8 @@ pub struct DataChunkInfo {
 }
 
 /// `DataChunkParserPtr`: parse one chunk; `false` stops the parse.
-pub type DataChunkParser<C> = fn(&mut DataChunkInput<C>, &DataChunkInfo, &mut C) -> ChunkResult<bool>;
+pub type DataChunkParser<C> =
+    fn(&mut DataChunkInput<C>, &DataChunkInfo, &mut C) -> ChunkResult<bool>;
 
 /// `class UserParser` (without its unused `userData`).
 pub struct UserParser<C> {
@@ -403,7 +428,9 @@ pub struct UserParser<C> {
 /// `nameToKey(name)` on the caller's generator. Its only failure is a key
 /// past `0x7fffffff`, undefined upstream (`NameKeyError::KeysExhausted`).
 fn name_to_key(names: &mut NameKeyGenerator, name: &[u8]) -> ChunkResult<NameKeyType> {
-    names.try_name_to_key(name).map_err(|_| ChunkError::Undefined(ChunkUndefined::NameKeysExhausted))
+    names
+        .try_name_to_key(name)
+        .map_err(|_| ChunkError::Undefined(ChunkUndefined::NameKeysExhausted))
 }
 
 /// A `Dict` setter's failure: `ERROR_OUT_OF_MEMORY`, the throw of
@@ -435,7 +462,14 @@ impl<C> DataChunkInput<C> {
         let mut contents = DataChunkTableOfContents::new();
         contents.read(&mut file)?;
         let filepos_of_first_chunk = file.tell();
-        Ok(DataChunkInput { file, contents, filepos_of_first_chunk, parsers: Vec::new(), chunk_stack: Vec::new(), embedded_nuls: 0 })
+        Ok(DataChunkInput {
+            file,
+            contents,
+            filepos_of_first_chunk,
+            parsers: Vec::new(),
+            chunk_stack: Vec::new(),
+            embedded_nuls: 0,
+        })
     }
 
     // --- p1w4-sides ---
@@ -456,8 +490,17 @@ impl<C> DataChunkInput<C> {
 
     /// `registerParser(label, parentLabel, parser)`: `parentLabel` `""` is
     /// the top level.
-    pub fn register_parser(&mut self, label: &[u8], parent_label: &[u8], parser: DataChunkParser<C>) {
-        self.parsers.push(UserParser { parser, label: label.to_vec(), parent_label: parent_label.to_vec() });
+    pub fn register_parser(
+        &mut self,
+        label: &[u8],
+        parent_label: &[u8],
+        parser: DataChunkParser<C>,
+    ) {
+        self.parsers.push(UserParser {
+            parser,
+            label: label.to_vec(),
+            parent_label: parent_label.to_vec(),
+        });
     }
 
     /// `parse(userData)`: parse chunks from here to the end of the file or
@@ -516,7 +559,10 @@ impl<C> DataChunkInput<C> {
     /// `decrementDataLeft(size)` on every open chunk.
     fn decrement_data_left(&mut self, size: i32) -> ChunkResult<()> {
         for c in &mut self.chunk_stack {
-            c.data_left = c.data_left.checked_sub(size).ok_or(ChunkUndefined::DataLeftOverflow)?;
+            c.data_left = c
+                .data_left
+                .checked_sub(size)
+                .ok_or(ChunkUndefined::DataLeftOverflow)?;
         }
         Ok(())
     }
@@ -554,7 +600,8 @@ impl<C> DataChunkInput<C> {
             return Ok(());
         };
         if top.data_left > 0 {
-            self.file.absolute_seek(self.file.tell().wrapping_add(top.data_left as u32));
+            self.file
+                .absolute_seek(self.file.tell().wrapping_add(top.data_left as u32));
             self.decrement_data_left(top.data_left)?;
         }
         self.chunk_stack.pop();
@@ -573,7 +620,9 @@ impl<C> DataChunkInput<C> {
 
     /// `getChunkLabel` (`""` if no chunk is open).
     pub fn get_chunk_label(&self) -> Vec<u8> {
-        self.chunk_stack.last().map_or_else(Vec::new, |c| self.contents.get_name(c.id))
+        self.chunk_stack
+            .last()
+            .map_or_else(Vec::new, |c| self.contents.get_name(c.id))
     }
     /// `getChunkVersion` (0 if no chunk is open).
     pub fn get_chunk_version(&self) -> DataChunkVersionType {
@@ -644,7 +693,10 @@ impl<C> DataChunkInput<C> {
         let mut buf = vec![0u8; usize::from(len) * 2];
         self.file.read(&mut buf, i32::from(len) * 2)?;
         self.decrement_data_left(i32::from(len) * 2)?;
-        let units: Vec<u16> = buf.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        let units: Vec<u16> = buf
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
         let n = units.iter().position(|&u| u == 0).unwrap_or(units.len());
         self.embedded_nuls += u64::from(n < units.len()); // p1w4-sides
         Ok(units[..n].to_vec())
@@ -722,13 +774,31 @@ mod tests {
         values: (i32, f32),
     }
 
-    fn outer(f: &mut DataChunkInput<Out>, info: &DataChunkInfo, out: &mut Out) -> ChunkResult<bool> {
-        out.seen.push((info.label.clone(), info.parent_label.clone(), info.version, info.data_size));
+    fn outer(
+        f: &mut DataChunkInput<Out>,
+        info: &DataChunkInfo,
+        out: &mut Out,
+    ) -> ChunkResult<bool> {
+        out.seen.push((
+            info.label.clone(),
+            info.parent_label.clone(),
+            info.version,
+            info.data_size,
+        ));
         f.parse(out)
     }
 
-    fn inner(f: &mut DataChunkInput<Out>, info: &DataChunkInfo, out: &mut Out) -> ChunkResult<bool> {
-        out.seen.push((info.label.clone(), info.parent_label.clone(), info.version, info.data_size));
+    fn inner(
+        f: &mut DataChunkInput<Out>,
+        info: &DataChunkInfo,
+        out: &mut Out,
+    ) -> ChunkResult<bool> {
+        out.seen.push((
+            info.label.clone(),
+            info.parent_label.clone(),
+            info.version,
+            info.data_size,
+        ));
         out.values = (f.read_int()?, f.read_real()?);
         Ok(f.at_end_of_chunk())
     }
@@ -741,7 +811,13 @@ mod tests {
         input.register_parser(b"Inner", b"Outer", inner);
         let mut out = Out::default();
         assert_eq!(input.parse(&mut out), Ok(true));
-        assert_eq!(out.seen, vec![(b"Outer".to_vec(), Vec::new(), 3, 18), (b"Inner".to_vec(), b"Outer".to_vec(), 7, 8)]);
+        assert_eq!(
+            out.seen,
+            vec![
+                (b"Outer".to_vec(), Vec::new(), 3, 18),
+                (b"Inner".to_vec(), b"Outer".to_vec(), 7, 8)
+            ]
+        );
         assert_eq!(out.values, (-5, 1.5));
         assert!(input.at_end_of_file());
         input.reset();
@@ -755,7 +831,10 @@ mod tests {
         t.read(&mut s).unwrap();
         assert!(!t.is_opened_for_read()); // no names
         let mut s = CachedFileInputStream::new(b"CkMp\x05".to_vec()).unwrap();
-        assert_eq!(t.read(&mut s), Err(ChunkError::Undefined(ChunkUndefined::UninitialisedRead)));
+        assert_eq!(
+            t.read(&mut s),
+            Err(ChunkError::Undefined(ChunkUndefined::UninitialisedRead))
+        );
         let a = NameKeyType(1);
         let mut d = Dict::new();
         d.set_int(a, 1).unwrap();
@@ -774,7 +853,11 @@ mod tests {
         key: Option<NameKeyType>,
     }
 
-    fn dict_parser(f: &mut DataChunkInput<DictOut>, _: &DataChunkInfo, out: &mut DictOut) -> ChunkResult<bool> {
+    fn dict_parser(
+        f: &mut DataChunkInput<DictOut>,
+        _: &DataChunkInfo,
+        out: &mut DictOut,
+    ) -> ChunkResult<bool> {
         out.dict = Some(f.read_dict(&mut out.names)?);
         out.key = Some(f.read_name_key(&mut out.names)?);
         Ok(true)
@@ -784,7 +867,12 @@ mod tests {
     fn read_dict_and_name_key_fill_common_dict() {
         let mut v = b"CkMp".to_vec();
         w(&mut v, &4i32.to_le_bytes());
-        for (name, id) in [(&b"Ints"[..], 1u32), (b"Text", 2), (b"Real", 3), (b"Outer", 4)] {
+        for (name, id) in [
+            (&b"Ints"[..], 1u32),
+            (b"Text", 2),
+            (b"Real", 3),
+            (b"Outer", 4),
+        ] {
             v.push(name.len() as u8);
             w(&mut v, name);
             w(&mut v, &id.to_le_bytes());
@@ -808,8 +896,15 @@ mod tests {
         let mut out = DictOut::default();
         out.names.init();
         assert_eq!(input.parse(&mut out), Ok(true));
-        let (ints, text, real) = (out.names.name_to_key(b"Ints"), out.names.name_to_key(b"Text"), out.names.name_to_key(b"Real"));
-        assert_eq!((ints, text, real), (NameKeyType(1), NameKeyType(2), NameKeyType(3)));
+        let (ints, text, real) = (
+            out.names.name_to_key(b"Ints"),
+            out.names.name_to_key(b"Text"),
+            out.names.name_to_key(b"Real"),
+        );
+        assert_eq!(
+            (ints, text, real),
+            (NameKeyType(1), NameKeyType(2), NameKeyType(3))
+        );
         assert_eq!(out.names.key_to_name(text), b"Text");
         let d = out.dict.expect("read_dict ran");
         assert_eq!(d.get_pair_count(), 3);

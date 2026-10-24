@@ -40,13 +40,17 @@
 use std::sync::Arc;
 
 use crate::common::game_common::Relationship;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::kind_of::KINDOF_STRUCTURE;
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::object_status_types::{OBJECT_STATUS_DETECTED, OBJECT_STATUS_STEALTHED};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE};
+use crate::logic::module::update_module::{
+    SleepyUpdatePhase, UpdateModule, UpdateModuleData, UpdateSleepTime, UPDATE_SLEEP_NONE,
+};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::modules::upgrade_pair::{parse_upgrade_pair, UpgradePair};
 use crate::logic::world::game_logic::World;
@@ -78,33 +82,79 @@ pub struct AutoDepositUpdateModuleData {
 impl Default for AutoDepositUpdateModuleData {
     /// `AutoDepositUpdateModuleData()`.
     fn default() -> Self {
-        AutoDepositUpdateModuleData { update: UpdateModuleData::new(), deposit_frame: 0, deposit_amount: 0, initial_capture_bonus: 0, is_actual_money: true, upgrade_boost: Vec::new() }
+        AutoDepositUpdateModuleData {
+            update: UpdateModuleData::new(),
+            deposit_frame: 0,
+            deposit_amount: 0,
+            initial_capture_bonus: 0,
+            is_actual_money: true,
+            upgrade_boost: Vec::new(),
+        }
     }
 }
 
 /// `AutoDepositUpdateModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<AutoDepositUpdateModuleData>; 6] = [
-    FieldParse::new("DepositTiming", |ini, d, _| { d.deposit_frame = ini.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("DepositAmount", |ini, d, _| { d.deposit_amount = ini.parse_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("InitialCaptureBonus", |ini, d, _| { d.initial_capture_bonus = ini.parse_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("ActualMoney", |ini, d, _| { d.is_actual_money = ini.parse_bool()?; Ok(()) }, UserData::None),
-    FieldParse::new("UpgradedBoost", |ini, d, _| parse_upgrade_pair(ini, &mut d.upgrade_boost), UserData::None),
+    FieldParse::new(
+        "DepositTiming",
+        |ini, d, _| {
+            d.deposit_frame = ini.parse_duration_unsigned_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DepositAmount",
+        |ini, d, _| {
+            d.deposit_amount = ini.parse_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "InitialCaptureBonus",
+        |ini, d, _| {
+            d.initial_capture_bonus = ini.parse_int()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ActualMoney",
+        |ini, d, _| {
+            d.is_actual_money = ini.parse_bool()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "UpgradedBoost",
+        |ini, d, _| parse_upgrade_pair(ini, &mut d.upgrade_boost),
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl AutoDepositUpdateModuleData {
     /// `buildFieldParse(p)`: the behaviour base, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, AutoDepositUpdateModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, AutoDepositUpdateModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<AutoDepositUpdateModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<AutoDepositUpdateModuleData> {
         let mut data = AutoDepositUpdateModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, AutoDepositUpdateModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                AutoDepositUpdateModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -146,11 +196,20 @@ fn real_to_int(x: f32) -> Result<i32, IniError> {
 
 impl AutoDepositUpdate {
     /// The first half of the constructor, which touches no world: the base and the data (`INI_INVALID_DATA` for null data).
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<AutoDepositUpdateModuleData>>) -> IniResult<Self> {
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<AutoDepositUpdateModuleData>>,
+    ) -> IniResult<Self> {
         let data = module_data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let base = Arc::new(data.update.clone());
         let update = UpdateModule::new(object, Some(base), SleepyUpdatePhase::Normal)?;
-        Ok(AutoDepositUpdate { update, data, deposit_on_frame: 0, award_initial_capture_bonus: false, initialized: false })
+        Ok(AutoDepositUpdate {
+            update,
+            data,
+            deposit_on_frame: 0,
+            award_initial_capture_bonus: false,
+            initialized: false,
+        })
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
@@ -165,7 +224,11 @@ impl AutoDepositUpdate {
 
     /// The module's own state as words, for the tests that compare it with upstream's.
     pub fn state_words(&self) -> Vec<u32> {
-        vec![self.deposit_on_frame, u32::from(self.award_initial_capture_bonus), u32::from(self.initialized)]
+        vec![
+            self.deposit_on_frame,
+            u32::from(self.award_initial_capture_bonus),
+            u32::from(self.initialized),
+        ]
     }
 
     /// `update()` as the scheduler runs it (see [`update_behavior::world_update`]).
@@ -179,7 +242,12 @@ impl AutoDepositUpdate {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         update_behavior::update_module_call(self, world, me, call)
     }
 
@@ -200,16 +268,33 @@ impl AutoDepositUpdate {
 
     /// `getUpgradedSupplyBoost()`: the boost of the first pair whose upgrade the controlling player has completed (see the module docs for the `static`).
     pub fn upgraded_supply_boost(&self, world: &mut World, me: ObjectId) -> i32 {
-        let Some(player) = world.get_controlling_player(me) else { return 0 };
+        let Some(player) = world.get_controlling_player(me) else {
+            return 0;
+        };
         for info in &self.data.upgrade_boost {
             // the function-local `static`, initialised the first time control reaches it
-            if world.cuts.auto_deposit_upgrade_static.is_none() || crate::logic::modules::plant(901) {
-                let found = world.statics.upgrade_center.find_upgrade(&mut world.names, &info.type_name).ok().flatten().map(|t| t.upgrade_mask());
+            if world.cuts.auto_deposit_upgrade_static.is_none() || crate::logic::modules::plant(901)
+            {
+                let found = world
+                    .statics
+                    .upgrade_center
+                    .find_upgrade(&mut world.names, &info.type_name)
+                    .ok()
+                    .flatten()
+                    .map(|t| t.upgrade_mask());
                 world.cuts.auto_deposit_upgrade_static = Some(found);
             }
             if let Some(mask) = world.cuts.auto_deposit_upgrade_static.flatten() {
-                if world.players.get_nth(player).is_some_and(|p| p.upgrades_completed.test_for_all(&mask)) {
-                    return if crate::logic::modules::plant(902) { 0 } else { info.amount };
+                if world
+                    .players
+                    .get_nth(player)
+                    .is_some_and(|p| p.upgrades_completed.test_for_all(&mask))
+                {
+                    return if crate::logic::modules::plant(902) {
+                        0
+                    } else {
+                        info.amount
+                    };
                 }
             }
         }
@@ -217,21 +302,43 @@ impl AutoDepositUpdate {
     }
 
     /// `awardInitialCaptureBonus(player)`: `player` as an index (a negative one is `NULL`).
-    pub fn award_initial_capture_bonus(&mut self, world: &mut World, me: ObjectId, player: i32) -> Result<(), IniError> {
+    pub fn award_initial_capture_bonus(
+        &mut self,
+        world: &mut World,
+        me: ObjectId,
+        player: i32,
+    ) -> Result<(), IniError> {
         self.deposit_on_frame = world.frame().wrapping_add(self.data.deposit_frame);
-        if player < 0 || (!self.award_initial_capture_bonus && !crate::logic::modules::plant(903)) || self.data.initial_capture_bonus <= 0 {
+        if player < 0
+            || (!self.award_initial_capture_bonus && !crate::logic::modules::plant(903))
+            || self.data.initial_capture_bonus <= 0
+        {
             return Ok(());
         }
         let bonus = self.data.initial_capture_bonus;
-        world.cut(CutCall::PlayerMoneyDeposit { player, amount: bonus as u32 });
-        world.cut(CutCall::PlayerScoreAddMoneyEarned { player, amount: bonus });
+        world.cut(CutCall::PlayerMoneyDeposit {
+            player,
+            amount: bonus as u32,
+        });
+        world.cut(CutCall::PlayerScoreAddMoneyEarned {
+            player,
+            amount: bonus,
+        });
 
         // Display cash income floating over the blacklotus
         if bonus > 0 {
-            let mut position = world.objects.find(me).map(|o| o.get_position()).unwrap_or_default();
+            let mut position = world
+                .objects
+                .find(me)
+                .map(|o| o.get_position())
+                .unwrap_or_default();
             position.z += 10.0; // add a little z to make it show up above the unit.
             let color = world.cuts.player_color(player) | floating_alpha();
-            world.cut(CutCall::InGameUiAddFloatingText { amount: bonus, position, color });
+            world.cut(CutCall::InGameUiAddFloatingText {
+                amount: bonus,
+                position,
+                color,
+            });
         }
         self.award_initial_capture_bonus = false;
         Ok(())
@@ -242,43 +349,81 @@ impl AutoDepositUpdate {
         let now = world.frame();
         let modd = self.data.clone();
         // makes sure that buildings under construction do not get a bonus CCB
-        if world.objects.find(me).is_some_and(|o| o.construction_percent != CONSTRUCTION_COMPLETE) && !crate::logic::modules::plant(904) {
+        if world
+            .objects
+            .find(me)
+            .is_some_and(|o| o.construction_percent != CONSTRUCTION_COMPLETE)
+            && !crate::logic::modules::plant(904)
+        {
             return Ok(UPDATE_SLEEP_NONE);
         }
         let _ = now;
-        let money_amount = modd.deposit_amount.wrapping_add(self.upgraded_supply_boost(world, me));
+        let money_amount = modd
+            .deposit_amount
+            .wrapping_add(self.upgraded_supply_boost(world, me));
         let player = world.get_controlling_player(me);
         if modd.is_actual_money {
-            let player = player.ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
-            world.cut(CutCall::PlayerMoneyDeposit { player, amount: money_amount as u32 });
-            world.cut(CutCall::PlayerScoreAddMoneyEarned { player, amount: if crate::logic::modules::plant(905) { money_amount } else { modd.deposit_amount } });
+            let player =
+                player.ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+            world.cut(CutCall::PlayerMoneyDeposit {
+                player,
+                amount: money_amount as u32,
+            });
+            world.cut(CutCall::PlayerScoreAddMoneyEarned {
+                player,
+                amount: if crate::logic::modules::plant(905) {
+                    money_amount
+                } else {
+                    modd.deposit_amount
+                },
+            });
         }
 
         let mut display_money = money_amount > 0;
-        let (stealthed, detected) = world.objects.find(me).map_or((false, false), |o| (o.test_status(OBJECT_STATUS_STEALTHED), o.test_status(OBJECT_STATUS_DETECTED)));
+        let (stealthed, detected) = world.objects.find(me).map_or((false, false), |o| {
+            (
+                o.test_status(OBJECT_STATUS_STEALTHED),
+                o.test_status(OBJECT_STATUS_DETECTED),
+            )
+        });
         if stealthed {
             // OY LOOK!  I AM USING LOCAL PLAYER.
-            if (!world.is_locally_controlled(me) && !detected) != crate::logic::modules::plant(906) {
+            if (!world.is_locally_controlled(me) && !detected) != crate::logic::modules::plant(906)
+            {
                 display_money = false;
             }
         }
         if display_money && world.objects.find(me).is_some() {
             let (mut position, is_structure, major, minor) = {
                 let o = world.objects.find(me).expect("checked above");
-                (o.get_position(), o.is_kind_of(KINDOF_STRUCTURE), o.geometry_info.get_major_radius(), o.geometry_info.get_minor_radius())
+                (
+                    o.get_position(),
+                    o.is_kind_of(KINDOF_STRUCTURE),
+                    o.geometry_info.get_major_radius(),
+                    o.geometry_info.get_minor_radius(),
+                )
             };
             position.z += 10.0; // add a little z to make it show up above the unit.
             if is_structure {
                 let width = major * 0.3;
-                let depth = if crate::logic::modules::plant(907) { major } else { minor } * 0.3;
+                let depth = if crate::logic::modules::plant(907) {
+                    major
+                } else {
+                    minor
+                } * 0.3;
                 let (wl, wh) = (real_to_int(-width)?, real_to_int(width)?);
                 position.x += world.random.game_client_random_value(wl, wh) as f32;
                 let (dl, dh) = (real_to_int(-depth)?, real_to_int(depth)?);
                 position.y += world.random.game_client_random_value(dl, dh) as f32;
             }
-            let player = player.ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+            let player =
+                player.ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
             let color = world.cuts.player_color(player) | floating_alpha();
-            world.cut(CutCall::InGameUiAddFloatingText { amount: money_amount, position, color });
+            world.cut(CutCall::InGameUiAddFloatingText {
+                amount: money_amount,
+                position,
+                color,
+            });
         }
         Ok(UPDATE_SLEEP_NONE)
     }
@@ -303,8 +448,19 @@ impl UpdateBehavior for AutoDepositUpdate {
                 self.award_initial_capture_bonus = true;
                 self.initialized = true;
             }
-            self.deposit_on_frame = now.wrapping_add(if crate::logic::modules::plant(910) { 0 } else { self.data.deposit_frame });
-            if (world.is_neutral_controlled(me.object) && !crate::logic::modules::plant(908)) || self.data.deposit_amount < if crate::logic::modules::plant(909) { 0 } else { 1 } {
+            self.deposit_on_frame = now.wrapping_add(if crate::logic::modules::plant(910) {
+                0
+            } else {
+                self.data.deposit_frame
+            });
+            if (world.is_neutral_controlled(me.object) && !crate::logic::modules::plant(908))
+                || self.data.deposit_amount
+                    < if crate::logic::modules::plant(909) {
+                        0
+                    } else {
+                        1
+                    }
+            {
                 return UPDATE_SLEEP_NONE;
             }
             return match self.pay(world, me.object) {
@@ -370,7 +526,9 @@ impl Snapshot for AutoDepositUpdate {
 
 /// The factory's `NewModuleDataProc` for `AutoDepositUpdate`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::AutoDepositUpdate(Arc::new(AutoDepositUpdateModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::AutoDepositUpdate(Arc::new(
+        AutoDepositUpdateModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
 #[allow(dead_code)]

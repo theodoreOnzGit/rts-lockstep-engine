@@ -27,16 +27,26 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined};
-use crate::common::kind_of::{KINDOF_AIRCRAFT, KINDOF_BOAT, KINDOF_DRONE, KINDOF_IMMUNE_TO_CAPTURE, KINDOF_TRANSPORT};
 use crate::common::game_common::Relationship;
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, Undefined,
+};
+use crate::common::kind_of::{
+    KINDOF_AIRCRAFT, KINDOF_BOAT, KINDOF_DRONE, KINDOF_IMMUNE_TO_CAPTURE, KINDOF_TRANSPORT,
+};
 use crate::common::module::{ModuleDataKind, ObjectId};
-use crate::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_HIJACKED, OBJECT_STATUS_MASKED, OBJECT_STATUS_NO_COLLISIONS, OBJECT_STATUS_UNSELECTABLE};
+use crate::common::object_status_types::{
+    ObjectStatusMaskType, OBJECT_STATUS_HIJACKED, OBJECT_STATUS_MASKED,
+    OBJECT_STATUS_NO_COLLISIONS, OBJECT_STATUS_UNSELECTABLE,
+};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::crate_collide_data_field_parse;
 use crate::logic::module::behavior_module::BehaviorModuleData;
 use crate::logic::module::collide_module::CollideModule;
-use crate::logic::modules::crate_collide::{crate_destroy_object, crate_is_valid_to_execute, crate_module_call, CrateBehavior, CrateCollideModuleData};
+use crate::logic::modules::crate_collide::{
+    crate_destroy_object, crate_is_valid_to_execute, crate_module_call, CrateBehavior,
+    CrateCollideModuleData,
+};
 use crate::logic::modules::open_contain::CMD_FROM_AI;
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
@@ -60,21 +70,31 @@ pub struct ConvertToHijackedVehicleCrateCollideModuleData {
 impl ConvertToHijackedVehicleCrateCollideModuleData {
     /// `ConvertToHijackedVehicleCrateCollideModuleData()`.
     pub fn new() -> Self {
-        ConvertToHijackedVehicleCrateCollideModuleData { crate_data: CrateCollideModuleData::new(), range_of_effect: 0 }
+        ConvertToHijackedVehicleCrateCollideModuleData {
+            crate_data: CrateCollideModuleData::new(),
+            range_of_effect: 0,
+        }
     }
 
     /// `buildFieldParse(p)`: the module data base and the crate fields (the class adds none).
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, ConvertToHijackedVehicleCrateCollideModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, ConvertToHijackedVehicleCrateCollideModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&BASE_FIELD_PARSE)?;
         Ok(())
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ConvertToHijackedVehicleCrateCollideModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<ConvertToHijackedVehicleCrateCollideModuleData> {
         let mut data = ConvertToHijackedVehicleCrateCollideModuleData::new();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, ConvertToHijackedVehicleCrateCollideModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                ConvertToHijackedVehicleCrateCollideModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -96,13 +116,17 @@ pub struct ConvertToHijackedVehicleCrateCollide {
 impl PartialEq for ConvertToHijackedVehicleCrateCollide {
     /// The same object and the same data object (upstream compares pointers).
     fn eq(&self, other: &Self) -> bool {
-        self.collide.behavior().object() == other.collide.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
+        self.collide.behavior().object() == other.collide.behavior().object()
+            && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
 impl ConvertToHijackedVehicleCrateCollide {
     /// `ConvertToHijackedVehicleCrateCollide(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(object: ObjectId, data: Option<Arc<ConvertToHijackedVehicleCrateCollideModuleData>>) -> IniResult<ConvertToHijackedVehicleCrateCollide> {
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<ConvertToHijackedVehicleCrateCollideModuleData>>,
+    ) -> IniResult<ConvertToHijackedVehicleCrateCollide> {
         let data = data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let collide = CollideModule::new(object, Some(Arc::new(data.crate_data.collide.clone())))?;
         Ok(ConvertToHijackedVehicleCrateCollide { collide, data })
@@ -119,7 +143,12 @@ impl ConvertToHijackedVehicleCrateCollide {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         crate_module_call(self, world, me, call)
     }
 }
@@ -133,11 +162,18 @@ impl CrateBehavior for ConvertToHijackedVehicleCrateCollide {
     }
 
     /// `isValidToExecute(other)`.
-    fn is_valid_to_execute(&self, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<bool, IniError> {
+    fn is_valid_to_execute(
+        &self,
+        world: &mut World,
+        me: ModuleHandle,
+        other: ObjectId,
+    ) -> Result<bool, IniError> {
         if !crate_is_valid_to_execute(&self.data.crate_data, world, me, other)? {
             return Ok(false);
         }
-        let Some(o) = world.objects.find(other) else { return Ok(false) };
+        let Some(o) = world.objects.find(other) else {
+            return Ok(false);
+        };
         if o.is_effectively_dead() {
             return Ok(false); // can't hijack a dead vehicle
         }
@@ -159,68 +195,129 @@ impl CrateBehavior for ConvertToHijackedVehicleCrateCollide {
         let is_transport = o.is_kind_of(KINDOF_TRANSPORT);
         let contain = o.contain;
         // "Only hijack enemy objects"
-        if (world.get_relationship(me.object, other) != Relationship::Enemies) != crate::logic::modules::plant(1734) {
+        if (world.get_relationship(me.object, other) != Relationship::Enemies)
+            != crate::logic::modules::plant(1734)
+        {
             return Ok(false);
         }
         // "Allow empty transports to be hijacked." / "do not jack vehicles that may carry hostile passengers"
         if is_transport && !crate::logic::modules::plant(1735) {
             if let Some(c) = contain {
-                if world.module_call(other, c, ModuleCall::GetContainCount).as_int(0) > 0 {
+                if world
+                    .module_call(other, c, ModuleCall::GetContainCount)
+                    .as_int(0)
+                    > 0
+                {
                     return Ok(false);
                 }
             }
         }
         // "Make sure you can't hijack any aircraft (or hijack-enter)."
-        if world.objects.find(other).is_some_and(|o| o.is_kind_of(KINDOF_AIRCRAFT)) {
+        if world
+            .objects
+            .find(other)
+            .is_some_and(|o| o.is_kind_of(KINDOF_AIRCRAFT))
+        {
             return Ok(false);
         }
         Ok(true)
     }
 
     /// `executeCrateBehavior(other)`.
-    fn execute_crate_behavior(&mut self, world: &mut World, me: ModuleHandle, other: ObjectId) -> Result<bool, IniError> {
+    fn execute_crate_behavior(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        other: ObjectId,
+    ) -> Result<bool, IniError> {
         let obj = me.object;
         let ai = world.objects.find(obj).and_then(|o| o.ai);
         // "in order to prevent an unintentional conversion simply by having the terrorist walk too close to it"
         if let Some(ai) = ai {
-            if world.module_call(obj, ai, ModuleCall::AiGetGoalObject).as_id() != other && !crate::logic::modules::plant(1736) {
+            if world
+                .module_call(obj, ai, ModuleCall::AiGetGoalObject)
+                .as_id()
+                != other
+                && !crate::logic::modules::plant(1736)
+            {
                 return Ok(false);
             }
         }
-        world.emit(ObjectClientEvent::Radar { call: RadarCall::TryInfiltrationEvent, object_id: other, position: None });
+        world.emit(ObjectClientEvent::Radar {
+            call: RadarCall::TryInfiltrationEvent,
+            object_id: other,
+            position: None,
+        });
         // "play the "vehicle stolen" EVA event if the local player is the victim!"
         if world.is_locally_controlled(other) && !crate::logic::modules::plant(1737) {
-            world.emit(ObjectClientEvent::Eva { message: EvaMessage::VehicleStolen });
+            world.emit(ObjectClientEvent::Eva {
+                message: EvaMessage::VehicleStolen,
+            });
         }
-        let player = world.get_controlling_player(obj).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
+        let player = world
+            .get_controlling_player(obj)
+            .ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
         let team = world.players.get_nth(player).and_then(|p| p.default_team);
         world.crate_set_team(other, team);
         let mut hijacked = ObjectStatusMaskType::new();
         hijacked.set(OBJECT_STATUS_HIJACKED, 1);
         world.set_status(other, hijacked, true); // I claim this car in the name of the GLA
-        let target_ai = world.objects.find(other).and_then(|o| o.ai).ok_or_else(|| IniError::undefined(Undefined::NullAi))?;
-        let pos = world.objects.find(other).map(|o| o.get_position()).unwrap_or_default();
+        let target_ai = world
+            .objects
+            .find(other)
+            .and_then(|o| o.ai)
+            .ok_or_else(|| IniError::undefined(Undefined::NullAi))?;
+        let pos = world
+            .objects
+            .find(other)
+            .map(|o| o.get_position())
+            .unwrap_or_default();
         if !crate::logic::modules::plant(1738) {
-            world.module_call(other, target_ai, ModuleCall::AiMoveToPosition { pos, command_source: CMD_FROM_AI });
+            world.module_call(
+                other,
+                target_ai,
+                ModuleCall::AiMoveToPosition {
+                    pos,
+                    command_source: CMD_FROM_AI,
+                },
+            );
         }
         world.module_call(other, target_ai, ModuleCall::AiIdle);
         // "Just in case this target is a dozer, lets make him stop al his dozer tasks"
-        if world.module_call(other, target_ai, ModuleCall::AiGetDozerAIInterface).as_bool() {
+        if world
+            .module_call(other, target_ai, ModuleCall::AiGetDozerAIInterface)
+            .as_bool()
+        {
             for task in DOZER_TASK_FIRST..DOZER_NUM_TASKS {
                 world.module_call(other, target_ai, ModuleCall::DozerCancelTask(task));
             }
         }
-        world.emit(ObjectClientEvent::AudioAddEvent { name: b"HijackDriver".to_vec(), object_id: obj, position: None, player_index: None });
+        world.emit(ObjectClientEvent::AudioAddEvent {
+            name: b"HijackDriver".to_vec(),
+            object_id: obj,
+            position: None,
+            player_index: None,
+        });
         // "transfer the hijacker's name to the car"
-        let name = world.objects.find(obj).map(|o| o.name.clone()).unwrap_or_default();
-        world.cut(CutCall::ScriptEngineTransferObjectName { name, object: other });
+        let name = world
+            .objects
+            .find(obj)
+            .map(|o| o.name.clone())
+            .unwrap_or_default();
+        world.cut(CutCall::ScriptEngineTransferObjectName {
+            name,
+            object: other,
+        });
         let level = |w: &World, id| w.objects.find(id).map_or(0, |o| o.experience.level as i32);
         let highest = level(world, other).max(level(world, obj));
         world.crate_experience_set_veterancy_level(obj, highest, false);
         if !crate::logic::modules::plant(1739) {
             world.crate_experience_set_veterancy_level(other, highest, false);
         }
-        let target_can_eject = world.objects.find(other).is_some_and(|o| o.modules.iter().any(|m| m.name == b"EjectPilotDie"));
+        let target_can_eject = world
+            .objects
+            .find(other)
+            .is_some_and(|o| o.modules.iter().any(|m| m.name == b"EjectPilotDie"));
         if !target_can_eject && !crate::logic::modules::plant(1740) {
             crate_destroy_object(world, obj);
             return Ok(true);
@@ -229,10 +326,18 @@ impl CrateBehavior for ConvertToHijackedVehicleCrateCollide {
         if let Some(hijacker) = world.find_module(obj, b"HijackerUpdate") {
             world.module_call(obj, hijacker, ModuleCall::HijackerSetTargetObject(other));
             world.module_call(obj, hijacker, ModuleCall::HijackerSetIsInVehicle(true));
-            world.module_call(obj, hijacker, ModuleCall::HijackerSetUpdate(!crate::logic::modules::plant(1741)));
+            world.module_call(
+                obj,
+                hijacker,
+                ModuleCall::HijackerSetUpdate(!crate::logic::modules::plant(1741)),
+            );
             // "flag bits so hijacker won't be selectible or collideable while within the vehicle"
             let mut bits = ObjectStatusMaskType::new();
-            for b in [OBJECT_STATUS_NO_COLLISIONS, OBJECT_STATUS_MASKED, OBJECT_STATUS_UNSELECTABLE] {
+            for b in [
+                OBJECT_STATUS_NO_COLLISIONS,
+                OBJECT_STATUS_MASKED,
+                OBJECT_STATUS_UNSELECTABLE,
+            ] {
                 bits.set(b, 1);
             }
             world.set_status(obj, bits, true);
@@ -243,7 +348,10 @@ impl CrateBehavior for ConvertToHijackedVehicleCrateCollide {
             // "By setting him to idle, we will prevent him from entering the target after this gets called."
             world.module_call(obj, ai, ModuleCall::AiIdle);
         }
-        let (vision, shroud) = (world.get_vision_range(obj), world.get_shroud_clearing_range(obj));
+        let (vision, shroud) = (
+            world.get_vision_range(obj),
+            world.get_shroud_clearing_range(obj),
+        );
         world.set_vision_range(other, vision);
         world.set_shroud_clearing_range(other, shroud);
         if !crate::logic::modules::plant(1742) {
@@ -289,5 +397,7 @@ impl Snapshot for ConvertToHijackedVehicleCrateCollide {
 
 /// The factory's `NewModuleDataProc` for `ConvertToHijackedVehicleCrateCollide`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::ConvertToHijackedVehicleCrateCollide(Arc::new(ConvertToHijackedVehicleCrateCollideModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::ConvertToHijackedVehicleCrateCollide(
+        Arc::new(ConvertToHijackedVehicleCrateCollideModuleData::friend_new_module_data(ini)?),
+    ))
 }

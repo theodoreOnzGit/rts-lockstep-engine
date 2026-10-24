@@ -13,7 +13,6 @@
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
 
-
 //! `SupplyWarehouseCreate`: when a supply warehouse is created, every player's
 //! resource gathering manager records it. Warehouses are never built, so there
 //! is no `onBuildComplete` work (upstream: none).
@@ -45,7 +44,9 @@ pub struct SupplyWarehouseCreate {
 impl SupplyWarehouseCreate {
     /// `SupplyWarehouseCreate(thing, moduleData)`.
     pub fn new(object: ObjectId, module_data: Option<Arc<CreateModuleData>>) -> IniResult<Self> {
-        Ok(SupplyWarehouseCreate { create: CreateModule::new(object, module_data)? })
+        Ok(SupplyWarehouseCreate {
+            create: CreateModule::new(object, module_data)?,
+        })
     }
 
     /// The `CreateModule` base.
@@ -72,7 +73,12 @@ create_module_eq!(SupplyWarehouseCreate);
 
 impl SupplyWarehouseCreate {
     /// The module's answer to one of `Object`'s calls (`onCreate` and `onBuildComplete` of the create interface).
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         let _ = me;
         match call {
             ModuleCall::OnCreate => {
@@ -98,7 +104,10 @@ mod tests {
     #[test]
     fn warehouses_are_recorded_on_create_for_every_player() {
         let mut m = SupplyWarehouseCreate::new(4, Some(Arc::new(CreateModuleData::new()))).unwrap();
-        let mut h = Recorder { players: Some(2), ..Default::default() };
+        let mut h = Recorder {
+            players: Some(2),
+            ..Default::default()
+        };
         m.on_create(&mut h);
         assert_eq!(h.log, vec!["warehouse 1 4", "warehouse 0 4"]);
         h.players = None;

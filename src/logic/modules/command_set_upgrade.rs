@@ -46,7 +46,9 @@
 
 use std::sync::Arc;
 
-use crate::common::ini::{FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::module::upgrade_module::{UpgradeModule, UpgradeModuleData};
@@ -89,9 +91,30 @@ static UPGRADE_BASE_FIELD_PARSE: [FieldParse<CommandSetUpgradeModuleData>; 6] =
 
 /// `CommandSetUpgradeModuleData::buildFieldParse`'s own table.
 pub static COMMAND_SET_UPGRADE_FIELD_PARSE: [FieldParse<CommandSetUpgradeModuleData>; 4] = [
-    FieldParse::new("CommandSet", |i, d, _| { d.new_command_set = i.parse_ascii_string()?; Ok(()) }, UserData::None),
-    FieldParse::new("CommandSetAlt", |i, d, _| { d.new_command_set_alt = i.parse_ascii_string()?; Ok(()) }, UserData::None),
-    FieldParse::new("TriggerAlt", |i, d, _| { d.trigger_alt = i.parse_ascii_string()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "CommandSet",
+        |i, d, _| {
+            d.new_command_set = i.parse_ascii_string()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "CommandSetAlt",
+        |i, d, _| {
+            d.new_command_set_alt = i.parse_ascii_string()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "TriggerAlt",
+        |i, d, _| {
+            d.trigger_alt = i.parse_ascii_string()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
@@ -99,7 +122,9 @@ impl CommandSetUpgradeModuleData {
     /// `CommandSetUpgradeModuleData::buildFieldParse(p)`:
     /// `UpgradeModuleData::buildFieldParse(p)` (which adds the mux table after
     /// `ModuleData`'s, which adds none), then this class's table.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, CommandSetUpgradeModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, CommandSetUpgradeModuleData>,
+    ) -> IniResult<()> {
         crate::logic::module::behavior_module::BehaviorModuleData::build_field_parse(p)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
         p.add(&COMMAND_SET_UPGRADE_FIELD_PARSE)
@@ -107,10 +132,15 @@ impl CommandSetUpgradeModuleData {
 
     /// `friend_newModuleData(ini)` (`MAKE_STANDARD_MODULE_MACRO_WITH_MODULE_DATA`):
     /// a default data object, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<CommandSetUpgradeModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<CommandSetUpgradeModuleData> {
         let mut data = CommandSetUpgradeModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, CommandSetUpgradeModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                CommandSetUpgradeModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -128,8 +158,12 @@ pub struct CommandSetUpgrade {
 impl CommandSetUpgrade {
     /// `CommandSetUpgrade(thing, moduleData)`: the base, nothing of its own.
     /// `INI_INVALID_DATA` for no data, as the base's constructor.
-    pub fn new(object: ObjectId, data: Option<Arc<CommandSetUpgradeModuleData>>) -> IniResult<CommandSetUpgrade> {
-        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<CommandSetUpgradeModuleData>>,
+    ) -> IniResult<CommandSetUpgrade> {
+        let data =
+            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let base = UpgradeModule::new(object, Some(data.upgrade.clone()))?;
         Ok(CommandSetUpgrade { base, data })
     }
@@ -145,7 +179,12 @@ impl CommandSetUpgrade {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         upgrade_module_call(self, world, me, call)
     }
 
@@ -162,7 +201,8 @@ impl PartialEq for CommandSetUpgrade {
     /// The same state: the same data object (upstream compares pointers) and
     /// the same `m_upgradeExecuted`. (`UpdateBody` is compared in tests.)
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.data, &other.data) && self.base.is_already_upgraded() == other.base.is_already_upgraded()
+        Arc::ptr_eq(&self.data, &other.data)
+            && self.base.is_already_upgraded() == other.base.is_already_upgraded()
     }
 }
 
@@ -175,7 +215,11 @@ impl UpgradeBehavior for CommandSetUpgrade {
     }
 
     /// `upgradeImplementation()`.
-    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
+    fn upgrade_implementation(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+    ) -> Result<(), IniError> {
         let d = self.data.clone();
         let statics = world.statics.clone();
         let upgrade_template = statics
@@ -193,7 +237,11 @@ impl UpgradeBehavior for CommandSetUpgrade {
                 }
             }
             // "See if upgrade is found in the object completed upgrades"
-            let object_mask = world.objects.find(me.object).map(|o| o.get_object_completed_upgrade_mask()).unwrap_or_default();
+            let object_mask = world
+                .objects
+                .find(me.object)
+                .map(|o| o.get_object_completed_upgrade_mask())
+                .unwrap_or_default();
             if object_mask.test_for_any(&upgrade_mask) {
                 CommandSetUpgrade::give_command_set(world, me, &d.new_command_set_alt);
                 return Ok(());
@@ -242,7 +290,9 @@ impl Snapshot for CommandSetUpgrade {
 
 /// The factory's `NewModuleDataProc` for `CommandSetUpgrade`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::CommandSetUpgrade(Arc::new(CommandSetUpgradeModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::CommandSetUpgrade(Arc::new(
+        CommandSetUpgradeModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
 #[cfg(test)]
@@ -255,15 +305,30 @@ mod tests {
     use crate::logic::world::object_create::NewObject;
     use crate::logic::world::statics::GameStatics;
 
-    fn block(ini: &mut Ini<'_>, out: &mut Vec<IniResult<CommandSetUpgradeModuleData>>) -> IniResult<()> {
-        out.push(CommandSetUpgradeModuleData::friend_new_module_data(Some(ini)));
+    fn block(
+        ini: &mut Ini<'_>,
+        out: &mut Vec<IniResult<CommandSetUpgradeModuleData>>,
+    ) -> IniResult<()> {
+        out.push(CommandSetUpgradeModuleData::friend_new_module_data(Some(
+            ini,
+        )));
         Ok(())
     }
-    static BLOCKS: [BlockParse<Vec<IniResult<CommandSetUpgradeModuleData>>>; 1] = [BlockParse { token: "D", parse: block }];
+    static BLOCKS: [BlockParse<Vec<IniResult<CommandSetUpgradeModuleData>>>; 1] = [BlockParse {
+        token: "D",
+        parse: block,
+    }];
 
     fn data_of(text: &str) -> IniResult<CommandSetUpgradeModuleData> {
         let mut out = Vec::new();
-        let _ = Ini::load(b"c.ini", format!("D\n{text}\nEnd\n").as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut out);
+        let _ = Ini::load(
+            b"c.ini",
+            format!("D\n{text}\nEnd\n").as_bytes(),
+            IniLoadType::Overwrite,
+            None,
+            &BLOCKS,
+            &mut out,
+        );
         out.remove(0)
     }
 
@@ -281,15 +346,29 @@ mod tests {
             center.new_upgrade(&mut names, n.as_bytes()).unwrap();
         }
         let mut w = World::new();
-        w.statics = Arc::new(GameStatics { upgrade_center: center, ..Default::default() });
+        w.statics = Arc::new(GameStatics {
+            upgrade_center: center,
+            ..Default::default()
+        });
         w.names = names;
         w.cuts.neutral_default_team = 1;
-        w.teams.insert_team(crate::logic::world::team::Team::new(1, 0)).unwrap();
+        w.teams
+            .insert_team(crate::logic::world::team::Team::new(1, 0))
+            .unwrap();
         w.cuts.team_players.insert(1, 0);
         let data = ModuleDataKind::CommandSetUpgrade(Arc::new(data_of(text).unwrap()));
-        let m = crate::logic::modules::new_module(0, b"CommandSetUpgrade", b"ModuleTag_CS", &data).unwrap().unwrap();
+        let m = crate::logic::modules::new_module(0, b"CommandSetUpgrade", b"ModuleTag_CS", &data)
+            .unwrap()
+            .unwrap();
         let tt = Arc::new(ThingTemplate::new(0));
-        let id = w.new_object(NewObject { template: tt, status: Default::default(), team: None, modules: vec![m] }).unwrap();
+        let id = w
+            .new_object(NewObject {
+                template: tt,
+                status: Default::default(),
+                team: None,
+                modules: vec![m],
+            })
+            .unwrap();
         (w, id)
     }
 
@@ -301,37 +380,71 @@ mod tests {
         w.events
             .events()
             .iter()
-            .filter(|e| matches!(e, crate::logic::client_event::ClientEvent::Object(ObjectClientEvent::ControlBarMarkUiDirty)))
+            .filter(|e| {
+                matches!(
+                    e,
+                    crate::logic::client_event::ClientEvent::Object(
+                        ObjectClientEvent::ControlBarMarkUiDirty
+                    )
+                )
+            })
             .count()
     }
 
     #[test]
     fn the_fields_and_defaults_are_read() {
         let d = data_of("").unwrap();
-        assert_eq!((d.new_command_set.as_slice(), d.trigger_alt.as_slice()), (&b""[..], &b"none"[..]));
-        let d = data_of("CommandSet = Set1\n CommandSetAlt = Set2\n TriggerAlt = B\n TriggeredBy = A").unwrap();
+        assert_eq!(
+            (d.new_command_set.as_slice(), d.trigger_alt.as_slice()),
+            (&b""[..], &b"none"[..])
+        );
+        let d =
+            data_of("CommandSet = Set1\n CommandSetAlt = Set2\n TriggerAlt = B\n TriggeredBy = A")
+                .unwrap();
         assert_eq!(d.new_command_set, b"Set1");
         assert_eq!(d.new_command_set_alt, b"Set2");
         assert_eq!(d.trigger_alt, b"B");
-        assert_eq!(d.upgrade.mux_data().activation_upgrade_names, vec![b"A".to_vec()]);
+        assert_eq!(
+            d.upgrade.mux_data().activation_upgrade_names,
+            vec![b"A".to_vec()]
+        );
         // parseAsciiString takes an empty value as an empty name, as upstream's getNextAsciiString
         assert_eq!(data_of("CommandSet").unwrap().new_command_set, b"");
     }
 
     #[test]
     fn it_gives_the_command_set_once_and_marks_the_ui_dirty() {
-        let (mut w, id) = world_with("CommandSet = Set1\n CommandSetAlt = Set2\n TriggerAlt = B\n TriggeredBy = A");
+        let (mut w, id) = world_with(
+            "CommandSet = Set1\n CommandSetAlt = Set2\n TriggerAlt = B\n TriggeredBy = A",
+        );
         let idx = the_module(&w, id);
-        assert!(!w.module_call(id, idx, ModuleCall::AttemptUpgrade(mask(&[2]))).as_bool());
-        assert!(w.module_call(id, idx, ModuleCall::AttemptUpgrade(mask(&[0]))).as_bool());
-        assert_eq!(w.objects.find(id).unwrap().command_set_string_override, b"Set1");
+        assert!(!w
+            .module_call(id, idx, ModuleCall::AttemptUpgrade(mask(&[2])))
+            .as_bool());
+        assert!(w
+            .module_call(id, idx, ModuleCall::AttemptUpgrade(mask(&[0])))
+            .as_bool());
+        assert_eq!(
+            w.objects.find(id).unwrap().command_set_string_override,
+            b"Set1"
+        );
         assert_eq!(dirty_count(&w), 1);
         // once only, until reset
-        assert!(!w.module_call(id, idx, ModuleCall::AttemptUpgrade(mask(&[0]))).as_bool());
-        assert!(w.module_call(id, idx, ModuleCall::IsAlreadyUpgraded).as_bool());
-        assert!(w.module_call(id, idx, ModuleCall::ResetUpgrade(mask(&[0]))).as_bool());
-        assert!(!w.module_call(id, idx, ModuleCall::IsAlreadyUpgraded).as_bool());
-        assert!(!w.module_call(id, idx, ModuleCall::IsSubObjectsUpgrade).as_bool());
+        assert!(!w
+            .module_call(id, idx, ModuleCall::AttemptUpgrade(mask(&[0])))
+            .as_bool());
+        assert!(w
+            .module_call(id, idx, ModuleCall::IsAlreadyUpgraded)
+            .as_bool());
+        assert!(w
+            .module_call(id, idx, ModuleCall::ResetUpgrade(mask(&[0])))
+            .as_bool());
+        assert!(!w
+            .module_call(id, idx, ModuleCall::IsAlreadyUpgraded)
+            .as_bool());
+        assert!(!w
+            .module_call(id, idx, ModuleCall::IsSubObjectsUpgrade)
+            .as_bool());
         assert!(w.cuts.module_errors.is_empty());
     }
 
@@ -342,32 +455,57 @@ mod tests {
         let (mut w, id) = world_with(text);
         w.cuts.player_upgrades.insert(0, mask(&[1]));
         let idx = the_module(&w, id);
-        assert!(w.module_call(id, idx, ModuleCall::AttemptUpgrade(mask(&[0]))).as_bool());
-        assert_eq!(w.objects.find(id).unwrap().command_set_string_override, b"Set2");
+        assert!(w
+            .module_call(id, idx, ModuleCall::AttemptUpgrade(mask(&[0])))
+            .as_bool());
+        assert_eq!(
+            w.objects.find(id).unwrap().command_set_string_override,
+            b"Set2"
+        );
         // the object has B
         let (mut w, id) = world_with(text);
         w.objects.find_mut(id).unwrap().object_upgrades_completed = mask(&[1]);
         let idx = the_module(&w, id);
         w.module_call(id, idx, ModuleCall::AttemptUpgrade(mask(&[0])));
-        assert_eq!(w.objects.find(id).unwrap().command_set_string_override, b"Set2");
+        assert_eq!(
+            w.objects.find(id).unwrap().command_set_string_override,
+            b"Set2"
+        );
         // force refresh runs the implementation again, only once upgraded
         w.objects.find_mut(id).unwrap().object_upgrades_completed = UpgradeMaskType::default();
         w.module_call(id, idx, ModuleCall::ForceRefreshUpgrade);
-        assert_eq!(w.objects.find(id).unwrap().command_set_string_override, b"Set1");
+        assert_eq!(
+            w.objects.find(id).unwrap().command_set_string_override,
+            b"Set1"
+        );
     }
 
     #[test]
     fn a_removal_reaches_this_module_at_once_and_the_fx_is_named() {
         // RemovesUpgrades = A resets this very module (removeUpgrade -> resetUpgrade on every upgrade module)
-        let (mut w, id) = world_with("CommandSet = S\n TriggeredBy = A B\n RemovesUpgrades = A\n FXListUpgrade = FX_Up");
+        let (mut w, id) = world_with(
+            "CommandSet = S\n TriggeredBy = A B\n RemovesUpgrades = A\n FXListUpgrade = FX_Up",
+        );
         w.cuts.trace = Some(Vec::new());
         w.objects.find_mut(id).unwrap().object_upgrades_completed = mask(&[0]);
         let idx = the_module(&w, id);
-        assert!(w.module_call(id, idx, ModuleCall::AttemptUpgrade(mask(&[0]))).as_bool());
-        assert!(w.cuts.reentrant_skips.is_empty(), "the reset was delivered, not skipped");
+        assert!(w
+            .module_call(id, idx, ModuleCall::AttemptUpgrade(mask(&[0])))
+            .as_bool());
+        assert!(
+            w.cuts.reentrant_skips.is_empty(),
+            "the reset was delivered, not skipped"
+        );
         assert_eq!(w.cuts.reentrant_delivered, 1);
-        assert!(!w.objects.find(id).unwrap().object_upgrades_completed.any(), "A was removed from the object");
-        assert!(w.module_call(id, idx, ModuleCall::IsAlreadyUpgraded).as_bool(), "executed is set after the removals");
+        assert!(
+            !w.objects.find(id).unwrap().object_upgrades_completed.any(),
+            "A was removed from the object"
+        );
+        assert!(
+            w.module_call(id, idx, ModuleCall::IsAlreadyUpgraded)
+                .as_bool(),
+            "executed is set after the removals"
+        );
         let trace = w.cuts.trace.clone().unwrap();
         assert!(trace.iter().any(|t| t == "remove A"));
         assert!(w.events.events().iter().any(|e| matches!(e,
@@ -380,7 +518,9 @@ mod tests {
         let (mut w, id) = world_with("TriggeredBy = Nope");
         assert_eq!(w.cuts.module_errors.len(), 1);
         let idx = the_module(&w, id);
-        assert!(!w.module_call(id, idx, ModuleCall::AttemptUpgrade(mask(&[0]))).as_bool());
+        assert!(!w
+            .module_call(id, idx, ModuleCall::AttemptUpgrade(mask(&[0])))
+            .as_bool());
         assert_eq!(w.cuts.module_errors.len(), 2);
     }
 
@@ -389,11 +529,19 @@ mod tests {
         use crate::common::module_factory::{is_translated, translated_module};
         assert!(is_translated("CommandSetUpgrade"));
         let t = translated_module("CommandSetUpgrade").unwrap();
-        assert_eq!(t.which_interfaces, Some(crate::common::module::MODULEINTERFACE_UPGRADE));
+        assert_eq!(
+            t.which_interfaces,
+            Some(crate::common::module::MODULEINTERFACE_UPGRADE)
+        );
         let data = (t.create_data_proc.unwrap())(None).unwrap();
-        assert!(matches!((t.create_proc.unwrap())(5, Some(data)).unwrap(), crate::common::module::Module::Upgrade(_)));
+        assert!(matches!(
+            (t.create_proc.unwrap())(5, Some(data)).unwrap(),
+            crate::common::module::Module::Upgrade(_)
+        ));
         // the module's xfer: its version (1), then UpgradeModule's version (1), BehaviorModule's chain, the mux
-        let mut m = CommandSetUpgrade::new(5, Some(Arc::new(CommandSetUpgradeModuleData::default()))).unwrap();
+        let mut m =
+            CommandSetUpgrade::new(5, Some(Arc::new(CommandSetUpgradeModuleData::default())))
+                .unwrap();
         let mut base = UpgradeModule::new(5, Some(m.data.upgrade.clone())).unwrap();
         let mine = crate::logic::module::test_support::save_bytes(&mut m).unwrap();
         let theirs = crate::logic::module::test_support::save_bytes(&mut base).unwrap();
@@ -401,7 +549,14 @@ mod tests {
         assert_eq!(&mine[1..], &theirs[..]);
         let mut body = UpdateBody::CommandSetUpgrade(m.clone());
         assert!(body.owns_base_chain());
-        assert!(!UpdateBody::ModuleProbe(crate::logic::world::module_probe::ProbeModule::new(Default::default(), 0.0, Default::default())).owns_base_chain());
+        assert!(
+            !UpdateBody::ModuleProbe(crate::logic::world::module_probe::ProbeModule::new(
+                Default::default(),
+                0.0,
+                Default::default()
+            ))
+            .owns_base_chain()
+        );
         let _ = &mut body;
     }
 }

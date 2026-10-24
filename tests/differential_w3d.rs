@@ -95,7 +95,11 @@ impl Gn {
         self.g.below(2) == 0
     }
     fn f32(&mut self) -> f32 {
-        if self.below(4) == 0 { self.g.mixed() } else { self.g.uniform(-2.0, 2.0) }
+        if self.below(4) == 0 {
+            self.g.mixed()
+        } else {
+            self.g.uniform(-2.0, 2.0)
+        }
     }
     fn name(&mut self) -> [u8; W3D_NAME_LEN] {
         let mut n = [0u8; W3D_NAME_LEN];
@@ -173,7 +177,11 @@ fn gen_chunk_tree(g: &mut Gn, depth: u32) -> Vec<u8> {
         for _ in 0..g.below(5) {
             let n = g.below(12) as usize;
             b.push(g.below(16) as u8);
-            b.push(if g.chance(5) { g.g.u32() as u8 } else { n as u8 });
+            b.push(if g.chance(5) {
+                g.g.u32() as u8
+            } else {
+                n as u8
+            });
             b.extend((0..n).map(|_| g.g.u32() as u8));
         }
         b
@@ -280,7 +288,10 @@ fn rust_chunk_script(data: &[u8], script: &[u8]) -> Result<Log, ChunkIoError> {
 #[test]
 fn chunkio_matches_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let mut g = Gn { g: Gen::new(0xC10), clean: false };
+    let mut g = Gn {
+        g: Gen::new(0xC10),
+        clean: false,
+    };
     let mut check = Check::new("ChunkLoadClass (scripted calls)");
     let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
     let (mut calls, mut wrapped_reads) = (0u64, 0u64);
@@ -315,7 +326,10 @@ fn chunkio_matches_upstream() {
             Err(ChunkIoError::NonTerminating) => unreachable!("scripts are finite"),
         };
         calls += script.len() as u64;
-        wrapped_reads += script.windows(5).filter(|w| w[0] == 10 && w[4] >= 0x80).count() as u64;
+        wrapped_reads += script
+            .windows(5)
+            .filter(|w| w[0] == 10 && w[4] >= 0x80)
+            .count() as u64;
         let c = cpp_log(|log, cap, n| unsafe {
             cpp::ref_chunkio_run(
                 data.as_ptr() as *const _,
@@ -327,7 +341,9 @@ fn chunkio_matches_upstream() {
                 n,
             )
         });
-        check.eq(&rust, &c, || format!("case {case}: data {:02x?} script {:02x?}", data, script));
+        check.eq(&rust, &c, || {
+            format!("case {case}: data {:02x?} script {:02x?}", data, script)
+        });
     }
     println!(
         "chunkio: {CASES} files+scripts, ~{calls} script bytes, ~{wrapped_reads} reads with lengths >= 2^31; \
@@ -390,7 +406,9 @@ fn w3d_struct_layouts_match_upstream() {
                 for f in $t::FIELDS {
                     rust.extend_from_slice(&all[f.offset..f.offset + f.size]);
                 }
-                let c = cpp_log(|log, cap, n| unsafe { cpp::ref_w3d_parse(index, bytes.as_ptr(), log, cap, n) });
+                let c = cpp_log(|log, cap, n| unsafe {
+                    cpp::ref_w3d_parse(index, bytes.as_ptr(), log, cap, n)
+                });
                 check.eq(&rust, &c, || format!("{} from {:02x?}", $t::C_NAME, bytes));
             }
             #[allow(unused_assignments)]
@@ -439,7 +457,14 @@ fn log_motion(log: &mut Log, c: &Option<MotionChannel>) {
         return;
     };
     log.push(1);
-    for v in [c.pivot_idx, c.type_, c.vector_len as u32, c.first_frame as u32, c.last_frame as u32, c.data.len() as u32] {
+    for v in [
+        c.pivot_idx,
+        c.type_,
+        c.vector_len as u32,
+        c.first_frame as u32,
+        c.last_frame as u32,
+        c.data.len() as u32,
+    ] {
         p32(log, v);
     }
     for f in &c.data {
@@ -453,7 +478,14 @@ fn log_bits(log: &mut Log, c: &Option<BitChannel>) {
         return;
     };
     log.push(1);
-    for v in [c.pivot_idx, c.type_, c.default_val as u32, c.first_frame as u32, c.last_frame as u32, c.bits.len() as u32] {
+    for v in [
+        c.pivot_idx,
+        c.type_,
+        c.default_val as u32,
+        c.first_frame as u32,
+        c.last_frame as u32,
+        c.bits.len() as u32,
+    ] {
         p32(log, v);
     }
     log.extend_from_slice(&c.bits);
@@ -465,7 +497,15 @@ fn log_compressed(log: &mut Log, c: &Option<CompressedChannel>, adaptive: bool) 
         Some(CompressedChannel::TimeCoded(c)) => {
             assert!(!adaptive);
             log.push(1);
-            for v in [c.pivot_idx, c.type_, c.vector_len as u32, c.packet_size, c.num_time_codes, c.last_time_code_idx, 0] {
+            for v in [
+                c.pivot_idx,
+                c.type_,
+                c.vector_len as u32,
+                c.packet_size,
+                c.num_time_codes,
+                c.last_time_code_idx,
+                0,
+            ] {
                 p32(log, v);
             }
             p32(log, c.data.len() as u32);
@@ -476,7 +516,14 @@ fn log_compressed(log: &mut Log, c: &Option<CompressedChannel>, adaptive: bool) 
         Some(CompressedChannel::AdaptiveDelta(c)) => {
             assert!(adaptive);
             log.push(2);
-            for v in [c.pivot_idx, c.type_, c.vector_len as u32, c.num_frames, c.scale.to_bits(), 0x7FFF_FFFF] {
+            for v in [
+                c.pivot_idx,
+                c.type_,
+                c.vector_len as u32,
+                c.num_frames,
+                c.scale.to_bits(),
+                0x7FFF_FFFF,
+            ] {
                 p32(log, v);
             }
             p32(log, (c.vector_len * 2) as u32);
@@ -494,7 +541,14 @@ fn log_tc_bits(log: &mut Log, c: &Option<TimeCodedBitChannel>) {
         return;
     };
     log.push(1);
-    for v in [c.pivot_idx, c.type_, c.default_val as u32, c.num_time_codes, 0, c.bits.len() as u32] {
+    for v in [
+        c.pivot_idx,
+        c.type_,
+        c.default_val as u32,
+        c.num_time_codes,
+        0,
+        c.bits.len() as u32,
+    ] {
         p32(log, v);
     }
     for w in &c.bits {
@@ -533,7 +587,11 @@ fn rust_load(data: &[u8], kind: i32, trees: &Trees) -> W3dResult<Log> {
             if let Some(a) = a {
                 log.extend_from_slice(&a.name);
                 log.extend_from_slice(&a.hierarchy_name);
-                for v in [a.num_frames as u32, a.num_nodes as u32, a.frame_rate.to_bits()] {
+                for v in [
+                    a.num_frames as u32,
+                    a.num_nodes as u32,
+                    a.frame_rate.to_bits(),
+                ] {
                     p32(&mut log, v);
                 }
                 for (i, m) in &a.node_motion {
@@ -552,7 +610,12 @@ fn rust_load(data: &[u8], kind: i32, trees: &Trees) -> W3dResult<Log> {
             if let Some(a) = a {
                 log.extend_from_slice(&a.name);
                 log.extend_from_slice(&a.hierarchy_name);
-                for v in [a.num_frames as u32, a.num_nodes as u32, a.frame_rate.to_bits(), a.flavor as u32] {
+                for v in [
+                    a.num_frames as u32,
+                    a.num_nodes as u32,
+                    a.frame_rate.to_bits(),
+                    a.flavor as u32,
+                ] {
                     p32(&mut log, v);
                 }
                 let adaptive = a.flavor as u32 == ANIM_FLAVOR_ADAPTIVE_DELTA;
@@ -572,7 +635,16 @@ fn rust_load(data: &[u8], kind: i32, trees: &Trees) -> W3dResult<Log> {
 }
 
 fn cpp_load(data: &[u8], kind: i32) -> Log {
-    cpp_log(|log, cap, n| unsafe { cpp::ref_w3d_load(data.as_ptr() as *const _, data.len() as i32, kind, log, cap, n) })
+    cpp_log(|log, cap, n| unsafe {
+        cpp::ref_w3d_load(
+            data.as_ptr() as *const _,
+            data.len() as i32,
+            kind,
+            log,
+            cap,
+            n,
+        )
+    })
 }
 
 fn register_trees(trees: &[([u8; W3D_NAME_LEN], u32)]) -> Trees {
@@ -596,7 +668,10 @@ fn run_loader_cases(
     gen: impl Fn(&mut Gn, &Trees) -> Vec<u8>,
     skip_large: impl Fn(&[u8]) -> bool,
 ) {
-    let mut g = Gn { g: Gen::new(seed), clean: false };
+    let mut g = Gn {
+        g: Gen::new(seed),
+        clean: false,
+    };
     let mut check = Check::new(name);
     let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
     let (mut ok, mut failed, mut large) = (0u64, 0u64, 0u64);
@@ -668,12 +743,20 @@ fn gen_htree(g: &mut Gn) -> Vec<u8> {
     h.version = version;
     h.name = g.name();
     h.num_pivots = n;
-    h.center = W3dVectorStruct { x: g.f32(), y: g.f32(), z: g.f32() };
+    h.center = W3dVectorStruct {
+        x: g.f32(),
+        y: g.f32(),
+        z: g.f32(),
+    };
     let mut body = if g.chance(20) {
         chunk(g, W3D_CHUNK_PIVOTS, false, &[])
     } else {
         let hb = h.to_bytes();
-        let hb = if g.chance(10) { hb[..g.below(36) as usize].to_vec() } else { hb };
+        let hb = if g.chance(10) {
+            hb[..g.below(36) as usize].to_vec()
+        } else {
+            hb
+        };
         chunk(g, W3D_CHUNK_HIERARCHY_HEADER, false, &hb)
     };
     let pre30 = version < w3d_make_version(3, 0);
@@ -688,7 +771,11 @@ fn gen_htree(g: &mut Gn) -> Vec<u8> {
         let mut pb = Vec::new();
         let k = if count > 0 && count < 10_000 {
             let full = count as u32 - u32::from(pre30);
-            if g.chance(6) { g.below(full + 1) } else { full }
+            if g.chance(6) {
+                g.below(full + 1)
+            } else {
+                full
+            }
         } else {
             g.below(4)
         };
@@ -703,10 +790,23 @@ fn gen_htree(g: &mut Gn) -> Vec<u8> {
                 7 => g.g.u32(),
                 _ => g.below(count.clamp(1, 8) as u32),
             };
-            p.translation = W3dVectorStruct { x: g.f32(), y: g.f32(), z: g.f32() };
-            p.euler_angles = W3dVectorStruct { x: g.f32(), y: g.f32(), z: g.f32() };
+            p.translation = W3dVectorStruct {
+                x: g.f32(),
+                y: g.f32(),
+                z: g.f32(),
+            };
+            p.euler_angles = W3dVectorStruct {
+                x: g.f32(),
+                y: g.f32(),
+                z: g.f32(),
+            };
             let q = if g.coin() {
-                [g.g.uniform(-1.0, 1.0), g.g.uniform(-1.0, 1.0), g.g.uniform(-1.0, 1.0), g.g.uniform(-1.0, 1.0)]
+                [
+                    g.g.uniform(-1.0, 1.0),
+                    g.g.uniform(-1.0, 1.0),
+                    g.g.uniform(-1.0, 1.0),
+                    g.g.uniform(-1.0, 1.0),
+                ]
             } else {
                 [g.f32(), g.f32(), g.f32(), g.f32()]
             };
@@ -729,7 +829,15 @@ fn htree_too_large(log: &[u8]) -> bool {
 #[test]
 fn htree_load_matches_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    run_loader_cases("HTreeClass::Load_W3D", 0, 20_000, 0x47EE, &Vec::new(), |g, _| gen_htree(g), htree_too_large);
+    run_loader_cases(
+        "HTreeClass::Load_W3D",
+        0,
+        20_000,
+        0x47EE,
+        &Vec::new(),
+        |g, _| gen_htree(g),
+        htree_too_large,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -738,9 +846,16 @@ fn htree_load_matches_upstream() {
 
 fn tree_names() -> Vec<([u8; W3D_NAME_LEN], u32)> {
     let mut v = Vec::new();
-    for (i, n) in [(b"SKEL" as &[u8], 6u32), (b"BIG", 70_000), (b"NONE", 0), (b"NEG", 0x8000_0005), (b"SIXTEENCHARSNAME", 3), (b"P1", 1)]
-        .iter()
-        .enumerate()
+    for (i, n) in [
+        (b"SKEL" as &[u8], 6u32),
+        (b"BIG", 70_000),
+        (b"NONE", 0),
+        (b"NEG", 0x8000_0005),
+        (b"SIXTEENCHARSNAME", 3),
+        (b"P1", 1),
+    ]
+    .iter()
+    .enumerate()
     {
         let mut name = [0u8; W3D_NAME_LEN];
         name[..n.0.len()].copy_from_slice(n.0);
@@ -752,10 +867,22 @@ fn tree_names() -> Vec<([u8; W3D_NAME_LEN], u32)> {
 
 fn anim_header(g: &mut Gn, trees: &Trees, compressed: bool) -> Vec<u8> {
     let mut h = W3dCompressedAnimHeaderStruct::from_bytes(&[0; 44]);
-    h.version = if compressed && g.coin() { w3d_make_version(0, 1) } else { gen_version(g) };
+    h.version = if compressed && g.coin() {
+        w3d_make_version(0, 1)
+    } else {
+        gen_version(g)
+    };
     h.name = g.name();
-    h.hierarchy_name = if g.below(8) == 0 { g.name() } else { trees[g.below(trees.len() as u32) as usize].0 };
-    h.num_frames = if g.below(6) == 0 { g.g.u32() } else { g.below(100) };
+    h.hierarchy_name = if g.below(8) == 0 {
+        g.name()
+    } else {
+        trees[g.below(trees.len() as u32) as usize].0
+    };
+    h.num_frames = if g.below(6) == 0 {
+        g.g.u32()
+    } else {
+        g.below(100)
+    };
     let mut b = h.to_bytes();
     if compressed {
         let flavor: u16 = match g.below(8) {
@@ -763,11 +890,19 @@ fn anim_header(g: &mut Gn, trees: &Trees, compressed: bool) -> Vec<u8> {
             1..=3 => 1,
             _ => 0,
         };
-        let rate = if g.below(6) == 0 { g.g.u32() as u16 } else { 15 + g.below(30) as u16 };
+        let rate = if g.below(6) == 0 {
+            g.g.u32() as u16
+        } else {
+            15 + g.below(30) as u16
+        };
         b[40..42].copy_from_slice(&rate.to_le_bytes());
         b[42..44].copy_from_slice(&flavor.to_le_bytes());
     } else {
-        let rate = if g.below(6) == 0 { g.g.u32() } else { 15 + g.below(30) };
+        let rate = if g.below(6) == 0 {
+            g.g.u32()
+        } else {
+            15 + g.below(30)
+        };
         b[40..44].copy_from_slice(&rate.to_le_bytes());
     }
     b
@@ -784,7 +919,11 @@ fn gen_pivot(g: &mut Gn) -> u16 {
 
 fn gen_raw_anim(g: &mut Gn, trees: &Trees) -> Vec<u8> {
     let hb = anim_header(g, trees, false);
-    let id = if g.chance(20) { W3D_CHUNK_ANIMATION_CHANNEL } else { W3D_CHUNK_ANIMATION_HEADER };
+    let id = if g.chance(20) {
+        W3D_CHUNK_ANIMATION_CHANNEL
+    } else {
+        W3D_CHUNK_ANIMATION_HEADER
+    };
     let mut body = chunk(g, id, false, &hb);
     for _ in 0..g.below(8) {
         match g.below(8) {
@@ -810,7 +949,11 @@ fn gen_raw_anim(g: &mut Gn, trees: &Trees) -> Vec<u8> {
                 b.extend_from_slice(&(if g.below(6) == 0 { 1u16 } else { 0 }).to_le_bytes());
                 b.extend_from_slice(&gen_pivot(g).to_le_bytes());
                 b.push(g.below(2) as u8);
-                let extra = if numbytes < 64 { numbytes as usize } else { g.below(16) as usize };
+                let extra = if numbytes < 64 {
+                    numbytes as usize
+                } else {
+                    g.below(16) as usize
+                };
                 b.extend((0..extra.max(1)).map(|_| g.g.u32() as u8));
                 body.extend(chunk(g, W3D_CHUNK_BIT_CHANNEL, false, &b));
             }
@@ -828,13 +971,27 @@ fn gen_raw_anim(g: &mut Gn, trees: &Trees) -> Vec<u8> {
                     2..=4 => 4,
                     _ => 1,
                 };
-                let flags: u16 = if g.below(8) == 0 { g.below(20) as u16 } else { g.below(7) as u16 };
-                let nf = ((i32::from(last) - i32::from(first) + 1) as u32).wrapping_mul(u32::from(vlen));
+                let flags: u16 = if g.below(8) == 0 {
+                    g.below(20) as u16
+                } else {
+                    g.below(7) as u16
+                };
+                let nf =
+                    ((i32::from(last) - i32::from(first) + 1) as u32).wrapping_mul(u32::from(vlen));
                 let mut b = Vec::new();
                 for v in [first, last, vlen, flags, gen_pivot(g), 0] {
                     b.extend_from_slice(&v.to_le_bytes());
                 }
-                let floats = if nf < 200 { nf as usize + if g.below(4) == 0 { g.below(3) as usize } else { 0 } } else { g.below(8) as usize };
+                let floats = if nf < 200 {
+                    nf as usize
+                        + if g.below(4) == 0 {
+                            g.below(3) as usize
+                        } else {
+                            0
+                        }
+                } else {
+                    g.below(8) as usize
+                };
                 for _ in 0..floats.max(1) {
                     b.extend_from_slice(&g.f32().to_bits().to_le_bytes());
                 }
@@ -867,7 +1024,11 @@ fn gen_compressed_anim(g: &mut Gn, trees: &Trees) -> Vec<u8> {
                 b.extend_from_slice(&gen_pivot(g).to_le_bytes());
                 b.push(if g.below(6) == 0 { 1 } else { 0 });
                 b.push(g.below(2) as u8);
-                let words = if n < 64 { n as usize } else { g.below(6) as usize };
+                let words = if n < 64 {
+                    n as usize
+                } else {
+                    g.below(6) as usize
+                };
                 for _ in 0..words.max(1) {
                     w32(&mut b, g.g.u32());
                 }
@@ -876,10 +1037,25 @@ fn gen_compressed_anim(g: &mut Gn, trees: &Trees) -> Vec<u8> {
             _ => {
                 let adaptive = g.coin();
                 let mut b = Vec::new();
-                w32(&mut b, if g.below(6) == 0 { g.g.u32() } else { g.below(40) });
+                w32(
+                    &mut b,
+                    if g.below(6) == 0 {
+                        g.g.u32()
+                    } else {
+                        g.below(40)
+                    },
+                );
                 b.extend_from_slice(&gen_pivot(g).to_le_bytes());
-                b.push(if g.below(8) == 0 { g.g.u32() as u8 } else { [1u8, 4][g.below(2) as usize] });
-                b.push(if g.below(8) == 0 { g.below(16) as u8 } else { [0u8, 1, 2, 6][g.below(4) as usize] });
+                b.push(if g.below(8) == 0 {
+                    g.g.u32() as u8
+                } else {
+                    [1u8, 4][g.below(2) as usize]
+                });
+                b.push(if g.below(8) == 0 {
+                    g.below(16) as u8
+                } else {
+                    [0u8, 1, 2, 6][g.below(4) as usize]
+                });
                 if adaptive {
                     w32(&mut b, g.f32().to_bits());
                 }
@@ -901,14 +1077,30 @@ fn gen_compressed_anim(g: &mut Gn, trees: &Trees) -> Vec<u8> {
 fn raw_anim_load_matches_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let trees = register_trees(&tree_names());
-    run_loader_cases("HRawAnimClass::Load_W3D", 1, 20_000, 0xA41, &trees, gen_raw_anim, |_| false);
+    run_loader_cases(
+        "HRawAnimClass::Load_W3D",
+        1,
+        20_000,
+        0xA41,
+        &trees,
+        gen_raw_anim,
+        |_| false,
+    );
 }
 
 #[test]
 fn compressed_anim_load_matches_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let trees = register_trees(&tree_names());
-    run_loader_cases("HCompressedAnimClass::Load_W3D", 2, 20_000, 0xCA41, &trees, gen_compressed_anim, |_| false);
+    run_loader_cases(
+        "HCompressedAnimClass::Load_W3D",
+        2,
+        20_000,
+        0xCA41,
+        &trees,
+        gen_compressed_anim,
+        |_| false,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -922,11 +1114,17 @@ fn crc_memory_matches_upstream() {
     let mut g = Gen::new(0xC3C);
     let mut check = Check::new("CRC_Memory (realcrc.cpp)");
     for case in 0..20_000 {
-        let n = if case < 300 { case } else { g.below(600) as usize };
+        let n = if case < 300 {
+            case
+        } else {
+            g.below(600) as usize
+        };
         let data: Vec<u8> = (0..n).map(|_| g.u32() as u8).collect();
         let seed = if g.below(3) == 0 { g.u32() } else { 0 };
         let c = unsafe { cpp::ref_crc_memory(data.as_ptr(), n as i32, seed) };
-        check.eq(crc_memory(&data, seed), c, || format!("{data:02x?} seed {seed:#x}"));
+        check.eq(crc_memory(&data, seed), c, || {
+            format!("{data:02x?} seed {seed:#x}")
+        });
     }
     check.finish();
 }
@@ -963,7 +1161,9 @@ fn dx8_convert_color_matches_upstream() {
 // 7. Meshes
 // ---------------------------------------------------------------------------
 
-use rts_lockstep_engine::formats::w3d::mesh::{self, Arr, MatDesc, Mesh, MeshLoadOptions, PrelitMode};
+use rts_lockstep_engine::formats::w3d::mesh::{
+    self, Arr, MatDesc, Mesh, MeshLoadOptions, PrelitMode,
+};
 
 fn p_arr<T: Copy + PartialEq>(log: &mut Log, a: &Option<Arr<T>>, f: impl Fn(&mut Log, T)) {
     match a {
@@ -1018,20 +1218,38 @@ fn log_mesh(log: &mut Log, m: &Mesh) {
     log.extend_from_slice(&m.header.to_bytes());
     p32(log, m.name.len() as u32);
     log.extend_from_slice(&m.name);
-    for v in [m.flags, m.w3d_attributes, i32::from(m.sort_level) as u32, m.poly_count as u32, m.vertex_count as u32] {
+    for v in [
+        m.flags,
+        m.w3d_attributes,
+        i32::from(m.sort_level) as u32,
+        m.poly_count as u32,
+        m.vertex_count as u32,
+    ] {
         p32(log, v);
     }
-    for v in m.bound_box_min.iter().chain(&m.bound_box_max).chain(&m.bound_sphere_center).chain([&m.bound_sphere_radius]) {
+    for v in m
+        .bound_box_min
+        .iter()
+        .chain(&m.bound_box_max)
+        .chain(&m.bound_sphere_center)
+        .chain([&m.bound_sphere_radius])
+    {
         p32(log, v.to_bits());
     }
     let f3 = |l: &mut Log, v: [f32; 3]| v.iter().for_each(|x| p32(l, x.to_bits()));
     p_arr(log, &m.vertices, f3);
     p_arr(log, &m.normals, f3);
-    p_arr(log, &m.polys, |l, v: [u16; 3]| v.iter().for_each(|x| l.extend_from_slice(&x.to_le_bytes())));
+    p_arr(log, &m.polys, |l, v: [u16; 3]| {
+        v.iter().for_each(|x| l.extend_from_slice(&x.to_le_bytes()))
+    });
     p_arr(log, &m.surface_types, |l, v| l.push(v));
-    p_arr(log, &m.planes, |l, v: [f32; 4]| v.iter().for_each(|x| p32(l, x.to_bits())));
+    p_arr(log, &m.planes, |l, v: [f32; 4]| {
+        v.iter().for_each(|x| p32(l, x.to_bits()))
+    });
     p_arr(log, &m.shade_indices, p32);
-    p_arr(log, &m.bone_links, |l, v: u16| l.extend_from_slice(&v.to_le_bytes()));
+    p_arr(log, &m.bone_links, |l, v: u16| {
+        l.extend_from_slice(&v.to_le_bytes())
+    });
     p_arr(log, &m.user_text, |l, v| l.push(v));
     match &m.cull_tree {
         None => log.push(0),
@@ -1100,7 +1318,11 @@ fn rust_load_mesh(data: &[u8], prelit: i32) -> W3dResult<Log> {
     log.push(b'O');
     if c.open_chunk()? {
         log.push(1);
-        let mode = [PrelitMode::Vertex, PrelitMode::LightmapMultiPass, PrelitMode::LightmapMultiTexture][prelit as usize];
+        let mode = [
+            PrelitMode::Vertex,
+            PrelitMode::LightmapMultiPass,
+            PrelitMode::LightmapMultiTexture,
+        ][prelit as usize];
         match mesh::load_w3d(&mut c, &MeshLoadOptions { prelit_mode: mode })? {
             Some(m) => log_mesh(&mut log, &m),
             None => log.extend_from_slice(&[b'e', 2]),
@@ -1155,7 +1377,16 @@ fn gen_material_chunks(g: &mut Gn, mg: &mut MeshGen, depth: u32) -> Vec<u8> {
     match g.below(6) {
         0 => {
             let mut b = Vec::new();
-            for v in [if g.below(4) == 0 { g.below(7) } else { 1 + g.below(2) }, mg.vmats, mg.shaders, mg.textures] {
+            for v in [
+                if g.below(4) == 0 {
+                    g.below(7)
+                } else {
+                    1 + g.below(2)
+                },
+                mg.vmats,
+                mg.shaders,
+                mg.textures,
+            ] {
                 w32(&mut b, v);
             }
             if g.chance(8) {
@@ -1169,7 +1400,11 @@ fn gen_material_chunks(g: &mut Gn, mg: &mut MeshGen, depth: u32) -> Vec<u8> {
             let mut b = Vec::new();
             for _ in 0..n {
                 for k in 0..16 {
-                    b.push(if g.below(10) == 0 { g.g.u32() as u8 } else { g.below([8, 2, 2, 7, 2, 6, 2, 4, 2, 13, 4, 2, 2, 13, 4, 1][k]) as u8 });
+                    b.push(if g.below(10) == 0 {
+                        g.g.u32() as u8
+                    } else {
+                        g.below([8, 2, 2, 7, 2, 6, 2, 4, 2, 13, 4, 2, 2, 13, 4, 1][k]) as u8
+                    });
                 }
             }
             out.extend(chunk(g, W3D_CHUNK_SHADERS, false, &b));
@@ -1210,7 +1445,11 @@ fn gen_material_chunks(g: &mut Gn, mg: &mut MeshGen, depth: u32) -> Vec<u8> {
                     w32(&mut info, g.f32().to_bits());
                     t.extend(chunk(g, W3D_CHUNK_TEXTURE_INFO, false, &info));
                 }
-                let id = if g.chance(12) { W3D_CHUNK_TEXTURE_NAME } else { W3D_CHUNK_TEXTURE };
+                let id = if g.chance(12) {
+                    W3D_CHUNK_TEXTURE_NAME
+                } else {
+                    W3D_CHUNK_TEXTURE
+                };
                 b.extend(chunk(g, id, true, &t));
                 mg.textures += 1;
             }
@@ -1255,13 +1494,21 @@ fn gen_material_chunks(g: &mut Gn, mg: &mut MeshGen, depth: u32) -> Vec<u8> {
                                     st.extend(chunk(g, W3D_CHUNK_TEXTURE_IDS, false, &b));
                                 }
                                 2 => {
-                                    let n = if g.below(4) == 0 { g.below(5) } else { mg.verts };
+                                    let n = if g.below(4) == 0 {
+                                        g.below(5)
+                                    } else {
+                                        mg.verts
+                                    };
                                     let mut b = floats(g, 2 * n as usize);
                                     if g.below(3) == 0 && !b.is_empty() {
                                         // repeat an earlier array: shared by CRC
                                         b = vec![0x3f; b.len()];
                                     }
-                                    let id = if g.below(5) == 0 { W3D_CHUNK_TEXCOORDS } else { W3D_CHUNK_STAGE_TEXCOORDS };
+                                    let id = if g.below(5) == 0 {
+                                        W3D_CHUNK_TEXCOORDS
+                                    } else {
+                                        W3D_CHUNK_STAGE_TEXCOORDS
+                                    };
                                     st.extend(chunk(g, id, false, &b));
                                 }
                                 _ => {
@@ -1293,7 +1540,14 @@ fn gen_mesh(g: &mut Gn) -> Vec<u8> {
     };
     let geom = [0u32, 0x10000, 0x20000, 0x60000, 0x30000][g.below(5) as usize];
     let mut attr = geom;
-    for bit in [W3D_MESH_FLAG_TWO_SIDED, W3D_MESH_FLAG_CAST_SHADOW, W3D_MESH_FLAG_NPATCHABLE, OBSOLETE_W3D_MESH_FLAG_LIGHTMAPPED, 0x10, 0x20] {
+    for bit in [
+        W3D_MESH_FLAG_TWO_SIDED,
+        W3D_MESH_FLAG_CAST_SHADOW,
+        W3D_MESH_FLAG_NPATCHABLE,
+        OBSOLETE_W3D_MESH_FLAG_LIGHTMAPPED,
+        0x10,
+        0x20,
+    ] {
         if g.below(4) == 0 {
             attr |= bit;
         }
@@ -1318,29 +1572,69 @@ fn gen_mesh(g: &mut Gn) -> Vec<u8> {
         2 => g.below(32) as i32,
         _ => 0,
     };
-    h.min = W3dVectorStruct { x: g.f32(), y: g.f32(), z: g.f32() };
-    h.max = W3dVectorStruct { x: g.f32(), y: g.f32(), z: g.f32() };
-    h.sph_center = W3dVectorStruct { x: g.f32(), y: g.f32(), z: g.f32() };
+    h.min = W3dVectorStruct {
+        x: g.f32(),
+        y: g.f32(),
+        z: g.f32(),
+    };
+    h.max = W3dVectorStruct {
+        x: g.f32(),
+        y: g.f32(),
+        z: g.f32(),
+    };
+    h.sph_center = W3dVectorStruct {
+        x: g.f32(),
+        y: g.f32(),
+        z: g.f32(),
+    };
     h.sph_radius = g.f32();
     let hb = h.to_bytes();
-    let hid = if g.chance(25) { W3D_CHUNK_VERTICES } else { W3D_CHUNK_MESH_HEADER3 };
+    let hid = if g.chance(25) {
+        W3D_CHUNK_VERTICES
+    } else {
+        W3D_CHUNK_MESH_HEADER3
+    };
     let mut body = chunk(g, hid, false, &hb);
-    let mut mg = MeshGen { verts, tris, vmats: 0, shaders: 0, textures: 0 };
+    let mut mg = MeshGen {
+        verts,
+        tris,
+        vmats: 0,
+        shaders: 0,
+        textures: 0,
+    };
     for _ in 0..g.below(16) {
         let c = match g.below(22) {
             0 | 1 => {
                 let n = (verts + if g.below(6) == 0 { g.below(3) } else { 0 }) as usize;
                 let b = floats(g, 3 * n);
-                let id = [W3D_CHUNK_VERTICES, W3D_CHUNK_VERTEX_NORMALS, W3D_CHUNK_SURRENDER_NORMALS][g.below(3) as usize];
+                let id = [
+                    W3D_CHUNK_VERTICES,
+                    W3D_CHUNK_VERTEX_NORMALS,
+                    W3D_CHUNK_SURRENDER_NORMALS,
+                ][g.below(3) as usize];
                 chunk(g, id, false, &b)
             }
             2 | 3 => {
                 let mut b = Vec::new();
                 for _ in 0..tris {
                     for _ in 0..3 {
-                        w32(&mut b, if g.below(8) == 0 { g.g.u32() } else { g.below(verts.max(1)) });
+                        w32(
+                            &mut b,
+                            if g.below(8) == 0 {
+                                g.g.u32()
+                            } else {
+                                g.below(verts.max(1))
+                            },
+                        );
                     }
-                    w32(&mut b, if g.below(4) == 0 { g.g.u32() } else { g.below(32) });
+                    w32(
+                        &mut b,
+                        if g.below(4) == 0 {
+                            g.g.u32()
+                        } else {
+                            g.below(32)
+                        },
+                    );
                     b.extend(floats(g, 4));
                 }
                 chunk(g, W3D_CHUNK_TRIANGLES, false, &b)
@@ -1411,7 +1705,13 @@ fn gen_mesh(g: &mut Gn) -> Vec<u8> {
                 chunk(g, id, true, &b)
             }
             13 => {
-                let id = [W3D_CHUNK_DEFORM, W3D_CHUNK_DAMAGE, O_W3D_CHUNK_MATERIALS, O_W3D_CHUNK_SURRENDER_TRIANGLES, 0x777][g.below(5) as usize];
+                let id = [
+                    W3D_CHUNK_DEFORM,
+                    W3D_CHUNK_DAMAGE,
+                    O_W3D_CHUNK_MATERIALS,
+                    O_W3D_CHUNK_SURRENDER_TRIANGLES,
+                    0x777,
+                ][g.below(5) as usize];
                 let n = g.below(20) as usize;
                 let b = rand_bytes(g, n);
                 chunk(g, id, false, &b)
@@ -1437,7 +1737,10 @@ fn mesh_too_large(log: &[u8]) -> bool {
 #[test]
 fn mesh_load_matches_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let mut g = Gn { g: Gen::new(0x3E5), clean: false };
+    let mut g = Gn {
+        g: Gen::new(0x3E5),
+        clean: false,
+    };
     let mut check = Check::new("MeshModelClass::Load_W3D (meshmdlio.cpp)");
     let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
     let (mut ok, mut failed, mut large) = (0u64, 0u64, 0u64);
@@ -1474,9 +1777,18 @@ fn mesh_load_matches_upstream() {
             eprintln!("mesh case {case}: {:02x?}", data);
         }
         let c = cpp_log(|log, cap, n| unsafe {
-            cpp::ref_w3d_load_mesh(data.as_ptr() as *const _, data.len() as i32, prelit, log, cap, n)
+            cpp::ref_w3d_load_mesh(
+                data.as_ptr() as *const _,
+                data.len() as i32,
+                prelit,
+                log,
+                cap,
+                n,
+            )
         });
-        check.eq(&rust, &c, || format!("case {case} (prelit mode {prelit}): {:02x?}", data));
+        check.eq(&rust, &c, || {
+            format!("case {case} (prelit mode {prelit}): {:02x?}", data)
+        });
     }
     println!(
         "MeshModelClass::Load_W3D: {CASES} inputs, {ok} loaded, {failed} load errors; excluded (undefined upstream, \

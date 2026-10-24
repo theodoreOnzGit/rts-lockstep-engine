@@ -33,8 +33,15 @@ use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::update_body::UpdateBody;
 use crate::upgrade_module_data_field_parse;
 /// `ExperienceScalarUpgrade::upgradeImplementation`'s scalar: `current + AddXPScalar`.
-pub fn upgrade_implementation(current_scalar: f32, data: &ExperienceScalarUpgradeModuleData) -> f32 {
-    if crate::logic::modules::plant(11) { current_scalar - data.add_xp_scalar } else { current_scalar + data.add_xp_scalar }
+pub fn upgrade_implementation(
+    current_scalar: f32,
+    data: &ExperienceScalarUpgradeModuleData,
+) -> f32 {
+    if crate::logic::modules::plant(11) {
+        current_scalar - data.add_xp_scalar
+    } else {
+        current_scalar + data.add_xp_scalar
+    }
 }
 /// `class ExperienceScalarUpgradeModuleData : public UpgradeModuleData`.
 #[derive(Debug)]
@@ -50,23 +57,37 @@ impl Default for ExperienceScalarUpgradeModuleData {
     fn default() -> Self {
         ExperienceScalarUpgradeModuleData {
             upgrade: Arc::new(UpgradeModuleData::new()),
-            add_xp_scalar: if crate::logic::modules::plant(23) { 1.0 } else { 0.0 },
+            add_xp_scalar: if crate::logic::modules::plant(23) {
+                1.0
+            } else {
+                0.0
+            },
         }
     }
 }
 
 /// `UpgradeModuleData::buildFieldParse`'s table, for this data class.
-static UPGRADE_BASE_FIELD_PARSE: [FieldParse<ExperienceScalarUpgradeModuleData>; 6] = upgrade_module_data_field_parse!(ExperienceScalarUpgradeModuleData, upgrade);
+static UPGRADE_BASE_FIELD_PARSE: [FieldParse<ExperienceScalarUpgradeModuleData>; 6] =
+    upgrade_module_data_field_parse!(ExperienceScalarUpgradeModuleData, upgrade);
 
 /// `ExperienceScalarUpgradeModuleData::buildFieldParse`'s own table.
 static OWN_FIELD_PARSE: [FieldParse<ExperienceScalarUpgradeModuleData>; 2] = [
-    FieldParse::new("AddXPScalar", |i, d, _| { d.add_xp_scalar = i.parse_real()?; Ok(()) }, UserData::None),
+    FieldParse::new(
+        "AddXPScalar",
+        |i, d, _| {
+            d.add_xp_scalar = i.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl ExperienceScalarUpgradeModuleData {
     /// `buildFieldParse(p)`: `BehaviorModuleData`'s, then `UpgradeModuleData`'s, then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, ExperienceScalarUpgradeModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, ExperienceScalarUpgradeModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&UPGRADE_BASE_FIELD_PARSE)?;
         p.add(&OWN_FIELD_PARSE)?;
@@ -74,10 +95,15 @@ impl ExperienceScalarUpgradeModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ExperienceScalarUpgradeModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<ExperienceScalarUpgradeModuleData> {
         let mut data = ExperienceScalarUpgradeModuleData::default();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, ExperienceScalarUpgradeModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                ExperienceScalarUpgradeModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
@@ -95,19 +121,21 @@ pub struct ExperienceScalarUpgrade {
 impl PartialEq for ExperienceScalarUpgrade {
     /// The same data object and the same `m_upgradeExecuted` (upstream compares the data pointer).
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.data, &other.data) && self.base.is_already_upgraded() == other.base.is_already_upgraded()
+        Arc::ptr_eq(&self.data, &other.data)
+            && self.base.is_already_upgraded() == other.base.is_already_upgraded()
     }
 }
 
 impl ExperienceScalarUpgrade {
     /// `ExperienceScalarUpgrade(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(object: ObjectId, data: Option<Arc<ExperienceScalarUpgradeModuleData>>) -> IniResult<ExperienceScalarUpgrade> {
-        let data = data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<ExperienceScalarUpgradeModuleData>>,
+    ) -> IniResult<ExperienceScalarUpgrade> {
+        let data =
+            data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let base = UpgradeModule::new(object, Some(data.upgrade.clone()))?;
-        Ok(ExperienceScalarUpgrade {
-            base,
-            data,
-        })
+        Ok(ExperienceScalarUpgrade { base, data })
     }
 
     /// `getInterfaceMask()`: the `UpgradeModule` one.
@@ -121,7 +149,12 @@ impl ExperienceScalarUpgrade {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         upgrade_module_call(self, world, me, call)
     }
 }
@@ -133,7 +166,11 @@ impl UpgradeBehavior for ExperienceScalarUpgrade {
     fn base_mut(&mut self) -> &mut UpgradeModule {
         &mut self.base
     }
-    fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
+    fn upgrade_implementation(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+    ) -> Result<(), IniError> {
         if let Some(current) = world.objects.find(me.object).map(|o| o.experience.scalar) {
             let new = upgrade_implementation(current, &self.data);
             if let Some(o) = world.objects.find_mut(me.object) {
@@ -180,7 +217,9 @@ impl Snapshot for ExperienceScalarUpgrade {
 
 /// The factory's `NewModuleDataProc` for `ExperienceScalarUpgrade`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::ExperienceScalarUpgrade(Arc::new(ExperienceScalarUpgradeModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::ExperienceScalarUpgrade(Arc::new(
+        ExperienceScalarUpgradeModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
 #[cfg(test)]
@@ -188,7 +227,10 @@ mod tests {
     use super::*;
     #[test]
     fn the_scalar_is_added_to_the_current_one() {
-        let d = ExperienceScalarUpgradeModuleData { add_xp_scalar: 0.25, ..Default::default() };
+        let d = ExperienceScalarUpgradeModuleData {
+            add_xp_scalar: 0.25,
+            ..Default::default()
+        };
         assert_eq!(upgrade_implementation(1.0, &d), 1.25);
     }
 }

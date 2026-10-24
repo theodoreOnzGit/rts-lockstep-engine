@@ -74,19 +74,27 @@ use std::sync::{Arc, Mutex};
 static CPP_LOCK: Mutex<()> = Mutex::new(());
 
 use rts_lockstep_engine::common::game_common::VeterancyLevel;
-use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
-use rts_lockstep_engine::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_COUNT, OBJECT_STATUS_UNDER_CONSTRUCTION};
 use rts_lockstep_engine::common::game_type::ObjectId;
+use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
+use rts_lockstep_engine::common::object_status_types::{
+    ObjectStatusMaskType, OBJECT_STATUS_COUNT, OBJECT_STATUS_UNDER_CONSTRUCTION,
+};
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::module::create_module::CreateModuleData;
 use rts_lockstep_engine::logic::modules::create_host::{CreateHost, UpgradeRef};
-use rts_lockstep_engine::logic::modules::grant_upgrade_create::{GrantUpgradeCreate, GrantUpgradeCreateModuleData};
-use rts_lockstep_engine::logic::modules::lock_weapon_create::{LockWeaponCreate, LockWeaponCreateModuleData};
+use rts_lockstep_engine::logic::modules::grant_upgrade_create::{
+    GrantUpgradeCreate, GrantUpgradeCreateModuleData,
+};
+use rts_lockstep_engine::logic::modules::lock_weapon_create::{
+    LockWeaponCreate, LockWeaponCreateModuleData,
+};
 use rts_lockstep_engine::logic::modules::preorder_create::PreorderCreate;
 use rts_lockstep_engine::logic::modules::special_power_create::SpecialPowerCreate;
 use rts_lockstep_engine::logic::modules::supply_center_create::SupplyCenterCreate;
 use rts_lockstep_engine::logic::modules::supply_warehouse_create::SupplyWarehouseCreate;
-use rts_lockstep_engine::logic::modules::veterancy_gain_create::{VeterancyGainCreate, VeterancyGainCreateModuleData};
+use rts_lockstep_engine::logic::modules::veterancy_gain_create::{
+    VeterancyGainCreate, VeterancyGainCreateModuleData,
+};
 
 /// The object of every program (`g_object.m_id` on the C++ side).
 const OBJ: ObjectId = 7;
@@ -151,7 +159,10 @@ fn gen_block(rng: &mut Rng, kind: u32) -> String {
         6 => {
             if rng.chance(4, 5) {
                 let names = ["U0", "U1", "U2", "NOPE"];
-                s.push_str(&format!("UpgradeToGrant = {}\n", names[rng.below(4) as usize]));
+                s.push_str(&format!(
+                    "UpgradeToGrant = {}\n",
+                    names[rng.below(4) as usize]
+                ));
             }
             if rng.chance(2, 3) {
                 let mut statuses = Vec::new();
@@ -177,7 +188,11 @@ fn gen_program(rng: &mut Rng) -> Program {
     let text = gen_block(rng, kind);
     let mut w = vec![kind];
     // the player list: absent once in eight programs, otherwise a count of 0 to 4
-    w.push(if rng.chance(1, 8) { NULL_LIST } else { rng.below(5) });
+    w.push(if rng.chance(1, 8) {
+        NULL_LIST
+    } else {
+        rng.below(5)
+    });
     for _ in 0..PLAYERS {
         w.push(u32::from(rng.chance(1, 3))); // preorder
         w.push(rng.below(8)); // sciences
@@ -217,7 +232,11 @@ fn gen_program(rng: &mut Rng) -> Program {
             }
             10 => {
                 w.push(7);
-                w.push(if rng.chance(1, 8) { NULL_LIST } else { rng.below(5) });
+                w.push(if rng.chance(1, 8) {
+                    NULL_LIST
+                } else {
+                    rng.below(5)
+                });
             }
             _ => {
                 // 8: sciences of a player; 9: a player's manager; 10: an upgrade (kept last so it stays rare)
@@ -329,16 +348,25 @@ impl CreateHost for Host {
     fn find_upgrade(&mut self, name: &[u8]) -> Option<UpgradeRef> {
         let i = UPGRADE_NAMES.iter().position(|n| n.as_bytes() == name)?;
         let (exists, player_type) = self.world.upgrades[i];
-        exists.then_some(UpgradeRef { id: i as u32, player_type })
+        exists.then_some(UpgradeRef {
+            id: i as u32,
+            player_type,
+        })
     }
     fn player_add_upgrade_complete(&mut self, player: i32, upgrade: UpgradeRef) {
-        self.log.push(format!("player-upgrade {player} {}", upgrade.id));
+        self.log
+            .push(format!("player-upgrade {player} {}", upgrade.id));
     }
     fn object_give_upgrade(&mut self, obj: ObjectId, upgrade: UpgradeRef) {
-        self.log.push(format!("object-upgrade {obj} {}", upgrade.id));
+        self.log
+            .push(format!("object-upgrade {obj} {}", upgrade.id));
     }
     fn academy_record_upgrade(&mut self, player: i32, upgrade: UpgradeRef, granted: bool) {
-        self.log.push(format!("academy {player} {} {}", upgrade.id, u8::from(granted)));
+        self.log.push(format!(
+            "academy {player} {} {}",
+            upgrade.id,
+            u8::from(granted)
+        ));
     }
     fn object_status_bits(&self, _obj: ObjectId) -> ObjectStatusMaskType {
         let mut mask = ObjectStatusMaskType::default();
@@ -370,18 +398,24 @@ impl Under {
             Under::Center(m) => m.on_create(),
             Under::Lock(m) => m.on_create(),
             Under::Veterancy(m) => m.on_create(host),
-            Under::Grant(m) => m.on_create(host).expect("the controller is present in every differential program"),
+            Under::Grant(m) => m
+                .on_create(host)
+                .expect("the controller is present in every differential program"),
         }
     }
     /// `onBuildComplete()`, for the kinds that have one (the others have none upstream).
     fn on_build_complete(&mut self, host: &mut Host) {
         match self {
-            Under::Preorder(m) => m.on_build_complete(host).expect("the controller is present in every differential program"),
+            Under::Preorder(m) => m
+                .on_build_complete(host)
+                .expect("the controller is present in every differential program"),
             Under::Special(m) => m.on_build_complete(host),
             Under::Warehouse(_) | Under::Veterancy(_) => {}
             Under::Center(m) => m.on_build_complete(host),
             Under::Lock(m) => m.on_build_complete(host),
-            Under::Grant(m) => m.on_build_complete(host).expect("the controller is present in every differential program"),
+            Under::Grant(m) => m
+                .on_build_complete(host)
+                .expect("the controller is present in every differential program"),
         }
     }
 }
@@ -413,13 +447,17 @@ fn block(ini: &mut Ini<'_>, c: &mut DataCtx) -> IniResult<()> {
         }
         4 => {
             let mut d = LockWeaponCreateModuleData::new();
-            ini.init_from_ini_multi_proc(&mut d, |p| LockWeaponCreateModuleData::build_field_parse(p))?;
+            ini.init_from_ini_multi_proc(&mut d, |p| {
+                LockWeaponCreateModuleData::build_field_parse(p)
+            })?;
             c.line = format!("data slot {}", d.slot_to_lock);
             c.data = Some(Data::Lock(d));
         }
         5 => {
             let mut d = VeterancyGainCreateModuleData::new();
-            ini.init_from_ini_multi_proc(&mut d, |p| VeterancyGainCreateModuleData::build_field_parse(p))?;
+            ini.init_from_ini_multi_proc(&mut d, |p| {
+                VeterancyGainCreateModuleData::build_field_parse(p)
+            })?;
             // the science as the C++ prints it: the value of the hook (SCIENCE_A = 1 ...), -1 for none
             let science = match d.science_required.as_deref() {
                 None => -1,
@@ -433,21 +471,42 @@ fn block(ini: &mut Ini<'_>, c: &mut DataCtx) -> IniResult<()> {
         }
         _ => {
             let mut d = GrantUpgradeCreateModuleData::new();
-            ini.init_from_ini_multi_proc(&mut d, |p| GrantUpgradeCreateModuleData::build_field_parse(p))?;
-            let bits: String = (0..OBJECT_STATUS_COUNT).map(|i| if d.exempt_status.test(i) { '1' } else { '0' }).collect();
-            c.line = format!("data upgrade {} exempt {bits}", String::from_utf8_lossy(&d.upgrade_name));
+            ini.init_from_ini_multi_proc(&mut d, |p| {
+                GrantUpgradeCreateModuleData::build_field_parse(p)
+            })?;
+            let bits: String = (0..OBJECT_STATUS_COUNT)
+                .map(|i| if d.exempt_status.test(i) { '1' } else { '0' })
+                .collect();
+            c.line = format!(
+                "data upgrade {} exempt {bits}",
+                String::from_utf8_lossy(&d.upgrade_name)
+            );
             c.data = Some(Data::Grant(d));
         }
     }
     Ok(())
 }
 
-static BLOCKS: [BlockParse<DataCtx>; 1] = [BlockParse { token: "D", parse: block }];
+static BLOCKS: [BlockParse<DataCtx>; 1] = [BlockParse {
+    token: "D",
+    parse: block,
+}];
 
 /// Reads the block with the Rust INI. `None` is an error (the generator never makes one).
 fn read_block(kind: u32, text: &str) -> Option<(Data, String)> {
-    let mut c = DataCtx { kind, ..DataCtx::default() };
-    Ini::load(b"create.ini", text.as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut c).ok()?;
+    let mut c = DataCtx {
+        kind,
+        ..DataCtx::default()
+    };
+    Ini::load(
+        b"create.ini",
+        text.as_bytes(),
+        IniLoadType::Overwrite,
+        None,
+        &BLOCKS,
+        &mut c,
+    )
+    .ok()?;
     Some((c.data?, c.line))
 }
 
@@ -458,7 +517,11 @@ fn run_rust(p: &Program) -> String {
     let w = &p.words;
     let kind = w[0];
     let mut world = World {
-        player_count: if w[1] == NULL_LIST { None } else { Some(w[1] as i32) },
+        player_count: if w[1] == NULL_LIST {
+            None
+        } else {
+            Some(w[1] as i32)
+        },
         ..World::default()
     };
     let mut r = 2;
@@ -477,7 +540,10 @@ fn run_rust(p: &Program) -> String {
         *u = (w[r] != 0, w[r + 1] != 0);
         r += 2;
     }
-    let mut host = Host { world, log: Vec::new() };
+    let mut host = Host {
+        world,
+        log: Vec::new(),
+    };
 
     let (data, line) = read_block(kind, &p.text).expect("the generated block is valid");
     host.log.push(line);
@@ -492,8 +558,12 @@ fn run_rust(p: &Program) -> String {
             }
         }
         Data::Lock(d) => Under::Lock(LockWeaponCreate::new(OBJ, Some(Arc::new(d))).expect("data")),
-        Data::Veterancy(d) => Under::Veterancy(VeterancyGainCreate::new(OBJ, Some(Arc::new(d))).expect("data")),
-        Data::Grant(d) => Under::Grant(GrantUpgradeCreate::new(OBJ, Some(Arc::new(d))).expect("data")),
+        Data::Veterancy(d) => {
+            Under::Veterancy(VeterancyGainCreate::new(OBJ, Some(Arc::new(d))).expect("data"))
+        }
+        Data::Grant(d) => {
+            Under::Grant(GrantUpgradeCreate::new(OBJ, Some(Arc::new(d))).expect("data"))
+        }
     };
 
     while r < w.len() {
@@ -521,7 +591,11 @@ fn run_rust(p: &Program) -> String {
                 r += 2;
             }
             7 => {
-                host.world.player_count = if w[r] == NULL_LIST { None } else { Some(w[r] as i32) };
+                host.world.player_count = if w[r] == NULL_LIST {
+                    None
+                } else {
+                    Some(w[r] as i32)
+                };
                 r += 1;
             }
             8 => {
@@ -604,7 +678,10 @@ fn creates_agree_with_the_upstream_text_on_random_programs() {
          actions per kind (preorder, special, warehouse, center, lock, veterancy, grant): {actions:?}"
     );
     if let Some((p, rust, cpp_out)) = &first_bad {
-        panic!("{differing} programs differ; first: {}\nprogram: {p:?}", first_difference(rust, cpp_out));
+        panic!(
+            "{differing} programs differ; first: {}\nprogram: {p:?}",
+            first_difference(rust, cpp_out)
+        );
     }
 }
 
@@ -635,6 +712,12 @@ fn a_hand_written_program_makes_the_documented_calls() {
     let rust = run_rust(&p);
     let cpp_out = run_cpp(&p);
     assert_eq!(rust, cpp_out);
-    assert!(rust.contains("player-upgrade 1 0"), "the player-type upgrade goes to the controller: {rust}");
-    assert!(rust.contains("academy 1 0 1"), "the academy records the granted upgrade: {rust}");
+    assert!(
+        rust.contains("player-upgrade 1 0"),
+        "the player-type upgrade goes to the controller: {rust}"
+    );
+    assert!(
+        rust.contains("academy 1 0 1"),
+        "the academy records the granted upgrade: {rust}"
+    );
 }

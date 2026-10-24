@@ -160,7 +160,10 @@ impl std::fmt::Display for CsfError {
             CsfError::NotCsf => write!(f, "not a CSF string file"),
             CsfError::NoLabels => write!(f, "CSF string file declares no labels"),
             CsfError::Corrupt => write!(f, "CSF string file has a bad label or string tag"),
-            CsfError::Undefined(u) => write!(f, "CSF string file outside what the original reader defines: {u:?}"),
+            CsfError::Undefined(u) => write!(
+                f,
+                "CSF string file outside what the original reader defines: {u:?}"
+            ),
         }
     }
 }
@@ -185,8 +188,22 @@ impl CsfHeader {
         if data.len() < 24 {
             return None;
         }
-        let w = |i: usize| i32::from_le_bytes([data[4 * i], data[4 * i + 1], data[4 * i + 2], data[4 * i + 3]]);
-        Some(CsfHeader { id: w(0), version: w(1), num_labels: w(2), num_strings: w(3), skip: w(4), langid: w(5) })
+        let w = |i: usize| {
+            i32::from_le_bytes([
+                data[4 * i],
+                data[4 * i + 1],
+                data[4 * i + 2],
+                data[4 * i + 3],
+            ])
+        };
+        Some(CsfHeader {
+            id: w(0),
+            version: w(1),
+            num_labels: w(2),
+            num_strings: w(3),
+            skip: w(4),
+            langid: w(5),
+        })
     }
 }
 
@@ -327,7 +344,11 @@ impl GameText {
         if header.id != CSF_ID {
             return Err(CsfError::NotCsf);
         }
-        let language = if header.version >= 2 { header.langid } else { LANGUAGE_ID_US };
+        let language = if header.version >= 2 {
+            header.langid
+        } else {
+            LANGUAGE_ID_US
+        };
         if header.num_labels == 0 {
             return Err(CsfError::NoLabels);
         }
@@ -337,8 +358,20 @@ impl GameText {
         let text_count = header.num_labels as usize;
         let (infos, max_label_len, eof_spin) = parse_csf(data, text_count)?;
         let mut lut: Vec<usize> = (0..infos.len()).collect();
-        lut.sort_by(|&a, &b| infos[a].label.to_ascii_lowercase().cmp(&infos[b].label.to_ascii_lowercase()));
-        Ok(GameText { infos, text_count, lut, language, max_label_len, eof_spin })
+        lut.sort_by(|&a, &b| {
+            infos[a]
+                .label
+                .to_ascii_lowercase()
+                .cmp(&infos[b].label.to_ascii_lowercase())
+        });
+        Ok(GameText {
+            infos,
+            text_count,
+            lut,
+            language,
+            max_label_len,
+            eof_spin,
+        })
     }
 
     /// `m_language`.
@@ -371,7 +404,9 @@ impl GameText {
     /// The labels read that equal `label` under `stricmp`, in file order.
     fn matches(&self, label: &[u8]) -> Vec<&StringInfo> {
         let key = label.to_ascii_lowercase();
-        let lo = self.lut.partition_point(|&i| self.infos[i].label.to_ascii_lowercase() < key);
+        let lo = self
+            .lut
+            .partition_point(|&i| self.infos[i].label.to_ascii_lowercase() < key);
         self.lut[lo..]
             .iter()
             .take_while(|&&i| self.infos[i].label.to_ascii_lowercase() == key)
@@ -385,7 +420,11 @@ impl GameText {
         if label.is_empty() && self.padding() > 0 {
             // the empty entries sort first; with a read label "" as well
             // the match is ambiguous (see is_ambiguous): take the first read
-            return Some(self.matches(label).first().map_or(&[][..], |s| s.text.as_slice()));
+            return Some(
+                self.matches(label)
+                    .first()
+                    .map_or(&[][..], |s| s.text.as_slice()),
+            );
         }
         self.matches(label).first().map(|s| s.text.as_slice())
     }
@@ -441,16 +480,17 @@ fn parse_csf(data: &[u8], text_count: usize) -> Result<(Vec<StringInfo>, i32, u6
     let mut eof_spin = 0u64;
 
     // `len` is read into `buffer` (`m_buffer[len] = 0` must be in range)
-    let read_bytes = |file: &mut RamFile<'_>, buffer: &mut Vec<u8>, len: i32| -> Result<(), CsfError> {
-        if len != 0 {
-            file.read(buffer, len).map_err(ub)?;
-        }
-        if !(0..MAX_UITEXT_LENGTH as i32).contains(&len) {
-            return Err(ub(CsfUndefined::BufferOverrun));
-        }
-        buffer[len as usize] = 0;
-        Ok(())
-    };
+    let read_bytes =
+        |file: &mut RamFile<'_>, buffer: &mut Vec<u8>, len: i32| -> Result<(), CsfError> {
+            if len != 0 {
+                file.read(buffer, len).map_err(ub)?;
+            }
+            if !(0..MAX_UITEXT_LENGTH as i32).contains(&len) {
+                return Err(ub(CsfUndefined::BufferOverrun));
+            }
+            buffer[len as usize] = 0;
+            Ok(())
+        };
 
     while file.read_int(&mut id).map_err(ub)? == 4 {
         if id != CSF_LABEL {
@@ -469,7 +509,10 @@ fn parse_csf(data: &[u8], text_count: usize) -> Result<(Vec<StringInfo>, i32, u6
         if infos.len() >= text_count {
             return Err(ub(CsfUndefined::MoreLabelsThanDeclared));
         }
-        let mut info = StringInfo { label: c_str(&buffer).to_vec(), ..StringInfo::default() };
+        let mut info = StringInfo {
+            label: c_str(&buffer).to_vec(),
+            ..StringInfo::default()
+        };
         if len > max_label_len {
             max_label_len = len;
         }
@@ -479,7 +522,8 @@ fn parse_csf(data: &[u8], text_count: usize) -> Result<(Vec<StringInfo>, i32, u6
             // and do not move back, every remaining string reads 0 bytes and
             // changes nothing (id stays a valid tag, the STRW NUL lands where
             // it did): upstream spins through them; skip them, counted.
-            if num >= 1 && file.pos == data.len() as i64 && len >= 0 && len.checked_mul(2).is_some() {
+            if num >= 1 && file.pos == data.len() as i64 && len >= 0 && len.checked_mul(2).is_some()
+            {
                 eof_spin += (num_strings - num) as u64;
                 break;
             }
@@ -504,7 +548,9 @@ fn parse_csf(data: &[u8], text_count: usize) -> Result<(Vec<StringInfo>, i32, u6
                     k += 1;
                 }
                 // stripSpaces works in place on m_tbuffer
-                let n = (0..).position(|i| unit(&tbuffer, i) == 0).unwrap_or(TBUFFER_UNITS);
+                let n = (0..)
+                    .position(|i| unit(&tbuffer, i) == 0)
+                    .unwrap_or(TBUFFER_UNITS);
                 let mut text: Vec<u16> = (0..n).map(|i| unit(&tbuffer, i)).collect();
                 strip_spaces(&mut text);
                 for (i, &c) in text.iter().enumerate() {
@@ -545,7 +591,14 @@ mod tests {
             w(&mut v, 1);
             w(&mut v, l.len() as i32);
             v.extend_from_slice(l.as_bytes());
-            w(&mut v, if s.is_some() { CSF_STRINGWITHWAVE } else { CSF_STRING });
+            w(
+                &mut v,
+                if s.is_some() {
+                    CSF_STRINGWITHWAVE
+                } else {
+                    CSF_STRING
+                },
+            );
             let units: Vec<u16> = t.encode_utf16().collect();
             w(&mut v, units.len() as i32);
             for u in units {
@@ -566,7 +619,13 @@ mod tests {
     #[test]
     fn loads_and_fetches() {
         assert_eq!(&CSF_ID.to_le_bytes(), b" FSC");
-        let data = csf(&[("GUI:Ok", "  O  K ", None), ("gui:cancel", "Cancel\n  x", Some("speech.wav"))], 3);
+        let data = csf(
+            &[
+                ("GUI:Ok", "  O  K ", None),
+                ("gui:cancel", "Cancel\n  x", Some("speech.wav")),
+            ],
+            3,
+        );
         let t = GameText::load_csf(&data).unwrap();
         assert_eq!(t.language(), 4);
         assert_eq!(t.fetch(b"gui:ok"), Some(&u("O K")[..]));
@@ -574,9 +633,18 @@ mod tests {
         assert_eq!(t.strings()[1].speech, b"speech.wav");
         assert_eq!(t.fetch(b"nope"), None);
         assert_eq!(t.fetch(b""), Some(&[][..])); // one empty entry (3 declared, 2 read)
-        assert_eq!(t.get_strings_with_label_prefix(b"G"), vec![b"GUI:Ok".to_vec()]);
-        assert_eq!(GameText::load_csf(&data[..23]).unwrap_err(), CsfError::NotCsf);
-        assert_eq!(GameText::load_csf(&csf(&[("a", "b", None)], 0)).unwrap_err(), CsfError::NoLabels);
+        assert_eq!(
+            t.get_strings_with_label_prefix(b"G"),
+            vec![b"GUI:Ok".to_vec()]
+        );
+        assert_eq!(
+            GameText::load_csf(&data[..23]).unwrap_err(),
+            CsfError::NotCsf
+        );
+        assert_eq!(
+            GameText::load_csf(&csf(&[("a", "b", None)], 0)).unwrap_err(),
+            CsfError::NoLabels
+        );
         assert_eq!(
             GameText::load_csf(&csf(&[("a", "b", None), ("c", "d", None)], 1)).unwrap_err(),
             CsfError::Undefined(CsfUndefined::MoreLabelsThanDeclared)

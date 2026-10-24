@@ -88,7 +88,9 @@ use super::academy_classification::{AcademyClassificationType, ACADEMY_CLASSIFIC
 use super::audio_event_name::AudioEventName;
 use super::bit_flags::BitIndexOutOfRange;
 use super::game_common::LOGICFRAMES_PER_SECOND;
-use super::ini::{FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Undefined, UserData};
+use super::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Undefined, UserData,
+};
 use super::name_key_generator::{NameKeyGenerator, NameKeyType};
 use super::overridable::Overridable;
 use super::special_power_mask_type::{SpecialPowerMaskType, SPECIAL_POWER_NAMES};
@@ -100,15 +102,21 @@ use super::special_power_type::{SpecialPowerType, SPECIAL_INVALID};
 pub use super::science::{ScienceType, SCIENCE_INVALID};
 
 /// `DEFAULT_DEFECTION_DETECTION_PROTECTION_TIME_LIMIT`: `LOGICFRAMES_PER_SECOND * 10`.
-pub const DEFAULT_DEFECTION_DETECTION_PROTECTION_TIME_LIMIT: u32 = (LOGICFRAMES_PER_SECOND * 10) as u32;
+pub const DEFAULT_DEFECTION_DETECTION_PROTECTION_TIME_LIMIT: u32 =
+    (LOGICFRAMES_PER_SECOND * 10) as u32;
 
 /// `MAKE_SPECIALPOWER_MASK(k)`.
-pub fn make_special_power_mask(k: SpecialPowerType) -> Result<SpecialPowerMaskType, BitIndexOutOfRange> {
+pub fn make_special_power_mask(
+    k: SpecialPowerType,
+) -> Result<SpecialPowerMaskType, BitIndexOutOfRange> {
     SpecialPowerMaskType::try_from_indices(&[k])
 }
 
 /// `TEST_SPECIALPOWERMASK(m, t)`.
-pub fn test_special_power_mask(m: &SpecialPowerMaskType, t: SpecialPowerType) -> Result<bool, BitIndexOutOfRange> {
+pub fn test_special_power_mask(
+    m: &SpecialPowerMaskType,
+    t: SpecialPowerType,
+) -> Result<bool, BitIndexOutOfRange> {
     m.try_test(t)
 }
 
@@ -137,7 +145,11 @@ pub fn clear_special_power_mask(m: &mut SpecialPowerMaskType) {
 }
 
 /// `SET_SPECIALPOWERMASK(m, t, val)` (`val` is 1 upstream's default).
-pub fn set_special_power_mask(m: &mut SpecialPowerMaskType, t: SpecialPowerType, val: i32) -> Result<(), BitIndexOutOfRange> {
+pub fn set_special_power_mask(
+    m: &mut SpecialPowerMaskType,
+    t: SpecialPowerType,
+    val: i32,
+) -> Result<(), BitIndexOutOfRange> {
     m.try_set(t, val)
 }
 
@@ -318,7 +330,10 @@ impl FieldCtx<'_> {
     /// `INI_INVALID_DATA`.
     fn parse_science(ini: &mut Ini<'_>, c: &mut FieldCtx<'_>, _: &UserData) -> IniResult<()> {
         let token = ini.get_next_token(None)?;
-        let key = c.names.try_name_to_key(&token).map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
+        let key = c
+            .names
+            .try_name_to_key(&token)
+            .map_err(|_| IniError::undefined(Undefined::NameKeysExhausted))?;
         if !(c.is_valid_science)(key) {
             return Err(IniError::new(IniErrorKind::InvalidData));
         }
@@ -331,9 +346,14 @@ impl FieldCtx<'_> {
         Ok(())
     }
 
-    fn parse_academy(ini: &mut Ini<'_>, c: &mut FieldCtx<'_>, user_data: &UserData) -> IniResult<()> {
+    fn parse_academy(
+        ini: &mut Ini<'_>,
+        c: &mut FieldCtx<'_>,
+        user_data: &UserData,
+    ) -> IniResult<()> {
         let i = ini.parse_index_list(user_data.names())?;
-        c.data.academy_classification_type = AcademyClassificationType::from_index(i).expect("index within the name list");
+        c.data.academy_classification_type =
+            AcademyClassificationType::from_index(i).expect("index within the name list");
         Ok(())
     }
 }
@@ -361,40 +381,61 @@ impl SpecialPowerStore {
 
     /// The templates in store order.
     pub fn templates(&self) -> impl Iterator<Item = SpecialPowerTemplateRef<'_>> {
-        self.special_power_templates.iter().map(|b| SpecialPowerTemplateRef { head: b })
+        self.special_power_templates
+            .iter()
+            .map(|b| SpecialPowerTemplateRef { head: b })
     }
 
     fn find_private_index(&self, name: &[u8]) -> Option<usize> {
-        self.special_power_templates.iter().position(|t| t.get_final_override().data.name == name)
+        self.special_power_templates
+            .iter()
+            .position(|t| t.get_final_override().data.name == name)
     }
 
     /// `findSpecialPowerTemplate(name)`: the first template whose (final
     /// override's) name is `name`, which is compared exactly (case counts).
     pub fn find_special_power_template(&self, name: &[u8]) -> Option<SpecialPowerTemplateRef<'_>> {
-        self.find_private_index(name).map(|i| SpecialPowerTemplateRef { head: &self.special_power_templates[i] })
+        self.find_private_index(name)
+            .map(|i| SpecialPowerTemplateRef {
+                head: &self.special_power_templates[i],
+            })
     }
 
     /// `findSpecialPowerTemplateByID(id)`.
-    pub fn find_special_power_template_by_id(&self, id: u32) -> Option<SpecialPowerTemplateRef<'_>> {
+    pub fn find_special_power_template_by_id(
+        &self,
+        id: u32,
+    ) -> Option<SpecialPowerTemplateRef<'_>> {
         self.templates().find(|t| t.id() == id)
     }
 
     /// `getSpecialPowerTemplateByIndex(index)` (for WorldBuilder).
-    pub fn get_special_power_template_by_index(&self, index: u32) -> Option<SpecialPowerTemplateRef<'_>> {
-        self.special_power_templates.get(index as usize).map(|b| SpecialPowerTemplateRef { head: b })
+    pub fn get_special_power_template_by_index(
+        &self,
+        index: u32,
+    ) -> Option<SpecialPowerTemplateRef<'_>> {
+        self.special_power_templates
+            .get(index as usize)
+            .map(|b| SpecialPowerTemplateRef { head: b })
     }
 
     /// `reset()`: delete the overrides, and the templates that were made by an
     /// override load. Ids are not reset.
     pub fn reset(&mut self) {
         let templates = std::mem::take(&mut self.special_power_templates);
-        self.special_power_templates = templates.into_iter().filter_map(|t| t.delete_overrides()).collect();
+        self.special_power_templates = templates
+            .into_iter()
+            .filter_map(|t| t.delete_overrides())
+            .collect();
     }
 
     /// A new template as `parseSpecialPowerDefinition` makes it: a copy of
     /// `DefaultSpecialPower` (all of `Overridable` too, so a default that is
     /// an override makes an override), named and numbered.
-    fn new_from_default(&mut self, name: &[u8]) -> Result<Box<Overridable<SpecialPowerTemplateData>>, IniError> {
+    fn new_from_default(
+        &mut self,
+        name: &[u8],
+    ) -> Result<Box<Overridable<SpecialPowerTemplateData>>, IniError> {
         let mut new = match self.find_special_power_template(b"DefaultSpecialPower") {
             Some(default) => {
                 if default.chain().get_next_override().is_some() {
@@ -439,30 +480,39 @@ impl SpecialPowerStore {
 
         let existing = self.find_private_index(&name);
 
-        let target: &mut Overridable<SpecialPowerTemplateData> = if ini.get_load_type() == IniLoadType::CreateOverrides {
-            if let Some(i) = existing {
-                let child = self.special_power_templates[i].friend_get_final_override();
-                let mut copy = Overridable::new(child.data.clone());
-                copy.mark_as_override();
-                // the child is the final override: nothing is displaced
-                child.set_next_override(Some(Box::new(copy)));
-                self.special_power_templates[i].friend_get_final_override()
+        let target: &mut Overridable<SpecialPowerTemplateData> =
+            if ini.get_load_type() == IniLoadType::CreateOverrides {
+                if let Some(i) = existing {
+                    let child = self.special_power_templates[i].friend_get_final_override();
+                    let mut copy = Overridable::new(child.data.clone());
+                    copy.mark_as_override();
+                    // the child is the final override: nothing is displaced
+                    child.set_next_override(Some(Box::new(copy)));
+                    self.special_power_templates[i].friend_get_final_override()
+                } else {
+                    let mut new = self.new_from_default(&name)?;
+                    new.mark_as_override();
+                    self.special_power_templates.push(new);
+                    self.special_power_templates
+                        .last_mut()
+                        .expect("just pushed")
+                }
+            } else if existing.is_some() {
+                return Err(IniError::new(IniErrorKind::InvalidData));
             } else {
-                let mut new = self.new_from_default(&name)?;
-                new.mark_as_override();
+                let new = self.new_from_default(&name)?;
                 self.special_power_templates.push(new);
-                self.special_power_templates.last_mut().expect("just pushed")
-            }
-        } else if existing.is_some() {
-            return Err(IniError::new(IniErrorKind::InvalidData));
-        } else {
-            let new = self.new_from_default(&name)?;
-            self.special_power_templates.push(new);
-            self.special_power_templates.last_mut().expect("just pushed")
-        };
+                self.special_power_templates
+                    .last_mut()
+                    .expect("just pushed")
+            };
 
         // parse the ini definition
-        let mut ctx = FieldCtx { data: &mut target.data, names, is_valid_science };
+        let mut ctx = FieldCtx {
+            data: &mut target.data,
+            names,
+            is_valid_science,
+        };
         let fields = [
             FieldParse::new(
                 "ReloadTime",
@@ -473,7 +523,11 @@ impl SpecialPowerStore {
                 UserData::None,
             ),
             FieldParse::new("RequiredScience", FieldCtx::parse_science, UserData::None),
-            FieldParse::new("InitiateSound", |ini, c: &mut FieldCtx<'_>, _| c.data.initiate_sound.parse(ini), UserData::None),
+            FieldParse::new(
+                "InitiateSound",
+                |ini, c: &mut FieldCtx<'_>, _| c.data.initiate_sound.parse(ini),
+                UserData::None,
+            ),
             FieldParse::new(
                 "InitiateAtLocationSound",
                 |ini, c: &mut FieldCtx<'_>, _| c.data.initiate_at_location_sound.parse(ini),
@@ -487,7 +541,11 @@ impl SpecialPowerStore {
                 },
                 UserData::None,
             ),
-            FieldParse::new("Enum", FieldCtx::parse_enum, UserData::Names(&SPECIAL_POWER_NAMES)),
+            FieldParse::new(
+                "Enum",
+                FieldCtx::parse_enum,
+                UserData::Names(&SPECIAL_POWER_NAMES),
+            ),
             FieldParse::new(
                 "DetectionTime",
                 |ini, c: &mut FieldCtx<'_>, _| {
@@ -536,7 +594,11 @@ impl SpecialPowerStore {
                 },
                 UserData::None,
             ),
-            FieldParse::new("AcademyClassify", FieldCtx::parse_academy, UserData::Names(&ACADEMY_CLASSIFICATION_TYPE_NAMES)),
+            FieldParse::new(
+                "AcademyClassify",
+                FieldCtx::parse_academy,
+                UserData::Names(&ACADEMY_CLASSIFICATION_TYPE_NAMES),
+            ),
             FieldParse::end(),
         ];
         ini.init_from_ini(&mut ctx, &fields)
@@ -557,13 +619,21 @@ mod tests {
 
     fn block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
         let valid = c.sciences.clone();
-        c.store.parse_special_power_definition(ini, &mut c.names, &move |k| valid.contains(&k))
+        c.store
+            .parse_special_power_definition(ini, &mut c.names, &move |k| valid.contains(&k))
     }
 
-    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse { token: "SpecialPower", parse: block }];
+    static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse {
+        token: "SpecialPower",
+        parse: block,
+    }];
 
     fn ctx() -> Ctx {
-        let mut c = Ctx { store: SpecialPowerStore::new(), names: NameKeyGenerator::new(), sciences: Vec::new() };
+        let mut c = Ctx {
+            store: SpecialPowerStore::new(),
+            names: NameKeyGenerator::new(),
+            sciences: Vec::new(),
+        };
         c.names.init();
         let k = c.names.name_to_key(b"SCIENCE_Paradrop");
         c.sciences.push(k);
@@ -587,7 +657,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(c.store.len(), 2);
-        let p = c.store.find_special_power_template(b"SuperweaponDaisyCutter").unwrap();
+        let p = c
+            .store
+            .find_special_power_template(b"SuperweaponDaisyCutter")
+            .unwrap();
         assert_eq!((p.id(), p.special_power_type()), (1, SPECIAL_DAISY_CUTTER));
         assert_eq!(p.reload_time(), 7200);
         assert_eq!(p.required_science(), ScienceType(c.sciences[0].0 as i32));
@@ -595,17 +668,42 @@ mod tests {
         assert_eq!(p.initiate_at_target_sound().event_name, b"");
         assert!(p.has_public_timer() && !p.is_shared_n_sync() && p.is_shortcut_power());
         assert_eq!((p.detection_time(), p.view_object_duration()), (30, 60));
-        assert_eq!((p.view_object_range(), p.radius_cursor_radius()), (250.5, 170.0));
-        assert_eq!(p.academy_classification_type(), AcademyClassificationType::Superpower);
+        assert_eq!(
+            (p.view_object_range(), p.radius_cursor_radius()),
+            (250.5, 170.0)
+        );
+        assert_eq!(
+            p.academy_classification_type(),
+            AcademyClassificationType::Superpower
+        );
         // the constructor's defaults
         let d = c.store.find_special_power_template_by_id(2).unwrap();
         assert_eq!(d.name(), b"Plain");
-        assert_eq!((d.special_power_type(), d.required_science(), d.reload_time()), (SPECIAL_INVALID, SCIENCE_INVALID, 0));
-        assert_eq!(d.detection_time(), DEFAULT_DEFECTION_DETECTION_PROTECTION_TIME_LIMIT);
-        assert_eq!(d.academy_classification_type(), AcademyClassificationType::None);
+        assert_eq!(
+            (
+                d.special_power_type(),
+                d.required_science(),
+                d.reload_time()
+            ),
+            (SPECIAL_INVALID, SCIENCE_INVALID, 0)
+        );
+        assert_eq!(
+            d.detection_time(),
+            DEFAULT_DEFECTION_DETECTION_PROTECTION_TIME_LIMIT
+        );
+        assert_eq!(
+            d.academy_classification_type(),
+            AcademyClassificationType::None
+        );
         assert!(c.store.find_special_power_template(b"plain").is_none());
         assert!(c.store.find_special_power_template_by_id(3).is_none());
-        assert_eq!(c.store.get_special_power_template_by_index(1).unwrap().name(), b"Plain");
+        assert_eq!(
+            c.store
+                .get_special_power_template_by_index(1)
+                .unwrap()
+                .name(),
+            b"Plain"
+        );
         assert!(c.store.get_special_power_template_by_index(2).is_none());
     }
 
@@ -614,7 +712,15 @@ mod tests {
         let mut c = ctx();
         load(&mut c, IniLoadType::Overwrite, b"SpecialPower DefaultSpecialPower\n ReloadTime = 1000\n Enum = SPECIAL_CASH_HACK\nEnd\nSpecialPower B\n ShortcutPower = Yes\nEnd\n").unwrap();
         let b = c.store.find_special_power_template(b"B").unwrap();
-        assert_eq!((b.id(), b.reload_time(), b.special_power_type(), b.is_shortcut_power()), (2, 30, SPECIAL_CASH_HACK, true));
+        assert_eq!(
+            (
+                b.id(),
+                b.reload_time(),
+                b.special_power_type(),
+                b.is_shortcut_power()
+            ),
+            (2, 30, SPECIAL_CASH_HACK, true)
+        );
         // a repeated name in an ordinary load is INI_INVALID_DATA
         let r = load(&mut c, IniLoadType::Overwrite, b"SpecialPower B\nEnd\n");
         assert_eq!(r.unwrap_err().kind, IniErrorKind::InvalidData);
@@ -636,14 +742,45 @@ mod tests {
         assert_eq!(c.store.len(), 2);
         let a = c.store.find_special_power_template(b"A").unwrap();
         // the final override: new reload time, everything else copied
-        assert_eq!((a.reload_time(), a.special_power_type(), a.is_shortcut_power(), a.id()), (150, SPECIAL_CASH_HACK, true, 1));
+        assert_eq!(
+            (
+                a.reload_time(),
+                a.special_power_type(),
+                a.is_shortcut_power(),
+                a.id()
+            ),
+            (150, SPECIAL_CASH_HACK, true, 1)
+        );
         // the head keeps its own academy type, which is what the getter reads
-        assert_eq!(a.academy_classification_type(), AcademyClassificationType::None);
-        assert_eq!(a.chain().get_final_override().data.academy_classification_type, AcademyClassificationType::UpgradeRadar);
-        assert_eq!(c.store.find_special_power_template_by_id(2).unwrap().name(), b"Map");
+        assert_eq!(
+            a.academy_classification_type(),
+            AcademyClassificationType::None
+        );
+        assert_eq!(
+            a.chain()
+                .get_final_override()
+                .data
+                .academy_classification_type,
+            AcademyClassificationType::UpgradeRadar
+        );
+        assert_eq!(
+            c.store.find_special_power_template_by_id(2).unwrap().name(),
+            b"Map"
+        );
         // a second override goes to the end of the chain
-        load(&mut c, IniLoadType::CreateOverrides, b"SpecialPower A\n ReloadTime = 7000\nEnd\n").unwrap();
-        assert_eq!(c.store.find_special_power_template(b"A").unwrap().reload_time(), 210);
+        load(
+            &mut c,
+            IniLoadType::CreateOverrides,
+            b"SpecialPower A\n ReloadTime = 7000\nEnd\n",
+        )
+        .unwrap();
+        assert_eq!(
+            c.store
+                .find_special_power_template(b"A")
+                .unwrap()
+                .reload_time(),
+            210
+        );
         c.store.reset();
         assert_eq!(c.store.len(), 1);
         let a = c.store.find_special_power_template(b"A").unwrap();
@@ -658,8 +795,18 @@ mod tests {
     #[test]
     fn a_default_with_an_override_chain_cannot_be_copied() {
         let mut c = ctx();
-        load(&mut c, IniLoadType::Overwrite, b"SpecialPower DefaultSpecialPower\nEnd\n").unwrap();
-        load(&mut c, IniLoadType::CreateOverrides, b"SpecialPower DefaultSpecialPower\n ReloadTime = 1000\nEnd\n").unwrap();
+        load(
+            &mut c,
+            IniLoadType::Overwrite,
+            b"SpecialPower DefaultSpecialPower\nEnd\n",
+        )
+        .unwrap();
+        load(
+            &mut c,
+            IniLoadType::CreateOverrides,
+            b"SpecialPower DefaultSpecialPower\n ReloadTime = 1000\nEnd\n",
+        )
+        .unwrap();
         let e = load(&mut c, IniLoadType::Overwrite, b"SpecialPower X\nEnd\n").unwrap_err();
         assert!(e.is_undefined());
         assert_eq!(c.store.len(), 1);
@@ -671,20 +818,55 @@ mod tests {
     fn errors() {
         let mut c = ctx();
         for (text, kind) in [
-            (&b"SpecialPower A\n Enum = SPECIAL_NOPE\nEnd\n"[..], IniErrorKind::InvalidData),
-            (b"SpecialPower A\n RequiredScience = SCIENCE_Unknown\nEnd\n", IniErrorKind::InvalidData),
-            (b"SpecialPower A\n AcademyClassify = ACT_X\nEnd\n", IniErrorKind::InvalidData),
-            (b"SpecialPower A\n PublicTimer = Maybe\nEnd\n", IniErrorKind::InvalidData),
-            (b"SpecialPower A\n InitiateSound =\nEnd\n", IniErrorKind::InvalidData),
-            (b"SpecialPower A\n Foo = 1\nEnd\n", IniErrorKind::UnknownToken),
+            (
+                &b"SpecialPower A\n Enum = SPECIAL_NOPE\nEnd\n"[..],
+                IniErrorKind::InvalidData,
+            ),
+            (
+                b"SpecialPower A\n RequiredScience = SCIENCE_Unknown\nEnd\n",
+                IniErrorKind::InvalidData,
+            ),
+            (
+                b"SpecialPower A\n AcademyClassify = ACT_X\nEnd\n",
+                IniErrorKind::InvalidData,
+            ),
+            (
+                b"SpecialPower A\n PublicTimer = Maybe\nEnd\n",
+                IniErrorKind::InvalidData,
+            ),
+            (
+                b"SpecialPower A\n InitiateSound =\nEnd\n",
+                IniErrorKind::InvalidData,
+            ),
+            (
+                b"SpecialPower A\n Foo = 1\nEnd\n",
+                IniErrorKind::UnknownToken,
+            ),
             (b"SpecialPower\n", IniErrorKind::InvalidData),
         ] {
             let mut c2 = ctx();
-            assert_eq!(load(&mut c2, IniLoadType::Overwrite, text).unwrap_err().kind, kind, "{}", String::from_utf8_lossy(text));
+            assert_eq!(
+                load(&mut c2, IniLoadType::Overwrite, text)
+                    .unwrap_err()
+                    .kind,
+                kind,
+                "{}",
+                String::from_utf8_lossy(text)
+            );
         }
         // a template whose line failed stays, with what was read before it
-        let _ = load(&mut c, IniLoadType::Overwrite, b"SpecialPower A\n ReloadTime = 1000\n Foo = 1\nEnd\n");
-        assert_eq!(c.store.find_special_power_template(b"A").unwrap().reload_time(), 30);
+        let _ = load(
+            &mut c,
+            IniLoadType::Overwrite,
+            b"SpecialPower A\n ReloadTime = 1000\n Foo = 1\nEnd\n",
+        );
+        assert_eq!(
+            c.store
+                .find_special_power_template(b"A")
+                .unwrap()
+                .reload_time(),
+            30
+        );
     }
 
     #[test]
@@ -694,8 +876,15 @@ mod tests {
         assert_eq!(test_special_power_mask(&a, 67), Err(BitIndexOutOfRange));
         let mut m = SpecialPowerMaskType::new();
         set_special_power_mask(&mut m, SPECIAL_DAISY_CUTTER, 1).unwrap();
-        assert!(test_special_power_mask_any(&m, &make_special_power_mask(SPECIAL_DAISY_CUTTER).unwrap()));
-        assert!(test_special_power_mask_multi(&m, &make_special_power_mask(SPECIAL_DAISY_CUTTER).unwrap(), &a));
+        assert!(test_special_power_mask_any(
+            &m,
+            &make_special_power_mask(SPECIAL_DAISY_CUTTER).unwrap()
+        ));
+        assert!(test_special_power_mask_multi(
+            &m,
+            &make_special_power_mask(SPECIAL_DAISY_CUTTER).unwrap(),
+            &a
+        ));
         assert!(special_power_mask_any_set(&m));
         set_special_power_mask(&mut m, SPECIAL_DAISY_CUTTER, 0).unwrap();
         assert!(!special_power_mask_any_set(&m));

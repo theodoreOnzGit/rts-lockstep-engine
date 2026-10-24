@@ -27,7 +27,9 @@ use std::sync::Arc;
 
 use crate::common::base_type::Coord3D;
 use crate::common::damage_fx::FxListName;
-use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniErrorKind, IniResult, MultiIniFieldParse, UserData,
+};
 use crate::common::module::{ModuleDataKind, ObjectId};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::DamageInfo;
@@ -57,27 +59,42 @@ pub struct InstantDeathBehaviorModuleData {
 impl InstantDeathBehaviorModuleData {
     /// `InstantDeathBehaviorModuleData()`: empty lists.
     pub fn new() -> Self {
-        InstantDeathBehaviorModuleData { die: DieModuleData::new(), ..Default::default() }
+        InstantDeathBehaviorModuleData {
+            die: DieModuleData::new(),
+            ..Default::default()
+        }
     }
 
     /// `buildFieldParse(p)`: the behaviour base, the four die mux fields (read from the layer-5 table into `die`), then this class's.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, InstantDeathBehaviorModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, InstantDeathBehaviorModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&FIELD_PARSE)
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<InstantDeathBehaviorModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<InstantDeathBehaviorModuleData> {
         let mut data = InstantDeathBehaviorModuleData::new();
         if let Some(ini) = ini {
-            ini.init_from_ini_multi_proc(&mut data, InstantDeathBehaviorModuleData::build_field_parse)?;
+            ini.init_from_ini_multi_proc(
+                &mut data,
+                InstantDeathBehaviorModuleData::build_field_parse,
+            )?;
         }
         Ok(data)
     }
 }
 
 /// Lifts entry `k` of the layer-5 die field table onto `InstantDeathBehaviorModuleData::die`.
-fn lift_die_field(k: usize, i: &mut Ini<'_>, d: &mut InstantDeathBehaviorModuleData, u: &UserData) -> IniResult<()> {
+fn lift_die_field(
+    k: usize,
+    i: &mut Ini<'_>,
+    d: &mut InstantDeathBehaviorModuleData,
+    u: &UserData,
+) -> IniResult<()> {
     match DIE_MODULE_DATA_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.die, u),
         None => Ok(()),
@@ -95,14 +112,57 @@ fn tokens(i: &mut Ini<'_>) -> IniResult<Vec<Vec<u8>>> {
 
 /// `DieModuleData::buildFieldParse`'s fields, then `InstantDeathBehaviorModuleData`'s (`parseFX`, `parseOCL`, `parseWeapon`: each token appended).
 static FIELD_PARSE: [FieldParse<InstantDeathBehaviorModuleData>; 8] = [
-    FieldParse::new("DeathTypes", |i, d, u| lift_die_field(0, i, d, u), UserData::None),
-    FieldParse::new("VeterancyLevels", |i, d, u| lift_die_field(1, i, d, u), UserData::None),
-    FieldParse::new("ExemptStatus", |i, d, u| lift_die_field(2, i, d, u), UserData::None),
-    FieldParse::new("RequiredStatus", |i, d, u| lift_die_field(3, i, d, u), UserData::None),
+    FieldParse::new(
+        "DeathTypes",
+        |i, d, u| lift_die_field(0, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "VeterancyLevels",
+        |i, d, u| lift_die_field(1, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ExemptStatus",
+        |i, d, u| lift_die_field(2, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RequiredStatus",
+        |i, d, u| lift_die_field(3, i, d, u),
+        UserData::None,
+    ),
     // `findFXList(token)`: "could be null! this is OK!"
-    FieldParse::new("FX", |i, d, _| { d.fx.extend(tokens(i)?.into_iter().map(|t| if t.eq_ignore_ascii_case(b"None") { None } else { Some(t) })); Ok(()) }, UserData::None),
-    FieldParse::new("OCL", |i, d, _| { d.ocls.extend(tokens(i)?); Ok(()) }, UserData::None),
-    FieldParse::new("Weapon", |i, d, _| { d.weapons.extend(tokens(i)?); Ok(()) }, UserData::None),
+    FieldParse::new(
+        "FX",
+        |i, d, _| {
+            d.fx.extend(tokens(i)?.into_iter().map(|t| {
+                if t.eq_ignore_ascii_case(b"None") {
+                    None
+                } else {
+                    Some(t)
+                }
+            }));
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "OCL",
+        |i, d, _| {
+            d.ocls.extend(tokens(i)?);
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "Weapon",
+        |i, d, _| {
+            d.weapons.extend(tokens(i)?);
+            Ok(())
+        },
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
@@ -117,13 +177,17 @@ pub struct InstantDeathBehavior {
 impl PartialEq for InstantDeathBehavior {
     /// The same object, the same data object (upstream compares pointers).
     fn eq(&self, other: &Self) -> bool {
-        self.die.behavior().object() == other.die.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
+        self.die.behavior().object() == other.die.behavior().object()
+            && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
 impl InstantDeathBehavior {
     /// `InstantDeathBehavior(thing, moduleData)`: the base; `INI_INVALID_DATA` for no data.
-    pub fn new(object: ObjectId, data: Option<Arc<InstantDeathBehaviorModuleData>>) -> IniResult<InstantDeathBehavior> {
+    pub fn new(
+        object: ObjectId,
+        data: Option<Arc<InstantDeathBehaviorModuleData>>,
+    ) -> IniResult<InstantDeathBehavior> {
         let data = data.ok_or_else(|| IniError::new(IniErrorKind::InvalidData))?;
         let die = DieModule::new(object, Some(Arc::new(data.die.clone())))?;
         Ok(InstantDeathBehavior { die, data })
@@ -135,7 +199,12 @@ impl InstantDeathBehavior {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         die_module_call(self, world, me, call)
     }
 
@@ -155,7 +224,11 @@ impl DieBehavior for InstantDeathBehavior {
         }
         let obj = me.object;
         if let Some(ai) = world.objects.find(obj).and_then(|o| o.ai) {
-            if world.module_call(obj, ai, ModuleCall::AiIsAiInDeadState).as_bool() && !crate::logic::modules::plant(1802) {
+            if world
+                .module_call(obj, ai, ModuleCall::AiIsAiInDeadState)
+                .as_bool()
+                && !crate::logic::modules::plant(1802)
+            {
                 return;
             }
             world.module_call(obj, ai, ModuleCall::AiMarkAsDead);
@@ -165,23 +238,53 @@ impl DieBehavior for InstantDeathBehavior {
             // `FXList::doFXObj(NULL, ..)` does nothing
             if let Some(fx) = &d.fx[idx] {
                 if !crate::logic::modules::plant(1803) {
-                    world.emit(ObjectClientEvent::FxListDoFxObj { fx: fx.clone(), object_id: obj });
+                    world.emit(ObjectClientEvent::FxListDoFxObj {
+                        fx: fx.clone(),
+                        object_id: obj,
+                    });
                 }
             }
         }
         if let Some(idx) = Self::draw(world, d.ocls.len()) {
             // `ObjectCreationList::create(NULL, ..)` makes nothing
             let ocl = &d.ocls[idx];
-            if world.statics.clone().object_creation_list_store.find_object_creation_list(&mut world.names, ocl).is_some() {
-                world.cut(CutCall::OclCreate { object: obj, ocl: ocl.clone() });
+            if world
+                .statics
+                .clone()
+                .object_creation_list_store
+                .find_object_creation_list(&mut world.names, ocl)
+                .is_some()
+            {
+                world.cut(CutCall::OclCreate {
+                    object: obj,
+                    ocl: ocl.clone(),
+                });
             }
         }
-        if let Some(idx) = Self::draw(world, d.weapons.len() + usize::from(crate::logic::modules::plant(1804))) {
+        if let Some(idx) = Self::draw(
+            world,
+            d.weapons.len() + usize::from(crate::logic::modules::plant(1804)),
+        ) {
             // `findWeaponTemplate(token)`: whatever the case; "could be null! this is OK!"
-            let weapon = d.weapons.get(idx).and_then(|wt| world.statics.weapon_store.templates().iter().find(|t| t.name.eq_ignore_ascii_case(wt)).map(|t| t.name.clone()));
+            let weapon = d.weapons.get(idx).and_then(|wt| {
+                world
+                    .statics
+                    .weapon_store
+                    .templates()
+                    .iter()
+                    .find(|t| t.name.eq_ignore_ascii_case(wt))
+                    .map(|t| t.name.clone())
+            });
             if let Some(weapon) = weapon {
-                let position = world.objects.find(obj).map_or_else(Coord3D::default, |o| o.get_position());
-                world.cut(CutCall::WeaponCreateAndFireTemp { weapon, source: obj, position });
+                let position = world
+                    .objects
+                    .find(obj)
+                    .map_or_else(Coord3D::default, |o| o.get_position());
+                world.cut(CutCall::WeaponCreateAndFireTemp {
+                    weapon,
+                    source: obj,
+                    position,
+                });
             }
         }
         if !crate::logic::modules::plant(1805) {
@@ -220,5 +323,7 @@ impl Snapshot for InstantDeathBehavior {
 
 /// The factory's `NewModuleDataProc` for `InstantDeathBehavior`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::InstantDeathBehavior(Arc::new(InstantDeathBehaviorModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::InstantDeathBehavior(Arc::new(
+        InstantDeathBehaviorModuleData::friend_new_module_data(ini)?,
+    )))
 }

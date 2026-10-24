@@ -57,7 +57,8 @@ pub struct SquishCollide {
 impl PartialEq for SquishCollide {
     /// The same object and the same data object (upstream compares pointers).
     fn eq(&self, other: &Self) -> bool {
-        self.collide.behavior().object() == other.collide.behavior().object() && Arc::ptr_eq(&self.data, &other.data)
+        self.collide.behavior().object() == other.collide.behavior().object()
+            && Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
@@ -80,13 +81,25 @@ impl SquishCollide {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         match call {
             ModuleCall::OnCollide { other, .. } => {
-                lend_clone(world, me, self, UpdateBody::SquishCollide, |b| match b {
-                    UpdateBody::SquishCollide(m) => Some(m),
-                    _ => None,
-                }, |w, m| m.on_collide(w, me, other));
+                lend_clone(
+                    world,
+                    me,
+                    self,
+                    UpdateBody::SquishCollide,
+                    |b| match b {
+                        UpdateBody::SquishCollide(m) => Some(m),
+                        _ => None,
+                    },
+                    |w, m| m.on_collide(w, me, other),
+                );
                 ModuleReply::Done
             }
             _ => ModuleReply::Unhandled,
@@ -98,22 +111,37 @@ impl SquishCollide {
         if other == INVALID_ID {
             return;
         }
-        let Some(o) = world.objects.find(other) else { return };
+        let Some(o) = world.objects.find(other) else {
+            return;
+        };
         let _ = o;
         let self_id = me.object;
         let ai = world.objects.find(self_id).and_then(|o| o.ai);
         if let Some(ai) = ai {
-            if world.module_call(self_id, ai, ModuleCall::AiGetGoalObject).as_id() == other && !crate::logic::modules::plant(1146) {
+            if world
+                .module_call(self_id, ai, ModuleCall::AiGetGoalObject)
+                .as_id()
+                == other
+                && !crate::logic::modules::plant(1146)
+            {
                 // We are actually targeting the other object to do something to! Don't allow them to crush us in the following special circumstances:
 
                 // Hijacking!
-                if world.find_module(self_id, b"HijackerUpdate").is_some() && !crate::logic::modules::plant(1144) {
+                if world.find_module(self_id, b"HijackerUpdate").is_some()
+                    && !crate::logic::modules::plant(1144)
+                {
                     return;
                 }
 
                 // TNT hunter placing a charge!
-                if let Some(sa) = world.find_special_ability_update(self_id, SPECIAL_TANKHUNTER_TNT_ATTACK) {
-                    if world.module_call(self_id, sa, ModuleCall::SpecialAbilityIsActive).as_bool() || crate::logic::modules::plant(1145) {
+                if let Some(sa) =
+                    world.find_special_ability_update(self_id, SPECIAL_TANKHUNTER_TNT_ATTACK)
+                {
+                    if world
+                        .module_call(self_id, sa, ModuleCall::SpecialAbilityIsActive)
+                        .as_bool()
+                        || crate::logic::modules::plant(1145)
+                    {
                         return;
                     }
                 }
@@ -121,12 +149,24 @@ impl SquishCollide {
         }
 
         // order matters: we want to know if IT considers ME to be an ally (a reversal of the usual situation)
-        let relationship = if crate::logic::modules::plant(1147) { world.get_relationship(self_id, other) } else { world.get_relationship(other, self_id) };
-        if (world.get_crusher_level(other) > 0 || crate::logic::modules::plant(1148)) && relationship != Relationship::Allies {
-            let Some(physics) = world.objects.find(other).and_then(|o| o.physics) else { return };
+        let relationship = if crate::logic::modules::plant(1147) {
+            world.get_relationship(self_id, other)
+        } else {
+            world.get_relationship(other, self_id)
+        };
+        if (world.get_crusher_level(other) > 0 || crate::logic::modules::plant(1148))
+            && relationship != Relationship::Allies
+        {
+            let Some(physics) = world.objects.find(other).and_then(|o| o.physics) else {
+                return;
+            };
 
             // use a 1.0 crush radius so the tank has to actually hit the infantry.
-            let (Some(mine), Some(theirs)) = (world.objects.find(self_id), world.objects.find(other)) else { return };
+            let (Some(mine), Some(theirs)) =
+                (world.objects.find(self_id), world.objects.find(other))
+            else {
+                return;
+            };
             let mut my_geom = mine.geometry_info.clone();
             if !crate::logic::modules::plant(1149) {
                 my_geom.set_major_radius(1.0);
@@ -134,18 +174,31 @@ impl SquishCollide {
             }
             let (my_pos, my_angle) = (mine.get_position(), mine.thing.orientation());
             let (pos, angle) = (theirs.get_position(), theirs.thing.orientation());
-            if !world.partition.geom_collides_with_geom(&pos, &theirs.geometry_info, angle, &my_pos, &my_geom, my_angle) {
+            if !world.partition.geom_collides_with_geom(
+                &pos,
+                &theirs.geometry_info,
+                angle,
+                &my_pos,
+                &my_geom,
+                my_angle,
+            ) {
                 return;
             }
 
             // only squish if tank is moving toward victim
-            let vel = world.module_call(other, physics, ModuleCall::PhysicsGetVelocity).as_coord();
+            let vel = world
+                .module_call(other, physics, ModuleCall::PhysicsGetVelocity)
+                .as_coord();
             let (to_x, to_y) = (my_pos.x - pos.x, my_pos.y - pos.y);
 
             if to_x * vel.x + to_y * vel.y > 0.0 || crate::logic::modules::plant(1141) {
                 let mut damage_info = DamageInfo::default();
                 damage_info.input.damage_type = DAMAGE_CRUSH;
-                damage_info.input.death_type = if crate::logic::modules::plant(1142) { 0 } else { DEATH_CRUSHED };
+                damage_info.input.death_type = if crate::logic::modules::plant(1142) {
+                    0
+                } else {
+                    DEATH_CRUSHED
+                };
                 damage_info.input.source_id = other;
                 damage_info.input.amount = HUGE_DAMAGE_AMOUNT; // make sure they die
                 world.attempt_damage(self_id, &mut damage_info);
@@ -177,5 +230,7 @@ impl Snapshot for SquishCollide {
 
 /// The factory's `NewModuleDataProc` for `SquishCollide`: a plain `CollideModuleData`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::Collide(Arc::new(CollideModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::Collide(Arc::new(
+        CollideModuleData::friend_new_module_data(ini)?,
+    )))
 }

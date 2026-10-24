@@ -119,11 +119,27 @@ pub enum BodyCall {
     /// `TheGameLogic->destroyObject(obj)` (`SlowDeathBehavior`).
     DestroyObject { object: ObjectId },
     /// `obj->setDisabled(type)`.
-    SetDisabled { object: ObjectId, disabled_type: i32 },
+    SetDisabled {
+        object: ObjectId,
+        disabled_type: i32,
+    },
+    /// batch R33: `obj->setDisabledUntil(type, frame)` (`EMPUpdate`, `LeafletDropBehavior`).
+    SetDisabledUntil {
+        object: ObjectId,
+        disabled_type: i32,
+        frame: u32,
+    },
     /// `me->clearDisabled(type)`.
-    ClearDisabled { object: ObjectId, disabled_type: i32 },
+    ClearDisabled {
+        object: ObjectId,
+        disabled_type: i32,
+    },
     /// `obj->doStatusDamage(status, frames)`.
-    DoStatusDamage { object: ObjectId, status: i32, frames: i32 },
+    DoStatusDamage {
+        object: ObjectId,
+        status: i32,
+        frames: i32,
+    },
     /// `getObject()->notifySubdualDamage(amount)`.
     NotifySubdualDamage { object: ObjectId, amount: f32 },
     /// `damager->scoreTheKill(victim)`.
@@ -133,13 +149,21 @@ pub enum BodyCall {
     /// `obj->setTeam(team)`.
     SetTeam { object: ObjectId, team: TeamId },
     /// `obj->setStatus(mask)` (`set` true) or `clearStatus`.
-    SetStatus { object: ObjectId, mask: ObjectStatusMaskType, set: bool },
+    SetStatus {
+        object: ObjectId,
+        mask: ObjectStatusMaskType,
+        set: bool,
+    },
     /// `ThePlayerList->getNeutralPlayer()->getAcademyStats()->recordVehicleSniped()`.
     AcademyVehicleSniped,
     /// `thingToKill->getControllingPlayer()->getAcademyStats()->recordClearedGarrisonedBuilding()`.
     AcademyClearedGarrisonedBuilding { player: PlayerIndex },
     /// `obj->getMultiLogicalBonePosition(prefix, max, positions, NULL, FALSE)`.
-    GetMultiLogicalBonePosition { object: ObjectId, prefix: Vec<u8>, max: i32 },
+    GetMultiLogicalBonePosition {
+        object: ObjectId,
+        prefix: Vec<u8>,
+        max: i32,
+    },
     /// `TheParticleSystemManager->findTemplate(name)`; `found` is the answer.
     ParticleFindTemplate { name: Vec<u8>, found: bool },
     /// `particleSystem->attachToObject(obj)`.
@@ -152,7 +176,11 @@ pub enum BodyCall {
     GetDistanceSquared { object: ObjectId, other: ObjectId },
     /// `ThePartitionManager->iterateObjectsInRange(position, range, FROM_CENTER_2D, filters, ITER_FASTEST)` with `PartitionFilterPlayerAffiliation(player,
     /// ALLOW_ALLIES, true)` and `PartitionFilterOnMap`.
-    IterateRetaliationFriends { position: Coord3D, range: f32, player: PlayerIndex },
+    IterateRetaliationFriends {
+        position: Coord3D,
+        range: f32,
+        player: PlayerIndex,
+    },
 }
 
 /// The summary of a `DamageInfo` in the lines of a probe module's trace and a differential test's log: source, damage type, death type, damage FX override,
@@ -198,15 +226,33 @@ impl World {
 
     /// `obj->setDisabled(type)`.
     pub fn body_set_disabled(&mut self, id: ObjectId, disabled_type: i32) {
-        self.body_cut(BodyCall::SetDisabled { object: id, disabled_type });
+        self.body_cut(BodyCall::SetDisabled {
+            object: id,
+            disabled_type,
+        });
         if !self.cuts.body.stub_object_calls {
             self.set_disabled(id, disabled_type);
         }
     }
 
+    /// batch R33: `obj->setDisabledUntil(type, frame)`.
+    pub fn body_set_disabled_until(&mut self, id: ObjectId, disabled_type: i32, frame: u32) {
+        self.body_cut(BodyCall::SetDisabledUntil {
+            object: id,
+            disabled_type,
+            frame,
+        });
+        if !self.cuts.body.stub_object_calls {
+            self.set_disabled_until(id, disabled_type, frame);
+        }
+    }
+
     /// `obj->clearDisabled(type)`.
     pub fn body_clear_disabled(&mut self, id: ObjectId, disabled_type: i32) {
-        self.body_cut(BodyCall::ClearDisabled { object: id, disabled_type });
+        self.body_cut(BodyCall::ClearDisabled {
+            object: id,
+            disabled_type,
+        });
         if !self.cuts.body.stub_object_calls {
             self.clear_disabled(id, disabled_type);
         }
@@ -214,7 +260,11 @@ impl World {
 
     /// `obj->doStatusDamage(status, frames)`; the duration reaches the helper as a `Real`.
     pub fn body_do_status_damage(&mut self, id: ObjectId, status: i32, frames: i32) {
-        self.body_cut(BodyCall::DoStatusDamage { object: id, status, frames });
+        self.body_cut(BodyCall::DoStatusDamage {
+            object: id,
+            status,
+            frames,
+        });
         if !self.cuts.body.stub_object_calls {
             self.do_status_damage(id, status, frames as f32);
         }
@@ -238,7 +288,10 @@ impl World {
 
     /// `obj->onDie(damageInfo)`.
     pub fn body_on_die(&mut self, id: ObjectId, info: &DamageInfo) {
-        self.body_cut(BodyCall::OnDie { object: id, info: info.clone() });
+        self.body_cut(BodyCall::OnDie {
+            object: id,
+            info: info.clone(),
+        });
         if !self.cuts.body.stub_object_calls {
             self.on_die(id, info);
         }
@@ -255,7 +308,11 @@ impl World {
 
     /// `obj->setStatus(mask)` (`set`) or `obj->clearStatus(mask)`.
     pub fn body_set_status(&mut self, id: ObjectId, mask: ObjectStatusMaskType, set: bool) {
-        self.body_cut(BodyCall::SetStatus { object: id, mask, set });
+        self.body_cut(BodyCall::SetStatus {
+            object: id,
+            mask,
+            set,
+        });
         if self.cuts.body.stub_object_calls {
             // the bits alone: the repulsor helper, the stealth relook and the construction mine sweep are `set_status`'s and have their own test
             if let Some(o) = self.objects.find_mut(id) {
@@ -292,13 +349,31 @@ impl World {
 
     /// `obj->getMultiLogicalBonePosition(prefix, max, positions, NULL, FALSE)`: no bones for an object without a drawable
     /// (`get_multi_logical_bone_position`), else the bones of the table, at most `max`.
-    pub fn body_get_multi_logical_bone_position(&mut self, id: ObjectId, prefix: &[u8], max: i32) -> Vec<Coord3D> {
-        self.body_cut(BodyCall::GetMultiLogicalBonePosition { object: id, prefix: prefix.to_vec(), max });
-        let has_drawable = self.objects.find(id).is_some_and(|o| o.drawable != crate::common::game_type::INVALID_DRAWABLE_ID);
+    pub fn body_get_multi_logical_bone_position(
+        &mut self,
+        id: ObjectId,
+        prefix: &[u8],
+        max: i32,
+    ) -> Vec<Coord3D> {
+        self.body_cut(BodyCall::GetMultiLogicalBonePosition {
+            object: id,
+            prefix: prefix.to_vec(),
+            max,
+        });
+        let has_drawable = self
+            .objects
+            .find(id)
+            .is_some_and(|o| o.drawable != crate::common::game_type::INVALID_DRAWABLE_ID);
         if !has_drawable {
             return Vec::new();
         }
-        let mut bones = self.cuts.body.bones.get(&(id, prefix.to_vec())).cloned().unwrap_or_default();
+        let mut bones = self
+            .cuts
+            .body
+            .bones
+            .get(&(id, prefix.to_vec()))
+            .cloned()
+            .unwrap_or_default();
         bones.truncate(max.max(0) as usize);
         bones
     }
@@ -306,7 +381,10 @@ impl World {
     /// `TheParticleSystemManager->findTemplate(name) != NULL`.
     pub fn body_particle_find_template(&mut self, name: &[u8]) -> bool {
         let found = self.cuts.body.particle_templates.contains(name);
-        self.body_cut(BodyCall::ParticleFindTemplate { name: name.to_vec(), found });
+        self.body_cut(BodyCall::ParticleFindTemplate {
+            name: name.to_vec(),
+            found,
+        });
         found
     }
 
@@ -329,20 +407,43 @@ impl World {
     }
 
     /// `object->getAbleToAttackSpecificObject(ATTACK_NEW_TARGET, victim, CMD_FROM_AI)`: a `CanAttackResult` value.
-    pub fn body_get_able_to_attack_specific_object(&mut self, object: ObjectId, victim: ObjectId) -> i32 {
+    pub fn body_get_able_to_attack_specific_object(
+        &mut self,
+        object: ObjectId,
+        victim: ObjectId,
+    ) -> i32 {
         self.body_cut(BodyCall::GetAbleToAttackSpecificObject { object, victim });
-        self.cuts.body.able_to_attack.get(&(object, victim)).copied().unwrap_or(0)
+        self.cuts
+            .body
+            .able_to_attack
+            .get(&(object, victim))
+            .copied()
+            .unwrap_or(0)
     }
 
     /// `ThePartitionManager->getDistanceSquared(object, other, FROM_BOUNDINGSPHERE_2D)`.
     pub fn body_get_distance_squared(&mut self, object: ObjectId, other: ObjectId) -> f32 {
         self.body_cut(BodyCall::GetDistanceSquared { object, other });
-        self.cuts.body.distance_squared.get(&(object, other)).copied().unwrap_or(0.0)
+        self.cuts
+            .body
+            .distance_squared
+            .get(&(object, other))
+            .copied()
+            .unwrap_or(0.0)
     }
 
     /// The retaliation scan of `ActiveBody::attemptDamage`: the objects in range allied to `player` and on the map, in iteration order.
-    pub fn body_iterate_retaliation_friends(&mut self, position: Coord3D, range: f32, player: PlayerIndex) -> Vec<ObjectId> {
-        self.body_cut(BodyCall::IterateRetaliationFriends { position, range, player });
+    pub fn body_iterate_retaliation_friends(
+        &mut self,
+        position: Coord3D,
+        range: f32,
+        player: PlayerIndex,
+    ) -> Vec<ObjectId> {
+        self.body_cut(BodyCall::IterateRetaliationFriends {
+            position,
+            range,
+            player,
+        });
         self.cuts.body.retaliation_friends.clone()
     }
 }

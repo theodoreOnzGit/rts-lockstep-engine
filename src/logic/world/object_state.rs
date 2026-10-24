@@ -23,28 +23,35 @@
 
 use crate::common::base_type::Coord3D;
 use crate::common::disabled_types::{
-    DisabledMaskType, DisabledType, DISABLED_ANY, DISABLED_COUNT, DISABLED_EMP, DISABLED_HACKED, DISABLED_HELD, DISABLED_SCRIPT_DISABLED,
-    DISABLED_SCRIPT_UNDERPOWERED, DISABLED_SUBDUED, DISABLED_UNDERPOWERED, DISABLED_UNMANNED,
+    DisabledMaskType, DisabledType, DISABLED_ANY, DISABLED_COUNT, DISABLED_EMP, DISABLED_HACKED,
+    DISABLED_HELD, DISABLED_SCRIPT_DISABLED, DISABLED_SCRIPT_UNDERPOWERED, DISABLED_SUBDUED,
+    DISABLED_UNDERPOWERED, DISABLED_UNMANNED,
 };
 use crate::common::game_common::Relationship;
 use crate::common::game_common::{FOREVER, LOGICFRAMES_PER_SECOND, NEVER, PLAYERMASK_ALL};
 use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::geometry::GeometryInfo;
 use crate::common::kind_of::{
-    KINDOF_ALWAYS_SELECTABLE, KINDOF_DRONE, KINDOF_IGNORED_IN_GUI, KINDOF_MINE, KINDOF_MOB_NEXUS, KINDOF_REVEAL_TO_ALL,
-    KINDOF_SPAWNS_ARE_THE_WEAPONS, KINDOF_STRUCTURE, KINDOF_VEHICLE,
+    KINDOF_ALWAYS_SELECTABLE, KINDOF_DRONE, KINDOF_IGNORED_IN_GUI, KINDOF_MINE, KINDOF_MOB_NEXUS,
+    KINDOF_REVEAL_TO_ALL, KINDOF_SPAWNS_ARE_THE_WEAPONS, KINDOF_STRUCTURE, KINDOF_VEHICLE,
 };
 use crate::common::object_status_types::{
-    ObjectStatusMaskType, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_MASKED, OBJECT_STATUS_REPULSOR,
-    OBJECT_STATUS_STEALTHED, OBJECT_STATUS_UNDER_CONSTRUCTION, OBJECT_STATUS_UNSELECTABLE,
+    ObjectStatusMaskType, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_MASKED,
+    OBJECT_STATUS_REPULSOR, OBJECT_STATUS_STEALTHED, OBJECT_STATUS_UNDER_CONSTRUCTION,
+    OBJECT_STATUS_UNSELECTABLE,
 };
-use crate::logic::object_script_status_bits::{OBJECT_STATUS_SCRIPT_DISABLED, OBJECT_STATUS_SCRIPT_UNPOWERED};
+use crate::logic::object_script_status_bits::{
+    OBJECT_STATUS_SCRIPT_DISABLED, OBJECT_STATUS_SCRIPT_UNPOWERED,
+};
 use crate::logic::weapon_set::WeaponTemplateSet;
 use crate::logic::weapon_set_flags::WeaponSetFlags;
 use crate::logic::weapon_types::WEAPONSET_CARBOMB;
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::ModuleCall;
-use crate::logic::world::object::{HelperKind, PRIVATE_CAPTURED, PRIVATE_EFFECTIVELY_DEAD, PRIVATE_OFF_MAP, PRIVATE_UNDETECTED_DEFECTOR};
+use crate::logic::world::object::{
+    HelperKind, PRIVATE_CAPTURED, PRIVATE_EFFECTIVELY_DEAD, PRIVATE_OFF_MAP,
+    PRIVATE_UNDETECTED_DEFECTOR,
+};
 use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::object_events::{ModelConditionOp, ObjectClientEvent, ObjectSound};
 
@@ -82,7 +89,9 @@ impl World {
 
     /// `getStatusBits()`.
     pub fn get_status_bits(&self, id: ObjectId) -> ObjectStatusMaskType {
-        self.objects.find(id).map_or(ObjectStatusMaskType::new(), |o| o.status)
+        self.objects
+            .find(id)
+            .map_or(ObjectStatusMaskType::new(), |o| o.status)
     }
 
     /// `setStatus(objectStatus, set)`: sets or clears the bits, and on a
@@ -93,7 +102,9 @@ impl World {
     /// (`iteratePotentialCollisions`, a cut point) and dirties the object's
     /// partition data.
     pub fn set_status(&mut self, id: ObjectId, object_status: ObjectStatusMaskType, set: bool) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         let old_status = o.status;
         if set {
             o.status.set_mask(&object_status);
@@ -104,7 +115,13 @@ impl World {
         if new_status == old_status {
             return;
         }
-        if set && object_status.test(OBJECT_STATUS_REPULSOR) && self.objects.find(id).is_some_and(|o| o.helpers.repulsor.is_some()) {
+        if set
+            && object_status.test(OBJECT_STATUS_REPULSOR)
+            && self
+                .objects
+                .find(id)
+                .is_some_and(|o| o.helpers.repulsor.is_some())
+        {
             // Damaged repulsable civilians scare (repulse) other civs, but only for a short amount of time...
             let when = self.frame().wrapping_add(2 * LOGICFRAMES_PER_SECOND as u32);
             self.helper_sleep_until(id, HelperKind::Repulsor, when);
@@ -114,21 +131,35 @@ impl World {
             || object_status.test(OBJECT_STATUS_DISGUISED)
         {
             // When any of the three key status bits for stealth go on or off, then handle partition updates for vision.
-            if self.objects.find(id).is_some_and(|o| o.template().get_shroud_reveal_to_all_range() > 0.0) {
+            if self
+                .objects
+                .find(id)
+                .is_some_and(|o| o.template().get_shroud_reveal_to_all_range() > 0.0)
+            {
                 self.handle_partition_cell_maintenance(id);
             }
         }
         // when an object's construction status changes, it needs to have its partition data updated,
         // in order to maintain the shroud correctly.
-        if new_status.test(OBJECT_STATUS_UNDER_CONSTRUCTION) != old_status.test(OBJECT_STATUS_UNDER_CONSTRUCTION) {
+        if new_status.test(OBJECT_STATUS_UNDER_CONSTRUCTION)
+            != old_status.test(OBJECT_STATUS_UNDER_CONSTRUCTION)
+        {
             // CHECK FOR MINES, AND DETONATE THEM NOW
             for them in self.cut_partition_potential_collisions(id) {
-                if !self.objects.find(them).is_some_and(|t| t.is_kind_of(KINDOF_MINE)) {
+                if !self
+                    .objects
+                    .find(them)
+                    .is_some_and(|t| t.is_kind_of(KINDOF_MINE))
+                {
                     continue;
                 }
                 // DETONATE ANY ENEMY MINES, OR DELETE FRIENDLY ONES
                 if self.get_relationship(id, them) == Relationship::Enemies {
-                    self.kill(them, crate::logic::damage::DAMAGE_UNRESISTABLE, crate::logic::damage::DEATH_NORMAL);
+                    self.kill(
+                        them,
+                        crate::logic::damage::DAMAGE_UNRESISTABLE,
+                        crate::logic::damage::DEATH_NORMAL,
+                    );
                 // detonate mine
                 } else {
                     self.destroy_object(them);
@@ -149,7 +180,9 @@ impl World {
     /// and unpowered also set or clear the matching `DISABLED_SCRIPT_*` and
     /// dirty the partition data (they change how far the object sees).
     pub fn set_script_status(&mut self, id: ObjectId, bit: u8, set: bool) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         let old_script_status = o.script_status;
         if set {
             o.script_status |= bit;
@@ -160,9 +193,10 @@ impl World {
         if new == old_script_status {
             return;
         }
-        for (flag, disabled_type) in
-            [(OBJECT_STATUS_SCRIPT_DISABLED, DISABLED_SCRIPT_DISABLED), (OBJECT_STATUS_SCRIPT_UNPOWERED, DISABLED_SCRIPT_UNDERPOWERED)]
-        {
+        for (flag, disabled_type) in [
+            (OBJECT_STATUS_SCRIPT_DISABLED, DISABLED_SCRIPT_DISABLED),
+            (OBJECT_STATUS_SCRIPT_UNPOWERED, DISABLED_SCRIPT_UNDERPOWERED),
+        ] {
             if (new & flag) != (old_script_status & flag) {
                 if self.objects.find(id).is_some_and(|o| o.in_partition) {
                     // if an object becomes disabled or unpowered, then you have to update its partition data because it will
@@ -185,7 +219,9 @@ impl World {
 
     /// `setEffectivelyDead(dead)`; a dead object leaves the radar.
     pub fn set_effectively_dead(&mut self, id: ObjectId, dead: bool) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         if dead {
             o.private_status |= PRIVATE_EFFECTIVELY_DEAD;
         } else {
@@ -198,7 +234,9 @@ impl World {
 
     /// `setCaptured(isCaptured)`: clearing it "should never happen".
     pub fn set_captured(&mut self, id: ObjectId, is_captured: bool) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         if is_captured {
             o.private_status |= PRIVATE_CAPTURED;
         } else {
@@ -208,7 +246,9 @@ impl World {
 
     /// `friend_setUndetectedDefector(status)`.
     pub fn friend_set_undetected_defector(&mut self, id: ObjectId, status: bool) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         if status {
             o.private_status |= PRIVATE_UNDETECTED_DEFECTOR;
         } else {
@@ -246,7 +286,9 @@ impl World {
     /// veterancy and its healing bonus). `onDisabledEdge(true)` runs last if
     /// the object was not disabled before.
     pub fn set_disabled_until(&mut self, id: ObjectId, t: DisabledType, frame: u32) {
-        let Some(o) = self.objects.find(id) else { return };
+        let Some(o) = self.objects.find(id) else {
+            return;
+        };
         let edge_case = !o.is_disabled();
         if !(0..DISABLED_COUNT).contains(&t) {
             return; // "Invalid disabled type value specified -- doesn't not exist!"
@@ -261,7 +303,11 @@ impl World {
                 object_id: INVALID_ID,
                 position: Some(position),
             });
-        } else if t == DISABLED_UNDERPOWERED || t == DISABLED_EMP || t == DISABLED_SUBDUED || t == DISABLED_HACKED {
+        } else if t == DISABLED_UNDERPOWERED
+            || t == DISABLED_EMP
+            || t == DISABLED_SUBDUED
+            || t == DISABLED_HACKED
+        {
             // We've lost power -- make sure we aren't already out of power as the sounds shouldn't happen
             // if you were already disabled.
             let o = self.objects.find(id).expect("checked above");
@@ -278,7 +324,11 @@ impl World {
                     None
                 };
                 if let Some(sound) = sound {
-                    self.emit(ObjectClientEvent::Sound { sound, object_id: INVALID_ID, position: Some(position) });
+                    self.emit(ObjectClientEvent::Sound {
+                        sound,
+                        object_id: INVALID_ID,
+                        position: Some(position),
+                    });
                 }
             }
         }
@@ -300,7 +350,11 @@ impl World {
                 // and in clear, only-held and not-disabled are both causes to untint.
                 // Also shouldn't be tinting when disabled by scripting, or by being unmanned.
                 if t != DISABLED_HELD && t != DISABLED_SCRIPT_DISABLED && t != DISABLED_UNMANNED {
-                    self.emit(ObjectClientEvent::DrawableTint { object_id: id, status: TINT_STATUS_DISABLED, on: true });
+                    self.emit(ObjectClientEvent::DrawableTint {
+                        object_id: id,
+                        status: TINT_STATUS_DISABLED,
+                        on: true,
+                    });
                 }
             }
 
@@ -311,10 +365,21 @@ impl World {
                 }
             }
 
-            if self.objects.find(id).is_some_and(|o| o.is_kind_of(KINDOF_SPAWNS_ARE_THE_WEAPONS)) {
+            if self
+                .objects
+                .find(id)
+                .is_some_and(|o| o.is_kind_of(KINDOF_SPAWNS_ARE_THE_WEAPONS))
+            {
                 if let Some(sbi) = self.get_spawn_behavior_interface(id) {
                     // Kris: Patch 1.01 - November 12, 2003: we want to disable the slaves, not order them to go idle!
-                    self.module_call(id, sbi, ModuleCall::OrderSlavesDisabledUntil { disabled_type: t, frame });
+                    self.module_call(
+                        id,
+                        sbi,
+                        ModuleCall::OrderSlavesDisabledUntil {
+                            disabled_type: t,
+                            frame,
+                        },
+                    );
                 }
             }
         }
@@ -327,18 +392,27 @@ impl World {
             let is_carbomb = {
                 let o = self.objects.find(id).expect("checked above");
                 let sets = o.template().get_weapon_template_sets();
-                crate::common::sparse_match_finder::SparseMatchFinder::find_best_info_slow::<_, WeaponTemplateSet>(sets, &flags)
-                    .is_some_and(|i| sets[i].test_weapon_set_flag(WEAPONSET_CARBOMB))
+                crate::common::sparse_match_finder::SparseMatchFinder::find_best_info_slow::<
+                    _,
+                    WeaponTemplateSet,
+                >(sets, &flags)
+                .is_some_and(|i| sets[i].test_weapon_set_flag(WEAPONSET_CARBOMB))
             };
             if is_carbomb {
                 let sniper_id = match self.get_body_module(id) {
-                    Some(b) => self.module_call(id, b, ModuleCall::GetLastDamageSource).as_id(),
+                    Some(b) => self
+                        .module_call(id, b, ModuleCall::GetLastDamageSource)
+                        .as_id(),
                     None => INVALID_ID,
                 };
                 if self.objects.find(sniper_id).is_some() {
                     self.score_the_kill(sniper_id, id);
                 }
-                self.kill(id, crate::logic::damage::DAMAGE_UNRESISTABLE, crate::logic::damage::DEATH_NORMAL);
+                self.kill(
+                    id,
+                    crate::logic::damage::DAMAGE_UNRESISTABLE,
+                    crate::logic::damage::DEATH_NORMAL,
+                );
             } else {
                 // This vehicle's pilot has been sniped, so we want to clear the veterancy rating (if any)
                 self.cut_experience_set_experience_and_level(id, 0, false);
@@ -358,7 +432,9 @@ impl World {
     /// `getDisabledUntil(type)`: for `DISABLED_ANY` the latest frame of any
     /// type that is on; for one type its frame if it is on; else 0.
     pub fn get_disabled_until(&self, id: ObjectId, t: DisabledType) -> u32 {
-        let Some(o) = self.objects.find(id) else { return 0 };
+        let Some(o) = self.objects.find(id) else {
+            return 0;
+        };
         if t == DISABLED_ANY {
             let mut highest_frame = 0;
             // Iterate through each disabled type and return the one with the highest frame.
@@ -387,11 +463,17 @@ impl World {
         if !(0..DISABLED_COUNT).contains(&t) {
             return false; // "Invalid disabled type value specified -- doesn't not exist!"
         }
-        let Some(o) = self.objects.find(id) else { return false };
+        let Some(o) = self.objects.find(id) else {
+            return false;
+        };
         if !o.is_disabled_by_type(t) {
             return false;
         }
-        if t == DISABLED_UNDERPOWERED || t == DISABLED_EMP || t == DISABLED_SUBDUED || t == DISABLED_HACKED {
+        if t == DISABLED_UNDERPOWERED
+            || t == DISABLED_EMP
+            || t == DISABLED_SUBDUED
+            || t == DISABLED_HACKED
+        {
             // We've regained power-- make sure we aren't still disabled by another type.
             if (!o.is_disabled_by_type(DISABLED_UNDERPOWERED) || t == DISABLED_UNDERPOWERED)
                 && (!o.is_disabled_by_type(DISABLED_EMP) || t == DISABLED_EMP)
@@ -407,7 +489,11 @@ impl World {
                     None
                 };
                 if let Some(sound) = sound {
-                    self.emit(ObjectClientEvent::Sound { sound, object_id: INVALID_ID, position: Some(position) });
+                    self.emit(ObjectClientEvent::Sound {
+                        sound,
+                        object_id: INVALID_ID,
+                        position: Some(position),
+                    });
                 }
             }
         }
@@ -422,16 +508,27 @@ impl World {
         if let Some(contain) = self.get_contain(id) {
             // We explicitly pass stuff in up in the set, so we need to turn it off if it is a forever type
             let rider = self.module_call(id, contain, ModuleCall::GetRider).as_id();
-            let forever = self.objects.find(id).is_some_and(|o| o.disabled_till_frame[t as usize] == FOREVER);
+            let forever = self
+                .objects
+                .find(id)
+                .is_some_and(|o| o.disabled_till_frame[t as usize] == FOREVER);
             if rider != INVALID_ID && forever {
                 self.clear_disabled(rider, t);
             }
         }
 
-        if self.objects.find(id).is_some_and(|o| o.is_kind_of(KINDOF_SPAWNS_ARE_THE_WEAPONS)) {
+        if self
+            .objects
+            .find(id)
+            .is_some_and(|o| o.is_kind_of(KINDOF_SPAWNS_ARE_THE_WEAPONS))
+        {
             if let Some(sbi) = self.get_spawn_behavior_interface(id) {
                 // Kris: Patch 1.02 - December 17, 2003: make sure slaves can recover from being disabled by subdual
-                self.module_call(id, sbi, ModuleCall::OrderSlavesToClearDisabled { disabled_type: t });
+                self.module_call(
+                    id,
+                    sbi,
+                    ModuleCall::OrderSlavesToClearDisabled { disabled_type: t },
+                );
             }
         }
 
@@ -450,7 +547,11 @@ impl World {
         // to clarify, if I am NOT disabled by anything other than DISABLED_HELD, DISABLED_SCRIPT_DISABLED or
         // DISABLED_UNMANNED, the tint goes.
         if my_flags_minus_exceptions.count() == 0 && drawable {
-            self.emit(ObjectClientEvent::DrawableTint { object_id: id, status: TINT_STATUS_DISABLED, on: false });
+            self.emit(ObjectClientEvent::DrawableTint {
+                object_id: id,
+                status: TINT_STATUS_DISABLED,
+                on: false,
+            });
         }
 
         self.check_disabled_status(id); // in case we just edged
@@ -466,7 +567,9 @@ impl World {
     pub fn check_disabled_status(&mut self, id: ObjectId) {
         let now = self.frame();
         for i in 0..DISABLED_COUNT {
-            let Some(o) = self.objects.find(id) else { return };
+            let Some(o) = self.objects.find(id) else {
+                return;
+            };
             if o.is_disabled_by_type(i) && now >= o.disabled_till_frame[i as usize] {
                 self.clear_disabled(id, i); // This will also DECREMENT m_pauseCount in all specialpowers
                 if let Some(o) = self.objects.find_mut(id) {
@@ -485,7 +588,10 @@ impl World {
         // rip through the behavior modules and call the onDisabledEdge for any modules that care
         self.call_all_modules(id, ModuleCall::OnDisabledEdge { becoming_disabled });
 
-        if becoming_disabled && self.objects.find(id).is_some_and(|o| o.ai.is_some()) && self.cuts.dozer_ais.contains(&id) {
+        if becoming_disabled
+            && self.objects.find(id).is_some_and(|o| o.ai.is_some())
+            && self.cuts.dozer_ais.contains(&id)
+        {
             // Have to say goodbye to the thing we might be building or repairing so someone else can do it.
             self.cut(CutCall::DozerCancelTask { object: id });
         }
@@ -495,13 +601,24 @@ impl World {
         if let Some(controller) = controller {
             //@todo jkmcd - Colin suggested we rewrite this to use the interface stuff.
             if let Some(m) = self.find_module(id, b"RadarUpgrade") {
-                if self.module_call(id, m, ModuleCall::IsAlreadyUpgraded).as_bool() {
+                if self
+                    .module_call(id, m, ModuleCall::IsAlreadyUpgraded)
+                    .as_bool()
+                {
                     // Need to decrement the count here, because we own a radar upgrade
-                    let disable_proof = self.module_call(id, m, ModuleCall::GetRadarDisableProof).as_bool();
+                    let disable_proof = self
+                        .module_call(id, m, ModuleCall::GetRadarDisableProof)
+                        .as_bool();
                     if becoming_disabled {
-                        self.cut(CutCall::PlayerRemoveRadar { player: controller, disable_proof });
+                        self.cut(CutCall::PlayerRemoveRadar {
+                            player: controller,
+                            disable_proof,
+                        });
                     } else {
-                        self.cut(CutCall::PlayerAddRadar { player: controller, disable_proof });
+                        self.cut(CutCall::PlayerAddRadar {
+                            player: controller,
+                            disable_proof,
+                        });
                     }
                 }
             }
@@ -509,7 +626,10 @@ impl World {
 
         // We will need to adjust power ... somehow ...
         let (mut power_to_adjust, energy_bonus) = match self.objects.find(id) {
-            Some(o) => (o.template().get_energy_production(), o.template().get_energy_bonus()),
+            Some(o) => (
+                o.template().get_energy_production(),
+                o.template().get_energy_bonus(),
+            ),
             None => return,
         };
         if power_to_adjust > 0 {
@@ -517,18 +637,28 @@ impl World {
             // which makes us not low power so we add the consumption so we go low power...
             // This check also guards the IsDisabled in friend_adjustPower above
             if let Some(m) = self.find_module(id, b"PowerPlantUpgrade") {
-                if self.module_call(id, m, ModuleCall::IsAlreadyUpgraded).as_bool() {
+                if self
+                    .module_call(id, m, ModuleCall::IsAlreadyUpgraded)
+                    .as_bool()
+                {
                     power_to_adjust += energy_bonus;
                 }
             }
             if let Some(m) = self.find_module(id, b"OverchargeBehavior") {
-                if self.module_call(id, m, ModuleCall::IsOverchargeActive).as_bool() {
+                if self
+                    .module_call(id, m, ModuleCall::IsOverchargeActive)
+                    .as_bool()
+                {
                     power_to_adjust += energy_bonus;
                 }
             }
             // Now, adjust the power for the player.
             if let Some(controller) = controller {
-                self.cut(CutCall::EnergyAdjustPower { player: controller, amount: power_to_adjust, add: !becoming_disabled });
+                self.cut(CutCall::EnergyAdjustPower {
+                    player: controller,
+                    amount: power_to_adjust,
+                    add: !becoming_disabled,
+                });
             }
         }
     }
@@ -538,7 +668,9 @@ impl World {
     /// `setWeaponSetFlag(wst)`: the flag, the weapon set refresh (a cut
     /// point) and the drawable's model condition.
     pub fn set_weapon_set_flag(&mut self, id: ObjectId, wst: i32) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         o.cur_weapon_set_flags.set(wst, 1);
         self.cut(CutCall::WeaponSetUpdate { object: id });
         self.drawable_model_condition_single(id, wst, true);
@@ -546,7 +678,9 @@ impl World {
 
     /// `clearWeaponSetFlag(wst)`.
     pub fn clear_weapon_set_flag(&mut self, id: ObjectId, wst: i32) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         o.cur_weapon_set_flags.set(wst, 0);
         self.cut(CutCall::WeaponSetUpdate { object: id });
         self.drawable_model_condition_single(id, wst, false);
@@ -555,20 +689,30 @@ impl World {
     /// The drawable half of `set/clearWeaponSetFlag`:
     /// `m_drawable->set/clearModelConditionState(TheWeaponSetTypeToModelConditionTypeMap[wst])`.
     fn drawable_model_condition_single(&mut self, id: ObjectId, wst: i32, set: bool) {
-        let Some(o) = self.objects.find(id) else { return };
+        let Some(o) = self.objects.find(id) else {
+            return;
+        };
         if o.drawable == crate::common::game_type::INVALID_DRAWABLE_ID {
             return;
         }
-        let mc =
-            WEAPON_SET_TYPE_TO_MODEL_CONDITION.get(wst as usize).copied().unwrap_or(crate::common::model_state::MODELCONDITION_INVALID);
+        let mc = WEAPON_SET_TYPE_TO_MODEL_CONDITION
+            .get(wst as usize)
+            .copied()
+            .unwrap_or(crate::common::model_state::MODELCONDITION_INVALID);
         let list = vec![mc];
-        let op = if set { ModelConditionOp::Set(list) } else { ModelConditionOp::Clear(list) };
+        let op = if set {
+            ModelConditionOp::Set(list)
+        } else {
+            ModelConditionOp::Clear(list)
+        };
         self.emit(ObjectClientEvent::DrawableModelCondition { object_id: id, op });
     }
 
     /// `setWeaponBonusCondition(wst)`: on a change the weapons are told (a cut point).
     pub fn set_weapon_bonus_condition(&mut self, id: ObjectId, wst: i32) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         let old = o.weapon_bonus_condition;
         o.weapon_bonus_condition |= 1u32.wrapping_shl(wst as u32);
         if old != o.weapon_bonus_condition {
@@ -579,7 +723,9 @@ impl World {
 
     /// `clearWeaponBonusCondition(wst)`.
     pub fn clear_weapon_bonus_condition(&mut self, id: ObjectId, wst: i32) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         let old = o.weapon_bonus_condition;
         o.weapon_bonus_condition &= !1u32.wrapping_shl(wst as u32);
         if old != o.weapon_bonus_condition {
@@ -604,7 +750,9 @@ impl World {
     /// `testArmorSetFlag(ast)`.
     pub fn test_armor_set_flag(&mut self, id: ObjectId, ast: i32) -> bool {
         match self.get_body_module(id) {
-            Some(b) => self.module_call(id, b, ModuleCall::TestArmorSetFlag(ast)).as_bool(),
+            Some(b) => self
+                .module_call(id, b, ModuleCall::TestArmorSetFlag(ast))
+                .as_bool(),
             None => false,
         }
     }
@@ -616,7 +764,11 @@ impl World {
         self.set_status(id, mask_of(OBJECT_STATUS_MASKED), mask);
         if mask {
             let player_mask = self.controlling_player_mask(id);
-            self.cut(CutCall::GameLogicDeselectObject { object: id, player_mask: !player_mask, affect_client: true });
+            self.cut(CutCall::GameLogicDeselectObject {
+                object: id,
+                player_mask: !player_mask,
+                affect_client: true,
+            });
         }
     }
 
@@ -628,14 +780,27 @@ impl World {
     /// `getShroudedStatus(playerIndex)`: always clear for `KINDOF_ALWAYS_VISIBLE`;
     /// the partition data's otherwise; clear for an object not in the
     /// partition manager (a soldier garrisoned in a building).
-    pub fn get_shrouded_status(&self, id: ObjectId, player_index: i32) -> crate::common::game_common::ObjectShroudStatus {
+    pub fn get_shrouded_status(
+        &self,
+        id: ObjectId,
+        player_index: i32,
+    ) -> crate::common::game_common::ObjectShroudStatus {
         use crate::common::game_common::ObjectShroudStatus;
-        let Some(o) = self.objects.find(id) else { return ObjectShroudStatus::Clear };
-        if o.template().is_kind_of(crate::common::kind_of::KINDOF_ALWAYS_VISIBLE) {
+        let Some(o) = self.objects.find(id) else {
+            return ObjectShroudStatus::Clear;
+        };
+        if o.template()
+            .is_kind_of(crate::common::kind_of::KINDOF_ALWAYS_VISIBLE)
+        {
             return ObjectShroudStatus::Clear;
         }
         if o.in_partition {
-            return self.cuts.shrouded_status.get(&(id, player_index)).copied().unwrap_or(ObjectShroudStatus::Clear);
+            return self
+                .cuts
+                .shrouded_status
+                .get(&(id, player_index))
+                .copied()
+                .unwrap_or(ObjectShroudStatus::Clear);
         }
         // This can happen for objects removed from the partition system (e.g., for soldiers that are
         // garrisoned inside a building).
@@ -644,7 +809,13 @@ impl World {
 
     /// `reactToTurretChange(turret, oldRotation, oldPitch)`: a changed rotation
     /// tells the container.
-    pub fn react_to_turret_change(&mut self, id: ObjectId, turret: i32, old_rotation: f32, _old_pitch: f32) {
+    pub fn react_to_turret_change(
+        &mut self,
+        id: ObjectId,
+        turret: i32,
+        old_rotation: f32,
+        _old_pitch: f32,
+    ) {
         let mut current_rotation = 0.0f32;
         if self.objects.find(id).is_some_and(|o| o.ai.is_some()) {
             current_rotation = self.cuts.ai_turret_rotation(id, turret);
@@ -661,17 +832,24 @@ impl World {
 
     /// `setSelectable(selectable)`.
     pub fn set_selectable(&mut self, id: ObjectId, selectable: bool) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         o.is_selectable = selectable;
         if o.drawable != crate::common::game_type::INVALID_DRAWABLE_ID {
-            self.emit(ObjectClientEvent::DrawableSetSelectable { object_id: id, selectable });
+            self.emit(ObjectClientEvent::DrawableSetSelectable {
+                object_id: id,
+                selectable,
+            });
         }
     }
 
     /// `isSelectable()`: `KINDOF_ALWAYS_SELECTABLE`, or selectable and not
     /// `UNSELECTABLE` and not effectively dead.
     pub fn is_selectable(&self, id: ObjectId) -> bool {
-        let Some(o) = self.objects.find(id) else { return false };
+        let Some(o) = self.objects.find(id) else {
+            return false;
+        };
         if o.template().is_kind_of(KINDOF_ALWAYS_SELECTABLE) {
             return true;
         }
@@ -680,7 +858,11 @@ impl World {
 
     /// `isMassSelectable()`.
     pub fn is_mass_selectable(&self, id: ObjectId) -> bool {
-        self.is_selectable(id) && !self.objects.find(id).is_some_and(|o| o.is_kind_of(KINDOF_STRUCTURE))
+        self.is_selectable(id)
+            && !self
+                .objects
+                .find(id)
+                .is_some_and(|o| o.is_kind_of(KINDOF_STRUCTURE))
     }
 
     // ---- geometry ----------------------------------------------------------------------------
@@ -689,21 +871,29 @@ impl World {
     /// unregistered and registered again so that its size is updated; the
     /// drawable is told.
     pub fn set_geometry_info(&mut self, id: ObjectId, geom: &GeometryInfo) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         o.geometry_info = geom.clone();
         if o.in_partition {
             // if our geometry changes, we unregister and re-register with the partitionmgr so that our size gets updated.
             self.partition_unregister_object(id);
             self.partition_register_object(id);
         }
-        if self.objects.find(id).is_some_and(|o| o.drawable != crate::common::game_type::INVALID_DRAWABLE_ID) {
+        if self
+            .objects
+            .find(id)
+            .is_some_and(|o| o.drawable != crate::common::game_type::INVALID_DRAWABLE_ID)
+        {
             self.emit(ObjectClientEvent::DrawableReactToGeometryChange { object_id: id });
         }
     }
 
     /// `setGeometryInfoZ(newZ)`: "a Z change only does not need to un/register with the PartitionManager".
     pub fn set_geometry_info_z(&mut self, id: ObjectId, new_z: f32) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         o.geometry_info.set_max_height_above_position(new_z);
         if o.drawable != crate::common::game_type::INVALID_DRAWABLE_ID {
             self.emit(ObjectClientEvent::DrawableReactToGeometryChange { object_id: id });
@@ -749,9 +939,9 @@ impl World {
     pub fn on_contained_by(&mut self, id: ObjectId, contained_by: ObjectId) {
         self.set_status(id, mask_of(OBJECT_STATUS_UNSELECTABLE), true);
         let enclosing = match self.get_contain(contained_by) {
-            Some(c) if self.objects.find(contained_by).is_some() => {
-                self.module_call(contained_by, c, ModuleCall::IsEnclosingContainerFor(id)).as_bool()
-            }
+            Some(c) if self.objects.find(contained_by).is_some() => self
+                .module_call(contained_by, c, ModuleCall::IsEnclosingContainerFor(id))
+                .as_bool(),
             _ => false,
         };
         if enclosing {
@@ -782,7 +972,9 @@ impl World {
 
     /// `isContained()`.
     pub fn is_contained(&self, id: ObjectId) -> bool {
-        self.objects.find(id).is_some_and(|o| o.contained_by != INVALID_ID)
+        self.objects
+            .find(id)
+            .is_some_and(|o| o.contained_by != INVALID_ID)
     }
 
     /// `getTransportSlotCount()`: the template's raw count, or for a special
@@ -803,14 +995,27 @@ impl World {
         if *ring {
             return 0;
         }
-        let Some(o) = self.objects.find(id) else { return 0 };
+        let Some(o) = self.objects.find(id) else {
+            return 0;
+        };
         let mut count = o.template().get_raw_transport_slot_count();
         if let Some(contain) = self.get_contain(id) {
-            if self.module_call(id, contain, ModuleCall::IsSpecialZeroSlotContainer).as_bool() {
+            if self
+                .module_call(id, contain, ModuleCall::IsSpecialZeroSlotContainer)
+                .as_bool()
+            {
                 count = 0;
                 if depth >= crate::logic::modules::open_contain::MAX_RECURSION {
-                    let me = crate::logic::world::module_call::ModuleHandle { object: id, index: contain };
-                    self.cuts.module_errors.push((me, crate::common::ini::IniError::undefined(crate::common::ini::Undefined::EndlessLoop)));
+                    let me = crate::logic::world::module_call::ModuleHandle {
+                        object: id,
+                        index: contain,
+                    };
+                    self.cuts.module_errors.push((
+                        me,
+                        crate::common::ini::IniError::undefined(
+                            crate::common::ini::Undefined::EndlessLoop,
+                        ),
+                    ));
                     *ring = true;
                     return 0;
                 }
@@ -829,11 +1034,16 @@ impl World {
     /// `isHero()`: a hero inside, or this is one.
     pub fn is_hero(&mut self, id: ObjectId) -> bool {
         if let Some(contain) = self.get_contain(id) {
-            if self.module_call(id, contain, ModuleCall::IsHeroInside).as_bool() {
+            if self
+                .module_call(id, contain, ModuleCall::IsHeroInside)
+                .as_bool()
+            {
                 return true;
             }
         }
-        self.objects.find(id).is_some_and(|o| o.is_kind_of(crate::common::kind_of::KINDOF_HERO))
+        self.objects
+            .find(id)
+            .is_some_and(|o| o.is_kind_of(crate::common::kind_of::KINDOF_HERO))
     }
 
     // ---- vision and shroud ---------------------------------------------------------------------
@@ -853,7 +1063,9 @@ impl World {
     /// `getShroudClearingRange()`: structures under construction "can only see
     /// themselves" (the bounding circle).
     pub fn get_shroud_clearing_range(&self, id: ObjectId) -> f32 {
-        let Some(o) = self.objects.find(id) else { return 0.0 };
+        let Some(o) = self.objects.find(id) else {
+            return 0.0;
+        };
         if o.status.test(OBJECT_STATUS_UNDER_CONSTRUCTION) {
             return o.geometry_info.get_bounding_circle_radius();
         }
@@ -864,7 +1076,9 @@ impl World {
     /// ("complete and total monkey hack fix": a new object has not been moved
     /// yet and would clear the shroud around the wrong place).
     pub fn set_shroud_clearing_range(&mut self, id: ObjectId, r: f32) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         if r != o.shroud_clearing_range {
             o.shroud_clearing_range = r;
             let pos = o.get_position();
@@ -889,8 +1103,12 @@ impl World {
     /// `setVisionSpied(setting, byWhom)`: a reference count per spying
     /// player; the object relooks on the edge (0 to 1 and 1 to 0).
     pub fn set_vision_spied(&mut self, id: ObjectId, setting: bool, by_whom: i32) {
-        let Some(o) = self.objects.find_mut(id) else { return };
-        let Some(slot) = o.vision_spied_by.get_mut(by_whom as usize) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
+        let Some(slot) = o.vision_spied_by.get_mut(by_whom as usize) else {
+            return;
+        };
         let mut need_refresh = false; // If this setting is an edge trigger on the reference count, I need to refresh
         if setting {
             *slot += 1;
@@ -952,21 +1170,31 @@ impl World {
     /// player, and is neither under construction, effectively dead, nor
     /// blind.
     fn may_affect_maps(&self, id: ObjectId) -> bool {
-        let Some(o) = self.objects.find(id) else { return false };
+        let Some(o) = self.objects.find(id) else {
+            return false;
+        };
         if self.get_controlling_player(id).is_none() {
             return false;
         }
-        !(o.status.test(OBJECT_STATUS_UNDER_CONSTRUCTION) || o.is_effectively_dead() || self.get_shroud_clearing_range(id) <= 0.0)
+        !(o.status.test(OBJECT_STATUS_UNDER_CONSTRUCTION)
+            || o.is_effectively_dead()
+            || self.get_shroud_clearing_range(id) <= 0.0)
     }
 
     fn add_value(&mut self, id: ObjectId) {
-        if !self.objects.find(id).is_some_and(|o| o.partition_last_value.is_invalid()) {
+        if !self
+            .objects
+            .find(id)
+            .is_some_and(|o| o.partition_last_value.is_invalid())
+        {
             return; // "An Object is adding value, but hasn't removed his previous value."
         }
         if !self.may_affect_maps(id) {
             return;
         }
-        let player = self.get_controlling_player(id).expect("may_affect_maps checked it");
+        let player = self
+            .get_controlling_player(id)
+            .expect("may_affect_maps checked it");
         let mask = self.cuts.player_mask(player);
         let range = self.get_vision_range(id); // we are valuable all the way to where we can target.
         let o = self.objects.find_mut(id).expect("checked above");
@@ -975,11 +1203,19 @@ impl World {
         o.partition_last_value.for_whom = mask;
         o.partition_last_value.how_far = range;
         let s = o.partition_last_value;
-        self.cut(CutCall::PartitionDoValueAffect { x: s.where_.x, y: s.where_.y, how_far: s.how_far, data: s.data, for_whom: s.for_whom });
+        self.cut(CutCall::PartitionDoValueAffect {
+            x: s.where_.x,
+            y: s.where_.y,
+            how_far: s.how_far,
+            data: s.data,
+            for_whom: s.for_whom,
+        });
     }
 
     fn remove_value(&mut self, id: ObjectId) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         if o.partition_last_value.is_invalid() {
             // removing before adding is valid, cause we always remove before adding.
             return;
@@ -996,13 +1232,19 @@ impl World {
     }
 
     fn add_threat(&mut self, id: ObjectId) {
-        if !self.objects.find(id).is_some_and(|o| o.partition_last_threat.is_invalid()) {
+        if !self
+            .objects
+            .find(id)
+            .is_some_and(|o| o.partition_last_threat.is_invalid())
+        {
             return; // "An Object is adding threat, but hasn't removed his previous threat."
         }
         if !self.may_affect_maps(id) {
             return;
         }
-        let player = self.get_controlling_player(id).expect("may_affect_maps checked it");
+        let player = self
+            .get_controlling_player(id)
+            .expect("may_affect_maps checked it");
         let mask = self.cuts.player_mask(player);
         let range = self.get_vision_range(id); // we are threatening all the way to where we can target.
         let o = self.objects.find_mut(id).expect("checked above");
@@ -1011,11 +1253,19 @@ impl World {
         o.partition_last_threat.for_whom = mask;
         o.partition_last_threat.how_far = range;
         let s = o.partition_last_threat;
-        self.cut(CutCall::PartitionDoThreatAffect { x: s.where_.x, y: s.where_.y, how_far: s.how_far, data: s.data, for_whom: s.for_whom });
+        self.cut(CutCall::PartitionDoThreatAffect {
+            x: s.where_.x,
+            y: s.where_.y,
+            how_far: s.how_far,
+            data: s.data,
+            for_whom: s.for_whom,
+        });
     }
 
     fn remove_threat(&mut self, id: ObjectId) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         if o.partition_last_threat.is_invalid() {
             return;
         }
@@ -1035,11 +1285,19 @@ impl World {
     /// else at another range. Not while dead, destroyed, or inside a
     /// container that does not let its passengers see out.
     fn look(&mut self, id: ObjectId) {
-        if !self.objects.find(id).is_some_and(|o| o.partition_last_look.is_invalid()) {
+        if !self
+            .objects
+            .find(id)
+            .is_some_and(|o| o.partition_last_look.is_invalid())
+        {
             return; // "An Object is looking, but hasn't unlooked the last one."
         }
-        let Some(controller) = self.get_controlling_player(id) else { return };
-        let Some(o) = self.objects.find(id) else { return };
+        let Some(controller) = self.get_controlling_player(id) else {
+            return;
+        };
+        let Some(o) = self.objects.find(id) else {
+            return;
+        };
         // Some things get Destroyed directly without hitting Death.
         if o.is_destroyed() || o.is_effectively_dead() {
             return;
@@ -1047,7 +1305,10 @@ impl World {
         let contained_by = o.contained_by;
         if contained_by != INVALID_ID {
             if let Some(c) = self.get_contain(contained_by) {
-                if !self.module_call(contained_by, c, ModuleCall::IsGarrisonable).as_bool() {
+                if !self
+                    .module_call(contained_by, c, ModuleCall::IsGarrisonable)
+                    .as_bool()
+                {
                     return; // dont look, 'cause you are in a tunnel, now
                 }
             }
@@ -1063,15 +1324,28 @@ impl World {
                 let count = self.players.player_count();
                 for current_index in (0..count).rev() {
                     // Build mask of of allies who can see me.
-                    if self.cuts.player_relationship_to_player_default_team(controller, current_index) == Relationship::Allies {
+                    if self
+                        .cuts
+                        .player_relationship_to_player_default_team(controller, current_index)
+                        == Relationship::Allies
+                    {
                         looking_mask |= self.cuts.player_mask(current_index);
                     }
                 }
                 // Other players can also be looking through our eyes.
-                looking_mask |= self.objects.find(id).expect("checked above").vision_spied_mask;
+                looking_mask |= self
+                    .objects
+                    .find(id)
+                    .expect("checked above")
+                    .vision_spied_mask;
             }
             let pos = self.objects.find(id).expect("checked above").get_position();
-            self.cut(CutCall::PartitionDoShroudReveal { x: pos.x, y: pos.y, range: shroud_clearing_range, mask: looking_mask });
+            self.cut(CutCall::PartitionDoShroudReveal {
+                x: pos.x,
+                y: pos.y,
+                range: shroud_clearing_range,
+                mask: looking_mask,
+            });
             let o = self.objects.find_mut(id).expect("checked above");
             o.partition_last_look.where_ = pos;
             o.partition_last_look.for_whom = looking_mask;
@@ -1084,12 +1358,18 @@ impl World {
         // And don't reveal while under construction. When finished, a refresh occurs, so don't worry.
         if reveal_to_all_range > 0.0 && !o.status.test(OBJECT_STATUS_UNDER_CONSTRUCTION) {
             // Only reveal to all when the unit is visible. If it's stealthed, we won't reveal it anymore.
-            let stealthed_and_not_detected =
-                o.status.test(OBJECT_STATUS_STEALTHED) && !o.status.test(OBJECT_STATUS_DETECTED) && !o.status.test(OBJECT_STATUS_DISGUISED);
+            let stealthed_and_not_detected = o.status.test(OBJECT_STATUS_STEALTHED)
+                && !o.status.test(OBJECT_STATUS_DETECTED)
+                && !o.status.test(OBJECT_STATUS_DISGUISED);
             if !stealthed_and_not_detected {
                 let pos = o.get_position();
                 let players_mask = self.cut_players_with_relationship(controller, true, true);
-                self.cut(CutCall::PartitionDoShroudReveal { x: pos.x, y: pos.y, range: reveal_to_all_range, mask: players_mask });
+                self.cut(CutCall::PartitionDoShroudReveal {
+                    x: pos.x,
+                    y: pos.y,
+                    range: reveal_to_all_range,
+                    mask: players_mask,
+                });
                 let o = self.objects.find_mut(id).expect("checked above");
                 o.partition_reveal_all_last_look.where_ = pos;
                 o.partition_reveal_all_last_look.for_whom = players_mask;
@@ -1099,44 +1379,75 @@ impl World {
     }
 
     fn unlook(&mut self, id: ObjectId) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         if o.partition_last_look.is_invalid() {
             // Your very first action will be an unlook, so of course you haven't looked yet. This is not an error
             return;
         }
         let s = o.partition_last_look;
         o.partition_last_look.reset();
-        self.cut(CutCall::PartitionQueueUndoShroudReveal { x: s.where_.x, y: s.where_.y, range: s.how_far, mask: s.for_whom });
+        self.cut(CutCall::PartitionQueueUndoShroudReveal {
+            x: s.where_.x,
+            y: s.where_.y,
+            range: s.how_far,
+            mask: s.for_whom,
+        });
         let o = self.objects.find_mut(id).expect("checked above");
         if !o.partition_reveal_all_last_look.is_invalid() {
             let r = o.partition_reveal_all_last_look;
             o.partition_reveal_all_last_look.reset();
-            self.cut(CutCall::PartitionQueueUndoShroudReveal { x: r.where_.x, y: r.where_.y, range: r.how_far, mask: r.for_whom });
+            self.cut(CutCall::PartitionQueueUndoShroudReveal {
+                x: r.where_.x,
+                y: r.where_.y,
+                range: r.how_far,
+                mask: r.for_whom,
+            });
         }
     }
 
     fn shroud(&mut self, id: ObjectId) {
-        if !self.objects.find(id).is_some_and(|o| o.partition_last_shroud.is_invalid()) {
+        if !self
+            .objects
+            .find(id)
+            .is_some_and(|o| o.partition_last_shroud.is_invalid())
+        {
             return; // "An Object is shrouding, but hasn't unshrouded the last one."
         }
-        let Some(controller) = self.get_controlling_player(id) else { return };
+        let Some(controller) = self.get_controlling_player(id) else {
+            return;
+        };
         let o = self.objects.find(id).expect("checked above");
         // things under construction don't shroud, nor do dead or blind things
-        #[allow(clippy::neg_cmp_op_on_partial_ord)] // `!(range > 0.0f)` of upstream, whose NaN answer is `true`
-        if o.status.test(OBJECT_STATUS_UNDER_CONSTRUCTION) || o.is_effectively_dead() || !(self.get_shroud_range(id) > 0.0) {
+        #[allow(clippy::neg_cmp_op_on_partial_ord)]
+        // `!(range > 0.0f)` of upstream, whose NaN answer is `true`
+        if o.status.test(OBJECT_STATUS_UNDER_CONSTRUCTION)
+            || o.is_effectively_dead()
+            || !(self.get_shroud_range(id) > 0.0)
+        {
             return;
         }
         let mut shrouding_mask: u16 = 0;
         let count = self.players.player_count();
         for current_index in (0..count).rev() {
             // Build mask of NON-allies.
-            if self.cuts.player_relationship_to_player_default_team(controller, current_index) != Relationship::Allies {
+            if self
+                .cuts
+                .player_relationship_to_player_default_team(controller, current_index)
+                != Relationship::Allies
+            {
                 shrouding_mask |= self.cuts.player_mask(current_index);
             }
         }
         let pos = self.objects.find(id).expect("checked above").get_position();
         let range = self.get_shroud_range(id);
-        self.cut(CutCall::PartitionDoShroudCover { x: pos.x, y: pos.y, range, mask: shrouding_mask });
+        self.cut(CutCall::PartitionDoShroudCover {
+            x: pos.x,
+            y: pos.y,
+            range,
+            mask: shrouding_mask,
+        });
         let o = self.objects.find_mut(id).expect("checked above");
         o.partition_last_shroud.where_ = pos;
         o.partition_last_shroud.for_whom = shrouding_mask;
@@ -1144,13 +1455,20 @@ impl World {
     }
 
     fn unshroud(&mut self, id: ObjectId) {
-        let Some(o) = self.objects.find_mut(id) else { return };
+        let Some(o) = self.objects.find_mut(id) else {
+            return;
+        };
         if o.partition_last_shroud.is_invalid() {
             return;
         }
         let s = o.partition_last_shroud;
         o.partition_last_shroud.reset();
-        self.cut(CutCall::PartitionUndoShroudCover { x: s.where_.x, y: s.where_.y, range: s.how_far, mask: s.for_whom });
+        self.cut(CutCall::PartitionUndoShroudCover {
+            x: s.where_.x,
+            y: s.where_.y,
+            range: s.how_far,
+            mask: s.for_whom,
+        });
     }
 }
 

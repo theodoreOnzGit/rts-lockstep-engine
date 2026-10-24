@@ -46,7 +46,9 @@ use std::collections::BTreeMap;
 use std::ffi::CString;
 
 use rts_lockstep_engine::common::game_common::VETERANCY_NAMES;
-use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Thrown, TYPE_TABLE};
+use rts_lockstep_engine::common::ini::{
+    BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, Thrown, TYPE_TABLE,
+};
 use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
 use rts_lockstep_engine::common::random_value::RandomValues;
 use rts_lockstep_engine::common::xfer::Xfer;
@@ -54,9 +56,12 @@ use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::damage::{DAMAGE_TYPE_NAMES, DEATH_NAMES};
 use rts_lockstep_engine::logic::weapon::{
-    WeaponStore, WeaponTemplate, LEVELS, WEAPON_AFFECTS_MASK_NAMES, WEAPON_COLLIDE_MASK_NAMES, WEAPON_PREFIRE_NAMES, WEAPON_RELOAD_NAMES,
+    WeaponStore, WeaponTemplate, LEVELS, WEAPON_AFFECTS_MASK_NAMES, WEAPON_COLLIDE_MASK_NAMES,
+    WEAPON_PREFIRE_NAMES, WEAPON_RELOAD_NAMES,
 };
-use rts_lockstep_engine::logic::weapon_bonus::{WeaponBonus, WEAPON_BONUS_FIELD_COUNT, WEAPON_BONUS_FIELD_NAMES, WEAPON_BONUS_NAMES};
+use rts_lockstep_engine::logic::weapon_bonus::{
+    WeaponBonus, WEAPON_BONUS_FIELD_COUNT, WEAPON_BONUS_FIELD_NAMES, WEAPON_BONUS_NAMES,
+};
 use support::{Check, Gen};
 
 /// The C++ side has process-global state (the name keys, the stores, `strtok`, `XferLoad`'s static buffer), so
@@ -76,7 +81,10 @@ impl Ctx {
     fn new() -> Self {
         let mut names = NameKeyGenerator::new();
         names.reset();
-        Ctx { store: WeaponStore::new(), names }
+        Ctx {
+            store: WeaponStore::new(),
+            names,
+        }
     }
 }
 
@@ -89,7 +97,13 @@ fn h_stub(_: &mut Ini<'_>, _: &mut Ctx) -> IniResult<()> {
 
 /// The block table: `Weapon` is translated; the other handlers throw `ERROR_BUG`, as the stubs of wrap_ini.cpp do.
 fn blocks() -> Vec<BlockParse<Ctx>> {
-    TYPE_TABLE.iter().map(|&(token, _, _)| BlockParse { token, parse: if token == "Weapon" { h_weapon } else { h_stub } }).collect()
+    TYPE_TABLE
+        .iter()
+        .map(|&(token, _, _)| BlockParse {
+            token,
+            parse: if token == "Weapon" { h_weapon } else { h_stub },
+        })
+        .collect()
 }
 
 fn put_u32(v: &mut Vec<u8>, x: u32) {
@@ -213,7 +227,13 @@ fn dump_template(v: &mut Vec<u8>, t: &WeaponTemplate) {
     put_real(v, t.historic_bonus_radius);
     put_u32(v, t.historic_bonus_count as u32);
     put_u32(v, t.historic_bonus_weapon.map_or(0, |k| k.0));
-    for b in [t.leech_range_weapon, t.capable_of_following_waypoint, t.is_shows_ammo_pips, t.allow_attack_garrisoned_bldgs, t.play_fx_when_stealthed] {
+    for b in [
+        t.leech_range_weapon,
+        t.capable_of_following_waypoint,
+        t.is_shows_ammo_pips,
+        t.allow_attack_garrisoned_bldgs,
+        t.play_fx_when_stealthed,
+    ] {
         put_u32(v, u32::from(b));
     }
     put_u32(v, t.pre_attack_delay as u32);
@@ -258,10 +278,23 @@ fn cmp_dump(check: &mut Check, rust: Vec<u8>, cpp: Vec<u8>, input: impl FnOnce()
         check.eq(0, 0, String::new);
         return;
     }
-    let at = rust.iter().zip(cpp.iter()).position(|(a, b)| a != b).unwrap_or(rust.len().min(cpp.len()));
+    let at = rust
+        .iter()
+        .zip(cpp.iter())
+        .position(|(a, b)| a != b)
+        .unwrap_or(rust.len().min(cpp.len()));
     let (lo, hi) = (at.saturating_sub(24), at + 24);
     let slice = |v: &[u8]| v[lo.min(v.len())..hi.min(v.len())].to_vec();
-    check.eq(0, 1, || format!("{}: lengths {} / {}, first difference at byte {at}: rust {:?} cpp {:?}", input(), rust.len(), cpp.len(), slice(&rust), slice(&cpp)));
+    check.eq(0, 1, || {
+        format!(
+            "{}: lengths {} / {}, first difference at byte {at}: rust {:?} cpp {:?}",
+            input(),
+            rust.len(),
+            cpp.len(),
+            slice(&rust),
+            slice(&cpp)
+        )
+    });
 }
 
 fn cpp_dump() -> Vec<u8> {
@@ -294,10 +327,26 @@ fn pick_mix(g: &mut Gen, list: &[&str]) -> String {
     case_mix(g, s)
 }
 
-const BLOCK_NAMES: [&str; 8] = ["Rifle", "rifle", "TankGun", "Missile", "ProjBomb", "A", "Cannon_2", "X1"];
-const FX_NAMES: [&str; 6] = ["FX_Small", "FX_Big", "fx_small", "FX_Explosion", "None", "none"];
+const BLOCK_NAMES: [&str; 8] = [
+    "Rifle", "rifle", "TankGun", "Missile", "ProjBomb", "A", "Cannon_2", "X1",
+];
+const FX_NAMES: [&str; 6] = [
+    "FX_Small",
+    "FX_Big",
+    "fx_small",
+    "FX_Explosion",
+    "None",
+    "none",
+];
 const PSYS_NAMES: [&str; 4] = ["PS_Smoke", "PS_Trail", "None", "ps_smoke"];
-const OCL_NAMES: [&str; 6] = ["OCL_Debris", "OCL_Crater", "ocl_debris", "SomethingElse", "None", ""];
+const OCL_NAMES: [&str; 6] = [
+    "OCL_Debris",
+    "OCL_Crater",
+    "ocl_debris",
+    "SomethingElse",
+    "None",
+    "",
+];
 const PROJ_NAMES: [&str; 5] = ["ProjBullet", "ProjMissile", "None", "NONE", "Rocket"];
 const SOUND_NAMES: [&str; 5] = ["RifleFire", "CannonShot", "NoSound", "nosound", "None"];
 
@@ -354,7 +403,11 @@ fn gen_bits(g: &mut Gen, names: &[&str], clean: bool) -> String {
         0 => parts.push("NONE".to_string()),
         1 => {
             for _ in 0..1 + g.below(3) {
-                parts.push(format!("{}{}", if g.below(2) == 0 { "+" } else { "-" }, pick_mix(g, names)));
+                parts.push(format!(
+                    "{}{}",
+                    if g.below(2) == 0 { "+" } else { "-" },
+                    pick_mix(g, names)
+                ));
             }
         }
         _ => {
@@ -416,7 +469,13 @@ fn gen_field(g: &mut Gen, clean: bool, names: &[String]) -> String {
         "AntiAirborneInfantry",
         "AntiBallisticMissile",
     ];
-    let int_fields = ["ClipSize", "ContinuousFireOne", "ContinuousFireTwo", "ShotsPerBarrel", "HistoricBonusCount"];
+    let int_fields = [
+        "ClipSize",
+        "ContinuousFireOne",
+        "ContinuousFireTwo",
+        "ShotsPerBarrel",
+        "HistoricBonusCount",
+    ];
     let duration_fields = [
         "FireSoundLoopTime",
         "ContinuousFireCoast",
@@ -440,7 +499,19 @@ fn gen_field(g: &mut Gen, clean: bool, names: &[String]) -> String {
         }),
         18 => format!("DamageStatusType = {}", {
             if clean || g.below(10) != 0 {
-                pick(g, &["BURNED", "AFLAME", "WET", "STEALTHED", "NONE", "DISGUISED", "FAERIE_FIRE"]).to_string()
+                pick(
+                    g,
+                    &[
+                        "BURNED",
+                        "AFLAME",
+                        "WET",
+                        "STEALTHED",
+                        "NONE",
+                        "DISGUISED",
+                        "FAERIE_FIRE",
+                    ],
+                )
+                .to_string()
             } else {
                 pick(g, &["BOGUS", ""]).to_string()
             }
@@ -460,13 +531,29 @@ fn gen_field(g: &mut Gen, clean: bool, names: &[String]) -> String {
         25 => format!("ProjectileDetonationOCL = {}", pick(g, &OCL_NAMES)),
         26 => format!("ProjectileExhaust = {}", pick(g, &PSYS_NAMES)),
         27 => {
-            let v = if clean || g.below(12) != 0 { gen_vet(g) } else { "ULTRA".to_string() };
+            let v = if clean || g.below(12) != 0 {
+                gen_vet(g)
+            } else {
+                "ULTRA".to_string()
+            };
             match g.below(5) {
                 0 => format!("VeterancyFireFX = {} {}", v, pick(g, &FX_NAMES)),
-                1 => format!("VeterancyProjectileDetonationFX = {} {}", v, pick(g, &FX_NAMES)),
+                1 => format!(
+                    "VeterancyProjectileDetonationFX = {} {}",
+                    v,
+                    pick(g, &FX_NAMES)
+                ),
                 2 => format!("VeterancyFireOCL = {} {}", v, pick(g, &OCL_NAMES)),
-                3 => format!("VeterancyProjectileDetonationOCL = {} {}", v, pick(g, &OCL_NAMES)),
-                _ => format!("VeterancyProjectileExhaust = {} {}", v, pick(g, &PSYS_NAMES)),
+                3 => format!(
+                    "VeterancyProjectileDetonationOCL = {} {}",
+                    v,
+                    pick(g, &OCL_NAMES)
+                ),
+                _ => format!(
+                    "VeterancyProjectileExhaust = {} {}",
+                    v,
+                    pick(g, &PSYS_NAMES)
+                ),
             }
         }
         28 => {
@@ -478,39 +565,117 @@ fn gen_field(g: &mut Gen, clean: bool, names: &[String]) -> String {
                 5 => format!("DelayBetweenShots = Min:{}", n(g)),
                 6 => format!("DelayBetweenShots = Min:{} Foo:{}", n(g), n(g)),
                 7 => "DelayBetweenShots =".to_string(),
-                _ => pick(g, &["DelayBetweenShots = Min:", "DelayBetweenShots = Max:5", "DelayBetweenShots = x"]).to_string(),
+                _ => pick(
+                    g,
+                    &[
+                        "DelayBetweenShots = Min:",
+                        "DelayBetweenShots = Max:5",
+                        "DelayBetweenShots = x",
+                    ],
+                )
+                .to_string(),
             }
         }
-        29 => format!("RadiusDamageAffects = {}", gen_bits(g, &WEAPON_AFFECTS_MASK_NAMES, clean)),
-        30 => format!("ProjectileCollidesWith = {}", gen_bits(g, &WEAPON_COLLIDE_MASK_NAMES, clean)),
-        31 => format!("AutoReloadsClip = {}", if clean || g.below(10) != 0 { pick_mix(g, &WEAPON_RELOAD_NAMES) } else { "NEVER".to_string() }),
-        32 => format!("PreAttackType = {}", if clean || g.below(10) != 0 { pick_mix(g, &WEAPON_PREFIRE_NAMES) } else { "ALWAYS".to_string() }),
+        29 => format!(
+            "RadiusDamageAffects = {}",
+            gen_bits(g, &WEAPON_AFFECTS_MASK_NAMES, clean)
+        ),
+        30 => format!(
+            "ProjectileCollidesWith = {}",
+            gen_bits(g, &WEAPON_COLLIDE_MASK_NAMES, clean)
+        ),
+        31 => format!(
+            "AutoReloadsClip = {}",
+            if clean || g.below(10) != 0 {
+                pick_mix(g, &WEAPON_RELOAD_NAMES)
+            } else {
+                "NEVER".to_string()
+            }
+        ),
+        32 => format!(
+            "PreAttackType = {}",
+            if clean || g.below(10) != 0 {
+                pick_mix(g, &WEAPON_PREFIRE_NAMES)
+            } else {
+                "ALWAYS".to_string()
+            }
+        ),
         33 => format!(
             "{} = {}",
             pick(g, &["ProjectileStreamName", "LaserName", "LaserBoneName"]),
             pick(g, &["Stream1", "Laser_A", "Bone01", "None", ""])
         ),
         34 => {
-            let cond = if clean || g.below(10) != 0 { WEAPON_BONUS_NAMES[g.below(WEAPON_BONUS_NAMES.len() as u32) as usize] } else { "BOGUS" };
-            let field = if clean || g.below(10) != 0 { WEAPON_BONUS_FIELD_NAMES[g.below(WEAPON_BONUS_FIELD_NAMES.len() as u32) as usize] } else { "BOGUS" };
-            let pct = if clean || g.below(10) != 0 { format!("{}%", g.below(400)) } else { "x%".to_string() };
+            let cond = if clean || g.below(10) != 0 {
+                WEAPON_BONUS_NAMES[g.below(WEAPON_BONUS_NAMES.len() as u32) as usize]
+            } else {
+                "BOGUS"
+            };
+            let field = if clean || g.below(10) != 0 {
+                WEAPON_BONUS_FIELD_NAMES[g.below(WEAPON_BONUS_FIELD_NAMES.len() as u32) as usize]
+            } else {
+                "BOGUS"
+            };
+            let pct = if clean || g.below(10) != 0 {
+                format!("{}%", g.below(400))
+            } else {
+                "x%".to_string()
+            };
             format!("WeaponBonus = {cond} {field} {pct}")
         }
         35 => {
-            let target = if names.is_empty() || g.below(4) == 0 { pick(g, &["None", "none", "Nope", "Rifle"]).to_string() } else { names[g.below(names.len() as u32) as usize].clone() };
+            let target = if names.is_empty() || g.below(4) == 0 {
+                pick(g, &["None", "none", "Nope", "Rifle"]).to_string()
+            } else {
+                names[g.below(names.len() as u32) as usize].clone()
+            };
             format!("HistoricBonusWeapon = {target}")
         }
-        36 => format!("ScatterTarget = X:{} Y:{}", g.uniform(-9.0, 9.0), g.uniform(-9.0, 9.0)),
-        37 => pick(g, &["ScatterTarget = X:1", "ScatterTarget =", "ScatterTarget = Y:2 X:1"]).to_string(),
-        38 if !clean => pick(g, &["Bogus = 1", "AntiAir = Yes", "primarydamage", "= 5", "PrimaryDamage"]).to_string(),
+        36 => format!(
+            "ScatterTarget = X:{} Y:{}",
+            g.uniform(-9.0, 9.0),
+            g.uniform(-9.0, 9.0)
+        ),
+        37 => pick(
+            g,
+            &[
+                "ScatterTarget = X:1",
+                "ScatterTarget =",
+                "ScatterTarget = Y:2 X:1",
+            ],
+        )
+        .to_string(),
+        38 if !clean => pick(
+            g,
+            &[
+                "Bogus = 1",
+                "AntiAir = Yes",
+                "primarydamage",
+                "= 5",
+                "PrimaryDamage",
+            ],
+        )
+        .to_string(),
         _ => format!("{} = {}", pick(g, &real_fields), gen_real(g, clean)),
     }
 }
 
 fn gen_block(g: &mut Gen, lines: &mut Vec<String>, clean: bool, names: &mut Vec<String>) {
-    let word = if !clean && g.below(12) == 0 { pick(g, &["Foo", "Weapons", "weapon", "WEAPON"]).to_string() } else { "Weapon".to_string() };
-    let name = if g.below(8) == 0 && !names.is_empty() { names[g.below(names.len() as u32) as usize].clone() } else { pick(g, &BLOCK_NAMES).to_string() };
-    let name = if !clean && g.below(25) == 0 { pick(g, &["", "\"quoted\"", "Wea pon"]).to_string() } else { name };
+    let word = if !clean && g.below(12) == 0 {
+        pick(g, &["Foo", "Weapons", "weapon", "WEAPON"]).to_string()
+    } else {
+        "Weapon".to_string()
+    };
+    let name = if g.below(8) == 0 && !names.is_empty() {
+        names[g.below(names.len() as u32) as usize].clone()
+    } else {
+        pick(g, &BLOCK_NAMES).to_string()
+    };
+    let name = if !clean && g.below(25) == 0 {
+        pick(g, &["", "\"quoted\"", "Wea pon"]).to_string()
+    } else {
+        name
+    };
     if !names.contains(&name) {
         names.push(name.clone());
     }
@@ -519,7 +684,11 @@ fn gen_block(g: &mut Gen, lines: &mut Vec<String>, clean: bool, names: &mut Vec<
         lines.push(gen_field(g, clean, names));
     }
     if clean || g.below(15) != 0 {
-        lines.push(if !clean && g.below(8) == 0 { pick(g, &["end", "END", "  End  ", "End;comment"]).to_string() } else { "End".to_string() });
+        lines.push(if !clean && g.below(8) == 0 {
+            pick(g, &["end", "END", "  End  ", "End;comment"]).to_string()
+        } else {
+            "End".to_string()
+        });
     }
 }
 
@@ -544,7 +713,14 @@ fn gen_file(g: &mut Gen, names: &mut Vec<String>) -> Vec<u8> {
     match if clean { 99 } else { g.below(14) } {
         0 if !out.is_empty() => {
             let p = g.below(out.len() as u32) as usize;
-            out.insert(p, if g.below(2) == 0 { 0 } else { 0x80 + g.below(0x80) as u8 });
+            out.insert(
+                p,
+                if g.below(2) == 0 {
+                    0
+                } else {
+                    0x80 + g.below(0x80) as u8
+                },
+            );
         }
         1 if !out.is_empty() => {
             let p = g.below(out.len() as u32) as usize;
@@ -594,7 +770,11 @@ fn rust_outcome(r: IniResult<()>, crc: u32) -> Result<Outcome, IniError> {
             Some(Thrown::OutOfRange) => (4, Vec::new()),
         },
     };
-    Ok(Outcome { status, detail, crc })
+    Ok(Outcome {
+        status,
+        detail,
+        crc,
+    })
 }
 
 fn cpp_load(name: &[u8], data: &[u8], load_type: i32, with_xfer: bool) -> Outcome {
@@ -625,7 +805,11 @@ fn cpp_load(name: &[u8], data: &[u8], load_type: i32, with_xfer: bool) -> Outcom
         2 | 3 => code.to_le_bytes().to_vec(),
         _ => panic!("C++ threw something unexpected (status {status})"),
     };
-    Outcome { status, detail, crc: if with_xfer { crc } else { 0 } }
+    Outcome {
+        status,
+        detail,
+        crc: if with_xfer { crc } else { 0 },
+    }
 }
 
 fn show(b: &[u8]) -> String {
@@ -690,7 +874,14 @@ fn weapon_store_matches_upstream() {
     let mut store_ops = Check::new("delayed damage, historic damage, reset");
     let mut excluded = Excluded::default();
     let mut ctx = Ctx::new();
-    let (mut ok, mut failed, mut templates, mut overrides_dropped, mut getter_calls, mut excluded_getters) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+    let (
+        mut ok,
+        mut failed,
+        mut templates,
+        mut overrides_dropped,
+        mut getter_calls,
+        mut excluded_getters,
+    ) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
     const CASES: usize = 4_000;
     for case in 0..CASES {
         let mut block_names: Vec<String> = Vec::new();
@@ -709,9 +900,24 @@ fn weapon_store_matches_upstream() {
         }
         for (d, lt) in &files {
             let mut crc = XferCrc::new_without_nan_guard();
-            let load_type = if *lt == IniLoadType::CreateOverrides as i32 { IniLoadType::CreateOverrides } else { IniLoadType::Overwrite };
+            let load_type = if *lt == IniLoadType::CreateOverrides as i32 {
+                IniLoadType::CreateOverrides
+            } else {
+                IniLoadType::Overwrite
+            };
             let before = ctx.store.templates().len();
-            let r = Ini::load(&name, d, load_type, if with_xfer { Some(&mut crc as &mut dyn Xfer) } else { None }, &table, &mut ctx);
+            let r = Ini::load(
+                &name,
+                d,
+                load_type,
+                if with_xfer {
+                    Some(&mut crc as &mut dyn Xfer)
+                } else {
+                    None
+                },
+                &table,
+                &mut ctx,
+            );
             let crc_v = if with_xfer { crc.get_crc() } else { 0 };
             if load_type == IniLoadType::CreateOverrides {
                 overrides_dropped += 1;
@@ -731,12 +937,27 @@ fn weapon_store_matches_upstream() {
         }
         for (i, (d, lt)) in files.iter().enumerate() {
             let c = cpp_load(&name, d, *lt, with_xfer);
-            if rust_outcomes[i].status == 0 { ok += 1 } else { failed += 1 }
-            outcome.eq(&rust_outcomes[i], &c, || format!("case {case} file {i}: {:?}", show(d)));
+            if rust_outcomes[i].status == 0 {
+                ok += 1
+            } else {
+                failed += 1
+            }
+            outcome.eq(&rust_outcomes[i], &c, || {
+                format!("case {case} file {i}: {:?}", show(d))
+            });
         }
         templates += ctx.store.templates().len() as u64;
-        cmp_dump(&mut dumps, rust_dump(&ctx.store), cpp_dump(), || format!("case {case}: files {:?} / {:?}", show(&data), second.as_ref().map(|s| show(s))));
-        let rk: Vec<u32> = probe.iter().map(|n| ctx.names.name_to_key(n.as_bytes()).0).collect();
+        cmp_dump(&mut dumps, rust_dump(&ctx.store), cpp_dump(), || {
+            format!(
+                "case {case}: files {:?} / {:?}",
+                show(&data),
+                second.as_ref().map(|s| show(s))
+            )
+        });
+        let rk: Vec<u32> = probe
+            .iter()
+            .map(|n| ctx.names.name_to_key(n.as_bytes()).0)
+            .collect();
         let ck: Vec<u32> = probe
             .iter()
             .map(|n| {
@@ -749,7 +970,9 @@ fn weapon_store_matches_upstream() {
         // postProcessLoad
         ctx.store.post_process_load(&find_template, &find_ocl);
         unsafe { cpp::ref_weapon_post_process() };
-        cmp_dump(&mut post, rust_dump(&ctx.store), cpp_dump(), || format!("case {case}"));
+        cmp_dump(&mut post, rust_dump(&ctx.store), cpp_dump(), || {
+            format!("case {case}")
+        });
 
         // the getters, under a few bonuses
         let seed = g.u32();
@@ -785,25 +1008,44 @@ fn weapon_store_matches_upstream() {
                 let mut c = [0u32; 12];
                 unsafe { cpp::ref_weapon_getters(idx as i32, b.as_ptr(), c.as_mut_ptr()) };
                 getter_calls += 1;
-                getters.eq(r.to_vec(), c.to_vec(), || format!("case {case} template {idx} bonus {b:?}"));
+                getters.eq(r.to_vec(), c.to_vec(), || {
+                    format!("case {case} template {idx} bonus {b:?}")
+                });
             }
         }
 
         // findWeaponTemplate
-        for n in block_names.iter().map(String::as_str).chain(["None", "none", "Nope", "Rifle", "rifle"]) {
+        for n in block_names
+            .iter()
+            .map(String::as_str)
+            .chain(["None", "none", "Nope", "Rifle", "rifle"])
+        {
             let cn = CString::new(n).unwrap();
             let c = unsafe { cpp::ref_weapon_find(cn.as_ptr()) };
             let r = ctx
                 .store
                 .find_weapon_template(&mut ctx.names, n.as_bytes())
                 .unwrap()
-                .map(|t| ctx.store.templates().iter().position(|x| x.name_key == t.name_key).unwrap() as i32)
+                .map(|t| {
+                    ctx.store
+                        .templates()
+                        .iter()
+                        .position(|x| x.name_key == t.name_key)
+                        .unwrap() as i32
+                })
                 .unwrap_or(-1);
             finds.eq(r, c, || format!("case {case}: {n:?}"));
         }
         // names not seen before: their keys show whether a find assigned a key to "None" or to a stranger
-        let fresh = [format!("Fresh{case}a"), "None".to_string(), format!("Fresh{case}b")];
-        let rk: Vec<u32> = fresh.iter().map(|n| ctx.names.name_to_key(n.as_bytes()).0).collect();
+        let fresh = [
+            format!("Fresh{case}a"),
+            "None".to_string(),
+            format!("Fresh{case}b"),
+        ];
+        let rk: Vec<u32> = fresh
+            .iter()
+            .map(|n| ctx.names.name_to_key(n.as_bytes()).0)
+            .collect();
         let ck: Vec<u32> = fresh
             .iter()
             .map(|n| {
@@ -819,26 +1061,50 @@ fn weapon_store_matches_upstream() {
             for _ in 0..g.below(4) {
                 let idx = g.below(n as u32) as usize;
                 let (frame, src, vic) = (g.below(500), g.below(10) as i32, g.below(10) as i32);
-                let (x, y, z) = (g.uniform(-9.0, 9.0), g.uniform(-9.0, 9.0), g.uniform(0.0, 5.0));
+                let (x, y, z) = (
+                    g.uniform(-9.0, 9.0),
+                    g.uniform(-9.0, 9.0),
+                    g.uniform(0.0, 5.0),
+                );
                 let b = random_bonus(&mut g);
                 let key = ctx.store.templates()[idx].name_key;
-                ctx.store.set_delayed_damage(key, &rts_lockstep_engine::common::base_type::Coord3D { x, y, z }, frame, src, vic, &bonus_of(&b));
-                unsafe { cpp::ref_weapon_delayed(0, idx as i32, frame, src, vic, x, y, z, b.as_ptr()) };
+                ctx.store.set_delayed_damage(
+                    key,
+                    &rts_lockstep_engine::common::base_type::Coord3D { x, y, z },
+                    frame,
+                    src,
+                    vic,
+                    &bonus_of(&b),
+                );
+                unsafe {
+                    cpp::ref_weapon_delayed(0, idx as i32, frame, src, vic, x, y, z, b.as_ptr())
+                };
             }
             for _ in 0..g.below(4) {
                 let idx = g.below(n as u32) as usize;
-                let (frame, x, y, z) = (g.below(500), g.uniform(-9.0, 9.0), g.uniform(-9.0, 9.0), g.uniform(0.0, 5.0));
-                ctx.store.templates_mut()[idx].historic_damage.push(rts_lockstep_engine::logic::weapon::HistoricWeaponDamageInfo {
-                    frame,
-                    location: rts_lockstep_engine::common::base_type::Coord3D { x, y, z },
-                });
+                let (frame, x, y, z) = (
+                    g.below(500),
+                    g.uniform(-9.0, 9.0),
+                    g.uniform(-9.0, 9.0),
+                    g.uniform(0.0, 5.0),
+                );
+                ctx.store.templates_mut()[idx].historic_damage.push(
+                    rts_lockstep_engine::logic::weapon::HistoricWeaponDamageInfo {
+                        frame,
+                        location: rts_lockstep_engine::common::base_type::Coord3D { x, y, z },
+                    },
+                );
                 unsafe { cpp::ref_weapon_historic(idx as i32, frame, x, y, z) };
             }
-            cmp_dump(&mut store_ops, rust_dump(&ctx.store), cpp_dump(), || format!("case {case}: after the delayed and historic damage"));
+            cmp_dump(&mut store_ops, rust_dump(&ctx.store), cpp_dump(), || {
+                format!("case {case}: after the delayed and historic damage")
+            });
             match g.below(3) {
                 0 => {
                     ctx.store.delete_all_delayed_damage();
-                    unsafe { cpp::ref_weapon_delayed(1, 0, 0, 0, 0, 0.0, 0.0, 0.0, [1.0f32; 5].as_ptr()) };
+                    unsafe {
+                        cpp::ref_weapon_delayed(1, 0, 0, 0, 0, 0.0, 0.0, 0.0, [1.0f32; 5].as_ptr())
+                    };
                 }
                 1 => {
                     ctx.store.reset();
@@ -846,7 +1112,9 @@ fn weapon_store_matches_upstream() {
                 }
                 _ => {}
             }
-            cmp_dump(&mut store_ops, rust_dump(&ctx.store), cpp_dump(), || format!("case {case}: after the clean-up"));
+            cmp_dump(&mut store_ops, rust_dump(&ctx.store), cpp_dump(), || {
+                format!("case {case}: after the clean-up")
+            });
         }
     }
     println!(
@@ -855,7 +1123,13 @@ fn weapon_store_matches_upstream() {
         excluded.total(),
         excluded.0
     );
-    let total = outcome.report() + dumps.report() + keys.report() + post.report() + getters.report() + finds.report() + store_ops.report();
+    let total = outcome.report()
+        + dumps.report()
+        + keys.report()
+        + post.report()
+        + getters.report()
+        + finds.report()
+        + store_ops.report();
     assert_eq!(total, 0);
 }
 
@@ -872,16 +1146,37 @@ fn defaults_getters_and_undefined_inputs() {
     assert_eq!(t.continuous_fire_one_shots_needed, i32::MAX);
     assert!(t.get_auto_reloads_clip());
     let wb = WeaponBonus::new();
-    assert_eq!(t.get_attack_range(&wb), 0.0, "the undersize cannot make a range negative");
+    assert_eq!(
+        t.get_attack_range(&wb),
+        0.0,
+        "the undersize cannot make a range negative"
+    );
     assert!(t.is_contact_weapon());
 
     // DelayBetweenShots with a missing token is undefined upstream
     let mut ctx = Ctx::new();
     let table = blocks();
-    let r = Ini::load(b"a.ini", b"Weapon A\n DelayBetweenShots =\nEnd\n", IniLoadType::Overwrite, None, &table, &mut ctx);
+    let r = Ini::load(
+        b"a.ini",
+        b"Weapon A\n DelayBetweenShots =\nEnd\n",
+        IniLoadType::Overwrite,
+        None,
+        &table,
+        &mut ctx,
+    );
     assert!(r.unwrap_err().is_undefined());
-    let r = Ini::load(b"a.ini", b"Weapon B\n DelayBetweenShots = Min:5\nEnd\n", IniLoadType::Overwrite, None, &table, &mut ctx);
-    assert!(r.unwrap_err().is_undefined(), "after Min: the Max label is read through NULL");
+    let r = Ini::load(
+        b"a.ini",
+        b"Weapon B\n DelayBetweenShots = Min:5\nEnd\n",
+        IniLoadType::Overwrite,
+        None,
+        &table,
+        &mut ctx,
+    );
+    assert!(
+        r.unwrap_err().is_undefined(),
+        "after Min: the Max label is read through NULL"
+    );
     let _ = Undefined::NullTokenString;
 
     // a pre-attack delay whose product leaves Int
@@ -891,7 +1186,7 @@ fn defaults_getters_and_undefined_inputs() {
     b2.set_field(4, 4.0);
     assert!(big.get_pre_attack_delay(&b2).is_err());
     assert!(big.get_pre_attack_delay(&WeaponBonus::new()).is_ok());
-    println!("RESULT 3 classes of undefined input are errors in Rust (and are never sent to the C++)");
+    println!(
+        "RESULT 3 classes of undefined input are errors in Rust (and are never sent to the C++)"
+    );
 }
-
-

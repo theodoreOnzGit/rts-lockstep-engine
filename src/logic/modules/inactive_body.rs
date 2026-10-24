@@ -71,8 +71,17 @@ impl InactiveBody {
 
     /// The constructor's first half: the base from the plain `ModuleData` (`INI_INVALID_DATA` for null data).
     pub fn new(object: ObjectId, module_data: Option<Arc<ModuleData>>) -> IniResult<InactiveBody> {
-        let data = module_data.map(|d| Arc::new(BodyModuleData { behavior: BehaviorModuleData { module_data: (*d).clone() } }));
-        Ok(InactiveBody { body: BodyModule::new(object, data)?, die_called: false })
+        let data = module_data.map(|d| {
+            Arc::new(BodyModuleData {
+                behavior: BehaviorModuleData {
+                    module_data: (*d).clone(),
+                },
+            })
+        });
+        Ok(InactiveBody {
+            body: BodyModule::new(object, data)?,
+            die_called: false,
+        })
     }
 
     /// The constructor's second half, run by the world: `getObject()->setEffectivelyDead(true)`.
@@ -100,7 +109,11 @@ impl InactiveBody {
 
         // Inactive bodies have no health so no damage can really be done
         info.out.actual_damage_dealt = 0.0;
-        info.out.actual_damage_clipped = if crate::logic::modules::plant(1274) { info.input.amount } else { 0.0 };
+        info.out.actual_damage_clipped = if crate::logic::modules::plant(1274) {
+            info.input.amount
+        } else {
+            0.0
+        };
         info.out.no_effect = true;
 
         // exception: damage type KILL always wipes us out
@@ -111,7 +124,20 @@ impl InactiveBody {
             if !self.die_called || crate::logic::modules::plant(1276) {
                 let i = info.clone();
                 let obj = me.object;
-                lend_clone(world, me, self, UpdateBody::InactiveBody, |b| if let UpdateBody::InactiveBody(m) = b { Some(m) } else { None }, |w, _s| w.body_on_die(obj, &i));
+                lend_clone(
+                    world,
+                    me,
+                    self,
+                    UpdateBody::InactiveBody,
+                    |b| {
+                        if let UpdateBody::InactiveBody(m) = b {
+                            Some(m)
+                        } else {
+                            None
+                        }
+                    },
+                    |w, _s| w.body_on_die(obj, &i),
+                );
                 self.die_called = !crate::logic::modules::plant(1277);
             }
         }
@@ -132,7 +158,12 @@ impl InactiveBody {
     }
 
     /// The module's answer to one of `Object`'s calls: its own virtuals, then `BodyModule`'s defaults.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         match call {
             ModuleCall::AttemptDamage(mut info) => {
                 self.attempt_damage(world, me, &mut info);
@@ -150,28 +181,58 @@ impl InactiveBody {
             ModuleCall::EstimateDamage(input) => ModuleReply::Real(self.estimate_damage(&input)),
             // "Inactive bodies have no health to get"
             ModuleCall::GetHealth => ModuleReply::Real(0.0),
-            ModuleCall::GetDamageState => ModuleReply::Int(if crate::logic::modules::plant(1279) { 1 } else { BODY_PRISTINE }),
-            ModuleCall::SetDamageState(_) | ModuleCall::SetAflame(_) | ModuleCall::OnVeterancyLevelChanged { .. } => ModuleReply::Done,
+            ModuleCall::GetDamageState => ModuleReply::Int(if crate::logic::modules::plant(1279) {
+                1
+            } else {
+                BODY_PRISTINE
+            }),
+            ModuleCall::SetDamageState(_)
+            | ModuleCall::SetAflame(_)
+            | ModuleCall::OnVeterancyLevelChanged { .. } => ModuleReply::Done,
             ModuleCall::SetArmorSetFlag(_) | ModuleCall::ClearArmorSetFlag(_) => ModuleReply::Done,
             ModuleCall::TestArmorSetFlag(_) => ModuleReply::Bool(false),
             // "Inactive bodies have no health to increase or decrease"
             ModuleCall::InternalChangeHealth(_) => ModuleReply::Done,
             // the defaults of `BodyModule`
-            ModuleCall::GetMaxHealth | ModuleCall::GetInitialHealth | ModuleCall::GetPreviousHealth => ModuleReply::Real(0.0),
-            ModuleCall::GetDamageScalar => ModuleReply::Real(if crate::logic::modules::plant(1282) { 1.0 } else { self.body.get_damage_scalar() }),
+            ModuleCall::GetMaxHealth
+            | ModuleCall::GetInitialHealth
+            | ModuleCall::GetPreviousHealth => ModuleReply::Real(0.0),
+            ModuleCall::GetDamageScalar => {
+                ModuleReply::Real(if crate::logic::modules::plant(1282) {
+                    1.0
+                } else {
+                    self.body.get_damage_scalar()
+                })
+            }
             ModuleCall::ApplyDamageScalar(s) => {
                 self.body.apply_damage_scalar(s);
                 ModuleReply::Done
             }
-            ModuleCall::GetSubdualDamageHealRate => ModuleReply::Int(self.body.get_subdual_damage_heal_rate() as i32),
-            ModuleCall::GetSubdualDamageHealAmount => ModuleReply::Real(self.body.get_subdual_damage_heal_amount()),
-            ModuleCall::HasAnySubdualDamage => ModuleReply::Bool(self.body.has_any_subdual_damage()),
-            ModuleCall::GetCurrentSubdualDamageAmount => ModuleReply::Real(self.body.get_current_subdual_damage_amount()),
+            ModuleCall::GetSubdualDamageHealRate => {
+                ModuleReply::Int(self.body.get_subdual_damage_heal_rate() as i32)
+            }
+            ModuleCall::GetSubdualDamageHealAmount => {
+                ModuleReply::Real(self.body.get_subdual_damage_heal_amount())
+            }
+            ModuleCall::HasAnySubdualDamage => {
+                ModuleReply::Bool(self.body.has_any_subdual_damage())
+            }
+            ModuleCall::GetCurrentSubdualDamageAmount => {
+                ModuleReply::Real(self.body.get_current_subdual_damage_amount())
+            }
             // `getLastDamageInfo()` is NULL
-            ModuleCall::GetLastDamageInfo | ModuleCall::GetLastDamageSource => ModuleReply::Unhandled,
-            ModuleCall::GetLastDamageTimestamp => ModuleReply::Int(self.body.get_last_damage_timestamp() as i32),
-            ModuleCall::GetLastHealingTimestamp => ModuleReply::Int(self.body.get_last_healing_timestamp() as i32),
-            ModuleCall::GetClearableLastAttacker => ModuleReply::Id(self.body.get_clearable_last_attacker()),
+            ModuleCall::GetLastDamageInfo | ModuleCall::GetLastDamageSource => {
+                ModuleReply::Unhandled
+            }
+            ModuleCall::GetLastDamageTimestamp => {
+                ModuleReply::Int(self.body.get_last_damage_timestamp() as i32)
+            }
+            ModuleCall::GetLastHealingTimestamp => {
+                ModuleReply::Int(self.body.get_last_healing_timestamp() as i32)
+            }
+            ModuleCall::GetClearableLastAttacker => {
+                ModuleReply::Id(self.body.get_clearable_last_attacker())
+            }
             ModuleCall::ClearLastAttacker => {
                 self.body.clear_last_attacker();
                 ModuleReply::Done
@@ -183,10 +244,14 @@ impl InactiveBody {
                 ModuleReply::Done
             }
             ModuleCall::SetMaxHealth(m) => {
-                self.body.set_max_health(m, crate::logic::module::body_module::SAME_CURRENTHEALTH);
+                self.body
+                    .set_max_health(m, crate::logic::module::body_module::SAME_CURRENTHEALTH);
                 ModuleReply::Done
             }
-            ModuleCall::SetMaxHealthWithChange { max_health, change_type } => {
+            ModuleCall::SetMaxHealthWithChange {
+                max_health,
+                change_type,
+            } => {
                 self.body.set_max_health(max_health, change_type);
                 ModuleReply::Done
             }
@@ -202,7 +267,9 @@ impl InactiveBody {
                 self.body.set_indestructible(b);
                 ModuleReply::Done
             }
-            ModuleCall::IsIndestructible => ModuleReply::Bool(self.body.is_indestructible() != crate::logic::modules::plant(1280)),
+            ModuleCall::IsIndestructible => ModuleReply::Bool(
+                self.body.is_indestructible() != crate::logic::modules::plant(1280),
+            ),
             ModuleCall::EvaluateVisualCondition => {
                 self.body.evaluate_visual_condition();
                 ModuleReply::Done
@@ -242,6 +309,7 @@ impl Snapshot for InactiveBody {
 
 /// The factory's `NewModuleDataProc` for `InactiveBody`: `Module::friend_newModuleData`, a plain `ModuleData`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::Module(Arc::new(ModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::Module(Arc::new(
+        ModuleData::friend_new_module_data(ini)?,
+    )))
 }
-

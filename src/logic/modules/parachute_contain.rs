@@ -43,16 +43,24 @@ use std::sync::Arc;
 use crate::common::base_type::{real_to_int, Coord3D};
 use crate::common::disabled_types::DISABLED_HELD;
 use crate::common::game_type::{ObjectId, INVALID_ID, LAYER_GROUND};
-use crate::common::ini::{FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, Undefined, UserData};
+use crate::common::ini::{
+    FieldParse, Ini, IniError, IniResult, MultiIniFieldParse, Undefined, UserData,
+};
 use crate::common::kind_of::{KINDOF_INFANTRY, KINDOF_PARACHUTABLE};
 use crate::common::model_state::{MODELCONDITION_FREEFALL, MODELCONDITION_PARACHUTING};
 use crate::common::module::ModuleDataKind;
-use crate::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_NO_COLLISIONS, OBJECT_STATUS_PARACHUTING};
+use crate::common::object_status_types::{
+    ObjectStatusMaskType, OBJECT_STATUS_NO_COLLISIONS, OBJECT_STATUS_PARACHUTING,
+};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::damage::{DamageInfo, DAMAGE_FALLING, DAMAGE_WATER, HUGE_DAMAGE_AMOUNT};
 use crate::logic::module::behavior_module::BehaviorModuleData;
-use crate::logic::module::update_module::{UpdateModule, UpdateSleepTime, DOOR_1, UPDATE_SLEEP_NONE};
-use crate::logic::modules::open_contain::{self, out, OpenContain, OpenContainModuleData, OpenContainVirtuals, CMD_FROM_AI};
+use crate::logic::module::update_module::{
+    UpdateModule, UpdateSleepTime, DOOR_1, UPDATE_SLEEP_NONE,
+};
+use crate::logic::modules::open_contain::{
+    self, out, OpenContain, OpenContainModuleData, OpenContainVirtuals, CMD_FROM_AI,
+};
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::object_creation_list::DEATH_FLOODED;
 use crate::logic::terrain_logic::DEATH_SPLATTED;
@@ -116,7 +124,12 @@ impl Default for ParachuteContainModuleData {
 }
 
 /// Lifts entry `k` of `OpenContainModuleData`'s table onto the `open` base.
-fn lift_open(k: usize, i: &mut Ini<'_>, d: &mut ParachuteContainModuleData, u: &UserData) -> IniResult<()> {
+fn lift_open(
+    k: usize,
+    i: &mut Ini<'_>,
+    d: &mut ParachuteContainModuleData,
+    u: &UserData,
+) -> IniResult<()> {
     match open_contain::FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.open, u),
         None => Ok(()),
@@ -124,7 +137,12 @@ fn lift_open(k: usize, i: &mut Ini<'_>, d: &mut ParachuteContainModuleData, u: &
 }
 
 /// Lifts entry `k` of the die mux table onto the `open` base.
-fn lift_die(k: usize, i: &mut Ini<'_>, d: &mut ParachuteContainModuleData, u: &UserData) -> IniResult<()> {
+fn lift_die(
+    k: usize,
+    i: &mut Ini<'_>,
+    d: &mut ParachuteContainModuleData,
+    u: &UserData,
+) -> IniResult<()> {
     match open_contain::DIE_MUX_FIELD_PARSE[k].parse {
         Some(f) => f(i, &mut d.open, u),
         None => Ok(()),
@@ -132,47 +150,163 @@ fn lift_die(k: usize, i: &mut Ini<'_>, d: &mut ParachuteContainModuleData, u: &U
 }
 
 static LIFTED_OPEN: [FieldParse<ParachuteContainModuleData>; 16] = [
-    FieldParse::new("ContainMax", |i, d, u| lift_open(0, i, d, u), UserData::None),
-    FieldParse::new("EnterSound", |i, d, u| lift_open(1, i, d, u), UserData::None),
+    FieldParse::new(
+        "ContainMax",
+        |i, d, u| lift_open(0, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "EnterSound",
+        |i, d, u| lift_open(1, i, d, u),
+        UserData::None,
+    ),
     FieldParse::new("ExitSound", |i, d, u| lift_open(2, i, d, u), UserData::None),
-    FieldParse::new("DamagePercentToUnits", |i, d, u| lift_open(3, i, d, u), UserData::None),
-    FieldParse::new("BurnedDeathToUnits", |i, d, u| lift_open(4, i, d, u), UserData::None),
-    FieldParse::new("AllowInsideKindOf", |i, d, u| lift_open(5, i, d, u), UserData::None),
-    FieldParse::new("ForbidInsideKindOf", |i, d, u| lift_open(6, i, d, u), UserData::None),
-    FieldParse::new("PassengersAllowedToFire", |i, d, u| lift_open(7, i, d, u), UserData::None),
-    FieldParse::new("PassengersInTurret", |i, d, u| lift_open(8, i, d, u), UserData::None),
-    FieldParse::new("NumberOfExitPaths", |i, d, u| lift_open(9, i, d, u), UserData::None),
-    FieldParse::new("DoorOpenTime", |i, d, u| lift_open(10, i, d, u), UserData::None),
-    FieldParse::new("WeaponBonusPassedToPassengers", |i, d, u| lift_open(11, i, d, u), UserData::None),
-    FieldParse::new("AllowAlliesInside", |i, d, u| lift_open(12, i, d, u), UserData::None),
-    FieldParse::new("AllowEnemiesInside", |i, d, u| lift_open(13, i, d, u), UserData::None),
-    FieldParse::new("AllowNeutralInside", |i, d, u| lift_open(14, i, d, u), UserData::None),
+    FieldParse::new(
+        "DamagePercentToUnits",
+        |i, d, u| lift_open(3, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "BurnedDeathToUnits",
+        |i, d, u| lift_open(4, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AllowInsideKindOf",
+        |i, d, u| lift_open(5, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ForbidInsideKindOf",
+        |i, d, u| lift_open(6, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "PassengersAllowedToFire",
+        |i, d, u| lift_open(7, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "PassengersInTurret",
+        |i, d, u| lift_open(8, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "NumberOfExitPaths",
+        |i, d, u| lift_open(9, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "DoorOpenTime",
+        |i, d, u| lift_open(10, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "WeaponBonusPassedToPassengers",
+        |i, d, u| lift_open(11, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AllowAlliesInside",
+        |i, d, u| lift_open(12, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AllowEnemiesInside",
+        |i, d, u| lift_open(13, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "AllowNeutralInside",
+        |i, d, u| lift_open(14, i, d, u),
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 static LIFTED_DIE: [FieldParse<ParachuteContainModuleData>; 5] = [
     FieldParse::new("DeathTypes", |i, d, u| lift_die(0, i, d, u), UserData::None),
-    FieldParse::new("VeterancyLevels", |i, d, u| lift_die(1, i, d, u), UserData::None),
-    FieldParse::new("ExemptStatus", |i, d, u| lift_die(2, i, d, u), UserData::None),
-    FieldParse::new("RequiredStatus", |i, d, u| lift_die(3, i, d, u), UserData::None),
+    FieldParse::new(
+        "VeterancyLevels",
+        |i, d, u| lift_die(1, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ExemptStatus",
+        |i, d, u| lift_die(2, i, d, u),
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RequiredStatus",
+        |i, d, u| lift_die(3, i, d, u),
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 /// `ParachuteContainModuleData::buildFieldParse`'s own table.
 static FIELD_PARSE: [FieldParse<ParachuteContainModuleData>; 8] = [
-    FieldParse::new("PitchRateMax", |i, d, _| { d.pitch_rate_max = i.parse_angular_velocity_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("RollRateMax", |i, d, _| { d.roll_rate_max = i.parse_angular_velocity_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("LowAltitudeDamping", |i, d, _| { d.low_altitude_damping = i.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("ParachuteOpenDist", |i, d, _| { d.para_open_dist = i.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("KillWhenLandingInWaterSlop", |i, d, _| { d.kill_when_landing_in_water_slop = i.parse_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("FreeFallDamagePercent", |i, d, _| { d.free_fall_damage_percent = i.parse_percent_to_real()?; Ok(()) }, UserData::None),
-    FieldParse::new("ParachuteOpenSound", |i, d, _| d.parachute_open_sound.parse(i), UserData::None),
+    FieldParse::new(
+        "PitchRateMax",
+        |i, d, _| {
+            d.pitch_rate_max = i.parse_angular_velocity_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "RollRateMax",
+        |i, d, _| {
+            d.roll_rate_max = i.parse_angular_velocity_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "LowAltitudeDamping",
+        |i, d, _| {
+            d.low_altitude_damping = i.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ParachuteOpenDist",
+        |i, d, _| {
+            d.para_open_dist = i.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "KillWhenLandingInWaterSlop",
+        |i, d, _| {
+            d.kill_when_landing_in_water_slop = i.parse_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "FreeFallDamagePercent",
+        |i, d, _| {
+            d.free_fall_damage_percent = i.parse_percent_to_real()?;
+            Ok(())
+        },
+        UserData::None,
+    ),
+    FieldParse::new(
+        "ParachuteOpenSound",
+        |i, d, _| d.parachute_open_sound.parse(i),
+        UserData::None,
+    ),
     FieldParse::end(),
 ];
 
 impl ParachuteContainModuleData {
     /// `ParachuteContainModuleData::buildFieldParse(p)`: `OpenContainModuleData::buildFieldParse(p)`, then this class's table.
-    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, ParachuteContainModuleData>) -> IniResult<()> {
+    pub fn build_field_parse(
+        p: &mut MultiIniFieldParse<'_, ParachuteContainModuleData>,
+    ) -> IniResult<()> {
         BehaviorModuleData::build_field_parse(p)?;
         p.add(&LIFTED_OPEN)?;
         p.add(&LIFTED_DIE)?;
@@ -181,7 +315,9 @@ impl ParachuteContainModuleData {
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.
-    pub fn friend_new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ParachuteContainModuleData> {
+    pub fn friend_new_module_data(
+        ini: Option<&mut Ini<'_>>,
+    ) -> IniResult<ParachuteContainModuleData> {
         let mut data = ParachuteContainModuleData::default();
         if let Some(ini) = ini {
             ini.init_from_ini_multi_proc(&mut data, ParachuteContainModuleData::build_field_parse)?;
@@ -192,7 +328,9 @@ impl ParachuteContainModuleData {
 
 /// The factory's `NewModuleDataProc` for `ParachuteContain`.
 pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<ModuleDataKind> {
-    Ok(ModuleDataKind::ParachuteContain(Arc::new(ParachuteContainModuleData::friend_new_module_data(ini)?)))
+    Ok(ModuleDataKind::ParachuteContain(Arc::new(
+        ParachuteContainModuleData::friend_new_module_data(ini)?,
+    )))
 }
 
 /// `class ParachuteContain : public OpenContain`.
@@ -240,7 +378,11 @@ fn status_mask(bit: i32) -> ObjectStatusMaskType {
     m
 }
 
-const ZERO: Coord3D = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
+const ZERO: Coord3D = Coord3D {
+    x: 0.0,
+    y: 0.0,
+    z: 0.0,
+};
 
 impl ParachuteContain {
     /// `getInterfaceMask()`: the base's.
@@ -249,8 +391,12 @@ impl ParachuteContain {
     }
 
     /// The constructor's first half: the base's (on a copy of its part of the data) and the fields.
-    pub fn unconstructed(object: ObjectId, module_data: Option<Arc<ParachuteContainModuleData>>) -> IniResult<ParachuteContain> {
-        let data = module_data.ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
+    pub fn unconstructed(
+        object: ObjectId,
+        module_data: Option<Arc<ParachuteContainModuleData>>,
+    ) -> IniResult<ParachuteContain> {
+        let data = module_data
+            .ok_or_else(|| IniError::new(crate::common::ini::IniErrorKind::InvalidData))?;
         let oc = OpenContain::unconstructed(object, Some(Arc::new(data.open.clone())))?;
         Ok(ParachuteContain {
             oc,
@@ -289,8 +435,15 @@ impl ParachuteContain {
     /// The state, as words: the base's, then the fields in `xfer` order (reals as bits).
     pub fn state_words(&self) -> Vec<u32> {
         let mut v = self.oc.state_words();
-        let c = |v: &mut Vec<u32>, p: &Coord3D| v.extend([p.x.to_bits(), p.y.to_bits(), p.z.to_bits()]);
-        v.extend([self.pitch.to_bits(), self.roll.to_bits(), self.pitch_rate.to_bits(), self.roll_rate.to_bits(), self.start_z.to_bits()]);
+        let c =
+            |v: &mut Vec<u32>, p: &Coord3D| v.extend([p.x.to_bits(), p.y.to_bits(), p.z.to_bits()]);
+        v.extend([
+            self.pitch.to_bits(),
+            self.roll.to_bits(),
+            self.pitch_rate.to_bits(),
+            self.roll_rate.to_bits(),
+            self.start_z.to_bits(),
+        ]);
         v.push(u32::from(self.is_landing_override_set));
         for p in [
             &self.landing_override,
@@ -305,7 +458,11 @@ impl ParachuteContain {
         ] {
             c(&mut v, p);
         }
-        v.extend([u32::from(self.need_to_update_rider_bones), u32::from(self.need_to_update_para_bones), u32::from(self.opened)]);
+        v.extend([
+            u32::from(self.need_to_update_rider_bones),
+            u32::from(self.need_to_update_para_bones),
+            u32::from(self.opened),
+        ]);
         v
     }
 
@@ -313,11 +470,17 @@ impl ParachuteContain {
     pub fn world_construct(&mut self, world: &mut World, me: ModuleHandle) {
         self.oc.world_construct(world, me);
         let d = self.data.clone();
-        self.pitch_rate = world.random.game_logic_random_value_real(-d.pitch_rate_max, d.pitch_rate_max);
+        self.pitch_rate = world
+            .random
+            .game_logic_random_value_real(-d.pitch_rate_max, d.pitch_rate_max);
         if !crate::logic::modules::plant(1511) {
-            self.roll_rate = world.random.game_logic_random_value_real(-d.roll_rate_max, d.roll_rate_max);
+            self.roll_rate = world
+                .random
+                .game_logic_random_value_real(-d.roll_rate_max, d.roll_rate_max);
         }
-        out(self, world, me, |w| w.set_status(me.object, status_mask(OBJECT_STATUS_PARACHUTING), true));
+        out(self, world, me, |w| {
+            w.set_status(me.object, status_mask(OBJECT_STATUS_PARACHUTING), true)
+        });
     }
 
     /// `update()` as the scheduler runs it.
@@ -326,7 +489,12 @@ impl ParachuteContain {
     }
 
     /// The module's answer to one of `Object`'s calls.
-    pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
+    pub fn module_call(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        call: ModuleCall,
+    ) -> ModuleReply {
         open_contain::contain_module_call(self, world, me, call)
     }
 
@@ -408,8 +576,12 @@ impl ParachuteContain {
         if self.need_to_update_para_bones {
             self.need_to_update_para_bones = false;
             if world.has_drawable(us) {
-                self.para_sway_bone = world.contain_drawable_pristine_bone(us, b"PARA_COG").unwrap_or(ZERO);
-                self.para_attach_bone = world.contain_drawable_pristine_bone(us, b"PARA_ATTCH").unwrap_or(ZERO);
+                self.para_sway_bone = world
+                    .contain_drawable_pristine_bone(us, b"PARA_COG")
+                    .unwrap_or(ZERO);
+                self.para_attach_bone = world
+                    .contain_drawable_pristine_bone(us, b"PARA_ATTCH")
+                    .unwrap_or(ZERO);
             }
         }
 
@@ -422,7 +594,10 @@ impl ParachuteContain {
                     None => {
                         // "No parachute-attach bone... using object height!"
                         self.rider_attach_bone = ZERO;
-                        let h = world.objects.find(rider).map_or(0.0, |o| o.geometry_info.get_max_height_above_position());
+                        let h = world
+                            .objects
+                            .find(rider)
+                            .map_or(0.0, |o| o.geometry_info.get_max_height_above_position());
                         if !crate::logic::modules::plant(1514) {
                             self.rider_attach_bone.z += h;
                         }
@@ -436,15 +611,28 @@ impl ParachuteContain {
     fn update_offsets_from_bones(&mut self, world: &mut World, me: ModuleHandle) {
         let us = me.object;
         let obj_pos = world.objects.find(us).map_or(ZERO, |o| o.get_position());
-        let sub = |a: Coord3D, b: &Coord3D| Coord3D { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
+        let sub = |a: Coord3D, b: &Coord3D| Coord3D {
+            x: a.x - b.x,
+            y: a.y - b.y,
+            z: a.z - b.z,
+        };
 
-        self.para_sway_offset = sub(world.contain_convert_bone_pos_to_world_pos(us, &self.para_sway_bone), &obj_pos);
-        self.para_attach_offset = sub(world.contain_convert_bone_pos_to_world_pos(us, &self.para_attach_bone), &obj_pos);
+        self.para_sway_offset = sub(
+            world.contain_convert_bone_pos_to_world_pos(us, &self.para_sway_bone),
+            &obj_pos,
+        );
+        self.para_attach_offset = sub(
+            world.contain_convert_bone_pos_to_world_pos(us, &self.para_attach_bone),
+            &obj_pos,
+        );
 
         let rider = self.rider(world, me);
         if rider != INVALID_ID {
             let rider_pos = world.objects.find(rider).map_or(ZERO, |o| o.get_position());
-            self.rider_attach_offset = sub(world.contain_convert_bone_pos_to_world_pos(rider, &self.rider_attach_bone), &rider_pos);
+            self.rider_attach_offset = sub(
+                world.contain_convert_bone_pos_to_world_pos(rider, &self.rider_attach_bone),
+                &rider_pos,
+            );
             self.rider_attach_offset = sub(self.para_attach_offset, &self.rider_attach_offset);
             if !crate::logic::modules::plant(1515) {
                 self.rider_sway_offset = sub(self.para_sway_offset, &self.rider_attach_offset);
@@ -471,15 +659,26 @@ impl ParachuteContain {
             out(self, world, me, |w| w.contain_set_position(rider, &pos));
         }
 
-        let angle = world.objects.find(us).map_or(0.0, |o| o.thing.orientation());
+        let angle = world
+            .objects
+            .find(us)
+            .map_or(0.0, |o| o.thing.orientation());
         out(self, world, me, |w| w.contain_set_orientation(rider, angle));
 
         if world.has_drawable(rider) {
-            if world.objects.find(rider).is_some_and(|o| o.is_disabled_by_type(DISABLED_HELD)) {
+            if world
+                .objects
+                .find(rider)
+                .is_some_and(|o| o.is_disabled_by_type(DISABLED_HELD))
+            {
                 let tmp = self.calc_sway_mtx(&self.rider_sway_offset.clone());
-                out(self, world, me, |w| w.contain_drawable_set_instance_matrix(rider, Some(&tmp)));
+                out(self, world, me, |w| {
+                    w.contain_drawable_set_instance_matrix(rider, Some(&tmp))
+                });
             } else {
-                out(self, world, me, |w| w.contain_drawable_set_instance_matrix(rider, None));
+                out(self, world, me, |w| {
+                    w.contain_drawable_set_instance_matrix(rider, None)
+                });
             }
         }
     }
@@ -497,7 +696,9 @@ impl ParachuteContain {
     fn hide_unless_opened(&mut self, world: &mut World, me: ModuleHandle) {
         if world.has_drawable(me.object) {
             let hidden = !self.opened;
-            out(self, world, me, |w| w.contain_drawable_set_hidden(me.object, hidden));
+            out(self, world, me, |w| {
+                w.contain_drawable_set_hidden(me.object, hidden)
+            });
         }
     }
 }
@@ -521,7 +722,13 @@ impl OpenContainVirtuals for ParachuteContain {
 
     /// `ParachuteContain::isValidContainerFor(rider, checkCapacity)`: the base's, then a transportable rider (infantry and parachutable objects always
     /// are: "this allows us to paradrop pilots, but not transport them by other means"), and only one at a time.
-    fn is_valid_container_for(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId, check_capacity: bool) -> bool {
+    fn is_valid_container_for(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        rider: ObjectId,
+        check_capacity: bool,
+    ) -> bool {
         if rider == INVALID_ID || world.objects.find(rider).is_none() {
             return false;
         }
@@ -530,8 +737,16 @@ impl OpenContainVirtuals for ParachuteContain {
             return false;
         }
         let transport_slot_count = out(self, world, me, |w| w.get_transport_slot_count(rider));
-        let (infantry, parachutable) = world.objects.find(rider).map_or((false, false), |o| (o.is_kind_of(KINDOF_INFANTRY), o.is_kind_of(KINDOF_PARACHUTABLE)));
-        if transport_slot_count == 0 && !infantry && (!parachutable || crate::logic::modules::plant(1517)) {
+        let (infantry, parachutable) = world.objects.find(rider).map_or((false, false), |o| {
+            (
+                o.is_kind_of(KINDOF_INFANTRY),
+                o.is_kind_of(KINDOF_PARACHUTABLE),
+            )
+        });
+        if transport_slot_count == 0
+            && !infantry
+            && (!parachutable || crate::logic::modules::plant(1517))
+        {
             return false;
         }
         // "we can only 'hold' one item at a time."
@@ -542,7 +757,12 @@ impl OpenContainVirtuals for ParachuteContain {
     }
 
     /// `isEnclosingContainerFor(obj)`: `FALSE`.
-    fn is_enclosing_container_for(&mut self, _world: &mut World, _me: ModuleHandle, _obj: ObjectId) -> bool {
+    fn is_enclosing_container_for(
+        &mut self,
+        _world: &mut World,
+        _me: ModuleHandle,
+        _obj: ObjectId,
+    ) -> bool {
         crate::logic::modules::plant(1519)
     }
 
@@ -552,14 +772,30 @@ impl OpenContainVirtuals for ParachuteContain {
     }
 
     /// `ParachuteContain::onContaining(rider, wasSelected)`: the rider is held, parachuting and in free fall, and hangs from the parachute.
-    fn on_containing(&mut self, world: &mut World, me: ModuleHandle, rider: ObjectId, was_selected: bool) {
+    fn on_containing(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+        rider: ObjectId,
+        was_selected: bool,
+    ) {
         open_contain::base_on_containing(self, world, me, rider, was_selected);
 
         // "objects inside a transport are held"
-        out(self, world, me, |w| w.contain_set_disabled(rider, DISABLED_HELD));
-        out(self, world, me, |w| w.set_status(rider, status_mask(OBJECT_STATUS_PARACHUTING), true));
+        out(self, world, me, |w| {
+            w.contain_set_disabled(rider, DISABLED_HELD)
+        });
+        out(self, world, me, |w| {
+            w.set_status(rider, status_mask(OBJECT_STATUS_PARACHUTING), true)
+        });
 
-        out(self, world, me, |w| w.clear_and_set_model_condition_state(rider, MODELCONDITION_PARACHUTING, MODELCONDITION_FREEFALL));
+        out(self, world, me, |w| {
+            w.clear_and_set_model_condition_state(
+                rider,
+                MODELCONDITION_PARACHUTING,
+                MODELCONDITION_FREEFALL,
+            )
+        });
         self.need_to_update_rider_bones = true;
 
         // "position him correctly."
@@ -574,49 +810,98 @@ impl OpenContainVirtuals for ParachuteContain {
         let us = me.object;
 
         // "object is no longer held inside a transport"
-        out(self, world, me, |w| w.contain_clear_disabled(rider, DISABLED_HELD));
-        out(self, world, me, |w| w.clear_status(rider, status_mask(OBJECT_STATUS_PARACHUTING)));
+        out(self, world, me, |w| {
+            w.contain_clear_disabled(rider, DISABLED_HELD)
+        });
+        out(self, world, me, |w| {
+            w.clear_status(rider, status_mask(OBJECT_STATUS_PARACHUTING))
+        });
 
         // "mark parachute as 'no-collisions'... it is just ephemeral at this point"
         if !crate::logic::modules::plant(1520) {
-            out(self, world, me, |w| w.set_status(us, status_mask(OBJECT_STATUS_NO_COLLISIONS), true));
+            out(self, world, me, |w| {
+                w.set_status(us, status_mask(OBJECT_STATUS_NO_COLLISIONS), true)
+            });
         }
 
         // "position him correctly."
         self.position_rider(world, me, rider);
 
-        out(self, world, me, |w| w.contain_clear_model_condition_flags(rider, &[MODELCONDITION_FREEFALL, MODELCONDITION_PARACHUTING]));
+        out(self, world, me, |w| {
+            w.contain_clear_model_condition_flags(
+                rider,
+                &[MODELCONDITION_FREEFALL, MODELCONDITION_PARACHUTING],
+            )
+        });
         self.need_to_update_rider_bones = true;
 
         // "temporarily mark the guy as being allowed to fall (overriding his locomotor's stick-to-ground attribute)"
         if let Some(physics) = world.objects.find(rider).and_then(|o| o.physics) {
-            out(self, world, me, |w| w.module_call(rider, physics, ModuleCall::PhysicsSetAllowToFall(true)));
-            out(self, world, me, |w| w.module_call(rider, physics, ModuleCall::PhysicsApplyForce(ZERO)));
+            out(self, world, me, |w| {
+                w.module_call(rider, physics, ModuleCall::PhysicsSetAllowToFall(true))
+            });
+            out(self, world, me, |w| {
+                w.module_call(rider, physics, ModuleCall::PhysicsApplyForce(ZERO))
+            });
         }
 
         if let Some(rider_ai) = world.objects.find(rider).and_then(|o| o.ai) {
             let controller = world.get_controlling_player(rider);
             if controller.is_some_and(|p| world.contain_player_is_skirmish_ai(p)) {
                 // "hunt, as per Dustin's request."
-                out(self, world, me, |w| w.module_call(rider, rider_ai, ModuleCall::AiHunt { command_source: CMD_FROM_AI }));
+                out(self, world, me, |w| {
+                    w.module_call(
+                        rider,
+                        rider_ai,
+                        ModuleCall::AiHunt {
+                            command_source: CMD_FROM_AI,
+                        },
+                    )
+                });
             } else {
                 let mut has_rally_point = false;
                 // the transport of the rider, and the building that produced the transport
-                let transport = world.objects.find(rider).map_or(INVALID_ID, |o| o.producer_id);
+                let transport = world
+                    .objects
+                    .find(rider)
+                    .map_or(INVALID_ID, |o| o.producer_id);
                 if let Some(t) = world.objects.find(transport) {
                     let producer = t.producer_id;
                     if world.objects.find(producer).is_some() {
                         // "See if we need to set a rally point for the object being parachuted"
-                        if let Some(exit) = out(self, world, me, |w| w.get_object_exit_interface(producer)) {
-                            if out(self, world, me, |w| w.module_call(producer, exit, ModuleCall::UseSpawnRallyPoint)).as_bool() {
-                                out(self, world, me, |w| w.module_call(producer, exit, ModuleCall::ExitObjectViaDoor { obj: rider, door: DOOR_1 }));
+                        if let Some(exit) =
+                            out(self, world, me, |w| w.get_object_exit_interface(producer))
+                        {
+                            if out(self, world, me, |w| {
+                                w.module_call(producer, exit, ModuleCall::UseSpawnRallyPoint)
+                            })
+                            .as_bool()
+                            {
+                                out(self, world, me, |w| {
+                                    w.module_call(
+                                        producer,
+                                        exit,
+                                        ModuleCall::ExitObjectViaDoor {
+                                            obj: rider,
+                                            door: DOOR_1,
+                                        },
+                                    )
+                                });
                                 has_rally_point = true;
                             }
                         }
                     }
                 }
                 if !has_rally_point && !crate::logic::modules::plant(1521) {
-                    out(self, world, me, |w| w.module_call(rider, rider_ai, ModuleCall::AiIdleFrom { command_source: CMD_FROM_AI }));
+                    out(self, world, me, |w| {
+                        w.module_call(
+                            rider,
+                            rider_ai,
+                            ModuleCall::AiIdleFrom {
+                                command_source: CMD_FROM_AI,
+                            },
+                        )
+                    });
                 }
             }
         }
@@ -624,15 +909,25 @@ impl OpenContainVirtuals for ParachuteContain {
         // "if we land in the water, we die. alas."
         let rider_pos = world.objects.find(rider).map_or(ZERO, |o| o.get_position());
         let rider_layer = world.objects.find(rider).map_or(LAYER_GROUND, |o| o.layer);
-        if let Some(water_z) = out(self, world, me, |w| w.terrain_is_underwater_water_z(rider_pos.x, rider_pos.y)) {
-            if rider_pos.z <= water_z + d.kill_when_landing_in_water_slop && rider_layer == LAYER_GROUND {
+        if let Some(water_z) = out(self, world, me, |w| {
+            w.terrain_is_underwater_water_z(rider_pos.x, rider_pos.y)
+        }) {
+            if rider_pos.z <= water_z + d.kill_when_landing_in_water_slop
+                && rider_layer == LAYER_GROUND
+            {
                 // "don't call kill(); do it manually, so we can specify DEATH_FLOODED"
                 let mut info = DamageInfo::default();
                 info.input.damage_type = DAMAGE_WATER;
-                info.input.death_type = if crate::logic::modules::plant(1522) { crate::logic::damage::DEATH_NORMAL } else { DEATH_FLOODED };
+                info.input.death_type = if crate::logic::modules::plant(1522) {
+                    crate::logic::damage::DEATH_NORMAL
+                } else {
+                    DEATH_FLOODED
+                };
                 info.input.source_id = INVALID_ID;
                 info.input.amount = HUGE_DAMAGE_AMOUNT;
-                out(self, world, me, |w| w.contain_attempt_damage(rider, &mut info));
+                out(self, world, me, |w| {
+                    w.contain_attempt_damage(rider, &mut info)
+                });
             }
         }
 
@@ -641,11 +936,18 @@ impl OpenContainVirtuals for ParachuteContain {
         let cell_x = real_to_int(rider_pos.x / PATHFIND_CELL_SIZE as f32);
         let cell_y = real_to_int(rider_pos.y / PATHFIND_CELL_SIZE as f32);
         let rider_layer = world.objects.find(rider).map_or(LAYER_GROUND, |o| o.layer);
-        let cell_type = out(self, world, me, |w| w.contain_pathfind_cell_type(rider_layer, cell_x, cell_y)).unwrap_or(CELL_IMPASSABLE);
+        let cell_type = out(self, world, me, |w| {
+            w.contain_pathfind_cell_type(rider_layer, cell_x, cell_y)
+        })
+        .unwrap_or(CELL_IMPASSABLE);
 
         // "If we land outside the map from a faulty parachute, we die too."
         let off_map = world.objects.find(rider).is_some_and(|o| o.is_off_map());
-        if off_map || cell_type == CELL_CLIFF || (cell_type == CELL_WATER && !crate::logic::modules::plant(1523)) || cell_type == CELL_IMPASSABLE {
+        if off_map
+            || cell_type == CELL_CLIFF
+            || (cell_type == CELL_WATER && !crate::logic::modules::plant(1523))
+            || cell_type == CELL_IMPASSABLE
+        {
             self.kill(world, me, rider);
         }
     }
@@ -653,7 +955,9 @@ impl OpenContainVirtuals for ParachuteContain {
     /// `ParachuteContain::onDie(damageInfo)`: killed in the air, the parachute drops its rider screaming, with some damage "for losing your parachute".
     fn on_die(&mut self, world: &mut World, me: ModuleHandle, info: &DamageInfo) {
         let us = me.object;
-        if out(self, world, me, |w| w.is_significantly_above_terrain(us)) != crate::logic::modules::plant(1524) {
+        if out(self, world, me, |w| w.is_significantly_above_terrain(us))
+            != crate::logic::modules::plant(1524)
+        {
             let rider = self.rider(world, me);
             if rider != INVALID_ID {
                 self.remove_all_contained(world, me, false);
@@ -663,21 +967,32 @@ impl OpenContainVirtuals for ParachuteContain {
                         undefined(world, me, Undefined::NullBodyModule);
                         return;
                     };
-                    let max = out(self, world, me, |w| w.module_call(rider, body, ModuleCall::GetMaxHealth)).as_real(0.0);
+                    let max = out(self, world, me, |w| {
+                        w.module_call(rider, body, ModuleCall::GetMaxHealth)
+                    })
+                    .as_real(0.0);
                     let mut extra = DamageInfo::default();
                     extra.input.damage_type = DAMAGE_FALLING;
                     extra.input.death_type = DEATH_SPLATTED;
                     extra.input.source_id = info.input.source_id;
                     extra.input.amount = max * d.free_fall_damage_percent;
-                    out(self, world, me, |w| w.contain_attempt_damage(rider, &mut extra));
+                    out(self, world, me, |w| {
+                        w.contain_attempt_damage(rider, &mut extra)
+                    });
                 }
                 if let Some(physics) = world.objects.find(rider).and_then(|o| o.physics) {
-                    out(self, world, me, |w| w.module_call(rider, physics, ModuleCall::PhysicsSetAllowToFall(true)));
+                    out(self, world, me, |w| {
+                        w.module_call(rider, physics, ModuleCall::PhysicsSetAllowToFall(true))
+                    });
                     // "bwah ha ha"
                     if !crate::logic::modules::plant(1525) {
-                        out(self, world, me, |w| w.module_call(rider, physics, ModuleCall::PhysicsSetIsInFreeFall(true)));
+                        out(self, world, me, |w| {
+                            w.module_call(rider, physics, ModuleCall::PhysicsSetIsInFreeFall(true))
+                        });
                     }
-                    out(self, world, me, |w| w.module_call(rider, physics, ModuleCall::PhysicsApplyForce(ZERO)));
+                    out(self, world, me, |w| {
+                        w.module_call(rider, physics, ModuleCall::PhysicsApplyForce(ZERO))
+                    });
                 }
             }
         }
@@ -690,7 +1005,12 @@ impl OpenContainVirtuals for ParachuteContain {
     fn on_collide(&mut self, world: &mut World, me: ModuleHandle, other: ObjectId) {
         if other == INVALID_ID || world.objects.find(other).is_none() {
             // "if we're in a container (eg, a transport plane), just ignore this..."
-            if world.objects.find(me.object).is_some_and(|o| o.contained_by != INVALID_ID) && !crate::logic::modules::plant(1526) {
+            if world
+                .objects
+                .find(me.object)
+                .is_some_and(|o| o.contained_by != INVALID_ID)
+                && !crate::logic::modules::plant(1526)
+            {
                 return;
             }
             self.remove_all_contained(world, me, false);
@@ -703,7 +1023,11 @@ impl OpenContainVirtuals for ParachuteContain {
         open_contain::base_update(self, world, me);
 
         let us = me.object;
-        if world.objects.find(us).is_some_and(|o| o.is_disabled_by_type(DISABLED_HELD)) {
+        if world
+            .objects
+            .find(us)
+            .is_some_and(|o| o.is_disabled_by_type(DISABLED_HELD))
+        {
             // "my, that was easy"
             return UPDATE_SLEEP_NONE;
         }
@@ -717,7 +1041,9 @@ impl OpenContainVirtuals for ParachuteContain {
             let p = pos(world);
             self.start_z = p.z;
             let ground_height = out(self, world, me, |w| w.terrain_get_ground_height(p.x, p.y));
-            if self.start_z - ground_height < 2.0 * d.para_open_dist && !crate::logic::modules::plant(1527) {
+            if self.start_z - ground_height < 2.0 * d.para_open_dist
+                && !crate::logic::modules::plant(1527)
+            {
                 // "we ejected too close to the ground, and there isn't enough room to open the chute ... we'll fudge a little"
                 self.start_z = ground_height + 2.0 * d.para_open_dist;
             }
@@ -727,13 +1053,32 @@ impl OpenContainVirtuals for ParachuteContain {
             // see if we need to open.
             if (self.start_z - pos(world).z).abs() >= d.para_open_dist {
                 self.opened = !crate::logic::modules::plant(1528);
-                out(self, world, me, |w| w.clear_and_set_model_condition_state(us, MODELCONDITION_FREEFALL, MODELCONDITION_PARACHUTING));
+                out(self, world, me, |w| {
+                    w.clear_and_set_model_condition_state(
+                        us,
+                        MODELCONDITION_FREEFALL,
+                        MODELCONDITION_PARACHUTING,
+                    )
+                });
                 self.need_to_update_para_bones = true;
                 if rider != INVALID_ID {
-                    out(self, world, me, |w| w.clear_and_set_model_condition_state(rider, MODELCONDITION_FREEFALL, MODELCONDITION_PARACHUTING));
+                    out(self, world, me, |w| {
+                        w.clear_and_set_model_condition_state(
+                            rider,
+                            MODELCONDITION_FREEFALL,
+                            MODELCONDITION_PARACHUTING,
+                        )
+                    });
                     self.need_to_update_rider_bones = true;
                     let name = d.parachute_open_sound.event_name.clone();
-                    out(self, world, me, |w| w.emit(ObjectClientEvent::AudioAddEvent { name, object_id: rider, position: None, player_index: None }));
+                    out(self, world, me, |w| {
+                        w.emit(ObjectClientEvent::AudioAddEvent {
+                            name,
+                            object_id: rider,
+                            position: None,
+                            player_index: None,
+                        })
+                    });
                 }
 
                 // "When a parachute opens, it should look for a good place to land. This could be explicitly set by a DeliverPayload, otherwise any
@@ -742,16 +1087,44 @@ impl OpenContainVirtuals for ParachuteContain {
                     let mut target = pos(world);
                     if self.is_landing_override_set {
                         target = self.landing_override;
-                        if out(self, world, me, |w| w.module_call(us, ai, ModuleCall::AiHasCurLocomotor)).as_bool() {
-                            out(self, world, me, |w| w.module_call(us, ai, ModuleCall::AiLocomotorSetUltraAccurate(true)));
+                        if out(self, world, me, |w| {
+                            w.module_call(us, ai, ModuleCall::AiHasCurLocomotor)
+                        })
+                        .as_bool()
+                        {
+                            out(self, world, me, |w| {
+                                w.module_call(us, ai, ModuleCall::AiLocomotorSetUltraAccurate(true))
+                            });
                         }
                     } else if !crate::logic::modules::plant(1529) {
-                        out(self, world, me, |w| w.contain_partition_find_position_around(&mut target, 0.0, 100.0, FPF_NONE));
+                        out(self, world, me, |w| {
+                            w.contain_partition_find_position_around(
+                                &mut target,
+                                0.0,
+                                100.0,
+                                FPF_NONE,
+                            )
+                        });
                     }
-                    out(self, world, me, |w| w.module_call(us, ai, ModuleCall::AiMoveToPosition { pos: target, command_source: CMD_FROM_AI }));
+                    out(self, world, me, |w| {
+                        w.module_call(
+                            us,
+                            ai,
+                            ModuleCall::AiMoveToPosition {
+                                pos: target,
+                                command_source: CMD_FROM_AI,
+                            },
+                        )
+                    });
                 }
             } else if rider != INVALID_ID {
-                out(self, world, me, |w| w.clear_and_set_model_condition_state(rider, MODELCONDITION_PARACHUTING, MODELCONDITION_FREEFALL));
+                out(self, world, me, |w| {
+                    w.clear_and_set_model_condition_state(
+                        rider,
+                        MODELCONDITION_PARACHUTING,
+                        MODELCONDITION_FREEFALL,
+                    )
+                });
             }
         }
         // the drawable, unchecked
@@ -760,14 +1133,18 @@ impl OpenContainVirtuals for ParachuteContain {
             return UPDATE_SLEEP_NONE;
         }
         let hidden = !self.opened;
-        out(self, world, me, |w| w.contain_drawable_set_hidden(us, hidden));
+        out(self, world, me, |w| {
+            w.contain_drawable_set_hidden(us, hidden)
+        });
 
         let no_collisions = status_mask(OBJECT_STATUS_NO_COLLISIONS);
         if !self.opened || self.get_contain_count(world) == 0 {
             // "unopened, or empty, chutes, don't collide with anything, to simplify ejections, paradrops, landings, etc..."
             out(self, world, me, |w| w.set_status(us, no_collisions, true));
             if rider != INVALID_ID {
-                out(self, world, me, |w| w.set_status(rider, no_collisions, true));
+                out(self, world, me, |w| {
+                    w.set_status(rider, no_collisions, true)
+                });
             }
         } else {
             // "opened/nonempty chutes DO collide..."
@@ -778,30 +1155,53 @@ impl OpenContainVirtuals for ParachuteContain {
         }
 
         if let Some(ai) = parachute_ai {
-            if !world.objects.find(us).is_some_and(|o| o.is_effectively_dead()) {
-                let set = if self.opened { LOCOMOTORSET_NORMAL } else { LOCOMOTORSET_FREEFALL };
-                out(self, world, me, |w| w.module_call(us, ai, ModuleCall::AiChooseLocomotorSet(set)));
+            if !world
+                .objects
+                .find(us)
+                .is_some_and(|o| o.is_effectively_dead())
+            {
+                let set = if self.opened {
+                    LOCOMOTORSET_NORMAL
+                } else {
+                    LOCOMOTORSET_FREEFALL
+                };
+                out(self, world, me, |w| {
+                    w.module_call(us, ai, ModuleCall::AiChooseLocomotorSet(set))
+                });
 
-                if out(self, world, me, |w| w.module_call(us, ai, ModuleCall::AiHasCurLocomotor)).as_bool() {
+                if out(self, world, me, |w| {
+                    w.module_call(us, ai, ModuleCall::AiHasCurLocomotor)
+                })
+                .as_bool()
+                {
                     // "damp the swaying a bunch when we get close, so that things land vertically (or nearly so)"
                     let mut altitude_damping = 0.0;
                     if self.get_contain_count(world) > 0 {
                         let rider = self.rider(world, me);
                         const ALTITUDE_DAMP_START: f32 = 20.0;
-                        if out(self, world, me, |w| w.get_height_above_terrain(rider)) <= ALTITUDE_DAMP_START {
+                        if out(self, world, me, |w| w.get_height_above_terrain(rider))
+                            <= ALTITUDE_DAMP_START
+                        {
                             altitude_damping = d.low_altitude_damping;
                         }
                     }
 
                     if self.opened {
-                        let sway = |t: &mut Self, w: &mut World, k: u8| out(t, w, me, |w| w.module_call(us, ai, ModuleCall::AiLocomotorSway(k))).as_real(0.0);
+                        let sway = |t: &mut Self, w: &mut World, k: u8| {
+                            out(t, w, me, |w| {
+                                w.module_call(us, ai, ModuleCall::AiLocomotorSway(k))
+                            })
+                            .as_real(0.0)
+                        };
                         let pitch_stiffness = sway(self, world, 0);
                         let roll_stiffness = sway(self, world, 1);
                         let pitch_damping = sway(self, world, 2) + altitude_damping;
                         let roll_damping = sway(self, world, 3) + altitude_damping;
                         // spring/damper
-                        self.pitch_rate += (-pitch_stiffness * self.pitch) + (-pitch_damping * self.pitch_rate);
-                        self.roll_rate += (-roll_stiffness * self.roll) + (-roll_damping * self.roll_rate);
+                        self.pitch_rate +=
+                            (-pitch_stiffness * self.pitch) + (-pitch_damping * self.pitch_rate);
+                        self.roll_rate +=
+                            (-roll_stiffness * self.roll) + (-roll_damping * self.roll_rate);
 
                         self.pitch += self.pitch_rate;
                         if !crate::logic::modules::plant(1531) {
@@ -810,8 +1210,20 @@ impl OpenContainVirtuals for ParachuteContain {
 
                         if self.is_landing_override_set {
                             // "Need to wait until after opening to do this, or else we are sending the message to the Freefall locomotor."
-                            out(self, world, me, |w| w.module_call(us, ai, ModuleCall::AiLocomotorSetCloseEnoughDist(10.0)));
-                            out(self, world, me, |w| w.module_call(us, ai, ModuleCall::AiLocomotorSetCloseEnoughDist3D(false)));
+                            out(self, world, me, |w| {
+                                w.module_call(
+                                    us,
+                                    ai,
+                                    ModuleCall::AiLocomotorSetCloseEnoughDist(10.0),
+                                )
+                            });
+                            out(self, world, me, |w| {
+                                w.module_call(
+                                    us,
+                                    ai,
+                                    ModuleCall::AiLocomotorSetCloseEnoughDist3D(false),
+                                )
+                            });
                         }
                     }
 
@@ -819,7 +1231,9 @@ impl OpenContainVirtuals for ParachuteContain {
                     self.update_bone_positions(world, me);
                     self.update_offsets_from_bones(world, me);
                     let tmp = self.calc_sway_mtx(&self.para_sway_offset.clone());
-                    out(self, world, me, |w| w.contain_drawable_set_instance_matrix(us, Some(&tmp)));
+                    out(self, world, me, |w| {
+                        w.contain_drawable_set_instance_matrix(us, Some(&tmp))
+                    });
 
                     self.position_contained_objects_relative_to_container(world, me);
                 }
@@ -828,22 +1242,32 @@ impl OpenContainVirtuals for ParachuteContain {
 
         // "allow us to land on bridges!"
         let para_pos = pos(world);
-        let new_layer = out(self, world, me, |w| w.terrain_get_highest_layer_for_destination(&para_pos));
+        let new_layer = out(self, world, me, |w| {
+            w.terrain_get_highest_layer_for_destination(&para_pos)
+        });
         out(self, world, me, |w| w.contain_set_layer(us, new_layer));
         if rider != INVALID_ID {
             out(self, world, me, |w| w.contain_set_layer(rider, new_layer));
         }
 
         // "If we have lost our passenger for whatever reason, die early. Otherwise we just sit around forever."
-        if self.get_contain_count(world) == 0 && !crate::logic::modules::plant(1532) && !self.kill(world, me, us) {
+        if self.get_contain_count(world) == 0
+            && !crate::logic::modules::plant(1532)
+            && !self.kill(world, me, us)
+        {
             return UPDATE_SLEEP_NONE;
         }
 
         // "the collide system doesn't always collide us with the ground if we fall into water. so force the issue."
         let para_pos = pos(world);
-        let (dead, layer) = world.objects.find(us).map_or((true, LAYER_GROUND), |o| (o.is_effectively_dead(), o.layer));
+        let (dead, layer) = world
+            .objects
+            .find(us)
+            .map_or((true, LAYER_GROUND), |o| (o.is_effectively_dead(), o.layer));
         if !dead && layer == LAYER_GROUND {
-            if let Some(water_z) = out(self, world, me, |w| w.terrain_is_underwater_water_z(para_pos.x, para_pos.y)) {
+            if let Some(water_z) = out(self, world, me, |w| {
+                w.terrain_is_underwater_water_z(para_pos.x, para_pos.y)
+            }) {
                 if para_pos.z - water_z < d.kill_when_landing_in_water_slop {
                     self.kill(world, me, us);
                 }
@@ -854,7 +1278,11 @@ impl OpenContainVirtuals for ParachuteContain {
     }
 
     /// `positionContainedObjectsRelativeToContainer()`: every rider of the module's own list is positioned.
-    fn position_contained_objects_relative_to_container(&mut self, world: &mut World, me: ModuleHandle) {
+    fn position_contained_objects_relative_to_container(
+        &mut self,
+        world: &mut World,
+        me: ModuleHandle,
+    ) {
         for rider in self.oc.contain_list().to_vec() {
             self.position_rider(world, me, rider);
         }
@@ -901,7 +1329,12 @@ impl UpdateBehavior for ParachuteContain {
             _ => None,
         }
     }
-    fn other_call(&mut self, _world: &mut World, _me: ModuleHandle, _call: ModuleCall) -> ModuleReply {
+    fn other_call(
+        &mut self,
+        _world: &mut World,
+        _me: ModuleHandle,
+        _call: ModuleCall,
+    ) -> ModuleReply {
         ModuleReply::Unhandled
     }
 }
