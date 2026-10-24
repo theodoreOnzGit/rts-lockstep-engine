@@ -73,7 +73,7 @@ use crate::logic::world::sleepy::UpdateHandle;
 use crate::logic::world::update_body::UpdateBody;
 
 /// `FROM_BOUNDINGSPHERE_3D` (`DistanceCalculationType`).
-const FROM_BOUNDINGSPHERE_3D: i32 = 1;
+const FROM_BOUNDINGSPHERE_3D: i32 = 3;
 /// `TINT_STATUS_DISABLED`: "drawable tint color is deathly dark grey".
 const TINT_STATUS_DISABLED: i32 = 0x0000_0001;
 

@@ -87,9 +87,11 @@ void Player::iterateObjects( void (*func)( Object *, void * ), void *userData )
 }
 /* --- p1w13-sonnet --- (batch P: ActiveBody logs its retaliation scan; null for AutoHealBehavior's) */
 void (*g_ahRangeHook)(const Coord3D *, Real, PartitionFilter **) = 0;
+int g_ahRangeDc = -1;   /* batch R34: the distance calculation of the last scan, for the hooks that log it (R33's) */
 /* --- end p1w13-sonnet --- */
 SimpleObjectIterator *PartitionManager::iterateObjectsInRange( const Coord3D *pos, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters, IterOrderType order )
 {
+	g_ahRangeDc = (int)dc;
 	if (g_ahRangeHook) g_ahRangeHook(pos, maxDist, filters);
 	SimpleObjectIterator *it = new SimpleObjectIterator;
 	it->m_list = g_ahRange;

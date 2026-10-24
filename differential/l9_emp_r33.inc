@@ -51,7 +51,7 @@ void r33ScanHook(const Coord3D *pos, Real maxDist, PartitionFilter **filters)
 {
 	int n = 0;
 	while (filters && filters[n]) ++n;
-	ulog("scan %08x %08x %08x %08x %d", realBits(pos->x), realBits(pos->y), realBits(pos->z), realBits(maxDist), n);
+	ulog("scan %08x %08x %08x %08x %d %d", realBits(pos->x), realBits(pos->y), realBits(pos->z), realBits(maxDist), n, g_ahRangeDc);
 }
 Real r33F(unsigned u) { Real r; memcpy(&r, &u, 4); return r; }
 /* the kinds the test gives an object, by bit (the same list in the Rust test) */

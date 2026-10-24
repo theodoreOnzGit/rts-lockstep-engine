@@ -37,6 +37,11 @@
 //! and 476,214 outputs: **0 mismatches**; 279,901 effect lines compared (the compared cases'): 3,051 flashes (each an attack), 32,534 scans,
 //! 11,439 disables, 36,777 damages (the kills), 28,083 particle systems, and 468 tint records.
 //!
+//! **Corrected 2026-10-24 (R34):** the scan's distance type was `1` (`FROM_CENTER_3D`), where upstream passes `FROM_BOUNDINGSPHERE_3D`
+//! (3), and these results could not show it: the scan line carried the number of filters, not the distance type. The constant is fixed, the
+//! line now carries the distance type (`g_ahRangeDc`), the numbers above are the re-run's (unchanged), and with the old constant 300 cases give
+//! 1,001 mismatches.
+//!
 //! On the way: the module build's `setOrientation` is a line and keeps no angle, so the constructor's random orientation is compared as that
 //! line (the Rust side's angle after the constructor), not as a state word.
 //!
@@ -454,9 +459,9 @@ fn effects(w: &mut World, events_before: usize, names: &mut HashMap<u32, Vec<u8>
                     tally.disables += 1;
                     log.push(format!("disableduntil {object} {disabled_type} {frame}"))
                 }
-                Some(CutCall::PartitionIterateObjectsInRangeAt { position: p, range, .. }) => {
+                Some(CutCall::PartitionIterateObjectsInRangeAt { position: p, range, dc }) => {
                     tally.scans += 1;
-                    log.push(format!("scan {:08x} {:08x} {:08x} {:08x} 0", b(p.x), b(p.y), b(p.z), b(range)))
+                    log.push(format!("scan {:08x} {:08x} {:08x} {:08x} 0 {dc}", b(p.x), b(p.y), b(p.z), b(range)))
                 }
                 _ => {}
             }

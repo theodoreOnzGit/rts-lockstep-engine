@@ -85,7 +85,8 @@ void Eva::parseEvaMessageFromIni( INI *ini, void *instance, void *store, const v
 void Drawable::setEffectiveOpacity( Real pulseFactor, Real explicitOpacity ) { ulog("opacity %08x %08x", realBits(pulseFactor), realBits(explicitOpacity)); }
 void Drawable::setSecondMaterialPassOpacity( Real op ) { ulog("secondpass %d %08x", m_ownerObject ? (int)m_ownerObject->m_oid : 0, realBits(op)); }
 void Drawable::setStealthLook( StealthLookType look ) { ulog("look %d", (int)look); }
-void Drawable::setModelConditionFlags( const ModelConditionFlags & ) {}
+bool g_r34SetFlagsLog = false;   /* batch R34: setModelConditionFlags is a line ("setflags", flagBitsE) */
+void Drawable::setModelConditionFlags( const ModelConditionFlags &f ) { if (g_r34SetFlagsLog) ulog("setflags %s", flagBitsE(f).c_str()); }
 void Drawable::updateDrawable() {}
 void GameLogic::bindObjectAndDrawable( Object *obj, Drawable *draw ) { ulog("bind %d", (int)obj->m_oid); draw->m_ownerObject = obj; obj->m_drawable = draw; }
 void SpawnBehaviorInterface::revealSlaves() { ulog("revealslaves %d", m_ownerId); }

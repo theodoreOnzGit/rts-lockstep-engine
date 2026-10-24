@@ -3395,6 +3395,16 @@ mod differential {
                 std::fs::create_dir_all(&dir).expect("create mod_gen/GameLogic/Module");
                 std::fs::write(dir.join("EMPUpdate.h"), cut).expect("write EMPUpdate.h copy");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R34 (differential/l9_tensile_r34.inc): TensileFormationUpdate.cpp's getTFU keeps its name key in a function-local `static`,
+                // which the test's per-case reset of the name key generator would leave stale; the `static` dropped (asserted once), into
+                // mod_gen/TensileFormationUpdate_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Update/TensileFormationUpdate.cpp");
+                let text = std::fs::read_to_string(&path).expect("read TensileFormationUpdate.cpp");
+                let key = "static NameKeyType theTFUKey";
+                assert_eq!(text.matches(key).count(), 1, "TensileFormationUpdate.cpp: getTFU's static name key must occur once");
+                let cut = text.replace(key, "NameKeyType theTFUKey");
+                std::fs::write(mod_gen.join("TensileFormationUpdate_edit.cpp"), cut).expect("write TensileFormationUpdate_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();

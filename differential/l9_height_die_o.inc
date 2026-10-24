@@ -37,6 +37,8 @@ TerrainLogic g_hdTerrain;
 PartitionManager g_hdPartition;
 ParticleSystemManager g_hdPsm;
 Real g_hdGround[8], g_hdLayerHeight[8];
+Coord3D g_hdNormal[8];   /* batch R34: the normal getGroundHeight assigns, when g_hdNormalOn */
+bool g_hdNormalOn = false;
 int g_hdLayer[8];
 std::vector<Object *> g_hdScan;
 bool g_hdApplyFilters = false;   /* batch R25 */
@@ -57,6 +59,7 @@ unsigned hdCell(Real x, Real y)
 Real TerrainLogic::getGroundHeight( Real x, Real y, Coord3D* normal ) const
 {
 	ulog("ground %08x %08x", realBits(x), realBits(y));
+	if (normal && g_hdNormalOn) *normal = g_hdNormal[hdCell(x, y)];
 	return g_hdGround[hdCell(x, y)];
 }
 Real TerrainLogic::getLayerHeight(Real x, Real y, PathfindLayerEnum layer, Coord3D* normal, Bool clip) const

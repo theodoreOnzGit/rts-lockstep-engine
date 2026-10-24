@@ -117,6 +117,7 @@ public:
 	/* --- end p1w12-sonnet --- */
 	/* --- p1w13-sonnet --- */
 	Object *getClosestObject( const Object *obj, Real maxDist, DistanceCalculationType dc = FROM_CENTER_2D, PartitionFilter **filters = 0 );   /* update batch O: FireSpreadUpdate */
+	Object *getClosestObject( const Coord3D *pos, Real maxDist, DistanceCalculationType dc = FROM_CENTER_2D, PartitionFilter **filters = 0 );   /* batch R34: TensileFormationUpdate */
 	Bool geomCollidesWithGeom(const Coord3D* pos1, const GeometryInfo& geom1, Real angle1, const Coord3D* pos2, const GeometryInfo& geom2, Real angle2) const;
 	SimpleObjectIterator *iterateObjectsInRange( const Object *obj, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = 0, IterOrderType order = ITER_FASTEST );
 	Real getDistanceSquared( const Object *obj, const Object *otherObj, DistanceCalculationType d, Coord3D *vec = 0 ) const;   /* batch P: ActiveBody */

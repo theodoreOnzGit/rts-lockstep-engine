@@ -45,6 +45,8 @@ public:
 	void snapPosition(Object *obj, Coord3D *pos);   /* batch R18 */
 	/* --- p1w13-sonnet --- (batch R2: TransportContain) */
 	Bool validMovementTerrain( PathfindLayerEnum layer, const Locomotor* locomotor, const Coord3D *pos );
+	void createAWallFromMyFootprint( Object *obj );   /* batch R34: TensileFormationUpdate (lines, differential/l9_tensile_r34.inc) */
+	void removeWallFromMyFootprint( Object *obj );
 	/* --- end p1w13-sonnet --- */
 	/* --- end p1w13-sonnet --- */
 };

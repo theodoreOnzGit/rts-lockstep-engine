@@ -125,6 +125,7 @@ pub mod emp_update;
 pub mod pilot_find_vehicle_update;
 pub mod horde_update;
 pub mod topple_update;
+pub mod tensile_formation_update;
 pub mod bone_fx_update;
 pub mod transition_damage_fx;
 pub mod structure_collapse_update;
@@ -520,6 +521,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::ToppleUpdate(d) => Some(made_update(
             topple_update::ToppleUpdate::get_interface_mask(),
             topple_update::ToppleUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::ToppleUpdate(m))),
+        )),
+        ModuleDataKind::TensileFormationUpdate(d) => Some(made_update(
+            tensile_formation_update::TensileFormationUpdate::get_interface_mask(),
+            tensile_formation_update::TensileFormationUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::TensileFormationUpdate(m))),
         )),
         ModuleDataKind::LeafletDropBehavior(d) => Some(made_update(
             emp_update::LeafletDropBehavior::get_interface_mask(),

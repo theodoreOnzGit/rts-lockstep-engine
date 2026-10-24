@@ -40,8 +40,11 @@ public:
 	Real getSubdualDamageHealAmount() const { return 0.0f; }
 	Bool hasAnySubdualDamage() const { return false; }
 	Real getCurrentSubdualDamageAmount() const { return 0.0f; }
-	BodyDamageType getDamageState() const { return BODY_PRISTINE; }
-	void setDamageState( BodyDamageType ) {}
+	/* batch R34: with m_traceState, setDamageState is a line and sets the state getDamageState answers (PRISTINE otherwise, as before) */
+	bool m_traceState = false;
+	BodyDamageType m_state = BODY_PRISTINE;
+	BodyDamageType getDamageState() const { return m_state; }
+	void setDamageState( BodyDamageType s ) { if (m_traceState) { ulog("setdamagestate %d %d", (int)m_owner->m_oid, (int)s); m_state = s; } }
 	void setAflame( Bool setting ) { ulog("aflame %d", (int)setting); }
 	void onVeterancyLevelChanged( VeterancyLevel, VeterancyLevel, Bool ) {}
 	void setArmorSetFlag( ArmorSetType ) {}

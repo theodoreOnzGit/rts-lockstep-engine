@@ -295,6 +295,36 @@ impl World {
         self.cuts.terrain_ground[terrain_cell(x, y)]
     }
 
+    /// batch R34: `TheTerrainLogic->getGroundHeight(x, y, &normal)`: the height and the normal it assigns.
+    pub fn terrain_get_ground_height_and_normal(&mut self, x: f32, y: f32) -> (f32, Coord3D) {
+        self.cut(CutCall::TerrainGetGroundHeight { x, y });
+        let cell = terrain_cell(x, y);
+        (self.cuts.terrain_ground[cell], self.cuts.terrain_normal[cell])
+    }
+
+    /// batch R34: `TheAI->pathfinder()->createAWallFromMyFootprint(obj)` ("temporarily treat this object as an obstacle"); the pathfinder is layer 11's.
+    pub fn pathfinder_create_wall_from_footprint(&mut self, object: ObjectId) {
+        self.cut(CutCall::PathfinderCreateWallFromFootprint { object });
+    }
+
+    /// batch R34: `TheAI->pathfinder()->removeWallFromMyFootprint(obj)`.
+    pub fn pathfinder_remove_wall_from_footprint(&mut self, object: ObjectId) {
+        self.cut(CutCall::PathfinderRemoveWallFromFootprint { object });
+    }
+
+    /// batch R34: `ThePartitionManager->getClosestObject(&position, range, dc)` (no filters); `None` for `NULL`.
+    pub fn partition_get_closest_object_at(&mut self, position: Coord3D, range: f32, dc: i32) -> Option<ObjectId> {
+        self.cut(CutCall::PartitionGetClosestObjectAt { position, range, dc });
+        let id = self.cuts.closest_object_at;
+        self.objects.find(id).map(|_| id)
+    }
+
+    /// batch R34: `TheAudio->isCurrentlyPlaying(handle)` (the client's).
+    pub fn audio_is_currently_playing(&mut self, handle: u32) -> bool {
+        self.cut(CutCall::AudioIsCurrentlyPlaying { handle });
+        self.cuts.audio_playing
+    }
+
     /// `TheTerrainLogic->getHighestLayerForDestination(pos)`.
     pub fn terrain_get_highest_layer_for_destination(&mut self, pos: &crate::common::base_type::Coord3D) -> crate::common::game_type::PathfindLayer {
         self.cut(CutCall::TerrainGetHighestLayerForDestination { x: pos.x, y: pos.y, z: pos.z });
@@ -726,6 +756,14 @@ pub enum CutCall {
     // --- p1w13-sonnet ---
     /// `TheTerrainLogic->getGroundHeight(x, y)` (`HeightDieUpdate`); `ObjectCuts::terrain_ground` answers.
     TerrainGetGroundHeight { x: f32, y: f32 },
+    /// batch R34: `TheAI->pathfinder()->createAWallFromMyFootprint(obj)` (`TensileFormationUpdate`).
+    PathfinderCreateWallFromFootprint { object: ObjectId },
+    /// batch R34: `TheAI->pathfinder()->removeWallFromMyFootprint(obj)`.
+    PathfinderRemoveWallFromFootprint { object: ObjectId },
+    /// batch R34: `ThePartitionManager->getClosestObject(&position, range, dc)`; `ObjectCuts::closest_object_at` answers.
+    PartitionGetClosestObjectAt { position: Coord3D, range: f32, dc: i32 },
+    /// batch R34: `TheAudio->isCurrentlyPlaying(handle)` (`AudioEventRTS::isCurrentlyPlaying`); `ObjectCuts::audio_playing` answers.
+    AudioIsCurrentlyPlaying { handle: u32 },
     /// `TheTerrainLogic->getHighestLayerForDestination(pos)` (`HeightDieUpdate`); `ObjectCuts::terrain_layer` answers.
     TerrainGetHighestLayerForDestination { x: f32, y: f32, z: f32 },
     /// `TheTerrainLogic->getLayerHeight(x, y, layer)` (`HeightDieUpdate`); `ObjectCuts::terrain_layer_height` answers.
@@ -1076,6 +1114,12 @@ pub struct ObjectCuts {
     pub terrain_has_water: [bool; 8],
     /// The water height `isUnderwater` assigns, by [`terrain_cell`] of (x, y).
     pub terrain_water: [f32; 8],
+    /// batch R34: the ground normal `getGroundHeight(x, y, &normal)` assigns, by [`terrain_cell`] of (x, y).
+    pub terrain_normal: [Coord3D; 8],
+    /// batch R34: what `ThePartitionManager->getClosestObject(&pos, range, dc)` answers (`INVALID_ID` for `NULL`).
+    pub closest_object_at: ObjectId,
+    /// batch R34: what `TheAudio->isCurrentlyPlaying(handle)` answers, for every handle.
+    pub audio_playing: bool,
     /// The cut points of `ActiveBody`: see `body_cuts`.
     pub body: crate::logic::world::body_cuts::BodyCutTables,
     /// The cut points of the contain modules: see `contain_cuts`.
@@ -1181,6 +1225,9 @@ impl Default for ObjectCuts {
             terrain_layer_height: [0.0; 8],
             terrain_has_water: [false; 8],
             terrain_water: [0.0; 8],
+            terrain_normal: [Coord3D { x: 0.0, y: 0.0, z: 1.0 }; 8],
+            closest_object_at: 0,
+            audio_playing: false,
             body: Default::default(),
             contain: Default::default(),
             // --- end p1w13-sonnet ---

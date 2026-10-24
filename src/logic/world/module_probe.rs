@@ -188,6 +188,8 @@ pub struct ProbeAnswers {
     pub current_victim_pos: Option<Coord3D>,
     /// batch R12: the body's `getDamageState()` (`None`: the probe does not answer, as before).
     pub damage_state: Option<i32>,
+    /// batch R34: `setDamageState(s)` is a line of the trace (`bt setdamagestate <object> <s>`) and sets the state `getDamageState()` answers.
+    pub trace_damage_state: bool,
     // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     // --- p1w7-sonnet ---
@@ -534,6 +536,12 @@ impl ProbeModule {
                 let mut d = crate::logic::damage::DamageInfo::default();
                 d.input.source_id = self.answers.last_damage_source.unwrap_or(INVALID_ID);
                 ModuleReply::Damage(d)
+            }
+            // batch R34: the damage state set, when the test asks
+            ModuleCall::SetDamageState(s) if self.answers.trace_damage_state => {
+                world.body_trace(format!("setdamagestate {} {s}", me.object));
+                self.answers.damage_state = Some(s);
+                ModuleReply::Done
             }
             // batch R12: the damage state, when the test gives one
             ModuleCall::GetDamageState if self.answers.damage_state.is_some() => ModuleReply::Int(self.answers.damage_state.unwrap_or(0)),

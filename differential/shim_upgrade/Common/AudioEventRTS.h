@@ -31,6 +31,12 @@ public:
 	Int m_playerIndex;
 	ObjectID m_objectID;
 	/* --- end p1w11-sonnet --- */
+	/* --- p1w13-sonnet --- (batch R34: TensileFormationUpdate's crack sound; isCurrentlyPlaying asks TheAudio, defined by differential/l9_tensile_r34.inc) */
+	UnsignedInt m_playingHandle = 0;
+	void setPlayingHandle(UnsignedInt handle) { m_playingHandle = handle; }
+	UnsignedInt getPlayingHandle() const { return m_playingHandle; }
+	Bool isCurrentlyPlaying() const;
+	/* --- end p1w13-sonnet --- */
 };
 /* --- p1w12-sonnet --- */
 typedef UnsignedInt AudioHandle;
