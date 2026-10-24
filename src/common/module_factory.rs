@@ -800,6 +800,16 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::repair_dock_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::repair_dock_update::RepairDockUpdate::get_interface_mask()),
         }),
+        "SupplyCenterDockUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::supply_center_dock_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::supply_center_dock_update::SupplyCenterDockUpdate::get_interface_mask()),
+        }),
+        "SupplyWarehouseDockUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::supply_warehouse_dock_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::supply_warehouse_dock_update::SupplyWarehouseDockUpdate::get_interface_mask()),
+        }),
         "ProjectileStreamUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::new_plain_update_module_data),
@@ -1157,6 +1167,8 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::ToppleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::PropagandaTowerBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::RepairDockUpdate(d)) => Some(std::sync::Arc::new(d.dock.update.clone())),
+        Some(ModuleDataKind::SupplyCenterDockUpdate(d)) => Some(std::sync::Arc::new(d.dock.update.clone())),
+        Some(ModuleDataKind::SupplyWarehouseDockUpdate(d)) => Some(std::sync::Arc::new(d.dock.update.clone())),
         Some(ModuleDataKind::GenerateMinefieldBehavior(d)) => Some(std::sync::Arc::new(crate::logic::module::update_module::UpdateModuleData { behavior: d.behavior.clone() })),
         Some(ModuleDataKind::MinefieldBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::StickyBombUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),

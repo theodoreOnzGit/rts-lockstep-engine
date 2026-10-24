@@ -216,6 +216,16 @@ pub struct ProbeAnswers {
     /// `getWarehouseScanDistance`.
     pub scan_distance: f32,
     // --- end p1w7-sonnet ---
+    // --- p1w13-sonnet --- (batch R44: the supply docks; with `probe_effect_trace`, each box call is a line)
+    /// The boxes the supply truck carries (`loseOneBox` takes one while there are any).
+    pub supply_boxes: i32,
+    /// `gainOneBox` takes the box (and counts it).
+    pub gain_box: bool,
+    /// `getUpgradedSupplyBoost`.
+    pub supply_boost: i32,
+    /// `StealthUpdate::isTemporaryGrant`.
+    pub temporary_grant: bool,
+    // --- end p1w13-sonnet ---
 }
 
 /// The scripted module. See the module docs.
@@ -1088,7 +1098,43 @@ impl ProbeModule {
             | ModuleCall::DockCancelDock { .. }
             | ModuleCall::DockIsAllowPassthroughType
             | ModuleCall::DockIsRallyPointAfterDockType
-            | ModuleCall::DockAction { .. } => ModuleReply::Unhandled,
+            | ModuleCall::DockAction { .. }
+            | ModuleCall::SupplyWarehouseSetCashValue(_)
+            | ModuleCall::SupplyWarehouseGetBoxesStored => ModuleReply::Unhandled,
+            ModuleCall::HasSupplyTruckAiInterface => ModuleReply::Bool(self.answers.supply_truck),
+            ModuleCall::SupplyTruckLoseOneBox => {
+                let lost = self.answers.supply_boxes > 0;
+                if lost {
+                    self.answers.supply_boxes -= 1;
+                }
+                if world.cuts.probe_effect_trace {
+                    if let Some(t) = &mut world.cuts.trace {
+                        t.push(format!("losebox {} {}", me.object, i32::from(lost)));
+                    }
+                }
+                ModuleReply::Bool(lost)
+            }
+            ModuleCall::SupplyTruckGainOneBox { remaining_stock } => {
+                if self.answers.gain_box {
+                    self.answers.supply_boxes += 1;
+                }
+                if world.cuts.probe_effect_trace {
+                    if let Some(t) = &mut world.cuts.trace {
+                        t.push(format!("gainbox {} {remaining_stock} {}", me.object, i32::from(self.answers.gain_box)));
+                    }
+                }
+                ModuleReply::Bool(self.answers.gain_box)
+            }
+            ModuleCall::SupplyTruckGetUpgradedSupplyBoost => ModuleReply::Int(self.answers.supply_boost),
+            ModuleCall::SupplyTruckSetForceWantingState(v) => {
+                if world.cuts.probe_effect_trace {
+                    if let Some(t) = &mut world.cuts.trace {
+                        t.push(format!("forcewant {} {}", me.object, i32::from(v)));
+                    }
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::StealthIsTemporaryGrant => ModuleReply::Bool(self.answers.temporary_grant),
             // batch R39: a probe named LifetimeUpdate stands in for one (`lifetime_die_frame`)
             ModuleCall::LifetimeGetDieFrame => match self.answers.lifetime_die_frame {
                 Some(f) => ModuleReply::Int(f as i32),

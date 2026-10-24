@@ -32,7 +32,11 @@ enum AIFreeToExitType // Note - written out in save/load xfer, don't change thes
 };
 /* --- end p1w13-sonnet --- */
 class DozerAIInterface;
+class SupplyTruckAIInterface;
 class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
+	/* p1w13-sonnet, batch R44: the supply docks' truck (differential/l9_supply_docks_r44.inc); null for the other drivers */
+	SupplyTruckAIInterface *getSupplyTruckAIInterface() { return m_supplyTruck; }
+	SupplyTruckAIInterface *m_supplyTruck = 0;
 	DozerAIInterface *getDozerAIInterface();   /* p1w13-sonnet, batch R13e: differential/l9_crates_r13e.inc */
 	void transferAttack(ObjectID fromID, ObjectID toID);   /* p1w13-sonnet, batch R14a: differential/l9_dies_r14.inc */
 	void notifyCrate(ObjectID id);

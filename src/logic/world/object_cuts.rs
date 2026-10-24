@@ -951,6 +951,8 @@ pub struct ObjectGlobals {
     // --- end p1w12-sonnet ---
     /// `TheGlobalData->m_maxTunnelCapacity` (`TunnelTracker::getContainMax`).
     pub max_tunnel_capacity: i32,
+    /// batch R44: `m_baseValuePerSupplyBox` (`Player::getSupplyBoxValue`, `SupplyWarehouseDockUpdate::setCashValue`).
+    pub base_value_per_supply_box: u32,
     /// `TheScriptEngine->getObjectsShouldReceiveDifficultyBonus()`.
     pub objects_should_receive_difficulty_bonus: bool,
     // --- p1w10-sonnet ---
@@ -986,6 +988,7 @@ impl Default for ObjectGlobals {
             get_healed_animation_z_rise_per_second: 0.0,
             // --- end p1w12-sonnet ---
             max_tunnel_capacity: 0,
+            base_value_per_supply_box: 100,
             objects_should_receive_difficulty_bonus: false,
             // --- p1w10-sonnet ---
             hulk_max_lifetime_override: -1,

@@ -77,6 +77,7 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	Bool isSelected() const { return m_selected; }
 	void setDrawableHidden(Bool hidden);
 	const ModelConditionFlags &getModelConditionFlags() const { return m_condFlags; }
+	void updateDrawableSupplyStatus( Int maxSupply, Int currentSupply );   /* p1w13-sonnet, batch R44: a line (differential/l9_supply_docks_r44.inc) */
 	/* --- p1w13-sonnet --- (batch R2: TransportContain) */
 	/* the transport's exit bone: one named ExitBoneT, at a world position, if the scene gives the art one */
 	Int getPristineBonePositions(const char* boneNamePrefix, Int startIndex, Coord3D* positions, Matrix3D* transforms, Int maxBones) const

@@ -70,6 +70,7 @@ public:
 	class PowerAcademyStats *getAcademyStats() { return (class PowerAcademyStats *)this; }
 	Relationship getRelationship(const Team *that) const;
 	Team *getDefaultTeam() { return m_defaultTeam; }
+	UnsignedInt getSupplyBoxValue();   /* p1w13-sonnet, batch R44: Player.cpp's, verbatim (differential/l9_supply_docks_r44.inc) */
 	Color getPlayerColor() const { return m_color; }   /* update batch L: the floating text's colour */
 	Color m_color = 0;
 	Color getPlayerNightColor() const { return m_nightColor; }   /* batch R11: CaveContain (never reached there: see cave_contain.rs); batch R12: GarrisonContain */

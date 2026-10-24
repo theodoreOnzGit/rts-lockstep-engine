@@ -725,6 +725,24 @@ pub enum ModuleCall {
     /// `action(docker, drone)`; replies [`ModuleReply::Bool`].
     DockAction { docker: ObjectId, drone: ObjectId },
     // --- end p1w13-sonnet ---
+    // --- p1w13-sonnet --- (batch R44: the supply docks)
+    /// `getSupplyTruckAIInterface() != NULL` (of an AI module); replies [`ModuleReply::Bool`].
+    HasSupplyTruckAiInterface,
+    /// `SupplyTruckAIInterface::loseOneBox()`; replies [`ModuleReply::Bool`].
+    SupplyTruckLoseOneBox,
+    /// `SupplyTruckAIInterface::gainOneBox(remainingStock)`; replies [`ModuleReply::Bool`].
+    SupplyTruckGainOneBox { remaining_stock: i32 },
+    /// `SupplyTruckAIInterface::getUpgradedSupplyBoost()`; replies [`ModuleReply::Int`].
+    SupplyTruckGetUpgradedSupplyBoost,
+    /// `SupplyTruckAIInterface::setForceWantingState(v)`.
+    SupplyTruckSetForceWantingState(bool),
+    /// `StealthUpdate::isTemporaryGrant()`; replies [`ModuleReply::Bool`].
+    StealthIsTemporaryGrant,
+    /// `SupplyWarehouseDockUpdate::setCashValue(cashValue)`.
+    SupplyWarehouseSetCashValue(i32),
+    /// `SupplyWarehouseDockUpdate::getBoxesStored()`; replies [`ModuleReply::Int`].
+    SupplyWarehouseGetBoxesStored,
+    // --- end p1w13-sonnet ---
     // --- p1w13-sonnet --- (batch R38: `BridgeTowerBehaviorInterface`, which `TerrainLogic`'s `Bridge::createTower` drives)
     /// `setBridge(bridge)` (the bridge's id; one that is no object is `setBridge(NULL)`).
     BridgeTowerSetBridge(ObjectId),

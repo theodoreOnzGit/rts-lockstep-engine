@@ -32,7 +32,8 @@ public:
 	Int m_maxTunnelCapacity = 0;   /* batch R10: TunnelTracker */
 	Int m_timeOfDay = 0;   /* batch R11: CaveContain (a TimeOfDay) */
 	Real m_gravity = -1.0f;   /* batch R29: StructureCollapseUpdate */
-	Real m_standardMinefieldDensity = 0.01f, m_standardMinefieldDistance = 40.0f;   /* batch R41: GenerateMinefieldBehavior (GlobalData.cpp's values) */
+	Real m_standardMinefieldDensity = 0.01f, m_standardMinefieldDistance = 40.0f;
+	Int m_baseValuePerSupplyBox = 100;   /* batch R44: the supply docks (set by the test) */   /* batch R41: GenerateMinefieldBehavior (GlobalData.cpp's values) */
 	/* --- end p1w13-sonnet --- */
 };
 extern GlobalData *TheGlobalData;

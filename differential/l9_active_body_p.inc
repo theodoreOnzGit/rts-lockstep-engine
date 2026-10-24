@@ -300,8 +300,10 @@ void GameLogic::deselectObject(Object *objToDeselect, PlayerMaskType playerMask,
 	ulog("deselect %d %u %d", (int)objToDeselect->m_oid, (unsigned)playerMask, (int)affectClient);
 }
 void Drawable::reactToBodyDamageStateChange(int newState) { ulog("react %d %d", m_ownerObject ? (int)m_ownerObject->m_oid : 0, newState); }
+Real (*g_distHook)(const Object *, const Object *) = 0;   /* p1w13-sonnet, batch R44: the supply docks' table (l9_supply_docks_r44.inc) */
 Real PartitionManager::getDistanceSquared(const Object *obj, const Object *otherObj, DistanceCalculationType, Coord3D *) const
 {
+	if (g_distHook) return g_distHook(obj, otherObj);
 	ulog("distsq %d %d", (int)obj->m_oid, (int)otherObj->m_oid);
 	return g_abDist[obj->m_oid - 1][otherObj->m_oid - 1];
 }

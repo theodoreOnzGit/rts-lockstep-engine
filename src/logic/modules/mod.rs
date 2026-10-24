@@ -129,6 +129,8 @@ pub mod topple_update;
 pub mod propaganda_tower_behavior;
 pub mod dock_update;
 pub mod repair_dock_update;
+pub mod supply_center_dock_update;
+pub mod supply_warehouse_dock_update;
 pub mod projectile_stream_update;
 pub mod generate_minefield_behavior;
 pub mod minefield_behavior;
@@ -563,6 +565,14 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::RepairDockUpdate(d) => Some(made_update(
             repair_dock_update::RepairDockUpdate::get_interface_mask(),
             repair_dock_update::RepairDockUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::RepairDockUpdate(m))),
+        )),
+        ModuleDataKind::SupplyCenterDockUpdate(d) => Some(made_update(
+            supply_center_dock_update::SupplyCenterDockUpdate::get_interface_mask(),
+            supply_center_dock_update::SupplyCenterDockUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::SupplyCenterDockUpdate(m))),
+        )),
+        ModuleDataKind::SupplyWarehouseDockUpdate(d) => Some(made_update(
+            supply_warehouse_dock_update::SupplyWarehouseDockUpdate::get_interface_mask(),
+            supply_warehouse_dock_update::SupplyWarehouseDockUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::SupplyWarehouseDockUpdate(m))),
         )),
         ModuleDataKind::GenerateMinefieldBehavior(d) => Some(made_update(
             generate_minefield_behavior::GenerateMinefieldBehavior::get_interface_mask(),

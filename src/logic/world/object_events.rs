@@ -339,6 +339,10 @@ pub enum ObjectClientEvent {
     FxListDoFxPosRadius { fx: Vec<u8>, position: Coord3D, radius: f32 },
     // --- end p1w11-sonnet ---
     // --- end p1l9-example ---
+    // --- p1w13-sonnet --- (batch R44)
+    /// `draw->updateDrawableSupplyStatus(maxBoxes, currentBoxes)` (a supply warehouse's boxes).
+    DrawableUpdateSupplyStatus { object_id: ObjectId, max_boxes: i32, current_boxes: i32 },
+    // --- end p1w13-sonnet ---
 }
 
 /// The `objectSoundAmbient*` properties of a map object, as read from its

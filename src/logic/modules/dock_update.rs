@@ -205,6 +205,16 @@ impl DockUpdate {
         w
     }
 
+    /// `m_activeDocker`.
+    pub fn active_docker(&self) -> ObjectId {
+        self.active_docker
+    }
+
+    /// `m_dockerInside`.
+    pub fn docker_inside(&self) -> bool {
+        self.docker_inside
+    }
+
     /// `isDockOpen()`.
     pub fn is_dock_open(&self) -> bool {
         self.dock_open

@@ -432,6 +432,10 @@ pub enum ModuleDataKind {
     PropagandaTowerBehavior(Arc<crate::logic::modules::propaganda_tower_behavior::PropagandaTowerBehaviorModuleData>),
     /// `RepairDockUpdate` (batch R43).
     RepairDockUpdate(Arc<crate::logic::modules::repair_dock_update::RepairDockUpdateModuleData>),
+    /// `SupplyCenterDockUpdate` (batch R44).
+    SupplyCenterDockUpdate(Arc<crate::logic::modules::supply_center_dock_update::SupplyCenterDockUpdateModuleData>),
+    /// `SupplyWarehouseDockUpdate` (batch R44).
+    SupplyWarehouseDockUpdate(Arc<crate::logic::modules::supply_warehouse_dock_update::SupplyWarehouseDockUpdateModuleData>),
     /// `GenerateMinefieldBehavior` (batch R41).
     GenerateMinefieldBehavior(Arc<crate::logic::modules::generate_minefield_behavior::GenerateMinefieldBehaviorModuleData>),
     /// `MinefieldBehavior` (batch R40).
@@ -637,6 +641,8 @@ impl ModuleDataKind {
             ModuleDataKind::ToppleUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::PropagandaTowerBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::RepairDockUpdate(d) => &d.dock.update.behavior.module_data,
+            ModuleDataKind::SupplyCenterDockUpdate(d) => &d.dock.update.behavior.module_data,
+            ModuleDataKind::SupplyWarehouseDockUpdate(d) => &d.dock.update.behavior.module_data,
             ModuleDataKind::GenerateMinefieldBehavior(d) => &d.behavior.module_data,
             ModuleDataKind::MinefieldBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::StickyBombUpdate(d) => &d.update.behavior.module_data,
@@ -1097,6 +1103,20 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::RepairDockUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.dock.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::SupplyCenterDockUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.dock.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::SupplyWarehouseDockUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.dock.update.behavior.module_data.set_module_tag_name_key(key);
                     true
