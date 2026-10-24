@@ -132,6 +132,8 @@ pub enum UpdateBody {
     TempWeaponBonusHelper(crate::logic::modules::temp_weapon_bonus_helper::TempWeaponBonusHelper),
     /// `DestroyDie`.
     DestroyDie(crate::logic::modules::destroy_die::DestroyDie),
+    /// `BoneFXDamage` (batch R30).
+    BoneFxDamage(crate::logic::modules::bone_fx_update::BoneFxDamage),
     /// `KeepObjectDie`.
     KeepObjectDie(crate::logic::modules::keep_object_die::KeepObjectDie),
     /// `UpgradeDie`.
@@ -237,6 +239,8 @@ pub enum UpdateBody {
     HordeUpdate(crate::logic::modules::horde_update::HordeUpdate),
     /// `ToppleUpdate` (batch R28).
     ToppleUpdate(crate::logic::modules::topple_update::ToppleUpdate),
+    /// `BoneFxUpdate` (batch R30).
+    BoneFxUpdate(crate::logic::modules::bone_fx_update::BoneFxUpdate),
     /// `StructureCollapseUpdate` (batch R29).
     StructureCollapseUpdate(crate::logic::modules::structure_collapse_update::StructureCollapseUpdate),
     /// `StealthDetectorUpdate` (batch R27).
@@ -366,6 +370,7 @@ impl UpdateBody {
             UpdateBody::StatusDamageHelper(m) => m.world_update(world, me),
             UpdateBody::TempWeaponBonusHelper(m) => m.world_update(world, me),
             UpdateBody::DestroyDie(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::BoneFxDamage(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::KeepObjectDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::UpgradeDie(_) => UPDATE_SLEEP_FOREVER,
 // --- end p1w10-sonnet (helpers and dies) ---
@@ -433,6 +438,7 @@ impl UpdateBody {
             UpdateBody::PilotFindVehicleUpdate(m) => m.world_update(world, me),
             UpdateBody::HordeUpdate(m) => m.world_update(world, me),
             UpdateBody::ToppleUpdate(m) => m.world_update(world, me),
+            UpdateBody::BoneFxUpdate(m) => m.world_update(world, me),
             UpdateBody::StructureCollapseUpdate(m) => m.world_update(world, me),
             UpdateBody::StealthDetectorUpdate(m) => m.world_update(world, me),
             UpdateBody::StealthUpdate(m) => m.world_update(world, me),
@@ -518,6 +524,7 @@ impl UpdateBody {
             UpdateBody::StatusDamageHelper(m) => m.module_call(world, me, call),
             UpdateBody::TempWeaponBonusHelper(m) => m.module_call(world, me, call),
             UpdateBody::DestroyDie(m) => m.module_call(world, me, call),
+            UpdateBody::BoneFxDamage(m) => m.module_call(world, me, call),
             UpdateBody::KeepObjectDie(m) => m.module_call(world, me, call),
             UpdateBody::UpgradeDie(m) => m.module_call(world, me, call),
 // --- end p1w10-sonnet (helpers and dies) ---
@@ -585,6 +592,7 @@ impl UpdateBody {
             UpdateBody::PilotFindVehicleUpdate(m) => m.module_call(world, me, call),
             UpdateBody::HordeUpdate(m) => m.module_call(world, me, call),
             UpdateBody::ToppleUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::BoneFxUpdate(m) => m.module_call(world, me, call),
             UpdateBody::StructureCollapseUpdate(m) => m.module_call(world, me, call),
             UpdateBody::StealthDetectorUpdate(m) => m.module_call(world, me, call),
             UpdateBody::StealthUpdate(m) => m.module_call(world, me, call),
@@ -683,6 +691,7 @@ impl UpdateBody {
             UpdateBody::StatusDamageHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::TempWeaponBonusHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::DestroyDie(m) => m.xfer(xfer),
+            UpdateBody::BoneFxDamage(m) => m.xfer(xfer),
             UpdateBody::KeepObjectDie(m) => m.xfer(xfer),
             UpdateBody::UpgradeDie(m) => m.xfer(xfer),
 // --- end p1w10-sonnet (helpers and dies) ---
@@ -718,6 +727,7 @@ impl UpdateBody {
             UpdateBody::PilotFindVehicleUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::HordeUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::ToppleUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::BoneFxUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::StructureCollapseUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::StealthDetectorUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::StealthUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
@@ -790,6 +800,7 @@ impl UpdateBody {
             UpdateBody::StatusDamageHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::TempWeaponBonusHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::DestroyDie(m) => m.crc(xfer),
+            UpdateBody::BoneFxDamage(m) => m.crc(xfer),
             UpdateBody::KeepObjectDie(m) => m.crc(xfer),
             UpdateBody::UpgradeDie(m) => m.crc(xfer),
 // --- end p1w10-sonnet (helpers and dies) ---
@@ -825,6 +836,7 @@ impl UpdateBody {
             UpdateBody::PilotFindVehicleUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::HordeUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::ToppleUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::BoneFxUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::StructureCollapseUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::StealthDetectorUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::StealthUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
@@ -897,6 +909,7 @@ impl UpdateBody {
             UpdateBody::StatusDamageHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::TempWeaponBonusHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::DestroyDie(m) => m.load_post_process(),
+            UpdateBody::BoneFxDamage(m) => m.load_post_process(),
             UpdateBody::KeepObjectDie(m) => m.load_post_process(),
             UpdateBody::UpgradeDie(m) => m.load_post_process(),
 // --- end p1w10-sonnet (helpers and dies) ---
@@ -932,6 +945,7 @@ impl UpdateBody {
             UpdateBody::PilotFindVehicleUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::HordeUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::ToppleUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::BoneFxUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::StructureCollapseUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::StealthDetectorUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::StealthUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
@@ -1009,6 +1023,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::StatusDamageHelper(m) => m.crc(xfer),
             UpdateBody::TempWeaponBonusHelper(m) => m.crc(xfer),
             UpdateBody::DestroyDie(m) => m.crc(xfer),
+            UpdateBody::BoneFxDamage(m) => m.crc(xfer),
             UpdateBody::KeepObjectDie(m) => m.crc(xfer),
             UpdateBody::UpgradeDie(m) => m.crc(xfer),
 // --- end p1w10-sonnet (helpers and dies) ---
@@ -1076,6 +1091,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::PilotFindVehicleUpdate(m) => m.crc(xfer),
             UpdateBody::HordeUpdate(m) => m.crc(xfer),
             UpdateBody::ToppleUpdate(m) => m.crc(xfer),
+            UpdateBody::BoneFxUpdate(m) => m.crc(xfer),
             UpdateBody::StructureCollapseUpdate(m) => m.crc(xfer),
             UpdateBody::StealthDetectorUpdate(m) => m.crc(xfer),
             UpdateBody::StealthUpdate(m) => m.crc(xfer),
@@ -1157,6 +1173,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::StatusDamageHelper(m) => m.xfer(xfer),
             UpdateBody::TempWeaponBonusHelper(m) => m.xfer(xfer),
             UpdateBody::DestroyDie(m) => m.xfer(xfer),
+            UpdateBody::BoneFxDamage(m) => m.xfer(xfer),
             UpdateBody::KeepObjectDie(m) => m.xfer(xfer),
             UpdateBody::UpgradeDie(m) => m.xfer(xfer),
 // --- end p1w10-sonnet (helpers and dies) ---
@@ -1224,6 +1241,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::PilotFindVehicleUpdate(m) => m.xfer(xfer),
             UpdateBody::HordeUpdate(m) => m.xfer(xfer),
             UpdateBody::ToppleUpdate(m) => m.xfer(xfer),
+            UpdateBody::BoneFxUpdate(m) => m.xfer(xfer),
             UpdateBody::StructureCollapseUpdate(m) => m.xfer(xfer),
             UpdateBody::StealthDetectorUpdate(m) => m.xfer(xfer),
             UpdateBody::StealthUpdate(m) => m.xfer(xfer),
@@ -1305,6 +1323,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::StatusDamageHelper(m) => m.load_post_process(),
             UpdateBody::TempWeaponBonusHelper(m) => m.load_post_process(),
             UpdateBody::DestroyDie(m) => m.load_post_process(),
+            UpdateBody::BoneFxDamage(m) => m.load_post_process(),
             UpdateBody::KeepObjectDie(m) => m.load_post_process(),
             UpdateBody::UpgradeDie(m) => m.load_post_process(),
 // --- end p1w10-sonnet (helpers and dies) ---
@@ -1372,6 +1391,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::PilotFindVehicleUpdate(m) => m.load_post_process(),
             UpdateBody::HordeUpdate(m) => m.load_post_process(),
             UpdateBody::ToppleUpdate(m) => m.load_post_process(),
+            UpdateBody::BoneFxUpdate(m) => m.load_post_process(),
             UpdateBody::StructureCollapseUpdate(m) => m.load_post_process(),
             UpdateBody::StealthDetectorUpdate(m) => m.load_post_process(),
             UpdateBody::StealthUpdate(m) => m.load_post_process(),
@@ -1594,6 +1614,7 @@ impl UpdateBody {
             UpdateBody::PilotFindVehicleUpdate(m) => m.world_construct(world, me),
             UpdateBody::HordeUpdate(m) => m.world_construct(world, me),
             UpdateBody::ToppleUpdate(m) => m.world_construct(world, me),
+            UpdateBody::BoneFxUpdate(m) => m.world_construct(world, me),
             UpdateBody::StructureCollapseUpdate(m) => m.world_construct(world, me),
             UpdateBody::StealthDetectorUpdate(m) => m.world_construct(world, me),
             UpdateBody::StealthUpdate(m) => m.world_construct(world, me),

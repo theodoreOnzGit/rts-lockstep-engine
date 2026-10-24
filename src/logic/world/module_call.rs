@@ -634,6 +634,8 @@ pub enum ModuleCall {
     AiMarkAsDead,
     /// batch R29: `BoneFXUpdate::stopAllBoneFX()` (`StructureCollapseUpdate::doCollapseDoneStuff`, on the object's `BoneFXUpdate`).
     BoneFxStopAll,
+    /// batch R30: `BoneFXUpdate::changeBodyDamageState(oldState, newState)` (`BoneFXDamage::onBodyDamageStateChange`).
+    BoneFxChangeBodyDamageState { old_state: i32, new_state: i32 },
     /// `SlavedUpdate::onSlaverDie(NULL)`.
     SlavedOnSlaverDie,
     // ---- the other interfaces ActiveBody asks for ----

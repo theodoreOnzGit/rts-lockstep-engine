@@ -151,6 +151,7 @@ public:
 	Bool isDisabled() const { return m_disabled; }
 	BehaviorModule **getBehaviorModules() const { return m_behaviors; }
 	UpdateModule *findUpdateModule(NameKeyType key) const;   /* defined in l9_upgrades_c.inc */
+	class DamageModule *findDamageModule(NameKeyType key) const;   /* batch R30: defined in l9_bonefx_r30.inc */
 	Bool m_disabled;
 	BehaviorModule **m_behaviors;
 	/* ReplaceObjectUpgrade: the object's place, team and id, and whether destroyObject has been called on it */

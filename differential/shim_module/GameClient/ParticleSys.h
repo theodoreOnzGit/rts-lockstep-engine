@@ -18,6 +18,7 @@ public:
 	void attachToObject( const class Object *obj );   /* p1w13-sonnet, batch P (differential/l9_active_body_p.inc) */
 	void attachToDrawable( const class Drawable *draw );   /* p1w13-sonnet, batch R27: a line (differential/l9_stealth_detector_r27.inc) */
 	void destroy( void );
+	void stop( void );   /* batch R30: a line (differential/l9_bonefx_r30.inc) */
 	ParticleSystemID getSystemID() const { return m_id; }
 	ParticleSystemID m_id;
 	int m_tmpl;

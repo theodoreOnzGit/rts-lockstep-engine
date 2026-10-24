@@ -70,6 +70,7 @@ ParticleSystemTemplate *ParticleSystemManager::findTemplate( const AsciiString &
 }
 ParticleSystem *ParticleSystemManager::createParticleSystem( const ParticleSystemTemplate *sysTemplate, Bool createSlaves )
 {
+	if (!sysTemplate) return 0;   /* batch R30: as the real manager (BoneFXUpdate asks for a NULL template) */
 	ParticleSystem *s = &g_ahPsSlots[g_ahPsNext++ % 64];
 	s->m_id = ++g_ahPsLastId;
 	s->m_tmpl = sysTemplate->m_idx;

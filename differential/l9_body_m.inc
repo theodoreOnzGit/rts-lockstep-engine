@@ -47,7 +47,8 @@ public:
 	void setArmorSetFlag( ArmorSetType ) {}
 	void clearArmorSetFlag( ArmorSetType ) {}
 	Bool testArmorSetFlag( ArmorSetType ) { return false; }
-	const DamageInfo *getLastDamageInfo() const { return 0; }
+	const DamageInfo *getLastDamageInfo() const { return m_lastDamage; }   /* batch R30: none, or the test's */
+	const DamageInfo *m_lastDamage = 0;
 	UnsignedInt getLastDamageTimestamp() const { return 0; }
 	UnsignedInt getLastHealingTimestamp() const { return 0; }
 	ObjectID getClearableLastAttacker() const { return INVALID_ID; }

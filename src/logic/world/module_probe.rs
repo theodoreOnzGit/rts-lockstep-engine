@@ -450,6 +450,10 @@ impl ProbeModule {
                 world.body_trace(format!("stopbonefx {}", me.object));
                 ModuleReply::Done
             }
+            ModuleCall::BoneFxChangeBodyDamageState { old_state, new_state } => {
+                world.body_trace(format!("bonefxstate {} {old_state} {new_state}", me.object));
+                ModuleReply::Done
+            }
             ModuleCall::OnDamage(info) if world.cuts.body.probe_trace => {
                 world.body_trace(format!("ondamage {} {} {}", me.object, me.index, crate::logic::world::body_cuts::info_line(&info)));
                 ModuleReply::Done

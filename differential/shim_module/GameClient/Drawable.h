@@ -79,6 +79,14 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	/* the transport's exit bone: one named ExitBoneT, at a world position, if the scene gives the art one */
 	Int getPristineBonePositions(const char* boneNamePrefix, Int startIndex, Coord3D* positions, Matrix3D* transforms, Int maxBones) const
 	{
+		/* batch R30: BoneFXUpdate's bones, when the test gives them (differential/l9_bonefx_r30.inc) */
+		extern const Coord3D *(*g_r30BoneHook)(const char *);
+		if (g_r30BoneHook) {
+			const Coord3D *p = g_r30BoneHook(boneNamePrefix);
+			if (!p || maxBones < 1) return 0;
+			if (positions) positions[0] = *p;
+			return 1;
+		}
 		/* batch R8: and the parachute's three bones (ParachuteContain) */
 		static const char *const kPara[3] = { "PARA_COG", "PARA_ATTCH", "PARA_MAN" };
 		for (int i = 0; i < 3; ++i) {

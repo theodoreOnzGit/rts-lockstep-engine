@@ -790,6 +790,16 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::topple_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::topple_update::ToppleUpdate::get_interface_mask()),
         }),
+        "BoneFXDamage" => Some(ModuleTemplate {
+            create_proc: Some(new_damage_base),
+            create_data_proc: Some(crate::logic::modules::new_plain_damage_module_data),
+            which_interfaces: Some(crate::logic::module::damage_module::DamageModule::get_interface_mask()),
+        }),
+        "BoneFXUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::bone_fx_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::bone_fx_update::BoneFxUpdate::get_interface_mask()),
+        }),
         "StructureCollapseUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::structure_collapse_update::new_module_data),
@@ -1070,6 +1080,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::PilotFindVehicleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::HordeUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::ToppleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::BoneFxUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::StructureCollapseUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::StealthDetectorUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::StealthUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
@@ -1127,6 +1138,17 @@ fn new_die_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module
     Ok(Module::Die(crate::logic::module::die_module::DieModule::new(object, base)?))
 }
 // --- end p1w10-sonnet ---
+
+// --- p1w13-sonnet ---
+/// batch R30: the `NewModuleProc` of a translated damage module: its `DamageModule` base.
+fn new_damage_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module, IniError> {
+    let base = match data {
+        Some(ModuleDataKind::Damage(d)) => Some(d),
+        _ => None,
+    };
+    Ok(Module::Damage(crate::logic::module::damage_module::DamageModule::new(object, base)?))
+}
+// --- end p1w13-sonnet ---
 
 // --- p1w11-sonnet ---
 /// The `NewModuleProc` of a translated special power module: its `SpecialPowerModule` base, made from the `SpecialPowerModuleData` base of its data.

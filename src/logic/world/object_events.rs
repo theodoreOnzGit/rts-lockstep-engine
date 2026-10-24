@@ -282,6 +282,9 @@ pub enum ObjectClientEvent {
     /// batch R29: `getDrawable()->setInstanceMatrix(&m)` with `m` the drawable's instance matrix (`getInstanceMatrix()`, the client's) with its
     /// translation set to `translation` (`StructureCollapseUpdate`'s shudder and sinking).
     DrawableSetInstanceTranslation { object_id: ObjectId, translation: Coord3D },
+    /// batch R30: `BoneFXUpdate` stops the particle system it just made (`id`) if the object's drawable is effectively hidden
+    /// (`drawable->isDrawableEffectivelyHidden()`, the client's): `psys->stop()`.
+    ParticleSystemStopIfDrawableHidden { id: u32, object_id: ObjectId },
     /// batch R28: `ToppleUpdate` tells the drawable to stop swaying (its `SwayClientUpdate` client modules' `stopSway()`).
     DrawableStopSway { object_id: ObjectId },
     /// batch R28: `ToppleUpdate`'s stump burns if the toppled object's drawable is burned: `if (draw->getModelConditionFlags().test(

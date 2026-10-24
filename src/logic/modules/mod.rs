@@ -124,6 +124,7 @@ pub mod weapon_bonus_update;
 pub mod pilot_find_vehicle_update;
 pub mod horde_update;
 pub mod topple_update;
+pub mod bone_fx_update;
 pub mod structure_collapse_update;
 pub mod stealth_detector_update;
 pub mod stealth_update;
@@ -307,6 +308,11 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
             upgrade_die::UpgradeDie::new(object, Some(d.clone())).map(UpdateBody::UpgradeDie),
         )),
         // the two die modules whose data is `DieModuleData` itself are told apart by their name
+        // batch R30: the damage module whose data is `DamageModuleData` itself
+        ModuleDataKind::Damage(d) => match name {
+            b"BoneFXDamage" => Some(made(bone_fx_update::BoneFxDamage::get_interface_mask(), bone_fx_update::BoneFxDamage::new(object, Some(d.clone())).map(UpdateBody::BoneFxDamage))),
+            _ => None,
+        },
         ModuleDataKind::Die(d) => match name {
             b"DestroyDie" => Some(made(DieModule::get_interface_mask(), destroy_die::DestroyDie::new(object, Some(d.clone())).map(UpdateBody::DestroyDie))),
             b"KeepObjectDie" => Some(made(DieModule::get_interface_mask(), keep_object_die::KeepObjectDie::new(object, Some(d.clone())).map(UpdateBody::KeepObjectDie))),
@@ -506,6 +512,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::ToppleUpdate(d) => Some(made_update(
             topple_update::ToppleUpdate::get_interface_mask(),
             topple_update::ToppleUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::ToppleUpdate(m))),
+        )),
+        ModuleDataKind::BoneFxUpdate(d) => Some(made_update(
+            bone_fx_update::BoneFxUpdate::get_interface_mask(),
+            bone_fx_update::BoneFxUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::BoneFxUpdate(m))),
         )),
         ModuleDataKind::StructureCollapseUpdate(d) => Some(made_update(
             structure_collapse_update::StructureCollapseUpdate::get_interface_mask(),
@@ -749,6 +759,11 @@ pub const fn plant(_k: u32) -> bool {
 }
 
 /// The factory's `NewModuleDataProc` for the die modules whose data is `DieModuleData` itself (`DestroyDie`, `KeepObjectDie`).
+/// batch R30: the factory's `NewModuleDataProc` for a damage module whose data is `DamageModuleData` (`BoneFXDamage`).
+pub fn new_plain_damage_module_data(ini: Option<&mut crate::common::ini::Ini<'_>>) -> crate::common::ini::IniResult<ModuleDataKind> {
+    Ok(ModuleDataKind::Damage(std::sync::Arc::new(crate::logic::module::damage_module::DamageModuleData::friend_new_module_data(ini)?)))
+}
+
 pub fn new_plain_die_module_data(ini: Option<&mut crate::common::ini::Ini<'_>>) -> crate::common::ini::IniResult<ModuleDataKind> {
     Ok(ModuleDataKind::Die(std::sync::Arc::new(crate::logic::module::die_module::DieModuleData::friend_new_module_data(ini)?)))
 }

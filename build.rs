@@ -3316,6 +3316,43 @@ mod differential {
                 std::fs::write(mod_gen.join("StealthDetectorUpdate_edit.cpp"), cut).expect("write StealthDetectorUpdate_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R30 (differential/l9_bonefx_r30.inc): BoneFXUpdate.cpp parses its particle systems with `ini->parseParticleSystemTemplate`; the same
+                // replacement (asserted once), its declaration after the BoneFXDamage.h include (asserted once), into mod_gen/BoneFXUpdate_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Update/BoneFXUpdate.cpp");
+                let text = std::fs::read_to_string(&path).expect("read BoneFXUpdate.cpp");
+                let (parse, include) = ("ini->parseParticleSystemTemplate", "#include \"GameLogic/Module/BoneFXDamage.h\"\n");
+                assert_eq!(text.matches(parse).count(), 1, "BoneFXUpdate.cpp: the particle system parser must occur once");
+                assert_eq!(text.matches(include).count(), 1, "BoneFXUpdate.cpp: the BoneFXDamage.h include must occur once");
+                let cut = text.replace(parse, "l9ahParsePsTemplate").replace(
+                    include,
+                    &format!("{include}class INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n"),
+                );
+                // StructureCollapseUpdate's driver has a stand-in BoneFXUpdate, so the driver compiles these classes under R30 names: the header once more,
+                // as mod_gen/BoneFXUpdate_r30.h (its `#pragma once` and include guard removed, each asserted once), which the edited .cpp includes.
+                let header = "#include \"GameLogic/Module/BoneFXUpdate.h\"\n";
+                assert_eq!(cut.matches(header).count(), 1, "BoneFXUpdate.cpp: the BoneFXUpdate.h include must occur once");
+                let cut = cut.replace(header, "#include \"BoneFXUpdate_r30.h\"\n");
+                // and the function-local `static` name key loses its `static` (asserted once), as in FlammableUpdate.cpp: the test resets the name key
+                // generator for every case. BoneFXDamage.cpp's two the same (asserted twice), into mod_gen/BoneFXDamage_edit.cpp.
+                let key = "static NameKeyType key_BoneFXDamage = NAMEKEY(\"BoneFXDamage\");";
+                assert_eq!(cut.matches(key).count(), 1, "BoneFXUpdate.cpp: the BoneFXDamage name key must occur once");
+                let cut = cut.replace(key, &key["static ".len()..]);
+                let dpath = up.join("GameEngine/Source/GameLogic/Object/Damage/BoneFXDamage.cpp");
+                let dtext = std::fs::read_to_string(&dpath).expect("read BoneFXDamage.cpp");
+                let dkey = "static NameKeyType key_BoneFXUpdate = NAMEKEY(\"BoneFXUpdate\");";
+                assert_eq!(dtext.matches(dkey).count(), 2, "BoneFXDamage.cpp: the BoneFXUpdate name key must occur twice");
+                std::fs::write(mod_gen.join("BoneFXDamage_edit.cpp"), dtext.replace(dkey, &dkey["static ".len()..])).expect("write BoneFXDamage_edit.cpp");
+                println!("cargo:rerun-if-changed={}", dpath.display());
+                std::fs::write(mod_gen.join("BoneFXUpdate_edit.cpp"), cut).expect("write BoneFXUpdate_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
+                let hpath = up.join("GameEngine/Include/GameLogic/Module/BoneFXUpdate.h");
+                let htext = std::fs::read_to_string(&hpath).expect("read BoneFXUpdate.h");
+                let (once, guard) = ("#pragma once\n", "#ifndef __BONEFXUPDATE_H_\n#define __BONEFXUPDATE_H_\n");
+                assert_eq!(htext.matches(once).count(), 1, "BoneFXUpdate.h: #pragma once must occur once");
+                assert_eq!(htext.matches(guard).count(), 1, "BoneFXUpdate.h: the include guard must occur once");
+                let hcut = htext.replace(once, "").replace(guard, "#ifndef __BONEFXUPDATE_R30_H_\n#define __BONEFXUPDATE_R30_H_\n");
+                std::fs::write(mod_gen.join("BoneFXUpdate_r30.h"), hcut).expect("write BoneFXUpdate_r30.h");
+                println!("cargo:rerun-if-changed={}", hpath.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();
