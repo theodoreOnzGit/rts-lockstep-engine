@@ -795,6 +795,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::propaganda_tower_behavior::new_module_data),
             which_interfaces: Some(crate::logic::modules::propaganda_tower_behavior::PropagandaTowerBehavior::get_interface_mask()),
         }),
+        "ProjectileStreamUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::new_plain_update_module_data),
+            which_interfaces: Some(crate::logic::modules::projectile_stream_update::ProjectileStreamUpdate::get_interface_mask()),
+        }),
         "GenerateMinefieldBehavior" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::generate_minefield_behavior::new_module_data),

@@ -1730,6 +1730,20 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    /// p1w13-sonnet, batch R42: ProjectileStreamUpdate (differential/l9_projectile_stream_r42.inc).
+    pub fn ref_l9r42_run(
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
     /// p1w13-sonnet, batch R36: StructureToppleUpdate (differential/l9_structure_topple_r36.inc).
     pub fn ref_l9r36_run(
         filename: *const c_char,

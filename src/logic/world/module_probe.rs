@@ -1071,7 +1071,9 @@ impl ProbeModule {
             | ModuleCall::StickyBombGetDetonationFrame
             | ModuleCall::LandMineSetScootParms { .. }
             | ModuleCall::LandMineDisarm
-            | ModuleCall::GenerateMinefieldSetTarget(_) => ModuleReply::Unhandled,
+            | ModuleCall::GenerateMinefieldSetTarget(_)
+            | ModuleCall::ProjectileStreamAddProjectile { .. }
+            | ModuleCall::ProjectileStreamSetPosition(_) => ModuleReply::Unhandled,
             // batch R39: a probe named LifetimeUpdate stands in for one (`lifetime_die_frame`)
             ModuleCall::LifetimeGetDieFrame => match self.answers.lifetime_die_frame {
                 Some(f) => ModuleReply::Int(f as i32),

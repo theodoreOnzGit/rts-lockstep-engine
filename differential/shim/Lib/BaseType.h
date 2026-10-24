@@ -60,7 +60,8 @@ struct Coord3D { Real x, y, z; void zero( void ) { x = 0.0f; y = 0.0f; z = 0.0f;
 	Real length( void ) const { return (Real)sqrt( x*x + y*y + z*z ); }   /* batch R26: BaseType.h line 335 */
 	Real lengthSqr( void ) const { return x*x + y*y + z*z; }   /* batch R33 (EMPUpdate): BaseType.h */
 	void scale( Real scale ) { x *= scale; y *= scale; z *= scale; }   /* batch R34 (TensileFormationUpdate): BaseType.h lines 392-397 */
-	void normalize( void ) { Real len = length(); if( len != 0 ) { x /= len; y /= len; z /= len; } }   /* batch R28 (ToppleUpdate): BaseType.h lines 338-348 */ };
+	void normalize( void ) { Real len = length(); if( len != 0 ) { x /= len; y /= len; z /= len; } }   /* batch R28 (ToppleUpdate): BaseType.h lines 338-348 */
+	Bool operator==( const Coord3D &r ) { return (x == r.x && y == r.y && z == r.z); }   /* batch R42 (ProjectileStreamUpdate): BaseType.h lines 406-411 */ };
 struct ICoord3D { Int x, y, z; void zero( void ) { x = 0; y = 0; z = 0; } };
 struct Region3D { Coord3D lo, hi; };
 struct IRegion3D { ICoord3D lo, hi; };

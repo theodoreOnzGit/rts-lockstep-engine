@@ -127,6 +127,7 @@ pub mod pilot_find_vehicle_update;
 pub mod horde_update;
 pub mod topple_update;
 pub mod propaganda_tower_behavior;
+pub mod projectile_stream_update;
 pub mod generate_minefield_behavior;
 pub mod minefield_behavior;
 pub mod sticky_bomb_update;
@@ -344,6 +345,12 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
                 bridge_scaffold_behavior::BridgeScaffoldBehavior::get_interface_mask(),
                 bridge_scaffold_behavior::BridgeScaffoldBehavior::unconstructed(object, Some(d.clone()))
                     .map(|m| (m.update_module().clone(), UpdateBody::BridgeScaffoldBehavior(m))),
+            )),
+            // batch R42
+            b"ProjectileStreamUpdate" => Some(made_update(
+                projectile_stream_update::ProjectileStreamUpdate::get_interface_mask(),
+                projectile_stream_update::ProjectileStreamUpdate::unconstructed(object, Some(d.clone()))
+                    .map(|m| (m.update_module().clone(), UpdateBody::ProjectileStreamUpdate(m))),
             )),
             _ => None,
         },

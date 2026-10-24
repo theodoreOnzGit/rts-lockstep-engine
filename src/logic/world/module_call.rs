@@ -686,6 +686,12 @@ pub enum ModuleCall {
     /// `GenerateMinefieldBehavior::setMinefieldTarget(pos)` (`None` for `NULL`).
     GenerateMinefieldSetTarget(Option<Coord3D>),
     // --- end p1w13-sonnet ---
+    // --- p1w13-sonnet --- (batch R42: `ProjectileStreamUpdate`, which `Weapon::fireWeaponTemplate` drives)
+    /// `addProjectile(sourceID, newID, victimID, victimPos)` (`INVALID_ID` for no victim, `None` for a `NULL` position).
+    ProjectileStreamAddProjectile { source: ObjectId, new_id: ObjectId, victim: ObjectId, victim_pos: Option<Coord3D> },
+    /// `setPosition(newPosition)`.
+    ProjectileStreamSetPosition(Coord3D),
+    // --- end p1w13-sonnet ---
     // --- p1w13-sonnet --- (batch R38: `BridgeTowerBehaviorInterface`, which `TerrainLogic`'s `Bridge::createTower` drives)
     /// `setBridge(bridge)` (the bridge's id; one that is no object is `setBridge(NULL)`).
     BridgeTowerSetBridge(ObjectId),
