@@ -64,7 +64,9 @@ public:
 	void setBackCrushed( Bool ) {}
 	void applyDamageScalar( Real ) {}
 	Real getDamageScalar() const { return 1.0f; }
-	void internalChangeHealth( Real ) {}
+	/* batch R40: with m_traceChange, internalChangeHealth is a line and changes the health (nothing otherwise, as before) */
+	bool m_traceChange = false;
+	void internalChangeHealth( Real delta ) { if (m_traceChange) { ulog("internalchange %d %08x", (int)m_owner->m_oid, realBits(delta)); m_health += delta; } }
 	void setIndestructible( Bool ) {}
 	Bool isIndestructible( void ) const { return false; }
 	void evaluateVisualCondition() {}

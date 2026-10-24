@@ -194,6 +194,13 @@ pub struct ProbeAnswers {
     pub trace_kill_contained: bool,
     /// batch R39: `LifetimeUpdate::getDieFrame()`, for a probe that stands in for one (`None`: it does not answer).
     pub lifetime_die_frame: Option<u32>,
+    /// batch R40: `AIUpdateInterface::isClearingMines()`.
+    pub clearing_mines: bool,
+    /// batch R40: the body's `internalChangeHealth(delta)` is a line of the trace (`bt internalchange <object> <delta bits>`) and changes the
+    /// health (the module build's `MBody` with `m_traceChange`).
+    pub trace_internal_change: bool,
+    /// batch R40: the body never dies (the module build's `MBody` does not).
+    pub no_death: bool,
     // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     // --- p1w7-sonnet ---
@@ -440,7 +447,7 @@ impl ProbeModule {
                 info.out.actual_damage_clipped = dealt;
                 info.out.no_effect = false;
                 self.last_damage_source = info.input.source_id;
-                if self.health <= 0.0 && !self.died {
+                if self.health <= 0.0 && !self.died && !self.answers.no_death {
                     self.died = true;
                     self.lend(world, me, |w| w.on_die(me.object, &info));
                 }
@@ -545,6 +552,12 @@ impl ProbeModule {
             ModuleCall::SetDamageState(s) if self.answers.trace_damage_state => {
                 world.body_trace(format!("setdamagestate {} {s}", me.object));
                 self.answers.damage_state = Some(s);
+                ModuleReply::Done
+            }
+            // batch R40: the change, when the test asks for it
+            ModuleCall::InternalChangeHealth(delta) if self.answers.trace_internal_change => {
+                world.body_trace(format!("internalchange {} {:08x}", me.object, delta.to_bits()));
+                self.health += delta;
                 ModuleReply::Done
             }
             // batch R12: the damage state, when the test gives one
@@ -657,6 +670,7 @@ impl ProbeModule {
                 ModuleReply::Id(self.answers.closest_rider)
             }
             ModuleCall::AiGetGoalObject => ModuleReply::Id(self.answers.goal_object),
+            ModuleCall::AiIsClearingMines => ModuleReply::Bool(self.answers.clearing_mines),
             ModuleCall::AiGetCurrentVictim => ModuleReply::Id(self.answers.current_victim),
             ModuleCall::AiGetCurrentVictimPos => self.answers.current_victim_pos.map_or(ModuleReply::Unhandled, ModuleReply::Coord),
             ModuleCall::PhysicsGetVelocity => ModuleReply::Coord(self.answers.velocity),
@@ -1045,7 +1059,9 @@ impl ProbeModule {
             | ModuleCall::BridgeTowerSetTowerType(_)
             | ModuleCall::StickyBombInit { .. }
             | ModuleCall::StickyBombIsTimedBomb
-            | ModuleCall::StickyBombGetDetonationFrame => ModuleReply::Unhandled,
+            | ModuleCall::StickyBombGetDetonationFrame
+            | ModuleCall::LandMineSetScootParms { .. }
+            | ModuleCall::LandMineDisarm => ModuleReply::Unhandled,
             // batch R39: a probe named LifetimeUpdate stands in for one (`lifetime_die_frame`)
             ModuleCall::LifetimeGetDieFrame => match self.answers.lifetime_die_frame {
                 Some(f) => ModuleReply::Int(f as i32),

@@ -3433,6 +3433,16 @@ mod differential {
                 assert_eq!(text.matches(guard).count(), 3, "StickyBombUpdate.h: the include guard must occur three times (two lines and the end comment)");
                 std::fs::write(mod_gen.join("StickyBombUpdate_r39.h"), text.replace(guard, "__STICK_BOMB_UPDATE_H_R39")).expect("write StickyBombUpdate_r39.h");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R40 (differential/l9_minefield_r40.inc): MinefieldBehavior.cpp's update keeps AutoHealBehavior's name key in a
+                // function-local `static`, which the test's per-case reset of the name key generator would leave stale; the `static` dropped
+                // (asserted once), into mod_gen/MinefieldBehavior_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Behavior/MinefieldBehavior.cpp");
+                let text = std::fs::read_to_string(&path).expect("read MinefieldBehavior.cpp");
+                let key = "static const NameKeyType key_AutoHealBehavior";
+                assert_eq!(text.matches(key).count(), 1, "MinefieldBehavior.cpp: update's static name key must occur once");
+                let cut = text.replace(key, "const NameKeyType key_AutoHealBehavior");
+                std::fs::write(mod_gen.join("MinefieldBehavior_edit.cpp"), cut).expect("write MinefieldBehavior_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();

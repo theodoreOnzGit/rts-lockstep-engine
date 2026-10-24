@@ -674,6 +674,14 @@ pub enum ModuleCall {
     /// `StickyBombUpdate::getDetonationFrame()`; replies [`ModuleReply::Int`] (the frame's bits).
     StickyBombGetDetonationFrame,
     // --- end p1w13-sonnet ---
+    // --- p1w13-sonnet --- (batch R40: MinefieldBehavior's LandMineInterface and what it asks of an AI)
+    /// `AIUpdateInterface::isClearingMines()`; replies [`ModuleReply::Bool`].
+    AiIsClearingMines,
+    /// `LandMineInterface::setScootParms(start, end)`.
+    LandMineSetScootParms { start: Coord3D, end: Coord3D },
+    /// `LandMineInterface::disarm()`.
+    LandMineDisarm,
+    // --- end p1w13-sonnet ---
     // --- p1w13-sonnet --- (batch R38: `BridgeTowerBehaviorInterface`, which `TerrainLogic`'s `Bridge::createTower` drives)
     /// `setBridge(bridge)` (the bridge's id; one that is no object is `setBridge(NULL)`).
     BridgeTowerSetBridge(ObjectId),

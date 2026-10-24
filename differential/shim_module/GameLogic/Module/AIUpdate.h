@@ -96,6 +96,10 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	Int m_lastCmdSource = 0;
 	/* --- end p1w13-sonnet --- */
 	/* --- end p1w13-sonnet --- */
+	/* --- p1w13-sonnet --- (batch R40: MinefieldBehavior grants a mine clearer immunity) */
+	Bool isClearingMines() const { return m_clearingMines; }
+	Bool m_clearingMines = false;
+	/* --- end p1w13-sonnet --- */
 };
 #endif
 
