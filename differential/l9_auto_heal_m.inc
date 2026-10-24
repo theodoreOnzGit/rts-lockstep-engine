@@ -76,7 +76,7 @@ ParticleSystem *ParticleSystemManager::createParticleSystem( const ParticleSyste
 	s->m_tmpl = sysTemplate->m_idx;
 	return s;
 }
-void ParticleSystemManager::destroyParticleSystemByID( ParticleSystemID id ) {}
+void ParticleSystemManager::destroyParticleSystemByID( ParticleSystemID id ) { ulog("psdestroyid %u", id); }   /* batch R31: a line */
 void ParticleSystem::setPosition( const Coord3D *pos )
 {
 	ulog("psys %s %u %08x,%08x,%08x", g_ahPsNames[(size_t)m_tmpl].c_str(), m_id, realBits(pos->x), realBits(pos->y), realBits(pos->z));

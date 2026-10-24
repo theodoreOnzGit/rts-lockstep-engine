@@ -191,6 +191,34 @@ impl World {
         self.cuts.ai_ally_near.contains(&id)
     }
 
+    /// batch R31: `drawable->getPristineBonePositions(prefix, startIndex, positions, NULL, maxBones)`: the art's bones (the client's), from
+    /// `cuts.contain.pristine_bones`: for `start_index` 0 the bone named `prefix`, else `<prefix>01`, `<prefix>02`, ... (from `start_index`, to 99)
+    /// while the art has them, at most `max_bones` (W3DModelDraw's loop). None for an object with no drawable.
+    pub fn drawable_pristine_bones(&self, id: ObjectId, prefix: &[u8], start_index: i32, max_bones: i32) -> Vec<Coord3D> {
+        let mut out = Vec::new();
+        if !self.has_drawable(id) || max_bones <= 0 {
+            return out;
+        }
+        let end_index = if start_index == 0 { 0 } else { 99 };
+        for i in start_index..=end_index {
+            let mut name = prefix.to_vec();
+            if i != 0 {
+                name.extend_from_slice(format!("{i:02}").as_bytes());
+            }
+            let Some(p) = self.cuts.contain.pristine_bones.get(&(id, name)) else { break };
+            out.push(*p);
+            if out.len() as i32 >= max_bones {
+                break;
+            }
+        }
+        out
+    }
+
+    /// batch R31: `TheParticleSystemManager->destroyParticleSystemByID(id)`.
+    pub fn destroy_particle_system_by_id(&mut self, id: u32) {
+        self.cut(CutCall::ParticleSystemDestroyById { id });
+    }
+
     /// batch R28: `TheScriptEngine->adjustToppleDirection(object, direction)`: "if the object is named and has a specified topple direction,
     /// topple adjust direction to reflect it" (the first entry for its name, normalised).
     pub fn script_adjust_topple_direction(&mut self, id: ObjectId, direction: &mut Coord3D) {
@@ -651,6 +679,8 @@ pub enum CutCall {
     /// batch R29: `ObjectCreationList::create(ocl, primary, &primaryPos, NULL, angle)` for the list named `ocl` (`StructureCollapseUpdate::
     /// doPhaseStuff`); like [`CutCall::OclCreate`], a name that is no list makes nothing.
     OclCreateAtPrimary { primary: ObjectId, ocl: Vec<u8>, primary_pos: Coord3D, angle: f32 },
+    /// batch R31: `TheParticleSystemManager->destroyParticleSystemByID(id)` (`TransitionDamageFX`).
+    ParticleSystemDestroyById { id: u32 },
     // --- end p1w12-sonnet ---
     // --- p1w13-sonnet ---
     /// `TheTerrainLogic->getGroundHeight(x, y)` (`HeightDieUpdate`); `ObjectCuts::terrain_ground` answers.

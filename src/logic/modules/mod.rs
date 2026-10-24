@@ -125,6 +125,7 @@ pub mod pilot_find_vehicle_update;
 pub mod horde_update;
 pub mod topple_update;
 pub mod bone_fx_update;
+pub mod transition_damage_fx;
 pub mod structure_collapse_update;
 pub mod stealth_detector_update;
 pub mod stealth_update;
@@ -308,6 +309,11 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
             upgrade_die::UpgradeDie::new(object, Some(d.clone())).map(UpdateBody::UpgradeDie),
         )),
         // the two die modules whose data is `DieModuleData` itself are told apart by their name
+        // batch R31
+        ModuleDataKind::TransitionDamageFx(d) => Some(made(
+            transition_damage_fx::TransitionDamageFx::get_interface_mask(),
+            transition_damage_fx::TransitionDamageFx::new(object, Some(d.clone())).map(UpdateBody::TransitionDamageFx),
+        )),
         // batch R30: the damage module whose data is `DamageModuleData` itself
         ModuleDataKind::Damage(d) => match name {
             b"BoneFXDamage" => Some(made(bone_fx_update::BoneFxDamage::get_interface_mask(), bone_fx_update::BoneFxDamage::new(object, Some(d.clone())).map(UpdateBody::BoneFxDamage))),

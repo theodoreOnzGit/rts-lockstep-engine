@@ -134,6 +134,8 @@ pub enum UpdateBody {
     DestroyDie(crate::logic::modules::destroy_die::DestroyDie),
     /// `BoneFXDamage` (batch R30).
     BoneFxDamage(crate::logic::modules::bone_fx_update::BoneFxDamage),
+    /// `TransitionDamageFX` (batch R31).
+    TransitionDamageFx(crate::logic::modules::transition_damage_fx::TransitionDamageFx),
     /// `KeepObjectDie`.
     KeepObjectDie(crate::logic::modules::keep_object_die::KeepObjectDie),
     /// `UpgradeDie`.
@@ -371,6 +373,7 @@ impl UpdateBody {
             UpdateBody::TempWeaponBonusHelper(m) => m.world_update(world, me),
             UpdateBody::DestroyDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::BoneFxDamage(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::TransitionDamageFx(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::KeepObjectDie(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::UpgradeDie(_) => UPDATE_SLEEP_FOREVER,
 // --- end p1w10-sonnet (helpers and dies) ---
@@ -525,6 +528,7 @@ impl UpdateBody {
             UpdateBody::TempWeaponBonusHelper(m) => m.module_call(world, me, call),
             UpdateBody::DestroyDie(m) => m.module_call(world, me, call),
             UpdateBody::BoneFxDamage(m) => m.module_call(world, me, call),
+            UpdateBody::TransitionDamageFx(m) => m.module_call(world, me, call),
             UpdateBody::KeepObjectDie(m) => m.module_call(world, me, call),
             UpdateBody::UpgradeDie(m) => m.module_call(world, me, call),
 // --- end p1w10-sonnet (helpers and dies) ---
@@ -692,6 +696,7 @@ impl UpdateBody {
             UpdateBody::TempWeaponBonusHelper(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::DestroyDie(m) => m.xfer(xfer),
             UpdateBody::BoneFxDamage(m) => m.xfer(xfer),
+            UpdateBody::TransitionDamageFx(m) => m.xfer(xfer),
             UpdateBody::KeepObjectDie(m) => m.xfer(xfer),
             UpdateBody::UpgradeDie(m) => m.xfer(xfer),
 // --- end p1w10-sonnet (helpers and dies) ---
@@ -801,6 +806,7 @@ impl UpdateBody {
             UpdateBody::TempWeaponBonusHelper(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::DestroyDie(m) => m.crc(xfer),
             UpdateBody::BoneFxDamage(m) => m.crc(xfer),
+            UpdateBody::TransitionDamageFx(m) => m.crc(xfer),
             UpdateBody::KeepObjectDie(m) => m.crc(xfer),
             UpdateBody::UpgradeDie(m) => m.crc(xfer),
 // --- end p1w10-sonnet (helpers and dies) ---
@@ -910,6 +916,7 @@ impl UpdateBody {
             UpdateBody::TempWeaponBonusHelper(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::DestroyDie(m) => m.load_post_process(),
             UpdateBody::BoneFxDamage(m) => m.load_post_process(),
+            UpdateBody::TransitionDamageFx(m) => m.load_post_process(),
             UpdateBody::KeepObjectDie(m) => m.load_post_process(),
             UpdateBody::UpgradeDie(m) => m.load_post_process(),
 // --- end p1w10-sonnet (helpers and dies) ---
@@ -1024,6 +1031,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::TempWeaponBonusHelper(m) => m.crc(xfer),
             UpdateBody::DestroyDie(m) => m.crc(xfer),
             UpdateBody::BoneFxDamage(m) => m.crc(xfer),
+            UpdateBody::TransitionDamageFx(m) => m.crc(xfer),
             UpdateBody::KeepObjectDie(m) => m.crc(xfer),
             UpdateBody::UpgradeDie(m) => m.crc(xfer),
 // --- end p1w10-sonnet (helpers and dies) ---
@@ -1174,6 +1182,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::TempWeaponBonusHelper(m) => m.xfer(xfer),
             UpdateBody::DestroyDie(m) => m.xfer(xfer),
             UpdateBody::BoneFxDamage(m) => m.xfer(xfer),
+            UpdateBody::TransitionDamageFx(m) => m.xfer(xfer),
             UpdateBody::KeepObjectDie(m) => m.xfer(xfer),
             UpdateBody::UpgradeDie(m) => m.xfer(xfer),
 // --- end p1w10-sonnet (helpers and dies) ---
@@ -1324,6 +1333,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::TempWeaponBonusHelper(m) => m.load_post_process(),
             UpdateBody::DestroyDie(m) => m.load_post_process(),
             UpdateBody::BoneFxDamage(m) => m.load_post_process(),
+            UpdateBody::TransitionDamageFx(m) => m.load_post_process(),
             UpdateBody::KeepObjectDie(m) => m.load_post_process(),
             UpdateBody::UpgradeDie(m) => m.load_post_process(),
 // --- end p1w10-sonnet (helpers and dies) ---

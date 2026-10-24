@@ -82,10 +82,18 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 		/* batch R30: BoneFXUpdate's bones, when the test gives them (differential/l9_bonefx_r30.inc) */
 		extern const Coord3D *(*g_r30BoneHook)(const char *);
 		if (g_r30BoneHook) {
-			const Coord3D *p = g_r30BoneHook(boneNamePrefix);
-			if (!p || maxBones < 1) return 0;
-			if (positions) positions[0] = *p;
-			return 1;
+			/* batch R31: and a prefix's numbered bones, from startIndex while the art has them (W3DModelDraw's loop) */
+			Int count = 0;
+			for (Int i = startIndex; i <= (startIndex == 0 ? 0 : 99) && count < maxBones; ++i) {
+				char name[256];
+				if (i == 0) snprintf(name, sizeof(name), "%s", boneNamePrefix);
+				else snprintf(name, sizeof(name), "%s%02d", boneNamePrefix, (int)i);
+				const Coord3D *p = g_r30BoneHook(name);
+				if (!p) break;
+				if (positions) positions[count] = *p;
+				++count;
+			}
+			return count;
 		}
 		/* batch R8: and the parachute's three bones (ParachuteContain) */
 		static const char *const kPara[3] = { "PARA_COG", "PARA_ATTCH", "PARA_MAN" };

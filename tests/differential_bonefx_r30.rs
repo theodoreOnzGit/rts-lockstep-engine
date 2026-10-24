@@ -34,9 +34,12 @@
 //! # Results (2026-10-24, `L9R30_CASES=9000`)
 //!
 //! 9,000 cases (6,065 compared; 1,771 data blocks threw, as the C++ did; 1,164 excluded, undefined upstream: 641 an effect's bones with no
-//! drawable, 523 its damage test with no body), 237,129 ops (194,858 updates, 16,314 body damage state changes, 32,459 xfers) and 1,548,951
-//! outputs: **0 mismatches**; 30,049 effect lines compared: 5,744 FX lists and 5,371 OCLs at their bones' world positions, 5,772 particle
-//! systems made (2,738 stopped, the drawable hidden) and 4,652 destroyed.
+//! drawable, 523 its damage test with no body), 237,129 ops (~~194,858~~ **158,285** updates, ~~16,314~~ **13,254** body damage state changes,
+//! ~~32,459~~ **26,426** xfers) and 1,548,951 outputs: **0 mismatches**; ~~30,049~~ **29,614** effect lines compared: ~~5,744~~ **5,644** FX lists and
+//! ~~5,371~~ **5,303** OCLs at their bones' world positions, ~~5,772~~ **5,688** particle systems made (~~2,738~~ **2,707** stopped, the drawable
+//! hidden) and ~~4,652~~ **4,584** destroyed.
+//! **CORRECTED 2026-10-24** (the same day): the first record's counts of updates, xfers and effects also counted the cases later excluded as
+//! undefined upstream, whose outputs are not compared; the counts below are the compared cases' only (the output and mismatch counts were right).
 //!
 //! On the way (driver and stand-in fixes): upstream's function-local `static` name keys outlive the test's per-case name key generator, so
 //! `build.rs` drops the `static`, as for `FlammableUpdate.cpp`; the stand-in particle system manager made a system of a `NULL` template, where
@@ -300,7 +303,8 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
     s.into_bytes()
 }
 
-#[derive(Default)]
+/// What the compared cases reached (a case excluded as undefined upstream counts for nothing).
+#[derive(Default, Clone)]
 struct Tally {
     effects: u64,
     updates: u64,
@@ -633,10 +637,12 @@ fn bone_fx_update_matches_upstream() {
             })
             .collect();
         let rust = if outcome.status == 0 {
+            let tally_before = tally.clone();
             let (rd, w) = rust_run(&ctx, data.expect("read ok"), &cfg, &ops, &mut tally);
             if let Some((_, e)) = w.cuts.module_errors.iter().find(|(_, e)| e.is_undefined()) {
                 *reasons.entry(format!("{e}")).or_insert(0u64) += 1;
                 excluded += 1;
+                tally = tally_before;
                 continue;
             }
             Some(rd)

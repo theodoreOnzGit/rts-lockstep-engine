@@ -35,9 +35,12 @@
 //! # Results (2026-10-24, `L9R29_CASES=9000`)
 //!
 //! 9,000 cases (6,205 compared; 1,826 data blocks threw, as the C++ did; 969 excluded, undefined upstream: 641 a collapse with no drawable, 179
-//! `MaxBurstDelay` read uninitialised, 149 a building down with no body), 183,290 ops (109,259 updates, 18,119 deaths, 46,015 xfers) and 195,700
-//! outputs: **0 mismatches**; 94,505 effect lines compared, among them 13,291 FX lists and OCLs of the phases, 1,195 bone FX stops and 2,116 body
-//! particle updates; 74,745 ops ended waiting, 27,746 collapsing and 17,284 done.
+//! `MaxBurstDelay` read uninitialised, 149 a building down with no body), 183,290 ops (~~109,259~~ **91,528** updates, ~~18,119~~ **14,942** deaths,
+//! ~~46,015~~ **38,655** xfers) and 195,700 outputs: **0 mismatches**; ~~94,505~~ **80,744** effect lines compared, among them ~~13,291~~ **10,438** FX
+//! lists and OCLs of the phases, ~~1,195~~ **1,038** bone FX stops and ~~2,116~~ **2,057** body particle updates; ~~74,745~~ **56,377** ops ended
+//! waiting, ~~27,746~~ **22,606** collapsing and ~~17,284~~ **14,738** done.
+//! **CORRECTED 2026-10-24** (the same day): the first record's counts of updates, xfers and effects also counted the cases later excluded as
+//! undefined upstream, whose outputs are not compared; the counts below are the compared cases' only (the output and mismatch counts were right).
 //!
 //! On the way: the shudder's two client random numbers are the arguments of one call, whose order C++ leaves unspecified; the reference build
 //! (clang) draws them left to right, and the first translation had them the other way round.
@@ -309,7 +312,8 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
     s.into_bytes()
 }
 
-#[derive(Default)]
+/// What the compared cases reached (a case excluded as undefined upstream counts for nothing).
+#[derive(Default, Clone)]
 struct Tally {
     effects: u64,
     updates: u64,
@@ -647,10 +651,12 @@ fn structure_collapse_update_matches_upstream() {
             })
             .collect();
         let rust = if outcome.status == 0 {
+            let tally_before = tally.clone();
             let (rd, w) = rust_run(&ctx, data.expect("read ok"), &cfg, &ops, &mut tally);
             if let Some((_, e)) = w.cuts.module_errors.iter().find(|(_, e)| e.is_undefined()) {
                 *reasons.entry(format!("{e}")).or_insert(0u64) += 1;
                 excluded += 1;
+                tally = tally_before;
                 continue;
             }
             Some(rd)

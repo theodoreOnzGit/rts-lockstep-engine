@@ -790,6 +790,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::topple_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::topple_update::ToppleUpdate::get_interface_mask()),
         }),
+        "TransitionDamageFX" => Some(ModuleTemplate {
+            create_proc: Some(new_damage_base),
+            create_data_proc: Some(crate::logic::modules::transition_damage_fx::new_module_data),
+            which_interfaces: Some(crate::logic::modules::transition_damage_fx::TransitionDamageFx::get_interface_mask()),
+        }),
         "BoneFXDamage" => Some(ModuleTemplate {
             create_proc: Some(new_damage_base),
             create_data_proc: Some(crate::logic::modules::new_plain_damage_module_data),
@@ -1144,6 +1149,7 @@ fn new_die_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module
 fn new_damage_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module, IniError> {
     let base = match data {
         Some(ModuleDataKind::Damage(d)) => Some(d),
+        Some(ModuleDataKind::TransitionDamageFx(d)) => Some(std::sync::Arc::new(d.damage.clone())),
         _ => None,
     };
     Ok(Module::Damage(crate::logic::module::damage_module::DamageModule::new(object, base)?))

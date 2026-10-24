@@ -1660,6 +1660,20 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    /// p1w13-sonnet, batch R31: TransitionDamageFX (differential/l9_transition_r31.inc).
+    pub fn ref_l9r31_run(
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
     /// p1w13-sonnet, batch R30: BoneFXUpdate, BoneFXDamage (differential/l9_bonefx_r30.inc).
     pub fn ref_l9r30_run(
         filename: *const c_char,

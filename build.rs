@@ -3353,6 +3353,20 @@ mod differential {
                 let hcut = htext.replace(once, "").replace(guard, "#ifndef __BONEFXUPDATE_R30_H_\n#define __BONEFXUPDATE_R30_H_\n");
                 std::fs::write(mod_gen.join("BoneFXUpdate_r30.h"), hcut).expect("write BoneFXUpdate_r30.h");
                 println!("cargo:rerun-if-changed={}", hpath.display());
+                // batch R31 (differential/l9_transition_r31.inc): TransitionDamageFX.cpp parses its particle systems with
+                // `ini->parseParticleSystemTemplate`; the same replacement (asserted once), its declaration after the module header's include (asserted
+                // once), into mod_gen/TransitionDamageFX_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Damage/TransitionDamageFX.cpp");
+                let text = std::fs::read_to_string(&path).expect("read TransitionDamageFX.cpp");
+                let (parse, include) = ("ini->parseParticleSystemTemplate", "#include \"GameLogic/Module/TransitionDamageFX.h\"\n");
+                assert_eq!(text.matches(parse).count(), 1, "TransitionDamageFX.cpp: the particle system parser must occur once");
+                assert_eq!(text.matches(include).count(), 1, "TransitionDamageFX.cpp: the module header include must occur once");
+                let cut = text.replace(parse, "l9ahParsePsTemplate").replace(
+                    include,
+                    &format!("{include}class INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n"),
+                );
+                std::fs::write(mod_gen.join("TransitionDamageFX_edit.cpp"), cut).expect("write TransitionDamageFX_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();

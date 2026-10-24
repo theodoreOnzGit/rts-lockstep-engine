@@ -32,8 +32,11 @@
 //! # Results (2026-10-24, `L9R28_CASES=9000`)
 //!
 //! 9,000 cases (6,384 compared; 1,771 data blocks threw, as the C++ did; 845 excluded, undefined upstream: a topple of an object with no drawable,
-//! whose `getClientUpdateModules` is unchecked), 250,763 ops (217,907 updates, 30,666 xfers) and 514,294 outputs: **0 mismatches**; 103,048 effect
-//! lines compared; 137,927 ops ended falling, 14,488 bouncing back and 18,772 down, 30,232 with a stump made.
+//! whose `getClientUpdateModules` is unchecked), 250,763 ops (~~217,907~~ **187,954** updates, ~~30,666~~ **26,489** xfers) and 514,294 outputs:
+//! **0 mismatches**; ~~103,048~~ **101,399** effect lines compared; ~~137,927~~ **113,490** ops ended falling, ~~14,488~~ **11,777** bouncing back
+//! and ~~18,772~~ **15,200** down, ~~30,232~~ **29,766** with a stump made.
+//! **CORRECTED 2026-10-24** (the same day): the first record's counts of updates, xfers and effects also counted the cases later excluded as
+//! undefined upstream, whose outputs are not compared; the counts below are the compared cases' only (the output and mismatch counts were right).
 //!
 //! On the way (a driver fix): `applyTopplingForce` has no "already toppling" guard, so every topple makes a stump and a tree toppled twice makes
 //! two; the first stand-in factory gave every stump id 3. It gives 3, 4, ... now, as the game logic does, and the dump counts them.
@@ -244,7 +247,8 @@ fn gen_text(g: &mut Gen, clean: bool) -> Vec<u8> {
     s.into_bytes()
 }
 
-#[derive(Default)]
+/// What the compared cases reached (a case excluded as undefined upstream counts for nothing).
+#[derive(Default, Clone)]
 struct Tally {
     effects: u64,
     updates: u64,
@@ -600,10 +604,12 @@ fn topple_update_matches_upstream() {
             })
             .collect();
         let rust = if outcome.status == 0 {
+            let tally_before = tally.clone();
             let (rd, w) = rust_run(&ctx, data.expect("read ok"), &cfg, &ops, &mut tally);
             if let Some((_, e)) = w.cuts.module_errors.iter().find(|(_, e)| e.is_undefined()) {
                 *reasons.entry(format!("{e}")).or_insert(0u64) += 1;
                 excluded += 1;
+                tally = tally_before;
                 continue;
             }
             Some(rd)
