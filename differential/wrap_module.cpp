@@ -844,5 +844,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_neutron_scaffold_r35.inc"   /* p1w13-sonnet, batch R35: NeutronBlastBehavior, BridgeScaffoldBehavior */
 #include "l9_structure_topple_r36.inc"   /* p1w13-sonnet, batch R36: StructureToppleUpdate */
 #include "l9_propaganda_r37.inc"   /* p1w13-sonnet, batch R37: PropagandaTowerBehavior */
+#include "l9_bridge_tower_r38.inc"   /* p1w13-sonnet, batch R38: BridgeTowerBehavior */
 #include "l9_ocl_power_r22.inc"   /* p1w13-sonnet, batch R22: OCLSpecialPower (run by l9_powers_h.inc, kind 7) */
 /* --- end p1w13-sonnet --- */

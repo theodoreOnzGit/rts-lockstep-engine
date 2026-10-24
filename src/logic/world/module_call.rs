@@ -664,6 +664,14 @@ pub enum ModuleCall {
     /// `setVerticalSpeed(verticalSpeed)`.
     ScaffoldSetVerticalSpeed(f32),
     // --- end p1w13-sonnet ---
+    // --- p1w13-sonnet --- (batch R38: `BridgeTowerBehaviorInterface`, which `TerrainLogic`'s `Bridge::createTower` drives)
+    /// `setBridge(bridge)` (the bridge's id; one that is no object is `setBridge(NULL)`).
+    BridgeTowerSetBridge(ObjectId),
+    /// `getBridgeID()`; replies [`ModuleReply::Id`].
+    BridgeTowerGetBridgeId,
+    /// `setTowerType(type)` (`BridgeTowerType` as its value).
+    BridgeTowerSetTowerType(i32),
+    // --- end p1w13-sonnet ---
     /// `StickyBombUpdate::detonate()`.
     Detonate,
     /// `ObjectDefectionHelper::startDefectionTimer(time, withDefectorFx)`.

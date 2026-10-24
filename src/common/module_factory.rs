@@ -830,6 +830,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::transition_damage_fx::new_module_data),
             which_interfaces: Some(crate::logic::modules::transition_damage_fx::TransitionDamageFx::get_interface_mask()),
         }),
+        "BridgeTowerBehavior" => Some(ModuleTemplate {
+            create_proc: Some(new_behavior_base),
+            create_data_proc: Some(crate::logic::modules::bridge_tower_behavior::new_module_data),
+            which_interfaces: Some(crate::logic::modules::bridge_tower_behavior::BridgeTowerBehavior::get_interface_mask()),
+        }),
         "BoneFXDamage" => Some(ModuleTemplate {
             create_proc: Some(new_damage_base),
             create_data_proc: Some(crate::logic::modules::new_plain_damage_module_data),
@@ -1190,6 +1195,17 @@ fn new_die_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module
     Ok(Module::Die(crate::logic::module::die_module::DieModule::new(object, base)?))
 }
 // --- end p1w10-sonnet ---
+
+// --- p1w13-sonnet ---
+/// batch R38: the `NewModuleProc` of a translated behaviour module whose data is `BehaviorModuleData` itself: its `BehaviorModule` base.
+fn new_behavior_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Module, IniError> {
+    let base = match data {
+        Some(d @ ModuleDataKind::Behavior(_)) => Some(d),
+        _ => None,
+    };
+    Ok(Module::Behavior(crate::logic::module::behavior_module::BehaviorModule::new(object, base)?))
+}
+// --- end p1w13-sonnet ---
 
 // --- p1w13-sonnet ---
 /// batch R30: the `NewModuleProc` of a translated damage module: its `DamageModule` base.

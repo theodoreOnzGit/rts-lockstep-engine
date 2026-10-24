@@ -1031,13 +1031,16 @@ impl ProbeModule {
             | ModuleCall::SpecialAbilityIsActive // p1w13-sonnet
             | ModuleCall::CountermeasuresIsActive => ModuleReply::Bool(self.answers.yes),
             ModuleCall::CalculateCountermeasureToDivertTo { .. } => ModuleReply::Id(self.answers.countermeasure),
-            // batch R35: a probe has no bridge scaffold interface
+            // batch R35: a probe has no bridge scaffold interface (batch R38: nor a bridge tower interface)
             ModuleCall::ScaffoldSetPositions { .. }
             | ModuleCall::ScaffoldSetMotion(_)
             | ModuleCall::ScaffoldGetCurrentMotion
             | ModuleCall::ScaffoldReverseMotion
             | ModuleCall::ScaffoldSetLateralSpeed(_)
-            | ModuleCall::ScaffoldSetVerticalSpeed(_) => ModuleReply::Unhandled,
+            | ModuleCall::ScaffoldSetVerticalSpeed(_)
+            | ModuleCall::BridgeTowerSetBridge(_)
+            | ModuleCall::BridgeTowerGetBridgeId
+            | ModuleCall::BridgeTowerSetTowerType(_) => ModuleReply::Unhandled,
             ModuleCall::DoesSpecialPowerHaveOverridableDestinationActive | ModuleCall::DoesSpecialPowerHaveOverridableDestination => {
                 if self.answers.has & (1 << 8) != 0 {
                     ModuleReply::Bool(self.answers.yes)

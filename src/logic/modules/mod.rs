@@ -111,6 +111,7 @@ pub mod spy_vision_update;
 pub mod upgrade_mux_user;
 pub mod fx_list_die;
 pub mod fire_weapon_when_dead_behavior;
+pub mod bridge_tower_behavior;
 pub mod auto_deposit_update;
 // --- end p1w11-sonnet ---
 // --- p1w12-sonnet ---
@@ -321,6 +322,14 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
             transition_damage_fx::TransitionDamageFx::get_interface_mask(),
             transition_damage_fx::TransitionDamageFx::new(object, Some(d.clone())).map(UpdateBody::TransitionDamageFx),
         )),
+        // batch R38: the behaviour module whose data is `BehaviorModuleData` itself (`MAKE_STANDARD_MODULE_MACRO`, the plain `ModuleData`)
+        ModuleDataKind::Behavior(d) => match name {
+            b"BridgeTowerBehavior" => Some(made(
+                bridge_tower_behavior::BridgeTowerBehavior::get_interface_mask(),
+                bridge_tower_behavior::BridgeTowerBehavior::new(object, Some(d.clone())).map(UpdateBody::BridgeTowerBehavior),
+            )),
+            _ => None,
+        },
         // batch R30: the damage module whose data is `DamageModuleData` itself
         ModuleDataKind::Damage(d) => match name {
             b"BoneFXDamage" => Some(made(bone_fx_update::BoneFxDamage::get_interface_mask(), bone_fx_update::BoneFxDamage::new(object, Some(d.clone())).map(UpdateBody::BoneFxDamage))),
