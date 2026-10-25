@@ -123,6 +123,7 @@ pub mod missile_launcher_building_update;
 pub mod spectre_gunship_deployment_update;
 pub mod countermeasures_behavior;
 pub mod auto_heal_behavior;
+pub mod fire_weapon_when_damaged_behavior;
 pub mod checkpoint_update;
 pub mod flammable_update;
 pub mod poisoned_behavior;
@@ -574,6 +575,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::AutoHealBehavior(d) => Some(made_update(
             auto_heal_behavior::AutoHealBehavior::get_interface_mask(),
             auto_heal_behavior::AutoHealBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::AutoHealBehavior(m))),
+        )),
+        ModuleDataKind::FireWeaponWhenDamagedBehavior(d) => Some(made_update(
+            fire_weapon_when_damaged_behavior::FireWeaponWhenDamagedBehavior::get_interface_mask(),
+            fire_weapon_when_damaged_behavior::FireWeaponWhenDamagedBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::FireWeaponWhenDamagedBehavior(m))),
         )),
         ModuleDataKind::CheckpointUpdate(d) => Some(made_update(
             UpdateModule::get_interface_mask(),

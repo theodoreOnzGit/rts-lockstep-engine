@@ -203,6 +203,7 @@ public:
 	** (a line: differential/l9_fire_weapon_update_r64.inc) and Weapon.h's three setters, verbatim */
 	WeaponStatus getStatus() const;
 	Object* forceFireWeapon( const Object *source, const Coord3D *pos );
+	void reloadAmmo(const Object *source);   /* batch R65: a line (differential/l9_fire_weapon_damaged_r65.inc) */
 	void setPossibleNextShotFrame( UnsignedInt frameNum ) { m_whenWeCanFireAgain = frameNum; }
 	void setPreAttackFinishedFrame( UnsignedInt frameNum ) { m_whenPreAttackFinished = frameNum; }
 	void setStatus( WeaponStatus status) { m_status = status; }

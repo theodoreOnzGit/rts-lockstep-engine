@@ -424,6 +424,8 @@ pub enum ModuleDataKind {
     CountermeasuresBehavior(Arc<crate::logic::modules::countermeasures_behavior::CountermeasuresBehaviorModuleData>),
     /// `AutoHealBehaviorModuleData`.
     AutoHealBehavior(Arc<crate::logic::modules::auto_heal_behavior::AutoHealBehaviorModuleData>),
+    /// `FireWeaponWhenDamagedBehavior` (batch R65).
+    FireWeaponWhenDamagedBehavior(Arc<crate::logic::modules::fire_weapon_when_damaged_behavior::FireWeaponWhenDamagedBehaviorModuleData>),
     /// `CheckpointUpdateModuleData`.
     CheckpointUpdate(Arc<crate::logic::modules::checkpoint_update::CheckpointUpdateModuleData>),
     /// `FlammableUpdateModuleData`.
@@ -680,6 +682,7 @@ impl ModuleDataKind {
             ModuleDataKind::SpectreGunshipDeploymentUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::CountermeasuresBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::AutoHealBehavior(d) => &d.update.behavior.module_data,
+            ModuleDataKind::FireWeaponWhenDamagedBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::CheckpointUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::FlammableUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::PoisonedBehavior(d) => &d.update.behavior.module_data,
@@ -1145,6 +1148,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::AutoHealBehavior(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::FireWeaponWhenDamagedBehavior(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

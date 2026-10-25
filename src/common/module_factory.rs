@@ -785,6 +785,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::auto_heal_behavior::new_module_data),
             which_interfaces: Some(crate::logic::modules::auto_heal_behavior::AutoHealBehavior::get_interface_mask()),
         }),
+        "FireWeaponWhenDamagedBehavior" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::fire_weapon_when_damaged_behavior::new_module_data),
+            which_interfaces: Some(crate::logic::modules::fire_weapon_when_damaged_behavior::FireWeaponWhenDamagedBehavior::get_interface_mask()),
+        }),
         "CheckpointUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::checkpoint_update::new_module_data),
@@ -1266,6 +1271,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::SpectreGunshipDeploymentUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::CountermeasuresBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::AutoHealBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::FireWeaponWhenDamagedBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::CheckpointUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::FlammableUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::PoisonedBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),

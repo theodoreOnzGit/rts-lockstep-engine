@@ -111,6 +111,19 @@ impl World {
         }
     }
 
+    /// `weapon->reloadAmmo(source)` for a weapon a module owns: the clip reloaded at the bonus's rate. Under `cuts.stub_weapon_calls` a
+    /// record ([`CutCall::WeaponReloadAmmo`]) and nothing else.
+    pub fn module_weapon_reload_ammo(&mut self, weapon: &mut Weapon, source: ObjectId) {
+        if self.cuts.stub_weapon_calls {
+            self.cut(CutCall::WeaponReloadAmmo { source, template: weapon.template() });
+            return;
+        }
+        let shared = WeaponHost::is_reload_time_shared(self, source);
+        if let Some(e) = weapon.reload_ammo(self, source, shared) {
+            e.apply_via_host(self, source);
+        }
+    }
+
     /// `weapon->forceFireWeapon(source, pos)` for a weapon a module owns (the projectile, if one was made, is not kept). Under
     /// `cuts.stub_weapon_calls` a record ([`CutCall::WeaponForceFireAtPosition`]).
     pub fn module_weapon_force_fire_at_position(&mut self, weapon: &mut Weapon, source: ObjectId, pos: Coord3D) -> Result<(), crate::common::ini::IniError> {

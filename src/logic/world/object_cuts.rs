@@ -1069,6 +1069,8 @@ pub enum CutCall {
     WeaponLoadAmmoNow { source: ObjectId, template: usize },
     /// batch R62: a module's weapon's `fireWeapon(source, target)`, under `stub_weapon_calls`.
     WeaponFireAtObject { source: ObjectId, target: ObjectId, template: usize },
+    /// batch R65: a module's weapon's `reloadAmmo(source)`, under `stub_weapon_calls`.
+    WeaponReloadAmmo { source: ObjectId, template: usize },
     /// batch R64: a module's weapon's `forceFireWeapon(source, pos)`, under `stub_weapon_calls`.
     WeaponForceFireAtPosition { source: ObjectId, pos: Coord3D, template: usize },
     /// batch R63: `obj->reloadAllAmmo(now)`, under `stub_weapon_calls`.

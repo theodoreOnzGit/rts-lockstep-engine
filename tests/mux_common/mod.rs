@@ -209,6 +209,11 @@ pub fn gen_frame(g: &mut Gen) -> u32 {
 
 /// Runs an xfer of module slot `idx` of object `me`: `how` 0 saves (to the file `file`), 1 loads `saved` (cut to 512 bytes), 2 computes the CRC.
 pub fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8], file: &str) -> (i32, Vec<u8>, u32) {
+    run_xfer_cut(w, me, idx, how, saved, file, 512)
+}
+
+/// [`run_xfer`] with the load cut to `cut` bytes, for a driver whose load buffer is larger (batch R65's, 1,024 bytes).
+pub fn run_xfer_cut(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8], file: &str, cut: usize) -> (i32, Vec<u8>, u32) {
     fn status<T>(r: Result<T, rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
         match r {
             Ok(_) => 0,
@@ -227,7 +232,7 @@ pub fn run_xfer(w: &mut World, me: ObjectId, idx: usize, how: u32, saved: &[u8],
         }
         1 => {
             let mut b = saved.to_vec();
-            b.truncate(512);
+            b.truncate(cut);
             let mut x = XferLoad::new(b);
             let st = match x.open(file.as_bytes()) {
                 Ok(()) => status(w.xfer_module_slot(me, idx, &mut x)),
