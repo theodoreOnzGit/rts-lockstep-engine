@@ -347,6 +347,7 @@ public:
 	class R26StealthUpdate *r26GetStealth() const { return m_r26Stealth; }
 	/* batch R50: PhysicsBehavior compiled under R50 names (differential/l9_physics_r50.inc), its own getPhysics; and what it asks of an object */
 	class R50PhysicsBehavior *r50GetPhysics() const { return m_r50Physics; }
+	void getUnitDirectionVector3D(Coord3D& dir) const;   /* batch R52: Thing.cpp's, verbatim (differential/l9_countermeasures_r52.inc) */
 	class R50PhysicsBehavior *m_r50Physics = 0;
 	Real getCarrierDeckHeight() const { return 0.0f; }   /* Object.cpp 6334-6350: no producer here (the test's objects have none) */
 	Bool canCrushOrSquish(Object *otherObj, CrushSquishTestType testType) const;   /* Object.cpp, verbatim (mod_gen/ObjectCrush.inc) */

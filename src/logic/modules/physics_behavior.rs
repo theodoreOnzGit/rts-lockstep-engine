@@ -1429,6 +1429,14 @@ impl UpdateBehavior for PhysicsBehavior {
                 self.scrub_velocity_z(v);
                 ModuleReply::Done
             }
+            ModuleCall::PhysicsTransferVelocityFrom(v) => {
+                // `transferVelocityTo(that)`, `that`'s half: `that->m_vel.add(&m_vel); that->m_velMag = INVALID_VEL_MAG;`
+                self.vel.x += v.x;
+                self.vel.y += v.y;
+                self.vel.z += v.z;
+                self.vel_mag = INVALID_VEL_MAG;
+                ModuleReply::Done
+            }
             ModuleCall::PhysicsAddVelocityTo(v) => {
                 self.vel.x += v.x;
                 self.vel.y += v.y;

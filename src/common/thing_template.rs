@@ -1083,6 +1083,11 @@ impl ThingTemplate {
         &self.behavior_module_info
     }
 
+    /// The behaviour modules' list, to change (batch R52: a test gives a factory template a module, as `Object` blocks do through the INI).
+    pub fn friend_behavior_module_info_mut(&mut self) -> &mut ModuleInfo {
+        &mut self.behavior_module_info
+    }
+
     /// `getDrawModuleInfo()`.
     pub fn get_draw_module_info(&self) -> &ModuleInfo {
         &self.draw_module_info

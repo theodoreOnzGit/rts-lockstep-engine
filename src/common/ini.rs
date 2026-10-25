@@ -242,6 +242,8 @@ pub enum Undefined {
     /// batch R50: a member the constructor leaves alone is read before anything sets it (`PhysicsBehavior::m_turning`, saved or read through
     /// `getTurning` before `setTurning` or `resetDynamicPhysics`; `m_originalAllowBounce`, which nothing sets).
     UninitialisedMember,
+    /// batch R52: an iterator stepped before the first element of its container and read (`CountermeasuresBehavior::calculateCountermeasureToDivertTo`).
+    IteratorOutOfRange,
     /// `getAI()` is `NULL` and the module calls through it (`ActiveBody`'s `DAMAGE_KILLPILOT` of a rider-change vehicle).
     NullAi,
     /// `getContain()` is `NULL` and the module calls through it (`HijackerUpdate`: a parachute template whose object has no contain module).

@@ -864,6 +864,12 @@ pub enum ModuleCall {
     /// `CountermeasuresBehaviorInterface::calculateCountermeasureToDivertTo(victim)`;
     /// replies [`ModuleReply::Id`].
     CalculateCountermeasureToDivertTo { victim: ObjectId },
+    /// batch R52: `CountermeasuresBehaviorInterface::reloadCountermeasures()`.
+    ReloadCountermeasures,
+    /// batch R52: `ProjectileUpdateInterface::setFramesTillCountermeasureDiversionOccurs(frames)`.
+    ProjectileSetFramesTillCountermeasureDiversion(u32),
+    /// batch R52: the receiving end of `PhysicsBehavior::transferVelocityTo(that)`: `that` gains the velocity and recomputes its speed.
+    PhysicsTransferVelocityFrom(Coord3D),
     // --- p1w7-sonnet ---
     /// `DockUpdateInterface::isClearToApproach(docker)`; replies [`ModuleReply::Bool`].
     IsClearToApproach { docker: ObjectId },

@@ -723,6 +723,13 @@ impl ProbeModule {
                 ModuleReply::Bool(self.answers.process_collision)
             }
             ModuleCall::AiHasLocomotorForSurface(s) => ModuleReply::Bool(self.answers.locomotor_surfaces & s != 0),
+            // batch R52: a missile's projectile update told to divert to the countermeasures (a line)
+            ModuleCall::ProjectileSetFramesTillCountermeasureDiversion(frames) => {
+                world.body_trace(format!("projdecoy {} {frames}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::PhysicsTransferVelocityFrom(_) => ModuleReply::Done,
+            ModuleCall::ReloadCountermeasures => ModuleReply::Unhandled,
             ModuleCall::ProjectileHandleCollision { other } => {
                 world.body_trace(format!("projcollide {} {other}", me.object));
                 ModuleReply::Bool(self.answers.projectile_handles_collision)

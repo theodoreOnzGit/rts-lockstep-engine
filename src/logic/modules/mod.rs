@@ -117,6 +117,7 @@ pub mod auto_deposit_update;
 // --- end p1w11-sonnet ---
 // --- p1w12-sonnet ---
 pub mod fire_ocl_after_weapon_cooldown_update;
+pub mod countermeasures_behavior;
 pub mod auto_heal_behavior;
 pub mod checkpoint_update;
 pub mod flammable_update;
@@ -537,6 +538,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d) => Some(made_update(
             fire_ocl_after_weapon_cooldown_update::FireOCLAfterWeaponCooldownUpdate::get_interface_mask(),
             fire_ocl_after_weapon_cooldown_update::FireOCLAfterWeaponCooldownUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::FireOCLAfterWeaponCooldownUpdate(m))),
+        )),
+        ModuleDataKind::CountermeasuresBehavior(d) => Some(made_update(
+            countermeasures_behavior::CountermeasuresBehavior::get_interface_mask(),
+            countermeasures_behavior::CountermeasuresBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::CountermeasuresBehavior(m))),
         )),
         ModuleDataKind::AutoHealBehavior(d) => Some(made_update(
             auto_heal_behavior::AutoHealBehavior::get_interface_mask(),

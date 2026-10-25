@@ -412,6 +412,8 @@ pub enum ModuleDataKind {
     // --- p1w12-sonnet ---
     /// `FireOCLAfterWeaponCooldownUpdateModuleData`.
     FireOCLAfterWeaponCooldownUpdate(Arc<crate::logic::modules::fire_ocl_after_weapon_cooldown_update::FireOCLAfterWeaponCooldownUpdateModuleData>),
+    /// `CountermeasuresBehavior` (batch R52).
+    CountermeasuresBehavior(Arc<crate::logic::modules::countermeasures_behavior::CountermeasuresBehaviorModuleData>),
     /// `AutoHealBehaviorModuleData`.
     AutoHealBehavior(Arc<crate::logic::modules::auto_heal_behavior::AutoHealBehaviorModuleData>),
     /// `CheckpointUpdateModuleData`.
@@ -648,6 +650,7 @@ impl ModuleDataKind {
             // --- end p1w11-sonnet ---
             // --- p1w12-sonnet ---
             ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::CountermeasuresBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::AutoHealBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::CheckpointUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::FlammableUpdate(d) => &d.update.behavior.module_data,
@@ -1064,6 +1067,13 @@ impl ModuleDataKind {
             // --- end p1w11-sonnet ---
             // --- p1w12-sonnet ---
             ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::CountermeasuresBehavior(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

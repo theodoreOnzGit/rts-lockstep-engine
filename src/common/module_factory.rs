@@ -755,6 +755,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::fire_ocl_after_weapon_cooldown_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::fire_ocl_after_weapon_cooldown_update::FireOCLAfterWeaponCooldownUpdate::get_interface_mask()),
         }),
+        "CountermeasuresBehavior" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::countermeasures_behavior::new_module_data),
+            which_interfaces: Some(crate::logic::modules::countermeasures_behavior::CountermeasuresBehavior::get_interface_mask()),
+        }),
         "AutoHealBehavior" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::auto_heal_behavior::new_module_data),
@@ -1197,6 +1202,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         // --- end p1w11-sonnet ---
         // --- p1w12-sonnet ---
         Some(ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::CountermeasuresBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::AutoHealBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::CheckpointUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::FlammableUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
