@@ -452,6 +452,8 @@ pub enum ModuleDataKind {
     StructureToppleUpdate(Arc<crate::logic::modules::structure_topple_update::StructureToppleUpdateModuleData>),
     /// `NeutronBlastBehavior` (batch R35).
     NeutronBlastBehavior(Arc<crate::logic::modules::neutron_blast_behavior::NeutronBlastBehaviorModuleData>),
+    /// `BunkerBusterBehavior` (batch R54).
+    BunkerBusterBehavior(Arc<crate::logic::modules::bunker_buster_behavior::BunkerBusterBehaviorModuleData>),
     /// `TensileFormationUpdate` (batch R34).
     TensileFormationUpdate(Arc<crate::logic::modules::tensile_formation_update::TensileFormationUpdateModuleData>),
     /// `LeafletDropBehavior` (batch R33).
@@ -671,6 +673,7 @@ impl ModuleDataKind {
             ModuleDataKind::StickyBombUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::StructureToppleUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::NeutronBlastBehavior(d) => &d.update.behavior.module_data,
+            ModuleDataKind::BunkerBusterBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::TensileFormationUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::LeafletDropBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::EmpUpdate(d) => &d.update.behavior.module_data,
@@ -1203,6 +1206,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::NeutronBlastBehavior(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::BunkerBusterBehavior(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

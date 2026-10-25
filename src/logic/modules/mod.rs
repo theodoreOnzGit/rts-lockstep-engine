@@ -140,6 +140,7 @@ pub mod minefield_behavior;
 pub mod sticky_bomb_update;
 pub mod structure_topple_update;
 pub mod neutron_blast_behavior;
+pub mod bunker_buster_behavior;
 pub mod bridge_scaffold_behavior;
 pub mod tensile_formation_update;
 pub mod bone_fx_update;
@@ -615,6 +616,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::NeutronBlastBehavior(d) => Some(made_update(
             neutron_blast_behavior::NeutronBlastBehavior::get_interface_mask(),
             neutron_blast_behavior::NeutronBlastBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::NeutronBlastBehavior(m))),
+        )),
+        ModuleDataKind::BunkerBusterBehavior(d) => Some(made_update(
+            bunker_buster_behavior::BunkerBusterBehavior::get_interface_mask(),
+            bunker_buster_behavior::BunkerBusterBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::BunkerBusterBehavior(m))),
         )),
         ModuleDataKind::TensileFormationUpdate(d) => Some(made_update(
             tensile_formation_update::TensileFormationUpdate::get_interface_mask(),

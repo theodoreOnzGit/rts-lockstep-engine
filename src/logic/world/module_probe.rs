@@ -206,6 +206,10 @@ pub struct ProbeAnswers {
     pub trace_damage_state: bool,
     /// batch R35: `killAllContained()` is a line of the trace (`bt killall <object>`).
     pub trace_kill_contained: bool,
+    /// batch R54: the contain module answers `isBustable()` with `bustable`, and `harmAndForceExitAllContained(info)` is a line of the trace
+    /// (`bt harmall <object> <damage type> <death type> <source> <source player mask> <amount bits>`).
+    pub trace_bust: bool,
+    pub bustable: bool,
     /// batch R39: `LifetimeUpdate::getDieFrame()`, for a probe that stands in for one (`None`: it does not answer).
     pub lifetime_die_frame: Option<u32>,
     /// batch R40: `AIUpdateInterface::isClearingMines()`.
@@ -973,6 +977,12 @@ impl ProbeModule {
             // batch R35: the passengers killed, when the test asks
             ModuleCall::KillAllContained if self.answers.trace_kill_contained => {
                 world.body_trace(format!("killall {}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::IsBustable if self.answers.trace_bust => ModuleReply::Bool(self.answers.bustable),
+            ModuleCall::HarmAndForceExitAllContained(info) if self.answers.trace_bust => {
+                let i = &info.input;
+                world.body_trace(format!("harmall {} {} {} {} {} {:08x}", me.object, i.damage_type, i.death_type, i.source_id, i.source_player_mask, i.amount.to_bits()));
                 ModuleReply::Done
             }
             // the contain module's own interface: a probe is a damage and die module, and answers the contain questions as it did before (the scripted answers)

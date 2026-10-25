@@ -48,10 +48,12 @@ std::vector<unsigned char> g_fkSaved;
 }  // namespace
 
 WeaponStore *TheWeaponStore = 0;
+/* p1w13-sonnet, batch R54: a driver whose templates are real WeaponTemplates (not KWeapons) names them through this hook */
+const char *(*g_tempWeaponName)(const WeaponTemplate *) = 0;
 void WeaponStore::createAndFireTempWeapon(const WeaponTemplate *wt, const Object *source, const Coord3D *pos)
 {
 	if (wt == NULL) return;   /* Weapon.cpp 1539-1540 (p1w13-sonnet, batch R50: PhysicsBehavior fires a crash weapon that may be none) */
-	ulog("weapon %s %d %u,%u,%u", ((const KWeapon *)wt)->name, (int)source->m_oid, realBits(pos->x), realBits(pos->y), realBits(pos->z));
+	ulog("weapon %s %d %u,%u,%u", g_tempWeaponName ? g_tempWeaponName(wt) : ((const KWeapon *)wt)->name, (int)source->m_oid, realBits(pos->x), realBits(pos->y), realBits(pos->z));
 }
 
 extern "C" {
