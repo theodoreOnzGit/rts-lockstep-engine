@@ -109,6 +109,18 @@ impl World {
         self.cuts.weapon_slot_facts.get(&(id, slot)).copied()
     }
 
+    /// `obj->setWeaponLock(slot, lockType)` (batch R55): an object whose weapon set holds weapons takes the lock; one whose weapons are the
+    /// tables' (`cuts.cur_weapon`, `cuts.weapons`) is a [`CutCall::ObjectSetWeaponLock`] record.
+    pub fn set_weapon_lock(&mut self, id: ObjectId, slot: i32, lock: crate::logic::weapon_set_state::WeaponLockType) {
+        match self.objects.find_mut(id) {
+            Some(o) if o.weapon_set.has_any_weapon() => {
+                o.weapon_set.set_weapon_lock(slot, lock);
+            }
+            Some(_) => self.cut(CutCall::ObjectSetWeaponLock { object: id, slot, lock }),
+            None => {}
+        }
+    }
+
     /// `toWeapon->transferNextShotStatsFrom(*fromWeapon)` when both objects have a weapon in those slots (the Patch 1.01 Jarmen Kell hack). Real weapons
     /// are changed; a weapon of the table is a [`CutCall::WeaponTransferNextShotStats`] record.
     pub fn weapon_transfer_next_shot_stats(&mut self, to: ObjectId, to_slot: i32, from: ObjectId, from_slot: i32) {
@@ -929,6 +941,8 @@ pub enum CutCall {
     // --- p1w13-sonnet --- (batch R2: TransportContain)
     /// `toWeapon->transferNextShotStatsFrom(*fromWeapon)` for weapons of the table (`World::weapon_transfer_next_shot_stats`).
     WeaponTransferNextShotStats { to: ObjectId, from: ObjectId },
+    /// `obj->setWeaponLock(slot, lockType)` of an object whose weapon set holds no weapons (`World::set_weapon_lock`, batch R55).
+    ObjectSetWeaponLock { object: ObjectId, slot: i32, lock: i32 },
     // --- end p1w13-sonnet ---
 }
 

@@ -860,6 +860,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::neutron_blast_behavior::new_module_data),
             which_interfaces: Some(crate::logic::modules::neutron_blast_behavior::NeutronBlastBehavior::get_interface_mask()),
         }),
+        "DemoTrapUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::demo_trap_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::demo_trap_update::DemoTrapUpdate::get_interface_mask()),
+        }),
         "BunkerBusterBehavior" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::bunker_buster_behavior::new_module_data),
@@ -1231,6 +1236,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::StickyBombUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::StructureToppleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::NeutronBlastBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::DemoTrapUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::BunkerBusterBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::TensileFormationUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::LeafletDropBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),

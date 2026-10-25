@@ -246,6 +246,8 @@ pub enum Undefined {
     NullSpecialPowerModule,
     /// batch R54: `a % b` with `b` zero (`BunkerBusterBehavior::update`'s `getFrame() % m_crashThroughBunkerFXFrequency` of a frequency of 0).
     ModuloByZero,
+    /// batch R55: `getCurrentWeapon()` is `NULL` and the module calls through it (`DemoTrapUpdate::update`'s `getWeaponSlot()`).
+    NullCurrentWeapon,
     /// `getAI()` is `NULL` and the module calls through it (`ActiveBody`'s `DAMAGE_KILLPILOT` of a rider-change vehicle).
     NullAi,
     /// `getContain()` is `NULL` and the module calls through it (`HijackerUpdate`: a parachute template whose object has no contain module).

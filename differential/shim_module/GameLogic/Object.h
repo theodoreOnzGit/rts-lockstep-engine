@@ -74,6 +74,13 @@ enum CanAttackResult
 	ATTACKRESULT_POSSIBLE_AFTER_MOVING,	///< possible, after moving closer
 	ATTACKRESULT_POSSIBLE,							///< possible now
 };
+/* batch R55 (DemoTrapUpdate locks a slot): WeaponSet.h lines 181-186, verbatim */
+enum WeaponLockType
+{
+	NOT_LOCKED,							///< Weapon is not locked
+	LOCKED_TEMPORARILY,			///< Weapon is locked until clip is empty, or current "attack" state exits
+	LOCKED_PERMANENTLY			///< Weapon is locked until explicitly unlocked or lock is changed to another weapon
+};
 /* --- end p1w13-sonnet --- */
 /* --- p1w12-sonnet --- (Common/STLTypedefs.h lines 88-89, verbatim) */
 #include <list>
@@ -205,6 +212,7 @@ public:
 	Weapon *getCurrentWeapon(WeaponSlotType *wslot = NULL) { if (wslot && m_curWeapon) *wslot = m_curWeapon->getWeaponSlot(); return m_curWeapon; }
 	Weapon *getWeaponInWeaponSlot(WeaponSlotType wslot) const { return m_slotWeapon[wslot]; }
 	Weapon *m_curWeapon = 0;
+	Bool setWeaponLock( WeaponSlotType weaponSlot, WeaponLockType lockType );   /* batch R55: a line (differential/l9_demo_trap_r55.inc) */
 	/* --- p1w13-sonnet --- (batch R12: GarrisonContain) the test's last shot frame; isMobile is Object.cpp:2902-2911 (isDisabled() of the disabled bits) */
 	UnsignedInt getLastShotFiredFrame() const { return m_lastShotFrame; }
 	void setDisabledUntil( DisabledType type = DISABLED_DEFAULT, UnsignedInt frame = FOREVER );   /* batch R13: the sabotage crates (a line: differential/l9_crates_f.inc) */
