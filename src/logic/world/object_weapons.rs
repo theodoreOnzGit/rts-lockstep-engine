@@ -174,11 +174,13 @@ pub fn has_weapon_to_deal_damage_type<H: ObjectWeaponHost>(host: &H, o: ObjectId
 }
 
 /// `Object::getLargestWeaponRange()`.
-pub fn get_largest_weapon_range<H: ObjectWeaponHost>(host: &H, o: ObjectId) -> f32 {
+pub fn get_largest_weapon_range<H: ObjectWeaponHost>(host: &mut H, o: ObjectId) -> f32 {
     let mut ret_val = -1.0f32;
     for i in 0..WEAPONSLOT_COUNT {
-        let Some(weapon) = host.weapon_set(o).get_weapon_in_weapon_slot(i) else { continue };
+        // (a copy, put back after: the range query may need the host mutably, and the weapon's status is a cell the query may update)
+        let Some(weapon) = host.weapon_set(o).get_weapon_in_weapon_slot(i).cloned() else { continue };
         let tmp_val = weapon.get_attack_range(host, o);
+        host.put_weapon(o, i, weapon);
         if tmp_val > ret_val {
             ret_val = tmp_val;
         }
@@ -230,19 +232,23 @@ pub fn get_ammo_pip_showing_info<H: ObjectWeaponHost>(host: &H, o: ObjectId) -> 
 /// `Object::getAbleToAttackSpecificObject(t, target, commandSource, specificSlot)`: "NO LONGER internally calls
 /// isAbleToAttack(), since that isn't an incredibly fast call".
 pub fn get_able_to_attack_specific_object<H: ObjectWeaponHost>(
-    host: &H,
+    host: &mut H,
     o: ObjectId,
     t: AbleToAttackType,
     target: ObjectId,
     command_source: CommandSourceType,
     specific_slot: i32,
 ) -> WResult<CanAttackResult> {
-    host.weapon_set(o).get_able_to_attack_specific_object(host, t, o, target, command_source, specific_slot)
+    // (a copy of the set, put back after: the question may need the host mutably, and the weapons' status cells may be updated)
+    let set = host.weapon_set(o).clone();
+    let r = set.get_able_to_attack_specific_object(host, t, o, target, command_source, specific_slot);
+    *host.weapon_set_mut(o) = set;
+    r
 }
 
 /// `Object::getAbleToUseWeaponAgainstTarget(attackType, victim, pos, commandSource, specificSlot)`.
 pub fn get_able_to_use_weapon_against_target<H: ObjectWeaponHost>(
-    host: &H,
+    host: &mut H,
     o: ObjectId,
     attack_type: AbleToAttackType,
     victim: Option<ObjectId>,
@@ -250,7 +256,11 @@ pub fn get_able_to_use_weapon_against_target<H: ObjectWeaponHost>(
     command_source: CommandSourceType,
     specific_slot: i32,
 ) -> WResult<CanAttackResult> {
-    host.weapon_set(o).get_able_to_use_weapon_against_target(host, attack_type, o, victim, pos, command_source, specific_slot)
+    // (a copy of the set, put back after: the question may need the host mutably, and the weapons' status cells may be updated)
+    let set = host.weapon_set(o).clone();
+    let r = set.get_able_to_use_weapon_against_target(host, attack_type, o, victim, pos, command_source, specific_slot);
+    *host.weapon_set_mut(o) = set;
+    r
 }
 
 /// `Object::chooseBestWeaponForTarget(target, criteria, cmdSource)`.
@@ -522,7 +532,7 @@ pub fn get_single_logical_bone_position<H: ObjectBoneHost>(host: &H, o: ObjectId
 /// turret position and rotation it asked for even when the call that fills them returned false: that read of an
 /// uninitialised value is [`WeaponError::UninitialisedRead`].
 pub fn get_single_logical_bone_position_on_turret<H: ObjectBoneHost>(
-    host: &H,
+    host: &mut H,
     o: ObjectId,
     which_turret: i32,
     bone_name: &[u8],

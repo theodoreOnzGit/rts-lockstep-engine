@@ -871,7 +871,7 @@ impl WeaponHost for Sim {
     fn has_drawable(&self, o: ObjectId) -> bool {
         self.ob(o).has_drawable
     }
-    fn is_locally_controlled(&self, o: ObjectId) -> bool {
+    fn is_locally_controlled(&mut self, o: ObjectId) -> bool {
         self.ob(o).locally
     }
     fn weapon_bonus_condition(&self, o: ObjectId) -> u32 {
@@ -880,7 +880,7 @@ impl WeaponHost for Sim {
     fn contained_by(&self, o: ObjectId) -> Option<ObjectId> {
         self.opt(self.ob(o).contained_by)
     }
-    fn container_passed_weapon_bonus(&self, container: ObjectId) -> Option<u32> {
+    fn container_passed_weapon_bonus(&mut self, container: ObjectId) -> Option<u32> {
         let c = self.ob(container);
         (c.has_contain && c.passed_bonus).then_some(c.passed_flags)
     }
@@ -896,16 +896,16 @@ impl WeaponHost for Sim {
             w.set_status(status);
         }
     }
-    fn num_consecutive_shots_fired_at_target(&self, o: ObjectId, _victim: Option<ObjectId>) -> i32 {
+    fn num_consecutive_shots_fired_at_target(&mut self, o: ObjectId, _victim: Option<ObjectId>) -> i32 {
         self.ob(o).consecutive
     }
-    fn is_above_terrain(&self, o: ObjectId) -> bool {
+    fn is_above_terrain(&mut self, o: ObjectId) -> bool {
         self.ob(o).above
     }
-    fn is_airborne_target(&self, o: ObjectId) -> bool {
+    fn is_airborne_target(&mut self, o: ObjectId) -> bool {
         self.test_status(o, rts_lockstep_engine::common::object_status_types::OBJECT_STATUS_AIRBORNE_TARGET)
     }
-    fn is_significantly_above_terrain(&self, o: ObjectId) -> bool {
+    fn is_significantly_above_terrain(&mut self, o: ObjectId) -> bool {
         self.ob(o).signif
     }
     fn layer(&self, o: ObjectId) -> PathfindLayer {
@@ -937,7 +937,7 @@ impl WeaponHost for Sim {
     fn is_destroyed(&self, o: ObjectId) -> bool {
         self.ob(o).destroyed
     }
-    fn is_able_to_attack(&self, o: ObjectId) -> bool {
+    fn is_able_to_attack(&mut self, o: ObjectId) -> bool {
         self.ob(o).able_to_attack
     }
     fn team_relationship_to_player_index(&self, o: ObjectId, player_index: i32) -> Relationship {
@@ -958,7 +958,7 @@ impl WeaponHost for Sim {
         let index = t.finder.find_best_info(&t.sets, &flags)?;
         Some(WeaponTemplateSetRef { thing_template: ti as u16 + 1, index })
     }
-    fn estimate_damage(&self, o: ObjectId, input: &DamageInfoInput) -> f32 {
+    fn estimate_damage(&mut self, o: ObjectId, input: &DamageInfoInput) -> f32 {
         self.rec(format!("est victim={} src={} dt={} death={} amt={}", o, input.source_id, input.damage_type, input.death_type, fb(input.amount)));
         self.ob(o).estimate
     }
@@ -1012,33 +1012,33 @@ impl WeaponHost for Sim {
         self.objs.iter().filter(|x| x.player == p && !x.destroyed).map(|x| x.id).collect()
     }
 
-    fn contain_facts(&self, o: ObjectId) -> Option<ContainFacts> {
+    fn contain_facts(&mut self, o: ObjectId) -> Option<ContainFacts> {
         let c = self.ob(o);
         c.has_contain.then_some(ContainFacts { count: c.contain_count, garrisonable: c.garrisonable, immune_to_clear_building_attacks: c.immune_clear })
     }
-    fn contain_is_enclosing_container_for(&self, container: ObjectId, inner: ObjectId) -> bool {
+    fn contain_is_enclosing_container_for(&mut self, container: ObjectId, inner: ObjectId) -> bool {
         self.ob(container).enclosing.contains(&inner)
     }
-    fn contain_is_garrisonable(&self, container: ObjectId) -> bool {
+    fn contain_is_garrisonable(&mut self, container: ObjectId) -> bool {
         self.ob(container).garrisonable
     }
-    fn contain_calc_best_garrison_position(&self, container: ObjectId, target_pos: &Coord3D) -> Option<Coord3D> {
+    fn contain_calc_best_garrison_position(&mut self, container: ObjectId, target_pos: &Coord3D) -> Option<Coord3D> {
         self.ob(container).best_garrison.then_some(Coord3D { x: target_pos.x + 1.0, y: target_pos.y + 2.0, z: target_pos.z + 3.0 })
     }
-    fn contain_is_passenger_allowed_to_fire(&self, o: ObjectId) -> bool {
+    fn contain_is_passenger_allowed_to_fire(&mut self, o: ObjectId) -> bool {
         self.ob(o).passenger_fire
     }
-    fn contain_items(&self, o: ObjectId) -> Option<Vec<ObjectId>> {
+    fn contain_items(&mut self, o: ObjectId) -> Option<Vec<ObjectId>> {
         self.ob(o).has_items.then(|| self.ob(o).items.clone())
     }
-    fn contain_apparent_controlling_player(&self, o: ObjectId, _observer: Option<i32>) -> Option<i32> {
+    fn contain_apparent_controlling_player(&mut self, o: ObjectId, _observer: Option<i32>) -> Option<i32> {
         let a = self.ob(o).apparent;
         (a >= 0).then_some(a)
     }
-    fn has_contain(&self, o: ObjectId) -> bool {
+    fn has_contain(&mut self, o: ObjectId) -> bool {
         self.ob(o).has_contain
     }
-    fn stealth_disguised_player_index(&self, o: ObjectId) -> Option<i32> {
+    fn stealth_disguised_player_index(&mut self, o: ObjectId) -> Option<i32> {
         let s = self.ob(o);
         (s.has_stealth && s.disguised).then_some(s.disguised_player)
     }
@@ -1054,7 +1054,7 @@ impl WeaponHost for Sim {
         })
     }
     fn spawn_slaves_can_use_weapon_against_target(
-        &self,
+        &mut self,
         o: ObjectId,
         _attack_type: AbleToAttackType,
         _victim: Option<ObjectId>,
@@ -1070,25 +1070,29 @@ impl WeaponHost for Sim {
         })
     }
     fn member_able_to_use_weapon_against_target(
-        &self,
+        &mut self,
         member: ObjectId,
         attack_type: AbleToAttackType,
         victim: Option<ObjectId>,
         pos: Option<Coord3D>,
         command_source: CommandSourceType,
     ) -> Result<CanAttackResult, WeaponError> {
-        self.ob(member).weapon_set.get_able_to_use_weapon_against_target(self, attack_type, member, victim, pos, command_source, -1)
+        // (a copy put back after, as `object_weapons` does: the weapons' status cells may be updated)
+        let set = self.ob(member).weapon_set.clone();
+        let r = set.get_able_to_use_weapon_against_target(self, attack_type, member, victim, pos, command_source, -1);
+        self.ob_mut(member).weapon_set = set;
+        r
     }
 
-    fn ai_sneaky_targeting_offset(&self, o: ObjectId) -> Option<Coord3D> {
+    fn ai_sneaky_targeting_offset(&mut self, o: ObjectId) -> Option<Coord3D> {
         let s = self.ob(o);
         (s.has_ai && s.sneaky).then_some(s.sneaky_offset)
     }
-    fn ai_cur_locomotor_set_type(&self, o: ObjectId) -> Option<i32> {
+    fn ai_cur_locomotor_set_type(&mut self, o: ObjectId) -> Option<i32> {
         let s = self.ob(o);
         s.has_ai.then_some(s.loco)
     }
-    fn ai_is_aircraft_that_adjusts_destination(&self, o: ObjectId) -> bool {
+    fn ai_is_aircraft_that_adjusts_destination(&mut self, o: ObjectId) -> bool {
         let s = self.ob(o);
         s.has_ai && s.adjusts
     }
@@ -1098,11 +1102,11 @@ impl WeaponHost for Sim {
             self.rec(format!("assault o={} victim={}", o, victim.unwrap_or(0)));
         }
     }
-    fn ai_which_turret_for_weapon_slot(&self, o: ObjectId, wslot: i32) -> Option<(i32, f32, f32)> {
+    fn ai_which_turret_for_weapon_slot(&mut self, o: ObjectId, wslot: i32) -> Option<(i32, f32, f32)> {
         let s = self.ob(o);
         s.has_ai.then(|| (s.turret[wslot as usize], s.turret_angle[wslot as usize], s.turret_pitch[wslot as usize]))
     }
-    fn ai_is_weapon_slot_on_turret_and_aiming_at_target(&self, o: ObjectId, wslot: i32, _victim: ObjectId) -> bool {
+    fn ai_is_weapon_slot_on_turret_and_aiming_at_target(&mut self, o: ObjectId, wslot: i32, _victim: ObjectId) -> bool {
         let s = self.ob(o);
         s.has_ai && s.aiming[wslot as usize]
     }
@@ -1180,7 +1184,7 @@ impl WeaponHost for Sim {
         self.ob_mut(projectile).producer = source;
         self.rec(format!("producer p={projectile} s={source}"));
     }
-    fn has_special_power_completion_die(&self, o: ObjectId) -> bool {
+    fn has_special_power_completion_die(&mut self, o: ObjectId) -> bool {
         self.ob(o).has_spc_die
     }
     fn special_power_completion_die_notify_script_engine(&mut self, o: ObjectId) {
@@ -1189,7 +1193,7 @@ impl WeaponHost for Sim {
     fn special_power_completion_die_set_creator(&mut self, o: ObjectId, creator: ObjectId) {
         self.rec(format!("spc.creator o={o} c={creator}"));
     }
-    fn has_projectile_update_interface(&self, o: ObjectId) -> bool {
+    fn has_projectile_update_interface(&mut self, o: ObjectId) -> bool {
         self.ob(o).has_pui
     }
     fn projectile_launch(
@@ -1216,7 +1220,7 @@ impl WeaponHost for Sim {
         ));
         self.ob_mut(projectile).launcher = source;
     }
-    fn projectile_launcher_id(&self, o: ObjectId) -> Option<ObjectId> {
+    fn projectile_launcher_id(&mut self, o: ObjectId) -> Option<ObjectId> {
         let s = self.ob(o);
         s.has_pui.then_some(s.launcher)
     }
@@ -1224,13 +1228,13 @@ impl WeaponHost for Sim {
         self.ob_mut(o).pos = *pos;
         self.rec(format!("setpos o={} {}", o, fb3(pos)));
     }
-    fn has_countermeasures(&self, o: ObjectId) -> bool {
+    fn has_countermeasures(&mut self, o: ObjectId) -> bool {
         self.ob(o).has_cm
     }
     fn report_missile_for_countermeasures(&mut self, o: ObjectId, projectile: ObjectId) {
         self.rec(format!("cm.report o={o} missile={projectile}"));
     }
-    fn has_land_mine_interface(&self, o: ObjectId) -> bool {
+    fn has_land_mine_interface(&mut self, o: ObjectId) -> bool {
         self.ob(o).has_land_mine
     }
     fn disarm_land_mine(&mut self, o: ObjectId) {
@@ -1246,7 +1250,7 @@ impl WeaponHost for Sim {
         self.rec(format!("stream.add o={} src={} proj={} victim={} pos={}", stream, source, projectile, victim.unwrap_or(0), fb3(&vp)));
         true
     }
-    fn assisted_targeting_is_free(&self, o: ObjectId) -> Option<bool> {
+    fn assisted_targeting_is_free(&mut self, o: ObjectId) -> Option<bool> {
         let s = self.ob(o);
         s.has_assist.then_some(s.assist_free)
     }
@@ -1272,11 +1276,11 @@ impl WeaponHost for Sim {
         self.rec(format!("ocl id={ocl} primary={primary}"));
     }
 
-    fn barrel_count(&self, o: ObjectId, wslot: i32) -> Option<i32> {
+    fn barrel_count(&mut self, o: ObjectId, wslot: i32) -> Option<i32> {
         let s = self.ob(o);
         s.has_drawable.then(|| s.barrels[wslot as usize])
     }
-    fn projectile_launch_offset(&self, o: ObjectId, _wslot: i32, _barrel: i32, _turret: i32) -> Option<LaunchOffset> {
+    fn projectile_launch_offset(&mut self, o: ObjectId, _wslot: i32, _barrel: i32, _turret: i32) -> Option<LaunchOffset> {
         let s = self.ob(o);
         (s.has_drawable && s.has_launch).then_some(LaunchOffset { attach_transform: s.launch_xform, turret_rot_pos: s.turret_rot_pos, turret_pitch_pos: s.turret_pitch_pos })
     }
@@ -1330,7 +1334,7 @@ impl WeaponHost for Sim {
             self.rec(format!("phys.ignore o={projectile} with={launcher}"));
         }
     }
-    fn parking_place_has_reserved_space(&self, o: ObjectId, intended: ObjectId) -> bool {
+    fn parking_place_has_reserved_space(&mut self, o: ObjectId, intended: ObjectId) -> bool {
         let s = self.ob(o);
         s.has_parking && s.reserved.contains(&intended)
     }
@@ -1696,7 +1700,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let mode = r.u();
                 let shared = sim.is_reload_time_shared(src);
                 let w = reg[wi].as_mut().expect("weapon");
-                let e = if mode == 0 { w.load_ammo_now(&sim, src, shared) } else { w.reload_ammo(&sim, src, shared) };
+                let e = if mode == 0 { w.load_ammo_now(&mut sim, src, shared) } else { w.reload_ammo(&mut sim, src, shared) };
                 if let Some(e) = e {
                     e.apply_via_host(&mut sim, src);
                 }
@@ -1780,21 +1784,21 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let goal = r.coord();
                 let v = sim.opt(victim);
                 let b = |x: bool| x as i32;
-                let inobj = v.map_or(-1, |v| b(w.is_within_attack_range(&sim, src, v)));
-                let inpos = b(w.is_within_attack_range_pos(&sim, src, &pos));
+                let inobj = v.map_or(-1, |v| b(w.is_within_attack_range(&mut sim, src, v)));
+                let inpos = b(w.is_within_attack_range_pos(&mut sim, src, &pos));
                 let closeobj = v.map_or(-1, |v| b(w.is_too_close(&sim, src, v)));
                 let closepos = b(w.is_too_close_pos(&sim, src, &pos));
-                let goalpos = b(w.is_goal_pos_within_attack_range(&sim, src, &goal, v, &pos));
-                let sg1 = b(w.is_source_object_with_goal_position_within_attack_range(&sim, src, &goal, v, Some(&pos)));
-                let sg2 = b(w.is_source_object_with_goal_position_within_attack_range(&sim, src, &goal, None, Some(&pos)));
-                let range = fb(w.get_attack_range(&sim, src));
-                let dist = fb(w.get_attack_distance(&sim, src, v));
-                let pdr = fb(w.get_primary_damage_radius(&sim, src));
-                let crt = w.get_clip_reload_time(&sim, src);
+                let goalpos = b(w.is_goal_pos_within_attack_range(&mut sim, src, &goal, v, &pos));
+                let sg1 = b(w.is_source_object_with_goal_position_within_attack_range(&mut sim, src, &goal, v, Some(&pos)));
+                let sg2 = b(w.is_source_object_with_goal_position_within_attack_range(&mut sim, src, &goal, None, Some(&pos)));
+                let range = fb(w.get_attack_range(&mut sim, src));
+                let dist = fb(w.get_attack_distance(&mut sim, src, v));
+                let pdr = fb(w.get_primary_damage_radius(&mut sim, src));
+                let crt = w.get_clip_reload_time(&mut sim, src);
                 let dmgw = b(w.is_damage_weapon(&sim.store));
                 let pitch = v.map_or(-1, |v| b(w.is_within_target_pitch(&sim, src, v)));
                 let est = match v {
-                    Some(v) => w.estimate_weapon_damage(&sim, src, Some(v), None)?.to_bits(),
+                    Some(v) => w.estimate_weapon_damage(&mut sim, src, Some(v), None)?.to_bits(),
                     None => 0,
                 };
                 let los1 = v.map_or(-1, |v| b(w.is_clear_firing_line_of_sight_terrain(&sim, src, v)));
@@ -1826,7 +1830,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let pos = r.coord();
                 let bonus = rd_bonus(&mut r);
                 let v = sim.opt(victim);
-                let e = estimate_weapon_template_damage(&sim, ti, Some(src), v, has_pos.then_some(pos), &bonus)?;
+                let e = estimate_weapon_template_damage(&mut sim, ti, Some(src), v, has_pos.then_some(pos), &bonus)?;
                 sim.rec(format!("ret estimate {}", fb(e)));
             }
             13 => {
@@ -1835,7 +1839,8 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let proj = r.i();
                 let thing = r.i();
                 let intended = r.i();
-                let c = should_projectile_collide_with(&sim, ti, sim.opt(launcher), sim.opt(proj), sim.opt(thing), intended);
+                let (launcher, proj, thing) = (sim.opt(launcher), sim.opt(proj), sim.opt(thing));
+                let c = should_projectile_collide_with(&mut sim, ti, launcher, proj, thing, intended);
                 sim.rec(format!("ret collide {}", c as i32));
             }
             14 => {
@@ -1866,7 +1871,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let launcher = r.i();
                 let wslot = r.i();
                 let barrel = r.i();
-                let (m, p) = Weapon::calc_projectile_launch_position(&sim, launcher, wslot, barrel);
+                let (m, p) = Weapon::calc_projectile_launch_position(&mut sim, launcher, wslot, barrel);
                 let words: Vec<String> = m.to_array().iter().map(|&x| fb(x)).collect();
                 sim.rec(format!("ret launchpos pos={} m={} ", fb3(&p), words.join(" ")));
             }
@@ -1924,7 +1929,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let o = r.i();
                 let now = r.b();
                 let mut ws = std::mem::take(&mut sim.ob_mut(o).weapon_set);
-                ws.reload_all_ammo(&sim, o, now);
+                ws.reload_all_ammo(&mut sim, o, now);
                 sim.ob_mut(o).weapon_set = ws;
             }
             22 => {
@@ -1940,7 +1945,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let cmd = r.i();
                 let victim = sim.opt(v);
                 let mut ws = std::mem::take(&mut sim.ob_mut(o).weapon_set);
-                let res = ws.choose_best_weapon_for_target(&sim, o, victim, crit, command_source(cmd));
+                let res = ws.choose_best_weapon_for_target(&mut sim, o, victim, crit, command_source(cmd));
                 sim.ob_mut(o).weapon_set = ws;
                 sim.rec(format!("ret choose {}", res? as i32));
             }
@@ -1950,7 +1955,10 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let at = r.i();
                 let cmd = r.i();
                 let slot = r.i();
-                let res = sim.ob(o).weapon_set.get_able_to_attack_specific_object(&sim, at as AbleToAttackType, o, v, command_source(cmd), slot)?;
+                let set = sim.ob(o).weapon_set.clone();
+                let res = set.get_able_to_attack_specific_object(&mut sim, at as AbleToAttackType, o, v, command_source(cmd), slot);
+                sim.ob_mut(o).weapon_set = set;
+                let res = res?;
                 sim.rec(format!("ret able {}", res as i32));
             }
             25 => {
@@ -1962,7 +1970,10 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let cmd = r.i();
                 let slot = r.i();
                 let victim = sim.opt(v);
-                let res = sim.ob(o).weapon_set.get_able_to_use_weapon_against_target(&sim, at, o, victim, has_pos.then_some(pos), command_source(cmd), slot)?;
+                let set = sim.ob(o).weapon_set.clone();
+                let res = set.get_able_to_use_weapon_against_target(&mut sim, at, o, victim, has_pos.then_some(pos), command_source(cmd), slot);
+                sim.ob_mut(o).weapon_set = set;
+                let res = res?;
                 sim.rec(format!("ret ableuse {}", res as i32));
             }
             26 => {
@@ -2102,18 +2113,33 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let wp = ow::find_waypoint_following_capable_weapon(&mut sim, o);
                 let pip = ow::get_ammo_pip_showing_info(&sim, o);
                 // (the const getCurrentWeapon is the same call)
-                sim.rec(format!(
-                    "ret objq any={} dmg={} ready={} dtype={} range={:08x} oom={} locked={} shared={} mask={:08x} lastshot={} cur={},{} ccur={},{} wp={} pip={},{},{}",
+                // (the answers in the same order, before the record: the range needs the host mutably)
+                let (any, dmg, ready, dtype) = (
                     ow::has_any_weapon(&sim, o) as i32,
                     ow::has_any_damage_weapon(&sim, o) as i32,
                     ow::get_most_percent_ready_to_fire_any_weapon(&sim, o),
                     ow::has_weapon_to_deal_damage_type(&sim, o, dt) as i32,
-                    ow::get_largest_weapon_range(&sim, o).to_bits(),
+                );
+                let range = ow::get_largest_weapon_range(&mut sim, o).to_bits();
+                let (oom, locked, shared, mask, lastshot) = (
                     ow::is_out_of_ammo(&sim, o) as i32,
                     ow::is_cur_weapon_locked(&sim, o) as i32,
                     ow::is_reload_time_shared(&sim, o) as i32,
                     ow::get_weapon_in_weapon_slot_command_source_mask(&sim, o, slot as usize),
                     ow::get_last_shot_fired_frame(&sim, o),
+                );
+                sim.rec(format!(
+                    "ret objq any={} dmg={} ready={} dtype={} range={:08x} oom={} locked={} shared={} mask={:08x} lastshot={} cur={},{} ccur={},{} wp={} pip={},{},{}",
+                    any,
+                    dmg,
+                    ready,
+                    dtype,
+                    range,
+                    oom,
+                    locked,
+                    shared,
+                    mask,
+                    lastshot,
                     cur.has_weapon as i32,
                     cur.slot.unwrap_or(-1),
                     cur.has_weapon as i32,
@@ -2165,11 +2191,11 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let victim = sim.opt(v);
                 match kind {
                     0 => {
-                        let res = ow::get_able_to_attack_specific_object(&sim, o, at as AbleToAttackType, v, command_source(cmd), slot)?;
+                        let res = ow::get_able_to_attack_specific_object(&mut sim, o, at as AbleToAttackType, v, command_source(cmd), slot)?;
                         sim.rec(format!("ret oable {}", res as i32));
                     }
                     1 => {
-                        let res = ow::get_able_to_use_weapon_against_target(&sim, o, at, victim, has_pos.then_some(pos), command_source(cmd), slot)?;
+                        let res = ow::get_able_to_use_weapon_against_target(&mut sim, o, at, victim, has_pos.then_some(pos), command_source(cmd), slot)?;
                         sim.rec(format!("ret oableuse {}", res as i32));
                     }
                     _ => {
@@ -2225,7 +2251,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                     let q = if kind == 0 {
                         ow::get_single_logical_bone_position(&sim, o, name, want_pos, want_tr)
                     } else {
-                        ow::get_single_logical_bone_position_on_turret(&sim, o, turret, name, want_pos, want_tr)?
+                        ow::get_single_logical_bone_position_on_turret(&mut sim, o, turret, name, want_pos, want_tr)?
                     };
                     sim.rec(format!("ret bone{} found={} pos={} tr={}", kind, q.found as i32, fmt_pos(q.position), mtx_str(&q.transform.unwrap_or(untouched))));
                 } else {
@@ -2253,7 +2279,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let cs = command_source(r.i());
                 let ex = r.i();
                 let v: i32 = match kind {
-                    0 => am::can_get_repaired_at(&sim, o, t, cs)? as i32,
+                    0 => am::can_get_repaired_at(&mut sim, o, t, cs)? as i32,
                     1 => am::can_transfer_supplies_at(&sim, o, t) as i32,
                     2 => am::can_dock_at(&sim, o.expect("canDockAt takes objects"), t.expect("canDockAt takes objects"), cs) as i32,
                     3 => am::can_get_healed_at(&sim, o, t, cs) as i32,
@@ -2265,23 +2291,26 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                             1 => CanEnterType::DontCheckCapacity,
                             _ => CanEnterType::CombatDropInto,
                         };
-                        am::can_enter_object(&sim, o, t, cs, mode)? as i32
+                        am::can_enter_object(&mut sim, o, t, cs, mode)? as i32
                     }
-                    7 => am::get_can_attack_object(&sim, o, t, cs, ex as AbleToAttackType)? as i32,
+                    7 => am::get_can_attack_object(&mut sim, o, t, cs, ex as AbleToAttackType)? as i32,
                     8 => am::can_convert_object_to_car_bomb(&sim, o, t, cs) as i32,
                     9 => am::can_hijack_vehicle(&sim, o, t, cs) as i32,
                     10 => am::can_sabotage_building(&sim, o, t, cs) as i32,
-                    11 => am::can_capture_building(&sim, o, t, cs)? as i32,
-                    12 => am::can_disable_vehicle_via_hacking(&sim, o, t, cs, ex & 1 != 0)? as i32,
-                    13 => am::can_steal_cash_via_hacking(&sim, o, t, cs)? as i32,
-                    14 => am::can_snipe_vehicle(&sim, o, t, cs) as i32,
+                    11 => am::can_capture_building(&mut sim, o, t, cs)? as i32,
+                    12 => am::can_disable_vehicle_via_hacking(&mut sim, o, t, cs, ex & 1 != 0)? as i32,
+                    13 => am::can_steal_cash_via_hacking(&mut sim, o, t, cs)? as i32,
+                    14 => am::can_snipe_vehicle(&mut sim, o, t, cs) as i32,
                     15 => am::can_bribe_unit(o, t, cs) as i32,
                     16 => am::can_cut_building_power(o, t, cs) as i32,
-                    17 => am::can_disable_building_via_hacking(&sim, o, t, cs)? as i32,
+                    17 => am::can_disable_building_via_hacking(&mut sim, o, t, cs)? as i32,
                     18 => am::can_make_object_defector(&sim, o, t, cs) as i32,
-                    19 => am::can_fire_weapon_at_object(&sim, o, t, cs, ex % 3)? as i32,
-                    20 => am::can_garrison(&sim, o, t, cs)? as i32,
-                    _ => am::can_player_garrison(&sim, (0..sim.players.len() as i32).contains(&ex).then_some(ex), t, cs)? as i32,
+                    19 => am::can_fire_weapon_at_object(&mut sim, o, t, cs, ex % 3)? as i32,
+                    20 => am::can_garrison(&mut sim, o, t, cs)? as i32,
+                    _ => {
+                        let player = (0..sim.players.len() as i32).contains(&ex).then_some(ex);
+                        am::can_player_garrison(&mut sim, player, t, cs)? as i32
+                    }
                 };
                 sim.rec(format!("ret act k={kind} v={v}"));
             }
@@ -2300,7 +2329,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let tmpl = SpecialPowerTemplateRef { id: 1000 + sp_type as u32, sp_type };
                 let v: i32 = match kind {
                     0 => am::can_do_special_power_at_location(&sim, o, &loc, cs, &tmpl, way, opts, check)? as i32,
-                    1 => am::can_do_special_power_at_object(&sim, o, t, cs, &tmpl, opts, check)? as i32,
+                    1 => am::can_do_special_power_at_object(&mut sim, o, t, cs, &tmpl, opts, check)? as i32,
                     2 => am::can_do_special_power(&sim, o, &tmpl, cs, opts, check) as i32,
                     3 => am::can_fire_weapon_at_location(&sim, sim.opt(o), has_loc.then_some(&loc), cs, slot % 3, way) as i32,
                     4 => am::can_fire_weapon(&sim, sim.opt(o), slot % 3, cs) as i32,

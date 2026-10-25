@@ -119,7 +119,7 @@ pub const LOCKED_TEMPORARILY: WeaponLockType = 1;
 pub const LOCKED_PERMANENTLY: WeaponLockType = 2;
 
 /// `getVictimAntiMask(victim)`.
-fn get_victim_anti_mask<H: WeaponHost>(host: &H, victim: ObjectId) -> u32 {
+fn get_victim_anti_mask<H: WeaponHost>(host: &mut H, victim: ObjectId) -> u32 {
     if host.is_kind_of(victim, KINDOF_SMALL_MISSILE) {
         // all missiles are also projectiles!
         WEAPON_ANTI_SMALL_MISSILE
@@ -474,7 +474,7 @@ impl WeaponSet {
     }
 
     /// `reloadAllAmmo(obj, now)`.
-    pub fn reload_all_ammo<H: WeaponHost>(&mut self, host: &H, obj: ObjectId, now: bool) {
+    pub fn reload_all_ammo<H: WeaponHost>(&mut self, host: &mut H, obj: ObjectId, now: bool) {
         for i in 0..SLOTS {
             let shared = self.is_shared_reload_time(host);
             if let Some(weapon) = self.weapons[i].as_mut() {
@@ -550,7 +550,7 @@ impl WeaponSet {
     /// `getAbleToAttackSpecificObject(attackType, source, victim, commandSource, specificSlot)`.
     pub fn get_able_to_attack_specific_object<H: WeaponHost>(
         &self,
-        host: &H,
+        host: &mut H,
         attack_type: AbleToAttackType,
         source: ObjectId,
         victim: ObjectId,
@@ -675,7 +675,7 @@ impl WeaponSet {
     #[allow(clippy::too_many_arguments)]
     pub fn get_able_to_use_weapon_against_target<H: WeaponHost>(
         &self,
-        host: &H,
+        host: &mut H,
         attack_type: AbleToAttackType,
         source: ObjectId,
         victim: Option<ObjectId>,
@@ -843,7 +843,7 @@ impl WeaponSet {
     /// current weapon becomes the primary one). This does take weapon attack range into account.
     pub fn choose_best_weapon_for_target<H: WeaponHost>(
         &mut self,
-        host: &H,
+        host: &mut H,
         obj: ObjectId,
         victim: Option<ObjectId>,
         criteria: WeaponChoiceCriteria,
@@ -888,13 +888,17 @@ impl WeaponSet {
             }
 
             // weapon out of ammo
-            let t = &host.store().templates()[weapon.template()];
-            if weapon.get_status(now) == WeaponStatus::OutOfAmmo && !t.get_auto_reloads_clip() {
+            // (the template's facts read before the host's questions, which may need the host mutably)
+            let (t_auto_reloads_clip, t_anti_mask, t_damage_type) = {
+                let t = &host.store().templates()[weapon.template()];
+                (t.get_auto_reloads_clip(), t.anti_mask, t.damage_type)
+            };
+            if weapon.get_status(now) == WeaponStatus::OutOfAmmo && !t_auto_reloads_clip {
                 continue;
             }
 
             // weapon not allowed to target this kind of thing
-            if (t.anti_mask & get_victim_anti_mask(host, victim)) == 0 {
+            if (t_anti_mask & get_victim_anti_mask(host, victim)) == 0 {
                 continue;
             }
 
@@ -912,7 +916,7 @@ impl WeaponSet {
 
             // weapon would do no damage against this target. exception: 'unresistable' weapons are allowed to do
             // zero damage.
-            if damage <= 0.0 && t.damage_type != DAMAGE_UNRESISTABLE {
+            if damage <= 0.0 && t_damage_type != DAMAGE_UNRESISTABLE {
                 continue;
             }
 

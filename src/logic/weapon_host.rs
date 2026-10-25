@@ -227,7 +227,7 @@ pub trait WeaponHost: WeaponXferLookups {
     /// `getDrawable() != NULL`.
     fn has_drawable(&self, o: ObjectId) -> bool;
     /// `isLocallyControlled()`.
-    fn is_locally_controlled(&self, o: ObjectId) -> bool;
+    fn is_locally_controlled(&mut self, o: ObjectId) -> bool;
     /// `getWeaponBonusCondition()`.
     fn weapon_bonus_condition(&self, o: ObjectId) -> u32;
     /// `getContainedBy()`.
@@ -235,7 +235,7 @@ pub trait WeaponHost: WeaponXferLookups {
     /// `getContainedBy()->getContain()` when it `isWeaponBonusPassedToPassengers()`: its
     /// `getWeaponBonusPassedToPassengers()`. `None` when there is no container, no contain module, or it passes
     /// nothing.
-    fn container_passed_weapon_bonus(&self, container: ObjectId) -> Option<u32>;
+    fn container_passed_weapon_bonus(&mut self, container: ObjectId) -> Option<u32>;
     /// `isReloadTimeShared()` (the weapon set's).
     fn is_reload_time_shared(&self, o: ObjectId) -> bool;
     /// `for each slot: weapon = getWeaponInWeaponSlot(slot); if (weapon) { weapon->setPossibleNextShotFrame(frame);
@@ -243,13 +243,13 @@ pub trait WeaponHost: WeaponXferLookups {
     /// it has just set the same two values on itself.
     fn apply_shared_reload(&mut self, o: ObjectId, next_shot_frame: u32, status: WeaponStatus);
     /// `getNumConsecutiveShotsFiredAtTarget(victim)`.
-    fn num_consecutive_shots_fired_at_target(&self, o: ObjectId, victim: Option<ObjectId>) -> i32;
+    fn num_consecutive_shots_fired_at_target(&mut self, o: ObjectId, victim: Option<ObjectId>) -> i32;
     /// `isAboveTerrain()`.
-    fn is_above_terrain(&self, o: ObjectId) -> bool;
+    fn is_above_terrain(&mut self, o: ObjectId) -> bool;
     /// `isAirborneTarget()`.
-    fn is_airborne_target(&self, o: ObjectId) -> bool;
+    fn is_airborne_target(&mut self, o: ObjectId) -> bool;
     /// `isSignificantlyAboveTerrain()`.
-    fn is_significantly_above_terrain(&self, o: ObjectId) -> bool;
+    fn is_significantly_above_terrain(&mut self, o: ObjectId) -> bool;
     /// `getLayer()`.
     fn layer(&self, o: ObjectId) -> PathfindLayer;
     /// `getProducerID()`.
@@ -265,14 +265,14 @@ pub trait WeaponHost: WeaponXferLookups {
     /// `isDestroyed()`.
     fn is_destroyed(&self, o: ObjectId) -> bool;
     /// `isAbleToAttack()`.
-    fn is_able_to_attack(&self, o: ObjectId) -> bool;
+    fn is_able_to_attack(&mut self, o: ObjectId) -> bool;
     /// `o->getTeam()->getRelationship(player->getDefaultTeam())` for the player with this index.
     fn team_relationship_to_player_index(&self, o: ObjectId, player_index: i32) -> Relationship;
     /// `obj->getTemplate()->findWeaponTemplateSet(obj->getWeaponSetFlags())`: it fills the template's match cache,
     /// hence `&mut`. `None` for `NULL`.
     fn find_weapon_template_set(&mut self, o: ObjectId) -> Option<WeaponTemplateSetRef>;
     /// `estimateDamage(input)` of the body (the armor and the bonuses of the victim).
-    fn estimate_damage(&self, o: ObjectId, input: &DamageInfoInput) -> f32;
+    fn estimate_damage(&mut self, o: ObjectId, input: &DamageInfoInput) -> f32;
     /// `attemptDamage(&info)`: the body's damage (it fills `info.out`).
     fn attempt_damage(&mut self, o: ObjectId, info: &mut DamageInfo);
     /// `TheGameLogic->destroyObject(o)`.
@@ -297,30 +297,30 @@ pub trait WeaponHost: WeaponXferLookups {
     // ---- modules of an Object ---------------------------------------------------------------------------------------
 
     /// `getContain()` facts (`None` = no contain module).
-    fn contain_facts(&self, o: ObjectId) -> Option<ContainFacts>;
+    fn contain_facts(&mut self, o: ObjectId) -> Option<ContainFacts>;
     /// `getContain()->isEnclosingContainerFor(inner)`; `false` when there is no contain module.
-    fn contain_is_enclosing_container_for(&self, container: ObjectId, inner: ObjectId) -> bool;
+    fn contain_is_enclosing_container_for(&mut self, container: ObjectId, inner: ObjectId) -> bool;
     /// `getContain()->isGarrisonable()`.
-    fn contain_is_garrisonable(&self, container: ObjectId) -> bool;
+    fn contain_is_garrisonable(&mut self, container: ObjectId) -> bool;
     /// `getContain()->calcBestGarrisonPosition(&goalPos, &targetPos)`: the goal position, or `None`.
-    fn contain_calc_best_garrison_position(&self, container: ObjectId, target_pos: &Coord3D) -> Option<Coord3D>;
+    fn contain_calc_best_garrison_position(&mut self, container: ObjectId, target_pos: &Coord3D) -> Option<Coord3D>;
     /// `getContain()->isPassengerAllowedToFire()`; `false` when there is no contain module.
-    fn contain_is_passenger_allowed_to_fire(&self, o: ObjectId) -> bool;
+    fn contain_is_passenger_allowed_to_fire(&mut self, o: ObjectId) -> bool;
     /// `getContain()->getContainedItemsList()` (`None` = the pointer is `NULL`).
-    fn contain_items(&self, o: ObjectId) -> Option<ContainedItems>;
+    fn contain_items(&mut self, o: ObjectId) -> Option<ContainedItems>;
     /// `getContain()->getApparentControllingPlayer(observer)`: that player's index, `None` for `NULL`.
-    fn contain_apparent_controlling_player(&self, o: ObjectId, observer: Option<i32>) -> Option<i32>;
+    fn contain_apparent_controlling_player(&mut self, o: ObjectId, observer: Option<i32>) -> Option<i32>;
     /// `getContain() != NULL`.
-    fn has_contain(&self, o: ObjectId) -> bool;
+    fn has_contain(&mut self, o: ObjectId) -> bool;
     /// `getStealth()`'s `isDisguised()` and `getDisguisedPlayerIndex()`: `None` when there is no stealth update or
     /// it is not disguised.
-    fn stealth_disguised_player_index(&self, o: ObjectId) -> Option<i32>;
+    fn stealth_disguised_player_index(&mut self, o: ObjectId) -> Option<i32>;
     /// `ThePlayerList->getNthPlayer(index)` exists and the observer's `getRelationship(its default team)`:
     /// `None` if either player is missing.
     fn player_relationship_to_player(&self, observer: Option<i32>, other_index: i32) -> Option<Relationship>;
     /// `getSpawnBehaviorInterface()->getCanAnySlavesUseWeaponAgainstTarget(...)`; `None` = no spawn behaviour.
     fn spawn_slaves_can_use_weapon_against_target(
-        &self,
+        &mut self,
         o: ObjectId,
         attack_type: AbleToAttackType,
         victim: Option<ObjectId>,
@@ -330,7 +330,7 @@ pub trait WeaponHost: WeaponXferLookups {
     /// `garrisonedMember->getAbleToUseWeaponAgainstTarget(attackType, victim, pos, commandSource)`: another
     /// object's own weapon set is asked (the host dispatches to that object).
     fn member_able_to_use_weapon_against_target(
-        &self,
+        &mut self,
         member: ObjectId,
         attack_type: AbleToAttackType,
         victim: Option<ObjectId>,
@@ -341,17 +341,17 @@ pub trait WeaponHost: WeaponXferLookups {
     // ---- the AI of an Object -----------------------------------------------------------------------------------------
 
     /// `getAI()->getSneakyTargetingOffset(&offset)`: the offset, or `None` when there is no AI or it is not sneaky.
-    fn ai_sneaky_targeting_offset(&self, o: ObjectId) -> Option<Coord3D>;
+    fn ai_sneaky_targeting_offset(&mut self, o: ObjectId) -> Option<Coord3D>;
     /// `getAI()->getCurLocomotorSetType()`; `None` = no AI.
-    fn ai_cur_locomotor_set_type(&self, o: ObjectId) -> Option<i32>;
+    fn ai_cur_locomotor_set_type(&mut self, o: ObjectId) -> Option<i32>;
     /// `getAI() && getAI()->isAircraftThatAdjustsDestination()`.
-    fn ai_is_aircraft_that_adjusts_destination(&self, o: ObjectId) -> bool;
+    fn ai_is_aircraft_that_adjusts_destination(&mut self, o: ObjectId) -> bool;
     /// `getAI()->getAssaultTransportAIInterface()->beginAssault(victim)`; nothing without the interface.
     fn ai_begin_assault(&mut self, o: ObjectId, victim: Option<ObjectId>);
     /// `getAIUpdateInterface()->getWhichTurretForWeaponSlot(wslot, &angle, &pitch)`: `None` without AI.
-    fn ai_which_turret_for_weapon_slot(&self, o: ObjectId, wslot: i32) -> Option<(i32, f32, f32)>;
+    fn ai_which_turret_for_weapon_slot(&mut self, o: ObjectId, wslot: i32) -> Option<(i32, f32, f32)>;
     /// `getAI()->isWeaponSlotOnTurretAndAimingAtTarget(slot, victim)`; `false` without AI.
-    fn ai_is_weapon_slot_on_turret_and_aiming_at_target(&self, o: ObjectId, wslot: i32, victim: ObjectId) -> bool;
+    fn ai_is_weapon_slot_on_turret_and_aiming_at_target(&mut self, o: ObjectId, wslot: i32, victim: ObjectId) -> bool;
     /// `TheAI->pathfinder()->adjustTargetDestination(source, target, pos, weapon, &approachTargetPos)`.
     fn adjust_target_destination(
         &mut self,
@@ -400,13 +400,13 @@ pub trait WeaponHost: WeaponXferLookups {
     /// `projectile->setProducer(source)`.
     fn set_producer(&mut self, projectile: ObjectId, source: ObjectId);
     /// `findSpecialPowerCompletionDie() != NULL`.
-    fn has_special_power_completion_die(&self, o: ObjectId) -> bool;
+    fn has_special_power_completion_die(&mut self, o: ObjectId) -> bool;
     /// `findSpecialPowerCompletionDie()->notifyScriptEngine()`.
     fn special_power_completion_die_notify_script_engine(&mut self, o: ObjectId);
     /// `findSpecialPowerCompletionDie()->setCreator(creator)`.
     fn special_power_completion_die_set_creator(&mut self, o: ObjectId, creator: ObjectId);
     /// Whether a behaviour module of `o` has a `ProjectileUpdateInterface`.
-    fn has_projectile_update_interface(&self, o: ObjectId) -> bool;
+    fn has_projectile_update_interface(&mut self, o: ObjectId) -> bool;
     /// `pui->projectileLaunchAtObjectOrPosition(victim, &destination, source, wslot, barrel, weaponTemplate,
     /// exhaust)` on the first module of `projectile` that has the interface.
     #[allow(clippy::too_many_arguments)] // the arguments of upstream's `projectileLaunchAtObjectOrPosition`
@@ -422,15 +422,15 @@ pub trait WeaponHost: WeaponXferLookups {
         exhaust: &FxName,
     );
     /// `pui->projectileGetLauncherID()` on the first module of `o` with the interface; `None` when it has none.
-    fn projectile_launcher_id(&self, o: ObjectId) -> Option<ObjectId>;
+    fn projectile_launcher_id(&mut self, o: ObjectId) -> Option<ObjectId>;
     /// `setPosition(&pos)`.
     fn set_position(&mut self, o: ObjectId, pos: &Coord3D);
     /// `hasCountermeasures()`.
-    fn has_countermeasures(&self, o: ObjectId) -> bool;
+    fn has_countermeasures(&mut self, o: ObjectId) -> bool;
     /// `reportMissileForCountermeasures(projectile)`.
     fn report_missile_for_countermeasures(&mut self, o: ObjectId, projectile: ObjectId);
     /// Some module of `o` has a `LandMineInterface`.
-    fn has_land_mine_interface(&self, o: ObjectId) -> bool;
+    fn has_land_mine_interface(&mut self, o: ObjectId) -> bool;
     /// `lmi->disarm()` on the first module of `o` with a `LandMineInterface`.
     fn disarm_land_mine(&mut self, o: ObjectId);
     /// `findUpdateModule(ProjectileStreamUpdate)`: `setPosition(pos)` and `addProjectile(source, projectile,
@@ -444,7 +444,7 @@ pub trait WeaponHost: WeaponXferLookups {
         victim_pos: Option<Coord3D>,
     ) -> bool;
     /// `findUpdateModule(AssistedTargetingUpdate)` of `o`: `Some(isFreeToAssist())`, `None` without the module.
-    fn assisted_targeting_is_free(&self, o: ObjectId) -> Option<bool>;
+    fn assisted_targeting_is_free(&mut self, o: ObjectId) -> Option<bool>;
     /// `assistedTargetingUpdate->assistAttack(requesting, victim)`.
     fn assisted_targeting_assist_attack(&mut self, o: ObjectId, requesting: ObjectId, victim: ObjectId);
     /// `laser->getDrawable()->findClientUpdateModule(LaserUpdate)->initLaser(source, victim, &sourcePos, &pos,
@@ -456,10 +456,10 @@ pub trait WeaponHost: WeaponXferLookups {
     // ---- the drawable (model data the simulation reads) ---------------------------------------------------------------
 
     /// `getDrawable()->getBarrelCount(wslot)`; `None` when the object has no drawable.
-    fn barrel_count(&self, o: ObjectId, wslot: i32) -> Option<i32>;
+    fn barrel_count(&mut self, o: ObjectId, wslot: i32) -> Option<i32>;
     /// `getDrawable()->getProjectileLaunchOffset(wslot, barrel, &attach, turret, &rotPos, &pitchPos)`; `None`
     /// when there is no drawable or no such bone.
-    fn projectile_launch_offset(&self, o: ObjectId, wslot: i32, barrel: i32, turret: i32) -> Option<LaunchOffset>;
+    fn projectile_launch_offset(&mut self, o: ObjectId, wslot: i32, barrel: i32, turret: i32) -> Option<LaunchOffset>;
     /// `convertBonePosToWorldPos(NULL, &boneTransform, NULL, &worldTransform)`.
     fn convert_bone_transform_to_world(&self, o: ObjectId, bone_transform: &Matrix3D) -> Matrix3D;
     /// A client effect.
@@ -477,5 +477,5 @@ pub trait WeaponHost: WeaponXferLookups {
     /// have a `PhysicsBehavior`.
     fn transfer_velocity_and_ignore_collisions(&mut self, launcher: ObjectId, projectile: ObjectId);
     /// A parking place on `o` (`ParkingPlaceBehaviorInterface`) that `hasReservedSpace(intended)`.
-    fn parking_place_has_reserved_space(&self, o: ObjectId, intended: ObjectId) -> bool;
+    fn parking_place_has_reserved_space(&mut self, o: ObjectId, intended: ObjectId) -> bool;
 }

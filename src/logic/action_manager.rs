@@ -223,7 +223,7 @@ pub trait ActionHost: ObjectWeaponHost {
 
 /// `appearsToContainFriendlies(obj, otherObject)`: "check if the object is a container containing stealth units
 /// tricking the player into thinking it isn't actually an enemy."
-fn appears_to_contain_friendlies<H: ActionHost>(host: &H, obj: ObjectId, other_object: ObjectId) -> AResult<bool> {
+fn appears_to_contain_friendlies<H: ActionHost>(host: &mut H, obj: ObjectId, other_object: ObjectId) -> AResult<bool> {
     if host.has_contain(other_object) {
         let other_player = host.contain_apparent_controlling_player(other_object, host.controlling_player(obj));
         // the test "other player's relationship to the object's team" is wrong; we want to know how WE consider THEM,
@@ -257,7 +257,7 @@ fn is_hidden_by_stealth<H: ActionHost>(host: &H, target: ObjectId) -> bool {
 }
 
 /// `ActionManager::canGetRepairedAt(obj, repairDest, commandSource)`.
-pub fn can_get_repaired_at<H: ActionHost>(host: &H, obj: Option<ObjectId>, repair_dest: Option<ObjectId>, command_source: CommandSourceType) -> AResult<bool> {
+pub fn can_get_repaired_at<H: ActionHost>(host: &mut H, obj: Option<ObjectId>, repair_dest: Option<ObjectId>, command_source: CommandSourceType) -> AResult<bool> {
     // sanity
     let (Some(obj), Some(repair_dest)) = (obj, repair_dest) else { return Ok(false) };
 
@@ -575,7 +575,7 @@ pub fn can_resume_construction_of<H: ActionHost>(
 
 /// `ActionManager::canEnterObject(obj, objectToEnter, commandSource, mode)`.
 pub fn can_enter_object<H: ActionHost>(
-    host: &H,
+    host: &mut H,
     obj: Option<ObjectId>,
     object_to_enter: Option<ObjectId>,
     command_source: CommandSourceType,
@@ -732,7 +732,7 @@ pub fn can_enter_object<H: ActionHost>(
 
 /// `ActionManager::getCanAttackObject(obj, objectToAttack, commandSource, attackType)`.
 pub fn get_can_attack_object<H: ActionHost>(
-    host: &H,
+    host: &mut H,
     obj: Option<ObjectId>,
     object_to_attack: Option<ObjectId>,
     command_source: CommandSourceType,
@@ -954,7 +954,7 @@ pub fn can_make_object_defector<H: ActionHost>(
 }
 
 /// `ActionManager::canCaptureBuilding(obj, objectToCapture, commandSource)`.
-pub fn can_capture_building<H: ActionHost>(host: &H, obj: Option<ObjectId>, object_to_capture: Option<ObjectId>, command_source: CommandSourceType) -> AResult<bool> {
+pub fn can_capture_building<H: ActionHost>(host: &mut H, obj: Option<ObjectId>, object_to_capture: Option<ObjectId>, command_source: CommandSourceType) -> AResult<bool> {
     // sanity
     let (Some(obj), Some(object_to_capture)) = (obj, object_to_capture) else { return Ok(false) };
 
@@ -1036,7 +1036,7 @@ pub fn can_capture_building<H: ActionHost>(host: &H, obj: Option<ObjectId>, obje
 
 /// `ActionManager::canDisableVehicleViaHacking(obj, objectToHack, commandSource, checkSourceRequirements)`.
 pub fn can_disable_vehicle_via_hacking<H: ActionHost>(
-    host: &H,
+    host: &mut H,
     obj: Option<ObjectId>,
     object_to_hack: Option<ObjectId>,
     command_source: CommandSourceType,
@@ -1102,7 +1102,7 @@ pub fn can_disable_vehicle_via_hacking<H: ActionHost>(
 }
 
 /// `ActionManager::canStealCashViaHacking(obj, objectToHack, commandSource)`.
-pub fn can_steal_cash_via_hacking<H: ActionHost>(host: &H, obj: Option<ObjectId>, object_to_hack: Option<ObjectId>, command_source: CommandSourceType) -> AResult<bool> {
+pub fn can_steal_cash_via_hacking<H: ActionHost>(host: &mut H, obj: Option<ObjectId>, object_to_hack: Option<ObjectId>, command_source: CommandSourceType) -> AResult<bool> {
     // sanity
     let (Some(obj), Some(object_to_hack)) = (obj, object_to_hack) else { return Ok(false) };
 
@@ -1169,7 +1169,7 @@ pub fn can_steal_cash_via_hacking<H: ActionHost>(host: &H, obj: Option<ObjectId>
 
 /// `ActionManager::canDisableBuildingViaHacking(obj, objectToHack, commandSource)`.
 pub fn can_disable_building_via_hacking<H: ActionHost>(
-    host: &H,
+    host: &mut H,
     obj: Option<ObjectId>,
     object_to_hack: Option<ObjectId>,
     command_source: CommandSourceType,
@@ -1248,7 +1248,7 @@ pub fn can_cut_building_power(_obj: Option<ObjectId>, _building: Option<ObjectId
 }
 
 /// `ActionManager::canSnipeVehicle(obj, objectToSnipe, commandSource)`.
-pub fn can_snipe_vehicle<H: ActionHost>(host: &H, obj: Option<ObjectId>, object_to_snipe: Option<ObjectId>, command_source: CommandSourceType) -> bool {
+pub fn can_snipe_vehicle<H: ActionHost>(host: &mut H, obj: Option<ObjectId>, object_to_snipe: Option<ObjectId>, command_source: CommandSourceType) -> bool {
     // Sanity check
     let (Some(obj), Some(object_to_snipe)) = (obj, object_to_snipe) else { return false };
 
@@ -1412,7 +1412,7 @@ pub fn can_do_special_power_at_location<H: ActionHost>(
 /// `ActionManager::canDoSpecialPowerAtObject(obj, target, commandSource, spTemplate, commandOptions,
 /// checkSourceRequirements)`.
 pub fn can_do_special_power_at_object<H: ActionHost>(
-    host: &H,
+    host: &mut H,
     obj: ObjectId,
     target: ObjectId,
     command_source: CommandSourceType,
@@ -1746,7 +1746,7 @@ pub fn can_fire_weapon_at_location<H: ActionHost>(
 
 /// `ActionManager::canFireWeaponAtObject(obj, target, commandSource, slot)`.
 pub fn can_fire_weapon_at_object<H: ActionHost>(
-    host: &H,
+    host: &mut H,
     obj: Option<ObjectId>,
     target: Option<ObjectId>,
     command_source: CommandSourceType,
@@ -1756,7 +1756,8 @@ pub fn can_fire_weapon_at_object<H: ActionHost>(
     let (Some(obj), Some(target)) = (obj, target) else { return Ok(false) };
 
     // Make sure we have the right weapon.
-    let Some(weapon) = host.weapon_set(obj).get_weapon_in_weapon_slot(slot) else { return Ok(false) };
+    // (a copy: the questions below may need the host mutably; they do not change the weapon)
+    let Some(weapon) = host.weapon_set(obj).get_weapon_in_weapon_slot(slot).cloned() else { return Ok(false) };
 
     let mut sniper = false;
     if host.store().templates()[weapon.template()].damage_type == DAMAGE_KILLPILOT {
@@ -1773,7 +1774,11 @@ pub fn can_fire_weapon_at_object<H: ActionHost>(
     };
 
     if result == CanAttackResult::Possible || result == CanAttackResult::PossibleAfterMoving {
-        return Ok(weapon.estimate_weapon_damage(host, obj, Some(target), None)? != 0.0);
+        // (the weapon as the question above left it, a copy put back after: its status is a cell)
+        let Some(weapon) = host.weapon_set(obj).get_weapon_in_weapon_slot(slot).cloned() else { return Ok(false) };
+        let damage = weapon.estimate_weapon_damage(host, obj, Some(target), None);
+        host.put_weapon(obj, slot, weapon);
+        return Ok(damage? != 0.0);
     }
     Ok(false)
 }
@@ -1788,7 +1793,7 @@ pub fn can_fire_weapon<H: ActionHost>(host: &H, obj: Option<ObjectId>, slot: i32
 }
 
 /// `ActionManager::canGarrison(obj, target, commandSource)`.
-pub fn can_garrison<H: ActionHost>(host: &H, obj: Option<ObjectId>, target: Option<ObjectId>, _command_source: CommandSourceType) -> AResult<bool> {
+pub fn can_garrison<H: ActionHost>(host: &mut H, obj: Option<ObjectId>, target: Option<ObjectId>, _command_source: CommandSourceType) -> AResult<bool> {
     let (Some(obj), Some(target)) = (obj, target) else { return Ok(false) };
 
     // The object was not an infantry, or is disallowed from being allowed to garrison stuff.
@@ -1824,7 +1829,7 @@ pub fn can_garrison<H: ActionHost>(host: &H, obj: Option<ObjectId>, target: Opti
 }
 
 /// `ActionManager::canPlayerGarrison(player, target, commandSource)`.
-pub fn can_player_garrison<H: ActionHost>(host: &H, player: Option<i32>, target: Option<ObjectId>, _command_source: CommandSourceType) -> AResult<bool> {
+pub fn can_player_garrison<H: ActionHost>(host: &mut H, player: Option<i32>, target: Option<ObjectId>, _command_source: CommandSourceType) -> AResult<bool> {
     let (Some(player), Some(target)) = (player, target) else { return Ok(false) };
 
     if host.is_effectively_dead(target) {

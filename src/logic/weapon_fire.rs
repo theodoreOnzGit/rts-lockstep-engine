@@ -438,7 +438,7 @@ impl Weapon {
     // ---- bonus, ammo and reload ------------------------------------------------------------------------------------
 
     /// `computeBonus(source, extraBonusFlags, bonus)`.
-    pub fn compute_bonus<H: WeaponHost>(&self, host: &H, source: ObjectId, extra_bonus_flags: WeaponBonusConditionFlags) -> WeaponBonus {
+    pub fn compute_bonus<H: WeaponHost>(&self, host: &mut H, source: ObjectId, extra_bonus_flags: WeaponBonusConditionFlags) -> WeaponBonus {
         let mut bonus = WeaponBonus::new();
         bonus.clear();
         let mut flags = host.weapon_bonus_condition(source);
@@ -461,19 +461,19 @@ impl Weapon {
     }
 
     /// `loadAmmoNow(source)`.
-    pub fn load_ammo_now<H: WeaponHost>(&mut self, host: &H, source: ObjectId, shared: bool) -> Option<SharedReload> {
+    pub fn load_ammo_now<H: WeaponHost>(&mut self, host: &mut H, source: ObjectId, shared: bool) -> Option<SharedReload> {
         let bonus = self.compute_bonus(host, source, 0);
         self.reload_with_bonus(host, &bonus, true, shared)
     }
 
     /// `reloadAmmo(source)`.
-    pub fn reload_ammo<H: WeaponHost>(&mut self, host: &H, source: ObjectId, shared: bool) -> Option<SharedReload> {
+    pub fn reload_ammo<H: WeaponHost>(&mut self, host: &mut H, source: ObjectId, shared: bool) -> Option<SharedReload> {
         let bonus = self.compute_bonus(host, source, 0);
         self.reload_with_bonus(host, &bonus, false, shared)
     }
 
     /// `getClipReloadTime(source)`.
-    pub fn get_clip_reload_time<H: WeaponHost>(&self, host: &H, source: ObjectId) -> i32 {
+    pub fn get_clip_reload_time<H: WeaponHost>(&self, host: &mut H, source: ObjectId) -> i32 {
         let bonus = self.compute_bonus(host, source, 0);
         tpl(host.store(), self.template).get_clip_reload_time(&bonus)
     }
@@ -569,14 +569,14 @@ impl Weapon {
     // ---- ranges -------------------------------------------------------------------------------------------------------
 
     /// `getAttackRange(source)`.
-    pub fn get_attack_range<H: WeaponHost>(&self, host: &H, source: ObjectId) -> f32 {
+    pub fn get_attack_range<H: WeaponHost>(&self, host: &mut H, source: ObjectId) -> f32 {
         let bonus = self.compute_bonus(host, source, 0);
         tpl(host.store(), self.template).get_attack_range(&bonus)
     }
 
     /// `getAttackDistance(source, victimObj, victimPos)`: the largest distance between the centres for the victim to
     /// be in range.
-    pub fn get_attack_distance<H: WeaponHost>(&self, host: &H, source: ObjectId, victim: Option<ObjectId>) -> f32 {
+    pub fn get_attack_distance<H: WeaponHost>(&self, host: &mut H, source: ObjectId, victim: Option<ObjectId>) -> f32 {
         let mut range = self.get_attack_range(host, source);
 
         if let Some(v) = victim {
@@ -589,7 +589,7 @@ impl Weapon {
     }
 
     /// `getPrimaryDamageRadius(source)`.
-    pub fn get_primary_damage_radius<H: WeaponHost>(&self, host: &H, source: ObjectId) -> f32 {
+    pub fn get_primary_damage_radius<H: WeaponHost>(&self, host: &mut H, source: ObjectId) -> f32 {
         let bonus = self.compute_bonus(host, source, 0);
         tpl(host.store(), self.template).get_primary_damage_radius(&bonus)
     }
@@ -602,7 +602,7 @@ impl Weapon {
     /// `isSourceObjectWithGoalPositionWithinAttackRange(source, goalPos, target, targetPos)`.
     pub fn is_source_object_with_goal_position_within_attack_range<H: WeaponHost>(
         &self,
-        host: &H,
+        host: &mut H,
         source: ObjectId,
         goal_pos: &Coord3D,
         target: Option<ObjectId>,
@@ -625,7 +625,7 @@ impl Weapon {
     }
 
     /// `isWithinAttackRange(source, pos)`.
-    pub fn is_within_attack_range_pos<H: WeaponHost>(&self, host: &H, source: ObjectId, pos: &Coord3D) -> bool {
+    pub fn is_within_attack_range_pos<H: WeaponHost>(&self, host: &mut H, source: ObjectId, pos: &Coord3D) -> bool {
         let dist_sqr = host.distance_squared_to_pos(source, pos, ATTACK_RANGE_CALC_TYPE);
         let attack_range_sqr = sqr(self.get_attack_range(host, source));
         let min_attack_range_sqr = sqr(tpl(host.store(), self.template).get_minimum_attack_range());
@@ -636,7 +636,7 @@ impl Weapon {
     }
 
     /// `isWithinAttackRange(source, target)`.
-    pub fn is_within_attack_range<H: WeaponHost>(&self, host: &H, source: ObjectId, target: ObjectId) -> bool {
+    pub fn is_within_attack_range<H: WeaponHost>(&self, host: &mut H, source: ObjectId, target: ObjectId) -> bool {
         let attack_range_sqr = sqr(self.get_attack_range(host, source));
 
         let mut dist_sqr;
@@ -701,7 +701,7 @@ impl Weapon {
     /// `isGoalPosWithinAttackRange(source, goalPos, target, targetPos)`.
     pub fn is_goal_pos_within_attack_range<H: WeaponHost>(
         &self,
-        host: &H,
+        host: &mut H,
         source: ObjectId,
         goal_pos: &Coord3D,
         target: Option<ObjectId>,
@@ -887,7 +887,7 @@ impl Weapon {
     /// `estimateWeaponDamage(source, victim, victimPos)`.
     pub fn estimate_weapon_damage<H: WeaponHost>(
         &self,
-        host: &H,
+        host: &mut H,
         source: ObjectId,
         victim: Option<ObjectId>,
         victim_pos: Option<Coord3D>,
@@ -1279,13 +1279,13 @@ impl Weapon {
     }
 
     /// `getPreAttackDelay(source, victim)`.
-    pub fn get_pre_attack_delay<H: WeaponHost>(&self, host: &H, source: ObjectId, victim: Option<ObjectId>) -> WResult<i32> {
+    pub fn get_pre_attack_delay<H: WeaponHost>(&self, host: &mut H, source: ObjectId, victim: Option<ObjectId>) -> WResult<i32> {
         // look for a reason to return zero and have no delay
         let t = tpl(host.store(), self.template);
-        let prefire_type = t.prefire_type;
+        let (prefire_type, clip_size) = (t.prefire_type, t.clip_size);
         if prefire_type == PREFIRE_PER_CLIP {
             // `UnsignedInt < Int` compares as unsigned (clip_size > 0 here)
-            if t.clip_size > 0 && self.ammo_in_clip < t.clip_size as u32 {
+            if clip_size > 0 && self.ammo_in_clip < clip_size as u32 {
                 return Ok(0); // I only delay once a clip, and this is not the first shot
             }
         } else if prefire_type == PREFIRE_PER_ATTACK && host.num_consecutive_shots_fired_at_target(source, victim) > 0 {
@@ -1294,7 +1294,7 @@ impl Weapon {
         // else it is per shot, so it always applies
 
         let bonus = self.compute_bonus(host, source, 0);
-        t.get_pre_attack_delay(&bonus)
+        tpl(host.store(), self.template).get_pre_attack_delay(&bonus)
     }
 
     /// `processRequestAssistance(requestingObject, victimObject)`: "iterate through our player's objects, and tell
@@ -1555,7 +1555,7 @@ impl Weapon {
     }
 
     /// `Weapon::calcProjectileLaunchPosition(launcher, wslot, specificBarrelToUse, worldTransform, worldPos)`.
-    pub fn calc_projectile_launch_position<H: WeaponHost>(host: &H, launcher: ObjectId, wslot: i32, specific_barrel_to_use: i32) -> (Matrix3D, Coord3D) {
+    pub fn calc_projectile_launch_position<H: WeaponHost>(host: &mut H, launcher: ObjectId, wslot: i32, specific_barrel_to_use: i32) -> (Matrix3D, Coord3D) {
         if let Some(container) = host.contained_by(launcher) {
             // if we are in an enclosing container, our launch position is our actual position
             if host.contain_is_enclosing_container_for(container, launcher) {
@@ -1716,7 +1716,7 @@ fn clip_to_terrain_extent(bounds: &Region3D, approach_target_pos: &mut Coord3D) 
 
 /// `WeaponTemplate::estimateWeaponTemplateDamage(sourceObj, victimObj, victimPos, bonus)`.
 pub fn estimate_weapon_template_damage<H: WeaponHost>(
-    host: &H,
+    host: &mut H,
     template: usize,
     source: Option<ObjectId>,
     victim: Option<ObjectId>,
@@ -1724,6 +1724,8 @@ pub fn estimate_weapon_template_damage<H: WeaponHost>(
     bonus: &WeaponBonus,
 ) -> WResult<f32> {
     let t = tpl(host.store(), template);
+    // (the template's facts read before the host's questions, which may need the host mutably)
+    let allow_attack_garrisoned_bldgs = t.allow_attack_garrisoned_bldgs;
     let Some(source) = source else { return Ok(0.0) };
     if victim.is_none() && victim_pos.is_none() {
         return Ok(0.0);
@@ -1754,7 +1756,7 @@ pub fn estimate_weapon_template_damage<H: WeaponHost>(
         }
     }
 
-    if damage_type == DAMAGE_SURRENDER || t.allow_attack_garrisoned_bldgs {
+    if damage_type == DAMAGE_SURRENDER || allow_attack_garrisoned_bldgs {
         if let Some(c) = host.contain_facts(victim) {
             if c.count > 0 && c.garrisonable && !c.immune_to_clear_building_attacks {
                 // this is just a nonzero value, to ensure we can target garrisoned things with surrender weapons,
@@ -1777,7 +1779,7 @@ pub fn estimate_weapon_template_damage<H: WeaponHost>(
 
     // @todo Kris need to examine the DAMAGE_HACK type for damage estimation purposes.
 
-    let damage_amount = t.get_primary_damage(bonus);
+    let damage_amount = tpl(host.store(), template).get_primary_damage(bonus);
     let damage_info = DamageInfoInput { damage_type, death_type, source_id: source, amount: damage_amount, ..Default::default() };
     Ok(host.estimate_damage(victim, &damage_info))
 }
@@ -1785,7 +1787,7 @@ pub fn estimate_weapon_template_damage<H: WeaponHost>(
 /// `WeaponTemplate::shouldProjectileCollideWith(projectileLauncher, projectile, thingWeCollidedWith,
 /// intendedVictimID)`. `intended_victim` is `INVALID_ID` for a position-shot.
 pub fn should_projectile_collide_with<H: WeaponHost>(
-    host: &H,
+    host: &mut H,
     template: usize,
     projectile_launcher: Option<ObjectId>,
     projectile: Option<ObjectId>,
@@ -1793,6 +1795,8 @@ pub fn should_projectile_collide_with<H: WeaponHost>(
     intended_victim: ObjectId,
 ) -> bool {
     let t = tpl(host.store(), template);
+    // (the template's facts read before the host's questions, which may need the host mutably)
+    let (t_damage_type, t_collide_mask) = (t.damage_type, t.collide_mask);
     let (Some(projectile), Some(thing)) = (projectile, thing_we_collided_with) else { return false };
 
     // if it's our intended victim, we want to collide with it, regardless of any other considerations
@@ -1814,7 +1818,7 @@ pub fn should_projectile_collide_with<H: WeaponHost>(
     }
 
     // never bother burning already-burned things. (srj)
-    if (t.damage_type == DAMAGE_FLAME || t.damage_type == DAMAGE_PARTICLE_BEAM) && host.test_status(thing, OBJECT_STATUS_BURNED) {
+    if (t_damage_type == DAMAGE_FLAME || t_damage_type == DAMAGE_PARTICLE_BEAM) && host.test_status(thing, OBJECT_STATUS_BURNED) {
         return false;
     }
 
@@ -1866,7 +1870,7 @@ pub fn should_projectile_collide_with<H: WeaponHost>(
     }
 
     // if any in requiredMask are present in collidemask, do the collision. (srj)
-    (t.collide_mask & required_mask) != 0
+    (t_collide_mask & required_mask) != 0
 }
 
 /// `WeaponTemplate::fireWeaponTemplate(...)`: fire the weapon, return the frame the damage will be dealt (0 when a
@@ -1963,16 +1967,18 @@ pub fn fire_weapon_template<H: WeaponHost>(
             fx = None;
         }
 
+        // (the template's facts read before the host's questions, which may need the host mutably)
+        let play_fx_when_stealthed = t.play_fx_when_stealthed;
+        let radius = t.get_primary_damage_radius(bonus);
+        let contact_weapon = t.is_contact_weapon();
+        let speed = t.weapon_speed;
         let hidden = !host.is_locally_controlled(source) // if user watching is not controller and
             && host.test_status(source, OBJECT_STATUS_STEALTHED) // if unit is stealthed (like a Pathfinder)
             && !host.test_status(source, OBJECT_STATUS_DETECTED) // but not detected...
             && !host.test_status(source, OBJECT_STATUS_DISGUISED) // and not disguised...
             && !host.is_kind_of(source, KINDOF_MINE) // and not a mine (which always do the FX, even if hidden)...
-            && !t.play_fx_when_stealthed; // and not a weapon marked to playwhenstealthed
+            && !play_fx_when_stealthed; // and not a weapon marked to playwhenstealthed
         if !hidden {
-            let radius = t.get_primary_damage_radius(bonus);
-            let contact_weapon = t.is_contact_weapon();
-            let speed = t.weapon_speed;
             host.weapon_fx(WeaponFx::Fire {
                 source,
                 weapon_slot: wslot,
