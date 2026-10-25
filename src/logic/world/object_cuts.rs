@@ -284,6 +284,33 @@ impl World {
         self.cut(CutCall::ParticleSystemSetLifetime { id, frames });
     }
 
+    /// batch R57: `system->setLifetimeRange(min, max)`.
+    pub fn particle_system_set_lifetime_range(&mut self, id: u32, min: f32, max: f32) {
+        self.cut(CutCall::ParticleSystemSetLifetimeRange { id, min, max });
+    }
+
+    /// batch R57: `ThePartitionManager->getDistanceSquared(obj, other, dc)`: the partition manager's distance procedures
+    /// (`partition::collide::dist_calc`, verified against PartitionManager.cpp) over the objects' positions and geometries. A missing object is
+    /// at the origin with no geometry (the callers' objects exist).
+    pub fn partition_distance_squared(&self, a: ObjectId, b: ObjectId, dc: crate::logic::world::partition::DistanceCalculationType) -> f32 {
+        let (pa, ga) = self.position_and_geometry(a);
+        let (pb, gb) = self.position_and_geometry(b);
+        crate::logic::world::partition::dist_calc(dc, &pa, ga.as_ref(), &pb, gb.as_ref(), crate::logic::world::partition::HUGE_DIST_SQR).dist_sqr
+    }
+
+    /// batch R57: `ThePartitionManager->getDistanceSquared(obj, &pos, dc)` (see [`World::partition_distance_squared`]).
+    pub fn partition_distance_squared_to_pos(&self, a: ObjectId, pos: &Coord3D, dc: crate::logic::world::partition::DistanceCalculationType) -> f32 {
+        let (pa, ga) = self.position_and_geometry(a);
+        crate::logic::world::partition::dist_calc(dc, &pa, ga.as_ref(), pos, None, crate::logic::world::partition::HUGE_DIST_SQR).dist_sqr
+    }
+
+    fn position_and_geometry(&self, id: ObjectId) -> (Coord3D, Option<crate::common::geometry::GeometryInfo>) {
+        match self.objects.find(id) {
+            Some(o) => (o.get_position(), Some(o.geometry_info.clone())),
+            None => (Coord3D::default(), None),
+        }
+    }
+
     /// batch R33: `system->setInitialDelay(frames)`.
     pub fn particle_system_set_initial_delay(&mut self, id: u32, frames: u32) {
         self.cut(CutCall::ParticleSystemSetInitialDelay { id, frames });
@@ -961,6 +988,8 @@ pub enum CutCall {
     WeaponTransferNextShotStats { to: ObjectId, from: ObjectId },
     /// `obj->setWeaponLock(slot, lockType)` of an object whose weapon set holds no weapons (`World::set_weapon_lock`, batch R55).
     ObjectSetWeaponLock { object: ObjectId, slot: i32, lock: i32 },
+    /// `system->setLifetimeRange(min, max)` (batch R57).
+    ParticleSystemSetLifetimeRange { id: u32, min: f32, max: f32 },
     /// `ThePartitionManager->getClosestObject(&position, range, FROM_CENTER_2D, { PartitionFilterAcceptByKindOf(CLEANUP_HAZARD),
     /// PartitionFilterSameMapStatus(object) })` (`World::partition_get_closest_cleanup_hazard_at`, batch R56).
     PartitionGetClosestCleanupHazardAt { object: ObjectId, position: Coord3D, range: f32 },

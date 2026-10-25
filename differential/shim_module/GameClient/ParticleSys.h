@@ -28,6 +28,7 @@ public:
 	/* batch R33: EMPUpdate's sparks (differential/l9_emp_r33.inc) */
 	void setSystemLifetime( UnsignedInt frames );
 	void setInitialDelay( UnsignedInt delay );
+	void setLifetimeRange( Real min, Real max );   /* batch R57: SlavedUpdate's welding sparks (a line: differential/l9_slaved_r57.inc) */
 	ParticleSystemID getSystemID() const { return m_id; }
 	ParticleSystemID m_id;
 	int m_tmpl;

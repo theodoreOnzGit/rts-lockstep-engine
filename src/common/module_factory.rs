@@ -865,6 +865,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::demo_trap_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::demo_trap_update::DemoTrapUpdate::get_interface_mask()),
         }),
+        "SlavedUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::slaved_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::slaved_update::SlavedUpdate::get_interface_mask()),
+        }),
         "CleanupHazardUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::cleanup_hazard_update::new_module_data),
@@ -1242,6 +1247,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::StructureToppleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::NeutronBlastBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::DemoTrapUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::SlavedUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::CleanupHazardUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::BunkerBusterBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::TensileFormationUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),

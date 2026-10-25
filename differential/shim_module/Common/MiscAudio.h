@@ -18,5 +18,6 @@ public:
 	AudioEventRTS m_defectorTimerDingSound;
 	AudioEventRTS m_stealthDiscoveredSound;   /* p1w13-sonnet, batch R27: StealthDetectorUpdate */
 	AudioEventRTS m_stealthNeutralizedSound;
+	AudioEventRTS m_repairSparks;   /* p1w13-sonnet, batch R57: SlavedUpdate */
 };
 #endif

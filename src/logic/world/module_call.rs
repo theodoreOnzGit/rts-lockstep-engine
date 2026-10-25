@@ -589,6 +589,16 @@ pub enum ModuleCall {
     SpawnRevealSlaves,
     /// `AIUpdateInterface::getLastCommandSource()`; replies [`ModuleReply::Int`] (a `CommandSourceType`).
     AiGetLastCommandSource,
+    /// batch R57: `AIUpdateInterface::getPath()->getLastNode()->getPosition()`; replies [`ModuleReply::Coord`] (unhandled: no path).
+    AiGetPathLastNodePosition,
+    /// batch R57: `getCurLocomotor()->setUsePreciseZPos(on)`.
+    AiLocomotorSetUsePreciseZPos(bool),
+    /// batch R57: `AIUpdateInterface::aiGoProne(damageInfo, cmdSource)`.
+    AiGoProne { info: DamageInfo, command_source: i32 },
+    /// batch R57: `SlavedUpdateInterface::onEnslave(slaver)`.
+    SlavedOnEnslave { slaver: ObjectId },
+    /// batch R57: `SlavedUpdateInterface::onSlaverDamage(info)`.
+    SlavedOnSlaverDamage(DamageInfo),
     /// batch R56: `AIUpdateInterface::isBusy()`; replies [`ModuleReply::Bool`].
     AiIsBusy,
     /// batch R56: `AIUpdateInterface::aiBusy(cmdSource)`.

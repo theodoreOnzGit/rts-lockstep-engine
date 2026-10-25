@@ -501,7 +501,8 @@ Real Locomotor::getPitchStiffness() const { return ctOfLoco(this)->loco[0]; }
 Real Locomotor::getRollStiffness() const { return ctOfLoco(this)->loco[1]; }
 Real Locomotor::getPitchDamping() const { return ctOfLoco(this)->loco[2]; }
 Real Locomotor::getRollDamping() const { return ctOfLoco(this)->loco[3]; }
-void Locomotor::setUltraAccurate(Bool u) { ulog("locoultra %d %d", (int)ctOfLoco(this)->obj->m_oid, u ? 1 : 0); }
+int (*g_locoOwnerHook)(const Locomotor *) = 0;   /* p1w13-sonnet, batch R57: a driver whose locomotors are not this one's names their owners */
+void Locomotor::setUltraAccurate(Bool u) { ulog("locoultra %d %d", g_locoOwnerHook ? g_locoOwnerHook(this) : (int)ctOfLoco(this)->obj->m_oid, u ? 1 : 0); }
 void Locomotor::setCloseEnoughDist(Real dist) { ulog("lococlose %d %08x", (int)ctOfLoco(this)->obj->m_oid, realBits(dist)); }
 void Locomotor::setCloseEnoughDist3D(Bool setting) { ulog("lococlose3d %d %d", (int)ctOfLoco(this)->obj->m_oid, setting ? 1 : 0); }
 void AIUpdateInterface::aiHunt(CommandSourceType cmdSource) { ulog("aihunt %d %d", (int)m_owner->m_oid, (int)cmdSource); }
@@ -711,8 +712,10 @@ PathfindLayerEnum TerrainLogic::getLayerForDestination(const Coord3D *pos)
 	ulog("destlayer %08x %08x %08x", realBits(pos->x), realBits(pos->y), realBits(pos->z));
 	return (PathfindLayerEnum)g_hdLayer[hdCell(pos->x, pos->y)];
 }
-Real PartitionManager::getDistanceSquared(const Object *obj, const Coord3D *pos, DistanceCalculationType, Coord3D *) const
+Real (*g_distPosDcHook)(const Object *, const Coord3D *, DistanceCalculationType) = 0;   /* p1w13-sonnet, batch R57: the real distance procedures (l9_slaved_r57.inc) */
+Real PartitionManager::getDistanceSquared(const Object *obj, const Coord3D *pos, DistanceCalculationType dc, Coord3D *) const
 {
+	if (g_distPosDcHook) return g_distPosDcHook(obj, pos, dc);
 	ulog("cdist %d %08x %08x %08x", (int)obj->m_oid, realBits(pos->x), realBits(pos->y), realBits(pos->z));
 	Real dx = obj->m_pos.x - pos->x, dy = obj->m_pos.y - pos->y;
 	return dx * dx + dy * dy;

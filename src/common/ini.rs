@@ -251,6 +251,9 @@ pub enum Undefined {
     /// batch R56: a cached weapon template is `NULL` where its attack range is read (`CleanupHazardUpdate::fireWhenReady` of a unit whose
     /// `WeaponSlot` held no weapon at `onObjectCreated`).
     NullWeaponTemplate,
+    /// batch R57: an object's `getTeam()` is `NULL` and the module calls through it (`SlavedUpdate::update`'s
+    /// `masterTeam->getRelationship(myTeam)`).
+    NullTeam,
     /// `getAI()` is `NULL` and the module calls through it (`ActiveBody`'s `DAMAGE_KILLPILOT` of a rider-change vehicle).
     NullAi,
     /// `getContain()` is `NULL` and the module calls through it (`HijackerUpdate`: a parachute template whose object has no contain module).

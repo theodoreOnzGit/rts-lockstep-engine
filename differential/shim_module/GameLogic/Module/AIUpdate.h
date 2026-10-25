@@ -33,6 +33,23 @@ enum AIFreeToExitType // Note - written out in save/load xfer, don't change thes
 /* --- end p1w13-sonnet --- */
 class DozerAIInterface;
 class SupplyTruckAIInterface;
+/* --- p1w13-sonnet --- (batch R57: SlavedUpdate reads the last node of its master's path; AIPathfind.h's PathNode::getPosition and
+** Path::getLastNode, verbatim, on stand-ins that hold only those fields) */
+class DamageInfo;
+class PathNode
+{
+public:
+	Coord3D *getPosition( void ) { return &m_pos; }			///< return position of this node
+	const Coord3D *getPosition( void ) const { return &m_pos; }			///< return position of this node
+	Coord3D m_pos;
+};
+class Path
+{
+public:
+	PathNode *getLastNode( void ) { return m_pathTail; }
+	PathNode *m_pathTail = 0;
+};
+/* --- end p1w13-sonnet --- */
 class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	/* p1w13-sonnet, batch R44: the supply docks' truck (differential/l9_supply_docks_r44.inc); null for the other drivers */
 	SupplyTruckAIInterface *getSupplyTruckAIInterface() { return m_supplyTruck; }
@@ -98,6 +115,10 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	/* batch R26: StealthUpdate drops a temporary grant on a player's command (differential/l9_stealth_r26.inc) */
 	CommandSourceType getLastCommandSource() const { return (CommandSourceType)m_lastCmdSource; }
 	Int m_lastCmdSource = 0;
+	/* batch R57: SlavedUpdate follows its master's path and goes prone when the master is hit (differential/l9_slaved_r57.inc) */
+	Path *getPath() { return m_r57Path; }
+	Path *m_r57Path = 0;
+	void aiGoProne( const DamageInfo *damageInfo, CommandSourceType cmdSource );
 	/* batch R56: CleanupHazardUpdate keeps the AI busy and orders the attack (lines: differential/l9_cleanup_hazard_r56.inc) */
 	Bool isBusy() const { return m_busy; }
 	Bool m_busy = false;

@@ -45,6 +45,8 @@ pub enum ObjectSound {
     // --- p1w11-sonnet ---
     /// `MiscAudio::m_crateHeal` (`HealCrateCollide`).
     CrateHeal,
+    /// batch R57: `MiscAudio::m_repairSparks` (`SlavedUpdate`'s welding).
+    RepairSparks,
     /// `MiscAudio::m_crateShroud` (`ShroudCrateCollide`).
     CrateShroud,
     /// `MiscAudio::m_crateMoney` (`MoneyCrateCollide`).

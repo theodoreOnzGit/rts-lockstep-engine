@@ -157,6 +157,8 @@ pub struct ProbeAnswers {
     pub moving: bool,
     /// `isIdle()` of the AI.
     pub idle: bool,
+    /// batch R57: the AI's path's last node (`None`: `getPath()` is `NULL`).
+    pub path_last_node: Option<Coord3D>,
     /// batch R56: the AI's `isBusy()`.
     pub busy: bool,
     /// `isImmuneToClearBuildingAttacks()` of the contain module.
@@ -679,6 +681,8 @@ impl ProbeModule {
                 world.body_trace(format!("slaverdie {}", me.object));
                 ModuleReply::Done
             }
+            // batch R57: a probe is no slaved update
+            ModuleCall::SlavedOnEnslave { .. } | ModuleCall::SlavedOnSlaverDamage(_) => ModuleReply::Unhandled,
             // a probe is no slow death behaviour unless it is told to be one (the body test's UndeadBody)
             ModuleCall::BeginSlowDeath(info) => {
                 if !self.answers.slow_death {
@@ -962,6 +966,16 @@ impl ProbeModule {
                 ModuleReply::Done
             }
             ModuleCall::AiGetLastCommandSource => ModuleReply::Int(self.answers.last_command_source),
+            // batch R57: SlavedUpdate's AI and locomotor
+            ModuleCall::AiGetPathLastNodePosition => self.answers.path_last_node.map_or(ModuleReply::Unhandled, ModuleReply::Coord),
+            ModuleCall::AiLocomotorSetUsePreciseZPos(on) => {
+                world.body_trace(format!("locoprecise {} {}", me.object, i32::from(on)));
+                ModuleReply::Done
+            }
+            ModuleCall::AiGoProne { info, command_source } => {
+                world.body_trace(format!("aiprone {} {} {:08x} {command_source}", me.object, info.input.damage_type, info.input.amount.to_bits()));
+                ModuleReply::Done
+            }
             // batch R56: CleanupHazardUpdate's AI
             ModuleCall::AiIsBusy => ModuleReply::Bool(self.answers.busy),
             ModuleCall::AiBusy { command_source } => {
