@@ -241,6 +241,9 @@ pub enum Undefined {
     UninitialisedModuleData,
     /// batch R52: an iterator stepped before the first element of its container and read (`CountermeasuresBehavior::calculateCountermeasureToDivertTo`).
     IteratorOutOfRange,
+    /// batch R53: a special power update module's cached `m_specialPowerModule` is `NULL` where it is used (`MissileLauncherBuildingUpdate::
+    /// initiateIntentToDoSpecialPower` before its first update found the module).
+    NullSpecialPowerModule,
     /// `getAI()` is `NULL` and the module calls through it (`ActiveBody`'s `DAMAGE_KILLPILOT` of a rider-change vehicle).
     NullAi,
     /// `getContain()` is `NULL` and the module calls through it (`HijackerUpdate`: a parachute template whose object has no contain module).

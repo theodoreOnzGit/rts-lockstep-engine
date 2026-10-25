@@ -1829,6 +1829,20 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    /// p1w13-sonnet, batch R53: MissileLauncherBuildingUpdate (differential/l9_missile_launcher_r53.inc).
+    pub fn ref_l9r53_run(
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
     /// p1w13-sonnet, batch R52: CountermeasuresBehavior (differential/l9_countermeasures_r52.inc).
     pub fn ref_l9r52_run(
         filename: *const c_char,

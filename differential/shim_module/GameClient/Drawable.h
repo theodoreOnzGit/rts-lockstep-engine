@@ -44,7 +44,8 @@ enum StealthLookType
 	STEALTHLOOK_INVISIBLE						///< unit is stealthed-and-invisible
 };
 /* --- end p1w13-sonnet --- */
-class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModelConditionState(ModelConditionFlagType a);
+class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModelConditionState(ModelConditionFlagType a); void setAnimationLoopDuration(UnsignedInt numFrames);   /* batch R53 (l9_missile_launcher_r53.inc) */
+
 	void setTintStatus(TintStatus statusBits); void clearTintStatus(TintStatus statusBits);
 	/* batch R33: EMPUpdate (differential/l9_emp_r33.inc) */
 	void setInstanceScale(Real scale); void colorTint(const RGBColor *color); void colorFlash(const RGBColor *color, UnsignedInt decayFrames, UnsignedInt attackFrames, UnsignedInt sustainAtPeak);

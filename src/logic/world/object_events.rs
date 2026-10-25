@@ -249,6 +249,8 @@ pub enum ObjectClientEvent {
     // --- p1w13-sonnet ---
     /// `m_drawable->setShadowsEnabled(enabled)`.
     DrawableSetShadowsEnabled { object_id: ObjectId, enabled: bool },
+    /// batch R53: `m_drawable->setAnimationLoopDuration(frames)`.
+    DrawableSetAnimationLoopDuration { object_id: ObjectId, frames: u32 },
     // --- end p1w13-sonnet ---
     /// `m_drawable->setTerrainDecalFadeTarget(target, rate)`.
     DrawableTerrainDecalFadeTarget { object_id: ObjectId, target: f32, rate: f32 },

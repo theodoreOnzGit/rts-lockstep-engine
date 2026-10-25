@@ -23,11 +23,11 @@
 ** Drawable, FXList, GameLogic, ...) are renamed (ModTest...) so that no stand-in can clash with another unit's
 ** stand-in of the same class (the Armor build has its own Object and FXList).
 **
-** What is NOT compiled here (their .cpp files need Player, Eva, the script engine, the thing factory and more,
-** and their tests are Rust-only, see tests/differential_module.rs): SpecialPowerModule.cpp,
-** SpecialPowerUpdateModule.cpp (the SpecialPowerModuleData parse also needs TheSpecialPowerStore, which the INI
-** build leaves null), ModuleFactory.cpp (205 module headers; only its init() body is preprocessed, below) and
-** ContainModule.h (an interface of sixty pure virtuals, one inline function).
+** What is NOT compiled here: ModuleFactory.cpp (205 module headers; only its init() body is preprocessed, below) and
+** ContainModule.h (an interface of sixty pure virtuals, one inline function). ~~SpecialPowerModule.cpp and
+** SpecialPowerUpdateModule.cpp~~ CORRECTED 2026-10-25 (p1w13-sonnet, batch R53): both are compiled at the end of the unit now
+** (SpecialPowerModule.cpp by differential/l9_powers_h.inc, through mod_gen/SpecialPowerModule_nokey.cpp; SpecialPowerUpdateModule.cpp by
+** differential/l9_missile_launcher_r53.inc), on the stand-ins those drivers give them.
 **
 ** The registrations. build.rs cuts the body of ModuleFactory::init verbatim out of ModuleFactory.cpp
 ** (module_registrations.inc, asserted once), and it is preprocessed here twice with `addModule` defined as a
@@ -858,5 +858,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_neutron_death_r49.inc"   /* p1w13-sonnet, batch R49: NeutronMissileSlowDeathBehavior */
 #include "l9_physics_r50.inc"   /* p1w13-sonnet, batch R50: PhysicsBehavior */
 #include "l9_countermeasures_r52.inc"   /* p1w13-sonnet, batch R52: CountermeasuresBehavior */
+#include "l9_missile_launcher_r53.inc"   /* p1w13-sonnet, batch R53: MissileLauncherBuildingUpdate */
 #include "l9_ocl_power_r22.inc"   /* p1w13-sonnet, batch R22: OCLSpecialPower (run by l9_powers_h.inc, kind 7) */
 /* --- end p1w13-sonnet --- */

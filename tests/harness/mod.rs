@@ -13,6 +13,11 @@ use std::ffi::CString;
 use crate::support::{Check, Gen};
 use crate::up_common::*;
 
+thread_local! {
+    /// Definitions loaded with the upgrades in every case, on both sides (batch R53: special power templates); empty unless a test sets it.
+    pub static EXTRA_DEFS: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
 /// What the Rust run returns.
 pub struct RunOut {
     /// The dump after the data dump, as the driver writes it.
@@ -105,7 +110,8 @@ impl Harness<'_> {
             let init_center = g.below(5) != 0;
             let n_up = if g.below(10) == 0 { 0 } else { 1 + g.below(8) as usize };
             let upgrades: Vec<String> = (0..n_up).map(|i| format!("Up{i}")).collect();
-            let defs: String = upgrades.iter().map(|u| format!("Upgrade {u}\nEnd\n")).collect();
+            let mut defs: String = upgrades.iter().map(|u| format!("Upgrade {u}\nEnd\n")).collect();
+            EXTRA_DEFS.with(|e| defs.push_str(&e.borrow()));
             let mut ctx = Ctx::new(init_names, init_center);
             Ini::load(b"Data\\INI\\Up.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &table, &mut ctx).expect("upgrades load");
             cpp_reset(init_names, init_center);

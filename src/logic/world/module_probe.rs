@@ -117,6 +117,8 @@ pub struct ProbeAnswers {
     pub subdual_damage: Option<f32>,
     pub last_damage_source: Option<ObjectId>,
     /// batch R14b: the body's front and back crushed flags, when the test gives them (`getFrontCrushed`, `setFrontCrushed` and the back's use them).
+    /// batch R53: a special power's `getReadyFrame()`.
+    pub ready_frame: u32,
     pub front_crushed: Option<bool>,
     /// batch R15: what `construct` returns (`INVALID_ID`: `NULL`); `construct` and `aiResumeConstruction` are lines of the trace.
     pub construct_result: ObjectId,
@@ -329,7 +331,9 @@ impl ProbeModule {
             }
             ModuleCall::IsReady | ModuleCall::IsScriptOnly => ModuleReply::Bool(self.answers.yes),
             ModuleCall::GetPercentReady => ModuleReply::Real(1.0),
-            ModuleCall::GetReadyFrame | ModuleCall::GetRequiredScience => ModuleReply::Int(0),
+            // batch R53: a special power's ready frame, the test's (0 by default)
+            ModuleCall::GetReadyFrame => ModuleReply::Int(self.answers.ready_frame as i32),
+            ModuleCall::GetRequiredScience => ModuleReply::Int(0),
             // batch R13: a recharge is a line of the trace, when `probe_effect_trace` asks (the sabotage crates' test)
             ModuleCall::StartPowerRecharge => {
                 if world.cuts.probe_effect_trace {

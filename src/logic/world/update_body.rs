@@ -229,6 +229,8 @@ pub enum UpdateBody {
     // --- p1w12-sonnet ---
     /// `FireOCLAfterWeaponCooldownUpdate`.
     FireOCLAfterWeaponCooldownUpdate(crate::logic::modules::fire_ocl_after_weapon_cooldown_update::FireOCLAfterWeaponCooldownUpdate),
+    /// `MissileLauncherBuildingUpdate` (batch R53).
+    MissileLauncherBuildingUpdate(crate::logic::modules::missile_launcher_building_update::MissileLauncherBuildingUpdate),
     /// `CountermeasuresBehavior` (batch R52).
     CountermeasuresBehavior(crate::logic::modules::countermeasures_behavior::CountermeasuresBehavior),
     /// `AutoHealBehavior`.
@@ -485,6 +487,7 @@ impl UpdateBody {
 // --- end p1w11-sonnet ---
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.world_update(world, me),
+            UpdateBody::MissileLauncherBuildingUpdate(m) => m.world_update(world, me),
             UpdateBody::CountermeasuresBehavior(m) => m.world_update(world, me),
             UpdateBody::AutoHealBehavior(m) => m.world_update(world, me),
             UpdateBody::CheckpointUpdate(m) => m.world_update(world, me),
@@ -665,6 +668,7 @@ impl UpdateBody {
 // --- end p1w11-sonnet ---
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::MissileLauncherBuildingUpdate(m) => m.module_call(world, me, call),
             UpdateBody::CountermeasuresBehavior(m) => m.module_call(world, me, call),
             UpdateBody::AutoHealBehavior(m) => m.module_call(world, me, call),
             UpdateBody::CheckpointUpdate(m) => m.module_call(world, me, call),
@@ -825,6 +829,7 @@ impl UpdateBody {
 // --- end p1w11-sonnet ---
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::MissileLauncherBuildingUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::CountermeasuresBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::AutoHealBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::CheckpointUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
@@ -959,6 +964,7 @@ impl UpdateBody {
 // --- end p1w11-sonnet ---
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::MissileLauncherBuildingUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::CountermeasuresBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::AutoHealBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::CheckpointUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
@@ -1093,6 +1099,7 @@ impl UpdateBody {
 // --- end p1w11-sonnet ---
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::MissileLauncherBuildingUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::CountermeasuresBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::AutoHealBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::CheckpointUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
@@ -1265,6 +1272,7 @@ impl Snapshot for UpdateBody {
 // --- end p1w11-sonnet ---
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.crc(xfer),
+            UpdateBody::MissileLauncherBuildingUpdate(m) => m.crc(xfer),
             UpdateBody::CountermeasuresBehavior(m) => m.crc(xfer),
             UpdateBody::AutoHealBehavior(m) => m.crc(xfer),
             UpdateBody::CheckpointUpdate(m) => m.crc(xfer),
@@ -1441,6 +1449,7 @@ impl Snapshot for UpdateBody {
 // --- end p1w11-sonnet ---
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.xfer(xfer),
+            UpdateBody::MissileLauncherBuildingUpdate(m) => m.xfer(xfer),
             UpdateBody::CountermeasuresBehavior(m) => m.xfer(xfer),
             UpdateBody::AutoHealBehavior(m) => m.xfer(xfer),
             UpdateBody::CheckpointUpdate(m) => m.xfer(xfer),
@@ -1617,6 +1626,7 @@ impl Snapshot for UpdateBody {
 // --- end p1w11-sonnet ---
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.load_post_process(),
+            UpdateBody::MissileLauncherBuildingUpdate(m) => m.load_post_process(),
             UpdateBody::CountermeasuresBehavior(m) => m.load_post_process(),
             UpdateBody::AutoHealBehavior(m) => m.load_post_process(),
             UpdateBody::CheckpointUpdate(m) => m.load_post_process(),
@@ -1864,6 +1874,7 @@ impl UpdateBody {
 // --- end p1w11-sonnet ---
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.world_construct(world, me),
+            UpdateBody::MissileLauncherBuildingUpdate(m) => m.world_construct(world, me),
             UpdateBody::CountermeasuresBehavior(m) => m.world_construct(world, me),
             UpdateBody::AutoHealBehavior(m) => m.world_construct(world, me),
             UpdateBody::CheckpointUpdate(m) => m.world_construct(world, me),
