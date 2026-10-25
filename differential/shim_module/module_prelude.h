@@ -171,10 +171,12 @@ enum StaticGameLODLevel
 };
 /* UpdateModule.h forward-declares `enum CommandOption;`. The real definition is in
 ** GameClient/ControlBar.h (the client); the module files of this build use the type
-** nowhere, so only its first enumerator is copied, to make the type complete. */
+** nowhere, so only its first enumerator is copied, to make the type complete. Batch R60: SpectreGunshipDeploymentUpdate.cpp tests
+** COMMAND_FIRED_BY_SCRIPT (ControlBar.h line 99, its value). */
 enum CommandOption
 {
-	COMMAND_OPTION_NONE = 0x00000000
+	COMMAND_OPTION_NONE = 0x00000000,
+	COMMAND_FIRED_BY_SCRIPT = 0x00040000
 };
 /* --- p1w13-sonnet, batch R33 --- EMPUpdate.cpp's BaseType.h conversions, on the x87 helpers' transcriptions
 ** (differential/wrap_base_type.cpp), as the OCL fixture does (BaseType.h lines 232 and 243, commit 0a05454d) */

@@ -201,6 +201,8 @@ pub struct ProbeAnswers {
     pub free_to_exit: i32,
     /// `AIUpdateInterface::getCurLocomotor()` is not `NULL`.
     pub has_locomotor: bool,
+    /// batch R60: the current locomotor's preferred height.
+    pub preferred_height: f32,
     /// `DockUpdateInterface::isDockOpen()` (batch R3); `setDockOpen` sets it.
     pub dock_open: bool,
     /// batch R8: the current locomotor's pitch stiffness, roll stiffness, pitch damping and roll damping.
@@ -356,6 +358,20 @@ impl ProbeModule {
                         t.push(format!("recharge {} {}", me.object, me.index));
                     }
                 }
+                ModuleReply::Done
+            }
+            // batch R60: the special power calls as lines, when `probe_power_trace` asks
+            ModuleCall::SetReadyFrame { frame } if world.cuts.probe_power_trace => {
+                world.body_trace(format!("readyframe {} {frame}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::MarkSpecialPowerTriggered { location } if world.cuts.probe_power_trace => {
+                let at = location.map_or("null".to_string(), |l| format!("{},{},{}", l.x.to_bits(), l.y.to_bits(), l.z.to_bits()));
+                world.body_trace(format!("triggered {} {at}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::DoSpecialPowerAtLocation { loc, angle, command_options } if world.cuts.probe_power_trace => {
+                world.body_trace(format!("poweratloc {} {},{},{} {} {command_options}", me.object, loc.x.to_bits(), loc.y.to_bits(), loc.z.to_bits(), angle.to_bits()));
                 ModuleReply::Done
             }
             ModuleCall::SetReadyFrame { .. } | ModuleCall::MarkSpecialPowerTriggered { .. } => ModuleReply::Done,
@@ -832,6 +848,8 @@ impl ProbeModule {
             }
             ModuleCall::AiGetFreeToExit { .. } => ModuleReply::Int(self.answers.free_to_exit),
             ModuleCall::AiHasCurLocomotor => ModuleReply::Bool(self.answers.has_locomotor),
+            ModuleCall::AiGetCurLocomotorPreferredHeight if self.answers.has_locomotor => ModuleReply::Real(self.answers.preferred_height),
+            ModuleCall::AiGetCurLocomotorPreferredHeight => ModuleReply::Unhandled,
             ModuleCall::ReserveDoorForExit { .. } | ModuleCall::KillRidersWhoAreNotFreeToExit | ModuleCall::IsSpecificRiderFreeToExit { .. } => ModuleReply::Unhandled,
             // --- end p1w13-sonnet ---
             // OpenContain's test: the calls the container makes on its riders are lines of the trace (`bt ...`)

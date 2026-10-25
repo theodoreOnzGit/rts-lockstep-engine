@@ -28,6 +28,7 @@ Object *ObjectCreationList::createInternal(const Object *primaryObj, const Coord
 	return 0;
 }
 
+Coord3D *r22FarOffsetPtr() { return &g_r22FarOffset; }   /* batch R60: SpectreGunshipDeploymentUpdate's driver sets it */
 ModuleData *r22ReadOcl(INI *ini) { return OCLSpecialPower::friend_newModuleData(ini); }
 SpecialPowerModule *r22NewOcl(Object *obj, const ModuleData *d) { return new OCLSpecialPower(obj, d); }
 /* the data dump: the upgrades (count, then the science's name and the list's code each: 0 NULL, 1 OCL_A, 2 OCL_B), the default list's code, the create

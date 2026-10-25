@@ -281,6 +281,8 @@ pub enum Undefined {
     // --- p1w13-sonnet ---
     /// batch R26: `StealthUpdate::changeVisualDisguise` resets the physics of an object that has none (`getPhysics()` unchecked).
     NullPhysics,
+    /// batch R60: `getAI()->getCurLocomotor()` dereferenced with no current locomotor (`SpectreGunshipDeploymentUpdate`'s new gunship).
+    NullLocomotor,
     // --- end p1w13-sonnet ---
     // --- p1w1-armor ---
     /// A `DamageType` outside `[0, DAMAGE_NUM_TYPES)` indexes an array

@@ -568,6 +568,8 @@ pub enum ModuleCall {
     AiGetFreeToExit { exiter: ObjectId },
     /// `AIUpdateInterface::getCurLocomotor() != NULL`; replies [`ModuleReply::Bool`].
     AiHasCurLocomotor,
+    /// batch R60: `AIUpdateInterface::getCurLocomotor()->getPreferredHeight()`; replies [`ModuleReply::Real`], anything else for no locomotor.
+    AiGetCurLocomotorPreferredHeight,
     /// `ExitInterface::reserveDoorForExit(objType, specificObject)` of a contain module; replies [`ModuleReply::Int`] (`ExitDoorType`).
     ReserveDoorForExit { specific: ObjectId },
     /// `killRidersWhoAreNotFreeToExit()` of a contain module (protected upstream; the differential test calls it).

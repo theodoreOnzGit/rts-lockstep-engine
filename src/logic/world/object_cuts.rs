@@ -58,7 +58,7 @@ use crate::common::upgrade::UpgradeMaskType;
 use crate::logic::client_event::ClientEvent;
 use crate::logic::world::game_logic::World;
 use crate::logic::world::ids::{PlayerIndex, TeamId};
-use crate::logic::world::module_call::{ModuleCall, ModuleHandle};
+use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
 use crate::logic::world::object::HelperKind;
 use crate::logic::world::object_create::NewModule;
 use crate::logic::world::object_events::ObjectClientEvent;
@@ -117,6 +117,22 @@ impl World {
             return Some(w.get_status(self.frame()) as i32);
         }
         self.cuts.cur_weapon_status.get(&id).copied()
+    }
+
+    /// batch R60: `obj->getAI()->getCurLocomotor()->getPreferredHeight()`: no AI is [`Undefined::NullAi`], an AI with no current locomotor
+    /// [`Undefined::NullLocomotor`] (both unchecked upstream).
+    pub fn ai_cur_locomotor_preferred_height(&mut self, id: ObjectId) -> Result<f32, crate::common::ini::Undefined> {
+        use crate::common::ini::Undefined;
+        let ai = self.objects.find(id).and_then(|o| o.ai).ok_or(Undefined::NullAi)?;
+        match self.module_call(id, ai, ModuleCall::AiGetCurLocomotorPreferredHeight) {
+            ModuleReply::Real(h) => Ok(h),
+            _ => Err(Undefined::NullLocomotor),
+        }
+    }
+
+    /// batch R60: `TheGameLogic->selectObject(obj, createNewSelection, playerMask, affectClient)`: a record (the selection is the client's).
+    pub fn game_logic_select_object(&mut self, id: ObjectId, create_new_selection: bool, player_mask: PlayerMaskType, affect_client: bool) {
+        self.cut(CutCall::GameLogicSelectObject { object: id, create_new_selection, player_mask, affect_client });
     }
 
     /// batch R59: `obj->getDrawable()->findClientUpdateModule(NAMEKEY(name)) != NULL`: the object's template has a client update module of
@@ -994,6 +1010,8 @@ pub enum CutCall {
     AcademyStatsRecordMine,
     /// `TheGameLogic->deselectObject(obj, playerMask, affectClient)`.
     GameLogicDeselectObject { object: ObjectId, player_mask: PlayerMaskType, affect_client: bool },
+    /// batch R60: `TheGameLogic->selectObject(obj, createNewSelection, playerMask, affectClient)`.
+    GameLogicSelectObject { object: ObjectId, create_new_selection: bool, player_mask: PlayerMaskType, affect_client: bool },
     // ---- WeaponSet and helpers ----
     /// `m_weaponSet.updateWeaponSet(obj)`.
     WeaponSetUpdate { object: ObjectId },
@@ -1280,6 +1298,12 @@ pub struct ObjectCuts {
     pub weapon_slot_template: BTreeMap<(ObjectId, i32), usize>,
     /// batch R59: the status (a `WeaponStatus` value) of the current weapon of an object with no weapon set (no entry: no current weapon).
     pub cur_weapon_status: BTreeMap<ObjectId, i32>,
+    /// batch R60: `World::thing_factory_new_object` makes a module no layer has translated as a probe with these answers (an `...AIUpdate` the
+    /// object's AI), not a plain stub (`None`, the default: a stub).
+    pub untranslated_probe: Option<crate::logic::world::module_probe::ProbeAnswers>,
+    /// batch R60: a probe writes its special power calls (`setReadyFrame`, `markSpecialPowerTriggered`, `doSpecialPowerAtLocation`) to the
+    /// trace as `bt` lines (off by default).
+    pub probe_power_trace: bool,
     /// batch R34: what `TheAudio->isCurrentlyPlaying(handle)` answers, for every handle.
     pub audio_playing: bool,
     /// The cut points of `ActiveBody`: see `body_cuts`.
@@ -1393,6 +1417,8 @@ impl Default for ObjectCuts {
             closest_object_at: 0,
             weapon_slot_template: BTreeMap::new(),
             cur_weapon_status: BTreeMap::new(),
+            untranslated_probe: None,
+            probe_power_trace: false,
             audio_playing: false,
             body: Default::default(),
             contain: Default::default(),

@@ -48,6 +48,7 @@ public:
 	/* --- end p1w12-sonnet --- */
 	/* --- p1w13-sonnet --- (batch P: ActiveBody; differential/l9_active_body_p.inc) */
 	void deselectObject( Object *objToDeselect, PlayerMaskType playerMask, Bool affectClient );
+	void selectObject(Object *obj, Bool createNewSelection, PlayerMaskType playerMask, Bool affectClient = FALSE);   /* batch R60 (a line) */
 	/* --- end p1w13-sonnet --- */
 	/* --- p1w13-sonnet --- (SlowDeathBehavior) */
 	Int getHulkMaxLifetimeOverride() const { return m_hulkOverride; }

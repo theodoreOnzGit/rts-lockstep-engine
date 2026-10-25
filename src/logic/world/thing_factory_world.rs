@@ -42,6 +42,8 @@ use crate::common::thing_template::ModuleInfoData;
 use crate::logic::world::game_logic::{World, WorldError};
 use crate::logic::world::ids::TeamId;
 use crate::logic::world::object_create::{NewModule, NewObject};
+use crate::logic::world::module_probe::ProbeModule;
+use crate::logic::world::update_body::UpdateBody;
 
 /// Why `ThingFactory::newObject` did not make an object.
 #[derive(Debug, PartialEq)]
@@ -88,6 +90,11 @@ impl World {
                 None => {
                     let mut stub = NewModule::plain(name, tag);
                     stub.interfaces = info.nuggets()[i as usize].interface_mask;
+                    // (batch R60: a test's probe in its place, when it asks)
+                    if let Some(answers) = self.cuts.untranslated_probe.clone() {
+                        stub.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(answers, 0.0, Default::default())));
+                        stub.is_ai = name.ends_with(b"AIUpdate");
+                    }
                     self.cuts.untranslated_modules.push(name.to_vec());
                     modules.push(stub);
                 }
