@@ -56,8 +56,10 @@ public:
 	UnsignedInt getLastHealingTimestamp() const { return 0; }
 	ObjectID getClearableLastAttacker() const { return INVALID_ID; }
 	void clearLastAttacker() {}
-	Bool getFrontCrushed() const { return false; }
-	Bool getBackCrushed() const { return false; }
+	/* batch R50: the crushed ends the test gives (none, as before, by default) */
+	Bool m_front = false, m_back = false;
+	Bool getFrontCrushed() const { return m_front; }
+	Bool getBackCrushed() const { return m_back; }
 	void setInitialHealth( Int ) {}
 	void setMaxHealth( Real, MaxHealthChangeType ) {}
 	void setFrontCrushed( Bool ) {}

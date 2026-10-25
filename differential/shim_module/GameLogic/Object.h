@@ -87,6 +87,13 @@ class DamageInfo;
 typedef std::list<Object *>																ObjectPointerList;
 typedef std::list<Object *>::iterator											ObjectPointerListIterator;
 /* --- end p1w12-sonnet --- */
+/* batch R50: GameLogic/Object.h lines 150-155, verbatim */
+enum CrushSquishTestType
+{
+	TEST_CRUSH_ONLY, 
+	TEST_SQUISH_ONLY, 
+	TEST_CRUSH_OR_SQUISH
+};
 class Object : public Thing
 {
 public:
@@ -338,6 +345,18 @@ public:
 	** these, which differential/l9_stealth_r26.inc names getStealth and getPhysics while it includes StealthUpdate.cpp; the rest is Object.h and
 	** Object.cpp, verbatim where it says so) */
 	class R26StealthUpdate *r26GetStealth() const { return m_r26Stealth; }
+	/* batch R50: PhysicsBehavior compiled under R50 names (differential/l9_physics_r50.inc), its own getPhysics; and what it asks of an object */
+	class R50PhysicsBehavior *r50GetPhysics() const { return m_r50Physics; }
+	class R50PhysicsBehavior *m_r50Physics = 0;
+	Real getCarrierDeckHeight() const { return 0.0f; }   /* Object.cpp 6334-6350: no producer here (the test's objects have none) */
+	Bool canCrushOrSquish(Object *otherObj, CrushSquishTestType testType) const;   /* Object.cpp, verbatim (mod_gen/ObjectCrush.inc) */
+	UnsignedByte getCrushableLevel() const { return m_crushable; }
+	UnsignedByte m_crushable = 0;
+	void setCaptured(Bool isCaptured) { m_r50Captured = isCaptured; }
+	Bool m_r50Captured = false;
+	void onCollide(Object *other, const Coord3D *loc, const Coord3D *normal);   /* Object.cpp 2393-2414, verbatim (l9_physics_r50.inc) */
+	class Module *findModule(NameKeyType key) const;   /* Object.cpp 2871-2898, verbatim (l9_physics_r50.inc) */
+	Bool isDestroyed() const { return m_status.test(OBJECT_STATUS_DESTROYED); }   /* Object.h line 213 */
 	class R26PhysicsBehavior *r26GetPhysics() const { return m_r26Physics; }
 	class R26StealthUpdate *m_r26Stealth = 0;
 	class R26PhysicsBehavior *m_r26Physics = 0;

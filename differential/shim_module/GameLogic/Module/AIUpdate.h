@@ -100,6 +100,16 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	Int m_lastCmdSource = 0;
 	/* --- end p1w13-sonnet --- */
 	/* --- end p1w13-sonnet --- */
+	/* --- p1w13-sonnet --- (batch R50: PhysicsBehavior's questions, differential/l9_physics_r50.inc) */
+	LocomotorSetType getCurLocomotorSetType() const { return (LocomotorSetType)m_r50LocoSet; }
+	ObjectID getIgnoredObstacleID( void ) const { return m_r50Ignored; }
+	Bool processCollision(class PhysicsBehavior *physics, Object *other);   /* a line */
+	Bool hasLocomotorForSurface(Int surfaceType) { return (m_r50Surfaces & (unsigned)surfaceType) != 0; }
+	Int m_r50LocoSet = -1;
+	ObjectID m_r50Ignored = (ObjectID)0;
+	Bool m_r50Process = true;
+	unsigned m_r50Surfaces = 0;
+	/* --- end p1w13-sonnet --- */
 	/* --- p1w13-sonnet --- (batch R40: MinefieldBehavior grants a mine clearer immunity) */
 	Bool isClearingMines() const { return m_clearingMines; }
 	Bool m_clearingMines = false;

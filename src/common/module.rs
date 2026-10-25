@@ -510,6 +510,8 @@ pub enum ModuleDataKind {
     SlowDeathBehavior(Arc<crate::logic::modules::slow_death_behavior::SlowDeathBehaviorModuleData>),
     /// `JetSlowDeathBehavior` (batch R46).
     JetSlowDeathBehavior(Arc<crate::logic::modules::jet_slow_death_behavior::JetSlowDeathBehaviorModuleData>),
+    /// `PhysicsBehavior` (batch R50).
+    PhysicsBehavior(Arc<crate::logic::modules::physics_behavior::PhysicsBehaviorModuleData>),
     /// `NeutronMissileSlowDeathBehavior` (batch R49).
     NeutronMissileSlowDeathBehavior(Arc<crate::logic::modules::neutron_missile_slow_death_behavior::NeutronMissileSlowDeathBehaviorModuleData>),
     /// `HelicopterSlowDeathBehavior` (batch R48).
@@ -694,6 +696,7 @@ impl ModuleDataKind {
             ModuleDataKind::ActiveBody(d) => &d.body.behavior.module_data,
             ModuleDataKind::SlowDeathBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::JetSlowDeathBehavior(d) => &d.slow.update.behavior.module_data,
+            ModuleDataKind::PhysicsBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::NeutronMissileSlowDeathBehavior(d) => &d.slow.update.behavior.module_data,
             ModuleDataKind::HelicopterSlowDeathBehavior(d) => &d.slow.update.behavior.module_data,
             ModuleDataKind::BattleBusSlowDeathBehavior(d) => &d.slow.update.behavior.module_data,
@@ -1398,6 +1401,13 @@ impl ModuleDataKind {
             ModuleDataKind::JetSlowDeathBehavior(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.slow.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::PhysicsBehavior(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
                     true
                 }
                 None => false,

@@ -70,6 +70,13 @@ pub struct ProbeAnswers {
     pub contained: Vec<ObjectId>,
     /// Batch R47: the physics' `clearAcceleration` since the last `scrubVelocity2D` (which reports it).
     pub acceleration_cleared: bool,
+    /// Batch R50: the AI's `getCurLocomotorSetType` (`None`: `Unhandled`), `getIgnoredObstacleID`, `processCollision`'s answer (a line
+    /// `aiprocess`), `hasLocomotorForSurface`'s surfaces; a projectile's `projectileHandleCollision` answer (a line `projcollide`).
+    pub locomotor_set_type: Option<i32>,
+    pub ignored_obstacle: ObjectId,
+    pub process_collision: bool,
+    pub locomotor_surfaces: u32,
+    pub projectile_handles_collision: bool,
     /// Batch R47: `applyShock`, `applyRandomRotation` and `processDamageToContained` are lines (`pshock`, `prandrot`, `pdmgcontained`);
     /// otherwise they do nothing, as they did before.
     pub trace_throw: bool,
@@ -708,6 +715,39 @@ impl ProbeModule {
                 world.body_trace(format!("ppitch {} {:08x}", me.object, p.to_bits()));
                 ModuleReply::Done
             }
+            // --- p1w13-sonnet --- (batch R50)
+            ModuleCall::AiGetCurLocomotorSetType => self.answers.locomotor_set_type.map_or(ModuleReply::Unhandled, ModuleReply::Int),
+            ModuleCall::AiGetIgnoredObstacleId => ModuleReply::Id(self.answers.ignored_obstacle),
+            ModuleCall::AiProcessCollision { other } => {
+                world.body_trace(format!("aiprocess {} {other}", me.object));
+                ModuleReply::Bool(self.answers.process_collision)
+            }
+            ModuleCall::AiHasLocomotorForSurface(s) => ModuleReply::Bool(self.answers.locomotor_surfaces & s != 0),
+            ModuleCall::ProjectileHandleCollision { other } => {
+                world.body_trace(format!("projcollide {} {other}", me.object));
+                ModuleReply::Bool(self.answers.projectile_handles_collision)
+            }
+            ModuleCall::PhysicsSetYawRate(_)
+            | ModuleCall::PhysicsScrubVelocityZ(_)
+            | ModuleCall::PhysicsAddVelocityTo(_)
+            | ModuleCall::PhysicsSetTurning(_)
+            | ModuleCall::PhysicsSetIgnoreCollisionsWith(_)
+            | ModuleCall::PhysicsSetStickToGround(_)
+            | ModuleCall::PhysicsSetImmuneToFallingDamage(_)
+            | ModuleCall::PhysicsSetAllowAirborneFriction(_)
+            | ModuleCall::PhysicsSetAllowCollideForce(_)
+            | ModuleCall::PhysicsSetBounceSound(_)
+            | ModuleCall::PhysicsAddOverlap(_)
+            | ModuleCall::PhysicsSetMass(_) => ModuleReply::Done,
+            ModuleCall::PhysicsIsIgnoringCollisionsWith(_)
+            | ModuleCall::PhysicsGetIsStunned
+            | ModuleCall::PhysicsGetIsInFreeFall
+            | ModuleCall::PhysicsIsMotive
+            | ModuleCall::PhysicsGetForwardSpeed2D
+            | ModuleCall::PhysicsGetForwardSpeed3D
+            | ModuleCall::PhysicsGetAcceleration
+            | ModuleCall::PhysicsGetCurrentOverlap
+            | ModuleCall::PhysicsGetPreviousOverlap => ModuleReply::Unhandled,
             // --- p1w13-sonnet --- (batch R47: a cleared acceleration is reported by the next scrub, as the C++ stand-in sees it)
             ModuleCall::PhysicsClearAcceleration => {
                 self.answers.acceleration_cleared = true;

@@ -980,6 +980,9 @@ pub struct ObjectGlobals {
     // --- p1w13-sonnet ---
     /// `TheGameLODManager->getSlowDeathScale()` (`SlowDeathBehavior`): 1 is the normal speed of a death, 0 an instant one.
     pub slow_death_scale: f32,
+    /// batch R50: `TheGlobalData->m_groundStiffness` and `m_structureStiffness` (`PhysicsBehavior`'s bounces; 0.5 by default).
+    pub ground_stiffness: f32,
+    pub structure_stiffness: f32,
     // --- end p1w13-sonnet ---
     // --- end p1w10-sonnet ---
 }
@@ -1012,6 +1015,8 @@ impl Default for ObjectGlobals {
             // --- end p1w10-sonnet ---
             // --- p1w13-sonnet ---
             slow_death_scale: 1.0,
+            ground_stiffness: 0.5,
+            structure_stiffness: 0.5,
             // --- end p1w13-sonnet ---
         }
     }

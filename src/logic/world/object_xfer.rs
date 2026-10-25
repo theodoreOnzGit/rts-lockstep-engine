@@ -603,6 +603,13 @@ impl World {
                     self.cuts.module_errors.push((me, crate::common::ini::IniError::undefined(crate::common::ini::Undefined::NullObject)));
                 }
             }
+            // batch R50: a physics module's save writes `m_turning`, which nothing may have set yet
+            if let Some(crate::logic::world::update_body::UpdateBody::PhysicsBehavior(p)) = &snap.body {
+                if !p.check_save() {
+                    let me = crate::logic::world::module_call::ModuleHandle { object: id, index: idx as u16 };
+                    self.cuts.module_errors.push((me, crate::common::ini::IniError::undefined(crate::common::ini::Undefined::UninitialisedMember)));
+                }
+            }
         }
         crate::common::xfer::take_invalid_bool_read();
         let r = xfer.xfer_snapshot(&mut snap);

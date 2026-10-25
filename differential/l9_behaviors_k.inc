@@ -50,6 +50,7 @@ std::vector<unsigned char> g_fkSaved;
 WeaponStore *TheWeaponStore = 0;
 void WeaponStore::createAndFireTempWeapon(const WeaponTemplate *wt, const Object *source, const Coord3D *pos)
 {
+	if (wt == NULL) return;   /* Weapon.cpp 1539-1540 (p1w13-sonnet, batch R50: PhysicsBehavior fires a crash weapon that may be none) */
 	ulog("weapon %s %d %u,%u,%u", ((const KWeapon *)wt)->name, (int)source->m_oid, realBits(pos->x), realBits(pos->y), realBits(pos->z));
 }
 

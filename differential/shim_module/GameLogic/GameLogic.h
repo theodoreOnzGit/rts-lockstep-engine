@@ -29,6 +29,9 @@ public:
 	/* --- p1w10-sonnet --- (the layer-9 die batch: DestroyDie and UpgradeDie; both answered by l9_helpers.inc) */
 	void destroyObject(Object *obj) { if (g_modDestroyHook) g_modDestroyHook(obj); modhelp_destroy(obj); }   /* inline hooks: shim_updates' GameLogic has its own, out of line, destroyObject */
 	Object *findObjectByID(ObjectID id) { return modhelp_find(id); }
+	/* batch R50: destroyObject under a name of its own (differential/l9_physics_r50.inc: the inline destroyObject above has the mangled name of
+	** other units' out-of-line ones, which the linker may take where it is not inlined) */
+	void r50DestroyObject(Object *obj) { if (g_modDestroyHook) g_modDestroyHook(obj); modhelp_destroy(obj); }
 	Object *getFirstObject();   /* differential/l9_dies_d.inc */
 	/* --- end p1w10-sonnet --- */
 	UnsignedInt m_frame = 0;

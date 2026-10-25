@@ -761,6 +761,60 @@ pub enum ModuleCall {
     /// `getCurLocomotor()->setMaxBraking(braking)`.
     AiLocomotorSetMaxBraking(f32),
     // --- end p1w13-sonnet ---
+    // --- p1w13-sonnet --- (batch R50: PhysicsBehavior, and what it asks of the other modules)
+    /// `getAI()->getCurLocomotorSetType()`; replies [`ModuleReply::Int`] (a `LocomotorSetType`).
+    AiGetCurLocomotorSetType,
+    /// `getAIUpdateInterface()->getIgnoredObstacleID()`; replies [`ModuleReply::Id`].
+    AiGetIgnoredObstacleId,
+    /// `getAIUpdateInterface()->processCollision(physics, other)` (the physics is the object's own); replies [`ModuleReply::Bool`].
+    AiProcessCollision { other: ObjectId },
+    /// `getAIUpdateInterface()->hasLocomotorForSurface(surfaces)`; replies [`ModuleReply::Bool`].
+    AiHasLocomotorForSurface(u32),
+    /// `ProjectileUpdateInterface::projectileHandleCollision(other)` (`INVALID_ID` for `NULL`); replies [`ModuleReply::Bool`].
+    ProjectileHandleCollision { other: ObjectId },
+    /// `PhysicsBehavior::setYawRate(yaw)`.
+    PhysicsSetYawRate(f32),
+    /// `PhysicsBehavior::scrubVelocityZ(desiredVelocity)`.
+    PhysicsScrubVelocityZ(f32),
+    /// `PhysicsBehavior::addVelocityTo(&vel)`.
+    PhysicsAddVelocityTo(Coord3D),
+    /// `PhysicsBehavior::setTurning(turning)` (`TURN_NEGATIVE` -1, `TURN_NONE` 0, `TURN_POSITIVE` 1).
+    PhysicsSetTurning(i32),
+    /// `PhysicsBehavior::setIgnoreCollisionsWith(obj)` (`INVALID_ID` for `NULL`).
+    PhysicsSetIgnoreCollisionsWith(ObjectId),
+    /// `PhysicsBehavior::isIgnoringCollisionsWith(id)`; replies [`ModuleReply::Bool`].
+    PhysicsIsIgnoringCollisionsWith(ObjectId),
+    /// `PhysicsBehavior::setStickToGround(on)`.
+    PhysicsSetStickToGround(bool),
+    /// `PhysicsBehavior::setImmuneToFallingDamage(on)`.
+    PhysicsSetImmuneToFallingDamage(bool),
+    /// `PhysicsBehavior::setAllowAirborneFriction(on)`.
+    PhysicsSetAllowAirborneFriction(bool),
+    /// `PhysicsBehavior::setAllowCollideForce(on)`.
+    PhysicsSetAllowCollideForce(bool),
+    /// `PhysicsBehavior::setBounceSound(sound)` (the event's name; `None` for `NULL`).
+    PhysicsSetBounceSound(Option<Vec<u8>>),
+    /// `PhysicsBehavior::getIsStunned()`; replies [`ModuleReply::Bool`].
+    PhysicsGetIsStunned,
+    /// `PhysicsBehavior::getIsInFreeFall()`; replies [`ModuleReply::Bool`].
+    PhysicsGetIsInFreeFall,
+    /// `PhysicsBehavior::isMotive()`; replies [`ModuleReply::Bool`].
+    PhysicsIsMotive,
+    /// `PhysicsBehavior::getForwardSpeed2D()`; replies [`ModuleReply::Real`].
+    PhysicsGetForwardSpeed2D,
+    /// `PhysicsBehavior::getForwardSpeed3D()`; replies [`ModuleReply::Real`].
+    PhysicsGetForwardSpeed3D,
+    /// `PhysicsBehavior::getAcceleration()` (last frame's); replies [`ModuleReply::Coord`].
+    PhysicsGetAcceleration,
+    /// `PhysicsBehavior::getCurrentOverlap()`; replies [`ModuleReply::Id`].
+    PhysicsGetCurrentOverlap,
+    /// `PhysicsBehavior::getPreviousOverlap()`; replies [`ModuleReply::Id`].
+    PhysicsGetPreviousOverlap,
+    /// `PhysicsBehavior::addOverlap(obj)`.
+    PhysicsAddOverlap(ObjectId),
+    /// `PhysicsBehavior::setMass(mass)`.
+    PhysicsSetMass(f32),
+    // --- end p1w13-sonnet ---
     // --- p1w13-sonnet --- (batch R38: `BridgeTowerBehaviorInterface`, which `TerrainLogic`'s `Bridge::createTower` drives)
     /// `setBridge(bridge)` (the bridge's id; one that is no object is `setBridge(NULL)`).
     BridgeTowerSetBridge(ObjectId),
