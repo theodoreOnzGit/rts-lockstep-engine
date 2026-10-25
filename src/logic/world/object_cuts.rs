@@ -130,6 +130,45 @@ impl World {
         }
     }
 
+    /// batch W1b: `ThePartitionManager->getGoalDistanceSquared(a, &goal, b, dc)`: `a` as if at `goal`.
+    pub fn partition_goal_distance_squared(&self, a: ObjectId, goal: &Coord3D, b: ObjectId, dc: crate::logic::world::partition::DistanceCalculationType) -> f32 {
+        let (_, ga) = self.position_and_geometry(a);
+        let (pb, gb) = self.position_and_geometry(b);
+        crate::logic::world::partition::dist_calc(dc, goal, ga.as_ref(), &pb, gb.as_ref(), crate::logic::world::partition::HUGE_DIST_SQR).dist_sqr
+    }
+
+    /// batch W1b: `ThePartitionManager->getGoalDistanceSquared(a, &goal, &pos, dc)`.
+    pub fn partition_goal_distance_squared_to_pos(
+        &self,
+        a: ObjectId,
+        goal: &Coord3D,
+        pos: &Coord3D,
+        dc: crate::logic::world::partition::DistanceCalculationType,
+    ) -> f32 {
+        let (_, ga) = self.position_and_geometry(a);
+        crate::logic::world::partition::dist_calc(dc, goal, ga.as_ref(), pos, None, crate::logic::world::partition::HUGE_DIST_SQR).dist_sqr
+    }
+
+    /// batch W1b: `ThePartitionManager->getVectorTo(a, b, dc, vec)`.
+    pub fn partition_vector_to(&self, a: ObjectId, b: ObjectId, dc: crate::logic::world::partition::DistanceCalculationType) -> Coord3D {
+        let (pa, ga) = self.position_and_geometry(a);
+        let (pb, gb) = self.position_and_geometry(b);
+        crate::logic::world::partition::dist_calc(dc, &pa, ga.as_ref(), &pb, gb.as_ref(), crate::logic::world::partition::HUGE_DIST_SQR).vec
+    }
+
+    /// batch W1b: `ThePartitionManager->getVectorTo(a, &pos, dc, vec)`.
+    pub fn partition_vector_to_pos(&self, a: ObjectId, pos: &Coord3D, dc: crate::logic::world::partition::DistanceCalculationType) -> Coord3D {
+        let (pa, ga) = self.position_and_geometry(a);
+        crate::logic::world::partition::dist_calc(dc, &pa, ga.as_ref(), pos, None, crate::logic::world::partition::HUGE_DIST_SQR).vec
+    }
+
+    /// batch W1b: `ThePartitionManager->isClearLineOfSightTerrain(NULL, from, NULL, to)`: the table `cuts.blocked_lines_of_sight` (the
+    /// terrain's sight lines are the partition manager's, layer 12's).
+    pub fn cut_partition_is_clear_line_of_sight_terrain(&self, from: &Coord3D, to: &Coord3D) -> bool {
+        let b = |c: &Coord3D| [c.x.to_bits(), c.y.to_bits(), c.z.to_bits()];
+        !self.cuts.blocked_lines_of_sight.contains(&(b(from), b(to)))
+    }
+
     /// batch R61: `TheGameLogic->deselectObject(obj, playerMask, affectClient)`: a record (the selection is the client's).
     pub fn game_logic_deselect_object(&mut self, id: ObjectId, player_mask: PlayerMaskType, affect_client: bool) {
         self.cut(CutCall::GameLogicDeselectObject { object: id, player_mask, affect_client });
@@ -1018,6 +1057,14 @@ pub enum CutCall {
     GameLogicDeselectObject { object: ObjectId, player_mask: PlayerMaskType, affect_client: bool },
     /// batch R60: `TheGameLogic->selectObject(obj, createNewSelection, playerMask, affectClient)`.
     GameLogicSelectObject { object: ObjectId, create_new_selection: bool, player_mask: PlayerMaskType, affect_client: bool },
+    /// batch W1b: `getControllingPlayer()->getAcademyStats()->recordMineCleared()`.
+    AcademyStatsRecordMineCleared { player: PlayerIndex },
+    /// batch W1b: `TheAI->pathfinder()->adjustTargetDestination(source, target, pos, weapon, &approach)` (layer 11's; the position stays).
+    PathfinderAdjustTargetDestination { source: ObjectId, target: ObjectId, pos: Option<Coord3D>, template: usize, approach: Coord3D },
+    /// batch W1b: a weapon's fire or detonation `ObjectCreationList::create(ocl, primary, NULL)`, the list by the weapon template's id for it.
+    WeaponOclCreate { ocl: u32, primary: ObjectId },
+    /// batch W1b: `m_firingTracker->shotFired(weapon, victimID)` (the helper is a stub module yet), the weapon by its template.
+    FiringTrackerShotFired { object: ObjectId, template: usize, victim: ObjectId },
     // ---- WeaponSet and helpers ----
     /// `m_weaponSet.updateWeaponSet(obj)`.
     WeaponSetUpdate { object: ObjectId },
@@ -1304,6 +1351,17 @@ pub struct ObjectCuts {
     pub weapon_slot_template: BTreeMap<(ObjectId, i32), usize>,
     /// batch R59: the status (a `WeaponStatus` value) of the current weapon of an object with no weapon set (no entry: no current weapon).
     pub cur_weapon_status: BTreeMap<ObjectId, i32>,
+    /// batch W1b: `getNumConsecutiveShotsFiredAtTarget(victim)` by (object, victim) (the firing tracker helper is not an object module
+    /// yet; no entry: 0).
+    pub consecutive_shots_at_victim: BTreeMap<(ObjectId, ObjectId), i32>,
+    /// batch W1b: `TheTerrainLogic->getBridgeAttackPoints(bridge, &info)`'s two points, by bridge (no entry: the origin twice).
+    pub bridge_attack_points: BTreeMap<ObjectId, (Coord3D, Coord3D)>,
+    /// batch W1b: `getDrawable()->getBarrelCount(wslot)` by (object, slot) (no entry: 0).
+    pub drawable_barrel_count: BTreeMap<(ObjectId, i32), i32>,
+    /// batch W1b: `getDrawable()->getProjectileLaunchOffset(wslot, barrel, ...)` by (object, slot, barrel, turret) (no entry: no bone).
+    pub drawable_launch_offset: BTreeMap<(ObjectId, i32, i32, i32), crate::logic::weapon_host::LaunchOffset>,
+    /// batch W1b: the segments `ThePartitionManager->isClearLineOfSightTerrain` finds blocked, as (from, to) bit patterns (none: clear).
+    pub blocked_lines_of_sight: BTreeSet<([u32; 3], [u32; 3])>,
     /// batch R60: `World::thing_factory_new_object` makes a module no layer has translated as a probe with these answers (an `...AIUpdate` the
     /// object's AI), not a plain stub (`None`, the default: a stub).
     pub untranslated_probe: Option<crate::logic::world::module_probe::ProbeAnswers>,
@@ -1423,6 +1481,11 @@ impl Default for ObjectCuts {
             closest_object_at: 0,
             weapon_slot_template: BTreeMap::new(),
             cur_weapon_status: BTreeMap::new(),
+            consecutive_shots_at_victim: BTreeMap::new(),
+            bridge_attack_points: BTreeMap::new(),
+            drawable_barrel_count: BTreeMap::new(),
+            drawable_launch_offset: BTreeMap::new(),
+            blocked_lines_of_sight: BTreeSet::new(),
             untranslated_probe: None,
             probe_power_trace: false,
             audio_playing: false,

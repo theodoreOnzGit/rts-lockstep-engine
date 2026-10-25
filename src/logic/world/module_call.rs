@@ -976,6 +976,44 @@ pub enum ModuleCall {
     /// `SpecialPowerUpdateInterface::initiateIntentToDoSpecialPower(template, targetObj, targetPos, way, commandOptions)`, the template by id
     /// and the waypoint by id; replies [`ModuleReply::Bool`] (unhandled: no such interface).
     InitiateIntentToDoSpecialPower { template: u32, target_object: ObjectId, target_position: Option<Coord3D>, waypoint: u32, command_options: u32 },
+    /// batch W1b: `ContainModuleInterface::calcBestGarrisonPosition(&goalPos, &targetPos)`; replies [`ModuleReply::Coord`] with the goal
+    /// position, anything else for none.
+    CalcBestGarrisonPosition { target_pos: Coord3D },
+    /// batch W1b: `StealthUpdate::isDisguised()` and `getDisguisedPlayerIndex()`; replies [`ModuleReply::Int`] when disguised.
+    StealthGetDisguisedPlayerIndex,
+    /// batch W1b: `SpawnBehaviorInterface::getCanAnySlavesUseWeaponAgainstTarget(attackType, victim, pos, commandSource)`; replies
+    /// [`ModuleReply::Int`] (`CanAttackResult`).
+    SpawnCanAnySlavesUseWeaponAgainstTarget { attack_type: i32, victim: ObjectId, pos: Option<Coord3D>, command_source: i32 },
+    /// batch W1b: `AIUpdateInterface::getSneakyTargetingOffset(&offset)`; replies [`ModuleReply::Coord`] when sneaky.
+    AiGetSneakyTargetingOffset,
+    /// batch W1b: `AIUpdateInterface::isAircraftThatAdjustsDestination()`; replies [`ModuleReply::Bool`].
+    AiIsAircraftThatAdjustsDestination,
+    /// batch W1b: `getAssaultTransportAIInterface()->beginAssault(victim)` (nothing without the interface).
+    AiBeginAssault { victim: ObjectId },
+    /// batch W1b: `getWhichTurretForWeaponSlot(slot, &angle, &pitch)`; replies [`ModuleReply::Turret`].
+    AiGetWhichTurretForWeaponSlot { slot: i32 },
+    /// batch W1b: `isWeaponSlotOnTurretAndAimingAtTarget(slot, victim)`; replies [`ModuleReply::Bool`].
+    AiIsWeaponSlotOnTurretAndAimingAtTarget { slot: i32, victim: ObjectId },
+    /// batch W1b: this module is a `SpecialPowerCompletionDie` (`findSpecialPowerCompletionDie`); replies [`ModuleReply::Bool`].
+    IsSpecialPowerCompletionDie,
+    /// batch W1b: `SpecialPowerCompletionDie::notifyScriptEngine()`.
+    SpecialPowerCompletionDieNotifyScriptEngine,
+    /// batch W1b: `ProjectileUpdateInterface::projectileLaunchAtObjectOrPosition(victim, &dest, launcher, wslot, barrel, template, exhaust)`.
+    ProjectileLaunchAtObjectOrPosition {
+        victim: ObjectId,
+        destination: Coord3D,
+        source: ObjectId,
+        wslot: i32,
+        barrel: i32,
+        template: usize,
+        exhaust: crate::logic::weapon::FxName,
+    },
+    /// batch W1b: `ProjectileUpdateInterface::projectileGetLauncherID()`; replies [`ModuleReply::Id`].
+    ProjectileGetLauncherId,
+    /// batch W1b: `getLandMineInterface() != NULL`; replies [`ModuleReply::Bool`].
+    HasLandMineInterface,
+    /// batch W1b: `ParkingPlaceBehaviorInterface::hasReservedSpace(id)`; replies [`ModuleReply::Bool`].
+    ParkingPlaceHasReservedSpace { intended: ObjectId },
     /// batch R61: `RailedTransportDockUpdateInterface::isLoadingOrUnloading()`; replies [`ModuleReply::Bool`] (unhandled: no such interface).
     RailedTransportDockIsLoadingOrUnloading,
     /// batch R61: `RailedTransportDockUpdateInterface::unloadAll()`.
@@ -1012,6 +1050,8 @@ pub enum ModuleReply {
     // --- p1w13-sonnet --- (batch R43)
     /// `reserveApproachPosition` / `advanceApproachPosition`: the answer, and the position and index (the caller's when not written).
     Approach { ok: bool, position: Option<Coord3D>, index: i32 },
+    /// batch W1b: `getWhichTurretForWeaponSlot(slot, &angle, &pitch)`: the turret and its two out-parameters.
+    Turret { turret: i32, angle: f32, pitch: f32 },
     // --- end p1w13-sonnet ---
 }
 

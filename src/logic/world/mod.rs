@@ -50,6 +50,7 @@ pub mod player_xfer;
 pub mod player_ops;
 pub mod build_assistant;
 pub mod create_host_world;
+pub mod weapon_host_world; // layer 12, batch W1b: WeaponHost for World
 pub mod update_host_world;
 pub mod helper_host_world;
 // --- end p1w10-sonnet ---

@@ -393,6 +393,21 @@ impl ProbeModule {
                 ModuleReply::Bool(self.answers.spu_take)
             }
             ModuleCall::DoesSpecialPowerUpdatePassScienceTest | ModuleCall::InitiateIntentToDoSpecialPower { .. } => ModuleReply::Unhandled,
+            // batch W1b: not asked of a probe yet
+            ModuleCall::CalcBestGarrisonPosition { .. }
+            | ModuleCall::StealthGetDisguisedPlayerIndex
+            | ModuleCall::SpawnCanAnySlavesUseWeaponAgainstTarget { .. }
+            | ModuleCall::AiGetSneakyTargetingOffset
+            | ModuleCall::AiIsAircraftThatAdjustsDestination
+            | ModuleCall::AiBeginAssault { .. }
+            | ModuleCall::AiGetWhichTurretForWeaponSlot { .. }
+            | ModuleCall::AiIsWeaponSlotOnTurretAndAimingAtTarget { .. }
+            | ModuleCall::IsSpecialPowerCompletionDie
+            | ModuleCall::SpecialPowerCompletionDieNotifyScriptEngine
+            | ModuleCall::ProjectileLaunchAtObjectOrPosition { .. }
+            | ModuleCall::ProjectileGetLauncherId
+            | ModuleCall::HasLandMineInterface
+            | ModuleCall::ParkingPlaceHasReservedSpace { .. } => ModuleReply::Unhandled,
             // batch R61: not a railed transport's dock
             ModuleCall::RailedTransportDockIsLoadingOrUnloading | ModuleCall::RailedTransportDockUnloadAll | ModuleCall::RailedTransportDockUnloadSingleObject(_) => {
                 ModuleReply::Unhandled

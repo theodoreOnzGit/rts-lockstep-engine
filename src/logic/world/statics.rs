@@ -64,6 +64,8 @@ pub struct GameStatics {
     pub damage_fx_store: crate::common::damage_fx::DamageFxStore,
     /// `TheCrateSystem` (`CreateCrateDie` finds its crate templates in it).
     pub crate_system: crate::logic::crate_system::CrateSystem,
+    /// batch W1b: `TheGlobalData` (the weapon code reads its weapon bonus set and historic damage limit; empty: `NULL`).
+    pub global_data: crate::common::global_data::GlobalDataStore,
     // --- end p1w13-sonnet ---
     // New stores go here, each in its translator's marked block.
 }

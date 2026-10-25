@@ -1136,7 +1136,7 @@ impl WeaponHost for Sim {
         let pa = self.ob(a).pos;
         Coord3D { x: pos.x - pa.x, y: pos.y - pa.y, z: pos.z - pa.z }
     }
-    fn objects_in_range(&self, pos: &Coord3D, radius: f32, calc: DistanceCalculationType) -> Vec<(ObjectId, f32)> {
+    fn objects_in_range(&mut self, pos: &Coord3D, radius: f32, calc: DistanceCalculationType) -> Vec<(ObjectId, f32)> {
         let mut v = Vec::new();
         for o in &self.objs {
             let d = wpn_dist(pos, 0.0, &o.pos, self.rad(o.id, calc), calc);
@@ -1156,10 +1156,10 @@ impl WeaponHost for Sim {
         let p = self.ob(bridge).pos;
         (Coord3D { x: p.x + 10.0, y: p.y, z: p.z }, Coord3D { x: p.x - 10.0, y: p.y + 5.0, z: p.z })
     }
-    fn layer_height(&self, x: f32, y: f32, layer: PathfindLayer) -> f32 {
+    fn layer_height(&mut self, x: f32, y: f32, layer: PathfindLayer) -> f32 {
         x * 0.01 + y * 0.02 + (layer as f32) * 1.5
     }
-    fn ground_height(&self, x: f32, y: f32) -> f32 {
+    fn ground_height(&mut self, x: f32, y: f32) -> f32 {
         x * 0.01 + y * 0.02
     }
     fn terrain_extent(&self) -> Region3D {

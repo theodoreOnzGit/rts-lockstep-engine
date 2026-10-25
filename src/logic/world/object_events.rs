@@ -258,6 +258,10 @@ pub enum ObjectClientEvent {
     DrawableTerrainDecalFadeTarget { object_id: ObjectId, target: f32, rate: f32 },
     /// `m_drawable->setDrawableHidden(hidden)` (`TunnelTracker::loadPostProcess`).
     DrawableSetHidden { object_id: ObjectId, hidden: bool },
+    /// batch W1b: a weapon's client effect (`Drawable::handleWeaponFireFX`, the FX lists of a shot or a disarm).
+    WeaponFx(crate::logic::weapon_host::WeaponFx),
+    /// batch W1b: `m_drawable->updateDrawableClipStatus(ammoInClip, maxClipSize, slot)`.
+    DrawableUpdateClipStatus { object_id: ObjectId, ammo_in_clip: u32, max_clip_size: i32, slot: i32 },
     /// `m_drawable->flashAsSelected()`.
     DrawableFlashAsSelected { object_id: ObjectId },
     // --- p1w13-sonnet --- (batch R5: RiderChangeContain moves the selection between bike and rider)

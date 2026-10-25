@@ -378,7 +378,7 @@ pub trait WeaponHost: WeaponXferLookups {
     fn vector_to_pos(&self, a: ObjectId, pos: &Coord3D, calc: DistanceCalculationType) -> Coord3D;
     /// `ThePartitionManager->iterateObjectsInRange(pos, radius, calc)` walked with `firstWithNumeric` /
     /// `nextWithNumeric`: each object with its distance squared, in the iterator's order.
-    fn objects_in_range(&self, pos: &Coord3D, radius: f32, calc: DistanceCalculationType) -> Vec<(ObjectId, f32)>;
+    fn objects_in_range(&mut self, pos: &Coord3D, radius: f32, calc: DistanceCalculationType) -> Vec<(ObjectId, f32)>;
     /// `ThePartitionManager->iteratePotentialCollisions(source->getPosition(), source->getGeometryInfo(), 0)`.
     fn potential_collisions(&self, source: ObjectId) -> Vec<ObjectId>;
     /// `ThePartitionManager->isClearLineOfSightTerrain(NULL, from, NULL, to)`.
@@ -386,9 +386,9 @@ pub trait WeaponHost: WeaponXferLookups {
     /// `TheTerrainLogic->getBridgeAttackPoints(bridge, &info)`: the two attack points.
     fn bridge_attack_points(&self, bridge: ObjectId) -> (Coord3D, Coord3D);
     /// `TheTerrainLogic->getLayerHeight(x, y, layer)`.
-    fn layer_height(&self, x: f32, y: f32, layer: PathfindLayer) -> f32;
+    fn layer_height(&mut self, x: f32, y: f32, layer: PathfindLayer) -> f32;
     /// `TheTerrainLogic->getGroundHeight(x, y)`.
-    fn ground_height(&self, x: f32, y: f32) -> f32;
+    fn ground_height(&mut self, x: f32, y: f32) -> f32;
     /// `TheTerrainLogic->getExtent(&bounds)`.
     fn terrain_extent(&self) -> Region3D;
 
