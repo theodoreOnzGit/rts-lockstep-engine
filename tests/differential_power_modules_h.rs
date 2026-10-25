@@ -98,6 +98,23 @@
 //! | 1913 | the target never moved to a clear cell | 2,796 |
 //! | 1914 | `CREATE_ABOVE_LOCATION` at the target's height | 557 |
 //!
+//! # Batch R51: `SpecialAbility` (2026-10-25, `p1w13-sonnet`)
+//!
+//! `SpecialAbility.cpp` is compiled unchanged into the driver and run as kind 8 (`special_ability_r51_matches_upstream`, seed `0x0051_5AB1`,
+//! `L9R51_CASES`). Results, 9,000 cases: 7,811 reads and 57,043 dump lines compared (5,031 cases run), **0 mismatches**; 1,189 excluded as
+//! undefined upstream, 2,780 data blocks threw on both sides; 20,398 powers done, 4,466 xfers, 41,428 effect lines.
+//!
+//! The class's own disabled tests repeat the base's (`SpecialPowerModule.cpp` returns for a disabled object as well), so plants that drop them
+//! survive: they are equivalent, and were replaced by the ones below. A plant that skips the base call altogether also skips the Rust side's
+//! undefined-case checks and so runs the C++ into a crash (`createViewObject`); those were replaced too.
+//!
+//! | plant | what is broken | mismatches |
+//! |---|---|---|
+//! | 2211 | `doSpecialPower` does the base's twice | 2,997 |
+//! | 2212 | `doSpecialPowerAtObject` does the base's `doSpecialPower` | 1,567 |
+//! | 2213 | `doSpecialPowerAtLocation` does the base's `doSpecialPower` | 2,038 |
+//! | 2214 | `doSpecialPowerAtObject` targets the object itself | 1,617 |
+//!
 //! # Upstream facts the test exposed
 //!
 //! - `SpecialPowerModule.h` declares TWO `getReadyFrame`: the interface's `const` one (the shared timer, or `m_availableOnFrame` plus the paused frames)
@@ -161,6 +178,7 @@ use rts_lockstep_engine::logic::modules::cash_bounty_power::CashBountyPowerModul
 use rts_lockstep_engine::logic::modules::cash_hack_special_power::CashHackSpecialPowerModuleData;
 use rts_lockstep_engine::logic::modules::cleanup_area_power::CleanupAreaPowerModuleData;
 use rts_lockstep_engine::logic::modules::defector_special_power::DefectorSpecialPowerModuleData;
+use rts_lockstep_engine::logic::modules::special_ability::SpecialAbilityModuleData;
 use rts_lockstep_engine::logic::modules::ocl_special_power::OCLSpecialPowerModuleData;
 use rts_lockstep_engine::logic::modules::special_power_body::SpecialPowerBehavior;
 use rts_lockstep_engine::logic::modules::special_power_module_impl::SpecialPowerModuleImpl;
@@ -188,7 +206,7 @@ const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9power_h.bi
 const XFER_FILE: &str = "l9power_h.bin";
 
 /// The class names of the kinds, in the order of the driver's `kind` (the base is never registered with the module factory).
-const CLASSES: [&str; 8] = [
+const CLASSES: [&str; 9] = [
     "SpecialPowerModule",
     "CleanupAreaPower",
     "BaikonurLaunchPower",
@@ -197,6 +215,7 @@ const CLASSES: [&str; 8] = [
     "CashBountyPower",
     "CashHackSpecialPower",
     "OCLSpecialPower",
+    "SpecialAbility",
 ];
 /// The power types the cases give the special powers (`Enum = `).
 const TYPES: [&str; 13] = [
@@ -287,6 +306,7 @@ fn read_block(ini: &mut Ini<'_>, out: &mut (usize, Option<ModuleDataKind>)) -> I
         5 => ModuleDataKind::CashBountyPower(Arc::new(CashBountyPowerModuleData::friend_new_module_data(Some(ini))?)),
         6 => ModuleDataKind::CashHackSpecialPower(Arc::new(CashHackSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
         7 => ModuleDataKind::OCLSpecialPower(Arc::new(OCLSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
+        8 => ModuleDataKind::SpecialAbility(Arc::new(SpecialAbilityModuleData::friend_new_module_data(Some(ini))?)),
         _ => ModuleDataKind::DefectorSpecialPower(Arc::new(DefectorSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
     });
     Ok(())
@@ -309,6 +329,7 @@ fn base_of(data: &ModuleDataKind) -> &SpecialPowerModuleData {
         ModuleDataKind::CashBountyPower(d) => &d.special_power,
         ModuleDataKind::CashHackSpecialPower(d) => &d.special_power,
         ModuleDataKind::OCLSpecialPower(d) => &d.special_power,
+        ModuleDataKind::SpecialAbility(d) => &d.special_power,
         _ => unreachable!("not a special power module"),
     }
 }
@@ -792,6 +813,7 @@ fn state_words(w: &World, me: ObjectId, idx: u16) -> Vec<u32> {
         UpdateBody::CashBountyPower(m) => m.power(),
         UpdateBody::CashHackSpecialPower(m) => m.power(),
         UpdateBody::OCLSpecialPower(m) => m.power(),
+        UpdateBody::SpecialAbility(m) => m.power(),
         _ => unreachable!("not a special power module"),
     };
     vec![power.get_available_on_frame(), power.paused_count() as u32, power.paused_on_frame(), power.paused_percent().to_bits()]
@@ -1127,6 +1149,13 @@ fn ocl_power_r22_matches_upstream() {
     run_suite(&[7], 0x0022_0C15, cases, "OCL power R22");
 }
 
+/// Batch R51: `SpecialAbility` on the same driver (its own seed and case count).
+#[test]
+fn special_ability_r51_matches_upstream() {
+    let cases = std::env::var("L9R51_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000);
+    run_suite(&[8], 0x0051_5AB1, cases, "SpecialAbility R51");
+}
+
 /// The cases of `kinds` (in turn), from the seed: each a set of special powers, a data block, a scene and ops, run on both sides and compared.
 fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
     let _lock = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -1136,7 +1165,7 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
     let mut run = Check::new(&format!("{label} ops (data, effects, state, objects)"));
     let (mut read_failed, mut ops_run, mut excluded) = (0u64, 0u64, 0u64);
     let mut tally = Tally::default();
-    let mut per_kind = [0u64; 8];
+    let mut per_kind = [0u64; 9];
     let mut counts: BTreeMap<String, u64> = BTreeMap::new();
     let mut shown = 0;
     for case in 0..cases {

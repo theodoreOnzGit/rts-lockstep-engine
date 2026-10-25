@@ -17,6 +17,8 @@
 #define min(x,y) (((x)<(y)) ? (x) : (y))
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/SpecialPower/CashHackSpecialPower.cpp"
 #undef min
+/* p1w13-sonnet, batch R51: SpecialAbility (kind 8) */
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/SpecialPower/SpecialAbility.cpp"
 
 /* batch R22: OCLSpecialPower (kind 7) is compiled at the end of the unit, after the stand-ins it reaches (differential/l9_ocl_power_r22.inc) */
 ModuleData *r22ReadOcl(INI *ini);
@@ -107,6 +109,7 @@ ModuleData *l9spRead(int kind, const char *filename)
 			case 5: data = CashBountyPower::friend_newModuleData(&ini); break;
 			case 6: data = CashHackSpecialPower::friend_newModuleData(&ini); break;
 			case 7: data = r22ReadOcl(&ini); break;
+			case 8: data = SpecialAbility::friend_newModuleData(&ini); break;
 			default: data = DefectorSpecialPower::friend_newModuleData(&ini); break;
 			}
 		} catch (...) {
@@ -190,7 +193,7 @@ extern "C" {
 ** 5 onSpecialPowerCreation  6 setReadyFrame(a)  7 markSpecialPowerTriggered(a != 0: location (b, c, d))  8 startPowerRecharge  9 queries only  10 the frame = a
 ** 11 the objects' disabled = a & 1 and controlling player = b - 1 (0 none)  12 xfer save  13 xfer load of the last save  14 xfer CRC  15 loadPostProcess
 ** 16 the local player = a - 1 (0 none)  17 the relationships = a (2 bits each)  18 the relationships to the default teams = a  19 (batch R21) player a gets
-** science c (its key) if b, else loses every science  20 onObjectCreated  21 player a's money = b. cfg[8..10] (batch R21): the players' money. Kinds 5
+** science c (its key) if b, else loses every science  20 onObjectCreated  21 player a's money = b. Kind 8 (batch R51): SpecialAbility. cfg[8..10] (batch R21): the players' money. Kinds 5
 ** CashBountyPower and 6 CashHackSpecialPower (batch R21); the constructor is followed by onObjectCreated, as Object's (only CashBountyPower has one). Each op appends: the CATCH_ALL status, isReady, getPercentReady (bits),
 ** getReadyFrame, isScriptOnly, the effect log (count, then each as a string), the xfer status, bytes and CRC, the module's four state words, and the
 ** players' cash bounties (batch R21), the objects the module made (count, then id, team, position and shroud range bits of each). The constructor's effect log (count, then each as a string) comes
@@ -326,6 +329,7 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 	case 5: m = new CashBountyPower(obj, d); break;
 	case 6: m = new CashHackSpecialPower(obj, d); break;
 	case 7: m = r22NewOcl(obj, d); break;
+	case 8: m = new SpecialAbility(obj, d); break;
 	default: m = new DefectorSpecialPower(obj, d); break;
 	}
 	m->onObjectCreated();   /* (batch R21) Object's constructor, once every module is made (Object.cpp:485); only CashBountyPower has one */
